@@ -1,3 +1,4 @@
+import { apiFetch } from "./api-client.ts"
 // ============================================================================
 // Leitbild iframe panel — lets humans view the bound Leitbild dashboard
 // alongside Samsinn chat.
@@ -7,7 +8,7 @@
 //     before the trash button. Visible only when the active room has a
 //     leitbildMirror binding; click toggles the panel.
 //  2. A floating, draggable, resizable panel containing an iframe to the
-//     Leitbild SPA for the bound Control Instance.
+//     Leitbild SPA for the bound Simulation Run.
 //
 // Position + size persist in localStorage so the user's chosen layout
 // survives reloads.
@@ -26,6 +27,7 @@ interface MirrorStatus {
   readonly status: null | {
     readonly baseUrl: string
     readonly workspaceId: string
+    readonly simulationRunId: string
     readonly connected: boolean
   }
 }
@@ -62,19 +64,12 @@ const saveLayout = (p: PanelLayout): void => {
 
 // === URL helpers ===
 
-const spaUrl = (baseUrl: string, workspaceId: string): string => {
-  // Leitbild SPA route is /i/{scenarioId}/{runId}
-  // where workspaceId = `${scenarioId}:${runId}`.
-  const colonIdx = workspaceId.indexOf(':')
-  if (colonIdx < 0) return baseUrl
-  const scenarioId = workspaceId.slice(0, colonIdx)
-  const runId = workspaceId.slice(colonIdx + 1)
-  return `${baseUrl}/i/${encodeURIComponent(scenarioId)}/${encodeURIComponent(runId)}`
-}
+const spaUrl = (baseUrl: string, workspaceId: string, simulationRunId: string): string =>
+  `${baseUrl}/workspaces/${encodeURIComponent(workspaceId)}/runs/${encodeURIComponent(simulationRunId)}`
 
 const fetchMirrorStatus = async (roomName: string, signal: AbortSignal): Promise<MirrorStatus | null> => {
   try {
-    const res = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/leitbild-mirror`, { signal, credentials: 'same-origin' })
+    const res = await apiFetch(`/rooms/${encodeURIComponent(roomName)}/leitbild-mirror`, { signal, credentials: 'same-origin' })
     if (!res.ok) return null
     return await res.json() as MirrorStatus
   } catch {
@@ -357,7 +352,7 @@ export const updateLeitbildPanelForRoom = async (roomName: string | undefined, r
     return
   }
 
-  const url = spaUrl(status.status.baseUrl, status.status.workspaceId)
+  const url = spaUrl(status.status.baseUrl, status.status.workspaceId, status.status.simulationRunId)
   if (ifr.src !== url) ifr.src = url
   btn.classList.remove('hidden')
 }
@@ -365,7 +360,7 @@ export const updateLeitbildPanelForRoom = async (roomName: string | undefined, r
 // === Agent-callable screenshot (lb_screenshot tool) ===
 //
 // Server-side lb_screenshot broadcasts an `lb_screenshot_request` WS frame
-// to every session in the instance. We listen here, capture the iframe rect
+// to every session in the Workspace. We listen here, capture the iframe rect
 // via the existing captureIframeRect helper, and post back via WS. First
 // responder wins on the server side; if our session has no iframe mounted
 // we silently no-op (server timeout will fire after 10s).
@@ -406,4 +401,3 @@ const installAgentRequestListener = (): void => {
 
 // Auto-install on module load — the panel module is imported once at app boot.
 installAgentRequestListener()
-

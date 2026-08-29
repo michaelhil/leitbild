@@ -6,7 +6,7 @@ Accepted.
 
 ## Context
 
-Leitbild needs read-only access to pack-owned computations that are not canonical Control Instance object state.
+Leitbild needs read-only access to pack-owned computations that are not canonical Simulation Run object state.
 
 Examples:
 
@@ -23,7 +23,7 @@ Adding bespoke HTTP endpoints for each domain would make core and generic UI mod
 Use one generic read-only pack query route:
 
 ```text
-POST /api/control-instances/:id/queries
+POST /api/workspaces/:workspaceId/simulation-runs/:simulationRunId/queries
 ```
 
 The request envelope is:

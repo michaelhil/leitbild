@@ -152,7 +152,7 @@ describe('recall tool', () => {
   test('unconfigured embedder when store is empty still returns []', async () => {
     // Empty store + no key: should still return [] (success), since there's
     // nothing to search anyway. This avoids a confusing error when an
-    // instance has never ingested.
+    // Workspace has never ingested.
     const { path, cleanup } = await tempPath()
     try {
       const store = createVectorStore(path)

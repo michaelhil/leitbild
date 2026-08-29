@@ -14,6 +14,8 @@
 
 // === Connect + Reconnect ===
 
+import { workspaceRealtimeUrl } from './api-client.ts'
+
 const BACKOFF_SCHEDULE_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]
 
 export interface WSClient {
@@ -32,11 +34,7 @@ export const createWSClient = (
     BACKOFF_SCHEDULE_MS[Math.min(attempt, BACKOFF_SCHEDULE_MS.length - 1)]!
 
   const connect = () => {
-    const params = new URLSearchParams()
-    if (sessionToken) params.set('session', sessionToken)
-
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    ws = new WebSocket(`${protocol}//${location.host}/ws?${params}`)
+    ws = new WebSocket(workspaceRealtimeUrl(sessionToken))
 
     ws.onopen = () => {
       attempt = 0  // reset backoff on successful connect

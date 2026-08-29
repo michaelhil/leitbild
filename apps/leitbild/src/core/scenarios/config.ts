@@ -340,7 +340,7 @@ export const scenarioDefinitionFromConfig = async (
   options: { readonly routing: RoutingAdapter },
 ): Promise<ScenarioDefinition> => {
   const config = scenarioConfigSchema.parse(rawConfig)
-  const packsById = new Map(packs.map(pack => [pack.id, pack]))
+  const packsById = new Map(packs.map(pack => [pack.descriptor.id, pack]))
   const startsAt = config.world.startsAt as IsoTimestamp
   const objectMap = new Map<ObjectId, OperationalObject>()
   const initialObjects: OperationalObject[] = []

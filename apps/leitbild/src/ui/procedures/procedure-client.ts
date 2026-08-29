@@ -1,5 +1,5 @@
 import type {
-  ControlInstanceId,
+  SimulationRunId,
   ProcedureAssessment,
   ProcedureCatalog,
   ProcedureDocument,
@@ -9,7 +9,8 @@ import type {
   ProcedureTag,
   ProcedureTagId,
 } from '../../core/model/index.ts'
-import { queryControlInstancePack, sendControlInstanceCommand } from '../control-instance-client.ts'
+import { querySimulationRunPack, sendSimulationRunCommand } from '../simulation-run-client.ts'
+import { workspaceApiPath } from '../workspace-context.ts'
 
 export interface ProcedureRunsResponse {
   readonly runs: ReadonlyArray<ProcedureRunState>
@@ -103,32 +104,32 @@ const readJson = async <T>(response: Response, message: string): Promise<T> => {
 }
 
 export const readProcedureCatalog = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   config: { readonly sourceId?: string; readonly refresh?: boolean } = {},
 ): Promise<ProcedureCatalog> => {
   const params = new URLSearchParams()
   if (config.sourceId) params.set('sourceId', config.sourceId)
   if (config.refresh) params.set('refresh', 'true')
   const suffix = params.size > 0 ? `?${params.toString()}` : ''
-  const response = await fetch(`/api/control-instances/${encodeURIComponent(controlInstanceId)}/procedures${suffix}`, { cache: 'no-store' })
+  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/procedures${suffix}`), { cache: 'no-store' })
   const body = await readJson<{ readonly catalog: ProcedureCatalog }>(response, 'procedure catalog fetch failed')
   return body.catalog
 }
 
 export const readProcedureSourceStatus = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   config: { readonly sourceId?: string } = {},
 ): Promise<ProcedureSourceLoadStatus> => {
   const params = new URLSearchParams()
   if (config.sourceId) params.set('sourceId', config.sourceId)
   const suffix = params.size > 0 ? `?${params.toString()}` : ''
-  const response = await fetch(`/api/control-instances/${encodeURIComponent(controlInstanceId)}/procedure-source-status${suffix}`, { cache: 'no-store' })
+  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/procedure-source-status${suffix}`), { cache: 'no-store' })
   const body = await readJson<{ readonly status: ProcedureSourceLoadStatus }>(response, 'procedure source status fetch failed')
   return body.status
 }
 
 export const readProcedureDocument = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   procedureId: string,
   config: { readonly sourceId?: string; readonly refresh?: boolean } = {},
 ): Promise<ProcedureDocument> => {
@@ -136,24 +137,24 @@ export const readProcedureDocument = async (
   if (config.sourceId) params.set('sourceId', config.sourceId)
   if (config.refresh) params.set('refresh', 'true')
   const suffix = params.size > 0 ? `?${params.toString()}` : ''
-  const response = await fetch(`/api/control-instances/${encodeURIComponent(controlInstanceId)}/procedures/${encodeURIComponent(procedureId)}${suffix}`, { cache: 'no-store' })
+  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/procedures/${encodeURIComponent(procedureId)}${suffix}`), { cache: 'no-store' })
   const body = await readJson<{ readonly procedure: ProcedureDocument }>(response, 'procedure fetch failed')
   return body.procedure
 }
 
 export const readProcedureRuns = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
 ): Promise<ProcedureRunsResponse> => {
-  const response = await fetch(`/api/control-instances/${encodeURIComponent(controlInstanceId)}/procedure-runs`, { cache: 'no-store' })
+  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/procedure-runs`), { cache: 'no-store' })
   const body = await readJson<{ readonly procedures: ProcedureRunsResponse }>(response, 'procedure runs fetch failed')
   return body.procedures
 }
 
 export const startProcedureRun = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   config: { readonly sourceId: string; readonly procedureId: string; readonly scope: ProcedureRunScope },
 ): Promise<void> => {
-  const response = await sendControlInstanceCommand(controlInstanceId, {
+  const response = await sendSimulationRunCommand(simulationRunId, {
     kind: 'procedure.run.start',
     targetObjectIds: config.scope.targetObjectId ? [config.scope.targetObjectId] : [],
     payload: config,
@@ -162,7 +163,7 @@ export const startProcedureRun = async (
 }
 
 export const updateProcedureStep = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   config: {
     readonly runId: string
     readonly stepId: ProcedureStepId
@@ -172,7 +173,7 @@ export const updateProcedureStep = async (
     readonly currentStepId?: ProcedureStepId
   },
 ): Promise<void> => {
-  const response = await sendControlInstanceCommand(controlInstanceId, {
+  const response = await sendSimulationRunCommand(simulationRunId, {
     kind: 'procedure.step.update',
     targetObjectIds: [],
     payload: config,
@@ -181,10 +182,10 @@ export const updateProcedureStep = async (
 }
 
 export const closeProcedureRun = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   config: { readonly runId: string; readonly status: 'completed' | 'abandoned' },
 ): Promise<void> => {
-  const response = await sendControlInstanceCommand(controlInstanceId, {
+  const response = await sendSimulationRunCommand(simulationRunId, {
     kind: 'procedure.run.close',
     targetObjectIds: [],
     payload: config,
@@ -193,10 +194,10 @@ export const closeProcedureRun = async (
 }
 
 export const resetProcedureRun = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   config: { readonly sourceId: string; readonly procedureId: string; readonly scope: ProcedureRunScope },
 ): Promise<void> => {
-  const response = await sendControlInstanceCommand(controlInstanceId, {
+  const response = await sendSimulationRunCommand(simulationRunId, {
     kind: 'procedure.run.reset',
     targetObjectIds: config.scope.targetObjectId ? [config.scope.targetObjectId] : [],
     payload: config,
@@ -211,12 +212,12 @@ const requireOkPackResult = (value: unknown, message: string): Record<string, un
 }
 
 export const validateProcedureTags = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   systemId: string,
   tags: ReadonlyArray<ProcedureTag>,
 ): Promise<ReadonlyMap<string, ProcedureTagValidation>> => {
   if (tags.length === 0) return new Map()
-  const body = await queryControlInstancePack(controlInstanceId, {
+  const body = await querySimulationRunPack(simulationRunId, {
     packId: 'process-plant',
     kind: 'process-plant.procedure-tags.validate',
     payload: {
@@ -245,11 +246,11 @@ export const validateProcedureTags = async (
 }
 
 export const readProcedureTagValue = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   systemId: string,
   tag: ProcedureTag,
 ): Promise<ProcedureTagValue> => {
-  const body = await queryControlInstancePack(controlInstanceId, {
+  const body = await querySimulationRunPack(simulationRunId, {
     packId: 'process-plant',
     kind: 'process-plant.procedure-tags.read',
     payload: {
@@ -311,12 +312,12 @@ const parseProcedureCsfSignalRead = (value: unknown): ProcedureCsfSignalRead => 
 }
 
 export const evaluateProcedureCsfs = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   systemId: string,
   csfs: ReadonlyArray<string>,
 ): Promise<ReadonlyMap<string, ProcedureCsfEvaluation>> => {
   if (csfs.length === 0) return new Map()
-  const body = await queryControlInstancePack(controlInstanceId, {
+  const body = await querySimulationRunPack(simulationRunId, {
     packId: 'process-plant',
     kind: 'process-plant.procedure-csfs.evaluate',
     payload: {

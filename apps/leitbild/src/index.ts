@@ -1,5 +1,4 @@
 import { createServer } from './core/api/server.ts'
-import { createControlInstanceRegistry } from './core/control-instances/registry.ts'
 import { createScenarioCatalog } from './core/scenarios/catalog.ts'
 import { leitbildPacks } from './app-assembly.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from './packs/ambulance/sim/adapter.ts'
@@ -17,6 +16,7 @@ import { createRoutingAdapterFromEnv } from './routing/config.ts'
 import { builtinMissions, createBuiltinScenarios } from './scenarios/index.ts'
 import { join } from 'node:path'
 import { createLocalWorkspaceDirectory } from './core/workspaces/directory.ts'
+import { createLeitbildWorkspaceRuntimeRegistry } from './core/workspaces/runtime-registry.ts'
 
 const routing = createRoutingAdapterFromEnv()
 const scenarios = await createBuiltinScenarios(routing)
@@ -25,7 +25,7 @@ const scenarioCatalog = createScenarioCatalog({ packs: leitbildPacks, scenarios,
 // OpenSky requires OAuth2 client_credentials. If the operator hasn't provisioned
 // them (e.g. local dev, demo machines without an OpenSky account), we skip
 // registration rather than crash the server — scenarios that opt into
-// aviation.opensky will fail loud at control-instance creation, which is the
+// aviation.opensky will fail loud at simulation-run creation, which is the
 // right surface for "you forgot to set up credentials".
 const aviationOpenSkyAdapter: PackRuntimeAdapter | null = (() => {
   const clientId = process.env.OPENSKY_CLIENT_ID
@@ -41,7 +41,7 @@ const aviationOpenSkyAdapter: PackRuntimeAdapter | null = (() => {
 const aviationVatsimAdapter = createVatsimPackRuntimeAdapter()
 
 // The multi-runtime stitches OpenSky and VATSIM behind one runtime id so a
-// Control Instance can swap source at runtime via aviation.set_source. Only
+// Simulation Run can swap source at runtime via aviation.set_source. Only
 // expose it when at least one underlying source is available, otherwise
 // scenarios that depend on it would fail in a more confusing way at start-up.
 const aviationMultiAdapter: PackRuntimeAdapter | null = (aviationOpenSkyAdapter || aviationVatsimAdapter)
@@ -57,26 +57,28 @@ const workspaceDirectory = createLocalWorkspaceDirectory({
   path: join(dataDir, 'workspace-directory.json'),
   defaultDisplayName: 'Leitbild',
 })
-const defaultWorkspace = await workspaceDirectory.ensureDefault()
+const runtimeAdapters: ReadonlyArray<PackRuntimeAdapter> = [
+  createLocalAmbulancePackRuntimeAdapter({ routing }),
+  createLocalTrafficPackRuntimeAdapter({ routing }),
+  createLocalWeatherPackRuntimeAdapter(),
+  createDroneNativePackRuntimeAdapter(),
+  createLocalProcessPlantPackRuntimeAdapter(),
+  createLocalElectricGridPackRuntimeAdapter(),
+  createAviationNoopPackRuntimeAdapter(),
+  ...(aviationOpenSkyAdapter ? [aviationOpenSkyAdapter] : []),
+  aviationVatsimAdapter,
+  ...(aviationMultiAdapter ? [aviationMultiAdapter] : []),
+]
 
-const registry = createControlInstanceRegistry({
+const workspaces = createLeitbildWorkspaceRuntimeRegistry({
   dataDir,
+  workspaceDirectory,
   scenarioCatalog,
-  runtimeAdapters: [
-    createLocalAmbulancePackRuntimeAdapter({ routing }),
-    createLocalTrafficPackRuntimeAdapter({ routing }),
-    createLocalWeatherPackRuntimeAdapter(),
-    createDroneNativePackRuntimeAdapter(),
-    createLocalProcessPlantPackRuntimeAdapter(),
-    createLocalElectricGridPackRuntimeAdapter(),
-    createAviationNoopPackRuntimeAdapter(),
-    ...(aviationOpenSkyAdapter ? [aviationOpenSkyAdapter] : []),
-    aviationVatsimAdapter,
-    ...(aviationMultiAdapter ? [aviationMultiAdapter] : []),
-  ],
-  interactionHandlers: leitbildPacks.flatMap(pack => pack.interactionHandlers ?? []),
+  runtimeAdapters,
+  interactionHandlers: leitbildPacks.flatMap(pack => pack.interactions?.handlers ?? []),
 })
+await workspaces.defaultWorkspace()
 
-const server = createServer({ registry, workspaceId: defaultWorkspace.id })
+const server = createServer({ workspaces, packs: leitbildPacks })
 
 console.log(`Leitbild running at http://localhost:${server.port}`)

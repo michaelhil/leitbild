@@ -1,7 +1,8 @@
+import { apiFetch } from "../api-client.ts"
 // UI extension mount layer (Path C).
 //
-// A pack declares `ui_extensions: ["biometrics"]` in its pack.json. The server
-// surfaces this verbatim in /api/packs (list_packs tool response). The browser
+// A Pack declares `uiExtensions: ["biometrics"]` in its pack.json. The server
+// surfaces this verbatim in /packs (list_packs tool response). The browser
 // unions the declared names across installed packs and reconciles them against
 // KNOWN_UI_EXTENSIONS — mounting / unmounting as the union changes.
 //
@@ -129,17 +130,17 @@ export const reconcileExtensions = async (declared: ReadonlySet<string>): Promis
   }
 }
 
-// Pull the declared set from the /api/packs response. Reads pack entries'
-// ui_extensions arrays and unions them. System packs (core/local) don't
+// Pull the declared set from the /packs response. Reads Pack entries'
+// uiExtensions arrays and unions them. System Packs (core/local) don't
 // declare extensions; only user-installed packs can.
 export const fetchDeclaredExtensions = async (): Promise<ReadonlySet<string>> => {
   try {
-    const res = await fetch('/api/packs')
+    const res = await apiFetch('/packs')
     if (!res.ok) return new Set()
-    const body = await res.json() as Array<{ ui_extensions?: ReadonlyArray<string> }>
+    const body = await res.json() as Array<{ uiExtensions?: ReadonlyArray<string> }>
     const set = new Set<string>()
     for (const p of body) {
-      for (const name of p.ui_extensions ?? []) set.add(name)
+      for (const name of p.uiExtensions ?? []) set.add(name)
     }
     return set
   } catch {

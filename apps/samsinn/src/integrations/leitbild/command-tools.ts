@@ -1,5 +1,5 @@
 // ============================================================================
-// Leitbild command tool (V2.B — write surface).
+// Leitbild command tool — write surface.
 //
 // One generic tool — lb_command(kind, targets, payload) — gated by the
 // agent's leitbildBinding.role === 'operator'. Tools registered with
@@ -12,24 +12,24 @@
 //
 // The clientId is the primary handle for echo filtering: the room mirror
 // re-broadcasts command.issued / command.result events, and a bound agent
-// already filters all external-mirror messages from its context (V2.A's
+// already filters all external-mirror messages from its context (the
 // suppressLeitbildMirror), so the agent does not double-react to its own
 // command. Other room participants (humans, supervisor agents) still see
 // the events through the mirror as designed.
 //
-// No echo-specific data structures needed: V2.A's filter is sufficient.
+// No echo-specific data structures are needed; that filter is sufficient.
 // ============================================================================
 
 import { createHash } from 'node:crypto'
 import type { Tool, ToolContext, ToolResult } from '../../core/types/tool.ts'
-import type { LeitbildAgentBinding } from '../../core/types/agent.ts'
+import type { ResolvedLeitbildAgentBinding } from './types.ts'
 import { createLeitbildClient } from './client.ts'
 
 export interface LeitbildCommandToolDeps {
-  readonly getBinding: (agentId: string) => LeitbildAgentBinding | undefined
+  readonly getBinding: (agentId: string) => ResolvedLeitbildAgentBinding | undefined
   readonly getAgentName?: (agentId: string) => string | undefined
   // Per-tenant scope for the LeitbildClient pool, looked up per-call by
-  // agent id (bootstrap resolves to the owning system's instance id).
+  // agent id (bootstrap resolves to the owning Workspace id).
   // Audit Finding 2.1.3.
   readonly getScope?: (agentId: string) => string | undefined
 }
@@ -51,12 +51,12 @@ const ok = (data: unknown): ToolResult => ({ success: true, data })
 
 const createLbCommand = (deps: LeitbildCommandToolDeps): Tool => ({
   name: 'lb_command',
-  description: 'Issue a control command to the bound Leitbild Control Instance. Use accepted command kinds (discover via the per-CI capabilities endpoint). Returns the immediate accept/reject result; live downstream events are visible to other room participants via the room mirror. Requires the agent\'s leitbildBinding.role === "operator".',
+  description: 'Issue a control command to the bound Leitbild Simulation Run. Use accepted command kinds from the Run capability manifest. Returns the immediate accept/reject result; live downstream events are visible to other room participants via the room mirror. Requires the agent\'s leitbildBinding.role === "operator".',
   returns: 'JSON: { ok: true, commandId, acceptedAt } on accept; { ok: false, commandId, rejectedAt, reason } on reject.',
   parameters: {
     type: 'object',
     properties: {
-      kind: { type: 'string', description: 'Command kind, e.g. "ambulance.assign_to_incident" (must be one of acceptedCommandKinds from the CI capabilities).' },
+      kind: { type: 'string', description: 'Command kind, e.g. "ambulance.assign_to_incident" (must be one of acceptedCommandKinds from the Run capabilities).' },
       targets: { type: 'array', items: { type: 'string' }, description: 'Target object ids the command applies to. May be empty if the command kind takes no targets.' },
       payload: { type: 'object', description: 'Command-kind-specific payload (pass {} if none).' },
     },
@@ -65,7 +65,7 @@ const createLbCommand = (deps: LeitbildCommandToolDeps): Tool => ({
   },
   execute: async (params, ctx: ToolContext) => {
     const binding = deps.getBinding(ctx.callerId)
-    if (!binding) return fail('No leitbildBinding configured for this agent. Add { baseUrl, workspaceId, role } to the agent config to use lb_command.')
+    if (!binding) return fail('No Leitbild Simulation Run is configured for this agent or its Workspace.')
     if (binding.role !== 'operator') return fail('lb_command requires leitbildBinding.role === "operator". This agent has role: "' + binding.role + '".')
 
     const kind = String(params.kind ?? '').trim()
@@ -96,8 +96,8 @@ const createLbCommand = (deps: LeitbildCommandToolDeps): Tool => ({
     const idempotencyKey = createHash('sha256').update(fingerprint).digest('hex').slice(0, 32)
 
     try {
-      const client = createLeitbildClient(binding.baseUrl, { scope: deps.getScope?.(ctx.callerId) })
-      const body = await client.callCommand(binding.workspaceId, {
+      const client = createLeitbildClient(binding, { scope: deps.getScope?.(ctx.callerId) })
+      const body = await client.callCommand(binding.simulationRunId, {
         actorId, clientId, kind, targetObjectIds: targets, payload, idempotencyKey,
       }) as { result?: unknown }
       return ok(body.result ?? body)

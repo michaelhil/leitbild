@@ -36,7 +36,7 @@ describe('createMapLayersPanel', () => {
       datasetId: 'aero-norway',
       categories: [...categories],
       defaultsOn: ['tma', 'airport'],
-      controlInstanceId: null,
+      simulationRunId: null,
     })
     expect(ctrl.isVisible('tma')).toBe(true)
     expect(ctrl.isVisible('fir')).toBe(false)
@@ -47,7 +47,7 @@ describe('createMapLayersPanel', () => {
       datasetId: 'aero-norway',
       categories: [...categories],
       defaultsOn: ['tma'],
-      controlInstanceId: null,
+      simulationRunId: null,
     })
     const after = ctrl.toggle('fir')
     expect(after.isVisible('fir')).toBe(true)
@@ -59,7 +59,7 @@ describe('createMapLayersPanel', () => {
       datasetId: 'aero-norway',
       categories: [...categories],
       defaultsOn: [],
-      controlInstanceId: null,
+      simulationRunId: null,
     })
     const all = ctrl.setAll(true)
     for (const c of categories) expect(all.isVisible(c)).toBe(true)
@@ -70,19 +70,19 @@ describe('createMapLayersPanel', () => {
       datasetId: 'aero-norway',
       categories: [...categories],
       defaultsOn: [...categories],
-      controlInstanceId: null,
+      simulationRunId: null,
     })
     const none = ctrl.setAll(false)
     for (const c of categories) expect(none.isVisible(c)).toBe(false)
   })
 
-  test('persists to storage when controlInstanceId is supplied', () => {
+  test('persists to storage when simulationRunId is supplied', () => {
     const storage = memoryStorage()
     const ctrl = createMapLayersPanel({
       datasetId: 'aero-norway',
       categories: [...categories],
       defaultsOn: ['tma'],
-      controlInstanceId: 'halden',
+      simulationRunId: 'halden',
       storage,
     })
     ctrl.toggle('fir')
@@ -92,13 +92,13 @@ describe('createMapLayersPanel', () => {
     expect(parsed.fir).toBe(true)
   })
 
-  test('does not persist when controlInstanceId is null', () => {
+  test('does not persist when simulationRunId is null', () => {
     const storage = memoryStorage()
     const ctrl = createMapLayersPanel({
       datasetId: 'aero-norway',
       categories: [...categories],
       defaultsOn: [],
-      controlInstanceId: null,
+      simulationRunId: null,
       storage,
     })
     ctrl.toggle('tma')
@@ -115,7 +115,7 @@ describe('createMapLayersPanel', () => {
       datasetId: 'aero-norway',
       categories: [...categories],
       defaultsOn: ['tma'],
-      controlInstanceId: 'halden',
+      simulationRunId: 'halden',
       storage,
     })
     expect(ctrl.isVisible('fir')).toBe(true)
@@ -132,7 +132,7 @@ describe('createMapLayersPanel', () => {
       datasetId: 'aero-norway',
       categories: [...categories],
       defaultsOn: ['tma'],
-      controlInstanceId: 'halden',
+      simulationRunId: 'halden',
       storage,
     })
     expect(ctrl.isVisible('unknown_category' as never)).toBe(false)
@@ -146,7 +146,7 @@ describe('createMapLayersPanel', () => {
       datasetId: 'aero-norway',
       categories: [...categories],
       defaultsOn: ['tma'],
-      controlInstanceId: 'halden',
+      simulationRunId: 'halden',
       storage,
     })
     expect(ctrl.isVisible('tma')).toBe(true)

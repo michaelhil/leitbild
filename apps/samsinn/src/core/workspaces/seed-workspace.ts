@@ -16,6 +16,7 @@
 import type { SamsinnWorkspaceRuntime } from '../../main.ts'
 import { resolveDefaultModel, type ProviderSnapshot } from '../../llm/models/default-resolver.ts'
 import { CURATED_MODELS, DEFAULT_MODEL_ID } from '../../llm/models/catalog.ts'
+import { resolveProviderAvailability } from '../../llm/provider-availability.ts'
 
 // Build a minimal ProviderSnapshot[] from live SamsinnWorkspaceRuntime state. Mirrors the
 // subset of /api/routes/runtime.ts:/api/models that resolveDefaultModel needs.
@@ -28,23 +29,21 @@ const buildProviderSnapshots = (system: SamsinnWorkspaceRuntime): ReadonlyArray<
     if (name === 'ollama') {
       const gw = system.ollama
       const m = monitor.ollama
-      const cool = m && m.sub === 'backoff'
       const available = gw?.getHealth().availableModels ?? []
       out.push({
         name: 'ollama',
-        status: cool ? 'cooldown' : (available.length === 0 ? 'down' : 'ok'),
+        availability: resolveProviderAvailability(m, {
+          fallbackSub: 'ok',
+          modelCount: available.length,
+          requireModels: true,
+        }),
         models: available.map(id => ({ id })),
       })
       continue
     }
-    const enabled = system.providerKeys.isEnabled(name)
+    const hasKey = system.providerKeys.get(name).length > 0
+    const userEnabled = system.providerKeys.isUserEnabled(name)
     const m = monitor[name]
-    const status: ProviderSnapshot['status'] =
-      !enabled ? 'no_key' :
-      m && (m.sub === 'no_key' || m.sub === 'disabled') ? 'no_key' :
-      m && (m.sub === 'down' || m.sub === 'unhealthy') ? 'down' :
-      m && m.sub === 'backoff' ? 'cooldown' :
-      'ok'
     // Curated order defines preference, but only provider-reported models are
     // routable. Do not seed an unavailable recommendation into a live system.
     const reportedIds = system.gateways[name]?.getHealth().availableModels ?? []
@@ -58,7 +57,15 @@ const buildProviderSnapshots = (system: SamsinnWorkspaceRuntime): ReadonlyArray<
       seen.add(m.id)
       models.push(m)
     }
-    out.push({ name, status, models })
+    out.push({
+      name,
+      availability: resolveProviderAvailability(m, {
+        fallbackSub: !userEnabled ? 'disabled' : !hasKey ? 'no_key' : 'ok',
+        modelCount: models.length,
+        requireModels: true,
+      }),
+      models,
+    })
   }
   return out
 }
@@ -78,7 +85,6 @@ export const seedWorkspace = async (system: SamsinnWorkspaceRuntime): Promise<vo
   const aiden = await system.spawnAIAgent({
     name: 'Aiden',
     model,
-    preferredModel: model,
     persona: 'You are Aiden, a friendly and curious assistant. You help the user explore what this system can do — answer questions directly, call tools when useful, and keep replies concise.',
   })
   await system.addAgentToRoom(aiden.id, room.profile.id, 'seed')

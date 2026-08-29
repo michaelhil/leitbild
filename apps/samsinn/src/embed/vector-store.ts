@@ -1,7 +1,7 @@
 // ============================================================================
 // Vector store — per-Workspace, JSONL append-only with brute-force cosine.
 //
-// One file per instance: instances/<id>/vectors.jsonl. Each line is a JSON
+// One file per Workspace shard: workspaces/<id>/samsinn/vectors.jsonl. Each line is a JSON
 // record. Three line shapes:
 //
 //   { "v": 1, "kind": "header", "provider": "openai", "model": "text-embedding-3-small", "dim": 1536, "createdAt": 1700000000000 }

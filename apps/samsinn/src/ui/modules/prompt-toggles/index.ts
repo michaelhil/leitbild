@@ -67,11 +67,11 @@ export const renderPromptToggles = (container: HTMLElement, deps: PromptTogglesD
   const fetchPreview = async (): Promise<ContextPreview | null> => {
     const roomId = getRoomIdForPreview()
     const qs = roomId ? `?roomId=${encodeURIComponent(roomId)}` : ''
-    return safeFetchJson<ContextPreview>(`/api/agents/${agentEnc}/context-preview${qs}`)
+    return safeFetchJson<ContextPreview>(`/agents/${agentEnc}/context-preview${qs}`)
   }
 
   const patchAgent = async (patch: Record<string, unknown>): Promise<void> => {
-    await safeFetchJson(`/api/agents/${agentEnc}`, {
+    await safeFetchJson(`/agents/${agentEnc}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
     })

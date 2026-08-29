@@ -1,5 +1,5 @@
-// PUT /api/providers/order        — router priority (UI reorder arrows)
-// PUT /api/providers/:name         — set apiKey / enabled / maxConcurrent /
+// PUT /providers/order        — router priority (UI reorder arrows)
+// PUT /providers/:name         — set apiKey / enabled / maxConcurrent /
 //                                    baseUrl / pinnedModels for one provider
 //
 // Mutations take effect immediately — gateways read keys lazily via
@@ -20,7 +20,7 @@ export const providersConfigRoutes: RouteEntry[] = [
   // Must precede the generic /:name route so the pattern matches first.
   {
     method: 'PUT',
-    pattern: /^\/api\/providers\/order$/,
+    pattern: /^\/providers\/order$/,
     handler: async (req, _match, { system, broadcast }) => {
       const body = await parseBody(req)
       const incoming = body.order
@@ -50,7 +50,7 @@ export const providersConfigRoutes: RouteEntry[] = [
   // --- Set / clear a single provider's key / settings ---
   {
     method: 'PUT',
-    pattern: /^\/api\/providers\/([^/]+)$/,
+    pattern: /^\/providers\/([^/]+)$/,
     handler: async (req, match, { system, broadcast }) => {
       const name = decodeURIComponent(match[1] ?? '')
       if (!name) return errorResponse('Provider name required')
@@ -200,7 +200,7 @@ export const providersConfigRoutes: RouteEntry[] = [
   // request so changes take effect without restart.
   {
     method: 'GET',
-    pattern: /^\/api\/llm-policy\/fallback$/,
+    pattern: /^\/llm-policy\/fallback$/,
     handler: (_req, _match, { system }) => {
       const chain = system.llmPolicyStore?.getModelFallback() ?? []
       return json({ chain })
@@ -208,7 +208,7 @@ export const providersConfigRoutes: RouteEntry[] = [
   },
   {
     method: 'PUT',
-    pattern: /^\/api\/llm-policy\/fallback$/,
+    pattern: /^\/llm-policy\/fallback$/,
     handler: async (req, _match, { system, broadcast }) => {
       if (!system.llmPolicyStore) return errorResponse('llm policy store unavailable', 500)
       const body = await parseBody(req)

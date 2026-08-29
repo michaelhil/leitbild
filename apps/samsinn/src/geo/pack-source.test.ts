@@ -2,11 +2,12 @@
 // pack tagging, and the room-aware filter in store.listCategoryForRoom.
 
 import { describe, expect, test, afterEach, beforeEach } from 'bun:test'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, rename, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { refreshPackGeodata, getPackFeatures, getAllPackFeatures, __resetPackGeodataCache } from './pack-source.ts'
 import { listCategoryForRoom } from './store.ts'
+import { createSamsinnPackDescriptor } from '../packs/manifest.ts'
 
 const fc = (features: ReadonlyArray<unknown>): string =>
   JSON.stringify({ type: 'FeatureCollection', features })
@@ -19,6 +20,19 @@ const feature = (id: string, name: string, category: string, lat: number, lng: n
   geometry: { type: 'Point', coordinates: [lng, lat] },
   properties: { id, name, category },
 })
+
+const writePackManifest = async (root: string, directoryId: string, packId = directoryId): Promise<void> => {
+  await writeFile(join(root, directoryId, 'pack.json'), JSON.stringify({
+    descriptor: createSamsinnPackDescriptor({
+      id: packId,
+      version: '1.0.0',
+      name: packId,
+      contributions: [{ kind: 'geodata' }],
+    }),
+    wikis: [],
+    uiExtensions: [],
+  }))
+}
 
 describe('pack-source geodata loader', () => {
   let packsDir: string
@@ -35,13 +49,12 @@ describe('pack-source geodata loader', () => {
 
   test('loads features from <pack>/geodata/*.geojson and tags them', async () => {
     await mkdir(join(packsDir, 'aviation', 'geodata'), { recursive: true })
+    await writePackManifest(packsDir, 'aviation')
     await writeFile(
       join(packsDir, 'aviation', 'geodata', 'airports.geojson'),
       fc([feature('osl', 'Oslo Airport', 'airports', 60.19, 11.10)]),
       'utf-8',
     )
-    await writeFile(join(packsDir, 'aviation', 'pack.json'), JSON.stringify({ name: 'aviation' }))
-
     const state = await refreshPackGeodata(packsDir)
     expect(state.errors).toEqual([])
     expect(state.perPackFeatureCounts.get('aviation')).toBe(1)
@@ -55,6 +68,7 @@ describe('pack-source geodata loader', () => {
 
   test('multiple files per pack merge into the category map', async () => {
     await mkdir(join(packsDir, 'aviation', 'geodata'), { recursive: true })
+    await writePackManifest(packsDir, 'aviation')
     await writeFile(
       join(packsDir, 'aviation', 'geodata', 'airports.geojson'),
       fc([feature('osl', 'Oslo', 'airports', 60.19, 11.10)]),
@@ -73,6 +87,8 @@ describe('pack-source geodata loader', () => {
   test('two packs contribute to the same category, both visible', async () => {
     await mkdir(join(packsDir, 'aviation', 'geodata'), { recursive: true })
     await mkdir(join(packsDir, 'cafes', 'geodata'), { recursive: true })
+    await writePackManifest(packsDir, 'aviation')
+    await writePackManifest(packsDir, 'cafes')
     await writeFile(
       join(packsDir, 'aviation', 'geodata', 'airports.geojson'),
       fc([feature('osl', 'Oslo', 'airports', 60.19, 11.10)]),
@@ -89,6 +105,7 @@ describe('pack-source geodata loader', () => {
 
   test('malformed files are skipped with a structured error; siblings still load', async () => {
     await mkdir(join(packsDir, 'aviation', 'geodata'), { recursive: true })
+    await writePackManifest(packsDir, 'aviation')
     await writeFile(join(packsDir, 'aviation', 'geodata', 'broken.geojson'), '{ not json')
     await writeFile(
       join(packsDir, 'aviation', 'geodata', 'good.geojson'),
@@ -102,6 +119,7 @@ describe('pack-source geodata loader', () => {
 
   test('non-Feature entries dropped silently, kept in error log when id missing', async () => {
     await mkdir(join(packsDir, 'aviation', 'geodata'), { recursive: true })
+    await writePackManifest(packsDir, 'aviation')
     await writeFile(
       join(packsDir, 'aviation', 'geodata', 'airports.geojson'),
       fc([
@@ -118,6 +136,8 @@ describe('pack-source geodata loader', () => {
   test('listCategoryForRoom filters pack features by activePacks', async () => {
     await mkdir(join(packsDir, 'aviation', 'geodata'), { recursive: true })
     await mkdir(join(packsDir, 'cafes', 'geodata'), { recursive: true })
+    await writePackManifest(packsDir, 'aviation')
+    await writePackManifest(packsDir, 'cafes')
     await writeFile(
       join(packsDir, 'aviation', 'geodata', 'airports.geojson'),
       fc([feature('osl', 'Oslo Airport', 'airports', 60.19, 11.10)]),
@@ -151,6 +171,7 @@ describe('pack-source geodata loader', () => {
     // the previous and re-scans, so the third call returns the state with
     // all three packs. Asserts no in-flight dedupe race drops a pack.
     await mkdir(join(packsDir, 'p1', 'geodata'), { recursive: true })
+    await writePackManifest(packsDir, 'p1')
     await writeFile(
       join(packsDir, 'p1', 'geodata', 'a.geojson'),
       fc([feature('p1-a', 'A', 'cat', 0, 0)]),
@@ -159,20 +180,24 @@ describe('pack-source geodata loader', () => {
 
     const r1 = refreshPackGeodata(packsDir)
 
-    await mkdir(join(packsDir, 'p2', 'geodata'), { recursive: true })
+    await mkdir(join(packsDir, '_p2', 'geodata'), { recursive: true })
+    await writePackManifest(packsDir, '_p2', 'p2')
     await writeFile(
-      join(packsDir, 'p2', 'geodata', 'a.geojson'),
+      join(packsDir, '_p2', 'geodata', 'a.geojson'),
       fc([feature('p2-a', 'A', 'cat', 0, 0)]),
       'utf-8',
     )
+    await rename(join(packsDir, '_p2'), join(packsDir, 'p2'))
     const r2 = refreshPackGeodata(packsDir)
 
-    await mkdir(join(packsDir, 'p3', 'geodata'), { recursive: true })
+    await mkdir(join(packsDir, '_p3', 'geodata'), { recursive: true })
+    await writePackManifest(packsDir, '_p3', 'p3')
     await writeFile(
-      join(packsDir, 'p3', 'geodata', 'a.geojson'),
+      join(packsDir, '_p3', 'geodata', 'a.geojson'),
       fc([feature('p3-a', 'A', 'cat', 0, 0)]),
       'utf-8',
     )
+    await rename(join(packsDir, '_p3'), join(packsDir, 'p3'))
     const r3 = refreshPackGeodata(packsDir)
 
     const [s1, s2, s3] = await Promise.all([r1, r2, r3])

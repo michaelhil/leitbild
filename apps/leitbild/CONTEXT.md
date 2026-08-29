@@ -6,7 +6,7 @@ Leitbild is a platform for shared, map-based control-center work over moving and
 
 **Simulation Run**:
 A persistent execution of exactly one immutable Scenario Revision inside one Workspace, addressable by its own opaque id and URL.
-_Avoid_: Control Instance, Scenario Run, Session, Simulation Instance, or encoding the Scenario id into the Run id
+_Avoid_: Scenario Run, Session, Simulation Instance, or encoding the Scenario id into the Run id
 
 **Pack**:
 A user-facing and architectural capability module that contributes pack-owned behavior, object types, runtimes, presentation, queries, interactions, and documentation to Leitbild.
@@ -185,7 +185,7 @@ A stable, unit-bearing value path inside a compiled process system, such as `cor
 _Avoid_: free-text units, ad hoc telemetry object fields, or mutable untyped variable bags
 
 **Process Signal Binding**:
-Graph-owned metadata that makes a process variable discoverable and usable by operators, procedures, AI agents, and control-room surfaces. A binding may declare `tagId`, `equipmentId`, `description`, `externalRefs`, capability overrides, and limits, but the authoritative identity remains `{controlRunId, systemId, variablePath}`.
+Graph-owned metadata that makes a process variable discoverable and usable by operators, procedures, AI agents, and control-room surfaces. A binding may declare `tagId`, `equipmentId`, `description`, `externalRefs`, capability overrides, and limits, but the authoritative identity remains `{simulationRunId, systemId, variablePath}`.
 _Avoid_: separate runtime binding catalogs, duplicate sensor/actuator ids, or tag lookup without an explicit process system id
 
 **Process Variable Capability**:

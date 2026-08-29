@@ -13,7 +13,7 @@ import { handleAPI, handleUnscopedAPI } from './http-routes.ts'
 import { handleWSMessage, type WSData } from './ws-handler.ts'
 import {
   WORKSPACE_COOKIE,
-  buildWorkspaceCookie, getWorkspaceFromQuery, getWorkspaceId, getJoinFromQuery,
+  buildWorkspaceCookie, getWorkspaceId, getWorkspaceIdFromPath,
   resolveOrMintWorkspace,
 } from './workspace-cookie.ts'
 import { resolve, normalize } from 'node:path'
@@ -21,6 +21,9 @@ import { getCaptureRegistry } from '../core/biometrics/registry.ts'
 import type { WorkspaceDirectory } from '../core/workspaces/directory.ts'
 import { createOpenAccessContext } from '../core/workspaces/request-context.ts'
 import type { WorkspaceId } from '@samsinn-leitbild/platform-contracts'
+import { buildSamsinnDiscovery } from './discovery.ts'
+import { handleWorkspaceDirectoryApi } from './workspace-api.ts'
+import { resolveApplicationApiPath } from './api-path.ts'
 
 
 // === Server Config ===
@@ -71,7 +74,7 @@ body { padding-top: 40px; }
 `
 
 const serveStatic = async (pathname: string, uiPath: string, transpiler: Bun.Transpiler): Promise<Response | null> => {
-  if (pathname === '/' || pathname === '/index.html') {
+  if (pathname === '/' || pathname === '/index.html' || getWorkspaceIdFromPath(pathname) !== null) {
     const file = Bun.file(`${uiPath}/index.html`)
     if (await file.exists()) {
       return new Response(file, { headers: { 'Content-Type': 'text/html' } })
@@ -163,6 +166,15 @@ const applySecurityHeaders = (res: Response): Response => {
   return res
 }
 
+const requestBaseUrl = (request: Request): string => {
+  const requestUrl = new URL(request.url)
+  const protocol = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim() || requestUrl.protocol.replace(':', '')
+  const host = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
+    || request.headers.get('host')
+    || requestUrl.host
+  return `${protocol}://${host}`
+}
+
 // === Server Factory ===
 
 export const createServer = (config: ServerConfig) => {
@@ -196,6 +208,12 @@ export const createServer = (config: ServerConfig) => {
       // Local alias so the wrap is one short call per return site.
       // WS upgrade returns undefined, so those paths skip wrapping.
       const sec = applySecurityHeaders
+
+      if (pathname === '/.well-known/samsinn' && req.method === 'GET') {
+        return sec(Response.json(buildSamsinnDiscovery(requestBaseUrl(req)), {
+          headers: { 'Cache-Control': 'public, max-age=60' },
+        }))
+      }
 
       // === ?token=<X> redirect — single-click sandbox onboarding ===
       // Lets the operator share `https://host/?token=ABC` with invitees;
@@ -246,27 +264,53 @@ export const createServer = (config: ServerConfig) => {
       })
       if (unscoped) return sec(unscoped)
 
-      // === ?join=<id> redirect — set cookie + 303 to a clean URL ===
-      // Strip the join param and preserve the rest, so a shared link with
-      // extra params (?join=abc&room=general) doesn't loop the redirect.
-      //
-      // F4: refuse joins to ids that don't exist. Without this an attacker-
-      // chosen id propagates through the cookie to the next request, which
-      // materializes a brand-new Workspace under their chosen id (an
-      // amplification vector for Workspace-dir spam).
-      const joinId = getJoinFromQuery(url)
-      if (joinId) {
-        if (!(await workspaceExists(joinId))) {
-          return sec(new Response('Workspace not found', { status: 404 }))
+      if (pathname === '/api/workspaces' || /^\/api\/workspaces\/[^/]+$/.test(pathname)) {
+        if (authEnabled() && !isValidSession(sessionFromRequest(req))) {
+          return sec(new Response('Unauthorized', { status: 401 }))
         }
-        const cleaned = new URL(url)
-        cleaned.searchParams.delete('join')
-        const target = cleaned.pathname + (cleaned.search || '')
+        const response = await handleWorkspaceDirectoryApi(
+          req,
+          url,
+          config.workspaceDirectory,
+          server.requestIP(req)?.address,
+          (workspaceId, modules) => {
+            const runtime = registry.tryGetLive(workspaceId)
+            if (!runtime) return
+            for (const existing of runtime.settings.listModuleBindings()) {
+              runtime.settings.removeModuleBinding(existing.moduleId)
+            }
+            for (const binding of modules) runtime.settings.setModuleBinding(binding)
+          },
+        )
+        if (response) return sec(response)
+      }
+
+      // Only explicitly scoped or deployment-level application routes are
+      // public. Internal route modules receive the normalized local suffix.
+      const applicationApiPath = resolveApplicationApiPath(pathname)
+      if (applicationApiPath.kind === 'invalid-api') {
+        return sec(Response.json({ error: {
+          code: applicationApiPath.code,
+          message: applicationApiPath.message,
+        } }, { status: applicationApiPath.code === 'invalid_workspace_id' ? 400 : 404 }))
+      }
+
+      // Root navigation creates or resumes a Workspace, then moves the browser
+      // onto the sole canonical Workspace URL. The UI derives its scope from
+      // this path; the HttpOnly cookie binds subsequent requests server-side.
+      if ((pathname === '/' || pathname === '/index.html') && req.method === 'GET') {
+        const selected = getWorkspaceId(req)
+        const workspaceId = selected !== null && await workspaceExists(selected)
+          ? selected
+          : resolveOrMintWorkspace(new Request(req.url, { method: req.method }), url).workspaceId
+        if (!(await workspaceExists(workspaceId))) {
+          await config.workspaceDirectory.ensure({ id: workspaceId, displayName: 'Samsinn Workspace' })
+        }
         return sec(new Response(null, {
           status: 303,
           headers: {
-            'Location': target,
-            'Set-Cookie': buildWorkspaceCookie(joinId, req),
+            Location: `/workspaces/${encodeURIComponent(workspaceId)}`,
+            'Set-Cookie': buildWorkspaceCookie(workspaceId, req),
           },
         }))
       }
@@ -279,27 +323,20 @@ export const createServer = (config: ServerConfig) => {
       // the single deliberate load. Other static assets remain readable,
       // while API calls fail closed and WS gets a terminal close code.
       const cookieWorkspaceId = getWorkspaceId(req)
+      const pathWorkspaceId = getWorkspaceIdFromPath(pathname)
       const staleCookie = cookieWorkspaceId !== null
+        && pathWorkspaceId === null
         && !(await workspaceExists(cookieWorkspaceId))
       if (staleCookie) {
         const staleStatic = await serveStatic(pathname, uiPath, transpiler)
         if (staleStatic !== null) {
-          if (pathname === '/' || pathname === '/index.html') {
-            const fresh = resolveOrMintWorkspace(new Request(req.url, { method: req.method }), url)
-            const headers = new Headers(staleStatic.headers)
-            if (fresh.setCookieValue) {
-              await config.workspaceDirectory.ensure({ id: fresh.workspaceId, displayName: 'Samsinn Workspace' })
-              headers.append('Set-Cookie', fresh.setCookieValue)
-            }
-            return sec(new Response(staleStatic.body, { status: staleStatic.status, headers }))
-          }
           return sec(staleStatic)
         }
         if (pathname === '/favicon.ico') return sec(new Response(null, { status: 204 }))
         if (authEnabled() && !isValidSession(sessionFromRequest(req))) {
           return sec(new Response('Unauthorized', { status: 401 }))
         }
-        if (pathname === '/ws') {
+        if (/^\/api\/workspaces\/[^/]+\/ws$/.test(pathname)) {
           const sessionToken = url.searchParams.get('session') ?? crypto.randomUUID()
           const upgraded = server.upgrade(req, {
             data: {
@@ -321,7 +358,15 @@ export const createServer = (config: ServerConfig) => {
       // way out; the Workspace itself is materialized lazily by /ws or an
       // /api/* call from the UI — never by a static GET or a cookieless
       // probe (see F1/F5 below).
-      const { workspaceId, setCookieValue } = resolveOrMintWorkspace(req, url)
+      const resolvedWorkspace = resolveOrMintWorkspace(req, url)
+      const isRealtime = applicationApiPath.kind === 'workspace'
+        && applicationApiPath.internalPath === '/ws'
+      const workspaceId = isRealtime ? applicationApiPath.workspaceId : resolvedWorkspace.workspaceId
+      const setCookieValue = resolvedWorkspace.setCookieValue
+
+      if (pathWorkspaceId !== null && !(await workspaceExists(pathWorkspaceId))) {
+        return sec(new Response('Workspace not found', { status: 404 }))
+      }
 
       // F1: static-only paths never need a per-Workspace system. Serve
       // them before getOrLoad so bots/crawlers/uptime probes that just
@@ -332,8 +377,7 @@ export const createServer = (config: ServerConfig) => {
       if (earlyStatic !== null) {
         // Only a real page navigation starts a visitor session. Direct
         // module/CSS probes remain completely cookieless.
-        if (setCookieValue && (pathname === '/' || pathname === '/index.html')) {
-          await config.workspaceDirectory.ensure({ id: workspaceId, displayName: 'Samsinn Workspace' })
+        if (setCookieValue && pathWorkspaceId !== null) {
           const headers = new Headers(earlyStatic.headers)
           headers.append('Set-Cookie', setCookieValue)
           return sec(new Response(earlyStatic.body, { status: earlyStatic.status, headers }))
@@ -351,20 +395,14 @@ export const createServer = (config: ServerConfig) => {
       // no reclaim-by-name, no spawn-on-connect. Each post_message names
       // its actor via senderId; non-content commands fall back to 'system'
       // attribution server-side.
-      if (pathname === '/ws') {
+      if (isRealtime) {
         // A real UI load receives samsinn_workspace from the initial `/`
         // response before opening its socket. Refuse direct/cookieless WS
         // probes instead of minting and persisting a new seeded Workspace for
         // every reconnecting bot or monitor that does not retain cookies.
-        // Scripted callers may use ?workspace=<id> explicitly.
-        if (getWorkspaceId(req) === null && getWorkspaceFromQuery(url) === null) {
-          return sec(new Response('Workspace cookie required', { status: 401 }))
-        }
-        // Query-bound scripted clients may only attach to an existing
-        // Workspace; never let an arbitrary `?workspace=` value mint one.
-        const queryWorkspace = getWorkspaceFromQuery(url)
-        if (getWorkspaceId(req) === null && queryWorkspace !== null && !(await workspaceExists(queryWorkspace))) {
-          return sec(new Response('Workspace not found', { status: 404 }))
+        const cookieWorkspace = getWorkspaceId(req)
+        if (cookieWorkspace !== null && cookieWorkspace !== workspaceId) {
+          return sec(Response.json({ error: { code: 'workspace_scope_mismatch', message: 'Realtime path and Workspace cookie disagree' } }, { status: 409 }))
         }
         if (authEnabled() && !isValidSession(sessionFromRequest(req))) {
           return sec(new Response('Unauthorized', { status: 401 }))
@@ -383,17 +421,14 @@ export const createServer = (config: ServerConfig) => {
         return upgraded ? undefined : sec(new Response('WebSocket upgrade failed', { status: 500 }))
       }
 
-      // Do this gate before registry.getOrLoad. The route-level gate in
-      // handleAPI is intentionally retained as defense in depth, but if it
-      // runs after getOrLoad a cookieless probe has already materialized and
-      // seeded a persistent Workspace.
-      if (
-        pathname.startsWith('/api/') &&
-        pathname !== '/api/auth' &&
-        pathname !== '/api/system/info' &&
-        getWorkspaceId(req) === null
-      ) {
+      // Enforce request identity at the public boundary before loading any
+      // Workspace runtime. Internal route handlers receive an already-scoped,
+      // already-authorized request and contain no transport compatibility logic.
+      if (pathname.startsWith('/api/') && getWorkspaceId(req) === null) {
         return sec(new Response('No session', { status: 401 }))
+      }
+      if (pathname.startsWith('/api/') && authEnabled() && !isValidSession(sessionFromRequest(req))) {
+        return sec(new Response('Unauthorized', { status: 401 }))
       }
 
       // === API + static dispatch ===
@@ -404,7 +439,19 @@ export const createServer = (config: ServerConfig) => {
       const accessContext = createOpenAccessContext(workspaceId, req)
       const system = await registry.getOrLoad(workspaceId)
       const remoteAddress = server.requestIP(req)?.address
-      const apiResponse = await handleAPI(req, pathname, system, workspaceId, accessContext, {
+      let internalApiPath = applicationApiPath.kind === 'deployment'
+        ? applicationApiPath.internalPath
+        : null
+      if (applicationApiPath.kind === 'workspace') {
+        if (applicationApiPath.workspaceId !== workspaceId) {
+          return sec(Response.json({ error: { code: 'workspace_scope_mismatch', message: 'API path and Workspace session disagree' } }, { status: 409 }))
+        }
+        internalApiPath = applicationApiPath.internalPath
+      }
+      if (!internalApiPath) {
+        return sec(Response.json({ error: { code: 'route_not_found', message: 'Unknown API route' } }, { status: 404 }))
+      }
+      const apiResponse = await handleAPI(req, internalApiPath, system, workspaceId, accessContext, {
         broadcast: wsManager.broadcast,
         subscribeAgentState: wsManager.subscribeAgentState,
         unsubscribeAgentState: wsManager.unsubscribeAgentState,
@@ -418,9 +465,8 @@ export const createServer = (config: ServerConfig) => {
       })
       if (apiResponse) {
         // Only append the cookieless-fallback Set-Cookie if the route didn't
-        // already set its own samsinn_workspace cookie (e.g. /switch). Otherwise
-        // the browser would honor whichever appears last, masking the route's
-        // intent.
+        // already set its own samsinn_workspace cookie. Otherwise the browser
+        // would honor whichever appears last, masking the route's intent.
         if (setCookieValue) {
           const existing = apiResponse.headers.getSetCookie?.() ?? []
           const alreadySet = existing.some(c => c.startsWith(`${WORKSPACE_COOKIE}=`))
@@ -489,8 +535,8 @@ export const createServer = (config: ServerConfig) => {
   })
 
   console.log(`Server listening on http://${bindHost}:${port}`)
-  console.log(`WebSocket: ws://${bindHost}:${port}/ws`)
-  console.log(`API: http://${bindHost}:${port}/api/rooms`)
+  console.log(`Discovery: http://${bindHost}:${port}/.well-known/samsinn`)
+  console.log(`API: http://${bindHost}:${port}/api/workspaces/{workspaceId}`)
 
   return server
 }

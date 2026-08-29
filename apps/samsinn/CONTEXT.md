@@ -22,7 +22,7 @@ _Avoid_: treating every installed Pack as active or resolving Pack contributions
 
 **Simulation Run Binding**:
 A Room's reference to one Leitbild Simulation Run in the same Workspace.
-_Avoid_: Control Instance binding, duplicated Leitbild base URLs on Rooms or Agents
+_Avoid_: duplicated Leitbild base URLs on Rooms or Agents, or treating the binding as a second Workspace Module Binding
 
 ## Relationships
 

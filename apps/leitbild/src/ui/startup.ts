@@ -1,7 +1,7 @@
 export type StartupStepId =
   | 'route'
   | 'interface'
-  | 'control-instance'
+  | 'simulation-run'
   | 'snapshot'
   | 'map'
   | 'objects'
@@ -28,7 +28,7 @@ export interface StartupStep {
 export const createStartupSteps = (nowMs = performance.now()): ReadonlyArray<StartupStep> => [
   { id: 'route', label: 'Read route', status: 'pending' },
   { id: 'interface', label: 'Prepare interface', status: 'pending' },
-  { id: 'control-instance', label: 'Open Control Instance', status: 'pending' },
+  { id: 'simulation-run', label: 'Open Simulation Run', status: 'pending' },
   { id: 'snapshot', label: 'Load snapshot', status: 'pending' },
   { id: 'map', label: 'Start map', status: 'pending', startedAtMs: nowMs },
   { id: 'objects', label: 'Render operational objects', status: 'pending' },
@@ -135,9 +135,9 @@ export const startupHasFailed = (steps: ReadonlyArray<StartupStep>): boolean =>
   steps.some(step => step.status === 'failed')
 
 export const startupModalShouldShow = (config: {
-  readonly routeMode: 'picker' | 'control-instance'
+  readonly routeMode: 'picker' | 'simulation-run'
   readonly dismissed: boolean
   readonly steps: ReadonlyArray<StartupStep>
 }): boolean =>
-  config.routeMode === 'control-instance'
+  config.routeMode === 'simulation-run'
   && !config.dismissed

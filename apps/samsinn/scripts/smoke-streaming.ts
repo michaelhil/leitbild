@@ -2,10 +2,10 @@
 // ============================================================================
 // Post-restart smoke test: WS broadcast wiring is alive.
 //
-// What it proves: a wired instance can deliver a `message` broadcast to a
+// What it proves: a wired Workspace can deliver a `message` broadcast to a
 // connected WS client. Catches the silent-skip class of bug fixed in
 // 5d73a8e — where streaming events were dropped on the floor for every
-// non-boot instance.
+// non-default Workspace.
 //
 // What it does NOT exercise: real LLM streaming, the evict→reload
 // boundary, or the eval-event chunk path. For those use
@@ -21,7 +21,7 @@
 //   1 — red: missing token, auth failed, or no broadcast within timeout
 // ============================================================================
 
-import { bootstrapProbe } from './lib/probe-bootstrap.ts'
+import { bootstrapProbe, workspaceApiUrl, workspaceRealtimeUrl } from './lib/probe-bootstrap.ts'
 
 const TIMEOUT_MS = 5_000
 
@@ -41,7 +41,7 @@ const main = async (): Promise<void> => {
     token: process.env.SAMSINN_TOKEN,
   })
 
-  const ws = new WebSocket(`${ctx.wsBaseUrl}/ws`, {
+  const ws = new WebSocket(workspaceRealtimeUrl(ctx), {
     headers: { Cookie: ctx.cookie },
   } as unknown as undefined)
 
@@ -64,14 +64,14 @@ const main = async (): Promise<void> => {
   }).catch(e => fail(e.message))
 
   // Find a room to send into.
-  const roomsRes = await fetch(`${ctx.baseUrl}/api/rooms`, {
+  const roomsRes = await fetch(workspaceApiUrl(ctx, '/rooms'), {
     headers: { Cookie: ctx.cookie },
   })
-  if (!roomsRes.ok) fail(`/api/rooms returned ${roomsRes.status}`)
+  if (!roomsRes.ok) fail(`Workspace rooms returned ${roomsRes.status}`)
   const rooms = await roomsRes.json() as Array<{ id: string }>
-  if (rooms.length === 0) fail('instance has no rooms — seed should have created one')
+  if (rooms.length === 0) fail('Workspace has no rooms — seed should have created one')
 
-  const postRes = await fetch(`${ctx.baseUrl}/api/messages`, {
+  const postRes = await fetch(workspaceApiUrl(ctx, '/messages'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Cookie: ctx.cookie },
     body: JSON.stringify({
@@ -81,7 +81,7 @@ const main = async (): Promise<void> => {
       target: { rooms: [rooms[0]!.id] },
     }),
   })
-  if (!postRes.ok) fail(`/api/messages returned ${postRes.status}`)
+  if (!postRes.ok) fail(`Workspace messages returned ${postRes.status}`)
 
   await new Promise<void>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`no 'message' broadcast within ${TIMEOUT_MS}ms — broadcast wiring is broken`)), TIMEOUT_MS)

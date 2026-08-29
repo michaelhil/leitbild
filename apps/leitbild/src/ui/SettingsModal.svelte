@@ -91,7 +91,7 @@
     <section class="settings-row">
       <div>
         <strong>Scenario</strong>
-        <span>Reset this control instance from a scenario definition.</span>
+        <span>Reset this simulation run from a scenario definition.</span>
       </div>
       <select value={selectedScenarioId} onchange={onScenarioChange}>
         {#each scenarios as scenario (scenario.id)}

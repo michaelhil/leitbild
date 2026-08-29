@@ -1,3 +1,4 @@
+import { apiFetch } from "../api-client.ts"
 // Settings > Scripts modal — master/detail.
 // Left: list of scripts + a "New" button.
 // Right: markdown source editor; server validates on save (line-precise errors).
@@ -23,7 +24,7 @@ interface ScriptDetail {
 
 const fetchCatalog = async (): Promise<ScriptListItem[]> => {
   try {
-    const res = await fetch('/api/scripts')
+    const res = await apiFetch('/scripts')
     if (!res.ok) return []
     const data = await res.json() as { scripts: ScriptListItem[] }
     return data.scripts
@@ -32,7 +33,7 @@ const fetchCatalog = async (): Promise<ScriptListItem[]> => {
 
 const fetchScript = async (name: string): Promise<ScriptDetail | null> => {
   try {
-    const res = await fetch(`/api/scripts/${encodeURIComponent(name)}`)
+    const res = await apiFetch(`/scripts/${encodeURIComponent(name)}`)
     if (!res.ok) return null
     return await res.json() as ScriptDetail
   } catch { return null }
@@ -143,7 +144,7 @@ export const openScriptsListModal = async (): Promise<void> => {
           body: `Delete script "${s.title}"? Running scripts are not affected.`,
           confirmLabel: 'Delete',
         }))) return
-        const res = await fetch(`/api/scripts/${encodeURIComponent(s.name)}`, { method: 'DELETE' })
+        const res = await apiFetch(`/scripts/${encodeURIComponent(s.name)}`, { method: 'DELETE' })
         if (res.ok) {
           if (selectedName === s.name) { selectedName = null; renderEmpty() }
           await loadCatalog()
@@ -215,7 +216,7 @@ export const openScriptsListModal = async (): Promise<void> => {
       errBox.classList.add('hidden')
       saveBtn.disabled = true
       try {
-        const res = await fetch('/api/scripts', {
+        const res = await apiFetch('/scripts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, source: ta.value }),
@@ -263,7 +264,7 @@ export const openScriptsListModal = async (): Promise<void> => {
   searchInput.oninput = renderList
   newBtn.onclick = createNew
   reloadBtn.onclick = async () => {
-    await fetch('/api/scripts/reload', { method: 'POST' })
+    await apiFetch('/scripts/reload', { method: 'POST' })
     await loadCatalog()
   }
 

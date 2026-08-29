@@ -8,7 +8,7 @@ Accepted.
 
 Leitbild uses Svelte 5, but early UI code used classic Svelte component patterns such as `export let`, `$:` reactive statements, `on:` event directives, and slots. Those patterns still work, but mixing classic syntax with Svelte 5 runes makes state ownership harder to audit.
 
-The control surface is becoming central to Leitbild: it coordinates Control Instance state, map rendering, object presentation, placement workflows, modal workflows, and future adaptive UI surfaces. Regressions in derived UI state, such as category field visibility not updating after a refactor, show that hidden reactive dependencies are a real risk.
+The control surface is becoming central to Leitbild: it coordinates Simulation Run state, map rendering, object presentation, placement workflows, modal workflows, and future adaptive UI surfaces. Regressions in derived UI state, such as category field visibility not updating after a refactor, show that hidden reactive dependencies are a real risk.
 
 ## Decision
 
@@ -27,7 +27,7 @@ The primary `src/ui` Svelte component surface should stay fully migrated: no `ex
 
 ## State Ownership Rules
 
-- The Control Instance Projected State remains canonical shared operational truth.
+- The Simulation Run Projected State remains canonical shared operational truth.
 - Svelte state may hold client-local UI state such as selected controls, open menus, rail width, startup modal state, placement drafts, and transient map lifecycle flags.
 - Svelte state must not become a second canonical object store.
 - Derived UI models may be represented as pure TypeScript selectors when this improves testability or prevents hidden reactive dependency bugs.
@@ -47,7 +47,7 @@ This migration is complete for the current `src/ui` component set as of the rune
 
 ## Structural Patterns
 
-- `App.svelte` coordinates Control Instance state, route selection, startup lifecycle, and lazy loading, but delegates deeper UI workflows to focused rune state modules.
+- `App.svelte` coordinates Simulation Run state, route selection, startup lifecycle, and lazy loading, but delegates deeper UI workflows to focused rune state modules.
 - `rail-layout-state.svelte.ts` owns rail width persistence, collapse behavior, and resize pointer listeners. It does not own map invalidation.
 - `placement-state.svelte.ts` owns map placement mode, route/polygon point accumulation, create-draft creation, and user-facing placement status text.
 - `ModalShell.svelte` uses snippets for typed modal body/footer composition instead of slot fragments.
@@ -75,7 +75,7 @@ Examples:
 - Start and clear an interval.
 - Create and destroy the MapLibre map instance.
 - Observe the MapLibre container and call `map.resize()` only when the rendered container dimensions actually change.
-- Start the app's initial route/control-instance boot sequence.
+- Start the app's initial route/simulation-run boot sequence.
 
 Do not call command, startup, socket, or map-construction functions from a raw `$effect` unless the rerun behavior is intentional and documented near the effect. Hidden rune reads through helper functions are still dependencies.
 
@@ -86,7 +86,7 @@ Benefits:
 - More explicit state ownership.
 - Fewer hidden dependency bugs in derived UI state.
 - Better locality for UI state and lifecycle behavior.
-- Cleaner seams between Svelte UI, Control Instance state, MapLibre, and pack presentation.
+- Cleaner seams between Svelte UI, Simulation Run state, MapLibre, and pack presentation.
 
 Costs:
 
@@ -99,6 +99,6 @@ Costs:
 - Do not use `$effect` to compute values that can be `$derived`.
 - Do not use raw `$effect` for mount-only external lifecycle setup; use `runOnMount`.
 - Do not add global UI stores for state that is local to one surface.
-- Do not duplicate canonical Control Instance object state in Svelte modules.
+- Do not duplicate canonical Simulation Run object state in Svelte modules.
 - Do not create compatibility layers for both old and new Svelte patterns. Migrate the touched slice cleanly.
 - Do not add `requestAnimationFrame` or timeout-based "map activation" heuristics to paper over MapLibre lifecycle bugs. Find the concrete lifecycle boundary instead.

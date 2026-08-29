@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, IsoTimestamp, ObjectId } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, SimulationRunId, IsoTimestamp, ObjectId } from '../src/core/model/index.ts'
 import { nowIso } from '../src/core/model/index.ts'
 import { createScenarioCatalog } from '../src/core/scenarios/catalog.ts'
 import { gridDerateBranchCommandKind, gridTripGeneratorCommandKind } from '../src/packs/electric-grid/commands.ts'
@@ -13,7 +13,7 @@ import { weatherPack } from '../src/packs/weather/pack.ts'
 import { scenarios } from '../src/scenarios/index.ts'
 import type { PackRuntimeEvent } from '../src/simulation/protocol.ts'
 
-const controlInstanceId = 'control-instance:electric-grid-test' as ControlInstanceId
+const simulationRunId = 'run-electric-grid-test' as SimulationRunId
 const actorId = 'actor:electric-grid-test' as ActorId
 const sourceDerivedTopologyRuntimeConfig = {
   topology: {
@@ -28,7 +28,7 @@ const command = (config: {
   readonly payload: unknown
 }): CommandEnvelope => ({
   id: `command:${crypto.randomUUID()}` as CommandId,
-  controlInstanceId,
+  simulationRunId,
   actorId,
   kind: config.kind,
   targetObjectIds: config.targetObjectIds,
@@ -67,8 +67,8 @@ describe('electric grid pack', () => {
       runtimeId: electricGridRuntimeId,
       runtimeConfig: sourceDerivedTopologyRuntimeConfig,
     })
-    expect(electricGridPack.mapLayerGroups?.map(group => group.id)).not.toContain('electric-grid:branches')
-    expect(electricGridPack.mapLayerGroups?.map(group => group.id)).toContain('electric-grid:reference-lines')
+    expect(electricGridPack.presentation.mapLayerGroups?.map(group => group.id)).not.toContain('electric-grid:branches')
+    expect(electricGridPack.presentation.mapLayerGroups?.map(group => group.id)).toContain('electric-grid:reference-lines')
     expect(scenario.surface.regions.find(region => region.primitive === 'map')?.config.layers).toContain('grid')
     expect(gridObjects.length).toBeGreaterThanOrEqual(250)
     expect(gridObjects.some(object => {
@@ -98,7 +98,7 @@ describe('electric grid pack', () => {
   test('solves frequency, voltage, branches, and consumer service on connect', async () => {
     const scenario = gridScenario()
     const connection = await createLocalElectricGridPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: {
         scenarioId: scenario.id,
         runtimeIds: [electricGridRuntimeId],
@@ -173,7 +173,7 @@ describe('electric grid pack', () => {
   test('accepts operational commands and exposes query snapshots', async () => {
     const scenario = gridScenario()
     const connection = await createLocalElectricGridPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: {
         scenarioId: scenario.id,
         runtimeIds: [electricGridRuntimeId],
@@ -242,7 +242,7 @@ describe('electric grid pack', () => {
   test('keeps solver projections projected while persisting command mutations', async () => {
     const scenario = gridScenario()
     const connection = await createLocalElectricGridPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: {
         scenarioId: scenario.id,
         runtimeIds: [electricGridRuntimeId],
@@ -285,7 +285,7 @@ describe('electric grid pack', () => {
     const scenario = gridScenario()
     const gridObjectCount = scenario.initialObjects.filter(object => object.packId === 'electric-grid').length
     const connection = await createLocalElectricGridPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: {
         scenarioId: scenario.id,
         runtimeIds: [electricGridRuntimeId],

@@ -231,7 +231,7 @@ describe('Room — self-contained component', () => {
     expect(msg.senderName).toBe('Alice')
   })
 
-  test('senderName is optional (backwards compatibility)', () => {
+  test('senderName is optional for sources without a resolved display name', () => {
     const room = createRoom(makeProfile())
     const msg = room.post({ senderId: 'a', content: 'hi', type: 'chat' })
     expect(msg.senderName).toBeUndefined()
@@ -506,10 +506,9 @@ describe('Room — Directed Addressing [[AgentName]]', () => {
     expect(recent[2]!.cause).toEqual({ kind: 'trigger', name: 'morning briefing' })
   })
 
-  test('messages without cause keep cause undefined (back-compat)', () => {
+  test('messages without an automation cause keep cause undefined', () => {
     const room = createRoom({ id: 'r-nc', name: 'nc', createdAt: Date.now(), createdBy: 'sys' })
     room.post({ senderId: 'a', senderName: 'Alice', content: 'just a chat', type: 'chat' })
     expect(room.getRecent(1)[0]!.cause).toBeUndefined()
   })
 })
-

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ControlInstanceId, GeoJsonLineString, GeoJsonPoint, InteractionEffect, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject, RouteImpact, SignalId } from '../../core/model/index.ts'
+import type { SimulationRunId, GeoJsonLineString, GeoJsonPoint, InteractionEffect, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject, RouteImpact, SignalId } from '../../core/model/index.ts'
 import { assetRoutePlannedSignalType, confirmedFact, notificationIdSchema, pointFromPosition, routeDistanceMeters } from '../../core/model/index.ts'
 import { trafficPackDataSchema, type TrafficPackData } from './model.ts'
 
@@ -118,7 +118,7 @@ const effectsForRoute = (
   object: OperationalObject,
   trafficObjects: ReadonlyArray<OperationalObject>,
   signalId: SignalId,
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   at: IsoTimestamp,
 ): ReadonlyArray<InteractionEffect> => {
   const route = object.spatial.route?.planned
@@ -135,7 +135,7 @@ const effectsForRoute = (
       type: 'notification.emit',
       notification: {
         id: notificationIdSchema.parse(`notification:${signalId}`),
-        controlInstanceId,
+        simulationRunId,
         at,
         title: 'Route affected by traffic',
         message: `${object.label} route intersects ${impacts.map(({ traffic }) => traffic.label).join(', ')}`,
@@ -160,7 +160,7 @@ export const createTrafficRouteImpactHandler = (): InteractionHandler => ({
       if (!trafficObject || trafficDataOf(trafficObject) === null) return []
       return snapshot.objects
         .filter(candidate => candidate.kind === 'mobile_entity' && candidate.spatial.route?.planned)
-        .flatMap(object => effectsForRoute(object, [trafficObject], signal.id, signal.controlInstanceId, signal.at))
+        .flatMap(object => effectsForRoute(object, [trafficObject], signal.id, signal.simulationRunId, signal.at))
     }
     const payload = routePlannedPayloadSchema.safeParse(signal.payload)
     if (!payload.success) return []
@@ -170,7 +170,7 @@ export const createTrafficRouteImpactHandler = (): InteractionHandler => ({
       object,
       snapshot.objects.filter(candidate => trafficDataOf(candidate) !== null),
       signal.id,
-      signal.controlInstanceId,
+      signal.simulationRunId,
       signal.at,
     )
   },

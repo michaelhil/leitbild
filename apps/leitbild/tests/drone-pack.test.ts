@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, ControlInstanceId, GeoJsonPoint, IsoTimestamp, ObjectId, OperationalObject, PackId } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, SimulationRunId, GeoJsonPoint, IsoTimestamp, ObjectId, OperationalObject, PackId } from '../src/core/model/index.ts'
 import { geoPointFromLonLat } from '../src/core/model/index.ts'
 import type { PackQueryResponse } from '../src/core/packs/protocol.ts'
 import {
@@ -42,7 +42,7 @@ import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { loadDroneWorldTerrainStatus, localPointFromLonLat } from '../src/ui/drone/drone-map-world.ts'
 import { createTestScenarioCatalog, waitForCondition } from './helpers.ts'
 
-const controlInstanceId = 'control-instance:test-drone-control' as ControlInstanceId
+const simulationRunId = 'run-test-drone-control' as SimulationRunId
 const actorId = 'actor:test-pilot' as ActorId
 const at = '2026-06-07T10:00:00.000Z' as IsoTimestamp
 
@@ -142,7 +142,7 @@ const command = (
   commandSequence += 1
   return {
     id: `command:drone-test-${commandSequence}` as CommandEnvelope['id'],
-    controlInstanceId,
+    simulationRunId,
     actorId,
     kind,
     targetObjectIds,
@@ -253,7 +253,7 @@ describe('drone pack native runtime', () => {
     const initial = drone({ id: 'drone:native-manual-simple', altitudeM: 0, headingDeg: 90 })
     const adapter = createDroneNativePackRuntimeAdapter()
     const connection = await adapter.connect({
-      controlInstanceId,
+      simulationRunId,
       initialObjects: [initial],
       scenario: {
         scenarioId: 'scenario:native-manual-simple',
@@ -300,7 +300,7 @@ describe('drone pack native runtime', () => {
     const initial = drone({ id: 'drone:native-manual-yaw', altitudeM: 12, headingDeg: 0 })
     const adapter = createDroneNativePackRuntimeAdapter()
     const connection = await adapter.connect({
-      controlInstanceId,
+      simulationRunId,
       initialObjects: [initial],
       scenario: {
         scenarioId: 'scenario:native-manual-yaw',
@@ -341,7 +341,7 @@ describe('drone pack native runtime', () => {
     const initial = drone({ id: 'drone:native-motion-frame', altitudeM: 18, headingDeg: 45 })
     const adapter = createDroneNativePackRuntimeAdapter()
     const connection = await adapter.connect({
-      controlInstanceId,
+      simulationRunId,
       initialObjects: [initial],
       scenario: {
         scenarioId: 'scenario:native-motion-frame',
@@ -379,7 +379,7 @@ describe('drone pack native runtime', () => {
     const initial = drone({ id: 'drone:native-manual-intent', altitudeM: 18, headingDeg: 90 })
     const adapter = createDroneNativePackRuntimeAdapter()
     const connection = await adapter.connect({
-      controlInstanceId,
+      simulationRunId,
       initialObjects: [initial],
       scenario: {
         scenarioId: 'scenario:native-manual-intent',
@@ -439,7 +439,7 @@ describe('drone pack native runtime', () => {
     }))
     const adapter = createDroneNativePackRuntimeAdapter()
     const connection = await adapter.connect({
-      controlInstanceId,
+      simulationRunId,
       initialObjects: fleet,
       scenario: {
         scenarioId: 'scenario:native-manual-stress',
@@ -505,7 +505,7 @@ describe('drone pack native runtime', () => {
     const initial = drone({ id: 'drone:native-loop', altitudeM: 0, headingDeg: 0 })
     const adapter = createDroneNativePackRuntimeAdapter()
     const connection = await adapter.connect({
-      controlInstanceId,
+      simulationRunId,
       initialObjects: [initial],
       scenario: {
         scenarioId: 'scenario:native-test',
@@ -563,7 +563,7 @@ describe('drone pack native runtime', () => {
 
   test('native create command does not require telemetry', async () => {
     const adapter = createDroneNativePackRuntimeAdapter()
-    const connection = await adapter.connect({ controlInstanceId, initialObjects: [] })
+    const connection = await adapter.connect({ simulationRunId, initialObjects: [] })
     try {
       const result = await connection.sendCommand(command(createDroneCommandKind, {
         objectType: 'drone',
@@ -616,7 +616,7 @@ describe('drone pack native runtime', () => {
     const handler = createDroneAttackInteractionHandler()
     const effects = await handler.handle({
       signal: droneAttackSignal({
-        controlInstanceId,
+        simulationRunId,
         at,
         attackerId: attacker.id,
         targetId: target.id,
@@ -634,14 +634,14 @@ describe('drone pack native runtime', () => {
 
   test('drone pack presentation and creation commands expose native vehicle concepts', () => {
     const object = drone({ id: 'drone:presentation', modelId: 'native-gimbal-quad' })
-    const presentation = dronePack.presentObject(object, { objects: [object] })
+    const presentation = dronePack.presentation.presentObject(object, { objects: [object] })
     const fieldsByKey = new Map(presentation.fields.map(field => [field.key, field.value]))
 
     expect(fieldsByKey.get('model')).toBe('Gimbal Quad')
     expect(fieldsByKey.get('link')).toBe('connected')
     expect(presentation.summary).toContain('Gimbal Quad')
 
-    const commandRequest = dronePack.buildCreateObjectCommand('drone', 'New native drone', {
+    const commandRequest = dronePack.commands.buildCreateObjectCommand('drone', 'New native drone', {
       kind: 'point',
       point: point(10.7, 59.9),
     }, {
@@ -673,6 +673,6 @@ describe('drone pack native runtime', () => {
   })
 
   test('hold command is part of the native runtime command surface', () => {
-    expect(dronePack.buildCancelTargetCommand(drone({ id: 'drone:cancel' }), { objects: [] }).kind).toBe(holdDroneCommandKind)
+    expect(dronePack.commands.buildCancelTargetCommand(drone({ id: 'drone:cancel' }), { objects: [] }).kind).toBe(holdDroneCommandKind)
   })
 })

@@ -1,0 +1,22 @@
+import { describe, expect, test } from 'bun:test'
+import { capabilityManifestSchema } from '@samsinn-leitbild/platform-contracts'
+import { BUNDLED_PACKS } from './bundled.ts'
+import { buildSamsinnCapabilityManifest } from './capabilities.ts'
+
+describe('Samsinn Workspace capability manifest', () => {
+  test('derives generic capabilities from Pack descriptors', () => {
+    const manifest = buildSamsinnCapabilityManifest(BUNDLED_PACKS.map(pack => pack.descriptor))
+    expect(capabilityManifestSchema.safeParse(manifest).success).toBe(true)
+    expect(manifest.capabilities).toContainEqual(expect.objectContaining({
+      id: 'core.tool',
+      kind: 'tool',
+      packId: 'core',
+      version: '1.0.0',
+    }))
+    expect(manifest.capabilities).toContainEqual(expect.objectContaining({
+      id: 'pwr-ops.wiki',
+      kind: 'data',
+      packId: 'pwr-ops',
+    }))
+  })
+})

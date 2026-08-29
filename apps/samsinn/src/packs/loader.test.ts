@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { loadAllPacks, loadPack } from './loader.ts'
 import { createToolRegistry } from '../core/tool-registry.ts'
 import { createSkillStore } from '../skills/loader.ts'
+import { createSamsinnPackDescriptor, parsePackManifest } from './manifest.ts'
+import type { Pack, PackManifest } from './types.ts'
 
 const TOOL_SRC = (name: string, body = `return { success: true, data: '${name}' }`) => `
 export default {
@@ -22,6 +24,27 @@ description: ${desc}
 
 Body for ${name}.
 `
+
+const manifestFor = (id: string, kinds: ReadonlyArray<string>): PackManifest => parsePackManifest({
+  descriptor: createSamsinnPackDescriptor({
+    id,
+    version: '1.0.0',
+    name: id,
+    contributions: kinds.map(kind => ({ kind })),
+  }),
+  wikis: [],
+  uiExtensions: [],
+})
+
+const packFor = (dirPath: string, id: string, kinds: ReadonlyArray<string>): Pack => ({
+  id,
+  dirPath,
+  manifest: manifestFor(id, kinds),
+})
+
+const writeManifest = async (dirPath: string, id: string, kinds: ReadonlyArray<string>): Promise<void> => {
+  await writeFile(join(dirPath, 'pack.json'), JSON.stringify(manifestFor(id, kinds)))
+}
 
 describe('loadPack', () => {
   let root: string
@@ -47,7 +70,7 @@ describe('loadPack', () => {
     const registry = createToolRegistry()
     const store = createSkillStore()
     const result = await loadPack(
-      { namespace: 'atc', dirPath: packDir, manifest: {} },
+      packFor(packDir, 'atc', ['tool', 'skill']),
       registry,
       store,
     )
@@ -66,6 +89,7 @@ describe('loadPack', () => {
       const packDir = join(root, ns)
       await mkdir(join(packDir, 'tools'), { recursive: true })
       await writeFile(join(packDir, 'tools', 'plan.ts'), TOOL_SRC('plan'))
+      await writeManifest(packDir, ns, ['tool'])
     }
 
     const registry = createToolRegistry()
@@ -84,7 +108,7 @@ describe('loadPack', () => {
 
     const registry = createToolRegistry()
     const store = createSkillStore()
-    await loadPack({ namespace: 'atc', dirPath: packDir, manifest: {} }, registry, store)
+    await loadPack(packFor(packDir, 'atc', ['tool']), registry, store)
 
     const tool = registry.get('atc_plan')
     expect(tool?.name).toBe('atc_plan')
@@ -97,7 +121,7 @@ describe('loadPack', () => {
 
     const registry = createToolRegistry()
     const store = createSkillStore()
-    await loadPack({ namespace: 'atc', dirPath: packDir, manifest: {} }, registry, store)
+    await loadPack(packFor(packDir, 'atc', ['tool']), registry, store)
 
     const entry = registry.getEntry('atc_plan')
     expect(entry?.source.kind).toBe('pack-bundled')
@@ -113,7 +137,7 @@ describe('loadPack', () => {
 
     const registry = createToolRegistry()
     const store = createSkillStore()
-    await loadPack({ namespace: 'atc', dirPath: packDir, manifest: {} }, registry, store)
+    await loadPack(packFor(packDir, 'atc', ['tool']), registry, store)
 
     expect(registry.has('atc_a')).toBe(true)
     expect(registry.has('atc_b')).toBe(true)
@@ -133,10 +157,23 @@ describe('loadPack', () => {
 
     const registry = createToolRegistry()
     const store = createSkillStore()
-    await loadPack({ namespace: 'atc', dirPath: packDir, manifest: {} }, registry, store)
+    await loadPack(packFor(packDir, 'atc', ['skill']), registry, store)
 
     const removed = store.removeByPack('atc')
     expect([...removed].sort()).toEqual(['atc/s1', 'atc/s2'])
     expect(store.get('atc/s1')).toBeUndefined()
+  })
+
+  it('rejects undeclared contribution directories before mutating registries', async () => {
+    const packDir = join(root, 'atc')
+    await mkdir(join(packDir, 'tools'), { recursive: true })
+    await writeFile(join(packDir, 'tools', 'plan.ts'), TOOL_SRC('plan'))
+
+    const registry = createToolRegistry()
+    const store = createSkillStore()
+    const result = await loadPack(packFor(packDir, 'atc', ['skill']), registry, store)
+
+    expect(result.errors.join(' ')).toContain('contains tool contributions but does not declare them')
+    expect(registry.has('atc_plan')).toBe(false)
   })
 })

@@ -1,3 +1,4 @@
+import { apiFetch } from "./api-client.ts"
 // ============================================================================
 // Thinking-indicator store subscriptions.
 //
@@ -119,17 +120,17 @@ export const initThinkingDisplay = (deps: ThinkingDisplayDeps): void => {
       agentName,
       checkin.iterations,
       checkin.recentTools,
-      // Continue: POST /api/agents/:name/continue-tools
+      // Continue: POST /agents/:name/continue-tools
       () => {
-        fetch(`/api/agents/${encodeURIComponent(agentName)}/continue-tools`, {
+        apiFetch(`/agents/${encodeURIComponent(agentName)}/continue-tools`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ roomId: checkin.roomId, additionalIterations: 5 }),
         }).catch(() => { /* surfaced as failed network in dev console */ })
       },
-      // Stop: POST /api/agents/:name/cancel (existing cancel-generation path).
+      // Stop: POST /agents/:name/cancel (existing cancel-generation path).
       () => {
-        fetch(`/api/agents/${encodeURIComponent(agentName)}/cancel`, { method: 'POST' })
+        apiFetch(`/agents/${encodeURIComponent(agentName)}/cancel`, { method: 'POST' })
           .catch(() => { /* surfaced as failed network in dev console */ })
       },
     )

@@ -147,7 +147,7 @@ const buildTool = (deps: WikiLookupDeps): Tool => ({
       fire(false, 'no-manifest')
       return { success: false, error: `${deps.wikiName} manifest is unavailable. Try again in a minute, or use procedure_lookup for procedures.` }
     }
-    const pages = manifest.pages ?? []
+    const pages = manifest.pages
     if (pages.length === 0) {
       fire(false, 'no-pages')
       return { success: false, error: `${deps.wikiName} has no reference pages in its manifest. Use procedure_lookup for procedures.` }

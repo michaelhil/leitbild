@@ -1,8 +1,9 @@
+import { apiFetch } from "./api-client.ts"
 // ============================================================================
 // Models popover — floating panel attached to a provider row that lists the
 // provider's available models with metadata + pin toggles.
 //
-// Data source: POST /api/providers/:name/refresh-models refreshes the
+// Data source: POST /providers/:name/refresh-models refreshes the
 // gateway cache and returns the union of (reported + curated) with
 // context-window info and pin state.
 // ============================================================================
@@ -129,7 +130,7 @@ const renderList = (
       testBtn.disabled = true
       testBtn.textContent = '…'
       try {
-        const res = await fetch(`/api/providers/${encodeURIComponent(providerName)}/test-model`, {
+        const res = await apiFetch(`/providers/${encodeURIComponent(providerName)}/test-model`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: m.id }),
@@ -207,7 +208,7 @@ export const openModelsPopover = async (
   let pinnedSet = new Set<string>()
   let data: RefreshResponse
   try {
-    const res = await fetch(`/api/providers/${encodeURIComponent(providerName)}/refresh-models`, { method: 'POST' })
+    const res = await apiFetch(`/providers/${encodeURIComponent(providerName)}/refresh-models`, { method: 'POST' })
     data = await res.json() as RefreshResponse
     pinnedSet = new Set(data.models.filter(m => m.pinned).map(m => m.id))
   } catch (err) {
@@ -226,7 +227,7 @@ export const openModelsPopover = async (
     renderList(popover, providerName, data, pinnedSet, onTogglePin)
     // Persist.
     try {
-      const res = await fetch(`/api/providers/${encodeURIComponent(providerName)}`, {
+      const res = await apiFetch(`/providers/${encodeURIComponent(providerName)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pinnedModels: [...pinnedSet] }),

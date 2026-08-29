@@ -5,7 +5,7 @@ import type { MapRuntimeHandle } from './types.ts'
 
 export interface ReferenceLayerControllerRegistration {
   readonly runtime: MapRuntimeHandle
-  readonly controlInstanceId: string | null
+  readonly simulationRunId: string | null
   readonly datasetIds: ReadonlyArray<string>
   readonly layerGroups: ReadonlyArray<PackMapLayerGroup>
   readonly visibility: Readonly<Record<string, boolean>>
@@ -26,7 +26,7 @@ export interface ReferenceLayerControllerConfig {
 const referenceKeyFor = (
   registration: ReferenceLayerControllerRegistration,
 ): string => [
-  registration.controlInstanceId ?? 'no-control-instance',
+  registration.simulationRunId ?? 'no-simulation-run',
   registration.datasetIds.join(','),
   registration.layerGroups.map(group => `${group.id}:${group.layerIdPattern}:${group.defaultVisible}`).join(','),
 ].join('|')

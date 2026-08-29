@@ -1,4 +1,4 @@
-import { nowIso, type CommandEnvelope, type CommandResult, type ControlInstanceEvent, type IsoTimestamp, type ObjectId, type OperationalObject, type SimulationClockState } from '../../../../core/model/index.ts'
+import { nowIso, type CommandEnvelope, type CommandResult, type SimulationRunEvent, type IsoTimestamp, type ObjectId, type OperationalObject, type SimulationClockState } from '../../../../core/model/index.ts'
 import type {
   PackRuntimeAdapter,
   PackRuntimeConnection,
@@ -32,8 +32,8 @@ import { normaliseOpenSkyStates } from './normalise.ts'
 //
 // Architecture:
 //   - One adapter instance per server process.
-//   - Each Control Instance connection owns its own ephemeral aircraft map and
-//     starts polling only while that CI has subscribers.
+//   - Each Simulation Run connection owns its own ephemeral aircraft map and
+//     starts polling only while that Simulation Run has subscribers.
 //   - The loop fetches the configured bbox, normalises rows, diffs against the
 //     last poll, and emits upsert / delete PackRuntimeEvents to subscribers.
 //   - Aircraft are ephemeral: `initialObjects` of kind 'aircraft' is ignored;
@@ -193,11 +193,12 @@ export const createOpenSkyPackRuntimeAdapter = (config: OpenSkyAdapterConfig): P
 
   const url = buildStatesUrl(runtime.bbox)
 
-  // Per-Control-Instance state. The adapter is normally shared across CIs at
-  // the server level, but each `connect()` gives that CI its own aircraft map,
+  // Per-Simulation-Run state. The adapter is shared at the server level, but
+  // each `connect()` gives one Run its own aircraft map,
   // event handler set, and subscriber-gated poll loop.
   return {
     id: aviationOpenSkyRuntimeId,
+    version: '1.0.0',
     packId: aviationRuntimePackId,
     acceptedCommandKinds: [],
     queryKinds: ['aviation.source_status'],
@@ -259,7 +260,7 @@ export const createOpenSkyPackRuntimeAdapter = (config: OpenSkyAdapterConfig): P
 
       return {
         getSnapshot: async () => ({
-          controlInstanceId: connectionConfig.controlInstanceId,
+          simulationRunId: connectionConfig.simulationRunId,
           objects: [...state.values()].map(entry => entry.object),
           capturedAt: runtime.nowIso(),
         }),
@@ -300,7 +301,7 @@ export const createOpenSkyPackRuntimeAdapter = (config: OpenSkyAdapterConfig): P
             generatedAt: runtime.nowIso(),
           }
         },
-        observeCommittedEvents: async (_events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => undefined,
+        observeCommittedEvents: async (_events: ReadonlyArray<SimulationRunEvent>): Promise<void> => undefined,
         setClock: async (next: SimulationClockState): Promise<void> => { clock = next },
         close: async (): Promise<void> => {
           stopPolling()

@@ -1,8 +1,8 @@
 import { resolve, normalize } from 'node:path'
 import type { ServerWebSocket } from 'bun'
 import { z } from 'zod'
-import { actorIdSchema, clientIdSchema, controlInstanceIdSchema, nowIso, type CommandResult, type ControlInstanceId } from '../model/index.ts'
-import type { ControlInstanceRegistry } from '../control-instances/registry.ts'
+import { actorIdSchema, clientIdSchema, simulationRunIdSchema, nowIso, type CommandResult, type SimulationRunId } from '../model/index.ts'
+import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import {
   createMapArtifactConfigFromEnv,
   createMapArtifactStatus,
@@ -21,28 +21,32 @@ import {
   type MapArtifactConfig,
 } from '../../map/artifacts.ts'
 import {
-  buildControlInstanceActor,
-  buildControlInstanceCommand,
-  handleControlInstanceApi,
-} from './control-instance-routes.ts'
+  buildSimulationRunActor,
+  buildSimulationRunCommand,
+  handleSimulationRunApi,
+} from './simulation-run-routes.ts'
 import {
   commandIdempotencyConfigFromEnv,
   commandIdempotencyStoreForRuntime,
   issueCommandWithIdempotency,
 } from './command-idempotency.ts'
-import { createControlInstanceRealtimeManager, emptyRealtimeStatus, type RealtimeStatus } from './realtime.ts'
-import { json } from './responses.ts'
+import { createSimulationRunRealtimeManager, emptyRealtimeStatus, type RealtimeStatus, type SimulationRunRealtimeManager } from './realtime.ts'
+import { apiError, json } from './responses.ts'
 import { buildManifest } from './discovery.ts'
 import { createSamsinnScreenshotConfigFromEnv } from './client-config.ts'
-import type { WorkspaceId } from '@samsinn-leitbild/platform-contracts'
+import { workspaceIdSchema, type WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 import { createOpenAccessContext } from '../workspaces/request-context.ts'
+import type { LeitbildWorkspaceRuntime, LeitbildWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
+import { handleWorkspaceApi } from './workspace-routes.ts'
+import type { LeitbildPack } from '../packs/protocol.ts'
+import { buildLeitbildCapabilityManifest } from '../packs/capabilities.ts'
 
 const frameAncestorsHeader = "frame-ancestors 'self' https://samsinn.app https://*.samsinn.app"
 const defaultRealtimeInputActorId = actorIdSchema.parse('actor:operator')
 
 interface ServerConfig {
-  readonly registry: ControlInstanceRegistry
-  readonly workspaceId: WorkspaceId
+  readonly workspaces: LeitbildWorkspaceRuntimeRegistry
+  readonly packs?: ReadonlyArray<LeitbildPack>
   readonly port?: number
   readonly bindHost?: string
   readonly uiDistPath?: string
@@ -51,7 +55,7 @@ interface ServerConfig {
 
 interface WSData {
   readonly workspaceId: WorkspaceId
-  readonly controlInstanceId: ControlInstanceId
+  readonly simulationRunId: SimulationRunId
 }
 
 const realtimeClientCommandMessageSchema = z.object({
@@ -96,7 +100,7 @@ const memoryStatus = (): {
 }
 
 export const createHealthDetails = async (config: {
-  readonly registry: ControlInstanceRegistry
+  readonly registry: SimulationRunRegistry
   readonly realtime?: RealtimeStatus
   readonly mapArtifacts: MapArtifactConfig
 }): Promise<{
@@ -107,7 +111,7 @@ export const createHealthDetails = async (config: {
     readonly uptimeSeconds: number
     readonly memory: ReturnType<typeof memoryStatus>
   }
-  readonly registry: Awaited<ReturnType<ControlInstanceRegistry['status']>>
+  readonly registry: Awaited<ReturnType<SimulationRunRegistry['status']>>
   readonly realtime: RealtimeStatus
   readonly mapArtifacts: Awaited<ReturnType<typeof createMapArtifactStatus>>
 }> => ({
@@ -150,7 +154,7 @@ export const staticContentTypeForPath = (filePath: string): string => {
 }
 
 const serveStatic = async (pathname: string, uiDistPath: string): Promise<Response | null> => {
-  const normalizedPath = pathname === '/' || pathname === '/i' || pathname.startsWith('/i/') ? '/index.html' : pathname
+  const normalizedPath = pathname === '/' || pathname.startsWith('/workspaces/') ? '/index.html' : pathname
   const filePath = normalize(`${uiDistPath}${normalizedPath}`)
   if (!filePath.startsWith(uiDistPath)) return new Response('Forbidden', { status: 403 })
   const file = Bun.file(filePath)
@@ -218,15 +222,19 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
   const bindHost = config.bindHost ?? process.env.LEITBILD_BIND_HOST ?? '0.0.0.0'
   const uiDistPath = resolve(config.uiDistPath ?? `${import.meta.dir}/../../ui/dist`)
   const mapArtifacts = config.mapArtifacts ?? createMapArtifactConfigFromEnv()
-  const realtime = createControlInstanceRealtimeManager<ServerWebSocket<WSData>>({
-    registry: config.registry,
-    send: (socket, message) => {
-      socket.send(JSON.stringify(message))
-    },
-    sendReady: (socket, message) => {
-      socket.send(JSON.stringify(message))
-    },
-  })
+  const realtimeByWorkspace = new Map<WorkspaceId, SimulationRunRealtimeManager<ServerWebSocket<WSData>>>()
+
+  const realtimeFor = (workspaceRuntime: LeitbildWorkspaceRuntime): SimulationRunRealtimeManager<ServerWebSocket<WSData>> => {
+    const current = realtimeByWorkspace.get(workspaceRuntime.workspace.id)
+    if (current) return current
+    const realtime = createSimulationRunRealtimeManager<ServerWebSocket<WSData>>({
+      registry: workspaceRuntime.simulationRuns,
+      send: (socket, message) => socket.send(JSON.stringify(message)),
+      sendReady: (socket, message) => socket.send(JSON.stringify(message)),
+    })
+    realtimeByWorkspace.set(workspaceRuntime.workspace.id, realtime)
+    return realtime
+  }
 
   const sendRealtimeCommandError = (
     socket: ServerWebSocket<WSData>,
@@ -235,7 +243,8 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
   ): void => {
     socket.send(JSON.stringify({
       type: 'command.error',
-      controlInstanceId: socket.data.controlInstanceId,
+      workspaceId: socket.data.workspaceId,
+      simulationRunId: socket.data.simulationRunId,
       ...(requestId === undefined ? {} : { requestId }),
       message,
     }))
@@ -248,29 +257,31 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
   ): void => {
     socket.send(JSON.stringify({
       type: 'runtime.input.error',
-      controlInstanceId: socket.data.controlInstanceId,
+      workspaceId: socket.data.workspaceId,
+      simulationRunId: socket.data.simulationRunId,
       ...(inputType === undefined ? {} : { inputType }),
       message,
     }))
   }
 
   const issueRealtimeCommand = async (
-    controlInstanceId: ControlInstanceId,
+    workspaceId: WorkspaceId,
+    simulationRunId: SimulationRunId,
     rawCommand: unknown,
   ): Promise<CommandResult> => {
-    const runtime = config.registry.get(controlInstanceId)
+    const runtime = config.workspaces.getLoaded(workspaceId)?.simulationRuns.get(simulationRunId)
     if (!runtime) {
       return {
         ok: false,
         commandId: `command:${crypto.randomUUID()}` as CommandResult['commandId'],
         rejectedAt: nowIso(),
-        reason: 'control instance not found',
+        reason: 'simulation run not found',
       }
     }
-    const command = buildControlInstanceCommand(controlInstanceId, rawCommand)
-    const actor = buildControlInstanceActor(command.actorId)
+    const command = buildSimulationRunCommand(simulationRunId, rawCommand)
+    const actor = buildSimulationRunActor(command.actorId)
     const issued = await issueCommandWithIdempotency({
-      store: commandIdempotencyStoreForRuntime(controlInstanceId),
+      store: commandIdempotencyStoreForRuntime(workspaceId, simulationRunId),
       idempotency: commandIdempotencyConfigFromEnv(),
       actor,
       command,
@@ -300,9 +311,9 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
     }
     if (parsed.type === 'runtime.input') {
       try {
-        const runtime = config.registry.get(socket.data.controlInstanceId)
+        const runtime = config.workspaces.getLoaded(socket.data.workspaceId)?.simulationRuns.get(socket.data.simulationRunId)
         if (!runtime) {
-          sendRealtimeInputError(socket, parsed.input.type, 'control instance not found')
+          sendRealtimeInputError(socket, parsed.input.type, 'simulation run not found')
           return
         }
         await runtime.receiveRealtimeInput({
@@ -318,10 +329,11 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
       return
     }
     try {
-      const result = await issueRealtimeCommand(socket.data.controlInstanceId, parsed.command)
+      const result = await issueRealtimeCommand(socket.data.workspaceId, socket.data.simulationRunId, parsed.command)
       socket.send(JSON.stringify({
         type: 'command.result',
-        controlInstanceId: socket.data.controlInstanceId,
+        workspaceId: socket.data.workspaceId,
+        simulationRunId: socket.data.simulationRunId,
         requestId: parsed.requestId,
         result,
       }))
@@ -343,7 +355,22 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
         }))
       }
       if (url.pathname === '/health/details') {
-        return secure(json(await createHealthDetails({ registry: config.registry, realtime: realtime.status(), mapArtifacts })))
+        const workspaces = await config.workspaces.list()
+        return secure(json({
+          ok: true,
+          generatedAt: new Date().toISOString(),
+          process: { pid: process.pid, uptimeSeconds: process.uptime(), memory: memoryStatus() },
+          mapArtifacts: await createMapArtifactStatus(mapArtifacts),
+          workspaces: await Promise.all(workspaces.map(async workspace => {
+            const runtime = config.workspaces.getLoaded(workspace.id)
+            return {
+              workspace,
+              loaded: runtime !== undefined,
+              ...(runtime === undefined ? {} : { registry: await runtime.simulationRuns.status() }),
+              realtime: realtimeByWorkspace.get(workspace.id)?.status() ?? emptyRealtimeStatus(),
+            }
+          })),
+        }))
       }
       if (url.pathname === '/api/client-config' && req.method === 'GET') {
         return secure(json({ samsinnScreenshot: createSamsinnScreenshotConfigFromEnv() }))
@@ -379,23 +406,54 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
         if (glyphResponse) return secure(glyphResponse)
       }
 
-      const controlInstanceApiResponse = await handleControlInstanceApi(req, url, {
-        registry: config.registry,
-        accessContext: createOpenAccessContext(config.workspaceId, req),
-        websocketClients: realtime.status().controlInstances,
+      const workspaceApiResponse = await handleWorkspaceApi(req, url, config.workspaces)
+      if (workspaceApiResponse) return secure(workspaceApiResponse)
+
+      const workspaceScopeMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\//)
+      if (workspaceScopeMatch) {
+        const workspaceIdResult = workspaceIdSchema.safeParse(decodeURIComponent(workspaceScopeMatch[1] ?? ''))
+        if (!workspaceIdResult.success) return secure(apiError(400, 'invalid_request', workspaceIdResult.error.message))
+        const workspaceId = workspaceIdResult.data
+        let workspaceRuntime: LeitbildWorkspaceRuntime
+        try {
+          workspaceRuntime = await config.workspaces.getOrLoad(workspaceId)
+        } catch (err) {
+          if ((err as Error).message.startsWith('Workspace not found:')) {
+            return secure(apiError(404, 'workspace_not_found', 'Workspace not found'))
+          }
+          throw err
+        }
+        const realtime = realtimeFor(workspaceRuntime)
+        if (url.pathname === `/api/workspaces/${encodeURIComponent(workspaceId)}/capabilities` && req.method === 'GET') {
+          return secure(json(buildLeitbildCapabilityManifest(config.packs ?? [])))
+        }
+      const simulationRunApiResponse = await handleSimulationRunApi(req, url, {
+          registry: workspaceRuntime.simulationRuns,
+          accessContext: createOpenAccessContext(workspaceId, req),
+        websocketClients: realtime.status().simulationRuns,
       })
-      if (controlInstanceApiResponse) {
+      if (simulationRunApiResponse) {
         realtime.reconcile()
-        return secure(controlInstanceApiResponse)
+        return secure(simulationRunApiResponse)
       }
 
-      if (url.pathname === '/ws') {
-        const rawControlInstanceId = url.searchParams.get('controlInstance')
-        if (!rawControlInstanceId) return secure(new Response('Missing controlInstance', { status: 400 }))
-        const controlInstanceId = controlInstanceIdSchema.parse(rawControlInstanceId)
-        if (!config.registry.get(controlInstanceId)) return secure(new Response('Control instance not found', { status: 404 }))
-        const upgraded = serverApi.upgrade(req, { data: { workspaceId: config.workspaceId, controlInstanceId } })
+        if (url.pathname === `/api/workspaces/${encodeURIComponent(workspaceId)}/ws`) {
+        const rawSimulationRunId = url.searchParams.get('simulationRun')
+        if (!rawSimulationRunId) return secure(new Response('Missing simulationRun', { status: 400 }))
+          const simulationRunIdResult = simulationRunIdSchema.safeParse(rawSimulationRunId)
+          if (!simulationRunIdResult.success) return secure(new Response('Invalid Simulation Run id', { status: 400 }))
+          const simulationRunId = simulationRunIdResult.data
+          try {
+            await workspaceRuntime.simulationRuns.load(simulationRunId)
+          } catch (err) {
+            if ((err as Error).message.startsWith('Simulation Run not found:')) {
+              return secure(new Response('Simulation Run not found', { status: 404 }))
+            }
+            throw err
+          }
+        const upgraded = serverApi.upgrade(req, { data: { workspaceId, simulationRunId } })
         return upgraded ? undefined : secure(new Response('WebSocket upgrade failed', { status: 400 }))
+        }
       }
 
       const staticResponse = await serveStatic(url.pathname, uiDistPath)
@@ -404,10 +462,12 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
     },
     websocket: {
       open(socket) {
-        realtime.addClient(socket.data.controlInstanceId, socket)
+        const workspaceRuntime = config.workspaces.getLoaded(socket.data.workspaceId)
+        if (!workspaceRuntime) return socket.close(1011, 'Workspace runtime unavailable')
+        realtimeFor(workspaceRuntime).addClient(socket.data.simulationRunId, socket)
       },
       close(socket) {
-        realtime.removeClient(socket.data.controlInstanceId, socket)
+        realtimeByWorkspace.get(socket.data.workspaceId)?.removeClient(socket.data.simulationRunId, socket)
       },
       message(socket, message) {
         void handleRealtimeClientMessage(socket, message)
@@ -416,9 +476,11 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
   })
 
   return {
-    port,
+    port: server.port ?? port,
     stop: () => {
-      realtime.stop()
+      for (const realtime of realtimeByWorkspace.values()) realtime.stop()
+      realtimeByWorkspace.clear()
+      void config.workspaces.shutdown()
       server.stop()
     },
   }

@@ -66,14 +66,13 @@ body`)
     expect(frontmatter.allowedTools).toEqual([])
   })
 
-  test('inline scalar becomes single-element array', () => {
-    const { frontmatter } = parseFrontmatter(`---
+  test('rejects scalar values for array fields', () => {
+    expect(() => parseFrontmatter(`---
 name: foo
 description: test
 allowed-tools: web_search
 ---
-body`)
-    expect(frontmatter.allowedTools).toEqual(['web_search'])
+body`)).toThrow('array frontmatter fields')
   })
 
   test('does not consume following key lines as block items', () => {
@@ -82,7 +81,7 @@ name: foo
 description: test
 allowed-tools:
   - a
-scope: my-room
+scope: [my-room]
 ---
 body`)
     expect(frontmatter.allowedTools).toEqual(['a'])
@@ -104,15 +103,14 @@ content`)
   })
 })
 
-describe('parseFrontmatter — scope backwards compatibility', () => {
-  test('scope inline scalar still wraps into array', () => {
-    const { frontmatter } = parseFrontmatter(`---
+describe('parseFrontmatter — scope arrays', () => {
+  test('rejects an inline scalar', () => {
+    expect(() => parseFrontmatter(`---
 name: foo
 description: test
 scope: my-room
 ---
-body`)
-    expect(frontmatter.scope).toEqual(['my-room'])
+body`)).toThrow('array frontmatter fields')
   })
 
   test('scope inline array', () => {
@@ -125,7 +123,7 @@ body`)
     expect(frontmatter.scope).toEqual(['room-a', 'room-b'])
   })
 
-  test('scope block list (new path via parseYAMLArrayField)', () => {
+  test('scope block list', () => {
     const { frontmatter } = parseFrontmatter(`---
 name: foo
 description: test

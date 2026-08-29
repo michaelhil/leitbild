@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { leitbildMirrorRoutes } from './leitbild-mirror.ts'
 import { __injectClient, __resetClientPool, type LeitbildClient } from '../../integrations/leitbild/client.ts'
-import type { ControlInstanceSummary, LeitbildEventHandler, SubscriptionHandle } from '../../integrations/leitbild/types.ts'
+import type { SimulationRunSummary, LeitbildEventHandler, SubscriptionHandle } from '../../integrations/leitbild/types.ts'
+import { createLeitbildModuleBinding } from '../../integrations/leitbild/client.ts'
+import { workspaceIdSchema } from '@samsinn-leitbild/platform-contracts'
+import { createWorkspaceSettings } from '../../core/workspaces/settings.ts'
 
 const BASE_URL = 'https://leitbild.samsinn.app'
-const SCOPE = 'tenant-test'
+const WORKSPACE_ID = workspaceIdSchema.parse('11111111-1111-4111-8111-111111111111')
+const connection = { moduleBinding: createLeitbildModuleBinding(BASE_URL), workspaceId: WORKSPACE_ID }
 
 interface FakeClientOptions {
-  readonly instances: ReadonlyArray<ControlInstanceSummary>
+  readonly simulationRuns: ReadonlyArray<SimulationRunSummary>
   readonly capabilitiesByInstance: Readonly<Record<string, Record<string, unknown>>>
   readonly queryByInstance: Readonly<Record<string, unknown>>
   readonly createdId?: string
@@ -25,15 +29,12 @@ const mkClient = (options: FakeClientOptions): FakeClientState => {
     throw new Error(`no ${kind} for ${id}`)
   }
   const client: LeitbildClient = {
+    connection,
     baseUrl: BASE_URL,
-    getManifest: async () => ({
-      manifestSchemaVersion: '1.0.0',
-      identity: { implementation: 'test', implementationVersion: '1', title: 'Test', operator: 'Test', deploymentId: 'test' },
-      links: {},
-      realtime: { model: 'test' },
-    }),
-    listControlInstances: async () => options.instances,
-    createControlInstance: async (scenarioId: string) => {
+    getManifest: async () => ({}) as never,
+    provisionWorkspace: async () => {},
+    listSimulationRuns: async () => options.simulationRuns,
+    createSimulationRun: async (scenarioId: string) => {
       createdScenarioIds.push(scenarioId)
       return { id: createdId }
     },
@@ -45,7 +46,7 @@ const mkClient = (options: FakeClientOptions): FakeClientState => {
     callCommand: async () => ({}),
     getCapabilities: async (workspaceId: string) =>
       options.capabilitiesByInstance[workspaceId] ?? missing('capabilities', workspaceId),
-    subscribe: (_instanceId: string, _handler: LeitbildEventHandler, _startSeq: number): SubscriptionHandle => ({
+    subscribe: (_simulationRunId: string, _handler: LeitbildEventHandler, _startSeq: number): SubscriptionHandle => ({
       close: () => {},
       lastSeq: () => 0,
     }),
@@ -54,12 +55,14 @@ const mkClient = (options: FakeClientOptions): FakeClientState => {
 }
 
 const invokeSelect = async (body: Record<string, unknown>, client: LeitbildClient): Promise<Response> => {
-  __injectClient(BASE_URL, client, SCOPE)
-  const path = '/api/leitbild-proxy/control-instances/select'
+  __injectClient(connection, client, WORKSPACE_ID)
+  const path = '/leitbild-proxy/simulation-runs/select'
   const route = leitbildMirrorRoutes.find(r => r.method === 'POST' && r.pattern.test(path))
   if (!route) throw new Error('select route not found')
   const match = path.match(route.pattern)
   if (!match) throw new Error('select route did not match')
+  const settings = createWorkspaceSettings()
+  settings.setModuleBinding(connection.moduleBinding)
   return route.handler(
     new Request(`http://samsinn.test${path}`, {
       method: 'POST',
@@ -67,7 +70,7 @@ const invokeSelect = async (body: Record<string, unknown>, client: LeitbildClien
       body: JSON.stringify(body),
     }),
     match,
-    { workspaceId: SCOPE } as never,
+    { workspaceId: WORKSPACE_ID, system: { settings } } as never,
   ) as Promise<Response>
 }
 
@@ -77,7 +80,6 @@ const processPlantCapabilities = (): Record<string, unknown> => ({
 })
 
 const selectBody = (): Record<string, unknown> => ({
-  baseUrl: BASE_URL,
   preferredScenarioId: 'halden-process-plant-demo',
   candidateScenarioIds: ['halden-process-plant-demo', 'oslo-all-packs-demo'],
   requiredPackId: 'process-plant',
@@ -87,12 +89,12 @@ const selectBody = (): Record<string, unknown> => ({
 
 afterEach(() => { __resetClientPool() })
 
-describe('Leitbild proxy control-instance selection', () => {
+describe('Leitbild proxy simulation-run selection', () => {
   test('reuses a readable process-plant instance', async () => {
     const fake = mkClient({
-      instances: [
-        { id: 'older', scenarioId: 'halden-process-plant-demo', loaded: true, snapshotSeq: 2 },
-        { id: 'fresh', scenarioId: 'halden-process-plant-demo', loaded: true, snapshotSeq: 10 },
+      simulationRuns: [
+        { id: 'older', scenarioId: 'halden-process-plant-demo', scenarioRevisionId: 'revision-old', createdAt: '2026-01-01T00:00:00Z', loaded: true, snapshotSeq: 2, objectCount: 1, websocketClientCount: 0 },
+        { id: 'fresh', scenarioId: 'halden-process-plant-demo', scenarioRevisionId: 'revision-new', createdAt: '2026-01-02T00:00:00Z', loaded: true, snapshotSeq: 10, objectCount: 1, websocketClientCount: 0 },
       ],
       capabilitiesByInstance: {
         older: processPlantCapabilities(),
@@ -105,10 +107,10 @@ describe('Leitbild proxy control-instance selection', () => {
     })
 
     const res = await invokeSelect(selectBody(), fake.client)
-    const data = await res.json() as { workspaceId?: string; created?: boolean; systemIds?: ReadonlyArray<string> }
+    const data = await res.json() as { simulationRunId?: string; created?: boolean; systemIds?: ReadonlyArray<string> }
 
     expect(res.status).toBe(200)
-    expect(data.workspaceId).toBe('fresh')
+    expect(data.simulationRunId).toBe('fresh')
     expect(data.created).toBe(false)
     expect(data.systemIds).toEqual(['fresh-plant'])
     expect(fake.createdScenarioIds).toEqual([])
@@ -116,8 +118,8 @@ describe('Leitbild proxy control-instance selection', () => {
 
   test('creates a preferred scenario when existing candidates fail the process-plant probe', async () => {
     const fake = mkClient({
-      instances: [
-        { id: 'bad', scenarioId: 'halden-process-plant-demo', loaded: true, snapshotSeq: 20 },
+      simulationRuns: [
+        { id: 'bad', scenarioId: 'halden-process-plant-demo', scenarioRevisionId: 'revision-bad', createdAt: '2026-01-01T00:00:00Z', loaded: true, snapshotSeq: 20, objectCount: 1, websocketClientCount: 0 },
       ],
       capabilitiesByInstance: {
         bad: { activePackIds: ['weather'], queryKinds: { weather: ['weather.fieldStats'] } },
@@ -130,19 +132,19 @@ describe('Leitbild proxy control-instance selection', () => {
     })
 
     const res = await invokeSelect(selectBody(), fake.client)
-    const data = await res.json() as { workspaceId?: string; created?: boolean; systemIds?: ReadonlyArray<string>; skippedCandidates?: ReadonlyArray<string> }
+    const data = await res.json() as { simulationRunId?: string; created?: boolean; systemIds?: ReadonlyArray<string>; skippedCandidates?: ReadonlyArray<string> }
 
     expect(res.status).toBe(200)
-    expect(data.workspaceId).toBe('created-pwr')
+    expect(data.simulationRunId).toBe('created-pwr')
     expect(data.created).toBe(true)
     expect(data.systemIds).toEqual(['new-plant'])
     expect(data.skippedCandidates?.[0]).toContain('missing active pack')
     expect(fake.createdScenarioIds).toEqual(['halden-process-plant-demo'])
   })
 
-  test('rejects base URLs outside the Leitbild allowlist', async () => {
+  test('rejects request-level base URL overrides', async () => {
     const fake = mkClient({
-      instances: [],
+      simulationRuns: [],
       capabilitiesByInstance: {},
       queryByInstance: {},
     })
@@ -151,6 +153,6 @@ describe('Leitbild proxy control-instance selection', () => {
     const data = await res.json() as { error?: string }
 
     expect(res.status).toBe(400)
-    expect(data.error).toContain('not in the Leitbild allowlist')
+    expect(data.error).toContain('unexpected fields: baseUrl')
   })
 })

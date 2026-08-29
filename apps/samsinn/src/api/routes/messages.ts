@@ -5,7 +5,7 @@ import type { RouteEntry } from './types.ts'
 export const messageRoutes: RouteEntry[] = [
   {
     method: 'POST',
-    pattern: /^\/api\/messages$/,
+    pattern: /^\/messages$/,
     handler: async (req, _match, { system }) => {
       const body = await parseBody(req)
       if (!body.content || !body.senderId) return errorResponse('content and senderId are required')

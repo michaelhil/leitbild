@@ -4,7 +4,7 @@
 
 export const safeFetch = async (url: string, init?: RequestInit): Promise<Response | null> => {
   try {
-    const res = await fetch(url, init)
+    const res = await apiFetch(url, init)
     if (!res.ok) {
       console.error(`Fetch ${init?.method ?? 'GET'} ${url} failed: ${res.status}`)
       return null
@@ -25,3 +25,4 @@ export const safeFetchJson = async <T>(url: string, init?: RequestInit): Promise
     return null
   }
 }
+import { apiFetch } from './api-client.ts'

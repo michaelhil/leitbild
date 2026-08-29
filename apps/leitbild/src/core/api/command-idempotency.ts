@@ -1,5 +1,6 @@
-import type { CommandEnvelope, CommandResult, ControlInstanceId } from '../model/index.ts'
-import type { Actor } from '../control-instances/actors.ts'
+import type { CommandEnvelope, CommandResult, SimulationRunId } from '../model/index.ts'
+import type { Actor } from '../simulation-runs/actors.ts'
+import type { WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
 export const defaultCommandIdempotencyTtlMs = 60 * 60 * 1_000
 export const defaultCommandIdempotencyMaxEntries = 10_000
@@ -66,7 +67,7 @@ export const commandBodyFingerprint = (command: CommandEnvelope): string =>
 export const commandIdempotencyTupleKey = (command: CommandEnvelope): string | null => {
   if (!command.idempotencyKey) return null
   return stableJson([
-    command.controlInstanceId,
+    command.simulationRunId,
     command.actorId,
     command.clientId ?? null,
     command.kind,
@@ -167,12 +168,16 @@ export const issueCommandWithIdempotency = async (config: {
   }
 }
 
-const storesByRuntime = new Map<ControlInstanceId, CommandIdempotencyStore>()
+const storesByRuntime = new Map<string, CommandIdempotencyStore>()
 
-export const commandIdempotencyStoreForRuntime = (controlInstanceId: ControlInstanceId): CommandIdempotencyStore => {
-  const existing = storesByRuntime.get(controlInstanceId)
+export const commandIdempotencyStoreForRuntime = (
+  workspaceId: WorkspaceId,
+  simulationRunId: SimulationRunId,
+): CommandIdempotencyStore => {
+  const scopeKey = `${workspaceId}/${simulationRunId}`
+  const existing = storesByRuntime.get(scopeKey)
   if (existing) return existing
   const store = createCommandIdempotencyStore()
-  storesByRuntime.set(controlInstanceId, store)
+  storesByRuntime.set(scopeKey, store)
   return store
 }

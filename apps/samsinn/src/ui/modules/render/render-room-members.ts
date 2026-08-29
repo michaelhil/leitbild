@@ -164,10 +164,8 @@ const renderChip = (
   inspectAgent: (agentId: string) => void,
 ): HTMLElement => {
   const chip = document.createElement('span')
-  // Chip text is white (text-text) on a muted bg; the legacy `text-accent`
-  // made names link-blue inside the chip which read as "clickable link"
-  // when these are agent identities, not links. Use text-text everywhere
-  // so the name reads as a label.
+  // Chip text is white (text-text) on a muted background so agent identities
+  // read as labels rather than links.
   const bg = isMuted ? 'bg-surface-strong text-text-subtle' : 'bg-surface-muted text-text'
   chip.className = `inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs ${bg} group/chip`
   // Selected humans get an additional 1px white inner border on the chip

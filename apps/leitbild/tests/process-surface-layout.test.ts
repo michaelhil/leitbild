@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ControlInstanceId } from '../src/core/model/index.ts'
+import type { SimulationRunId } from '../src/core/model/index.ts'
 import {
   readProcessSurfaceLayout,
   readProcessSurfaceWindowBounds,
@@ -18,11 +18,11 @@ const createMemoryStorage = () => {
 }
 
 describe('process surface layout storage', () => {
-  test('stores widget positions per control instance, system, and surface', () => {
+  test('stores widget positions per simulation run, system, and surface', () => {
     const storage = createMemoryStorage()
-    const controlInstanceId = 'control-instance:layout-test' as ControlInstanceId
+    const simulationRunId = 'run-layout-test' as SimulationRunId
     storeProcessSurfaceLayout({
-      controlInstanceId,
+      simulationRunId,
       systemId: 'unit-a',
       surfaceId: 'unit-overview',
       layout: {
@@ -31,14 +31,14 @@ describe('process surface layout storage', () => {
     }, storage)
 
     expect(readProcessSurfaceLayout({
-      controlInstanceId,
+      simulationRunId,
       systemId: 'unit-a',
       surfaceId: 'unit-overview',
     }, storage)).toEqual({
       'reactor-vessel': { x: 120, y: 240 },
     })
     expect(readProcessSurfaceLayout({
-      controlInstanceId,
+      simulationRunId,
       systemId: 'unit-b',
       surfaceId: 'unit-overview',
     }, storage)).toEqual({})
@@ -46,32 +46,32 @@ describe('process surface layout storage', () => {
 
   test('rejects corrupted layout data visibly', () => {
     const storage = createMemoryStorage()
-    storage.setItem('leitbild.processSurfaceLayout.v1:control-instance:layout-test:unit-a:unit-overview', '{"reactor-vessel":{"x":"bad","y":1}}')
+    storage.setItem('leitbild.processSurfaceLayout.v1:run-layout-test:unit-a:unit-overview', '{"reactor-vessel":{"x":"bad","y":1}}')
 
     expect(() => readProcessSurfaceLayout({
-      controlInstanceId: 'control-instance:layout-test' as ControlInstanceId,
+      simulationRunId: 'run-layout-test' as SimulationRunId,
       systemId: 'unit-a',
       surfaceId: 'unit-overview',
     }, storage)).toThrow('invalid coordinates')
   })
 
-  test('stores window bounds per control instance, system, and surface', () => {
+  test('stores window bounds per simulation run, system, and surface', () => {
     const storage = createMemoryStorage()
-    const controlInstanceId = 'control-instance:window-test' as ControlInstanceId
+    const simulationRunId = 'run-window-test' as SimulationRunId
     storeProcessSurfaceWindowBounds({
-      controlInstanceId,
+      simulationRunId,
       systemId: 'unit-a',
       surfaceId: 'unit-overview',
       bounds: { x: 40, y: 50, width: 900, height: 640 },
     }, storage)
 
     expect(readProcessSurfaceWindowBounds({
-      controlInstanceId,
+      simulationRunId,
       systemId: 'unit-a',
       surfaceId: 'unit-overview',
     }, storage)).toEqual({ x: 40, y: 50, width: 900, height: 640 })
     expect(readProcessSurfaceWindowBounds({
-      controlInstanceId,
+      simulationRunId,
       systemId: 'unit-b',
       surfaceId: 'unit-overview',
     }, storage)).toBeNull()
@@ -79,10 +79,10 @@ describe('process surface layout storage', () => {
 
   test('rejects corrupted window bounds visibly', () => {
     const storage = createMemoryStorage()
-    storage.setItem('leitbild.processSurfaceWindow.v1:control-instance:window-test:unit-a:unit-overview', '{"x":1,"y":2,"width":"wide","height":4}')
+    storage.setItem('leitbild.processSurfaceWindow.v1:run-window-test:unit-a:unit-overview', '{"x":1,"y":2,"width":"wide","height":4}')
 
     expect(() => readProcessSurfaceWindowBounds({
-      controlInstanceId: 'control-instance:window-test' as ControlInstanceId,
+      simulationRunId: 'run-window-test' as SimulationRunId,
       systemId: 'unit-a',
       surfaceId: 'unit-overview',
     }, storage)).toThrow('invalid coordinates')

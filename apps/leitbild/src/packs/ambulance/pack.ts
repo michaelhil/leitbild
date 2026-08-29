@@ -1,6 +1,7 @@
 import type { KnowledgeFact, OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
+import { createLeitbildPackDescriptor } from '../../core/packs/protocol.ts'
 import {
   cancelDestinationCommandKind,
   createObjectCommandKind,
@@ -247,7 +248,7 @@ const countForCategory = (
   objects: ReadonlyArray<OperationalObject>,
   categoryId: string,
 ): number =>
-  objects.filter(object => ambulancePack.categories.find(category => category.id === categoryId)?.matches(object)).length
+  objects.filter(object => ambulancePack.presentation.categories.find(category => category.id === categoryId)?.matches(object)).length
 
 const assertCreatableType = (typeId: string): CreatableAmbulanceObjectType => {
   if (typeId === 'ambulance' || typeId === 'hospital' || typeId === 'incident') return typeId
@@ -260,92 +261,104 @@ const assertPointGeometry = (geometry: PackCreationGeometry) => {
 }
 
 export const ambulancePack: LeitbildPack = {
-  id: 'ambulance',
-  name: 'Ambulance Dispatch',
-  runtimes: [
-    { id: ambulanceSimRuntimeId, label: 'Local ambulance runtime', kind: 'local' },
-  ],
-  defaultRuntimeId: ambulanceSimRuntimeId,
-  wikiRefs: [
-    { name: 'Leitbild ambulance wiki', url: 'https://github.com/samsinn-wikis/leitbild-ambulance' },
-  ],
+  descriptor: createLeitbildPackDescriptor({
+    id: 'ambulance',
+    version: '1.0.0',
+    name: 'Ambulance Dispatch',
+    contributions: ['runtime', 'knowledge', 'scenario', 'presentation', 'commands', 'interactions'],
+  }),
+  runtime: {
+    runtimes: [
+      { id: ambulanceSimRuntimeId, version: '1.0.0', label: 'Local ambulance runtime', kind: 'local' },
+    ],
+    defaultRuntimeId: ambulanceSimRuntimeId,
+  },
+  knowledge: {
+    wikiRefs: [
+      { name: 'Leitbild ambulance wiki', url: 'https://github.com/samsinn-wikis/leitbild-ambulance' },
+    ],
+  },
   scenario: ambulanceScenarioSupport,
-  categories: [
-    {
-      id: 'hospitals',
-      label: 'Hospitals',
-      emptyLabel: 'No hospitals',
-      matches: (object: OperationalObject): boolean => parseHospitalData(object) !== null,
-    },
-    {
-      id: 'ambulances',
-      label: 'Ambulances',
-      emptyLabel: 'No ambulances',
-      matches: (object: OperationalObject): boolean => parseAmbulanceData(object) !== null,
-    },
-    {
-      id: 'incidents',
-      label: 'Incidents',
-      emptyLabel: 'No incidents',
-      matches: (object: OperationalObject): boolean => parseIncidentData(object) !== null,
-    },
-  ],
-  createObjectTypes: [
-    { id: 'hospital', label: 'Hospital', categoryId: 'hospitals', icon: 'hospital', color: '#245b9f', placementKind: 'point' },
-    { id: 'ambulance', label: 'Ambulance', categoryId: 'ambulances', icon: 'ambulance', color: '#22845d', placementKind: 'point' },
-    { id: 'incident', label: 'Incident', categoryId: 'incidents', icon: 'crash', color: '#c7352b', placementKind: 'point' },
-  ],
-  interactionHandlers: [
-    createAmbulanceArrivalInteractionHandler(),
-  ],
-  presentObject: (object, context): PackObjectPresentation => {
-    if (parseAmbulanceData(object)) return presentationForAmbulance(object, context.objects)
-    if (parseHospitalData(object)) return presentationForHospital(object)
-    if (parseIncidentData(object)) return presentationForIncident(object, context.objects)
-    return {
-      categoryId: 'unknown',
-      icon: 'unknown',
-      color: '#667085',
-      summary: object.operational.status,
-      status: packStatus('idle', object.operational.status),
-      fields: [packField('warning', 'Warning', 'Object is outside the ambulance pack vocabulary')],
-    }
-  },
-  defaultObjectLabel: (typeId, context): string => {
-    const type = assertCreatableType(typeId)
-    const definition = ambulancePack.createObjectTypes.find(candidate => candidate.id === type)
-    if (!definition) throw new Error(`missing create type definition: ${type}`)
-    const index = countForCategory(context.objects, definition.categoryId) + 1
-    return `${definition.label} ${index}`
-  },
-  buildCreateObjectCommand: (typeId, label, geometry): PackCommandRequest => {
-    const point = assertPointGeometry(geometry)
-    return {
-      kind: createObjectCommandKind,
-      targetObjectIds: [],
-      payload: {
-        objectType: assertCreatableType(typeId),
-        label,
-        point,
+  presentation: {
+    categories: [
+      {
+        id: 'hospitals',
+        label: 'Hospitals',
+        emptyLabel: 'No hospitals',
+        matches: (object: OperationalObject): boolean => parseHospitalData(object) !== null,
       },
-    }
+      {
+        id: 'ambulances',
+        label: 'Ambulances',
+        emptyLabel: 'No ambulances',
+        matches: (object: OperationalObject): boolean => parseAmbulanceData(object) !== null,
+      },
+      {
+        id: 'incidents',
+        label: 'Incidents',
+        emptyLabel: 'No incidents',
+        matches: (object: OperationalObject): boolean => parseIncidentData(object) !== null,
+      },
+    ],
+    presentObject: (object, context): PackObjectPresentation => {
+      if (parseAmbulanceData(object)) return presentationForAmbulance(object, context.objects)
+      if (parseHospitalData(object)) return presentationForHospital(object)
+      if (parseIncidentData(object)) return presentationForIncident(object, context.objects)
+      return {
+        categoryId: 'unknown',
+        icon: 'unknown',
+        color: '#667085',
+        summary: object.operational.status,
+        status: packStatus('idle', object.operational.status),
+        fields: [packField('warning', 'Warning', 'Object is outside the ambulance pack vocabulary')],
+      }
+    },
   },
-  isController: (object): boolean => parseAmbulanceData(object) !== null,
-  isTarget: (_controller, candidate): boolean =>
-    parseIncidentData(candidate) !== null || parseHospitalData(candidate) !== null,
-  buildSetTargetCommand: (controller, target): PackCommandRequest => ({
-    kind: setDestinationCommandKind,
-    targetObjectIds: [controller.id, target.id],
-    payload: {
-      ambulanceId: controller.id,
-      destinationId: target.id,
+  commands: {
+    createObjectTypes: [
+      { id: 'hospital', label: 'Hospital', categoryId: 'hospitals', icon: 'hospital', color: '#245b9f', placementKind: 'point' },
+      { id: 'ambulance', label: 'Ambulance', categoryId: 'ambulances', icon: 'ambulance', color: '#22845d', placementKind: 'point' },
+      { id: 'incident', label: 'Incident', categoryId: 'incidents', icon: 'crash', color: '#c7352b', placementKind: 'point' },
+    ],
+    defaultObjectLabel: (typeId, context): string => {
+      const type = assertCreatableType(typeId)
+      const definition = ambulancePack.commands.createObjectTypes.find(candidate => candidate.id === type)
+      if (!definition) throw new Error(`missing create type definition: ${type}`)
+      const index = countForCategory(context.objects, definition.categoryId) + 1
+      return `${definition.label} ${index}`
     },
-  }),
-  buildCancelTargetCommand: (controller): PackCommandRequest => ({
-    kind: cancelDestinationCommandKind,
-    targetObjectIds: [controller.id],
-    payload: {
-      ambulanceId: controller.id,
+    buildCreateObjectCommand: (typeId, label, geometry): PackCommandRequest => {
+      const point = assertPointGeometry(geometry)
+      return {
+        kind: createObjectCommandKind,
+        targetObjectIds: [],
+        payload: {
+          objectType: assertCreatableType(typeId),
+          label,
+          point,
+        },
+      }
     },
-  }),
+    isController: (object): boolean => parseAmbulanceData(object) !== null,
+    isTarget: (_controller, candidate): boolean =>
+      parseIncidentData(candidate) !== null || parseHospitalData(candidate) !== null,
+    buildSetTargetCommand: (controller, target): PackCommandRequest => ({
+      kind: setDestinationCommandKind,
+      targetObjectIds: [controller.id, target.id],
+      payload: {
+        ambulanceId: controller.id,
+        destinationId: target.id,
+      },
+    }),
+    buildCancelTargetCommand: (controller): PackCommandRequest => ({
+      kind: cancelDestinationCommandKind,
+      targetObjectIds: [controller.id],
+      payload: {
+        ambulanceId: controller.id,
+      },
+    }),
+  },
+  interactions: {
+    handlers: [createAmbulanceArrivalInteractionHandler()],
+  },
 }

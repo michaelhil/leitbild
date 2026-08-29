@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Copy, FileJson2, Image, ShieldCheck, X } from 'lucide-svelte'
-  import type { ControlInstanceId } from '../../core/model/index.ts'
+  import type { SimulationRunId } from '../../core/model/index.ts'
   import {
     listProcessPlantCredibilityEvidence,
     readProcessPlantCredibilityArtifact,
@@ -9,7 +9,7 @@
   } from './process-surface-client.ts'
 
   interface Props {
-    readonly controlInstanceId: ControlInstanceId
+    readonly simulationRunId: SimulationRunId
     readonly systemId: string
     readonly close: () => void
   }
@@ -33,7 +33,7 @@
     readonly caseResults: ReadonlyArray<SummaryCaseResult>
   }
 
-  let { controlInstanceId, systemId, close }: Props = $props()
+  let { simulationRunId, systemId, close }: Props = $props()
 
   let loading = $state(true)
   let error = $state<string | null>(null)
@@ -113,7 +113,7 @@
   }
 
   $effect(() => {
-    const instanceId = controlInstanceId
+    const runId = simulationRunId
     const selectedSystemId = systemId
     let cancelled = false
 
@@ -124,7 +124,7 @@
         evidence = []
         artifactData = null
         copyStatus = null
-        const next = await listProcessPlantCredibilityEvidence(instanceId, selectedSystemId)
+        const next = await listProcessPlantCredibilityEvidence(runId, selectedSystemId)
         if (cancelled) return
         evidence = next.evidence
         selectedEvidenceId = next.evidence[0]?.id ?? null
@@ -144,7 +144,7 @@
   })
 
   $effect(() => {
-    const instanceId = controlInstanceId
+    const runId = simulationRunId
     const selectedSystemId = systemId
     const evidenceId = selectedEvidenceId
     const artifactId = selectedArtifactId
@@ -163,7 +163,7 @@
         artifactError = null
         artifactData = null
         copyStatus = null
-        const next = await readProcessPlantCredibilityArtifact(instanceId, selectedSystemId, evidenceId, artifactId)
+        const next = await readProcessPlantCredibilityArtifact(runId, selectedSystemId, evidenceId, artifactId)
         if (!cancelled) artifactData = next
       } catch (err) {
         if (!cancelled) artifactError = err instanceof Error ? err.message : String(err)

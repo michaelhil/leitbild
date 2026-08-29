@@ -1,4 +1,4 @@
-// System / orchestration events: instance reset lifecycle, packs/triggers/
+// System / orchestration events: Workspace reset lifecycle, packs/triggers/
 // providers config changes, summary config, errors. These mostly fan out
 // via CustomEvents so independent panels can opt in without tight
 // coupling to this dispatcher.

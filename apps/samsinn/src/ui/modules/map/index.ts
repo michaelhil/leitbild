@@ -10,7 +10,13 @@
 // theme — OSM has no dark variant — but the attribute is there for it.
 
 import { ensureLeaflet, type LeafletApi, type LeafletMap } from './api.ts'
-import { parseMapSource, collectLatLngs, type ParsedMap, type EnvelopeFeature } from './normalise.ts'
+import {
+  collectEnvelopeLatLngs,
+  formatMapErrors,
+  parseMapBody,
+  type MapEnvelope,
+  type MapFeature,
+} from '../../../core/render-validators/map-schema.ts'
 import { showMapFallback } from './fallback.ts'
 import { buildIconSpec } from './icons.ts'
 import { addPostRenderProcessor } from '../extensions/post-render-registry.ts'
@@ -32,7 +38,7 @@ const buildMapContainer = (height = DEFAULT_HEIGHT_PX): HTMLElement => {
   return wrapper
 }
 
-const addEnvelopeFeature = (L: LeafletApi, map: LeafletMap, f: EnvelopeFeature): void => {
+const addEnvelopeFeature = (L: LeafletApi, map: LeafletMap, f: MapFeature): void => {
   if (f.type === 'marker') {
     // Unified divIcon path. Previously markers without an icon/color used
     // Leaflet's default bitmap pin, which depends on Leaflet's CSS bundle
@@ -77,12 +83,12 @@ const addEnvelopeFeature = (L: LeafletApi, map: LeafletMap, f: EnvelopeFeature):
 const buildMap = (
   L: LeafletApi,
   container: HTMLElement,
-  parsed: Extract<ParsedMap, { kind: 'envelope' | 'geojson' }>,
+  envelope: MapEnvelope,
   source: string,
 ): { map: LeafletMap } | null => {
   // Empty FeatureCollection AND no view => nothing to render.
-  const points = collectLatLngs(parsed)
-  const view = parsed.data.view
+  const points = collectEnvelopeLatLngs(envelope)
+  const view = envelope.view
   if (points.length === 0 && !view) {
     showMapFallback(container, source, 'empty')
     return null
@@ -120,12 +126,7 @@ const buildMap = (
   })
   tileLayer.addTo(map)
 
-  // Add features. GeoJSON path delegates to L.geoJSON for the common case.
-  if (parsed.kind === 'envelope') {
-    for (const f of parsed.data.features) addEnvelopeFeature(L, map, f)
-  } else {
-    L.geoJSON(parsed.data, {}).addTo(map)
-  }
+  for (const feature of envelope.features) addEnvelopeFeature(L, map, feature)
 
   // View: explicit wins; else fitBounds. Single-point feature uses setView
   // with a sensible default zoom because fitBounds on a single point picks
@@ -156,13 +157,13 @@ const renderInto = async (container: HTMLElement, source: string): Promise<void>
     return
   }
 
-  const parsed = parseMapSource(source)
-  if (parsed.kind === 'invalid') {
-    showMapFallback(container, source, 'invalid', parsed.reason)
+  const parsed = parseMapBody(source)
+  if (parsed.ok === false) {
+    showMapFallback(container, source, 'invalid', formatMapErrors(parsed.errors))
     return
   }
 
-  const result = buildMap(L, container, parsed, source)
+  const result = buildMap(L, container, parsed.envelope, source)
   // Register for lifecycle ownership — sweep + release guarantee map.remove()
   // runs when the wrapper detaches. Both call sites (chat-fence and the
   // geodata-panel preview) route through here, so one attach() covers both.

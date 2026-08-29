@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, ControlInstanceEvent, GeoJsonLineString, GeoJsonPoint, InteractionSignal, IsoTimestamp, MotionProfileSet, ObjectId, OperationalObject, ControlInstanceId } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, SimulationRunEvent, GeoJsonLineString, GeoJsonPoint, InteractionSignal, IsoTimestamp, MotionProfileSet, ObjectId, OperationalObject, SimulationRunId } from '../../../core/model/index.ts'
 import { advanceAlongRoute, defaultMotionProfile, interactionSignalSchema, meters, motionProfileFor, nowIso, pointFromPosition, remainingDistanceAlongRoute, routeDistanceMeters } from '../../../core/model/index.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import type { PackRuntimeEvent, PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
@@ -33,7 +33,7 @@ interface AmbulanceMotion {
 }
 
 interface EngineState {
-  readonly controlInstanceId: ControlInstanceId
+  readonly simulationRunId: SimulationRunId
   readonly objectProjection: Map<ObjectId, OperationalObject>
   readonly motion: Map<ObjectId, AmbulanceMotion>
   elapsedMs: number
@@ -46,7 +46,7 @@ export interface AmbulanceSimEngine {
   readonly snapshot: () => PackRuntimeSnapshot
   readonly tick: (dtMs: number) => ReadonlyArray<PackRuntimeEvent>
   readonly handleCommand: (command: CommandEnvelope) => Promise<CommandResult>
-  readonly observeCommittedEvents: (events: ReadonlyArray<ControlInstanceEvent>) => void
+  readonly observeCommittedEvents: (events: ReadonlyArray<SimulationRunEvent>) => void
 }
 
 const defaultAmbulanceMotionProfileId = 'normal'
@@ -100,7 +100,7 @@ const deleteEvent = (objectId: ObjectId, at: IsoTimestamp): PackRuntimeEvent => 
 })
 
 const arrivalSignalEvent = (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   ambulance: OperationalObject,
   target: OperationalObject,
   at: IsoTimestamp,
@@ -108,7 +108,7 @@ const arrivalSignalEvent = (
 ): PackRuntimeEvent => {
   const signal = interactionSignalSchema.parse({
     id: `signal:${randomUUID()}`,
-    controlInstanceId,
+    simulationRunId,
     at,
     source: { kind: 'object', id: ambulance.id, runtimeId: ambulanceSimRuntimeId },
     targets: [{ kind: 'object', id: target.id }],
@@ -238,7 +238,7 @@ const stopAmbulance = (ambulance: OperationalObject, at: IsoTimestamp, status: s
 }
 
 export const createAmbulanceSimEngine = (config: {
-  readonly controlInstanceId: ControlInstanceId
+  readonly simulationRunId: SimulationRunId
   readonly routing: RoutingAdapter
   readonly objects: ReadonlyArray<OperationalObject>
 }): AmbulanceSimEngine => {
@@ -250,7 +250,7 @@ export const createAmbulanceSimEngine = (config: {
     if (restoredMotion) motion.set(object.id, restoredMotion)
   }
   const state: EngineState = {
-    controlInstanceId: config.controlInstanceId,
+    simulationRunId: config.simulationRunId,
     objectProjection,
     motion,
     elapsedMs: 0,
@@ -260,7 +260,7 @@ export const createAmbulanceSimEngine = (config: {
   }
 
   const snapshot = (): PackRuntimeSnapshot => ({
-    controlInstanceId: state.controlInstanceId,
+    simulationRunId: state.simulationRunId,
     objects: [...state.objectProjection.values()],
     capturedAt: nowIso(),
   })
@@ -356,7 +356,7 @@ export const createAmbulanceSimEngine = (config: {
         const stopped = stopAmbulance(moving, at2, target.kind === 'incident' ? 'on_scene' : 'available')
         state.objectProjection.set(stopped.id, stopped)
         events.push(upsertEvent(stopped, at2))
-        events.push(arrivalSignalEvent(state.controlInstanceId, stopped, target, at2, motion))
+        events.push(arrivalSignalEvent(state.simulationRunId, stopped, target, at2, motion))
       } else {
         state.objectProjection.set(ambulanceId, moving)
         state.motion.set(ambulanceId, { ...motion, segmentIndex })
@@ -490,7 +490,7 @@ export const createAmbulanceSimEngine = (config: {
     return { ok: true, commandId: command.id, acceptedAt: at3 }
   }
 
-  const observeCommittedEvents = (events: ReadonlyArray<ControlInstanceEvent>): void => {
+  const observeCommittedEvents = (events: ReadonlyArray<SimulationRunEvent>): void => {
     for (const event of events) {
       if (event.type === 'object.upserted') {
         state.objectProjection.set(event.object.id, event.object)

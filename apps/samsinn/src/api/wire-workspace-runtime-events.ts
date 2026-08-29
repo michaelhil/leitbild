@@ -110,11 +110,11 @@ export const wireWorkspaceRuntimeEvents = (
   system.setOnBookmarksChanged(() => { sched() })
 
   // Agent-settings edits (persona, model, tools, triggers, name, etc.) —
-  // fired by the API/MCP layer after PATCH /api/agents/:name and the
+  // fired by the API/MCP layer after updating an Agent and the
   // triggers routes apply changes. Without this hook, those edits stay in
   // memory until the next message-post triggers a save (or a process crash
   // loses them). REST-driven, no WS broadcast — UI already refetched the
-  // /api/agents/:name detail to render the result.
+  // Workspace-scoped Agent detail endpoint to render the result.
   system.setOnAgentSettingsChanged(() => { sched() })
 
   // === Non-mutating callbacks → broadcast only ===

@@ -19,17 +19,17 @@ The older vocabulary now obscures the architecture:
 Use this vocabulary for active architecture and new code:
 
 - **Pack**: the user-facing and architectural capability module. A scenario composes packs.
-- **Pack runtime**: the active implementation that backs a pack inside a Control Instance. A runtime may be a local simulation, a replay runtime, or a live adapter.
+- **Pack runtime**: the active implementation that backs a pack inside a Simulation Run. A runtime may be a local simulation, a replay runtime, or a live adapter.
 - **Source**: an external, reference, live-feed, map, route, or code input used by a runtime or UI surface.
 - **Pack data**: pack-owned object payload on an `OperationalObject`.
-- **Control Instance event**: a committed event in canonical Control Instance history.
+- **Simulation Run event**: a committed event in canonical Simulation Run history.
 
 Breaking renames:
 
 - `OperationalObject.domain` becomes `OperationalObject.packId`.
 - `OperationalObject.domainData` becomes `OperationalObject.packData`.
 - `DomainId` becomes `PackId`.
-- `DomainEvent` becomes `ControlInstanceEvent`.
+- `DomainEvent` becomes `SimulationRunEvent`.
 - `SimulationAdapter` becomes `PackRuntimeAdapter`.
 - `SimulationConnection` becomes `PackRuntimeConnection`.
 - `SimulationEvent` becomes `PackRuntimeEvent`.
@@ -42,7 +42,7 @@ Breaking renames:
 
 Process-plant variable metadata is a separate classification. Its `domain` field becomes `discipline` with values such as `thermal`, `hydraulic`, `electrical`, `control`, `chemical`, and `radiological`.
 
-Do not add compatibility aliases for the old names. Scenario files, persisted Control Instance state, API payloads, and tests should use the new vocabulary directly. Old persisted state may fail validation after this breaking change.
+Do not add compatibility aliases for the old names. Scenario files, persisted Simulation Run state, API payloads, and tests should use the new vocabulary directly. Old persisted state may fail validation after this breaking change.
 
 ## Exceptions
 
@@ -64,7 +64,7 @@ The electric grid pack and future packs can use the same clear stack:
 ```text
 scenario -> packs -> pack runtimes -> sources
 object -> packId + packData
-history -> Control Instance events
+history -> Simulation Run events
 ```
 
 This is a broad breaking rename. The benefit is a cleaner vocabulary before additional packs deepen the architecture.

@@ -1,3 +1,4 @@
+import { apiFetch } from "../api-client.ts"
 // Room-header script controls — start chip / running indicator / advance / stop.
 //
 // One init function wires every handler. Subscribes to $activeScriptByRoom +
@@ -89,7 +90,7 @@ export const initScriptPanel = (deps: ScriptPanelDeps): void => {
     if (scripts.length === 0) {
       // Fetch on first open if catalog is empty.
       try {
-        const res = await fetch('/api/scripts')
+        const res = await apiFetch('/scripts')
         if (res.ok) {
           const data = await res.json() as { scripts: typeof scripts }
           $scriptCatalog.set(data.scripts)
@@ -137,7 +138,7 @@ export const initScriptPanel = (deps: ScriptPanelDeps): void => {
     const roomId = $selectedRoomId.get()
     if (!roomId) return undefined
     // Cheap reverse-lookup: find the room name. We use an existing fetch via
-    // /api/rooms but the dispatch already has it cached as $rooms in stores.
+    // /rooms but the dispatch already has it cached as $rooms in stores.
     // Avoid importing $rooms — round-trip via the API is fine for a click.
     return undefined   // we'll switch to using the stored room name below
   }
@@ -153,7 +154,7 @@ export const initScriptPanel = (deps: ScriptPanelDeps): void => {
       return
     }
     if ($roomPaused.get()) {
-      const res = await fetch(`/api/rooms/${encodeURIComponent(name)}/pause`, {
+      const res = await apiFetch(`/rooms/${encodeURIComponent(name)}/pause`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ paused: false }),
@@ -164,7 +165,7 @@ export const initScriptPanel = (deps: ScriptPanelDeps): void => {
       }
       return
     }
-    const res = await fetch(`/api/rooms/${encodeURIComponent(name)}/script/advance`, { method: 'POST' })
+    const res = await apiFetch(`/rooms/${encodeURIComponent(name)}/script/advance`, { method: 'POST' })
     if (!res.ok) {
       const data = await res.json().catch(() => ({ error: 'unknown' }))
       showToast(document.body, `Advance failed: ${(data as { error?: string }).error ?? `HTTP ${res.status}`}`, { type: 'error', position: 'fixed' })
@@ -180,7 +181,7 @@ export const initScriptPanel = (deps: ScriptPanelDeps): void => {
       body: 'Stop the running script and despawn its cast?',
       confirmLabel: 'Stop',
     }))) return
-    const res = await fetch(`/api/rooms/${encodeURIComponent(name)}/script/stop`, { method: 'POST' })
+    const res = await apiFetch(`/rooms/${encodeURIComponent(name)}/script/stop`, { method: 'POST' })
     if (!res.ok) {
       const data = await res.json().catch(() => ({ error: 'unknown' }))
       showToast(document.body, `Stop failed: ${(data as { error?: string }).error ?? `HTTP ${res.status}`}`, { type: 'error', position: 'fixed' })
@@ -201,7 +202,7 @@ const getSelectedRoomName = async (): Promise<string | undefined> => {
 const startScript = async (scriptName: string): Promise<void> => {
   const roomName = await getSelectedRoomName()
   if (!roomName) return
-  const res = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/script/start`, {
+  const res = await apiFetch(`/rooms/${encodeURIComponent(roomName)}/script/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ scriptName }),

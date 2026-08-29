@@ -1,11 +1,11 @@
 // ============================================================================
 // Packs admin routes — install / update / uninstall / list packs from GitHub.
 //
-// GET    /api/packs                 list installed packs + their registered
+// GET    /packs                 list installed packs + their registered
 //                                   tool/skill keys
-// POST   /api/packs/install         body: { source: string; name?: string }
-// POST   /api/packs/update/:name    git pull + re-register
-// DELETE /api/packs/:name           unregister + rm -rf
+// POST   /packs/install         body: { source: string }
+// POST   /packs/update/:id      git pull + re-register
+// DELETE /packs/:id             unregister + delete
 //
 // All mutations emit a `packs_changed` WS broadcast so open UIs refresh.
 // Heavy lifting lives in the built-in pack tools — routes are thin wrappers
@@ -33,44 +33,38 @@ const invoke = async (
 export const packsRoutes: RouteEntry[] = [
   {
     method: 'GET',
-    pattern: /^\/api\/packs$/,
+    pattern: /^\/packs$/,
     handler: async (_req, _match, { system }) => invoke(system, 'list_packs', {}),
   },
   {
     // Browse view — pack registry merged with installed flag. Powers the
     // "Available packs" section of the Packs modal. Cached 5 min server-side.
     method: 'GET',
-    pattern: /^\/api\/packs\/registry$/,
+    pattern: /^\/packs\/registry$/,
     handler: async (_req, _match, { system }) => {
       const available = await getAvailablePacks()
       // Get installed list to mark each available pack. Registry names are
-      // canonical (registry strips `samsinn-pack-` from repo basenames before
-      // returning) and install_pack writes packs under the same canonical
-      // namespace (manifest.name first, stripped basename fallback). So a
-      // direct equality match is enough here — no prefix-stripping shim.
+      // canonical (registry strips `samsinn-pack-` from repo basenames).
+      // A Pack descriptor id is authoritative after installation.
       const listTool = system.toolRegistry.get('list_packs')
       const installedRes = listTool
         ? await listTool.execute({}, { callerId: 'api', callerName: 'api' })
         : { success: false }
       const installed = installedRes.success && Array.isArray(installedRes.data)
-        ? new Set((installedRes.data as Array<{ namespace: string }>).map(p => p.namespace))
+        ? new Set((installedRes.data as Array<{ id: string }>).map(pack => pack.id))
         : new Set<string>()
       return json(available.map(p => ({ ...p, installed: installed.has(p.name) })))
     },
   },
   {
     method: 'POST',
-    pattern: /^\/api\/packs\/install$/,
+    pattern: /^\/packs\/install$/,
     handler: async (req, _match, { system, broadcast }) => {
       const body = await parseBody(req)
       if (typeof body.source !== 'string' || !body.source.trim()) {
         return errorResponse('source is required')
       }
-      const params: Record<string, unknown> = { source: body.source.trim() }
-      if (typeof body.name === 'string' && body.name.trim()) {
-        params.name = body.name.trim()
-      }
-      const response = await invoke(system, 'install_pack', params)
+      const response = await invoke(system, 'install_pack', { source: body.source.trim() })
       if (response.status === 200) {
         try { broadcast({ type: 'packs_changed' }) } catch { /* ignore */ }
       }
@@ -79,10 +73,10 @@ export const packsRoutes: RouteEntry[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/packs\/update\/([^/]+)$/,
+    pattern: /^\/packs\/update\/([^/]+)$/,
     handler: async (_req, match, { system, broadcast }) => {
-      const name = decodeURIComponent(match[1] ?? '')
-      const response = await invoke(system, 'update_pack', { name })
+      const id = decodeURIComponent(match[1] ?? '')
+      const response = await invoke(system, 'update_pack', { id })
       if (response.status === 200) {
         try { broadcast({ type: 'packs_changed' }) } catch { /* ignore */ }
       }
@@ -91,10 +85,10 @@ export const packsRoutes: RouteEntry[] = [
   },
   {
     method: 'DELETE',
-    pattern: /^\/api\/packs\/([^/]+)$/,
+    pattern: /^\/packs\/([^/]+)$/,
     handler: async (_req, match, { system, broadcast }) => {
-      const name = decodeURIComponent(match[1] ?? '')
-      const response = await invoke(system, 'uninstall_pack', { name })
+      const id = decodeURIComponent(match[1] ?? '')
+      const response = await invoke(system, 'uninstall_pack', { id })
       if (response.status === 200) {
         try { broadcast({ type: 'packs_changed' }) } catch { /* ignore */ }
       }

@@ -1,13 +1,14 @@
+import { apiFetch } from "../../api-client.ts"
 // ============================================================================
 // Providers panel — unified list of all providers (cloud + ollama) with
 // per-provider key management, reorder arrows, and Ollama settings expander.
 //
 // The server returns providers in current router order. Arrows let the user
-// promote/demote each provider; new order is sent via PUT /api/providers/order
+// promote/demote each provider; new order is sent via PUT /providers/order
 // and takes effect live (no restart). Ollama settings (connection, models,
 // gateway config) live inside the Ollama row's expandable details.
 //
-// Poll-driven: refreshes /api/providers every 10s while the dashboard is open.
+// Poll-driven: refreshes /providers every 10s while the dashboard is open.
 // Also re-renders immediately on the `providers-changed` custom event
 // (fired by ws-dispatch on providers_changed broadcasts).
 // ============================================================================
@@ -71,7 +72,7 @@ const renderFallbackSection = async (container: HTMLElement): Promise<void> => {
 
   // Load current chain
   try {
-    const r = await fetch('/api/llm-policy/fallback')
+    const r = await apiFetch('/llm-policy/fallback')
     if (r.ok) {
       const data = await r.json() as { chain: string[] }
       input.value = (data.chain ?? []).join(', ')
@@ -83,7 +84,7 @@ const renderFallbackSection = async (container: HTMLElement): Promise<void> => {
     saveBtn.disabled = true
     status.textContent = 'Saving…'
     try {
-      const r = await fetch('/api/llm-policy/fallback', {
+      const r = await apiFetch('/llm-policy/fallback', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chain: value.length === 0 ? null : value }),
@@ -318,14 +319,14 @@ let changeListener: ((ev: Event) => void) | null = null
 
 const refresh = async (): Promise<void> => {
   try {
-    const res = await fetch('/api/providers')
+    const res = await apiFetch('/providers')
     if (!res.ok) return
     const data = await res.json() as ProvidersResponse
     renderProvidersPanel(data)
   } catch { /* ignore transient fetch errors */ }
 }
 
-// Run /api/providers/:name/test for every provider currently shown, in
+// Run /providers/:name/test for every provider currently shown, in
 // sequence (avoid hammering all upstreams in parallel). Each result pushes
 // into the monitor (server-side) and triggers a providers_changed broadcast,
 // so the panel rerenders automatically — no manual refresh needed here.
@@ -338,7 +339,7 @@ const testAll = async (): Promise<void> => {
   const btn = document.getElementById('providers-test-all') as HTMLButtonElement | null
   if (btn) { btn.disabled = true; btn.textContent = 'Testing…' }
   try {
-    const res = await fetch('/api/providers')
+    const res = await apiFetch('/providers')
     if (!res.ok) return
     const data = await res.json() as ProvidersResponse
     const lines: string[] = []

@@ -199,7 +199,7 @@ describe('WS Handler', () => {
 
   // --- set_paused ---
 
-  test('set_paused pauses room and broadcasts only to the session instance', async () => {
+  test('set_paused pauses Room and broadcasts only to the session Workspace', async () => {
     let broadcasted: WSOutbound | null = null
     let broadcastInstance: string | undefined
     ;(wsManager as unknown as Record<string, unknown>).broadcastToWorkspace = (workspaceId: string, msg: WSOutbound) => {
@@ -366,7 +366,7 @@ describe('WSManager.safeSend backpressure', () => {
     expect(closed()).toBeNull()
   })
 
-  test('instance switch releases the old viewer session and closes its socket', () => {
+  test('Workspace switch releases the old viewer session and closes its socket', () => {
     const wsManager = createWSManager({ getRuntime: () => undefined })
     const { ws, closed } = makeWS()
     const nextWorkspaceId = newWorkspaceId()
@@ -383,7 +383,7 @@ describe('WSManager.safeSend backpressure', () => {
     expect(wsManager.wsConnections.has('tab-token')).toBe(false)
   })
 
-  test('ordinary reconnect keeps a session already bound to the same instance', () => {
+  test('ordinary reconnect keeps a session already bound to the same Workspace', () => {
     const wsManager = createWSManager({ getRuntime: () => undefined })
     const { ws, closed } = makeWS()
     wsManager.sessions.set('tab-token', {
@@ -448,16 +448,16 @@ describe('WSManager.safeSend backpressure', () => {
     expect(wsManager.sessions.has('recent-token')).toBe(true)
     expect(wsManager.sessions.has('live-token')).toBe(true)
     // v15+: sweep no longer removes agents from team. Sessions are pure
-    // viewers; agent removal only happens via DELETE /api/agents/:name.
+    // viewers; agent removal only happens through the Workspace-scoped Agent API.
     expect(removed).toEqual([])
     expect(limitMetrics.snapshot().staleSessionsEvicted).toBe(1)
   })
 
-  test('sweepStaleSessions tolerates evicted instance (no agent removal, session still dropped)', async () => {
+  test('sweepStaleSessions tolerates an evicted Workspace runtime', async () => {
     const { createLimitMetrics } = await import('../core/limit-metrics.ts')
     const limitMetrics = createLimitMetrics()
     const wsManager = createWSManager({
-      getRuntime: () => undefined,           // instance evicted
+      getRuntime: () => undefined,           // Workspace runtime evicted
       limitMetrics,
     })
     wsManager.sessions.set('orphan-token', {

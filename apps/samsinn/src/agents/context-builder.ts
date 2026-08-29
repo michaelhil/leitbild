@@ -137,8 +137,8 @@ export const getParticipantsForRoom = (
     }
   }
 
-  // Fallback / supplement: senders from message history. Preserves correctness
-  // when getRoomMembers is unavailable (tests, legacy call sites).
+  // Supplement current membership with senders from message history so the
+  // context remains complete even when a member has since left the room.
   const ctx = history.rooms.get(roomId)
   const historyMsgs = ctx?.history ?? []
   const fresh = history.incoming.filter(m => m.roomId === roomId)
@@ -189,7 +189,7 @@ export interface BuildContextDeps {
   readonly promptsEnabled?: boolean              // group master for includePrompts; false forces all off
   readonly contextEnabled?: boolean              // group master for includeContext; false forces all off
   readonly contextTokenBudget?: number           // token budget for system+history (derived from model window)
-  // V2.A: when true, drop room-mirror messages (cause.kind === 'external-mirror')
+  // When true, drop Room-mirror messages (cause.kind === 'external-mirror').
   // from the agent's LLM context EXCEPT reset-boundary messages. The bound
   // agent has direct lb_* tools and doesn't need narrative duplication;
   // reset boundaries still pass through so the agent knows its mental model
@@ -563,7 +563,7 @@ const createNormalStrategy = (
     const ctx = deps.history.rooms.get(triggerRoomId)
     const allRaw = ctx?.history ?? []
     const freshRaw = deps.history.incoming.filter(m => m.roomId === triggerRoomId)
-    // V2.A bound-agent filter: drop external-mirror messages EXCEPT reset
+    // Bound-Agent filter: drop external-mirror messages except reset
     // boundaries. Applied before historyLimit slicing so the budget counts
     // only messages the agent actually sees.
     const keepMessage = (m: { cause?: { kind?: string; name?: string } }): boolean => {

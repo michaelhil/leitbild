@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { Component } from 'svelte'
-  import { parseControlSurfaceRoute } from './control-instance-route.ts'
+  import { parseControlSurfaceRoute } from './simulation-run-route.ts'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
+  import { configureActiveWorkspace } from './workspace-context.ts'
 
   type RouteComponent = Component
 
@@ -11,8 +12,14 @@
   const loadRoute = async (): Promise<void> => {
     try {
       const route = parseControlSurfaceRoute(location.pathname)
-      if (route.mode === 'picker') {
-        const module = await import('./routes/InstancePickerRoute.svelte')
+      if (route.mode === 'workspace-index') {
+        const module = await import('./routes/WorkspacePickerRoute.svelte')
+        Route = module.default
+        return
+      }
+      configureActiveWorkspace(route.workspaceId)
+      if (route.mode === 'run-picker') {
+        const module = await import('./routes/RunPickerRoute.svelte')
         Route = module.default
         return
       }

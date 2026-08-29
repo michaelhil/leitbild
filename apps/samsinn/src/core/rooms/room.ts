@@ -35,7 +35,7 @@ import { DEFAULT_SUMMARY_CONFIG } from '../types/summary.ts'
 import { SYSTEM_SENDER_ID } from '../types/constants.ts'
 import { parseAddressedAgents } from './addressing.ts'
 import { deliverBroadcast } from './delivery-modes.ts'
-import { defaultActiveNamespaces } from '../../packs/bundled.ts'
+import { defaultActivePackIds } from '../../packs/bundled.ts'
 
 export interface RoomCallbacks {
   readonly deliver?: DeliverFn
@@ -83,7 +83,7 @@ export const createRoom = (
   // Seed with the default-active bundled packs (core, local, demos, pwr-ops
   // today). Restore paths overwrite via restoreState({ activePacks: ... }).
   // Snapshot.serialize captures the full list — no implicit augmentation.
-  let activePacks: ReadonlyArray<string> = defaultActiveNamespaces()
+  let activePacks: ReadonlyArray<string> = defaultActivePackIds()
   // Optional Leitbild mirror binding (V1: room-scoped, read-only).
   // Set via setLeitbildMirror; the mirror service in
   // src/integrations/leitbild/ reacts and attaches/detaches subscriptions.
@@ -368,7 +368,7 @@ export const createRoom = (
       }
       if (state.summaryConfig) summaryConfig = state.summaryConfig
       if (state.latestSummary !== undefined) latestSummary = state.latestSummary
-      // Unconditional apply — v24+ snapshots always carry activePacks
+      // Canonical snapshots always carry activePacks.
       // (the full truth, including empty). The createRoom default-active
       // seed is purely for fresh in-memory rooms; restore overwrites.
       activePacks = state.activePacks ? [...state.activePacks] : []

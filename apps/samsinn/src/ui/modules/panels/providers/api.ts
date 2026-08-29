@@ -1,3 +1,4 @@
+import { apiFetch } from "../../api-client.ts"
 // ============================================================================
 // REST calls + result formatting for the providers panel.
 // ============================================================================
@@ -19,7 +20,7 @@ export interface TestResult {
 }
 
 export const save = async (name: string, body: Record<string, unknown>): Promise<boolean> => {
-  const res = await fetch(`/api/providers/${encodeURIComponent(name)}`, {
+  const res = await apiFetch(`/providers/${encodeURIComponent(name)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -28,7 +29,7 @@ export const save = async (name: string, body: Record<string, unknown>): Promise
 }
 
 export const saveOrder = async (order: string[]): Promise<boolean> => {
-  const res = await fetch(`/api/providers/order`, {
+  const res = await apiFetch(`/providers/order`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ order }),
@@ -37,7 +38,7 @@ export const saveOrder = async (order: string[]): Promise<boolean> => {
 }
 
 export const testKey = async (name: string, apiKey?: string): Promise<TestResult> => {
-  const res = await fetch(`/api/providers/${encodeURIComponent(name)}/test`, {
+  const res = await apiFetch(`/providers/${encodeURIComponent(name)}/test`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(apiKey ? { apiKey } : {}),

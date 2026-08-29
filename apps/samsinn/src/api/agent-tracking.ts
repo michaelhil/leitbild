@@ -22,7 +22,7 @@
 // events for SEED-spawned and SCRIPT-spawned agents because the only callers
 // of subscribeAgentState lived in REST/WS create handlers + a one-shot
 // init-loop in wireWorkspaceRuntimeEvents. Adding a new agent-creation entry point
-// (e.g. seedFreshInstance) bypassed both. Centralizing here makes the
+// (e.g. fresh-Workspace seeding) bypassed both. Centralizing here makes the
 // invariant impossible to miss: every spawn goes through this wrapper.
 //
 // Bun JS is single-threaded; mutating system function references via

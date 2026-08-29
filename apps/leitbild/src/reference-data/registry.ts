@@ -21,17 +21,15 @@ export interface RegisteredDataset {
   readonly build: (env: RegistryEnvironment) => DatasetConfig
 }
 
-const datasetIdOf = (config: DatasetConfig): DatasetId => config.id
-
 const buildPackBuilders = (pack: LeitbildPack): ReadonlyArray<RegisteredDataset> => {
-  if (!pack.referenceDatasetBuilders || pack.referenceDatasetBuilders.length === 0) return []
-  return pack.referenceDatasetBuilders.map((builder): RegisteredDataset => ({
+  if (!pack.referenceData || pack.referenceData.builders.length === 0) return []
+  return pack.referenceData.builders.map((builder): RegisteredDataset => ({
     id: builder.id,
     build: (env) => {
       const cfg = builder.build(env)
       if (cfg.id !== builder.id) {
         throw new Error(
-          `reference-data registry: pack "${pack.id}" declared builder id "${String(builder.id)}" but build() returned dataset id "${String(cfg.id)}"`,
+          `reference-data registry: pack "${pack.descriptor.id}" declared builder id "${String(builder.id)}" but build() returned dataset id "${String(cfg.id)}"`,
         )
       }
       return cfg
@@ -71,10 +69,3 @@ export const findRegisteredDataset = (
   }
   return null
 }
-
-// Test/back-compat helper: build a single descriptor from a pre-resolved DatasetConfig.
-// Used by tests that synthesise their own DatasetConfig without going through a pack.
-export const datasetConfigToDescriptor = (config: DatasetConfig): RegisteredDataset => ({
-  id: datasetIdOf(config),
-  build: () => config,
-})

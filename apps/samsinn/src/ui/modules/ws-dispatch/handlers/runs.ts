@@ -1,3 +1,4 @@
+import { apiFetch } from "../../api-client.ts"
 // Long-running progress events: scripts, summary runs, ollama health,
 // provider routing toasts. These don't mutate persistent state — they
 // surface progress / interventions to the user.
@@ -117,7 +118,7 @@ export const runHandlers: RunHandlers = {
 
   script_catalog_changed(_msg) {
     // Lazy-refetch catalog so any open consumers see the new state.
-    void fetch('/api/scripts')
+    void apiFetch('/scripts')
       .then(r => r.ok ? r.json() : { scripts: [] })
       .then(data => {
         const scripts = (data as { scripts?: unknown }).scripts

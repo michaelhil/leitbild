@@ -1,4 +1,4 @@
-// procmd-core — v0.6 parser.
+// procmd-core — v0.7 parser.
 //
 // Spec: docs/procedure-md.md. Handles:
 //   - YAML frontmatter with unknown-key passthrough (fm.extra)
@@ -9,14 +9,14 @@
 //   - inline `«TAG»` references
 //   - standalone `CSF: <channel>` declarations in preamble
 //   - `## Tags` appendix — structured tag definitions
-//   - `procedure-md:` version handshake (0.6 only; unknown → warning, parses)
+//   - strict `procedure-md: 0.7` format identity
 //
 // Deferred to future spec increments: When:/Until:/Abort-if:, sub-steps
-// (`### Step`), [primitive] override, profile-vocabulary validation, the
-// v0.7 `Decision:` keyword.
+// (`### Step`), [primitive] override, and profile-vocabulary validation.
 
 import {
   ACCEPTED_PROCMD_VERSIONS,
+  PARSER_PROCMD_VERSION,
   type BranchTarget,
   type ParseResult,
   type ParsedFrontmatter,
@@ -32,7 +32,7 @@ const KNOWN_FM_KEYS = new Set([
   'applies-to', 'category', 'csfs-monitored', 'entry-triggers',
 ])
 
-const parseFrontmatter = (raw: string): { fm: ParsedFrontmatter | null; body: string; warning?: string } => {
+const parseFrontmatter = (raw: string): { fm: ParsedFrontmatter | null; body: string; error?: string } => {
   if (!raw.startsWith('---\n') && !raw.startsWith('---\r\n')) {
     return { fm: null, body: raw }
   }
@@ -61,17 +61,17 @@ const parseFrontmatter = (raw: string): { fm: ParsedFrontmatter | null; body: st
     if (!KNOWN_FM_KEYS.has(k)) extra[k] = v
   }
 
-  let warning: string | undefined
   const version = map['procedure-md']
-  if (version && !ACCEPTED_PROCMD_VERSIONS.has(version)) {
-    warning = `procedure-md ${version} declared; parser supports ${[...ACCEPTED_PROCMD_VERSIONS].join(', ')} — output may be degraded`
+  if (!version) return { fm: null, body, error: '`procedure-md` is required' }
+  if (!ACCEPTED_PROCMD_VERSIONS.has(version)) {
+    return { fm: null, body, error: `unsupported procedure-md ${version}; expected ${PARSER_PROCMD_VERSION}` }
   }
 
   return {
     fm: {
       procedureId: map['procedure-id']!,
       title: map['title']!,
-      ...(map['procedure-md'] ? { procedureMd: map['procedure-md'] } : {}),
+      procedureMd: version,
       ...(map['profile'] ? { profile: map['profile'] } : {}),
       ...(map['applies-to'] ? { appliesTo: map['applies-to'] } : {}),
       ...(map['category'] ? { category: map['category'] } : {}),
@@ -80,7 +80,6 @@ const parseFrontmatter = (raw: string): { fm: ParsedFrontmatter | null; body: st
       extra,
     },
     body,
-    ...(warning ? { warning } : {}),
   }
 }
 
@@ -390,18 +389,17 @@ const parseBody = (body: string): BodyResult => {
 // === Public entry ============================================================
 
 export const parseProcedure = (raw: string): ParseResult => {
-  const { fm, body, warning: fmWarning } = parseFrontmatter(raw)
-  if (!fm) return { error: 'invalid frontmatter — `procedure-id` and `title` are required' }
+  const { fm, body, error } = parseFrontmatter(raw)
+  if (!fm) return { error: error ?? 'invalid frontmatter — `procedure-id` and `title` are required' }
   const { preamble, csfChannels, steps, tagDefinitions, warnings } = parseBody(body)
   if (steps.length === 0) return { error: `no \`## Step\` headings found in ${fm.procedureId}` }
-  const allWarnings = fmWarning ? [fmWarning, ...warnings] : warnings
   const result: ParsedProcedure = {
     frontmatter: fm,
     preamble,
     csfChannels,
     steps,
     tagDefinitions,
-    warnings: allWarnings,
+    warnings,
   }
   return result
 }

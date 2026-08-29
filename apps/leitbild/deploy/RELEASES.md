@@ -5,7 +5,7 @@ relevant local gate, deploy a complete immutable code artifact, and test at
 `https://leitbild.samsinn.app`.
 
 Routine code deployment never builds, copies, promotes, or deletes maps,
-terrain, scenery, reference datasets, OSRM data, or Control Instance state.
+terrain, scenery, reference datasets, OSRM data, or Simulation Run state.
 
 ## Normal loop
 
@@ -22,7 +22,7 @@ bun run deploy -- --full
 
 Quick mode always runs `bun run check`, `bun run test:deploy`, and
 `bun run build:ui`. The deploy suite covers the release transaction, discovery,
-server health, map artifacts, and the Control Instance API. Supply one or more
+server health, map artifacts, and the Simulation Run API. Supply one or more
 `--test <path-or-pattern>` options for additional affected behavior. `--full`
 runs all tests and cannot be combined with `--test`.
 
@@ -48,7 +48,7 @@ by `bun.lock` checksum, so ordinary source changes do not reinstall them.
 /opt/leitbild/deps/<lock-sha>         Linux node_modules for one lock
 /opt/leitbild/runtime/bun             app-private pinned Bun runtime
 
-/opt/leitbild/data                    persistent Control Instance state
+/opt/leitbild/data                    persistent Simulation Run state
 /opt/leitbild/maps                    persistent static map artifacts
 /opt/leitbild/reference               persistent reference datasets
 /opt/leitbild/osrm-data               persistent routing data

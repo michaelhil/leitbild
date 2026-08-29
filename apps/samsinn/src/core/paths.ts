@@ -22,11 +22,8 @@
 //         snapshot.json
 //         logs/*.jsonl
 //         memory/<agentName>/{notes.log,facts.json}
-//     .local-pack-migrated                      ← sentinel: drop-in dirs
-//                                                  moved into packs/local/
-//                                                  (commit P, one-shot)
 //
-// SAMSINN_HOME defaults to ~/.samsinn (preserves existing single-tenant UX).
+// SAMSINN_HOME defaults to ~/.samsinn.
 // ============================================================================
 
 import { homedir } from 'node:os'
@@ -40,10 +37,7 @@ export const samsinnHome = (): string =>
 
 // Shared (global) paths — registries, configs, packs dirs.
 //
-// Drop-in dirs (tools/skills/scripts/geodata) live INSIDE the synthetic
-// 'local' pack at packs/local/<subdir>/ since commit P. The migration
-// at boot moves them from their old top-level locations idempotently.
-// See migrate-local-pack.ts.
+// Authored tools, skills, scripts, and geodata live inside the local Pack.
 const localPack = (): string => join(samsinnHome(), 'packs', 'local')
 
 export const sharedPaths = {
@@ -88,8 +82,8 @@ export const isValidWorkspaceId = (id: string): id is WorkspaceId =>
   workspaceIdSchema.safeParse(id).success
 
 // Defense-in-depth: throws if a caller bypassed the boundary check. Cheap
-// guard that prevents accidental path traversal if any future call site
-// forgets to validate before passing into instancePaths/trashPath.
+// guard that prevents accidental path traversal if a future call site
+// forgets to validate before constructing Workspace paths.
 export const assertValidWorkspaceId: (id: string) => asserts id is WorkspaceId = (id) => {
   workspaceIdSchema.parse(id)
 }

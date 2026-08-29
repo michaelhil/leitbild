@@ -20,9 +20,8 @@
 // Results are cached for 5 min so the UI Browse view doesn't hammer the API.
 // ============================================================================
 
-import { stripPackPrefix } from './manifest.ts'
-
 const PREFIX = 'samsinn-pack-'
+const stripPackPrefix = (value: string): string => value.replace(/^samsinn-pack-/, '')
 const CACHE_TTL_MS = 5 * 60_000
 
 export interface RegistryPack {

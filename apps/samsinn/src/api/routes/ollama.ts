@@ -1,11 +1,11 @@
 import { json, errorResponse, parseBody } from './helpers.ts'
 import type { RouteEntry } from './types.ts'
 import type { SamsinnWorkspaceRuntime } from '../../main.ts'
-import { parseOllamaConfigPatch, type LLMGateway } from '../../llm/gateway.ts'
+import { parseOllamaConfigPatch, type OllamaGateway } from '../../llm/gateway.ts'
 
-// Guard: all /api/ollama/* routes need Ollama to be a configured provider.
+// Guard: all /ollama/* routes need Ollama to be a configured provider.
 // When Ollama is excluded from the router, these endpoints return 503.
-const requireOllama = (system: SamsinnWorkspaceRuntime): LLMGateway | Response => {
+const requireOllama = (system: SamsinnWorkspaceRuntime): OllamaGateway | Response => {
   if (!system.ollama) {
     return errorResponse('Ollama is not a configured provider in this deployment', 503)
   }
@@ -15,7 +15,7 @@ const requireOllama = (system: SamsinnWorkspaceRuntime): LLMGateway | Response =
 export const ollamaRoutes: RouteEntry[] = [
   {
     method: 'GET',
-    pattern: /^\/api\/ollama\/health$/,
+    pattern: /^\/ollama\/health$/,
     handler: (_req, _match, { system }) => {
       const gw = requireOllama(system); if (gw instanceof Response) return gw
       return json(gw.getHealth())
@@ -23,7 +23,7 @@ export const ollamaRoutes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/ollama\/metrics$/,
+    pattern: /^\/ollama\/metrics$/,
     handler: (_req, _match, { system }) => {
       const gw = requireOllama(system); if (gw instanceof Response) return gw
       return json(gw.getMetrics())
@@ -31,7 +31,7 @@ export const ollamaRoutes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/ollama\/models$/,
+    pattern: /^\/ollama\/models$/,
     handler: async (_req, _match, { system }) => {
       const gw = requireOllama(system); if (gw instanceof Response) return gw
       const health = gw.getHealth()
@@ -43,7 +43,7 @@ export const ollamaRoutes: RouteEntry[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/ollama\/models\/([^/]+)\/load$/,
+    pattern: /^\/ollama\/models\/([^/]+)\/load$/,
     handler: async (_req, match, { system }) => {
       const gw = requireOllama(system); if (gw instanceof Response) return gw
       const name = decodeURIComponent(match[1] ?? '')
@@ -58,7 +58,7 @@ export const ollamaRoutes: RouteEntry[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/ollama\/models\/([^/]+)\/unload$/,
+    pattern: /^\/ollama\/models\/([^/]+)\/unload$/,
     handler: async (_req, match, { system }) => {
       const gw = requireOllama(system); if (gw instanceof Response) return gw
       const name = decodeURIComponent(match[1] ?? '')
@@ -73,7 +73,7 @@ export const ollamaRoutes: RouteEntry[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/ollama\/reset-circuit$/,
+    pattern: /^\/ollama\/reset-circuit$/,
     handler: (_req, _match, { system }) => {
       const gw = requireOllama(system); if (gw instanceof Response) return gw
       gw.resetCircuitBreaker()
@@ -82,7 +82,7 @@ export const ollamaRoutes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/ollama\/config$/,
+    pattern: /^\/ollama\/config$/,
     handler: (_req, _match, { system }) => {
       const gw = requireOllama(system); if (gw instanceof Response) return gw
       return json(gw.getConfig())
@@ -90,7 +90,7 @@ export const ollamaRoutes: RouteEntry[] = [
   },
   {
     method: 'PUT',
-    pattern: /^\/api\/ollama\/config$/,
+    pattern: /^\/ollama\/config$/,
     handler: async (req, _match, { system }) => {
       const gw = requireOllama(system); if (gw instanceof Response) return gw
       gw.updateConfig(parseOllamaConfigPatch(await parseBody(req)))

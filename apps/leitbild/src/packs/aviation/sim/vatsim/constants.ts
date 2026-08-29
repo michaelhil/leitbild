@@ -27,7 +27,7 @@ export interface VatsimBbox {
 }
 
 // Same as the OpenSky default; VATSIM data is global, so we filter
-// client-side to keep the Control Instance's view scoped.
+// client-side to keep the Simulation Run's view scoped.
 export const NORWAY_BBOX: VatsimBbox = {
   lamin: 57.5,
   lomin: 3.0,

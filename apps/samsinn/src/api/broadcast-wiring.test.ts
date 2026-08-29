@@ -1,16 +1,16 @@
 // ============================================================================
-// Integration test: cookie-bound instances get full broadcast wiring.
+// Integration test: cookie-bound Workspaces get full broadcast wiring.
 //
 // The bug fixed in 5d73a8e was that wireWorkspaceRuntimeEvents was silently skipped
-// for non-boot instances because onWorkspaceRuntimeCreated ran before the registry's
+// for non-default Workspaces because onWorkspaceRuntimeCreated ran before the registry's
 // internal map.set() — autoSaverFor(id) returned null, the `if (autoSaver)`
-// guard short-circuited, and every cookie-bound instance booted with
+// guard short-circuited, and every cookie-bound Workspace booted with
 // setOnEvalEvent / setOnMessagePosted / state.subscribe all unwired.
 //
-// This test proves end-to-end that an instance loaded via the registry
+// This test proves end-to-end that a Workspace loaded via the registry
 // path (the cookie-bound code path) has live broadcast wiring: posting a
 // message into one of its rooms fans out via wsManager.broadcastToWorkspace
-// scoped to that instance.
+// scoped to that Workspace.
 //
 // First assertion is the harness sanity check: the system's snapshot has
 // at least one room. If that fails the test setup is broken and we'd be
@@ -31,7 +31,7 @@ import { newWorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
 const makeSetup = makeStubSetup
 
-describe('cookie-bound instance broadcast wiring (regression for 5d73a8e)', () => {
+describe('cookie-bound Workspace broadcast wiring (regression for 5d73a8e)', () => {
   let homeDir: string
 
   afterEach(async () => {
@@ -39,7 +39,7 @@ describe('cookie-bound instance broadcast wiring (regression for 5d73a8e)', () =
     delete process.env.SAMSINN_HOME
   })
 
-  test('routeMessage in a cookie-bound instance reaches broadcastToWorkspace', async () => {
+  test('routeMessage in a cookie-bound Workspace reaches broadcastToWorkspace', async () => {
     homeDir = await mkdtemp(join(tmpdir(), 'samsinn-streaming-'))
     process.env.SAMSINN_HOME = homeDir
 
@@ -74,7 +74,7 @@ describe('cookie-bound instance broadcast wiring (regression for 5d73a8e)', () =
       },
     }
 
-    // The bug only manifested for non-boot instances loaded by cookie. Use
+    // The bug only manifested for non-default Workspaces loaded by cookie. Use
     // an explicit cookie-shaped id (16 chars, lowercase alphanumeric) so we
     // exercise that exact path.
     const cookieId = newWorkspaceId()

@@ -1,4 +1,4 @@
-import type { CommandEnvelope, CommandResult, ControlInstanceEvent, OperationalObject } from '../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, SimulationRunEvent, OperationalObject } from '../core/model/index.ts'
 import { nowIso } from '../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../core/packs/protocol.ts'
 import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEmission, PackRuntimeEventHandler, PackRuntimeRealtimeInput, PackScenarioRuntimeConfig, PackRuntimeSnapshot } from './protocol.ts'
@@ -47,6 +47,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
 
   return {
     id: 'runtime-hub',
+    version: '1.0.0',
     packId: 'runtime-hub',
     acceptedCommandKinds: adapters.flatMap(adapter => adapter.acceptedCommandKinds),
     acceptedRealtimeInputTypes: adapters.flatMap(adapter => adapter.acceptedRealtimeInputTypes ?? []),
@@ -63,7 +64,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         return {
           adapter,
           connection: await adapter.connect({
-            controlInstanceId: config.controlInstanceId,
+            simulationRunId: config.simulationRunId,
             ...(scenario === undefined ? {} : { scenario }),
             ...(initialObjects === undefined ? {} : { initialObjects }),
             ...(config.runtimeStateStores?.[adapter.id] === undefined
@@ -85,7 +86,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
           throw new Error(`duplicate runtime object ids from runtimes: ${duplicates.join(', ')}`)
         }
         return {
-          controlInstanceId: config.controlInstanceId,
+          simulationRunId: config.simulationRunId,
           objects,
           capturedAt: nowIso(),
         }
@@ -142,7 +143,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         receiveRealtimeInput,
         commandEventPersistence,
         query,
-        observeCommittedEvents: async (events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => {
+        observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
           await Promise.all(connections.map(({ connection }) => connection.observeCommittedEvents(events)))
         },
         setClock: async (clock): Promise<void> => {

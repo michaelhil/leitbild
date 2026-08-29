@@ -12,13 +12,13 @@ Leitbild also introduces separate scenario and mission definition schemas:
 - **Mission Definition** describes goals, objectives, tasks, stages, triggers, actions, and evaluation metrics.
 - **Mission Progress State** tracks runtime progress separately from the reusable mission definition.
 
-Domain interaction rules live in packs. Objects carry capabilities, resources, load, capacity, state, and context, but they do not contain executable behavior. A simulation instance may treat an object as the source or subject of an event, then emit ordered `PackRuntimeEvent`s through the adapter.
+Domain interaction rules live in Packs. Objects carry capabilities, resources, load, capacity, state, and context, but they do not contain executable behavior. A Simulation Run may treat an object as the source or subject of an event, then emit ordered `PackRuntimeEvent`s through the Pack Runtime.
 
-Scenario Definitions are now the only production startup format for new control instances. Restored control instances are initialized from persisted snapshots/history. Domain seed factories are rejected because they create a second initialization model beside scenarios.
+Scenario Definitions are now the only production startup format for new simulation runs. Restored simulation runs are initialized from persisted snapshots/history. Domain seed factories are rejected because they create a second initialization model beside scenarios.
 
 Scenarios are top-level compositions, not pack-owned files. They declare active pack ids, optional provider overrides keyed by pack id, initial operational objects, and provider configs keyed by pack id. The Scenario Catalog resolves those author-facing pack choices into internal provider ids before the Simulation Hub starts providers and gives each provider only its relevant initial objects/config.
 
-Scenario Definitions may include a small declarative Scenario Script. V1 script steps are scheduled relative to control-instance scenario start and may show guidance, hide guidance, highlight objects, clear highlights, upsert objects, or delete objects. Script actions are committed as ordered Domain Events by the Control Instance runtime. Script progress belongs to the running Control Instance snapshot, not to the reusable Scenario Definition.
+Scenario Definitions may include a small declarative Scenario Script. V1 script steps are scheduled relative to simulation-run scenario start and may show guidance, hide guidance, highlight objects, clear highlights, upsert objects, or delete objects. Script actions are committed as ordered Domain Events by the Simulation Run runtime. Script progress belongs to the running Simulation Run snapshot, not to the reusable Scenario Definition.
 
 ## Rationale
 
@@ -34,7 +34,7 @@ Scenario and mission are also separate concepts. Scenario data initializes a wor
 - Domain packs still own `packData` schemas.
 - Context schemas live in core because the awareness concept is cross-domain.
 - Agent context views are derived on demand and are not persisted as canonical state.
-- New control instances must be created through a Scenario Definition selected from the scenario catalog.
+- New simulation runs must be created through a Scenario Definition selected from the scenario catalog.
 - Built-in scenarios live at the top level and activate packs through the Scenario Catalog.
 - Scenario scripts can drive onboarding/tutorial flow and timed scenario evolution without reintroducing hidden seed factories.
 - Scenario guidance/highlights are part of projected state so reloads and multiple clients stay coherent.

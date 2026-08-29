@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, ControlInstanceEvent, ObjectId, OperationalObject, SignalId, SimulationClockState } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, SimulationRunEvent, ObjectId, OperationalObject, SignalId, SimulationClockState } from '../../../core/model/index.ts'
 import { nowIso } from '../../../core/model/index.ts'
 import type {
   PackRuntimeAdapter,
@@ -63,7 +63,7 @@ const emitPackRuntimeEvents = (
 
 const emitRuntimeFailure = (config: {
   readonly handlers: ReadonlySet<PackRuntimeEventHandler>
-  readonly controlInstanceId: PackRuntimeConnectionConfig['controlInstanceId']
+  readonly simulationRunId: PackRuntimeConnectionConfig['simulationRunId']
   readonly error: unknown
 }): void => {
   const at = nowIso()
@@ -73,7 +73,7 @@ const emitRuntimeFailure = (config: {
     provenance: { source: 'simulator', adapterId: processPlantSimAdapterId },
     signal: {
       id: `process-plant-runtime-failed:${randomUUID()}` as SignalId,
-      controlInstanceId: config.controlInstanceId,
+      simulationRunId: config.simulationRunId,
       at,
       source: { kind: 'simulation', id: processPlantSimRuntimeId },
       targets: [{ kind: 'broadcast' }],
@@ -89,6 +89,7 @@ const emitRuntimeFailure = (config: {
 
 export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter => ({
   id: processPlantSimRuntimeId,
+  version: '1.0.0',
   packId: processPlantPackId,
   acceptedCommandKinds: [processPlantControlWriteCommandKind, processPlantIcLifecycleCommandKind],
   queryKinds: processPlantQueryKinds,
@@ -144,7 +145,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         events.push(...(protection?.evaluate({
           runtime,
           elapsedMs: runtime.elapsedMs(),
-          controlInstanceId: config.controlInstanceId,
+          simulationRunId: config.simulationRunId,
           sourceRuntimeId: processPlantSimRuntimeId,
         }) ?? []))
         telemetry?.recordDueSamples(runtime)
@@ -175,7 +176,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           clearInterval(interval)
           emitRuntimeFailure({
             handlers,
-            controlInstanceId: config.controlInstanceId,
+            simulationRunId: config.simulationRunId,
             error,
           })
         }
@@ -185,7 +186,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
 
     return {
       getSnapshot: async () => ({
-        controlInstanceId: config.controlInstanceId,
+        simulationRunId: config.simulationRunId,
         objects: [...objectsById.values()],
         capturedAt: nowIso(),
       }),
@@ -211,7 +212,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
               id: payload.data.lifecycleId,
               action: payload.data.action,
               elapsedMs: system.runtime.elapsedMs(),
-              controlInstanceId: config.controlInstanceId,
+              simulationRunId: config.simulationRunId,
               sourceRuntimeId: processPlantSimRuntimeId,
               actorId: command.actorId,
               ...(command.clientId === undefined ? {} : { clientId: command.clientId }),
@@ -275,7 +276,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           at: nowIso(),
         })
       },
-      observeCommittedEvents: async (events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => {
+      observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
         for (const event of events) {
           if (event.type === 'object.upserted' && processPlantUnitSystemId(event.object) !== null) {
             objectsById.set(event.object.id, event.object)

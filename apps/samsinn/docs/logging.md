@@ -1,6 +1,6 @@
 # Observational logging
 
-Append-only JSONL event stream capturing everything significant that happens in a running samsinn instance. Designed for:
+Append-only JSONL event stream capturing everything significant that happens in a running Samsinn Workspace. Designed for:
 
 - **Control-room studies** — multi-agent advisory tools used during real operations; retrospective analysis of operator ↔ agent ↔ tool dynamics.
 - **Usage audits** — who used what, when, and what did the agents say.
@@ -66,7 +66,7 @@ get_logging()  →  {enabled, dir, sessionId, kinds, currentFile, stats: {eventC
 | Control | Env var | REST field | Default |
 |---|---|---|---|
 | On/off | `SAMSINN_LOG_ENABLED=1` | `enabled: true` | `false` |
-| Output directory | `SAMSINN_LOG_DIR` | `dir` | `$SAMSINN_HOME/instances/<id>/logs/` |
+| Output directory | `SAMSINN_LOG_DIR` | `dir` | `$SAMSINN_HOME/workspaces/<workspaceId>/samsinn/logs/` |
 | Session identifier | `SAMSINN_SESSION_ID` | `sessionId` | `session-<ts>-<shortId>` |
 | Kind filter | `SAMSINN_LOG_KINDS` (comma-separated) | `kinds: string[]` | `["*"]` |
 
@@ -76,7 +76,7 @@ Changing `dir` at runtime behaves the same way — old file closes, new file ope
 
 ## File layout
 
-In multi-Workspace deploys, each instance writes to its own log directory under `$SAMSINN_HOME/instances/<id>/logs/`. The `dir` config above is the per-Workspace default; override only if you want to merge or relocate.
+Each Workspace writes to its Samsinn-owned log directory under `$SAMSINN_HOME/workspaces/<workspaceId>/samsinn/logs/`. Override the per-Workspace default only when logs deliberately need another destination.
 
 ```
 <dir>/

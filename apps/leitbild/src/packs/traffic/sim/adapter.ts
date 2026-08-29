@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, ControlInstanceEvent, GeoJsonLineString, GeoJsonPolygon, IsoTimestamp, ObjectId, OperationalObject } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, SimulationRunEvent, GeoJsonLineString, GeoJsonPolygon, IsoTimestamp, ObjectId, OperationalObject } from '../../../core/model/index.ts'
 import { confirmedFact, interactionSignalSchema, nowIso, type InteractionSignal, type SignalId } from '../../../core/model/index.ts'
 import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler } from '../../../simulation/protocol.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
@@ -119,7 +119,7 @@ const trafficChangedSignalEvent = (
 ): PackRuntimeEvent => {
   const signal = interactionSignalSchema.parse({
     id: `signal:${randomUUID()}` as SignalId,
-    controlInstanceId: command.controlInstanceId,
+    simulationRunId: command.simulationRunId,
     at,
     source: { kind: 'object', id: object.id, runtimeId: trafficSimRuntimeId },
     targets: [{ kind: 'broadcast' }],
@@ -145,6 +145,7 @@ export const createLocalTrafficPackRuntimeAdapter = (adapterConfig: {
   readonly routing?: RoutingAdapter
 } = {}): PackRuntimeAdapter => ({
   id: trafficSimRuntimeId,
+  version: '1.0.0',
   packId: trafficPackId,
   acceptedCommandKinds: [createTrafficConditionCommandKind],
   queryKinds: trafficQueryKinds,
@@ -159,7 +160,7 @@ export const createLocalTrafficPackRuntimeAdapter = (adapterConfig: {
 
     return {
       getSnapshot: async () => ({
-        controlInstanceId: config.controlInstanceId,
+        simulationRunId: config.simulationRunId,
         objects: [...objects.values()],
         capturedAt: nowIso(),
       }),
@@ -221,7 +222,7 @@ export const createLocalTrafficPackRuntimeAdapter = (adapterConfig: {
           objects: [...objects.values()],
           at: nowIso(),
         }),
-      observeCommittedEvents: async (events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => {
+      observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
         for (const event of events) {
           if (event.type === 'object.upserted' && event.object.packId === trafficPackId) objects.set(event.object.id, event.object)
           if (event.type === 'object.deleted') objects.delete(event.objectId)

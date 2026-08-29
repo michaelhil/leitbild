@@ -42,27 +42,26 @@ export interface RoomState {
   readonly members: ReadonlyArray<string>
   readonly summaryConfig?: SummaryConfig
   readonly latestSummary?: string
-  // Pack namespaces activated in this room — the COMPLETE truth as of v24.
+  // Pack ids activated in this Room — the complete truth.
   // Includes system packs (core, local) and bundled default-active packs
   // (demos, pwr-ops). No implicit augmentation at read time. Empty list is
   // valid ("user has deactivated everything") and distinguishable from absent.
   readonly activePacks: ReadonlyArray<string>
-  // Optional binding to a Leitbild Control Instance — when set, a mirror
-  // service streams the control instance's events into this room as
+  // Optional binding to a Leitbild Simulation Run — when set, a mirror
+  // service streams the simulation run's events into this room as
   // system messages. See src/integrations/leitbild/. Absent on rooms with
   // no Leitbild binding; persisted in snapshot from v25 onward.
   readonly leitbildMirror?: LeitbildMirrorConfig
 }
 
-// === Leitbild mirror binding (V1: room-scoped, read-only) ===
+// === Leitbild mirror binding (Room-scoped, read-only) ===
 //
 // Lives in core because Room state owns it; the mirror service
 // (src/integrations/leitbild/mirror-service.ts) reads/writes via the
 // Room interface. Structural; integration code may extend.
 
 export interface LeitbildMirrorConfig {
-  readonly baseUrl: string         // e.g. "https://leitbild.samsinn.app"
-  readonly workspaceId: string      // Leitbild Control Instance id
+  readonly simulationRunId: string
   readonly format: 'summary' | 'full'
 }
 
@@ -118,16 +117,16 @@ export interface Room {
   // Current `room_summary` at top of stream, if any.
   readonly getCurrentCompressionMessage: () => Message | undefined
 
-  // Active packs — the COMPLETE namespace list of packs active in this room
-  // (v24+). Includes system packs (core, local) and bundled default-active
-  // packs. New rooms get defaultActiveNamespaces() seeded at construction
+  // Active Packs — the complete Pack-id list active in this Room.
+  // Includes system Packs (core, local) and bundled default-active
+  // packs. New rooms get defaultActivePackIds() seeded at construction
   // (see src/packs/bundled.ts). The activation route enforces that system
   // packs can never be dropped from this list.
   readonly getActivePacks: () => ReadonlyArray<string>
-  readonly setActivePacks: (namespaces: ReadonlyArray<string>) => void
+  readonly setActivePacks: (packIds: ReadonlyArray<string>) => void
 
-  // Leitbild mirror binding (V1: room-scoped, read-only). Set/cleared via
-  // PUT/DELETE /api/rooms/:name/leitbild-mirror; the mirror service reacts
+  // Leitbild mirror binding (Room-scoped, read-only). Set/cleared via
+  // PUT/DELETE on the Workspace-scoped Room mirror resource; the mirror service reacts
   // to changes by attaching/detaching its subscription.
   readonly getLeitbildMirror: () => LeitbildMirrorConfig | undefined
   readonly setLeitbildMirror: (config: LeitbildMirrorConfig | undefined) => void

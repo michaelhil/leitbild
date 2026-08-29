@@ -13,7 +13,7 @@ import type { RoomProfile, UIMessage } from './render/render-types.ts'
 
 export const fetchRoomMessages = async (_roomId: string, roomName: string): Promise<void> => {
   const data = await safeFetchJson<{ profile: RoomProfile; messages: UIMessage[] }>(
-    `/api/rooms/${encodeURIComponent(roomName)}?limit=1000`,
+    `/rooms/${encodeURIComponent(roomName)}?limit=1000`,
   )
   if (!data) return
   $roomMessages.setKey(data.profile.id, data.messages)
@@ -21,7 +21,7 @@ export const fetchRoomMessages = async (_roomId: string, roomName: string): Prom
 
 export const fetchRoomMembers = async (roomId: string, roomName: string): Promise<void> => {
   const members = await safeFetchJson<Array<{ id: string }>>(
-    `/api/rooms/${encodeURIComponent(roomName)}/members`,
+    `/rooms/${encodeURIComponent(roomName)}/members`,
   )
   if (!members) return
   $roomMembers.setKey(roomId, members.map(m => m.id))

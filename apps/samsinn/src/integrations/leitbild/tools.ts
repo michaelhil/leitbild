@@ -1,8 +1,8 @@
 // ============================================================================
-// Leitbild agent tools (V2.A — read-only).
+// Leitbild Agent tools — read-only surface.
 //
 // Four tools become callable by an AI agent that has BOTH:
-//   - a leitbildBinding in its AIAgentConfig (sets baseUrl + workspaceId)
+//   - a leitbildBinding in its AIAgentConfig (selects Simulation Run + role)
 //   - the tool name in its tools[] allowlist
 //
 // All tools resolve the binding at execution time via the caller's agent
@@ -12,13 +12,13 @@
 // Per-agent snapshot cache (TTL ~5s) so multiple lb_state / lb_object /
 // lb_scenario calls in a single agent turn don't all roundtrip.
 //
-// Commands (lb_command) live in command-tools.ts (V2.B). This file is
+// Commands (`lb_command`) live in command-tools.ts. This file is
 // strictly the read surface.
 // ============================================================================
 
 import type { Tool, ToolContext, ToolResult } from '../../core/types/tool.ts'
-import type { LeitbildAgentBinding } from '../../core/types/agent.ts'
-import type { ControlInstanceSnapshot } from './types.ts'
+import type { ResolvedLeitbildAgentBinding } from './types.ts'
+import type { SimulationRunSnapshot } from './types.ts'
 import { createLeitbildClient } from './client.ts'
 
 // === Deps wiring (allows tests to inject without spinning up the System) ===
@@ -26,19 +26,17 @@ import { createLeitbildClient } from './client.ts'
 export interface LeitbildToolDeps {
   // Look up an agent's Leitbild binding by callerId. Returns undefined
   // when the caller has no binding (tool returns a helpful error then).
-  readonly getBinding: (agentId: string) => LeitbildAgentBinding | undefined
-  // Optional: per-tenant scope for the LeitbildClient pool. Bootstrap
-  // wires this to return the cookie-bound instance id that owns the
-  // agent, so cross-tenant lifecycles stay isolated even though the
-  // tool is registered process-wide. Tests/single-tenant omit and
-  // share the global pool. Audit Finding 2.1.3.
+  readonly getBinding: (agentId: string) => ResolvedLeitbildAgentBinding | undefined
+  // Optional Workspace scope for the LeitbildClient pool. Bootstrap wires
+  // this to the Workspace that owns the Agent, keeping client lifecycles
+  // isolated even though the tool is registered process-wide.
   readonly getScope?: (agentId: string) => string | undefined
 }
 
 // === Per-agent snapshot cache ===
 
 interface CachedSnapshot {
-  readonly snapshot: ControlInstanceSnapshot
+  readonly snapshot: SimulationRunSnapshot
   readonly fetchedAt: number
 }
 
@@ -48,22 +46,22 @@ interface CachedSnapshot {
 // scenarios show event-volume issues where snapshot freshness matters.
 const SNAPSHOT_TTL_MS = 5_000
 
-const snapshotCache = new Map<string, CachedSnapshot>() // key: `${agentId}:${baseUrl}:${workspaceId}`
+const snapshotCache = new Map<string, CachedSnapshot>()
 
-const cacheKey = (agentId: string, binding: LeitbildAgentBinding): string =>
-  `${agentId}:${binding.baseUrl}:${binding.workspaceId}`
+const cacheKey = (agentId: string, binding: ResolvedLeitbildAgentBinding): string =>
+  `${agentId}:${binding.moduleBinding.baseUrl}:${binding.workspaceId}:${binding.simulationRunId}`
 
 const getCachedSnapshot = async (
   agentId: string,
-  binding: LeitbildAgentBinding,
+  binding: ResolvedLeitbildAgentBinding,
   scope?: string,
-): Promise<ControlInstanceSnapshot> => {
+): Promise<SimulationRunSnapshot> => {
   const key = cacheKey(agentId, binding)
   const now = Date.now()
   const cached = snapshotCache.get(key)
   if (cached && now - cached.fetchedAt < SNAPSHOT_TTL_MS) return cached.snapshot
-  const client = createLeitbildClient(binding.baseUrl, scope ? { scope } : {})
-  const snapshot = await client.getSnapshot(binding.workspaceId)
+  const client = createLeitbildClient(binding, scope ? { scope } : {})
+  const snapshot = await client.getSnapshot(binding.simulationRunId)
   snapshotCache.set(key, { snapshot, fetchedAt: now })
   return snapshot
 }
@@ -71,9 +69,9 @@ const getCachedSnapshot = async (
 export const __clearLeitbildToolCache = (): void => { snapshotCache.clear() }
 
 // Evict all cached snapshots for one agent. Called when the agent is
-// removed from the system so per-(agent,instance) entries don't leak
+// removed from the system so per-(Agent, Run) entries do not leak
 // forever in a long-running process. Cheap O(n) walk; n is bounded by
-// distinct (agent × leitbild-instance) pairs ever queried.
+// distinct (Agent × Simulation Run) pairs ever queried.
 export const clearLeitbildToolCacheForAgent = (agentId: string): void => {
   const prefix = `${agentId}:`
   for (const key of snapshotCache.keys()) {
@@ -86,11 +84,11 @@ export const clearLeitbildToolCacheForAgent = (agentId: string): void => {
 const requireBinding = (
   deps: LeitbildToolDeps,
   ctx: ToolContext,
-): LeitbildAgentBinding | { error: string } => {
+): ResolvedLeitbildAgentBinding | { error: string } => {
   const binding = deps.getBinding(ctx.callerId)
   if (!binding) {
     return {
-      error: 'No leitbildBinding configured for this agent. Add { baseUrl, workspaceId, role } to the agent config to use lb_* tools.',
+      error: 'No Leitbild Simulation Run is configured for this agent or its Workspace.',
     }
   }
   return binding
@@ -103,7 +101,7 @@ const ok = (data: unknown): ToolResult => ({ success: true, data })
 
 const createLbState = (deps: LeitbildToolDeps): Tool => ({
   name: 'lb_state',
-  description: 'Read the current Leitbild Control Instance snapshot for the bound deployment. Returns clock, object count, scenario id, and a summarized object inventory by domain. Use when you need fresh authoritative state before reasoning or acting.',
+  description: 'Read the current Leitbild Simulation Run snapshot for the bound deployment. Returns clock, object count, scenario id, and a summarized object inventory by domain. Use when you need fresh authoritative state before reasoning or acting.',
   returns: 'JSON: { scenarioId, clock, objectCount, objectsByDomain }',
   parameters: { type: 'object', properties: {}, additionalProperties: false },
   execute: async (_params, ctx) => {
@@ -132,7 +130,7 @@ const createLbState = (deps: LeitbildToolDeps): Tool => ({
 
 const createLbObject = (deps: LeitbildToolDeps): Tool => ({
   name: 'lb_object',
-  description: 'Read one specific operational object from the bound Leitbild Control Instance by id. Returns the full domain payload (label, status, position, domain-specific fields). Use after lb_state when you need details on a particular object.',
+  description: 'Read one specific operational object from the bound Leitbild Simulation Run by id. Returns the full domain payload (label, status, position, domain-specific fields). Use after lb_state when you need details on a particular object.',
   returns: 'JSON: the operational object record, or { error } if not found',
   parameters: {
     type: 'object',
@@ -181,8 +179,8 @@ const createLbQuery = (deps: LeitbildToolDeps): Tool => ({
     const payload = (params.payload as Record<string, unknown> | undefined) ?? {}
     if (!packId || !kind) return fail('lb_query requires packId and kind')
     try {
-      const client = createLeitbildClient(binding.baseUrl, { scope: deps.getScope?.(ctx.callerId) })
-      const body = await client.callPackQuery(binding.workspaceId, packId, kind, payload)
+      const client = createLeitbildClient(binding, { scope: deps.getScope?.(ctx.callerId) })
+      const body = await client.callPackQuery(binding.simulationRunId, packId, kind, payload)
       return ok(body)
     } catch (err) {
       return fail(`lb_query failed: ${(err as Error).message}`)
@@ -192,14 +190,14 @@ const createLbQuery = (deps: LeitbildToolDeps): Tool => ({
 
 const createLbScenario = (deps: LeitbildToolDeps): Tool => ({
   name: 'lb_scenario',
-  description: 'Read the active scenario metadata for the bound Leitbild Control Instance (title, description, scripted phases). Use once at start of reasoning to ground yourself in the scenario.',
+  description: 'Read the active scenario metadata for the bound Leitbild Simulation Run (title, description, scripted phases). Use once at start of reasoning to ground yourself in the scenario.',
   returns: 'JSON: { id, title, description, ... } or { error } if no scenario',
   parameters: { type: 'object', properties: {}, additionalProperties: false },
   execute: async (_params, ctx) => {
     const binding = requireBinding(deps, ctx)
     if ('error' in binding) return fail(binding.error)
     try {
-      const client = createLeitbildClient(binding.baseUrl, { scope: deps.getScope?.(ctx.callerId) })
+      const client = createLeitbildClient(binding, { scope: deps.getScope?.(ctx.callerId) })
       const snap = await getCachedSnapshot(ctx.callerId, binding, deps.getScope?.(ctx.callerId))
       if (!snap.scenarioId) return fail('Snapshot has no scenarioId.')
       const scenario = await client.getScenario(snap.scenarioId)
@@ -211,11 +209,11 @@ const createLbScenario = (deps: LeitbildToolDeps): Tool => ({
   },
 })
 
-// === lb_dispatch_context (V2.A composite) ===
+// === lb_dispatch_context composite ===
 //
 // One-shot read tool that bundles everything an agent typically needs to
 // reason about a dispatch decision: scenario meta, current snapshot, and
-// every pack-query advertised in the per-CI capabilities manifest, called
+// every Pack query advertised in the Simulation Run capability manifest, called
 // in parallel with empty payloads. Queries that require a non-empty payload
 // surface as { ok: false, reason } in their slot — agents see the gap and
 // can follow up with a targeted lb_query call.
@@ -229,14 +227,14 @@ interface CapabilitiesResponse {
 
 const createLbDispatchContext = (deps: LeitbildToolDeps): Tool => ({
   name: 'lb_dispatch_context',
-  description: 'Single composite read that bundles current snapshot summary, scenario metadata, capabilities (active packs + accepted command kinds + wikiRefs), and every pack-query advertised by the per-CI capabilities manifest (called in parallel with empty payload). Use this as the first call when you need a broad picture before reasoning. Queries that require payloads will show as failed slots — call lb_query directly with the right payload to fill them.',
+  description: 'Single composite read that bundles current snapshot summary, scenario metadata, capabilities (active Packs + accepted command kinds + wikiRefs), and every Pack query advertised by the Simulation Run capability manifest (called in parallel with empty payload). Use this as the first call when you need a broad picture before reasoning. Queries that require payloads will show as failed slots — call lb_query directly with the right payload to fill them.',
   returns: 'JSON: { state, scenario, capabilities, queries: { <packId>: { <kind>: { ok, result|reason } } } }',
   parameters: { type: 'object', properties: {}, additionalProperties: false },
   execute: async (_params, ctx) => {
     const binding = requireBinding(deps, ctx)
     if ('error' in binding) return fail(binding.error)
     try {
-      const client = createLeitbildClient(binding.baseUrl, { scope: deps.getScope?.(ctx.callerId) })
+      const client = createLeitbildClient(binding, { scope: deps.getScope?.(ctx.callerId) })
       // Fetch state, scenario, and capabilities in parallel. All three
       // call paths now route through client.* methods that share header
       // injection + URL construction (audit Findings 2.1.5 + 2.1.6).
@@ -247,7 +245,7 @@ const createLbDispatchContext = (deps: LeitbildToolDeps): Tool => ({
           if (!snap.scenarioId) return undefined
           return client.getScenario(snap.scenarioId)
         })(),
-        client.getCapabilities(binding.workspaceId).catch((err: Error) => {
+        client.getCapabilities(binding.simulationRunId).catch((err: Error) => {
           // Capabilities is the manifest-rel-gated endpoint — surface the
           // failure as a typed fail rather than throwing through the
           // Promise.all (which would lose snapshot + scenario context).
@@ -273,7 +271,7 @@ const createLbDispatchContext = (deps: LeitbildToolDeps): Tool => ({
       const queryResults = await Promise.all(
         kindsToCall.map(async ({ packId, kind }) => {
           try {
-            const body = await client.callPackQuery(binding.workspaceId, packId, kind, {}) as {
+            const body = await client.callPackQuery(binding.simulationRunId, packId, kind, {}) as {
               readonly response?: { readonly ok?: boolean; readonly result?: unknown; readonly error?: { readonly message?: string } }
             }
             if (body.response?.ok === false) return { packId, kind, ok: false as const, reason: body.response.error?.message ?? 'pack rejected' }

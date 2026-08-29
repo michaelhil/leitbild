@@ -72,7 +72,7 @@ const snapshotDiagnostics = (
 
 const contextKeyFor = (
   context: PackPresentationComposerContext,
-): string => `${context.pack?.id ?? 'no-pack'}:${context.currentTime ?? 'no-time'}`
+): string => `${context.pack?.descriptor.id ?? 'no-pack'}:${context.currentTime ?? 'no-time'}`
 
 const objectsForPackLookup = (
   objects: ReadonlyArray<OperationalObject>,
@@ -136,7 +136,7 @@ export const createPackPresentationComposer = (
       tierDiagnostics.cacheMisses += 1
       const startedAtMs = nowMs()
       try {
-        const presentation = context.pack.presentObject(object, {
+        const presentation = context.pack.presentation.presentObject(object, {
           objects: context.objects,
           objectsForPack,
           tier,

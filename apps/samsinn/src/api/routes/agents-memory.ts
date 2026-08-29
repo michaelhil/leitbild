@@ -1,6 +1,6 @@
 // Agent memory introspection routes — separated from routes/agents.ts to
 // keep that file focused on agent CRUD + per-agent config. All five
-// endpoints below operate on /api/agents/:name/memory[/...] paths.
+// endpoints below operate on /agents/:name/memory[/...] paths.
 
 import { json, errorResponse } from './helpers.ts'
 import { asAIAgent } from '../../agents/shared.ts'
@@ -9,7 +9,7 @@ import type { RouteEntry } from './types.ts'
 export const agentMemoryRoutes: RouteEntry[] = [
   {
     method: 'GET',
-    pattern: /^\/api\/agents\/([^/]+)\/memory$/,
+    pattern: /^\/agents\/([^/]+)\/memory$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const agent = system.team.getAgent(name)
@@ -21,7 +21,7 @@ export const agentMemoryRoutes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/agents\/([^/]+)\/memory\/([^/]+)$/,
+    pattern: /^\/agents\/([^/]+)\/memory\/([^/]+)$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const roomId = decodeURIComponent(match[2]!)
@@ -34,7 +34,7 @@ export const agentMemoryRoutes: RouteEntry[] = [
   },
   {
     method: 'DELETE',
-    pattern: /^\/api\/agents\/([^/]+)\/memory\/([^/]+)\/([^/]+)$/,
+    pattern: /^\/agents\/([^/]+)\/memory\/([^/]+)\/([^/]+)$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const roomId = decodeURIComponent(match[2]!)
@@ -50,7 +50,7 @@ export const agentMemoryRoutes: RouteEntry[] = [
   },
   {
     method: 'DELETE',
-    pattern: /^\/api\/agents\/([^/]+)\/memory\/([^/]+)$/,
+    pattern: /^\/agents\/([^/]+)\/memory\/([^/]+)$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const roomId = decodeURIComponent(match[2]!)
@@ -64,7 +64,7 @@ export const agentMemoryRoutes: RouteEntry[] = [
   },
   {
     method: 'DELETE',
-    pattern: /^\/api\/agents\/([^/]+)\/memory$/,
+    pattern: /^\/agents\/([^/]+)\/memory$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const agent = system.team.getAgent(name)

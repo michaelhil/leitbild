@@ -1,3 +1,4 @@
+import { apiFetch } from "./api-client.ts"
 // ============================================================================
 // Agent Inspector — Inline view for agent config + memory.
 //
@@ -52,7 +53,7 @@ const renderMemoryMessage = (
   delBtn.title = 'Delete from agent memory'
   delBtn.onclick = async (e) => {
     e.stopPropagation()
-    await safeFetchJson(`/api/agents/${agentEnc}/memory/${encodeURIComponent(roomId)}/${encodeURIComponent(msg.id)}`, { method: 'DELETE' })
+    await safeFetchJson(`/agents/${agentEnc}/memory/${encodeURIComponent(roomId)}/${encodeURIComponent(msg.id)}`, { method: 'DELETE' })
     row.remove()
   }
   row.appendChild(delBtn)
@@ -147,7 +148,7 @@ const renderTagsField = (container: HTMLElement, agentEnc: string, initialTags: 
   saveBtn.onclick = async () => {
     if (input.value === saved) return
     const tags = parseTags(input.value)
-    await safeFetchJson(`/api/agents/${agentEnc}`, {
+    await safeFetchJson(`/agents/${agentEnc}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tags }),
     })
@@ -170,7 +171,7 @@ export const renderAgentInspector = (container: HTMLElement, agentName: string):
   container.innerHTML = '<div class="text-sm text-text-muted">Loading…</div>'
 
   const render = async (): Promise<void> => {
-    const agentRes = await safeFetchJson<Record<string, unknown>>(`/api/agents/${enc}`)
+    const agentRes = await safeFetchJson<Record<string, unknown>>(`/agents/${enc}`)
     if (!agentRes) {
       container.innerHTML = '<div class="text-sm text-danger">Failed to load agent data</div>'
       return
@@ -194,7 +195,7 @@ export const renderAgentInspector = (container: HTMLElement, agentName: string):
     header.appendChild(nameEl)
 
     // Inline rename — humans only (AI rename deferred). Click pencil →
-    // input replaces nameEl → Enter saves via PATCH /api/agents/:name →
+    // input replaces nameEl → Enter saves via PATCH /agents/:name →
     // optimistic UI; cross-tab sync via the agent_renamed WS event.
     if (!isAI) {
       const pencil = icon('pencil', { size: 14 })
@@ -219,7 +220,7 @@ export const renderAgentInspector = (container: HTMLElement, agentName: string):
           const next = input.value.trim()
           if (!next || next === current) { restore(current); return }
           try {
-            const res = await fetch(`/api/agents/${encodeURIComponent(current)}`, {
+            const res = await apiFetch(`/agents/${encodeURIComponent(current)}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ name: next }),
@@ -263,7 +264,7 @@ export const renderAgentInspector = (container: HTMLElement, agentName: string):
       modelSelect.onchange = async () => {
         if (!modelSelect.value) return
         const newModel = modelSelect.value
-        await safeFetchJson(`/api/agents/${enc}`, {
+        await safeFetchJson(`/agents/${enc}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: newModel }),
         })
@@ -312,7 +313,7 @@ export const renderAgentInspector = (container: HTMLElement, agentName: string):
         'Agent Persona',
         (agentRes.persona as string) ?? '',
         async (val) => {
-          await safeFetchJson(`/api/agents/${enc}`, {
+          await safeFetchJson(`/agents/${enc}`, {
             method: 'PATCH', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ persona: val }),
           })
@@ -336,7 +337,7 @@ export const renderAgentInspector = (container: HTMLElement, agentName: string):
         'Description',
         descValue,
         async (val) => {
-          await safeFetchJson(`/api/agents/${enc}`, {
+          await safeFetchJson(`/agents/${enc}`, {
             method: 'PATCH', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ description: val }),
           })
@@ -351,7 +352,7 @@ export const renderAgentInspector = (container: HTMLElement, agentName: string):
 
     // --- Memory section (AI only) ---
     if (isAI) {
-      const stats = await safeFetchJson<MemoryStats>(`/api/agents/${enc}/memory`)
+      const stats = await safeFetchJson<MemoryStats>(`/agents/${enc}/memory`)
       if (stats) {
         const memoryRow = document.createElement('div')
         memoryRow.className = 'flex items-center justify-between mb-2 mt-2'
@@ -368,7 +369,7 @@ export const renderAgentInspector = (container: HTMLElement, agentName: string):
           clearAllBtn.className = 'text-xs text-danger hover:text-danger-hover px-2 py-1 rounded hover:bg-surface-muted'
           clearAllBtn.textContent = 'Clear All'
           clearAllBtn.onclick = async () => {
-            await safeFetchJson(`/api/agents/${enc}/memory`, { method: 'DELETE' })
+            await safeFetchJson(`/agents/${enc}/memory`, { method: 'DELETE' })
             await render()
           }
           memoryRow.appendChild(clearAllBtn)
@@ -394,7 +395,7 @@ export const renderAgentInspector = (container: HTMLElement, agentName: string):
             clearBtn.textContent = 'Clear'
             clearBtn.onclick = async (e) => {
               e.stopPropagation()
-              await safeFetchJson(`/api/agents/${enc}/memory/${encodeURIComponent(room.roomId)}`, { method: 'DELETE' })
+              await safeFetchJson(`/agents/${enc}/memory/${encodeURIComponent(room.roomId)}`, { method: 'DELETE' })
               await render()
             }
             roomHeader.appendChild(clearBtn)
@@ -417,7 +418,7 @@ export const renderAgentInspector = (container: HTMLElement, agentName: string):
             messagesContainer.innerHTML = ''
 
             type MessageItem = { id: string; senderName?: string; content: string; timestamp: number }
-            const messages = await safeFetchJson<MessageItem[]>(`/api/agents/${enc}/memory/${encodeURIComponent(room.roomId)}`)
+            const messages = await safeFetchJson<MessageItem[]>(`/agents/${enc}/memory/${encodeURIComponent(room.roomId)}`)
             if (!messages) { messagesContainer.textContent = 'Failed to load'; return }
 
             const toShow = messages.slice(-10)

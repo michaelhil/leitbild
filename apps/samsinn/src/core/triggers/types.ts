@@ -13,9 +13,6 @@
 // Pinned to a single roomId; cascade-deleted when the room is removed.
 // `lastFiredAt` mutates on each fire and rides the existing snapshot debounce.
 //
-// Snapshot back-compat: the new modes are additive. Old snapshots load as
-// before; new triggers in old code degrade to no-op (unknown mode) without
-// crashing — the dispatch switch falls through.
 // ============================================================================
 
 export type TriggerMode = 'execute' | 'post' | 'start-script'

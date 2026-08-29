@@ -1,50 +1,66 @@
-// ============================================================================
-// Leitbild client — talks to a Leitbild deployment via its discovery manifest.
-//
-// One factory per process. Module-level pool keyed by baseUrl so multiple
-// rooms (or, in V2, multiple agents) sharing the same deployment share
-// one underlying WS connection per Control Instance.
-//
-// Walks the manifest's `links` to resolve every endpoint. Never hardcodes
-// /api/... paths. Required link rels are validated on first manifest fetch;
-// missing rels = loud failure (the deployment is too old to mirror).
-//
-// Always sends Leitbild-Client header. Always encodeURIComponent's {id}
-// substitutions. Caches the manifest per Cache-Control max-age + ETag.
-//
-// V1 scope: read-only. No commands, no lifecycle actions, no clock control.
-// ============================================================================
-
+import {
+  moduleBindingSchema,
+  moduleDiscoverySchema,
+  type ModuleBinding,
+} from '@samsinn-leitbild/platform-contracts'
 import type {
-  ControlInstanceSummary,
-  ControlInstanceSnapshot,
   LeitbildEvent,
   LeitbildEventHandler,
   LeitbildManifestSummary,
+  LeitbildWorkspaceConnection,
   ScenarioSummary,
+  SimulationRunSnapshot,
+  SimulationRunSummary,
   SubscriptionHandle,
 } from './types.ts'
 import { REQUIRED_LINK_RELS } from './types.ts'
 
-// === Client identity ===
+const CLIENT_HEADER = 'samsinn'
+const DEFAULT_SCOPE = '__global__'
 
-const CLIENT_NAME = 'samsinn'
-const CLIENT_VERSION = '0.1.0' // pinned to the integration's own version
-const CLIENT_HEADER = `${CLIENT_NAME}; version="${CLIENT_VERSION}"`
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
 
-// === URI template expansion (RFC 6570 subset) ===
-// We only need {id} (path) and {?afterSeq} (query). Tiny inline impl.
+const requireRecord = (value: unknown, label: string): Record<string, unknown> => {
+  if (!isRecord(value)) throw new Error(`${label} must be a JSON object`)
+  return value
+}
+
+const requireString = (value: unknown, label: string): string => {
+  if (typeof value !== 'string' || value.length === 0) throw new Error(`${label} must be a non-empty string`)
+  return value
+}
+
+const requireNumber = (value: unknown, label: string): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${label} must be a finite number`)
+  return value
+}
 
 const expandTemplate = (template: string, vars: Record<string, string | number | undefined>): string => {
-  return template.replace(/\{([?]?)(\w+)\}/g, (_match, prefix, name) => {
+  const expanded = template.replace(/\{([?]?)(\w+)\}/g, (match, prefix: string, name: string) => {
     const value = vars[name]
-    if (value === undefined || value === null || value === '') return ''
+    if (value === undefined || value === '') {
+      if (prefix === '?') return ''
+      throw new Error(`Leitbild URI template requires variable "${name}": ${match}`)
+    }
     const encoded = encodeURIComponent(String(value))
     return prefix === '?' ? `?${name}=${encoded}` : encoded
   })
+  if (/\{[^}]+\}/.test(expanded)) throw new Error(`Unsupported Leitbild URI template: ${template}`)
+  return expanded
 }
 
-// === Manifest cache entry ===
+const normalizeBaseUrl = (raw: string): string => {
+  const url = new URL(raw)
+  url.search = ''
+  url.hash = ''
+  return `${url.protocol}//${url.host}${url.pathname.replace(/\/$/, '')}`
+}
+
+const parseMaxAgeMs = (cacheControl: string | null): number | null => {
+  const match = cacheControl?.match(/max-age=(\d+)/)
+  return match ? Number(match[1]) * 1_000 : null
+}
 
 interface ManifestCacheEntry {
   readonly manifest: LeitbildManifestSummary
@@ -52,96 +68,72 @@ interface ManifestCacheEntry {
   readonly expiresAtMs: number
 }
 
-// === per-Workspace subscription pool ===
-
 interface SubscriberRecord {
   readonly handler: LeitbildEventHandler
   lastSeq: number
 }
 
-interface InstanceSubscription {
+interface RunSubscription {
   ws: WebSocket | null
   readonly subscribers: Set<SubscriberRecord>
   lastSeq: number
-  readonly url: string
   reconnectDelayMs: number
   closed: boolean
   reconnectTimer?: ReturnType<typeof setTimeout>
 }
 
-// === Client interface ===
-
 export interface LeitbildClient {
+  readonly connection: LeitbildWorkspaceConnection
   readonly getManifest: () => Promise<LeitbildManifestSummary>
-  readonly listControlInstances: () => Promise<ReadonlyArray<ControlInstanceSummary>>
-  readonly createControlInstance: (scenarioId: string) => Promise<{ readonly id: string }>
-  readonly getSnapshot: (workspaceId: string) => Promise<ControlInstanceSnapshot>
+  readonly provisionWorkspace: (displayName: string) => Promise<void>
+  readonly listSimulationRuns: () => Promise<ReadonlyArray<SimulationRunSummary>>
+  readonly createSimulationRun: (scenarioId: string) => Promise<{ readonly id: string }>
+  readonly getSnapshot: (simulationRunId: string) => Promise<SimulationRunSnapshot>
   readonly getScenario: (scenarioId: string) => Promise<ScenarioSummary | undefined>
-  readonly getEvents: (workspaceId: string, afterSeq: number) => Promise<ReadonlyArray<LeitbildEvent>>
-  readonly subscribe: (workspaceId: string, onEvent: LeitbildEventHandler, startSeq: number) => SubscriptionHandle
-  // POST a pack-query against the instance. Resolves the URL via the
-  // manifest's `controlInstancePackQueries` link template and applies the
-  // canonical Leitbild-Client header. Returns the raw JSON body. Throws on
-  // non-2xx or manifest-missing-rel. Callers (lb_query / lb_dispatch_context)
-  // get one shared code path so CLIENT_HEADER and URL construction stay in
-  // sync with the rest of the client (audit Findings 2.1.5 + 2.1.6).
-  readonly callPackQuery: (workspaceId: string, packId: string, kind: string, payload: Record<string, unknown>) => Promise<unknown>
-  // POST a command against the instance. Same shape contract as
-  // callPackQuery; resolves via `controlInstanceCommands` link template.
-  readonly callCommand: (workspaceId: string, body: Record<string, unknown>) => Promise<unknown>
-  // GET the per-CI capabilities (active packs + accepted command kinds +
-  // wikiRefs + queryKinds). Resolves via `controlInstanceCapabilities`.
-  readonly getCapabilities: (workspaceId: string) => Promise<Record<string, unknown>>
+  readonly getEvents: (simulationRunId: string, afterSeq: number) => Promise<ReadonlyArray<LeitbildEvent>>
+  readonly subscribe: (simulationRunId: string, onEvent: LeitbildEventHandler, startSeq: number) => SubscriptionHandle
+  readonly callPackQuery: (simulationRunId: string, packId: string, kind: string, payload: Record<string, unknown>) => Promise<unknown>
+  readonly callCommand: (simulationRunId: string, body: Record<string, unknown>) => Promise<unknown>
+  readonly getCapabilities: (simulationRunId: string) => Promise<Record<string, unknown>>
   readonly baseUrl: string
 }
 
-// === Module-level pool ===
-//
-// Audit Finding 2.1.3 — per-tenant scoping. The pool was previously keyed
-// by baseUrl alone, which meant two cookie-bound Samsinn tenants binding
-// to the same Leitbild deployment shared one underlying WS connection +
-// one manifest cache. Per-tenant lifecycles were tangled: tenant A's
-// detach could leave tenant B subscribed via the same record set, and
-// any manifest ETag refresh applied to both.
-//
-// New scoping: the key is `${scope}::${normalizedBaseUrl}`. Default scope
-// `'__global__'` keeps the old behavior for callers that don't pass a
-// scope — useful for tests and for the single-tenant headless path.
-// Multi-tenant callers (bootstrap routes + mirror-service + lb_* tools)
-// pass the per-system instance id as scope, so each tenant gets its own
-// underlying client + WS pool.
-
-const clientPool = new Map<string, LeitbildClient>()
-const DEFAULT_SCOPE = '__global__'
-
-const normalizeBaseUrl = (raw: string): string => {
-  const u = new URL(raw)
-  u.search = ''
-  u.hash = ''
-  return `${u.protocol}//${u.host}${u.pathname.replace(/\/$/, '')}`
-}
-
-const poolKey = (scope: string, baseUrl: string): string => `${scope}::${baseUrl}`
-
 export interface CreateLeitbildClientOptions {
-  // Per-tenant scope (typically the cookie-bound instance id). Two
-  // callers with the same baseUrl but different scopes get separate
-  // underlying clients. Default `'__global__'` for callers that don't
-  // care (tests, single-tenant headless).
   readonly scope?: string
 }
 
-// === Factory ===
+const clientPool = new Map<string, LeitbildClient>()
+const poolKey = (scope: string, baseUrl: string, workspaceId: string): string =>
+  `${scope}::${baseUrl}::${workspaceId}`
 
-export const createLeitbildClient = (baseUrlRaw: string, options: CreateLeitbildClientOptions = {}): LeitbildClient => {
-  const baseUrl = normalizeBaseUrl(baseUrlRaw)
+const validateManifest = (raw: unknown): LeitbildManifestSummary => {
+  const manifest = moduleDiscoverySchema.parse(raw)
+  if (manifest.module.id !== 'leitbild') {
+    throw new Error(`Expected Leitbild discovery, received module "${manifest.module.id}"`)
+  }
+  const missing = REQUIRED_LINK_RELS.filter(rel => !manifest.links[rel])
+  if (missing.length > 0) throw new Error(`Leitbild discovery missing link rels: ${missing.join(', ')}`)
+  return manifest
+}
+
+export const createLeitbildClient = (
+  rawConnection: LeitbildWorkspaceConnection,
+  options: CreateLeitbildClientOptions = {},
+): LeitbildClient => {
+  const parsedBinding = moduleBindingSchema.parse(rawConnection.moduleBinding)
+  if (parsedBinding.moduleId !== 'leitbild') throw new Error('Leitbild client requires the leitbild module binding')
+  const baseUrl = normalizeBaseUrl(parsedBinding.baseUrl)
+  const connection: LeitbildWorkspaceConnection = {
+    moduleBinding: { ...parsedBinding, baseUrl },
+    workspaceId: rawConnection.workspaceId,
+  }
   const scope = options.scope ?? DEFAULT_SCOPE
-  const key = poolKey(scope, baseUrl)
+  const key = poolKey(scope, baseUrl, connection.workspaceId)
   const cached = clientPool.get(key)
   if (cached) return cached
 
   let manifestCache: ManifestCacheEntry | null = null
-  const instanceSubs = new Map<string, InstanceSubscription>()
+  const runSubscriptions = new Map<string, RunSubscription>()
 
   const defaultHeaders = (): Record<string, string> => ({
     'Leitbild-Client': CLIENT_HEADER,
@@ -151,292 +143,259 @@ export const createLeitbildClient = (baseUrlRaw: string, options: CreateLeitbild
   const fetchManifest = async (): Promise<LeitbildManifestSummary> => {
     const now = Date.now()
     if (manifestCache && manifestCache.expiresAtMs > now) return manifestCache.manifest
-
-    const headers: Record<string, string> = defaultHeaders()
+    const headers = defaultHeaders()
     if (manifestCache?.etag) headers['If-None-Match'] = manifestCache.etag
-
-    const url = `${baseUrl}/.well-known/leitbild`
-    const res = await fetch(url, { headers })
-
-    if (res.status === 304 && manifestCache) {
-      // Extend TTL using new Cache-Control.
-      const ttl = parseMaxAgeMs(res.headers.get('Cache-Control')) ?? 60_000
+    const response = await fetch(parsedBinding.discoveryUrl, { headers })
+    if (response.status === 304 && manifestCache) {
+      const ttl = parseMaxAgeMs(response.headers.get('Cache-Control')) ?? 60_000
       manifestCache = { ...manifestCache, expiresAtMs: Date.now() + ttl }
       return manifestCache.manifest
     }
-    if (!res.ok) throw new Error(`Leitbild discovery manifest fetch failed: ${res.status} ${res.statusText}`)
-
-    const body = (await res.json()) as LeitbildManifestSummary
-    validateManifest(body)
-
-    const ttl = parseMaxAgeMs(res.headers.get('Cache-Control')) ?? 60_000
-    manifestCache = { manifest: body, etag: res.headers.get('ETag'), expiresAtMs: Date.now() + ttl }
-    return body
+    if (!response.ok) throw new Error(`Leitbild discovery fetch failed: ${response.status} ${response.statusText}`)
+    const manifest = validateManifest(await response.json())
+    const ttl = parseMaxAgeMs(response.headers.get('Cache-Control')) ?? 60_000
+    manifestCache = { manifest, etag: response.headers.get('ETag'), expiresAtMs: Date.now() + ttl }
+    return manifest
   }
 
-  const resolveLink = async (rel: string, vars: Record<string, string | number | undefined> = {}): Promise<string> => {
+  const resolveLink = async (
+    rel: string,
+    vars: Record<string, string | number | undefined> = {},
+  ): Promise<string> => {
     const manifest = await fetchManifest()
-    const link = manifest.links[rel]
-    if (!link) throw new Error(`Leitbild manifest missing required link rel: ${rel}`)
-    const template = link.hrefTemplate ?? link.href
-    if (!template) throw new Error(`Leitbild manifest link "${rel}" has neither href nor hrefTemplate`)
-    return expandTemplate(template, vars)
+    const template = manifest.links[rel]
+    if (!template) throw new Error(`Leitbild discovery missing link rel: ${rel}`)
+    return expandTemplate(template, { workspaceId: connection.workspaceId, ...vars })
   }
 
-  const getSnapshot = async (workspaceId: string): Promise<ControlInstanceSnapshot> => {
-    const url = await resolveLink('controlInstanceSnapshot', { id: workspaceId })
-    const res = await fetch(url, { headers: defaultHeaders() })
-    if (!res.ok) throw new Error(`Leitbild snapshot fetch failed for ${workspaceId}: ${res.status}`)
-    const raw = (await res.json()) as Record<string, unknown>
-    // Leitbild wraps the snapshot under a `snapshot` key alongside `id`.
-    // Tolerant of both shapes: nested under .snapshot, or top-level.
-    const body = (raw.snapshot && typeof raw.snapshot === 'object'
-      ? raw.snapshot
-      : raw) as ControlInstanceSnapshot & { scenario?: { scenarioId?: string } }
-    const seq = (body as { seq?: number; snapshotSeq?: number }).seq
-      ?? (body as { snapshotSeq?: number }).snapshotSeq ?? 0
-    // Surface scenarioId either at top level or nested under .scenario.
-    const scenarioId = body.scenarioId ?? body.scenario?.scenarioId
-    return { ...body, seq, ...(scenarioId ? { scenarioId } : {}) }
-  }
-
-  const listControlInstances = async (): Promise<ReadonlyArray<ControlInstanceSummary>> => {
-    const url = await resolveLink('controlInstances')
-    const res = await fetch(url, { headers: defaultHeaders() })
-    if (!res.ok) throw new Error(`Leitbild control-instance list fetch failed: HTTP ${res.status}`)
-    const body = (await res.json()) as { instances?: ReadonlyArray<ControlInstanceSummary>; controlInstances?: ReadonlyArray<ControlInstanceSummary> } | ReadonlyArray<ControlInstanceSummary>
-    if (Array.isArray(body)) return body as ReadonlyArray<ControlInstanceSummary>
-    const envelope = body as { instances?: ReadonlyArray<ControlInstanceSummary>; controlInstances?: ReadonlyArray<ControlInstanceSummary> }
-    return envelope.instances ?? envelope.controlInstances ?? []
-  }
-
-  const createControlInstance = async (scenarioId: string): Promise<{ readonly id: string }> => {
-    const url = await resolveLink('controlInstances')
-    const res = await postJson(url, { scenarioId })
-    if (!res.ok) throw new Error(`Leitbild control-instance create failed: HTTP ${res.status}`)
-    const body = await res.json() as { id?: string; instance?: { readonly id?: string } }
-    const id = body.id ?? body.instance?.id
-    if (!id) throw new Error('Leitbild create response did not include an instance id')
-    return { id }
-  }
-
-  const getScenario = async (scenarioId: string): Promise<ScenarioSummary | undefined> => {
-    const url = await resolveLink('scenarios')
-    const res = await fetch(url, { headers: defaultHeaders() })
-    if (!res.ok) return undefined
-    const body = (await res.json()) as { scenarios?: ReadonlyArray<ScenarioSummary> }
-    return body.scenarios?.find(s => s.id === scenarioId)
-  }
-
-  const getEvents = async (workspaceId: string, afterSeq: number): Promise<ReadonlyArray<LeitbildEvent>> => {
-    const url = await resolveLink('controlInstanceEvents', { id: workspaceId, afterSeq })
-    const res = await fetch(url, { headers: defaultHeaders() })
-    if (!res.ok) throw new Error(`Leitbild events fetch failed for ${workspaceId}: ${res.status}`)
-    const body = (await res.json()) as { events?: ReadonlyArray<LeitbildEvent> } | ReadonlyArray<LeitbildEvent>
-    if (Array.isArray(body)) return body
-    return (body as { events?: ReadonlyArray<LeitbildEvent> }).events ?? []
-  }
-
-  // --- Pack-query / command / capabilities (used by lb_* agent tools) ---
-
-  const postJson = async (url: string, body: Record<string, unknown>): Promise<Response> => fetch(url, {
+  const postJson = (url: string, body: Record<string, unknown>): Promise<Response> => fetch(url, {
     method: 'POST',
     headers: { ...defaultHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
 
-  const callPackQuery = async (workspaceId: string, packId: string, kind: string, payload: Record<string, unknown>): Promise<unknown> => {
-    const url = await resolveLink('controlInstancePackQueries', { id: workspaceId })
-    const res = await postJson(url, { packId, kind, payload })
-    if (!res.ok) throw new Error(`Leitbild pack-query failed: HTTP ${res.status}`)
-    return res.json()
-  }
-
-  const callCommand = async (workspaceId: string, body: Record<string, unknown>): Promise<unknown> => {
-    const url = await resolveLink('controlInstanceCommands', { id: workspaceId })
-    const res = await postJson(url, body)
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => '')
-      throw new Error(`Leitbild command failed: HTTP ${res.status}${errBody ? `: ${errBody}` : ''}`)
-    }
-    return res.json()
-  }
-
-  const getCapabilities = async (workspaceId: string): Promise<Record<string, unknown>> => {
-    const url = await resolveLink('controlInstanceCapabilities', { id: workspaceId })
-    const res = await fetch(url, { headers: defaultHeaders() })
-    if (!res.ok) throw new Error(`Leitbild capabilities fetch failed: HTTP ${res.status}`)
-    return res.json() as Promise<Record<string, unknown>>
-  }
-
-  // --- WS subscription management ---
-
-  const openWs = async (workspaceId: string, sub: InstanceSubscription): Promise<void> => {
-    const url = await resolveLink('realtime', { id: workspaceId })
-    // Bun's WebSocket constructor accepts (url, protocols?, options?). Headers
-    // on WS are awkward across runtimes; Leitbild-Client carried via query
-    // is also planned-but-not-enforced. For V1 we skip header for WS and
-    // rely on the URL identifying the client by connection.
-    const ws = new WebSocket(url)
-    sub.ws = ws
-
-    ws.addEventListener('message', (ev: MessageEvent) => {
-      try {
-        const msg = JSON.parse(typeof ev.data === 'string' ? ev.data : String(ev.data))
-        if (msg.type === 'realtime.ready') {
-          // No subscriber-affecting action — mirror service handles
-          // race-safe attach by buffering until snapshot is fetched.
-          return
-        }
-        if (msg.type === 'events' && Array.isArray(msg.events)) {
-          for (const event of msg.events as LeitbildEvent[]) {
-            if (typeof event.seq !== 'number') continue
-            // Detect epoch boundary (Leitbild's reset wipes the journal
-            // and restarts seq from 0; the new epoch isn't a duplicate
-            // of the old one). Reset internal dedup state so the new
-            // events pass through; subscribers handle re-anchoring.
-            if (event.seq < sub.lastSeq && sub.lastSeq > 0) {
-              sub.lastSeq = 0
-              for (const r of sub.subscribers) r.lastSeq = 0
-            }
-            if (event.seq <= sub.lastSeq) continue
-            sub.lastSeq = event.seq
-            for (const record of sub.subscribers) {
-              if (event.seq > record.lastSeq) {
-                record.lastSeq = event.seq
-                try { record.handler(event) } catch { /* subscriber threw: isolate so one mirror's bug doesn't kill the WS for all subscribers */ }
-              }
-            }
-          }
-        }
-      } catch { /* malformed WS frame (non-JSON or wrong shape): drop & wait for next; server-side bug not client-side concern */ }
+  const provisionWorkspace = async (displayName: string): Promise<void> => {
+    const url = await resolveLink('workspace')
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: { ...defaultHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ displayName }),
     })
-
-    ws.addEventListener('close', () => { scheduleReconnect(workspaceId, sub) })
-    ws.addEventListener('error', () => { try { ws.close() } catch { /* close may throw if WS already terminal; reconnect will be scheduled by close handler */ } })
+    if (!response.ok) throw new Error(`Leitbild Workspace provision failed: HTTP ${response.status}`)
+    const body = requireRecord(await response.json(), 'Leitbild Workspace response')
+    const workspace = requireRecord(body.workspace, 'Leitbild Workspace response.workspace')
+    if (workspace.id !== connection.workspaceId) throw new Error('Leitbild provisioned a different Workspace id')
   }
 
-  const scheduleReconnect = (workspaceId: string, sub: InstanceSubscription): void => {
-    if (sub.closed) return
-    if (sub.subscribers.size === 0) return
-    const delay = sub.reconnectDelayMs
-    sub.reconnectDelayMs = Math.min(sub.reconnectDelayMs * 2, 30_000)
-    sub.reconnectTimer = setTimeout(async () => {
+  const listSimulationRuns = async (): Promise<ReadonlyArray<SimulationRunSummary>> => {
+    const response = await fetch(await resolveLink('simulationRuns'), { headers: defaultHeaders() })
+    if (!response.ok) throw new Error(`Leitbild Simulation Run list failed: HTTP ${response.status}`)
+    const body = requireRecord(await response.json(), 'Leitbild Simulation Run list')
+    if (!Array.isArray(body.simulationRuns)) throw new Error('Leitbild Simulation Run list must contain simulationRuns[]')
+    return body.simulationRuns.map((raw, index) => {
+      const run = requireRecord(raw, `simulationRuns[${index}]`)
+      return {
+        id: requireString(run.id, `simulationRuns[${index}].id`),
+        scenarioId: run.scenarioId === null ? null : requireString(run.scenarioId, `simulationRuns[${index}].scenarioId`),
+        scenarioRevisionId: run.scenarioRevisionId === null ? null : requireString(run.scenarioRevisionId, `simulationRuns[${index}].scenarioRevisionId`),
+        createdAt: run.createdAt === null ? null : requireString(run.createdAt, `simulationRuns[${index}].createdAt`),
+        loaded: run.loaded === true,
+        snapshotSeq: run.snapshotSeq === null ? null : requireNumber(run.snapshotSeq, `simulationRuns[${index}].snapshotSeq`),
+        objectCount: run.objectCount === null ? null : requireNumber(run.objectCount, `simulationRuns[${index}].objectCount`),
+        ...(typeof run.loadError === 'string' ? { loadError: run.loadError } : {}),
+        websocketClientCount: requireNumber(run.websocketClientCount, `simulationRuns[${index}].websocketClientCount`),
+      }
+    })
+  }
+
+  const createSimulationRun = async (scenarioId: string): Promise<{ readonly id: string }> => {
+    const response = await postJson(await resolveLink('simulationRuns'), { scenarioId })
+    if (!response.ok) throw new Error(`Leitbild Simulation Run create failed: HTTP ${response.status}`)
+    const body = requireRecord(await response.json(), 'Leitbild Simulation Run create response')
+    return { id: requireString(body.id, 'Leitbild Simulation Run create response.id') }
+  }
+
+  const getSnapshot = async (simulationRunId: string): Promise<SimulationRunSnapshot> => {
+    const response = await fetch(await resolveLink('simulationRunSnapshot', { simulationRunId }), { headers: defaultHeaders() })
+    if (!response.ok) throw new Error(`Leitbild snapshot fetch failed for ${simulationRunId}: HTTP ${response.status}`)
+    const body = requireRecord(await response.json(), 'Leitbild snapshot response')
+    if (body.id !== simulationRunId) throw new Error('Leitbild snapshot response has the wrong Simulation Run id')
+    const snapshot = requireRecord(body.snapshot, 'Leitbild snapshot response.snapshot')
+    const seq = requireNumber(snapshot.seq, 'Leitbild snapshot response.snapshot.seq')
+    const scenario = snapshot.scenario === undefined ? undefined : requireRecord(snapshot.scenario, 'snapshot.scenario')
+    const scenarioId = scenario === undefined || scenario.scenarioId === undefined
+      ? undefined
+      : requireString(scenario.scenarioId, 'snapshot.scenario.scenarioId')
+    return { ...snapshot, seq, ...(scenarioId === undefined ? {} : { scenarioId }) } as SimulationRunSnapshot
+  }
+
+  const getScenario = async (scenarioId: string): Promise<ScenarioSummary | undefined> => {
+    const response = await fetch(await resolveLink('scenario', { scenarioId }), { headers: defaultHeaders() })
+    if (response.status === 404) return undefined
+    if (!response.ok) throw new Error(`Leitbild Scenario fetch failed: HTTP ${response.status}`)
+    const body = requireRecord(await response.json(), 'Leitbild Scenario response')
+    const scenario = requireRecord(body.scenario, 'Leitbild Scenario response.scenario')
+    if (scenario.id !== scenarioId) throw new Error('Leitbild Scenario response has the wrong Scenario id')
+    return scenario as ScenarioSummary
+  }
+
+  const parseEvents = (raw: unknown): ReadonlyArray<LeitbildEvent> => {
+    const body = requireRecord(raw, 'Leitbild events response')
+    if (!Array.isArray(body.events)) throw new Error('Leitbild events response must contain events[]')
+    return body.events.map((rawEvent, index) => {
+      const event = requireRecord(rawEvent, `events[${index}]`)
+      return {
+        ...event,
+        seq: requireNumber(event.seq, `events[${index}].seq`),
+        type: requireString(event.type, `events[${index}].type`),
+      } as LeitbildEvent
+    })
+  }
+
+  const getEvents = async (simulationRunId: string, afterSeq: number): Promise<ReadonlyArray<LeitbildEvent>> => {
+    const response = await fetch(await resolveLink('simulationRunEvents', { simulationRunId, afterSeq }), { headers: defaultHeaders() })
+    if (!response.ok) throw new Error(`Leitbild events fetch failed for ${simulationRunId}: HTTP ${response.status}`)
+    return parseEvents(await response.json())
+  }
+
+  const callPackQuery = async (simulationRunId: string, packId: string, kind: string, payload: Record<string, unknown>): Promise<unknown> => {
+    const response = await postJson(await resolveLink('simulationRunPackQueries', { simulationRunId }), { packId, kind, payload })
+    if (!response.ok) throw new Error(`Leitbild pack query failed: HTTP ${response.status}`)
+    return response.json()
+  }
+
+  const callCommand = async (simulationRunId: string, body: Record<string, unknown>): Promise<unknown> => {
+    const response = await postJson(await resolveLink('simulationRunCommands', { simulationRunId }), body)
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => '')
+      throw new Error(`Leitbild command failed: HTTP ${response.status}${errorBody ? `: ${errorBody}` : ''}`)
+    }
+    return response.json()
+  }
+
+  const getCapabilities = async (simulationRunId: string): Promise<Record<string, unknown>> => {
+    const response = await fetch(await resolveLink('simulationRunCapabilities', { simulationRunId }), { headers: defaultHeaders() })
+    if (!response.ok) throw new Error(`Leitbild capabilities fetch failed: HTTP ${response.status}`)
+    return requireRecord(await response.json(), 'Leitbild capabilities response')
+  }
+
+  const scheduleReconnect = (simulationRunId: string, subscription: RunSubscription): void => {
+    if (subscription.closed || subscription.subscribers.size === 0) return
+    const delay = subscription.reconnectDelayMs
+    subscription.reconnectDelayMs = Math.min(subscription.reconnectDelayMs * 2, 30_000)
+    subscription.reconnectTimer = setTimeout(async () => {
       try {
-        const missed = await getEvents(workspaceId, sub.lastSeq)
-        for (const event of missed) {
-          if (event.seq <= sub.lastSeq) continue
-          sub.lastSeq = event.seq
-          for (const record of sub.subscribers) {
-            if (event.seq > record.lastSeq) {
-              record.lastSeq = event.seq
-              try { record.handler(event) } catch { /* subscriber threw on replay event: same isolation rule as live-stream path above */ }
-            }
+        const events = await getEvents(simulationRunId, subscription.lastSeq)
+        for (const event of events) {
+          if (event.seq <= subscription.lastSeq) continue
+          subscription.lastSeq = event.seq
+          for (const record of subscription.subscribers) {
+            if (event.seq <= record.lastSeq) continue
+            record.lastSeq = event.seq
+            try { record.handler(event) } catch { /* isolate subscribers */ }
           }
         }
-        await openWs(workspaceId, sub)
-        sub.reconnectDelayMs = 1_000 // reset on success
+        await openWebSocket(simulationRunId, subscription)
+        subscription.reconnectDelayMs = 1_000
       } catch {
-        // Reconnect attempt failed (events fetch 5xx, WS open rejected, etc.)
-        // Schedule another retry with the already-doubled backoff. Errors
-        // here are surfaced via the next attempt's behavior; no operator log
-        // because the backoff loop itself is the signal.
-        scheduleReconnect(workspaceId, sub)
+        scheduleReconnect(simulationRunId, subscription)
       }
     }, delay)
   }
 
-  const subscribe = (workspaceId: string, onEvent: LeitbildEventHandler, startSeq: number): SubscriptionHandle => {
-    let sub = instanceSubs.get(workspaceId)
-    if (!sub) {
-      sub = {
+  const openWebSocket = async (simulationRunId: string, subscription: RunSubscription): Promise<void> => {
+    const socket = new WebSocket(await resolveLink('realtime', { simulationRunId }))
+    subscription.ws = socket
+    socket.addEventListener('message', (message: MessageEvent) => {
+      try {
+        const raw = requireRecord(JSON.parse(typeof message.data === 'string' ? message.data : String(message.data)), 'Leitbild realtime message')
+        if (raw.workspaceId !== connection.workspaceId || raw.simulationRunId !== simulationRunId) return
+        if (raw.type === 'realtime.ready') return
+        if (raw.type !== 'events' || !Array.isArray(raw.events)) return
+        for (const event of parseEvents({ events: raw.events })) {
+          if (event.seq < subscription.lastSeq && subscription.lastSeq > 0) {
+            subscription.lastSeq = 0
+            for (const record of subscription.subscribers) record.lastSeq = 0
+          }
+          if (event.seq <= subscription.lastSeq) continue
+          subscription.lastSeq = event.seq
+          for (const record of subscription.subscribers) {
+            if (event.seq <= record.lastSeq) continue
+            record.lastSeq = event.seq
+            try { record.handler(event) } catch { /* isolate subscribers */ }
+          }
+        }
+      } catch { /* malformed realtime messages are ignored */ }
+    })
+    socket.addEventListener('close', () => scheduleReconnect(simulationRunId, subscription))
+    socket.addEventListener('error', () => { try { socket.close() } catch { /* already closed */ } })
+  }
+
+  const subscribe = (simulationRunId: string, onEvent: LeitbildEventHandler, startSeq: number): SubscriptionHandle => {
+    let subscription = runSubscriptions.get(simulationRunId)
+    if (!subscription) {
+      subscription = {
         ws: null,
         subscribers: new Set(),
         lastSeq: startSeq,
-        url: '',
         reconnectDelayMs: 1_000,
         closed: false,
       }
-      instanceSubs.set(workspaceId, sub)
-      void openWs(workspaceId, sub)
+      runSubscriptions.set(simulationRunId, subscription)
+      void openWebSocket(simulationRunId, subscription)
     }
     const record: SubscriberRecord = { handler: onEvent, lastSeq: startSeq }
-    sub.subscribers.add(record)
+    subscription.subscribers.add(record)
     return {
       close: () => {
-        const s = instanceSubs.get(workspaceId)
-        if (!s) return
-        s.subscribers.delete(record)
-        if (s.subscribers.size === 0) {
-          s.closed = true
-          if (s.reconnectTimer) clearTimeout(s.reconnectTimer)
-          try { s.ws?.close() } catch { /* close may throw if WS already terminal; we're tearing down anyway */ }
-          instanceSubs.delete(workspaceId)
-        }
+        const current = runSubscriptions.get(simulationRunId)
+        if (!current) return
+        current.subscribers.delete(record)
+        if (current.subscribers.size > 0) return
+        current.closed = true
+        if (current.reconnectTimer) clearTimeout(current.reconnectTimer)
+        try { current.ws?.close() } catch { /* already closed */ }
+        runSubscriptions.delete(simulationRunId)
       },
       lastSeq: () => record.lastSeq,
     }
   }
 
   const client: LeitbildClient = {
+    connection,
     getManifest: fetchManifest,
-    listControlInstances,
-    createControlInstance,
+    provisionWorkspace,
+    listSimulationRuns,
+    createSimulationRun,
     getSnapshot,
     getScenario,
+    getEvents,
+    subscribe,
     callPackQuery,
     callCommand,
     getCapabilities,
-    getEvents,
-    subscribe,
     baseUrl,
   }
   clientPool.set(key, client)
   return client
 }
 
-// === Internal helpers ===
-
-const validateManifest = (m: LeitbildManifestSummary): void => {
-  if (!m.manifestSchemaVersion?.startsWith('1.')) {
-    throw new Error(`Unsupported Leitbild manifestSchemaVersion: ${m.manifestSchemaVersion}`)
-  }
-  if (!m.links) throw new Error('Leitbild manifest missing links block')
-  const missing: string[] = []
-  for (const rel of REQUIRED_LINK_RELS) {
-    if (!m.links[rel]) missing.push(rel)
-  }
-  if (missing.length > 0) {
-    throw new Error(`Leitbild manifest missing required link rels: ${missing.join(', ')}`)
-  }
+export const createLeitbildModuleBinding = (baseUrlRaw: string): ModuleBinding => {
+  const baseUrl = normalizeBaseUrl(baseUrlRaw)
+  return moduleBindingSchema.parse({
+    moduleId: 'leitbild',
+    baseUrl,
+    discoveryUrl: `${baseUrl}/.well-known/leitbild`,
+  })
 }
 
-const parseMaxAgeMs = (cacheControl: string | null): number | null => {
-  if (!cacheControl) return null
-  const match = cacheControl.match(/max-age=(\d+)/)
-  if (!match) return null
-  return Number(match[1]) * 1_000
-}
+export const __resetClientPool = (): void => { clientPool.clear() }
 
-// === Test/diagnostic helpers ===
-
-export const __resetClientPool = (): void => {
-  for (const client of clientPool.values()) {
-    // No close() on LeitbildClient itself; subs auto-close when count==0.
-    void client
-  }
-  clientPool.clear()
-}
-
-// Test-only: pre-populate the pool with a fake client for a given baseUrl
-// so callers of createLeitbildClient(baseUrl) get the fake. Production
-// code never calls this. Pair with __resetClientPool in afterEach to keep
-// tests hermetic. Scope defaults to '__global__' to match tests that don't
-// pass a scope.
-export const __injectClient = (baseUrl: string, client: LeitbildClient, scope: string = DEFAULT_SCOPE): void => {
-  const u = new URL(baseUrl)
-  u.search = ''
-  u.hash = ''
-  const normalized = `${u.protocol}//${u.host}${u.pathname.replace(/\/$/, '')}`
-  clientPool.set(poolKey(scope, normalized), client)
+export const __injectClient = (
+  connection: LeitbildWorkspaceConnection,
+  client: LeitbildClient,
+  scope: string = DEFAULT_SCOPE,
+): void => {
+  const binding = moduleBindingSchema.parse(connection.moduleBinding)
+  clientPool.set(poolKey(scope, normalizeBaseUrl(binding.baseUrl), connection.workspaceId), client)
 }

@@ -61,12 +61,21 @@ describe('providers-store', () => {
     expect(warnings.some(w => w.includes('not valid JSON'))).toBe(true)
   })
 
-  test('load handles schema version mismatch with warning', async () => {
+  test('load rejects a schema version mismatch', async () => {
     await writeFile(path, JSON.stringify({ version: 99, providers: { cerebras: { apiKey: 'k' } } }))
     const { data, warnings } = await loadProviderStore(path)
-    expect(warnings.some(w => w.includes('version 99'))).toBe(true)
-    // Still parses what it can.
-    expect(data.providers.cerebras?.apiKey).toBe('k')
+    expect(warnings.some(w => w.includes('canonical schema'))).toBe(true)
+    expect(data.providers).toEqual({})
+  })
+
+  test('load rejects unknown fields instead of stripping them', async () => {
+    await writeFile(path, JSON.stringify({
+      version: STORE_VERSION,
+      providers: { cerebras: { apiKey: 'k', legacySetting: true } },
+    }))
+    const { data, warnings } = await loadProviderStore(path)
+    expect(data.providers).toEqual({})
+    expect(warnings.some(w => w.includes('canonical schema'))).toBe(true)
   })
 
   test('atomic write: save is visible either wholly or not at all', async () => {

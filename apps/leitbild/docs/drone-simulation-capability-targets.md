@@ -28,7 +28,7 @@ Native runtime responsibilities:
 - arm/disarm, takeoff, land, hold, return, goto, manual velocity, mission, geofence, gimbal, swarm, and effect commands
 - flight-envelope validation from declarative vehicle models
 - battery drain, pose, velocity, attitude, health, arming, navigation, mission, geofence, and payload projection
-- shared Control Instance object updates through the Runtime Hub
+- shared Simulation Run object updates through the Runtime Hub
 
 Target behavior:
 

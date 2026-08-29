@@ -13,7 +13,7 @@ export interface MapLayersPanelInit {
   readonly datasetId: string
   readonly categories: ReadonlyArray<string>
   readonly defaultsOn: ReadonlyArray<string>
-  readonly controlInstanceId: string | null
+  readonly simulationRunId: string | null
   readonly storage?: MapLayersStorage
 }
 
@@ -24,8 +24,8 @@ export interface MapLayersPanelState {
 
 const STORAGE_PREFIX = 'leitbild:layers'
 
-const storageKey = (datasetId: string, controlInstanceId: string): string =>
-  `${STORAGE_PREFIX}:${datasetId}:${controlInstanceId}`
+const storageKey = (datasetId: string, simulationRunId: string): string =>
+  `${STORAGE_PREFIX}:${datasetId}:${simulationRunId}`
 
 const inMemoryStorage = (): MapLayersStorage => {
   const map = new Map<string, string>()
@@ -37,11 +37,11 @@ const inMemoryStorage = (): MapLayersStorage => {
 
 const readPersisted = (
   storage: MapLayersStorage | undefined,
-  controlInstanceId: string | null,
+  simulationRunId: string | null,
   datasetId: string,
 ): Record<string, boolean> | null => {
-  if (!storage || !controlInstanceId) return null
-  const raw = storage.get(storageKey(datasetId, controlInstanceId))
+  if (!storage || !simulationRunId) return null
+  const raw = storage.get(storageKey(datasetId, simulationRunId))
   if (!raw) return null
   try {
     const parsed = JSON.parse(raw)
@@ -58,13 +58,13 @@ const readPersisted = (
 
 const writePersisted = (
   storage: MapLayersStorage | undefined,
-  controlInstanceId: string | null,
+  simulationRunId: string | null,
   datasetId: string,
   visibility: Record<string, boolean>,
 ): void => {
-  if (!storage || !controlInstanceId) return
+  if (!storage || !simulationRunId) return
   try {
-    storage.set(storageKey(datasetId, controlInstanceId), JSON.stringify(visibility))
+    storage.set(storageKey(datasetId, simulationRunId), JSON.stringify(visibility))
   } catch {
     // Storage failure is non-fatal; toggles still apply in-memory.
   }
@@ -90,24 +90,24 @@ export interface MapLayersPanelController {
 
 const buildController = (
   state: MapLayersPanelState,
-  init: { readonly controlInstanceId: string | null; readonly storage: MapLayersStorage | undefined },
+  init: { readonly simulationRunId: string | null; readonly storage: MapLayersStorage | undefined },
 ): MapLayersPanelController => ({
   state,
   isVisible: (category) => state.visibility[category] ?? false,
   toggle: (category) => {
     const next = { ...state.visibility, [category]: !state.visibility[category] }
-    writePersisted(init.storage, init.controlInstanceId, state.datasetId, next)
+    writePersisted(init.storage, init.simulationRunId, state.datasetId, next)
     return buildController({ ...state, visibility: next }, init)
   },
   setVisible: (category, visible) => {
     const next = { ...state.visibility, [category]: visible }
-    writePersisted(init.storage, init.controlInstanceId, state.datasetId, next)
+    writePersisted(init.storage, init.simulationRunId, state.datasetId, next)
     return buildController({ ...state, visibility: next }, init)
   },
   setAll: (visible) => {
     const next: Record<string, boolean> = {}
     for (const k of Object.keys(state.visibility)) next[k] = visible
-    writePersisted(init.storage, init.controlInstanceId, state.datasetId, next)
+    writePersisted(init.storage, init.simulationRunId, state.datasetId, next)
     return buildController({ ...state, visibility: next }, init)
   },
 })
@@ -115,7 +115,7 @@ const buildController = (
 export const createMapLayersPanel = (init: MapLayersPanelInit): MapLayersPanelController => {
   const storage = init.storage ?? inMemoryStorage()
   const defaults = defaultVisibility(init.categories, init.defaultsOn)
-  const persisted = readPersisted(storage, init.controlInstanceId, init.datasetId)
+  const persisted = readPersisted(storage, init.simulationRunId, init.datasetId)
   const visibility: Record<string, boolean> = { ...defaults }
   if (persisted) {
     for (const c of init.categories) {
@@ -123,7 +123,7 @@ export const createMapLayersPanel = (init: MapLayersPanelInit): MapLayersPanelCo
     }
   }
   const state: MapLayersPanelState = { datasetId: init.datasetId, visibility }
-  return buildController(state, { controlInstanceId: init.controlInstanceId, storage })
+  return buildController(state, { simulationRunId: init.simulationRunId, storage })
 }
 
 export const aeroNorwayDefaultsOn: ReadonlyArray<string> = [

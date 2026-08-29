@@ -39,7 +39,7 @@ Pack-specific operational truth for an object. Packs own the schema and validati
 Perspective-bearing artificial situation awareness attached to an operational object. Context captures what an asset, operator, system, or AI perspective knows, remembers, observed, or was told.
 
 **Scenario Definition**:
-Validated startup definition for a new control instance: world settings, active packs, optional pack runtime overrides/configuration, initial objects, and initial contexts.
+Validated startup definition for a new simulation run: world settings, active packs, optional pack runtime overrides/configuration, initial objects, and initial contexts.
 
 **Mission Definition**:
 Operational intent layered on top of a scenario: goals, objectives, tasks, stages, triggers, actions, and evaluation metrics.
@@ -111,9 +111,9 @@ Scenario Config expansion is deterministic and ordered. Initial objects are expa
 
 Traffic condition configs may describe road-segment congestion by two route intent points (`from` and `to`) instead of a literal line. The traffic pack expands that intent through the active routing adapter into the same full geometry used by operator-created traffic. Literal geometry remains useful for areas and deliberately authored shapes, but route intent is preferred when the condition is meant to follow roads.
 
-The expanded `ScenarioDefinition` remains the runtime contract. The Control Instance runtime does not execute JSON directly; it receives a validated definition with full operational objects and declarative script actions.
+The expanded `ScenarioDefinition` remains the runtime contract. The Simulation Run runtime does not execute JSON directly; it receives a validated definition with full operational objects and declarative script actions.
 
-New control instances start from a validated Scenario Definition. Restored control instances start from persisted snapshots and durable history. Pack-specific seed factories are not a production startup mechanism; if a pack needs helper functions, they must produce full validated `OperationalObject`s inside a Scenario Definition rather than a parallel seed format.
+New simulation runs start from a validated Scenario Definition. Restored simulation runs start from persisted snapshots and durable history. Pack-specific seed factories are not a production startup mechanism; if a pack needs helper functions, they must produce full validated `OperationalObject`s inside a Scenario Definition rather than a parallel seed format.
 
 Scenario startup is multi-pack and may become multi-pack runtime. A scenario may activate several packs, for example ambulance plus traffic. The Scenario Catalog resolves each active pack to the pack's default pack runtime unless the scenario names an explicit pack runtime override. The Runtime Hub receives the resolved runtime ids and passes each pack runtime only the initial objects and config relevant to that pack runtime. This keeps scenario authoring centered on packs while preserving pack runtime boundaries.
 
@@ -126,7 +126,7 @@ A Scenario Definition owns the initial client surface. The client must not rende
 The v1 surface model is deliberately narrow:
 
 - `schemaVersion`: currently `1`.
-- `regions`: configured instances of safe built-in primitives.
+- `regions`: configured uses of safe built-in primitives.
 - `map`: MapLibre surface with explicit center, zoom, and enabled operational layer groups.
 - `objectRail`: category rail with explicit category order, collapsed state, width, and visible field keys.
 - `systemFooter`: status/version/theme/reset footer.
@@ -142,13 +142,13 @@ Important v1 rules:
 - A scenario may omit the map or rail entirely if its surface does not need them.
 - Rich adaptive/generated UI remains a future layer above this primitive registry and must treat generated specs as untrusted input.
 
-This gives Leitbild a blank-slate boot path: open the control instance, load the scenario definition, validate the surface, then assemble only the declared primitives. Startup errors should be surfaced honestly in the boot modal.
+This gives Leitbild a blank-slate boot path: open the simulation run, load the scenario definition, validate the surface, then assemble only the declared primitives. Startup errors should be surfaced honestly in the boot modal.
 
 ## Scenario Script V1
 
 A Scenario Definition may include an optional `script`. The script is a small declarative timeline, not an arbitrary code engine.
 
-V1 supports steps scheduled relative to control-instance scenario start:
+V1 supports steps scheduled relative to simulation-run scenario start:
 
 - `at: { kind: "after_scenario_start", seconds: number }`
 
@@ -163,16 +163,16 @@ Each step has an id, optional title, and one or more actions. Supported V1 actio
 
 Compact Scenario Config may author `create_object` and `update_object` actions. These are expansion-time conveniences only: `create_object` becomes `upsert_object`, and `update_object` becomes `upsert_object` after the owning pack applies a declared operation such as `ambulance/set_incident_victims`. The runtime action vocabulary stays small.
 
-Scenario script actions are committed as ordinary ordered Control Instance events by the Control Instance runtime. This is deliberate:
+Scenario script actions are committed as ordinary ordered Simulation Run events by the Simulation Run runtime. This is deliberate:
 
 - clients receive script changes over the same live feed as simulator and operator changes
 - snapshots contain current guidance/highlights and evolved object state
 - pack runtimes observe committed object changes through the same pack runtime projection mechanism
-- event ordering stays under Control Instance ownership
+- event ordering stays under Simulation Run ownership
 
 Scenario scripts should be used for startup/tutorial flow, timed incidents, delayed fact revelation, and scenario-authored world changes. They should not contain general business logic, loops, arbitrary expressions, or pack rules. Pack mechanics such as ambulance patient loading or hospital admission remain in packs and interaction handlers.
 
-Script progress is runtime state, not reusable scenario definition data. A Control Instance snapshot stores the scenario id, current guidance, highlighted object ids, and fired script step ids. This lets restored runtimes avoid refiring completed steps and fire overdue steps after restart.
+Script progress is runtime state, not reusable scenario definition data. A Simulation Run snapshot stores the scenario id, current guidance, highlighted object ids, and fired script step ids. This lets restored runtimes avoid refiring completed steps and fire overdue steps after restart.
 
 ## Mission Definition V1
 
@@ -242,7 +242,7 @@ V1 rule pattern:
 
 Objects should not contain executable behavior. An ambulance object should not directly mutate an incident, and a hospital object should not directly mutate an ambulance. Instead, the ambulance pack can define deterministic interaction helpers such as "empty ambulance arrived at incident" or "loaded ambulance arrived at hospital".
 
-Any object type can be the source or subject of a Control Instance event. For example, a hospital can report that no emergency beds are available, or an incident can report updated victim information. The object does not emit directly onto Leitbild's event stream; the pack runtime emits the event with provenance that identifies the runtime, object, and cause. This keeps event ordering, replay, persistence, and remote runtime integration coherent.
+Any object type can be the source or subject of a Simulation Run event. For example, a hospital can report that no emergency beds are available, or an incident can report updated victim information. The object does not emit directly onto Leitbild's event stream; the pack runtime emits the event with provenance that identifies the runtime, object, and cause. This keeps event ordering, replay, persistence, and remote runtime integration coherent.
 
 Generalization to a core rule engine is deferred until at least two real packs need the same abstraction.
 

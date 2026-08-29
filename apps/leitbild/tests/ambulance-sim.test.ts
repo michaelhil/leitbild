@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, ControlInstanceEvent } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, SimulationRunId, SimulationRunEvent } from '../src/core/model/index.ts'
 import { confirmedFact, geoPointFromLonLat, meters, nowIso, type KnowledgeFact, type ObjectId, type OperationalObject } from '../src/core/model/index.ts'
 import {
   assignToIncidentCommandKind,
@@ -16,7 +16,7 @@ import type { PackRuntimeEvent } from '../src/simulation/protocol.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { testScenarioRuntimeConfig } from './helpers.ts'
 
-const controlInstanceId = 'control-instance:test' as ControlInstanceId
+const simulationRunId = 'run-test' as SimulationRunId
 const actorId = 'actor:test-operator' as ActorId
 
 const makeCommand = (config: {
@@ -27,7 +27,7 @@ const makeCommand = (config: {
   readonly expectedRevision?: number
 }): CommandEnvelope => ({
   id: `command:${config.id}` as CommandId,
-  controlInstanceId,
+  simulationRunId,
   actorId,
   kind: config.kind,
   targetObjectIds: config.targetObjectIds ?? [],
@@ -99,10 +99,10 @@ const applyInteractionEvents = async (
       snapshot: { objects: engine.snapshot().objects, seq: 0 },
       provenance: event.provenance,
     })
-    const committedEvents: ControlInstanceEvent[] = effects.map((effect, index) => {
+    const committedEvents: SimulationRunEvent[] = effects.map((effect, index) => {
       const base = {
-        id: `event:test-${event.signal.id}-${index}` as ControlInstanceEvent['id'],
-        controlInstanceId,
+        id: `event:test-${event.signal.id}-${index}` as SimulationRunEvent['id'],
+        simulationRunId,
         seq: index + 1,
         at: event.signal.at,
         provenance: event.provenance,
@@ -117,7 +117,7 @@ const applyInteractionEvents = async (
 
 describe('local ambulance runtime', () => {
   test('starts with the tutorial ambulance, incident, and hospital set', async () => {
-    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
+    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ simulationRunId, scenario: testScenarioRuntimeConfig() })
     const initial = await connection.getSnapshot()
 
     expect(initial.objects.filter(object => object.kind === 'mobile_entity')).toHaveLength(3)
@@ -147,7 +147,7 @@ describe('local ambulance runtime', () => {
       }
     })
     const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: {
         ...runtime,
         initialObjects: objectsWithoutRoute,
@@ -170,7 +170,7 @@ describe('local ambulance runtime', () => {
   })
 
   test('accepts a dispatch command and updates scenario state', async () => {
-    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
+    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ simulationRunId, scenario: testScenarioRuntimeConfig() })
     const initial = await connection.getSnapshot()
     const ambulance = initial.objects.find(object => object.kind === 'mobile_entity' && object.operational.status === 'available')
     const incident = initial.objects.find(object => object.id === 'incident:gronland-unattended')
@@ -201,13 +201,13 @@ describe('local ambulance runtime', () => {
 
   test('ignores committed object upserts owned by other pack runtimes', async () => {
     const runtime = testScenarioRuntimeConfig()
-    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: runtime })
+    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ simulationRunId, scenario: runtime })
     const trafficObject = runtime.initialObjects.find(object => object.packId === 'traffic')
     if (!trafficObject) throw new Error('scenario missing traffic object')
 
     await connection.observeCommittedEvents([{
-      id: 'event:test-traffic-upsert' as ControlInstanceEvent['id'],
-      controlInstanceId,
+      id: 'event:test-traffic-upsert' as SimulationRunEvent['id'],
+      simulationRunId,
       seq: 1,
       at: nowIso(),
       provenance: { source: 'simulator' },
@@ -222,7 +222,7 @@ describe('local ambulance runtime', () => {
 
   test('evolves incident and hospital facts through runtime events', () => {
     const engine = createAmbulanceSimEngine({
-      controlInstanceId,
+      simulationRunId,
       objects: osloAmbulanceScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
@@ -254,7 +254,7 @@ describe('local ambulance runtime', () => {
   test('follows shaped route coordinates instead of jumping straight to the destination', async () => {
     const firstRoutePoint = geoPointFromLonLat(10.7387, 59.9364)
     const engine = createAmbulanceSimEngine({
-      controlInstanceId,
+      simulationRunId,
       objects: osloAmbulanceScenario.initialObjects,
       routing: {
         id: 'test-shaped-route',
@@ -296,7 +296,7 @@ describe('local ambulance runtime', () => {
 
   test('starts moving immediately when the route begins at the ambulance position', async () => {
     const engine = createAmbulanceSimEngine({
-      controlInstanceId,
+      simulationRunId,
       objects: osloAmbulanceScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
@@ -328,7 +328,7 @@ describe('local ambulance runtime', () => {
     const denseCoordinates = Array.from({ length: 50 }, (_value, index) =>
       geoPointFromLonLat(startLon, startLat + index * 0.00001).coordinates)
     const engine = createAmbulanceSimEngine({
-      controlInstanceId,
+      simulationRunId,
       objects: osloAmbulanceScenario.initialObjects,
       routing: {
         id: 'test-dense-route',
@@ -369,7 +369,7 @@ describe('local ambulance runtime', () => {
 
   test('uses the same default motion profile for new and restored motion', async () => {
     const engine = createAmbulanceSimEngine({
-      controlInstanceId: 'control-instance:test-motion-profile' as ControlInstanceId,
+      simulationRunId: 'run-test-motion-profile' as SimulationRunId,
       objects: osloAmbulanceScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
@@ -390,7 +390,7 @@ describe('local ambulance runtime', () => {
     expect(moving?.spatial.position?.speedMps).toBe(15)
 
     const restoredEngine = createAmbulanceSimEngine({
-      controlInstanceId: 'control-instance:test-restored-motion-profile' as ControlInstanceId,
+      simulationRunId: 'run-test-restored-motion-profile' as SimulationRunId,
       routing: createDirectRoutingAdapter(),
       objects: engine.snapshot().objects,
     })
@@ -400,7 +400,7 @@ describe('local ambulance runtime', () => {
   })
 
   test('creates ambulance pack objects from operator commands', async () => {
-    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
+    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ simulationRunId, scenario: testScenarioRuntimeConfig() })
     const result = await connection.sendCommand(makeCommand({
       id: 'create-hospital',
       kind: createObjectCommandKind,
@@ -418,7 +418,7 @@ describe('local ambulance runtime', () => {
   })
 
   test('retargets and cancels an ambulance destination', async () => {
-    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
+    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ simulationRunId, scenario: testScenarioRuntimeConfig() })
     const initial = await connection.getSnapshot()
     const ambulance = initial.objects.find(object => object.kind === 'mobile_entity')
     const incident = initial.objects.find(object => object.kind === 'incident')
@@ -462,7 +462,7 @@ describe('local ambulance runtime', () => {
   })
 
   test('clears destination when an ambulance reaches a hospital', async () => {
-    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
+    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ simulationRunId, scenario: testScenarioRuntimeConfig() })
     const initial = await connection.getSnapshot()
     const ambulance = initial.objects.find(object => object.kind === 'mobile_entity')
     const hospital = initial.objects.find(object => object.kind === 'facility')
@@ -506,7 +506,7 @@ describe('local ambulance runtime', () => {
       }, 2)
     })
     const engine = createAmbulanceSimEngine({
-      controlInstanceId,
+      simulationRunId,
       objects: initialObjects,
       routing: createDirectRoutingAdapter(),
     })
@@ -539,7 +539,7 @@ describe('local ambulance runtime', () => {
 
   test('marks an incident resolved when arriving ambulance capacity covers all victims', async () => {
     const baseObjects = createAmbulanceSimEngine({
-      controlInstanceId,
+      simulationRunId,
       objects: osloAmbulanceScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     }).snapshot().objects
@@ -549,7 +549,7 @@ describe('local ambulance runtime', () => {
       return object
     })
     const engine = createAmbulanceSimEngine({
-      controlInstanceId,
+      simulationRunId,
       objects: initialObjects,
       routing: createDirectRoutingAdapter(),
     })
@@ -580,13 +580,13 @@ describe('local ambulance runtime', () => {
 
   test('unloads patients and updates hospital capacity when a loaded ambulance reaches a hospital', async () => {
     const baseObjects = createAmbulanceSimEngine({
-      controlInstanceId,
+      simulationRunId,
       objects: osloAmbulanceScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     }).snapshot().objects
     const initialObjects = baseObjects.map(object => object.kind === 'mobile_entity' ? withAmbulancePatients(object, 1, 1) : object)
     const engine = createAmbulanceSimEngine({
-      controlInstanceId,
+      simulationRunId,
       objects: initialObjects,
       routing: createDirectRoutingAdapter(),
     })
@@ -616,7 +616,7 @@ describe('local ambulance runtime', () => {
 
   test('keeps loaded ambulance waiting when hospital has no receiving capacity', async () => {
     const baseObjects = createAmbulanceSimEngine({
-      controlInstanceId,
+      simulationRunId,
       objects: osloAmbulanceScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     }).snapshot().objects
@@ -626,7 +626,7 @@ describe('local ambulance runtime', () => {
       return object
     })
     const engine = createAmbulanceSimEngine({
-      controlInstanceId,
+      simulationRunId,
       objects: initialObjects,
       routing: createDirectRoutingAdapter(),
     })

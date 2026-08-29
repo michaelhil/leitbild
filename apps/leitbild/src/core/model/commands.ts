@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { actorIdSchema, clientIdSchema, commandIdSchema, objectIdSchema, controlInstanceIdSchema, type ActorId, type ClientId, type CommandId, type ObjectId, type ControlInstanceId } from './ids.ts'
+import { actorIdSchema, clientIdSchema, commandIdSchema, objectIdSchema, simulationRunIdSchema, type ActorId, type ClientId, type CommandId, type ObjectId, type SimulationRunId } from './ids.ts'
 import { isoTimestampSchema, type IsoTimestamp } from './time.ts'
 
 export const deleteObjectCommandKind = 'object.delete'
@@ -12,7 +12,7 @@ export type DeleteObjectPayload = z.infer<typeof deleteObjectPayloadSchema>
 
 export interface CommandEnvelope {
   readonly id: CommandId
-  readonly controlInstanceId: ControlInstanceId
+  readonly simulationRunId: SimulationRunId
   readonly actorId: ActorId
   readonly clientId?: ClientId
   readonly idempotencyKey?: string
@@ -38,7 +38,7 @@ export type CommandResult =
 
 export const commandEnvelopeSchema = z.object({
   id: commandIdSchema,
-  controlInstanceId: controlInstanceIdSchema,
+  simulationRunId: simulationRunIdSchema,
   actorId: actorIdSchema,
   clientId: clientIdSchema.optional(),
   idempotencyKey: z.string().min(1).max(256).optional(),

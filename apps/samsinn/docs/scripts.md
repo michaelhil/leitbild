@@ -124,23 +124,25 @@ advance and on user interjection.
 ## REST + WebSocket surface
 
 ```bash
+SCOPE=http://localhost:3000/api/workspaces/<workspaceId>
+
 # Catalog
-curl http://localhost:3000/api/scripts
-curl -X POST http://localhost:3000/api/scripts/reload
-curl http://localhost:3000/api/scripts/<name>      # full source
+curl "$SCOPE/scripts"
+curl -X POST "$SCOPE/scripts/reload"
+curl "$SCOPE/scripts/<name>"      # full source
 curl -X POST -H 'Content-Type: application/json' \
   -d '{"name":"x","source":"# SCRIPT: …"}' \
-  http://localhost:3000/api/scripts                # upsert
-curl -X DELETE http://localhost:3000/api/scripts/<name>
+  "$SCOPE/scripts"                # upsert
+curl -X DELETE "$SCOPE/scripts/<name>"
 
 # Per-room run
-curl http://localhost:3000/api/rooms/<room>/script
-curl 'http://localhost:3000/api/rooms/<room>/script/document?viewer=director'
+curl "$SCOPE/rooms/<room>/script"
+curl "$SCOPE/rooms/<room>/script/document?viewer=director"
 curl -X POST -H 'Content-Type: application/json' \
   -d '{"scriptName":"<name>"}' \
-  http://localhost:3000/api/rooms/<room>/script/start
-curl -X POST http://localhost:3000/api/rooms/<room>/script/stop
-curl -X POST http://localhost:3000/api/rooms/<room>/script/advance
+  "$SCOPE/rooms/<room>/script/start"
+curl -X POST "$SCOPE/rooms/<room>/script/stop"
+curl -X POST "$SCOPE/rooms/<room>/script/advance"
 ```
 
 WebSocket events broadcast to room subscribers:

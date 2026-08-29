@@ -1,5 +1,7 @@
 import { json, errorResponse, parseBody } from './helpers.ts'
 import type { RouteEntry } from './types.ts'
+import type { MonitorState } from '../../llm/provider-monitor.ts'
+import { resolveProviderAvailability } from '../../llm/provider-availability.ts'
 
 export const runtimeRoutes: RouteEntry[] = [
   {
@@ -22,7 +24,7 @@ export const runtimeRoutes: RouteEntry[] = [
   // Room or Workspace settings adapter.
   {
     method: 'GET',
-    pattern: /^\/api\/models$/,
+    pattern: /^\/models$/,
     handler: async (_req, _match, { system }) => {
       // Structured response grouped by provider, with per-model metadata
       // (context window, running flag, recommended flag). Consumed by the
@@ -31,7 +33,7 @@ export const runtimeRoutes: RouteEntry[] = [
         const { CURATED_MODELS, isCuratedModel } =
           await import('../../llm/models/catalog.ts')
         const { resolveDefaultModel } = await import('../../llm/models/default-resolver.ts')
-        const { PROVIDER_PROFILES } = await import('../../llm/providers-config.ts')
+        const { PROVIDER_PROFILES, isLocal } = await import('../../llm/providers-config.ts')
         const { getContextWindowSync } = await import('../../llm/models/context-window.ts')
         const { loadProviderStore, mergeWithEnv } = await import('../../llm/providers-store.ts')
 
@@ -41,11 +43,7 @@ export const runtimeRoutes: RouteEntry[] = [
         const monitor = system.llm.getMonitorSnapshot()
         const providers: Array<{
           name: string
-          status: 'ok' | 'no_key' | 'cooldown' | 'down'
-          // Optional richer fields surfaced for the model-select dropdown's
-          // tooltip + countdown — older clients ignore them.
-          reason?: string
-          retryAt?: number | null
+          availability: MonitorState
           models: Array<{ id: string; contextMax: number; recommended: boolean; pinned?: boolean; running?: boolean; label?: string }>
         }> = []
 
@@ -53,16 +51,9 @@ export const runtimeRoutes: RouteEntry[] = [
         for (const name of system.providerConfig.order) {
           if (name === 'ollama') continue
           const gw = system.gateways[name]
-          const enabled = system.providerKeys.isEnabled(name)
+          const hasKey = system.providerKeys.get(name).length > 0
+          const userEnabled = system.providerKeys.isUserEnabled(name)
           const m = monitor[name]
-          // Map the monitor's richer sub-state down to this endpoint's
-          // legacy 4-value enum so existing UI consumers keep working.
-          const status: 'ok' | 'no_key' | 'cooldown' | 'down' =
-            !enabled ? 'no_key' :
-            m && (m.sub === 'no_key' || m.sub === 'disabled') ? 'no_key' :
-            m && (m.sub === 'down' || m.sub === 'unhealthy') ? 'down' :
-            m && m.sub === 'backoff' ? 'cooldown' :
-            'ok'
 
           const reported = gw?.getHealth().availableModels ?? []
           const reportedSet = new Set(reported)
@@ -109,9 +100,13 @@ export const runtimeRoutes: RouteEntry[] = [
             models.push({ id, contextMax: ctx.contextMax, recommended: false, pinned: pinnedSet.has(id) })
           }
           providers.push({
-            name, status, models,
-            ...(m && m.reason ? { reason: m.reason } : {}),
-            ...(m && m.retryAt !== null ? { retryAt: m.retryAt } : {}),
+            name,
+            availability: resolveProviderAvailability(m, {
+              fallbackSub: !userEnabled ? 'disabled' : (!hasKey && !isLocal(name)) ? 'no_key' : 'ok',
+              modelCount: models.length,
+              requireModels: true,
+            }),
+            models,
           })
           void PROVIDER_PROFILES
         }
@@ -124,7 +119,6 @@ export const runtimeRoutes: RouteEntry[] = [
           ])
           const runSet = new Set(running)
           const ollamaMon = monitor.ollama ?? null
-          const cool = ollamaMon && ollamaMon.sub === 'backoff'
           // All Ollama models are "recommended" — they're local and free, so
           // there's no reason to hide them behind "show all". Running models
           // just get an extra star.
@@ -138,37 +132,38 @@ export const runtimeRoutes: RouteEntry[] = [
           })
           providers.push({
             name: 'ollama',
-            status: cool ? 'cooldown' : (all.length === 0 ? 'down' : 'ok'),
-            ...(ollamaMon && ollamaMon.reason ? { reason: ollamaMon.reason } : {}),
-            ...(ollamaMon && ollamaMon.retryAt !== null ? { retryAt: ollamaMon.retryAt } : {}),
+            availability: resolveProviderAvailability(ollamaMon, {
+              fallbackSub: merged.ollama.enabled ? 'ok' : 'disabled',
+              modelCount: models.length,
+              requireModels: true,
+            }),
             models,
           })
         }
 
         // Default model pick — delegated to the pure resolver so the same logic
         // can be reused by per-call effective-model resolution in agent eval.
-        // The resolver only sees 'ok' providers as candidates (key + no cooldown
-        // already encoded in the status field above).
+        // The resolver only sees available providers as candidates.
         const defaultModel = resolveDefaultModel(providers)
 
         void isCuratedModel
 
         return json({ providers, defaultModel })
       } catch (err) {
-        console.error('/api/models error:', err)
+        console.error('/models error:', err)
         return json({ providers: [], defaultModel: '' })
       }
     },
   },
   {
     method: 'GET',
-    pattern: /^\/api\/ollama\/urls$/,
+    pattern: /^\/ollama\/urls$/,
     handler: (_req, _match, { system }) =>
       json({ current: system.ollamaUrls.getCurrent(), saved: system.ollamaUrls.list() }),
   },
   {
     method: 'PUT',
-    pattern: /^\/api\/ollama\/urls$/,
+    pattern: /^\/ollama\/urls$/,
     handler: async (req, _match, { system }) => {
       const body = await parseBody(req)
       if (typeof body.url === 'string') {
@@ -180,7 +175,7 @@ export const runtimeRoutes: RouteEntry[] = [
   },
   {
     method: 'DELETE',
-    pattern: /^\/api\/ollama\/urls$/,
+    pattern: /^\/ollama\/urls$/,
     handler: async (req, _match, { system }) => {
       const body = await parseBody(req)
       if (typeof body.url === 'string') {

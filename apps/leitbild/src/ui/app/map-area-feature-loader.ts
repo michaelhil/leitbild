@@ -1,6 +1,6 @@
-import type { ControlInstanceId, GeoJsonPolygon, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
+import type { SimulationRunId, GeoJsonPolygon, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
 import type { LeitbildPack, PackMapAreaFeature, PackQueryRequest } from '../../core/packs/protocol.ts'
-import { queryControlInstancePack, type ControlInstanceRequestOptions } from '../control-instance-client.ts'
+import { querySimulationRunPack, type SimulationRunRequestOptions } from '../simulation-run-client.ts'
 import type { PackQueryApiResponse } from '../types.ts'
 
 export interface MapAreaFeatureLoaderContext {
@@ -13,13 +13,13 @@ export interface MapAreaFeatureLoaderContext {
 export interface MapAreaFeatureRuntimeConfig {
   readonly pack: () => LeitbildPack | null
   readonly objects: () => ReadonlyArray<OperationalObject>
-  readonly controlInstanceId: () => ControlInstanceId | null
+  readonly simulationRunId: () => SimulationRunId | null
   readonly currentTime: () => IsoTimestamp | undefined
   readonly queryTimeoutMs?: number
   readonly queryPack?: (
-    controlInstanceId: ControlInstanceId,
+    simulationRunId: SimulationRunId,
     request: PackQueryRequest,
-    options?: ControlInstanceRequestOptions,
+    options?: SimulationRunRequestOptions,
   ) => Promise<PackQueryApiResponse>
 }
 
@@ -69,19 +69,19 @@ export const createMapAreaFeatureLoader = (
       : { ...presentationContext, currentTime }
     const pack = config.pack()
     if (!pack) return []
-    const syncFeatures = pack.mapAreaFeatures?.(presentationContextWithTime) ?? []
-    const controlInstanceId = config.controlInstanceId()
-    if (!controlInstanceId) return syncFeatures
-    const requests = pack.mapAreaFeatureQueries?.(presentationContextWithTime) ?? []
+    const syncFeatures = pack.presentation.mapAreaFeatures?.(presentationContextWithTime) ?? []
+    const simulationRunId = config.simulationRunId()
+    if (!simulationRunId) return syncFeatures
+    const requests = pack.presentation.mapAreaFeatureQueries?.(presentationContextWithTime) ?? []
     if (requests.length === 0) return syncFeatures
-    const query = config.queryPack ?? queryControlInstancePack
+    const query = config.queryPack ?? querySimulationRunPack
     const timeout = createAbortSignalWithTimeout(
       context.signal,
       config.queryTimeoutMs ?? defaultMapAreaFeatureQueryTimeoutMs,
     )
     try {
       const responses = await Promise.all(requests.map(async request => {
-        const body = await query(controlInstanceId, request, { signal: timeout.signal })
+        const body = await query(simulationRunId, request, { signal: timeout.signal })
         if (!body.response.ok) throw new Error(body.response.reason)
         return mapFeaturesFromQueryResult(body.response.result)
       }))

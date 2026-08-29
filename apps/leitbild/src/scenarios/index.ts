@@ -20,7 +20,7 @@ export const builtinMissions: ReadonlyArray<MissionDefinition> = [{
   scenarioId: 'oslo-drone-operations',
   goals: [{
     id: 'goal:drone-shared-operations',
-    title: 'Operate multiple drones in one shared control instance',
+    title: 'Operate multiple drones in one shared simulation run',
     description: 'Use map commands, direct flight windows, and swarm commands while every drone remains an individually simulated object.',
   }],
   objectives: [

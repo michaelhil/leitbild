@@ -23,10 +23,10 @@ export type RequestId = z.infer<typeof requestIdSchema>
 export const eventIdSchema = z.uuid().brand<'PlatformEventId'>()
 export type PlatformEventId = z.infer<typeof eventIdSchema>
 
-export const protocolVersionSchema = z.string()
+export const semanticVersionSchema = z.string()
   .regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/)
-  .brand<'ProtocolVersion'>()
-export type ProtocolVersion = z.infer<typeof protocolVersionSchema>
+  .brand<'SemanticVersion'>()
+export type SemanticVersion = z.infer<typeof semanticVersionSchema>
 
 export const isoTimestampSchema = z.iso.datetime({ offset: true })
 export type IsoTimestamp = z.infer<typeof isoTimestampSchema>

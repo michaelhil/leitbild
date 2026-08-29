@@ -5,14 +5,10 @@
 import type { Pack } from './types.ts'
 import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { readManifest, namespaceFor } from './manifest.ts'
-
-// Pack namespace must satisfy the tool-name regex so it can be used as a
-// prefix: `<ns>_<tool>` must remain a valid tool identifier.
-const VALID_NAMESPACE = /^[a-zA-Z0-9_-]+$/
+import { readManifest } from './manifest.ts'
 
 // scanPacks runs on every install/update/uninstall (for list_packs), every
-// PUT /api/rooms/:name/packs (for activation validation), and every
+// the Workspace-scoped Room Pack API (for activation validation), and every
 // refreshPackGeodata. Without dedup, an orphan .prev sibling would emit
 // the warning once per call — flooding logs after a single crashed update.
 // Module-level Set lives for the process lifetime; bounded by operator's
@@ -58,14 +54,12 @@ export const scanPacks = async (rootDir: string): Promise<ReadonlyArray<Pack>> =
       if (!s.isDirectory()) continue
     } catch { continue }
 
-    const namespace = namespaceFor(dirPath)
-    if (!VALID_NAMESPACE.test(namespace)) {
-      console.warn(`[packs] ${namespace}: directory name is not a valid namespace — skipping`)
-      continue
-    }
-
     const manifest = await readManifest(dirPath)
-    packs.push({ namespace, dirPath, manifest })
+    const id = manifest.descriptor.id
+    if (entry !== id) {
+      throw new Error(`${join(dirPath, 'pack.json')}: descriptor.id ${id} must match Pack directory name ${entry}`)
+    }
+    packs.push({ id, dirPath, manifest })
   }
 
   return packs
@@ -84,7 +78,7 @@ export const scanPackSubdirs = async (
     const candidate = join(p.dirPath, subdir)
     try {
       const s = await stat(candidate)
-      if (s.isDirectory()) out.push({ pack: p.namespace, dir: candidate })
+    if (s.isDirectory()) out.push({ pack: p.id, dir: candidate })
     } catch { /* no such subdir — fine, packs choose what to ship */ }
   }
   return out

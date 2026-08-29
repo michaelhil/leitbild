@@ -19,7 +19,7 @@
 //     iterated `system.team.listAgents()` at wire time. The init-loop
 //     covered SNAPSHOT-RESTORED agents (which exist before wireWorkspaceRuntimeEvents
 //     runs). It did NOT cover agents spawned AFTER wire — including
-//     seedFreshInstance's Helper, script-engine cast members, and any
+//     the fresh-Workspace Helper, script-engine cast members, and any
 //     programmatic spawn. They silently bypassed subscription.
 //
 // FIX (bootstrap.ts wireAgentTracking + wire-workspace-runtime-events.ts init-loop)
@@ -77,7 +77,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     // SAME shape that wsManager.subscribeAgentState would emit, so we can
     // verify the spawn-wrapper drives the chain end-to-end without relying
     // on wsManager's internal closure (which captures baseWs.broadcastTo
-    // Instance and is invisible to outer instrumentation).
+    // Workspace and is invisible to outer instrumentation).
     const broadcasts: Array<{ workspaceId: string; msg: WSOutbound }> = []
     const subscribed: Array<{ agentId: string; agentName: string; workspaceId: string }> = []
 
@@ -86,7 +86,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
       onWorkspaceRuntimeCreated: async (system, id, autoSaver: AutoSaver) => {
         // Simulate bootstrap.ts's first async step (logging.configure).
         // Critical: this releases a microtask, so if buildWorkspaceRuntime doesn't
-        // await this hook, seedFreshInstance races ahead and spawns Helper
+        // await this hook, Workspace seeding races ahead and spawns Helper
         // BEFORE wireAgentTracking installs its spawn-wrapper. The race-fix
         // in runtime-registry.ts must await opts.onWorkspaceRuntimeCreated.
         await new Promise(r => setImmediate(r))
@@ -146,7 +146,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     // 3. End-to-end: trigger Helper's eval via the same path the UI uses
     // (post a message, addressed to Helper). The stub LLM returns instantly,
     // so the agent transitions generating → idle. Both transitions should
-    // produce `agent_state` broadcasts scoped to OUR cookie's instance.
+    // produce `agent_state` broadcasts scoped to OUR cookie's Workspace.
     const room = sys.rooms.listAllRooms()[0]
     expect(room).toBeDefined()
     sys.routeMessage(
@@ -168,7 +168,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
       await new Promise(r => setTimeout(r, 25))
     }
     if (stateEvents.length === 0) {
-      // Diagnostic: dump what DID broadcast for Helper or this instance.
+      // Diagnostic: dump what DID broadcast for Helper or this Workspace.
       const types = broadcasts.filter(b => b.workspaceId === cookieId).map(b => b.msg.type)
       throw new Error(`No agent_state broadcasts for Helper. Got ${broadcasts.length} broadcasts total; types for cookieId: [${types.join(', ')}]`)
     }
@@ -313,7 +313,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     // Wait for agent to settle to idle so eviction can drain.
     await new Promise(r => setTimeout(r, 200))
 
-    // Evict the instance. stateUnsubs MUST be cleared for helperId;
+    // Evict the Workspace runtime. stateUnsubs MUST be cleared for helperId;
     // without the fix, it persists across the reload.
     await registry.evictOne(cookieId)
 

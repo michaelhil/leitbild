@@ -90,7 +90,7 @@ export const stateHandlers: StateHandlers = {
     $mutedAgents.set(new Set())
     $turnInfo.set(null)
 
-    // Select a valid room for this authoritative snapshot. Instance switches
+    // Select a valid room for this authoritative snapshot. Workspace switches
     // and resets can leave the UI holding a Room id from the previous Workspace state.
     const selectedRoomId = $selectedRoomId.get()
     if (msg.rooms.length === 0) {
@@ -114,7 +114,7 @@ export const stateHandlers: StateHandlers = {
     // Server is authoritative. Drop the stale per-room message cache so the
     // $roomMessages.listen() renderer at app.ts:433 receives a per-room
     // `changedKey` and diffs the old DOM against the new (empty) array,
-    // removing phantom messages from a previous server instance. Bare
+    // removing phantom messages from a previous server process. Bare
     // `$roomMessages.set({})` would empty the cache but not trigger the
     // listener (changedKey would be undefined) — same gotcha already
     // documented in the messages_cleared handler above.

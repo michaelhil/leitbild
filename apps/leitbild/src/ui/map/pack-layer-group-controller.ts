@@ -25,7 +25,7 @@ const collectGroups = (packs: ReadonlyArray<LeitbildPack>): ReadonlyArray<PackMa
   const out: PackMapLayerGroup[] = []
   const seen = new Set<string>()
   for (const pack of packs) {
-    for (const group of pack.mapLayerGroups ?? []) {
+    for (const group of pack.presentation.mapLayerGroups ?? []) {
       if (seen.has(group.id)) continue
       seen.add(group.id)
       out.push(group)

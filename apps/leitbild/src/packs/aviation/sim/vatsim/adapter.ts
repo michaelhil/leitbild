@@ -1,4 +1,4 @@
-import { nowIso, type CommandEnvelope, type CommandResult, type ControlInstanceEvent, type IsoTimestamp, type ObjectId, type OperationalObject, type SimulationClockState } from '../../../../core/model/index.ts'
+import { nowIso, type CommandEnvelope, type CommandResult, type SimulationRunEvent, type IsoTimestamp, type ObjectId, type OperationalObject, type SimulationClockState } from '../../../../core/model/index.ts'
 import type {
   PackRuntimeAdapter,
   PackRuntimeConnection,
@@ -139,6 +139,7 @@ export const createVatsimPackRuntimeAdapter = (config: VatsimAdapterConfig = {})
 
   return {
     id: aviationVatsimRuntimeId,
+    version: '1.0.0',
     packId: aviationRuntimePackId,
     acceptedCommandKinds: [],
     queryKinds: ['aviation.source_status'],
@@ -199,7 +200,7 @@ export const createVatsimPackRuntimeAdapter = (config: VatsimAdapterConfig = {})
 
       return {
         getSnapshot: async () => ({
-          controlInstanceId: connectionConfig.controlInstanceId,
+          simulationRunId: connectionConfig.simulationRunId,
           objects: [...state.values()].map(entry => entry.object),
           capturedAt: runtime.nowIso(),
         }),
@@ -240,7 +241,7 @@ export const createVatsimPackRuntimeAdapter = (config: VatsimAdapterConfig = {})
             generatedAt: runtime.nowIso(),
           }
         },
-        observeCommittedEvents: async (_events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => undefined,
+        observeCommittedEvents: async (_events: ReadonlyArray<SimulationRunEvent>): Promise<void> => undefined,
         setClock: async (next: SimulationClockState): Promise<void> => { clock = next },
         close: async (): Promise<void> => {
           stopPolling()

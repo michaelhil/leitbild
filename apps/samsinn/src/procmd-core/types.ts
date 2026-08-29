@@ -1,12 +1,11 @@
-// procmd-core — shared type surface for the procmd v0.6 parser.
+// procmd-core — shared type surface for the procmd v0.7 parser.
 //
 // Consumed by:
-//   - talkingAgents/src/packs/pwr-ops/procmd/parser.ts (re-export shim)
-//   - talkingAgents/src/packs/pwr-ops/procmd/renderer.ts (procmd → agent markdown)
+//   - src/packs/pwr-ops/procmd/renderer.ts (procmd → agent markdown)
 //   - pwr-ops/validate.ts (corpus-wide validator)
 //   - pwr-ops/scripts/render-procmd.ts (procmd → MkDocs-flavored markdown)
 //
-// Spec: docs/procedure-md.md (v0.6 normative).
+// Spec: docs/procedure-md.md (v0.7 normative).
 //
 // The library exports only types, parsing, and version constants. Renderers
 // and validators are each consumer's responsibility — they share semantics
@@ -18,7 +17,7 @@ export const ACCEPTED_PROCMD_VERSIONS = new Set(['0.7'])
 export interface ParsedFrontmatter {
   readonly procedureId: string
   readonly title: string
-  readonly procedureMd?: string
+  readonly procedureMd: string
   readonly profile?: string
   readonly appliesTo?: string
   readonly category?: string

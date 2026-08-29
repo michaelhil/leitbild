@@ -1,12 +1,12 @@
 // Skills REST routes — isolated so the skills domain has its
 // own file like every other domain (rooms, agents, wikis, packs, etc.).
 //
-//   GET    /api/skills          — list (name, description, scope, tools)
-//   GET    /api/skills/:name    — full detail (body included)
-//   POST   /api/skills          — create new skill on disk + in-memory
-//   PUT    /api/skills/:name    — update description/body/scope; preserves
+//   GET    /skills          — list (name, description, scope, tools)
+//   GET    /skills/:name    — full detail (body included)
+//   POST   /skills          — create new skill on disk + in-memory
+//   PUT    /skills/:name    — update description/body/scope; preserves
 //                                 allowed-tools across restart
-//   DELETE /api/skills/:name    — rm -rf the skill dir + drop from store
+//   DELETE /skills/:name    — rm -rf the skill dir + drop from store
 
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -33,7 +33,7 @@ const renderSkillMd = (
 export const skillRoutes: RouteEntry[] = [
   {
     method: 'GET',
-    pattern: /^\/api\/skills$/,
+    pattern: /^\/skills$/,
     handler: (_req, _match, { system }) =>
       json(system.skillStore.list().map(s => ({
         name: s.name, description: s.description,
@@ -43,7 +43,7 @@ export const skillRoutes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/skills\/([^/]+)$/,
+    pattern: /^\/skills\/([^/]+)$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const skill = system.skillStore.get(name)
@@ -59,7 +59,7 @@ export const skillRoutes: RouteEntry[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/skills$/,
+    pattern: /^\/skills$/,
     handler: async (req, _match, { system }) => {
       const body = await parseBody(req)
       const name = body.name as string
@@ -84,7 +84,7 @@ export const skillRoutes: RouteEntry[] = [
   },
   {
     method: 'PUT',
-    pattern: /^\/api\/skills\/([^/]+)$/,
+    pattern: /^\/skills\/([^/]+)$/,
     handler: async (req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const skill = system.skillStore.get(name)
@@ -116,7 +116,7 @@ export const skillRoutes: RouteEntry[] = [
   },
   {
     method: 'DELETE',
-    pattern: /^\/api\/skills\/([^/]+)$/,
+    pattern: /^\/skills\/([^/]+)$/,
     handler: async (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const skill = system.skillStore.get(name)

@@ -1,3 +1,4 @@
+import { apiFetch } from "./api-client.ts"
 // Send-as picker — opens when the user submits a message in a room with no
 // poster selected and more than one human candidate. Lists humans (in-room
 // first, then others); selecting one sets the per-room poster and re-fires
@@ -14,7 +15,7 @@ export interface SendAsPickerDeps {
 }
 
 // Quick "create human" path used when no humans exist anywhere. Inline
-// prompt → POST /api/agents/human → add to current room → select → re-send.
+// prompt → POST /agents/human → add to current room → select → re-send.
 export const createHumanInline = async (
   roomId: string,
   content: string,
@@ -25,7 +26,7 @@ export const createHumanInline = async (
   const roomName = roomIdToName(roomId)
   if (!roomName) return
   try {
-    const res = await fetch('/api/agents/human', {
+    const res = await apiFetch('/agents/human', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, roomName }),

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { moduleIdSchema, protocolVersionSchema } from './ids.ts'
+import { moduleIdSchema, semanticVersionSchema } from './ids.ts'
 
 const packTokenSchema = z.string()
   .min(1)
@@ -18,10 +18,10 @@ export const packDependencySchema = z.object({
 }).strict()
 
 export const packDescriptorSchema = z.object({
-  schemaVersion: protocolVersionSchema,
+  schemaVersion: semanticVersionSchema,
   id: packTokenSchema,
   moduleId: moduleIdSchema,
-  version: protocolVersionSchema,
+  version: semanticVersionSchema,
   name: z.string().min(1).max(256),
   description: z.string().min(1).max(2048).optional(),
   platformVersionRange: z.string().min(1),
@@ -54,7 +54,7 @@ export const capabilityDescriptorSchema = z.object({
   id: packTokenSchema,
   kind: z.enum(['command', 'query', 'stream', 'surface', 'tool', 'skill', 'data']),
   packId: packTokenSchema,
-  version: protocolVersionSchema,
+  version: semanticVersionSchema,
   description: z.string().min(1).max(2048).optional(),
 }).strict()
 export type CapabilityDescriptor = z.infer<typeof capabilityDescriptorSchema>

@@ -1,5 +1,5 @@
 // Pure read-only introspection of an agent's effective tool surface in a
-// given room. Used by GET /api/agents/:name/surface to answer "what does
+// given room. Used by the Workspace-scoped Agent surface API to answer "what does
 // this agent actually see when invoked in this room, and why."
 //
 // No side effects, no caching, no LLM call. Computes the same surface

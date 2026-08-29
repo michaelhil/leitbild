@@ -68,7 +68,7 @@
     readonly onMapReady: () => void
     readonly onMapError: (message: string) => void
     readonly onMapDiagnostic?: (snapshot: MapRuntimeDiagnosticsSnapshot) => void
-    readonly controlInstanceId?: string | null
+    readonly simulationRunId?: string | null
     readonly activePackIds?: ReadonlyArray<string>
     readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
     readonly mapLayerGroupVisibility?: Readonly<Record<string, boolean>>
@@ -99,7 +99,7 @@
     onMapReady,
     onMapError,
     onMapDiagnostic = () => undefined,
-    controlInstanceId = null,
+    simulationRunId = null,
     activePackIds = [],
     mapLayerGroups = [],
     mapLayerGroupVisibility = {},
@@ -281,7 +281,7 @@
     if (!currentRuntime) return
     referenceLayerController.register({
       runtime: currentRuntime,
-      controlInstanceId,
+      simulationRunId,
       datasetIds: referenceDatasetIds,
       layerGroups: mapLayerGroups,
       visibility: mapLayerGroupVisibility,
@@ -468,7 +468,7 @@
     runtime
     referenceDatasetIds
     mapLayerGroups
-    controlInstanceId
+    simulationRunId
     untrack(() => registerReferenceLayers())
   })
 

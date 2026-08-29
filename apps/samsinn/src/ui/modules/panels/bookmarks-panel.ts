@@ -1,7 +1,8 @@
+import { apiFetch } from "../api-client.ts"
 // ============================================================================
 // Bookmarks Panel — system-wide message bookmarks dialog.
 //
-// Opens on demand, fetches /api/bookmarks, renders a scrollable list.
+// Opens on demand, fetches /bookmarks, renders a scrollable list.
 // Row click → inserts the bookmark text into the chat composer for the user
 // to edit before sending. Pen toggles in-line edit (textarea that auto-grows,
 // saves on blur/Enter, Escape cancels, edits preserve list position). Red ×
@@ -21,14 +22,14 @@ export interface BookmarksPanelDeps {
 }
 
 const fetchBookmarks = async (): Promise<Bookmark[]> => {
-  const res = await fetch('/api/bookmarks')
+  const res = await apiFetch('/bookmarks')
   if (!res.ok) return []
   const data = await res.json() as { bookmarks?: Bookmark[] }
   return data.bookmarks ?? []
 }
 
 const putBookmark = async (id: string, content: string): Promise<boolean> => {
-  const res = await fetch(`/api/bookmarks/${encodeURIComponent(id)}`, {
+  const res = await apiFetch(`/bookmarks/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content }),
@@ -37,7 +38,7 @@ const putBookmark = async (id: string, content: string): Promise<boolean> => {
 }
 
 const deleteBookmark = async (id: string): Promise<boolean> => {
-  const res = await fetch(`/api/bookmarks/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  const res = await apiFetch(`/bookmarks/${encodeURIComponent(id)}`, { method: 'DELETE' })
   return res.ok
 }
 

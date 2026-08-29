@@ -78,8 +78,8 @@ export const createSkillStore = (): SkillStore => {
 }
 
 // --- Frontmatter parsing ---
-// Simple parser — no YAML library. Handles scalar, inline array, and YAML
-// block-list values for array fields.
+// Simple parser — no YAML library. Array fields accept only inline arrays or
+// YAML block lists so each frontmatter field has one unambiguous type.
 
 interface Frontmatter {
   name?: string
@@ -90,9 +90,7 @@ interface Frontmatter {
 
 // Parse a frontmatter field whose value is an array of strings. Handles:
 //   1. Inline array:     field: [a, b, c]
-//   2. Inline scalar:    field: single       (wrapped into [single] — matches
-//                                              the prior `scope: my-room` behavior)
-//   3. YAML block list:  field:
+//   2. YAML block list:  field:
 //                          - a
 //                          - b
 //                        (any indent; `- ` prefix required). Non-matching line
@@ -113,7 +111,7 @@ const parseYAMLArrayField = (
   }
 
   if (trimmed.length > 0) {
-    return { value: [trimmed], nextIdx: startIdx + 1 }
+    throw new Error('array frontmatter fields must use [item] or a YAML block list')
   }
 
   // Empty value → consume subsequent YAML block-list lines, bounded by endIdx

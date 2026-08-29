@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { createLeitbildCommandTools, toLeitbildSlug } from './command-tools.ts'
+import { createLeitbildModuleBinding } from './client.ts'
+import { workspaceIdSchema } from '@samsinn-leitbild/platform-contracts'
 
 describe('toLeitbildSlug', () => {
   test('lowercases and replaces spaces with hyphens', () => {
@@ -18,7 +20,12 @@ describe('toLeitbildSlug', () => {
 })
 
 describe('lb_command', () => {
-  const baseBinding = { baseUrl: 'https://example.test', workspaceId: 'x:y', role: 'operator' as const }
+  const baseBinding = {
+    moduleBinding: createLeitbildModuleBinding('https://example.test'),
+    workspaceId: workspaceIdSchema.parse('44444444-4444-4444-8444-444444444444'),
+    simulationRunId: 'run-44444444-4444-4444-8444-444444444444',
+    role: 'operator' as const,
+  }
 
   test('exposes one tool named lb_command', () => {
     const tools = createLeitbildCommandTools({ getBinding: () => baseBinding })
@@ -29,7 +36,7 @@ describe('lb_command', () => {
     const [tool] = createLeitbildCommandTools({ getBinding: () => undefined })
     const r = await tool!.execute({ kind: 'k', targets: [], payload: {} }, { callerId: 'a', callerName: 'A' })
     expect(r.success).toBe(false)
-    expect(String(r.error)).toContain('No leitbildBinding')
+    expect(String(r.error)).toContain('No Leitbild Simulation Run')
   })
 
   test('refuses observer role', async () => {

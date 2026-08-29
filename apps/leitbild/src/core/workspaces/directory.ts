@@ -2,12 +2,19 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
-import { isoTimestampSchema, newWorkspaceId, workspaceIdSchema, type WorkspaceId } from '@samsinn-leitbild/platform-contracts'
+import {
+  isoTimestampSchema,
+  moduleBindingSchema,
+  newWorkspaceId,
+  workspaceIdSchema,
+  type ModuleBinding,
+  type WorkspaceId,
+} from '@samsinn-leitbild/platform-contracts'
 
 export interface WorkspaceRecord {
   readonly id: WorkspaceId
   readonly displayName: string
-  readonly status: 'active' | 'archived'
+  readonly modules: ReadonlyArray<ModuleBinding>
   readonly createdAt: string
   readonly updatedAt: string
 }
@@ -15,15 +22,18 @@ export interface WorkspaceRecord {
 export interface WorkspaceDirectory {
   readonly list: () => Promise<ReadonlyArray<WorkspaceRecord>>
   readonly get: (id: WorkspaceId) => Promise<WorkspaceRecord | undefined>
-  readonly ensure: (config: { readonly id: WorkspaceId; readonly displayName: string }) => Promise<WorkspaceRecord>
+  readonly ensure: (config: {
+    readonly id: WorkspaceId
+    readonly displayName: string
+    readonly modules?: ReadonlyArray<ModuleBinding>
+  }) => Promise<WorkspaceRecord>
   readonly ensureDefault: (displayName?: string) => Promise<WorkspaceRecord>
-  readonly archive: (id: WorkspaceId) => Promise<boolean>
 }
 
 const workspaceRecordSchema = z.object({
   id: workspaceIdSchema,
   displayName: z.string().min(1).max(256),
-  status: z.enum(['active', 'archived']),
+  modules: z.array(moduleBindingSchema),
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,
 }).strict()
@@ -39,6 +49,13 @@ const directoryFileSchema = z.object({
       ctx.addIssue({ code: 'custom', path: ['workspaces', index, 'id'], message: `duplicate Workspace id: ${workspace.id}` })
     }
     seen.add(workspace.id)
+    const moduleIds = new Set<string>()
+    workspace.modules.forEach((binding, moduleIndex) => {
+      if (moduleIds.has(binding.moduleId)) {
+        ctx.addIssue({ code: 'custom', path: ['workspaces', index, 'modules', moduleIndex, 'moduleId'], message: `duplicate Module binding: ${binding.moduleId}` })
+      }
+      moduleIds.add(binding.moduleId)
+    })
   })
   if (file.defaultWorkspaceId !== undefined && !seen.has(file.defaultWorkspaceId)) {
     ctx.addIssue({ code: 'custom', path: ['defaultWorkspaceId'], message: 'default Workspace does not exist' })
@@ -81,19 +98,35 @@ export const createLocalWorkspaceDirectory = (config: {
     return result
   }
 
-  const ensure = (ensureConfig: { readonly id: WorkspaceId; readonly displayName: string }): Promise<WorkspaceRecord> =>
+  const ensure = (ensureConfig: {
+    readonly id: WorkspaceId
+    readonly displayName: string
+    readonly modules?: ReadonlyArray<ModuleBinding>
+  }): Promise<WorkspaceRecord> =>
     mutate(async () => {
       const file = await load()
       const existing = file.workspaces.find(workspace => workspace.id === ensureConfig.id)
-      if (existing) return existing
+      if (existing) {
+        if (ensureConfig.modules === undefined) return existing
+        const updated = workspaceRecordSchema.parse({
+          ...existing,
+          modules: ensureConfig.modules,
+          updatedAt: nowIso(),
+        })
+        await save({
+          ...file,
+          workspaces: file.workspaces.map(workspace => workspace.id === existing.id ? updated : workspace),
+        })
+        return updated
+      }
       const timestamp = nowIso()
-      const record: WorkspaceRecord = {
+      const record = workspaceRecordSchema.parse({
         id: ensureConfig.id,
         displayName: ensureConfig.displayName,
-        status: 'active',
+        modules: ensureConfig.modules ?? [],
         createdAt: timestamp,
         updatedAt: timestamp,
-      }
+      })
       await save({ ...file, workspaces: [...file.workspaces, record] })
       return record
     })
@@ -107,13 +140,13 @@ export const createLocalWorkspaceDirectory = (config: {
         return existing
       }
       const timestamp = nowIso()
-      const record: WorkspaceRecord = {
+      const record = workspaceRecordSchema.parse({
         id: newWorkspaceId(),
         displayName,
-        status: 'active',
+        modules: [],
         createdAt: timestamp,
         updatedAt: timestamp,
-      }
+      })
       await save({
         schemaVersion: 1,
         defaultWorkspaceId: record.id,
@@ -122,24 +155,10 @@ export const createLocalWorkspaceDirectory = (config: {
       return record
     })
 
-  const archive = (id: WorkspaceId): Promise<boolean> =>
-    mutate(async () => {
-      const file = await load()
-      const existing = file.workspaces.find(workspace => workspace.id === id)
-      if (!existing) return false
-      if (existing.status === 'archived') return true
-      const workspaces = file.workspaces.map(workspace => workspace.id === id
-        ? { ...workspace, status: 'archived' as const, updatedAt: nowIso() }
-        : workspace)
-      await save({ ...file, workspaces })
-      return true
-    })
-
   return {
     list: async () => (await load()).workspaces,
     get: async (id) => (await load()).workspaces.find(workspace => workspace.id === id),
     ensure,
     ensureDefault,
-    archive,
   }
 }

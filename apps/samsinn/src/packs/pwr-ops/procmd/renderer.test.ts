@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { parseProcedure } from './parser.ts'
+import { parseProcedure } from '../../../procmd-core/index.ts'
 import { renderProcedure, renderIndex } from './renderer.ts'
 
 const fixture = (name: string): string =>
@@ -74,6 +74,7 @@ describe('renderProcedure — mermaid fallback on validation failure', () => {
   // synthetic stress test for the validator, not a real corpus shape.
   test('omits diagram with visible footer when validator rejects', () => {
     const parsed = parseProcedure(`---
+procedure-md: 0.7
 procedure-id: STRESS-1
 title: Stress Test
 ---

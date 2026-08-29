@@ -1,9 +1,9 @@
 // ============================================================================
-// GET /api/logging      → current config + stats
-// PUT /api/logging      → reconfigure (enabled, dir, sessionId, kinds)
+// GET /logging      → current config + stats
+// PUT /logging      → reconfigure (enabled, dir, sessionId, kinds)
 //
 // Thin wrapper over system.logging. No auth — consistent with
-// /api/providers; deployments needing access control handle it at the
+// /providers; deployments needing access control handle it at the
 // network layer.
 // ============================================================================
 
@@ -14,12 +14,12 @@ import type { LogConfig } from '../../logging/types.ts'
 export const loggingRoutes: RouteEntry[] = [
   {
     method: 'GET',
-    pattern: /^\/api\/logging$/,
+    pattern: /^\/logging$/,
     handler: (_req, _match, { system }) => json(system.logging.get()),
   },
   {
     method: 'PUT',
-    pattern: /^\/api\/logging$/,
+    pattern: /^\/logging$/,
     handler: async (req, _match, { system }) => {
       const body = await parseBody(req)
       const partial: Partial<LogConfig> = {

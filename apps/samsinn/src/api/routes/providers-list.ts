@@ -1,4 +1,4 @@
-// GET /api/providers — provider status list (never returns raw keys).
+// GET /providers — provider status list (never returns raw keys).
 //
 // Combines the on-disk providers store, env-var fallback (mergeWithEnv),
 // and the live monitor snapshot into a stable shape the UI renders
@@ -12,12 +12,8 @@ import {
 import {
   PROVIDER_PROFILES, type CloudProviderName, isLocal,
 } from '../../llm/providers-config.ts'
-import type { MonitorState, MonitorSubState, FailureRecord } from '../../llm/provider-monitor.ts'
-
-// Legacy 4-value status surfaced to existing UI code that hasn't yet been
-// updated to consume the richer monitor sub-state. The monitor's sub-state
-// is also returned in `monitor` so new UI can use it directly.
-type ProviderStatus = 'ok' | 'no_key' | 'cooldown' | 'down' | 'disabled'
+import type { MonitorState, FailureRecord } from '../../llm/provider-monitor.ts'
+import { resolveProviderAvailability } from '../../llm/provider-availability.ts'
 
 interface ProviderStatusEntry {
   readonly name: string
@@ -32,48 +28,14 @@ interface ProviderStatusEntry {
   readonly isLocal: boolean
   readonly baseUrl?: string
   readonly maxConcurrent: number | null
-  readonly cooldown: { readonly coldUntilMs: number; readonly reason: string } | null
-  readonly status: ProviderStatus
-  // Full monitor state — Phase 2/3 UI will render directly from this.
-  readonly monitor: {
-    readonly sub: MonitorSubState
-    readonly reason: string
-    readonly retryAt: number | null
-    readonly modelCount: number
-    readonly consecutiveFailures: number
-    readonly lastError: { code: string; message: string } | null
-    readonly lastErrorAt: number | null
-  } | null
+  readonly availability: MonitorState
   readonly recentFailures: ReadonlyArray<FailureRecord>
-}
-
-const subToLegacyStatus = (sub: MonitorSubState | null): ProviderStatus => {
-  if (sub === null) return 'ok'
-  if (sub === 'no_key') return 'no_key'
-  if (sub === 'disabled') return 'disabled'
-  if (sub === 'down' || sub === 'unhealthy') return 'down'
-  if (sub === 'backoff') return 'cooldown'
-  return 'ok'
-}
-
-const routabilityStatus = (
-  base: ProviderStatus,
-  isLocalProvider: boolean,
-  modelCount: number | undefined,
-): ProviderStatus =>
-  base === 'ok' && isLocalProvider && (modelCount ?? 0) === 0 ? 'down' : base
-
-const monitorToLegacyCooldown = (
-  m: MonitorState | null,
-): { coldUntilMs: number; reason: string } | null => {
-  if (!m || m.sub !== 'backoff' || m.retryAt === null) return null
-  return { coldUntilMs: m.retryAt, reason: m.reason }
 }
 
 export const providersListRoutes: RouteEntry[] = [
   {
     method: 'GET',
-    pattern: /^\/api\/providers$/,
+    pattern: /^\/providers$/,
     handler: async (_req, _match, { system }) => {
       const { data: store, warnings } = await loadProviderStore(system.providersStorePath)
       const merged = mergeWithEnv(store)
@@ -83,19 +45,6 @@ export const providersListRoutes: RouteEntry[] = [
       const orderLockedByEnv = !!process.env.PROVIDER_ORDER
 
       const byName = new Map<string, ProviderStatusEntry>()
-
-      const monitorPayload = (mon: MonitorState | null): ProviderStatusEntry['monitor'] =>
-        mon
-          ? {
-              sub: mon.sub,
-              reason: mon.reason,
-              retryAt: mon.retryAt,
-              modelCount: mon.modelCount,
-              consecutiveFailures: mon.consecutiveFailures,
-              lastError: mon.lastError,
-              lastErrorAt: mon.lastErrorAt,
-            }
-          : null
 
       for (const name of Object.keys(PROVIDER_PROFILES) as CloudProviderName[]) {
         const m = merged.cloud[name]
@@ -119,14 +68,10 @@ export const providersListRoutes: RouteEntry[] = [
           // Local providers are "enabled" once user-enabled — no key required.
           enabled: local ? userEnabled : (hasKey && userEnabled),
           maxConcurrent: m.maxConcurrent ?? PROVIDER_PROFILES[name].defaultMaxConcurrent,
-          cooldown: monitorToLegacyCooldown(monState),
-          // Status mapping: local providers can't be 'no_key' (don't need one).
-          status: routabilityStatus(!userEnabled
-            ? 'disabled'
-            : (!hasKey && !local)
-              ? 'no_key'
-              : subToLegacyStatus(monState?.sub ?? null), local, monState?.modelCount),
-          monitor: monitorPayload(monState),
+          availability: resolveProviderAvailability(monState, {
+            fallbackSub: !userEnabled ? 'disabled' : (!hasKey && !local) ? 'no_key' : 'ok',
+            requireModels: local,
+          }),
           recentFailures: failures,
         })
       }
@@ -144,13 +89,10 @@ export const providersListRoutes: RouteEntry[] = [
         userEnabled: ollamaUserEnabled,
         enabled: ollamaUserEnabled,
         maxConcurrent: merged.ollama.maxConcurrent ?? 2,
-        cooldown: monitorToLegacyCooldown(ollamaMon),
-        status: routabilityStatus(
-          !ollamaUserEnabled ? 'disabled' : subToLegacyStatus(ollamaMon?.sub ?? null),
-          true,
-          ollamaMon?.modelCount,
-        ),
-        monitor: monitorPayload(ollamaMon),
+        availability: resolveProviderAvailability(ollamaMon, {
+          fallbackSub: ollamaUserEnabled ? 'ok' : 'disabled',
+          requireModels: true,
+        }),
         recentFailures: ollamaFailures,
       })
 

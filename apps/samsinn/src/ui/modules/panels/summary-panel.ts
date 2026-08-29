@@ -1,3 +1,4 @@
+import { apiFetch } from "../api-client.ts"
 // ============================================================================
 // Summary & Compression panel — settings + inspect modals.
 // Controlled via WS (set_summary_config, regenerate_summary) and a REST GET
@@ -149,7 +150,7 @@ export const openSummaryInspectModal = async (
 
   // Fetch current state
   try {
-    const resp = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/summary`)
+    const resp = await apiFetch(`/rooms/${encodeURIComponent(roomName)}/summary`)
     if (resp.ok) {
       const data = await resp.json() as { summary: string | null; compression: { content: string } | null }
       inspectState.summaryText = data.summary ?? ''
@@ -256,7 +257,7 @@ export const initSummaryPanel = (deps: SummaryPanelDeps): void => {
     try {
       // Kept as bare fetch: the !ok branch reads response.text() to show
       // the server's error message — safeFetchJson would lose that detail.
-      const resp = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/summary-config`)
+      const resp = await apiFetch(`/rooms/${encodeURIComponent(roomName)}/summary-config`)
       if (!resp.ok) throw new Error(await resp.text())
       const cfg = await resp.json() as SummaryConfig
       openSummarySettingsModal(roomName, cfg)

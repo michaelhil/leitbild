@@ -1,6 +1,7 @@
 import type { OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { LeitbildPack, PackCommandRequest, PackMapLayerGroup, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
+import { createLeitbildPackDescriptor } from '../../core/packs/protocol.ts'
 import {
   gridClearDerateCommandKind,
   gridCloseBranchCommandKind,
@@ -192,19 +193,20 @@ const unsupportedCommand = (): PackCommandRequest => {
 }
 
 export const electricGridPack: LeitbildPack = {
-  id: electricGridPackId,
-  name: 'Electric Grid',
-  runtimes: [
-    { id: electricGridRuntimeId, label: 'Local electric grid runtime', kind: 'local' },
-  ],
-  defaultRuntimeId: electricGridRuntimeId,
-  wikiRefs: [
-    { name: 'Leitbild electric grid pack wiki', url: 'https://samsinn-wikis.github.io/leitbild/packs/electric-grid/' },
-  ],
-  referenceDatasetIds: [gridNorwayDatasetIdValue],
-  mapLayerGroups: layerGroups,
+  descriptor: createLeitbildPackDescriptor({
+    id: electricGridPackId, version: '1.0.0', name: 'Electric Grid',
+    contributions: ['runtime', 'knowledge', 'reference-data', 'scenario', 'presentation', 'commands'],
+  }),
+  runtime: {
+    runtimes: [{ id: electricGridRuntimeId, version: '1.0.0', label: 'Local electric grid runtime', kind: 'local' }],
+    defaultRuntimeId: electricGridRuntimeId,
+  },
+  knowledge: { wikiRefs: [{ name: 'Leitbild electric grid pack wiki', url: 'https://samsinn-wikis.github.io/leitbild/packs/electric-grid/' }] },
+  referenceData: { builders: [], datasetIds: [gridNorwayDatasetIdValue] },
   scenario: electricGridScenarioSupport,
-  categories: [
+  presentation: {
+    mapLayerGroups: layerGroups,
+    categories: [
     { id: 'grid-system', label: 'Grid Overview', emptyLabel: 'No grid overview', matches: object => parseGridData(object)?.assetKind === 'system' },
     { id: 'grid-generation', label: 'Generation', emptyLabel: 'No generators', matches: object => parseGridData(object)?.assetKind === 'generator' || parseGridData(object)?.assetKind === 'storage' },
     { id: 'grid-branches', label: 'Lines & Transformers', emptyLabel: 'No grid branches', matches: object => parseGridData(object)?.assetKind === 'branch' },
@@ -213,9 +215,8 @@ export const electricGridPack: LeitbildPack = {
       const data = parseGridData(object)
       return data?.assetKind === 'load' || data?.assetKind === 'ev_charging'
     } },
-  ],
-  createObjectTypes: [],
-  presentObject: (object: OperationalObject): PackObjectPresentation => {
+    ],
+    presentObject: (object: OperationalObject): PackObjectPresentation => {
     const data = parseGridData(object)
     if (!data) {
       return {
@@ -248,29 +249,33 @@ export const electricGridPack: LeitbildPack = {
       ...(mapIconSizePx === undefined ? {} : { mapIconSizePx }),
       noteworthyUpdates: data.assetKind === 'system' || tone !== 'ready',
     }
+    },
   },
-  defaultObjectLabel: (typeId: string): string => {
-    throw new Error(`electric-grid pack does not support object creation yet: ${typeId}`)
-  },
-  buildCreateObjectCommand: (): PackCommandRequest => unsupportedCommand(),
-  isController: (object: OperationalObject): boolean => {
-    const data = parseGridData(object)
-    return data?.type === 'grid_generator' || data?.type === 'grid_branch' || data?.type === 'grid_load'
-  },
-  isTarget: () => false,
-  buildSetTargetCommand: (controller: OperationalObject): PackCommandRequest => {
-    const data = parseGridData(controller)
-    if (data?.type === 'grid_generator') return commandFor(gridDispatchGeneratorCommandKind, controller, { targetMw: Math.max(0, data.targetMw * 0.9) })
-    if (data?.type === 'grid_branch') return commandFor(data.state === 'closed' ? gridDerateBranchCommandKind : gridClearDerateCommandKind, controller, data.state === 'closed' ? { availability: 0.65 } : {})
-    if (data?.type === 'grid_load') return commandFor(gridShedLoadCommandKind, controller, { shedMw: data.interruptibleMw * 0.25 })
-    return unsupportedCommand()
-  },
-  buildCancelTargetCommand: (controller: OperationalObject): PackCommandRequest => {
-    const data = parseGridData(controller)
-    if (data?.type === 'grid_generator') return commandFor(data.state === 'tripped' ? gridSetGeneratorAvailabilityCommandKind : gridTripGeneratorCommandKind, controller, data.state === 'tripped' ? { availableMw: data.capacityMw } : {})
-    if (data?.type === 'grid_branch') return commandFor(data.state === 'open' ? gridCloseBranchCommandKind : gridOpenBranchCommandKind, controller, {})
-    if (data?.type === 'grid_load' && data.loadKind === 'ev_charging') return commandFor(gridSetEvChargingPolicyCommandKind, controller, { demandMw: Math.max(data.criticalMw, data.demandMw * 0.65) })
-    if (data?.type === 'grid_load') return commandFor(gridRestoreLoadCommandKind, controller, {})
-    return unsupportedCommand()
+  commands: {
+    createObjectTypes: [],
+    defaultObjectLabel: (typeId: string): string => {
+      throw new Error(`electric-grid pack does not support object creation yet: ${typeId}`)
+    },
+    buildCreateObjectCommand: (): PackCommandRequest => unsupportedCommand(),
+    isController: (object: OperationalObject): boolean => {
+      const data = parseGridData(object)
+      return data?.type === 'grid_generator' || data?.type === 'grid_branch' || data?.type === 'grid_load'
+    },
+    isTarget: () => false,
+    buildSetTargetCommand: (controller: OperationalObject): PackCommandRequest => {
+      const data = parseGridData(controller)
+      if (data?.type === 'grid_generator') return commandFor(gridDispatchGeneratorCommandKind, controller, { targetMw: Math.max(0, data.targetMw * 0.9) })
+      if (data?.type === 'grid_branch') return commandFor(data.state === 'closed' ? gridDerateBranchCommandKind : gridClearDerateCommandKind, controller, data.state === 'closed' ? { availability: 0.65 } : {})
+      if (data?.type === 'grid_load') return commandFor(gridShedLoadCommandKind, controller, { shedMw: data.interruptibleMw * 0.25 })
+      return unsupportedCommand()
+    },
+    buildCancelTargetCommand: (controller: OperationalObject): PackCommandRequest => {
+      const data = parseGridData(controller)
+      if (data?.type === 'grid_generator') return commandFor(data.state === 'tripped' ? gridSetGeneratorAvailabilityCommandKind : gridTripGeneratorCommandKind, controller, data.state === 'tripped' ? { availableMw: data.capacityMw } : {})
+      if (data?.type === 'grid_branch') return commandFor(data.state === 'open' ? gridCloseBranchCommandKind : gridOpenBranchCommandKind, controller, {})
+      if (data?.type === 'grid_load' && data.loadKind === 'ev_charging') return commandFor(gridSetEvChargingPolicyCommandKind, controller, { demandMw: Math.max(data.criticalMw, data.demandMw * 0.65) })
+      if (data?.type === 'grid_load') return commandFor(gridRestoreLoadCommandKind, controller, {})
+      return unsupportedCommand()
+    },
   },
 }

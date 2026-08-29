@@ -42,7 +42,7 @@ When in doubt: ugly ≠ broken. Move on.
 
 ## Anti-pattern tripwires (each has bitten this codebase)
 
-- **No silent skips on optional dependencies.** `if (x) doX()` patterns hide latent bugs when `x` is sometimes-undefined due to ordering and invariants drift. Either: (a) annotate why "skip" is correct (`// evicted-during-event drop is intentional`), (b) assert `x` is present and throw, or (c) make `x` non-optional in the type. The bug fixed in `5d73a8e` (broadcast wiring silently skipped for cookie-bound instances) was three unannotated `if`s lined up.
+- **No silent skips on optional dependencies.** `if (x) doX()` patterns hide latent bugs when `x` is sometimes-undefined due to ordering and invariants drift. Either: (a) annotate why "skip" is correct (`// evicted-during-event drop is intentional`), (b) assert `x` is present and throw, or (c) make `x` non-optional in the type. The bug fixed in `5d73a8e` (broadcast wiring silently skipped for cookie-bound Workspaces) was three unannotated `if`s lined up.
 
 - **Boot-once cache of derived state with external inputs.** The wiki bug fixed in `b660b3e`: `wikiRegistry.setWikis(merge(stored, discovered))` was called once at boot; CRUD endpoints re-synced but the GET handler didn't; `discovered` (GitHub org listing) changed externally → GET showed wikis the registry didn't know about. Lesson: if `X = compute(A, B)` is cached, invalidate when *either* input can change, or derive `X` fresh on each read (usually cheap). Pattern to watch: `setX(computeX())` at boot followed by reads that assume currency.
 

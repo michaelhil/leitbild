@@ -1,3 +1,4 @@
+import { apiFetch } from "./api-client.ts"
 // Boot-time UI footer wiring — theme toggle + app version + repo link.
 // Extracted from app.ts to keep the shell focused on routing and dispatch.
 // Self-contained: imports its deps lazily, no closure dependencies on app.ts.
@@ -13,7 +14,7 @@ export const wireBootstrapFooter = (): void => {
       } catch { /* mermaid may not be loaded yet */ }
     })
     try {
-      const info = await fetch('/api/system/info').then(r => r.ok ? r.json() : null) as { version: string; repoUrl: string } | null
+      const info = await apiFetch('/system/info').then(r => r.ok ? r.json() : null) as { version: string; repoUrl: string } | null
       if (!info) return
       const vEl = document.getElementById('app-version')
       if (vEl) vEl.textContent = `v${info.version}`

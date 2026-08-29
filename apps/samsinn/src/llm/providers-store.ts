@@ -12,6 +12,7 @@ import { readFile, writeFile, rename, chmod, mkdir, stat } from 'node:fs/promise
 import { dirname } from 'node:path'
 import type { CloudProviderName } from './providers-config.ts'
 import { PROVIDER_PROFILES, isLocal } from './providers-config.ts'
+import { z } from 'zod'
 
 export const STORE_VERSION = 1
 
@@ -41,6 +42,31 @@ export interface ProvidersFileShape {
 }
 
 const EMPTY: ProvidersFileShape = { version: STORE_VERSION, providers: {} }
+
+const cloudEntrySchema = z.object({
+  apiKey: z.string().optional(),
+  enabled: z.boolean().optional(),
+  maxConcurrent: z.number().finite().positive().optional(),
+  pinnedModels: z.array(z.string().min(1)).optional(),
+  baseUrl: z.string().trim().min(1).optional(),
+  embeddingModel: z.string().trim().min(1).optional(),
+}).strict()
+
+const ollamaEntrySchema = z.object({
+  enabled: z.boolean().optional(),
+  maxConcurrent: z.number().finite().positive().optional(),
+}).strict()
+
+const providerShape: Record<string, typeof cloudEntrySchema | ReturnType<typeof ollamaEntrySchema.optional>> = {
+  ollama: ollamaEntrySchema.optional(),
+}
+for (const name of Object.keys(PROVIDER_PROFILES)) providerShape[name] = cloudEntrySchema.optional()
+
+const providersFileSchema = z.object({
+  version: z.literal(STORE_VERSION),
+  providers: z.object(providerShape).strict(),
+  order: z.array(z.string().min(1)).optional(),
+}).strict()
 
 // === Load ===
 
@@ -79,59 +105,12 @@ export const loadProviderStore = async (path: string): Promise<LoadResult> => {
     return { data: EMPTY, warnings }
   }
 
-  const data = validateShape(parsed, warnings)
-  return { data, warnings }
-}
-
-const validateShape = (raw: unknown, warnings: string[]): ProvidersFileShape => {
-  if (typeof raw !== 'object' || raw === null) {
-    warnings.push('providers.json root is not an object — ignoring')
-    return EMPTY
+  const result = providersFileSchema.safeParse(parsed)
+  if (!result.success) {
+    warnings.push('providers.json does not match the canonical schema — ignoring')
+    return { data: EMPTY, warnings }
   }
-  const r = raw as Record<string, unknown>
-  const version = typeof r.version === 'number' ? r.version : 0
-  if (version !== STORE_VERSION) {
-    warnings.push(`providers.json version ${version} (expected ${STORE_VERSION}) — migration may be required`)
-  }
-  const providers = typeof r.providers === 'object' && r.providers !== null
-    ? r.providers as Record<string, Record<string, unknown>>
-    : {}
-
-  const cleaned: Record<string, StoredCloudEntry | StoredOllamaEntry> = {}
-  for (const [name, entry] of Object.entries(providers)) {
-    if (typeof entry !== 'object' || entry === null) continue
-    const out: StoredCloudEntry = {}
-    if (typeof entry.apiKey === 'string') (out as { apiKey?: string }).apiKey = entry.apiKey
-    if (typeof entry.enabled === 'boolean') (out as { enabled?: boolean }).enabled = entry.enabled
-    if (typeof entry.maxConcurrent === 'number' && entry.maxConcurrent > 0) {
-      (out as { maxConcurrent?: number }).maxConcurrent = entry.maxConcurrent
-    }
-    if (Array.isArray(entry.pinnedModels)) {
-      const pins = (entry.pinnedModels as unknown[]).filter((v): v is string => typeof v === 'string' && v.length > 0)
-      if (pins.length > 0) (out as { pinnedModels?: ReadonlyArray<string> }).pinnedModels = pins
-    }
-    // Local providers (llamacpp): persisted baseUrl override.
-    if (typeof entry.baseUrl === 'string' && entry.baseUrl.trim().length > 0) {
-      (out as { baseUrl?: string }).baseUrl = entry.baseUrl.trim()
-    }
-    if (typeof entry.embeddingModel === 'string' && entry.embeddingModel.trim().length > 0) {
-      (out as { embeddingModel?: string }).embeddingModel = entry.embeddingModel.trim()
-    }
-    cleaned[name] = out
-  }
-
-  // Optional stored router order — strip non-string entries silently.
-  let order: ReadonlyArray<string> | undefined
-  if (Array.isArray(r.order)) {
-    order = (r.order as unknown[]).filter((v): v is string => typeof v === 'string' && v.length > 0)
-    if (order.length === 0) order = undefined
-  }
-
-  return {
-    version: STORE_VERSION,
-    providers: cleaned as ProvidersFileShape['providers'],
-    ...(order ? { order } : {}),
-  }
+  return { data: result.data as ProvidersFileShape, warnings }
 }
 
 // === Save — atomic write with 0600 ===

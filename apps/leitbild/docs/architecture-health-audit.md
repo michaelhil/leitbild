@@ -1,26 +1,26 @@
 # Architecture Health Audit
 
-This audit records the cleanup baseline for the multi-package health pass covering control-instance memory, process-plant orchestration, runtime performance, UI architecture, and validation. It is intentionally concrete: source-of-truth boundaries, loops, known cracks, and the verification evidence expected after refactors.
+This audit records the cleanup baseline for the multi-package health pass covering simulation-run memory, process-plant orchestration, runtime performance, UI architecture, and validation. It is intentionally concrete: source-of-truth boundaries, loops, known cracks, and the verification evidence expected after refactors.
 
 ## Source-Of-Truth Matrix
 
 | Area | Canonical Truth | Derived Or Cached State | Boundary Rule |
 | --- | --- | --- | --- |
-| Control instance state | Projected control-instance state in `src/core/control-instances/runtime.ts`, persisted through snapshot plus durable event log | UI stores, recent-run cache, MapLibre sources, rail presentation | Pack runtimes emit events; core commits them; UI never becomes canonical truth. |
+| Simulation Run state | Projected state in `src/core/simulation-runs/runtime.ts`, persisted through snapshot plus durable event log | UI stores, recent-Run cache, MapLibre sources, rail presentation | Pack runtimes emit events; core commits them; UI never becomes canonical truth. |
 | Durable history | `events.jsonl` with monotonically increasing sequence numbers | In-memory `durableEvents` array | Sequence regression is corruption; snapshot is current truth, journal is meaningful ordered history. |
-| Runtime-private state | Per-runtime JSON under the control-instance runtime state directory | Pack runtime objects after restore | Runtime state is private to the adapter and must not be reinterpreted by core. |
+| Runtime-private state | Per-runtime JSON under the simulation-run runtime state directory | Pack runtime objects after restore | Runtime state is private to the adapter and must not be reinterpreted by core. |
 | Process plant graph | Scenario `processSystems` or `graphRef`, compiled by the process-plant graph compiler | Runtime variable table, execution plan, topology caches | Graph/spec validation must reject ambiguous links, variables, I&C references, and alarm references before runtime. |
 | Process plant runtime | Per-system runtime variable table and elapsed time | Projected process-plant operational objects and rail/map presentation | Published variables are projected outward; continuous physics stays inside the pack. |
 | I&C/alarm/trip state | Per-system protection runner snapshot | Catalog/query responses and projected active alarm/trip counts | I&C is automatic plant behavior, not a procedure engine. Procedures query it; they do not live inside it. |
 | Weather state | Weather pack sparse H3/cell state and influence objects | Map weather layers and weather field query responses | Core and UI ask the pack for features/query data; they do not compute weather truth. |
 | Scenario script | Scenario definition plus scenario fired-step state | Guidance overlay and highlighted objects | Script steps must be visible through committed scenario events; failures must not silently disappear. |
-| UI surface | Scenario `surface` definition and live control-instance snapshot | Component-local Svelte state | Local UI state may control visibility and layout, but not simulation truth. |
+| UI surface | Scenario `surface` definition and live simulation-run snapshot | Component-local Svelte state | Local UI state may control visibility and layout, but not simulation truth. |
 
 ## Runtime Loop Inventory
 
 | Loop | Owner | Tick/Trigger | Writes | Failure Policy |
 | --- | --- | --- | --- | --- |
-| Control-instance publish queue | Core runtime | Every committed event batch | Snapshot, durable log, subscribers | Ordered queue; failures must surface instead of being swallowed. |
+| Simulation Run publish queue | Core runtime | Every committed event batch | Snapshot, durable log, subscribers | Ordered queue; failures must surface instead of being swallowed. |
 | Scenario script timers | Core runtime | Wall-clock timers adjusted by sim clock speed | Scenario events, object events, interaction signals | Timer/action errors are a crack if they only log to console. |
 | Process plant pack runtime | Process-plant adapter | 1 s interval, scaled by sim clock | Per-system runtime, pack runtime state, projected object updates, I&C signals | A runtime failure now stops the pack runtime and emits a critical pack runtime-failed signal. |
 | Process plant physics | Per process system | Fixed-step runtime phases | Runtime variable table and telemetry recorder | Acceptance traces and benchmark guardrails verify bounded trends and performance. |
@@ -30,21 +30,21 @@ This audit records the cleanup baseline for the multi-package health pass coveri
 
 ## Scenario Initialization Trace
 
-1. Route parsing resolves `/i/<scenario>/<run>` or picker selection into a scenario id and run id.
-2. Scenario catalog loads the scenario definition, required packs, runtime configs, initial objects, process systems, script, and surface definition.
-3. Control-instance registry opens or creates the scenario-run control instance id.
-4. Snapshot and event log are restored. If the requested scenario conflicts with the stored snapshot, the run is reset rather than silently merged.
-5. Simulation hub connects only the scenario’s active pack runtimes and passes each pack runtime its private state store.
-6. Pack runtimes restore private state, compile scenario-defined systems, and project initial operational objects.
-7. Core hydrates projected state, initializes the clock, starts due script steps, and subscribes to pack runtime emissions.
-8. UI loads the surface, snapshot, map style, operational objects, and realtime stream. Startup status must show failures honestly.
+1. Route parsing resolves `/workspaces/{workspaceId}/simulation-runs/{simulationRunId}` into explicit Workspace and Run ids.
+2. The Workspace runtime resolves its Scenario Library and Run registry; unknown ids fail without falling back to another Workspace.
+3. The Run registry loads the immutable Run Manifest, pinned Scenario Revision, snapshot, and event journal.
+4. Manifest, Scenario digest, Pack versions, and runtime versions are validated. A mismatch fails restore; a Scenario is never reapplied or substituted.
+5. Runtime Hub connects exactly one active runtime per selected Pack and passes each its private state store.
+6. Pack runtimes restore private state, compile revision-defined systems, and continue their operational projections.
+7. Core hydrates projected state and clock, resumes due script steps, and subscribes to Pack runtime emissions through the single commit path.
+8. UI loads the pinned surface, snapshot, map style, operational objects, and Workspace-scoped realtime stream. Startup failures remain visible.
 
 ## Fallback And Catch Audit
 
 | Location | Current Classification | Follow-Up |
 | --- | --- | --- |
-| `src/core/control-instances/scenario-runner.ts` | Crack: due-step failure currently logs to console from the timer runner. | Prefer reporting failures through core committed events or caller-owned error handling in a later focused pass. |
-| `src/core/control-instances/runtime.ts` simulation emission safety | Crack: publish failure logs to console and keeps running. | Needs a visible runtime error channel, but changing core event semantics is larger than this pass. |
+| `src/core/simulation-runs/scenario-runner.ts` | Crack: due-step failure currently logs to console from the timer runner. | Prefer reporting failures through core committed events or caller-owned error handling in a later focused pass. |
+| `src/core/simulation-runs/runtime.ts` simulation emission safety | Crack: publish failure logs to console and keeps running. | Needs a visible runtime error channel, but changing core event semantics is larger than this pass. |
 | `src/packs/process-plant/sim/adapter.ts` pack runtime tick | Fixed in this pass: pack runtime tick failure now stops the pack runtime, rejects subsequent commands/queries, and emits a critical interaction signal. | Add tests around pack runtime-failed signaling if the failure channel grows broader. |
 | UI local-storage catches | Acceptable local resilience: theme/rail settings can fall back to defaults. | Keep warnings visible in development; do not make these simulation truth. |
 | Pack query `safeParse` catches | Acceptable boundary handling when converted to explicit query failures. | Keep failure responses specific and pack-scoped. |

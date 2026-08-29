@@ -33,10 +33,9 @@ export type EvalEventCore =
   | { readonly kind: 'model_fallback'; readonly preferred: string; readonly effective: string; readonly reason: string }
   | { readonly kind: 'eval_completed'; readonly outcome: 'respond' | 'pass' | 'error' }
   // Tool-iteration check-in: the agent's tool loop has used `iterations`
-  // calls without finishing. Pre-PR-3 the loop silently exited at the
-  // maxToolIterations cap with a "tool_loop_exceeded" error; now it
-  // emits this event and waits for explicit user input. The UI surfaces
-  // [Continue +N] [Stop] buttons; calling /api/agents/:id/continue-tools
+  // calls without finishing. It emits this event and waits for explicit
+  // user input. The UI surfaces
+  // [Continue +N] [Stop] buttons; calling the Workspace-scoped continue-tools endpoint
   // raises the cap, cancelGeneration stops cleanly, and an abandonment
   // timeout (default 10min, env SAMSINN_TOOL_CHECKIN_ABANDON_MS) auto-
   // stops if neither happens — bounding state-machine leakage.

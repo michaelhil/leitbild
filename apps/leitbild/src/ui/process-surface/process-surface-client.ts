@@ -1,4 +1,4 @@
-import type { ControlInstanceId } from '../../core/model/index.ts'
+import type { SimulationRunId } from '../../core/model/index.ts'
 import type { VariablePath } from '../../packs/process-plant/graph/index.ts'
 import type {
   CompiledProcessSurface,
@@ -9,7 +9,7 @@ import type {
   ProcessSurfaceGraphLens,
   ProcessSurfaceValue,
 } from '../../packs/process-plant/surfaces/index.ts'
-import { queryControlInstancePack } from '../control-instance-client.ts'
+import { querySimulationRunPack } from '../simulation-run-client.ts'
 
 export interface ProcessSurfaceLensOption {
   readonly id: string
@@ -390,9 +390,9 @@ const parseProcessPlantDynamicIcRefPattern = (value: unknown): ProcessPlantDynam
 }
 
 export const readProcessPlantCatalog = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
 ): Promise<ProcessPlantCatalog> => {
-  const body = await queryControlInstancePack(controlInstanceId, {
+  const body = await querySimulationRunPack(simulationRunId, {
     packId: 'process-plant',
     kind: 'process-plant.catalog.list',
     payload: {},
@@ -455,11 +455,11 @@ const parseProcessPlantCredibilityEvidence = (value: unknown): ProcessPlantCredi
 }
 
 export const readProcessPlantCatalogSource = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   section: ProcessPlantCatalogSectionId,
   id: string,
 ): Promise<ProcessPlantCatalogSourceFile> => {
-  const body = await queryControlInstancePack(controlInstanceId, {
+  const body = await querySimulationRunPack(simulationRunId, {
     packId: 'process-plant',
     kind: 'process-plant.catalog.source',
     payload: { section, id },
@@ -483,10 +483,10 @@ export const readProcessPlantCatalogSource = async (
 }
 
 export const listProcessPlantCredibilityEvidence = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   systemId: string,
 ): Promise<ProcessPlantCredibilityList> => {
-  const body = await queryControlInstancePack(controlInstanceId, {
+  const body = await querySimulationRunPack(simulationRunId, {
     packId: 'process-plant',
     kind: 'process-plant.credibility.list',
     payload: { systemId },
@@ -499,12 +499,12 @@ export const listProcessPlantCredibilityEvidence = async (
 }
 
 export const readProcessPlantCredibilityArtifact = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   systemId: string,
   evidenceId: string,
   artifactId: string,
 ): Promise<ProcessPlantCredibilityArtifact> => {
-  const body = await queryControlInstancePack(controlInstanceId, {
+  const body = await querySimulationRunPack(simulationRunId, {
     packId: 'process-plant',
     kind: 'process-plant.credibility.read',
     payload: { systemId, evidenceId, artifactId },
@@ -519,10 +519,10 @@ export const readProcessPlantCredibilityArtifact = async (
 }
 
 export const listProcessPlantVariablePaths = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   systemId: string,
 ): Promise<ReadonlyArray<VariablePath>> => {
-  const body = await queryControlInstancePack(controlInstanceId, {
+  const body = await querySimulationRunPack(simulationRunId, {
     packId: 'process-plant',
     kind: 'process-plant.variables.search',
     payload: { systemId },
@@ -539,10 +539,10 @@ export const listProcessPlantVariablePaths = async (
 }
 
 export const listProcessSurfaces = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   systemId: string,
 ): Promise<ReadonlyArray<ProcessSurfaceListItem>> => {
-  const body = await queryControlInstancePack(controlInstanceId, {
+  const body = await querySimulationRunPack(simulationRunId, {
     packId: 'process-plant',
     kind: 'process-plant.surfaces.list',
     payload: { systemId },
@@ -561,11 +561,11 @@ export const listProcessSurfaces = async (
 }
 
 export const readProcessSurface = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   systemId: string,
   surfaceId: string,
 ): Promise<CompiledProcessSurface> => {
-  const body = await queryControlInstancePack(controlInstanceId, {
+  const body = await querySimulationRunPack(simulationRunId, {
     packId: 'process-plant',
     kind: 'process-plant.surface.read',
     payload: { systemId, surfaceId },
@@ -575,11 +575,11 @@ export const readProcessSurface = async (
 }
 
 export const readProcessSurfaceSnapshot = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   systemId: string,
   surfaceId: string,
 ): Promise<ProcessSurfaceSnapshot> => {
-  const body = await queryControlInstancePack(controlInstanceId, {
+  const body = await querySimulationRunPack(simulationRunId, {
     packId: 'process-plant',
     kind: 'process-plant.surface.snapshot',
     payload: { systemId, surfaceId },
@@ -595,12 +595,12 @@ export const readProcessSurfaceSnapshot = async (
 }
 
 export const readProcessSurfaceProjection = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   systemId: string,
   surfaceId: string,
   lens: ProcessSurfaceGraphLens,
 ): Promise<ProcessSurfaceProjection> => {
-  const body = await queryControlInstancePack(controlInstanceId, {
+  const body = await querySimulationRunPack(simulationRunId, {
     packId: 'process-plant',
     kind: 'process-plant.surface.project',
     payload: { systemId, surfaceId, lens },
@@ -627,11 +627,11 @@ export const readProcessSurfaceProjection = async (
 }
 
 export const readProcessPlantArtifact = async (
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   systemId: string,
   artifact: ProcessPlantArtifactKind,
 ): Promise<ProcessPlantArtifact> => {
-  const body = await queryControlInstancePack(controlInstanceId, {
+  const body = await querySimulationRunPack(simulationRunId, {
     packId: 'process-plant',
     kind: 'process-plant.artifact.read',
     payload: { systemId, artifact },

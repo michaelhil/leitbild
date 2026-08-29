@@ -27,13 +27,12 @@ describe('local Workspace directory', () => {
     expect((await reloaded.ensureDefault()).id).toBe(first.id)
   })
 
-  test('keeps independent Workspace records and archives explicitly', async () => {
+  test('keeps independent Workspace records', async () => {
     const { directory } = await createDirectory()
     const first = await directory.ensure({ id: newWorkspaceId(), displayName: 'First' })
     const second = await directory.ensure({ id: newWorkspaceId(), displayName: 'Second' })
-    expect(await directory.archive(first.id)).toBe(true)
-    expect((await directory.get(first.id))?.status).toBe('archived')
-    expect((await directory.get(second.id))?.status).toBe('active')
+    expect((await directory.get(first.id))?.displayName).toBe('First')
+    expect((await directory.get(second.id))?.displayName).toBe('Second')
   })
 
   test('fails visibly for corrupt persisted data', async () => {

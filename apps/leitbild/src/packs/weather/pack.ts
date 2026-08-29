@@ -2,6 +2,7 @@ import type { GeoJsonPoint, OperationalObject } from '../../core/model/index.ts'
 import { nowIso } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
+import { createLeitbildPackDescriptor } from '../../core/packs/protocol.ts'
 import { createWeatherAreaCommandKind } from './commands.ts'
 import { weatherPresentationSeverityForState, weatherSampleAtPoint, type WeatherPresentationSeverity } from './conditions.ts'
 import {
@@ -122,25 +123,25 @@ const buildWeatherCreatePayload = (
 }
 
 export const weatherPack: LeitbildPack = {
-  id: 'weather',
-  name: 'Weather Conditions',
-  runtimes: [
-    { id: weatherSimRuntimeId, label: 'Local weather runtime', kind: 'local' },
-  ],
-  defaultRuntimeId: weatherSimRuntimeId,
+  descriptor: createLeitbildPackDescriptor({
+    id: 'weather', version: '1.0.0', name: 'Weather Conditions',
+    contributions: ['runtime', 'scenario', 'presentation', 'commands'],
+  }),
+  runtime: {
+    runtimes: [{ id: weatherSimRuntimeId, version: '1.0.0', label: 'Local weather runtime', kind: 'local' }],
+    defaultRuntimeId: weatherSimRuntimeId,
+  },
   scenario: weatherScenarioSupport,
-  categories: [
-    {
+  presentation: {
+    categories: [{
       id: 'weather',
       label: 'Weather',
       emptyLabel: 'No weather conditions',
       matches: (object: OperationalObject): boolean => parseWeatherData(object) !== null,
-    },
-  ],
-  createObjectTypes: [],
-  mapAreaFeatureLayers: ['weather'],
-  mapAreaFeatureSourcePackIds: [weatherPackId],
-  presentObject: (object): PackObjectPresentation => {
+    }],
+    mapAreaFeatureLayers: ['weather'],
+    mapAreaFeatureSourcePackIds: [weatherPackId],
+    presentObject: (object): PackObjectPresentation => {
     const data = parseWeatherData(object)
     const severity = data ? weatherPresentationSeverityForState(data.state) : undefined
     const tone = statusToneFor(severity)
@@ -154,8 +155,8 @@ export const weatherPack: LeitbildPack = {
       mapIconVisible: data?.conditionKind !== 'weather_influence',
       noteworthyUpdates: false,
     }
-  },
-  mapAreaFeatureQueries: (context) => context.map
+    },
+    mapAreaFeatureQueries: (context) => context.map
     ? [{
         packId: 'weather',
         kind: 'weather.mapFeatures',
@@ -168,26 +169,30 @@ export const weatherPack: LeitbildPack = {
         },
       }]
     : [],
-  contextualFields: (object, context): ReadonlyArray<PackObjectField> => {
-    const point = samplePointFor(object)
-    if (!point) return []
-    const weatherObjects = context.objectsForPack?.(weatherPackId)
-      ?? context.objects.filter(candidate => candidate.packId === weatherPackId)
-    const sample = weatherSampleAtPoint(weatherObjects, point, context.currentTime ?? nowIso())
-    return [packField('weather', 'Weather', weatherValue(sample.state))]
+    contextualFields: (object, context): ReadonlyArray<PackObjectField> => {
+      const point = samplePointFor(object)
+      if (!point) return []
+      const weatherObjects = context.objectsForPack?.(weatherPackId)
+        ?? context.objects.filter(candidate => candidate.packId === weatherPackId)
+      const sample = weatherSampleAtPoint(weatherObjects, point, context.currentTime ?? nowIso())
+      return [packField('weather', 'Weather', weatherValue(sample.state))]
+    },
   },
-  defaultObjectLabel: (typeId, context): string => {
-    if (typeId !== 'weather_probe' && typeId !== 'weather_area') throw new Error(`unsupported weather create type: ${typeId}`)
-    const count = context.objects.filter(object => parseWeatherData(object) !== null).length + 1
-    return typeId === 'weather_probe' ? `Weather probe ${count}` : `Weather area ${count}`
+  commands: {
+    createObjectTypes: [],
+    defaultObjectLabel: (typeId, context): string => {
+      if (typeId !== 'weather_probe' && typeId !== 'weather_area') throw new Error(`unsupported weather create type: ${typeId}`)
+      const count = context.objects.filter(object => parseWeatherData(object) !== null).length + 1
+      return typeId === 'weather_probe' ? `Weather probe ${count}` : `Weather area ${count}`
+    },
+    buildCreateObjectCommand: (typeId: string, label: string, geometry: PackCreationGeometry, parameters?: unknown): PackCommandRequest => ({
+      kind: createWeatherAreaCommandKind,
+      targetObjectIds: [],
+      payload: buildWeatherCreatePayload(typeId, label, geometry, parameters),
+    }),
+    isController: () => false,
+    isTarget: () => false,
+    buildSetTargetCommand: (): PackCommandRequest => unsupportedCommand(),
+    buildCancelTargetCommand: (): PackCommandRequest => unsupportedCommand(),
   },
-  buildCreateObjectCommand: (typeId: string, label: string, geometry: PackCreationGeometry, parameters?: unknown): PackCommandRequest => ({
-    kind: createWeatherAreaCommandKind,
-    targetObjectIds: [],
-    payload: buildWeatherCreatePayload(typeId, label, geometry, parameters),
-  }),
-  isController: () => false,
-  isTarget: () => false,
-  buildSetTargetCommand: (): PackCommandRequest => unsupportedCommand(),
-  buildCancelTargetCommand: (): PackCommandRequest => unsupportedCommand(),
 }

@@ -9,8 +9,8 @@ export interface PackRegistry {
 export const createPackRegistry = (packs: ReadonlyArray<LeitbildPack>): PackRegistry => {
   const byId = new Map<string, LeitbildPack>()
   for (const pack of packs) {
-    if (byId.has(pack.id)) throw new Error(`duplicate pack id: ${pack.id}`)
-    byId.set(pack.id, pack)
+    if (byId.has(pack.descriptor.id)) throw new Error(`duplicate pack id: ${pack.descriptor.id}`)
+    byId.set(pack.descriptor.id, pack)
   }
 
   return {

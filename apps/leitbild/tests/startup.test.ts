@@ -19,7 +19,7 @@ describe('startup progress model', () => {
     steps = completeStartupStep(steps, 'route', 30)
 
     expect(steps.find(step => step.id === 'map')?.status).toBe('done')
-    expect(steps.find(step => step.id === 'control-instance')?.status).toBe('pending')
+    expect(steps.find(step => step.id === 'simulation-run')?.status).toBe('pending')
     expect(steps.find(step => step.id === 'route')?.completedAtMs).toBe(30)
   })
 
@@ -27,15 +27,15 @@ describe('startup progress model', () => {
     let steps = createStartupSteps(10)
     steps = completeStartupStep(steps, 'route', 20)
     steps = completeStartupStep(steps, 'interface', 30)
-    steps = startStartupStep(steps, 'control-instance', 40)
-    steps = failStartupStep(steps, 'control-instance', 'join failed', 50)
+    steps = startStartupStep(steps, 'simulation-run', 40)
+    steps = failStartupStep(steps, 'simulation-run', 'join failed', 50)
 
-    const reset = resetStartupStepsAfter(steps, 'control-instance')
+    const reset = resetStartupStepsAfter(steps, 'simulation-run')
 
     expect(reset.find(step => step.id === 'route')?.status).toBe('done')
     expect(reset.find(step => step.id === 'interface')?.status).toBe('done')
-    expect(reset.find(step => step.id === 'control-instance')?.status).toBe('pending')
-    expect(reset.find(step => step.id === 'control-instance')?.error).toBeUndefined()
+    expect(reset.find(step => step.id === 'simulation-run')?.status).toBe('pending')
+    expect(reset.find(step => step.id === 'simulation-run')?.error).toBeUndefined()
   })
 
   test('reports readiness and failure explicitly', () => {
@@ -82,13 +82,13 @@ describe('startup progress model', () => {
     for (const step of steps) steps = completeStartupStep(steps, step.id, 20)
 
     expect(startupModalShouldShow({
-      routeMode: 'control-instance',
+      routeMode: 'simulation-run',
       dismissed: false,
       steps,
     })).toBe(true)
 
     expect(startupModalShouldShow({
-      routeMode: 'control-instance',
+      routeMode: 'simulation-run',
       dismissed: true,
       steps,
     })).toBe(false)

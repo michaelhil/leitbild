@@ -1,20 +1,20 @@
 <script lang="ts">
   import { Save, X } from 'lucide-svelte'
-  import type { ControlInstanceId, OperationalObject } from '../../core/model/index.ts'
+  import type { SimulationRunId, OperationalObject } from '../../core/model/index.ts'
   import { configureDroneVehicleModelCommandKind } from '../../packs/drone/commands.ts'
   import { dronePackDataSchema, droneVehicleModelSchema, type DroneCapability, type DronePayload } from '../../packs/drone/model.ts'
-  import { sendControlInstanceCommand } from '../control-instance-client.ts'
+  import { sendSimulationRunCommand } from '../simulation-run-client.ts'
   import IconButton from '../components/IconButton.svelte'
 
   interface Props {
-    readonly controlInstanceId: ControlInstanceId
+    readonly simulationRunId: SimulationRunId
     readonly object: OperationalObject
     readonly windowOffsetIndex?: number
     readonly close: () => void
   }
 
   let {
-    controlInstanceId,
+    simulationRunId,
     object,
     windowOffsetIndex = 0,
     close,
@@ -90,7 +90,7 @@
         payloads: payloadsFromJson(),
         visual: { color, accentColor, scale },
       })
-      const body = await sendControlInstanceCommand(controlInstanceId, {
+      const body = await sendSimulationRunCommand(simulationRunId, {
         kind: configureDroneVehicleModelCommandKind,
         targetObjectIds: [object.id],
         payload: {

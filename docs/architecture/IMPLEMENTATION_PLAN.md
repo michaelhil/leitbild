@@ -2,9 +2,9 @@
 
 ## Objective
 
-Align Samsinn and Leitbild around a common Workspace model, predictable extension lifecycle, versioned integration contracts, and optional coordinated suite while preserving their independent domain models, standalone operation, and deployment artifacts.
+Align Samsinn and Leitbild around a common Workspace model, predictable extension lifecycle, strict integration contracts, and an optional coordinated suite while preserving their independent domain models, standalone operation, and deployment artifacts.
 
-The migration is complete only when the old Instance and Control Instance concepts are absent from product code, persistence paths, public APIs, URLs, UI copy, integration bindings, and current documentation.
+The refactor is complete only when Workspace and Simulation Run are the sole canonical platform and execution concepts in product code, persistence paths, public APIs, URLs, UI copy, integration bindings, and current documentation.
 
 ## Non-negotiable invariants
 
@@ -15,7 +15,7 @@ The migration is complete only when the old Instance and Control Instance concep
 5. Leitbild keeps one canonical event commit pipeline and one active Pack Runtime per active Pack in a Simulation Run.
 6. Samsinn keeps typed callbacks and intentional REST/MCP surface differences.
 7. All external input is validated at the boundary; failures are structured and visible.
-8. Source data is never destroyed by migration. Purge is a later explicit operation.
+8. There is no compatibility or migration layer. Old state is rejected; current state has one canonical shape.
 9. Authentication policy is deferred, but every application use case receives an explicit access context so auth can be inserted without changing domain signatures again.
 
 ## Target dependency graph
@@ -36,7 +36,7 @@ platform-contracts -X-> any application
 ### Work
 
 - Record current commits, toolchain versions, test outcomes, deploy entry points, API discovery, URL shapes, storage layouts, and production service names.
-- Add golden contract tests for current Samsinn instance selection, Leitbild Control Instance lifecycle, room-to-Leitbild bindings, snapshots, journals, and share URLs.
+- Characterize behavior that remains valid after the clean break: Rooms, Agents, Simulation Runs, bindings, snapshots, journals, and share URLs.
 - Record environmental test dependencies separately from deterministic failures.
 
 ### Gate
@@ -70,16 +70,16 @@ platform-contracts -X-> any application
 ### Work
 
 - Establish `Deployment`, `Workspace`, `Module`, `Module Binding`, `Pack`, `Capability`, `Scenario Revision`, and `Simulation Run` as canonical terms.
-- Add branded Workspace and protocol identifiers.
-- Add versioned schemas for structured errors, request context, discovery, module bindings, event transport metadata, pack descriptors, contribution descriptors, and capability descriptors.
+- Add branded Workspace and request identifiers.
+- Add strict schemas for structured errors, request context, discovery, module bindings, event transport metadata, pack descriptors, contribution descriptors, and capability descriptors.
 - Publish JSON Schema/OpenAPI fragments from the same validated source where useful; do not maintain duplicate handwritten schemas.
-- Add compatibility tests proving each application accepts the supported contract version range and rejects unsupported versions visibly.
+- Validate one canonical discovery and Module Binding shape; do not negotiate API versions or accept alternate contract shapes.
 
 ### Gate
 
 - The contracts package has no application imports or runtime-side effects.
 - IDs are opaque; display slugs are never canonical identity.
-- Contract version negotiation and rejection paths are tested.
+- Strict contract rejection paths are tested.
 
 ## Phase 3 — Workspace foundation
 
@@ -88,7 +88,7 @@ platform-contracts -X-> any application
 - Define a `WorkspaceDirectory` port in each application using platform contract values at the boundary and application-owned types internally.
 - Implement a real local filesystem directory for standalone mode.
 - Add explicit `WorkspaceContext` and `AccessContext` to application use cases. The initial access policy allows the current open mode.
-- Introduce deployment-scoped defaults and a deliberate default Workspace for legacy local startup.
+- Introduce deployment-scoped defaults and a deliberate default Workspace for standalone local startup.
 - Make WebSocket connections and background jobs carry Workspace Id explicitly.
 
 ### Gate
@@ -120,14 +120,14 @@ platform-contracts -X-> any application
 
 ### Work
 
-- Rename Control Instance to Simulation Run throughout domain code, API, realtime, UI, metrics, persistence, tests, and documentation.
+- Use Simulation Run consistently throughout domain code, API, realtime, UI, metrics, persistence, tests, and documentation.
 - Use opaque `SimulationRunId`; remove the encoded `scenarioId:runId` identity.
 - Add Workspace-owned Scenario records and immutable Scenario Revisions. Built-in scenario configs remain deployment templates that can be materialized into a Workspace library.
 - Persist a Run Manifest containing Workspace Id, Scenario Revision snapshot/digest, selected Packs, resolved Pack/runtime versions, creation time, and lifecycle state.
 - Make a Simulation Run permanently reference one Scenario Revision. Reset restores that revision; another revision requires another run.
 - Split the current runtime into lifecycle, command, query, projection, event commit, runtime hub, and persistence services while retaining one ordered commit path.
 - Change storage to `data/workspaces/<workspaceId>/leitbild/simulation-runs/<runId>`.
-- Replace hard deletion with archive/trash and explicit purge.
+- Keep deletion explicit and immediate. Do not add archive/trash lifecycle without a product need.
 
 ### Gate
 
@@ -140,7 +140,7 @@ platform-contracts -X-> any application
 
 ### Work
 
-- Add the common Pack Descriptor envelope: id, application, version, compatibility, dependencies, and declared contribution kinds.
+- Add the common Pack Descriptor envelope: id, application, version, runtime requirements, dependencies, and declared contribution kinds.
 - Keep application-specific typed contribution contracts.
 - Make Samsinn pack manifests strict and transactional: malformed descriptors or contributions fail installation without partially mutating the catalog.
 - Split Leitbild's broad pack interface into independently optional contribution groups: scenario, runtime, presentation, interaction, reference data, commands, and queries.
@@ -153,22 +153,22 @@ platform-contracts -X-> any application
 - Packs from one application are never loadable by the other unless a future explicit adapter is added.
 - Capability results change immediately and predictably when effective Pack selection changes.
 
-## Phase 7 — Versioned APIs, realtime, and integration
+## Phase 7 — Scoped APIs, realtime, and integration
 
 ### Work
 
-- Add `/api/v1/workspaces/{workspaceId}/...` resource trees.
+- Add `/api/workspaces/{workspaceId}/...` resource trees.
 - Standardize structured errors, cursors, revisions/ETags, timestamps, correlation/causation ids, and idempotency keys.
-- Add discovery manifests advertising supported protocol versions, Workspace scope, links, capabilities, and current open access posture.
+- Add versionless discovery manifests advertising Workspace scope, links, capabilities, and current open access posture.
 - Make realtime clients subscribe to explicit Workspace/resource scopes with sequence-based resume.
 - Preserve intentional REST/MCP task differences while routing both through the same use cases.
-- Replace duplicated Samsinn Leitbild URLs/instance ids with one Workspace Module Binding and Room-level Simulation Run binding. Agents inherit Room context unless explicitly overridden.
-- Keep legacy API adapters only long enough to migrate URLs and clients; emit deprecation metadata and test their removal date.
+- Replace duplicated Samsinn Leitbild URLs and Run ids with one Workspace Module Binding and Room-level Simulation Run binding. Agents inherit Room context unless explicitly overridden.
+- Remove old APIs and clients in the same cut. Do not ship aliases, redirects, or deprecation adapters.
 
 ### Gate
 
 - Contract tests cover both applications and the Samsinn-to-Leitbild integration.
-- Stale revisions, duplicate idempotency keys, unsupported protocol versions, and scope mismatches return distinct structured errors.
+- Stale revisions, duplicate idempotency keys, malformed discovery, and scope mismatches return distinct structured errors.
 - No current integration client relies on tolerant guessing of alternate response shapes.
 
 ## Phase 8 — Optional suite
@@ -177,7 +177,7 @@ platform-contracts -X-> any application
 
 - Implement a minimal Workspace Directory and navigation shell.
 - Store only Workspace metadata, enabled Module ids, Module Bindings, and provisioning status.
-- Provision application shards through their versioned APIs.
+- Provision application shards through their canonical Workspace APIs.
 - Add aggregate status and links without proxying or copying application state.
 - Cache known bindings in each application so directory downtime does not end active work.
 
@@ -187,30 +187,26 @@ platform-contracts -X-> any application
 - Stopping the suite leaves existing direct application URLs operational.
 - The suite database contains no Rooms, Agents, Scenarios, Simulation Runs, Pack settings, events, or projections.
 
-## Phase 9 — Migration and cutover
+## Phase 9 — Clean cutover
 
 ### Work
 
-- Build offline migration commands with `inspect`, `dry-run`, `apply`, and `verify` modes.
-- Migrate Samsinn instance directories to Workspace shards.
-- Materialize Leitbild Scenario Revisions and migrate Control Instance directories to opaque Simulation Run ids.
-- Produce a signed migration manifest containing source path, destination path, source/destination digest, old/new id, and old/new URL.
-- Preserve source directories read-only until post-deploy verification and backup retention gates pass.
-- Redirect old share URLs through an explicit mapping during the compatibility window.
-- Remove compatibility adapters, old terminology, old route builders, and migration-only runtime code after verification.
+- Switch each application directly to its canonical Workspace storage and API shape.
+- Reject old snapshot, manifest, journal, cookie, URL, and identifier shapes visibly.
+- Remove old terminology, routes, builders, types, and tests in the same change.
+- Start with empty application state where old state cannot be read safely under the new model.
 
 ### Gate
 
-- Dry-run is side-effect free.
-- Applying twice is idempotent.
-- Verification detects missing, extra, changed, or unparseable data.
-- Rollback can point the previous release at untouched source data.
+- No compatibility adapter or migration command exists in production code.
+- Unsupported persisted shapes fail visibly and never receive an implicit reinterpretation.
+- Only the canonical URL and storage layout are documented and tested.
 
 ## Phase 10 — Final verification and deployment
 
 ### Work
 
-- Run type checks, unit/integration tests, dependency checks, UI builds, deployment tests, restore tests, migration tests, and combined failure drills.
+- Run type checks, unit/integration tests, dependency checks, UI builds, deployment tests, restore tests, strict old-shape rejection tests, and combined failure drills.
 - Test multiple Workspaces, multiple Runs, concurrent clients, suite outage, application outage, incompatible Pack versions, corrupt manifests, and stale URLs.
 - Deploy independently built Samsinn and Leitbild artifacts.
 - Run production health, persistence, URL-sharing, realtime, and cross-application smoke checks.
@@ -248,17 +244,17 @@ platform-contracts -X-> any application
 
 **Countermeasure:** split only contribution groups that are optional, independently consumed, independently validated, or server/UI/runtime separated. Keep cohesive functions together.
 
-### Data migration could lose shared URLs or silently reinterpret state
+### A clean break could silently reinterpret old state
 
-**Failure mode:** composite Leitbild ids and Samsinn cookies are rewritten without complete mappings, or old scenarios resolve differently during restore.
+**Failure mode:** an old snapshot happens to parse under the new type names and is loaded with incorrect scope or scenario semantics.
 
-**Countermeasure:** preserve source data, pin normalized Scenario Revisions, generate exhaustive mapping manifests, verify digests, and keep a time-bounded redirect adapter.
+**Countermeasure:** bump persisted schema versions, require Workspace and Scenario Revision identity, and reject every old shape. No heuristic inference or fallback paths.
 
-### Compatibility layers could become permanent
+### Compatibility code could creep back in
 
-**Failure mode:** old and new APIs coexist indefinitely and every change must support both.
+**Failure mode:** aliases or tolerant parsers are added during implementation to make old tests pass.
 
-**Countermeasure:** each adapter has a test asserting its removal milestone. Cutover is incomplete while legacy product terms or route builders remain.
+**Countermeasure:** old tests and fixtures are replaced, not accommodated. Boundary tests assert that old terms, paths, and persisted versions are rejected.
 
 ### The suite could become a single point of failure
 
@@ -276,15 +272,15 @@ platform-contracts -X-> any application
 
 **Failure mode:** naming, behavior, storage, API, and deployment change in one irreversible commit.
 
-**Countermeasure:** the phases above are separately committed and gated. Repository movement is behavior-neutral; internal seams precede public renames; migration tooling precedes data cutover.
+**Countermeasure:** the phases above are separately committed and gated. Repository movement is behavior-neutral; internal seams precede the clean public cutover; old state is discarded rather than migrated.
 
 ## Completion criteria
 
-- No current product code or documentation uses Instance for a Workspace or Control Instance for a Simulation Run.
+- Workspace and Simulation Run are the only canonical platform and execution terms.
 - Both applications run standalone and together.
 - One Workspace Id scopes both applications without duplicated identity mappings.
 - Scenario revisions and Pack/runtime versions make Run restore deterministic or fail visibly as incompatible.
 - All adapters call application use cases; no transport reaches directly into aggregates or persistence.
 - Pack activation and Capability Manifest derivation are consistent at every scope.
-- Migration and rollback are tested against copies of real production-shaped data.
+- Old persisted and wire shapes are rejected, with no migration or compatibility path.
 - Independent production deployments and combined smoke tests pass.

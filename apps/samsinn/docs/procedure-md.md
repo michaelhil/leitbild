@@ -24,8 +24,7 @@ This document specifies **procmd v0.7 normative**. Reference parser:
 
 **No backward compatibility with v0.6 or earlier.** v0.7 added the
 `Decision:` step keyword (first real spec increment after v0.6's atomic
-relabel). Every artifact declares v0.7. Parsers reject other versions
-with a warning (still parse, but output is degraded).
+relabel). Every artifact declares v0.7. Parsers reject every other version.
 
 ### v0.7 — `Decision:` step keyword
 
@@ -939,4 +938,4 @@ The following are deferred to v0.6 or later:
 
 ---
 
-*procmd v0.6 — last reviewed 2026-05-12.*
+*procmd v0.7 — current format.*

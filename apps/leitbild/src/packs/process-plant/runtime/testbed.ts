@@ -1,5 +1,5 @@
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import type { ControlInstanceId } from '../../../core/model/index.ts'
+import type { SimulationRunId } from '../../../core/model/index.ts'
 import { createProcessPlantScheduleRunner, type ProcessPlantScheduleConfig } from './schedule.ts'
 import { createProcessPlantTelemetryRecorder, type ProcessPlantTelemetryConfig, type ProcessPlantTelemetrySeries } from './telemetry.ts'
 import {
@@ -49,7 +49,7 @@ export interface ProcessPlantMultiSystemTestbed {
 export const createProcessPlantMultiSystemTestbed = (
   configs: ReadonlyArray<ProcessPlantMultiSystemConfig>,
 ): ProcessPlantMultiSystemTestbed => {
-  const controlInstanceId = 'control-instance:process-plant-testbed' as ControlInstanceId
+  const simulationRunId = 'run-process-plant-testbed' as SimulationRunId
   const systemIds = new Set<string>()
   const systems = configs.map(config => {
     if (systemIds.has(config.system.id)) throw new Error(`duplicate process plant multi-system id: ${config.system.id}`)
@@ -89,7 +89,7 @@ export const createProcessPlantMultiSystemTestbed = (
           system.protection?.evaluate({
             runtime: system.runtime,
             elapsedMs: system.runtime.elapsedMs(),
-            controlInstanceId,
+            simulationRunId,
             sourceRuntimeId: 'process-plant-testbed',
           })
           system.telemetry?.recordDueSamples(system.runtime)

@@ -51,7 +51,6 @@ export type DemoId =
   | 'leitbild'
 
 export interface LeitbildDemoSetup {
-  readonly baseUrl: string
   readonly preferredScenarioId: string
   readonly candidateScenarioIds: ReadonlyArray<string>
   readonly requiredPackId: string
@@ -161,7 +160,6 @@ export const DEMO_CATALOG: ReadonlyArray<Demo> = [
     requiredPacks: ['pwr-ops'],
     requiredTools: ['lb_state', 'lb_scenario', 'lb_query', 'procedure_lookup', 'wiki_lookup'],
     leitbildSetup: {
-      baseUrl: 'https://leitbild.samsinn.app',
       preferredScenarioId: 'halden-process-plant-demo',
       candidateScenarioIds: ['halden-process-plant-demo', 'oslo-all-packs-demo'],
       requiredPackId: 'process-plant',
@@ -299,11 +297,10 @@ export const DEMO_CATALOG: ReadonlyArray<Demo> = [
   id: 'leitbild',
   title: 'Leitbild Integration',
   blurb:
-    'Connect this room to a live Leitbild scenario with ambulance dispatch, weather, and PWR process-plant data. Samsinn will bind the room to a readable process-plant Control Instance, mirror Leitbild events into chat, and give AI agents the lb_* plus procedure tools. Trigger a transient in Leitbild with the lightning control, then click a prompt. Re-open this list any time from the 🪄 icon in the room header.',
+    'Connect this room to a live Leitbild scenario with ambulance dispatch, weather, and PWR process-plant data. Samsinn will bind the room to a readable process-plant Simulation Run, mirror Leitbild events into chat, and give AI agents the lb_* plus procedure tools. Trigger a transient in Leitbild with the lightning control, then click a prompt. Re-open this list any time from the 🪄 icon in the room header.',
   requiredPacks: ['pwr-ops'],
   requiredTools: ['lb_state', 'lb_scenario', 'lb_query', 'lb_dispatch_context', 'procedure_lookup', 'wiki_lookup', 'eal_classify'],
   leitbildSetup: {
-    baseUrl: 'https://leitbild.samsinn.app',
     preferredScenarioId: 'halden-process-plant-demo',
     candidateScenarioIds: ['halden-process-plant-demo', 'oslo-all-packs-demo'],
     requiredPackId: 'process-plant',

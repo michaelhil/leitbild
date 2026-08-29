@@ -54,7 +54,7 @@ curl -X POST http://localhost:3000/api/packs/install \
   -d '{"source":"vatsim"}'
 ```
 
-Installation is immediate — new tools and skills reach every running agent across every active instance without restart (process-wide shared registry). `update_pack` runs `git pull --ff-only` and re-registers. `uninstall_pack` unregisters and deletes the directory. Pack management is gated by `SAMSINN_ENABLE_PACKS` (default ON; set to `0` to lock the runtime to whatever's on disk at boot).
+Installation is immediate — new tools and skills reach every running agent across every loaded Workspace without restart (deployment-scoped shared registry). `update_pack` runs `git pull --ff-only` and re-registers. `uninstall_pack` unregisters and deletes the directory. Pack management is gated by `SAMSINN_ENABLE_PACKS` (default ON; set to `0` to lock the runtime to whatever's on disk at boot).
 
 ## Pack anatomy
 

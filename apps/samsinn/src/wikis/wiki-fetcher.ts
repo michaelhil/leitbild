@@ -29,12 +29,8 @@ export interface WikiManifest {
   readonly wiki: string
   readonly procmdVersion?: string
   readonly procedures: ReadonlyArray<WikiManifestEntry>
-  /**
-   * Phase D additions — non-procedure pages (system descriptions, tag /
-   * setpoint catalogues, tech-spec extracts, lineups). Optional for
-   * backward compatibility: a v1 manifest without `pages` is still valid.
-   */
-  readonly pages?: ReadonlyArray<WikiManifestPageEntry>
+  /** Non-procedure pages: system descriptions, catalogues, extracts, and lineups. */
+  readonly pages: ReadonlyArray<WikiManifestPageEntry>
 }
 
 export interface WikiManifestEntry {
@@ -196,13 +192,7 @@ export const createWikiSource = (
       const parsed = JSON.parse(raw) as unknown
       if (!parsed || typeof parsed !== 'object') return null
       const m = parsed as Partial<WikiManifest>
-      if (m.version !== 1 || !Array.isArray(m.procedures)) return null
-      // `pages` is optional — silently drop a malformed `pages` field
-      // rather than failing the whole manifest (procedures still usable).
-      if (m.pages !== undefined && !Array.isArray(m.pages)) {
-        const { pages: _ignored, ...rest } = m
-        return rest as WikiManifest
-      }
+      if (m.version !== 1 || !Array.isArray(m.procedures) || !Array.isArray(m.pages)) return null
       return m as WikiManifest
     } catch {
       return null

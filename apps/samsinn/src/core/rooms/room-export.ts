@@ -3,7 +3,7 @@
 //
 // Returns every message in a room with its full telemetry (tokens, provider,
 // model, generationMs, etc.) in a deterministic JSON shape. Used by the
-// `export_room` MCP tool and the `GET /api/rooms/:id/export` REST route.
+// `export_room` MCP tool and the Workspace-scoped Room export REST route.
 //
 // Deliberately minimal: messages are passed through unchanged. Any future
 // fields added to Message flow into exports automatically — experiments want

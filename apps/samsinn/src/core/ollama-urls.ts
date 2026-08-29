@@ -3,7 +3,7 @@
 // factory returns a no-op implementation so the UI dashboard can always
 // call list/add/remove/getCurrent/setCurrent without null-checks.
 
-import type { LLMGateway } from '../llm/gateway.ts'
+import type { OllamaGateway } from '../llm/gateway.ts'
 
 export interface OllamaRawHandle {
   readonly baseUrl: string
@@ -20,7 +20,7 @@ export interface OllamaUrlRegistry {
 
 export const createOllamaUrlRegistry = (
   ollamaRaw: OllamaRawHandle | undefined,
-  ollama: LLMGateway | undefined,
+  ollama: OllamaGateway | undefined,
 ): OllamaUrlRegistry => {
   if (!ollamaRaw || !ollama) {
     return {

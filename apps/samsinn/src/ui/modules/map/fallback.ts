@@ -1,5 +1,5 @@
 // Fallback UI for map render failures. Shared between the inline chat
-// renderer and the artifact renderer (legacy) for visual consistency.
+// renderer and the artifact renderer for visual consistency.
 //
 // The "invalid" path renders structured validation errors prominently —
 // the same text that would be returned to an agent in a tool result, so
@@ -9,7 +9,7 @@
 // Built with createElement + textContent — no innerHTML — so future edits
 // can't accidentally introduce an XSS hole when concatenating source.
 
-import { truncateForDisplay } from './normalise.ts'
+import { truncateForDisplay } from '../../../core/render-validators/map-schema.ts'
 
 export type FallbackReason = 'unavailable' | 'invalid' | 'tile-blocked' | 'empty'
 

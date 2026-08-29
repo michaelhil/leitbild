@@ -1,7 +1,7 @@
 // Tool inspection + hot-reload.
 //
-//   GET  /api/tools         — list (name, description) for the sidebar
-//   GET  /api/tools/:name   — full detail: schema, source path, enabledFor;
+//   GET  /tools         — list (name, description) for the sidebar
+//   GET  /tools/:name   — full detail: schema, source path, enabledFor;
 //                             source code included only for non-built-in tools
 //                             when the request originates from localhost.
 //
@@ -23,13 +23,13 @@ const isLoopback = (address: string | undefined): boolean =>
 export const toolRoutes: RouteEntry[] = [
   {
     method: 'GET',
-    pattern: /^\/api\/tools$/,
+    pattern: /^\/tools$/,
     handler: (_req, _match, { system }) =>
       json(system.toolRegistry.list().map(t => ({ name: t.name, description: t.description }))),
   },
   {
     method: 'POST',
-    pattern: /^\/api\/tools\/rescan$/,
+    pattern: /^\/tools\/rescan$/,
     handler: async (_req, _match, { system }) => {
       const result = await rescanExternalTools(system.toolRegistry)
       // Refresh every agent's tool list so newly-registered tools reach
@@ -44,7 +44,7 @@ export const toolRoutes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/tools\/([^/]+)$/,
+    pattern: /^\/tools\/([^/]+)$/,
     handler: async (_req, match, { system, remoteAddress }) => {
       const name = decodeURIComponent(match[1]!)
       const entry = system.toolRegistry.getEntry(name)

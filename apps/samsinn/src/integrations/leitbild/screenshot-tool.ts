@@ -24,7 +24,7 @@
 //   - Tool called from agent whose room has no Leitbild iframe: still
 //     broadcasts; if nothing responds, timeout.
 //
-// V1 scope: per-Workspace broadcast (any session in this Samsinn instance
+// Current scope: per-Workspace broadcast (any session in this Samsinn Workspace
 // with an iframe responds). Future: target a specific room's sessions.
 // ============================================================================
 
@@ -69,11 +69,11 @@ export const rejectScreenshotResult = (requestId: string, reason: string): void 
 }
 
 export interface LeitbildScreenshotToolDeps {
-  // Posts a WSOutbound to every session in the named instance. Bootstrap
+  // Posts a WSOutbound to every session in the named Workspace. Bootstrap
   // wires this from wsManager.broadcastToWorkspace + the tool's
-  // per-call instance scope (via deps.getScope).
+  // per-call Workspace scope (via deps.getScope).
   readonly broadcastToWorkspace: (workspaceId: WorkspaceId, msg: WSOutbound) => void
-  // Per-call instance scope (same shape as the other lb_* tools).
+  // Per-call Workspace scope (same shape as the other lb_* tools).
   readonly getScope?: (agentId: string) => WorkspaceId | undefined
   // Lookup helpers used to post the screenshot into the agent's room.
   // The tool needs to know which room the agent's eval was triggered in.
@@ -89,7 +89,7 @@ export const createLeitbildScreenshotTool = (deps: LeitbildScreenshotToolDeps): 
   execute: async (_params, ctx: ToolContext) => {
     const scope = deps.getScope?.(ctx.callerId)
     if (!scope) {
-      return { success: false, error: 'lb_screenshot requires a per-tenant scope (no system associated with this agent).' }
+      return { success: false, error: 'lb_screenshot requires a Workspace scope (no Workspace associated with this Agent).' }
     }
 
     const requestId = crypto.randomUUID()
@@ -110,8 +110,8 @@ export const createLeitbildScreenshotTool = (deps: LeitbildScreenshotToolDeps): 
         timer,
       })
       // The roomId hint helps the browser-side handler pick the right
-      // session (when multi-Workspace-mounting eventually lands). For
-      // V1, every session reads its own currentRoomId and only the
+      // session if multi-Workspace mounting is introduced. Every session
+      // currently reads its own currentRoomId and only the
       // session with a Leitbild iframe responds.
       deps.broadcastToWorkspace(scope, {
         type: 'lb_screenshot_request',

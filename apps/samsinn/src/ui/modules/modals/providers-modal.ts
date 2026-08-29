@@ -1,4 +1,4 @@
-// Settings > Providers modal. The actual modal markup is the legacy
+// Settings > Providers modal. The modal markup is the shared
 // `<dialog id="ollama-dashboard">` element — opening it means
 // showModal() + activating the cloud-providers panel subscription.
 // This wrapper exists so settings-nav.ts can route to it by name.

@@ -1,23 +1,24 @@
-import type { ControlInstanceId, OperationalObject, ScenarioDefinition, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
+import type { SimulationRunId, OperationalObject, ScenarioDefinition, ScenarioExecutionState, SimulationClockState } from '../core/model/index.ts'
 import type { PackCreateObjectType, PackCreationGeometry, PackObjectCategory, PackQueryResponse } from '../core/packs/protocol.ts'
 
-export interface ControlInstanceSnapshot {
+export interface SimulationRunSnapshot {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly seq: number
-  readonly scenario?: ScenarioInstanceState
+  readonly scenario?: ScenarioExecutionState
   readonly clock?: SimulationClockState
 }
 
-export interface ControlInstanceResponse {
-  readonly id: ControlInstanceId
-  readonly snapshot: ControlInstanceSnapshot
+export interface SimulationRunResponse {
+  readonly id: SimulationRunId
+  readonly snapshot: SimulationRunSnapshot
   readonly scenario?: ScenarioDefinition
 }
 
-export interface ControlInstanceSummary {
-  readonly id: ControlInstanceId
+export interface SimulationRunSummary {
+  readonly id: SimulationRunId
   readonly scenarioId: string | null
-  readonly runId: string | null
+  readonly scenarioRevisionId: string | null
+  readonly createdAt: string | null
   readonly loaded: boolean
   readonly snapshotSeq: number | null
   readonly objectCount: number | null
@@ -25,8 +26,8 @@ export interface ControlInstanceSummary {
   readonly loadError?: string
 }
 
-export interface ControlInstanceListResponse {
-  readonly controlInstances: ReadonlyArray<ControlInstanceSummary>
+export interface SimulationRunListResponse {
+  readonly simulationRuns: ReadonlyArray<SimulationRunSummary>
 }
 
 export interface ScenarioResponse {

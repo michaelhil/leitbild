@@ -1,9 +1,10 @@
+import { apiFetch } from "./api-client.ts"
 // ============================================================================
 // Auth gate — runs before the rest of the UI boots.
 //
-// Server tells us whether auth is required (via GET /api/auth) and whether
+// Server tells us whether auth is required (via GET /auth) and whether
 // our cookie is currently valid. If auth is on and we're not authed, we
-// show a token prompt; on submit we POST /api/auth which sets the
+// show a token prompt; on submit we POST /auth which sets the
 // HttpOnly cookie. After that, the page is reloaded and the regular boot
 // flow runs.
 //
@@ -18,7 +19,7 @@ interface AuthStatus {
 
 const fetchStatus = async (): Promise<AuthStatus> => {
   try {
-    const res = await fetch('/api/auth', { method: 'GET' })
+    const res = await apiFetch('/auth', { method: 'GET' })
     if (!res.ok) return { authEnabled: true, authenticated: false }
     return await res.json() as AuthStatus
   } catch {
@@ -28,7 +29,7 @@ const fetchStatus = async (): Promise<AuthStatus> => {
 
 const submitToken = async (token: string): Promise<boolean> => {
   try {
-    const res = await fetch('/api/auth', {
+    const res = await apiFetch('/auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token }),

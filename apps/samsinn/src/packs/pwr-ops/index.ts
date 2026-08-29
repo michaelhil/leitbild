@@ -2,7 +2,7 @@
 // pack.json. Compiled into the binary like synthetic-demos; the wiki
 // content itself is always fetched fresh from GitHub at tool-call time.
 //
-// Future remote-pack migration: move this directory to its own GitHub
+// Future remote-pack extraction: move this directory to its own GitHub
 // repo (samsinn-packs/pwr-ops), drop the bundled registration in
 // bootstrap.ts, and the rest stays the same.
 
@@ -12,21 +12,9 @@ import { createProcedureLookupTool } from './tools/procedure-lookup.ts'
 import { createWikiLookupTool } from './tools/wiki-lookup.ts'
 import { createEalClassifyTool } from './tools/eal-classify.ts'
 import { createProcedureSearchTool } from './tools/procedure-search.ts'
-import type { WikiSourceBinding } from '../types.ts'
+import { parsePackManifest } from '../manifest.ts'
 
-interface ManifestWiki {
-  readonly name: string
-  readonly url: string
-  readonly source: WikiSourceBinding
-}
-
-interface PackManifestShape {
-  readonly name: string
-  readonly description?: string
-  readonly wikis: ReadonlyArray<ManifestWiki>
-}
-
-const manifest = packManifest as PackManifestShape
+const manifest = parsePackManifest(packManifest, 'src/packs/pwr-ops/pack.json')
 
 const wiki = manifest.wikis[0]
 if (!wiki || !wiki.source) {

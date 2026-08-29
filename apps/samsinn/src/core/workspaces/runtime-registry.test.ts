@@ -23,7 +23,7 @@ describe('WorkspaceRuntimeRegistry', () => {
     // PROVIDER=ollama keeps shared runtime quiet — no cloud gateways built.
     process.env.PROVIDER = 'ollama'
     // Disable first-run seeding — these tests assert empty-RoomDirectory semantics.
-    process.env.SAMSINN_SEED_EXAMPLE = '0'
+    process.env.SAMSINN_SEED_WORKSPACE = '0'
     const shared = createDeploymentRuntime()
     registry = createWorkspaceRuntimeRegistry({ deployment: shared, idleMs: 1_000_000 })  // long idle so no auto-evict in unit tests
   })
@@ -33,7 +33,7 @@ describe('WorkspaceRuntimeRegistry', () => {
     if (originalHome === undefined) delete process.env.SAMSINN_HOME
     else process.env.SAMSINN_HOME = originalHome
     delete process.env.PROVIDER
-    delete process.env.SAMSINN_SEED_EXAMPLE
+    delete process.env.SAMSINN_SEED_WORKSPACE
     await rm(homeDir, { recursive: true, force: true })
   })
 
@@ -65,7 +65,7 @@ describe('WorkspaceRuntimeRegistry', () => {
       version: '26', timestamp: Date.now(), rooms: [], agents: [], humans: [],
     }))
 
-    delete process.env.SAMSINN_SEED_EXAMPLE
+    delete process.env.SAMSINN_SEED_WORKSPACE
     const seeded = await registry.getOrLoad(id)
     expect(seeded.rooms.listAllRooms().some(r => r.name === 'Cafe')).toBe(true)
     expect(seeded.team.listAgents().some(a => a.name === 'Aiden')).toBe(true)

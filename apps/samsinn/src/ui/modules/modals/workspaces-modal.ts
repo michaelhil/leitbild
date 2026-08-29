@@ -1,3 +1,4 @@
+import { apiFetch } from "../api-client.ts"
 // Settings > Workspaces. A Workspace is the stable boundary for isolated
 // rooms, agents, messages, and module state. This surface deliberately offers
 // create, switch, share, and reset only; deletion belongs behind a future
@@ -37,7 +38,7 @@ const readError = async (response: Response): Promise<string> => {
 }
 
 const shareWorkspace = async (workspaceId: string): Promise<void> => {
-  const url = `${window.location.origin}/?join=${encodeURIComponent(workspaceId)}`
+  const url = `${window.location.origin}/workspaces/${encodeURIComponent(workspaceId)}`
   try {
     await navigator.clipboard.writeText(url)
     showToast(document.body, 'Workspace link copied', { type: 'success', position: 'fixed' })
@@ -47,17 +48,8 @@ const shareWorkspace = async (workspaceId: string): Promise<void> => {
 }
 
 const switchWorkspace = async (workspaceId: string): Promise<void> => {
-  try {
-    const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/switch`, { method: 'POST' })
-    if (!response.ok) {
-      showToast(document.body, await readError(response), { type: 'error', position: 'fixed' })
-      return
-    }
-    rotateSessionTokenForWorkspaceSwitch()
-    window.location.reload()
-  } catch {
-    showToast(document.body, 'Workspace switch failed', { type: 'error', position: 'fixed' })
-  }
+  rotateSessionTokenForWorkspaceSwitch()
+  window.location.assign(`/workspaces/${encodeURIComponent(workspaceId)}`)
 }
 
 const createWorkspace = async (button: HTMLButtonElement): Promise<void> => {
@@ -65,7 +57,7 @@ const createWorkspace = async (button: HTMLButtonElement): Promise<void> => {
   if (!displayName) return
   button.disabled = true
   try {
-    const response = await fetch('/api/workspaces', {
+    const response = await apiFetch('/workspaces', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ displayName }),
@@ -146,7 +138,7 @@ const buildRow = (workspace: WorkspaceRow, currentId: string | null): HTMLElemen
 const renderWorkspaces = async (list: HTMLElement): Promise<void> => {
   list.innerHTML = '<div class="text-text-subtle italic p-3">Loading…</div>'
   try {
-    const response = await fetch('/api/workspaces')
+    const response = await apiFetch('/workspaces')
     if (!response.ok) throw new Error(await readError(response))
     const data = await response.json() as WorkspaceListResponse
     list.innerHTML = ''

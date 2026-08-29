@@ -1,4 +1,4 @@
-import type { ControlInstanceId } from '../../../../core/model/index.ts'
+import type { SimulationRunId } from '../../../../core/model/index.ts'
 import type { PackRuntimeEvent } from '../../../../simulation/protocol.ts'
 import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
 import type { ProcessPlantSignalReference } from '../../signals.ts'
@@ -51,7 +51,7 @@ export interface ProcessPlantProtectionRunner {
   readonly evaluate: (config: {
     readonly runtime: ProcessPlantRuntime
     readonly elapsedMs: number
-    readonly controlInstanceId: ControlInstanceId
+    readonly simulationRunId: SimulationRunId
     readonly sourceRuntimeId: string
   }) => ReadonlyArray<PackRuntimeEvent>
   readonly snapshot: () => ProcessPlantIcSnapshot
@@ -60,7 +60,7 @@ export interface ProcessPlantProtectionRunner {
     readonly id: string
     readonly action: ProcessPlantIcLifecycleAction
     readonly elapsedMs: number
-    readonly controlInstanceId: ControlInstanceId
+    readonly simulationRunId: SimulationRunId
     readonly sourceRuntimeId: string
     readonly actorId?: string
     readonly clientId?: string
@@ -225,7 +225,7 @@ export const createProcessPlantProtectionRunner = (config: {
     readonly rule: ProcessPlantIcRule
     readonly effect: Extract<ProcessPlantIcEffect, { readonly type: 'alarm.enter' | 'trip.enter' }>
     readonly elapsedMs: number
-    readonly controlInstanceId: ControlInstanceId
+    readonly simulationRunId: SimulationRunId
     readonly sourceRuntimeId: string
   }): ReadonlyArray<PackRuntimeEvent> => {
     const kind = input.effect.type === 'alarm.enter' ? 'alarm' : 'trip'
@@ -260,7 +260,7 @@ export const createProcessPlantProtectionRunner = (config: {
     }
     if (lifecycle.suppressed || lifecycle.shelved) return []
     return [eventForProcessPlantIcLifecycleTransition({
-      controlInstanceId: input.controlInstanceId,
+      simulationRunId: input.simulationRunId,
       sourceRuntimeId: input.sourceRuntimeId,
       systemId: config.system.id,
       rule: input.rule,
@@ -272,7 +272,7 @@ export const createProcessPlantProtectionRunner = (config: {
 
   const expireShelvedLifecycles = (input: {
     readonly elapsedMs: number
-    readonly controlInstanceId: ControlInstanceId
+    readonly simulationRunId: SimulationRunId
     readonly sourceRuntimeId: string
   }): ReadonlyArray<PackRuntimeEvent> => {
     const events: PackRuntimeEvent[] = []
@@ -292,7 +292,7 @@ export const createProcessPlantProtectionRunner = (config: {
         elapsedMs: input.elapsedMs,
       })
       events.push(eventForProcessPlantIcLifecycleTransition({
-        controlInstanceId: input.controlInstanceId,
+        simulationRunId: input.simulationRunId,
         sourceRuntimeId: input.sourceRuntimeId,
         systemId: config.system.id,
         rule,
@@ -307,7 +307,7 @@ export const createProcessPlantProtectionRunner = (config: {
   const clearLifecycle = (input: {
     readonly rule: ProcessPlantIcRule
     readonly elapsedMs: number
-    readonly controlInstanceId: ControlInstanceId
+    readonly simulationRunId: SimulationRunId
     readonly sourceRuntimeId: string
   }): ReadonlyArray<PackRuntimeEvent> => {
     const events: PackRuntimeEvent[] = []
@@ -336,7 +336,7 @@ export const createProcessPlantProtectionRunner = (config: {
         elapsedMs: input.elapsedMs,
       })
       events.push(eventForProcessPlantIcLifecycleTransition({
-        controlInstanceId: input.controlInstanceId,
+        simulationRunId: input.simulationRunId,
         sourceRuntimeId: input.sourceRuntimeId,
         systemId: config.system.id,
         rule: input.rule,
@@ -349,9 +349,9 @@ export const createProcessPlantProtectionRunner = (config: {
   }
 
   return {
-    evaluate: ({ runtime, elapsedMs, controlInstanceId, sourceRuntimeId }): ReadonlyArray<PackRuntimeEvent> => {
+    evaluate: ({ runtime, elapsedMs, simulationRunId, sourceRuntimeId }): ReadonlyArray<PackRuntimeEvent> => {
       const events: PackRuntimeEvent[] = [
-        ...expireShelvedLifecycles({ elapsedMs, controlInstanceId, sourceRuntimeId }),
+        ...expireShelvedLifecycles({ elapsedMs, simulationRunId, sourceRuntimeId }),
       ]
       for (const rule of rules) {
         const state = states.get(rule.id)
@@ -393,7 +393,7 @@ export const createProcessPlantProtectionRunner = (config: {
             state.active = false
             state.lastTransitionElapsedMs = elapsedMs
             if (rule.resetWhenClear) state.latched = false
-            events.push(...clearLifecycle({ rule, elapsedMs, controlInstanceId, sourceRuntimeId }))
+            events.push(...clearLifecycle({ rule, elapsedMs, simulationRunId, sourceRuntimeId }))
             continue
           }
           if (!matches) {
@@ -410,7 +410,7 @@ export const createProcessPlantProtectionRunner = (config: {
               state.lastTransitionElapsedMs = elapsedMs
             }
             if (rule.resetWhenClear) state.latched = false
-            events.push(...clearLifecycle({ rule, elapsedMs, controlInstanceId, sourceRuntimeId }))
+            events.push(...clearLifecycle({ rule, elapsedMs, simulationRunId, sourceRuntimeId }))
             continue
           }
         }
@@ -428,7 +428,7 @@ export const createProcessPlantProtectionRunner = (config: {
               })
               continue
             }
-            events.push(...enterLifecycle({ rule, effect, elapsedMs, controlInstanceId, sourceRuntimeId }))
+            events.push(...enterLifecycle({ rule, effect, elapsedMs, simulationRunId, sourceRuntimeId }))
           } catch (error) {
             failures.push(processPlantIcFailureFor({ ruleId: rule.id, effectId: effect.id, elapsedMs, error }))
           }
@@ -530,7 +530,7 @@ export const createProcessPlantProtectionRunner = (config: {
         ...(input.reason === undefined ? {} : { reason: input.reason }),
       })
       events.push(eventForProcessPlantIcLifecycleTransition({
-        controlInstanceId: input.controlInstanceId,
+        simulationRunId: input.simulationRunId,
         sourceRuntimeId: input.sourceRuntimeId,
         systemId: config.system.id,
         rule,

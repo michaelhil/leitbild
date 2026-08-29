@@ -1,3 +1,4 @@
+import { apiFetch } from "./api-client.ts"
 // ============================================================================
 // samsinn — UI Application
 //
@@ -131,7 +132,7 @@ const handleDeleteRoom = async (roomId: string, roomName: string): Promise<void>
 
 const handleBookmark = async (content: string): Promise<void> => {
   try {
-    const res = await fetch('/api/bookmarks', {
+    const res = await apiFetch('/bookmarks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
@@ -267,7 +268,7 @@ $agentListView.subscribe(({ agents, selectedAgentId, selectedRoomId, roomMemberI
       $selectedAgentId.set(agentId)
     },
     onDelete: async (agentName) => {
-      void safeFetchJson(`/api/agents/${encodeURIComponent(agentName)}`, { method: 'DELETE' })
+      void safeFetchJson(`/agents/${encodeURIComponent(agentName)}`, { method: 'DELETE' })
     },
   })
   updateAgentsLabel()
@@ -385,7 +386,7 @@ $selectedRoomId.listen((roomId, prevRoomId) => {
 
     // Leitbild dashboard iframe — shows floating toggle when this room has a
     // leitbildMirror binding; hides when it doesn't. Fetches the binding's
-    // baseUrl + workspaceId from /api/rooms/:name/leitbild-mirror to build the
+    // baseUrl + workspaceId from /rooms/:name/leitbild-mirror to build the
     // SPA URL. See docs/leitbild-walkthrough.md.
     void updateLeitbildPanelForRoom(room.name, roomId)
     // Composer attachments chip strip re-targets to the new active room.
@@ -708,14 +709,14 @@ agentForm.onsubmit = (e) => {
   if (!agentName) return
 
   if (agentModalKind === 'human') {
-    // POST to /api/agents/human with name + optional persona/tags + optional room.
+    // POST to /agents/human with name + optional persona/tags + optional room.
     const autoAddRoom = consumeAutoAddRoom()
     const persona = (data.get('persona') as string | null)?.trim() || undefined
     const rawTagsHuman = (data.get('tags') as string | null)?.trim() ?? ''
     const humanTags = rawTagsHuman ? rawTagsHuman.split(',').map(t => t.trim()).filter(Boolean) : undefined
     void (async () => {
       try {
-        const res = await fetch('/api/agents/human', {
+        const res = await apiFetch('/agents/human', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -841,9 +842,9 @@ btnRoomPrompt.onclick = () => {
   if (!room) return
   openTextEditorModal(
     `Room Prompt — ${room.name}`,
-    `/api/rooms/${encodeURIComponent(room.name)}`,
+    `/rooms/${encodeURIComponent(room.name)}`,
     'roomPrompt',
-    `/api/rooms/${encodeURIComponent(room.name)}/prompt`,
+    `/rooms/${encodeURIComponent(room.name)}/prompt`,
     'PUT',
     (data) => ((data.profile as Record<string, unknown>)?.roomPrompt as string) ?? '',
   )
@@ -885,9 +886,7 @@ const connect = () => {
   setWSClient(client)
 }
 
-// v15+: WS sessions are pure viewers — no name, no agent binding.
-// The legacy localStorage `ta_name` (and the never-shown #name-modal)
-// are vestigial; we ignore both.
+// WebSocket sessions are pure viewers with no name or Agent binding.
 void (async () => {
   const { ensureAuthenticated } = await import('./auth.ts')
   await ensureAuthenticated()

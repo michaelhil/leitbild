@@ -1,3 +1,4 @@
+import { apiFetch } from "./api-client.ts"
 // ============================================================================
 // Ollama Dashboard — health, metrics, model management, URL switching.
 //
@@ -62,7 +63,7 @@ export const updateOllamaHealthUI = (
       modelsEl.querySelectorAll('.od-unload').forEach(btn => {
         btn.addEventListener('click', async () => {
           const model = (btn as HTMLElement).dataset.model
-          if (model) await fetch(`/api/ollama/models/${encodeURIComponent(model)}/unload`, { method: 'POST' })
+          if (model) await apiFetch(`/ollama/models/${encodeURIComponent(model)}/unload`, { method: 'POST' })
         })
       })
     }
@@ -96,7 +97,7 @@ export const updateOllamaHealthUI = (
       loadRow.appendChild(select)
       loadRow.appendChild(btn)
       btn.addEventListener('click', async () => {
-        if (select.value) await fetch(`/api/ollama/models/${encodeURIComponent(select.value)}/load`, { method: 'POST' })
+        if (select.value) await apiFetch(`/ollama/models/${encodeURIComponent(select.value)}/load`, { method: 'POST' })
       })
     } else {
       loadRow.innerHTML = '<span class="text-xs text-text-muted">All models loaded</span>'
@@ -133,7 +134,7 @@ export const updateOllamaMetricsUI = (metrics: Record<string, unknown>): void =>
 // === URL management ===
 
 export const refreshOllamaUrls = async (urlSelect: HTMLSelectElement): Promise<void> => {
-  const data = await safeFetchJson<{ current: string; saved: string[] }>('/api/ollama/urls')
+  const data = await safeFetchJson<{ current: string; saved: string[] }>('/ollama/urls')
   if (!data) return
   urlSelect.innerHTML = ''
   for (const url of data.saved) {
@@ -153,7 +154,7 @@ export const wireOllamaDashboard = (
 ): void => {
   // Reset circuit breaker button
   els.dashboard.querySelector('#od-reset-circuit')?.addEventListener('click', async () => {
-    await fetch('/api/ollama/reset-circuit', { method: 'POST' })
+    await apiFetch('/ollama/reset-circuit', { method: 'POST' })
   })
 
   els.dashboard.querySelector('#od-cfg-save')?.addEventListener('click', async () => {
@@ -166,18 +167,18 @@ export const wireOllamaDashboard = (
     if (cfgQueue?.value) body.maxQueueDepth = parseInt(cfgQueue.value)
     if (cfgTimeout?.value) body.queueTimeoutMs = parseInt(cfgTimeout.value)
     if (cfgKeepalive?.value) body.keepAlive = cfgKeepalive.value
-    await fetch('/api/ollama/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    await apiFetch('/ollama/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   })
 
   els.urlSelect.onchange = async () => {
     if (!els.urlSelect.value) return
-    await fetch('/api/ollama/urls', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: els.urlSelect.value }) })
+    await apiFetch('/ollama/urls', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: els.urlSelect.value }) })
   }
 
   els.btnUrlAdd.onclick = async () => {
     const url = els.urlInput.value.trim()
     if (!url) return
-    await fetch('/api/ollama/urls', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) })
+    await apiFetch('/ollama/urls', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) })
     els.urlInput.value = ''
     await refreshOllamaUrls(els.urlSelect)
   }
@@ -185,7 +186,7 @@ export const wireOllamaDashboard = (
   els.btnUrlDelete.onclick = async () => {
     const url = els.urlSelect.value
     if (!url) return
-    await fetch('/api/ollama/urls', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) })
+    await apiFetch('/ollama/urls', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) })
     await refreshOllamaUrls(els.urlSelect)
   }
 
@@ -211,7 +212,7 @@ const stopMetricsPoll = (): void => {
 
 const pollOllamaMetrics = async (): Promise<void> => {
   try {
-    const res = await fetch('/api/ollama/metrics')
+    const res = await apiFetch('/ollama/metrics')
     if (res.ok) updateOllamaMetricsUI(await res.json() as Record<string, unknown>)
   } catch { /* transient — next tick will retry */ }
 }
@@ -228,9 +229,9 @@ export const openOllamaDashboard = async (
 
   try {
     const [healthRes, metricsRes, configRes] = await Promise.all([
-      fetch('/api/ollama/health'),
-      fetch('/api/ollama/metrics'),
-      fetch('/api/ollama/config'),
+      apiFetch('/ollama/health'),
+      apiFetch('/ollama/metrics'),
+      apiFetch('/ollama/config'),
     ])
     if (healthRes.ok) updateOllamaHealthUI(await healthRes.json() as Record<string, unknown>, els.statusDot)
     if (metricsRes.ok) updateOllamaMetricsUI(await metricsRes.json() as Record<string, unknown>)

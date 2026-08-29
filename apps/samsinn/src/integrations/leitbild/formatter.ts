@@ -53,7 +53,7 @@ export const formatBanner = (ctx: BannerContext): string => {
 // === Reset boundary — posted when Leitbild emits a reset event ===
 
 export const formatResetBoundary = (newSeq: number): string =>
-  `[Leitbild] ⟲ CONTROL INSTANCE RESET — historical events above no longer reflect current state. Re-anchored at seq=${newSeq}.`
+  `[Leitbild] ⟲ SIMULATION RUN RESET — historical events above no longer reflect current state. Re-anchored at seq=${newSeq}.`
 
 // Note: formatReconnectNotice was removed in the knip triage pass — it was
 // exported but never called (mirror-service handles reconnect inside

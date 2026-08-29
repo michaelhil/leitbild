@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ControlInstanceId } from '../src/core/model/index.ts'
+import type { SimulationRunId } from '../src/core/model/index.ts'
 import type { PackCreateObjectType } from '../src/core/packs/protocol.ts'
 import {
   categoryRowsFor,
@@ -13,7 +13,7 @@ import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 
 const scenarioObjects = () =>
   createAmbulanceSimEngine({
-    controlInstanceId: 'control-instance:control-surface-selectors' as ControlInstanceId,
+    simulationRunId: 'run-control-surface-selectors' as SimulationRunId,
     objects: osloAmbulanceScenario.initialObjects,
     routing: createDirectRoutingAdapter(),
   }).snapshot().objects
@@ -31,7 +31,7 @@ describe('control surface selectors', () => {
 
   test('keeps category object order deterministic regardless of incoming object order', () => {
     const objects = scenarioObjects()
-    const ambulance = objects.find(object => ambulancePack.isController(object))
+    const ambulance = objects.find(object => ambulancePack.commands.isController(object))
     if (!ambulance) throw new Error('scenario fixture missing ambulance')
     const laterAmbulance = {
       ...ambulance,
@@ -58,7 +58,7 @@ describe('control surface selectors', () => {
 
   test('selects controllers only when the active pack accepts the object as controllable', () => {
     const objects = scenarioObjects()
-    const ambulance = objects.find(object => ambulancePack.isController(object))
+    const ambulance = objects.find(object => ambulancePack.commands.isController(object))
     const hospital = objects.find(object => object.id === 'facility:ous')
     if (!ambulance || !hospital) throw new Error('scenario fixture missing expected objects')
 
@@ -68,7 +68,7 @@ describe('control surface selectors', () => {
   })
 
   test('creates placement cursor data and rejects unknown pack icons visibly', () => {
-    const ambulanceCreateType = ambulancePack.createObjectTypes.find(type => type.id === 'ambulance')
+    const ambulanceCreateType = ambulancePack.commands.createObjectTypes.find(type => type.id === 'ambulance')
     if (!ambulanceCreateType) throw new Error('ambulance create type missing')
 
     expect(placementCursorFor(ambulanceCreateType, ambulancePack)).toEqual({

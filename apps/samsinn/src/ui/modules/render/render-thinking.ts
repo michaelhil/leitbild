@@ -124,7 +124,7 @@ export const addThinkingWarning = (container: HTMLElement, agentName: string, me
 // Inline "agent has used N tool calls without finishing" notice with
 // [Continue +5] [Stop] buttons. Replaces the silent maxToolIterations
 // cliff — the user decides whether to extend or stop. onContinue calls
-// POST /api/agents/:name/continue-tools; onStop calls the existing
+// POST to the Workspace-scoped Agent continue-tools endpoint; onStop calls the existing
 // cancel-generation path. Removed automatically by clearThinkingIndicator
 // when the agent goes idle (eval completes or is cancelled).
 export const addToolCheckinNotice = (

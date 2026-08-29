@@ -1,7 +1,7 @@
 // ============================================================================
 // Trigger scheduler — single setInterval coarse poll over all agents/triggers.
 //
-// Rationale (see plan): one timer for the whole instance. Per-tick: walk each
+// Rationale (see plan): one timer for the whole Workspace runtime. Per-tick: walk each
 // agent → walk its enabled triggers → fire those whose
 // `(lastFiredAt ?? 0) + intervalSec*1000 <= now` AND agent is not busy.
 // `lastFiredAt` is set BEFORE dispatch (overrun protection — a slow eval
@@ -10,7 +10,7 @@
 // Three minimisation levers built in:
 //   1. Early-return when no agent has any enabled triggers (cached flag).
 //   2. The setInterval is stopped entirely when the count drops to zero and
-//      restarted on first add. Idle instances pay zero scheduler cost.
+//      restarted on first add. Idle Workspaces pay zero scheduler cost.
 //   3. First-fire stagger: when invalidating the cache (after add/load), any
 //      trigger with `lastFiredAt` undefined gets it set to bootTime so the
 //      first eval lands at `bootTime + intervalSec`, not immediately.

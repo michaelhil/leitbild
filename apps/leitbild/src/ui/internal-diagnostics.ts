@@ -40,7 +40,7 @@ export interface InternalDiagnosticsStartupSnapshot {
   readonly marks: ReadonlyArray<InternalDiagnosticsStartupMark>
 }
 
-export interface InternalDiagnosticsControlInstanceSnapshot {
+export interface InternalDiagnosticsSimulationRunSnapshot {
   readonly id: string | null
   readonly expectedScenarioId: string | null
   readonly snapshotReady: boolean
@@ -143,7 +143,7 @@ export interface InternalDiagnosticsSnapshot {
   readonly route: InternalDiagnosticsRouteSnapshot
   readonly browser: InternalDiagnosticsBrowserSnapshot
   readonly startup: InternalDiagnosticsStartupSnapshot
-  readonly controlInstance: InternalDiagnosticsControlInstanceSnapshot
+  readonly simulationRun: InternalDiagnosticsSimulationRunSnapshot
   readonly scenario: InternalDiagnosticsScenarioSnapshot
   readonly presentation: PackPresentationDiagnosticsSnapshot
   readonly map: InternalDiagnosticsMapSnapshot

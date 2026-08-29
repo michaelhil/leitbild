@@ -30,7 +30,7 @@ interface MutableStep {
   readonly sourceLine: number
 }
 
-const frontmatterAliases: Readonly<Record<string, keyof Frontmatter | 'procedureMd' | 'referencePlant' | 'type'>> = {
+const frontmatterFields: Readonly<Record<string, keyof Frontmatter | 'procedureMd' | 'referencePlant' | 'type'>> = {
   'procedure-id': 'procedureId',
   title: 'title',
   profile: 'profile',
@@ -77,11 +77,13 @@ const parseFrontmatter = (raw: string): { readonly frontmatter: Frontmatter; rea
     const match = line.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/)
     if (!match) continue
     const rawKey = match[1] ?? ''
-    const key = frontmatterAliases[rawKey]
+    const key = frontmatterFields[rawKey]
     if (!key) continue
     const rawValue = match[2] ?? ''
     values[key] = rawValue.trim().startsWith('[') ? parseArrayValue(rawValue) : rawValue.trim()
   }
+  if (values.type !== 'procedure') throw new Error('procedure frontmatter requires type: procedure')
+  if (values.procedureMd !== '0.7') throw new Error('procedure frontmatter requires procedure-md: 0.7')
   if (typeof values.procedureId !== 'string') throw new Error('procedure frontmatter requires procedure-id')
   if (typeof values.title !== 'string') throw new Error('procedure frontmatter requires title')
   return {

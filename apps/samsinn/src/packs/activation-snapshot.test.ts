@@ -57,10 +57,10 @@ describe('M3: evict-reload + cross-Workspace pack scrub round-trip', () => {
     // 2. Persist + discard (simulates eviction).
     await saveSnapshot(serializeSystem(live), snapshotPath)
 
-    // 3. uninstall_pack 'aviation' fires while this instance is evicted —
+    // 3. uninstall_pack 'aviation' fires while this Workspace is evicted —
     // appendPendingScrub mutates the on-disk snapshot.
     const queued = await appendPendingScrub(snapshotPath, {
-      namespace: 'aviation',
+      packId: 'aviation',
       scheduledAt: '2026-05-06T10:00:00.000Z',
     })
     expect(queued.applied).toBe(true)
@@ -68,7 +68,7 @@ describe('M3: evict-reload + cross-Workspace pack scrub round-trip', () => {
     // Verify the scrub is on disk before reload.
     const onDisk = await loadSnapshot(snapshotPath)
     expect(onDisk?.pendingScrubs?.length).toBe(1)
-    expect(onDisk?.pendingScrubs?.[0]?.namespace).toBe('aviation')
+    expect(onDisk?.pendingScrubs?.[0]?.packId).toBe('aviation')
     // Pre-restore: rooms still record aviation as active.
     expect(onDisk?.rooms.find(r => r.profile.name === 'Cafe')?.activePacks).toContain('aviation')
 
@@ -107,8 +107,8 @@ describe('M3: evict-reload + cross-Workspace pack scrub round-trip', () => {
     await saveSnapshot(serializeSystem(live), snapshotPath)
 
     // Two separate uninstall events while evicted.
-    await appendPendingScrub(snapshotPath, { namespace: 'a', scheduledAt: '2026-05-06T10:00:00.000Z' })
-    await appendPendingScrub(snapshotPath, { namespace: 'c', scheduledAt: '2026-05-06T10:01:00.000Z' })
+    await appendPendingScrub(snapshotPath, { packId: 'a', scheduledAt: '2026-05-06T10:00:00.000Z' })
+    await appendPendingScrub(snapshotPath, { packId: 'c', scheduledAt: '2026-05-06T10:01:00.000Z' })
 
     const reloaded = buildWorkspaceRuntime()
     await restoreFromSnapshot(
@@ -119,7 +119,7 @@ describe('M3: evict-reload + cross-Workspace pack scrub round-trip', () => {
     expect(reloaded.rooms.getRoom(room.profile.id)!.getActivePacks()).toEqual(['b', 'd'])
   })
 
-  test('scrub against a never-active namespace is a no-op on restore', async () => {
+  test('scrub against a never-active Pack id is a no-op on restore', async () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'm3-noop-scrub-'))
     const snapshotPath = join(tmpDir, 'snapshot.json')
 
@@ -128,7 +128,7 @@ describe('M3: evict-reload + cross-Workspace pack scrub round-trip', () => {
     room.setActivePacks(['kept'])
     await saveSnapshot(serializeSystem(live), snapshotPath)
 
-    await appendPendingScrub(snapshotPath, { namespace: 'never-was-active', scheduledAt: '2026-05-06T10:00:00.000Z' })
+    await appendPendingScrub(snapshotPath, { packId: 'never-was-active', scheduledAt: '2026-05-06T10:00:00.000Z' })
 
     const reloaded = buildWorkspaceRuntime()
     await restoreFromSnapshot(
@@ -136,7 +136,7 @@ describe('M3: evict-reload + cross-Workspace pack scrub round-trip', () => {
       (await loadSnapshot(snapshotPath))!,
     )
 
-    // 'kept' survives; the scrub for an unknown namespace is harmless.
+    // 'kept' survives; the scrub for an unknown Pack id is harmless.
     expect(reloaded.rooms.getRoom(room.profile.id)!.getActivePacks()).toEqual(['kept'])
   })
 })

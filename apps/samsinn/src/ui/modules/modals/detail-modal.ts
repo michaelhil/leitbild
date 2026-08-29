@@ -221,10 +221,9 @@ export const createModal = (config: ModalConfig): ModalElements => {
   card.setAttribute('aria-labelledby', titleId)
   header.appendChild(title)
   const close = (): void => { overlay.remove() }
-  // No × button. Click outside or Escape closes. Some callers used to look
-  // it up via `header.querySelector('button')` — those have been migrated
-  // to insert their own buttons before any reference, so the lookup is
-  // either gone or harmless (returns the inserted button or null).
+  // No × button. Click outside or Escape closes. Callers that query the
+  // header for a button insert their own button first, so the lookup either
+  // returns that button or null.
 
   const scrollBody = document.createElement('div')
   scrollBody.className = 'px-6 py-4 overflow-y-auto min-h-0 flex-1 modal-scroll'
@@ -357,7 +356,7 @@ export const openTextEditorModal = (
   method = 'PUT',
   extractValue?: (data: Record<string, unknown>) => string,
 ): void => {
-  fetch(fetchUrl)
+  apiFetch(fetchUrl)
     .then(res => res.ok ? res.json() : null)
     .then(data => {
       if (!data) return
@@ -370,7 +369,7 @@ export const openTextEditorModal = (
       const buttons = createButtonRow(
         modal.close,
         () => {
-          fetch(saveUrl, {
+          apiFetch(saveUrl, {
             method,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ [fieldName]: textarea.value }),
@@ -384,3 +383,4 @@ export const openTextEditorModal = (
     })
     .catch(() => {})
 }
+import { apiFetch } from '../api-client.ts'

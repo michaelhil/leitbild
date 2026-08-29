@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ChevronsUp, ChevronDown, ChevronUp, Copy, FileCode2, RotateCcw, Search, X, ZoomIn, ZoomOut } from 'lucide-svelte'
   import { tick } from 'svelte'
-  import type { ControlInstanceId } from '../../core/model/index.ts'
+  import type { SimulationRunId } from '../../core/model/index.ts'
   import {
     readProcessPlantArtifact,
     type ProcessPlantArtifact,
@@ -11,13 +11,13 @@
   } from './process-surface-client.ts'
 
   interface Props {
-    readonly controlInstanceId: ControlInstanceId
+    readonly simulationRunId: SimulationRunId
     readonly systemId: string
     readonly artifact: ProcessPlantArtifactKind
     readonly close: () => void
   }
 
-  let { controlInstanceId, systemId, artifact, close }: Props = $props()
+  let { simulationRunId, systemId, artifact, close }: Props = $props()
 
   let loading = $state(true)
   let error = $state<string | null>(null)
@@ -321,7 +321,7 @@
   }
 
   $effect(() => {
-    const selectedControlInstanceId = controlInstanceId
+    const selectedSimulationRunId = simulationRunId
     const selectedSystemId = systemId
     const selectedArtifact = artifact
     let cancelled = false
@@ -340,7 +340,7 @@
         renderError = null
         graphSize = null
         clearGraphView()
-        const next = await readProcessPlantArtifact(selectedControlInstanceId, selectedSystemId, selectedArtifact)
+        const next = await readProcessPlantArtifact(selectedSimulationRunId, selectedSystemId, selectedArtifact)
         if (!cancelled) data = next
       } catch (err) {
         if (!cancelled) error = err instanceof Error ? err.message : String(err)

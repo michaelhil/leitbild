@@ -1,4 +1,4 @@
-import type { CommandEnvelope, CommandResult, ControlInstanceEvent, GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, OperationalObject, SimulationClockState } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, SimulationRunEvent, GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, OperationalObject, SimulationClockState } from '../../../core/model/index.ts'
 import { nowIso, objectIdSchema } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeRealtimeMessage, PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
@@ -82,6 +82,7 @@ const maxRuntimeCatchUpSteps = 5
 
 export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
   id: droneNativeRuntimeId,
+  version: '1.0.0',
   packId: dronePackId,
   acceptedCommandKinds: droneCommandKinds,
   acceptedRealtimeInputTypes: [droneManualIntentRealtimeInputType],
@@ -636,7 +637,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
         emit([{
           type: 'interaction.signal',
           signal: droneAttackSignal({
-            controlInstanceId: command.controlInstanceId,
+            simulationRunId: command.simulationRunId,
             at,
             attackerId: payload.attackerId,
             targetId: payload.targetId,
@@ -655,7 +656,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
     return {
       getSnapshot: async (): Promise<PackRuntimeSnapshot> => ({
-        controlInstanceId: config.controlInstanceId,
+        simulationRunId: config.simulationRunId,
         objects: [...objects.values()],
         capturedAt: nowIso(),
       }),
@@ -686,9 +687,9 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       },
       query: async (request: PackQueryRequest): Promise<PackQueryResponse> =>
         answerDroneQuery({ request, objects: [...objects.values()], models: runtimeConfig.models }),
-      observeCommittedEvents: async (events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => {
+      observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
         for (const event of events) {
-          if (event.controlInstanceId !== config.controlInstanceId) continue
+          if (event.simulationRunId !== config.simulationRunId) continue
           if (event.type === 'object.upserted') {
             const record = upsertRuntimeObject(event.object)
             if (record && !homePoints.has(event.object.id)) homePoints.set(event.object.id, record.data.pose.point)

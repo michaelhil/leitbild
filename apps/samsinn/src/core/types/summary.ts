@@ -60,7 +60,7 @@ export const DEFAULT_SUMMARY_CONFIG: SummaryConfig = {
 
 // Validate an unknown body against SummaryConfig. Returns the typed config
 // on success, or a structured error message on failure. The endpoint
-// `PUT /api/rooms/:name/summary-config` accepts JSON from authed clients
+// The Workspace-scoped Room summary-config endpoint accepts JSON from authenticated clients
 // (the UI); before this validator the route did `body as unknown as
 // SummaryConfig`, which TS-accepted any shape and pushed the failure to
 // runtime in unpredictable places (an invalid schedule.kind could

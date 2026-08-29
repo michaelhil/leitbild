@@ -1,4 +1,4 @@
-import type { ControlInstanceId } from '../src/core/model/index.ts'
+import type { SimulationRunId } from '../src/core/model/index.ts'
 import { createScenarioCatalog, type ScenarioCatalog } from '../src/core/scenarios/catalog.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { aviationPack } from '../src/packs/aviation/pack.ts'
@@ -51,8 +51,8 @@ export const testScenarioRuntimeConfig = (): PackScenarioRuntimeConfig => {
   }
 }
 
-export const testControlInstanceId = (suffix: string): ControlInstanceId =>
-  `control-instance:${suffix}` as ControlInstanceId
+export const testSimulationRunId = (suffix: string): SimulationRunId =>
+  `run-${suffix}` as SimulationRunId
 
 export const waitForCondition = async (
   label: string,

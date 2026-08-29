@@ -1,6 +1,6 @@
 // procmd-core public API.
 //
-// Spec: docs/procedure-md.md (v0.6 normative).
+// Spec: docs/procedure-md.md (v0.7 normative).
 //
 // This is the single source of truth for procmd parsing. It is vendored
 // into the pwr-ops wiki repo under `procmd-core/` with a SHA pin in

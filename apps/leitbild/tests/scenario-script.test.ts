@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { IsoTimestamp } from '../src/core/model/index.ts'
 import { scenarioDefinitionSchema } from '../src/core/model/index.ts'
-import { dueScenarioScriptSteps } from '../src/core/control-instances/scenario-runner.ts'
+import { dueScenarioScriptSteps } from '../src/core/simulation-runs/scenario-runner.ts'
 import { osloAmbulanceScenario, scenarios } from '../src/scenarios/index.ts'
 
 describe('scenario script model', () => {

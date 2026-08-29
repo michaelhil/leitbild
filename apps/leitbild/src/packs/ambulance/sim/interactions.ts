@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { AdapterId, ControlInstanceId, InteractionEffect, InteractionEndpoint, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject, SignalId } from '../../../core/model/index.ts'
+import type { AdapterId, SimulationRunId, InteractionEffect, InteractionEndpoint, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject, SignalId } from '../../../core/model/index.ts'
 import {
   confirmedFact,
   estimatedFact,
@@ -264,7 +264,7 @@ const effectsForArrivalResult = (
   input: AmbulanceArrivalInteractionInput,
   result: AmbulanceArrivalInteractionResult,
   signalId: SignalId,
-  controlInstanceId: ControlInstanceId,
+  simulationRunId: SimulationRunId,
   source: InteractionEndpoint,
   targets: ReadonlyArray<InteractionEndpoint>,
 ): ReadonlyArray<InteractionEffect> => {
@@ -280,7 +280,7 @@ const effectsForArrivalResult = (
       type: 'notification.emit',
       notification: {
         id: notificationIdSchema.parse(`notification:${signalId}`),
-        controlInstanceId,
+        simulationRunId,
         at: input.at,
         title: targetResolved ? 'Incident resolved' : 'Arrival processed',
         message: targetResolved
@@ -318,7 +318,7 @@ export const createAmbulanceArrivalInteractionHandler = (): InteractionHandler =
       target,
       at: signal.at,
       adapterId: provenance.adapterId ?? 'adapter:interaction-runtime' as AdapterId,
-    }, result, signal.id, signal.controlInstanceId, signal.source, signal.targets)
+    }, result, signal.id, signal.simulationRunId, signal.source, signal.targets)
   },
 })
 
@@ -360,7 +360,7 @@ export const createAmbulanceMedicalDemandInteractionHandler = (): InteractionHan
       type: 'notification.emit',
       notification: {
         id: notificationIdSchema.parse(`notification:${signal.id}`),
-        controlInstanceId: signal.controlInstanceId,
+        simulationRunId: signal.simulationRunId,
         at: signal.at,
         title: payload.data.title,
         message: payload.data.description,

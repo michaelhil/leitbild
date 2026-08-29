@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { parseProcedure } from './parser.ts'
+import { parseProcedure } from '../../../procmd-core/index.ts'
 
 const fixture = (name: string): string =>
   readFileSync(join(import.meta.dir, '..', 'fixtures', name), 'utf-8')
@@ -147,7 +147,7 @@ Note: this is the last step
   })
 })
 
-describe('parseProcedure — v0.6 promoted keywords', () => {
+describe('parseProcedure — core v0.7 syntax', () => {
   const src = `---
 type: procedure
 procedure-md: 0.7
@@ -246,8 +246,8 @@ Action: log completion
   })
 })
 
-describe('parseProcedure — version handshake', () => {
-  test('unknown procedure-md version emits a warning but still parses', () => {
+describe('parseProcedure — strict format identity', () => {
+  test('rejects an unknown procedure-md version', () => {
     const src = `---
 type: procedure
 procedure-md: 99.9
@@ -262,11 +262,10 @@ Check: something
 - ok → #x
 `
     const r = parseProcedure(src)
-    if ('error' in r) throw new Error(r.error)
-    expect(r.warnings.some(w => w.includes('99.9'))).toBe(true)
+    expect(r).toEqual({ error: 'unsupported procedure-md 99.9; expected 0.7' })
   })
 
-  test('omitted procedure-md is fine', () => {
+  test('requires procedure-md', () => {
     const src = `---
 type: procedure
 procedure-id: TEST-4
@@ -279,11 +278,11 @@ applies-to: anywhere
 Check: something
 `
     const r = parseProcedure(src)
-    expect('error' in r).toBe(false)
+    expect(r).toEqual({ error: '`procedure-md` is required' })
   })
 })
 
-describe('parseProcedure — E-0 fixture exercises v0.6 features', () => {
+describe('parseProcedure — E-0 fixture exercises v0.7 features', () => {
   const r = parseProcedure(fixture('E-0.md'))
   if ('error' in r) throw new Error(`E-0 fixture failed: ${r.error}`)
 

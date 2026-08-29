@@ -179,7 +179,7 @@ describe('procedure_lookup — telemetry', () => {
     restore()
     restore = installFetchMock((url) => {
       if (url.endsWith('/wiki/_manifest.json')) return new Response(JSON.stringify({
-        version: 1, wiki: 'pwr-ops', procedures: [{ id: 'E-0', title: 'Reactor Trip' }],
+        version: 1, wiki: 'pwr-ops', procedures: [{ id: 'E-0', title: 'Reactor Trip' }], pages: [],
       }), { status: 200 })
       return fixtureResponder(url)
     })
@@ -209,6 +209,7 @@ describe('procedure_lookup — manifest-driven index', () => {
         // Procedure that does NOT appear in index.md — manifest is authoritative
         { id: 'AOP-1', title: 'Generic AOP', coverage: 'developed', stepCount: 10 },
       ],
+      pages: [],
     }
     restore = installFetchMock((url) => {
       if (url.endsWith('/wiki/_manifest.json')) return new Response(JSON.stringify(MANIFEST), { status: 200 })

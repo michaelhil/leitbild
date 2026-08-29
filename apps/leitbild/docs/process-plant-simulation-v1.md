@@ -263,7 +263,7 @@ Process signal bindings are the bridge between compiled process variables and pr
 Every process signal resolves to:
 
 ```text
-{ controlRunId, systemId, variablePath }
+{ simulationRunId, systemId, variablePath }
 ```
 
 `systemId` is always explicit. Leitbild does not assume a current unit or a fleet of identical plants. A tag such as `PT-455` can exist in several independent systems; API calls disambiguate by `systemId`.
@@ -404,7 +404,7 @@ Writable controls use the same signal reference shape through `process-plant.con
 }
 ```
 
-No process-specific HTTP endpoint family is introduced. The Control Instance API routes generic pack queries and command envelopes to the active process-plant pack runtime.
+No process-specific HTTP endpoint family is introduced. The Simulation Run API routes generic pack queries and command envelopes to the active process-plant pack runtime.
 
 ## Cross-Pack Operational Demands
 
@@ -796,7 +796,7 @@ When adding component or process-link behavior, use the runtime behavior API rat
 
 Behavior authoring rules:
 
-- keep continuous physics in behavior modules, not in Leitbild events or Control Instance object updates,
+- keep continuous physics in behavior modules, not in Leitbild events or Simulation Run object updates,
 - declare every local output in `writes`; undeclared writes fail and unknown write variables fail during execution-plan compilation,
 - use compiled graph indexes and adjacency maps such as `incomingLinksByComponent` and `outgoingLinksByComponent` instead of scanning all links in hot loops,
 - cache only static graph-derived data; do not cache process values outside the authoritative variable table,
@@ -851,7 +851,7 @@ Current runtime behavior is deliberately minimal but functional:
 
 The current thermophysical helpers live in `src/packs/process-plant/runtime/thermophysics.ts`. They are intentionally approximate and code-backed: specific heat, latent heat, water temperature rise from heat/flow, steam flow from heat, a pressure-to-saturation-temperature approximation, and a small energy-balance helper. Keep this shared helper layer thin. It should prevent duplicated constants and arithmetic drift without pretending to be RELAP, Modelica, or a steam-table package.
 
-The runtime is connected through the process-plant pack runtime. The pack runtime owns private runtime snapshots, exposes read-only process state through pack queries, and accepts writable-variable commands through the normal Control Instance command path.
+The runtime is connected through the process-plant pack runtime. The pack runtime owns private runtime snapshots, exposes read-only process state through pack queries, and accepts writable-variable commands through the normal Simulation Run command path.
 
 ## Feasibility Scenarios
 

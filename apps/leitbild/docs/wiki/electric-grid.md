@@ -641,7 +641,7 @@ src/packs/electric-grid/
 
 **Leitbild guidance.**
 
-- Control Instance projected state should contain operator-facing grid assets and events.
+- Simulation Run projected state should contain operator-facing grid assets and events.
 - The pack runtime should own dense solver state: bus angles, branch flows, island membership, frequency, reserves, and internal matrices.
 - Pack queries should expose read-only snapshots of solver state to UI, procedures, and AI agents.
 - Commands should be validated and queued through the runtime, not applied directly by UI.
@@ -653,7 +653,7 @@ flowchart TB
   Scenario["Scenario Definition<br/>packs + initial grid surface"]
   Dataset["Reference Dataset<br/>assets, geometry, graph seed"]
   Runtime["Grid Runtime<br/>compiled graph and solvers"]
-  Projection["Control Instance Projection<br/>operator-facing state"]
+  Projection["Simulation Run Projection<br/>operator-facing state"]
   Queries["Pack Queries<br/>flows, health, assets, contingencies"]
   Commands["Commands<br/>dispatch, shed, isolate, restore"]
   OtherPacks["Other Packs<br/>PWR, hospitals, aviation, weather"]

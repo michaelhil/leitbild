@@ -1,3 +1,4 @@
+import { apiFetch } from "../api-client.ts"
 // Settings > Skills modal — master/detail.
 // Left: list of skills + a "New" button.
 // Right: full skill editor (reuses skill-detail-modal's shared renderer).
@@ -17,7 +18,7 @@ interface SkillListItem {
 
 const fetchSkills = async (): Promise<SkillListItem[]> => {
   try {
-    const res = await fetch('/api/skills')
+    const res = await apiFetch('/skills')
     if (!res.ok) return []
     return await res.json() as SkillListItem[]
   } catch { return [] }

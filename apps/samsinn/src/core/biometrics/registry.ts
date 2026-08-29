@@ -4,7 +4,7 @@
 // reaching back to the browser.
 //
 // Ephemeral by design: never persisted to snapshot, cleared on Workspace
-// teardown / instance evict, no on-disk trace. The widget pushes snapshots
+// teardown / Workspace runtime eviction, no on-disk trace. The widget pushes snapshots
 // over WS roughly every 2 s while a capture is active; the registry is the
 // server-side cache the agent reads from.
 //

@@ -1,33 +1,35 @@
-import type { ControlInstanceRegistry } from '../control-instances/registry.ts'
-import type { ControlInstanceEventNotification } from '../control-instances/runtime.ts'
-import type { ControlInstanceId, SimulationClockState } from '../model/index.ts'
+import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
+import type { SimulationRunEventNotification } from '../simulation-runs/runtime.ts'
+import type { SimulationRunId, SimulationClockState } from '../model/index.ts'
 import type { PackRuntimeRealtimeMessage } from '../../simulation/protocol.ts'
+import type { WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
 type RealtimeMessageContext = Omit<RealtimeReadyMessage, 'type' | 'clock'>
 
 interface RealtimeSubscription {
-  readonly runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>
+  readonly runtime: NonNullable<ReturnType<SimulationRunRegistry['get']>>
   readonly unsubscribe: () => void
   context: RealtimeMessageContext
 }
 
 interface SubscriptionReconciliation {
-  readonly runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>> | null
+  readonly runtime: NonNullable<ReturnType<SimulationRunRegistry['get']>> | null
   readonly changed: boolean
 }
 
 export interface RealtimeStatus {
   readonly websocketClientCount: number
-  readonly subscribedControlInstanceCount: number
-  readonly controlInstances: ReadonlyArray<{
-    readonly id: ControlInstanceId
+  readonly subscribedSimulationRunCount: number
+  readonly simulationRuns: ReadonlyArray<{
+    readonly id: SimulationRunId
     readonly websocketClientCount: number
   }>
 }
 
 export interface RealtimeReadyMessage {
   readonly type: 'realtime.ready'
-  readonly controlInstanceId: ControlInstanceId
+  readonly workspaceId: WorkspaceId
+  readonly simulationRunId: SimulationRunId
   readonly scenarioId?: string
   readonly snapshotSeq: number
   readonly clock?: SimulationClockState
@@ -35,15 +37,17 @@ export interface RealtimeReadyMessage {
 
 export interface RealtimeEventBatchMessage {
   readonly type: 'events'
-  readonly controlInstanceId: ControlInstanceId
+  readonly workspaceId: WorkspaceId
+  readonly simulationRunId: SimulationRunId
   readonly scenarioId?: string
   readonly snapshotSeq: number
-  readonly events: ControlInstanceEventNotification['events']
+  readonly events: SimulationRunEventNotification['events']
 }
 
 export interface RealtimeRuntimeMessageBatch {
   readonly type: 'runtime.realtime'
-  readonly controlInstanceId: ControlInstanceId
+  readonly workspaceId: WorkspaceId
+  readonly simulationRunId: SimulationRunId
   readonly scenarioId?: string
   readonly snapshotSeq: number
   readonly messages: ReadonlyArray<PackRuntimeRealtimeMessage>
@@ -51,9 +55,9 @@ export interface RealtimeRuntimeMessageBatch {
 
 export type RealtimeOutboundMessage = RealtimeEventBatchMessage | RealtimeRuntimeMessageBatch
 
-export interface ControlInstanceRealtimeManager<Client> {
-  readonly addClient: (controlInstanceId: ControlInstanceId, client: Client) => void
-  readonly removeClient: (controlInstanceId: ControlInstanceId, client: Client) => void
+export interface SimulationRunRealtimeManager<Client> {
+  readonly addClient: (simulationRunId: SimulationRunId, client: Client) => void
+  readonly removeClient: (simulationRunId: SimulationRunId, client: Client) => void
   readonly reconcile: () => void
   readonly status: () => RealtimeStatus
   readonly stop: () => void
@@ -61,32 +65,32 @@ export interface ControlInstanceRealtimeManager<Client> {
 
 export const emptyRealtimeStatus = (): RealtimeStatus => ({
   websocketClientCount: 0,
-  subscribedControlInstanceCount: 0,
-  controlInstances: [],
+  subscribedSimulationRunCount: 0,
+  simulationRuns: [],
 })
 
 const realtimeStatusFromClients = <Client>(
-  clientsByControlInstance: ReadonlyMap<ControlInstanceId, ReadonlySet<Client>>,
-  subscribedControlInstanceCount: number,
+  clientsBySimulationRun: ReadonlyMap<SimulationRunId, ReadonlySet<Client>>,
+  subscribedSimulationRunCount: number,
 ): RealtimeStatus => {
-  const controlInstances = [...clientsByControlInstance.entries()]
+  const simulationRuns = [...clientsBySimulationRun.entries()]
     .map(([id, clients]) => ({ id, websocketClientCount: clients.size }))
     .sort((left, right) => left.id.localeCompare(right.id))
   return {
-    websocketClientCount: controlInstances.reduce((count, item) => count + item.websocketClientCount, 0),
-    subscribedControlInstanceCount,
-    controlInstances,
+    websocketClientCount: simulationRuns.reduce((count, item) => count + item.websocketClientCount, 0),
+    subscribedSimulationRunCount,
+    simulationRuns,
   }
 }
 
-export const createControlInstanceRealtimeManager = <Client>(config: {
-  readonly registry: ControlInstanceRegistry
+export const createSimulationRunRealtimeManager = <Client>(config: {
+  readonly registry: SimulationRunRegistry
   readonly send: (client: Client, message: RealtimeOutboundMessage) => void
   readonly sendReady: (client: Client, message: RealtimeReadyMessage) => void
-}): ControlInstanceRealtimeManager<Client> => {
-  const clientsByControlInstance = new Map<ControlInstanceId, Set<Client>>()
-  const subscriptionsByControlInstance = new Map<ControlInstanceId, RealtimeSubscription>()
-  const releasesByClient = new Map<Client, { readonly controlInstanceId: ControlInstanceId; readonly release: () => void }>()
+}): SimulationRunRealtimeManager<Client> => {
+  const clientsBySimulationRun = new Map<SimulationRunId, Set<Client>>()
+  const subscriptionsBySimulationRun = new Map<SimulationRunId, RealtimeSubscription>()
+  const releasesByClient = new Map<Client, { readonly simulationRunId: SimulationRunId; readonly release: () => void }>()
 
   const releaseClientLease = (client: Client): void => {
     const lease = releasesByClient.get(client)
@@ -95,39 +99,40 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
     releasesByClient.delete(client)
   }
 
-  const ensureClientLease = (controlInstanceId: ControlInstanceId, client: Client): void => {
+  const ensureClientLease = (simulationRunId: SimulationRunId, client: Client): void => {
     const lease = releasesByClient.get(client)
-    if (lease?.controlInstanceId === controlInstanceId) return
+    if (lease?.simulationRunId === simulationRunId) return
     lease?.release()
     releasesByClient.set(client, {
-      controlInstanceId,
-      release: config.registry.acquireLease(controlInstanceId, 'realtime'),
+      simulationRunId,
+      release: config.registry.acquireLease(simulationRunId, 'realtime'),
     })
   }
 
   const messageContextForRuntime = (
-    controlInstanceId: ControlInstanceId,
-    runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>,
+    simulationRunId: SimulationRunId,
+    runtime: NonNullable<ReturnType<SimulationRunRegistry['get']>>,
   ): RealtimeMessageContext => {
     const snapshot = runtime.snapshot()
     return {
-      controlInstanceId,
+      workspaceId: config.registry.workspaceId,
+      simulationRunId,
       ...(snapshot.scenario?.scenarioId === undefined ? {} : { scenarioId: snapshot.scenario.scenarioId }),
       snapshotSeq: snapshot.seq,
     }
   }
 
-  const broadcastToControlInstance = (
-    controlInstanceId: ControlInstanceId,
-    runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>,
-    notification: ControlInstanceEventNotification,
+  const broadcastToSimulationRun = (
+    simulationRunId: SimulationRunId,
+    runtime: NonNullable<ReturnType<SimulationRunRegistry['get']>>,
+    notification: SimulationRunEventNotification,
   ): void => {
-    const subscription = subscriptionsByControlInstance.get(controlInstanceId)
+    const subscription = subscriptionsBySimulationRun.get(simulationRunId)
     if (subscription?.runtime !== runtime) return
-    const clients = clientsByControlInstance.get(controlInstanceId)
+    const clients = clientsBySimulationRun.get(simulationRunId)
     if (!clients) return
     const messageContext = notification.events.length > 0
-      ? messageContextForRuntime(controlInstanceId, runtime)
+      ? messageContextForRuntime(simulationRunId, runtime)
       : subscription.context
     subscription.context = messageContext
     if (notification.events.length > 0) {
@@ -149,89 +154,89 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
   }
 
   const readyMessageForRuntime = (
-    controlInstanceId: ControlInstanceId,
-    runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>,
+    simulationRunId: SimulationRunId,
+    runtime: NonNullable<ReturnType<SimulationRunRegistry['get']>>,
   ): RealtimeReadyMessage => {
     const snapshot = runtime.snapshot()
     return {
       type: 'realtime.ready',
-      ...messageContextForRuntime(controlInstanceId, runtime),
+      ...messageContextForRuntime(simulationRunId, runtime),
       ...(snapshot.clock === undefined ? {} : { clock: snapshot.clock }),
     }
   }
 
-  const sendReadyToControlInstance = (
-    controlInstanceId: ControlInstanceId,
-    runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>,
+  const sendReadyToSimulationRun = (
+    simulationRunId: SimulationRunId,
+    runtime: NonNullable<ReturnType<SimulationRunRegistry['get']>>,
   ): void => {
-    const clients = clientsByControlInstance.get(controlInstanceId)
+    const clients = clientsBySimulationRun.get(simulationRunId)
     if (!clients) return
-    const message = readyMessageForRuntime(controlInstanceId, runtime)
+    const message = readyMessageForRuntime(simulationRunId, runtime)
     for (const client of clients) config.sendReady(client, message)
   }
 
   const sendReadyToClient = (
-    controlInstanceId: ControlInstanceId,
-    runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>,
+    simulationRunId: SimulationRunId,
+    runtime: NonNullable<ReturnType<SimulationRunRegistry['get']>>,
     client: Client,
   ): void => {
-    config.sendReady(client, readyMessageForRuntime(controlInstanceId, runtime))
+    config.sendReady(client, readyMessageForRuntime(simulationRunId, runtime))
   }
 
-  const reconcileControlInstanceSubscription = (controlInstanceId: ControlInstanceId): SubscriptionReconciliation => {
-    const clients = clientsByControlInstance.get(controlInstanceId)
-    const existing = subscriptionsByControlInstance.get(controlInstanceId)
+  const reconcileSimulationRunSubscription = (simulationRunId: SimulationRunId): SubscriptionReconciliation => {
+    const clients = clientsBySimulationRun.get(simulationRunId)
+    const existing = subscriptionsBySimulationRun.get(simulationRunId)
     if (!clients || clients.size === 0) {
       existing?.unsubscribe()
-      subscriptionsByControlInstance.delete(controlInstanceId)
+      subscriptionsBySimulationRun.delete(simulationRunId)
       return { runtime: null, changed: existing !== undefined }
     }
-    const runtime = config.registry.get(controlInstanceId)
+    const runtime = config.registry.get(simulationRunId)
     if (!runtime) {
       existing?.unsubscribe()
-      subscriptionsByControlInstance.delete(controlInstanceId)
+      subscriptionsBySimulationRun.delete(simulationRunId)
       return { runtime: null, changed: existing !== undefined }
     }
-    for (const client of clients) ensureClientLease(controlInstanceId, client)
+    for (const client of clients) ensureClientLease(simulationRunId, client)
     if (existing?.runtime === runtime) return { runtime, changed: false }
     existing?.unsubscribe()
-    const unsubscribe = runtime.subscribe(event => broadcastToControlInstance(controlInstanceId, runtime, event))
-    subscriptionsByControlInstance.set(controlInstanceId, {
+    const unsubscribe = runtime.subscribe(event => broadcastToSimulationRun(simulationRunId, runtime, event))
+    subscriptionsBySimulationRun.set(simulationRunId, {
       runtime,
       unsubscribe,
-      context: messageContextForRuntime(controlInstanceId, runtime),
+      context: messageContextForRuntime(simulationRunId, runtime),
     })
     return { runtime, changed: true }
   }
 
   return {
-    addClient: (controlInstanceId, client): void => {
-      const clients = clientsByControlInstance.get(controlInstanceId) ?? new Set<Client>()
+    addClient: (simulationRunId, client): void => {
+      const clients = clientsBySimulationRun.get(simulationRunId) ?? new Set<Client>()
       clients.add(client)
-      clientsByControlInstance.set(controlInstanceId, clients)
-      const { runtime } = reconcileControlInstanceSubscription(controlInstanceId)
-      if (runtime) sendReadyToClient(controlInstanceId, runtime, client)
+      clientsBySimulationRun.set(simulationRunId, clients)
+      const { runtime } = reconcileSimulationRunSubscription(simulationRunId)
+      if (runtime) sendReadyToClient(simulationRunId, runtime, client)
     },
-    removeClient: (controlInstanceId, client): void => {
-      const clients = clientsByControlInstance.get(controlInstanceId)
+    removeClient: (simulationRunId, client): void => {
+      const clients = clientsBySimulationRun.get(simulationRunId)
       if (!clients) return
       clients.delete(client)
       releaseClientLease(client)
-      if (clients.size === 0) clientsByControlInstance.delete(controlInstanceId)
-      reconcileControlInstanceSubscription(controlInstanceId)
+      if (clients.size === 0) clientsBySimulationRun.delete(simulationRunId)
+      reconcileSimulationRunSubscription(simulationRunId)
     },
     reconcile: (): void => {
-      for (const controlInstanceId of clientsByControlInstance.keys()) {
-        const { runtime, changed } = reconcileControlInstanceSubscription(controlInstanceId)
-        if (runtime && changed) sendReadyToControlInstance(controlInstanceId, runtime)
+      for (const simulationRunId of clientsBySimulationRun.keys()) {
+        const { runtime, changed } = reconcileSimulationRunSubscription(simulationRunId)
+        if (runtime && changed) sendReadyToSimulationRun(simulationRunId, runtime)
       }
     },
-    status: () => realtimeStatusFromClients(clientsByControlInstance, subscriptionsByControlInstance.size),
+    status: () => realtimeStatusFromClients(clientsBySimulationRun, subscriptionsBySimulationRun.size),
     stop: (): void => {
-      for (const { unsubscribe } of subscriptionsByControlInstance.values()) unsubscribe()
+      for (const { unsubscribe } of subscriptionsBySimulationRun.values()) unsubscribe()
       for (const client of [...releasesByClient.keys()]) releaseClientLease(client)
-      subscriptionsByControlInstance.clear()
-      clientsByControlInstance.clear()
+      subscriptionsBySimulationRun.clear()
+      clientsBySimulationRun.clear()
     },
   }
 }

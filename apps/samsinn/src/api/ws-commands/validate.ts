@@ -95,10 +95,6 @@ const validateCreateAgent = (obj: RawObject): ValidationResult<Extract<WSInbound
     const result = optionalNumber(config, key)
     if (!result.ok) return result
   }
-  for (const key of ['preferredModel']) {
-    const result = optionalString(config, key)
-    if (!result.ok) return result
-  }
   for (const key of ['thinking', 'includeTools', 'promptsEnabled', 'contextEnabled']) {
     const value = config[key]
     if (value !== undefined && typeof value !== 'boolean') return { ok: false, error: `config.${key} must be a boolean when present` }

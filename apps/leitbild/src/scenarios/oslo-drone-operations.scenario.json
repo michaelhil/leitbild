@@ -309,7 +309,7 @@
             "guidance": {
               "id": "drone-ops-briefing",
               "title": "Drone operations",
-              "message": "Select a drone to command it on the map, or open its flight window for direct keyboard/gamepad control. Drones are backed by Leitbild's native runtime and share this control instance across connected browsers.",
+              "message": "Select a drone to command it on the map, or open its flight window for direct keyboard/gamepad control. Drones are backed by Leitbild's native runtime and share this simulation run across connected browsers.",
               "objectIds": ["drone:oslo-survey-1", "drone:oslo-survey-2", "drone:oslo-interceptor-1"],
               "dismissible": true
             }

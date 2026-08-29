@@ -24,7 +24,7 @@ export const loadUiPack = async (packId: string): Promise<LeitbildPack> => {
   if (loaded) return loaded
   if (!isKnownUiPackId(packId)) throw new Error(`scenario references unknown UI pack: ${packId}`)
   const pack = await packLoaders[packId]()
-  if (pack.id !== packId) throw new Error(`UI pack loader for ${packId} returned ${pack.id}`)
+  if (pack.descriptor.id !== packId) throw new Error(`UI pack loader for ${packId} returned ${pack.descriptor.id}`)
   loadedPacks.set(packId, pack)
   return pack
 }
@@ -40,7 +40,8 @@ export const createScenarioControlPack = async (
   }
   const packs = await Promise.all(packIds.map(loadUiPack))
   return createCompositePack({
-    id: `scenario-control:${packIds.join('+')}`,
+    id: `scenario-control-${packIds.join('-')}`,
+    version: '1.0.0',
     name: 'Scenario Control',
     packs,
   })

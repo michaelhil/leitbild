@@ -2,7 +2,7 @@
 // SamsinnWorkspaceRuntime-scoped MCP tools.
 //
 // Currently exposes only `reset_system`, which clears all rooms and agents
-// from the running instance while leaving tool registry, skill store,
+// from the current Workspace while leaving Deployment resources,
 // provider router, and snapshot wiring untouched. Intended for the
 // experiment runner's persistent-process mode — one subprocess serving many
 // independent runs, with cheap state reset between them.
@@ -17,7 +17,7 @@ import { textResult, errorResult } from './helpers.ts'
 export const registerSystemTools = (mcpServer: McpServer, system: SamsinnWorkspaceRuntime): void => {
   mcpServer.tool(
     'reset_system',
-    'Clear all rooms and agents from the running samsinn instance. Preserves tool registry, skills, provider router state, and stored keys. Intended for experiment runners in persistent-process mode. Returns {reset: true, removed: {rooms, agents}}.',
+    'Clear all Rooms and Agents from the current Samsinn Workspace. Preserves Deployment tools, skills, provider routing, and stored keys. Intended for experiment runners in persistent-process mode. Returns {reset: true, removed: {rooms, agents}}.',
     {},
     async () => {
       try {

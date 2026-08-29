@@ -4,7 +4,7 @@
 // sender + room + timestamp so the agent can cite specifically.
 //
 // Scope filter:
-//   "instance"     — search every room in this instance (default)
+//   "workspace"    — search every Room in this Workspace (default)
 //   "room:<name>"  — only the named room (resolves via rooms.getRoom)
 //
 // Returns up to k hits (default 5, capped at 20). Each hit:
@@ -35,7 +35,7 @@ const DEFAULT_K = 5
 export const createRecallTool = (deps: RecallToolDeps): Tool => ({
   name: 'recall',
   description:
-    'Searches long-term conversation memory across this samsinn instance for ' +
+    'Searches long-term conversation memory across this Samsinn Workspace for ' +
     'messages similar to your query. Use to recall what was said in this or ' +
     'another room, possibly weeks ago, after summary-compression has folded ' +
     'the original messages out of live history.',
@@ -53,7 +53,7 @@ export const createRecallTool = (deps: RecallToolDeps): Tool => ({
       scope: {
         type: 'string',
         description:
-          'Optional. "instance" (default) searches all rooms; "room:<name>" scopes to one room.',
+          'Optional. "workspace" (default) searches all Rooms; "room:<name>" scopes to one Room.',
       },
       k: {
         type: 'number',
@@ -70,9 +70,9 @@ export const createRecallTool = (deps: RecallToolDeps): Tool => ({
     const k = Math.max(1, Math.min(MAX_K, Math.trunc(Number(params.k ?? DEFAULT_K)) || DEFAULT_K))
 
     let scopedRoomId: string | undefined
-    if (scopeRaw && scopeRaw !== 'instance') {
+    if (scopeRaw && scopeRaw !== 'workspace') {
       if (!scopeRaw.startsWith('room:')) {
-        return { success: false, error: `unknown scope '${scopeRaw}'. Use "instance" or "room:<name>".` }
+        return { success: false, error: `unknown scope '${scopeRaw}'. Use "workspace" or "room:<name>".` }
       }
       const roomName = scopeRaw.slice('room:'.length).trim()
       if (!roomName) return { success: false, error: 'room scope requires a non-empty name after "room:"' }

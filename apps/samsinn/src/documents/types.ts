@@ -2,18 +2,18 @@
 // Documents — type-only module. per-Workspace corpus of uploaded files
 // that can be searched via the query_documents tool.
 //
-// On-disk layout (per instance):
-//   instances/<id>/documents/<docId>/original.<ext>     uploaded binary
-//   instances/<id>/documents/<docId>/extracted.txt      plain-text extract
-//   instances/<id>/documents/<docId>/metadata.json      DocumentMetadata
-//   instances/<id>/documents/<docId>/.pending           marker — present
+// On-disk layout (per Workspace):
+//   workspaces/<id>/samsinn/documents/<docId>/original.<ext>  uploaded binary
+//   workspaces/<id>/samsinn/documents/<docId>/extracted.txt   plain-text extract
+//   workspaces/<id>/samsinn/documents/<docId>/metadata.json   DocumentMetadata
+//   workspaces/<id>/samsinn/documents/<docId>/.pending        marker — present
 //                                                       between upload and
 //                                                       indexer completion;
 //                                                       missing = terminal
 //                                                       state (indexed or
 //                                                       failed)
 //
-// Vectors live in instances/<id>/vectors.jsonl with namespace='document'
+// Vectors live in workspaces/<id>/samsinn/vectors.jsonl with namespace='document'
 // and metadata { docId, chunkIdx, page? }. Deletion writes tombstones to
 // the vector store and removes the documents/<docId>/ directory.
 // ============================================================================

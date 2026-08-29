@@ -16,37 +16,14 @@ import { appendWhisperBadge } from '../whisper-badge.ts'
 import { showToast } from '../toast.ts'
 import { $messageThinking } from '../stores.ts'
 
-// Best-effort clipboard write. Tries the modern Async Clipboard API first
-// (https/localhost only; some browsers refuse on programmatic clicks), then
-// falls back to a hidden textarea + document.execCommand('copy') which works
-// on more contexts but is deprecated. Returns true if either path reported
-// success — caller decides what to surface to the user.
+// Clipboard writes use the current Async Clipboard API. Returns false when
+// the browser or document context does not permit clipboard access.
 const writeClipboard = async (text: string): Promise<boolean> => {
   try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-      return true
-    }
-  } catch { /* fall through to legacy path */ }
-  // Legacy path: an offscreen textarea selected and copied via execCommand.
-  // Preserved here because navigator.clipboard rejects on insecure contexts
-  // and on some packaged WebViews even when the document is focused.
-  try {
-    const ta = document.createElement('textarea')
-    ta.value = text
-    ta.setAttribute('readonly', '')
-    ta.style.position = 'fixed'
-    ta.style.top = '-1000px'
-    ta.style.opacity = '0'
-    document.body.appendChild(ta)
-    ta.select()
-    const ok = document.execCommand('copy')
-    ta.remove()
-    return ok
+    if (!navigator.clipboard?.writeText) return false
+    await navigator.clipboard.writeText(text)
+    return true
   } catch {
-    // Legacy execCommand fallback failed (Safari Lockdown Mode, or browser
-    // without execCommand support). Caller already tried navigator.clipboard
-    // first; both paths failing returns false so the UI shows a hint instead.
     return false
   }
 }
@@ -90,7 +67,7 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
   const isRoutineExternalMirror =
     msg.cause?.kind === 'external-mirror' &&
     !msg.content.includes('mirror error') &&
-    !msg.content.includes('CONTROL INSTANCE RESET')
+    !msg.content.includes('SIMULATION RUN RESET')
   if (isRoutineExternalMirror) return
 
   const isJoinLeave = msg.type === 'join' || msg.type === 'leave'
@@ -158,8 +135,8 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
     }
   } else {
     // Tint by sender kind so the room reads as a conversation between two
-    // distinct populations: humans (blue) vs AI (green). Falls back to the
-    // legacy msg-self/msg-agent split for unresolved senders.
+    // distinct populations: humans (blue) vs AI (green). Unresolved senders
+    // use message ownership to select a stable class.
     const senderInfo = getAgent(msg.senderId)
     const kindClass = senderInfo?.kind === 'human' ? 'msg-human'
       : senderInfo?.kind === 'ai' ? 'msg-agent'

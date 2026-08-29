@@ -11,17 +11,24 @@ import {
   type RegistryEnvironment,
 } from '../src/reference-data/registry.ts'
 import type { LeitbildPack } from '../src/core/packs/protocol.ts'
+import { createLeitbildPackDescriptor } from '../src/core/packs/protocol.ts'
 
 const okEnv: RegistryEnvironment = { OPENAIP_API_KEY: 'test-key' }
 const emptyEnv: RegistryEnvironment = {}
 
 const aviationPackWithReferenceDatasets: LeitbildPack = {
   ...aviationPack,
-  referenceDatasetBuilders: aviationReferenceDatasetBuilders,
+  referenceData: {
+    builders: aviationReferenceDatasetBuilders,
+    datasetIds: aviationPack.referenceData?.datasetIds ?? [],
+  },
 }
 const electricGridPackWithReferenceDatasets: LeitbildPack = {
   ...electricGridPack,
-  referenceDatasetBuilders: electricGridReferenceDatasetBuilders,
+  referenceData: {
+    builders: electricGridReferenceDatasetBuilders,
+    datasetIds: electricGridPack.referenceData?.datasetIds ?? [],
+  },
 }
 const packs: ReadonlyArray<LeitbildPack> = [
   aviationPackWithReferenceDatasets,
@@ -66,7 +73,15 @@ describe('reference-data registry (collector)', () => {
   })
 
   test('duplicate dataset id across packs throws', () => {
-    const dup: LeitbildPack = { ...aviationPackWithReferenceDatasets, id: 'aviation-clone' }
+    const dup: LeitbildPack = {
+      ...aviationPackWithReferenceDatasets,
+      descriptor: createLeitbildPackDescriptor({
+        id: 'aviation-clone',
+        version: aviationPack.descriptor.version,
+        name: 'Aviation Clone',
+        contributions: aviationPack.descriptor.contributions.map(contribution => contribution.kind),
+      }),
+    }
     expect(() => collectRegisteredDatasets([aviationPackWithReferenceDatasets, dup])).toThrow(/duplicate dataset id/)
   })
 })

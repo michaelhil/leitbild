@@ -1,4 +1,5 @@
-// Model dropdown builder. Fetches /api/models, renders a <select> grouped
+import { apiFetch } from "./api-client.ts"
+// Model dropdown builder. Fetches /models, renders a <select> grouped
 // by provider with status tags. The show-all toggle is persisted in
 // localStorage so the UI remembers the user's last filter.
 
@@ -15,10 +16,11 @@ interface ModelCatalogModel {
 
 interface ModelCatalogProvider {
   name: string
-  status: 'ok' | 'no_key' | 'cooldown' | 'down'
-  // Optional richer fields from the monitor — present on newer servers.
-  reason?: string
-  retryAt?: number | null
+  availability: {
+    sub: 'ok' | 'backoff' | 'unhealthy' | 'no_key' | 'disabled' | 'down'
+    reason: string
+    retryAt: number | null
+  }
   models: ModelCatalogModel[]
 }
 
@@ -50,34 +52,36 @@ const formatContext = (n: number): string => {
 const fullModelId = (_providerName: string, modelId: string): string => modelId
 
 // Brief inline tag shown next to the optgroup label. Falls back to the
-// status word; uses the monitor's reason when available so a rate-limited
-// provider says e.g. "rate-limited (retry in 47s)" instead of "cooldown".
+// availability state; includes a countdown for explicit backoff windows.
 const statusLabel = (provider: ModelCatalogProvider): string => {
-  if (provider.status === 'ok') return ''
-  if (provider.status === 'no_key') return ' (no API key)'
-  if (provider.status === 'cooldown') {
-    if (provider.retryAt !== null && provider.retryAt !== undefined) {
-      const remaining = retryRemainingSeconds(provider.retryAt)
-      return ` (cooldown — ${remaining}s)`
+  const { availability } = provider
+  if (availability.sub === 'ok') return ''
+  if (availability.sub === 'no_key') return ' (no API key)'
+  if (availability.sub === 'disabled') return ' (disabled)'
+  if (availability.sub === 'backoff') {
+    if (availability.retryAt !== null) {
+      const remaining = retryRemainingSeconds(availability.retryAt)
+      return ` (backoff — ${remaining}s)`
     }
-    return ' (cooldown)'
+    return ' (backoff)'
   }
-  return ' (down)'
+  return ` (${availability.sub})`
 }
 
 // User-facing remediation hint as a per-option tooltip. Same source of
 // truth as the toast remediation strings but UI-local because the dropdown
-// fetches from /api/models, not /api/providers.
-const remediationHint = (status: ModelCatalogProvider['status'], providerName: string): string => {
-  if (status === 'no_key') return `Add an API key for ${providerName} in the Providers panel`
-  if (status === 'cooldown') return `${providerName} is rate-limited — wait for the cooldown to expire or pick a model on a different provider`
-  if (status === 'down') return `${providerName} is unavailable — try again or switch providers`
+// fetches from /models, not /providers.
+const remediationHint = (sub: ModelCatalogProvider['availability']['sub'], providerName: string): string => {
+  if (sub === 'no_key') return `Add an API key for ${providerName} in the Providers panel`
+  if (sub === 'disabled') return `Enable ${providerName} in the Providers panel`
+  if (sub === 'backoff') return `${providerName} is rate-limited — wait for the backoff to expire or pick a model on a different provider`
+  if (sub === 'down' || sub === 'unhealthy') return `${providerName} is unavailable — try again or switch providers`
   return ''
 }
 
 const fetchModelCatalog = async (): Promise<ModelCatalogResponse> => {
   try {
-    const res = await fetch('/api/models')
+    const res = await apiFetch('/models')
     if (!res.ok) return { providers: [], defaultModel: '' }
     return await res.json() as ModelCatalogResponse
   } catch {
@@ -110,26 +114,26 @@ export const populateModelSelect = async (
     return ''
   }
 
-  // Two-bucket render: routable providers (ok/cooldown) first, structurally
-  // unavailable ones (no_key/down) at the bottom. Unavailable groups render
+  // Two-bucket render: routable providers (ok/backoff) first, structurally
+  // unavailable ones at the bottom. Unavailable groups render
   // with an actionable label so the user sees *why* they can't pick a
   // particular model — and how to fix it — rather than the model just
   // being missing from the list.
   //
-  // Both buckets are populated; only ok/cooldown options are routable and
-  // get added to the eligible-for-selection set. no_key/down options are
+  // Both buckets are populated; only ok/backoff options are routable and
+  // get added to the eligible-for-selection set. Other options are
   // shown but disabled, with a tooltip explaining the remediation step.
   const routable: string[] = []
   const orderedProviders = [
-    ...data.providers.filter(p => p.status === 'ok' || p.status === 'cooldown'),
-    ...data.providers.filter(p => p.status === 'no_key' || p.status === 'down'),
+    ...data.providers.filter(p => p.availability.sub === 'ok' || p.availability.sub === 'backoff'),
+    ...data.providers.filter(p => p.availability.sub !== 'ok' && p.availability.sub !== 'backoff'),
   ]
   for (const prov of orderedProviders) {
     const models = showAll ? prov.models : prov.models.filter(m => m.recommended)
     if (models.length === 0) continue
     const group = document.createElement('optgroup')
     group.label = `${prov.name}${statusLabel(prov)}`
-    const tooltip = remediationHint(prov.status, prov.name)
+    const tooltip = remediationHint(prov.availability.sub, prov.name)
     for (const m of models) {
       const opt = document.createElement('option')
       const full = fullModelId(prov.name, m.id)
@@ -142,10 +146,10 @@ export const populateModelSelect = async (
         ? `${pinTag}${label} · ${ctx}${runTag}`
         : `${pinTag}${label}${runTag}`
       if (tooltip) opt.title = tooltip
-      if (prov.status === 'cooldown' || prov.status === 'down') opt.classList.add('text-text-muted')
-      if (prov.status === 'no_key' || prov.status === 'down') {
+      if (prov.availability.sub !== 'ok') opt.classList.add('text-text-muted')
+      if (prov.availability.sub !== 'ok' && prov.availability.sub !== 'backoff') {
         // Disable so the user can't pick a model that has no chance of
-        // routing right now. cooldown stays selectable — it'll recover.
+        // routing right now. Backoff stays selectable because it will recover.
         opt.disabled = true
         opt.classList.add('text-text-muted', 'opacity-60')
       } else {
@@ -173,9 +177,8 @@ export const populateModelSelect = async (
     : (data.defaultModel && routable.includes(data.defaultModel) ? data.defaultModel : routable[0]!)
   select.value = chosen
 
-  // If the preferred model wasn't in the list (e.g. a legacy Ollama model), add
-  // it at the top as "(not available)" so the user can still see the current
-  // value.
+  // If the preferred model is not currently reported, show the configured
+  // value explicitly as unavailable.
   if (options.preferredModel && !routable.includes(options.preferredModel)) {
     const opt = document.createElement('option')
     opt.value = options.preferredModel

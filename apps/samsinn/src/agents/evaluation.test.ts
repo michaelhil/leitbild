@@ -439,7 +439,7 @@ describe('evaluate (tool loop)', () => {
     }
   })
 
-  test('checkin not wired → legacy tool_loop_exceeded behaviour preserved', async () => {
+  test('checkin not wired → configured iteration cap remains authoritative', async () => {
     const { provider } = makeScriptedProvider([
       { toolCalls: [{ function: { name: 'a', arguments: {} } }] },
       { toolCalls: [{ function: { name: 'b', arguments: {} } }] },

@@ -9,7 +9,7 @@
 // Handlers are split by concern across handlers/{state,runs,system}.ts:
 //   - state:  snapshot, messages, agent state, room/agent membership
 //   - runs:   long-running progress (scripts, summary runs, provider toasts)
-//   - system: instance / packs / triggers / providers / reset / errors
+//   - system: Workspace / packs / triggers / providers / reset / errors
 // ============================================================================
 
 import type { WSOutbound } from '../../../core/types/ws-protocol.ts'

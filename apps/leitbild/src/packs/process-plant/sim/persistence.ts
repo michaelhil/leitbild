@@ -1,5 +1,5 @@
 import type { PackRuntimeConnectionConfig } from '../../../simulation/protocol.ts'
-import { defaultControlInstanceRuntimePolicy } from '../../../core/control-instances/runtime-persistence-policy.ts'
+import { defaultSimulationRunRuntimePolicy } from '../../../core/simulation-runs/runtime-persistence-policy.ts'
 import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
 import { runtimeStateForProcessPlantSystems } from './runtime-state.ts'
 
@@ -8,7 +8,7 @@ export interface ProcessPlantRuntimePersistence {
   readonly scheduleSave: () => void
 }
 
-const runtimeStateFlushIntervalMs = defaultControlInstanceRuntimePolicy.runtimePrivateStateFlushIntervalMs
+const runtimeStateFlushIntervalMs = defaultSimulationRunRuntimePolicy.runtimePrivateStateFlushIntervalMs
 
 export const createProcessPlantRuntimePersistence = (config: {
   readonly connection: PackRuntimeConnectionConfig

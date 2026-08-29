@@ -26,7 +26,6 @@ describe('workspace contracts', () => {
       moduleId: 'leitbild',
       baseUrl: 'https://leitbild.example.test',
       discoveryUrl: 'https://leitbild.example.test/.well-known/leitbild',
-      protocolVersion: '1.0.0',
     }
     expect(() => workspaceDescriptorSchema.parse({
       id: workspaceId,
@@ -37,13 +36,11 @@ describe('workspace contracts', () => {
     })).toThrow('duplicate module binding')
   })
 
-  test('publishes versioned module discovery', () => {
+  test('publishes one strict module discovery shape', () => {
     const discovery = moduleDiscoverySchema.parse({
-      schemaVersion: '1.0.0',
       generatedAt: now,
       module: { id: 'samsinn', title: 'Samsinn', implementationVersion: '0.15.0' },
-      supportedProtocolVersions: ['1.0.0'],
-      workspaceScope: { mode: 'path', pathTemplate: '/api/v1/workspaces/{workspaceId}' },
+      workspaceScope: { mode: 'path', pathTemplate: '/api/workspaces/{workspaceId}' },
       access: { posture: 'open', modes: ['none'] },
       links: { self: 'https://samsinn.example.test/.well-known/samsinn' },
     })

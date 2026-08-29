@@ -1,3 +1,4 @@
+import { apiFetch } from "../api-client.ts"
 // ============================================================================
 // Geodata panel — categories list, search, per-category & per-feature delete.
 //
@@ -11,7 +12,7 @@
 import { showToast } from '../toast.ts'
 import { renderMapSource } from '../map/index.ts'
 import { openGeodataImportModal } from '../modals/geodata-import-modal.ts'
-import type { MarkerIcon } from '../map/normalise.ts'
+import type { MarkerIcon } from '../../../core/render-validators/map-schema.ts'
 
 interface CategoryRow {
   readonly id: string
@@ -48,31 +49,31 @@ const escapeHtml = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] ?? c))
 
 const fetchOverview = async (): Promise<OverviewResp> => {
-  const res = await fetch('/api/geodata')
+  const res = await apiFetch('/geodata')
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return await res.json() as OverviewResp
 }
 
 const fetchCategoryFeatures = async (id: string): Promise<ReadonlyArray<GeoFeature>> => {
-  const res = await fetch(`/api/geodata/${encodeURIComponent(id)}`)
+  const res = await apiFetch(`/geodata/${encodeURIComponent(id)}`)
   if (!res.ok) return []
   const data = await res.json() as { features?: ReadonlyArray<GeoFeature> }
   return data.features ?? []
 }
 
 const deleteFeature = async (categoryId: string, source: string, id: string): Promise<boolean> => {
-  const res = await fetch(`/api/geodata/${encodeURIComponent(categoryId)}/${encodeURIComponent(source)}/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  const res = await apiFetch(`/geodata/${encodeURIComponent(categoryId)}/${encodeURIComponent(source)}/${encodeURIComponent(id)}`, { method: 'DELETE' })
   return res.ok
 }
 
 const deleteCategoryRequest = async (id: string): Promise<boolean> => {
-  const res = await fetch(`/api/geodata/categories/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  const res = await apiFetch(`/geodata/categories/${encodeURIComponent(id)}`, { method: 'DELETE' })
   return res.ok
 }
 
 const search = async (q: string, c: string): Promise<{ source: string; features: ReadonlyArray<GeoFeature> } | null> => {
-  const url = `/api/geodata/search?q=${encodeURIComponent(q)}&category=${encodeURIComponent(c)}`
-  const res = await fetch(url)
+  const url = `/geodata/search?q=${encodeURIComponent(q)}&category=${encodeURIComponent(c)}`
+  const res = await apiFetch(url)
   if (!res.ok) return null
   const data = await res.json() as { result?: { source: string; features: ReadonlyArray<GeoFeature> } }
   return data.result ?? null

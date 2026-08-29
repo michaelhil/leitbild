@@ -74,9 +74,8 @@ const makeSystem = (): SamsinnWorkspaceRuntime => {
   } as unknown as SamsinnWorkspaceRuntime
 }
 
-// All requests carry the Samsinn Workspace cookie. handleAPI gates
-// cookieless /api/* with 401 (F5); production never sees a cookieless
-// API call because the UI mints via GET /. Tests mirror that contract.
+// Internal route tests exercise the already-scoped application dispatcher.
+// Cookie, authentication, and public URL enforcement belong to server.ts.
 const COOKIE = `samsinn_workspace=${TEST_WORKSPACE_ID}`
 
 const req = (method: string, path: string, body?: unknown): Request => {
@@ -118,8 +117,8 @@ describe('HTTP Routes', () => {
 
   // --- Rooms ---
 
-  test('GET /api/rooms returns all rooms', async () => {
-    const res = await call(system, req('GET', '/api/rooms'), '/api/rooms')
+  test('GET /rooms returns all rooms', async () => {
+    const res = await call(system, req('GET', '/rooms'), '/rooms')
     expect(res?.status).toBe(200)
     const data = await res!.json() as Array<{ name: string }>
     expect(Array.isArray(data)).toBe(true)
@@ -127,140 +126,140 @@ describe('HTTP Routes', () => {
     expect(data[0]!.name).toBe('TestRoom')
   })
 
-  test('POST /api/rooms creates room with 201', async () => {
-    const res = await call(system, req('POST', '/api/rooms', { name: 'NewRoom' }), '/api/rooms')
+  test('POST /rooms creates room with 201', async () => {
+    const res = await call(system, req('POST', '/rooms', { name: 'NewRoom' }), '/rooms')
     expect(res?.status).toBe(201)
     const data = await res!.json() as { value: { profile: { name: string } } }
     expect(data.value.profile.name).toBe('NewRoom')
   })
 
-  test('POST /api/rooms missing name returns 400', async () => {
-    const res = await call(system, req('POST', '/api/rooms', {}), '/api/rooms')
+  test('POST /rooms missing name returns 400', async () => {
+    const res = await call(system, req('POST', '/rooms', {}), '/rooms')
     expect(res?.status).toBe(400)
   })
 
-  test('GET /api/rooms/:name returns room', async () => {
-    const res = await call(system, req('GET', '/api/rooms/TestRoom'), '/api/rooms/TestRoom')
+  test('GET /rooms/:name returns room', async () => {
+    const res = await call(system, req('GET', '/rooms/TestRoom'), '/rooms/TestRoom')
     expect(res?.status).toBe(200)
     const data = await res!.json() as { profile: { name: string }; messages: unknown[] }
     expect(data.profile.name).toBe('TestRoom')
     expect(Array.isArray(data.messages)).toBe(true)
   })
 
-  test('GET /api/rooms/:name unknown room returns 404', async () => {
-    const res = await call(system, req('GET', '/api/rooms/Ghost'), '/api/rooms/Ghost')
+  test('GET /rooms/:name unknown room returns 404', async () => {
+    const res = await call(system, req('GET', '/rooms/Ghost'), '/rooms/Ghost')
     expect(res?.status).toBe(404)
   })
 
-  test('DELETE /api/rooms/:name removes room', async () => {
-    const res = await call(system, req('DELETE', '/api/rooms/TestRoom'), '/api/rooms/TestRoom')
+  test('DELETE /rooms/:name removes room', async () => {
+    const res = await call(system, req('DELETE', '/rooms/TestRoom'), '/rooms/TestRoom')
     expect(res?.status).toBe(200)
     expect(system.rooms.getRoom('TestRoom')).toBeUndefined()
   })
 
   // --- Pause ---
 
-  test('PUT /api/rooms/:name/pause with true pauses room', async () => {
-    const res = await call(system, req('PUT', '/api/rooms/TestRoom/pause', { paused: true }), '/api/rooms/TestRoom/pause')
+  test('PUT /rooms/:name/pause with true pauses room', async () => {
+    const res = await call(system, req('PUT', '/rooms/TestRoom/pause', { paused: true }), '/rooms/TestRoom/pause')
     expect(res?.status).toBe(200)
     const data = await res!.json() as { paused: boolean }
     expect(data.paused).toBe(true)
   })
 
-  test('PUT /api/rooms/:name/pause with false unpauses room', async () => {
+  test('PUT /rooms/:name/pause with false unpauses room', async () => {
     const room = system.rooms.getRoom('TestRoom')!
     room.setPaused(true)
-    const res = await call(system, req('PUT', '/api/rooms/TestRoom/pause', { paused: false }), '/api/rooms/TestRoom/pause')
+    const res = await call(system, req('PUT', '/rooms/TestRoom/pause', { paused: false }), '/rooms/TestRoom/pause')
     expect(res?.status).toBe(200)
     expect((await res!.json() as { paused: boolean }).paused).toBe(false)
   })
 
-  test('PUT /api/rooms/:name/pause with string value returns 400', async () => {
-    const res = await call(system, req('PUT', '/api/rooms/TestRoom/pause', { paused: 'yes' }), '/api/rooms/TestRoom/pause')
+  test('PUT /rooms/:name/pause with string value returns 400', async () => {
+    const res = await call(system, req('PUT', '/rooms/TestRoom/pause', { paused: 'yes' }), '/rooms/TestRoom/pause')
     expect(res?.status).toBe(400)
   })
 
-  test('PUT /api/rooms/:name/pause missing paused field returns 400', async () => {
-    const res = await call(system, req('PUT', '/api/rooms/TestRoom/pause', {}), '/api/rooms/TestRoom/pause')
+  test('PUT /rooms/:name/pause missing paused field returns 400', async () => {
+    const res = await call(system, req('PUT', '/rooms/TestRoom/pause', {}), '/rooms/TestRoom/pause')
     expect(res?.status).toBe(400)
   })
 
   // --- Mute ---
 
-  test('PUT /api/rooms/:name/mute with non-boolean muted returns 400', async () => {
-    const res = await call(system, req('PUT', '/api/rooms/TestRoom/mute', { agentName: 'Bot', muted: 'true' }), '/api/rooms/TestRoom/mute')
+  test('PUT /rooms/:name/mute with non-boolean muted returns 400', async () => {
+    const res = await call(system, req('PUT', '/rooms/TestRoom/mute', { agentName: 'Bot', muted: 'true' }), '/rooms/TestRoom/mute')
     expect(res?.status).toBe(400)
   })
 
-  test('PUT /api/rooms/:name/mute with missing agentName returns 400', async () => {
-    const res = await call(system, req('PUT', '/api/rooms/TestRoom/mute', { muted: true }), '/api/rooms/TestRoom/mute')
+  test('PUT /rooms/:name/mute with missing agentName returns 400', async () => {
+    const res = await call(system, req('PUT', '/rooms/TestRoom/mute', { muted: true }), '/rooms/TestRoom/mute')
     expect(res?.status).toBe(400)
   })
 
   // --- Members ---
 
-  test('GET /api/rooms/:name/members returns empty list', async () => {
-    const res = await call(system, req('GET', '/api/rooms/TestRoom/members'), '/api/rooms/TestRoom/members')
+  test('GET /rooms/:name/members returns empty list', async () => {
+    const res = await call(system, req('GET', '/rooms/TestRoom/members'), '/rooms/TestRoom/members')
     expect(res?.status).toBe(200)
     expect(await res!.json()).toHaveLength(0)
   })
 
-  test('GET /api/rooms/:name/members returns members with agent info', async () => {
+  test('GET /rooms/:name/members returns members with agent info', async () => {
     const room = system.rooms.getRoom('TestRoom')!
     const { createHumanAgent } = await import('../agents/human-agent.ts')
     const agent = createHumanAgent({ name: 'Alice' }, () => {})
     system.team.addAgent(agent)
     room.addMember(agent.id)
-    const res = await call(system, req('GET', '/api/rooms/TestRoom/members'), '/api/rooms/TestRoom/members')
+    const res = await call(system, req('GET', '/rooms/TestRoom/members'), '/rooms/TestRoom/members')
     expect(res?.status).toBe(200)
     const data = await res!.json() as Array<{ id: string; name: string }>
     expect(data).toHaveLength(1)
     expect(data[0]!.name).toBe('Alice')
   })
 
-  test('GET /api/rooms/:name/members unknown room returns 404', async () => {
-    const res = await call(system, req('GET', '/api/rooms/Ghost/members'), '/api/rooms/Ghost/members')
+  test('GET /rooms/:name/members unknown room returns 404', async () => {
+    const res = await call(system, req('GET', '/rooms/Ghost/members'), '/rooms/Ghost/members')
     expect(res?.status).toBe(404)
   })
 
-  test('POST /api/rooms/:name/members adds agent to room', async () => {
+  test('POST /rooms/:name/members adds agent to room', async () => {
     const { createHumanAgent } = await import('../agents/human-agent.ts')
     const agent = createHumanAgent({ name: 'Bob' }, () => {})
     system.team.addAgent(agent)
-    const res = await call(system, req('POST', '/api/rooms/TestRoom/members', { agentName: 'Bob' }), '/api/rooms/TestRoom/members')
+    const res = await call(system, req('POST', '/rooms/TestRoom/members', { agentName: 'Bob' }), '/rooms/TestRoom/members')
     expect(res?.status).toBe(200)
     const data = await res!.json() as { added: boolean; agentName: string }
     expect(data.added).toBe(true)
     expect(data.agentName).toBe('Bob')
   })
 
-  test('POST /api/rooms/:name/members missing agentName returns 400', async () => {
-    const res = await call(system, req('POST', '/api/rooms/TestRoom/members', {}), '/api/rooms/TestRoom/members')
+  test('POST /rooms/:name/members missing agentName returns 400', async () => {
+    const res = await call(system, req('POST', '/rooms/TestRoom/members', {}), '/rooms/TestRoom/members')
     expect(res?.status).toBe(400)
   })
 
-  test('POST /api/rooms/:name/members unknown agent returns 404', async () => {
-    const res = await call(system, req('POST', '/api/rooms/TestRoom/members', { agentName: 'Ghost' }), '/api/rooms/TestRoom/members')
+  test('POST /rooms/:name/members unknown agent returns 404', async () => {
+    const res = await call(system, req('POST', '/rooms/TestRoom/members', { agentName: 'Ghost' }), '/rooms/TestRoom/members')
     expect(res?.status).toBe(404)
   })
 
-  test('DELETE /api/rooms/:name/members/:agentName removes agent from room', async () => {
+  test('DELETE /rooms/:name/members/:agentName removes agent from room', async () => {
     const { createHumanAgent } = await import('../agents/human-agent.ts')
     const agent = createHumanAgent({ name: 'Carol' }, () => {})
     system.team.addAgent(agent)
-    const res = await call(system, req('DELETE', '/api/rooms/TestRoom/members/Carol'), '/api/rooms/TestRoom/members/Carol')
+    const res = await call(system, req('DELETE', '/rooms/TestRoom/members/Carol'), '/rooms/TestRoom/members/Carol')
     expect(res?.status).toBe(200)
     const data = await res!.json() as { removed: boolean }
     expect(data.removed).toBe(true)
   })
 
-  test('DELETE /api/rooms/:name/members/:agentName unknown agent returns 404', async () => {
-    const res = await call(system, req('DELETE', '/api/rooms/TestRoom/members/Ghost'), '/api/rooms/TestRoom/members/Ghost')
+  test('DELETE /rooms/:name/members/:agentName unknown agent returns 404', async () => {
+    const res = await call(system, req('DELETE', '/rooms/TestRoom/members/Ghost'), '/rooms/TestRoom/members/Ghost')
     expect(res?.status).toBe(404)
   })
 
-  test('DELETE /api/rooms/:name/members/:agentName unknown room returns 404', async () => {
-    const res = await call(system, req('DELETE', '/api/rooms/Ghost/members/Alice'), '/api/rooms/Ghost/members/Alice')
+  test('DELETE /rooms/:name/members/:agentName unknown room returns 404', async () => {
+    const res = await call(system, req('DELETE', '/rooms/Ghost/members/Alice'), '/rooms/Ghost/members/Alice')
     expect(res?.status).toBe(404)
   })
 
@@ -269,59 +268,6 @@ describe('HTTP Routes', () => {
   test('unknown route returns null', async () => {
     const res = await call(system, req('GET', '/no-such-route'), '/no-such-route')
     expect(res).toBeNull()
-  })
-})
-
-// === F5: cookieless /api/* gate ===
-//
-// Bots/scanners probing the API without first going through the UI's
-// GET / + /ws handshake should get 401, NOT create a Workspace via the
-// downstream registry.getOrLoad call. /api/auth and /api/system/info are
-// exempt because the UI calls them before any cookie exists (to render
-// the token prompt + version banner).
-
-describe('HTTP Routes — F5 cookieless /api/* gate', () => {
-  const reqNoCookie = (method: string, path: string): Request =>
-    new Request(`http://localhost${path}`, { method })
-
-  test('cookieless GET /api/rooms → 401', async () => {
-    const sys = makeSystem()
-    const res = await handleAPI(reqNoCookie('GET', '/api/rooms'), '/api/rooms', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
-      broadcast: noopBroadcast,
-      subscribeAgentState: noopSubscribe,
-    })
-    expect(res?.status).toBe(401)
-  })
-
-  test('cookieless GET /api/auth → allowed (exempt for UI bootstrap)', async () => {
-    const sys = makeSystem()
-    const res = await handleAPI(reqNoCookie('GET', '/api/auth'), '/api/auth', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
-      broadcast: noopBroadcast,
-      subscribeAgentState: noopSubscribe,
-    })
-    expect(res?.status).toBe(200)
-  })
-
-  test('cookieless GET /api/system/info → allowed (exempt for token-prompt banner)', async () => {
-    const sys = makeSystem()
-    const res = await handleAPI(reqNoCookie('GET', '/api/system/info'), '/api/system/info', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
-      broadcast: noopBroadcast,
-      subscribeAgentState: noopSubscribe,
-    })
-    expect(res?.status).toBe(200)
-  })
-
-  test('malformed cookie value treated as no cookie → 401 (defends against header injection of bogus ids)', async () => {
-    const sys = makeSystem()
-    const r = new Request('http://localhost/api/rooms', {
-      method: 'GET',
-      headers: { cookie: 'samsinn_workspace=../etc/passwd' },
-    })
-    const res = await handleAPI(r, '/api/rooms', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
-      broadcast: noopBroadcast,
-      subscribeAgentState: noopSubscribe,
-    })
-    expect(res?.status).toBe(401)
   })
 })
 
@@ -354,147 +300,21 @@ describe('unscoped bootstrap routes', () => {
 
   test('ordinary tenant routes are not claimed by the unscoped dispatcher', async () => {
     const res = await handleUnscopedAPI(
-      new Request('http://localhost/api/rooms'),
-      '/api/rooms',
+      new Request('http://localhost/rooms'),
+      '/rooms',
       {},
     )
     expect(res).toBeNull()
   })
 })
 
-// === Auth gate (deploy mode) ===
-//
-// When SAMSINN_TOKEN is set, every route except /api/auth and /api/system/info
-// must reject requests without a valid session cookie. This is enforced by a
-// single check in handleAPI() at the top of the dispatcher; if a future
-// refactor moves routes around the gate, this regression test fails loudly.
-
-describe('HTTP Routes — auth gate (deploy mode)', () => {
-  let system: SamsinnWorkspaceRuntime
-  let originalToken: string | undefined
-
-  beforeEach(() => {
-    system = makeSystem()
-    originalToken = process.env.SAMSINN_TOKEN
-    process.env.SAMSINN_TOKEN = 'test-token-deployment'
-  })
-
-  // Restore env after each test so other suites are unaffected.
-  // (afterEach not imported; reset inline at end of each test.)
-
-  const restoreToken = (): void => {
-    if (originalToken === undefined) delete process.env.SAMSINN_TOKEN
-    else process.env.SAMSINN_TOKEN = originalToken
-  }
-
-  test('GET /api/system/info exempt — no cookie → 200', async () => {
-    const res = await call(system, req('GET', '/api/system/info'), '/api/system/info')
-    expect(res?.status).toBe(200)
-    restoreToken()
-  })
-
-  test('POST /api/auth exempt — handler runs even without cookie (correct token → 200)', async () => {
-    const res = await call(system, req('POST', '/api/auth', { token: 'test-token-deployment' }), '/api/auth')
-    expect(res?.status).toBe(200)
-    restoreToken()
-  })
-
-  test('POST /api/system/shutdown without cookie → 401 (audit regression)', async () => {
-    const res = await call(system, req('POST', '/api/system/shutdown'), '/api/system/shutdown')
-    expect(res?.status).toBe(401)
-    restoreToken()
-  })
-
-  test('GET /api/providers without cookie → 401 (audit regression)', async () => {
-    const res = await call(system, req('GET', '/api/providers'), '/api/providers')
-    expect(res?.status).toBe(401)
-    restoreToken()
-  })
-
-  test('PUT /api/providers/openrouter without cookie → 401', async () => {
-    const res = await call(system, req('PUT', '/api/providers/openrouter', { apiKey: 'malicious' }), '/api/providers/openrouter')
-    expect(res?.status).toBe(401)
-    restoreToken()
-  })
-
-  test('POST /api/providers/openrouter/test without cookie → 401', async () => {
-    const res = await call(system, req('POST', '/api/providers/openrouter/test', {}), '/api/providers/openrouter/test')
-    expect(res?.status).toBe(401)
-    restoreToken()
-  })
-
-  test('GET /api/rooms without cookie → 401', async () => {
-    const res = await call(system, req('GET', '/api/rooms'), '/api/rooms')
-    expect(res?.status).toBe(401)
-    restoreToken()
-  })
-
-  test('POST /api/workspaces without cookie → 401', async () => {
-    const res = await call(system, req('POST', '/api/workspaces'), '/api/workspaces')
-    expect(res?.status).toBe(401)
-    restoreToken()
-  })
-
-  test('GET /api/system/limits without cookie → 401 (auth-gated, NOT exempt)', async () => {
-    const res = await call(system, req('GET', '/api/system/limits'), '/api/system/limits')
-    expect(res?.status).toBe(401)
-    restoreToken()
-  })
-
-  test('A1: POST /api/auth rate-limited per IP — 21st bad attempt returns 429', async () => {
-    // The shared route handler reads ctx.remoteAddress; in tests the call()
-    // helper threads through whatever the test passes. The default tight
-    // window is 5 min / 20 attempts; 21 attempts from the same IP trips it.
-    const { __resetAuthLimiter } = await import('./auth.ts')
-    __resetAuthLimiter()
-
-    let lastStatus = 0
-    let last429: Response | null = null
-    for (let i = 0; i < 25; i++) {
-      const res = await call(
-        system,
-        req('POST', '/api/auth', { token: 'wrong-token' }),
-        '/api/auth',
-        { remoteAddress: '198.51.100.7' },
-      )
-      lastStatus = res!.status
-      if (res!.status === 429) { last429 = res; break }
-    }
-    expect(last429).not.toBeNull()
-    expect(lastStatus).toBe(429)
-    expect(last429!.headers.get('Retry-After')).toBeTruthy()
-    __resetAuthLimiter()
-    restoreToken()
-  })
-
-  test('A1: failed POST /api/auth attempt logs to stderr', async () => {
-    const { __resetAuthLimiter } = await import('./auth.ts')
-    __resetAuthLimiter()
-    const origWarn = console.warn
-    let warned = ''
-    console.warn = (msg: unknown) => { warned += String(msg) + '\n' }
-    try {
-      await call(
-        system,
-        req('POST', '/api/auth', { token: 'wrong' }),
-        '/api/auth',
-        { remoteAddress: '198.51.100.8' },
-      )
-    } finally { console.warn = origWarn }
-    expect(warned).toContain('[auth] failed token attempt')
-    expect(warned).toContain('198.51.100.8')
-    __resetAuthLimiter()
-    restoreToken()
-  })
-})
-
-describe('GET /api/system/limits (no auth)', () => {
+describe('GET /system/limits (no auth)', () => {
   test('returns metrics + configured snapshot, reflects inc()', async () => {
     const system = makeSystem()
     // bump a counter via the system's metrics handle
     system.limitMetrics.inc('rateLimitEvicted', 3)
     system.limitMetrics.inc('sseBufferExceeded')
-    const res = await call(system, req('GET', '/api/system/limits'), '/api/system/limits')
+    const res = await call(system, req('GET', '/system/limits'), '/system/limits')
     expect(res?.status).toBe(200)
     const data = await res!.json() as {
       metrics: Record<string, number>
@@ -507,33 +327,33 @@ describe('GET /api/system/limits (no auth)', () => {
     expect(data.configured.maxRateLimitKeys).toBe(4096)
   })
 
-  // --- POST /api/system/evict ---
+  // --- POST /system/evict ---
   // Cookie-bound evict: drops the SamsinnWorkspaceRuntime from memory, snapshot stays.
-  // Mirrors /api/system/reset's auth shape but without the countdown
+  // Mirrors /system/reset's auth shape but without the countdown
   // and without trashing the directory.
 
-  test('POST /api/system/evict returns 501 when evictWorkspace not wired', async () => {
-    const r = req('POST', '/api/system/evict')
+  test('POST /system/evict returns 501 when evictWorkspace not wired', async () => {
+    const r = req('POST', '/system/evict')
     const sys = makeSystem()
-    const res = await handleAPI(r, '/api/system/evict', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
+    const res = await handleAPI(r, '/system/evict', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
       broadcast: noopBroadcast,
       subscribeAgentState: noopSubscribe,
     })
     expect(res?.status).toBe(501)
   })
 
-  test('POST /api/system/evict calls evictWorkspace and returns 200 on success', async () => {
+  test('POST /system/evict calls evictWorkspace and returns 200 on success', async () => {
     let calledWith: Request | undefined
     const evictWorkspace = async (rq: Request) => {
       calledWith = rq
       return { ok: true as const, workspaceId: TEST_WORKSPACE_ID }
     }
-    const r = new Request('http://test/api/system/evict', {
+    const r = new Request('http://test/system/evict', {
       method: 'POST',
       headers: { Cookie: `samsinn_workspace=${TEST_WORKSPACE_ID}` },
     })
     const sys = makeSystem()
-    const res = await handleAPI(r, '/api/system/evict', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
+    const res = await handleAPI(r, '/system/evict', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
       broadcast: noopBroadcast,
       subscribeAgentState: noopSubscribe,
       evictWorkspace,
@@ -545,11 +365,11 @@ describe('GET /api/system/limits (no auth)', () => {
     expect(body.workspaceId).toBe(TEST_WORKSPACE_ID)
   })
 
-  test('POST /api/system/evict surfaces evictWorkspace failure as 400', async () => {
+  test('POST /system/evict surfaces evictWorkspace failure as 400', async () => {
     const evictWorkspace = async () => ({ ok: false as const, reason: 'no Workspace cookie' })
-    const r = req('POST', '/api/system/evict')
+    const r = req('POST', '/system/evict')
     const sys = makeSystem()
-    const res = await handleAPI(r, '/api/system/evict', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
+    const res = await handleAPI(r, '/system/evict', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
       broadcast: noopBroadcast,
       subscribeAgentState: noopSubscribe,
       evictWorkspace,
@@ -559,9 +379,9 @@ describe('GET /api/system/limits (no auth)', () => {
 })
 
 // === Phase 2B: route handler coverage gaps surfaced by the audit ===
-// Covers /api/agents and /api/agents/.../triggers and /api/providers route
+// Covers /agents and /agents/.../triggers and /providers route
 // shapes that http-routes integration tests didn't previously exercise.
-// Negative-path heavy by necessity — positive paths for POST /api/agents
+// Negative-path heavy by necessity — positive paths for POST /agents
 // require a real spawnAIAgent which would pull in the full LLM stack.
 
 describe('HTTP Routes — agents (audit gap)', () => {
@@ -571,46 +391,46 @@ describe('HTTP Routes — agents (audit gap)', () => {
     system = makeSystem()
   })
 
-  test('GET /api/agents returns empty array when none registered', async () => {
-    const res = await call(system, req('GET', '/api/agents'), '/api/agents')
+  test('GET /agents returns empty array when none registered', async () => {
+    const res = await call(system, req('GET', '/agents'), '/agents')
     expect(res?.status).toBe(200)
     const data = await res!.json() as unknown[]
     expect(Array.isArray(data)).toBe(true)
     expect(data).toHaveLength(0)
   })
 
-  test('GET /api/agents/Ghost returns 404 for unknown agent', async () => {
-    const res = await call(system, req('GET', '/api/agents/Ghost'), '/api/agents/Ghost')
+  test('GET /agents/Ghost returns 404 for unknown agent', async () => {
+    const res = await call(system, req('GET', '/agents/Ghost'), '/agents/Ghost')
     expect(res?.status).toBe(404)
   })
 
-  test('GET /api/agents/Ghost/rooms returns 404 for unknown agent', async () => {
-    const res = await call(system, req('GET', '/api/agents/Ghost/rooms'), '/api/agents/Ghost/rooms')
+  test('GET /agents/Ghost/rooms returns 404 for unknown agent', async () => {
+    const res = await call(system, req('GET', '/agents/Ghost/rooms'), '/agents/Ghost/rooms')
     expect(res?.status).toBe(404)
   })
 
-  test('DELETE /api/agents/Ghost returns 404 for unknown agent', async () => {
-    const res = await call(system, req('DELETE', '/api/agents/Ghost'), '/api/agents/Ghost')
+  test('DELETE /agents/Ghost returns 404 for unknown agent', async () => {
+    const res = await call(system, req('DELETE', '/agents/Ghost'), '/agents/Ghost')
     expect(res?.status).toBe(404)
   })
 
-  test('PATCH /api/agents/Ghost returns 404 for unknown agent', async () => {
-    const res = await call(system, req('PATCH', '/api/agents/Ghost', { persona: 'changed' }), '/api/agents/Ghost')
+  test('PATCH /agents/Ghost returns 404 for unknown agent', async () => {
+    const res = await call(system, req('PATCH', '/agents/Ghost', { persona: 'changed' }), '/agents/Ghost')
     expect(res?.status).toBe(404)
   })
 
-  test('POST /api/agents/Ghost/cancel returns 404 for unknown agent', async () => {
-    const res = await call(system, req('POST', '/api/agents/Ghost/cancel', {}), '/api/agents/Ghost/cancel')
+  test('POST /agents/Ghost/cancel returns 404 for unknown agent', async () => {
+    const res = await call(system, req('POST', '/agents/Ghost/cancel', {}), '/agents/Ghost/cancel')
     expect(res?.status).toBe(404)
   })
 
-  test('POST /api/agents missing body returns 400', async () => {
-    const res = await call(system, req('POST', '/api/agents', {}), '/api/agents')
+  test('POST /agents missing body returns 400', async () => {
+    const res = await call(system, req('POST', '/agents', {}), '/agents')
     expect(res?.status).toBe(400)
   })
 
-  test('POST /api/agents/human missing name returns 400', async () => {
-    const res = await call(system, req('POST', '/api/agents/human', { displayName: 'Test' }), '/api/agents/human')
+  test('POST /agents/human missing name returns 400', async () => {
+    const res = await call(system, req('POST', '/agents/human', { displayName: 'Test' }), '/agents/human')
     // Either 400 (validation fail) or 201 (created) — depending on shape.
     // Negative coverage: at minimum, server doesn't 500 on partial body.
     expect(res?.status).toBeLessThan(500)
@@ -625,30 +445,30 @@ describe('HTTP Routes — agent triggers (audit gap)', () => {
     system.rooms.createRoom({ name: 'TestRoom', createdBy: 'system' })
   })
 
-  test('GET /api/agents/Ghost/triggers returns 404 for unknown agent', async () => {
-    const res = await call(system, req('GET', '/api/agents/Ghost/triggers'), '/api/agents/Ghost/triggers')
+  test('GET /agents/Ghost/triggers returns 404 for unknown agent', async () => {
+    const res = await call(system, req('GET', '/agents/Ghost/triggers'), '/agents/Ghost/triggers')
     expect(res?.status).toBe(404)
   })
 
-  test('POST /api/agents/Ghost/triggers returns 404 for unknown agent', async () => {
+  test('POST /agents/Ghost/triggers returns 404 for unknown agent', async () => {
     const res = await call(
       system,
-      req('POST', '/api/agents/Ghost/triggers', { name: 'T', prompt: 'p', mode: 'interval', intervalSec: 60, roomId: 'TestRoom' }),
-      '/api/agents/Ghost/triggers',
+      req('POST', '/agents/Ghost/triggers', { name: 'T', prompt: 'p', mode: 'interval', intervalSec: 60, roomId: 'TestRoom' }),
+      '/agents/Ghost/triggers',
     )
     expect(res?.status).toBe(404)
   })
 
-  test('DELETE /api/agents/Ghost/triggers/some-id returns 404', async () => {
-    const res = await call(system, req('DELETE', '/api/agents/Ghost/triggers/abc'), '/api/agents/Ghost/triggers/abc')
+  test('DELETE /agents/Ghost/triggers/some-id returns 404', async () => {
+    const res = await call(system, req('DELETE', '/agents/Ghost/triggers/abc'), '/agents/Ghost/triggers/abc')
     expect(res?.status).toBe(404)
   })
 
-  test('PUT /api/agents/Ghost/triggers/some-id returns 404', async () => {
+  test('PUT /agents/Ghost/triggers/some-id returns 404', async () => {
     const res = await call(
       system,
-      req('PUT', '/api/agents/Ghost/triggers/abc', { enabled: true }),
-      '/api/agents/Ghost/triggers/abc',
+      req('PUT', '/agents/Ghost/triggers/abc', { enabled: true }),
+      '/agents/Ghost/triggers/abc',
     )
     expect(res?.status).toBe(404)
   })

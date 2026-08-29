@@ -1,3 +1,4 @@
+import { apiFetch } from "../api-client.ts"
 // Shell for the top-left "System Prompt" button: fetches Workspace settings.
 // system prompt + response-format template, shows them in a modal with
 // dirty-state tracking and a single Update button that PUTs back to the
@@ -7,7 +8,7 @@ import { createModal, createTextarea, createButton, setButtonPending } from '../
 import { showToast } from '../toast.ts'
 
 export const openSystemPromptModal = async (): Promise<void> => {
-  const res = await fetch('/api/workspace/settings').catch(() => null)
+  const res = await apiFetch('/workspace/settings').catch(() => null)
   if (!res || !res.ok) return
   const data = await res.json() as { workspacePrompt?: string; responseFormat?: string } | null
   if (!data) return
@@ -48,7 +49,7 @@ export const openSystemPromptModal = async (): Promise<void> => {
 
   updateBtn.onclick = async () => {
     if (!isDirty()) return
-    await fetch('/api/workspace/settings', {
+    await apiFetch('/workspace/settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ workspacePrompt: workspaceArea.value, responseFormat: formatArea.value }),

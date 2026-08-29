@@ -59,7 +59,7 @@ Options:
   --list            List deployed releases and the active target (read-only)
   --rollback ID     Atomically reactivate an earlier release
 
-Map, reference, OSRM, and control-instance data are never included or changed.
+Map, reference, OSRM, and simulation-run data are never included or changed.
 `
 
 export const isSafeReleaseId = (value: string): boolean => /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(value)
@@ -294,7 +294,7 @@ curl -fsS -o /dev/null http://127.0.0.1:3000/health
 available_kb="$(df --output=avail /opt | tail -n 1 | tr -d ' ')"
 test "$available_kb" -gt 4194304
 diag="$(curl -fsS http://127.0.0.1:3000/api/system/diagnostics)"
-generating="$(printf '%s' "$diag" | jq '[.instances[].generatingAgentCount // 0] | add // 0')"
+generating="$(printf '%s' "$diag" | jq '[.workspaces[].generatingAgentCount // 0] | add // 0')"
 test "$generating" -eq 0 || { echo "Refusing deploy: $generating Samsinn agent generation(s) active" >&2; exit 1; }
 printf 'preflight_ok available_kb=%s generating=%s\n' "$available_kb" "$generating"
 working="$(systemctl show ${SERVICE} -p WorkingDirectory --value)"
@@ -514,7 +514,7 @@ const deploy = async (options: DeployOptions): Promise<void> => {
     console.log(`Files: ${artifact.manifest.fileCount}`)
     console.log(`Artifact: ${(size / 1024 / 1024).toFixed(2)} MiB`)
     console.log(`Source digest: ${artifact.manifest.sourceDigest}`)
-    console.log('Persistent maps/reference/OSRM/control-instance data: excluded')
+    console.log('Persistent maps/reference/OSRM/simulation-run data: excluded')
 
     if (options.dryRun) {
       console.log('\n✓ Dry run complete; production was not contacted or changed')

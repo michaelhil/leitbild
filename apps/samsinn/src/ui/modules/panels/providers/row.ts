@@ -5,11 +5,10 @@
 
 import { retryRemainingSeconds } from '../../../lib/format-retry.ts'
 
-export type Status = 'ok' | 'no_key' | 'cooldown' | 'down' | 'disabled'
-
-export interface MonitorPayload {
+export interface ProviderAvailability {
   sub: 'ok' | 'backoff' | 'unhealthy' | 'no_key' | 'disabled' | 'down'
   reason: string
+  since: number
   retryAt: number | null
   modelCount: number
   consecutiveFailures: number
@@ -39,9 +38,7 @@ export interface ProviderStatusEntry {
   isLocal?: boolean
   baseUrl?: string
   maxConcurrent: number | null
-  cooldown: { coldUntilMs: number; reason: string } | null
-  status: Status
-  monitor: MonitorPayload | null
+  availability: ProviderAvailability
   recentFailures: ReadonlyArray<FailureRecord>
 }
 
@@ -69,45 +66,35 @@ const PROVIDER_URLS: Record<CloudProviderName | 'ollama', string> = {
   ollama:     'https://ollama.com',
 }
 
-const dotColourClass = (status: Status): string => {
-  if (status === 'ok') return 'bg-success'
-  if (status === 'cooldown') return 'bg-warning'
-  if (status === 'down') return 'bg-danger'
+const dotColourClass = (sub: ProviderAvailability['sub']): string => {
+  if (sub === 'ok') return 'bg-success'
+  if (sub === 'backoff') return 'bg-warning'
+  if (sub === 'down' || sub === 'unhealthy') return 'bg-danger'
   // disabled + no_key both render as gray; disabled gets the slash overlay.
   return 'bg-border-strong'
 }
 
-const statusTooltip = (status: Status, monitor: MonitorPayload | null): string => {
-  // When the monitor reports rich state, prefer it — surface the actual
-  // reason and (for backoff) a live countdown to recovery. Falls back to
-  // the bare status word for older payloads or unknown providers.
-  if (monitor) {
-    if (monitor.sub === 'backoff' && monitor.retryAt !== null) {
-      const remainingS = retryRemainingSeconds(monitor.retryAt)
-      const reason = monitor.reason || 'cooldown'
-      return `${reason} — retries allowed in ${remainingS}s · click to disable`
-    }
-    if (monitor.sub === 'unhealthy') {
-      const last = monitor.lastError?.message ? ` (${monitor.lastError.message.slice(0, 80)})` : ''
-      return `unhealthy — ${monitor.consecutiveFailures} recent failures${last} · click to disable`
-    }
-    if (monitor.sub === 'down') return 'down — click to disable'
-    if (monitor.sub === 'disabled') return 'disabled — click to enable'
-    if (monitor.sub === 'no_key') return 'no key — paste one to enable'
-    if (monitor.sub === 'ok') return `ok — ${monitor.modelCount} models · click to disable`
+const availabilityTooltip = (availability: ProviderAvailability): string => {
+  if (availability.sub === 'backoff' && availability.retryAt !== null) {
+    const remainingS = retryRemainingSeconds(availability.retryAt)
+    const reason = availability.reason || 'backoff'
+    return `${reason} — retries allowed in ${remainingS}s · click to disable`
   }
-  if (status === 'ok') return 'ok — click to disable'
-  if (status === 'cooldown') return 'cooldown — click to disable'
-  if (status === 'down') return 'down — click to disable'
-  if (status === 'disabled') return 'disabled — click to enable'
-  return 'no key'
+  if (availability.sub === 'unhealthy') {
+    const last = availability.lastError?.message ? ` (${availability.lastError.message.slice(0, 80)})` : ''
+    return `unhealthy — ${availability.consecutiveFailures} recent failures${last} · click to disable`
+  }
+  if (availability.sub === 'down') return `${availability.reason || 'down'} — click to disable`
+  if (availability.sub === 'disabled') return 'disabled — click to enable'
+  if (availability.sub === 'no_key') return 'no key — paste one to enable'
+  return `ok — ${availability.modelCount} models · click to disable`
 }
 
 // Returns the `<button>` that holds the status dot + optional red slash.
 // The outer button is a larger click target (16×16) for comfort.
-const statusButton = (status: Status, monitor: MonitorPayload | null): string => {
-  const dot = `<span class="inline-block w-2.5 h-2.5 rounded-full ${dotColourClass(status)}"></span>`
-  const slash = status === 'disabled'
+const availabilityButton = (availability: ProviderAvailability): string => {
+  const dot = `<span class="inline-block w-2.5 h-2.5 rounded-full ${dotColourClass(availability.sub)}"></span>`
+  const slash = availability.sub === 'disabled'
     ? `<span class="absolute inset-0 flex items-center justify-center pointer-events-none"
              aria-hidden="true"
              style="transform: rotate(-45deg)">
@@ -115,7 +102,7 @@ const statusButton = (status: Status, monitor: MonitorPayload | null): string =>
        </span>`
     : ''
   // Tooltip is escaped against quote-injection via the attribute encoder.
-  const tip = statusTooltip(status, monitor)
+  const tip = availabilityTooltip(availability)
     .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   return `<button class="prov-dot-btn relative w-4 h-4 flex items-center justify-center shrink-0 cursor-pointer" title="${tip}">
     ${dot}
@@ -207,7 +194,7 @@ export const renderRow = (ctx: RowContext): HTMLElement => {
   `
 
   row.innerHTML = `
-    ${statusButton(entry.status, entry.monitor)}
+    ${availabilityButton(entry.availability)}
     ${nameCol}
     ${keyField}
     ${maxField}

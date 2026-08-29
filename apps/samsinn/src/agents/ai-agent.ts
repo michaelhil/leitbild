@@ -205,8 +205,7 @@ export const createAIAgent = (
   // null → stop (user clicked Stop, abandonment fired, or signal aborted).
   //
   // Set SAMSINN_TOOL_CHECKIN_ABANDON_MS=0 to disable the pause entirely
-  // (headless / batch / test mode): the loop falls through to the legacy
-  // tool_loop_exceeded behaviour at maxToolIterations as before.
+  // (headless / batch / test mode): evaluation stops at maxToolIterations.
   const pendingCheckins = new Map<string, (v: number | null) => void>()
   const parsedAbandonMs = Number.parseInt(process.env.SAMSINN_TOOL_CHECKIN_ABANDON_MS ?? '', 10)
   const abandonMs = Number.isFinite(parsedAbandonMs) && parsedAbandonMs >= 0

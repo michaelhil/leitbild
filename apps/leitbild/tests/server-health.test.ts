@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test'
+import { newWorkspaceId } from '@samsinn-leitbild/platform-contracts'
 import { mkdir, mkdtemp, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { actorIdSchema, commandEnvelopeSchema, nowIso, type CommandEnvelope, type ControlInstanceId, type ControlInstanceEvent, type ObjectId } from '../src/core/model/index.ts'
-import type { Actor } from '../src/core/control-instances/actors.ts'
+import { actorIdSchema, commandEnvelopeSchema, nowIso, type CommandEnvelope, type SimulationRunId, type SimulationRunEvent, type ObjectId } from '../src/core/model/index.ts'
+import type { Actor } from '../src/core/simulation-runs/actors.ts'
 import { createHealthDetails, staticContentTypeForPath } from '../src/core/api/server.ts'
-import { createControlInstanceRealtimeManager, type RealtimeEventBatchMessage, type RealtimeOutboundMessage } from '../src/core/api/realtime.ts'
-import { createControlInstanceRegistry, type ControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
+import { createSimulationRunRealtimeManager, type RealtimeEventBatchMessage, type RealtimeOutboundMessage } from '../src/core/api/realtime.ts'
+import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
@@ -15,7 +16,7 @@ import { createTestScenarioCatalog } from './helpers.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 
 interface CapturedRealtimeClient {
-  readonly events: ControlInstanceEvent[]
+  readonly events: SimulationRunEvent[]
   readonly eventMessages: RealtimeEventBatchMessage[]
   readonly readyMessages: string[]
 }
@@ -61,21 +62,21 @@ const waitForMovingObjectEvent = async (
 }
 
 const waitForRuntimeClosed = async (
-  registry: ReturnType<typeof createControlInstanceRegistry>,
-  controlInstanceId: ControlInstanceId,
+  registry: ReturnType<typeof createSimulationRunRegistry>,
+  simulationRunId: SimulationRunId,
 ): Promise<void> => {
   const deadline = Date.now() + 1_000
   while (Date.now() < deadline) {
-    if (!registry.get(controlInstanceId)) return
+    if (!registry.get(simulationRunId)) return
     await Bun.sleep(10)
   }
-  throw new Error(`timed out waiting for idle runtime close: ${controlInstanceId}`)
+  throw new Error(`timed out waiting for idle runtime close: ${simulationRunId}`)
 }
 
-const dispatchAmbulanceCommand = (controlInstanceId: ControlInstanceId, ambulanceId: ObjectId, targetId: ObjectId): CommandEnvelope =>
+const dispatchAmbulanceCommand = (simulationRunId: SimulationRunId, ambulanceId: ObjectId, targetId: ObjectId): CommandEnvelope =>
   commandEnvelopeSchema.parse({
     id: `command:${crypto.randomUUID()}`,
-    controlInstanceId,
+    simulationRunId,
     actorId: operatorActor.id,
     kind: 'ambulance.set_destination',
     targetObjectIds: [ambulanceId, targetId],
@@ -95,7 +96,7 @@ describe('server health', () => {
     expect(staticContentTypeForPath('/assets/unknown.bin')).toBe('application/octet-stream')
   })
 
-  test('reports process, storage, control instance, and realtime details', async () => {
+  test('reports process, storage, simulation run, and realtime details', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-health-test-'))
     const mapRoot = await mkdtemp(join(tmpdir(), 'leitbild-map-health-test-'))
     const releaseDir = join(mapRoot, 'releases', 'leitbild-osm-norway', 'health-build')
@@ -105,8 +106,9 @@ describe('server health', () => {
     await Bun.write(join(releaseDir, 'norway.pmtiles'), 'pmtiles')
     await Bun.write(join(glyphDir, '0-255.pbf'), 'glyphs')
     await symlink(releaseDir, join(mapRoot, 'current'))
-    const registry = createControlInstanceRegistry({
+    const registry = createSimulationRunRegistry({
       dataDir,
+      workspaceId: newWorkspaceId(),
       scenarioCatalog: createTestScenarioCatalog(),
       runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
@@ -114,24 +116,23 @@ describe('server health', () => {
         createLocalWeatherPackRuntimeAdapter(),
       ],
     })
-    const runtime = await registry.ensure('sandbox' as ControlInstanceId)
+    const runtime = await registry.create()
     try {
       const details = await createHealthDetails({ registry, mapArtifacts: { rootDir: mapRoot } })
 
       expect(details.ok).toBe(true)
       expect(details.process.memory.rssBytes).toBeGreaterThan(0)
-      expect(details.registry.dataDir).toBe(dataDir)
+      expect(details.registry.dataDir).toContain(`/workspaces/${registry.workspaceId}/leitbild`)
       expect(details.registry.storage.totalBytes).toBeGreaterThan(0)
-      expect(details.registry.controlInstances).toContainEqual({
+      expect(details.registry.simulationRuns).toContainEqual(expect.objectContaining({
         id: runtime.id,
         scenarioId: 'oslo-ambulance',
-        runId: null,
         loaded: true,
         objectCount: osloAmbulanceScenario.initialObjects.length,
         snapshotSeq: runtime.snapshot().seq,
-      })
+      }))
       expect(details.realtime.websocketClientCount).toBe(0)
-      expect(details.realtime.subscribedControlInstanceCount).toBe(0)
+      expect(details.realtime.subscribedSimulationRunCount).toBe(0)
       expect(details.mapArtifacts.status).toBe('ready')
       expect(details.mapArtifacts.activeBuildId).toBe('health-build')
       expect(details.mapArtifacts.currentPmtiles.sizeBytes).toBeGreaterThan(0)
@@ -143,11 +144,11 @@ describe('server health', () => {
     }
   })
 
-  test('resubscribes realtime clients after a control instance reset recreates the runtime', async () => {
+  test('resubscribes realtime clients after a simulation run reset recreates the runtime', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-server-realtime-test-'))
-    const controlInstanceId = 'sandbox' as ControlInstanceId
-    const registry = createControlInstanceRegistry({
+    const registry = createSimulationRunRegistry({
       dataDir,
+      workspaceId: newWorkspaceId(),
       scenarioCatalog: createTestScenarioCatalog(),
       runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
@@ -156,56 +157,58 @@ describe('server health', () => {
       ],
     })
     const client: CapturedRealtimeClient = { events: [], eventMessages: [], readyMessages: [] }
-    const realtime = createControlInstanceRealtimeManager<CapturedRealtimeClient>({
+    const realtime = createSimulationRunRealtimeManager<CapturedRealtimeClient>({
       registry,
       send: captureRealtimeMessage,
       sendReady: (targetClient, message) => {
         targetClient.readyMessages.push(message.scenarioId ?? '')
       },
     })
+    let simulationRunId: SimulationRunId | undefined
     try {
-      await registry.ensure(controlInstanceId)
-      realtime.addClient(controlInstanceId, client)
-      expect(realtime.status().subscribedControlInstanceCount).toBe(1)
+      const runtimeBeforeReset = await registry.create()
+      simulationRunId = runtimeBeforeReset.id
+      realtime.addClient(simulationRunId, client)
+      expect(realtime.status().subscribedSimulationRunCount).toBe(1)
       expect(client.readyMessages).toContain('oslo-ambulance')
 
-      await registry.reset(controlInstanceId, { scenarioId: 'halden' })
-      const resetEvent = client.events.find(event => event.type === 'controlInstance.reset')
+      await registry.reset(simulationRunId)
+      const resetEvent = client.events.find(event => event.type === 'simulationRun.reset')
       expect(resetEvent).toMatchObject({
-        type: 'controlInstance.reset',
+        type: 'simulationRun.reset',
         previousScenarioId: 'oslo-ambulance',
-        scenarioId: 'halden',
+        scenarioId: 'oslo-ambulance',
       })
       realtime.reconcile()
-      expect(client.readyMessages).toContain('halden')
+      expect(client.readyMessages.filter(id => id === 'oslo-ambulance')).toHaveLength(2)
 
-      const runtime = registry.get(controlInstanceId)
-      if (!runtime) throw new Error('expected control instance runtime after reset')
+      const runtime = registry.get(simulationRunId)
+      if (!runtime) throw new Error('expected simulation run runtime after reset')
       const result = await runtime.issueCommand(
         operatorActor,
-        dispatchAmbulanceCommand(controlInstanceId, 'amb:halden-1' as ObjectId, 'incident:halden-bridge' as ObjectId),
+        dispatchAmbulanceCommand(simulationRunId, 'amb:a12' as ObjectId, 'incident:gronland-unattended' as ObjectId),
       )
       expect(result.ok).toBe(true)
 
-      await waitForMovingObjectEvent(client, 'amb:halden-1')
+      await waitForMovingObjectEvent(client, 'amb:a12')
       const postResetEventMessages = client.eventMessages.filter(message =>
-        !message.events.some(event => event.type === 'controlInstance.reset'),
+        !message.events.some(event => event.type === 'simulationRun.reset'),
       )
-      expect(postResetEventMessages.every(message => message.scenarioId === 'halden')).toBe(true)
-      realtime.removeClient(controlInstanceId, client)
-      expect(realtime.status().subscribedControlInstanceCount).toBe(0)
-      expect(registry.get(controlInstanceId)).toBe(runtime)
+      expect(postResetEventMessages.every(message => message.scenarioId === 'oslo-ambulance')).toBe(true)
+      realtime.removeClient(simulationRunId, client)
+      expect(realtime.status().subscribedSimulationRunCount).toBe(0)
+      expect(registry.get(simulationRunId)).toBe(runtime)
     } finally {
       realtime.stop()
-      await registry.close(controlInstanceId)
+      if (simulationRunId) await registry.close(simulationRunId)
     }
   })
 
-  test('sends realtime ready to every client that joins an already-subscribed control instance', async () => {
+  test('sends realtime ready to every client that joins an already-subscribed simulation run', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-server-second-client-test-'))
-    const controlInstanceId = 'sandbox' as ControlInstanceId
-    const registry = createControlInstanceRegistry({
+    const registry = createSimulationRunRegistry({
       dataDir,
+      workspaceId: newWorkspaceId(),
       scenarioCatalog: createTestScenarioCatalog(),
       runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
@@ -215,38 +218,40 @@ describe('server health', () => {
     })
     const firstClient: CapturedRealtimeClient = { events: [], eventMessages: [], readyMessages: [] }
     const secondClient: CapturedRealtimeClient = { events: [], eventMessages: [], readyMessages: [] }
-    const realtime = createControlInstanceRealtimeManager<CapturedRealtimeClient>({
+    const realtime = createSimulationRunRealtimeManager<CapturedRealtimeClient>({
       registry,
       send: captureRealtimeMessage,
       sendReady: (targetClient, message) => {
         targetClient.readyMessages.push(message.scenarioId ?? '')
       },
     })
+    let simulationRunId: SimulationRunId | undefined
     try {
-      await registry.ensure(controlInstanceId)
-      realtime.addClient(controlInstanceId, firstClient)
+      const runtime = await registry.create()
+      simulationRunId = runtime.id
+      realtime.addClient(simulationRunId, firstClient)
       expect(firstClient.readyMessages).toEqual(['oslo-ambulance'])
-      expect(realtime.status().subscribedControlInstanceCount).toBe(1)
+      expect(realtime.status().subscribedSimulationRunCount).toBe(1)
 
-      realtime.addClient(controlInstanceId, secondClient)
+      realtime.addClient(simulationRunId, secondClient)
       expect(secondClient.readyMessages).toEqual(['oslo-ambulance'])
       expect(firstClient.readyMessages).toEqual(['oslo-ambulance'])
       expect(realtime.status().websocketClientCount).toBe(2)
-      expect(realtime.status().subscribedControlInstanceCount).toBe(1)
+      expect(realtime.status().subscribedSimulationRunCount).toBe(1)
 
-      await registry.reset(controlInstanceId, { scenarioId: 'halden' })
+      await registry.reset(simulationRunId)
       realtime.reconcile()
-      expect(firstClient.readyMessages).toEqual(['oslo-ambulance', 'halden'])
-      expect(secondClient.readyMessages).toEqual(['oslo-ambulance', 'halden'])
+      expect(firstClient.readyMessages).toEqual(['oslo-ambulance', 'oslo-ambulance'])
+      expect(secondClient.readyMessages).toEqual(['oslo-ambulance', 'oslo-ambulance'])
     } finally {
       realtime.stop()
-      await registry.close(controlInstanceId)
+      if (simulationRunId) await registry.close(simulationRunId)
     }
   })
 
   test('does not snapshot the runtime for pure realtime broadcasts', () => {
-    const controlInstanceId = 'control-instance:runtime-realtime-cache-test' as ControlInstanceId
-    const handlers = new Set<Parameters<NonNullable<ReturnType<ControlInstanceRegistry['get']>>['subscribe']>[0]>()
+    const simulationRunId = 'run-runtime-realtime-cache-test' as SimulationRunId
+    const handlers = new Set<Parameters<NonNullable<ReturnType<SimulationRunRegistry['get']>>['subscribe']>[0]>()
     let snapshotSeq = 7
     let snapshotCalls = 0
     const runtime = {
@@ -258,17 +263,17 @@ describe('server health', () => {
           scenario: { scenarioId: 'scenario:realtime-cache' },
         }
       },
-      subscribe: (handler: Parameters<NonNullable<ReturnType<ControlInstanceRegistry['get']>>['subscribe']>[0]) => {
+      subscribe: (handler: Parameters<NonNullable<ReturnType<SimulationRunRegistry['get']>>['subscribe']>[0]) => {
         handlers.add(handler)
         return () => handlers.delete(handler)
       },
-    } as unknown as NonNullable<ReturnType<ControlInstanceRegistry['get']>>
+    } as unknown as NonNullable<ReturnType<SimulationRunRegistry['get']>>
     const registry = {
-      get: (id: ControlInstanceId) => id === controlInstanceId ? runtime : null,
+      get: (id: SimulationRunId) => id === simulationRunId ? runtime : null,
       acquireLease: () => () => {},
-    } as unknown as ControlInstanceRegistry
+    } as unknown as SimulationRunRegistry
     const messages: RealtimeOutboundMessage[] = []
-    const realtime = createControlInstanceRealtimeManager<{ readonly id: string }>({
+    const realtime = createSimulationRunRealtimeManager<{ readonly id: string }>({
       registry,
       send: (_client, message) => {
         messages.push(message)
@@ -276,7 +281,7 @@ describe('server health', () => {
       sendReady: () => {},
     })
 
-    realtime.addClient(controlInstanceId, { id: 'client:1' })
+    realtime.addClient(simulationRunId, { id: 'client:1' })
     const setupSnapshotCalls = snapshotCalls
     for (const handler of handlers) {
       handler({
@@ -295,7 +300,7 @@ describe('server health', () => {
     for (const handler of handlers) {
       handler({
         type: 'event.notification',
-        events: [{ type: 'test.event', seq: 8, at: nowIso() } as unknown as ControlInstanceEvent],
+        events: [{ type: 'test.event', seq: 8, at: nowIso() } as unknown as SimulationRunEvent],
       })
     }
     expect(snapshotCalls).toBe(setupSnapshotCalls + 1)
@@ -308,9 +313,9 @@ describe('server health', () => {
 
   test('closes idle runtimes after the last realtime client leaves', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-server-idle-client-test-'))
-    const controlInstanceId = 'sandbox' as ControlInstanceId
-    const registry = createControlInstanceRegistry({
+    const registry = createSimulationRunRegistry({
       dataDir,
+      workspaceId: newWorkspaceId(),
       scenarioCatalog: createTestScenarioCatalog(),
       idleRuntimeCloseDelayMs: 5,
       runtimeAdapters: [
@@ -320,25 +325,27 @@ describe('server health', () => {
       ],
     })
     const client: CapturedRealtimeClient = { events: [], eventMessages: [], readyMessages: [] }
-    const realtime = createControlInstanceRealtimeManager<CapturedRealtimeClient>({
+    const realtime = createSimulationRunRealtimeManager<CapturedRealtimeClient>({
       registry,
       send: captureRealtimeMessage,
       sendReady: (targetClient, message) => {
         targetClient.readyMessages.push(message.scenarioId ?? '')
       },
     })
+    let simulationRunId: SimulationRunId | undefined
     try {
-      const runtime = await registry.ensure(controlInstanceId)
-      realtime.addClient(controlInstanceId, client)
-      expect(registry.get(controlInstanceId)).toBe(runtime)
+      const runtime = await registry.create()
+      simulationRunId = runtime.id
+      realtime.addClient(simulationRunId, client)
+      expect(registry.get(simulationRunId)).toBe(runtime)
 
-      realtime.removeClient(controlInstanceId, client)
-      await waitForRuntimeClosed(registry, controlInstanceId)
+      realtime.removeClient(simulationRunId, client)
+      await waitForRuntimeClosed(registry, simulationRunId)
       expect(realtime.status().websocketClientCount).toBe(0)
-      expect(realtime.status().subscribedControlInstanceCount).toBe(0)
+      expect(realtime.status().subscribedSimulationRunCount).toBe(0)
     } finally {
       realtime.stop()
-      await registry.close(controlInstanceId)
+      if (simulationRunId) await registry.close(simulationRunId)
     }
   })
 })

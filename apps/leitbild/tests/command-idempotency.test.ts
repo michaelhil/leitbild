@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import type { Actor } from '../src/core/control-instances/actors.ts'
+import type { Actor } from '../src/core/simulation-runs/actors.ts'
 import {
   createCommandIdempotencyStore,
   issueCommandWithIdempotency,
 } from '../src/core/api/command-idempotency.ts'
-import type { ActorId, ClientId, CommandEnvelope, CommandId, CommandResult, ControlInstanceId, IsoTimestamp, ObjectId } from '../src/core/model/index.ts'
+import type { ActorId, ClientId, CommandEnvelope, CommandId, CommandResult, SimulationRunId, IsoTimestamp, ObjectId } from '../src/core/model/index.ts'
 
 const actor: Actor = {
   id: 'actor:test' as ActorId,
@@ -19,7 +19,7 @@ const command = (config: {
   readonly expectedRevision?: number
 }): CommandEnvelope => ({
   id: config.id as CommandId,
-  controlInstanceId: 'control-instance:test' as ControlInstanceId,
+  simulationRunId: 'run-test' as SimulationRunId,
   actorId: actor.id,
   clientId: 'client:test' as ClientId,
   ...(config.idempotencyKey === undefined ? {} : { idempotencyKey: config.idempotencyKey }),

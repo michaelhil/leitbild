@@ -39,7 +39,7 @@ Reference data is a first-class architectural primitive in Leitbild, distinct fr
 
 ### Placement
 
-The runtime library lives at `src/reference-data/` as a top-level peer of `src/map/`, `src/simulation/`, `src/scenarios/`, `src/routing/`, `src/core/`, `src/packs/`, and `src/ui/`. The existing codebase reserves `src/core/` for the abstract model and protocol primitives (`core/model`, `core/packs`, `core/scenarios`, `core/spatial`, `core/control-instances`, `core/api`) and places larger runtime-layer concerns at the top level as peers (`src/map/` for map artifacts, `src/simulation/` for the simulation hub). Reference data is a runtime layer in the same shape as `src/map/`: it produces and serves artifacts that the rest of the system consumes. Top-level placement matches that precedent.
+The runtime library lives at `src/reference-data/` as a top-level peer of `src/map/`, `src/simulation/`, `src/scenarios/`, `src/routing/`, `src/core/`, `src/packs/`, and `src/ui/`. The existing codebase reserves `src/core/` for the abstract model and protocol primitives (`core/model`, `core/packs`, `core/scenarios`, `core/spatial`, `core/simulation-runs`, `core/api`) and places larger runtime-layer concerns at the top level as peers (`src/map/` for map artifacts, `src/simulation/` for the simulation hub). Reference data is a runtime layer in the same shape as `src/map/`: it produces and serves artifacts that the rest of the system consumes. Top-level placement matches that precedent.
 
 The build CLI lives at `scripts/reference-build.ts` and `scripts/reference-promote.ts`, mirroring the existing `scripts/maps-*` split for OSM.
 
@@ -104,7 +104,7 @@ readonly referenceDatasetRefs?: ReadonlyArray<string>
 
 Packs reference datasets by string id. Datasets remain neutral (they live in `src/reference-data/datasets/`, not inside packs), preserving pack independence. A future drone pack and the ADSB pack can both consume `aero-norway` without depending on each other.
 
-The change is backwards compatible. Existing packs ignore it.
+The change is part of the canonical Pack contract. Packs must satisfy the current descriptor and reference-data schema.
 
 ### Per-dataset PMTiles, not a single combined tileset
 

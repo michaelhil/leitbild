@@ -1,4 +1,4 @@
-import { nowIso, type CommandEnvelope, type CommandResult, type ControlInstanceEvent, type SimulationClockState } from '../../../core/model/index.ts'
+import { nowIso, type CommandEnvelope, type CommandResult, type SimulationRunEvent, type SimulationClockState } from '../../../core/model/index.ts'
 import type {
   PackRuntimeAdapter,
   PackRuntimeConnection,
@@ -13,6 +13,7 @@ import { aviationRuntimePackId, aviationNoopAdapterId, aviationNoopRuntimeId } f
 
 export const createAviationNoopPackRuntimeAdapter = (): PackRuntimeAdapter => ({
   id: aviationNoopRuntimeId,
+  version: '1.0.0',
   packId: aviationRuntimePackId,
   acceptedCommandKinds: [],
   queryKinds: [],
@@ -26,7 +27,7 @@ export const createAviationNoopPackRuntimeAdapter = (): PackRuntimeAdapter => ({
     const handlers = new Set<PackRuntimeEventHandler>()
     return {
       getSnapshot: async () => ({
-        controlInstanceId: config.controlInstanceId,
+        simulationRunId: config.simulationRunId,
         objects: [],
         capturedAt: nowIso(),
       }),
@@ -47,13 +48,13 @@ export const createAviationNoopPackRuntimeAdapter = (): PackRuntimeAdapter => ({
         reason: 'aviation noop runtime answers no queries in Phase B.1',
         generatedAt: nowIso(),
       }),
-      observeCommittedEvents: async (_events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => undefined,
+      observeCommittedEvents: async (_events: ReadonlyArray<SimulationRunEvent>): Promise<void> => undefined,
       setClock: async (next: SimulationClockState): Promise<void> => { clock = next },
       close: async (): Promise<void> => { handlers.clear() },
     }
   },
 })
 
-export const aviationNoopRuntime = { id: aviationNoopRuntimeId, label: 'Aviation noop (Phase B.1 placeholder)', kind: 'local' as const }
+export const aviationNoopRuntime = { id: aviationNoopRuntimeId, version: '1.0.0', label: 'Aviation noop (Phase B.1 placeholder)', kind: 'local' as const }
 
 export { aviationNoopAdapterId, aviationNoopRuntimeId }

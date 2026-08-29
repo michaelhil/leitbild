@@ -32,7 +32,7 @@ export interface JsonlFileSinkOptions {
 // the active file; on overflow it is renamed to <base>.1.jsonl (overwriting
 // any prior .1) and a fresh <base>.jsonl is started. per-Workspace footprint
 // is therefore bounded at 2 × rotateAtBytes — important on multi-tenant
-// deploys where N instances each have their own log directory.
+// deployments where each Workspace has its own log directory.
 const rotateBytesFromEnv = (): number => {
   const v = process.env.SAMSINN_LOG_MAX_BYTES
   if (!v) return 50 * 1024 * 1024

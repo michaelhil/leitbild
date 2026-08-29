@@ -3,9 +3,9 @@ import { resolveDefaultModel, resolveDefaultModelChain, type ProviderSnapshot } 
 
 const p = (
   name: string,
-  status: ProviderSnapshot['status'],
+  sub: ProviderSnapshot['availability']['sub'],
   modelIds: ReadonlyArray<string>,
-): ProviderSnapshot => ({ name, status, models: modelIds.map(id => ({ id })) })
+): ProviderSnapshot => ({ name, availability: { sub }, models: modelIds.map(id => ({ id })) })
 
 describe('resolveDefaultModel', () => {
   test('all healthy → first preference (anthropic) wins', () => {
@@ -37,15 +37,15 @@ describe('resolveDefaultModel', () => {
   test('no providers usable → empty string', () => {
     const out = resolveDefaultModel([
       p('anthropic', 'no_key', []),
-      p('gemini', 'cooldown', ['gemini-2.5-flash-lite']),
+      p('gemini', 'backoff', ['gemini-2.5-flash-lite']),
       p('ollama', 'down', []),
     ])
     expect(out).toBe('')
   })
 
-  test('first preference in cooldown → falls through (cooldown is not ok)', () => {
+  test('first preference in backoff → falls through (backoff is not ok)', () => {
     const out = resolveDefaultModel([
-      p('anthropic', 'cooldown', ['claude-haiku-4-5']),
+      p('anthropic', 'backoff', ['claude-haiku-4-5']),
       p('gemini', 'ok', ['gemini-2.5-flash-lite']),
     ])
     expect(out).toBe('gemini-2.5-flash-lite')
@@ -120,7 +120,7 @@ describe('resolveDefaultModel', () => {
   test('chain returns one default per usable provider, in default preference order', () => {
     const out = resolveDefaultModelChain([
       p('kimi', 'ok', ['moonshot-v1-128k']),
-      p('openai', 'cooldown', ['gpt-5.4']),
+      p('openai', 'backoff', ['gpt-5.4']),
       p('gemini', 'ok', ['gemini-2.5-flash', 'gemini-2.5-pro']),
       p('mistral', 'ok', ['mistral-small-latest']),
     ])

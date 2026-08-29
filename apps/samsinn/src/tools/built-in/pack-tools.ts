@@ -1,15 +1,12 @@
 // ============================================================================
 // Pack admin tools — install / update / uninstall / list packs from GitHub.
 //
-// A pack is a git-cloned directory under ~/.samsinn/packs/<ns>/ with optional
-// pack.json plus tools/ and skills/ subdirs. The namespace is the directory
-// basename; it prefixes all registered tools (`<ns>_<tool>`) and skills
-// (`<ns>/<skill>`) to eliminate cross-pack name collisions.
+// A Pack is a git-cloned directory under ~/.samsinn/packs/<packId>/ with a
+// required strict pack.json plus declared contribution directories. descriptor.id
+// is canonical and must match the directory; it prefixes registered tools and
+// skills to eliminate cross-Pack name collisions.
 //
-// Canonical namespace resolution (single source of truth):
-//   1. pack.json `name` (validated against VALID_NS)
-//   2. samsinn-pack-stripped basename of the source repo
-//   3. caller's optional `name` override (always wins if provided)
+// Canonical Pack id resolution has one source of truth: pack.json descriptor.id.
 //
 // install_pack source forms:
 //   - bare name `X`     → resolved against the registry (see registry.ts).
@@ -19,8 +16,8 @@
 //   - full URL          → cloned as-is (https://, ssh, file://, ...)
 //
 // Install flow: clone to a temp dir, read the manifest, resolve the canonical
-// namespace, then move the temp dir to the final path. This means the FINAL
-// directory name always matches the canonical namespace — so scanner-derived
+// packId, then move the temp dir to the final path. This means the FINAL
+// directory name always matches the canonical packId — so scanner-derived
 // basename == registered tool/skill prefix == registry name. One source of
 // truth, no prefix-stripping shims downstream.
 //
@@ -31,8 +28,9 @@
 import type { Tool, ToolRegistry } from '../../core/types/tool.ts'
 import type { SkillStore } from '../../skills/loader.ts'
 import { loadPack } from '../../packs/loader.ts'
-import { readManifest, resolveInstallNamespace, stripPackPrefix } from '../../packs/manifest.ts'
+import { readManifest } from '../../packs/manifest.ts'
 import { scanPacks } from '../../packs/scanner.ts'
+import { resolvePackLoadOrder } from '../../packs/catalog.ts'
 import { getAvailablePacks, invalidateRegistryCache } from '../../packs/registry.ts'
 import { BUNDLED_PACKS } from '../../packs/bundled.ts'
 import { formatShellError } from '../../core/redact.ts'
@@ -40,13 +38,15 @@ import { createSerialiseChain, type SerialiseChain } from '../../core/serialise-
 import { stat, mkdtemp, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { $ } from 'bun'
+import type { PackManifest } from '../../packs/types.ts'
 
-// Pack namespaces are directory names — same regex as tool/skill names.
-const VALID_NS = /^[a-zA-Z0-9_-]+$/
+// Pack ids are directory names and use the same safe token grammar.
+const VALID_PACK_ID = /^[a-zA-Z0-9_-]+$/
+const stripPackPrefix = (value: string): string => value.replace(/^samsinn-pack-/, '')
 
-// B2: per-namespace serialisation. Concurrent install/update/uninstall on
-// the SAME namespace would otherwise race on `<ns>.prev`, the rename slot,
-// and the registry teardown order. Different namespaces install in
+// B2: per-Pack serialisation. Concurrent install/update/uninstall on
+// the SAME packId would otherwise race on `<ns>.prev`, the rename slot,
+// and the registry teardown order. Different Packs install in
 // parallel — chains are independent.
 //
 // Map cleanup happens on successful uninstall (delete the entry once the
@@ -70,7 +70,7 @@ type RefreshAllFn = () => Promise<void>
 // pattern.
 export type NotifyPacksChanged = (info: {
   readonly action: 'installed' | 'updated' | 'uninstalled'
-  readonly namespace: string
+  readonly packId: string
   readonly tools: ReadonlyArray<string>
   readonly skills: ReadonlyArray<string>
 }) => void
@@ -82,25 +82,25 @@ export interface PackToolsDeps {
   readonly refreshAllAgentTools: RefreshAllFn
   readonly notifyPacksChanged?: NotifyPacksChanged
   // Optional: list rooms + scrub activePacks on uninstall. When wired,
-  // uninstall_pack atomically removes the pack's namespace from every
+  // uninstall_pack atomically removes the pack's packId from every
   // room's activePacks list before unregistering, so no room ends up
   // referencing a now-deleted pack. Without this, the scrub is skipped
   // (tests / MCP-only mode where RoomDirectory isn't in scope — no rooms to
   // scrub anyway).
-  // Async because the implementation awaits per-evicted-instance snapshot
+  // Async because the implementation awaits per-evicted-Workspace snapshot
   // writes (M1 pendingScrubs durability — see bootstrap.ts). Tests/MCP-only
   // mode can pass a sync callback wrapped in Promise.resolve(...).
-  readonly scrubActivePacks?: (packNamespace: string) =>
+  readonly scrubActivePacks?: (packId: string) =>
     Promise<{ roomId: string; activePacks: ReadonlyArray<string> }[]>
     | { roomId: string; activePacks: ReadonlyArray<string> }[]
   // Optional: auto-activate a freshly-installed pack in every existing
-  // room across every live instance. Mirrors scrubActivePacks but adds
-  // (instead of removing) the namespace. Without this wired, install_pack
+  // Room across every live Workspace. Mirrors scrubActivePacks but adds
+  // (instead of removing) the packId. Without this wired, install_pack
   // just registers the pack but doesn't surface its tools in any room
   // until the user toggles per-room — a friction point users have called
   // out. With it wired, "install pack X" means "X is usable everywhere
   // immediately." Per-room opt-out still works.
-  readonly autoActivateInAllRooms?: (packNamespace: string) =>
+  readonly autoActivateInAllRooms?: (packId: string) =>
     Promise<{ roomId: string; activePacks: ReadonlyArray<string> }[]>
     | { roomId: string; activePacks: ReadonlyArray<string> }[]
   // Optional: re-scan <pack>/geodata/*.geojson across all installed
@@ -157,7 +157,7 @@ const resolveSource = (source: string): ResolvedUrl | { error: string } => {
 // OR by the full repo basename — both forms are accepted so an agent that
 // remembers either spelling resolves the same pack.
 const resolveBareName = async (bareName: string): Promise<ResolvedUrl | { error: string }> => {
-  if (!VALID_NS.test(bareName)) {
+  if (!VALID_PACK_ID.test(bareName)) {
     return { error: `Invalid pack name "${bareName}" — use letters, digits, underscores, hyphens` }
   }
   let available
@@ -182,26 +182,24 @@ export const createInstallPackTool = (deps: PackToolsDeps): Tool => ({
   name: 'install_pack',
   description: 'Installs a pack (tools + skills) from GitHub. Source: bare name (registry), user/repo, or git URL. Tools become `<pack>_<tool>`; skills become `<pack>/<skill>`.',
   usage: 'Bring domain-specific tooling into the session. Effect is immediate. Call list_available_packs first if unsure of names.',
-  returns: 'Object with namespace, registered tool names, registered skill names, and the manifest if present.',
+  returns: 'Object with Pack id, registered tool names, registered skill names, and the validated manifest.',
   parameters: {
     type: 'object',
     properties: {
       source: { type: 'string', description: 'Bare pack name (resolved via registry), user/repo shorthand, or full git URL' },
-      name: { type: 'string', description: 'Override the canonical namespace (optional — defaults to pack.json name or stripped basename)' },
     },
     required: ['source'],
   },
   execute: async (params) => {
     const source = (params.source as string ?? '').trim()
-    const override = typeof params.name === 'string' ? (params.name as string).trim() : ''
     if (!source) return { success: false, error: 'source is required' }
 
     // `core` is a system pack bundled into the binary; samsinn-core (its
     // public read-only mirror) is intentionally NOT installable. Refuse
-    // any source that would resolve to a `core` namespace, including
+    // any source that would resolve to a `core` packId, including
     // direct attempts at the mirror URL. See README.md and
     // .github/workflows/sync-core-mirror.yml.
-    if (override === 'core' || /(^|[/:])samsinn-core(\.git)?\/?$/i.test(source)) {
+    if (/(^|[/:])samsinn-core(\.git)?\/?$/i.test(source)) {
       return {
         success: false,
         error: '"core" is bundled into samsinn at build time and cannot be installed as a pack. The samsinn-core mirror exists for audit only.',
@@ -247,37 +245,31 @@ export const createInstallPackTool = (deps: PackToolsDeps): Tool => ({
       return { success: false, error: `git clone failed: ${formatShellError(clone, 'git clone')}` }
     }
 
-    // Resolve the canonical namespace from the manifest. Override always
-    // wins; otherwise pack.json name; otherwise stripped basename.
-    const manifest = await readManifest(tempDir)
-    let namespace: string
-    if (override) {
-      namespace = override
-      if (!VALID_NS.test(namespace)) {
-        await cleanup()
-        return { success: false, error: `Invalid namespace override "${namespace}"` }
-      }
-    } else {
-      const derived = resolveInstallNamespace(manifest, resolved.sourceLabel)
-      if (!derived) {
-        await cleanup()
-        return { success: false, error: `Could not derive a valid namespace from manifest or source basename "${resolved.sourceLabel}". Pass an explicit \`name\`.` }
-      }
-      namespace = derived
+    let manifest: PackManifest
+    try {
+      manifest = await readManifest(tempDir)
+    } catch (error) {
+      await cleanup()
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+    const packId = manifest.descriptor.id
+    if (packId === 'core') {
+      await cleanup()
+      return { success: false, error: '"core" is bundled into Samsinn and cannot be installed as a Pack' }
     }
 
-    // B2: serialise the post-namespace-resolution work for this namespace.
+    // B2: serialise the post-packId-resolution work for this packId.
     // Two concurrent installs of the same pack can't interleave the
     // stat/rename/loadPack sequence; the second waits for the first to
     // complete and then either sees "already installed" or proceeds cleanly
     // if the first rolled back.
-    const finalPath = join(deps.packsDir, namespace)
-    return chainFor(namespace).run(async () => {
+    const finalPath = join(deps.packsDir, packId)
+    return chainFor(packId).run(async () => {
       try {
         const s = await stat(finalPath)
         if (s.isDirectory()) {
           await cleanup()
-          return { success: false, error: `Pack "${namespace}" is already installed — use update_pack to refresh or uninstall_pack first` }
+          return { success: false, error: `Pack "${packId}" is already installed — use update_pack to refresh or uninstall_pack first` }
         }
       } catch { /* not present — proceed */ }
 
@@ -289,8 +281,15 @@ export const createInstallPackTool = (deps: PackToolsDeps): Tool => ({
         return { success: false, error: `Could not move installed pack into place: ${reason}` }
       }
 
+      try {
+        resolvePackLoadOrder(await scanPacks(deps.packsDir))
+      } catch (error) {
+        try { await rm(finalPath, { recursive: true, force: true }) } catch { /* cleanup failure is surfaced by the original error */ }
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
+      }
+
       const result = await loadPack(
-        { namespace, dirPath: finalPath, manifest },
+        { id: packId, dirPath: finalPath, manifest },
         deps.toolRegistry,
         deps.skillStore,
       )
@@ -302,12 +301,12 @@ export const createInstallPackTool = (deps: PackToolsDeps): Tool => ({
     // that is exactly the inconsistent-state bug that left agents claiming
     // VATSIM tools they didn't have.
     if (result.errors.length > 0) {
-      deps.toolRegistry.unregisterByPack(namespace)
-      deps.skillStore.removeByPack(namespace)
+      deps.toolRegistry.unregisterByPack(packId)
+      deps.skillStore.removeByPack(packId)
       try { await rm(finalPath, { recursive: true, force: true }) } catch { /* best-effort */ }
       return {
         success: false,
-        error: `Pack "${namespace}" failed to install cleanly — rolled back. ${result.errors.length} error(s):\n  • ${result.errors.join('\n  • ')}`,
+        error: `Pack "${packId}" failed to install cleanly — rolled back. ${result.errors.length} error(s):\n  • ${result.errors.join('\n  • ')}`,
       }
     }
 
@@ -318,23 +317,23 @@ export const createInstallPackTool = (deps: PackToolsDeps): Tool => ({
         catch (err) { console.error('[packs] refreshPackGeodata failed:', err) }
       }
     } catch (err) {
-      console.error(`[packs] refreshAllAgentTools failed after install "${namespace}":`, err)
+      console.error(`[packs] refreshAllAgentTools failed after install "${packId}":`, err)
     }
-    // Auto-activate in every existing room across all live instances.
+    // Auto-activate in every existing Room across all live Workspaces.
     // Without this, the pack is registered but its tools are invisible
     // until the user toggles per-room — friction users have called out.
     // Per-room opt-out continues to work normally (a room that toggles
     // OFF after auto-activate keeps the user's choice).
     try {
-      const activated = (await deps.autoActivateInAllRooms?.(namespace)) ?? []
+      const activated = (await deps.autoActivateInAllRooms?.(packId)) ?? []
       if (activated.length > 0) {
-        console.log(`[packs] auto-activated "${namespace}" in ${activated.length} room${activated.length === 1 ? '' : 's'}`)
+        console.log(`[packs] auto-activated "${packId}" in ${activated.length} room${activated.length === 1 ? '' : 's'}`)
       }
     } catch (err) {
-      console.error(`[packs] autoActivateInAllRooms failed after install "${namespace}":`, err)
+      console.error(`[packs] autoActivateInAllRooms failed after install "${packId}":`, err)
     }
     deps.notifyPacksChanged?.({
-      action: 'installed', namespace,
+      action: 'installed', packId: packId,
       tools: result.tools, skills: result.skills,
     })
 
@@ -345,7 +344,7 @@ export const createInstallPackTool = (deps: PackToolsDeps): Tool => ({
       return {
         success: true,
         data: {
-          namespace,
+          id: packId,
           url: resolved.url,
           tools: result.tools,
           skills: result.skills,
@@ -359,28 +358,36 @@ export const createInstallPackTool = (deps: PackToolsDeps): Tool => ({
 export const createUpdatePackTool = (deps: PackToolsDeps): Tool => ({
   name: 'update_pack',
   description: 'Pulls the latest commits for an installed pack and re-registers its tools/skills. Preserves changes git can fast-forward over.',
-  returns: 'Object with namespace and refreshed tool/skill counts.',
+  returns: 'Object with Pack id and refreshed tool/skill counts.',
   parameters: {
     type: 'object',
     properties: {
-      name: { type: 'string', description: 'Pack namespace (directory name under ~/.samsinn/packs)' },
+      id: { type: 'string', description: 'Pack id' },
     },
-    required: ['name'],
+    required: ['id'],
   },
   execute: async (params) => {
-    const namespace = (params.name as string)?.trim() ?? ''
-    if (!VALID_NS.test(namespace)) return { success: false, error: `Invalid pack name "${namespace}"` }
+    const packId = (params.id as string)?.trim() ?? ''
+    if (!VALID_PACK_ID.test(packId)) return { success: false, error: `Invalid pack name "${packId}"` }
 
-    // B2: serialise per namespace so concurrent update_pack calls on the
+    // B2: serialise per packId so concurrent update_pack calls on the
     // same pack don't race on `.prev` cp + git pull.
-    return chainFor(namespace).run(async () => {
-    const dirPath = join(deps.packsDir, namespace)
+    return chainFor(packId).run(async () => {
+    const dirPath = join(deps.packsDir, packId)
     const prevPath = `${dirPath}.prev`
     try {
       const s = await stat(dirPath)
-      if (!s.isDirectory()) return { success: false, error: `Pack "${namespace}" is not installed` }
+      if (!s.isDirectory()) return { success: false, error: `Pack "${packId}" is not installed` }
     } catch {
-      return { success: false, error: `Pack "${namespace}" is not installed` }
+      return { success: false, error: `Pack "${packId}" is not installed` }
+    }
+
+    let catalogBeforeUpdate
+    try {
+      catalogBeforeUpdate = await scanPacks(deps.packsDir)
+      resolvePackLoadOrder(catalogBeforeUpdate)
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
     }
 
     // Real rollback contract: copy current pack to <ns>.prev BEFORE any
@@ -397,7 +404,7 @@ export const createUpdatePackTool = (deps: PackToolsDeps): Tool => ({
       if (s) {
         return {
           success: false,
-          error: `Pack "${namespace}" has an orphan .prev sibling at ${prevPath} from a prior failed update. Inspect + remove it before retrying update_pack.`,
+          error: `Pack "${packId}" has an orphan .prev sibling at ${prevPath} from a prior failed update. Inspect + remove it before retrying update_pack.`,
         }
       }
     } catch { /* not present — proceed */ }
@@ -416,8 +423,8 @@ export const createUpdatePackTool = (deps: PackToolsDeps): Tool => ({
     // the pack as empty. Acceptable — alternative is a per-pack mutex
     // primitive that the rest of the registry doesn't have today.
     const restoreFromPrev = async (): Promise<string | null> => {
-      deps.toolRegistry.unregisterByPack(namespace)
-      deps.skillStore.removeByPack(namespace)
+      deps.toolRegistry.unregisterByPack(packId)
+      deps.skillStore.removeByPack(packId)
       try { await rm(dirPath, { recursive: true, force: true }) } catch { /* might be partial */ }
       try {
         await rename(prevPath, dirPath)
@@ -426,7 +433,7 @@ export const createUpdatePackTool = (deps: PackToolsDeps): Tool => ({
       }
       const restoredManifest = await readManifest(dirPath)
       const restored = await loadPack(
-        { namespace, dirPath, manifest: restoredManifest },
+        { id: packId, dirPath, manifest: restoredManifest },
         deps.toolRegistry,
         deps.skillStore,
       )
@@ -443,13 +450,31 @@ export const createUpdatePackTool = (deps: PackToolsDeps): Tool => ({
       return { success: false, error: `git pull failed: ${formatShellError(pull, 'git pull')}` }
     }
 
-    // Unregister the pack's current artifacts, then re-load from disk.
-    deps.toolRegistry.unregisterByPack(namespace)
-    deps.skillStore.removeByPack(namespace)
+    let manifest: PackManifest
+    try {
+      manifest = await readManifest(dirPath)
+      if (manifest.descriptor.id !== packId) {
+        throw new Error(`updated descriptor.id ${manifest.descriptor.id} does not match installed Pack id ${packId}`)
+      }
+      resolvePackLoadOrder(catalogBeforeUpdate.map(pack =>
+        pack.id === packId ? { id: packId, dirPath, manifest } : pack,
+      ))
+    } catch (error) {
+      const restoreErr = await restoreFromPrev()
+      const reason = error instanceof Error ? error.message : String(error)
+      return {
+        success: false,
+        error: `Pack "${packId}" has an invalid update and was rolled back: ${reason}${restoreErr ? ` (rollback also failed: ${restoreErr})` : ''}`,
+      }
+    }
 
-    const manifest = await readManifest(dirPath)
+    // The candidate manifest and dependency graph are valid. Replace the
+    // runtime contributions only after those read-only checks complete.
+    deps.toolRegistry.unregisterByPack(packId)
+    deps.skillStore.removeByPack(packId)
+
     const result = await loadPack(
-      { namespace, dirPath, manifest },
+      { id: packId, dirPath, manifest },
       deps.toolRegistry,
       deps.skillStore,
     )
@@ -462,13 +487,13 @@ export const createUpdatePackTool = (deps: PackToolsDeps): Tool => ({
       const restoreNote = restoreErr ? ` (rollback also failed: ${restoreErr})` : ' — rolled back to previous version.'
       return {
         success: false,
-        error: `Pack "${namespace}" failed to update cleanly${restoreNote} ${result.errors.length} error(s):\n  • ${result.errors.join('\n  • ')}`,
+        error: `Pack "${packId}" failed to update cleanly${restoreNote} ${result.errors.length} error(s):\n  • ${result.errors.join('\n  • ')}`,
       }
     }
 
     // Success: drop the .prev snapshot.
     try { await rm(prevPath, { recursive: true, force: true }) }
-    catch (err) { console.warn(`[packs] failed to clean .prev snapshot for "${namespace}":`, err) }
+    catch (err) { console.warn(`[packs] failed to clean .prev snapshot for "${packId}":`, err) }
 
     try {
       await deps.refreshAllAgentTools()
@@ -477,17 +502,17 @@ export const createUpdatePackTool = (deps: PackToolsDeps): Tool => ({
         catch (err) { console.error('[packs] refreshPackGeodata failed:', err) }
       }
     } catch (err) {
-      console.error(`[packs] refreshAllAgentTools failed after update "${namespace}":`, err)
+      console.error(`[packs] refreshAllAgentTools failed after update "${packId}":`, err)
     }
     deps.notifyPacksChanged?.({
-      action: 'updated', namespace,
+      action: 'updated', packId: packId,
       tools: result.tools, skills: result.skills,
     })
 
     return {
       success: true,
       data: {
-        namespace,
+        id: packId,
         tools: result.tools,
         skills: result.skills,
         manifest,
@@ -501,27 +526,43 @@ export const createUpdatePackTool = (deps: PackToolsDeps): Tool => ({
 export const createUninstallPackTool = (deps: PackToolsDeps): Tool => ({
   name: 'uninstall_pack',
   description: 'Unregisters a pack\'s tools and skills, then deletes its directory under ~/.samsinn/packs.',
-  returns: 'Object with namespace and the tool/skill keys that were unregistered.',
+  returns: 'Object with Pack id and the tool/skill keys that were unregistered.',
   parameters: {
     type: 'object',
     properties: {
-      name: { type: 'string', description: 'Pack namespace (directory name under ~/.samsinn/packs)' },
+      id: { type: 'string', description: 'Pack id' },
     },
-    required: ['name'],
+    required: ['id'],
   },
   execute: async (params) => {
-    const namespace = (params.name as string)?.trim() ?? ''
-    if (!VALID_NS.test(namespace)) return { success: false, error: `Invalid pack name "${namespace}"` }
+    const packId = (params.id as string)?.trim() ?? ''
+    if (!VALID_PACK_ID.test(packId)) return { success: false, error: `Invalid pack name "${packId}"` }
 
-    // B2: serialise per namespace so concurrent uninstall + install / update
-    // on the same namespace can't interleave.
-    return chainFor(namespace).run(async () => {
-    const dirPath = join(deps.packsDir, namespace)
+    // B2: serialise per packId so concurrent uninstall + install / update
+    // on the same packId can't interleave.
+    return chainFor(packId).run(async () => {
+    const dirPath = join(deps.packsDir, packId)
     try {
       const s = await stat(dirPath)
-      if (!s.isDirectory()) return { success: false, error: `Pack "${namespace}" is not installed` }
+      if (!s.isDirectory()) return { success: false, error: `Pack "${packId}" is not installed` }
     } catch {
-      return { success: false, error: `Pack "${namespace}" is not installed` }
+      return { success: false, error: `Pack "${packId}" is not installed` }
+    }
+
+    try {
+      const packs = await scanPacks(deps.packsDir)
+      const dependents = packs.filter(pack =>
+        pack.id !== packId
+        && pack.manifest.descriptor.dependencies.some(dependency => dependency.id === packId),
+      )
+      if (dependents.length > 0) {
+        return {
+          success: false,
+          error: `Pack "${packId}" is required by: ${dependents.map(pack => pack.id).sort().join(', ')}`,
+        }
+      }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
     }
 
     // Step 1: scrub activePacks across every room before tearing down the
@@ -530,13 +571,13 @@ export const createUninstallPackTool = (deps: PackToolsDeps): Tool => ({
     // would see the pack's resolved-to-empty surface and behave oddly.
     // Scrubbing first means rooms transition cleanly from "active with
     // tools" to "no longer active" with no intermediate broken state.
-    const scrubbed = (await deps.scrubActivePacks?.(namespace)) ?? []
+    const scrubbed = (await deps.scrubActivePacks?.(packId)) ?? []
 
     // Step 2: registry teardown. unregisterByPack returns the keys that
     // were removed so we can report and audit. Both are synchronous so
     // there's no half-state window between them.
-    const removedTools = deps.toolRegistry.unregisterByPack(namespace)
-    const removedSkills = deps.skillStore.removeByPack(namespace)
+    const removedTools = deps.toolRegistry.unregisterByPack(packId)
+    const removedSkills = deps.skillStore.removeByPack(packId)
 
     // Step 3: refresh agent surfaces so live evals see the new state on
     // their next call. refreshTools is idempotent; an error here means
@@ -550,7 +591,7 @@ export const createUninstallPackTool = (deps: PackToolsDeps): Tool => ({
         catch (err) { console.error('[packs] refreshPackGeodata failed:', err) }
       }
     } catch (err) {
-      console.error(`[packs] refreshAllAgentTools failed after uninstall "${namespace}":`, err)
+      console.error(`[packs] refreshAllAgentTools failed after uninstall "${packId}":`, err)
     }
 
     // Step 4: notify clients of activation scrubs first (so per-room UIs
@@ -558,7 +599,7 @@ export const createUninstallPackTool = (deps: PackToolsDeps): Tool => ({
     // The order shows users "this room lost the pack" before "the pack
     // is gone" rather than the reverse confusing sequence.
     deps.notifyPacksChanged?.({
-      action: 'uninstalled', namespace,
+      action: 'uninstalled', packId: packId,
       tools: removedTools, skills: removedSkills,
     })
 
@@ -578,14 +619,14 @@ export const createUninstallPackTool = (deps: PackToolsDeps): Tool => ({
     // this pack with `installed: false` instead of waiting up to 5 min.
     invalidateRegistryCache()
 
-    // B2: cleanup the per-namespace chain entry now that the pack is gone.
+    // B2: cleanup the per-Pack chain entry now that the pack is gone.
     // Without this, every install/uninstall cycle leaks a chain.
-    packChains.delete(namespace)
+    packChains.delete(packId)
 
     return {
       success: true,
       data: {
-        namespace,
+        id: packId,
         removedTools,
         removedSkills,
         // Diagnostic: which rooms were scrubbed and what their new
@@ -609,7 +650,7 @@ export const createListPacksTool = (deps: PackToolsDeps): Tool => ({
     const skills = deps.skillStore.list()
 
     // Bundled packs (core, local, demos, pwr-ops) — table-driven from
-    // src/packs/bundled.ts. Tools are matched to a namespace by
+    // src/packs/bundled.ts. Tools are matched to a packId by
     // packNameFor-equivalent rules:
     //   core   ← kind:'built-in'
     //   local  ← kind:'external', or skill-bundled with no pack
@@ -631,29 +672,28 @@ export const createListPacksTool = (deps: PackToolsDeps): Tool => ({
       return s.pack === ns
     }
 
-    const bundledEntries = BUNDLED_PACKS.map(b => ({
-      namespace: b.namespace,
-      dirPath: '',                                // not on disk
-      manifest: { name: b.displayName, description: b.description },
-      tools: entries.filter(matchTool(b.namespace)).map(e => e.tool.name),
-      skills: skills.filter(matchSkill(b.namespace)).map(s => s.name),
-      system: b.system,
-      defaultActive: b.defaultActive,
+    const bundledEntries = BUNDLED_PACKS.map(pack => ({
+      id: pack.descriptor.id,
+      descriptor: pack.descriptor,
+      wikis: [],
+      uiExtensions: [],
+      tools: entries.filter(matchTool(pack.descriptor.id)).map(e => e.tool.name),
+      skills: skills.filter(matchSkill(pack.descriptor.id)).map(s => s.name),
+      system: pack.system,
+      defaultActive: pack.defaultActive,
     }))
 
     const installedEntries = installedPacks.map(p => ({
-      namespace: p.namespace,
-      dirPath: p.dirPath,
-      manifest: p.manifest,
+      id: p.id,
+      descriptor: p.manifest.descriptor,
+      wikis: p.manifest.wikis,
+      uiExtensions: p.manifest.uiExtensions,
       tools: entries
-        .filter(e => e.source.kind === 'pack-bundled' && e.source.pack === p.namespace)
+        .filter(e => e.source.kind === 'pack-bundled' && e.source.pack === p.id)
         .map(e => e.tool.name),
       skills: skills
-        .filter(s => s.pack === p.namespace)
+        .filter(s => s.pack === p.id)
         .map(s => s.name),
-      // Surfaced for the browser-side extension reconciler. Empty/absent for
-      // packs that don't declare any. Bundled packs don't declare extensions.
-      ui_extensions: p.manifest.ui_extensions ?? [],
       system: false,
       defaultActive: false,                       // user opted in by installing
     }))
@@ -671,7 +711,7 @@ export const createListAvailablePacksTool = (deps: PackToolsDeps): Tool => ({
   execute: async () => {
     try {
       const available = await getAvailablePacks()
-      const installed = new Set((await scanPacks(deps.packsDir)).map(p => p.namespace))
+      const installed = new Set((await scanPacks(deps.packsDir)).map(p => p.id))
       const data = available.map(p => ({
         name: p.name,
         repoName: p.repoName,

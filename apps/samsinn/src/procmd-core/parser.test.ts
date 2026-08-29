@@ -10,7 +10,7 @@ describe('procmd-core — version constants', () => {
   test('PARSER_PROCMD_VERSION is the current spec version', () => {
     expect(PARSER_PROCMD_VERSION).toBe('0.7')
   })
-  test('ACCEPTED_PROCMD_VERSIONS is exactly 0.6 (no back-compat)', () => {
+  test('accepts only the current v0.7 format', () => {
     expect([...ACCEPTED_PROCMD_VERSIONS]).toEqual(['0.7'])
   })
 })
@@ -20,7 +20,7 @@ describe('procmd-core — E-0 fixture (v0.7)', () => {
   if ('error' in result) throw new Error(`E-0 failed: ${result.error}`)
   const r = result
 
-  test('frontmatter version handshake clean (no warning for v0.7 content)', () => {
+  test('frontmatter format identity is clean for v0.7 content', () => {
     expect(r.warnings.filter(w => w.includes('procedure-md'))).toEqual([])
   })
 
@@ -34,23 +34,21 @@ describe('procmd-core — E-0 fixture (v0.7)', () => {
   })
 })
 
-describe('procmd-core — version handshake rejects unknown versions with a warning, still parses', () => {
-  test('v0.5 (legacy) triggers warning, no error', () => {
+describe('procmd-core — strict format identity', () => {
+  test('rejects an older format', () => {
     const src = `---
 procedure-md: 0.5
-procedure-id: LEGACY-1
-title: Legacy
+procedure-id: OLD-1
+title: Old
 ---
 ## Step 1 [id: x]
 Check: ok
 `
     const r = parseProcedure(src)
-    if ('error' in r) throw new Error(r.error)
-    expect(r.warnings.some(w => w.includes('0.5'))).toBe(true)
-    expect(r.steps.length).toBe(1)
+    expect(r).toEqual({ error: 'unsupported procedure-md 0.5; expected 0.7' })
   })
 
-  test('v99.9 (future) triggers warning, no error', () => {
+  test('rejects a newer format', () => {
     const src = `---
 procedure-md: 99.9
 procedure-id: FUTURE-1
@@ -60,11 +58,10 @@ title: Future
 Check: ok
 `
     const r = parseProcedure(src)
-    if ('error' in r) throw new Error(r.error)
-    expect(r.warnings.some(w => w.includes('99.9'))).toBe(true)
+    expect(r).toEqual({ error: 'unsupported procedure-md 99.9; expected 0.7' })
   })
 
-  test('omitted procedure-md is fine', () => {
+  test('requires procedure-md', () => {
     const src = `---
 procedure-id: NOVER-1
 title: No version
@@ -72,7 +69,7 @@ title: No version
 ## Step 1 [id: x]
 Check: ok
 `
-    expect('error' in parseProcedure(src)).toBe(false)
+    expect(parseProcedure(src)).toEqual({ error: '`procedure-md` is required' })
   })
 })
 
@@ -125,6 +122,7 @@ Action: close MSIV on identified faulted SG
 
   test('Decision step counts as a decision (isDecision: true) even with no branches', () => {
     const synthetic = `---
+procedure-md: 0.7
 procedure-id: D-2
 title: D2
 ---
@@ -148,6 +146,7 @@ Decision: choose between alternatives
 
   test('Path collection ends before normal body keywords resume', () => {
     const src2 = `---
+procedure-md: 0.7
 procedure-id: D-3
 title: D3
 ---

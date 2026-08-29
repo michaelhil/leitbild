@@ -1,8 +1,24 @@
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { scanPacks, __resetScannerWarnings } from './scanner.ts'
+import { createSamsinnPackDescriptor } from './manifest.ts'
+import { __resetScannerWarnings, scanPacks } from './scanner.ts'
+
+const writePack = async (root: string, id: string): Promise<void> => {
+  const dir = join(root, id)
+  await mkdir(dir)
+  await writeFile(join(dir, 'pack.json'), JSON.stringify({
+    descriptor: createSamsinnPackDescriptor({
+      id,
+      version: '1.0.0',
+      name: id,
+      contributions: [{ kind: 'tool' }],
+    }),
+    wikis: [],
+    uiExtensions: [],
+  }))
+}
 
 describe('scanPacks', () => {
   let root: string
@@ -15,57 +31,50 @@ describe('scanPacks', () => {
     await rm(root, { recursive: true, force: true })
   })
 
-  it('returns [] when root is missing', async () => {
+  it('returns [] when root is missing or empty', async () => {
     expect(await scanPacks(join(root, 'nope'))).toEqual([])
-  })
-
-  it('returns [] when root is empty', async () => {
     expect(await scanPacks(root)).toEqual([])
   })
 
-  it('finds packs with and without manifests', async () => {
-    await mkdir(join(root, 'atc'))
-    await writeFile(join(root, 'atc', 'pack.json'), JSON.stringify({
-      name: 'ATC', description: 'air traffic',
-    }))
-    await mkdir(join(root, 'driving'))
+  it('finds only Packs with strict manifests and canonical directory ids', async () => {
+    await writePack(root, 'atc')
+    await writePack(root, 'driving')
 
     const packs = await scanPacks(root)
-    expect(packs.length).toBe(2)
-    const byNs = new Map(packs.map(p => [p.namespace, p]))
-    expect(byNs.get('atc')?.manifest).toEqual({ name: 'ATC', description: 'air traffic' })
-    expect(byNs.get('driving')?.manifest).toEqual({})
+    expect(packs.map(pack => pack.id)).toEqual(['atc', 'driving'])
+    expect(packs[0]?.manifest.descriptor.name).toBe('atc')
   })
 
-  it('skips hidden and underscore-prefixed dirs', async () => {
+  it('skips hidden directories and files at the root', async () => {
     await mkdir(join(root, '.git'))
     await mkdir(join(root, '_scratch'))
-    await mkdir(join(root, 'real'))
-
-    const packs = await scanPacks(root)
-    expect(packs.map(p => p.namespace)).toEqual(['real'])
-  })
-
-  it('skips files at root', async () => {
     await writeFile(join(root, 'not-a-pack.txt'), 'x')
-    await mkdir(join(root, 'real'))
+    await writePack(root, 'real')
 
-    const packs = await scanPacks(root)
-    expect(packs.map(p => p.namespace)).toEqual(['real'])
+    expect((await scanPacks(root)).map(pack => pack.id)).toEqual(['real'])
   })
 
-  it('skips directories with invalid namespace characters', async () => {
-    await mkdir(join(root, 'has.dot'))
-    await mkdir(join(root, 'ok-name'))
+  it('fails visibly for a missing manifest or a directory/id mismatch', async () => {
+    await mkdir(join(root, 'missing'))
+    await expect(scanPacks(root)).rejects.toThrow('required Pack manifest')
+    await rm(join(root, 'missing'), { recursive: true, force: true })
 
-    const packs = await scanPacks(root)
-    expect(packs.map(p => p.namespace)).toEqual(['ok-name'])
+    const wrongDir = join(root, 'wrong')
+    await mkdir(wrongDir)
+    await writeFile(join(wrongDir, 'pack.json'), JSON.stringify({
+      descriptor: createSamsinnPackDescriptor({
+        id: 'actual', version: '1.0.0', name: 'Actual', contributions: [{ kind: 'tool' }],
+      }),
+      wikis: [],
+      uiExtensions: [],
+    }))
+    await expect(scanPacks(root)).rejects.toThrow('must match Pack directory name')
   })
 
-  it('C1: orphan .prev warning fires once per path across many scans', async () => {
+  it('orphan .prev warning fires once per path across many scans', async () => {
     __resetScannerWarnings()
     await mkdir(join(root, 'aviation.prev'))
-    await mkdir(join(root, 'aviation'))
+    await writePack(root, 'aviation')
 
     let warnings = 0
     const origWarn = console.warn

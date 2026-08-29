@@ -34,10 +34,10 @@ export const effectiveActivePacks = (room: RoomActivation): ReadonlyArray<string
 export const effectiveActivePackSet = (room: RoomActivation): ReadonlySet<string> =>
   new Set(effectiveActivePacks(room))
 
-// True if a pack identified by `packNamespace` is active in the room.
+// True if a pack identified by `packId` is active in the room.
 // Tools without a pack (kind: 'built-in', 'external') are mapped to
 // 'core' / 'local' by packNameFor and gated through this same path.
 export const isPackActiveInRoom = (
   room: RoomActivation,
-  packNamespace: string,
-): boolean => effectiveActivePackSet(room).has(packNamespace)
+  packId: string,
+): boolean => effectiveActivePackSet(room).has(packId)

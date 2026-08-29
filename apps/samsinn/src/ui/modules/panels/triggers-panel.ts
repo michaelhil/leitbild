@@ -1,3 +1,4 @@
+import { apiFetch } from "../api-client.ts"
 // ============================================================================
 // Triggers panel — three modals stacked from the room header's clock icon.
 //
@@ -5,7 +6,7 @@
 // Modal B: per-agent trigger list scoped to the current room → opens Modal C.
 // Modal C: form for create or edit (one shape, mode toggled by `existing?`).
 //
-// Server APIs in src/api/routes/triggers.ts. Re-renders on triggers_changed
+// Server APIs in src/routes/triggers.ts. Re-renders on triggers_changed
 // WS event AND directly after a successful save (belt + suspenders for
 // disconnected WS).
 // ============================================================================
@@ -54,7 +55,7 @@ interface RoomCtx { id: string; name: string }
 
 const fetchTriggers = async (agentName: string): Promise<Trigger[]> => {
   try {
-    const res = await fetch(`/api/agents/${encodeURIComponent(agentName)}/triggers`)
+    const res = await apiFetch(`/agents/${encodeURIComponent(agentName)}/triggers`)
     if (!res.ok) return []
     const data = await res.json() as { triggers?: Trigger[] }
     return data.triggers ?? []
@@ -63,7 +64,7 @@ const fetchTriggers = async (agentName: string): Promise<Trigger[]> => {
 
 const fetchRoomAgents = async (roomName: string): Promise<AgentRow[]> => {
   try {
-    const res = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/members`)
+    const res = await apiFetch(`/rooms/${encodeURIComponent(roomName)}/members`)
     if (!res.ok) return []
     const members = await res.json() as ReadonlyArray<{ id: string; name: string; kind?: 'ai' | 'human' }>
     // Each member needs its trigger count for this room — one fetch each.
@@ -163,7 +164,7 @@ export const openTriggerForm = async (
     targetSelect.innerHTML = ''
     if (m === 'start-script') {
       if (!scriptsCache) {
-        const r = await fetch('/api/scripts').catch(() => null)
+        const r = await apiFetch('/scripts').catch(() => null)
         if (r?.ok) {
           const data = await r.json() as { scripts: Array<{ name: string; title: string }> }
           scriptsCache = data.scripts
@@ -276,10 +277,10 @@ export const openTriggerForm = async (
       setButtonPending(saveBtn, true)
       try {
         const url = isEdit
-          ? `/api/agents/${encodeURIComponent(agentName)}/triggers/${encodeURIComponent(existing!.id)}`
-          : `/api/agents/${encodeURIComponent(agentName)}/triggers`
+          ? `/agents/${encodeURIComponent(agentName)}/triggers/${encodeURIComponent(existing!.id)}`
+          : `/agents/${encodeURIComponent(agentName)}/triggers`
         const method = isEdit ? 'PUT' : 'POST'
-        const res = await fetch(url, {
+        const res = await apiFetch(url, {
           method,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(merged),
@@ -395,7 +396,7 @@ export const openAgentTriggers = async (
           body: `Delete trigger "${t.name}"?`,
           confirmLabel: 'Delete',
         }))) return
-        const res = await fetch(`/api/agents/${encodeURIComponent(agentName)}/triggers/${encodeURIComponent(t.id)}`, { method: 'DELETE' })
+        const res = await apiFetch(`/agents/${encodeURIComponent(agentName)}/triggers/${encodeURIComponent(t.id)}`, { method: 'DELETE' })
         if (res.ok) {
           showToast(document.body, 'Trigger deleted', { type: 'success', position: 'fixed' })
           await render()

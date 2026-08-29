@@ -1,3 +1,4 @@
+import { apiFetch } from "../api-client.ts"
 // ============================================================================
 // Demo modal — a new launch creates and selects a dedicated room, then shows
 // the blurb + clickable prompt rows. Click a row → post the prompt as the
@@ -30,14 +31,14 @@ const createDedicatedDemoRoom = async (demo: Demo): Promise<DedicatedDemoRoom | 
   let createdRoomName: string | undefined
 
   try {
-    const agentsRes = await fetch('/api/agents', { credentials: 'same-origin' })
+    const agentsRes = await apiFetch('/agents', { credentials: 'same-origin' })
     if (!agentsRes.ok) throw new Error(`could not list agents (${agentsRes.status})`)
     const agentList = await agentsRes.json() as ReadonlyArray<{ id: string; name: string; kind: 'ai' | 'human' }>
     const human = agentList.find(a => a.id === preferredHumanId && a.kind === 'human')
       ?? agentList.find(a => a.kind === 'human' && a.name === 'You')
       ?? agentList.find(a => a.kind === 'human')
 
-    const create = await fetch('/api/rooms', {
+    const create = await apiFetch('/rooms', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
@@ -56,7 +57,7 @@ const createDedicatedDemoRoom = async (demo: Demo): Promise<DedicatedDemoRoom | 
 
     let demoHuman = human
     if (demoHuman) {
-      const add = await fetch(`/api/rooms/${encodeURIComponent(name)}/members`, {
+      const add = await apiFetch(`/rooms/${encodeURIComponent(name)}/members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
@@ -68,7 +69,7 @@ const createDedicatedDemoRoom = async (demo: Demo): Promise<DedicatedDemoRoom | 
       let humanName = 'Demo User'
       let suffix = 2
       while (existingNames.has(humanName)) humanName = `Demo User ${suffix++}`
-      const addHuman = await fetch('/api/agents/human', {
+      const addHuman = await apiFetch('/agents/human', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
@@ -95,7 +96,7 @@ const createDedicatedDemoRoom = async (demo: Demo): Promise<DedicatedDemoRoom | 
   } catch (err) {
     if (createdRoomName) {
       try {
-        await fetch(`/api/rooms/${encodeURIComponent(createdRoomName)}`, {
+        await apiFetch(`/rooms/${encodeURIComponent(createdRoomName)}`, {
           method: 'DELETE',
           credentials: 'same-origin',
         })
@@ -190,7 +191,7 @@ const ensureRoomPacks = async (roomId: string, packs: ReadonlyArray<string>): Pr
   const roomName = $rooms.get()[roomId]?.name
   if (!roomName) return false
   try {
-    const res = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/packs`)
+    const res = await apiFetch(`/rooms/${encodeURIComponent(roomName)}/packs`)
     if (!res.ok) return false
     const data = await res.json() as { activePacks?: ReadonlyArray<string> }
     const current = new Set(data.activePacks ?? [])
@@ -199,7 +200,7 @@ const ensureRoomPacks = async (roomId: string, packs: ReadonlyArray<string>): Pr
       if (!current.has(p)) { current.add(p); changed = true }
     }
     if (!changed) return true
-    const put = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/packs`, {
+    const put = await apiFetch(`/rooms/${encodeURIComponent(roomName)}/packs`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ activePacks: [...current] }),
@@ -211,8 +212,7 @@ const ensureRoomPacks = async (roomId: string, packs: ReadonlyArray<string>): Pr
 }
 
 interface LeitbildSelectResponse {
-  readonly id?: string
-  readonly workspaceId?: string
+  readonly simulationRunId?: string
   readonly created?: boolean
   readonly reused?: boolean
   readonly scenarioId?: string
@@ -221,7 +221,7 @@ interface LeitbildSelectResponse {
 
 interface LeitbildSelectOk {
   readonly ok: true
-  readonly workspaceId: string
+  readonly simulationRunId: string
   readonly created: boolean
   readonly systemIds: ReadonlyArray<string>
 }
@@ -243,7 +243,9 @@ interface LeitbildSetupFail {
 
 interface DemoModelProvider {
   readonly name: string
-  readonly status: 'ok' | 'no_key' | 'cooldown' | 'down'
+  readonly availability: {
+    readonly sub: 'ok' | 'backoff' | 'unhealthy' | 'no_key' | 'disabled' | 'down'
+  }
   readonly models: ReadonlyArray<{ readonly id: string }>
 }
 
@@ -263,7 +265,7 @@ const parseErrorResponse = async (res: Response): Promise<string> => {
 
 const fetchDemoModelCatalog = async (): Promise<DemoModelCatalog | undefined> => {
   try {
-    const res = await fetch('/api/models', { credentials: 'same-origin' })
+    const res = await apiFetch('/models', { credentials: 'same-origin' })
     if (!res.ok) {
       console.warn(`[demos] Could not load model catalog for demo setup: HTTP ${res.status}`)
       return undefined
@@ -273,15 +275,17 @@ const fetchDemoModelCatalog = async (): Promise<DemoModelCatalog | undefined> =>
     const providers: DemoModelProvider[] = []
     for (const p of rawProviders) {
       if (!p || typeof p !== 'object') continue
-      const r = p as { name?: unknown; status?: unknown; models?: unknown }
+      const r = p as { name?: unknown; availability?: unknown; models?: unknown }
       if (typeof r.name !== 'string') continue
-      if (r.status !== 'ok' && r.status !== 'no_key' && r.status !== 'cooldown' && r.status !== 'down') continue
+      if (!r.availability || typeof r.availability !== 'object') continue
+      const sub = (r.availability as { sub?: unknown }).sub
+      if (sub !== 'ok' && sub !== 'backoff' && sub !== 'unhealthy' && sub !== 'no_key' && sub !== 'disabled' && sub !== 'down') continue
       const models = Array.isArray(r.models)
         ? r.models
           .map(m => (m && typeof m === 'object' && typeof (m as { id?: unknown }).id === 'string') ? { id: (m as { id: string }).id } : undefined)
           .filter((m): m is { readonly id: string } => m !== undefined)
         : []
-      providers.push({ name: r.name, status: r.status, models })
+      providers.push({ name: r.name, availability: { sub }, models })
     }
     const defaultModel = typeof body.defaultModel === 'string' ? body.defaultModel.trim() : ''
     return { providers, defaultModel }
@@ -302,7 +306,7 @@ const modelIsRoutable = (modelRef: string, catalog: DemoModelCatalog): boolean =
   if (!trimmed) return false
   const parsed = parseModelRef(trimmed)
   return catalog.providers.some(p =>
-    p.status === 'ok' &&
+    p.availability.sub === 'ok' &&
     (!parsed.provider || p.name === parsed.provider) &&
     p.models.some(m => m.id === parsed.modelId))
 }
@@ -317,14 +321,13 @@ const rescueModelForDemo = (currentModel: string | undefined, catalog: DemoModel
   return catalog.defaultModel
 }
 
-const selectLeitbildInstance = async (setup: LeitbildDemoSetup): Promise<LeitbildSelectOk | LeitbildSetupFail> => {
+const selectLeitbildSimulationRun = async (setup: LeitbildDemoSetup): Promise<LeitbildSelectOk | LeitbildSetupFail> => {
   try {
-    const res = await fetch('/api/leitbild-proxy/control-instances/select', {
+    const res = await apiFetch('/leitbild-proxy/simulation-runs/select', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
       body: JSON.stringify({
-        baseUrl: setup.baseUrl,
         preferredScenarioId: setup.preferredScenarioId,
         candidateScenarioIds: setup.candidateScenarioIds,
         requiredPackId: setup.requiredPackId,
@@ -332,13 +335,13 @@ const selectLeitbildInstance = async (setup: LeitbildDemoSetup): Promise<Leitbil
         probePayload: setup.probePayload,
       }),
     })
-    if (!res.ok) return { ok: false, reason: `Failed to select Leitbild Control Instance: ${await parseErrorResponse(res)}` }
+    if (!res.ok) return { ok: false, reason: `Failed to select Leitbild Simulation Run: ${await parseErrorResponse(res)}` }
     const body = await res.json() as LeitbildSelectResponse
-    const workspaceId = body.workspaceId ?? body.id
-    if (!workspaceId) return { ok: false, reason: 'Leitbild selection returned no instance id' }
+    const simulationRunId = body.simulationRunId
+    if (!simulationRunId) return { ok: false, reason: 'Leitbild selection returned no Simulation Run id' }
     return {
       ok: true,
-      workspaceId,
+      simulationRunId,
       created: body.created === true,
       systemIds: Array.isArray(body.systemIds) ? body.systemIds.filter((v): v is string => typeof v === 'string') : [],
     }
@@ -347,7 +350,7 @@ const selectLeitbildInstance = async (setup: LeitbildDemoSetup): Promise<Leitbil
   }
 }
 
-// Leitbild demo setup: select or create a CI that satisfies the demo's
+// Leitbild demo setup: select or create a Simulation Run that satisfies the demo's
 // declared pack/query probe, bind the current room's mirror to it, and
 // patch any AI agents in the room to add a matching leitbildBinding plus
 // the demo's tool allowlist. If no AI is in the room, the mirror still
@@ -361,19 +364,19 @@ const setupLeitbildDemo = async (
   const roomName = $rooms.get()[roomId]?.name
   if (!roomName) return { ok: false, reason: 'Room not found' }
 
-  // 1. Select an existing readable CI or create a fresh one via the
+  // 1. Select an existing readable Simulation Run or create a fresh one via the
   //    Samsinn-side proxy (avoids CORS; Leitbild declares no direct browser
   //    access in its manifest).
-  const selected = await selectLeitbildInstance(setup)
+  const selected = await selectLeitbildSimulationRun(setup)
   if (selected.ok === false) return selected
 
   // 2. Bind the room mirror
   try {
-    const res = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/leitbild-mirror`, {
+    const res = await apiFetch(`/rooms/${encodeURIComponent(roomName)}/leitbild-mirror`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ baseUrl: setup.baseUrl, workspaceId: selected.workspaceId, format: 'summary' }),
+      body: JSON.stringify({ simulationRunId: selected.simulationRunId, format: 'summary' }),
     })
     if (!res.ok) return { ok: false, reason: `Failed to bind room mirror: HTTP ${res.status}` }
   } catch (err) {
@@ -394,7 +397,7 @@ const setupLeitbildDemo = async (
   for (const ai of ais) {
     try {
       // Fetch current tools so we don't overwrite the agent's allowlist.
-      const detailRes = await fetch(`/api/agents/${encodeURIComponent(ai.name)}`, { credentials: 'same-origin' })
+      const detailRes = await apiFetch(`/agents/${encodeURIComponent(ai.name)}`, { credentials: 'same-origin' })
       const detail = detailRes.ok
         ? await detailRes.json() as { model?: string; tools?: ReadonlyArray<string> }
         : { model: ai.model, tools: [] as string[] }
@@ -404,14 +407,14 @@ const setupLeitbildDemo = async (
       const rescueModel = rescueModelForDemo(currentModel, modelCatalog)
       const patchBody: {
         tools: string[]
-        leitbildBinding: { baseUrl: string; workspaceId: string; role: 'observer' }
+        leitbildBinding: { simulationRunId: string; role: 'observer' }
         model?: string
       } = {
         tools: [...existingTools],
-        leitbildBinding: { baseUrl: setup.baseUrl, workspaceId: selected.workspaceId, role: 'observer' },
+        leitbildBinding: { simulationRunId: selected.simulationRunId, role: 'observer' },
         ...(rescueModel ? { model: rescueModel } : {}),
       }
-      const patchRes = await fetch(`/api/agents/${encodeURIComponent(ai.name)}`, {
+      const patchRes = await apiFetch(`/agents/${encodeURIComponent(ai.name)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
@@ -434,12 +437,12 @@ const setupLeitbildDemo = async (
 // already known) finds it.
 const ensurePackInstalled = async (packShortName: string, registryFullName: string): Promise<void> => {
   try {
-    const res = await fetch('/api/packs')
+    const res = await apiFetch('/packs')
     if (!res.ok) return
-    const data = await res.json() as { packs?: ReadonlyArray<{ namespace: string }> }
-    const installed = (data.packs ?? []).some(p => p.namespace === packShortName)
+    const data = await res.json() as ReadonlyArray<{ id: string }>
+    const installed = data.some(pack => pack.id === packShortName)
     if (installed) return
-    await fetch('/api/packs/install', {
+    await apiFetch('/packs/install', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ source: registryFullName }),
@@ -470,7 +473,7 @@ const createDemoAgents = async (
 
   let existingNames: Set<string>
   try {
-    const res = await fetch('/api/agents', { credentials: 'same-origin' })
+    const res = await apiFetch('/agents', { credentials: 'same-origin' })
     if (!res.ok) return { ok: false, reason: `Could not list agents: HTTP ${res.status}` }
     const body = await res.json() as ReadonlyArray<{ name?: unknown }>
     existingNames = new Set(body.flatMap(a => typeof a.name === 'string' ? [a.name] : []))
@@ -486,7 +489,7 @@ const createDemoAgents = async (
     existingNames.add(name)
 
     try {
-      const create = await fetch('/api/agents', {
+      const create = await apiFetch('/agents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
@@ -504,7 +507,7 @@ const createDemoAgents = async (
         return { ok: false, reason: `Agent creation returned no identity for ${name}` }
       }
 
-      const add = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/members`, {
+      const add = await apiFetch(`/rooms/${encodeURIComponent(roomName)}/members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
@@ -535,7 +538,7 @@ const createDemoAgents = async (
 
 const setRoomDeliveryMode = async (roomName: string, mode: 'broadcast' | 'manual'): Promise<DemoActionFailure | { readonly ok: true }> => {
   try {
-    const res = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/delivery-mode`, {
+    const res = await apiFetch(`/rooms/${encodeURIComponent(roomName)}/delivery-mode`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
@@ -549,7 +552,7 @@ const setRoomDeliveryMode = async (roomName: string, mode: 'broadcast' | 'manual
 
 const setRoomPaused = async (roomName: string, paused: boolean): Promise<boolean> => {
   try {
-    const res = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/pause`, {
+    const res = await apiFetch(`/rooms/${encodeURIComponent(roomName)}/pause`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
@@ -580,7 +583,7 @@ const executeDemoPrompt = async (demo: Demo, entry: DemoPrompt): Promise<boolean
 
   if (action.kind === 'start-script') {
     try {
-      const res = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/script/start`, {
+      const res = await apiFetch(`/rooms/${encodeURIComponent(roomName)}/script/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
@@ -717,7 +720,7 @@ export const openDemoModal = async (
       : ''
     const action = setup.created ? 'created' : 'reused'
     const systems = setup.systemIds.length > 0 ? ` · systems: ${setup.systemIds.slice(0, 3).join(', ')}` : ''
-    showToast(document.body, `Leitbild ${action}: ${setup.workspaceId.slice(0, 36)}…${systems} · ${aiHint}${modelHint}`, { type: 'success', position: 'fixed', durationMs: 10000 })
+    showToast(document.body, `Leitbild ${action}: ${setup.simulationRunId.slice(0, 36)}…${systems} · ${aiHint}${modelHint}`, { type: 'success', position: 'fixed', durationMs: 10000 })
     // Refresh the iframe panel for the current room — it was last evaluated
     // when the room was selected (before the mirror existed), so the toggle
     // button is currently hidden. Re-evaluate so it appears.

@@ -155,14 +155,7 @@ export interface AgentToolSupport {
 }
 
 const warnMissingTools = (agentName: string, requested: ReadonlyArray<string>, registry: ToolRegistry): void => {
-  // Skip dispatcher names — they're expected to be absent from the
-  // registry as atomic entries. The surface synthesises them at
-  // projection time, the trampoline gets registered later in
-  // buildToolSupport, and expandFamilyAliases in tool-surface/index.ts
-  // turns stored dispatcher names into member names before they reach
-  // the candidate set. Treating them as "missing" was misleading and
-  // sent prod debugging down a rabbit hole (2026-05-12).
-  const missing = requested.filter(n => !registry.has(n) && !FAMILY_DISPATCHER_NAMES.has(n))
+  const missing = requested.filter(n => !registry.has(n) || FAMILY_DISPATCHER_NAMES.has(n))
   if (missing.length > 0)
     console.warn(`[spawn] Agent "${agentName}": tools not found in registry: ${missing.join(', ')}`)
 }
@@ -247,8 +240,8 @@ export const buildToolSupport = async (
     // and family compression, gated on provider strictness. Returns null
     // when the room is unknown so the caller falls back to the static
     // toolDefinitions (which the surface also computed with no room
-    // filter — functionally equivalent, but the null contract is preserved
-    // for legacy test compatibility + clarity).
+    // filter; a missing Room yields null so the static projection remains usable
+    // in focused runtime tests.
     support.resolveToolDefinitions = (roomId: string): ReadonlyArray<ToolDefinition> | null => {
       if (!getRoomActivation(roomId)) return null
       const model = agentRef.currentModel?.() ?? ''
@@ -274,11 +267,9 @@ export const buildToolSupport = async (
 // the now-deleted budget cap produced silent tool drops in production.
 //
 // Callers that want a specific breadth declare `tools:` explicitly on the
-// AIAgentConfig. Snapshot-restored agents whose persisted config has
-// tools === undefined are backfilled at load time to preserve their
-// pre-redesign behavior (see src/core/storage/snapshot.ts).
+// AIAgentConfig. Omitting the list intentionally selects the bundled defaults.
 const deriveDefaultRequestedTools = (registry: ToolRegistry): ReadonlyArray<string> => {
-  const bundledNs = new Set(BUNDLED_PACKS.map(p => p.namespace))
+  const bundledNs = new Set(BUNDLED_PACKS.map(pack => pack.descriptor.id))
   const out: string[] = []
   for (const entry of registry.listEntries()) {
     if (bundledNs.has(packNameFor(entry))) out.push(entry.tool.name)

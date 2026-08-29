@@ -1,3 +1,4 @@
+import { apiFetch } from "../api-client.ts"
 // ============================================================================
 // Packs panel — renderers used by the Settings > Packs modal.
 //
@@ -19,9 +20,10 @@ interface WikiRef {
 }
 
 interface InstalledPack {
-  namespace: string
-  dirPath: string
-  manifest: { name?: string; description?: string; wikis?: ReadonlyArray<WikiRef> }
+  id: string
+  descriptor: { name: string; description?: string }
+  wikis: ReadonlyArray<WikiRef>
+  uiExtensions: ReadonlyArray<string>
   tools: string[]
   skills: string[]
   // system: true for the synthetic 'core' and 'local' packs. UI hides
@@ -47,7 +49,7 @@ interface RoomActivation {
 
 const fetchActivation = async (roomId: string): Promise<ReadonlyArray<string>> => {
   try {
-    const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/packs`)
+    const res = await apiFetch(`/rooms/${encodeURIComponent(roomId)}/packs`)
     if (!res.ok) return []
     const body = await res.json() as { activePacks?: ReadonlyArray<string> }
     return body.activePacks ?? []
@@ -58,7 +60,7 @@ const setActivation = async (
   roomId: string,
   activePacks: ReadonlyArray<string>,
 ): Promise<{ ok: boolean; error?: string; activePacks?: ReadonlyArray<string> }> => {
-  const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/packs`, {
+  const res = await apiFetch(`/rooms/${encodeURIComponent(roomId)}/packs`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ activePacks }),
@@ -85,7 +87,7 @@ const currentRoomActivation = async (): Promise<RoomActivation | null> => {
 
 const fetchPacks = async (): Promise<InstalledPack[]> => {
   try {
-    const res = await fetch('/api/packs')
+    const res = await apiFetch('/packs')
     if (!res.ok) return []
     return await res.json() as InstalledPack[]
   } catch { return [] }
@@ -93,7 +95,7 @@ const fetchPacks = async (): Promise<InstalledPack[]> => {
 
 const fetchRegistry = async (): Promise<RegistryPack[]> => {
   try {
-    const res = await fetch('/api/packs/registry')
+    const res = await apiFetch('/packs/registry')
     if (!res.ok) return []
     return await res.json() as RegistryPack[]
   } catch { return [] }
@@ -101,7 +103,7 @@ const fetchRegistry = async (): Promise<RegistryPack[]> => {
 
 const installFromBrowse = async (source: string, label: string): Promise<boolean> => {
   showToast(document.body, `Installing ${label}…`, { position: 'fixed' })
-  const res = await fetch('/api/packs/install', {
+  const res = await apiFetch('/packs/install', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ source }),
@@ -111,10 +113,10 @@ const installFromBrowse = async (source: string, label: string): Promise<boolean
     showToast(document.body, `Install failed: ${body.error ?? 'unknown'}`, { type: 'error', position: 'fixed' })
     return false
   }
-  const data = await res.json() as { namespace: string; tools: string[]; skills: string[] }
+  const data = await res.json() as { id: string; tools: string[]; skills: string[] }
   showToast(
     document.body,
-    `${data.namespace}: ${data.tools.length} tools, ${data.skills.length} skills`,
+    `${data.id}: ${data.tools.length} tools, ${data.skills.length} skills`,
     { type: 'success', position: 'fixed' },
   )
   return true
@@ -165,20 +167,20 @@ const renderInstalledSection = (
   for (const pack of packs) {
     const row = document.createElement('div')
     row.className = 'px-3 py-2 text-xs hover:bg-surface-muted flex items-center gap-2 border-b border-border'
-    const label = pack.manifest.name ?? pack.namespace
-    const desc = pack.manifest.description ?? ''
+    const label = pack.descriptor.name
+    const desc = pack.descriptor.description ?? ''
     // Rough decision-time signal of "what does activating this cost in
     // tokens." ~200 tokens per tool def is the industry-standard floor
     // for a typed-schema function declaration; verbose descriptions push
     // higher but the order of magnitude is enough for the user to make
     // an informed activation choice. Exact post-activation token sizes
-    // are available via GET /api/agents/:name/surface.
+    // are available via GET /agents/:name/surface.
     const estTokens = pack.tools.length * 200
     const tokensSuffix = pack.tools.length > 0 ? ` · ~${estTokens >= 1000 ? `${(estTokens / 1000).toFixed(1)}k` : estTokens} tok` : ''
     const counts = `${pack.tools.length} tool${pack.tools.length === 1 ? '' : 's'}, ${pack.skills.length} skill${pack.skills.length === 1 ? '' : 's'}${tokensSuffix}`
-    const isActive = activeSet.has(pack.namespace)
+    const isActive = activeSet.has(pack.id)
 
-    // Build the row body via DOM construction. pack.manifest.{name,description}
+    // Build the row body via DOM construction. Pack descriptor metadata
     // and the wiki name/url come from third-party pack.json files — putting
     // them through innerHTML lets a malicious pack run script in any tab
     // that opens this panel.
@@ -200,7 +202,7 @@ const renderInstalledSection = (
 
     // External wiki links — pack metadata only, samsinn doesn't fetch the
     // content. People view + edit on GitHub Pages directly.
-    const wikis = pack.manifest.wikis ?? []
+    const wikis = pack.wikis
     if (wikis.length > 0) {
       const wikisRow = document.createElement('div')
       wikisRow.className = 'text-[10px] mt-0.5'
@@ -259,8 +261,8 @@ const renderInstalledSection = (
       const input = row.querySelector<HTMLInputElement>('.pack-toggle-input')
       input?.addEventListener('change', async () => {
         const next = input.checked
-          ? [...activation.activePacks.filter(p => p !== pack.namespace), pack.namespace]
-          : activation.activePacks.filter(p => p !== pack.namespace)
+          ? [...activation.activePacks.filter(p => p !== pack.id), pack.id]
+          : activation.activePacks.filter(p => p !== pack.id)
         const result = await setActivation(activation.roomId, next)
         if (!result.ok) {
           // Revert UI on failure — server is the truth source.
@@ -270,7 +272,7 @@ const renderInstalledSection = (
         }
         showToast(
           document.body,
-          `${pack.namespace}: ${input.checked ? 'activated' : 'deactivated'} in ${activation.roomName}`,
+          `${pack.id}: ${input.checked ? 'activated' : 'deactivated'} in ${activation.roomName}`,
           { type: 'success', position: 'fixed' },
         )
         // The pack-activation-changed WS event triggers re-render; no
@@ -283,10 +285,10 @@ const renderInstalledSection = (
     // future readers don't ask "why is this attaching to nothing."
     if (!pack.system) {
       row.querySelector<HTMLButtonElement>('.pack-update')?.addEventListener('click', async () => {
-        showToast(document.body, `${pack.namespace}: updating…`, { position: 'fixed' })
-        const res = await fetch(`/api/packs/update/${encodeURIComponent(pack.namespace)}`, { method: 'POST' })
+        showToast(document.body, `${pack.id}: updating…`, { position: 'fixed' })
+        const res = await apiFetch(`/packs/update/${encodeURIComponent(pack.id)}`, { method: 'POST' })
         const ok = res.ok
-        showToast(document.body, `${pack.namespace}: ${ok ? 'updated' : 'update failed'}`, {
+        showToast(document.body, `${pack.id}: ${ok ? 'updated' : 'update failed'}`, {
           type: ok ? 'success' : 'error', position: 'fixed',
         })
       })
@@ -294,12 +296,12 @@ const renderInstalledSection = (
         const { confirmModal } = await import('../modals/confirm-modal.ts')
         if (!(await confirmModal({
           title: 'Uninstall pack',
-          body: `Uninstall pack "${pack.namespace}"? Its tools and skills will be unregistered.`,
+          body: `Uninstall pack "${pack.id}"? Its tools and skills will be unregistered.`,
           confirmLabel: 'Uninstall',
         }))) return
-        const res = await fetch(`/api/packs/${encodeURIComponent(pack.namespace)}`, { method: 'DELETE' })
+        const res = await apiFetch(`/packs/${encodeURIComponent(pack.id)}`, { method: 'DELETE' })
         const ok = res.ok
-        showToast(document.body, `${pack.namespace}: ${ok ? 'uninstalled' : 'uninstall failed'}`, {
+        showToast(document.body, `${pack.id}: ${ok ? 'uninstalled' : 'uninstall failed'}`, {
           type: ok ? 'success' : 'error', position: 'fixed',
         })
       })
@@ -364,7 +366,7 @@ export const promptInstall = async (): Promise<void> => {
   if (!source) return
 
   showToast(document.body, `Installing ${source}…`, { position: 'fixed' })
-  const res = await fetch('/api/packs/install', {
+  const res = await apiFetch('/packs/install', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ source }),
@@ -374,10 +376,10 @@ export const promptInstall = async (): Promise<void> => {
     showToast(document.body, `Install failed: ${body.error ?? 'unknown'}`, { type: 'error', position: 'fixed' })
     return
   }
-  const data = await res.json() as { namespace: string; tools: string[]; skills: string[] }
+  const data = await res.json() as { id: string; tools: string[]; skills: string[] }
   showToast(
     document.body,
-    `${data.namespace}: ${data.tools.length} tools, ${data.skills.length} skills`,
+    `${data.id}: ${data.tools.length} tools, ${data.skills.length} skills`,
     { type: 'success', position: 'fixed' },
   )
 }

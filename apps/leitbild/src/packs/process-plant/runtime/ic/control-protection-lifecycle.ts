@@ -1,4 +1,4 @@
-import type { AdapterId, ControlInstanceId, InteractionSignal, SignalId } from '../../../../core/model/index.ts'
+import type { AdapterId, SimulationRunId, InteractionSignal, SignalId } from '../../../../core/model/index.ts'
 import { nowIso } from '../../../../core/model/index.ts'
 import type { PackRuntimeEvent } from '../../../../simulation/protocol.ts'
 import type {
@@ -95,7 +95,7 @@ export const mutableLifecycleFor = (
 }
 
 export const eventForProcessPlantIcLifecycleTransition = (config: {
-  readonly controlInstanceId: ControlInstanceId
+  readonly simulationRunId: SimulationRunId
   readonly sourceRuntimeId: string
   readonly systemId: string
   readonly rule: ProcessPlantIcRule
@@ -109,7 +109,7 @@ export const eventForProcessPlantIcLifecycleTransition = (config: {
   const at = nowIso()
   const signal: InteractionSignal = {
     id: signalIdFor(config.systemId, config.rule.id, config.lifecycle.effectId, config.transition, config.elapsedMs),
-    controlInstanceId: config.controlInstanceId,
+    simulationRunId: config.simulationRunId,
     at,
     source: { kind: 'simulation', id: config.sourceRuntimeId },
     targets: [{ kind: 'broadcast' }],

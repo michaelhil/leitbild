@@ -9,13 +9,13 @@
 //       test catches it.
 
 import { describe, expect, test } from 'bun:test'
-import { BUNDLED_PACKS, defaultActiveNamespaces, isSystemPack, getBundledPack } from './bundled.ts'
+import { BUNDLED_PACKS, defaultActivePackIds, isSystemPack, getBundledPack } from './bundled.ts'
 import { packNameFor } from '../core/types/tool-pack.ts'
 import type { ToolRegistryEntry } from '../core/types/tool.ts'
 
 describe('BUNDLED_PACKS', () => {
   test('contains the four well-known packs in the documented order', () => {
-    expect(BUNDLED_PACKS.map(p => p.namespace)).toEqual(['core', 'local', 'demos', 'pwr-ops'])
+    expect(BUNDLED_PACKS.map(pack => pack.descriptor.id)).toEqual(['core', 'local', 'demos', 'pwr-ops'])
   })
 
   test('core and local are system packs; demos and pwr-ops are not', () => {
@@ -27,23 +27,22 @@ describe('BUNDLED_PACKS', () => {
   })
 
   test('all four are default-active', () => {
-    expect([...defaultActiveNamespaces()].sort()).toEqual(['core', 'demos', 'local', 'pwr-ops'])
+    expect([...defaultActivePackIds()].sort()).toEqual(['core', 'demos', 'local', 'pwr-ops'])
   })
 
   test('every entry has the expected shape', () => {
-    for (const p of BUNDLED_PACKS) {
-      expect(typeof p.namespace).toBe('string')
-      expect(p.namespace.length).toBeGreaterThan(0)
-      expect(typeof p.displayName).toBe('string')
-      expect(typeof p.description).toBe('string')
-      expect(p.description.length).toBeGreaterThan(0)
-      expect(typeof p.system).toBe('boolean')
-      expect(typeof p.defaultActive).toBe('boolean')
+    for (const pack of BUNDLED_PACKS) {
+      expect(String(pack.descriptor.moduleId)).toBe('samsinn')
+      expect(pack.descriptor.id.length).toBeGreaterThan(0)
+      expect(pack.descriptor.name.length).toBeGreaterThan(0)
+      expect(pack.descriptor.description?.length).toBeGreaterThan(0)
+      expect(typeof pack.system).toBe('boolean')
+      expect(typeof pack.defaultActive).toBe('boolean')
     }
   })
 
   test('getBundledPack lookup', () => {
-    expect(getBundledPack('pwr-ops')?.namespace).toBe('pwr-ops')
+    expect(getBundledPack('pwr-ops')?.descriptor.id).toBe('pwr-ops')
     expect(getBundledPack('nope')).toBeUndefined()
   })
 })

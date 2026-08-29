@@ -36,7 +36,7 @@ updates, and cleanup—require explicit confirmation immediately beforehand.
 
 ## Persistent state and secrets
 
-- `/var/lib/samsinn`: instances, provider configuration, packs, and logs
+- `/var/lib/samsinn`: Workspaces, provider configuration, packs, and logs
 - `/etc/samsinn/env`: production environment, root-owned mode `0600`
 - `/etc/systemd/system/samsinn.service`: active service unit
 - `/etc/caddy/Caddyfile`: public TLS/reverse-proxy configuration

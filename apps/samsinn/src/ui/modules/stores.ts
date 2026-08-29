@@ -35,13 +35,6 @@ export const $sessionToken = atom(
   typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SESSION_TOKEN_KEY) ?? '' : '',
 )
 
-// Viewer tokens are per-tab, not per-origin. localStorage made every open
-// tab share one server session and overwrite the connection map entry.
-// Clear the legacy cross-tab value once this module loads.
-if (typeof localStorage !== 'undefined') {
-  try { localStorage.removeItem(SESSION_TOKEN_KEY) } catch { /* privacy mode */ }
-}
-
 export const persistSessionToken = (token: string): void => {
   $sessionToken.set(token)
   if (typeof sessionStorage !== 'undefined') {

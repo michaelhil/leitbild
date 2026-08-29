@@ -2,15 +2,15 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createJsonlEventLog } from '../src/core/control-instances/event-log.ts'
-import type { ControlInstanceId, ControlInstanceEvent, EventId, ObjectId } from '../src/core/model/index.ts'
+import { createJsonlEventLog } from '../src/core/simulation-runs/event-log.ts'
+import type { SimulationRunId, SimulationRunEvent, EventId, ObjectId } from '../src/core/model/index.ts'
 import { nowIso } from '../src/core/model/index.ts'
 
-const controlInstanceId = 'control-instance:event-log-test' as ControlInstanceId
+const simulationRunId = 'run-event-log-test' as SimulationRunId
 
-const makeEvent = (seq: number): ControlInstanceEvent => ({
+const makeEvent = (seq: number): SimulationRunEvent => ({
   id: `event:test-${seq}` as EventId,
-  controlInstanceId,
+  simulationRunId,
   seq,
   at: nowIso(),
   provenance: { source: 'system' },

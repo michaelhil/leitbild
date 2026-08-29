@@ -5,15 +5,15 @@ describe('UI scenario pack loading', () => {
   test('loads only the packs declared by a scenario', async () => {
     const pack = await createScenarioControlPack(['ambulance'])
 
-    expect(pack.id).toBe('scenario-control:ambulance')
-    expect(pack.categories.map(category => category.id)).toEqual([
+    expect(pack.descriptor.id).toBe('scenario-control-ambulance')
+    expect(pack.presentation.categories.map(category => category.id)).toEqual([
       'hospitals',
       'ambulances',
       'incidents',
     ])
-    expect(pack.categories.map(category => category.id)).not.toContain('traffic')
-    expect(pack.categories.map(category => category.id)).not.toContain('process-plants')
-    expect(pack.createObjectTypes.map(type => type.id).sort()).toEqual([
+    expect(pack.presentation.categories.map(category => category.id)).not.toContain('traffic')
+    expect(pack.presentation.categories.map(category => category.id)).not.toContain('process-plants')
+    expect(pack.commands.createObjectTypes.map(type => type.id).sort()).toEqual([
       'ambulance',
       'hospital',
       'incident',
@@ -23,9 +23,9 @@ describe('UI scenario pack loading', () => {
   test('combines scenario packs in declared order', async () => {
     const pack = await createScenarioControlPack(['traffic', 'weather'])
 
-    expect(pack.id).toBe('scenario-control:traffic+weather')
-    expect(pack.categories.map(category => category.id)).toEqual(['traffic', 'weather'])
-    expect(pack.createObjectTypes.map(type => type.id).sort()).toEqual([
+    expect(pack.descriptor.id).toBe('scenario-control-traffic-weather')
+    expect(pack.presentation.categories.map(category => category.id)).toEqual(['traffic', 'weather'])
+    expect(pack.commands.createObjectTypes.map(type => type.id).sort()).toEqual([
       'traffic_area',
       'traffic_road_segment',
     ].sort())

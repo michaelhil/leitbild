@@ -1,8 +1,8 @@
 import type {
   ActorId,
   CommandEnvelope,
-  ControlInstanceEvent,
-  ControlInstanceId,
+  SimulationRunEvent,
+  SimulationRunId,
   EventId,
   IsoTimestamp,
   ProcedureControlState,
@@ -26,7 +26,7 @@ export interface ProcedureEventFactory {
 }
 
 export interface ProcedureCommandContext {
-  readonly controlInstanceId: ControlInstanceId
+  readonly simulationRunId: SimulationRunId
   readonly at: IsoTimestamp
   readonly command: CommandEnvelope
   readonly procedures: ProcedureControlState | undefined
@@ -36,9 +36,9 @@ export interface ProcedureCommandContext {
 
 const procedureBase = (
   context: ProcedureCommandContext,
-): Omit<ControlInstanceEvent, 'type'> => ({
+): Omit<SimulationRunEvent, 'type'> => ({
   id: context.factory.eventId(),
-  controlInstanceId: context.controlInstanceId,
+  simulationRunId: context.simulationRunId,
   seq: context.factory.nextSeq(),
   at: context.at,
   provenance: { source: 'operator', causedByCommandId: context.command.id },
@@ -78,7 +78,7 @@ const runHasCurrentState = (
 
 export const procedureCommandEvents = async (
   context: ProcedureCommandContext,
-): Promise<ReadonlyArray<ControlInstanceEvent> | null> => {
+): Promise<ReadonlyArray<SimulationRunEvent> | null> => {
   const kind = procedureCommandKindSchema.safeParse(context.command.kind)
   if (!kind.success) return null
 

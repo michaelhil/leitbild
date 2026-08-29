@@ -9,7 +9,7 @@ import {
   objectContextSchema,
   operationalObjectSchema,
   scenarioDefinitionSchema,
-  type ControlInstanceId,
+  type SimulationRunId,
   type ObjectId,
 } from '../src/core/model/index.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
@@ -18,7 +18,7 @@ import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 
 const ambulanceObjects = () =>
   createAmbulanceSimEngine({
-    controlInstanceId: 'control-instance:context-model-test' as ControlInstanceId,
+    simulationRunId: 'run-context-model-test' as SimulationRunId,
     objects: osloAmbulanceScenario.initialObjects,
     routing: createDirectRoutingAdapter(),
   }).snapshot().objects

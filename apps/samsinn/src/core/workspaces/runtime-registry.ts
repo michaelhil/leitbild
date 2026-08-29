@@ -288,12 +288,12 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     // boot left an explicitly empty snapshot, spawn Cafe + Aiden + You.
     // An empty snapshot is equivalent to a fresh Workspace: it contains no
     // user state to preserve, and otherwise permanently suppresses the seed
-    // on every reload. Skipped when SAMSINN_SEED_EXAMPLE=0 (legacy env).
+    // on every reload. Skipped when SAMSINN_SEED_WORKSPACE=0.
     const snapshotIsEmpty = snapshot !== null
       && snapshot.rooms.length === 0
       && snapshot.agents.length === 0
       && snapshot.humans.length === 0
-    if ((!snapshot || snapshotIsEmpty) && process.env.SAMSINN_SEED_EXAMPLE !== '0') {
+    if ((!snapshot || snapshotIsEmpty) && process.env.SAMSINN_SEED_WORKSPACE !== '0') {
       try {
         await seedWorkspace(system)
       } catch (err) {

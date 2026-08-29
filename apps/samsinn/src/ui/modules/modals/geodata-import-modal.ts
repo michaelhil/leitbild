@@ -1,3 +1,4 @@
+import { apiFetch } from "../api-client.ts"
 // ============================================================================
 // Geodata Import modal — single-step paste flow.
 //
@@ -11,13 +12,13 @@
 //      rows in the summary).
 //
 // The marker-icon list inside the prompt is sourced from MARKER_ICONS in
-// src/ui/modules/map/normalise.ts so we never drift between renderer and
+// the canonical map schema so we never drift between renderer and
 // validator.
 // ============================================================================
 
 import { createModal } from '../modals/detail-modal.ts'
 import { showToast } from '../toast.ts'
-import { MARKER_ICONS } from '../map/normalise.ts'
+import { MARKER_ICONS } from '../../../core/render-validators/map-schema.ts'
 
 const promptTemplate = (task: string): string => `You are populating a category in the samsinn geodata system. Output ONE JSON object exactly matching the schema below — no Markdown fences, no commentary, no surrounding prose.
 
@@ -63,7 +64,7 @@ const submitImport = async (paste: string): Promise<ImportResultPayload | { netw
     return { ok: false, categoryId: null, featuresAdded: 0, featuresReplaced: 0, errors: [{ index: -1, message: `paste is not valid JSON: ${err instanceof Error ? err.message : String(err)}` }] }
   }
   try {
-    const res = await fetch('/api/geodata/import', {
+    const res = await apiFetch('/geodata/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

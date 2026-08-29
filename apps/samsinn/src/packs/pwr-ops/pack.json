@@ -1,6 +1,18 @@
 {
-  "name": "pwr-ops",
-  "description": "Westinghouse PWR Emergency Operating Procedures — fetched live from the samsinn-wikis/pwr-ops wiki.",
+  "descriptor": {
+    "schemaVersion": "1.0.0",
+    "id": "pwr-ops",
+    "moduleId": "samsinn",
+    "version": "1.0.0",
+    "name": "PWR Operations",
+    "description": "Westinghouse PWR Emergency Operating Procedures — fetched live from the samsinn-wikis/pwr-ops wiki.",
+    "platformVersionRange": "^1.0.0",
+    "dependencies": [],
+    "contributions": [
+      { "kind": "tool" },
+      { "kind": "wiki" }
+    ]
+  },
   "wikis": [
     {
       "name": "PWR EOPs",
@@ -15,5 +27,6 @@
         "citationBase": "https://samsinn-wikis.github.io/pwr-ops/procedures/"
       }
     }
-  ]
+  ],
+  "uiExtensions": []
 }

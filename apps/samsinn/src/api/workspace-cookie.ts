@@ -37,28 +37,26 @@ export const buildWorkspaceCookie = (id: WorkspaceId, req: Request): string => {
   return `${WORKSPACE_COOKIE}=${id}; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=${TTL_SECONDS}`
 }
 
-// Scripted clients can select an existing Workspace without a cookie by
-// passing ?workspace=<uuid> on every request.
-export const getWorkspaceFromQuery = (url: URL): WorkspaceId | null =>
-  parseWorkspaceId(url.searchParams.get('workspace'))
-
-// Share links retain the compact ?join= form; the value is now the canonical
-// Workspace UUID and is verified against the Workspace Directory by server.ts.
-export const getJoinFromQuery = (url: URL): WorkspaceId | null =>
-  parseWorkspaceId(url.searchParams.get('join'))
+export const getWorkspaceIdFromPath = (pathname: string): WorkspaceId | null => {
+  const match = pathname.match(/^\/workspaces\/([^/]+)$/)
+  if (!match) return null
+  try {
+    return parseWorkspaceId(decodeURIComponent(match[1] ?? ''))
+  } catch {
+    return null
+  }
+}
 
 export interface ResolvedWorkspace {
   readonly id: WorkspaceId | null
-  readonly source: 'join' | 'cookie' | 'query' | 'none'
+  readonly source: 'path' | 'cookie' | 'none'
 }
 
 export const resolveWorkspaceId = (req: Request, url: URL): ResolvedWorkspace => {
-  const joined = getJoinFromQuery(url)
-  if (joined) return { id: joined, source: 'join' }
+  const fromPath = getWorkspaceIdFromPath(url.pathname)
+  if (fromPath) return { id: fromPath, source: 'path' }
   const cookie = getWorkspaceId(req)
   if (cookie) return { id: cookie, source: 'cookie' }
-  const queried = getWorkspaceFromQuery(url)
-  if (queried) return { id: queried, source: 'query' }
   return { id: null, source: 'none' }
 }
 
@@ -71,7 +69,12 @@ export interface MintedWorkspace {
 export const resolveOrMintWorkspace = (req: Request, url: URL): MintedWorkspace => {
   const resolved = resolveWorkspaceId(req, url)
   if (resolved.id !== null) {
-    return { workspaceId: resolved.id, setCookieValue: null, isNew: false }
+    const cookie = getWorkspaceId(req)
+    return {
+      workspaceId: resolved.id,
+      setCookieValue: cookie === resolved.id ? null : buildWorkspaceCookie(resolved.id, req),
+      isNew: false,
+    }
   }
   const workspaceId = newWorkspaceId()
   return {

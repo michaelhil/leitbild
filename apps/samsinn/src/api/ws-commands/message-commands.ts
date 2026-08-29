@@ -8,7 +8,7 @@ export const handleMessageCommand = (msg: WSInbound, ctx: CommandContext): boole
     case 'post_message': {
       // v15+: senderId is REQUIRED on post_message. The WS session no longer
       // owns a default human agent; clients must name the actor explicitly.
-      // Validates: present, exists in this instance, is a human (AI agents
+      // Validates: present, exists in this Workspace, is a human (AI agents
       // post via the eval path, not WS).
       if (!msg.senderId) {
         wsManager.safeSend(ws, JSON.stringify({ type: 'error', message: 'senderId required for post_message' } satisfies WSOutbound))

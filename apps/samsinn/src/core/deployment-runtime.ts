@@ -1,21 +1,21 @@
 // ============================================================================
-// DeploymentRuntime — the slice of System that's safe to share across multiple
-// instances. Built once at boot; reused by every createSamsinnWorkspaceRuntime call to avoid
+// DeploymentRuntime — resources shared safely across multiple Workspaces.
+// Built once at boot and reused by every createSamsinnWorkspaceRuntime call to avoid
 // duplicating provider gateways, API-quota state, and the LLM router.
 //
 // What's shared:
 //   - ProviderRouter (llm) — failover logic + per-provider cooldown map.
-//     Shared on purpose: API-quota cost is per host, not per instance.
+//     Shared on purpose: API-quota cost is per Deployment, not per Workspace.
 //   - Ollama gateway + raw + ollamaUrls — single ps poll, single keep-alive
-//     state, single URL list editable from any instance's UI.
+//     state, single URL list editable from any Workspace UI.
 //   - ProviderKeys + gateways — runtime key edits visible everywhere.
 //   - ProviderConfig — boot-time decision (order, single-Ollama mode, …).
 //   - sharedToolRegistry — external tools, skill-bundled tools, pack-bundled
 //     tools, MCP tools, write_skill / write_tool / install_pack et al.
 //     Single FS scan at boot, no per-Workspace reload thrash. Pack installed
-//     in instance A is immediately visible to instance B.
+//     in one Workspace is immediately available to another Workspace.
 //   - sharedSkillStore — every loaded skill (pack and free-standing). Each
-//     instance reads from the same store; install/uninstall mutate one place.
+//     Workspace reads from the same store; install/uninstall mutate one place.
 //
 // What stays per-Workspace (built fresh by createSamsinnWorkspaceRuntime):
 //   - RoomDirectory (rooms, agents, artifacts, messages, members, mute/pause)
@@ -48,8 +48,8 @@ export interface DeploymentRuntime {
   readonly providerKeys: ProviderKeys
   readonly providerSetup: ProviderSetupResult
   // MCP-backed tools loaded ONCE per process at boot (each MCP server is
-  // a stdio child process; we don't want N children for N instances).
-  // Each instance's createSamsinnWorkspaceRuntime registers these definitions into its
+  // a stdio child process; we do not want one child per Workspace).
+  // Each Workspace runtime registers these definitions into its
   // own ToolRegistry — the underlying connection is shared.
   // Mutable list so bootstrap can populate after construction.
   mcpTools: Tool[]
@@ -63,11 +63,11 @@ export interface DeploymentRuntime {
   // Shared tool registry — populated at boot by bootstrap.ts (external tools,
   // skill-bundled tools, pack-bundled tools, MCP tools) and subsequently
   // mutated only by install/uninstall_pack and write_skill/write_tool. Per-
-  // instance Systems wrap this in an overlay (createOverlayToolRegistry).
+  // Workspace runtimes wrap this in an overlay (createOverlayToolRegistry).
   readonly sharedToolRegistry: ToolRegistry
   // Shared skill store — populated alongside sharedToolRegistry. Each
-  // instance reads from the same store, so installing a pack in instance A
-  // makes its skills visible in instance B without an instance reload.
+  // Workspace reads from the same store, so installing a Pack makes its
+  // skills available to other Workspaces without reloading them.
   readonly sharedSkillStore: SkillStore
   // Cross-provider LLM policy (system default fallback chain). Loaded once
   // at boot from ~/.samsinn/llm-policy.json, mutable through the UI at
@@ -89,11 +89,11 @@ export interface CreateDeploymentRuntimeOptions {
   //   - src/boot/bootstrap-e2e.test.ts (end-to-end boot path)
   readonly providerSetup?: ProviderSetupResult
   // Optional pre-built metrics handle. Bootstrap supplies one so the same
-  // instance can be passed to buildProvidersFromConfig before DeploymentRuntime
+  // object can be passed to buildProvidersFromConfig before DeploymentRuntime
   // exists. Tests/headless paths omit and we lazy-create.
   readonly limitMetrics?: LimitMetrics
   // Optional pre-built provider keys store. Bootstrap supplies this so the
-  // SAME ProviderKeys instance flows into both `buildProvidersFromConfig`
+  // SAME ProviderKeys object flows into both `buildProvidersFromConfig`
   // (used by bootstrap to wire limitMetrics into adapters) AND DeploymentRuntime.
   // Without this, bootstrap built providerSetup with NO providerKeys → router
   // had `isProviderEnabled = undefined` → every provider (including keyless

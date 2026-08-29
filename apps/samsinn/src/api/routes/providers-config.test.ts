@@ -1,5 +1,5 @@
 // ============================================================================
-// Regression tests for PUT /api/providers/:name.
+// Regression tests for PUT /providers/:name.
 //
 // Bug: a PUT carrying only non-apiKey fields (e.g. pinnedModels) used to
 // silently overwrite the in-memory key with '', breaking env-only providers
@@ -50,7 +50,7 @@ const buildWorkspaceRuntime = async (
   return { system, storePath }
 }
 
-describe('PUT /api/providers/:name', () => {
+describe('PUT /providers/:name', () => {
   test('pinning models on an env-only provider does NOT wipe the in-memory key', async () => {
     const { system } = await buildWorkspaceRuntime(
       { kimi: { pinnedModels: [] } },  // file has NO apiKey for kimi
@@ -59,8 +59,8 @@ describe('PUT /api/providers/:name', () => {
     )
     expect(system.providerKeys.get('kimi')).toBe('sk-env-only-kimi-key')
 
-    const { handler, match } = findHandler('PUT', '/api/providers/kimi')
-    const req = new Request('http://localhost/api/providers/kimi', {
+    const { handler, match } = findHandler('PUT', '/providers/kimi')
+    const req = new Request('http://localhost/providers/kimi', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pinnedModels: ['kimi-k2.6'] }),
@@ -80,8 +80,8 @@ describe('PUT /api/providers/:name', () => {
     )
     expect(system.providerKeys.get('kimi')).toBe('stored')
 
-    const { handler, match } = findHandler('PUT', '/api/providers/kimi')
-    const req = new Request('http://localhost/api/providers/kimi', {
+    const { handler, match } = findHandler('PUT', '/providers/kimi')
+    const req = new Request('http://localhost/providers/kimi', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ apiKey: null }),
@@ -92,8 +92,8 @@ describe('PUT /api/providers/:name', () => {
 
   test('saving a new apiKey replaces the in-memory key', async () => {
     const { system } = await buildWorkspaceRuntime({ kimi: {} }, 'KIMI_API_KEY', '')
-    const { handler, match } = findHandler('PUT', '/api/providers/kimi')
-    const req = new Request('http://localhost/api/providers/kimi', {
+    const { handler, match } = findHandler('PUT', '/providers/kimi')
+    const req = new Request('http://localhost/providers/kimi', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ apiKey: 'sk-fresh' }),
@@ -113,8 +113,8 @@ describe('PUT /api/providers/:name', () => {
     const { readFile } = await import('node:fs/promises')
     await writeFile(storePath, JSON.stringify({ version: 1, providers: { kimi: { pinnedModels: [] } }, order }))
 
-    const { handler, match } = findHandler('PUT', '/api/providers/kimi')
-    const req = new Request('http://localhost/api/providers/kimi', {
+    const { handler, match } = findHandler('PUT', '/providers/kimi')
+    const req = new Request('http://localhost/providers/kimi', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pinnedModels: ['kimi-k2.6'] }),

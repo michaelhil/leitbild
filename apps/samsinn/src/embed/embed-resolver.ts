@@ -2,14 +2,14 @@
 // Embed-resolver — picks the embedder for the next ingestion.
 //
 // Two cases:
-//   1. The instance has already committed to a binding (provider/model/dim)
+//   1. The Workspace index has already committed to a binding (provider/model/dim)
 //      from a prior ingestion. We MUST use the same binding — vector stores
 //      cannot mix dims. If the bound provider currently has no API key
 //      configured, the resolver returns a "stuck" result and the caller
 //      surfaces a clear error. (We do not silently fall over to a different
 //      provider; that would corrupt the index.)
 //
-//   2. The instance has no binding yet (first-ever ingestion). The resolver
+//   2. The Workspace index has no binding yet (first-ever ingestion). The resolver
 //      picks the highest-priority configured cloud provider — OpenAI first,
 //      then Gemini. The pick becomes the binding once written.
 //
@@ -37,8 +37,8 @@ export type ResolverResult =
   | {
       readonly status: 'stuck'
       readonly reason: string
-      // The binding the instance is committed to, when we got stuck because
-      // its key disappeared. Helps the UI explain the situation.
+      // The binding the Workspace index is committed to when its key disappeared.
+      // Helps the UI explain the situation.
       readonly binding?: { provider: EmbedProvider; model: string }
     }
   | {
@@ -64,7 +64,7 @@ export const resolveEmbedder = (input: ResolverInput): ResolverResult => {
       return {
         status: 'stuck',
         reason:
-          `instance is bound to embedder ${p}/${input.bound.model} but no API key is configured for ${p}. ` +
+          `Workspace index is bound to embedder ${p}/${input.bound.model} but no API key is configured for ${p}. ` +
           `Set ${p.toUpperCase()}_API_KEY (env) or save it via the providers panel and retry.`,
         binding: { provider: p, model: input.bound.model },
       }

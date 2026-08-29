@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { nowIso, type CommandEnvelope, type CommandResult, type ControlInstanceEvent, type IsoTimestamp, type ObjectId, type SimulationClockState } from '../../../../core/model/index.ts'
+import { nowIso, type CommandEnvelope, type CommandResult, type SimulationRunEvent, type IsoTimestamp, type ObjectId, type SimulationClockState } from '../../../../core/model/index.ts'
 import type {
   PackRuntimeAdapter,
   PackRuntimeConnection,
@@ -16,15 +16,15 @@ import {
   type AviationSourceId,
 } from './constants.ts'
 
-// aviation.multi — a per-Control-Instance proxy that owns at most one
+// aviation.multi — a per-Simulation-Run proxy that owns at most one
 // underlying live-aircraft connection (OpenSky or VATSIM) at a time and lets
 // the operator hot-swap between them via the aviation.set_source command.
 //
 // Why a proxy rather than two independent adapters?
-//   - Hot-swap is intrinsically a CI-scoped state machine: one source active
+//   - Hot-swap is intrinsically a Run-scoped state machine: one source active
 //     at a time, an explicit deletion sweep on switch so the UI doesn't show
 //     ghost aircraft from the previous source.
-//   - It keeps the rail picker's mental model simple: one command, one CI.
+//   - It keeps the rail picker's mental model simple: one command, one Run.
 //   - The cost is small: we just forward events from the active sub-adapter,
 //     re-stamping the runtimeId so downstream routing sees `aviation.multi`.
 
@@ -79,6 +79,7 @@ export const createAviationMultiPackRuntimeAdapter = (
 
   return {
     id: aviationMultiRuntimeId,
+    version: '1.0.0',
     packId: aviationRuntimePackId,
     acceptedCommandKinds: [aviationSetSourceCommandKind],
     queryKinds: ['aviation.source_status'],
@@ -182,12 +183,12 @@ export const createAviationMultiPackRuntimeAdapter = (
       return {
         getSnapshot: async () => {
           if (!activeConnection) {
-            return { controlInstanceId: connectionConfig.controlInstanceId, objects: [], capturedAt: clock() }
+            return { simulationRunId: connectionConfig.simulationRunId, objects: [], capturedAt: clock() }
           }
           const sub = await activeConnection.getSnapshot()
-          // Re-stamp controlInstanceId for the multi runtime; sub-adapter
+          // Re-stamp simulationRunId for the multi runtime; sub-adapter
           // already filled it but we want to be explicit.
-          return { ...sub, controlInstanceId: connectionConfig.controlInstanceId }
+          return { ...sub, simulationRunId: connectionConfig.simulationRunId }
         },
         subscribe: (handler: PackRuntimeEventHandler): (() => void) => {
           handlers.add(handler)
@@ -262,7 +263,7 @@ export const createAviationMultiPackRuntimeAdapter = (
           }
           return sub
         },
-        observeCommittedEvents: async (events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => {
+        observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
           if (activeConnection) await activeConnection.observeCommittedEvents(events)
         },
         setClock: async (next: SimulationClockState): Promise<void> => {

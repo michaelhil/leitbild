@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // ============================================================================
 // Real-eval streaming probe — fires an actual LLM eval against a chosen
-// instance + room and records every WS frame received with relative
+// Workspace + Room and records every WS frame received with relative
 // timestamps. The smoke test (smoke-streaming.ts) only exercises the
 // system-message → broadcast path; it does NOT exercise the eval-event
 // chunk path. This script does.
@@ -34,7 +34,7 @@
 //   1 — any other failure
 // ============================================================================
 
-import { bootstrapProbe, type ProbeContext } from './lib/probe-bootstrap.ts'
+import { bootstrapProbe, workspaceApiUrl, workspaceRealtimeUrl, type ProbeContext } from './lib/probe-bootstrap.ts'
 
 const TIMEOUT_MS = 30_000
 
@@ -61,26 +61,26 @@ interface EvalRunResult {
 
 const ensureSeeded = async (ctx: ProbeContext): Promise<{ roomId: string; aiName: string; humanId: string }> => {
   const [roomsRes, agentsRes] = await Promise.all([
-    fetch(`${ctx.baseUrl}/api/rooms`, { headers: { Cookie: ctx.cookie } }),
-    fetch(`${ctx.baseUrl}/api/agents`, { headers: { Cookie: ctx.cookie } }),
+    fetch(workspaceApiUrl(ctx, '/rooms'), { headers: { Cookie: ctx.cookie } }),
+    fetch(workspaceApiUrl(ctx, '/agents'), { headers: { Cookie: ctx.cookie } }),
   ])
-  if (!roomsRes.ok) fail(1, `/api/rooms ${roomsRes.status}`)
-  if (!agentsRes.ok) fail(1, `/api/agents ${agentsRes.status}`)
+  if (!roomsRes.ok) fail(1, `Workspace rooms ${roomsRes.status}`)
+  if (!agentsRes.ok) fail(1, `Workspace agents ${agentsRes.status}`)
   const rooms = await roomsRes.json() as Array<{ id: string; name: string }>
   const agents = await agentsRes.json() as Array<{ id: string; name: string; kind: 'ai' | 'human' }>
-  if (rooms.length === 0) fail(1, 'no rooms in instance — seed should have created one')
+  if (rooms.length === 0) fail(1, 'no rooms in Workspace — seed should have created one')
   const aiMember = agents.find(a => a.kind === 'ai')
   const humanMember = agents.find(a => a.kind === 'human')
-  if (!aiMember) fail(1, 'no AI agent in instance')
-  if (!humanMember) fail(1, 'no human agent in instance')
+  if (!aiMember) fail(1, 'no AI agent in Workspace')
+  if (!humanMember) fail(1, 'no human agent in Workspace')
   return { roomId: rooms[0]!.id, aiName: aiMember!.name, humanId: humanMember!.id }
 }
 
-// Open a WS bound to the probe's instance, post a message AS the human
+// Open a WS bound to the probe's Workspace, post a message AS the human
 // (which triggers the AI to respond), and record every frame with timing.
 const runOneEval = async (ctx: ProbeContext, label: string): Promise<EvalRunResult> => {
   const seed = await ensureSeeded(ctx)
-  const ws = new WebSocket(`${ctx.wsBaseUrl}/ws`, {
+  const ws = new WebSocket(workspaceRealtimeUrl(ctx), {
     headers: { Cookie: ctx.cookie },
   } as unknown as undefined)
 
@@ -124,7 +124,7 @@ const runOneEval = async (ctx: ProbeContext, label: string): Promise<EvalRunResu
   // streaming-capable provider — 'short greeting' could legitimately be
   // 1 chunk and we'd misdiagnose the streaming path as broken.
   t0 = performance.now()
-  const postRes = await fetch(`${ctx.baseUrl}/api/messages`, {
+  const postRes = await fetch(workspaceApiUrl(ctx, '/messages'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Cookie: ctx.cookie },
     body: JSON.stringify({
@@ -134,7 +134,7 @@ const runOneEval = async (ctx: ProbeContext, label: string): Promise<EvalRunResu
       target: { rooms: [seed.roomId] },
     }),
   })
-  if (!postRes.ok) fail(1, `[${label}] /api/messages ${postRes.status}: ${await postRes.text()}`)
+  if (!postRes.ok) fail(1, `[${label}] Workspace messages ${postRes.status}: ${await postRes.text()}`)
 
   await new Promise<void>((resolve) => {
     const tx = setTimeout(resolve, TIMEOUT_MS)
@@ -217,27 +217,27 @@ const main = async (): Promise<void> => {
     return
   }
 
-  // Evict the probe instance via the cookie-bound endpoint, then run a
+  // Evict the probe Workspace via its scoped endpoint, then run a
   // second eval — which forces lazy-reload via restoreFromSnapshot.
   //
-  // We used to poll /api/system/diagnostics here to confirm the instance
+  // We used to poll process diagnostics here to confirm the Workspace
   // dropped from the registry, but post f2eda78 that's a contradiction:
-  // any cookie naming the just-evicted id triggers F3/getOrLoad and
-  // re-materialises the instance. The /api/system/evict response is
+  // any cookie naming the just-evicted id triggers getOrLoad and
+  // re-materialises the Workspace. The scoped evict response is
   // already authoritative; Run 2 below is the actual regression check
   // (it fails loud if reload didn't re-wire the agent-state subscription).
   console.log('\n=== evict ===')
-  const evictRes = await fetch(`${ctx.baseUrl}/api/system/evict`, {
+  const evictRes = await fetch(workspaceApiUrl(ctx, '/system/evict'), {
     method: 'POST',
     headers: { Cookie: ctx.cookie },
   })
-  if (!evictRes.ok) fail(1, `/api/system/evict ${evictRes.status}: ${await evictRes.text()}`)
+  if (!evictRes.ok) fail(1, `Workspace evict ${evictRes.status}: ${await evictRes.text()}`)
   const { evicted } = await evictRes.json() as { evicted: boolean }
-  if (!evicted) fail(1, '/api/system/evict returned evicted:false')
+  if (!evicted) fail(1, 'Workspace evict returned evicted:false')
   console.log('evicted: true')
 
-  // Run 2 — post-reload. This is the regression check. The instance
-  // gets lazy-reloaded by /api/rooms inside ensureSeeded → registry
+  // Run 2 — post-reload. This is the regression check. The Workspace
+  // gets lazy-reloaded by the scoped rooms request inside ensureSeeded → registry
   // .getOrLoad → restoreFromSnapshot → wireSystemEvents → init-loop
   // calls subscribeAgentState. Without unsubscribeAgentState in
   // onSystemEvicted, the idempotent guard would silently skip and

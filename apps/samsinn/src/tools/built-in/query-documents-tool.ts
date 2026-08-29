@@ -4,7 +4,7 @@
 // chunks similar to the agent's query.
 //
 // Filter:
-//   docIds?: string[]   restrict to specific documents in the instance
+//   docIds?: string[]   restrict to specific documents in the Workspace
 //
 // Returns up to k hits (default 5, capped at 20). Each hit:
 //   { text, docId, filename, chunkIdx, score }
@@ -28,7 +28,7 @@ const DEFAULT_K = 5
 export const createQueryDocumentsTool = (deps: QueryDocumentsToolDeps): Tool => ({
   name: 'query_documents',
   description:
-    'Searches the document corpus uploaded to this samsinn instance ' +
+    'Searches the document corpus uploaded to this Samsinn Workspace ' +
     '(PDFs, markdown, plain text) for passages similar to your query.',
   usage:
     'Use when the user references uploaded documents — "what does the spec ' +

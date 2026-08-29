@@ -25,6 +25,7 @@ import type { Room, LeitbildMirrorConfig } from '../../core/types/room.ts'
 import type { LeitbildClient, } from './client.ts'
 import { createLeitbildClient } from './client.ts'
 import type { LeitbildEvent, SubscriptionHandle } from './types.ts'
+import type { LeitbildWorkspaceConnection } from './types.ts'
 import { formatMirrorError, formatResetBoundary } from './formatter.ts'
 import { SYSTEM_SENDER_ID } from '../../core/types/constants.ts'
 import type { LimitMetrics } from '../../core/limit-metrics.ts'
@@ -32,6 +33,7 @@ import type { LimitMetrics } from '../../core/limit-metrics.ts'
 interface ActiveMirror {
   readonly room: Room
   readonly config: LeitbildMirrorConfig
+  readonly connection: LeitbildWorkspaceConnection
   readonly client: LeitbildClient
   handle?: SubscriptionHandle
   lastSeq: number
@@ -73,21 +75,22 @@ const meaningfulSignature = (event: LeitbildEvent): { objectId: string; sig: str
 export interface MirrorStatus {
   readonly baseUrl: string
   readonly workspaceId: string
+  readonly simulationRunId: string
   readonly format: 'summary' | 'full'
   readonly lastSeq: number
   readonly connected: boolean
 }
 
 export interface MirrorService {
-  // `scope` (typically a per-system instance id) keys the underlying
+  // `scope` (typically a Workspace id) keys the underlying
   // LeitbildClient pool so two tenants binding to the same Leitbild
   // deployment get isolated WS connections + manifest caches. Default
   // scope (omitted) shares a global pool — fine for single-tenant.
-  readonly attach: (room: Room, config: LeitbildMirrorConfig, scope?: string) => Promise<void>
+  readonly attach: (room: Room, connection: LeitbildWorkspaceConnection, config: LeitbildMirrorConfig, scope?: string) => Promise<void>
   readonly detach: (room: Room) => void
-  readonly statusFor: (room: Room) => MirrorStatus | undefined
+  readonly statusFor: (room: Room, connection?: LeitbildWorkspaceConnection) => MirrorStatus | undefined
   // restoreAll iterates one Workspace's Room Directory.
-  readonly restoreAll: (rooms: RoomDirectory, scope?: string) => Promise<void>
+  readonly restoreAll: (rooms: RoomDirectory, connection: LeitbildWorkspaceConnection, scope?: string) => Promise<void>
   readonly shutdown: () => void
 }
 
@@ -109,7 +112,7 @@ export const createMirrorService = (deps: MirrorServiceDeps = {}): MirrorService
       type: 'system',
       cause: {
         kind: 'external-mirror',
-        name: `${mirror.config.baseUrl}:${mirror.config.workspaceId}:${event?.seq ?? mirror.lastSeq}${event?.id ? `:${event.id}` : ''}`,
+        name: `${mirror.connection.moduleBinding.baseUrl}:${mirror.config.simulationRunId}:${event?.seq ?? mirror.lastSeq}${event?.id ? `:${event.id}` : ''}`,
       },
     })
   }
@@ -133,8 +136,8 @@ export const createMirrorService = (deps: MirrorServiceDeps = {}): MirrorService
     rememberMeaningfulState(mirror, event)
   }
 
-  // Detect Leitbild Control Instance reset. Two signals:
-  //   1. Explicit `controlInstance.reset` event from Leitbild (preferred,
+  // Detect Leitbild Simulation Run reset. Two signals:
+  //   1. Explicit `simulationRun.reset` event from Leitbild (preferred,
   //      requires Leitbild V1.1+ — see leitbild docs/discovery.md).
   //   2. Seq regression (event.seq < mirror.lastSeq) — defensive fallback
   //      for older Leitbild deployments where reset wipes the journal and
@@ -142,7 +145,7 @@ export const createMirrorService = (deps: MirrorServiceDeps = {}): MirrorService
   // Both trigger the same re-anchor flow: refetch snapshot, post boundary
   // message, reset mirror.lastSeq to the new snapshot's seq.
   const isResetSignal = (event: LeitbildEvent, mirror: ActiveMirror): boolean => {
-    if (event.type === 'controlInstance.reset') return true
+    if (event.type === 'simulationRun.reset') return true
     if (typeof event.seq === 'number' && event.seq < mirror.lastSeq && mirror.lastSeq > 0) return true
     return false
   }
@@ -161,7 +164,7 @@ export const createMirrorService = (deps: MirrorServiceDeps = {}): MirrorService
       // Re-anchor: refetch snapshot, post boundary message with NEW seq.
       // Note: the post-reset seq may be lower than mirror.lastSeq.
       try {
-        const snapshot = await mirror.client.getSnapshot(mirror.config.workspaceId)
+        const snapshot = await mirror.client.getSnapshot(mirror.config.simulationRunId)
         mirror.lastSeq = snapshot.seq
         mirror.room.post({
           senderId: SYSTEM_SENDER_ID,
@@ -170,7 +173,7 @@ export const createMirrorService = (deps: MirrorServiceDeps = {}): MirrorService
           type: 'system',
           cause: {
             kind: 'external-mirror',
-            name: `${mirror.config.baseUrl}:${mirror.config.workspaceId}:${snapshot.seq}:reset-boundary`,
+            name: `${mirror.connection.moduleBinding.baseUrl}:${mirror.config.simulationRunId}:${snapshot.seq}:reset-boundary`,
           },
         })
         return
@@ -190,18 +193,23 @@ export const createMirrorService = (deps: MirrorServiceDeps = {}): MirrorService
     rememberMeaningfulState(mirror, event)
   }
 
-  const attach = async (room: Room, config: LeitbildMirrorConfig, scope?: string): Promise<void> => {
+  const attach = async (
+    room: Room,
+    connection: LeitbildWorkspaceConnection,
+    config: LeitbildMirrorConfig,
+    scope?: string,
+  ): Promise<void> => {
     // Detach any prior mirror on this room first — single binding per room.
     detachRoom(room.profile.id)
 
     // scope keys the LeitbildClient pool so cross-tenant lifecycles stay
     // isolated (audit Finding 2.1.3). Single-tenant / tests pass undefined
     // and share the global pool.
-    const client = createLeitbildClient(config.baseUrl, scope ? { scope } : {})
+    const client = createLeitbildClient(connection, scope ? { scope } : {})
     // bufferedEvents starts as [] so events arriving between subscribe and
     // snapshot-anchor are captured. Switched to null after drain → live mode.
     const mirror: ActiveMirror = {
-      room, config, client,
+      room, config, connection, client,
       lastSeq: 0,
       objectSignatures: new Map(),
       bufferedEvents: [],
@@ -213,11 +221,11 @@ export const createMirrorService = (deps: MirrorServiceDeps = {}): MirrorService
     // Finding 2.1.1 — closes the documented-but-unimplemented race window.
     // startSeq=0 is intentional: we don't yet know the real anchor; the
     // forward-only filter applied during drain will drop events <= snapshot.seq.
-    mirror.handle = client.subscribe(config.workspaceId, (event) => { void handleEvent(mirror)(event) }, 0)
+    mirror.handle = client.subscribe(config.simulationRunId, (event) => { void handleEvent(mirror)(event) }, 0)
     active.set(room.profile.id, mirror)
 
     try {
-      const snapshot = await client.getSnapshot(config.workspaceId)
+      const snapshot = await client.getSnapshot(config.simulationRunId)
       mirror.lastSeq = snapshot.seq
 
       // Persist the binding on the room (in case attach was triggered
@@ -269,28 +277,37 @@ export const createMirrorService = (deps: MirrorServiceDeps = {}): MirrorService
     room.setLeitbildMirror(undefined)
   }
 
-  const statusFor = (room: Room): MirrorStatus | undefined => {
+  const statusFor = (room: Room, connection?: LeitbildWorkspaceConnection): MirrorStatus | undefined => {
     const mirror = active.get(room.profile.id)
     if (!mirror) {
       const cfg = room.getLeitbildMirror()
       if (!cfg) return undefined
-      return { baseUrl: cfg.baseUrl, workspaceId: cfg.workspaceId, format: cfg.format, lastSeq: 0, connected: false }
+      if (!connection) return undefined
+      return {
+        baseUrl: connection.moduleBinding.baseUrl,
+        workspaceId: connection.workspaceId,
+        simulationRunId: cfg.simulationRunId,
+        format: cfg.format,
+        lastSeq: 0,
+        connected: false,
+      }
     }
     return {
-      baseUrl: mirror.config.baseUrl,
-      workspaceId: mirror.config.workspaceId,
+      baseUrl: mirror.connection.moduleBinding.baseUrl,
+      workspaceId: mirror.connection.workspaceId,
+      simulationRunId: mirror.config.simulationRunId,
       format: mirror.config.format,
       lastSeq: mirror.lastSeq,
       connected: !!mirror.handle,
     }
   }
 
-  const restoreAll = async (rooms: RoomDirectory, scope?: string): Promise<void> => {
+  const restoreAll = async (rooms: RoomDirectory, connection: LeitbildWorkspaceConnection, scope?: string): Promise<void> => {
     for (const profile of rooms.listAllRooms()) {
       const room = rooms.getRoom(profile.id)
       const cfg = room?.getLeitbildMirror()
       if (room && cfg) {
-        try { await attach(room, cfg, scope) }
+        try { await attach(room, connection, cfg, scope) }
         catch (err) { console.warn(`[leitbild] restoreAll failed for room "${profile.name}": ${(err as Error).message}`) }
       }
     }

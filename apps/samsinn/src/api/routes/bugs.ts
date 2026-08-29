@@ -1,5 +1,5 @@
 // ============================================================================
-// Bug reporting — POST /api/bugs creates a GitHub issue on the configured
+// Bug reporting — POST /bugs creates a GitHub issue on the configured
 // repo using a server-side PAT. The browser never sees the token.
 //
 // Config via env (set in /etc/samsinn/env on production):
@@ -10,13 +10,13 @@
 // as "bug reporting not configured on this server."
 //
 // Rate-limited via a dedicated per-IP limiter (10/hour by default) — see
-// getBugLimiter below. Not shared with instance-create: bug submissions
+// getBugLimiter below. Not shared with Workspace creation: bug submissions
 // are rarer for legitimate users and the abuse path (spam to the
-// operator's public GitHub repo) needs a tighter cap than instance
+// operator's public GitHub repo) needs a tighter cap than Workspace
 // creation does.
 //
 // Auto-context attached to every issue: app version + browser UA, sourced
-// from the request body (the UI fills these from /api/system/info +
+// from the request body (the UI fills these from /system/info +
 // navigator.userAgent). Never includes room names, agent names, messages,
 // or logs — those would leak user content to a public repo.
 // ============================================================================
@@ -28,7 +28,7 @@ import { createRateLimiter, type RateLimiter } from '../rate-limit.ts'
 const REPO = process.env.SAMSINN_GH_REPO ?? 'michaelhil/samsinn'
 const TOKEN = process.env.SAMSINN_GH_TOKEN ?? ''
 
-// A3: dedicated rate limiter, NOT shared with instance-create. Tighter
+// A3: dedicated rate limiter, NOT shared with Workspace creation. Tighter
 // window — bug submissions are rare for legitimate users (10/hour is
 // generous; a frustrated user retrying still goes through), and the
 // abuse path (an authenticated tester spamming the operator's GitHub
@@ -90,7 +90,7 @@ export const buildIssueBody = (description: string, version: string, userAgent: 
 export const bugRoutes: RouteEntry[] = [
   {
     method: 'POST',
-    pattern: /^\/api\/bugs$/,
+    pattern: /^\/bugs$/,
     handler: async (req, _match, ctx) => {
       if (!TOKEN) return errorResponse('bug reporting not configured', 503)
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Copy, Search, X } from 'lucide-svelte'
   import { tick } from 'svelte'
-  import type { ControlInstanceId } from '../../core/model/index.ts'
+  import type { SimulationRunId } from '../../core/model/index.ts'
   import {
     readProcessPlantCatalog,
     readProcessPlantCatalogSource,
@@ -13,7 +13,7 @@
   } from './process-surface-client.ts'
 
   interface Props {
-    readonly controlInstanceId: ControlInstanceId
+    readonly simulationRunId: SimulationRunId
     readonly close: () => void
   }
 
@@ -36,7 +36,7 @@
     readonly source: ProcessPlantCatalogSourceFile | null
   }
 
-  let { controlInstanceId, close }: Props = $props()
+  let { simulationRunId, close }: Props = $props()
 
   let loading = $state(true)
   let error = $state<string | null>(null)
@@ -119,7 +119,7 @@
     sourceLoading = true
     sourceError = null
     try {
-      const source = await readProcessPlantCatalogSource(controlInstanceId, section.id, row.id)
+      const source = await readProcessPlantCatalogSource(simulationRunId, section.id, row.id)
       if (sourceRequestId !== requestId) return
       sourcePanel = {
         sectionTitle: section.title,
@@ -147,7 +147,7 @@
   }
 
   $effect(() => {
-    const instanceId = controlInstanceId
+    const runId = simulationRunId
     let cancelled = false
 
     const load = async (): Promise<void> => {
@@ -157,7 +157,7 @@
         catalog = null
         copyStatus = null
         closeCatalogSource()
-        const next = await readProcessPlantCatalog(instanceId)
+        const next = await readProcessPlantCatalog(runId)
         if (!cancelled) catalog = next
       } catch (err) {
         if (!cancelled) error = err instanceof Error ? err.message : String(err)

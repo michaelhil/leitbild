@@ -4,7 +4,7 @@
 // (initial + reconnect). Before this fix, the snapshot handler refreshed
 // rooms/agents/transients but left `$roomMessages` untouched. If the
 // server's authoritative state diverged from the client cache (e.g. server
-// restart, instance eviction), the UI showed phantom messages forever.
+// restart, Workspace eviction), the UI showed phantom messages forever.
 //
 // These tests pin the listener-semantics contract: cached rooms are
 // cleared via `setKey(roomId, [])` (which fires the renderer's diff path)
@@ -17,6 +17,7 @@ import { $roomMessages, $rooms, $selectedRoomId, $agents, $messageContexts, $age
 import type { WSOutbound } from '../../../../core/types/ws-protocol.ts'
 
 type Snapshot = Extract<WSOutbound, { readonly type: 'snapshot' }>
+const workspaceId = '11111111-1111-4111-8111-111111111111'
 
 const mkRoom = (id: string, name: string) => ({
   id,
@@ -44,17 +45,37 @@ describe('stateHandlers.snapshot — stale cache eviction', () => {
   // test output. Stub globalThis.fetch for the whole describe so any
   // post-snapshot fetch resolves harmlessly.
   let origFetch: typeof globalThis.fetch
+  let originalDocument: Document | undefined
+  let originalLocation: Location | undefined
   beforeEach(() => {
     $roomMessages.set({})
     $rooms.set({})
     $selectedRoomId.set(null)
     $agents.set({})
     origFetch = globalThis.fetch
+    originalDocument = globalThis.document
+    originalLocation = globalThis.location
+    Object.defineProperty(globalThis, 'document', {
+      configurable: true,
+      value: { cookie: `samsinn_workspace=${workspaceId}` },
+      writable: true,
+    })
+    Object.defineProperty(globalThis, 'location', {
+      configurable: true,
+      value: { pathname: `/workspaces/${workspaceId}` },
+      writable: true,
+    })
     globalThis.fetch = (() => Promise.resolve(new Response(JSON.stringify({
       profile: { id: 'stub', name: 'stub' }, messages: [],
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))) as typeof fetch
   })
-  afterEach(() => { globalThis.fetch = origFetch })
+  afterEach(() => {
+    globalThis.fetch = origFetch
+    if (originalDocument) globalThis.document = originalDocument
+    else delete (globalThis as typeof globalThis & { document?: Document }).document
+    if (originalLocation) globalThis.location = originalLocation
+    else delete (globalThis as typeof globalThis & { location?: Location }).location
+  })
 
   test('clears each previously-cached room via setKey (fires the listener)', () => {
     $roomMessages.setKey('r1', [mkMsg('m1', 'r1') as never])
@@ -85,7 +106,7 @@ describe('stateHandlers.snapshot — stale cache eviction', () => {
   })
 
   test('replaces stale selected room with the first room from the snapshot', () => {
-    $selectedRoomId.set('old-instance-room')
+    $selectedRoomId.set('old-workspace-room')
 
     const snap: Snapshot = {
       type: 'snapshot',
@@ -100,7 +121,7 @@ describe('stateHandlers.snapshot — stale cache eviction', () => {
   })
 
   test('clears selected room when authoritative snapshot has no rooms', () => {
-    $selectedRoomId.set('old-instance-room')
+    $selectedRoomId.set('old-workspace-room')
 
     const snap: Snapshot = {
       type: 'snapshot',
@@ -139,7 +160,7 @@ describe('stateHandlers.snapshot — stale cache eviction', () => {
     // fetch is fired but not awaited inside the handler; give it a tick.
     await new Promise(resolve => setTimeout(resolve, 0))
 
-    expect(fetchCalls.some(u => u.includes('/api/rooms/R1'))).toBe(true)
+    expect(fetchCalls.some(u => u.includes(`/api/workspaces/${workspaceId}/rooms/R1`))).toBe(true)
 
     globalThis.fetch = origFetch
   })
@@ -163,7 +184,7 @@ describe('stateHandlers.snapshot — stale cache eviction', () => {
     }
     stateHandlers.snapshot!(snap as never)
 
-    expect(fetchCalls.filter(u => u.includes('/api/rooms/'))).toEqual([])
+    expect(fetchCalls.filter(u => u.includes(`/api/workspaces/${workspaceId}/rooms/`))).toEqual([])
 
     globalThis.fetch = origFetch
   })

@@ -1,4 +1,4 @@
-import type { ControlInstanceId } from '../../core/model/index.ts'
+import type { SimulationRunId } from '../../core/model/index.ts'
 
 export interface ProcessSurfaceWidgetPosition {
   readonly x: number
@@ -26,18 +26,18 @@ const browserStorage = (): StorageLike | null =>
   typeof localStorage === 'undefined' ? null : localStorage
 
 const storageKeyFor = (config: {
-  readonly controlInstanceId: ControlInstanceId
+  readonly simulationRunId: SimulationRunId
   readonly systemId: string
   readonly surfaceId: string
 }): string =>
-  `${layoutStoragePrefix}:${config.controlInstanceId}:${config.systemId}:${config.surfaceId}`
+  `${layoutStoragePrefix}:${config.simulationRunId}:${config.systemId}:${config.surfaceId}`
 
 const windowStorageKeyFor = (config: {
-  readonly controlInstanceId: ControlInstanceId
+  readonly simulationRunId: SimulationRunId
   readonly systemId: string
   readonly surfaceId: string
 }): string =>
-  `${windowStoragePrefix}:${config.controlInstanceId}:${config.systemId}:${config.surfaceId}`
+  `${windowStoragePrefix}:${config.simulationRunId}:${config.systemId}:${config.surfaceId}`
 
 const isFiniteCoordinate = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value)
@@ -81,7 +81,7 @@ const parseWindowBounds = (value: unknown): ProcessSurfaceWindowBounds => {
 
 export const readProcessSurfaceLayout = (
   config: {
-    readonly controlInstanceId: ControlInstanceId
+    readonly simulationRunId: SimulationRunId
     readonly systemId: string
     readonly surfaceId: string
   },
@@ -101,7 +101,7 @@ export const readProcessSurfaceLayout = (
 
 export const storeProcessSurfaceLayout = (
   config: {
-    readonly controlInstanceId: ControlInstanceId
+    readonly simulationRunId: SimulationRunId
     readonly systemId: string
     readonly surfaceId: string
     readonly layout: ProcessSurfaceLayout
@@ -114,7 +114,7 @@ export const storeProcessSurfaceLayout = (
 
 export const readProcessSurfaceWindowBounds = (
   config: {
-    readonly controlInstanceId: ControlInstanceId
+    readonly simulationRunId: SimulationRunId
     readonly systemId: string
     readonly surfaceId: string
   },
@@ -134,7 +134,7 @@ export const readProcessSurfaceWindowBounds = (
 
 export const storeProcessSurfaceWindowBounds = (
   config: {
-    readonly controlInstanceId: ControlInstanceId
+    readonly simulationRunId: SimulationRunId
     readonly systemId: string
     readonly surfaceId: string
     readonly bounds: ProcessSurfaceWindowBounds

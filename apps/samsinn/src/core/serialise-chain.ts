@@ -15,8 +15,8 @@
 //   - src/tools/built-in/pack-tools.ts — install / update / uninstall
 //
 // The fourth consumer is what triggered the extraction (see CLAUDE.md
-// guidance on threshold for shared abstractions). Earlier consumers
-// migrated alongside this introduction so the inline `let chain` /
+// guidance on threshold for shared abstractions). Earlier consumers were
+// consolidated here so the inline `let chain` /
 // serialise pattern lives in exactly one place.
 
 export interface SerialiseChain {

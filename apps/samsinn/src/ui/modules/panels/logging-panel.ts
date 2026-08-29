@@ -1,3 +1,4 @@
+import { apiFetch } from "../api-client.ts"
 // ============================================================================
 // Logging panel — renderers used by the Settings > Logging modal and the
 // always-live state dot next to the Logging row in the sidebar.
@@ -30,14 +31,14 @@ interface LoggingState {
 
 const fetchState = async (): Promise<LoggingState | null> => {
   try {
-    const res = await fetch('/api/logging')
+    const res = await apiFetch('/logging')
     if (!res.ok) return null
     return await res.json() as LoggingState
   } catch { return null }
 }
 
 const putConfig = async (partial: Partial<LoggingState>): Promise<LoggingState | { error: string }> => {
-  const res = await fetch('/api/logging', {
+  const res = await apiFetch('/logging', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(partial),

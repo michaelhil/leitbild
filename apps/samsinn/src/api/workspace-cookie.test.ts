@@ -3,8 +3,7 @@ import { workspaceIdSchema } from '@samsinn-leitbild/platform-contracts'
 import {
   WORKSPACE_COOKIE,
   buildWorkspaceCookie,
-  getJoinFromQuery,
-  getWorkspaceFromQuery,
+  getWorkspaceIdFromPath,
   getWorkspaceId,
   resolveOrMintWorkspace,
   resolveWorkspaceId,
@@ -27,18 +26,24 @@ describe('Workspace selection', () => {
     expect(buildWorkspaceCookie(workspaceId, new Request('https://samsinn.test/'))).toContain('; Secure')
   })
 
-  test('parses canonical scripted and share-link parameters', () => {
-    expect(getWorkspaceFromQuery(new URL(`https://samsinn.test/?workspace=${workspaceId}`))).toBe(workspaceId)
-    expect(getJoinFromQuery(new URL(`https://samsinn.test/?join=${workspaceId}`))).toBe(workspaceId)
-    expect(getWorkspaceFromQuery(new URL('https://samsinn.test/?instance=abcdefghijklmnop'))).toBeNull()
+  test('parses only the canonical Workspace UI path', () => {
+    expect(getWorkspaceIdFromPath(`/workspaces/${workspaceId}`)).toBe(workspaceId)
+    expect(getWorkspaceIdFromPath(`/workspaces/${workspaceId}/rooms`)).toBeNull()
+    expect(getWorkspaceIdFromPath('/?join=abcdefghijklmnop')).toBeNull()
   })
 
-  test('resolves join, cookie, query, then none', () => {
-    const joined = new URL(`https://samsinn.test/?join=${workspaceId}`)
-    expect(resolveWorkspaceId(request(), joined)).toEqual({ id: workspaceId, source: 'join' })
+  test('resolves path, cookie, then none', () => {
+    const path = new URL(`https://samsinn.test/workspaces/${workspaceId}`)
+    expect(resolveWorkspaceId(request(), path)).toEqual({ id: workspaceId, source: 'path' })
     expect(resolveWorkspaceId(request(`${WORKSPACE_COOKIE}=${workspaceId}`), new URL('https://samsinn.test/')).source).toBe('cookie')
-    expect(resolveWorkspaceId(request(), new URL(`https://samsinn.test/?workspace=${workspaceId}`)).source).toBe('query')
     expect(resolveWorkspaceId(request(), new URL('https://samsinn.test/'))).toEqual({ id: null, source: 'none' })
+  })
+
+  test('a canonical path refreshes a missing or different selection cookie', () => {
+    const url = new URL(`https://samsinn.test/workspaces/${workspaceId}`)
+    expect(resolveOrMintWorkspace(request(), url)).toMatchObject({ workspaceId, isNew: false })
+    expect(resolveOrMintWorkspace(request(), url).setCookieValue).toContain(`${WORKSPACE_COOKIE}=${workspaceId}`)
+    expect(resolveOrMintWorkspace(request(`${WORKSPACE_COOKIE}=${workspaceId}`), url).setCookieValue).toBeNull()
   })
 
   test('mints a UUID and cookie only when no Workspace is selected', () => {

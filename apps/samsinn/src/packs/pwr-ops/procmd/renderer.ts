@@ -3,7 +3,7 @@
 // fails the lightweight validator, the diagram is omitted and a visible
 // footer line tells the user (no silent fallback).
 
-import type { ParsedProcedure, ParsedStep, Branch } from './parser.ts'
+import type { ParsedProcedure, ParsedStep, Branch } from '../../../procmd-core/index.ts'
 
 export interface RenderedProcedure {
   readonly markdown: string

@@ -10,7 +10,7 @@ _Avoid_: Instance when referring to an installation or process
 
 **Workspace**:
 A durable container that gives related Samsinn, Leitbild, and future module data one shared identity while leaving each module responsible for its own state.
-_Avoid_: Instance, Control Instance, House, Tenant
+_Avoid_: using a process, account, Room, or Run as the cross-Module container
 
 **Module**:
 A major application that may be enabled in a Workspace, such as Samsinn or Leitbild.

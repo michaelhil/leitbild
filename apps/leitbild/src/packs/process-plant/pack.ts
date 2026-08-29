@@ -2,6 +2,7 @@ import type { PackId, GeoJsonPoint, IsoTimestamp, OperationalObject } from '../.
 import { geoPointFromLonLat, meters, objectIdSchema } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectPresentation, PackScenarioObjectSpec } from '../../core/packs/protocol.ts'
+import { createLeitbildPackDescriptor } from '../../core/packs/protocol.ts'
 import { processPlantControlWriteCommandKind } from './commands.ts'
 import { emptyProcessPlantProjection, processPlantPackId, processPlantUnitPackDataSchema, type ProcessPlantUnitPackData } from './model.ts'
 import { processPlantSimAdapterId, processPlantSimRuntimeId } from './sim/constants.ts'
@@ -108,17 +109,15 @@ const presentationForUnit = (object: OperationalObject, data: ProcessPlantUnitPa
 }
 
 export const processPlantPack: LeitbildPack = {
-  id: 'process-plant',
-  name: 'Process Plant',
-  runtimes: [{
-    id: processPlantSimRuntimeId,
-    label: 'Local process plant runtime',
-    kind: 'local',
-  }],
-  wikiRefs: [
-    { name: 'Leitbild PWR operations wiki', url: 'https://github.com/michaelhil/leitbild/blob/main/docs/wiki/pwr-ops.md' },
-  ],
-  defaultRuntimeId: processPlantSimRuntimeId,
+  descriptor: createLeitbildPackDescriptor({
+    id: 'process-plant', version: '1.0.0', name: 'Process Plant',
+    contributions: ['runtime', 'knowledge', 'scenario', 'presentation', 'commands'],
+  }),
+  runtime: {
+    runtimes: [{ id: processPlantSimRuntimeId, version: '1.0.0', label: 'Local process plant runtime', kind: 'local' }],
+    defaultRuntimeId: processPlantSimRuntimeId,
+  },
+  knowledge: { wikiRefs: [{ name: 'Leitbild PWR operations wiki', url: 'https://github.com/michaelhil/leitbild/blob/main/docs/wiki/pwr-ops.md' }] },
   scenario: {
     expandObject: (spec, context): OperationalObject => {
       if (spec.type !== 'unit') unsupported(`scenario object type ${spec.type}`)
@@ -126,40 +125,31 @@ export const processPlantPack: LeitbildPack = {
     },
     applyOperation: () => unsupported('scenario operations'),
   },
-  categories: [{
-    id: 'process-plants',
-    label: 'Process plants',
-    emptyLabel: 'No process plants',
-    matches: (object): boolean => parseUnitData(object) !== null,
-  }],
-  createObjectTypes: [],
-  presentObject: (object: OperationalObject): PackObjectPresentation => {
-    const data = parseUnitData(object)
-    if (data) return presentationForUnit(object, data)
-    return {
-      categoryId: 'unknown',
-      icon: 'unknown',
-      color: '#667085',
-      summary: object.operational.status,
-      status: packStatus('idle', object.operational.status),
-      fields: [packField('warning', 'Warning', 'Object is outside the process-plant pack vocabulary')],
-    }
+  presentation: {
+    categories: [{
+      id: 'process-plants', label: 'Process plants', emptyLabel: 'No process plants',
+      matches: (object): boolean => parseUnitData(object) !== null,
+    }],
+    presentObject: (object: OperationalObject): PackObjectPresentation => {
+      const data = parseUnitData(object)
+      if (data) return presentationForUnit(object, data)
+      return {
+        categoryId: 'unknown', icon: 'unknown', color: '#667085', summary: object.operational.status,
+        status: packStatus('idle', object.operational.status),
+        fields: [packField('warning', 'Warning', 'Object is outside the process-plant pack vocabulary')],
+      }
+    },
   },
-  defaultObjectLabel: (typeId: string): string =>
-    unsupported(`default label for create type ${typeId}`),
-  buildCreateObjectCommand: (
-    typeId: string,
-    _label: string,
-    _geometry: PackCreationGeometry,
-    _parameters?: unknown,
-  ): PackCommandRequest =>
-    unsupported(`create-object command for type ${typeId}`),
-  isController: (): boolean => false,
-  isTarget: (): boolean => false,
-  buildSetTargetCommand: (): PackCommandRequest =>
-    unsupported('target commands'),
-  buildCancelTargetCommand: (): PackCommandRequest =>
-    unsupported('cancel-target commands'),
+  commands: {
+    createObjectTypes: [],
+    defaultObjectLabel: (typeId: string): string => unsupported(`default label for create type ${typeId}`),
+    buildCreateObjectCommand: (typeId: string, _label: string, _geometry: PackCreationGeometry, _parameters?: unknown): PackCommandRequest =>
+      unsupported(`create-object command for type ${typeId}`),
+    isController: (): boolean => false,
+    isTarget: (): boolean => false,
+    buildSetTargetCommand: (): PackCommandRequest => unsupported('target commands'),
+    buildCancelTargetCommand: (): PackCommandRequest => unsupported('cancel-target commands'),
+  },
 }
 
 export { processPlantControlWriteCommandKind }

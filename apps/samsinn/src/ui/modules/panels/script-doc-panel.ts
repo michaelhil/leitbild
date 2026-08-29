@@ -1,3 +1,4 @@
+import { apiFetch } from "../api-client.ts"
 // Right-rail script panel: immutable source above, live run status below.
 //
 // Visible only when a script is active in the selected room. Renders the
@@ -54,7 +55,7 @@ const fetchSource = async (scriptName: string): Promise<string> => {
   const cached = sourceCache.get(scriptName)
   if (cached !== undefined) return cached
   try {
-    const res = await fetch(`/api/scripts/${encodeURIComponent(scriptName)}`)
+    const res = await apiFetch(`/scripts/${encodeURIComponent(scriptName)}`)
     if (res.ok) {
       const data = await res.json() as { source?: unknown }
       if (typeof data.source === 'string') {

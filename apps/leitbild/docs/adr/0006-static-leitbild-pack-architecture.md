@@ -10,7 +10,7 @@ The first implementation is static and built in. Leitbild will not add GitHub-ba
 
 ## Rationale
 
-Leitbild must support multiple operational domains without letting the core UI or control instance model become ambulance-specific. A pack-shaped interface gives the project a clear seam between generic control-center functionality and domain-specific behavior.
+Leitbild must support multiple operational domains without letting the core UI or simulation run model become ambulance-specific. A pack-shaped interface gives the project a clear seam between generic control-center functionality and domain-specific behavior.
 
 The installable unit should remain simple. Splitting domain, simulation, UI, and asset behavior into separate user-facing pack types would create management overhead and unclear compatibility rules. Instead, those are contribution sections inside one pack. Scenarios are top-level compositions that activate packs rather than being owned by a single pack.
 

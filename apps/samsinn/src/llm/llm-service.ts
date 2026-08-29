@@ -49,6 +49,7 @@ import { resolveDefaultModelChain, type ProviderSnapshot } from './models/defaul
 import { CURATED_MODELS } from './models/catalog.ts'
 import { isAgentFallbackable as classifyIsAgentFallbackable } from '../agents/error-classify.ts'
 import { isAbortError } from './errors.ts'
+import { resolveProviderAvailability } from './provider-availability.ts'
 
 // === Source tagging — every call site declares its identity ===
 
@@ -159,14 +160,6 @@ const orderReportedModelsForDefault = (provider: string, ids: ReadonlyArray<stri
   return out
 }
 
-const monitorStatus = (state: MonitorState | null | undefined): ProviderSnapshot['status'] => {
-  if (!state) return 'ok'
-  if (state.sub === 'ok') return 'ok'
-  if (state.sub === 'backoff') return 'cooldown'
-  if (state.sub === 'no_key' || state.sub === 'disabled') return 'no_key'
-  return 'down'
-}
-
 const buildImplicitFallbackChain = async (router: ProviderRouter): Promise<ReadonlyArray<string>> => {
   const refs = await router.models().catch(() => [] as string[])
   const byProvider = new Map<string, string[]>()
@@ -180,7 +173,7 @@ const buildImplicitFallbackChain = async (router: ProviderRouter): Promise<Reado
   const monitor = router.getMonitorSnapshot()
   const snapshots: ProviderSnapshot[] = router.getProviderNames().map(name => ({
     name,
-    status: monitorStatus(monitor[name]),
+    availability: resolveProviderAvailability(monitor[name], { fallbackSub: 'ok' }),
     models: orderReportedModelsForDefault(name, byProvider.get(name) ?? []).map(id => ({ id })),
   }))
   return resolveDefaultModelChain(snapshots)

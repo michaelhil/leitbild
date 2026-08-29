@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { createLeitbildTools, __clearLeitbildToolCache } from './tools.ts'
-import type { LeitbildAgentBinding } from '../../core/types/agent.ts'
+import type { ResolvedLeitbildAgentBinding } from './types.ts'
+import { createLeitbildModuleBinding } from './client.ts'
+import { workspaceIdSchema } from '@samsinn-leitbild/platform-contracts'
 
 describe('leitbild tools', () => {
   test('returns five read tools with stable names', () => {
@@ -15,13 +17,18 @@ describe('leitbild tools', () => {
     for (const tool of tools) {
       const result = await tool.execute(tool.name === 'lb_object' ? { id: 'amb-1' } : tool.name === 'lb_query' ? { packId: 'ambulance', kind: 'ambulance.objects' } : {}, ctx)
       expect(result.success).toBe(false)
-      expect(String(result.error)).toContain('No leitbildBinding')
+      expect(String(result.error)).toContain('No Leitbild Simulation Run')
     }
   })
 
   test('binding resolver receives the caller id', async () => {
     const seen: string[] = []
-    const binding: LeitbildAgentBinding = { baseUrl: 'https://example.test', workspaceId: 'x:y', role: 'observer' }
+    const binding: ResolvedLeitbildAgentBinding = {
+      moduleBinding: createLeitbildModuleBinding('https://example.test'),
+      workspaceId: workspaceIdSchema.parse('33333333-3333-4333-8333-333333333333'),
+      simulationRunId: 'run-33333333-3333-4333-8333-333333333333',
+      role: 'observer',
+    }
     const tools = createLeitbildTools({
       getBinding: (id: string) => { seen.push(id); return binding },
     })

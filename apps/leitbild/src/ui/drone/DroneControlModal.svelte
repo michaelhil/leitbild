@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Maximize2, X } from 'lucide-svelte'
-  import type { ControlInstanceId, ObjectId, OperationalObject } from '../../core/model/index.ts'
+  import type { SimulationRunId, ObjectId, OperationalObject } from '../../core/model/index.ts'
   import {
     attackCommandKind,
     holdDroneCommandKind,
@@ -11,7 +11,7 @@
   import { dronePackDataSchema, type DroneManualAxes } from '../../packs/drone/model.ts'
   import { droneManualIntentRealtimeInputType, type DroneMotionFrame } from '../../packs/drone/realtime.ts'
   import { droneSensorContacts } from '../../packs/drone/query.ts'
-  import { sendControlInstanceCommand, type ControlInstanceCommandRequest } from '../control-instance-client.ts'
+  import { sendSimulationRunCommand, type SimulationRunCommandRequest } from '../simulation-run-client.ts'
   import type { RuntimeInputRequest } from '../app/realtime-connection.ts'
   import type { CommandResponse } from '../types.ts'
   import IconButton from '../components/IconButton.svelte'
@@ -40,10 +40,10 @@
   import DroneSettingsRail from './DroneSettingsRail.svelte'
 
   interface Props {
-    readonly controlInstanceId: ControlInstanceId
+    readonly simulationRunId: SimulationRunId
     readonly object: OperationalObject
     readonly objects: ReadonlyArray<OperationalObject>
-    readonly sendRealtimeCommand?: (command: ControlInstanceCommandRequest) => Promise<CommandResponse>
+    readonly sendRealtimeCommand?: (command: SimulationRunCommandRequest) => Promise<CommandResponse>
     readonly sendRealtimeInput?: (input: RuntimeInputRequest) => void
     readonly subscribeMotionFrames?: (consumer: DroneMotionFrameConsumer) => () => void
     readonly windowOffsetIndex?: number
@@ -81,7 +81,7 @@
   type DroneMotionFrameConsumer = (frames: ReadonlyArray<DroneMotionFrame>) => void
 
   let {
-    controlInstanceId,
+    simulationRunId,
     object,
     objects,
     sendRealtimeCommand,
@@ -467,7 +467,7 @@
         commandStatus = err instanceof Error ? `${err.message}; falling back to command path` : 'Realtime input failed; falling back to command path'
       }
     }
-    const command: ControlInstanceCommandRequest = {
+    const command: SimulationRunCommandRequest = {
       kind: manualControlCommandKind,
       targetObjectIds: [selectedObject.id],
       payload: commandPayload,
@@ -475,11 +475,11 @@
     try {
       const response = sendRealtimeCommand
         ? await sendRealtimeCommand(command)
-        : await sendControlInstanceCommand(controlInstanceId, command)
+        : await sendSimulationRunCommand(simulationRunId, command)
       return { transport: 'command', result: response.result }
     } catch (err) {
       if (!sendRealtimeCommand) throw err
-      const response = await sendControlInstanceCommand(controlInstanceId, command)
+      const response = await sendSimulationRunCommand(simulationRunId, command)
       return { transport: 'command', result: response.result }
     }
   }
@@ -526,7 +526,7 @@
       : mode === 'land'
         ? landDroneCommandKind
         : returnToLaunchDroneCommandKind
-    const body = await sendControlInstanceCommand(controlInstanceId, {
+    const body = await sendSimulationRunCommand(simulationRunId, {
       kind,
       targetObjectIds: [selectedObject.id],
       payload: {
@@ -538,7 +538,7 @@
 
   const attackTarget = async (): Promise<void> => {
     if (!selectedTargetId) return
-    const body = await sendControlInstanceCommand(controlInstanceId, {
+    const body = await sendSimulationRunCommand(simulationRunId, {
       kind: attackCommandKind,
       targetObjectIds: [selectedObject.id, selectedTargetId as ObjectId],
       payload: {

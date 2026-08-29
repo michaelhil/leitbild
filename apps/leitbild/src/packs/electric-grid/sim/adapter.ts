@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type {
   CommandEnvelope,
   CommandResult,
-  ControlInstanceEvent,
+  SimulationRunEvent,
   IsoTimestamp,
   OperationalObject,
   SimulationClockState,
@@ -17,7 +17,7 @@ import type {
   PackRuntimeEventPersistence,
 } from '../../../simulation/protocol.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
-import { defaultControlInstanceRuntimePolicy } from '../../../core/control-instances/runtime-persistence-policy.ts'
+import { defaultSimulationRunRuntimePolicy } from '../../../core/simulation-runs/runtime-persistence-policy.ts'
 import {
   electricGridCommandKinds,
   gridClearDerateCommandKind,
@@ -38,7 +38,7 @@ import { norwayGridArenaTopology } from '../arena/norway-grid-arena.ts'
 import { solveGrid, type GridRuntimeState, type GridSolverTopology } from '../runtime/solver.ts'
 
 const updateIntervalMs = 2_000
-const runtimeStateFlushIntervalMs = defaultControlInstanceRuntimePolicy.runtimePrivateStateFlushIntervalMs
+const runtimeStateFlushIntervalMs = defaultSimulationRunRuntimePolicy.runtimePrivateStateFlushIntervalMs
 const projectedChangeThresholds = {
   branchFlowMw: 50,
   branchLoadingPercent: 5,
@@ -271,6 +271,7 @@ const currentSimulationTime = (
 
 export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter => ({
   id: electricGridRuntimeId,
+  version: '1.0.0',
   packId: electricGridRuntimePackId,
   acceptedCommandKinds: electricGridCommandKinds,
   queryKinds: electricGridQueryKinds,
@@ -388,7 +389,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
 
     return {
       getSnapshot: async () => ({
-        controlInstanceId: config.controlInstanceId,
+        simulationRunId: config.simulationRunId,
         objects: [...objects.values()],
         capturedAt: nowIso(),
       }),
@@ -429,7 +430,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
       },
       query: async (request: PackQueryRequest): Promise<PackQueryResponse> =>
         answerElectricGridQuery({ request, objects: [...objects.values()] }),
-      observeCommittedEvents: async (events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => {
+      observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
         for (const event of events) {
           if (event.type === 'object.upserted' && event.object.packId === electricGridRuntimePackId) {
             objects.set(event.object.id, restoreGridObject(event.object))

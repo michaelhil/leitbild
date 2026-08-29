@@ -1,6 +1,7 @@
 import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject, SurfaceMapLayer } from '../model/index.ts'
 import type { RoutingAdapter } from '../../routing/protocol.ts'
 import type { DatasetConfig, DatasetId } from '../../reference-data/types.ts'
+import { packDescriptorSchema, type PackDescriptor } from '@samsinn-leitbild/platform-contracts'
 
 /** Builder a pack declares to contribute a reference dataset. The CLI reads `id`
  * for filtering and listing; `build` runs only when the pipeline actually
@@ -200,6 +201,7 @@ export interface PackTargetContext {
 
 export interface PackRuntime {
   readonly id: string
+  readonly version: string
   readonly label: string
   readonly kind: 'local' | 'remote' | 'replay'
 }
@@ -250,34 +252,22 @@ export interface PackScenarioSupport {
   ) => OperationalObject | Promise<OperationalObject>
 }
 
-export interface LeitbildPack {
-  readonly id: string
-  readonly name: string
-  readonly runtimes?: ReadonlyArray<PackRuntime>
-  readonly defaultRuntimeId?: string
-  readonly wikiRefs?: ReadonlyArray<PackWikiRef>
-  /**
-   * Reference dataset builders contributed by this pack. The reference-data
-   * pipeline (build CLI, manifest writer, spatial index) walks all active
-   * packs and collects their builders. See ADR 0019 (amended) and ADR 0022.
-   */
-  readonly referenceDatasetBuilders?: ReadonlyArray<PackReferenceDatasetBuilder>
-  /**
-   * Reference dataset ids used by the UI to register already-built map overlays.
-   * Build callbacks stay server/CLI-side; UI bundles should not import dataset
-   * fetchers or build pipelines just to know which overlays a pack can render.
-   */
-  readonly referenceDatasetIds?: ReadonlyArray<DatasetId>
-  /**
-   * Rail-side layer-group toggles. When a pack contributes mapLayerGroups,
-   * the control rail renders a section with one row per group plus an
-   * optional source-picker. See ADR 0023.
-   */
-  readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
-  readonly scenario?: PackScenarioSupport
+export interface PackRuntimeContribution {
+  readonly runtimes: ReadonlyArray<PackRuntime>
+  readonly defaultRuntimeId: string
+}
+
+export interface PackKnowledgeContribution {
+  readonly wikiRefs: ReadonlyArray<PackWikiRef>
+}
+
+export interface PackReferenceDataContribution {
+  readonly builders: ReadonlyArray<PackReferenceDatasetBuilder>
+  readonly datasetIds: ReadonlyArray<DatasetId>
+}
+
+export interface PackPresentationContribution {
   readonly categories: ReadonlyArray<PackObjectCategory>
-  readonly createObjectTypes: ReadonlyArray<PackCreateObjectType>
-  readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
   readonly presentObject: (
     object: OperationalObject,
     context: PackObjectPresentationContext,
@@ -299,6 +289,11 @@ export interface LeitbildPack {
   readonly mapAreaFeatureQueries?: (
     context: PackObjectPresentationContext,
   ) => ReadonlyArray<PackQueryRequest>
+  readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
+}
+
+export interface PackCommandContribution {
+  readonly createObjectTypes: ReadonlyArray<PackCreateObjectType>
   readonly defaultObjectLabel: (
     typeId: string,
     context: PackObjectCreationContext,
@@ -325,3 +320,36 @@ export interface LeitbildPack {
     context: PackTargetContext,
   ) => PackCommandRequest
 }
+
+export interface PackInteractionContribution {
+  readonly handlers: ReadonlyArray<InteractionHandler>
+}
+
+export interface LeitbildPack {
+  readonly descriptor: PackDescriptor
+  readonly runtime?: PackRuntimeContribution
+  readonly knowledge?: PackKnowledgeContribution
+  readonly referenceData?: PackReferenceDataContribution
+  readonly scenario?: PackScenarioSupport
+  readonly presentation: PackPresentationContribution
+  readonly commands: PackCommandContribution
+  readonly interactions?: PackInteractionContribution
+}
+
+export const createLeitbildPackDescriptor = (config: {
+  readonly id: string
+  readonly version: string
+  readonly name: string
+  readonly description?: string
+  readonly contributions: ReadonlyArray<string>
+}): PackDescriptor => packDescriptorSchema.parse({
+  schemaVersion: '1.0.0',
+  id: config.id,
+  moduleId: 'leitbild',
+  version: config.version,
+  name: config.name,
+  ...(config.description === undefined ? {} : { description: config.description }),
+  platformVersionRange: '^1.0.0',
+  dependencies: [],
+  contributions: config.contributions.map(kind => ({ kind })),
+})

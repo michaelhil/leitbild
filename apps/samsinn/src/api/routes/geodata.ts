@@ -1,12 +1,12 @@
 // ============================================================================
 // Geodata admin routes — dynamic categories, paste-import, delete cascade.
 //
-// GET    /api/geodata                                 → registry overview (categories + counts)
-// GET    /api/geodata/:category                       → list features in a category
-// GET    /api/geodata/search?q=...&category=...       → resolver cascade lookup
-// POST   /api/geodata/import                          → paste-object import (validate + apply)
-// DELETE /api/geodata/categories/:id                  → delete category (cascades to .geojson)
-// DELETE /api/geodata/:category/:source/:id           → remove individual feature (local + unverified only)
+// GET    /geodata                                 → registry overview (categories + counts)
+// GET    /geodata/:category                       → list features in a category
+// GET    /geodata/search?q=...&category=...       → resolver cascade lookup
+// POST   /geodata/import                          → paste-object import (validate + apply)
+// DELETE /geodata/categories/:id                  → delete category (cascades to .geojson)
+// DELETE /geodata/:category/:source/:id           → remove individual feature (local + unverified only)
 //
 // All categories are user-defined via the import flow. There is no closed
 // allow-list — validation walks the registry at request time.
@@ -28,7 +28,7 @@ export const geodataRoutes: RouteEntry[] = [
   //     the empty-state UI hangs off an empty array here. ---
   {
     method: 'GET',
-    pattern: /^\/api\/geodata$/,
+    pattern: /^\/geodata$/,
     handler: async () => {
       const categories = await listCategories()
       const rows = await Promise.all(categories.map(async (meta) => {
@@ -53,7 +53,7 @@ export const geodataRoutes: RouteEntry[] = [
   //     wins the dispatcher's first-match-wins lookup. ---
   {
     method: 'GET',
-    pattern: /^\/api\/geodata\/search$/,
+    pattern: /^\/geodata\/search$/,
     handler: async (req) => {
       const url = new URL(req.url)
       const q = url.searchParams.get('q')?.trim()
@@ -73,7 +73,7 @@ export const geodataRoutes: RouteEntry[] = [
   // --- Import: validate + apply paste object. ---
   {
     method: 'POST',
-    pattern: /^\/api\/geodata\/import$/,
+    pattern: /^\/geodata\/import$/,
     handler: async (req) => {
       const body = await parseBody(req)
       const result = await applyImport(body)
@@ -88,7 +88,7 @@ export const geodataRoutes: RouteEntry[] = [
   //     features in any source carry that id. ---
   {
     method: 'DELETE',
-    pattern: /^\/api\/geodata\/categories\/([a-z0-9-]+)$/,
+    pattern: /^\/geodata\/categories\/([a-z0-9-]+)$/,
     handler: async (_req, match) => {
       const id = match[1]!
       const r = await removeCategory(id)
@@ -100,7 +100,7 @@ export const geodataRoutes: RouteEntry[] = [
   // --- List features in a category. ---
   {
     method: 'GET',
-    pattern: /^\/api\/geodata\/([a-z0-9-]+)$/,
+    pattern: /^\/geodata\/([a-z0-9-]+)$/,
     handler: async (_req, match) => {
       const c = match[1]!
       if (!await getCategory(c)) return errorResponse(`unknown category: ${c}`, 404)
@@ -112,7 +112,7 @@ export const geodataRoutes: RouteEntry[] = [
   // --- Delete an individual feature. Only (source=local, verified=false). ---
   {
     method: 'DELETE',
-    pattern: /^\/api\/geodata\/([a-z0-9-]+)\/([a-z]+)\/([^/]+)$/,
+    pattern: /^\/geodata\/([a-z0-9-]+)\/([a-z]+)\/([^/]+)$/,
     handler: async (_req, match) => {
       const c = match[1]!
       const src = match[2]!
@@ -123,7 +123,7 @@ export const geodataRoutes: RouteEntry[] = [
       const target = features.find((f) => f.properties.id === id && f.properties.source === src)
       if (!target) return errorResponse('not found', 404)
       if (target.properties.verified || src !== 'local') {
-        return errorResponse('only local + unverified features can be deleted via this endpoint; use DELETE /api/geodata/categories/:id to remove a whole category', 403)
+        return errorResponse('only local + unverified features can be deleted via this endpoint; use DELETE /geodata/categories/:id to remove a whole category', 403)
       }
       const result = await removeFeature(c, 'local', id)
       return json({ removed: result.removed })

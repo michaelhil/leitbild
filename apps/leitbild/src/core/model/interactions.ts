@@ -3,14 +3,14 @@ import { geoJsonGeometrySchema, type GeoJsonGeometry } from './geo.ts'
 import {
   actorIdSchema,
   clientIdSchema,
-  controlInstanceIdSchema,
+  simulationRunIdSchema,
   idSchema,
   notificationIdSchema,
   objectIdSchema,
   signalIdSchema,
   type ActorId,
   type ClientId,
-  type ControlInstanceId,
+  type SimulationRunId,
   type NotificationId,
   type ObjectId,
   type SignalId,
@@ -53,7 +53,7 @@ export type InteractionEndpoint =
 
 export interface InteractionSignal {
   readonly id: SignalId
-  readonly controlInstanceId: ControlInstanceId
+  readonly simulationRunId: SimulationRunId
   readonly at: IsoTimestamp
   readonly source: InteractionEndpoint
   readonly targets: ReadonlyArray<InteractionEndpoint>
@@ -67,7 +67,7 @@ export interface InteractionSignal {
 
 export interface OperationalNotification {
   readonly id: NotificationId
-  readonly controlInstanceId: ControlInstanceId
+  readonly simulationRunId: SimulationRunId
   readonly at: IsoTimestamp
   readonly title: string
   readonly message: string
@@ -142,7 +142,7 @@ export const interactionEndpointSchema = z.discriminatedUnion('kind', [
 
 export const interactionSignalSchema = z.object({
   id: signalIdSchema,
-  controlInstanceId: controlInstanceIdSchema,
+  simulationRunId: simulationRunIdSchema,
   at: isoTimestampSchema,
   source: interactionEndpointSchema,
   targets: z.array(interactionEndpointSchema),
@@ -156,7 +156,7 @@ export const interactionSignalSchema = z.object({
 
 export const operationalNotificationSchema = z.object({
   id: notificationIdSchema,
-  controlInstanceId: controlInstanceIdSchema,
+  simulationRunId: simulationRunIdSchema,
   at: isoTimestampSchema,
   title: z.string().min(1),
   message: z.string().min(1),

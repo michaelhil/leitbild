@@ -18,6 +18,7 @@
 // ============================================================================
 
 import { DEFAULT_PREFERENCE_ORDER, CURATED_MODELS } from './catalog.ts'
+import type { MonitorSubState } from '../provider-monitor.ts'
 
 // Skip thinking models when picking the default — a fresh user's seed
 // agent should never land on a 10s-time-to-first-content reasoning model.
@@ -29,8 +30,7 @@ const isThinking = (provider: string, modelId: string): boolean => {
 
 export interface ProviderSnapshot {
   readonly name: string
-  // 'ok' = has effective key (or is ollama) AND not in cooldown.
-  readonly status: 'ok' | 'no_key' | 'cooldown' | 'down'
+  readonly availability: { readonly sub: MonitorSubState }
   // First entry is the preferred pick for this provider (curated order).
   readonly models: ReadonlyArray<{ readonly id: string }>
 }
@@ -52,13 +52,13 @@ const orderedProviders = (providers: ReadonlyArray<ProviderSnapshot>): ReadonlyA
   const seen = new Set<string>()
   const out: ProviderSnapshot[] = []
   for (const prov of DEFAULT_PREFERENCE_ORDER) {
-    const p = providers.find(x => x.name === prov && x.status === 'ok')
+    const p = providers.find(x => x.name === prov && x.availability.sub === 'ok')
     if (!p) continue
     seen.add(prov)
     out.push(p)
   }
   for (const p of providers) {
-    if (p.status !== 'ok' || seen.has(p.name)) continue
+    if (p.availability.sub !== 'ok' || seen.has(p.name)) continue
     seen.add(p.name)
     out.push(p)
   }
@@ -84,7 +84,7 @@ export const resolveDefaultModel = (providers: ReadonlyArray<ProviderSnapshot>):
   // First pass: walk the curated preference order, pick the first ok provider
   // whose first NON-thinking model is available.
   for (const prov of DEFAULT_PREFERENCE_ORDER) {
-    const p = providers.find(x => x.name === prov && x.status === 'ok')
+    const p = providers.find(x => x.name === prov && x.availability.sub === 'ok')
     if (!p) continue
     const firstFast = p.models.find(m => !isThinking(prov, m.id))
     if (!firstFast) continue
@@ -95,7 +95,7 @@ export const resolveDefaultModel = (providers: ReadonlyArray<ProviderSnapshot>):
   // sambanova, ollama) so a fresh user with only Ollama configured still
   // gets a default.
   for (const p of providers) {
-    if (p.status !== 'ok') continue
+    if (p.availability.sub !== 'ok') continue
     const firstFast = p.models.find(m => !isThinking(p.name, m.id))
     if (firstFast) return formatModelRef(p.name, firstFast.id)
   }

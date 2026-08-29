@@ -22,9 +22,6 @@
 // keeps the chain intact while making it obvious in any audit that a
 // capture happened and what is missing.
 //
-// SNAPSHOT_VERSION is NOT bumped: this is purely additive on an optional
-// field (cause), and load remains compatible. See feedback_no_snapshot_backcompat.md.
-
 import type { Message } from '../types/messaging.ts'
 
 const buildStoppedFence = (captureId: string, agentName: string): string =>

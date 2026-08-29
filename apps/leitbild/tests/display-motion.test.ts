@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ControlInstanceId, GeoJsonLineString, OperationalObject } from '../src/core/model/index.ts'
+import type { SimulationRunId, GeoJsonLineString, OperationalObject } from '../src/core/model/index.ts'
 import { geoPointFromLonLat } from '../src/core/model/index.ts'
 import {
   createDisplayMotionState,
@@ -13,7 +13,7 @@ import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 
 const scenarioAmbulance = (): OperationalObject => {
   const object = createAmbulanceSimEngine({
-    controlInstanceId: 'control-instance:display-motion-test' as ControlInstanceId,
+    simulationRunId: 'run-display-motion-test' as SimulationRunId,
     objects: osloAmbulanceScenario.initialObjects,
     routing: createDirectRoutingAdapter(),
   }).snapshot().objects.find(candidate => candidate.kind === 'mobile_entity')

@@ -36,6 +36,12 @@ export interface BootstrapOptions {
   readonly token?: string
 }
 
+export const workspaceApiUrl = (context: ProbeContext, path: `/${string}`): string =>
+  `${context.baseUrl}/api/workspaces/${encodeURIComponent(context.workspaceId)}${path}`
+
+export const workspaceRealtimeUrl = (context: ProbeContext): string =>
+  `${context.wsBaseUrl}/api/workspaces/${encodeURIComponent(context.workspaceId)}/ws`
+
 const fail = (msg: string): never => {
   console.error(`FAIL: ${msg}`)
   process.exit(1)
@@ -73,7 +79,7 @@ export const bootstrapProbe = async (opts: BootstrapOptions): Promise<ProbeConte
     if (!issued) fail('probe navigation did not return a samsinn_workspace Set-Cookie')
     const workspaceId = issued!.slice(WORKSPACE_COOKIE_PREFIX.length)
     const cookie = sessionCookie ? `${sessionCookie}; ${issued}` : issued!
-    const warm = await fetch(`${baseUrl}/api/rooms`, { headers: { Cookie: cookie } })
+    const warm = await fetch(`${baseUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/rooms`, { headers: { Cookie: cookie } })
     if (!warm.ok) fail(`probe Workspace warmup ${warm.status}`)
     return { baseUrl, wsBaseUrl, cookie, workspaceId, sessionCookie }
   }

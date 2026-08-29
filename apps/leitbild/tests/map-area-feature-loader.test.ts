@@ -1,9 +1,14 @@
 import { describe, expect, test } from 'bun:test'
-import type { ControlInstanceId, IsoTimestamp } from '../src/core/model/index.ts'
+import type { SimulationRunId, IsoTimestamp } from '../src/core/model/index.ts'
 import { geoPointFromLonLat } from '../src/core/model/index.ts'
-import type { LeitbildPack, PackMapAreaFeature, PackQueryRequest } from '../src/core/packs/protocol.ts'
+import {
+  createLeitbildPackDescriptor,
+  type LeitbildPack,
+  type PackMapAreaFeature,
+  type PackQueryRequest,
+} from '../src/core/packs/protocol.ts'
 import { createMapAreaFeatureLoader } from '../src/ui/app/map-area-feature-loader.ts'
-import type { ControlInstanceRequestOptions } from '../src/ui/control-instance-client.ts'
+import type { SimulationRunRequestOptions } from '../src/ui/simulation-run-client.ts'
 import type { PackQueryApiResponse } from '../src/ui/types.ts'
 
 const generatedAt = '2026-05-30T00:00:00.000Z' as IsoTimestamp
@@ -34,26 +39,34 @@ const delay = async (ms: number): Promise<void> => {
 }
 
 const createPack = (requests: ReadonlyArray<PackQueryRequest>): LeitbildPack => ({
-  id: 'weather',
-  name: 'Weather',
-  categories: [],
-  createObjectTypes: [],
-  mapAreaFeatures: () => [featureFor('sync-feature')],
-  mapAreaFeatureQueries: () => requests,
-  presentObject: () => ({
-    categoryId: 'weather',
-    icon: 'weather',
-    color: '#2563eb',
-    summary: '',
-    fields: [],
-    status: { tone: 'ready', label: 'Ready', indicator: { shape: 'dot' } },
+  descriptor: createLeitbildPackDescriptor({
+    id: 'weather-test',
+    version: '1.0.0',
+    name: 'Weather Test',
+    contributions: ['presentation', 'commands', 'queries'],
   }),
-  defaultObjectLabel: () => 'unused',
-  buildCreateObjectCommand: () => ({ kind: 'unused', payload: {}, targetObjectIds: [] }),
-  isController: () => false,
-  isTarget: () => false,
-  buildSetTargetCommand: () => ({ kind: 'unused', payload: {}, targetObjectIds: [] }),
-  buildCancelTargetCommand: () => ({ kind: 'unused', payload: {}, targetObjectIds: [] }),
+  presentation: {
+    categories: [],
+    mapAreaFeatures: () => [featureFor('sync-feature')],
+    mapAreaFeatureQueries: () => requests,
+    presentObject: () => ({
+      categoryId: 'weather',
+      icon: 'weather',
+      color: '#2563eb',
+      summary: '',
+      fields: [],
+      status: { tone: 'ready', label: 'Ready', indicator: { shape: 'dot' } },
+    }),
+  },
+  commands: {
+    createObjectTypes: [],
+    defaultObjectLabel: () => 'unused',
+    buildCreateObjectCommand: () => ({ kind: 'unused', payload: {}, targetObjectIds: [] }),
+    isController: () => false,
+    isTarget: () => false,
+    buildSetTargetCommand: () => ({ kind: 'unused', payload: {}, targetObjectIds: [] }),
+    buildCancelTargetCommand: () => ({ kind: 'unused', payload: {}, targetObjectIds: [] }),
+  },
 })
 
 describe('MapAreaFeatureLoader', () => {
@@ -65,9 +78,9 @@ describe('MapAreaFeatureLoader', () => {
     let activeQueries = 0
     let maxActiveQueries = 0
     const queryPack = async (
-      _controlInstanceId: ControlInstanceId,
+      _simulationRunId: SimulationRunId,
       request: PackQueryRequest,
-      options?: ControlInstanceRequestOptions,
+      options?: SimulationRunRequestOptions,
     ): Promise<PackQueryApiResponse> => {
       expect(options?.signal).toBeInstanceOf(AbortSignal)
       activeQueries += 1
@@ -87,7 +100,7 @@ describe('MapAreaFeatureLoader', () => {
     const loader = createMapAreaFeatureLoader({
       pack: () => createPack(requests),
       objects: () => [],
-      controlInstanceId: () => 'control-instance:test' as ControlInstanceId,
+      simulationRunId: () => 'run-test' as SimulationRunId,
       currentTime: () => generatedAt,
       queryPack,
       queryTimeoutMs: 500,

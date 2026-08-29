@@ -10,12 +10,12 @@ import { exportRoomConversation } from '../../core/rooms/room-export.ts'
 export const roomRoutes: RouteEntry[] = [
   {
     method: 'GET',
-    pattern: /^\/api\/rooms$/,
+    pattern: /^\/rooms$/,
     handler: (_req, _match, { system }) => json(system.rooms.listAllRooms()),
   },
   {
     method: 'POST',
-    pattern: /^\/api\/rooms$/,
+    pattern: /^\/rooms$/,
     handler: async (req, _match, { system }) => {
       const body = await parseBody(req)
       if (!body.name || typeof body.name !== 'string') return errorResponse('name is required')
@@ -33,7 +33,7 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/rooms\/([^/]+)$/,
+    pattern: /^\/rooms\/([^/]+)$/,
     handler: (req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
@@ -44,7 +44,7 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/rooms\/([^/]+)\/export$/,
+    pattern: /^\/rooms\/([^/]+)\/export$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
@@ -54,7 +54,7 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     method: 'DELETE',
-    pattern: /^\/api\/rooms\/([^/]+)\/messages\/([^/]+)$/,
+    pattern: /^\/rooms\/([^/]+)\/messages\/([^/]+)$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const messageId = decodeURIComponent(match[2]!)
@@ -67,7 +67,7 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     method: 'DELETE',
-    pattern: /^\/api\/rooms\/([^/]+)\/messages$/,
+    pattern: /^\/rooms\/([^/]+)\/messages$/,
     handler: (_req, match, { system, leitbildMirror }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
@@ -91,7 +91,7 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     method: 'DELETE',
-    pattern: /^\/api\/rooms\/([^/]+)$/,
+    pattern: /^\/rooms\/([^/]+)$/,
     handler: (_req, match, { system, leitbildMirror }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
@@ -103,7 +103,7 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     method: 'PUT',
-    pattern: /^\/api\/rooms\/([^/]+)\/prompt$/,
+    pattern: /^\/rooms\/([^/]+)\/prompt$/,
     handler: async (req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
@@ -119,7 +119,7 @@ export const roomRoutes: RouteEntry[] = [
     // 'local') are NOT included — those are always active and not under
     // operator control.
     method: 'GET',
-    pattern: /^\/api\/rooms\/([^/]+)\/packs$/,
+    pattern: /^\/rooms\/([^/]+)\/packs$/,
     handler: async (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
@@ -134,7 +134,7 @@ export const roomRoutes: RouteEntry[] = [
     // atomic — any unknown namespace or system-pack-removal aborts the
     // whole set (no partial writes).
     method: 'PUT',
-    pattern: /^\/api\/rooms\/([^/]+)\/packs$/,
+    pattern: /^\/rooms\/([^/]+)\/packs$/,
     handler: async (req, match, { system, broadcastToWorkspace, workspaceId }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
@@ -144,7 +144,7 @@ export const roomRoutes: RouteEntry[] = [
         ? (body!.activePacks as unknown[]).filter((v): v is string => typeof v === 'string')
         : []
 
-      // Validate every requested namespace against list_packs — same
+      // Validate every requested Pack id against list_packs — same
       // truth source the UI uses, no parallel scanner. list_packs now
       // includes bundled packs (core, local, demos, pwr-ops) so demo
       // modal PUTs of ['pwr-ops', ...] validate cleanly.
@@ -153,13 +153,13 @@ export const roomRoutes: RouteEntry[] = [
         ? await listTool.execute({}, { callerId: 'api', callerName: 'api' })
         : { success: false }
       const known = listed.success && Array.isArray(listed.data)
-        ? (listed.data as Array<{ namespace: string; system: boolean }>)
+        ? (listed.data as Array<{ id: string; system: boolean }>)
         : []
-      const knownSet = new Set(known.map(p => p.namespace))
-      const systemSet = new Set(known.filter(p => p.system).map(p => p.namespace))
+      const knownSet = new Set(known.map(pack => pack.id))
+      const systemSet = new Set(known.filter(pack => pack.system).map(pack => pack.id))
 
       const unknown = requested.filter(ns => !knownSet.has(ns))
-      if (unknown.length > 0) return errorResponse(`unknown pack namespaces: ${unknown.join(', ')}`, 400)
+      if (unknown.length > 0) return errorResponse(`unknown Pack ids: ${unknown.join(', ')}`, 400)
 
       // Auto-include system packs if the client omitted them. Treats the
       // request as "everything the user wants active among non-system
@@ -175,7 +175,7 @@ export const roomRoutes: RouteEntry[] = [
       const current = new Set(room.getActivePacks())
       for (const sys of systemSet) {
         if (current.has(sys) && !requestedSet.has(sys)) {
-          console.warn(`[packs] PUT /api/rooms/${name}/packs omitted system pack "${sys}"; re-added`)
+          console.warn(`[packs] PUT /rooms/${name}/packs omitted system pack "${sys}"; re-added`)
         }
       }
 
@@ -194,7 +194,7 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/rooms\/([^/]+)\/members$/,
+    pattern: /^\/rooms\/([^/]+)\/members$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
@@ -208,7 +208,7 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/rooms\/([^/]+)\/members$/,
+    pattern: /^\/rooms\/([^/]+)\/members$/,
     handler: async (req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
@@ -224,7 +224,7 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     method: 'DELETE',
-    pattern: /^\/api\/rooms\/([^/]+)\/members\/([^/]+)$/,
+    pattern: /^\/rooms\/([^/]+)\/members\/([^/]+)$/,
     handler: (_req, match, { system }) => {
       const rName = decodeURIComponent(match[1]!)
       const aName = decodeURIComponent(match[2]!)
@@ -238,7 +238,7 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     method: 'PUT',
-    pattern: /^\/api\/rooms\/([^/]+)\/delivery-mode$/,
+    pattern: /^\/rooms\/([^/]+)\/delivery-mode$/,
     handler: async (req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
@@ -254,7 +254,7 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     method: 'PUT',
-    pattern: /^\/api\/rooms\/([^/]+)\/pause$/,
+    pattern: /^\/rooms\/([^/]+)\/pause$/,
     handler: async (req, match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
@@ -274,7 +274,7 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     method: 'PUT',
-    pattern: /^\/api\/rooms\/([^/]+)\/mute$/,
+    pattern: /^\/rooms\/([^/]+)\/mute$/,
     handler: async (req, match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
@@ -293,7 +293,7 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/rooms\/([^/]+)\/agents\/([^/]+)\/activate$/,
+    pattern: /^\/rooms\/([^/]+)\/agents\/([^/]+)\/activate$/,
     handler: (_req, match, { system }) => {
       const roomName = decodeURIComponent(match[1]!)
       const agentName = decodeURIComponent(match[2]!)
@@ -307,7 +307,7 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/rooms\/([^/]+)\/summary-config$/,
+    pattern: /^\/rooms\/([^/]+)\/summary-config$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
@@ -317,7 +317,7 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     method: 'PUT',
-    pattern: /^\/api\/rooms\/([^/]+)\/summary-config$/,
+    pattern: /^\/rooms\/([^/]+)\/summary-config$/,
     handler: async (req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
@@ -335,7 +335,7 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/rooms\/([^/]+)\/summary$/,
+    pattern: /^\/rooms\/([^/]+)\/summary$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
@@ -349,7 +349,7 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/rooms\/([^/]+)\/summary\/regenerate$/,
+    pattern: /^\/rooms\/([^/]+)\/summary\/regenerate$/,
     handler: async (req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)

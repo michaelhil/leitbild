@@ -1,6 +1,7 @@
 import type { GeoJsonPoint, OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
+import { createLeitbildPackDescriptor } from '../../core/packs/protocol.ts'
 import {
   createDroneCommandKind,
   holdDroneCommandKind,
@@ -84,24 +85,72 @@ const pointForTarget = (target: OperationalObject): GeoJsonPoint => {
 }
 
 export const droneUiPack: LeitbildPack = {
-  id: dronePackId,
-  name: 'Drone Operations',
-  runtimes: [
-    { id: droneNativeRuntimeId, label: 'Native drone runtime', kind: 'local' },
-  ],
-  defaultRuntimeId: droneNativeRuntimeId,
-  wikiRefs: [
-    { name: 'Drone operations', url: '/docs/wiki/drone-ops.md' },
-  ],
-  categories: [
+  descriptor: createLeitbildPackDescriptor({
+    id: dronePackId, version: '1.0.0', name: 'Drone Operations',
+    contributions: ['runtime', 'knowledge', 'presentation', 'commands', 'interactions'],
+  }),
+  runtime: {
+    runtimes: [{ id: droneNativeRuntimeId, version: '1.0.0', label: 'Native drone runtime', kind: 'local' }],
+    defaultRuntimeId: droneNativeRuntimeId,
+  },
+  knowledge: { wikiRefs: [{ name: 'Drone operations', url: '/docs/wiki/drone-ops.md' }] },
+  presentation: {
+    categories: [
     {
       id: 'drones',
       label: 'Drones',
       emptyLabel: 'No drones',
       matches: (object: OperationalObject): boolean => parseDroneData(object) !== null,
     },
-  ],
-  createObjectTypes: [
+    ],
+    mapAreaFeatureLayers: ['objects'],
+    mapAreaFeatureSourcePackIds: [dronePackId],
+    mapAreaFeatureQueries: (context) => context.map
+      ? [{
+          packId: dronePackId,
+          kind: 'drone.mapFeatures',
+          payload: {
+            viewport: context.map.viewport,
+            zoom: context.map.zoom,
+            layers: ['sensor-footprints', 'effect-ranges', 'swarm-envelopes'],
+          },
+        }]
+      : [],
+    presentObject: (object): PackObjectPresentation => {
+      const data = parseDroneData(object)
+      return {
+        categoryId: 'drones',
+        icon: 'drone',
+        color: data?.vehicle.visual.color ?? '#2563eb',
+        summary: data ? droneSummary(data) : object.operational.status,
+        status: data ? droneStatus(data) : packStatus('error', 'Invalid drone data'),
+        fields: data ? droneFields(data) : [packField('error', 'Error', 'Invalid drone pack data')],
+        mapIconSizePx: data ? Math.max(22, Math.round(24 * data.vehicle.visual.scale)) : 24,
+        noteworthyUpdates: data?.health.state === 'degraded' || data?.health.state === 'critical' || data?.health.state === 'failed' || data?.health.state === 'destroyed',
+      }
+    },
+    contextualFields: (object, context): ReadonlyArray<PackObjectField> => {
+      if (object.packId === dronePackId) return []
+      const point = object.spatial.position?.point ?? (object.spatial.geometry?.type === 'Point' ? object.spatial.geometry : null)
+      if (!point) return []
+      const nearby = context.objects
+        .flatMap(candidate => {
+          const data = parseDroneData(candidate)
+          const candidatePoint = candidate.spatial.position?.point
+          if (!data || !candidatePoint) return []
+          const lonDelta = (candidatePoint.coordinates[0] - point.coordinates[0]) * 111_320
+          const latDelta = (candidatePoint.coordinates[1] - point.coordinates[1]) * 111_320
+          const distanceM = Math.hypot(lonDelta, latDelta)
+          return distanceM < 1_500 ? [{ label: candidate.label, distanceM, mode: data.navigation.kind }] : []
+        })
+        .sort((left, right) => left.distanceM - right.distanceM)
+        .slice(0, 3)
+      if (nearby.length === 0) return []
+      return [packField('nearby-drones', 'Nearby drones', nearby.map(item => `${item.label} ${Math.round(item.distanceM)} m ${item.mode}`).join(', '))]
+    },
+  },
+  commands: {
+    createObjectTypes: [
     {
       id: 'drone',
       label: 'Drone',
@@ -120,61 +169,13 @@ export const droneUiPack: LeitbildPack = {
         { key: 'altitudeM', label: 'Altitude m', kind: 'number', defaultValue: 35, min: 0, max: 500, step: 5 },
       ],
     },
-  ],
-  interactionHandlers: [
-    createDroneAttackInteractionHandler(),
-  ],
-  mapAreaFeatureLayers: ['objects'],
-  mapAreaFeatureSourcePackIds: [dronePackId],
-  mapAreaFeatureQueries: (context) => context.map
-    ? [{
-        packId: dronePackId,
-        kind: 'drone.mapFeatures',
-        payload: {
-          viewport: context.map.viewport,
-          zoom: context.map.zoom,
-          layers: ['sensor-footprints', 'effect-ranges', 'swarm-envelopes'],
-        },
-      }]
-    : [],
-  presentObject: (object): PackObjectPresentation => {
-    const data = parseDroneData(object)
-    return {
-      categoryId: 'drones',
-      icon: 'drone',
-      color: data?.vehicle.visual.color ?? '#2563eb',
-      summary: data ? droneSummary(data) : object.operational.status,
-      status: data ? droneStatus(data) : packStatus('error', 'Invalid drone data'),
-      fields: data ? droneFields(data) : [packField('error', 'Error', 'Invalid drone pack data')],
-      mapIconSizePx: data ? Math.max(22, Math.round(24 * data.vehicle.visual.scale)) : 24,
-      noteworthyUpdates: data?.health.state === 'degraded' || data?.health.state === 'critical' || data?.health.state === 'failed' || data?.health.state === 'destroyed',
-    }
-  },
-  contextualFields: (object, context): ReadonlyArray<PackObjectField> => {
-    if (object.packId === dronePackId) return []
-    const point = object.spatial.position?.point ?? (object.spatial.geometry?.type === 'Point' ? object.spatial.geometry : null)
-    if (!point) return []
-    const nearby = context.objects
-      .flatMap(candidate => {
-        const data = parseDroneData(candidate)
-        const candidatePoint = candidate.spatial.position?.point
-        if (!data || !candidatePoint) return []
-        const lonDelta = (candidatePoint.coordinates[0] - point.coordinates[0]) * 111_320
-        const latDelta = (candidatePoint.coordinates[1] - point.coordinates[1]) * 111_320
-        const distanceM = Math.hypot(lonDelta, latDelta)
-        return distanceM < 1_500 ? [{ label: candidate.label, distanceM, mode: data.navigation.kind }] : []
-      })
-      .sort((left, right) => left.distanceM - right.distanceM)
-      .slice(0, 3)
-    if (nearby.length === 0) return []
-    return [packField('nearby-drones', 'Nearby drones', nearby.map(item => `${item.label} ${Math.round(item.distanceM)} m ${item.mode}`).join(', '))]
-  },
-  defaultObjectLabel: (typeId, context): string => {
+    ],
+    defaultObjectLabel: (typeId, context): string => {
     assertCreatableType(typeId)
     const count = context.objects.filter(object => parseDroneData(object) !== null).length + 1
     return `Drone ${count}`
   },
-  buildCreateObjectCommand: (typeId: string, label: string, geometry: PackCreationGeometry, parameters?: unknown): PackCommandRequest => {
+    buildCreateObjectCommand: (typeId: string, label: string, geometry: PackCreationGeometry, parameters?: unknown): PackCommandRequest => {
     assertCreatableType(typeId)
     const record = typeof parameters === 'object' && parameters !== null ? parameters as Record<string, unknown> : {}
     return {
@@ -189,18 +190,18 @@ export const droneUiPack: LeitbildPack = {
       },
     }
   },
-  isController: (object): boolean => {
+    isController: (object): boolean => {
     const data = parseDroneData(object)
     return data !== null && data.health.state !== 'destroyed' && data.link.state !== 'lost'
   },
-  isTarget: (controller, candidate): boolean => {
+    isTarget: (controller, candidate): boolean => {
     if (controller.id === candidate.id) return false
     const data = parseDroneData(controller)
     if (!data) return false
     if (candidate.spatial.position?.point === undefined && candidate.spatial.geometry?.type !== 'Point') return false
     return droneHasCapability(data.vehicle, 'guided_navigation')
   },
-  buildSetTargetCommand: (controller, target): PackCommandRequest => {
+    buildSetTargetCommand: (controller, target): PackCommandRequest => {
     const data = parseDroneData(controller)
     if (!data) throw new Error(`controller is not a drone: ${controller.id}`)
     return {
@@ -216,11 +217,13 @@ export const droneUiPack: LeitbildPack = {
       },
     }
   },
-  buildCancelTargetCommand: (controller): PackCommandRequest => ({
-    kind: holdDroneCommandKind,
-    targetObjectIds: [controller.id],
-    payload: {
-      droneId: controller.id,
-    },
-  }),
+    buildCancelTargetCommand: (controller): PackCommandRequest => ({
+      kind: holdDroneCommandKind,
+      targetObjectIds: [controller.id],
+      payload: { droneId: controller.id },
+    }),
+  },
+  interactions: {
+    handlers: [createDroneAttackInteractionHandler()],
+  },
 }

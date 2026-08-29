@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { commandEnvelopeSchema, commandResultSchema, type CommandEnvelope, type CommandResult } from './commands.ts'
-import { eventIdSchema, objectIdSchema, controlInstanceIdSchema, type ActorId, type EventId, type ObjectId, type ControlInstanceId } from './ids.ts'
+import { eventIdSchema, objectIdSchema, simulationRunIdSchema, type ActorId, type EventId, type ObjectId, type SimulationRunId } from './ids.ts'
 import { operationalObjectSchema, type OperationalObject } from './object.ts'
 import { provenanceSchema, type Provenance } from './provenance.ts'
 import { isoTimestampSchema, simulationClockStateSchema, type IsoTimestamp, type SimulationClockState } from './time.ts'
@@ -11,13 +11,13 @@ import { procedureRunClosedEventSchema, procedureRunResetEventSchema, procedureR
 
 export interface EventEnvelopeBase {
   readonly id: EventId
-  readonly controlInstanceId: ControlInstanceId
+  readonly simulationRunId: SimulationRunId
   readonly seq: number
   readonly at: IsoTimestamp
   readonly provenance: Provenance
 }
 
-export type ControlInstanceEvent =
+export type SimulationRunEvent =
   | (EventEnvelopeBase & {
       readonly type: 'object.upserted'
       readonly object: OperationalObject
@@ -72,7 +72,7 @@ export type ControlInstanceEvent =
       readonly objectIds?: ReadonlyArray<ObjectId>
     })
   | (EventEnvelopeBase & {
-      readonly type: 'controlInstance.reset'
+      readonly type: 'simulationRun.reset'
       readonly previousSeq: number
       readonly previousScenarioId?: string
       readonly scenarioId?: string
@@ -112,13 +112,13 @@ export type ControlInstanceEvent =
 
 const eventBaseSchema = z.object({
   id: eventIdSchema,
-  controlInstanceId: controlInstanceIdSchema,
+  simulationRunId: simulationRunIdSchema,
   seq: z.number().int().nonnegative(),
   at: isoTimestampSchema,
   provenance: provenanceSchema,
 })
 
-export const controlInstanceEventSchema = z.discriminatedUnion('type', [
+export const simulationRunEventSchema = z.discriminatedUnion('type', [
   eventBaseSchema.extend({
     type: z.literal('object.upserted'),
     object: operationalObjectSchema,
@@ -173,7 +173,7 @@ export const controlInstanceEventSchema = z.discriminatedUnion('type', [
     objectIds: z.array(objectIdSchema).optional(),
   }),
   eventBaseSchema.extend({
-    type: z.literal('controlInstance.reset'),
+    type: z.literal('simulationRun.reset'),
     previousSeq: z.number().int().nonnegative(),
     previousScenarioId: z.string().min(1).optional(),
     scenarioId: z.string().min(1).optional(),

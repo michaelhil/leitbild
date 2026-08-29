@@ -1,7 +1,7 @@
 <script lang="ts">
   import { BookOpen, Bug, Check, ChevronLeft, ChevronRight, ExternalLink, HelpCircle, MessageSquare, Play, RefreshCw, Star, X } from 'lucide-svelte'
   import type {
-    ControlInstanceId,
+    SimulationRunId,
     ObjectId,
     ProcedureAssessment,
     ProcedureCatalog,
@@ -61,7 +61,7 @@
   } from '../window-bounds.ts'
 
   interface Props {
-    readonly controlInstanceId: ControlInstanceId
+    readonly simulationRunId: SimulationRunId
     readonly systemId: string
     readonly unitName?: string
     readonly unitStatus?: PackObjectStatusPresentation
@@ -130,7 +130,7 @@
   }
 
   let {
-    controlInstanceId,
+    simulationRunId,
     systemId,
     unitName = undefined,
     unitStatus = undefined,
@@ -355,7 +355,7 @@
     const missing = runDocumentIds(nextRuns).filter(procedureId => !runDocuments.has(procedureId))
     if (missing.length === 0) return
     const loaded = await Promise.all(missing.map(async procedureId =>
-      await readProcedureDocument(controlInstanceId, procedureId, {
+      await readProcedureDocument(simulationRunId, procedureId, {
         sourceId: nextRuns.find(run => run.procedureId === procedureId)?.sourceId,
       }),
     ))
@@ -368,7 +368,7 @@
   const readAndRememberProcedureDocument = async (procedureId: ProcedureId): Promise<ProcedureDocument> => {
     const cached = runDocuments.get(procedureId)
     if (cached) return cached
-    const loaded = await readProcedureDocument(controlInstanceId, procedureId, {
+    const loaded = await readProcedureDocument(simulationRunId, procedureId, {
       sourceId: catalog?.source.sourceId,
     })
     rememberProcedureDocument(loaded)
@@ -501,7 +501,7 @@
       if (stopped || inFlight) return
       try {
         inFlight = true
-        procedureSourceStatus = await readProcedureSourceStatus(controlInstanceId, { sourceId })
+        procedureSourceStatus = await readProcedureSourceStatus(simulationRunId, { sourceId })
       } catch (err) {
         setLoadStage('source', 'failed', errorMessage(err))
       } finally {
@@ -528,13 +528,13 @@
       procedureSourceStatus = null
       setLoadStage('source', 'running', refresh ? 'Refreshing source files' : 'Starting source loader')
       stopSourceStatusPolling = pollProcedureSourceStatus(catalog?.source.sourceId)
-      const nextCatalog = await readProcedureCatalog(controlInstanceId, { refresh })
+      const nextCatalog = await readProcedureCatalog(simulationRunId, { refresh })
       stopSourceStatusPolling()
       stopSourceStatusPolling = null
-      procedureSourceStatus = await readProcedureSourceStatus(controlInstanceId, { sourceId: nextCatalog.source.sourceId })
+      procedureSourceStatus = await readProcedureSourceStatus(simulationRunId, { sourceId: nextCatalog.source.sourceId })
       setLoadStage('source', 'done', `${nextCatalog.procedures.length} procedures available`)
       setLoadStage('runs', 'running')
-      const nextRuns = await readProcedureRuns(controlInstanceId)
+      const nextRuns = await readProcedureRuns(simulationRunId)
       const nextScopedRuns = scopedProcedureRuns(nextRuns.runs)
       await ensureRunDocuments(nextScopedRuns)
       catalog = nextCatalog
@@ -561,7 +561,7 @@
 
   const refreshRuns = async (): Promise<void> => {
     try {
-      const nextRuns = scopedProcedureRuns((await readProcedureRuns(controlInstanceId)).runs)
+      const nextRuns = scopedProcedureRuns((await readProcedureRuns(simulationRunId)).runs)
       await ensureRunDocuments(nextRuns)
       runs = nextRuns
     } catch (err) {
@@ -575,7 +575,7 @@
       error = null
       selectedProcedureId = procedureId
       setLoadStage('document', 'running', procedureId)
-      const nextDocument = await readProcedureDocument(controlInstanceId, procedureId, {
+      const nextDocument = await readProcedureDocument(simulationRunId, procedureId, {
         sourceId: catalog?.source.sourceId,
         refresh,
       })
@@ -585,7 +585,7 @@
       const loadTagValidation = async (): Promise<ReadonlyMap<string, ProcedureTagValidation>> => {
         try {
           setLoadStage('tags', 'running', `${nextDocument.tags.length} tags`)
-          const nextTagValidation = await validateProcedureTags(controlInstanceId, systemId, nextDocument.tags)
+          const nextTagValidation = await validateProcedureTags(simulationRunId, systemId, nextDocument.tags)
           const missingCount = [...nextTagValidation.values()].filter(validation => validation.status === 'missing').length
           setLoadStage('tags', 'done', missingCount === 0
             ? `${nextDocument.tags.length} tags resolved`
@@ -599,7 +599,7 @@
       const loadCsfEvaluations = async (): Promise<ReadonlyMap<string, ProcedureCsfEvaluation>> => {
         try {
           setLoadStage('csfs', 'running', `${csfIds.length} functions`)
-          const nextCsfEvaluations = await evaluateProcedureCsfs(controlInstanceId, systemId, csfIds)
+          const nextCsfEvaluations = await evaluateProcedureCsfs(simulationRunId, systemId, csfIds)
           setLoadStage('csfs', 'done', `${nextCsfEvaluations.size} functions evaluated`)
           return nextCsfEvaluations
         } catch (err) {
@@ -624,7 +624,7 @@
     const current = document
     if (!current) return
     try {
-      await startProcedureRun(controlInstanceId, {
+      await startProcedureRun(simulationRunId, {
         sourceId: current.source.sourceId,
         procedureId: current.procedureId,
         scope: currentScope,
@@ -638,7 +638,7 @@
   const closeActiveRun = async (status: 'completed' | 'abandoned'): Promise<void> => {
     if (!activeRun) return
     try {
-      await closeProcedureRun(controlInstanceId, { runId: activeRun.runId, status })
+      await closeProcedureRun(simulationRunId, { runId: activeRun.runId, status })
       await refreshRuns()
     } catch (err) {
       error = err instanceof Error ? err.message : String(err)
@@ -798,13 +798,13 @@
     try {
       transitionInProgress = true
       if (!targetRun) {
-        await startProcedureRun(controlInstanceId, {
+        await startProcedureRun(simulationRunId, {
           sourceId: transition.targetProcedure.source.sourceId,
           procedureId: transition.targetProcedure.procedureId,
           scope: currentScope,
         })
       }
-      await updateProcedureStep(controlInstanceId, {
+      await updateProcedureStep(simulationRunId, {
         runId: sourceRun.runId,
         stepId: transition.fromStep.id,
         assessment: 'failed',
@@ -822,7 +822,7 @@
         durationMs: 4_000,
       })
       await waitMs(1_000)
-      await closeProcedureRun(controlInstanceId, { runId: sourceRun.runId, status: 'completed' })
+      await closeProcedureRun(simulationRunId, { runId: sourceRun.runId, status: 'completed' })
       await loadProcedure(transition.targetProcedure.procedureId)
       await refreshRuns()
     } catch (err) {
@@ -848,7 +848,7 @@
     const current = document
     if (!current) return
     try {
-      await resetProcedureRun(controlInstanceId, {
+      await resetProcedureRun(simulationRunId, {
         sourceId: current.source.sourceId,
         procedureId: current.procedureId,
         scope: currentScope,
@@ -920,7 +920,7 @@
   ): Promise<boolean> => {
     if (!selectedRun) return false
     try {
-      await updateProcedureStep(controlInstanceId, {
+      await updateProcedureStep(simulationRunId, {
         runId: selectedRun.runId,
         stepId: step.id,
         currentStepId: update.currentStepId ?? step.id,
@@ -973,7 +973,7 @@
     try {
       csfRefreshInFlight = true
       csfError = null
-      csfEvaluations = await evaluateProcedureCsfs(controlInstanceId, systemId, csfs)
+      csfEvaluations = await evaluateProcedureCsfs(simulationRunId, systemId, csfs)
     } catch (err) {
       csfError = err instanceof Error ? err.message : String(err)
     } finally {
@@ -992,7 +992,7 @@
       return
     }
     try {
-      hoveredTagValue = await readProcedureTagValue(controlInstanceId, systemId, tag)
+      hoveredTagValue = await readProcedureTagValue(simulationRunId, systemId, tag)
     } catch (err) {
       hoveredTagError = err instanceof Error ? err.message : String(err)
     }
@@ -1011,7 +1011,7 @@
       `Step: ${step.label} (${step.id})`,
       `Source: ${document.sourceUrl}`,
       `Source revision: ${document.source.commitSha ?? `${document.source.repository}@${document.source.ref}`}`,
-      `Leitbild control instance: ${controlInstanceId}`,
+      `Leitbild simulation run: ${simulationRunId}`,
       '',
       'Describe the procedure text or procedure-system problem here:',
     ].join('\n')

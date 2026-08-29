@@ -45,7 +45,7 @@ export interface LeitbildPack {
 
 ### Rail rendering
 
-When the control rail builds its content for an active scenario, it iterates the active packs. For each pack with `mapLayerGroups?.length > 0`, the rail appends a section beneath that pack's object-grouped sections. Each group renders as a checkbox row labelled by `label`, with persistent visibility state keyed by the existing per-Control-Instance storage convention (`leitbild:layers:<datasetOrPackId>:<controlInstanceId>`).
+When the control rail builds its content for an active Scenario, it iterates the active Packs. For each Pack with `mapLayerGroups?.length > 0`, the rail appends a section beneath that Pack's object-grouped sections. Each group renders as a checkbox row labelled by `label`, with persistent visibility state keyed by Simulation Run (`leitbild:layers:<datasetOrPackId>:<simulationRunId>`).
 
 ### Wiring to the map
 
@@ -80,11 +80,11 @@ A scenario may pin or override the default visibility of any group by writing:
 }
 ```
 
-The rail seeds initial state from `packLayerGroupVisibility` if present, otherwise from `defaultVisible` on each group. User toggles overwrite the seed and persist in `localStorage` per Control Instance.
+The rail seeds initial state from `packLayerGroupVisibility` if present, otherwise from `defaultVisible` on each group. User toggles overwrite the seed and persist in `localStorage` per Simulation Run.
 
 ## Consequences
 
-- **Backwards compatible.** No existing pack declares `mapLayerGroups`; existing rail behaviour is unchanged.
+- **Strict optional contribution.** Packs either declare a valid `mapLayerGroups` contribution or omit it; malformed declarations fail validation.
 - **No DOM event coupling.** The presenter / state module is pure TypeScript and unit-testable (matches existing presenter pattern in `control-rail-presenter.ts`).
 - **Layer-id pattern matching** uses a small glob matcher (`*` matches one segment between colons). 6–8 LOC + 5 tests. Avoids pulling in a glob library.
 - **Per-category granularity below a group** (e.g., toggle just CTA inside Airspace) is *not* exposed in the rail in v1. Scenario authors can pre-configure per-category visibility through the reference-data style module's `categories` array. Rail UI for per-category granularity is a future enhancement only if operators ask for it.

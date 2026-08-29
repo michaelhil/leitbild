@@ -1,14 +1,16 @@
-import type { ControlInstanceId, SimulationClockState } from '../../core/model/index.ts'
+import type { SimulationRunId, SimulationClockState } from '../../core/model/index.ts'
 import {
-  parseControlInstanceWebSocketMessage,
-  type ControlInstanceEventBatchMessage,
+  parseSimulationRunWebSocketMessage,
+  type SimulationRunEventBatchMessage,
   type RuntimeRealtimeMessageBatch,
-} from '../control-instance-events.ts'
-import type { ControlInstanceCommandRequest } from '../control-instance-client.ts'
+} from '../simulation-run-events.ts'
+import type { SimulationRunCommandRequest } from '../simulation-run-client.ts'
 import type { CommandResponse } from '../types.ts'
+import { workspaceApiPath } from '../workspace-context.ts'
+import { activeWorkspaceId } from '../workspace-context.ts'
 
 export interface RealtimeReadyMessage {
-  readonly controlInstanceId: ControlInstanceId
+  readonly simulationRunId: SimulationRunId
   readonly scenarioId?: string
   readonly clock?: SimulationClockState
 }
@@ -19,17 +21,17 @@ export interface RealtimeConnectionCallbacks {
   readonly onError: (message: string) => void
   readonly onInvalidMessage: (message: string) => void
   readonly onReady: (message: RealtimeReadyMessage) => void
-  readonly onEvent: (message: ControlInstanceEventBatchMessage) => void
+  readonly onEvent: (message: SimulationRunEventBatchMessage) => void
   readonly onRuntimeRealtime: (message: RuntimeRealtimeMessageBatch) => void
 }
 
 export interface RealtimeConnectionController {
-  readonly connect: (id: ControlInstanceId, callbacks: RealtimeConnectionCallbacks) => void
+  readonly connect: (id: SimulationRunId, callbacks: RealtimeConnectionCallbacks) => void
   readonly disconnect: () => void
-  readonly canCarry: (id: ControlInstanceId) => boolean
-  readonly statusFor: (id: ControlInstanceId) => 'open' | 'connecting' | 'other'
-  readonly sendCommand: (id: ControlInstanceId, command: ControlInstanceCommandRequest) => Promise<CommandResponse>
-  readonly sendRuntimeInput: (id: ControlInstanceId, input: RuntimeInputRequest) => void
+  readonly canCarry: (id: SimulationRunId) => boolean
+  readonly statusFor: (id: SimulationRunId) => 'open' | 'connecting' | 'other'
+  readonly sendCommand: (id: SimulationRunId, command: SimulationRunCommandRequest) => Promise<CommandResponse>
+  readonly sendRuntimeInput: (id: SimulationRunId, input: RuntimeInputRequest) => void
 }
 
 export interface RuntimeInputRequest {
@@ -41,14 +43,14 @@ export interface RuntimeInputRequest {
 
 export const createRealtimeConnectionController = (): RealtimeConnectionController => {
   let socket: WebSocket | null = null
-  let socketId: ControlInstanceId | null = null
+  let socketId: SimulationRunId | null = null
   const pendingCommands = new Map<string, {
     readonly resolve: (response: CommandResponse) => void
     readonly reject: (err: Error) => void
     readonly timeoutId: number
   }>()
 
-  const canCarry = (id: ControlInstanceId): boolean =>
+  const canCarry = (id: SimulationRunId): boolean =>
     socket !== null
     && socketId === id
     && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)
@@ -86,7 +88,7 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
       if (canCarry(id)) return
       socket?.close()
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const nextSocket = new WebSocket(`${protocol}//${location.host}/ws?controlInstance=${encodeURIComponent(id)}`)
+      const nextSocket = new WebSocket(`${protocol}//${location.host}${workspaceApiPath('/ws')}?simulationRun=${encodeURIComponent(id)}`)
       socket = nextSocket
       socketId = id
 
@@ -108,12 +110,16 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
       nextSocket.onmessage = (message) => {
         let parsed
         try {
-          parsed = parseControlInstanceWebSocketMessage(message.data as string)
+          parsed = parseSimulationRunWebSocketMessage(message.data as string)
         } catch (err) {
           callbacks.onInvalidMessage(err instanceof Error ? err.message : 'Invalid WebSocket message')
           return
         }
         if (!parsed) return
+        if (parsed.workspaceId !== activeWorkspaceId() || parsed.simulationRunId !== id) {
+          callbacks.onInvalidMessage('Realtime message scope does not match the active Workspace and Simulation Run')
+          return
+        }
         if (parsed.type === 'realtime.ready') {
           callbacks.onReady(parsed)
           return

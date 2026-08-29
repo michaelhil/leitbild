@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, SignalId } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, SimulationRunId, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, SignalId } from '../src/core/model/index.ts'
 import { geoPointFromLonLat, operationalDemandRequestedSignalType } from '../src/core/model/index.ts'
 import type { PackQueryRequest } from '../src/core/packs/protocol.ts'
 import type { PackRuntimeStateStore } from '../src/simulation/protocol.ts'
@@ -20,7 +20,7 @@ import {
 import { createAmbulanceMedicalDemandInteractionHandler } from '../src/packs/ambulance/sim/interactions.ts'
 import { scenarios } from '../src/scenarios/index.ts'
 
-const controlInstanceId = 'control-instance:process-plant-test' as ControlInstanceId
+const simulationRunId = 'run-process-plant-test' as SimulationRunId
 const startsAt = '2026-01-01T09:00:00.000Z' as IsoTimestamp
 
 const createMemoryStateStore = (): PackRuntimeStateStore => {
@@ -65,7 +65,7 @@ const query = (kind: string, payload: unknown = {}): PackQueryRequest => ({
 
 const command = (payload: unknown): CommandEnvelope => ({
   id: 'command:process-plant-test' as CommandId,
-  controlInstanceId,
+  simulationRunId,
   actorId: 'actor:operator' as ActorId,
   kind: processPlantControlWriteCommandKind,
   targetObjectIds: [],
@@ -75,7 +75,7 @@ const command = (payload: unknown): CommandEnvelope => ({
 
 const lifecycleCommand = (payload: unknown): CommandEnvelope => ({
   id: 'command:process-plant-ack-test' as CommandId,
-  controlInstanceId,
+  simulationRunId,
   actorId: 'actor:operator' as ActorId,
   kind: processPlantIcLifecycleCommandKind,
   targetObjectIds: [],
@@ -105,7 +105,7 @@ describe('process plant pack runtime', () => {
       runtimeConfigs: {},
     }) as OperationalObject
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: {
         ...scenarioConfig(),
         initialObjects: [unit],
@@ -132,7 +132,7 @@ describe('process plant pack runtime', () => {
 
   test('runs scenario-defined process systems without operational objects', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig(),
       runtimeStateStore: createMemoryStateStore(),
     })
@@ -293,7 +293,7 @@ describe('process plant pack runtime', () => {
     if (!scenario) throw new Error('missing Halden process-plant scenario')
     const processPlantRuntimeConfig = scenario.runtimeConfigs['process-plant'] ?? {}
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: {
         scenarioId: scenario.id,
         runtimeIds: ['process-plant-local'],
@@ -338,7 +338,7 @@ describe('process plant pack runtime', () => {
 
   test('exposes compiled process surfaces and batched surface snapshots through pack queries', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig(),
       runtimeStateStore: createMemoryStateStore(),
     })
@@ -448,7 +448,7 @@ describe('process plant pack runtime', () => {
     const handler = createAmbulanceMedicalDemandInteractionHandler()
     const signal: InteractionSignal = {
       id: 'signal:medical-demand-test' as SignalId,
-      controlInstanceId,
+      simulationRunId,
       at: startsAt,
       source: { kind: 'object', id: 'plant:test' as ObjectId },
       targets: [{ kind: 'role', id: 'medical-transport' }],
@@ -489,7 +489,7 @@ describe('process plant pack runtime', () => {
 
   test('applies validated write commands through the runtime update loop', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig(),
       runtimeStateStore: createMemoryStateStore(),
     })
@@ -518,7 +518,7 @@ describe('process plant pack runtime', () => {
 
   test('resolves process signal tags and accepts tag-addressed writes', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig(),
       runtimeStateStore: createMemoryStateStore(),
     })
@@ -560,7 +560,7 @@ describe('process plant pack runtime', () => {
 
   test('exposes procedure-relevant signal search and mixed signal reads', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig(),
       runtimeStateStore: createMemoryStateStore(),
     })
@@ -625,7 +625,7 @@ describe('process plant pack runtime', () => {
 
   test('rejects command writes outside declared hard ranges', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig(),
       runtimeStateStore: createMemoryStateStore(),
     })
@@ -645,7 +645,7 @@ describe('process plant pack runtime', () => {
   test('restores queued commands from runtime-private state', async () => {
     const stateStore = createMemoryStateStore()
     const firstConnection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig(),
       runtimeStateStore: stateStore,
     })
@@ -658,7 +658,7 @@ describe('process plant pack runtime', () => {
     await firstConnection.close()
 
     const secondConnection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig(),
       runtimeStateStore: stateStore,
     })
@@ -676,7 +676,7 @@ describe('process plant pack runtime', () => {
 
   test('applies pack-owned scheduled actions and exposes configured telemetry trends', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -723,7 +723,7 @@ describe('process plant pack runtime', () => {
 
   test('rejects invalid process variable writes explicitly', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig(),
       runtimeStateStore: createMemoryStateStore(),
     })
@@ -743,7 +743,7 @@ describe('process plant pack runtime', () => {
   test('emits protection signals and queues protection writes at tick boundaries', async () => {
     const received: unknown[] = []
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -804,7 +804,7 @@ describe('process plant pack runtime', () => {
   test('emits non-latched protection effects once per active condition entry', async () => {
     const received: unknown[] = []
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -853,7 +853,7 @@ describe('process plant pack runtime', () => {
 
   test('exposes I&C status with persistent alarm lifecycle state', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -909,7 +909,7 @@ describe('process plant pack runtime', () => {
 
   test('preserves structured annunciator metadata in I&C lifecycle state', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -982,7 +982,7 @@ describe('process plant pack runtime', () => {
 
   test('mode conditions qualify I&C rules without a separate mode store', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -1044,7 +1044,7 @@ describe('process plant pack runtime', () => {
 
   test('validates control writes through the query surface without mutating state', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig(),
       runtimeStateStore: createMemoryStateStore(),
     })
@@ -1074,7 +1074,7 @@ describe('process plant pack runtime', () => {
 
   test('evaluates procedure-facing I&C conditions by tag id', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig(),
       runtimeStateStore: createMemoryStateStore(),
     })
@@ -1108,7 +1108,7 @@ describe('process plant pack runtime', () => {
 
   test('evaluates procedure CSF monitor status from typed plant conditions', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig(),
       runtimeStateStore: createMemoryStateStore(),
     })
@@ -1136,7 +1136,7 @@ describe('process plant pack runtime', () => {
 
   test('evaluates heat-sink CSF from assembled steam generator topology', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({}, {
         graph: undefined,
         assemblyRef: processPlantPwrReferenceAssemblyRef,
@@ -1169,7 +1169,7 @@ describe('process plant pack runtime', () => {
 
   test('blocks process writes through explicit I&C permissives and interlocks', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -1242,7 +1242,7 @@ describe('process plant pack runtime', () => {
 
   test('rejects invalid I&C rule class and effect combinations before runtime starts', async () => {
     await expect(createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -1273,7 +1273,7 @@ describe('process plant pack runtime', () => {
 
   test('rejects invalid I&C clear conditions before runtime starts', async () => {
     await expect(createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -1311,7 +1311,7 @@ describe('process plant pack runtime', () => {
 
   test('validates procedure tag appendices against graph-owned process signal bindings', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig(),
       runtimeStateStore: createMemoryStateStore(),
     })
@@ -1599,7 +1599,7 @@ describe('process plant pack runtime', () => {
 
   test('procedure-facing queries observe reference I&C trip response after a real transient', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -1680,7 +1680,7 @@ describe('process plant pack runtime', () => {
 
   test('rejects invalid I&C write targets before runtime starts', async () => {
     await expect(createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -1711,7 +1711,7 @@ describe('process plant pack runtime', () => {
 
   test('applies explicit I&C lifecycle actions through one command surface', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -1795,7 +1795,7 @@ describe('process plant pack runtime', () => {
   test('emits lifecycle action events and records operator provenance in alarm history', async () => {
     const received: unknown[] = []
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -1869,7 +1869,7 @@ describe('process plant pack runtime', () => {
 
   test('uses explicit alarm clear conditions and clear delays to avoid chatter', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -1935,7 +1935,7 @@ describe('process plant pack runtime', () => {
 
   test('expires shelved alarms and exposes alarm summary first-out state', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -2042,7 +2042,7 @@ describe('process plant pack runtime', () => {
 
   test('loads reference I&C behavior through explicit icRef', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -2092,7 +2092,7 @@ describe('process plant pack runtime', () => {
 
   test('loads graph-derived reference I&C for assembled custom-loop PWR systems', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -2136,7 +2136,7 @@ describe('process plant pack runtime', () => {
 
   test('exposes I&C catalog for UI and AI introspection', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -2174,7 +2174,7 @@ describe('process plant pack runtime', () => {
 
   test('rejects ambiguous reference and inline I&C configuration', async () => {
     await expect(createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -2189,7 +2189,7 @@ describe('process plant pack runtime', () => {
 
   test('rejects runtime config for an unknown process system', async () => {
     await expect(createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           missingPlant: {
@@ -2203,7 +2203,7 @@ describe('process plant pack runtime', () => {
 
   test('rejects unknown process plant icRef explicitly', async () => {
     await expect(createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -2217,7 +2217,7 @@ describe('process plant pack runtime', () => {
 
   test('reference I&C reports SGTR indications without encoding procedures', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -2294,7 +2294,7 @@ describe('process plant pack runtime', () => {
 
   test('reference I&C actuates auxiliary feedwater on SG low-low level', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -2345,7 +2345,7 @@ describe('process plant pack runtime', () => {
 
   test('reference I&C reports RCP trip and loop low flow', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -2378,7 +2378,7 @@ describe('process plant pack runtime', () => {
   test('reference I&C state restores per system from runtime snapshots', async () => {
     const store = createMemoryStateStore()
     const first = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {
@@ -2399,7 +2399,7 @@ describe('process plant pack runtime', () => {
     await first.close()
 
     const restored = await createLocalProcessPlantPackRuntimeAdapter().connect({
-      controlInstanceId,
+      simulationRunId,
       scenario: scenarioConfig({
         systems: {
           plant: {

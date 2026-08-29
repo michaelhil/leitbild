@@ -23,7 +23,7 @@ import {
   type ChatCallOptions, type HealthChangeCallback,
 } from './provider-gateway.ts'
 
-// Re-export for legacy import paths.
+// Public Ollama gateway types.
 export type {
   CircuitState, RequestStatus, RequestRecord, GatewayMetrics, LoadedModel,
   OllamaHealth, ProviderHealth, OllamaHealthExtra,
@@ -73,9 +73,6 @@ export interface OllamaGateway extends Omit<ProviderGateway, 'getHealth' | 'getC
   readonly unloadModel: (name: string) => Promise<void>
   readonly refreshHealth: () => void
 }
-
-// Back-compat alias — existing call sites use LLMGateway / createLLMGateway.
-export type LLMGateway = OllamaGateway
 
 // === Factory ===
 

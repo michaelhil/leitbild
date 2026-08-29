@@ -1,18 +1,18 @@
 // ============================================================================
 // Script REST routes (v3 — markdown-native).
 //
-// GET    /api/scripts                          → catalog
-// GET    /api/scripts/:name                    → full script (with .md source)
-// POST   /api/scripts                          → upsert { name, source }
-// DELETE /api/scripts/:name                    → delete file
-// POST   /api/scripts/reload                   → rescan
+// GET    /scripts                          → catalog
+// GET    /scripts/:name                    → full script (with .md source)
+// POST   /scripts                          → upsert { name, source }
+// DELETE /scripts/:name                    → delete file
+// POST   /scripts/reload                   → rescan
 //
-// GET    /api/rooms/:name/script               → current run state
-// GET    /api/rooms/:name/script/document      → rendered living document
+// GET    /rooms/:name/script               → current run state
+// GET    /rooms/:name/script/document      → rendered living document
 //        ?viewer=<castName|director>
-// POST   /api/rooms/:name/script/start         → { scriptName }
-// POST   /api/rooms/:name/script/stop
-// POST   /api/rooms/:name/script/advance       → operator force-advance
+// POST   /rooms/:name/script/start         → { scriptName }
+// POST   /rooms/:name/script/stop
+// POST   /rooms/:name/script/advance       → operator force-advance
 // ============================================================================
 
 import { json, errorResponse, parseBody } from './helpers.ts'
@@ -23,7 +23,7 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
   // --- Catalog ---
   {
     method: 'GET',
-    pattern: /^\/api\/scripts$/,
+    pattern: /^\/scripts$/,
     handler: (_req, _match, { system }) =>
       json({
         scripts: system.scriptStore.list().map(s => ({
@@ -38,7 +38,7 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/scripts\/reload$/,
+    pattern: /^\/scripts\/reload$/,
     handler: async (_req, _match, { system, broadcast }) => {
       const names = await system.scriptStore.reload()
       broadcast({ type: 'script_catalog_changed' })
@@ -47,7 +47,7 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/scripts\/([^/]+)$/,
+    pattern: /^\/scripts\/([^/]+)$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const script = system.scriptStore.get(name)
@@ -65,7 +65,7 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/scripts$/,
+    pattern: /^\/scripts$/,
     handler: async (req, _match, { system, broadcast }) => {
       const body = await parseBody(req) as { name?: unknown; source?: unknown }
       if (typeof body.name !== 'string') return errorResponse('name (string) required')
@@ -81,7 +81,7 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
   },
   {
     method: 'DELETE',
-    pattern: /^\/api\/scripts\/([^/]+)$/,
+    pattern: /^\/scripts\/([^/]+)$/,
     handler: async (_req, match, { system, broadcast }) => {
       const name = decodeURIComponent(match[1]!)
       const removed = await system.scriptStore.remove(name)
@@ -94,7 +94,7 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
   // --- Per-room run lifecycle ---
   {
     method: 'GET',
-    pattern: /^\/api\/rooms\/([^/]+)\/script$/,
+    pattern: /^\/rooms\/([^/]+)\/script$/,
     handler: (_req, match, { system }) => {
       const roomName = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(roomName)
@@ -120,7 +120,7 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/rooms\/([^/]+)\/script\/document$/,
+    pattern: /^\/rooms\/([^/]+)\/script\/document$/,
     handler: (req, match, { system }) => {
       const roomName = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(roomName)
@@ -135,7 +135,7 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/rooms\/([^/]+)\/script\/start$/,
+    pattern: /^\/rooms\/([^/]+)\/script\/start$/,
     handler: async (req, match, { system }) => {
       const roomName = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(roomName)
@@ -149,7 +149,7 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/rooms\/([^/]+)\/script\/stop$/,
+    pattern: /^\/rooms\/([^/]+)\/script\/stop$/,
     handler: async (_req, match, { system }) => {
       const roomName = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(roomName)
@@ -161,7 +161,7 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/rooms\/([^/]+)\/script\/advance$/,
+    pattern: /^\/rooms\/([^/]+)\/script\/advance$/,
     handler: async (_req, match, { system }) => {
       const roomName = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(roomName)

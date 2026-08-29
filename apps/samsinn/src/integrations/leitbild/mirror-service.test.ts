@@ -16,6 +16,13 @@ import { createMirrorService } from './mirror-service.ts'
 import type { LeitbildClient } from './client.ts'
 import type { Room, LeitbildMirrorConfig } from '../../core/types/room.ts'
 import type { LeitbildEvent } from './types.ts'
+import { createLeitbildModuleBinding } from './client.ts'
+import { workspaceIdSchema } from '@samsinn-leitbild/platform-contracts'
+
+const connection = {
+  moduleBinding: createLeitbildModuleBinding('https://fake.test'),
+  workspaceId: workspaceIdSchema.parse('22222222-2222-4222-8222-222222222222'),
+}
 
 interface FakeRoom extends Room {
   readonly posted: Array<{ content: string }>
@@ -56,11 +63,13 @@ const mkClient = (opts: {
     subs,
     release: () => releaseSnapshot?.(),
     client: {
+      connection,
       baseUrl: 'https://fake.test',
       getManifest: async () => {
         if (opts.manifestThrows) throw new Error('manifest unavailable')
         return { manifestSchemaVersion: '1.0.0', identity: { operator: 'Test' }, links: {}, realtime: { model: '' } } as never
       },
+      provisionWorkspace: async () => {},
       getSnapshot: async () => {
         if (opts.snapshotThrows) throw new Error('snapshot unavailable')
         if (opts.snapshotDelayMs !== undefined) await snapshotReady
@@ -81,13 +90,13 @@ const mkClient = (opts: {
 }
 
 // Inject the fake client into the module-level pool so
-// createLeitbildClient(baseUrl) returns it instead of constructing a real one.
+// createLeitbildClient(connection) returns it instead of constructing a real one.
 // Uses the test seam in client.ts (parallel to __resetClientPool).
 import { __injectClient, __resetClientPool } from './client.ts'
 
-const withFakeClient = async <T>(baseUrl: string, fake: LeitbildClient, fn: () => Promise<T>): Promise<T> => {
+const withFakeClient = async <T>(fake: LeitbildClient, fn: () => Promise<T>): Promise<T> => {
   __resetClientPool()
-  __injectClient(baseUrl, fake)
+  __injectClient(connection, fake)
   try { return await fn() } finally { __resetClientPool() }
 }
 
@@ -96,10 +105,10 @@ describe('mirror-service attach — race-safe buffering', () => {
     const { client, subs, release } = mkClient({ snapshot: { seq: 100 }, snapshotDelayMs: 10 })
     const svc = createMirrorService()
     const room = mkRoom('r1')
-    const config: LeitbildMirrorConfig = { baseUrl: 'https://fake.test', workspaceId: 'i1', format: 'summary' }
+    const config: LeitbildMirrorConfig = { simulationRunId: 'run-11111111-1111-4111-8111-111111111111', format: 'summary' }
 
-    await withFakeClient(config.baseUrl, client, async () => {
-      const attachPromise = svc.attach(room, config)
+    await withFakeClient(client, async () => {
+      const attachPromise = svc.attach(room, connection, config)
       // Give the event loop a tick so subscribe() runs.
       await new Promise(r => setTimeout(r, 1))
       // By this point subscribe should have been called even though getSnapshot
@@ -114,10 +123,10 @@ describe('mirror-service attach — race-safe buffering', () => {
     const { client, subs, release } = mkClient({ snapshot: { seq: 100 }, snapshotDelayMs: 10 })
     const svc = createMirrorService()
     const room = mkRoom('r2')
-    const config: LeitbildMirrorConfig = { baseUrl: 'https://fake.test', workspaceId: 'i2', format: 'summary' }
+    const config: LeitbildMirrorConfig = { simulationRunId: 'run-22222222-2222-4222-8222-222222222222', format: 'summary' }
 
-    await withFakeClient(config.baseUrl, client, async () => {
-      const attachPromise = svc.attach(room, config)
+    await withFakeClient(client, async () => {
+      const attachPromise = svc.attach(room, connection, config)
       await new Promise(r => setTimeout(r, 1))
       // Fire 3 events while snapshot is pending.
       const handler = subs[0]!.handler
@@ -137,12 +146,12 @@ describe('mirror-service attach — race-safe buffering', () => {
     const { client, subs } = mkClient({ snapshot: { seq: 0 }, snapshotThrows: true })
     const svc = createMirrorService()
     const room = mkRoom('r3')
-    const config: LeitbildMirrorConfig = { baseUrl: 'https://fake.test', workspaceId: 'i3', format: 'summary' }
+    const config: LeitbildMirrorConfig = { simulationRunId: 'run-33333333-3333-4333-8333-333333333333', format: 'summary' }
 
-    await withFakeClient(config.baseUrl, client, async () => {
+    await withFakeClient(client, async () => {
       let threw = false
       try {
-        await svc.attach(room, config)
+        await svc.attach(room, connection, config)
       } catch {
         threw = true
       }
@@ -161,10 +170,10 @@ describe('mirror-service attach — race-safe buffering', () => {
     const { client, subs, release } = mkClient({ snapshot: { seq: 50 }, snapshotDelayMs: 1 })
     const svc = createMirrorService()
     const room = mkRoom('r4')
-    const config: LeitbildMirrorConfig = { baseUrl: 'https://fake.test', workspaceId: 'i4', format: 'summary' }
+    const config: LeitbildMirrorConfig = { simulationRunId: 'run-44444444-4444-4444-8444-444444444444', format: 'summary' }
 
-    await withFakeClient(config.baseUrl, client, async () => {
-      const attachPromise = svc.attach(room, config)
+    await withFakeClient(client, async () => {
+      const attachPromise = svc.attach(room, connection, config)
       release()
       await attachPromise
 
@@ -182,18 +191,18 @@ describe('mirror-service attach — race-safe buffering', () => {
     const { client, subs, release } = mkClient({ snapshot: { seq: 50 }, snapshotDelayMs: 1 })
     const svc = createMirrorService()
     const room = mkRoom('r5')
-    const config: LeitbildMirrorConfig = { baseUrl: 'https://fake.test', workspaceId: 'i5', format: 'summary' }
+    const config: LeitbildMirrorConfig = { simulationRunId: 'run-55555555-5555-4555-8555-555555555555', format: 'summary' }
 
-    await withFakeClient(config.baseUrl, client, async () => {
-      const attachPromise = svc.attach(room, config)
+    await withFakeClient(client, async () => {
+      const attachPromise = svc.attach(room, connection, config)
       release()
       await attachPromise
 
-      subs[0]!.handler({ seq: 60, type: 'controlInstance.reset' } as LeitbildEvent)
+      subs[0]!.handler({ seq: 60, type: 'simulationRun.reset' } as LeitbildEvent)
       await new Promise(resolve => setTimeout(resolve, 0))
 
       expect(room.posted.length).toBe(1)
-      expect(room.posted[0]!.content).toContain('CONTROL INSTANCE RESET')
+      expect(room.posted[0]!.content).toContain('SIMULATION RUN RESET')
     })
   })
 })

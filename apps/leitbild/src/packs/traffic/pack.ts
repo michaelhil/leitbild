@@ -1,6 +1,7 @@
 import type { KnowledgeFact, OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { LeitbildPack, PackCommandRequest, PackCreateObjectParameter, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
+import { createLeitbildPackDescriptor } from '../../core/packs/protocol.ts'
 import { createTrafficConditionCommandKind } from './commands.ts'
 import { trafficPackDataSchema, trafficPackId, type TrafficPackData, type TrafficSeverity } from './model.ts'
 import { createTrafficRouteImpactHandler } from './interactions.ts'
@@ -120,54 +121,56 @@ const buildTrafficCreatePayload = (
 }
 
 export const trafficPack: LeitbildPack = {
-  id: 'traffic',
-  name: 'Traffic Conditions',
-  runtimes: [
-    { id: trafficSimRuntimeId, label: 'Local traffic runtime', kind: 'local' },
-  ],
-  defaultRuntimeId: trafficSimRuntimeId,
+  descriptor: createLeitbildPackDescriptor({
+    id: 'traffic', version: '1.0.0', name: 'Traffic Conditions',
+    contributions: ['runtime', 'scenario', 'presentation', 'commands', 'interactions'],
+  }),
+  runtime: {
+    runtimes: [{ id: trafficSimRuntimeId, version: '1.0.0', label: 'Local traffic runtime', kind: 'local' }],
+    defaultRuntimeId: trafficSimRuntimeId,
+  },
   scenario: trafficScenarioSupport,
-  categories: [
-    {
+  presentation: {
+    categories: [{
       id: 'traffic',
       label: 'Traffic',
       emptyLabel: 'No traffic conditions',
       matches: (object: OperationalObject): boolean => parseTrafficData(object) !== null,
+    }],
+    presentObject: (object): PackObjectPresentation => {
+      const data = parseTrafficData(object)
+      return {
+        categoryId: 'traffic',
+        icon: 'traffic',
+        color: trafficColor(data?.severity),
+        summary: data ? `${data.geometryMode.replaceAll('_', ' ')} · ${data.severity}` : object.operational.status,
+        status: packStatus(data?.severity === 'blocked' || data?.severity === 'high' ? 'error' : 'working', data ? `${data.condition.replaceAll('_', ' ')} · ${data.severity}` : object.operational.status),
+        fields: data ? trafficDetails(data) : [packField('error', 'Error', 'Invalid traffic pack data')],
+      }
     },
-  ],
-  createObjectTypes: [
-    { id: 'traffic_road_segment', label: 'Road traffic', categoryId: 'traffic', icon: 'traffic', color: '#c2410c', placementKind: 'route', parameters: trafficCreateParameters },
-    { id: 'traffic_area', label: 'Traffic area', categoryId: 'traffic', icon: 'traffic', color: '#c2410c', placementKind: 'polygon', parameters: trafficCreateParameters },
-  ],
-  interactionHandlers: [
-    createTrafficRouteImpactHandler(),
-  ],
-  presentObject: (object): PackObjectPresentation => {
-    const data = parseTrafficData(object)
-    return {
-      categoryId: 'traffic',
-      icon: 'traffic',
-      color: trafficColor(data?.severity),
-      summary: data ? `${data.geometryMode.replaceAll('_', ' ')} · ${data.severity}` : object.operational.status,
-      status: packStatus(data?.severity === 'blocked' || data?.severity === 'high' ? 'error' : 'working', data ? `${data.condition.replaceAll('_', ' ')} · ${data.severity}` : object.operational.status),
-      fields: data ? trafficDetails(data) : [packField('error', 'Error', 'Invalid traffic pack data')],
-    }
   },
-  defaultObjectLabel: (typeId, context): string => {
-    const count = context.objects.filter(object => parseTrafficData(object) !== null).length + 1
-    if (typeId === 'traffic_road_segment') return `Road traffic ${count}`
-    if (typeId === 'traffic_area') return `Traffic area ${count}`
-    throw new Error(`unsupported traffic create type: ${typeId}`)
-  },
-  buildCreateObjectCommand: (typeId: string, label: string, geometry: PackCreationGeometry, parameters?: unknown): PackCommandRequest => {
-    return {
+  commands: {
+    createObjectTypes: [
+      { id: 'traffic_road_segment', label: 'Road traffic', categoryId: 'traffic', icon: 'traffic', color: '#c2410c', placementKind: 'route', parameters: trafficCreateParameters },
+      { id: 'traffic_area', label: 'Traffic area', categoryId: 'traffic', icon: 'traffic', color: '#c2410c', placementKind: 'polygon', parameters: trafficCreateParameters },
+    ],
+    defaultObjectLabel: (typeId, context): string => {
+      const count = context.objects.filter(object => parseTrafficData(object) !== null).length + 1
+      if (typeId === 'traffic_road_segment') return `Road traffic ${count}`
+      if (typeId === 'traffic_area') return `Traffic area ${count}`
+      throw new Error(`unsupported traffic create type: ${typeId}`)
+    },
+    buildCreateObjectCommand: (typeId: string, label: string, geometry: PackCreationGeometry, parameters?: unknown): PackCommandRequest => ({
       kind: createTrafficConditionCommandKind,
       targetObjectIds: [],
       payload: buildTrafficCreatePayload(typeId, label, geometry, parameters),
-    }
+    }),
+    isController: () => false,
+    isTarget: () => false,
+    buildSetTargetCommand: (): PackCommandRequest => unsupportedCommand(),
+    buildCancelTargetCommand: (): PackCommandRequest => unsupportedCommand(),
   },
-  isController: () => false,
-  isTarget: () => false,
-  buildSetTargetCommand: (): PackCommandRequest => unsupportedCommand(),
-  buildCancelTargetCommand: (): PackCommandRequest => unsupportedCommand(),
+  interactions: {
+    handlers: [createTrafficRouteImpactHandler()],
+  },
 }

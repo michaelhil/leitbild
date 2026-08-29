@@ -8,8 +8,8 @@
 import type { Tool, ToolResult } from '../../../core/types/tool.ts'
 import type { WikiSourceBinding } from '../../types.ts'
 import { createWikiSource, extractProcedureIds, type WikiSource, type WikiManifest } from '../../../wikis/wiki-fetcher.ts'
-import { parseProcedure } from '../procmd/parser.ts'
-import type { ParsedProcedure, ParsedStep } from '../procmd/parser.ts'
+import { parseProcedure } from '../../../procmd-core/index.ts'
+import type { ParsedProcedure, ParsedStep } from '../../../procmd-core/index.ts'
 import { renderProcedure, renderIndex } from '../procmd/renderer.ts'
 
 interface PwrEopsToolDeps {

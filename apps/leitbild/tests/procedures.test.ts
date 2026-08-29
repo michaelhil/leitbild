@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, ControlInstanceEvent, ControlInstanceId, EventId, IsoTimestamp, ProcedureDocument } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, SimulationRunEvent, SimulationRunId, EventId, IsoTimestamp, ProcedureDocument } from '../src/core/model/index.ts'
 import { nowIso } from '../src/core/model/index.ts'
-import { createControlInstanceStateStore } from '../src/core/control-instances/state-store.ts'
+import { createSimulationRunStateStore } from '../src/core/simulation-runs/state-store.ts'
 import { parseProcedureMarkdown } from '../src/core/procedures/procmd.ts'
 import { procedureCommandEvents } from '../src/core/procedures/run-state.ts'
 
@@ -71,6 +71,21 @@ const unitBScope = {
 } as const
 
 describe('procedure system', () => {
+  test('rejects missing and unsupported procedure formats', () => {
+    expect(() => parseProcedureMarkdown({
+      source,
+      sourcePath: 'wiki/procedures/old.md',
+      sourceUrl: 'https://example.test/old.md',
+      rawMarkdown: e0Fixture.replace('procedure-md: 0.7', 'procedure-md: 0.6'),
+    })).toThrow('procedure-md: 0.7')
+    expect(() => parseProcedureMarkdown({
+      source,
+      sourcePath: 'wiki/procedures/unversioned.md',
+      sourceUrl: 'https://example.test/unversioned.md',
+      rawMarkdown: e0Fixture.replace('procedure-md: 0.7\n', ''),
+    })).toThrow('procedure-md: 0.7')
+  })
+
   test('parses procmd steps, branches, tags, and CSF metadata', () => {
     const procedure = parseFixture()
 
@@ -106,11 +121,11 @@ describe('procedure system', () => {
 
   test('procedure commands create durable run-state events and restore into snapshots', async () => {
     let seq = 0
-    const controlInstanceId = 'procedure-test' as ControlInstanceId
+    const simulationRunId = 'procedure-test' as SimulationRunId
     const at = nowIso()
     const command: CommandEnvelope = {
       id: 'command:procedure-start' as CommandEnvelope['id'],
-      controlInstanceId,
+      simulationRunId,
       actorId: 'actor:operator' as ActorId,
       kind: 'procedure.run.start',
       targetObjectIds: [],
@@ -118,7 +133,7 @@ describe('procedure system', () => {
       issuedAt: at,
     }
     const started = await procedureCommandEvents({
-      controlInstanceId,
+      simulationRunId,
       at,
       command,
       procedures: undefined,
@@ -129,8 +144,8 @@ describe('procedure system', () => {
       readDocument: async () => parseFixture(),
     })
     if (!started) throw new Error('procedure command was not handled')
-    const startEvent = started[0] as ControlInstanceEvent
-    const store = createControlInstanceStateStore()
+    const startEvent = started[0] as SimulationRunEvent
+    const store = createSimulationRunStateStore()
     store.hydrate({ objects: [], seq: 0 })
     store.apply(startEvent)
     const runId = store.snapshot().procedures?.runs[0]?.runId
@@ -139,7 +154,7 @@ describe('procedure system', () => {
     expect(store.snapshot().procedures?.runs[0]?.currentStepId).toBe('verify-reactor-trip')
 
     const update = await procedureCommandEvents({
-      controlInstanceId,
+      simulationRunId,
       at,
       command: {
         ...command,
@@ -161,7 +176,7 @@ describe('procedure system', () => {
       readDocument: async () => parseFixture(),
     })
     if (!update) throw new Error('procedure update command was not handled')
-    store.apply(update[0] as ControlInstanceEvent)
+    store.apply(update[0] as SimulationRunEvent)
     expect(store.snapshot().procedures?.runs[0]?.currentStepId).toBe('verify-turbine-trip')
 
     expect(store.snapshot().procedures?.runs[0]?.stepStates).toEqual([{
@@ -175,16 +190,16 @@ describe('procedure system', () => {
 
   test('procedure runs are scoped per unit and reset clears only the selected unit procedure', async () => {
     let seq = 0
-    const controlInstanceId = 'procedure-test' as ControlInstanceId
+    const simulationRunId = 'procedure-test' as SimulationRunId
     const at = nowIso()
     const baseCommand = {
-      controlInstanceId,
+      simulationRunId,
       actorId: 'actor:operator' as ActorId,
       kind: 'procedure.run.start',
       targetObjectIds: [],
       issuedAt: at,
     } satisfies Omit<CommandEnvelope, 'id' | 'payload'>
-    const store = createControlInstanceStateStore()
+    const store = createSimulationRunStateStore()
     store.hydrate({ objects: [], seq: 0 })
     const commandFactory = {
       eventId: () => `event:${++seq}` as EventId,
@@ -193,7 +208,7 @@ describe('procedure system', () => {
 
     for (const [id, scope] of [['command:start-a', unitAScope], ['command:start-b', unitBScope]] as const) {
       const events = await procedureCommandEvents({
-        controlInstanceId,
+        simulationRunId,
         at,
         command: {
           ...baseCommand,
@@ -205,7 +220,7 @@ describe('procedure system', () => {
         readDocument: async () => parseFixture(),
       })
       if (!events) throw new Error('procedure command was not handled')
-      store.apply(events[0] as ControlInstanceEvent)
+      store.apply(events[0] as SimulationRunEvent)
     }
 
     expect(store.snapshot().procedures?.runs.map(run => run.scope.systemId).sort()).toEqual([
@@ -216,7 +231,7 @@ describe('procedure system', () => {
     let duplicate = 'accepted'
     try {
       await procedureCommandEvents({
-        controlInstanceId,
+        simulationRunId,
         at,
         command: {
           ...baseCommand,
@@ -233,7 +248,7 @@ describe('procedure system', () => {
     expect(duplicate).toContain('reset it before starting another run')
 
     const reset = await procedureCommandEvents({
-      controlInstanceId,
+      simulationRunId,
       at,
       command: {
         ...baseCommand,
@@ -246,7 +261,7 @@ describe('procedure system', () => {
       readDocument: async () => parseFixture(),
     })
     if (!reset) throw new Error('procedure reset command was not handled')
-    store.apply(reset[0] as ControlInstanceEvent)
+    store.apply(reset[0] as SimulationRunEvent)
 
     expect(store.snapshot().procedures?.runs.map(run => run.scope.systemId)).toEqual(['halden-unit-b'])
   })

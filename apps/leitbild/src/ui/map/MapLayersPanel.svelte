@@ -9,7 +9,7 @@
     readonly datasetId: string
     readonly categories: ReadonlyArray<string>
     readonly defaultsOn: ReadonlyArray<string>
-    readonly controlInstanceId: string | null
+    readonly simulationRunId: string | null
     readonly storage?: MapLayersStorage
     readonly onVisibilityChange?: (visibility: Readonly<Record<string, boolean>>) => void
     readonly title?: string
@@ -22,7 +22,7 @@
     datasetId: props.datasetId,
     categories: props.categories,
     defaultsOn: props.defaultsOn,
-    controlInstanceId: props.controlInstanceId,
+    simulationRunId: props.simulationRunId,
     ...(props.storage ? { storage: props.storage } : {}),
   }))
 

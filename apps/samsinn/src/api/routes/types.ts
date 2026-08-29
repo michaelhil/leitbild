@@ -30,7 +30,7 @@ export interface WorkspaceAdmin {
   readonly buildSwitchCookie: (id: WorkspaceId, req: Request) => string
 }
 
-// Read-only health snapshot used by /api/system/diagnostics. Walks the
+// Read-only health snapshot used by /system/diagnostics. Walks the
 // registry + wsManager to surface per-Workspace broadcast wiring state.
 // Catches the silent-skip class of bug fixed in 5d73a8e: zero-broadcast
 // Workspaces under live traffic mean the wiring chain is broken somewhere.

@@ -1,11 +1,12 @@
+import { apiFetch } from "../api-client.ts"
 // ============================================================================
-// Bug report modal — POST /api/bugs creates a GitHub issue server-side.
+// Bug report modal — POST /bugs creates a GitHub issue server-side.
 //
 // Reachable from two surfaces (both wired in app.ts / settings-nav.ts):
 //   - Bug icon in the room header (#btn-report-bug)
 //   - "Report bug" entry in the Settings sidebar
 //
-// Auto-attached context: samsinn version (from /api/system/info) + browser
+// Auto-attached context: samsinn version (from /system/info) + browser
 // userAgent. Never includes room/agent/message content. The user-typed
 // description is the only free text — it goes through verbatim.
 // ============================================================================
@@ -19,7 +20,7 @@ let cachedInfo: { version: string; gitSha: string } | null = null
 const fetchVersion = async (): Promise<{ version: string; gitSha: string }> => {
   if (cachedInfo !== null) return cachedInfo
   try {
-    const res = await fetch('/api/system/info')
+    const res = await apiFetch('/system/info')
     if (!res.ok) return { version: '', gitSha: '' }
     const info = await res.json() as Partial<SystemInfo>
     cachedInfo = { version: info.version ?? '', gitSha: info.gitSha ?? '' }
@@ -59,7 +60,7 @@ export const openBugModal = async (): Promise<void> => {
     if (!title || !description) return
     submitBtn.disabled = true
     try {
-      const res = await fetch('/api/bugs', {
+      const res = await apiFetch('/bugs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, description, version: versionLabel, userAgent: ua }),

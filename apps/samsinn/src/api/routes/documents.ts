@@ -1,11 +1,11 @@
 // ============================================================================
-// /api/documents — per-Workspace document corpus for RAG.
+// /documents — per-Workspace document corpus for RAG.
 //
-// GET    /api/documents          → list all documents in this instance
-// POST   /api/documents          → upload (multipart/form-data, field "file")
-// DELETE /api/documents/:docId   → remove the doc + tombstone its vectors
+// GET    /documents          → list all documents in this Workspace
+// POST   /documents          → upload (multipart/form-data, field "file")
+// DELETE /documents/:docId   → remove the doc + tombstone its vectors
 //
-// Auth: gated by the instance cookie like every other per-Workspace route.
+// Auth: gated by the Workspace boundary like every other Workspace route.
 // Rate limit: per-IP. Default 10 uploads / hour, tunable via env vars.
 // ============================================================================
 
@@ -27,12 +27,12 @@ export const initDocumentsLimiter = (limitMetrics?: LimitMetrics): RateLimiter =
 }
 
 const NOT_AVAILABLE = (): Response =>
-  errorResponse('document corpus is not available on this instance (no embedder configured)', 503)
+  errorResponse('document corpus is not available in this Workspace (no embedder configured)', 503)
 
 export const documentRoutes: RouteEntry[] = [
   {
     method: 'GET',
-    pattern: /^\/api\/documents$/,
+    pattern: /^\/documents$/,
     handler: (_req, _match, { system }) => {
       if (!system.documents) return NOT_AVAILABLE()
       return json({ documents: system.documents.list() })
@@ -40,7 +40,7 @@ export const documentRoutes: RouteEntry[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/documents$/,
+    pattern: /^\/documents$/,
     handler: async (req, _match, { system, remoteAddress }) => {
       if (!system.documents) return NOT_AVAILABLE()
 
@@ -90,7 +90,7 @@ export const documentRoutes: RouteEntry[] = [
   },
   {
     method: 'DELETE',
-    pattern: /^\/api\/documents\/([^/]+)$/,
+    pattern: /^\/documents\/([^/]+)$/,
     handler: async (_req, match, { system }) => {
       if (!system.documents) return NOT_AVAILABLE()
       const docId = decodeURIComponent(match[1]!)

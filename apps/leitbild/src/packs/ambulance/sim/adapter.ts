@@ -52,7 +52,7 @@ const validateAmbulanceRuntimeObject = (object: OperationalObject): OperationalO
 
 const initialObjectsFor = (config: PackRuntimeConnectionConfig): ReadonlyArray<OperationalObject> => {
   const objects = config.initialObjects ?? config.scenario?.initialObjects
-  if (!objects) throw new Error(`ambulance runtime requires scenario or restored objects for control instance ${config.controlInstanceId}`)
+  if (!objects) throw new Error(`ambulance runtime requires scenario or restored objects for simulation run ${config.simulationRunId}`)
   return objects
     .filter(object => object.packId === ambulancePackId)
     .map(validateAmbulanceRuntimeObject)
@@ -121,6 +121,7 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
   readonly routing: RoutingAdapter
 }): PackRuntimeAdapter => ({
   id: ambulanceSimRuntimeId,
+  version: '1.0.0',
   packId: ambulancePackId,
   acceptedCommandKinds: [
     assignToIncidentCommandKind,
@@ -132,7 +133,7 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const objects = await restoreMissingRuntimeRoutes(initialObjectsFor(config), adapterConfig.routing)
     const engine = createAmbulanceSimEngine({
-      controlInstanceId: config.controlInstanceId,
+      simulationRunId: config.simulationRunId,
       routing: adapterConfig.routing,
       objects,
     })
@@ -164,7 +165,7 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
           .map(object => {
             const signal = interactionSignalSchema.parse({
               id: `signal:${randomUUID()}` as SignalId,
-              controlInstanceId: command.controlInstanceId,
+              simulationRunId: command.simulationRunId,
               at: snapshot.capturedAt,
               source: { kind: 'object', id: object.id, runtimeId: ambulanceSimRuntimeId },
               targets: [{ kind: 'object', id: object.id }],

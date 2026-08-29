@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ControlInstanceId, IsoTimestamp } from '../src/core/model/index.ts'
+import type { SimulationRunId, IsoTimestamp } from '../src/core/model/index.ts'
 import {
   componentVariablePath,
   compileProcessPlantExecutionPlan,
@@ -113,7 +113,7 @@ const runWithReferenceProtection = (input: {
     protection.evaluate({
       runtime: input.runtime,
       elapsedMs: input.runtime.elapsedMs(),
-      controlInstanceId: 'control-instance:runtime-protection-test' as ControlInstanceId,
+      simulationRunId: 'run-runtime-protection-test' as SimulationRunId,
       sourceRuntimeId: 'process-plant-local',
     })
     elapsedMs = nextElapsedMs
@@ -250,7 +250,7 @@ describe('process plant runtime', () => {
       protection.evaluate({
         runtime,
         elapsedMs: runtime.elapsedMs(),
-        controlInstanceId: 'control-instance:runtime-protection-test' as ControlInstanceId,
+        simulationRunId: 'run-runtime-protection-test' as SimulationRunId,
         sourceRuntimeId: 'process-plant-local',
       })
       expect(activeLifecycleIds(protection.snapshot())).toEqual({
@@ -404,7 +404,7 @@ describe('process plant runtime', () => {
         protection.evaluate({
           runtime,
           elapsedMs: runtime.elapsedMs(),
-          controlInstanceId: 'control-instance:runtime-surface-alarm-test' as ControlInstanceId,
+          simulationRunId: 'run-runtime-surface-alarm-test' as SimulationRunId,
           sourceRuntimeId: 'process-plant-local',
         })
       }
@@ -1128,7 +1128,7 @@ describe('process plant runtime', () => {
       protection.evaluate({
         runtime,
         elapsedMs: runtime.elapsedMs(),
-        controlInstanceId: 'control-instance:runtime-rps-test' as ControlInstanceId,
+        simulationRunId: 'run-runtime-rps-test' as SimulationRunId,
         sourceRuntimeId: 'process-plant-local',
       })
       const currentLevel = Number(runtime.readVariable(valueOf('sgA.levelPercent')))

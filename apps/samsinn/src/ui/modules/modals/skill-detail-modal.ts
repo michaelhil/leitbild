@@ -1,3 +1,4 @@
+import { apiFetch } from "../api-client.ts"
 // Skill inspector + editor.
 //
 // Two entry points:
@@ -79,7 +80,7 @@ export const renderSkillDetailInto = (
           body: `Delete skill "${skillName}"? This removes the skill directory.`,
           confirmLabel: 'Delete',
         }))) return
-        await safeFetch(`/api/skills/${encodeURIComponent(skillName)}`, { method: 'DELETE' })
+        await safeFetch(`/skills/${encodeURIComponent(skillName)}`, { method: 'DELETE' })
         onDone?.()
       },
     })
@@ -110,7 +111,7 @@ export const renderSkillDetailInto = (
     if (!isDirty()) return
     const scope = scopeInput.value.split(',').map(s => s.trim()).filter(Boolean)
     if (isNew) {
-      const ok = await safeFetch('/api/skills', {
+      const ok = await safeFetch('/skills', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: nameInput.value.trim(),
@@ -121,7 +122,7 @@ export const renderSkillDetailInto = (
       })
       if (!ok) return
     } else {
-      await safeFetch(`/api/skills/${encodeURIComponent(skillName)}`, {
+      await safeFetch(`/skills/${encodeURIComponent(skillName)}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ description: descInput.value, body: bodyArea.value, scope }),
       })
@@ -138,7 +139,7 @@ export const renderSkillDetailInto = (
   footer.appendChild(btnRow)
 
   if (!isNew && toolsContainer) {
-    fetch(`/api/skills/${encodeURIComponent(skillName)}`)
+    apiFetch(`/skills/${encodeURIComponent(skillName)}`)
       .then(r => r.ok ? r.json() : null)
       .then((data: { description?: string; body?: string; scope?: string[]; tools?: string[] } | null) => {
         if (!data) return

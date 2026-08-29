@@ -1,14 +1,15 @@
+import { apiFetch } from "./api-client.ts"
 // ============================================================================
 // Reset action + global countdown banner.
 //
 // Triggered from the Settings drawer (data-settings-row="reset"). On click:
-// confirmation modal → POST /api/system/reset → server schedules a 10-second
+// confirmation modal → POST /system/reset → server schedules a 10-second
 // commit and broadcasts `reset_pending`. Every connected tab shows a banner
 // with a `Cancel` button; any tab can cancel during the window. After commit
 // the server exits, systemd respawns, browsers reconnect via the existing
 // WS reconnect loop in ws-client.ts.
 //
-// Server-side single-flight + 5-minute cooldown lives in src/api/routes/
+// Server-side single-flight + 5-minute cooldown lives in src/routes/
 // system.ts. The UI just trusts the server's responses.
 // ============================================================================
 
@@ -37,7 +38,7 @@ const showCountdownBanner = (commitsAtMs: number): void => {
   cancel.onclick = async () => {
     cancel.disabled = true
     try {
-      const res = await fetch('/api/system/reset/cancel', { method: 'POST' })
+      const res = await apiFetch('/system/reset/cancel', { method: 'POST' })
       if (!res.ok) showToast(document.body, 'Cancel failed', { type: 'error', position: 'fixed' })
       // The server's broadcast `reset_cancelled` will clear the banner.
     } catch {
@@ -93,13 +94,13 @@ const showConfirmModal = (): Promise<boolean> =>
   })
 
 // Triggered from the Settings drawer. Shows a confirmation modal, then POSTs
-// to /api/system/reset. The countdown banner is rendered by the global WS
+// to /system/reset. The countdown banner is rendered by the global WS
 // listeners (initResetPanel) — visible to ALL tabs, not just the initiator.
 export const triggerReset = async (): Promise<void> => {
   const ok = await showConfirmModal()
   if (!ok) return
   try {
-    const res = await fetch('/api/system/reset', { method: 'POST' })
+    const res = await apiFetch('/system/reset', { method: 'POST' })
     if (!res.ok) {
       const body = await res.json().catch(() => ({})) as { error?: string }
       showToast(document.body, body.error ?? `Reset failed (${res.status})`, { type: 'error', position: 'fixed' })

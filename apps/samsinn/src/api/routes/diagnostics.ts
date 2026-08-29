@@ -1,15 +1,15 @@
 // Diagnostic endpoints. Read-only introspection of agent tool surfaces
 // and recent evals — the "no more SSH" layer.
 //
-// GET /api/agents/:name/surface?roomId=:id
+// GET /agents/:name/surface?roomId=:id
 //   Pure, no eval triggered. Answers "what does this agent actually see
 //   when invoked in this room, and why" with per-tool pack attribution.
 //
-// GET /api/diagnostics/evals/recent?limit=20&agent=:name
+// GET /diagnostics/evals/recent?limit=20&agent=:name
 //   per-Workspace ring buffer of the last N agent evals, newest first.
 //   Filterable by agent name.
 //
-// GET /api/diagnostics/evals/:traceId
+// GET /diagnostics/evals/:traceId
 //   Single eval trace — context_ready messages, tool calls, warnings,
 //   outcome. The traceId is broadcast on every agent_activity event so
 //   the UI can deep-link.
@@ -21,7 +21,7 @@ import type { RouteEntry } from './types.ts'
 export const diagnosticRoutes: RouteEntry[] = [
   {
     method: 'GET',
-    pattern: /^\/api\/agents\/([^/]+)\/surface$/,
+    pattern: /^\/agents\/([^/]+)\/surface$/,
     handler: (req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const url = new URL(req.url)
@@ -34,7 +34,7 @@ export const diagnosticRoutes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/diagnostics\/evals\/recent$/,
+    pattern: /^\/diagnostics\/evals\/recent$/,
     handler: (req, _match, { system }) => {
       const url = new URL(req.url)
       const limit = Number(url.searchParams.get('limit') ?? '20')
@@ -48,7 +48,7 @@ export const diagnosticRoutes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/diagnostics\/evals\/([^/]+)$/,
+    pattern: /^\/diagnostics\/evals\/([^/]+)$/,
     handler: (_req, match, { system }) => {
       const traceId = decodeURIComponent(match[1]!)
       const rec = system.evalBuffer.getByTraceId(traceId)

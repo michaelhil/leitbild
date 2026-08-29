@@ -30,7 +30,7 @@ import type { ProviderRoutingEvent } from './llm/router.ts'
 import { asAIAgent } from './agents/shared.ts'
 import { createTeam } from './agents/team.ts'
 import { createMessageRouter } from './core/delivery.ts'
-import type { LLMGateway } from './llm/gateway.ts'
+import type { OllamaGateway } from './llm/gateway.ts'
 import type { ProviderRouter } from './llm/router.ts'
 import { createLLMService, type LLMService } from './llm/llm-service.ts'
 import type { ProviderSetupResult } from './llm/providers-setup.ts'
@@ -109,7 +109,7 @@ export interface SamsinnWorkspaceRuntime {
   readonly llmPolicyStore?: import('./llm/llm-policy-store.ts').PolicyStore
   // Direct Ollama gateway (present iff Ollama is a configured provider).
   // Used by the Ollama dashboard UI for ps/loadModel; not for routing.
-  readonly ollama: LLMGateway | undefined
+  readonly ollama: OllamaGateway | undefined
   readonly providerConfig: ProviderConfig
   // Mutable registry of current API keys, read by gateways at request time.
   // Used by the providers admin endpoints to apply key changes without restart.
@@ -199,7 +199,7 @@ export interface SamsinnWorkspaceRuntime {
   readonly setOnSummaryRunFailed: (cb: (roomId: string, target: SummaryTarget, reason: string) => void) => void
   readonly setOnSummaryConfigChanged: (cb: OnSummaryConfigChanged) => void
   // RAG: per-Workspace document corpus. Present iff options.vectorsFile was
-  // provided (cookie-bound multi-tenant path); undefined in legacy tests.
+  // provided by Workspace boot; undefined in focused runtime tests.
   readonly documents?: DocumentManager
   readonly setOnDocumentStatusChange: (cb: (meta: DocumentMetadata) => void) => void
 
@@ -240,14 +240,13 @@ export interface CreateSamsinnWorkspaceRuntimeOptions {
   // Threaded by the registry; tests/headless paths can omit (becomes "?").
   readonly workspaceLabel?: string
   // Per-Workspace vector store path (RAG features). When set, createSamsinnWorkspaceRuntime
-  // wires the memory indexer + recall tool. Omitted in tests / single-tenant
-  // paths that don't have an Workspace ID — RAG features are no-op there.
+  // wires the memory indexer + recall tool. Omitted in focused runtime tests
+  // that do not have a Workspace ID; RAG features are no-op there.
   readonly vectorsFile?: string
 }
 
 export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRuntimeOptions = {}): SamsinnWorkspaceRuntime => {
-  // Either reuse a deployment runtime (multi-workspace) or build one inline
-  // (legacy single-tenant + tests). The result is the same shape either way.
+  // Either reuse a deployment runtime or build one inline for focused tests.
   const deploymentWasGiven = options.deployment !== undefined
   const deployment: DeploymentRuntime = options.deployment ?? createDeploymentRuntime({
     ...(options.providerConfig ? { providerConfig: options.providerConfig } : {}),
@@ -411,7 +410,7 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
   }
   // RAG: per-Workspace vector store + memory indexer. The store is lazy —
   // first .add() opens / appends to the JSONL file. Without options.vectorsFile
-  // (e.g. legacy single-tenant + tests) the store and tool are not wired.
+  // (e.g. focused tests) the store and tool are not wired.
   const vectorStore: VectorStore | undefined = options.vectorsFile
     ? createVectorStore(options.vectorsFile)
     : undefined
@@ -598,8 +597,8 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
     createGetRoomHistoryTool(rooms),
     createPostToRoomTool(rooms),
     // RAG: recall tool — only registered when this Workspace has a vector
-    // store (i.e. options.vectorsFile was provided). Tests + single-tenant
-    // legacy paths don't get it; agents see a clean tool list without
+    // store (i.e. options.vectorsFile was provided). Focused runtime tests
+    // do not get it; agents see a clean tool list without
     // a non-functional `recall`.
     ...(vectorStore ? [createRecallTool({ vectorStore, providerKeys, rooms })] : []),
     ...(vectorStore ? [createQueryDocumentsTool({ vectorStore, providerKeys })] : []),
@@ -616,10 +615,8 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
     toolRegistry.registerWithSource(tool, { kind: 'pack-bundled', pack: BIOMETRICS_PACK_NAMESPACE })
   }
 
-  // Skill system — file-based behavioral templates with bundled tools.
-  // skillStore is process-shared (populated by bootstrap). scriptStore is
-  // still per-Workspace (file-backed under SAMSINN_HOME/scripts; will move
-  // to shared in a follow-up — same migration as we just did for skills).
+  // Skill and script catalogs are deployment-scoped Pack contributions.
+  // Workspace and Room activation determine which contributions are effective.
   const skillsDir = sharedPaths.skills()
   const scriptsDir = sharedPaths.scripts()
   const packsDir = sharedPaths.packs()
@@ -689,9 +686,7 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
     }
   }
 
-  // write_script — pure data (writes JSON files under SAMSINN_HOME/scripts).
-  // Stays per-Workspace because scriptStore is per-Workspace for now (file-
-  // backed; same migration as skillStore is a future PR).
+  // write_script updates the deployment-scoped local Pack script catalog.
   toolRegistry.register(createWriteScriptTool(scriptStore, () => { /* onChange already broadcasts */ }))
 
   // Forward-ref so the runner can call SamsinnWorkspaceRuntime.* without a build-order cycle.
@@ -721,7 +716,7 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
       const fromRouter = await llm.models()
       const fromOllama = ollama?.getHealth().availableModels ?? []
       // Router returns prefixed (`name:model`); Ollama health returns unprefixed.
-      // Keep both so an agent's `model: 'qwen2.5-coder'` (legacy unprefixed)
+      // Keep both so an Ollama model's unprefixed id
       // resolves alongside `groq:llama-3.3-70b-versatile`.
       availableModelsCache = [...fromRouter, ...fromOllama]
     } catch (err) {
@@ -773,8 +768,8 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
 
   // Provider-routing-event listener lives on the shared router (see
   // createDeploymentRuntime). The dispatcher is normally set by WorkspaceRuntimeRegistry
-  // (multi-Workspace) — but when this SamsinnWorkspaceRuntime is built standalone (tests
-  // and the headless legacy path), we set the dispatcher to forward
+  // (multi-Workspace) — but when this SamsinnWorkspaceRuntime is built directly in tests,
+  // we set the dispatcher to forward
   // events to *this* SamsinnWorkspaceRuntime's late-bound subscribers. Multi-Workspace
   // boot overrides this when registry sets its own dispatcher.
 
@@ -881,8 +876,8 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
     },
   }
 
-  // Standalone path (test + legacy): forward provider routing events to
-  // *this* SamsinnWorkspaceRuntime. Multi-Workspace boot replaces this dispatcher via
+  // Focused runtime-test path: forward provider routing events to
+  // *this* SamsinnWorkspaceRuntime. Workspace boot replaces this dispatcher via
   // WorkspaceRuntimeRegistry → deployment.setProviderEventDispatcher.
   if (!deploymentWasGiven) {
     deployment.setProviderEventDispatcher((event) => {

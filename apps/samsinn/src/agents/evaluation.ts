@@ -274,10 +274,9 @@ export interface EvalOptions {
   // Tool-iteration check-in hook. Called by the loop when maxToolIterations
   // is about to be exceeded with more tool calls pending. Returns the
   // number of additional iterations to allow (user clicked Continue) or
-  // null to stop (user clicked Stop, or abandonment timeout fired, or
-  // cancel was signalled). When absent, the loop falls back to the
-  // legacy `tool_loop_exceeded` behaviour for back-compat with callers
-  // that don't wire the checkin facility yet.
+  // null to stop (user clicked Stop, abandonment timeout fired, or cancel
+  // was signalled). Without a handler, evaluation remains strictly bounded
+  // by maxToolIterations.
   readonly requestToolCheckin?: (info: {
     readonly iterations: number
     readonly recentTools: ReadonlyArray<{ readonly tool: string; readonly success: boolean }>
@@ -401,8 +400,8 @@ export const evaluate = async (
 
         // If this iteration just used the LAST allowed slot, ask the user
         // before proceeding (so the next loop iteration doesn't silently
-        // get cut off by the for-condition). Only when a checkin handler
-        // is wired — otherwise fall through to legacy tool_loop_exceeded.
+        // get cut off by the for-condition). Without a handler, the
+        // configured iteration cap remains authoritative.
         if (requestToolCheckin && toolRound + 1 > effectiveMaxIterations) {
           const recentTools = toolTrace.slice(-3).map(t => ({ tool: t.tool, success: t.success }))
           onEvent?.({

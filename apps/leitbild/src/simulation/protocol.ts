@@ -1,9 +1,9 @@
-import type { ActorId, ClientId, CommandEnvelope, CommandResult, ControlInstanceEvent, InteractionSignal, OperationalObject, Provenance, ScenarioProcessSystemDefinition, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
-import type { IsoTimestamp, ObjectId, ControlInstanceId } from '../core/model/index.ts'
+import type { ActorId, ClientId, CommandEnvelope, CommandResult, SimulationRunEvent, InteractionSignal, OperationalObject, Provenance, ScenarioProcessSystemDefinition, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
+import type { IsoTimestamp, ObjectId, SimulationRunId } from '../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../core/packs/protocol.ts'
 
 export interface PackRuntimeSnapshot {
-  readonly controlInstanceId: ControlInstanceId
+  readonly simulationRunId: SimulationRunId
   readonly objects: ReadonlyArray<OperationalObject>
   readonly capturedAt: IsoTimestamp
 }
@@ -66,7 +66,7 @@ export interface PackRuntimeConnection {
   readonly receiveRealtimeInput?: (input: PackRuntimeRealtimeInput) => Promise<void>
   readonly commandEventPersistence?: (command: CommandEnvelope) => PackRuntimeEventPersistence
   readonly query: (request: PackQueryRequest) => Promise<PackQueryResponse>
-  readonly observeCommittedEvents: (events: ReadonlyArray<ControlInstanceEvent>) => Promise<void>
+  readonly observeCommittedEvents: (events: ReadonlyArray<SimulationRunEvent>) => Promise<void>
   readonly setClock: (clock: SimulationClockState) => Promise<void>
   readonly close: () => Promise<void>
 }
@@ -78,6 +78,7 @@ export interface PackRuntimeStateStore {
 
 export interface PackRuntimeAdapter {
   readonly id: string
+  readonly version: string
   readonly packId: string
   readonly acceptedCommandKinds: ReadonlyArray<string>
   readonly acceptedRealtimeInputTypes?: ReadonlyArray<string>
@@ -97,7 +98,7 @@ export interface PackScenarioRuntimeConfig {
 }
 
 export interface PackRuntimeConnectionConfig {
-  readonly controlInstanceId: ControlInstanceId
+  readonly simulationRunId: SimulationRunId
   readonly scenario?: PackScenarioRuntimeConfig
   readonly initialObjects?: ReadonlyArray<OperationalObject>
   readonly runtimeStateStore?: PackRuntimeStateStore

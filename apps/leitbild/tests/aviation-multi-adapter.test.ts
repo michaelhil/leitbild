@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, IsoTimestamp, ObjectId } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, SimulationRunId, IsoTimestamp, ObjectId } from '../src/core/model/index.ts'
 import { aviationPackId } from '../src/packs/aviation/model.ts'
 import { createAviationMultiPackRuntimeAdapter } from '../src/packs/aviation/sim/multi/adapter.ts'
 import { aviationOpenSkyRuntimeId, aviationVatsimRuntimeId } from '../src/packs/aviation/sim/constants.ts'
@@ -28,6 +28,7 @@ const createStubAdapter = (id: string): StubAdapter => {
   let activeEmit: ((events: ReadonlyArray<PackRuntimeEvent>) => void) | null = null
   const adapter: PackRuntimeAdapter = {
     id,
+    version: '1.0.0',
     packId: aviationPackId,
     acceptedCommandKinds: [],
     queryKinds: [],
@@ -46,7 +47,7 @@ const createStubAdapter = (id: string): StubAdapter => {
       }
       return {
         getSnapshot: async () => ({
-          controlInstanceId: config.controlInstanceId,
+          simulationRunId: config.simulationRunId,
           objects: [],
           capturedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
         }),
@@ -118,7 +119,7 @@ const upsertEvent = (id: string, runtimeId: string): PackRuntimeEvent => ({
 
 const issueSetSource = (source: 'opensky' | 'vatsim'): CommandEnvelope => ({
   id: `cmd:${source}` as CommandId,
-  controlInstanceId: 'control-instance:test' as ControlInstanceId,
+  simulationRunId: 'run-test' as SimulationRunId,
   actorId: 'actor:test' as ActorId,
   kind: aviationSetSourceCommandKind,
   targetObjectIds: [],
@@ -132,7 +133,7 @@ describe('createAviationMultiPackRuntimeAdapter', () => {
     const vatsim = createStubAdapter(aviationVatsimRuntimeId)
     const multi = createAviationMultiPackRuntimeAdapter({ opensky, vatsim })
     const connection = await multi.connect({
-      controlInstanceId: 'control-instance:test' as ControlInstanceId,
+      simulationRunId: 'run-test' as SimulationRunId,
     })
 
     const emissions: { runtimeId: string; events: ReadonlyArray<PackRuntimeEvent> }[] = []
@@ -156,7 +157,7 @@ describe('createAviationMultiPackRuntimeAdapter', () => {
     const vatsim = createStubAdapter(aviationVatsimRuntimeId)
     const multi = createAviationMultiPackRuntimeAdapter({ opensky, vatsim })
     const connection = await multi.connect({
-      controlInstanceId: 'control-instance:test' as ControlInstanceId,
+      simulationRunId: 'run-test' as SimulationRunId,
     })
     const emissions: ReadonlyArray<PackRuntimeEvent>[] = []
     connection.subscribe((emission) => {
@@ -193,7 +194,7 @@ describe('createAviationMultiPackRuntimeAdapter', () => {
     const vatsim = createStubAdapter(aviationVatsimRuntimeId)
     const multi = createAviationMultiPackRuntimeAdapter({ opensky, vatsim })
     const connection = await multi.connect({
-      controlInstanceId: 'control-instance:test' as ControlInstanceId,
+      simulationRunId: 'run-test' as SimulationRunId,
     })
     const bad = await connection.sendCommand({
       ...issueSetSource('opensky'),
@@ -207,7 +208,7 @@ describe('createAviationMultiPackRuntimeAdapter', () => {
     const vatsim = createStubAdapter(aviationVatsimRuntimeId)
     const multi = createAviationMultiPackRuntimeAdapter({ vatsim, defaultSource: 'vatsim' })
     const connection = await multi.connect({
-      controlInstanceId: 'control-instance:test' as ControlInstanceId,
+      simulationRunId: 'run-test' as SimulationRunId,
     })
     const result = await connection.sendCommand(issueSetSource('opensky'))
     expect(result.ok).toBe(false)
@@ -219,7 +220,7 @@ describe('createAviationMultiPackRuntimeAdapter', () => {
     const vatsim = createStubAdapter(aviationVatsimRuntimeId)
     const multi = createAviationMultiPackRuntimeAdapter({ vatsim, defaultSource: 'opensky' })
     const connection = await multi.connect({
-      controlInstanceId: 'control-instance:test' as ControlInstanceId,
+      simulationRunId: 'run-test' as SimulationRunId,
       scenario: {
         scenarioId: 'scenario:aviation',
         runtimeIds: ['aviation.multi'],

@@ -1,7 +1,7 @@
 // ============================================================================
 // In-memory per-key sliding-window rate limiter with LRU bound.
 //
-// Used by routes that need to throttle drive-by spam (instance creation,
+// Used by routes that need to throttle drive-by spam (Workspace creation,
 // bug submission). Single-process, no Redis — fits samsinn's threat model:
 // one operator, single host, restarts are rare enough that losing the
 // counter on restart isn't a real abuse path.

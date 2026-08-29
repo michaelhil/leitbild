@@ -8,6 +8,7 @@ import type {
   PackMapLayerGroup,
   PackRuntime,
 } from '../../core/packs/protocol.ts'
+import { createLeitbildPackDescriptor } from '../../core/packs/protocol.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
 import { asDatasetId } from '../../reference-data/types.ts'
 import { aviationNoopRuntime, aviationNoopRuntimeId } from './sim/noop-adapter.ts'
@@ -55,16 +56,18 @@ const layerGroups: ReadonlyArray<PackMapLayerGroup> = [
 
 // Pack-level runtime catalogue. Adapter registration (the actual factory
 // invocation, with env-derived credentials) happens in `src/index.ts`. The
-// scenario opts a Control Instance into a non-default runtime via
+// scenario opts a Simulation Run into a non-default runtime via
 // runtimeOverrides — see norway-airspace.scenario.json.
 const aviationOpenSkyRuntime: PackRuntime = {
   id: aviationOpenSkyRuntimeId,
+  version: '1.0.0',
   label: 'OpenSky Network (live ADS-B)',
   kind: 'remote',
 }
 
 const aviationVatsimRuntime: PackRuntime = {
   id: aviationVatsimRuntimeId,
+  version: '1.0.0',
   label: 'VATSIM (live flight-sim network)',
   kind: 'remote',
 }
@@ -75,6 +78,7 @@ const aviationVatsimRuntime: PackRuntime = {
 // directly.
 const aviationMultiRuntime: PackRuntime = {
   id: aviationMultiRuntimeId,
+  version: '1.0.0',
   label: 'Aviation (multi-source: OpenSky / VATSIM)',
   kind: 'remote',
 }
@@ -129,30 +133,27 @@ const aircraftColor = (data: AircraftPackData): string => {
 }
 
 export const aviationPack: LeitbildPack = {
-  id: 'aviation',
-  name: 'Aviation',
-  wikiRefs: [
-    { name: 'Leitbild aviation pack wiki', url: 'https://samsinn-wikis.github.io/leitbild/packs/aviation/' },
-  ],
-  runtimes: [
-    aviationNoopRuntime,
-    aviationOpenSkyRuntime,
-    aviationVatsimRuntime,
-    aviationMultiRuntime,
-  ],
-  defaultRuntimeId: aviationNoopRuntimeId,
-  referenceDatasetIds: [aeroNorwayDatasetIdValue],
-  mapLayerGroups: layerGroups,
-  categories: [
+  descriptor: createLeitbildPackDescriptor({
+    id: 'aviation', version: '1.0.0', name: 'Aviation',
+    contributions: ['runtime', 'knowledge', 'reference-data', 'presentation', 'commands'],
+  }),
+  runtime: {
+    runtimes: [aviationNoopRuntime, aviationOpenSkyRuntime, aviationVatsimRuntime, aviationMultiRuntime],
+    defaultRuntimeId: aviationNoopRuntimeId,
+  },
+  knowledge: { wikiRefs: [{ name: 'Leitbild aviation pack wiki', url: 'https://samsinn-wikis.github.io/leitbild/packs/aviation/' }] },
+  referenceData: { builders: [], datasetIds: [aeroNorwayDatasetIdValue] },
+  presentation: {
+    mapLayerGroups: layerGroups,
+    categories: [
     {
       id: 'aircraft',
       label: 'Aircraft',
       emptyLabel: 'No aircraft in view',
       matches: (object: OperationalObject): boolean => parseAircraft(object) !== null,
     },
-  ],
-  createObjectTypes: [],
-  presentObject: (object: OperationalObject): PackObjectPresentation => {
+    ],
+    presentObject: (object: OperationalObject): PackObjectPresentation => {
     const data = parseAircraft(object)
     if (!data) {
       // Defensive: an unknown aviation OperationalObject — fall back to the
@@ -179,17 +180,21 @@ export const aviationPack: LeitbildPack = {
       fields: aircraftFields(data),
       muted: data.onGround,
     }
+    },
   },
-  defaultObjectLabel: (typeId: string): string => typeId,
-  buildCreateObjectCommand: (typeId: string, _label: string, _geometry: PackCreationGeometry): PackCommandRequest => {
-    throw new Error(`aviation pack cannot create object of type ${typeId} — aircraft are observed, not created`)
-  },
-  isController: (_object: OperationalObject): boolean => false,
-  isTarget: (_controller: OperationalObject, _candidate: OperationalObject): boolean => false,
-  buildSetTargetCommand: (_controller: OperationalObject, _target: OperationalObject): PackCommandRequest => {
-    throw new Error('aviation pack does not support targeting in this phase')
-  },
-  buildCancelTargetCommand: (_controller: OperationalObject): PackCommandRequest => {
-    throw new Error('aviation pack does not support targeting in this phase')
+  commands: {
+    createObjectTypes: [],
+    defaultObjectLabel: (typeId: string): string => typeId,
+    buildCreateObjectCommand: (typeId: string, _label: string, _geometry: PackCreationGeometry): PackCommandRequest => {
+      throw new Error(`aviation pack cannot create object of type ${typeId} — aircraft are observed, not created`)
+    },
+    isController: (_object: OperationalObject): boolean => false,
+    isTarget: (_controller: OperationalObject, _candidate: OperationalObject): boolean => false,
+    buildSetTargetCommand: (_controller: OperationalObject, _target: OperationalObject): PackCommandRequest => {
+      throw new Error('aviation pack does not support targeting in this phase')
+    },
+    buildCancelTargetCommand: (_controller: OperationalObject): PackCommandRequest => {
+      throw new Error('aviation pack does not support targeting in this phase')
+    },
   },
 }

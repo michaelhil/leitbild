@@ -94,7 +94,7 @@ export interface ScenarioScriptProgressState {
   readonly firedStepIds: ReadonlyArray<string>
 }
 
-export interface ScenarioInstanceState {
+export interface ScenarioExecutionState {
   readonly scenarioId: string
   readonly guidance?: ScenarioGuidance
   readonly highlightedObjectIds: ReadonlyArray<ObjectId>
@@ -323,7 +323,7 @@ export const scenarioScriptProgressStateSchema = z.object({
   firedStepIds: z.array(idSchema).default([]),
 })
 
-export const scenarioInstanceStateSchema = z.object({
+export const scenarioExecutionStateSchema = z.object({
   scenarioId: idSchema,
   guidance: scenarioGuidanceSchema.optional(),
   highlightedObjectIds: z.array(objectIdSchema).default([]),

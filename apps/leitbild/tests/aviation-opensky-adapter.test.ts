@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { readFile } from 'node:fs/promises'
-import type { ControlInstanceId, IsoTimestamp } from '../src/core/model/index.ts'
+import type { SimulationRunId, IsoTimestamp } from '../src/core/model/index.ts'
 import { createOpenSkyPackRuntimeAdapter } from '../src/packs/aviation/sim/opensky/adapter.ts'
 import type { HttpFetch } from '../src/packs/aviation/sim/opensky/auth.ts'
 import type { PackRuntimeEvent, PackRuntimeEventHandler } from '../src/simulation/protocol.ts'
@@ -101,7 +101,7 @@ describe('createOpenSkyPackRuntimeAdapter', () => {
     })
 
     const connection = await adapter.connect({
-      controlInstanceId: 'control-instance:test' as ControlInstanceId,
+      simulationRunId: 'run-test' as SimulationRunId,
     })
 
     const batches: PackRuntimeEvent[][] = []
@@ -154,7 +154,7 @@ describe('createOpenSkyPackRuntimeAdapter', () => {
       clearIntervalFn: timer.clearIntervalFn,
     })
     const connection = await adapter.connect({
-      controlInstanceId: 'control-instance:test' as ControlInstanceId,
+      simulationRunId: 'run-test' as SimulationRunId,
     })
 
     const batches: PackRuntimeEvent[][] = []
@@ -190,7 +190,7 @@ describe('createOpenSkyPackRuntimeAdapter', () => {
       clearIntervalFn: timer.clearIntervalFn,
     })
     const connection = await adapter.connect({
-      controlInstanceId: 'control-instance:test' as ControlInstanceId,
+      simulationRunId: 'run-test' as SimulationRunId,
     })
     connection.subscribe(() => undefined)
     await Bun.sleep(10)

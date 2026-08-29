@@ -19,7 +19,7 @@ import { openDemoModal, refreshDemoHeaderIcon } from './demo-modal.ts'
 import { $activeDemoByRoom, clearDemoForRoom } from './active-demo-store.ts'
 
 // Build a shareable URL for a demo. Uses the current origin + path so the
-// link works whether served from `/`, `/?instance=xyz`, etc. The receiver's
+// link works from the canonical `/workspaces/<workspace-id>` route. The receiver's
 // boot handler in initDemoDeepLink() reads `?demo=<id>` and triggers the
 // same flow as clicking the card in the picker modal.
 const demoShareUrl = (demo: Demo): string =>

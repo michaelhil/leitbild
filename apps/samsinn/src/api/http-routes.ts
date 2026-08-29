@@ -27,7 +27,6 @@ import { triggerRoutes } from './routes/triggers.ts'
 import { packsRoutes } from './routes/packs.ts'
 import { authResponse, systemInfoResponse, systemRoutes } from './routes/system.ts'
 import { json } from './routes/helpers.ts'
-import { workspaceRoutes } from './routes/workspaces.ts'
 import { bugRoutes } from './routes/bugs.ts'
 import { bookmarkRoutes } from './routes/bookmarks.ts'
 import { toolRoutes } from './routes/tools.ts'
@@ -37,6 +36,7 @@ import { geodataRoutes } from './routes/geodata.ts'
 import { documentRoutes } from './routes/documents.ts'
 import { diagnosticRoutes } from './routes/diagnostics.ts'
 import { leitbildMirrorRoutes } from './routes/leitbild-mirror.ts'
+import { capabilityRoutes } from './routes/capabilities.ts'
 import type { RouteContext } from './routes/types.ts'
 import type { AccessContext, WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
@@ -46,7 +46,8 @@ import type { AccessContext, WorkspaceId } from '@samsinn-leitbild/platform-cont
 // Order matters: more-specific patterns (e.g. /rooms/:name/todos/:id) before general ones.
 
 const allRoutes = [
-  // Tool routes come before runtimeRoutes so /api/tools/:name + /api/tools/rescan
+  ...capabilityRoutes,
+  // Tool routes come before runtimeRoutes so /tools/:name + /tools/rescan
   // are matched before any catch-all patterns elsewhere.
   ...toolRoutes,
   ...runtimeRoutes,
@@ -56,11 +57,10 @@ const allRoutes = [
   ...providersListRoutes,
   ...providersConfigRoutes,
   ...providersTestRoutes,
-  // Trigger routes BEFORE agentRoutes so /api/agents/:name/triggers matches first.
+  // Trigger routes BEFORE agentRoutes so /agents/:name/triggers matches first.
   ...triggerRoutes,
   ...packsRoutes,
   ...systemRoutes,
-  ...workspaceRoutes,
   ...bugRoutes,
   ...loggingRoutes,
   ...bookmarkRoutes,
@@ -74,11 +74,11 @@ const allRoutes = [
   // /rooms/:name/leitbild-mirror matches before the generic /rooms/:name.
   ...leitbildMirrorRoutes,
   ...roomRoutes,
-  // Agent-memory routes BEFORE agentRoutes so /api/agents/:name/memory
-  // matches before /api/agents/:name (which would shadow it).
+  // Agent-memory routes BEFORE agentRoutes so /agents/:name/memory
+  // matches before /agents/:name (which would shadow it).
   ...agentMemoryRoutes,
-  // Diagnostic routes BEFORE agentRoutes so /api/agents/:name/surface
-  // matches before /api/agents/:name. Also covers /api/diagnostics/*.
+  // Diagnostic routes BEFORE agentRoutes so /agents/:name/surface
+  // matches before /agents/:name. Also covers /diagnostics/*.
   ...diagnosticRoutes,
   ...agentRoutes,
   ...messageRoutes,
@@ -146,46 +146,6 @@ export const handleAPI = async (
   deps: RouteDeps,
 ): Promise<Response | null> => {
   const ctx: RouteContext = { system, workspaceId, accessContext, ...deps }
-
-  // F5: cookieless /api/* → 401. Bots that probe the API without first
-  // going through /ws (which is where real UI flow mints a cookie) can't
-  // create Workspaces. Exempted: /api/auth (UI calls this BEFORE having a
-  // cookie to render the token prompt) and /api/system/info (version
-  // banner on the same screen). All other /api/* require an existing
-  // cookie. Real UI never sees this — `GET /` minted the cookie before
-  // any /api call.
-  //
-  // The check uses getWorkspaceId() (raw cookie read) instead of trusting
-  // `workspaceId`, because resolveOrMintWorkspace in server.ts may have
-  // minted a fresh id for a cookieless caller; we want the unminted view.
-  if (
-    pathname.startsWith('/api/') &&
-    pathname !== '/api/auth' &&
-    pathname !== '/api/system/info' &&
-    getWorkspaceId(req) === null
-  ) {
-    return new Response('No session', { status: 401 })
-  }
-
-  // Auth gate. Scoped to /api/* so static paths (/, /index.html, /dist.css,
-  // /favicon.ico) can load and the UI can boot to show the token prompt.
-  // Without this scope, the gate ran on every path (returning null fell
-  // through to serveStatic, but a 401 short-circuited the chain), so the
-  // root page returned "Unauthorized" plain text and invitees never saw
-  // the prompt.
-  // /api/auth itself is exempt so the UI can submit the token.
-  // /api/system/info is exempt so the version banner can render at the
-  // token-prompt screen without a session.
-  if (
-    authEnabled() &&
-    pathname.startsWith('/api/') &&
-    pathname !== '/api/auth' &&
-    pathname !== '/api/system/info'
-  ) {
-    if (!isValidSession(sessionFromRequest(req))) {
-      return new Response('Unauthorized', { status: 401 })
-    }
-  }
 
   for (const route of allRoutes) {
     if (route.method !== req.method) continue

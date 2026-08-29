@@ -45,11 +45,11 @@ describe('scenario surface model', () => {
 
   test('orders and filters rail categories from scenario surface config', () => {
     const rows = categoryRowsForSurface([
-      { category: ambulancePack.categories[1]!, objects: [] },
-      { category: trafficPack.categories[0]!, objects: [] },
-      { category: weatherPack.categories[0]!, objects: [] },
-      { category: ambulancePack.categories[0]!, objects: [] },
-      { category: ambulancePack.categories[2]!, objects: [] },
+      { category: ambulancePack.presentation.categories[1]!, objects: [] },
+      { category: trafficPack.presentation.categories[0]!, objects: [] },
+      { category: weatherPack.presentation.categories[0]!, objects: [] },
+      { category: ambulancePack.presentation.categories[0]!, objects: [] },
+      { category: ambulancePack.presentation.categories[2]!, objects: [] },
     ], surfaceObjectRailConfig(osloAmbulanceScenario.surface))
 
     expect(rows.map(row => row.category.id)).toEqual([

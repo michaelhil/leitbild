@@ -2,7 +2,7 @@
 
 A **Leitbild Pack** is a namespaced bundle of operational capability.
 
-Leitbild itself owns control instances, actors, roles, command envelopes, event ordering, state projection, map rendering, persistence, audit logs, metrics, and AI integration boundaries. Packs contribute pack-specific behavior behind those core seams.
+Leitbild itself owns simulation runs, actors, roles, command envelopes, event ordering, state projection, map rendering, persistence, audit logs, metrics, and AI integration boundaries. Packs contribute pack-specific behavior behind those core seams.
 
 Concrete pack implementations live in `src/packs/*`. The generic pack protocol, registry, and composition helpers live in `src/core/packs/*`.
 
@@ -82,7 +82,7 @@ Installation should mirror the Samsinn pack model:
 - validate namespace and compatibility
 - move into the final pack directory
 - register contributions
-- notify active UIs and control instances
+- notify active UIs and simulation runs
 
 Suggested environment variable:
 
@@ -155,11 +155,11 @@ Packs must not shadow core contribution names.
 
 ## Composition
 
-Multiple packs should eventually be active in one control instance, for example ambulance + police + drone.
+Multiple packs should eventually be active in one simulation run, for example ambulance + police + drone.
 
 Composition rules:
 
-- Leitbild owns the control instance clock.
+- Leitbild owns the simulation run clock.
 - Leitbild owns event ordering.
 - Leitbild owns command envelopes and actor identity.
 - Leitbild owns permissions and ownership rules.
@@ -167,10 +167,10 @@ Composition rules:
 - Leitbild owns interaction signal ordering and effect commit.
 - Packs publish events through Leitbild seams.
 - Packs issue changes to other operational areas only through declared commands, interaction signals, and committed events.
-- Pack interaction handlers inspect signals plus current control-instance state and return constrained effects. They must not mutate shared state directly.
+- Pack interaction handlers inspect signals plus current simulation-run state and return constrained effects. They must not mutate shared state directly.
 - Packs that need another pack's capability should emit a generic demand signal when possible. The source pack describes the need; responder packs decide whether and how to materialize target objects or notifications.
 
-Multi-pack runtime orchestration uses the Runtime Hub once more than one pack runtime is active in a Control Instance.
+Multi-pack runtime orchestration uses the Runtime Hub once more than one pack runtime is active in a Simulation Run.
 
 ## Generic UI Boundary
 
@@ -179,7 +179,7 @@ Generic UI modules must not import pack-specific pack models, runtimes, geometry
 Pack-specific presentation belongs behind `LeitbildPack`:
 
 - `presentObject` owns the category, icon, color, summary, object fields, status indicator, and noteworthy-update policy for one object.
-- `contextualFields` is detail-tier enrichment only. It lets a pack add derived fields to another pack's object for inspectors, hover detail, or selected-object detail without making map and rail summaries pay for cross-pack inference. Contextual enrichment must use the presentation object index or a bounded pack query rather than scanning the full Control Instance object list on every row render.
+- `contextualFields` is detail-tier enrichment only. It lets a pack add derived fields to another pack's object for inspectors, hover detail, or selected-object detail without making map and rail summaries pay for cross-pack inference. Contextual enrichment must use the presentation object index or a bounded pack query rather than scanning the full Simulation Run object list on every row render.
 - `mapAreaFeatures` lets a pack synchronously project object-derived spatial features into generic rendered areas when the current object snapshot is sufficient.
 - `mapAreaFeatureLayers` declares which surface map layers activate pack area features so generic map lifecycle code does not hard-code a concrete pack such as weather.
 - `mapAreaFeatureQueries` lets a pack request runtime-backed spatial features when rendering depends on runtime-owned private state. Weather uses this for H3 map features because the weather sparse field lives inside the weather pack runtime, not in generic UI state.
@@ -211,7 +211,7 @@ The drone pack is the first high-interaction vehicle-control pack built on the s
 
 A drone is an ordinary operational object for Leitbild-wide awareness, but continuous flight mechanics live in the native server-side drone pack runtime. Drone pack data includes validated vehicle model metadata, link/arming/navigation state, pose, velocity, attitude, battery, health, control, mission, geofence, payload runtime state, and optional swarm state. Vehicle models are declarative data, so surveillance, support, and effect-capable drones are examples rather than hard-coded object classes.
 
-The browser samples keyboard and Gamepad API state only as an input device boundary. It sends validated `drone.manual_control`, `drone.goto`, `drone.swarm_command`, `drone.configure_vehicle_model`, and `drone.attack` commands through the normal Control Instance API. The native pack runtime remains authoritative for vehicle motion; multiple browsers and multiple flight windows see the same projected state.
+The browser samples keyboard and Gamepad API state only as an input device boundary. It sends validated `drone.manual_control`, `drone.goto`, `drone.swarm_command`, `drone.configure_vehicle_model`, and `drone.attack` commands through the normal Simulation Run API. The native pack runtime remains authoritative for vehicle motion; multiple browsers and multiple flight windows see the same projected state.
 
 Drone effects use generic interaction signals. The drone runtime may emit `drone.attack.requested`, and the pack interaction handler returns constrained object-upsert/notification effects after validating capability, payload, range, and target state. It does not import or mutate another pack's private model. Surveillance contacts are read-only pack query projections; they do not mutate targets or become a second operational truth source.
 
@@ -232,10 +232,10 @@ This prevents the map from becoming weather-specific while still letting several
 
 ## Pack Query Surface
 
-The generic Control Instance API exposes one read-only query route:
+The generic Simulation Run API exposes one read-only query route:
 
 ```text
-POST /api/control-instances/:id/queries
+POST /api/workspaces/:workspaceId/simulation-runs/:simulationRunId/queries
 ```
 
 The request envelope is:
@@ -320,7 +320,7 @@ Current built-in query kinds:
 - `process-plant.alarms.summary`
 - `process-plant.alarms.history`
 
-Process-plant also accepts `process-plant.control.write` through the generic Control Instance command endpoint. The payload identifies a process system, exactly one signal reference (`path` or `tagId`), and a typed value. The pack runtime resolves tag ids inside that explicit system, validates writability/type, and queues the write for the next solver phase; it does not mutate variables through the query route. `process-plant.control.validate` uses the same validation and permissive/interlock gate path as a read-only dry run, so UI and AI clients can explain whether a control write would be accepted before issuing it.
+Process-plant also accepts `process-plant.control.write` through the generic Simulation Run command endpoint. The payload identifies a process system, exactly one signal reference (`path` or `tagId`), and a typed value. The pack runtime resolves tag ids inside that explicit system, validates writability/type, and queues the write for the next solver phase; it does not mutate variables through the query route. `process-plant.control.validate` uses the same validation and permissive/interlock gate path as a read-only dry run, so UI and AI clients can explain whether a control write would be accepted before issuing it.
 
 Process-plant also accepts `process-plant.ic.lifecycle`. The payload identifies a process system, an I&C lifecycle id such as `alarm:high-pressure:pzr-high-pressure`, and one lifecycle action: `acknowledge`, `reset`, `suppress`, `unsuppress`, `shelve`, or `unshelve`. It may include a human-readable `reason` and a `shelveDurationMs` for time-bounded shelving. These actions update alarm/trip lifecycle state only; they do not clear the underlying process condition, execute procedures, or mutate plant physics.
 
@@ -342,7 +342,7 @@ Process-plant graph queries now expose compiled connection metadata as `connecti
 
 Process-plant variable queries expose both component variables and link-local variables. Current tank and condenser variables include inventory, level, temperature, makeup/production, and available outlet flow. Reactor coolant pumps may expose `developedHeadPa`, `loopFlowTargetKgPerS`, and `loopFlowKgPerS` when they own a declared primary loop. The current PWR graph also exposes reactor-vessel primary coolant inventory, inventory deviation, and pressure bias; the pressurizer remains the canonical RCS pressure source. Steam generators may expose `tubeLeakFraction`, `primaryToSecondaryLeakKgPerS`, and `secondaryRadiationMSvPerH` for SGTR-like faults. Current link variables include flow, temperature, pressure, radiation, valve position, and leak area where declared by the graph. Consumers should treat these as pack-owned process state, not core operational-object fields.
 
-Process-plant runtime config may define timed process actions and telemetry sampling per process system. This makes multi-system scenarios possible without adding a fleet-wide process abstraction to Leitbild core: a scenario can instantiate any number of independent `processSystems`, and each system can have its own telemetry variables and schedule. Pack runtime config system keys must match declared process system ids exactly; unknown keys are rejected because they almost always indicate a scenario authoring typo. The process-plant pack runtime persists runtime snapshots, fired scheduled actions, and telemetry buffers per system in runtime-private state; it does not write dense process trends into the Control Instance event journal. Runtime snapshots include graph identity and compiled variable paths, and restores fail visibly when runtime-private state no longer matches the compiled process graph.
+Process-plant runtime config may define timed process actions and telemetry sampling per process system. This makes multi-system scenarios possible without adding a fleet-wide process abstraction to Leitbild core: a scenario can instantiate any number of independent `processSystems`, and each system can have its own telemetry variables and schedule. Pack runtime config system keys must match declared process system ids exactly; unknown keys are rejected because they almost always indicate a scenario authoring typo. The process-plant pack runtime persists runtime snapshots, fired scheduled actions, and telemetry buffers per system in runtime-private state; it does not write dense process trends into the Simulation Run event journal. Runtime snapshots include graph identity and compiled variable paths, and restores fail visibly when runtime-private state no longer matches the compiled process graph.
 
 Process-plant systems may use an inline `graph`, a pack-owned `graphRef`, or an `assemblyRef` with `assemblyConfig`. `graphRef` is the preferred shape for scenarios that instantiate existing graphs many times. `assemblyRef` is the preferred shape when the final graph should be generated from reusable fragments, for example PWR variants with different loop counts or a non-PWR plant assembled from shared process fragments. A process system must define exactly one graph source, and unknown refs fail in the process-plant compiler before runtime starts. Per-system `parameters` overlay component parameters before graph compilation, while `initialState` initializes declared runtime variables before the first solver tick. Neither field may mutate topology.
 
@@ -358,13 +358,13 @@ An **Interaction Signal** is a scoped claim, observation, or interaction attempt
 - `observation.detected`
 - `ai.recommendation.created`
 
-An **Interaction Handler** validates signal payloads it understands, inspects the current control-instance snapshot, and returns constrained effects such as object upserts, object deletes, or operational notifications.
+An **Interaction Handler** validates signal payloads it understands, inspects the current simulation-run snapshot, and returns constrained effects such as object upserts, object deletes, or operational notifications.
 
 Packs must keep the distinction clear:
 
 - Signals are input claims or observations.
 - Handler effects are proposals.
-- Control Instance events are accepted canonical history after Leitbild validates, orders, persists, and broadcasts the effects.
+- Simulation Run events are accepted canonical history after Leitbild validates, orders, persists, and broadcasts the effects.
 
 Unknown signal payloads may be stored for audit, but must not mutate canonical state unless a registered handler validates and accepts them.
 
@@ -374,7 +374,7 @@ Traffic packs should model route-affecting road state first as aggregate traffic
 
 Individual traffic vehicles may be added later as a detail layer, but aggregate traffic conditions are the preferred first operational object because they are cheaper to render, easier for operators to understand, and easier for AI agents to reason over.
 
-Traffic conditions may create route impacts for mobile assets. They should not silently reroute assets unless a future control-instance policy explicitly enables automatic rerouting.
+Traffic conditions may create route impacts for mobile assets. They should not silently reroute assets unless a future simulation-run policy explicitly enables automatic rerouting.
 
 ## Scenario, Mission, and Context Use
 
@@ -391,7 +391,7 @@ Packs must keep boundaries clear:
 - mission progress is runtime state owned by Leitbild, not static pack data.
 - scenarios are top-level compositions that list active packs; they are not owned by one pack.
 - runtime ids are internal runtime wiring. Scenario APIs should expose `packs`, not low-level runtime ids, unless a debug/runtime-detail endpoint explicitly asks for them.
-- restored control instances use snapshots/history, not scenarios.
+- restored simulation runs use snapshots/history, not scenarios.
 - object presentation decides whether revision changes are noteworthy for operator attention. Frequent motion updates should not become rail `new` badges; packs should enable noteworthy updates only for object types where a changed field is operationally meaningful.
 - pack helpers may construct full `OperationalObject`s, but packs must not introduce a second production seed-object model beside Scenario Definitions.
 - compact scenario files may name pack object specs, but the expanded Scenario Definition is still the runtime contract.

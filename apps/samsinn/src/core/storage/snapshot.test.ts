@@ -32,7 +32,7 @@ describe('Snapshot', () => {
     try { await unlink(`${TEST_SNAPSHOT_PATH}.tmp`) } catch { /* ignore */ }
   })
 
-  describe('old-version rejection', () => {
+  describe('canonical schema rejection', () => {
     test('rejects any non-current snapshot version', async () => {
       await mkdir(TEST_SNAPSHOT_DIR, { recursive: true })
       for (const v of ['3', '6', '7']) {
@@ -41,6 +41,27 @@ describe('Snapshot', () => {
         const loaded = await loadSnapshot(TEST_SNAPSHOT_PATH)
         expect(loaded).toBeNull()
       }
+    })
+
+    test('rejects current-version snapshots with unknown fields', async () => {
+      await mkdir(TEST_SNAPSHOT_DIR, { recursive: true })
+      const invalid = {
+        version: '29',
+        timestamp: Date.now(),
+        rooms: [],
+        agents: [],
+        humans: [],
+        moduleBindings: [],
+      }
+      await Bun.write(TEST_SNAPSHOT_PATH, JSON.stringify(invalid))
+      expect(await loadSnapshot(TEST_SNAPSHOT_PATH)).toBeNull()
+    })
+
+    test('rejects current-version snapshots missing canonical fields', async () => {
+      await mkdir(TEST_SNAPSHOT_DIR, { recursive: true })
+      const invalid = { version: '29', timestamp: Date.now(), rooms: [], agents: [] }
+      await Bun.write(TEST_SNAPSHOT_PATH, JSON.stringify(invalid))
+      expect(await loadSnapshot(TEST_SNAPSHOT_PATH)).toBeNull()
     })
   })
 
@@ -83,7 +104,7 @@ describe('Snapshot', () => {
       const system = createTestSystem()
       const snapshot = serializeSystem(system)
 
-      expect(snapshot.version).toBe('27')
+      expect(snapshot.version).toBe('29')
       expect(snapshot.timestamp).toBeGreaterThan(0)
       expect(snapshot.rooms.length).toBe(1) // default Introductions room
       expect(snapshot.agents.length).toBe(0)
@@ -134,7 +155,7 @@ describe('Snapshot', () => {
 
       const loaded = await loadSnapshot(TEST_SNAPSHOT_PATH)
       expect(loaded).not.toBeNull()
-      expect(loaded!.version).toBe('27')
+      expect(loaded!.version).toBe('29')
       expect(loaded!.rooms.length).toBe(snapshot.rooms.length)
 
       const chatMsgs = loaded!.rooms[0]!.messages.filter(m => m.type === 'chat')
@@ -255,42 +276,42 @@ describe('Snapshot', () => {
   })
 
   describe('pendingScrubs (M1: cross-Workspace pack uninstall)', () => {
-    test('appendPendingScrub queues a namespace and dedupes repeats', async () => {
+    test('appendPendingScrub queues a Pack id and dedupes repeats', async () => {
       await mkdir(TEST_SNAPSHOT_DIR, { recursive: true })
       const system = createTestSystem()
       const room = system.rooms.getRoom('Introductions')!
       room.setActivePacks(['aviation', 'cafes'])
       await saveSnapshot(serializeSystem(system), TEST_SNAPSHOT_PATH)
 
-      const r1 = await appendPendingScrub(TEST_SNAPSHOT_PATH, { namespace: 'aviation', scheduledAt: '2026-05-06T00:00:00.000Z' })
+      const r1 = await appendPendingScrub(TEST_SNAPSHOT_PATH, { packId: 'aviation', scheduledAt: '2026-05-06T00:00:00.000Z' })
       expect(r1.applied).toBe(true)
 
-      // Repeat same namespace — must dedupe.
-      const r2 = await appendPendingScrub(TEST_SNAPSHOT_PATH, { namespace: 'aviation', scheduledAt: '2026-05-06T00:01:00.000Z' })
+      // Repeat same Pack id — must dedupe.
+      const r2 = await appendPendingScrub(TEST_SNAPSHOT_PATH, { packId: 'aviation', scheduledAt: '2026-05-06T00:01:00.000Z' })
       expect(r2.applied).toBe(false)
       expect(r2.reason).toBe('already queued')
 
-      // Different namespace appends.
-      const r3 = await appendPendingScrub(TEST_SNAPSHOT_PATH, { namespace: 'cafes', scheduledAt: '2026-05-06T00:02:00.000Z' })
+      // Different Pack id appends.
+      const r3 = await appendPendingScrub(TEST_SNAPSHOT_PATH, { packId: 'cafes', scheduledAt: '2026-05-06T00:02:00.000Z' })
       expect(r3.applied).toBe(true)
 
       const reloaded = await loadSnapshot(TEST_SNAPSHOT_PATH)
       expect(reloaded?.pendingScrubs?.length).toBe(2)
-      expect(reloaded?.pendingScrubs?.map(p => p.namespace).sort()).toEqual(['aviation', 'cafes'])
+      expect(reloaded?.pendingScrubs?.map(p => p.packId).sort()).toEqual(['aviation', 'cafes'])
     })
 
     test('appendPendingScrub refuses missing snapshot file', async () => {
-      const result = await appendPendingScrub(TEST_SNAPSHOT_PATH, { namespace: 'x', scheduledAt: '2026-05-06T00:00:00.000Z' })
+      const result = await appendPendingScrub(TEST_SNAPSHOT_PATH, { packId: 'x', scheduledAt: '2026-05-06T00:00:00.000Z' })
       expect(result.applied).toBe(false)
       expect(result.reason).toBe('no snapshot file')
     })
 
-    test('appendPendingScrub refuses incompatible-version snapshot', async () => {
+    test('appendPendingScrub refuses a non-canonical snapshot', async () => {
       await mkdir(TEST_SNAPSHOT_DIR, { recursive: true })
       await Bun.write(TEST_SNAPSHOT_PATH, JSON.stringify({ version: '7', timestamp: Date.now(), rooms: [], agents: [] }))
-      const result = await appendPendingScrub(TEST_SNAPSHOT_PATH, { namespace: 'x', scheduledAt: '2026-05-06T00:00:00.000Z' })
+      const result = await appendPendingScrub(TEST_SNAPSHOT_PATH, { packId: 'x', scheduledAt: '2026-05-06T00:00:00.000Z' })
       expect(result.applied).toBe(false)
-      expect(result.reason).toContain('incompatible snapshot version')
+      expect(result.reason).toContain('canonical schema')
     })
 
     test('restoreFromSnapshot drains pendingScrubs from room.activePacks', async () => {
@@ -301,8 +322,8 @@ describe('Snapshot', () => {
       await saveSnapshot(serializeSystem(system), TEST_SNAPSHOT_PATH)
 
       // Schedule scrubs for aviation and maritime — cafes should remain.
-      await appendPendingScrub(TEST_SNAPSHOT_PATH, { namespace: 'aviation', scheduledAt: '2026-05-06T00:00:00.000Z' })
-      await appendPendingScrub(TEST_SNAPSHOT_PATH, { namespace: 'maritime', scheduledAt: '2026-05-06T00:01:00.000Z' })
+      await appendPendingScrub(TEST_SNAPSHOT_PATH, { packId: 'aviation', scheduledAt: '2026-05-06T00:00:00.000Z' })
+      await appendPendingScrub(TEST_SNAPSHOT_PATH, { packId: 'maritime', scheduledAt: '2026-05-06T00:01:00.000Z' })
 
       const loaded = await loadSnapshot(TEST_SNAPSHOT_PATH)
       expect(loaded).not.toBeNull()
@@ -322,7 +343,7 @@ describe('Snapshot', () => {
     })
 
     test('SNAPSHOT_VERSION is current', () => {
-      expect(SNAPSHOT_VERSION).toBe(27)
+      expect(SNAPSHOT_VERSION).toBe(29)
     })
   })
 
@@ -363,7 +384,7 @@ describe('Snapshot', () => {
     test('absent workspacePrompt leaves the in-memory default', async () => {
       const fresh = createTestSystem()
       const defaultPrompt = fresh.settings.getPrompt()
-      const snapshotWithoutPrompt = { version: '27' as const, timestamp: 0, rooms: [], agents: [], humans: [] }
+      const snapshotWithoutPrompt = { version: '29' as const, timestamp: 0, rooms: [], agents: [], humans: [] }
       await restoreFromSnapshot({ ...fresh, spawnAIAgent: async () => {} }, snapshotWithoutPrompt)
       expect(fresh.settings.getPrompt()).toBe(defaultPrompt)
     })
@@ -372,14 +393,14 @@ describe('Snapshot', () => {
   describe('A4: concurrent writes are serialised — no JSON corruption', () => {
     test('25 concurrent appendPendingScrub calls all land', async () => {
       // Realistic scenario: cross-Workspace uninstall fires multiple
-      // appendPendingScrubs against the same evicted-instance snapshot
+      // appendPendingScrubs against the same evicted-Workspace snapshot
       // file. Without the write chain, two concurrent read-modify-writes
       // can lose the earlier append.
       //
       // Note: saveSnapshot vs appendPendingScrub is NOT a relevant race
-      // because saveSnapshot only runs for LIVE instances and
+      // because saveSnapshot only runs for live Workspaces and
       // appendPendingScrub only runs for EVICTED ones — the registry
-      // mutex guarantees the instance is in exactly one state.
+      // mutex guarantees the Workspace is in exactly one state.
       await mkdir(TEST_SNAPSHOT_DIR, { recursive: true })
       const system = createTestSystem()
       await saveSnapshot(serializeSystem(system), TEST_SNAPSHOT_PATH)
@@ -387,7 +408,7 @@ describe('Snapshot', () => {
       const ops: Promise<unknown>[] = []
       for (let i = 0; i < 25; i++) {
         ops.push(appendPendingScrub(TEST_SNAPSHOT_PATH, {
-          namespace: `ns-${i}`,
+          packId: `ns-${i}`,
           scheduledAt: `2026-05-06T10:${String(i).padStart(2, '0')}:00.000Z`,
         }))
       }
@@ -396,12 +417,12 @@ describe('Snapshot', () => {
       const loaded = await loadSnapshot(TEST_SNAPSHOT_PATH)
       expect(loaded).not.toBeNull()
       expect(loaded!.pendingScrubs?.length).toBe(25)
-      const namespaces = new Set(loaded!.pendingScrubs!.map(p => p.namespace))
-      expect(namespaces.size).toBe(25)
+      const packIds = new Set(loaded!.pendingScrubs!.map(p => p.packId))
+      expect(packIds.size).toBe(25)
     })
 
     test('concurrent saveSnapshots against the same path produce a valid final file', async () => {
-      // Live-instance debounced saves can fire close together (e.g. M5
+      // Live-Workspace debounced saves can fire close together (e.g. M5
       // flushNow racing with the auto-saver's pending timer). The chain
       // ensures the final file is whichever save was scheduled last,
       // never a half-written interleave.

@@ -110,7 +110,7 @@ export const CURATED_MODELS: Record<string, ReadonlyArray<CuratedModel>> = {
 // when no last-used model is available, and by the seed flow.
 //
 // OpenAI first because gpt-5.4 is the curated showcase model — operators
-// who ship a Samsinn instance with an OpenAI key get the demos running
+// who deploy Samsinn with an OpenAI key get the demos running
 // on gpt-5.4 out of the box. Gemini stays prioritized above Anthropic
 // because its free tier remains the most generous fallback for developers
 // without an OpenAI key.

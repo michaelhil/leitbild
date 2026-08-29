@@ -3,7 +3,7 @@ import {
   eventIdSchema,
   isoTimestampSchema,
   moduleIdSchema,
-  protocolVersionSchema,
+  semanticVersionSchema,
   resourceIdSchema,
   workspaceIdSchema,
 } from './ids.ts'
@@ -16,7 +16,7 @@ export const resourceReferenceSchema = z.object({
 export type ResourceReference = z.infer<typeof resourceReferenceSchema>
 
 export const platformEventEnvelopeSchema = z.object({
-  schemaVersion: protocolVersionSchema,
+  schemaVersion: semanticVersionSchema,
   id: eventIdSchema,
   workspaceId: workspaceIdSchema,
   resource: resourceReferenceSchema,

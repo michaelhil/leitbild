@@ -4,7 +4,7 @@ The `drone` pack uses Leitbild's native server-side drone runtime. There is no s
 
 Drone operations live in `src/packs/drone`. The pack contributes drone object creation, scenario expansion, vehicle model validation, interaction effects, read-only pack queries, map presentation, and pack-specific UI modals. The default runtime is `drone.native`.
 
-The browser owns input capture and rendering only. It sends normal Control Instance commands and renders projected object/query state. It does not own authoritative drone motion.
+The browser owns input capture and rendering only. It sends normal Simulation Run commands and renders projected object/query state. It does not own authoritative drone motion.
 
 ## Capability Surface
 
@@ -25,7 +25,7 @@ The drone capability is one pack with one runtime path:
 - config: `src/packs/drone/native/config.ts`
 - object projection helpers: `src/packs/drone/native/object-state.ts`
 
-The runtime keeps private motion targets, home points, mission plans, and geofence polygons. It emits ordinary Pack Runtime object updates through the Runtime Hub, so Control Instance Projected State remains canonical shared Leitbild truth.
+The runtime keeps private motion targets, home points, mission plans, and geofence polygons. It emits ordinary Pack Runtime object updates through the Runtime Hub, so Simulation Run Projected State remains canonical shared Leitbild truth.
 
 Default runtime settings:
 
@@ -110,7 +110,7 @@ Drone effects are routed through generic interaction signals:
 1. UI, scenario, AI, or operator issues `drone.attack`.
 2. The drone runtime validates attacker/target command shape and emits `drone.attack.requested`.
 3. The pack interaction handler validates attacker state, payload availability, range, and target state.
-4. The handler returns constrained effects for the Control Instance runtime to commit.
+4. The handler returns constrained effects for the Simulation Run runtime to commit.
 
 Targets can be drones or non-drone assets. Drone targets receive damage records and health-state updates. Non-drone targets receive operational damage/destroyed status plus an alert. The handler does not import another pack's internals and does not directly mutate foreign private state.
 

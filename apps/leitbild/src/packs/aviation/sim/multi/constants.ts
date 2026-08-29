@@ -5,7 +5,7 @@
 export const aviationMultiRuntimeId = 'aviation.multi'
 export const aviationMultiAdapterId = aviationMultiRuntimeId
 
-/** Switches the live aircraft source for a Control Instance. Accepted only by
+/** Switches the live aircraft source for a Simulation Run. Accepted only by
  *  the aviation.multi adapter. Payload: `{ source: 'opensky' | 'vatsim' }`. */
 export const aviationSetSourceCommandKind = 'aviation.set_source'
 

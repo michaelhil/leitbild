@@ -40,7 +40,7 @@ const notification = (
   type: 'notification.emit',
   notification: {
     id: notificationIdSchema.parse(`notification:drone:${randomId()}`),
-    controlInstanceId: signal.controlInstanceId,
+    simulationRunId: signal.simulationRunId,
     at: signal.at,
     title,
     message,
@@ -223,7 +223,7 @@ export const createDroneAttackInteractionHandler = (): InteractionHandler => ({
 })
 
 export const droneAttackSignal = (config: {
-  readonly controlInstanceId: string
+  readonly simulationRunId: string
   readonly at: IsoTimestamp
   readonly attackerId: ObjectId
   readonly targetId: ObjectId
@@ -232,7 +232,7 @@ export const droneAttackSignal = (config: {
 }): InteractionSignal =>
   interactionSignalSchema.parse({
     id: `signal:${randomId()}` as SignalId,
-    controlInstanceId: config.controlInstanceId,
+    simulationRunId: config.simulationRunId,
     at: config.at,
     source: { kind: 'object', id: config.attackerId },
     targets: [{ kind: 'object', id: config.targetId }],

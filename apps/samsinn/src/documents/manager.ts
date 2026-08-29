@@ -25,7 +25,7 @@ import type { VectorStore, VectorRecord } from '../embed/vector-store.ts'
 import type { ProviderKeys } from '../llm/provider-keys.ts'
 
 export interface DocumentManagerDeps {
-  readonly rootDir: string                    // <instance>/documents/
+  readonly rootDir: string                    // <workspace>/documents/
   readonly vectorStore: VectorStore
   readonly providerKeys: ProviderKeys
   readonly onStatusChange?: (meta: DocumentMetadata) => void

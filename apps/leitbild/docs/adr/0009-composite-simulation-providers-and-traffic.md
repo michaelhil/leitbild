@@ -2,11 +2,11 @@
 
 ## Decision
 
-Leitbild will support multiple simulation providers inside one Control Instance through a small Simulation Hub.
+Leitbild will support multiple simulation providers inside one Simulation Run through a small Simulation Hub.
 
-The Simulation Hub connects provider adapters, merges their initial snapshots, forwards provider emissions into the Control Instance runtime, routes commands to providers that declare support for the command kind, broadcasts committed Domain Events back to every provider, and closes providers together.
+The Simulation Hub connects provider adapters, merges their initial snapshots, forwards provider emissions into the Simulation Run runtime, routes commands to providers that declare support for the command kind, broadcasts committed Domain Events back to every provider, and closes providers together.
 
-Control Instance Projected State remains the canonical current Leitbild truth, with the Durable Journal recording meaningful accepted history. Providers may keep private state and provider-local projections, but provider-to-provider interaction must flow through committed Domain Events and Interaction Signals.
+Simulation Run Projected State remains the canonical current Leitbild truth, with the Durable Journal recording meaningful accepted history. Providers may keep private state and provider-local projections, but provider-to-provider interaction must flow through committed Domain Events and Interaction Signals.
 
 The first second provider is a traffic provider. V1 traffic is modeled as aggregate **Traffic Conditions** such as congestion zones, blocked road segments, slow corridors, and access-restricted areas. Individual traffic vehicles are deferred.
 
@@ -20,10 +20,10 @@ Route changes caused by traffic are decisionful. V1 records route impact and emi
 
 ## Consequences
 
-- A Control Instance can connect more than one provider.
+- A Simulation Run can connect more than one provider.
 - Restored snapshots are split by provider domain when creating provider-local projections.
 - Committed Domain Events are still observed by all providers so cross-provider awareness can develop.
-- Provider emissions are ordered by arrival at the Control Instance; event `at` timestamps preserve provider-observed time.
+- Provider emissions are ordered by arrival at the Simulation Run; event `at` timestamps preserve provider-observed time.
 - Provider command routing is explicit through declared command kinds.
 - Traffic conditions are canonical Operational Objects with spatial geometry and traffic domain data.
 - Traffic route impact is canonical state on the affected object, not private ambulance-provider truth.

@@ -1,6 +1,6 @@
-// POST /api/providers/:name/refresh-models  — refresh model-cache and return list
-// POST /api/providers/:name/test-model       — single-model ping (from popover)
-// POST /api/providers/:name/test             — full key-test + concurrency probe
+// POST /providers/:name/refresh-models  — refresh model-cache and return list
+// POST /providers/:name/test-model       — single-model ping (from popover)
+// POST /providers/:name/test             — full key-test + concurrency probe
 //
 // All three are user-initiated network probes. Results push into the
 // monitor so the panel dot reflects what the user just saw, and emit
@@ -26,7 +26,7 @@ export const providersTestRoutes: RouteEntry[] = [
   //     metadata (used by the UI models popover).
   {
     method: 'POST',
-    pattern: /^\/api\/providers\/([^/]+)\/refresh-models$/,
+    pattern: /^\/providers\/([^/]+)\/refresh-models$/,
     handler: async (_req, match, { system }) => {
       const name = decodeURIComponent(match[1] ?? '')
       if (name !== 'ollama' && !isCloud(name)) return errorResponse(`Unknown provider: ${name}`, 404)
@@ -93,7 +93,7 @@ export const providersTestRoutes: RouteEntry[] = [
   // --- Test a single model (from the models popover) ---
   {
     method: 'POST',
-    pattern: /^\/api\/providers\/([^/]+)\/test-model$/,
+    pattern: /^\/providers\/([^/]+)\/test-model$/,
     handler: async (req, match, { system }) => {
       const name = decodeURIComponent(match[1] ?? '')
       const body = await parseBody(req).catch(() => ({} as Record<string, unknown>))
@@ -178,7 +178,7 @@ export const providersTestRoutes: RouteEntry[] = [
   // --- Test a key (pending or stored) ---
   {
     method: 'POST',
-    pattern: /^\/api\/providers\/([^/]+)\/test$/,
+    pattern: /^\/providers\/([^/]+)\/test$/,
     handler: async (req, match, { system, broadcast }) => {
       const name = decodeURIComponent(match[1] ?? '')
 

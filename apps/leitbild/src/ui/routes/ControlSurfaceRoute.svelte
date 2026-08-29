@@ -4,7 +4,7 @@
   import type {
     IsoTimestamp,
     OperationalObject,
-    ControlInstanceId,
+    SimulationRunId,
     ObjectId,
     ProcedureDocument,
     ProcedureId,
@@ -12,7 +12,7 @@
     ProcedureRunState,
     ProcedureStepId,
     ScenarioDefinition,
-    ScenarioInstanceState,
+    ScenarioExecutionState,
     SimulationClockState,
   } from '../../core/model/index.ts'
   import { deleteObjectCommandKind } from '../../core/model/index.ts'
@@ -20,22 +20,22 @@
   import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
   import {
     fetchScenario,
-    joinControlInstance as joinControlInstanceClient,
+    createSimulationRun as createSimulationRunClient,
+    joinSimulationRun as joinSimulationRunClient,
     listScenarios as listScenariosClient,
-    resetControlInstance,
-    sendControlInstanceCommand,
-    setControlInstanceClock,
-    syncControlInstanceSnapshot as syncControlInstanceSnapshotClient,
-  } from '../control-instance-client.ts'
+    resetSimulationRun,
+    sendSimulationRunCommand,
+    setSimulationRunClock,
+    syncSimulationRunSnapshot as syncSimulationRunSnapshotClient,
+  } from '../simulation-run-client.ts'
   import {
-    createGeneratedRunId,
     parseControlSurfaceRoute,
-    pathForNewScenarioRun,
-    pathForScenarioRun,
-  } from '../control-instance-route.ts'
+    pathForNewSimulationRun,
+    pathForSimulationRun,
+  } from '../simulation-run-route.ts'
   import {
-    applyControlInstanceEventBatchMessage,
-  } from '../control-instance-events.ts'
+    applySimulationRunEventBatchMessage,
+  } from '../simulation-run-events.ts'
   import { parseDroneMotionFramesRealtimeMessage, type DroneMotionFrame } from '../../packs/drone/realtime.ts'
   import { createMapAreaFeatureLoader } from '../app/map-area-feature-loader.ts'
   import { installPlacementGlobalEvents } from '../app/placement-global-events.ts'
@@ -99,13 +99,13 @@
     type InternalDiagnosticsSnapshot,
     type LongTaskDiagnosticsMonitor,
   } from '../internal-diagnostics.ts'
-  import type { CategoryRow, ControlInstanceResponse, CreateDraft, ScenarioListItem } from '../types.ts'
+  import type { CategoryRow, SimulationRunResponse, CreateDraft, ScenarioListItem } from '../types.ts'
 
   const appVersion = __LEITBILD_VERSION__
   const gridOverviewCategoryId = 'grid-system'
   const emptyStringArray: ReadonlyArray<string> = []
-  const emptyMapLayerGroups: NonNullable<LeitbildPack['mapLayerGroups']> = []
-  const emptyMapAreaFeatureLayers: NonNullable<LeitbildPack['mapAreaFeatureLayers']> = []
+  const emptyMapLayerGroups: NonNullable<LeitbildPack['presentation']['mapLayerGroups']> = []
+  const emptyMapAreaFeatureLayers: NonNullable<LeitbildPack['presentation']['mapAreaFeatureLayers']> = []
   const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], completed: [] }
 
   interface ProcessSurfaceWindowEntry {
@@ -144,15 +144,15 @@
     readonly index: number
   }
   let activePack = $state<LeitbildPack | null>(null)
-  let controlInstanceId = $state<ControlInstanceId | null>(null)
+  let simulationRunId = $state<SimulationRunId | null>(null)
   let objects = $state<OperationalObject[]>([])
-  let scenarioState = $state<ScenarioInstanceState | undefined>(undefined)
+  let scenarioState = $state<ScenarioExecutionState | undefined>(undefined)
   let clock = $state<SimulationClockState | undefined>(undefined)
   let scenarioDefinition = $state<ScenarioDefinition | null>(null)
   let selectedControllerId = $state<string | null>(null)
   let status = $state('Starting')
   let commandStatus = $state('')
-  const routeMode = 'control-instance'
+  const routeMode = 'simulation-run'
   let seenRevisions = $state(new Map<string, number>())
   let expectedRealtimeScenarioId = $state<string | null>(null)
   let realtimeAttached = $state(false)
@@ -202,7 +202,7 @@
   let processPlantCredibilityModalLoadPromise: Promise<Component> | null = null
   let droneControlModalLoadPromise: Promise<Component> | null = null
   let droneProfileEditorModalLoadPromise: Promise<Component> | null = null
-  let pendingRealtimeControlInstanceId = $state<ControlInstanceId | null>(null)
+  let pendingRealtimeSimulationRunId = $state<SimulationRunId | null>(null)
   let postReadyPreloadStarted = false
   let startupAutoDismissTimer: number | null = null
   let startupDebugGeneration = 0
@@ -213,7 +213,7 @@
   let procedureRunRefreshInFlight = false
   let procedureRunRefreshQueued = false
   let procedureRunRefreshKey = ''
-  let procedureRunDocumentControlInstanceId: ControlInstanceId | null = null
+  let procedureRunDocumentSimulationRunId: SimulationRunId | null = null
   let latestDroneMotionFrames: ReadonlyArray<DroneMotionFrame> = []
   const droneMotionFrameConsumers = new Set<DroneMotionFrameConsumer>()
   const realtimeConnection = createRealtimeConnectionController()
@@ -312,8 +312,8 @@
   // Pack-rail layer-group visibility. Active pack contributes mapLayerGroups
   // (e.g. aviation pack: airspace, airports, aircraft); the rail renders
   // toggles and writes here; OperationalMap re-applies on change.
-  const activeMapLayerGroups = $derived(activePack?.mapLayerGroups ?? emptyMapLayerGroups)
-  const activePackAreaFeatureLayers = $derived(activePack?.mapAreaFeatureLayers ?? emptyMapAreaFeatureLayers)
+  const activeMapLayerGroups = $derived(activePack?.presentation.mapLayerGroups ?? emptyMapLayerGroups)
+  const activePackAreaFeatureLayers = $derived(activePack?.presentation.mapAreaFeatureLayers ?? emptyMapAreaFeatureLayers)
   const activePackAreaFeatureSourcePackIds = $derived(activePack?.mapAreaFeatureSourcePackIds ?? emptyStringArray)
   const activeReferenceDatasetIds = $derived(activePack?.referenceDatasetIds?.map(String) ?? emptyStringArray)
   let mapLayerGroupVisibility = $state<Record<string, boolean>>({})
@@ -378,7 +378,7 @@
 
   const railSourcePicker = $derived.by(() => {
     if (!activePack || !scenarioDefinition) return null
-    const activeRuntimeId = scenarioDefinition.runtimeOverrides[activePack.id]
+    const activeRuntimeId = scenarioDefinition.runtimeOverrides[activePack.descriptor.id]
       ?? activePack.defaultRuntimeId
     if (activeRuntimeId !== 'aviation.multi') return null
     const sources = [
@@ -432,7 +432,7 @@
   const mapAreaFeaturesFor = createMapAreaFeatureLoader({
     pack: () => activePack,
     objects: () => objects,
-    controlInstanceId: () => controlInstanceId,
+    simulationRunId: () => simulationRunId,
     currentTime: currentPackTime,
   })
 
@@ -488,8 +488,8 @@
         steps: startupSteps,
         marks: startupDebugMarks,
       },
-      controlInstance: {
-        id: controlInstanceId,
+      simulationRun: {
+        id: simulationRunId,
         expectedScenarioId: expectedRealtimeScenarioId,
         snapshotReady,
         realtimeAttached,
@@ -1004,7 +1004,7 @@
       .map(run => run.procedureId))]
 
   const ensureProcedureRunDocuments = async (
-    controlId: ControlInstanceId,
+    controlId: SimulationRunId,
     nextRuns: ReadonlyArray<ProcedureRunState>,
   ): Promise<void> => {
     const missing = procedureRunDocumentIds(nextRuns).filter(procedureId => !procedureRunDocuments.has(procedureId))
@@ -1021,18 +1021,18 @@
   }
 
   const refreshProcedureRunState = async (): Promise<void> => {
-    const controlId = controlInstanceId
+    const controlId = simulationRunId
     if (!controlId || scenarioDefinition?.packs.includes('process-plant') !== true) {
       procedureRuns = []
       procedureRunDocuments = new Map()
       procedureRunRefreshKey = ''
-      procedureRunDocumentControlInstanceId = null
+      procedureRunDocumentSimulationRunId = null
       return
     }
-    if (procedureRunDocumentControlInstanceId !== controlId) {
+    if (procedureRunDocumentSimulationRunId !== controlId) {
       procedureRuns = []
       procedureRunDocuments = new Map()
-      procedureRunDocumentControlInstanceId = controlId
+      procedureRunDocumentSimulationRunId = controlId
     }
     if (procedureRunRefreshInFlight) {
       procedureRunRefreshQueued = true
@@ -1044,7 +1044,7 @@
         procedureRunRefreshQueued = false
         const nextRuns = scopedProcedureRuns((await readProcedureRuns(controlId)).runs)
         await ensureProcedureRunDocuments(controlId, nextRuns)
-        if (controlInstanceId === controlId) procedureRuns = nextRuns
+        if (simulationRunId === controlId) procedureRuns = nextRuns
       } while (procedureRunRefreshQueued)
     } catch (err) {
       commandStatus = err instanceof Error ? err.message : 'Unable to refresh procedure run status'
@@ -1100,12 +1100,18 @@
     postReadyPreloadStarted = false
     startupDismissed = false
     latestMapRuntimeDiagnostics = null
-    pendingRealtimeControlInstanceId = null
+    pendingRealtimeSimulationRunId = null
     latestDroneMotionFrames = []
-    startupSteps = resetStartupStepsAfter(startupSteps, 'control-instance')
+    startupSteps = resetStartupStepsAfter(startupSteps, 'simulation-run')
   }
 
   const activeRoute = () => parseControlSurfaceRoute(location.pathname)
+
+  const activeWorkspaceId = () => {
+    const route = activeRoute()
+    if (route.mode === 'workspace-index') throw new Error('Workspace route expected')
+    return route.workspaceId
+  }
 
   const scenarioIdForReset = (): string | undefined =>
     scenarioState?.scenarioId
@@ -1134,9 +1140,9 @@
   }
 
   const createScenarioRun = async (scenarioId: string, navigation: 'assign' | 'replace' = 'assign'): Promise<void> => {
-    status = 'Opening Control Instance'
-    const runId = createGeneratedRunId()
-    const nextPath = pathForScenarioRun(scenarioId, runId)
+    status = 'Opening Simulation Run'
+    const created = await createSimulationRunClient({ scenarioId })
+    const nextPath = pathForSimulationRun(activeWorkspaceId(), created.id)
     if (navigation === 'replace') {
       location.replace(nextPath)
       return
@@ -1145,25 +1151,25 @@
   }
 
   const defaultName = (type: PackCreateObjectType): string =>
-    requireActivePack().defaultObjectLabel(type.id, { objects })
+    requireActivePack().commands.defaultObjectLabel(type.id, { objects })
 
-  const syncControlInstanceSnapshot = async (): Promise<void> => {
-    if (!controlInstanceId) return
-    const body = await syncControlInstanceSnapshotClient(controlInstanceId)
+  const syncSimulationRunSnapshot = async (): Promise<void> => {
+    if (!simulationRunId) return
+    const body = await syncSimulationRunSnapshotClient(simulationRunId)
     objects = [...body.snapshot.objects]
     scenarioState = body.snapshot.scenario
     clock = body.snapshot.clock
   }
 
   const sendCommand = async (kind: string, payload: unknown, targetObjectIds: readonly string[] = []): Promise<void> => {
-    if (!controlInstanceId) return
+    if (!simulationRunId) return
     if (!realtimeAttached) {
       commandStatus = 'Wait for realtime attachment before sending commands'
       return
     }
     let body
     try {
-      body = await sendControlInstanceCommand(controlInstanceId, { kind, targetObjectIds, payload })
+      body = await sendSimulationRunCommand(simulationRunId, { kind, targetObjectIds, payload })
     } catch (err) {
       commandStatus = err instanceof Error ? err.message : 'command failed'
       return
@@ -1173,17 +1179,17 @@
       return
     }
     commandStatus = 'Command accepted'
-    await syncControlInstanceSnapshot()
+    await syncSimulationRunSnapshot()
   }
 
   const sendRealtimeCommand = async (command: Parameters<typeof realtimeConnection.sendCommand>[1]) => {
-    if (!controlInstanceId) throw new Error('control instance is not ready')
-    return await realtimeConnection.sendCommand(controlInstanceId, command)
+    if (!simulationRunId) throw new Error('simulation run is not ready')
+    return await realtimeConnection.sendCommand(simulationRunId, command)
   }
 
   const sendRealtimeInput = (input: Parameters<typeof realtimeConnection.sendRuntimeInput>[1]): void => {
-    if (!controlInstanceId) throw new Error('control instance is not ready')
-    realtimeConnection.sendRuntimeInput(controlInstanceId, input)
+    if (!simulationRunId) throw new Error('simulation run is not ready')
+    realtimeConnection.sendRuntimeInput(simulationRunId, input)
   }
 
   const subscribeDroneMotionFrames = (consumer: DroneMotionFrameConsumer): (() => void) => {
@@ -1209,7 +1215,7 @@
     placement.clearDraft()
     commandStatus = `Creating ${draft.objectType.label}`
     const pack = requireActivePack()
-    const command = pack.buildCreateObjectCommand(
+    const command = pack.commands.buildCreateObjectCommand(
       draft.objectType.id,
       draft.label.trim() || defaultName(draft.objectType),
       draft.geometry,
@@ -1226,34 +1232,34 @@
     }
     if (destination.id === controller.id) return
     const pack = requireActivePack()
-    if (!pack.isTarget(controller, destination, { objects })) return
+    if (!pack.commands.isTarget(controller, destination, { objects })) return
     commandStatus = `Sending ${controller.label} to ${destination.label}`
-    const command = pack.buildSetTargetCommand(controller, destination, { objects })
+    const command = pack.commands.buildSetTargetCommand(controller, destination, { objects })
     await sendCommand(command.kind, command.payload, command.targetObjectIds)
   }
 
   const selectObject = (object: OperationalObject): void => {
     markSeen(object)
     const pack = requireActivePack()
-    if (pack.isController(object)) {
+    if (pack.commands.isController(object)) {
       selectedControllerId = object.id
       commandStatus = `Selected ${object.label}; click a valid target`
       return
     }
     const controller = selectedControllerObject
-    if (controller && pack.isTarget(controller, object, { objects })) {
+    if (controller && pack.commands.isTarget(controller, object, { objects })) {
       void setDestination(object)
     }
   }
 
-  const connectWebSocket = (id: ControlInstanceId): void => {
+  const connectWebSocket = (id: SimulationRunId): void => {
     if (mapVisible && !mapReady) {
-      pendingRealtimeControlInstanceId = id
+      pendingRealtimeSimulationRunId = id
       startStep('realtime')
       status = 'Waiting for map first frame before realtime updates'
       return
     }
-    pendingRealtimeControlInstanceId = null
+    pendingRealtimeSimulationRunId = null
     startStep('realtime')
     if (realtimeConnection.canCarry(id)) {
       status = realtimeConnection.statusFor(id) === 'open' ? 'Realtime channel open' : 'Connecting'
@@ -1278,8 +1284,8 @@
         status = message
       },
       onReady: (parsed) => {
-        if (parsed.controlInstanceId !== id) {
-          failStep('realtime', `Realtime attached to ${parsed.controlInstanceId}, expected ${id}`)
+        if (parsed.simulationRunId !== id) {
+          failStep('realtime', `Realtime attached to ${parsed.simulationRunId}, expected ${id}`)
           return
         }
         if (expectedRealtimeScenarioId !== null && parsed.scenarioId !== expectedRealtimeScenarioId) {
@@ -1293,10 +1299,10 @@
         completeReadyWhenReady()
       },
       onEvent: (parsed) => {
-        if (parsed.controlInstanceId !== id) return
+        if (parsed.simulationRunId !== id) return
         if (expectedRealtimeScenarioId !== null && parsed.scenarioId !== expectedRealtimeScenarioId) return
         if (!realtimeAttached) return
-        const applied = applyControlInstanceEventBatchMessage({ objects, selectedControllerId, scenarioState }, parsed)
+        const applied = applySimulationRunEventBatchMessage({ objects, selectedControllerId, scenarioState }, parsed)
         if (applied.objectUpdate) {
           objects = [...applied.objectUpdate.objects]
           selectedControllerId = applied.objectUpdate.selectedControllerId
@@ -1318,7 +1324,7 @@
         }
       },
       onRuntimeRealtime: (parsed) => {
-        if (parsed.controlInstanceId !== id) return
+        if (parsed.simulationRunId !== id) return
         if (expectedRealtimeScenarioId !== null && parsed.scenarioId !== expectedRealtimeScenarioId) return
         if (!realtimeAttached) return
         const frames = parsed.messages.flatMap(message => {
@@ -1335,21 +1341,21 @@
   }
 
   const connectPendingRealtime = (): void => {
-    const id = pendingRealtimeControlInstanceId
+    const id = pendingRealtimeSimulationRunId
     if (!id) return
-    pendingRealtimeControlInstanceId = null
+    pendingRealtimeSimulationRunId = null
     connectWebSocket(id)
   }
 
-  const controlInstanceIdFromPath = (): ControlInstanceId => {
+  const simulationRunIdFromPath = (): SimulationRunId => {
     const route = activeRoute()
-    if (route.mode !== 'control-instance') throw new Error('control instance route expected')
+    if (route.mode !== 'simulation-run') throw new Error('simulation run route expected')
     if (location.pathname !== route.canonicalPath) history.replaceState(null, '', route.canonicalPath)
-    return route.controlInstanceId
+    return route.simulationRunId
   }
 
   const completeStartupFromResponse = async (
-    response: ControlInstanceResponse,
+    response: SimulationRunResponse,
     config: {
       readonly rememberRecentRun?: () => void
       readonly onRememberRecentRunFailed?: (error: unknown) => void
@@ -1357,7 +1363,7 @@
     },
   ): Promise<void> => {
     const scenarioId = response.snapshot.scenario?.scenarioId
-    if (!scenarioId) throw new Error('control instance snapshot is missing scenario state')
+    if (!scenarioId) throw new Error('simulation run snapshot is missing scenario state')
     const packScenario = scenarioDefinition?.id === scenarioId
       ? scenarioDefinition
       : response.scenario?.id === scenarioId
@@ -1370,8 +1376,8 @@
       startStep,
       completeStep,
       setActiveStartupStep: config.setActiveStartupStep,
-      setControlInstanceId: id => {
-        controlInstanceId = id
+      setSimulationRunId: id => {
+        simulationRunId = id
       },
       setObjects: nextObjects => {
         objects = nextObjects
@@ -1402,7 +1408,7 @@
     })
   }
 
-  const joinControlInstance = async (): Promise<void> => {
+  const joinSimulationRun = async (): Promise<void> => {
     realtimeConnection.disconnect()
     realtimeAttached = false
     resetStartupForJoin()
@@ -1411,21 +1417,22 @@
     scenarioDefinition = null
     activePack = null
     status = 'Starting'
-    startStep('control-instance')
-    let activeStartupStep: StartupStepId = 'control-instance'
+    startStep('simulation-run')
+    let activeStartupStep: StartupStepId = 'simulation-run'
     try {
-      const id = controlInstanceIdFromPath()
+      const id = simulationRunIdFromPath()
       const route = activeRoute()
-      if (route.mode !== 'control-instance') throw new Error('control instance route expected')
-      expectedRealtimeScenarioId = route.scenarioId
+      if (route.mode !== 'simulation-run') throw new Error('simulation run route expected')
       markStartup('join-request:start')
-      const body = await joinControlInstanceClient(id, { scenarioId: route.scenarioId })
+      const body = await joinSimulationRunClient(id)
       markStartup('join-request:done')
+      const joinedScenarioId = body.snapshot.scenario?.scenarioId
+      if (!joinedScenarioId) throw new Error('simulation run snapshot is missing scenario state')
       await completeStartupFromResponse(body, {
         setActiveStartupStep: id => {
           activeStartupStep = id
         },
-        rememberRecentRun: () => rememberRecentScenarioRun(route.scenarioId, route.runId),
+        rememberRecentRun: () => rememberRecentScenarioRun(route.workspaceId, joinedScenarioId, id),
         onRememberRecentRunFailed: err => {
           commandStatus = err instanceof Error ? err.message : 'Unable to remember scenario run'
         },
@@ -1436,7 +1443,7 @@
   }
 
   const resetScenario = async (): Promise<void> => {
-    if (!controlInstanceId) return
+    if (!simulationRunId) return
     realtimeAttached = false
     resetStartupForJoin()
     snapshotReady = false
@@ -1445,13 +1452,12 @@
     activePack = null
     status = 'Resetting'
     commandStatus = 'Resetting scenario'
-    startStep('control-instance')
-    let activeStartupStep: StartupStepId = 'control-instance'
+    startStep('simulation-run')
+    let activeStartupStep: StartupStepId = 'simulation-run'
     try {
-      const requestedScenarioId = scenarioIdForReset()
-      expectedRealtimeScenarioId = requestedScenarioId ?? null
+      expectedRealtimeScenarioId = scenarioIdForReset() ?? null
       startStep('realtime')
-      const body = await resetControlInstance(controlInstanceId, { scenarioId: requestedScenarioId })
+      const body = await resetSimulationRun(simulationRunId)
       await completeStartupFromResponse(body, {
         setActiveStartupStep: id => {
           activeStartupStep = id
@@ -1467,17 +1473,17 @@
   const selectScenario = async (scenarioId: string): Promise<void> => {
     let rememberedPath: string | null
     try {
-      rememberedPath = pathForRecentScenarioRun(scenarioId)
+      rememberedPath = pathForRecentScenarioRun(activeWorkspaceId(), scenarioId)
     } catch (err) {
       commandStatus = err instanceof Error ? err.message : 'Unable to read recent scenario runs'
       return
     }
-    location.href = rememberedPath ?? pathForNewScenarioRun(scenarioId)
+    location.href = rememberedPath ?? pathForNewSimulationRun(activeWorkspaceId(), scenarioId)
   }
 
   const toggleClockPaused = async (): Promise<void> => {
-    if (!controlInstanceId || !clock) return
-    const body = await setControlInstanceClock(controlInstanceId, { paused: !clock.paused })
+    if (!simulationRunId || !clock) return
+    const body = await setSimulationRunClock(simulationRunId, { paused: !clock.paused })
     clock = body.clock
   }
 
@@ -1543,7 +1549,7 @@
       }
     }
     preloadOperationalMapModule()
-    void joinControlInstance()
+    void joinSimulationRun()
     return () => {
       cleanupInternalDiagnosticsGlobal()
       longTaskMonitor?.stop()
@@ -1581,7 +1587,7 @@
   })
 
   $effect(() => {
-    const controlId = controlInstanceId
+    const controlId = simulationRunId
     const hasProcessPlant = scenarioDefinition?.packs.includes('process-plant') === true
     const refreshKey = controlId && hasProcessPlant ? `${controlId}:${procedureRevision}` : ''
     if (refreshKey === procedureRunRefreshKey) return
@@ -1678,7 +1684,7 @@
           onMapReady={handleMapReady}
           onMapError={handleMapError}
           onMapDiagnostic={handleMapDiagnostic}
-          {controlInstanceId}
+          {simulationRunId}
           activePackIds={scenarioDefinition?.packs ?? emptyStringArray}
           mapLayerGroups={activeMapLayerGroups}
           {mapLayerGroupVisibility}
@@ -1709,10 +1715,10 @@
   </div>
 {/if}
 
-{#if DroneControlModal && controlInstanceId}
+{#if DroneControlModal && simulationRunId}
   {#each droneControlWindowModels as windowEntry (windowEntry.id)}
     <DroneControlModal
-      {controlInstanceId}
+      {simulationRunId}
       object={windowEntry.object}
       {objects}
       {sendRealtimeCommand}
@@ -1724,10 +1730,10 @@
   {/each}
 {/if}
 
-{#if DroneProfileEditorModal && controlInstanceId}
+{#if DroneProfileEditorModal && simulationRunId}
   {#each droneProfileEditorWindowModels as windowEntry (windowEntry.id)}
     <DroneProfileEditorModal
-      {controlInstanceId}
+      {simulationRunId}
       object={windowEntry.object}
       windowOffsetIndex={windowEntry.index}
       close={() => closeDroneProfileEditor(windowEntry.id)}
@@ -1735,10 +1741,10 @@
   {/each}
 {/if}
 
-{#if ProcessSurfaceModal && controlInstanceId}
+{#if ProcessSurfaceModal && simulationRunId}
   {#each processSurfaceWindowModels as windowEntry (windowEntry.id)}
     <ProcessSurfaceModal
-      {controlInstanceId}
+      {simulationRunId}
       object={windowEntry.object}
       unitStatus={statusPresentationFor(windowEntry.object)}
       unitContexts={procedureUnitContexts}
@@ -1751,10 +1757,10 @@
   {/each}
 {/if}
 
-{#if ProcedureSystemModal && controlInstanceId}
+{#if ProcedureSystemModal && simulationRunId}
   {#each procedureSystemWindowModels as windowEntry (windowEntry.id)}
     <ProcedureSystemModal
-      {controlInstanceId}
+      {simulationRunId}
       systemId={windowEntry.systemId}
       unitName={windowEntry.object.label}
       unitStatus={statusPresentationFor(windowEntry.object)}
@@ -1769,11 +1775,11 @@
   {/each}
 {/if}
 
-{#if processPlantArtifactModal && ProcessPlantArtifactModal && controlInstanceId}
+{#if processPlantArtifactModal && ProcessPlantArtifactModal && simulationRunId}
   {@const artifactSystemId = processPlantSystemIdFor(processPlantArtifactModal.object)}
   {#if artifactSystemId}
     <ProcessPlantArtifactModal
-      {controlInstanceId}
+      {simulationRunId}
       systemId={artifactSystemId}
       artifact={processPlantArtifactModal.artifact}
       close={closeProcessPlantArtifact}
@@ -1781,18 +1787,18 @@
   {/if}
 {/if}
 
-{#if processPlantCatalogModal && ProcessPlantCatalogModal && controlInstanceId}
+{#if processPlantCatalogModal && ProcessPlantCatalogModal && simulationRunId}
   <ProcessPlantCatalogModal
-    {controlInstanceId}
+    {simulationRunId}
     close={closeProcessPlantCatalog}
   />
 {/if}
 
-{#if processPlantCredibilityModal && ProcessPlantCredibilityModal && controlInstanceId}
+{#if processPlantCredibilityModal && ProcessPlantCredibilityModal && simulationRunId}
   {@const credibilitySystemId = processPlantSystemIdFor(processPlantCredibilityModal)}
   {#if credibilitySystemId}
     <ProcessPlantCredibilityModal
-      {controlInstanceId}
+      {simulationRunId}
       systemId={credibilitySystemId}
       close={closeProcessPlantCredibility}
     />
@@ -1803,7 +1809,7 @@
   <StartupModal
     steps={startupSteps}
     tone={systemStatusTone}
-    retry={joinControlInstance}
+    retry={joinSimulationRun}
     close={closeStartupModal}
     autoCloseWhenReady={!startupStatusModalOpen}
     closeWhenReadyOnly={!startupStatusModalOpen}

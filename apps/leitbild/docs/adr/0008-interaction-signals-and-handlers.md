@@ -2,23 +2,23 @@
 
 ## Decision
 
-Leitbild will model cross-object, cross-simulation, and AI-observed interaction through a control-instance-scoped interaction layer.
+Leitbild will model cross-object, cross-simulation, and AI-observed interaction through a simulation-run-scoped interaction layer.
 
 The interaction layer uses:
 
 - **Interaction Signals** for claims, observations, recommendations, or interaction attempts.
-- **Interaction Handlers** for deterministic interpretation of signals against the current control-instance snapshot.
+- **Interaction Handlers** for deterministic interpretation of signals against the current simulation-run snapshot.
 - **Interaction Effects** for constrained proposed results.
 - **Domain Events** for accepted canonical history after runtime validation, ordering, persistence, and broadcast.
 - **Operational Notifications** for durable attention items visible to operators, AI agents, replay, and debugging.
 
-Objects do not directly call or mutate other objects. Simulation instances, actors, clients, AI agents, and system processes may emit signals. Registered handlers inspect signals and current state, then return effects. The control-instance runtime commits accepted effects as ordered domain events.
+Objects do not directly call or mutate other objects. Pack runtimes, actors, clients, AI agents, and system processes may emit signals. Registered handlers inspect signals and current state, then return effects. The Simulation Run runtime commits accepted effects as ordered domain events.
 
-Control Instance Projected State is the canonical current Leitbild truth for shared operational objects. The Durable Journal records meaningful accepted history. Simulation providers may keep private mechanics and provider-local projections, but they learn about accepted shared state by observing committed Control Instance events. They are not mutated through a second authoritative object-state path.
+Simulation Run Projected State is the canonical current Leitbild truth for shared operational objects. The Durable Journal records meaningful accepted history. Simulation providers may keep private mechanics and provider-local projections, but they learn about accepted shared state by observing committed Simulation Run events. They are not mutated through a second authoritative object-state path.
 
 V1 will use static, trusted handler registration from built-in packs. Dynamic external handler loading is deferred. Route-impact handling may warn and update canonical route-awareness state, but automatic rerouting is deferred until explicit human, AI, or scenario policy control exists.
 
-Scenario scripts may emit interaction signals as declarative data. A scenario-emitted signal enters the same runtime handling path as a simulation-emitted or API-submitted signal: the control-instance runtime records `interaction.signal.received`, active handlers inspect the current snapshot, and only accepted effects become ordered domain events. This keeps scenario tutorials and demos from bypassing the interaction model.
+Scenario scripts may emit interaction signals as declarative data. A scenario-emitted signal enters the same runtime handling path as a simulation-emitted or API-submitted signal: the simulation-run runtime records `interaction.signal.received`, active handlers inspect the current snapshot, and only accepted effects become ordered domain events. This keeps scenario tutorials and demos from bypassing the interaction model.
 
 V1 also defines the generic operational-demand signal type:
 
@@ -30,7 +30,7 @@ Its payload declares a capability need at a point location, with demand id, capa
 
 ## Rationale
 
-Leitbild needs interactions such as ambulance-arrives-at-incident, ambulance-arrives-at-hospital, hospital-capacity-changed, drone-observation-detected, and AI-recommendation-created. These interactions may involve two objects, many objects, multiple simulation instances, operators, and AI agents.
+Leitbild needs interactions such as ambulance-arrives-at-incident, ambulance-arrives-at-hospital, hospital-capacity-changed, drone-observation-detected, and AI-recommendation-created. These interactions may involve two objects, many objects, multiple Pack runtimes, operators, and AI agents.
 
 Direct object-to-object mutation would hide side effects, make replay difficult, and couple domain packs together. A central god orchestrator would be simple at first but would pull domain-specific rules into core.
 
@@ -45,8 +45,8 @@ The chosen model follows useful patterns from event-sourced systems, Redux/Elm-s
 
 ## Consequences
 
-- The control instance remains the boundary for ordering, routing, persistence, audit, and broadcast.
-- Interaction handlers read the canonical Control Instance snapshot, not provider-private state.
+- The simulation run remains the boundary for ordering, routing, persistence, audit, and broadcast.
+- Interaction handlers read the canonical Simulation Run snapshot, not provider-private state.
 - Simulation providers observe committed events to adapt private mechanics; this observation is not a canonical write path.
 - Core validates the signal/effect envelopes but does not understand every domain payload.
 - Packs validate and handle domain-specific signal payloads.
@@ -70,7 +70,7 @@ Rejected because multi-object and cross-simulation interactions would become rac
 
 One central orchestrator could own all rules.
 
-Rejected as the long-term architecture because it would either become a god module or force ambulance, drone, police, maritime, and other domain rules into core. The control-instance runtime should own sequencing and commit, while packs own domain interpretation.
+Rejected as the long-term architecture because it would either become a god module or force ambulance, drone, police, maritime, and other domain rules into core. The simulation-run runtime should own sequencing and commit, while packs own domain interpretation.
 
 ### Loose callback event bus
 
@@ -82,7 +82,7 @@ Rejected because it produces callback spaghetti, unclear ordering, and weak audi
 
 The runtime could apply interaction effects directly back into simulation providers.
 
-Rejected as the long-term model because it implies duplicate canonical object stores. Providers may observe committed events and update private projections, but Control Instance Projected State remains the shared source of truth.
+Rejected as the long-term model because it implies duplicate canonical object stores. Providers may observe committed events and update private projections, but Simulation Run Projected State remains the shared source of truth.
 
 ### Arbitrary scripting engine
 

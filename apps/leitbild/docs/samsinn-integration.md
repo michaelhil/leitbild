@@ -76,7 +76,7 @@ Command commits accept an optional `idempotencyKey`:
 The dedup tuple is:
 
 ```text
-(controlInstanceId, actorId, clientId|null, kind, idempotencyKey)
+(simulationRunId, actorId, clientId|null, kind, idempotencyKey)
 ```
 
 Leitbild fingerprints `targetObjectIds`, `payload`, and `expectedRevision`. A duplicate with the same tuple and same body replays the original result, including the original `commandId`. Concurrent duplicates share the in-flight command execution. The fixed TTL starts at first-seen and defaults to 1 hour; override it with `LEITBILD_IDEMPOTENCY_TTL_MS`. Each runtime keeps up to `LEITBILD_IDEMPOTENCY_MAX_ENTRIES` entries, default `10000`.

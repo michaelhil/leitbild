@@ -105,7 +105,7 @@ describe('wiki-fetcher — GitHub Pages fallback for manifest', () => {
   }
 
   test('falls back to GitHub Pages mirror when raw.githubusercontent 404s', async () => {
-    const MANIFEST = JSON.stringify({ version: 1, wiki: 'pwr-ops', procedures: [{ id: 'X-1' }] })
+    const MANIFEST = JSON.stringify({ version: 1, wiki: 'pwr-ops', procedures: [{ id: 'X-1' }], pages: [] })
     const original = globalThis.fetch
     let rawCalls = 0
     let pagesCalls = 0

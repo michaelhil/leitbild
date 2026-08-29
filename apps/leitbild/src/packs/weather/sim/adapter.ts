@@ -1,7 +1,7 @@
 import type {
   CommandEnvelope,
   CommandResult,
-  ControlInstanceEvent,
+  SimulationRunEvent,
   GeoJsonPoint,
   IsoTimestamp,
   ObjectId,
@@ -247,6 +247,7 @@ const createOperatorWeatherAreaData = (
 
 export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
   id: weatherSimRuntimeId,
+  version: '1.0.0',
   packId: weatherPackId,
   acceptedCommandKinds: [createWeatherAreaCommandKind],
   queryKinds: weatherQueryKinds,
@@ -261,7 +262,7 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
     let clock: SimulationClockState = { currentTime: startedAt, updatedAt: startedAt, paused: false, speed: 1 }
     let lastTickWallMs = Date.now()
     let sparseField: WeatherSparseField = createWeatherSparseField(weatherGridForObjects({
-      gridId: `${config.controlInstanceId}:weather`,
+      gridId: `${config.simulationRunId}:weather`,
       objects: [...objects.values()],
       fallbackPoint: objects.values().next().value?.spatial.position?.point ?? geoPointFromLonLat(0, 0),
     }))
@@ -330,7 +331,7 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
     return {
       getSnapshot: async () => ({
-        controlInstanceId: config.controlInstanceId,
+        simulationRunId: config.simulationRunId,
         objects: [...objects.values()],
         capturedAt: nowIso(),
       }),
@@ -395,7 +396,7 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
           objects: [...objects.values()],
           at: clock.currentTime,
         }),
-      observeCommittedEvents: async (events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => {
+      observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
         let changed = false
         for (const event of events) {
           if (event.type === 'object.upserted' && event.object.packId === weatherPackId) {

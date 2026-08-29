@@ -1,3 +1,4 @@
+import { apiFetch } from "../api-client.ts"
 // Read-only tool inspector. Shows description, usage, returns, parameter
 // schema, originating file, and — for external / skill-bundled tools served
 // from localhost — the source code. Each enabledFor agent is a pill that
@@ -54,7 +55,7 @@ export const renderToolDetailInto = async (
   opts?: { readonly onPillClick?: () => void },
 ): Promise<void> => {
   container.innerHTML = ''
-  const res = await fetch(`/api/tools/${encodeURIComponent(toolName)}`)
+  const res = await apiFetch(`/tools/${encodeURIComponent(toolName)}`)
   if (!res.ok) {
     container.innerHTML = '<div class="text-xs text-text-muted">Tool not found.</div>'
     return

@@ -25,7 +25,7 @@ interface Message {
 
 **Scope:** IDs are globally unique (`crypto.randomUUID()`). `inReplyTo` may reference messages from any context — current room, other rooms, DMs. An agent can only reference IDs it has actually received (structural guarantee: `flushInfo.ids` can only contain delivered messages).
 
-**Backward compatibility:** Optional field. Existing messages have `inReplyTo: undefined`. No migration needed. Snapshot restore is unaffected since message arrays are preserved whole.
+The field is optional because not every Message is produced in response to another Message.
 
 ### What inReplyTo Is Not
 

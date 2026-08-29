@@ -6,7 +6,7 @@ Accepted.
 
 ## Context
 
-Leitbild is moving toward control instances that are assembled from scenario definitions rather than hardcoded domain defaults. During startup, the client previously rendered an Oslo-centered map and ambulance/traffic rail before the scenario was fully loaded. That made the product look initialized even when the actual scenario surface had not been resolved, and it would fail badly for scenarios that do not want a map, want a different initial viewport, or want different rail categories.
+Leitbild is moving toward simulation runs that are assembled from scenario definitions rather than hardcoded domain defaults. During startup, the client previously rendered an Oslo-centered map and ambulance/traffic rail before the scenario was fully loaded. That made the product look initialized even when the actual scenario surface had not been resolved, and it would fail badly for scenarios that do not want a map, want a different initial viewport, or want different rail categories.
 
 We need the scenario to own initial UI assembly without turning scenario files into executable UI code.
 
@@ -21,7 +21,7 @@ V1 primitives:
 - `systemFooter`: Leitbild status/version/theme/reset footer.
 - `guidanceOverlay`: scenario-owned onboarding or instruction overlay.
 
-The client starts from a neutral boot shell. It fetches the scenario definition after joining the control instance and renders only the surface primitives declared by that scenario. A visible map primitive must provide an explicit center and zoom; hidden default viewports are rejected. Object rail sections must reference categories provided by active packs.
+The client starts from a neutral boot shell. It fetches the scenario definition after joining the simulation run and renders only the surface primitives declared by that scenario. A visible map primitive must provide an explicit center and zoom; hidden default viewports are rejected. Object rail sections must reference categories provided by active packs.
 
 Surface definitions are not component registries for arbitrary scenario code. They configure reviewed primitives only.
 

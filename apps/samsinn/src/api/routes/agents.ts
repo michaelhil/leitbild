@@ -3,7 +3,7 @@ import { asAIAgent } from '../../agents/shared.ts'
 import { toolsToDefinitions } from '../../llm/tool-capability.ts'
 import { modelSupportsTools } from '../../llm/models/catalog.ts'
 import { estimateTokens } from '../../agents/context-builder.ts'
-import type { ContextSection, IncludeContext, IncludePrompts, PromptSection } from '../../core/types/agent.ts'
+import type { ContextSection, IncludeContext, IncludePrompts, LeitbildAgentBinding, PromptSection } from '../../core/types/agent.ts'
 import type { ToolRegistry } from '../../core/types/tool.ts'
 import type { SamsinnWorkspaceRuntime } from '../../main.ts'
 import type { RouteEntry } from './types.ts'
@@ -16,6 +16,18 @@ import { parsePrefixedModel } from '../../llm/models/parse-prefix.ts'
 // neither knows about it. Result is informational — callers do NOT block
 // on it. Effective-model resolution at call time picks a working fallback.
 type ModelStatus = 'ok' | 'unavailable' | 'unverified'
+
+const parseLeitbildAgentBinding = (raw: unknown): LeitbildAgentBinding | { readonly error: string } => {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { error: 'leitbildBinding must be an object' }
+  const body = raw as Record<string, unknown>
+  const unexpected = Object.keys(body).filter(key => key !== 'simulationRunId' && key !== 'role')
+  if (unexpected.length > 0) return { error: `leitbildBinding has unexpected fields: ${unexpected.join(', ')}` }
+  if (typeof body.simulationRunId !== 'string' || !/^run-[0-9a-f-]{36}$/.test(body.simulationRunId)) {
+    return { error: 'leitbildBinding.simulationRunId must be an opaque Simulation Run id' }
+  }
+  if (body.role !== 'observer' && body.role !== 'operator') return { error: 'leitbildBinding.role must be observer or operator' }
+  return { simulationRunId: body.simulationRunId, role: body.role }
+}
 
 const resolveModelStatus = async (system: SamsinnWorkspaceRuntime, requestedModel: string): Promise<ModelStatus> => {
   const ollamaAvailable = system.ollama?.getHealth().availableModels ?? []
@@ -68,7 +80,7 @@ const sanitizeIncludeContext = (raw: unknown): IncludeContext | undefined => {
 export const agentRoutes: RouteEntry[] = [
   {
     method: 'GET',
-    pattern: /^\/api\/agents$/,
+    pattern: /^\/agents$/,
     handler: (_req, _match, { system }) =>
       json(system.team.listAgents().map(a => ({
         id: a.id, name: a.name, kind: a.kind, state: a.state.get(),
@@ -76,7 +88,7 @@ export const agentRoutes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/agents\/([^/]+)\/rooms$/,
+    pattern: /^\/agents\/([^/]+)\/rooms$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const agent = system.team.getAgent(name)
@@ -86,7 +98,7 @@ export const agentRoutes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/agents\/([^/]+)$/,
+    pattern: /^\/agents\/([^/]+)$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const agent = system.team.getAgent(name)
@@ -127,7 +139,7 @@ export const agentRoutes: RouteEntry[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/agents$/,
+    pattern: /^\/agents$/,
     handler: async (req, _match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
       const body = await parseBody(req)
       if (!body.name || !body.model || !body.persona) {
@@ -139,6 +151,10 @@ export const agentRoutes: RouteEntry[] = [
       // yellow warning chip; do NOT block creation. Effective-model
       // resolution at call time picks a working fallback.
       const requestedModel = body.model as string
+      const leitbildBinding = body.leitbildBinding === undefined
+        ? undefined
+        : parseLeitbildAgentBinding(body.leitbildBinding)
+      if (leitbildBinding && 'error' in leitbildBinding) return errorResponse(leitbildBinding.error, 400)
       const modelStatus = await resolveModelStatus(system, requestedModel)
       if (modelStatus === 'unavailable') {
         console.warn(`[agents] Model "${requestedModel}" not currently available — agent will use fallback when invoked.`)
@@ -155,9 +171,7 @@ export const agentRoutes: RouteEntry[] = [
           ...(body.tools && Array.isArray(body.tools)
             ? { tools: (body.tools as unknown[]).filter((t): t is string => typeof t === 'string') }
             : {}),
-          ...(body.leitbildBinding && typeof body.leitbildBinding === 'object'
-            ? { leitbildBinding: body.leitbildBinding as import('../../core/types/agent.ts').LeitbildAgentBinding }
-            : {}),
+          ...(leitbildBinding === undefined ? {} : { leitbildBinding }),
         })
         const aiA = asAIAgent(agent)
         const evt = { type: 'agent_joined' as const, agent: { id: agent.id, name: agent.name, kind: agent.kind, ...(aiA ? { model: aiA.getModel() } : {}) } }
@@ -175,7 +189,7 @@ export const agentRoutes: RouteEntry[] = [
   // - `roomName` (optional) auto-adds the new human to that room
   {
     method: 'POST',
-    pattern: /^\/api\/agents\/human$/,
+    pattern: /^\/agents\/human$/,
     handler: async (req, _match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
       const body = await parseBody(req)
       const name = typeof body.name === 'string' ? body.name.trim() : ''
@@ -205,7 +219,7 @@ export const agentRoutes: RouteEntry[] = [
   },
   {
     method: 'PATCH',
-    pattern: /^\/api\/agents\/([^/]+)$/,
+    pattern: /^\/agents\/([^/]+)$/,
     handler: async (req, match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
       const name = decodeURIComponent(match[1]!)
       const agent = system.team.getAgent(name)
@@ -264,8 +278,10 @@ export const agentRoutes: RouteEntry[] = [
         // Leitbild binding — accept full replacement or explicit null to clear.
         if (body.leitbildBinding === null) {
           aiAgent.updateLeitbildBinding?.(undefined)
-        } else if (body.leitbildBinding && typeof body.leitbildBinding === 'object') {
-          aiAgent.updateLeitbildBinding?.(body.leitbildBinding as import('../../core/types/agent.ts').LeitbildAgentBinding)
+        } else if (body.leitbildBinding !== undefined) {
+          const binding = parseLeitbildAgentBinding(body.leitbildBinding)
+          if ('error' in binding) return errorResponse(binding.error, 400)
+          aiAgent.updateLeitbildBinding?.(binding)
         }
       }
       if (typeof body.description === 'string' && agent.updateDescription) {
@@ -286,7 +302,7 @@ export const agentRoutes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/agents\/([^/]+)\/context-preview$/,
+    pattern: /^\/agents\/([^/]+)\/context-preview$/,
     handler: (req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const agent = system.team.getAgent(name)
@@ -313,7 +329,7 @@ export const agentRoutes: RouteEntry[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/agents\/([^/]+)\/cancel$/,
+    pattern: /^\/agents\/([^/]+)\/cancel$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const agent = system.team.getAgent(name)
@@ -329,7 +345,7 @@ export const agentRoutes: RouteEntry[] = [
   // (rare race: user clicked after timeout/cancel/eval completion).
   {
     method: 'POST',
-    pattern: /^\/api\/agents\/([^/]+)\/continue-tools$/,
+    pattern: /^\/agents\/([^/]+)\/continue-tools$/,
     handler: async (req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const agent = system.team.getAgent(name)
@@ -347,7 +363,7 @@ export const agentRoutes: RouteEntry[] = [
   },
   {
     method: 'DELETE',
-    pattern: /^\/api\/agents\/([^/]+)$/,
+    pattern: /^\/agents\/([^/]+)$/,
     handler: (_req, match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
       const name = decodeURIComponent(match[1]!)
       const agent = system.team.getAgent(name)

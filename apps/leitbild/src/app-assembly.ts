@@ -12,11 +12,13 @@ import { weatherPack } from './packs/weather/pack.ts'
 
 const withReferenceDatasetBuilders = (
   pack: LeitbildPack,
-  referenceDatasetBuilders: NonNullable<LeitbildPack['referenceDatasetBuilders']>,
+  referenceDatasetBuilders: NonNullable<LeitbildPack['referenceData']>['builders'],
 ): LeitbildPack => ({
   ...pack,
-  referenceDatasetBuilders,
-  referenceDatasetIds: pack.referenceDatasetIds ?? referenceDatasetBuilders.map(builder => builder.id),
+  referenceData: {
+    builders: referenceDatasetBuilders,
+    datasetIds: pack.referenceData?.datasetIds ?? referenceDatasetBuilders.map(builder => builder.id),
+  },
 })
 
 export const leitbildPacks: ReadonlyArray<LeitbildPack> = [
@@ -32,6 +34,7 @@ export const leitbildPacks: ReadonlyArray<LeitbildPack> = [
 export const createLeitbildControlPack = (): LeitbildPack =>
   createCompositePack({
     id: 'leitbild-control',
+    version: '1.0.0',
     name: 'Leitbild Control',
     packs: leitbildPacks,
   })

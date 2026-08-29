@@ -211,10 +211,10 @@ describe('memory-indexer', () => {
         })
 
         await mkIndexer(storeA).handleCompressionStart('rA', [
-          mkMsg({ content: 'instance A secret' }),
+          mkMsg({ content: 'Workspace A secret' }),
         ], 'sA')
         await mkIndexer(storeB).handleCompressionStart('rB', [
-          mkMsg({ content: 'instance B unrelated' }),
+          mkMsg({ content: 'Workspace B unrelated' }),
         ], 'sB')
 
         expect(storeA.count().live).toBe(1)
@@ -222,12 +222,12 @@ describe('memory-indexer', () => {
 
         // Search in A using B's seed shouldn't find B's content
         const aHits = storeA.search(
-          Array.from({ length: 8 }, (_, j) => Math.sin('instance A secret'.length + j * 0.1)),
+          Array.from({ length: 8 }, (_, j) => Math.sin('Workspace A secret'.length + j * 0.1)),
           'memory',
           { k: 5 },
         )
         expect(aHits.length).toBe(1)
-        expect(aHits[0]!.text).toContain('instance A')
+        expect(aHits[0]!.text).toContain('Workspace A')
       } finally {
         await a.cleanup()
         await b.cleanup()

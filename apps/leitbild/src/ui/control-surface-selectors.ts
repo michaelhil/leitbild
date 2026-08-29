@@ -14,7 +14,7 @@ export const selectedControllerObjectFor = (
   selectedControllerId: string | null,
   pack: LeitbildPack,
 ): OperationalObject | null =>
-  objects.find(object => object.id === selectedControllerId && pack.isController(object)) ?? null
+  objects.find(object => object.id === selectedControllerId && pack.commands.isController(object)) ?? null
 
 const compareOperationalObjectsForRail = (left: OperationalObject, right: OperationalObject): number => {
   const labelComparison = left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: 'base' })
@@ -26,8 +26,8 @@ export const categoryRowsFor = (
   objects: ReadonlyArray<OperationalObject>,
   pack: LeitbildPack,
 ): ReadonlyArray<CategoryRow> =>
-  pack.categories.map(category => {
-    const createType = pack.createObjectTypes.find(type => type.categoryId === category.id)
+  pack.presentation.categories.map(category => {
+    const createType = pack.commands.createObjectTypes.find(type => type.categoryId === category.id)
     return {
       category,
       objects: [...objects.filter(object => category.matches(object))].sort(compareOperationalObjectsForRail),
@@ -41,7 +41,7 @@ export const placementCursorFor = (
 ): PlacementCursor | null => {
   if (!placementMode) return null
   if (!isIconName(placementMode.icon)) {
-    throw new Error(`pack ${pack.id} requested unknown create cursor icon: ${placementMode.icon}`)
+    throw new Error(`pack ${pack.descriptor.id} requested unknown create cursor icon: ${placementMode.icon}`)
   }
   return { icon: placementMode.icon, color: placementMode.color }
 }

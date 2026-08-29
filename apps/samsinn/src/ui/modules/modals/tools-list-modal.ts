@@ -1,3 +1,4 @@
+import { apiFetch } from "../api-client.ts"
 // Settings > Tools modal — master/detail.
 // Left: list of registered tools (with search filter + rescan button).
 // Right: detail of the selected tool, rendered by tool-detail-modal's shared
@@ -15,14 +16,14 @@ interface ToolListItem {
 
 const fetchTools = async (): Promise<ToolListItem[]> => {
   try {
-    const res = await fetch('/api/tools')
+    const res = await apiFetch('/tools')
     if (!res.ok) return []
     return await res.json() as ToolListItem[]
   } catch { return [] }
 }
 
 const rescanTools = async (): Promise<void> => {
-  const res = await fetch('/api/tools/rescan', { method: 'POST' })
+  const res = await apiFetch('/tools/rescan', { method: 'POST' })
   if (!res.ok) {
     showToast(document.body, 'Rescan failed', { type: 'error', position: 'fixed' })
     return

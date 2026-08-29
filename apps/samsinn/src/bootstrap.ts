@@ -62,7 +62,6 @@ import {
   createWebTools, createWriteSkillTool, createWriteToolTool, createPackTools,
   createGeoLookupTool, createGeoAddTool, createGeoRemoveTool, createGeoListCategoriesTool, createGeoListFeaturesTool,
 } from './tools/built-in/index.ts'
-import { runGeodataMigrationOnce } from './geo/migrate.ts'
 import { createLocalWorkspaceDirectory } from './core/workspaces/directory.ts'
 import { newWorkspaceId, type WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 import type { WorkspaceAdmin } from './api/routes/types.ts'
@@ -130,24 +129,6 @@ export const bootstrap = async (): Promise<void> => {
     mcpDisconnect = result.disconnect
   }
 
-  // === One-shot filesystem migration (idempotent via sentinel) ===
-  // Moves drop-in dirs into the synthetic 'local' pack so the layout
-  // matches every other pack. Tarball-backed; refuses to clobber if
-  // both old and new locations already have content. See migrate-local-
-  // pack.ts.
-  {
-    const { migrateLocalPack } = await import('./core/migrate-local-pack.ts')
-    const result = await migrateLocalPack(sharedPaths.root())
-    if (result.status === 'migrated') {
-      const summary = (result.moved ?? []).map(m => `${m.dir}=${m.count}`).join(' ')
-      console.log(`[migrate] moved drop-ins → packs/local/ (${summary}); backup: ${result.backupPath}`)
-    } else if (result.status === 'failed') {
-      console.error(`[migrate] failed: ${result.reason}`)
-      console.error('[migrate] samsinn will continue with whatever paths sharedPaths.* now resolves to. Resolve manually then restart.')
-    }
-    // 'skipped' is the steady-state — silent.
-  }
-
   // === Process-wide tool/skill/pack scan — once, into shared ===
   // Single FS scan: external tools, free-standing skills (cwd + samsinn-home),
   // and packs all register into the SHARED registry/store. Per-Workspace
@@ -160,16 +141,14 @@ export const bootstrap = async (): Promise<void> => {
   await loadAllPacks(sharedPaths.packs(), deployment.sharedToolRegistry, deployment.sharedSkillStore)
 
   // Bundled packs — compiled into the binary. Each pack's tools register
-  // with kind:'pack-bundled' + pack:<namespace> so per-room activation
+  // with kind:'pack-bundled' + pack:<Pack id> so per-room activation
   // (room.activePacks) actually gates them. The packs themselves are
   // declared in src/packs/bundled.ts (the BUNDLED_PACKS table — single
-  // source of truth for namespace, system flag, default-active flag).
+  // source of truth for Pack id, system flag, default-active flag).
   //
   // Bundled-pack tools are exempt from the `<pack>_<tool>` registry-key
   // prefix convention that filesystem packs follow (loadToolDirectory
-  // applies the prefix; we don't go through it here). When pwr-ops
-  // graduates to a filesystem registry pack (samsinn-packs/pwr-ops),
-  // tool names will need a rename pass at that migration point.
+  // applies the prefix; bundled Packs intentionally keep their declared names).
   {
     const { BUNDLED_DEMO_TOOLS } = await import('./packs/synthetic-demos/tools/index.ts')
     for (const tool of BUNDLED_DEMO_TOOLS) {
@@ -201,35 +180,8 @@ export const bootstrap = async (): Promise<void> => {
   }
 
   // Bundled example scripts are loaded read-only from examples/scripts/ via
-  // ScriptStore's extraSourceDirs (wired in main.ts). Nothing is copied into
-  // $SAMSINN_HOME/scripts/ — that directory holds user-authored scripts only.
-  //
-  // One-shot migration for installs that ran the OLD seeder (which copied
-  // bundled examples into $SAMSINN_HOME/scripts/). For each bundled example,
-  // if the user-dir copy is byte-identical to the bundled one, delete it (it
-  // was a seed, not an edit). If contents differ, leave it alone — the user
-  // edited it; the ScriptStore's collision detection will throw at boot with
-  // both paths and the user can rename or delete the stale one. Sidecar from
-  // the old seeder is removed unconditionally.
-  try {
-    const { rm, readFile, readdir } = await import('node:fs/promises')
-    const userScriptsDir = sharedPaths.scripts()
-    const bundledDir = resolve(process.cwd(), 'examples', 'scripts')
-    const sidecar = resolve(userScriptsDir, '.seeded.json')
-    if (existsSync(sidecar)) await rm(sidecar, { force: true })
-    let bundledNames: string[] = []
-    try { bundledNames = (await readdir(bundledDir)).filter(n => n.endsWith('.md')) } catch { /* no bundled */ }
-    let removed = 0
-    for (const name of bundledNames) {
-      const userPath = resolve(userScriptsDir, name)
-      if (!existsSync(userPath)) continue
-      try {
-        const [a, b] = await Promise.all([readFile(userPath, 'utf-8'), readFile(resolve(bundledDir, name), 'utf-8')])
-        if (a === b) { await rm(userPath, { force: true }); removed++ }
-      } catch { /* read failure → leave alone */ }
-    }
-    if (removed > 0) console.log(`[scripts] migration: removed ${removed} stale seeded copies (byte-identical to bundled)`)
-  } catch { /* best-effort */ }
+  // ScriptStore's extraSourceDirs (wired in main.ts). The local Pack's scripts
+  // directory contains only authored scripts.
 
   // === Process-wide built-in tools (no per-Workspace state) ===
   // Anything that doesn't bind to a per-Workspace RoomDirectory registers ONCE here.
@@ -258,10 +210,7 @@ export const bootstrap = async (): Promise<void> => {
   deployment.sharedToolRegistry.register(createGetTimeTool())
   deployment.sharedToolRegistry.register(createTestToolTool(deployment.sharedToolRegistry))
   deployment.sharedToolRegistry.register(createListSkillsTool(deployment.sharedSkillStore))
-  // Geo: one-shot migration of any pre-registry layout, then register the
-  // shared geodata tools. The migration is idempotent — subsequent boots
-  // see the registry file and do nothing.
-  await runGeodataMigrationOnce()
+  // Register shared geodata tools against the canonical local-Pack layout.
   // Forward-bound resolver: registry is created later in this function,
   // but createGeoLookupTool is constructed now. We hand the tool a closure
   // that will read from `registry` at call time — by which point it's been
@@ -281,20 +230,28 @@ export const bootstrap = async (): Promise<void> => {
   deployment.sharedToolRegistry.register(createGeoRemoveTool())
   deployment.sharedToolRegistry.register(createGeoListCategoriesTool())
   deployment.sharedToolRegistry.register(createGeoListFeaturesTool())
-  // Leitbild agent tools (V2.A) — visible to all rooms, but each requires
+  // Leitbild Agent tools are visible to all Rooms, but each requires
   // the caller's agent to have a leitbildBinding in its config (otherwise
   // returns an explanatory error). Tool execution looks up the binding via
   // the closure below at call time; team is finalized by then.
   {
     const { createLeitbildTools } = await import('./integrations/leitbild/tools.ts')
-    const getLeitbildBinding = (agentId: string) => {
+    const getLeitbildBinding = (agentId: string): import('./integrations/leitbild/types.ts').ResolvedLeitbildAgentBinding | undefined => {
       for (const meta of registry.list()) {
         const sys = registry.tryGetLive(meta.id)
         if (!sys) continue
         const agent = sys.team.getAgent(agentId)
         if (!agent || agent.kind !== 'ai') continue
         const cfg = (agent as { getConfig?: () => { leitbildBinding?: import('./core/types/agent.ts').LeitbildAgentBinding } }).getConfig?.()
-        if (cfg?.leitbildBinding) return cfg.leitbildBinding
+        const moduleBinding = sys.settings.getModuleBinding('leitbild')
+        if (cfg?.leitbildBinding && moduleBinding) {
+          return {
+            moduleBinding,
+            workspaceId: meta.id,
+            simulationRunId: cfg.leitbildBinding.simulationRunId,
+            role: cfg.leitbildBinding.role,
+          }
+        }
       }
       return undefined
     }
@@ -308,7 +265,7 @@ export const bootstrap = async (): Promise<void> => {
     for (const tool of createLeitbildTools({ getBinding: getLeitbildBinding, getScope: getLeitbildScope })) {
       deployment.sharedToolRegistry.register(tool)
     }
-    // V2.B: command tool (operator role only — enforced at execution time
+    // Command tool (operator role only — enforced at execution time
     // inside the tool, not at registration time). Same lookup for binding,
     // plus a name resolver so the actor/client slug is human-readable.
     const { createLeitbildCommandTools } = await import('./integrations/leitbild/command-tools.ts')
@@ -324,7 +281,7 @@ export const bootstrap = async (): Promise<void> => {
     for (const tool of createLeitbildCommandTools({ getBinding: getLeitbildBinding, getAgentName, getScope: getLeitbildScope })) {
       deployment.sharedToolRegistry.register(tool)
     }
-    // V3 (this commit): lb_screenshot agent tool. Requires a connected
+    // The screenshot tool requires a connected
     // browser session — broadcasts via wsManager.broadcastToWorkspace,
     // first responder wins. See src/integrations/leitbild/screenshot-tool.ts.
     const { createLeitbildScreenshotTool } = await import('./integrations/leitbild/screenshot-tool.ts')
@@ -418,6 +375,12 @@ export const bootstrap = async (): Promise<void> => {
       } catch (err) {
         console.error(`[logging] failed to apply boot config: ${err instanceof Error ? err.message : String(err)}`)
       }
+      const workspaceRecord = await workspaceDirectory.get(id)
+      if (!workspaceRecord) throw new Error(`Workspace is not registered: ${id}`)
+      for (const existing of system.settings.listModuleBindings()) {
+        system.settings.removeModuleBinding(existing.moduleId)
+      }
+      for (const binding of workspaceRecord.modules) system.settings.setModuleBinding(binding)
       // Track agents for provider-event routing. Walk existing agents from
       // any snapshot restore; wrap spawn/remove for new ones.
       for (const agent of system.team.listAgents()) {
@@ -429,7 +392,7 @@ export const bootstrap = async (): Promise<void> => {
         subscribeAgentState: wsManager.subscribeAgentState,
         unsubscribeAgentState: wsManager.unsubscribeAgentState,
       })
-      // (Default-room fallback removed — seedFreshInstance below handles
+      // (Default-room fallback removed — Workspace seeding below handles
       // the empty-Workspace case with a properly-themed 'demo' room and a
       // Helper agent. The old `general` fallback always created a room
       // BEFORE seed ran, so seed's `if rooms.length > 0 return` check
@@ -444,7 +407,10 @@ export const bootstrap = async (): Promise<void> => {
       // reattach-on-GET fires (which requires a human or agent hitting
       // the endpoint). Fire-and-forget; mirror.attach handles its own
       // errors by posting a [mirror error] system message.
-      void leitbildMirror.restoreAll(system.rooms, id)
+      const moduleBinding = system.settings.getModuleBinding('leitbild')
+      if (moduleBinding) {
+        void leitbildMirror.restoreAll(system.rooms, { moduleBinding, workspaceId: id }, id)
+      }
     },
     onWorkspaceRuntimeEvicted: (system, id) => {
       // Close WS sessions for this Workspace — they hold dangling references.
@@ -495,13 +461,13 @@ export const bootstrap = async (): Promise<void> => {
   // doesn't exist even with the right toolDefinitions in the request.
   const crossWorkspaceNotifyPacksChanged = (info: {
     readonly action: 'installed' | 'updated' | 'uninstalled'
-    readonly namespace: string
+    readonly packId: string
     readonly tools: ReadonlyArray<string>
     readonly skills: ReadonlyArray<string>
   }): void => {
     const note = info.action === 'uninstalled'
-      ? `[admin] Pack "${info.namespace}" was uninstalled. ${info.tools.length} tools and ${info.skills.length} skills are no longer available.`
-      : `[admin] Pack "${info.namespace}" was ${info.action}. Tools available now: ${info.tools.join(', ') || '(none)'}. Skills: ${info.skills.join(', ') || '(none)'}. Disregard any earlier message claiming these were unavailable.`
+      ? `[admin] Pack "${info.packId}" was uninstalled. ${info.tools.length} tools and ${info.skills.length} skills are no longer available.`
+      : `[admin] Pack "${info.packId}" was ${info.action}. Tools available now: ${info.tools.join(', ') || '(none)'}. Skills: ${info.skills.join(', ') || '(none)'}. Disregard any earlier message claiming these were unavailable.`
     for (const meta of registry.list()) {
       const sys = registry.tryGetLive(meta.id)
       if (!sys) continue
@@ -530,11 +496,11 @@ export const bootstrap = async (): Promise<void> => {
   }
   if (packsEnabled) {
     // Cross-Workspace scrub: when a pack is uninstalled, remove its
-    // namespace from every room.activePacks across every live Workspace,
+    // Pack id from every room.activePacks across every live Workspace,
     // and broadcast pack_activation_changed per affected room. Returns
     // the audit list so the uninstall response can include it.
     const crossWorkspaceScrubActivePacks = async (
-      packNamespace: string,
+      packId: string,
     ): Promise<{ roomId: string; activePacks: ReadonlyArray<string> }[]> => {
       const out: { roomId: string; activePacks: ReadonlyArray<string> }[] = []
       const dirtyWorkspaces = new Set<WorkspaceId>()
@@ -545,8 +511,8 @@ export const bootstrap = async (): Promise<void> => {
           const room = sys.rooms.getRoom(profile.id)
           if (!room) continue
           const before = room.getActivePacks()
-          if (!before.includes(packNamespace)) continue
-          const after = before.filter(p => p !== packNamespace)
+          if (!before.includes(packId)) continue
+          const after = before.filter(p => p !== packId)
           room.setActivePacks(after)
           out.push({ roomId: profile.id, activePacks: after })
           dirtyWorkspaces.add(meta.id)
@@ -575,7 +541,7 @@ export const bootstrap = async (): Promise<void> => {
       // M1: append a pendingScrub to every evicted Workspace's snapshot so
       // the scrub applies on its next reload. Without this, an evicted
       // Workspace reloaded post-uninstall restores the deleted pack as
-      // active, and a later same-namespace install would auto-activate
+      // active, and a later same Pack id install would auto-activate
       // without operator opt-in.
       //
       // B3 (round 3): awaited via Promise.all so the uninstall response
@@ -588,7 +554,7 @@ export const bootstrap = async (): Promise<void> => {
         if (registry.tryGetLive(meta.id)) continue  // handled by live loop above
         const snapshotPath = workspacePaths(meta.id).snapshot
         scrubPromises.push(
-          appendPendingScrub(snapshotPath, { namespace: packNamespace, scheduledAt })
+          appendPendingScrub(snapshotPath, { packId: packId, scheduledAt })
             .then(result => {
               if (!result.applied && result.reason && result.reason !== 'no snapshot file' && result.reason !== 'already queued') {
                 console.warn(`[packs] could not queue scrub for evicted Workspace ${meta.id}: ${result.reason}`)
@@ -612,11 +578,11 @@ export const bootstrap = async (): Promise<void> => {
     }
 
     // Cross-Workspace auto-activate: when a new pack installs, add its
-    // namespace to every room.activePacks across every live Workspace.
+    // Pack id to every room.activePacks across every live Workspace.
     // Mirrors crossWorkspaceScrubActivePacks but adds (not removes). Per-
     // room opt-out via the panel toggle still works.
     const crossWorkspaceAutoActivatePack = async (
-      packNamespace: string,
+      packId: string,
     ): Promise<{ roomId: string; activePacks: ReadonlyArray<string> }[]> => {
       const out: { roomId: string; activePacks: ReadonlyArray<string> }[] = []
       const dirtyWorkspaces = new Set<WorkspaceId>()
@@ -627,8 +593,8 @@ export const bootstrap = async (): Promise<void> => {
           const room = sys.rooms.getRoom(profile.id)
           if (!room) continue
           const before = room.getActivePacks()
-          if (before.includes(packNamespace)) continue   // already active in this room
-          const after = [...before, packNamespace]
+          if (before.includes(packId)) continue   // already active in this room
+          const after = [...before, packId]
           room.setActivePacks(after)
           out.push({ roomId: profile.id, activePacks: after })
           dirtyWorkspaces.add(meta.id)

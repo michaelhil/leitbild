@@ -1,7 +1,7 @@
 // ============================================================================
 // System-level admin routes — currently just shutdown.
 //
-// POST /api/system/shutdown triggers a graceful shutdown so a supervisor
+// POST /system/shutdown triggers a graceful shutdown so a supervisor
 // (bun --watch, docker, systemd) can respawn with fresh env + providers.json.
 // Samsinn doesn't self-respawn; the user's orchestrator is responsible.
 // ============================================================================
@@ -111,7 +111,7 @@ export const authResponse = async (req: Request, remoteAddress?: string): Promis
 export const systemRoutes: RouteEntry[] = [
   {
     method: 'GET',
-    pattern: /^\/api\/system\/info$/,
+    pattern: /^\/system\/info$/,
     handler: async () => systemInfoResponse(),
   },
   {
@@ -119,21 +119,21 @@ export const systemRoutes: RouteEntry[] = [
     // Always succeeds; the body says whether auth is required and whether the
     // current request carries a valid session cookie.
     method: 'GET',
-    pattern: /^\/api\/auth$/,
+    pattern: /^\/auth$/,
     handler: async (req) => authResponse(req),
   },
   {
     method: 'POST',
-    pattern: /^\/api\/auth$/,
+    pattern: /^\/auth$/,
     handler: async (req, _match, ctx) => authResponse(req, ctx.remoteAddress),
   },
   {
     // Process-global cap/limit observability snapshot. Read by ops/admin
-    // panels. Auth-gated (NOT exempt; only /api/system/info and /api/auth
+    // panels. Auth-gated (NOT exempt; only /system/info and /auth
     // bypass the gate). Returns counters + the configured cap values for
     // context.
     method: 'GET',
-    pattern: /^\/api\/system\/limits$/,
+    pattern: /^\/system\/limits$/,
     handler: async (_req, _match, ctx) => json({
       metrics: ctx.system.limitMetrics.snapshot(),
       configured: {
@@ -153,7 +153,7 @@ export const systemRoutes: RouteEntry[] = [
     // with zero broadcasts under traffic means the wiring chain is broken.
     // Read-only; safe to poll.
     method: 'GET',
-    pattern: /^\/api\/system\/diagnostics$/,
+    pattern: /^\/system\/diagnostics$/,
     handler: async (_req, _match, ctx) => {
       if (!ctx.diagnostics) return errorResponse('diagnostics not wired', 500)
       return json(ctx.diagnostics.snapshot())
@@ -162,7 +162,7 @@ export const systemRoutes: RouteEntry[] = [
   {
     // Aggregated operator-visibility snapshot. Single URL the operator
     // can poll to see "is anything obviously wrong" without paging
-    // through /api/system/limits + /api/system/diagnostics + journalctl.
+    // through /system/limits + /system/diagnostics + journalctl.
     //
     // Surfaces:
     //   - typecheck / boot status (implicit: if you got this response, boot ok)
@@ -174,11 +174,11 @@ export const systemRoutes: RouteEntry[] = [
     //
     // Counters are PROCESS-WIDE (aggregate across cookie-bound Workspaces),
     // not per-tenant. That's the right shape for operator triage; per-tenant
-    // breakdowns belong in /api/system/diagnostics.
+    // breakdowns belong in /system/diagnostics.
     //
     // Read-only; auth-gated; safe to poll at ~30s cadence.
     method: 'GET',
-    pattern: /^\/api\/system\/health$/,
+    pattern: /^\/system\/health$/,
     handler: async (_req, _match, ctx) => {
       const limits = ctx.system.limitMetrics.snapshot()
       const monitors = ctx.system.monitors
@@ -225,7 +225,7 @@ export const systemRoutes: RouteEntry[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/system\/shutdown$/,
+    pattern: /^\/system\/shutdown$/,
     handler: async (_req, _match, _ctx) => {
       // Schedule exit on the next tick so the response is flushed first.
       // SIGTERM triggers the drain/snapshot-save shutdown handler in
@@ -241,7 +241,7 @@ export const systemRoutes: RouteEntry[] = [
     // Workspace's clients only. Cancellable via /reset/cancel during the
     // window. Single-flight per Workspace.
     method: 'POST',
-    pattern: /^\/api\/system\/reset$/,
+    pattern: /^\/system\/reset$/,
     handler: async (req, _match, ctx) => {
       if (!ctx.resetWorkspace) return errorResponse('reset not supported in this mode', 501)
       const { getWorkspaceId } = await import('../workspace-cookie.ts')
@@ -287,7 +287,7 @@ export const systemRoutes: RouteEntry[] = [
     // (handled by onWorkspaceRuntimeEvicted) is the user-visible signal, identical
     // to the idle-evict path. Cookie-only auth, mirroring /reset.
     method: 'POST',
-    pattern: /^\/api\/system\/evict$/,
+    pattern: /^\/system\/evict$/,
     handler: async (req, _match, ctx) => {
       if (!ctx.evictWorkspace) return errorResponse('evict not supported in this mode', 501)
       const result = await ctx.evictWorkspace(req)
@@ -297,7 +297,7 @@ export const systemRoutes: RouteEntry[] = [
   },
   {
     method: 'POST',
-    pattern: /^\/api\/system\/reset\/cancel$/,
+    pattern: /^\/system\/reset\/cancel$/,
     handler: async (req, _match, ctx) => {
       const { getWorkspaceId } = await import('../workspace-cookie.ts')
       const id = getWorkspaceId(req)

@@ -1,10 +1,10 @@
 // ============================================================================
 // Triggers admin routes — per-agent scheduled prompts.
 //
-// GET    /api/agents/:name/triggers           list this agent's triggers
-// POST   /api/agents/:name/triggers           create — body: { name, prompt, mode, intervalSec, roomId, enabled? }
-// PUT    /api/agents/:name/triggers/:id       update (partial body)
-// DELETE /api/agents/:name/triggers/:id       remove
+// GET    /agents/:name/triggers           list this agent's triggers
+// POST   /agents/:name/triggers           create — body: { name, prompt, mode, intervalSec, roomId, enabled? }
+// PUT    /agents/:name/triggers/:id       update (partial body)
+// DELETE /agents/:name/triggers/:id       remove
 //
 // All mutations broadcast `triggers_changed` so panels refresh, and call
 // `system.triggerScheduler.invalidate()` so the cached "any triggers exist"
@@ -19,7 +19,7 @@ export const triggerRoutes: RouteEntry[] = [
   // --- List ---
   {
     method: 'GET',
-    pattern: /^\/api\/agents\/([^/]+)\/triggers$/,
+    pattern: /^\/agents\/([^/]+)\/triggers$/,
     handler: async (_req, match, { system }) => {
       const agent = system.team.getAgent(decodeURIComponent(match[1]!))
       if (!agent) return errorResponse('agent not found', 404)
@@ -29,7 +29,7 @@ export const triggerRoutes: RouteEntry[] = [
   // --- Create ---
   {
     method: 'POST',
-    pattern: /^\/api\/agents\/([^/]+)\/triggers$/,
+    pattern: /^\/agents\/([^/]+)\/triggers$/,
     handler: async (req, match, { system, broadcast }) => {
       const agent = system.team.getAgent(decodeURIComponent(match[1]!))
       if (!agent) return errorResponse('agent not found', 404)
@@ -64,7 +64,7 @@ export const triggerRoutes: RouteEntry[] = [
   // --- Update ---
   {
     method: 'PUT',
-    pattern: /^\/api\/agents\/([^/]+)\/triggers\/([^/]+)$/,
+    pattern: /^\/agents\/([^/]+)\/triggers\/([^/]+)$/,
     handler: async (req, match, { system, broadcast }) => {
       const agent = system.team.getAgent(decodeURIComponent(match[1]!))
       if (!agent) return errorResponse('agent not found', 404)
@@ -110,7 +110,7 @@ export const triggerRoutes: RouteEntry[] = [
   // --- Delete ---
   {
     method: 'DELETE',
-    pattern: /^\/api\/agents\/([^/]+)\/triggers\/([^/]+)$/,
+    pattern: /^\/agents\/([^/]+)\/triggers\/([^/]+)$/,
     handler: async (_req, match, { system, broadcast }) => {
       const agent = system.team.getAgent(decodeURIComponent(match[1]!))
       if (!agent) return errorResponse('agent not found', 404)

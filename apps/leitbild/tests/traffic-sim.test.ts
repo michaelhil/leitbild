@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, SimulationRunId } from '../src/core/model/index.ts'
 import { geoPointFromLonLat, nowIso } from '../src/core/model/index.ts'
 import { createTrafficConditionCommandKind } from '../src/packs/traffic/commands.ts'
 import { trafficPackDataSchema } from '../src/packs/traffic/model.ts'
@@ -8,11 +8,11 @@ import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/a
 import { trafficScenarioSupport } from '../src/packs/traffic/scenario.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 
-const controlInstanceId = 'control-instance:traffic-sim-test' as ControlInstanceId
+const simulationRunId = 'run-traffic-sim-test' as SimulationRunId
 
 const makeCommand = (payload: unknown): CommandEnvelope => ({
   id: `command:${crypto.randomUUID()}` as CommandId,
-  controlInstanceId,
+  simulationRunId,
   actorId: 'actor:test-operator' as ActorId,
   kind: createTrafficConditionCommandKind,
   targetObjectIds: [],
@@ -42,7 +42,7 @@ describe('local traffic runtime', () => {
 
   test('creates road-segment traffic from routed start and end points', async () => {
     const adapter = createLocalTrafficPackRuntimeAdapter({ routing: createDirectRoutingAdapter() })
-    const connection = await adapter.connect({ controlInstanceId })
+    const connection = await adapter.connect({ simulationRunId })
     try {
       const emittedTypes: string[] = []
       const unsubscribe = connection.subscribe(emission => {
@@ -78,7 +78,7 @@ describe('local traffic runtime', () => {
 
   test('creates area traffic from a polygon', async () => {
     const adapter = createLocalTrafficPackRuntimeAdapter()
-    const connection = await adapter.connect({ controlInstanceId })
+    const connection = await adapter.connect({ simulationRunId })
     try {
       const result = await connection.sendCommand(makeCommand({
         objectType: 'traffic_area',

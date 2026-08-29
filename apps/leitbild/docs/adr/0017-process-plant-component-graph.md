@@ -32,7 +32,7 @@ The runtime code is factored into an orchestrator, a variable table, component b
 
 Component and process-link behaviors run through a constrained behavior context. Behavior definitions declare audit-facing read dependencies and declared write outputs; the execution-plan compiler validates declared write paths against the compiled graph, and the context enforces that behavior updates only write those outputs. Read declarations remain reviewable metadata until all graph-dependent reads are normalized through shared helpers. This keeps the solver functional and explicit without turning V1 into a general-purpose runtime plugin framework. Runtime writes and accepted commands validate finite values, invalid ratio bounds, and negative non-negative physical quantities before they become provider snapshots or telemetry. A full invariant scan remains available as an explicit debug check rather than a default per-step allocation.
 
-The process-plant simulation provider owns provider-private runtime state. It persists runtime snapshots in a provider sidecar under the Control Instance directory rather than writing dense process variables into the Control Instance object snapshot or durable event journal. The sidecar includes elapsed process time, fixed-step remainder, queued commands, and variable values.
+The process-plant simulation provider owns provider-private runtime state. It persists runtime snapshots in a provider sidecar under the Simulation Run directory rather than writing dense process variables into the Simulation Run object snapshot or durable event journal. The sidecar includes elapsed process time, fixed-step remainder, queued commands, and variable values.
 
 The provider also owns process-specific schedules and telemetry buffers. Scenario `runtimeConfigs["process-plant"]` can configure timed variable writes and selected trend sampling per process system. This keeps pump trips, valve operations, rod moves, and process trends inside the process-plant pack instead of turning core scenario scripting into a process-control language.
 
@@ -57,7 +57,7 @@ The first process slice is a lumped-parameter directional model, not analysis-gr
 - Future higher-fidelity components can replace simpler component definitions behind the same typed ports and variable paths.
 - Solver behavior now has explicit read/write metadata and an enforced write contract, making richer future components less likely to corrupt unrelated plant state.
 - The runtime phase list reflects actual execution; telemetry publication is a read-out from the variable table, not a hidden state-changing phase.
-- The pack now has a real headless runtime/testbed plus Control Instance provider integration.
+- The pack now has a real headless runtime/testbed plus Simulation Run provider integration.
 - The generic query surface can inspect systems, graph topology, variables, published telemetry, and runtime status without new HTTP routes.
 - The generic query surface can also read configured trend buffers through `process-plant.trends.read`.
 - Reusable process-plant assets are catalog contributions. The generic contribution catalog now covers graph refs, graph assemblies, graph fragments, fragment presets, I&C refs, graph-aware I&C refs, and process surfaces. PWR contributes to that catalog; generic runtime/query code should not import PWR graph or surface modules directly.

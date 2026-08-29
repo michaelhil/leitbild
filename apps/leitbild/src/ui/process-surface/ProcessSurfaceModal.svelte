@@ -2,7 +2,7 @@
   import type { Component } from 'svelte'
   import { untrack } from 'svelte'
   import { ClipboardList, Eye, Play, X, Zap } from 'lucide-svelte'
-  import type { ControlInstanceId, ObjectId, OperationalObject } from '../../core/model/index.ts'
+  import type { SimulationRunId, ObjectId, OperationalObject } from '../../core/model/index.ts'
   import type { PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
   import { processPlantControlWriteCommandKind } from '../../packs/process-plant/command-kinds.ts'
   import {
@@ -14,7 +14,7 @@
   } from '../../packs/process-plant/demo-transients.ts'
   import type { CompiledProcessSurface, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
   import { statusToneColor } from '../status-presentation.ts'
-  import { sendControlInstanceCommand } from '../control-instance-client.ts'
+  import { sendSimulationRunCommand } from '../simulation-run-client.ts'
   import ProcedureRunBadges from '../procedures/ProcedureRunBadges.svelte'
   import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from '../procedures/procedure-run-selectors.ts'
   import ProcessSurfaceRenderer from './ProcessSurfaceRenderer.svelte'
@@ -45,7 +45,7 @@
   } from '../window-bounds.ts'
 
   interface Props {
-    readonly controlInstanceId: ControlInstanceId
+    readonly simulationRunId: SimulationRunId
     readonly object: OperationalObject
     readonly unitStatus?: PackObjectStatusPresentation
     readonly unitContexts?: ReadonlyArray<{
@@ -64,7 +64,7 @@
   const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], completed: [] }
 
   let {
-    controlInstanceId,
+    simulationRunId,
     object,
     unitStatus = undefined,
     unitContexts = [],
@@ -149,11 +149,11 @@
   const processSurfaceSystemId = untrack(() => systemIdFor(object))
 
   const refreshSnapshot = async (
-    instanceId: ControlInstanceId,
+    runId: SimulationRunId,
     systemId: string,
     surfaceId: string,
   ): Promise<void> => {
-    const snapshot = await readProcessSurfaceSnapshot(instanceId, systemId, surfaceId)
+    const snapshot = await readProcessSurfaceSnapshot(runId, systemId, surfaceId)
     values = new Map(snapshot.values.map(value => [value.path, value]))
     alarms = snapshot.alarms
   }
@@ -246,7 +246,7 @@
         currentDemoTransientContext(),
       )
       for (const command of commands) {
-        const response = await sendControlInstanceCommand(controlInstanceId, {
+        const response = await sendSimulationRunCommand(simulationRunId, {
           kind: processPlantControlWriteCommandKind,
           targetObjectIds: [object.id],
           payload: {
@@ -259,7 +259,7 @@
           throw new Error(response.result.reason ?? `process plant rejected ${command.path}`)
         }
       }
-      if (currentSurface) await refreshSnapshot(controlInstanceId, systemId, currentSurface.id)
+      if (currentSurface) await refreshSnapshot(simulationRunId, systemId, currentSurface.id)
     } catch (err) {
       error = `${transient.label} failed: ${err instanceof Error ? err.message : String(err)}`
     } finally {
@@ -272,7 +272,7 @@
     const systemId = loadedSystemId
     if (!currentSurface || !systemId) return
     storeProcessSurfaceWindowBounds({
-      controlInstanceId,
+      simulationRunId,
       systemId,
       surfaceId: currentSurface.id,
       bounds,
@@ -343,7 +343,7 @@
     widgetPositions = next
     if (commit) {
       storeProcessSurfaceLayout({
-        controlInstanceId,
+        simulationRunId,
         systemId,
         surfaceId: currentSurface.id,
         layout: next,
@@ -361,18 +361,18 @@
       projection = null
       return
     }
-    projection = await readProcessSurfaceProjection(controlInstanceId, systemId, surfaceId, lens.lens)
+    projection = await readProcessSurfaceProjection(simulationRunId, systemId, surfaceId, lens.lens)
   }
 
   const startSnapshotRefresh = (config: {
-    readonly instanceId: ControlInstanceId
+    readonly runId: SimulationRunId
     readonly systemId: string
     readonly surfaceId: string
     readonly isCancelled: () => boolean
   }): (() => void) => {
     const refreshSafely = async (): Promise<void> => {
       try {
-        await refreshSnapshot(config.instanceId, config.systemId, config.surfaceId)
+        await refreshSnapshot(config.runId, config.systemId, config.surfaceId)
       } catch (err) {
         if (!config.isCancelled()) error = err instanceof Error ? err.message : String(err)
       }
@@ -387,7 +387,7 @@
 
   $effect(() => {
     const selectedSystemId = processSurfaceSystemId
-    const selectedControlInstanceId = controlInstanceId
+    const selectedSimulationRunId = simulationRunId
     let cancelled = false
     let stopRefresh: (() => void) | null = null
 
@@ -403,11 +403,11 @@
         values = new Map()
         systemVariablePaths = []
         alarms = emptyProcessSurfaceAlarmSnapshot
-        const surfaces = await listProcessSurfaces(selectedControlInstanceId, selectedSystemId)
+        const surfaces = await listProcessSurfaces(selectedSimulationRunId, selectedSystemId)
         const first = surfaces[0]
         if (!first) throw new Error(`no process displays are available for ${selectedSystemId}`)
-        const nextSurface = await readProcessSurface(selectedControlInstanceId, selectedSystemId, first.id)
-        const nextVariablePaths = await listProcessPlantVariablePaths(selectedControlInstanceId, selectedSystemId)
+        const nextSurface = await readProcessSurface(selectedSimulationRunId, selectedSystemId, first.id)
+        const nextVariablePaths = await listProcessPlantVariablePaths(selectedSimulationRunId, selectedSystemId)
         if (cancelled) return
         loadedSystemId = selectedSystemId
         surface = nextSurface
@@ -415,20 +415,20 @@
         projection = null
         activeLensId = nextSurface.lenses[0]?.id ?? 'all'
         widgetPositions = readProcessSurfaceLayout({
-          controlInstanceId: selectedControlInstanceId,
+          simulationRunId: selectedSimulationRunId,
           systemId: selectedSystemId,
           surfaceId: nextSurface.id,
         })
         const currentWindowBounds = untrack(() => windowBounds)
         windowBounds = clampWindowBounds(readProcessSurfaceWindowBounds({
-          controlInstanceId: selectedControlInstanceId,
+          simulationRunId: selectedSimulationRunId,
           systemId: selectedSystemId,
           surfaceId: nextSurface.id,
         }) ?? currentWindowBounds)
-        await refreshSnapshot(selectedControlInstanceId, selectedSystemId, first.id)
+        await refreshSnapshot(selectedSimulationRunId, selectedSystemId, first.id)
         if (cancelled) return
         stopRefresh = startSnapshotRefresh({
-          instanceId: selectedControlInstanceId,
+          runId: selectedSimulationRunId,
           systemId: selectedSystemId,
           surfaceId: first.id,
           isCancelled: () => cancelled,
@@ -711,7 +711,7 @@
   {/if}
   {#if procedureModalOpen && loadedSystemId && ProcedureSystemModal}
     <ProcedureSystemModal
-      {controlInstanceId}
+      {simulationRunId}
       systemId={loadedSystemId}
       unitName={object.label}
       {unitStatus}

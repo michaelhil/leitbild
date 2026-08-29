@@ -22,7 +22,7 @@ Process signal identity is graph-owned metadata compiled into each process syste
 The source of truth for a process signal is the compiled variable:
 
 ```text
-{ controlRunId, systemId, variablePath }
+{ simulationRunId, systemId, variablePath }
 ```
 
 `systemId` is always explicit. There is no implicit current unit, fleet-wide alias, or shared cross-unit namespace. Multi-unit scenarios are represented as multiple independent process systems.

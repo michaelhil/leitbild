@@ -3,7 +3,7 @@ import type {
   ActorId,
   CommandEnvelope,
   CommandId,
-  ControlInstanceId,
+  SimulationRunId,
   IsoTimestamp,
   SimulationClockState,
 } from '../src/core/model/index.ts'
@@ -29,13 +29,14 @@ const createStubAdapter = (id: string, packId: string, commandKind: string): Stu
   let connectCount = 0
   const adapter: PackRuntimeAdapter = {
     id,
+    version: '1.0.0',
     packId,
     acceptedCommandKinds: [commandKind],
     connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
       connectCount += 1
       return {
         getSnapshot: async () => ({
-          controlInstanceId: config.controlInstanceId,
+          simulationRunId: config.simulationRunId,
           objects: [],
           capturedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
         }),
@@ -59,7 +60,7 @@ const createStubAdapter = (id: string, packId: string, commandKind: string): Stu
 
 const command = (kind: string): CommandEnvelope => ({
   id: `command:${kind}` as CommandId,
-  controlInstanceId: 'control-instance:test' as ControlInstanceId,
+  simulationRunId: 'run-test' as SimulationRunId,
   actorId: 'actor:test' as ActorId,
   kind,
   targetObjectIds: [],
@@ -74,7 +75,7 @@ describe('createRuntimeHub', () => {
     const hub = createRuntimeHub([active, inactive])
 
     const connection = await hub.connect({
-      controlInstanceId: 'control-instance:test' as ControlInstanceId,
+      simulationRunId: 'run-test' as SimulationRunId,
       scenario: {
         scenarioId: 'scenario:test',
         runtimeIds: ['active.runtime'],

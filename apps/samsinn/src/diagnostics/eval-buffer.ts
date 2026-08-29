@@ -6,7 +6,7 @@
 // traceId and closes on `eval_completed`. Closed records sit in a FIFO
 // ring; the oldest evicts on overflow.
 //
-// Why a ring (not unbounded): a busy instance produces hundreds of evals
+// Why a ring (not unbounded): a busy Workspace produces hundreds of evals
 // per session. The diagnostic value is "what just happened" — 50 evals
 // covers any reasonable post-mortem window without unbounded memory.
 //

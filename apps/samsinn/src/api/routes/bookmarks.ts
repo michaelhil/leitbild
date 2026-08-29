@@ -14,13 +14,13 @@ const readContent = (body: Record<string, unknown>): string | null => {
 export const bookmarkRoutes: RouteEntry[] = [
   {
     method: 'GET',
-    pattern: /^\/api\/bookmarks$/,
+    pattern: /^\/bookmarks$/,
     handler: (_req, _match, { system }) =>
       json({ bookmarks: system.bookmarks.list() }),
   },
   {
     method: 'POST',
-    pattern: /^\/api\/bookmarks$/,
+    pattern: /^\/bookmarks$/,
     handler: async (req, _match, { system }) => {
       const body = await parseBody(req)
       const content = readContent(body)
@@ -30,7 +30,7 @@ export const bookmarkRoutes: RouteEntry[] = [
   },
   {
     method: 'PUT',
-    pattern: /^\/api\/bookmarks\/([^/]+)$/,
+    pattern: /^\/bookmarks\/([^/]+)$/,
     handler: async (req, match, { system }) => {
       const id = decodeURIComponent(match[1]!)
       const body = await parseBody(req)
@@ -43,7 +43,7 @@ export const bookmarkRoutes: RouteEntry[] = [
   },
   {
     method: 'DELETE',
-    pattern: /^\/api\/bookmarks\/([^/]+)$/,
+    pattern: /^\/bookmarks\/([^/]+)$/,
     handler: (_req, match, { system }) => {
       const id = decodeURIComponent(match[1]!)
       const removed = system.bookmarks.remove(id)

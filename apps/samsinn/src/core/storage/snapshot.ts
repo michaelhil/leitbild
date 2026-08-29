@@ -7,8 +7,9 @@
 //
 // Auto-saver: debounced timer (5s default), flushes on SIGINT/SIGTERM.
 //
-// v27 is the canonical Workspace snapshot. Rooms, Workspace settings, and
-// bookmarks are independent services; previous snapshot shapes are rejected.
+// v29 is the canonical Workspace runtime snapshot. Module bindings live in
+// the Workspace Directory; this file contains only Samsinn-owned state.
+// Previous snapshot shapes are rejected.
 // ============================================================================
 
 import type { Agent, AIAgentConfig } from '../types/agent.ts'
@@ -23,10 +24,11 @@ import { createSerialiseChain } from '../serialise-chain.ts'
 import { redactBiometricMessages } from './snapshot-redact.ts'
 import { mkdir, rename, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { z } from 'zod'
 
 // --- Version ---
 
-export const SNAPSHOT_VERSION = 27
+export const SNAPSHOT_VERSION = 29
 
 // --- Snapshot schema ---
 
@@ -40,14 +42,14 @@ export interface RoomSnapshot {
   readonly compressedIds?: ReadonlyArray<string>
   readonly summaryConfig?: SummaryConfig
   readonly latestSummary?: string
-  // Pack namespaces activated in this room — the COMPLETE truth (v24+).
+  // Pack namespaces activated in this Room — the complete truth.
   // Includes system packs (core, local) and bundled default-active packs
   // (demos, pwr-ops). Always present; empty list is valid and meaningful
   // ("user has deactivated every pack including system-suggested ones",
   // though the activation route guards against removing system packs).
   readonly activePacks: ReadonlyArray<string>
-  // Leitbild mirror binding (v25+). Optional; persisted only when a room
-  // is bound to a Leitbild Control Instance. Restored at boot — see
+  // Optional Leitbild mirror binding, persisted only when a Room
+  // is bound to a Leitbild Simulation Run. Restored at boot — see
   // src/integrations/leitbild/mirror-service.ts for reconnect lifecycle.
   readonly leitbildMirror?: LeitbildMirrorConfig
 }
@@ -58,8 +60,6 @@ export interface AgentSnapshot {
   readonly roomIds: ReadonlyArray<string>
 }
 
-// Humans are now persistent across restarts. The legacy model (humans live
-// only as long as a WS session is bound to them) is gone in v15.
 export interface HumanAgentSnapshot {
   readonly id: string
   readonly name: string
@@ -68,7 +68,7 @@ export interface HumanAgentSnapshot {
 }
 
 export interface PendingScrub {
-  readonly namespace: string
+  readonly packId: string
   readonly scheduledAt: string  // ISO-8601 — for triage when scrubs accumulate
 }
 
@@ -84,9 +84,9 @@ export interface EmbedderBindingSnapshot {
 }
 
 // Document-corpus metadata. The binary lives at
-// instances/<id>/documents/<docId>/original.<ext>, the extracted plain
-// text at .../extracted.txt, and the vectors are interleaved into the
-// instance's vectors.jsonl (one record per chunk, namespace='document').
+// workspaces/<id>/samsinn/documents/<docId>/original.<ext>, the extracted
+// text at .../extracted.txt, and vectors are interleaved into the
+// Workspace shard's vectors.jsonl (one record per chunk, namespace='document').
 export type DocumentStatus = 'pending' | 'indexed' | 'failed'
 
 export interface DocumentSnapshot {
@@ -102,7 +102,7 @@ export interface DocumentSnapshot {
 }
 
 export interface SystemSnapshot {
-  readonly version: '27'
+  readonly version: '29'
   readonly timestamp: number
   readonly rooms: ReadonlyArray<RoomSnapshot>
   readonly agents: ReadonlyArray<AgentSnapshot>             // AI agents
@@ -110,16 +110,15 @@ export interface SystemSnapshot {
   readonly bookmarks?: ReadonlyArray<Bookmark>
   readonly ollamaUrls?: ReadonlyArray<string>
   readonly ollamaUrl?: string
-  // Pack scrubs scheduled while this instance was evicted. Each entry is
-  // applied on next restoreFromSnapshot — namespace is removed from every
+  // Pack scrubs scheduled while this Workspace was evicted. Each entry is
+  // applied on next restoreFromSnapshot — Pack id is removed from every
   // room.activePacks. Cleared after drain on the same restore.
   readonly pendingScrubs?: ReadonlyArray<PendingScrub>
-  // Workspace-level customisations. Both are omitted when equal
-  // to the default — restoreFromSnapshot leaves the in-memory default in
-  // place if absent. Persisted as v21 (was set/get-able but unsaved before).
+  // Workspace-level customisations. Both are omitted when equal to the
+  // default; restoreFromSnapshot leaves the in-memory default in place.
   readonly workspacePrompt?: string
   readonly responseFormat?: string
-  // RAG state (v22). Both absent on instances that have never ingested.
+  // RAG state. Both are absent on Workspaces that have never ingested.
   readonly embedderBinding?: EmbedderBindingSnapshot
   readonly documents?: ReadonlyArray<DocumentSnapshot>
 }
@@ -202,9 +201,8 @@ export const serializeSystem = (system: SerializableSystem): SystemSnapshot => {
 
   const workspacePrompt = system.settings.getPrompt()
   const responseFormat = system.settings.getResponseFormat()
-
   return {
-    version: '27',
+    version: '29',
     timestamp: Date.now(),
     rooms,
     agents,
@@ -221,7 +219,7 @@ export const serializeSystem = (system: SerializableSystem): SystemSnapshot => {
     ...(responseFormat !== DEFAULT_RESPONSE_FORMAT ? { responseFormat } : {}),
     // pendingScrubs is NOT serialised from a live system — it's only ever
     // injected externally by appendPendingScrub (uninstall_pack against an
-    // evicted instance), and it's drained at restoreFromSnapshot. By the
+    // evicted Workspace), and it's drained at restoreFromSnapshot. By the
     // time a live system is being serialised, every scrub has already been
     // applied to room.activePacks.
   }
@@ -229,27 +227,206 @@ export const serializeSystem = (system: SerializableSystem): SystemSnapshot => {
 
 // --- Validation ---
 
-const isValidSnapshot = (raw: Record<string, unknown>): boolean =>
-  raw.version === String(SNAPSHOT_VERSION)
+const stringArraySchema = z.array(z.string())
 
-// No migration ladder — clean break per repo policy. Older snapshots are
-// rejected by isValidSnapshot and the server starts fresh.
+const triggerSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  prompt: z.string(),
+  mode: z.enum(['execute', 'post', 'start-script']),
+  intervalSec: z.number().finite(),
+  enabled: z.boolean(),
+  roomId: z.string(),
+  lastFiredAt: z.number().finite().optional(),
+  targetName: z.string().optional(),
+}).strict()
+
+const roomProfileSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  roomPrompt: z.string().optional(),
+  createdBy: z.string(),
+  createdAt: z.number().finite(),
+}).strict()
+
+const messageCauseSchema = z.object({
+  kind: z.enum(['script', 'trigger', 'biometric', 'external-mirror']),
+  name: z.string(),
+  step: z.number().int().optional(),
+}).strict()
+
+const messageAttachmentSchema = z.object({
+  kind: z.literal('image'),
+  dataUrl: z.string(),
+  mimeType: z.literal('image/png'),
+  width: z.number().finite(),
+  height: z.number().finite(),
+  source: z.enum(['leitbild', 'user-upload']).optional(),
+  capturedAt: z.number().finite(),
+}).strict()
+
+const toolTraceEntrySchema = z.object({
+  tool: z.string(),
+  arguments: z.record(z.string(), z.unknown()),
+  success: z.boolean(),
+  resultPreview: z.string(),
+}).strict()
+
+const messageSchema = z.object({
+  id: z.string(),
+  senderId: z.string(),
+  senderName: z.string().optional(),
+  content: z.string(),
+  timestamp: z.number().finite(),
+  type: z.enum(['chat', 'join', 'leave', 'system', 'room_summary', 'pass', 'mute', 'error']),
+  roomId: z.string(),
+  correlationId: z.string().optional(),
+  inReplyTo: stringArraySchema.optional(),
+  cause: messageCauseSchema.optional(),
+  generationMs: z.number().finite().optional(),
+  promptTokens: z.number().finite().optional(),
+  completionTokens: z.number().finite().optional(),
+  cacheCreation: z.number().finite().optional(),
+  cacheRead: z.number().finite().optional(),
+  contextMax: z.number().finite().optional(),
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  errorCode: z.enum([
+    'no_api_key', 'model_unavailable', 'rate_limited', 'network',
+    'provider_down', 'tool_loop_exceeded', 'empty_response',
+    'tools_unavailable', 'unknown',
+  ]).optional(),
+  errorProvider: z.string().optional(),
+  agentName: z.string().optional(),
+  agentKind: z.enum(['ai', 'human']).optional(),
+  agentTags: stringArraySchema.optional(),
+  toolTrace: z.array(toolTraceEntrySchema).optional(),
+  attachments: z.array(messageAttachmentSchema).optional(),
+}).strict()
+
+const summaryScheduleSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('time'), everySeconds: z.number().finite() }).strict(),
+  z.object({ kind: z.literal('messages'), everyMessages: z.number().finite() }).strict(),
+])
+
+const summaryConfigSchema = z.object({
+  model: z.string().optional(),
+  summary: z.object({
+    enabled: z.boolean(),
+    schedule: summaryScheduleSchema,
+  }).strict(),
+  compression: z.object({
+    enabled: z.boolean(),
+    schedule: summaryScheduleSchema,
+    keepFresh: z.number().finite(),
+    batchSize: z.number().finite(),
+    aggressiveness: z.enum(['low', 'med', 'high']),
+  }).strict(),
+}).strict()
+
+const roomSnapshotSchema = z.object({
+  profile: roomProfileSchema,
+  messages: z.array(messageSchema),
+  members: stringArraySchema,
+  deliveryMode: z.enum(['broadcast', 'manual']),
+  paused: z.boolean(),
+  muted: stringArraySchema,
+  compressedIds: stringArraySchema.optional(),
+  summaryConfig: summaryConfigSchema.optional(),
+  latestSummary: z.string().optional(),
+  activePacks: stringArraySchema,
+  leitbildMirror: z.object({
+    simulationRunId: z.string(),
+    format: z.enum(['summary', 'full']),
+  }).strict().optional(),
+}).strict()
+
+const agentConfigSchema = z.object({
+  name: z.string(),
+  model: z.string(),
+  persona: z.string(),
+  temperature: z.number().finite().optional(),
+  seed: z.number().finite().optional(),
+  historyLimit: z.number().finite().optional(),
+  tools: stringArraySchema.optional(),
+  maxToolIterations: z.number().finite().optional(),
+  tags: stringArraySchema.optional(),
+  thinking: z.boolean().optional(),
+  includePrompts: z.object({
+    persona: z.boolean().optional(),
+    room: z.boolean().optional(),
+    workspace: z.boolean().optional(),
+    responseFormat: z.boolean().optional(),
+    skills: z.boolean().optional(),
+    wikis: z.boolean().optional(),
+  }).strict().optional(),
+  includeContext: z.object({
+    participants: z.boolean().optional(),
+    activity: z.boolean().optional(),
+    knownAgents: z.boolean().optional(),
+  }).strict().optional(),
+  includeTools: z.boolean().optional(),
+  promptsEnabled: z.boolean().optional(),
+  contextEnabled: z.boolean().optional(),
+  triggers: z.array(triggerSchema).optional(),
+  leitbildBinding: z.object({
+    simulationRunId: z.string(),
+    role: z.enum(['observer', 'operator']),
+  }).strict().optional(),
+}).strict()
+
+const systemSnapshotSchema = z.object({
+  version: z.literal('29'),
+  timestamp: z.number().finite(),
+  rooms: z.array(roomSnapshotSchema),
+  agents: z.array(z.object({
+    id: z.string(),
+    config: agentConfigSchema,
+    roomIds: stringArraySchema,
+  }).strict()),
+  humans: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    roomIds: stringArraySchema,
+    triggers: z.array(triggerSchema).optional(),
+  }).strict()),
+  bookmarks: z.array(z.object({ id: z.string(), content: z.string() }).strict()).optional(),
+  ollamaUrls: stringArraySchema.optional(),
+  ollamaUrl: z.string().optional(),
+  pendingScrubs: z.array(z.object({
+    packId: z.string(),
+    scheduledAt: z.string(),
+  }).strict()).optional(),
+  workspacePrompt: z.string().optional(),
+  responseFormat: z.string().optional(),
+  embedderBinding: z.object({
+    provider: z.enum(['openai', 'gemini']),
+    model: z.string(),
+    dim: z.number().int(),
+    boundAt: z.number().finite(),
+  }).strict().optional(),
+  documents: z.array(z.object({
+    docId: z.string(),
+    filename: z.string(),
+    mimetype: z.string(),
+    sizeBytes: z.number().finite(),
+    uploadTs: z.number().finite(),
+    status: z.enum(['pending', 'indexed', 'failed']),
+    errorMessage: z.string().optional(),
+    pageCount: z.number().finite().optional(),
+    chunkCount: z.number().finite().optional(),
+  }).strict()).optional(),
+}).strict()
+
+const parseSnapshot = (raw: unknown) => systemSnapshotSchema.safeParse(raw)
 
 // --- Save / Load ---
 
 // A snapshot is "skippable" iff persisting it adds no value the user would
 // notice — i.e. truly empty (no rooms, no agents, no bookmarks). Used by
 // createAutoSaver to skip persistence when seeding is disabled
-// (SAMSINN_SEED_EXAMPLE=0) and nothing was created.
+// (SAMSINN_SEED_WORKSPACE=0) and nothing was created.
 //
-// Previously this also recognized "seed-only" snapshots (1 Cafe + 1 AI + 1
-// Human + no chat) as skippable to avoid drive-by visitors leaving dirs on
-// disk. That coupled the check to seed-example.ts and only compared agent
-// NAMES — persona/model/triggers/tools edits without a chat message were
-// silently dropped (it half-undid F1's "agent edits trigger save"). Dropped
-// in favour of letting the janitor handle drive-by cleanup (instance-
-// cleanup.ts: demote idle → trash after 48h, purge after 7d). The auth-
-// gated prod deploy bounds drive-by traffic; one snapshot file is ~5–20KB.
 const isEmptySnapshot = (snap: SystemSnapshot): boolean => {
   if (snap.bookmarks && snap.bookmarks.length > 0) return false
   return snap.rooms.length === 0 && snap.agents.length === 0
@@ -257,7 +434,7 @@ const isEmptySnapshot = (snap: SystemSnapshot): boolean => {
 
 // A4: serialise all snapshot file mutations through a single chained
 // promise. Both saveSnapshot (auto-saver) and appendPendingScrub (cross-
-// instance pack uninstall) tmp+rename to the same path; without
+// Workspace Pack uninstall) tmp+rename to the same path; without
 // serialisation, B can read → A writes new content → B writes its
 // (stale-base) → A's content is lost.
 //
@@ -276,14 +453,13 @@ export const saveSnapshot = (snapshot: SystemSnapshot, path: string): Promise<vo
   })
 
 // Append a pending pack scrub to a snapshot file in place. Used by the
-// cross-Workspace scrub path for instances that are currently evicted —
+// cross-Workspace scrub path for Workspaces that are currently evicted —
 // since they're not live in memory, we mutate their on-disk snapshot
 // directly so the scrub applies on next restoreFromSnapshot.
 //
 // Atomic write via tmp+rename. Skips silently if the snapshot is missing
-// or rejected by isValidSnapshot — a v19 leftover is harmless because it
-// will be ignored on next load anyway. Best-effort: callers log on failure
-// but don't surface to the uninstall response.
+// or rejected by the canonical schema. Best-effort: callers log on failure
+// but don't surface the error to the uninstall response.
 export const appendPendingScrub = (
   path: string,
   scrub: PendingScrub,
@@ -300,17 +476,18 @@ export const appendPendingScrub = (
     } catch (err) {
       return { applied: false, reason: `parse failed: ${err instanceof Error ? err.message : String(err)}` }
     }
-    if (!isValidSnapshot(raw)) {
-      return { applied: false, reason: `incompatible snapshot version (got v${raw.version})` }
+    const parsed = parseSnapshot(raw)
+    if (!parsed.success) {
+      return { applied: false, reason: 'snapshot does not match the canonical schema' }
     }
-    // Dedupe by namespace — if a prior scrub for the same pack is already
+    // Dedupe by Pack id — if a prior scrub for the same Pack is already
     // queued we don't pile on duplicates.
     const existing = (raw.pendingScrubs as PendingScrub[] | undefined) ?? []
-    if (existing.some(p => p.namespace === scrub.namespace)) {
+    if (existing.some(p => p.packId === scrub.packId)) {
       return { applied: false, reason: 'already queued' }
     }
     const next: SystemSnapshot = {
-      ...(raw as unknown as SystemSnapshot),
+      ...parsed.data,
       pendingScrubs: [...existing, scrub],
     }
     const tmpPath = `${path}.tmp`
@@ -327,16 +504,13 @@ export const loadSnapshot = async (path: string): Promise<SystemSnapshot | null>
     const text = await file.text()
     const raw = JSON.parse(text) as Record<string, unknown>
 
-    if (!isValidSnapshot(raw)) {
-      // Louder than warn — this means user state from a previous version is
-      // about to be invisible. Operator must decide whether to delete the
-      // file (clean break) or downgrade. Bumping to error so it surfaces
-      // in log scrapes and admin tooling.
-      console.error(`Snapshot at "${path}" is incompatible (got v${raw.version}, expected v${SNAPSHOT_VERSION}). Ignoring — delete the snapshot file to reset.`)
+    const parsed = parseSnapshot(raw)
+    if (!parsed.success) {
+      console.error(`Snapshot at "${path}" does not match the canonical schema. Ignoring it.`)
       return null
     }
 
-    return raw as unknown as SystemSnapshot
+    return parsed.data as SystemSnapshot
   } catch (err) {
     console.error('Failed to load snapshot:', err)
     return null
@@ -376,12 +550,12 @@ export const restoreFromSnapshot = async (
   snapshot: SystemSnapshot,
 ): Promise<void> => {
   // Drain pendingScrubs before applying activePacks. Each entry came from
-  // an uninstall_pack that fired while this instance was evicted; we apply
-  // by filtering the namespace out of every room.activePacks at restore.
+  // an uninstall_pack that fired while this Workspace was evicted; we apply
+  // by filtering the Pack id out of every room.activePacks at restore.
   // No on-disk write here — the next auto-save naturally produces a
   // snapshot without pendingScrubs (serializeSystem omits the field).
   const scrubbed = new Set<string>(
-    (snapshot.pendingScrubs ?? []).map(p => p.namespace),
+    (snapshot.pendingScrubs ?? []).map(p => p.packId),
   )
   if (scrubbed.size > 0) {
     console.log(`[snapshot] applying ${scrubbed.size} pending pack scrub(s) on restore: ${[...scrubbed].join(', ')}`)
@@ -428,7 +602,7 @@ export const restoreFromSnapshot = async (
     for (const humanSnap of snapshot.humans ?? []) {
       await system.spawnHumanAgent(
         { name: humanSnap.name },
-        () => { /* no-op default; UI doesn't bind transport in v15 */ },
+        () => { /* no-op default; the UI uses the Workspace broadcast */ },
         { overrideId: humanSnap.id },
       )
       const agent = system.team?.getAgent(humanSnap.id)
@@ -500,7 +674,7 @@ export const createAutoSaver = (
     firstDeferredAt = null
     try {
       const snapshot = serializeSystem(system)
-      // Skip persistence for instances with no real user activity. Prevents
+      // Skip persistence for Workspaces with no real user activity. Prevents
       // cookieless drive-by visits and the seed-only state from leaving an
       // empty dir on disk. First user/AI message flips this and the dir is
       // created via saveSnapshot's mkdir(recursive).
