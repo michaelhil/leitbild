@@ -25,6 +25,7 @@ const parseEnvironmentJson = <T>(key: string, schema: z.ZodType<T>, fallback: T)
 const registrations = parseEnvironmentJson('WORKSPACE_MODULES', z.array(moduleRegistrationSchema), [])
 const experiences = parseEnvironmentJson('WORKSPACE_EXPERIENCES', z.array(experienceDescriptorSchema), [])
 const initialExperienceIds = parseEnvironmentJson('INITIAL_EXPERIENCE_IDS', z.array(experienceIdSchema), [])
+const publicOrigin = z.string().url().parse(process.env.WORKSPACE_HOST_URL)
 const installedExperiences = new Set(experiences.map(experience => experience.id))
 for (const experienceId of initialExperienceIds) {
   if (!installedExperiences.has(experienceId)) {
@@ -44,6 +45,7 @@ const server = createWorkspaceHostServer({
   initialExperienceIds,
   port: Number(process.env.PORT) || 3100,
   bindHost: process.env.BIND_HOST ?? '127.0.0.1',
+  publicOrigin,
 })
 
 const shutdown = (): void => {

@@ -71,8 +71,11 @@ export const createWorkspaceHostServer = (config: {
   readonly port?: number
   readonly bindHost?: string
   readonly uiDistPath?: string
+  readonly publicOrigin?: string
 }) => {
   const uiDistPath = resolve(config.uiDistPath ?? `${import.meta.dir}/ui/dist`)
+  const publicOrigin = config.publicOrigin === undefined ? null : new URL(config.publicOrigin).origin
+  const publicUrl = (path: string, requestUrl: URL): string => new URL(path, publicOrigin ?? requestUrl.origin).href
   return Bun.serve({
     port: config.port ?? 3100,
     hostname: config.bindHost ?? '127.0.0.1',
@@ -99,14 +102,14 @@ export const createWorkspaceHostServer = (config: {
                 .find(candidate => candidate.id === initialExperienceId)
               if (experience?.status === 'ready') {
                 return Response.redirect(
-                  new URL(`/workspaces/${workspace.id}/experiences/${initialExperienceId}`, url).href,
+                  publicUrl(`/workspaces/${workspace.id}/experiences/${initialExperienceId}`, url),
                   303,
                 )
               }
             }
-            return Response.redirect(new URL(`/workspaces/${workspace.id}`, url).href, 303)
+            return Response.redirect(publicUrl(`/workspaces/${workspace.id}`, url), 303)
           }
-          return Response.redirect(new URL('/workspaces', url).href, 303)
+          return Response.redirect(publicUrl('/workspaces', url), 303)
         }
 
         const experienceEntryMatch = url.pathname.match(/^\/workspaces\/([^/]+)\/experiences\/([^/]+)$/)

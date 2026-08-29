@@ -230,6 +230,7 @@ if test ${install ? '1' : '0'} -eq 1; then
   install -d -o root -g root -m 0755 /etc/workspace-host
   ln -sfn /opt/leitbild/runtime ${shellQuote(`${DEPLOY_ROOT}/runtime`)}
   cat > /etc/workspace-host/env <<'EOF'
+WORKSPACE_HOST_URL=https://samsinn.app
 WORKSPACE_MODULES=[{"moduleId":"microworld","baseUrl":"https://leitbild.samsinn.app","manifestPath":"/.well-known/workspace-module"},{"moduleId":"collaboration","baseUrl":"https://samsinn.app","manifestPath":"/.well-known/workspace-module/collaboration"},{"moduleId":"agents","baseUrl":"https://samsinn.app","manifestPath":"/.well-known/workspace-module/agents"}]
 WORKSPACE_EXPERIENCES=[{"id":"leitbild","title":"Leitbild","requiredModules":["microworld"],"entryModuleId":"microworld"},{"id":"samsinn","title":"Samsinn","requiredModules":["collaboration","agents"],"entryModuleId":"collaboration"}]
 INITIAL_EXPERIENCE_IDS=["leitbild","samsinn"]
