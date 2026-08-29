@@ -5,8 +5,10 @@ operator Mac. The Restic password lives in macOS Keychain under
 `no.openai.samsinn-restic`; it is not stored beside the repository.
 
 - `critical` runs daily at 03:15. It briefly stops Samsinn and Leitbild while
-  streaming their mutable state, secrets, host configuration, unit files, and
-  recovery metadata. An exit trap restarts and health-checks both services.
+  creating a server-local snapshot of their mutable state, secrets, host
+  configuration, unit files, and recovery metadata. It restarts and
+  health-checks both services before streaming that snapshot off-host. An exit
+  trap also recovers the services if snapshot creation fails.
 - `static` runs Sundays at 04:15 without stopping the apps. It captures the
   map, reference-data, and OSRM roots.
 - A restore drill runs on the first of each month. It checks the Restic

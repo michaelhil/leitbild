@@ -30,24 +30,32 @@ backup_wait_for_health() {
   return 1
 }
 
+backup_restart_services() {
+  [[ "$backup_services_stopped" -eq 1 ]] || return 0
+  local backup_restart_failed=0
+  if [[ "$backup_leitbild_was_active" -eq 1 ]]; then
+    systemctl start leitbild.service || backup_restart_failed=1
+  fi
+  if [[ "$backup_samsinn_was_active" -eq 1 ]]; then
+    systemctl start samsinn.service || backup_restart_failed=1
+  fi
+  if [[ "$backup_leitbild_was_active" -eq 1 ]] && ! backup_wait_for_health http://127.0.0.1:4177/health; then
+    echo 'Leitbild did not recover after backup' >&2
+    backup_restart_failed=1
+  fi
+  if [[ "$backup_samsinn_was_active" -eq 1 ]] && ! backup_wait_for_health http://127.0.0.1:3000/health; then
+    echo 'Samsinn did not recover after backup' >&2
+    backup_restart_failed=1
+  fi
+  [[ "$backup_restart_failed" -eq 0 ]] || return 1
+  backup_services_stopped=0
+}
+
 backup_cleanup() {
   local backup_exit_code=$?
   trap - EXIT
   if [[ "$backup_services_stopped" -eq 1 ]]; then
-    if [[ "$backup_leitbild_was_active" -eq 1 ]]; then
-      systemctl start leitbild.service || backup_exit_code=1
-    fi
-    if [[ "$backup_samsinn_was_active" -eq 1 ]]; then
-      systemctl start samsinn.service || backup_exit_code=1
-    fi
-    if [[ "$backup_leitbild_was_active" -eq 1 ]] && ! backup_wait_for_health http://127.0.0.1:4177/health; then
-      echo 'Leitbild did not recover after backup' >&2
-      backup_exit_code=1
-    fi
-    if [[ "$backup_samsinn_was_active" -eq 1 ]] && ! backup_wait_for_health http://127.0.0.1:3000/health; then
-      echo 'Samsinn did not recover after backup' >&2
-      backup_exit_code=1
-    fi
+    backup_restart_services || backup_exit_code=1
   fi
   rm -rf -- "$backup_temp_root"
   exit "$backup_exit_code"
@@ -72,7 +80,8 @@ if [[ "$backup_scope" == critical ]]; then
   backup_services_stopped=1
   systemctl stop samsinn.service leitbild.service
 
-  tar --acls --xattrs --numeric-owner -cf - -C / \
+  backup_archive="$backup_temp_root/critical.tar"
+  tar --acls --xattrs --numeric-owner -cf "$backup_archive" -C / \
     var/lib/samsinn \
     opt/leitbild/data \
     etc/caddy/Caddyfile \
@@ -85,6 +94,8 @@ if [[ "$backup_scope" == critical ]]; then
     etc/ssh/sshd_config.d \
     etc/ufw \
     -C "$backup_temp_root" backup-metadata
+  backup_restart_services
+  cat "$backup_archive"
 else
   tar --acls --xattrs --numeric-owner -cf - -C / \
     opt/leitbild/maps \
