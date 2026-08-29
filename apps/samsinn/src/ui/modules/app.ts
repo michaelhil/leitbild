@@ -385,7 +385,7 @@ $selectedRoomId.listen((roomId, prevRoomId) => {
 
     // Leitbild dashboard iframe — shows floating toggle when this room has a
     // leitbildMirror binding; hides when it doesn't. Fetches the binding's
-    // baseUrl + instanceId from /api/rooms/:name/leitbild-mirror to build the
+    // baseUrl + workspaceId from /api/rooms/:name/leitbild-mirror to build the
     // SPA URL. See docs/leitbild-walkthrough.md.
     void updateLeitbildPanelForRoom(room.name, roomId)
     // Composer attachments chip strip re-targets to the new active room.
@@ -874,8 +874,8 @@ const connect = () => {
     if (handler) handler(raw as Parameters<typeof handler>[0])
   }, (connected, terminalReason) => {
     $connected.set(connected)
-    if (terminalReason === 'instance-deleted') {
-      showToast(document.body, 'This instance was deleted. Reload the page to create a fresh instance.', {
+    if (terminalReason === 'workspace-unavailable') {
+      showToast(document.body, 'This Workspace is unavailable. Reload the page to create a fresh Workspace.', {
         type: 'error',
         position: 'fixed',
         durationMs: 15000,

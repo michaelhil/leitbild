@@ -2,7 +2,7 @@
 // Leitbild agent tools (V2.A — read-only).
 //
 // Four tools become callable by an AI agent that has BOTH:
-//   - a leitbildBinding in its AIAgentConfig (sets baseUrl + instanceId)
+//   - a leitbildBinding in its AIAgentConfig (sets baseUrl + workspaceId)
 //   - the tool name in its tools[] allowlist
 //
 // All tools resolve the binding at execution time via the caller's agent
@@ -48,10 +48,10 @@ interface CachedSnapshot {
 // scenarios show event-volume issues where snapshot freshness matters.
 const SNAPSHOT_TTL_MS = 5_000
 
-const snapshotCache = new Map<string, CachedSnapshot>() // key: `${agentId}:${baseUrl}:${instanceId}`
+const snapshotCache = new Map<string, CachedSnapshot>() // key: `${agentId}:${baseUrl}:${workspaceId}`
 
 const cacheKey = (agentId: string, binding: LeitbildAgentBinding): string =>
-  `${agentId}:${binding.baseUrl}:${binding.instanceId}`
+  `${agentId}:${binding.baseUrl}:${binding.workspaceId}`
 
 const getCachedSnapshot = async (
   agentId: string,
@@ -63,7 +63,7 @@ const getCachedSnapshot = async (
   const cached = snapshotCache.get(key)
   if (cached && now - cached.fetchedAt < SNAPSHOT_TTL_MS) return cached.snapshot
   const client = createLeitbildClient(binding.baseUrl, scope ? { scope } : {})
-  const snapshot = await client.getSnapshot(binding.instanceId)
+  const snapshot = await client.getSnapshot(binding.workspaceId)
   snapshotCache.set(key, { snapshot, fetchedAt: now })
   return snapshot
 }
@@ -90,7 +90,7 @@ const requireBinding = (
   const binding = deps.getBinding(ctx.callerId)
   if (!binding) {
     return {
-      error: 'No leitbildBinding configured for this agent. Add { baseUrl, instanceId, role } to the agent config to use lb_* tools.',
+      error: 'No leitbildBinding configured for this agent. Add { baseUrl, workspaceId, role } to the agent config to use lb_* tools.',
     }
   }
   return binding
@@ -182,7 +182,7 @@ const createLbQuery = (deps: LeitbildToolDeps): Tool => ({
     if (!packId || !kind) return fail('lb_query requires packId and kind')
     try {
       const client = createLeitbildClient(binding.baseUrl, { scope: deps.getScope?.(ctx.callerId) })
-      const body = await client.callPackQuery(binding.instanceId, packId, kind, payload)
+      const body = await client.callPackQuery(binding.workspaceId, packId, kind, payload)
       return ok(body)
     } catch (err) {
       return fail(`lb_query failed: ${(err as Error).message}`)
@@ -247,7 +247,7 @@ const createLbDispatchContext = (deps: LeitbildToolDeps): Tool => ({
           if (!snap.scenarioId) return undefined
           return client.getScenario(snap.scenarioId)
         })(),
-        client.getCapabilities(binding.instanceId).catch((err: Error) => {
+        client.getCapabilities(binding.workspaceId).catch((err: Error) => {
           // Capabilities is the manifest-rel-gated endpoint — surface the
           // failure as a typed fail rather than throwing through the
           // Promise.all (which would lose snapshot + scenario context).
@@ -273,7 +273,7 @@ const createLbDispatchContext = (deps: LeitbildToolDeps): Tool => ({
       const queryResults = await Promise.all(
         kindsToCall.map(async ({ packId, kind }) => {
           try {
-            const body = await client.callPackQuery(binding.instanceId, packId, kind, {}) as {
+            const body = await client.callPackQuery(binding.workspaceId, packId, kind, {}) as {
               readonly response?: { readonly ok?: boolean; readonly result?: unknown; readonly error?: { readonly message?: string } }
             }
             if (body.response?.ok === false) return { packId, kind, ok: false as const, reason: body.response.error?.message ?? 'pack rejected' }

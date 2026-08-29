@@ -1,9 +1,9 @@
-// In-memory capture registry — one per House instance. Holds the lifecycle
+// In-memory capture registry — one per RoomDirectory instance. Holds the lifecycle
 // state and latest snapshot of every active biometric capture so the
 // `biometrics_read` tool can answer "what's the current user state" without
 // reaching back to the browser.
 //
-// Ephemeral by design: never persisted to snapshot, cleared on house
+// Ephemeral by design: never persisted to snapshot, cleared on Workspace
 // teardown / instance evict, no on-disk trace. The widget pushes snapshots
 // over WS roughly every 2 s while a capture is active; the registry is the
 // server-side cache the agent reads from.

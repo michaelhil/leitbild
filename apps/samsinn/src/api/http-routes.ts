@@ -4,15 +4,16 @@
 // Pure request→response functions. No WebSocket or server lifecycle concerns.
 // All routes delegate to SamsinnWorkspaceRuntime methods — no business logic here.
 //
-// Route modules live in routes/: rooms, agents, messages, house.
+// Route modules live in routes/ by application concern.
 // The dispatcher iterates the route table, matches method+pattern, calls handler.
 // ============================================================================
 
 import type { SamsinnWorkspaceRuntime } from '../main.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
 import { authEnabled, isValidSession, sessionFromRequest } from './auth.ts'
-import { getInstanceId } from './instance-cookie.ts'
-import { houseRoutes } from './routes/house.ts'
+import { getWorkspaceId } from './workspace-cookie.ts'
+import { runtimeRoutes } from './routes/runtime.ts'
+import { workspaceSettingsRoutes } from './routes/workspace-settings.ts'
 import { skillRoutes } from './routes/skills.ts'
 import { roomRoutes } from './routes/rooms.ts'
 import { agentRoutes } from './routes/agents.ts'
@@ -26,7 +27,7 @@ import { triggerRoutes } from './routes/triggers.ts'
 import { packsRoutes } from './routes/packs.ts'
 import { authResponse, systemInfoResponse, systemRoutes } from './routes/system.ts'
 import { json } from './routes/helpers.ts'
-import { instanceRoutes } from './routes/instances.ts'
+import { workspaceRoutes } from './routes/workspaces.ts'
 import { bugRoutes } from './routes/bugs.ts'
 import { bookmarkRoutes } from './routes/bookmarks.ts'
 import { toolRoutes } from './routes/tools.ts'
@@ -37,7 +38,7 @@ import { documentRoutes } from './routes/documents.ts'
 import { diagnosticRoutes } from './routes/diagnostics.ts'
 import { leitbildMirrorRoutes } from './routes/leitbild-mirror.ts'
 import type { RouteContext } from './routes/types.ts'
-import type { AccessContext } from '@samsinn-leitbild/platform-contracts'
+import type { AccessContext, WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
 // Route helpers live in ./routes/helpers.ts to keep http-routes.ts cycle-free.
 
@@ -45,10 +46,11 @@ import type { AccessContext } from '@samsinn-leitbild/platform-contracts'
 // Order matters: more-specific patterns (e.g. /rooms/:name/todos/:id) before general ones.
 
 const allRoutes = [
-  // Tool routes come before houseRoutes so /api/tools/:name + /api/tools/rescan
+  // Tool routes come before runtimeRoutes so /api/tools/:name + /api/tools/rescan
   // are matched before any catch-all patterns elsewhere.
   ...toolRoutes,
-  ...houseRoutes,
+  ...runtimeRoutes,
+  ...workspaceSettingsRoutes,
   ...skillRoutes,
   ...ollamaRoutes,
   ...providersListRoutes,
@@ -58,15 +60,15 @@ const allRoutes = [
   ...triggerRoutes,
   ...packsRoutes,
   ...systemRoutes,
-  ...instanceRoutes,
+  ...workspaceRoutes,
   ...bugRoutes,
   ...loggingRoutes,
   ...bookmarkRoutes,
   // Scripts before rooms (avoids /rooms/:name/script being shadowed)
   ...scriptRoutes,
-  // Geodata routes — process-wide, no instance binding.
+  // Geodata routes — process-wide, no Workspace binding.
   ...geodataRoutes,
-  // RAG documents — per-instance corpus.
+  // RAG documents — per-Workspace corpus.
   ...documentRoutes,
   // Leitbild mirror — must come BEFORE roomRoutes so
   // /rooms/:name/leitbild-mirror matches before the generic /rooms/:name.
@@ -85,37 +87,37 @@ const allRoutes = [
 // === Dispatcher ===
 
 // Per-request dependencies: everything routes need that isn't `req` /
-// `pathname` / `system` / `instanceId`. Bundled into one shape so the
+// `pathname` / `system` / `workspaceId`. Bundled into one shape so the
 // server.ts → handleAPI seam stays narrow as new cross-cutting capabilities
-// land (resetInstance, instances, diagnostics, …).
+// land (resetWorkspace, Workspaces, diagnostics, …).
 export interface RouteDeps {
   readonly broadcast: (msg: WSOutbound) => void
   readonly subscribeAgentState: RouteContext['subscribeAgentState']
   readonly unsubscribeAgentState?: (agentId: string) => void
   readonly remoteAddress?: string
-  readonly resetInstance?: RouteContext['resetInstance']
-  readonly evictInstance?: RouteContext['evictInstance']
-  readonly broadcastToInstance?: RouteContext['broadcastToInstance']
-  readonly instances?: RouteContext['instances']
+  readonly resetWorkspace?: RouteContext['resetWorkspace']
+  readonly evictWorkspace?: RouteContext['evictWorkspace']
+  readonly broadcastToWorkspace?: RouteContext['broadcastToWorkspace']
+  readonly workspaces?: RouteContext['workspaces']
   readonly diagnostics?: RouteContext['diagnostics']
   readonly leitbildMirror?: RouteContext['leitbildMirror']
 }
 
 // Routes that are process-global and intentionally usable before an
-// instance cookie exists. Dispatch them before registry.getOrLoad: passing
-// these through the per-instance dispatcher used to materialize a seeded
-// instance for every diagnostics/auth/info probe.
+// Workspace cookie exists. Dispatch them before registry.getOrLoad: passing
+// these through the per-Workspace dispatcher used to materialize a seeded
+// Workspace for every diagnostics/auth/info probe.
 export const handleUnscopedAPI = async (
   req: Request,
   pathname: string,
   deps: Pick<RouteDeps, 'remoteAddress' | 'diagnostics'>,
 ): Promise<Response | null> => {
-  if (pathname === '/health' && req.method === 'GET' && getInstanceId(req) === null) {
-    const diagnostics = deps.diagnostics?.snapshot() ?? { instances: [], wsSessions: 0 }
+  if (pathname === '/health' && req.method === 'GET' && getWorkspaceId(req) === null) {
+    const diagnostics = deps.diagnostics?.snapshot() ?? { workspaces: [], wsSessions: 0 }
     return json({
       status: 'ok',
       scope: 'process',
-      instances: diagnostics.instances.length,
+      workspaces: diagnostics.workspaces.length,
       wsSessions: diagnostics.wsSessions,
     })
   }
@@ -139,28 +141,28 @@ export const handleAPI = async (
   req: Request,
   pathname: string,
   system: SamsinnWorkspaceRuntime,
-  instanceId: string,
+  workspaceId: WorkspaceId,
   accessContext: AccessContext,
   deps: RouteDeps,
 ): Promise<Response | null> => {
-  const ctx: RouteContext = { system, instanceId, accessContext, ...deps }
+  const ctx: RouteContext = { system, workspaceId, accessContext, ...deps }
 
   // F5: cookieless /api/* → 401. Bots that probe the API without first
   // going through /ws (which is where real UI flow mints a cookie) can't
-  // create instances. Exempted: /api/auth (UI calls this BEFORE having a
+  // create Workspaces. Exempted: /api/auth (UI calls this BEFORE having a
   // cookie to render the token prompt) and /api/system/info (version
   // banner on the same screen). All other /api/* require an existing
   // cookie. Real UI never sees this — `GET /` minted the cookie before
   // any /api call.
   //
-  // The check uses getInstanceId() (raw cookie read) instead of trusting
-  // `instanceId`, because resolveOrMintInstance in server.ts may have
+  // The check uses getWorkspaceId() (raw cookie read) instead of trusting
+  // `workspaceId`, because resolveOrMintWorkspace in server.ts may have
   // minted a fresh id for a cookieless caller; we want the unminted view.
   if (
     pathname.startsWith('/api/') &&
     pathname !== '/api/auth' &&
     pathname !== '/api/system/info' &&
-    getInstanceId(req) === null
+    getWorkspaceId(req) === null
   ) {
     return new Response('No session', { status: 401 })
   }

@@ -31,7 +31,6 @@ describe('workspace contracts', () => {
     expect(() => workspaceDescriptorSchema.parse({
       id: workspaceId,
       displayName: 'Exercise Alpha',
-      status: 'active',
       modules: [binding, binding],
       createdAt: now,
       updatedAt: now,

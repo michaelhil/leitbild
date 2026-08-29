@@ -14,7 +14,7 @@
 //
 // ID Architecture: The agent generates its own UUID. The LLM sees names only.
 // Names are resolved to UUIDs externally by resolveTarget in spawn.ts.
-// The agent does NOT hold references to house, team, or routeMessage.
+// The agent does NOT hold references to the Room Directory, Team, or routeMessage.
 // Side effects are handled via the onDecision callback.
 // ============================================================================
 
@@ -69,7 +69,7 @@ export interface AIAgentOptions {
   // the trigger room. Returns null when the room is unknown (agent falls
   // back to the static toolDefinitions). See spawn.ts AgentToolSupport.
   readonly resolveToolDefinitions?: (roomId: string) => ReadonlyArray<ToolDefinition> | null
-  readonly getHousePrompt?: () => string
+  readonly getWorkspacePrompt?: () => string
   readonly getResponseFormat?: () => string
   readonly getCompressedIds?: (roomId: string) => ReadonlySet<string>
   // Current room membership, resolved to profiles. Used by the Participants
@@ -141,7 +141,7 @@ export const createAIAgent = (
   const includePromptsState: Required<IncludePrompts> = {
     persona: config.includePrompts?.persona ?? true,
     room: config.includePrompts?.room ?? true,
-    house: config.includePrompts?.house ?? true,
+    workspace: config.includePrompts?.workspace ?? true,
     responseFormat: config.includePrompts?.responseFormat ?? true,
     skills: config.includePrompts?.skills ?? true,
     wikis: config.includePrompts?.wikis ?? true,
@@ -181,7 +181,7 @@ export const createAIAgent = (
     const { provider, model } = resolveModelForContext(currentModel)
     return getContextWindowSync(provider, model).contextMax
   }
-  const getHousePrompt = options?.getHousePrompt
+  const getWorkspacePrompt = options?.getWorkspacePrompt
   const getResponseFormat = options?.getResponseFormat
   const getCompressedIds = options?.getCompressedIds
   const getRoomMembers = options?.getRoomMembers
@@ -227,7 +227,7 @@ export const createAIAgent = (
   const contextDeps = (): BuildContextDeps => ({
     agentId,
     persona: currentPersona,
-    housePrompt: getHousePrompt?.(),
+    workspacePrompt: getWorkspacePrompt?.(),
     responseFormat: getResponseFormat?.(),
     history: agentHistory,
     historyLimit,

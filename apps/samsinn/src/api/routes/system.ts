@@ -148,8 +148,8 @@ export const systemRoutes: RouteEntry[] = [
     }),
   },
   {
-    // Per-instance broadcast wiring + health snapshot. Operator visibility
-    // for the silent-skip class of bug fixed in 5d73a8e: a live instance
+    // Per-Workspace broadcast wiring + health snapshot. Operator visibility
+    // for the silent-skip class of bug fixed in 5d73a8e: a live Workspace
     // with zero broadcasts under traffic means the wiring chain is broken.
     // Read-only; safe to poll.
     method: 'GET',
@@ -168,11 +168,11 @@ export const systemRoutes: RouteEntry[] = [
     //   - typecheck / boot status (implicit: if you got this response, boot ok)
     //   - per-provider monitor state (healthy / backoff / unhealthy / oneoff)
     //   - process-wide anomaly counters from limit-metrics
-    //   - per-instance broadcast wiring + last-broadcast age
-    //   - per-instance leitbild mirror state (connected? lastSeq?)
+    //   - per-Workspace broadcast wiring + last-broadcast age
+    //   - per-Workspace leitbild mirror state (connected? lastSeq?)
     //   - WS session count
     //
-    // Counters are PROCESS-WIDE (aggregate across cookie-bound instances),
+    // Counters are PROCESS-WIDE (aggregate across cookie-bound Workspaces),
     // not per-tenant. That's the right shape for operator triage; per-tenant
     // breakdowns belong in /api/system/diagnostics.
     //
@@ -192,9 +192,9 @@ export const systemRoutes: RouteEntry[] = [
           modelCount: st.modelCount,
         }
       }
-      const diag = ctx.diagnostics?.snapshot() ?? { instances: [], wsSessions: 0 }
+      const diag = ctx.diagnostics?.snapshot() ?? { workspaces: [], wsSessions: 0 }
       const now = Date.now()
-      const instances = diag.instances.map(i => ({
+      const workspaces = diag.workspaces.map(i => ({
         id: i.id,
         wired: i.wired,
         agentCount: i.agentCount,
@@ -219,7 +219,7 @@ export const systemRoutes: RouteEntry[] = [
         },
         providers: monitorStates,
         wsSessions: diag.wsSessions,
-        instances,
+        workspaces,
       })
     },
   },
@@ -237,51 +237,51 @@ export const systemRoutes: RouteEntry[] = [
     },
   },
   {
-    // Per-instance reset — broadcasts a 10-second countdown to that
-    // instance's clients only. Cancellable via /reset/cancel during the
-    // window. Single-flight per instance.
+    // Per-Workspace reset — broadcasts a 10-second countdown to that
+    // Workspace's clients only. Cancellable via /reset/cancel during the
+    // window. Single-flight per Workspace.
     method: 'POST',
     pattern: /^\/api\/system\/reset$/,
     handler: async (req, _match, ctx) => {
-      if (!ctx.resetInstance) return errorResponse('reset not supported in this mode', 501)
-      const { getInstanceId } = await import('../instance-cookie.ts')
-      const id = getInstanceId(req)
-      if (!id) return errorResponse('no instance cookie', 400)
+      if (!ctx.resetWorkspace) return errorResponse('reset not supported in this mode', 501)
+      const { getWorkspaceId } = await import('../workspace-cookie.ts')
+      const id = getWorkspaceId(req)
+      if (!id) return errorResponse('no Workspace cookie', 400)
 
       if (resetTimers.has(id)) return errorResponse('reset already in progress', 409)
       const commitsAtMs = Date.now() + RESET_COUNTDOWN_MS
 
-      // broadcastToInstance is always wired by HTTP-mode bootstrap. Headless
+      // broadcastToWorkspace is always wired by HTTP-mode bootstrap. Headless
       // / MCP mode never reaches this route. The previous `else ctx.broadcast`
       // fallback would have leaked reset countdowns to every connected
-      // instance; deleted as unreachable + dangerous.
-      const sendToInstance = (msg: import('../../core/types/ws-protocol.ts').WSOutbound): void => {
-        ctx.broadcastToInstance?.(id, msg)
+      // Workspace; deleted as unreachable + dangerous.
+      const sendToWorkspace = (msg: import('../../core/types/ws-protocol.ts').WSOutbound): void => {
+        ctx.broadcastToWorkspace?.(id, msg)
       }
 
       const timer = setTimeout(async () => {
-        const result = await ctx.resetInstance!(req)
+        const result = await ctx.resetWorkspace!(req)
         if (!result.ok) {
-          sendToInstance({ type: 'reset_failed', reason: result.reason })
+          sendToWorkspace({ type: 'reset_failed', reason: result.reason })
           resetTimers.delete(id)
           return
         }
-        // The instance directory was moved to .trash. The browser keeps
+        // The Workspace directory was moved to .trash. The browser keeps
         // the same cookie; on reconnect, registry.getOrLoad creates a
-        // fresh empty House under the same id. WS connections were closed
+        // fresh empty RoomDirectory under the same id. WS connections were closed
         // by the onWorkspaceRuntimeEvicted hook.
-        sendToInstance({ type: 'reset_committed', oldId: id, newId: result.instanceId })
+        sendToWorkspace({ type: 'reset_committed', workspaceId: result.workspaceId })
         resetTimers.delete(id)
       }, RESET_COUNTDOWN_MS)
       resetTimers.set(id, timer)
 
-      sendToInstance({ type: 'reset_pending', commitsAtMs })
-      console.log(`[reset] instance ${id}: initiated; commits at ${new Date(commitsAtMs).toISOString()}`)
+      sendToWorkspace({ type: 'reset_pending', commitsAtMs })
+      console.log(`[reset] Workspace ${id}: initiated; commits at ${new Date(commitsAtMs).toISOString()}`)
       return json({ resetting: true, commitsAtMs })
     },
   },
   {
-    // Per-instance evict — drops the cookie's System from memory, leaves
+    // Per-Workspace evict — drops the cookie's System from memory, leaves
     // the snapshot on disk. Distinct from /reset (which trashes the dir).
     // No countdown, no broadcast: the WS close on the cookie's session
     // (handled by onWorkspaceRuntimeEvicted) is the user-visible signal, identical
@@ -289,32 +289,32 @@ export const systemRoutes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/system\/evict$/,
     handler: async (req, _match, ctx) => {
-      if (!ctx.evictInstance) return errorResponse('evict not supported in this mode', 501)
-      const result = await ctx.evictInstance(req)
+      if (!ctx.evictWorkspace) return errorResponse('evict not supported in this mode', 501)
+      const result = await ctx.evictWorkspace(req)
       if (!result.ok) return errorResponse(result.reason, 400)
-      return json({ evicted: true, instanceId: result.instanceId })
+      return json({ evicted: true, workspaceId: result.workspaceId })
     },
   },
   {
     method: 'POST',
     pattern: /^\/api\/system\/reset\/cancel$/,
     handler: async (req, _match, ctx) => {
-      const { getInstanceId } = await import('../instance-cookie.ts')
-      const id = getInstanceId(req)
-      if (!id) return errorResponse('no instance cookie', 400)
+      const { getWorkspaceId } = await import('../workspace-cookie.ts')
+      const id = getWorkspaceId(req)
+      if (!id) return errorResponse('no Workspace cookie', 400)
       const timer = resetTimers.get(id)
       if (!timer) return errorResponse('no reset in progress', 404)
       clearTimeout(timer)
       resetTimers.delete(id)
-      const sendToInstance = (msg: import('../../core/types/ws-protocol.ts').WSOutbound): void => {
-        ctx.broadcastToInstance?.(id, msg)
+      const sendToWorkspace = (msg: import('../../core/types/ws-protocol.ts').WSOutbound): void => {
+        ctx.broadcastToWorkspace?.(id, msg)
       }
-      sendToInstance({ type: 'reset_cancelled' })
+      sendToWorkspace({ type: 'reset_cancelled' })
       return json({ cancelled: true })
     },
   },
 ]
 
-// --- Reset state — per-instance, keyed by cookie's instance id ---
-const resetTimers = new Map<string, ReturnType<typeof setTimeout>>()
+// --- Reset state — per-Workspace, keyed by cookie's Workspace id ---
+const resetTimers = new Map<import('@samsinn-leitbild/platform-contracts').WorkspaceId, ReturnType<typeof setTimeout>>()
 const RESET_COUNTDOWN_MS = 10 * 1000

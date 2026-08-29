@@ -1,11 +1,11 @@
 // ============================================================================
-// /api/documents — per-instance document corpus for RAG.
+// /api/documents — per-Workspace document corpus for RAG.
 //
 // GET    /api/documents          → list all documents in this instance
 // POST   /api/documents          → upload (multipart/form-data, field "file")
 // DELETE /api/documents/:docId   → remove the doc + tombstone its vectors
 //
-// Auth: gated by the instance cookie like every other per-instance route.
+// Auth: gated by the instance cookie like every other per-Workspace route.
 // Rate limit: per-IP. Default 10 uploads / hour, tunable via env vars.
 // ============================================================================
 

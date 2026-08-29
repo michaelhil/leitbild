@@ -78,7 +78,7 @@ export const systemHandlers: SystemHandlers = {
 
   reset_committed(msg) {
     window.dispatchEvent(new CustomEvent('reset-committed', {
-      detail: { oldId: msg.oldId, newId: msg.newId },
+      detail: { workspaceId: msg.workspaceId },
     }))
   },
 

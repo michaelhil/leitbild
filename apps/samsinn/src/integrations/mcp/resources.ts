@@ -11,7 +11,7 @@ export const registerMCPResources = (mcpServer: McpServer, system: SamsinnWorksp
       contents: [{
         uri: 'samsinn://rooms',
         mimeType: 'application/json',
-        text: JSON.stringify(system.house.listAllRooms(), null, 2),
+        text: JSON.stringify(system.rooms.listAllRooms(), null, 2),
       }],
     }),
   )
@@ -39,7 +39,7 @@ export const registerMCPResources = (mcpServer: McpServer, system: SamsinnWorksp
     new ResourceTemplate('samsinn://rooms/{name}/messages', { list: undefined }),
     { description: 'Recent messages in a specific room', mimeType: 'application/json' },
     async (uri, { name }) => {
-      const room = system.house.getRoom(name as string)
+      const room = system.rooms.getRoom(name as string)
       if (!room) return { contents: [] }
       return {
         contents: [{

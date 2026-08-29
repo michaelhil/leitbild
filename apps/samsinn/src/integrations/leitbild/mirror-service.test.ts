@@ -96,7 +96,7 @@ describe('mirror-service attach — race-safe buffering', () => {
     const { client, subs, release } = mkClient({ snapshot: { seq: 100 }, snapshotDelayMs: 10 })
     const svc = createMirrorService()
     const room = mkRoom('r1')
-    const config: LeitbildMirrorConfig = { baseUrl: 'https://fake.test', instanceId: 'i1', format: 'summary' }
+    const config: LeitbildMirrorConfig = { baseUrl: 'https://fake.test', workspaceId: 'i1', format: 'summary' }
 
     await withFakeClient(config.baseUrl, client, async () => {
       const attachPromise = svc.attach(room, config)
@@ -114,7 +114,7 @@ describe('mirror-service attach — race-safe buffering', () => {
     const { client, subs, release } = mkClient({ snapshot: { seq: 100 }, snapshotDelayMs: 10 })
     const svc = createMirrorService()
     const room = mkRoom('r2')
-    const config: LeitbildMirrorConfig = { baseUrl: 'https://fake.test', instanceId: 'i2', format: 'summary' }
+    const config: LeitbildMirrorConfig = { baseUrl: 'https://fake.test', workspaceId: 'i2', format: 'summary' }
 
     await withFakeClient(config.baseUrl, client, async () => {
       const attachPromise = svc.attach(room, config)
@@ -137,7 +137,7 @@ describe('mirror-service attach — race-safe buffering', () => {
     const { client, subs } = mkClient({ snapshot: { seq: 0 }, snapshotThrows: true })
     const svc = createMirrorService()
     const room = mkRoom('r3')
-    const config: LeitbildMirrorConfig = { baseUrl: 'https://fake.test', instanceId: 'i3', format: 'summary' }
+    const config: LeitbildMirrorConfig = { baseUrl: 'https://fake.test', workspaceId: 'i3', format: 'summary' }
 
     await withFakeClient(config.baseUrl, client, async () => {
       let threw = false
@@ -161,7 +161,7 @@ describe('mirror-service attach — race-safe buffering', () => {
     const { client, subs, release } = mkClient({ snapshot: { seq: 50 }, snapshotDelayMs: 1 })
     const svc = createMirrorService()
     const room = mkRoom('r4')
-    const config: LeitbildMirrorConfig = { baseUrl: 'https://fake.test', instanceId: 'i4', format: 'summary' }
+    const config: LeitbildMirrorConfig = { baseUrl: 'https://fake.test', workspaceId: 'i4', format: 'summary' }
 
     await withFakeClient(config.baseUrl, client, async () => {
       const attachPromise = svc.attach(room, config)
@@ -182,7 +182,7 @@ describe('mirror-service attach — race-safe buffering', () => {
     const { client, subs, release } = mkClient({ snapshot: { seq: 50 }, snapshotDelayMs: 1 })
     const svc = createMirrorService()
     const room = mkRoom('r5')
-    const config: LeitbildMirrorConfig = { baseUrl: 'https://fake.test', instanceId: 'i5', format: 'summary' }
+    const config: LeitbildMirrorConfig = { baseUrl: 'https://fake.test', workspaceId: 'i5', format: 'summary' }
 
     await withFakeClient(config.baseUrl, client, async () => {
       const attachPromise = svc.attach(room, config)

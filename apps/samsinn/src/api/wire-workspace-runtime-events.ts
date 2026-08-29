@@ -9,7 +9,7 @@
 // What it wires:
 //   - 25 system callback slots that previously lived in server.ts and
 //     ws-handler.ts. They now broadcast scoped to the originating
-//     instance via wsManager.broadcastToInstance(instanceId, msg).
+//     Workspace via wsManager.broadcastToWorkspace(workspaceId, msg).
 //   - Auto-save scheduling on every state-mutating callback.
 //
 // Why it's here:
@@ -24,6 +24,7 @@ import type { SamsinnWorkspaceRuntime } from '../main.ts'
 import type { AutoSaver } from '../core/storage/snapshot.ts'
 import type { WSManager } from './ws-handler.ts'
 import { asAIAgent } from '../agents/shared.ts'
+import type { WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
 type PromptContextSnapshot = {
   readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>
@@ -36,15 +37,15 @@ export const wireWorkspaceRuntimeEvents = (
   system: SamsinnWorkspaceRuntime,
   wsManager: WSManager,
   autoSaver: AutoSaver,
-  instanceId: string,
+  workspaceId: WorkspaceId,
 ): void => {
-  // Tag this instance as wired in the wsManager — the diagnostics endpoint
-  // reads this to surface "instance X has its broadcast slots wired" so a
+  // Tag this Workspace as wired in the wsManager — the diagnostics endpoint
+  // reads this to surface "Workspace X has its broadcast slots wired" so a
   // future regression of the silent-skip class doesn't go unnoticed.
-  wsManager.markWired(instanceId)
+  wsManager.markWired(workspaceId)
   const sched = (): void => autoSaver.scheduleSave()
   const broadcast = (msg: Parameters<WSManager['broadcast']>[0]): void => {
-    wsManager.broadcastToInstance(instanceId, msg)
+    wsManager.broadcastToWorkspace(workspaceId, msg)
   }
   // Context is held only until the corresponding message is posted, then
   // delivered in a separate ephemeral WS event. It never enters snapshots.
@@ -52,7 +53,7 @@ export const wireWorkspaceRuntimeEvents = (
 
   // Helper resolvers for room/agent name lookup (tolerate missing entities).
   const roomNameFor = (roomId: string): string =>
-    system.house.getRoom(roomId)?.profile.name ?? roomId
+    system.rooms.getRoom(roomId)?.profile.name ?? roomId
   const agentNameFor = (agentId: string | null | undefined): string | undefined =>
     typeof agentId === 'string' ? system.team.getAgent(agentId)?.name : undefined
 
@@ -69,7 +70,7 @@ export const wireWorkspaceRuntimeEvents = (
   })
 
   system.setOnDeliveryModeChanged((roomId, mode) => {
-    const room = system.house.getRoom(roomId)
+    const room = system.rooms.getRoom(roomId)
     broadcast({
       type: 'delivery_mode_changed',
       roomName: roomNameFor(roomId),
@@ -191,9 +192,9 @@ export const wireWorkspaceRuntimeEvents = (
 
   // === Provider routing events → toasts ===
   // The shared router fires routing events with an agentId; the registry's
-  // reverse index resolves agentId → instanceId in setProviderEventDispatcher,
-  // and the per-instance SamsinnWorkspaceRuntime's late-bound setOnProvider* slots receive
-  // them and re-broadcast scoped to the originating instance.
+  // reverse index resolves agentId → workspaceId in setProviderEventDispatcher,
+  // and the per-Workspace SamsinnWorkspaceRuntime's late-bound setOnProvider* slots receive
+  // them and re-broadcast scoped to the originating Workspace.
 
   system.setOnProviderBound((agentId, model, oldProvider, newProvider) => {
     broadcast({
@@ -231,33 +232,33 @@ export const wireWorkspaceRuntimeEvents = (
   // === Summary + compression ===
 
   system.setOnSummaryConfigChanged((roomId, config) => {
-    const roomName = system.house.getRoom(roomId)?.profile.name
+    const roomName = system.rooms.getRoom(roomId)?.profile.name
     if (!roomName) return
     broadcast({ type: 'summary_config_changed', roomName, config })
     sched()
   })
   system.setOnSummaryRunStarted((roomId, target) => {
-    const roomName = system.house.getRoom(roomId)?.profile.name
+    const roomName = system.rooms.getRoom(roomId)?.profile.name
     if (!roomName) return
     broadcast({ type: 'summary_run_started', roomName, target })
   })
   system.setOnSummaryRunDelta((roomId, target, delta) => {
-    const roomName = system.house.getRoom(roomId)?.profile.name
+    const roomName = system.rooms.getRoom(roomId)?.profile.name
     if (!roomName) return
     broadcast({ type: 'summary_run_delta', roomName, target, delta })
   })
   system.setOnSummaryRunCompleted((roomId, target, text) => {
-    const roomName = system.house.getRoom(roomId)?.profile.name
+    const roomName = system.rooms.getRoom(roomId)?.profile.name
     if (!roomName) return
     broadcast({ type: 'summary_run_completed', roomName, target, text })
   })
   system.setOnSummaryRunFailed((roomId, target, reason) => {
-    const roomName = system.house.getRoom(roomId)?.profile.name
+    const roomName = system.rooms.getRoom(roomId)?.profile.name
     if (!roomName) return
     broadcast({ type: 'summary_run_failed', roomName, target, reason })
   })
 
-  // === RAG documents — status transitions broadcast to the bound instance ===
+  // === RAG documents — status transitions broadcast to the bound Workspace ===
   system.setOnDocumentStatusChange((meta) => {
     broadcast({
       type: 'document_status',
@@ -270,9 +271,9 @@ export const wireWorkspaceRuntimeEvents = (
     })
   })
 
-  // === Ollama gateway health (shared across instances; broadcast unscoped) ===
+  // === Ollama gateway health (shared across Workspaces; broadcast unscoped) ===
   // Note: ollama gateway is a shared resource (created in DeploymentRuntime once).
-  // Health changes go to ALL connected clients regardless of instance —
+  // Health changes go to ALL connected clients regardless of Workspace —
   // that matches the underlying state (one gateway, one health value).
   system.ollama?.onHealthChange((health) => {
     wsManager.broadcast({ type: 'ollama_health', health })
@@ -291,7 +292,7 @@ export const wireWorkspaceRuntimeEvents = (
   // ad-hoc subscribeAgentState calls in route/command handlers — the
   // wrapper is the single source of truth.
   for (const agent of system.team.listAgents()) {
-    if (agent.kind === 'ai') wsManager.subscribeAgentState(agent, instanceId)
+    if (agent.kind === 'ai') wsManager.subscribeAgentState(agent, workspaceId)
   }
   // (asAIAgent is imported for future use by other extracted blocks.)
   void asAIAgent

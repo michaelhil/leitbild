@@ -5,7 +5,7 @@
 // on successful onopen. Replaces the previous fixed-2s retry which hammered
 // the server at 30 attempts/min when down.
 //
-// Custom close codes (4xxx range, server-defined): 4001 = "instance
+// Custom close codes (4xxx range, server-defined): 4001 = "Workspace
 // unavailable" (transient — eviction-in-progress; backoff still applies but
 // the next reconnect generally succeeds). No close-code branching here:
 // browsers don't expose HTTP 401 responses to onclose, and surfacing custom
@@ -23,7 +23,7 @@ export interface WSClient {
 export const createWSClient = (
   sessionToken: string,
   onMessage: (msg: unknown) => void,
-  onStatusChange: (connected: boolean, terminalReason?: 'instance-deleted') => void,
+  onStatusChange: (connected: boolean, terminalReason?: 'workspace-unavailable') => void,
 ): WSClient => {
   let ws: WebSocket | null = null
   let attempt = 0
@@ -45,11 +45,11 @@ export const createWSClient = (
 
     ws.onclose = (event) => {
       if (event.code === 4004) {
-        onStatusChange(false, 'instance-deleted')
+        onStatusChange(false, 'workspace-unavailable')
         return
       }
       onStatusChange(false)
-      // The server intentionally superseded this socket during an instance
+      // The server intentionally superseded this socket during a Workspace
       // switch. The reloaded page owns the replacement connection.
       if (event.code === 4003) return
       const delay = nextDelayMs()

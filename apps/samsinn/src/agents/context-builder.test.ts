@@ -19,7 +19,7 @@ const mkHistory = (roomId: string, name: string, prompt?: string, messages: Mess
 const mkDeps = (overrides: Partial<BuildContextDeps> = {}): BuildContextDeps => ({
   agentId: 'agent-1',
   persona: 'You are Alpha.',
-  housePrompt: 'Be concise.',
+  workspacePrompt: 'Be concise.',
   responseFormat: 'Reply in plain text.',
   history: mkHistory('room-1', 'General', 'Topic: weather.'),
   historyLimit: 10,
@@ -31,16 +31,16 @@ describe('context-builder includePrompts', () => {
   test('all sections included by default (undefined includePrompts)', () => {
     const result = buildContext(mkDeps(), 'room-1')
     const sys = result.messages[0]!.content
-    expect(sys).toContain('<samsinn:house_rules>')
+    expect(sys).toContain('<samsinn:workspace_rules>')
     expect(sys).toContain('<samsinn:room name="General">')
     expect(sys).toContain('<samsinn:identity>')
     expect(sys).toContain('<samsinn:response_format>')
   })
 
-  test('house: false suppresses HOUSE RULES only', () => {
-    const result = buildContext(mkDeps({ includePrompts: { house: false } }), 'room-1')
+  test('workspace: false suppresses WORKSPACE RULES only', () => {
+    const result = buildContext(mkDeps({ includePrompts: { workspace: false } }), 'room-1')
     const sys = result.messages[0]!.content
-    expect(sys).not.toContain('<samsinn:house_rules>')
+    expect(sys).not.toContain('<samsinn:workspace_rules>')
     expect(sys).toContain('<samsinn:room name="General">')
     expect(sys).toContain('<samsinn:identity>')
     expect(sys).toContain('<samsinn:response_format>')
@@ -50,7 +50,7 @@ describe('context-builder includePrompts', () => {
     const result = buildContext(mkDeps({ includePrompts: { room: false } }), 'room-1')
     const sys = result.messages[0]!.content
     expect(sys).not.toContain('<samsinn:room name="General">')
-    expect(sys).toContain('<samsinn:house_rules>')
+    expect(sys).toContain('<samsinn:workspace_rules>')
     expect(sys).toContain('<samsinn:identity>')
   })
 
@@ -58,7 +58,7 @@ describe('context-builder includePrompts', () => {
     const result = buildContext(mkDeps({ includePrompts: { persona: false } }), 'room-1')
     const sys = result.messages[0]!.content
     expect(sys).not.toContain('<samsinn:identity>')
-    expect(sys).toContain('<samsinn:house_rules>')
+    expect(sys).toContain('<samsinn:workspace_rules>')
   })
 
   test('responseFormat: false suppresses RESPONSE FORMAT only', () => {
@@ -70,10 +70,10 @@ describe('context-builder includePrompts', () => {
 
   test('all four off: none of the four sections present; CONTEXT still emitted', () => {
     const result = buildContext(mkDeps({
-      includePrompts: { persona: false, room: false, house: false, responseFormat: false },
+      includePrompts: { persona: false, room: false, workspace: false, responseFormat: false },
     }), 'room-1')
     const sys = result.messages[0]!.content
-    expect(sys).not.toContain('<samsinn:house_rules>')
+    expect(sys).not.toContain('<samsinn:workspace_rules>')
     expect(sys).not.toContain('<samsinn:room name="General">')
     expect(sys).not.toContain('<samsinn:identity>')
     expect(sys).not.toContain('<samsinn:response_format>')
@@ -81,7 +81,7 @@ describe('context-builder includePrompts', () => {
   })
 
   test('partial includePrompts defaults missing keys to true', () => {
-    const result = buildContext(mkDeps({ includePrompts: { house: false } }), 'room-1')
+    const result = buildContext(mkDeps({ includePrompts: { workspace: false } }), 'room-1')
     const sys = result.messages[0]!.content
     expect(sys).toContain('<samsinn:identity>')
     expect(sys).toContain('<samsinn:room name="General">')
@@ -91,10 +91,10 @@ describe('context-builder includePrompts', () => {
   test('promptsEnabled: false excludes every prompt regardless of per-key flags', () => {
     const result = buildContext(mkDeps({
       promptsEnabled: false,
-      includePrompts: { persona: true, room: true, house: true, responseFormat: true, skills: true },
+      includePrompts: { persona: true, room: true, workspace: true, responseFormat: true, skills: true },
     }), 'room-1')
     const sys = result.messages[0]!.content
-    expect(sys).not.toContain('<samsinn:house_rules>')
+    expect(sys).not.toContain('<samsinn:workspace_rules>')
     expect(sys).not.toContain('<samsinn:room name="General">')
     expect(sys).not.toContain('<samsinn:identity>')
     expect(sys).not.toContain('<samsinn:response_format>')
@@ -114,7 +114,7 @@ describe('buildSystemSections', () => {
   test('returns labelled sections with enabled flags', () => {
     const sections = buildSystemSections(mkDeps(), 'room-1')
     const byKey = Object.fromEntries(sections.map(s => [s.key, s]))
-    expect(byKey.house?.enabled).toBe(true)
+    expect(byKey.workspace?.enabled).toBe(true)
     expect(byKey.room?.enabled).toBe(true)
     expect(byKey.persona?.enabled).toBe(true)
     expect(byKey.responseFormat?.enabled).toBe(true)
@@ -122,9 +122,9 @@ describe('buildSystemSections', () => {
     expect(byKey.ctx_intro?.optional).toBe(false)
   })
 
-  test('respects includePrompts.house=false', () => {
-    const sections = buildSystemSections(mkDeps({ includePrompts: { house: false } }), 'room-1')
-    expect(sections.find(s => s.key === 'house')!.enabled).toBe(false)
+  test('respects includePrompts.workspace=false', () => {
+    const sections = buildSystemSections(mkDeps({ includePrompts: { workspace: false } }), 'room-1')
+    expect(sections.find(s => s.key === 'workspace')!.enabled).toBe(false)
   })
 
   test('respects includeContext.knownAgents=false', () => {

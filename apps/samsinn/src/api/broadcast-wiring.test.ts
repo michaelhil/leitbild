@@ -9,7 +9,7 @@
 //
 // This test proves end-to-end that an instance loaded via the registry
 // path (the cookie-bound code path) has live broadcast wiring: posting a
-// message into one of its rooms fans out via wsManager.broadcastToInstance
+// message into one of its rooms fans out via wsManager.broadcastToWorkspace
 // scoped to that instance.
 //
 // First assertion is the harness sanity check: the system's snapshot has
@@ -27,6 +27,7 @@ import { createWSManager, type WSManager } from './ws-handler.ts'
 import { wireWorkspaceRuntimeEvents } from './wire-workspace-runtime-events.ts'
 import { makeStubGateway, makeStubSetup, stubProviderConfig as baseConfig } from './stub-gateway.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
+import { newWorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
 const makeSetup = makeStubSetup
 
@@ -38,7 +39,7 @@ describe('cookie-bound instance broadcast wiring (regression for 5d73a8e)', () =
     delete process.env.SAMSINN_HOME
   })
 
-  test('routeMessage in a cookie-bound instance reaches broadcastToInstance', async () => {
+  test('routeMessage in a cookie-bound instance reaches broadcastToWorkspace', async () => {
     homeDir = await mkdtemp(join(tmpdir(), 'samsinn-streaming-'))
     process.env.SAMSINN_HOME = homeDir
 
@@ -51,7 +52,7 @@ describe('cookie-bound instance broadcast wiring (regression for 5d73a8e)', () =
     // this. The bootstrap pattern relies on wsManager being assigned before
     // any registry.getOrLoad() runs.
     let wsManager!: WSManager
-    const broadcasts: Array<{ instanceId: string; msg: WSOutbound }> = []
+    const broadcasts: Array<{ workspaceId: string; msg: WSOutbound }> = []
 
     const registry = createWorkspaceRuntimeRegistry({
       deployment: shared,
@@ -63,38 +64,38 @@ describe('cookie-bound instance broadcast wiring (regression for 5d73a8e)', () =
     })
 
     // Construct wsManager AFTER registry but BEFORE the first getOrLoad.
-    // Wrap broadcastToInstance to record what would have hit the WS.
-    const baseWs = createWSManager({ getSystem: (id) => registry.tryGetLive(id) })
+    // Wrap broadcastToWorkspace to record what would have hit the WS.
+    const baseWs = createWSManager({ getRuntime: (id) => registry.tryGetLive(id) })
     wsManager = {
       ...baseWs,
-      broadcastToInstance: (instanceId, msg) => {
-        broadcasts.push({ instanceId, msg })
-        baseWs.broadcastToInstance(instanceId, msg)
+      broadcastToWorkspace: (workspaceId, msg) => {
+        broadcasts.push({ workspaceId, msg })
+        baseWs.broadcastToWorkspace(workspaceId, msg)
       },
     }
 
     // The bug only manifested for non-boot instances loaded by cookie. Use
     // an explicit cookie-shaped id (16 chars, lowercase alphanumeric) so we
     // exercise that exact path.
-    const cookieId = 'cookieinst123abc'
+    const cookieId = newWorkspaceId()
     const sys = await registry.getOrLoad(cookieId)
 
     // Harness sanity: the seed should have produced at least one room.
     // If this is empty, we'd misdiagnose missing wiring as missing room.
-    const rooms = sys.house.listAllRooms()
+    const rooms = sys.rooms.listAllRooms()
     expect(rooms.length).toBeGreaterThan(0)
 
     // Trigger a message that fires onMessagePosted. This is the chain the
     // bug broke: room.post -> onMessagePosted (via lateBinding proxy) ->
-    // wireWorkspaceRuntimeEvents-installed callback -> broadcastToInstance.
+    // wireWorkspaceRuntimeEvents-installed callback -> broadcastToWorkspace.
     sys.routeMessage(
       { rooms: [rooms[0]!.id] },
       { senderId: 'system', senderName: 'system', content: 'test note', type: 'system' },
     )
 
-    // The broadcast must have reached our instrumented broadcastToInstance,
-    // scoped to OUR cookie-bound instanceId. Pre-fix behavior: zero entries.
-    const our = broadcasts.filter(b => b.instanceId === cookieId)
+    // The broadcast must have reached our instrumented broadcastToWorkspace,
+    // scoped to OUR cookie-bound workspaceId. Pre-fix behavior: zero entries.
+    const our = broadcasts.filter(b => b.workspaceId === cookieId)
     expect(our.length).toBeGreaterThan(0)
     expect(our.some(b => b.msg.type === 'message')).toBe(true)
   })

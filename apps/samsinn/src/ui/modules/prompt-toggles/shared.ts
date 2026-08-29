@@ -38,7 +38,7 @@ export interface ContextPreview {
 export const PROMPT_KEYS = [
   { code: 'persona',        section: 'persona',        label: 'Agent persona' },
   { code: 'room',           section: 'room',           label: 'Room prompt' },
-  { code: 'house',          section: 'house',          label: 'System prompt' },
+  { code: 'workspace',          section: 'workspace',          label: 'System prompt' },
   { code: 'responseFormat', section: 'responseFormat', label: 'Response format' },
   { code: 'skills',         section: 'skills',         label: 'Skills' },
 ] as const

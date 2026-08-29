@@ -52,13 +52,12 @@ export interface WSConnection {
   close: (code: number, reason?: string) => void
 }
 
-// In v15+ a WS session is a "viewer" of an instance — it doesn't bind to
+// A WS session is a viewer of one Workspace — it doesn't bind to
 // any human agent. Each WS message that creates content names its actor
 // via senderId; non-content commands fall back to 'system' attribution.
 // The session map exists only for connection lifecycle (reconnect, sweep).
 export interface ClientSession {
   readonly workspaceId: WorkspaceId
-  readonly instanceId: string         // which per-tenant House this session belongs to
   readonly sessionToken: string       // per-WS-connection unique id, matches the wsConnections map key
   lastActivity: number
 }
@@ -66,11 +65,10 @@ export interface ClientSession {
 export interface WSData {
   sessionToken: string
   workspaceId: WorkspaceId
-  instanceId: string                  // bound at upgrade from cookie
-  // A deleted-instance handshake is upgraded only so the browser can
+  // An unavailable-Workspace handshake is upgraded only so the browser can
   // receive a meaningful 4xxx close code. The open handler closes it
   // before loading or materializing any SamsinnWorkspaceRuntime.
-  terminalClose?: 'instance-deleted'
+  terminalClose?: 'workspace-unavailable'
 }
 
 // === Session + State Management ===
@@ -79,68 +77,68 @@ export interface WSManager {
   readonly sessions: Map<string, ClientSession>
   readonly wsConnections: Map<string, WSConnection>
   // A browser tab keeps its viewer token across ordinary reconnects. When
-  // that tab intentionally switches instances, release the old binding and
+  // that tab intentionally switches Workspaces, release the old binding and
   // close its tracked socket so the same token can bind to the new cookie.
-  readonly releaseSessionForInstanceSwitch: (sessionToken: string, nextInstanceId: string) => boolean
+  readonly releaseSessionForWorkspaceSwitch: (sessionToken: string, nextWorkspaceId: WorkspaceId) => boolean
   // Send to a single ws with backpressure protection. Used by the
   // per-agent transport closures in server.ts. Returns true if the bytes
   // were enqueued, false if the consumer was dropped for being too slow.
   readonly safeSend: (ws: WSConnection, data: string) => boolean
   // Global broadcast — used for shared state (Ollama health, reset, etc.)
-  // that applies regardless of which instance a client belongs to.
+  // that applies regardless of which Workspace a client belongs to.
   readonly broadcast: (msg: WSOutbound) => void
-  // Per-instance broadcast — only delivers to ws connections whose session
-  // has matching instanceId. Used by wireWorkspaceRuntimeEvents so an event fired in
-  // instance A doesn't reach instance B's clients.
-  readonly broadcastToInstance: (instanceId: string, msg: WSOutbound) => void
-  readonly subscribeAgentState: (agent: Agent, instanceId: string) => void
+  // Per-Workspace broadcast — only delivers to ws connections whose session
+  // has matching workspaceId. Used by wireWorkspaceRuntimeEvents so an event fired in
+  // Workspace A doesn't reach Workspace B's clients.
+  readonly broadcastToWorkspace: (workspaceId: WorkspaceId, msg: WSOutbound) => void
+  readonly subscribeAgentState: (agent: Agent, workspaceId: WorkspaceId) => void
   readonly unsubscribeAgentState: (agentId: string) => void
-  // Returns null when the instance has been evicted between the WS upgrade
+  // Returns null when the Workspace has been evicted between the WS upgrade
   // and the snapshot build. Callers must close the socket (4001) instead of
   // sending a fabricated empty snapshot — clients trust empty rooms+agents
   // and would render a blank UI without knowing why.
-  readonly buildSnapshot: (instanceId: string, sessionToken?: string) => Extract<WSOutbound, { type: 'snapshot' }> | null
+  readonly buildSnapshot: (workspaceId: WorkspaceId, sessionToken?: string) => Extract<WSOutbound, { type: 'snapshot' }> | null
   // Drop sessions whose WS has been closed for more than SESSION_STALE_MS
   // and remove the corresponding human agent from the team. Without this,
   // every disconnected user accumulates a session entry forever (and an
-  // inactive human in team.listAgents()) until the instance is evicted.
+  // inactive human in team.listAgents()) until the Workspace is evicted.
   // Returns the number of sessions dropped.
   readonly sweepStaleSessions: (now?: number) => number
   // Diagnostic surface — exposed via /api/system/diagnostics. Read-only.
-  // markWired(id) is called by wireWorkspaceRuntimeEvents on first call per instance
-  // so the diagnostics endpoint can report which instances actually had
+  // markWired(id) is called by wireWorkspaceRuntimeEvents on first call per Workspace
+  // so the diagnostics endpoint can report which Workspaces actually had
   // their broadcast slots wired. lastBroadcastAt is the timestamp of the
-  // most recent broadcastToInstance call for that id (regardless of how
+  // most recent broadcastToWorkspace call for that id (regardless of how
   // many sessions received it).
-  readonly markWired: (instanceId: string) => void
-  readonly isWired: (instanceId: string) => boolean
-  readonly lastBroadcastAt: (instanceId: string) => number | null
+  readonly markWired: (workspaceId: WorkspaceId) => void
+  readonly isWired: (workspaceId: WorkspaceId) => boolean
+  readonly lastBroadcastAt: (workspaceId: WorkspaceId) => number | null
   readonly sessionCount: () => number
 }
 
-// Resolver: given an instanceId, return the live SamsinnWorkspaceRuntime if currently in
+// Resolver: given an workspaceId, return the live SamsinnWorkspaceRuntime if currently in
 // memory, or undefined. WSManager uses this to scope buildSnapshot/state
 // subscriptions to the caller's tenant rather than closing over a single
-// boot system. The shared Ollama gateway is the same across instances, so
+// boot system. The shared Ollama gateway is the same across Workspaces, so
 // any live system's ollama field works (callers pass the resolved one in).
 export interface WSManagerDeps {
-  readonly getSystem: (instanceId: string) => SamsinnWorkspaceRuntime | undefined
+  readonly getRuntime: (workspaceId: WorkspaceId) => SamsinnWorkspaceRuntime | undefined
   // Optional — when present, backpressure drops are counted. Tests omit.
   readonly limitMetrics?: LimitMetrics
 }
 
 export const createWSManager = (deps: WSManagerDeps): WSManager => {
-  const { getSystem, limitMetrics } = deps
+  const { getRuntime, limitMetrics } = deps
   const sessions = new Map<string, ClientSession>()
   const wsConnections = new Map<string, WSConnection>()
   const stateUnsubs = new Map<string, () => void>()
 
-  const releaseSessionForInstanceSwitch = (sessionToken: string, nextInstanceId: string): boolean => {
+  const releaseSessionForWorkspaceSwitch = (sessionToken: string, nextWorkspaceId: WorkspaceId): boolean => {
     const existing = sessions.get(sessionToken)
-    if (!existing || existing.instanceId === nextInstanceId) return false
+    if (!existing || existing.workspaceId === nextWorkspaceId) return false
     const oldWs = wsConnections.get(sessionToken)
     if (oldWs) {
-      try { oldWs.close(4003, 'instance switched') } catch { /* already closed */ }
+      try { oldWs.close(4003, 'Workspace switched') } catch { /* already closed */ }
       // Only remove the connection we actually closed. A delayed close
       // callback from an older socket must never delete its replacement.
       if (wsConnections.get(sessionToken) === oldWs) {
@@ -174,18 +172,18 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
   }
 
   // Diagnostic state — populated by wireWorkspaceRuntimeEvents (markWired) and
-  // every broadcastToInstance call (lastBroadcastByInstance). Surfaced
+  // every broadcastToWorkspace call (lastBroadcastByWorkspace). Surfaced
   // via /api/system/diagnostics. No effect on hot-path latency.
-  const wiredInstances = new Set<string>()
-  const lastBroadcastByInstance = new Map<string, number>()
+  const wiredWorkspaces = new Set<WorkspaceId>()
+  const lastBroadcastByWorkspace = new Map<WorkspaceId, number>()
 
-  // Per-instance broadcast — filters wsConnections by session.instanceId
+  // Per-Workspace broadcast — filters wsConnections by session.workspaceId
   // so events fired in one tenant don't reach another tenant's clients.
-  const broadcastToInstance = (instanceId: string, msg: WSOutbound): void => {
-    lastBroadcastByInstance.set(instanceId, Date.now())
+  const broadcastToWorkspace = (workspaceId: WorkspaceId, msg: WSOutbound): void => {
+    lastBroadcastByWorkspace.set(workspaceId, Date.now())
     const data = JSON.stringify(msg)
     for (const [token, session] of sessions) {
-      if (session.instanceId !== instanceId) continue
+      if (session.workspaceId !== workspaceId) continue
       const ws = wsConnections.get(token)
       if (!ws) continue
       safeSend(ws, data)
@@ -197,12 +195,12 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
   // Ollama metrics are pulled by the dashboard via GET /api/ollama/metrics
   // (3s polling) — no WS push path.
 
-  const subscribeAgentState = (agent: Agent, instanceId: string): void => {
+  const subscribeAgentState = (agent: Agent, workspaceId: WorkspaceId): void => {
     if (agent.kind !== 'ai') return
     if (stateUnsubs.has(agent.id)) return
     const agentName = agent.name
     const unsub = agent.state.subscribe((state: StateValue, _agentId: string, context?: string, startedAt?: number) => {
-      broadcastToInstance(instanceId, {
+      broadcastToWorkspace(workspaceId, {
         type: 'agent_state', agentName, state, context,
         ...(startedAt !== undefined ? { generationStarted: startedAt } : {}),
       })
@@ -223,17 +221,17 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
   // any snapshot restore). Single-tenant boot path calls wireWorkspaceRuntimeEvents
   // immediately after createWSManager, so behavior is preserved.
 
-  const buildSnapshot = (instanceId: string, sessionToken?: string): Extract<WSOutbound, { type: 'snapshot' }> | null => {
-    const sys = getSystem(instanceId)
+  const buildSnapshot = (workspaceId: WorkspaceId, sessionToken?: string): Extract<WSOutbound, { type: 'snapshot' }> | null => {
+    const sys = getRuntime(workspaceId)
     if (!sys) {
-      // Instance evicted between WS upgrade and snapshot build.
-      console.error(`[ws] buildSnapshot for evicted instance ${instanceId} — caller will close socket (4001)`)
+      // Workspace runtime evicted between WS upgrade and snapshot build.
+      console.error(`[ws] buildSnapshot for evicted Workspace ${workspaceId} — caller will close socket (4001)`)
       void sessionToken
       return null
     }
     const roomStates: Record<string, RoomState> = {}
-    for (const profile of sys.house.listAllRooms()) {
-      const room = sys.house.getRoom(profile.id)
+    for (const profile of sys.rooms.listAllRooms()) {
+      const room = sys.rooms.getRoom(profile.id)
       if (room) roomStates[profile.id] = room.getRoomState()
     }
     const agents: AgentProfile[] = sys.team.listAgents()
@@ -251,7 +249,7 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
       })
     return {
       type: 'snapshot',
-      rooms: sys.house.listAllRooms(),
+      rooms: sys.rooms.listAllRooms(),
       agents,
       roomStates,
       ...(sessionToken ? { sessionToken } : {}),
@@ -276,13 +274,13 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
   }
 
   return {
-    sessions, wsConnections, releaseSessionForInstanceSwitch,
-    safeSend, broadcast, broadcastToInstance,
+    sessions, wsConnections, releaseSessionForWorkspaceSwitch,
+    safeSend, broadcast, broadcastToWorkspace,
     subscribeAgentState, unsubscribeAgentState, buildSnapshot, sweepStaleSessions,
     // --- Diagnostics ---
-    markWired: (id: string) => { wiredInstances.add(id) },
-    isWired: (id: string) => wiredInstances.has(id),
-    lastBroadcastAt: (id: string) => lastBroadcastByInstance.get(id) ?? null,
+    markWired: (id: WorkspaceId) => { wiredWorkspaces.add(id) },
+    isWired: (id: WorkspaceId) => wiredWorkspaces.has(id),
+    lastBroadcastAt: (id: WorkspaceId) => lastBroadcastByWorkspace.get(id) ?? null,
     sessionCount: () => sessions.size,
   }
 }

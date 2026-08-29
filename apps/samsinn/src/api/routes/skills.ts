@@ -1,4 +1,4 @@
-// Skills REST routes — split from house.ts so the skills domain has its
+// Skills REST routes — isolated so the skills domain has its
 // own file like every other domain (rooms, agents, wikis, packs, etc.).
 //
 //   GET    /api/skills          — list (name, description, scope, tools)

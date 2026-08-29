@@ -1,7 +1,7 @@
 import { json, errorResponse, parseBody } from './helpers.ts'
 import type { RouteEntry } from './types.ts'
 
-export const houseRoutes: RouteEntry[] = [
+export const runtimeRoutes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/health$/,
@@ -13,15 +13,13 @@ export const houseRoutes: RouteEntry[] = [
         ollamaStatus: health?.status ?? 'unconfigured',
         ollamaLatencyMs: health?.latencyMs ?? 0,
         providers: system.providerConfig.order,
-        rooms: system.house.listAllRooms().length,
+        rooms: system.rooms.listAllRooms().length,
         agents: system.team.listAgents().length,
       })
     },
   },
-  // Skills routes moved to routes/skills.ts. Other house-shaped endpoints
-  // (/health, /api/models, /api/house/prompts, /api/ollama/urls) stay here
-  // because they're cross-cutting reads that don't belong to any single
-  // domain.
+  // Cross-cutting deployment/runtime reads live here rather than inside a
+  // Room or Workspace settings adapter.
   {
     method: 'GET',
     pattern: /^\/api\/models$/,
@@ -160,28 +158,6 @@ export const houseRoutes: RouteEntry[] = [
         console.error('/api/models error:', err)
         return json({ providers: [], defaultModel: '' })
       }
-    },
-  },
-  {
-    method: 'GET',
-    pattern: /^\/api\/house\/prompts$/,
-    handler: (_req, _match, { system }) =>
-      json({
-        housePrompt: system.house.getHousePrompt(),
-        responseFormat: system.house.getResponseFormat(),
-      }),
-  },
-  {
-    method: 'PUT',
-    pattern: /^\/api\/house\/prompts$/,
-    handler: async (req, _match, { system }) => {
-      const body = await parseBody(req)
-      if (typeof body.housePrompt === 'string') system.house.setHousePrompt(body.housePrompt)
-      if (typeof body.responseFormat === 'string') system.house.setResponseFormat(body.responseFormat)
-      return json({
-        housePrompt: system.house.getHousePrompt(),
-        responseFormat: system.house.getResponseFormat(),
-      })
     },
   },
   {

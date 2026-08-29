@@ -65,7 +65,7 @@ const createLbCommand = (deps: LeitbildCommandToolDeps): Tool => ({
   },
   execute: async (params, ctx: ToolContext) => {
     const binding = deps.getBinding(ctx.callerId)
-    if (!binding) return fail('No leitbildBinding configured for this agent. Add { baseUrl, instanceId, role } to the agent config to use lb_command.')
+    if (!binding) return fail('No leitbildBinding configured for this agent. Add { baseUrl, workspaceId, role } to the agent config to use lb_command.')
     if (binding.role !== 'operator') return fail('lb_command requires leitbildBinding.role === "operator". This agent has role: "' + binding.role + '".')
 
     const kind = String(params.kind ?? '').trim()
@@ -97,7 +97,7 @@ const createLbCommand = (deps: LeitbildCommandToolDeps): Tool => ({
 
     try {
       const client = createLeitbildClient(binding.baseUrl, { scope: deps.getScope?.(ctx.callerId) })
-      const body = await client.callCommand(binding.instanceId, {
+      const body = await client.callCommand(binding.workspaceId, {
         actorId, clientId, kind, targetObjectIds: targets, payload, idempotencyKey,
       }) as { result?: unknown }
       return ok(body.result ?? body)

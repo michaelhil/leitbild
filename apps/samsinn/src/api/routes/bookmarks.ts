@@ -1,4 +1,4 @@
-// System-wide message bookmarks. Thin wrappers over House; mutations trigger
+// Workspace message bookmarks. Mutations trigger
 // the OnBookmarksChanged callback which the server wires to auto-save.
 
 import { json, errorResponse, parseBody } from './helpers.ts'
@@ -16,7 +16,7 @@ export const bookmarkRoutes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/bookmarks$/,
     handler: (_req, _match, { system }) =>
-      json({ bookmarks: system.house.listBookmarks() }),
+      json({ bookmarks: system.bookmarks.list() }),
   },
   {
     method: 'POST',
@@ -25,7 +25,7 @@ export const bookmarkRoutes: RouteEntry[] = [
       const body = await parseBody(req)
       const content = readContent(body)
       if (content === null) return errorResponse('content is required', 400)
-      return json({ bookmark: system.house.addBookmark(content) }, 201)
+      return json({ bookmark: system.bookmarks.add(content) }, 201)
     },
   },
   {
@@ -36,7 +36,7 @@ export const bookmarkRoutes: RouteEntry[] = [
       const body = await parseBody(req)
       const content = readContent(body)
       if (content === null) return errorResponse('content is required', 400)
-      const updated = system.house.updateBookmark(id, content)
+      const updated = system.bookmarks.update(id, content)
       if (!updated) return errorResponse('bookmark not found', 404)
       return json({ bookmark: updated })
     },
@@ -46,7 +46,7 @@ export const bookmarkRoutes: RouteEntry[] = [
     pattern: /^\/api\/bookmarks\/([^/]+)$/,
     handler: (_req, match, { system }) => {
       const id = decodeURIComponent(match[1]!)
-      const removed = system.house.deleteBookmark(id)
+      const removed = system.bookmarks.remove(id)
       if (!removed) return errorResponse('bookmark not found', 404)
       return json({ ok: true })
     },

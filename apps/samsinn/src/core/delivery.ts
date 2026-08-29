@@ -13,13 +13,13 @@ export interface MessageRouterDeps extends RouterDeps {
   readonly limitMetrics?: LimitMetrics
 }
 
-export const createMessageRouter = ({ house, limitMetrics }: MessageRouterDeps): RouteMessage => {
+export const createMessageRouter = ({ rooms, limitMetrics }: MessageRouterDeps): RouteMessage => {
   return (target: MessageTarget, params) => {
     const correlationId = crypto.randomUUID()
     const delivered: Message[] = []
 
     for (const roomId of target.rooms) {
-      const room = house.getRoom(roomId)
+      const room = rooms.getRoom(roomId)
       if (!room) {
         // Visible to operator so a typo'd / deleted room target is loud
         // instead of silently dropped. The caller's `delivered` array still

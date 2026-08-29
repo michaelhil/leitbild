@@ -63,14 +63,14 @@ const showConfirmModal = (): Promise<boolean> =>
   new Promise(resolve => {
     // Use a <dialog> with showModal() so the confirm sits on the browser's
     // top layer above any other open <dialog> (e.g. when Reset is triggered
-    // from inside the Instances modal).
+    // from inside the Workspaces modal).
     const dlg = document.createElement('dialog')
     dlg.className = 'rounded-lg shadow-xl bg-surface text-text'
     dlg.style.cssText = 'max-width:420px;width:90%;padding:20px;border:none'
     dlg.innerHTML = `
       <h2 style="margin:0 0 8px;font-size:16px;font-weight:600;color:var(--text-strong)">⚠ Reset this sandbox?</h2>
       <p style="margin:0 0 16px;font-size:13px;line-height:1.5;color:var(--text)">
-        Wipes all rooms, agents, messages, and per-instance memory in this sandbox. Shared packs, skills, and provider keys are kept. There is a 10-second window after confirming where any user can cancel.
+        Permanently wipes Samsinn rooms, agents, messages, and memory in this Workspace. Shared packs, skills, and provider keys are kept. There is a 10-second window after confirming where any user can cancel.
       </p>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button type="button" id="reset-cancel" style="padding:8px 14px;border:1px solid var(--border-strong);border-radius:4px;background:var(--surface);color:var(--text);font-size:13px;cursor:pointer">Cancel</button>

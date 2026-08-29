@@ -1,5 +1,5 @@
 // ============================================================================
-// Vector store — per-instance, JSONL append-only with brute-force cosine.
+// Vector store — per-Workspace, JSONL append-only with brute-force cosine.
 //
 // One file per instance: instances/<id>/vectors.jsonl. Each line is a JSON
 // record. Three line shapes:

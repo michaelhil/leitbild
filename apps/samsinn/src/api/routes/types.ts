@@ -1,49 +1,43 @@
 import type { SamsinnWorkspaceRuntime } from '../../main.ts'
 import type { Agent } from '../../core/types/agent.ts'
 import type { WSOutbound } from '../../core/types/ws-protocol.ts'
-import type { AccessContext } from '@samsinn-leitbild/platform-contracts'
+import type { AccessContext, WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
-export interface ResetInstanceOk {
+export interface ResetWorkspaceOk {
   readonly ok: true
-  readonly instanceId: string   // same id; the directory was moved to .trash and a fresh House will lazy-load
+  readonly workspaceId: WorkspaceId
 }
-export interface ResetInstanceFail {
+export interface ResetWorkspaceFail {
   readonly ok: false
   readonly reason: string
 }
-export type ResetInstanceResult = ResetInstanceOk | ResetInstanceFail
+export type ResetWorkspaceResult = ResetWorkspaceOk | ResetWorkspaceFail
 
 // Distinct from reset: evict drops the SamsinnWorkspaceRuntime from in-memory state but
 // leaves the on-disk snapshot intact. The next request lazy-reloads via
 // restoreFromSnapshot, exercising the evict→reload boundary that the
 // streaming-probe deploy gate uses to catch unsubscribeAgentState-style
 // regressions.
-export type EvictInstanceResult =
-  | { readonly ok: true; readonly instanceId: string }
+export type EvictWorkspaceResult =
+  | { readonly ok: true; readonly workspaceId: WorkspaceId }
   | { readonly ok: false; readonly reason: string }
 
-// Capabilities that the Instances admin routes need. Wired in bootstrap.ts.
-export interface InstanceAdmin {
-  readonly listOnDisk: () => Promise<ReadonlyArray<{ id: string; snapshotMtimeMs: number; snapshotSizeBytes: number }>>
-  readonly liveIds: () => ReadonlySet<string>
-  readonly createNew: () => Promise<{ id: string }>
-  // Trash an instance directory by id. Refuses if id is the current cookie's
-  // instance — caller should use /api/system/reset for that.
-  readonly delete: (id: string) => Promise<{ ok: true } | { ok: false; reason: string }>
-  // Operator-initiated trash cleanup. Walks .trash/ and rm -rf each entry.
-  readonly purgeTrash: () => Promise<{ purged: number; errors: ReadonlyArray<string> }>
+// Capabilities that the Workspace routes need. Wired in bootstrap.ts.
+export interface WorkspaceAdmin {
+  readonly list: () => Promise<ReadonlyArray<{ id: WorkspaceId; displayName: string; snapshotMtimeMs: number; snapshotSizeBytes: number; isLive: boolean }>>
+  readonly create: (displayName?: string) => Promise<{ id: WorkspaceId }>
   // Build a Set-Cookie value pointing at `id`. The route returns it on the response.
-  readonly buildSwitchCookie: (id: string, req: Request) => string
+  readonly buildSwitchCookie: (id: WorkspaceId, req: Request) => string
 }
 
 // Read-only health snapshot used by /api/system/diagnostics. Walks the
-// registry + wsManager to surface per-instance broadcast wiring state.
+// registry + wsManager to surface per-Workspace broadcast wiring state.
 // Catches the silent-skip class of bug fixed in 5d73a8e: zero-broadcast
-// instances under live traffic mean the wiring chain is broken somewhere.
+// Workspaces under live traffic mean the wiring chain is broken somewhere.
 export interface DiagnosticsCapability {
   readonly snapshot: () => {
-    readonly instances: ReadonlyArray<{
-      readonly id: string
+    readonly workspaces: ReadonlyArray<{
+      readonly id: WorkspaceId
       readonly wired: boolean
       readonly agentCount: number
       readonly generatingAgentCount: number
@@ -51,30 +45,30 @@ export interface DiagnosticsCapability {
     }>
     readonly wsSessions: number
     readonly configuredIdleMs?: number
-    readonly maxLoadedInstances?: number
+    readonly maxLoadedWorkspaces?: number
   }
 }
 
 export interface RouteContext {
   readonly system: SamsinnWorkspaceRuntime
   readonly accessContext: AccessContext
-  // Instance bound to this request via the cookie (resolved before dispatch).
-  readonly instanceId: string
+  // Workspace bound to this request via the cookie (resolved before dispatch).
+  readonly workspaceId: WorkspaceId
   readonly broadcast: (msg: WSOutbound) => void
-  readonly broadcastToInstance?: (instanceId: string, msg: WSOutbound) => void
-  readonly subscribeAgentState: (agent: Agent, instanceId: string) => void
+  readonly broadcastToWorkspace?: (workspaceId: WorkspaceId, msg: WSOutbound) => void
+  readonly subscribeAgentState: (agent: Agent, workspaceId: WorkspaceId) => void
   readonly unsubscribeAgentState?: (agentId: string) => void
   readonly remoteAddress?: string
-  // Per-instance reset (Phase F5). Reads the cookie from req, trashes the
-  // instance directory, drops it from the registry. The same id is kept;
-  // the next request from the same cookie lazy-creates a fresh empty House.
-  readonly resetInstance?: (req: Request) => Promise<ResetInstanceResult>
-  // Drop the cookie's instance from memory without trashing its snapshot —
+  // Per-Workspace reset (Phase F5). Reads the cookie from req, trashes the
+  // Workspace directory, drops it from the registry. The same id is kept;
+  // the next request from the same cookie lazy-creates a fresh empty RoomDirectory.
+  readonly resetWorkspace?: (req: Request) => Promise<ResetWorkspaceResult>
+  // Drop the cookie's Workspace from memory without trashing its snapshot —
   // the next WS upgrade lazy-reloads via restoreFromSnapshot. Used by the
   // post-deploy streaming probe to exercise the evict→reload boundary.
-  readonly evictInstance?: (req: Request) => Promise<EvictInstanceResult>
-  // Instances admin (list / create / switch / delete). Wired in bootstrap.
-  readonly instances?: InstanceAdmin
+  readonly evictWorkspace?: (req: Request) => Promise<EvictWorkspaceResult>
+  // Workspace discovery and selection (list / create / switch). Wired in bootstrap.
+  readonly workspaces?: WorkspaceAdmin
   // Read-only health/wiring snapshot. Wired in bootstrap.
   readonly diagnostics?: DiagnosticsCapability
   // Leitbild mirror service (process-level singleton). Wired in bootstrap.

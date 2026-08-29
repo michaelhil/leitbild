@@ -40,7 +40,7 @@ export const triggerRoutes: RouteEntry[] = [
       if (err) return errorResponse(err, 400)
       // Validate the pinned room exists.
       const roomId = (body as { roomId: string }).roomId
-      if (!system.house.getRoom(roomId)) return errorResponse(`room "${roomId}" not found`, 404)
+      if (!system.rooms.getRoom(roomId)) return errorResponse(`room "${roomId}" not found`, 404)
 
       const mode = (body as { mode: TriggerMode }).mode
       const targetName = (body as { targetName?: string }).targetName?.trim()
@@ -90,7 +90,7 @@ export const triggerRoutes: RouteEntry[] = [
       }
       const err = validateTriggerInput(merged as Record<string, unknown>, agent.kind)
       if (err) return errorResponse(err, 400)
-      if (!system.house.getRoom(merged.roomId)) return errorResponse(`room "${merged.roomId}" not found`, 404)
+      if (!system.rooms.getRoom(merged.roomId)) return errorResponse(`room "${merged.roomId}" not found`, 404)
 
       agent.updateTrigger(id, {
         name: merged.name.trim(),

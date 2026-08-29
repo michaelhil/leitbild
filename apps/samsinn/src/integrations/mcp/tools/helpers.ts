@@ -12,7 +12,7 @@ export const errorResult = (message: string) => ({
 })
 
 export const resolveRoom = (system: SamsinnWorkspaceRuntime, roomName: string): Room => {
-  const room = system.house.getRoom(roomName)
+  const room = system.rooms.getRoom(roomName)
   if (!room) throw new Error(`Room "${roomName}" not found`)
   return room
 }

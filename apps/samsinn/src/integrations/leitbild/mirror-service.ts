@@ -6,7 +6,7 @@
 //   - attach(room, config)   — fetch snapshot, subscribe to WS, absorb routine
 //                              events quietly, post only reset/errors
 //   - detach(room)           — close subscription
-//   - restoreAll(house)      — boot-time reattach for rooms with persisted config
+//   - restoreAll(rooms)      — boot-time reattach for rooms with persisted config
 //   - shutdown()             — close every subscription (process exit)
 //
 // Race-safe attach (per Codex's Leitbild-side guidance):
@@ -20,7 +20,7 @@
 // a clear boundary message and refreshes the snapshot baseline.
 // ============================================================================
 
-import type { House } from '../../core/types/room.ts'
+import type { RoomDirectory } from '../../core/rooms/directory.ts'
 import type { Room, LeitbildMirrorConfig } from '../../core/types/room.ts'
 import type { LeitbildClient, } from './client.ts'
 import { createLeitbildClient } from './client.ts'
@@ -72,7 +72,7 @@ const meaningfulSignature = (event: LeitbildEvent): { objectId: string; sig: str
 
 export interface MirrorStatus {
   readonly baseUrl: string
-  readonly instanceId: string
+  readonly workspaceId: string
   readonly format: 'summary' | 'full'
   readonly lastSeq: number
   readonly connected: boolean
@@ -86,8 +86,8 @@ export interface MirrorService {
   readonly attach: (room: Room, config: LeitbildMirrorConfig, scope?: string) => Promise<void>
   readonly detach: (room: Room) => void
   readonly statusFor: (room: Room) => MirrorStatus | undefined
-  // restoreAll iterates a house's rooms; scope is the house's owning system.
-  readonly restoreAll: (house: House, scope?: string) => Promise<void>
+  // restoreAll iterates one Workspace's Room Directory.
+  readonly restoreAll: (rooms: RoomDirectory, scope?: string) => Promise<void>
   readonly shutdown: () => void
 }
 
@@ -109,7 +109,7 @@ export const createMirrorService = (deps: MirrorServiceDeps = {}): MirrorService
       type: 'system',
       cause: {
         kind: 'external-mirror',
-        name: `${mirror.config.baseUrl}:${mirror.config.instanceId}:${event?.seq ?? mirror.lastSeq}${event?.id ? `:${event.id}` : ''}`,
+        name: `${mirror.config.baseUrl}:${mirror.config.workspaceId}:${event?.seq ?? mirror.lastSeq}${event?.id ? `:${event.id}` : ''}`,
       },
     })
   }
@@ -161,7 +161,7 @@ export const createMirrorService = (deps: MirrorServiceDeps = {}): MirrorService
       // Re-anchor: refetch snapshot, post boundary message with NEW seq.
       // Note: the post-reset seq may be lower than mirror.lastSeq.
       try {
-        const snapshot = await mirror.client.getSnapshot(mirror.config.instanceId)
+        const snapshot = await mirror.client.getSnapshot(mirror.config.workspaceId)
         mirror.lastSeq = snapshot.seq
         mirror.room.post({
           senderId: SYSTEM_SENDER_ID,
@@ -170,7 +170,7 @@ export const createMirrorService = (deps: MirrorServiceDeps = {}): MirrorService
           type: 'system',
           cause: {
             kind: 'external-mirror',
-            name: `${mirror.config.baseUrl}:${mirror.config.instanceId}:${snapshot.seq}:reset-boundary`,
+            name: `${mirror.config.baseUrl}:${mirror.config.workspaceId}:${snapshot.seq}:reset-boundary`,
           },
         })
         return
@@ -213,11 +213,11 @@ export const createMirrorService = (deps: MirrorServiceDeps = {}): MirrorService
     // Finding 2.1.1 — closes the documented-but-unimplemented race window.
     // startSeq=0 is intentional: we don't yet know the real anchor; the
     // forward-only filter applied during drain will drop events <= snapshot.seq.
-    mirror.handle = client.subscribe(config.instanceId, (event) => { void handleEvent(mirror)(event) }, 0)
+    mirror.handle = client.subscribe(config.workspaceId, (event) => { void handleEvent(mirror)(event) }, 0)
     active.set(room.profile.id, mirror)
 
     try {
-      const snapshot = await client.getSnapshot(config.instanceId)
+      const snapshot = await client.getSnapshot(config.workspaceId)
       mirror.lastSeq = snapshot.seq
 
       // Persist the binding on the room (in case attach was triggered
@@ -274,20 +274,20 @@ export const createMirrorService = (deps: MirrorServiceDeps = {}): MirrorService
     if (!mirror) {
       const cfg = room.getLeitbildMirror()
       if (!cfg) return undefined
-      return { baseUrl: cfg.baseUrl, instanceId: cfg.instanceId, format: cfg.format, lastSeq: 0, connected: false }
+      return { baseUrl: cfg.baseUrl, workspaceId: cfg.workspaceId, format: cfg.format, lastSeq: 0, connected: false }
     }
     return {
       baseUrl: mirror.config.baseUrl,
-      instanceId: mirror.config.instanceId,
+      workspaceId: mirror.config.workspaceId,
       format: mirror.config.format,
       lastSeq: mirror.lastSeq,
       connected: !!mirror.handle,
     }
   }
 
-  const restoreAll = async (house: House, scope?: string): Promise<void> => {
-    for (const profile of house.listAllRooms()) {
-      const room = house.getRoom(profile.id)
+  const restoreAll = async (rooms: RoomDirectory, scope?: string): Promise<void> => {
+    for (const profile of rooms.listAllRooms()) {
+      const room = rooms.getRoom(profile.id)
       const cfg = room?.getLeitbildMirror()
       if (room && cfg) {
         try { await attach(room, cfg, scope) }

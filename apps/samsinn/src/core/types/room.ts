@@ -1,16 +1,11 @@
-// Room + House — message delivery, membership, mode, and system-level
-// collection. House also owns system-level LLM access and bookmarks.
+// Room domain types — message delivery, membership, mode, and Room state.
 
 import type {
   Message,
   RoomProfile,
   PostParams,
-  DeliverFn,
   DeliveryMode,
-  ResolveAgentName,
-  ResolveTagFn,
 } from './messaging.ts'
-import type { LLMCallOptions } from './llm.ts'
 import type { SummaryConfig } from './summary.ts'
 
 // === Room event callbacks ===
@@ -24,7 +19,6 @@ export type OnMembershipChanged = (roomId: string, roomName: string, agentId: st
 export interface RemoveAgentFromRoomOptions {
   readonly deleteRoomIfEmpty?: boolean
 }
-export type OnBookmarksChanged = () => void
 // Fired by the API/MCP layer after agent settings (persona, model, tools,
 // triggers, name, etc.) are mutated. Bookmarks-style: argless, "something
 // changed". Wire-system-events triggers a snapshot save so config edits
@@ -38,13 +32,6 @@ export type OnSummaryConfigChanged = (roomId: string, config: SummaryConfig) => 
 // Fired when a summary or compression output is persisted to the room.
 export type SummaryTarget = 'summary' | 'compression'
 export type OnSummaryUpdated = (roomId: string, target: SummaryTarget) => void
-
-// === Bookmarks — system-wide message snippets (Phase 1) ===
-
-export interface Bookmark {
-  readonly id: string
-  readonly content: string
-}
 
 // === Room state snapshot (for UI sync on connect/reconnect) ===
 
@@ -75,7 +62,7 @@ export interface RoomState {
 
 export interface LeitbildMirrorConfig {
   readonly baseUrl: string         // e.g. "https://leitbild.samsinn.app"
-  readonly instanceId: string      // Leitbild Control Instance id
+  readonly workspaceId: string      // Leitbild Control Instance id
   readonly format: 'summary' | 'full'
 }
 
@@ -168,55 +155,6 @@ export interface CreateResult<T> {
   readonly value: T
   readonly requestedName: string
   readonly assignedName: string
-}
-
-// === HouseCallbacks — configuration object for createHouse ===
-
-export interface HouseCallbacks {
-  readonly deliver?: DeliverFn
-  readonly resolveAgentName?: ResolveAgentName
-  readonly resolveTag?: ResolveTagFn
-  readonly resolveKind?: (id: string) => 'ai' | 'human' | undefined
-  readonly onMessagePosted?: OnMessagePosted
-  readonly onTurnChanged?: OnTurnChanged
-  readonly onDeliveryModeChanged?: OnDeliveryModeChanged
-  readonly onRoomCreated?: OnRoomCreated
-  readonly onRoomDeleted?: OnRoomDeleted
-  readonly onBookmarksChanged?: OnBookmarksChanged
-  readonly onManualModeEntered?: (roomId: string) => void
-  readonly onModeAutoSwitched?: OnModeAutoSwitched
-  readonly onSummaryConfigChanged?: OnSummaryConfigChanged
-  readonly onSummaryUpdated?: OnSummaryUpdated
-  readonly callSystemLLM?: (options: LLMCallOptions) => Promise<string>
-  // Script-engine hook. Direct callback (not via lateBinding) — fires after
-  // onMessagePosted on every chat message. Replaces the prior `scriptHook`
-  // lateBinding in main.ts; the runner is always present at room-construction
-  // time, so the warn-once-on-missing-subscriber benefit doesn't apply here.
-  readonly onScriptMessage?: OnMessagePosted
-}
-
-// === House — room collection + bookmarks + system-level LLM ===
-
-export interface House {
-  readonly createRoom: (config: RoomConfig) => Room
-  readonly createRoomSafe: (config: RoomConfig) => CreateResult<Room>
-  readonly getRoom: (idOrName: string) => Room | undefined
-  readonly getRoomsForAgent: (agentId: string) => ReadonlyArray<Room>
-  readonly listAllRooms: () => ReadonlyArray<RoomProfile>
-  readonly removeRoom: (id: string) => boolean
-  readonly getHousePrompt: () => string
-  readonly setHousePrompt: (prompt: string) => void
-  readonly getResponseFormat: () => string
-  readonly setResponseFormat: (format: string) => void
-  readonly restoreRoom: (profile: RoomProfile) => Room
-  // System-wide message bookmarks. New entries at index 0 (top).
-  readonly listBookmarks: () => ReadonlyArray<Bookmark>
-  readonly addBookmark: (content: string) => Bookmark
-  readonly updateBookmark: (id: string, content: string) => Bookmark | undefined
-  readonly deleteBookmark: (id: string) => boolean
-  readonly restoreBookmarks: (bookmarks: ReadonlyArray<Bookmark>) => void
-  // System-level LLM access — available when callSystemLLM is provided via HouseCallbacks
-  readonly callSystemLLM?: (options: LLMCallOptions) => Promise<string>
 }
 
 export interface RoomConfig {

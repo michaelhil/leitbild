@@ -74,7 +74,7 @@ export const getBundledPack = (namespace: string): BundledPack | undefined =>
 export const isSystemPack = (namespace: string): boolean =>
   BUNDLED_PACKS.some(p => p.namespace === namespace && p.system)
 
-// Used by seed-instance.ts when creating a fresh room. Filesystem-installed
+// Used by seed-workspace.ts when creating a fresh room. Filesystem-installed
 // packs do NOT contribute to default-active (operator opts in per pack at
 // install time, then per-room via the UI) — only bundled defaultActive
 // entries are auto-seeded.

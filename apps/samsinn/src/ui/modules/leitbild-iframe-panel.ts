@@ -25,7 +25,7 @@ import { send as wsSend } from './ws-send.ts'
 interface MirrorStatus {
   readonly status: null | {
     readonly baseUrl: string
-    readonly instanceId: string
+    readonly workspaceId: string
     readonly connected: boolean
   }
 }
@@ -62,13 +62,13 @@ const saveLayout = (p: PanelLayout): void => {
 
 // === URL helpers ===
 
-const spaUrl = (baseUrl: string, instanceId: string): string => {
+const spaUrl = (baseUrl: string, workspaceId: string): string => {
   // Leitbild SPA route is /i/{scenarioId}/{runId}
-  // where instanceId = `${scenarioId}:${runId}`.
-  const colonIdx = instanceId.indexOf(':')
+  // where workspaceId = `${scenarioId}:${runId}`.
+  const colonIdx = workspaceId.indexOf(':')
   if (colonIdx < 0) return baseUrl
-  const scenarioId = instanceId.slice(0, colonIdx)
-  const runId = instanceId.slice(colonIdx + 1)
+  const scenarioId = workspaceId.slice(0, colonIdx)
+  const runId = workspaceId.slice(colonIdx + 1)
   return `${baseUrl}/i/${encodeURIComponent(scenarioId)}/${encodeURIComponent(runId)}`
 }
 
@@ -357,7 +357,7 @@ export const updateLeitbildPanelForRoom = async (roomName: string | undefined, r
     return
   }
 
-  const url = spaUrl(status.status.baseUrl, status.status.instanceId)
+  const url = spaUrl(status.status.baseUrl, status.status.workspaceId)
   if (ifr.src !== url) ifr.src = url
   btn.classList.remove('hidden')
 }

@@ -15,7 +15,7 @@
 //
 // NO MOCKS. The test uses:
 //   - real createDeploymentRuntime + real createWorkspaceRuntimeRegistry
-//   - real per-instance System with real House, ToolRegistry, capture registry
+//   - real per-Workspace System with real RoomDirectory, ToolRegistry, capture registry
 //   - real WS handler dispatch via handleWSMessage
 //   - real snapshot save → reload via captureSnapshot + redactBiometricMessages
 //
@@ -29,8 +29,6 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { newWorkspaceId } from '@samsinn-leitbild/platform-contracts'
 import { mkdtemp, rm } from 'node:fs/promises'
-
-const TEST_WORKSPACE_ID = newWorkspaceId()
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createDeploymentRuntime } from '../core/deployment-runtime.ts'
@@ -82,23 +80,23 @@ describe('biometrics capture flow (no mocks)', () => {
         wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
       },
     })
-    wsManager = createWSManager({ getSystem: (id) => registry.tryGetLive(id) })
+    wsManager = createWSManager({ getRuntime: (id) => registry.tryGetLive(id) })
 
-    const cookieId = 'biocookietest123'
+    const cookieId = newWorkspaceId()
     const system = await registry.getOrLoad(cookieId)
 
     // Activate the biometrics pack in the seed room so the per-room filter
     // exposes biometrics_* tools to agents in that room. (For the tool
     // factory call below we use the registry directly, so activation isn't
     // strictly required — but exercising it confirms the activation path.)
-    const rooms = system.house.listAllRooms()
+    const rooms = system.rooms.listAllRooms()
     expect(rooms.length).toBeGreaterThan(0)
-    const room = system.house.getRoom(rooms[0]!.id)!
+    const room = system.rooms.getRoom(rooms[0]!.id)!
     room.setActivePacks(['biometrics'])
     expect(room.getActivePacks()).toContain('biometrics')
 
     // Step 1 — agent invokes biometrics_start. Pull the registered tool
-    // from the per-instance overlay and execute it.
+    // from the per-Workspace overlay and execute it.
     const startTool = system.toolRegistry.get('biometrics_start')
     expect(startTool).toBeTruthy()
 
@@ -127,7 +125,7 @@ describe('biometrics capture flow (no mocks)', () => {
       getBufferedAmount: () => 0,
       close: () => {},
     }
-    const session = { workspaceId: TEST_WORKSPACE_ID, instanceId: cookieId, sessionToken: 'tab-1', lastActivity: Date.now() }
+    const session = { workspaceId: cookieId, sessionToken: 'tab-1', lastActivity: Date.now() }
 
     await handleWSMessage(
       conn, session,
@@ -213,12 +211,12 @@ describe('biometrics capture flow (no mocks)', () => {
         wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
       },
     })
-    wsManager = createWSManager({ getSystem: (id) => registry.tryGetLive(id) })
+    wsManager = createWSManager({ getRuntime: (id) => registry.tryGetLive(id) })
 
-    const cookieId = 'redacttest123abc'
+    const cookieId = newWorkspaceId()
     const system = await registry.getOrLoad(cookieId)
-    const rooms = system.house.listAllRooms()
-    const room = system.house.getRoom(rooms[0]!.id)!
+    const rooms = system.rooms.listAllRooms()
+    const room = system.rooms.getRoom(rooms[0]!.id)!
     room.setActivePacks(['biometrics'])
 
     const startTool = system.toolRegistry.get('biometrics_start')!
@@ -267,7 +265,7 @@ describe('biometrics capture flow (no mocks)', () => {
         wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
       },
     })
-    wsManager = createWSManager({ getSystem: (id) => registry.tryGetLive(id) })
+    wsManager = createWSManager({ getRuntime: (id) => registry.tryGetLive(id) })
 
     // Subscribe to the registry hook the same way api/server.ts does at boot.
     // No mocks — real capture registry, real listener.
@@ -278,9 +276,9 @@ describe('biometrics capture flow (no mocks)', () => {
     })
 
     try {
-      const cookieId = 'agentstoptest12c'
+      const cookieId = newWorkspaceId()
       const system = await registry.getOrLoad(cookieId)
-      const room = system.house.getRoom(system.house.listAllRooms()[0]!.id)!
+      const room = system.rooms.getRoom(system.rooms.listAllRooms()[0]!.id)!
       room.setActivePacks(['biometrics'])
       const human = system.team.listAgents().find(a => a.kind === 'human')!
 
@@ -292,7 +290,7 @@ describe('biometrics capture flow (no mocks)', () => {
       const captureId = (startResult.data as { captureId: string }).captureId
 
       const conn: WSConnection = { send: () => {}, getBufferedAmount: () => 0, close: () => {} }
-      const sess = { workspaceId: TEST_WORKSPACE_ID, instanceId: cookieId, sessionToken: 'tab-1', lastActivity: Date.now() }
+      const sess = { workspaceId: cookieId, sessionToken: 'tab-1', lastActivity: Date.now() }
       await handleWSMessage(conn, sess, JSON.stringify({ type: 'biometric_capture_started', captureId }), system, wsManager)
 
       // Agent stops while widget would still be live.
@@ -332,12 +330,12 @@ describe('biometrics capture flow (no mocks)', () => {
         wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
       },
     })
-    wsManager = createWSManager({ getSystem: (id) => registry.tryGetLive(id) })
+    wsManager = createWSManager({ getRuntime: (id) => registry.tryGetLive(id) })
 
-    const cookieId = 'claimtest1234abc'
+    const cookieId = newWorkspaceId()
     const system = await registry.getOrLoad(cookieId)
-    const rooms = system.house.listAllRooms()
-    const room = system.house.getRoom(rooms[0]!.id)!
+    const rooms = system.rooms.listAllRooms()
+    const room = system.rooms.getRoom(rooms[0]!.id)!
     room.setActivePacks(['biometrics'])
 
     const startTool = system.toolRegistry.get('biometrics_start')!
@@ -356,8 +354,8 @@ describe('biometrics capture flow (no mocks)', () => {
     const sentB: string[] = []
     const tabA: WSConnection = { send: (d) => sentA.push(d), getBufferedAmount: () => 0, close: () => {} }
     const tabB: WSConnection = { send: (d) => sentB.push(d), getBufferedAmount: () => 0, close: () => {} }
-    const sessA = { workspaceId: TEST_WORKSPACE_ID, instanceId: cookieId, sessionToken: 'tab-A', lastActivity: Date.now() }
-    const sessB = { workspaceId: TEST_WORKSPACE_ID, instanceId: cookieId, sessionToken: 'tab-B', lastActivity: Date.now() }
+    const sessA = { workspaceId: cookieId, sessionToken: 'tab-A', lastActivity: Date.now() }
+    const sessB = { workspaceId: cookieId, sessionToken: 'tab-B', lastActivity: Date.now() }
 
     // Register both connections so wsManager.wsConnections can find them by token.
     wsManager.wsConnections.set('tab-A', tabA)

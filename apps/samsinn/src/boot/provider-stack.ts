@@ -11,7 +11,7 @@
 import { sharedPaths } from '../core/paths.ts'
 import { createDeploymentRuntime, type DeploymentRuntime } from '../core/deployment-runtime.ts'
 import { createLimitMetrics, type LimitMetrics } from '../core/limit-metrics.ts'
-import { initInstanceLimiter } from '../api/routes/instances.ts'
+import { initWorkspaceLimiter } from '../api/routes/workspaces.ts'
 import { parseProviderConfig, summariseProviderConfig, type ProviderConfig } from '../llm/providers-config.ts'
 import { buildProvidersFromConfig } from '../llm/providers-setup.ts'
 import { loadProviderStore, mergeWithEnv } from '../llm/providers-store.ts'
@@ -59,7 +59,7 @@ export const buildProviderStack = async (): Promise<ProviderStack> => {
   // so LRU evictions are counted. Idempotent — safe if called more than
   // once. Bug + auth limiters are scoped per-route-file and don't need
   // metrics wiring (per-IP eviction is rare for those endpoints).
-  initInstanceLimiter(deployment.limitMetrics)
+  initWorkspaceLimiter(deployment.limitMetrics)
 
   return { providerConfig, providerKeys, limitMetrics, deployment }
 }

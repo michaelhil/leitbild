@@ -85,7 +85,7 @@ export interface PackToolsDeps {
   // uninstall_pack atomically removes the pack's namespace from every
   // room's activePacks list before unregistering, so no room ends up
   // referencing a now-deleted pack. Without this, the scrub is skipped
-  // (tests / MCP-only mode where House isn't in scope — no rooms to
+  // (tests / MCP-only mode where RoomDirectory isn't in scope — no rooms to
   // scrub anyway).
   // Async because the implementation awaits per-evicted-instance snapshot
   // writes (M1 pendingScrubs durability — see bootstrap.ts). Tests/MCP-only

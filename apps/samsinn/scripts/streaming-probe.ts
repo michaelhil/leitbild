@@ -198,7 +198,7 @@ const main = async (): Promise<void> => {
     target: 'fresh',
     token: process.env.SAMSINN_TOKEN,
   })
-  console.log(`probe: instance=${ctx.instance.slice(0, 8)} mode=${evictReload ? 'evict-reload' : 'single'}`)
+  console.log(`probe: workspace=${ctx.workspaceId.slice(0, 8)} mode=${evictReload ? 'evict-reload' : 'single'}`)
 
   // Run 1 — baseline. Wiring is checked hard; streaming quality is soft.
   const run1 = await runOneEval(ctx, 'baseline')

@@ -34,7 +34,7 @@
 //      subscribeAgentState having been called for the seeded agent.
 //   2. Triggering the agent's eval (via agent.receive with a stub LLM)
 //      causes an `agent_state` broadcast scoped to the cookie's
-//      instanceId — the exact chain the UI relies on.
+//      workspaceId — the exact chain the UI relies on.
 // ============================================================================
 
 import { describe, test, expect, afterEach, beforeEach } from 'bun:test'
@@ -49,6 +49,7 @@ import { wireAgentTracking } from './agent-tracking.ts'
 import { makeStubGateway, makeStubSetup, stubProviderConfig as baseConfig } from './stub-gateway.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
 import type { AutoSaver } from '../core/storage/snapshot.ts'
+import { newWorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
 const makeSetup = makeStubSetup
 
@@ -77,8 +78,8 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     // verify the spawn-wrapper drives the chain end-to-end without relying
     // on wsManager's internal closure (which captures baseWs.broadcastTo
     // Instance and is invisible to outer instrumentation).
-    const broadcasts: Array<{ instanceId: string; msg: WSOutbound }> = []
-    const subscribed: Array<{ agentId: string; agentName: string; instanceId: string }> = []
+    const broadcasts: Array<{ workspaceId: string; msg: WSOutbound }> = []
+    const subscribed: Array<{ agentId: string; agentName: string; workspaceId: string }> = []
 
     const registry = createWorkspaceRuntimeRegistry({
       deployment: shared,
@@ -99,11 +100,11 @@ describe('per-agent state subscription is wired for every spawn path', () => {
             // `broadcasts` then proves: (a) the wrapper invoked us for
             // the seeded agent, and (b) state transitions actually flow.
             if (agent.kind !== 'ai') return
-            subscribed.push({ agentId: agent.id, agentName: agent.name, instanceId: instId })
+            subscribed.push({ agentId: agent.id, agentName: agent.name, workspaceId: instId })
             const agentName = agent.name
             agent.state.subscribe((state, _agentId, context) => {
               broadcasts.push({
-                instanceId: instId,
+                workspaceId: instId,
                 msg: { type: 'agent_state', agentName, state, ...(context !== undefined ? { context } : {}) },
               })
             })
@@ -114,10 +115,10 @@ describe('per-agent state subscription is wired for every spawn path', () => {
       },
     })
 
-    const baseWs = createWSManager({ getSystem: (id) => registry.tryGetLive(id) })
+    const baseWs = createWSManager({ getRuntime: (id) => registry.tryGetLive(id) })
     wsManager = baseWs
 
-    const cookieId = 'cookieinst123abc'
+    const cookieId = newWorkspaceId()
     const sys = await registry.getOrLoad(cookieId)
 
     // 1. Seed must have produced exactly one AI agent (Helper).
@@ -126,10 +127,10 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     // `rooms.length > 0`, causing seed to short-circuit and Helper to
     // never spawn. The fallback was removed; if it sneaks back in,
     // this assertion catches it.
-    const rooms = sys.house.listAllRooms()
+    const rooms = sys.rooms.listAllRooms()
     expect(rooms.length).toBe(1)
     expect(rooms[0]?.name).toBe('Cafe')
-    expect(sys.house.getRoom(rooms[0]!.id)?.getActivePacks()).toContain('demos')
+    expect(sys.rooms.getRoom(rooms[0]!.id)?.getActivePacks()).toContain('demos')
     const aiAgents = sys.team.listAgents().filter(a => a.kind === 'ai')
     expect(aiAgents.length).toBe(1)
     const helper = aiAgents[0]!
@@ -139,14 +140,14 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     // Pre-fix: zero entries — the only places that called subscribeAgentState
     // were REST/WS handlers (none ran here) and the wireWorkspaceRuntimeEvents init-
     // loop (which iterated team BEFORE seed spawned Helper).
-    const subForHelper = subscribed.filter(s => s.agentId === helper.id && s.instanceId === cookieId)
+    const subForHelper = subscribed.filter(s => s.agentId === helper.id && s.workspaceId === cookieId)
     expect(subForHelper).toHaveLength(1)
 
     // 3. End-to-end: trigger Helper's eval via the same path the UI uses
     // (post a message, addressed to Helper). The stub LLM returns instantly,
     // so the agent transitions generating → idle. Both transitions should
     // produce `agent_state` broadcasts scoped to OUR cookie's instance.
-    const room = sys.house.listAllRooms()[0]
+    const room = sys.rooms.listAllRooms()[0]
     expect(room).toBeDefined()
     sys.routeMessage(
       { rooms: [room!.id] },
@@ -160,7 +161,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     const deadline = Date.now() + 2000
     while (Date.now() < deadline) {
       stateEvents = broadcasts.filter(b =>
-        b.instanceId === cookieId && b.msg.type === 'agent_state' &&
+        b.workspaceId === cookieId && b.msg.type === 'agent_state' &&
         (b.msg as { agentName?: string }).agentName === 'Aiden',
       )
       if (stateEvents.length > 0) break
@@ -168,7 +169,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     }
     if (stateEvents.length === 0) {
       // Diagnostic: dump what DID broadcast for Helper or this instance.
-      const types = broadcasts.filter(b => b.instanceId === cookieId).map(b => b.msg.type)
+      const types = broadcasts.filter(b => b.workspaceId === cookieId).map(b => b.msg.type)
       throw new Error(`No agent_state broadcasts for Helper. Got ${broadcasts.length} broadcasts total; types for cookieId: [${types.join(', ')}]`)
     }
     const generating = stateEvents.find(b => (b.msg as { state?: string }).state === 'generating')
@@ -200,10 +201,10 @@ describe('per-agent state subscription is wired for every spawn path', () => {
       },
     })
 
-    const baseWs = createWSManager({ getSystem: (id) => registry.tryGetLive(id) })
+    const baseWs = createWSManager({ getRuntime: (id) => registry.tryGetLive(id) })
     wsManager = baseWs
 
-    const sys = await registry.getOrLoad('cookieinst123abc')
+    const sys = await registry.getOrLoad(newWorkspaceId())
     const helper = sys.team.listAgents().find(a => a.kind === 'ai')!
     expect(helper.name).toBe('Aiden')
 
@@ -257,17 +258,17 @@ describe('per-agent state subscription is wired for every spawn path', () => {
       },
     })
 
-    wsManager = createWSManager({ getSystem: (id) => registry.tryGetLive(id) })
+    wsManager = createWSManager({ getRuntime: (id) => registry.tryGetLive(id) })
 
-    // Register a fake WS session/connection so broadcastToInstance has
+    // Register a fake WS session/connection so broadcastToWorkspace has
     // something to send to. The fake records every message it receives.
     const wsMessages: string[] = []
     const fakeToken = 'fake-session-token'
-    const cookieIdInstance = 'evictreloadtest1'
+    const cookieIdInstance = newWorkspaceId()
     wsManager.sessions.set(fakeToken, {
-      instanceId: cookieIdInstance,
-      // The other ClientSession fields aren't read by broadcastToInstance;
-      // only instanceId is used to filter. Cast satisfies the structural
+      workspaceId: cookieIdInstance,
+      // The other ClientSession fields aren't read by broadcastToWorkspace;
+      // only workspaceId is used to filter. Cast satisfies the structural
       // type without committing to fields the test doesn't care about.
     } as unknown as Parameters<typeof wsManager.sessions.set>[1])
     wsManager.wsConnections.set(fakeToken, {
@@ -289,7 +290,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     await new Promise(r => setTimeout(r, 100))
 
     // Trigger eval pre-evict — confirm baseline that broadcasts work.
-    const room1 = sys1.house.listAllRooms()[0]!
+    const room1 = sys1.rooms.listAllRooms()[0]!
     sys1.routeMessage(
       { rooms: [room1.id] },
       { senderId: 'system', senderName: 'system', content: '[[AI]] ping1', type: 'chat' },
@@ -330,7 +331,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     // agent_state broadcast arrives — the reloaded helper2.state has
     // no subscriber because stateUnsubs.has(helperId) was true and
     // subscribeAgentState silently skipped.
-    const room2 = sys2.house.listAllRooms()[0]!
+    const room2 = sys2.rooms.listAllRooms()[0]!
     sys2.routeMessage(
       { rooms: [room2.id] },
       { senderId: 'system', senderName: 'system', content: '[[AI]] ping2', type: 'chat' },

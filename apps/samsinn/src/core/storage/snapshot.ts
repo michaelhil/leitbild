@@ -7,85 +7,18 @@
 //
 // Auto-saver: debounced timer (5s default), flushes on SIGINT/SIGTERM.
 //
-// v26: current. Adds optional `Message.attachments` for image attachments
-//   (the V0.15 multimodal path). Composer attaches PNG screenshots from the
-//   Leitbild iframe panel; multimodal-capable models receive them as
-//   `image_url` content parts via openai-compatible adapter; non-multimodal
-//   models see a text placeholder. Validated at the WS boundary in
-//   src/api/ws-commands/validate.ts. v25 rejected at load (clean break).
-// v25: adds optional `RoomSnapshot.leitbildMirror` (LeitbildMirrorConfig)
-//   so room ↔ Control Instance bindings survive restart. Restored at boot by
-//   leitbildMirror.restoreAll(house). v24 rejected at load.
-// v24: unifies the pack-activation model — room.activePacks is now the
-//   COMPLETE per-room pack list including system packs (core, local) and
-//   bundled default-active packs (demos, pwr-ops). The prior IMPLICIT_ACTIVE
-//   resolver is gone; what the snapshot says is what the room has. Always
-//   serialised (was previously omitted-when-empty). v23 rejected at load.
-// v23: RAG-foundation state predecessor.
-// v22: adds RAG-foundation state at the system level:
-//   - `embedderBinding` — once any per-instance embedding ingestion runs
-//     (memory fold or document upload), the instance commits to a
-//     (provider, model, dim) triplet. Mid-life dimension switches are
-//     impossible (vector stores cannot mix dims), so the binding is
-//     persisted and consulted by every subsequent ingestion. Absent on
-//     instances that have never ingested.
-//   - `documents` — uploaded document metadata (filename, size, status,
-//     etc.). The binary + extracted text + vectors live in sidecar files
-//     under instances/<id>/documents/ and instances/<id>/vectors.jsonl;
-//     only metadata is in-snapshot. Absent / empty array on instances
-//     with no uploads.
-// Snapshots from v21 are rejected at load (clean break per project policy).
-// v21: adds top-level `housePrompt` + `responseFormat` —
-// house-level state that has been get/set-able since v0 but was never
-// serialised. Operator customisations (system prompt, response format
-// rules) survived the request that set them but reverted to defaults on
-// restart/eviction. Snapshots from v20 are rejected at load.
-// v20: adds top-level `pendingScrubs` — the queue used by
-// cross-instance pack-uninstall to remove a namespace from
-// room.activePacks across instances that were evicted at the time of the
-// uninstall. Drained on restoreFromSnapshot. Without this, an evicted
-// instance reloaded after an uninstall would restore the deleted pack
-// into its rooms, and a later same-namespace install would auto-activate
-// without operator opt-in. Snapshots from v19 are rejected at load.
-// v19: replaces room.wikiBindings + agent.wikiBindings with
-// room.activePacks (single per-room layer per the unify-around-packs
-// design). Wikis are now reached via active packs that bundle them; the
-// per-agent binding layer is gone (config.tools whitelist remains the
-// per-agent fine-grain). Snapshots from v18 were rejected at load.
-// v18: removed the artifact subsystem entirely (task_list, poll,
-// document, mermaid, map artifact types). Mermaid + map are now inline-only
-// via fenced code blocks in chat. The other types had no inline replacement
-// and are gone. Snapshots from v17 are rejected at load (clean break per
-// project policy).
-// v17: adds per-agent `triggers` (scheduled prompts) on AIAgentConfig
-// and HumanAgentSnapshot. Both AI and human agents support triggers. The
-// scheduler runs server-side; persisted state is the trigger list +
-// lastFiredAt timestamps so triggers resume across restart. Cascade-cleaned
-// when the pinned room is deleted.
-// v16: adds 'error' MessageType + errorCode/errorProvider on Message
-// (distinct from 'pass' so LLM/transport failures don't masquerade as agent
-// decisions) and `preferredModel` on AIAgentConfig (user intent, snapshot-stable;
-// effective model resolved per call). Older versions are rejected at load —
-// no migration ladder.
-//      v14 adds RoomSnapshot.wikiBindings + AIAgentConfig.wikiBindings (per-room
-//      and per-agent wiki bindings for the wiki-backed knowledge feature).
-//      v13 removes the v1 script engine entirely (replaced by the v2 reactive
-//      runner — see docs/scripts.md). v1 ScriptRun was never persisted, so
-//      this is a clean drop with nothing to migrate.
-//      v12 removed macros entirely. Dropped RoomSnapshot.selectedMacroId and
-//      any persisted macro artifacts.
-//      v11 added RoomSnapshot.summaryConfig + latestSummary. Also removed the
-//      cap-based message pruning path, so compressedIds are only populated by
-//      the summary-engine's replaceCompression() now.
+// v27 is the canonical Workspace snapshot. Rooms, Workspace settings, and
+// bookmarks are independent services; previous snapshot shapes are rejected.
 // ============================================================================
 
 import type { Agent, AIAgentConfig } from '../types/agent.ts'
 import type { DeliveryMode, Message, RoomProfile } from '../types/messaging.ts'
-import type { Bookmark, LeitbildMirrorConfig, Room } from '../types/room.ts'
+import type { LeitbildMirrorConfig, Room } from '../types/room.ts'
+import type { Bookmark } from '../workspaces/bookmark-store.ts'
 import type { SummaryConfig } from '../types/summary.ts'
 import type { Trigger } from '../triggers/types.ts'
 import { asAIAgent } from '../../agents/shared.ts'
-import { DEFAULT_HOUSE_PROMPT, DEFAULT_RESPONSE_FORMAT } from '../house.ts'
+import { DEFAULT_RESPONSE_FORMAT, DEFAULT_WORKSPACE_PROMPT } from '../workspaces/settings.ts'
 import { createSerialiseChain } from '../serialise-chain.ts'
 import { redactBiometricMessages } from './snapshot-redact.ts'
 import { mkdir, rename, rm } from 'node:fs/promises'
@@ -93,7 +26,7 @@ import { dirname } from 'node:path'
 
 // --- Version ---
 
-export const SNAPSHOT_VERSION = 26
+export const SNAPSHOT_VERSION = 27
 
 // --- Snapshot schema ---
 
@@ -139,7 +72,7 @@ export interface PendingScrub {
   readonly scheduledAt: string  // ISO-8601 — for triage when scrubs accumulate
 }
 
-// Per-instance commitment to a single embedding model. Set on first
+// per-Workspace commitment to a single embedding model. Set on first
 // ingestion (memory fold or document upload), then frozen — vector
 // stores cannot mix dimensions across providers, so this triplet is the
 // per-index identity. Persisted so it survives restart/eviction.
@@ -169,7 +102,7 @@ export interface DocumentSnapshot {
 }
 
 export interface SystemSnapshot {
-  readonly version: '26'
+  readonly version: '27'
   readonly timestamp: number
   readonly rooms: ReadonlyArray<RoomSnapshot>
   readonly agents: ReadonlyArray<AgentSnapshot>             // AI agents
@@ -181,10 +114,10 @@ export interface SystemSnapshot {
   // applied on next restoreFromSnapshot — namespace is removed from every
   // room.activePacks. Cleared after drain on the same restore.
   readonly pendingScrubs?: ReadonlyArray<PendingScrub>
-  // House-level customisations. Both omitted from the snapshot when equal
+  // Workspace-level customisations. Both are omitted when equal
   // to the default — restoreFromSnapshot leaves the in-memory default in
   // place if absent. Persisted as v21 (was set/get-able but unsaved before).
-  readonly housePrompt?: string
+  readonly workspacePrompt?: string
   readonly responseFormat?: string
   // RAG state (v22). Both absent on instances that have never ingested.
   readonly embedderBinding?: EmbedderBindingSnapshot
@@ -194,13 +127,17 @@ export interface SystemSnapshot {
 // --- Minimal System interface for serialization ---
 
 interface SerializableSystem {
-  readonly house: {
+  readonly rooms: {
     readonly listAllRooms: () => ReadonlyArray<RoomProfile>
     readonly getRoom: (idOrName: string) => Room | undefined
     readonly getRoomsForAgent: (agentId: string) => ReadonlyArray<Room>
-    readonly getHousePrompt: () => string
+  }
+  readonly settings: {
+    readonly getPrompt: () => string
     readonly getResponseFormat: () => string
-    readonly listBookmarks: () => ReadonlyArray<Bookmark>
+  }
+  readonly bookmarks: {
+    readonly list: () => ReadonlyArray<Bookmark>
   }
   readonly team: {
     readonly listAgents: () => ReadonlyArray<Agent>
@@ -215,11 +152,11 @@ interface SerializableSystem {
 // --- Serialize ---
 
 export const serializeSystem = (system: SerializableSystem): SystemSnapshot => {
-  const roomProfiles = system.house.listAllRooms()
+  const roomProfiles = system.rooms.listAllRooms()
   const rooms: RoomSnapshot[] = []
 
   for (const profile of roomProfiles) {
-    const room = system.house.getRoom(profile.id)
+    const room = system.rooms.getRoom(profile.id)
     if (!room) continue
 
     const state = room.getRoomState()
@@ -243,7 +180,7 @@ export const serializeSystem = (system: SerializableSystem): SystemSnapshot => {
   const agents: AgentSnapshot[] = []
   const humans: HumanAgentSnapshot[] = []
   for (const agent of system.team.listAgents()) {
-    const agentRooms = system.house.getRoomsForAgent(agent.id)
+    const agentRooms = system.rooms.getRoomsForAgent(agent.id)
     if (agent.kind === 'ai') {
       const aiAgent = asAIAgent(agent)
       if (!aiAgent) continue
@@ -263,16 +200,16 @@ export const serializeSystem = (system: SerializableSystem): SystemSnapshot => {
     }
   }
 
-  const housePrompt = system.house.getHousePrompt()
-  const responseFormat = system.house.getResponseFormat()
+  const workspacePrompt = system.settings.getPrompt()
+  const responseFormat = system.settings.getResponseFormat()
 
   return {
-    version: '26',
+    version: '27',
     timestamp: Date.now(),
     rooms,
     agents,
     humans,
-    bookmarks: [...system.house.listBookmarks()],
+    bookmarks: [...system.bookmarks.list()],
     ...(system.ollamaUrls ? {
       ollamaUrls: system.ollamaUrls.list(),
       ollamaUrl: system.ollamaUrls.getCurrent(),
@@ -280,7 +217,7 @@ export const serializeSystem = (system: SerializableSystem): SystemSnapshot => {
     // Omit when equal to the default — keeps snapshots small and lets
     // restoreFromSnapshot leave the in-memory default in place when no
     // override was set.
-    ...(housePrompt !== DEFAULT_HOUSE_PROMPT ? { housePrompt } : {}),
+    ...(workspacePrompt !== DEFAULT_WORKSPACE_PROMPT ? { workspacePrompt } : {}),
     ...(responseFormat !== DEFAULT_RESPONSE_FORMAT ? { responseFormat } : {}),
     // pendingScrubs is NOT serialised from a live system — it's only ever
     // injected externally by appendPendingScrub (uninstall_pack against an
@@ -339,7 +276,7 @@ export const saveSnapshot = (snapshot: SystemSnapshot, path: string): Promise<vo
   })
 
 // Append a pending pack scrub to a snapshot file in place. Used by the
-// cross-instance scrub path for instances that are currently evicted —
+// cross-Workspace scrub path for instances that are currently evicted —
 // since they're not live in memory, we mutate their on-disk snapshot
 // directly so the scrub applies on next restoreFromSnapshot.
 //
@@ -409,11 +346,15 @@ export const loadSnapshot = async (path: string): Promise<SystemSnapshot | null>
 // --- Restore ---
 
 interface RestorableSystem {
-  readonly house: {
+  readonly rooms: {
     readonly restoreRoom: (profile: RoomProfile) => Room
-    readonly setHousePrompt: (prompt: string) => void
+  }
+  readonly settings: {
+    readonly setPrompt: (prompt: string) => void
     readonly setResponseFormat: (format: string) => void
-    readonly restoreBookmarks: (entries: ReadonlyArray<Bookmark>) => void
+  }
+  readonly bookmarks: {
+    readonly restore: (entries: ReadonlyArray<Bookmark>) => void
   }
   readonly spawnAIAgent: (config: AIAgentConfig, options?: { overrideId?: string }) => Promise<unknown>
   readonly spawnHumanAgent?: (config: { name: string }, send: (msg: unknown) => void, options?: { overrideId?: string }) => Promise<unknown>
@@ -449,7 +390,7 @@ export const restoreFromSnapshot = async (
   // 1. Restore rooms (messages + membership + state)
   const roomMap = new Map<string, Room>()
   for (const roomSnap of snapshot.rooms) {
-    const room = system.house.restoreRoom(roomSnap.profile)
+    const room = system.rooms.restoreRoom(roomSnap.profile)
     room.injectMessages(roomSnap.messages)
     const filteredActive = roomSnap.activePacks.filter(ns => !scrubbed.has(ns))
     room.restoreState({
@@ -482,7 +423,7 @@ export const restoreFromSnapshot = async (
   }
 
   // 2b. Restore human agents (preserved IDs, no-op transport — clients
-  // reattach via the per-instance broadcast, not per-agent transport).
+  // reattach via the per-Workspace broadcast, not per-agent transport).
   if (system.spawnHumanAgent) {
     for (const humanSnap of snapshot.humans ?? []) {
       await system.spawnHumanAgent(
@@ -506,7 +447,7 @@ export const restoreFromSnapshot = async (
   }
 
   // 4. Restore bookmarks (system-wide)
-  system.house.restoreBookmarks(snapshot.bookmarks ?? [])
+  system.bookmarks.restore(snapshot.bookmarks ?? [])
 
   // 5. Restore Ollama URLs
   if (system.ollamaUrls && snapshot.ollamaUrls) {
@@ -514,10 +455,10 @@ export const restoreFromSnapshot = async (
     if (snapshot.ollamaUrl) system.ollamaUrls.setCurrent(snapshot.ollamaUrl)
   }
 
-  // 6. Restore house-level customisations. Omitted fields leave the
-  //    in-memory default (set by createHouse) untouched.
-  if (snapshot.housePrompt !== undefined) system.house.setHousePrompt(snapshot.housePrompt)
-  if (snapshot.responseFormat !== undefined) system.house.setResponseFormat(snapshot.responseFormat)
+  // 6. Restore Workspace-level customisations. Omitted fields leave the
+  //    defaults from createWorkspaceSettings untouched.
+  if (snapshot.workspacePrompt !== undefined) system.settings.setPrompt(snapshot.workspacePrompt)
+  if (snapshot.responseFormat !== undefined) system.settings.setResponseFormat(snapshot.responseFormat)
 }
 
 // --- Auto-saver ---

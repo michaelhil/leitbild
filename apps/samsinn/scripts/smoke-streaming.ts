@@ -94,7 +94,7 @@ const main = async (): Promise<void> => {
 
   if (!snapshotReceived) fail('no snapshot received on WS open — protocol regression')
 
-  console.log(`OK: ws snapshot + message broadcast received (instance=${ctx.instance.slice(0, 8)}, eventTypes=${[...seen].join(',')})`)
+  console.log(`OK: ws snapshot + message broadcast received (workspace=${ctx.workspaceId.slice(0, 8)}, eventTypes=${[...seen].join(',')})`)
 }
 
 main().catch(e => fail(e.message))

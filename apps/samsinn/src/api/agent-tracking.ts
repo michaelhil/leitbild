@@ -9,9 +9,9 @@
 //
 // Per-agent hooks (each must be idempotent so this wrapper can co-exist with
 // the snapshot-restore init-loop in wireWorkspaceRuntimeEvents):
-//   1. attachAgent(agentId, instanceId)
+//   1. attachAgent(agentId, workspaceId)
 //        — registry's reverse index for provider-routing events.
-//   2. wsManager.subscribeAgentState(agent, instanceId)
+//   2. wsManager.subscribeAgentState(agent, workspaceId)
 //        — turns agent.state.notifyState() into a scoped `agent_state` WS
 //          broadcast. Without it, the UI's $agents store never sees the
 //          'generating' transition, no thinking indicator appears, and
@@ -31,17 +31,18 @@
 
 import type { Agent } from '../core/types/agent.ts'
 import type { SamsinnWorkspaceRuntime } from '../main.ts'
+import type { WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
 export interface AgentTrackingDeps {
-  readonly attach: (agentId: string, instanceId: string) => void
+  readonly attach: (agentId: string, workspaceId: WorkspaceId) => void
   readonly detach: (agentId: string) => void
-  readonly subscribeAgentState: (agent: Agent, instanceId: string) => void
+  readonly subscribeAgentState: (agent: Agent, workspaceId: WorkspaceId) => void
   readonly unsubscribeAgentState: (agentId: string) => void
 }
 
 export const wireAgentTracking = (
   system: SamsinnWorkspaceRuntime,
-  instanceId: string,
+  workspaceId: WorkspaceId,
   deps: AgentTrackingDeps,
 ): void => {
   const { attach, detach, subscribeAgentState, unsubscribeAgentState } = deps
@@ -51,16 +52,16 @@ export const wireAgentTracking = (
   Object.assign(system, {
     spawnAIAgent: async (cfg: Parameters<typeof origSpawnAI>[0], opts?: Parameters<typeof origSpawnAI>[1]) => {
       const agent = await origSpawnAI(cfg, opts)
-      attach(agent.id, instanceId)
-      subscribeAgentState(agent, instanceId)
+      attach(agent.id, workspaceId)
+      subscribeAgentState(agent, workspaceId)
       return agent
     },
     spawnHumanAgent: async (cfg: Parameters<typeof origSpawnHuman>[0], send: Parameters<typeof origSpawnHuman>[1]) => {
       const agent = await origSpawnHuman(cfg, send)
-      attach(agent.id, instanceId)
+      attach(agent.id, workspaceId)
       // Humans don't have AI state, but subscribeAgentState early-returns
       // for kind !== 'ai'. Calling it keeps the per-spawn surface uniform.
-      subscribeAgentState(agent, instanceId)
+      subscribeAgentState(agent, workspaceId)
       return agent
     },
     removeAgent: (id: string) => {

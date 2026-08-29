@@ -76,7 +76,7 @@ Changing `dir` at runtime behaves the same way — old file closes, new file ope
 
 ## File layout
 
-In multi-instance deploys, each instance writes to its own log directory under `$SAMSINN_HOME/instances/<id>/logs/`. The `dir` config above is the per-instance default; override only if you want to merge or relocate.
+In multi-Workspace deploys, each instance writes to its own log directory under `$SAMSINN_HOME/instances/<id>/logs/`. The `dir` config above is the per-Workspace default; override only if you want to merge or relocate.
 
 ```
 <dir>/
@@ -84,7 +84,7 @@ In multi-instance deploys, each instance writes to its own log directory under `
   <sessionId>.1.jsonl     ← rolled (rotation on overflow)
 ```
 
-Rotation is a 2-file ring: when the active file exceeds `SAMSINN_LOG_MAX_BYTES` (default 50 MB), any prior `.1.jsonl` is removed, the active is renamed to `.1`, and a fresh active is started. Per-instance footprint is therefore capped at 2 × the threshold (~100 MB by default).
+Rotation is a 2-file ring: when the active file exceeds `SAMSINN_LOG_MAX_BYTES` (default 50 MB), any prior `.1.jsonl` is removed, the active is renamed to `.1`, and a fresh active is started. per-Workspace footprint is therefore capped at 2 × the threshold (~100 MB by default).
 
 Each line is one JSON object:
 

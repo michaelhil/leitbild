@@ -1,4 +1,4 @@
-import type { House } from '../../core/types/room.ts'
+import type { RoomDirectory } from '../../core/rooms/directory.ts'
 import type { Tool, ToolContext } from '../../core/types/tool.ts'
 import { resolveRoom } from './resolve.ts'
 
@@ -14,7 +14,7 @@ export const createGetTimeTool = (): Tool => ({
   }),
 })
 
-export const createPostToRoomTool = (house: House): Tool => ({
+export const createPostToRoomTool = (rooms: RoomDirectory): Tool => ({
   name: 'post_to_room',
   description: 'Post a message to a specific room. For replies in the current room, just write your response.',
   usage: 'Send to a room other than the current one (e.g. reporting back to a coordinator). For normal replies, just write your response.',
@@ -31,7 +31,7 @@ export const createPostToRoomTool = (house: House): Tool => ({
     const roomName = params.roomName as string | undefined
     const content = params.content as string | undefined
     if (!roomName || !content) return { success: false, error: 'roomName and content are required' }
-    const room = house.getRoom(roomName)
+    const room = rooms.getRoom(roomName)
     if (!room) return { success: false, error: `Room "${roomName}" not found` }
     // 'chat' type: agent speaks into the room as itself, visible to all members as a normal message.
     const message = room.post({
@@ -44,7 +44,7 @@ export const createPostToRoomTool = (house: House): Tool => ({
   },
 })
 
-export const createGetRoomHistoryTool = (house: House): Tool => ({
+export const createGetRoomHistoryTool = (rooms: RoomDirectory): Tool => ({
   name: 'get_room_history',
   description: 'Return recent messages from a room. Omit roomName for the current room.',
   usage: 'Catch up on a room or review past decisions. Omit roomName for current room.',
@@ -58,7 +58,7 @@ export const createGetRoomHistoryTool = (house: House): Tool => ({
     required: [],
   },
   execute: async (params: Record<string, unknown>, context: ToolContext) => {
-    const room = resolveRoom(house, params, context)
+    const room = resolveRoom(rooms, params, context)
     if (!room) return { success: false, error: 'Room not found — provide roomName or call from a room context' }
     const limit = Math.min(typeof params.limit === 'number' ? params.limit : 20, 100)
     const messages = room.getRecent(limit)

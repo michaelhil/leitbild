@@ -1,129 +1,53 @@
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { samsinnHome, sharedPaths, instancePaths, trashPath, isValidInstanceId, assertValidInstanceId } from './paths.ts'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { workspaceIdSchema } from '@samsinn-leitbild/platform-contracts'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import {
+  assertValidWorkspaceId,
+  isValidWorkspaceId,
+  samsinnHome,
+  sharedPaths,
+  workspacePaths,
+} from './paths.ts'
 
-describe('samsinnHome', () => {
-  let originalHome: string | undefined
+const workspaceId = workspaceIdSchema.parse('9d2bd146-dc4a-4cbf-9754-f966884c5ca9')
+let originalHome: string | undefined
 
-  beforeEach(() => { originalHome = process.env.SAMSINN_HOME })
-  afterEach(() => {
-    if (originalHome === undefined) delete process.env.SAMSINN_HOME
-    else process.env.SAMSINN_HOME = originalHome
-  })
+beforeEach(() => { originalHome = process.env.SAMSINN_HOME })
+afterEach(() => {
+  if (originalHome === undefined) delete process.env.SAMSINN_HOME
+  else process.env.SAMSINN_HOME = originalHome
+})
 
-  it('defaults to ~/.samsinn when env is unset', () => {
+describe('Samsinn path policy', () => {
+  it('defaults to ~/.samsinn and accepts an explicit home', () => {
     delete process.env.SAMSINN_HOME
     expect(samsinnHome()).toBe(join(homedir(), '.samsinn'))
-  })
-
-  it('uses SAMSINN_HOME when set', () => {
     process.env.SAMSINN_HOME = '/var/lib/samsinn'
     expect(samsinnHome()).toBe('/var/lib/samsinn')
   })
 
-  it('treats empty SAMSINN_HOME as unset', () => {
-    process.env.SAMSINN_HOME = ''
-    expect(samsinnHome()).toBe(join(homedir(), '.samsinn'))
-  })
-})
-
-describe('sharedPaths', () => {
-  let originalHome: string | undefined
-  beforeEach(() => { originalHome = process.env.SAMSINN_HOME })
-  afterEach(() => {
-    if (originalHome === undefined) delete process.env.SAMSINN_HOME
-    else process.env.SAMSINN_HOME = originalHome
-  })
-
-  it('all derive from SAMSINN_HOME', () => {
+  it('keeps deployment and Workspace roots separate', () => {
     process.env.SAMSINN_HOME = '/tmp/x'
-    expect(sharedPaths.root()).toBe('/tmp/x')
     expect(sharedPaths.providers()).toBe('/tmp/x/providers.json')
     expect(sharedPaths.packs()).toBe('/tmp/x/packs')
-    // Drop-in dirs live INSIDE the synthetic 'local' pack since commit P.
-    expect(sharedPaths.skills()).toBe('/tmp/x/packs/local/skills')
-    expect(sharedPaths.scripts()).toBe('/tmp/x/packs/local/scripts')
-    expect(sharedPaths.tools()).toBe('/tmp/x/packs/local/tools')
-    expect(sharedPaths.geodata()).toBe('/tmp/x/packs/local/geodata')
-    expect(sharedPaths.knowledge()).toBe('/tmp/x/knowledge')
-    expect(sharedPaths.adminLog()).toBe('/tmp/x/logs/admin.jsonl')
-    expect(sharedPaths.instancesRoot()).toBe('/tmp/x/instances')
-    expect(sharedPaths.trashRoot()).toBe('/tmp/x/instances/.trash')
-  })
-})
-
-describe('instancePaths', () => {
-  let originalHome: string | undefined
-  beforeEach(() => { originalHome = process.env.SAMSINN_HOME })
-  afterEach(() => {
-    if (originalHome === undefined) delete process.env.SAMSINN_HOME
-    else process.env.SAMSINN_HOME = originalHome
+    expect(sharedPaths.workspaceDirectory()).toBe('/tmp/x/workspace-directory.json')
+    expect(sharedPaths.workspacesRoot()).toBe('/tmp/x/workspaces')
   })
 
-  it('derives all per-instance paths from id', () => {
+  it('places Samsinn state in the Workspace-owned module shard', () => {
     process.env.SAMSINN_HOME = '/tmp/x'
-    const p = instancePaths('abc123def456ghij')
-    expect(p.root).toBe('/tmp/x/instances/abc123def456ghij')
-    expect(p.snapshot).toBe('/tmp/x/instances/abc123def456ghij/snapshot.json')
-    expect(p.logs).toBe('/tmp/x/instances/abc123def456ghij/logs')
-    expect(p.memory).toBe('/tmp/x/instances/abc123def456ghij/memory')
+    const paths = workspacePaths(workspaceId)
+    expect(paths.root).toBe(`/tmp/x/workspaces/${workspaceId}/samsinn`)
+    expect(paths.snapshot).toBe(`/tmp/x/workspaces/${workspaceId}/samsinn/snapshot.json`)
+    expect(paths.logs).toBe(`/tmp/x/workspaces/${workspaceId}/samsinn/logs`)
+    expect(paths.memory).toBe(`/tmp/x/workspaces/${workspaceId}/samsinn/memory`)
+    expect(paths.vectors).toBe(`/tmp/x/workspaces/${workspaceId}/samsinn/vectors.jsonl`)
   })
 
-  it('throws on invalid id (defense-in-depth)', () => {
-    process.env.SAMSINN_HOME = '/tmp/x'
-    expect(() => instancePaths('../etc')).toThrow(/invalid instance id/)
-    expect(() => instancePaths('')).toThrow(/invalid instance id/)
-    expect(() => instancePaths('UPPERCASE12345678')).toThrow(/invalid instance id/)
-  })
-})
-
-describe('assertValidInstanceId', () => {
-  it('throws on invalid; passes on valid', () => {
-    expect(() => assertValidInstanceId('abc123def456ghij')).not.toThrow()
-    expect(() => assertValidInstanceId('../foo')).toThrow(/invalid instance id/)
-    expect(() => trashPath('foo/bar')).toThrow(/invalid instance id/)
-  })
-})
-
-describe('trashPath', () => {
-  let originalHome: string | undefined
-  beforeEach(() => { originalHome = process.env.SAMSINN_HOME })
-  afterEach(() => {
-    if (originalHome === undefined) delete process.env.SAMSINN_HOME
-    else process.env.SAMSINN_HOME = originalHome
-  })
-
-  it('includes a timestamp suffix to disambiguate', () => {
-    process.env.SAMSINN_HOME = '/tmp/x'
-    expect(trashPath('abc123def456ghij', 1234567890))
-      .toBe('/tmp/x/instances/.trash/abc123def456ghij-1234567890')
-  })
-})
-
-describe('isValidInstanceId', () => {
-  it('accepts 16-char lowercase alphanumeric', () => {
-    expect(isValidInstanceId('abc123def456ghij')).toBe(true)
-    expect(isValidInstanceId('0123456789abcdef')).toBe(true)
-  })
-
-  it('rejects wrong length', () => {
-    expect(isValidInstanceId('abc')).toBe(false)
-    expect(isValidInstanceId('abc123def456ghij1')).toBe(false)
-    expect(isValidInstanceId('')).toBe(false)
-  })
-
-  it('rejects uppercase', () => {
-    expect(isValidInstanceId('ABC123def456ghij')).toBe(false)
-  })
-
-  it('rejects path-traversal attempts', () => {
-    expect(isValidInstanceId('../etc/passwd000')).toBe(false)
-    expect(isValidInstanceId('foo/bar/baz/quux')).toBe(false)
-    expect(isValidInstanceId('foo.bar.baz.quux')).toBe(false)
-  })
-
-  it('rejects whitespace', () => {
-    expect(isValidInstanceId('abc 123def456ghi')).toBe(false)
+  it('rejects non-UUID and traversal-shaped identifiers', () => {
+    expect(isValidWorkspaceId(workspaceId)).toBe(true)
+    expect(isValidWorkspaceId('../etc')).toBe(false)
+    expect(() => assertValidWorkspaceId('../etc')).toThrow()
   })
 })

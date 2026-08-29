@@ -64,7 +64,7 @@ export const introspectAgentSurface = (
   const ai = asAIAgent(agent)
   if (!ai) return { error: `agent "${agentName}" is not an AI agent` }
 
-  const room = system.house.getRoom(roomId)
+  const room = system.rooms.getRoom(roomId)
   if (!room) return { error: `room "${roomId}" not found` }
 
   const config = ai.getConfig()
@@ -77,7 +77,7 @@ export const introspectAgentSurface = (
 
   // Reuse the production surface — guarantees we report what the eval
   // would actually compute.
-  const getRoomActivation: GetRoomActivation = (id) => system.house.getRoom(id)
+  const getRoomActivation: GetRoomActivation = (id) => system.rooms.getRoom(id)
   const surface = createToolSurface({ registry, requestedTools, getRoomActivation })
   const defs: ReadonlyArray<ToolDefinition> = surface.project(roomId, configuredProvider ?? undefined)
 

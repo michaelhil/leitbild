@@ -11,7 +11,7 @@ export const roomRoutes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/rooms$/,
-    handler: (_req, _match, { system }) => json(system.house.listAllRooms()),
+    handler: (_req, _match, { system }) => json(system.rooms.listAllRooms()),
   },
   {
     method: 'POST',
@@ -20,7 +20,7 @@ export const roomRoutes: RouteEntry[] = [
       const body = await parseBody(req)
       if (!body.name || typeof body.name !== 'string') return errorResponse('name is required')
       try {
-        const result = system.house.createRoomSafe({
+        const result = system.rooms.createRoomSafe({
           name: body.name,
           roomPrompt: body.roomPrompt as string | undefined,
           createdBy: (body.createdBy as string) ?? SYSTEM_SENDER_ID,
@@ -36,7 +36,7 @@ export const roomRoutes: RouteEntry[] = [
     pattern: /^\/api\/rooms\/([^/]+)$/,
     handler: (req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       const limit = parseInt(new URL(req.url).searchParams.get('limit') ?? '50', 10)
       return json({ profile: room.profile, messages: room.getRecent(limit) })
@@ -47,7 +47,7 @@ export const roomRoutes: RouteEntry[] = [
     pattern: /^\/api\/rooms\/([^/]+)\/export$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       return json(exportRoomConversation(room))
     },
@@ -58,7 +58,7 @@ export const roomRoutes: RouteEntry[] = [
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const messageId = decodeURIComponent(match[2]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       const deleted = room.deleteMessage(messageId)
       if (!deleted) return errorResponse(`Message "${messageId}" not found`, 404)
@@ -70,7 +70,7 @@ export const roomRoutes: RouteEntry[] = [
     pattern: /^\/api\/rooms\/([^/]+)\/messages$/,
     handler: (_req, match, { system, leitbildMirror }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       const count = room.getMessageCount()
       room.clearMessages()
@@ -94,7 +94,7 @@ export const roomRoutes: RouteEntry[] = [
     pattern: /^\/api\/rooms\/([^/]+)$/,
     handler: (_req, match, { system, leitbildMirror }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       leitbildMirror?.detach(room)
       system.removeRoom(room.profile.id)
@@ -106,7 +106,7 @@ export const roomRoutes: RouteEntry[] = [
     pattern: /^\/api\/rooms\/([^/]+)\/prompt$/,
     handler: async (req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       const body = await parseBody(req)
       if (typeof body.roomPrompt !== 'string') return errorResponse('roomPrompt is required')
@@ -122,7 +122,7 @@ export const roomRoutes: RouteEntry[] = [
     pattern: /^\/api\/rooms\/([^/]+)\/packs$/,
     handler: async (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       return json({ activePacks: room.getActivePacks() })
     },
@@ -135,9 +135,9 @@ export const roomRoutes: RouteEntry[] = [
     // whole set (no partial writes).
     method: 'PUT',
     pattern: /^\/api\/rooms\/([^/]+)\/packs$/,
-    handler: async (req, match, { system, broadcastToInstance, instanceId }) => {
+    handler: async (req, match, { system, broadcastToWorkspace, workspaceId }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       const body = await parseBody(req) as { activePacks?: ReadonlyArray<unknown> } | null
       const requested = Array.isArray(body?.activePacks)
@@ -180,14 +180,14 @@ export const roomRoutes: RouteEntry[] = [
       }
 
       room.setActivePacks(next)
-      // Per-instance state — pack activation is scoped to one tenant's room.
+      // per-Workspace state — pack activation is scoped to one tenant's room.
       // The previous global `broadcast(...)` fanned out to every connected
       // tenant; their UI handlers no-oped on unfamiliar roomId but the
-      // re-fetch traffic was wasted. RouteContext.broadcastToInstance is
+      // re-fetch traffic was wasted. RouteContext.broadcastToWorkspace is
       // typed optional (MCP-mode shape compatibility); pack-activation
       // routes only register in HTTP mode where it's always wired.
       try {
-        broadcastToInstance?.(instanceId, { type: 'pack_activation_changed', roomId: room.profile.id, activePacks: next })
+        broadcastToWorkspace?.(workspaceId, { type: 'pack_activation_changed', roomId: room.profile.id, activePacks: next })
       } catch { /* ignore */ }
       return json({ activePacks: room.getActivePacks() })
     },
@@ -197,7 +197,7 @@ export const roomRoutes: RouteEntry[] = [
     pattern: /^\/api\/rooms\/([^/]+)\/members$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       const members = room.getParticipantIds().map(id => {
         const agent = system.team.getAgent(id)
@@ -211,7 +211,7 @@ export const roomRoutes: RouteEntry[] = [
     pattern: /^\/api\/rooms\/([^/]+)\/members$/,
     handler: async (req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       const body = await parseBody(req)
       const agentName = body.agentName as string | undefined
@@ -228,7 +228,7 @@ export const roomRoutes: RouteEntry[] = [
     handler: (_req, match, { system }) => {
       const rName = decodeURIComponent(match[1]!)
       const aName = decodeURIComponent(match[2]!)
-      const room = system.house.getRoom(rName)
+      const room = system.rooms.getRoom(rName)
       if (!room) return errorResponse(`Room "${rName}" not found`, 404)
       const agent = system.team.getAgent(aName)
       if (!agent) return errorResponse(`Agent "${aName}" not found`, 404)
@@ -241,7 +241,7 @@ export const roomRoutes: RouteEntry[] = [
     pattern: /^\/api\/rooms\/([^/]+)\/delivery-mode$/,
     handler: async (req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       const body = await parseBody(req)
       const rawMode = body.mode as string
@@ -255,9 +255,9 @@ export const roomRoutes: RouteEntry[] = [
   {
     method: 'PUT',
     pattern: /^\/api\/rooms\/([^/]+)\/pause$/,
-    handler: async (req, match, { system, instanceId, broadcast, broadcastToInstance }) => {
+    handler: async (req, match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       const body = await parseBody(req)
       if (typeof body.paused !== 'boolean') return errorResponse('paused must be a boolean')
@@ -267,7 +267,7 @@ export const roomRoutes: RouteEntry[] = [
         if (script) void system.scriptRunner?.resume(room.profile.id)
       }
       const evt = { type: 'delivery_mode_changed' as const, roomName: room.profile.name, mode: room.deliveryMode, paused: room.paused }
-      if (broadcastToInstance) broadcastToInstance(instanceId, evt)
+      if (broadcastToWorkspace) broadcastToWorkspace(workspaceId, evt)
       else broadcast(evt)
       return json({ paused: room.paused })
     },
@@ -275,9 +275,9 @@ export const roomRoutes: RouteEntry[] = [
   {
     method: 'PUT',
     pattern: /^\/api\/rooms\/([^/]+)\/mute$/,
-    handler: async (req, match, { system, instanceId, broadcast, broadcastToInstance }) => {
+    handler: async (req, match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       const body = await parseBody(req)
       if (typeof body.agentName !== 'string') return errorResponse('agentName is required')
@@ -286,7 +286,7 @@ export const roomRoutes: RouteEntry[] = [
       if (!agent) return errorResponse(`Agent "${body.agentName}" not found`, 404)
       room.setMuted(agent.id, body.muted)
       const evt = { type: 'mute_changed' as const, roomName: room.profile.name, agentName: agent.name, muted: body.muted }
-      if (broadcastToInstance) broadcastToInstance(instanceId, evt)
+      if (broadcastToWorkspace) broadcastToWorkspace(workspaceId, evt)
       else broadcast(evt)
       return json({ muted: room.isMuted(agent.id) })
     },
@@ -297,7 +297,7 @@ export const roomRoutes: RouteEntry[] = [
     handler: (_req, match, { system }) => {
       const roomName = decodeURIComponent(match[1]!)
       const agentName = decodeURIComponent(match[2]!)
-      const room = system.house.getRoom(roomName)
+      const room = system.rooms.getRoom(roomName)
       if (!room) return errorResponse(`Room "${roomName}" not found`, 404)
       const agent = system.team.getAgent(agentName)
       if (!agent) return errorResponse(`Agent "${agentName}" not found`, 404)
@@ -310,7 +310,7 @@ export const roomRoutes: RouteEntry[] = [
     pattern: /^\/api\/rooms\/([^/]+)\/summary-config$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       return json(room.summaryConfig)
     },
@@ -320,7 +320,7 @@ export const roomRoutes: RouteEntry[] = [
     pattern: /^\/api\/rooms\/([^/]+)\/summary-config$/,
     handler: async (req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       const body = await parseBody(req)
       // Validate at the trust boundary. The previous version did
@@ -338,7 +338,7 @@ export const roomRoutes: RouteEntry[] = [
     pattern: /^\/api\/rooms\/([^/]+)\/summary$/,
     handler: (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       const compression = room.getCurrentCompressionMessage()
       return json({
@@ -352,7 +352,7 @@ export const roomRoutes: RouteEntry[] = [
     pattern: /^\/api\/rooms\/([^/]+)\/summary\/regenerate$/,
     handler: async (req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       const body = await parseBody(req)
       const target = body.target as 'summary' | 'compression' | 'both'

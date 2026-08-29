@@ -79,7 +79,7 @@ describe('pack-source geodata loader', () => {
     )
     await writeFile(
       join(packsDir, 'cafes', 'geodata', 'cafes.geojson'),
-      fc([feature('java', 'Java House', 'cafes', 59.91, 10.74)]),
+      fc([feature('java', 'Java RoomDirectory', 'cafes', 59.91, 10.74)]),
     )
 
     const state = await refreshPackGeodata(packsDir)
@@ -126,7 +126,7 @@ describe('pack-source geodata loader', () => {
     // that activation gates per-namespace, not per-category.
     await writeFile(
       join(packsDir, 'cafes', 'geodata', 'cafes.geojson'),
-      fc([feature('java', 'Java House', 'cafes', 59.91, 10.74)]),
+      fc([feature('java', 'Java RoomDirectory', 'cafes', 59.91, 10.74)]),
     )
     await refreshPackGeodata(packsDir)
 

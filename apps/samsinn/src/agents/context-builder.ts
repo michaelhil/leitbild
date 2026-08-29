@@ -10,7 +10,7 @@
 // window is passed to the LLM on each context build.
 //
 // --- Section assembly order (system prompt) ---
-// 1. House prompt + agent persona
+// 1. RoomDirectory prompt + agent persona
 // 2. Skills (from getSkills, skill-store) — may be empty
 // 3. Active script context (from getScriptContext) — only when in a running script
 // 4. Wiki bindings + pack-bundled context — empty when none active
@@ -156,7 +156,7 @@ export const getParticipantsForRoom = (
 export interface BuildContextDeps {
   readonly agentId: string
   readonly persona: string
-  readonly housePrompt?: string
+  readonly workspacePrompt?: string
   readonly responseFormat?: string
   readonly history: AgentHistory
   // Per-room skills section. Implementation looks up the room by id and
@@ -167,7 +167,7 @@ export interface BuildContextDeps {
   readonly getWikisCatalog?: (roomId: string) => string
   // Script-mode bypass. When this returns a value (cast member in an
   // active run), the agent's context is built ENTIRELY from these
-  // pieces — house prompt, room context, message history are suppressed.
+  // pieces — Workspace prompt, room context, message history are suppressed.
   //
   // The systemDoc (structural document — header, cast, step list, current
   // step's roles/goal/pressure) becomes the system prompt. The dialogue
@@ -216,7 +216,7 @@ export interface BuildContextDeps {
 const resolveIncludes = (inc: IncludePrompts | undefined): Required<IncludePrompts> => ({
   persona: inc?.persona ?? true,
   room: inc?.room ?? true,
-  house: inc?.house ?? true,
+  workspace: inc?.workspace ?? true,
   responseFormat: inc?.responseFormat ?? true,
   skills: inc?.skills ?? true,
   wikis: inc?.wikis ?? true,
@@ -273,7 +273,7 @@ export interface SystemSection {
 }
 
 export type SystemSectionKey =
-  | 'house' | 'room' | 'persona' | 'responseFormat' | 'skills' | 'wikis'
+  | 'workspace' | 'room' | 'persona' | 'responseFormat' | 'skills' | 'wikis'
   | 'ctx_intro'           // "You are in room X" — always emitted
   | 'ctx_flow'
   | 'ctx_participants'
@@ -296,7 +296,7 @@ export const buildSystemSections = (
   const contextEnabled = deps.contextEnabled ?? true
   const includes = promptsEnabled
     ? resolveIncludes(deps.includePrompts)
-    : { persona: false, room: false, house: false, responseFormat: false, skills: false, wikis: false }
+    : { persona: false, room: false, workspace: false, responseFormat: false, skills: false, wikis: false }
   const ctxIncludes = contextEnabled
     ? resolveIncludeContext(deps.includeContext)
     : { participants: false, activity: false, knownAgents: false }
@@ -304,10 +304,10 @@ export const buildSystemSections = (
   const out: SystemSection[] = []
 
   out.push({
-    key: 'house',
-    label: 'HOUSE RULES',
-    text: deps.housePrompt ?? '',
-    enabled: includes.house && !!deps.housePrompt,
+    key: 'workspace',
+    label: 'WORKSPACE RULES',
+    text: deps.workspacePrompt ?? '',
+    enabled: includes.workspace && !!deps.workspacePrompt,
     optional: true,
   })
 
@@ -417,8 +417,8 @@ const CTX_VARIABLE_KEYS: ReadonlyArray<SystemSectionKey> = [
 // Map a SystemSection to the XML tag used to fence it. Tag names are
 // canonical (lower_snake_case), namespaced under `samsinn:`. Adding a new
 // prompt-level section means adding it here.
-const TAG_FOR_PROMPT_KEY: Record<'house' | 'room' | 'persona' | 'skills' | 'wikis' | 'responseFormat', string> = {
-  house: 'samsinn:house_rules',
+const TAG_FOR_PROMPT_KEY: Record<'workspace' | 'room' | 'persona' | 'skills' | 'wikis' | 'responseFormat', string> = {
+  workspace: 'samsinn:workspace_rules',
   room: 'samsinn:room',
   persona: 'samsinn:identity',
   skills: 'samsinn:skills',
@@ -434,7 +434,7 @@ const escapeAttr = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 // Produce the system prompt as an ordered list of blocks with a `cacheable`
-// flag. Stable blocks (HOUSE/ROOM/IDENTITY/SKILLS/RESPONSE_FORMAT + stable
+// flag. Stable blocks (WORKSPACE/ROOM/IDENTITY/SKILLS/RESPONSE_FORMAT + stable
 // CONTEXT subsections) are cacheable; the variable CONTEXT subsections are
 // not. The `<samsinn:context>` fence opens in the stable block (when stable
 // children exist) and closes in the variable block — the final concatenation
@@ -449,7 +449,7 @@ const buildSystemBlocks = (
 
   // Stable top-level prompt sections, in order.
   const promptOrder: ReadonlyArray<keyof typeof TAG_FOR_PROMPT_KEY> = [
-    'house', 'room', 'persona', 'skills', 'wikis', 'responseFormat',
+    'workspace', 'room', 'persona', 'skills', 'wikis', 'responseFormat',
   ]
   const stableLines: string[] = []
   const roomCtx = deps.history.rooms.get(triggerRoomId)

@@ -10,7 +10,7 @@
 // already in the codebase before this extraction:
 //
 //   - src/core/storage/snapshot.ts — saveSnapshot + appendPendingScrub
-//   - src/geo/pack-source.ts       — refreshPackGeodata (cross-instance)
+//   - src/geo/pack-source.ts       — refreshPackGeodata (cross-Workspace)
 //   - src/core/scripts/script-store.ts — upsert / remove / reload
 //   - src/tools/built-in/pack-tools.ts — install / update / uninstall
 //

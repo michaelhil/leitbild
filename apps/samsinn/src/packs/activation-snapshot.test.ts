@@ -1,14 +1,13 @@
 // M3: end-to-end test for the evict-reload-with-scrub flow.
 //
-// Covers the full chain that crossInstanceScrubActivePacks relies on for
-// evicted instances:
+// Covers the full chain used to scrub a pack from unloaded Workspaces:
 //
-//   1. Live instance has activePacks set in a room and persists snapshot.
-//   2. Instance is "evicted" (we discard the in-memory system; the disk
+//   1. A loaded Workspace has activePacks set in a room and persists snapshot.
+//   2. Its runtime is evicted (we discard memory; the disk
 //      snapshot remains).
-//   3. uninstall_pack against a different live instance fires
-//      appendPendingScrub() against the evicted instance's snapshot file.
-//   4. Reload the evicted instance via loadSnapshot + restoreFromSnapshot.
+//   3. uninstall_pack in another Workspace fires appendPendingScrub()
+//      against the unloaded Workspace's snapshot file.
+//   4. Reload it via loadSnapshot + restoreFromSnapshot.
 //   5. Assert the scrubbed namespace is gone from room.activePacks AND
 //      the next save naturally drops pendingScrubs.
 //
@@ -21,7 +20,9 @@ import { describe, test, expect, afterEach } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createHouse } from '../core/house.ts'
+import { createRoomDirectory } from '../core/rooms/directory.ts'
+import { createBookmarkStore } from '../core/workspaces/bookmark-store.ts'
+import { createWorkspaceSettings } from '../core/workspaces/settings.ts'
 import {
   serializeSystem, saveSnapshot, loadSnapshot, restoreFromSnapshot,
   appendPendingScrub,
@@ -29,11 +30,13 @@ import {
 import { SYSTEM_SENDER_ID } from '../core/types/constants.ts'
 
 const buildWorkspaceRuntime = () => {
-  const house = createHouse({})
-  return { house, team: { listAgents: () => [], getAgent: () => undefined } }
+  const rooms = createRoomDirectory({})
+  const settings = createWorkspaceSettings()
+  const bookmarks = createBookmarkStore()
+  return { rooms, settings, bookmarks, team: { listAgents: () => [], getAgent: () => undefined } }
 }
 
-describe('M3: evict-reload + cross-instance pack scrub round-trip', () => {
+describe('M3: evict-reload + cross-Workspace pack scrub round-trip', () => {
   let tmpDir: string
 
   afterEach(async () => {
@@ -44,10 +47,10 @@ describe('M3: evict-reload + cross-instance pack scrub round-trip', () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'm3-evict-reload-'))
     const snapshotPath = join(tmpDir, 'snapshot.json')
 
-    // 1. Live instance with two rooms each holding a pack we'll uninstall.
+    // 1. Loaded Workspace with two rooms each holding a pack we'll uninstall.
     const live = buildWorkspaceRuntime()
-    const cafe = live.house.createRoom({ name: 'Cafe', createdBy: SYSTEM_SENDER_ID })
-    const office = live.house.createRoom({ name: 'Office', createdBy: SYSTEM_SENDER_ID })
+    const cafe = live.rooms.createRoom({ name: 'Cafe', createdBy: SYSTEM_SENDER_ID })
+    const office = live.rooms.createRoom({ name: 'Office', createdBy: SYSTEM_SENDER_ID })
     cafe.setActivePacks(['aviation', 'menus'])
     office.setActivePacks(['aviation'])
 
@@ -72,14 +75,14 @@ describe('M3: evict-reload + cross-instance pack scrub round-trip', () => {
     // 4. Reload into a fresh system.
     const reloaded = buildWorkspaceRuntime()
     await restoreFromSnapshot(
-      { house: reloaded.house, spawnAIAgent: async () => {} },
+      { ...reloaded, spawnAIAgent: async () => {} },
       onDisk!,
     )
 
     // 5. activePacks is filtered: aviation gone, menus stays in Cafe,
     // Office (which only had aviation) is now empty.
-    const restoredCafe = reloaded.house.getRoom(cafe.profile.id)!
-    const restoredOffice = reloaded.house.getRoom(office.profile.id)!
+    const restoredCafe = reloaded.rooms.getRoom(cafe.profile.id)!
+    const restoredOffice = reloaded.rooms.getRoom(office.profile.id)!
     expect(restoredCafe.getActivePacks()).toEqual(['menus'])
     expect(restoredOffice.getActivePacks()).toEqual([])
 
@@ -99,7 +102,7 @@ describe('M3: evict-reload + cross-instance pack scrub round-trip', () => {
     const snapshotPath = join(tmpDir, 'snapshot.json')
 
     const live = buildWorkspaceRuntime()
-    const room = live.house.createRoom({ name: 'Hub', createdBy: SYSTEM_SENDER_ID })
+    const room = live.rooms.createRoom({ name: 'Hub', createdBy: SYSTEM_SENDER_ID })
     room.setActivePacks(['a', 'b', 'c', 'd'])
     await saveSnapshot(serializeSystem(live), snapshotPath)
 
@@ -109,11 +112,11 @@ describe('M3: evict-reload + cross-instance pack scrub round-trip', () => {
 
     const reloaded = buildWorkspaceRuntime()
     await restoreFromSnapshot(
-      { house: reloaded.house, spawnAIAgent: async () => {} },
+      { ...reloaded, spawnAIAgent: async () => {} },
       (await loadSnapshot(snapshotPath))!,
     )
 
-    expect(reloaded.house.getRoom(room.profile.id)!.getActivePacks()).toEqual(['b', 'd'])
+    expect(reloaded.rooms.getRoom(room.profile.id)!.getActivePacks()).toEqual(['b', 'd'])
   })
 
   test('scrub against a never-active namespace is a no-op on restore', async () => {
@@ -121,7 +124,7 @@ describe('M3: evict-reload + cross-instance pack scrub round-trip', () => {
     const snapshotPath = join(tmpDir, 'snapshot.json')
 
     const live = buildWorkspaceRuntime()
-    const room = live.house.createRoom({ name: 'Hub', createdBy: SYSTEM_SENDER_ID })
+    const room = live.rooms.createRoom({ name: 'Hub', createdBy: SYSTEM_SENDER_ID })
     room.setActivePacks(['kept'])
     await saveSnapshot(serializeSystem(live), snapshotPath)
 
@@ -129,11 +132,11 @@ describe('M3: evict-reload + cross-instance pack scrub round-trip', () => {
 
     const reloaded = buildWorkspaceRuntime()
     await restoreFromSnapshot(
-      { house: reloaded.house, spawnAIAgent: async () => {} },
+      { ...reloaded, spawnAIAgent: async () => {} },
       (await loadSnapshot(snapshotPath))!,
     )
 
     // 'kept' survives; the scrub for an unknown namespace is harmless.
-    expect(reloaded.house.getRoom(room.profile.id)!.getActivePacks()).toEqual(['kept'])
+    expect(reloaded.rooms.getRoom(room.profile.id)!.getActivePacks()).toEqual(['kept'])
   })
 })

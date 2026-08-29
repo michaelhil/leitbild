@@ -206,7 +206,7 @@ export type OnProviderStreamFailed = (
 ) => void
 
 // === Standalone LLM call options ===
-// Used by callLLM(), ToolContext.llm, and HouseCallbacks.callSystemLLM.
+// Used by callLLM(), ToolContext.llm, and RoomDirectoryCallbacks.callSystemLLM.
 // No agent lifecycle, no history, no routing, no protocol parsing.
 export interface LLMCallOptions {
   readonly model: string

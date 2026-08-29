@@ -23,7 +23,7 @@
 // Why a canary flag: dynamic mode changes every existing agent's per-call
 // budget. Some currently-borderline contexts would suddenly fit; some
 // currently-fine evals might newly trip a budget cap. Default-off lets
-// operators opt in per-instance for canary while the static path stays
+// operators opt in per-Workspace for canary while the static path stays
 // the safe-by-default for everyone else. Promotion to default-on after a
 // canary period with no observed regressions.
 // ============================================================================

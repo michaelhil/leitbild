@@ -6,7 +6,8 @@
 export type {
   Message, MessageType, MessageTarget, RoomProfile, AgentProfile, PostParams, DeliverFn,
 } from './core/types/messaging.ts'
-export type { CreateResult, Room, House, RoomConfig } from './core/types/room.ts'
+export type { CreateResult, Room, RoomConfig } from './core/types/room.ts'
+export type { RoomDirectory } from './core/rooms/directory.ts'
 export type {
   Agent, AIAgent, Team, RouteMessage, AIAgentConfig, AgentResponse, AgentState, StateValue, StateSubscriber,
 } from './core/types/agent.ts'
@@ -18,7 +19,7 @@ export { SYSTEM_SENDER_ID, DEFAULTS } from './core/types/constants.ts'
 
 // Core factories
 export { createRoom } from './core/rooms/room.ts'
-export { createHouse } from './core/house.ts'
+export { createRoomDirectory } from './core/rooms/directory.ts'
 export { createMessageRouter } from './core/delivery.ts'
 
 // Agent factories

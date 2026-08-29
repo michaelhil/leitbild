@@ -1,4 +1,5 @@
-import type { House, RoomConfig } from '../../core/types/room.ts'
+import type { RoomConfig } from '../../core/types/room.ts'
+import type { RoomDirectory } from '../../core/rooms/directory.ts'
 import type { Team } from '../../core/types/agent.ts'
 import type { Tool, ToolContext } from '../../core/types/tool.ts'
 
@@ -6,7 +7,7 @@ type AddToRoomFn = (agentId: string, roomId: string, invitedBy?: string) => Prom
 type RemoveFromRoomFn = (agentId: string, roomId: string, removedBy?: string) => void
 type RemoveRoomFn = (roomId: string) => boolean
 
-export const createListRoomsTool = (house: House): Tool => ({
+export const createListRoomsTool = (rooms: RoomDirectory): Tool => ({
   name: 'list_rooms',
   description: 'List rooms.',
   usage: 'Use to discover available rooms before joining, posting to, or routing messages. Check here first when you need to know which rooms exist.',
@@ -14,11 +15,11 @@ export const createListRoomsTool = (house: House): Tool => ({
   parameters: {},
   execute: async () => ({
     success: true,
-    data: house.listAllRooms().map(r => ({ name: r.name })),
+    data: rooms.listAllRooms().map(r => ({ name: r.name })),
   }),
 })
 
-export const createCreateRoomTool = (house: House, addAgentToRoom: AddToRoomFn): Tool => ({
+export const createCreateRoomTool = (rooms: RoomDirectory, addAgentToRoom: AddToRoomFn): Tool => ({
   name: 'create_room',
   description: 'Create a room and add yourself to it. Returns the assigned name (may differ on conflict).',
   usage: 'Set up a workspace. The calling agent is added automatically. Optional roomPrompt sets purpose/constraints.',
@@ -40,7 +41,7 @@ export const createCreateRoomTool = (house: House, addAgentToRoom: AddToRoomFn):
         roomPrompt: params.roomPrompt as string | undefined,
         createdBy: context.callerId,
       }
-      const result = house.createRoomSafe(config)
+      const result = rooms.createRoomSafe(config)
       await addAgentToRoom(context.callerId, result.value.profile.id)
       return {
         success: true,
@@ -52,7 +53,7 @@ export const createCreateRoomTool = (house: House, addAgentToRoom: AddToRoomFn):
   },
 })
 
-export const createDeleteRoomTool = (removeRoom: RemoveRoomFn, house: House): Tool => ({
+export const createDeleteRoomTool = (removeRoom: RemoveRoomFn, rooms: RoomDirectory): Tool => ({
   name: 'delete_room',
   description: 'Permanently delete a room and its messages. Irreversible — prefer remove_from_room if unsure.',
   usage: 'Use only to remove rooms that are fully finished and no longer needed. This is irreversible — all messages are lost. Prefer leaving a room over deleting it if unsure.',
@@ -65,14 +66,14 @@ export const createDeleteRoomTool = (removeRoom: RemoveRoomFn, house: House): To
   execute: async (params: Record<string, unknown>) => {
     const roomName = params.roomName as string | undefined
     if (!roomName) return { success: false, error: 'roomName is required' }
-    const room = house.getRoom(roomName)
+    const room = rooms.getRoom(roomName)
     if (!room) return { success: false, error: `Room "${roomName}" not found` }
     removeRoom(room.profile.id)
     return { success: true, data: { removed: roomName } }
   },
 })
 
-export const createSetRoomPromptTool = (house: House): Tool => ({
+export const createSetRoomPromptTool = (rooms: RoomDirectory): Tool => ({
   name: 'set_room_prompt',
   description: 'Set the system prompt for a room; injected into every agent in that room.',
   usage: 'Use to define or update the purpose and rules for a room. All agents in the room will receive this in their context.',
@@ -89,14 +90,14 @@ export const createSetRoomPromptTool = (house: House): Tool => ({
     const roomName = params.roomName as string | undefined
     const prompt = params.prompt as string | undefined
     if (!roomName || !prompt) return { success: false, error: 'roomName and prompt are required' }
-    const room = house.getRoom(roomName)
+    const room = rooms.getRoom(roomName)
     if (!room) return { success: false, error: `Room "${roomName}" not found` }
     room.setRoomPrompt(prompt)
     return { success: true, data: { roomName: room.profile.name, prompt } }
   },
 })
 
-export const createPauseRoomTool = (house: House): Tool => ({
+export const createPauseRoomTool = (rooms: RoomDirectory): Tool => ({
   name: 'pause_room',
   description: 'Pause or unpause message delivery in a room.',
   usage: 'Use to pause a room temporarily while re-configuring it (adding agents, changing mode), then unpause when ready. Does not affect join/leave messages.',
@@ -113,14 +114,14 @@ export const createPauseRoomTool = (house: House): Tool => ({
     const roomName = params.roomName as string | undefined
     if (!roomName) return { success: false, error: 'roomName is required' }
     if (typeof params.paused !== 'boolean') return { success: false, error: 'paused must be a boolean' }
-    const room = house.getRoom(roomName)
+    const room = rooms.getRoom(roomName)
     if (!room) return { success: false, error: `Room "${roomName}" not found` }
     room.setPaused(params.paused)
     return { success: true, data: { roomName: room.profile.name, paused: params.paused } }
   },
 })
 
-export const createSetDeliveryModeTool = (house: House): Tool => ({
+export const createSetDeliveryModeTool = (rooms: RoomDirectory): Tool => ({
   name: 'set_delivery_mode',
   description: 'Switch a room to broadcast delivery.',
   usage: 'Use to switch a room to broadcast mode so all members receive every message.',
@@ -133,14 +134,14 @@ export const createSetDeliveryModeTool = (house: House): Tool => ({
   execute: async (params: Record<string, unknown>) => {
     const roomName = params.roomName as string | undefined
     if (!roomName) return { success: false, error: 'roomName is required' }
-    const room = house.getRoom(roomName)
+    const room = rooms.getRoom(roomName)
     if (!room) return { success: false, error: `Room "${roomName}" not found` }
     room.setDeliveryMode('broadcast')
     return { success: true, data: { roomName: room.profile.name, mode: 'broadcast' } }
   },
 })
 
-export const createAddToRoomTool = (team: Team, house: House, addAgentToRoom: AddToRoomFn): Tool => ({
+export const createAddToRoomTool = (team: Team, rooms: RoomDirectory, addAgentToRoom: AddToRoomFn): Tool => ({
   name: 'add_to_room',
   description: 'Add an agent (yourself or another) to a room. Use your own name to join.',
   usage: 'Use to join a room yourself or invite another agent. Triggers a visible join notification. Use your own name to join a room you are not yet in.',
@@ -159,7 +160,7 @@ export const createAddToRoomTool = (team: Team, house: House, addAgentToRoom: Ad
     if (!agentName || !roomName) return { success: false, error: 'agentName and roomName are required' }
     const agent = team.getAgent(agentName)
     if (!agent) return { success: false, error: `Agent "${agentName}" not found` }
-    const room = house.getRoom(roomName)
+    const room = rooms.getRoom(roomName)
     if (!room) return { success: false, error: `Room "${roomName}" not found` }
     const isSelf = agent.id === context.callerId
     await addAgentToRoom(agent.id, room.profile.id, isSelf ? undefined : context.callerName)
@@ -167,7 +168,7 @@ export const createAddToRoomTool = (team: Team, house: House, addAgentToRoom: Ad
   },
 })
 
-export const createRemoveFromRoomTool = (team: Team, house: House, removeAgentFromRoom: RemoveFromRoomFn): Tool => ({
+export const createRemoveFromRoomTool = (team: Team, rooms: RoomDirectory, removeAgentFromRoom: RemoveFromRoomFn): Tool => ({
   name: 'remove_from_room',
   description: 'Remove an agent (yourself or another) from a room.',
   usage: 'Use to leave a room when your participation is complete, or to remove another agent. Triggers a visible leave notification. You can still re-join later.',
@@ -186,7 +187,7 @@ export const createRemoveFromRoomTool = (team: Team, house: House, removeAgentFr
     if (!agentName || !roomName) return { success: false, error: 'agentName and roomName are required' }
     const agent = team.getAgent(agentName)
     if (!agent) return { success: false, error: `Agent "${agentName}" not found` }
-    const room = house.getRoom(roomName)
+    const room = rooms.getRoom(roomName)
     if (!room) return { success: false, error: `Room "${roomName}" not found` }
     const isSelf = agent.id === context.callerId
     removeAgentFromRoom(agent.id, room.profile.id, isSelf ? undefined : context.callerName)

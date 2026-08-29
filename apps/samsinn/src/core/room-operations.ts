@@ -1,6 +1,6 @@
 // System-level room/membership operations — extracted from main.ts to keep
 // createSamsinnWorkspaceRuntime focused on factory wiring. Pure dependency injection: the
-// factory closes over team/house/routeMessage and the late-bound callbacks
+// factory closes over team/rooms/routeMessage and the late-bound callbacks
 // it needs, and returns four functions with the original signatures.
 //
 // Internal cross-reference: systemRemoveAgentFromRoom usually calls
@@ -9,14 +9,15 @@
 // opt out when the room itself is the durable artifact.
 
 import type { RouteMessage, Team } from './types/agent.ts'
-import type { House, OnMembershipChanged, RemoveAgentFromRoomOptions } from './types/room.ts'
+import type { OnMembershipChanged, RemoveAgentFromRoomOptions } from './types/room.ts'
+import type { RoomDirectory } from './rooms/directory.ts'
 import type { TriggerScheduler } from './triggers/scheduler.ts'
 import { addAgentToRoom, removeAgentFromRoom } from '../agents/actions.ts'
 import { asAIAgent } from '../agents/shared.ts'
 
 export interface RoomOperationsDeps {
   readonly team: Team
-  readonly house: House
+  readonly rooms: RoomDirectory
   readonly routeMessage: RouteMessage
   readonly onMembershipChanged: OnMembershipChanged
   readonly triggerScheduler: TriggerScheduler
@@ -30,13 +31,13 @@ export interface RoomOperations {
 }
 
 export const createRoomOperations = (deps: RoomOperationsDeps): RoomOperations => {
-  const { team, house, routeMessage, onMembershipChanged, triggerScheduler } = deps
+  const { team, rooms, routeMessage, onMembershipChanged, triggerScheduler } = deps
 
   const systemAddAgentToRoom = async (agentId: string, roomId: string, invitedBy?: string): Promise<void> => {
     const agent = team.getAgent(agentId)
-    const room = house.getRoom(roomId)
+    const room = rooms.getRoom(roomId)
     if (!agent || !room) return
-    await addAgentToRoom(agentId, agent.name, roomId, invitedBy, team, routeMessage, house)
+    await addAgentToRoom(agentId, agent.name, roomId, invitedBy, team, routeMessage, rooms)
     onMembershipChanged(roomId, room.profile.name, agentId, agent.name, 'added')
   }
 
@@ -47,9 +48,9 @@ export const createRoomOperations = (deps: RoomOperationsDeps): RoomOperations =
     options?: RemoveAgentFromRoomOptions,
   ): void => {
     const agent = team.getAgent(agentId)
-    const room = house.getRoom(roomId)
+    const room = rooms.getRoom(roomId)
     if (!agent || !room) return
-    removeAgentFromRoom(agentId, agent.name, roomId, removedBy, team, routeMessage, house)
+    removeAgentFromRoom(agentId, agent.name, roomId, removedBy, team, routeMessage, rooms)
     onMembershipChanged(roomId, room.profile.name, agentId, agent.name, 'removed')
     if ((options?.deleteRoomIfEmpty ?? true) && room.getParticipantIds().length === 0) {
       systemRemoveRoom(roomId)
@@ -57,12 +58,12 @@ export const createRoomOperations = (deps: RoomOperationsDeps): RoomOperations =
   }
 
   const systemRemoveRoom = (roomId: string): boolean => {
-    const room = house.getRoom(roomId)
+    const room = rooms.getRoom(roomId)
     if (!room) return false
     for (const agentId of room.getParticipantIds()) {
       team.getAgent(agentId)?.leave(roomId)
     }
-    const removed = house.removeRoom(roomId)
+    const removed = rooms.removeRoom(roomId)
     if (removed) {
       // Cascade-clean triggers pinned to the deleted room. Without this,
       // triggers become orphans — the scheduler skips them silently
@@ -82,7 +83,7 @@ export const createRoomOperations = (deps: RoomOperationsDeps): RoomOperations =
   // Cancel in-flight AI generation only for agents whose current generation
   // context is this room. Called by the room's onManualModeEntered hook.
   const cancelGenerationsInRoom = (roomId: string): void => {
-    const room = house.getRoom(roomId)
+    const room = rooms.getRoom(roomId)
     if (!room) return
     for (const id of room.getParticipantIds()) {
       const agent = team.getAgent(id)

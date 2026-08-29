@@ -6,8 +6,8 @@ import { asAIAgent } from '../../agents/shared.ts'
 
 export const handleRoomCommand = async (msg: WSInbound, ctx: CommandContext): Promise<boolean> => {
   const { ws, system, wsManager } = ctx
-  const broadcastToSessionInstance = (outbound: Parameters<typeof wsManager.broadcastToInstance>[1]): void => {
-    wsManager.broadcastToInstance(ctx.session.instanceId, outbound)
+  const broadcastToSessionInstance = (outbound: Parameters<typeof wsManager.broadcastToWorkspace>[1]): void => {
+    wsManager.broadcastToWorkspace(ctx.session.workspaceId, outbound)
   }
   // v15+: WS sessions don't own a default actor. Non-content commands
   // attribute to 'system' as createdBy / initiator-name. Future PRs can
@@ -17,7 +17,7 @@ export const handleRoomCommand = async (msg: WSInbound, ctx: CommandContext): Pr
 
   switch (msg.type) {
     case 'create_room': {
-      const result = system.house.createRoomSafe({
+      const result = system.rooms.createRoomSafe({
         name: msg.name,
         roomPrompt: msg.roomPrompt,
         createdBy: SYSTEM_ACTOR_ID,

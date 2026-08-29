@@ -1,5 +1,5 @@
 // ============================================================================
-// seedInstance — first-boot seed for a fresh instance.
+// seedWorkspace — first-boot seed for a fresh Workspace.
 //
 // Creates room "Cafe" (broadcast mode) with one AI ("Aiden") and one Human
 // ("You"). Replaces the prior welcome-scenario seed path. Plain TS — no
@@ -18,7 +18,7 @@ import { resolveDefaultModel, type ProviderSnapshot } from '../../llm/models/def
 import { CURATED_MODELS, DEFAULT_MODEL_ID } from '../../llm/models/catalog.ts'
 
 // Build a minimal ProviderSnapshot[] from live SamsinnWorkspaceRuntime state. Mirrors the
-// subset of /api/routes/house.ts:/api/models that resolveDefaultModel needs.
+// subset of /api/routes/runtime.ts:/api/models that resolveDefaultModel needs.
 // No /api/models HTTP call — that would self-trigger before the server has
 // bound a port.
 const buildProviderSnapshots = (system: SamsinnWorkspaceRuntime): ReadonlyArray<ProviderSnapshot> => {
@@ -63,15 +63,15 @@ const buildProviderSnapshots = (system: SamsinnWorkspaceRuntime): ReadonlyArray<
   return out
 }
 
-export const seedInstance = async (system: SamsinnWorkspaceRuntime): Promise<void> => {
+export const seedWorkspace = async (system: SamsinnWorkspaceRuntime): Promise<void> => {
   // Idempotency: if a Cafe already exists (e.g. re-seed call), bail.
-  const existing = system.house.listAllRooms().some(p => p.name === 'Cafe')
+  const existing = system.rooms.listAllRooms().some(p => p.name === 'Cafe')
   if (existing) return
 
   const model = resolveDefaultModel(buildProviderSnapshots(system)) || DEFAULT_MODEL_ID
 
   // Room first so spawned agents have something to join.
-  const room = system.house.createRoom({ name: 'Cafe', createdBy: 'system' })
+  const room = system.rooms.createRoom({ name: 'Cafe', createdBy: 'system' })
 
   // AI: Aiden — a friendly default companion. No tool whitelist → sees every
   // tool active in the room (pack-aware filter at the call site).

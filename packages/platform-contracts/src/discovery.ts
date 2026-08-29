@@ -12,7 +12,6 @@ export type ModuleBinding = z.infer<typeof moduleBindingSchema>
 export const workspaceDescriptorSchema = z.object({
   id: workspaceIdSchema,
   displayName: z.string().min(1).max(256),
-  status: z.enum(['active', 'archived']),
   modules: z.array(moduleBindingSchema),
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,

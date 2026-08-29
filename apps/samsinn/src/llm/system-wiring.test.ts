@@ -167,9 +167,9 @@ describe('SamsinnWorkspaceRuntime.llm wiring — router events reach late-bound 
 
     // callSystemLLM goes through house callbacks → evaluation.callLLM → router.
     // It does not pass agentId, so the router treats it as agentId=null.
-    await system.house.getHousePrompt()  // no-op to ensure house is wired
+    await system.settings.getPrompt()  // no-op to ensure workspace settings are wired
     // Directly exercise the system callLLM path via house callback:
-    const houseCallbacks = (system.house as unknown as { /* accessing via llm */ })
+    const houseCallbacks = (system.rooms as unknown as { /* accessing via llm */ })
     void houseCallbacks
     // Simpler: call system.llm.chat without agentId.
     await system.llm.chat({

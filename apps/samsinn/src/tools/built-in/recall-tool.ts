@@ -1,11 +1,11 @@
 // ============================================================================
-// recall — built-in tool. Searches the per-instance vector store for
+// recall — built-in tool. Searches the per-Workspace vector store for
 // previously-said messages similar to the agent's query. Hits include
 // sender + room + timestamp so the agent can cite specifically.
 //
 // Scope filter:
 //   "instance"     — search every room in this instance (default)
-//   "room:<name>"  — only the named room (resolves via house.getRoom)
+//   "room:<name>"  — only the named room (resolves via rooms.getRoom)
 //
 // Returns up to k hits (default 5, capped at 20). Each hit:
 //   { text, roomName, senderName, timestamp, score }
@@ -16,7 +16,7 @@
 // ============================================================================
 
 import type { Tool } from '../../core/types/tool.ts'
-import type { House } from '../../core/types/room.ts'
+import type { RoomDirectory } from '../../core/rooms/directory.ts'
 import type { ProviderKeys } from '../../llm/provider-keys.ts'
 import type { VectorStore } from '../../embed/vector-store.ts'
 import { embedTexts, type EmbedProvider } from '../../embed/embedder.ts'
@@ -26,7 +26,7 @@ import { buildEmbeddingProvidersFromKeys } from '../../embed/memory-indexer.ts'
 export interface RecallToolDeps {
   readonly vectorStore: VectorStore
   readonly providerKeys: ProviderKeys
-  readonly house: House
+  readonly rooms: RoomDirectory
 }
 
 const MAX_K = 200
@@ -76,7 +76,7 @@ export const createRecallTool = (deps: RecallToolDeps): Tool => ({
       }
       const roomName = scopeRaw.slice('room:'.length).trim()
       if (!roomName) return { success: false, error: 'room scope requires a non-empty name after "room:"' }
-      const room = deps.house.getRoom(roomName)
+      const room = deps.rooms.getRoom(roomName)
       if (!room) return { success: false, error: `room '${roomName}' not found` }
       scopedRoomId = room.profile.id
     }

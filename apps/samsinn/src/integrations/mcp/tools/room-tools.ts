@@ -20,7 +20,7 @@ const dummyContext: ToolContext = {
 }
 
 export const registerRoomTools = (mcpServer: McpServer, system: SamsinnWorkspaceRuntime): void => {
-  const listRooms = createListRoomsTool(system.house)
+  const listRooms = createListRoomsTool(system.rooms)
   mcpServer.tool(
     listRooms.name,
     listRooms.description,
@@ -36,7 +36,7 @@ export const registerRoomTools = (mcpServer: McpServer, system: SamsinnWorkspace
     },
   )
 
-  const createRoom = createCreateRoomTool(system.house, system.addAgentToRoom)
+  const createRoom = createCreateRoomTool(system.rooms, system.addAgentToRoom)
   mcpServer.tool(
     createRoom.name,
     createRoom.description,
@@ -58,7 +58,7 @@ export const registerRoomTools = (mcpServer: McpServer, system: SamsinnWorkspace
     },
   )
 
-  const deleteRoom = createDeleteRoomTool(system.removeRoom, system.house)
+  const deleteRoom = createDeleteRoomTool(system.removeRoom, system.rooms)
   mcpServer.tool(
     deleteRoom.name,
     deleteRoom.description,
@@ -74,7 +74,7 @@ export const registerRoomTools = (mcpServer: McpServer, system: SamsinnWorkspace
     },
   )
 
-  const setRoomPrompt = createSetRoomPromptTool(system.house)
+  const setRoomPrompt = createSetRoomPromptTool(system.rooms)
   mcpServer.tool(
     setRoomPrompt.name,
     setRoomPrompt.description,
@@ -93,7 +93,7 @@ export const registerRoomTools = (mcpServer: McpServer, system: SamsinnWorkspace
     },
   )
 
-  const pauseRoom = createPauseRoomTool(system.house)
+  const pauseRoom = createPauseRoomTool(system.rooms)
   mcpServer.tool(
     pauseRoom.name,
     pauseRoom.description,
@@ -112,7 +112,7 @@ export const registerRoomTools = (mcpServer: McpServer, system: SamsinnWorkspace
     },
   )
 
-  const setDeliveryMode = createSetDeliveryModeTool(system.house)
+  const setDeliveryMode = createSetDeliveryModeTool(system.rooms)
   mcpServer.tool(
     setDeliveryMode.name,
     setDeliveryMode.description,
@@ -128,7 +128,7 @@ export const registerRoomTools = (mcpServer: McpServer, system: SamsinnWorkspace
     },
   )
 
-  const addToRoom = createAddToRoomTool(system.team, system.house, system.addAgentToRoom)
+  const addToRoom = createAddToRoomTool(system.team, system.rooms, system.addAgentToRoom)
   mcpServer.tool(
     addToRoom.name,
     addToRoom.description,
@@ -147,7 +147,7 @@ export const registerRoomTools = (mcpServer: McpServer, system: SamsinnWorkspace
     },
   )
 
-  const removeFromRoom = createRemoveFromRoomTool(system.team, system.house, system.removeAgentFromRoom)
+  const removeFromRoom = createRemoveFromRoomTool(system.team, system.rooms, system.removeAgentFromRoom)
   mcpServer.tool(
     removeFromRoom.name,
     removeFromRoom.description,

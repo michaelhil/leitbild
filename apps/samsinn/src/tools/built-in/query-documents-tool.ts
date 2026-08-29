@@ -1,5 +1,5 @@
 // ============================================================================
-// query_documents — built-in tool. Searches the per-instance document
+// query_documents — built-in tool. Searches the per-Workspace document
 // corpus (PDFs, markdown, plain text uploaded via /api/documents) for
 // chunks similar to the agent's query.
 //

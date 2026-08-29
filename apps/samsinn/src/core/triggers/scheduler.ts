@@ -18,7 +18,7 @@
 // ============================================================================
 
 import type { Agent, Team } from '../types/agent.ts'
-import type { House } from '../types/room.ts'
+import type { RoomDirectory } from '../rooms/directory.ts'
 import { asAIAgent } from '../../agents/shared.ts'
 import { computeDueTriggers, type AgentTriggerSnapshot } from './types.ts'
 
@@ -35,7 +35,7 @@ export interface TriggerScheduler {
 
 export interface SchedulerDeps {
   readonly team: Team
-  readonly house: House
+  readonly rooms: RoomDirectory
   // Now-source. Defaults to Date.now; tests inject a fake clock.
   readonly now?: () => number
   // Optional: callback after a trigger is dispatched. Tests use it as a
@@ -100,7 +100,7 @@ export const createTriggerScheduler = (deps: SchedulerDeps): TriggerScheduler =>
     if (!agent) return
     const trigger = agent.getTriggers?.().find(t => t.id === triggerId)
     if (!trigger) return
-    const room = deps.house.getRoom(trigger.roomId)
+    const room = deps.rooms.getRoom(trigger.roomId)
     if (!room) return  // Skip silently — room deletion between tick and dispatch is a normal race; cascade-clean in room-operations.ts:65-71 deletes orphaned triggers on the same path.
 
     // Per-mode busy gate. Skip without marking lastFiredAt so the trigger

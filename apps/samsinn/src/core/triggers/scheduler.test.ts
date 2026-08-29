@@ -4,7 +4,7 @@ import type { Trigger } from './types.ts'
 
 // Minimal fakes — the scheduler only needs:
 //   team.listAgents / getAgent
-//   house.getRoom
+//   rooms.getRoom
 //   agent.kind / state / getTriggers / markTriggerFired
 //   Room.post (post-mode dispatch)
 //   AIAgent.fireTriggerExecute (execute-mode dispatch)
@@ -74,7 +74,7 @@ describe('createTriggerScheduler', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       team: { listAgents: () => [agent as any], getAgent: () => agent as any } as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      house: { getRoom: () => room as any } as any,
+      rooms: { getRoom: () => room as any } as any,
       now: () => nowMs,
     })
     const due = await sched.tickNow()
@@ -96,7 +96,7 @@ describe('createTriggerScheduler', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       team: { listAgents: () => [agent as any], getAgent: () => agent as any } as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      house: { getRoom: () => room as any } as any,
+      rooms: { getRoom: () => room as any } as any,
       now: () => 1_000_000,
     })
     await sched.tickNow()
@@ -117,7 +117,7 @@ describe('createTriggerScheduler', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       team: { listAgents: () => [agent as any], getAgent: () => agent as any } as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      house: { getRoom: () => room as any } as any,
+      rooms: { getRoom: () => room as any } as any,
       now: () => nowMs,
     })
     // Stagger ran on construction → lastFiredAt should equal current now().
@@ -147,7 +147,7 @@ describe('createTriggerScheduler', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       team: { listAgents: () => [agent as any], getAgent: () => agent as any } as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      house: { getRoom: () => room as any } as any,
+      rooms: { getRoom: () => room as any } as any,
       now: () => nowMs,
     })
 
@@ -184,7 +184,7 @@ describe('createTriggerScheduler', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       team: { listAgents: () => [agent as any], getAgent: () => agent as any } as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      house: { getRoom: () => room as any } as any,
+      rooms: { getRoom: () => room as any } as any,
       now: () => 1_000_000,
     })
     await sched.tickNow()
@@ -202,7 +202,7 @@ describe('createTriggerScheduler', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       team: { listAgents: () => [agent as any], getAgent: () => agent as any } as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      house: { getRoom: () => undefined } as any,
+      rooms: { getRoom: () => undefined } as any,
       now: () => 1_000_000,
     })
     await sched.tickNow()
@@ -226,7 +226,7 @@ describe('createTriggerScheduler', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       team: { listAgents: () => [agent as any], getAgent: () => agent as any } as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      house: { getRoom: () => room as any } as any,
+      rooms: { getRoom: () => room as any } as any,
       now: () => 1_000_000,
       isScriptRunningInRoom: () => busy,
       startScript: async (roomId, name) => { calls.push({ roomId, name }); return { ok: true } },
@@ -250,7 +250,7 @@ describe('createTriggerScheduler', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       team: { listAgents: () => [agent as any], getAgent: () => agent as any } as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      house: { getRoom: () => room as any } as any,
+      rooms: { getRoom: () => room as any } as any,
       now: () => 1_000_000,
       isScriptRunningInRoom: () => true,  // already running
       startScript: async (roomId, name) => { calls.push({ roomId, name }); return { ok: true } },

@@ -6,12 +6,12 @@
 //   - script runner activation gate (script-runner.start)
 //
 // Each layer has its own unit test; this one verifies they compose
-// correctly under realistic House + Room + Pack metadata, and that
+// correctly under realistic RoomDirectory + Room + Pack metadata, and that
 // flipping room.setActivePacks() takes effect on the very next eval —
 // no caching, no stale views (the b660b3e pattern this design avoids).
 
 import { describe, test, expect } from 'bun:test'
-import { createHouse } from '../core/house.ts'
+import { createRoomDirectory } from '../core/rooms/directory.ts'
 import { createToolRegistry } from '../core/tool-registry.ts'
 import { buildToolSupport } from '../agents/spawn.ts'
 import type { Tool, ToolResult } from '../core/types/tool.ts'
@@ -28,9 +28,9 @@ const okTool = (name: string): Tool => ({
 
 const stubProvider = {} as unknown as LLMProvider
 
-describe('pack activation — end-to-end with House + Room', () => {
+describe('pack activation — end-to-end with RoomDirectory + Room', () => {
   test('fresh room: agent sees bundled-pack tools (core/local/demos/pwr-ops) but not unrelated registry packs', async () => {
-    const house = createHouse({})
+    const house = createRoomDirectory({})
     const room = house.createRoom({ name: 'Cafe', createdBy: SYSTEM_SENDER_ID })
     // v24: fresh room is seeded with default-active bundled packs.
     expect([...room.getActivePacks()].sort()).toEqual(['core', 'demos', 'local', 'pwr-ops'])
@@ -63,7 +63,7 @@ describe('pack activation — end-to-end with House + Room', () => {
   })
 
   test('flipping setActivePacks takes effect on the next resolve, no cache', async () => {
-    const house = createHouse({})
+    const house = createRoomDirectory({})
     const room = house.createRoom({ name: 'Tower', createdBy: SYSTEM_SENDER_ID })
     const reg = createToolRegistry()
     reg.registerWithSource(okTool('builtin_a'), { kind: 'built-in' })
@@ -101,7 +101,7 @@ describe('pack activation — end-to-end with House + Room', () => {
   })
 
   test('two rooms diverge: each sees only its own active packs', async () => {
-    const house = createHouse({})
+    const house = createRoomDirectory({})
     const tower = house.createRoom({ name: 'Tower', createdBy: SYSTEM_SENDER_ID })
     const cafe  = house.createRoom({ name: 'Cafe',  createdBy: SYSTEM_SENDER_ID })
     const reg = createToolRegistry()
@@ -135,7 +135,7 @@ describe('pack activation — end-to-end with House + Room', () => {
   })
 
   test('effectiveActivePacks is a passthrough — what the room says is what you get', () => {
-    const house = createHouse({})
+    const house = createRoomDirectory({})
     const room = house.createRoom({ name: 'X', createdBy: SYSTEM_SENDER_ID })
     // Fresh room is seeded with bundled defaults — verify the order matches
     // BUNDLED_PACKS in src/packs/bundled.ts.
@@ -145,14 +145,14 @@ describe('pack activation — end-to-end with House + Room', () => {
   })
 
   test('snapshot-style restore round-trips activePacks', () => {
-    const house = createHouse({})
+    const house = createRoomDirectory({})
     const room = house.createRoom({ name: 'X', createdBy: SYSTEM_SENDER_ID })
     room.setActivePacks(['aviation', 'cafes'])
     const state = room.getRoomState()
     expect(state.activePacks).toEqual(['aviation', 'cafes'])
 
     // Fresh room from snapshot data.
-    const house2 = createHouse({})
+    const house2 = createRoomDirectory({})
     const restored = house2.createRoom({ name: 'X', createdBy: SYSTEM_SENDER_ID })
     restored.restoreState({
       members: [],

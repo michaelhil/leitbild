@@ -455,7 +455,7 @@ describe('[NEW] message tagging', () => {
     }
 
     const agent = createAIAgent(makeConfig(), provider, () => {}, {
-      getHousePrompt: () => 'Be helpful. Prioritise new messages.',
+      getWorkspacePrompt: () => 'Be helpful. Prioritise new messages.',
       getResponseFormat: () => '- Just write natural text.',
     })
     agent.receive(makeMessage({ senderId: 'alice', roomId: 'room-1' }))
@@ -463,8 +463,8 @@ describe('[NEW] message tagging', () => {
 
     const systemMsg = capturedMessages.find(m => m.role === 'system')
     expect(systemMsg?.content).toContain('Prioritise')
-    expect(systemMsg?.content).toContain('<samsinn:house_rules>')
-    expect(systemMsg?.content).toContain('</samsinn:house_rules>')
+    expect(systemMsg?.content).toContain('<samsinn:workspace_rules>')
+    expect(systemMsg?.content).toContain('</samsinn:workspace_rules>')
     expect(systemMsg?.content).toContain('<samsinn:response_format>')
     expect(systemMsg?.content).toContain('</samsinn:response_format>')
   })

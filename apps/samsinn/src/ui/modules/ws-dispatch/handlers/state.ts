@@ -91,7 +91,7 @@ export const stateHandlers: StateHandlers = {
     $turnInfo.set(null)
 
     // Select a valid room for this authoritative snapshot. Instance switches
-    // and resets can leave the UI holding a room id from the previous house.
+    // and resets can leave the UI holding a Room id from the previous Workspace state.
     const selectedRoomId = $selectedRoomId.get()
     if (msg.rooms.length === 0) {
       if (selectedRoomId) $selectedRoomId.set(null)

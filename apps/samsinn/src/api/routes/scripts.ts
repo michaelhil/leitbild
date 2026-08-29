@@ -97,7 +97,7 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
     pattern: /^\/api\/rooms\/([^/]+)\/script$/,
     handler: (_req, match, { system }) => {
       const roomName = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(roomName)
+      const room = system.rooms.getRoom(roomName)
       if (!room) return errorResponse(`Room "${roomName}" not found`, 404)
       const run = system.scriptRunner.getRun(room.profile.id)
       if (!run) return json({ active: false })
@@ -123,7 +123,7 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
     pattern: /^\/api\/rooms\/([^/]+)\/script\/document$/,
     handler: (req, match, { system }) => {
       const roomName = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(roomName)
+      const room = system.rooms.getRoom(roomName)
       if (!room) return errorResponse(`Room "${roomName}" not found`, 404)
       const run = system.scriptRunner.getRun(room.profile.id)
       if (!run) return json({ active: false })
@@ -138,7 +138,7 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
     pattern: /^\/api\/rooms\/([^/]+)\/script\/start$/,
     handler: async (req, match, { system }) => {
       const roomName = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(roomName)
+      const room = system.rooms.getRoom(roomName)
       if (!room) return errorResponse(`Room "${roomName}" not found`, 404)
       const body = await parseBody(req)
       if (typeof body.scriptName !== 'string') return errorResponse('scriptName is required')
@@ -152,7 +152,7 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
     pattern: /^\/api\/rooms\/([^/]+)\/script\/stop$/,
     handler: async (_req, match, { system }) => {
       const roomName = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(roomName)
+      const room = system.rooms.getRoom(roomName)
       if (!room) return errorResponse(`Room "${roomName}" not found`, 404)
       const result = await system.scriptRunner.stop(room.profile.id)
       if (!result.ok) return errorResponse(result.reason ?? 'failed to stop script', 400)
@@ -164,7 +164,7 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
     pattern: /^\/api\/rooms\/([^/]+)\/script\/advance$/,
     handler: async (_req, match, { system }) => {
       const roomName = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(roomName)
+      const room = system.rooms.getRoom(roomName)
       if (!room) return errorResponse(`Room "${roomName}" not found`, 404)
       const result = await system.scriptRunner.forceAdvance(room.profile.id)
       if (!result.ok) return errorResponse(result.reason ?? 'failed to advance', 400)

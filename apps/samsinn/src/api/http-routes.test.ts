@@ -4,32 +4,33 @@
 
 import { describe, test, expect, beforeEach } from 'bun:test'
 import { handleAPI, handleUnscopedAPI } from './http-routes.ts'
-import { createHouse } from '../core/house.ts'
+import { createRoomDirectory } from '../core/rooms/directory.ts'
 import { createTeam } from '../agents/team.ts'
 import { createToolRegistry } from '../core/tool-registry.ts'
 import { createLimitMetrics } from '../core/limit-metrics.ts'
+import { createWorkspaceSettings } from '../core/workspaces/settings.ts'
+import { createBookmarkStore } from '../core/workspaces/bookmark-store.ts'
 import type { DeliverFn } from '../core/types/messaging.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
 import type { SamsinnWorkspaceRuntime } from '../main.ts'
-import { accessContextSchema, newRequestId } from '@samsinn-leitbild/platform-contracts'
-import { workspaceIdForLegacyInstance } from '../core/workspaces/request-context.ts'
+import { accessContextSchema, newRequestId, newWorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
 // === Helpers ===
 
 const noopDeliver: DeliverFn = () => {}
 const noopBroadcast = (_msg: WSOutbound): void => {}
 const noopSubscribe = (): void => {}
-// 16-char lowercase alphanumeric to satisfy isValidInstanceId so the
-// cookie attached by `req()` below passes the F5 cookieless-→-401 gate.
-const TEST_INSTANCE_ID = 'testinstance1234'
+const TEST_WORKSPACE_ID = newWorkspaceId()
 const TEST_ACCESS_CONTEXT = accessContextSchema.parse({
-  workspaceId: workspaceIdForLegacyInstance(TEST_INSTANCE_ID),
+  workspaceId: TEST_WORKSPACE_ID,
   requestId: newRequestId(),
   actor: { kind: 'anonymous' },
 })
 
 const makeSystem = (): SamsinnWorkspaceRuntime => {
-  const house = createHouse({ deliver: noopDeliver })
+  const rooms = createRoomDirectory({ deliver: noopDeliver })
+  const settings = createWorkspaceSettings()
+  const bookmarks = createBookmarkStore()
   const team = createTeam()
   const toolRegistry = createToolRegistry()
   const ollama = {
@@ -46,13 +47,13 @@ const makeSystem = (): SamsinnWorkspaceRuntime => {
     dispose: () => {},
   }
   return {
-    house, team, toolRegistry,
+    rooms, settings, bookmarks, team, toolRegistry,
     llm: { models: async () => [], chat: async () => ({ content: '', generationMs: 0, tokensUsed: { prompt: 0, completion: 0 } }) } as unknown as SamsinnWorkspaceRuntime['llm'],
     ollama,
     providerConfig: { order: ['ollama'], ollamaUrl: 'http://localhost:11434', ollamaMaxConcurrent: 2, cloud: {}, ollamaOnly: false, forceFailProvider: null, droppedFromOrder: [], orderFromUser: false } as unknown as SamsinnWorkspaceRuntime['providerConfig'],
     routeMessage: () => [],
     removeAgent: (id: string) => team.removeAgent(id),
-    removeRoom: (id: string) => house.removeRoom(id),
+    removeRoom: (id: string) => rooms.removeRoom(id),
     addAgentToRoom: async () => {},
     removeAgentFromRoom: () => {},
     spawnAIAgent: async () => { throw new Error('Not implemented') },
@@ -73,10 +74,10 @@ const makeSystem = (): SamsinnWorkspaceRuntime => {
   } as unknown as SamsinnWorkspaceRuntime
 }
 
-// All requests carry the samsinn_instance cookie. handleAPI gates
+// All requests carry the Samsinn Workspace cookie. handleAPI gates
 // cookieless /api/* with 401 (F5); production never sees a cookieless
 // API call because the UI mints via GET /. Tests mirror that contract.
-const COOKIE = `samsinn_instance=${TEST_INSTANCE_ID}`
+const COOKIE = `samsinn_workspace=${TEST_WORKSPACE_ID}`
 
 const req = (method: string, path: string, body?: unknown): Request => {
   const url = `http://localhost${path}`
@@ -89,7 +90,7 @@ const req = (method: string, path: string, body?: unknown): Request => {
 }
 
 const call = (system: SamsinnWorkspaceRuntime, r: Request, path: string, opts: { remoteAddress?: string } = {}) =>
-  handleAPI(r, path, system, TEST_INSTANCE_ID, TEST_ACCESS_CONTEXT, {
+  handleAPI(r, path, system, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
     broadcast: noopBroadcast,
     subscribeAgentState: noopSubscribe,
     ...(opts.remoteAddress ? { remoteAddress: opts.remoteAddress } : {}),
@@ -102,7 +103,7 @@ describe('HTTP Routes', () => {
 
   beforeEach(() => {
     system = makeSystem()
-    system.house.createRoom({ name: 'TestRoom', createdBy: 'system' })
+    system.rooms.createRoom({ name: 'TestRoom', createdBy: 'system' })
   })
 
   // --- Health ---
@@ -154,7 +155,7 @@ describe('HTTP Routes', () => {
   test('DELETE /api/rooms/:name removes room', async () => {
     const res = await call(system, req('DELETE', '/api/rooms/TestRoom'), '/api/rooms/TestRoom')
     expect(res?.status).toBe(200)
-    expect(system.house.getRoom('TestRoom')).toBeUndefined()
+    expect(system.rooms.getRoom('TestRoom')).toBeUndefined()
   })
 
   // --- Pause ---
@@ -167,7 +168,7 @@ describe('HTTP Routes', () => {
   })
 
   test('PUT /api/rooms/:name/pause with false unpauses room', async () => {
-    const room = system.house.getRoom('TestRoom')!
+    const room = system.rooms.getRoom('TestRoom')!
     room.setPaused(true)
     const res = await call(system, req('PUT', '/api/rooms/TestRoom/pause', { paused: false }), '/api/rooms/TestRoom/pause')
     expect(res?.status).toBe(200)
@@ -205,7 +206,7 @@ describe('HTTP Routes', () => {
   })
 
   test('GET /api/rooms/:name/members returns members with agent info', async () => {
-    const room = system.house.getRoom('TestRoom')!
+    const room = system.rooms.getRoom('TestRoom')!
     const { createHumanAgent } = await import('../agents/human-agent.ts')
     const agent = createHumanAgent({ name: 'Alice' }, () => {})
     system.team.addAgent(agent)
@@ -274,7 +275,7 @@ describe('HTTP Routes', () => {
 // === F5: cookieless /api/* gate ===
 //
 // Bots/scanners probing the API without first going through the UI's
-// GET / + /ws handshake should get 401, NOT create an instance via the
+// GET / + /ws handshake should get 401, NOT create a Workspace via the
 // downstream registry.getOrLoad call. /api/auth and /api/system/info are
 // exempt because the UI calls them before any cookie exists (to render
 // the token prompt + version banner).
@@ -285,7 +286,7 @@ describe('HTTP Routes — F5 cookieless /api/* gate', () => {
 
   test('cookieless GET /api/rooms → 401', async () => {
     const sys = makeSystem()
-    const res = await handleAPI(reqNoCookie('GET', '/api/rooms'), '/api/rooms', sys, TEST_INSTANCE_ID, TEST_ACCESS_CONTEXT, {
+    const res = await handleAPI(reqNoCookie('GET', '/api/rooms'), '/api/rooms', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
       broadcast: noopBroadcast,
       subscribeAgentState: noopSubscribe,
     })
@@ -294,7 +295,7 @@ describe('HTTP Routes — F5 cookieless /api/* gate', () => {
 
   test('cookieless GET /api/auth → allowed (exempt for UI bootstrap)', async () => {
     const sys = makeSystem()
-    const res = await handleAPI(reqNoCookie('GET', '/api/auth'), '/api/auth', sys, TEST_INSTANCE_ID, TEST_ACCESS_CONTEXT, {
+    const res = await handleAPI(reqNoCookie('GET', '/api/auth'), '/api/auth', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
       broadcast: noopBroadcast,
       subscribeAgentState: noopSubscribe,
     })
@@ -303,7 +304,7 @@ describe('HTTP Routes — F5 cookieless /api/* gate', () => {
 
   test('cookieless GET /api/system/info → allowed (exempt for token-prompt banner)', async () => {
     const sys = makeSystem()
-    const res = await handleAPI(reqNoCookie('GET', '/api/system/info'), '/api/system/info', sys, TEST_INSTANCE_ID, TEST_ACCESS_CONTEXT, {
+    const res = await handleAPI(reqNoCookie('GET', '/api/system/info'), '/api/system/info', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
       broadcast: noopBroadcast,
       subscribeAgentState: noopSubscribe,
     })
@@ -314,9 +315,9 @@ describe('HTTP Routes — F5 cookieless /api/* gate', () => {
     const sys = makeSystem()
     const r = new Request('http://localhost/api/rooms', {
       method: 'GET',
-      headers: { cookie: 'samsinn_instance=../etc/passwd' },
+      headers: { cookie: 'samsinn_workspace=../etc/passwd' },
     })
-    const res = await handleAPI(r, '/api/rooms', sys, TEST_INSTANCE_ID, TEST_ACCESS_CONTEXT, {
+    const res = await handleAPI(r, '/api/rooms', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
       broadcast: noopBroadcast,
       subscribeAgentState: noopSubscribe,
     })
@@ -329,19 +330,19 @@ describe('unscoped bootstrap routes', () => {
     const res = await handleUnscopedAPI(
       new Request('http://localhost/health'),
       '/health',
-      { diagnostics: { snapshot: () => ({ instances: [], wsSessions: 0 }) } },
+      { diagnostics: { snapshot: () => ({ workspaces: [], wsSessions: 0 }) } },
     )
     expect(res?.status).toBe(200)
     expect(await res?.json()).toEqual({
       status: 'ok',
       scope: 'process',
-      instances: 0,
+      workspaces: 0,
       wsSessions: 0,
     })
   })
 
-  test('diagnostics is served without a per-instance SamsinnWorkspaceRuntime', async () => {
-    const snapshot = { instances: [], wsSessions: 0 }
+  test('diagnostics is served without a per-Workspace SamsinnWorkspaceRuntime', async () => {
+    const snapshot = { workspaces: [], wsSessions: 0 }
     const res = await handleUnscopedAPI(
       new Request('http://localhost/api/system/diagnostics'),
       '/api/system/diagnostics',
@@ -428,8 +429,8 @@ describe('HTTP Routes — auth gate (deploy mode)', () => {
     restoreToken()
   })
 
-  test('POST /api/instances without cookie → 401', async () => {
-    const res = await call(system, req('POST', '/api/instances'), '/api/instances')
+  test('POST /api/workspaces without cookie → 401', async () => {
+    const res = await call(system, req('POST', '/api/workspaces'), '/api/workspaces')
     expect(res?.status).toBe(401)
     restoreToken()
   })
@@ -511,47 +512,47 @@ describe('GET /api/system/limits (no auth)', () => {
   // Mirrors /api/system/reset's auth shape but without the countdown
   // and without trashing the directory.
 
-  test('POST /api/system/evict returns 501 when evictInstance not wired', async () => {
+  test('POST /api/system/evict returns 501 when evictWorkspace not wired', async () => {
     const r = req('POST', '/api/system/evict')
     const sys = makeSystem()
-    const res = await handleAPI(r, '/api/system/evict', sys, TEST_INSTANCE_ID, TEST_ACCESS_CONTEXT, {
+    const res = await handleAPI(r, '/api/system/evict', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
       broadcast: noopBroadcast,
       subscribeAgentState: noopSubscribe,
     })
     expect(res?.status).toBe(501)
   })
 
-  test('POST /api/system/evict calls evictInstance and returns 200 on success', async () => {
+  test('POST /api/system/evict calls evictWorkspace and returns 200 on success', async () => {
     let calledWith: Request | undefined
-    const evictInstance = async (rq: Request) => {
+    const evictWorkspace = async (rq: Request) => {
       calledWith = rq
-      return { ok: true as const, instanceId: TEST_INSTANCE_ID }
+      return { ok: true as const, workspaceId: TEST_WORKSPACE_ID }
     }
     const r = new Request('http://test/api/system/evict', {
       method: 'POST',
-      headers: { Cookie: `samsinn_instance=${TEST_INSTANCE_ID}` },
+      headers: { Cookie: `samsinn_workspace=${TEST_WORKSPACE_ID}` },
     })
     const sys = makeSystem()
-    const res = await handleAPI(r, '/api/system/evict', sys, TEST_INSTANCE_ID, TEST_ACCESS_CONTEXT, {
+    const res = await handleAPI(r, '/api/system/evict', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
       broadcast: noopBroadcast,
       subscribeAgentState: noopSubscribe,
-      evictInstance,
+      evictWorkspace,
     })
     expect(res?.status).toBe(200)
     expect(calledWith).toBe(r)
-    const body = await res!.json() as { evicted: boolean; instanceId: string }
+    const body = await res!.json() as { evicted: boolean; workspaceId: string }
     expect(body.evicted).toBe(true)
-    expect(body.instanceId).toBe(TEST_INSTANCE_ID)
+    expect(body.workspaceId).toBe(TEST_WORKSPACE_ID)
   })
 
-  test('POST /api/system/evict surfaces evictInstance failure as 400', async () => {
-    const evictInstance = async () => ({ ok: false as const, reason: 'no instance cookie' })
+  test('POST /api/system/evict surfaces evictWorkspace failure as 400', async () => {
+    const evictWorkspace = async () => ({ ok: false as const, reason: 'no Workspace cookie' })
     const r = req('POST', '/api/system/evict')
     const sys = makeSystem()
-    const res = await handleAPI(r, '/api/system/evict', sys, TEST_INSTANCE_ID, TEST_ACCESS_CONTEXT, {
+    const res = await handleAPI(r, '/api/system/evict', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
       broadcast: noopBroadcast,
       subscribeAgentState: noopSubscribe,
-      evictInstance,
+      evictWorkspace,
     })
     expect(res?.status).toBe(400)
   })
@@ -621,7 +622,7 @@ describe('HTTP Routes — agent triggers (audit gap)', () => {
 
   beforeEach(() => {
     system = makeSystem()
-    system.house.createRoom({ name: 'TestRoom', createdBy: 'system' })
+    system.rooms.createRoom({ name: 'TestRoom', createdBy: 'system' })
   })
 
   test('GET /api/agents/Ghost/triggers returns 404 for unknown agent', async () => {

@@ -76,7 +76,7 @@ export const validateBootstrap = (system: SamsinnWorkspaceRuntime, ctx: Validate
 
   // Contract 4: wsManager.isWired(id) must return true for this system by
   // the time this contract runs. Captures the 5d73a8e invariant: every
-  // per-instance system is wired by the registry's onWorkspaceRuntimeCreated hook,
+  // per-Workspace system is wired by the registry's onWorkspaceRuntimeCreated hook,
   // which fires BEFORE onFirstLoad (where this validator is called from).
   // If wsManager was undefined when onWorkspaceRuntimeCreated fired, wireWorkspaceRuntimeEvents
   // was silently skipped — the bug pattern that made cookie-bound instances

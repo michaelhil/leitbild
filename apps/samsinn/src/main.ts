@@ -8,11 +8,14 @@
 import type { Agent, AIAgent, AIAgentConfig, RouteMessage, Team } from './core/types/agent.ts'
 import type { DeliverFn, ResolveAgentName, ResolveTagFn } from './core/types/messaging.ts'
 import type {
-  House, HouseCallbacks, OnAgentSettingsChanged, OnBookmarksChanged, OnDeliveryModeChanged,
+  OnAgentSettingsChanged, OnDeliveryModeChanged,
   OnMembershipChanged, OnMessagePosted, OnModeAutoSwitched,
   OnRoomCreated, OnRoomDeleted, OnSummaryConfigChanged, OnSummaryUpdated, RemoveAgentFromRoomOptions,
   OnTurnChanged,
 } from './core/types/room.ts'
+import { createRoomDirectory, type RoomDirectory, type RoomDirectoryCallbacks } from './core/rooms/directory.ts'
+import { createWorkspaceSettings, type WorkspaceSettings } from './core/workspaces/settings.ts'
+import { createBookmarkStore, type BookmarkStore, type OnBookmarksChanged } from './core/workspaces/bookmark-store.ts'
 import type { SummaryScheduler, SummaryTarget } from './core/summaries/summary-scheduler.ts'
 import { createSummaryEngine } from './core/summaries/summary-engine.ts'
 import { scanPackSubdirs } from './packs/scanner.ts'
@@ -24,7 +27,6 @@ import { DEFAULTS } from './core/types/constants.ts'
 import type { ToolRegistry } from './core/types/tool.ts'
 import type { OnProviderBound, OnProviderAllFailed, OnProviderStreamFailed } from './core/types/llm.ts'
 import type { ProviderRoutingEvent } from './llm/router.ts'
-import { createHouse } from './core/house.ts'
 import { asAIAgent } from './agents/shared.ts'
 import { createTeam } from './agents/team.ts'
 import { createMessageRouter } from './core/delivery.ts'
@@ -39,13 +41,12 @@ import type { LimitMetrics } from './core/limit-metrics.ts'
 import type { ProviderGateway } from './llm/provider-gateway.ts'
 import { createOverlayToolRegistry } from './core/tool-registry.ts'
 import { spawnAIAgent, spawnHumanAgent, buildToolSupport, type SpawnOptions } from './agents/spawn.ts'
-import { callLLM } from './agents/evaluation.ts'
 import { createHumanAgent } from './agents/human-agent.ts'
 import type { HumanAgentConfig, TransportSend } from './agents/human-agent.ts'
 import type { HumanAgent } from './agents/human-agent.ts'
 import { createRoomOperations } from './core/room-operations.ts'
 import {
-  // House-bound built-ins (registered into the per-instance overlay).
+  // RoomDirectory-bound built-ins (registered into the per-Workspace overlay).
   // Process-wide built-ins (createPassTool, createGetTimeTool, createWebTools,
   // createTestToolTool, createListSkillsTool, createWriteSkillTool,
   // createWriteToolTool, createPackTools) live in deployment.sharedToolRegistry —
@@ -90,7 +91,9 @@ import {
 } from './logging/event-mapping.ts'
 
 export interface SamsinnWorkspaceRuntime {
-  readonly house: House
+  readonly rooms: RoomDirectory
+  readonly settings: WorkspaceSettings
+  readonly bookmarks: BookmarkStore
   readonly team: Team
   readonly routeMessage: RouteMessage
   // Provider-neutral LLM access. All agents and callSystemLLM go through here.
@@ -122,7 +125,7 @@ export interface SamsinnWorkspaceRuntime {
   // agents picking up a fallback get the latest list. Mirrors the wiki
   // resolveActiveWikis "derive on read" pattern (no boot-time freeze).
   readonly refreshAvailableModels: () => Promise<void>
-  // Per-instance ring buffer of recent agent evals — fuel for
+  // Per-Workspace ring buffer of recent agent evals — fuel for
   // /api/diagnostics/evals/*. Subscribes via addEvalEventListener so
   // it coexists with the wire-workspace-runtime-events broadcaster.
   readonly evalBuffer: import('./diagnostics/eval-buffer.ts').EvalBuffer
@@ -150,7 +153,7 @@ export interface SamsinnWorkspaceRuntime {
   readonly ollamaUrls: OllamaUrlRegistry
   readonly removeAgent: (id: string) => boolean
   readonly removeRoom: (roomId: string) => boolean
-  // Clear every room and agent from the running instance. Used by the
+  // Clear every room and agent from the running Workspace. Used by the
   // `reset_system` MCP tool in the experiment runner's persistent-process
   // mode so a single subprocess can serve many independent runs. Leaves the
   // tool registry, skill store, provider router, and snapshot wiring alone —
@@ -195,7 +198,7 @@ export interface SamsinnWorkspaceRuntime {
   readonly setOnSummaryRunCompleted: (cb: (roomId: string, target: SummaryTarget, text: string) => void) => void
   readonly setOnSummaryRunFailed: (cb: (roomId: string, target: SummaryTarget, reason: string) => void) => void
   readonly setOnSummaryConfigChanged: (cb: OnSummaryConfigChanged) => void
-  // RAG: per-instance document corpus. Present iff options.vectorsFile was
+  // RAG: per-Workspace document corpus. Present iff options.vectorsFile was
   // provided (cookie-bound multi-tenant path); undefined in legacy tests.
   readonly documents?: DocumentManager
   readonly setOnDocumentStatusChange: (cb: (meta: DocumentMetadata) => void) => void
@@ -208,7 +211,7 @@ export interface SamsinnWorkspaceRuntime {
   readonly logging: LoggingHandle
 
   // --- Process-global limit/cap counters (held on DeploymentRuntime) ---
-  // Same instance across every SamsinnWorkspaceRuntime in this process; surfaced via
+  // Same Workspace across every SamsinnWorkspaceRuntime in this process; surfaced via
   // GET /api/system/limits.
   readonly limitMetrics: LimitMetrics
 }
@@ -227,7 +230,7 @@ export interface LoggingHandle {
 
 export interface CreateSamsinnWorkspaceRuntimeOptions {
   // Pre-built deployment runtime. When passed, createSamsinnWorkspaceRuntime skips internal
-  // provider construction and uses these. Phase D's HouseRegistry passes
+  // provider construction and uses these. WorkspaceRuntimeRegistry passes
   // one deployment runtime to many workspace runtime factories.
   readonly deployment?: DeploymentRuntime
   // Standalone/test path: when deployment is absent, build it locally.
@@ -235,10 +238,10 @@ export interface CreateSamsinnWorkspaceRuntimeOptions {
   readonly providerSetup?: ProviderSetupResult
   // Diagnostic label used in unsubscribed-callback warnings (lateBinding).
   // Threaded by the registry; tests/headless paths can omit (becomes "?").
-  readonly instanceLabel?: string
-  // Per-instance vector store path (RAG features). When set, createSamsinnWorkspaceRuntime
+  readonly workspaceLabel?: string
+  // Per-Workspace vector store path (RAG features). When set, createSamsinnWorkspaceRuntime
   // wires the memory indexer + recall tool. Omitted in tests / single-tenant
-  // paths that don't have an instance ID — RAG features are no-op there.
+  // paths that don't have an Workspace ID — RAG features are no-op there.
   readonly vectorsFile?: string
 }
 
@@ -280,11 +283,11 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
   //
   // Warn-once on missing subscriber: when `proxy(...)` fires before
   // `set(...)` has been called AND no observers are registered, log one
-  // console.warn the first time per (slot name, instanceLabel) pair so a
+  // console.warn the first time per (slot name, workspaceLabel) pair so a
   // wiring miss is visible immediately. Subsequent dropped events stay
   // silent. The bug fixed in 5d73a8e was invisible for three days because
   // there was no signal at all when the wiring was skipped.
-  const instanceLabel = options.instanceLabel ?? '?'
+  const workspaceLabel = options.workspaceLabel ?? '?'
   const lateBinding = <T extends (...args: never[]) => void>(slotName: string): {
     proxy: T
     set: (cb: T) => void
@@ -300,7 +303,7 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
         }
       } else if (observers.length === 0 && !warnedNoSubscriber) {
         warnedNoSubscriber = true
-        console.warn(`[lateBinding] ${slotName} has no subscriber for instance ${instanceLabel} — first event dropped, subsequent dropped silently`)
+        console.warn(`[lateBinding] ${slotName} has no subscriber for Workspace ${workspaceLabel} — first event dropped, subsequent dropped silently`)
       }
       const snapshot = [...observers]
       for (const cb of snapshot) {
@@ -350,7 +353,7 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
   const evalBuffer = createEvalBuffer()
   evalBuffer.attach(evalEvent.add)
 
-  // Forward-declared (matches schedulerRef pattern). HouseCallbacks.onScriptMessage closes over this.
+  // Forward-declared (matches schedulerRef pattern). RoomDirectoryCallbacks.onScriptMessage closes over this.
   let scriptRunnerRef: ScriptRunner | undefined
 
   const resolveAgentName: ResolveAgentName = (name) => team.getAgent(name)?.id
@@ -359,12 +362,12 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
 
   const ollamaUrls: OllamaUrlRegistry = createOllamaUrlRegistry(ollamaRaw, ollama)
 
-  // Forward-declared: the summary scheduler is built after `house`, but the
-  // house's onMessagePosted callback needs to feed into it. We bridge with a
+  // Forward-declared: the summary scheduler is built after `rooms`, but the
+  // rooms's onMessagePosted callback needs to feed into it. We bridge with a
   // mutable slot that's set after construction.
   let schedulerRef: SummaryScheduler | undefined
 
-  const houseCallbacks: HouseCallbacks = {
+  const roomCallbacks: RoomDirectoryCallbacks = {
     deliver,
     resolveAgentName,
     resolveTag,
@@ -381,7 +384,6 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
       roomDeleted.proxy(roomId, roomName)
       schedulerRef?.onRoomRemoved(roomId)
     },
-    onBookmarksChanged: bookmarksChanged.proxy,
     onManualModeEntered: (roomId: string) => { cancelGenerationsInRoom(roomId) },
     onModeAutoSwitched: modeAutoSwitched.proxy,
     onSummaryConfigChanged: (roomId, config) => {
@@ -389,13 +391,14 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
       schedulerRef?.onConfigChanged(roomId)
     },
     onSummaryUpdated: summaryUpdated.proxy,
-    callSystemLLM: (options) => callLLM(llmService.bound({ source: 'system' }), options),
   }
-  const house = createHouse(houseCallbacks)
-  const routeMessage = createMessageRouter({ house, limitMetrics: deployment.limitMetrics })
-  // Per-instance overlay over the process-shared tool registry. Pack tools,
+  const rooms = createRoomDirectory(roomCallbacks)
+  const settings = createWorkspaceSettings()
+  const bookmarks = createBookmarkStore(bookmarksChanged.proxy)
+  const routeMessage = createMessageRouter({ rooms, limitMetrics: deployment.limitMetrics })
+  // Per-Workspace overlay over the process-shared tool registry. Pack tools,
   // skill-bundled tools, external tools, MCP tools and the codegen suite
-  // live in shared (registered once at boot). Only house-bound built-ins
+  // live in shared (registered once at boot). Only rooms-bound built-ins
   // (room ops, post_to_room, write_script) register into the overlay below.
   const toolRegistry = createOverlayToolRegistry(deployment.sharedToolRegistry)
 
@@ -406,7 +409,7 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
     const model = firstAi ? (firstAi as AIAgent).getModel?.() : undefined
     return model ?? 'llama3.2'
   }
-  // RAG: per-instance vector store + memory indexer. The store is lazy —
+  // RAG: per-Workspace vector store + memory indexer. The store is lazy —
   // first .add() opens / appends to the JSONL file. Without options.vectorsFile
   // (e.g. legacy single-tenant + tests) the store and tool are not wired.
   const vectorStore: VectorStore | undefined = options.vectorsFile
@@ -416,20 +419,20 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
     ? createMemoryIndexer({
         vectorStore,
         getProviders: () => buildEmbeddingProvidersFromKeys(providerKeys),
-        getRoomName: (roomId) => house.getRoom(roomId)?.profile.name,
+        getRoomName: (roomId) => rooms.getRoom(roomId)?.profile.name,
       })
     : undefined
 
-  // RAG: document corpus manager. Lives at <instance>/documents/. The
+  // RAG: document corpus manager. Lives at <Workspace>/documents/. The
   // manager is fire-and-forget on indexing; status transitions are
   // pushed to subscribers via this late-binding slot (bootstrap wires
-  // it to broadcastToInstance for WS push).
+  // it to broadcastToWorkspace for WS push).
   const documentLateBinding: { onStatusChange: (m: DocumentMetadata) => void } = {
     onStatusChange: () => { /* no-op until set */ },
   }
   const documents: DocumentManager | undefined = (vectorStore && options.vectorsFile)
     ? createDocumentManager({
-        // documents/ sits as a sibling of vectors.jsonl under the instance root
+        // documents/ sits as a sibling of vectors.jsonl under the Workspace root
         rootDir: `${dirname(options.vectorsFile)}/documents`,
         vectorStore,
         providerKeys,
@@ -449,7 +452,7 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
   })
   const summaryScheduler = createSummaryScheduler({
     engine: summaryEngine,
-    getRoom: (id) => house.getRoom(id),
+    getRoom: (id) => rooms.getRoom(id),
     onRunStarted: (roomId, target) => summaryRunStarted.proxy(roomId, target),
     onRunDelta: (roomId, target, delta) => summaryRunDelta.proxy(roomId, target, delta),
     onRunCompleted: (roomId, target, text) => summaryRunCompleted.proxy(roomId, target, text),
@@ -461,7 +464,7 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
   // exist (lever 1+2 in createTriggerScheduler); restarts on first add.
   const triggerScheduler: TriggerScheduler = createTriggerScheduler({
     team,
-    house,
+    rooms,
     startScript: (roomId, name) =>
       scriptRunnerRef
         ? scriptRunnerRef.start(roomId, name)
@@ -472,7 +475,7 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
   // SamsinnWorkspaceRuntime-level membership operations — extracted to core/room-operations.ts.
   const roomOps = createRoomOperations({
     team,
-    house,
+    rooms,
     routeMessage,
     onMembershipChanged: (...args) => membershipChanged.proxy(...args),
     triggerScheduler,
@@ -490,7 +493,7 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
     agentId: string,
     roomId: string,
   ): { ok: boolean; queued: boolean; reason?: string } => {
-    const room = house.getRoom(roomId)
+    const room = rooms.getRoom(roomId)
     if (!room) return { ok: false, queued: false, reason: 'room not found' }
     if (room.deliveryMode !== 'manual') {
       return { ok: false, queued: false, reason: 'room is not in manual mode' }
@@ -535,9 +538,9 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
       }
       if (removeAgent(agent.id)) agentCount++
     }
-    const rooms = house.listAllRooms()
+    const roomProfiles = rooms.listAllRooms()
     let roomCount = 0
-    for (const profile of rooms) {
+    for (const profile of roomProfiles) {
       if (systemRemoveRoom(profile.id)) roomCount++
     }
     return { rooms: roomCount, agents: agentCount }
@@ -546,8 +549,8 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
   const removeAgent = (id: string): boolean => {
     const agent = team.getAgent(id)
     if (!agent) return false
-    for (const profile of house.listAllRooms()) {
-      const room = house.getRoom(profile.id)
+    for (const profile of rooms.listAllRooms()) {
+      const room = rooms.getRoom(profile.id)
       if (room?.hasMember(id)) {
         systemRemoveAgentFromRoom(id, profile.id)
       }
@@ -572,50 +575,50 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
     return removed
   }
 
-  // Register HOUSE-BOUND built-in tools into the per-instance overlay.
+  // Register Room/Team-bound built-in tools into the per-Workspace overlay.
   // Process-wide tools (pass, get_time, web *, test_tool, list_skills,
   // write_skill / write_tool, install_pack et al, MCP tools, external tools,
   // skill-bundled tools, pack-bundled tools) live in deployment.sharedToolRegistry
   // and are registered once at boot — see bootstrap.ts.
   toolRegistry.registerAll([
-    // Room management — bound to per-instance house
-    createListRoomsTool(house),
-    createCreateRoomTool(house, systemAddAgentToRoom),
-    createDeleteRoomTool(systemRemoveRoom, house),
-    createSetRoomPromptTool(house),
-    createPauseRoomTool(house),
-    createSetDeliveryModeTool(house),
-    createAddToRoomTool(team, house, systemAddAgentToRoom),
-    createRemoveFromRoomTool(team, house, systemRemoveAgentFromRoom),
-    // Agent tools — bound to per-instance team / house
+    // Room management — bound to per-Workspace rooms
+    createListRoomsTool(rooms),
+    createCreateRoomTool(rooms, systemAddAgentToRoom),
+    createDeleteRoomTool(systemRemoveRoom, rooms),
+    createSetRoomPromptTool(rooms),
+    createPauseRoomTool(rooms),
+    createSetDeliveryModeTool(rooms),
+    createAddToRoomTool(team, rooms, systemAddAgentToRoom),
+    createRemoveFromRoomTool(team, rooms, systemRemoveAgentFromRoom),
+    // Agent tools — bound to per-Workspace team / rooms
     createListAgentsTool(team),
-    createMuteAgentTool(team, house),
-    createGetMyContextTool(team, house),
-    // Utility tools — bound to per-instance house
-    createGetRoomHistoryTool(house),
-    createPostToRoomTool(house),
-    // RAG: recall tool — only registered when this instance has a vector
+    createMuteAgentTool(team, rooms),
+    createGetMyContextTool(team, rooms),
+    // Utility tools — bound to per-Workspace rooms
+    createGetRoomHistoryTool(rooms),
+    createPostToRoomTool(rooms),
+    // RAG: recall tool — only registered when this Workspace has a vector
     // store (i.e. options.vectorsFile was provided). Tests + single-tenant
     // legacy paths don't get it; agents see a clean tool list without
     // a non-functional `recall`.
-    ...(vectorStore ? [createRecallTool({ vectorStore, providerKeys, house })] : []),
+    ...(vectorStore ? [createRecallTool({ vectorStore, providerKeys, rooms })] : []),
     ...(vectorStore ? [createQueryDocumentsTool({ vectorStore, providerKeys })] : []),
   ])
 
-  // Biometrics tools — implementation lives in core (needs House + capture
+  // Biometrics tools — implementation lives in core (needs RoomDirectory + capture
   // registry), but registered with source.pack='biometrics' so the per-room
   // activePacks filter (effectiveActivePackSet) gates them exactly like a
   // pack-bundled tool. Users discover and activate biometrics via the
   // samsinn-biometrics pack repo; activating it in a room makes these
   // tools visible to agents in that room. See docs in
   // src/tools/built-in/biometric-tools.ts for the rationale.
-  for (const tool of createBiometricsTools({ house, registry: getCaptureRegistry() })) {
+  for (const tool of createBiometricsTools({ rooms, registry: getCaptureRegistry() })) {
     toolRegistry.registerWithSource(tool, { kind: 'pack-bundled', pack: BIOMETRICS_PACK_NAMESPACE })
   }
 
   // Skill system — file-based behavioral templates with bundled tools.
   // skillStore is process-shared (populated by bootstrap). scriptStore is
-  // still per-instance (file-backed under SAMSINN_HOME/scripts; will move
+  // still per-Workspace (file-backed under SAMSINN_HOME/scripts; will move
   // to shared in a follow-up — same migration as we just did for skills).
   const skillsDir = sharedPaths.skills()
   const scriptsDir = sharedPaths.scripts()
@@ -640,7 +643,7 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
   // visible only when its owning pack is active in this room. Standalone
   // skills (no pack field) are treated as 'local' and are always visible.
   const getSkillsForRoom = (roomId: string): string => {
-    const room = house.getRoom(roomId)
+    const room = rooms.getRoom(roomId)
     if (!room) return ''
     const active = effectiveActivePackSet(room)
     const inScope = skillStore.forScope(room.profile.name)
@@ -658,7 +661,7 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
     readonly name: string
     readonly declaredTools: ReadonlyArray<string>
   }> => {
-    const room = house.getRoom(roomId)
+    const room = rooms.getRoom(roomId)
     if (!room) return []
     const active = effectiveActivePackSet(room)
     return skillStore.forScope(room.profile.name)
@@ -680,21 +683,21 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
         // Pack-aware filter must survive a hot reload — without re-passing
         // it here, refreshing tools (e.g. after install_pack) would silently
         // erase the resolver and revert the agent to seeing every tool.
-        (roomId: string) => house.getRoom(roomId),
+        (roomId: string) => rooms.getRoom(roomId),
       )
       ai.refreshTools(support)
     }
   }
 
   // write_script — pure data (writes JSON files under SAMSINN_HOME/scripts).
-  // Stays per-instance because scriptStore is per-instance for now (file-
+  // Stays per-Workspace because scriptStore is per-Workspace for now (file-
   // backed; same migration as skillStore is a future PR).
   toolRegistry.register(createWriteScriptTool(scriptStore, () => { /* onChange already broadcasts */ }))
 
   // Forward-ref so the runner can call SamsinnWorkspaceRuntime.* without a build-order cycle.
   const systemRef: { current: SamsinnWorkspaceRuntime | undefined } = { current: undefined }
   const scriptRunner = createScriptRunner({
-    getSystem: () => systemRef.current as SamsinnWorkspaceRuntime,
+    getRuntime: () => systemRef.current as SamsinnWorkspaceRuntime,
     emit: (roomId, event, detail) => scriptEvent.proxy(roomId, event, detail),
   })
   // Wire the runner into the room callback declared up-front.
@@ -751,7 +754,7 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
   }
 
   const boundSpawnAIAgent = (config: AIAgentConfig, options?: SpawnOptions) =>
-    spawnAIAgent(config, llmService, house, team, routeMessage, toolRegistry, {
+    spawnAIAgent(config, llmService, rooms, settings, team, routeMessage, toolRegistry, {
       ...options,
       getSkills: getSkillsForRoom,
       getActiveSkillsDeclarations: getActiveSkillsDeclarationsForRoom,
@@ -759,7 +762,7 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
       // Pack-aware tool surface filter — the LLM only sees tools owned by
       // packs active in the trigger room. Returns the Room directly; the
       // resolver only needs getActivePacks().
-      getRoomActivation: (roomId: string) => house.getRoom(roomId),
+      getRoomActivation: (roomId: string) => rooms.getRoom(roomId),
       onEvalEvent: evalEvent.proxy,
       resolveEffectiveModel,
       // Process-global counter sink — context-builder bumps
@@ -770,9 +773,9 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
 
   // Provider-routing-event listener lives on the shared router (see
   // createDeploymentRuntime). The dispatcher is normally set by WorkspaceRuntimeRegistry
-  // (multi-instance) — but when this SamsinnWorkspaceRuntime is built standalone (tests
+  // (multi-Workspace) — but when this SamsinnWorkspaceRuntime is built standalone (tests
   // and the headless legacy path), we set the dispatcher to forward
-  // events to *this* SamsinnWorkspaceRuntime's late-bound subscribers. Multi-instance
+  // events to *this* SamsinnWorkspaceRuntime's late-bound subscribers. Multi-Workspace
   // boot overrides this when registry sets its own dispatcher.
 
   const boundSpawnHumanAgent = async (
@@ -781,7 +784,7 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
     options?: { overrideId?: string },
   ): Promise<HumanAgent> => {
     const agent = createHumanAgent(config, send, options?.overrideId)
-    await spawnHumanAgent(agent, house, team, routeMessage)
+    await spawnHumanAgent(agent, rooms, team, routeMessage)
     return agent
   }
 
@@ -879,7 +882,7 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
   }
 
   // Standalone path (test + legacy): forward provider routing events to
-  // *this* SamsinnWorkspaceRuntime. Multi-instance boot replaces this dispatcher via
+  // *this* SamsinnWorkspaceRuntime. Multi-Workspace boot replaces this dispatcher via
   // WorkspaceRuntimeRegistry → deployment.setProviderEventDispatcher.
   if (!deploymentWasGiven) {
     deployment.setProviderEventDispatcher((event) => {
@@ -894,7 +897,7 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
   }
 
   const system: SamsinnWorkspaceRuntime = {
-    house, team, routeMessage,
+    rooms, settings, bookmarks, team, routeMessage,
     llm, llmService, ollama, providerConfig, providerKeys, gateways, monitors,
     ...(deployment.llmPolicyStore ? { llmPolicyStore: deployment.llmPolicyStore } : {}),
     refreshAvailableModels,

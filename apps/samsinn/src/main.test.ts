@@ -18,8 +18,8 @@ describe('SamsinnWorkspaceRuntime.resetState', () => {
     const system = createSamsinnWorkspaceRuntime()
 
     // Seed state: 2 rooms, 2 human agents (no LLM traffic needed).
-    system.house.createRoom({ name: 'alpha', createdBy: SYSTEM_SENDER_ID })
-    system.house.createRoom({ name: 'bravo', createdBy: SYSTEM_SENDER_ID })
+    system.rooms.createRoom({ name: 'alpha', createdBy: SYSTEM_SENDER_ID })
+    system.rooms.createRoom({ name: 'bravo', createdBy: SYSTEM_SENDER_ID })
 
     const a = createHumanAgent({ name: 'Alice' }, () => {})
     const b = createHumanAgent({ name: 'Bob' }, () => {})
@@ -34,7 +34,7 @@ describe('SamsinnWorkspaceRuntime.resetState', () => {
     expect(result.agents).toBe(2)
 
     // State is empty after reset
-    expect(system.house.listAllRooms()).toHaveLength(0)
+    expect(system.rooms.listAllRooms()).toHaveLength(0)
     expect(system.team.listAgents()).toHaveLength(0)
 
     // Infrastructure preserved
@@ -44,14 +44,14 @@ describe('SamsinnWorkspaceRuntime.resetState', () => {
   test('name re-use after reset — re-create agents/rooms with the same names', async () => {
     const system = createSamsinnWorkspaceRuntime()
 
-    system.house.createRoom({ name: 'trial', createdBy: SYSTEM_SENDER_ID })
+    system.rooms.createRoom({ name: 'trial', createdBy: SYSTEM_SENDER_ID })
     const agent1 = createHumanAgent({ name: 'solver' }, () => {})
     system.team.addAgent(agent1)
 
     await system.resetState()
 
     // Re-create with the SAME names — must succeed (no stale name lingering)
-    expect(() => system.house.createRoom({ name: 'trial', createdBy: SYSTEM_SENDER_ID })).not.toThrow()
+    expect(() => system.rooms.createRoom({ name: 'trial', createdBy: SYSTEM_SENDER_ID })).not.toThrow()
     const agent2 = createHumanAgent({ name: 'solver' }, () => {})
     expect(() => system.team.addAgent(agent2)).not.toThrow()
 
@@ -67,7 +67,7 @@ describe('lateBinding warn-once', () => {
     console.warn = (...args: unknown[]) => { warnings.push(args.join(' ')) }
 
     try {
-      const system = createSamsinnWorkspaceRuntime({ instanceLabel: 'test-instance' })
+      const system = createSamsinnWorkspaceRuntime({ workspaceLabel: 'test-Workspace' })
       // Use `bookmarksChanged` — wired into house callbacks but with no
       // internal subscribers (wire-workspace-runtime-events would normally set one;
       // tests skip that). Firing it without a subscriber should warn once.
@@ -75,13 +75,13 @@ describe('lateBinding warn-once', () => {
       // (The original version of this test fired `messagePosted` via room.post
       // — but other in-process subscribers (summary scheduler, etc.) listen
       // there, so that slot is no longer "unsubscribed" by default.)
-      system.house.addBookmark('first')
-      system.house.addBookmark('second')
-      system.house.addBookmark('third')
+      system.bookmarks.add('first')
+      system.bookmarks.add('second')
+      system.bookmarks.add('third')
 
       const slotWarnings = warnings.filter(w => w.includes('bookmarksChanged'))
       expect(slotWarnings.length).toBe(1)
-      expect(slotWarnings[0]).toContain('test-instance')
+      expect(slotWarnings[0]).toContain('test-Workspace')
       expect(slotWarnings[0]).toContain('first event dropped')
     } finally {
       console.warn = origWarn
@@ -94,10 +94,10 @@ describe('lateBinding warn-once', () => {
     console.warn = (...args: unknown[]) => { warnings.push(args.join(' ')) }
 
     try {
-      const system = createSamsinnWorkspaceRuntime({ instanceLabel: 'test-2' })
+      const system = createSamsinnWorkspaceRuntime({ workspaceLabel: 'test-2' })
       // Set the subscriber BEFORE any event — no warning should fire.
       system.setOnMessagePosted(() => { /* ok */ })
-      const room = system.house.createRoom({ name: 'lb-test-2', createdBy: SYSTEM_SENDER_ID })
+      const room = system.rooms.createRoom({ name: 'lb-test-2', createdBy: SYSTEM_SENDER_ID })
       const human = createHumanAgent({ name: 'Trigger2' }, () => {})
       system.team.addAgent(human)
       room.post({ senderId: human.id, content: 'hi', type: 'chat' })

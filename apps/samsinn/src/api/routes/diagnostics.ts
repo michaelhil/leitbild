@@ -6,7 +6,7 @@
 //   when invoked in this room, and why" with per-tool pack attribution.
 //
 // GET /api/diagnostics/evals/recent?limit=20&agent=:name
-//   Per-instance ring buffer of the last N agent evals, newest first.
+//   per-Workspace ring buffer of the last N agent evals, newest first.
 //   Filterable by agent name.
 //
 // GET /api/diagnostics/evals/:traceId

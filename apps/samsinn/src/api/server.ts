@@ -12,14 +12,15 @@ import { authEnabled, isValidSession, sessionFromRequest, validateToken, issueSe
 import { handleAPI, handleUnscopedAPI } from './http-routes.ts'
 import { handleWSMessage, type WSData } from './ws-handler.ts'
 import {
-  INSTANCE_COOKIE,
-  buildInstanceCookie, getInstanceFromQuery, getInstanceId, getJoinFromQuery,
-  resolveOrMintInstance,
-} from './instance-cookie.ts'
+  WORKSPACE_COOKIE,
+  buildWorkspaceCookie, getWorkspaceFromQuery, getWorkspaceId, getJoinFromQuery,
+  resolveOrMintWorkspace,
+} from './workspace-cookie.ts'
 import { resolve, normalize } from 'node:path'
 import { getCaptureRegistry } from '../core/biometrics/registry.ts'
 import type { WorkspaceDirectory } from '../core/workspaces/directory.ts'
-import { createOpenAccessContext, workspaceIdForLegacyInstance } from '../core/workspaces/request-context.ts'
+import { createOpenAccessContext } from '../core/workspaces/request-context.ts'
+import type { WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
 
 // === Server Config ===
@@ -31,14 +32,14 @@ interface ServerConfig {
   readonly port?: number
   readonly bindHost?: string
   readonly uiPath?: string
-  // Per-instance reset wired by bootstrap.
-  readonly resetInstance: (req: Request) => Promise<import('./routes/types.ts').ResetInstanceResult>
-  // Per-instance evict (drop from memory, keep snapshot) — exercises the
+  // Reset Samsinn state inside the request's Workspace.
+  readonly resetWorkspace: (req: Request) => Promise<import('./routes/types.ts').ResetWorkspaceResult>
+  // Per-Workspace evict (drop from memory, keep snapshot) — exercises the
   // evict→reload boundary in the deploy gate. Wired by bootstrap.
-  readonly evictInstance: (req: Request) => Promise<import('./routes/types.ts').EvictInstanceResult>
-  // Instances admin (list / create / switch / delete) wired by bootstrap.
-  readonly instances: import('./routes/types.ts').InstanceAdmin
-  // Read-only diagnostics snapshot (per-instance broadcast wiring health).
+  readonly evictWorkspace: (req: Request) => Promise<import('./routes/types.ts').EvictWorkspaceResult>
+  // Workspace administration wired by bootstrap.
+  readonly workspaces: import('./routes/types.ts').WorkspaceAdmin
+  // Read-only diagnostics snapshot (per-Workspace broadcast wiring health).
   readonly diagnostics: import('./routes/types.ts').DiagnosticsCapability
   // Leitbild mirror service (process-level). Wired by bootstrap when the
   // integration is initialized. Optional so tests can omit it.
@@ -170,32 +171,10 @@ export const createServer = (config: ServerConfig) => {
   const bindHost = config.bindHost ?? process.env.SAMSINN_BIND_HOST ?? '0.0.0.0'
   const uiPath = resolve(config.uiPath ?? `${import.meta.dir}/../ui`)
   const transpiler = new Bun.Transpiler({ loader: 'ts' })
-  // Root navigation issues an instance cookie before any per-instance
-  // System exists. Keep that deliberate reservation briefly so the first
-  // API/WS request can distinguish it from a cookie for a deleted instance.
-  // Bounded to prevent unauthenticated page hits from growing memory forever.
-  const pendingInstanceIds = new Map<string, number>()
-  const PENDING_INSTANCE_TTL_MS = 5 * 60_000
-  const MAX_PENDING_INSTANCES = 4096
-  const rememberPendingInstance = (id: string): void => {
-    const now = Date.now()
-    for (const [candidate, expiresAt] of pendingInstanceIds) {
-      if (expiresAt > now && pendingInstanceIds.size < MAX_PENDING_INSTANCES) break
-      pendingInstanceIds.delete(candidate)
-    }
-    pendingInstanceIds.set(id, now + PENDING_INSTANCE_TTL_MS)
-  }
-  const isPendingInstance = (id: string): boolean => {
-    const expiresAt = pendingInstanceIds.get(id)
-    if (expiresAt === undefined) return false
-    if (expiresAt <= Date.now()) {
-      pendingInstanceIds.delete(id)
-      return false
-    }
-    return true
-  }
+  const workspaceExists = async (id: WorkspaceId): Promise<boolean> =>
+    (await config.workspaceDirectory.get(id)) !== undefined
 
-  // Note: per-instance event wiring (broadcasts + autosave) is set up by
+  // Note: per-Workspace event wiring (broadcasts + autosave) is set up by
   // registry.onWorkspaceRuntimeCreated. createServer no longer wires anything itself.
 
   // Biometric: when an agent calls biometrics_stop, the capture registry
@@ -259,7 +238,7 @@ export const createServer = (config: ServerConfig) => {
       }
 
       // Process-global bootstrap/diagnostic routes must never cross the
-      // per-instance registry boundary. In particular, deployment probes
+      // per-Workspace registry boundary. In particular, deployment probes
       // against /api/system/diagnostics previously created a seeded tenant.
       const unscoped = await handleUnscopedAPI(req, pathname, {
         remoteAddress: server.requestIP(req)?.address,
@@ -273,12 +252,12 @@ export const createServer = (config: ServerConfig) => {
       //
       // F4: refuse joins to ids that don't exist. Without this an attacker-
       // chosen id propagates through the cookie to the next request, which
-      // materializes a brand-new instance under their chosen id (an
-      // amplification vector for instance-dir spam).
+      // materializes a brand-new Workspace under their chosen id (an
+      // amplification vector for Workspace-dir spam).
       const joinId = getJoinFromQuery(url)
       if (joinId) {
-        if (!(await registry.exists(joinId))) {
-          return sec(new Response('Instance not found', { status: 404 }))
+        if (!(await workspaceExists(joinId))) {
+          return sec(new Response('Workspace not found', { status: 404 }))
         }
         const cleaned = new URL(url)
         cleaned.searchParams.delete('join')
@@ -287,32 +266,29 @@ export const createServer = (config: ServerConfig) => {
           status: 303,
           headers: {
             'Location': target,
-            'Set-Cookie': buildInstanceCookie(joinId, req),
+            'Set-Cookie': buildWorkspaceCookie(joinId, req),
           },
         }))
       }
 
-      // A cookie whose instance was deleted must not silently mint a new
-      // System on background API polling or WebSocket reconnect. That was
-      // the source of "delete all" immediately producing several seeded
-      // instances: each old tab/retry received a different random id.
+      // A cookie whose Workspace is no longer registered must not silently
+      // mint state on background API polling or WebSocket reconnect.
       //
       // Only a top-level navigation renews the cookie. It serves HTML
-      // without materializing the instance; the subsequent WS open performs
+      // without materializing the Workspace; the subsequent WS open performs
       // the single deliberate load. Other static assets remain readable,
       // while API calls fail closed and WS gets a terminal close code.
-      const cookieInstanceId = getInstanceId(req)
-      const staleCookie = cookieInstanceId !== null
-        && !isPendingInstance(cookieInstanceId)
-        && !(await registry.exists(cookieInstanceId))
+      const cookieWorkspaceId = getWorkspaceId(req)
+      const staleCookie = cookieWorkspaceId !== null
+        && !(await workspaceExists(cookieWorkspaceId))
       if (staleCookie) {
         const staleStatic = await serveStatic(pathname, uiPath, transpiler)
         if (staleStatic !== null) {
           if (pathname === '/' || pathname === '/index.html') {
-            const fresh = resolveOrMintInstance(new Request(req.url, { method: req.method }), url)
+            const fresh = resolveOrMintWorkspace(new Request(req.url, { method: req.method }), url)
             const headers = new Headers(staleStatic.headers)
             if (fresh.setCookieValue) {
-              rememberPendingInstance(fresh.instanceId)
+              await config.workspaceDirectory.ensure({ id: fresh.workspaceId, displayName: 'Samsinn Workspace' })
               headers.append('Set-Cookie', fresh.setCookieValue)
             }
             return sec(new Response(staleStatic.body, { status: staleStatic.status, headers }))
@@ -328,29 +304,28 @@ export const createServer = (config: ServerConfig) => {
           const upgraded = server.upgrade(req, {
             data: {
               sessionToken,
-              workspaceId: workspaceIdForLegacyInstance(cookieInstanceId!),
-              instanceId: cookieInstanceId!,
-              terminalClose: 'instance-deleted',
+              workspaceId: cookieWorkspaceId!,
+              terminalClose: 'workspace-unavailable',
             },
           })
           return upgraded ? undefined : sec(new Response('WebSocket upgrade failed', { status: 500 }))
         }
-        return sec(new Response('Instance was deleted. Reload to create a fresh instance.', {
+        return sec(new Response('Workspace unavailable. Reload to create a fresh Workspace.', {
           status: 410,
           headers: { 'Content-Type': 'text/plain' },
         }))
       }
 
-      // === Resolve which instance this request is for ===
+      // === Resolve which Workspace this request is for ===
       // Cookieless requests get a per-visitor id. The cookie is set on the
-      // way out; the instance itself is materialized lazily by /ws or an
+      // way out; the Workspace itself is materialized lazily by /ws or an
       // /api/* call from the UI — never by a static GET or a cookieless
       // probe (see F1/F5 below).
-      const { instanceId, setCookieValue } = resolveOrMintInstance(req, url)
+      const { workspaceId, setCookieValue } = resolveOrMintWorkspace(req, url)
 
-      // F1: static-only paths never need a per-instance system. Serve
+      // F1: static-only paths never need a per-Workspace system. Serve
       // them before getOrLoad so bots/crawlers/uptime probes that just
-      // GET / or /dist.css can't materialize an instance. The cookie is
+      // GET / or /dist.css can't materialize an Workspace. The cookie is
       // still attached so the next real call (/ws or /api/*) reuses the
       // same id.
       const earlyStatic = await serveStatic(pathname, uiPath, transpiler)
@@ -358,7 +333,7 @@ export const createServer = (config: ServerConfig) => {
         // Only a real page navigation starts a visitor session. Direct
         // module/CSS probes remain completely cookieless.
         if (setCookieValue && (pathname === '/' || pathname === '/index.html')) {
-          rememberPendingInstance(instanceId)
+          await config.workspaceDirectory.ensure({ id: workspaceId, displayName: 'Samsinn Workspace' })
           const headers = new Headers(earlyStatic.headers)
           headers.append('Set-Cookie', setCookieValue)
           return sec(new Response(earlyStatic.body, { status: earlyStatic.status, headers }))
@@ -366,94 +341,89 @@ export const createServer = (config: ServerConfig) => {
         return sec(earlyStatic)
       }
       // /favicon.ico has no file but bots GET it constantly. 204 with
-      // cookie, no instance.
+      // cookie, no Workspace.
       if (pathname === '/favicon.ico') {
         return sec(new Response(null, { status: 204 }))
       }
 
       // === WebSocket upgrade ===
-      // v15+: WS sessions are pure viewers of an instance. No agent binding,
+      // WS sessions are pure viewers of a Workspace. No agent binding,
       // no reclaim-by-name, no spawn-on-connect. Each post_message names
       // its actor via senderId; non-content commands fall back to 'system'
       // attribution server-side.
       if (pathname === '/ws') {
-        // A real UI load receives samsinn_instance from the initial `/`
+        // A real UI load receives samsinn_workspace from the initial `/`
         // response before opening its socket. Refuse direct/cookieless WS
-        // probes instead of minting and persisting a new seeded instance for
+        // probes instead of minting and persisting a new seeded Workspace for
         // every reconnecting bot or monitor that does not retain cookies.
-        // Scripted callers may use ?instance=<id> explicitly.
-        if (getInstanceId(req) === null && getInstanceFromQuery(url) === null) {
-          return sec(new Response('Instance cookie required', { status: 401 }))
+        // Scripted callers may use ?workspace=<id> explicitly.
+        if (getWorkspaceId(req) === null && getWorkspaceFromQuery(url) === null) {
+          return sec(new Response('Workspace cookie required', { status: 401 }))
         }
         // Query-bound scripted clients may only attach to an existing
-        // instance; never let an arbitrary `?instance=` value mint one.
-        const queryInstance = getInstanceFromQuery(url)
-        if (getInstanceId(req) === null && queryInstance !== null && !(await registry.exists(queryInstance))) {
-          return sec(new Response('Instance not found', { status: 404 }))
+        // Workspace; never let an arbitrary `?workspace=` value mint one.
+        const queryWorkspace = getWorkspaceFromQuery(url)
+        if (getWorkspaceId(req) === null && queryWorkspace !== null && !(await workspaceExists(queryWorkspace))) {
+          return sec(new Response('Workspace not found', { status: 404 }))
         }
         if (authEnabled() && !isValidSession(sessionFromRequest(req))) {
           return sec(new Response('Unauthorized', { status: 401 }))
         }
         const sessionToken = url.searchParams.get('session') ?? crypto.randomUUID()
-        const workspaceId = workspaceIdForLegacyInstance(instanceId)
-        await config.workspaceDirectory.ensure({
-          id: workspaceId,
-          displayName: `Samsinn ${instanceId}`,
-        })
+        if (!(await workspaceExists(workspaceId))) {
+          return sec(new Response('Workspace not found', { status: 404 }))
+        }
 
-        // An intentional instance switch keeps the tab's viewer token but
+        // An intentional Workspace switch keeps the tab's viewer token but
         // changes its cookie. Release the old binding before upgrade instead
         // of rejecting the new socket and leaving the UI blank.
-        wsManager.releaseSessionForInstanceSwitch(sessionToken, instanceId)
+        wsManager.releaseSessionForWorkspaceSwitch(sessionToken, workspaceId)
 
-        const upgraded = server.upgrade(req, { data: { sessionToken, workspaceId, instanceId } })
+        const upgraded = server.upgrade(req, { data: { sessionToken, workspaceId } })
         return upgraded ? undefined : sec(new Response('WebSocket upgrade failed', { status: 500 }))
       }
 
       // Do this gate before registry.getOrLoad. The route-level gate in
       // handleAPI is intentionally retained as defense in depth, but if it
       // runs after getOrLoad a cookieless probe has already materialized and
-      // seeded a persistent instance.
+      // seeded a persistent Workspace.
       if (
         pathname.startsWith('/api/') &&
         pathname !== '/api/auth' &&
         pathname !== '/api/system/info' &&
-        getInstanceId(req) === null
+        getWorkspaceId(req) === null
       ) {
         return sec(new Response('No session', { status: 401 }))
       }
 
       // === API + static dispatch ===
       // Resolve the system for this cookie (lazy-loads from disk if evicted).
-      pendingInstanceIds.delete(instanceId)
-      const workspaceId = workspaceIdForLegacyInstance(instanceId)
-      await config.workspaceDirectory.ensure({
-        id: workspaceId,
-        displayName: `Samsinn ${instanceId}`,
-      })
+      if (!(await workspaceExists(workspaceId))) {
+        return sec(new Response('Workspace not found', { status: 404 }))
+      }
       const accessContext = createOpenAccessContext(workspaceId, req)
-      const system = await registry.getOrLoad(instanceId)
+      const system = await registry.getOrLoad(workspaceId)
       const remoteAddress = server.requestIP(req)?.address
-      const apiResponse = await handleAPI(req, pathname, system, instanceId, accessContext, {
+      const apiResponse = await handleAPI(req, pathname, system, workspaceId, accessContext, {
         broadcast: wsManager.broadcast,
         subscribeAgentState: wsManager.subscribeAgentState,
         unsubscribeAgentState: wsManager.unsubscribeAgentState,
         remoteAddress,
-        resetInstance: config.resetInstance,
-        evictInstance: config.evictInstance,
-        broadcastToInstance: wsManager.broadcastToInstance,
-        instances: config.instances,
+        resetWorkspace: config.resetWorkspace,
+        evictWorkspace: config.evictWorkspace,
+        broadcastToWorkspace: wsManager.broadcastToWorkspace,
+        workspaces: config.workspaces,
         diagnostics: config.diagnostics,
         leitbildMirror: config.leitbildMirror,
       })
       if (apiResponse) {
         // Only append the cookieless-fallback Set-Cookie if the route didn't
-        // already set its own samsinn_instance cookie (e.g. /switch). Otherwise
+        // already set its own samsinn_workspace cookie (e.g. /switch). Otherwise
         // the browser would honor whichever appears last, masking the route's
         // intent.
         if (setCookieValue) {
           const existing = apiResponse.headers.getSetCookie?.() ?? []
-          const alreadySet = existing.some(c => c.startsWith(`${INSTANCE_COOKIE}=`))
+          const alreadySet = existing.some(c => c.startsWith(`${WORKSPACE_COOKIE}=`))
           if (!alreadySet) apiResponse.headers.append('Set-Cookie', setCookieValue)
         }
         return sec(apiResponse)
@@ -466,19 +436,17 @@ export const createServer = (config: ServerConfig) => {
 
     websocket: {
       async open(ws) {
-        if (ws.data.terminalClose === 'instance-deleted') {
-          ws.close(4004, 'instance deleted; reload to create a fresh instance')
+        if (ws.data.terminalClose === 'workspace-unavailable') {
+          ws.close(4004, 'Workspace unavailable; reload to create a fresh Workspace')
           return
         }
-        // Ensure the instance is loaded (lazy materialization on first
+        // Ensure the Workspace is loaded (lazy materialization on first
         // visit). The session entry is keyed by sessionToken so reconnects
         // and stale-sweep work the same.
-        pendingInstanceIds.delete(ws.data.instanceId)
-        await registry.getOrLoad(ws.data.instanceId)
+        await registry.getOrLoad(ws.data.workspaceId)
         const existing = wsManager.sessions.get(ws.data.sessionToken)
         const session = existing ?? {
           workspaceId: ws.data.workspaceId,
-          instanceId: ws.data.instanceId,
           sessionToken: ws.data.sessionToken,
           lastActivity: Date.now(),
         }
@@ -486,8 +454,8 @@ export const createServer = (config: ServerConfig) => {
         else session.lastActivity = Date.now()
         wsManager.wsConnections.set(ws.data.sessionToken, ws)
 
-        const snap = wsManager.buildSnapshot(ws.data.instanceId, ws.data.sessionToken)
-        if (!snap) { ws.close(4001, 'instance unavailable'); return }
+        const snap = wsManager.buildSnapshot(ws.data.workspaceId, ws.data.sessionToken)
+        if (!snap) { ws.close(4001, 'Workspace unavailable'); return }
         wsManager.safeSend(ws, JSON.stringify(snap))
       },
 
@@ -496,12 +464,8 @@ export const createServer = (config: ServerConfig) => {
         if (!session) return
         // A superseded socket may outlive a token rebind briefly. Never let
         // it dispatch against its old System using the new session scope.
-        if (session.instanceId !== ws.data.instanceId) {
-          ws.close(4003, 'instance switched')
-          return
-        }
         if (session.workspaceId !== ws.data.workspaceId) {
-          ws.close(4003, 'workspace switched')
+          ws.close(4003, 'Workspace switched')
           return
         }
         session.lastActivity = Date.now()
@@ -509,7 +473,7 @@ export const createServer = (config: ServerConfig) => {
         // and message). Eviction during an active WS is rare — onWorkspaceRuntimeEvicted
         // closes the WS — but races are possible and getOrLoad returns the
         // reloaded system safely.
-        const targetSystem = await registry.getOrLoad(ws.data.instanceId)
+        const targetSystem = await registry.getOrLoad(ws.data.workspaceId)
         await handleWSMessage(ws, session, typeof raw === 'string' ? raw : raw.toString(), targetSystem, wsManager, config.leitbildMirror)
       },
 

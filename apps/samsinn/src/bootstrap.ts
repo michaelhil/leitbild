@@ -6,7 +6,7 @@
 //
 // Multi-tenant: WorkspaceRuntimeRegistry holds N per-cookie systems. Each one is
 // lazy-loaded on first request, evicted after SAMSINN_IDLE_MS (default
-// 30 min), and persisted at $SAMSINN_HOME/instances/<id>/snapshot.json.
+// 30 min), and persisted at $SAMSINN_HOME/Workspaces/<id>/snapshot.json.
 // Shared runtime: provider router, gateways, ProviderKeys, MCP tools.
 //
 // === Construction order (matters; do not reshuffle without thinking) ===
@@ -19,23 +19,22 @@
 //   5. wsManager      — assigned BEFORE any registry.getOrLoad runs, so
 //                       the hook always sees a defined value. Failure to
 //                       respect this is how 5d73a8e happened: any cookie-
-//                       bound instance whose onWorkspaceRuntimeCreated fired with
+//                       bound Workspace whose onWorkspaceRuntimeCreated fired with
 //                       wsManager undefined silently skipped wireWorkspaceRuntimeEvents.
 //   6. Pack admin     — install/update/uninstall_pack registered last
-//                       because they need the cross-instance refresh
+//                       because they need the cross-Workspace refresh
 //                       callback that walks `registry.list()`.
 //   7. Boot system    — getOrLoad seeds the first cookieless visitor.
 //                       wsManager already exists; onWorkspaceRuntimeCreated wires it.
 //   8. Janitor + timers + HTTP server.
 //
-// Single wiring path: every instance (boot AND cookie-bound) gets its
+// Single wiring path: every Workspace (boot AND cookie-bound) gets its
 // broadcasts wired by the same onWorkspaceRuntimeCreated hook. There is NO rescue
 // branch elsewhere in this file. If you find yourself reaching for one,
 // the lifecycle invariant above is broken — fix it there.
 // ============================================================================
 
 import { createWorkspaceRuntimeRegistry } from './core/workspaces/runtime-registry.ts'
-import { startJanitor } from './core/instances/instance-cleanup.ts'
 import { DEFAULTS } from './core/types/constants.ts'
 import { registerAllMCPServers } from './integrations/mcp/client.ts'
 import { existsSync } from 'node:fs'
@@ -47,18 +46,17 @@ import { createPolicyStore } from './llm/llm-policy-store.ts'
 import { asAIAgent } from './agents/shared.ts'
 import { warmProviderModels } from './llm/providers-setup.ts'
 import { parseLogConfigFromEnv } from './logging/config.ts'
-import { sharedPaths, instancePaths } from './core/paths.ts'
+import { sharedPaths, workspacePaths } from './core/paths.ts'
 import { appendPendingScrub } from './core/storage/snapshot.ts'
 import { createToolRegistry } from './core/tool-registry.ts'
-import { generateInstanceId } from './api/instance-cookie.ts'
 import { wireWorkspaceRuntimeEvents } from './api/wire-workspace-runtime-events.ts'
 import { wireAgentTracking } from './api/agent-tracking.ts'
 import { validateBootstrap } from './boot/validate.ts'
 import { buildProviderStack, summariseProviders } from './boot/provider-stack.ts'
 import { createWSManager } from './api/ws-handler.ts'
-// Process-wide tool factories. Anything that doesn't bind to a per-instance
-// `house` registers into deployment.sharedToolRegistry once at boot, not per
-// instance — see registerSharedTools below.
+// Process-wide tool factories. Anything that doesn't bind to a per-Workspace
+// Deployment-scoped tools register into deployment.sharedToolRegistry once at boot, not per
+// Workspace — see registerSharedTools below.
 import {
   createPassTool, createGetTimeTool, createTestToolTool, createListSkillsTool,
   createWebTools, createWriteSkillTool, createWriteToolTool, createPackTools,
@@ -66,6 +64,8 @@ import {
 } from './tools/built-in/index.ts'
 import { runGeodataMigrationOnce } from './geo/migrate.ts'
 import { createLocalWorkspaceDirectory } from './core/workspaces/directory.ts'
+import { newWorkspaceId, type WorkspaceId } from '@samsinn-leitbild/platform-contracts'
+import type { WorkspaceAdmin } from './api/routes/types.ts'
 
 const DRAIN_TIMEOUT_MS = 5_000
 
@@ -85,6 +85,10 @@ export const bootstrap = async (): Promise<void> => {
   // in commits f04e61e / d0c1f73 / 3729e50 surfaced; isolating the order
   // keeps the contract obvious.
   const { providerConfig, deployment } = await buildProviderStack()
+  const workspaceDirectory = createLocalWorkspaceDirectory({
+    path: sharedPaths.workspaceDirectory(),
+    defaultDisplayName: 'Samsinn Workspace',
+  })
   const providerSetup = deployment.providerSetup
 
   // Load LLM policy (system default fallback chain). Persisted at
@@ -106,12 +110,12 @@ export const bootstrap = async (): Promise<void> => {
   console.log(summariseProviders(providerConfig))
 
   // === Boot logging template ===
-  // Each per-instance system applies this in its onWorkspaceRuntimeCreated hook.
+  // Each per-Workspace system applies this in its onWorkspaceRuntimeCreated hook.
   const bootLogConfig = parseLogConfigFromEnv()
 
   // === MCP tools — load once at boot ===
   // Each MCP server is a stdio child process. We register the Tool[]
-  // definitions directly into deployment.sharedToolRegistry so every per-instance
+  // definitions directly into deployment.sharedToolRegistry so every per-Workspace
   // overlay can resolve them; the underlying connection is deployment. Also kept
   // on deployment.mcpTools as a list for any consumer that needs the raw set.
   const mcpConfigPath = `${import.meta.dir}/../mcp-servers.json`
@@ -146,9 +150,9 @@ export const bootstrap = async (): Promise<void> => {
 
   // === Process-wide tool/skill/pack scan — once, into shared ===
   // Single FS scan: external tools, free-standing skills (cwd + samsinn-home),
-  // and packs all register into the SHARED registry/store. Per-instance
+  // and packs all register into the SHARED registry/store. Per-Workspace
   // Systems wrap this in an overlay (see createSamsinnWorkspaceRuntime in main.ts).
-  // Replaces the old per-instance loaders that ran inside onWorkspaceRuntimeCreated
+  // Replaces the old per-Workspace loaders that ran inside onWorkspaceRuntimeCreated
   // and re-scanned everything for every cookie that hit the server.
   await loadExternalTools(deployment.sharedToolRegistry)
   await loadSkills(resolve(process.cwd(), 'skills'), deployment.sharedSkillStore, deployment.sharedToolRegistry)
@@ -227,10 +231,10 @@ export const bootstrap = async (): Promise<void> => {
     if (removed > 0) console.log(`[scripts] migration: removed ${removed} stale seeded copies (byte-identical to bundled)`)
   } catch { /* best-effort */ }
 
-  // === Process-wide built-in tools (no per-instance state) ===
-  // Anything that doesn't bind to a per-instance House registers ONCE here.
-  // House-bound tools (room ops, artifacts, post_to_room, …) stay in
-  // createSamsinnWorkspaceRuntime and live in the per-instance overlay.
+  // === Process-wide built-in tools (no per-Workspace state) ===
+  // Anything that doesn't bind to a per-Workspace RoomDirectory registers ONCE here.
+  // RoomDirectory-bound tools (room ops, artifacts, post_to_room, …) stay in
+  // createSamsinnWorkspaceRuntime and live in the per-Workspace overlay.
   const isDeployMode = !!(process.env.SAMSINN_TOKEN && process.env.SAMSINN_TOKEN.length > 0)
   const flag = (name: string, defaultOn: boolean): boolean => {
     const v = process.env[name]
@@ -267,7 +271,7 @@ export const bootstrap = async (): Promise<void> => {
     for (const meta of registry.list()) {
       const sys = registry.tryGetLive(meta.id)
       if (!sys) continue
-      const room = sys.house.getRoom(roomId)
+      const room = sys.rooms.getRoom(roomId)
       if (room) return room.getActivePacks()
     }
     return undefined
@@ -294,12 +298,12 @@ export const bootstrap = async (): Promise<void> => {
       }
       return undefined
     }
-    // Audit Finding 2.1.3: getScope returns the cookie-bound instance id
+    // Audit Finding 2.1.3: getScope returns the cookie-bound Workspace id
     // that owns the agent, so the underlying LeitbildClient pool is keyed
     // per-tenant — two tenants binding to the same Leitbild deployment
     // get isolated WS connections + manifest caches.
-    const getLeitbildScope = (agentId: string): string | undefined => {
-      return registry.instanceForAgent(agentId)
+    const getLeitbildScope = (agentId: string): WorkspaceId | undefined => {
+      return registry.workspaceForAgent(agentId)
     }
     for (const tool of createLeitbildTools({ getBinding: getLeitbildBinding, getScope: getLeitbildScope })) {
       deployment.sharedToolRegistry.register(tool)
@@ -321,11 +325,11 @@ export const bootstrap = async (): Promise<void> => {
       deployment.sharedToolRegistry.register(tool)
     }
     // V3 (this commit): lb_screenshot agent tool. Requires a connected
-    // browser session — broadcasts via wsManager.broadcastToInstance,
+    // browser session — broadcasts via wsManager.broadcastToWorkspace,
     // first responder wins. See src/integrations/leitbild/screenshot-tool.ts.
     const { createLeitbildScreenshotTool } = await import('./integrations/leitbild/screenshot-tool.ts')
     const screenshotTool = createLeitbildScreenshotTool({
-      broadcastToInstance: (id, msg) => wsManager.broadcastToInstance(id, msg),
+      broadcastToWorkspace: (id, msg) => wsManager.broadcastToWorkspace(id, msg),
       getScope: getLeitbildScope,
       getRoomByName: (roomName: string) => {
         // ctx.roomId in tool execution is set to the trigger room ID
@@ -335,7 +339,7 @@ export const bootstrap = async (): Promise<void> => {
         for (const meta of registry.list()) {
           const sys = registry.tryGetLive(meta.id)
           if (!sys) continue
-          const room = sys.house.getRoom(roomName)
+          const room = sys.rooms.getRoom(roomName)
           if (room) return room
         }
         return undefined
@@ -363,8 +367,8 @@ export const bootstrap = async (): Promise<void> => {
   }
   if (codegenEnabled) {
     // write_skill writes a SKILL.md file and registers into the shared store —
-    // visible across instances immediately. write_tool / pack admin land
-    // below, after `registry` exists (they need cross-instance refresh).
+    // visible across Workspaces immediately. write_tool / pack admin land
+    // below, after `registry` exists (they need cross-Workspace refresh).
     deployment.sharedToolRegistry.register(createWriteSkillTool(deployment.sharedSkillStore, sharedPaths.skills()))
   }
 
@@ -383,7 +387,7 @@ export const bootstrap = async (): Promise<void> => {
   let wsManager!: ReturnType<typeof createWSManager>
 
   // Leitbild mirror service — created eagerly so the onWorkspaceRuntimeCreated hook
-  // can call restoreAll(system.house) for any room with persisted
+  // can call restoreAll(system.rooms) for any room with persisted
   // leitbildMirror config. Without this, restored mirrors stay dormant
   // until a human hits the mirror endpoint (lazy reattach).
   const { createMirrorService } = await import('./integrations/leitbild/mirror-service.ts')
@@ -395,7 +399,7 @@ export const bootstrap = async (): Promise<void> => {
     // Lazy validateBootstrap: fires once on the first successful getOrLoad.
     // Replaces the boot-time call against a throwaway boot system. Contract
     // still runs before any traffic actually reaches a System; we just
-    // don't materialize an empty instance dir for the privilege.
+    // don't materialize an empty Workspace dir for the privilege.
     // The wsManager closure is safe because (a) the let-with-assertion
     // pattern guarantees it's set before any getOrLoad runs, and (b) the
     // onWorkspaceRuntimeCreated hook below calls wireWorkspaceRuntimeEvents synchronously,
@@ -404,10 +408,10 @@ export const bootstrap = async (): Promise<void> => {
       isWsWired: () => wsManager.isWired(id),
     }),
     onWorkspaceRuntimeCreated: async (system, id, autoSaver) => {
-      // No per-instance FS scans: external tools, skills, packs and MCP
+      // No per-Workspace FS scans: external tools, skills, packs and MCP
       // tools all live in deployment.sharedToolRegistry (populated above before
-      // the registry was built). Per-instance toolRegistry is a thin overlay
-      // that adds house-bound built-ins on top. See main.ts createSamsinnWorkspaceRuntime.
+      // the registry was built). Per-Workspace toolRegistry is a thin overlay
+      // that adds Workspace-bound built-ins on top. See main.ts createSamsinnWorkspaceRuntime.
       // Configure logging from env template.
       try {
         await system.logging.configure(bootLogConfig)
@@ -426,7 +430,7 @@ export const bootstrap = async (): Promise<void> => {
         unsubscribeAgentState: wsManager.unsubscribeAgentState,
       })
       // (Default-room fallback removed — seedFreshInstance below handles
-      // the empty-instance case with a properly-themed 'demo' room and a
+      // the empty-Workspace case with a properly-themed 'demo' room and a
       // Helper agent. The old `general` fallback always created a room
       // BEFORE seed ran, so seed's `if rooms.length > 0 return` check
       // would short-circuit and Helper never spawned.)
@@ -440,14 +444,14 @@ export const bootstrap = async (): Promise<void> => {
       // reattach-on-GET fires (which requires a human or agent hitting
       // the endpoint). Fire-and-forget; mirror.attach handles its own
       // errors by posting a [mirror error] system message.
-      void leitbildMirror.restoreAll(system.house, id)
+      void leitbildMirror.restoreAll(system.rooms, id)
     },
     onWorkspaceRuntimeEvicted: (system, id) => {
-      // Close WS sessions for this instance — they hold dangling references.
+      // Close WS sessions for this Workspace — they hold dangling references.
       for (const [token, sess] of [...wsManager.sessions]) {
-        if (sess.instanceId !== id) continue
+        if (sess.workspaceId !== id) continue
         const ws = wsManager.wsConnections.get(token) as { close?: (code: number, reason?: string) => void } | undefined
-        try { ws?.close?.(1001, 'instance evicted') } catch { /* ignore */ }
+        try { ws?.close?.(1001, 'Workspace evicted') } catch { /* ignore */ }
         wsManager.sessions.delete(token)
         wsManager.wsConnections.delete(token)
       }
@@ -461,7 +465,7 @@ export const bootstrap = async (): Promise<void> => {
       // 'generating' broadcast, no thinking indicator, no streaming
       // visible in the UI even though chunks broadcast fine. Entire bug
       // class is invisible to smoke-streaming.ts because that script
-      // exercises in-memory wired instances, not evict-reload cycles.
+      // exercises in-memory wired Workspaces, not evict-reload cycles.
       for (const a of system.team.listAgents()) {
         registry.detachAgent(a.id)
         wsManager.unsubscribeAgentState(a.id)
@@ -469,27 +473,27 @@ export const bootstrap = async (): Promise<void> => {
     },
   })
 
-  // === Cross-instance refresh + pack-change notification ===
+  // === Cross-Workspace refresh + pack-change notification ===
   // Tool changes (install_pack, write_tool) need to propagate to every live
-  // instance, not just the one whose agent triggered the change. The shared
+  // Workspace, not just the one whose agent triggered the change. The shared
   // toolRegistry is already updated; what we still need is to rebuild each
   // agent's frozen tool-executor and tool-definitions snapshot.
-  const crossInstanceRefreshAllAgentTools = async (): Promise<void> => {
+  const crossWorkspaceRefreshAllAgentTools = async (): Promise<void> => {
     for (const meta of registry.list()) {
       const sys = registry.tryGetLive(meta.id)
       if (!sys) continue
       try { await sys.refreshAllAgentTools() } catch (err) {
-        console.error(`[refresh] instance ${meta.id}:`, err instanceof Error ? err.message : String(err))
+        console.error(`[refresh] Workspace ${meta.id}:`, err instanceof Error ? err.message : String(err))
       }
     }
   }
 
   // Drop a [admin] system note into every room with at least one AI agent
-  // across every active instance. Without this an agent's chat history
+  // across every active Workspace. Without this an agent's chat history
   // keeps "tool unavailable" replies from before the install — Gemini and
   // others pattern-match against past output and keep claiming the tool
   // doesn't exist even with the right toolDefinitions in the request.
-  const crossInstanceNotifyPacksChanged = (info: {
+  const crossWorkspaceNotifyPacksChanged = (info: {
     readonly action: 'installed' | 'updated' | 'uninstalled'
     readonly namespace: string
     readonly tools: ReadonlyArray<string>
@@ -501,9 +505,9 @@ export const bootstrap = async (): Promise<void> => {
     for (const meta of registry.list()) {
       const sys = registry.tryGetLive(meta.id)
       if (!sys) continue
-      for (const room of sys.house.listAllRooms()) {
+      for (const room of sys.rooms.listAllRooms()) {
         const hasAi = sys.team.listByKind('ai').some(a =>
-          sys.house.getRoomsForAgent(a.id).some(r => r.profile.id === room.id),
+          sys.rooms.getRoomsForAgent(a.id).some(r => r.profile.id === room.id),
         )
         if (!hasAi) continue
         try {
@@ -521,73 +525,73 @@ export const bootstrap = async (): Promise<void> => {
   // on disk); packsEnabled covers vetted GitHub pack management.
   if (codegenEnabled) {
     deployment.sharedToolRegistry.register(createWriteToolTool(
-      deployment.sharedToolRegistry, deployment.sharedSkillStore, crossInstanceRefreshAllAgentTools,
+      deployment.sharedToolRegistry, deployment.sharedSkillStore, crossWorkspaceRefreshAllAgentTools,
     ))
   }
   if (packsEnabled) {
-    // Cross-instance scrub: when a pack is uninstalled, remove its
-    // namespace from every room.activePacks across every live instance,
+    // Cross-Workspace scrub: when a pack is uninstalled, remove its
+    // namespace from every room.activePacks across every live Workspace,
     // and broadcast pack_activation_changed per affected room. Returns
     // the audit list so the uninstall response can include it.
-    const crossInstanceScrubActivePacks = async (
+    const crossWorkspaceScrubActivePacks = async (
       packNamespace: string,
     ): Promise<{ roomId: string; activePacks: ReadonlyArray<string> }[]> => {
       const out: { roomId: string; activePacks: ReadonlyArray<string> }[] = []
-      const dirtyInstances = new Set<string>()
+      const dirtyWorkspaces = new Set<WorkspaceId>()
       for (const meta of registry.list()) {
         const sys = registry.tryGetLive(meta.id)
         if (!sys) continue
-        for (const profile of sys.house.listAllRooms()) {
-          const room = sys.house.getRoom(profile.id)
+        for (const profile of sys.rooms.listAllRooms()) {
+          const room = sys.rooms.getRoom(profile.id)
           if (!room) continue
           const before = room.getActivePacks()
           if (!before.includes(packNamespace)) continue
           const after = before.filter(p => p !== packNamespace)
           room.setActivePacks(after)
           out.push({ roomId: profile.id, activePacks: after })
-          dirtyInstances.add(meta.id)
+          dirtyWorkspaces.add(meta.id)
           // Per-room WS event so any open packs panel re-renders. Best-
           // effort — broadcast layer may not be wired in tests / MCP-only.
           try {
-            wsManager?.broadcastToInstance(meta.id, {
+            wsManager?.broadcastToWorkspace(meta.id, {
               type: 'pack_activation_changed', roomId: profile.id, activePacks: after,
             })
           } catch { /* ignore */ }
         }
       }
-      // M5: force-flush every affected instance's auto-saver. The default
+      // M5: force-flush every affected Workspace's auto-saver. The default
       // 5s debounce window is long enough that a server crash within it
       // would lose the scrub mutation, and the next boot's snapshot would
       // restore the deleted pack into room.activePacks. Fire-and-forget
       // is fine — the in-memory state is already authoritative for the
       // uninstall response; the flush is just durability.
-      for (const id of dirtyInstances) {
+      for (const id of dirtyWorkspaces) {
         const saver = registry.autoSaverFor(id)
         if (!saver) continue
         saver.flush().catch(err => {
           console.error(`[packs] post-scrub snapshot flush failed for ${id}:`, err)
         })
       }
-      // M1: append a pendingScrub to every evicted instance's snapshot so
+      // M1: append a pendingScrub to every evicted Workspace's snapshot so
       // the scrub applies on its next reload. Without this, an evicted
-      // instance reloaded post-uninstall restores the deleted pack as
+      // Workspace reloaded post-uninstall restores the deleted pack as
       // active, and a later same-namespace install would auto-activate
       // without operator opt-in.
       //
       // B3 (round 3): awaited via Promise.all so the uninstall response
-      // only returns once every evicted instance's snapshot is durable on
-      // disk. Adds ~5-20ms × max(N) latency where N is evicted-instance
+      // only returns once every evicted Workspace's snapshot is durable on
+      // disk. Adds ~5-20ms × max(N) latency where N is evicted-Workspace
       // count — bounded by deploy size.
       const scheduledAt = new Date().toISOString()
       const scrubPromises: Promise<unknown>[] = []
       for (const meta of registry.list()) {
         if (registry.tryGetLive(meta.id)) continue  // handled by live loop above
-        const snapshotPath = instancePaths(meta.id).snapshot
+        const snapshotPath = workspacePaths(meta.id).snapshot
         scrubPromises.push(
           appendPendingScrub(snapshotPath, { namespace: packNamespace, scheduledAt })
             .then(result => {
               if (!result.applied && result.reason && result.reason !== 'no snapshot file' && result.reason !== 'already queued') {
-                console.warn(`[packs] could not queue scrub for evicted instance ${meta.id}: ${result.reason}`)
+                console.warn(`[packs] could not queue scrub for evicted Workspace ${meta.id}: ${result.reason}`)
               }
             })
             .catch(err => {
@@ -607,38 +611,38 @@ export const bootstrap = async (): Promise<void> => {
       await refreshPackGeodata(sharedPaths.packs())
     }
 
-    // Cross-instance auto-activate: when a new pack installs, add its
-    // namespace to every room.activePacks across every live instance.
-    // Mirrors crossInstanceScrubActivePacks but adds (not removes). Per-
+    // Cross-Workspace auto-activate: when a new pack installs, add its
+    // namespace to every room.activePacks across every live Workspace.
+    // Mirrors crossWorkspaceScrubActivePacks but adds (not removes). Per-
     // room opt-out via the panel toggle still works.
-    const crossInstanceAutoActivatePack = async (
+    const crossWorkspaceAutoActivatePack = async (
       packNamespace: string,
     ): Promise<{ roomId: string; activePacks: ReadonlyArray<string> }[]> => {
       const out: { roomId: string; activePacks: ReadonlyArray<string> }[] = []
-      const dirtyInstances = new Set<string>()
+      const dirtyWorkspaces = new Set<WorkspaceId>()
       for (const meta of registry.list()) {
         const sys = registry.tryGetLive(meta.id)
         if (!sys) continue
-        for (const profile of sys.house.listAllRooms()) {
-          const room = sys.house.getRoom(profile.id)
+        for (const profile of sys.rooms.listAllRooms()) {
+          const room = sys.rooms.getRoom(profile.id)
           if (!room) continue
           const before = room.getActivePacks()
           if (before.includes(packNamespace)) continue   // already active in this room
           const after = [...before, packNamespace]
           room.setActivePacks(after)
           out.push({ roomId: profile.id, activePacks: after })
-          dirtyInstances.add(meta.id)
+          dirtyWorkspaces.add(meta.id)
           try {
-            wsManager?.broadcastToInstance(meta.id, {
+            wsManager?.broadcastToWorkspace(meta.id, {
               type: 'pack_activation_changed', roomId: profile.id, activePacks: after,
             })
           } catch { /* ignore */ }
         }
       }
-      // Force-flush every affected instance's auto-saver so a crash within
+      // Force-flush every affected Workspace's auto-saver so a crash within
       // the 5s debounce doesn't lose the activation. Same pattern as
-      // crossInstanceScrubActivePacks.
-      for (const id of dirtyInstances) {
+      // crossWorkspaceScrubActivePacks.
+      for (const id of dirtyWorkspaces) {
         const saver = registry.autoSaverFor(id)
         if (!saver) continue
         saver.flush().catch(err => {
@@ -652,26 +656,26 @@ export const bootstrap = async (): Promise<void> => {
       packsDir: sharedPaths.packs(),
       toolRegistry: deployment.sharedToolRegistry,
       skillStore: deployment.sharedSkillStore,
-      refreshAllAgentTools: crossInstanceRefreshAllAgentTools,
-      notifyPacksChanged: crossInstanceNotifyPacksChanged,
-      scrubActivePacks: crossInstanceScrubActivePacks,
-      autoActivateInAllRooms: crossInstanceAutoActivatePack,
+      refreshAllAgentTools: crossWorkspaceRefreshAllAgentTools,
+      notifyPacksChanged: crossWorkspaceNotifyPacksChanged,
+      scrubActivePacks: crossWorkspaceScrubActivePacks,
+      autoActivateInAllRooms: crossWorkspaceAutoActivatePack,
       refreshPackGeodata: refreshPackGeodataAfterMutation,
     }))
   }
 
   // === wsManager — assigned NOW (before any registry.getOrLoad runs) ===
   // wsManager is registry-aware: buildSnapshot and subscribeAgentState
-  // resolve the live System per instanceId rather than closing over a
+  // resolve the live System per workspaceId rather than closing over a
   // single boot system. State subscriptions broadcast scoped to the
-  // originating instance via broadcastToInstance.
+  // originating Workspace via broadcastToWorkspace.
   // Order matters: this assignment MUST happen before the first getOrLoad,
   // otherwise the onWorkspaceRuntimeCreated hook would observe `wsManager` undefined
   // and silently skip wireWorkspaceRuntimeEvents — that was the source of a long
   // latent bug fixed in commit 5d73a8e. Pre-assigning wsManager keeps the
   // hook's wiring path single, with no rescue branch elsewhere.
   wsManager = createWSManager({
-    getSystem: (id) => registry.tryGetLive(id),
+    getRuntime: (id) => registry.tryGetLive(id),
     limitMetrics: deployment.limitMetrics,
   })
 
@@ -687,20 +691,20 @@ export const bootstrap = async (): Promise<void> => {
   // === Provider routing event dispatcher (registry-aware) ===
   deployment.setProviderEventDispatcher((event) => {
     if (!event.agentId) return   // events without an agentId can't be routed
-    const instanceId = registry.instanceForAgent(event.agentId)
-    if (!instanceId) return      // late event for evicted/removed agent
+    const workspaceId = registry.workspaceForAgent(event.agentId)
+    if (!workspaceId) return      // late event for evicted/removed agent
     // tryGetLive returns the in-memory system if it's currently active;
     // does NOT trigger a lazy-load (we don't want a late provider event
-    // to resurrect an evicted instance just to dispatch one event).
-    const sys = registry.tryGetLive(instanceId)
+    // to resurrect an evicted Workspace just to dispatch one event).
+    const sys = registry.tryGetLive(workspaceId)
     if (!sys) return
     try { sys.dispatchProviderEvent(event) } catch { /* drop */ }
   })
 
   // === Boot the appropriate runtime ===
   if (headless) {
-    // Headless: fresh instance per process boot. No janitor or eviction.
-    const headlessId = generateInstanceId()
+    // Headless: fresh Workspace per process boot. No janitor or eviction.
+    const headlessId = newWorkspaceId()
     const system = await registry.getOrLoad(headlessId)
 
     // wsManager not used in headless mode; create a stub so wireWorkspaceRuntimeEvents
@@ -746,10 +750,10 @@ export const bootstrap = async (): Promise<void> => {
 
   // === HTTP mode ===
   // No boot system. The first cookieless visitor (or a cookie-bound one)
-  // creates their instance lazily via the HTTP path. validateBootstrap
+  // creates their Workspace lazily via the HTTP path. validateBootstrap
   // runs on that first getOrLoad via onFirstLoad above. This eliminates
-  // the boot-orphan instance dir that watch-mode reloads used to mint on
-  // every restart — see commit log for the empty-instance-accumulation fix.
+  // the boot-orphan Workspace dir that watch-mode reloads used to mint on
+  // every restart — see commit log for the empty-Workspace-accumulation fix.
 
   // Warm provider model caches. Awaited synchronously: B3 of the audit
   // requires that warm complete BEFORE we accept traffic, so the router's
@@ -761,8 +765,8 @@ export const bootstrap = async (): Promise<void> => {
   }
 
   // Tool surface log — sourced from the shared registry (process-wide).
-  // Per-instance overlays (house-bound built-ins) aren't included; those
-  // are uniform across instances anyway.
+  // Per-Workspace overlays (Room/Team-bound built-ins) aren't included; those
+  // are uniform across Workspaces anyway.
   console.log(`Tools: ${deployment.sharedToolRegistry.list().map(t => t.name).join(', ')}`)
 
   // Activation summary — operator-visible verification that the pack
@@ -801,10 +805,7 @@ export const bootstrap = async (): Promise<void> => {
     console.log(`[packs] activation surface: ${fmt}  (per-room: room.activePacks ⊕ core+local)`)
   }
 
-  // === Janitor + idle-eviction timer ===
-  const janitor = startJanitor({
-    isActive: id => registry.list().some(m => m.id === id),
-  })
+  // === Explicit trash cleanup + idle runtime eviction ===
   let evictionSweepRunning = false
   const runEvictionSweep = async (): Promise<void> => {
     if (evictionSweepRunning) {
@@ -814,7 +815,7 @@ export const bootstrap = async (): Promise<void> => {
     evictionSweepRunning = true
     try {
       const evicted = await registry.evictIdle()
-      if (evicted > 0) console.log(`[registry] idle eviction sweep removed ${evicted} instance(s)`)
+      if (evicted > 0) console.log(`[registry] idle eviction sweep removed ${evicted} Workspace(s)`)
     } catch (err) {
       console.error(`[registry] evictIdle: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
@@ -826,82 +827,79 @@ export const bootstrap = async (): Promise<void> => {
   // Stale-session sweep — every hour, drop sessions whose WS has been
   // closed for >7d and remove the inactive human agent from its team.
   // Without this, every disconnected user accumulates forever until the
-  // instance is evicted.
+  // Workspace is evicted.
   const sessionSweepTimer = setInterval(() => {
     try { wsManager?.sweepStaleSessions() } catch (err) {
       console.error(`[ws] sweepStaleSessions: ${err instanceof Error ? err.message : String(err)}`)
     }
   }, 60 * 60 * 1000)
 
-  // === Per-instance reset ===
-  // Trashes the cookie's instance dir; the same id persists. Browser
-  // reconnects → registry creates fresh empty House under the same id.
-  const resetInstance = async (req: Request) => {
-    const { getInstanceId } = await import('./api/instance-cookie.ts')
-    const id = getInstanceId(req)
-    if (!id) return { ok: false as const, reason: 'no instance cookie' }
+  // === Per-Workspace reset ===
+  // Trashes the cookie's Workspace dir; the same id persists. Browser
+  // reconnects → registry creates fresh empty RoomDirectory under the same id.
+  const resetWorkspace = async (req: Request) => {
+    const { getWorkspaceId } = await import('./api/workspace-cookie.ts')
+    const id = getWorkspaceId(req)
+    if (!id) return { ok: false as const, reason: 'no Workspace cookie' }
     try {
-      await registry.resetInstance(id)
-      return { ok: true as const, instanceId: id }
+      await registry.resetWorkspaceState(id)
+      return { ok: true as const, workspaceId: id }
     } catch (err) {
       return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }
     }
   }
 
-  // === Per-instance evict ===
+  // === Per-Workspace evict ===
   // Drops the cookie's System from memory; the on-disk snapshot is
   // untouched, so the next request lazy-reloads via restoreFromSnapshot.
   // Used by the post-deploy streaming probe to exercise the
   // evict→reload boundary that hid the unsubscribeAgentState bug.
-  const evictInstance = async (req: Request) => {
-    const { getInstanceId } = await import('./api/instance-cookie.ts')
-    const id = getInstanceId(req)
-    if (!id) return { ok: false as const, reason: 'no instance cookie' }
+  const evictWorkspace = async (req: Request) => {
+    const { getWorkspaceId } = await import('./api/workspace-cookie.ts')
+    const id = getWorkspaceId(req)
+    if (!id) return { ok: false as const, reason: 'no Workspace cookie' }
     try {
       await registry.evictOne(id)
-      return { ok: true as const, instanceId: id }
+      return { ok: true as const, workspaceId: id }
     } catch (err) {
       return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }
     }
   }
 
-  // === Instances admin ===
-  // Capability bundle for the Instances modal under Settings. Delete reuses
-  // registry.resetInstance (trashes the dir, drops in-memory state). The id
-  // remains valid in principle, but listOnDisk no longer reports it.
-  const { buildInstanceCookie } = await import('./api/instance-cookie.ts')
-  const instancesAdmin = {
-    listOnDisk: () => registry.listOnDisk(),
-    liveIds: () => new Set(registry.list().map(m => m.id)),
-    createNew: async () => {
-      const newId = generateInstanceId()
-      // Materialize in-memory so the live list reports it. We deliberately
-      // do NOT touch disk here — empty instances no longer leave a dir
-      // (see snapshot.ts:isEmptySnapshot + autosaver skip). The UI lists
-      // the new instance by merging listOnDisk with liveIds().
-      await registry.getOrLoad(newId)
-      return { id: newId }
+  // === Workspace administration ===
+  const { buildWorkspaceCookie } = await import('./api/workspace-cookie.ts')
+  const workspacesAdmin: WorkspaceAdmin = {
+    list: async () => {
+      const [records, stored] = await Promise.all([workspaceDirectory.list(), registry.listOnDisk()])
+      const storedById = new Map(stored.map(entry => [entry.id, entry]))
+      const liveIds = new Set(registry.list().map(meta => meta.id))
+      return records.map(record => {
+        const moduleState = storedById.get(record.id)
+        return {
+          id: record.id,
+          displayName: record.displayName,
+          snapshotMtimeMs: moduleState?.snapshotMtimeMs ?? 0,
+          snapshotSizeBytes: moduleState?.snapshotSizeBytes ?? 0,
+          isLive: liveIds.has(record.id),
+        }
+      })
     },
-    purgeTrash: () => registry.purgeTrash(),
-    delete: async (id: string) => {
-      try {
-        await registry.resetInstance(id)
-        return { ok: true as const }
-      } catch (err) {
-        return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }
-      }
+    create: async (displayName = 'Samsinn Workspace') => {
+      const id = newWorkspaceId()
+      await workspaceDirectory.ensure({ id, displayName })
+      return { id }
     },
-    buildSwitchCookie: (id: string, req: Request) => buildInstanceCookie(id, req),
+    buildSwitchCookie: (id, req) => buildWorkspaceCookie(id, req),
   }
 
   // === Diagnostics capability ===
   // Read-only health snapshot. Walks the registry + wsManager state to
-  // expose per-instance broadcast wiring + last-broadcast timestamps. The
+  // expose per-Workspace broadcast wiring + last-broadcast timestamps. The
   // signal that catches the silent-skip class of bug we just fixed: an
-  // active instance with zero broadcasts under live traffic is wrong.
+  // active Workspace with zero broadcasts under live traffic is wrong.
   const diagnostics = {
     snapshot: () => ({
-      instances: registry.list().map(meta => {
+      workspaces: registry.list().map(meta => {
         const sys = registry.tryGetLive(meta.id)
         const aiAgents = sys?.team.listByKind('ai') ?? []
         return {
@@ -914,7 +912,7 @@ export const bootstrap = async (): Promise<void> => {
       }),
       wsSessions: wsManager.sessionCount(),
       configuredIdleMs: registry.idleMs(),
-      maxLoadedInstances: registry.maxLoadedInstances(),
+      maxLoadedWorkspaces: registry.maxLoadedWorkspaces(),
     }),
   }
 
@@ -930,18 +928,14 @@ export const bootstrap = async (): Promise<void> => {
     await ensureCssBuilt({ uiPath })
   }
   const { createServer } = await import('./api/server.ts')
-  const workspaceDirectory = createLocalWorkspaceDirectory({
-    path: sharedPaths.workspaceDirectory(),
-    defaultDisplayName: 'Samsinn',
-  })
   createServer({
     registry,
     workspaceDirectory,
     wsManager,
     port: parseInt(process.env.PORT ?? String(DEFAULTS.port), 10),
-    resetInstance,
-    evictInstance,
-    instances: instancesAdmin,
+    resetWorkspace,
+    evictWorkspace,
+    workspaces: workspacesAdmin,
     diagnostics,
     leitbildMirror,
   })
@@ -949,15 +943,14 @@ export const bootstrap = async (): Promise<void> => {
   // === Graceful shutdown ===
   const shutdown = async (): Promise<void> => {
     console.log('Shutting down, saving snapshots...')
-    janitor.stop()
     clearInterval(evictTimer)
     clearInterval(sessionSweepTimer)
     if (!ephemeral) {
       try { await registry.shutdown() } catch (err) { console.error('Failed to flush snapshots:', err) }
     }
-    // Disable logging on every still-live instance. Process exit would close
+    // Disable logging on every still-live Workspace. Process exit would close
     // the JSONL sinks anyway, but explicit configure({enabled:false}) lets
-    // each instance flush a clean shutdown line first.
+    // each Workspace flush a clean shutdown line first.
     for (const meta of registry.list()) {
       const sys = registry.tryGetLive(meta.id)
       if (sys) try { await sys.logging.configure({ enabled: false }) } catch { /* noop */ }

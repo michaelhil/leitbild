@@ -1,6 +1,6 @@
 // ============================================================================
 // Team — Agent collection (AI + human).
-// Simple Map. No delivery logic. No awareness of rooms or house.
+// Simple Map. No delivery logic. No awareness of Rooms or Workspaces.
 // Names are unique (case-insensitive). addAgent() throws on collision.
 // getAgent() accepts UUID or name (dual lookup).
 // ============================================================================

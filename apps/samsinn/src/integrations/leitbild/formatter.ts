@@ -16,7 +16,7 @@ import type { LeitbildEvent } from './types.ts'
 
 export interface BannerContext {
   readonly baseUrl: string
-  readonly instanceId: string
+  readonly workspaceId: string
   readonly scenarioTitle?: string
   readonly scenarioDescription?: string
   readonly objectCount?: number
@@ -30,7 +30,7 @@ export interface BannerContext {
 
 export const formatBanner = (ctx: BannerContext): string => {
   const lines: string[] = []
-  lines.push(`[Leitbild] Connected to ${ctx.instanceId} on ${hostOf(ctx.baseUrl)}`)
+  lines.push(`[Leitbild] Connected to ${ctx.workspaceId} on ${hostOf(ctx.baseUrl)}`)
   if (ctx.scenarioTitle) {
     lines.push(`  Scenario: ${ctx.scenarioTitle}${ctx.scenarioDescription ? ' — ' + ctx.scenarioDescription : ''}`)
   }

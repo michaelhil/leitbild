@@ -1,5 +1,5 @@
 // ============================================================================
-// Documents — type-only module. Per-instance corpus of uploaded files
+// Documents — type-only module. per-Workspace corpus of uploaded files
 // that can be searched via the query_documents tool.
 //
 // On-disk layout (per instance):

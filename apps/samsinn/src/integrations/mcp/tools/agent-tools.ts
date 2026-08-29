@@ -29,7 +29,7 @@ export const registerAgentTools = (mcpServer: McpServer, system: SamsinnWorkspac
     },
   )
 
-  const muteAgent = createMuteAgentTool(system.team, system.house)
+  const muteAgent = createMuteAgentTool(system.team, system.rooms)
   mcpServer.tool(
     muteAgent.name,
     muteAgent.description,
@@ -52,15 +52,16 @@ export const registerAgentTools = (mcpServer: McpServer, system: SamsinnWorkspac
   // Per-section prompt toggles. UI label → key mapping (for spec authors):
   //   "Agent persona"   → persona
   //   "Room prompt"     → room
-  //   "SamsinnWorkspaceRuntime prompt"   → house   (the global housePrompt, NOT the LLM role:'system')
+  //   "Workspace prompt" → workspace
   //   "Response format" → responseFormat
   //   "Skills"          → skills
   const includePromptsShape = z.object({
     persona: z.boolean().optional(),
     room: z.boolean().optional(),
-    house: z.boolean().optional(),
+    workspace: z.boolean().optional(),
     responseFormat: z.boolean().optional(),
     skills: z.boolean().optional(),
+    wikis: z.boolean().optional(),
   }).optional()
 
   const includeContextShape = z.object({
@@ -71,7 +72,7 @@ export const registerAgentTools = (mcpServer: McpServer, system: SamsinnWorkspac
 
   mcpServer.tool(
     'create_agent',
-    'Create a new AI agent (not added to any room by default). Every optional field maps 1:1 to AIAgentConfig — see src/core/types/agent.ts. `includePrompts` uses keys (persona/room/house/responseFormat/skills); UI labels map as: "SamsinnWorkspaceRuntime prompt" = house, "Agent persona" = persona, "Room prompt" = room, "Skills" = skills, "Response format" = responseFormat.',
+    'Create a new AI agent (not added to any room by default). Every optional field maps 1:1 to AIAgentConfig — see src/core/types/agent.ts. `includePrompts` uses keys (persona/room/workspace/responseFormat/skills/wikis).',
     {
       name: z.string().describe('Agent name'),
       model: z.string().describe('Model ID. Cloud models are provider-prefixed: "anthropic:claude-haiku-4-5", "gemini:gemini-2.5-flash", "groq:llama-3.3-70b-versatile", etc. Ollama models are bare: "llama3.2" or "qwen2.5:14b". Call GET /api/models for the live list.'),
@@ -126,7 +127,7 @@ export const registerAgentTools = (mcpServer: McpServer, system: SamsinnWorkspac
         const detail: Record<string, unknown> = {
           id: agent.id, name: agent.name,
           kind: agent.kind, state: agent.state.get(),
-          rooms: system.house.getRoomsForAgent(agent.id).map(r => r.profile.name),
+          rooms: system.rooms.getRoomsForAgent(agent.id).map(r => r.profile.name),
         }
         const aiAgent = asAIAgent(agent)
         if (aiAgent) {
@@ -182,11 +183,12 @@ export const registerAgentTools = (mcpServer: McpServer, system: SamsinnWorkspac
     {
       name: z.string().describe('Agent name'),
       includePrompts: z.object({
-        agent: z.boolean().optional(),
+        persona: z.boolean().optional(),
         room: z.boolean().optional(),
-        house: z.boolean().optional(),
+        workspace: z.boolean().optional(),
         responseFormat: z.boolean().optional(),
         skills: z.boolean().optional(),
+        wikis: z.boolean().optional(),
       }).optional().describe('Prompt-section toggles. Partial — only provided keys change.'),
       includeContext: z.object({
         participants: z.boolean().optional(),
@@ -222,28 +224,28 @@ export const registerAgentTools = (mcpServer: McpServer, system: SamsinnWorkspac
   )
 
   mcpServer.tool(
-    'get_house_prompts',
-    'Get the global house prompt and response format that guide all agents',
+    'get_workspace_settings',
+    'Get the Workspace prompt and response format that guide all agents',
     {},
     async () => textResult({
-      housePrompt: system.house.getHousePrompt(),
-      responseFormat: system.house.getResponseFormat(),
+      workspacePrompt: system.settings.getPrompt(),
+      responseFormat: system.settings.getResponseFormat(),
     }),
   )
 
   mcpServer.tool(
-    'set_house_prompts',
-    'Update the global house prompt and/or response format',
+    'set_workspace_settings',
+    'Update the Workspace prompt and/or response format',
     {
-      housePrompt: z.string().optional().describe('Global behavioral guidance for all agents'),
+      workspacePrompt: z.string().optional().describe('Workspace-wide behavioral guidance for all agents'),
       responseFormat: z.string().optional().describe('Response format instructions for agents'),
     },
-    async ({ housePrompt, responseFormat }) => {
-      if (housePrompt !== undefined) system.house.setHousePrompt(housePrompt)
-      if (responseFormat !== undefined) system.house.setResponseFormat(responseFormat)
+    async ({ workspacePrompt, responseFormat }) => {
+      if (workspacePrompt !== undefined) system.settings.setPrompt(workspacePrompt)
+      if (responseFormat !== undefined) system.settings.setResponseFormat(responseFormat)
       return textResult({
-        housePrompt: system.house.getHousePrompt(),
-        responseFormat: system.house.getResponseFormat(),
+        workspacePrompt: system.settings.getPrompt(),
+        responseFormat: system.settings.getResponseFormat(),
       })
     },
   )

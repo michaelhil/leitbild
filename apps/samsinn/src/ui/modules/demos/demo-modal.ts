@@ -212,7 +212,7 @@ const ensureRoomPacks = async (roomId: string, packs: ReadonlyArray<string>): Pr
 
 interface LeitbildSelectResponse {
   readonly id?: string
-  readonly instanceId?: string
+  readonly workspaceId?: string
   readonly created?: boolean
   readonly reused?: boolean
   readonly scenarioId?: string
@@ -221,7 +221,7 @@ interface LeitbildSelectResponse {
 
 interface LeitbildSelectOk {
   readonly ok: true
-  readonly instanceId: string
+  readonly workspaceId: string
   readonly created: boolean
   readonly systemIds: ReadonlyArray<string>
 }
@@ -334,11 +334,11 @@ const selectLeitbildInstance = async (setup: LeitbildDemoSetup): Promise<Leitbil
     })
     if (!res.ok) return { ok: false, reason: `Failed to select Leitbild Control Instance: ${await parseErrorResponse(res)}` }
     const body = await res.json() as LeitbildSelectResponse
-    const instanceId = body.instanceId ?? body.id
-    if (!instanceId) return { ok: false, reason: 'Leitbild selection returned no instance id' }
+    const workspaceId = body.workspaceId ?? body.id
+    if (!workspaceId) return { ok: false, reason: 'Leitbild selection returned no instance id' }
     return {
       ok: true,
-      instanceId,
+      workspaceId,
       created: body.created === true,
       systemIds: Array.isArray(body.systemIds) ? body.systemIds.filter((v): v is string => typeof v === 'string') : [],
     }
@@ -373,7 +373,7 @@ const setupLeitbildDemo = async (
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ baseUrl: setup.baseUrl, instanceId: selected.instanceId, format: 'summary' }),
+      body: JSON.stringify({ baseUrl: setup.baseUrl, workspaceId: selected.workspaceId, format: 'summary' }),
     })
     if (!res.ok) return { ok: false, reason: `Failed to bind room mirror: HTTP ${res.status}` }
   } catch (err) {
@@ -404,11 +404,11 @@ const setupLeitbildDemo = async (
       const rescueModel = rescueModelForDemo(currentModel, modelCatalog)
       const patchBody: {
         tools: string[]
-        leitbildBinding: { baseUrl: string; instanceId: string; role: 'observer' }
+        leitbildBinding: { baseUrl: string; workspaceId: string; role: 'observer' }
         model?: string
       } = {
         tools: [...existingTools],
-        leitbildBinding: { baseUrl: setup.baseUrl, instanceId: selected.instanceId, role: 'observer' },
+        leitbildBinding: { baseUrl: setup.baseUrl, workspaceId: selected.workspaceId, role: 'observer' },
         ...(rescueModel ? { model: rescueModel } : {}),
       }
       const patchRes = await fetch(`/api/agents/${encodeURIComponent(ai.name)}`, {
@@ -717,7 +717,7 @@ export const openDemoModal = async (
       : ''
     const action = setup.created ? 'created' : 'reused'
     const systems = setup.systemIds.length > 0 ? ` · systems: ${setup.systemIds.slice(0, 3).join(', ')}` : ''
-    showToast(document.body, `Leitbild ${action}: ${setup.instanceId.slice(0, 36)}…${systems} · ${aiHint}${modelHint}`, { type: 'success', position: 'fixed', durationMs: 10000 })
+    showToast(document.body, `Leitbild ${action}: ${setup.workspaceId.slice(0, 36)}…${systems} · ${aiHint}${modelHint}`, { type: 'success', position: 'fixed', durationMs: 10000 })
     // Refresh the iframe panel for the current room — it was last evaluated
     // when the room was selected (before the mirror existed), so the toggle
     // button is currently hidden. Re-evaluate so it appears.

@@ -1,6 +1,6 @@
 // ============================================================================
 // Name utilities — validation and uniqueness for entity names.
-// Used by house.ts and team.ts. Lives in core/ to avoid inverted dependencies.
+// Used by Room Directory and Team. Lives in core/ to avoid inverted dependencies.
 // ============================================================================
 
 // Maximum allowed name length (prevents excessive LLM token usage)

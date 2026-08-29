@@ -8,7 +8,9 @@
 // ============================================================================
 
 import type { Agent, AIAgent, AIAgentConfig, RouteMessage, Team } from '../core/types/agent.ts'
-import type { House, Room } from '../core/types/room.ts'
+import type { Room } from '../core/types/room.ts'
+import type { RoomDirectory } from '../core/rooms/directory.ts'
+import type { WorkspaceSettings } from '../core/workspaces/settings.ts'
 import type { LLMProvider } from '../core/types/llm.ts'
 import type { LLMService } from '../llm/llm-service.ts'
 import type { MessageTarget } from '../core/types/messaging.ts'
@@ -345,7 +347,8 @@ export interface SpawnOptions {
 export const spawnAIAgent = async (
   config: AIAgentConfig,
   llmService: LLMService,
-  house: House,
+  rooms: RoomDirectory,
+  settings: WorkspaceSettings,
   team: Team,
   routeMessage: RouteMessage,
   toolRegistry?: ToolRegistry,
@@ -451,11 +454,11 @@ export const spawnAIAgent = async (
 
   const agent = createAIAgent(config, llmProvider, onDecision, {
     ...toolSupport,
-    getHousePrompt: () => house.getHousePrompt(),
-    getResponseFormat: () => house.getResponseFormat(),
-    getCompressedIds: (roomId: string) => house.getRoom(roomId)?.getCompressedIds() ?? new Set(),
+    getWorkspacePrompt: settings.getPrompt,
+    getResponseFormat: settings.getResponseFormat,
+    getCompressedIds: (roomId: string) => rooms.getRoom(roomId)?.getCompressedIds() ?? new Set(),
     getRoomMembers: (roomId: string) => {
-      const room = house.getRoom(roomId)
+      const room = rooms.getRoom(roomId)
       if (!room) return []
       const profiles: Array<import('../core/types/messaging.ts').AgentProfile> = []
       for (const id of room.getParticipantIds()) {
@@ -483,19 +486,19 @@ export const spawnAIAgent = async (
 
 export const spawnHumanAgent = async (
   agent: Agent,
-  house: House,
+  rooms: RoomDirectory,
   team: Team,
   routeMessage: RouteMessage,
   roomsToJoin?: ReadonlyArray<Room>,
 ): Promise<Agent> => {
   team.addAgent(agent)
 
-  const rooms = roomsToJoin ?? house.listAllRooms().map(
-    profile => house.getRoom(profile.id),
+  const targetRooms = roomsToJoin ?? rooms.listAllRooms().map(
+    profile => rooms.getRoom(profile.id),
   ).filter((r): r is Room => r !== undefined)
 
-  await Promise.all(rooms.map(room =>
-    addAgentToRoom(agent.id, agent.name, room.profile.id, undefined, team, routeMessage, house),
+  await Promise.all(targetRooms.map(room =>
+    addAgentToRoom(agent.id, agent.name, room.profile.id, undefined, team, routeMessage, rooms),
   ))
 
   return agent

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { House, Room, RoomConfig } from '../../core/types/room.ts'
+import type { RoomDirectory } from '../../core/rooms/directory.ts'
 import type { ProviderKeys } from '../../llm/provider-keys.ts'
 import { createVectorStore } from '../../embed/vector-store.ts'
 import { createRecallTool } from './recall-tool.ts'
@@ -44,24 +44,10 @@ const mkProviderKeys = (openaiKey: string): ProviderKeys => {
   }
 }
 
-const mkMinimalHouse = (): House => ({
-  // Only `getRoom` is exercised by the tool; rest are stubs.
+const makeRoomDirectoryStub = (): RoomDirectory => ({
+  // Only getRoom is exercised by the tool.
   getRoom: () => undefined,
-  listAllRooms: () => [],
-  createRoom: () => ({ kind: 'created' as const, room: undefined as unknown as Room }),
-  removeRoom: () => false,
-  setRoomProfile: () => {},
-  setRoomConfig: () => false,
-  getRoomConfig: () => undefined as unknown as RoomConfig,
-  setHousePrompt: () => {},
-  getHousePrompt: () => '',
-  setResponseFormat: () => {},
-  getResponseFormat: () => '',
-  getRoomsForAgent: () => [],
-  listBookmarks: () => [],
-  addBookmark: () => {},
-  removeBookmark: () => false,
-} as unknown as House)
+} as unknown as RoomDirectory)
 
 describe('recall tool', () => {
   test('empty store returns success + empty array', async () => {
@@ -71,7 +57,7 @@ describe('recall tool', () => {
       const tool = createRecallTool({
         vectorStore: store,
         providerKeys: mkProviderKeys('sk-test'),
-        house: mkMinimalHouse(),
+        rooms: makeRoomDirectoryStub(),
       })
       const result = await tool.execute({ query: 'anything' }, { callerId: 'a', callerName: 'a' })
       expect(result.success).toBe(true)
@@ -88,7 +74,7 @@ describe('recall tool', () => {
       const tool = createRecallTool({
         vectorStore: store,
         providerKeys: mkProviderKeys('sk-test'),
-        house: mkMinimalHouse(),
+        rooms: makeRoomDirectoryStub(),
       })
       const result = await tool.execute({ query: '   ' }, { callerId: 'a', callerName: 'a' })
       expect(result.success).toBe(false)
@@ -105,7 +91,7 @@ describe('recall tool', () => {
       const tool = createRecallTool({
         vectorStore: store,
         providerKeys: mkProviderKeys('sk-test'),
-        house: mkMinimalHouse(),
+        rooms: makeRoomDirectoryStub(),
       })
       const result = await tool.execute({ query: 'q', scope: 'bogus' }, { callerId: 'a', callerName: 'a' })
       expect(result.success).toBe(false)
@@ -140,7 +126,7 @@ describe('recall tool', () => {
         const tool = createRecallTool({
           vectorStore: store,
           providerKeys: mkProviderKeys('sk-test'),
-          house: mkMinimalHouse(),
+          rooms: makeRoomDirectoryStub(),
         })
         // Use a query that, when embedded by stubFetch, produces a vector
         // close to the stored one (same length → same seed → same vector).
@@ -173,7 +159,7 @@ describe('recall tool', () => {
       const tool = createRecallTool({
         vectorStore: store,
         providerKeys: mkProviderKeys(''),
-        house: mkMinimalHouse(),
+        rooms: makeRoomDirectoryStub(),
       })
       const result = await tool.execute({ query: 'q' }, { callerId: 'a', callerName: 'a' })
       // Resolver returns 'unconfigured' → tool returns error

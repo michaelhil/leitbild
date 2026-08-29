@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { newWorkspaceId } from '@samsinn-leitbild/platform-contracts'
 import { createLocalWorkspaceDirectory } from './directory.ts'
-import { createOpenAccessContext, workspaceIdForLegacyInstance } from './request-context.ts'
+import { createOpenAccessContext } from './request-context.ts'
 
 const temporaryDirectories: string[] = []
 
@@ -27,13 +27,12 @@ describe('local Workspace directory', () => {
     expect((await reloaded.ensureDefault()).id).toBe(first.id)
   })
 
-  test('keeps independent Workspace records and archives explicitly', async () => {
+  test('keeps independent Workspace records', async () => {
     const { directory } = await createDirectory()
     const first = await directory.ensure({ id: newWorkspaceId(), displayName: 'First' })
     const second = await directory.ensure({ id: newWorkspaceId(), displayName: 'Second' })
-    expect(await directory.archive(first.id)).toBe(true)
-    expect((await directory.get(first.id))?.status).toBe('archived')
-    expect((await directory.get(second.id))?.status).toBe('active')
+    expect((await directory.get(first.id))?.displayName).toBe('First')
+    expect((await directory.get(second.id))?.displayName).toBe('Second')
   })
 
   test('fails visibly for corrupt persisted data', async () => {
@@ -43,14 +42,9 @@ describe('local Workspace directory', () => {
   })
 })
 
-describe('legacy Instance boundary', () => {
-  test('maps an existing Instance id to a stable opaque Workspace id', () => {
-    expect(workspaceIdForLegacyInstance('abcdefghijklmnop')).toBe(workspaceIdForLegacyInstance('abcdefghijklmnop'))
-    expect(workspaceIdForLegacyInstance('abcdefghijklmnop')).not.toBe(workspaceIdForLegacyInstance('abcdefghijklmnox'))
-  })
-
+describe('Workspace request context', () => {
   test('creates explicit open access context and rejects malformed supplied request ids', () => {
-    const workspaceId = workspaceIdForLegacyInstance('abcdefghijklmnop')
+    const workspaceId = newWorkspaceId()
     expect(createOpenAccessContext(workspaceId, new Request('http://samsinn.test')).workspaceId).toBe(workspaceId)
     expect(() => createOpenAccessContext(workspaceId, new Request('http://samsinn.test', {
       headers: { 'x-request-id': 'not-a-uuid' },

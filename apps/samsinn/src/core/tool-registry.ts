@@ -53,13 +53,13 @@ export const createToolRegistry = (): ToolRegistry => {
   }
 }
 
-// Overlay registry — used by per-instance Systems to register house-bound
-// built-ins (createListRoomsTool(house), etc.) on top of the process-shared
+// Overlay registry — used by per-Workspace runtimes to register Room/Team-bound
+// built-ins on top of the process-shared
 // registry that holds external tools, skills, packs, and MCP tools.
 //
 // Lookup falls through: own map → parent. Mutations stay in the overlay
 // (writes to parent are intentional admin paths via shared registration in
-// bootstrap, not via per-instance code). list() / listEntries() merge.
+// bootstrap, not via per-Workspace code). list() / listEntries() merge.
 //
 // `unregisterByPack` and `unregister` only touch the overlay; pack tools
 // live in the shared parent and the install/uninstall flow mutates parent

@@ -7,7 +7,7 @@
 // agent calls this tool, we:
 //
 //   1. Generate a requestId.
-//   2. broadcastToInstance an `lb_screenshot_request` WS frame.
+//   2. broadcastToWorkspace an `lb_screenshot_request` WS frame.
 //   3. Browser sessions with a Leitbild iframe mounted respond with
 //      `lb_screenshot_result` (or `lb_screenshot_failed`).
 //   4. First-responder wins. Tool resolves the matching pending promise.
@@ -24,12 +24,13 @@
 //   - Tool called from agent whose room has no Leitbild iframe: still
 //     broadcasts; if nothing responds, timeout.
 //
-// V1 scope: per-instance broadcast (any session in this Samsinn instance
+// V1 scope: per-Workspace broadcast (any session in this Samsinn instance
 // with an iframe responds). Future: target a specific room's sessions.
 // ============================================================================
 
 import type { Tool, ToolContext } from '../../core/types/tool.ts'
 import type { WSOutbound } from '../../core/types/ws-protocol.ts'
+import type { WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 import type { MessageAttachment } from '../../core/types/messaging.ts'
 import { SYSTEM_SENDER_ID } from '../../core/types/constants.ts'
 
@@ -69,11 +70,11 @@ export const rejectScreenshotResult = (requestId: string, reason: string): void 
 
 export interface LeitbildScreenshotToolDeps {
   // Posts a WSOutbound to every session in the named instance. Bootstrap
-  // wires this from wsManager.broadcastToInstance + the tool's
+  // wires this from wsManager.broadcastToWorkspace + the tool's
   // per-call instance scope (via deps.getScope).
-  readonly broadcastToInstance: (instanceId: string, msg: WSOutbound) => void
+  readonly broadcastToWorkspace: (workspaceId: WorkspaceId, msg: WSOutbound) => void
   // Per-call instance scope (same shape as the other lb_* tools).
-  readonly getScope?: (agentId: string) => string | undefined
+  readonly getScope?: (agentId: string) => WorkspaceId | undefined
   // Lookup helpers used to post the screenshot into the agent's room.
   // The tool needs to know which room the agent's eval was triggered in.
   // Returned room is the trigger room when known (ctx.roomId).
@@ -109,10 +110,10 @@ export const createLeitbildScreenshotTool = (deps: LeitbildScreenshotToolDeps): 
         timer,
       })
       // The roomId hint helps the browser-side handler pick the right
-      // session (when multi-instance-mounting eventually lands). For
+      // session (when multi-Workspace-mounting eventually lands). For
       // V1, every session reads its own currentRoomId and only the
       // session with a Leitbild iframe responds.
-      deps.broadcastToInstance(scope, {
+      deps.broadcastToWorkspace(scope, {
         type: 'lb_screenshot_request',
         requestId,
         roomId: ctx.roomId ?? '',

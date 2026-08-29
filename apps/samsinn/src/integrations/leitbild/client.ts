@@ -52,7 +52,7 @@ interface ManifestCacheEntry {
   readonly expiresAtMs: number
 }
 
-// === Per-instance subscription pool ===
+// === per-Workspace subscription pool ===
 
 interface SubscriberRecord {
   readonly handler: LeitbildEventHandler
@@ -75,23 +75,23 @@ export interface LeitbildClient {
   readonly getManifest: () => Promise<LeitbildManifestSummary>
   readonly listControlInstances: () => Promise<ReadonlyArray<ControlInstanceSummary>>
   readonly createControlInstance: (scenarioId: string) => Promise<{ readonly id: string }>
-  readonly getSnapshot: (instanceId: string) => Promise<ControlInstanceSnapshot>
+  readonly getSnapshot: (workspaceId: string) => Promise<ControlInstanceSnapshot>
   readonly getScenario: (scenarioId: string) => Promise<ScenarioSummary | undefined>
-  readonly getEvents: (instanceId: string, afterSeq: number) => Promise<ReadonlyArray<LeitbildEvent>>
-  readonly subscribe: (instanceId: string, onEvent: LeitbildEventHandler, startSeq: number) => SubscriptionHandle
+  readonly getEvents: (workspaceId: string, afterSeq: number) => Promise<ReadonlyArray<LeitbildEvent>>
+  readonly subscribe: (workspaceId: string, onEvent: LeitbildEventHandler, startSeq: number) => SubscriptionHandle
   // POST a pack-query against the instance. Resolves the URL via the
   // manifest's `controlInstancePackQueries` link template and applies the
   // canonical Leitbild-Client header. Returns the raw JSON body. Throws on
   // non-2xx or manifest-missing-rel. Callers (lb_query / lb_dispatch_context)
   // get one shared code path so CLIENT_HEADER and URL construction stay in
   // sync with the rest of the client (audit Findings 2.1.5 + 2.1.6).
-  readonly callPackQuery: (instanceId: string, packId: string, kind: string, payload: Record<string, unknown>) => Promise<unknown>
+  readonly callPackQuery: (workspaceId: string, packId: string, kind: string, payload: Record<string, unknown>) => Promise<unknown>
   // POST a command against the instance. Same shape contract as
   // callPackQuery; resolves via `controlInstanceCommands` link template.
-  readonly callCommand: (instanceId: string, body: Record<string, unknown>) => Promise<unknown>
+  readonly callCommand: (workspaceId: string, body: Record<string, unknown>) => Promise<unknown>
   // GET the per-CI capabilities (active packs + accepted command kinds +
   // wikiRefs + queryKinds). Resolves via `controlInstanceCapabilities`.
-  readonly getCapabilities: (instanceId: string) => Promise<Record<string, unknown>>
+  readonly getCapabilities: (workspaceId: string) => Promise<Record<string, unknown>>
   readonly baseUrl: string
 }
 
@@ -183,10 +183,10 @@ export const createLeitbildClient = (baseUrlRaw: string, options: CreateLeitbild
     return expandTemplate(template, vars)
   }
 
-  const getSnapshot = async (instanceId: string): Promise<ControlInstanceSnapshot> => {
-    const url = await resolveLink('controlInstanceSnapshot', { id: instanceId })
+  const getSnapshot = async (workspaceId: string): Promise<ControlInstanceSnapshot> => {
+    const url = await resolveLink('controlInstanceSnapshot', { id: workspaceId })
     const res = await fetch(url, { headers: defaultHeaders() })
-    if (!res.ok) throw new Error(`Leitbild snapshot fetch failed for ${instanceId}: ${res.status}`)
+    if (!res.ok) throw new Error(`Leitbild snapshot fetch failed for ${workspaceId}: ${res.status}`)
     const raw = (await res.json()) as Record<string, unknown>
     // Leitbild wraps the snapshot under a `snapshot` key alongside `id`.
     // Tolerant of both shapes: nested under .snapshot, or top-level.
@@ -228,10 +228,10 @@ export const createLeitbildClient = (baseUrlRaw: string, options: CreateLeitbild
     return body.scenarios?.find(s => s.id === scenarioId)
   }
 
-  const getEvents = async (instanceId: string, afterSeq: number): Promise<ReadonlyArray<LeitbildEvent>> => {
-    const url = await resolveLink('controlInstanceEvents', { id: instanceId, afterSeq })
+  const getEvents = async (workspaceId: string, afterSeq: number): Promise<ReadonlyArray<LeitbildEvent>> => {
+    const url = await resolveLink('controlInstanceEvents', { id: workspaceId, afterSeq })
     const res = await fetch(url, { headers: defaultHeaders() })
-    if (!res.ok) throw new Error(`Leitbild events fetch failed for ${instanceId}: ${res.status}`)
+    if (!res.ok) throw new Error(`Leitbild events fetch failed for ${workspaceId}: ${res.status}`)
     const body = (await res.json()) as { events?: ReadonlyArray<LeitbildEvent> } | ReadonlyArray<LeitbildEvent>
     if (Array.isArray(body)) return body
     return (body as { events?: ReadonlyArray<LeitbildEvent> }).events ?? []
@@ -245,15 +245,15 @@ export const createLeitbildClient = (baseUrlRaw: string, options: CreateLeitbild
     body: JSON.stringify(body),
   })
 
-  const callPackQuery = async (instanceId: string, packId: string, kind: string, payload: Record<string, unknown>): Promise<unknown> => {
-    const url = await resolveLink('controlInstancePackQueries', { id: instanceId })
+  const callPackQuery = async (workspaceId: string, packId: string, kind: string, payload: Record<string, unknown>): Promise<unknown> => {
+    const url = await resolveLink('controlInstancePackQueries', { id: workspaceId })
     const res = await postJson(url, { packId, kind, payload })
     if (!res.ok) throw new Error(`Leitbild pack-query failed: HTTP ${res.status}`)
     return res.json()
   }
 
-  const callCommand = async (instanceId: string, body: Record<string, unknown>): Promise<unknown> => {
-    const url = await resolveLink('controlInstanceCommands', { id: instanceId })
+  const callCommand = async (workspaceId: string, body: Record<string, unknown>): Promise<unknown> => {
+    const url = await resolveLink('controlInstanceCommands', { id: workspaceId })
     const res = await postJson(url, body)
     if (!res.ok) {
       const errBody = await res.text().catch(() => '')
@@ -262,8 +262,8 @@ export const createLeitbildClient = (baseUrlRaw: string, options: CreateLeitbild
     return res.json()
   }
 
-  const getCapabilities = async (instanceId: string): Promise<Record<string, unknown>> => {
-    const url = await resolveLink('controlInstanceCapabilities', { id: instanceId })
+  const getCapabilities = async (workspaceId: string): Promise<Record<string, unknown>> => {
+    const url = await resolveLink('controlInstanceCapabilities', { id: workspaceId })
     const res = await fetch(url, { headers: defaultHeaders() })
     if (!res.ok) throw new Error(`Leitbild capabilities fetch failed: HTTP ${res.status}`)
     return res.json() as Promise<Record<string, unknown>>
@@ -271,8 +271,8 @@ export const createLeitbildClient = (baseUrlRaw: string, options: CreateLeitbild
 
   // --- WS subscription management ---
 
-  const openWs = async (instanceId: string, sub: InstanceSubscription): Promise<void> => {
-    const url = await resolveLink('realtime', { id: instanceId })
+  const openWs = async (workspaceId: string, sub: InstanceSubscription): Promise<void> => {
+    const url = await resolveLink('realtime', { id: workspaceId })
     // Bun's WebSocket constructor accepts (url, protocols?, options?). Headers
     // on WS are awkward across runtimes; Leitbild-Client carried via query
     // is also planned-but-not-enforced. For V1 we skip header for WS and
@@ -312,18 +312,18 @@ export const createLeitbildClient = (baseUrlRaw: string, options: CreateLeitbild
       } catch { /* malformed WS frame (non-JSON or wrong shape): drop & wait for next; server-side bug not client-side concern */ }
     })
 
-    ws.addEventListener('close', () => { scheduleReconnect(instanceId, sub) })
+    ws.addEventListener('close', () => { scheduleReconnect(workspaceId, sub) })
     ws.addEventListener('error', () => { try { ws.close() } catch { /* close may throw if WS already terminal; reconnect will be scheduled by close handler */ } })
   }
 
-  const scheduleReconnect = (instanceId: string, sub: InstanceSubscription): void => {
+  const scheduleReconnect = (workspaceId: string, sub: InstanceSubscription): void => {
     if (sub.closed) return
     if (sub.subscribers.size === 0) return
     const delay = sub.reconnectDelayMs
     sub.reconnectDelayMs = Math.min(sub.reconnectDelayMs * 2, 30_000)
     sub.reconnectTimer = setTimeout(async () => {
       try {
-        const missed = await getEvents(instanceId, sub.lastSeq)
+        const missed = await getEvents(workspaceId, sub.lastSeq)
         for (const event of missed) {
           if (event.seq <= sub.lastSeq) continue
           sub.lastSeq = event.seq
@@ -334,20 +334,20 @@ export const createLeitbildClient = (baseUrlRaw: string, options: CreateLeitbild
             }
           }
         }
-        await openWs(instanceId, sub)
+        await openWs(workspaceId, sub)
         sub.reconnectDelayMs = 1_000 // reset on success
       } catch {
         // Reconnect attempt failed (events fetch 5xx, WS open rejected, etc.)
         // Schedule another retry with the already-doubled backoff. Errors
         // here are surfaced via the next attempt's behavior; no operator log
         // because the backoff loop itself is the signal.
-        scheduleReconnect(instanceId, sub)
+        scheduleReconnect(workspaceId, sub)
       }
     }, delay)
   }
 
-  const subscribe = (instanceId: string, onEvent: LeitbildEventHandler, startSeq: number): SubscriptionHandle => {
-    let sub = instanceSubs.get(instanceId)
+  const subscribe = (workspaceId: string, onEvent: LeitbildEventHandler, startSeq: number): SubscriptionHandle => {
+    let sub = instanceSubs.get(workspaceId)
     if (!sub) {
       sub = {
         ws: null,
@@ -357,21 +357,21 @@ export const createLeitbildClient = (baseUrlRaw: string, options: CreateLeitbild
         reconnectDelayMs: 1_000,
         closed: false,
       }
-      instanceSubs.set(instanceId, sub)
-      void openWs(instanceId, sub)
+      instanceSubs.set(workspaceId, sub)
+      void openWs(workspaceId, sub)
     }
     const record: SubscriberRecord = { handler: onEvent, lastSeq: startSeq }
     sub.subscribers.add(record)
     return {
       close: () => {
-        const s = instanceSubs.get(instanceId)
+        const s = instanceSubs.get(workspaceId)
         if (!s) return
         s.subscribers.delete(record)
         if (s.subscribers.size === 0) {
           s.closed = true
           if (s.reconnectTimer) clearTimeout(s.reconnectTimer)
           try { s.ws?.close() } catch { /* close may throw if WS already terminal; we're tearing down anyway */ }
-          instanceSubs.delete(instanceId)
+          instanceSubs.delete(workspaceId)
         }
       },
       lastSeq: () => record.lastSeq,

@@ -6,7 +6,7 @@
 // - join() sends recent history over transport (no LLM summary)
 //
 // No message storage — Room is the source of truth for room messages.
-// Room membership tracked by Room.hasMember (House.getRoomsForAgent for lookup).
+// Room membership tracked by Room.hasMember (RoomDirectory.getRoomsForAgent for lookup).
 // ID is auto-generated UUID, same as AI agents.
 // ============================================================================
 

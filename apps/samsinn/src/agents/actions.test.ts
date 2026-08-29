@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { createHouse } from '../core/house.ts'
+import { createRoomDirectory } from '../core/rooms/directory.ts'
 import { createMessageRouter } from '../core/delivery.ts'
 import { createTeam } from './team.ts'
 import { createHumanAgent } from './human-agent.ts'
@@ -26,9 +26,9 @@ const createTestSystem = () => {
   const deliver = (agentId: string, message: Message) => {
     team.getAgent(agentId)?.receive(message)
   }
-  const house = createHouse({ deliver })
-  const routeMessage = createMessageRouter({ house })
-  return { house, team, routeMessage }
+  const rooms = createRoomDirectory({ deliver })
+  const routeMessage = createMessageRouter({ rooms })
+  return { rooms, team, routeMessage }
 }
 
 const makeAgent = (name: string) => {
@@ -39,12 +39,12 @@ const makeAgent = (name: string) => {
 
 describe('addAgentToRoom', () => {
   test('adds agent to room, calls join, posts join message', async () => {
-    const { house, team, routeMessage } = createTestSystem()
+    const { rooms, team, routeMessage } = createTestSystem()
     const { agent, inbox } = makeAgent('Alice')
     team.addAgent(agent)
-    const room = house.createRoom({ name: 'General', createdBy: 'system' })
+    const room = rooms.createRoom({ name: 'General', createdBy: 'system' })
 
-    await addAgentToRoom(agent.id, agent.name, room.profile.id, undefined, team, routeMessage, house)
+    await addAgentToRoom(agent.id, agent.name, room.profile.id, undefined, team, routeMessage, rooms)
 
     expect(room.hasMember(agent.id)).toBe(true)
     const joinMsg = room.getRecent(5).find(m => m.type === 'join' && m.senderId === agent.id)
@@ -56,34 +56,34 @@ describe('addAgentToRoom', () => {
   })
 
   test('includes inviter name in join message', async () => {
-    const { house, team, routeMessage } = createTestSystem()
+    const { rooms, team, routeMessage } = createTestSystem()
     const { agent } = makeAgent('Bob')
     team.addAgent(agent)
-    const room = house.createRoom({ name: 'Club', createdBy: 'system' })
+    const room = rooms.createRoom({ name: 'Club', createdBy: 'system' })
 
-    await addAgentToRoom(agent.id, agent.name, room.profile.id, 'Admin', team, routeMessage, house)
+    await addAgentToRoom(agent.id, agent.name, room.profile.id, 'Admin', team, routeMessage, rooms)
 
     const joinMsg = room.getRecent(5).find(m => m.type === 'join')
     expect(joinMsg!.content).toBe('[Bob] has joined (added by [Admin])')
   })
 
   test('no-ops if agent not in team', async () => {
-    const { house, team, routeMessage } = createTestSystem()
-    const room = house.createRoom({ name: 'Room', createdBy: 'system' })
+    const { rooms, team, routeMessage } = createTestSystem()
+    const room = rooms.createRoom({ name: 'Room', createdBy: 'system' })
 
-    await addAgentToRoom('ghost-id', 'Ghost', room.profile.id, undefined, team, routeMessage, house)
+    await addAgentToRoom('ghost-id', 'Ghost', room.profile.id, undefined, team, routeMessage, rooms)
 
     expect(room.hasMember('ghost-id')).toBe(false)
     expect(room.getMessageCount()).toBe(0)
   })
 
   test('no-ops if room not found', async () => {
-    const { house, team, routeMessage } = createTestSystem()
+    const { rooms, team, routeMessage } = createTestSystem()
     const { agent } = makeAgent('Alice')
     team.addAgent(agent)
 
     // No throw expected
-    await addAgentToRoom(agent.id, agent.name, 'nonexistent-room-id', undefined, team, routeMessage, house)
+    await addAgentToRoom(agent.id, agent.name, 'nonexistent-room-id', undefined, team, routeMessage, rooms)
   })
 
   // ============================================================================
@@ -97,48 +97,48 @@ describe('addAgentToRoom', () => {
   // ============================================================================
 
   test('second AI auto-switches room to manual when added interactively (invitedBy undefined)', async () => {
-    const { house, team, routeMessage } = createTestSystem()
+    const { rooms, team, routeMessage } = createTestSystem()
     const ai1 = makeAIStub('AI1'); const ai2 = makeAIStub('AI2')
     team.addAgent(ai1); team.addAgent(ai2)
-    const room = house.createRoom({ name: 'R', createdBy: 'system' })
+    const room = rooms.createRoom({ name: 'R', createdBy: 'system' })
 
-    await addAgentToRoom(ai1.id, ai1.name, room.profile.id, undefined, team, routeMessage, house)
+    await addAgentToRoom(ai1.id, ai1.name, room.profile.id, undefined, team, routeMessage, rooms)
     expect(room.deliveryMode).toBe('broadcast')
 
-    await addAgentToRoom(ai2.id, ai2.name, room.profile.id, undefined, team, routeMessage, house)
+    await addAgentToRoom(ai2.id, ai2.name, room.profile.id, undefined, team, routeMessage, rooms)
     expect(room.deliveryMode).toBe('manual')
   })
 
   test('second AI auto-switches when added by a human/agent (invitedBy is a name)', async () => {
-    const { house, team, routeMessage } = createTestSystem()
+    const { rooms, team, routeMessage } = createTestSystem()
     const ai1 = makeAIStub('AI1'); const ai2 = makeAIStub('AI2')
     team.addAgent(ai1); team.addAgent(ai2)
-    const room = house.createRoom({ name: 'R', createdBy: 'system' })
+    const room = rooms.createRoom({ name: 'R', createdBy: 'system' })
 
-    await addAgentToRoom(ai1.id, ai1.name, room.profile.id, undefined, team, routeMessage, house)
-    await addAgentToRoom(ai2.id, ai2.name, room.profile.id, 'Alice', team, routeMessage, house)
+    await addAgentToRoom(ai1.id, ai1.name, room.profile.id, undefined, team, routeMessage, rooms)
+    await addAgentToRoom(ai2.id, ai2.name, room.profile.id, 'Alice', team, routeMessage, rooms)
     expect(room.deliveryMode).toBe('manual')
   })
 
   test('second AI does NOT auto-switch when added by seed', async () => {
-    const { house, team, routeMessage } = createTestSystem()
+    const { rooms, team, routeMessage } = createTestSystem()
     const ai1 = makeAIStub('AI1'); const ai2 = makeAIStub('AI2')
     team.addAgent(ai1); team.addAgent(ai2)
-    const room = house.createRoom({ name: 'R', createdBy: 'system' })
+    const room = rooms.createRoom({ name: 'R', createdBy: 'system' })
 
-    await addAgentToRoom(ai1.id, ai1.name, room.profile.id, undefined, team, routeMessage, house)
-    await addAgentToRoom(ai2.id, ai2.name, room.profile.id, 'seed', team, routeMessage, house)
+    await addAgentToRoom(ai1.id, ai1.name, room.profile.id, undefined, team, routeMessage, rooms)
+    await addAgentToRoom(ai2.id, ai2.name, room.profile.id, 'seed', team, routeMessage, rooms)
     expect(room.deliveryMode).toBe('broadcast')
   })
 
   test('second AI does NOT auto-switch when added by the script runner', async () => {
-    const { house, team, routeMessage } = createTestSystem()
+    const { rooms, team, routeMessage } = createTestSystem()
     const ai1 = makeAIStub('AI1'); const ai2 = makeAIStub('AI2')
     team.addAgent(ai1); team.addAgent(ai2)
-    const room = house.createRoom({ name: 'R', createdBy: 'system' })
+    const room = rooms.createRoom({ name: 'R', createdBy: 'system' })
 
-    await addAgentToRoom(ai1.id, ai1.name, room.profile.id, undefined, team, routeMessage, house)
-    await addAgentToRoom(ai2.id, ai2.name, room.profile.id, 'script-runner', team, routeMessage, house)
+    await addAgentToRoom(ai1.id, ai1.name, room.profile.id, undefined, team, routeMessage, rooms)
+    await addAgentToRoom(ai2.id, ai2.name, room.profile.id, 'script-runner', team, routeMessage, rooms)
     expect(room.deliveryMode).toBe('broadcast')
   })
 
@@ -152,15 +152,15 @@ describe('addAgentToRoom', () => {
 
 describe('removeAgentFromRoom', () => {
   test('removes agent, calls leave, posts leave message', async () => {
-    const { house, team, routeMessage } = createTestSystem()
+    const { rooms, team, routeMessage } = createTestSystem()
     const { agent } = makeAgent('Charlie')
     team.addAgent(agent)
-    const room = house.createRoom({ name: 'Hall', createdBy: 'system' })
+    const room = rooms.createRoom({ name: 'Hall', createdBy: 'system' })
 
-    await addAgentToRoom(agent.id, agent.name, room.profile.id, undefined, team, routeMessage, house)
+    await addAgentToRoom(agent.id, agent.name, room.profile.id, undefined, team, routeMessage, rooms)
     expect(room.hasMember(agent.id)).toBe(true)
 
-    removeAgentFromRoom(agent.id, agent.name, room.profile.id, undefined, team, routeMessage, house)
+    removeAgentFromRoom(agent.id, agent.name, room.profile.id, undefined, team, routeMessage, rooms)
 
     expect(room.hasMember(agent.id)).toBe(false)
     const leaveMsg = room.getRecent(10).find(m => m.type === 'leave' && m.senderId === agent.id)
@@ -169,45 +169,45 @@ describe('removeAgentFromRoom', () => {
   })
 
   test('includes remover name in leave message', async () => {
-    const { house, team, routeMessage } = createTestSystem()
+    const { rooms, team, routeMessage } = createTestSystem()
     const { agent } = makeAgent('Dave')
     team.addAgent(agent)
-    const room = house.createRoom({ name: 'Room', createdBy: 'system' })
+    const room = rooms.createRoom({ name: 'Room', createdBy: 'system' })
 
-    await addAgentToRoom(agent.id, agent.name, room.profile.id, undefined, team, routeMessage, house)
-    removeAgentFromRoom(agent.id, agent.name, room.profile.id, 'Admin', team, routeMessage, house)
+    await addAgentToRoom(agent.id, agent.name, room.profile.id, undefined, team, routeMessage, rooms)
+    removeAgentFromRoom(agent.id, agent.name, room.profile.id, 'Admin', team, routeMessage, rooms)
 
     const leaveMsg = room.getRecent(10).find(m => m.type === 'leave')
     expect(leaveMsg!.content).toBe('[Dave] has left (removed by [Admin])')
   })
 
   test('no-ops if agent is not a member', async () => {
-    const { house, team, routeMessage } = createTestSystem()
+    const { rooms, team, routeMessage } = createTestSystem()
     const { agent } = makeAgent('Eve')
     team.addAgent(agent)
-    const room = house.createRoom({ name: 'Room', createdBy: 'system' })
+    const room = rooms.createRoom({ name: 'Room', createdBy: 'system' })
 
     // Not a member — should not throw or post
-    removeAgentFromRoom(agent.id, agent.name, room.profile.id, undefined, team, routeMessage, house)
+    removeAgentFromRoom(agent.id, agent.name, room.profile.id, undefined, team, routeMessage, rooms)
     expect(room.getMessageCount()).toBe(0)
   })
 
   test('no-ops if agent not in team', () => {
-    const { house, team, routeMessage } = createTestSystem()
-    const room = house.createRoom({ name: 'Room', createdBy: 'system' })
+    const { rooms, team, routeMessage } = createTestSystem()
+    const room = rooms.createRoom({ name: 'Room', createdBy: 'system' })
 
     // No throw expected
-    removeAgentFromRoom('ghost-id', 'Ghost', room.profile.id, undefined, team, routeMessage, house)
+    removeAgentFromRoom('ghost-id', 'Ghost', room.profile.id, undefined, team, routeMessage, rooms)
   })
 
   test('calls agent.leave so AI agent removes room from context', async () => {
-    const { house, team, routeMessage } = createTestSystem()
+    const { rooms, team, routeMessage } = createTestSystem()
     const { agent } = makeAgent('Frank')
     team.addAgent(agent)
-    const room = house.createRoom({ name: 'ToLeave', createdBy: 'system' })
+    const room = rooms.createRoom({ name: 'ToLeave', createdBy: 'system' })
 
-    await addAgentToRoom(agent.id, agent.name, room.profile.id, undefined, team, routeMessage, house)
-    removeAgentFromRoom(agent.id, agent.name, room.profile.id, undefined, team, routeMessage, house)
+    await addAgentToRoom(agent.id, agent.name, room.profile.id, undefined, team, routeMessage, rooms)
+    removeAgentFromRoom(agent.id, agent.name, room.profile.id, undefined, team, routeMessage, rooms)
 
     // Human agent.leave is a no-op but must not throw
     expect(room.hasMember(agent.id)).toBe(false)

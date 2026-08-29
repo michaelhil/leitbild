@@ -11,7 +11,7 @@ export const handleAgentCommand = async (msg: WSInbound, ctx: CommandContext): P
       // system.spawnAIAgent — see wireAgentTracking in bootstrap.ts.
       const agent = await system.spawnAIAgent(msg.config)
       const ai = asAIAgent(agent)
-      ctx.wsManager.broadcastToInstance(ctx.session.instanceId, { type: 'agent_joined', agent: { id: agent.id, name: agent.name, kind: agent.kind, ...(ai ? { model: ai.getModel() } : {}) } })
+      ctx.wsManager.broadcastToWorkspace(ctx.session.workspaceId, { type: 'agent_joined', agent: { id: agent.id, name: agent.name, kind: agent.kind, ...(ai ? { model: ai.getModel() } : {}) } })
       return true
     }
     case 'remove_agent': {
@@ -20,7 +20,7 @@ export const handleAgentCommand = async (msg: WSInbound, ctx: CommandContext): P
         // unsubscribeAgentState happens automatically inside the wrapped
         // system.removeAgent — see wireAgentTracking in bootstrap.ts.
         system.removeAgent(agent.id)
-        ctx.wsManager.broadcastToInstance(ctx.session.instanceId, { type: 'agent_removed', agentName: msg.name })
+        ctx.wsManager.broadcastToWorkspace(ctx.session.workspaceId, { type: 'agent_removed', agentName: msg.name })
       }
       return true
     }

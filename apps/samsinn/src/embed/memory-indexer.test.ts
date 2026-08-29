@@ -194,7 +194,7 @@ describe('memory-indexer', () => {
     }
   })
 
-  test('cross-instance isolation: two stores never see each other\'s data', async () => {
+  test('cross-Workspace isolation: two stores never see each other\'s data', async () => {
     const origFetch = globalThis.fetch
     globalThis.fetch = stubFetch(8)
     try {

@@ -44,13 +44,13 @@ export const wireEventNotifications = (system: SamsinnWorkspaceRuntime, mcpServe
   }
 
   const onTurnChanged: OnTurnChanged = (roomId, agentId, waitingForHuman) => {
-    const room = system.house.getRoom(roomId)
+    const room = system.rooms.getRoom(roomId)
     const agent = agentId ? system.team.getAgent(agentId) : undefined
     sendNotification({ type: 'turn_changed', roomName: room?.profile.name, agentName: agent?.name, waitingForHuman })
   }
 
   const onDeliveryModeChanged: OnDeliveryModeChanged = (roomId, mode) => {
-    const room = system.house.getRoom(roomId)
+    const room = system.rooms.getRoom(roomId)
     sendNotification({ type: 'delivery_mode_changed', roomName: room?.profile.name, mode })
   }
 

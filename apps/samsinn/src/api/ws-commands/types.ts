@@ -25,8 +25,8 @@ export const sendError = (wsManager: WSManager, ws: WSConnection, message: strin
   wsManager.safeSend(ws, JSON.stringify({ type: 'error', message } satisfies WSOutbound))
 }
 
-export const requireRoom = (wsManager: WSManager, ws: WSConnection, system: SamsinnWorkspaceRuntime, roomName: string): ReturnType<typeof system.house.getRoom> => {
-  const room = system.house.getRoom(roomName)
+export const requireRoom = (wsManager: WSManager, ws: WSConnection, system: SamsinnWorkspaceRuntime, roomName: string): ReturnType<typeof system.rooms.getRoom> => {
+  const room = system.rooms.getRoom(roomName)
   if (!room) sendError(wsManager, ws, `Room "${roomName}" not found`)
   return room
 }

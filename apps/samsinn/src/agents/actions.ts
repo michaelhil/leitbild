@@ -6,7 +6,7 @@
 // membership, call agent.join/leave, and post a visible chat message.
 // ============================================================================
 
-import type { House } from '../core/types/room.ts'
+import type { RoomDirectory } from '../core/rooms/directory.ts'
 import type { RouteMessage, Team } from '../core/types/agent.ts'
 import { makeJoinFields } from './shared.ts'
 
@@ -27,12 +27,12 @@ export const addAgentToRoom = async (
   invitedBy: string | undefined,
   team: Team,
   routeMessage: RouteMessage,
-  house: House,
+  rooms: RoomDirectory,
 ): Promise<void> => {
   const target = team.getAgent(targetId)
   if (!target) return
 
-  const room = house.getRoom(roomId)
+  const room = rooms.getRoom(roomId)
   if (!room) return
 
   if (room.hasMember(targetId)) return
@@ -72,12 +72,12 @@ export const removeAgentFromRoom = (
   removedBy: string | undefined,
   team: Team,
   routeMessage: RouteMessage,
-  house: House,
+  rooms: RoomDirectory,
 ): void => {
   const target = team.getAgent(targetId)
   if (!target) return
 
-  const room = house.getRoom(roomId)
+  const room = rooms.getRoom(roomId)
   if (!room || !room.hasMember(targetId)) return
 
   room.removeMember(targetId)

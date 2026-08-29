@@ -24,8 +24,7 @@ describe('systemHandlers.reset_committed', () => {
     try {
       systemHandlers.reset_committed!({
         type: 'reset_committed',
-        oldId: 'old-instance',
-        newId: 'new-instance',
+        workspaceId: '9d2bd146-dc4a-4cbf-9754-f966884c5ca9',
       })
     } finally {
       if (hadWindow) {
@@ -40,7 +39,7 @@ describe('systemHandlers.reset_committed', () => {
 
     expect(events).toEqual([{
       type: 'reset-committed',
-      detail: { oldId: 'old-instance', newId: 'new-instance' },
+      detail: { workspaceId: '9d2bd146-dc4a-4cbf-9754-f966884c5ca9' },
     }])
   })
 })

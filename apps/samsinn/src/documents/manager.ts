@@ -1,6 +1,6 @@
 // ============================================================================
 // Document manager — orchestrates upload, extraction, chunking, embedding,
-// and deletion for the per-instance document corpus.
+// and deletion for the per-Workspace document corpus.
 //
 // In-memory state mirrors what's on disk. createDocumentManager(rootDir)
 // builds it; load() scans the directory and rebuilds metadata + resumes

@@ -59,7 +59,7 @@ export type ScriptEventEmitter = (
 ) => void
 
 export interface ScriptRunnerDeps {
-  readonly getSystem: () => SamsinnWorkspaceRuntime
+  readonly getRuntime: () => SamsinnWorkspaceRuntime
   readonly emit?: ScriptEventEmitter
 }
 
@@ -72,7 +72,7 @@ export interface ScriptRunnerDeps {
 const MAX_CONSECUTIVE_WHISPER_FAILURES = 5
 
 export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
-  const { getSystem, emit } = deps
+  const { getRuntime, emit } = deps
   const runs = new Map<string, ScriptRun>()
   const queues = new Map<string, Promise<void>>()
   const lastSpeaker = new Map<string, string>()   // roomId → cast name who spoke last
@@ -118,7 +118,7 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
   }
 
   const postStageCard = (roomId: string, content: string): void => {
-    const room = getSystem().house.getRoom(roomId)
+    const room = getRuntime().rooms.getRoom(roomId)
     if (!room) return
     // Stamp causality so the UI can surface "via script: X step N". Fall
     // back to room-only context when there's no live run (rare; abort path
@@ -154,7 +154,7 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
   // panic shutdown) — silently no-op'ing on missing agents would stall the
   // script forever; aborting with a stage card keeps the room sane.
   const findMissingCast = (run: ScriptRun): string | undefined => {
-    const system = getSystem()
+    const system = getRuntime()
     for (const member of run.script.cast) {
       if (!system.team.getAgent(member.name)) return member.name
     }
@@ -171,7 +171,7 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
   }
 
   const removeScriptAgent = (agentId: string, roomId: string): void => {
-    const system = getSystem()
+    const system = getRuntime()
     try {
       system.removeAgentFromRoom(agentId, roomId, 'script-runner', { deleteRoomIfEmpty: false })
     } catch { /* best-effort */ }
@@ -182,8 +182,8 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
 
   const start = async (roomId: string, scriptName: string): Promise<{ ok: boolean; reason?: string }> => {
     if (runs.has(roomId)) return { ok: false, reason: 'a script is already running in this room' }
-    const system = getSystem()
-    const room = system.house.getRoom(roomId)
+    const system = getRuntime()
+    const room = system.rooms.getRoom(roomId)
     if (!room) return { ok: false, reason: 'room not found' }
     const script = system.scriptStore.get(scriptName)
     if (!script) return { ok: false, reason: `script "${scriptName}" not found` }
@@ -208,8 +208,8 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
   // else is the shared internal flow.
   const startWith = async (roomId: string, script: Script): Promise<{ ok: boolean; reason?: string }> => {
     if (runs.has(roomId)) return { ok: false, reason: 'a script is already running in this room' }
-    const system = getSystem()
-    const room = system.house.getRoom(roomId)
+    const system = getRuntime()
+    const room = system.rooms.getRoom(roomId)
     if (!room) return { ok: false, reason: 'room not found' }
     void room
     return startScriptInternal(roomId, script)
@@ -230,8 +230,8 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
     roomId: string,
     script: Script,
   ): Promise<{ ok: boolean; reason?: string }> => {
-    const system = getSystem()
-    const room = system.house.getRoom(roomId)!  // checked by caller
+    const system = getRuntime()
+    const room = system.rooms.getRoom(roomId)!  // checked by caller
 
     for (const member of script.cast) {
       if (system.team.getAgent(member.name)) {
@@ -319,8 +319,8 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
     const pending = queues.get(roomId)
     if (pending) await pending
 
-    const system = getSystem()
-    const room = system.house.getRoom(roomId)
+    const system = getRuntime()
+    const room = system.rooms.getRoom(roomId)
 
     for (const member of run.script.cast) {
       const agent = system.team.getAgent(member.name)
@@ -356,13 +356,13 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
     if (!run || run.ended) return { ok: false, reason: 'no active script in this room' }
     enqueue(roomId, async () => {
       const liveRun = runs.get(roomId)
-      const room = getSystem().house.getRoom(roomId)
+      const room = getRuntime().rooms.getRoom(roomId)
       if (!liveRun || liveRun.ended || !room || room.paused) return
 
       // If an utterance is still in flight, do not start a second one. Its
       // onCastPost handler will observe the resumed room and continue.
       const generating = liveRun.script.cast.some(member => {
-        const agent = getSystem().team.getAgent(member.name)
+        const agent = getRuntime().team.getAgent(member.name)
         const ai = agent ? asAIAgent(agent) : undefined
         return ai?.state.get() === 'generating' && ai.state.getContext() === roomId
       })
@@ -375,14 +375,14 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
       }
       if (liveRun.script.turnMode === 'broadcast-pass') {
         const next = liveRun.script.cast.find(c => !liveRun.broadcastSeen.includes(c.name))
-        const agent = next ? getSystem().team.getAgent(next.name) : undefined
-        if (agent) getSystem().activateAgentInRoom(agent.id, roomId)
+        const agent = next ? getRuntime().team.getAgent(next.name) : undefined
+        if (agent) getRuntime().activateAgentInRoom(agent.id, roomId)
         return
       }
       const last = lastSpeaker.get(roomId)
       const nextName = last ? nextSpeaker(liveRun, last, undefined) : startsCastName(liveRun.script)
-      const agent = nextName ? getSystem().team.getAgent(nextName) : undefined
-      if (agent) getSystem().activateAgentInRoom(agent.id, roomId)
+      const agent = nextName ? getRuntime().team.getAgent(nextName) : undefined
+      if (agent) getRuntime().activateAgentInRoom(agent.id, roomId)
     })
     return { ok: true }
   }
@@ -418,7 +418,7 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
     run.turn += 1
     lastSpeaker.set(run.roomId, castName)
 
-    const system = getSystem()
+    const system = getRuntime()
     const result = message.type === 'pass'
       ? {
           whisper: { ready_to_advance: true, notes: 'passed — no relevant contribution' },
@@ -483,7 +483,7 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
     })
     void wasReady
 
-    const room = system.house.getRoom(run.roomId)
+    const room = system.rooms.getRoom(run.roomId)
     const allReady = run.script.cast.every(c => run.readiness[c.name] === true)
     if (run.script.turnMode === 'broadcast-pass') {
       const roundComplete = run.broadcastSeen.length >= run.script.cast.length
@@ -548,8 +548,8 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
     // No whisper for user/director posts and step-advance — round-robin from the last speaker.
     const last = lastSpeaker.get(run.roomId)
     const nextName = last ? nextSpeaker(run, last, undefined) : startsCastName(run.script)
-    if (nextName && !getSystem().house.getRoom(run.roomId)?.paused) {
-      const system = getSystem()
+    if (nextName && !getRuntime().rooms.getRoom(run.roomId)?.paused) {
+      const system = getRuntime()
       const agent = system.team.getAgent(nextName)
       if (agent) system.activateAgentInRoom(agent.id, run.roomId)
     }
@@ -599,8 +599,8 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
     // No whisper for user/director posts and step-advance — round-robin from the last speaker.
     const last = lastSpeaker.get(run.roomId)
     const nextName = last ? nextSpeaker(run, last, undefined) : startsCastName(run.script)
-    if (nextName && !getSystem().house.getRoom(run.roomId)?.paused) {
-      const system = getSystem()
+    if (nextName && !getRuntime().rooms.getRoom(run.roomId)?.paused) {
+      const system = getRuntime()
       const agent = system.team.getAgent(nextName)
       if (agent) system.activateAgentInRoom(agent.id, run.roomId)
     }

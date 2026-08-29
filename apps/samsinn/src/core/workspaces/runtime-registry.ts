@@ -1,7 +1,7 @@
 // ============================================================================
-// WorkspaceRuntimeRegistry — per-tenant House lifecycle keyed by instance ID.
+// WorkspaceRuntimeRegistry — per-tenant RoomDirectory lifecycle keyed by Workspace ID.
 //
-// One process holds many instances; each is a SamsinnWorkspaceRuntime bound to its own
+// One process holds many Workspaces; each is a SamsinnWorkspaceRuntime bound to its own
 // snapshot file. The registry lazy-loads from disk on first request,
 // keeps the SamsinnWorkspaceRuntime in memory while active, and evicts idle ones after
 // SAMSINN_IDLE_MS (default 30 min) by flushing snapshot + dropping the
@@ -20,15 +20,15 @@
 //   getOrLoad(id)           — single source of truth; touches lastTouchedAt
 //   evictOne(id)            — graceful: drain → flush → drop. Idempotent.
 //   evictIdle(now, idleMs)  — periodic sweep
-//   resetInstance(id)       — wipe state, return new id (for /api/system/reset)
+//   resetWorkspaceState(id)       — wipe state, return new id (for /api/system/reset)
 //   exists(id)              — disk OR memory
 //   list()                  — readonly meta for admin
 //   shutdown()              — flush all + clear
 //
 // What lives outside the registry's concern:
-//   - Snapshot path resolution (uses instancePaths from core/paths.ts)
-//   - Per-instance event-callback wiring (wireWorkspaceRuntimeEvents)
-//   - Janitor (instance-cleanup.ts) — operates on disk only
+//   - Snapshot path resolution (uses workspacePaths from core/paths.ts)
+//   - Per-Workspace event-callback wiring (wireWorkspaceRuntimeEvents)
+//   - Janitor (Workspace-cleanup.ts) — operates on disk only
 //
 // === buildWorkspaceRuntime ordering (subtle; was the source of 5d73a8e) ===
 // Inside buildWorkspaceRuntime(id):
@@ -36,7 +36,7 @@
 //   2. loadSnapshot + restoreFromSnapshot  — agents rehydrated.
 //   3. buildAutoSaver              — debounced snapshot writer.
 //   4. opts.onWorkspaceRuntimeCreated(...)   — caller's wiring runs HERE.
-//   5. seedInstance(system) (if no snapshot)  — Cafe + Aiden + You.
+//   5. seedWorkspace(system) (if no snapshot)  — Cafe + Aiden + You.
 //   6. return { system, autoSaver }
 // THEN in getOrLoad:
 //   7. map.set(id, entry)          — registry knows about the system.
@@ -55,21 +55,21 @@ import { createSamsinnWorkspaceRuntime } from '../../main.ts'
 import {
   loadSnapshot, restoreFromSnapshot, createAutoSaver, type AutoSaver,
 } from '../storage/snapshot.ts'
-import { instancePaths, isValidInstanceId, sharedPaths, trashPath } from '../paths.ts'
-import { mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { workspacePaths, isValidWorkspaceId, sharedPaths } from '../paths.ts'
+import { readdir, rename, rm, stat } from 'node:fs/promises'
 import { asAIAgent } from '../../agents/shared.ts'
-import { seedInstance } from '../instances/seed-instance.ts'
+import { seedWorkspace } from './seed-workspace.ts'
+import type { WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
 // --- Defaults & env ---
 
 const DEFAULT_IDLE_MS = 30 * 60_000   // 30 min
 const DEFAULT_DRAIN_MS = 5_000
-// The production service has a 2 GiB cgroup cap. A seeded instance currently
+// The production service has a 2 GiB cgroup cap. A seeded Workspace currently
 // costs roughly 1 MiB, so 128 leaves ample room for shared provider/catalog/UI
 // state and transient generation spikes while still supporting far more
 // concurrent rooms than the sandbox normally sees.
-const DEFAULT_MAX_LOADED_INSTANCES = 128
+const DEFAULT_MAX_LOADED_WORKSPACES = 128
 
 const idleMsFromEnv = (): number => {
   const v = process.env.SAMSINN_IDLE_MS
@@ -78,28 +78,28 @@ const idleMsFromEnv = (): number => {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_IDLE_MS
 }
 
-const maxLoadedInstancesFromEnv = (): number => {
-  const v = process.env.SAMSINN_MAX_LOADED_INSTANCES
-  if (!v) return DEFAULT_MAX_LOADED_INSTANCES
+const maxLoadedWorkspacesFromEnv = (): number => {
+  const v = process.env.SAMSINN_MAX_LOADED_WORKSPACES
+  if (!v) return DEFAULT_MAX_LOADED_WORKSPACES
   const n = Number(v)
-  return Number.isSafeInteger(n) && n > 0 ? n : DEFAULT_MAX_LOADED_INSTANCES
+  return Number.isSafeInteger(n) && n > 0 ? n : DEFAULT_MAX_LOADED_WORKSPACES
 }
 
 // --- Types ---
 
-export interface InstanceMeta {
-  readonly id: string
+export interface WorkspaceRuntimeMeta {
+  readonly id: WorkspaceId
   readonly lastTouchedAt: number
   readonly state: 'active' | 'evicting'
 }
 
-export interface InstanceOnDisk {
-  readonly id: string
+export interface WorkspaceModuleOnDisk {
+  readonly id: WorkspaceId
   readonly snapshotMtimeMs: number   // 0 if snapshot file is missing
   readonly snapshotSizeBytes: number // 0 if snapshot file is missing
 }
 
-interface InstanceEntry {
+interface WorkspaceRuntimeEntry {
   readonly system: SamsinnWorkspaceRuntime
   readonly autoSaver: AutoSaver
   readonly onIdle: () => Promise<void>          // hook called by registry on evict
@@ -112,76 +112,72 @@ export interface WorkspaceRuntimeRegistryOptions {
   readonly deployment: DeploymentRuntime
   readonly idleMs?: number                      // override default 30 min
   readonly drainMs?: number                     // override default 5s
-  readonly maxLoadedInstances?: number          // hard LRU safety bound
+  readonly maxLoadedWorkspaces?: number          // hard LRU safety bound
   // Hook called immediately after a fresh SamsinnWorkspaceRuntime is constructed (either
   // first load or post-eviction reload). Bootstrap wires WS broadcasts here.
   // The autoSaver is passed in directly because the registry's map entry
   // isn't set until AFTER this hook returns — so registry.autoSaverFor(id)
   // would return null inside the hook. Subtle and was the source of a
   // long-running bug where streaming events never reached cookie-bound
-  // instances.
+  // Workspaces.
   //
   // The hook is awaited. It MUST complete (wireAgentTracking +
-  // wireWorkspaceRuntimeEvents installed) before seedInstance runs — otherwise
+  // wireWorkspaceRuntimeEvents installed) before seedWorkspace runs — otherwise
   // the seeded AI bypasses the spawn-wrapper and never gets per-agent
   // hooks (state subscription, attachAgent). Returning Promise<void> is
   // mandatory for any hook that does async work.
-  readonly onWorkspaceRuntimeCreated?: (system: SamsinnWorkspaceRuntime, id: string, autoSaver: AutoSaver) => Promise<void> | void
+  readonly onWorkspaceRuntimeCreated?: (runtime: SamsinnWorkspaceRuntime, id: WorkspaceId, autoSaver: AutoSaver) => Promise<void> | void
   // Hook called immediately before a SamsinnWorkspaceRuntime is dropped from memory.
   // Bootstrap removes the WS callback wiring here.
-  readonly onWorkspaceRuntimeEvicted?: (system: SamsinnWorkspaceRuntime, id: string) => void
+  readonly onWorkspaceRuntimeEvicted?: (runtime: SamsinnWorkspaceRuntime, id: WorkspaceId) => void
   // Fires exactly once, after the first successful getOrLoad in this
   // process. Replaces the boot-time validateBootstrap call: the contract
   // check still runs before any traffic actually reaches a SamsinnWorkspaceRuntime, but
-  // we don't materialize a throwaway boot instance just to validate.
-  // Receives the instance id so contract checks can verify per-instance
+  // we don't materialize a throwaway boot Workspace just to validate.
+  // Receives the Workspace id so contract checks can verify per-Workspace
   // wiring (e.g. wsManager.isWired(id)).
-  readonly onFirstLoad?: (system: SamsinnWorkspaceRuntime, id: string) => void
+  readonly onFirstLoad?: (runtime: SamsinnWorkspaceRuntime, id: WorkspaceId) => void
 }
 
 export interface WorkspaceRuntimeRegistry {
-  readonly getOrLoad: (id: string) => Promise<SamsinnWorkspaceRuntime>
-  readonly evictOne: (id: string) => Promise<void>
+  readonly getOrLoad: (id: WorkspaceId) => Promise<SamsinnWorkspaceRuntime>
+  readonly evictOne: (id: WorkspaceId) => Promise<void>
   readonly evictIdle: (now?: number) => Promise<number>
-  // Trash the instance's on-disk state and drop from memory. The same id
+  // Delete the Workspace module's on-disk state and drop it from memory. The same id
   // is preserved — browser keeps its cookie, next request lazy-creates a
-  // fresh empty House under the same id.
-  readonly resetInstance: (id: string) => Promise<void>
-  readonly exists: (id: string) => Promise<boolean>
-  readonly list: () => ReadonlyArray<InstanceMeta>
-  // Enumerate every valid instance directory under SAMSINN_HOME/instances,
-  // returning snapshot mtime + size. Includes instances not currently in
-  // memory. Used by the Instances admin UI.
-  readonly listOnDisk: () => Promise<ReadonlyArray<InstanceOnDisk>>
-  // Operator-initiated trash cleanup. Walks .trash and rm -rf each entry.
-  // Distinct from the janitor's age-based purge — runs only when the user
-  // clicks "Purge trash" in the admin UI.
-  readonly purgeTrash: () => Promise<{ purged: number; errors: ReadonlyArray<string> }>
+  // fresh empty RoomDirectory under the same id.
+  readonly resetWorkspaceState: (id: WorkspaceId) => Promise<void>
+  readonly exists: (id: WorkspaceId) => Promise<boolean>
+  readonly list: () => ReadonlyArray<WorkspaceRuntimeMeta>
+  // Enumerate every valid Workspace directory under SAMSINN_HOME/workspaces,
+  // returning snapshot mtime + size. Includes Workspaces not currently in
+  // memory. Used by the Workspaces UI.
+  readonly listOnDisk: () => Promise<ReadonlyArray<WorkspaceModuleOnDisk>>
   readonly shutdown: () => Promise<void>
   // For tests + boundary handlers that need to know the configured timer.
   readonly idleMs: () => number
-  readonly maxLoadedInstances: () => number
-  // Boundary access to the in-memory autosaver for an active instance.
+  readonly maxLoadedWorkspaces: () => number
+  // Boundary access to the in-memory autosaver for an active Workspace.
   // wireWorkspaceRuntimeEvents needs it to schedule saves from broadcast callbacks.
-  // Returns null if the instance is not currently in memory.
-  readonly autoSaverFor: (id: string) => AutoSaver | null
+  // Returns null if the Workspace is not currently in memory.
+  readonly autoSaverFor: (id: WorkspaceId) => AutoSaver | null
   // In-memory only lookup. Returns the live SamsinnWorkspaceRuntime for `id` if it is
   // currently loaded and active (not evicting), else undefined.
   //
-  // SILENTLY returns undefined for evicted/unloaded instances. Every
+  // SILENTLY returns undefined for evicted/unloaded Workspaces. Every
   // existing caller depends on this — late provider events drop, WS
-  // snapshot building closes the socket with 4001, cross-instance fan-
-  // outs skip the missing instance. If you need a hard error or you
+  // snapshot building closes the socket with 4001, cross-Workspace fan-
+  // outs skip the missing Workspace. If you need a hard error or you
   // need to materialize the system, use `getOrLoad` instead. Adding a
   // call site that quietly skips when the answer should be "load this"
   // is how silent-skip bugs hide — see CLAUDE.md "no silent skips on
   // optional dependencies."
-  readonly tryGetLive: (id: string) => SamsinnWorkspaceRuntime | undefined
-  // Agent → instance reverse index for provider routing events. Bootstrap
+  readonly tryGetLive: (id: WorkspaceId) => SamsinnWorkspaceRuntime | undefined
+  // Agent → Workspace reverse index for provider routing events. Bootstrap
   // wires shared.setProviderEventDispatcher to use this.
-  readonly attachAgent: (agentId: string, instanceId: string) => void
+  readonly attachAgent: (agentId: string, workspaceId: WorkspaceId) => void
   readonly detachAgent: (agentId: string) => void
-  readonly instanceForAgent: (agentId: string) => string | undefined
+  readonly workspaceForAgent: (agentId: string) => WorkspaceId | undefined
 }
 
 // ============================================================================
@@ -189,15 +185,15 @@ export interface WorkspaceRuntimeRegistry {
 export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOptions): WorkspaceRuntimeRegistry => {
   const idleMs = opts.idleMs ?? idleMsFromEnv()
   const drainMs = opts.drainMs ?? DEFAULT_DRAIN_MS
-  const maxLoadedInstances = opts.maxLoadedInstances ?? maxLoadedInstancesFromEnv()
-  if (!Number.isSafeInteger(maxLoadedInstances) || maxLoadedInstances <= 0) {
-    throw new Error(`[registry] maxLoadedInstances must be a positive integer; got ${String(maxLoadedInstances)}`)
+  const maxLoadedWorkspaces = opts.maxLoadedWorkspaces ?? maxLoadedWorkspacesFromEnv()
+  if (!Number.isSafeInteger(maxLoadedWorkspaces) || maxLoadedWorkspaces <= 0) {
+    throw new Error(`[registry] maxLoadedWorkspaces must be a positive integer; got ${String(maxLoadedWorkspaces)}`)
   }
-  const map = new Map<string, InstanceEntry>()
-  const pendingLoads = new Map<string, Promise<SamsinnWorkspaceRuntime>>()
+  const map = new Map<WorkspaceId, WorkspaceRuntimeEntry>()
+  const pendingLoads = new Map<WorkspaceId, Promise<SamsinnWorkspaceRuntime>>()
   // Reverse index for provider event routing. Populated when an agent
-  // is spawned in an instance; cleared on agent removal or instance evict.
-  const agentInstanceMap = new Map<string, string>()
+  // is spawned in an Workspace; cleared on agent removal or Workspace evict.
+  const agentWorkspaceMap = new Map<string, WorkspaceId>()
 
   // --- Internals ---
 
@@ -229,7 +225,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     }
   }
 
-  // Build the per-instance autosaver. Callback wiring (which schedules
+  // Build the per-Workspace autosaver. Callback wiring (which schedules
   // save on each mutation) lives in src/api/wire-workspace-runtime-events.ts, which
   // gets the saver via autoSaverFor(id). The onWorkspaceRuntimeCreated hook calls
   // wireWorkspaceRuntimeEvents — that's the single source of save scheduling.
@@ -237,7 +233,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     createAutoSaver(_system, snapshotPath)
 
   // Build a fresh SamsinnWorkspaceRuntime for `id`, restoring from snapshot if present.
-  // Note: we DO NOT mkdir here. The instance dir is created lazily by
+  // Note: we DO NOT mkdir here. The Workspace dir is created lazily by
   // saveSnapshot's own mkdir(recursive) on the first real autosave write.
   //
   // Drive-by traffic (bots, monitoring probes, anonymous home-page hits)
@@ -247,11 +243,11 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   // signal (the UI opening /ws, or an explicit /api call from a cookie
   // holder). Stale cookies for purged ids are soft-expired by server.ts
   // before they reach getOrLoad.
-  const buildWorkspaceRuntime = async (id: string): Promise<{ system: SamsinnWorkspaceRuntime; autoSaver: AutoSaver }> => {
-    const paths = instancePaths(id)
+  const buildWorkspaceRuntime = async (id: WorkspaceId): Promise<{ system: SamsinnWorkspaceRuntime; autoSaver: AutoSaver }> => {
+    const paths = workspacePaths(id)
     const system = createSamsinnWorkspaceRuntime({
       deployment: opts.deployment,
-      instanceLabel: id,
+      workspaceLabel: id,
       vectorsFile: paths.vectors,
     })
 
@@ -264,7 +260,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err)
         console.error(`[registry] restore failed for ${id}: ${reason}`)
-        // Move bad file aside, continue with empty house.
+        // Move bad file aside, continue with an empty Workspace runtime.
         const aside = `${paths.snapshot}.corrupt.${Date.now()}.json`
         try { await rename(paths.snapshot, aside) } catch { /* ignore */ }
       }
@@ -280,17 +276,17 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     // AWAITED on purpose: the hook installs wireAgentTracking (the spawn
     // wrapper that installs per-agent state subscriptions, provider-event
     // attach, etc.) and wireWorkspaceRuntimeEvents (the system-wide WS broadcast
-    // subscribers). seedInstance below calls system.spawnAIAgent — if it
+    // subscribers). seedWorkspace below calls system.spawnAIAgent — if it
     // ran before the wrapper was installed, the seeded agent would bypass
     // per-agent wiring (no thinking indicator, no state broadcasts, no
     // provider-event scoping). The hook is async because of logging.configure;
     // without await, the first await inside the hook releases a microtask
-    // and seedInstance races ahead.
+    // and seedWorkspace races ahead.
     await opts.onWorkspaceRuntimeCreated?.(system, id, autoSaver)
 
     // First-run seeding: when no snapshot existed, or when an older/broken
     // boot left an explicitly empty snapshot, spawn Cafe + Aiden + You.
-    // An empty snapshot is equivalent to a fresh instance: it contains no
+    // An empty snapshot is equivalent to a fresh Workspace: it contains no
     // user state to preserve, and otherwise permanently suppresses the seed
     // on every reload. Skipped when SAMSINN_SEED_EXAMPLE=0 (legacy env).
     const snapshotIsEmpty = snapshot !== null
@@ -299,10 +295,10 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
       && snapshot.humans.length === 0
     if ((!snapshot || snapshotIsEmpty) && process.env.SAMSINN_SEED_EXAMPLE !== '0') {
       try {
-        await seedInstance(system)
+        await seedWorkspace(system)
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err)
-        console.error(`[registry] seedInstance threw (continuing with empty House): ${reason}`)
+        console.error(`[registry] seedWorkspace threw (continuing with empty RoomDirectory): ${reason}`)
       }
       // Persist the seed so a refresh keeps it (without waiting for the
       // autosaver's debounce). Best-effort — autosaver will retry on its
@@ -316,7 +312,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   // --- Public API ---
 
   let firstLoadFired = false
-  const fireFirstLoadOnce = (system: SamsinnWorkspaceRuntime, id: string): void => {
+  const fireFirstLoadOnce = (system: SamsinnWorkspaceRuntime, id: WorkspaceId): void => {
     if (firstLoadFired) return
     firstLoadFired = true
     try { opts.onFirstLoad?.(system, id) } catch (err) {
@@ -329,7 +325,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   }
 
   const evictForCapacity = async (): Promise<number> => {
-    const excess = map.size - maxLoadedInstances + 1
+    const excess = map.size - maxLoadedWorkspaces + 1
     if (excess <= 0) return 0
     const targets = [...map.entries()]
       .filter(([, entry]) => entry.state === 'active')
@@ -344,7 +340,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   // and map insertion. Without this short queue, two completed loads can both
   // observe one free slot and push the registry past its configured bound.
   let capacityMutation = Promise.resolve()
-  const installLoadedEntry = async (id: string, entry: InstanceEntry): Promise<number> => {
+  const installLoadedEntry = async (id: WorkspaceId, entry: WorkspaceRuntimeEntry): Promise<number> => {
     let evicted = 0
     const operation = capacityMutation.then(async () => {
       evicted = await evictForCapacity()
@@ -355,9 +351,9 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     return evicted
   }
 
-  const getOrLoad = async (id: string): Promise<SamsinnWorkspaceRuntime> => {
-    if (!isValidInstanceId(id)) {
-      throw new Error(`[registry] invalid instance id: ${id}`)
+  const getOrLoad = async (id: WorkspaceId): Promise<SamsinnWorkspaceRuntime> => {
+    if (!isValidWorkspaceId(id)) {
+      throw new Error(`[registry] invalid Workspace id: ${id}`)
     }
 
     // Fast path: in-map and not evicting.
@@ -382,7 +378,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     const loadPromise = (async (): Promise<SamsinnWorkspaceRuntime> => {
       try {
         const { system, autoSaver } = await buildWorkspaceRuntime(id)
-        const entry: InstanceEntry = {
+        const entry: WorkspaceRuntimeEntry = {
           system,
           autoSaver,
           lastTouchedAt: Date.now(),
@@ -391,7 +387,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
         }
         const evicted = await installLoadedEntry(id, entry)
         if (evicted > 0) {
-          console.warn(`[registry] capacity ${maxLoadedInstances} reached; evicted ${evicted} least-recently-used instance(s)`)
+          console.warn(`[registry] capacity ${maxLoadedWorkspaces} reached; evicted ${evicted} least-recently-used Workspace(s)`)
         }
         fireFirstLoadOnce(system, id)
         return system
@@ -405,7 +401,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
 
   // Idempotent: calling evictOne twice (or while another caller is also
   // evicting) returns the same in-flight promise.
-  const evictOne = async (id: string): Promise<void> => {
+  const evictOne = async (id: WorkspaceId): Promise<void> => {
     const entry = map.get(id)
     if (!entry) return
     if (entry.state === 'evicting' && entry.evictionPromise) {
@@ -450,9 +446,9 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
         console.error(`[registry] evict ${id} hook threw: ${err instanceof Error ? err.message : String(err)}`)
       }
       entry.autoSaver.dispose()
-      // Stop the per-instance schedulers' setIntervals. Without this, the
-      // timer closures pin the entire SamsinnWorkspaceRuntime (House + agents + history) and
-      // keep firing every tick on an evicted instance — memory leak +
+      // Stop the per-Workspace schedulers' setIntervals. Without this, the
+      // timer closures pin the entire SamsinnWorkspaceRuntime (RoomDirectory + agents + history) and
+      // keep firing every tick on an evicted Workspace — memory leak +
       // wasted CPU proportional to (evicted-with-active-schedulers) ×
       // tick frequency. autoSaver.dispose handles its own debounce timer;
       // these handle theirs.
@@ -483,7 +479,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   }
 
   const evictIdle = async (now: number = Date.now()): Promise<number> => {
-    const targets: string[] = []
+    const targets: WorkspaceId[] = []
     for (const [id, entry] of map) {
       if (entry.state === 'active' && now - entry.lastTouchedAt > idleMs) {
         targets.push(id)
@@ -493,120 +489,86 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     return targets.length
   }
 
-  const resetInstance = async (id: string): Promise<void> => {
-    if (!isValidInstanceId(id)) {
-      throw new Error(`[registry] invalid instance id: ${id}`)
+  const resetWorkspaceState = async (id: WorkspaceId): Promise<void> => {
+    if (!isValidWorkspaceId(id)) {
+      throw new Error(`[registry] invalid Workspace id: ${id}`)
     }
     // Drain + drop from memory.
     if (map.has(id)) await evictOne(id)
-    // Move on disk to trash. Janitor purges after 7 days.
-    const paths = instancePaths(id)
-    const trash = trashPath(id, Date.now())
-    try {
-      await mkdir(dirname(trash), { recursive: true })
-      await rename(paths.root, trash)
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code
-      if (code !== 'ENOENT') {
-        console.error(`[registry] reset ${id} trash failed: ${err instanceof Error ? err.message : String(err)}`)
-      }
-    }
+    // Reset is intentionally destructive. Snapshot compatibility is a clean
+    // break and this architecture pass does not retain migration/archive data.
+    const paths = workspacePaths(id)
+    await rm(paths.root, { recursive: true, force: true })
     // Same id is preserved. Browser cookie unchanged. Next request →
-    // registry.getOrLoad(id) → no in-memory + no disk → fresh House.
+    // registry.getOrLoad(id) → no in-memory + no disk → fresh RoomDirectory.
   }
 
-  const exists = async (id: string): Promise<boolean> => {
-    if (!isValidInstanceId(id)) return false
+  const exists = async (id: WorkspaceId): Promise<boolean> => {
+    if (!isValidWorkspaceId(id)) return false
     if (map.has(id)) return true
     try {
-      await stat(instancePaths(id).snapshot)
+      await stat(workspacePaths(id).snapshot)
       return true
     } catch {
       return false
     }
   }
 
-  const list = (): ReadonlyArray<InstanceMeta> =>
+  const list = (): ReadonlyArray<WorkspaceRuntimeMeta> =>
     [...map.entries()].map(([id, e]) => ({
       id,
       lastTouchedAt: e.lastTouchedAt,
       state: e.state,
     }))
 
-  const listOnDisk = async (): Promise<ReadonlyArray<InstanceOnDisk>> => {
-    const root = sharedPaths.instancesRoot()
+  const listOnDisk = async (): Promise<ReadonlyArray<WorkspaceModuleOnDisk>> => {
+    const root = sharedPaths.workspacesRoot()
     let entries: string[]
     try {
       entries = await readdir(root)
     } catch {
       return []   // root doesn't exist yet — first boot
     }
-    const out: InstanceOnDisk[] = []
+    const out: WorkspaceModuleOnDisk[] = []
     for (const name of entries) {
-      // Skip .trash + anything that isn't a valid instance id.
-      if (!isValidInstanceId(name)) continue
+      // Skip anything that is not a canonical Workspace id.
+      if (!isValidWorkspaceId(name)) continue
       let mtimeMs = 0
       let sizeBytes = 0
       try {
-        const st = await stat(join(root, name, 'snapshot.json'))
+        const st = await stat(workspacePaths(name).snapshot)
         mtimeMs = st.mtimeMs
         sizeBytes = st.size
       } catch {
-        // No snapshot yet (just-created instance) — directory exists, file doesn't.
+        // No snapshot yet (just-created Workspace) — directory exists, file doesn't.
       }
       out.push({ id: name, snapshotMtimeMs: mtimeMs, snapshotSizeBytes: sizeBytes })
     }
     return out
   }
 
-  // Walk .trash and rm -rf every entry. Returns the count purged. Used
-  // by the "Purge trash" admin endpoint. Does NOT run the demote pass —
-  // operator-initiated cleanup of trash only.
-  const purgeTrash = async (): Promise<{ purged: number; errors: ReadonlyArray<string> }> => {
-    const trashRoot = sharedPaths.trashRoot()
-    let entries: string[]
-    try {
-      entries = await readdir(trashRoot)
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code
-      if (code === 'ENOENT') return { purged: 0, errors: [] }
-      return { purged: 0, errors: [`readdir trash: ${(err as Error).message}`] }
-    }
-    let purged = 0
-    const errors: string[] = []
-    for (const name of entries) {
-      try {
-        await rm(join(trashRoot, name), { recursive: true, force: true })
-        purged += 1
-      } catch (err) {
-        errors.push(`${name}: ${(err as Error).message}`)
-      }
-    }
-    return { purged, errors }
-  }
-
-  // Final flush of every active instance. Called from the SIGINT/SIGTERM
+  // Final flush of every active Workspace. Called from the SIGINT/SIGTERM
   // handler in bootstrap.ts (replaces the single-system flush).
   const shutdown = async (): Promise<void> => {
     const ids = [...map.keys()]
     await Promise.all(ids.map(evictOne))
   }
 
-  const autoSaverFor = (id: string): AutoSaver | null => {
+  const autoSaverFor = (id: WorkspaceId): AutoSaver | null => {
     const entry = map.get(id)
     return entry ? entry.autoSaver : null
   }
 
-  const attachAgent = (agentId: string, instanceId: string): void => {
-    agentInstanceMap.set(agentId, instanceId)
+  const attachAgent = (agentId: string, workspaceId: WorkspaceId): void => {
+    agentWorkspaceMap.set(agentId, workspaceId)
   }
   const detachAgent = (agentId: string): void => {
-    agentInstanceMap.delete(agentId)
+    agentWorkspaceMap.delete(agentId)
   }
-  const instanceForAgent = (agentId: string): string | undefined =>
-    agentInstanceMap.get(agentId)
+  const workspaceForAgent = (agentId: string): WorkspaceId | undefined =>
+    agentWorkspaceMap.get(agentId)
 
-  const tryGetLive = (id: string): SamsinnWorkspaceRuntime | undefined => {
+  const tryGetLive = (id: WorkspaceId): SamsinnWorkspaceRuntime | undefined => {
     const entry = map.get(id)
     if (!entry || entry.state !== 'active') return undefined
     return entry.system
@@ -616,18 +578,17 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     getOrLoad,
     evictOne,
     evictIdle,
-    resetInstance,
+    resetWorkspaceState,
     exists,
     list,
     listOnDisk,
-    purgeTrash,
     shutdown,
     idleMs: () => idleMs,
-    maxLoadedInstances: () => maxLoadedInstances,
+    maxLoadedWorkspaces: () => maxLoadedWorkspaces,
     autoSaverFor,
     tryGetLive,
     attachAgent,
     detachAgent,
-    instanceForAgent,
+    workspaceForAgent,
   }
 }

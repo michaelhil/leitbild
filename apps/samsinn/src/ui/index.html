@@ -484,7 +484,7 @@
             <span>Logging</span>
             <span id="logging-state-dot" class="text-xs" title="Logging state">◌</span>
           </button>
-          <button data-settings-row="instances" class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive" title="List, switch, create, or delete sandboxes. Reset lives inside the modal too.">Instances</button>
+          <button data-settings-row="workspaces" class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive" title="Create, switch, share, or reset isolated Workspaces.">Workspaces</button>
           <button data-settings-row="bug"       class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive" title="Report a bug to the GitHub repo">Report bug</button>
         </div>
       </div>
@@ -705,19 +705,20 @@
     </form>
   </dialog>
 
-  <!-- Instances Modal — list / switch / create / delete sandboxes -->
-  <dialog id="instances-modal" class="rounded-lg shadow-xl p-0 w-[640px] max-w-[95vw] bg-surface text-text">
+  <!-- Workspaces Modal -->
+  <dialog id="workspaces-modal" class="rounded-lg shadow-xl p-0 w-[640px] max-w-[95vw] bg-surface text-text">
     <div class="flex flex-col" style="max-height: 80vh;">
       <div class="px-4 py-3 border-b flex items-center gap-2 justify-between">
-        <h3 class="font-medium text-text-strong truncate">Instances</h3>
-        <div id="instances-header-actions" class="flex items-center gap-2 shrink-0">
-          <!-- Populated by instances-modal.ts based on browse / bulk mode -->
+        <h3 class="font-medium text-text-strong truncate">Workspaces</h3>
+        <div class="flex items-center gap-2 shrink-0">
+          <button id="create-workspace" type="button" class="px-3 py-1 text-sm bg-success text-white rounded">Create</button>
+          <button id="close-workspaces" type="button" class="px-3 py-1 text-sm border border-border-strong rounded">Close</button>
         </div>
       </div>
       <div class="px-4 py-2 text-xs text-text-subtle border-b">
-        Each instance is an isolated sandbox: its own rooms, agents, messages, and snapshot. The current instance is bound to your browser by a cookie.
+        A Workspace is an isolated solution boundary. Samsinn keeps its own rooms, agents, messages, settings, and saved state within it.
       </div>
-      <div id="instances-list" class="flex-1 overflow-y-auto px-2 py-2 text-sm">
+      <div id="workspaces-list" class="flex-1 overflow-y-auto px-2 py-2 text-sm">
         <div class="text-text-subtle italic p-3">Loading…</div>
       </div>
     </div>

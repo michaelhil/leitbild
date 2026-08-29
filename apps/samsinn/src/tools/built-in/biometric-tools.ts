@@ -11,10 +11,10 @@
 //
 // The pack repository (samsinn-biometrics) ships only pack.json (declares
 // ui_extensions) plus the agent-facing skill. Tool implementation lives
-// here so it can reach House + capture registry without exposing a
+// here so it can reach RoomDirectory + capture registry without exposing a
 // globalThis surface to drop-in pack code.
 
-import type { House } from '../../core/types/room.ts'
+import type { RoomDirectory } from '../../core/rooms/directory.ts'
 import type { Tool, ToolContext } from '../../core/types/tool.ts'
 import type { CaptureRegistry } from '../../core/biometrics/registry.ts'
 
@@ -29,7 +29,7 @@ const fenceContent = (payload: object): string =>
   '```biometric\n' + JSON.stringify(payload, null, 2) + '\n```'
 
 export interface BiometricToolsDeps {
-  readonly house: House
+  readonly rooms: RoomDirectory
   readonly registry: CaptureRegistry
 }
 
@@ -49,7 +49,7 @@ export const createBiometricsStartTool = (deps: BiometricToolsDeps): Tool => ({
     const reason = typeof params.reason === 'string' ? params.reason.trim() : ''
     if (!reason) return { success: false, error: 'reason is required' }
     if (!context.roomId) return { success: false, error: 'biometrics_start must be invoked from a room context' }
-    const room = deps.house.getRoom(context.roomId)
+    const room = deps.rooms.getRoom(context.roomId)
     if (!room) return { success: false, error: `room "${context.roomId}" not found` }
 
     const captureId = generateCaptureId()
@@ -105,7 +105,7 @@ export const createBiometricsStopTool = (deps: BiometricToolsDeps): Tool => ({
     // is also actively driven by samsinn:biometric-stop-all; this is the
     // out-of-band record, not the primary stop mechanism.
     if (context.roomId) {
-      const room = deps.house.getRoom(context.roomId)
+      const room = deps.rooms.getRoom(context.roomId)
       if (room) {
         room.post({
           senderId: context.callerId,

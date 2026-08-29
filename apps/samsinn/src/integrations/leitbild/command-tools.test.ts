@@ -18,7 +18,7 @@ describe('toLeitbildSlug', () => {
 })
 
 describe('lb_command', () => {
-  const baseBinding = { baseUrl: 'https://example.test', instanceId: 'x:y', role: 'operator' as const }
+  const baseBinding = { baseUrl: 'https://example.test', workspaceId: 'x:y', role: 'operator' as const }
 
   test('exposes one tool named lb_command', () => {
     const tools = createLeitbildCommandTools({ getBinding: () => baseBinding })

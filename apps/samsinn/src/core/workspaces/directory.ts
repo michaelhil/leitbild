@@ -7,7 +7,6 @@ import { isoTimestampSchema, newWorkspaceId, workspaceIdSchema, type WorkspaceId
 export interface WorkspaceRecord {
   readonly id: WorkspaceId
   readonly displayName: string
-  readonly status: 'active' | 'archived'
   readonly createdAt: string
   readonly updatedAt: string
 }
@@ -17,13 +16,11 @@ export interface WorkspaceDirectory {
   readonly get: (id: WorkspaceId) => Promise<WorkspaceRecord | undefined>
   readonly ensure: (config: { readonly id: WorkspaceId; readonly displayName: string }) => Promise<WorkspaceRecord>
   readonly ensureDefault: (displayName?: string) => Promise<WorkspaceRecord>
-  readonly archive: (id: WorkspaceId) => Promise<boolean>
 }
 
 const workspaceRecordSchema = z.object({
   id: workspaceIdSchema,
   displayName: z.string().min(1).max(256),
-  status: z.enum(['active', 'archived']),
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,
 }).strict()
@@ -90,7 +87,6 @@ export const createLocalWorkspaceDirectory = (config: {
       const record: WorkspaceRecord = {
         id: ensureConfig.id,
         displayName: ensureConfig.displayName,
-        status: 'active',
         createdAt: timestamp,
         updatedAt: timestamp,
       }
@@ -110,7 +106,6 @@ export const createLocalWorkspaceDirectory = (config: {
       const record: WorkspaceRecord = {
         id: newWorkspaceId(),
         displayName,
-        status: 'active',
         createdAt: timestamp,
         updatedAt: timestamp,
       }
@@ -122,24 +117,10 @@ export const createLocalWorkspaceDirectory = (config: {
       return record
     })
 
-  const archive = (id: WorkspaceId): Promise<boolean> =>
-    mutate(async () => {
-      const file = await load()
-      const existing = file.workspaces.find(workspace => workspace.id === id)
-      if (!existing) return false
-      if (existing.status === 'archived') return true
-      const workspaces = file.workspaces.map(workspace => workspace.id === id
-        ? { ...workspace, status: 'archived' as const, updatedAt: nowIso() }
-        : workspace)
-      await save({ ...file, workspaces })
-      return true
-    })
-
   return {
     list: async () => (await load()).workspaces,
     get: async (id) => (await load()).workspaces.find(workspace => workspace.id === id),
     ensure,
     ensureDefault,
-    archive,
   }
 }

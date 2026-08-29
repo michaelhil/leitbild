@@ -21,7 +21,7 @@ describe('leitbild tools', () => {
 
   test('binding resolver receives the caller id', async () => {
     const seen: string[] = []
-    const binding: LeitbildAgentBinding = { baseUrl: 'https://example.test', instanceId: 'x:y', role: 'observer' }
+    const binding: LeitbildAgentBinding = { baseUrl: 'https://example.test', workspaceId: 'x:y', role: 'observer' }
     const tools = createLeitbildTools({
       getBinding: (id: string) => { seen.push(id); return binding },
     })

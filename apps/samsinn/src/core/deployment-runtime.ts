@@ -12,19 +12,19 @@
 //   - ProviderConfig — boot-time decision (order, single-Ollama mode, …).
 //   - sharedToolRegistry — external tools, skill-bundled tools, pack-bundled
 //     tools, MCP tools, write_skill / write_tool / install_pack et al.
-//     Single FS scan at boot, no per-instance reload thrash. Pack installed
+//     Single FS scan at boot, no per-Workspace reload thrash. Pack installed
 //     in instance A is immediately visible to instance B.
 //   - sharedSkillStore — every loaded skill (pack and free-standing). Each
 //     instance reads from the same store; install/uninstall mutate one place.
 //
-// What stays per-instance (built fresh by createSamsinnWorkspaceRuntime):
-//   - House (rooms, agents, artifacts, messages, members, mute/pause)
+// What stays per-Workspace (built fresh by createSamsinnWorkspaceRuntime):
+//   - RoomDirectory (rooms, agents, artifacts, messages, members, mute/pause)
 //   - Team
-//   - Tool-registry OVERLAY — house-bound built-ins (createListRoomsTool,
+//   - Tool-registry OVERLAY — Room/Team-bound built-ins (createListRoomsTool,
 //     createAddArtifactTool, etc.) layered above sharedToolRegistry.
 //   - Logging sink
 //   - Summary scheduler
-//   - Script store (still per-instance — file-backed; future Phase B'
+//   - Script store (still per-Workspace — file-backed; future Phase B'
 //     candidate, parallel to skillStore here)
 //   - All event-callback late-binding slots
 // ============================================================================
@@ -55,7 +55,7 @@ export interface DeploymentRuntime {
   mcpTools: Tool[]
   // Provider routing events fan out via a single listener on the shared
   // router. The dispatcher is set once by the WorkspaceRuntimeRegistry, which has
-  // the agentId → instanceId reverse index. Default: noop.
+  // the agentId → workspaceId reverse index. Default: noop.
   setProviderEventDispatcher: (fn: (event: ProviderRoutingEvent) => void) => void
   // Process-global counters for cap/limit hits. Read-only API; the only
   // mutator is the inc() method on the metrics object itself.
@@ -125,7 +125,7 @@ export const createDeploymentRuntime = (
     opts.providerSetup ?? buildProvidersFromConfig(providerConfig, { providerKeys })
 
   // Single listener on the shared router. The registered dispatcher
-  // (set by WorkspaceRuntimeRegistry) routes events to the correct per-instance
+  // (set by WorkspaceRuntimeRegistry) routes events to the correct per-Workspace
   // subscriber via the agentId reverse index.
   let dispatcher: (event: ProviderRoutingEvent) => void = () => { /* noop */ }
   providerSetup.router.onRoutingEvent((event) => {

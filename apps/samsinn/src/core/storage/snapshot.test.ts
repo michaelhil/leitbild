@@ -1,7 +1,9 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { serializeSystem, saveSnapshot, loadSnapshot, restoreFromSnapshot, appendPendingScrub, SNAPSHOT_VERSION, createAutoSaver } from './snapshot.ts'
 import { stat } from 'node:fs/promises'
-import { createHouse } from '../house.ts'
+import { createRoomDirectory } from '../rooms/directory.ts'
+import { createBookmarkStore } from '../workspaces/bookmark-store.ts'
+import { createWorkspaceSettings } from '../workspaces/settings.ts'
 import { createTeam } from '../../agents/team.ts'
 import type { DeliverFn } from '../types/messaging.ts'
 import { unlink, mkdir } from 'node:fs/promises'
@@ -16,10 +18,12 @@ const noopDeliver: DeliverFn = () => {}
 // Helper: create a minimal system-like object with a default room
 const createTestSystem = () => {
   const team = createTeam()
-  const house = createHouse({ deliver: noopDeliver })
+  const rooms = createRoomDirectory({ deliver: noopDeliver })
+  const settings = createWorkspaceSettings()
+  const bookmarks = createBookmarkStore()
   // Create default room (main.ts does this in createSamsinnWorkspaceRuntime, but we're testing standalone)
-  house.createRoom({ name: 'Introductions', createdBy: 'system' })
-  return { house, team }
+  rooms.createRoom({ name: 'Introductions', createdBy: 'system' })
+  return { rooms, settings, bookmarks, team }
 }
 
 describe('Snapshot', () => {
@@ -43,8 +47,8 @@ describe('Snapshot', () => {
   describe('bookmarks round-trip', () => {
     test('serializes and restores bookmarks, newest-first', () => {
       const system = createTestSystem()
-      const first = system.house.addBookmark('first message')
-      const second = system.house.addBookmark('second message')
+      const first = system.bookmarks.add('first message')
+      const second = system.bookmarks.add('second message')
 
       const snapshot = serializeSystem(system)
       expect(snapshot.bookmarks?.length).toBe(2)
@@ -52,26 +56,25 @@ describe('Snapshot', () => {
       expect(snapshot.bookmarks?.[0]?.id).toBe(second.id)
       expect(snapshot.bookmarks?.[1]?.id).toBe(first.id)
 
-      // Restore into a fresh house
-      const fresh = createHouse({ deliver: noopDeliver })
-      fresh.restoreBookmarks(snapshot.bookmarks ?? [])
-      expect(fresh.listBookmarks().map(b => b.content)).toEqual(['second message', 'first message'])
+      const fresh = createBookmarkStore()
+      fresh.restore(snapshot.bookmarks ?? [])
+      expect(fresh.list().map(b => b.content)).toEqual(['second message', 'first message'])
     })
 
     test('update preserves position; delete removes', () => {
       const system = createTestSystem()
-      const a = system.house.addBookmark('a')
-      const b = system.house.addBookmark('b')
-      const c = system.house.addBookmark('c')
+      const a = system.bookmarks.add('a')
+      const b = system.bookmarks.add('b')
+      const c = system.bookmarks.add('c')
       // Order after adds: [c, b, a]
-      expect(system.house.listBookmarks().map(x => x.id)).toEqual([c.id, b.id, a.id])
+      expect(system.bookmarks.list().map(x => x.id)).toEqual([c.id, b.id, a.id])
 
-      system.house.updateBookmark(b.id, 'B!')
-      expect(system.house.listBookmarks().map(x => x.id)).toEqual([c.id, b.id, a.id])
-      expect(system.house.listBookmarks().find(x => x.id === b.id)?.content).toBe('B!')
+      system.bookmarks.update(b.id, 'B!')
+      expect(system.bookmarks.list().map(x => x.id)).toEqual([c.id, b.id, a.id])
+      expect(system.bookmarks.list().find(x => x.id === b.id)?.content).toBe('B!')
 
-      expect(system.house.deleteBookmark(a.id)).toBe(true)
-      expect(system.house.listBookmarks().map(x => x.id)).toEqual([c.id, b.id])
+      expect(system.bookmarks.remove(a.id)).toBe(true)
+      expect(system.bookmarks.list().map(x => x.id)).toEqual([c.id, b.id])
     })
   })
 
@@ -80,7 +83,7 @@ describe('Snapshot', () => {
       const system = createTestSystem()
       const snapshot = serializeSystem(system)
 
-      expect(snapshot.version).toBe('26')
+      expect(snapshot.version).toBe('27')
       expect(snapshot.timestamp).toBeGreaterThan(0)
       expect(snapshot.rooms.length).toBe(1) // default Introductions room
       expect(snapshot.agents.length).toBe(0)
@@ -88,7 +91,7 @@ describe('Snapshot', () => {
 
     test('serializes rooms with messages', () => {
       const system = createTestSystem()
-      const room = system.house.getRoom('Introductions')!
+      const room = system.rooms.getRoom('Introductions')!
 
       room.post({ senderId: 'agent-1', senderName: 'Alpha', content: 'Hello', type: 'chat' })
       room.post({ senderId: 'agent-2', senderName: 'Beta', content: 'Hi there', type: 'chat' })
@@ -105,7 +108,7 @@ describe('Snapshot', () => {
 
     test('serializes room delivery state', () => {
       const system = createTestSystem()
-      const room = system.house.getRoom('Introductions')!
+      const room = system.rooms.getRoom('Introductions')!
 
       room.addMember('agent-1')
       room.setMuted('agent-1', true)
@@ -123,7 +126,7 @@ describe('Snapshot', () => {
   describe('saveSnapshot / loadSnapshot', () => {
     test('round-trips through disk', async () => {
       const system = createTestSystem()
-      const room = system.house.getRoom('Introductions')!
+      const room = system.rooms.getRoom('Introductions')!
       room.post({ senderId: 'agent-1', senderName: 'Alpha', content: 'Persisted', type: 'chat' })
 
       const snapshot = serializeSystem(system)
@@ -131,7 +134,7 @@ describe('Snapshot', () => {
 
       const loaded = await loadSnapshot(TEST_SNAPSHOT_PATH)
       expect(loaded).not.toBeNull()
-      expect(loaded!.version).toBe('26')
+      expect(loaded!.version).toBe('27')
       expect(loaded!.rooms.length).toBe(snapshot.rooms.length)
 
       const chatMsgs = loaded!.rooms[0]!.messages.filter(m => m.type === 'chat')
@@ -145,7 +148,7 @@ describe('Snapshot', () => {
 
     test('returns null for invalid version', async () => {
       await mkdir(TEST_SNAPSHOT_DIR, { recursive: true })
-      await Bun.write(TEST_SNAPSHOT_PATH, JSON.stringify({ version: '999', timestamp: 0, house: {}, rooms: [], agents: [] }))
+      await Bun.write(TEST_SNAPSHOT_PATH, JSON.stringify({ version: '999', timestamp: 0, rooms: [], agents: [] }))
       const loaded = await loadSnapshot(TEST_SNAPSHOT_PATH)
       expect(loaded).toBeNull()
     })
@@ -156,7 +159,7 @@ describe('Snapshot', () => {
 
       // First save: non-empty (default Introductions room exists). With a
       // bookmark added, isEmptySnapshot is false.
-      system.house.addBookmark('keep me alive')
+      system.bookmarks.add('keep me alive')
       const saver = createAutoSaver(system, TEST_SNAPSHOT_PATH, 0)
       await saver.flush()
       let exists = false
@@ -165,10 +168,10 @@ describe('Snapshot', () => {
 
       // Now empty the system: remove default room + bookmarks. isEmptySnapshot
       // becomes true and the next save must rm the file.
-      const room = system.house.getRoom('Introductions')!
-      system.house.removeRoom(room.profile.id)
+      const room = system.rooms.getRoom('Introductions')!
+      system.rooms.removeRoom(room.profile.id)
       // Manually clear bookmarks via the same path used in tests.
-      system.house.restoreBookmarks([])
+      system.bookmarks.restore([])
       await saver.flush()
 
       let stillExists = false
@@ -179,8 +182,8 @@ describe('Snapshot', () => {
 
     test('A3: empty save when no file exists is a no-op (no error)', async () => {
       const system = createTestSystem()
-      const room = system.house.getRoom('Introductions')!
-      system.house.removeRoom(room.profile.id)
+      const room = system.rooms.getRoom('Introductions')!
+      system.rooms.removeRoom(room.profile.id)
       // Empty system, no prior file. flush() should not throw.
       const saver = createAutoSaver(system, TEST_SNAPSHOT_PATH, 0)
       await saver.flush()
@@ -196,7 +199,7 @@ describe('Snapshot', () => {
     test('restores rooms with messages and state', async () => {
       // 1. Create original system and populate
       const original = createTestSystem()
-      const origRoom = original.house.getRoom('Introductions')!
+      const origRoom = original.rooms.getRoom('Introductions')!
       origRoom.addMember('agent-1')
       origRoom.post({ senderId: 'agent-1', senderName: 'Alpha', content: 'Before restart', type: 'chat' })
       origRoom.setMuted('agent-1', true)
@@ -207,18 +210,20 @@ describe('Snapshot', () => {
       // 3. Create fresh system and restore
       const fresh = createTestSystem()
       // Remove the default intro room since restore will recreate it
-      const defaultIntro = fresh.house.getRoom('Introductions')
-      if (defaultIntro) fresh.house.removeRoom(defaultIntro.profile.id)
+      const defaultIntro = fresh.rooms.getRoom('Introductions')
+      if (defaultIntro) fresh.rooms.removeRoom(defaultIntro.profile.id)
 
       // Minimal restorableSystem
       const restorableSystem = {
-        house: fresh.house,
+        rooms: fresh.rooms,
+        settings: fresh.settings,
+        bookmarks: fresh.bookmarks,
         spawnAIAgent: async () => {},
       }
       await restoreFromSnapshot(restorableSystem, snapshot)
 
       // 4. Verify
-      const restoredRoom = fresh.house.getRoom('Introductions')
+      const restoredRoom = fresh.rooms.getRoom('Introductions')
       expect(restoredRoom).toBeTruthy()
 
       const msgs = restoredRoom!.getRecent(100)
@@ -231,29 +236,29 @@ describe('Snapshot', () => {
 
     test('preserves room IDs', async () => {
       const original = createTestSystem()
-      const origRoom = original.house.getRoom('Introductions')!
+      const origRoom = original.rooms.getRoom('Introductions')!
       const origRoomId = origRoom.profile.id
 
       const snapshot = serializeSystem(original)
 
       const fresh = createTestSystem()
-      const defaultIntro = fresh.house.getRoom('Introductions')
-      if (defaultIntro) fresh.house.removeRoom(defaultIntro.profile.id)
+      const defaultIntro = fresh.rooms.getRoom('Introductions')
+      if (defaultIntro) fresh.rooms.removeRoom(defaultIntro.profile.id)
 
-      await restoreFromSnapshot({ house: fresh.house, spawnAIAgent: async () => {} }, snapshot)
+      await restoreFromSnapshot({ ...fresh, spawnAIAgent: async () => {} }, snapshot)
 
-      const restoredRoom = fresh.house.getRoom(origRoomId)
+      const restoredRoom = fresh.rooms.getRoom(origRoomId)
       expect(restoredRoom).toBeTruthy()
       expect(restoredRoom!.profile.id).toBe(origRoomId)
     })
 
   })
 
-  describe('pendingScrubs (M1: cross-instance pack uninstall)', () => {
+  describe('pendingScrubs (M1: cross-Workspace pack uninstall)', () => {
     test('appendPendingScrub queues a namespace and dedupes repeats', async () => {
       await mkdir(TEST_SNAPSHOT_DIR, { recursive: true })
       const system = createTestSystem()
-      const room = system.house.getRoom('Introductions')!
+      const room = system.rooms.getRoom('Introductions')!
       room.setActivePacks(['aviation', 'cafes'])
       await saveSnapshot(serializeSystem(system), TEST_SNAPSHOT_PATH)
 
@@ -291,7 +296,7 @@ describe('Snapshot', () => {
     test('restoreFromSnapshot drains pendingScrubs from room.activePacks', async () => {
       await mkdir(TEST_SNAPSHOT_DIR, { recursive: true })
       const system = createTestSystem()
-      const room = system.house.getRoom('Introductions')!
+      const room = system.rooms.getRoom('Introductions')!
       room.setActivePacks(['aviation', 'cafes', 'maritime'])
       await saveSnapshot(serializeSystem(system), TEST_SNAPSHOT_PATH)
 
@@ -303,11 +308,11 @@ describe('Snapshot', () => {
       expect(loaded).not.toBeNull()
 
       const fresh = createTestSystem()
-      const defaultIntro = fresh.house.getRoom('Introductions')
-      if (defaultIntro) fresh.house.removeRoom(defaultIntro.profile.id)
-      await restoreFromSnapshot({ house: fresh.house, spawnAIAgent: async () => {} }, loaded!)
+      const defaultIntro = fresh.rooms.getRoom('Introductions')
+      if (defaultIntro) fresh.rooms.removeRoom(defaultIntro.profile.id)
+      await restoreFromSnapshot({ ...fresh, spawnAIAgent: async () => {} }, loaded!)
 
-      const restored = fresh.house.getRoom(room.profile.id)!
+      const restored = fresh.rooms.getRoom(room.profile.id)!
       expect(restored.getActivePacks()).toEqual(['cafes'])
 
       // Re-serialise and verify pendingScrubs is gone (serializeSystem
@@ -317,56 +322,56 @@ describe('Snapshot', () => {
     })
 
     test('SNAPSHOT_VERSION is current', () => {
-      expect(SNAPSHOT_VERSION).toBe(26)
+      expect(SNAPSHOT_VERSION).toBe(27)
     })
   })
 
-  describe('A2: house-level state persistence (v21)', () => {
-    test('default housePrompt + responseFormat are omitted from snapshot', () => {
+  describe('Workspace settings persistence', () => {
+    test('default workspacePrompt + responseFormat are omitted from snapshot', () => {
       const system = createTestSystem()
       const snapshot = serializeSystem(system)
-      expect(snapshot.housePrompt).toBeUndefined()
+      expect(snapshot.workspacePrompt).toBeUndefined()
       expect(snapshot.responseFormat).toBeUndefined()
     })
 
-    test('customised housePrompt round-trips through serialise + restore', async () => {
+    test('customised workspacePrompt round-trips through serialise + restore', async () => {
       const system = createTestSystem()
-      system.house.setHousePrompt('CUSTOM HOUSE PROMPT')
+      system.settings.setPrompt('CUSTOM WORKSPACE PROMPT')
       const snapshot = serializeSystem(system)
-      expect(snapshot.housePrompt).toBe('CUSTOM HOUSE PROMPT')
+      expect(snapshot.workspacePrompt).toBe('CUSTOM WORKSPACE PROMPT')
 
       const fresh = createTestSystem()
-      const defaultIntro = fresh.house.getRoom('Introductions')
-      if (defaultIntro) fresh.house.removeRoom(defaultIntro.profile.id)
-      await restoreFromSnapshot({ house: fresh.house, spawnAIAgent: async () => {} }, snapshot)
-      expect(fresh.house.getHousePrompt()).toBe('CUSTOM HOUSE PROMPT')
+      const defaultIntro = fresh.rooms.getRoom('Introductions')
+      if (defaultIntro) fresh.rooms.removeRoom(defaultIntro.profile.id)
+      await restoreFromSnapshot({ ...fresh, spawnAIAgent: async () => {} }, snapshot)
+      expect(fresh.settings.getPrompt()).toBe('CUSTOM WORKSPACE PROMPT')
     })
 
     test('customised responseFormat round-trips', async () => {
       const system = createTestSystem()
-      system.house.setResponseFormat('-- pirate-style only --')
+      system.settings.setResponseFormat('-- pirate-style only --')
       const snapshot = serializeSystem(system)
       expect(snapshot.responseFormat).toBe('-- pirate-style only --')
 
       const fresh = createTestSystem()
-      const defaultIntro = fresh.house.getRoom('Introductions')
-      if (defaultIntro) fresh.house.removeRoom(defaultIntro.profile.id)
-      await restoreFromSnapshot({ house: fresh.house, spawnAIAgent: async () => {} }, snapshot)
-      expect(fresh.house.getResponseFormat()).toBe('-- pirate-style only --')
+      const defaultIntro = fresh.rooms.getRoom('Introductions')
+      if (defaultIntro) fresh.rooms.removeRoom(defaultIntro.profile.id)
+      await restoreFromSnapshot({ ...fresh, spawnAIAgent: async () => {} }, snapshot)
+      expect(fresh.settings.getResponseFormat()).toBe('-- pirate-style only --')
     })
 
-    test('absent housePrompt in restored snapshot leaves the in-memory default', async () => {
+    test('absent workspacePrompt leaves the in-memory default', async () => {
       const fresh = createTestSystem()
-      const defaultPrompt = fresh.house.getHousePrompt()
-      const snapshotMissingHouse = { version: '26' as const, timestamp: 0, rooms: [], agents: [], humans: [] }
-      await restoreFromSnapshot({ house: fresh.house, spawnAIAgent: async () => {} }, snapshotMissingHouse)
-      expect(fresh.house.getHousePrompt()).toBe(defaultPrompt)
+      const defaultPrompt = fresh.settings.getPrompt()
+      const snapshotWithoutPrompt = { version: '27' as const, timestamp: 0, rooms: [], agents: [], humans: [] }
+      await restoreFromSnapshot({ ...fresh, spawnAIAgent: async () => {} }, snapshotWithoutPrompt)
+      expect(fresh.settings.getPrompt()).toBe(defaultPrompt)
     })
   })
 
   describe('A4: concurrent writes are serialised — no JSON corruption', () => {
     test('25 concurrent appendPendingScrub calls all land', async () => {
-      // Realistic scenario: cross-instance uninstall fires multiple
+      // Realistic scenario: cross-Workspace uninstall fires multiple
       // appendPendingScrubs against the same evicted-instance snapshot
       // file. Without the write chain, two concurrent read-modify-writes
       // can lose the earlier append.
@@ -402,7 +407,7 @@ describe('Snapshot', () => {
       // never a half-written interleave.
       await mkdir(TEST_SNAPSHOT_DIR, { recursive: true })
       const system = createTestSystem()
-      const room = system.house.getRoom('Introductions')!
+      const room = system.rooms.getRoom('Introductions')!
       const ops: Promise<unknown>[] = []
       for (let i = 0; i < 20; i++) {
         room.post({ senderId: 'agent-1', senderName: 'A', content: `msg-${i}`, type: 'chat' })

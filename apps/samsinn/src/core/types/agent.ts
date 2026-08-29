@@ -3,7 +3,8 @@
 
 import type { Message, MessageTarget, PostParams } from './messaging.ts'
 import type { ToolDefinition, ToolExecutor } from './tool.ts'
-import type { Room, House } from './room.ts'
+import type { Room } from './room.ts'
+import type { RoomDirectory } from '../rooms/directory.ts'
 import type { Trigger } from '../triggers/types.ts'
 
 // === Agent State — subscribe/get pattern for observability ===
@@ -65,10 +66,10 @@ export interface Agent {
 // LLM system message. UI labels map to config keys as:
 //   UI "Agent persona"   → `persona`        (the per-agent persona string)
 //   UI "Room prompt"     → `room`           (the trigger room's roomPrompt)
-//   UI "System prompt"   → `house`          (global housePrompt — NOT the LLM `role:'system'`)
+//   UI "Workspace prompt" → `workspace`     (Workspace-wide rules)
 //   UI "Response format" → `responseFormat` (global responseFormat)
 // All default true; undefined at load → preserve current behavior.
-export type PromptSection = 'persona' | 'room' | 'house' | 'responseFormat' | 'skills' | 'wikis'
+export type PromptSection = 'persona' | 'room' | 'workspace' | 'responseFormat' | 'skills' | 'wikis'
 export type IncludePrompts = Partial<Record<PromptSection, boolean>>
 
 // Sub-sections inside the generated CONTEXT block. Default all true; undefined
@@ -197,7 +198,7 @@ export interface Team {
 // === Message router — single coordination function ===
 
 export interface RouterDeps {
-  readonly house: House
+  readonly rooms: RoomDirectory
 }
 
 export type RouteMessage = (target: MessageTarget, params: PostParams) => ReadonlyArray<Message>
@@ -227,7 +228,7 @@ export interface AIAgentConfig {
   readonly tags?: ReadonlyArray<string>         // capability/role tags for [[tag:X]] addressing
   readonly thinking?: boolean                    // enable model CoT (qwen3 thinking mode)
   // Context & Prompts toggles — all default true; undefined preserves current behavior
-  readonly includePrompts?: IncludePrompts      // per-section prompt inclusion (persona/room/house/responseFormat/skills)
+  readonly includePrompts?: IncludePrompts      // persona/room/workspace/responseFormat/skills/wikis
   readonly includeContext?: IncludeContext      // CONTEXT sub-sections (participants/activity/knownAgents)
   readonly includeTools?: boolean               // master: send tool definitions to LLM (default: true)
   readonly promptsEnabled?: boolean             // master for all per-section prompt toggles (default: true)
@@ -244,7 +245,7 @@ export interface AIAgentConfig {
 
 export interface LeitbildAgentBinding {
   readonly baseUrl: string         // e.g. "https://leitbild.samsinn.app"
-  readonly instanceId: string      // Leitbild Control Instance id
+  readonly workspaceId: string      // Leitbild Control Instance id
   readonly role: 'observer' | 'operator'
 }
 

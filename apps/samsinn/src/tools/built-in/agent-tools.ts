@@ -1,5 +1,5 @@
 import type { AgentProfile } from '../../core/types/messaging.ts'
-import type { House } from '../../core/types/room.ts'
+import type { RoomDirectory } from '../../core/rooms/directory.ts'
 import type { Team } from '../../core/types/agent.ts'
 import type { Tool, ToolContext } from '../../core/types/tool.ts'
 
@@ -30,7 +30,7 @@ export const createListAgentsTool = (team: Team): Tool => ({
   }),
 })
 
-export const createMuteAgentTool = (team: Team, house: House): Tool => ({
+export const createMuteAgentTool = (team: Team, rooms: RoomDirectory): Tool => ({
   name: 'mute_agent',
   description: 'Mute or unmute an agent in a room.',
   usage: 'Silence a misbehaving agent in one room without removing them. Use sparingly.',
@@ -49,7 +49,7 @@ export const createMuteAgentTool = (team: Team, house: House): Tool => ({
     const agentName = params.agentName as string | undefined
     if (!roomName || !agentName) return { success: false, error: 'roomName and agentName are required' }
     if (typeof params.muted !== 'boolean') return { success: false, error: 'muted must be a boolean' }
-    const room = house.getRoom(roomName)
+    const room = rooms.getRoom(roomName)
     if (!room) return { success: false, error: `Room "${roomName}" not found` }
     const agent = team.getAgent(agentName)
     if (!agent) return { success: false, error: `Agent "${agentName}" not found` }
@@ -58,7 +58,7 @@ export const createMuteAgentTool = (team: Team, house: House): Tool => ({
   },
 })
 
-export const createGetMyContextTool = (team: Team, house: House): Tool => ({
+export const createGetMyContextTool = (team: Team, rooms: RoomDirectory): Tool => ({
   name: 'get_my_context',
   description: 'Return your own name, id, kind, and current rooms.',
   usage: 'Use to identify yourself, confirm your current room membership, or orient before taking structural actions.',
@@ -66,14 +66,14 @@ export const createGetMyContextTool = (team: Team, house: House): Tool => ({
   parameters: {},
   execute: async (_params: Record<string, unknown>, context: ToolContext) => {
     const agent = team.getAgent(context.callerId)
-    const rooms = house.getRoomsForAgent(context.callerId).map(r => r.profile.name)
+    const memberships = rooms.getRoomsForAgent(context.callerId).map(r => r.profile.name)
     return {
       success: true,
       data: {
         name: context.callerName,
         id: context.callerId,
         kind: agent?.kind ?? 'ai',
-        rooms,
+        rooms: memberships,
       },
     }
   },

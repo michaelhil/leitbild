@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { createAIAgent } from '../../agents/ai-agent.ts'
 import { createTeam } from '../../agents/team.ts'
 import type { SamsinnWorkspaceRuntime } from '../../main.ts'
-import { createHouse } from '../house.ts'
+import { createRoomDirectory } from '../rooms/directory.ts'
 import { createRoomOperations } from '../room-operations.ts'
 import type { TriggerScheduler } from '../triggers/scheduler.ts'
 import type { Agent, AIAgentConfig, RouteMessage } from '../types/agent.ts'
@@ -42,7 +42,7 @@ const triggerScheduler: TriggerScheduler = {
 
 describe('script runner teardown', () => {
   test('stopping a script removes temporary cast without deleting an otherwise empty room', async () => {
-    const house = createHouse()
+    const house = createRoomDirectory()
     const team = createTeam()
     const room = house.createRoom({ name: 'Script Room', createdBy: 'test' })
     const routeMessage: RouteMessage = (target, params) => {
@@ -55,7 +55,7 @@ describe('script runner teardown', () => {
     }
     const roomOps = createRoomOperations({
       team,
-      house,
+      rooms: house,
       routeMessage,
       onMembershipChanged: () => {},
       triggerScheduler,
@@ -70,7 +70,7 @@ describe('script runner teardown', () => {
       return team.removeAgent(id)
     }
     const system = {
-      house,
+      rooms: house,
       team,
       llmService: { bound: () => llm },
       spawnAIAgent: async (config: AIAgentConfig): Promise<Agent> => {
@@ -83,7 +83,7 @@ describe('script runner teardown', () => {
       removeAgent,
       activateAgentInRoom: () => ({ ok: true, queued: false }),
     } as unknown as SamsinnWorkspaceRuntime
-    const runner = createScriptRunner({ getSystem: () => system })
+    const runner = createScriptRunner({ getRuntime: () => system })
 
     await expect(runner.startWith(room.profile.id, script)).resolves.toEqual({ ok: true })
     expect(room.getParticipantIds()).toHaveLength(2)
@@ -96,7 +96,7 @@ describe('script runner teardown', () => {
   })
 
   test('pause lets the current cast post finish but blocks the next activation until resume', async () => {
-    const house = createHouse()
+    const house = createRoomDirectory()
     const team = createTeam()
     const room = house.createRoom({ name: 'Pause Room', createdBy: 'test' })
     const activations: string[] = []
@@ -110,13 +110,13 @@ describe('script runner teardown', () => {
     }
     const roomOps = createRoomOperations({
       team,
-      house,
+      rooms: house,
       routeMessage,
       onMembershipChanged: () => {},
       triggerScheduler,
     })
     const system = {
-      house,
+      rooms: house,
       team,
       llmService: { bound: () => llm },
       spawnAIAgent: async (config: AIAgentConfig): Promise<Agent> => {
@@ -132,7 +132,7 @@ describe('script runner teardown', () => {
         return { ok: true, queued: false }
       },
     } as unknown as SamsinnWorkspaceRuntime
-    const runner = createScriptRunner({ getSystem: () => system })
+    const runner = createScriptRunner({ getRuntime: () => system })
 
     await runner.startWith(room.profile.id, script)
     expect(activations).toEqual(['Alex'])

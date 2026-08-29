@@ -1,4 +1,4 @@
-// Per-instance ring buffer of recent agent evals — the post-hoc trace
+// per-Workspace ring buffer of recent agent evals — the post-hoc trace
 // store behind /api/diagnostics/evals/*.
 //
 // Subscribes to the existing onEvalEvent stream and assembles per-eval
@@ -10,10 +10,10 @@
 // per session. The diagnostic value is "what just happened" — 50 evals
 // covers any reasonable post-mortem window without unbounded memory.
 //
-// Why per-instance (not process-wide): each cookie-bound System has its
+// Why per-Workspace (not process-wide): each cookie-bound System has its
 // own agents and rooms; cross-tenant trace bleed would be confusing
 // (and a soft privacy leak). One ring per System matches every other
-// per-instance store.
+// per-Workspace store.
 
 import type { EvalEvent, OnEvalEvent } from '../core/types/agent-eval.ts'
 

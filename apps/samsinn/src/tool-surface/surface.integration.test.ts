@@ -120,7 +120,7 @@ describe('tool surface integration', () => {
     const r = createToolRegistry()
     r.register(createPassTool())
     r.register(createGetTimeTool())
-    // post_to_room requires House — fake-construct via the factory then
+    // post_to_room requires RoomDirectory — fake-construct via the factory then
     // exercise its registration shape only.
     const house = { getRoom: () => undefined } as unknown as Parameters<typeof createPostToRoomTool>[0]
     r.register(createPostToRoomTool(house))

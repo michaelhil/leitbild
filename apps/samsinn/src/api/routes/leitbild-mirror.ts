@@ -16,11 +16,11 @@ import type { ControlInstanceSummary } from '../../integrations/leitbild/types.t
 
 const parseMirrorConfig = (body: Record<string, unknown>): LeitbildMirrorConfig | { error: string } => {
   if (typeof body.baseUrl !== 'string' || body.baseUrl.trim() === '') return { error: 'baseUrl is required' }
-  if (typeof body.instanceId !== 'string' || body.instanceId.trim() === '') return { error: 'instanceId is required' }
+  if (typeof body.workspaceId !== 'string' || body.workspaceId.trim() === '') return { error: 'workspaceId is required' }
   const format = body.format ?? 'summary'
   if (format !== 'summary' && format !== 'full') return { error: 'format must be "summary" or "full"' }
   try { new URL(body.baseUrl) } catch { return { error: 'baseUrl must be a valid URL' } }
-  return { baseUrl: body.baseUrl, instanceId: body.instanceId, format }
+  return { baseUrl: body.baseUrl, workspaceId: body.workspaceId, format }
 }
 
 // Server-side proxy for creating Leitbild Control Instances from the
@@ -163,19 +163,19 @@ interface ProcessPlantProbeFail {
 
 const probeProcessPlantInstance = async (
   client: ReturnType<typeof createLeitbildClient>,
-  instanceId: string,
+  workspaceId: string,
   packId: string,
   queryKind: string,
   payload: Record<string, unknown>,
 ): Promise<ProcessPlantProbe | ProcessPlantProbeFail> => {
-  const capabilities = await client.getCapabilities(instanceId)
+  const capabilities = await client.getCapabilities(workspaceId)
   const activePacks = Array.isArray(capabilities.activePackIds)
     ? capabilities.activePackIds.filter((v): v is string => typeof v === 'string')
     : []
   if (!activePacks.includes(packId)) return { ok: false, reason: `missing active pack "${packId}"` }
   const kinds = getQueryKinds(capabilities, packId)
   if (!kinds.some(k => queryKindMatches(k, queryKind))) return { ok: false, reason: `missing query kind "${queryKind}"` }
-  const result = await client.callPackQuery(instanceId, packId, queryKind, payload)
+  const result = await client.callPackQuery(workspaceId, packId, queryKind, payload)
   const systemIds = extractSystemIds(result)
   if (systemIds.length === 0) return { ok: false, reason: 'systems.list returned no process systems' }
   return { ok: true, systemIds }
@@ -184,7 +184,7 @@ const probeProcessPlantInstance = async (
 const proxyCreateControlInstance: RouteEntry = {
   method: 'POST',
   pattern: /^\/api\/leitbild-proxy\/control-instances$/,
-  handler: async (req, _match, { instanceId: scope }) => {
+  handler: async (req, _match, { workspaceId: scope }) => {
     const body = await parseBody(req)
     if (typeof body.baseUrl !== 'string') return errorResponse('baseUrl is required', 400)
     if (typeof body.scenarioId !== 'string') return errorResponse('scenarioId is required', 400)
@@ -203,7 +203,7 @@ const proxyCreateControlInstance: RouteEntry = {
 const proxySelectControlInstance: RouteEntry = {
   method: 'POST',
   pattern: /^\/api\/leitbild-proxy\/control-instances\/select$/,
-  handler: async (req, _match, { instanceId: scope }) => {
+  handler: async (req, _match, { workspaceId: scope }) => {
     const body = await parseBody(req)
     if (typeof body.baseUrl !== 'string') return errorResponse('baseUrl is required', 400)
     const guarded = validateProxyBaseUrl(body.baseUrl)
@@ -238,7 +238,7 @@ const proxySelectControlInstance: RouteEntry = {
           if (probe.ok) {
             return json({
               id: candidate.id,
-              instanceId: candidate.id,
+              workspaceId: candidate.id,
               scenarioId: candidate.scenarioId,
               created: false,
               reused: true,
@@ -259,7 +259,7 @@ const proxySelectControlInstance: RouteEntry = {
       }
       return json({
         id: created.id,
-        instanceId: created.id,
+        workspaceId: created.id,
         scenarioId: preferredScenarioId,
         created: true,
         reused: false,
@@ -279,9 +279,9 @@ export const leitbildMirrorRoutes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/rooms\/([^/]+)\/leitbild-mirror$/,
-    handler: async (_req, match, { system, leitbildMirror, instanceId }) => {
+    handler: async (_req, match, { system, leitbildMirror, workspaceId }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       // Lazy self-heal: if room has persisted config but service has no
       // record (Samsinn was restarted), reattach silently. Idempotent —
@@ -289,7 +289,7 @@ export const leitbildMirrorRoutes: RouteEntry[] = [
       const persisted = room.getLeitbildMirror()
       const status = leitbildMirror?.statusFor(room)
       if (persisted && leitbildMirror && (!status || !status.connected)) {
-        try { await leitbildMirror.attach(room, persisted, instanceId) } catch {
+        try { await leitbildMirror.attach(room, persisted, workspaceId) } catch {
           // attach() catches its own error and posts a formatMirrorError chat
           // message into the room — the user sees the failure inline. We
           // don't re-throw because this is a lazy self-heal; the GET still
@@ -305,18 +305,18 @@ export const leitbildMirrorRoutes: RouteEntry[] = [
   {
     method: 'PUT',
     pattern: /^\/api\/rooms\/([^/]+)\/leitbild-mirror$/,
-    handler: async (req, match, { system, leitbildMirror, instanceId }) => {
+    handler: async (req, match, { system, leitbildMirror, workspaceId }) => {
       if (!leitbildMirror) return errorResponse('Leitbild integration not initialized', 503)
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       const body = await parseBody(req)
       const parsed = parseMirrorConfig(body)
       if ('error' in parsed) return errorResponse(parsed.error, 400)
       try {
-        // Pass instanceId as scope so this tenant's LeitbildClient pool
+        // Pass workspaceId as scope so this tenant's LeitbildClient pool
         // is isolated from other tenants binding to the same baseUrl.
-        await leitbildMirror.attach(room, parsed, instanceId)
+        await leitbildMirror.attach(room, parsed, workspaceId)
         return json({ status: leitbildMirror.statusFor(room) ?? null }, 200)
       } catch (err) {
         return errorResponse(`attach failed: ${(err as Error).message}`, 502)
@@ -328,7 +328,7 @@ export const leitbildMirrorRoutes: RouteEntry[] = [
     pattern: /^\/api\/rooms\/([^/]+)\/leitbild-mirror$/,
     handler: (_req, match, { system, leitbildMirror }) => {
       const name = decodeURIComponent(match[1]!)
-      const room = system.house.getRoom(name)
+      const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
       leitbildMirror?.detach(room)
       return json({ status: null })

@@ -40,11 +40,11 @@ const mkClient = (options: FakeClientOptions): FakeClientState => {
     getSnapshot: async () => ({ seq: 0 }),
     getScenario: async () => undefined,
     getEvents: async () => [],
-    callPackQuery: async (instanceId: string) =>
-      options.queryByInstance[instanceId] ?? missing('query result', instanceId),
+    callPackQuery: async (workspaceId: string) =>
+      options.queryByInstance[workspaceId] ?? missing('query result', workspaceId),
     callCommand: async () => ({}),
-    getCapabilities: async (instanceId: string) =>
-      options.capabilitiesByInstance[instanceId] ?? missing('capabilities', instanceId),
+    getCapabilities: async (workspaceId: string) =>
+      options.capabilitiesByInstance[workspaceId] ?? missing('capabilities', workspaceId),
     subscribe: (_instanceId: string, _handler: LeitbildEventHandler, _startSeq: number): SubscriptionHandle => ({
       close: () => {},
       lastSeq: () => 0,
@@ -67,7 +67,7 @@ const invokeSelect = async (body: Record<string, unknown>, client: LeitbildClien
       body: JSON.stringify(body),
     }),
     match,
-    { instanceId: SCOPE } as never,
+    { workspaceId: SCOPE } as never,
   ) as Promise<Response>
 }
 
@@ -105,10 +105,10 @@ describe('Leitbild proxy control-instance selection', () => {
     })
 
     const res = await invokeSelect(selectBody(), fake.client)
-    const data = await res.json() as { instanceId?: string; created?: boolean; systemIds?: ReadonlyArray<string> }
+    const data = await res.json() as { workspaceId?: string; created?: boolean; systemIds?: ReadonlyArray<string> }
 
     expect(res.status).toBe(200)
-    expect(data.instanceId).toBe('fresh')
+    expect(data.workspaceId).toBe('fresh')
     expect(data.created).toBe(false)
     expect(data.systemIds).toEqual(['fresh-plant'])
     expect(fake.createdScenarioIds).toEqual([])
@@ -130,10 +130,10 @@ describe('Leitbild proxy control-instance selection', () => {
     })
 
     const res = await invokeSelect(selectBody(), fake.client)
-    const data = await res.json() as { instanceId?: string; created?: boolean; systemIds?: ReadonlyArray<string>; skippedCandidates?: ReadonlyArray<string> }
+    const data = await res.json() as { workspaceId?: string; created?: boolean; systemIds?: ReadonlyArray<string>; skippedCandidates?: ReadonlyArray<string> }
 
     expect(res.status).toBe(200)
-    expect(data.instanceId).toBe('created-pwr')
+    expect(data.workspaceId).toBe('created-pwr')
     expect(data.created).toBe(true)
     expect(data.systemIds).toEqual(['new-plant'])
     expect(data.skippedCandidates?.[0]).toContain('missing active pack')

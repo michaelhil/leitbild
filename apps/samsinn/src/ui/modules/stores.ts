@@ -49,7 +49,7 @@ export const persistSessionToken = (token: string): void => {
   }
 }
 
-export const rotateSessionTokenForInstanceSwitch = (): void => {
+export const rotateSessionTokenForWorkspaceSwitch = (): void => {
   $sessionToken.set('')
   if (typeof sessionStorage !== 'undefined') {
     try { sessionStorage.removeItem(SESSION_TOKEN_KEY) } catch { /* privacy mode */ }

@@ -3,7 +3,7 @@
 //
 // Centralizes observability for caps that would otherwise be invisible:
 // truncations, retries, drops, evictions. Surfaced via GET /api/system/limits.
-// Single-threaded JS; no locking. Per-instance metrics are out of scope —
+// Single-threaded JS; no locking. per-Workspace metrics are out of scope —
 // these are infrastructure-level counts, not per-tenant behavior.
 //
 // Why a snapshot instead of streaming: the read side is an admin polling at

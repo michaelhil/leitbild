@@ -4,7 +4,7 @@
 
 import { describe, test, expect, beforeEach } from 'bun:test'
 import { handleWSMessage, createWSManager } from './ws-handler.ts'
-import { createHouse } from '../core/house.ts'
+import { createRoomDirectory } from '../core/rooms/directory.ts'
 import { createTeam } from '../agents/team.ts'
 import { createAIAgent } from '../agents/ai-agent.ts'
 import { createHumanAgent } from '../agents/human-agent.ts'
@@ -14,6 +14,8 @@ import type { WSOutbound } from '../core/types/ws-protocol.ts'
 import type { SamsinnWorkspaceRuntime } from '../main.ts'
 import type { ClientSession, WSManager } from './ws-handler.ts'
 import { newWorkspaceId } from '@samsinn-leitbild/platform-contracts'
+import { createWorkspaceSettings } from '../core/workspaces/settings.ts'
+import { createBookmarkStore } from '../core/workspaces/bookmark-store.ts'
 
 // === Helpers ===
 
@@ -35,21 +37,23 @@ const makeLLMProvider = () => ({
 })
 
 const makeSystem = (): SamsinnWorkspaceRuntime => {
-  const house = createHouse({ deliver: noopDeliver })
+  const rooms = createRoomDirectory({ deliver: noopDeliver })
+  const settings = createWorkspaceSettings()
+  const bookmarks = createBookmarkStore()
   const team = createTeam()
-  house.createRoom({ name: 'TestRoom', createdBy: 'system' })
+  rooms.createRoom({ name: 'TestRoom', createdBy: 'system' })
 
   const routeMessage: RouteMessage = (target, params) => {
     const posted: Message[] = []
     for (const roomName of (target.rooms ?? [])) {
-      const room = house.getRoom(roomName)
+      const room = rooms.getRoom(roomName)
       if (room) posted.push(room.post(params))
     }
     return posted
   }
 
   return {
-    house, team,
+    rooms, settings, bookmarks, team,
     routeMessage,
     llm: makeLLMProvider(),
     ollama: makeLLMProvider(),
@@ -57,7 +61,7 @@ const makeSystem = (): SamsinnWorkspaceRuntime => {
     toolRegistry: { register: () => {}, get: () => undefined, list: () => [] },
     refreshAllAgentTools: async () => {},
     removeAgent: (id: string) => team.removeAgent(id),
-    removeRoom: (id: string) => house.removeRoom(id),
+    removeRoom: (id: string) => rooms.removeRoom(id),
     addAgentToRoom: async () => {},
     removeAgentFromRoom: () => {},
     spawnAIAgent: async () => { throw new Error('Not mocked') },
@@ -124,9 +128,9 @@ describe('WS Handler', () => {
     const human = createHumanAgent({ name: 'Human' }, () => {})
     system.team.addAgent(human)
     humanId = human.id
-    session = { workspaceId: TEST_WORKSPACE_ID, instanceId: 'test0123456789ab', sessionToken: 'tok-test', lastActivity: Date.now() }
+    session = { workspaceId: TEST_WORKSPACE_ID, sessionToken: 'tok-test', lastActivity: Date.now() }
     wsManager = createWSManager({
-      getSystem: () => system,
+      getRuntime: () => system,
     })
   })
 
@@ -198,15 +202,15 @@ describe('WS Handler', () => {
   test('set_paused pauses room and broadcasts only to the session instance', async () => {
     let broadcasted: WSOutbound | null = null
     let broadcastInstance: string | undefined
-    ;(wsManager as unknown as Record<string, unknown>).broadcastToInstance = (instanceId: string, msg: WSOutbound) => {
-      broadcastInstance = instanceId
+    ;(wsManager as unknown as Record<string, unknown>).broadcastToWorkspace = (workspaceId: string, msg: WSOutbound) => {
+      broadcastInstance = workspaceId
       broadcasted = msg
     }
     const { ws } = makeWS()
     await dispatch(ws, session, system, wsManager, { type: 'set_paused', roomName: 'TestRoom', paused: true })
-    const room = system.house.getRoom('TestRoom')!
+    const room = system.rooms.getRoom('TestRoom')!
     expect(room.paused).toBe(true)
-    expect(broadcastInstance).toBe(session.instanceId)
+    expect(broadcastInstance).toBe(session.workspaceId)
     expect(broadcasted).not.toBeNull()
     expect(((broadcasted as unknown) as { type: string; paused: boolean }).paused).toBe(true)
   })
@@ -239,8 +243,8 @@ describe('WS Handler', () => {
       },
     })
     expect(errors()).toHaveLength(0)
-    expect(system.house.getRoom('TestRoom')!.summaryConfig.summary.enabled).toBe(true)
-    expect(system.house.getRoom('TestRoom')!.summaryConfig.compression.aggressiveness).toBe('high')
+    expect(system.rooms.getRoom('TestRoom')!.summaryConfig.summary.enabled).toBe(true)
+    expect(system.rooms.getRoom('TestRoom')!.summaryConfig.compression.aggressiveness).toBe('high')
   })
 
   test('set_paused on unknown room sends error', async () => {
@@ -334,7 +338,7 @@ describe('WSManager.safeSend backpressure', () => {
     const { createLimitMetrics } = require('../core/limit-metrics.ts') as typeof import('../core/limit-metrics.ts')
     const limitMetrics = createLimitMetrics()
     const wsManager = createWSManager({
-      getSystem: () => undefined,
+      getRuntime: () => undefined,
       limitMetrics,
     })
     const { ws, messages, setBuffered, closed } = makeWS()
@@ -347,7 +351,7 @@ describe('WSManager.safeSend backpressure', () => {
   })
 
   test('sends normally when buffer is under cap', () => {
-    const wsManager = createWSManager({ getSystem: () => undefined })
+    const wsManager = createWSManager({ getRuntime: () => undefined })
     const { ws, setBuffered, closed } = makeWS()
     setBuffered(1024)
     let received = ''
@@ -363,42 +367,41 @@ describe('WSManager.safeSend backpressure', () => {
   })
 
   test('instance switch releases the old viewer session and closes its socket', () => {
-    const wsManager = createWSManager({ getSystem: () => undefined })
+    const wsManager = createWSManager({ getRuntime: () => undefined })
     const { ws, closed } = makeWS()
+    const nextWorkspaceId = newWorkspaceId()
     wsManager.sessions.set('tab-token', {
       workspaceId: TEST_WORKSPACE_ID,
-      instanceId: 'old123def456ghij',
       sessionToken: 'tab-token',
       lastActivity: Date.now(),
     })
     wsManager.wsConnections.set('tab-token', ws)
 
-    expect(wsManager.releaseSessionForInstanceSwitch('tab-token', 'new123def456ghij')).toBe(true)
-    expect(closed()).toEqual({ code: 4003, reason: 'instance switched' })
+    expect(wsManager.releaseSessionForWorkspaceSwitch('tab-token', nextWorkspaceId)).toBe(true)
+    expect(closed()).toEqual({ code: 4003, reason: 'Workspace switched' })
     expect(wsManager.sessions.has('tab-token')).toBe(false)
     expect(wsManager.wsConnections.has('tab-token')).toBe(false)
   })
 
   test('ordinary reconnect keeps a session already bound to the same instance', () => {
-    const wsManager = createWSManager({ getSystem: () => undefined })
+    const wsManager = createWSManager({ getRuntime: () => undefined })
     const { ws, closed } = makeWS()
     wsManager.sessions.set('tab-token', {
       workspaceId: TEST_WORKSPACE_ID,
-      instanceId: 'same123def456ghi',
       sessionToken: 'tab-token',
       lastActivity: Date.now(),
     })
     wsManager.wsConnections.set('tab-token', ws)
 
-    expect(wsManager.releaseSessionForInstanceSwitch('tab-token', 'same123def456ghi')).toBe(false)
+    expect(wsManager.releaseSessionForWorkspaceSwitch('tab-token', TEST_WORKSPACE_ID)).toBe(false)
     expect(closed()).toBeNull()
     expect(wsManager.sessions.has('tab-token')).toBe(true)
     expect(wsManager.wsConnections.get('tab-token')).toBe(ws)
   })
 
   test('buildSnapshot returns null when system is evicted (caller closes 4001)', () => {
-    const wsManager = createWSManager({ getSystem: () => undefined })
-    const result = wsManager.buildSnapshot('test0123456789ab', 'agent-id')
+    const wsManager = createWSManager({ getRuntime: () => undefined })
+    const result = wsManager.buildSnapshot(TEST_WORKSPACE_ID, 'agent-id')
     expect(result).toBeNull()
   })
 
@@ -408,7 +411,7 @@ describe('WSManager.safeSend backpressure', () => {
     const removed: string[] = []
     const fakeSystem = { removeAgent: (id: string) => { removed.push(id); return true } } as unknown as SamsinnWorkspaceRuntime
     const wsManager = createWSManager({
-      getSystem: () => fakeSystem,
+      getRuntime: () => fakeSystem,
       limitMetrics,
     })
     const TEN_DAYS_AGO = Date.now() - 10 * 24 * 60 * 60 * 1000
@@ -416,7 +419,6 @@ describe('WSManager.safeSend backpressure', () => {
 
       workspaceId: TEST_WORKSPACE_ID,
 
-      instanceId: 'test0123456789ab',
       sessionToken: 'stale-token',
       lastActivity: TEN_DAYS_AGO,
     })
@@ -425,7 +427,6 @@ describe('WSManager.safeSend backpressure', () => {
 
       workspaceId: TEST_WORKSPACE_ID,
 
-      instanceId: 'test0123456789ab',
       sessionToken: 'recent-token',
       lastActivity: Date.now() - 60_000,
     })
@@ -434,7 +435,6 @@ describe('WSManager.safeSend backpressure', () => {
 
       workspaceId: TEST_WORKSPACE_ID,
 
-      instanceId: 'test0123456789ab',
       sessionToken: 'live-token',
       lastActivity: TEN_DAYS_AGO,
     })
@@ -457,14 +457,13 @@ describe('WSManager.safeSend backpressure', () => {
     const { createLimitMetrics } = await import('../core/limit-metrics.ts')
     const limitMetrics = createLimitMetrics()
     const wsManager = createWSManager({
-      getSystem: () => undefined,           // instance evicted
+      getRuntime: () => undefined,           // instance evicted
       limitMetrics,
     })
     wsManager.sessions.set('orphan-token', {
 
       workspaceId: TEST_WORKSPACE_ID,
 
-      instanceId: 'test0123456789ab',
       sessionToken: 'orphan-token',
       lastActivity: Date.now() - 10 * 24 * 60 * 60 * 1000,
     })
@@ -479,7 +478,7 @@ describe('WSManager.safeSend backpressure', () => {
     // after the Phase 1 widening — not direct ws.send.
     const localSystem = (await import('./ws-handler.test.ts')) as never
     void localSystem
-    const wsManager = createWSManager({ getSystem: () => undefined })
+    const wsManager = createWSManager({ getRuntime: () => undefined })
     const { ws, messages, setBuffered, closed } = makeWS()
     setBuffered(9 * 1024 * 1024)
     // Direct safeSend invocation — proves the wire works. The end-to-end

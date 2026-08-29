@@ -30,7 +30,7 @@ export interface JsonlFileSinkOptions {
 
 // Per-file byte cap. Rotation maintains a 2-file ring: <base>.jsonl is
 // the active file; on overflow it is renamed to <base>.1.jsonl (overwriting
-// any prior .1) and a fresh <base>.jsonl is started. Per-instance footprint
+// any prior .1) and a fresh <base>.jsonl is started. per-Workspace footprint
 // is therefore bounded at 2 × rotateAtBytes — important on multi-tenant
 // deploys where N instances each have their own log directory.
 const rotateBytesFromEnv = (): number => {

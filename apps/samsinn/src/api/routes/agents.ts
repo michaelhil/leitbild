@@ -30,7 +30,7 @@ const resolveModelStatus = async (system: SamsinnWorkspaceRuntime, requestedMode
   return available ? 'ok' : 'unavailable'
 }
 
-const PROMPT_SECTIONS: ReadonlyArray<PromptSection> = ['persona', 'room', 'house', 'responseFormat', 'skills']
+const PROMPT_SECTIONS: ReadonlyArray<PromptSection> = ['persona', 'room', 'workspace', 'responseFormat', 'skills']
 const CONTEXT_SECTIONS: ReadonlyArray<ContextSection> = ['participants', 'activity', 'knownAgents']
 
 // Compute approximate token cost of each registered tool's definition.
@@ -81,7 +81,7 @@ export const agentRoutes: RouteEntry[] = [
       const name = decodeURIComponent(match[1]!)
       const agent = system.team.getAgent(name)
       if (!agent) return errorResponse(`Agent "${name}" not found`, 404)
-      return json(system.house.getRoomsForAgent(agent.id).map(r => r.profile))
+      return json(system.rooms.getRoomsForAgent(agent.id).map(r => r.profile))
     },
   },
   {
@@ -93,7 +93,7 @@ export const agentRoutes: RouteEntry[] = [
       if (!agent) return errorResponse(`Agent "${name}" not found`, 404)
       const detail: Record<string, unknown> = {
         id: agent.id, name: agent.name,
-        kind: agent.kind, state: agent.state.get(), rooms: system.house.getRoomsForAgent(agent.id).map(r => r.profile.id),
+        kind: agent.kind, state: agent.state.get(), rooms: system.rooms.getRoomsForAgent(agent.id).map(r => r.profile.id),
       }
       const aiAgent = asAIAgent(agent)
       if (aiAgent) {
@@ -128,7 +128,7 @@ export const agentRoutes: RouteEntry[] = [
   {
     method: 'POST',
     pattern: /^\/api\/agents$/,
-    handler: async (req, _match, { system, instanceId, broadcast, broadcastToInstance }) => {
+    handler: async (req, _match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
       const body = await parseBody(req)
       if (!body.name || !body.model || !body.persona) {
         return errorResponse('name, model, and persona are required')
@@ -161,7 +161,7 @@ export const agentRoutes: RouteEntry[] = [
         })
         const aiA = asAIAgent(agent)
         const evt = { type: 'agent_joined' as const, agent: { id: agent.id, name: agent.name, kind: agent.kind, ...(aiA ? { model: aiA.getModel() } : {}) } }
-        if (broadcastToInstance) broadcastToInstance(instanceId, evt)
+        if (broadcastToWorkspace) broadcastToWorkspace(workspaceId, evt)
         else broadcast(evt)
         return json({ id: agent.id, name: agent.name, modelStatus }, 201)
       } catch (err) {
@@ -176,7 +176,7 @@ export const agentRoutes: RouteEntry[] = [
   {
     method: 'POST',
     pattern: /^\/api\/agents\/human$/,
-    handler: async (req, _match, { system, instanceId, broadcast, broadcastToInstance }) => {
+    handler: async (req, _match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
       const body = await parseBody(req)
       const name = typeof body.name === 'string' ? body.name.trim() : ''
       if (!name) return errorResponse('name is required')
@@ -189,13 +189,13 @@ export const agentRoutes: RouteEntry[] = [
         if (tags.length > 0) config.metadata = { tags }
         const agent = await system.spawnHumanAgent(config, () => { /* no-op transport */ })
         if (typeof body.roomName === 'string' && body.roomName.trim()) {
-          const room = system.house.getRoom(body.roomName.trim())
+          const room = system.rooms.getRoom(body.roomName.trim())
           if (room) {
             await system.addAgentToRoom(agent.id, room.profile.id)
           }
         }
         const evt = { type: 'agent_joined' as const, agent: { id: agent.id, name: agent.name, kind: agent.kind } }
-        if (broadcastToInstance) broadcastToInstance(instanceId, evt)
+        if (broadcastToWorkspace) broadcastToWorkspace(workspaceId, evt)
         else broadcast(evt)
         return json({ id: agent.id, name: agent.name }, 201)
       } catch (err) {
@@ -206,7 +206,7 @@ export const agentRoutes: RouteEntry[] = [
   {
     method: 'PATCH',
     pattern: /^\/api\/agents\/([^/]+)$/,
-    handler: async (req, match, { system, instanceId, broadcast, broadcastToInstance }) => {
+    handler: async (req, match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
       const name = decodeURIComponent(match[1]!)
       const agent = system.team.getAgent(name)
       if (!agent) return errorResponse(`Agent "${name}" not found`, 404)
@@ -220,7 +220,7 @@ export const agentRoutes: RouteEntry[] = [
         const err = system.team.renameAgent(agent.id, body.name as string)
         if (err) return errorResponse(err, err.includes('already taken') ? 409 : 400)
         const evt = { type: 'agent_renamed' as const, id: agent.id, oldName, newName: agent.name }
-        if (broadcastToInstance) broadcastToInstance(instanceId, evt)
+        if (broadcastToWorkspace) broadcastToWorkspace(workspaceId, evt)
         else broadcast(evt)
       }
       const aiAgent = asAIAgent(agent)
@@ -295,7 +295,7 @@ export const agentRoutes: RouteEntry[] = [
       if (!ai) return errorResponse('Only AI agents have a context preview')
       const url = new URL(req.url)
       const roomIdParam = url.searchParams.get('roomId') ?? undefined
-      const agentRooms = system.house.getRoomsForAgent(agent.id).map(r => r.profile.id)
+      const agentRooms = system.rooms.getRoomsForAgent(agent.id).map(r => r.profile.id)
       const roomId = roomIdParam && agentRooms.includes(roomIdParam)
         ? roomIdParam
         : agentRooms[0]
@@ -348,7 +348,7 @@ export const agentRoutes: RouteEntry[] = [
   {
     method: 'DELETE',
     pattern: /^\/api\/agents\/([^/]+)$/,
-    handler: (_req, match, { system, instanceId, broadcast, broadcastToInstance }) => {
+    handler: (_req, match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
       const name = decodeURIComponent(match[1]!)
       const agent = system.team.getAgent(name)
       if (!agent) return errorResponse(`Agent "${name}" not found`, 404)
@@ -356,7 +356,7 @@ export const agentRoutes: RouteEntry[] = [
       // system.removeAgent — see wireAgentTracking in bootstrap.ts.
       system.removeAgent(agent.id)
       const evt = { type: 'agent_removed' as const, agentName: name }
-      if (broadcastToInstance) broadcastToInstance(instanceId, evt)
+      if (broadcastToWorkspace) broadcastToWorkspace(workspaceId, evt)
       else broadcast(evt)
       return json({ removed: true })
     },

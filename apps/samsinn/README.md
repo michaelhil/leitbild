@@ -15,7 +15,7 @@
 - **Embed in your own LLM workflow** — run headless as an MCP server; external LLMs orchestrate everything via 23 tools
 - **Integrate programmatically** — full REST API + WebSocket protocol for building your own UI or automation
 - **Mirror an external simulation into a room** — bind a Samsinn room to a [Leitbild](https://leitbild.samsinn.app) Control Instance; live events become chat messages so a team of agents (and humans) share situational awareness of a running simulation. Per-agent bindings let specialist agents read state and (in operator role) issue commands. See [Leitbild integration](#leitbild-integration).
-- **Self-host with multi-instance isolation** — one Bun process serves many independent sandboxes, each cookie-bound to its own user. Manage them from Settings → Instances (list, switch, create, delete, reset). See [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md) for the Hetzner CAX11 (~€4/mo) deploy path.
+- **Self-host with multi-Workspace isolation** — one Bun process serves many independent sandboxes, each cookie-bound to its own user. Manage them from Settings → Instances (list, switch, create, delete, reset). See [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md) for the Hetzner CAX11 (~€4/mo) deploy path.
 
 ---
 
@@ -312,7 +312,7 @@ Every agent can use these tools by listing them in its `tools` config field.
 | `mute_agent` | Mute or unmute an agent in a room |
 | `post_to_room` | Post a message to a different room |
 | `get_room_history` | Recent messages from a specific room |
-| `recall` / `query_documents` | RAG: semantic search over folded memories and uploaded documents (per-instance vector store) |
+| `recall` / `query_documents` | RAG: semantic search over folded memories and uploaded documents (per-Workspace vector store) |
 | `web_search` / `web_fetch` / `web_extract_json` | Web research (gated by `SAMSINN_ENABLE_WEB`) |
 | `geo_lookup` / `geo_add` / `geo_remove` / `geo_list_categories` / `geo_list_features` | Place lookup + management against the canonical geo store |
 | `list_skills` / `write_skill` | List or generate Skills (markdown behavioral templates with bundled tools) |
@@ -703,9 +703,9 @@ notes/research/           — Design exploration & research notes (not user-faci
 
 ---
 
-## Multi-instance ("sandboxes")
+## multi-Workspace ("sandboxes")
 
-Samsinn supports many independent *instances* in one Bun process. Each instance has its own rooms, agents, message history, todos, snapshot, and per-instance log directory. Instances share only the LLM provider gateways (one ProviderRouter, one Ollama gateway), provider keys, packs, and skills — i.e. things that are expensive to build and shouldn't be duplicated.
+Samsinn supports many independent *instances* in one Bun process. Each instance has its own rooms, agents, message history, todos, snapshot, and per-Workspace log directory. Instances share only the LLM provider gateways (one ProviderRouter, one Ollama gateway), provider keys, packs, and skills — i.e. things that are expensive to build and shouldn't be duplicated.
 
 **How a request is bound to an instance.** A signed `samsinn_instance` HttpOnly cookie carries a 16-character id. First-time visitors get a fresh id auto-assigned; subsequent requests reuse it. `?join=<id>` on any URL switches the cookie and 303-redirects to a clean URL — that's how you share an instance.
 
@@ -719,17 +719,17 @@ $SAMSINN_HOME/                              ← default ~/.samsinn (dev) or /var
   tools/                                    ← shared drop-in tools
   instances/
     <id>/
-      snapshot.json                         ← per-instance state
-      logs/*.jsonl                          ← per-instance logging (2-file ring, 50 MB each)
+      snapshot.json                         ← per-Workspace state
+      logs/*.jsonl                          ← per-Workspace logging (2-file ring, 50 MB each)
       memory/<agentName>/{notes.log,facts.json}
     .trash/<id>-<unix-ts>/                  ← evicted/reset, purged after 7 days
 ```
 
 **The Instances modal** (Settings → Instances) lets you list every sandbox on disk, switch between them, create new ones, reset the current one (10-second cancellable countdown), and bulk-delete others. The current instance has a "Reset" action; non-current rows have "Switch" / "Delete". Click the header `Delete` button to enter bulk-delete mode (checkboxes appear pre-checked).
 
-**Lifecycle.** Idle instances are evicted from memory after `SAMSINN_IDLE_MS` (default 30 min): drained, snapshot-flushed, dropped. The next request lazy-reloads from disk. The `instance-cleanup` janitor demotes long-idle directories to `.trash/` and purges trash after `SAMSINN_TRASH_TTL_MS` (default 7 days). Per-instance reset (`/api/system/reset`) trashes the directory but preserves the cookie's id, so the user reconnects to a fresh empty House under the same id.
+**Lifecycle.** Idle instances are evicted from memory after `SAMSINN_IDLE_MS` (default 30 min): drained, snapshot-flushed, dropped. The next request lazy-reloads from disk. The `instance-cleanup` janitor demotes long-idle directories to `.trash/` and purges trash after `SAMSINN_TRASH_TTL_MS` (default 7 days). per-Workspace reset (`/api/system/reset`) trashes the directory but preserves the cookie's id, so the user reconnects to a fresh empty House under the same id.
 
-**Resource caps and rate limits.** A per-IP sliding-window limiter (5 requests / 60 s, env-tunable) covers `POST /api/instances` and `POST /api/bugs`. Log files rotate at `SAMSINN_LOG_MAX_BYTES` (default 50 MB) into a 2-file ring (`<base>.jsonl` + `<base>.1.jsonl`) — per-instance footprint capped at 100 MB.
+**Resource caps and rate limits.** A per-IP sliding-window limiter (5 requests / 60 s, env-tunable) covers `POST /api/instances` and `POST /api/bugs`. Log files rotate at `SAMSINN_LOG_MAX_BYTES` (default 50 MB) into a 2-file ring (`<base>.jsonl` + `<base>.1.jsonl`) — per-Workspace footprint capped at 100 MB.
 
 **Bug reporting.** Settings → Report bug (or the bug icon in the room header) opens a form that submits to `POST /api/bugs`. The server uses `SAMSINN_GH_TOKEN` to create a GitHub issue on `SAMSINN_GH_REPO` (default `michaelhil/samsinn`). Disabled if the token is unset. The browser never sees the token; submissions include only the user-typed title/description plus app version + browser UA.
 
@@ -827,7 +827,7 @@ The full health audit (`bun run health`) compares against `.health/baseline.md` 
 | v0.9.1 | **Caps & limits hardening.** Bound WS send queue per client (8 MB) — slow consumers are closed with 1009 instead of growing memory unbounded; reconnect path is unchanged. Replaced rate-limit GC sweep with a true LRU bound (4096 keys) — defends direct-exposure deploys from unique-IP map exhaustion. New `LimitMetrics` counter object on `SharedRuntime` tracks `sseBufferExceeded`, `evictionFlushRetries`, `evictionForceEvicts`, `wsBackpressureDropped`, `rateLimitEvicted` — surfaced via auth-gated `GET /api/system/limits`. Documented LRU bypass limitation (acceptable behind Caddy). |
 | v0.9.0 | **Script engine v2 + audit hardening.** Scripts are now markdown-source (`$SAMSINN_HOME/scripts/<name>/script.md`); reactive runner subscribed to `onMessagePosted`; two-LLM whisper classification; context-builder bypass for cast members; settings modal + room-header start/status chip; `write_script` tool. Safety: per-tick liveness check (auto-abort if cast leaves room); whisper consecutive-failure circuit breaker (5 fallbacks → stop with stage card); 256 KB cap on script source. **LLM hardening**: bounded SSE re-assembly buffer (10 MB); `Retry-After` past dates → undefined (was 0, collapsed cooldown); Ollama `toolChoice` warning surfaced once-per-pair (was silently dropped); `/api/providers/:name/test-model` truncates upstream 5xx body to 500 chars. **Persistence**: incompatible snapshot version logs at error (was warn); eviction flush retries 5/15/60s before force-evict with ERROR; per-type `validateBody` drops corrupt artifact bodies on snapshot load instead of crashing rehydrate. **Security**: regression test for global auth gate (covers shutdown + providers); defense-in-depth `assertValidInstanceId` inside `instancePaths()`/`trashPath()`. Snapshot v13. |
 | v0.8.0 | **Scripts replace macros** — improvisational multi-agent scenes driven by per-character objectives, structural resolution (no central judge), and a `update_beat` speech-act bus. Filesystem-backed scripts at `$SAMSINN_HOME/scripts/<name>/script.json` (or flat `<name>.json`); `LLMRequest.toolChoice` plumbed through OpenAI-compatible providers; new REST under `/api/scripts` and `/api/rooms/:name/script/{start,stop}`; new WS events `script_started`, `script_scene_advanced`, `script_beat`, `script_completed`. Snapshot v11 → v12 (clean break — old snapshots with macros are rejected). See [docs/scripts.md](docs/scripts.md). |
-| v0.7.0 | **Multi-instance** — one Bun process serves many cookie-bound sandboxes; `$SAMSINN_HOME/instances/<id>/`, lazy load + idle eviction + janitor + 7-day trash purge; per-instance reset replaces whole-process exit. **Instances UI** under Settings (list / switch / create / delete + bulk delete + reset). **Room switcher** dropdown next to room name. **Visibility popover** — eye icon hides/shows room-header buttons (localStorage), doubles as a quick-access bar. **Bug reporting** to GitHub Issues via server-side PAT (`SAMSINN_GH_TOKEN`). **Deploy mode** — `SAMSINN_AUTH_TOKEN` shared-token auth, systemd unit + Caddyfile + Hetzner CAX11 RUNBOOK. HTTP security headers, per-IP rate limiter, log rotation 2-file ring (env-tunable). |
+| v0.7.0 | **multi-Workspace** — one Bun process serves many cookie-bound sandboxes; `$SAMSINN_HOME/instances/<id>/`, lazy load + idle eviction + janitor + 7-day trash purge; per-Workspace reset replaces whole-process exit. **Instances UI** under Settings (list / switch / create / delete + bulk delete + reset). **Room switcher** dropdown next to room name. **Visibility popover** — eye icon hides/shows room-header buttons (localStorage), doubles as a quick-access bar. **Bug reporting** to GitHub Issues via server-side PAT (`SAMSINN_GH_TOKEN`). **Deploy mode** — `SAMSINN_AUTH_TOKEN` shared-token auth, systemd unit + Caddyfile + Hetzner CAX11 RUNBOOK. HTTP security headers, per-IP rate limiter, log rotation 2-file ring (env-tunable). |
 | v0.6.0 | File-based skills system (Claude Skills compatible SKILL.md format with bundled tools); runtime code generation (`write_skill`, `write_tool`, `list_skills`); dynamic tool resolution (`refreshTools` — agents gain new tools without respawning); dedicated `=== SKILLS ===` prompt section; fix: `ToolContext.llm` now tracks current model instead of spawn-time model |
 | v0.5.14 | Unified `AgentHistory` struct (rooms/DMs/incoming in one place); flush-on-pass (agents never re-evaluate passed messages); `ConcurrencyManager` extraction; snapshot migration framework; tool result truncation (4,000 char default, configurable); comprehensive file splitting (tools/built-in/, api/routes/, api/ws-commands/, mcp/tools/); config object consolidation; delivery-mode bug fix; graceful shutdown with eval drain |
 | v0.5.13 | 19 built-in tools, 16 external tools (memory/compute/web/research), structured tool descriptions with usage/returns fields, filesystem tool loader, `delegate` tool with todo integration |

@@ -16,13 +16,12 @@
 //     geodata/.bundled/<version>/               ← cached samsinn-geodata snapshot (NOT user data)
 //     knowledge/                                ← shared knowledge files
 //     logs/admin.jsonl                          ← janitor + registry events
-//     instances/                                ← per-instance state
-//       <id>/
+//     workspaces/                               ← Workspace-scoped module state
+//       <workspace-id>/
+//         samsinn/                              ← Samsinn-owned shard
 //         snapshot.json
 //         logs/*.jsonl
 //         memory/<agentName>/{notes.log,facts.json}
-//       .trash/
-//         <id>-<unix-ts>/                       ← evicted/reset, kept 7 days
 //     .local-pack-migrated                      ← sentinel: drop-in dirs
 //                                                  moved into packs/local/
 //                                                  (commit P, one-shot)
@@ -32,6 +31,7 @@
 
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { workspaceIdSchema, type WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
 export const samsinnHome = (): string =>
   process.env.SAMSINN_HOME && process.env.SAMSINN_HOME.length > 0
@@ -56,30 +56,25 @@ export const sharedPaths = {
   tools: (): string => join(localPack(), 'tools'),
   knowledge: (): string => join(samsinnHome(), 'knowledge'),
   geodata: (): string => join(localPack(), 'geodata'),
-  // Legacy global memory dir. Moves to per-instance in Phase I; keep for
-  // now so single-tenant agents keep their notes.log/facts.json.
-  memoryLegacy: (): string => join(samsinnHome(), 'memory'),
   adminLog: (): string => join(samsinnHome(), 'logs', 'admin.jsonl'),
   workspaceDirectory: (): string => join(samsinnHome(), 'workspace-directory.json'),
-  instancesRoot: (): string => join(samsinnHome(), 'instances'),
-  trashRoot: (): string => join(samsinnHome(), 'instances', '.trash'),
+  workspacesRoot: (): string => join(samsinnHome(), 'workspaces'),
 }
 
-// Per-instance paths — derive from a 16-char base32-lowercase ID. The
-// validateInstanceId guard keeps callers honest at the boundary.
-export interface InstancePaths {
+// Samsinn's owned persistence shard inside one Workspace.
+export interface WorkspacePaths {
   readonly root: string
   readonly snapshot: string
   readonly logs: string
   readonly memory: string
-  // Per-instance vector index (RAG). Single JSONL file with header,
+  // per-Workspace vector index (RAG). Single JSONL file with header,
   // vectors, and tombstones. See src/embed/vector-store.ts.
   readonly vectors: string
 }
 
-export const instancePaths = (id: string): InstancePaths => {
-  assertValidInstanceId(id)
-  const root = join(samsinnHome(), 'instances', id)
+export const workspacePaths = (id: WorkspaceId): WorkspacePaths => {
+  assertValidWorkspaceId(id)
+  const root = join(samsinnHome(), 'workspaces', id, 'samsinn')
   return {
     root,
     snapshot: join(root, 'snapshot.json'),
@@ -89,24 +84,12 @@ export const instancePaths = (id: string): InstancePaths => {
   }
 }
 
-// Trash path for an evicted/reset instance. Timestamp suffix prevents
-// collisions if the same id is reset multiple times.
-export const trashPath = (id: string, now: number = Date.now()): string => {
-  assertValidInstanceId(id)
-  return join(samsinnHome(), 'instances', '.trash', `${id}-${now}`)
-}
-
-// Validate an instance ID — 16 chars, lowercase alphanumeric. Used at the
-// boundary (cookie, ?join=, ?instance=) to refuse anything else before it
-// reaches the filesystem.
-const ID_PATTERN = /^[a-z0-9]{16}$/
-export const isValidInstanceId = (id: string): boolean => ID_PATTERN.test(id)
+export const isValidWorkspaceId = (id: string): id is WorkspaceId =>
+  workspaceIdSchema.safeParse(id).success
 
 // Defense-in-depth: throws if a caller bypassed the boundary check. Cheap
 // guard that prevents accidental path traversal if any future call site
 // forgets to validate before passing into instancePaths/trashPath.
-export const assertValidInstanceId = (id: string): void => {
-  if (!isValidInstanceId(id)) {
-    throw new Error(`invalid instance id: ${JSON.stringify(id)} (expected 16-char lowercase alphanumeric)`)
-  }
+export const assertValidWorkspaceId: (id: string) => asserts id is WorkspaceId = (id) => {
+  workspaceIdSchema.parse(id)
 }

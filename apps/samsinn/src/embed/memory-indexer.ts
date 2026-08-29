@@ -1,5 +1,5 @@
 // ============================================================================
-// Memory indexer — captures compression batches into the per-instance
+// Memory indexer — captures compression batches into the per-Workspace
 // vector store so agents can later `recall` them.
 //
 // Wired into SummaryEngineDeps.onCompressionStart. Fires right before the

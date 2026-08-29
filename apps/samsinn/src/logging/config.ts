@@ -17,7 +17,7 @@ export const defaultSessionId = (): string =>
   `session-${Date.now()}-${shortId()}`
 
 // Phase A keeps the global default (preserves existing single-tenant UX).
-// Phase H carves this per-instance.
+// Phase H carves this per-Workspace.
 export const defaultLogDir = (): string => join(samsinnHome(), 'logs')
 
 // Read boot config from environment. Missing/empty → sensible defaults.
