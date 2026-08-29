@@ -1,0 +1,25 @@
+{
+  "name": "samsinn-leitbild-platform",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "bun@1.4.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "check:boundaries": "bun run scripts/check-boundaries.ts",
+    "check:samsinn": "bun run --cwd apps/samsinn check",
+    "check:leitbild": "bun run --cwd apps/leitbild check",
+    "check": "bun run check:boundaries && bun run check:samsinn && bun run check:leitbild",
+    "test:samsinn": "bun run --cwd apps/samsinn test:unit",
+    "test:leitbild": "bun run --cwd apps/leitbild test",
+    "test": "bun run test:samsinn && bun run test:leitbild"
+  },
+  "engines": {
+    "bun": "1.4.0"
+  },
+  "devDependencies": {
+    "bun-types": "1.4.0"
+  }
+}

@@ -44,6 +44,8 @@
     "@deck.gl/core": "^9.3.2",
     "@deck.gl/layers": "^9.3.2",
     "@deck.gl/mapbox": "^9.3.2",
+    "@mapbox/vector-tile": "^2.0.4",
+    "@maplibre/maplibre-gl-style-spec": "^24.8.5",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "earcut": "^3.0.2",
     "h3-js": "^4.4.0",
