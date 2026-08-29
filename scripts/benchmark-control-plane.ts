@@ -74,7 +74,6 @@ const benchmarkServer = async (config: {
       : {
           WORKSPACE_HOST_HOME: config.stateHome,
           WORKSPACE_MODULES: '[]',
-          WORKSPACE_EXPERIENCES: '[]',
         }),
   }
   const child = Bun.spawn([bun, 'run', 'src/index.ts'], {

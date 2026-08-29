@@ -1,0 +1,227 @@
+import {
+  moduleCapabilityCollectionSchema,
+  moduleCapabilityInvocationResultSchema,
+  moduleCapabilityInvocationSchema,
+  moduleFailureSchema,
+  moduleIdSchema,
+  moduleRegistrationSchema,
+  moduleResourceCollectionSchema,
+  workspaceModuleManifestSchema,
+  type ModuleCapabilityCollection,
+  type ModuleCapabilityInvocation,
+  type ModuleCapabilityInvocationResult,
+  type ModuleFailure,
+  type ModuleId,
+  type ModuleRegistration,
+  type ModuleResourceCollection,
+  type WorkspaceId,
+  type WorkspaceModuleManifest,
+} from '@leitbild/contracts'
+
+export type ModuleCallResult<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly failure: ModuleFailure }
+
+export type ModuleOperationResult = ModuleCallResult<undefined>
+
+export interface ModuleGateway {
+  readonly list: () => ReadonlyArray<ModuleRegistration>
+  readonly has: (moduleId: ModuleId) => boolean
+  readonly join: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleOperationResult>
+  readonly leave: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleOperationResult>
+  readonly resources: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleResourceCollection>>
+  readonly capabilities: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleCapabilityCollection>>
+  readonly invoke: (moduleId: ModuleId, invocation: ModuleCapabilityInvocation) => Promise<ModuleCallResult<ModuleCapabilityInvocationResult>>
+}
+
+const normalizeBaseUrl = (value: string): string => {
+  const url = new URL(value)
+  url.pathname = url.pathname.replace(/\/+$/, '')
+  url.search = ''
+  url.hash = ''
+  return url.toString().replace(/\/$/, '')
+}
+
+const failure = <T>(config: ModuleFailure): ModuleCallResult<T> => ({
+  ok: false,
+  failure: moduleFailureSchema.parse(config),
+})
+
+const expandWorkspacePath = (baseUrl: string, pathTemplate: string, workspaceId: WorkspaceId): string =>
+  `${baseUrl}${pathTemplate.replaceAll('{workspaceId}', encodeURIComponent(workspaceId))}`
+
+const expandInvocationPath = (
+  baseUrl: string,
+  pathTemplate: string,
+  invocation: ModuleCapabilityInvocation,
+): string => expandWorkspacePath(baseUrl, pathTemplate, invocation.workspaceId)
+  .replaceAll('{capabilityId}', encodeURIComponent(invocation.capabilityId))
+
+export const createModuleGateway = (config: {
+  readonly registrations: ReadonlyArray<ModuleRegistration>
+  readonly fetch?: typeof fetch
+}): ModuleGateway => {
+  const fetchImpl = config.fetch ?? fetch
+  const registrations = config.registrations.map(registration => moduleRegistrationSchema.parse({
+    ...registration,
+    internalBaseUrl: normalizeBaseUrl(registration.internalBaseUrl),
+  }))
+  const byId = new Map(registrations.map(registration => [registration.moduleId, registration]))
+  if (byId.size !== registrations.length) throw new Error('Module registrations must have unique ids')
+
+  const discover = async (registration: ModuleRegistration): Promise<WorkspaceModuleManifest | ModuleFailure> => {
+    let response: Response
+    try {
+      response = await fetchImpl(`${registration.internalBaseUrl}${registration.manifestPath}`, {
+        headers: { Accept: 'application/json' },
+      })
+    } catch (error) {
+      return moduleFailureSchema.parse({
+        code: 'module_unavailable',
+        message: error instanceof Error ? error.message : String(error),
+        retryable: true,
+      })
+    }
+    if (!response.ok) {
+      return moduleFailureSchema.parse({
+        code: 'module_discovery_failed',
+        message: `Module discovery returned HTTP ${response.status}`,
+        retryable: response.status >= 500,
+      })
+    }
+    try {
+      const manifest = workspaceModuleManifestSchema.parse(await response.json())
+      if (manifest.module.id !== registration.moduleId) {
+        return moduleFailureSchema.parse({
+          code: 'module_identity_mismatch',
+          message: `Module manifest identifies ${manifest.module.id}; expected ${registration.moduleId}`,
+          retryable: false,
+        })
+      }
+      return manifest
+    } catch (error) {
+      return moduleFailureSchema.parse({
+        code: 'module_contract_invalid',
+        message: error instanceof Error ? error.message : String(error),
+        retryable: false,
+      })
+    }
+  }
+
+  const operate = async (moduleId: ModuleId, workspaceId: WorkspaceId, method: 'PUT' | 'DELETE'): Promise<ModuleOperationResult> => {
+    const registration = byId.get(moduleId)
+    if (!registration) {
+      return failure({ code: 'module_not_installed', message: `Module is not installed: ${moduleId}`, retryable: false })
+    }
+    const manifest = await discover(registration)
+    if ('code' in manifest) return { ok: false, failure: manifest }
+    const url = expandWorkspacePath(registration.internalBaseUrl, manifest.endpoints.workspace, workspaceId)
+    let response: Response
+    try {
+      response = await fetchImpl(url, {
+        method,
+        headers: { Accept: 'application/json', ...(method === 'PUT' ? { 'Content-Type': 'application/json' } : {}) },
+        ...(method === 'PUT' ? { body: JSON.stringify({ workspaceId }) } : {}),
+      })
+    } catch (error) {
+      return failure({
+        code: 'module_unavailable',
+        message: error instanceof Error ? error.message : String(error),
+        retryable: true,
+      })
+    }
+    if (!response.ok) {
+      return failure({
+        code: method === 'PUT' ? 'module_join_failed' : 'module_leave_failed',
+        message: `Module lifecycle returned HTTP ${response.status}`,
+        retryable: response.status >= 500,
+      })
+    }
+    return { ok: true, value: undefined }
+  }
+
+  const readCollection = async <T>(config: {
+    readonly moduleId: ModuleId
+    readonly workspaceId: WorkspaceId
+    readonly endpoint: 'resources' | 'capabilities'
+    readonly parse: (value: unknown) => T
+  }): Promise<ModuleCallResult<T>> => {
+    const registration = byId.get(config.moduleId)
+    if (!registration) return failure({ code: 'module_not_installed', message: `Module is not installed: ${config.moduleId}`, retryable: false })
+    const manifest = await discover(registration)
+    if ('code' in manifest) return { ok: false, failure: manifest }
+    const url = expandWorkspacePath(registration.internalBaseUrl, manifest.endpoints[config.endpoint], config.workspaceId)
+    let response: Response
+    try {
+      response = await fetchImpl(url, { headers: { Accept: 'application/json' } })
+    } catch (error) {
+      return failure({ code: 'module_unavailable', message: error instanceof Error ? error.message : String(error), retryable: true })
+    }
+    if (!response.ok) {
+      return failure({
+        code: 'module_query_failed',
+        message: `Module ${config.endpoint} query returned HTTP ${response.status}`,
+        retryable: response.status >= 500,
+      })
+    }
+    try {
+      return { ok: true, value: config.parse(await response.json()) }
+    } catch (error) {
+      return failure({ code: 'module_contract_invalid', message: error instanceof Error ? error.message : String(error), retryable: false })
+    }
+  }
+
+  const invoke = async (
+    moduleId: ModuleId,
+    rawInvocation: ModuleCapabilityInvocation,
+  ): Promise<ModuleCallResult<ModuleCapabilityInvocationResult>> => {
+    const registration = byId.get(moduleId)
+    if (!registration) return failure({ code: 'module_not_installed', message: `Module is not installed: ${moduleId}`, retryable: false })
+    const invocation = moduleCapabilityInvocationSchema.parse(rawInvocation)
+    const manifest = await discover(registration)
+    if ('code' in manifest) return { ok: false, failure: manifest }
+    const url = expandInvocationPath(registration.internalBaseUrl, manifest.endpoints.invoke, invocation)
+    let response: Response
+    try {
+      response = await fetchImpl(url, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify(invocation),
+      })
+    } catch (error) {
+      return failure({ code: 'module_unavailable', message: error instanceof Error ? error.message : String(error), retryable: true })
+    }
+    if (!response.ok) {
+      return failure({
+        code: 'capability_invocation_failed',
+        message: `Module Capability invocation returned HTTP ${response.status}`,
+        retryable: response.status >= 500,
+      })
+    }
+    try {
+      return { ok: true, value: moduleCapabilityInvocationResultSchema.parse(await response.json()) }
+    } catch (error) {
+      return failure({ code: 'module_contract_invalid', message: error instanceof Error ? error.message : String(error), retryable: false })
+    }
+  }
+
+  return {
+    list: () => registrations,
+    has: moduleId => byId.has(moduleIdSchema.parse(moduleId)),
+    join: (moduleId, workspaceId) => operate(moduleId, workspaceId, 'PUT'),
+    leave: (moduleId, workspaceId) => operate(moduleId, workspaceId, 'DELETE'),
+    resources: (moduleId, workspaceId) => readCollection({
+      moduleId,
+      workspaceId,
+      endpoint: 'resources',
+      parse: value => moduleResourceCollectionSchema.parse(value),
+    }),
+    capabilities: (moduleId, workspaceId) => readCollection({
+      moduleId,
+      workspaceId,
+      endpoint: 'capabilities',
+      parse: value => moduleCapabilityCollectionSchema.parse(value),
+    }),
+    invoke,
+  }
+}

@@ -26,4 +26,4 @@ _Avoid_: production workflow or runtime controller
 
 **Agent Pack**:
 An extension owned by the Agents Module that contributes Agent-facing tools, skills, scripts, knowledge, geodata, or reviewed UI extensions.
-_Avoid_: Samsinn Pack, universal Pack, or cross-Module ownership
+_Avoid_: universal Pack or cross-Module ownership

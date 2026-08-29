@@ -8,70 +8,34 @@ interface Boundary {
 }
 
 const repositoryRoot = resolve(import.meta.dir, '..')
+const appImport = (names: string): RegExp => new RegExp(`(?:from\\s*|import\\s*)[('"\\x60][^'"\\x60]*apps/(?:${names})(?:/|['"\\x60])`)
+const packageImport = (names: string): RegExp => new RegExp(`(?:from\\s*|import\\s*)[('"\\x60]@leitbild/(?:${names})(?:/|['"\\x60])`)
 
 const boundaries: ReadonlyArray<Boundary> = [
-  {
-    owner: 'Samsinn',
-    root: resolve(repositoryRoot, 'apps/samsinn'),
-    forbidden: [
-      /(?:from\s*|import\s*)[('"`]@samsinn-leitbild\/leitbild(?:\/|['"`])/,
-      /(?:from\s*|import\s*)[('"`][^'"`]*apps\/leitbild(?:\/|['"`])/,
-    ],
-  },
-  {
-    owner: 'Leitbild',
-    root: resolve(repositoryRoot, 'apps/leitbild'),
-    forbidden: [
-      /(?:from\s*|import\s*)[('"`]@samsinn-leitbild\/samsinn(?:\/|['"`])/,
-      /(?:from\s*|import\s*)[('"`][^'"`]*apps\/samsinn(?:\/|['"`])/,
-    ],
-  },
-  {
-    owner: 'Workspace Host',
-    root: resolve(repositoryRoot, 'apps/workspace-host'),
-    forbidden: [
-      /(?:from\s*|import\s*)[('"`]@samsinn-leitbild\/(?:samsinn|leitbild)(?:\/|['"`])/,
-      /(?:from\s*|import\s*)[('"`][^'"`]*apps\/(?:samsinn|leitbild)(?:\/|['"`])/,
-    ],
-  },
-  {
-    owner: 'Platform contracts',
-    root: resolve(repositoryRoot, 'packages/platform-contracts'),
-    forbidden: [
-      /(?:from\s*|import\s*)[('"`][^'"`]*apps\/(?:samsinn|leitbild|workspace-host)(?:\/|['"`])/,
-      /(?:from\s*|import\s*)[('"`]@samsinn-leitbild\/(?:samsinn|leitbild|workspace-host)(?:\/|['"`])/,
-    ],
-  },
+  { owner: 'World', root: resolve(repositoryRoot, 'apps/world'), forbidden: [appImport('collab-agents|leitbild'), packageImport('collab-agents|host')] },
+  { owner: 'Collab/Agents', root: resolve(repositoryRoot, 'apps/collab-agents'), forbidden: [appImport('world|leitbild'), packageImport('world|host')] },
+  { owner: 'Leitbild Host', root: resolve(repositoryRoot, 'apps/leitbild'), forbidden: [appImport('world|collab-agents'), packageImport('world|collab-agents')] },
+  { owner: 'Contracts', root: resolve(repositoryRoot, 'packages/contracts'), forbidden: [appImport('world|collab-agents|leitbild'), packageImport('world|collab-agents|host')] },
 ]
 
 const sourceGlob = new Bun.Glob('**/*.{ts,tsx,svelte}')
-const manifestGlob = new Bun.Glob('package.json')
-
 const scanBoundary = async (boundary: Boundary): Promise<ReadonlyArray<string>> => {
   const violations: string[] = []
   if (!existsSync(boundary.root)) return violations
-
-  const sourceFiles = await Array.fromAsync(sourceGlob.scan({ cwd: boundary.root, onlyFiles: true }))
-  const manifestFiles = await Array.fromAsync(manifestGlob.scan({ cwd: boundary.root, onlyFiles: true }))
-  for (const localPath of [...sourceFiles, ...manifestFiles]) {
+  for await (const localPath of sourceGlob.scan({ cwd: boundary.root, onlyFiles: true })) {
     const absolutePath = resolve(boundary.root, localPath)
     const content = await Bun.file(absolutePath).text()
     for (const forbidden of boundary.forbidden) {
-      if (forbidden.test(content)) {
-        violations.push(`${boundary.owner}: ${relative(repositoryRoot, absolutePath).split(sep).join('/')}`)
-      }
-      forbidden.lastIndex = 0
+      if (forbidden.test(content)) violations.push(`${boundary.owner}: ${relative(repositoryRoot, absolutePath).split(sep).join('/')}`)
     }
   }
   return violations
 }
 
 const violations = (await Promise.all(boundaries.map(scanBoundary))).flat()
-
 if (violations.length > 0) {
   console.error('Application boundary violations:')
   for (const violation of violations) console.error(`- ${violation}`)
   process.exit(1)
 }
-
 console.log('Application boundaries are intact.')

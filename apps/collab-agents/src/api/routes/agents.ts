@@ -1,0 +1,368 @@
+import { json, errorResponse, parseBody } from './helpers.ts'
+import { asAIAgent } from '../../agents/shared.ts'
+import { toolsToDefinitions } from '../../llm/tool-capability.ts'
+import { modelSupportsTools } from '../../llm/models/catalog.ts'
+import { estimateTokens } from '../../agents/context-builder.ts'
+import type { ContextSection, IncludeContext, IncludePrompts, PromptSection } from '../../core/types/agent.ts'
+import { toolGrantSetSchema } from '@leitbild/contracts'
+import type { ToolRegistry } from '../../core/types/tool.ts'
+import type { CollabAgentsWorkspaceRuntime } from '../../main.ts'
+import type { RouteEntry } from './types.ts'
+import { parsePrefixedModel } from '../../llm/models/parse-prefix.ts'
+
+// Soft model-availability check used by both POST and PATCH agent handlers.
+// 'unverified' means we have no provider info yet (key not configured /
+// router empty); 'ok' means the model is in the union of currently-loaded
+// Ollama models and router-resolvable cloud models; 'unavailable' means
+// neither knows about it. Result is informational — callers do NOT block
+// on it. Effective-model resolution at call time picks a working fallback.
+type ModelStatus = 'ok' | 'unavailable' | 'unverified'
+
+const resolveModelStatus = async (system: CollabAgentsWorkspaceRuntime, requestedModel: string): Promise<ModelStatus> => {
+  const ollamaAvailable = system.ollama?.getHealth().availableModels ?? []
+  const routerAvailable = await system.llm.models().catch(() => [] as string[])
+  const allAvailable = [...ollamaAvailable, ...routerAvailable]
+  if (allAvailable.length === 0) return 'unverified'
+  const requested = parsePrefixedModel(requestedModel)
+  const available = allAvailable.some(ref => {
+    const parsed = parsePrefixedModel(ref)
+    return parsed.modelId === requested.modelId && (!requested.provider || parsed.provider === requested.provider)
+  })
+  return available ? 'ok' : 'unavailable'
+}
+
+const PROMPT_SECTIONS: ReadonlyArray<PromptSection> = ['persona', 'room', 'workspace', 'responseFormat', 'skills']
+const CONTEXT_SECTIONS: ReadonlyArray<ContextSection> = ['participants', 'activity', 'knownAgents']
+
+// Compute approximate token cost of each registered tool's definition.
+// Uses the standard 4-chars-per-token heuristic across JSON-serialised defs.
+const computeToolTokens = (toolNames: ReadonlyArray<string>, registry: ToolRegistry): Record<string, number> => {
+  const result: Record<string, number> = {}
+  const tools = toolNames.map(n => registry.get(n)).filter((t): t is NonNullable<ReturnType<typeof registry.get>> => t !== undefined)
+  const defs = toolsToDefinitions(tools)
+  for (const def of defs) {
+    result[def.function.name] = estimateTokens(JSON.stringify(def))
+  }
+  return result
+}
+
+const sanitizeIncludePrompts = (raw: unknown): IncludePrompts | undefined => {
+  if (!raw || typeof raw !== 'object') return undefined
+  const r = raw as Record<string, unknown>
+  const out: IncludePrompts = {}
+  for (const key of PROMPT_SECTIONS) {
+    if (typeof r[key] === 'boolean') out[key] = r[key] as boolean
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+const sanitizeIncludeContext = (raw: unknown): IncludeContext | undefined => {
+  if (!raw || typeof raw !== 'object') return undefined
+  const r = raw as Record<string, unknown>
+  const out: IncludeContext = {}
+  for (const key of CONTEXT_SECTIONS) {
+    if (typeof r[key] === 'boolean') out[key] = r[key] as boolean
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+export const agentRoutes: RouteEntry[] = [
+  {
+    method: 'GET',
+    pattern: /^\/agents$/,
+    handler: (_req, _match, { system }) =>
+      json(system.team.listAgents().map(a => ({
+        id: a.id, name: a.name, kind: a.kind, state: a.state.get(),
+      }))),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/agents\/([^/]+)\/rooms$/,
+    handler: (_req, match, { system }) => {
+      const name = decodeURIComponent(match[1]!)
+      const agent = system.team.getAgent(name)
+      if (!agent) return errorResponse(`Agent "${name}" not found`, 404)
+      return json(system.rooms.getRoomsForAgent(agent.id).map(r => r.profile))
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/agents\/([^/]+)$/,
+    handler: (_req, match, { system }) => {
+      const name = decodeURIComponent(match[1]!)
+      const agent = system.team.getAgent(name)
+      if (!agent) return errorResponse(`Agent "${name}" not found`, 404)
+      const detail: Record<string, unknown> = {
+        id: agent.id, name: agent.name,
+        kind: agent.kind, state: agent.state.get(), rooms: system.rooms.getRoomsForAgent(agent.id).map(r => r.profile.id),
+      }
+      const aiAgent = asAIAgent(agent)
+      if (aiAgent) {
+        detail.persona = aiAgent.getPersona()
+        detail.model = aiAgent.getModel()
+        detail.temperature = aiAgent.getTemperature()
+        detail.historyLimit = aiAgent.getHistoryLimit()
+        detail.thinking = aiAgent.getThinking()
+        detail.tools = aiAgent.getTools()
+        detail.includePrompts = aiAgent.getIncludePrompts()
+        detail.includeContext = aiAgent.getIncludeContext()
+        detail.includeTools = aiAgent.getIncludeTools()
+        detail.promptsEnabled = aiAgent.getPromptsEnabled()
+        detail.contextEnabled = aiAgent.getContextEnabled()
+        detail.maxToolIterations = aiAgent.getMaxToolIterations()
+        detail.toolGrants = aiAgent.getToolGrants()
+        // Registered tools + token cost estimates — enables per-tool UI panel
+        const registered = system.toolRegistry.list().map(t => t.name)
+        detail.registeredTools = registered
+        detail.toolTokens = computeToolTokens(registered, system.toolRegistry)
+      }
+      if (agent.getDescription) {
+        detail.description = agent.getDescription()
+      }
+      if (agent.getTags) {
+        detail.tags = agent.getTags()
+      }
+      return json(detail)
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/agents$/,
+    handler: async (req, _match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
+      const body = await parseBody(req)
+      if (!body.name || !body.model || !body.persona) {
+        return errorResponse('name, model, and persona are required')
+      }
+      // Soft validation — let the user set a preferred model even if the
+      // provider is currently unconfigured (e.g. setting up agents before
+      // adding the API key). Surface a `modelStatus` so the UI can show a
+      // yellow warning chip; do NOT block creation. Effective-model
+      // resolution at call time picks a working fallback.
+      const requestedModel = body.model as string
+      const toolGrants = body.toolGrants === undefined
+        ? undefined
+        : toolGrantSetSchema.safeParse(body.toolGrants)
+      if (toolGrants && !toolGrants.success) return errorResponse(toolGrants.error.message, 400)
+      const modelStatus = await resolveModelStatus(system, requestedModel)
+      if (modelStatus === 'unavailable') {
+        console.warn(`[agents] Model "${requestedModel}" not currently available — agent will use fallback when invoked.`)
+      }
+      try {
+        // subscribeAgentState happens automatically inside the wrapped
+        // system.spawnAIAgent — see wireAgentTracking in bootstrap.ts.
+        const agent = await system.spawnAIAgent({
+          name: body.name as string,
+          model: requestedModel,
+          persona: body.persona as string,
+          temperature: body.temperature as number | undefined,
+          historyLimit: body.historyLimit as number | undefined,
+          ...(body.tools && Array.isArray(body.tools)
+            ? { tools: (body.tools as unknown[]).filter((t): t is string => typeof t === 'string') }
+            : {}),
+          ...(toolGrants === undefined ? {} : { toolGrants: toolGrants.data }),
+        })
+        const aiA = asAIAgent(agent)
+        const evt = { type: 'agent_joined' as const, agent: { id: agent.id, name: agent.name, kind: agent.kind, ...(aiA ? { model: aiA.getModel() } : {}) } }
+        if (broadcastToWorkspace) broadcastToWorkspace(workspaceId, evt)
+        else broadcast(evt)
+        return json({ id: agent.id, name: agent.name, modelStatus }, 201)
+      } catch (err) {
+        return errorResponse(err instanceof Error ? err.message : 'Failed to create agent')
+      }
+    },
+  },
+  // Create a human agent. Body: { name, persona?, tags?, roomName? }.
+  // - `persona` is stored as the agent's description (same field used for AI)
+  // - `tags` enable [[tag:X]] addressing exactly like AI agents
+  // - `roomName` (optional) auto-adds the new human to that room
+  {
+    method: 'POST',
+    pattern: /^\/agents\/human$/,
+    handler: async (req, _match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
+      const body = await parseBody(req)
+      const name = typeof body.name === 'string' ? body.name.trim() : ''
+      if (!name) return errorResponse('name is required')
+      const persona = typeof body.persona === 'string' ? body.persona.trim() : undefined
+      const rawTags = Array.isArray(body.tags) ? (body.tags as unknown[]) : []
+      const tags = rawTags.filter((t): t is string => typeof t === 'string').map(t => t.trim()).filter(Boolean)
+      try {
+        const config: { name: string; description?: string; metadata?: Record<string, unknown> } = { name }
+        if (persona) config.description = persona
+        if (tags.length > 0) config.metadata = { tags }
+        const agent = await system.spawnHumanAgent(config, () => { /* no-op transport */ })
+        if (typeof body.roomName === 'string' && body.roomName.trim()) {
+          const room = system.rooms.getRoom(body.roomName.trim())
+          if (room) {
+            await system.addAgentToRoom(agent.id, room.profile.id)
+          }
+        }
+        const evt = { type: 'agent_joined' as const, agent: { id: agent.id, name: agent.name, kind: agent.kind } }
+        if (broadcastToWorkspace) broadcastToWorkspace(workspaceId, evt)
+        else broadcast(evt)
+        return json({ id: agent.id, name: agent.name }, 201)
+      } catch (err) {
+        return errorResponse(err instanceof Error ? err.message : 'Failed to create human')
+      }
+    },
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/agents\/([^/]+)$/,
+    handler: async (req, match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
+      const name = decodeURIComponent(match[1]!)
+      const agent = system.team.getAgent(name)
+      if (!agent) return errorResponse(`Agent "${name}" not found`, 404)
+      const body = await parseBody(req)
+      // --- Rename ---
+      // Process before any other field so subsequent UI events reference the
+      // new name. Humans are renameable today; AI rename support depends on
+      // the agent factory implementing setName (deferred for AI in v15).
+      if (typeof body.name === 'string' && body.name.trim() !== agent.name) {
+        const oldName = agent.name
+        const err = system.team.renameAgent(agent.id, body.name as string)
+        if (err) return errorResponse(err, err.includes('already taken') ? 409 : 400)
+        const evt = { type: 'agent_renamed' as const, id: agent.id, oldName, newName: agent.name }
+        if (broadcastToWorkspace) broadcastToWorkspace(workspaceId, evt)
+        else broadcast(evt)
+      }
+      const aiAgent = asAIAgent(agent)
+      let modelStatus: ModelStatus | undefined
+      if (aiAgent) {
+        if (body.persona) aiAgent.updatePersona(body.persona as string)
+        if (body.model) {
+          // Same soft-validation as POST — accept the update, surface status
+          // so the UI can warn if currently unavailable.
+          const requestedModel = body.model as string
+          modelStatus = await resolveModelStatus(system, requestedModel)
+          if (modelStatus === 'unavailable') {
+            console.warn(`[agents] Model "${requestedModel}" not currently available — agent will use fallback when invoked.`)
+          }
+          aiAgent.updateModel(requestedModel)
+        }
+        if (body.temperature !== undefined) aiAgent.updateTemperature?.(body.temperature as number | undefined)
+        if (body.historyLimit !== undefined) aiAgent.updateHistoryLimit?.(body.historyLimit as number)
+        if (body.thinking !== undefined) aiAgent.updateThinking?.(body.thinking as boolean)
+        const inc = sanitizeIncludePrompts(body.includePrompts)
+        if (inc) aiAgent.updateIncludePrompts(inc)
+        const incCtx = sanitizeIncludeContext(body.includeContext)
+        if (incCtx) aiAgent.updateIncludeContext(incCtx)
+        if (typeof body.includeTools === 'boolean') aiAgent.updateIncludeTools(body.includeTools)
+        if (typeof body.promptsEnabled === 'boolean') aiAgent.updatePromptsEnabled(body.promptsEnabled)
+        if (typeof body.contextEnabled === 'boolean') aiAgent.updateContextEnabled(body.contextEnabled)
+        if (typeof body.maxToolIterations === 'number') aiAgent.updateMaxToolIterations(body.maxToolIterations)
+        // Tool-list edits rebuild every AI agent's tool support via the
+        // system helper. Routing through refreshAllAgentTools is what keeps
+        // the per-room pack-activation resolver wired — building a fresh
+        // support object here with raw buildToolSupport (no resolvers)
+        // silently erased it, so PATCH'd agents lost per-room filtering.
+        // Rejects names not in the registry before updating.
+        if (Array.isArray(body.tools)) {
+          const requested = (body.tools as unknown[]).filter((n): n is string => typeof n === 'string')
+          const known = new Set(system.toolRegistry.list().map(t => t.name))
+          const resolved = requested.filter(n => known.has(n))
+          aiAgent.updateTools?.(resolved)
+          await system.refreshAllAgentTools()
+        }
+        if (body.toolGrants !== undefined) {
+          const grants = toolGrantSetSchema.safeParse(body.toolGrants)
+          if (!grants.success) return errorResponse(grants.error.message, 400)
+          aiAgent.updateToolGrants(grants.data)
+        }
+      }
+      if (typeof body.description === 'string' && agent.updateDescription) {
+        agent.updateDescription(body.description)
+      }
+      if (Array.isArray(body.tags) && agent.updateTags) {
+        const tags = (body.tags as unknown[])
+          .filter((t): t is string => typeof t === 'string')
+          .map(t => t.trim())
+          .filter(t => t.length > 0)
+        agent.updateTags(tags)
+      }
+      // Persist edits — without this, persona/model/tools/etc. live in
+      // memory until the next message-post (or a SIGKILL loses them).
+      system.notifyAgentSettingsChanged()
+      return json({ updated: true, name: agent.name, ...(modelStatus !== undefined ? { modelStatus } : {}) })
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/agents\/([^/]+)\/context-preview$/,
+    handler: (req, match, { system }) => {
+      const name = decodeURIComponent(match[1]!)
+      const agent = system.team.getAgent(name)
+      if (!agent) return errorResponse(`Agent "${name}" not found`, 404)
+      const ai = asAIAgent(agent)
+      if (!ai) return errorResponse('Only AI agents have a context preview')
+      const url = new URL(req.url)
+      const roomIdParam = url.searchParams.get('roomId') ?? undefined
+      const agentRooms = system.rooms.getRoomsForAgent(agent.id).map(r => r.profile.id)
+      const roomId = roomIdParam && agentRooms.includes(roomIdParam)
+        ? roomIdParam
+        : agentRooms[0]
+      if (!roomId) return errorResponse('Agent is not in any rooms', 400)
+      const preview = ai.getContextPreview(roomId)
+      const registered = system.toolRegistry.list().map(t => t.name)
+      const model = ai.getConfig().model
+      return json({
+        ...preview,
+        toolTokens: computeToolTokens(registered, system.toolRegistry),
+        registeredTools: registered,
+        modelSupportsTools: modelSupportsTools(model),
+      })
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/agents\/([^/]+)\/cancel$/,
+    handler: (_req, match, { system }) => {
+      const name = decodeURIComponent(match[1]!)
+      const agent = system.team.getAgent(name)
+      if (!agent) return errorResponse(`Agent "${name}" not found`, 404)
+      const aiAgent = asAIAgent(agent)
+      if (!aiAgent) return errorResponse('Only AI agents can be cancelled')
+      aiAgent.cancelGeneration()
+      return json({ cancelled: true, name: agent.name })
+    },
+  },
+  // Resume a paused tool-iteration check-in. Body: { roomId, additionalIterations? }.
+  // Returns { resumed: boolean } — false when there was no pending checkin
+  // (rare race: user clicked after timeout/cancel/eval completion).
+  {
+    method: 'POST',
+    pattern: /^\/agents\/([^/]+)\/continue-tools$/,
+    handler: async (req, match, { system }) => {
+      const name = decodeURIComponent(match[1]!)
+      const agent = system.team.getAgent(name)
+      if (!agent) return errorResponse(`Agent "${name}" not found`, 404)
+      const aiAgent = asAIAgent(agent)
+      if (!aiAgent || !aiAgent.continueTools) return errorResponse('Only AI agents can continue tool loops')
+      const body = await req.json().catch(() => ({})) as { roomId?: unknown; additionalIterations?: unknown }
+      if (typeof body.roomId !== 'string' || !body.roomId) return errorResponse('roomId is required')
+      const additional = typeof body.additionalIterations === 'number' && body.additionalIterations > 0
+        ? body.additionalIterations
+        : 5
+      const resumed = aiAgent.continueTools(body.roomId, additional)
+      return json({ resumed, additional, name: agent.name })
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/agents\/([^/]+)$/,
+    handler: (_req, match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
+      const name = decodeURIComponent(match[1]!)
+      const agent = system.team.getAgent(name)
+      if (!agent) return errorResponse(`Agent "${name}" not found`, 404)
+      // unsubscribeAgentState happens automatically inside the wrapped
+      // system.removeAgent — see wireAgentTracking in bootstrap.ts.
+      system.removeAgent(agent.id)
+      const evt = { type: 'agent_removed' as const, agentName: name }
+      if (broadcastToWorkspace) broadcastToWorkspace(workspaceId, evt)
+      else broadcast(evt)
+      return json({ removed: true })
+    },
+  },
+  // Memory introspection routes live in routes/agents-memory.ts (registered
+  // separately in http-routes.ts). Kept out of this file to keep agent CRUD
+  // and per-agent config focused.
+]

@@ -1,5 +1,5 @@
 {
-  "name": "@samsinn-leitbild/integration-tests",
+  "name": "@leitbild/integration-tests",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@samsinn-leitbild/platform-contracts": "workspace:*"
+    "@leitbild/contracts": "workspace:*"
   },
   "devDependencies": {
     "@typescript/native": "npm:typescript@7.0.2",

@@ -4,35 +4,38 @@ import { chmod, copyFile, lstat, mkdir, mkdtemp, readlink, readdir, rm, symlink,
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 
-const APP_ID = 'leitbild'
-const SSH_HOST = process.env.SAMSINN_SSH_HOST ?? 'samsinn'
+const APP_ID = 'leitbild-platform'
+const SSH_HOST = process.env.LEITBILD_SSH_HOST ?? 'samsinn'
+const WORKSPACE_ROOT = resolve(import.meta.dir, '../../..')
+const HOST_ROOT = resolve(import.meta.dir, '..')
+const WORLD_ROOT = resolve(WORKSPACE_ROOT, 'apps/world')
+const COLLAB_AGENTS_ROOT = resolve(WORKSPACE_ROOT, 'apps/collab-agents')
+const CONTRACTS_ROOT = resolve(WORKSPACE_ROOT, 'packages/contracts')
 const DEPLOY_ROOT = '/opt/leitbild'
 const CURRENT_LINK = `${DEPLOY_ROOT}/current`
 const RELEASES_DIR = `${DEPLOY_ROOT}/releases`
 const DEPS_DIR = `${DEPLOY_ROOT}/deps`
-const SERVICE = 'leitbild.service'
+const STATE_ROOT = '/var/lib/leitbild'
+const SERVICES = ['leitbild-world.service', 'leitbild-collab-agents.service', 'leitbild-host.service'] as const
 const SERVICE_USER = 'leitbild'
-const BUN_BIN = '/opt/leitbild/runtime/bun'
-const PLATFORM_CONTRACTS_ROOT = resolve(import.meta.dir, '../../../packages/platform-contracts')
-const PLATFORM_CONTRACTS_ARTIFACT_PATH = 'packages/platform-contracts'
-export const REQUIRED_BUN_VERSION = '1.4.0'
-const LOCAL_HEALTH_URL = 'http://127.0.0.1:4177/health'
-const PUBLIC_URLS = ['https://leitbild.samsinn.app/health', 'https://samsinn.app/health'] as const
-const LOCAL_PROBES = ['/health', '/.well-known/workspace-module', '/map/capabilities.json', '/map/scenery/current/tileset.json'] as const
+const BUN_BIN = `${DEPLOY_ROOT}/runtime/bun`
+const PUBLIC_HEALTH_URL = 'https://leitbild.app/health'
+const REQUIRED_BUN_VERSION = '1.4.0'
 
-export interface DeployOptions {
+interface Options {
   readonly dryRun: boolean
   readonly yes: boolean
-  readonly updateService: boolean
-  readonly full: boolean
-  readonly tests: ReadonlyArray<string>
-  readonly list: boolean
-  readonly rollback: string | null
+  readonly install: boolean
 }
 
-export interface DeploymentManifest {
+interface ArtifactEntry {
+  readonly source: string
+  readonly target: string
+}
+
+interface DeploymentManifest {
   readonly schemaVersion: 1
-  readonly app: string
+  readonly app: typeof APP_ID
   readonly releaseId: string
   readonly createdAt: string
   readonly baseCommit: string
@@ -40,88 +43,44 @@ export interface DeploymentManifest {
   readonly dirty: boolean
   readonly worktreeStatus: ReadonlyArray<string>
   readonly sourceDigest: string
-  readonly platformContractsDigest: string
+  readonly contractsDigest: string
   readonly fileCount: number
-  readonly validation: 'quick' | 'full'
-  readonly validationCommands: ReadonlyArray<string>
   readonly persistentRootsExcluded: ReadonlyArray<string>
 }
 
-const usage = (): string => `Usage:
-  bun run deploy -- [--dry-run] [--test <path-or-pattern>...] [--full]
-                     [--yes] [--update-service]
-  bun run deploy -- --list
-  bun run deploy -- --rollback <release-id> [--yes]
+const usage = (): string => `Usage: bun run deploy -- [--dry-run] [--yes] [--install]
 
-Options:
-  --dry-run         Validate and package locally without contacting production
-  --test VALUE      Run a relevant Bun test path/pattern before packaging
-  --full            Run the full test suite instead of selected tests
-  --yes             Skip the interactive confirmation (automation only)
-  --update-service  Install the release-layout systemd unit with rollback backup
-  --list            List deployed releases and the active target (read-only)
-  --rollback ID     Atomically reactivate an earlier release
-
-Map, reference, OSRM, and simulation-run data are never included or changed.
+  --dry-run  Validate and package without contacting production
+  --yes      Skip the interactive production confirmation
+  --install  Install the service, state directory, environment, and Caddy topology
 `
 
-export const isSafeReleaseId = (value: string): boolean => /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(value)
-
-export const assertBunVersion = (actual: string): void => {
-  if (actual !== REQUIRED_BUN_VERSION) {
-    throw new Error(`Bun ${REQUIRED_BUN_VERSION} is required; found ${actual}`)
-  }
-}
-
-export const parseDeployArgs = (args: ReadonlyArray<string>): DeployOptions => {
+export const parseDeployArgs = (args: ReadonlyArray<string>): Options => {
   let dryRun = false
   let yes = false
-  let updateService = false
-  let full = false
-  const tests: string[] = []
-  let list = false
-  let rollback: string | null = null
-
-  for (let i = 0; i < args.length; i += 1) {
-    const arg = args[i]!
+  let install = false
+  for (const arg of args) {
     if (arg === '--dry-run') dryRun = true
     else if (arg === '--yes') yes = true
-    else if (arg === '--update-service') updateService = true
-    else if (arg === '--full') full = true
-    else if (arg === '--test') {
-      const test = args[i + 1]
-      if (!test) throw new Error('--test requires a path or pattern')
-      tests.push(test)
-      i += 1
-    } else if (arg === '--list') list = true
-    else if (arg === '--rollback') {
-      rollback = args[i + 1] ?? null
-      if (!rollback) throw new Error('--rollback requires a release id')
-      i += 1
-    } else if (arg === '--help' || arg === '-h') {
+    else if (arg === '--install') install = true
+    else if (arg === '--help' || arg === '-h') {
       console.log(usage())
       process.exit(0)
     } else throw new Error(`Unknown argument: ${arg}\n\n${usage()}`)
   }
-
-  const modes = Number(list) + Number(rollback !== null)
-  if (modes > 1) throw new Error('--list and --rollback are mutually exclusive')
-  if ((dryRun || updateService || full || tests.length > 0) && modes > 0) {
-    throw new Error('deploy validation flags cannot be combined with --list or --rollback')
-  }
-  if (full && tests.length > 0) throw new Error('--full and --test are mutually exclusive')
-  if (rollback && !isSafeReleaseId(rollback)) throw new Error(`Invalid release id: ${rollback}`)
-  return { dryRun, yes, updateService, full, tests, list, rollback }
+  return { dryRun, yes, install }
 }
 
-const run = async (label: string, command: ReadonlyArray<string>, cwd = process.cwd()): Promise<void> => {
+const shellQuote = (value: string): string => `'${value.replaceAll("'", `'"'"'`)}'`
+
+const run = async (label: string, command: ReadonlyArray<string>, cwd = WORKSPACE_ROOT): Promise<void> => {
   console.log(`\n→ ${label}`)
   const child = Bun.spawn([...command], { cwd, stdout: 'inherit', stderr: 'inherit' })
   const code = await child.exited
   if (code !== 0) throw new Error(`${label} failed with exit code ${code}`)
 }
 
-const capture = async (command: ReadonlyArray<string>, cwd = process.cwd()): Promise<string> => {
+const capture = async (command: ReadonlyArray<string>, cwd = WORKSPACE_ROOT): Promise<string> => {
   const child = Bun.spawn([...command], { cwd, stdout: 'pipe', stderr: 'pipe' })
   const [stdout, stderr, code] = await Promise.all([
     new Response(child.stdout).text(),
@@ -132,7 +91,51 @@ const capture = async (command: ReadonlyArray<string>, cwd = process.cwd()): Pro
   return stdout
 }
 
-const shellQuote = (value: string): string => `'${value.replaceAll("'", `'"'"'`)}'`
+const trackedFiles = async (root: string): Promise<string[]> => {
+  const raw = await capture(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], root)
+  return raw.split('\0').filter(Boolean).sort()
+}
+
+const directoryFiles = async (root: string, child: string): Promise<string[]> => {
+  const files: string[] = []
+  const visit = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name)
+      if (entry.isDirectory()) await visit(path)
+      else files.push(relative(root, path))
+    }
+  }
+  await visit(join(root, child))
+  return files
+}
+
+const entriesFor = async (root: string, targetRoot: string, extra: ReadonlyArray<string> = []): Promise<ArtifactEntry[]> => {
+  const entries: ArtifactEntry[] = []
+  for (const path of [...new Set([...await trackedFiles(root), ...extra])].sort()) {
+    if (path.startsWith('/') || path.split('/').includes('..')) throw new Error(`Unsafe source path: ${path}`)
+    const source = join(root, path)
+    const stat = await lstat(source).catch(error => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw error
+    })
+    if (stat === null) continue
+    if (stat.isFile() || stat.isSymbolicLink()) entries.push({ source, target: join(targetRoot, path) })
+  }
+  return entries
+}
+
+const digestEntries = async (entries: ReadonlyArray<ArtifactEntry>): Promise<string> => {
+  const hasher = new Bun.CryptoHasher('sha256')
+  for (const entry of [...entries].sort((left, right) => left.target.localeCompare(right.target))) {
+    const stat = await lstat(entry.source)
+    hasher.update(entry.target)
+    hasher.update('\0')
+    if (stat.isSymbolicLink()) hasher.update(await readlink(entry.source))
+    else hasher.update(await Bun.file(entry.source).arrayBuffer())
+    hasher.update('\0')
+  }
+  return hasher.digest('hex')
+}
 
 const sha256File = async (path: string): Promise<string> => {
   const hasher = new Bun.CryptoHasher('sha256')
@@ -140,454 +143,195 @@ const sha256File = async (path: string): Promise<string> => {
   return hasher.digest('hex')
 }
 
-const collectDirectoryFiles = async (repoRoot: string, relativeRoot: string): Promise<string[]> => {
-  const result: string[] = []
-  const visit = async (directory: string): Promise<void> => {
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      const path = join(directory, entry.name)
-      if (entry.isDirectory()) await visit(path)
-      else result.push(relative(repoRoot, path))
-    }
-  }
-  await visit(join(repoRoot, relativeRoot))
-  return result
-}
-
-const collectArtifactPaths = async (repoRoot: string): Promise<string[]> => {
-  const raw = await capture(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], repoRoot)
-  const candidates = [
-    ...raw.split('\0').filter(Boolean),
-    ...await collectDirectoryFiles(repoRoot, 'src/ui/dist'),
-  ]
-  const paths: string[] = []
-  for (const path of candidates) {
-    if (path.startsWith('/') || path.split('/').includes('..')) throw new Error(`Unsafe repository path: ${path}`)
-    try {
-      const stat = await lstat(join(repoRoot, path))
-      if (stat.isFile() || stat.isSymbolicLink()) paths.push(path)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    }
-  }
-  return [...new Set(paths)].sort()
-}
-
-const collectPlatformContractPaths = async (): Promise<string[]> => {
-  const raw = await capture(
-    ['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
-    PLATFORM_CONTRACTS_ROOT,
-  )
-  return raw.split('\0').filter(Boolean).sort()
-}
-
-const sourceDigest = async (repoRoot: string, paths: ReadonlyArray<string>): Promise<string> => {
-  const hasher = new Bun.CryptoHasher('sha256')
-  for (const path of paths) {
-    const absolute = join(repoRoot, path)
-    const stat = await lstat(absolute)
-    hasher.update(path)
-    hasher.update('\0')
-    if (stat.isSymbolicLink()) {
-      hasher.update('symlink\0')
-      hasher.update(await readlink(absolute))
-    } else {
-      hasher.update('file\0')
-      hasher.update(await Bun.file(absolute).arrayBuffer())
-    }
-    hasher.update('\0')
-  }
-  return hasher.digest('hex')
-}
-
-const combinedDigest = (appDigest: string, contractsDigest: string): string => {
-  const hasher = new Bun.CryptoHasher('sha256')
-  hasher.update(`app\0${appDigest}\0platform-contracts\0${contractsDigest}\0`)
-  return hasher.digest('hex')
-}
-
-export const makeReleaseId = (createdAt: string, shortCommit: string, digest: string): string => {
-  const timestamp = createdAt.replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
-  const releaseId = `${timestamp}-${shortCommit}-${digest.slice(0, 10)}`
-  if (!isSafeReleaseId(releaseId)) throw new Error(`Generated unsafe release id: ${releaseId}`)
-  return releaseId
-}
-
-const copyArtifactFiles = async (repoRoot: string, stageRoot: string, paths: ReadonlyArray<string>): Promise<void> => {
-  for (const path of paths) {
-    const source = join(repoRoot, path)
-    const target = join(stageRoot, path)
-    const stat = await lstat(source)
+const copyEntries = async (entries: ReadonlyArray<ArtifactEntry>, stageRoot: string): Promise<void> => {
+  for (const entry of entries) {
+    const target = join(stageRoot, entry.target)
+    const stat = await lstat(entry.source)
     await mkdir(dirname(target), { recursive: true })
-    if (stat.isSymbolicLink()) await symlink(await readlink(source), target)
+    if (stat.isSymbolicLink()) await symlink(await readlink(entry.source), target)
     else {
-      await copyFile(source, target)
+      await copyFile(entry.source, target)
       await chmod(target, stat.mode & 0o777)
     }
   }
 }
 
-const validationCommands = (options: DeployOptions): string[] => [
-  'bun run check',
-  ...(options.full
-    ? ['bun test']
-    : ['bun run test:deploy', ...(options.tests.length > 0 ? [`bun test ${options.tests.join(' ')}`] : [])]),
-  'bun run build:ui',
-]
-
-const createArtifact = async (repoRoot: string, options: DeployOptions): Promise<{
-  readonly archivePath: string
-  readonly archiveChecksum: string
-  readonly lockChecksum: string
-  readonly manifest: DeploymentManifest
-  readonly cleanup: () => Promise<void>
-}> => {
+const createArtifact = async () => {
   const tempRoot = await mkdtemp(join(tmpdir(), 'leitbild-release-'))
   const stageRoot = join(tempRoot, 'stage')
   const archivePath = join(tempRoot, 'release.tgz')
   await mkdir(stageRoot)
-
-  const paths = await collectArtifactPaths(repoRoot)
-  const contractPaths = await collectPlatformContractPaths()
-  const contractsDigest = await sourceDigest(PLATFORM_CONTRACTS_ROOT, contractPaths)
-  const digest = combinedDigest(await sourceDigest(repoRoot, paths), contractsDigest)
+  const hostEntries = await entriesFor(HOST_ROOT, 'apps/leitbild', await directoryFiles(HOST_ROOT, 'src/ui/dist'))
+  const worldEntries = await entriesFor(WORLD_ROOT, 'apps/world', await directoryFiles(WORLD_ROOT, 'src/ui/dist'))
+  const collabAgentsEntries = await entriesFor(COLLAB_AGENTS_ROOT, 'apps/collab-agents', ['src/ui/dist.css'])
+  const contractEntries = await entriesFor(CONTRACTS_ROOT, 'packages/contracts')
+  const rootEntries: ArtifactEntry[] = ['package.json', 'bun.lock'].map(path => ({ source: join(WORKSPACE_ROOT, path), target: path }))
+  const entries = [...rootEntries, ...hostEntries, ...worldEntries, ...collabAgentsEntries, ...contractEntries]
+  const sourceDigest = await digestEntries(entries)
+  const contractsDigest = await digestEntries(contractEntries)
   const createdAt = new Date().toISOString()
-  const baseCommit = (await capture(['git', 'rev-parse', 'HEAD'], repoRoot)).trim()
-  const branch = (await capture(['git', 'branch', '--show-current'], repoRoot)).trim() || '(detached)'
-  const worktreeStatus = (await capture(['git', 'status', '--porcelain=v1', '--untracked-files=all'], repoRoot))
-    .split('\n').filter(Boolean)
+  const baseCommit = (await capture(['git', 'rev-parse', 'HEAD'])).trim()
+  const branch = (await capture(['git', 'branch', '--show-current'])).trim() || '(detached)'
+  const worktreeStatus = (await capture(['git', 'status', '--porcelain=v1', '--untracked-files=all'])).split('\n').filter(Boolean)
   const manifest: DeploymentManifest = {
     schemaVersion: 1,
     app: APP_ID,
-    releaseId: makeReleaseId(createdAt, baseCommit.slice(0, 10), digest),
+    releaseId: `${createdAt.replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}-${baseCommit.slice(0, 10)}-${sourceDigest.slice(0, 10)}`,
     createdAt,
     baseCommit,
     branch,
     dirty: worktreeStatus.length > 0,
     worktreeStatus,
-    sourceDigest: digest,
-    platformContractsDigest: contractsDigest,
-    fileCount: paths.length + contractPaths.length,
-    validation: options.full ? 'full' : 'quick',
-    validationCommands: validationCommands(options),
-    persistentRootsExcluded: [
-      '/opt/leitbild/data',
-      '/opt/leitbild/maps',
-      '/opt/leitbild/reference',
-      '/opt/leitbild/osrm-data',
-    ],
+    sourceDigest,
+    contractsDigest,
+    fileCount: entries.length,
+    persistentRootsExcluded: [STATE_ROOT],
   }
-
-  await copyArtifactFiles(repoRoot, stageRoot, paths)
-  await copyArtifactFiles(
-    PLATFORM_CONTRACTS_ROOT,
-    join(stageRoot, PLATFORM_CONTRACTS_ARTIFACT_PATH),
-    contractPaths,
-  )
+  await copyEntries(entries, stageRoot)
   await writeFile(join(stageRoot, 'DEPLOYMENT.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 })
-  const tarCommand = process.platform === 'darwin'
-    ? ['tar', '--no-mac-metadata', '--no-xattrs', '-czf', archivePath, '-C', stageRoot, '.']
-    : ['tar', '-czf', archivePath, '-C', stageRoot, '.']
-  await run('Create immutable code-only artifact', tarCommand, repoRoot)
+  await run('Create immutable Leitbild artifact', ['tar', '--no-mac-metadata', '--no-xattrs', '-czf', archivePath, '-C', stageRoot, '.'])
   return {
     archivePath,
     archiveChecksum: await sha256File(archivePath),
-    lockChecksum: await sha256File(join(repoRoot, 'bun.lock')),
+    lockChecksum: await sha256File(join(WORKSPACE_ROOT, 'bun.lock')),
     manifest,
     cleanup: () => rm(tempRoot, { recursive: true, force: true }),
   }
 }
 
-const confirmMutation = (description: string, yes: boolean): void => {
-  if (yes) return
-  if (!process.stdin.isTTY) throw new Error('Refusing a production mutation without --yes in a non-interactive shell')
-  const answer = prompt(`${description}\nType "deploy" to continue:`)
-  if (answer !== 'deploy') throw new Error('Deployment cancelled')
-}
-
-export const remotePreflightScript = (updateService: boolean): string => `
-set -euo pipefail
-actual_bun="$(${BUN_BIN} --version)"
-test "$actual_bun" = ${shellQuote(REQUIRED_BUN_VERSION)} || {
-  echo "Refusing deploy: Bun ${REQUIRED_BUN_VERSION} required at ${BUN_BIN}; found $actual_bun" >&2
-  exit 1
-}
+const remotePreflight = (install: boolean): string => `set -euo pipefail
+test "$(/opt/leitbild/runtime/bun --version)" = ${shellQuote(REQUIRED_BUN_VERSION)}
 test "$(systemctl is-active caddy.service)" = active
-test "$(systemctl is-active samsinn.service)" = active
-test "$(systemctl is-active ${SERVICE})" = active
-curl -fsS -o /dev/null ${LOCAL_HEALTH_URL}
-curl -fsS -o /dev/null http://127.0.0.1:3000/health
-available_kb="$(df --output=avail /opt | tail -n 1 | tr -d ' ')"
-test "$available_kb" -gt 4194304
-diag="$(curl -fsS http://127.0.0.1:3000/api/system/diagnostics)"
-generating="$(printf '%s' "$diag" | jq '[.. | objects | .generatingAgentCount? // empty] | add // 0')"
-test "$generating" -eq 0 || { echo "Refusing deploy: $generating Samsinn agent generation(s) active" >&2; exit 1; }
-printf 'preflight_ok available_kb=%s generating=%s\n' "$available_kb" "$generating"
-working="$(systemctl show ${SERVICE} -p WorkingDirectory --value)"
-if test "$working" != ${shellQuote(CURRENT_LINK)} && test ${updateService ? '1' : '0'} -ne 1; then
-  echo "Service still uses $working; first release deploy requires --update-service" >&2
-  exit 1
+test "$(systemctl is-active docker.service)" = active
+test "$(df --output=avail /opt | tail -n 1 | tr -d ' ')" -gt 2097152
+if test ${install ? '0' : '1'} -eq 1; then
+  ${SERVICES.map(service => `test "$(systemctl is-active ${service})" = active`).join('\n  ')}
 fi
 `
 
-export const remoteDeployScript = (artifact: {
-  readonly manifest: DeploymentManifest
-  readonly archiveChecksum: string
-  readonly lockChecksum: string
-}, remoteArchive: string, updateService: boolean): string => {
-  const releaseId = artifact.manifest.releaseId
-  const releaseDir = `${RELEASES_DIR}/${releaseId}`
-  return `
-set -euo pipefail
-exec 9>/run/lock/samsinn-stack-deploy.lock
-flock -n 9 || { echo "Another Samsinn/Leitbild deployment is active" >&2; exit 1; }
-${remotePreflightScript(updateService)}
-deploy_root=${shellQuote(DEPLOY_ROOT)}
-current_link=${shellQuote(CURRENT_LINK)}
-releases_dir=${shellQuote(RELEASES_DIR)}
-deps_dir=${shellQuote(DEPS_DIR)}
-release_id=${shellQuote(releaseId)}
-release_dir=${shellQuote(releaseDir)}
+const remoteDeploy = (artifact: Awaited<ReturnType<typeof createArtifact>>, remoteArchive: string, install: boolean): string => {
+  const id = artifact.manifest.releaseId
+  return `set -euo pipefail
+exec 9>/run/lock/leitbild-deploy.lock
+flock -n 9 || { echo "Another stack deployment is active" >&2; exit 1; }
+${remotePreflight(install)}
+release_id=${shellQuote(id)}
+release_dir=${shellQuote(`${RELEASES_DIR}/${id}`)}
 archive=${shellQuote(remoteArchive)}
-archive_sha=${shellQuote(artifact.archiveChecksum)}
-lock_sha=${shellQuote(artifact.lockChecksum)}
-contracts_sha=${shellQuote(artifact.manifest.platformContractsDigest)}
-incoming="$releases_dir/.incoming-$release_id"
-dep_dir="$deps_dir/$lock_sha-$contracts_sha"
-unit_backup="/etc/systemd/system/${SERVICE}.pre-release-$release_id"
+incoming=${shellQuote(`${RELEASES_DIR}/.incoming-${id}`)}
+dep_dir=${shellQuote(`${DEPS_DIR}/${artifact.lockChecksum}-${artifact.manifest.contractsDigest}`)}
 previous=""
-if test -L "$current_link"; then previous="$(readlink -f "$current_link")"; fi
-unit_changed=0
-
-cleanup_incoming() {
-  rm -rf -- "$incoming"
-  rm -f -- "$archive"
-}
-rollback_activation() {
-  echo "Activation failed; restoring previous service target" >&2
-  if test -n "$previous" && test -d "$previous"; then
-    next_link="$deploy_root/.rollback-current-$release_id"
-    ln -s "$previous" "$next_link"
-    mv -Tf "$next_link" "$current_link"
-  fi
-  if test "$unit_changed" -eq 1 && test -f "$unit_backup"; then
-    cp "$unit_backup" /etc/systemd/system/${SERVICE}
-    systemctl daemon-reload
-  fi
-  systemctl reset-failed ${SERVICE} || true
-  if ! systemctl restart ${SERVICE} || ! wait_for_health; then
-    echo "Previous Leitbild release did not recover cleanly" >&2
-    return 1
-  fi
-}
-wait_for_health() {
-  for attempt in $(seq 1 30); do
-    if systemctl is-active --quiet ${SERVICE} && curl -fsS -o /dev/null ${LOCAL_HEALTH_URL}; then
-      return 0
-    fi
-    sleep 1
-  done
-  return 1
-}
-trap cleanup_incoming EXIT
-mkdir -p "$releases_dir" "$deps_dir"
-test ! -e "$release_dir" || { echo "Release already exists: $release_id" >&2; exit 1; }
-printf '%s  %s\n' "$archive_sha" "$archive" | sha256sum --check --status
+test ! -e "$release_dir"
+if test -L ${shellQuote(CURRENT_LINK)}; then previous="$(readlink -f ${shellQuote(CURRENT_LINK)})"; fi
+cleanup() { rm -rf -- "$incoming"; rm -f -- "$archive"; }
+trap cleanup EXIT
+if test ${install ? '1' : '0'} -eq 1; then
+  id -u ${SERVICE_USER} >/dev/null 2>&1 || useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin ${SERVICE_USER}
+  install -d -o ${SERVICE_USER} -g ${SERVICE_USER} -m 0700 ${shellQuote(`${STATE_ROOT}/host`)} ${shellQuote(`${STATE_ROOT}/world`)} ${shellQuote(`${STATE_ROOT}/collab-agents`)}
+  install -d -o root -g root -m 0755 ${shellQuote(DEPLOY_ROOT)}
+  install -d -o root -g root -m 0755 /etc/leitbild
+  cat > /etc/leitbild/platform.env <<'EOF'
+WORKSPACE_HOST_URL=https://leitbild.app
+WORKSPACE_MODULES=[{"moduleId":"world","internalBaseUrl":"http://127.0.0.1:4177","manifestPath":"/.well-known/workspace-module"},{"moduleId":"collab","internalBaseUrl":"http://127.0.0.1:3000","manifestPath":"/.well-known/workspace-module/collab"},{"moduleId":"agents","internalBaseUrl":"http://127.0.0.1:3000","manifestPath":"/.well-known/workspace-module/agents"}]
+EOF
+  chmod 0600 /etc/leitbild/platform.env
+fi
+mkdir -p ${shellQuote(RELEASES_DIR)} ${shellQuote(DEPS_DIR)}
+printf '%s  %s\n' ${shellQuote(artifact.archiveChecksum)} "$archive" | sha256sum --check --status
 mkdir "$incoming"
 tar -xzf "$archive" --no-same-owner -C "$incoming"
-if find "$incoming" -name '._*' -print -quit | grep -q .; then
-  echo "Refusing release containing AppleDouble metadata files" >&2
-  exit 1
-fi
-test "$(jq -r '.app' "$incoming/DEPLOYMENT.json")" = ${shellQuote(APP_ID)}
-test "$(jq -r '.releaseId' "$incoming/DEPLOYMENT.json")" = "$release_id"
-test "$(sha256sum "$incoming/bun.lock" | cut -d ' ' -f 1)" = "$lock_sha"
-test "$(jq -r '.name' "$incoming/packages/platform-contracts/package.json")" = '@samsinn-leitbild/platform-contracts'
-test ! -e "$incoming/node_modules"
-
+test "$(jq -r .app "$incoming/DEPLOYMENT.json")" = ${shellQuote(APP_ID)}
+test "$(jq -r .releaseId "$incoming/DEPLOYMENT.json")" = "$release_id"
 if test ! -d "$dep_dir/node_modules"; then
-  dep_tmp="$deps_dir/.incoming-$lock_sha-$contracts_sha-$$"
+  dep_tmp="${DEPS_DIR}/.incoming-${artifact.lockChecksum}-$$"
   rm -rf -- "$dep_tmp"
-  mkdir "$dep_tmp"
-  jq 'del(.dependencies["@samsinn-leitbild/platform-contracts"])' "$incoming/package.json" > "$dep_tmp/package.json"
-  cp "$incoming/bun.lock" "$dep_tmp/"
+  mkdir -p "$dep_tmp/apps/leitbild" "$dep_tmp/apps/world" "$dep_tmp/apps/collab-agents" "$dep_tmp/packages"
+  cp "$incoming/package.json" "$incoming/bun.lock" "$dep_tmp/"
+  cp "$incoming/apps/leitbild/package.json" "$dep_tmp/apps/leitbild/"
+  cp "$incoming/apps/world/package.json" "$dep_tmp/apps/world/"
+  cp "$incoming/apps/collab-agents/package.json" "$dep_tmp/apps/collab-agents/"
+  cp -a "$incoming/packages/contracts" "$dep_tmp/packages/"
   chown -R ${SERVICE_USER}:${SERVICE_USER} "$dep_tmp"
-  if ! sudo -u ${SERVICE_USER} sh -c 'cd "$1" && exec "$2" install --frozen-lockfile' sh "$dep_tmp" ${shellQuote(BUN_BIN)}; then
-    rm -rf -- "$dep_tmp"
-    exit 1
-  fi
-  mkdir -p "$dep_tmp/node_modules/@samsinn-leitbild/platform-contracts"
-  cp -a "$incoming/packages/platform-contracts/." "$dep_tmp/node_modules/@samsinn-leitbild/platform-contracts/"
-  while IFS= read -r dependency; do
-    source_dependency="$dep_tmp/node_modules/$dependency"
-    bundled_dependency="$dep_tmp/node_modules/@samsinn-leitbild/platform-contracts/node_modules/$dependency"
-    test -e "$source_dependency"
-    mkdir -p "$(dirname "$bundled_dependency")"
-    cp -aL "$source_dependency" "$bundled_dependency"
-  done < <(jq -r '.dependencies // {} | keys[]' "$incoming/packages/platform-contracts/package.json")
-  chown -R ${SERVICE_USER}:${SERVICE_USER} "$dep_tmp/node_modules/@samsinn-leitbild"
+  sudo -u ${SERVICE_USER} sh -c 'cd "$1" && exec "$2" install --frozen-lockfile --production' sh "$dep_tmp" ${shellQuote(BUN_BIN)}
   mv "$dep_tmp" "$dep_dir"
 fi
 ln -s "$dep_dir/node_modules" "$incoming/node_modules"
+ln -s "$dep_dir/apps/leitbild/node_modules" "$incoming/apps/leitbild/node_modules"
+ln -s "$dep_dir/apps/world/node_modules" "$incoming/apps/world/node_modules"
+ln -s "$dep_dir/apps/collab-agents/node_modules" "$incoming/apps/collab-agents/node_modules"
 mv "$incoming" "$release_dir"
-trap 'rm -f -- "$archive"' EXIT
-
-next_link="$deploy_root/.next-current-$release_id"
+next_link="${DEPLOY_ROOT}/.next-$release_id"
 ln -s "$release_dir" "$next_link"
-mv -Tf "$next_link" "$current_link"
-
-if test ${updateService ? '1' : '0'} -eq 1; then
-  cp /etc/systemd/system/${SERVICE} "$unit_backup"
-  cp "$release_dir/deploy/leitbild.service" /etc/systemd/system/${SERVICE}
+mv -Tf "$next_link" ${shellQuote(CURRENT_LINK)}
+if test ${install ? '1' : '0'} -eq 1; then
+  for service in ${SERVICES.join(' ')}; do cp "$release_dir/apps/leitbild/deploy/$service" "/etc/systemd/system/$service"; done
   systemctl daemon-reload
-  unit_changed=1
+  systemctl enable ${SERVICES.join(' ')}
 fi
-
-if ! systemctl restart ${SERVICE} || ! wait_for_health; then
-  rollback_activation || exit 2
+systemctl reset-failed ${SERVICES.join(' ')} || true
+if ! systemctl restart ${SERVICES.join(' ')}; then
+  if test -n "$previous"; then ln -sfn "$previous" ${shellQuote(CURRENT_LINK)}; systemctl restart ${SERVICES.join(' ')}; fi
   exit 1
 fi
-for path in ${LOCAL_PROBES.map(shellQuote).join(' ')}; do
-  if ! curl -fsS -o /dev/null "http://127.0.0.1:4177$path"; then
-    rollback_activation || exit 2
-    exit 1
-  fi
+for port in 3000 4177 3100; do for attempt in $(seq 1 60); do curl -fsS -o /dev/null "http://127.0.0.1:$port/health" && break; sleep 1; done; curl -fsS -o /dev/null "http://127.0.0.1:$port/health"; done
+caddy_backup="/etc/caddy/Caddyfile.pre-leitbild-$release_id"
+cp /etc/caddy/Caddyfile "$caddy_backup"
+caddy validate --config "$release_dir/apps/leitbild/deploy/Caddyfile"
+install -o root -g root -m 0644 "$release_dir/apps/leitbild/deploy/Caddyfile" /etc/caddy/Caddyfile
+if ! systemctl reload caddy.service; then
+  cp "$caddy_backup" /etc/caddy/Caddyfile
+  systemctl reload caddy.service || true
+  exit 1
+fi
+public_ready=0
+for attempt in $(seq 1 60); do
+  if curl -fsS -o /dev/null ${shellQuote(PUBLIC_HEALTH_URL)}; then public_ready=1; break; fi
+  sleep 1
 done
-for url in ${PUBLIC_URLS.map(shellQuote).join(' ')}; do
-  if ! curl -fsS -o /dev/null "$url"; then
-    rollback_activation || exit 2
-    exit 1
-  fi
-done
-rm -f -- "$archive"
+if test "$public_ready" -ne 1; then
+  cp "$caddy_backup" /etc/caddy/Caddyfile
+  systemctl reload caddy.service || true
+  exit 1
+fi
+find ${shellQuote(RELEASES_DIR)} -mindepth 1 -maxdepth 1 -type d ! -path "$release_dir" -exec rm -rf -- {} +
+find ${shellQuote(DEPS_DIR)} -mindepth 1 -maxdepth 1 -type d ! -path "$dep_dir" -exec rm -rf -- {} +
 printf 'activated_release=%s previous=%s\n' "$release_id" "\${previous:-none}"
 `
 }
 
-const verifyPublicHealth = async (): Promise<void> => {
-  for (const url of PUBLIC_URLS) {
-    const response = await fetch(url)
-    if (!response.ok) throw new Error(`Public verification failed: ${url} returned ${response.status}`)
-    console.log(`✓ ${url} ${response.status}`)
-  }
+const confirmMutation = (id: string, yes: boolean): void => {
+  if (yes) return
+  if (!process.stdin.isTTY) throw new Error('Refusing production mutation without --yes')
+  if (prompt(`Deploy Leitbild ${id} to production? Type "deploy" to continue:`) !== 'deploy') throw new Error('Deployment cancelled')
 }
 
-const listReleases = async (): Promise<void> => {
-  await run('List Leitbild releases', ['ssh', SSH_HOST, `set -e
-    if test -L ${shellQuote(CURRENT_LINK)}; then
-      printf 'current='; readlink -f ${shellQuote(CURRENT_LINK)}
-    else
-      printf 'current=legacy-layout\n'
-    fi
-    if test -d ${shellQuote(RELEASES_DIR)}; then
-      find ${shellQuote(RELEASES_DIR)} -mindepth 1 -maxdepth 1 -type d ! -name '.incoming-*' -printf '%f\n' | sort -r
-    fi
-  `])
-}
-
-export const remoteRollbackScript = (releaseId: string): string => {
-  const target = `${RELEASES_DIR}/${releaseId}`
-  return `set -euo pipefail
-    exec 9>/run/lock/samsinn-stack-deploy.lock
-    flock -n 9 || { echo "Another Samsinn/Leitbild deployment is active" >&2; exit 1; }
-    target=${shellQuote(target)}
-    current=${shellQuote(CURRENT_LINK)}
-    test -d "$target"
-    test "$(jq -r '.app' "$target/DEPLOYMENT.json")" = ${shellQuote(APP_ID)}
-    previous="$(readlink -f "$current")"
-    verify_target() {
-      for attempt in $(seq 1 30); do
-        if systemctl is-active --quiet ${SERVICE} && curl -fsS -o /dev/null ${LOCAL_HEALTH_URL}; then break; fi
-        test "$attempt" -lt 30 || return 1
-        sleep 1
-      done
-      for path in ${LOCAL_PROBES.map(shellQuote).join(' ')}; do
-        curl -fsS -o /dev/null "http://127.0.0.1:4177$path" || return 1
-      done
-      for url in ${PUBLIC_URLS.map(shellQuote).join(' ')}; do
-        curl -fsS -o /dev/null "$url" || return 1
-      done
-    }
-    next=${shellQuote(`${DEPLOY_ROOT}/.rollback-${releaseId}`)}
-    ln -s "$target" "$next"
-    mv -Tf "$next" "$current"
-    if systemctl restart ${SERVICE} && verify_target; then exit 0; fi
-    restore=${shellQuote(`${DEPLOY_ROOT}/.restore-${releaseId}`)}
-    ln -s "$previous" "$restore"
-    mv -Tf "$restore" "$current"
-    systemctl restart ${SERVICE}
-    verify_target || { echo "Previous Leitbild release did not recover cleanly" >&2; exit 2; }
-    exit 1
-  `
-}
-
-const rollbackRelease = async (releaseId: string, yes: boolean): Promise<void> => {
-  confirmMutation(`Rollback Leitbild production to ${releaseId}?`, yes)
-  await run('Production preflight', ['ssh', SSH_HOST, remotePreflightScript(false)])
-  await run('Activate previous release', ['ssh', SSH_HOST, remoteRollbackScript(releaseId)])
-  await verifyPublicHealth()
-}
-
-const validate = async (repoRoot: string, options: DeployOptions): Promise<void> => {
-  await run('TypeScript checks', ['bun', 'run', 'check'], repoRoot)
-  if (options.full) await run('Full test suite', ['bun', 'test'], repoRoot)
-  else {
-    await run('Always-on deploy smoke suite', ['bun', 'run', 'test:deploy'], repoRoot)
-    if (options.tests.length > 0) {
-      await run('Selected relevant tests', ['bun', 'test', ...options.tests], repoRoot)
-    }
-  }
-  await run('Build production UI', ['bun', 'run', 'build:ui'], repoRoot)
-}
-
-const deploy = async (options: DeployOptions): Promise<void> => {
-  const repoRoot = resolve(import.meta.dir, '..')
-  assertBunVersion(Bun.version)
-  await validate(repoRoot, options)
-  const artifact = await createArtifact(repoRoot, options)
+const main = async (): Promise<void> => {
+  const options = parseDeployArgs(process.argv.slice(2))
+  if (Bun.version !== REQUIRED_BUN_VERSION) throw new Error(`Bun ${REQUIRED_BUN_VERSION} required; found ${Bun.version}`)
+  await run('Platform checks', ['bun', 'run', 'check'])
+  await run('Platform tests', ['bun', 'run', 'test'])
+  await run('Build Leitbild host UI', ['bun', 'run', 'build:ui'], HOST_ROOT)
+  await run('Build World UI', ['bun', 'run', 'build:ui'], WORLD_ROOT)
+  await run('Build Collab/Agents CSS', ['bun', 'run', 'build:css'], COLLAB_AGENTS_ROOT)
+  const artifact = await createArtifact()
   try {
-    const size = Bun.file(artifact.archivePath).size
     console.log(`\nRelease: ${artifact.manifest.releaseId}`)
-    console.log(`Base commit: ${artifact.manifest.baseCommit}`)
     console.log(`Dirty worktree: ${artifact.manifest.dirty ? 'yes' : 'no'}`)
-    if (artifact.manifest.dirty) {
-      for (const entry of artifact.manifest.worktreeStatus) console.log(`  ${entry}`)
-    }
-    console.log(`Validation: ${artifact.manifest.validation}`)
     console.log(`Files: ${artifact.manifest.fileCount}`)
-    console.log(`Artifact: ${(size / 1024 / 1024).toFixed(2)} MiB`)
-    console.log(`Source digest: ${artifact.manifest.sourceDigest}`)
-    console.log('Persistent maps/reference/OSRM/simulation-run data: excluded')
-
-    if (options.dryRun) {
-      console.log('\n✓ Dry run complete; production was not contacted or changed')
-      return
-    }
-
-    confirmMutation(`Deploy ${artifact.manifest.releaseId} to Leitbild production?`, options.yes)
-    await run('Production preflight', ['ssh', SSH_HOST, remotePreflightScript(options.updateService)])
+    if (options.dryRun) return console.log('\n✓ Dry run complete; production was not changed')
+    confirmMutation(artifact.manifest.releaseId, options.yes)
+    await run('Production preflight', ['ssh', SSH_HOST, remotePreflight(options.install)])
     const remoteArchive = `/tmp/leitbild-${artifact.manifest.releaseId}.tgz`
-    await run('Upload immutable code artifact', ['scp', artifact.archivePath, `${SSH_HOST}:${remoteArchive}`])
-    await run('Install and activate code release', [
-      'ssh', SSH_HOST,
-      remoteDeployScript(artifact, remoteArchive, options.updateService),
-    ])
-    await verifyPublicHealth()
-    console.log(`\n✓ Leitbild ${artifact.manifest.releaseId} is active; static map assets were untouched`)
+    await run('Upload immutable Leitbild artifact', ['scp', artifact.archivePath, `${SSH_HOST}:${remoteArchive}`])
+    await run('Activate Leitbild release', ['ssh', SSH_HOST, remoteDeploy(artifact, remoteArchive, options.install)])
+    for (const url of [PUBLIC_HEALTH_URL]) {
+      const response = await fetch(url)
+      if (!response.ok) throw new Error(`${url} returned ${response.status}`)
+      console.log(`✓ ${url} ${response.status}`)
+    }
   } finally {
     await artifact.cleanup()
   }
 }
 
-const main = async (): Promise<void> => {
-  const options = parseDeployArgs(process.argv.slice(2))
-  if (options.list) return listReleases()
-  if (options.rollback) return rollbackRelease(options.rollback, options.yes)
-  return deploy(options)
-}
-
-if (import.meta.main) {
-  main().catch(error => {
-    console.error(`\n✗ ${error instanceof Error ? error.message : String(error)}`)
-    process.exit(1)
-  })
-}
+if (import.meta.main) await main()

@@ -1,6 +1,6 @@
-# Workspace Platform
+# Leitbild Platform
 
-The Workspace Platform gives composable Modules one shared product identity without absorbing their domain state or behavior.
+The Leitbild Platform gives World, Collab, and Agents one product identity without absorbing their domain state or behavior.
 
 ## Language
 
@@ -8,24 +8,24 @@ The Workspace Platform gives composable Modules one shared product identity with
 A durable product container with one identity, optional display name, and a set of Module Memberships.
 _Avoid_: Instance, Suite, account, Room, or Simulation Run
 
-**Workspace Host**:
-The sole public entry point and authority for Workspace identity, Module Membership, navigation, and Workspace-scoped routing.
-_Avoid_: Suite, coordinator, shared domain runtime
-
-**Experience**:
-A coherent user-facing surface composed from one or more Modules, such as Leitbild or Samsinn.
-_Avoid_: using Experience as a state owner or deployment boundary
+**Leitbild Host**:
+The sole public entry point and authority for Workspace identity, core Module lifecycle, navigation, and Workspace-scoped routing.
+_Avoid_: Workspace Host, Suite, coordinator, shared domain runtime
 
 **Module**:
 A technical bounded context that owns domain state and behavior and can participate in a Workspace.
 _Avoid_: Experience, Pack, process
 
-**Module Membership**:
-The durable fact that a Module participates in one Workspace, including its lifecycle status but not its domain state.
-_Avoid_: Module Binding, installation, copied service URL
+**Core Module**:
+World, Collab, or Agents: a Module provisioned for every Workspace while its expensive runtime activity remains lazy.
+_Avoid_: optional Experience, user-installed Module
+
+**Module Provisioning State**:
+The lifecycle status of one core Module inside one Workspace, excluding the Module's domain state.
+_Avoid_: Module Membership, Module Binding, feature toggle
 
 **Module Manifest**:
-A Module's validated declaration of identity, Experiences, Resources, Capabilities, lifecycle endpoints, and UI contribution.
+A Module's validated declaration of identity, Resources, Capabilities, lifecycle endpoints, and Workspace UI route.
 _Avoid_: service-specific configuration guessed by the Host
 
 **Resource**:
@@ -45,24 +45,19 @@ A Module-owned extension interpreted only by its owning Module.
 _Avoid_: Module, universal plugin, cross-Module runtime
 
 **Demo Definition**:
-An optional experience-owned prompt, persona, tool recommendation, and capability requirement used to start a demonstration.
+An optional Module-owned prompt, persona, tool recommendation, and Capability requirement used to start a demonstration.
 _Avoid_: environment provisioning, concrete Resource ids, workflow
 
 **Workspace Template**:
-An optional apply-once recipe that creates Module Membership and Module-owned seed Resources, after which the Workspace is ordinary and independent.
+An optional apply-once recipe that creates Module-owned seed Resources, after which the Workspace is ordinary and independent.
 _Avoid_: Blueprint, controller, reconciliation, Agent configuration
-
-**Distribution**:
-An installable selection of the Workspace Host, Modules, Packs, and Experiences.
-_Avoid_: giving single-Experience installations a different architecture
 
 ## Relationships
 
-- A Workspace Host can manage many Workspaces.
-- A Workspace can enable many Modules.
+- A Leitbild Host can manage many Workspaces.
+- Every Workspace provisions World, Collab, and Agents.
 - A Module owns its Workspace-scoped domain state.
-- An Experience can compose several Modules without owning their state.
 - A Pack belongs to exactly one Module.
 - A Resource belongs to exactly one Module and one Workspace.
 - A Capability is advertised by exactly one Module and may apply to a Resource type or an entire Workspace.
-- A Workspace Template may create a Workspace but never controls it afterward.
+- A Workspace Template may seed a Workspace but never controls it afterward.

@@ -1,0 +1,25 @@
+leitbild.app {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Frame-Options DENY
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	@world path_regexp world ^(?:/workspaces/[^/]+/world(?:/.*)?|/api/workspaces/[^/]+/world(?:/.*)?|/assets/world/.*|/map/.*)$
+	handle @world {
+		reverse_proxy 127.0.0.1:4177
+	}
+
+	@collab_agents path_regexp collab_agents ^(?:/workspaces/[^/]+/(?:collab|agents)|/api/workspaces/[^/]+/(?:collab|agents)(?:/.*)?|/api/(?:auth|system/.*|packs(?:/.*)?)|/modules/.*|/lib/.*|/core/.*|/biometrics/.*|/dist\.css)$
+	handle @collab_agents {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:3100
+	}
+}

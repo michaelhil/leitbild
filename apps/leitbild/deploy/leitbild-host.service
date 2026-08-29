@@ -1,0 +1,34 @@
+[Unit]
+Description=Leitbild host and workspace shell
+After=network-online.target leitbild-world.service leitbild-collab-agents.service
+Wants=network-online.target
+Requires=leitbild-world.service leitbild-collab-agents.service
+
+[Service]
+Type=simple
+User=leitbild
+Group=leitbild
+WorkingDirectory=/opt/leitbild/current/apps/leitbild
+Environment=PORT=3100
+Environment=BIND_HOST=127.0.0.1
+Environment=WORKSPACE_HOST_HOME=/var/lib/leitbild/host
+EnvironmentFile=/etc/leitbild/platform.env
+ExecStart=/opt/leitbild/runtime/bun run src/index.ts
+Restart=on-failure
+RestartSec=5s
+MemoryMax=256M
+CPUQuota=50%
+LimitNOFILE=4096
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/leitbild/host
+PrivateTmp=true
+PrivateDevices=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

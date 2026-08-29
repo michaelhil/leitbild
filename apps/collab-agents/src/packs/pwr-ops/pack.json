@@ -1,0 +1,32 @@
+{
+  "descriptor": {
+    "schemaVersion": "1.0.0",
+    "id": "pwr-ops",
+    "moduleId": "agents",
+    "version": "1.0.0",
+    "name": "PWR Operations",
+    "description": "Westinghouse PWR Emergency Operating Procedures — fetched live from the leitbild-wikis/pwr-ops wiki.",
+    "platformVersionRange": "^1.0.0",
+    "dependencies": [],
+    "contributions": [
+      { "kind": "tool" },
+      { "kind": "wiki" }
+    ]
+  },
+  "wikis": [
+    {
+      "name": "PWR EOPs",
+      "url": "https://leitbild-wikis.github.io/pwr-ops/",
+      "source": {
+        "org": "leitbild-wikis",
+        "repo": "pwr-ops",
+        "branch": "main",
+        "procedureDir": "wiki/procedures",
+        "indexFile": "wiki/index.md",
+        "manifestFile": "wiki/_manifest.json",
+        "citationBase": "https://leitbild-wikis.github.io/pwr-ops/procedures/"
+      }
+    }
+  ],
+  "uiExtensions": []
+}

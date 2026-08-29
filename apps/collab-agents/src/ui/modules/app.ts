@@ -1,0 +1,901 @@
+import { apiFetch } from "./api-client.ts"
+// ============================================================================
+// leitbild — UI Application
+//
+// Orchestrator: connects WS client, wires store subscriptions to DOM,
+// handles user events. State lives in stores.ts; WS dispatch in ws-dispatch.ts.
+// ============================================================================
+
+import { createWSClient, type WSClient } from './ws-client.ts'
+import { send, setWSClient } from './ws-send.ts'
+import { initThinkingDisplay } from './thinking-display.ts'
+import { fetchRoomMessages, fetchRoomMembers } from './room-fetchers.ts'
+import { renderRooms } from './render/render-rooms.ts'
+import { renderAgents } from './render/render-agents.ts'
+import { mountRoomMembers, consumeAutoAddRoom, registerPendingCreateAdd, clearAutoAddRoom } from './render/render-room-members.ts'
+import { mountRoomSwitcher } from './render/render-room-switcher.ts'
+import { mountVisibilityPopover } from './visibility-popover.ts'
+import { initMessageHeaderPrefs } from './message-header-prefs.ts'
+import { renderMessage } from './render/render-message.ts'
+import { renderDemoStrip } from './demos/index.ts'
+import type {
+  UIMessage,
+  RoomProfile,
+  AgentInfo,
+} from './render/render-types.ts'
+import { derivePhase, phaseLabel, THINKING_MARKER } from './thinking-phase.ts'
+import { openTextEditorModal } from './modals/detail-modal.ts'
+import { openSendAsPicker } from './send-as-picker.ts'
+import { reconcileSelectionForRoom } from './agent-selection.ts'
+import { wsDispatch } from './ws-dispatch/index.ts'
+import { batched } from '../lib/nanostores.ts'
+import { showToast } from './toast.ts'
+import { roomNameToId, roomIdToName, agentIdToName } from './identity-lookups.ts'
+import { populateModelSelect, getShowAllModels, setShowAllModels } from './model-select.ts'
+import { safeFetchJson } from './fetch-helpers.ts'
+import {
+  updateOllamaHealthUI,
+  wireOllamaDashboard,
+  type OllamaDashboardElements,
+} from './ollama-dashboard.ts'
+import { stopProvidersPanel } from './panels/providers/index.ts'
+import { startLoggingStateDot } from './panels/logging-panel.ts'
+import { initSettingsNav } from './settings-nav.ts'
+import { hydrateIconPlaceholders, icon } from './icon.ts'
+import {
+  isSummaryGroupExpanded,
+  initSummaryPanel,
+} from './panels/summary-panel.ts'
+import { initScriptPanel } from './panels/script-panel.ts'
+import { initScriptDocPanel } from './panels/script-doc-panel.ts'
+import {
+  $myAgentId,
+  $sessionToken,
+  $connected,
+  $selectedRoomId,
+  $selectedAgentId,
+  $rooms,
+  $pausedRooms,
+  $unreadCounts,
+  $agents,
+  $agentIdByName,
+  $roomMembers,
+  $mutedAgents,
+  $generatingRoomIds,
+  $visibleThinkingIndicators,
+  $roomMessages,
+  $thinkingPreviews,
+  $thinkingTools,
+  $pendingToolCheckins,
+  $liveThinking,
+  $messageThinking,
+  $currentDeliveryMode,
+  $roomPaused,
+  $turnInfo,
+  $ollamaHealth,
+  $agentContexts,
+  $agentWarnings,
+  $messageContexts,
+  $messageWarnings,
+  $roomListView,
+  $agentListView,
+  $selectedHumanByRoom,
+  type AgentEntry,
+} from './stores.ts'
+
+// === DOM refs ===
+
+import { domRefs } from './app-dom.ts'
+import { createThinkingController } from './app-thinking.ts'
+
+const {
+  roomList, roomHeader, roomNameEl, roomInfoBar, roomsToggle, roomsHeader,
+  agentList, roomMembers, noRoomState, chatArea,
+  messagesDiv, chatForm, chatInput,
+  roomStatusDot, btnModeToggle,
+  btnSummaryToggle, btnSummarySettings, btnSummaryInspect, btnSummaryRegenerate,
+  roomModeInfo,
+  nameModal, nameForm, roomModal, roomForm, agentModal, agentForm,
+  agentsHeader, agentsToggle,
+  ollamaStatusDot, ollamaDashboard,
+  ollamaUrlSelect, ollamaUrlInput, btnOllamaUrlAdd, btnOllamaUrlDelete,
+} = domRefs
+
+// Shorthand for getting an element by selector. Used at several points below.
+// Previously broken — callers assumed a global `$` that didn't exist, silently
+// throwing ReferenceError at module load and halting handler wiring.
+const $ = (sel: string) => document.querySelector(sel)!
+
+// Empty-state demo strip — adapter that closes over the messagesDiv ref and
+// the per-room "is the chat empty" check. Renders the strip below the
+// messages area only when the current room has no chat (only system) posts.
+const renderDemoStripForRoom = (roomId: string): void => {
+  if (messagesDiv.getAttribute('data-room-id') !== roomId) return
+  const isCurrentRoomEmpty = (): boolean => {
+    const msgs = $roomMessages.get()[roomId] ?? []
+    return msgs.every(m => m.type !== 'chat')
+  }
+  renderDemoStrip(messagesDiv, roomId, isCurrentRoomEmpty)
+}
+
+// === WS client ===
+// The `client` reference is held in ws-send.ts so any UI module can call
+// `send(...)` without being threaded the client through imports.
+let client: WSClient | null = null
+
+// === Action helpers ===
+
+const handleDeleteRoom = async (roomId: string, roomName: string): Promise<void> => {
+  void roomId
+  send({ type: 'delete_room', roomName })
+}
+
+const handleBookmark = async (content: string): Promise<void> => {
+  try {
+    const res = await apiFetch('/bookmarks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    })
+    if (!res.ok) throw new Error(`${res.status}`)
+    showToast(document.body, 'Bookmarked')
+  } catch {
+    showToast(document.body, 'Bookmark failed')
+  }
+}
+
+const handleDeleteMessage = (msgId: string): void => {
+  const roomId = $selectedRoomId.get()
+  if (!roomId) return
+  const roomName = roomIdToName(roomId)
+  if (!roomName) return
+  send({ type: 'delete_message', roomName, messageId: msgId })
+  // Remove from store immediately (optimistic)
+  const msgs = $roomMessages.get()[roomId]
+  if (msgs) {
+    $roomMessages.setKey(roomId, msgs.filter(m => m.id !== msgId))
+  }
+  messagesDiv.querySelector(`[data-msg-id="${msgId}"]`)?.remove()
+}
+
+// Prompt-context modal + per-message view-context handler live in context-modal.ts.
+import { showContextModal, handleViewContext } from './modals/context-modal.ts'
+import { clearAttachments, getAttachments, mountAttachmentChips } from './composer-attachments.ts'
+
+// === Data fetching (triggered by subscriptions) ===
+// Lives in room-fetchers.ts — imported above.
+
+// === Room header status rendering (pause dot, mode icons, summary group) ===
+
+const refreshRoomControls = (): void => {
+  const paused = $roomPaused.get()
+  const mode = $currentDeliveryMode.get()
+  const roomId = $selectedRoomId.get()
+
+  // Pause dot
+  roomStatusDot.setAttribute('aria-pressed', paused ? 'true' : 'false')
+  roomStatusDot.title = paused ? 'Paused — click to resume' : 'Active — click to pause'
+
+  // Mode toggle: swap the inner icon and labels based on current mode.
+  const isManual = mode === 'manual'
+  btnModeToggle.setAttribute('aria-pressed', String(isManual))
+  const altMode = isManual ? 'Broadcast' : 'Manual'
+  const currentLabel = isManual ? 'Manual' : 'Broadcast'
+  const labelText = `${currentLabel} — click to switch to ${altMode}`
+  btnModeToggle.title = labelText
+  btnModeToggle.setAttribute('aria-label', labelText)
+  btnModeToggle.replaceChildren(icon(isManual ? 'hand' : 'megaphone', { size: 14 }))
+
+  // Summary group expand state (per-room)
+  const summaryExpanded = roomId ? isSummaryGroupExpanded(roomId) : false
+  btnSummaryToggle.setAttribute('aria-pressed', summaryExpanded ? 'true' : 'false')
+  btnSummarySettings.classList.toggle('hidden', !summaryExpanded)
+  btnSummaryInspect.classList.toggle('hidden', !summaryExpanded)
+  btnSummaryRegenerate.classList.toggle('hidden', !summaryExpanded)
+}
+
+// === Ollama dashboard (extracted to ollama-dashboard.ts) ===
+
+const ollamaEls: OllamaDashboardElements = {
+  statusDot: ollamaStatusDot,
+  dashboard: ollamaDashboard,
+  urlSelect: ollamaUrlSelect,
+  urlInput: ollamaUrlInput,
+  btnUrlAdd: btnOllamaUrlAdd,
+  btnUrlDelete: btnOllamaUrlDelete,
+}
+
+// === Skills/Tools list ===
+
+let roomsSectionExpanded = true
+let agentsSectionExpanded = true
+
+const updateAgentsLabel = () => {
+  agentsToggle.textContent = `${agentsSectionExpanded ? '▾' : '▸'} Agents (${Object.keys($agents.get()).length})`
+}
+
+// ============================================================================
+// STORE SUBSCRIPTIONS — wire reactive state to DOM
+//
+// File-size note: app.ts exceeds the project's 500-line guideline. An
+// extraction round (B2) was attempted but rejected — every subscription
+// here references app-local closures (handleDeleteRoom, handleBookmark,
+// send, $selectedAgentId.set, etc.) and DOM elements defined in this
+// file's setup phase. Moving the subscriptions into the render layer
+// would force two-way imports (render-* → app for handlers, app →
+// render-* for init()) which is strictly worse coupling than the
+// current shape. Per CLAUDE.md "Rejected refactors": splits that don't
+// reduce coupling are motion-without-progress. Revisit only when handlers
+// + DOM bindings can also move out together.
+// ============================================================================
+
+// --- Room list (batched: rooms + selection + pause + unread + generating) ---
+$roomListView.subscribe(({ rooms, selectedRoomId, pausedRooms, unreadCounts, generatingRoomIds }) => {
+  renderRooms(roomList, {
+    rooms,
+    selectedRoomId,
+    pausedRooms,
+    unreadCounts,
+    generatingRoomIds,
+    onSelect: (id) => {
+      // Selecting a room dismisses any open agent modal (and clears the
+      // sidebar agent-selection highlight).
+      $selectedAgentId.set(null)
+      $selectedRoomId.set(id)
+    },
+    onDelete: handleDeleteRoom,
+    onTogglePaused: (_id, roomName, nowPaused) => {
+      send({ type: 'set_paused', roomName, paused: nowPaused })
+    },
+  })
+  roomsToggle.textContent = `▾ Rooms (${Object.keys(rooms).length})`
+})
+
+// --- Agent list (batched: agents + identity + selection + members) ---
+// Per-room actions (add/remove/mute) live in the room-members chip row;
+// this sidebar list is now a read-only global registry with in-room tint.
+// Sidebar agent list: display-only — selection happens in the room chip
+// row, not here. Re-renders on agent list / membership / mute / inspect
+// changes; does NOT depend on $selectedHumanByRoom.
+$agentListView.subscribe(({ agents, selectedAgentId, selectedRoomId, roomMemberIds }) => {
+  renderAgents(agentList, {
+    agents: agents as unknown as Record<string, AgentInfo>,
+    selectedAgentId,
+    roomMemberIds,
+    hasSelectedRoom: selectedRoomId !== null,
+    onInspect: (agentId) => {
+      $selectedAgentId.set(agentId)
+    },
+    onDelete: async (agentName) => {
+      void safeFetchJson(`/agents/${encodeURIComponent(agentName)}`, { method: 'DELETE' })
+    },
+  })
+  updateAgentsLabel()
+})
+
+$selectedRoomId.subscribe((roomId) => {
+  if (!roomId) return
+  reconcileSelectionForRoom(roomId)
+})
+
+// Also reconcile when the agent list changes (e.g. snapshot just arrived
+// after a fresh page load — auto-select fires once agents are visible).
+$agents.listen(() => {
+  const roomId = $selectedRoomId.get()
+  if (roomId) reconcileSelectionForRoom(roomId)
+})
+
+// --- Room members chip row (chip row + Add picker at top of room page) ---
+// Shared opener for the create-agent modal — used by both the sidebar button
+// and the room-members "+ Create new…" picker.
+const openCreateAgentModalShared = async (): Promise<void> => {
+  const modelSelect = agentForm.querySelector('select[name="model"]') as HTMLSelectElement
+  const showAllBox = document.getElementById('model-show-all') as HTMLInputElement | null
+  if (showAllBox) showAllBox.checked = getShowAllModels()
+  agentModal.showModal()
+  await populateModelSelect(modelSelect)
+}
+
+mountRoomMembers({
+  container: roomMembers,
+  send,
+  openCreateAgentModal: () => void openCreateAgentModalShared(),
+  // Inspector is a modal — keep the user in the room (no $selectedRoomId.set(null))
+  // so the modal layers over the room view rather than replacing it.
+  inspectAgent: (agentId) => {
+    $selectedAgentId.set(agentId)
+  },
+})
+
+mountRoomSwitcher({
+  button: document.getElementById('room-switcher') as HTMLButtonElement,
+  popover: document.getElementById('room-switcher-popover') as HTMLElement,
+  openCreateRoomModal: () => roomModal.showModal(),
+})
+
+// Apply persisted message-header field-visibility prefs as body classes
+// BEFORE the first message renders. CSS rules in index.html hide
+// `[data-mh-piece="<name>"]` when `body.mh-hide-<name>` is set.
+initMessageHeaderPrefs()
+
+mountVisibilityPopover({
+  button: document.getElementById('btn-icon-visibility') as HTMLButtonElement,
+  popover: document.getElementById('icon-visibility-popover') as HTMLElement,
+  roomHeader: roomHeader,
+})
+
+// Bug-report icon in the room header — same modal as Settings → Report bug.
+document.getElementById('btn-report-bug')!.onclick = () => {
+  void import('./modals/bug-modal.ts').then(m => m.openBugModal())
+}
+
+// --- Room selection: visibility, fetch data, render messages ---
+// Composer attachments chip strip: mount once into the host element below
+// the messages area. Returns a refresh function we call on every room
+// change so the strip re-targets to the new active room.
+const composerAttachmentsHost = document.getElementById('composer-attachments') as HTMLDivElement
+const refreshComposerChips = mountAttachmentChips(composerAttachmentsHost, () => $selectedRoomId.get() ?? undefined)
+
+$selectedRoomId.listen((roomId, prevRoomId) => {
+  // Clear unread
+  if (roomId) $unreadCounts.setKey(roomId, 0)
+
+  // UI visibility
+  if (roomId) {
+    const room = $rooms.get()[roomId]
+    if (!room) return
+    noRoomState.classList.add('hidden')
+    roomHeader.classList.remove('hidden')
+    roomInfoBar.classList.remove('hidden')
+    chatArea.classList.remove('hidden')
+    roomNameEl.textContent = room.name
+
+    // Fetch membership if needed
+    if (!$roomMembers.get()[roomId]) {
+      fetchRoomMembers(roomId, room.name)
+    }
+
+    // Render messages — stamp roomId on the container for defensive checks
+    messagesDiv.innerHTML = ''
+    messagesDiv.setAttribute('data-room-id', roomId)
+    messagesDiv.style.scrollBehavior = 'auto'
+    const cached = $roomMessages.get()[roomId]
+    if (cached) {
+      for (const m of cached) renderMessage({
+        container: messagesDiv, msg: m, myAgentId: $myAgentId.get() ?? '',
+        agents: $agents.get() as unknown as Record<string, AgentInfo>,
+        onDelete: handleDeleteMessage, onViewContext: handleViewContext, onBookmark: handleBookmark,
+      })
+    } else {
+      fetchRoomMessages(roomId, room.name)
+    }
+
+    // Restore thinking indicators for agents generating in this room
+    for (const [id, agent] of Object.entries($agents.get())) {
+      if (agent.state === 'generating' && agent.context === roomId) {
+        ensureThinkingIndicator(id, agent.name)
+      }
+    }
+
+    messagesDiv.scrollTop = messagesDiv.scrollHeight
+    requestAnimationFrame(() => { messagesDiv.style.scrollBehavior = '' })
+
+    // Apply room-specific state
+    refreshRoomControls()
+
+    // Composer attachments chip strip re-targets to the new active room.
+    refreshComposerChips()
+
+    // Empty-state demo nudge — shows when the room has no chat content
+    // (only the welcome system banner). Hides as soon as anyone posts.
+    // Idempotent; safe to call on every room render.
+    renderDemoStripForRoom(roomId)
+  } else {
+    // No room selected — show the empty-state. Agent inspector is now a
+    // modal, so it doesn't compete with chat-area visibility anymore.
+    noRoomState.classList.remove('hidden')
+    roomHeader.classList.add('hidden')
+    roomInfoBar.classList.add('hidden')
+    chatArea.classList.add('hidden')
+  }
+})
+
+// --- Agent selection — opens the detail modal ---
+// Both the sidebar agent list and the room-members chip row set
+// $selectedAgentId; this listener routes both to the modal. The modal's
+// own close handler clears $selectedAgentId so the sidebar drops its
+// highlight when the user dismisses the dialog.
+$selectedAgentId.listen(async (agentId) => {
+  if (agentId) {
+    const agent = $agents.get()[agentId]
+    if (!agent) return
+    const { openAgentDetailModal } = await import('./modals/agent-detail-modal.ts')
+    openAgentDetailModal(agent.name)
+  } else {
+    const { closeAgentDetailModal } = await import('./modals/agent-detail-modal.ts')
+    closeAgentDetailModal()
+  }
+})
+
+// "Change model" links inside error message bubbles dispatch
+// open-agent-inspector with { agentId, focus }. Without a listener the
+// click was a no-op (bug introduced when the inspector moved to a modal).
+// Route to the same selection store the sidebar uses so the modal opens
+// via the existing $selectedAgentId path — single open-modal channel,
+// no duplicate code.
+window.addEventListener('open-agent-inspector', (e) => {
+  const detail = (e as CustomEvent<{ agentId?: string; focus?: string }>).detail
+  if (detail?.agentId && $agents.get()[detail.agentId]) {
+    $selectedAgentId.set(detail.agentId)
+  }
+})
+
+// --- New messages in current room: append to DOM ---
+$roomMessages.listen((allMessages, _old, changedRoomId) => {
+  // Double-check: both the store and the DOM container must agree on which room is displayed
+  if (!changedRoomId || changedRoomId !== $selectedRoomId.get()) return
+  if (messagesDiv.getAttribute('data-room-id') !== changedRoomId) return
+  // The subscription fires after setKey. We need to render only new messages.
+  // Since we replace the full array in the store, we compare with what's in the DOM.
+  const msgs = allMessages[changedRoomId] ?? []
+  const existingIds = new Set(
+    Array.from(messagesDiv.querySelectorAll('[data-msg-id]')).map(el => el.getAttribute('data-msg-id')!)
+  )
+  for (const m of msgs) {
+    if (!existingIds.has(m.id)) {
+      renderMessage({
+        container: messagesDiv, msg: m, myAgentId: $myAgentId.get() ?? '',
+        agents: $agents.get() as unknown as Record<string, AgentInfo>,
+        onDelete: handleDeleteMessage, onViewContext: handleViewContext, onBookmark: handleBookmark,
+      })
+    }
+  }
+  // Remove deleted messages
+  for (const id of existingIds) {
+    if (!msgs.some(m => m.id === id)) {
+      messagesDiv.querySelector(`[data-msg-id="${id}"]`)?.remove()
+    }
+  }
+  // Ensure thinking indicators stay at the bottom (after newly appended messages)
+  syncThinkingIndicators()
+
+  // Scroll to bottom if near bottom
+  if (messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight < 100) {
+    messagesDiv.scrollTop = messagesDiv.scrollHeight
+  }
+
+  // The strip renderer's own empty-check decides whether to show or hide,
+  // so calling on every message update is the cheapest correct path.
+  renderDemoStripForRoom(changedRoomId)
+})
+
+// --- Thinking indicator lifecycle ---
+
+const { ensureThinkingIndicator, clearThinkingIndicator, syncThinkingIndicators } = createThinkingController({
+  messagesDiv,
+  send,
+  $agents,
+  $agentContexts,
+  $agentWarnings,
+  $thinkingTools,
+  $thinkingPreviews,
+  $pendingToolCheckins,
+  $liveThinking,
+  $selectedRoomId,
+  $visibleThinkingIndicators,
+  showContextModal,
+})
+
+$agents.listen((_agents, _old, _changedId) => {
+  syncThinkingIndicators()
+})
+
+// --- Thinking-indicator subscriptions live in thinking-display.ts.
+//     Preview / tools / contexts / warnings listeners wired by initThinkingDisplay. ---
+initThinkingDisplay({ messagesDiv, showContextModal })
+
+// --- Mode / turn info (batched: mode + pause feed mode selector) ---
+const $modeView = batched(
+  [$currentDeliveryMode, $roomPaused],
+  (mode: string, paused: boolean) => ({ mode, paused }),
+)
+$modeView.listen(() => refreshRoomControls())
+
+$turnInfo.listen((info) => {
+  if (info?.agentName) {
+    roomModeInfo.textContent = `Turn: ${info.agentName}${info.waitingForHuman ? ' (waiting for input)' : ''}`
+    roomModeInfo.className = 'text-xs text-accent h-4 font-medium'
+  }
+})
+
+// --- Connection state ---
+$connected.listen((connected) => {
+  chatInput.disabled = !connected
+  if (connected) chatForm.querySelector('button')!.removeAttribute('disabled')
+})
+
+// --- Sidebar resize (drag handle on right edge; drag-to-left collapses) ---
+void import('./sidebar-resize.ts').then(m => m.initSidebarResize())
+
+// --- Ollama health (metrics now polled by ollama-dashboard.ts directly via REST) ---
+$ollamaHealth.listen((health) => {
+  if (health) updateOllamaHealthUI(health as unknown as Record<string, unknown>, ollamaStatusDot)
+})
+
+// ============================================================================
+// DOM EVENT HANDLERS
+// ============================================================================
+
+// Reset textarea height after a send (auto-grow leaves it tall otherwise).
+const resetChatInputHeight = (): void => {
+  chatInput.style.height = 'auto'
+}
+
+// Auto-grow on input, capped via max-height in CSS. Cheap; runs on every keystroke.
+chatInput.addEventListener('input', () => {
+  chatInput.style.height = 'auto'
+  chatInput.style.height = `${chatInput.scrollHeight}px`
+})
+
+// Enter submits, Shift+Enter inserts a newline. Pasting multi-line content
+// (e.g. a fenced ```map block) preserves its newlines because <textarea>
+// doesn't strip them the way <input type="text"> did.
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    e.preventDefault()
+    chatForm.requestSubmit()
+  }
+})
+
+chatForm.onsubmit = (e) => {
+  e.preventDefault()
+  const content = chatInput.value.trim()
+  const roomId = $selectedRoomId.get()
+  if (!content || !roomId) return
+  const roomName = roomIdToName(roomId)
+  if (!roomName) return
+
+  const posterMap = $selectedHumanByRoom.get()
+  let senderId = posterMap[roomId]
+
+  // If no human selected for this room, try to resolve. Auto-select the
+  // single human in the room; otherwise open the picker modal.
+  if (!senderId) {
+    const view = $agentListView.get()
+    const memberSet = new Set(view.roomMemberIds)
+    const humansInRoom = Object.values(view.agents).filter(a => a.kind === 'human' && memberSet.has(a.id))
+    if (humansInRoom.length === 1) {
+      senderId = humansInRoom[0]!.id
+      $selectedHumanByRoom.setKey(roomId, senderId)
+    } else {
+      // Hand off to the send-as picker. It re-submits when the user selects.
+      void openSendAsPicker(roomId, content, { chatInput, resetChatInputHeight })
+      return
+    }
+  }
+
+  const pendingAtts = getAttachments(roomId)
+  send({
+    type: 'post_message',
+    target: { rooms: [roomName] },
+    content,
+    senderId,
+    ...(pendingAtts.length > 0 ? { attachments: pendingAtts } : {}),
+  })
+  if (pendingAtts.length > 0) clearAttachments(roomId)
+  chatInput.value = ''; resetChatInputHeight()
+  resetChatInputHeight()
+}
+
+document.getElementById('btn-create-room')!.onclick = (e) => {
+  e.stopPropagation()
+  roomModal.showModal()
+}
+
+document.getElementById('btn-create-agent')!.onclick = (e) => {
+  e.stopPropagation()
+  void openCreateAgentModalShared()
+}
+
+// "Show all models" toggle in agent-modal: persist preference + re-populate
+// the visible model select without reopening the modal.
+const showAllBox = document.getElementById('model-show-all') as HTMLInputElement | null
+if (showAllBox) {
+  showAllBox.addEventListener('change', async () => {
+    setShowAllModels(showAllBox.checked)
+    const modelSelect = agentForm.querySelector('select[name="model"]') as HTMLSelectElement
+    const prev = modelSelect.value
+    await populateModelSelect(modelSelect, { preferredModel: prev || undefined })
+  })
+}
+
+// Hot-reload: when keys change server-side, refresh any open model selects.
+window.addEventListener('providers-changed', () => {
+  void (async () => {
+    const selects = document.querySelectorAll<HTMLSelectElement>('select[name="model"], #agent-area select')
+    for (const sel of Array.from(selects)) {
+      const prev = sel.value
+      await populateModelSelect(sel, { preferredModel: prev || undefined })
+    }
+  })()
+})
+
+// --- Pause status dot (header) ---
+roomStatusDot.onclick = () => {
+  const roomId = $selectedRoomId.get()
+  if (!roomId) return
+  const roomName = roomIdToName(roomId)
+  if (!roomName) return
+  send({ type: 'set_paused', roomName, paused: !$roomPaused.get() })
+}
+
+// --- Mode icon pair (Broadcast / Manual) ---
+const setMode = (mode: 'broadcast' | 'manual'): void => {
+  const roomId = $selectedRoomId.get()
+  if (!roomId) return
+  const roomName = roomIdToName(roomId)
+  if (!roomName) return
+  send({ type: 'set_delivery_mode', roomName, mode })
+}
+// Single mode toggle — flips between broadcast and manual. The icon and
+// title are kept in sync by refreshRoomControls() driven by $modeView.
+btnModeToggle.onclick = () => {
+  const next = $currentDeliveryMode.get() === 'manual' ? 'broadcast' : 'manual'
+  setMode(next)
+}
+
+// --- Summary group (Toggle, Settings, Inspect, Regenerate) lives in summary-panel.ts.
+//     Wired once below via initSummaryPanel. ---
+
+initSummaryPanel({ onRefreshRoomControls: refreshRoomControls })
+initScriptPanel({ onRefreshRoomControls: refreshRoomControls })
+initScriptDocPanel()
+void import('./reset-button.ts').then(m => m.initResetPanel())
+
+roomForm.onsubmit = (e) => {
+  e.preventDefault()
+  const data = new FormData(roomForm)
+  const roomPrompt = (data.get('roomPrompt') as string | null)?.trim() || undefined
+  send({ type: 'create_room', name: data.get('name') as string, ...(roomPrompt ? { roomPrompt } : {}) })
+  roomModal.close(); roomForm.reset()
+}
+
+// Kind-tab state. Default 'ai' on each open. Reset on close in the
+// agentModal close listener below.
+let agentModalKind: 'ai' | 'human' = 'ai'
+const setAgentModalKind = (kind: 'ai' | 'human'): void => {
+  agentModalKind = kind
+  const titleEl = document.getElementById('agent-modal-title')
+  if (titleEl) titleEl.textContent = kind === 'ai' ? 'Create AI Agent' : 'Create Human'
+  const aiFields = document.querySelector('[data-ai-fields]') as HTMLElement | null
+  if (aiFields) aiFields.style.display = kind === 'ai' ? '' : 'none'
+  const tabsRoot = document.getElementById('agent-kind-tabs')
+  if (tabsRoot) {
+    for (const btn of Array.from(tabsRoot.querySelectorAll<HTMLButtonElement>('button[data-kind]'))) {
+      const active = btn.dataset.kind === kind
+      btn.setAttribute('aria-selected', String(active))
+      btn.classList.toggle('border-accent', active)
+      btn.classList.toggle('text-text-strong', active)
+      btn.classList.toggle('border-transparent', !active)
+      btn.classList.toggle('text-text-muted', !active)
+    }
+  }
+  // Toggle `required` on AI-only fields so the browser doesn't block
+  // the human-form submit on missing model/persona.
+  const modelSelect = agentForm.querySelector('select[name="model"]') as HTMLSelectElement | null
+  const personaTA = agentForm.querySelector('textarea[name="persona"]') as HTMLTextAreaElement | null
+  if (modelSelect) modelSelect.required = kind === 'ai'
+  if (personaTA) personaTA.required = kind === 'ai'
+}
+const tabsRoot = document.getElementById('agent-kind-tabs')
+if (tabsRoot) {
+  tabsRoot.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-kind]')
+    if (!btn) return
+    setAgentModalKind(btn.dataset.kind as 'ai' | 'human')
+  })
+}
+
+agentForm.onsubmit = (e) => {
+  e.preventDefault()
+  const data = new FormData(agentForm)
+  const agentName = (data.get('name') as string).trim()
+  if (!agentName) return
+
+  if (agentModalKind === 'human') {
+    // POST to /agents/human with name + optional persona/tags + optional room.
+    const autoAddRoom = consumeAutoAddRoom()
+    const persona = (data.get('persona') as string | null)?.trim() || undefined
+    const rawTagsHuman = (data.get('tags') as string | null)?.trim() ?? ''
+    const humanTags = rawTagsHuman ? rawTagsHuman.split(',').map(t => t.trim()).filter(Boolean) : undefined
+    void (async () => {
+      try {
+        const res = await apiFetch('/agents/human', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: agentName,
+            ...(persona ? { persona } : {}),
+            ...(humanTags && humanTags.length > 0 ? { tags: humanTags } : {}),
+            ...(autoAddRoom ? { roomName: autoAddRoom } : {}),
+          }),
+        })
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({})) as { error?: string }
+          showToast(document.body, body.error ?? `Create failed (${res.status})`, { type: 'error', position: 'fixed' })
+          return
+        }
+        showToast(document.body, `Created ${agentName}`, { type: 'success', position: 'fixed' })
+      } catch {
+        showToast(document.body, 'Create failed', { type: 'error', position: 'fixed' })
+      }
+    })()
+    agentModal.close(); agentForm.reset()
+    return
+  }
+
+  // AI path (existing flow).
+  const rawTags = (data.get('tags') as string | null)?.trim() ?? ''
+  const tags = rawTags ? rawTags.split(',').map(t => t.trim()).filter(Boolean) : undefined
+  const autoAddRoom = consumeAutoAddRoom()
+  if (autoAddRoom) registerPendingCreateAdd(agentName, autoAddRoom)
+  send({ type: 'create_agent', config: { name: agentName, model: data.get('model') as string, persona: data.get('persona') as string, ...(tags && tags.length > 0 ? { tags } : {}) } })
+  agentModal.close(); agentForm.reset()
+}
+
+// If the create-agent modal is closed without submitting, drop any pending
+// auto-add-to-room intent so it doesn't leak into the next open. Also reset
+// the kind tabs so the next open defaults to AI.
+agentModal.addEventListener('close', () => {
+  clearAutoAddRoom()
+  setAgentModalKind('ai')
+})
+
+// Sidebar section toggles
+// Section toggles: click the dedicated toggle button (with aria-expanded)
+// rather than the whole header — keeps the +create button and toggle as
+// distinct keyboard targets.
+const roomsToggleBtn = $('#rooms-toggle-btn') as HTMLButtonElement
+roomsToggleBtn.onclick = () => {
+  roomsSectionExpanded = !roomsSectionExpanded
+  roomList.classList.toggle('hidden', !roomsSectionExpanded)
+  roomsToggle.textContent = `${roomsSectionExpanded ? '▾' : '▸'} Rooms (${Object.keys($rooms.get()).length})`
+  roomsToggleBtn.setAttribute('aria-expanded', String(roomsSectionExpanded))
+}
+
+const agentsToggleBtn = $('#agents-toggle-btn') as HTMLButtonElement
+agentsToggleBtn.onclick = () => {
+  agentsSectionExpanded = !agentsSectionExpanded
+  agentList.classList.toggle('hidden', !agentsSectionExpanded)
+  updateAgentsLabel()
+  agentsToggleBtn.setAttribute('aria-expanded', String(agentsSectionExpanded))
+}
+
+// Settings sidebar section — single nav entry to six modal rows.
+hydrateIconPlaceholders()
+initSettingsNav()
+
+// === Global modal UX: click outside to close ===
+//
+// Native <dialog>.showModal() supports Escape via the `cancel` event and a
+// click on the dialog element targets the backdrop area. We wire a single
+// listener per <dialog> that closes on backdrop click. Dialogs built via
+// createModal() already have their own overlay-click handler; that path is
+// untouched. Visible × close buttons are de-emphasized (CSS) so click-
+// outside is the canonical close affordance.
+for (const dlg of Array.from(document.querySelectorAll<HTMLDialogElement>('dialog'))) {
+  dlg.addEventListener('click', (e) => {
+    if (e.target === dlg && dlg.open) dlg.close()
+  })
+}
+// Keep the logging recording dot fresh in the sidebar even when the
+// Logging modal isn't open.
+startLoggingStateDot()
+
+const btnClearMessages = $('#btn-clear-messages') as HTMLButtonElement
+btnClearMessages.onclick = async () => {
+  const roomId = $selectedRoomId.get()
+  if (!roomId) return
+  const roomName = roomIdToName(roomId)
+  if (!roomName) return
+  const { confirmModal } = await import('./modals/confirm-modal.ts')
+  if (!(await confirmModal({
+    title: 'Clear messages',
+    body: `Clear all messages in "${roomName}"? This cannot be undone.`,
+    confirmLabel: 'Clear',
+  }))) return
+  send({ type: 'clear_messages', roomName })
+}
+
+const btnBookmarks = $('#btn-bookmarks') as HTMLButtonElement
+btnBookmarks.onclick = async () => {
+  const { openBookmarksPanel } = await import('./panels/bookmarks-panel.ts')
+  await openBookmarksPanel({
+    setComposerText: (text: string) => {
+      chatInput.value = text
+      chatInput.focus()
+    },
+  })
+}
+
+const btnTriggers = $('#btn-triggers') as HTMLButtonElement
+btnTriggers.onclick = async () => {
+  const roomId = $selectedRoomId.get()
+  if (!roomId) return
+  const room = $rooms.get()[roomId]
+  if (!room) return
+  const { openTriggersModal } = await import('./panels/triggers-panel.ts')
+  await openTriggersModal({ id: roomId, name: room.name })
+}
+
+const btnRoomPrompt = $('#btn-room-prompt') as HTMLButtonElement
+btnRoomPrompt.onclick = () => {
+  const roomId = $selectedRoomId.get()
+  if (!roomId) return
+  const room = $rooms.get()[roomId]
+  if (!room) return
+  openTextEditorModal(
+    `Room Prompt — ${room.name}`,
+    `/rooms/${encodeURIComponent(room.name)}`,
+    'roomPrompt',
+    `/rooms/${encodeURIComponent(room.name)}/prompt`,
+    'PUT',
+    (data) => ((data.profile as Record<string, unknown>)?.roomPrompt as string) ?? '',
+  )
+}
+
+// Theme toggle + app info (version + repo link in sidebar footer)
+void (async () => {
+  const { wireBootstrapFooter } = await import('./ui-bootstrap-footer.ts')
+  wireBootstrapFooter()
+})()
+
+// Providers dashboard — one-time wiring. Opener lives in providers-modal.ts,
+// routed from the Settings > Providers sidebar row.
+wireOllamaDashboard(ollamaEls, send)
+
+// Stop polling when dashboard closes (reuses existing close event on the dialog).
+ollamaEls.dashboard.addEventListener('close', () => stopProvidersPanel())
+
+// ============================================================================
+// CONNECT + STARTUP
+// ============================================================================
+
+const connect = () => {
+  client = createWSClient($sessionToken.get(), (raw) => {
+    const msg = raw as { type?: string }
+    if (typeof msg.type !== 'string') return
+    const handler = wsDispatch[msg.type]
+    if (handler) handler(raw as Parameters<typeof handler>[0])
+  }, (connected, terminalReason) => {
+    $connected.set(connected)
+    if (terminalReason === 'workspace-unavailable') {
+      showToast(document.body, 'This Workspace is unavailable. Reload the page to create a fresh Workspace.', {
+        type: 'error',
+        position: 'fixed',
+        durationMs: 15000,
+      })
+    }
+  })
+  setWSClient(client)
+}
+
+// WebSocket sessions are pure viewers with no name or Agent binding.
+void (async () => {
+  const { ensureAuthenticated } = await import('./auth.ts')
+  await ensureAuthenticated()
+  // UI extension reconciliation runs BEFORE connect() so any post-render
+  // processors a pack-declared extension registers (e.g. biometrics) are in
+  // place when the WS snapshot arrives and historical messages render.
+  // Re-runs on every packs-changed event (install/uninstall/update) so the
+  // extension surface tracks pack lifecycle. Pack-declared but unknown
+  // names are silently ignored (forward-compat — see
+  // src/ui/modules/extensions/registry.ts).
+  const { refreshExtensions } = await import('./extensions/registry.ts')
+  await refreshExtensions()
+  window.addEventListener('packs-changed', () => { void refreshExtensions() })
+  connect()
+  // Demo deep-link: read `?demo=<id>` and pin the demo to the current room.
+  const { initDemoDeepLink } = await import('./demos/index.ts')
+  initDemoDeepLink()
+})()

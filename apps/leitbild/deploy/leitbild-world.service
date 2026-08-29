@@ -1,0 +1,40 @@
+[Unit]
+Description=Leitbild World module
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=leitbild
+Group=leitbild
+WorkingDirectory=/opt/leitbild/current/apps/world
+Environment=PORT=4177
+Environment=LEITBILD_BIND_HOST=127.0.0.1
+Environment=LEITBILD_DATA_DIR=/var/lib/leitbild/world
+Environment=LEITBILD_MAP_ROOT=/opt/leitbild/maps
+Environment=LEITBILD_REFERENCE_ROOT=/opt/leitbild/reference
+Environment=LEITBILD_ROUTING_PROVIDER=osrm
+Environment=LEITBILD_OSRM_URL=http://127.0.0.1:5000
+Environment=WORKSPACE_HOST_URL=http://127.0.0.1:3100
+EnvironmentFile=-/etc/leitbild/world.env
+ExecStartPre=/bin/sh -c 'for attempt in $(seq 1 60); do /usr/bin/curl -fsS -o /dev/null "http://127.0.0.1:5000/route/v1/driving/10.7522,59.9139;10.7530,59.9145?overview=false" && exit 0; sleep 1; done; exit 1'
+ExecStart=/opt/leitbild/runtime/bun run src/index.ts
+Restart=on-failure
+RestartSec=5s
+MemoryMax=1G
+CPUQuota=180%
+LimitNOFILE=65536
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/leitbild/world
+PrivateTmp=true
+PrivateDevices=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

@@ -1,8 +1,8 @@
 import { mount } from 'svelte'
 import App from './App.svelte'
-import './style.css'
+import './styles.css'
 
-const target = document.getElementById('app')
-if (!target) throw new Error('missing #app mount point')
+const target = document.querySelector('#app')
+if (!(target instanceof HTMLElement)) throw new Error('Workspace Host UI root is missing')
 
 mount(App, { target })

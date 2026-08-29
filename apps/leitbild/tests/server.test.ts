@@ -1,0 +1,77 @@
+import { afterEach, describe, expect, test } from 'bun:test'
+import { coreModuleIds, moduleRegistrationSchema } from '@leitbild/contracts'
+import { createWorkspaceHost } from '../src/host.ts'
+import type { ModuleGateway } from '../src/module-gateway.ts'
+import { createWorkspaceHostServer } from '../src/server.ts'
+import { createWorkspaceStore, type WorkspaceStore } from '../src/store.ts'
+
+const servers: Array<ReturnType<typeof createWorkspaceHostServer>> = []
+const stores: WorkspaceStore[] = []
+afterEach(() => {
+  for (const server of servers.splice(0)) server.stop(true)
+  for (const store of stores.splice(0)) store.close()
+})
+
+const gateway = (): ModuleGateway => ({
+  list: () => coreModuleIds.map(moduleId => moduleRegistrationSchema.parse({
+    moduleId, internalBaseUrl: `http://${moduleId}.internal`, manifestPath: '/manifest',
+  })),
+  has: moduleId => coreModuleIds.includes(moduleId),
+  join: async () => ({ ok: true, value: undefined }),
+  leave: async () => ({ ok: true, value: undefined }),
+  resources: async () => ({ ok: true, value: { resources: [] } }),
+  capabilities: async () => ({ ok: true, value: { capabilities: [] } }),
+  invoke: async () => ({ ok: true, value: { result: null } }),
+})
+
+const startHost = () => {
+  const store = createWorkspaceStore(':memory:')
+  stores.push(store)
+  const host = createWorkspaceHost({ store, modules: gateway() })
+  const server = createWorkspaceHostServer({ host, port: 0, bindHost: '127.0.0.1' })
+  servers.push(server)
+  return { host, baseUrl: `http://127.0.0.1:${server.port}` }
+}
+
+describe('Leitbild server', () => {
+  test('shows onboarding for zero Workspaces without implicit creation', async () => {
+    const { host, baseUrl } = startHost()
+    const response = await fetch(`${baseUrl}/`, { redirect: 'manual' })
+    expect(response.status).toBe(303)
+    expect(response.headers.get('location')).toBe(`${baseUrl}/workspaces`)
+    expect(response.headers.get('set-cookie')).toBeNull()
+    expect(host.list()).toHaveLength(0)
+  })
+
+  test('returns directly to the sole Workspace from root', async () => {
+    const { host, baseUrl } = startHost()
+    const workspace = await host.create({ name: null })
+    const response = await fetch(`${baseUrl}/`, { redirect: 'manual' })
+    expect(response.headers.get('location')).toBe(`${baseUrl}/workspaces/${workspace.id}`)
+  })
+
+  test('supports create, rename, read, and complete delete', async () => {
+    const { baseUrl } = startHost()
+    const createdResponse = await fetch(`${baseUrl}/api/workspaces`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+    })
+    expect(createdResponse.status).toBe(201)
+    const created = (await createdResponse.json() as { workspace: { id: string; name: string | null; modules: unknown[] } }).workspace
+    expect(created.name).toBeNull()
+    expect(created.modules).toHaveLength(3)
+
+    const renamedResponse = await fetch(`${baseUrl}/api/workspaces/${created.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Exercise Alpha' }),
+    })
+    expect((await renamedResponse.json() as { workspace: { name: string } }).workspace.name).toBe('Exercise Alpha')
+    expect((await fetch(`${baseUrl}/api/workspaces/${created.id}`)).status).toBe(200)
+    expect((await fetch(`${baseUrl}/api/workspaces/${created.id}`, { method: 'DELETE' })).status).toBe(204)
+    expect((await fetch(`${baseUrl}/api/workspaces/${created.id}`)).status).toBe(404)
+  })
+
+  test('does not expose user-controlled Module membership routes', async () => {
+    const { host, baseUrl } = startHost()
+    const workspace = await host.create({ name: null })
+    expect((await fetch(`${baseUrl}/api/workspaces/${workspace.id}/modules/world`, { method: 'DELETE' })).status).toBe(404)
+  })
+})
