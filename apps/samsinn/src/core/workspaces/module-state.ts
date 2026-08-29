@@ -1,4 +1,4 @@
-import { mkdir, readdir, rename, rm } from 'node:fs/promises'
+import { mkdir, readdir, rename, rm, rmdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 import {
@@ -69,7 +69,7 @@ export const createSamsinnModuleState = (): SamsinnModuleState => {
     const paths = workspaceModulePaths(workspaceId)
     await rm(paths[moduleId].root, { recursive: true, force: true })
     try {
-      if ((await readdir(paths.root)).length === 0) await rm(paths.root, { recursive: false })
+      if ((await readdir(paths.root)).length === 0) await rmdir(paths.root)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }

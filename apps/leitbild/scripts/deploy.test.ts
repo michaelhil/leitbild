@@ -31,13 +31,13 @@ describe('Leitbild release deploy arguments', () => {
   })
 
   test('accepts selected tests or the full suite, but not both', () => {
-    expect(parseDeployArgs(['--dry-run', '--test', 'tests/discovery.test.ts'])).toMatchObject({
+    expect(parseDeployArgs(['--dry-run', '--test', 'tests/workspace-module-api.test.ts'])).toMatchObject({
       dryRun: true,
       full: false,
-      tests: ['tests/discovery.test.ts'],
+      tests: ['tests/workspace-module-api.test.ts'],
     })
     expect(parseDeployArgs(['--full'])).toMatchObject({ full: true, tests: [] })
-    expect(() => parseDeployArgs(['--full', '--test', 'tests/discovery.test.ts'])).toThrow('mutually exclusive')
+    expect(() => parseDeployArgs(['--full', '--test', 'tests/workspace-module-api.test.ts'])).toThrow('mutually exclusive')
   })
 
   test('rejects unsafe rollback ids and incompatible operation modes', () => {
@@ -99,7 +99,7 @@ describe('Leitbild remote release transaction', () => {
     const rollbackScript = remoteRollbackScript('release-1')
     expect(await bashSyntaxExit(rollbackScript)).toBe(0)
     expect(rollbackScript).toContain('/run/lock/samsinn-stack-deploy.lock')
-    expect(rollbackScript).toContain('/.well-known/leitbild')
+    expect(rollbackScript).toContain('/.well-known/workspace-module')
     expect(rollbackScript).toContain('https://leitbild.samsinn.app/health')
   })
 })

@@ -1,6 +1,6 @@
 import type { MissionDefinition, OperationalObject, ScenarioDefinition } from '../model/index.ts'
 import { missionDefinitionSchema, scenarioDefinitionSchema } from '../model/index.ts'
-import type { LeitbildPack } from '../packs/protocol.ts'
+import type { MicroworldPack } from '../packs/protocol.ts'
 
 export interface ResolvedPackRuntime {
   readonly packId: string
@@ -10,7 +10,7 @@ export interface ResolvedPackRuntime {
 
 export interface ResolvedScenarioRuntime {
   readonly scenarioId: string
-  readonly packs: ReadonlyArray<LeitbildPack>
+  readonly packs: ReadonlyArray<MicroworldPack>
   readonly runtimes: ReadonlyArray<ResolvedPackRuntime>
   readonly initialObjects: ReadonlyArray<OperationalObject>
   readonly runtimeConfigs: Record<string, unknown>
@@ -29,14 +29,14 @@ export interface ScenarioCatalog {
 }
 
 export const createScenarioCatalog = (config: {
-  readonly packs: ReadonlyArray<LeitbildPack>
+  readonly packs: ReadonlyArray<MicroworldPack>
   readonly scenarios: ReadonlyArray<ScenarioDefinition>
   readonly missions?: ReadonlyArray<MissionDefinition>
   readonly defaultScenarioId?: string
 }): ScenarioCatalog => {
   const scenarios = new Map<string, ScenarioDefinition>()
   const missions = new Map<string, MissionDefinition>()
-  const packs = new Map<string, LeitbildPack>()
+  const packs = new Map<string, MicroworldPack>()
 
   for (const pack of config.packs) {
     if (packs.has(pack.descriptor.id)) throw new Error(`duplicate pack id: ${pack.descriptor.id}`)

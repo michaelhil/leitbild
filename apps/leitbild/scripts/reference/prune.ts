@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { join } from 'node:path'
-import { leitbildPacks } from '../../src/app-assembly.ts'
+import { microworldPacks } from '../../src/app-assembly.ts'
 import { currentBuildId, listBuildIds, removeStaleBuilds } from '../../src/reference-data/pipeline.ts'
 import { collectRegisteredDatasets } from '../../src/reference-data/registry.ts'
 import { referenceRoot } from './config.ts'
@@ -38,7 +38,7 @@ export const parsePruneArgs = (args: ReadonlyArray<string>): PruneOptions => {
 const main = async (): Promise<void> => {
   const options = parsePruneArgs(process.argv.slice(2))
   const root = referenceRoot()
-  const datasets = collectRegisteredDatasets(leitbildPacks).filter(
+  const datasets = collectRegisteredDatasets(microworldPacks).filter(
     descriptor => options.dataset === null || String(descriptor.id) === options.dataset,
   )
   if (datasets.length === 0) throw new Error(options.dataset ? `Unknown dataset: ${options.dataset}` : 'No datasets registered')

@@ -3,6 +3,7 @@ import {
   moduleCapabilityCollectionSchema,
   moduleCapabilityInvocationSchema,
   moduleResourceCollectionSchema,
+  toolGrantSetSchema,
   workspaceIdSchema,
   workspaceModuleManifestSchema,
   type ModuleCapabilityDescriptor,
@@ -34,6 +35,9 @@ const manifestFor = (moduleId: SamsinnModuleId) => workspaceModuleManifestSchema
     resources: `/internal/${moduleId}/workspaces/{workspaceId}/resources`,
     capabilities: `/internal/${moduleId}/workspaces/{workspaceId}/capabilities`,
     invoke: `/internal/${moduleId}/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke`,
+  },
+  ui: {
+    workspace: '/workspaces/{workspaceId}/samsinn',
   },
 })
 
@@ -92,7 +96,25 @@ const agentsCapabilities: ReadonlyArray<ModuleCapabilityDescriptor> = moduleCapa
       description: 'Creates an AI Agent Profile in the Workspace.',
       risk: 'write',
       idempotent: false,
-      inputSchema: { type: 'object', required: ['name', 'model', 'persona'], properties: { name: { type: 'string' }, model: { type: 'string' }, persona: { type: 'string' } }, additionalProperties: false },
+      inputSchema: {
+        type: 'object',
+        required: ['name', 'model', 'persona'],
+        properties: {
+          name: { type: 'string' },
+          model: { type: 'string' },
+          persona: { type: 'string' },
+          toolGrants: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['capabilityId'],
+              properties: { capabilityId: { type: 'string' } },
+              additionalProperties: false,
+            },
+          },
+        },
+        additionalProperties: false,
+      },
       outputSchema: { type: 'object' },
     },
     {
@@ -117,6 +139,7 @@ const createAgentSchema = z.object({
   name: z.string().trim().min(1).max(128),
   model: z.string().trim().min(1).max(256),
   persona: z.string().max(64_000),
+  toolGrants: toolGrantSetSchema.optional(),
 }).strict()
 
 const json = (body: unknown, status = 200): Response => Response.json(body, { status })

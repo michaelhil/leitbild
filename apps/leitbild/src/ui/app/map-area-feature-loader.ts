@@ -1,5 +1,5 @@
 import type { SimulationRunId, GeoJsonPolygon, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
-import type { LeitbildPack, PackMapAreaFeature, PackQueryRequest } from '../../core/packs/protocol.ts'
+import type { MicroworldPack, PackMapAreaFeature, PackQueryRequest } from '../../core/packs/protocol.ts'
 import { querySimulationRunPack, type SimulationRunRequestOptions } from '../simulation-run-client.ts'
 import type { PackQueryApiResponse } from '../types.ts'
 
@@ -11,7 +11,7 @@ export interface MapAreaFeatureLoaderContext {
 }
 
 export interface MapAreaFeatureRuntimeConfig {
-  readonly pack: () => LeitbildPack | null
+  readonly pack: () => MicroworldPack | null
   readonly objects: () => ReadonlyArray<OperationalObject>
   readonly simulationRunId: () => SimulationRunId | null
   readonly currentTime: () => IsoTimestamp | undefined

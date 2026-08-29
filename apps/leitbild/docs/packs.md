@@ -176,7 +176,7 @@ Multi-pack runtime orchestration uses the Runtime Hub once more than one pack ru
 
 Generic UI modules must not import pack-specific pack models, runtimes, geometry helpers, or condition calculators. They consume the pack protocol.
 
-Pack-specific presentation belongs behind `LeitbildPack`:
+Pack-specific presentation belongs behind `MicroworldPack`:
 
 - `presentObject` owns the category, icon, color, summary, object fields, status indicator, and noteworthy-update policy for one object.
 - `contextualFields` is detail-tier enrichment only. It lets a pack add derived fields to another pack's object for inspectors, hover detail, or selected-object detail without making map and rail summaries pay for cross-pack inference. Contextual enrichment must use the presentation object index or a bounded pack query rather than scanning the full Simulation Run object list on every row render.

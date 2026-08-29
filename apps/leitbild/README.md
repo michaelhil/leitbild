@@ -1,11 +1,12 @@
 # Leitbild
 
-Leitbild is a research platform for shared, map-based control-center work. It is independently deployable and can optionally share Workspace identity with Samsinn through the suite.
+Leitbild is a research platform for shared, map-based control-center work. Its domain is exposed as an independently deployable Microworld Workspace Module that can run alone or compose with other Modules through the Workspace Host.
 
 ## Architecture
 
 - A **Deployment** owns executable code, built-in Scenario templates, installed Packs, map artifacts, and infrastructure configuration.
-- A **Workspace** owns a Scenario Library, Module Bindings, and an isolated set of Simulation Runs.
+- The **Workspace Host** owns Workspace identity, naming, and enabled Module membership.
+- The **Microworld Module** owns a Workspace-scoped Scenario Library and isolated set of Simulation Runs.
 - A **Scenario** is a reusable Workspace-owned identity.
 - A **Scenario Revision** is an immutable, validated startup definition.
 - A **Simulation Run** is a persistent execution of exactly one Scenario Revision, addressed by an opaque `run-<uuid>` id.
@@ -18,13 +19,19 @@ The canonical language and runtime boundaries are documented in [CONTEXT.md](CON
 
 ## API and URLs
 
-Leitbild exposes one versionless API and no compatibility aliases:
+The Microworld Module publishes one strict manifest and versionless lifecycle/discovery surface:
 
 ```text
-GET  /.well-known/leitbild
-GET  /api/workspaces
-POST /api/workspaces
-PUT  /api/workspaces/{workspaceId}
+GET  /.well-known/workspace-module
+PUT|DELETE /internal/workspaces/{workspaceId}
+GET  /internal/workspaces/{workspaceId}/resources
+GET  /internal/workspaces/{workspaceId}/capabilities
+POST /internal/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke
+```
+
+The specialized Leitbild UI and API remain explicitly Workspace-scoped:
+
+```text
 GET  /api/workspaces/{workspaceId}/capabilities
 GET  /api/workspaces/{workspaceId}/scenarios
 GET  /api/workspaces/{workspaceId}/simulation-runs
@@ -36,7 +43,7 @@ POST /api/workspaces/{workspaceId}/simulation-runs/{simulationRunId}/commands
 POST /api/workspaces/{workspaceId}/simulation-runs/{simulationRunId}/queries
 ```
 
-The browser uses `/workspaces/{workspaceId}` and `/workspaces/{workspaceId}/simulation-runs/{simulationRunId}`. Workspace and Run ids are explicit in REST and realtime scope, so shared URLs cannot silently resolve into another Workspace.
+The browser uses `/workspaces/{workspaceId}` and `/workspaces/{workspaceId}/runs/{simulationRunId}`. Root navigation returns to the Workspace Host. There is no local Workspace picker, directory, selection cookie, default Workspace, or Workspace creation endpoint.
 
 ## Storage
 
@@ -44,13 +51,13 @@ The canonical layout is:
 
 ```text
 data/
-  workspace-directory.json
-  workspaces/{workspaceId}/leitbild/
+  workspaces/{workspaceId}/microworld/
+    workspace.json
     scenarios/
     simulation-runs/{simulationRunId}/
 ```
 
-Older Run identities, storage layouts, and persisted shapes are rejected. Leitbild contains no migration or compatibility layer for this cutover.
+The marker exists only after Host lifecycle provisioning. Older identities, storage layouts, and persisted shapes are rejected. Leitbild contains no migration or compatibility layer.
 
 ## Commands
 
@@ -62,4 +69,4 @@ bun run build:ui
 bun run start
 ```
 
-Production deployment uses `bun run deploy`. Samsinn and Leitbild retain separate artifacts, services, and release lifecycles.
+`WORKSPACE_HOST_URL` is required for HTTP startup. Production deployment uses `bun run deploy`. Samsinn, Leitbild, and the Workspace Host retain separate artifacts, services, and release lifecycles.

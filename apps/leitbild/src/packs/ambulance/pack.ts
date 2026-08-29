@@ -1,7 +1,7 @@
 import type { KnowledgeFact, OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
-import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
-import { createLeitbildPackDescriptor } from '../../core/packs/protocol.ts'
+import type { MicroworldPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
+import { createMicroworldPackDescriptor } from '../../core/packs/protocol.ts'
 import {
   cancelDestinationCommandKind,
   createObjectCommandKind,
@@ -260,8 +260,8 @@ const assertPointGeometry = (geometry: PackCreationGeometry) => {
   return geometry.point
 }
 
-export const ambulancePack: LeitbildPack = {
-  descriptor: createLeitbildPackDescriptor({
+export const ambulancePack: MicroworldPack = {
+  descriptor: createMicroworldPackDescriptor({
     id: 'ambulance',
     version: '1.0.0',
     name: 'Ambulance Dispatch',

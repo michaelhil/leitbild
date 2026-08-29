@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { refreshPackGeodata, getPackFeatures, getAllPackFeatures, __resetPackGeodataCache } from './pack-source.ts'
 import { listCategoryForRoom } from './store.ts'
-import { createSamsinnPackDescriptor } from '../packs/manifest.ts'
+import { createAgentPackDescriptor } from '../packs/manifest.ts'
 
 const fc = (features: ReadonlyArray<unknown>): string =>
   JSON.stringify({ type: 'FeatureCollection', features })
@@ -23,7 +23,7 @@ const feature = (id: string, name: string, category: string, lat: number, lng: n
 
 const writePackManifest = async (root: string, directoryId: string, packId = directoryId): Promise<void> => {
   await writeFile(join(root, directoryId, 'pack.json'), JSON.stringify({
-    descriptor: createSamsinnPackDescriptor({
+    descriptor: createAgentPackDescriptor({
       id: packId,
       version: '1.0.0',
       name: packId,

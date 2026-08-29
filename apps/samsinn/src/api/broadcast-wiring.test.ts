@@ -2,7 +2,7 @@
 // Integration test: lazily loaded Workspaces get full broadcast wiring.
 //
 // The bug fixed in 5d73a8e was that wireWorkspaceRuntimeEvents was silently skipped
-// for non-default Workspaces because onWorkspaceRuntimeCreated ran before the registry's
+// for lazily loaded Workspaces because onWorkspaceRuntimeCreated ran before the registry's
 // internal map.set() — autoSaverFor(id) returned null, the `if (autoSaver)`
 // guard short-circuited, and every lazily loaded Workspace booted with
 // setOnEvalEvent / setOnMessagePosted / state.subscribe all unwired.
@@ -77,7 +77,7 @@ describe('lazy Workspace broadcast wiring (regression for 5d73a8e)', () => {
       },
     }
 
-    // The bug only manifested for non-default Workspaces loaded by cookie. Use
+    // The bug only manifested for Workspaces loaded after process start. Use
     // an explicit cookie-shaped id (16 chars, lowercase alphanumeric) so we
     // exercise that exact path.
     const cookieId = newWorkspaceId()

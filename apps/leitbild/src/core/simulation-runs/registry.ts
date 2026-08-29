@@ -20,6 +20,7 @@ import type { SimulationRunRuntimeMetricsSnapshot } from './runtime-metrics.ts'
 import { defaultSimulationRunRuntimePolicy } from './runtime-persistence-policy.ts'
 import { createSimulationRunSnapshotStore } from './snapshot-store.ts'
 import type { SimulationRunEvent } from '../model/index.ts'
+import { microworldWorkspacePaths } from '../workspaces/paths.ts'
 import { createProcedureSourceService, type ProcedureSourceService } from '../procedures/source.ts'
 import { createLocalScenarioLibrary, type ScenarioLibrary, type ScenarioRecord, type ScenarioRevision } from '../scenarios/library.ts'
 import {
@@ -97,11 +98,12 @@ export const createSimulationRunRegistry = (config: {
   const idleRuntimeCloseTimers = new Map<SimulationRunId, ReturnType<typeof setTimeout>>()
   const idleRuntimeCloseDelayMs = config.idleRuntimeCloseDelayMs ?? defaultSimulationRunRuntimePolicy.idleRuntimeCloseDelayMs
   let nextLeaseNumber = 0
-  const workspaceRoot = join(config.dataDir, 'workspaces', config.workspaceId, 'leitbild')
-  const simulationRunRoot = join(workspaceRoot, 'simulation-runs')
+  const workspacePaths = microworldWorkspacePaths(config.dataDir, config.workspaceId)
+  const workspaceRoot = workspacePaths.root
+  const simulationRunRoot = workspacePaths.simulationRuns
   const scenarioLibrary = config.scenarioLibrary ?? createLocalScenarioLibrary({
     workspaceId: config.workspaceId,
-    rootDir: join(workspaceRoot, 'scenarios'),
+    rootDir: workspacePaths.scenarios,
   })
   let scenarioLibraryReady: Promise<void> | null = null
 

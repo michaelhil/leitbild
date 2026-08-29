@@ -2,7 +2,7 @@
   "descriptor": {
     "schemaVersion": "1.0.0",
     "id": "pwr-ops",
-    "moduleId": "samsinn",
+    "moduleId": "agents",
     "version": "1.0.0",
     "name": "PWR Operations",
     "description": "Westinghouse PWR Emergency Operating Procedures — fetched live from the samsinn-wikis/pwr-ops wiki.",

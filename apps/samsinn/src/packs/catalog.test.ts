@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { createSamsinnPackDescriptor, parsePackManifest } from './manifest.ts'
+import { createAgentPackDescriptor, parsePackManifest } from './manifest.ts'
 import { resolvePackLoadOrder, satisfiesPackVersion } from './catalog.ts'
 import type { Pack } from './types.ts'
 
@@ -11,7 +11,7 @@ const pack = (
   id,
   dirPath: `/packs/${id}`,
   manifest: parsePackManifest({
-    descriptor: createSamsinnPackDescriptor({
+    descriptor: createAgentPackDescriptor({
       id,
       version,
       name: id,

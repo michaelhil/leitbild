@@ -9,8 +9,6 @@
     "./ids": "./src/ids.ts",
     "./access": "./src/access.ts",
     "./errors": "./src/errors.ts",
-    "./discovery": "./src/discovery.ts",
-    "./events": "./src/events.ts",
     "./packs": "./src/packs.ts",
     "./workspaces": "./src/workspaces.ts",
     "./modules": "./src/modules.ts",

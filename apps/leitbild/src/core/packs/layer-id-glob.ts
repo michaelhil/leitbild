@@ -1,5 +1,5 @@
 // Tiny glob matcher for MapLibre layer-id patterns contributed via
-// LeitbildPack.mapLayerGroups[].layerIdPattern.
+// MicroworldPack.mapLayerGroups[].layerIdPattern.
 //
 // Semantics:
 //   `*` matches one ':'-separated segment (no ':' allowed within a `*`).

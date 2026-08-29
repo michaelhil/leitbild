@@ -1,4 +1,4 @@
-import type { LeitbildPack } from '../core/packs/protocol.ts'
+import type { MicroworldPack } from '../core/packs/protocol.ts'
 import type { DatasetConfig, DatasetId } from './types.ts'
 
 // Reference-data dataset registry.
@@ -21,7 +21,7 @@ export interface RegisteredDataset {
   readonly build: (env: RegistryEnvironment) => DatasetConfig
 }
 
-const buildPackBuilders = (pack: LeitbildPack): ReadonlyArray<RegisteredDataset> => {
+const buildPackBuilders = (pack: MicroworldPack): ReadonlyArray<RegisteredDataset> => {
   if (!pack.referenceData || pack.referenceData.builders.length === 0) return []
   return pack.referenceData.builders.map((builder): RegisteredDataset => ({
     id: builder.id,
@@ -43,7 +43,7 @@ const buildPackBuilders = (pack: LeitbildPack): ReadonlyArray<RegisteredDataset>
  * triggering env reads.
  */
 export const collectRegisteredDatasets = (
-  packs: ReadonlyArray<LeitbildPack>,
+  packs: ReadonlyArray<MicroworldPack>,
 ): ReadonlyArray<RegisteredDataset> => {
   const seen = new Set<string>()
   const out: RegisteredDataset[] = []
@@ -62,7 +62,7 @@ export const collectRegisteredDatasets = (
 
 export const findRegisteredDataset = (
   datasetId: string,
-  packs: ReadonlyArray<LeitbildPack>,
+  packs: ReadonlyArray<MicroworldPack>,
 ): RegisteredDataset | null => {
   for (const d of collectRegisteredDatasets(packs)) {
     if (String(d.id) === datasetId) return d

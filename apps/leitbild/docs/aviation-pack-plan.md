@@ -78,7 +78,7 @@ data/reference/manual/halden-exclusion-zone.geojson   → src/packs/aviation/dat
 
 ## Production deploy notes
 
-The dataset id (`aero-norway`) and on-disk paths (`/opt/leitbild/reference/releases/aero-norway/current/...`) do not change. No migration on Hetzner. The next `bun run reference:rebuild` will continue to find and refresh `aero-norway` because the build CLI walks `leitbildPacks` and the aviation pack contributes the same `DatasetConfig`.
+The dataset id (`aero-norway`) and on-disk paths (`/opt/leitbild/reference/releases/aero-norway/current/...`) do not change. No migration on Hetzner. The next `bun run reference:rebuild` will continue to find and refresh `aero-norway` because the build CLI walks `microworldPacks` and the aviation pack contributes the same `DatasetConfig`.
 
 ## Reverting / removing the pack
 
@@ -90,5 +90,5 @@ The dataset id (`aero-norway`) and on-disk paths (`/opt/leitbild/reference/relea
 - **ADR 0020** — OpenAIP / GeoNorge source choices (unchanged)
 - **ADR 0021** — sidecar GeoJSON (unchanged)
 - **ADR 0022** — aviation pack architecture
-- **ADR 0023** — `mapLayerGroups` field on `LeitbildPack`
+- **ADR 0023** — `mapLayerGroups` field on `MicroworldPack`
 - **Wiki**: `samsinn-wikis/leitbild` → `wiki/domains/aviation.md` (rename of `airspace.md`)

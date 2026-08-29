@@ -37,7 +37,7 @@ export interface PackMapLayerGroup {
   readonly layerIdPattern: string
 }
 
-export interface LeitbildPack {
+export interface MicroworldPack {
   // ...existing fields...
   readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
 }

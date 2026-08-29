@@ -1,7 +1,7 @@
 import type { OperationalObject } from '../model/index.ts'
 import {
-  createLeitbildPackDescriptor,
-  type LeitbildPack,
+  createMicroworldPackDescriptor,
+  type MicroworldPack,
   type PackCommandRequest,
   type PackCreationGeometry,
   type PackMapAreaFeature,
@@ -10,9 +10,9 @@ import {
   type PackTargetContext,
 } from './protocol.ts'
 
-const packId = (pack: LeitbildPack): string => pack.descriptor.id
+const packId = (pack: MicroworldPack): string => pack.descriptor.id
 
-const packForObject = (packs: ReadonlyArray<LeitbildPack>, object: OperationalObject): LeitbildPack | null => {
+const packForObject = (packs: ReadonlyArray<MicroworldPack>, object: OperationalObject): MicroworldPack | null => {
   const matches = packs.filter(pack => pack.presentation.categories.some(category => category.matches(object)))
   if (matches.length > 1) throw new Error(`ambiguous pack ownership for object ${object.id}: ${matches.map(packId).join(', ')}`)
   return matches[0] ?? null
@@ -26,7 +26,7 @@ const assertUniqueIds = (values: ReadonlyArray<{ readonly id: string }>, kind: s
   }
 }
 
-const packForCreateType = (packs: ReadonlyArray<LeitbildPack>, typeId: string): LeitbildPack => {
+const packForCreateType = (packs: ReadonlyArray<MicroworldPack>, typeId: string): MicroworldPack => {
   const matches = packs.filter(pack => pack.commands.createObjectTypes.some(type => type.id === typeId))
   if (matches.length === 0) throw new Error(`unknown create object type: ${typeId}`)
   if (matches.length > 1) throw new Error(`ambiguous create object type ${typeId}: ${matches.map(packId).join(', ')}`)
@@ -34,14 +34,14 @@ const packForCreateType = (packs: ReadonlyArray<LeitbildPack>, typeId: string): 
 }
 
 const packsForTargetCommand = (
-  packs: ReadonlyArray<LeitbildPack>,
+  packs: ReadonlyArray<MicroworldPack>,
   controller: OperationalObject,
   target: OperationalObject,
   context: PackTargetContext,
-): ReadonlyArray<LeitbildPack> =>
+): ReadonlyArray<MicroworldPack> =>
   packs.filter(pack => pack.commands.isController(controller) && pack.commands.isTarget(controller, target, context))
 
-const packForCancelCommand = (packs: ReadonlyArray<LeitbildPack>, controller: OperationalObject): LeitbildPack => {
+const packForCancelCommand = (packs: ReadonlyArray<MicroworldPack>, controller: OperationalObject): MicroworldPack => {
   const matches = packs.filter(pack => pack.commands.isController(controller))
   if (matches.length === 0) throw new Error(`no pack can cancel target for ${controller.id}`)
   if (matches.length > 1) throw new Error(`ambiguous cancel target command for ${controller.id}: ${matches.map(packId).join(', ')}`)
@@ -52,8 +52,8 @@ export const createCompositePack = (config: {
   readonly id: string
   readonly version: string
   readonly name: string
-  readonly packs: ReadonlyArray<LeitbildPack>
-}): LeitbildPack => {
+  readonly packs: ReadonlyArray<MicroworldPack>
+}): MicroworldPack => {
   if (config.packs.length === 0) throw new Error('composite pack requires at least one pack')
   assertUniqueIds(config.packs.flatMap(pack => pack.presentation.categories), 'object category')
   assertUniqueIds(config.packs.flatMap(pack => pack.commands.createObjectTypes), 'create object type')
@@ -61,7 +61,7 @@ export const createCompositePack = (config: {
 
   const mapAreaFeatureLayers = (() => {
     const seen = new Set<string>()
-    const output: NonNullable<LeitbildPack['presentation']['mapAreaFeatureLayers']>[number][] = []
+    const output: NonNullable<MicroworldPack['presentation']['mapAreaFeatureLayers']>[number][] = []
     for (const pack of config.packs) {
       for (const layer of pack.presentation.mapAreaFeatureLayers ?? []) {
         if (seen.has(layer)) continue
@@ -89,7 +89,7 @@ export const createCompositePack = (config: {
 
   const mapLayerGroups = (() => {
     const seen = new Set<string>()
-    const output: NonNullable<LeitbildPack['presentation']['mapLayerGroups']>[number][] = []
+    const output: NonNullable<MicroworldPack['presentation']['mapLayerGroups']>[number][] = []
     for (const pack of config.packs) {
       for (const group of pack.presentation.mapLayerGroups ?? []) {
         if (seen.has(group.id)) throw new Error(`composite pack ${config.id}: duplicate map layer group id "${group.id}"`)
@@ -113,7 +113,7 @@ export const createCompositePack = (config: {
   const wikiRefs = config.packs.flatMap(pack => pack.knowledge?.wikiRefs ?? [])
 
   return {
-    descriptor: createLeitbildPackDescriptor({
+    descriptor: createMicroworldPackDescriptor({
       id: config.id,
       version: config.version,
       name: config.name,

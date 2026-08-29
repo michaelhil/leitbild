@@ -1,7 +1,7 @@
 import type { GeoJsonPoint, OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
-import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
-import { createLeitbildPackDescriptor } from '../../core/packs/protocol.ts'
+import type { MicroworldPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
+import { createMicroworldPackDescriptor } from '../../core/packs/protocol.ts'
 import {
   createDroneCommandKind,
   holdDroneCommandKind,
@@ -84,8 +84,8 @@ const pointForTarget = (target: OperationalObject): GeoJsonPoint => {
   return point
 }
 
-export const droneUiPack: LeitbildPack = {
-  descriptor: createLeitbildPackDescriptor({
+export const droneUiPack: MicroworldPack = {
+  descriptor: createMicroworldPackDescriptor({
     id: dronePackId, version: '1.0.0', name: 'Drone Operations',
     contributions: ['runtime', 'knowledge', 'presentation', 'commands', 'interactions'],
   }),

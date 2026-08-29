@@ -96,7 +96,7 @@ Additional methods (`featuresInBbox`, `nearestK`, etc.) are added only when a re
 
 ### Pack contract change
 
-One optional field is added to `LeitbildPack`:
+One optional field is added to `MicroworldPack`:
 
 ```ts
 readonly referenceDatasetRefs?: ReadonlyArray<string>

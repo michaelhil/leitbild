@@ -1,8 +1,8 @@
 import type { PackId, GeoJsonPoint, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
 import { geoPointFromLonLat, meters, objectIdSchema } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
-import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectPresentation, PackScenarioObjectSpec } from '../../core/packs/protocol.ts'
-import { createLeitbildPackDescriptor } from '../../core/packs/protocol.ts'
+import type { MicroworldPack, PackCommandRequest, PackCreationGeometry, PackObjectPresentation, PackScenarioObjectSpec } from '../../core/packs/protocol.ts'
+import { createMicroworldPackDescriptor } from '../../core/packs/protocol.ts'
 import { processPlantControlWriteCommandKind } from './commands.ts'
 import { emptyProcessPlantProjection, processPlantPackId, processPlantUnitPackDataSchema, type ProcessPlantUnitPackData } from './model.ts'
 import { processPlantSimAdapterId, processPlantSimRuntimeId } from './sim/constants.ts'
@@ -108,8 +108,8 @@ const presentationForUnit = (object: OperationalObject, data: ProcessPlantUnitPa
   }
 }
 
-export const processPlantPack: LeitbildPack = {
-  descriptor: createLeitbildPackDescriptor({
+export const processPlantPack: MicroworldPack = {
+  descriptor: createMicroworldPackDescriptor({
     id: 'process-plant', version: '1.0.0', name: 'Process Plant',
     contributions: ['runtime', 'knowledge', 'scenario', 'presentation', 'commands'],
   }),

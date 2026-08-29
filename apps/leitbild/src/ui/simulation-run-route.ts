@@ -9,7 +9,6 @@ export interface SimulationRunRoute {
 }
 
 export type ControlSurfaceRoute =
-  | { readonly mode: 'workspace-index' }
   | { readonly mode: 'run-picker'; readonly workspaceId: WorkspaceId; readonly canonicalPath: string }
   | { readonly mode: 'new-run'; readonly workspaceId: WorkspaceId; readonly scenarioId: string; readonly canonicalPath: string }
   | SimulationRunRoute
@@ -24,7 +23,6 @@ export const pathForSimulationRun = (workspaceId: WorkspaceId, simulationRunId: 
   `${pathForWorkspace(workspaceId)}/runs/${encodeURIComponent(simulationRunId)}`
 
 export const parseControlSurfaceRoute = (pathname: string): ControlSurfaceRoute => {
-  if (pathname === '/') return { mode: 'workspace-index' }
   const workspaceMatch = pathname.match(/^\/workspaces\/([^/]+)\/?$/)
   if (workspaceMatch) {
     const workspaceId = workspaceIdSchema.parse(decodeURIComponent(workspaceMatch[1] ?? ''))

@@ -17,7 +17,7 @@ import {
   type SurfaceDefinition,
   type SurfaceRegionDefinition,
 } from '../model/index.ts'
-import type { LeitbildPack, PackScenarioObjectSpec, PackScenarioOperationSpec } from '../packs/protocol.ts'
+import type { MicroworldPack, PackScenarioObjectSpec, PackScenarioOperationSpec } from '../packs/protocol.ts'
 import type { RoutingAdapter } from '../../routing/protocol.ts'
 
 const lonLatSchema = z.tuple([
@@ -222,7 +222,7 @@ const scenarioTime = (startsAt: IsoTimestamp, seconds: number): IsoTimestamp =>
 const pointFromLonLat = (value: readonly [number, number]): GeoJsonPoint =>
   geoPointFromLonLat(value[0], value[1])
 
-const packFor = (packs: ReadonlyMap<string, LeitbildPack>, packId: string): LeitbildPack => {
+const packFor = (packs: ReadonlyMap<string, MicroworldPack>, packId: string): MicroworldPack => {
   const pack = packs.get(packId)
   if (!pack) throw new Error(`scenario references unknown pack: ${packId}`)
   if (!pack.scenario) throw new Error(`pack ${packId} does not support scenario config expansion`)
@@ -233,7 +233,7 @@ const expandObject = async (
   spec: PackScenarioObjectSpec,
   context: {
     readonly at: IsoTimestamp
-    readonly packs: ReadonlyMap<string, LeitbildPack>
+    readonly packs: ReadonlyMap<string, MicroworldPack>
     readonly objectMap: Map<ObjectId, OperationalObject>
     readonly routing: RoutingAdapter
     readonly runtimeConfigs: Record<string, unknown>
@@ -257,7 +257,7 @@ const expandScriptAction = async (
   action: ScenarioScriptActionConfig,
   context: {
     readonly at: IsoTimestamp
-    readonly packs: ReadonlyMap<string, LeitbildPack>
+    readonly packs: ReadonlyMap<string, MicroworldPack>
     readonly objectMap: Map<ObjectId, OperationalObject>
     readonly routing: RoutingAdapter
     readonly runtimeConfigs: Record<string, unknown>
@@ -336,7 +336,7 @@ const expandSurface = (surface: z.infer<typeof surfaceConfigSchema>): SurfaceDef
 
 export const scenarioDefinitionFromConfig = async (
   rawConfig: unknown,
-  packs: ReadonlyArray<LeitbildPack>,
+  packs: ReadonlyArray<MicroworldPack>,
   options: { readonly routing: RoutingAdapter },
 ): Promise<ScenarioDefinition> => {
   const config = scenarioConfigSchema.parse(rawConfig)

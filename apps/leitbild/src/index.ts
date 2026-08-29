@@ -1,6 +1,6 @@
 import { createServer } from './core/api/server.ts'
 import { createScenarioCatalog } from './core/scenarios/catalog.ts'
-import { leitbildPacks } from './app-assembly.ts'
+import { microworldPacks } from './app-assembly.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from './packs/ambulance/sim/adapter.ts'
 import { createAviationNoopPackRuntimeAdapter } from './packs/aviation/sim/noop-adapter.ts'
 import { createOpenSkyPackRuntimeAdapter } from './packs/aviation/sim/opensky/adapter.ts'
@@ -14,13 +14,12 @@ import { createLocalTrafficPackRuntimeAdapter } from './packs/traffic/sim/adapte
 import { createLocalWeatherPackRuntimeAdapter } from './packs/weather/sim/adapter.ts'
 import { createRoutingAdapterFromEnv } from './routing/config.ts'
 import { builtinMissions, createBuiltinScenarios } from './scenarios/index.ts'
-import { join } from 'node:path'
-import { createLocalWorkspaceDirectory } from './core/workspaces/directory.ts'
-import { createLeitbildWorkspaceRuntimeRegistry } from './core/workspaces/runtime-registry.ts'
+import { createMicroworldModuleState } from './core/workspaces/module-state.ts'
+import { createMicroworldWorkspaceRuntimeRegistry } from './core/workspaces/runtime-registry.ts'
 
 const routing = createRoutingAdapterFromEnv()
 const scenarios = await createBuiltinScenarios(routing)
-const scenarioCatalog = createScenarioCatalog({ packs: leitbildPacks, scenarios, missions: builtinMissions })
+const scenarioCatalog = createScenarioCatalog({ packs: microworldPacks, scenarios, missions: builtinMissions })
 
 // OpenSky requires OAuth2 client_credentials. If the operator hasn't provisioned
 // them (e.g. local dev, demo machines without an OpenSky account), we skip
@@ -53,9 +52,11 @@ const aviationMultiAdapter: PackRuntimeAdapter | null = (aviationOpenSkyAdapter 
   : null
 
 const dataDir = process.env.LEITBILD_DATA_DIR ?? 'data'
-const workspaceDirectory = createLocalWorkspaceDirectory({
-  path: join(dataDir, 'workspace-directory.json'),
-})
+const workspaceHostUrl = process.env.WORKSPACE_HOST_URL
+if (workspaceHostUrl === undefined) {
+  throw new Error('WORKSPACE_HOST_URL is required: Microworld is entered through the Workspace Host')
+}
+const moduleState = createMicroworldModuleState({ dataDir })
 const runtimeAdapters: ReadonlyArray<PackRuntimeAdapter> = [
   createLocalAmbulancePackRuntimeAdapter({ routing }),
   createLocalTrafficPackRuntimeAdapter({ routing }),
@@ -69,14 +70,14 @@ const runtimeAdapters: ReadonlyArray<PackRuntimeAdapter> = [
   ...(aviationMultiAdapter ? [aviationMultiAdapter] : []),
 ]
 
-const workspaces = createLeitbildWorkspaceRuntimeRegistry({
+const workspaces = createMicroworldWorkspaceRuntimeRegistry({
   dataDir,
-  workspaceDirectory,
+  moduleState,
   scenarioCatalog,
   runtimeAdapters,
-  interactionHandlers: leitbildPacks.flatMap(pack => pack.interactions?.handlers ?? []),
+  interactionHandlers: microworldPacks.flatMap(pack => pack.interactions?.handlers ?? []),
 })
 
-const server = createServer({ workspaces, packs: leitbildPacks })
+const server = createServer({ workspaces, packs: microworldPacks, workspaceHostUrl })
 
 console.log(`Leitbild running at http://localhost:${server.port}`)

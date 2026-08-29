@@ -32,7 +32,7 @@ describe('BUNDLED_PACKS', () => {
 
   test('every entry has the expected shape', () => {
     for (const pack of BUNDLED_PACKS) {
-      expect(String(pack.descriptor.moduleId)).toBe('samsinn')
+      expect(String(pack.descriptor.moduleId)).toBe('agents')
       expect(pack.descriptor.id.length).toBeGreaterThan(0)
       expect(pack.descriptor.name.length).toBeGreaterThan(0)
       expect(pack.descriptor.description?.length).toBeGreaterThan(0)

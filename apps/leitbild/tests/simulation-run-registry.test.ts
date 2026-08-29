@@ -39,7 +39,7 @@ const simulationRunDir = (
   dataDir: string,
   workspaceId: WorkspaceId,
   simulationRunId: SimulationRunId,
-): string => join(dataDir, 'workspaces', workspaceId, 'leitbild', 'simulation-runs', simulationRunId)
+): string => join(dataDir, 'workspaces', workspaceId, 'microworld', 'simulation-runs', simulationRunId)
 
 const issueDispatchCommand = async (runtime: SimulationRunRuntime): Promise<void> => {
   const snapshot = runtime.snapshot()

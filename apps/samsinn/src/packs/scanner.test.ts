@@ -2,14 +2,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createSamsinnPackDescriptor } from './manifest.ts'
+import { createAgentPackDescriptor } from './manifest.ts'
 import { __resetScannerWarnings, scanPacks } from './scanner.ts'
 
 const writePack = async (root: string, id: string): Promise<void> => {
   const dir = join(root, id)
   await mkdir(dir)
   await writeFile(join(dir, 'pack.json'), JSON.stringify({
-    descriptor: createSamsinnPackDescriptor({
+    descriptor: createAgentPackDescriptor({
       id,
       version: '1.0.0',
       name: id,
@@ -62,7 +62,7 @@ describe('scanPacks', () => {
     const wrongDir = join(root, 'wrong')
     await mkdir(wrongDir)
     await writeFile(join(wrongDir, 'pack.json'), JSON.stringify({
-      descriptor: createSamsinnPackDescriptor({
+      descriptor: createAgentPackDescriptor({
         id: 'actual', version: '1.0.0', name: 'Actual', contributions: [{ kind: 'tool' }],
       }),
       wikis: [],

@@ -19,11 +19,6 @@
   } from '../core/packs/protocol.ts'
   import { createMapPopupController } from './map/map-popup-controller.ts'
   import type { MapInputDebugController } from './map/map-input-debug.ts'
-  import {
-    disabledSamsinnScreenshotConfig,
-    fetchSamsinnScreenshotConfig,
-  } from './samsinn-screenshot-config.ts'
-  import type { SamsinnScreenshotConfig } from '../core/api/client-config.ts'
   import { simulationTimeAt } from './simulation-clock.ts'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import type { ThemeMode } from './theme.ts'
@@ -116,7 +111,6 @@
   let appliedTheme: ThemeMode | null = null
   let appliedCameraKey: string | null = null
   let mapReadyNotified = false
-  let screenshotResponderCleanup: (() => void) | null = null
 
   const createNoopMapInputDebugController = (): MapInputDebugController => ({
     install: () => undefined,
@@ -306,15 +300,6 @@
     onMapReady()
   }
 
-  const loadScreenshotConfig = async (): Promise<SamsinnScreenshotConfig> => {
-    try {
-      return await fetchSamsinnScreenshotConfig()
-    } catch (err) {
-      mapInputDebugController.record(`screenshot-config:failed:${err instanceof Error ? err.message : String(err)}`)
-      return disabledSamsinnScreenshotConfig()
-    }
-  }
-
   runOnMount(() => {
     if (!mapElement) throw new Error('Operational map element was not bound before map initialization')
     let cancelled = false
@@ -325,14 +310,11 @@
     const initializeMap = async (): Promise<void> => {
       await installMapInputDebugController()
       if (cancelled || !mapElement) return
-      const screenshotConfig = await loadScreenshotConfig()
-      if (cancelled || !mapElement) return
       const nextRuntime = await createMapRuntime({
         element: mapElement,
         styleUrl: styleUrlFor(theme),
         center: mapConfig.center,
         zoom: mapConfig.zoom,
-        preserveDrawingBuffer: screenshotConfig.enabled,
         placementActive: () => placementMode !== null,
         onPlacementPoint,
         onMoveStart: () => {
@@ -357,19 +339,6 @@
       appliedTheme = theme
       appliedCameraKey = cameraKeyFor(mapConfig)
       mapInputDebugController.install(nextRuntime.map)
-      if (screenshotConfig.enabled) {
-        const screenshotModule = await import('./samsinn-screenshot.ts')
-        if (cancelled) {
-          nextRuntime.destroy()
-          return
-        }
-        screenshotResponderCleanup = screenshotModule.installSamsinnScreenshotResponder({
-          enabled: screenshotConfig.enabled,
-          allowedParentOrigins: screenshotConfig.allowedParentOrigins,
-          maxDataUrlBytes: screenshotConfig.maxDataUrlBytes,
-          capture: async options => screenshotModule.captureMapCanvasScreenshot(nextRuntime.map.getCanvas(), options),
-        })
-      }
       operationalRenderController.flushNow()
       notifyMapReady()
       registerReferenceLayers()
@@ -394,8 +363,6 @@
       operationalRenderController.destroy()
       packOverlayController.destroy()
       popupController.hide()
-      screenshotResponderCleanup?.()
-      screenshotResponderCleanup = null
       referenceLayerController.reset()
       runtime?.destroy()
       runtime = null

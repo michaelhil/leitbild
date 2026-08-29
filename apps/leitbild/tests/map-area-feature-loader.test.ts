@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import type { SimulationRunId, IsoTimestamp } from '../src/core/model/index.ts'
 import { geoPointFromLonLat } from '../src/core/model/index.ts'
 import {
-  createLeitbildPackDescriptor,
-  type LeitbildPack,
+  createMicroworldPackDescriptor,
+  type MicroworldPack,
   type PackMapAreaFeature,
   type PackQueryRequest,
 } from '../src/core/packs/protocol.ts'
@@ -38,8 +38,8 @@ const delay = async (ms: number): Promise<void> => {
   })
 }
 
-const createPack = (requests: ReadonlyArray<PackQueryRequest>): LeitbildPack => ({
-  descriptor: createLeitbildPackDescriptor({
+const createPack = (requests: ReadonlyArray<PackQueryRequest>): MicroworldPack => ({
+  descriptor: createMicroworldPackDescriptor({
     id: 'weather-test',
     version: '1.0.0',
     name: 'Weather Test',

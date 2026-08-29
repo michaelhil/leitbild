@@ -11,7 +11,7 @@ import {
 } from '@samsinn-leitbild/platform-contracts'
 import { simulationRunIdSchema } from '../model/index.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
-import type { LeitbildWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
+import type { MicroworldWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
 import {
   commandIdempotencyConfigFromEnv,
   commandIdempotencyStoreForRuntime,
@@ -37,6 +37,9 @@ export const microworldModuleManifest = workspaceModuleManifestSchema.parse({
     resources: '/internal/workspaces/{workspaceId}/resources',
     capabilities: '/internal/workspaces/{workspaceId}/capabilities',
     invoke: '/internal/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke',
+  },
+  ui: {
+    workspace: '/workspaces/{workspaceId}',
   },
 })
 
@@ -191,7 +194,7 @@ const invokeCapability = async (
 export const handleMicroworldModuleApi = async (
   request: Request,
   url: URL,
-  workspaces: LeitbildWorkspaceRuntimeRegistry,
+  workspaces: MicroworldWorkspaceRuntimeRegistry,
 ): Promise<Response | null> => {
   try {
     if (url.pathname === '/.well-known/workspace-module' && request.method === 'GET') {
@@ -204,9 +207,8 @@ export const handleMicroworldModuleApi = async (
       if (request.method === 'PUT') {
         const input = lifecycleInputSchema.parse(await readJson(request))
         if (input.workspaceId !== workspaceId) return apiError(409, 'workspace_scope_mismatch', 'Lifecycle body and route disagree')
-        const existed = (await workspaces.list()).some(workspace => workspace.id === workspaceId)
-        await workspaces.provision(workspaceId)
-        return json({ workspaceId }, { status: existed ? 200 : 201 })
+        const provisioned = await workspaces.provision(workspaceId)
+        return json({ workspaceId, moduleId: MICROWORLD_MODULE_ID }, { status: provisioned.created ? 201 : 200 })
       }
       if (request.method === 'DELETE') {
         await workspaces.remove(workspaceId)
@@ -240,8 +242,8 @@ export const handleMicroworldModuleApi = async (
   } catch (error) {
     if (error instanceof SyntaxError) return apiError(400, 'invalid_json', error.message)
     if (error instanceof z.ZodError) return apiError(400, 'invalid_request', error.message)
-    if (error instanceof Error && error.message.startsWith('Workspace not found:')) {
-      return apiError(404, 'workspace_not_found', 'Workspace not found')
+    if (error instanceof Error && error.message.startsWith('Microworld Module not provisioned:')) {
+      return apiError(404, 'workspace_not_found', 'Microworld is not enabled in this Workspace')
     }
     if (error instanceof Error && error.message.startsWith('Simulation Run not found:')) {
       return apiError(404, 'simulation_run_not_found', 'Simulation Run not found')

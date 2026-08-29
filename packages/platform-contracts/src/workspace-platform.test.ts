@@ -86,8 +86,14 @@ describe('Module contracts', () => {
       id: 'samsinn',
       title: 'Samsinn',
       requiredModules: ['collaboration', 'agents'],
+      entryModuleId: 'collaboration',
     })
     expect(samsinn.requiredModules.map(String)).toEqual(['collaboration', 'agents'])
+    expect(String(samsinn.entryModuleId)).toBe('collaboration')
+    expect(() => experienceDescriptorSchema.parse({
+      ...samsinn,
+      entryModuleId: 'microworld',
+    })).toThrow()
   })
 })
 

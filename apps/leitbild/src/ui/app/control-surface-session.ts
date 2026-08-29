@@ -1,11 +1,11 @@
 import type { SimulationRunId, OperationalObject, ScenarioExecutionState, SimulationClockState } from '../../core/model/index.ts'
-import type { LeitbildPack } from '../../core/packs/protocol.ts'
+import type { MicroworldPack } from '../../core/packs/protocol.ts'
 import type { StartupStepId } from '../startup.ts'
 import type { SimulationRunResponse } from '../types.ts'
 
 export interface ControlSurfaceSnapshotStartupConfig {
   readonly response: SimulationRunResponse
-  readonly pack: LeitbildPack
+  readonly pack: MicroworldPack
   readonly startStep: (id: StartupStepId) => void
   readonly completeStep: (id: StartupStepId) => void
   readonly setActiveStartupStep: (id: StartupStepId) => void

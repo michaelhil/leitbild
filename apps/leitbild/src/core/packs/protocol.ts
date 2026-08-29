@@ -325,7 +325,7 @@ export interface PackInteractionContribution {
   readonly handlers: ReadonlyArray<InteractionHandler>
 }
 
-export interface LeitbildPack {
+export interface MicroworldPack {
   readonly descriptor: PackDescriptor
   readonly runtime?: PackRuntimeContribution
   readonly knowledge?: PackKnowledgeContribution
@@ -336,7 +336,7 @@ export interface LeitbildPack {
   readonly interactions?: PackInteractionContribution
 }
 
-export const createLeitbildPackDescriptor = (config: {
+export const createMicroworldPackDescriptor = (config: {
   readonly id: string
   readonly version: string
   readonly name: string
@@ -345,7 +345,7 @@ export const createLeitbildPackDescriptor = (config: {
 }): PackDescriptor => packDescriptorSchema.parse({
   schemaVersion: '1.0.0',
   id: config.id,
-  moduleId: 'leitbild',
+  moduleId: 'microworld',
   version: config.version,
   name: config.name,
   ...(config.description === undefined ? {} : { description: config.description }),

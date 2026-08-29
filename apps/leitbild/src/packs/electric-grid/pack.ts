@@ -1,7 +1,7 @@
 import type { OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
-import type { LeitbildPack, PackCommandRequest, PackMapLayerGroup, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
-import { createLeitbildPackDescriptor } from '../../core/packs/protocol.ts'
+import type { MicroworldPack, PackCommandRequest, PackMapLayerGroup, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
+import { createMicroworldPackDescriptor } from '../../core/packs/protocol.ts'
 import {
   gridClearDerateCommandKind,
   gridCloseBranchCommandKind,
@@ -192,8 +192,8 @@ const unsupportedCommand = (): PackCommandRequest => {
   throw new Error('electric-grid pack does not support this interaction')
 }
 
-export const electricGridPack: LeitbildPack = {
-  descriptor: createLeitbildPackDescriptor({
+export const electricGridPack: MicroworldPack = {
+  descriptor: createMicroworldPackDescriptor({
     id: electricGridPackId, version: '1.0.0', name: 'Electric Grid',
     contributions: ['runtime', 'knowledge', 'reference-data', 'scenario', 'presentation', 'commands'],
   }),

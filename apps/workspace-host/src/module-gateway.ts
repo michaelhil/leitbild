@@ -32,6 +32,7 @@ export interface ModuleGateway {
   readonly resources: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleResourceCollection>>
   readonly capabilities: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleCapabilityCollection>>
   readonly invoke: (moduleId: ModuleId, invocation: ModuleCapabilityInvocation) => Promise<ModuleCallResult<ModuleCapabilityInvocationResult>>
+  readonly workspaceUi: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<string>>
 }
 
 const normalizeBaseUrl = (value: string): string => {
@@ -205,6 +206,27 @@ export const createModuleGateway = (config: {
     }
   }
 
+  const workspaceUi = async (
+    moduleId: ModuleId,
+    workspaceId: WorkspaceId,
+  ): Promise<ModuleCallResult<string>> => {
+    const registration = byId.get(moduleId)
+    if (!registration) return failure({ code: 'module_not_installed', message: `Module is not installed: ${moduleId}`, retryable: false })
+    const manifest = await discover(registration)
+    if ('code' in manifest) return { ok: false, failure: manifest }
+    if (manifest.ui === undefined) {
+      return failure({
+        code: 'module_ui_unavailable',
+        message: `Module does not publish a Workspace UI: ${moduleId}`,
+        retryable: false,
+      })
+    }
+    return {
+      ok: true,
+      value: expandWorkspacePath(registration.baseUrl, manifest.ui.workspace, workspaceId),
+    }
+  }
+
   return {
     list: () => registrations,
     has: moduleId => byId.has(moduleIdSchema.parse(moduleId)),
@@ -223,5 +245,6 @@ export const createModuleGateway = (config: {
       parse: value => moduleCapabilityCollectionSchema.parse(value),
     }),
     invoke,
+    workspaceUi,
   }
 }

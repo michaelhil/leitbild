@@ -108,8 +108,15 @@ describe('Samsinn Workspace Module API', () => {
 
     expect((await request('POST', `/internal/collaboration/workspaces/${workspaceId}/capabilities/collaboration.room.create/invoke`,
       invokeBody(workspaceId, 'collaboration.room.create', { name: 'Operations' }))).status).toBe(201)
-    expect((await request('POST', `/internal/agents/workspaces/${workspaceId}/capabilities/agents.agent.create/invoke`,
-      invokeBody(workspaceId, 'agents.agent.create', { name: 'Analyst', model: 'test-model', persona: 'Analyse.' }))).status).toBe(201)
+    const createAgent = await request('POST', `/internal/agents/workspaces/${workspaceId}/capabilities/agents.agent.create/invoke`,
+      invokeBody(workspaceId, 'agents.agent.create', {
+        name: 'Analyst',
+        model: 'test-model',
+        persona: 'Analyse.',
+        toolGrants: [{ capabilityId: 'microworld.simulation-run.read' }],
+      }))
+    expect(createAgent.status).toBe(201)
+    const agentId = (await createAgent.json() as { result: { id: string } }).result.id
 
     const rooms = moduleResourceCollectionSchema.parse(
       await (await request('GET', `/internal/collaboration/workspaces/${workspaceId}/resources`)).json(),
@@ -121,6 +128,19 @@ describe('Samsinn Workspace Module API', () => {
     expect(agents.resources.map(resource => resource.title)).toEqual(['Analyst'])
     expect(String(rooms.resources[0]?.ref.type)).toBe('collaboration.room')
     expect(String(agents.resources[0]?.ref.type)).toBe('agents.agent')
+
+    const agentProfile = await request(
+      'POST',
+      `/internal/agents/workspaces/${workspaceId}/capabilities/agents.agent.read/invoke`,
+      invokeBody(workspaceId, 'agents.agent.read', {}, {
+        moduleId: 'agents',
+        type: 'agents.agent',
+        id: agentId,
+      }),
+    )
+    expect((await agentProfile.json() as {
+      result: { config: { toolGrants: Array<{ capabilityId: string }> } }
+    }).result.config.toolGrants).toEqual([{ capabilityId: 'microworld.simulation-run.read' }])
   })
 
   test('removing Collaboration preserves Agents state and disables only Collaboration', async () => {

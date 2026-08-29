@@ -1,10 +1,10 @@
 import {
-  capabilityManifestSchema,
-  type CapabilityDescriptor,
+  packCapabilityManifestSchema,
+  type PackCapabilityDescriptor,
 } from '@samsinn-leitbild/platform-contracts'
-import type { LeitbildPack } from './protocol.ts'
+import type { MicroworldPack } from './protocol.ts'
 
-const capabilityKindFor = (contributionKind: string): CapabilityDescriptor['kind'] => {
+const capabilityKindFor = (contributionKind: string): PackCapabilityDescriptor['kind'] => {
   switch (contributionKind) {
     case 'runtime': return 'stream'
     case 'presentation': return 'surface'
@@ -18,8 +18,8 @@ const capabilityKindFor = (contributionKind: string): CapabilityDescriptor['kind
   }
 }
 
-export const buildLeitbildCapabilityManifest = (packs: ReadonlyArray<LeitbildPack>) =>
-  capabilityManifestSchema.parse({
+export const buildMicroworldPackCapabilityManifest = (packs: ReadonlyArray<MicroworldPack>) =>
+  packCapabilityManifestSchema.parse({
     generatedAt: new Date().toISOString(),
     capabilities: packs
       .flatMap(pack => pack.descriptor.contributions.map(contribution => ({

@@ -1,45 +1,46 @@
-import { rm } from 'node:fs/promises'
-import { join } from 'node:path'
 import type { WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 import type { InteractionHandler } from '../model/index.ts'
 import type { ScenarioCatalog } from '../scenarios/catalog.ts'
 import type { ProcedureSourceService } from '../procedures/source.ts'
 import type { PackRuntimeAdapter } from '../../simulation/protocol.ts'
 import { createSimulationRunRegistry, type SimulationRunRegistry } from '../simulation-runs/registry.ts'
-import type { WorkspaceDirectory, WorkspaceRecord } from './directory.ts'
+import type { MicroworldModuleMarker, MicroworldModuleState } from './module-state.ts'
 
-export interface LeitbildWorkspaceRuntime {
-  readonly workspace: WorkspaceRecord
+export interface MicroworldWorkspaceRuntime {
+  readonly workspaceId: WorkspaceId
   readonly simulationRuns: SimulationRunRegistry
 }
 
-export interface LeitbildWorkspaceRuntimeRegistry {
-  readonly list: () => Promise<ReadonlyArray<WorkspaceRecord>>
-  readonly provision: (id: WorkspaceId) => Promise<LeitbildWorkspaceRuntime>
-  readonly getOrLoad: (id: WorkspaceId) => Promise<LeitbildWorkspaceRuntime>
-  readonly getLoaded: (id: WorkspaceId) => LeitbildWorkspaceRuntime | undefined
+export interface MicroworldWorkspaceRuntimeRegistry {
+  readonly list: () => Promise<ReadonlyArray<MicroworldModuleMarker>>
+  readonly provision: (id: WorkspaceId) => Promise<{
+    readonly runtime: MicroworldWorkspaceRuntime
+    readonly created: boolean
+  }>
+  readonly getOrLoad: (id: WorkspaceId) => Promise<MicroworldWorkspaceRuntime>
+  readonly getLoaded: (id: WorkspaceId) => MicroworldWorkspaceRuntime | undefined
   readonly close: (id: WorkspaceId) => Promise<boolean>
   readonly remove: (id: WorkspaceId) => Promise<boolean>
   readonly shutdown: () => Promise<void>
 }
 
-export const createLeitbildWorkspaceRuntimeRegistry = (config: {
+export const createMicroworldWorkspaceRuntimeRegistry = (config: {
   readonly dataDir: string
-  readonly workspaceDirectory: WorkspaceDirectory
+  readonly moduleState: MicroworldModuleState
   readonly scenarioCatalog: ScenarioCatalog
   readonly runtimeAdapters: ReadonlyArray<PackRuntimeAdapter>
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
   readonly idleRuntimeCloseDelayMs?: number
   readonly procedureSourceService?: ProcedureSourceService
-}): LeitbildWorkspaceRuntimeRegistry => {
-  const loaded = new Map<WorkspaceId, LeitbildWorkspaceRuntime>()
-  const pendingLoads = new Map<WorkspaceId, Promise<LeitbildWorkspaceRuntime>>()
+}): MicroworldWorkspaceRuntimeRegistry => {
+  const loaded = new Map<WorkspaceId, MicroworldWorkspaceRuntime>()
+  const pendingLoads = new Map<WorkspaceId, Promise<MicroworldWorkspaceRuntime>>()
 
-  const build = (workspace: WorkspaceRecord): LeitbildWorkspaceRuntime => ({
-    workspace,
+  const build = (workspaceId: WorkspaceId): MicroworldWorkspaceRuntime => ({
+    workspaceId,
     simulationRuns: createSimulationRunRegistry({
       dataDir: config.dataDir,
-      workspaceId: workspace.id,
+      workspaceId,
       scenarioCatalog: config.scenarioCatalog,
       runtimeAdapters: config.runtimeAdapters,
       ...(config.interactionHandlers === undefined ? {} : { interactionHandlers: config.interactionHandlers }),
@@ -48,15 +49,14 @@ export const createLeitbildWorkspaceRuntimeRegistry = (config: {
     }),
   })
 
-  const getOrLoad = async (id: WorkspaceId): Promise<LeitbildWorkspaceRuntime> => {
+  const getOrLoad = async (id: WorkspaceId): Promise<MicroworldWorkspaceRuntime> => {
     const current = loaded.get(id)
     if (current) return current
     const pending = pendingLoads.get(id)
     if (pending) return await pending
-    const loading = (async (): Promise<LeitbildWorkspaceRuntime> => {
-      const workspace = await config.workspaceDirectory.get(id)
-      if (!workspace) throw new Error(`Workspace not found: ${id}`)
-      const runtime = build(workspace)
+    const loading = (async (): Promise<MicroworldWorkspaceRuntime> => {
+      if (!await config.moduleState.get(id)) throw new Error(`Microworld Module not provisioned: ${id}`)
+      const runtime = build(id)
       loaded.set(id, runtime)
       return runtime
     })().finally(() => {
@@ -66,11 +66,12 @@ export const createLeitbildWorkspaceRuntimeRegistry = (config: {
     return await loading
   }
 
-  const provision = async (id: WorkspaceId): Promise<LeitbildWorkspaceRuntime> => {
-    const workspace = await config.workspaceDirectory.create(id)
-    const current = loaded.get(id)
-    if (!current) return await getOrLoad(id)
-    return current
+  const provision = async (id: WorkspaceId) => {
+    const provisioned = await config.moduleState.provision(id)
+    return {
+      runtime: loaded.get(id) ?? await getOrLoad(id),
+      created: provisioned.created,
+    }
   }
 
   const close = async (id: WorkspaceId): Promise<boolean> => {
@@ -84,18 +85,15 @@ export const createLeitbildWorkspaceRuntimeRegistry = (config: {
   }
 
   const remove = async (id: WorkspaceId): Promise<boolean> => {
-    const exists = await config.workspaceDirectory.get(id)
-    if (!exists) return false
     await close(id)
-    await rm(join(config.dataDir, 'workspaces', id, 'leitbild'), { recursive: true, force: true })
-    return await config.workspaceDirectory.delete(id)
+    return await config.moduleState.remove(id)
   }
 
   return {
-    list: () => config.workspaceDirectory.list(),
+    list: () => config.moduleState.list(),
     provision,
     getOrLoad,
-    getLoaded: (id) => loaded.get(id),
+    getLoaded: id => loaded.get(id),
     close,
     remove,
     shutdown: async () => {

@@ -1,5 +1,5 @@
 import type { PackDescriptor } from '@samsinn-leitbild/platform-contracts'
-import { createSamsinnPackDescriptor } from './manifest.ts'
+import { createAgentPackDescriptor } from './manifest.ts'
 
 export interface BundledPack {
   readonly descriptor: PackDescriptor
@@ -12,7 +12,7 @@ const descriptor = (
   name: string,
   description: string,
   contributionKinds: ReadonlyArray<string>,
-): PackDescriptor => createSamsinnPackDescriptor({
+): PackDescriptor => createAgentPackDescriptor({
   id,
   version: '1.0.0',
   name,

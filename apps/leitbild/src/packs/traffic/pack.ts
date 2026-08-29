@@ -1,7 +1,7 @@
 import type { KnowledgeFact, OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
-import type { LeitbildPack, PackCommandRequest, PackCreateObjectParameter, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
-import { createLeitbildPackDescriptor } from '../../core/packs/protocol.ts'
+import type { MicroworldPack, PackCommandRequest, PackCreateObjectParameter, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
+import { createMicroworldPackDescriptor } from '../../core/packs/protocol.ts'
 import { createTrafficConditionCommandKind } from './commands.ts'
 import { trafficPackDataSchema, trafficPackId, type TrafficPackData, type TrafficSeverity } from './model.ts'
 import { createTrafficRouteImpactHandler } from './interactions.ts'
@@ -120,8 +120,8 @@ const buildTrafficCreatePayload = (
   throw new Error(`unsupported traffic create type: ${typeId}`)
 }
 
-export const trafficPack: LeitbildPack = {
-  descriptor: createLeitbildPackDescriptor({
+export const trafficPack: MicroworldPack = {
+  descriptor: createMicroworldPackDescriptor({
     id: 'traffic', version: '1.0.0', name: 'Traffic Conditions',
     contributions: ['runtime', 'scenario', 'presentation', 'commands', 'interactions'],
   }),

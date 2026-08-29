@@ -42,6 +42,7 @@ export interface WorkspaceHost {
   readonly experiences: (id: WorkspaceId) => ReadonlyArray<WorkspaceExperience>
   readonly addExperience: (id: WorkspaceId, experienceId: ExperienceId) => Promise<ReadonlyArray<WorkspaceExperience>>
   readonly removeExperience: (id: WorkspaceId, experienceId: ExperienceId) => Promise<ReadonlyArray<WorkspaceExperience>>
+  readonly experienceEntryUrl: (id: WorkspaceId, experienceId: ExperienceId) => Promise<string>
   readonly resources: (id: WorkspaceId) => Promise<WorkspaceResourceCatalog>
   readonly capabilities: (id: WorkspaceId) => Promise<WorkspaceCapabilityCatalog>
   readonly invoke: (id: WorkspaceId, capabilityId: CapabilityId, input: InvokeCapabilityInput, access: AccessContext) => Promise<unknown>
@@ -256,6 +257,32 @@ export const createWorkspaceHost = (config: {
         }
       }
       return workspaceExperiences(requireWorkspace(id))
+    },
+    experienceEntryUrl: async (rawId, rawExperienceId) => {
+      const id = workspaceIdSchema.parse(rawId)
+      const experience = requireExperience(experienceIdSchema.parse(rawExperienceId))
+      const workspace = requireWorkspace(id)
+      const entryMembership = workspace.modules.find(item => item.moduleId === experience.entryModuleId)
+      const ready = experience.requiredModules.every(moduleId =>
+        workspace.modules.some(item => item.moduleId === moduleId && item.status === 'ready'))
+      if (!ready || entryMembership?.status !== 'ready') {
+        throw hostError({
+          status: 409,
+          code: 'experience_not_ready',
+          message: `Experience is not ready in this Workspace: ${experience.id}`,
+        })
+      }
+      const entry = await config.modules.workspaceUi(experience.entryModuleId, id)
+      if (!entry.ok) {
+        throw hostError({
+          status: 502,
+          code: entry.failure.code,
+          message: entry.failure.message,
+          retryable: entry.failure.retryable,
+          details: { experienceId: experience.id, moduleId: experience.entryModuleId },
+        })
+      }
+      return entry.value
     },
     resources: async rawId => {
       const id = workspaceIdSchema.parse(rawId)

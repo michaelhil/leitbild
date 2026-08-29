@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { leitbildPacks } from '../../src/app-assembly.ts'
+import { microworldPacks } from '../../src/app-assembly.ts'
 import { currentBuildId, listBuildIds, promoteBuild } from '../../src/reference-data/pipeline.ts'
 import { collectRegisteredDatasets } from '../../src/reference-data/registry.ts'
 import { asBuildId } from '../../src/reference-data/types.ts'
@@ -8,7 +8,7 @@ import { exitFailure, parseFlags, referenceRoot } from './config.ts'
 const flags = parseFlags(process.argv.slice(2))
 const root = referenceRoot()
 
-const datasets = collectRegisteredDatasets(leitbildPacks).filter(
+const datasets = collectRegisteredDatasets(microworldPacks).filter(
   d => flags.dataset === null || String(d.id) === flags.dataset,
 )
 if (datasets.length === 0) {

@@ -22,4 +22,5 @@ _Avoid_: internal solver variable, runtime-private state
 
 **Simulation Pack**:
 A Microworld-owned Pack that contributes scenario material, mechanics, Resources, Capabilities, or presentation.
-_Avoid_: universal Pack, Experience
+Its descriptor names `microworld` as its sole owning Module.
+_Avoid_: Leitbild Pack, universal Pack, Experience

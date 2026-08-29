@@ -74,7 +74,7 @@ The pipeline serves any pack that wants to ship a tileset. Aviation is its first
 ### Pack contract changes (two optional fields)
 
 ```ts
-export interface LeitbildPack {
+export interface MicroworldPack {
   // ...existing fields...
 
   /**
@@ -109,7 +109,7 @@ The previous `referenceDatasetRefs?: ReadonlyArray<string>` field added in Phase
 
 ### CLI behaviour
 
-`bun run reference:build` walks `leitbildPacks` from `src/app-assembly.ts`, calls `collectRegisteredDatasets(packs, env)`, builds each in order. Failure in one pack's dataset does not block other packs. The dataset *id* and on-disk paths (`/opt/leitbild/reference/releases/<id>/current/...`) do not change — only the code location moves. No production state migration on Hetzner.
+`bun run reference:build` walks `microworldPacks` from `src/app-assembly.ts`, calls `collectRegisteredDatasets(packs, env)`, builds each in order. Failure in one pack's dataset does not block other packs. The dataset *id* and on-disk paths (`/opt/leitbild/reference/releases/<id>/current/...`) do not change — only the code location moves. No production state migration on Hetzner.
 
 ### Cross-pack dataset sharing (not done in v1)
 

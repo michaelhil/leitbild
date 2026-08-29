@@ -2,7 +2,7 @@ import type { MissionDefinition, ObjectId, ScenarioDefinition } from '../core/mo
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { leitbildPacks } from '../app-assembly.ts'
+import { microworldPacks } from '../app-assembly.ts'
 import { scenarioDefinitionFromConfig } from '../core/scenarios/config.ts'
 import { createDirectRoutingAdapter } from '../routing/direct-adapter.ts'
 import type { RoutingAdapter } from '../routing/protocol.ts'
@@ -118,13 +118,13 @@ export const builtinMissions: ReadonlyArray<MissionDefinition> = [{
 export const createBuiltinScenarios = async (
   routing: RoutingAdapter,
 ): Promise<ReadonlyArray<ScenarioDefinition>> => [
-  await scenarioDefinitionFromConfig(readScenarioConfig('oslo-ambulance.scenario.json'), leitbildPacks, { routing }),
-  await scenarioDefinitionFromConfig(readScenarioConfig('oslo-all-packs-demo.scenario.json'), leitbildPacks, { routing }),
-  await scenarioDefinitionFromConfig(readScenarioConfig('oslo-drone-operations.scenario.json'), leitbildPacks, { routing }),
-  await scenarioDefinitionFromConfig(readScenarioConfig('halden.scenario.json'), leitbildPacks, { routing }),
-  await scenarioDefinitionFromConfig(readScenarioConfig('halden-process-plant-demo.scenario.json'), leitbildPacks, { routing }),
-  await scenarioDefinitionFromConfig(readScenarioConfig('norway-airspace.scenario.json'), leitbildPacks, { routing }),
-  await scenarioDefinitionFromConfig(readScenarioConfig('norway-electric-grid.scenario.json'), leitbildPacks, { routing }),
+  await scenarioDefinitionFromConfig(readScenarioConfig('oslo-ambulance.scenario.json'), microworldPacks, { routing }),
+  await scenarioDefinitionFromConfig(readScenarioConfig('oslo-all-packs-demo.scenario.json'), microworldPacks, { routing }),
+  await scenarioDefinitionFromConfig(readScenarioConfig('oslo-drone-operations.scenario.json'), microworldPacks, { routing }),
+  await scenarioDefinitionFromConfig(readScenarioConfig('halden.scenario.json'), microworldPacks, { routing }),
+  await scenarioDefinitionFromConfig(readScenarioConfig('halden-process-plant-demo.scenario.json'), microworldPacks, { routing }),
+  await scenarioDefinitionFromConfig(readScenarioConfig('norway-airspace.scenario.json'), microworldPacks, { routing }),
+  await scenarioDefinitionFromConfig(readScenarioConfig('norway-electric-grid.scenario.json'), microworldPacks, { routing }),
 ]
 
 export const scenarios: ReadonlyArray<ScenarioDefinition> = await createBuiltinScenarios(createDirectRoutingAdapter())

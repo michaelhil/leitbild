@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { leitbildPacks } from '../../src/app-assembly.ts'
+import { microworldPacks } from '../../src/app-assembly.ts'
 import { currentBuildId, listBuildIds } from '../../src/reference-data/pipeline.ts'
 import { collectRegisteredDatasets } from '../../src/reference-data/registry.ts'
 import { parseFlags, referenceRoot } from './config.ts'
@@ -18,7 +18,7 @@ interface DatasetStatus {
   readonly featureCount?: number
 }
 
-const datasets = collectRegisteredDatasets(leitbildPacks).filter(
+const datasets = collectRegisteredDatasets(microworldPacks).filter(
   d => flags.dataset === null || String(d.id) === flags.dataset,
 )
 

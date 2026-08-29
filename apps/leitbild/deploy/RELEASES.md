@@ -11,18 +11,18 @@ terrain, scenery, reference datasets, OSRM data, or Simulation Run state.
 
 ```bash
 # Quick rehearsal; always runs the production smoke suite.
-bun run deploy -- --dry-run --test tests/discovery.test.ts
+bun run deploy -- --dry-run --test tests/workspace-module-api.test.ts
 
 # Interactive production deployment with the same selected tests.
-bun run deploy -- --test tests/discovery.test.ts
+bun run deploy -- --test tests/workspace-module-api.test.ts
 
 # Milestone/cross-cutting validation (currently about 90 seconds locally).
 bun run deploy -- --full
 ```
 
 Quick mode always runs `bun run check`, `bun run test:deploy`, and
-`bun run build:ui`. The deploy suite covers the release transaction, discovery,
-server health, map artifacts, and the Simulation Run API. Supply one or more
+`bun run build:ui`. The deploy suite covers the release transaction, the
+Microworld Module contract, server health, map artifacts, and the Simulation Run API. Supply one or more
 `--test <path-or-pattern>` options for additional affected behavior. `--full`
 runs all tests and cannot be combined with `--test`.
 

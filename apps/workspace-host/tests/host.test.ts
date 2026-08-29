@@ -9,6 +9,7 @@ import {
 } from '@samsinn-leitbild/platform-contracts'
 import { createWorkspaceHost } from '../src/host.ts'
 import { createModuleGateway } from '../src/module-gateway.ts'
+import { createWorkspaceHostServer } from '../src/server.ts'
 import { createWorkspaceStore } from '../src/store.ts'
 
 const servers: Bun.Server<unknown>[] = []
@@ -38,6 +39,7 @@ const createMicroworldModule = () => {
             capabilities: '/internal/workspaces/{workspaceId}/capabilities',
             invoke: '/internal/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke',
           },
+          ui: { workspace: '/workspaces/{workspaceId}' },
         })
       }
       const match = url.pathname.match(/^\/internal\/workspaces\/([^/]+)$/)
@@ -84,6 +86,9 @@ const createMicroworldModule = () => {
       if (invocationMatch && request.method === 'POST') {
         const invocation = await request.json() as { resource?: { id: string }; input: unknown }
         return Response.json({ result: { resourceId: invocation.resource?.id, input: invocation.input } })
+      }
+      if (/^\/workspaces\/[^/]+$/.test(url.pathname) && request.method === 'GET') {
+        return new Response('Microworld')
       }
       return new Response('not found', { status: 404 })
     },
@@ -195,6 +200,7 @@ describe('Workspace Host', () => {
       id: 'leitbild',
       title: 'Leitbild',
       requiredModules: ['microworld'],
+      entryModuleId: 'microworld',
     })
     const { host, store } = createHost([module.registration], [leitbild])
     const workspace = await host.create({ name: null, experienceIds: [leitbild.id] })
@@ -205,6 +211,40 @@ describe('Workspace Host', () => {
       expect.objectContaining({ id: 'leitbild', status: 'absent' }),
     ])
     expect(host.get(workspace.id)?.modules).toEqual([])
+    store.close()
+  })
+
+  test('creates the first Workspace and routes directly into its sole initial Experience', async () => {
+    const module = createMicroworldModule()
+    const leitbild = experienceDescriptorSchema.parse({
+      id: 'leitbild',
+      title: 'Leitbild',
+      requiredModules: ['microworld'],
+      entryModuleId: 'microworld',
+    })
+    const { host, store } = createHost([module.registration], [leitbild])
+    const server = createWorkspaceHostServer({
+      host,
+      bindHost: '127.0.0.1',
+      port: 0,
+      initialExperienceIds: [leitbild.id],
+    })
+    servers.push(server)
+    const origin = `http://127.0.0.1:${server.port}`
+
+    const first = await fetch(origin, { redirect: 'manual' })
+    expect(first.status).toBe(303)
+    const workspace = host.list()[0]!
+    expect(workspace.name).toBeNull()
+    expect(first.headers.get('location')).toBe(
+      `${origin}/workspaces/${workspace.id}/experiences/leitbild`,
+    )
+
+    const entry = await fetch(first.headers.get('location')!, { redirect: 'manual' })
+    expect(entry.status).toBe(303)
+    expect(entry.headers.get('location')).toBe(
+      `${module.registration.baseUrl}/workspaces/${workspace.id}`,
+    )
     store.close()
   })
 })

@@ -32,25 +32,24 @@ import {
 } from './command-idempotency.ts'
 import { createSimulationRunRealtimeManager, emptyRealtimeStatus, type RealtimeStatus, type SimulationRunRealtimeManager } from './realtime.ts'
 import { apiError, json } from './responses.ts'
-import { buildManifest } from './discovery.ts'
-import { createSamsinnScreenshotConfigFromEnv } from './client-config.ts'
 import { workspaceIdSchema, type WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 import { createOpenAccessContext } from '../workspaces/request-context.ts'
-import type { LeitbildWorkspaceRuntime, LeitbildWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
+import type { MicroworldWorkspaceRuntime, MicroworldWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
 import { handleMicroworldModuleApi } from './workspace-module-api.ts'
-import type { LeitbildPack } from '../packs/protocol.ts'
-import { buildLeitbildCapabilityManifest } from '../packs/capabilities.ts'
+import type { MicroworldPack } from '../packs/protocol.ts'
+import { buildMicroworldPackCapabilityManifest } from '../packs/capabilities.ts'
 
-const frameAncestorsHeader = "frame-ancestors 'self' https://samsinn.app https://*.samsinn.app"
+const frameAncestorsHeader = "frame-ancestors 'self'"
 const defaultRealtimeInputActorId = actorIdSchema.parse('actor:operator')
 
 interface ServerConfig {
-  readonly workspaces: LeitbildWorkspaceRuntimeRegistry
-  readonly packs?: ReadonlyArray<LeitbildPack>
+  readonly workspaces: MicroworldWorkspaceRuntimeRegistry
+  readonly packs?: ReadonlyArray<MicroworldPack>
   readonly port?: number
   readonly bindHost?: string
   readonly uiDistPath?: string
   readonly mapArtifacts?: MapArtifactConfig
+  readonly workspaceHostUrl?: string
 }
 
 interface WSData {
@@ -154,38 +153,13 @@ export const staticContentTypeForPath = (filePath: string): string => {
 }
 
 const serveStatic = async (pathname: string, uiDistPath: string): Promise<Response | null> => {
-  const normalizedPath = pathname === '/' || pathname.startsWith('/workspaces/') ? '/index.html' : pathname
+  const normalizedPath = pathname.startsWith('/workspaces/') ? '/index.html' : pathname
   const filePath = normalize(`${uiDistPath}${normalizedPath}`)
   if (!filePath.startsWith(uiDistPath)) return new Response('Forbidden', { status: 403 })
   const file = Bun.file(filePath)
   if (!await file.exists()) return null
   return new Response(file, { headers: { 'Content-Type': staticContentTypeForPath(filePath) } })
 }
-
-const discoveryEtag = async (manifest: ReturnType<typeof buildManifest>): Promise<string> => {
-  const stableBody = JSON.stringify({
-    ...manifest,
-    generatedAt: undefined,
-  })
-  const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(stableBody))
-  const hash = [...new Uint8Array(digest)]
-    .map(byte => byte.toString(16).padStart(2, '0'))
-    .join('')
-    .slice(0, 16)
-  return `W/"${hash}"`
-}
-
-const requestBaseUrl = (req: Request): string => {
-  const url = new URL(req.url)
-  const forwardedProto = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim()
-  const forwardedHost = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
-  const protocol = forwardedProto ? `${forwardedProto}:` : url.protocol
-  const host = forwardedHost ?? url.host
-  return `${protocol}//${host}`
-}
-
-const acceptsEtag = (ifNoneMatch: string | null, etag: string): boolean =>
-  ifNoneMatch?.split(',').map(candidate => candidate.trim()).includes(etag) ?? false
 
 const withSecurityHeaders = (response: Response): Response => {
   const headers = new Headers(response.headers)
@@ -198,25 +172,6 @@ const withSecurityHeaders = (response: Response): Response => {
   })
 }
 
-const discoveryResponse = async (req: Request): Promise<Response> => {
-  const manifest = buildManifest(requestBaseUrl(req))
-  const etag = await discoveryEtag(manifest)
-  const headers = {
-    'Content-Type': 'application/json',
-    'Cache-Control': 'max-age=60, must-revalidate',
-    ETag: etag,
-  }
-  if (acceptsEtag(req.headers.get('if-none-match'), etag)) {
-    return new Response(null, { status: 304, headers })
-  }
-  return json(manifest, { headers })
-}
-
-export const handleDiscoveryRoute = async (req: Request, url: URL): Promise<Response | null> => {
-  if (url.pathname === '/.well-known/leitbild' && req.method === 'GET') return discoveryResponse(req)
-  return null
-}
-
 export const createServer = (config: ServerConfig): { readonly stop: () => void; readonly port: number } => {
   const port = config.port ?? Number(process.env.PORT ?? 3000)
   const bindHost = config.bindHost ?? process.env.LEITBILD_BIND_HOST ?? '0.0.0.0'
@@ -224,15 +179,15 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
   const mapArtifacts = config.mapArtifacts ?? createMapArtifactConfigFromEnv()
   const realtimeByWorkspace = new Map<WorkspaceId, SimulationRunRealtimeManager<ServerWebSocket<WSData>>>()
 
-  const realtimeFor = (workspaceRuntime: LeitbildWorkspaceRuntime): SimulationRunRealtimeManager<ServerWebSocket<WSData>> => {
-    const current = realtimeByWorkspace.get(workspaceRuntime.workspace.id)
+  const realtimeFor = (workspaceRuntime: MicroworldWorkspaceRuntime): SimulationRunRealtimeManager<ServerWebSocket<WSData>> => {
+    const current = realtimeByWorkspace.get(workspaceRuntime.workspaceId)
     if (current) return current
     const realtime = createSimulationRunRealtimeManager<ServerWebSocket<WSData>>({
       registry: workspaceRuntime.simulationRuns,
       send: (socket, message) => socket.send(JSON.stringify(message)),
       sendReady: (socket, message) => socket.send(JSON.stringify(message)),
     })
-    realtimeByWorkspace.set(workspaceRuntime.workspace.id, realtime)
+    realtimeByWorkspace.set(workspaceRuntime.workspaceId, realtime)
     return realtime
   }
 
@@ -362,23 +317,26 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
           process: { pid: process.pid, uptimeSeconds: process.uptime(), memory: memoryStatus() },
           mapArtifacts: await createMapArtifactStatus(mapArtifacts),
           workspaces: await Promise.all(workspaces.map(async workspace => {
-            const runtime = config.workspaces.getLoaded(workspace.id)
+            const runtime = config.workspaces.getLoaded(workspace.workspaceId)
             return {
-              workspace,
+              workspaceId: workspace.workspaceId,
+              moduleId: workspace.moduleId,
+              createdAt: workspace.createdAt,
               loaded: runtime !== undefined,
               ...(runtime === undefined ? {} : { registry: await runtime.simulationRuns.status() }),
-              realtime: realtimeByWorkspace.get(workspace.id)?.status() ?? emptyRealtimeStatus(),
+              realtime: realtimeByWorkspace.get(workspace.workspaceId)?.status() ?? emptyRealtimeStatus(),
             }
           })),
         }))
       }
-      if (url.pathname === '/api/client-config' && req.method === 'GET') {
-        return secure(json({ samsinnScreenshot: createSamsinnScreenshotConfigFromEnv() }))
-      }
-      const discoveryRouteResponse = await handleDiscoveryRoute(req, url)
-      if (discoveryRouteResponse) return secure(discoveryRouteResponse)
       const workspaceModuleResponse = await handleMicroworldModuleApi(req, url, config.workspaces)
       if (workspaceModuleResponse) return secure(workspaceModuleResponse)
+      if ((url.pathname === '/' || url.pathname === '/index.html') && req.method === 'GET') {
+        const location = config.workspaceHostUrl ?? process.env.WORKSPACE_HOST_URL
+        return location
+          ? secure(new Response(null, { status: 303, headers: { Location: location } }))
+          : secure(apiError(404, 'workspace_host_required', 'Open this Module through the Workspace Host'))
+      }
       if (url.pathname === '/map/capabilities.json') return secure(await mapCapabilitiesResponse(mapArtifacts))
       if (url.pathname === '/map/style.json') return secure(mapStyleResponse(url.searchParams.get('theme')))
       if (url.pathname.startsWith('/map/tiles/current/')) {
@@ -413,18 +371,18 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
         const workspaceIdResult = workspaceIdSchema.safeParse(decodeURIComponent(workspaceScopeMatch[1] ?? ''))
         if (!workspaceIdResult.success) return secure(apiError(400, 'invalid_request', workspaceIdResult.error.message))
         const workspaceId = workspaceIdResult.data
-        let workspaceRuntime: LeitbildWorkspaceRuntime
+        let workspaceRuntime: MicroworldWorkspaceRuntime
         try {
           workspaceRuntime = await config.workspaces.getOrLoad(workspaceId)
         } catch (err) {
-          if ((err as Error).message.startsWith('Workspace not found:')) {
-            return secure(apiError(404, 'workspace_not_found', 'Workspace not found'))
+          if ((err as Error).message.startsWith('Microworld Module not provisioned:')) {
+            return secure(apiError(404, 'workspace_not_found', 'Microworld is not enabled in this Workspace'))
           }
           throw err
         }
         const realtime = realtimeFor(workspaceRuntime)
         if (url.pathname === `/api/workspaces/${encodeURIComponent(workspaceId)}/capabilities` && req.method === 'GET') {
-          return secure(json(buildLeitbildCapabilityManifest(config.packs ?? [])))
+          return secure(json(buildMicroworldPackCapabilityManifest(config.packs ?? [])))
         }
       const simulationRunApiResponse = await handleSimulationRunApi(req, url, {
           registry: workspaceRuntime.simulationRuns,

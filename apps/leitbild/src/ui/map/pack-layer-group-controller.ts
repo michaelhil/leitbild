@@ -1,6 +1,6 @@
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import { layerIdsMatching } from '../../core/packs/layer-id-glob.ts'
-import type { LeitbildPack, PackMapLayerGroup } from '../../core/packs/protocol.ts'
+import type { MicroworldPack, PackMapLayerGroup } from '../../core/packs/protocol.ts'
 
 // Pack-rail-driven map layer visibility.
 //
@@ -21,7 +21,7 @@ export interface PackLayerGroupController {
   readonly defaults: Readonly<Record<string, boolean>>
 }
 
-const collectGroups = (packs: ReadonlyArray<LeitbildPack>): ReadonlyArray<PackMapLayerGroup> => {
+const collectGroups = (packs: ReadonlyArray<MicroworldPack>): ReadonlyArray<PackMapLayerGroup> => {
   const out: PackMapLayerGroup[] = []
   const seen = new Set<string>()
   for (const pack of packs) {
@@ -51,7 +51,7 @@ const safeSetVisibility = (map: MapLibreMap, layerId: string, visible: boolean):
 
 export const createPackLayerGroupController = (config: {
   readonly map: MapLibreMap
-  readonly packs: ReadonlyArray<LeitbildPack>
+  readonly packs: ReadonlyArray<MicroworldPack>
 }): PackLayerGroupController =>
   createPackLayerGroupControllerFromGroups({
     map: config.map,
@@ -81,7 +81,7 @@ export const createPackLayerGroupControllerFromGroups = (config: {
 }
 
 export const packLayerGroupsFromActive = (
-  packs: ReadonlyArray<LeitbildPack>,
+  packs: ReadonlyArray<MicroworldPack>,
 ): ReadonlyArray<PackMapLayerGroup> => collectGroups(packs)
 
 export const defaultVisibilityFor = (

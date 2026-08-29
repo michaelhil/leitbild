@@ -1,5 +1,5 @@
 import type { OperationalObject } from '../core/model/index.ts'
-import type { LeitbildPack, PackCreateObjectType } from '../core/packs/protocol.ts'
+import type { MicroworldPack, PackCreateObjectType } from '../core/packs/protocol.ts'
 import type { IconName } from './icons.ts'
 import { isIconName } from './icons.ts'
 import type { CategoryRow } from './types.ts'
@@ -12,7 +12,7 @@ export interface PlacementCursor {
 export const selectedControllerObjectFor = (
   objects: ReadonlyArray<OperationalObject>,
   selectedControllerId: string | null,
-  pack: LeitbildPack,
+  pack: MicroworldPack,
 ): OperationalObject | null =>
   objects.find(object => object.id === selectedControllerId && pack.commands.isController(object)) ?? null
 
@@ -24,7 +24,7 @@ const compareOperationalObjectsForRail = (left: OperationalObject, right: Operat
 
 export const categoryRowsFor = (
   objects: ReadonlyArray<OperationalObject>,
-  pack: LeitbildPack,
+  pack: MicroworldPack,
 ): ReadonlyArray<CategoryRow> =>
   pack.presentation.categories.map(category => {
     const createType = pack.commands.createObjectTypes.find(type => type.categoryId === category.id)
@@ -37,7 +37,7 @@ export const categoryRowsFor = (
 
 export const placementCursorFor = (
   placementMode: PackCreateObjectType | null,
-  pack: LeitbildPack,
+  pack: MicroworldPack,
 ): PlacementCursor | null => {
   if (!placementMode) return null
   if (!isIconName(placementMode.icon)) {

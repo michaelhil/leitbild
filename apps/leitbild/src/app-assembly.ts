@@ -1,5 +1,5 @@
 import { createCompositePack } from './core/packs/composite.ts'
-import type { LeitbildPack } from './core/packs/protocol.ts'
+import type { MicroworldPack } from './core/packs/protocol.ts'
 import { ambulancePack } from './packs/ambulance/pack.ts'
 import { aviationPack } from './packs/aviation/pack.ts'
 import { aviationReferenceDatasetBuilders } from './packs/aviation/reference-datasets.ts'
@@ -11,9 +11,9 @@ import { trafficPack } from './packs/traffic/pack.ts'
 import { weatherPack } from './packs/weather/pack.ts'
 
 const withReferenceDatasetBuilders = (
-  pack: LeitbildPack,
-  referenceDatasetBuilders: NonNullable<LeitbildPack['referenceData']>['builders'],
-): LeitbildPack => ({
+  pack: MicroworldPack,
+  referenceDatasetBuilders: NonNullable<MicroworldPack['referenceData']>['builders'],
+): MicroworldPack => ({
   ...pack,
   referenceData: {
     builders: referenceDatasetBuilders,
@@ -21,7 +21,7 @@ const withReferenceDatasetBuilders = (
   },
 })
 
-export const leitbildPacks: ReadonlyArray<LeitbildPack> = [
+export const microworldPacks: ReadonlyArray<MicroworldPack> = [
   ambulancePack,
   trafficPack,
   weatherPack,
@@ -31,10 +31,10 @@ export const leitbildPacks: ReadonlyArray<LeitbildPack> = [
   withReferenceDatasetBuilders(electricGridPack, electricGridReferenceDatasetBuilders),
 ]
 
-export const createLeitbildControlPack = (): LeitbildPack =>
+export const createMicroworldCompositePack = (): MicroworldPack =>
   createCompositePack({
     id: 'leitbild-control',
     version: '1.0.0',
     name: 'Leitbild Control',
-    packs: leitbildPacks,
+    packs: microworldPacks,
   })

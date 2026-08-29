@@ -212,6 +212,6 @@ You now know the core flow. Here's what everything else in the UI does — skim,
 - **Add an artifact type.** [`docs/artifact-modules.md`](artifact-modules.md) — the task-list / document / poll / mermaid system is pluggable.
 - **Headless / MCP.** Run Samsinn as an MCP server so another LLM can orchestrate everything through 23 tools: `bun run headless`. See the README section on MCP integration.
 - **REST + WebSocket API.** Everything the UI does is available as HTTP + WS — see the README for endpoints.
-- **Multiple Workspaces.** Settings → Workspaces lets you list, create, switch, and delete isolated collaboration environments. The current cookie binds the browser to one Workspace; share its Workspace URL to invite someone else. See the README and [`deploy/RUNBOOK.md`](../deploy/RUNBOOK.md).
+- **Multiple Workspaces.** Use the root-level **Workspaces** link to create, rename, open, compose, or delete Workspaces. Every Samsinn URL carries its Workspace id, so several Workspaces can stay open in different tabs and the same URL can be shared. See the README and [`deploy/RUNBOOK.md`](../deploy/RUNBOOK.md).
 
 When something breaks or confuses you, the **📋 context inspector** on any message is almost always the fastest way to understand why. Start there.

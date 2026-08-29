@@ -15,7 +15,7 @@ import {
 import { createToolRegistry } from '../../core/tool-registry.ts'
 import { createSkillStore } from '../../skills/loader.ts'
 import type { ToolContext } from '../../core/types/tool.ts'
-import { createSamsinnPackDescriptor } from '../../packs/manifest.ts'
+import { createAgentPackDescriptor } from '../../packs/manifest.ts'
 
 const CTX: ToolContext = { callerId: 'test', callerName: 'test' }
 
@@ -37,7 +37,7 @@ Body.
 `
 
 const PACK_MANIFEST = (id: string, contributionKinds: ReadonlyArray<string>) => ({
-  descriptor: createSamsinnPackDescriptor({
+  descriptor: createAgentPackDescriptor({
     id,
     version: '1.0.0',
     name: id.toUpperCase(),

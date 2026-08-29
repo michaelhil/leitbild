@@ -37,6 +37,22 @@ body {
   color: var(--text);
 }
 
+.workspace-back {
+  position: fixed;
+  top: 10px;
+  right: 12px;
+  z-index: 1000;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  box-shadow: 0 4px 16px rgba(16, 24, 40, .12);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
 button,
 input,
 select {

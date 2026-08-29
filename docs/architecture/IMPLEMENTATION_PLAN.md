@@ -6,6 +6,9 @@ Rebuild Samsinn and Leitbild as distinct Experiences over one Workspace Host and
 
 The benchmark baseline is `main` at `d212523`. The experiment is developed on `experiment/composable-workspace-platform` and does not deploy to production before the final gate.
 
+Implementation evidence and deliberate deferrals are tracked in
+[`EXPERIMENT_STATUS.md`](EXPERIMENT_STATUS.md).
+
 ## Architectural invariants
 
 1. The Workspace Host is the only public entry point and Workspace authority.
@@ -57,7 +60,8 @@ Gate: two tabs can use different Workspaces; Module failure is visible and retry
 - Let each Module publish Workspace-scoped Resources and Capabilities through its manifest.
 - Aggregate descriptors without copying domain payloads into the Host.
 - Route invocations to the owning Module with request, Workspace, actor, correlation, and idempotency context.
-- Add explicit Bindings only for continuous Resource-to-Resource behavior.
+- Keep the Binding contract narrow; implement a runtime only when a real
+  continuous Resource-to-Resource behavior requires it.
 
 Gate: a caller can discover and invoke a Microworld Capability without knowing a Leitbild-specific endpoint.
 
@@ -101,13 +105,16 @@ Gate: adding a Pack changes only its owning Module and published descriptors.
 
 ## Phase 8 — Demos and optional Templates
 
-- Extract demo prompts, personas, recommended tools, and capability requirements into Demo Definitions.
+- Keep demo prompts, personas, recommended tools, and future cross-Module
+  capability requirements in Experience-owned Demo Definitions.
 - Keep Demo Definitions free of concrete Resource ids.
-- Add the Workspace Template executor only after two real repeated environment setups exist.
+- Add the Workspace Template executor only after two real repeated environment setups exist; until then it is intentionally absent.
 - Validate every Module seed before applying; delete partial newly created state on failure.
 - Store provenance only; never reconcile or update an existing Workspace from a Template.
 
-Gate: the PWR demo works through discovery; if Templates qualify, one can reproduce its environment without configuring Agent behavior.
+Gate: existing demos remain functional; any cross-Module demo works through
+discovery. If Templates eventually qualify, one can reproduce an environment
+without configuring Agent behavior.
 
 ## Phase 9 — Distributions, benchmark, and destructive cutover
 
@@ -124,8 +131,7 @@ Gate: the PWR demo works through discovery; if Templates qualify, one can reprod
 3. Add and remove Microworld, Collaboration, and Agents Modules.
 4. Create a Scenario and Run; reload it from its canonical URL.
 5. Let an Agent discover a Run and invoke a permitted command.
-6. Mirror a Run event stream into a Room through an explicit Binding.
-7. Run the PWR demonstration without special Leitbild configuration in an Agent Profile.
-8. Stop one Module, observe explicit degraded status, recover, and retry.
-9. Delete a Workspace and verify all Module-owned state is removed.
-10. Run Microworld-only and Collaboration/Agents-only distributions with the same URL and lifecycle semantics.
+6. Run the PWR demonstration without special Microworld configuration in an Agent Profile.
+7. Stop one Module, observe explicit degraded status, recover, and retry.
+8. Delete a Workspace and verify all Module-owned state is removed.
+9. Run Microworld-only and Collaboration/Agents-only distributions with the same URL and lifecycle semantics.

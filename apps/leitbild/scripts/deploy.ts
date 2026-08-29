@@ -18,7 +18,7 @@ const PLATFORM_CONTRACTS_ARTIFACT_PATH = 'packages/platform-contracts'
 export const REQUIRED_BUN_VERSION = '1.4.0'
 const LOCAL_HEALTH_URL = 'http://127.0.0.1:4177/health'
 const PUBLIC_URLS = ['https://leitbild.samsinn.app/health', 'https://samsinn.app/health'] as const
-const LOCAL_PROBES = ['/health', '/.well-known/leitbild', '/map/capabilities.json', '/map/scenery/current/tileset.json'] as const
+const LOCAL_PROBES = ['/health', '/.well-known/workspace-module', '/map/capabilities.json', '/map/scenery/current/tileset.json'] as const
 
 export interface DeployOptions {
   readonly dryRun: boolean

@@ -3,13 +3,13 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  createSamsinnPackDescriptor,
+  createAgentPackDescriptor,
   parsePackManifest,
   readManifest,
 } from './manifest.ts'
 
 const validManifest = (overrides: Record<string, unknown> = {}) => ({
-  descriptor: createSamsinnPackDescriptor({
+  descriptor: createAgentPackDescriptor({
     id: 'atc',
     version: '1.2.3',
     name: 'ATC Pack',
@@ -21,7 +21,7 @@ const validManifest = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
-describe('Samsinn Pack manifest', () => {
+describe('Agent Pack manifest', () => {
   let dir: string
 
   beforeEach(async () => {
@@ -50,12 +50,12 @@ describe('Samsinn Pack manifest', () => {
     expect(() => parsePackManifest({ descriptor: { id: 'atc' } })).toThrow()
   })
 
-  it('rejects Packs for other applications and incompatible contract versions', () => {
+  it('rejects Packs for other Modules and incompatible contract versions', () => {
     const base = validManifest()
     expect(() => parsePackManifest({
       ...base,
-      descriptor: { ...base.descriptor, moduleId: 'leitbild' },
-    })).toThrow('moduleId is samsinn')
+      descriptor: { ...base.descriptor, moduleId: 'microworld' },
+    })).toThrow('moduleId is agents')
     expect(() => parsePackManifest({
       ...base,
       descriptor: { ...base.descriptor, platformVersionRange: '^2.0.0' },
@@ -63,7 +63,7 @@ describe('Samsinn Pack manifest', () => {
   })
 
   it('validates wiki metadata as an atomic contribution', () => {
-    const descriptor = createSamsinnPackDescriptor({
+    const descriptor = createAgentPackDescriptor({
       id: 'procedures',
       version: '1.0.0',
       name: 'Procedures',
@@ -84,7 +84,7 @@ describe('Samsinn Pack manifest', () => {
   })
 
   it('requires UI extension metadata and contribution ids to match exactly', () => {
-    const descriptor = createSamsinnPackDescriptor({
+    const descriptor = createAgentPackDescriptor({
       id: 'biometrics',
       version: '1.0.0',
       name: 'Biometrics',

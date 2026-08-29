@@ -50,17 +50,17 @@ export const packDescriptorSchema = z.object({
 })
 export type PackDescriptor = z.infer<typeof packDescriptorSchema>
 
-export const capabilityDescriptorSchema = z.object({
+export const packCapabilityDescriptorSchema = z.object({
   id: packTokenSchema,
   kind: z.enum(['command', 'query', 'stream', 'surface', 'tool', 'skill', 'data']),
   packId: packTokenSchema,
   version: semanticVersionSchema,
   description: z.string().min(1).max(2048).optional(),
 }).strict()
-export type CapabilityDescriptor = z.infer<typeof capabilityDescriptorSchema>
+export type PackCapabilityDescriptor = z.infer<typeof packCapabilityDescriptorSchema>
 
-export const capabilityManifestSchema = z.object({
+export const packCapabilityManifestSchema = z.object({
   generatedAt: z.iso.datetime({ offset: true }),
-  capabilities: z.array(capabilityDescriptorSchema),
+  capabilities: z.array(packCapabilityDescriptorSchema),
 }).strict()
-export type CapabilityManifest = z.infer<typeof capabilityManifestSchema>
+export type PackCapabilityManifest = z.infer<typeof packCapabilityManifestSchema>

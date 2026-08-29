@@ -22,7 +22,7 @@ import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import type { SimulationRunId } from '../src/core/model/index.ts'
-import { createLeitbildPackDescriptor, type LeitbildPack, type PackObjectPresentation } from '../src/core/packs/protocol.ts'
+import { createMicroworldPackDescriptor, type MicroworldPack, type PackObjectPresentation } from '../src/core/packs/protocol.ts'
 
 describe('pack architecture', () => {
   test('registers static packs by unique id', () => {
@@ -205,8 +205,8 @@ describe('pack architecture', () => {
       packData: {},
     }
     let contextualFieldCalls = 0
-    const basePack: LeitbildPack = {
-      descriptor: createLeitbildPackDescriptor({
+    const basePack: MicroworldPack = {
+      descriptor: createMicroworldPackDescriptor({
         id: 'base-pack', version: '1.0.0', name: 'Base Pack', contributions: ['presentation', 'commands'],
       }),
       presentation: {
@@ -230,9 +230,9 @@ describe('pack architecture', () => {
         buildCancelTargetCommand: () => { throw new Error('not used') },
       },
     }
-    const enrichmentPack: LeitbildPack = {
+    const enrichmentPack: MicroworldPack = {
       ...basePack,
-      descriptor: createLeitbildPackDescriptor({
+      descriptor: createMicroworldPackDescriptor({
         id: 'enrichment-pack', version: '1.0.0', name: 'Enrichment Pack', contributions: ['presentation', 'commands'],
       }),
       presentation: {
@@ -271,16 +271,16 @@ describe('pack architecture', () => {
   })
 
   test('composite packs aggregate map-area feature activation layers once', () => {
-    const packWithWeatherLayer: LeitbildPack = {
+    const packWithWeatherLayer: MicroworldPack = {
       ...ambulancePack,
-      descriptor: createLeitbildPackDescriptor({
+      descriptor: createMicroworldPackDescriptor({
         id: 'weather-layer-one', version: '1.0.0', name: 'Weather Layer One', contributions: ['presentation', 'commands'],
       }),
       presentation: { ...ambulancePack.presentation, categories: [], mapAreaFeatureLayers: ['weather'] },
     }
-    const secondPackWithWeatherLayer: LeitbildPack = {
+    const secondPackWithWeatherLayer: MicroworldPack = {
       ...trafficPack,
-      descriptor: createLeitbildPackDescriptor({
+      descriptor: createMicroworldPackDescriptor({
         id: 'weather-layer-two', version: '1.0.0', name: 'Weather Layer Two', contributions: ['presentation', 'commands'],
       }),
       presentation: { ...trafficPack.presentation, categories: [], mapAreaFeatureLayers: ['weather'] },
@@ -308,8 +308,8 @@ describe('pack architecture', () => {
     }
     const objects = [object, weatherObject]
     const currentTime = nowIso()
-    const pack: LeitbildPack = {
-      descriptor: createLeitbildPackDescriptor({
+    const pack: MicroworldPack = {
+      descriptor: createMicroworldPackDescriptor({
         id: 'indexed-presenter', version: '1.0.0', name: 'Indexed Presenter', contributions: ['presentation', 'commands'],
       }),
       presentation: {

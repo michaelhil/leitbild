@@ -17,7 +17,7 @@
   } from '../../core/model/index.ts'
   import { deleteObjectCommandKind } from '../../core/model/index.ts'
   import { createPackPresentationComposer } from '../../core/packs/presentation-composer.ts'
-  import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
+  import type { MicroworldPack, PackCreateObjectType, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
   import {
     fetchScenario,
     createSimulationRun as createSimulationRunClient,
@@ -104,8 +104,8 @@
   const appVersion = __LEITBILD_VERSION__
   const gridOverviewCategoryId = 'grid-system'
   const emptyStringArray: ReadonlyArray<string> = []
-  const emptyMapLayerGroups: NonNullable<LeitbildPack['presentation']['mapLayerGroups']> = []
-  const emptyMapAreaFeatureLayers: NonNullable<LeitbildPack['presentation']['mapAreaFeatureLayers']> = []
+  const emptyMapLayerGroups: NonNullable<MicroworldPack['presentation']['mapLayerGroups']> = []
+  const emptyMapAreaFeatureLayers: NonNullable<MicroworldPack['presentation']['mapAreaFeatureLayers']> = []
   const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], completed: [] }
 
   interface ProcessSurfaceWindowEntry {
@@ -143,7 +143,7 @@
     readonly systemId: string
     readonly index: number
   }
-  let activePack = $state<LeitbildPack | null>(null)
+  let activePack = $state<MicroworldPack | null>(null)
   let simulationRunId = $state<SimulationRunId | null>(null)
   let objects = $state<OperationalObject[]>([])
   let scenarioState = $state<ScenarioExecutionState | undefined>(undefined)
@@ -396,7 +396,7 @@
   const currentPackTime = (): IsoTimestamp | undefined =>
     simulationTimeAt(clock)
 
-  const requireActivePack = (): LeitbildPack => {
+  const requireActivePack = (): MicroworldPack => {
     if (!activePack) throw new Error('scenario packs are not loaded')
     return activePack
   }
@@ -1109,7 +1109,6 @@
 
   const activeWorkspaceId = () => {
     const route = activeRoute()
-    if (route.mode === 'workspace-index') throw new Error('Workspace route expected')
     return route.workspaceId
   }
 

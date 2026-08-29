@@ -12,11 +12,6 @@
   const loadRoute = async (): Promise<void> => {
     try {
       const route = parseControlSurfaceRoute(location.pathname)
-      if (route.mode === 'workspace-index') {
-        const module = await import('./routes/WorkspacePickerRoute.svelte')
-        Route = module.default
-        return
-      }
       configureActiveWorkspace(route.workspaceId)
       if (route.mode === 'run-picker') {
         const module = await import('./routes/RunPickerRoute.svelte')
@@ -34,6 +29,8 @@
     void loadRoute()
   })
 </script>
+
+<a class="workspace-back" href="/">Workspaces</a>
 
 {#if Route}
   <Route />

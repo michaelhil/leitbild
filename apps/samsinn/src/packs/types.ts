@@ -16,14 +16,14 @@ export interface WikiRef {
   readonly source?: WikiSourceBinding
 }
 
-/** Strict, application-specific metadata wrapped around the shared Pack Descriptor. */
+/** Strict, Agents-Module metadata wrapped around the shared Pack Descriptor. */
 export interface PackManifest {
   readonly descriptor: PackDescriptor
   readonly wikis: ReadonlyArray<WikiRef>
   readonly uiExtensions: ReadonlyArray<string>
 }
 
-/** A validated deployment-scoped Samsinn Pack. Its id is also its tool/skill namespace. */
+/** A validated deployment-scoped Agent Pack. Its id is also its tool/skill namespace. */
 export interface Pack {
   readonly id: string
   readonly dirPath: string

@@ -23,6 +23,9 @@ export const workspaceModuleManifestSchema = z.object({
     capabilities: relativePathTemplateSchema,
     invoke: invocationPathTemplateSchema,
   }).strict(),
+  ui: z.object({
+    workspace: relativePathTemplateSchema,
+  }).strict().optional(),
 }).strict()
 export type WorkspaceModuleManifest = z.infer<typeof workspaceModuleManifestSchema>
 

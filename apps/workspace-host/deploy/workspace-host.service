@@ -1,0 +1,45 @@
+[Unit]
+Description=Samsinn/Leitbild Workspace Host
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=workspace-host
+Group=workspace-host
+WorkingDirectory=/opt/workspace-platform/current/apps/workspace-host
+Environment=PORT=3100
+Environment=BIND_HOST=127.0.0.1
+Environment=WORKSPACE_HOST_HOME=/var/lib/workspace-host
+EnvironmentFile=/etc/workspace-host/env
+ExecStart=/opt/workspace-platform/runtime/bun run src/index.ts
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/workspace-host
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelLogs=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+RemoveIPC=true
+
+[Install]
+WantedBy=multi-user.target

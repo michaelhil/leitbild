@@ -1,6 +1,6 @@
 import type { OperationalObject } from '../../core/model/index.ts'
 import type {
-  LeitbildPack,
+  MicroworldPack,
   PackCommandRequest,
   PackCreationGeometry,
   PackObjectField,
@@ -8,7 +8,7 @@ import type {
   PackMapLayerGroup,
   PackRuntime,
 } from '../../core/packs/protocol.ts'
-import { createLeitbildPackDescriptor } from '../../core/packs/protocol.ts'
+import { createMicroworldPackDescriptor } from '../../core/packs/protocol.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
 import { asDatasetId } from '../../reference-data/types.ts'
 import { aviationNoopRuntime, aviationNoopRuntimeId } from './sim/noop-adapter.ts'
@@ -132,8 +132,8 @@ const aircraftColor = (data: AircraftPackData): string => {
   return '#1d4ed8' // blue-700
 }
 
-export const aviationPack: LeitbildPack = {
-  descriptor: createLeitbildPackDescriptor({
+export const aviationPack: MicroworldPack = {
+  descriptor: createMicroworldPackDescriptor({
     id: 'aviation', version: '1.0.0', name: 'Aviation',
     contributions: ['runtime', 'knowledge', 'reference-data', 'presentation', 'commands'],
   }),

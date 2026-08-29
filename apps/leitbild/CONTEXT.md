@@ -4,6 +4,10 @@ Leitbild is a platform for shared, map-based control-center work over moving and
 
 ## Language
 
+**Microworld Module**:
+The composable Workspace Module that owns Scenarios, Simulation Runs, operational state, and simulation mechanics.
+_Avoid_: Leitbild instance, control instance, or treating the application Deployment as Workspace identity
+
 **Simulation Run**:
 A persistent execution of exactly one immutable Scenario Revision inside one Workspace, addressable by its own opaque id and URL.
 _Avoid_: Scenario Run, Session, Simulation Instance, or encoding the Scenario id into the Run id
@@ -294,6 +298,8 @@ _Avoid_: expecting the live feed to be a permanent replay store
 
 ## Relationships
 
+- A Workspace may enable the **Microworld Module** independently or compose it with other Modules.
+- The Workspace Host owns Workspace identity and Module membership; the **Microworld Module** owns all Microworld state beneath that identity.
 - A **Simulation Run** has one or more **Pack Runtimes**.
 - A **Pack** may declare one or more **Pack Runtimes**.
 - An **Operational Object** may carry **Pack Data** owned by its **Pack**.

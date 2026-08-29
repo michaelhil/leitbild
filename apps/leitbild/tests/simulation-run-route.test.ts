@@ -25,8 +25,7 @@ describe('Simulation Run route model', () => {
     })
   })
 
-  test('keeps Workspace index, Workspace home, and new-run routes distinct', () => {
-    expect(parseControlSurfaceRoute('/')).toEqual({ mode: 'workspace-index' })
+  test('keeps Workspace home and new-run routes distinct', () => {
     expect(parseControlSurfaceRoute(`/workspaces/${workspaceId}`)).toEqual({
       mode: 'run-picker',
       workspaceId,
@@ -44,6 +43,7 @@ describe('Simulation Run route model', () => {
   })
 
   test('rejects invalid Workspace, run id, and route shapes', () => {
+    expect(() => parseControlSurfaceRoute('/')).toThrow()
     expect(() => parseControlSurfaceRoute('/workspaces/not-a-workspace')).toThrow()
     expect(() => parseControlSurfaceRoute(`/workspaces/${workspaceId}/runs/sandbox`)).toThrow()
     expect(() => parseControlSurfaceRoute(`/workspaces/${workspaceId}/runs/run-abc123/extra`))

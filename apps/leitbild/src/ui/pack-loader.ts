@@ -1,7 +1,7 @@
 import { createCompositePack } from '../core/packs/composite.ts'
-import type { LeitbildPack } from '../core/packs/protocol.ts'
+import type { MicroworldPack } from '../core/packs/protocol.ts'
 
-type PackLoader = () => Promise<LeitbildPack>
+type PackLoader = () => Promise<MicroworldPack>
 type KnownUiPackId = 'ambulance' | 'traffic' | 'weather' | 'drone' | 'process-plant' | 'aviation' | 'electric-grid'
 
 const packLoaders: Record<KnownUiPackId, PackLoader> = {
@@ -14,12 +14,12 @@ const packLoaders: Record<KnownUiPackId, PackLoader> = {
   'electric-grid': async () => (await import('../packs/electric-grid/pack.ts')).electricGridPack,
 }
 
-const loadedPacks = new Map<string, LeitbildPack>()
+const loadedPacks = new Map<string, MicroworldPack>()
 
 const isKnownUiPackId = (packId: string): packId is KnownUiPackId =>
   Object.hasOwn(packLoaders, packId)
 
-export const loadUiPack = async (packId: string): Promise<LeitbildPack> => {
+export const loadUiPack = async (packId: string): Promise<MicroworldPack> => {
   const loaded = loadedPacks.get(packId)
   if (loaded) return loaded
   if (!isKnownUiPackId(packId)) throw new Error(`scenario references unknown UI pack: ${packId}`)
@@ -31,7 +31,7 @@ export const loadUiPack = async (packId: string): Promise<LeitbildPack> => {
 
 export const createScenarioControlPack = async (
   packIds: ReadonlyArray<string>,
-): Promise<LeitbildPack> => {
+): Promise<MicroworldPack> => {
   if (packIds.length === 0) throw new Error('scenario declares no active packs')
   const uniquePackIds = new Set(packIds)
   if (uniquePackIds.size !== packIds.length) {

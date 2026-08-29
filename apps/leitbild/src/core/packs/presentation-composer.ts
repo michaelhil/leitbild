@@ -1,12 +1,12 @@
 import type { IsoTimestamp, OperationalObject } from '../model/index.ts'
 import type {
-  LeitbildPack,
+  MicroworldPack,
   PackObjectPresentation,
   PackObjectPresentationTier,
 } from './protocol.ts'
 
 export interface PackPresentationComposerContext {
-  readonly pack: LeitbildPack | null
+  readonly pack: MicroworldPack | null
   readonly objects: ReadonlyArray<OperationalObject>
   readonly currentTime?: IsoTimestamp
 }

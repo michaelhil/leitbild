@@ -1,10 +1,10 @@
 import {
-  capabilityManifestSchema,
-  type CapabilityDescriptor,
+  packCapabilityManifestSchema,
+  type PackCapabilityDescriptor,
   type PackDescriptor,
 } from '@samsinn-leitbild/platform-contracts'
 
-const capabilityKindFor = (contributionKind: string): CapabilityDescriptor['kind'] => {
+const capabilityKindFor = (contributionKind: string): PackCapabilityDescriptor['kind'] => {
   switch (contributionKind) {
     case 'tool': return 'tool'
     case 'skill': return 'skill'
@@ -12,12 +12,12 @@ const capabilityKindFor = (contributionKind: string): CapabilityDescriptor['kind
     case 'script':
     case 'geodata':
     case 'wiki': return 'data'
-    default: throw new Error(`Unsupported Samsinn Pack contribution kind: ${contributionKind}`)
+    default: throw new Error(`Unsupported Agent Pack contribution kind: ${contributionKind}`)
   }
 }
 
-export const buildSamsinnCapabilityManifest = (descriptors: ReadonlyArray<PackDescriptor>) =>
-  capabilityManifestSchema.parse({
+export const buildAgentPackCapabilityManifest = (descriptors: ReadonlyArray<PackDescriptor>) =>
+  packCapabilityManifestSchema.parse({
     generatedAt: new Date().toISOString(),
     capabilities: descriptors
       .flatMap(descriptor => descriptor.contributions.map(contribution => ({

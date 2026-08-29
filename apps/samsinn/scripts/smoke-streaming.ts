@@ -5,7 +5,7 @@
 // What it proves: a wired Workspace can deliver a `message` broadcast to a
 // connected WS client. Catches the silent-skip class of bug fixed in
 // 5d73a8e — where streaming events were dropped on the floor for every
-// non-default Workspace.
+// independently addressed Workspace.
 //
 // What it does NOT exercise: real LLM streaming, the evict→reload
 // boundary, or the eval-event chunk path. For those use

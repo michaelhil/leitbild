@@ -10,27 +10,27 @@ import {
   findRegisteredDataset,
   type RegistryEnvironment,
 } from '../src/reference-data/registry.ts'
-import type { LeitbildPack } from '../src/core/packs/protocol.ts'
-import { createLeitbildPackDescriptor } from '../src/core/packs/protocol.ts'
+import type { MicroworldPack } from '../src/core/packs/protocol.ts'
+import { createMicroworldPackDescriptor } from '../src/core/packs/protocol.ts'
 
 const okEnv: RegistryEnvironment = { OPENAIP_API_KEY: 'test-key' }
 const emptyEnv: RegistryEnvironment = {}
 
-const aviationPackWithReferenceDatasets: LeitbildPack = {
+const aviationPackWithReferenceDatasets: MicroworldPack = {
   ...aviationPack,
   referenceData: {
     builders: aviationReferenceDatasetBuilders,
     datasetIds: aviationPack.referenceData?.datasetIds ?? [],
   },
 }
-const electricGridPackWithReferenceDatasets: LeitbildPack = {
+const electricGridPackWithReferenceDatasets: MicroworldPack = {
   ...electricGridPack,
   referenceData: {
     builders: electricGridReferenceDatasetBuilders,
     datasetIds: electricGridPack.referenceData?.datasetIds ?? [],
   },
 }
-const packs: ReadonlyArray<LeitbildPack> = [
+const packs: ReadonlyArray<MicroworldPack> = [
   aviationPackWithReferenceDatasets,
   electricGridPackWithReferenceDatasets,
 ]
@@ -73,9 +73,9 @@ describe('reference-data registry (collector)', () => {
   })
 
   test('duplicate dataset id across packs throws', () => {
-    const dup: LeitbildPack = {
+    const dup: MicroworldPack = {
       ...aviationPackWithReferenceDatasets,
-      descriptor: createLeitbildPackDescriptor({
+      descriptor: createMicroworldPackDescriptor({
         id: 'aviation-clone',
         version: aviationPack.descriptor.version,
         name: 'Aviation Clone',

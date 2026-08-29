@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { loadAllPacks, loadPack } from './loader.ts'
 import { createToolRegistry } from '../core/tool-registry.ts'
 import { createSkillStore } from '../skills/loader.ts'
-import { createSamsinnPackDescriptor, parsePackManifest } from './manifest.ts'
+import { createAgentPackDescriptor, parsePackManifest } from './manifest.ts'
 import type { Pack, PackManifest } from './types.ts'
 
 const TOOL_SRC = (name: string, body = `return { success: true, data: '${name}' }`) => `
@@ -26,7 +26,7 @@ Body for ${name}.
 `
 
 const manifestFor = (id: string, kinds: ReadonlyArray<string>): PackManifest => parsePackManifest({
-  descriptor: createSamsinnPackDescriptor({
+  descriptor: createAgentPackDescriptor({
     id,
     version: '1.0.0',
     name: id,

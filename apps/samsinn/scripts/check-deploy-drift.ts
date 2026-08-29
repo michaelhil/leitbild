@@ -14,7 +14,7 @@
 // Why this exists:
 //   `deploy/Caddyfile` and `deploy/samsinn.service` are TEMPLATES. CLAUDE.md
 //   policy says never `cp` over prod — operator hand-edits prod (e.g. adding
-//   frame-src for Leitbild iframe). Over time the template drifts and a
+//   CSP directives for the specialised Workspace UI). Over time the template drifts and a
 //   fresh deploy on a new box would silently lose hand-applied directives.
 //   This script makes drift visible without auto-merging.
 //

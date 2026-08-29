@@ -45,7 +45,7 @@ Environment=NODE_ENV=production
 Environment=PATH=/home/samsinn/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=SAMSINN_HOME=/var/lib/samsinn
 Environment=SAMSINN_SECURE_COOKIES=1
-Environment=SAMSINN_MAX_LOADED_INSTANCES=128
+Environment=SAMSINN_MAX_LOADED_WORKSPACES=128
 EnvironmentFile=-/etc/samsinn/env
 
 # Logs go to journald — view with `journalctl -u samsinn -f`.

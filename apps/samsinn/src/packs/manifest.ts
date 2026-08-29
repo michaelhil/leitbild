@@ -5,8 +5,8 @@ import { z } from 'zod'
 import type { PackManifest } from './types.ts'
 
 const MANIFEST_FILENAME = 'pack.json'
-export const SAMSINN_PACK_SCHEMA_VERSION = '1.0.0'
-export const SAMSINN_PACK_PLATFORM_VERSION_RANGE = '^1.0.0'
+export const AGENT_PACK_SCHEMA_VERSION = '1.0.0'
+export const AGENT_PACK_PLATFORM_VERSION_RANGE = '^1.0.0'
 
 const httpUrlSchema = z.url().refine(value => {
   const protocol = new URL(value).protocol
@@ -48,27 +48,27 @@ const contributionKinds = new Set([
   'ui-extension',
 ])
 
-export const samsinnPackManifestSchema = z.object({
+export const agentPackManifestSchema = z.object({
   descriptor: packDescriptorSchema,
   wikis: z.array(wikiRefSchema).default([]),
   uiExtensions: z.array(extensionIdSchema).default([]),
 }).strict().superRefine((manifest, ctx) => {
   const descriptor = manifest.descriptor
-  if (descriptor.schemaVersion !== SAMSINN_PACK_SCHEMA_VERSION) {
+  if (descriptor.schemaVersion !== AGENT_PACK_SCHEMA_VERSION) {
     ctx.addIssue({
       code: 'custom',
       path: ['descriptor', 'schemaVersion'],
-      message: `unsupported Samsinn Pack schema version ${descriptor.schemaVersion}`,
+      message: `unsupported Agent Pack schema version ${descriptor.schemaVersion}`,
     })
   }
-  if (descriptor.moduleId !== 'samsinn') {
+  if (descriptor.moduleId !== 'agents') {
     ctx.addIssue({
       code: 'custom',
       path: ['descriptor', 'moduleId'],
-      message: 'Samsinn can only load Packs whose moduleId is samsinn',
+      message: 'The Agents Module can only load Packs whose moduleId is agents',
     })
   }
-  if (descriptor.platformVersionRange !== SAMSINN_PACK_PLATFORM_VERSION_RANGE) {
+  if (descriptor.platformVersionRange !== AGENT_PACK_PLATFORM_VERSION_RANGE) {
     ctx.addIssue({
       code: 'custom',
       path: ['descriptor', 'platformVersionRange'],
@@ -83,7 +83,7 @@ export const samsinnPackManifestSchema = z.object({
       ctx.addIssue({
         code: 'custom',
         path: ['descriptor', 'contributions', index, 'kind'],
-        message: `unsupported Samsinn contribution kind ${contribution.kind}`,
+        message: `unsupported Agent Pack contribution kind ${contribution.kind}`,
       })
     }
     declaredKinds.add(contribution.kind)
@@ -144,7 +144,7 @@ const packManifestError = (filePath: string, message: string, cause?: unknown): 
 }
 
 export const parsePackManifest = (value: unknown, filePath = MANIFEST_FILENAME): PackManifest => {
-  const result = samsinnPackManifestSchema.safeParse(value)
+  const result = agentPackManifestSchema.safeParse(value)
   if (!result.success) {
     const details = result.error.issues
       .map(issue => `${issue.path.join('.') || '<root>'}: ${issue.message}`)
@@ -172,7 +172,7 @@ export const readManifest = async (dirPath: string): Promise<PackManifest> => {
   return parsePackManifest(parsed, filePath)
 }
 
-export const createSamsinnPackDescriptor = (input: {
+export const createAgentPackDescriptor = (input: {
   readonly id: string
   readonly version: string
   readonly name: string
@@ -180,13 +180,13 @@ export const createSamsinnPackDescriptor = (input: {
   readonly contributions: ReadonlyArray<{ readonly kind: string; readonly id?: string }>
   readonly dependencies?: ReadonlyArray<{ readonly id: string; readonly versionRange: string }>
 }): PackDescriptor => packDescriptorSchema.parse({
-  schemaVersion: SAMSINN_PACK_SCHEMA_VERSION,
+  schemaVersion: AGENT_PACK_SCHEMA_VERSION,
   id: input.id,
-  moduleId: 'samsinn',
+  moduleId: 'agents',
   version: input.version,
   name: input.name,
   ...(input.description ? { description: input.description } : {}),
-  platformVersionRange: SAMSINN_PACK_PLATFORM_VERSION_RANGE,
+  platformVersionRange: AGENT_PACK_PLATFORM_VERSION_RANGE,
   dependencies: [...(input.dependencies ?? [])],
   contributions: [...input.contributions],
 })

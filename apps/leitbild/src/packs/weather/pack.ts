@@ -1,8 +1,8 @@
 import type { GeoJsonPoint, OperationalObject } from '../../core/model/index.ts'
 import { nowIso } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
-import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
-import { createLeitbildPackDescriptor } from '../../core/packs/protocol.ts'
+import type { MicroworldPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
+import { createMicroworldPackDescriptor } from '../../core/packs/protocol.ts'
 import { createWeatherAreaCommandKind } from './commands.ts'
 import { weatherPresentationSeverityForState, weatherSampleAtPoint, type WeatherPresentationSeverity } from './conditions.ts'
 import {
@@ -122,8 +122,8 @@ const buildWeatherCreatePayload = (
   throw new Error(`unsupported weather create type: ${typeId}`)
 }
 
-export const weatherPack: LeitbildPack = {
-  descriptor: createLeitbildPackDescriptor({
+export const weatherPack: MicroworldPack = {
+  descriptor: createMicroworldPackDescriptor({
     id: 'weather', version: '1.0.0', name: 'Weather Conditions',
     contributions: ['runtime', 'scenario', 'presentation', 'commands'],
   }),

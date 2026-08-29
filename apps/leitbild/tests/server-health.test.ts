@@ -122,7 +122,7 @@ describe('server health', () => {
 
       expect(details.ok).toBe(true)
       expect(details.process.memory.rssBytes).toBeGreaterThan(0)
-      expect(details.registry.dataDir).toContain(`/workspaces/${registry.workspaceId}/leitbild`)
+      expect(details.registry.dataDir).toContain(`/workspaces/${registry.workspaceId}/microworld`)
       expect(details.registry.storage.totalBytes).toBeGreaterThan(0)
       expect(details.registry.simulationRuns).toContainEqual(expect.objectContaining({
         id: runtime.id,

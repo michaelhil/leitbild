@@ -13,22 +13,22 @@ import {
   type WorkspaceId,
 } from '@samsinn-leitbild/platform-contracts'
 import { handleMicroworldModuleApi } from '../src/core/api/workspace-module-api.ts'
-import { createLocalWorkspaceDirectory } from '../src/core/workspaces/directory.ts'
+import { createMicroworldModuleState } from '../src/core/workspaces/module-state.ts'
 import {
-  createLeitbildWorkspaceRuntimeRegistry,
-  type LeitbildWorkspaceRuntimeRegistry,
+  createMicroworldWorkspaceRuntimeRegistry,
+  type MicroworldWorkspaceRuntimeRegistry,
 } from '../src/core/workspaces/runtime-registry.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioCatalog } from './helpers.ts'
 
-const registries: LeitbildWorkspaceRuntimeRegistry[] = []
+const registries: MicroworldWorkspaceRuntimeRegistry[] = []
 const temporaryDirectories: string[] = []
 
-const createRegistry = async (): Promise<LeitbildWorkspaceRuntimeRegistry> => {
+const createRegistry = async (): Promise<MicroworldWorkspaceRuntimeRegistry> => {
   const dataDir = await mkdtemp(join(tmpdir(), 'microworld-module-api-'))
   temporaryDirectories.push(dataDir)
-  const registry = createLeitbildWorkspaceRuntimeRegistry({
+  const registry = createMicroworldWorkspaceRuntimeRegistry({
     dataDir,
-    workspaceDirectory: createLocalWorkspaceDirectory({ path: join(dataDir, 'workspace-directory.json') }),
+    moduleState: createMicroworldModuleState({ dataDir }),
     scenarioCatalog: createTestScenarioCatalog(),
     runtimeAdapters: createTestPackRuntimeAdapters(),
   })
@@ -42,7 +42,7 @@ afterEach(async () => {
 })
 
 const call = async <T>(
-  registry: LeitbildWorkspaceRuntimeRegistry,
+  registry: MicroworldWorkspaceRuntimeRegistry,
   path: string,
   init?: RequestInit,
 ): Promise<{ readonly status: number; readonly body: T | null }> => {
@@ -52,7 +52,7 @@ const call = async <T>(
   return { status: response.status, body: response.status === 204 ? null : await response.json() as T }
 }
 
-const provision = async (registry: LeitbildWorkspaceRuntimeRegistry, workspaceId: WorkspaceId) =>
+const provision = async (registry: MicroworldWorkspaceRuntimeRegistry, workspaceId: WorkspaceId) =>
   await call(registry, `/internal/workspaces/${workspaceId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -72,7 +72,7 @@ describe('Microworld Module API', () => {
     const workspaceId = newWorkspaceId()
     expect((await provision(registry, workspaceId)).status).toBe(201)
     expect((await provision(registry, workspaceId)).status).toBe(200)
-    expect((await registry.list()).map(workspace => workspace.id)).toEqual([workspaceId])
+    expect((await registry.list()).map(workspace => workspace.workspaceId)).toEqual([workspaceId])
 
     expect((await call(registry, `/internal/workspaces/${workspaceId}`, { method: 'DELETE' })).status).toBe(204)
     expect(await registry.list()).toEqual([])
