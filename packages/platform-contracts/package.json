@@ -11,7 +11,12 @@
     "./errors": "./src/errors.ts",
     "./discovery": "./src/discovery.ts",
     "./events": "./src/events.ts",
-    "./packs": "./src/packs.ts"
+    "./packs": "./src/packs.ts",
+    "./workspaces": "./src/workspaces.ts",
+    "./modules": "./src/modules.ts",
+    "./experiences": "./src/experiences.ts",
+    "./resources": "./src/resources.ts",
+    "./bindings": "./src/bindings.ts"
   },
   "scripts": {
     "check": "tsc --noEmit",
