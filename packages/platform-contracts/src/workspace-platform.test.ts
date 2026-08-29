@@ -9,6 +9,7 @@ import {
   newBindingId,
   newWorkspaceId,
   resourceBindingSchema,
+  toolGrantSetSchema,
   workspaceModuleManifestSchema,
   workspaceSchema,
 } from './index.ts'
@@ -146,6 +147,22 @@ describe('dynamic Resource and Capability discovery', () => {
       },
     })
     expect(String(invocation.resource?.id)).toBe('run-01')
+  })
+
+  test('grants Capabilities without pinning concrete Resources', () => {
+    const grants = toolGrantSetSchema.parse([
+      { capabilityId: 'microworld.simulation-run.read' },
+      { capabilityId: 'microworld.simulation-run.issue-command' },
+    ])
+    expect(grants).toHaveLength(2)
+    expect(grants[0]).not.toHaveProperty('resourceId')
+    expect(() => toolGrantSetSchema.parse([
+      { capabilityId: 'microworld.simulation-run.read', resourceId: 'run-01' },
+    ])).toThrow()
+    expect(() => toolGrantSetSchema.parse([
+      { capabilityId: 'microworld.simulation-run.read' },
+      { capabilityId: 'microworld.simulation-run.read' },
+    ])).toThrow('duplicate Tool Grant')
   })
 })
 
