@@ -1,7 +1,11 @@
 import { z } from 'zod'
 import {
+  accessContextSchema,
+  capabilityIdSchema,
   createWorkspaceInputSchema,
+  invokeCapabilityInputSchema,
   moduleIdSchema,
+  newRequestId,
   platformError,
   renameWorkspaceInputSchema,
   workspaceIdSchema,
@@ -113,6 +117,29 @@ export const createWorkspaceHostServer = (config: {
       if (url.pathname === '/api/workspaces' && request.method === 'POST') {
         const input = createWorkspaceInputSchema.parse(await parseJson(request))
         return Response.json({ workspace: await config.host.create(input) }, { status: 201 })
+      }
+      const invocationMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/capabilities\/([^/]+)\/invoke$/)
+      if (invocationMatch && request.method === 'POST') {
+        const workspaceId = workspaceIdSchema.parse(decodeURIComponent(invocationMatch[1] ?? ''))
+        const capabilityId = capabilityIdSchema.parse(decodeURIComponent(invocationMatch[2] ?? ''))
+        const input = invokeCapabilityInputSchema.parse(await parseJson(request))
+        const access = accessContextSchema.parse({
+          workspaceId,
+          requestId: newRequestId(),
+          actor: { kind: 'anonymous' },
+          client: { id: 'workspace-host', kind: 'service' },
+        })
+        return Response.json({ result: await config.host.invoke(workspaceId, capabilityId, input, access) })
+      }
+      const resourcesMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/resources$/)
+      if (resourcesMatch && request.method === 'GET') {
+        const workspaceId = workspaceIdSchema.parse(decodeURIComponent(resourcesMatch[1] ?? ''))
+        return Response.json(await config.host.resources(workspaceId))
+      }
+      const capabilitiesMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/capabilities$/)
+      if (capabilitiesMatch && request.method === 'GET') {
+        const workspaceId = workspaceIdSchema.parse(decodeURIComponent(capabilitiesMatch[1] ?? ''))
+        return Response.json(await config.host.capabilities(workspaceId))
       }
       const moduleMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/modules\/([^/]+)(\/retry)?$/)
       if (moduleMatch) {

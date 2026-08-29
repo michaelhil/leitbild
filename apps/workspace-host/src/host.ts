@@ -1,15 +1,24 @@
 import {
+  capabilityIdSchema,
   createWorkspaceInputSchema,
   moduleIdSchema,
   moduleMembershipSchema,
   renameWorkspaceInputSchema,
+  workspaceCapabilityCatalogSchema,
   workspaceIdSchema,
+  workspaceResourceCatalogSchema,
+  workspaceResourceReferenceSchema,
+  type AccessContext,
+  type CapabilityId,
   type CreateWorkspaceInput,
+  type InvokeCapabilityInput,
   type ModuleId,
   type ModuleMembership,
   type RenameWorkspaceInput,
   type Workspace,
+  type WorkspaceCapabilityCatalog,
   type WorkspaceId,
+  type WorkspaceResourceCatalog,
 } from '@samsinn-leitbild/platform-contracts'
 import { hostError } from './errors.ts'
 import type { ModuleGateway, ModuleOperationResult } from './module-gateway.ts'
@@ -24,6 +33,9 @@ export interface WorkspaceHost {
   readonly addModule: (id: WorkspaceId, moduleId: ModuleId) => Promise<Workspace>
   readonly removeModule: (id: WorkspaceId, moduleId: ModuleId) => Promise<Workspace>
   readonly retryModule: (id: WorkspaceId, moduleId: ModuleId) => Promise<Workspace>
+  readonly resources: (id: WorkspaceId) => Promise<WorkspaceResourceCatalog>
+  readonly capabilities: (id: WorkspaceId) => Promise<WorkspaceCapabilityCatalog>
+  readonly invoke: (id: WorkspaceId, capabilityId: CapabilityId, input: InvokeCapabilityInput, access: AccessContext) => Promise<unknown>
   readonly installedModuleIds: () => ReadonlyArray<ModuleId>
 }
 
@@ -66,6 +78,12 @@ export const createWorkspaceHost = (config: {
     const result = await config.modules.leave(moduleId, workspaceId)
     if (result.ok) return config.store.removeMembership(workspaceId, moduleId)!
     return config.store.setMembership(workspaceId, membership(moduleId, 'leave_failed', result))!
+  }
+
+  const unavailableMembershipFailure = (item: ModuleMembership) => item.failure ?? {
+    code: 'module_not_ready',
+    message: `Module lifecycle is ${item.status}`,
+    retryable: item.status === 'joining' || item.status === 'leaving',
   }
 
   return {
@@ -159,6 +177,91 @@ export const createWorkspaceHost = (config: {
         return await leave(id, moduleId)
       }
       throw hostError({ status: 409, code: 'module_not_retryable', message: `Module lifecycle is not failed: ${moduleId}` })
+    },
+    resources: async rawId => {
+      const id = workspaceIdSchema.parse(rawId)
+      const workspace = requireWorkspace(id)
+      const results = await Promise.all(workspace.modules.map(async item => {
+        if (item.status !== 'ready') {
+          return { moduleId: item.moduleId, result: { ok: false as const, failure: unavailableMembershipFailure(item) } }
+        }
+        return { moduleId: item.moduleId, result: await config.modules.resources(item.moduleId, id) }
+      }))
+      const outcomes = results.map(item => item.result.ok
+        ? { moduleId: item.moduleId, status: 'ready' as const }
+        : { moduleId: item.moduleId, status: 'failed' as const, failure: item.result.failure })
+      const resources = results.flatMap(item => {
+        if (!item.result.ok) return []
+        const invalid = item.result.value.resources.find(resource =>
+          resource.ref.workspaceId !== id || resource.ref.moduleId !== item.moduleId)
+        if (invalid) {
+          throw hostError({
+            status: 502,
+            code: 'module_contract_invalid',
+            message: `Module ${item.moduleId} returned a Resource outside its ownership`,
+          })
+        }
+        return item.result.value.resources
+      })
+      return workspaceResourceCatalogSchema.parse({ workspaceId: id, modules: outcomes, resources })
+    },
+    capabilities: async rawId => {
+      const id = workspaceIdSchema.parse(rawId)
+      const workspace = requireWorkspace(id)
+      const results = await Promise.all(workspace.modules.map(async item => {
+        if (item.status !== 'ready') {
+          return { moduleId: item.moduleId, result: { ok: false as const, failure: unavailableMembershipFailure(item) } }
+        }
+        return { moduleId: item.moduleId, result: await config.modules.capabilities(item.moduleId, id) }
+      }))
+      const outcomes = results.map(item => item.result.ok
+        ? { moduleId: item.moduleId, status: 'ready' as const }
+        : { moduleId: item.moduleId, status: 'failed' as const, failure: item.result.failure })
+      const capabilities = results.flatMap(item => {
+        if (!item.result.ok) return []
+        const invalid = item.result.value.capabilities.find(capability => capability.moduleId !== item.moduleId)
+        if (invalid) {
+          throw hostError({
+            status: 502,
+            code: 'module_contract_invalid',
+            message: `Module ${item.moduleId} returned a Capability outside its ownership`,
+          })
+        }
+        return item.result.value.capabilities
+      })
+      return workspaceCapabilityCatalogSchema.parse({ workspaceId: id, modules: outcomes, capabilities })
+    },
+    invoke: async (rawId, rawCapabilityId, rawInput, access) => {
+      const id = workspaceIdSchema.parse(rawId)
+      const capabilityId = capabilityIdSchema.parse(rawCapabilityId)
+      const workspace = requireWorkspace(id)
+      const separator = capabilityId.indexOf('.')
+      const moduleId = moduleIdSchema.parse(capabilityId.slice(0, separator))
+      const active = workspace.modules.find(item => item.moduleId === moduleId)
+      if (!active || active.status !== 'ready') {
+        throw hostError({ status: 409, code: 'module_not_ready', message: `Capability Module is not ready in this Workspace: ${moduleId}` })
+      }
+      const resource = rawInput.resource === undefined ? undefined : workspaceResourceReferenceSchema.parse(rawInput.resource)
+      if (resource !== undefined && (resource.workspaceId !== id || resource.moduleId !== moduleId)) {
+        throw hostError({ status: 400, code: 'resource_scope_mismatch', message: 'Selected Resource does not belong to the Capability Module and Workspace' })
+      }
+      const result = await config.modules.invoke(moduleId, {
+        workspaceId: id,
+        capabilityId,
+        ...(resource === undefined ? {} : { resource }),
+        input: rawInput.input,
+        access,
+      })
+      if (!result.ok) {
+        throw hostError({
+          status: 502,
+          code: result.failure.code,
+          message: result.failure.message,
+          retryable: result.failure.retryable,
+          details: { moduleId, capabilityId },
+        })
+      }
+      return result.value.result
     },
     installedModuleIds: () => config.modules.list().map(registration => registration.moduleId),
   }

@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { moduleIdSchema, moduleRegistrationSchema, type WorkspaceId } from '@samsinn-leitbild/platform-contracts'
+import {
+  accessContextSchema,
+  capabilityIdSchema,
+  moduleIdSchema,
+  moduleRegistrationSchema,
+  newRequestId,
+} from '@samsinn-leitbild/platform-contracts'
 import { createWorkspaceHost } from '../src/host.ts'
 import { createModuleGateway } from '../src/module-gateway.ts'
 import { createWorkspaceStore } from '../src/store.ts'
@@ -19,7 +25,7 @@ const createMicroworldModule = () => {
   const server = Bun.serve({
     port: 0,
     hostname: '127.0.0.1',
-    fetch(request) {
+    async fetch(request) {
       const url = new URL(request.url)
       if (url.pathname === '/.well-known/workspace-module' && request.method === 'GET') {
         if (!state.available) return new Response('offline', { status: 503 })
@@ -42,6 +48,41 @@ const createMicroworldModule = () => {
         if (state.failLeave) return new Response('unavailable', { status: 503 })
         state.workspaces.delete(decodeURIComponent(match[1] ?? ''))
         return new Response(null, { status: 204 })
+      }
+      const resourcesMatch = url.pathname.match(/^\/internal\/workspaces\/([^/]+)\/resources$/)
+      if (resourcesMatch && request.method === 'GET') {
+        const workspaceId = decodeURIComponent(resourcesMatch[1] ?? '')
+        if (!state.workspaces.has(workspaceId)) return new Response('not found', { status: 404 })
+        return Response.json({
+          resources: [{
+            ref: { workspaceId, moduleId: 'microworld', type: 'microworld.simulation-run', id: 'run-01' },
+            title: 'Run 01',
+            capabilityIds: ['microworld.simulation-run.read'],
+            updatedAt: new Date().toISOString(),
+          }],
+        })
+      }
+      const capabilitiesMatch = url.pathname.match(/^\/internal\/workspaces\/([^/]+)\/capabilities$/)
+      if (capabilitiesMatch && request.method === 'GET') {
+        return Response.json({
+          capabilities: [{
+            id: 'microworld.simulation-run.read',
+            moduleId: 'microworld',
+            kind: 'query',
+            scope: { kind: 'resource', resourceType: 'microworld.simulation-run' },
+            title: 'Read Simulation Run',
+            description: 'Reads the selected Simulation Run.',
+            risk: 'read',
+            idempotent: true,
+            inputSchema: { type: 'object' },
+            outputSchema: { type: 'object' },
+          }],
+        })
+      }
+      const invocationMatch = url.pathname.match(/^\/internal\/workspaces\/([^/]+)\/capabilities\/([^/]+)\/invoke$/)
+      if (invocationMatch && request.method === 'POST') {
+        const invocation = await request.json() as { resource?: { id: string }; input: unknown }
+        return Response.json({ result: { resourceId: invocation.resource?.id, input: invocation.input } })
       }
       return new Response('not found', { status: 404 })
     },
@@ -102,6 +143,31 @@ describe('Workspace Host', () => {
     module.state.available = true
     const recovered = await host.retryModule(workspace.id, moduleId)
     expect(recovered.modules[0]?.status).toBe('ready')
+    store.close()
+  })
+
+  test('aggregates typed discovery and invokes a Capability without a Module-specific URL', async () => {
+    const module = createMicroworldModule()
+    const { host, store } = createHost([module.registration])
+    const workspace = await host.create({ name: null, moduleIds: [moduleIdSchema.parse('microworld')] })
+
+    const resources = await host.resources(workspace.id)
+    expect(resources.modules).toEqual([{ moduleId: moduleIdSchema.parse('microworld'), status: 'ready' }])
+    expect(resources.resources.map(resource => String(resource.ref.id))).toEqual(['run-01'])
+    const capabilities = await host.capabilities(workspace.id)
+    expect(capabilities.capabilities.map(capability => String(capability.id))).toEqual(['microworld.simulation-run.read'])
+
+    const result = await host.invoke(
+      workspace.id,
+      capabilityIdSchema.parse('microworld.simulation-run.read'),
+      { resource: resources.resources[0]!.ref, input: { include: 'summary' } },
+      accessContextSchema.parse({
+        workspaceId: workspace.id,
+        requestId: newRequestId(),
+        actor: { kind: 'ai', id: 'agent:test' },
+      }),
+    )
+    expect(result).toEqual({ resourceId: 'run-01', input: { include: 'summary' } })
     store.close()
   })
 

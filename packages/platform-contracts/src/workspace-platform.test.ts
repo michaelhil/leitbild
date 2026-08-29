@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   experienceDescriptorSchema,
   moduleCapabilityDescriptorSchema,
+  moduleCapabilityInvocationSchema,
   moduleMembershipSchema,
   moduleResourceDescriptorSchema,
   newBindingId,
@@ -122,6 +123,22 @@ describe('dynamic Resource and Capability discovery', () => {
       expect(String(capability.scope.resourceType)).toBe('microworld.simulation-run')
     }
     expect(capability).not.toHaveProperty('resourceId')
+  })
+
+  test('keeps the selected Resource in each invocation instead of Agent configuration', () => {
+    const workspaceId = newWorkspaceId()
+    const invocation = moduleCapabilityInvocationSchema.parse({
+      workspaceId,
+      capabilityId: 'microworld.simulation-run.read',
+      resource: { workspaceId, moduleId: 'microworld', type: 'microworld.simulation-run', id: 'run-01' },
+      input: {},
+      access: {
+        workspaceId,
+        requestId: crypto.randomUUID(),
+        actor: { kind: 'ai', id: 'agent:operator' },
+      },
+    })
+    expect(String(invocation.resource?.id)).toBe('run-01')
   })
 })
 

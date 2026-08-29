@@ -7,6 +7,8 @@ import {
   resourceTypeSchema,
   workspaceIdSchema,
 } from './ids.ts'
+import { accessContextSchema } from './access.ts'
+import { moduleFailureSchema } from './workspaces.ts'
 
 export const workspaceResourceReferenceSchema = z.object({
   workspaceId: workspaceIdSchema,
@@ -76,3 +78,84 @@ export const moduleCapabilityCollectionSchema = z.object({
   capabilities: z.array(moduleCapabilityDescriptorSchema),
 }).strict()
 export type ModuleCapabilityCollection = z.infer<typeof moduleCapabilityCollectionSchema>
+
+export const moduleQueryOutcomeSchema = z.discriminatedUnion('status', [
+  z.object({ moduleId: moduleIdSchema, status: z.literal('ready') }).strict(),
+  z.object({ moduleId: moduleIdSchema, status: z.literal('failed'), failure: moduleFailureSchema }).strict(),
+])
+export type ModuleQueryOutcome = z.infer<typeof moduleQueryOutcomeSchema>
+
+export const workspaceResourceCatalogSchema = z.object({
+  workspaceId: workspaceIdSchema,
+  modules: z.array(moduleQueryOutcomeSchema),
+  resources: z.array(moduleResourceDescriptorSchema),
+}).strict().superRefine((catalog, ctx) => {
+  const seenModules = new Set<string>()
+  catalog.modules.forEach((outcome, index) => {
+    if (seenModules.has(outcome.moduleId)) {
+      ctx.addIssue({ code: 'custom', path: ['modules', index, 'moduleId'], message: `duplicate Module outcome: ${outcome.moduleId}` })
+    }
+    seenModules.add(outcome.moduleId)
+  })
+  const seenResources = new Set<string>()
+  catalog.resources.forEach((resource, index) => {
+    if (resource.ref.workspaceId !== catalog.workspaceId) {
+      ctx.addIssue({ code: 'custom', path: ['resources', index, 'ref', 'workspaceId'], message: 'Resource belongs to another Workspace' })
+    }
+    const key = `${resource.ref.moduleId}:${resource.ref.type}:${resource.ref.id}`
+    if (seenResources.has(key)) {
+      ctx.addIssue({ code: 'custom', path: ['resources', index, 'ref'], message: `duplicate Resource: ${key}` })
+    }
+    seenResources.add(key)
+  })
+})
+export type WorkspaceResourceCatalog = z.infer<typeof workspaceResourceCatalogSchema>
+
+export const workspaceCapabilityCatalogSchema = z.object({
+  workspaceId: workspaceIdSchema,
+  modules: z.array(moduleQueryOutcomeSchema),
+  capabilities: z.array(moduleCapabilityDescriptorSchema),
+}).strict().superRefine((catalog, ctx) => {
+  const seenModules = new Set<string>()
+  catalog.modules.forEach((outcome, index) => {
+    if (seenModules.has(outcome.moduleId)) {
+      ctx.addIssue({ code: 'custom', path: ['modules', index, 'moduleId'], message: `duplicate Module outcome: ${outcome.moduleId}` })
+    }
+    seenModules.add(outcome.moduleId)
+  })
+  const seenCapabilities = new Set<string>()
+  catalog.capabilities.forEach((capability, index) => {
+    if (seenCapabilities.has(capability.id)) {
+      ctx.addIssue({ code: 'custom', path: ['capabilities', index, 'id'], message: `duplicate Capability: ${capability.id}` })
+    }
+    seenCapabilities.add(capability.id)
+  })
+})
+export type WorkspaceCapabilityCatalog = z.infer<typeof workspaceCapabilityCatalogSchema>
+
+export const invokeCapabilityInputSchema = z.object({
+  resource: workspaceResourceReferenceSchema.optional(),
+  input: z.unknown(),
+}).strict()
+export type InvokeCapabilityInput = z.infer<typeof invokeCapabilityInputSchema>
+
+export const moduleCapabilityInvocationSchema = z.object({
+  workspaceId: workspaceIdSchema,
+  capabilityId: capabilityIdSchema,
+  resource: workspaceResourceReferenceSchema.optional(),
+  input: z.unknown(),
+  access: accessContextSchema,
+}).strict().superRefine((invocation, ctx) => {
+  if (invocation.access.workspaceId !== invocation.workspaceId) {
+    ctx.addIssue({ code: 'custom', path: ['access', 'workspaceId'], message: 'Access context belongs to another Workspace' })
+  }
+  if (invocation.resource !== undefined && invocation.resource.workspaceId !== invocation.workspaceId) {
+    ctx.addIssue({ code: 'custom', path: ['resource', 'workspaceId'], message: 'Resource belongs to another Workspace' })
+  }
+})
+export type ModuleCapabilityInvocation = z.infer<typeof moduleCapabilityInvocationSchema>
+
+export const moduleCapabilityInvocationResultSchema = z.object({
+  result: z.unknown(),
+}).strict()
+export type ModuleCapabilityInvocationResult = z.infer<typeof moduleCapabilityInvocationResultSchema>

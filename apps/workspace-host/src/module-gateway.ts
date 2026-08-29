@@ -1,24 +1,37 @@
 import {
+  moduleCapabilityCollectionSchema,
+  moduleCapabilityInvocationResultSchema,
+  moduleCapabilityInvocationSchema,
   moduleFailureSchema,
   moduleIdSchema,
   moduleRegistrationSchema,
+  moduleResourceCollectionSchema,
   workspaceModuleManifestSchema,
+  type ModuleCapabilityCollection,
+  type ModuleCapabilityInvocation,
+  type ModuleCapabilityInvocationResult,
   type ModuleFailure,
   type ModuleId,
   type ModuleRegistration,
+  type ModuleResourceCollection,
   type WorkspaceId,
   type WorkspaceModuleManifest,
 } from '@samsinn-leitbild/platform-contracts'
 
-export type ModuleOperationResult =
-  | { readonly ok: true }
+export type ModuleCallResult<T> =
+  | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly failure: ModuleFailure }
+
+export type ModuleOperationResult = ModuleCallResult<undefined>
 
 export interface ModuleGateway {
   readonly list: () => ReadonlyArray<ModuleRegistration>
   readonly has: (moduleId: ModuleId) => boolean
   readonly join: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleOperationResult>
   readonly leave: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleOperationResult>
+  readonly resources: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleResourceCollection>>
+  readonly capabilities: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleCapabilityCollection>>
+  readonly invoke: (moduleId: ModuleId, invocation: ModuleCapabilityInvocation) => Promise<ModuleCallResult<ModuleCapabilityInvocationResult>>
 }
 
 const normalizeBaseUrl = (value: string): string => {
@@ -29,13 +42,20 @@ const normalizeBaseUrl = (value: string): string => {
   return url.toString().replace(/\/$/, '')
 }
 
-const failure = (config: ModuleFailure): ModuleOperationResult => ({
+const failure = <T>(config: ModuleFailure): ModuleCallResult<T> => ({
   ok: false,
   failure: moduleFailureSchema.parse(config),
 })
 
 const expandWorkspacePath = (baseUrl: string, pathTemplate: string, workspaceId: WorkspaceId): string =>
   `${baseUrl}${pathTemplate.replaceAll('{workspaceId}', encodeURIComponent(workspaceId))}`
+
+const expandInvocationPath = (
+  baseUrl: string,
+  pathTemplate: string,
+  invocation: ModuleCapabilityInvocation,
+): string => expandWorkspacePath(baseUrl, pathTemplate, invocation.workspaceId)
+  .replaceAll('{capabilityId}', encodeURIComponent(invocation.capabilityId))
 
 export const createModuleGateway = (config: {
   readonly registrations: ReadonlyArray<ModuleRegistration>
@@ -117,7 +137,72 @@ export const createModuleGateway = (config: {
         retryable: response.status >= 500,
       })
     }
-    return { ok: true }
+    return { ok: true, value: undefined }
+  }
+
+  const readCollection = async <T>(config: {
+    readonly moduleId: ModuleId
+    readonly workspaceId: WorkspaceId
+    readonly endpoint: 'resources' | 'capabilities'
+    readonly parse: (value: unknown) => T
+  }): Promise<ModuleCallResult<T>> => {
+    const registration = byId.get(config.moduleId)
+    if (!registration) return failure({ code: 'module_not_installed', message: `Module is not installed: ${config.moduleId}`, retryable: false })
+    const manifest = await discover(registration)
+    if ('code' in manifest) return { ok: false, failure: manifest }
+    const url = expandWorkspacePath(registration.baseUrl, manifest.endpoints[config.endpoint], config.workspaceId)
+    let response: Response
+    try {
+      response = await fetchImpl(url, { headers: { Accept: 'application/json' } })
+    } catch (error) {
+      return failure({ code: 'module_unavailable', message: error instanceof Error ? error.message : String(error), retryable: true })
+    }
+    if (!response.ok) {
+      return failure({
+        code: 'module_query_failed',
+        message: `Module ${config.endpoint} query returned HTTP ${response.status}`,
+        retryable: response.status >= 500,
+      })
+    }
+    try {
+      return { ok: true, value: config.parse(await response.json()) }
+    } catch (error) {
+      return failure({ code: 'module_contract_invalid', message: error instanceof Error ? error.message : String(error), retryable: false })
+    }
+  }
+
+  const invoke = async (
+    moduleId: ModuleId,
+    rawInvocation: ModuleCapabilityInvocation,
+  ): Promise<ModuleCallResult<ModuleCapabilityInvocationResult>> => {
+    const registration = byId.get(moduleId)
+    if (!registration) return failure({ code: 'module_not_installed', message: `Module is not installed: ${moduleId}`, retryable: false })
+    const invocation = moduleCapabilityInvocationSchema.parse(rawInvocation)
+    const manifest = await discover(registration)
+    if ('code' in manifest) return { ok: false, failure: manifest }
+    const url = expandInvocationPath(registration.baseUrl, manifest.endpoints.invoke, invocation)
+    let response: Response
+    try {
+      response = await fetchImpl(url, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify(invocation),
+      })
+    } catch (error) {
+      return failure({ code: 'module_unavailable', message: error instanceof Error ? error.message : String(error), retryable: true })
+    }
+    if (!response.ok) {
+      return failure({
+        code: 'capability_invocation_failed',
+        message: `Module Capability invocation returned HTTP ${response.status}`,
+        retryable: response.status >= 500,
+      })
+    }
+    try {
+      return { ok: true, value: moduleCapabilityInvocationResultSchema.parse(await response.json()) }
+    } catch (error) {
+      return failure({ code: 'module_contract_invalid', message: error instanceof Error ? error.message : String(error), retryable: false })
+    }
   }
 
   return {
@@ -125,5 +210,18 @@ export const createModuleGateway = (config: {
     has: moduleId => byId.has(moduleIdSchema.parse(moduleId)),
     join: (moduleId, workspaceId) => operate(moduleId, workspaceId, 'PUT'),
     leave: (moduleId, workspaceId) => operate(moduleId, workspaceId, 'DELETE'),
+    resources: (moduleId, workspaceId) => readCollection({
+      moduleId,
+      workspaceId,
+      endpoint: 'resources',
+      parse: value => moduleResourceCollectionSchema.parse(value),
+    }),
+    capabilities: (moduleId, workspaceId) => readCollection({
+      moduleId,
+      workspaceId,
+      endpoint: 'capabilities',
+      parse: value => moduleCapabilityCollectionSchema.parse(value),
+    }),
+    invoke,
   }
 }
