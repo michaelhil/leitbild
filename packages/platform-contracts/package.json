@@ -1,0 +1,30 @@
+{
+  "name": "@samsinn-leitbild/platform-contracts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "module": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./ids": "./src/ids.ts",
+    "./access": "./src/access.ts",
+    "./errors": "./src/errors.ts",
+    "./discovery": "./src/discovery.ts",
+    "./events": "./src/events.ts",
+    "./packs": "./src/packs.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.0",
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "bun": "1.4.0"
+  }
+}

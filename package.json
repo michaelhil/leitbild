@@ -9,12 +9,14 @@
   ],
   "scripts": {
     "check:boundaries": "bun run scripts/check-boundaries.ts",
+    "check:contracts": "bun run --cwd packages/platform-contracts check",
     "check:samsinn": "bun run --cwd apps/samsinn check",
     "check:leitbild": "bun run --cwd apps/leitbild check",
-    "check": "bun run check:boundaries && bun run check:samsinn && bun run check:leitbild",
+    "check": "bun run check:boundaries && bun run check:contracts && bun run check:samsinn && bun run check:leitbild",
+    "test:contracts": "bun run --cwd packages/platform-contracts test",
     "test:samsinn": "bun run --cwd apps/samsinn test:unit",
     "test:leitbild": "bun run --cwd apps/leitbild test",
-    "test": "bun run test:samsinn && bun run test:leitbild"
+    "test": "bun run test:contracts && bun run test:samsinn && bun run test:leitbild"
   },
   "engines": {
     "bun": "1.4.0"

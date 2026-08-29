@@ -4,17 +4,17 @@ Leitbild is a platform for shared, map-based control-center work over moving and
 
 ## Language
 
-**Control Instance**:
-A shared operational world in Leitbild, addressable by URL, where actors monitor objects, issue commands, receive events, and interact with one or more pack runtimes.
-_Avoid_: Study, StudySession, Session when referring to the shared world, Simulation Instance when referring to the Leitbild-managed shared world
+**Simulation Run**:
+A persistent execution of exactly one immutable Scenario Revision inside one Workspace, addressable by its own opaque id and URL.
+_Avoid_: Control Instance, Scenario Run, Session, Simulation Instance, or encoding the Scenario id into the Run id
 
 **Pack**:
 A user-facing and architectural capability module that contributes pack-owned behavior, object types, runtimes, presentation, queries, interactions, and documentation to Leitbild.
 _Avoid_: Domain, Plugin, Provider, Simulation Pack, Scenario Pack, UI Pack, Asset Pack
 
-**Pack Manifest**:
-The future installable-pack metadata file that declares a pack's identity and contributions without a separate `domains` field.
-_Avoid_: declaring domain ownership separately from the pack id
+**Pack Descriptor**:
+Versioned metadata that declares a Leitbild Pack's identity, compatibility, dependencies, and contribution kinds; typed Leitbild contribution implementations remain application-owned.
+_Avoid_: treating the shared descriptor as a universal Pack runtime interface
 
 **Pack Data**:
 Pack-owned operational payload attached to an Operational Object.
@@ -25,19 +25,19 @@ A shared control-center entity with independent operational identity, state, vis
 _Avoid_: automatically promoting internal engineering graph nodes, solver variables, matrix entries, measurements, or protection internals to objects
 
 **Pack Runtime**:
-The active implementation backing one pack inside a Control Instance.
+The active implementation backing one pack inside a Simulation Run.
 _Avoid_: Simulation Provider, Simulation Instance, Provider, Domain Runtime, Simulator as the canonical noun
 
 **Composite Pack Runtime**:
-A pack runtime that combines multiple internal sources or mechanics while remaining the single active runtime for its pack in a Control Instance.
-_Avoid_: activating multiple runtimes for one pack in the same Control Instance
+A pack runtime that combines multiple internal sources or mechanics while remaining the single active runtime for its pack in a Simulation Run.
+_Avoid_: activating multiple runtimes for one pack in the same Simulation Run
 
 **Source**:
 An external, reference, map, route, code, or live-feed input consumed by a pack runtime or UI surface.
 _Avoid_: using source for pack ownership, canonical state, or runtime identity
 
 **Runtime Hub**:
-A control-instance-local coordinator that connects multiple pack runtimes, merges their runtime snapshots, routes commands to runtimes that accept them, routes pack queries to the active runtime for that pack, forwards runtime emissions, and broadcasts committed Control Instance events back to runtimes.
+A simulation-run-local coordinator that connects multiple pack runtimes, merges their runtime snapshots, routes commands to runtimes that accept them, routes pack queries to the active runtime for that pack, forwards runtime emissions, and broadcasts committed Simulation Run events back to runtimes.
 _Avoid_: Simulation Hub, or putting multi-runtime orchestration inside one pack runtime
 
 **Runtime-Private State**:
@@ -45,20 +45,20 @@ Pack-runtime-internal state used for specialist mechanics, such as route followi
 _Avoid_: exposing runtime-private state directly as canonical API/UI/AI state
 
 **Runtime Projection**:
-A runtime-local read model of committed Control Instance state that helps a pack runtime continue its mechanics.
+A runtime-local read model of committed Simulation Run state that helps a pack runtime continue its mechanics.
 _Avoid_: calling this the object store or source of truth
 
 **Pack Query**:
-A read-only, pack-scoped request routed through the Control Instance API and Runtime Hub to the active runtime for that pack.
+A read-only, pack-scoped request routed through the Simulation Run API and Runtime Hub to the active runtime for that pack.
 _Avoid_: hardcoded pack-specific HTTP routes, arbitrary RPC, mutating state through query handlers, or treating query results as a second canonical state store
 
 **Client**:
-One connected browser tab, API integration, AI process, or display surface connected to a control instance.
+One connected browser tab, API integration, AI process, or display surface connected to a simulation run.
 _Avoid_: Session when referring to a connected browser tab or API connection
 
 **Actor**:
-A human, AI agent, or system identity that can observe or act within a control instance.
-_Avoid_: Participant, User when referring to operational identity inside a control instance
+A human, AI agent, or system identity that can observe or act within a simulation run.
+_Avoid_: Participant, User when referring to operational identity inside a simulation run
 
 **Surface**:
 A functional UI mode presented by a client.
@@ -80,28 +80,32 @@ _Avoid_: Pane or Widget when referring to scenario-level assembly configuration
 Structured, perspective-bearing artificial situation awareness attached to an operational object. It records facts, activity, references, and summaries from an asset, operator, system, or AI perspective.
 _Avoid_: using context as an untyped junk drawer, or using it for pack-owned operational truth that belongs in `packData`
 
-**Scenario Definition**:
-Validated startup definition for a new control instance: world settings, active packs, optional runtime overrides/configuration, initial objects, and initial object contexts. Scenarios are top-level compositions, not pack-owned files, and are the only production startup format for new control instances.
-_Avoid_: Mission when referring only to initial world setup
+**Scenario**:
+A reusable Workspace-owned identity whose simulation setup evolves through immutable Scenario Revisions.
+_Avoid_: Simulation Run, built-in Scenario Config, or mutating a Revision in place
+
+**Scenario Revision**:
+An immutable, validated startup definition containing world settings, selected Packs, runtime configuration, initial objects, contexts, surfaces, and optional scripts.
+_Avoid_: mutable Scenario Definition, resolving a restored Run from the current catalog
 
 **Scenario Config**:
-Compact JSON authoring format for built-in scenarios. It names active packs and pack-specific object/operation specs; pack scenario codecs expand it into a validated Scenario Definition before runtime.
-_Avoid_: treating config specs as runtime truth or putting arbitrary executable code in scenario files
+Compact deployment-owned JSON authoring format for a built-in Scenario template. Pack scenario codecs expand it into a candidate Scenario Revision before it enters a Workspace.
+_Avoid_: treating config specs as Run truth or putting arbitrary executable code in scenario files
 
 **Pack Scenario Codec**:
 Pack-owned expansion surface that converts compact scenario object specs and scenario operations into validated operational objects.
 _Avoid_: scenario files hand-building full pack objects with reusable helper code
 
-**Scenario Catalog**:
-Validated registry of Scenario Definitions and Mission Definitions.
-_Avoid_: hidden pack seed factories or hardcoded default runtime boot paths
+**Scenario Library**:
+The Workspace-owned collection of Scenarios and immutable Scenario Revisions available for new Simulation Runs.
+_Avoid_: global mutable Scenario Catalog, hidden pack seed factories, or hardcoded default runtime boot paths
 
 **Scenario Script**:
-A small declarative, time-based action list attached to a Scenario Definition.
+A small declarative, time-based action list attached to a Scenario Revision.
 _Avoid_: arbitrary script execution, browser-only tutorial state, or hidden runtime seed timers
 
 **Scenario Guidance**:
-Canonical scenario-owned UI instruction state for onboarding, tutorial prompts, and scripted scenario briefings. It is stored in Control Instance projected state so all clients and reloads see the same current guidance.
+Canonical scenario-owned UI instruction state for onboarding, tutorial prompts, and scripted scenario briefings. It is stored in Simulation Run projected state so all clients and reloads see the same current guidance.
 _Avoid_: local-only popovers for scenario-critical information
 
 **Mission Definition**:
@@ -117,19 +121,19 @@ A bounded, derived, LLM-friendly view assembled from object state, object contex
 _Avoid_: persisting generated prompt text or full event logs as canonical object state
 
 **Interaction Signal**:
-A scoped claim, observation, or interaction attempt emitted by a pack runtime, actor, AI agent, client, or system process inside a control instance.
+A scoped claim, observation, or interaction attempt emitted by a pack runtime, actor, AI agent, client, or system process inside a simulation run.
 _Avoid_: treating a signal payload as accepted truth, or letting one object directly mutate another object
 
 **Interaction Handler**:
-A deterministic, registered function contributed by core or an active pack that inspects an interaction signal plus the current control-instance snapshot and returns proposed effects. Handlers do not mutate state directly.
+A deterministic, registered function contributed by core or an active pack that inspects an interaction signal plus the current simulation-run snapshot and returns proposed effects. Handlers do not mutate state directly.
 _Avoid_: callback-style object behavior, hidden side effects, or long-lived handler-local memory
 
 **Interaction Effect**:
 A constrained proposed result of handling a signal, such as upserting an object, deleting an object, or emitting an operational notification.
 _Avoid_: arbitrary imperative code paths that bypass event ordering, validation, audit, or replay
 
-**Control Instance Event**:
-An accepted event emitted through the Control Instance runtime for ordering, projection, live feed delivery, and optional durable retention.
+**Simulation Run Event**:
+An accepted event emitted through the Simulation Run runtime for ordering, projection, live feed delivery, and optional durable retention.
 _Avoid_: using event to imply every live update must be durable history
 
 **Operational Notification**:
@@ -277,48 +281,49 @@ A vector tile layer that provides environmental or infrastructure context such a
 _Avoid_: Operational Object when the feature is static OSM-derived context
 
 **Projected State**:
-The current canonical operational picture for a control instance, held by the Control Instance runtime and persisted in snapshots for fast reload.
+The current canonical operational picture for a simulation run, held by the Simulation Run runtime and persisted in snapshots for fast reload.
 _Avoid_: treating the durable journal or runtime-private projections as the current source for UI/API/AI reads
 
 **Durable Journal**:
-Meaningful accepted control-instance history, such as commands, command results, object creation/deletion, interaction signals/effects, notifications, and semantic state changes.
+Meaningful accepted simulation-run history, such as commands, command results, object creation/deletion, interaction signals/effects, notifications, and semantic state changes.
 _Avoid_: using the durable journal as a full high-frequency motion trace
 
 **Live Change Feed**:
-Realtime control-instance updates broadcast to connected clients, including volatile updates that are not written to the durable journal.
+Realtime simulation-run updates broadcast to connected clients, including volatile updates that are not written to the durable journal.
 _Avoid_: expecting the live feed to be a permanent replay store
 
 ## Relationships
 
-- A **Control Instance** has one or more **Pack Runtimes**.
+- A **Simulation Run** has one or more **Pack Runtimes**.
 - A **Pack** may declare one or more **Pack Runtimes**.
 - An **Operational Object** may carry **Pack Data** owned by its **Pack**.
 - **Pack Data** is canonical object-level truth; **Runtime-Private State** is not.
-- **Runtime-Private State** may be authoritative for internal mechanics only; operator, AI, command, or cross-pack facts must surface through **Projected State**, **Pack Data**, **Control Instance Events**, or **Pack Queries**.
+- **Runtime-Private State** may be authoritative for internal mechanics only; operator, AI, command, or cross-pack facts must surface through **Projected State**, **Pack Data**, **Simulation Run Events**, or **Pack Queries**.
 - Internal graph elements become **Operational Objects** only when promoted to the shared operational picture.
-- A **Control Instance** has exactly one active **Pack Runtime** for each active **Pack**.
+- A **Simulation Run** has exactly one active **Pack Runtime** for each active **Pack**.
 - A **Composite Pack Runtime** may combine many **Sources** inside one active **Pack Runtime**.
-- A **Runtime Hub** may connect several **Pack Runtimes** to one **Control Instance**.
-- A **Pack Runtime** emits candidate updates and signals into a **Control Instance**.
-- A **Pack Runtime** may observe committed **Control Instance Events** to update **Runtime-Private State** or a **Runtime Projection**.
+- A **Runtime Hub** may connect several **Pack Runtimes** to one **Simulation Run**.
+- A **Pack Runtime** emits candidate updates and signals into a **Simulation Run**.
+- A **Pack Runtime** may observe committed **Simulation Run Events** to update **Runtime-Private State** or a **Runtime Projection**.
 - A **Pack Query** is routed to the active **Pack Runtime** for that pack and must be read-only.
 - **Pack Query** results are derived runtime-owned read views unless explicitly committed into **Projected State**.
-- A **Control Instance** can have many **Actors**.
-- A **Control Instance** can have many **Clients**.
-- A **Scenario Run** is a URL-addressable run of one **Scenario Definition** inside a **Control Instance**, for example `/i/halden/sandbox`; its internal Control Instance id is `halden:sandbox`.
+- A **Simulation Run** can have many **Actors**.
+- A **Simulation Run** can have many **Clients**.
+- A **Simulation Run** belongs to one Workspace and references exactly one immutable **Scenario Revision**.
+- A **Simulation Run** has an opaque id that is independent of its Scenario and is URL-addressable as `/w/{workspaceId}/runs/{runId}`.
 - An **Actor** can have many **Clients**.
 - A **Client** presents one primary **Surface** at a time.
 - A future user account can map to one or more **Actors**.
 - An **Operational Object** can have optional **Object Context**.
-- A **Scenario Definition** can initialize **Operational Objects** and their **Object Context**.
-- A **Scenario Definition** can include a **Scenario Script** for timed object updates, highlights, and **Scenario Guidance**.
-- Restored **Control Instances** use snapshots/history instead of replaying Scenario Definitions.
-- A **Mission Definition** can reference objects, roles, stages, objectives, and tasks initialized by a **Scenario Definition**.
-- **Mission Progress State** belongs to a running **Control Instance**, not to the reusable **Mission Definition**.
-- **Interaction Signals** are scoped to one **Control Instance** and may reference objects, actors, clients, pack runtimes, roles, areas, or broadcast targets.
-- **Interaction Handlers** are registered through core or active packs and run inside the **Control Instance** runtime.
-- **Interaction Effects** become ordered **Control Instance Events** only after validation and runtime commit.
-- **Control Instance Events** share one accepted event pipeline; the **Durable Journal** decides which events are retained as meaningful history.
+- A **Scenario Revision** can initialize **Operational Objects** and their **Object Context**.
+- A **Scenario Revision** can include a **Scenario Script** for timed object updates, highlights, and **Scenario Guidance**.
+- Restored **Simulation Runs** use pinned manifests, snapshots, and history instead of replaying or re-resolving Scenario Revisions.
+- A **Mission Definition** can reference objects, roles, stages, objectives, and tasks initialized by a **Scenario Revision**.
+- **Mission Progress State** belongs to a running **Simulation Run**, not to the reusable **Mission Definition**.
+- **Interaction Signals** are scoped to one **Simulation Run** and may reference objects, actors, clients, pack runtimes, roles, areas, or broadcast targets.
+- **Interaction Handlers** are registered through core or active packs and run inside the **Simulation Run** runtime.
+- **Interaction Effects** become ordered **Simulation Run Events** only after validation and runtime commit.
+- **Simulation Run Events** share one accepted event pipeline; the **Durable Journal** decides which events are retained as meaningful history.
 - **AI agents** are **Actors** and **Clients** that may issue commands or emit interaction signals, but their outputs are not canonical truth until accepted by handlers and committed as events.
 - **Projected State** is the canonical current Leitbild truth for UI, API, AI agents, metrics, and interaction handlers.
 - The **Durable Journal** is meaningful accepted history for audit, debugging, replay of decisions, and later research instrumentation.
@@ -328,12 +333,12 @@ _Avoid_: expecting the live feed to be a permanent replay store
 - A **Spatial Field Index** can be reused by multiple packs, but each pack owns its own field semantics and computation.
 - A **Weather Sparse Field** belongs to the weather pack runtime; the map receives projected features through `weather.mapFeatures`, not the field store itself.
 - H3 is a shared indexing vocabulary, not shared operational truth. Weather, wildfire, radiation, or exposure packs may all use the same cell ids while keeping separate pack-owned state and update loops.
-- A **Process Plant Runtime** belongs to the `process-plant` pack and consumes a compiled process system from a Scenario Definition.
+- A **Process Plant Runtime** belongs to the `process-plant` pack and consumes a compiled process system from a Scenario Revision.
 - **Process Plant Runtime** is a pack-specific specialization of **Pack Runtime**.
 - A **Process Variable Table** is the authoritative runtime store for one compiled process system.
 - **Process Variables** are not **Operational Objects**; selected variables are exposed through generic pack queries and future process surfaces.
 - A **Process Link** can contribute **Process Variables** to the same registry as component variables; sensors and actuators are metadata on variables, not separate node types by default.
-- **Solver Phases** update continuous plant state; **Control Instance Events** remain for discrete accepted history and operational transitions.
+- **Solver Phases** update continuous plant state; **Simulation Run Events** remain for discrete accepted history and operational transitions.
 - A **Process Plant Behavior Context** is created inside one **Solver Phase** and enforces write discipline against the **Process Variable Table**.
 - **Runtime-Private State** restores runtime-owned mechanics after reload without contaminating **Projected State**.
 - The **Durable Journal** stores meaningful accepted history, not every volatile movement update.
@@ -341,11 +346,11 @@ _Avoid_: expecting the live feed to be a permanent replay store
 
 ## Example dialogue
 
-> **Dev:** "When I reload `/i/halden/sandbox`, should I create a new Control Instance?"
-> **Domain expert:** "No — reloading should rejoin the existing Control Instance."
+> **Dev:** "When I reload `/w/example/runs/run-1`, should I create a new Simulation Run?"
+> **Domain expert:** "No — reloading should rejoin the existing Simulation Run."
 >
 > **Dev:** "Can the server run several ambulance runtimes at the same time?"
-> **Domain expert:** "Yes — each Control Instance connects its own Pack Runtime."
+> **Domain expert:** "Yes — each Simulation Run connects its own Pack Runtime."
 >
 > **Dev:** "If Anna opens the map and an alarm list in two browser tabs, is that one Client?"
 > **Domain expert:** "No — Anna is one Actor with two Clients."
@@ -355,12 +360,12 @@ _Avoid_: expecting the live feed to be a permanent replay store
 
 ## Flagged ambiguities
 
-- "session" was used to mean the shared world; resolved: the shared world is a **Control Instance**.
+- "session" was used to mean the shared world; resolved: the shared world is a **Simulation Run**.
 - "plugin" was considered for installable capabilities; resolved: use **Pack** in product language, code, docs, APIs, and manifests.
-- "instance" can mean too many things in software; resolved: use **Control Instance** for the shared world and **Pack Runtime** for active pack backing.
+- "instance" can mean too many things in software; resolved: use **Workspace** for the durable cross-application container, **Simulation Run** for one Leitbild execution, and **Pack Runtime** for active pack backing.
 - "simulator" may describe an implementation style, but the canonical noun is **Pack Runtime**; user-facing labels should say "runtime" unless explicitly describing simulation behavior.
-- "participant" sounded too research-specific; resolved: use **Actor** for operational identity inside a Control Instance.
+- "participant" sounded too research-specific; resolved: use **Actor** for operational identity inside a Simulation Run.
 - "state" can mean canonical truth, pack-owned payload, runtime progress, or perspective. Use **Pack Data** for pack-owned operational truth, **Object Context** for perspective-bearing awareness, and **Mission Progress State** for mission runtime status.
-- "event" can mean input signal, accepted state change, or UI attention. Use **Interaction Signal** for claims/observations/attempts, **Control Instance Event** for accepted canonical history, and **Operational Notification** for attention items.
+- "event" can mean input signal, accepted state change, or UI attention. Use **Interaction Signal** for claims/observations/attempts, **Simulation Run Event** for accepted canonical history, and **Operational Notification** for attention items.
 - "sim state" can mean runtime-private mechanics or shared Leitbild truth. Use **Runtime-Private State** or **Runtime Projection** for pack-runtime-local state, and **Projected State** for canonical Leitbild state.
 - "traffic" can mean aggregate road conditions or individual traffic vehicles. Use **Traffic Condition** for aggregate route-affecting areas/segments; use future traffic-vehicle terminology only when individual vehicles are actually modeled.

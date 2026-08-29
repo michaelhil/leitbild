@@ -57,6 +57,17 @@
         "typescript": "npm:@typescript/typescript6@6.0.2",
       },
     },
+    "packages/platform-contracts": {
+      "name": "@samsinn-leitbild/platform-contracts",
+      "version": "1.0.0",
+      "dependencies": {
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.4.0",
+        "typescript": "^6.0.3",
+      },
+    },
   },
   "packages": {
     "3d-tiles-renderer": ["3d-tiles-renderer@0.4.28", "", { "dependencies": { "@mapbox/vector-tile": "^2.0.3", "pbf": "^4.0.1", "pmtiles": "^4.3.2" }, "peerDependencies": { "@babylonjs/core": ">=8.0.0", "@babylonjs/loaders": ">=8.0.0", "@react-three/fiber": "^8.17.9 || ^9.0.0", "react": "^18.3.1 || ^19.0.0", "react-dom": "^18.3.1 || ^19.0.0", "three": ">=0.167.0" }, "optionalPeers": ["@babylonjs/core", "@babylonjs/loaders", "@react-three/fiber", "react", "react-dom", "three"] }, "sha512-eDFg3fTgnFeoa6kU9oyAQIci/N/CJq6JUi/ZUrmDyqLzEDH9mWd9FBs+NqS+0eO8b7y4HjIWfUVnf8o03AFtSA=="],
@@ -304,6 +315,8 @@
     "@rolldown/binding-win32-x64-msvc": ["@rolldown/binding-win32-x64-msvc@1.2.6", "", { "os": "win32", "cpu": "x64" }, "sha512-np8iZSLfXlAD4kWhiyq/u0Yt8oZDtRQ8lGhQaCXo2rl37KNjeU0GjJuwr4P3oeZ++ROfofsKNBqR5LTO8aXyWQ=="],
 
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.1", "", {}, "sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw=="],
+
+    "@samsinn-leitbild/platform-contracts": ["@samsinn-leitbild/platform-contracts@workspace:packages/platform-contracts"],
 
     "@sveltejs/acorn-typescript": ["@sveltejs/acorn-typescript@1.0.13", "", { "peerDependencies": { "acorn": "^8.9.0" } }, "sha512-wgKggnhZVL9Bfx1OaKKTrYY9BFRk6C8UAkQNUcIv1+llzYrIqy+RZm5HPKzn0NpEBvTVhTqB4kQyllZywsRBRQ=="],
 
