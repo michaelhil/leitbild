@@ -1,13 +1,18 @@
-# Platform Agent Instructions
+# Workspace Platform Agent Instructions
 
-These rules apply across the repository. Application-local `AGENTS.md` files add stricter rules within their own directories.
+These rules apply across the repository. Module-local `AGENTS.md` files may add stricter domain rules but may not weaken these platform boundaries.
 
-- Samsinn and Leitbild are independently deployable applications. They must never import from each other.
-- Cross-application source imports are limited to `packages/platform-contracts`.
-- Platform contracts contain identifiers and wire schemas, not shared business logic, persistence, runtime services, or UI components.
-- Every application must remain usable with a local Workspace directory when the suite application is absent.
-- The suite owns Workspace metadata and module bindings only. It must not own rooms, agents, scenarios, simulation runs, pack configuration, projected state, or runtime-private state.
+- The Workspace Host is the only public product entry point and the sole owner of Workspace identity, display metadata, and Module Membership.
+- A Module owns its domain state and behavior. The Host must not own Rooms, Agents, Scenarios, Simulation Runs, Pack configuration, projections, or runtime-private state.
+- Modules communicate through `packages/platform-contracts`; they never import another Module's implementation.
+- The contracts package contains identifiers and validated wire schemas, not shared business logic, persistence services, runtime implementations, or UI components.
+- One Workspace can expose several user-facing Experiences. Experience is a navigation/composition concept, not a state owner.
+- Agents discover Resources and Capabilities at runtime. Do not persist Module-specific resource ids or bindings in Agent configuration.
+- A Binding is allowed only for continuous system behavior that must persist without an Agent choosing on every action.
+- Packs belong to exactly one Module. Do not create a universal Pack runtime.
+- A Workspace Template is an optional apply-once factory. It must not configure Agents, grants, workflows, resource bindings, or ongoing reconciliation.
+- Workspace identity is carried in canonical URL paths. Cookies must not select or override a Workspace.
+- Combined and single-Experience distributions use the same Host-and-Module topology; a single-Experience distribution simply installs fewer Modules.
 - Use Bun 1.4.0 and TypeScript. Prefer functional modules, factory functions, explicit ports, and validated boundaries.
-- Do not add silent fallbacks or compatibility behavior without a visible warning, a test, and a removal condition.
-- Persistence changes are clean breaks unless the user explicitly requests a migration. Do not add automatic migration, compatibility parsing, aliases, or archive paths.
-- Commit each logical phase separately. Do not deploy a phase until its standalone and combined acceptance gates pass.
+- Do not add silent fallbacks, mocks in production, compatibility behavior, API versions, migrations, aliases, archives, or legacy parsing.
+- Commit each logical phase separately. Do not deploy this experimental branch to production until its standalone, combined, and baseline benchmark gates pass.
