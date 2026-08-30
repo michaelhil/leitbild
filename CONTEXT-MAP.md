@@ -10,6 +10,5 @@
 
 - **Leitbild Platform → Modules**: provisions every core Module with each Workspace and routes validated Workspace-scoped requests; each Module owns its state.
 - **Agents → Modules**: discovers Resources and invokes permitted Capabilities through contracts rather than stored Module-specific links.
-- **Agents ↔ Modules**: may use an explicit Binding when continuous system behavior, such as mirroring a Run into a Room, must persist.
 - **World → Agents**: publishes typed Resource and Capability descriptors, never internal simulation objects or runtime services.
 - **Packs → one Module**: extend exactly one bounded context and publish contributions through that Module.

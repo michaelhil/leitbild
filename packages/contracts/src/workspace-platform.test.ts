@@ -6,9 +6,7 @@ import {
   moduleCapabilityInvocationSchema,
   moduleMembershipSchema,
   moduleResourceDescriptorSchema,
-  newBindingId,
   newWorkspaceId,
-  resourceBindingSchema,
   toolGrantSetSchema,
   workspaceModuleManifestSchema,
   workspaceSchema,
@@ -159,28 +157,5 @@ describe('dynamic Resource and Capability discovery', () => {
       { capabilityId: 'world.simulation-run.read' },
       { capabilityId: 'world.simulation-run.read' },
     ])).toThrow('duplicate Tool Grant')
-  })
-})
-
-describe('Binding', () => {
-  test('is same-Workspace, explicit, and owned by the behavior Module', () => {
-    const workspaceId = newWorkspaceId()
-    const binding = resourceBindingSchema.parse({
-      id: newBindingId(),
-      workspaceId,
-      ownerModuleId: 'agents',
-      kind: 'agents.room-mirror',
-      source: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-01' },
-      target: { workspaceId, moduleId: 'agents', type: 'agents.room', id: 'ops' },
-      configuration: {},
-      createdAt: now,
-      updatedAt: now,
-    })
-    expect(String(binding.ownerModuleId)).toBe('agents')
-
-    expect(() => resourceBindingSchema.parse({
-      ...binding,
-      source: { ...binding.source, workspaceId: newWorkspaceId() },
-    })).toThrow('Binding source must belong')
   })
 })

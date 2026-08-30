@@ -21,16 +21,16 @@ A declarative coordination sequence executed through Rooms and their members.
 _Avoid_: Preset, cross-Module workflow engine
 
 **Room Definition**:
-An immutable Agents-owned declaration used to create a Room, its initial Memberships, Agent Profiles, selected Packs, and optional Agent Script.
+An Agents-owned declaration used to create a Room, its initial Memberships, Agent Profiles, selected Packs, prompt, and delivery mode.
 _Avoid_: live Room state, Preset, browser launch procedure
 
 **Prompt Deck**:
-A curated set of optional prompts with declared Capability requirements, usually presented as demonstration or training choices.
+A curated set of optional, explicitly invoked message or Agent Script actions, usually presented as demonstration or training choices.
 _Avoid_: workflow, Agent Script, hard-coded browser action
 
-**Agent Schedule**:
+**Agent Trigger**:
 A recurring wall-clock action owned by an Agent Profile.
-_Avoid_: Trigger, Scenario Cue, simulation-time event
+_Avoid_: Scenario Cue, simulation-time event, general workflow
 
 **Agent**:
 An AI actor with a model configuration, instructions, skills, tools, and bounded context assembly policy.
@@ -38,7 +38,7 @@ _Avoid_: hard-coded controller for a particular Resource
 
 **Agent Profile**:
 The durable behavior and runtime configuration of an Agent, excluding concrete Module Resource ids.
-_Avoid_: Preset, Resource Binding
+_Avoid_: Preset, persistent cross-Module Resource link
 
 **Tool Grant**:
 Permission for an Agent to invoke a named Capability under an explicit scope.

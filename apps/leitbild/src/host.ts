@@ -24,6 +24,20 @@ import {
 import { hostError } from './errors.ts'
 import type { ModuleGateway, ModuleOperationResult } from './module-gateway.ts'
 import type { WorkspaceStore } from './store.ts'
+import { getPreset, PRESET_CATALOG, type PresetDefinition } from './presets.ts'
+
+export interface PresetActionOutcome {
+  readonly capabilityId: CapabilityId
+  readonly status: 'applied' | 'failed'
+  readonly result?: unknown
+  readonly error?: string
+}
+
+export interface PresetApplication {
+  readonly presetId: string
+  readonly status: 'applied' | 'partial' | 'failed'
+  readonly outcomes: ReadonlyArray<PresetActionOutcome>
+}
 
 export interface WorkspaceHost {
   readonly list: () => ReadonlyArray<Workspace>
@@ -35,6 +49,8 @@ export interface WorkspaceHost {
   readonly resources: (id: WorkspaceId) => Promise<WorkspaceResourceCatalog>
   readonly capabilities: (id: WorkspaceId) => Promise<WorkspaceCapabilityCatalog>
   readonly invoke: (id: WorkspaceId, capabilityId: CapabilityId, input: InvokeCapabilityInput, access: AccessContext) => Promise<unknown>
+  readonly presets: () => ReadonlyArray<PresetDefinition>
+  readonly applyPreset: (id: WorkspaceId, presetId: string, access: AccessContext) => Promise<PresetApplication>
   readonly installedModuleIds: () => ReadonlyArray<ModuleId>
 }
 
@@ -82,6 +98,44 @@ export const createWorkspaceHost = (config: {
     code: 'module_not_ready',
     message: `Module lifecycle is ${item.status}`,
     retryable: item.status === 'joining' || item.status === 'leaving',
+  }
+
+  const invokeCapability = async (
+    rawId: WorkspaceId,
+    rawCapabilityId: CapabilityId,
+    rawInput: InvokeCapabilityInput,
+    access: AccessContext,
+  ): Promise<unknown> => {
+    const id = workspaceIdSchema.parse(rawId)
+    const capabilityId = capabilityIdSchema.parse(rawCapabilityId)
+    const workspace = requireWorkspace(id)
+    const separator = capabilityId.indexOf('.')
+    const moduleId = moduleIdSchema.parse(capabilityId.slice(0, separator))
+    const active = workspace.modules.find(item => item.moduleId === moduleId)
+    if (!active || active.status !== 'ready') {
+      throw hostError({ status: 409, code: 'module_not_ready', message: `Capability Module is not ready in this Workspace: ${moduleId}` })
+    }
+    const resource = rawInput.resource === undefined ? undefined : workspaceResourceReferenceSchema.parse(rawInput.resource)
+    if (resource !== undefined && (resource.workspaceId !== id || resource.moduleId !== moduleId)) {
+      throw hostError({ status: 400, code: 'resource_scope_mismatch', message: 'Selected Resource does not belong to the Capability Module and Workspace' })
+    }
+    const result = await config.modules.invoke(moduleId, {
+      workspaceId: id,
+      capabilityId,
+      ...(resource === undefined ? {} : { resource }),
+      input: rawInput.input,
+      access,
+    })
+    if (!result.ok) {
+      throw hostError({
+        status: 502,
+        code: result.failure.code,
+        message: result.failure.message,
+        retryable: result.failure.retryable,
+        details: { moduleId, capabilityId },
+      })
+    }
+    return result.value.result
   }
 
   return {
@@ -191,37 +245,34 @@ export const createWorkspaceHost = (config: {
       })
       return workspaceCapabilityCatalogSchema.parse({ workspaceId: id, modules: outcomes, capabilities })
     },
-    invoke: async (rawId, rawCapabilityId, rawInput, access) => {
+    invoke: invokeCapability,
+    presets: () => PRESET_CATALOG,
+    applyPreset: async (rawId, presetId, access) => {
       const id = workspaceIdSchema.parse(rawId)
-      const capabilityId = capabilityIdSchema.parse(rawCapabilityId)
-      const workspace = requireWorkspace(id)
-      const separator = capabilityId.indexOf('.')
-      const moduleId = moduleIdSchema.parse(capabilityId.slice(0, separator))
-      const active = workspace.modules.find(item => item.moduleId === moduleId)
-      if (!active || active.status !== 'ready') {
-        throw hostError({ status: 409, code: 'module_not_ready', message: `Capability Module is not ready in this Workspace: ${moduleId}` })
+      requireWorkspace(id)
+      const preset = getPreset(presetId)
+      if (!preset) throw hostError({ status: 404, code: 'preset_not_found', message: 'Preset not found' })
+      const outcomes = await Promise.all(preset.actions.map(async action => {
+        try {
+          return {
+            capabilityId: action.capabilityId,
+            status: 'applied' as const,
+            result: await invokeCapability(id, action.capabilityId, { input: action.input }, access),
+          }
+        } catch (error) {
+          return {
+            capabilityId: action.capabilityId,
+            status: 'failed' as const,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        }
+      }))
+      const applied = outcomes.filter(outcome => outcome.status === 'applied').length
+      return {
+        presetId: preset.id,
+        status: applied === outcomes.length ? 'applied' : applied === 0 ? 'failed' : 'partial',
+        outcomes,
       }
-      const resource = rawInput.resource === undefined ? undefined : workspaceResourceReferenceSchema.parse(rawInput.resource)
-      if (resource !== undefined && (resource.workspaceId !== id || resource.moduleId !== moduleId)) {
-        throw hostError({ status: 400, code: 'resource_scope_mismatch', message: 'Selected Resource does not belong to the Capability Module and Workspace' })
-      }
-      const result = await config.modules.invoke(moduleId, {
-        workspaceId: id,
-        capabilityId,
-        ...(resource === undefined ? {} : { resource }),
-        input: rawInput.input,
-        access,
-      })
-      if (!result.ok) {
-        throw hostError({
-          status: 502,
-          code: result.failure.code,
-          message: result.failure.message,
-          retryable: result.failure.retryable,
-          details: { moduleId, capabilityId },
-        })
-      }
-      return result.value.result
     },
     installedModuleIds: () => config.modules.list().map(registration => registration.moduleId),
   }

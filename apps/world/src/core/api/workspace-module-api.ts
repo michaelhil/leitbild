@@ -46,7 +46,18 @@ export const worldModuleManifest = workspaceModuleManifestSchema.parse({
 
 const lifecycleInputSchema = z.object({ workspaceId: workspaceIdSchema }).strict()
 const createRunInputSchema = z.object({ scenarioId: z.string().min(1).max(128).optional() }).strict()
-const issueCommandInputSchema = z.object({ command: z.unknown() }).strict()
+const issueCommandInputSchema = z.object({
+  command: z.object({
+    kind: z.string().trim().min(1).max(256),
+    targetObjectIds: z.array(z.string().min(1)).default([]),
+    payload: z.unknown(),
+  }).strict(),
+}).strict()
+const queryPackInputSchema = z.object({
+  packId: z.string().trim().min(1).max(128),
+  kind: z.string().trim().min(1).max(256),
+  payload: z.unknown(),
+}).strict()
 
 const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyArray<ModuleResourceDescriptor>> => {
   const observedAt = new Date().toISOString()
@@ -113,6 +124,24 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
   },
   {
     descriptor: {
+      id: 'world.simulation-run.capabilities',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Describe Simulation Run Capabilities',
+      description: 'Lists the active Packs and the exact command and query kinds accepted by this Simulation Run.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: { type: 'object', additionalProperties: false },
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (registry, invocation) => {
+      const runtime = await registry.load(requireSimulationRunResource(invocation))
+      return json({ result: runtime.capabilities() })
+    },
+  },
+  {
+    descriptor: {
       id: 'world.simulation-run.read',
       moduleId: WORLD_MODULE_ID,
       kind: 'query',
@@ -165,6 +194,28 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       return issued.ok
         ? json({ result: issued.result })
         : apiError(issued.status, issued.code, issued.message)
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.query-pack',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Query Simulation Pack',
+      description: 'Runs a supported read-only Pack query against the selected Simulation Run.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: z.toJSONSchema(queryPackInputSchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (registry, invocation) => {
+      const runtime = await registry.load(requireSimulationRunResource(invocation))
+      const input = queryPackInputSchema.parse(invocation.input)
+      const result = await runtime.queryPack(input)
+      return result.ok
+        ? json({ result })
+        : apiError(400, 'pack_query_failed', result.reason)
     },
   },
 ])

@@ -18,7 +18,7 @@ Simulation Run Projected State is the canonical current Leitbild truth for share
 
 V1 will use static, trusted handler registration from built-in packs. Dynamic external handler loading is deferred. Route-impact handling may warn and update canonical route-awareness state, but automatic rerouting is deferred until explicit human, AI, or scenario policy control exists.
 
-Scenario scripts may emit interaction signals as declarative data. A scenario-emitted signal enters the same runtime handling path as a simulation-emitted or API-submitted signal: the simulation-run runtime records `interaction.signal.received`, active handlers inspect the current snapshot, and only accepted effects become ordered domain events. This keeps scenario tutorials and demos from bypassing the interaction model.
+Scenario Timelines may emit interaction signals as declarative data. A scenario-emitted signal enters the same runtime handling path as a simulation-emitted or API-submitted signal: the simulation-run runtime records `interaction.signal.received`, active handlers inspect the current snapshot, and only accepted effects become ordered domain events. This keeps scenario tutorials and demos from bypassing the interaction model.
 
 V1 also defines the generic operational-demand signal type:
 
@@ -52,7 +52,7 @@ The chosen model follows useful patterns from event-sourced systems, Redux/Elm-s
 - Packs validate and handle domain-specific signal payloads.
 - AI-generated signals are treated as untrusted input until a registered handler accepts them.
 - Unknown signals may be persisted for audit, but they must not mutate canonical state.
-- Handler-local mutable memory is disallowed; durable memory belongs in object state, object context, mission progress, or the Durable Journal.
+- Handler-local mutable memory is disallowed; durable memory belongs in object state, object context, Pack runtime state, or the Durable Journal.
 - Handler-emitted follow-up signals and command requests are deferred until loop guards, causation tracking, and TTL semantics are implemented.
 - V1 effects should stay small: object upsert, object delete, and notification emit.
 - Traffic route-impact handlers must not silently reroute mobile assets; rerouting is a command or future declared policy.

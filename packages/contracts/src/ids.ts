@@ -37,9 +37,6 @@ export type RequestId = z.infer<typeof requestIdSchema>
 export const eventIdSchema = z.uuid().brand<'PlatformEventId'>()
 export type PlatformEventId = z.infer<typeof eventIdSchema>
 
-export const bindingIdSchema = z.uuid().brand<'BindingId'>()
-export type BindingId = z.infer<typeof bindingIdSchema>
-
 export const semanticVersionSchema = z.string()
   .regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/)
   .brand<'SemanticVersion'>()
@@ -51,4 +48,3 @@ export type IsoTimestamp = z.infer<typeof isoTimestampSchema>
 export const newWorkspaceId = (): WorkspaceId => workspaceIdSchema.parse(crypto.randomUUID())
 export const newRequestId = (): RequestId => requestIdSchema.parse(crypto.randomUUID())
 export const newPlatformEventId = (): PlatformEventId => eventIdSchema.parse(crypto.randomUUID())
-export const newBindingId = (): BindingId => bindingIdSchema.parse(crypto.randomUUID())

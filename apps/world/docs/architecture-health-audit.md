@@ -36,7 +36,7 @@ This audit records the cleanup baseline for the multi-package health pass coveri
 4. Manifest, Scenario digest, Pack versions, and runtime versions are validated. A mismatch fails restore; a Scenario is never reapplied or substituted.
 5. Runtime Hub connects exactly one active runtime per selected Pack and passes each its private state store.
 6. Pack runtimes restore private state, compile revision-defined systems, and continue their operational projections.
-7. Core hydrates projected state and clock, resumes due script steps, and subscribes to Pack runtime emissions through the single commit path.
+7. Core hydrates projected state and clock, resumes due Scenario Timeline Cues, and subscribes to Pack runtime emissions through the single commit path.
 8. UI loads the pinned surface, snapshot, map style, operational objects, and Workspace-scoped realtime stream. Startup failures remain visible.
 
 ## Fallback And Catch Audit

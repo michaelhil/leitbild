@@ -98,6 +98,9 @@ export const createWorkspaceHostServer = (config: {
         if (url.pathname === '/api/modules' && request.method === 'GET') {
           return Response.json({ modules: config.host.installedModuleIds().map(moduleId => ({ id: moduleId })) })
         }
+        if (url.pathname === '/api/presets' && request.method === 'GET') {
+          return Response.json({ presets: config.host.presets() })
+        }
         if (url.pathname === '/api/workspaces' && request.method === 'GET') {
           return Response.json({ workspaces: config.host.list() })
         }
@@ -122,6 +125,19 @@ export const createWorkspaceHostServer = (config: {
             client: { id: 'workspace-host', kind: 'service' },
           })
           return Response.json({ result: await config.host.invoke(workspaceId, capabilityId, input, access) })
+        }
+
+        const presetMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/presets\/([^/]+)\/apply$/)
+        if (presetMatch && request.method === 'POST') {
+          const workspaceId = workspaceIdSchema.parse(decodeURIComponent(presetMatch[1] ?? ''))
+          const presetId = decodeURIComponent(presetMatch[2] ?? '')
+          const access = accessContextSchema.parse({
+            workspaceId,
+            requestId: newRequestId(),
+            actor: { kind: 'anonymous' },
+            client: { id: 'workspace-host', kind: 'service' },
+          })
+          return Response.json({ application: await config.host.applyPreset(workspaceId, presetId, access) })
         }
 
         const resourcesMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/resources$/)

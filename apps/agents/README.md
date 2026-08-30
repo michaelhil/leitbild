@@ -133,7 +133,7 @@ Leitbild contains no World- or application-specific integration client. When the
 - `workspace_capabilities` discovers callable operations;
 - `workspace_invoke` invokes a granted Capability against a Resource selected for that call.
 
-This keeps Agent behavior configurable and makes future Modules available without adding another Leitbild integration subsystem. Continuous event-driven behavior is a separate explicit Binding concern; ordinary discovery and commands do not create Bindings.
+This keeps Agent behavior configurable and makes future Modules available without adding another Leitbild integration subsystem. A concrete continuous cross-Module behavior must be implemented and owned explicitly; ordinary discovery and commands create no persistent relationship.
 
 ## Persistence
 

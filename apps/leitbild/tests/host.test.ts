@@ -122,6 +122,19 @@ describe('Leitbild Workspace Host', () => {
     store.close()
   })
 
+  test('applies a Preset as independent Capability calls', async () => {
+    const { host, store } = createFixture()
+    const workspace = await host.create({ name: null })
+    const access = accessContextSchema.parse({ workspaceId: workspace.id, requestId: newRequestId(), actor: { kind: 'human', id: 'operator' } })
+    const application = await host.applyPreset(workspace.id, 'halden-process-control-room', access)
+    expect(application.status).toBe('applied')
+    expect(application.outcomes.map(outcome => String(outcome.capabilityId))).toEqual([
+      'world.simulation-run.create',
+      'agents.demo.apply',
+    ])
+    store.close()
+  })
+
   test('keeps a Workspace visible when any Module cleanup fails', async () => {
     const { modules, host, store } = createFixture()
     const workspace = await host.create({ name: null })

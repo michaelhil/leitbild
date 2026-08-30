@@ -12,7 +12,7 @@ Every Workspace has one UUID and provisions both Modules. Modules own their stat
 - `apps/leitbild` — host, Workspace manager, shared shell, and deployment
 - `apps/world` — World runtime and UI
 - `apps/agents` — Agents runtime and UI, including Rooms and messaging
-- `packages/contracts` — neutral Workspace, Module, Resource, Capability, Pack, and Binding contracts
+- `packages/contracts` — neutral Workspace, Module, Resource, Capability, and Pack contracts
 - `packages/integration-tests` — real cross-Module lifecycle and discovery tests
 
 ## Commands

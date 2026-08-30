@@ -22,7 +22,7 @@ _Avoid_: optional Experience, user-installed Module
 
 **Module Provisioning State**:
 The lifecycle status of one core Module inside one Workspace, excluding the Module's domain state.
-_Avoid_: Module Membership, Module Binding, feature toggle
+_Avoid_: Module Membership, optional Module toggle, feature toggle
 
 **Module Manifest**:
 A Module's validated declaration of identity, Resources, Capabilities, lifecycle endpoints, and Workspace UI route.
@@ -40,17 +40,13 @@ _Avoid_: tool name guessed by a caller, Pack, arbitrary RPC
 An immutable, reusable declaration that one Module validates and can instantiate as Resources.
 _Avoid_: live state, universal configuration object, cross-Module schema
 
-**Binding**:
-A durable, explicitly configured relationship that maintains continuous system behavior between Resources.
-_Avoid_: Agent preference, one-time tool call, hard-coded Agent-to-Resource link
-
 **Pack**:
 A Module-owned extension interpreted only by its owning Module.
 _Avoid_: Module, universal plugin, cross-Module runtime
 
 **Preset**:
-An apply-once cross-Module composition of pinned Module-owned Definition Revisions. Launching a Preset creates ordinary independent Resources and optional typed Bindings.
-_Avoid_: Workspace Template, Blueprint, workflow, controller, reconciliation
+An apply-once cross-Module composition of stable Module-owned Definition IDs. Launching a Preset creates ordinary independent Resources.
+_Avoid_: Workspace Template, Blueprint, workflow, controller, reconciliation, persistent wiring
 
 ## Relationships
 

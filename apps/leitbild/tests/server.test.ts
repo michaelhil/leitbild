@@ -74,4 +74,14 @@ describe('Leitbild server', () => {
     const workspace = await host.create({ name: null })
     expect((await fetch(`${baseUrl}/api/workspaces/${workspace.id}/modules/world`, { method: 'DELETE' })).status).toBe(404)
   })
+
+  test('publishes and applies cross-Module Presets', async () => {
+    const { host, baseUrl } = startHost()
+    const workspace = await host.create({ name: null })
+    const catalog = await (await fetch(`${baseUrl}/api/presets`)).json() as { presets: Array<{ id: string }> }
+    expect(catalog.presets.map(preset => preset.id)).toContain('halden-process-control-room')
+    const response = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/presets/halden-process-control-room/apply`, { method: 'POST' })
+    expect(response.status).toBe(200)
+    expect((await response.json() as { application: { status: string } }).application.status).toBe('applied')
+  })
 })

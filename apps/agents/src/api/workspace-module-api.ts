@@ -12,6 +12,7 @@ import {
 } from '@leitbild/contracts'
 import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
 import { asAIAgent } from '../agents/shared.ts'
+import { applyDemo, runPromptDeckEntry } from '../core/definitions/demo-service.ts'
 import type { AgentsModuleState } from '../core/workspaces/module-state.ts'
 import type { WorkspaceRuntimeRegistry } from '../core/workspaces/runtime-registry.ts'
 
@@ -40,6 +41,11 @@ const createAgentSchema = z.object({
   model: z.string().trim().min(1).max(256),
   persona: z.string().max(64_000),
   toolGrants: toolGrantSetSchema.optional(),
+}).strict()
+const applyDemoSchema = z.object({ demoId: z.string().trim().min(1).max(128) }).strict()
+const runPromptDeckEntrySchema = z.object({
+  demoId: z.string().trim().min(1).max(128),
+  entryId: z.string().trim().min(1).max(128),
 }).strict()
 
 const json = (body: unknown, status = 200): Response => Response.json(body, { status })
@@ -163,6 +169,43 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
         type: 'chat',
       })
       return json({ result: message }, 201)
+    },
+  },
+  {
+    descriptor: {
+      id: 'agents.demo.apply',
+      moduleId: AGENTS_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'workspace' },
+      title: 'Apply Demo',
+      description: 'Creates a Room from a server-owned Room Definition and makes its Prompt Deck available.',
+      risk: 'write',
+      idempotent: false,
+      inputSchema: z.toJSONSchema(applyDemoSchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (runtime, invocation) => {
+      const input = applyDemoSchema.parse(invocation.input)
+      return json({ result: await applyDemo(runtime, input.demoId) }, 201)
+    },
+  },
+  {
+    descriptor: {
+      id: 'agents.prompt-deck.run-entry',
+      moduleId: AGENTS_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'resource', resourceType: 'agents.room' },
+      title: 'Run Prompt Deck Entry',
+      description: 'Runs one declared Prompt Deck entry in a selected Room.',
+      risk: 'write',
+      idempotent: false,
+      inputSchema: z.toJSONSchema(runPromptDeckEntrySchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (runtime, invocation) => {
+      const roomId = requireResourceId(invocation, 'agents.room')
+      const input = runPromptDeckEntrySchema.parse(invocation.input)
+      return json({ result: await runPromptDeckEntry(runtime, input.demoId, roomId, input.entryId) })
     },
   },
   {

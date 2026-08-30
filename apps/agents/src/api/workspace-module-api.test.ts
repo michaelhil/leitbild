@@ -89,6 +89,8 @@ describe('Agents Workspace Module API', () => {
     expect(capabilities.capabilities.every(capability => capability.id.startsWith('agents.'))).toBe(true)
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room.create')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.agent.create')
+    expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.demo.apply')
+    expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.prompt-deck.run-entry')
 
     expect((await request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.room.create/invoke`,
       invokeBody(workspaceId, 'agents.room.create', { name: 'Operations' }))).status).toBe(201)

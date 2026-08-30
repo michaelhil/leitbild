@@ -376,7 +376,7 @@ Individual traffic vehicles may be added later as a detail layer, but aggregate 
 
 Traffic conditions may create route impacts for mobile assets. They should not silently reroute assets unless a future simulation-run policy explicitly enables automatic rerouting.
 
-## Scenario, Mission, and Context Use
+## Scenario and Context Use
 
 Packs may contribute reusable data and schemas used by scenarios:
 
@@ -388,7 +388,6 @@ Packs must keep boundaries clear:
 
 - `packData` is pack-owned operational truth.
 - `context` is perspective-bearing awareness.
-- mission progress is runtime state owned by Leitbild, not static pack data.
 - scenarios are top-level compositions that list active packs; they are not owned by one pack.
 - runtime ids are internal runtime wiring. Scenario APIs should expose `packs`, not low-level runtime ids, unless a debug/runtime-detail endpoint explicitly asks for them.
 - restored simulation runs use snapshots/history, not scenarios.

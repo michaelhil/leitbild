@@ -3,6 +3,8 @@
   import WorkspaceComposer from './WorkspaceComposer.svelte'
 
   type Page = { readonly kind: 'list' } | { readonly kind: 'workspace'; readonly id: string }
+  interface PresetDefinition { readonly id: string; readonly title: string; readonly description: string }
+  interface CatalogItem { readonly id?: string; readonly title: string; readonly ref?: { readonly type: string; readonly id: string } }
   const moduleTitles: Readonly<Record<string, string>> = { world: 'World', agents: 'Agents' }
 
   const page = (): Page => {
@@ -21,6 +23,9 @@
   let busy = $state(false)
   let error = $state<string | null>(null)
   let settingsDialog = $state<HTMLDialogElement | null>(null)
+  let presets = $state<ReadonlyArray<PresetDefinition>>([])
+  let resources = $state<ReadonlyArray<CatalogItem>>([])
+  let capabilities = $state<ReadonlyArray<CatalogItem>>([])
   const workspaceTitle = $derived(workspace?.name ?? workspace?.id ?? 'Workspace')
 
   const request = async <T,>(path: string, options?: RequestInit): Promise<T> => {
@@ -38,9 +43,17 @@
       if (currentPage.kind === 'list') {
         workspaces = (await request<{ workspaces: ReadonlyArray<Workspace> }>('/api/workspaces')).workspaces
       } else {
-        workspace = (await request<{ workspace: Workspace }>(
-          `/api/workspaces/${encodeURIComponent(currentPage.id)}`,
-        )).workspace
+        const workspaceId = encodeURIComponent(currentPage.id)
+        const [workspaceResponse, presetResponse, resourceResponse, capabilityResponse] = await Promise.all([
+          request<{ workspace: Workspace }>(`/api/workspaces/${workspaceId}`),
+          request<{ presets: ReadonlyArray<PresetDefinition> }>('/api/presets'),
+          request<{ resources: ReadonlyArray<CatalogItem> }>(`/api/workspaces/${workspaceId}/resources`),
+          request<{ capabilities: ReadonlyArray<CatalogItem> }>(`/api/workspaces/${workspaceId}/capabilities`),
+        ])
+        workspace = workspaceResponse.workspace
+        presets = presetResponse.presets
+        resources = resourceResponse.resources
+        capabilities = capabilityResponse.capabilities
         name = workspace.name ?? ''
       }
     } catch (cause) {
@@ -96,6 +109,18 @@
     if (!workspace || !confirm('Delete this Workspace and all of its World and Agents state?')) return
     await request(`/api/workspaces/${workspace.id}`, { method: 'DELETE' })
     location.href = '/workspaces'
+  })
+
+  const applyPreset = (presetId: string): Promise<void> => run(async () => {
+    if (!workspace) return
+    const response = await request<{ application: { status: 'applied' | 'partial' | 'failed'; outcomes: ReadonlyArray<{ error?: string }> } }>(
+      `/api/workspaces/${workspace.id}/presets/${encodeURIComponent(presetId)}/apply`,
+      { method: 'POST' },
+    )
+    if (response.application.status !== 'applied') {
+      throw new Error(response.application.outcomes.flatMap(outcome => outcome.error ? [outcome.error] : []).join('; ') || 'Preset application failed')
+    }
+    location.reload()
   })
 
   void load()
@@ -178,6 +203,25 @@
           <a class="button primary" href={`/workspaces/${workspace.id}/agents`}>Open Agents</a>
         </div>
       </section>
+
+      <section class="settings-section">
+        <h3>Presets</h3>
+        <p>Apply independent World and Agents definitions together. The created runs and rooms remain ordinary resources.</p>
+        {#each presets as preset (preset.id)}
+          <div class="preset-row">
+            <div><strong>{preset.title}</strong><small>{preset.description}</small></div>
+            <button disabled={busy} onclick={() => void applyPreset(preset.id)}>Apply</button>
+          </div>
+        {/each}
+      </section>
+
+      <details class="settings-section catalog-section">
+        <summary>System Catalog ({resources.length} resources, {capabilities.length} capabilities)</summary>
+        <h3>Resources</h3>
+        <ul>{#each resources as resource}<li><code>{resource.ref?.type}:{resource.ref?.id}</code> — {resource.title}</li>{/each}</ul>
+        <h3>Capabilities</h3>
+        <ul>{#each capabilities as capability}<li><code>{capability.id}</code> — {capability.title}</li>{/each}</ul>
+      </details>
 
       <section class="settings-section">
         <h3>Workspace</h3>
