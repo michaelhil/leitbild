@@ -322,6 +322,19 @@ button:disabled { opacity: .55; cursor: wait; }
 .json-index { color: #687269; }
 .json-punctuation { margin-right: .45rem; color: #758078; }
 .json-collection { color: #687269; font-style: italic; }
+.json-object-id { display: none; max-width: 32rem; margin-left: .55rem; overflow: hidden; color: #8a431f; text-overflow: ellipsis; vertical-align: bottom; }
+.json-branch:not([open]) > summary .json-object-id { display: inline-block; }
+.json-children-toggle {
+  min-height: 0;
+  margin-left: .45rem;
+  padding: 0 .2rem;
+  border: 0;
+  color: #758078;
+  background: transparent;
+  font: 9px/1 ui-sans-serif, system-ui, sans-serif;
+  vertical-align: .08rem;
+}
+.json-children-toggle:hover, .json-children-toggle:focus-visible { color: #26322a; background: #dce4da; }
 .json-value { color: #26322a; }
 .json-string { color: #8a431f; }
 .json-number, .json-bigint { color: #295f9e; }
