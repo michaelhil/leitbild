@@ -1,7 +1,6 @@
 <script lang="ts">
   import { Eye, EyeOff, House, Moon, RotateCcw, Sun } from 'lucide-svelte'
   import type { ThemeMode } from './theme.ts'
-  import type { ScenarioListItem } from './types.ts'
   import IconButton from './components/IconButton.svelte'
   import ModalShell from './components/ModalShell.svelte'
 
@@ -9,35 +8,23 @@
     readonly theme: ThemeMode
     readonly weatherLayerAvailable: boolean
     readonly weatherLayerVisible: boolean
-    readonly scenarios: ReadonlyArray<ScenarioListItem>
-    readonly selectedScenarioId: string
     readonly close: () => void
     readonly goToStartPage: () => void
     readonly toggleTheme: () => void
     readonly toggleWeatherLayer: () => void
     readonly resetScenario: () => Promise<void>
-    readonly selectScenario: (scenarioId: string) => Promise<void>
   }
 
   let {
     theme,
     weatherLayerAvailable,
     weatherLayerVisible,
-    scenarios,
-    selectedScenarioId,
     close,
     goToStartPage,
     toggleTheme,
     toggleWeatherLayer,
     resetScenario,
-    selectScenario,
   }: Props = $props()
-
-  const onScenarioChange = (event: Event): void => {
-    const target = event.currentTarget
-    if (!(target instanceof HTMLSelectElement)) return
-    void selectScenario(target.value)
-  }
 </script>
 
 <ModalShell title="Settings" {close} size="small">
@@ -60,7 +47,7 @@
     <section class="settings-row">
       <div>
         <strong>Start page</strong>
-        <span>Return to the scenario index.</span>
+        <span>Return to the Workspace catalog.</span>
       </div>
       <IconButton
         label="Go to start page"
@@ -87,18 +74,6 @@
         />
       </section>
     {/if}
-
-    <section class="settings-row">
-      <div>
-        <strong>Scenario</strong>
-        <span>Reset this simulation run from a scenario definition.</span>
-      </div>
-      <select value={selectedScenarioId} onchange={onScenarioChange}>
-        {#each scenarios as scenario (scenario.id)}
-          <option value={scenario.id}>{scenario.title}</option>
-        {/each}
-      </select>
-    </section>
 
     <section class="settings-row">
       <div>

@@ -89,13 +89,11 @@ describe('biometrics capture flow (no mocks)', () => {
     await moduleState.provision(cookieId)
     const system = await registry.getOrLoad(cookieId)
 
-    // Activate the biometrics pack in the seed room so the per-room filter
+    // Activate the biometrics pack in an explicitly created room so the per-room filter
     // exposes biometrics_* tools to agents in that room. (For the tool
     // factory call below we use the registry directly, so activation isn't
     // strictly required — but exercising it confirms the activation path.)
-    const rooms = system.rooms.listAllRooms()
-    expect(rooms.length).toBeGreaterThan(0)
-    const room = system.rooms.getRoom(rooms[0]!.id)!
+    const room = system.rooms.createRoom({ name: 'Biometrics Test', createdBy: 'test' })
     room.setActivePacks(['biometrics'])
     expect(room.getActivePacks()).toContain('biometrics')
 
@@ -222,8 +220,7 @@ describe('biometrics capture flow (no mocks)', () => {
     const cookieId = newWorkspaceId()
     await moduleState.provision(cookieId)
     const system = await registry.getOrLoad(cookieId)
-    const rooms = system.rooms.listAllRooms()
-    const room = system.rooms.getRoom(rooms[0]!.id)!
+    const room = system.rooms.createRoom({ name: 'Biometrics Redaction Test', createdBy: 'test' })
     room.setActivePacks(['biometrics'])
 
     const startTool = system.toolRegistry.get('biometrics_start')!
@@ -288,7 +285,7 @@ describe('biometrics capture flow (no mocks)', () => {
       const cookieId = newWorkspaceId()
       await moduleState.provision(cookieId)
       const system = await registry.getOrLoad(cookieId)
-      const room = system.rooms.getRoom(system.rooms.listAllRooms()[0]!.id)!
+      const room = system.rooms.createRoom({ name: 'Biometrics Stop Test', createdBy: 'test' })
       room.setActivePacks(['biometrics'])
       const human = system.team.listAgents().find(a => a.kind === 'human')!
 
@@ -347,8 +344,7 @@ describe('biometrics capture flow (no mocks)', () => {
     const cookieId = newWorkspaceId()
     await moduleState.provision(cookieId)
     const system = await registry.getOrLoad(cookieId)
-    const rooms = system.rooms.listAllRooms()
-    const room = system.rooms.getRoom(rooms[0]!.id)!
+    const room = system.rooms.createRoom({ name: 'Biometrics Claim Test', createdBy: 'test' })
     room.setActivePacks(['biometrics'])
 
     const startTool = system.toolRegistry.get('biometrics_start')!

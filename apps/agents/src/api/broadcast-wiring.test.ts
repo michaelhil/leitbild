@@ -84,16 +84,13 @@ describe('lazy Workspace broadcast wiring (regression for 5d73a8e)', () => {
     await moduleState.provision(cookieId)
     const sys = await registry.getOrLoad(cookieId)
 
-    // Harness sanity: the seed should have produced at least one room.
-    // If this is empty, we'd misdiagnose missing wiring as missing room.
-    const rooms = sys.rooms.listAllRooms()
-    expect(rooms.length).toBeGreaterThan(0)
+    const room = sys.rooms.createRoom({ name: 'Wiring Test', createdBy: 'test' })
 
     // Trigger a message that fires onMessagePosted. This is the chain the
     // bug broke: room.post -> onMessagePosted (via lateBinding proxy) ->
     // wireWorkspaceRuntimeEvents-installed callback -> broadcastToWorkspace.
     sys.routeMessage(
-      { rooms: [rooms[0]!.id] },
+      { rooms: [room.profile.id] },
       { senderId: 'system', senderName: 'system', content: 'test note', type: 'system' },
     )
 

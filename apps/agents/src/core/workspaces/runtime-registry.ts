@@ -36,7 +36,7 @@
 //   2. loadSnapshot + restoreFromSnapshot  — agents rehydrated.
 //   3. buildAutoSaver              — debounced snapshot writer.
 //   4. opts.onWorkspaceRuntimeCreated(...)   — caller's wiring runs HERE.
-//   5. seedWorkspace(system) (if no snapshot)  — Cafe + Aiden + You.
+//   5. seedWorkspaceIdentity(system) (if no snapshot) — You only.
 //   6. return { system, autoSaver }
 // THEN in getOrLoad:
 //   7. map.set(id, entry)          — registry knows about the system.
@@ -61,7 +61,7 @@ import {
 import { workspaceModulePaths, isValidWorkspaceId, sharedPaths } from '../paths.ts'
 import { readdir, stat } from 'node:fs/promises'
 import { asAIAgent } from '../../agents/shared.ts'
-import { seedWorkspace } from './seed-workspace.ts'
+import { seedWorkspaceIdentity } from './seed-workspace.ts'
 import type { WorkspaceId } from '@leitbild/contracts'
 import type { AgentsModuleState } from './module-state.ts'
 
@@ -127,7 +127,7 @@ export interface WorkspaceRuntimeRegistryOptions {
   // long-running bug where streaming events never reached lazily loaded Workspaces.
   //
   // The hook is awaited. It MUST complete (wireAgentTracking +
-  // wireWorkspaceRuntimeEvents installed) before seedWorkspace runs — otherwise
+  // wireWorkspaceRuntimeEvents installed) before identity seeding runs.
   // the seeded AI bypasses the spawn-wrapper and never gets per-agent
   // hooks (state subscription, attachAgent). Returning Promise<void> is
   // mandatory for any hook that does async work.
@@ -268,33 +268,18 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     // AWAITED on purpose: the hook installs wireAgentTracking (the spawn
     // wrapper that installs per-agent state subscriptions, provider-event
     // attach, etc.) and wireWorkspaceRuntimeEvents (the system-wide WS broadcast
-    // subscribers). seedWorkspace below calls system.spawnAIAgent — if it
-    // ran before the wrapper was installed, the seeded agent would bypass
-    // per-agent wiring (no thinking indicator, no state broadcasts, no
-    // provider-event scoping). The hook is async because of logging.configure;
-    // without await, the first await inside the hook releases a microtask
-    // and seedWorkspace races ahead.
+    // subscribers). The hook is async because of logging.configure and must
+    // complete before any seeded identity is created.
     await opts.onWorkspaceRuntimeCreated?.(system, id, autoSaver)
 
-    // First-run seeding: when no snapshot existed, or when an older/broken
-    // boot left an explicitly empty snapshot, spawn Cafe + Aiden + You.
-    // An empty snapshot is equivalent to a fresh Workspace: it contains no
-    // user state to preserve, and otherwise permanently suppresses the seed
-    // on every reload. Skipped when LEITBILD_SEED_WORKSPACE=0.
+    // First-run seeding creates only the human identity. Rooms and AI Agents
+    // are explicit Resources and never implicit Workspace defaults.
     const shouldSeed = snapshots.rooms === null
       && snapshots.agents === null
       && process.env.LEITBILD_SEED_WORKSPACE !== '0'
     if (shouldSeed) {
-      try {
-        await seedWorkspace(system)
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err)
-        console.error(`[registry] seedWorkspace threw (continuing with empty RoomDirectory): ${reason}`)
-      }
-      // Persist the seed so a refresh keeps it (without waiting for the
-      // autosaver's debounce). Best-effort — autosaver will retry on its
-      // own schedule if this throws.
-      try { await autoSaver.flush() } catch { /* autosaver will retry */ }
+      await seedWorkspaceIdentity(system)
+      await autoSaver.flush()
     }
 
     return { system, autoSaver }

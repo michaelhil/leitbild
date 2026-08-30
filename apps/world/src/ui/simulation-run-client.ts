@@ -2,10 +2,8 @@ import type { SimulationRunId } from '../core/model/index.ts'
 import type {
   ClockResponse,
   CommandResponse,
-  SimulationRunListResponse,
   SimulationRunResponse,
   PackQueryApiResponse,
-  ScenarioListResponse,
   ScenarioResponse,
 } from './types.ts'
 import type { PackQueryRequest } from '../core/packs/protocol.ts'
@@ -30,35 +28,9 @@ const readJsonResponse = async <T>(
   return await response.json() as T
 }
 
-export const listSimulationRuns = async (): Promise<SimulationRunListResponse> => {
-  const response = await fetch(workspaceApiPath('/simulation-runs'), { cache: 'no-store' })
-  return await readJsonResponse<SimulationRunListResponse>(response, 'simulation run list failed')
-}
-
 export const fetchScenario = async (scenarioId: string): Promise<ScenarioResponse> => {
   const response = await fetch(workspaceApiPath(`/scenarios/${encodeURIComponent(scenarioId)}`), { cache: 'no-store' })
   return await readJsonResponse<ScenarioResponse>(response, 'scenario fetch failed')
-}
-
-export const listScenarios = async (): Promise<ScenarioListResponse> => {
-  const response = await fetch(workspaceApiPath('/scenarios'), { cache: 'no-store' })
-  return await readJsonResponse<ScenarioListResponse>(response, 'scenario list failed')
-}
-
-const requestBody = (body: object): BodyInit | undefined => {
-  const text = JSON.stringify(body)
-  return text === '{}' ? undefined : text
-}
-
-export const createSimulationRun = async (
-  config: { readonly scenarioId?: string } = {},
-): Promise<SimulationRunResponse> => {
-  const body = requestBody(config)
-  const response = await fetch(workspaceApiPath('/simulation-runs'), {
-    method: 'POST',
-    ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body }),
-  })
-  return await readJsonResponse<SimulationRunResponse>(response, 'simulation run create failed')
 }
 
 export const joinSimulationRun = async (

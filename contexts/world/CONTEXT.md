@@ -9,7 +9,7 @@ A Workspace-owned reusable simulation setup that evolves through immutable Scena
 _Avoid_: Simulation Run, Workspace Template
 
 **Scenario Revision**:
-An immutable validated definition used to create one or more Simulation Runs.
+An immutable validated Definition Revision used to create one or more Simulation Runs.
 _Avoid_: mutable startup state, current Scenario
 
 **Scenario Fragment**:
@@ -29,8 +29,12 @@ A persistent execution of exactly one Scenario Revision inside one Workspace.
 _Avoid_: Instance, session, Scenario
 
 **Operational Object**:
-A World entity with independent operational identity, state, visibility, or command relevance. A Module may publish it as a discoverable Resource without changing ownership.
+A World entity with independent operational identity, state, visibility, or command relevance. It is discoverable inside Simulation Context before deeper object reads or commands.
 _Avoid_: internal solver variable, runtime-private state, Platform Resource as a synonym
+
+**Simulation Context**:
+An agent-safe current view of a Simulation Run: Scenario identity and objectives, current clock and guidance, operational-object summaries, and available operations. It excludes unrevealed Scenario Timeline content.
+_Avoid_: full snapshot dump, future-event leak, copied solver state
 
 **World Pack**:
 A World-owned Pack that contributes scenario material, mechanics, Resources, Capabilities, or presentation.

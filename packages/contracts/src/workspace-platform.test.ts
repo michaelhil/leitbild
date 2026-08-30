@@ -4,6 +4,7 @@ import {
   coreModuleIds,
   moduleCapabilityDescriptorSchema,
   moduleCapabilityInvocationSchema,
+  moduleDefinitionDescriptorSchema,
   moduleMembershipSchema,
   moduleResourceDescriptorSchema,
   newWorkspaceId,
@@ -70,6 +71,7 @@ describe('Module contracts', () => {
       module: { id: 'world', title: 'World' },
       endpoints: {
         workspace: '/internal/workspaces/{workspaceId}',
+        definitions: '/internal/workspaces/{workspaceId}/definitions',
         resources: '/internal/workspaces/{workspaceId}/resources',
         capabilities: '/internal/workspaces/{workspaceId}/capabilities',
         invoke: '/internal/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke',
@@ -86,6 +88,18 @@ describe('Module contracts', () => {
 })
 
 describe('dynamic Resource and Capability discovery', () => {
+  test('keeps a mutable Definition identity separate from its immutable current revision', () => {
+    const workspaceId = newWorkspaceId()
+    const definition = moduleDefinitionDescriptorSchema.parse({
+      ref: { workspaceId, moduleId: 'world', type: 'world.scenario', id: 'halden' },
+      title: 'Halden',
+      currentRevisionId: 'revision-0123456789abcdef0123456789abcdef',
+      capabilityIds: ['world.scenario.start'],
+    })
+    expect(String(definition.ref.id)).toBe('halden')
+    expect(String(definition.currentRevisionId)).toBe('revision-0123456789abcdef0123456789abcdef')
+  })
+
   test('requires Module-owned namespaces', () => {
     const workspaceId = newWorkspaceId()
     const resource = moduleResourceDescriptorSchema.parse({
@@ -141,6 +155,32 @@ describe('dynamic Resource and Capability discovery', () => {
       },
     })
     expect(String(invocation.resource?.id)).toBe('run-01')
+  })
+
+  test('targets either an exact Definition Revision or a Resource, never both', () => {
+    const workspaceId = newWorkspaceId()
+    const base = {
+      workspaceId,
+      capabilityId: 'world.scenario.start',
+      definition: {
+        workspaceId,
+        moduleId: 'world',
+        type: 'world.scenario',
+        id: 'halden',
+        revisionId: 'revision-0123456789abcdef0123456789abcdef',
+      },
+      input: {},
+      access: {
+        workspaceId,
+        requestId: crypto.randomUUID(),
+        actor: { kind: 'ai' as const, id: 'agent:operator' },
+      },
+    }
+    expect(String(moduleCapabilityInvocationSchema.parse(base).definition?.id)).toBe('halden')
+    expect(() => moduleCapabilityInvocationSchema.parse({
+      ...base,
+      resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-1' },
+    })).toThrow('cannot target both')
   })
 
   test('grants Capabilities without pinning concrete Resources', () => {

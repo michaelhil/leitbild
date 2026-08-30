@@ -20,8 +20,6 @@ export interface ControlSurfaceSnapshotStartupConfig {
   readonly loadSurfaceForScenario: (scenarioId: string) => Promise<void>
   readonly completeObjectsWhenReady: () => Promise<void>
   readonly connectRealtime: (id: SimulationRunId) => void
-  readonly rememberRecentRun?: () => void
-  readonly onRememberRecentRunFailed?: (error: unknown) => void
 }
 
 export const completeControlSurfaceStartupFromSnapshot = async (
@@ -37,11 +35,6 @@ export const completeControlSurfaceStartupFromSnapshot = async (
   config.setClock(snapshot.clock)
   if (!snapshot.scenario?.scenarioId) throw new Error('simulation run snapshot is missing scenario state')
   config.setExpectedRealtimeScenarioId(snapshot.scenario.scenarioId)
-  try {
-    config.rememberRecentRun?.()
-  } catch (err) {
-    config.onRememberRecentRunFailed?.(err)
-  }
   config.setSelectedControllerId(snapshot.objects.find(object => config.pack.commands.isController(object))?.id ?? null)
   config.setSeenRevisions(new Map(snapshot.objects.map(object => [object.id, object.revision])))
   config.setSnapshotReady(true)

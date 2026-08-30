@@ -27,6 +27,7 @@ const createModule = (moduleId: ModuleId) => {
           module: { id: moduleId, title: String(moduleId) },
           endpoints: {
             workspace: `/internal/${moduleId}/workspaces/{workspaceId}`,
+            definitions: `/internal/${moduleId}/workspaces/{workspaceId}/definitions`,
             resources: `/internal/${moduleId}/workspaces/{workspaceId}/resources`,
             capabilities: `/internal/${moduleId}/workspaces/{workspaceId}/capabilities`,
             invoke: `/internal/${moduleId}/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke`,
@@ -52,13 +53,37 @@ const createModule = (moduleId: ModuleId) => {
           title: 'Run 01', capabilityIds: ['world.simulation-run.read'], observedAt: new Date().toISOString(),
         }] : [] })
       }
+      const definitions = url.pathname.match(new RegExp(`^/internal/${moduleId}/workspaces/([^/]+)/definitions$`))
+      if (definitions) {
+        const workspaceId = decodeURIComponent(definitions[1] ?? '')
+        const item = moduleId === 'world'
+          ? { type: 'world.scenario', id: 'halden-process-plant-demo', title: 'Halden Process Plant', capabilityId: 'world.scenario.start' }
+          : { type: 'agents.room', id: 'control-room-script', title: 'Control Room', capabilityId: 'agents.room-definition.start' }
+        return Response.json({ definitions: [{
+          ref: { workspaceId, moduleId, type: item.type, id: item.id },
+          title: item.title,
+          currentRevisionId: 'revision-0123456789abcdef0123456789abcdef',
+          capabilityIds: [item.capabilityId],
+        }] })
+      }
       if (new RegExp(`^/internal/${moduleId}/workspaces/[^/]+/capabilities$`).test(url.pathname)) {
-        return Response.json({ capabilities: moduleId === 'world' ? [{
+        const startCapability = moduleId === 'world' ? {
+          id: 'world.scenario.start', moduleId, kind: 'command',
+          scope: { kind: 'definition', definitionType: 'world.scenario' },
+          title: 'Start Scenario', description: 'Starts the selected Scenario.',
+          risk: 'write', idempotent: false, inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
+        } : {
+          id: 'agents.room-definition.start', moduleId, kind: 'command',
+          scope: { kind: 'definition', definitionType: 'agents.room' },
+          title: 'Start Room', description: 'Starts the selected Room Definition.',
+          risk: 'write', idempotent: false, inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
+        }
+        return Response.json({ capabilities: [startCapability, ...(moduleId === 'world' ? [{
           id: 'world.simulation-run.read', moduleId, kind: 'query',
           scope: { kind: 'resource', resourceType: 'world.simulation-run' },
           title: 'Read Simulation Run', description: 'Reads the selected Simulation Run.',
           risk: 'read', idempotent: true, inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
-        }] : [] })
+        }] : [])] })
       }
       if (new RegExp(`^/internal/${moduleId}/workspaces/[^/]+/capabilities/[^/]+/invoke$`).test(url.pathname)) {
         const invocation = await request.json() as { resource?: { id: string }; input: unknown }
@@ -111,26 +136,28 @@ describe('Leitbild Workspace Host', () => {
     const workspace = await host.create({ name: null })
     const resources = await host.resources(workspace.id)
     expect(resources.resources.map(resource => String(resource.ref.id))).toEqual(['run-01'])
-    expect((await host.capabilities(workspace.id)).capabilities.map(item => String(item.id))).toEqual(['world.simulation-run.read'])
+    expect((await host.capabilities(workspace.id)).capabilities.map(item => String(item.id))).toEqual([
+      'agents.room-definition.start', 'world.scenario.start', 'world.simulation-run.read',
+    ])
     const result = await host.invoke(
       workspace.id,
       capabilityIdSchema.parse('world.simulation-run.read'),
       { resource: resources.resources[0]!.ref, input: { include: 'summary' } },
       accessContextSchema.parse({ workspaceId: workspace.id, requestId: newRequestId(), actor: { kind: 'ai', id: 'agent:test' } }),
     )
-    expect(result).toEqual({ resourceId: 'run-01', input: { include: 'summary' } })
+    expect(result).toEqual({ result: { resourceId: 'run-01', input: { include: 'summary' } } })
     store.close()
   })
 
-  test('applies a Preset as independent Capability calls', async () => {
+  test('starts a Composition as independent Definition Capability calls', async () => {
     const { host, store } = createFixture()
     const workspace = await host.create({ name: null })
     const access = accessContextSchema.parse({ workspaceId: workspace.id, requestId: newRequestId(), actor: { kind: 'human', id: 'operator' } })
-    const application = await host.applyPreset(workspace.id, 'halden-process-control-room', access)
+    const application = await host.startComposition(workspace.id, 'halden-process-control-room', access)
     expect(application.status).toBe('applied')
     expect(application.outcomes.map(outcome => String(outcome.capabilityId))).toEqual([
-      'world.simulation-run.create',
-      'agents.demo.apply',
+      'world.scenario.start',
+      'agents.room-definition.start',
     ])
     store.close()
   })

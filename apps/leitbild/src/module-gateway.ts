@@ -2,6 +2,7 @@ import {
   moduleCapabilityCollectionSchema,
   moduleCapabilityInvocationResultSchema,
   moduleCapabilityInvocationSchema,
+  moduleDefinitionCollectionSchema,
   moduleFailureSchema,
   moduleIdSchema,
   moduleRegistrationSchema,
@@ -10,6 +11,7 @@ import {
   type ModuleCapabilityCollection,
   type ModuleCapabilityInvocation,
   type ModuleCapabilityInvocationResult,
+  type ModuleDefinitionCollection,
   type ModuleFailure,
   type ModuleId,
   type ModuleRegistration,
@@ -29,6 +31,7 @@ export interface ModuleGateway {
   readonly has: (moduleId: ModuleId) => boolean
   readonly join: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleOperationResult>
   readonly leave: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleOperationResult>
+  readonly definitions: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleDefinitionCollection>>
   readonly resources: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleResourceCollection>>
   readonly capabilities: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleCapabilityCollection>>
   readonly invoke: (moduleId: ModuleId, invocation: ModuleCapabilityInvocation) => Promise<ModuleCallResult<ModuleCapabilityInvocationResult>>
@@ -143,7 +146,7 @@ export const createModuleGateway = (config: {
   const readCollection = async <T>(config: {
     readonly moduleId: ModuleId
     readonly workspaceId: WorkspaceId
-    readonly endpoint: 'resources' | 'capabilities'
+    readonly endpoint: 'definitions' | 'resources' | 'capabilities'
     readonly parse: (value: unknown) => T
   }): Promise<ModuleCallResult<T>> => {
     const registration = byId.get(config.moduleId)
@@ -210,6 +213,12 @@ export const createModuleGateway = (config: {
     has: moduleId => byId.has(moduleIdSchema.parse(moduleId)),
     join: (moduleId, workspaceId) => operate(moduleId, workspaceId, 'PUT'),
     leave: (moduleId, workspaceId) => operate(moduleId, workspaceId, 'DELETE'),
+    definitions: (moduleId, workspaceId) => readCollection({
+      moduleId,
+      workspaceId,
+      endpoint: 'definitions',
+      parse: value => moduleDefinitionCollectionSchema.parse(value),
+    }),
     resources: (moduleId, workspaceId) => readCollection({
       moduleId,
       workspaceId,

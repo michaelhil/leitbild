@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
   capabilityIdSchema,
+  definitionTypeSchema,
   isoTimestampSchema,
   moduleIdSchema,
   resourceIdSchema,
@@ -8,7 +9,10 @@ import {
   workspaceIdSchema,
 } from './ids.ts'
 import { accessContextSchema, actorContextSchema } from './access.ts'
-import { moduleFailureSchema } from './workspaces.ts'
+import { moduleQueryOutcomeSchema } from './modules.ts'
+import {
+  workspaceDefinitionRevisionReferenceSchema,
+} from './definitions.ts'
 
 export const workspaceResourceReferenceSchema = z.object({
   workspaceId: workspaceIdSchema,
@@ -24,12 +28,18 @@ export type WorkspaceResourceReference = z.infer<typeof workspaceResourceReferen
 
 const jsonSchemaSchema = z.record(z.string(), z.unknown())
 
+export const relativeUiPathSchema = z.string().min(1).max(1024).superRefine((value, ctx) => {
+  if (!value.startsWith('/')) ctx.addIssue({ code: 'custom', message: 'UI path must start with /' })
+  if (value.includes('://')) ctx.addIssue({ code: 'custom', message: 'UI path must not contain an origin' })
+})
+
 export const moduleCapabilityDescriptorSchema = z.object({
   id: capabilityIdSchema,
   moduleId: moduleIdSchema,
   kind: z.enum(['command', 'query', 'stream']),
   scope: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('workspace') }).strict(),
+    z.object({ kind: z.literal('definition'), definitionType: definitionTypeSchema }).strict(),
     z.object({ kind: z.literal('resource'), resourceType: resourceTypeSchema }).strict(),
   ]),
   title: z.string().trim().min(1).max(128),
@@ -45,14 +55,27 @@ export const moduleCapabilityDescriptorSchema = z.object({
   if (capability.scope.kind === 'resource' && !capability.scope.resourceType.startsWith(`${capability.moduleId}.`)) {
     ctx.addIssue({ code: 'custom', path: ['scope', 'resourceType'], message: 'Resource type must be owned by the Capability Module' })
   }
+  if (capability.scope.kind === 'definition' && !capability.scope.definitionType.startsWith(`${capability.moduleId}.`)) {
+    ctx.addIssue({ code: 'custom', path: ['scope', 'definitionType'], message: 'Definition type must be owned by the Capability Module' })
+  }
 })
 export type ModuleCapabilityDescriptor = z.infer<typeof moduleCapabilityDescriptorSchema>
 export type ModuleCapabilityDescriptorInput = z.input<typeof moduleCapabilityDescriptorSchema>
+
+export const moduleResourceLinkSchema = z.object({
+  rel: z.string().trim().min(1).max(128),
+  ref: workspaceResourceReferenceSchema,
+  title: z.string().trim().min(1).max(256).optional(),
+}).strict()
+export type ModuleResourceLink = z.infer<typeof moduleResourceLinkSchema>
 
 export const moduleResourceDescriptorSchema = z.object({
   ref: workspaceResourceReferenceSchema,
   title: z.string().trim().min(1).max(256),
   description: z.string().trim().min(1).max(2048).optional(),
+  sourceDefinition: workspaceDefinitionRevisionReferenceSchema.optional(),
+  links: z.array(moduleResourceLinkSchema).default([]),
+  uiPath: relativeUiPathSchema.optional(),
   capabilityIds: z.array(capabilityIdSchema),
   observedAt: isoTimestampSchema,
 }).strict().superRefine((resource, ctx) => {
@@ -65,6 +88,17 @@ export const moduleResourceDescriptorSchema = z.object({
       ctx.addIssue({ code: 'custom', path: ['capabilityIds', index], message: `duplicate Capability: ${capabilityId}` })
     }
     seen.add(capabilityId)
+  })
+  if (resource.sourceDefinition !== undefined && (
+    resource.sourceDefinition.workspaceId !== resource.ref.workspaceId
+    || resource.sourceDefinition.moduleId !== resource.ref.moduleId
+  )) {
+    ctx.addIssue({ code: 'custom', path: ['sourceDefinition'], message: 'Resource source Definition must belong to the same Module and Workspace' })
+  }
+  resource.links.forEach((link, index) => {
+    if (link.ref.workspaceId !== resource.ref.workspaceId) {
+      ctx.addIssue({ code: 'custom', path: ['links', index, 'ref', 'workspaceId'], message: 'Linked Resource must belong to the same Workspace' })
+    }
   })
 })
 export type ModuleResourceDescriptor = z.infer<typeof moduleResourceDescriptorSchema>
@@ -79,12 +113,6 @@ export const moduleCapabilityCollectionSchema = z.object({
   capabilities: z.array(moduleCapabilityDescriptorSchema),
 }).strict()
 export type ModuleCapabilityCollection = z.infer<typeof moduleCapabilityCollectionSchema>
-
-export const moduleQueryOutcomeSchema = z.discriminatedUnion('status', [
-  z.object({ moduleId: moduleIdSchema, status: z.literal('ready') }).strict(),
-  z.object({ moduleId: moduleIdSchema, status: z.literal('failed'), failure: moduleFailureSchema }).strict(),
-])
-export type ModuleQueryOutcome = z.infer<typeof moduleQueryOutcomeSchema>
 
 export const workspaceResourceCatalogSchema = z.object({
   workspaceId: workspaceIdSchema,
@@ -135,9 +163,14 @@ export const workspaceCapabilityCatalogSchema = z.object({
 export type WorkspaceCapabilityCatalog = z.infer<typeof workspaceCapabilityCatalogSchema>
 
 export const invokeCapabilityInputSchema = z.object({
+  definition: workspaceDefinitionRevisionReferenceSchema.optional(),
   resource: workspaceResourceReferenceSchema.optional(),
   input: z.unknown(),
-}).strict()
+}).strict().superRefine((invocation, ctx) => {
+  if (invocation.definition !== undefined && invocation.resource !== undefined) {
+    ctx.addIssue({ code: 'custom', path: ['definition'], message: 'Capability invocation cannot target both a Definition and a Resource' })
+  }
+})
 export type InvokeCapabilityInput = z.infer<typeof invokeCapabilityInputSchema>
 
 // Public Host request shape. `actor` is attribution supplied by the calling
@@ -151,6 +184,7 @@ export type WorkspaceCapabilityInvocationRequest = z.infer<typeof workspaceCapab
 export const moduleCapabilityInvocationSchema = z.object({
   workspaceId: workspaceIdSchema,
   capabilityId: capabilityIdSchema,
+  definition: workspaceDefinitionRevisionReferenceSchema.optional(),
   resource: workspaceResourceReferenceSchema.optional(),
   input: z.unknown(),
   access: accessContextSchema,
@@ -161,10 +195,17 @@ export const moduleCapabilityInvocationSchema = z.object({
   if (invocation.resource !== undefined && invocation.resource.workspaceId !== invocation.workspaceId) {
     ctx.addIssue({ code: 'custom', path: ['resource', 'workspaceId'], message: 'Resource belongs to another Workspace' })
   }
+  if (invocation.definition !== undefined && invocation.definition.workspaceId !== invocation.workspaceId) {
+    ctx.addIssue({ code: 'custom', path: ['definition', 'workspaceId'], message: 'Definition belongs to another Workspace' })
+  }
+  if (invocation.definition !== undefined && invocation.resource !== undefined) {
+    ctx.addIssue({ code: 'custom', path: ['definition'], message: 'Capability invocation cannot target both a Definition and a Resource' })
+  }
 })
 export type ModuleCapabilityInvocation = z.infer<typeof moduleCapabilityInvocationSchema>
 
 export const moduleCapabilityInvocationResultSchema = z.object({
   result: z.unknown(),
+  createdResources: z.array(workspaceResourceReferenceSchema).optional(),
 }).strict()
 export type ModuleCapabilityInvocationResult = z.infer<typeof moduleCapabilityInvocationResultSchema>

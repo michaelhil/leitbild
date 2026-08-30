@@ -20,9 +20,7 @@
   import type { WorldPack, PackCreateObjectType, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
   import {
     fetchScenario,
-    createSimulationRun as createSimulationRunClient,
     joinSimulationRun as joinSimulationRunClient,
-    listScenarios as listScenariosClient,
     resetSimulationRun,
     sendSimulationRunCommand,
     setSimulationRunClock,
@@ -30,8 +28,6 @@
   } from '../simulation-run-client.ts'
   import {
     parseControlSurfaceRoute,
-    pathForNewSimulationRun,
-    pathForSimulationRun,
   } from '../simulation-run-route.ts'
   import {
     applySimulationRunEventBatchMessage,
@@ -48,7 +44,6 @@
     selectedControllerObjectFor,
   } from '../control-surface-selectors.ts'
   import { createPlacementState } from '../placement-state.svelte.ts'
-  import { pathForRecentScenarioRun, rememberRecentScenarioRun } from '../recent-scenario-runs.ts'
   import { createRailLayoutState } from '../rail-layout-state.svelte.ts'
   import { simulationTimeAt } from '../simulation-clock.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
@@ -99,7 +94,7 @@
     type InternalDiagnosticsSnapshot,
     type LongTaskDiagnosticsMonitor,
   } from '../internal-diagnostics.ts'
-  import type { CategoryRow, SimulationRunResponse, CreateDraft, ScenarioListItem } from '../types.ts'
+  import type { CategoryRow, SimulationRunResponse, CreateDraft } from '../types.ts'
 
   const appVersion = __LEITBILD_VERSION__
   const gridOverviewCategoryId = 'grid-system'
@@ -190,8 +185,6 @@
   let processPlantCredibilityModal = $state<OperationalObject | null>(null)
   let theme = $state<ThemeMode>('light')
   let weatherLayerVisible = $state(true)
-  let scenarioOptions = $state<ReadonlyArray<ScenarioListItem>>([])
-  let scenarioOptionsLoaded = $state(false)
   let surfaceLoadGeneration = 0
   let operationalMapLoadPromise: Promise<Component> | null = null
   let processSurfaceModalLoadPromise: Promise<Component> | null = null
@@ -821,7 +814,6 @@
   const openSettings = (): void => {
     settingsModalOpen = true
     void loadSettingsModal()
-    void loadScenarioOptions()
   }
 
   const goToStartPage = (): void => {
@@ -1115,13 +1107,6 @@
   const scenarioIdForReset = (): string | undefined =>
     scenarioState?.scenarioId
 
-  const loadScenarioOptions = async (): Promise<void> => {
-    if (scenarioOptionsLoaded) return
-    const body = await listScenariosClient()
-    scenarioOptions = body.scenarios
-    scenarioOptionsLoaded = true
-  }
-
   const loadScenarioDefinitionAndPack = async (scenarioId: string): Promise<ScenarioDefinition> => {
     markStartup('scenario-fetch:start')
     const body = await fetchScenario(scenarioId)
@@ -1136,17 +1121,6 @@
     scenarioDefinition = scenario
     activePack = nextPack
     return scenario
-  }
-
-  const createScenarioRun = async (scenarioId: string, navigation: 'assign' | 'replace' = 'assign'): Promise<void> => {
-    status = 'Opening Simulation Run'
-    const created = await createSimulationRunClient({ scenarioId })
-    const nextPath = pathForSimulationRun(activeWorkspaceId(), created.id)
-    if (navigation === 'replace') {
-      location.replace(nextPath)
-      return
-    }
-    location.href = nextPath
   }
 
   const defaultName = (type: PackCreateObjectType): string =>
@@ -1356,8 +1330,6 @@
   const completeStartupFromResponse = async (
     response: SimulationRunResponse,
     config: {
-      readonly rememberRecentRun?: () => void
-      readonly onRememberRecentRunFailed?: (error: unknown) => void
       readonly setActiveStartupStep: (id: StartupStepId) => void
     },
   ): Promise<void> => {
@@ -1402,8 +1374,6 @@
       loadSurfaceForScenario,
       completeObjectsWhenReady,
       connectRealtime: connectWebSocket,
-      ...(config.rememberRecentRun === undefined ? {} : { rememberRecentRun: config.rememberRecentRun }),
-      ...(config.onRememberRecentRunFailed === undefined ? {} : { onRememberRecentRunFailed: config.onRememberRecentRunFailed }),
     })
   }
 
@@ -1425,15 +1395,9 @@
       markStartup('join-request:start')
       const body = await joinSimulationRunClient(id)
       markStartup('join-request:done')
-      const joinedScenarioId = body.snapshot.scenario?.scenarioId
-      if (!joinedScenarioId) throw new Error('simulation run snapshot is missing scenario state')
       await completeStartupFromResponse(body, {
         setActiveStartupStep: id => {
           activeStartupStep = id
-        },
-        rememberRecentRun: () => rememberRecentScenarioRun(route.workspaceId, joinedScenarioId, id),
-        onRememberRecentRunFailed: err => {
-          commandStatus = err instanceof Error ? err.message : 'Unable to remember scenario run'
         },
       })
     } catch (err) {
@@ -1467,17 +1431,6 @@
       failStep(activeStartupStep, err)
       commandStatus = err instanceof Error ? err.message : 'Scenario reset failed'
     }
-  }
-
-  const selectScenario = async (scenarioId: string): Promise<void> => {
-    let rememberedPath: string | null
-    try {
-      rememberedPath = pathForRecentScenarioRun(activeWorkspaceId(), scenarioId)
-    } catch (err) {
-      commandStatus = err instanceof Error ? err.message : 'Unable to read recent scenario runs'
-      return
-    }
-    location.href = rememberedPath ?? pathForNewSimulationRun(activeWorkspaceId(), scenarioId)
   }
 
   const toggleClockPaused = async (): Promise<void> => {
@@ -1522,7 +1475,7 @@
     let route
     try {
       route = activeRoute()
-      if (route.mode === 'picker') throw new Error('control surface route expected')
+      if (route.mode !== 'simulation-run') throw new Error('control surface route expected')
     } catch (err) {
       failStep('route', err)
       return () => {
@@ -1536,17 +1489,6 @@
     }
     completeStep('route')
     completeStep('interface')
-    if (route.mode === 'new-run') {
-      void createScenarioRun(route.scenarioId, 'replace')
-      return () => {
-        cleanupInternalDiagnosticsGlobal()
-        longTaskMonitor?.stop()
-        longTaskMonitor = null
-        removePlacementGlobalEvents()
-        railLayout.stopResize()
-        clearStartupAutoDismissTimer()
-      }
-    }
     preloadOperationalMapModule()
     void joinSimulationRun()
     return () => {
@@ -1824,13 +1766,10 @@
     {theme}
     weatherLayerAvailable={mapConfig?.layers.includes('weather') ?? false}
     {weatherLayerVisible}
-    scenarios={scenarioOptions}
-    selectedScenarioId={scenarioState?.scenarioId ?? ''}
     close={closeSettings}
     {goToStartPage}
     {toggleTheme}
     {toggleWeatherLayer}
     {resetScenario}
-    {selectScenario}
   />
 {/if}

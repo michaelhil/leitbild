@@ -124,12 +124,20 @@ describe('Workspace Host with real Modules', () => {
       ['world', 'ready'],
     ])
 
+    const definitionCatalog = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/definitions`)
+    expect(definitionCatalog.status).toBe(200)
+    const scenario = (await definitionCatalog.json() as {
+      definitions: Array<{ ref: Record<string, string>; currentRevisionId: string }>
+    }).definitions.find(definition => definition.ref.type === 'world.scenario')!
     const createRunResponse = await fetch(
-      `${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.simulation-run.create/invoke`,
+      `${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.scenario.start/invoke`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: {} }),
+        body: JSON.stringify({
+          definition: { ...scenario.ref, revisionId: scenario.currentRevisionId },
+          input: {},
+        }),
       },
     )
     expect(createRunResponse.status).toBe(200)
@@ -160,18 +168,18 @@ describe('Workspace Host with real Modules', () => {
     expect(JSON.stringify(aiAgent?.getConfig() ?? {})).not.toContain(runId)
 
     const context = { callerId: agentId, callerName: 'World Observer' }
-    const discover = runtime.toolRegistry.get('workspace_resources')
+    const discover = runtime.toolRegistry.get('workspace_catalog')
     const invoke = runtime.toolRegistry.get('workspace_invoke')
     expect(discover).toBeDefined()
     expect(invoke).toBeDefined()
     const discovered = await discover!.execute(
-      { capabilityId: 'world.simulation-run.read' },
+      {},
       context,
     )
     expect(discovered.success).toBe(true)
     const currentRun = (discovered.data as {
       resources: Array<{ ref: { moduleId: string; type: string; id: string } }>
-    }).resources[0]!
+    }).resources.find(resource => resource.ref.type === 'world.simulation-run')!
     expect(currentRun.ref.id).toBe(runId)
 
     const read = await invoke!.execute({

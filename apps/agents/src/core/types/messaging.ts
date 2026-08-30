@@ -116,6 +116,10 @@ export interface RoomProfile {
   readonly roomPrompt?: string
   readonly createdBy: string
   readonly createdAt: number
+  readonly sourceDefinition?: {
+    readonly id: string
+    readonly revisionId: string
+  }
 }
 
 export interface AgentProfile {

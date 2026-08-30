@@ -9,11 +9,11 @@ A durable shared conversation space with members, messages, delivery behavior, a
 _Avoid_: Channel, Thread, Simulation Run
 
 **Room Definition**:
-An immutable declaration used to create a Room, its initial members, selected Packs, Agent Profiles, and optional Agent Script.
-_Avoid_: live Room state, Preset, browser launch procedure
+A durable authored identity whose immutable revision creates a Room, its initial members, selected Packs, Agent Profiles, semantic Tool Grants, and Prompt Deck.
+_Avoid_: live Room state, Composition Definition, browser launch procedure
 
 **Prompt Deck**:
-A curated set of optional prompts with declared Capability requirements.
+A curated set of optional messages or Agent Script actions stored in a Room Definition Revision and resolved through a Room's pinned source revision.
 _Avoid_: workflow, Agent Script, hard-coded browser action
 
 **Agent**:

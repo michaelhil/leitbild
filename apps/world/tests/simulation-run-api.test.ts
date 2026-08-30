@@ -169,13 +169,13 @@ const createRun = async (
   registry: SimulationRunRegistry,
   scenarioId?: string,
 ): Promise<CreatedRunResponse> => {
-  const response = await callRoute<CreatedRunResponse>(registry, '/simulation-runs', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(scenarioId === undefined ? {} : { scenarioId }),
-  })
-  expect(response.status).toBe(201)
-  return response.body
+  const runtime = await registry.create(scenarioId === undefined ? {} : { scenarioId })
+  const revision = await registry.scenarioRevisionForRun(runtime.id)
+  return {
+    id: runtime.id,
+    snapshot: runtime.snapshot(),
+    ...(revision === undefined ? {} : { scenario: revision.definition }),
+  }
 }
 
 const runPath = (id: SimulationRunId, suffix = ''): string =>
@@ -186,17 +186,8 @@ const closeAll = async (registry: SimulationRunRegistry): Promise<void> => {
 }
 
 describe('Simulation Run API', () => {
-  test('lists public Scenario metadata and fetches complete definitions', async () => {
+  test('fetches the complete Scenario Definition needed by an active Run UI', async () => {
     const registry = await createTestRegistry()
-    const listed = await callRoute<{
-      readonly defaultScenarioId: string
-      readonly scenarios: ReadonlyArray<{ readonly id: string; readonly packs?: readonly string[] }>
-    }>(registry, '/scenarios')
-    expect(listed.status).toBe(200)
-    expect(listed.body.defaultScenarioId).toBe('oslo-ambulance')
-    expect(listed.body.scenarios.map(scenario => scenario.id)).toContain('halden-process-plant-demo')
-    expect(listed.body.scenarios.every(scenario => scenario.packs === undefined)).toBe(true)
-
     const fetched = await callRoute<{
       readonly scenario: {
         readonly id: string
@@ -208,48 +199,6 @@ describe('Simulation Run API', () => {
     expect(fetched.body.scenario.packs).toEqual(['process-plant', 'ambulance', 'weather'])
     expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'process-plant')).toHaveLength(7)
     expect(fetched.body.scenario.processSystems).toHaveLength(7)
-  })
-
-  test('creates opaque runs, rejects caller-owned ids, and lists revision metadata', async () => {
-    const registry = await createTestRegistry()
-    try {
-      const rejectedLegacyShape = await callRoute<{ readonly error: { readonly code: string } }>(
-        registry,
-        '/simulation-runs',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: 'named-run', scenarioId: 'oslo-ambulance' }),
-        },
-      )
-      expect(rejectedLegacyShape.status).toBe(400)
-      expect(rejectedLegacyShape.body.error.code).toBe('invalid_request')
-
-      const created = await createRun(registry, 'oslo-all-packs-demo')
-      expect(created.id).toMatch(/^run-[0-9a-f-]{36}$/)
-      expect(created.scenario?.id).toBe('oslo-all-packs-demo')
-      expect(created.snapshot.objects.filter(object => object.packId === 'process-plant')).toHaveLength(4)
-      expect(created.snapshot.objects.filter(object => object.packId === 'electric-grid').length).toBeGreaterThan(200)
-
-      const listed = await callRoute<{
-        readonly simulationRuns: ReadonlyArray<{
-          readonly id: SimulationRunId
-          readonly scenarioId: string
-          readonly scenarioRevisionId: string
-          readonly createdAt: string
-          readonly websocketClientCount: number
-        }>
-      }>(registry, '/simulation-runs')
-      expect(listed.body.simulationRuns).toEqual([expect.objectContaining({
-        id: created.id,
-        scenarioId: 'oslo-all-packs-demo',
-        scenarioRevisionId: expect.stringMatching(/^revision-/),
-        createdAt: expect.any(String),
-        websocketClientCount: 0,
-      })])
-    } finally {
-      await closeAll(registry)
-    }
   })
 
   test('joins only existing runs and exposes their objects and capabilities', async () => {
@@ -292,20 +241,8 @@ describe('Simulation Run API', () => {
     }
   })
 
-  test('rejects unknown Scenarios and invalid run ids with structured errors', async () => {
+  test('rejects invalid run ids with a structured error', async () => {
     const registry = await createTestRegistry()
-    const unknownScenario = await callRoute<{ readonly error: { readonly code: string } }>(
-      registry,
-      '/simulation-runs',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenarioId: 'missing-scenario' }),
-      },
-    )
-    expect(unknownScenario.status).toBe(404)
-    expect(unknownScenario.body.error.code).toBe('scenario_not_found')
-
     const invalidId = await callRoute<{ readonly error: { readonly code: string } }>(
       registry,
       '/simulation-runs/not-a-run/objects',

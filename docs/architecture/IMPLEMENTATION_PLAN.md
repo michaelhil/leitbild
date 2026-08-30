@@ -9,7 +9,7 @@
 7. Use Module-owned immutable Definitions for repeatable setup and typed Capabilities for every meaningful external operation.
 8. Compile reusable World Scenario Fragments into normalized Scenario Revisions; do not add a universal fragment runtime or inheritance language.
 9. Use Agents Room Definitions, Agent Scripts, and Prompt Decks instead of browser-owned launch procedures.
-10. Compose stable Definition IDs across Modules with independent apply-once Preset actions; created Resources capture the resolved Module-owned state or revision.
+10. Compose stable Definition IDs across Modules with independent apply-once Composition Definitions; the Host resolves exact revisions and created Resources record provenance.
 11. Add identity and per-Workspace access policy only after these ownership and routing boundaries are stable.
 
 The cutover is intentionally breaking. There are no aliases, persisted-shape migrations, old routes, dual-domain operation, optional Module compositions, or compatibility layers.

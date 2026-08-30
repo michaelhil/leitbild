@@ -1,6 +1,6 @@
 // ============================================================================
-// Integration test: per-agent state subscription is wired for ALL agent
-// creation paths — including the seeded path.
+// Integration test: per-agent state subscription is wired for every explicit
+// agent creation path and restored snapshots.
 //
 // REGRESSION CONTEXT
 // The bug surfaced after the wiki feature shipped. With wikis bound to a
@@ -30,8 +30,7 @@
 //   - REST + WS handlers no longer call subscribeAgentState themselves.
 //
 // WHAT THIS TEST PROVES
-//   1. The seed path (no snapshot, no REST/WS create) ends with
-//      subscribeAgentState having been called for the seeded agent.
+//   1. A programmatic spawn ends with subscribeAgentState called for the Agent.
 //   2. Triggering the agent's eval (via agent.receive with a stub LLM)
 //      causes an `agent_state` broadcast scoped to the cookie's
 //      workspaceId — the exact chain the UI relies on.
@@ -53,6 +52,18 @@ import { createAgentsModuleState } from '../core/workspaces/module-state.ts'
 import { newWorkspaceId } from '@leitbild/contracts'
 
 const makeSetup = makeStubSetup
+const TEST_AGENT_NAME = 'State Test Agent'
+
+const createTestAgentAndRoom = async (system: Awaited<ReturnType<ReturnType<typeof createWorkspaceRuntimeRegistry>['getOrLoad']>>) => {
+  const room = system.rooms.createRoom({ name: 'State Wiring Test', createdBy: 'test' })
+  const agent = await system.spawnAIAgent({
+    name: TEST_AGENT_NAME,
+    model: 'mock-model',
+    persona: 'Reply briefly when addressed.',
+  })
+  await system.addAgentToRoom(agent.id, room.profile.id, 'test')
+  return { room, agent }
+}
 
 describe('per-agent state subscription is wired for every spawn path', () => {
   let homeDir: string
@@ -67,7 +78,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     delete process.env.LEITBILD_HOME
   })
 
-  test('seed-spawned agent: subscribeAgentState IS called and agent_state broadcasts arrive', async () => {
+  test('programmatically spawned agent: subscribeAgentState is called and broadcasts arrive', async () => {
     const shared = createDeploymentRuntime({
       providerConfig: baseConfig,
       providerSetup: makeSetup(makeStubGateway()),
@@ -88,10 +99,8 @@ describe('per-agent state subscription is wired for every spawn path', () => {
       moduleState,
       onWorkspaceRuntimeCreated: async (system, id, autoSaver: ModuleAutoSaver) => {
         // Simulate bootstrap.ts's first async step (logging.configure).
-        // Critical: this releases a microtask, so if buildWorkspaceRuntime doesn't
-        // await this hook, Workspace seeding races ahead and spawns Helper
-        // BEFORE wireAgentTracking installs its spawn-wrapper. The race-fix
-        // in runtime-registry.ts must await opts.onWorkspaceRuntimeCreated.
+        // This releases a microtask so the test also proves runtime setup awaits
+        // tracking installation before callers can explicitly spawn an Agent.
         await new Promise(r => setImmediate(r))
 
         wireAgentTracking(system, id, {
@@ -125,37 +134,24 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     await moduleState.provision(cookieId)
     const sys = await registry.getOrLoad(cookieId)
 
-    // 1. Seed must have produced exactly one AI agent (Helper).
-    // Regression context: there used to be a 'general' fallback room
-    // creation in onWorkspaceRuntimeCreated that ran sync before seed could check
-    // `rooms.length > 0`, causing seed to short-circuit and Helper to
-    // never spawn. The fallback was removed; if it sneaks back in,
-    // this assertion catches it.
-    const rooms = sys.rooms.listAllRooms()
-    expect(rooms.length).toBe(1)
-    expect(rooms[0]?.name).toBe('Cafe')
-    expect(sys.rooms.getRoom(rooms[0]!.id)?.getActivePacks()).toContain('demos')
-    const aiAgents = sys.team.listAgents().filter(a => a.kind === 'ai')
-    expect(aiAgents.length).toBe(1)
-    const helper = aiAgents[0]!
-    expect(helper.name).toBe('Aiden')
+    expect(sys.rooms.listAllRooms()).toEqual([])
+    expect(sys.team.listAgents().filter(agent => agent.kind === 'ai')).toEqual([])
+    const { room, agent } = await createTestAgentAndRoom(sys)
 
     // 2. Per-agent subscription must have been routed through the wrapper.
     // Pre-fix: zero entries — the only places that called subscribeAgentState
     // were REST/WS handlers (none ran here) and the wireWorkspaceRuntimeEvents init-
     // loop (which iterated team BEFORE seed spawned Helper).
-    const subForHelper = subscribed.filter(s => s.agentId === helper.id && s.workspaceId === cookieId)
-    expect(subForHelper).toHaveLength(1)
+    const subscription = subscribed.filter(s => s.agentId === agent.id && s.workspaceId === cookieId)
+    expect(subscription).toHaveLength(1)
 
     // 3. End-to-end: trigger Helper's eval via the same path the UI uses
     // (post a message, addressed to Helper). The stub LLM returns instantly,
     // so the agent transitions generating → idle. Both transitions should
     // produce `agent_state` broadcasts scoped to OUR cookie's Workspace.
-    const room = sys.rooms.listAllRooms()[0]
-    expect(room).toBeDefined()
     sys.routeMessage(
-      { rooms: [room!.id] },
-      { senderId: 'system', senderName: 'system', content: '[[Helper]] ping', type: 'chat' },
+      { rooms: [room.profile.id] },
+      { senderId: 'system', senderName: 'system', content: `[[${TEST_AGENT_NAME}]] ping`, type: 'chat' },
     )
 
     // The eval is async (it goes through the stub LLM). Poll for state events
@@ -166,7 +162,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     while (Date.now() < deadline) {
       stateEvents = broadcasts.filter(b =>
         b.workspaceId === cookieId && b.msg.type === 'agent_state' &&
-        (b.msg as { agentName?: string }).agentName === 'Aiden',
+        (b.msg as { agentName?: string }).agentName === TEST_AGENT_NAME,
       )
       if (stateEvents.length > 0) break
       await new Promise(r => setTimeout(r, 25))
@@ -174,7 +170,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     if (stateEvents.length === 0) {
       // Diagnostic: dump what DID broadcast for Helper or this Workspace.
       const types = broadcasts.filter(b => b.workspaceId === cookieId).map(b => b.msg.type)
-      throw new Error(`No agent_state broadcasts for Helper. Got ${broadcasts.length} broadcasts total; types for cookieId: [${types.join(', ')}]`)
+      throw new Error(`No agent_state broadcasts for ${TEST_AGENT_NAME}. Got ${broadcasts.length} broadcasts total; types for cookieId: [${types.join(', ')}]`)
     }
     const generating = stateEvents.find(b => (b.msg as { state?: string }).state === 'generating')
     expect(generating).toBeDefined()
@@ -213,11 +209,10 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     const workspaceId = newWorkspaceId()
     await moduleState.provision(workspaceId)
     const sys = await registry.getOrLoad(workspaceId)
-    const helper = sys.team.listAgents().find(a => a.kind === 'ai')!
-    expect(helper.name).toBe('Aiden')
+    const { agent } = await createTestAgentAndRoom(sys)
 
-    sys.removeAgent(helper.id)
-    expect(unsubscribed).toContain(helper.id)
+    sys.removeAgent(agent.id)
+    expect(unsubscribed).toContain(agent.id)
   })
 
   test('evict + reload cycle: agent_state broadcasts still arrive for snapshot-restored agents', async () => {
@@ -290,26 +285,25 @@ describe('per-agent state subscription is wired for every spawn path', () => {
 
     const cookieId = cookieIdInstance
 
-    // First load: seed runs, Helper spawned, subscription installed,
-    // and a flush persists snapshot to disk so reload sees it.
+    // First load: explicitly create an Agent and Room, then let autosave
+    // persist them so the reload path restores the same Agent id.
     const sys1 = await registry.getOrLoad(cookieId)
-    const helper1 = sys1.team.listAgents().find(a => a.kind === 'ai')!
+    const { room: room1, agent: helper1 } = await createTestAgentAndRoom(sys1)
     const helperId = helper1.id
-    expect(helper1.name).toBe('Aiden')
+    expect(helper1.name).toBe(TEST_AGENT_NAME)
 
     // Wait for autosave to flush (seed triggers one).
     await new Promise(r => setTimeout(r, 100))
 
     // Trigger eval pre-evict — confirm baseline that broadcasts work.
-    const room1 = sys1.rooms.listAllRooms()[0]!
     sys1.routeMessage(
-      { rooms: [room1.id] },
+      { rooms: [room1.profile.id] },
       { senderId: 'system', senderName: 'system', content: '[[AI]] ping1', type: 'chat' },
     )
     const isGenerating = (data: string): boolean => {
       try {
         const m = JSON.parse(data) as { type?: string; state?: string; agentName?: string }
-        return m.type === 'agent_state' && m.state === 'generating' && m.agentName === 'Aiden'
+        return m.type === 'agent_state' && m.state === 'generating' && m.agentName === TEST_AGENT_NAME
       } catch { return false }
     }
     {
@@ -342,7 +336,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     // agent_state broadcast arrives — the reloaded helper2.state has
     // no subscriber because stateUnsubs.has(helperId) was true and
     // subscribeAgentState silently skipped.
-    const room2 = sys2.rooms.listAllRooms()[0]!
+    const room2 = sys2.rooms.listAllRooms().find(room => room.name === 'State Wiring Test')!
     sys2.routeMessage(
       { rooms: [room2.id] },
       { senderId: 'system', senderName: 'system', content: '[[AI]] ping2', type: 'chat' },

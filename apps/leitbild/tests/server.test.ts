@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { coreModuleIds, moduleRegistrationSchema } from '@leitbild/contracts'
+import { coreModuleIds, moduleDefinitionCollectionSchema, moduleRegistrationSchema } from '@leitbild/contracts'
 import { createWorkspaceHost } from '../src/host.ts'
 import type { ModuleGateway } from '../src/module-gateway.ts'
 import { createWorkspaceHostServer } from '../src/server.ts'
@@ -19,6 +19,17 @@ const gateway = (): ModuleGateway => ({
   has: moduleId => coreModuleIds.includes(moduleId),
   join: async () => ({ ok: true, value: undefined }),
   leave: async () => ({ ok: true, value: undefined }),
+  definitions: async (moduleId, workspaceId) => ({ ok: true, value: moduleDefinitionCollectionSchema.parse({ definitions: [
+    moduleId === 'world' ? {
+      ref: { workspaceId, moduleId, type: 'world.scenario', id: 'halden-process-plant-demo' },
+      title: 'Halden Process Plant', currentRevisionId: 'revision-0123456789abcdef0123456789abcdef',
+      capabilityIds: ['world.scenario.start'],
+    } : {
+      ref: { workspaceId, moduleId, type: 'agents.room', id: 'control-room-script' },
+      title: 'Control Room', currentRevisionId: 'revision-0123456789abcdef0123456789abcdef',
+      capabilityIds: ['agents.room-definition.start'],
+    },
+  ] }) }),
   resources: async () => ({ ok: true, value: { resources: [] } }),
   capabilities: async () => ({ ok: true, value: { capabilities: [] } }),
   invoke: async () => ({ ok: true, value: { result: null } }),
@@ -75,12 +86,12 @@ describe('Leitbild server', () => {
     expect((await fetch(`${baseUrl}/api/workspaces/${workspace.id}/modules/world`, { method: 'DELETE' })).status).toBe(404)
   })
 
-  test('publishes and applies cross-Module Presets', async () => {
+  test('publishes and starts cross-Module Compositions', async () => {
     const { host, baseUrl } = startHost()
     const workspace = await host.create({ name: null })
-    const catalog = await (await fetch(`${baseUrl}/api/presets`)).json() as { presets: Array<{ id: string }> }
-    expect(catalog.presets.map(preset => preset.id)).toContain('halden-process-control-room')
-    const response = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/presets/halden-process-control-room/apply`, { method: 'POST' })
+    const catalog = await (await fetch(`${baseUrl}/api/compositions`)).json() as { compositions: Array<{ id: string }> }
+    expect(catalog.compositions.map(composition => composition.id)).toContain('halden-process-control-room')
+    const response = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/compositions/halden-process-control-room/start`, { method: 'POST' })
     expect(response.status).toBe(200)
     expect((await response.json() as { application: { status: string } }).application.status).toBe('applied')
   })

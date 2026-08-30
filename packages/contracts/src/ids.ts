@@ -31,6 +31,27 @@ export const resourceIdSchema = z.string()
   .brand<'ResourceId'>()
 export type ResourceId = z.infer<typeof resourceIdSchema>
 
+export const definitionTypeSchema = z.string()
+  .min(3)
+  .max(128)
+  .regex(/^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/)
+  .brand<'DefinitionType'>()
+export type DefinitionType = z.infer<typeof definitionTypeSchema>
+
+export const definitionIdSchema = z.string()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._~-]*$/)
+  .brand<'DefinitionId'>()
+export type DefinitionId = z.infer<typeof definitionIdSchema>
+
+export const definitionRevisionIdSchema = z.string()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._~-]*$/)
+  .brand<'DefinitionRevisionId'>()
+export type DefinitionRevisionId = z.infer<typeof definitionRevisionIdSchema>
+
 export const requestIdSchema = z.uuid().brand<'RequestId'>()
 export type RequestId = z.infer<typeof requestIdSchema>
 

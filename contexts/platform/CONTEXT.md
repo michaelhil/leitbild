@@ -37,15 +37,19 @@ A typed command, query, or event stream exposed by a Module for a Resource type 
 _Avoid_: tool name guessed by a caller, Pack, arbitrary RPC
 
 **Definition**:
-An immutable, reusable declaration that one Module validates and can instantiate as Resources.
+A durable reusable authored identity owned and validated by one Module. Its current revision may change.
 _Avoid_: live state, universal configuration object, cross-Module schema
+
+**Definition Revision**:
+An immutable validated version of one Definition. Created Resources pin the exact revision that produced them.
+_Avoid_: mutable current configuration, Resource state
 
 **Pack**:
 A Module-owned extension interpreted only by its owning Module.
 _Avoid_: Module, universal plugin, cross-Module runtime
 
-**Preset**:
-An apply-once cross-Module composition of stable Module-owned Definition IDs. Launching a Preset creates ordinary independent Resources.
+**Composition Definition**:
+An apply-once Host-owned list of Module Definition references. The Host resolves each current revision at launch and creates ordinary independent Resources.
 _Avoid_: Workspace Template, Blueprint, workflow, controller, reconciliation, persistent wiring
 
 ## Relationships
@@ -54,6 +58,6 @@ _Avoid_: Workspace Template, Blueprint, workflow, controller, reconciliation, pe
 - Every Workspace provisions World and Agents.
 - A Module owns its Workspace-scoped domain state.
 - A Pack belongs to exactly one Module.
-- A Resource belongs to exactly one Module and one Workspace.
-- A Capability is advertised by exactly one Module and may apply to a Resource type or an entire Workspace.
-- A Preset may create Resources in several Modules but never controls them afterward.
+- A Resource belongs to exactly one Module and one Workspace and may identify the Definition Revision that created it.
+- A Capability is advertised by exactly one Module and may apply to a Definition type, Resource type, or Workspace.
+- A Composition Definition may create Resources in several Modules but never controls them afterward.

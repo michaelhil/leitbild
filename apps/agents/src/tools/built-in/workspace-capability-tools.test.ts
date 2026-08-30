@@ -29,6 +29,9 @@ const catalogFetch = (requests: Request[]): typeof fetch => (async (input, init)
       }],
     })
   }
+  if (request.url.endsWith('/definitions')) {
+    return Response.json({ workspaceId, modules: [{ moduleId, status: 'ready' }], definitions: [] })
+  }
   if (request.url.endsWith('/capabilities')) {
     return Response.json({
       workspaceId,
@@ -64,7 +67,7 @@ describe('Workspace Capability tools', () => {
     const capabilities = await tools[1]!.execute({}, context)
     expect(resources.success).toBe(true)
     expect((capabilities.data as { capabilities: Array<{ granted: boolean }> }).capabilities[0]?.granted).toBe(true)
-    expect(requests).toHaveLength(2)
+    expect(requests).toHaveLength(3)
   })
 
   test('rejects an invocation with a specific grant failure before network access', async () => {

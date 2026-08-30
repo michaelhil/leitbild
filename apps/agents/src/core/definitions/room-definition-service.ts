@@ -1,10 +1,14 @@
 import type { AgentsWorkspaceRuntime } from '../../main.ts'
+import { BUNDLED_PACKS } from '../../packs/bundled.ts'
+import { scanPacks } from '../../packs/scanner.ts'
 import { SYSTEM_SENDER_ID } from '../types/constants.ts'
 import { resolveWorkspaceDefaultModel } from '../workspaces/seed-workspace.ts'
-import { getDemo, type DemoDefinition, type PromptDeckEntry } from './demo-catalog.ts'
+import type { RoomDefinition, PromptDeckEntry } from './room-definition-catalog.ts'
+import type { RoomDefinitionLibrary } from './room-definition-library.ts'
 
-export interface AppliedDemo {
-  readonly demo: DemoDefinition
+export interface StartedRoomDefinition {
+  readonly definition: RoomDefinition
+  readonly revisionId: string
   readonly room: { readonly id: string; readonly name: string }
   readonly human: { readonly id: string; readonly name: string }
   readonly agents: ReadonlyArray<{ readonly id: string; readonly name: string }>
@@ -14,15 +18,14 @@ const requireKnownPacks = async (
   system: AgentsWorkspaceRuntime,
   requested: ReadonlyArray<string>,
 ): Promise<ReadonlyArray<string>> => {
-  const listTool = system.toolRegistry.get('list_packs')
-  if (!listTool) throw new Error('Pack discovery is unavailable')
-  const listed = await listTool.execute({}, { callerId: 'demo-service', callerName: 'demo-service' })
-  if (!listed.success || !Array.isArray(listed.data)) throw new Error('Pack discovery failed')
-  const packs = listed.data as Array<{ id: string; system: boolean }>
-  const known = new Set(packs.map(pack => pack.id))
+  const installed = await scanPacks(system.packsDir)
+  const known = new Set([
+    ...BUNDLED_PACKS.map(pack => pack.descriptor.id),
+    ...installed.map(pack => pack.id),
+  ])
   const missing = requested.filter(id => !known.has(id))
   if (missing.length > 0) throw new Error(`Required Packs are unavailable: ${missing.join(', ')}`)
-  return [...packs.filter(pack => pack.system).map(pack => pack.id), ...requested]
+  return [...BUNDLED_PACKS.filter(pack => pack.system).map(pack => pack.descriptor.id), ...requested]
 }
 
 const uniqueAgentName = (system: AgentsWorkspaceRuntime, requested: string): string => {
@@ -32,44 +35,59 @@ const uniqueAgentName = (system: AgentsWorkspaceRuntime, requested: string): str
   return candidate
 }
 
-export const applyDemo = async (
+const requireKnownTools = (system: AgentsWorkspaceRuntime, requested: ReadonlyArray<string>): void => {
+  const missing = requested.filter(name => system.toolRegistry.get(name) === undefined)
+  if (missing.length > 0) throw new Error(`Required tools are unavailable: ${missing.join(', ')}`)
+}
+
+export const startRoomDefinition = async (
   system: AgentsWorkspaceRuntime,
-  demoId: string,
-): Promise<AppliedDemo> => {
-  const demo = getDemo(demoId)
-  if (!demo) throw new Error(`Unknown demo "${demoId}"`)
-  const activePacks = await requireKnownPacks(system, demo.room.packs)
+  library: RoomDefinitionLibrary,
+  definitionId: string,
+  revisionId: string,
+): Promise<StartedRoomDefinition> => {
+  const current = await library.get(definitionId)
+  if (!current) throw new Error(`Unknown Room Definition "${definitionId}"`)
+  if (current.id !== revisionId) throw new Error(`Room Definition Revision is not current: ${revisionId}`)
+  const revision = await library.getRevision(revisionId)
+  if (!revision || revision.definitionId !== definitionId) throw new Error(`Unknown Room Definition Revision "${revisionId}"`)
+  const definition = revision.definition
+  requireKnownTools(system, definition.requiredTools)
+  const activePacks = await requireKnownPacks(system, definition.room.packs)
   const human = system.team.listByKind('human').find(agent => agent.name === 'You')
     ?? system.team.listByKind('human')[0]
   if (!human) throw new Error('This Workspace has no human agent')
 
   const room = system.rooms.createRoomSafe({
-    name: demo.room.name,
-    roomPrompt: demo.room.prompt,
+    name: definition.room.name,
+    roomPrompt: definition.room.prompt,
     createdBy: SYSTEM_SENDER_ID,
+    sourceDefinition: { id: definition.id, revisionId: revision.id },
   }).value
   const createdAgents: Array<{ id: string; name: string }> = []
   try {
     room.setActivePacks(activePacks)
-    room.setDeliveryMode(demo.room.deliveryMode)
+    room.setDeliveryMode(definition.room.deliveryMode)
     await system.addAgentToRoom(human.id, room.profile.id, 'demo')
     const model = resolveWorkspaceDefaultModel(system)
-    for (const definition of demo.room.agents) {
+    for (const agentDefinition of definition.room.agents) {
       const agent = await system.spawnAIAgent({
-        name: uniqueAgentName(system, definition.name),
+        name: uniqueAgentName(system, agentDefinition.name),
         model,
-        persona: definition.persona,
-        ...(definition.tools ? { tools: definition.tools } : {}),
-        ...(definition.temperature !== undefined ? { temperature: definition.temperature } : {}),
+        persona: agentDefinition.persona,
+        ...(agentDefinition.tools ? { tools: agentDefinition.tools } : {}),
+        ...(agentDefinition.toolGrants ? { toolGrants: agentDefinition.toolGrants } : {}),
+        ...(agentDefinition.temperature !== undefined ? { temperature: agentDefinition.temperature } : {}),
       })
       await system.addAgentToRoom(agent.id, room.profile.id, 'demo')
       createdAgents.push({ id: agent.id, name: agent.name })
     }
     // Joining a second AI intentionally auto-switches ordinary rooms to
     // manual. A Room Definition is authoritative, so restore its declared mode.
-    room.setDeliveryMode(demo.room.deliveryMode)
+    room.setDeliveryMode(definition.room.deliveryMode)
     return {
-      demo,
+      definition,
+      revisionId: revision.id,
       room: { id: room.profile.id, name: room.profile.name },
       human: { id: human.id, name: human.name },
       agents: createdAgents,
@@ -83,16 +101,20 @@ export const applyDemo = async (
 
 export const runPromptDeckEntry = async (
   system: AgentsWorkspaceRuntime,
-  demoId: string,
+  library: RoomDefinitionLibrary,
   roomId: string,
   entryId: string,
 ): Promise<PromptDeckEntry> => {
-  const demo = getDemo(demoId)
-  if (!demo) throw new Error(`Unknown demo "${demoId}"`)
-  const entry = demo.deck.entries.find(candidate => candidate.id === entryId)
-  if (!entry) throw new Error(`Unknown Prompt Deck entry "${entryId}"`)
   const room = system.rooms.getRoom(roomId)
   if (!room) throw new Error(`Room "${roomId}" not found`)
+  const sourceDefinition = room.profile.sourceDefinition
+  if (!sourceDefinition) throw new Error('Room was not created from a Room Definition')
+  const revision = await library.getRevision(sourceDefinition.revisionId)
+  if (!revision || revision.definitionId !== sourceDefinition.id) {
+    throw new Error(`Room Definition Revision "${sourceDefinition.revisionId}" not found`)
+  }
+  const entry = revision.definition.deck.entries.find(candidate => candidate.id === entryId)
+  if (!entry) throw new Error(`Unknown Prompt Deck entry "${entryId}"`)
 
   if (entry.action.kind === 'start-script') {
     const result = await system.scriptRunner.start(room.profile.id, entry.action.scriptName)

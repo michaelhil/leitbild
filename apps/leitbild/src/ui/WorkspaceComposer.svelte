@@ -1,6 +1,8 @@
 <script lang="ts">
   interface Props {
     readonly workspaceId: string
+    readonly worldRunId: string | null
+    readonly agentsRoomId: string | null
   }
 
   type CollapsedPane = 'world' | 'agents' | null
@@ -9,7 +11,7 @@
   const collapseThreshold = 12
   const minimumOpenShare = 20
 
-  let { workspaceId }: Props = $props()
+  let { workspaceId, worldRunId, agentsRoomId }: Props = $props()
   let splitPercent = $state(initialSplit)
   let lastOpenSplit = $state(initialSplit)
   let collapsedPane = $state<CollapsedPane>(null)
@@ -96,7 +98,9 @@
   <section class="module-pane world-pane" class:collapsed={collapsedPane === 'world'} aria-label="World simulations">
     <iframe
       class="module-frame active"
-      src={`/workspaces/${encodeURIComponent(workspaceId)}/world`}
+      src={worldRunId === null
+        ? `/workspaces/${encodeURIComponent(workspaceId)}/world`
+        : `/workspaces/${encodeURIComponent(workspaceId)}/world/runs/${encodeURIComponent(worldRunId)}`}
       title="World simulations"
     ></iframe>
   </section>
@@ -116,7 +120,9 @@
   <section class="module-pane agents-pane" class:collapsed={collapsedPane === 'agents'} aria-label="Agents room">
     <iframe
       class="module-frame active"
-      src={`/workspaces/${encodeURIComponent(workspaceId)}/agents`}
+      src={agentsRoomId === null
+        ? `/workspaces/${encodeURIComponent(workspaceId)}/agents`
+        : `/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(agentsRoomId)}`}
       title="Agents room"
     ></iframe>
   </section>

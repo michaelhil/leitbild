@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { workspaceIdSchema, type WorkspaceId } from '@leitbild/contracts'
 import { scenarioDefinitionSchema, type ScenarioDefinition } from '../model/index.ts'
 
-const scenarioRevisionIdSchema = z.string()
+export const scenarioRevisionIdSchema = z.string()
   .regex(/^revision-[a-f0-9]{32}$/)
   .brand<'ScenarioRevisionId'>()
 
@@ -60,6 +60,7 @@ export interface ScenarioLibrary {
   readonly get: (scenarioId: string) => Promise<ScenarioRecord | undefined>
   readonly getRevision: (revisionId: ScenarioRevisionId) => Promise<ScenarioRevision | undefined>
   readonly currentRevision: (scenarioId: string) => Promise<ScenarioRevision | undefined>
+  readonly delete: (scenarioId: string) => Promise<boolean>
 }
 
 const stableJson = (value: unknown): string => {
@@ -82,6 +83,7 @@ export const createLocalScenarioLibrary = (config: {
 }): ScenarioLibrary => {
   const indexPath = join(config.rootDir, 'catalog.json')
   const revisionsDir = join(config.rootDir, 'revisions')
+  const deletionsPath = join(config.rootDir, 'deleted-definitions.json')
   let mutationQueue: Promise<void> = Promise.resolve()
 
   const emptyIndex = (): ScenarioLibraryIndex => ({
@@ -112,6 +114,26 @@ export const createLocalScenarioLibrary = (config: {
     await atomicWrite(indexPath, scenarioLibraryIndexSchema.parse(index))
   }
 
+  const deletedDefinitionsSchema = z.object({
+    definitionIds: z.array(z.string().min(1).max(128)),
+  }).strict()
+
+  const loadDeletedDefinitionIds = async (): Promise<ReadonlySet<string>> => {
+    try {
+      const stored = deletedDefinitionsSchema.parse(JSON.parse(await readFile(deletionsPath, 'utf8')) as unknown)
+      return new Set(stored.definitionIds)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return new Set()
+      throw err
+    }
+  }
+
+  const saveDeletedDefinitionIds = async (definitionIds: ReadonlySet<string>): Promise<void> => {
+    await atomicWrite(deletionsPath, {
+      definitionIds: [...definitionIds].sort((left, right) => left.localeCompare(right)),
+    })
+  }
+
   const revisionPath = (id: ScenarioRevisionId): string => join(revisionsDir, `${id}.json`)
 
   const loadRevision = async (id: ScenarioRevisionId): Promise<ScenarioRevision | undefined> => {
@@ -131,9 +153,11 @@ export const createLocalScenarioLibrary = (config: {
       const duplicate = definitions.find((definition, index) => definitions.findIndex(candidate => candidate.id === definition.id) !== index)
       if (duplicate) throw new Error(`duplicate Scenario template id: ${duplicate.id}`)
       const index = await loadIndex()
+      const deletedDefinitionIds = await loadDeletedDefinitionIds()
       const records = new Map(index.scenarios.map(record => [record.id, record]))
 
       for (const definition of definitions) {
+        if (deletedDefinitionIds.has(definition.id)) continue
         const digest = digestDefinition(definition)
         const revisionId = scenarioRevisionIdSchema.parse(`revision-${digest.slice(0, 32)}`)
         const existingRevision = await loadRevision(revisionId)
@@ -184,6 +208,23 @@ export const createLocalScenarioLibrary = (config: {
     currentRevision: async (scenarioId) => {
       const record = (await loadIndex()).scenarios.find(scenario => scenario.id === scenarioId)
       return record ? await loadRevision(record.currentRevisionId) : undefined
+    },
+    delete: scenarioId => {
+      const operation = mutationQueue.then(async () => {
+        const index = await loadIndex()
+        const exists = index.scenarios.some(scenario => scenario.id === scenarioId)
+        if (!exists) return false
+        const deletedDefinitionIds = new Set(await loadDeletedDefinitionIds())
+        deletedDefinitionIds.add(scenarioId)
+        await saveDeletedDefinitionIds(deletedDefinitionIds)
+        await saveIndex({
+          ...index,
+          scenarios: index.scenarios.filter(scenario => scenario.id !== scenarioId),
+        })
+        return true
+      })
+      mutationQueue = operation.then(() => undefined, () => undefined)
+      return operation
     },
   }
 }

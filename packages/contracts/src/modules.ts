@@ -1,7 +1,14 @@
 import { z } from 'zod'
 import { moduleIdSchema, type ModuleId } from './ids.ts'
+import { moduleFailureSchema } from './workspaces.ts'
 
 export const coreModuleIds = ['world', 'agents'].map(value => moduleIdSchema.parse(value)) as readonly ModuleId[]
+
+export const moduleQueryOutcomeSchema = z.discriminatedUnion('status', [
+  z.object({ moduleId: moduleIdSchema, status: z.literal('ready') }).strict(),
+  z.object({ moduleId: moduleIdSchema, status: z.literal('failed'), failure: moduleFailureSchema }).strict(),
+])
+export type ModuleQueryOutcome = z.infer<typeof moduleQueryOutcomeSchema>
 
 const relativePathTemplateSchema = z.string().min(1).max(512).superRefine((value, ctx) => {
   if (!value.startsWith('/')) ctx.addIssue({ code: 'custom', message: 'path template must start with /' })
@@ -21,6 +28,7 @@ export const workspaceModuleManifestSchema = z.object({
   }).strict(),
   endpoints: z.object({
     workspace: relativePathTemplateSchema,
+    definitions: relativePathTemplateSchema,
     resources: relativePathTemplateSchema,
     capabilities: relativePathTemplateSchema,
     invoke: invocationPathTemplateSchema,

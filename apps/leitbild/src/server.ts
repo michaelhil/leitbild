@@ -98,8 +98,8 @@ export const createWorkspaceHostServer = (config: {
         if (url.pathname === '/api/modules' && request.method === 'GET') {
           return Response.json({ modules: config.host.installedModuleIds().map(moduleId => ({ id: moduleId })) })
         }
-        if (url.pathname === '/api/presets' && request.method === 'GET') {
-          return Response.json({ presets: config.host.presets() })
+        if (url.pathname === '/api/compositions' && request.method === 'GET') {
+          return Response.json({ compositions: config.host.compositions() })
         }
         if (url.pathname === '/api/workspaces' && request.method === 'GET') {
           return Response.json({ workspaces: config.host.list() })
@@ -115,6 +115,7 @@ export const createWorkspaceHostServer = (config: {
           const capabilityId = capabilityIdSchema.parse(decodeURIComponent(invocationMatch[2] ?? ''))
           const requestInput = workspaceCapabilityInvocationRequestSchema.parse(await parseJson(request))
           const input = {
+            ...(requestInput.definition === undefined ? {} : { definition: requestInput.definition }),
             ...(requestInput.resource === undefined ? {} : { resource: requestInput.resource }),
             input: requestInput.input,
           }
@@ -124,26 +125,31 @@ export const createWorkspaceHostServer = (config: {
             actor: requestInput.actor ?? { kind: 'anonymous' },
             client: { id: 'workspace-host', kind: 'service' },
           })
-          return Response.json({ result: await config.host.invoke(workspaceId, capabilityId, input, access) })
+          return Response.json(await config.host.invoke(workspaceId, capabilityId, input, access))
         }
 
-        const presetMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/presets\/([^/]+)\/apply$/)
-        if (presetMatch && request.method === 'POST') {
-          const workspaceId = workspaceIdSchema.parse(decodeURIComponent(presetMatch[1] ?? ''))
-          const presetId = decodeURIComponent(presetMatch[2] ?? '')
+        const compositionMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/compositions\/([^/]+)\/start$/)
+        if (compositionMatch && request.method === 'POST') {
+          const workspaceId = workspaceIdSchema.parse(decodeURIComponent(compositionMatch[1] ?? ''))
+          const compositionId = decodeURIComponent(compositionMatch[2] ?? '')
           const access = accessContextSchema.parse({
             workspaceId,
             requestId: newRequestId(),
             actor: { kind: 'anonymous' },
             client: { id: 'workspace-host', kind: 'service' },
           })
-          return Response.json({ application: await config.host.applyPreset(workspaceId, presetId, access) })
+          return Response.json({ application: await config.host.startComposition(workspaceId, compositionId, access) })
         }
 
         const resourcesMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/resources$/)
         if (resourcesMatch && request.method === 'GET') {
           const workspaceId = workspaceIdSchema.parse(decodeURIComponent(resourcesMatch[1] ?? ''))
           return Response.json(await config.host.resources(workspaceId))
+        }
+        const definitionsMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/definitions$/)
+        if (definitionsMatch && request.method === 'GET') {
+          const workspaceId = workspaceIdSchema.parse(decodeURIComponent(definitionsMatch[1] ?? ''))
+          return Response.json(await config.host.definitions(workspaceId))
         }
         const capabilitiesMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/capabilities$/)
         if (capabilitiesMatch && request.method === 'GET') {

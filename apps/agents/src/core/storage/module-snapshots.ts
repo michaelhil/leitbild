@@ -105,6 +105,10 @@ const roomProfileSchema = z.object({
   roomPrompt: z.string().optional(),
   createdBy: z.string(),
   createdAt: z.number().finite(),
+  sourceDefinition: z.object({
+    id: z.string().min(1).max(128),
+    revisionId: z.string().min(1).max(128),
+  }).strict().optional(),
 }).strict()
 
 const messageCauseSchema = z.object({

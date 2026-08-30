@@ -13,8 +13,8 @@
     try {
       const route = parseControlSurfaceRoute(location.pathname)
       configureActiveWorkspace(route.workspaceId)
-      if (route.mode === 'run-picker') {
-        const module = await import('./routes/RunPickerRoute.svelte')
+      if (route.mode === 'workspace-home') {
+        const module = await import('./routes/WorldHomeRoute.svelte')
         Route = module.default
         return
       }

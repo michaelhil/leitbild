@@ -381,9 +381,6 @@ export const stateHandlers: StateHandlers = {
       $selectedRoomId.set(null)
     }
 
-    // Drop any active-demo pin for the deleted room so stale keys don't
-    // accumulate. Async import to keep the dispatcher cycle-free.
-    void import('../../demos/active-demo-store.ts').then(m => m.clearDemoForRoom(roomId))
   },
 
   // --- Agents ---

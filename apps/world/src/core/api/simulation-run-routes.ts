@@ -33,10 +33,6 @@ const commandRequestSchema = z.object({
   expectedRevision: z.number().int().nonnegative().optional(),
 })
 
-const createSimulationRunRequestSchema = z.object({
-  scenarioId: z.string().min(1).optional(),
-}).strict()
-
 const signalRequestSchema = z.object({
   actorId: actorIdSchema.optional(),
   clientId: clientIdSchema.optional(),
@@ -156,48 +152,12 @@ const handleSimulationRunApiInner = async (
   if (!url.pathname.startsWith(`${apiPrefix}/`)) return null
   const pathname = url.pathname.slice(apiPrefix.length)
 
-  if (pathname === '/scenarios' && req.method === 'GET') {
-    return json({
-      scenarios: (await config.registry.listScenarios()).map(scenario => ({
-        id: scenario.id,
-        title: scenario.title,
-        description: scenario.description,
-        currentRevisionId: scenario.currentRevisionId,
-      })),
-      defaultScenarioId: config.registry.defaultScenarioId(),
-    })
-  }
-
   const scenarioMatch = pathname.match(/^\/scenarios\/([^/]+)$/)
   if (scenarioMatch && req.method === 'GET') {
     const scenarioId = decodeURIComponent(scenarioMatch[1] ?? '')
     const revision = await config.registry.currentScenario(scenarioId)
     if (!revision) return apiError(404, 'scenario_not_found', 'scenario not found')
     return json({ scenario: revision.definition, revisionId: revision.id, digest: revision.digest })
-  }
-
-  if (pathname === '/simulation-runs' && req.method === 'GET') {
-    const websocketClientCountById = new Map(
-      (config.websocketClients ?? []).map(item => [item.id, item.websocketClientCount]),
-    )
-    return json({
-      simulationRuns: (await config.registry.listKnown()).map(summary => ({
-        ...summary,
-        websocketClientCount: websocketClientCountById.get(summary.id) ?? 0,
-      })),
-    })
-  }
-
-  if (pathname === '/simulation-runs' && req.method === 'POST') {
-    const raw = await readJson(req)
-    const parsed = createSimulationRunRequestSchema.parse(raw)
-    if (parsed.scenarioId !== undefined && !await config.registry.currentScenario(parsed.scenarioId)) {
-      return apiError(404, 'scenario_not_found', 'scenario not found')
-    }
-    const runtime = await config.registry.create({
-      ...(parsed.scenarioId === undefined ? {} : { scenarioId: parsed.scenarioId }),
-    })
-    return json(await simulationRunResponse(config.registry, runtime), { status: 201 })
   }
 
   const simulationRunMatch = pathname.match(/^\/simulation-runs\/([^/]+)$/)

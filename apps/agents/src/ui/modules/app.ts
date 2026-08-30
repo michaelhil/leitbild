@@ -17,7 +17,7 @@ import { mountRoomSwitcher } from './render/render-room-switcher.ts'
 import { mountVisibilityPopover } from './visibility-popover.ts'
 import { initMessageHeaderPrefs } from './message-header-prefs.ts'
 import { renderMessage } from './render/render-message.ts'
-import { renderDemoStrip } from './demos/index.ts'
+import { initPromptDeck } from './prompt-deck.ts'
 import type {
   UIMessage,
   RoomProfile,
@@ -105,18 +105,6 @@ const {
 // Previously broken — callers assumed a global `$` that didn't exist, silently
 // throwing ReferenceError at module load and halting handler wiring.
 const $ = (sel: string) => document.querySelector(sel)!
-
-// Empty-state demo strip — adapter that closes over the messagesDiv ref and
-// the per-room "is the chat empty" check. Renders the strip below the
-// messages area only when the current room has no chat (only system) posts.
-const renderDemoStripForRoom = (roomId: string): void => {
-  if (messagesDiv.getAttribute('data-room-id') !== roomId) return
-  const isCurrentRoomEmpty = (): boolean => {
-    const msgs = $roomMessages.get()[roomId] ?? []
-    return msgs.every(m => m.type !== 'chat')
-  }
-  renderDemoStrip(messagesDiv, roomId, isCurrentRoomEmpty)
-}
 
 // === WS client ===
 // The `client` reference is held in ws-send.ts so any UI module can call
@@ -386,10 +374,6 @@ $selectedRoomId.listen((roomId, prevRoomId) => {
     // Composer attachments chip strip re-targets to the new active room.
     refreshComposerChips()
 
-    // Empty-state demo nudge — shows when the room has no chat content
-    // (only the welcome system banner). Hides as soon as anyone posts.
-    // Idempotent; safe to call on every room render.
-    renderDemoStripForRoom(roomId)
   } else {
     // No room selected — show the empty-state. Agent inspector is now a
     // modal, so it doesn't compete with chat-area visibility anymore.
@@ -464,9 +448,6 @@ $roomMessages.listen((allMessages, _old, changedRoomId) => {
     messagesDiv.scrollTop = messagesDiv.scrollHeight
   }
 
-  // The strip renderer's own empty-check decides whether to show or hide,
-  // so calling on every message update is the cheapest correct path.
-  renderDemoStripForRoom(changedRoomId)
 })
 
 // --- Thinking indicator lifecycle ---
@@ -895,7 +876,5 @@ void (async () => {
   await refreshExtensions()
   window.addEventListener('packs-changed', () => { void refreshExtensions() })
   connect()
-  // Demo deep-link: read `?demo=<id>` and pin the demo to the current room.
-  const { initDemoDeepLink } = await import('./demos/index.ts')
-  initDemoDeepLink()
+  initPromptDeck()
 })()

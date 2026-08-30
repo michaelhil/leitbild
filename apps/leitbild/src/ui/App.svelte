@@ -1,12 +1,30 @@
 <script lang="ts">
-  import { coreModuleIds, type Workspace } from '@leitbild/contracts'
+  import {
+    coreModuleIds,
+    type ModuleCapabilityDescriptor,
+    type ModuleDefinitionDescriptor,
+    type ModuleResourceDescriptor,
+    type Workspace,
+  } from '@leitbild/contracts'
   import WorkspaceComposer from './WorkspaceComposer.svelte'
 
   type Page = { readonly kind: 'list' } | { readonly kind: 'workspace'; readonly id: string }
-  interface PresetDefinition { readonly id: string; readonly title: string; readonly description: string }
-  interface CatalogItem { readonly id?: string; readonly title: string; readonly ref?: { readonly type: string; readonly id: string } }
-  const moduleTitles: Readonly<Record<string, string>> = { world: 'World', agents: 'Agents' }
+  interface CompositionDefinition { readonly id: string; readonly title: string; readonly description: string }
+  interface InvocationResponse {
+    readonly result: unknown
+    readonly createdResources?: ReadonlyArray<ModuleResourceDescriptor['ref']>
+  }
+  interface CompositionResponse {
+    readonly application: {
+      readonly status: 'applied' | 'partial' | 'failed'
+      readonly outcomes: ReadonlyArray<{
+        readonly error?: string
+        readonly createdResources?: ReadonlyArray<ModuleResourceDescriptor['ref']>
+      }>
+    }
+  }
 
+  const moduleTitles: Readonly<Record<string, string>> = { world: 'World', agents: 'Agents' }
   const page = (): Page => {
     if (location.pathname === '/workspaces') return { kind: 'list' }
     const match = location.pathname.match(/^\/workspaces\/([^/]+)$/)
@@ -15,6 +33,9 @@
   }
 
   const currentPage = page()
+  const initialSelection = new URLSearchParams(location.search)
+  let selectedWorldRunId = $state(initialSelection.get('world'))
+  let selectedAgentsRoomId = $state(initialSelection.get('agents'))
   let workspaces = $state<ReadonlyArray<Workspace>>([])
   let workspace = $state<Workspace | null>(null)
   let name = $state('')
@@ -23,10 +44,12 @@
   let busy = $state(false)
   let error = $state<string | null>(null)
   let settingsDialog = $state<HTMLDialogElement | null>(null)
-  let presets = $state<ReadonlyArray<PresetDefinition>>([])
-  let resources = $state<ReadonlyArray<CatalogItem>>([])
-  let capabilities = $state<ReadonlyArray<CatalogItem>>([])
+  let compositions = $state<ReadonlyArray<CompositionDefinition>>([])
+  let definitions = $state<ReadonlyArray<ModuleDefinitionDescriptor>>([])
+  let resources = $state<ReadonlyArray<ModuleResourceDescriptor>>([])
+  let capabilities = $state<ReadonlyArray<ModuleCapabilityDescriptor>>([])
   const workspaceTitle = $derived(workspace?.name ?? workspace?.id ?? 'Workspace')
+  const showingComposer = $derived(selectedWorldRunId !== null || selectedAgentsRoomId !== null)
 
   const request = async <T,>(path: string, options?: RequestInit): Promise<T> => {
     const response = await fetch(path, options)
@@ -34,6 +57,18 @@
     const body = await response.json() as T & { error?: { message?: string } }
     if (!response.ok) throw new Error(body.error?.message ?? `Request failed: ${response.status}`)
     return body
+  }
+
+  const loadWorkspaceCatalog = async (workspaceId: string): Promise<void> => {
+    const encoded = encodeURIComponent(workspaceId)
+    const [definitionResponse, resourceResponse, capabilityResponse] = await Promise.all([
+      request<{ definitions: ReadonlyArray<ModuleDefinitionDescriptor> }>(`/api/workspaces/${encoded}/definitions`),
+      request<{ resources: ReadonlyArray<ModuleResourceDescriptor> }>(`/api/workspaces/${encoded}/resources`),
+      request<{ capabilities: ReadonlyArray<ModuleCapabilityDescriptor> }>(`/api/workspaces/${encoded}/capabilities`),
+    ])
+    definitions = definitionResponse.definitions
+    resources = resourceResponse.resources
+    capabilities = capabilityResponse.capabilities
   }
 
   const load = async (): Promise<void> => {
@@ -44,16 +79,13 @@
         workspaces = (await request<{ workspaces: ReadonlyArray<Workspace> }>('/api/workspaces')).workspaces
       } else {
         const workspaceId = encodeURIComponent(currentPage.id)
-        const [workspaceResponse, presetResponse, resourceResponse, capabilityResponse] = await Promise.all([
+        const [workspaceResponse, compositionResponse] = await Promise.all([
           request<{ workspace: Workspace }>(`/api/workspaces/${workspaceId}`),
-          request<{ presets: ReadonlyArray<PresetDefinition> }>('/api/presets'),
-          request<{ resources: ReadonlyArray<CatalogItem> }>(`/api/workspaces/${workspaceId}/resources`),
-          request<{ capabilities: ReadonlyArray<CatalogItem> }>(`/api/workspaces/${workspaceId}/capabilities`),
+          request<{ compositions: ReadonlyArray<CompositionDefinition> }>('/api/compositions'),
+          loadWorkspaceCatalog(currentPage.id),
         ])
         workspace = workspaceResponse.workspace
-        presets = presetResponse.presets
-        resources = resourceResponse.resources
-        capabilities = capabilityResponse.capabilities
+        compositions = compositionResponse.compositions
         name = workspace.name ?? ''
       }
     } catch (cause) {
@@ -67,19 +99,14 @@
     if (busy) return
     busy = true
     error = null
-    try {
-      await action()
-    } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause)
-    } finally {
-      busy = false
-    }
+    try { await action() }
+    catch (cause) { error = cause instanceof Error ? cause.message : String(cause) }
+    finally { busy = false }
   }
 
   const createWorkspace = (): Promise<void> => run(async () => {
     const response = await request<{ workspace: Workspace }>('/api/workspaces', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: createName.trim() || null }),
     })
     location.href = `/workspaces/${response.workspace.id}`
@@ -88,8 +115,7 @@
   const saveName = (): Promise<void> => run(async () => {
     if (!workspace) return
     const response = await request<{ workspace: Workspace }>(`/api/workspaces/${workspace.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name.trim() || null }),
     })
     workspace = response.workspace
@@ -98,11 +124,10 @@
 
   const retryModule = (moduleId: string): Promise<void> => run(async () => {
     if (!workspace) return
-    const response = await request<{ workspace: Workspace }>(
-      `/api/workspaces/${workspace.id}/modules/${encodeURIComponent(moduleId)}/retry`,
-      { method: 'POST' },
-    )
-    workspace = response.workspace
+    workspace = (await request<{ workspace: Workspace }>(
+      `/api/workspaces/${workspace.id}/modules/${encodeURIComponent(moduleId)}/retry`, { method: 'POST' },
+    )).workspace
+    await loadWorkspaceCatalog(workspace.id)
   })
 
   const deleteWorkspace = (): Promise<void> => run(async () => {
@@ -111,142 +136,106 @@
     location.href = '/workspaces'
   })
 
-  const applyPreset = (presetId: string): Promise<void> => run(async () => {
+  const openResources = (created: ReadonlyArray<ModuleResourceDescriptor['ref']>): void => {
+    const world = created.find(resource => resource.moduleId === 'world' && resource.type === 'world.simulation-run')
+    const agents = created.find(resource => resource.moduleId === 'agents' && resource.type === 'agents.room')
+    const params = new URLSearchParams()
+    if (world) params.set('world', world.id)
+    else if (selectedWorldRunId) params.set('world', selectedWorldRunId)
+    if (agents) params.set('agents', agents.id)
+    else if (selectedAgentsRoomId) params.set('agents', selectedAgentsRoomId)
+    location.href = `${location.pathname}${params.size > 0 ? `?${params}` : ''}`
+  }
+
+  const invokeDefinition = (definition: ModuleDefinitionDescriptor, capability: ModuleCapabilityDescriptor): Promise<void> => run(async () => {
     if (!workspace) return
-    const response = await request<{ application: { status: 'applied' | 'partial' | 'failed'; outcomes: ReadonlyArray<{ error?: string }> } }>(
-      `/api/workspaces/${workspace.id}/presets/${encodeURIComponent(presetId)}/apply`,
-      { method: 'POST' },
+    if (capability.risk === 'destructive' && !confirm(`${capability.title}: ${definition.title}? Existing live resources will remain.`)) return
+    const response = await request<InvocationResponse>(
+      `/api/workspaces/${workspace.id}/capabilities/${encodeURIComponent(capability.id)}/invoke`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          definition: { ...definition.ref, revisionId: definition.currentRevisionId },
+          input: {}, actor: { kind: 'human' },
+        }),
+      },
     )
-    if (response.application.status !== 'applied') {
-      throw new Error(response.application.outcomes.flatMap(outcome => outcome.error ? [outcome.error] : []).join('; ') || 'Preset application failed')
-    }
-    location.reload()
+    if (response.createdResources?.length) openResources(response.createdResources)
+    else await loadWorkspaceCatalog(workspace.id)
   })
+
+  const startComposition = (compositionId: string): Promise<void> => run(async () => {
+    if (!workspace) return
+    const response = await request<CompositionResponse>(
+      `/api/workspaces/${workspace.id}/compositions/${encodeURIComponent(compositionId)}/start`, { method: 'POST' },
+    )
+    const created = response.application.outcomes.flatMap(outcome => outcome.createdResources ?? [])
+    if (response.application.status === 'failed') {
+      throw new Error(response.application.outcomes.flatMap(outcome => outcome.error ? [outcome.error] : []).join('; ') || 'Composition failed')
+    }
+    openResources(created)
+  })
+
+  const openResource = (resource: ModuleResourceDescriptor): void => {
+    const params = new URLSearchParams()
+    if (resource.ref.moduleId === 'world') params.set('world', resource.ref.id)
+    if (resource.ref.moduleId === 'agents') params.set('agents', resource.ref.id)
+    location.href = `${location.pathname}?${params}`
+  }
+
+  const capabilityFor = (id: string): ModuleCapabilityDescriptor | undefined => capabilities.find(item => item.id === id)
+  const definitionsFor = (moduleId: string): ReadonlyArray<ModuleDefinitionDescriptor> => definitions.filter(item => item.ref.moduleId === moduleId)
+  const resourcesFor = (moduleId: string): ReadonlyArray<ModuleResourceDescriptor> => resources.filter(item => item.ref.moduleId === moduleId)
 
   void load()
 </script>
 
 {#if currentPage.kind === 'workspace' && workspace}
   <header class="workspace-bar">
-    <div class="workspace-identity">
-      <a class="brand" href="/">Leitbild</a>
-      <span aria-hidden="true">/</span>
-      <span class="workspace-name" title={workspaceTitle}>{workspaceTitle}</span>
-    </div>
-    <button
-      class="icon-button"
-      type="button"
-      aria-label="Workspace settings"
-      title="Workspace settings"
-      onclick={() => settingsDialog?.showModal()}
-    >
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="12" cy="12" r="3" />
-        <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.42 1.42-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V20h-2v-.09A1.7 1.7 0 0 0 12.38 18a1.7 1.7 0 0 0-1.88.34l-.06.06-1.42-1.42.06-.06A1.7 1.7 0 0 0 9.42 15a1.7 1.7 0 0 0-1.55-1.03H7v-2h.09A1.7 1.7 0 0 0 9 10.94a1.7 1.7 0 0 0-.34-1.88L8.6 9l1.42-1.42.06.06A1.7 1.7 0 0 0 12 8a1.7 1.7 0 0 0 1.03-1.55V6h2v.09A1.7 1.7 0 0 0 16.06 8a1.7 1.7 0 0 0 1.88-.34l.06-.06L19.42 9l-.06.06A1.7 1.7 0 0 0 19.7 11a1.7 1.7 0 0 0 1.55 1.03H22v2h-.09A1.7 1.7 0 0 0 20 15Z" />
-      </svg>
+    <div class="workspace-identity"><a class="brand" href={`/workspaces/${workspace.id}`}>Leitbild</a><span aria-hidden="true">/</span><span class="workspace-name" title={workspaceTitle}>{workspaceTitle}</span></div>
+    <button class="icon-button" type="button" aria-label="Workspace settings" title="Workspace settings" onclick={() => settingsDialog?.showModal()}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.42 1.42-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V20h-2v-.09A1.7 1.7 0 0 0 12.38 18a1.7 1.7 0 0 0-1.88.34l-.06.06-1.42-1.42.06-.06A1.7 1.7 0 0 0 9.42 15a1.7 1.7 0 0 0-1.55-1.03H7v-2h.09A1.7 1.7 0 0 0 9 10.94a1.7 1.7 0 0 0-.34-1.88L8.6 9l1.42-1.42.06.06A1.7 1.7 0 0 0 12 8a1.7 1.7 0 0 0 1.03-1.55V6h2v.09A1.7 1.7 0 0 0 16.06 8a1.7 1.7 0 0 0 1.88-.34l.06-.06L19.42 9l-.06.06A1.7 1.7 0 0 0 19.7 11a1.7 1.7 0 0 0 1.55 1.03H22v2h-.09A1.7 1.7 0 0 0 20 15Z" /></svg>
     </button>
   </header>
 {:else}
-  <header class="topbar">
-    <a class="brand" href="/">Leitbild</a>
-    <a href="/workspaces">Workspaces</a>
-  </header>
+  <header class="topbar"><a class="brand" href="/">Leitbild</a><a href="/workspaces">Workspaces</a></header>
 {/if}
 
-<main class:workspace-main={currentPage.kind === 'workspace'}>
+<main class:workspace-main={currentPage.kind === 'workspace' && showingComposer}>
   {#if loading}
-    <section class="notice">Loading Workspaces…</section>
+    <section class="notice">Loading Workspace…</section>
   {:else if error && currentPage.kind === 'workspace' && !workspace}
-    <section class="notice error">
-      <h1>Workspace unavailable</h1>
-      <p>{error}</p>
-      <a href="/workspaces">Back to Workspaces</a>
-    </section>
+    <section class="notice error"><h1>Workspace unavailable</h1><p>{error}</p><a href="/workspaces">Back to Workspaces</a></section>
   {:else if currentPage.kind === 'list'}
-    <section class="hero">
-      <div><p class="eyebrow">Leitbild</p><h1>Workspaces</h1></div>
-      <p>Each Workspace contains World and Agents.</p>
-    </section>
-
+    <section class="hero"><div><p class="eyebrow">Leitbild</p><h1>Workspaces</h1></div><p>Each Workspace contains World and Agents.</p></section>
     {#if error}<p class="notice error">{error}</p>{/if}
-
-    <section class="panel create-panel">
-      <div><h2>{workspaces.length === 0 ? 'Meet Leitbild' : 'New Workspace'}</h2><p>Names are optional; the UUID is the stable identity.</p></div>
-      <label>Name <input bind:value={createName} maxlength="256" placeholder="Optional name" /></label>
-      <button class="primary" disabled={busy} onclick={() => void createWorkspace()}>Create Workspace</button>
-    </section>
-
-    <section class="workspace-grid">
-      {#each workspaces as item (item.id)}
-        <article class="workspace-card">
-          <div><h2>{item.name ?? item.id}</h2>{#if item.name}<code>{item.id}</code>{/if}</div>
-          <div class="chips">{#each coreModuleIds as moduleId}<span>{moduleTitles[moduleId]}</span>{/each}</div>
-          <div class="actions"><a class="button primary" href={`/workspaces/${item.id}`}>Open Workspace</a></div>
-        </article>
-      {/each}
-    </section>
+    <section class="panel create-panel"><div><h2>{workspaces.length === 0 ? 'Meet Leitbild' : 'New Workspace'}</h2><p>Names are optional; the UUID is the stable identity.</p></div><label>Name <input bind:value={createName} maxlength="256" placeholder="Optional name" /></label><button class="primary" disabled={busy} onclick={() => void createWorkspace()}>Create Workspace</button></section>
+    <section class="workspace-grid">{#each workspaces as item (item.id)}<article class="workspace-card"><div><h2>{item.name ?? item.id}</h2>{#if item.name}<code>{item.id}</code>{/if}</div><div class="chips">{#each coreModuleIds as moduleId}<span>{moduleTitles[moduleId]}</span>{/each}</div><div class="actions"><a class="button primary" href={`/workspaces/${item.id}`}>Open Workspace</a></div></article>{/each}</section>
   {:else if workspace}
-    <WorkspaceComposer workspaceId={workspace.id} />
-
-    {#if error}<p class="workspace-error">{error}</p>{/if}
-
-    <dialog class="settings-dialog" bind:this={settingsDialog}>
-      <header>
-        <div><p class="eyebrow">{workspaceTitle}</p><h2>Workspace Settings</h2></div>
-        <button class="dialog-close" type="button" aria-label="Close settings" onclick={() => settingsDialog?.close()}>×</button>
-      </header>
-
-      <section class="settings-section">
-        <h3>Applications</h3>
-        <div class="settings-links">
-          <a class="button primary" href={`/workspaces/${workspace.id}/world`}>Open World</a>
-          <a class="button primary" href={`/workspaces/${workspace.id}/agents`}>Open Agents</a>
-        </div>
-      </section>
-
-      <section class="settings-section">
-        <h3>Presets</h3>
-        <p>Apply independent World and Agents definitions together. The created runs and rooms remain ordinary resources.</p>
-        {#each presets as preset (preset.id)}
-          <div class="preset-row">
-            <div><strong>{preset.title}</strong><small>{preset.description}</small></div>
-            <button disabled={busy} onclick={() => void applyPreset(preset.id)}>Apply</button>
-          </div>
+    {#if showingComposer}
+      <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} agentsRoomId={selectedAgentsRoomId} />
+    {:else}
+      <section class="workspace-home">
+        <header class="catalog-hero"><div><p class="eyebrow">{workspaceTitle}</p><h1>What do you want to open?</h1></div><p>Start a reusable definition or continue an existing resource.</p></header>
+        {#if error}<p class="notice error">{error}</p>{/if}
+        {#if compositions.length > 0}<section class="catalog-section-home"><header><h2>Combined</h2><span>World + Agents</span></header><div class="catalog-grid">{#each compositions as composition (composition.id)}<article class="catalog-card"><div><h3>{composition.title}</h3><p>{composition.description}</p></div><button class="primary" disabled={busy} onclick={() => void startComposition(composition.id)}>Start</button></article>{/each}</div></section>{/if}
+        {#each coreModuleIds as moduleId}
+          <section class="catalog-section-home"><header><h2>{moduleTitles[moduleId]}</h2><span>{definitionsFor(moduleId).length} definitions</span></header><div class="catalog-grid">
+            {#each definitionsFor(moduleId) as definition (`${definition.ref.type}:${definition.ref.id}`)}
+              <article class="catalog-card"><div>{#if definition.category}<span class="card-category">{definition.category}</span>{/if}<h3>{definition.title}</h3><p>{definition.description ?? definition.ref.id}</p></div><div class="card-actions">{#each definition.capabilityIds as capabilityId}{@const capability = capabilityFor(capabilityId)}{#if capability}<button class:primary={capability.risk !== 'destructive'} class:danger={capability.risk === 'destructive'} disabled={busy} onclick={() => void invokeDefinition(definition, capability)}>{capability.title}</button>{/if}{/each}</div></article>
+            {/each}
+          </div></section>
         {/each}
+        {#if resources.length > 0}<section class="catalog-section-home"><header><h2>Continue</h2><span>{resources.length} live resources</span></header><div class="resource-columns">{#each coreModuleIds as moduleId}<div><h3>{moduleTitles[moduleId]}</h3>{#each resourcesFor(moduleId) as resource (`${resource.ref.type}:${resource.ref.id}`)}<button class="resource-row" onclick={() => openResource(resource)}><strong>{resource.title}</strong><span>{resource.description ?? resource.ref.id}</span></button>{/each}</div>{/each}</div></section>{/if}
       </section>
+    {/if}
 
-      <details class="settings-section catalog-section">
-        <summary>System Catalog ({resources.length} resources, {capabilities.length} capabilities)</summary>
-        <h3>Resources</h3>
-        <ul>{#each resources as resource}<li><code>{resource.ref?.type}:{resource.ref?.id}</code> — {resource.title}</li>{/each}</ul>
-        <h3>Capabilities</h3>
-        <ul>{#each capabilities as capability}<li><code>{capability.id}</code> — {capability.title}</li>{/each}</ul>
-      </details>
-
-      <section class="settings-section">
-        <h3>Workspace</h3>
-        <label>Name <input bind:value={name} maxlength="256" placeholder="Unnamed Workspace" /></label>
-        <div class="settings-actions">
-          <button disabled={busy} onclick={() => void saveName()}>Save name</button>
-          <a class="button" href="/workspaces">Manage Workspaces</a>
-        </div>
-        <code>{workspace.id}</code>
-      </section>
-
-      {#each workspace.modules as moduleState (moduleState.moduleId)}
-        {#if moduleState.status === 'failed'}
-          <section class="settings-section module-failure">
-            <h3>{moduleTitles[moduleState.moduleId] ?? moduleState.moduleId} unavailable</h3>
-            <p>{moduleState.failure?.message}</p>
-            <button disabled={busy} onclick={() => void retryModule(moduleState.moduleId)}>Retry</button>
-          </section>
-        {/if}
-      {/each}
-
-      <section class="settings-section danger-settings">
-        <div><h3>Delete Workspace</h3><p>Deletes all World and Agents state.</p></div>
-        <button class="danger" disabled={busy} onclick={() => void deleteWorkspace()}>Delete Workspace</button>
-      </section>
+    {#if error && showingComposer}<p class="workspace-error">{error}</p>{/if}
+    <dialog class="settings-dialog" bind:this={settingsDialog}>
+      <header><div><p class="eyebrow">{workspaceTitle}</p><h2>Workspace Settings</h2></div><button class="dialog-close" type="button" aria-label="Close settings" onclick={() => settingsDialog?.close()}>×</button></header>
+      <section class="settings-section"><h3>Workspace</h3><label>Name <input bind:value={name} maxlength="256" placeholder="Unnamed Workspace" /></label><div class="settings-actions"><button disabled={busy} onclick={() => void saveName()}>Save name</button><a class="button" href={`/workspaces/${workspace.id}`}>Workspace home</a><a class="button" href="/workspaces">Manage Workspaces</a></div><code>{workspace.id}</code></section>
+      <details class="settings-section catalog-section"><summary>Discovery catalog ({definitions.length} definitions, {resources.length} resources, {capabilities.length} capabilities)</summary><ul>{#each capabilities as capability}<li><code>{capability.id}</code> — {capability.title}</li>{/each}</ul></details>
+      {#each workspace.modules as moduleState (moduleState.moduleId)}{#if moduleState.status === 'failed'}<section class="settings-section module-failure"><h3>{moduleTitles[moduleState.moduleId] ?? moduleState.moduleId} unavailable</h3><p>{moduleState.failure?.message}</p><button disabled={busy} onclick={() => void retryModule(moduleState.moduleId)}>Retry</button></section>{/if}{/each}
+      <section class="settings-section danger-settings"><div><h3>Delete Workspace</h3><p>Deletes all World and Agents state.</p></div><button class="danger" disabled={busy} onclick={() => void deleteWorkspace()}>Delete Workspace</button></section>
     </dialog>
   {/if}
 </main>

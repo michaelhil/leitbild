@@ -1,63 +1,66 @@
 // ============================================================================
-// Server-owned demo definitions. The UI renders these declarations, while
-// the application service applies their Room Definition and Prompt Deck.
+// Bundled Room Definitions. Workspace catalogs materialize these declarations
+// and may remove them without changing existing Rooms.
 //
-// Adding a new demo: add an entry below. The strip/modal/header-icon all
-// derive from this array — no other edits needed.
+// Bundled entries are materialized into each Workspace's discoverable,
+// revisioned Definition library.
 // ============================================================================
 
-import type { DeliveryMode } from '../types/messaging.ts'
+import { z } from 'zod'
+import { toolGrantSetSchema } from '@leitbild/contracts'
 
-export interface PromptDeckEntry {
-  readonly id: string
-  readonly label: string
-  readonly description: string
-  readonly action: PromptDeckAction
-}
+const agentDefinitionSchema = z.object({
+  name: z.string().trim().min(1).max(128),
+  persona: z.string().max(64_000),
+  tools: z.array(z.string().min(1)).optional(),
+  toolGrants: toolGrantSetSchema.optional(),
+  temperature: z.number().finite().optional(),
+}).strict()
 
-export interface AgentDefinition {
-  readonly name: string
-  readonly persona: string
-  readonly tools?: ReadonlyArray<string>
-  readonly temperature?: number
-}
+const promptDeckActionSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('post-message'),
+    content: z.string().min(1).max(1_000_000),
+    pauseAfterMs: z.number().int().positive().optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal('start-script'),
+    scriptName: z.string().min(1).max(256),
+  }).strict(),
+])
 
-export type PromptDeckAction =
-  | {
-      readonly kind: 'post-message'
-      readonly content: string
-      readonly pauseAfterMs?: number
-    }
-  | {
-      readonly kind: 'start-script'
-      readonly scriptName: string
-    }
+export const promptDeckEntrySchema = z.object({
+  id: z.string().min(1).max(128),
+  label: z.string().min(1).max(256),
+  description: z.string().min(1).max(2048),
+  action: promptDeckActionSchema,
+}).strict()
+export type PromptDeckEntry = z.infer<typeof promptDeckEntrySchema>
 
-export interface RoomDefinition {
-  readonly id: string
-  readonly name: string
-  readonly prompt?: string
-  readonly deliveryMode: DeliveryMode
-  readonly packs: ReadonlyArray<string>
-  readonly agents: ReadonlyArray<AgentDefinition>
-}
+const roomSetupSchema = z.object({
+  name: z.string().min(1).max(128),
+  prompt: z.string().max(16_384).optional(),
+  deliveryMode: z.enum(['broadcast', 'manual']),
+  packs: z.array(z.string().min(1)),
+  agents: z.array(agentDefinitionSchema),
+}).strict()
 
-export interface PromptDeck {
-  readonly id: string
-  readonly entries: ReadonlyArray<PromptDeckEntry>
-}
+const promptDeckSchema = z.object({
+  entries: z.array(promptDeckEntrySchema),
+}).strict()
 
-export interface DemoDefinition {
-  readonly id: string
-  readonly title: string
-  readonly category?: string
-  readonly blurb: string
-  readonly requiredTools: ReadonlyArray<string>
-  readonly room: RoomDefinition
-  readonly deck: PromptDeck
-}
+export const roomDefinitionSchema = z.object({
+  id: z.string().min(1).max(128),
+  title: z.string().min(1).max(256),
+  category: z.string().min(1).max(128).optional(),
+  blurb: z.string().min(1).max(4096),
+  requiredTools: z.array(z.string().min(1)),
+  room: roomSetupSchema,
+  deck: promptDeckSchema,
+}).strict()
+export type RoomDefinition = z.infer<typeof roomDefinitionSchema>
 
-export const DEMO_CATALOG: ReadonlyArray<DemoDefinition> = [
+export const BUNDLED_ROOM_DEFINITIONS: ReadonlyArray<RoomDefinition> = z.array(roomDefinitionSchema).parse([
   {
     id: 'control-room-chaos',
     title: 'Control Room: Unstructured',
@@ -66,7 +69,6 @@ export const DEMO_CATALOG: ReadonlyArray<DemoDefinition> = [
       'See why “put several smart agents in one room” is not an orchestration strategy. This training-only demo creates four opinionated control-room personas in broadcast mode, gives them one ambiguous question, and pauses delivery automatically after 25 seconds. Leitbild opens it in a dedicated room. Re-open it from the 🪄 icon.',
     requiredTools: [],
     room: {
-      id: 'control-room-chaos',
       name: 'Demo: Control Room Unstructured',
       deliveryMode: 'broadcast',
       packs: [],
@@ -98,7 +100,6 @@ export const DEMO_CATALOG: ReadonlyArray<DemoDefinition> = [
       ],
     },
     deck: {
-      id: 'control-room-chaos',
       entries: [
       {
         id: 'start',
@@ -120,9 +121,8 @@ export const DEMO_CATALOG: ReadonlyArray<DemoDefinition> = [
     blurb:
       'Run the same kind of ambiguous training problem as a living multi-agent script. Four personas take controlled turns through a shared fact ledger, source grounding, adversarial challenge, decision gate, and final brief. The script creates and removes its own cast. Re-open it from the 🪄 icon.',
     requiredTools: ['procedure_lookup', 'wiki_lookup', 'eal_classify'],
-    room: { id: 'control-room-script', name: 'Demo: Control Room Scripted', deliveryMode: 'manual', packs: ['pwr-ops'], agents: [] },
+    room: { name: 'Demo: Control Room Scripted', deliveryMode: 'manual', packs: ['pwr-ops'], agents: [] },
     deck: {
-      id: 'control-room-script',
       entries: [
       {
         id: 'start',
@@ -140,9 +140,8 @@ export const DEMO_CATALOG: ReadonlyArray<DemoDefinition> = [
     blurb:
       'Run a structured discussion where every agent sees every turn. Each discipline contributes once per round or uses the pass tool when it has nothing new to add. No agent-to-agent addressing; the shared ledger and step gates keep the conversation coherent. Re-open it from the 🪄 icon.',
     requiredTools: ['procedure_lookup', 'wiki_lookup', 'eal_classify'],
-    room: { id: 'control-room-broadcast-pass', name: 'Demo: Control Room Broadcast Pass', deliveryMode: 'manual', packs: ['pwr-ops'], agents: [] },
+    room: { name: 'Demo: Control Room Broadcast Pass', deliveryMode: 'manual', packs: ['pwr-ops'], agents: [] },
     deck: {
-      id: 'control-room-broadcast-pass',
       entries: [
       {
         id: 'start',
@@ -160,7 +159,6 @@ export const DEMO_CATALOG: ReadonlyArray<DemoDefinition> = [
       'Pull real nuclear-plant emergency operating procedures from the wiki, search across them by keyword, and classify scenarios against NEI 99-01 emergency action levels. Click any prompt below to try it. You can re-open this list any time from the 🪄 icon in the room header.',
     requiredTools: ['procedure_lookup', 'procedure_search', 'wiki_lookup', 'eal_classify'],
     room: {
-      id: 'procedures',
       name: 'Demo: Procedures',
       deliveryMode: 'manual',
       packs: ['pwr-ops'],
@@ -171,7 +169,6 @@ export const DEMO_CATALOG: ReadonlyArray<DemoDefinition> = [
       }],
     },
     deck: {
-      id: 'procedures',
       entries: [
       {
         id: 'e0-to-e3',
@@ -225,7 +222,6 @@ export const DEMO_CATALOG: ReadonlyArray<DemoDefinition> = [
       'Webcam-based attention tracking. The agent observes your face for a moment, narrates what it sees, then releases the camera. You\'ll be asked to consent to webcam access the first time. Re-open this list any time from the 🪄 icon in the room header.',
     requiredTools: ['biometrics_start', 'biometrics_read', 'biometrics_stop'],
     room: {
-      id: 'biometrics',
       name: 'Demo: Biometrics',
       deliveryMode: 'manual',
       packs: ['biometrics'],
@@ -236,7 +232,6 @@ export const DEMO_CATALOG: ReadonlyArray<DemoDefinition> = [
       }],
     },
     deck: {
-      id: 'biometrics',
       entries: [
       {
         id: 'watch-me',
@@ -266,7 +261,6 @@ export const DEMO_CATALOG: ReadonlyArray<DemoDefinition> = [
       'Live VATSIM network data — real human pilots flying simulators right now — plus offshore platform geodata, rendered on an inline map. Re-open this list any time from the 🪄 icon in the room header.',
     requiredTools: ['vatsim_arrivals', 'norway_platforms'],
     room: {
-      id: 'aviation',
       name: 'Demo: Aviation',
       deliveryMode: 'manual',
       packs: ['demos'],
@@ -277,7 +271,6 @@ export const DEMO_CATALOG: ReadonlyArray<DemoDefinition> = [
       }],
     },
     deck: {
-      id: 'aviation',
       entries: [
       {
         id: 'heathrow-arrivals',
@@ -306,7 +299,7 @@ export const DEMO_CATALOG: ReadonlyArray<DemoDefinition> = [
       ],
     },
   },
-]
+])
 
-export const getDemo = (id: string): DemoDefinition | undefined =>
-  DEMO_CATALOG.find(demo => demo.id === id)
+export const getBundledRoomDefinition = (id: string): RoomDefinition | undefined =>
+  BUNDLED_ROOM_DEFINITIONS.find(definition => definition.id === id)

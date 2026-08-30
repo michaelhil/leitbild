@@ -2,6 +2,7 @@ import { z } from 'zod'
 import {
   moduleCapabilityCollectionSchema,
   moduleCapabilityInvocationSchema,
+  moduleDefinitionCollectionSchema,
   moduleIdSchema,
   moduleResourceCollectionSchema,
   toolGrantSetSchema,
@@ -12,7 +13,8 @@ import {
 } from '@leitbild/contracts'
 import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
 import { asAIAgent } from '../agents/shared.ts'
-import { applyDemo, runPromptDeckEntry } from '../core/definitions/demo-service.ts'
+import { runPromptDeckEntry, startRoomDefinition } from '../core/definitions/room-definition-service.ts'
+import { createRoomDefinitionLibrary } from '../core/definitions/room-definition-library.ts'
 import type { AgentsModuleState } from '../core/workspaces/module-state.ts'
 import type { WorkspaceRuntimeRegistry } from '../core/workspaces/runtime-registry.ts'
 
@@ -24,6 +26,7 @@ export const agentsModuleManifest = workspaceModuleManifestSchema.parse({
   },
   endpoints: {
     workspace: '/internal/workspaces/{workspaceId}',
+    definitions: '/internal/workspaces/{workspaceId}/definitions',
     resources: '/internal/workspaces/{workspaceId}/resources',
     capabilities: '/internal/workspaces/{workspaceId}/capabilities',
     invoke: '/internal/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke',
@@ -42,11 +45,11 @@ const createAgentSchema = z.object({
   persona: z.string().max(64_000),
   toolGrants: toolGrantSetSchema.optional(),
 }).strict()
-const applyDemoSchema = z.object({ demoId: z.string().trim().min(1).max(128) }).strict()
 const runPromptDeckEntrySchema = z.object({
-  demoId: z.string().trim().min(1).max(128),
   entryId: z.string().trim().min(1).max(128),
 }).strict()
+const emptyInputSchema = z.object({}).strict()
+const ROOM_DEFINITION_TYPE = 'agents.room'
 
 const json = (body: unknown, status = 200): Response => Response.json(body, { status })
 const apiError = (status: number, code: string, message: string): Response => json({ error: { code, message } }, status)
@@ -74,6 +77,17 @@ const resourcesFor = async (
       ref: { workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.room', id: room.id },
       title: room.name,
       ...(room.roomPrompt === undefined ? {} : { description: room.roomPrompt }),
+      ...(room.sourceDefinition === undefined ? {} : {
+        sourceDefinition: {
+          workspaceId,
+          moduleId: AGENTS_MODULE_ID,
+          type: ROOM_DEFINITION_TYPE,
+          id: room.sourceDefinition.id,
+          revisionId: room.sourceDefinition.revisionId,
+        },
+      }),
+      links: [],
+      uiPath: `/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(room.id)}`,
       capabilityIds: agentsCapabilities.idsForResourceType('agents.room'),
       observedAt,
     })),
@@ -81,10 +95,38 @@ const resourcesFor = async (
       ref: { workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.agent', id: agent.id },
       title: agent.name,
       ...(agent.getDescription?.() ? { description: agent.getDescription!() } : {}),
+      links: [],
+      uiPath: `/workspaces/${encodeURIComponent(workspaceId)}/agents`,
       capabilityIds: agentsCapabilities.idsForResourceType('agents.agent'),
       observedAt,
     })),
   ] }).resources
+}
+
+const definitionsFor = async (workspaceId: WorkspaceId) => {
+  const library = createRoomDefinitionLibrary(workspaceId)
+  const revisions = await library.list()
+  return moduleDefinitionCollectionSchema.parse({ definitions: revisions.map(revision => ({
+    ref: {
+      workspaceId,
+      moduleId: AGENTS_MODULE_ID,
+      type: ROOM_DEFINITION_TYPE,
+      id: revision.definitionId,
+    },
+    title: revision.definition.title,
+    description: revision.definition.blurb,
+    ...(revision.definition.category === undefined ? {} : { category: revision.definition.category }),
+    currentRevisionId: revision.id,
+    capabilityIds: agentsCapabilities.idsForDefinitionType(ROOM_DEFINITION_TYPE),
+  })) }).definitions
+}
+
+const requireRoomDefinitionId = (
+  invocation: z.infer<typeof moduleCapabilityInvocationSchema>,
+): string => {
+  if (!invocation.definition) throw new Error('Room Definition Capability requires a Definition')
+  if (invocation.definition.type !== ROOM_DEFINITION_TYPE) throw new Error('Capability requires an Agents Room Definition')
+  return invocation.definition.id
 }
 
 const requireResourceId = (
@@ -121,7 +163,15 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
         createdBy: invocation.access.actor.id ?? 'system',
         ...(input.roomPrompt ? { roomPrompt: input.roomPrompt } : {}),
       })
-      return json({ result: room.value.profile }, 201)
+      return json({
+        result: room.value.profile,
+        createdResources: [{
+          workspaceId: invocation.workspaceId,
+          moduleId: AGENTS_MODULE_ID,
+          type: 'agents.room',
+          id: room.value.profile.id,
+        }],
+      }, 201)
     },
   },
   {
@@ -173,20 +223,60 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
   },
   {
     descriptor: {
-      id: 'agents.demo.apply',
+      id: 'agents.room-definition.start',
       moduleId: AGENTS_MODULE_ID,
       kind: 'command',
-      scope: { kind: 'workspace' },
-      title: 'Apply Demo',
-      description: 'Creates a Room from a server-owned Room Definition and makes its Prompt Deck available.',
+      scope: { kind: 'definition', definitionType: ROOM_DEFINITION_TYPE },
+      title: 'Start Room',
+      description: 'Creates a Room from the current immutable revision of this Room Definition.',
       risk: 'write',
       idempotent: false,
-      inputSchema: z.toJSONSchema(applyDemoSchema),
+      inputSchema: z.toJSONSchema(emptyInputSchema),
       outputSchema: { type: 'object' },
     },
     invoke: async (runtime, invocation) => {
-      const input = applyDemoSchema.parse(invocation.input)
-      return json({ result: await applyDemo(runtime, input.demoId) }, 201)
+      emptyInputSchema.parse(invocation.input)
+      const started = await startRoomDefinition(
+        runtime,
+        createRoomDefinitionLibrary(invocation.workspaceId),
+        requireRoomDefinitionId(invocation),
+        invocation.definition!.revisionId,
+      )
+      const resource = {
+        workspaceId: invocation.workspaceId,
+        moduleId: AGENTS_MODULE_ID,
+        type: 'agents.room',
+        id: started.room.id,
+      }
+      return json({
+        result: {
+          room: started.room,
+          revisionId: started.revisionId,
+          uiPath: `/workspaces/${encodeURIComponent(invocation.workspaceId)}/agents?room=${encodeURIComponent(started.room.id)}`,
+        },
+        createdResources: [resource],
+      }, 201)
+    },
+  },
+  {
+    descriptor: {
+      id: 'agents.room-definition.delete',
+      moduleId: AGENTS_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'definition', definitionType: ROOM_DEFINITION_TYPE },
+      title: 'Delete Room Definition',
+      description: 'Removes this Room Definition from the Workspace catalog. Existing Rooms retain their pinned revision.',
+      risk: 'destructive',
+      idempotent: false,
+      inputSchema: z.toJSONSchema(emptyInputSchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (_runtime, invocation) => {
+      emptyInputSchema.parse(invocation.input)
+      const definitionId = requireRoomDefinitionId(invocation)
+      return await createRoomDefinitionLibrary(invocation.workspaceId).delete(definitionId, invocation.definition!.revisionId)
+        ? json({ result: { deleted: true, definitionId } })
+        : apiError(404, 'room_definition_not_found', 'Room Definition not found')
     },
   },
   {
@@ -205,7 +295,12 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
     invoke: async (runtime, invocation) => {
       const roomId = requireResourceId(invocation, 'agents.room')
       const input = runPromptDeckEntrySchema.parse(invocation.input)
-      return json({ result: await runPromptDeckEntry(runtime, input.demoId, roomId, input.entryId) })
+      return json({ result: await runPromptDeckEntry(
+        runtime,
+        createRoomDefinitionLibrary(invocation.workspaceId),
+        roomId,
+        input.entryId,
+      ) })
     },
   },
   {
@@ -272,7 +367,7 @@ export const handleAgentsModuleApi = async (
   try {
     if (url.pathname === '/.well-known/workspace-module' && request.method === 'GET') return json(agentsModuleManifest)
 
-    const match = url.pathname.match(/^\/internal\/workspaces\/([^/]+)(?:\/(resources|capabilities)|\/capabilities\/([^/]+)\/invoke)?$/)
+    const match = url.pathname.match(/^\/internal\/workspaces\/([^/]+)(?:\/(definitions|resources|capabilities)|\/capabilities\/([^/]+)\/invoke)?$/)
     if (!match) return null
     const workspaceId = workspaceIdSchema.parse(decodeURIComponent(match[1] ?? ''))
     const collection = match[2]
@@ -294,6 +389,9 @@ export const handleAgentsModuleApi = async (
     }
 
     await requireModule(config.state, workspaceId)
+    if (collection === 'definitions' && request.method === 'GET') {
+      return json(moduleDefinitionCollectionSchema.parse({ definitions: await definitionsFor(workspaceId) }))
+    }
     if (collection === 'resources' && request.method === 'GET') {
       return json(moduleResourceCollectionSchema.parse({ resources: await resourcesFor(workspaceId, config.registry) }))
     }

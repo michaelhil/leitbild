@@ -31,7 +31,7 @@ import { bookmarkRoutes } from './routes/bookmarks.ts'
 import { toolRoutes } from './routes/tools.ts'
 import { loggingRoutes } from './routes/logging.ts'
 import { scriptRoutes } from './routes/scripts.ts'
-import { demoRoutes } from './routes/demos.ts'
+import { promptDeckRoutes } from './routes/prompt-decks.ts'
 import { geodataRoutes } from './routes/geodata.ts'
 import { documentRoutes } from './routes/documents.ts'
 import { diagnosticRoutes } from './routes/diagnostics.ts'
@@ -63,7 +63,7 @@ const allRoutes = [
   ...bookmarkRoutes,
   // Scripts before rooms (avoids /rooms/:name/script being shadowed)
   ...scriptRoutes,
-  ...demoRoutes,
+  ...promptDeckRoutes,
   // Geodata routes use Workspace-scoped application paths even though the
   // underlying catalog is process-wide.
   ...geodataRoutes,

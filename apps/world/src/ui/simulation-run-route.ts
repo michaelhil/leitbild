@@ -9,15 +9,11 @@ export interface SimulationRunRoute {
 }
 
 export type ControlSurfaceRoute =
-  | { readonly mode: 'run-picker'; readonly workspaceId: WorkspaceId; readonly canonicalPath: string }
-  | { readonly mode: 'new-run'; readonly workspaceId: WorkspaceId; readonly scenarioId: string; readonly canonicalPath: string }
+  | { readonly mode: 'workspace-home'; readonly workspaceId: WorkspaceId; readonly canonicalPath: string }
   | SimulationRunRoute
 
 export const pathForWorkspace = (workspaceId: WorkspaceId): string =>
   `/workspaces/${encodeURIComponent(workspaceId)}/world`
-
-export const pathForNewSimulationRun = (workspaceId: WorkspaceId, scenarioId: string): string =>
-  `${pathForWorkspace(workspaceId)}/scenarios/${encodeURIComponent(scenarioId)}/runs/new`
 
 export const pathForSimulationRun = (workspaceId: WorkspaceId, simulationRunId: SimulationRunId): string =>
   `${pathForWorkspace(workspaceId)}/runs/${encodeURIComponent(simulationRunId)}`
@@ -26,19 +22,7 @@ export const parseControlSurfaceRoute = (pathname: string): ControlSurfaceRoute 
   const workspaceMatch = pathname.match(/^\/workspaces\/([^/]+)\/world\/?$/)
   if (workspaceMatch) {
     const workspaceId = workspaceIdSchema.parse(decodeURIComponent(workspaceMatch[1] ?? ''))
-    return { mode: 'run-picker', workspaceId, canonicalPath: pathForWorkspace(workspaceId) }
-  }
-  const createMatch = pathname.match(/^\/workspaces\/([^/]+)\/world\/scenarios\/([^/]+)\/runs\/new\/?$/)
-  if (createMatch) {
-    const workspaceId = workspaceIdSchema.parse(decodeURIComponent(createMatch[1] ?? ''))
-    const scenarioId = decodeURIComponent(createMatch[2] ?? '')
-    if (!scenarioId) throw new Error('route must include a non-empty Scenario id')
-    return {
-      mode: 'new-run',
-      workspaceId,
-      scenarioId,
-      canonicalPath: pathForNewSimulationRun(workspaceId, scenarioId),
-    }
+    return { mode: 'workspace-home', workspaceId, canonicalPath: pathForWorkspace(workspaceId) }
   }
   const runMatch = pathname.match(/^\/workspaces\/([^/]+)\/world\/runs\/([^/]+)\/?$/)
   if (!runMatch) throw new Error('route must identify a Workspace or Simulation Run')

@@ -174,6 +174,7 @@ export interface ScenarioDefinition {
   readonly schemaVersion: 1
   readonly title: string
   readonly description?: string
+  readonly objectives?: ReadonlyArray<string>
   readonly packs: ReadonlyArray<string>
   readonly runtimeOverrides: Record<string, string>
   readonly world: ScenarioWorldDefinition
@@ -407,6 +408,7 @@ export const scenarioDefinitionSchema = z.object({
   schemaVersion: z.literal(1),
   title: z.string().min(1),
   description: z.string().min(1).optional(),
+  objectives: z.array(z.string().trim().min(1).max(2048)).optional(),
   packs: z.array(idSchema).default([]),
   runtimeOverrides: z.record(z.string(), idSchema).default({}),
   world: scenarioWorldDefinitionSchema,

@@ -1,16 +1,9 @@
 // ============================================================================
-// seedWorkspace — first-boot seed for a fresh Workspace.
+// First-boot identity seed. Rooms and AI Agents are created explicitly from
+// Room Definitions or ordinary create Capabilities.
 //
-// Creates room "Cafe" (broadcast mode) with one AI ("Aiden") and one Human
-// ("You"). Replaces the prior welcome-scenario seed path. Plain TS — no
-// scenario engine, no markdown parser, no ops.
-//
-// The AI's model is the current curated default (via resolveDefaultModel
-// against live provider state). If nothing qualifies — fresh boot before any
-// provider key is set — we still spawn the agent with 'gpt-5.4' as the
-// preferred model; the per-call effective-model resolver in agent eval will
-// swap it out for whatever's available once the user adds a key. This keeps
-// the snapshot stable across "no key → key added" transitions.
+// Model resolution remains here because Room Definitions use the same live
+// provider-aware default without duplicating provider policy.
 // ============================================================================
 
 import type { AgentsWorkspaceRuntime } from '../../main.ts'
@@ -73,28 +66,7 @@ const buildProviderSnapshots = (system: AgentsWorkspaceRuntime): ReadonlyArray<P
 export const resolveWorkspaceDefaultModel = (system: AgentsWorkspaceRuntime): string =>
   resolveDefaultModel(buildProviderSnapshots(system)) || DEFAULT_MODEL_ID
 
-export const seedWorkspace = async (system: AgentsWorkspaceRuntime): Promise<void> => {
-  // Idempotency: if a Cafe already exists (e.g. re-seed call), bail.
-  const existing = system.rooms.listAllRooms().some(p => p.name === 'Cafe')
-  if (existing) return
-
-  const model = resolveWorkspaceDefaultModel(system)
-
-  // Room first so spawned agents have something to join.
-  const room = system.rooms.createRoom({ name: 'Cafe', createdBy: 'system' })
-
-  // AI: Aiden — a friendly default companion. No tool whitelist → sees every
-  // tool active in the room (pack-aware filter at the call site).
-  const aiden = await system.spawnAIAgent({
-    name: 'Aiden',
-    model,
-    persona: 'You are Aiden, a friendly and curious assistant. You help the user explore what this system can do — answer questions directly, call tools when useful, and keep replies concise.',
-  })
-  await system.addAgentToRoom(aiden.id, room.profile.id, 'seed')
-
-  // Human: "You" — the seat the connecting user will adopt on first connect.
-  // The transport `send` is a no-op until a real WS attaches via the
-  // adoptHuman path; spawnHumanAgent installs it lazily.
-  const you = await system.spawnHumanAgent({ name: 'You' }, () => { /* no transport yet */ })
-  await system.addAgentToRoom(you.id, room.profile.id, 'seed')
+export const seedWorkspaceIdentity = async (system: AgentsWorkspaceRuntime): Promise<void> => {
+  if (system.team.listByKind('human').some(actor => actor.name === 'You')) return
+  await system.spawnHumanAgent({ name: 'You' }, () => { /* transport attaches when a user connects */ })
 }

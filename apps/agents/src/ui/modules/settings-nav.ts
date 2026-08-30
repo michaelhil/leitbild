@@ -10,7 +10,7 @@
 import { domRefs } from './app-dom.ts'
 import { listExtensionPanels, onExtensionPanelsChanged, type PanelSpec } from './extensions/registry.ts'
 
-type SettingsRow = 'prompt' | 'providers' | 'tools' | 'skills' | 'scripts' | 'demos' | 'packs' | 'geodata' | 'logging' | 'bug'
+type SettingsRow = 'prompt' | 'providers' | 'tools' | 'skills' | 'scripts' | 'packs' | 'geodata' | 'logging' | 'bug'
 
 const openers: Record<SettingsRow, () => Promise<void> | void> = {
   prompt: async () => {
@@ -32,10 +32,6 @@ const openers: Record<SettingsRow, () => Promise<void> | void> = {
   scripts: async () => {
     const m = await import('./modals/scripts-list-modal.ts')
     await m.openScriptsListModal()
-  },
-  demos: async () => {
-    const m = await import('./demos/index.ts')
-    await m.openDemosNavPicker()
   },
   packs: async () => {
     const m = await import('./modals/packs-modal.ts')

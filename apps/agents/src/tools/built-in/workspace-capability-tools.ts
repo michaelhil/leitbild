@@ -1,9 +1,13 @@
 import {
   capabilityIdSchema,
+  definitionIdSchema,
+  definitionRevisionIdSchema,
+  definitionTypeSchema,
   moduleIdSchema,
   resourceIdSchema,
   resourceTypeSchema,
   workspaceCapabilityCatalogSchema,
+  workspaceDefinitionCatalogSchema,
   workspaceResourceCatalogSchema,
   type ToolGrant,
   type WorkspaceId,
@@ -64,15 +68,16 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
   const fetchImpl = deps.fetchImpl ?? fetch
   const workspacePath = `${baseUrl}/api/workspaces/${encodeURIComponent(deps.workspaceId)}`
 
-  const resources: Tool = {
-    name: 'workspace_resources',
-    description: 'List Resources exposed by Modules in this Workspace. Filter by Module, Resource type, or Capability when narrowing the result.',
-    usage: 'Discover current Resource identities immediately before invoking a Resource-scoped Workspace Capability. Do not remember Resource ids as Agent configuration.',
-    returns: '{ workspaceId, modules, resources[] } with each Resource ref, title, description, and advertised capabilityIds.',
+  const catalog: Tool = {
+    name: 'workspace_catalog',
+    description: 'List reusable Definitions and live Resources exposed by Modules in this Workspace.',
+    usage: 'Discover Definition and Resource identities immediately before invoking a scoped Workspace Capability. Do not remember runtime Resource ids as Agent configuration.',
+    returns: '{ workspaceId, definitions[], resources[] } with stable references, provenance, UI paths, links, and advertised capabilityIds.',
     parameters: {
       type: 'object',
       properties: {
         moduleId: { type: 'string' },
+        definitionType: { type: 'string' },
         resourceType: { type: 'string' },
         capabilityId: { type: 'string' },
       },
@@ -81,24 +86,37 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
     execute: async params => {
       try {
         const moduleId = params.moduleId === undefined ? undefined : moduleIdSchema.parse(params.moduleId)
+        const definitionType = params.definitionType === undefined ? undefined : definitionTypeSchema.parse(params.definitionType)
         const resourceType = params.resourceType === undefined ? undefined : resourceTypeSchema.parse(params.resourceType)
         const capabilityId = params.capabilityId === undefined ? undefined : capabilityIdSchema.parse(params.capabilityId)
-        const response = await getJson(fetchImpl, `${workspacePath}/resources`)
-        if (!response.ok) return await readHostError(response)
-        const catalog = workspaceResourceCatalogSchema.parse(await response.json())
+        const [definitionResponse, resourceResponse] = await Promise.all([
+          getJson(fetchImpl, `${workspacePath}/definitions`),
+          getJson(fetchImpl, `${workspacePath}/resources`),
+        ])
+        if (!definitionResponse.ok) return await readHostError(definitionResponse)
+        if (!resourceResponse.ok) return await readHostError(resourceResponse)
+        const definitions = workspaceDefinitionCatalogSchema.parse(await definitionResponse.json())
+        const resources = workspaceResourceCatalogSchema.parse(await resourceResponse.json())
         return {
           success: true,
           data: {
-            workspaceId: catalog.workspaceId,
-            modules: catalog.modules,
-            resources: catalog.resources.filter(resource =>
+            workspaceId: resources.workspaceId,
+            modules: {
+              definitions: definitions.modules,
+              resources: resources.modules,
+            },
+            definitions: definitions.definitions.filter(definition =>
+              (moduleId === undefined || definition.ref.moduleId === moduleId)
+              && (definitionType === undefined || definition.ref.type === definitionType)
+              && (capabilityId === undefined || definition.capabilityIds.includes(capabilityId))),
+            resources: resources.resources.filter(resource =>
               (moduleId === undefined || resource.ref.moduleId === moduleId)
               && (resourceType === undefined || resource.ref.type === resourceType)
               && (capabilityId === undefined || resource.capabilityIds.includes(capabilityId))),
           },
         }
       } catch (error) {
-        return failure('workspace_resource_discovery_failed', error instanceof Error ? error.message : String(error))
+        return failure('workspace_catalog_discovery_failed', error instanceof Error ? error.message : String(error))
       }
     },
   }
@@ -153,13 +171,24 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
 
   const invoke: Tool = {
     name: 'workspace_invoke',
-    description: 'Invoke one granted Workspace Capability against the current Workspace and an optional Resource selected from workspace_resources.',
-    usage: 'Copy capabilityId from workspace_capabilities. For Resource-scoped operations, pass moduleId, type, and id from a freshly discovered Resource; Workspace scope is supplied automatically.',
+    description: 'Invoke one granted Workspace Capability against the current Workspace and an optional Definition or Resource selected from workspace_catalog.',
+    usage: 'Copy capabilityId from workspace_capabilities. Pass either definition or resource for a scoped operation; Workspace scope is supplied automatically.',
     returns: 'The owning Module result, or a structured failure code such as capability_not_granted or workspace_host_request_failed.',
     parameters: {
       type: 'object',
       properties: {
         capabilityId: { type: 'string' },
+        definition: {
+          type: 'object',
+          properties: {
+            moduleId: { type: 'string' },
+            type: { type: 'string' },
+            id: { type: 'string' },
+            revisionId: { type: 'string' },
+          },
+          required: ['moduleId', 'type', 'id', 'revisionId'],
+          additionalProperties: false,
+        },
         resource: {
           type: 'object',
           properties: {
@@ -191,7 +220,24 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
       }
 
       let resource: { workspaceId: WorkspaceId; moduleId: ReturnType<typeof moduleIdSchema.parse>; type: ReturnType<typeof resourceTypeSchema.parse>; id: ReturnType<typeof resourceIdSchema.parse> } | undefined
+      let definition: { workspaceId: WorkspaceId; moduleId: ReturnType<typeof moduleIdSchema.parse>; type: ReturnType<typeof definitionTypeSchema.parse>; id: ReturnType<typeof definitionIdSchema.parse>; revisionId: ReturnType<typeof definitionRevisionIdSchema.parse> } | undefined
       try {
+        if (params.definition !== undefined && params.resource !== undefined) {
+          return failure('invalid_target', 'definition and resource are mutually exclusive')
+        }
+        if (params.definition !== undefined) {
+          if (!params.definition || typeof params.definition !== 'object' || Array.isArray(params.definition)) {
+            return failure('invalid_definition', 'definition must be an object')
+          }
+          const raw = params.definition as Record<string, unknown>
+          definition = {
+            workspaceId: deps.workspaceId,
+            moduleId: moduleIdSchema.parse(raw.moduleId),
+            type: definitionTypeSchema.parse(raw.type),
+            id: definitionIdSchema.parse(raw.id),
+            revisionId: definitionRevisionIdSchema.parse(raw.revisionId),
+          }
+        }
         if (params.resource !== undefined) {
           if (!params.resource || typeof params.resource !== 'object' || Array.isArray(params.resource)) {
             return failure('invalid_resource', 'resource must be an object')
@@ -213,6 +259,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({
+            ...(definition === undefined ? {} : { definition }),
             ...(resource === undefined ? {} : { resource }),
             input: params.input,
             actor: { kind: 'ai', id: context.callerId, displayName: context.callerName },
@@ -228,5 +275,5 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
     },
   }
 
-  return [resources, capabilities, invoke]
+  return [catalog, capabilities, invoke]
 }

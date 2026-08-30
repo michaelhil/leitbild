@@ -63,6 +63,7 @@ Module discovery and lifecycle are available at:
 ```text
 GET /.well-known/workspace-module
 PUT|DELETE /internal/workspaces/{workspaceId}
+GET /internal/workspaces/{workspaceId}/definitions
 GET /internal/workspaces/{workspaceId}/resources
 GET /internal/workspaces/{workspaceId}/capabilities
 POST /internal/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke
@@ -116,7 +117,7 @@ AI Agents provide:
 Each Pack requires a strict `pack.json` containing the shared descriptor envelope and Leitbild-specific metadata. The descriptor declares:
 
 - Pack id and version;
-- owning Module (`leitbild`);
+- owning Module (`agents`);
 - exact supported platform range;
 - dependencies;
 - contribution kinds such as tools, skills, scripts, geodata, wikis, and UI extensions.
@@ -127,13 +128,13 @@ Authored local extensions use the same layout under `$LEITBILD_HOME/packs/local/
 
 ## Cross-Module tools
 
-Leitbild contains no World- or application-specific integration client. When the Workspace contains other Modules, AI Agents use three generic tools:
+Leitbild contains no World- or application-specific integration client. AI Agents use three generic tools:
 
-- `workspace_resources` discovers live Resource descriptors;
+- `workspace_catalog` discovers reusable Definitions and live Resource descriptors;
 - `workspace_capabilities` discovers callable operations;
-- `workspace_invoke` invokes a granted Capability against a Resource selected for that call.
+- `workspace_invoke` invokes a granted Capability against an exact Definition Revision or Resource selected for that call.
 
-This keeps Agent behavior configurable and makes future Modules available without adding another Leitbild integration subsystem. A concrete continuous cross-Module behavior must be implemented and owned explicitly; ordinary discovery and commands create no persistent relationship.
+For a World Simulation Run, the Agent first requests `world.simulation-run.context` to learn its Scenario, objectives, current situation, operational objects, and supported operations, then reads a specific object or invokes a permitted command. Context is bounded and current; future Scenario Timeline events and solver-private state are not exposed. This keeps Agent behavior configurable and makes future Modules available without another integration subsystem. A concrete continuous cross-Module behavior must be implemented and owned explicitly; ordinary discovery and commands create no persistent relationship.
 
 ## Persistence
 

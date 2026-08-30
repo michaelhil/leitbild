@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   moduleCapabilityCollectionSchema,
+  moduleDefinitionCollectionSchema,
   moduleResourceCollectionSchema,
   newWorkspaceId,
   workspaceModuleManifestSchema,
@@ -29,7 +30,7 @@ beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), 'leitbild-module-api-'))
   process.env.LEITBILD_HOME = home
   process.env.PROVIDER = 'ollama'
-  process.env.LEITBILD_SEED_WORKSPACE = '0'
+  delete process.env.LEITBILD_SEED_WORKSPACE
   state = createAgentsModuleState()
   registry = createWorkspaceRuntimeRegistry({ deployment: createDeploymentRuntime(), moduleState: state, idleMs: 1_000_000 })
 })
@@ -55,14 +56,17 @@ const request = async (method: string, path: string, body?: unknown): Promise<Re
   return response
 }
 
-const invokeBody = (workspaceId: WorkspaceId, capabilityId: string, input: unknown, resource?: {
-  readonly type: string
-  readonly id: string
+const invokeBody = (workspaceId: WorkspaceId, capabilityId: string, input: unknown, target?: {
+  readonly resource?: { readonly type: string; readonly id: string }
+  readonly definition?: { readonly type: string; readonly id: string; readonly revisionId: string }
 }) => ({
   workspaceId,
   capabilityId,
-  ...(resource === undefined ? {} : {
-    resource: workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'agents', ...resource }),
+  ...(target?.resource === undefined ? {} : {
+    resource: workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'agents', ...target.resource }),
+  }),
+  ...(target?.definition === undefined ? {} : {
+    definition: { workspaceId, moduleId: 'agents', ...target.definition },
   }),
   input,
   access: {
@@ -89,8 +93,26 @@ describe('Agents Workspace Module API', () => {
     expect(capabilities.capabilities.every(capability => capability.id.startsWith('agents.'))).toBe(true)
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room.create')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.agent.create')
-    expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.demo.apply')
+    expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room-definition.start')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.prompt-deck.run-entry')
+
+    const definitions = moduleDefinitionCollectionSchema.parse(
+      await (await request('GET', `/internal/workspaces/${workspaceId}/definitions`)).json(),
+    )
+    const roomDefinition = definitions.definitions.find(definition => definition.ref.id === 'control-room-chaos')!
+    const started = await request(
+      'POST',
+      `/internal/workspaces/${workspaceId}/capabilities/agents.room-definition.start/invoke`,
+      invokeBody(workspaceId, 'agents.room-definition.start', {}, {
+        definition: {
+          type: String(roomDefinition.ref.type),
+          id: roomDefinition.ref.id,
+          revisionId: roomDefinition.currentRevisionId,
+        },
+      }),
+    )
+    expect(started.status).toBe(201)
+    const startedRoomId = (await started.json() as { result: { room: { id: string } } }).result.room.id
 
     expect((await request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.room.create/invoke`,
       invokeBody(workspaceId, 'agents.room.create', { name: 'Operations' }))).status).toBe(201)
@@ -105,17 +127,42 @@ describe('Agents Workspace Module API', () => {
     const resources = moduleResourceCollectionSchema.parse(
       await (await request('GET', `/internal/workspaces/${workspaceId}/resources`)).json(),
     )
-    expect(resources.resources.map(resource => resource.title)).toEqual(['Operations', 'Analyst'])
-    expect(resources.resources.map(resource => String(resource.ref.type))).toEqual(['agents.room', 'agents.agent'])
+    expect(resources.resources.map(resource => resource.title)).toContain('Operations')
+    expect(resources.resources.map(resource => resource.title)).toContain('Analyst')
+    expect(resources.resources.map(resource => String(resource.ref.type))).toContain('agents.room')
+    expect(resources.resources.map(resource => String(resource.ref.type))).toContain('agents.agent')
 
     const agentProfile = await request(
       'POST',
       `/internal/workspaces/${workspaceId}/capabilities/agents.agent.read/invoke`,
-      invokeBody(workspaceId, 'agents.agent.read', {}, { type: 'agents.agent', id: agentId }),
+      invokeBody(workspaceId, 'agents.agent.read', {}, { resource: { type: 'agents.agent', id: agentId } }),
     )
     expect((await agentProfile.json() as {
       result: { config: { toolGrants: Array<{ capabilityId: string }> } }
     }).result.config.toolGrants).toEqual([{ capabilityId: 'world.simulation-run.read' }])
+
+    const startedRoom = resources.resources.find(resource => resource.ref.id === startedRoomId)
+    expect(startedRoom?.sourceDefinition?.revisionId).toBe(roomDefinition.currentRevisionId)
+
+    expect((await request(
+      'POST',
+      `/internal/workspaces/${workspaceId}/capabilities/agents.room-definition.delete/invoke`,
+      invokeBody(workspaceId, 'agents.room-definition.delete', {}, {
+        definition: {
+          type: String(roomDefinition.ref.type),
+          id: roomDefinition.ref.id,
+          revisionId: roomDefinition.currentRevisionId,
+        },
+      }),
+    )).status).toBe(200)
+    const definitionsAfterDelete = moduleDefinitionCollectionSchema.parse(
+      await (await request('GET', `/internal/workspaces/${workspaceId}/definitions`)).json(),
+    )
+    expect(definitionsAfterDelete.definitions.some(definition => definition.ref.id === roomDefinition.ref.id)).toBe(false)
+    const resourcesAfterDelete = moduleResourceCollectionSchema.parse(
+      await (await request('GET', `/internal/workspaces/${workspaceId}/resources`)).json(),
+    )
+    expect(resourcesAfterDelete.resources.some(resource => resource.ref.id === startedRoomId)).toBe(true)
   })
 
   test('removing Agents removes the complete Module', async () => {

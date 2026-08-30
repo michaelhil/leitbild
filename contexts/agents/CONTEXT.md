@@ -18,11 +18,11 @@ _Avoid_: simulation event, Capability invocation
 
 **Agent Script**:
 A declarative coordination sequence executed through Rooms and their members.
-_Avoid_: Preset, cross-Module workflow engine
+_Avoid_: Composition Definition, cross-Module workflow engine
 
 **Room Definition**:
-An Agents-owned declaration used to create a Room, its initial Memberships, Agent Profiles, selected Packs, prompt, and delivery mode.
-_Avoid_: live Room state, Preset, browser launch procedure
+An Agents-owned Definition whose immutable revision creates a Room, its initial Memberships, Agent Profiles, semantic Tool Grants, selected Packs, prompt, delivery mode, and Prompt Deck.
+_Avoid_: live Room state, Composition Definition, browser launch procedure
 
 **Prompt Deck**:
 A curated set of optional, explicitly invoked message or Agent Script actions, usually presented as demonstration or training choices.
@@ -38,7 +38,7 @@ _Avoid_: hard-coded controller for a particular Resource
 
 **Agent Profile**:
 The durable behavior and runtime configuration of an Agent, excluding concrete Module Resource ids.
-_Avoid_: Preset, persistent cross-Module Resource link
+_Avoid_: Composition Definition, persistent cross-Module Resource link
 
 **Tool Grant**:
 Permission for an Agent to invoke a named Capability under an explicit scope.

@@ -14,6 +14,7 @@ export type CapabilityRegistration<TContext, TResult> = Readonly<{
 
 export type ModuleCapabilityRegistry<TContext, TResult> = Readonly<{
   descriptors: ReadonlyArray<ModuleCapabilityDescriptor>
+  idsForDefinitionType: (definitionType: string) => ReadonlyArray<string>
   idsForResourceType: (resourceType: string) => ReadonlyArray<string>
   invoke: (
     capabilityId: string,
@@ -27,14 +28,35 @@ const assertInvocationScope = (
   invocation: ModuleCapabilityInvocation,
 ): void => {
   if (descriptor.scope.kind === 'workspace') {
+    if (invocation.definition !== undefined || invocation.resource !== undefined) {
+      throw new Error(`Workspace Capability ${descriptor.id} does not accept a Definition or Resource`)
+    }
+    return
+  }
+
+  if (descriptor.scope.kind === 'definition') {
+    if (invocation.definition === undefined) {
+      throw new Error(`Definition Capability ${descriptor.id} requires a Definition`)
+    }
     if (invocation.resource !== undefined) {
-      throw new Error(`Workspace Capability ${descriptor.id} does not accept a Resource`)
+      throw new Error(`Definition Capability ${descriptor.id} does not accept a Resource`)
+    }
+    if (
+      invocation.definition.moduleId !== descriptor.moduleId
+      || invocation.definition.type !== descriptor.scope.definitionType
+    ) {
+      throw new Error(
+        `Capability ${descriptor.id} requires a ${descriptor.scope.definitionType} Definition`,
+      )
     }
     return
   }
 
   if (invocation.resource === undefined) {
     throw new Error(`Resource Capability ${descriptor.id} requires a Resource`)
+  }
+  if (invocation.definition !== undefined) {
+    throw new Error(`Resource Capability ${descriptor.id} does not accept a Definition`)
   }
   if (
     invocation.resource.moduleId !== descriptor.moduleId
@@ -72,6 +94,9 @@ export const createModuleCapabilityRegistry = <TContext, TResult>(
 
   return Object.freeze({
     descriptors,
+    idsForDefinitionType: (definitionType: string): ReadonlyArray<string> => descriptors
+      .filter(descriptor => descriptor.scope.kind === 'definition' && descriptor.scope.definitionType === definitionType)
+      .map(descriptor => descriptor.id),
     idsForResourceType: (resourceType: string): ReadonlyArray<string> => descriptors
       .filter(descriptor => descriptor.scope.kind === 'resource' && descriptor.scope.resourceType === resourceType)
       .map(descriptor => descriptor.id),

@@ -3,10 +3,8 @@ import type { SimulationRunId } from '../src/core/model/index.ts'
 import { workspaceIdSchema } from '@leitbild/contracts'
 import { configureActiveWorkspace } from '../src/ui/workspace-context.ts'
 import {
-  createSimulationRun,
   deleteSimulationRun,
   joinSimulationRun,
-  listSimulationRuns,
   resetSimulationRun,
   sendSimulationRunCommand,
   setSimulationRunClock,
@@ -31,29 +29,22 @@ afterEach(() => {
 })
 
 describe('simulation run client', () => {
-  test('uses the Simulation Run API paths for list, create, join, snapshot, and delete', async () => {
+  test('uses the Simulation Run API paths for join, snapshot, and delete', async () => {
     const calls: string[] = []
     installFetch((input, init) => {
       const path = String(input)
       calls.push(`${init?.method ?? 'GET'} ${path}`)
-      if (path === `${apiPrefix}/simulation-runs`) {
-        return new Response(JSON.stringify({ simulationRuns: [] }), { status: 200 })
-      }
       if (init?.method === 'DELETE') {
         return new Response(JSON.stringify({ id: 'run-test', deleted: true }), { status: 200 })
       }
       return new Response(JSON.stringify({ id: 'run-test', snapshot: { objects: [], seq: 0 } }), { status: 200 })
     })
 
-    await listSimulationRuns()
-    await createSimulationRun()
     await joinSimulationRun('run-test' as SimulationRunId)
     await syncSimulationRunSnapshot('run-test' as SimulationRunId)
     await deleteSimulationRun('run-test' as SimulationRunId)
 
     expect(calls).toEqual([
-      `GET ${apiPrefix}/simulation-runs`,
-      `POST ${apiPrefix}/simulation-runs`,
       `GET ${apiPrefix}/simulation-runs/run-test`,
       `GET ${apiPrefix}/simulation-runs/run-test/snapshot`,
       `DELETE ${apiPrefix}/simulation-runs/run-test`,
@@ -105,19 +96,17 @@ describe('simulation run client', () => {
     expect(JSON.parse(recordedBody)).toEqual({ paused: true })
   })
 
-  test('selects a Scenario only at creation and preserves it on join and reset', async () => {
+  test('does not accept Scenario replacement on join or reset', async () => {
     const calls: Array<{ readonly path: string; readonly method: string; readonly body: string }> = []
     installFetch((input, init) => {
       calls.push({ path: String(input), method: init?.method ?? 'GET', body: String(init?.body ?? '') })
       return new Response(JSON.stringify({ id: 'run-test', snapshot: { objects: [], seq: 0 } }), { status: 200 })
     })
 
-    await createSimulationRun({ scenarioId: 'oslo-ambulance' })
     await joinSimulationRun('run-test' as SimulationRunId)
     await resetSimulationRun('run-test' as SimulationRunId)
 
     expect(calls).toEqual([
-      { path: `${apiPrefix}/simulation-runs`, method: 'POST', body: JSON.stringify({ scenarioId: 'oslo-ambulance' }) },
       { path: `${apiPrefix}/simulation-runs/run-test`, method: 'GET', body: '' },
       { path: `${apiPrefix}/simulation-runs/run-test/reset`, method: 'POST', body: '' },
     ])
@@ -126,6 +115,6 @@ describe('simulation run client', () => {
   test('throws visible errors for failed API responses', async () => {
     installFetch(() => new Response('nope', { status: 503 }))
 
-    await expect(listSimulationRuns()).rejects.toThrow('simulation run list failed: 503')
+    await expect(joinSimulationRun('run-test' as SimulationRunId)).rejects.toThrow('simulation run join failed: 503')
   })
 })

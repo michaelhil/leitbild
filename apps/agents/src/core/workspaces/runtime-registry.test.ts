@@ -61,13 +61,13 @@ describe('WorkspaceRuntimeRegistry', () => {
     expect(a).toBe(b)
   })
 
-  it('seeds a newly provisioned Agents Workspace', async () => {
+  it('seeds only the human identity in a newly provisioned Agents Workspace', async () => {
     const id = newWorkspaceId()
     await provision(id)
     delete process.env.LEITBILD_SEED_WORKSPACE
     const seeded = await registry.getOrLoad(id)
-    expect(seeded.rooms.listAllRooms().some(r => r.name === 'Cafe')).toBe(true)
-    expect(seeded.team.listAgents().some(a => a.name === 'Aiden')).toBe(true)
+    expect(seeded.rooms.listAllRooms()).toEqual([])
+    expect(seeded.team.listAgents().map(actor => [actor.name, actor.kind])).toEqual([['You', 'human']])
   })
 
   it('different ids return different systems', async () => {

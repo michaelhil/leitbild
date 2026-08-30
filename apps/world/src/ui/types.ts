@@ -14,35 +14,8 @@ export interface SimulationRunResponse {
   readonly scenario?: ScenarioDefinition
 }
 
-export interface SimulationRunSummary {
-  readonly id: SimulationRunId
-  readonly scenarioId: string | null
-  readonly scenarioRevisionId: string | null
-  readonly createdAt: string | null
-  readonly loaded: boolean
-  readonly snapshotSeq: number | null
-  readonly objectCount: number | null
-  readonly websocketClientCount: number
-  readonly loadError?: string
-}
-
-export interface SimulationRunListResponse {
-  readonly simulationRuns: ReadonlyArray<SimulationRunSummary>
-}
-
 export interface ScenarioResponse {
   readonly scenario: ScenarioDefinition
-}
-
-export interface ScenarioListItem {
-  readonly id: string
-  readonly title: string
-  readonly description?: string
-}
-
-export interface ScenarioListResponse {
-  readonly scenarios: ReadonlyArray<ScenarioListItem>
-  readonly defaultScenarioId: string
 }
 
 export interface CommandResponse {

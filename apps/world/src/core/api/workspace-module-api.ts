@@ -2,6 +2,7 @@ import { z } from 'zod'
 import {
   moduleCapabilityCollectionSchema,
   moduleCapabilityInvocationSchema,
+  moduleDefinitionCollectionSchema,
   moduleIdSchema,
   moduleResourceCollectionSchema,
   workspaceIdSchema,
@@ -12,6 +13,7 @@ import {
 import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
 import { simulationRunIdSchema } from '../model/index.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
+import { scenarioRevisionIdSchema } from '../scenarios/library.ts'
 import type { WorldWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
 import {
   commandIdempotencyConfigFromEnv,
@@ -35,6 +37,7 @@ export const worldModuleManifest = workspaceModuleManifestSchema.parse({
   },
   endpoints: {
     workspace: '/internal/workspaces/{workspaceId}',
+    definitions: '/internal/workspaces/{workspaceId}/definitions',
     resources: '/internal/workspaces/{workspaceId}/resources',
     capabilities: '/internal/workspaces/{workspaceId}/capabilities',
     invoke: '/internal/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke',
@@ -45,7 +48,7 @@ export const worldModuleManifest = workspaceModuleManifestSchema.parse({
 })
 
 const lifecycleInputSchema = z.object({ workspaceId: workspaceIdSchema }).strict()
-const createRunInputSchema = z.object({ scenarioId: z.string().min(1).max(128).optional() }).strict()
+const emptyInputSchema = z.object({}).strict()
 const issueCommandInputSchema = z.object({
   command: z.object({
     kind: z.string().trim().min(1).max(256),
@@ -58,25 +61,35 @@ const queryPackInputSchema = z.object({
   kind: z.string().trim().min(1).max(256),
   payload: z.unknown(),
 }).strict()
+const readObjectInputSchema = z.object({
+  objectId: z.string().trim().min(1).max(128),
+}).strict()
+
+const SCENARIO_DEFINITION_TYPE = 'world.scenario'
+
+const definitionsFor = async (registry: SimulationRunRegistry) => {
+  const scenarios = await registry.listScenarios()
+  return moduleDefinitionCollectionSchema.parse({
+    definitions: scenarios.map(scenario => ({
+      ref: {
+        workspaceId: registry.workspaceId,
+        moduleId: WORLD_MODULE_ID,
+        type: SCENARIO_DEFINITION_TYPE,
+        id: scenario.id,
+      },
+      title: scenario.title,
+      ...(scenario.description === undefined ? {} : { description: scenario.description }),
+      currentRevisionId: scenario.currentRevisionId,
+      capabilityIds: worldCapabilities.idsForDefinitionType(SCENARIO_DEFINITION_TYPE),
+    })),
+  }).definitions
+}
 
 const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyArray<ModuleResourceDescriptor>> => {
   const observedAt = new Date().toISOString()
-  const [scenarios, simulationRuns] = await Promise.all([registry.listScenarios(), registry.listKnown()])
+  const simulationRuns = await registry.listKnown()
   return moduleResourceCollectionSchema.parse({
-    resources: [
-      ...scenarios.map(scenario => ({
-        ref: {
-          workspaceId: registry.workspaceId,
-          moduleId: WORLD_MODULE_ID,
-          type: 'world.scenario',
-          id: scenario.id,
-        },
-        title: scenario.title,
-        ...(scenario.description === undefined ? {} : { description: scenario.description }),
-        capabilityIds: [],
-        observedAt,
-      })),
-      ...simulationRuns.map(simulationRun => ({
+    resources: simulationRuns.map(simulationRun => ({
         ref: {
           workspaceId: registry.workspaceId,
           moduleId: WORLD_MODULE_ID,
@@ -87,11 +100,29 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
           ? simulationRun.id
           : `${simulationRun.scenarioId} — ${simulationRun.id}`,
         ...(simulationRun.loadError === undefined ? {} : { description: simulationRun.loadError }),
+        ...(simulationRun.scenarioId === null || simulationRun.scenarioRevisionId === null ? {} : {
+          sourceDefinition: {
+            workspaceId: registry.workspaceId,
+            moduleId: WORLD_MODULE_ID,
+            type: SCENARIO_DEFINITION_TYPE,
+            id: simulationRun.scenarioId,
+            revisionId: simulationRun.scenarioRevisionId,
+          },
+        }),
+        links: [],
+        uiPath: `/workspaces/${encodeURIComponent(registry.workspaceId)}/world/runs/${encodeURIComponent(simulationRun.id)}`,
         capabilityIds: worldCapabilities.idsForResourceType('world.simulation-run'),
         observedAt,
       })),
-    ],
   }).resources
+}
+
+const requireScenarioDefinitionId = (
+  invocation: z.infer<typeof moduleCapabilityInvocationSchema>,
+): string => {
+  if (invocation.definition === undefined) throw new Error('Scenario Capability requires a Definition')
+  if (invocation.definition.type !== SCENARIO_DEFINITION_TYPE) throw new Error('Capability requires a World Scenario Definition')
+  return invocation.definition.id
 }
 
 const requireSimulationRunResource = (
@@ -105,21 +136,55 @@ const requireSimulationRunResource = (
 const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, Response>(WORLD_MODULE_ID, [
   {
     descriptor: {
-      id: 'world.simulation-run.create',
+      id: 'world.scenario.start',
       moduleId: WORLD_MODULE_ID,
       kind: 'command',
-      scope: { kind: 'workspace' },
-      title: 'Create Simulation Run',
-      description: 'Creates a Simulation Run from a selected Workspace Scenario.',
+      scope: { kind: 'definition', definitionType: SCENARIO_DEFINITION_TYPE },
+      title: 'Start Scenario',
+      description: 'Creates a Simulation Run from the current immutable revision of this Scenario.',
       risk: 'write',
       idempotent: false,
-      inputSchema: z.toJSONSchema(createRunInputSchema),
+      inputSchema: z.toJSONSchema(emptyInputSchema),
       outputSchema: { type: 'object' },
     },
     invoke: async (registry, invocation) => {
-      const input = createRunInputSchema.parse(invocation.input)
-      const runtime = await registry.create(input.scenarioId === undefined ? {} : { scenarioId: input.scenarioId })
-      return json({ result: { id: runtime.id, capabilities: runtime.capabilities(), snapshot: runtime.snapshot() } }, { status: 201 })
+      emptyInputSchema.parse(invocation.input)
+      if (!invocation.definition) throw new Error('Scenario Capability requires a Definition')
+      const runtime = await registry.create({
+        scenarioId: requireScenarioDefinitionId(invocation),
+        scenarioRevisionId: scenarioRevisionIdSchema.parse(invocation.definition.revisionId),
+      })
+      const resource = {
+        workspaceId: registry.workspaceId,
+        moduleId: WORLD_MODULE_ID,
+        type: 'world.simulation-run',
+        id: runtime.id,
+      }
+      return json({
+        result: { id: runtime.id, uiPath: `/workspaces/${encodeURIComponent(registry.workspaceId)}/world/runs/${encodeURIComponent(runtime.id)}` },
+        createdResources: [resource],
+      }, { status: 201 })
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.scenario.delete',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'definition', definitionType: SCENARIO_DEFINITION_TYPE },
+      title: 'Delete Scenario',
+      description: 'Removes this Scenario from the Workspace catalog. Existing Simulation Runs retain their pinned revision.',
+      risk: 'destructive',
+      idempotent: false,
+      inputSchema: z.toJSONSchema(emptyInputSchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (registry, invocation) => {
+      emptyInputSchema.parse(invocation.input)
+      const scenarioId = requireScenarioDefinitionId(invocation)
+      return await registry.deleteScenario(scenarioId, scenarioRevisionIdSchema.parse(invocation.definition!.revisionId))
+        ? json({ result: { deleted: true, definitionId: scenarioId } })
+        : apiError(404, 'scenario_not_found', 'Scenario not found')
     },
   },
   {
@@ -159,6 +224,82 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       return summary
         ? json({ result: summary })
         : apiError(404, 'simulation_run_not_found', 'Simulation Run not found')
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.context',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Read Simulation Context',
+      description: 'Returns an agent-safe briefing, current situation, operational-object summaries, and available lower-level operations without exposing private Scenario Timeline content.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: z.toJSONSchema(emptyInputSchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (registry, invocation) => {
+      emptyInputSchema.parse(invocation.input)
+      const simulationRunId = requireSimulationRunResource(invocation)
+      const runtime = await registry.load(simulationRunId)
+      const [revision] = await Promise.all([registry.scenarioRevisionForRun(simulationRunId)])
+      if (!revision) return apiError(409, 'scenario_revision_unavailable', 'Simulation Run has no readable Scenario Revision')
+      const snapshot = runtime.snapshot()
+      return json({ result: {
+        subject: {
+          workspaceId: registry.workspaceId,
+          simulationRunId,
+          scenarioId: revision.scenarioId,
+          scenarioRevisionId: revision.id,
+        },
+        briefing: {
+          title: revision.definition.title,
+          ...(revision.definition.description === undefined ? {} : { summary: revision.definition.description }),
+          objectives: revision.definition.objectives ?? [],
+        },
+        situation: {
+          observedAt: new Date().toISOString(),
+          sequence: snapshot.seq,
+          ...(snapshot.clock === undefined ? {} : { clock: snapshot.clock }),
+          ...(snapshot.scenario?.guidance === undefined ? {} : { guidance: snapshot.scenario.guidance }),
+        },
+        operationalObjects: snapshot.objects.map(object => ({
+          id: object.id,
+          kind: object.kind,
+          packId: object.packId,
+          label: object.label,
+          lifecycle: object.lifecycle,
+          revision: object.revision,
+          status: object.operational.status,
+          ...(object.operational.priority === undefined ? {} : { priority: object.operational.priority }),
+          ...(object.operational.intent === undefined ? {} : { intent: object.operational.intent }),
+          updatedAt: object.timestamps.updatedAt,
+        })),
+        affordances: runtime.capabilities(),
+      } })
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.read-object',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Read Operational Object',
+      description: 'Reads current canonical projected state for one operational object discovered through Simulation Context.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: z.toJSONSchema(readObjectInputSchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (registry, invocation) => {
+      const runtime = await registry.load(requireSimulationRunResource(invocation))
+      const input = readObjectInputSchema.parse(invocation.input)
+      const object = runtime.snapshot().objects.find(candidate => candidate.id === input.objectId)
+      return object
+        ? json({ result: object })
+        : apiError(404, 'operational_object_not_found', 'Operational Object not found')
     },
   },
   {
@@ -263,6 +404,13 @@ export const handleWorldModuleApi = async (
       const workspaceId = workspaceIdSchema.parse(decodeURIComponent(resourcesMatch[1] ?? ''))
       const runtime = await workspaces.getOrLoad(workspaceId)
       return json(moduleResourceCollectionSchema.parse({ resources: await resourcesFor(runtime.simulationRuns) }))
+    }
+
+    const definitionsMatch = url.pathname.match(/^\/internal\/workspaces\/([^/]+)\/definitions$/)
+    if (definitionsMatch && request.method === 'GET') {
+      const workspaceId = workspaceIdSchema.parse(decodeURIComponent(definitionsMatch[1] ?? ''))
+      const runtime = await workspaces.getOrLoad(workspaceId)
+      return json(moduleDefinitionCollectionSchema.parse({ definitions: await definitionsFor(runtime.simulationRuns) }))
     }
 
     const capabilitiesMatch = url.pathname.match(/^\/internal\/workspaces\/([^/]+)\/capabilities$/)

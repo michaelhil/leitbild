@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import { workspaceIdSchema } from '@leitbild/contracts'
 import { simulationRunIdSchema } from '../src/core/model/index.ts'
 import {
-  pathForNewSimulationRun,
   pathForSimulationRun,
   pathForWorkspace,
   parseControlSurfaceRoute,
@@ -25,21 +24,14 @@ describe('Simulation Run route model', () => {
     })
   })
 
-  test('keeps Workspace home and new-run routes distinct', () => {
+  test('keeps the empty World route distinct from Simulation Runs', () => {
     expect(parseControlSurfaceRoute(`/workspaces/${workspaceId}/world`)).toEqual({
-      mode: 'run-picker',
+      mode: 'workspace-home',
       workspaceId,
       canonicalPath: `/workspaces/${workspaceId}/world`,
     })
-    expect(parseControlSurfaceRoute(`/workspaces/${workspaceId}/world/scenarios/halden/runs/new`)).toEqual({
-      mode: 'new-run',
-      workspaceId,
-      scenarioId: 'halden',
-      canonicalPath: `/workspaces/${workspaceId}/world/scenarios/halden/runs/new`,
-    })
     expect(pathForWorkspace(workspaceId)).toBe(`/workspaces/${workspaceId}/world`)
-    expect(pathForNewSimulationRun(workspaceId, 'halden'))
-      .toBe(`/workspaces/${workspaceId}/world/scenarios/halden/runs/new`)
+    expect(() => parseControlSurfaceRoute(`/workspaces/${workspaceId}/world/scenarios/halden/runs/new`)).toThrow()
   })
 
   test('rejects invalid Workspace, run id, and route shapes', () => {

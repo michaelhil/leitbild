@@ -137,4 +137,8 @@ export interface RoomConfig {
   readonly name: string
   readonly roomPrompt?: string
   readonly createdBy: string
+  readonly sourceDefinition?: {
+    readonly id: string
+    readonly revisionId: string
+  }
 }

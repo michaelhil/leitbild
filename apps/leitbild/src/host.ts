@@ -6,6 +6,8 @@ import {
   moduleMembershipSchema,
   renameWorkspaceInputSchema,
   workspaceCapabilityCatalogSchema,
+  workspaceDefinitionCatalogSchema,
+  workspaceDefinitionRevisionReferenceSchema,
   workspaceIdSchema,
   workspaceResourceCatalogSchema,
   workspaceResourceReferenceSchema,
@@ -18,25 +20,27 @@ import {
   type RenameWorkspaceInput,
   type Workspace,
   type WorkspaceCapabilityCatalog,
+  type WorkspaceDefinitionCatalog,
   type WorkspaceId,
   type WorkspaceResourceCatalog,
 } from '@leitbild/contracts'
 import { hostError } from './errors.ts'
 import type { ModuleGateway, ModuleOperationResult } from './module-gateway.ts'
 import type { WorkspaceStore } from './store.ts'
-import { getPreset, PRESET_CATALOG, type PresetDefinition } from './presets.ts'
+import { COMPOSITION_CATALOG, getComposition, type CompositionDefinition } from './compositions.ts'
 
-export interface PresetActionOutcome {
+export interface CompositionActionOutcome {
   readonly capabilityId: CapabilityId
   readonly status: 'applied' | 'failed'
   readonly result?: unknown
+  readonly createdResources?: ReadonlyArray<import('@leitbild/contracts').WorkspaceResourceReference>
   readonly error?: string
 }
 
-export interface PresetApplication {
-  readonly presetId: string
+export interface CompositionApplication {
+  readonly compositionId: string
   readonly status: 'applied' | 'partial' | 'failed'
-  readonly outcomes: ReadonlyArray<PresetActionOutcome>
+  readonly outcomes: ReadonlyArray<CompositionActionOutcome>
 }
 
 export interface WorkspaceHost {
@@ -46,11 +50,12 @@ export interface WorkspaceHost {
   readonly rename: (id: WorkspaceId, input: RenameWorkspaceInput) => Workspace
   readonly delete: (id: WorkspaceId) => Promise<void>
   readonly retryModule: (id: WorkspaceId, moduleId: ModuleId) => Promise<Workspace>
+  readonly definitions: (id: WorkspaceId) => Promise<WorkspaceDefinitionCatalog>
   readonly resources: (id: WorkspaceId) => Promise<WorkspaceResourceCatalog>
   readonly capabilities: (id: WorkspaceId) => Promise<WorkspaceCapabilityCatalog>
-  readonly invoke: (id: WorkspaceId, capabilityId: CapabilityId, input: InvokeCapabilityInput, access: AccessContext) => Promise<unknown>
-  readonly presets: () => ReadonlyArray<PresetDefinition>
-  readonly applyPreset: (id: WorkspaceId, presetId: string, access: AccessContext) => Promise<PresetApplication>
+  readonly invoke: (id: WorkspaceId, capabilityId: CapabilityId, input: InvokeCapabilityInput, access: AccessContext) => Promise<import('@leitbild/contracts').ModuleCapabilityInvocationResult>
+  readonly compositions: () => ReadonlyArray<CompositionDefinition>
+  readonly startComposition: (id: WorkspaceId, compositionId: string, access: AccessContext) => Promise<CompositionApplication>
   readonly installedModuleIds: () => ReadonlyArray<ModuleId>
 }
 
@@ -105,7 +110,7 @@ export const createWorkspaceHost = (config: {
     rawCapabilityId: CapabilityId,
     rawInput: InvokeCapabilityInput,
     access: AccessContext,
-  ): Promise<unknown> => {
+  ): Promise<import('@leitbild/contracts').ModuleCapabilityInvocationResult> => {
     const id = workspaceIdSchema.parse(rawId)
     const capabilityId = capabilityIdSchema.parse(rawCapabilityId)
     const workspace = requireWorkspace(id)
@@ -116,12 +121,17 @@ export const createWorkspaceHost = (config: {
       throw hostError({ status: 409, code: 'module_not_ready', message: `Capability Module is not ready in this Workspace: ${moduleId}` })
     }
     const resource = rawInput.resource === undefined ? undefined : workspaceResourceReferenceSchema.parse(rawInput.resource)
+    const definition = rawInput.definition === undefined ? undefined : workspaceDefinitionRevisionReferenceSchema.parse(rawInput.definition)
     if (resource !== undefined && (resource.workspaceId !== id || resource.moduleId !== moduleId)) {
       throw hostError({ status: 400, code: 'resource_scope_mismatch', message: 'Selected Resource does not belong to the Capability Module and Workspace' })
+    }
+    if (definition !== undefined && (definition.workspaceId !== id || definition.moduleId !== moduleId)) {
+      throw hostError({ status: 400, code: 'definition_scope_mismatch', message: 'Selected Definition does not belong to the Capability Module and Workspace' })
     }
     const result = await config.modules.invoke(moduleId, {
       workspaceId: id,
       capabilityId,
+      ...(definition === undefined ? {} : { definition }),
       ...(resource === undefined ? {} : { resource }),
       input: rawInput.input,
       access,
@@ -135,7 +145,7 @@ export const createWorkspaceHost = (config: {
         details: { moduleId, capabilityId },
       })
     }
-    return result.value.result
+    return result.value
   }
 
   return {
@@ -192,6 +202,33 @@ export const createWorkspaceHost = (config: {
       }
       throw hostError({ status: 409, code: 'module_not_retryable', message: `Module lifecycle is not failed: ${moduleId}` })
     },
+    definitions: async rawId => {
+      const id = workspaceIdSchema.parse(rawId)
+      const workspace = requireWorkspace(id)
+      const results = await Promise.all(workspace.modules.map(async item => {
+        if (item.status !== 'ready') {
+          return { moduleId: item.moduleId, result: { ok: false as const, failure: unavailableMembershipFailure(item) } }
+        }
+        return { moduleId: item.moduleId, result: await config.modules.definitions(item.moduleId, id) }
+      }))
+      const outcomes = results.map(item => item.result.ok
+        ? { moduleId: item.moduleId, status: 'ready' as const }
+        : { moduleId: item.moduleId, status: 'failed' as const, failure: item.result.failure })
+      const definitions = results.flatMap(item => {
+        if (!item.result.ok) return []
+        const invalid = item.result.value.definitions.find(definition =>
+          definition.ref.workspaceId !== id || definition.ref.moduleId !== item.moduleId)
+        if (invalid) {
+          throw hostError({
+            status: 502,
+            code: 'module_contract_invalid',
+            message: `Module ${item.moduleId} returned a Definition outside its ownership`,
+          })
+        }
+        return item.result.value.definitions
+      })
+      return workspaceDefinitionCatalogSchema.parse({ workspaceId: id, modules: outcomes, definitions })
+    },
     resources: async rawId => {
       const id = workspaceIdSchema.parse(rawId)
       const workspace = requireWorkspace(id)
@@ -246,18 +283,28 @@ export const createWorkspaceHost = (config: {
       return workspaceCapabilityCatalogSchema.parse({ workspaceId: id, modules: outcomes, capabilities })
     },
     invoke: invokeCapability,
-    presets: () => PRESET_CATALOG,
-    applyPreset: async (rawId, presetId, access) => {
+    compositions: () => COMPOSITION_CATALOG,
+    startComposition: async (rawId, compositionId, access) => {
       const id = workspaceIdSchema.parse(rawId)
       requireWorkspace(id)
-      const preset = getPreset(presetId)
-      if (!preset) throw hostError({ status: 404, code: 'preset_not_found', message: 'Preset not found' })
-      const outcomes = await Promise.all(preset.actions.map(async action => {
+      const composition = getComposition(compositionId)
+      if (!composition) throw hostError({ status: 404, code: 'composition_not_found', message: 'Composition not found' })
+      const outcomes = await Promise.all(composition.actions.map(async action => {
         try {
+          const definitions = await config.modules.definitions(action.moduleId, id)
+          if (!definitions.ok) throw new Error(definitions.failure.message)
+          const definition = definitions.value.definitions.find(candidate =>
+            candidate.ref.type === action.definitionType && candidate.ref.id === action.definitionId)
+          if (!definition) throw new Error(`Composition Definition is unavailable: ${action.definitionType}:${action.definitionId}`)
+          const invoked = await invokeCapability(id, action.capabilityId, {
+            definition: { ...definition.ref, revisionId: definition.currentRevisionId },
+            input: {},
+          }, access)
           return {
             capabilityId: action.capabilityId,
             status: 'applied' as const,
-            result: await invokeCapability(id, action.capabilityId, { input: action.input }, access),
+            result: invoked.result,
+            ...(invoked.createdResources === undefined ? {} : { createdResources: invoked.createdResources }),
           }
         } catch (error) {
           return {
@@ -269,7 +316,7 @@ export const createWorkspaceHost = (config: {
       }))
       const applied = outcomes.filter(outcome => outcome.status === 'applied').length
       return {
-        presetId: preset.id,
+        compositionId: composition.id,
         status: applied === outcomes.length ? 'applied' : applied === 0 ? 'failed' : 'partial',
         outcomes,
       }
