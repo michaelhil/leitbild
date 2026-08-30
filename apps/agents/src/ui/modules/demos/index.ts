@@ -14,7 +14,7 @@ import { createModal } from '../modals/detail-modal.ts'
 import { showToast } from '../toast.ts'
 import { icon } from '../icon.ts'
 import { $selectedRoomId } from '../stores.ts'
-import { DEMO_CATALOG, getDemo, type Demo } from './catalog.ts'
+import { DEMO_CATALOG, getDemo, type DemoDefinition } from '../../../core/definitions/demo-catalog.ts'
 import { openDemoModal, refreshDemoHeaderIcon } from './demo-modal.ts'
 import { $activeDemoByRoom, clearDemoForRoom } from './active-demo-store.ts'
 
@@ -22,7 +22,7 @@ import { $activeDemoByRoom, clearDemoForRoom } from './active-demo-store.ts'
 // link works from the canonical `/workspaces/<workspace-id>` route. The receiver's
 // boot handler in initDemoDeepLink() reads `?demo=<id>` and triggers the
 // same flow as clicking the card in the picker modal.
-const demoShareUrl = (demo: Demo): string =>
+const demoShareUrl = (demo: DemoDefinition): string =>
   `${window.location.origin}${window.location.pathname}?demo=${encodeURIComponent(demo.id)}`
 
 export { openDemoModal, refreshDemoHeaderIcon, clearDemoForRoom }

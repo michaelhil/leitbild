@@ -5,21 +5,19 @@
 // ============================================================================
 
 import { map } from '../../lib/nanostores.ts'
-import type { DemoId } from './catalog.ts'
-
 const STORAGE_KEY = 'leitbild:active-demo-by-room'
 
-const loadInitial = (): Record<string, DemoId> => {
+const loadInitial = (): Record<string, string> => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return {}
-    const parsed = JSON.parse(raw) as Record<string, DemoId>
+    const parsed = JSON.parse(raw) as Record<string, string>
     if (parsed && typeof parsed === 'object') return parsed
   } catch { /* fall through */ }
   return {}
 }
 
-export const $activeDemoByRoom = map<Record<string, DemoId>>(loadInitial())
+export const $activeDemoByRoom = map<Record<string, string>>(loadInitial())
 
 $activeDemoByRoom.listen((value) => {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(value)) } catch { /* quota / private mode */ }

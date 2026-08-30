@@ -70,12 +70,15 @@ const buildProviderSnapshots = (system: AgentsWorkspaceRuntime): ReadonlyArray<P
   return out
 }
 
+export const resolveWorkspaceDefaultModel = (system: AgentsWorkspaceRuntime): string =>
+  resolveDefaultModel(buildProviderSnapshots(system)) || DEFAULT_MODEL_ID
+
 export const seedWorkspace = async (system: AgentsWorkspaceRuntime): Promise<void> => {
   // Idempotency: if a Cafe already exists (e.g. re-seed call), bail.
   const existing = system.rooms.listAllRooms().some(p => p.name === 'Cafe')
   if (existing) return
 
-  const model = resolveDefaultModel(buildProviderSnapshots(system)) || DEFAULT_MODEL_ID
+  const model = resolveWorkspaceDefaultModel(system)
 
   // Room first so spawned agents have something to join.
   const room = system.rooms.createRoom({ name: 'Cafe', createdBy: 'system' })
