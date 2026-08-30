@@ -381,7 +381,6 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
       const simulationRunApiResponse = await handleSimulationRunApi(req, url, {
           registry: workspaceRuntime.simulationRuns,
           accessContext: createOpenAccessContext(workspaceId, req),
-        websocketClients: realtime.status().simulationRuns,
       })
       if (simulationRunApiResponse) {
         realtime.reconcile()

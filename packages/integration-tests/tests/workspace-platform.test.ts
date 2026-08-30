@@ -178,9 +178,13 @@ describe('Workspace Host with real Modules', () => {
     )
     expect(discovered.success).toBe(true)
     const currentRun = (discovered.data as {
-      resources: Array<{ ref: { moduleId: string; type: string; id: string } }>
+      resources: Array<{
+        ref: { moduleId: string; type: string; id: string }
+        summary: Array<{ key: string; kind: string; value: unknown }>
+      }>
     }).resources.find(resource => resource.ref.type === 'world.simulation-run')!
     expect(currentRun.ref.id).toBe(runId)
+    expect(currentRun.summary.find(item => item.key === 'viewer-count')).toMatchObject({ kind: 'count', value: 0 })
 
     const read = await invoke!.execute({
       capabilityId: 'world.simulation-run.read',
@@ -189,6 +193,21 @@ describe('Workspace Host with real Modules', () => {
     }, context)
     expect(read.success).toBe(true)
     expect((read.data as { id: string }).id).toBe(runId)
+
+    const deleteRun = await fetch(
+      `${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.simulation-run.delete/invoke`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resource: currentRun.ref, input: {} }),
+      },
+    )
+    expect(deleteRun.status).toBe(200)
+    const resourcesAfterDelete = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/resources`)
+    expect(resourcesAfterDelete.status).toBe(200)
+    expect((await resourcesAfterDelete.json() as {
+      resources: Array<{ ref: { id: string } }>
+    }).resources.some(resource => resource.ref.id === runId)).toBe(false)
 
     expect((await fetch(`${baseUrl}/api/workspaces/${workspace.id}`, { method: 'DELETE' })).status).toBe(204)
     expect(await worldRegistry.list()).toEqual([])

@@ -19,7 +19,7 @@ import type { SimulationRunCapabilities } from './runtime.ts'
 import type { SimulationRunRuntimeMetricsSnapshot } from './runtime-metrics.ts'
 import { defaultSimulationRunRuntimePolicy } from './runtime-persistence-policy.ts'
 import { createSimulationRunSnapshotStore } from './snapshot-store.ts'
-import type { SimulationRunEvent } from '../model/index.ts'
+import type { SimulationClockState, SimulationRunEvent } from '../model/index.ts'
 import { worldWorkspacePaths } from '../workspaces/paths.ts'
 import { createProcedureSourceService, type ProcedureSourceService } from '../procedures/source.ts'
 import { createLocalScenarioLibrary, type ScenarioLibrary, type ScenarioRecord, type ScenarioRevision, type ScenarioRevisionId } from '../scenarios/library.ts'
@@ -43,11 +43,13 @@ export interface SimulationRunLeaseSummary {
 export interface SimulationRunSummary {
   readonly id: SimulationRunId
   readonly scenarioId: string | null
+  readonly scenarioTitle: string | null
   readonly scenarioRevisionId: string | null
   readonly createdAt: string | null
   readonly loaded: boolean
   readonly snapshotSeq: number | null
   readonly objectCount: number | null
+  readonly clock: SimulationClockState | null
   readonly loadError?: string
 }
 
@@ -74,6 +76,7 @@ export interface SimulationRunRegistry {
   readonly listKnown: () => Promise<ReadonlyArray<SimulationRunSummary>>
   readonly status: () => Promise<SimulationRunRegistryStatus>
   readonly acquireLease: (id: SimulationRunId, kind: SimulationRunLeaseKind) => () => void
+  readonly leaseSummary: (id: SimulationRunId) => SimulationRunLeaseSummary
   readonly listScenarios: () => Promise<ReadonlyArray<ScenarioRecord>>
   readonly currentScenario: (id: string) => Promise<ScenarioRevision | undefined>
   readonly deleteScenario: (id: string, revisionId: ScenarioRevisionId) => Promise<boolean>
@@ -123,6 +126,17 @@ export const createSimulationRunRegistry = (config: {
   const leaseCountFor = (id: SimulationRunId): number =>
     leasesBySimulationRun.get(id)?.size ?? 0
 
+  const leaseSummary = (id: SimulationRunId): SimulationRunLeaseSummary => {
+    const leasesByKind: Record<SimulationRunLeaseKind, number> = {
+      realtime: 0,
+      api: 0,
+      background: 0,
+    }
+    const leases = leasesBySimulationRun.get(id)
+    if (leases) for (const kind of leases.values()) leasesByKind[kind] += 1
+    return { simulationRunId: id, leaseCount: leases?.size ?? 0, leasesByKind }
+  }
+
   const scheduleIdleRuntimeCloseIfUnleased = (id: SimulationRunId): void => {
     clearIdleRuntimeCloseTimer(id)
     if (idleRuntimeCloseDelayMs < 0) return
@@ -147,20 +161,8 @@ export const createSimulationRunRegistry = (config: {
   }
 
   const leaseSummaries = (): ReadonlyArray<SimulationRunLeaseSummary> =>
-    [...leasesBySimulationRun.entries()]
-      .map(([simulationRunId, leases]) => {
-        const leasesByKind: Record<SimulationRunLeaseKind, number> = {
-          realtime: 0,
-          api: 0,
-          background: 0,
-        }
-        for (const kind of leases.values()) leasesByKind[kind] += 1
-        return {
-          simulationRunId,
-          leaseCount: leases.size,
-          leasesByKind,
-        }
-      })
+    [...leasesBySimulationRun.keys()]
+      .map(leaseSummary)
       .sort((left, right) => left.simulationRunId.localeCompare(right.simulationRunId))
 
   const acquireLease = (id: SimulationRunId, kind: SimulationRunLeaseKind): (() => void) => {
@@ -492,25 +494,32 @@ export const createSimulationRunRegistry = (config: {
       return {
         id,
         scenarioId: null,
+        scenarioTitle: null,
         scenarioRevisionId: null,
         createdAt: null,
         loaded: false,
         snapshotSeq: null,
         objectCount: null,
+        clock: null,
         loadError: 'Simulation Run Manifest is missing',
       }
     }
     const loaded = simulationRuns.get(id)
+    await ensureScenarioLibrary()
+    const revision = await scenarioLibrary.getRevision(scenarioRevisionIdFromManifest(manifest))
+    const scenarioTitle = revision?.definition.title ?? null
     if (loaded) {
       const snapshot = loaded.snapshot()
       return {
         id,
         scenarioId: manifest.scenario.id,
+        scenarioTitle,
         scenarioRevisionId: manifest.scenario.revisionId,
         createdAt: manifest.createdAt,
         loaded: true,
         snapshotSeq: snapshot.seq,
         objectCount: snapshot.objects.length,
+        clock: snapshot.clock ?? null,
       }
     }
     const snapshotStore = createSimulationRunSnapshotStore({
@@ -529,11 +538,13 @@ export const createSimulationRunRegistry = (config: {
     return {
       id,
       scenarioId: manifest.scenario.id,
+      scenarioTitle,
       scenarioRevisionId: manifest.scenario.revisionId,
       createdAt: manifest.createdAt,
       loaded: false,
       snapshotSeq: snapshot?.seq ?? null,
       objectCount: snapshot?.objects.length ?? null,
+      clock: snapshot?.clock ?? null,
       ...(loadError === undefined ? {} : { loadError }),
     }
   }
@@ -597,6 +608,7 @@ export const createSimulationRunRegistry = (config: {
     listKnown,
     status,
     acquireLease,
+    leaseSummary,
     listScenarios: async () => {
       await ensureScenarioLibrary()
       return await scenarioLibrary.list()

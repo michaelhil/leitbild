@@ -17,10 +17,6 @@ const defaultOperatorActorId = actorIdSchema.parse('actor:operator')
 export interface SimulationRunRouteConfig {
   readonly registry: SimulationRunRegistry
   readonly accessContext: AccessContext
-  readonly websocketClients?: ReadonlyArray<{
-    readonly id: SimulationRunId
-    readonly websocketClientCount: number
-  }>
 }
 
 const commandRequestSchema = z.object({
@@ -177,9 +173,8 @@ const handleSimulationRunApiInner = async (
 
   if (simulationRunMatch && req.method === 'DELETE') {
     const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(simulationRunMatch[1] ?? ''))
-    const websocketClientCount = config.websocketClients?.find(item => item.id === simulationRunId)?.websocketClientCount ?? 0
-    if (websocketClientCount > 0) {
-      return apiError(409, 'simulation_run_has_users', 'simulation run has connected users')
+    if (config.registry.leaseSummary(simulationRunId).leasesByKind.realtime > 0) {
+      return apiError(409, 'simulation_run_has_viewers', 'simulation run has connected viewers')
     }
     const deleted = await config.registry.delete(simulationRunId)
     if (!deleted) return apiError(404, 'simulation_run_not_found', 'simulation run not found')

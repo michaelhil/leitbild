@@ -32,6 +32,14 @@ _Avoid_: service-specific configuration guessed by the Host
 A Workspace-scoped domain entity that a Module makes discoverable by stable reference and type.
 _Avoid_: copying the entity into the Host or using an untyped URL as identity
 
+**Resource Summary**:
+A small, current set of typed facts published with a Resource for discovery and overview surfaces, without replacing the Module's detailed state or read Capabilities.
+_Avoid_: copied domain state, arbitrary JSON metadata, Host-owned interpretation of Module internals
+
+**Viewer Connection**:
+One live client connection observing a Workspace or Resource. It is an ephemeral presence signal and is not necessarily one distinct person.
+_Avoid_: User, participant, member, authenticated identity
+
 **Capability**:
 A typed command, query, or event stream exposed by a Module for a Resource type or Workspace scope.
 _Avoid_: tool name guessed by a caller, Pack, arbitrary RPC

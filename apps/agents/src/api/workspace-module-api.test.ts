@@ -92,6 +92,7 @@ describe('Agents Workspace Module API', () => {
     )
     expect(capabilities.capabilities.every(capability => capability.id.startsWith('agents.'))).toBe(true)
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room.create')
+    expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room.delete')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.agent.create')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room-definition.start')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.prompt-deck.run-entry')
@@ -143,6 +144,9 @@ describe('Agents Workspace Module API', () => {
 
     const startedRoom = resources.resources.find(resource => resource.ref.id === startedRoomId)
     expect(startedRoom?.sourceDefinition?.revisionId).toBe(roomDefinition.currentRevisionId)
+    expect(startedRoom?.summary.find(item => item.key === 'created-at')?.kind).toBe('timestamp')
+    expect(startedRoom?.summary.find(item => item.key === 'message-count')?.kind).toBe('count')
+    expect(startedRoom?.summary.find(item => item.key === 'status')?.kind).toBe('status')
 
     expect((await request(
       'POST',
@@ -163,6 +167,18 @@ describe('Agents Workspace Module API', () => {
       await (await request('GET', `/internal/workspaces/${workspaceId}/resources`)).json(),
     )
     expect(resourcesAfterDelete.resources.some(resource => resource.ref.id === startedRoomId)).toBe(true)
+
+    expect((await request(
+      'POST',
+      `/internal/workspaces/${workspaceId}/capabilities/agents.room.delete/invoke`,
+      invokeBody(workspaceId, 'agents.room.delete', {}, {
+        resource: { type: 'agents.room', id: startedRoomId },
+      }),
+    )).status).toBe(200)
+    const resourcesAfterRoomDelete = moduleResourceCollectionSchema.parse(
+      await (await request('GET', `/internal/workspaces/${workspaceId}/resources`)).json(),
+    )
+    expect(resourcesAfterRoomDelete.resources.some(resource => resource.ref.id === startedRoomId)).toBe(false)
   })
 
   test('removing Agents removes the complete Module', async () => {

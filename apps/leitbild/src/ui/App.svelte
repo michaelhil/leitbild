@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte'
   import {
     coreModuleIds,
     type ModuleCapabilityDescriptor,
     type ModuleDefinitionDescriptor,
     type ModuleResourceDescriptor,
+    type ResourceSummaryItem,
     type Workspace,
   } from '@leitbild/contracts'
   import WorkspaceComposer from './WorkspaceComposer.svelte'
@@ -48,8 +50,10 @@
   let definitions = $state<ReadonlyArray<ModuleDefinitionDescriptor>>([])
   let resources = $state<ReadonlyArray<ModuleResourceDescriptor>>([])
   let capabilities = $state<ReadonlyArray<ModuleCapabilityDescriptor>>([])
+  let summaryClock = $state(Date.now())
   const workspaceTitle = $derived(workspace?.name ?? workspace?.id ?? 'Workspace')
   const showingComposer = $derived(selectedWorldRunId !== null || selectedAgentsRoomId !== null)
+  const continuableResources = $derived(resources.filter(resource => resource.uiPath !== undefined))
 
   const request = async <T,>(path: string, options?: RequestInit): Promise<T> => {
     const response = await fetch(path, options)
@@ -69,6 +73,13 @@
     definitions = definitionResponse.definitions
     resources = resourceResponse.resources
     capabilities = capabilityResponse.capabilities
+  }
+
+  const refreshResources = async (workspaceId: string): Promise<void> => {
+    const response = await request<{ resources: ReadonlyArray<ModuleResourceDescriptor> }>(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/resources`,
+    )
+    resources = response.resources
   }
 
   const load = async (): Promise<void> => {
@@ -163,6 +174,18 @@
     else await loadWorkspaceCatalog(workspace.id)
   })
 
+  const invokeResource = (resource: ModuleResourceDescriptor, capability: ModuleCapabilityDescriptor): Promise<void> => run(async () => {
+    if (!workspace) return
+    if (capability.risk === 'destructive' && !confirm(`${capability.title}: ${resource.title}? This cannot be undone.`)) return
+    await request<InvocationResponse>(
+      `/api/workspaces/${workspace.id}/capabilities/${encodeURIComponent(capability.id)}/invoke`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resource: resource.ref, input: {}, actor: { kind: 'human' } }),
+      },
+    )
+    await loadWorkspaceCatalog(workspace.id)
+  })
+
   const startComposition = (compositionId: string): Promise<void> => run(async () => {
     if (!workspace) return
     const response = await request<CompositionResponse>(
@@ -177,14 +200,41 @@
 
   const openResource = (resource: ModuleResourceDescriptor): void => {
     const params = new URLSearchParams()
-    if (resource.ref.moduleId === 'world') params.set('world', resource.ref.id)
-    if (resource.ref.moduleId === 'agents') params.set('agents', resource.ref.id)
-    location.href = `${location.pathname}?${params}`
+    if (resource.ref.type === 'world.simulation-run') params.set('world', resource.ref.id)
+    if (resource.ref.type === 'agents.room') params.set('agents', resource.ref.id)
+    if (params.size > 0) location.href = `${location.pathname}?${params}`
+    else if (resource.uiPath) location.href = resource.uiPath
   }
 
   const capabilityFor = (id: string): ModuleCapabilityDescriptor | undefined => capabilities.find(item => item.id === id)
+  const destructiveCapabilityFor = (resource: ModuleResourceDescriptor): ModuleCapabilityDescriptor | undefined =>
+    resource.capabilityIds.map(capabilityFor).find(capability => capability?.risk === 'destructive')
   const definitionsFor = (moduleId: string): ReadonlyArray<ModuleDefinitionDescriptor> => definitions.filter(item => item.ref.moduleId === moduleId)
-  const resourcesFor = (moduleId: string): ReadonlyArray<ModuleResourceDescriptor> => resources.filter(item => item.ref.moduleId === moduleId)
+  const resourcesFor = (moduleId: string): ReadonlyArray<ModuleResourceDescriptor> => continuableResources.filter(item => item.ref.moduleId === moduleId)
+  const relativeTime = (timestamp: string): string => {
+    const deltaSeconds = Math.round((summaryClock - Date.parse(timestamp)) / 1000)
+    const future = deltaSeconds < 0
+    const seconds = Math.abs(deltaSeconds)
+    if (seconds < 10) return 'just now'
+    const [value, unit] = seconds < 60
+      ? [seconds, 's']
+      : seconds < 3_600
+        ? [Math.round(seconds / 60), 'm']
+        : seconds < 86_400
+          ? [Math.round(seconds / 3_600), 'h']
+          : [Math.round(seconds / 86_400), 'd']
+    return future ? `in ${value}${unit}` : `${value}${unit} ago`
+  }
+  const summaryValue = (item: ResourceSummaryItem): string =>
+    item.kind === 'timestamp' ? relativeTime(item.value) : String(item.value)
+
+  const refreshInterval = setInterval(() => {
+    summaryClock = Date.now()
+    if (currentPage.kind === 'workspace' && workspace && !showingComposer) {
+      void refreshResources(workspace.id).catch(() => undefined)
+    }
+  }, 20_000)
+  onDestroy(() => clearInterval(refreshInterval))
 
   void load()
 </script>
@@ -225,7 +275,45 @@
             {/each}
           </div></section>
         {/each}
-        {#if resources.length > 0}<section class="catalog-section-home"><header><h2>Continue</h2><span>{resources.length} live resources</span></header><div class="resource-columns">{#each coreModuleIds as moduleId}<div><h3>{moduleTitles[moduleId]}</h3>{#each resourcesFor(moduleId) as resource (`${resource.ref.type}:${resource.ref.id}`)}<button class="resource-row" onclick={() => openResource(resource)}><strong>{resource.title}</strong><span>{resource.description ?? resource.ref.id}</span></button>{/each}</div>{/each}</div></section>{/if}
+        {#if continuableResources.length > 0}
+          <section class="catalog-section-home">
+            <header><h2>Continue</h2><span>{continuableResources.length} resources</span></header>
+            <div class="resource-columns">
+              {#each coreModuleIds as moduleId}
+                <div><h3>{moduleTitles[moduleId]}</h3>
+                  {#each resourcesFor(moduleId) as resource (`${resource.ref.type}:${resource.ref.id}`)}
+                    {@const deleteCapability = destructiveCapabilityFor(resource)}
+                    <article class="resource-card">
+                      <button class="resource-open" onclick={() => openResource(resource)}>
+                        <strong>{resource.title}</strong>
+                        {#if resource.description}<span class="resource-description">{resource.description}</span>{/if}
+                        {#if resource.summary.length > 0}
+                          <span class="resource-summary">
+                            {#each resource.summary as item (item.key)}
+                              <span class="resource-fact" title={item.kind === 'timestamp' ? item.value : undefined}>
+                                <small>{item.label}</small><b>{summaryValue(item)}</b>
+                              </span>
+                            {/each}
+                          </span>
+                        {/if}
+                      </button>
+                      {#if deleteCapability}
+                        <button
+                          class="resource-delete"
+                          type="button"
+                          aria-label={`${deleteCapability.title}: ${resource.title}`}
+                          title={deleteCapability.title}
+                          disabled={busy}
+                          onclick={() => void invokeResource(resource, deleteCapability)}
+                        >×</button>
+                      {/if}
+                    </article>
+                  {/each}
+                </div>
+              {/each}
+            </div>
+          </section>
+        {/if}
       </section>
     {/if}
 

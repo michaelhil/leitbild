@@ -120,9 +120,55 @@ button:disabled { opacity: .55; cursor: wait; }
 .resource-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .resource-columns > div { min-width: 0; }
 .resource-columns h3 { font-size: .8rem; color: #607064; text-transform: uppercase; letter-spacing: .08em; }
-.resource-row { width: 100%; min-height: 0; margin-bottom: .5rem; padding: .75rem; display: grid; justify-content: stretch; gap: .2rem; text-align: left; }
-.resource-row strong, .resource-row span { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.resource-row span { color: #687269; font-size: .75rem; }
+.resource-card {
+  position: relative;
+  margin-bottom: .6rem;
+  overflow: hidden;
+  border: 1px solid #c5cec2;
+  border-radius: 11px;
+  background: rgba(255,255,255,.8);
+}
+.resource-card:hover { border-color: #839182; background: #fff; }
+.resource-open {
+  width: 100%;
+  min-height: 0;
+  padding: .8rem 2.8rem .8rem .8rem;
+  display: grid;
+  justify-content: stretch;
+  gap: .22rem;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+  background: transparent;
+}
+.resource-open:hover { border-color: transparent; }
+.resource-open > strong, .resource-description { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resource-description { color: #687269; font-size: .75rem; }
+.resource-summary { margin-top: .45rem; display: flex; flex-wrap: wrap; gap: .32rem; }
+.resource-fact {
+  min-width: 66px;
+  padding: .32rem .42rem;
+  display: grid;
+  gap: .05rem;
+  border-radius: 6px;
+  color: #354239;
+  background: #edf1ea;
+}
+.resource-fact small { color: #758078; font-size: .58rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.resource-fact b { overflow: hidden; font-size: .72rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.resource-delete {
+  position: absolute;
+  top: .45rem;
+  right: .45rem;
+  width: 28px;
+  min-height: 28px;
+  padding: 0 0 .1rem;
+  border-color: transparent;
+  color: #89928a;
+  background: transparent;
+  font-size: 1.1rem;
+}
+.resource-delete:hover { border-color: #d3aaaa; color: #8a2d2d; background: #fff4f3; }
 
 .workspace-composer {
   position: relative;

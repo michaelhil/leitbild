@@ -137,7 +137,6 @@ const callRoute = async <T>(
   registry: SimulationRunRegistry,
   path: string,
   init?: RequestInit,
-  websocketClients?: ReadonlyArray<{ readonly id: SimulationRunId; readonly websocketClientCount: number }>,
 ): Promise<ApiResponse<T>> => {
   const apiPrefix = `/api/workspaces/${encodeURIComponent(registry.workspaceId)}/world`
   const request = new Request(`http://leitbild.test${apiPrefix}${path}`, init)
@@ -148,7 +147,6 @@ const callRoute = async <T>(
       requestId: newRequestId(),
       actor: { kind: 'anonymous' },
     }),
-    ...(websocketClients === undefined ? {} : { websocketClients }),
   })
   if (!response) throw new Error(`route did not handle ${init?.method ?? 'GET'} ${path}`)
   return { status: response.status, body: await response.json() as T }
@@ -322,23 +320,23 @@ describe('Simulation Run API', () => {
     }
   })
 
-  test('hard-deletes a run only when it has no connected users', async () => {
+  test('hard-deletes a run only when it has no connected viewers', async () => {
     const registry = await createTestRegistry()
     const created = await createRun(registry)
+    const releaseViewer = registry.acquireLease(created.id, 'realtime')
     const blocked = await callRoute<{ readonly error: { readonly code: string } }>(
       registry,
       runPath(created.id),
       { method: 'DELETE' },
-      [{ id: created.id, websocketClientCount: 1 }],
     )
     expect(blocked.status).toBe(409)
-    expect(blocked.body.error.code).toBe('simulation_run_has_users')
+    expect(blocked.body.error.code).toBe('simulation_run_has_viewers')
+    releaseViewer()
 
     const deleted = await callRoute<{ readonly deleted: boolean }>(
       registry,
       runPath(created.id),
       { method: 'DELETE' },
-      [{ id: created.id, websocketClientCount: 0 }],
     )
     expect(deleted.status).toBe(200)
     expect(deleted.body.deleted).toBe(true)

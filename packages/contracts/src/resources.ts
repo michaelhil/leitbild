@@ -69,6 +69,19 @@ export const moduleResourceLinkSchema = z.object({
 }).strict()
 export type ModuleResourceLink = z.infer<typeof moduleResourceLinkSchema>
 
+const resourceSummaryKeySchema = z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/)
+const resourceSummaryItemBase = {
+  key: resourceSummaryKeySchema,
+  label: z.string().trim().min(1).max(64),
+}
+
+export const resourceSummaryItemSchema = z.discriminatedUnion('kind', [
+  z.object({ ...resourceSummaryItemBase, kind: z.literal('count'), value: z.number().int().nonnegative() }).strict(),
+  z.object({ ...resourceSummaryItemBase, kind: z.literal('timestamp'), value: isoTimestampSchema }).strict(),
+  z.object({ ...resourceSummaryItemBase, kind: z.literal('status'), value: z.string().trim().min(1).max(128) }).strict(),
+])
+export type ResourceSummaryItem = z.infer<typeof resourceSummaryItemSchema>
+
 export const moduleResourceDescriptorSchema = z.object({
   ref: workspaceResourceReferenceSchema,
   title: z.string().trim().min(1).max(256),
@@ -77,6 +90,7 @@ export const moduleResourceDescriptorSchema = z.object({
   links: z.array(moduleResourceLinkSchema).default([]),
   uiPath: relativeUiPathSchema.optional(),
   capabilityIds: z.array(capabilityIdSchema),
+  summary: z.array(resourceSummaryItemSchema).max(8).default([]),
   observedAt: isoTimestampSchema,
 }).strict().superRefine((resource, ctx) => {
   const seen = new Set<string>()
@@ -99,6 +113,13 @@ export const moduleResourceDescriptorSchema = z.object({
     if (link.ref.workspaceId !== resource.ref.workspaceId) {
       ctx.addIssue({ code: 'custom', path: ['links', index, 'ref', 'workspaceId'], message: 'Linked Resource must belong to the same Workspace' })
     }
+  })
+  const summaryKeys = new Set<string>()
+  resource.summary.forEach((item, index) => {
+    if (summaryKeys.has(item.key)) {
+      ctx.addIssue({ code: 'custom', path: ['summary', index, 'key'], message: `duplicate Resource Summary key: ${item.key}` })
+    }
+    summaryKeys.add(item.key)
   })
 })
 export type ModuleResourceDescriptor = z.infer<typeof moduleResourceDescriptorSchema>

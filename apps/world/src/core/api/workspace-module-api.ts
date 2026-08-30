@@ -89,16 +89,25 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
   const observedAt = new Date().toISOString()
   const simulationRuns = await registry.listKnown()
   return moduleResourceCollectionSchema.parse({
-    resources: simulationRuns.map(simulationRun => ({
+    resources: simulationRuns.map(simulationRun => {
+      const viewers = registry.leaseSummary(simulationRun.id).leasesByKind.realtime
+      const status = simulationRun.loadError !== undefined
+        ? 'Unavailable'
+        : simulationRun.clock?.paused
+          ? 'Paused'
+          : !simulationRun.loaded
+            ? 'Ready'
+            : simulationRun.clock?.speed !== undefined && simulationRun.clock.speed !== 1
+              ? `Running · ${simulationRun.clock.speed}×`
+              : 'Running'
+      return {
         ref: {
           workspaceId: registry.workspaceId,
           moduleId: WORLD_MODULE_ID,
           type: 'world.simulation-run',
           id: simulationRun.id,
         },
-        title: simulationRun.scenarioId === null
-          ? simulationRun.id
-          : `${simulationRun.scenarioId} — ${simulationRun.id}`,
+        title: simulationRun.scenarioTitle ?? simulationRun.scenarioId ?? simulationRun.id,
         ...(simulationRun.loadError === undefined ? {} : { description: simulationRun.loadError }),
         ...(simulationRun.scenarioId === null || simulationRun.scenarioRevisionId === null ? {} : {
           sourceDefinition: {
@@ -112,8 +121,25 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
         links: [],
         uiPath: `/workspaces/${encodeURIComponent(registry.workspaceId)}/world/runs/${encodeURIComponent(simulationRun.id)}`,
         capabilityIds: worldCapabilities.idsForResourceType('world.simulation-run'),
+        summary: [
+          ...(simulationRun.createdAt === null ? [] : [{
+            key: 'started-at',
+            label: 'Started',
+            kind: 'timestamp' as const,
+            value: simulationRun.createdAt,
+          }]),
+          { key: 'status', label: 'Status', kind: 'status' as const, value: status },
+          { key: 'viewer-count', label: 'Viewers', kind: 'count' as const, value: viewers },
+          ...(simulationRun.objectCount === null ? [] : [{
+            key: 'object-count',
+            label: 'Objects',
+            kind: 'count' as const,
+            value: simulationRun.objectCount,
+          }]),
+        ],
         observedAt,
-      })),
+      }
+    }),
   }).resources
 }
 
@@ -185,6 +211,30 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       return await registry.deleteScenario(scenarioId, scenarioRevisionIdSchema.parse(invocation.definition!.revisionId))
         ? json({ result: { deleted: true, definitionId: scenarioId } })
         : apiError(404, 'scenario_not_found', 'Scenario not found')
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.delete',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Delete Simulation Run',
+      description: 'Permanently deletes a Simulation Run and its persisted state when no viewers are connected.',
+      risk: 'destructive',
+      idempotent: false,
+      inputSchema: z.toJSONSchema(emptyInputSchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (registry, invocation) => {
+      emptyInputSchema.parse(invocation.input)
+      const simulationRunId = requireSimulationRunResource(invocation)
+      if (registry.leaseSummary(simulationRunId).leasesByKind.realtime > 0) {
+        return apiError(409, 'simulation_run_has_viewers', 'Simulation Run has connected viewers')
+      }
+      return await registry.delete(simulationRunId)
+        ? json({ result: { deleted: true, simulationRunId } })
+        : apiError(404, 'simulation_run_not_found', 'Simulation Run not found')
     },
   },
   {

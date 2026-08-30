@@ -89,6 +89,9 @@ describe('World Module API', () => {
     expect((capabilities.body as { capabilities: Array<{ id: string }> }).capabilities.map(item => item.id)).toContain(
       'world.scenario.start',
     )
+    expect((capabilities.body as { capabilities: Array<{ id: string }> }).capabilities.map(item => item.id)).toContain(
+      'world.simulation-run.delete',
+    )
     const definitions = await call(registry, `/internal/workspaces/${workspaceId}/definitions`)
     const parsedDefinitions = moduleDefinitionCollectionSchema.parse(definitions.body)
     const scenario = parsedDefinitions.definitions[0]!
@@ -116,11 +119,16 @@ describe('World Module API', () => {
     )
     expect(created.status).toBe(201)
 
-    const resources = await call(registry, `/internal/workspaces/${workspaceId}/resources`)
-    expect(moduleResourceCollectionSchema.safeParse(resources.body).success).toBe(true)
-    const run = (resources.body as { resources: Array<{ ref: { type: string; id: string } }> }).resources
+    const resources = moduleResourceCollectionSchema.parse(
+      (await call(registry, `/internal/workspaces/${workspaceId}/resources`)).body,
+    )
+    const run = resources.resources
       .find(resource => resource.ref.type === 'world.simulation-run')
-    expect(run?.ref.id).toBe(created.body?.result.id)
+    expect(String(run?.ref.id)).toBe(created.body!.result.id)
+    expect(run?.title).toBe(scenario.title)
+    expect(run?.summary.find(item => item.key === 'started-at')?.kind).toBe('timestamp')
+    expect(run?.summary.find(item => item.key === 'viewer-count')).toMatchObject({ kind: 'count', value: 0 })
+    expect(run?.summary.find(item => item.key === 'status')).toMatchObject({ kind: 'status', value: 'Running' })
 
     const contextCapabilityId = capabilityIdSchema.parse('world.simulation-run.context')
     const context = await call<{ result: { briefing: { title: string }; operationalObjects: unknown[]; affordances: unknown } }>(
@@ -178,5 +186,41 @@ describe('World Module API', () => {
     expect(moduleResourceCollectionSchema.parse(
       (await call(registry, `/internal/workspaces/${workspaceId}/resources`)).body,
     ).resources.some(resource => resource.ref.id === run!.ref.id)).toBe(true)
+
+    const deleteRunCapabilityId = capabilityIdSchema.parse('world.simulation-run.delete')
+    const simulationRunId = registry.getLoaded(workspaceId)!.simulationRuns.list()[0]!.id
+    const releaseViewer = registry.getLoaded(workspaceId)!.simulationRuns.acquireLease(simulationRunId, 'realtime')
+    const blockedDelete = await call<{ error: { code: string } }>(
+      registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${deleteRunCapabilityId}/invoke`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          capabilityId: deleteRunCapabilityId,
+          resource: run!.ref,
+          input: {},
+          access,
+        }),
+      },
+    )
+    expect(blockedDelete.status).toBe(409)
+    expect(blockedDelete.body?.error.code).toBe('simulation_run_has_viewers')
+    releaseViewer()
+    expect((await call(registry, `/internal/workspaces/${workspaceId}/capabilities/${deleteRunCapabilityId}/invoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        workspaceId,
+        capabilityId: deleteRunCapabilityId,
+        resource: run!.ref,
+        input: {},
+        access,
+      }),
+    })).status).toBe(200)
+    expect(moduleResourceCollectionSchema.parse(
+      (await call(registry, `/internal/workspaces/${workspaceId}/resources`)).body,
+    ).resources.some(resource => resource.ref.id === run!.ref.id)).toBe(false)
   })
 })

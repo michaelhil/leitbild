@@ -73,30 +73,58 @@ const resourcesFor = async (
   const runtime = await registry.getOrLoad(workspaceId)
   const observedAt = new Date().toISOString()
   return moduleResourceCollectionSchema.parse({ resources: [
-    ...runtime.rooms.listAllRooms().map(room => ({
-      ref: { workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.room', id: room.id },
-      title: room.name,
-      ...(room.roomPrompt === undefined ? {} : { description: room.roomPrompt }),
-      ...(room.sourceDefinition === undefined ? {} : {
-        sourceDefinition: {
-          workspaceId,
-          moduleId: AGENTS_MODULE_ID,
-          type: ROOM_DEFINITION_TYPE,
-          id: room.sourceDefinition.id,
-          revisionId: room.sourceDefinition.revisionId,
-        },
-      }),
-      links: [],
-      uiPath: `/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(room.id)}`,
-      capabilityIds: agentsCapabilities.idsForResourceType('agents.room'),
-      observedAt,
-    })),
+    ...runtime.rooms.listAllRooms().map(profile => {
+      const room = runtime.rooms.getRoom(profile.id)
+      if (!room) throw new Error(`Room disappeared during Resource discovery: ${profile.id}`)
+      const memberIds = room.getParticipantIds()
+      const aiMemberCount = memberIds.filter(id => runtime.team.getAgent(id)?.kind === 'ai').length
+      const latestMessage = room.getRecent(1)[0]
+      return {
+        ref: { workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.room', id: profile.id },
+        title: profile.name,
+        ...(profile.sourceDefinition === undefined ? {} : {
+          sourceDefinition: {
+            workspaceId,
+            moduleId: AGENTS_MODULE_ID,
+            type: ROOM_DEFINITION_TYPE,
+            id: profile.sourceDefinition.id,
+            revisionId: profile.sourceDefinition.revisionId,
+          },
+        }),
+        links: [],
+        uiPath: `/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(profile.id)}`,
+        capabilityIds: agentsCapabilities.idsForResourceType('agents.room'),
+        summary: [
+          {
+            key: 'created-at',
+            label: 'Created',
+            kind: 'timestamp' as const,
+            value: new Date(profile.createdAt).toISOString(),
+          },
+          {
+            key: 'status',
+            label: 'Status',
+            kind: 'status' as const,
+            value: room.paused ? 'Paused' : room.deliveryMode === 'broadcast' ? 'Broadcast' : 'Manual',
+          },
+          { key: 'member-count', label: 'Members', kind: 'count' as const, value: memberIds.length },
+          { key: 'ai-member-count', label: 'AI agents', kind: 'count' as const, value: aiMemberCount },
+          { key: 'message-count', label: 'Messages', kind: 'count' as const, value: room.getMessageCount() },
+          ...(latestMessage === undefined ? [] : [{
+            key: 'last-activity-at',
+            label: 'Last activity',
+            kind: 'timestamp' as const,
+            value: new Date(latestMessage.timestamp).toISOString(),
+          }]),
+        ],
+        observedAt,
+      }
+    }),
     ...runtime.team.listByKind('ai').map(agent => ({
       ref: { workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.agent', id: agent.id },
       title: agent.name,
       ...(agent.getDescription?.() ? { description: agent.getDescription!() } : {}),
       links: [],
-      uiPath: `/workspaces/${encodeURIComponent(workspaceId)}/agents`,
       capabilityIds: agentsCapabilities.idsForResourceType('agents.agent'),
       observedAt,
     })),
@@ -172,6 +200,27 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
           id: room.value.profile.id,
         }],
       }, 201)
+    },
+  },
+  {
+    descriptor: {
+      id: 'agents.room.delete',
+      moduleId: AGENTS_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'resource', resourceType: 'agents.room' },
+      title: 'Delete Room',
+      description: 'Permanently deletes a Room, its messages, memberships, and Room-scoped triggers.',
+      risk: 'destructive',
+      idempotent: false,
+      inputSchema: z.toJSONSchema(emptyInputSchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (runtime, invocation) => {
+      emptyInputSchema.parse(invocation.input)
+      const roomId = requireResourceId(invocation, 'agents.room')
+      return runtime.removeRoom(roomId)
+        ? json({ result: { deleted: true, roomId } })
+        : apiError(404, 'room_not_found', 'Room not found')
     },
   },
   {

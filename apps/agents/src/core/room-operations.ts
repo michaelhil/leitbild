@@ -60,6 +60,7 @@ export const createRoomOperations = (deps: RoomOperationsDeps): RoomOperations =
   const systemRemoveRoom = (roomId: string): boolean => {
     const room = rooms.getRoom(roomId)
     if (!room) return false
+    cancelGenerationsInRoom(roomId)
     for (const agentId of room.getParticipantIds()) {
       team.getAgent(agentId)?.leave(roomId)
     }
