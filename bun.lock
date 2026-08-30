@@ -13,6 +13,7 @@
       "version": "0.15.0",
       "dependencies": {
         "@leitbild/contracts": "workspace:*",
+        "@leitbild/module-runtime": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.27.1",
         "unpdf": "^1.6.2",
         "zod": "^3.25 || ^4.0",
@@ -54,6 +55,7 @@
         "@deck.gl/layers": "^9.3.2",
         "@deck.gl/mapbox": "^9.3.2",
         "@leitbild/contracts": "workspace:*",
+        "@leitbild/module-runtime": "workspace:*",
         "@mapbox/vector-tile": "^2.0.4",
         "@maplibre/maplibre-gl-style-spec": "^24.8.5",
         "@sveltejs/vite-plugin-svelte": "^7.1.2",
@@ -95,6 +97,17 @@
         "@types/bun": "1.4.0",
         "@typescript/native": "npm:typescript@7.0.2",
         "typescript": "npm:@typescript/typescript6@6.0.2",
+      },
+    },
+    "packages/module-runtime": {
+      "name": "@leitbild/module-runtime",
+      "version": "1.0.0",
+      "dependencies": {
+        "@leitbild/contracts": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.0",
+        "typescript": "^6.0.3",
       },
     },
   },
@@ -146,6 +159,8 @@
     "@leitbild/host": ["@leitbild/host@workspace:apps/leitbild"],
 
     "@leitbild/integration-tests": ["@leitbild/integration-tests@workspace:packages/integration-tests"],
+
+    "@leitbild/module-runtime": ["@leitbild/module-runtime@workspace:packages/module-runtime"],
 
     "@leitbild/world": ["@leitbild/world@workspace:apps/world"],
 
@@ -1102,6 +1117,8 @@
     "@leitbild/contracts/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
     "@leitbild/host/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "@leitbild/module-runtime/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
     "@leitbild/world/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 

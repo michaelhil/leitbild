@@ -47,6 +47,7 @@ export const moduleCapabilityDescriptorSchema = z.object({
   }
 })
 export type ModuleCapabilityDescriptor = z.infer<typeof moduleCapabilityDescriptorSchema>
+export type ModuleCapabilityDescriptorInput = z.input<typeof moduleCapabilityDescriptorSchema>
 
 export const moduleResourceDescriptorSchema = z.object({
   ref: workspaceResourceReferenceSchema,

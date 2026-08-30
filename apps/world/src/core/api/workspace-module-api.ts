@@ -2,13 +2,14 @@ import { z } from 'zod'
 import {
   moduleCapabilityCollectionSchema,
   moduleCapabilityInvocationSchema,
+  moduleIdSchema,
   moduleResourceCollectionSchema,
   workspaceIdSchema,
   workspaceModuleManifestSchema,
-  type ModuleCapabilityDescriptor,
   type ModuleResourceDescriptor,
   type WorkspaceId,
 } from '@leitbild/contracts'
+import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
 import { simulationRunIdSchema } from '../model/index.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { WorldWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
@@ -24,7 +25,7 @@ import {
 } from './simulation-run-routes.ts'
 import { apiError, json, readJson } from './responses.ts'
 
-const WORLD_MODULE_ID = 'world' as const
+const WORLD_MODULE_ID = moduleIdSchema.parse('world')
 
 export const worldModuleManifest = workspaceModuleManifestSchema.parse({
   module: {
@@ -42,56 +43,6 @@ export const worldModuleManifest = workspaceModuleManifestSchema.parse({
     workspace: '/workspaces/{workspaceId}/world',
   },
 })
-
-const capabilities: ReadonlyArray<ModuleCapabilityDescriptor> = moduleCapabilityCollectionSchema.parse({
-  capabilities: [
-    {
-      id: 'world.simulation-run.create',
-      moduleId: WORLD_MODULE_ID,
-      kind: 'command',
-      scope: { kind: 'workspace' },
-      title: 'Create Simulation Run',
-      description: 'Creates a Simulation Run from a selected Workspace Scenario.',
-      risk: 'write',
-      idempotent: false,
-      inputSchema: {
-        type: 'object',
-        properties: { scenarioId: { type: 'string' } },
-        additionalProperties: false,
-      },
-      outputSchema: { type: 'object' },
-    },
-    {
-      id: 'world.simulation-run.read',
-      moduleId: WORLD_MODULE_ID,
-      kind: 'query',
-      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
-      title: 'Read Simulation Run',
-      description: 'Reads the current summary of a selected Simulation Run.',
-      risk: 'read',
-      idempotent: true,
-      inputSchema: { type: 'object', additionalProperties: false },
-      outputSchema: { type: 'object' },
-    },
-    {
-      id: 'world.simulation-run.issue-command',
-      moduleId: WORLD_MODULE_ID,
-      kind: 'command',
-      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
-      title: 'Issue Simulation Command',
-      description: 'Issues a validated domain command to a selected Simulation Run.',
-      risk: 'write',
-      idempotent: true,
-      inputSchema: {
-        type: 'object',
-        required: ['command'],
-        properties: { command: { type: 'object' } },
-        additionalProperties: false,
-      },
-      outputSchema: { type: 'object' },
-    },
-  ],
-}).capabilities
 
 const lifecycleInputSchema = z.object({ workspaceId: workspaceIdSchema }).strict()
 const createRunInputSchema = z.object({ scenarioId: z.string().min(1).max(128).optional() }).strict()
@@ -125,10 +76,7 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
           ? simulationRun.id
           : `${simulationRun.scenarioId} — ${simulationRun.id}`,
         ...(simulationRun.loadError === undefined ? {} : { description: simulationRun.loadError }),
-        capabilityIds: [
-          'world.simulation-run.read',
-          'world.simulation-run.issue-command',
-        ],
+        capabilityIds: worldCapabilities.idsForResourceType('world.simulation-run'),
         observedAt,
       })),
     ],
@@ -143,6 +91,84 @@ const requireSimulationRunResource = (
   return simulationRunIdSchema.parse(invocation.resource.id)
 }
 
+const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, Response>(WORLD_MODULE_ID, [
+  {
+    descriptor: {
+      id: 'world.simulation-run.create',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'workspace' },
+      title: 'Create Simulation Run',
+      description: 'Creates a Simulation Run from a selected Workspace Scenario.',
+      risk: 'write',
+      idempotent: false,
+      inputSchema: z.toJSONSchema(createRunInputSchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (registry, invocation) => {
+      const input = createRunInputSchema.parse(invocation.input)
+      const runtime = await registry.create(input.scenarioId === undefined ? {} : { scenarioId: input.scenarioId })
+      return json({ result: { id: runtime.id, capabilities: runtime.capabilities(), snapshot: runtime.snapshot() } }, { status: 201 })
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.read',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Read Simulation Run',
+      description: 'Reads the current summary of a selected Simulation Run.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: { type: 'object', additionalProperties: false },
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (registry, invocation) => {
+      const simulationRunId = requireSimulationRunResource(invocation)
+      const summary = (await registry.listKnown()).find(candidate => candidate.id === simulationRunId)
+      return summary
+        ? json({ result: summary })
+        : apiError(404, 'simulation_run_not_found', 'Simulation Run not found')
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.issue-command',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Issue Simulation Command',
+      description: 'Issues a validated domain command to a selected Simulation Run.',
+      risk: 'write',
+      idempotent: true,
+      inputSchema: z.toJSONSchema(issueCommandInputSchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (registry, invocation) => {
+      const simulationRunId = requireSimulationRunResource(invocation)
+      const runtime = await registry.load(simulationRunId)
+      const input = issueCommandInputSchema.parse(invocation.input)
+      const command = buildSimulationRunCommand(
+        simulationRunId,
+        input.command,
+        actorIdForAccessContext(invocation.access),
+      )
+      const actor = buildSimulationRunActor(command.actorId)
+      const issued = await issueCommandWithIdempotency({
+        store: commandIdempotencyStoreForRuntime(registry.workspaceId, simulationRunId),
+        idempotency: commandIdempotencyConfigFromEnv(),
+        actor,
+        command,
+        issue: runtime.issueCommand,
+      })
+      return issued.ok
+        ? json({ result: issued.result })
+        : apiError(issued.status, issued.code, issued.message)
+    },
+  },
+])
+
 const invokeCapability = async (
   registry: SimulationRunRegistry,
   capabilityId: string,
@@ -152,43 +178,8 @@ const invokeCapability = async (
   if (invocation.workspaceId !== registry.workspaceId) return apiError(409, 'workspace_scope_mismatch', 'Invocation belongs to another Workspace')
   if (invocation.capabilityId !== capabilityId) return apiError(409, 'capability_scope_mismatch', 'Invocation Capability does not match the route')
 
-  if (capabilityId === 'world.simulation-run.create') {
-    const input = createRunInputSchema.parse(invocation.input)
-    const runtime = await registry.create(input.scenarioId === undefined ? {} : { scenarioId: input.scenarioId })
-    return json({ result: { id: runtime.id, capabilities: runtime.capabilities(), snapshot: runtime.snapshot() } }, { status: 201 })
-  }
-
-  if (capabilityId === 'world.simulation-run.read') {
-    const simulationRunId = requireSimulationRunResource(invocation)
-    const summary = (await registry.listKnown()).find(candidate => candidate.id === simulationRunId)
-    return summary
-      ? json({ result: summary })
-      : apiError(404, 'simulation_run_not_found', 'Simulation Run not found')
-  }
-
-  if (capabilityId === 'world.simulation-run.issue-command') {
-    const simulationRunId = requireSimulationRunResource(invocation)
-    const runtime = await registry.load(simulationRunId)
-    const input = issueCommandInputSchema.parse(invocation.input)
-    const command = buildSimulationRunCommand(
-      simulationRunId,
-      input.command,
-      actorIdForAccessContext(invocation.access),
-    )
-    const actor = buildSimulationRunActor(command.actorId)
-    const issued = await issueCommandWithIdempotency({
-      store: commandIdempotencyStoreForRuntime(registry.workspaceId, simulationRunId),
-      idempotency: commandIdempotencyConfigFromEnv(),
-      actor,
-      command,
-      issue: runtime.issueCommand,
-    })
-    return issued.ok
-      ? json({ result: issued.result })
-      : apiError(issued.status, issued.code, issued.message)
-  }
-
-  return apiError(404, 'capability_not_found', 'Capability not found')
+  const response = await worldCapabilities.invoke(capabilityId, registry, invocation)
+  return response ?? apiError(404, 'capability_not_found', 'Capability not found')
 }
 
 export const handleWorldModuleApi = async (
@@ -227,7 +218,7 @@ export const handleWorldModuleApi = async (
     if (capabilitiesMatch && request.method === 'GET') {
       const workspaceId = workspaceIdSchema.parse(decodeURIComponent(capabilitiesMatch[1] ?? ''))
       await workspaces.getOrLoad(workspaceId)
-      return json(moduleCapabilityCollectionSchema.parse({ capabilities }))
+      return json(moduleCapabilityCollectionSchema.parse({ capabilities: worldCapabilities.descriptors }))
     }
 
     const invocationMatch = url.pathname.match(/^\/internal\/workspaces\/([^/]+)\/capabilities\/([^/]+)\/invoke$/)

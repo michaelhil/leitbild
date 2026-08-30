@@ -37,6 +37,7 @@
   },
   "dependencies": {
     "@leitbild/contracts": "workspace:*",
+    "@leitbild/module-runtime": "workspace:*",
     "3d-tiles-renderer": "^0.4.28",
     "@babylonjs/core": "^9.11.0",
     "@babylonjs/loaders": "^9.11.0",

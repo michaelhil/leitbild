@@ -2,14 +2,15 @@ import { z } from 'zod'
 import {
   moduleCapabilityCollectionSchema,
   moduleCapabilityInvocationSchema,
+  moduleIdSchema,
   moduleResourceCollectionSchema,
   toolGrantSetSchema,
   workspaceIdSchema,
   workspaceModuleManifestSchema,
-  type ModuleCapabilityDescriptor,
   type ModuleResourceDescriptor,
   type WorkspaceId,
 } from '@leitbild/contracts'
+import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
 import { asAIAgent } from '../agents/shared.ts'
 import type { AgentsModuleState } from '../core/workspaces/module-state.ts'
 import type { WorkspaceRuntimeRegistry } from '../core/workspaces/runtime-registry.ts'
@@ -29,88 +30,7 @@ export const agentsModuleManifest = workspaceModuleManifestSchema.parse({
   ui: { workspace: '/workspaces/{workspaceId}/agents' },
 })
 
-const agentsCapabilities: ReadonlyArray<ModuleCapabilityDescriptor> = moduleCapabilityCollectionSchema.parse({
-  capabilities: [
-    {
-      id: 'agents.room.create',
-      moduleId: 'agents',
-      kind: 'command',
-      scope: { kind: 'workspace' },
-      title: 'Create Room',
-      description: 'Creates a durable Room in the Workspace.',
-      risk: 'write',
-      idempotent: false,
-      inputSchema: { type: 'object', required: ['name'], properties: { name: { type: 'string' }, roomPrompt: { type: 'string' } }, additionalProperties: false },
-      outputSchema: { type: 'object' },
-    },
-    {
-      id: 'agents.room.read',
-      moduleId: 'agents',
-      kind: 'query',
-      scope: { kind: 'resource', resourceType: 'agents.room' },
-      title: 'Read Room',
-      description: 'Reads the selected Room profile, state, and recent messages.',
-      risk: 'read',
-      idempotent: true,
-      inputSchema: { type: 'object', additionalProperties: false },
-      outputSchema: { type: 'object' },
-    },
-    {
-      id: 'agents.room.post-message',
-      moduleId: 'agents',
-      kind: 'command',
-      scope: { kind: 'resource', resourceType: 'agents.room' },
-      title: 'Post Room Message',
-      description: 'Posts an attributed message to the selected Room.',
-      risk: 'write',
-      idempotent: false,
-      inputSchema: { type: 'object', required: ['content'], properties: { content: { type: 'string' } }, additionalProperties: false },
-      outputSchema: { type: 'object' },
-    },
-    {
-      id: 'agents.agent.create',
-      moduleId: 'agents',
-      kind: 'command',
-      scope: { kind: 'workspace' },
-      title: 'Create Agent',
-      description: 'Creates an AI Agent Profile in the Workspace.',
-      risk: 'write',
-      idempotent: false,
-      inputSchema: {
-        type: 'object',
-        required: ['name', 'model', 'persona'],
-        properties: {
-          name: { type: 'string' },
-          model: { type: 'string' },
-          persona: { type: 'string' },
-          toolGrants: {
-            type: 'array',
-            items: {
-              type: 'object',
-              required: ['capabilityId'],
-              properties: { capabilityId: { type: 'string' } },
-              additionalProperties: false,
-            },
-          },
-        },
-        additionalProperties: false,
-      },
-      outputSchema: { type: 'object' },
-    },
-    {
-      id: 'agents.agent.read',
-      moduleId: 'agents',
-      kind: 'query',
-      scope: { kind: 'resource', resourceType: 'agents.agent' },
-      title: 'Read Agent',
-      description: 'Reads the selected AI Agent Profile.',
-      risk: 'read',
-      idempotent: true,
-      inputSchema: { type: 'object', additionalProperties: false },
-      outputSchema: { type: 'object' },
-    },
-  ],
-}).capabilities
+const AGENTS_MODULE_ID = moduleIdSchema.parse('agents')
 
 const lifecycleSchema = z.object({ workspaceId: workspaceIdSchema }).strict()
 const createRoomSchema = z.object({ name: z.string().trim().min(1).max(128), roomPrompt: z.string().max(16_384).optional() }).strict()
@@ -145,17 +65,17 @@ const resourcesFor = async (
   const observedAt = new Date().toISOString()
   return moduleResourceCollectionSchema.parse({ resources: [
     ...runtime.rooms.listAllRooms().map(room => ({
-      ref: { workspaceId, moduleId: 'agents' as const, type: 'agents.room', id: room.id },
+      ref: { workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.room', id: room.id },
       title: room.name,
       ...(room.roomPrompt === undefined ? {} : { description: room.roomPrompt }),
-      capabilityIds: ['agents.room.read', 'agents.room.post-message'],
+      capabilityIds: agentsCapabilities.idsForResourceType('agents.room'),
       observedAt,
     })),
     ...runtime.team.listByKind('ai').map(agent => ({
-      ref: { workspaceId, moduleId: 'agents' as const, type: 'agents.agent', id: agent.id },
+      ref: { workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.agent', id: agent.id },
       title: agent.name,
       ...(agent.getDescription?.() ? { description: agent.getDescription!() } : {}),
-      capabilityIds: ['agents.agent.read'],
+      capabilityIds: agentsCapabilities.idsForResourceType('agents.agent'),
       observedAt,
     })),
   ] }).resources
@@ -172,6 +92,121 @@ const requireResourceId = (
   return invocation.resource.id
 }
 
+type AgentsWorkspaceRuntime = Awaited<ReturnType<WorkspaceRuntimeRegistry['getOrLoad']>>
+
+const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime, Response>(AGENTS_MODULE_ID, [
+  {
+    descriptor: {
+      id: 'agents.room.create',
+      moduleId: AGENTS_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'workspace' },
+      title: 'Create Room',
+      description: 'Creates a durable Room in the Workspace.',
+      risk: 'write',
+      idempotent: false,
+      inputSchema: z.toJSONSchema(createRoomSchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (runtime, invocation) => {
+      const input = createRoomSchema.parse(invocation.input)
+      const room = runtime.rooms.createRoomSafe({
+        name: input.name,
+        createdBy: invocation.access.actor.id ?? 'system',
+        ...(input.roomPrompt ? { roomPrompt: input.roomPrompt } : {}),
+      })
+      return json({ result: room.value.profile }, 201)
+    },
+  },
+  {
+    descriptor: {
+      id: 'agents.room.read',
+      moduleId: AGENTS_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'agents.room' },
+      title: 'Read Room',
+      description: 'Reads the selected Room profile, state, and recent messages.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: { type: 'object', additionalProperties: false },
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (runtime, invocation) => {
+      const room = runtime.rooms.getRoom(requireResourceId(invocation, 'agents.room'))
+      return room
+        ? json({ result: { profile: room.profile, state: room.getRoomState(), messages: room.getRecent(room.getMessageCount()) } })
+        : apiError(404, 'room_not_found', 'Room not found')
+    },
+  },
+  {
+    descriptor: {
+      id: 'agents.room.post-message',
+      moduleId: AGENTS_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'resource', resourceType: 'agents.room' },
+      title: 'Post Room Message',
+      description: 'Posts an attributed message to the selected Room.',
+      risk: 'write',
+      idempotent: false,
+      inputSchema: z.toJSONSchema(postMessageSchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (runtime, invocation) => {
+      const room = runtime.rooms.getRoom(requireResourceId(invocation, 'agents.room'))
+      if (!room) return apiError(404, 'room_not_found', 'Room not found')
+      const input = postMessageSchema.parse(invocation.input)
+      const actor = invocation.access.actor
+      const message = room.post({
+        senderId: actor.id ?? 'anonymous',
+        ...(actor.displayName === undefined ? {} : { senderName: actor.displayName }),
+        content: input.content,
+        type: 'chat',
+      })
+      return json({ result: message }, 201)
+    },
+  },
+  {
+    descriptor: {
+      id: 'agents.agent.create',
+      moduleId: AGENTS_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'workspace' },
+      title: 'Create Agent',
+      description: 'Creates an AI Agent Profile in the Workspace.',
+      risk: 'write',
+      idempotent: false,
+      inputSchema: z.toJSONSchema(createAgentSchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (runtime, invocation) => {
+      const input = createAgentSchema.parse(invocation.input)
+      const agent = await runtime.spawnAIAgent(input)
+      return json({ result: { id: agent.id, name: agent.name, kind: agent.kind } }, 201)
+    },
+  },
+  {
+    descriptor: {
+      id: 'agents.agent.read',
+      moduleId: AGENTS_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'agents.agent' },
+      title: 'Read Agent',
+      description: 'Reads the selected AI Agent Profile.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: { type: 'object', additionalProperties: false },
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (runtime, invocation) => {
+      const agent = runtime.team.getAgent(requireResourceId(invocation, 'agents.agent'))
+      const ai = agent ? asAIAgent(agent) : undefined
+      return ai
+        ? json({ result: { id: ai.id, kind: ai.kind, config: ai.getConfig() } })
+        : apiError(404, 'agent_not_found', 'Agent not found')
+    },
+  },
+])
+
 const invoke = async (
   capabilityId: string,
   workspaceId: WorkspaceId,
@@ -181,46 +216,9 @@ const invoke = async (
   const invocation = moduleCapabilityInvocationSchema.parse(raw)
   if (invocation.workspaceId !== workspaceId) return apiError(409, 'workspace_scope_mismatch', 'Invocation belongs to another Workspace')
   if (invocation.capabilityId !== capabilityId) return apiError(409, 'capability_scope_mismatch', 'Invocation Capability does not match the route')
-  if (!capabilityId.startsWith('agents.')) return apiError(404, 'capability_not_found', 'Capability not found')
   const runtime = await registry.getOrLoad(workspaceId)
-
-  if (capabilityId === 'agents.room.create') {
-    const input = createRoomSchema.parse(invocation.input)
-    const room = runtime.rooms.createRoomSafe({ name: input.name, createdBy: invocation.access.actor.id ?? 'system', ...(input.roomPrompt ? { roomPrompt: input.roomPrompt } : {}) })
-    return json({ result: room.value.profile }, 201)
-  }
-  if (capabilityId === 'agents.room.read') {
-    const room = runtime.rooms.getRoom(requireResourceId(invocation, 'agents.room'))
-    return room
-      ? json({ result: { profile: room.profile, state: room.getRoomState(), messages: room.getRecent(room.getMessageCount()) } })
-      : apiError(404, 'room_not_found', 'Room not found')
-  }
-  if (capabilityId === 'agents.room.post-message') {
-    const room = runtime.rooms.getRoom(requireResourceId(invocation, 'agents.room'))
-    if (!room) return apiError(404, 'room_not_found', 'Room not found')
-    const input = postMessageSchema.parse(invocation.input)
-    const actor = invocation.access.actor
-    const message = room.post({
-      senderId: actor.id ?? 'anonymous',
-      ...(actor.displayName === undefined ? {} : { senderName: actor.displayName }),
-      content: input.content,
-      type: 'chat',
-    })
-    return json({ result: message }, 201)
-  }
-  if (capabilityId === 'agents.agent.create') {
-    const input = createAgentSchema.parse(invocation.input)
-    const agent = await runtime.spawnAIAgent(input)
-    return json({ result: { id: agent.id, name: agent.name, kind: agent.kind } }, 201)
-  }
-  if (capabilityId === 'agents.agent.read') {
-    const agent = runtime.team.getAgent(requireResourceId(invocation, 'agents.agent'))
-    const ai = agent ? asAIAgent(agent) : undefined
-    return ai
-      ? json({ result: { id: ai.id, kind: ai.kind, config: ai.getConfig() } })
-      : apiError(404, 'agent_not_found', 'Agent not found')
-  }
-  return apiError(404, 'capability_not_found', 'Capability not found')
+  const response = await agentsCapabilities.invoke(capabilityId, runtime, invocation)
+  return response ?? apiError(404, 'capability_not_found', 'Capability not found')
 }
 
 export const handleAgentsModuleApi = async (
@@ -257,7 +255,7 @@ export const handleAgentsModuleApi = async (
       return json(moduleResourceCollectionSchema.parse({ resources: await resourcesFor(workspaceId, config.registry) }))
     }
     if (collection === 'capabilities' && request.method === 'GET') {
-      return json(moduleCapabilityCollectionSchema.parse({ capabilities: agentsCapabilities }))
+      return json(moduleCapabilityCollectionSchema.parse({ capabilities: agentsCapabilities.descriptors }))
     }
     if (capabilityId !== undefined && request.method === 'POST') {
       return await invoke(capabilityId, workspaceId, await readJson(request), config.registry)
