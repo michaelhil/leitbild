@@ -1,0 +1,36 @@
+{
+  "id": "halden-a2-sgtr-ramp",
+  "title": "Halden Unit A2 steam-generator tube leak ramp",
+  "description": "A reusable dynamic branch that gradually introduces a steam-generator tube leak.",
+  "includes": [],
+  "contribution": {
+    "packs": [],
+    "runtimeOverrides": {},
+    "objects": [],
+    "initialContexts": [],
+    "processSystems": [],
+    "runtimeConfigs": {},
+    "surfaceRegions": [],
+    "timelineCues": [
+      {
+        "id": "a2-sgtr-ramp",
+        "at": { "kind": "after_scenario_start", "seconds": 60 },
+        "actions": [
+          {
+            "type": "issue_command",
+            "command": {
+              "kind": "process-plant.control.ramp",
+              "targetObjectIds": ["plant:halden-a2"],
+              "payload": {
+                "systemId": "halden-unit-a2",
+                "path": "sgA.tubeLeakFraction",
+                "targetValue": 0.018,
+                "durationSeconds": 300
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

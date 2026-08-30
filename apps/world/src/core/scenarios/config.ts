@@ -165,14 +165,15 @@ export const scenarioConfigSchema = z.object({
   schemaVersion: z.literal(1),
   title: z.string().min(1),
   description: z.string().min(1).optional(),
-  packs: z.array(idSchema).min(1),
+  fragments: z.array(idSchema).default([]),
+  packs: z.array(idSchema).default([]),
   runtimeOverrides: z.record(z.string(), idSchema).default({}),
   world: z.object({
     startsAt: z.string().datetime(),
     mapCenter: lonLatSchema.optional(),
     environment: z.record(z.string(), z.unknown()).default({}),
   }),
-  objects: z.array(scenarioObjectConfigSchema),
+  objects: z.array(scenarioObjectConfigSchema).default([]),
   initialContexts: z.array(z.object({
     objectId: idSchema,
     context: z.unknown(),
@@ -214,6 +215,123 @@ export const scenarioConfigSchema = z.object({
 
 export type ScenarioConfig = z.infer<typeof scenarioConfigSchema>
 type ScenarioTimelineActionConfig = z.infer<typeof scenarioTimelineActionConfigSchema>
+
+export const scenarioFragmentSchema = z.object({
+  id: idSchema,
+  title: z.string().min(1),
+  description: z.string().min(1).optional(),
+  includes: z.array(idSchema).default([]),
+  contribution: z.object({
+    packs: z.array(idSchema).default([]),
+    runtimeOverrides: z.record(z.string(), idSchema).default({}),
+    objects: z.array(scenarioObjectConfigSchema).default([]),
+    initialContexts: scenarioConfigSchema.shape.initialContexts.default([]),
+    processSystems: scenarioConfigSchema.shape.processSystems.default([]),
+    runtimeConfigs: z.record(z.string(), z.unknown()).default({}),
+    surfaceRegions: z.array(surfaceRegionConfigSchema).default([]),
+    timelineCues: z.array(scenarioTimelineCueConfigSchema).default([]),
+  }).strict(),
+}).strict()
+
+export type ScenarioFragment = z.infer<typeof scenarioFragmentSchema>
+
+export interface ScenarioFragmentCatalog {
+  readonly list: () => ReadonlyArray<ScenarioFragment>
+  readonly compose: (config: ScenarioConfig) => ScenarioConfig
+}
+
+const mergeUniqueRecord = <T>(
+  target: Record<string, T>,
+  source: Readonly<Record<string, T>>,
+  fragmentId: string,
+  field: string,
+): void => {
+  for (const [key, value] of Object.entries(source)) {
+    if (key in target) throw new Error(`scenario Fragment ${fragmentId} duplicates ${field} key: ${key}`)
+    target[key] = value
+  }
+}
+
+export const createScenarioFragmentCatalog = (
+  candidates: ReadonlyArray<unknown>,
+): ScenarioFragmentCatalog => {
+  const fragments = new Map<string, ScenarioFragment>()
+  for (const candidate of candidates) {
+    const fragment = scenarioFragmentSchema.parse(candidate)
+    if (fragments.has(fragment.id)) throw new Error(`duplicate scenario Fragment id: ${fragment.id}`)
+    fragments.set(fragment.id, fragment)
+  }
+
+  const compose = (config: ScenarioConfig): ScenarioConfig => {
+    const ordered: ScenarioFragment[] = []
+    const visited = new Set<string>()
+    const visiting: string[] = []
+    const visit = (id: string): void => {
+      if (visited.has(id)) return
+      const cycleAt = visiting.indexOf(id)
+      if (cycleAt >= 0) throw new Error(`scenario Fragment cycle: ${[...visiting.slice(cycleAt), id].join(' -> ')}`)
+      const fragment = fragments.get(id)
+      if (!fragment) throw new Error(`unknown scenario Fragment: ${id}`)
+      visiting.push(id)
+      for (const includedId of fragment.includes) visit(includedId)
+      visiting.pop()
+      visited.add(id)
+      ordered.push(fragment)
+    }
+    for (const id of config.fragments) visit(id)
+
+    const packs: string[] = []
+    const runtimeOverrides: Record<string, string> = {}
+    const runtimeConfigs: Record<string, unknown> = {}
+    const objects: ScenarioConfig['objects'][number][] = []
+    const initialContexts: ScenarioConfig['initialContexts'][number][] = []
+    const processSystems: ScenarioConfig['processSystems'][number][] = []
+    const surfaceRegions: ScenarioConfig['surface']['regions'][number][] = []
+    const timelineCues: NonNullable<ScenarioConfig['timeline']>['cues'][number][] = []
+    const addPacks = (values: ReadonlyArray<string>): void => {
+      for (const value of values) if (!packs.includes(value)) packs.push(value)
+    }
+
+    for (const fragment of ordered) {
+      const contribution = fragment.contribution
+      addPacks(contribution.packs)
+      mergeUniqueRecord(runtimeOverrides, contribution.runtimeOverrides, fragment.id, 'runtimeOverrides')
+      mergeUniqueRecord(runtimeConfigs, contribution.runtimeConfigs, fragment.id, 'runtimeConfigs')
+      objects.push(...contribution.objects)
+      initialContexts.push(...contribution.initialContexts)
+      processSystems.push(...contribution.processSystems)
+      surfaceRegions.push(...contribution.surfaceRegions)
+      timelineCues.push(...contribution.timelineCues)
+    }
+
+    addPacks(config.packs)
+    mergeUniqueRecord(runtimeOverrides, config.runtimeOverrides, config.id, 'runtimeOverrides')
+    mergeUniqueRecord(runtimeConfigs, config.runtimeConfigs, config.id, 'runtimeConfigs')
+    objects.push(...config.objects)
+    initialContexts.push(...config.initialContexts)
+    processSystems.push(...config.processSystems)
+    surfaceRegions.push(...config.surface.regions)
+    timelineCues.push(...(config.timeline?.cues ?? []))
+
+    return scenarioConfigSchema.parse({
+      ...config,
+      fragments: [],
+      packs,
+      runtimeOverrides,
+      objects,
+      initialContexts,
+      processSystems,
+      runtimeConfigs,
+      surface: { ...config.surface, regions: surfaceRegions },
+      ...(timelineCues.length === 0 ? { timeline: undefined } : { timeline: { cues: timelineCues } }),
+    })
+  }
+
+  return {
+    list: () => [...fragments.values()].sort((left, right) => left.id.localeCompare(right.id)),
+    compose,
+  }
+}
 
 const scenarioTime = (startsAt: IsoTimestamp, seconds: number): IsoTimestamp =>
   new Date(Date.parse(startsAt) + seconds * 1000).toISOString() as IsoTimestamp
@@ -336,9 +454,10 @@ const expandSurface = (surface: z.infer<typeof surfaceConfigSchema>): SurfaceDef
 export const scenarioDefinitionFromConfig = async (
   rawConfig: unknown,
   packs: ReadonlyArray<WorldPack>,
-  options: { readonly routing: RoutingAdapter },
+  options: { readonly routing: RoutingAdapter; readonly fragments?: ScenarioFragmentCatalog },
 ): Promise<ScenarioDefinition> => {
-  const config = scenarioConfigSchema.parse(rawConfig)
+  const parsedConfig = scenarioConfigSchema.parse(rawConfig)
+  const config = options.fragments?.compose(parsedConfig) ?? parsedConfig
   const packsById = new Map(packs.map(pack => [pack.descriptor.id, pack]))
   const startsAt = config.world.startsAt as IsoTimestamp
   const objectMap = new Map<ObjectId, OperationalObject>()
