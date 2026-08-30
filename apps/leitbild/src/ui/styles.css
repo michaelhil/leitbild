@@ -302,7 +302,7 @@ button:disabled { opacity: .55; cursor: wait; }
 .inspection-section:last-child { border-bottom: 0; }
 .inspection-section summary { cursor: pointer; font-size: .9rem; font-weight: 700; }
 .inspection-section details > p { max-width: 760px; margin: .6rem 0 0; color: #687269; font-size: .8rem; line-height: 1.45; }
-.inspection-section pre {
+.json-tree {
   max-height: 42rem;
   margin: .7rem 0 0;
   padding: .8rem;
@@ -312,9 +312,21 @@ button:disabled { opacity: .55; cursor: wait; }
   color: #26322a;
   background: #eef2ec;
   font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  tab-size: 2;
-  white-space: pre;
+  white-space: nowrap;
 }
+.json-tree summary { display: list-item; width: fit-content; font: inherit; font-weight: 400; }
+.json-tree summary::marker { color: #758078; }
+.json-branch + .json-branch, .json-branch + .json-leaf, .json-leaf + .json-branch, .json-leaf + .json-leaf { margin-top: .12rem; }
+.json-children { margin: .12rem 0 .12rem .65rem; padding-left: .8rem; border-left: 1px solid #ced6cc; }
+.json-key { color: #365c46; }
+.json-index { color: #687269; }
+.json-punctuation { margin-right: .45rem; color: #758078; }
+.json-collection { color: #687269; font-style: italic; }
+.json-value { color: #26322a; }
+.json-string { color: #8a431f; }
+.json-number, .json-bigint { color: #295f9e; }
+.json-boolean { color: #6d3e91; }
+.json-null, .json-undefined { color: #687269; font-style: italic; }
 
 @media (max-width: 760px) {
   .topbar span { display: none; }

@@ -9,6 +9,7 @@
     type ResourceSummaryItem,
     type Workspace,
   } from '@leitbild/contracts'
+  import JsonTree from './JsonTree.svelte'
   import WorkspaceComposer from './WorkspaceComposer.svelte'
 
   type Page = { readonly kind: 'list' } | { readonly kind: 'workspace'; readonly id: string }
@@ -300,8 +301,6 @@
   }
   const summaryValue = (item: ResourceSummaryItem): string =>
     item.kind === 'timestamp' ? relativeTime(item.value) : String(item.value)
-  const formatJson = (value: unknown): string => JSON.stringify(value, null, 2)
-
   const refreshInterval = setInterval(() => {
     summaryClock = Date.now()
     if (currentPage.kind === 'workspace' && workspace && !showingComposer) {
@@ -403,15 +402,15 @@
       {:else if inspectionError}<section class="inspection-message error">{inspectionError}</section>
       {:else if inspectionView && inspectionSubject}
         <section class="inspection-section">
-          <details open><summary>Catalog metadata</summary><pre>{formatJson(inspectionSubject.descriptor)}</pre></details>
+          <details open><summary>Catalog metadata</summary><JsonTree value={inspectionSubject.descriptor} /></details>
         </section>
         {#each inspectionView.sections as section, index (section.id)}
           <section class="inspection-section">
-            <details open={index < 2}><summary>{section.title}</summary>{#if section.description}<p>{section.description}</p>{/if}<pre>{formatJson(section.data)}</pre></details>
+            <details open={index < 2}><summary>{section.title}</summary>{#if section.description}<p>{section.description}</p>{/if}<JsonTree value={section.data} /></details>
           </section>
         {/each}
         <section class="inspection-section">
-          <details><summary>Available capabilities ({inspectedCapabilities().length})</summary><pre>{formatJson(inspectedCapabilities())}</pre></details>
+          <details><summary>Available capabilities ({inspectedCapabilities().length})</summary><JsonTree value={inspectedCapabilities()} /></details>
         </section>
       {/if}
     </dialog>
