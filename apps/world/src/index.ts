@@ -13,13 +13,13 @@ import { createLocalProcessPlantPackRuntimeAdapter } from './packs/process-plant
 import { createLocalTrafficPackRuntimeAdapter } from './packs/traffic/sim/adapter.ts'
 import { createLocalWeatherPackRuntimeAdapter } from './packs/weather/sim/adapter.ts'
 import { createRoutingAdapterFromEnv } from './routing/config.ts'
-import { builtinMissions, createBuiltinScenarios } from './scenarios/index.ts'
+import { createBuiltinScenarios } from './scenarios/index.ts'
 import { createWorldModuleState } from './core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry } from './core/workspaces/runtime-registry.ts'
 
 const routing = createRoutingAdapterFromEnv()
 const scenarios = await createBuiltinScenarios(routing)
-const scenarioCatalog = createScenarioCatalog({ packs: worldPacks, scenarios, missions: builtinMissions })
+const scenarioCatalog = createScenarioCatalog({ packs: worldPacks, scenarios })
 
 // OpenSky requires OAuth2 client_credentials. If the operator hasn't provisioned
 // them (e.g. local dev, demo machines without an OpenSky account), we skip
@@ -78,6 +78,6 @@ const workspaces = createWorldWorkspaceRuntimeRegistry({
   interactionHandlers: worldPacks.flatMap(pack => pack.interactions?.handlers ?? []),
 })
 
-const server = createServer({ workspaces, packs: worldPacks, workspaceHostUrl })
+const server = createServer({ workspaces, workspaceHostUrl })
 
 console.log(`Leitbild running at http://localhost:${server.port}`)

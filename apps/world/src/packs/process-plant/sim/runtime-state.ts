@@ -12,11 +12,11 @@ import {
   variablePathSchema,
 } from '../graph/index.ts'
 import {
-  processPlantScheduleSnapshotSchema,
+  processPlantRampSnapshotSchema,
   processPlantTelemetrySnapshotSchema,
   processPlantProtectionSnapshotSchema,
   type ProcessPlantRuntimeSnapshot,
-  type ProcessPlantScheduleSnapshot,
+  type ProcessPlantRampSnapshot,
   type ProcessPlantTelemetrySnapshot,
   type ProcessPlantProtectionSnapshot,
 } from '../runtime/index.ts'
@@ -59,7 +59,7 @@ export const processPlantRuntimeStateSchema = z.object({
   systems: z.array(z.object({
     systemId: z.string().min(1),
     runtime: processPlantRuntimeSnapshotSchema,
-    schedule: processPlantScheduleSnapshotSchema.optional(),
+    ramps: processPlantRampSnapshotSchema,
     telemetry: processPlantTelemetrySnapshotSchema.optional(),
     protection: processPlantProtectionSnapshotSchema.optional(),
   })),
@@ -70,7 +70,7 @@ export interface ProcessPlantRuntimeState {
   readonly systems: ReadonlyArray<{
     readonly systemId: string
     readonly runtime: ProcessPlantRuntimeSnapshot
-    readonly schedule?: ProcessPlantScheduleSnapshot
+    readonly ramps: ProcessPlantRampSnapshot
     readonly telemetry?: ProcessPlantTelemetrySnapshot
     readonly protection?: ProcessPlantProtectionSnapshot
   }>
@@ -80,10 +80,10 @@ export const runtimeStateForProcessPlantSystems = (
   systems: ReadonlyMap<string, ProcessPlantSystemRuntime>,
 ): ProcessPlantRuntimeState => ({
   schemaVersion: 1,
-  systems: [...systems.values()].map(({ system, runtime, schedule, telemetry, protection }) => ({
+  systems: [...systems.values()].map(({ system, runtime, ramps, telemetry, protection }) => ({
     systemId: system.id,
     runtime: runtime.snapshot(),
-    schedule: schedule.snapshot(),
+    ramps: ramps.snapshot(),
     ...(telemetry === undefined ? {} : { telemetry: telemetry.snapshot() }),
     ...(protection === undefined ? {} : { protection: protection.snapshot() }),
   })),
@@ -99,10 +99,10 @@ export const restoredRuntimeSnapshotFor = (
   systemId: string,
 ): ProcessPlantRuntimeSnapshot | undefined => restoredSystemFor(runtimeState, systemId)?.runtime
 
-export const restoredScheduleSnapshotFor = (
+export const restoredRampSnapshotFor = (
   runtimeState: ProcessPlantRuntimeState | null,
   systemId: string,
-): ProcessPlantScheduleSnapshot | undefined => restoredSystemFor(runtimeState, systemId)?.schedule
+): ProcessPlantRampSnapshot | undefined => restoredSystemFor(runtimeState, systemId)?.ramps
 
 export const restoredTelemetrySnapshotFor = (
   runtimeState: ProcessPlantRuntimeState | null,

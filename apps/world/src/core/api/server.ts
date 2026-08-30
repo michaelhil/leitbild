@@ -36,15 +36,12 @@ import { workspaceIdSchema, type WorkspaceId } from '@leitbild/contracts'
 import { createOpenAccessContext } from '../workspaces/request-context.ts'
 import type { WorldWorkspaceRuntime, WorldWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
 import { handleWorldModuleApi } from './workspace-module-api.ts'
-import type { WorldPack } from '../packs/protocol.ts'
-import { buildWorldPackCapabilityManifest } from '../packs/capabilities.ts'
 
 const frameAncestorsHeader = "frame-ancestors 'self'"
 const defaultRealtimeInputActorId = actorIdSchema.parse('actor:operator')
 
 interface ServerConfig {
   readonly workspaces: WorldWorkspaceRuntimeRegistry
-  readonly packs?: ReadonlyArray<WorldPack>
   readonly port?: number
   readonly bindHost?: string
   readonly uiDistPath?: string
@@ -381,9 +378,6 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
           throw err
         }
         const realtime = realtimeFor(workspaceRuntime)
-        if (url.pathname === `/api/workspaces/${encodeURIComponent(workspaceId)}/world/capabilities` && req.method === 'GET') {
-          return secure(json(buildWorldPackCapabilityManifest(config.packs ?? [])))
-        }
       const simulationRunApiResponse = await handleSimulationRunApi(req, url, {
           registry: workspaceRuntime.simulationRuns,
           accessContext: createOpenAccessContext(workspaceId, req),

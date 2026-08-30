@@ -34,7 +34,6 @@ import { scriptRoutes } from './routes/scripts.ts'
 import { geodataRoutes } from './routes/geodata.ts'
 import { documentRoutes } from './routes/documents.ts'
 import { diagnosticRoutes } from './routes/diagnostics.ts'
-import { capabilityRoutes } from './routes/capabilities.ts'
 import type { RouteContext } from './routes/types.ts'
 import type { AccessContext, WorkspaceId } from '@leitbild/contracts'
 
@@ -44,7 +43,6 @@ import type { AccessContext, WorkspaceId } from '@leitbild/contracts'
 // Order matters: more-specific patterns (e.g. /rooms/:name/todos/:id) before general ones.
 
 const allRoutes = [
-  ...capabilityRoutes,
   // Tool routes come before runtimeRoutes so /tools/:name + /tools/rescan
   // are matched before any catch-all patterns elsewhere.
   ...toolRoutes,

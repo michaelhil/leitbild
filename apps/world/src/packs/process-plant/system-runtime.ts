@@ -1,6 +1,6 @@
 import type { CompiledProcessPlantSystem } from './process-systems.ts'
-import type { ProcessPlantProtectionRunner, ProcessPlantRuntime } from './runtime/index.ts'
-import type { ProcessPlantScheduleRunner, ProcessPlantTelemetryRecorder } from './runtime/index.ts'
+import type { ProcessPlantProtectionRunner, ProcessPlantRampRunner, ProcessPlantRuntime } from './runtime/index.ts'
+import type { ProcessPlantTelemetryRecorder } from './runtime/index.ts'
 
 export interface ProcessPlantRuntimePerformanceSnapshot {
   readonly wallMs: number
@@ -19,7 +19,7 @@ export interface ProcessPlantRuntimePerformance {
 export interface ProcessPlantSystemRuntime {
   readonly system: CompiledProcessPlantSystem
   readonly runtime: ProcessPlantRuntime
-  readonly schedule: ProcessPlantScheduleRunner
+  readonly ramps: ProcessPlantRampRunner
   readonly telemetry?: ProcessPlantTelemetryRecorder
   readonly protection?: ProcessPlantProtectionRunner
   readonly performance: ProcessPlantRuntimePerformance

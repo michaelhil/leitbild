@@ -1,5 +1,5 @@
-import type { MissionDefinition, OperationalObject, ScenarioDefinition } from '../model/index.ts'
-import { missionDefinitionSchema, scenarioDefinitionSchema } from '../model/index.ts'
+import type { OperationalObject, ScenarioDefinition } from '../model/index.ts'
+import { scenarioDefinitionSchema } from '../model/index.ts'
 import type { WorldPack } from '../packs/protocol.ts'
 
 export interface ResolvedPackRuntime {
@@ -24,29 +24,19 @@ export interface ScenarioCatalog {
   readonly runtimeFor: (id: string) => ResolvedScenarioRuntime | undefined
   readonly runtimeForDefinition: (scenario: ScenarioDefinition) => ResolvedScenarioRuntime
   readonly defaultScenarioId: () => string
-  readonly listMissions: () => ReadonlyArray<MissionDefinition>
-  readonly getMission: (id: string) => MissionDefinition | undefined
 }
 
 export const createScenarioCatalog = (config: {
   readonly packs: ReadonlyArray<WorldPack>
   readonly scenarios: ReadonlyArray<ScenarioDefinition>
-  readonly missions?: ReadonlyArray<MissionDefinition>
   readonly defaultScenarioId?: string
 }): ScenarioCatalog => {
   const scenarios = new Map<string, ScenarioDefinition>()
-  const missions = new Map<string, MissionDefinition>()
   const packs = new Map<string, WorldPack>()
 
   for (const pack of config.packs) {
     if (packs.has(pack.descriptor.id)) throw new Error(`duplicate pack id: ${pack.descriptor.id}`)
     packs.set(pack.descriptor.id, pack)
-  }
-
-  for (const missionCandidate of config.missions ?? []) {
-    const mission = missionDefinitionSchema.parse(missionCandidate) as MissionDefinition
-    if (missions.has(mission.id)) throw new Error(`duplicate mission id: ${mission.id}`)
-    missions.set(mission.id, mission)
   }
 
   const validateScenario = (scenario: ScenarioDefinition): void => {
@@ -110,20 +100,12 @@ export const createScenarioCatalog = (config: {
     scenarios.set(scenario.id, scenario)
   }
 
-  for (const scenario of scenarios.values()) {
-    if (scenario.missionId && !missions.has(scenario.missionId)) {
-      throw new Error(`scenario ${scenario.id} references unknown mission ${scenario.missionId}`)
-    }
-  }
   const defaultScenarioId = config.defaultScenarioId ?? config.scenarios[0]?.id
   if (!defaultScenarioId) throw new Error('scenario catalog has no scenarios')
   if (!scenarios.has(defaultScenarioId)) throw new Error(`default scenario is not registered: ${defaultScenarioId}`)
 
   const sortedScenarios = (): ReadonlyArray<ScenarioDefinition> =>
     [...scenarios.values()].sort((left, right) => left.id.localeCompare(right.id))
-
-  const sortedMissions = (): ReadonlyArray<MissionDefinition> =>
-    [...missions.values()].sort((left, right) => left.id.localeCompare(right.id))
 
   const applyInitialContexts = (scenario: ScenarioDefinition): ReadonlyArray<OperationalObject> => {
     const contextsByObjectId = new Map(scenario.initialContexts.map(initialContext => [initialContext.objectId, initialContext.context]))
@@ -174,7 +156,5 @@ export const createScenarioCatalog = (config: {
     },
     runtimeForDefinition: resolveRuntime,
     defaultScenarioId: (): string => defaultScenarioId,
-    listMissions: sortedMissions,
-    getMission: (id: string): MissionDefinition | undefined => missions.get(id),
   }
 }

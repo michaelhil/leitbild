@@ -5,15 +5,15 @@ import {
   interactionEndpointSchema,
   objectIdSchema,
   scenarioDefinitionSchema,
-  scenarioScriptCommandRequestSchema,
+  scenarioTimelineCommandRequestSchema,
   signalIdSchema,
   type GeoJsonPoint,
   type IsoTimestamp,
   type ObjectId,
   type OperationalObject,
   type ScenarioDefinition,
-  type ScenarioScriptAction,
-  type ScenarioScriptStep,
+  type ScenarioTimelineAction,
+  type ScenarioTimelineCue,
   type SurfaceDefinition,
   type SurfaceRegionDefinition,
 } from '../model/index.ts'
@@ -46,7 +46,7 @@ const scenarioGuidanceConfigSchema = z.object({
   tone: z.enum(['default', 'update']).default('default'),
 })
 
-const scenarioScriptActionConfigSchema = z.discriminatedUnion('type', [
+const scenarioTimelineActionConfigSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('show_guidance'),
     guidance: scenarioGuidanceConfigSchema,
@@ -92,22 +92,22 @@ const scenarioScriptActionConfigSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('issue_command'),
-    command: scenarioScriptCommandRequestSchema,
+    command: scenarioTimelineCommandRequestSchema,
   }),
 ])
 
-const scenarioScriptStepConfigSchema = z.object({
+const scenarioTimelineCueConfigSchema = z.object({
   id: idSchema,
   at: z.object({
     kind: z.literal('after_scenario_start'),
     seconds: z.number().finite().nonnegative(),
   }),
   title: z.string().min(1).optional(),
-  actions: z.array(scenarioScriptActionConfigSchema).min(1),
+  actions: z.array(scenarioTimelineActionConfigSchema).min(1),
 })
 
-const scenarioScriptConfigSchema = z.object({
-  steps: z.array(scenarioScriptStepConfigSchema).default([]),
+const scenarioTimelineConfigSchema = z.object({
+  cues: z.array(scenarioTimelineCueConfigSchema).default([]),
 })
 
 const surfaceMapRegionConfigSchema = z.object({
@@ -208,13 +208,12 @@ export const scenarioConfigSchema = z.object({
     }
   })).default([]),
   runtimeConfigs: z.record(z.string(), z.unknown()).default({}),
-  missionId: idSchema.optional(),
   surface: surfaceConfigSchema,
-  script: scenarioScriptConfigSchema.optional(),
+  timeline: scenarioTimelineConfigSchema.optional(),
 })
 
 export type ScenarioConfig = z.infer<typeof scenarioConfigSchema>
-type ScenarioScriptActionConfig = z.infer<typeof scenarioScriptActionConfigSchema>
+type ScenarioTimelineActionConfig = z.infer<typeof scenarioTimelineActionConfigSchema>
 
 const scenarioTime = (startsAt: IsoTimestamp, seconds: number): IsoTimestamp =>
   new Date(Date.parse(startsAt) + seconds * 1000).toISOString() as IsoTimestamp
@@ -253,8 +252,8 @@ const expandObject = async (
   return [await pack.scenario!.expandObject(spec, expansionContext)]
 }
 
-const expandScriptAction = async (
-  action: ScenarioScriptActionConfig,
+const expandTimelineAction = async (
+  action: ScenarioTimelineActionConfig,
   context: {
     readonly at: IsoTimestamp
     readonly packs: ReadonlyMap<string, WorldPack>
@@ -262,12 +261,12 @@ const expandScriptAction = async (
     readonly routing: RoutingAdapter
     readonly runtimeConfigs: Record<string, unknown>
   },
-): Promise<ScenarioScriptAction> => {
+): Promise<ScenarioTimelineAction> => {
   if (action.type === 'show_guidance' || action.type === 'highlight_objects') {
     return action
   }
   if (action.type === 'emit_signal' || action.type === 'issue_command') {
-    return action as ScenarioScriptAction
+    return action as ScenarioTimelineAction
   }
   if (action.type === 'hide_guidance') {
     return action.guidanceId === undefined
@@ -285,14 +284,14 @@ const expandScriptAction = async (
   }
   if (action.type === 'create_object') {
     const objects = await expandObject(action.object, context)
-    if (objects.length !== 1) throw new Error(`scenario script creates ${objects.length} objects; script create_object expects exactly one object`)
+    if (objects.length !== 1) throw new Error(`scenario timeline creates ${objects.length} objects; timeline create_object expects exactly one object`)
     const object = objects[0]!
-    if (context.objectMap.has(object.id)) throw new Error(`scenario script creates duplicate object id: ${object.id}`)
+    if (context.objectMap.has(object.id)) throw new Error(`scenario timeline creates duplicate object id: ${object.id}`)
     context.objectMap.set(object.id, object)
     return { type: 'upsert_object', object }
   }
   const object = context.objectMap.get(action.objectId)
-  if (!object) throw new Error(`scenario script operation references unknown object: ${action.objectId}`)
+  if (!object) throw new Error(`scenario timeline operation references unknown object: ${action.objectId}`)
   const pack = packFor(context.packs, action.operation.pack)
   const updated = await pack.scenario!.applyOperation(action.operation as PackScenarioOperationSpec, {
     at: context.at,
@@ -358,28 +357,28 @@ export const scenarioDefinitionFromConfig = async (
       initialObjects.push(object)
     }
   }
-  let script: ScenarioDefinition['script'] | undefined
-  if (config.script) {
-    const steps: ScenarioScriptStep[] = []
-    for (const step of config.script.steps) {
-      const actions: ScenarioScriptAction[] = []
-      for (const action of step.actions) {
-        actions.push(await expandScriptAction(action, {
-          at: scenarioTime(startsAt, step.at.seconds),
+  let timeline: ScenarioDefinition['timeline'] | undefined
+  if (config.timeline) {
+    const cues: ScenarioTimelineCue[] = []
+    for (const cue of config.timeline.cues) {
+      const actions: ScenarioTimelineAction[] = []
+      for (const action of cue.actions) {
+        actions.push(await expandTimelineAction(action, {
+          at: scenarioTime(startsAt, cue.at.seconds),
           packs: packsById,
           objectMap,
           routing: options.routing,
           runtimeConfigs: config.runtimeConfigs,
         }))
       }
-      steps.push({
-        id: step.id,
-        at: step.at,
-        ...(step.title === undefined ? {} : { title: step.title }),
+      cues.push({
+        id: cue.id,
+        at: cue.at,
+        ...(cue.title === undefined ? {} : { title: cue.title }),
         actions,
       })
     }
-    script = { steps }
+    timeline = { cues }
   }
 
   return scenarioDefinitionSchema.parse({
@@ -398,8 +397,7 @@ export const scenarioDefinitionFromConfig = async (
     initialContexts: config.initialContexts,
     processSystems: config.processSystems,
     runtimeConfigs: config.runtimeConfigs,
-    ...(config.missionId === undefined ? {} : { missionId: config.missionId }),
     surface: expandSurface(config.surface),
-    ...(script === undefined ? {} : { script }),
+    ...(timeline === undefined ? {} : { timeline }),
   }) as ScenarioDefinition
 }

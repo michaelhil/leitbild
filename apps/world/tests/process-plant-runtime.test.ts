@@ -8,6 +8,7 @@ import {
   connect,
   createBehaviorContext,
   createProcessPlantProtectionRunner,
+  createProcessPlantRampRunner,
   createProcessPlantScheduleRunner,
   createProcessPlantMultiSystemTestbed,
   createProcessPlantRuntime,
@@ -131,7 +132,7 @@ const surfaceAlarmIdsFor = (input: {
     {
       system: input.system,
       runtime: input.runtime,
-      schedule: createProcessPlantScheduleRunner({ system: input.system }),
+      ramps: createProcessPlantRampRunner({ runtime: input.runtime }),
       protection: input.protection,
       performance: createProcessPlantRuntimePerformance(),
     },

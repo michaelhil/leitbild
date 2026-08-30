@@ -8,7 +8,7 @@ export interface SimulationRunEventPayload {
   readonly at?: IsoTimestamp
   readonly object?: OperationalObject
   readonly objectId?: ObjectId
-  readonly stepId?: string
+  readonly cueId?: string
   readonly guidance?: ScenarioGuidance
   readonly guidanceId?: string
   readonly notification?: OperationalNotification
@@ -134,7 +134,7 @@ const parseEventPayload = (value: unknown): SimulationRunEventPayload => {
     ...(typeof value.at === 'string' ? { at: value.at as IsoTimestamp } : {}),
     ...(isRecord(value.object) ? { object: value.object as unknown as OperationalObject } : {}),
     ...(typeof value.objectId === 'string' ? { objectId: value.objectId as ObjectId } : {}),
-    ...(typeof value.stepId === 'string' ? { stepId: value.stepId } : {}),
+    ...(typeof value.cueId === 'string' ? { cueId: value.cueId } : {}),
     ...(isRecord(value.guidance) ? { guidance: value.guidance as unknown as ScenarioGuidance } : {}),
     ...(typeof value.guidanceId === 'string' ? { guidanceId: value.guidanceId } : {}),
     ...(isRecord(value.notification) ? { notification: value.notification as unknown as OperationalNotification } : {}),
@@ -255,13 +255,13 @@ const applyScenarioEvents = (
   for (const event of events) {
     const current = nextState
     if (!current) continue
-    if (event.type === 'scenario.step.started' && event.stepId) {
-      if (!current.script) continue
+    if (event.type === 'scenario.cue.started' && event.cueId) {
+      if (!current.timeline) continue
       nextState = {
         ...current,
-        script: {
-          startedAt: current.script.startedAt,
-          firedStepIds: [...new Set([...current.script.firedStepIds, event.stepId])],
+        timeline: {
+          startedAt: current.timeline.startedAt,
+          firedCueIds: [...new Set([...current.timeline.firedCueIds, event.cueId])],
         },
       }
     }

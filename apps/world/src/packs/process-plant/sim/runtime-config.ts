@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import type { PackRuntimeConnectionConfig } from '../../../simulation/protocol.ts'
 import {
-  processPlantScheduleConfigSchema,
   processPlantTelemetryConfigSchema,
   processPlantProtectionConfigSchema,
   type ProcessPlantProtectionConfig,
@@ -11,7 +10,6 @@ import type { CompiledProcessPlantSystem } from '../process-systems.ts'
 import { processPlantSimRuntimeId } from './constants.ts'
 
 export const processPlantRuntimeSystemConfigSchema = z.object({
-  schedule: processPlantScheduleConfigSchema.optional(),
   telemetry: processPlantTelemetryConfigSchema.optional(),
   icRef: z.string().min(1).optional(),
   protection: processPlantProtectionConfigSchema.optional(),

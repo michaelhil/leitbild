@@ -381,7 +381,7 @@ export const createSimulationRunRegistry = (config: {
       scenario: {
         id: scenarioRuntime.scenarioId,
         ...(scenarioRuntime.scenario.world.startsAt === undefined ? {} : { startsAt: scenarioRuntime.scenario.world.startsAt }),
-        ...(scenarioRuntime.scenario.script === undefined ? {} : { script: scenarioRuntime.scenario.script }),
+        ...(scenarioRuntime.scenario.timeline === undefined ? {} : { timeline: scenarioRuntime.scenario.timeline }),
       },
       capabilities: capabilitiesFor(scenarioRuntime, scenarioRevisionIdFromManifest(createConfig.manifest)),
       procedureSourceService,

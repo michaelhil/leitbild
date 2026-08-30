@@ -4,7 +4,6 @@
   "title": "Oslo drone operations",
   "description": "A shared native Leitbild drone-control and swarm scenario with ambulance targets and map-visible sensor/effect ranges.",
   "packs": ["ambulance", "drone"],
-  "missionId": "mission:oslo-drone-search-and-intercept",
   "runtimeOverrides": {},
   "world": {
     "startsAt": "2026-01-01T10:00:00.000Z",
@@ -264,8 +263,8 @@
       }
     ]
   },
-  "script": {
-    "steps": [
+  "timeline": {
+    "cues": [
       {
         "id": "drone-ops-auto-arm-survey",
         "at": { "kind": "after_scenario_start", "seconds": 0.5 },

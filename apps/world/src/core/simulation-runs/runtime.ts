@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, SimulationRunEvent, EventId, SimulationRunId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, ProcedureCatalog, ProcedureDocument, ProcedureId, ProcedureSourceId, Provenance, ScenarioExecutionState, ScenarioScript, ScenarioScriptAction, ScenarioScriptStep, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
+import type { CommandEnvelope, CommandResult, SimulationRunEvent, EventId, SimulationRunId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, ProcedureCatalog, ProcedureDocument, ProcedureId, ProcedureSourceId, Provenance, ScenarioExecutionState, ScenarioTimeline, ScenarioTimelineAction, ScenarioTimelineCue, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
 import { actorIdSchema, commandEnvelopeSchema, deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, notificationIdSchema, nowIso, simulationClockUpdateSchema } from '../model/index.ts'
 import type { PackQueryRequest, PackQueryResponse, PackWikiRef } from '../packs/protocol.ts'
 import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent, PackRuntimeRealtimeInput, PackRuntimeRealtimeMessage } from '../../simulation/protocol.ts'
@@ -8,7 +8,7 @@ import { createSimulationRunStateStore, type SimulationRunStateSnapshot } from '
 import type { SimulationRunSnapshotStore } from './snapshot-store.ts'
 import { canIssueCommand, type Actor } from './actors.ts'
 import { persistenceDispositionFor, type SimulationRunEventPersistenceDisposition } from './persistence-policy.ts'
-import { createScenarioScriptRunner, dueScenarioScriptSteps, type ScenarioScriptRunner } from './scenario-runner.ts'
+import { createScenarioTimelineRunner, dueScenarioTimelineCues, type ScenarioTimelineRunner } from './timeline-runner.ts'
 import {
   createSimulationRunRuntimeMetricsRecorder,
   type SimulationRunRuntimeMetricsSnapshot,
@@ -21,8 +21,8 @@ import type { ScenarioRevisionId } from '../scenarios/library.ts'
 
 const projectedSnapshotFlushIntervalMs = defaultSimulationRunRuntimePolicy.projectedSnapshotFlushIntervalMs
 const scenarioRunnerActor: Actor = {
-  id: actorIdSchema.parse('actor:scenario-runner'),
-  label: 'Scenario runner',
+  id: actorIdSchema.parse('actor:scenario-timeline'),
+  label: 'Scenario timeline',
   role: 'system',
 }
 
@@ -87,7 +87,7 @@ export const createSimulationRunRuntime = async (config: {
   readonly scenario?: {
     readonly id: string
     readonly startsAt?: IsoTimestamp
-    readonly script?: ScenarioScript
+    readonly timeline?: ScenarioTimeline
   }
   readonly capabilities?: Omit<SimulationRunCapabilities, 'simulationRunId'>
   readonly procedureSourceService?: ProcedureSourceService
@@ -292,7 +292,7 @@ export const createSimulationRunRuntime = async (config: {
   })
 
   const simulationRunEventFromScenarioAction = (
-    action: ScenarioScriptAction,
+    action: ScenarioTimelineAction,
     at: IsoTimestamp,
   ): SimulationRunEvent | null => {
     if (action.type === 'show_guidance') {
@@ -323,7 +323,7 @@ export const createSimulationRunRuntime = async (config: {
   }
 
   const scenarioSignalForAction = (
-    action: Extract<ScenarioScriptAction, { readonly type: 'emit_signal' }>,
+    action: Extract<ScenarioTimelineAction, { readonly type: 'emit_signal' }>,
     at: IsoTimestamp,
   ): InteractionSignal => ({
     id: action.signal.id,
@@ -339,28 +339,28 @@ export const createSimulationRunRuntime = async (config: {
     ...(action.signal.ttlMs === undefined ? {} : { ttlMs: action.signal.ttlMs }),
   })
 
-  const scenarioStepStartedEvent = (step: ScenarioScriptStep, at: IsoTimestamp): SimulationRunEvent => ({
+  const scenarioCueStartedEvent = (cue: ScenarioTimelineCue, at: IsoTimestamp): SimulationRunEvent => ({
     ...nextScenarioBase(at),
-    type: 'scenario.step.started',
-    stepId: step.id,
+    type: 'scenario.cue.started',
+    cueId: cue.id,
   })
 
-  const scenarioStepFailedEvent = (step: ScenarioScriptStep, error: unknown, at: IsoTimestamp): SimulationRunEvent => ({
+  const scenarioCueFailedEvent = (cue: ScenarioTimelineCue, error: unknown, at: IsoTimestamp): SimulationRunEvent => ({
     ...nextScenarioBase(at),
     type: 'notification.emitted',
     notification: {
-      id: notificationIdSchema.parse(`notification:scenario-step-failed:${step.id}:${randomUUID()}`),
+      id: notificationIdSchema.parse(`notification:scenario-cue-failed:${cue.id}:${randomUUID()}`),
       simulationRunId: config.id,
       at,
-      title: 'Scenario step failed',
-      message: `Scenario step ${step.id} failed: ${error instanceof Error ? error.message : String(error)}`,
+      title: 'Scenario cue failed',
+      message: `Scenario cue ${cue.id} failed: ${error instanceof Error ? error.message : String(error)}`,
       severity: 'critical',
-      source: { kind: 'simulation', id: 'scenario-runner' },
+      source: { kind: 'simulation', id: 'scenario-timeline' },
       targets: [{ kind: 'broadcast' }],
     },
   })
 
-  const simulationRunEventsForScenarioActions = (actions: ReadonlyArray<ScenarioScriptAction>, at: IsoTimestamp): ReadonlyArray<SimulationRunEvent> =>
+  const simulationRunEventsForScenarioActions = (actions: ReadonlyArray<ScenarioTimelineAction>, at: IsoTimestamp): ReadonlyArray<SimulationRunEvent> =>
     actions
       .map(action => simulationRunEventFromScenarioAction(action, at))
       .filter((event): event is SimulationRunEvent => event !== null)
@@ -645,12 +645,12 @@ export const createSimulationRunRuntime = async (config: {
     return {
       scenarioId: config.scenario.id,
       highlightedObjectIds: [],
-      ...(config.scenario.script === undefined
+      ...(config.scenario.timeline === undefined
         ? {}
         : {
-            script: {
+            timeline: {
               startedAt: config.scenario.startsAt ?? nowIso(),
-              firedStepIds: [],
+              firedCueIds: [],
             },
           }),
     }
@@ -685,7 +685,7 @@ export const createSimulationRunRuntime = async (config: {
   const hydratedClock = state.snapshot().clock
   if (hydratedClock) await config.runtimeConnection.setClock(hydratedClock)
 
-  let scenarioRunner: ScenarioScriptRunner | null = null
+  let scenarioRunner: ScenarioTimelineRunner | null = null
 
   const issueCommandThroughRuntime = async (
     actor: Actor,
@@ -723,7 +723,7 @@ export const createSimulationRunRuntime = async (config: {
   }
 
   const commandEnvelopeForScenarioAction = (
-    action: Extract<ScenarioScriptAction, { readonly type: 'issue_command' }>,
+    action: Extract<ScenarioTimelineAction, { readonly type: 'issue_command' }>,
     at: IsoTimestamp,
   ): CommandEnvelope =>
     commandEnvelopeSchema.parse({
@@ -738,11 +738,11 @@ export const createSimulationRunRuntime = async (config: {
       ...(action.command.expectedRevision === undefined ? {} : { expectedRevision: action.command.expectedRevision }),
     }) as CommandEnvelope
 
-  const publishScenarioStep = async (step: ScenarioScriptStep, at: IsoTimestamp): Promise<void> => {
-    const stepEvent = await publishOneGenerated(() => scenarioStepStartedEvent(step, at))
-    await config.runtimeConnection.observeCommittedEvents([stepEvent])
+  const publishScenarioCue = async (cue: ScenarioTimelineCue, at: IsoTimestamp): Promise<void> => {
+    const cueEvent = await publishOneGenerated(() => scenarioCueStartedEvent(cue, at))
+    await config.runtimeConnection.observeCommittedEvents([cueEvent])
 
-    for (const action of step.actions) {
+    for (const action of cue.actions) {
       if (action.type === 'emit_signal') {
         await enqueuePublish(async () => {
           await handleInteractionSignalNow(scenarioSignalForAction(action, at), { source: 'system' })
@@ -764,15 +764,15 @@ export const createSimulationRunRuntime = async (config: {
     }
   }
 
-  const runDueScenarioSteps = async (): Promise<void> => {
-    if (!config.scenario?.script || !state.snapshot().scenario?.script) return
-    const dueSteps = dueScenarioScriptSteps({
-      script: config.scenario.script,
+  const runDueScenarioCues = async (): Promise<void> => {
+    if (!config.scenario?.timeline || !state.snapshot().scenario?.timeline) return
+    const dueCues = dueScenarioTimelineCues({
+      timeline: config.scenario.timeline,
       state: state.snapshot().scenario!,
       nowMs: currentClockMs(),
     })
-    for (const step of dueSteps) {
-      await publishScenarioStep(step, nowIso())
+    for (const cue of dueCues) {
+      await publishScenarioCue(cue, nowIso())
     }
   }
 
@@ -782,27 +782,27 @@ export const createSimulationRunRuntime = async (config: {
     const clock = state.snapshot().clock
     if (clock?.paused) return
     const runnerScenarioState = state.snapshot().scenario
-    if (!config.scenario?.script || !runnerScenarioState?.script) return
-    scenarioRunner = createScenarioScriptRunner({
-      script: config.scenario.script,
+    if (!config.scenario?.timeline || !runnerScenarioState?.timeline) return
+    scenarioRunner = createScenarioTimelineRunner({
+      timeline: config.scenario.timeline,
       state: runnerScenarioState,
       nowMs: currentClockMs,
       delayMs: (dueAtMs, nowMs): number => {
         const speed = state.snapshot().clock?.speed ?? 1
         return Math.max(0, (dueAtMs - nowMs) / speed)
       },
-      onStepDue: async (step): Promise<void> => {
-        await publishScenarioStep(step, nowIso())
+      onCueDue: async (cue): Promise<void> => {
+        await publishScenarioCue(cue, nowIso())
       },
-      onStepFailed: async (step, error): Promise<void> => {
-        await publishOneGenerated(() => scenarioStepFailedEvent(step, error, nowIso()))
+      onCueFailed: async (cue, error): Promise<void> => {
+        await publishOneGenerated(() => scenarioCueFailedEvent(cue, error, nowIso()))
       },
     })
     scenarioRunner?.start()
   }
 
-  if (config.scenario?.script && state.snapshot().scenario?.script) {
-    await runDueScenarioSteps()
+  if (config.scenario?.timeline && state.snapshot().scenario?.timeline) {
+    await runDueScenarioCues()
     startScenarioRunner()
   }
 
@@ -837,12 +837,12 @@ export const createSimulationRunRuntime = async (config: {
       clock: nextClock,
     }))
     await config.runtimeConnection.setClock(nextClock)
-    if (config.scenario?.script) {
+    if (config.scenario?.timeline) {
       if (nextClock.paused) {
         scenarioRunner?.close()
         scenarioRunner = null
       } else {
-        await runDueScenarioSteps()
+        await runDueScenarioCues()
         startScenarioRunner()
       }
     }

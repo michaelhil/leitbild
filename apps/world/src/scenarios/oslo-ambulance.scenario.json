@@ -290,8 +290,8 @@
       }
     ]
   },
-  "script": {
-    "steps": [
+  "timeline": {
+    "cues": [
       {
         "id": "scenario-started",
         "at": { "kind": "after_scenario_start", "seconds": 0 },

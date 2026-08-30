@@ -1,4 +1,3 @@
-import { createCompositePack } from './core/packs/composite.ts'
 import type { WorldPack } from './core/packs/protocol.ts'
 import { ambulancePack } from './packs/ambulance/pack.ts'
 import { aviationPack } from './packs/aviation/pack.ts'
@@ -30,11 +29,3 @@ export const worldPacks: ReadonlyArray<WorldPack> = [
   withReferenceDatasetBuilders(aviationPack, aviationReferenceDatasetBuilders),
   withReferenceDatasetBuilders(electricGridPack, electricGridReferenceDatasetBuilders),
 ]
-
-export const createWorldCompositePack = (): WorldPack =>
-  createCompositePack({
-    id: 'leitbild-control',
-    version: '1.0.0',
-    name: 'Leitbild Control',
-    packs: worldPacks,
-  })

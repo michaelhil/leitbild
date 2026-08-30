@@ -3,8 +3,6 @@ import {
   agentContextViewSchema,
   confirmedFact,
   geoPointFromLonLat,
-  missionDefinitionSchema,
-  missionProgressStateSchema,
   nowIso,
   objectContextSchema,
   operationalObjectSchema,
@@ -149,7 +147,6 @@ describe('object context, scenario, and mission model', () => {
         context: object.context,
       }],
       runtimeConfigs: { ambulance: { adapter: 'ambulance.local' } },
-      missionId: 'mission:oslo-response-basic',
       surface: {
         schemaVersion: 1,
         regions: [{
@@ -167,89 +164,6 @@ describe('object context, scenario, and mission model', () => {
 
     expect(parsed.initialObjects).toHaveLength(1)
     expect(parsed.initialContexts[0]?.context.facts[0]?.key).toBe('dispatch.current_call')
-  })
-
-  test('MissionDefinition validates objectives, tasks, stages, triggers, actions, and metrics', () => {
-    const parsed = missionDefinitionSchema.parse({
-      id: 'mission:oslo-response-basic',
-      schemaVersion: 1,
-      title: 'Oslo response basic',
-      briefing: 'Dispatch one ambulance to the incident and transport to hospital if required.',
-      scenarioId: 'scenario:oslo-context-basic',
-      goals: [{
-        id: 'goal:stabilize-patient',
-        title: 'Stabilize and transport patient',
-      }],
-      objectives: [{
-        id: 'objective:dispatch',
-        title: 'Dispatch ambulance',
-        stageId: 'stage:response',
-        successCriteria: 'An ambulance is assigned to Incident 77.',
-      }],
-      tasks: [{
-        id: 'task:respond-incident-77',
-        title: 'Respond to Incident 77',
-        objectiveId: 'objective:dispatch',
-        targetObjectIds: ['incident:77'],
-        assigneeObjectId: 'amb:a12',
-      }],
-      stages: [{
-        id: 'stage:response',
-        title: 'Initial response',
-        objectiveIds: ['objective:dispatch'],
-        activeOnStart: true,
-      }],
-      triggers: [{
-        id: 'trigger:ambulance-assigned',
-        kind: 'task_assigned',
-        activeInStageIds: ['stage:response'],
-        condition: { taskId: 'task:respond-incident-77' },
-        oneShot: true,
-      }],
-      actions: [{
-        id: 'action:complete-dispatch-objective',
-        kind: 'complete_objective',
-        triggerId: 'trigger:ambulance-assigned',
-        payload: { objectiveId: 'objective:dispatch' },
-      }],
-      evaluationMetrics: [{
-        id: 'metric:time-to-dispatch',
-        label: 'Time to dispatch',
-      }],
-    })
-
-    expect(parsed.triggers[0]?.kind).toBe('task_assigned')
-    expect(parsed.actions[0]?.kind).toBe('complete_objective')
-  })
-
-  test('MissionProgressState is runtime state separate from MissionDefinition', () => {
-    const at = nowIso()
-    const definition = missionDefinitionSchema.parse({
-      id: 'mission:oslo-response-basic',
-      schemaVersion: 1,
-      title: 'Oslo response basic',
-    })
-    const progress = missionProgressStateSchema.parse({
-      missionId: definition.id,
-      schemaVersion: 1,
-      activeStageIds: ['stage:response'],
-      objectives: [{
-        objectiveId: 'objective:dispatch',
-        status: 'active',
-        updatedAt: at,
-      }],
-      tasks: [{
-        taskId: 'task:respond-incident-77',
-        status: 'assigned',
-        updatedAt: at,
-      }],
-      firedTriggerIds: ['trigger:ambulance-assigned'],
-      startedAt: at,
-      updatedAt: at,
-    })
-
-    expect(definition).not.toHaveProperty('activeStageIds')
-    expect(progress.activeStageIds).toEqual(['stage:response'])
   })
 
   test('AgentContextView is derivable and not required on stored objects', () => {

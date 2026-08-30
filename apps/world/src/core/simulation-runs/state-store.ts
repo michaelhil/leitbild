@@ -61,12 +61,12 @@ export const createSimulationRunStateStore = (): SimulationRunStateStore => {
       clock = event.clock
       return
     }
-    if (event.type === 'scenario.step.started') {
+    if (event.type === 'scenario.cue.started') {
       updateScenario(current => ({
         ...current,
-        script: {
-          startedAt: current.script?.startedAt ?? event.at,
-          firedStepIds: [...new Set([...(current.script?.firedStepIds ?? []), event.stepId])],
+        timeline: {
+          startedAt: current.timeline?.startedAt ?? event.at,
+          firedCueIds: [...new Set([...(current.timeline?.firedCueIds ?? []), event.cueId])],
         },
       }))
       return

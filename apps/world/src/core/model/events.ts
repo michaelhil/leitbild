@@ -52,8 +52,8 @@ export type SimulationRunEvent =
       readonly clock: SimulationClockState
     })
   | (EventEnvelopeBase & {
-      readonly type: 'scenario.step.started'
-      readonly stepId: string
+      readonly type: 'scenario.cue.started'
+      readonly cueId: string
     })
   | (EventEnvelopeBase & {
       readonly type: 'scenario.guidance.shown'
@@ -153,8 +153,8 @@ export const simulationRunEventSchema = z.discriminatedUnion('type', [
     clock: simulationClockStateSchema,
   }),
   eventBaseSchema.extend({
-    type: z.literal('scenario.step.started'),
-    stepId: z.string().min(1),
+    type: z.literal('scenario.cue.started'),
+    cueId: z.string().min(1),
   }),
   eventBaseSchema.extend({
     type: z.literal('scenario.guidance.shown'),

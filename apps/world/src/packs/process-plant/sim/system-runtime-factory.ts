@@ -1,9 +1,8 @@
 import { createProcessPlantRuntime } from '../runtime/index.ts'
 import {
-  createProcessPlantScheduleRunner,
+  createProcessPlantRampRunner,
   createProcessPlantTelemetryRecorder,
   createProcessPlantProtectionRunner,
-  type ProcessPlantScheduleConfig,
   type ProcessPlantTelemetryConfig,
   type ProcessPlantTelemetryRecorder,
 } from '../runtime/index.ts'
@@ -14,7 +13,7 @@ import { protectionConfigFor } from './runtime-config.ts'
 import {
   restoredProtectionSnapshotFor,
   restoredRuntimeSnapshotFor,
-  restoredScheduleSnapshotFor,
+  restoredRampSnapshotFor,
   restoredTelemetrySnapshotFor,
   type ProcessPlantRuntimeState,
 } from './runtime-state.ts'
@@ -28,7 +27,6 @@ export const createProcessPlantSystemRuntimes = (config: {
   (() => {
     const systemConfig = config.runtimeConfig.systems[system.id]
     const telemetryConfig: ProcessPlantTelemetryConfig | undefined = systemConfig?.telemetry
-    const scheduleConfig: ProcessPlantScheduleConfig | undefined = systemConfig?.schedule
     const protectionConfig = protectionConfigFor(systemConfig, system)
     const restoredRuntimeSnapshot = restoredRuntimeSnapshotFor(config.runtimeState, system.id)
     const runtime = createProcessPlantRuntime({
@@ -44,7 +42,7 @@ export const createProcessPlantSystemRuntimes = (config: {
           ...(restoredTelemetrySnapshot === undefined ? {} : { restoredSnapshot: restoredTelemetrySnapshot }),
         })
     telemetry?.recordDueSamples(runtime)
-    const restoredSchedule = restoredScheduleSnapshotFor(config.runtimeState, system.id)
+    const restoredRamps = restoredRampSnapshotFor(config.runtimeState, system.id)
     const restoredProtectionSnapshot = restoredProtectionSnapshotFor(config.runtimeState, system.id)
     const protection = protectionConfig === undefined
       ? undefined
@@ -56,10 +54,9 @@ export const createProcessPlantSystemRuntimes = (config: {
     return {
       system,
       runtime,
-      schedule: createProcessPlantScheduleRunner({
-        system,
-        ...(scheduleConfig === undefined ? {} : { schedule: scheduleConfig }),
-        ...(restoredSchedule === undefined ? {} : { restoredSnapshot: restoredSchedule }),
+      ramps: createProcessPlantRampRunner({
+        runtime,
+        ...(restoredRamps === undefined ? {} : { restoredSnapshot: restoredRamps }),
       }),
       ...(telemetry === undefined ? {} : { telemetry }),
       ...(protection === undefined ? {} : { protection }),

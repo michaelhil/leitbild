@@ -109,8 +109,8 @@
       }
     ]
   },
-  "script": {
-    "steps": [
+  "timeline": {
+    "cues": [
       {
         "id": "grid-intro-guidance",
         "at": {

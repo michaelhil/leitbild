@@ -359,30 +359,9 @@
     "process-plant": {
       "systems": {
         "halden-unit-a1": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
-        "halden-unit-a2": {
-          "icRef": "process-plant.pwr.reference.graph.ic.v2",
-          "schedule": {
-            "actions": [
-              { "id": "a2-sgtr-start", "atMs": 60000, "type": "setVariable", "path": "sgA.tubeLeakFraction", "value": 0.004 },
-              { "id": "a2-sgtr-escalate", "atMs": 180000, "type": "setVariable", "path": "sgA.tubeLeakFraction", "value": 0.018 }
-            ]
-          }
-        },
+        "halden-unit-a2": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
         "halden-unit-a3": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
-        "halden-unit-b1": {
-          "icRef": "process-plant.pwr.reference.graph.ic.v2",
-          "schedule": {
-            "actions": [
-              { "id": "b1-mfw-a-trip", "atMs": 120000, "type": "tripComponent", "componentId": "mainFeedwaterPumpA" },
-              { "id": "b1-mfw-b-trip", "atMs": 180000, "type": "tripComponent", "componentId": "mainFeedwaterPumpB" },
-              { "id": "b1-rcp-a-trip", "atMs": 300000, "type": "tripComponent", "componentId": "rcpA" },
-              { "id": "b1-rcp-b-trip", "atMs": 330000, "type": "tripComponent", "componentId": "rcpB" },
-              { "id": "b1-rcp-c-trip", "atMs": 360000, "type": "tripComponent", "componentId": "rcpC" },
-              { "id": "b1-rcp-d-trip", "atMs": 390000, "type": "tripComponent", "componentId": "rcpD" },
-              { "id": "b1-load-reduction", "atMs": 480000, "type": "setVariable", "path": "turbine.loadFraction", "value": 0.35 }
-            ]
-          }
-        },
+        "halden-unit-b1": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
         "halden-unit-b2": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
         "halden-unit-b3": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
         "halden-6-loop": { "icRef": "process-plant.pwr.reference.graph.ic.v2" }
@@ -423,8 +402,8 @@
       { "id": "guidance-overlay", "primitive": "guidanceOverlay", "visible": true, "config": {} }
     ]
   },
-  "script": {
-    "steps": [
+  "timeline": {
+    "cues": [
       {
         "id": "scenario-started",
         "at": { "kind": "after_scenario_start", "seconds": 0 },
@@ -473,6 +452,25 @@
         ]
       },
       {
+        "id": "a2-sgtr-ramp",
+        "at": { "kind": "after_scenario_start", "seconds": 60 },
+        "actions": [
+          {
+            "type": "issue_command",
+            "command": {
+              "kind": "process-plant.control.ramp",
+              "targetObjectIds": ["plant:halden-a2"],
+              "payload": {
+                "systemId": "halden-unit-a2",
+                "path": "sgA.tubeLeakFraction",
+                "targetValue": 0.018,
+                "durationSeconds": 300
+              }
+            }
+          }
+        ]
+      },
+      {
         "id": "a2-sgtr-guidance",
         "at": { "kind": "after_scenario_start", "seconds": 70 },
         "actions": [
@@ -494,6 +492,20 @@
         ]
       },
       {
+        "id": "b1-main-feedwater-trip-a",
+        "at": { "kind": "after_scenario_start", "seconds": 120 },
+        "actions": [
+          {
+            "type": "issue_command",
+            "command": {
+              "kind": "process-plant.control.write",
+              "targetObjectIds": ["plant:halden-b1"],
+              "payload": { "systemId": "halden-unit-b1", "path": "mainFeedwaterPumpA.running", "value": false }
+            }
+          }
+        ]
+      },
+      {
         "id": "b1-feedwater-guidance",
         "at": { "kind": "after_scenario_start", "seconds": 125 },
         "actions": [
@@ -511,6 +523,20 @@
         ]
       },
       {
+        "id": "b1-main-feedwater-trip-b",
+        "at": { "kind": "after_scenario_start", "seconds": 180 },
+        "actions": [
+          {
+            "type": "issue_command",
+            "command": {
+              "kind": "process-plant.control.write",
+              "targetObjectIds": ["plant:halden-b1"],
+              "payload": { "systemId": "halden-unit-b1", "path": "mainFeedwaterPumpB.running", "value": false }
+            }
+          }
+        ]
+      },
+      {
         "id": "clear-demo-highlights",
         "at": { "kind": "after_scenario_start", "seconds": 240 },
         "actions": [
@@ -519,6 +545,31 @@
             "objectIds": ["plant:halden-a2", "plant:halden-b1", "plant:halden-6-loop", "amb:demo-reserve-1"]
           }
         ]
+      },
+      {
+        "id": "b1-reactor-coolant-pump-trip-a",
+        "at": { "kind": "after_scenario_start", "seconds": 300 },
+        "actions": [{ "type": "issue_command", "command": { "kind": "process-plant.control.write", "targetObjectIds": ["plant:halden-b1"], "payload": { "systemId": "halden-unit-b1", "path": "rcpA.running", "value": false } } }]
+      },
+      {
+        "id": "b1-reactor-coolant-pump-trip-b",
+        "at": { "kind": "after_scenario_start", "seconds": 330 },
+        "actions": [{ "type": "issue_command", "command": { "kind": "process-plant.control.write", "targetObjectIds": ["plant:halden-b1"], "payload": { "systemId": "halden-unit-b1", "path": "rcpB.running", "value": false } } }]
+      },
+      {
+        "id": "b1-reactor-coolant-pump-trip-c",
+        "at": { "kind": "after_scenario_start", "seconds": 360 },
+        "actions": [{ "type": "issue_command", "command": { "kind": "process-plant.control.write", "targetObjectIds": ["plant:halden-b1"], "payload": { "systemId": "halden-unit-b1", "path": "rcpC.running", "value": false } } }]
+      },
+      {
+        "id": "b1-reactor-coolant-pump-trip-d",
+        "at": { "kind": "after_scenario_start", "seconds": 390 },
+        "actions": [{ "type": "issue_command", "command": { "kind": "process-plant.control.write", "targetObjectIds": ["plant:halden-b1"], "payload": { "systemId": "halden-unit-b1", "path": "rcpD.running", "value": false } } }]
+      },
+      {
+        "id": "b1-load-reduction",
+        "at": { "kind": "after_scenario_start", "seconds": 480 },
+        "actions": [{ "type": "issue_command", "command": { "kind": "process-plant.control.ramp", "targetObjectIds": ["plant:halden-b1"], "payload": { "systemId": "halden-unit-b1", "path": "turbine.loadFraction", "targetValue": 0.35, "durationSeconds": 120 } } }]
       }
     ]
   }

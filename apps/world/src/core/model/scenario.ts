@@ -89,16 +89,16 @@ export interface ScenarioGuidance {
   readonly tone?: 'default' | 'update'
 }
 
-export interface ScenarioScriptProgressState {
+export interface ScenarioTimelineProgressState {
   readonly startedAt: IsoTimestamp
-  readonly firedStepIds: ReadonlyArray<string>
+  readonly firedCueIds: ReadonlyArray<string>
 }
 
 export interface ScenarioExecutionState {
   readonly scenarioId: string
   readonly guidance?: ScenarioGuidance
   readonly highlightedObjectIds: ReadonlyArray<ObjectId>
-  readonly script?: ScenarioScriptProgressState
+  readonly timeline?: ScenarioTimelineProgressState
 }
 
 export interface ScenarioTimeRef {
@@ -106,7 +106,7 @@ export interface ScenarioTimeRef {
   readonly seconds: number
 }
 
-export interface ScenarioScriptCommandRequest {
+export interface ScenarioTimelineCommandRequest {
   readonly kind: string
   readonly targetObjectIds: ReadonlyArray<ObjectId>
   readonly payload: unknown
@@ -114,7 +114,7 @@ export interface ScenarioScriptCommandRequest {
   readonly expectedRevision?: number
 }
 
-export type ScenarioScriptAction =
+export type ScenarioTimelineAction =
   | {
       readonly type: 'show_guidance'
       readonly guidance: ScenarioGuidance
@@ -155,18 +155,18 @@ export type ScenarioScriptAction =
     }
   | {
       readonly type: 'issue_command'
-      readonly command: ScenarioScriptCommandRequest
+      readonly command: ScenarioTimelineCommandRequest
     }
 
-export interface ScenarioScriptStep {
+export interface ScenarioTimelineCue {
   readonly id: string
   readonly at: ScenarioTimeRef
   readonly title?: string
-  readonly actions: ReadonlyArray<ScenarioScriptAction>
+  readonly actions: ReadonlyArray<ScenarioTimelineAction>
 }
 
-export interface ScenarioScript {
-  readonly steps: ReadonlyArray<ScenarioScriptStep>
+export interface ScenarioTimeline {
+  readonly cues: ReadonlyArray<ScenarioTimelineCue>
 }
 
 export interface ScenarioDefinition {
@@ -181,9 +181,8 @@ export interface ScenarioDefinition {
   readonly initialContexts: ReadonlyArray<ScenarioInitialObjectContext>
   readonly processSystems: ReadonlyArray<ScenarioProcessSystemDefinition>
   readonly runtimeConfigs: Record<string, unknown>
-  readonly missionId?: string
   readonly surface: SurfaceDefinition
-  readonly script?: ScenarioScript
+  readonly timeline?: ScenarioTimeline
 }
 
 export const scenarioWorldDefinitionSchema = z.object({
@@ -192,7 +191,7 @@ export const scenarioWorldDefinitionSchema = z.object({
   environment: z.record(z.string(), z.unknown()).default({}),
 })
 
-export const scenarioScriptCommandRequestSchema = z.object({
+export const scenarioTimelineCommandRequestSchema = z.object({
   kind: z.string().min(1),
   targetObjectIds: z.array(objectIdSchema),
   payload: z.custom<unknown>(value => value !== undefined, 'payload is required'),
@@ -318,16 +317,16 @@ export const scenarioGuidanceSchema = z.object({
   tone: z.enum(['default', 'update']).default('default'),
 })
 
-export const scenarioScriptProgressStateSchema = z.object({
+export const scenarioTimelineProgressStateSchema = z.object({
   startedAt: isoTimestampSchema,
-  firedStepIds: z.array(idSchema).default([]),
+  firedCueIds: z.array(idSchema).default([]),
 })
 
 export const scenarioExecutionStateSchema = z.object({
   scenarioId: idSchema,
   guidance: scenarioGuidanceSchema.optional(),
   highlightedObjectIds: z.array(objectIdSchema).default([]),
-  script: scenarioScriptProgressStateSchema.optional(),
+  timeline: scenarioTimelineProgressStateSchema.optional(),
 })
 
 export const scenarioTimeRefSchema = z.object({
@@ -335,7 +334,7 @@ export const scenarioTimeRefSchema = z.object({
   seconds: z.number().finite().nonnegative(),
 })
 
-export const scenarioScriptActionSchema = z.discriminatedUnion('type', [
+export const scenarioTimelineActionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('show_guidance'),
     guidance: scenarioGuidanceSchema,
@@ -376,30 +375,30 @@ export const scenarioScriptActionSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('issue_command'),
-    command: scenarioScriptCommandRequestSchema,
+    command: scenarioTimelineCommandRequestSchema,
   }),
 ])
 
-export const scenarioScriptStepSchema = z.object({
+export const scenarioTimelineCueSchema = z.object({
   id: idSchema,
   at: scenarioTimeRefSchema,
   title: z.string().min(1).optional(),
-  actions: z.array(scenarioScriptActionSchema).min(1),
+  actions: z.array(scenarioTimelineActionSchema).min(1),
 })
 
-export const scenarioScriptSchema = z.object({
-  steps: z.array(scenarioScriptStepSchema).default([]),
-}).superRefine((script, ctx) => {
+export const scenarioTimelineSchema = z.object({
+  cues: z.array(scenarioTimelineCueSchema).default([]),
+}).superRefine((timeline, ctx) => {
   const seen = new Set<string>()
-  for (const [index, step] of script.steps.entries()) {
-    if (seen.has(step.id)) {
+  for (const [index, cue] of timeline.cues.entries()) {
+    if (seen.has(cue.id)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `duplicate scenario script step id: ${step.id}`,
-        path: ['steps', index, 'id'],
+        message: `duplicate scenario timeline cue id: ${cue.id}`,
+        path: ['cues', index, 'id'],
       })
     }
-    seen.add(step.id)
+    seen.add(cue.id)
   }
 })
 
@@ -415,7 +414,6 @@ export const scenarioDefinitionSchema = z.object({
   initialContexts: z.array(scenarioInitialObjectContextSchema).default([]),
   processSystems: z.array(scenarioProcessSystemDefinitionSchema).default([]),
   runtimeConfigs: z.record(z.string(), z.unknown()).default({}),
-  missionId: idSchema.optional(),
   surface: surfaceDefinitionSchema,
-  script: scenarioScriptSchema.optional(),
+  timeline: scenarioTimelineSchema.optional(),
 })

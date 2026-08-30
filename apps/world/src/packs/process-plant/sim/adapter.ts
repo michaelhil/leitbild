@@ -10,6 +10,8 @@ import type {
 } from '../../../simulation/protocol.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import {
+  processPlantControlRampCommandKind,
+  processPlantControlRampPayloadSchema,
   processPlantControlWriteCommandKind,
   processPlantControlWritePayloadSchema,
   processPlantIcLifecycleCommandKind,
@@ -91,7 +93,11 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
   id: processPlantSimRuntimeId,
   version: '1.0.0',
   packId: processPlantPackId,
-  acceptedCommandKinds: [processPlantControlWriteCommandKind, processPlantIcLifecycleCommandKind],
+  acceptedCommandKinds: [
+    processPlantControlWriteCommandKind,
+    processPlantControlRampCommandKind,
+    processPlantIcLifecycleCommandKind,
+  ],
   queryKinds: processPlantQueryKinds,
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const handlers = new Set<PackRuntimeEventHandler>()
@@ -138,9 +144,9 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       lastTickWallMs = nowWallMs
       if (elapsedMs <= 0 || systems.size === 0) return
       const events: PackRuntimeEvent[] = []
-      for (const { runtime, schedule, telemetry, protection, performance: runtimePerformance } of systems.values()) {
+      for (const { runtime, ramps, telemetry, protection, performance: runtimePerformance } of systems.values()) {
         const startedAt = performance.now()
-        schedule.applyDueActions(runtime, runtime.elapsedMs() + elapsedMs)
+        ramps.apply(runtime.elapsedMs() + elapsedMs)
         const tick = runtime.tick(elapsedMs)
         events.push(...(protection?.evaluate({
           runtime,
@@ -230,6 +236,32 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
               reason: err instanceof Error ? err.message : String(err),
             }
           }
+        }
+        if (command.kind === processPlantControlRampCommandKind) {
+          const payload = processPlantControlRampPayloadSchema.safeParse(command.payload)
+          if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: payload.error.message }
+          const system = systems.get(payload.data.systemId)
+          if (!system) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant system not found: ${payload.data.systemId}` }
+          const validation = validateProcessPlantControlWrite({
+            system: system.system,
+            runtime: system.runtime,
+            ...(system.protection === undefined ? {} : { protection: system.protection }),
+            payload: {
+              systemId: payload.data.systemId,
+              ...(payload.data.path === undefined ? {} : { path: payload.data.path }),
+              ...(payload.data.tagId === undefined ? {} : { tagId: payload.data.tagId }),
+              value: payload.data.targetValue,
+            },
+          })
+          if (!validation.accepted) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: validation.reason }
+          system.ramps.start({
+            id: command.id,
+            path: validation.targetPath,
+            target: payload.data.targetValue,
+            durationMs: payload.data.durationSeconds * 1_000,
+          })
+          await persistence.saveNow()
+          return { ok: true, commandId: command.id, acceptedAt }
         }
         if (command.kind !== processPlantControlWriteCommandKind) {
           return {

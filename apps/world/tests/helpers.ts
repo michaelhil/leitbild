@@ -17,14 +17,12 @@ import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
 import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric-grid/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import type { PackRuntimeAdapter, PackScenarioRuntimeConfig } from '../src/simulation/protocol.ts'
-import { builtinMissions } from '../src/scenarios/index.ts'
 
 export const testPacks = [ambulancePack, trafficPack, weatherPack, dronePack, processPlantPack, aviationPack, electricGridPack] as const
 
 export const createTestScenarioCatalog = (): ScenarioCatalog => createScenarioCatalog({
   packs: testPacks,
   scenarios,
-  missions: builtinMissions,
   defaultScenarioId: osloAmbulanceScenario.id,
 })
 

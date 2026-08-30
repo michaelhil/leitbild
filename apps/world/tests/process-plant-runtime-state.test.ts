@@ -9,6 +9,7 @@ import {
   createProcessPlantProtectionRunner,
   pressurizedWaterReactorPlantSpec,
   processPlantControlWriteCommandKind,
+  processPlantControlRampCommandKind,
   processPlantIcLifecycleCommandKind,
   processPlantPwrReferenceAssemblyRef,
   processPlantPwrReferenceGraphIcRef,
@@ -78,6 +79,16 @@ const lifecycleCommand = (payload: unknown): CommandEnvelope => ({
   simulationRunId,
   actorId: 'actor:operator' as ActorId,
   kind: processPlantIcLifecycleCommandKind,
+  targetObjectIds: [],
+  payload,
+  issuedAt: startsAt,
+})
+
+const rampCommand = (payload: unknown): CommandEnvelope => ({
+  id: 'command:process-plant-ramp-test' as CommandId,
+  simulationRunId,
+  actorId: 'actor:operator' as ActorId,
+  kind: processPlantControlRampCommandKind,
   targetObjectIds: [],
   payload,
   issuedAt: startsAt,
@@ -674,7 +685,7 @@ describe('process plant pack runtime', () => {
     await secondConnection.close()
   })
 
-  test('applies pack-owned scheduled actions and exposes configured telemetry trends', async () => {
+  test('applies a typed control ramp and exposes configured telemetry trends', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       simulationRunId,
       scenario: scenarioConfig({
@@ -682,16 +693,7 @@ describe('process plant pack runtime', () => {
           plant: {
             telemetry: {
               sampleIntervalMs: 1_000,
-              variables: ['rcpA.running', 'turbine.electricMw'],
-            },
-            schedule: {
-              actions: [{
-                id: 'plant-rcp-a-trip',
-                atMs: 1_000,
-                type: 'setVariable',
-                path: 'rcpA.running',
-                value: false,
-              }],
+              variables: ['turbine.loadFraction', 'turbine.electricMw'],
             },
           },
         },
@@ -699,24 +701,32 @@ describe('process plant pack runtime', () => {
       runtimeStateStore: createMemoryStateStore(),
     })
 
+    const accepted = await connection.sendCommand(rampCommand({
+      systemId: 'plant',
+      path: 'turbine.loadFraction',
+      targetValue: 0.5,
+      durationSeconds: 1,
+    }))
+    expect(accepted.ok).toBe(true)
+
     await Bun.sleep(1_100)
 
     const read = await connection.query(query('process-plant.variables.read', {
       systemId: 'plant',
-      paths: ['rcpA.running'],
+      paths: ['turbine.loadFraction'],
     }))
     expect(read.ok).toBe(true)
     if (!read.ok) throw new Error(read.reason)
-    expect((read.result as { variables: ReadonlyArray<{ readonly value: unknown }> }).variables[0]?.value).toBe(false)
+    expect((read.result as { variables: ReadonlyArray<{ readonly value: number }> }).variables[0]?.value).toBeCloseTo(0.5, 2)
 
     const trends = await connection.query(query('process-plant.trends.read', {
       systemId: 'plant',
-      paths: ['rcpA.running'],
+      paths: ['turbine.loadFraction'],
     }))
     expect(trends.ok).toBe(true)
     if (!trends.ok) throw new Error(trends.reason)
     const series = (trends.result as { series: ReadonlyArray<{ readonly points: ReadonlyArray<{ readonly value: unknown }> }> }).series[0]
-    expect(series?.points.map(point => point.value)).toContain(false)
+    expect(series?.points.some(point => typeof point.value === 'number' && point.value <= 0.51)).toBe(true)
 
     await connection.close()
   })

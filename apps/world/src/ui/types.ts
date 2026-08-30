@@ -38,7 +38,6 @@ export interface ScenarioListItem {
   readonly id: string
   readonly title: string
   readonly description?: string
-  readonly missionId?: string
 }
 
 export interface ScenarioListResponse {
