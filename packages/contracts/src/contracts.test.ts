@@ -15,3 +15,14 @@ describe('pack contracts', () => {
     })).toThrow()
   })
 })
+
+describe('package exports', () => {
+  test('every declared export resolves to a source file', async () => {
+    const packageJson = await Bun.file(new URL('../package.json', import.meta.url)).json() as {
+      readonly exports: Readonly<Record<string, string>>
+    }
+    for (const target of Object.values(packageJson.exports)) {
+      expect(await Bun.file(new URL(`../${target.replace(/^\.\//, '')}`, import.meta.url)).exists()).toBe(true)
+    }
+  })
+})

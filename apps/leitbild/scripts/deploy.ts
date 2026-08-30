@@ -10,7 +10,14 @@ const WORKSPACE_ROOT = resolve(import.meta.dir, '../../..')
 const HOST_ROOT = resolve(import.meta.dir, '..')
 const WORLD_ROOT = resolve(WORKSPACE_ROOT, 'apps/world')
 const AGENTS_ROOT = resolve(WORKSPACE_ROOT, 'apps/agents')
-const CONTRACTS_ROOT = resolve(WORKSPACE_ROOT, 'packages/contracts')
+export const PRODUCTION_DEPENDENCY_WORKSPACE_PATHS = [
+  'packages/contracts',
+  'packages/module-runtime',
+] as const
+const PRODUCTION_DEPENDENCY_WORKSPACES = PRODUCTION_DEPENDENCY_WORKSPACE_PATHS.map(target => ({
+  source: resolve(WORKSPACE_ROOT, target),
+  target,
+}))
 const DEPLOY_ROOT = '/opt/leitbild'
 const CURRENT_LINK = `${DEPLOY_ROOT}/current`
 const RELEASES_DIR = `${DEPLOY_ROOT}/releases`
@@ -43,7 +50,7 @@ interface DeploymentManifest {
   readonly dirty: boolean
   readonly worktreeStatus: ReadonlyArray<string>
   readonly sourceDigest: string
-  readonly contractsDigest: string
+  readonly dependencyPackagesDigest: string
   readonly fileCount: number
   readonly persistentRootsExcluded: ReadonlyArray<string>
 }
@@ -164,11 +171,13 @@ const createArtifact = async () => {
   const hostEntries = await entriesFor(HOST_ROOT, 'apps/leitbild', await directoryFiles(HOST_ROOT, 'src/ui/dist'))
   const worldEntries = await entriesFor(WORLD_ROOT, 'apps/world', await directoryFiles(WORLD_ROOT, 'src/ui/dist'))
   const agentsEntries = await entriesFor(AGENTS_ROOT, 'apps/agents', ['src/ui/dist.css'])
-  const contractEntries = await entriesFor(CONTRACTS_ROOT, 'packages/contracts')
   const rootEntries: ArtifactEntry[] = ['package.json', 'bun.lock'].map(path => ({ source: join(WORKSPACE_ROOT, path), target: path }))
-  const entries = [...rootEntries, ...hostEntries, ...worldEntries, ...agentsEntries, ...contractEntries]
+  const dependencyPackageEntries = (await Promise.all(
+    PRODUCTION_DEPENDENCY_WORKSPACES.map(workspace => entriesFor(workspace.source, workspace.target)),
+  )).flat()
+  const entries = [...rootEntries, ...hostEntries, ...worldEntries, ...agentsEntries, ...dependencyPackageEntries]
   const sourceDigest = await digestEntries(entries)
-  const contractsDigest = await digestEntries(contractEntries)
+  const dependencyPackagesDigest = await digestEntries(dependencyPackageEntries)
   const createdAt = new Date().toISOString()
   const baseCommit = (await capture(['git', 'rev-parse', 'HEAD'])).trim()
   const branch = (await capture(['git', 'branch', '--show-current'])).trim() || '(detached)'
@@ -183,7 +192,7 @@ const createArtifact = async () => {
     dirty: worktreeStatus.length > 0,
     worktreeStatus,
     sourceDigest,
-    contractsDigest,
+    dependencyPackagesDigest,
     fileCount: entries.length,
     persistentRootsExcluded: [STATE_ROOT],
   }
@@ -219,7 +228,7 @@ release_id=${shellQuote(id)}
 release_dir=${shellQuote(`${RELEASES_DIR}/${id}`)}
 archive=${shellQuote(remoteArchive)}
 incoming=${shellQuote(`${RELEASES_DIR}/.incoming-${id}`)}
-dep_dir=${shellQuote(`${DEPS_DIR}/${artifact.lockChecksum}-${artifact.manifest.contractsDigest}`)}
+dep_dir=${shellQuote(`${DEPS_DIR}/${artifact.lockChecksum}-${artifact.manifest.dependencyPackagesDigest}`)}
 previous=""
 test ! -e "$release_dir"
 if test -L ${shellQuote(CURRENT_LINK)}; then previous="$(readlink -f ${shellQuote(CURRENT_LINK)})"; fi
@@ -250,7 +259,7 @@ if test ! -d "$dep_dir/node_modules"; then
   cp "$incoming/apps/leitbild/package.json" "$dep_tmp/apps/leitbild/"
   cp "$incoming/apps/world/package.json" "$dep_tmp/apps/world/"
   cp "$incoming/apps/agents/package.json" "$dep_tmp/apps/agents/"
-  cp -a "$incoming/packages/contracts" "$dep_tmp/packages/"
+  ${PRODUCTION_DEPENDENCY_WORKSPACES.map(workspace => `cp -a "$incoming/${workspace.target}" "$dep_tmp/packages/"`).join('\n  ')}
   chown -R ${SERVICE_USER}:${SERVICE_USER} "$dep_tmp"
   sudo -u ${SERVICE_USER} sh -c 'cd "$1" && exec "$2" install --frozen-lockfile --production' sh "$dep_tmp" ${shellQuote(BUN_BIN)}
   mv "$dep_tmp" "$dep_dir"

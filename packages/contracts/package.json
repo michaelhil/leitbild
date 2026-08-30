@@ -12,8 +12,7 @@
     "./packs": "./src/packs.ts",
     "./workspaces": "./src/workspaces.ts",
     "./modules": "./src/modules.ts",
-    "./resources": "./src/resources.ts",
-    "./bindings": "./src/bindings.ts"
+    "./resources": "./src/resources.ts"
   },
   "scripts": {
     "check": "tsc --noEmit",
