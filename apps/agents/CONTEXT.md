@@ -8,6 +8,14 @@ The Agents Module provides durable multi-participant Rooms and configurable AI a
 A durable shared conversation space with members, messages, delivery behavior, and Room-specific settings inside one Workspace.
 _Avoid_: Channel, Thread, Simulation Run
 
+**Room Definition**:
+An immutable declaration used to create a Room, its initial members, selected Packs, Agent Profiles, and optional Agent Script.
+_Avoid_: live Room state, Preset, browser launch procedure
+
+**Prompt Deck**:
+A curated set of optional prompts with declared Capability requirements.
+_Avoid_: workflow, Agent Script, hard-coded browser action
+
 **Agent**:
 An AI actor with a model configuration, instructions, skills, tools, and bounded context assembly policy.
 _Avoid_: hard-coded controller for a particular Resource
@@ -31,6 +39,10 @@ _Avoid_: universal Pack or cross-Module Pack ownership
 **Agent Tool Grant**:
 A durable permission for one Agent to invoke one namespaced Workspace Capability. A Resource is selected at invocation time and is never stored in the grant.
 _Avoid_: persisted external Resource ids, base URLs, application-specific bindings
+
+**Agent Schedule**:
+A recurring wall-clock action owned by an Agent Profile.
+_Avoid_: Trigger, Scenario Cue, simulation-time event
 
 ## Relationships
 

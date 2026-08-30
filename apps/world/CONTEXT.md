@@ -89,8 +89,12 @@ A reusable Workspace-owned identity whose simulation setup evolves through immut
 _Avoid_: Simulation Run, built-in Scenario Config, or mutating a Revision in place
 
 **Scenario Revision**:
-An immutable, validated startup definition containing world settings, selected Packs, runtime configuration, initial objects, contexts, surfaces, and optional scripts.
+An immutable, validated startup definition containing world settings, selected Packs, runtime configuration, initial objects, contexts, surfaces, and an optional Timeline.
 _Avoid_: mutable Scenario Definition, resolving a restored Run from the current catalog
+
+**Scenario Fragment**:
+Reusable World-owned authoring material included with explicit parameters and a local namespace when compiling a Scenario Revision.
+_Avoid_: Scenario inheritance, runtime subtree, cross-Module fragment
 
 **Scenario Config**:
 Compact deployment-owned JSON authoring format for a built-in Scenario template. Pack scenario codecs expand it into a candidate Scenario Revision before it enters a Workspace.
@@ -104,24 +108,20 @@ _Avoid_: scenario files hand-building full pack objects with reusable helper cod
 The Workspace-owned collection of Scenarios and immutable Scenario Revisions available for new Simulation Runs.
 _Avoid_: global mutable Scenario Catalog, hidden pack seed factories, or hardcoded default runtime boot paths
 
-**Scenario Script**:
-A small declarative, time-based action list attached to a Scenario Revision.
-_Avoid_: arbitrary script execution, browser-only tutorial state, or hidden runtime seed timers
+**Scenario Timeline**:
+An ordered declarative collection of Cues attached to a Scenario Revision.
+_Avoid_: Scenario Script, arbitrary code, browser-only tutorial state, or hidden runtime seed timers
+
+**Cue**:
+A typed trigger and ordered Capability invocations evaluated by a Simulation Run.
+_Avoid_: generic workflow step, arbitrary expression, Pack-private timer
 
 **Scenario Guidance**:
 Canonical scenario-owned UI instruction state for onboarding, tutorial prompts, and scripted scenario briefings. It is stored in Simulation Run projected state so all clients and reloads see the same current guidance.
 _Avoid_: local-only popovers for scenario-critical information
 
-**Mission Definition**:
-Operational intent layered on top of a scenario: goals, objectives, tasks, stages, triggers, actions, and evaluation metrics.
-_Avoid_: Scenario when referring to objective/task progression
-
-**Mission Progress State**:
-Runtime execution state for a mission definition, including active stages, objective/task statuses, fired triggers, and timestamps.
-_Avoid_: storing runtime progress inside the reusable Mission Definition
-
 **Agent Context View**:
-A bounded, derived, LLM-friendly view assembled from object state, object context, mission/task state, and relevant nearby objects.
+A bounded, derived, LLM-friendly view assembled from object state, object context, and relevant nearby objects.
 _Avoid_: persisting generated prompt text or full event logs as canonical object state
 
 **Interaction Signal**:
@@ -322,10 +322,8 @@ _Avoid_: expecting the live feed to be a permanent replay store
 - A future user account can map to one or more **Actors**.
 - An **Operational Object** can have optional **Object Context**.
 - A **Scenario Revision** can initialize **Operational Objects** and their **Object Context**.
-- A **Scenario Revision** can include a **Scenario Script** for timed object updates, highlights, and **Scenario Guidance**.
+- A **Scenario Revision** can include a **Scenario Timeline** for timed object updates, highlights, commands, and **Scenario Guidance**.
 - Restored **Simulation Runs** use pinned manifests, snapshots, and history instead of replaying or re-resolving Scenario Revisions.
-- A **Mission Definition** can reference objects, roles, stages, objectives, and tasks initialized by a **Scenario Revision**.
-- **Mission Progress State** belongs to a running **Simulation Run**, not to the reusable **Mission Definition**.
 - **Interaction Signals** are scoped to one **Simulation Run** and may reference objects, actors, clients, pack runtimes, roles, areas, or broadcast targets.
 - **Interaction Handlers** are registered through core or active packs and run inside the **Simulation Run** runtime.
 - **Interaction Effects** become ordered **Simulation Run Events** only after validation and runtime commit.

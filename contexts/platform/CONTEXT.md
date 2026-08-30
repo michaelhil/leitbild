@@ -36,6 +36,10 @@ _Avoid_: copying the entity into the Host or using an untyped URL as identity
 A typed command, query, or event stream exposed by a Module for a Resource type or Workspace scope.
 _Avoid_: tool name guessed by a caller, Pack, arbitrary RPC
 
+**Definition**:
+An immutable, reusable declaration that one Module validates and can instantiate as Resources.
+_Avoid_: live state, universal configuration object, cross-Module schema
+
 **Binding**:
 A durable, explicitly configured relationship that maintains continuous system behavior between Resources.
 _Avoid_: Agent preference, one-time tool call, hard-coded Agent-to-Resource link
@@ -44,13 +48,9 @@ _Avoid_: Agent preference, one-time tool call, hard-coded Agent-to-Resource link
 A Module-owned extension interpreted only by its owning Module.
 _Avoid_: Module, universal plugin, cross-Module runtime
 
-**Demo Definition**:
-An optional Module-owned prompt, persona, tool recommendation, and Capability requirement used to start a demonstration.
-_Avoid_: environment provisioning, concrete Resource ids, workflow
-
-**Workspace Template**:
-An optional apply-once recipe that creates Module-owned seed Resources, after which the Workspace is ordinary and independent.
-_Avoid_: Blueprint, controller, reconciliation, Agent configuration
+**Preset**:
+An apply-once cross-Module composition of pinned Module-owned Definition Revisions. Launching a Preset creates ordinary independent Resources and optional typed Bindings.
+_Avoid_: Workspace Template, Blueprint, workflow, controller, reconciliation
 
 ## Relationships
 
@@ -60,4 +60,4 @@ _Avoid_: Blueprint, controller, reconciliation, Agent configuration
 - A Pack belongs to exactly one Module.
 - A Resource belongs to exactly one Module and one Workspace.
 - A Capability is advertised by exactly one Module and may apply to a Resource type or an entire Workspace.
-- A Workspace Template may seed a Workspace but never controls it afterward.
+- A Preset may create Resources in several Modules but never controls them afterward.
