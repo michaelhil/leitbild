@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { moduleResourceDescriptorSchema, newWorkspaceId, packDescriptorSchema } from './index.ts'
+import {
+  inspectionViewSchema,
+  moduleDefinitionDescriptorSchema,
+  moduleResourceDescriptorSchema,
+  newWorkspaceId,
+  packDescriptorSchema,
+} from './index.ts'
 
 describe('pack contracts', () => {
   test('rejects self-dependencies and duplicate contributions', () => {
@@ -46,5 +52,36 @@ describe('Resource Summary contracts', () => {
       ...resource,
       summary: [...resource.summary, { key: 'viewer-count', label: 'Other viewers', kind: 'count', value: 3 }],
     })).toThrow('duplicate Resource Summary key')
+  })
+})
+
+describe('Inspection View contracts', () => {
+  test('links inspection through an advertised Capability and validates structured sections', () => {
+    const workspaceId = newWorkspaceId()
+    const definition = moduleDefinitionDescriptorSchema.parse({
+      ref: { workspaceId, moduleId: 'world', type: 'world.scenario', id: 'exercise' },
+      title: 'Exercise',
+      currentRevisionId: 'revision-0123456789abcdef0123456789abcdef',
+      capabilityIds: ['world.scenario.inspect'],
+      inspectionCapabilityId: 'world.scenario.inspect',
+    })
+    expect(String(definition.inspectionCapabilityId)).toBe('world.scenario.inspect')
+    expect(() => moduleDefinitionDescriptorSchema.parse({
+      ...definition,
+      capabilityIds: [],
+    })).toThrow('Inspection Capability must be included')
+
+    const view = {
+      target: {
+        kind: 'definition',
+        definition: { ...definition.ref, revisionId: definition.currentRevisionId },
+      },
+      title: definition.title,
+      observedAt: new Date().toISOString(),
+      sections: [{ id: 'configuration', title: 'Configuration', data: { packs: ['weather'] } }],
+    }
+    expect(inspectionViewSchema.parse(view).sections).toHaveLength(1)
+    expect(() => inspectionViewSchema.parse({ ...view, sections: [...view.sections, view.sections[0]] }))
+      .toThrow('duplicate Inspection Section')
   })
 })

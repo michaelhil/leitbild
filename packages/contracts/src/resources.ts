@@ -90,6 +90,7 @@ export const moduleResourceDescriptorSchema = z.object({
   links: z.array(moduleResourceLinkSchema).default([]),
   uiPath: relativeUiPathSchema.optional(),
   capabilityIds: z.array(capabilityIdSchema),
+  inspectionCapabilityId: capabilityIdSchema.optional(),
   summary: z.array(resourceSummaryItemSchema).max(8).default([]),
   observedAt: isoTimestampSchema,
 }).strict().superRefine((resource, ctx) => {
@@ -103,6 +104,16 @@ export const moduleResourceDescriptorSchema = z.object({
     }
     seen.add(capabilityId)
   })
+  if (
+    resource.inspectionCapabilityId !== undefined
+    && !seen.has(resource.inspectionCapabilityId)
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['inspectionCapabilityId'],
+      message: 'Inspection Capability must be included in Resource capabilityIds',
+    })
+  }
   if (resource.sourceDefinition !== undefined && (
     resource.sourceDefinition.workspaceId !== resource.ref.workspaceId
     || resource.sourceDefinition.moduleId !== resource.ref.moduleId

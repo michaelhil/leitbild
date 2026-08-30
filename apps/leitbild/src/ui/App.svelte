@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte'
   import {
     coreModuleIds,
+    type InspectionView,
     type ModuleCapabilityDescriptor,
     type ModuleDefinitionDescriptor,
     type ModuleResourceDescriptor,
@@ -25,6 +26,9 @@
       }>
     }
   }
+  type InspectionSubject =
+    | { readonly kind: 'definition'; readonly descriptor: ModuleDefinitionDescriptor }
+    | { readonly kind: 'resource'; readonly descriptor: ModuleResourceDescriptor }
 
   const moduleTitles: Readonly<Record<string, string>> = { world: 'World', agents: 'Agents' }
   const page = (): Page => {
@@ -46,6 +50,12 @@
   let busy = $state(false)
   let error = $state<string | null>(null)
   let settingsDialog = $state<HTMLDialogElement | null>(null)
+  let inspectionDialog = $state<HTMLDialogElement | null>(null)
+  let inspectionSubject = $state<InspectionSubject | null>(null)
+  let inspectionView = $state<InspectionView | null>(null)
+  let inspectionLoading = $state(false)
+  let inspectionError = $state<string | null>(null)
+  let inspectionCopied = $state(false)
   let compositions = $state<ReadonlyArray<CompositionDefinition>>([])
   let definitions = $state<ReadonlyArray<ModuleDefinitionDescriptor>>([])
   let resources = $state<ReadonlyArray<ModuleResourceDescriptor>>([])
@@ -186,6 +196,69 @@
     await loadWorkspaceCatalog(workspace.id)
   })
 
+  const inspect = async (subject: InspectionSubject): Promise<void> => {
+    if (!workspace) return
+    const capabilityId = subject.descriptor.inspectionCapabilityId
+    const capability = capabilityId === undefined ? undefined : capabilityFor(capabilityId)
+    const correctlyScoped = capability !== undefined && (
+      subject.kind === 'definition'
+        ? capability.scope.kind === 'definition' && capability.scope.definitionType === subject.descriptor.ref.type
+        : capability.scope.kind === 'resource' && capability.scope.resourceType === subject.descriptor.ref.type
+    )
+    if (!capability || capability.kind !== 'query' || capability.risk !== 'read' || !correctlyScoped) {
+      error = 'This item does not publish a valid read-only Inspection Capability.'
+      return
+    }
+    inspectionSubject = subject
+    inspectionView = null
+    inspectionError = null
+    inspectionCopied = false
+    inspectionLoading = true
+    inspectionDialog?.showModal()
+    try {
+      const response = await request<InvocationResponse>(
+        `/api/workspaces/${workspace.id}/capabilities/${encodeURIComponent(capability.id)}/invoke`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...(subject.kind === 'definition'
+              ? { definition: { ...subject.descriptor.ref, revisionId: subject.descriptor.currentRevisionId } }
+              : { resource: subject.descriptor.ref }),
+            input: {}, actor: { kind: 'human' },
+          }),
+        },
+      )
+      inspectionView = response.result as InspectionView
+    } catch (cause) {
+      inspectionError = cause instanceof Error ? cause.message : String(cause)
+    } finally {
+      inspectionLoading = false
+    }
+  }
+
+  const inspectedCapabilities = (): ReadonlyArray<ModuleCapabilityDescriptor> => inspectionSubject === null
+    ? []
+    : inspectionSubject.descriptor.capabilityIds.flatMap(id => {
+      const capability = capabilityFor(id)
+      return capability === undefined ? [] : [capability]
+    })
+
+  const inspectionExport = (): unknown => inspectionSubject === null ? null : {
+    kind: inspectionSubject.kind,
+    descriptor: inspectionSubject.descriptor,
+    capabilities: inspectedCapabilities(),
+    inspection: inspectionView,
+  }
+
+  const copyInspection = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(inspectionExport(), null, 2))
+      inspectionCopied = true
+      setTimeout(() => { inspectionCopied = false }, 1_500)
+    } catch (cause) {
+      inspectionError = cause instanceof Error ? cause.message : String(cause)
+    }
+  }
+
   const startComposition = (compositionId: string): Promise<void> => run(async () => {
     if (!workspace) return
     const response = await request<CompositionResponse>(
@@ -227,6 +300,7 @@
   }
   const summaryValue = (item: ResourceSummaryItem): string =>
     item.kind === 'timestamp' ? relativeTime(item.value) : String(item.value)
+  const formatJson = (value: unknown): string => JSON.stringify(value, null, 2)
 
   const refreshInterval = setInterval(() => {
     summaryClock = Date.now()
@@ -271,7 +345,7 @@
         {#each coreModuleIds as moduleId}
           <section class="catalog-section-home"><header><h2>{moduleTitles[moduleId]}</h2><span>{definitionsFor(moduleId).length} definitions</span></header><div class="catalog-grid">
             {#each definitionsFor(moduleId) as definition (`${definition.ref.type}:${definition.ref.id}`)}
-              <article class="catalog-card"><div>{#if definition.category}<span class="card-category">{definition.category}</span>{/if}<h3>{definition.title}</h3><p>{definition.description ?? definition.ref.id}</p></div><div class="card-actions">{#each definition.capabilityIds as capabilityId}{@const capability = capabilityFor(capabilityId)}{#if capability}<button class:primary={capability.risk !== 'destructive'} class:danger={capability.risk === 'destructive'} disabled={busy} onclick={() => void invokeDefinition(definition, capability)}>{capability.title}</button>{/if}{/each}</div></article>
+              <article class="catalog-card"><div>{#if definition.category}<span class="card-category">{definition.category}</span>{/if}<h3>{definition.title}</h3><p>{definition.description ?? definition.ref.id}</p></div><div class="card-actions">{#each definition.capabilityIds.filter(id => id !== definition.inspectionCapabilityId) as capabilityId}{@const capability = capabilityFor(capabilityId)}{#if capability}<button class:primary={capability.risk !== 'destructive'} class:danger={capability.risk === 'destructive'} disabled={busy} onclick={() => void invokeDefinition(definition, capability)}>{capability.title}</button>{/if}{/each}{#if definition.inspectionCapabilityId}<button disabled={inspectionLoading} onclick={() => void inspect({ kind: 'definition', descriptor: definition })}>Inspect</button>{/if}</div></article>
             {/each}
           </div></section>
         {/each}
@@ -297,16 +371,10 @@
                           </span>
                         {/if}
                       </button>
-                      {#if deleteCapability}
-                        <button
-                          class="resource-delete"
-                          type="button"
-                          aria-label={`${deleteCapability.title}: ${resource.title}`}
-                          title={deleteCapability.title}
-                          disabled={busy}
-                          onclick={() => void invokeResource(resource, deleteCapability)}
-                        >×</button>
-                      {/if}
+                      <span class="resource-tools">
+                        {#if resource.inspectionCapabilityId}<button class="resource-inspect" type="button" aria-label={`Inspect ${resource.title}`} disabled={inspectionLoading} onclick={() => void inspect({ kind: 'resource', descriptor: resource })}>Inspect</button>{/if}
+                        {#if deleteCapability}<button class="resource-delete" type="button" aria-label={`${deleteCapability.title}: ${resource.title}`} title={deleteCapability.title} disabled={busy} onclick={() => void invokeResource(resource, deleteCapability)}>×</button>{/if}
+                      </span>
                     </article>
                   {/each}
                 </div>
@@ -324,6 +392,28 @@
       <details class="settings-section catalog-section"><summary>Discovery catalog ({definitions.length} definitions, {resources.length} resources, {capabilities.length} capabilities)</summary><ul>{#each capabilities as capability}<li><code>{capability.id}</code> — {capability.title}</li>{/each}</ul></details>
       {#each workspace.modules as moduleState (moduleState.moduleId)}{#if moduleState.status === 'failed'}<section class="settings-section module-failure"><h3>{moduleTitles[moduleState.moduleId] ?? moduleState.moduleId} unavailable</h3><p>{moduleState.failure?.message}</p><button disabled={busy} onclick={() => void retryModule(moduleState.moduleId)}>Retry</button></section>{/if}{/each}
       <section class="settings-section danger-settings"><div><h3>Delete Workspace</h3><p>Deletes all World and Agents state.</p></div><button class="danger" disabled={busy} onclick={() => void deleteWorkspace()}>Delete Workspace</button></section>
+    </dialog>
+    <dialog class="inspection-dialog" bind:this={inspectionDialog}>
+      <header>
+        <div><p class="eyebrow">{inspectionSubject?.kind === 'definition' ? 'Reusable definition' : 'Live resource'}</p><h2>{inspectionView?.title ?? inspectionSubject?.descriptor.title ?? 'Inspect'}</h2>{#if inspectionView?.description}<p>{inspectionView.description}</p>{/if}</div>
+        <button class="dialog-close" type="button" aria-label="Close inspection" onclick={() => inspectionDialog?.close()}>×</button>
+      </header>
+      <div class="inspection-toolbar"><span>{inspectionSubject?.descriptor.ref.moduleId} · {inspectionSubject?.descriptor.ref.type}</span><button disabled={inspectionLoading || inspectionView === null} onclick={() => void copyInspection()}>{inspectionCopied ? 'Copied' : 'Copy all JSON'}</button></div>
+      {#if inspectionLoading}<section class="inspection-message">Loading configuration and live state…</section>
+      {:else if inspectionError}<section class="inspection-message error">{inspectionError}</section>
+      {:else if inspectionView && inspectionSubject}
+        <section class="inspection-section">
+          <details open><summary>Catalog metadata</summary><pre>{formatJson(inspectionSubject.descriptor)}</pre></details>
+        </section>
+        {#each inspectionView.sections as section, index (section.id)}
+          <section class="inspection-section">
+            <details open={index < 2}><summary>{section.title}</summary>{#if section.description}<p>{section.description}</p>{/if}<pre>{formatJson(section.data)}</pre></details>
+          </section>
+        {/each}
+        <section class="inspection-section">
+          <details><summary>Available capabilities ({inspectedCapabilities().length})</summary><pre>{formatJson(inspectedCapabilities())}</pre></details>
+        </section>
+      {/if}
     </dialog>
   {/if}
 </main>

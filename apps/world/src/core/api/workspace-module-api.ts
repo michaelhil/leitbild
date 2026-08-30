@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import {
+  inspectionViewSchema,
   moduleCapabilityCollectionSchema,
   moduleCapabilityInvocationSchema,
   moduleDefinitionCollectionSchema,
@@ -81,6 +82,7 @@ const definitionsFor = async (registry: SimulationRunRegistry) => {
       ...(scenario.description === undefined ? {} : { description: scenario.description }),
       currentRevisionId: scenario.currentRevisionId,
       capabilityIds: worldCapabilities.idsForDefinitionType(SCENARIO_DEFINITION_TYPE),
+      inspectionCapabilityId: 'world.scenario.inspect',
     })),
   }).definitions
 }
@@ -121,6 +123,7 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
         links: [],
         uiPath: `/workspaces/${encodeURIComponent(registry.workspaceId)}/world/runs/${encodeURIComponent(simulationRun.id)}`,
         capabilityIds: worldCapabilities.idsForResourceType('world.simulation-run'),
+        inspectionCapabilityId: 'world.simulation-run.inspect',
         summary: [
           ...(simulationRun.createdAt === null ? [] : [{
             key: 'started-at',
@@ -159,7 +162,108 @@ const requireSimulationRunResource = (
   return simulationRunIdSchema.parse(invocation.resource.id)
 }
 
+const countBy = (values: ReadonlyArray<string>): Readonly<Record<string, number>> =>
+  Object.fromEntries([...new Set(values)].sort().map(value => [value, values.filter(candidate => candidate === value).length]))
+
+const serializableInspection = (value: unknown) =>
+  inspectionViewSchema.parse(JSON.parse(JSON.stringify(value)) as unknown)
+
+const scenarioSections = (definition: {
+  readonly objectives?: ReadonlyArray<string>
+  readonly packs: ReadonlyArray<string>
+  readonly runtimeOverrides: Readonly<Record<string, unknown>>
+  readonly world: unknown
+  readonly initialObjects: ReadonlyArray<{
+    readonly id: string
+    readonly kind: string
+    readonly packId: string
+    readonly label: string
+    readonly lifecycle: string
+    readonly operational: { readonly status: string }
+  }>
+  readonly initialContexts: ReadonlyArray<unknown>
+  readonly processSystems: ReadonlyArray<unknown>
+  readonly runtimeConfigs: Readonly<Record<string, unknown>>
+  readonly surface: unknown
+  readonly timeline?: unknown
+}) => [{
+  id: 'scenario-setup',
+  title: 'Scenario setup',
+  data: {
+    objectives: definition.objectives ?? [],
+    world: definition.world,
+    surface: definition.surface,
+  },
+}, {
+  id: 'packs-and-runtimes',
+  title: 'Packs and runtime configuration',
+  data: {
+    packs: definition.packs,
+    runtimeOverrides: definition.runtimeOverrides,
+    runtimeConfigs: definition.runtimeConfigs,
+  },
+}, {
+  id: 'assets',
+  title: 'Assets and process systems',
+  description: 'Initial operational assets, their contexts, and configured process systems.',
+  data: {
+    summary: {
+      operationalObjects: definition.initialObjects.length,
+      processSystems: definition.processSystems.length,
+      byPack: countBy(definition.initialObjects.map(object => object.packId)),
+      byKind: countBy(definition.initialObjects.map(object => object.kind)),
+    },
+    operationalObjects: definition.initialObjects,
+    objectContexts: definition.initialContexts,
+    processSystems: definition.processSystems,
+  },
+}, {
+  id: 'timeline',
+  title: 'Scenario timeline',
+  description: 'Configured future cues are shown here for design inspection; agent-safe Simulation Context remains separate.',
+  data: definition.timeline ?? { cues: [] },
+}]
+
 const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, Response>(WORLD_MODULE_ID, [
+  {
+    descriptor: {
+      id: 'world.scenario.inspect',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'definition', definitionType: SCENARIO_DEFINITION_TYPE },
+      title: 'Inspect Scenario',
+      description: 'Shows the exact Scenario Revision configuration, Packs, initial assets, process systems, and timeline.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: z.toJSONSchema(emptyInputSchema),
+      outputSchema: z.toJSONSchema(inspectionViewSchema),
+    },
+    invoke: async (registry, invocation) => {
+      emptyInputSchema.parse(invocation.input)
+      const scenarioId = requireScenarioDefinitionId(invocation)
+      const revision = await registry.currentScenario(scenarioId)
+      if (!revision || String(revision.id) !== String(invocation.definition!.revisionId)) {
+        return apiError(404, 'scenario_revision_not_found', 'Scenario Revision not found')
+      }
+      return json({ result: serializableInspection({
+        target: { kind: 'definition', definition: invocation.definition },
+        title: revision.definition.title,
+        ...(revision.definition.description === undefined ? {} : { description: revision.definition.description }),
+        observedAt: new Date().toISOString(),
+        sections: [{
+          id: 'identity',
+          title: 'Identity and provenance',
+          data: {
+            scenarioId: revision.scenarioId,
+            revisionId: revision.id,
+            digest: revision.digest,
+            createdAt: revision.createdAt,
+            schemaVersion: revision.definition.schemaVersion,
+          },
+        }, ...scenarioSections(revision.definition)],
+      }) })
+    },
+  },
   {
     descriptor: {
       id: 'world.scenario.start',
@@ -211,6 +315,85 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       return await registry.deleteScenario(scenarioId, scenarioRevisionIdSchema.parse(invocation.definition!.revisionId))
         ? json({ result: { deleted: true, definitionId: scenarioId } })
         : apiError(404, 'scenario_not_found', 'Scenario not found')
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.inspect',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Inspect Simulation Run',
+      description: 'Shows pinned Scenario configuration, current runtime state, operational asset summaries, and available operations.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: z.toJSONSchema(emptyInputSchema),
+      outputSchema: z.toJSONSchema(inspectionViewSchema),
+    },
+    invoke: async (registry, invocation) => {
+      emptyInputSchema.parse(invocation.input)
+      const simulationRunId = requireSimulationRunResource(invocation)
+      const [runtime, revision, knownRuns] = await Promise.all([
+        registry.load(simulationRunId),
+        registry.scenarioRevisionForRun(simulationRunId),
+        registry.listKnown(),
+      ])
+      if (!revision) return apiError(409, 'scenario_revision_unavailable', 'Simulation Run has no readable Scenario Revision')
+      const summary = knownRuns.find(candidate => candidate.id === simulationRunId)
+      if (!summary) return apiError(404, 'simulation_run_not_found', 'Simulation Run not found')
+      const snapshot = runtime.snapshot()
+      const leaseSummary = registry.leaseSummary(simulationRunId)
+      const assetSummaries = snapshot.objects.map(object => ({
+        id: object.id,
+        label: object.label,
+        kind: object.kind,
+        packId: object.packId,
+        lifecycle: object.lifecycle,
+        revision: object.revision,
+        status: object.operational.status,
+        ...(object.operational.priority === undefined ? {} : { priority: object.operational.priority }),
+        ...(object.operational.intent === undefined ? {} : { intent: object.operational.intent }),
+        alerts: object.alerts.length,
+        updatedAt: object.timestamps.updatedAt,
+      }))
+      return json({ result: serializableInspection({
+        target: { kind: 'resource', resource: invocation.resource },
+        title: revision.definition.title,
+        ...(revision.definition.description === undefined ? {} : { description: revision.definition.description }),
+        observedAt: new Date().toISOString(),
+        sections: [{
+          id: 'identity',
+          title: 'Run identity and provenance',
+          data: {
+            ...summary,
+            scenarioDigest: revision.digest,
+            scenarioRevisionCreatedAt: revision.createdAt,
+            connections: leaseSummary,
+          },
+        }, {
+          id: 'live-state',
+          title: 'Current simulation state',
+          data: {
+            sequence: snapshot.seq,
+            clock: snapshot.clock ?? null,
+            scenario: snapshot.scenario ?? null,
+          },
+        }, {
+          id: 'live-assets',
+          title: 'Current asset summaries',
+          description: 'Compact live summaries; detailed object state remains available through Read Operational Object.',
+          data: {
+            total: assetSummaries.length,
+            byPack: countBy(assetSummaries.map(object => String(object.packId))),
+            byKind: countBy(assetSummaries.map(object => String(object.kind))),
+            objects: assetSummaries,
+          },
+        }, {
+          id: 'available-operations',
+          title: 'Simulation operations',
+          data: runtime.capabilities(),
+        }, ...scenarioSections(revision.definition)],
+      }) })
     },
   },
   {

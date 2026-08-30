@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import {
+  inspectionViewSchema,
   moduleCapabilityCollectionSchema,
   moduleCapabilityInvocationSchema,
   moduleDefinitionCollectionSchema,
@@ -94,6 +95,7 @@ const resourcesFor = async (
         links: [],
         uiPath: `/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(profile.id)}`,
         capabilityIds: agentsCapabilities.idsForResourceType('agents.room'),
+        inspectionCapabilityId: 'agents.room.inspect',
         summary: [
           {
             key: 'created-at',
@@ -146,6 +148,7 @@ const definitionsFor = async (workspaceId: WorkspaceId) => {
     ...(revision.definition.category === undefined ? {} : { category: revision.definition.category }),
     currentRevisionId: revision.id,
     capabilityIds: agentsCapabilities.idsForDefinitionType(ROOM_DEFINITION_TYPE),
+    inspectionCapabilityId: 'agents.room-definition.inspect',
   })) }).definitions
 }
 
@@ -169,6 +172,46 @@ const requireResourceId = (
 }
 
 type AgentsWorkspaceRuntime = Awaited<ReturnType<WorkspaceRuntimeRegistry['getOrLoad']>>
+
+const serializableInspection = (value: unknown) =>
+  inspectionViewSchema.parse(JSON.parse(JSON.stringify(value)) as unknown)
+
+const roomDefinitionSections = (definition: {
+  readonly requiredTools: ReadonlyArray<string>
+  readonly room: {
+    readonly name: string
+    readonly prompt?: string
+    readonly deliveryMode: string
+    readonly packs: ReadonlyArray<string>
+    readonly agents: ReadonlyArray<unknown>
+  }
+  readonly deck: { readonly entries: ReadonlyArray<unknown> }
+}) => [{
+  id: 'room-configuration',
+  title: 'Room configuration',
+  data: {
+    name: definition.room.name,
+    prompt: definition.room.prompt ?? null,
+    deliveryMode: definition.room.deliveryMode,
+    packs: definition.room.packs,
+    requiredTools: definition.requiredTools,
+  },
+}, {
+  id: 'configured-agents',
+  title: 'Configured agents',
+  description: 'Agent personas, tools, semantic Capability grants, and generation settings declared by this definition.',
+  data: {
+    total: definition.room.agents.length,
+    agents: definition.room.agents,
+  },
+}, {
+  id: 'prompt-deck',
+  title: 'Prompt deck',
+  data: {
+    total: definition.deck.entries.length,
+    entries: definition.deck.entries,
+  },
+}]
 
 const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime, Response>(AGENTS_MODULE_ID, [
   {
@@ -200,6 +243,86 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
           id: room.value.profile.id,
         }],
       }, 201)
+    },
+  },
+  {
+    descriptor: {
+      id: 'agents.room.inspect',
+      moduleId: AGENTS_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'agents.room' },
+      title: 'Inspect Room',
+      description: 'Shows Room configuration and state, member profiles, source definition, and recent activity summaries.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: z.toJSONSchema(emptyInputSchema),
+      outputSchema: z.toJSONSchema(inspectionViewSchema),
+    },
+    invoke: async (runtime, invocation) => {
+      emptyInputSchema.parse(invocation.input)
+      const room = runtime.rooms.getRoom(requireResourceId(invocation, 'agents.room'))
+      if (!room) return apiError(404, 'room_not_found', 'Room not found')
+      const state = room.getRoomState()
+      const members = room.getParticipantIds().map(id => {
+        const agent = runtime.team.getAgent(id)
+        if (!agent) return { id, unavailable: true }
+        const ai = asAIAgent(agent)
+        return {
+          id: agent.id,
+          name: agent.name,
+          kind: agent.kind,
+          ...(ai === undefined ? {} : { configuration: ai.getConfig() }),
+        }
+      })
+      const recentMessages = room.getRecent(20)
+      const sourceRevision = room.profile.sourceDefinition === undefined
+        ? undefined
+        : await createRoomDefinitionLibrary(invocation.workspaceId).getRevision(room.profile.sourceDefinition.revisionId)
+      return json({ result: serializableInspection({
+        target: { kind: 'resource', resource: invocation.resource },
+        title: room.profile.name,
+        observedAt: new Date().toISOString(),
+        sections: [{
+          id: 'identity',
+          title: 'Room identity and provenance',
+          data: room.profile,
+        }, {
+          id: 'live-state',
+          title: 'Current Room state',
+          data: state,
+        }, {
+          id: 'members',
+          title: 'Members and Agent configuration',
+          data: {
+            total: members.length,
+            aiAgents: members.filter(member => 'kind' in member && member.kind === 'ai').length,
+            members,
+          },
+        }, {
+          id: 'recent-activity',
+          title: 'Recent activity',
+          description: 'The latest 20 messages are summarized here; the Room remains the canonical conversation view.',
+          data: {
+            messageCount: room.getMessageCount(),
+            messages: recentMessages.map(message => ({
+              id: message.id,
+              senderId: message.senderId,
+              ...(message.senderName === undefined ? {} : { senderName: message.senderName }),
+              type: message.type,
+              timestamp: new Date(message.timestamp).toISOString(),
+              contentPreview: message.content.length > 500 ? `${message.content.slice(0, 500)}…` : message.content,
+            })),
+          },
+        }, ...(sourceRevision === undefined ? [] : [{
+          id: 'source-definition',
+          title: 'Pinned Room Definition',
+          data: {
+            revisionId: sourceRevision.id,
+            definitionId: sourceRevision.definitionId,
+            definition: sourceRevision.definition,
+          },
+        }])],
+      }) })
     },
   },
   {
@@ -268,6 +391,43 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
         type: 'chat',
       })
       return json({ result: message }, 201)
+    },
+  },
+  {
+    descriptor: {
+      id: 'agents.room-definition.inspect',
+      moduleId: AGENTS_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'definition', definitionType: ROOM_DEFINITION_TYPE },
+      title: 'Inspect Room Definition',
+      description: 'Shows the exact Room Definition configuration, agent personas, Packs, tools, and Prompt Deck.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: z.toJSONSchema(emptyInputSchema),
+      outputSchema: z.toJSONSchema(inspectionViewSchema),
+    },
+    invoke: async (_runtime, invocation) => {
+      emptyInputSchema.parse(invocation.input)
+      const definitionId = requireRoomDefinitionId(invocation)
+      const revision = await createRoomDefinitionLibrary(invocation.workspaceId).getRevision(invocation.definition!.revisionId)
+      if (!revision || revision.definitionId !== definitionId) {
+        return apiError(404, 'room_definition_revision_not_found', 'Room Definition Revision not found')
+      }
+      return json({ result: serializableInspection({
+        target: { kind: 'definition', definition: invocation.definition },
+        title: revision.definition.title,
+        description: revision.definition.blurb,
+        observedAt: new Date().toISOString(),
+        sections: [{
+          id: 'identity',
+          title: 'Identity and provenance',
+          data: {
+            definitionId: revision.definitionId,
+            revisionId: revision.id,
+            category: revision.definition.category ?? null,
+          },
+        }, ...roomDefinitionSections(revision.definition)],
+      }) })
     },
   },
   {

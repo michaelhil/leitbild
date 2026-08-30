@@ -36,6 +36,10 @@ _Avoid_: copying the entity into the Host or using an untyped URL as identity
 A small, current set of typed facts published with a Resource for discovery and overview surfaces, without replacing the Module's detailed state or read Capabilities.
 _Avoid_: copied domain state, arbitrary JSON metadata, Host-owned interpretation of Module internals
 
+**Inspection View**:
+An on-demand, human-readable set of structured sections published by a Module for one exact Definition Revision or Resource. It exposes configuration, summaries, state, and provenance without moving ownership of that information into the Leitbild Host.
+_Avoid_: bloated discovery catalogs, a raw persistence dump, Host-specific knowledge of Module internals
+
 **Viewer Connection**:
 One live client connection observing a Workspace or Resource. It is an ephemeral presence signal and is not necessarily one distinct person.
 _Avoid_: User, participant, member, authenticated identity

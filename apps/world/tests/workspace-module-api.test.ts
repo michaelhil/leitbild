@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import {
   accessContextSchema,
   capabilityIdSchema,
+  inspectionViewSchema,
   moduleCapabilityCollectionSchema,
   moduleDefinitionCollectionSchema,
   moduleResourceCollectionSchema,
@@ -95,6 +96,7 @@ describe('World Module API', () => {
     const definitions = await call(registry, `/internal/workspaces/${workspaceId}/definitions`)
     const parsedDefinitions = moduleDefinitionCollectionSchema.parse(definitions.body)
     const scenario = parsedDefinitions.definitions[0]!
+    expect(String(scenario.inspectionCapabilityId)).toBe('world.scenario.inspect')
 
     const access = accessContextSchema.parse({
       workspaceId,
@@ -102,6 +104,26 @@ describe('World Module API', () => {
       actor: { kind: 'ai', id: 'operator' },
     })
     const createCapabilityId = capabilityIdSchema.parse('world.scenario.start')
+    const inspectScenarioCapabilityId = capabilityIdSchema.parse('world.scenario.inspect')
+    const scenarioInspection = await call<{ result: unknown }>(
+      registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${inspectScenarioCapabilityId}/invoke`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          capabilityId: inspectScenarioCapabilityId,
+          definition: { ...scenario.ref, revisionId: scenario.currentRevisionId },
+          input: {},
+          access,
+        }),
+      },
+    )
+    const parsedScenarioInspection = inspectionViewSchema.parse(scenarioInspection.body?.result)
+    expect(parsedScenarioInspection.sections.map(section => section.id)).toContain('assets')
+    expect(parsedScenarioInspection.sections.map(section => section.id)).toContain('timeline')
+
     const created = await call<{ result: { id: string }; createdResources: Array<{ id: string }> }>(
       registry,
       `/internal/workspaces/${workspaceId}/capabilities/${createCapabilityId}/invoke`,
@@ -129,6 +151,27 @@ describe('World Module API', () => {
     expect(run?.summary.find(item => item.key === 'started-at')?.kind).toBe('timestamp')
     expect(run?.summary.find(item => item.key === 'viewer-count')).toMatchObject({ kind: 'count', value: 0 })
     expect(run?.summary.find(item => item.key === 'status')).toMatchObject({ kind: 'status', value: 'Running' })
+    expect(String(run?.inspectionCapabilityId)).toBe('world.simulation-run.inspect')
+
+    const inspectRunCapabilityId = capabilityIdSchema.parse('world.simulation-run.inspect')
+    const runInspection = await call<{ result: unknown }>(
+      registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${inspectRunCapabilityId}/invoke`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          capabilityId: inspectRunCapabilityId,
+          resource: run!.ref,
+          input: {},
+          access,
+        }),
+      },
+    )
+    const parsedRunInspection = inspectionViewSchema.parse(runInspection.body?.result)
+    expect(parsedRunInspection.sections.map(section => section.id)).toContain('live-assets')
+    expect(parsedRunInspection.sections.map(section => section.id)).toContain('available-operations')
 
     const contextCapabilityId = capabilityIdSchema.parse('world.simulation-run.context')
     const context = await call<{ result: { briefing: { title: string }; operationalObjects: unknown[]; affordances: unknown } }>(

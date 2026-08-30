@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  inspectionViewSchema,
   moduleCapabilityCollectionSchema,
   moduleDefinitionCollectionSchema,
   moduleResourceCollectionSchema,
@@ -95,12 +96,31 @@ describe('Agents Workspace Module API', () => {
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room.delete')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.agent.create')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room-definition.start')
+    expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room-definition.inspect')
+    expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room.inspect')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.prompt-deck.run-entry')
 
     const definitions = moduleDefinitionCollectionSchema.parse(
       await (await request('GET', `/internal/workspaces/${workspaceId}/definitions`)).json(),
     )
     const roomDefinition = definitions.definitions.find(definition => definition.ref.id === 'control-room-chaos')!
+    expect(String(roomDefinition.inspectionCapabilityId)).toBe('agents.room-definition.inspect')
+    const definitionInspectionResponse = await request(
+      'POST',
+      `/internal/workspaces/${workspaceId}/capabilities/agents.room-definition.inspect/invoke`,
+      invokeBody(workspaceId, 'agents.room-definition.inspect', {}, {
+        definition: {
+          type: String(roomDefinition.ref.type),
+          id: roomDefinition.ref.id,
+          revisionId: roomDefinition.currentRevisionId,
+        },
+      }),
+    )
+    const definitionInspection = inspectionViewSchema.parse(
+      (await definitionInspectionResponse.json() as { result: unknown }).result,
+    )
+    expect(definitionInspection.sections.map(section => section.id)).toContain('configured-agents')
+    expect(definitionInspection.sections.map(section => section.id)).toContain('prompt-deck')
     const started = await request(
       'POST',
       `/internal/workspaces/${workspaceId}/capabilities/agents.room-definition.start/invoke`,
@@ -147,6 +167,20 @@ describe('Agents Workspace Module API', () => {
     expect(startedRoom?.summary.find(item => item.key === 'created-at')?.kind).toBe('timestamp')
     expect(startedRoom?.summary.find(item => item.key === 'message-count')?.kind).toBe('count')
     expect(startedRoom?.summary.find(item => item.key === 'status')?.kind).toBe('status')
+    expect(String(startedRoom?.inspectionCapabilityId)).toBe('agents.room.inspect')
+
+    const roomInspectionResponse = await request(
+      'POST',
+      `/internal/workspaces/${workspaceId}/capabilities/agents.room.inspect/invoke`,
+      invokeBody(workspaceId, 'agents.room.inspect', {}, {
+        resource: { type: 'agents.room', id: startedRoomId },
+      }),
+    )
+    const roomInspection = inspectionViewSchema.parse(
+      (await roomInspectionResponse.json() as { result: unknown }).result,
+    )
+    expect(roomInspection.sections.map(section => section.id)).toContain('members')
+    expect(roomInspection.sections.map(section => section.id)).toContain('source-definition')
 
     expect((await request(
       'POST',
