@@ -18,6 +18,11 @@
         Route = module.default
         return
       }
+      if (route.mode === 'scenario-builder') {
+        const module = await import('./routes/ScenarioBuilderRoute.svelte')
+        Route = module.default
+        return
+      }
       const module = await import('./routes/ControlSurfaceRoute.svelte')
       Route = module.default
     } catch (err) {
@@ -30,7 +35,9 @@
   })
 </script>
 
-<a class="workspace-back" href="/">Workspaces</a>
+{#if !location.pathname.endsWith('/scenarios/new')}
+  <a class="workspace-back" href="/">Workspaces</a>
+{/if}
 
 {#if Route}
   <Route />

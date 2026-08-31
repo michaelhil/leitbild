@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { workspaceIdSchema } from '@leitbild/contracts'
 import { simulationRunIdSchema } from '../src/core/model/index.ts'
 import {
+  pathForScenarioBuilder,
   pathForSimulationRun,
   pathForWorkspace,
   parseControlSurfaceRoute,
@@ -31,6 +32,12 @@ describe('Simulation Run route model', () => {
       canonicalPath: `/workspaces/${workspaceId}/world`,
     })
     expect(pathForWorkspace(workspaceId)).toBe(`/workspaces/${workspaceId}/world`)
+    expect(pathForScenarioBuilder(workspaceId)).toBe(`/workspaces/${workspaceId}/world/scenarios/new`)
+    expect(parseControlSurfaceRoute(`/workspaces/${workspaceId}/world/scenarios/new`)).toEqual({
+      mode: 'scenario-builder',
+      workspaceId,
+      canonicalPath: `/workspaces/${workspaceId}/world/scenarios/new`,
+    })
     expect(() => parseControlSurfaceRoute(`/workspaces/${workspaceId}/world/scenarios/halden/runs/new`)).toThrow()
   })
 

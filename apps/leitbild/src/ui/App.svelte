@@ -62,6 +62,7 @@
   let resources = $state<ReadonlyArray<ModuleResourceDescriptor>>([])
   let capabilities = $state<ReadonlyArray<ModuleCapabilityDescriptor>>([])
   let summaryClock = $state(Date.now())
+  let scenarioBuilderOpen = $state(false)
   const workspaceTitle = $derived(workspace?.name ?? workspace?.id ?? 'Workspace')
   const showingComposer = $derived(selectedWorldRunId !== null || selectedAgentsRoomId !== null)
   const continuableResources = $derived(resources.filter(resource => resource.uiPath !== undefined))
@@ -91,6 +92,12 @@
       `/api/workspaces/${encodeURIComponent(workspaceId)}/resources`,
     )
     resources = response.resources
+  }
+
+  const handleWindowMessage = (event: MessageEvent): void => {
+    if (event.origin !== location.origin || !workspace) return
+    const data = event.data as { readonly type?: unknown }
+    if (data.type === 'leitbild:scenario-saved') void loadWorkspaceCatalog(workspace.id)
   }
 
   const load = async (): Promise<void> => {
@@ -312,6 +319,8 @@
   void load()
 </script>
 
+<svelte:window onmessage={handleWindowMessage} />
+
 {#if currentPage.kind === 'workspace' && workspace}
   <header class="workspace-bar">
     <div class="workspace-identity"><a class="brand" href={`/workspaces/${workspace.id}`}>Leitbild</a><span aria-hidden="true">/</span><span class="workspace-name" title={workspaceTitle}>{workspaceTitle}</span></div>
@@ -340,6 +349,14 @@
       <section class="workspace-home">
         <header class="catalog-hero"><div><p class="eyebrow">{workspaceTitle}</p><h1>What do you want to open?</h1></div><p>Start a reusable definition or continue an existing resource.</p></header>
         {#if error}<p class="notice error">{error}</p>{/if}
+        <section class="catalog-section-home scenario-builder-home">
+          <header><h2>Create</h2><span>World scenario</span></header>
+          {#if scenarioBuilderOpen}
+            <div class="scenario-builder-frame"><button class="builder-close" type="button" onclick={() => { scenarioBuilderOpen = false }}>Close editor</button><iframe title="World Scenario Builder" src={`/workspaces/${encodeURIComponent(workspace.id)}/world/scenarios/new?embed=1`}></iframe></div>
+          {:else}
+            <article class="scenario-builder-launch"><div><h3>Build a scenario</h3><p>Pick World features, place assets on the map, and save the result as a reusable scenario.</p></div><button class="primary" onclick={() => { scenarioBuilderOpen = true }}>Open editor</button></article>
+          {/if}
+        </section>
         {#if compositions.length > 0}<section class="catalog-section-home"><header><h2>Combined</h2><span>World + Agents</span></header><div class="catalog-grid">{#each compositions as composition (composition.id)}<article class="catalog-card"><div><h3>{composition.title}</h3><p>{composition.description}</p></div><button class="primary" disabled={busy} onclick={() => void startComposition(composition.id)}>Start</button></article>{/each}</div></section>{/if}
         {#each coreModuleIds as moduleId}
           <section class="catalog-section-home"><header><h2>{moduleTitles[moduleId]}</h2><span>{definitionsFor(moduleId).length} definitions</span></header><div class="catalog-grid">
