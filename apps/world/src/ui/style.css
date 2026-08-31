@@ -72,7 +72,7 @@ body {
 .builder-outline .outline-item { padding-left: 22px; }
 .outline-empty { padding: 12px 8px; color: var(--muted); font-size: 12px; }
 .builder-map-panel { position: relative; min-width: 0; background: #dfe5e8; }
-.scenario-builder-map { position: absolute; inset: 0; }
+.builder-map-panel > .scenario-builder-map.maplibregl-map { position: absolute; inset: 0; }
 .scenario-builder-map.placing .maplibregl-canvas { cursor: crosshair; }
 .placement-banner { position: absolute; top: 10px; left: 50%; z-index: 5; padding: 7px 9px 7px 12px; display: flex; align-items: center; gap: 8px; border-radius: 999px; color: white; background: rgba(23,32,42,.92); transform: translateX(-50%); font-size: 12px; white-space: nowrap; }
 .placement-banner button { min-height: 26px; padding: 2px 8px; color: white; border-color: rgba(255,255,255,.35); background: transparent; }
