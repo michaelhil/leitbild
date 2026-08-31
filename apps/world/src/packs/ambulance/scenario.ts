@@ -10,7 +10,7 @@ import {
   type ObjectId,
   type OperationalObject,
 } from '../../core/model/index.ts'
-import type { PackScenarioObjectSpec, PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
+import type { PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
 import type { AmbulancePackData, IncidentPackData } from './model.ts'
 import {
   createScenarioAmbulanceObject,
@@ -198,17 +198,17 @@ const withVictimCount = (
 }
 
 export const ambulanceScenarioSupport: PackScenarioSupport = {
-  expandObject: async (rawSpec, context): Promise<OperationalObject> => {
+  expandItem: async (rawSpec, context) => {
     if (rawSpec.type === 'hospital') {
       const spec = hospitalSpecSchema.parse(rawSpec)
-      return createScenarioHospitalObject({
+      return { objects: [createScenarioHospitalObject({
         id: spec.id,
         label: spec.label,
         point: pointFromLonLat(spec.position),
         traumaBedsTotal: spec.traumaBeds.total,
         traumaBedsAvailable: spec.traumaBeds.available,
         at: context.at,
-      })
+      })] }
     }
     if (rawSpec.type === 'ambulance') {
       const spec = ambulanceSpecSchema.parse(rawSpec)
@@ -221,7 +221,7 @@ export const ambulanceScenarioSupport: PackScenarioSupport = {
             from: point,
             to: pointForAmbulanceTarget(target),
           })
-      return withAmbulanceState(createScenarioAmbulanceObject({
+      return { objects: [withAmbulanceState(createScenarioAmbulanceObject({
         id: spec.id,
         label: spec.label,
         point,
@@ -231,7 +231,7 @@ export const ambulanceScenarioSupport: PackScenarioSupport = {
         planned: route.geometry,
         etaSeconds: route.durationSeconds,
         source: 'simulator',
-      })
+      })] }
     }
     if (rawSpec.type === 'incident') {
       const spec = incidentSpecSchema.parse(rawSpec)
@@ -243,7 +243,7 @@ export const ambulanceScenarioSupport: PackScenarioSupport = {
         victimCount: incidentVictimCount(spec.victims, context.at) ?? 'unknown',
         at: context.at,
       })
-      return withIncidentStatus(object, spec.status, context.at)
+      return { objects: [withIncidentStatus(object, spec.status, context.at)] }
     }
     throw new Error(`unsupported ambulance scenario object type: ${rawSpec.type}`)
   },

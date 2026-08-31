@@ -20,7 +20,7 @@ import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/s
 import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { createTestScenarioCatalog } from './helpers.ts'
+import { createTestScenarioCatalog, testScenarioAuthoring } from './helpers.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 
 const createRegistry = (dataDir: string, workspaceId: WorkspaceId = newWorkspaceId()) =>
@@ -28,6 +28,7 @@ const createRegistry = (dataDir: string, workspaceId: WorkspaceId = newWorkspace
     dataDir,
     workspaceId,
     scenarioCatalog: createTestScenarioCatalog(),
+    ...testScenarioAuthoring(),
     runtimeAdapters: [
       createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
       createLocalTrafficPackRuntimeAdapter(),

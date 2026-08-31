@@ -89,16 +89,20 @@ A reusable Workspace-owned identity whose simulation setup evolves through immut
 _Avoid_: Simulation Run, built-in Scenario Config, or mutating a Revision in place
 
 **Scenario Revision**:
-An immutable, validated startup definition containing world settings, selected Packs, runtime configuration, initial objects, contexts, surfaces, and an optional Timeline.
+An immutable, validated revision retaining both its editable Scenario Draft and exact compiled startup definition.
 _Avoid_: mutable Scenario Definition, resolving a restored Run from the current catalog
 
-**Scenario Fragment**:
-Reusable World-owned authoring material included with explicit parameters and a local namespace when compiling a Scenario Revision.
-_Avoid_: Scenario inheritance, runtime subtree, cross-Module fragment
+**Scenario Draft**:
+The editable source of a Scenario containing selected Packs, compact Pack-owned Items, process systems, initial presentation, and an optional Timeline.
+_Avoid_: Scenario Config, compiled startup definition, mutable Simulation Run
 
-**Scenario Config**:
-Compact deployment-owned JSON authoring format for a built-in Scenario template. Pack scenario codecs expand it into a candidate Scenario Revision before it enters a Workspace.
-_Avoid_: treating config specs as Run truth or putting arbitrary executable code in scenario files
+**Scenario Feature**:
+A World Pack selected in a Scenario Draft and presented to authors as a composable feature.
+_Avoid_: Capability, universal plugin
+
+**Scenario Item**:
+A compact Pack-owned authored element expanded by its Pack Scenario Codec into validated runtime startup state.
+_Avoid_: assuming every Item maps one-to-one to an Operational Object
 
 **Pack Scenario Codec**:
 Pack-owned expansion surface that converts compact scenario object specs and scenario operations into validated operational objects.

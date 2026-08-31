@@ -6,7 +6,7 @@ import { newWorkspaceId } from '@leitbild/contracts'
 import { createWorldModuleState } from './module-state.ts'
 import { worldWorkspacePaths } from './paths.ts'
 import { createWorldWorkspaceRuntimeRegistry, type WorldWorkspaceRuntimeRegistry } from './runtime-registry.ts'
-import { createTestPackRuntimeAdapters, createTestScenarioCatalog } from '../../../tests/helpers.ts'
+import { createTestPackRuntimeAdapters, createTestScenarioCatalog, testScenarioAuthoring } from '../../../tests/helpers.ts'
 
 const temporaryDirectories: string[] = []
 const registries: WorldWorkspaceRuntimeRegistry[] = []
@@ -23,6 +23,7 @@ const createRegistry = async () => {
     dataDir,
     moduleState: createWorldModuleState({ dataDir }),
     scenarioCatalog: createTestScenarioCatalog(),
+    ...testScenarioAuthoring(),
     runtimeAdapters: createTestPackRuntimeAdapters(),
   })
   registries.push(registry)

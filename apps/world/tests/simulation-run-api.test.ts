@@ -23,7 +23,7 @@ import type { ProcedureSourceLoadStatus, ProcedureSourceService } from '../src/c
 import { parseProcedureMarkdown } from '../src/core/procedures/procmd.ts'
 import { setDestinationCommandKind } from '../src/packs/ambulance/commands.ts'
 import { assetArrivedAtTargetSignalType } from '../src/packs/ambulance/sim/interactions.ts'
-import { createTestPackRuntimeAdapters, createTestScenarioCatalog, testPacks } from './helpers.ts'
+import { createTestPackRuntimeAdapters, createTestScenarioCatalog, testPacks, testScenarioAuthoring } from './helpers.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 
 interface ApiResponse<T> {
@@ -125,6 +125,7 @@ const createTestRegistry = async (config: {
     dataDir,
     workspaceId: newWorkspaceId(),
     scenarioCatalog: createTestScenarioCatalog(),
+    ...testScenarioAuthoring(),
     runtimeAdapters: createTestPackRuntimeAdapters(),
     interactionHandlers: testPacks.flatMap(pack => pack.interactions?.handlers ?? []),
     ...(config.procedureSourceService === undefined

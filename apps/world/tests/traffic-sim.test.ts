@@ -112,7 +112,7 @@ describe('local traffic runtime', () => {
   })
 
   test('scenario traffic area specs are closed into valid GeoJSON polygons', async () => {
-    const object = await trafficScenarioSupport.expandObject({
+    const contribution = await trafficScenarioSupport.expandItem({
       pack: 'traffic',
       type: 'traffic_condition',
       id: 'traffic:test-open-polygon',
@@ -134,6 +134,7 @@ describe('local traffic runtime', () => {
       routing: createDirectRoutingAdapter(),
       runtimeConfigs: {},
     })
+    const object = contribution.objects[0]!
     const ring = object.spatial.geometry?.type === 'Polygon' ? object.spatial.geometry.coordinates[0] : undefined
 
     expect(ring?.at(-1)).toEqual(ring?.[0])

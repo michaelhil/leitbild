@@ -7,7 +7,7 @@ import {
   type OperationalObject,
   type PackId,
 } from '../../core/model/index.ts'
-import type { PackScenarioObjectSpec, PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
+import type { PackScenarioItemSpec, PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
 import {
   electricGridPackDataSchema,
   gridBranchKindSchema,
@@ -318,7 +318,7 @@ const dataForSpec = (spec: z.infer<typeof gridObjectSpecSchema>, at: IsoTimestam
   }
 }
 
-const expandGridObject = (rawSpec: PackScenarioObjectSpec, at: IsoTimestamp): OperationalObject => {
+const expandGridObject = (rawSpec: PackScenarioItemSpec, at: IsoTimestamp): OperationalObject => {
   const spec = gridObjectSpecSchema.parse(rawSpec)
   const data = electricGridPackDataSchema.parse(dataForSpec(spec, at))
   return baseObject({
@@ -331,18 +331,12 @@ const expandGridObject = (rawSpec: PackScenarioObjectSpec, at: IsoTimestamp): Op
 }
 
 export const electricGridScenarioSupport: PackScenarioSupport = {
-  expandObject: (rawSpec: PackScenarioObjectSpec, context): OperationalObject => {
-    if (rawSpec.type === 'regional_grid') {
-      throw new Error('electric-grid regional_grid expands to multiple objects and must be expanded through scenario config')
-    }
-    return expandGridObject(rawSpec, context.at)
-  },
-  expandObjects: (rawSpec: PackScenarioObjectSpec, context): ReadonlyArray<OperationalObject> => {
+  expandItem: (rawSpec: PackScenarioItemSpec, context) => {
     if (rawSpec.type === 'regional_grid') {
       regionalGridSpecSchema.parse(rawSpec)
-      return norwayGridArenaObjectSpecs().map(objectSpec => expandGridObject(objectSpec, context.at))
+      return { objects: norwayGridArenaObjectSpecs().map(objectSpec => expandGridObject(objectSpec, context.at)) }
     }
-    return [expandGridObject(rawSpec, context.at)]
+    return { objects: [expandGridObject(rawSpec, context.at)] }
   },
   applyOperation: (rawOperation: PackScenarioOperationSpec): OperationalObject => {
     throw new Error(`electric-grid scenario operation is not supported yet: ${rawOperation.type}`)

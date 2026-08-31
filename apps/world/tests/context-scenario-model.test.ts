@@ -138,7 +138,6 @@ describe('object context, scenario, and mission model', () => {
       runtimeOverrides: {},
       world: {
         startsAt: nowIso(),
-        mapCenter: geoPointFromLonLat(10.7522, 59.9139),
         environment: { weather: 'clear' },
       },
       initialObjects: [object],

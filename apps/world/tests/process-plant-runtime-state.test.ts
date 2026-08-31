@@ -96,7 +96,7 @@ const rampCommand = (payload: unknown): CommandEnvelope => ({
 
 describe('process plant pack runtime', () => {
   test('projects scenario-defined process units as operational objects', async () => {
-    const unit = await processPlantPack.scenario!.expandObject({
+    const contribution = await processPlantPack.scenario!.expandItem({
       pack: 'process-plant',
       type: 'unit',
       id: 'plant:test',
@@ -114,7 +114,8 @@ describe('process plant pack runtime', () => {
         },
       },
       runtimeConfigs: {},
-    }) as OperationalObject
+    })
+    const unit = contribution.objects[0] as OperationalObject
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       simulationRunId,
       scenario: {

@@ -9,12 +9,20 @@ A Workspace-owned reusable simulation setup that evolves through immutable Scena
 _Avoid_: Simulation Run, Workspace Template
 
 **Scenario Revision**:
-An immutable validated Definition Revision used to create one or more Simulation Runs.
+An immutable validated Definition Revision that retains its editable Scenario Draft and exact compiled startup Definition for one or more Simulation Runs.
 _Avoid_: mutable startup state, current Scenario
 
-**Scenario Fragment**:
-Reusable World-owned authoring material included with explicit parameters and a local namespace when compiling a Scenario Revision.
-_Avoid_: Scenario inheritance, runtime subtree, cross-Module fragment
+**Scenario Draft**:
+The editable source of a Scenario: identity, selected Packs, compact Pack-owned Items, process systems, initial presentation, and Timeline.
+_Avoid_: Scenario Config, compiled startup Definition, mutable Simulation Run
+
+**Scenario Feature**:
+A World Pack selected in a Scenario Draft. “Feature” is the author-facing view; the Pack remains the technical owner of its behavior and data.
+_Avoid_: Capability, plugin, universal module
+
+**Scenario Item**:
+A compact Pack-owned authored element such as an ambulance, weather area, or plant unit that is expanded into validated runtime startup state.
+_Avoid_: assuming every Item is exactly one Operational Object
 
 **Scenario Timeline**:
 An ordered collection of declarative Cues evaluated against Simulation Run time or committed World events.

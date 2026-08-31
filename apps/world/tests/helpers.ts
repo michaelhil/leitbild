@@ -2,7 +2,9 @@ import type { SimulationRunId } from '../src/core/model/index.ts'
 import { createScenarioCatalog, type ScenarioCatalog } from '../src/core/scenarios/catalog.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { aviationPack } from '../src/packs/aviation/pack.ts'
-import { osloAmbulanceScenario, scenarios } from '../src/scenarios/index.ts'
+import { osloAmbulanceScenario, scenarios, scenarioTemplates } from '../src/scenarios/index.ts'
+import { scenarioTemplateFromDraft } from '../src/core/scenarios/config.ts'
+import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createAviationNoopPackRuntimeAdapter } from '../src/packs/aviation/sim/noop-adapter.ts'
 import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
@@ -24,6 +26,12 @@ export const createTestScenarioCatalog = (): ScenarioCatalog => createScenarioCa
   packs: testPacks,
   scenarios,
   defaultScenarioId: osloAmbulanceScenario.id,
+})
+
+export const testScenarioAuthoring = () => ({
+  scenarioTemplates,
+  compileScenarioDraft: (draft: unknown) => scenarioTemplateFromDraft(draft, testPacks, { routing: createDirectRoutingAdapter() }),
+  scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(testPacks),
 })
 
 export const createTestPackRuntimeAdapters = (): ReadonlyArray<PackRuntimeAdapter> => [

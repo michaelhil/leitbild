@@ -267,6 +267,49 @@ export const ambulancePack: WorldPack = {
     name: 'Ambulance Dispatch',
     contributions: ['runtime', 'knowledge', 'scenario', 'presentation', 'commands', 'interactions'],
   }),
+  authoring: {
+    itemTypes: [{
+      id: 'ambulance',
+      label: 'Ambulance',
+      description: 'A dispatchable ambulance placed on the map.',
+      idPrefix: 'ambulance',
+      defaultItem: { equipment: [] },
+      placement: { target: 'item', path: ['position'] },
+      fields: [],
+    }, {
+      id: 'hospital',
+      label: 'Hospital',
+      description: 'A receiving hospital with configurable trauma-bed capacity.',
+      idPrefix: 'hospital',
+      defaultItem: { traumaBeds: { total: 5, available: 5 } },
+      placement: { target: 'item', path: ['position'] },
+      fields: [{
+        target: 'item', path: ['traumaBeds', 'total'], label: 'Trauma beds',
+        control: { kind: 'number', defaultValue: 5, min: 0, step: 1 },
+      }, {
+        target: 'item', path: ['traumaBeds', 'available'], label: 'Available beds',
+        control: { kind: 'number', defaultValue: 5, min: 0, step: 1 },
+      }],
+    }, {
+      id: 'incident',
+      label: 'Incident',
+      description: 'An emergency incident with triage severity and victim count.',
+      idPrefix: 'incident',
+      defaultItem: { triage: 'yellow', victims: { state: 'estimated', count: 1 } },
+      placement: { target: 'item', path: ['position'] },
+      fields: [{
+        target: 'item', path: ['triage'], label: 'Triage',
+        control: { kind: 'select', defaultValue: 'yellow', options: [
+          { value: 'green', label: 'Green' },
+          { value: 'yellow', label: 'Yellow' },
+          { value: 'red', label: 'Red' },
+        ] },
+      }, {
+        target: 'item', path: ['victims', 'count'], label: 'Victims',
+        control: { kind: 'number', defaultValue: 1, min: 0, step: 1 },
+      }],
+    }],
+  },
   runtime: {
     runtimes: [
       { id: ambulanceSimRuntimeId, version: '1.0.0', label: 'Local ambulance runtime', kind: 'local' },

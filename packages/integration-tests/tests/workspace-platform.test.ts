@@ -6,7 +6,7 @@ import { moduleRegistrationSchema, workspaceIdSchema } from '@leitbild/contracts
 import { createServer as createWorldServer } from '../../../apps/world/src/core/api/server.ts'
 import { createWorldModuleState } from '../../../apps/world/src/core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry } from '../../../apps/world/src/core/workspaces/runtime-registry.ts'
-import { createTestPackRuntimeAdapters, createTestScenarioCatalog } from '../../../apps/world/tests/helpers.ts'
+import { createTestPackRuntimeAdapters, createTestScenarioCatalog, testScenarioAuthoring } from '../../../apps/world/tests/helpers.ts'
 import { handleAgentsModuleApi } from '../../../apps/agents/src/api/workspace-module-api.ts'
 import { asAIAgent } from '../../../apps/agents/src/agents/shared.ts'
 import { createDeploymentRuntime } from '../../../apps/agents/src/core/deployment-runtime.ts'
@@ -56,6 +56,7 @@ describe('Workspace Host with real Modules', () => {
       dataDir,
       moduleState: createWorldModuleState({ dataDir }),
       scenarioCatalog: createTestScenarioCatalog(),
+      ...testScenarioAuthoring(),
       runtimeAdapters: createTestPackRuntimeAdapters(),
     })
     const worldServer = createWorldServer({

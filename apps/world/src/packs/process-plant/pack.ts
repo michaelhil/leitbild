@@ -1,7 +1,7 @@
 import type { PackId, GeoJsonPoint, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
 import { geoPointFromLonLat, meters, objectIdSchema } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
-import type { WorldPack, PackCommandRequest, PackCreationGeometry, PackObjectPresentation, PackScenarioObjectSpec } from '../../core/packs/protocol.ts'
+import type { WorldPack, PackCommandRequest, PackCreationGeometry, PackObjectPresentation, PackScenarioItemSpec } from '../../core/packs/protocol.ts'
 import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
 import { processPlantControlWriteCommandKind } from './commands.ts'
 import { emptyProcessPlantProjection, processPlantPackId, processPlantUnitPackDataSchema, type ProcessPlantUnitPackData } from './model.ts'
@@ -16,7 +16,7 @@ const parseUnitData = (object: OperationalObject): ProcessPlantUnitPackData | nu
   return parsed.success ? parsed.data : null
 }
 
-const pointFromSpec = (spec: PackScenarioObjectSpec): GeoJsonPoint => {
+const pointFromSpec = (spec: PackScenarioItemSpec): GeoJsonPoint => {
   const location = spec.location
   if (!Array.isArray(location) || location.length !== 2 || typeof location[0] !== 'number' || typeof location[1] !== 'number') {
     throw new Error(`process-plant unit ${spec.id} requires location [lon, lat]`)
@@ -24,13 +24,13 @@ const pointFromSpec = (spec: PackScenarioObjectSpec): GeoJsonPoint => {
   return geoPointFromLonLat(location[0], location[1])
 }
 
-const requiredString = (spec: PackScenarioObjectSpec, key: string): string => {
+const requiredString = (spec: PackScenarioItemSpec, key: string): string => {
   const value = spec[key]
   if (typeof value !== 'string' || value.length === 0) throw new Error(`process-plant unit ${spec.id} requires ${key}`)
   return value
 }
 
-const optionalString = (spec: PackScenarioObjectSpec, key: string): string | undefined => {
+const optionalString = (spec: PackScenarioItemSpec, key: string): string | undefined => {
   const value = spec[key]
   if (value === undefined) return undefined
   if (typeof value !== 'string' || value.length === 0) throw new Error(`process-plant unit ${spec.id} has invalid ${key}`)
@@ -38,14 +38,14 @@ const optionalString = (spec: PackScenarioObjectSpec, key: string): string | und
 }
 
 const optionalUnitData = (
-  spec: PackScenarioObjectSpec,
+  spec: PackScenarioItemSpec,
   key: string,
 ): Record<string, string> => {
   const value = optionalString(spec, key)
   return value === undefined ? {} : { [key]: value }
 }
 
-const expandUnitObject = (spec: PackScenarioObjectSpec, at: IsoTimestamp): OperationalObject => {
+const expandUnitObject = (spec: PackScenarioItemSpec, at: IsoTimestamp): OperationalObject => {
   const systemId = requiredString(spec, 'systemId')
   const packData: ProcessPlantUnitPackData = {
     type: 'process-plant-unit',
@@ -113,15 +113,40 @@ export const processPlantPack: WorldPack = {
     id: 'process-plant', version: '1.0.0', name: 'Process Plant',
     contributions: ['runtime', 'knowledge', 'scenario', 'presentation', 'commands'],
   }),
+  authoring: {
+    itemTypes: [{
+      id: 'unit',
+      label: 'Process plant',
+      description: 'A map-visible process plant backed by a reference PWR process system.',
+      idPrefix: 'plant',
+      defaultItem: {},
+      placement: { target: 'item', path: ['location'] },
+      linkedSystem: {
+        idPrefix: 'plant-system',
+        itemReferencePath: ['systemId'],
+        defaults: {
+          pack: 'process-plant',
+          componentLibrary: 'process-plant',
+          assemblyRef: 'process-plant.pwr.reference.v2',
+          assemblyConfig: { loopCount: 4 },
+        },
+      },
+      fields: [{
+        target: 'system', path: ['assemblyConfig', 'loopCount'], label: 'Primary loops',
+        control: { kind: 'number', defaultValue: 4, min: 2, max: 6, step: 1 },
+      }],
+    }],
+  },
   runtime: {
     runtimes: [{ id: processPlantSimRuntimeId, version: '1.0.0', label: 'Local process plant runtime', kind: 'local' }],
     defaultRuntimeId: processPlantSimRuntimeId,
   },
   knowledge: { wikiRefs: [{ name: 'Leitbild PWR operations wiki', url: 'https://github.com/michaelhil/leitbild/blob/main/docs/wiki/pwr-ops.md' }] },
   scenario: {
-    expandObject: (spec, context): OperationalObject => {
+    expandItem: (spec, context) => {
+      if (spec.pack !== 'process-plant') unsupported(`scenario pack ${spec.pack}`)
       if (spec.type !== 'unit') unsupported(`scenario object type ${spec.type}`)
-      return expandUnitObject(spec, context.at)
+      return { objects: [expandUnitObject(spec, context.at)] }
     },
     applyOperation: () => unsupported('scenario operations'),
   },

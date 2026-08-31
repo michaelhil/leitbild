@@ -1,4 +1,4 @@
-import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject, SurfaceMapLayer } from '../model/index.ts'
+import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject, ScenarioProcessSystemDefinition, SurfaceMapLayer } from '../model/index.ts'
 import type { RoutingAdapter } from '../../routing/protocol.ts'
 import type { DatasetConfig, DatasetId } from '../../reference-data/types.ts'
 import { packDescriptorSchema, type PackDescriptor } from '@leitbild/contracts'
@@ -211,12 +211,52 @@ export interface PackWikiRef {
   readonly url: string
 }
 
-export interface PackScenarioObjectSpec {
+export interface PackScenarioItemSpec {
   readonly pack: string
   readonly type: string
   readonly id: string
   readonly label: string
   readonly [key: string]: unknown
+}
+
+export interface PackScenarioItemContribution {
+  readonly objects: ReadonlyArray<OperationalObject>
+  readonly processSystems?: ReadonlyArray<ScenarioProcessSystemDefinition>
+}
+
+export type PackScenarioAuthoringControl =
+  | { readonly kind: 'text'; readonly defaultValue: string }
+  | { readonly kind: 'number'; readonly defaultValue: number; readonly min?: number; readonly max?: number; readonly step?: number }
+  | { readonly kind: 'boolean'; readonly defaultValue: boolean }
+  | { readonly kind: 'select'; readonly defaultValue: string; readonly options: ReadonlyArray<{ readonly value: string; readonly label: string }> }
+
+export interface PackScenarioAuthoringField {
+  readonly target: 'item' | 'system'
+  readonly path: ReadonlyArray<string | number>
+  readonly label: string
+  readonly control: PackScenarioAuthoringControl
+}
+
+export interface PackScenarioAuthoringItemType {
+  readonly id: string
+  readonly label: string
+  readonly description: string
+  readonly idPrefix: string
+  readonly defaultItem: Readonly<Record<string, unknown>>
+  readonly placement?: {
+    readonly target: 'item'
+    readonly path: ReadonlyArray<string | number>
+  }
+  readonly linkedSystem?: {
+    readonly idPrefix: string
+    readonly itemReferencePath: ReadonlyArray<string | number>
+    readonly defaults: Readonly<Record<string, unknown>>
+  }
+  readonly fields: ReadonlyArray<PackScenarioAuthoringField>
+}
+
+export interface PackScenarioAuthoringContribution {
+  readonly itemTypes: ReadonlyArray<PackScenarioAuthoringItemType>
 }
 
 export interface PackScenarioOperationSpec {
@@ -238,14 +278,10 @@ export interface PackScenarioOperationContext extends PackScenarioExpansionConte
 }
 
 export interface PackScenarioSupport {
-  readonly expandObject: (
-    spec: PackScenarioObjectSpec,
+  readonly expandItem: (
+    spec: PackScenarioItemSpec,
     context: PackScenarioExpansionContext,
-  ) => OperationalObject | Promise<OperationalObject>
-  readonly expandObjects?: (
-    spec: PackScenarioObjectSpec,
-    context: PackScenarioExpansionContext,
-  ) => ReadonlyArray<OperationalObject> | Promise<ReadonlyArray<OperationalObject>>
+  ) => PackScenarioItemContribution | Promise<PackScenarioItemContribution>
   readonly applyOperation: (
     operation: PackScenarioOperationSpec,
     context: PackScenarioOperationContext,
@@ -327,6 +363,7 @@ export interface PackInteractionContribution {
 
 export interface WorldPack {
   readonly descriptor: PackDescriptor
+  readonly authoring?: PackScenarioAuthoringContribution
   readonly runtime?: PackRuntimeContribution
   readonly knowledge?: PackKnowledgeContribution
   readonly referenceData?: PackReferenceDataContribution

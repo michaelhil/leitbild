@@ -1,4 +1,4 @@
-import type { PackScenarioObjectSpec } from '../../../core/packs/protocol.ts'
+import type { PackScenarioItemSpec } from '../../../core/packs/protocol.ts'
 
 export interface SourceDerivedSubstation {
   readonly externalId: string
@@ -65,6 +65,6 @@ export interface SourceDerivedGridArenaData {
   readonly loads: ReadonlyArray<InferredLoadZone>
 }
 
-export type GridArenaScenarioObjectSpec = PackScenarioObjectSpec & {
+export type GridArenaScenarioObjectSpec = PackScenarioItemSpec & {
   readonly pack: 'electric-grid'
 }

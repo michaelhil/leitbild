@@ -12,7 +12,7 @@ import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/s
 import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { createTestScenarioCatalog } from './helpers.ts'
+import { createTestScenarioCatalog, testScenarioAuthoring } from './helpers.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 
 interface CapturedRealtimeClient {
@@ -110,6 +110,7 @@ describe('server health', () => {
       dataDir,
       workspaceId: newWorkspaceId(),
       scenarioCatalog: createTestScenarioCatalog(),
+      ...testScenarioAuthoring(),
       runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
         createLocalTrafficPackRuntimeAdapter(),
@@ -150,6 +151,7 @@ describe('server health', () => {
       dataDir,
       workspaceId: newWorkspaceId(),
       scenarioCatalog: createTestScenarioCatalog(),
+      ...testScenarioAuthoring(),
       runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
         createLocalTrafficPackRuntimeAdapter(),
@@ -210,6 +212,7 @@ describe('server health', () => {
       dataDir,
       workspaceId: newWorkspaceId(),
       scenarioCatalog: createTestScenarioCatalog(),
+      ...testScenarioAuthoring(),
       runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
         createLocalTrafficPackRuntimeAdapter(),
@@ -317,6 +320,7 @@ describe('server health', () => {
       dataDir,
       workspaceId: newWorkspaceId(),
       scenarioCatalog: createTestScenarioCatalog(),
+      ...testScenarioAuthoring(),
       idleRuntimeCloseDelayMs: 5,
       runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),

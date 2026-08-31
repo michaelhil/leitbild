@@ -1,5 +1,7 @@
 import { createServer } from './core/api/server.ts'
 import { createScenarioCatalog } from './core/scenarios/catalog.ts'
+import { scenarioTemplateFromDraft } from './core/scenarios/config.ts'
+import { scenarioAuthoringCatalogFor } from './core/scenarios/authoring.ts'
 import { worldPacks } from './app-assembly.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from './packs/ambulance/sim/adapter.ts'
 import { createAviationNoopPackRuntimeAdapter } from './packs/aviation/sim/noop-adapter.ts'
@@ -13,12 +15,13 @@ import { createLocalProcessPlantPackRuntimeAdapter } from './packs/process-plant
 import { createLocalTrafficPackRuntimeAdapter } from './packs/traffic/sim/adapter.ts'
 import { createLocalWeatherPackRuntimeAdapter } from './packs/weather/sim/adapter.ts'
 import { createRoutingAdapterFromEnv } from './routing/config.ts'
-import { createBuiltinScenarios } from './scenarios/index.ts'
+import { createBuiltinScenarioTemplates } from './scenarios/index.ts'
 import { createWorldModuleState } from './core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry } from './core/workspaces/runtime-registry.ts'
 
 const routing = createRoutingAdapterFromEnv()
-const scenarios = await createBuiltinScenarios(routing)
+const scenarioTemplates = await createBuiltinScenarioTemplates(routing)
+const scenarios = scenarioTemplates.map(template => template.definition)
 const scenarioCatalog = createScenarioCatalog({ packs: worldPacks, scenarios })
 
 // OpenSky requires OAuth2 client_credentials. If the operator hasn't provisioned
@@ -74,6 +77,9 @@ const workspaces = createWorldWorkspaceRuntimeRegistry({
   dataDir,
   moduleState,
   scenarioCatalog,
+  scenarioTemplates,
+  compileScenarioDraft: draft => scenarioTemplateFromDraft(draft, worldPacks, { routing }),
+  scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(worldPacks),
   runtimeAdapters,
   interactionHandlers: worldPacks.flatMap(pack => pack.interactions?.handlers ?? []),
 })

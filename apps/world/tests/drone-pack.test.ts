@@ -190,7 +190,7 @@ const assertSmoothMotionFrames = (
 
 describe('drone pack native runtime', () => {
   test('expands scenario drones into native vehicle state', async () => {
-    const object = await droneScenarioSupport.expandObject({
+    const contribution = await droneScenarioSupport.expandItem({
       pack: 'drone',
       type: 'drone',
       id: 'drone:scenario-native',
@@ -207,6 +207,7 @@ describe('drone pack native runtime', () => {
       runtimeConfigs: { drone: { maxDrones: 10 } },
     })
 
+    const object = contribution.objects[0]!
     const data = droneData(object)
     expect(object.packId).toBe(dronePackId as PackId)
     expect(data.vehicle.modelId).toBe('native-survey-quad')

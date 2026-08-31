@@ -8,7 +8,7 @@ import {
   type IsoTimestamp,
   type OperationalObject,
 } from '../../core/model/index.ts'
-import type { PackScenarioObjectSpec, PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
+import type { PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
 import { trafficPackDataSchema, trafficSeveritySchema, type TrafficPackData, type TrafficGeometryMode } from './model.ts'
 import { trafficSimAdapterId, trafficSimPackId } from './sim/constants.ts'
 
@@ -106,7 +106,7 @@ const trafficConditionObject = (config: {
 
 const geometryFor = async (
   spec: z.infer<typeof trafficConditionSpecSchema>,
-  context: Parameters<PackScenarioSupport['expandObject']>[1],
+  context: Parameters<PackScenarioSupport['expandItem']>[1],
 ): Promise<GeoJsonLineString | GeoJsonPolygon> => {
   if (spec.geometryMode === 'road_segment') {
     if (spec.from && spec.to) {
@@ -124,12 +124,12 @@ const geometryFor = async (
 }
 
 export const trafficScenarioSupport: PackScenarioSupport = {
-  expandObject: async (rawSpec, context): Promise<OperationalObject> => {
+  expandItem: async (rawSpec, context) => {
     const spec = trafficConditionSpecSchema.parse(rawSpec)
     const object = trafficConditionObject({ spec, geometry: await geometryFor(spec, context), at: context.at })
     const parsed = trafficPackDataSchema.safeParse(object.packData)
     if (!parsed.success) throw new Error(`invalid scenario traffic object ${object.id}: ${parsed.error.message}`)
-    return { ...object, packData: parsed.data }
+    return { objects: [{ ...object, packData: parsed.data }] }
   },
   applyOperation: (rawOperation: PackScenarioOperationSpec): OperationalObject => {
     throw new Error(`traffic scenario operation is not supported yet: ${rawOperation.type}`)

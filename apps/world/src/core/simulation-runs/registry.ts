@@ -12,6 +12,8 @@ import {
 import type { PackRuntimeAdapter } from '../../simulation/protocol.ts'
 import { createRuntimeHub } from '../../simulation/runtime-hub.ts'
 import type { ScenarioCatalog } from '../scenarios/catalog.ts'
+import type { ScenarioDraft, ScenarioTemplate } from '../scenarios/config.ts'
+import type { ScenarioAuthoringCatalog } from '../scenarios/authoring.ts'
 import { createJsonlEventLog } from './event-log.ts'
 import { createJsonRuntimeStateStore } from './runtime-state-store.ts'
 import { createSimulationRunRuntime, type SimulationRunRuntime } from './runtime.ts'
@@ -67,6 +69,7 @@ export interface SimulationRunRegistryStatus {
 
 export interface SimulationRunRegistry {
   readonly workspaceId: WorkspaceId
+  readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
   readonly create: (config?: { readonly scenarioId?: string; readonly scenarioRevisionId?: ScenarioRevisionId }) => Promise<SimulationRunRuntime>
   readonly load: (id: SimulationRunId) => Promise<SimulationRunRuntime>
   readonly reset: (id: SimulationRunId) => Promise<SimulationRunRuntime>
@@ -79,6 +82,8 @@ export interface SimulationRunRegistry {
   readonly leaseSummary: (id: SimulationRunId) => SimulationRunLeaseSummary
   readonly listScenarios: () => Promise<ReadonlyArray<ScenarioRecord>>
   readonly currentScenario: (id: string) => Promise<ScenarioRevision | undefined>
+  readonly createScenario: (draft: ScenarioDraft) => Promise<ScenarioRevision>
+  readonly updateScenario: (draft: ScenarioDraft, expectedRevisionId: ScenarioRevisionId) => Promise<ScenarioRevision>
   readonly deleteScenario: (id: string, revisionId: ScenarioRevisionId) => Promise<boolean>
   readonly scenarioRevisionForRun: (id: SimulationRunId) => Promise<ScenarioRevision | undefined>
   readonly defaultScenarioId: () => string
@@ -90,6 +95,9 @@ export const createSimulationRunRegistry = (config: {
   readonly workspaceId: WorkspaceId
   readonly runtimeAdapters: ReadonlyArray<PackRuntimeAdapter>
   readonly scenarioCatalog: ScenarioCatalog
+  readonly scenarioTemplates: ReadonlyArray<ScenarioTemplate>
+  readonly compileScenarioDraft: (draft: unknown) => Promise<ScenarioTemplate>
+  readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
   readonly scenarioLibrary?: ScenarioLibrary
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
   readonly idleRuntimeCloseDelayMs?: number
@@ -112,7 +120,7 @@ export const createSimulationRunRegistry = (config: {
   let scenarioLibraryReady: Promise<void> | null = null
 
   const ensureScenarioLibrary = (): Promise<void> => {
-    scenarioLibraryReady ??= scenarioLibrary.materializeTemplates(config.scenarioCatalog.listScenarios())
+    scenarioLibraryReady ??= scenarioLibrary.materializeTemplates(config.scenarioTemplates)
     return scenarioLibraryReady
   }
 
@@ -599,6 +607,7 @@ export const createSimulationRunRegistry = (config: {
 
   return {
     workspaceId: config.workspaceId,
+    scenarioAuthoringCatalog: config.scenarioAuthoringCatalog,
     create,
     load,
     reset,
@@ -616,6 +625,14 @@ export const createSimulationRunRegistry = (config: {
     currentScenario: async (id: string) => {
       await ensureScenarioLibrary()
       return await scenarioLibrary.currentRevision(id)
+    },
+    createScenario: async draft => {
+      await ensureScenarioLibrary()
+      return await scenarioLibrary.create(await config.compileScenarioDraft(draft))
+    },
+    updateScenario: async (draft, expectedRevisionId) => {
+      await ensureScenarioLibrary()
+      return await scenarioLibrary.update(await config.compileScenarioDraft(draft), expectedRevisionId)
     },
     deleteScenario: async (id: string, revisionId: ScenarioRevisionId) => {
       await ensureScenarioLibrary()

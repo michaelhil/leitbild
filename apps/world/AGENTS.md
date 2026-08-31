@@ -35,8 +35,8 @@
 - Scenario Definitions name active `packs`; runtime ids are internal wiring resolved from pack defaults or explicit scenario runtime overrides.
 - Scenario Definitions own initial UI assembly through a validated Surface Definition. Do not render hardcoded operational map/rail/footer surfaces before the scenario surface is loaded.
 - Surface Definitions may configure only safe built-in primitives. Do not allow scenario JSON, AI output, or pack code to inject arbitrary Svelte components, HTML, scripts, or hidden fallback viewports.
-- Built-in scenarios should be authored as compact declarative JSON Scenario Configs when practical, then expanded through pack-owned scenario codecs into full validated Scenario Definitions. Do not put reusable object-construction logic inside individual scenario files.
-- Scenario Config expansion must stay deterministic and ordered. Do not parallelize object/action expansion when later specs may reference earlier created objects.
+- Built-in scenarios should be authored as compact declarative JSON Scenario Drafts, then expanded through pack-owned scenario codecs into full validated Scenario Definitions. Do not put reusable object-construction logic inside individual scenario files.
+- Scenario Draft expansion must stay deterministic and ordered. Do not parallelize Item/action expansion when later specs may reference earlier created objects.
 - Scenario scripts must stay declarative and must emit ordered Simulation Run events through the Simulation Run runtime. Do not add browser-only scenario/tutorial state, runtime-private scenario timers, or arbitrary scenario code execution.
 - Restored Simulation Runs must start from persisted snapshots/history, not by replaying or reapplying Scenario Definitions.
 - Treat Simulation Run Projected State as canonical current Leitbild truth. UI, API, AI agents, metrics, and interaction handlers must read shared operational state from the Simulation Run projection.

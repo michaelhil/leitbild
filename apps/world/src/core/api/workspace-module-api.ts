@@ -15,6 +15,8 @@ import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
 import { simulationRunIdSchema } from '../model/index.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import { scenarioRevisionIdSchema } from '../scenarios/library.ts'
+import { scenarioDraftSchema } from '../scenarios/config.ts'
+import { scenarioAuthoringCatalogSchema } from '../scenarios/authoring.ts'
 import type { WorldWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
 import {
   commandIdempotencyConfigFromEnv,
@@ -65,6 +67,7 @@ const queryPackInputSchema = z.object({
 const readObjectInputSchema = z.object({
   objectId: z.string().trim().min(1).max(128),
 }).strict()
+const createScenarioInputSchema = z.object({ draft: scenarioDraftSchema }).strict()
 
 const SCENARIO_DEFINITION_TYPE = 'world.scenario'
 
@@ -227,6 +230,64 @@ const scenarioSections = (definition: {
 const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, Response>(WORLD_MODULE_ID, [
   {
     descriptor: {
+      id: 'world.scenario-authoring.describe',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'workspace' },
+      title: 'Describe Scenario Authoring',
+      description: 'Lists discoverable World features and the Scenario items each Pack exposes for authoring.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: z.toJSONSchema(emptyInputSchema),
+      outputSchema: z.toJSONSchema(scenarioAuthoringCatalogSchema),
+    },
+    invoke: async (registry, invocation) => {
+      emptyInputSchema.parse(invocation.input)
+      return json({ result: registry.scenarioAuthoringCatalog })
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.scenario.create',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'workspace' },
+      title: 'Create Scenario',
+      description: 'Validates and saves a new editable Scenario Draft as an immutable Scenario Revision.',
+      risk: 'write',
+      idempotent: false,
+      inputSchema: {
+        type: 'object',
+        required: ['draft'],
+        properties: { draft: { type: 'object', description: 'A World-owned Scenario Draft.' } },
+        additionalProperties: false,
+      },
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (registry, invocation) => {
+      const input = createScenarioInputSchema.parse(invocation.input)
+      try {
+        const revision = await registry.createScenario(input.draft)
+        return json({ result: {
+          definition: {
+            workspaceId: registry.workspaceId,
+            moduleId: WORLD_MODULE_ID,
+            type: SCENARIO_DEFINITION_TYPE,
+            id: revision.scenarioId,
+            revisionId: revision.id,
+          },
+          title: revision.definition.title,
+        } }, { status: 201 })
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith('Scenario already exists:')) {
+          return apiError(409, 'scenario_already_exists', error.message)
+        }
+        throw error
+      }
+    },
+  },
+  {
+    descriptor: {
       id: 'world.scenario.inspect',
       moduleId: WORLD_MODULE_ID,
       kind: 'query',
@@ -260,6 +321,11 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
             createdAt: revision.createdAt,
             schemaVersion: revision.definition.schemaVersion,
           },
+        }, {
+          id: 'authored-draft',
+          title: 'Editable Scenario Draft',
+          description: 'The compact authored source retained with this immutable revision.',
+          data: revision.draft,
         }, ...scenarioSections(revision.definition)],
       }) })
     },

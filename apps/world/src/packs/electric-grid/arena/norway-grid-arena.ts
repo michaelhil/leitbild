@@ -1,4 +1,4 @@
-import type { PackScenarioObjectSpec } from '../../../core/packs/protocol.ts'
+import type { PackScenarioItemSpec } from '../../../core/packs/protocol.ts'
 import { generatorDefaults, inferBranchElectricalParameters } from './electrical-parameters.ts'
 import { norwayGridArenaData } from './norway-grid-arena-data.ts'
 import type { GridArenaScenarioObjectSpec, SourceDerivedGridArenaData } from './types.ts'
@@ -86,7 +86,7 @@ export const norwayGridArenaObjectSpecs = (
     substation.externalId,
     busIdFor(substation.name, substation.maxVoltageKv),
   ]))
-  const specs: PackScenarioObjectSpec[] = [
+  const specs: PackScenarioItemSpec[] = [
     {
       pack: 'electric-grid',
       type: 'grid_system',
@@ -239,7 +239,7 @@ export const norwayGridArenaObjectSpecs = (
   }
 
   specs.push({
-    pack: 'electric-grid',
+      pack: 'electric-grid',
     type: 'storage',
     id: 'grid:storage-oslo-battery',
     label: 'Oslo flexibility battery',

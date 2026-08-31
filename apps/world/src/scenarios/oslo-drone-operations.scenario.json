@@ -7,13 +7,12 @@
   "runtimeOverrides": {},
   "world": {
     "startsAt": "2026-01-01T10:00:00.000Z",
-    "mapCenter": [10.7522, 59.9139],
     "environment": {
       "city": "Oslo",
       "mode": "drone-operations"
     }
   },
-  "objects": [
+  "items": [
     {
       "pack": "ambulance",
       "type": "hospital",

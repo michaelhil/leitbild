@@ -9,16 +9,12 @@
   "runtimeOverrides": {},
   "world": {
     "startsAt": "2026-01-01T10:00:00.000Z",
-    "mapCenter": [
-      10.5,
-      62.4
-    ],
     "environment": {
       "city": "Norway",
       "mode": "electric-grid-demo"
     }
   },
-  "objects": [
+  "items": [
     {
       "pack": "electric-grid",
       "type": "regional_grid",

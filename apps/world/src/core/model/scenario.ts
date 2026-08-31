@@ -8,7 +8,6 @@ import { isoTimestampSchema, type IsoTimestamp } from './time.ts'
 
 export interface ScenarioWorldDefinition {
   readonly startsAt?: IsoTimestamp
-  readonly mapCenter?: GeoJsonPoint
   readonly environment: Record<string, unknown>
 }
 
@@ -188,7 +187,6 @@ export interface ScenarioDefinition {
 
 export const scenarioWorldDefinitionSchema = z.object({
   startsAt: isoTimestampSchema.optional(),
-  mapCenter: geoJsonPointSchema.optional(),
   environment: z.record(z.string(), z.unknown()).default({}),
 })
 

@@ -5,7 +5,7 @@ import {
   type IsoTimestamp,
   type OperationalObject,
 } from '../../core/model/index.ts'
-import type { PackScenarioObjectSpec, PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
+import type { PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
 import { defaultAtmosphere, defaultSurface } from './defaults.ts'
 import {
   weatherAtmosphereSchema,
@@ -233,14 +233,14 @@ const weatherConditionObject = (config: {
 }
 
 export const weatherScenarioSupport: PackScenarioSupport = {
-  expandObject: (rawSpec, context): OperationalObject => {
+  expandItem: (rawSpec, context) => {
     const spec = weatherConditionSpecSchema.parse(rawSpec)
     const runtimeConfig = weatherRuntimeConfigFor(context.runtimeConfigs)
-    return weatherConditionObject({
+    return { objects: [weatherConditionObject({
       spec,
       at: context.at,
       extensionDefinitions: runtimeConfig.fields.extensions,
-    })
+    })] }
   },
   applyOperation: (rawOperation: PackScenarioOperationSpec): OperationalObject => {
     throw new Error(`weather scenario operation is not supported yet: ${rawOperation.type}`)

@@ -3,18 +3,16 @@
   "schemaVersion": 1,
   "title": "Halden process-plant multi-sim demo",
   "description": "Seven independently simulated process-plant units near Halden, including a six-loop PWR variant, running alongside ambulance response and moving weather.",
-  "fragments": ["halden-a2-sgtr-ramp"],
   "packs": ["process-plant", "ambulance", "weather"],
   "runtimeOverrides": {},
   "world": {
     "startsAt": "2026-01-01T10:00:00.000Z",
-    "mapCenter": [11.3890, 59.1185],
     "environment": {
       "city": "Halden",
       "mode": "process-plant-demo"
     }
   },
-  "objects": [
+  "items": [
     {
       "pack": "process-plant",
       "type": "unit",
@@ -447,6 +445,25 @@
                 "severity": "warning",
                 "title": "Medical pickup requested at Unit A2",
                 "description": "Plant Unit A2 requests medical transport for two people at the site access point."
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "a2-sgtr-ramp",
+        "at": { "kind": "after_scenario_start", "seconds": 60 },
+        "actions": [
+          {
+            "type": "issue_command",
+            "command": {
+              "kind": "process-plant.control.ramp",
+              "targetObjectIds": ["plant:halden-a2"],
+              "payload": {
+                "systemId": "halden-unit-a2",
+                "path": "sgA.tubeLeakFraction",
+                "targetValue": 0.018,
+                "durationSeconds": 300
               }
             }
           }

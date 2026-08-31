@@ -127,6 +127,61 @@ export const weatherPack: WorldPack = {
     id: 'weather', version: '1.0.0', name: 'Weather Conditions',
     contributions: ['runtime', 'scenario', 'presentation', 'commands'],
   }),
+  authoring: {
+    itemTypes: [{
+      id: 'weather_condition',
+      label: 'Weather area',
+      description: 'A stationary weather influence area with editable size and conditions.',
+      idPrefix: 'weather',
+      defaultItem: {
+        summary: 'Configured weather area',
+        truthResolution: 8,
+        showAffectedCells: true,
+        showInfluenceShape: true,
+        showIcon: true,
+        priority: 0,
+        atmosphere: {
+          airTemperatureC: 8,
+          humidity: 0.75,
+          windSpeedMps: 4,
+          windDirectionDeg: 220,
+          visibilityM: 10_000,
+          cloudCover: 0.7,
+          precipitation: { type: 'rain', intensityMmPerHour: 1 },
+        },
+        surface: { groundTemperatureC: 7, wetness: 0.25, standingWater: 0, snow: 0, ice: 0, frost: 0 },
+        extensions: {},
+        falloffCurve: [{ x: 0, y: 1 }, { x: 1, y: 0 }],
+        keyframes: [{
+          atSeconds: 0,
+          center: [10.7522, 59.9139],
+          semiMajorAxisM: 4_000,
+          semiMinorAxisM: 2_000,
+          rotationDeg: 0,
+          atmosphere: {},
+          surface: {},
+          extensions: {},
+        }],
+      },
+      placement: { target: 'item', path: ['keyframes', 0, 'center'] },
+      fields: [{
+        target: 'item', path: ['summary'], label: 'Summary',
+        control: { kind: 'text', defaultValue: 'Configured weather area' },
+      }, {
+        target: 'item', path: ['keyframes', 0, 'semiMajorAxisM'], label: 'Length radius (m)',
+        control: { kind: 'number', defaultValue: 4_000, min: 100, step: 100 },
+      }, {
+        target: 'item', path: ['keyframes', 0, 'semiMinorAxisM'], label: 'Width radius (m)',
+        control: { kind: 'number', defaultValue: 2_000, min: 100, step: 100 },
+      }, {
+        target: 'item', path: ['atmosphere', 'airTemperatureC'], label: 'Air temperature (°C)',
+        control: { kind: 'number', defaultValue: 8, step: 1 },
+      }, {
+        target: 'item', path: ['atmosphere', 'precipitation', 'intensityMmPerHour'], label: 'Rain (mm/h)',
+        control: { kind: 'number', defaultValue: 1, min: 0, step: 0.1 },
+      }],
+    }],
+  },
   runtime: {
     runtimes: [{ id: weatherSimRuntimeId, version: '1.0.0', label: 'Local weather runtime', kind: 'local' }],
     defaultRuntimeId: weatherSimRuntimeId,

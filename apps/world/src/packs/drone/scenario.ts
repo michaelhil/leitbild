@@ -5,7 +5,7 @@ import {
   type GeoJsonPoint,
   type OperationalObject,
 } from '../../core/model/index.ts'
-import type { PackScenarioObjectSpec, PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
+import type { PackScenarioItemSpec, PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
 import {
   defaultDroneVehicleModels,
   droneSwarmMembershipSchema,
@@ -76,14 +76,14 @@ export const droneVehicleModelsFromRuntimeConfigs = (
 export const droneProfilesFromRuntimeConfigs = droneVehicleModelsFromRuntimeConfigs
 
 export const droneScenarioSupport: PackScenarioSupport = {
-  expandObject: (rawSpec: PackScenarioObjectSpec, context): OperationalObject => {
+  expandItem: (rawSpec: PackScenarioItemSpec, context) => {
     if (rawSpec.type !== 'drone') throw new Error(`unsupported drone scenario object type: ${rawSpec.type}`)
     const spec = droneSpecSchema.parse(rawSpec)
     const models = spec.model === undefined
       ? droneVehicleModelsFromRuntimeConfigs(context.runtimeConfigs)
       : [...droneVehicleModelsFromRuntimeConfigs(context.runtimeConfigs), spec.model]
     const model = spec.model ?? requireDroneVehicleModel(spec.modelId, models)
-    return createScenarioDroneObject({
+    return { objects: [createScenarioDroneObject({
       id: spec.id,
       label: spec.label,
       model,
@@ -92,7 +92,7 @@ export const droneScenarioSupport: PackScenarioSupport = {
       headingDeg: spec.headingDeg,
       at: context.at,
       ...(spec.swarm === undefined ? {} : { swarm: spec.swarm }),
-    })
+    })] }
   },
   applyOperation: (rawOperation: PackScenarioOperationSpec, context): OperationalObject => {
     if (rawOperation.type === 'set_vehicle_model') {
