@@ -58,7 +58,7 @@ const createModule = (moduleId: ModuleId) => {
         const workspaceId = decodeURIComponent(definitions[1] ?? '')
         const item = moduleId === 'world'
           ? { type: 'world.scenario', id: 'halden-process-plant-demo', title: 'Halden Process Plant', capabilityId: 'world.scenario.start' }
-          : { type: 'agents.room', id: 'control-room-script', title: 'Control Room', capabilityId: 'agents.room-definition.start' }
+          : { type: 'agents.room-definition', id: 'control-room-script', title: 'Control Room', capabilityId: 'agents.room-definition.start' }
         return Response.json({ definitions: [{
           ref: { workspaceId, moduleId, type: item.type, id: item.id },
           title: item.title,
@@ -74,7 +74,7 @@ const createModule = (moduleId: ModuleId) => {
           risk: 'write', idempotent: false, inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
         } : {
           id: 'agents.room-definition.start', moduleId, kind: 'command',
-          scope: { kind: 'definition', definitionType: 'agents.room' },
+          scope: { kind: 'definition', definitionType: 'agents.room-definition' },
           title: 'Start Room', description: 'Starts the selected Room Definition.',
           risk: 'write', idempotent: false, inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
         }

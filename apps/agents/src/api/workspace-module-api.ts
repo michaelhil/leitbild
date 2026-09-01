@@ -16,6 +16,7 @@ import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
 import { asAIAgent } from '../agents/shared.ts'
 import { runPromptDeckEntry, startRoomDefinition } from '../core/definitions/room-definition-service.ts'
 import { createRoomDefinitionLibrary } from '../core/definitions/room-definition-library.ts'
+import { roomDefinitionSchema, type RoomDefinition } from '../core/definitions/room-definition-catalog.ts'
 import type { AgentsModuleState } from '../core/workspaces/module-state.ts'
 import type { WorkspaceRuntimeRegistry } from '../core/workspaces/runtime-registry.ts'
 
@@ -49,8 +50,9 @@ const createAgentSchema = z.object({
 const runPromptDeckEntrySchema = z.object({
   entryId: z.string().trim().min(1).max(128),
 }).strict()
+const writeRoomDefinitionSchema = z.object({ definition: roomDefinitionSchema }).strict()
 const emptyInputSchema = z.object({}).strict()
-const ROOM_DEFINITION_TYPE = 'agents.room'
+const ROOM_DEFINITION_TYPE = 'agents.room-definition'
 
 const json = (body: unknown, status = 200): Response => Response.json(body, { status })
 const apiError = (status: number, code: string, message: string): Response => json({ error: { code, message } }, status)
@@ -135,18 +137,18 @@ const resourcesFor = async (
 
 const definitionsFor = async (workspaceId: WorkspaceId) => {
   const library = createRoomDefinitionLibrary(workspaceId)
-  const revisions = await library.list()
-  return moduleDefinitionCollectionSchema.parse({ definitions: revisions.map(revision => ({
+  const definitions = await library.list()
+  return moduleDefinitionCollectionSchema.parse({ definitions: definitions.map(definition => ({
     ref: {
       workspaceId,
       moduleId: AGENTS_MODULE_ID,
       type: ROOM_DEFINITION_TYPE,
-      id: revision.definitionId,
+      id: definition.id,
     },
-    title: revision.definition.title,
-    description: revision.definition.blurb,
-    ...(revision.definition.category === undefined ? {} : { category: revision.definition.category }),
-    currentRevisionId: revision.id,
+    title: definition.title,
+    ...(definition.description === undefined ? {} : { description: definition.description }),
+    ...(definition.category === undefined ? {} : { category: definition.category }),
+    currentRevisionId: definition.currentRevisionId,
     capabilityIds: agentsCapabilities.idsForDefinitionType(ROOM_DEFINITION_TYPE),
     inspectionCapabilityId: 'agents.room-definition.inspect',
   })) }).definitions
@@ -176,25 +178,13 @@ type AgentsWorkspaceRuntime = Awaited<ReturnType<WorkspaceRuntimeRegistry['getOr
 const serializableInspection = (value: unknown) =>
   inspectionViewSchema.parse(JSON.parse(JSON.stringify(value)) as unknown)
 
-const roomDefinitionSections = (definition: {
-  readonly requiredTools: ReadonlyArray<string>
-  readonly room: {
-    readonly name: string
-    readonly prompt?: string
-    readonly deliveryMode: string
-    readonly packs: ReadonlyArray<string>
-    readonly agents: ReadonlyArray<unknown>
-  }
-  readonly deck: { readonly entries: ReadonlyArray<unknown> }
-}) => [{
+const roomDefinitionSections = (definition: RoomDefinition) => [{
   id: 'room-configuration',
   title: 'Room configuration',
   data: {
-    name: definition.room.name,
     prompt: definition.room.prompt ?? null,
     deliveryMode: definition.room.deliveryMode,
     packs: definition.room.packs,
-    requiredTools: definition.requiredTools,
   },
 }, {
   id: 'configured-agents',
@@ -214,6 +204,41 @@ const roomDefinitionSections = (definition: {
 }]
 
 const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime, Response>(AGENTS_MODULE_ID, [
+  {
+    descriptor: {
+      id: 'agents.room-definition.create',
+      moduleId: AGENTS_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'workspace' },
+      title: 'Create Room Definition',
+      description: 'Validates and saves a reusable Room Definition as an immutable revision.',
+      risk: 'write',
+      idempotent: false,
+      inputSchema: z.toJSONSchema(writeRoomDefinitionSchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (_runtime, invocation) => {
+      const input = writeRoomDefinitionSchema.parse(invocation.input)
+      try {
+        const revision = await createRoomDefinitionLibrary(invocation.workspaceId).create(input.definition)
+        return json({ result: {
+          definition: {
+            workspaceId: invocation.workspaceId,
+            moduleId: AGENTS_MODULE_ID,
+            type: ROOM_DEFINITION_TYPE,
+            id: revision.definitionId,
+            revisionId: revision.id,
+          },
+          title: revision.document.title,
+        } }, 201)
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith('Definition already exists:')) {
+          return apiError(409, 'room_definition_already_exists', error.message)
+        }
+        throw error
+      }
+    },
+  },
   {
     descriptor: {
       id: 'agents.room.create',
@@ -319,7 +344,7 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
           data: {
             revisionId: sourceRevision.id,
             definitionId: sourceRevision.definitionId,
-            definition: sourceRevision.definition,
+            definition: sourceRevision.document,
           },
         }])],
       }) })
@@ -415,8 +440,8 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
       }
       return json({ result: serializableInspection({
         target: { kind: 'definition', definition: invocation.definition },
-        title: revision.definition.title,
-        description: revision.definition.blurb,
+        title: revision.document.title,
+        description: revision.document.description,
         observedAt: new Date().toISOString(),
         sections: [{
           id: 'identity',
@@ -424,10 +449,46 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
           data: {
             definitionId: revision.definitionId,
             revisionId: revision.id,
-            category: revision.definition.category ?? null,
+            category: revision.document.category ?? null,
           },
-        }, ...roomDefinitionSections(revision.definition)],
+        }, ...roomDefinitionSections(revision.document)],
       }) })
+    },
+  },
+  {
+    descriptor: {
+      id: 'agents.room-definition.update',
+      moduleId: AGENTS_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'definition', definitionType: ROOM_DEFINITION_TYPE },
+      title: 'Update Room Definition',
+      description: 'Creates a new immutable revision from edited Room Definition content.',
+      risk: 'write',
+      idempotent: false,
+      inputSchema: z.toJSONSchema(writeRoomDefinitionSchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (_runtime, invocation) => {
+      const input = writeRoomDefinitionSchema.parse(invocation.input)
+      const definitionId = requireRoomDefinitionId(invocation)
+      if (input.definition.id !== definitionId) {
+        return apiError(409, 'room_definition_identity_mismatch', 'Edited Room Definition id does not match the target Definition')
+      }
+      try {
+        const revision = await createRoomDefinitionLibrary(invocation.workspaceId).update(
+          input.definition,
+          invocation.definition!.revisionId,
+        )
+        return json({ result: {
+          definition: { ...invocation.definition, revisionId: revision.id },
+          title: revision.document.title,
+        } })
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith('Definition Revision changed:')) {
+          return apiError(409, 'room_definition_revision_changed', error.message)
+        }
+        throw error
+      }
     },
   },
   {

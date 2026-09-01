@@ -34,7 +34,6 @@ import { DEFAULT_SUMMARY_CONFIG } from '../types/summary.ts'
 import { SYSTEM_SENDER_ID } from '../types/constants.ts'
 import { parseAddressedAgents } from './addressing.ts'
 import { deliverBroadcast } from './delivery-modes.ts'
-import { defaultActivePackIds } from '../../packs/bundled.ts'
 
 export interface RoomCallbacks {
   readonly deliver?: DeliverFn
@@ -79,10 +78,9 @@ export const createRoom = (
   let paused = false
   let summaryConfig: SummaryConfig = DEFAULT_SUMMARY_CONFIG
   let latestSummary: string | undefined
-  // Seed with the default-active bundled packs (core, local, demos, pwr-ops
-  // today). Restore paths overwrite via restoreState({ activePacks: ... }).
-  // Snapshot.serialize captures the full list — no implicit augmentation.
-  let activePacks: ReadonlyArray<string> = defaultActivePackIds()
+  // Definitions and explicit operator actions select the exact Pack set.
+  // Built-in and local contributions are not Packs.
+  let activePacks: ReadonlyArray<string> = []
   // --- Eligible set: members minus user-muted ---
 
   const computeEligible = (): Set<string> =>

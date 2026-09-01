@@ -24,10 +24,10 @@ export const promptDeckRoutes: ReadonlyArray<RouteEntry> = [
           definition: {
             id: revision.definitionId,
             revisionId: revision.id,
-            title: revision.definition.title,
-            description: revision.definition.blurb,
+            title: revision.document.title,
+            description: revision.document.description,
           },
-          promptDeck: revision.definition.deck,
+          promptDeck: revision.document.deck,
         })
       } catch (error) {
         return errorResponse(error instanceof Error ? error.message : 'Prompt Deck unavailable', 404)

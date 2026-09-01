@@ -1,15 +1,8 @@
 // Pack activation resolver — single source of truth for "which packs are
 // active in room X."
 //
-// As of v24: room.activePacks is the COMPLETE list. There is no implicit
-// augmentation at read time. Default-active packs (see src/packs/bundled.ts)
-// are seeded into room.activePacks at room creation; from then on the
-// user's explicit list is authoritative.
-//
-// System packs ('core', 'local') are guaranteed to be in every room's
-// activePacks by the seed/restore paths and by the activation route, which
-// refuses requests that would remove them. See src/api/routes/rooms.ts and
-// src/packs/bundled.ts for the system-pack list.
+// room.activePacks is the complete, explicit list. Installing a Pack does
+// not activate it, and no synthetic or implicit Packs are added at read time.
 
 export interface RoomActivation {
   readonly getActivePacks: () => ReadonlyArray<string>
@@ -35,8 +28,7 @@ export const effectiveActivePackSet = (room: RoomActivation): ReadonlySet<string
   new Set(effectiveActivePacks(room))
 
 // True if a pack identified by `packId` is active in the room.
-// Tools without a pack (kind: 'built-in', 'external') are mapped to
-// 'core' / 'local' by packNameFor and gated through this same path.
+// Tools without a Pack owner are outside this gate.
 export const isPackActiveInRoom = (
   room: RoomActivation,
   packId: string,

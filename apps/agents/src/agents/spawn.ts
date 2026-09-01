@@ -15,8 +15,7 @@ import type { LLMProvider } from '../core/types/llm.ts'
 import type { LLMService } from '../llm/llm-service.ts'
 import type { MessageTarget } from '../core/types/messaging.ts'
 import type { Tool, ToolCall, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, ToolResult } from '../core/types/tool.ts'
-import { packNameFor } from '../core/types/tool-pack.ts'
-import { BUNDLED_PACKS } from '../packs/bundled.ts'
+import { owningPackFor } from '../core/types/tool-pack.ts'
 import { createAIAgent } from './ai-agent.ts'
 import type { Decision } from './ai-agent.ts'
 import { callLLM, streamLLM } from './evaluation.ts'
@@ -26,19 +25,8 @@ import { CURATED_MODELS } from '../llm/models/catalog.ts'
 
 // --- Tool executor ---
 
-// Maps a registered tool to the pack that owns it. The mapping is the source
-// of truth for "is this tool in the active surface for room X":
-//
-//   built-in        → 'core'   (immutable, always active)
-//   external        → 'local'  (drop-in dir, default-active)
-//   skill-bundled   → 'core' if no pack, else the pack the skill came from
-//   pack-bundled    → the pack namespace (e.g. 'aviation')
-//
-// Per-room pack-activation filter moved into src/tool-surface/index.ts in
-// the v0.13.0 tool-surface refactor — see project() there. spawn.ts now
-// delegates to the surface for projection + family compression. The
-// earlier 2000-token budget cap was removed (user-intent-authoritative —
-// no silent trimming).
+// Tool access has two explicit dimensions: the Agent's exact tool selection
+// and, for Pack-owned tools only, the Room's active Pack set.
 
 const createToolExecutor = (
   registry: ToolRegistry,
@@ -48,29 +36,12 @@ const createToolExecutor = (
 ): ToolExecutor => {
   const allowed = new Set(allowedTools)
 
-  // Pack-active tools must be callable even if they weren't in the
-  // agent's spawn-time `allowedTools`. The surface's UNION semantics
-  // shows pack tools to the LLM dynamically; the executor must mirror
-  // that, otherwise the LLM sees the tool but the executor rejects
-  // with "not available" — exactly the bug the diagnostic API caught
-  // post-PR-1. Resolved per-call (cheap; same getRoomActivation the
-  // surface uses).
-  const allowedByActivation = (toolName: string, roomId: string | undefined): boolean => {
-    if (!roomId || !getRoomActivation) return false
-    const room = getRoomActivation(roomId)
-    if (!room) return false
-    const entry = registry.getEntry(toolName)
-    if (!entry) return false
-    const pack = packNameFor(entry)
-    return new Set(['core', 'local', 'welcome', 'demos', ...room.getActivePacks()]).has(pack)
-  }
-
   return async (calls: ReadonlyArray<ToolCall>, roomId?: string): Promise<ReadonlyArray<ToolResult>> => {
     const results: ToolResult[] = []
     const callContext: ToolContext = roomId ? { ...context, roomId } : context
 
-    // Two access gates: agent's spawn-time allowlist (config.tools) and
-    // per-room pack activation. NO skill-level whitelist: skill
+    // Two access gates: Agent Tool Selection and, where applicable, Room
+    // Pack activation. NO skill-level whitelist: skill
     // `allowed-tools` is documentary only (see README + ai-agent.ts
     // coherence check). Earlier versions of this executor enforced
     // the skill whitelist at runtime — that contradicted the README,
@@ -79,31 +50,26 @@ const createToolExecutor = (
     // and overloaded "skill metadata" with "permission policy."
     // Removed 2026-05-12; see the PR that deletes spawn-allowed-tools.test.ts.
     for (const call of calls) {
-      // Two-gate rejection with WHICH-gate-fired specificity (CLAUDE.md
-      // tripwire: silently-ANDed permission gates). The operator's mental
+      // Rejections name the exact dimension that needs changing. The operator's mental
       // model is "I see this tool in the inspector → it should work." When
       // it doesn't, the message must name what to change: the agent's
       // allowlist OR the room's pack activation.
-      const inAllowlist = allowed.has(call.tool)
-      const inActivation = allowedByActivation(call.tool, roomId)
-      if (!inAllowlist && !inActivation) {
-        const entry = registry.getEntry(call.tool)
-        const pack = entry ? packNameFor(entry) : 'unknown'
-        if (entry && pack !== 'core' && pack !== 'local' && pack !== 'welcome' && pack !== 'demos') {
-          // Tool exists in the registry, owned by a non-implicit pack — most
-          // common case. Tell the operator to activate the pack.
-          results.push({ success: false, error: `Tool "${call.tool}" is not available: pack "${pack}" is not active in this room (activate via room settings)` })
-        } else {
-          // Either tool not in registry at all, OR owned by an implicit pack.
-          // Implicit-pack case ⇒ must be the agent's allowlist.
-          results.push({ success: false, error: `Tool "${call.tool}" is not available: not in this agent's tools allowlist (add it via agent settings)` })
-        }
+      if (!allowed.has(call.tool)) {
+        results.push({ success: false, error: `Tool "${call.tool}" is not in this Agent's tool selection` })
         continue
       }
 
-      const tool = registry.get(call.tool)
-      if (!tool) {
-        results.push({ success: false, error: `Tool "${call.tool}" not found` })
+      const entry = registry.getEntry(call.tool)
+      if (!entry) {
+        results.push({ success: false, error: `Tool "${call.tool}" is not registered` })
+        continue
+      }
+      const owningPack = owningPackFor(entry)
+      const room = roomId === undefined || getRoomActivation === undefined
+        ? undefined
+        : getRoomActivation(roomId)
+      if (owningPack !== undefined && room !== undefined && !room.getActivePacks().includes(owningPack)) {
+        results.push({ success: false, error: `Tool "${call.tool}" belongs to Pack "${owningPack}", which is not active in this Room` })
         continue
       }
 
@@ -111,7 +77,7 @@ const createToolExecutor = (
         const timeout = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error(`Tool "${call.tool}" timed out after 30s`)), 30_000),
         )
-        const result = await Promise.race([tool.execute(call.arguments, callContext), timeout])
+        const result = await Promise.race([entry.tool.execute(call.arguments, callContext), timeout])
         results.push(result)
       } catch (err) {
         // Log to operator so a tool throwing a fresh error class doesn't lose
@@ -148,9 +114,7 @@ export interface AgentToolSupport {
   // by the active packs in `roomId`. Returns null when the room is unknown
   // (caller falls back to the static toolDefinitions).
   //
-  // This is the structural fix for tool-context bloat: the LLM only sees
-  // tools from packs the operator has activated in the current room, plus
-  // the implicit-active core + local packs.
+  // The LLM sees only selected tools whose owning Packs are active.
   readonly resolveToolDefinitions?: (roomId: string) => ReadonlyArray<ToolDefinition> | null
 }
 
@@ -253,30 +217,6 @@ export const buildToolSupport = async (
   return support
 }
 
-// Default requestedTools when an agent is spawned without an explicit
-// `tools:` list. The per-room pack-activation filter further narrows
-// this to whichever packs are active in the trigger room, so the
-// effective surface at eval time is:
-//
-//   defaultRequestedTools  ∩  active-packs(roomId)
-//
-// We default to tools owned by bundled packs (system + bundled default-active:
-// core, local, demos, pwr-ops today — see src/packs/bundled.ts). Explicit
-// pack activation is the only way to add more. This replaces the prior
-// "give the agent everything in the registry" default, which combined with
-// the now-deleted budget cap produced silent tool drops in production.
-//
-// Callers that want a specific breadth declare `tools:` explicitly on the
-// AIAgentConfig. Omitting the list intentionally selects the bundled defaults.
-const deriveDefaultRequestedTools = (registry: ToolRegistry): ReadonlyArray<string> => {
-  const bundledNs = new Set(BUNDLED_PACKS.map(pack => pack.descriptor.id))
-  const out: string[] = []
-  for (const entry of registry.listEntries()) {
-    if (bundledNs.has(packNameFor(entry))) out.push(entry.tool.name)
-  }
-  return out
-}
-
 const resolveAgentTools = async (
   config: AIAgentConfig,
   llmProvider: LLMProvider,
@@ -285,7 +225,7 @@ const resolveAgentTools = async (
   getRoomActivation?: GetRoomActivation,
 ): Promise<AgentToolSupport> => {
   if (!toolRegistry) return {}
-  const requestedTools = config.tools ?? deriveDefaultRequestedTools(toolRegistry)
+  const requestedTools = config.tools ?? []
 
   if (requestedTools.length > 0) {
     warnMissingTools(config.name, requestedTools, toolRegistry)

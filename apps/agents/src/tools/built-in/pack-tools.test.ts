@@ -401,7 +401,7 @@ describe('list_packs', () => {
   let parent: string
   afterEach(async () => { if (parent) await rm(parent, { recursive: true, force: true }) })
 
-  it('returns the four bundled packs (core/local/demos/pwr-ops) followed by any filesystem-installed packs', async () => {
+  it('returns real bundled Packs followed by filesystem-installed Packs', async () => {
     const env = await makeDeps()
     parent = env.parent
     const url = await buildRepo(env.parent, 'atc')
@@ -412,39 +412,18 @@ describe('list_packs', () => {
     expect(result.success).toBe(true)
     const data = result.data as Array<{
       id: string
+      deployment: 'bundled' | 'installed'
       tools: string[]
       skills: string[]
-      system: boolean
-      defaultActive: boolean
     }>
 
-    // v24: bundled packs first (table-driven from src/packs/bundled.ts),
-    // then filesystem-installed packs.
-    expect(data.map(pack => pack.id)).toEqual(['core', 'local', 'demos', 'pwr-ops', 'atc'])
-
-    // System flag: only core and local.
-    expect(data.find(pack => pack.id === 'core')?.system).toBe(true)
-    expect(data.find(pack => pack.id === 'local')?.system).toBe(true)
-    expect(data.find(pack => pack.id === 'demos')?.system).toBe(false)
-    expect(data.find(pack => pack.id === 'pwr-ops')?.system).toBe(false)
-    expect(data.find(pack => pack.id === 'atc')?.system).toBe(false)
-
-    // defaultActive flag: all four bundled packs are default-active; the
-    // installed pack isn't (operator opted in by installing).
-    expect(data.find(pack => pack.id === 'core')?.defaultActive).toBe(true)
-    expect(data.find(pack => pack.id === 'demos')?.defaultActive).toBe(true)
-    expect(data.find(pack => pack.id === 'pwr-ops')?.defaultActive).toBe(true)
-    expect(data.find(pack => pack.id === 'atc')?.defaultActive).toBe(false)
+    expect(data.map(pack => pack.id)).toEqual(['demos', 'pwr-ops', 'atc'])
+    expect(data.map(pack => pack.deployment)).toEqual(['bundled', 'bundled', 'installed'])
 
     // The installed pack reports its own tools/skills correctly.
     const atc = data.find(pack => pack.id === 'atc')!
     expect(atc.tools).toEqual(['atc_ping'])
     expect(atc.skills).toEqual(['atc/demo'])
 
-    // System pack tool/skill counts depend on what the test's tool registry
-    // contains — makeDeps doesn't pre-load built-ins or external dropins,
-    // so core/local should be empty here. (Production has the full set.)
-    expect(data.find(pack => pack.id === 'core')?.tools).toEqual([])
-    expect(data.find(pack => pack.id === 'local')?.tools).toEqual([])
   })
 })

@@ -9,8 +9,8 @@
 // declared skills (real prod incident: biometric-awareness skill active
 // in Cafe room → agent's map-rendering tools rejected → 5-iteration loop).
 //
-// New semantic: tool access is gated by (a) agent's spawn-time
-// `allowedTools` list and (b) per-room pack activation. Skill metadata
+// Tool access is gated by (a) the Agent's exact Tool Selection and (b),
+// for Pack-owned tools, per-Room Pack activation. Skill metadata
 // is not consulted by the executor.
 //
 // This file locks that contract. If a future change re-introduces a
@@ -33,7 +33,7 @@ const mockTool = (name: string): Tool => ({
 const fakeContext: ToolContext = { callerId: 'a-1', callerName: 'TestAgent' }
 
 describe('executor: skill `allowed-tools` is no longer a runtime gate', () => {
-  test('tool calls are NOT gated by any skill whitelist — pack activation alone decides', async () => {
+  test('tool calls are not gated by any skill whitelist', async () => {
     // Repros the Cafe-room incident: a skill declared a narrow tool list
     // and the executor blocked everything else. With the new semantic the
     // executor consults only (allowedTools ∪ pack-activation) — skill
@@ -42,7 +42,7 @@ describe('executor: skill `allowed-tools` is no longer a runtime gate', () => {
     registry.register(mockTool('biometrics_start'))
     registry.register(mockTool('geo_list_features'))
 
-    // Pack activation surfaces both tools (core/local implicit).
+    // Built-in tools have no Pack owner, so Room activation is irrelevant.
     const getRoomActivation = (roomId: string) =>
       roomId === 'room-cafe' ? { getActivePacks: () => [] } : undefined
 
@@ -63,7 +63,7 @@ describe('executor: skill `allowed-tools` is no longer a runtime gate', () => {
     expect(results[0]!.success).toBe(true)
   })
 
-  test('agent allowlist still gates: tool not in allowedTools and not pack-active → rejected', async () => {
+  test('Agent Tool Selection is exact', async () => {
     // Regression guard for the OTHER gate. Removing the skill whitelist
     // must NOT loosen the agent's own allowed-tools list.
     const registry = createToolRegistry()
@@ -82,7 +82,7 @@ describe('executor: skill `allowed-tools` is no longer a runtime gate', () => {
       'room-x',
     )
     expect(results[0]!.success).toBe(false)
-    expect(results[0]!.error).toContain('is not available')
+    expect(results[0]!.error).toContain("is not in this Agent's tool selection")
   })
 
   test('pack-activation gate still works: pack-tool callable in active room, not in inactive', async () => {
@@ -98,7 +98,7 @@ describe('executor: skill `allowed-tools` is no longer a runtime gate', () => {
 
     const executor = createToolExecutor(
       registry,
-      [],                                           // not in agent's spawn-time list
+      ['aviation_lookup'],                          // selected by the Agent
       fakeContext,
       getRoomActivation,
     )
@@ -108,12 +108,12 @@ describe('executor: skill `allowed-tools` is no longer a runtime gate', () => {
 
     const inactiveRoom = await executor([{ tool: 'aviation_lookup', arguments: {} }], 'room-inactive')
     expect(inactiveRoom[0]!.success).toBe(false)
-    expect(inactiveRoom[0]!.error).toContain('is not available')
+    expect(inactiveRoom[0]!.error).toContain('is not active in this Room')
     // Rejection must name WHICH gate fired (CLAUDE.md tripwire on silently-
     // ANDed permission gates). When a known pack-owned tool is unavailable
     // because the room hasn't activated the owning pack, the error must say
     // so — operator's mental model is "I see the tool, it should work."
-    expect(inactiveRoom[0]!.error).toContain('pack "aviation" is not active')
+    expect(inactiveRoom[0]!.error).toContain('Pack "aviation"')
   })
 
 

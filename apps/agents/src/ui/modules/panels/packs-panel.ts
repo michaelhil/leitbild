@@ -21,14 +21,12 @@ interface WikiRef {
 
 interface InstalledPack {
   id: string
+  deployment: 'bundled' | 'installed'
   descriptor: { name: string; description?: string }
   wikis: ReadonlyArray<WikiRef>
   uiExtensions: ReadonlyArray<string>
   tools: string[]
   skills: string[]
-  // system: true for the synthetic 'core' and 'local' packs. UI hides
-  // the activation toggle (always-active) and uninstall/update controls.
-  system?: boolean
 }
 
 interface RegistryPack {
@@ -221,30 +219,22 @@ const renderInstalledSection = (
     }
     row.appendChild(bodyCol)
 
-    // System packs (core, local) are always-active and cannot be
-    // uninstalled — show a "system" badge instead of toggle/buttons.
-    if (pack.system) {
-      const badge = document.createElement('span')
-      badge.className = 'text-[10px] text-text-subtle uppercase tracking-wide px-2'
-      badge.setAttribute('title', 'Always active. Built into leitbild or sourced from your drop-in dirs.')
-      badge.textContent = 'system · always on'
-      row.appendChild(badge)
-    } else {
-      if (activation) {
-        const lbl = document.createElement('label')
-        lbl.className = 'pack-toggle inline-flex items-center gap-1 cursor-pointer select-none px-2'
-        lbl.setAttribute('title', `Toggle activation in ${activation.roomName}`)
-        const input = document.createElement('input')
-        input.type = 'checkbox'
-        input.className = 'pack-toggle-input'
-        input.checked = isActive
-        const stateSpan = document.createElement('span')
-        stateSpan.className = 'text-[10px] text-text-subtle'
-        stateSpan.textContent = isActive ? 'active' : 'inactive'
-        lbl.appendChild(input)
-        lbl.appendChild(stateSpan)
-        row.appendChild(lbl)
-      }
+    if (activation) {
+      const lbl = document.createElement('label')
+      lbl.className = 'pack-toggle inline-flex items-center gap-1 cursor-pointer select-none px-2'
+      lbl.setAttribute('title', `Toggle activation in ${activation.roomName}`)
+      const input = document.createElement('input')
+      input.type = 'checkbox'
+      input.className = 'pack-toggle-input'
+      input.checked = isActive
+      const stateSpan = document.createElement('span')
+      stateSpan.className = 'text-[10px] text-text-subtle'
+      stateSpan.textContent = isActive ? 'active' : 'inactive'
+      lbl.appendChild(input)
+      lbl.appendChild(stateSpan)
+      row.appendChild(lbl)
+    }
+    if (pack.deployment === 'installed') {
       const updateBtn = document.createElement('button')
       updateBtn.className = 'pack-update text-text-subtle hover:text-text px-2 py-1'
       updateBtn.setAttribute('title', 'Update (git pull)')
@@ -257,7 +247,7 @@ const renderInstalledSection = (
       row.appendChild(uninstallBtn)
     }
 
-    if (activation && !pack.system) {
+    if (activation) {
       const input = row.querySelector<HTMLInputElement>('.pack-toggle-input')
       input?.addEventListener('change', async () => {
         const next = input.checked
@@ -279,11 +269,7 @@ const renderInstalledSection = (
         // manual call needed.
       })
     }
-    // Update/uninstall only apply to installed (non-system) packs. The
-    // buttons aren't rendered for system packs, so the querySelector
-    // returns null and the listener is a no-op — guard explicitly so
-    // future readers don't ask "why is this attaching to nothing."
-    if (!pack.system) {
+    if (pack.deployment === 'installed') {
       row.querySelector<HTMLButtonElement>('.pack-update')?.addEventListener('click', async () => {
         showToast(document.body, `${pack.id}: updating…`, { position: 'fixed' })
         const res = await apiFetch(`/packs/update/${encodeURIComponent(pack.id)}`, { method: 'POST' })

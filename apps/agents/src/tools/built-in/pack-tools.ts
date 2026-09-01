@@ -93,16 +93,6 @@ export interface PackToolsDeps {
   readonly scrubActivePacks?: (packId: string) =>
     Promise<{ roomId: string; activePacks: ReadonlyArray<string> }[]>
     | { roomId: string; activePacks: ReadonlyArray<string> }[]
-  // Optional: auto-activate a freshly-installed pack in every existing
-  // Room across every live Workspace. Mirrors scrubActivePacks but adds
-  // (instead of removing) the packId. Without this wired, install_pack
-  // just registers the pack but doesn't surface its tools in any room
-  // until the user toggles per-room — a friction point users have called
-  // out. With it wired, "install pack X" means "X is usable everywhere
-  // immediately." Per-room opt-out still works.
-  readonly autoActivateInAllRooms?: (packId: string) =>
-    Promise<{ roomId: string; activePacks: ReadonlyArray<string> }[]>
-    | { roomId: string; activePacks: ReadonlyArray<string> }[]
   // Optional: re-scan <pack>/geodata/*.geojson across all installed
   // packs. Called on install/update/uninstall so newly-bundled (or
   // newly-removed) geodata categories show up in geo_lookup + the
@@ -318,19 +308,6 @@ export const createInstallPackTool = (deps: PackToolsDeps): Tool => ({
       }
     } catch (err) {
       console.error(`[packs] refreshAllAgentTools failed after install "${packId}":`, err)
-    }
-    // Auto-activate in every existing Room across all live Workspaces.
-    // Without this, the pack is registered but its tools are invisible
-    // until the user toggles per-room — friction users have called out.
-    // Per-room opt-out continues to work normally (a room that toggles
-    // OFF after auto-activate keeps the user's choice).
-    try {
-      const activated = (await deps.autoActivateInAllRooms?.(packId)) ?? []
-      if (activated.length > 0) {
-        console.log(`[packs] auto-activated "${packId}" in ${activated.length} room${activated.length === 1 ? '' : 's'}`)
-      }
-    } catch (err) {
-      console.error(`[packs] autoActivateInAllRooms failed after install "${packId}":`, err)
     }
     deps.notifyPacksChanged?.({
       action: 'installed', packId: packId,
@@ -641,32 +618,16 @@ export const createUninstallPackTool = (deps: PackToolsDeps): Tool => ({
 
 export const createListPacksTool = (deps: PackToolsDeps): Tool => ({
   name: 'list_packs',
-  description: 'Lists every pack the system knows about — bundled (compiled into the binary: core, local, demos, pwr-ops) plus any filesystem-installed packs under ~/.leitbild/packs. Each entry carries `system` (cannot be removed from a room) and `defaultActive` (auto-added to new rooms) flags.',
-  returns: 'Array of pack objects, each with `system: boolean` and `defaultActive: boolean`.',
+  description: 'Lists every Agent Pack the system knows about, including compiled and filesystem-installed Packs, with their discovered contributions.',
+  returns: 'Array of Agent Pack descriptors and discovered tool, skill, wiki, and UI contributions.',
   parameters: { type: 'object', properties: {} },
   execute: async () => {
     const installedPacks = await scanPacks(deps.packsDir)
     const entries = deps.toolRegistry.listEntries()
     const skills = deps.skillStore.list()
 
-    // Bundled packs (core, local, demos, pwr-ops) — table-driven from
-    // src/packs/bundled.ts. Tools are matched to a packId by
-    // packNameFor-equivalent rules:
-    //   core   ← kind:'built-in'
-    //   local  ← kind:'external', or skill-bundled with no pack
-    //   demos  ← kind:'pack-bundled', pack:'demos'
-    //   pwr-ops← kind:'pack-bundled', pack:'pwr-ops'
-    // Same decode lives in src/core/types/tool-pack.ts:packNameFor — drift
-    // between the two would surface as tools missing from a list_packs
-    // bucket. Asserted by the bundled-pack test.
-    const matchTool = (ns: string) => (e: typeof entries[number]): boolean => {
-      switch (ns) {
-        case 'core':  return e.source.kind === 'built-in'
-        case 'local': return e.source.kind === 'external' ||
-                              (e.source.kind === 'skill-bundled' && !e.source.pack)
-        default:      return e.source.kind === 'pack-bundled' && e.source.pack === ns
-      }
-    }
+    const matchTool = (packId: string) => (entry: typeof entries[number]): boolean =>
+      entry.source.pack === packId
     const matchSkill = (ns: string) => (s: typeof skills[number]): boolean => {
       if (ns === 'local') return !s.pack
       return s.pack === ns
@@ -674,17 +635,17 @@ export const createListPacksTool = (deps: PackToolsDeps): Tool => ({
 
     const bundledEntries = BUNDLED_PACKS.map(pack => ({
       id: pack.descriptor.id,
+      deployment: 'bundled' as const,
       descriptor: pack.descriptor,
       wikis: [],
       uiExtensions: [],
       tools: entries.filter(matchTool(pack.descriptor.id)).map(e => e.tool.name),
       skills: skills.filter(matchSkill(pack.descriptor.id)).map(s => s.name),
-      system: pack.system,
-      defaultActive: pack.defaultActive,
     }))
 
     const installedEntries = installedPacks.map(p => ({
       id: p.id,
+      deployment: 'installed' as const,
       descriptor: p.manifest.descriptor,
       wikis: p.manifest.wikis,
       uiExtensions: p.manifest.uiExtensions,
@@ -694,8 +655,6 @@ export const createListPacksTool = (deps: PackToolsDeps): Tool => ({
       skills: skills
         .filter(s => s.pack === p.id)
         .map(s => s.name),
-      system: false,
-      defaultActive: false,                       // user opted in by installing
     }))
 
     // Bundled packs first — that's the baseline surface for new rooms.

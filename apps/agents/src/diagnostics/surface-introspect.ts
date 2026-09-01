@@ -11,19 +11,19 @@ import type { ToolDefinition } from '../core/types/tool.ts'
 import type { AgentsWorkspaceRuntime } from '../main.ts'
 import { asAIAgent } from '../agents/shared.ts'
 import { createToolSurface, inferProviderFromModelRef, type GetRoomActivation } from '../tool-surface/index.ts'
-import { packNameFor } from '../core/types/tool-pack.ts'
+import { contributionSourceFor } from '../core/types/tool-pack.ts'
 import { effectiveActivePackSet } from '../packs/activation.ts'
 import { estimateTokens } from '../agents/context-builder.ts'
 import { CURATED_MODELS } from '../llm/models/catalog.ts'
 
 export interface ToolSurfaceTool {
   readonly name: string
-  readonly pack: string                        // owning pack (core/local/<ns>)
+  readonly source: string                      // Pack id, built-in, or local
   readonly tokens: number                      // estimated definition tokens
 }
 
-export interface PackRollup {
-  readonly pack: string
+export interface SourceRollup {
+  readonly source: string
   readonly tools: number
   readonly tokens: number
 }
@@ -50,7 +50,7 @@ export interface AgentSurface {
   readonly requestedCount: number
   readonly afterActivationCount: number
   readonly tools: ReadonlyArray<ToolSurfaceTool>
-  readonly packs: ReadonlyArray<PackRollup>
+  readonly sources: ReadonlyArray<SourceRollup>
   readonly totalTokens: number
 }
 
@@ -73,7 +73,7 @@ export const introspectAgentSurface = (
   const activePacks = effectiveActivePackSet(room)
 
   const registry = system.toolRegistry
-  const requestedTools = config.tools ?? registry.list().map(t => t.name)
+  const requestedTools = config.tools ?? []
 
   // Reuse the production surface — guarantees we report what the eval
   // would actually compute.
@@ -81,25 +81,25 @@ export const introspectAgentSurface = (
   const surface = createToolSurface({ registry, requestedTools, getRoomActivation })
   const defs: ReadonlyArray<ToolDefinition> = surface.project(roomId, configuredProvider ?? undefined)
 
-  const packForName = (name: string): string => {
+  const sourceForName = (name: string): string => {
     const entry = registry.getEntry(name)
-    return entry ? packNameFor(entry) : 'unknown'
+    return entry ? contributionSourceFor(entry) : 'unknown'
   }
 
   const tools: ToolSurfaceTool[] = defs.map(d => ({
     name: d.function.name,
-    pack: packForName(d.function.name),
+    source: sourceForName(d.function.name),
     tokens: estimateTokens(JSON.stringify(d)),
   }))
 
   const packBuckets = new Map<string, { tools: number; tokens: number }>()
   for (const t of tools) {
-    const b = packBuckets.get(t.pack) ?? { tools: 0, tokens: 0 }
+    const b = packBuckets.get(t.source) ?? { tools: 0, tokens: 0 }
     b.tools += 1
     b.tokens += t.tokens
-    packBuckets.set(t.pack, b)
+    packBuckets.set(t.source, b)
   }
-  const packs: PackRollup[] = [...packBuckets].map(([pack, b]) => ({ pack, ...b }))
+  const sources: SourceRollup[] = [...packBuckets].map(([source, b]) => ({ source, ...b }))
     .sort((a, b) => b.tokens - a.tokens)
 
   // afterActivation is the candidate set size BEFORE family compression —
@@ -129,7 +129,7 @@ export const introspectAgentSurface = (
     requestedCount: requestedTools.length,
     afterActivationCount: afterActivation,
     tools: tools.sort((a, b) => a.name.localeCompare(b.name)),
-    packs,
+    sources,
     totalTokens: tools.reduce((s, t) => s + t.tokens, 0),
   }
 }

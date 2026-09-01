@@ -2,6 +2,7 @@ import type { AgentsWorkspaceRuntime } from '../../main.ts'
 import { BUNDLED_PACKS } from '../../packs/bundled.ts'
 import { scanPacks } from '../../packs/scanner.ts'
 import { SYSTEM_SENDER_ID } from '../types/constants.ts'
+import { owningPackFor } from '../types/tool-pack.ts'
 import { resolveWorkspaceDefaultModel } from '../workspaces/seed-workspace.ts'
 import type { RoomDefinition, PromptDeckEntry } from './room-definition-catalog.ts'
 import type { RoomDefinitionLibrary } from './room-definition-library.ts'
@@ -25,7 +26,7 @@ const requireKnownPacks = async (
   ])
   const missing = requested.filter(id => !known.has(id))
   if (missing.length > 0) throw new Error(`Required Packs are unavailable: ${missing.join(', ')}`)
-  return [...BUNDLED_PACKS.filter(pack => pack.system).map(pack => pack.descriptor.id), ...requested]
+  return [...new Set(requested)]
 }
 
 const uniqueAgentName = (system: AgentsWorkspaceRuntime, requested: string): string => {
@@ -35,9 +36,21 @@ const uniqueAgentName = (system: AgentsWorkspaceRuntime, requested: string): str
   return candidate
 }
 
-const requireKnownTools = (system: AgentsWorkspaceRuntime, requested: ReadonlyArray<string>): void => {
-  const missing = requested.filter(name => system.toolRegistry.get(name) === undefined)
-  if (missing.length > 0) throw new Error(`Required tools are unavailable: ${missing.join(', ')}`)
+const validateAgentTools = (
+  system: AgentsWorkspaceRuntime,
+  definition: RoomDefinition,
+  activePacks: ReadonlySet<string>,
+): void => {
+  for (const agent of definition.room.agents) {
+    for (const toolName of agent.tools) {
+      const entry = system.toolRegistry.getEntry(toolName)
+      if (entry === undefined) throw new Error(`Agent "${agent.name}" selects unavailable tool "${toolName}"`)
+      const owningPack = owningPackFor(entry)
+      if (owningPack !== undefined && !activePacks.has(owningPack)) {
+        throw new Error(`Agent "${agent.name}" selects tool "${toolName}" from inactive Pack "${owningPack}"`)
+      }
+    }
+  }
 }
 
 export const startRoomDefinition = async (
@@ -48,18 +61,18 @@ export const startRoomDefinition = async (
 ): Promise<StartedRoomDefinition> => {
   const current = await library.get(definitionId)
   if (!current) throw new Error(`Unknown Room Definition "${definitionId}"`)
-  if (current.id !== revisionId) throw new Error(`Room Definition Revision is not current: ${revisionId}`)
+  if (current.currentRevisionId !== revisionId) throw new Error(`Room Definition Revision is not current: ${revisionId}`)
   const revision = await library.getRevision(revisionId)
   if (!revision || revision.definitionId !== definitionId) throw new Error(`Unknown Room Definition Revision "${revisionId}"`)
-  const definition = revision.definition
-  requireKnownTools(system, definition.requiredTools)
+  const definition = revision.document
   const activePacks = await requireKnownPacks(system, definition.room.packs)
+  validateAgentTools(system, definition, new Set(activePacks))
   const human = system.team.listByKind('human').find(agent => agent.name === 'You')
     ?? system.team.listByKind('human')[0]
   if (!human) throw new Error('This Workspace has no human agent')
 
   const room = system.rooms.createRoomSafe({
-    name: definition.room.name,
+    name: definition.title,
     roomPrompt: definition.room.prompt,
     createdBy: SYSTEM_SENDER_ID,
     sourceDefinition: { id: definition.id, revisionId: revision.id },
@@ -69,13 +82,13 @@ export const startRoomDefinition = async (
     room.setActivePacks(activePacks)
     room.setDeliveryMode(definition.room.deliveryMode)
     await system.addAgentToRoom(human.id, room.profile.id, 'demo')
-    const model = resolveWorkspaceDefaultModel(system)
+    const defaultModel = resolveWorkspaceDefaultModel(system)
     for (const agentDefinition of definition.room.agents) {
       const agent = await system.spawnAIAgent({
         name: uniqueAgentName(system, agentDefinition.name),
-        model,
+        model: agentDefinition.model ?? defaultModel,
         persona: agentDefinition.persona,
-        ...(agentDefinition.tools ? { tools: agentDefinition.tools } : {}),
+        tools: agentDefinition.tools,
         ...(agentDefinition.toolGrants ? { toolGrants: agentDefinition.toolGrants } : {}),
         ...(agentDefinition.temperature !== undefined ? { temperature: agentDefinition.temperature } : {}),
       })
@@ -113,7 +126,7 @@ export const runPromptDeckEntry = async (
   if (!revision || revision.definitionId !== sourceDefinition.id) {
     throw new Error(`Room Definition Revision "${sourceDefinition.revisionId}" not found`)
   }
-  const entry = revision.definition.deck.entries.find(candidate => candidate.id === entryId)
+  const entry = revision.document.deck.entries.find(candidate => candidate.id === entryId)
   if (!entry) throw new Error(`Unknown Prompt Deck entry "${entryId}"`)
 
   if (entry.action.kind === 'start-script') {

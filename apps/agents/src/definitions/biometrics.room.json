@@ -1,0 +1,53 @@
+{
+  "id": "biometrics",
+  "title": "Biometrics Demo",
+  "description": "Webcam-based attention tracking. The agent observes your face for a moment, narrates what it sees, then releases the camera. You'll be asked to consent to webcam access the first time. Re-open this list any time from the 🪄 icon in the room header.",
+  "room": {
+    "deliveryMode": "manual",
+    "packs": [
+      "biometrics"
+    ],
+    "agents": [
+      {
+        "name": "Biometrics Guide",
+        "persona": "You facilitate this biometrics demonstration. Follow the selected request, use the available biometrics tools in the requested lifecycle order, report only what the tool evidence supports, and release the camera promptly.",
+        "tools": [
+          "biometrics_start",
+          "biometrics_read",
+          "biometrics_stop"
+        ]
+      }
+    ]
+  },
+  "deck": {
+    "entries": [
+      {
+        "id": "watch-me",
+        "label": "Watch me",
+        "description": "Agent starts the camera, reads one frame, narrates, and stops.",
+        "action": {
+          "kind": "post-message",
+          "content": "Watch me for a moment using the biometrics tools, then tell me what you see — attention level, dominant expression, anything notable. Use biometrics_start, then biometrics_read with the captureId you got, then biometrics_stop with the same captureId."
+        }
+      },
+      {
+        "id": "coach-focus",
+        "label": "Coach my focus",
+        "description": "Agent observes and offers one piece of concrete focus advice.",
+        "action": {
+          "kind": "post-message",
+          "content": "Use the biometrics tools to observe me for a moment, then give me one concrete piece of advice for staying focused based on what you see. One reading, one observation, one tip."
+        }
+      },
+      {
+        "id": "quick-check",
+        "label": "Quick check",
+        "description": "Just a quick glance — am I still here?",
+        "action": {
+          "kind": "post-message",
+          "content": "Use biometrics_start, biometrics_read, then biometrics_stop to quickly check whether I'm still at my desk and looking attentive. One sentence reply."
+        }
+      }
+    ]
+  }
+}

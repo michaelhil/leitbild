@@ -41,7 +41,7 @@ export const COMPOSITION_CATALOG: ReadonlyArray<CompositionDefinition> = [
       {
         capabilityId: capabilityIdSchema.parse('agents.room-definition.start'),
         moduleId: moduleIdSchema.parse('agents'),
-        definitionType: definitionTypeSchema.parse('agents.room'),
+        definitionType: definitionTypeSchema.parse('agents.room-definition'),
         definitionId: definitionIdSchema.parse('control-room-script'),
       },
     ],

@@ -97,6 +97,8 @@ describe('Agents Workspace Module API', () => {
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.agent.create')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room-definition.start')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room-definition.inspect')
+    expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room-definition.create')
+    expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room-definition.update')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room.inspect')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.prompt-deck.run-entry')
 
@@ -213,6 +215,56 @@ describe('Agents Workspace Module API', () => {
       await (await request('GET', `/internal/workspaces/${workspaceId}/resources`)).json(),
     )
     expect(resourcesAfterRoomDelete.resources.some(resource => resource.ref.id === startedRoomId)).toBe(false)
+  })
+
+  test('creates and revises Room Definitions through the same capability surface', async () => {
+    const workspaceId = newWorkspaceId()
+    await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
+    const definition = {
+      id: 'custom-briefing',
+      title: 'Custom briefing',
+      description: 'An editable briefing Room.',
+      room: { deliveryMode: 'manual', packs: [], agents: [] },
+      deck: { entries: [] },
+    }
+    const created = await request(
+      'POST',
+      `/internal/workspaces/${workspaceId}/capabilities/agents.room-definition.create/invoke`,
+      invokeBody(workspaceId, 'agents.room-definition.create', { definition }),
+    )
+    expect(created.status).toBe(201)
+    const createdRef = (await created.json() as {
+      result: { definition: { type: string; id: string; revisionId: string } }
+    }).result.definition
+
+    const updated = await request(
+      'POST',
+      `/internal/workspaces/${workspaceId}/capabilities/agents.room-definition.update/invoke`,
+      invokeBody(workspaceId, 'agents.room-definition.update', {
+        definition: { ...definition, title: 'Revised briefing' },
+      }, { definition: createdRef }),
+    )
+    expect(updated.status).toBe(200)
+    const updatedRef = (await updated.json() as {
+      result: { definition: { revisionId: string } }
+    }).result.definition
+    expect(updatedRef.revisionId).not.toBe(createdRef.revisionId)
+
+    const listed = moduleDefinitionCollectionSchema.parse(
+      await (await request('GET', `/internal/workspaces/${workspaceId}/definitions`)).json(),
+    )
+    const custom = listed.definitions.find(item => item.ref.id === definition.id)
+    expect(custom?.title).toBe('Revised briefing')
+    expect(custom?.currentRevisionId).toBe(updatedRef.revisionId)
+
+    const staleUpdate = await request(
+      'POST',
+      `/internal/workspaces/${workspaceId}/capabilities/agents.room-definition.update/invoke`,
+      invokeBody(workspaceId, 'agents.room-definition.update', { definition }, {
+        definition: createdRef,
+      }),
+    )
+    expect(staleUpdate.status).toBe(409)
   })
 
   test('removing Agents removes the complete Module', async () => {

@@ -101,11 +101,8 @@ export interface Room {
   // Current `room_summary` at top of stream, if any.
   readonly getCurrentCompressionMessage: () => Message | undefined
 
-  // Active Packs — the complete Pack-id list active in this Room.
-  // Includes system Packs (core, local) and bundled default-active
-  // packs. New rooms get defaultActivePackIds() seeded at construction
-  // (see src/packs/bundled.ts). The activation route enforces that system
-  // packs can never be dropped from this list.
+  // Active Packs — the complete Pack-id list whose contributions are
+  // available in this Room. Built-in and local contributions are not Packs.
   readonly getActivePacks: () => ReadonlyArray<string>
   readonly setActivePacks: (packIds: ReadonlyArray<string>) => void
 

@@ -659,7 +659,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     if (!room) return ''
     const active = effectiveActivePackSet(room)
     const inScope = skillStore.forScope(room.profile.name)
-    const visible = inScope.filter(s => active.has(s.pack ?? 'local'))
+    const visible = inScope.filter(skill => skill.pack === undefined || active.has(skill.pack))
     if (visible.length === 0) return ''
     return visible.map(s => `[${s.name}] ${s.description}\n${s.body}`).join('\n\n---\n\n')
   }
@@ -677,7 +677,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     if (!room) return []
     const active = effectiveActivePackSet(room)
     return skillStore.forScope(room.profile.name)
-      .filter(s => active.has(s.pack ?? 'local'))
+      .filter(skill => skill.pack === undefined || active.has(skill.pack))
       .filter(s => s.allowedToolNames.length > 0)
       .map(s => ({ name: s.name, declaredTools: s.allowedToolNames }))
   }
@@ -686,7 +686,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     for (const agent of team.listByKind('ai')) {
       const ai = agent as AIAgent
       if (!ai.refreshTools) continue
-      const toolNames = ai.getTools() ?? toolRegistry.list().map(t => t.name)
+      const toolNames = ai.getTools() ?? []
       const support = await buildToolSupport(
         toolNames, toolRegistry,
         { id: ai.id, name: ai.name, currentModel: () => ai.getModel() },

@@ -138,42 +138,21 @@ export const roomRoutes: RouteEntry[] = [
         ? (body!.activePacks as unknown[]).filter((v): v is string => typeof v === 'string')
         : []
 
-      // Validate every requested Pack id against list_packs — same
-      // truth source the UI uses, no parallel scanner. list_packs now
-      // includes bundled packs (core, local, demos, pwr-ops) so demo
-      // modal PUTs of ['pwr-ops', ...] validate cleanly.
+      // Validate every requested Pack id against list_packs, the same
+      // contribution inventory used by the UI.
       const listTool = system.toolRegistry.get('list_packs')
       const listed = listTool
         ? await listTool.execute({}, { callerId: 'api', callerName: 'api' })
         : { success: false }
       const known = listed.success && Array.isArray(listed.data)
-        ? (listed.data as Array<{ id: string; system: boolean }>)
+        ? (listed.data as Array<{ id: string }>)
         : []
       const knownSet = new Set(known.map(pack => pack.id))
-      const systemSet = new Set(known.filter(pack => pack.system).map(pack => pack.id))
 
       const unknown = requested.filter(ns => !knownSet.has(ns))
       if (unknown.length > 0) return errorResponse(`unknown Pack ids: ${unknown.join(', ')}`, 400)
 
-      // Auto-include system packs if the client omitted them. Treats the
-      // request as "everything the user wants active among non-system
-      // packs" + the always-on system layer. Prevents the UI from having
-      // to remember to include core/local in every PUT.
-      const requestedSet = new Set(requested)
-      const next = [...systemSet, ...requested.filter(ns => !systemSet.has(ns))]
-
-      // Sanity: if the current room state has a system pack the request
-      // explicitly omitted, the merge above re-adds it. Loud-log if this
-      // ever surfaces (it would indicate a UI that's stripping system
-      // packs deliberately — bug, not a feature).
-      const current = new Set(room.getActivePacks())
-      for (const sys of systemSet) {
-        if (current.has(sys) && !requestedSet.has(sys)) {
-          console.warn(`[packs] PUT /rooms/${name}/packs omitted system pack "${sys}"; re-added`)
-        }
-      }
-
-      room.setActivePacks(next)
+      room.setActivePacks(requested)
       // per-Workspace state — pack activation is scoped to one tenant's room.
       // The previous global `broadcast(...)` fanned out to every connected
       // tenant; their UI handlers no-oped on unfamiliar roomId but the
@@ -181,7 +160,7 @@ export const roomRoutes: RouteEntry[] = [
       // typed optional (MCP-mode shape compatibility); pack-activation
       // routes only register in HTTP mode where it's always wired.
       try {
-        broadcastToWorkspace?.(workspaceId, { type: 'pack_activation_changed', roomId: room.profile.id, activePacks: next })
+        broadcastToWorkspace?.(workspaceId, { type: 'pack_activation_changed', roomId: room.profile.id, activePacks: requested })
       } catch { /* ignore */ }
       return json({ activePacks: room.getActivePacks() })
     },

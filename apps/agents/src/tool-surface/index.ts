@@ -17,17 +17,15 @@
 // other tools first — a brittleness landmine that caused production bugs
 // (the skill said "call biometrics_start" but the cap had stripped the tool
 // from the surface, so models rationalised "not supported in this
-// environment"). The cap was removed in favour of trusting user intent:
-// pack activation is authoritative. If the user activates a pack, every
-// tool that pack registered is in the surface. Period. Surface size
-// pressure is a knob the user controls (pack activation toggles), not
-// something the system silently mitigates by lying about capabilities.
+// environment"). The cap was removed in favour of exact Agent Tool
+// Selections. Room Pack activation controls availability; it never expands
+// an Agent's selection.
 //
 // Stateless except for the registered synthetic dispatcher tools (one-time
 // registration at boot). No per-agent state. No snapshot impact.
 
 import type { Tool, ToolDefinition, ToolRegistry } from '../core/types/tool.ts'
-import { packNameFor } from '../core/types/tool-pack.ts'
+import { owningPackFor } from '../core/types/tool-pack.ts'
 import { toolsToDefinitions } from '../llm/tool-capability.ts'
 import { effectiveActivePackSet } from '../packs/activation.ts'
 import {
@@ -70,7 +68,7 @@ export interface ToolSurface {
 
 export interface CreateToolSurfaceDeps {
   readonly registry: ToolRegistry
-  readonly requestedTools: ReadonlyArray<string>           // existing config.tools ?? all
+  readonly requestedTools: ReadonlyArray<string>
   readonly getRoomActivation?: GetRoomActivation
   readonly families?: ReadonlyArray<ToolFamily>            // default BUILT_IN_FAMILIES (test seam)
 }
@@ -83,21 +81,8 @@ export const createToolSurface = (deps: CreateToolSurfaceDeps): ToolSurface => {
   // Compute once per project() call; member resolution is lazy so MCP /
   // pack lifecycle changes are picked up automatically.
   //
-  // Two contributions UNION into the candidate set:
-  //
-  //   1. The agent's requestedTools (config.tools or the implicit-active
-  //      default from spawn) — intersected with the registry and then
-  //      filtered by per-room pack activation. These are tools the agent
-  //      was spawned with.
-  //
-  //   2. EVERY tool whose owning pack is active in this room. This is the
-  //      "pack activation is authoritative" invariant: when a user
-  //      activates a pack in a room, ALL of that pack's tools become
-  //      visible to any agent in that room, regardless of whether the
-  //      agent's requestedTools listed them. Without this, the narrowed
-  //      spawn default would silently hide pack-bundled tools the user
-  //      explicitly turned on.
-  //
+  // The Agent Tool Selection is exact. Pack activation is an orthogonal
+  // availability check for Pack-owned tools.
   // Family dispatcher names (geo_tools, fs, pack_admin, codegen_tools)
   // are universally excluded from the candidate set. THIS FILTER IS
   // LOAD-BEARING — it prevents projection-time duplicate-function
@@ -114,8 +99,9 @@ export const createToolSurface = (deps: CreateToolSurfaceDeps): ToolSurface => {
     const accept = (name: string, entry: ReturnType<typeof deps.registry.getEntry>): boolean => {
       if (!entry) return false
       if (FAMILY_DISPATCHER_NAMES.has(name)) return false
-      if (!activeSet) return true                                    // no room → no filter
-      return activeSet.has(packNameFor(entry))
+      const owningPack = owningPackFor(entry)
+      if (owningPack === undefined || activeSet === null) return true
+      return activeSet.has(owningPack)
     }
 
     const candidates = new Set<string>()
@@ -123,15 +109,6 @@ export const createToolSurface = (deps: CreateToolSurfaceDeps): ToolSurface => {
     for (const name of requestedSet) {
       const entry = deps.registry.getEntry(name)
       if (accept(name, entry)) candidates.add(name)
-    }
-    // (2) every tool from an active pack — adds pack tools regardless of
-    //     whether the agent's spawn-time requestedTools listed them.
-    if (activeSet) {
-      for (const entry of deps.registry.listEntries()) {
-        const name = entry.tool.name
-        if (FAMILY_DISPATCHER_NAMES.has(name)) continue
-        if (activeSet.has(packNameFor(entry))) candidates.add(name)
-      }
     }
     return candidates
   }

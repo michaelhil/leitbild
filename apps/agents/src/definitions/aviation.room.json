@@ -1,0 +1,61 @@
+{
+  "id": "aviation",
+  "title": "Aviation Demo",
+  "description": "Live VATSIM network data — real human pilots flying simulators right now — plus offshore platform geodata, rendered on an inline map. Re-open this list any time from the 🪄 icon in the room header.",
+  "room": {
+    "deliveryMode": "manual",
+    "packs": [
+      "demos"
+    ],
+    "agents": [
+      {
+        "name": "Aviation Guide",
+        "persona": "You facilitate this live-data demonstration. Use the requested tools, distinguish live observations from interpretation, and present geospatial results clearly.",
+        "tools": [
+          "vatsim_arrivals",
+          "norway_platforms"
+        ]
+      }
+    ]
+  },
+  "deck": {
+    "entries": [
+      {
+        "id": "heathrow-arrivals",
+        "label": "Arrivals into Heathrow",
+        "description": "Live VATSIM arrivals to EGLL on a map.",
+        "action": {
+          "kind": "post-message",
+          "content": "Use the vatsim_arrivals tool with ICAO EGLL and show me live arrivals to London Heathrow on a map."
+        }
+      },
+      {
+        "id": "jfk-arrivals",
+        "label": "Arrivals into JFK",
+        "description": "Live VATSIM arrivals to KJFK on a map.",
+        "action": {
+          "kind": "post-message",
+          "content": "Use the vatsim_arrivals tool with ICAO KJFK and show me live arrivals to New York JFK on a map."
+        }
+      },
+      {
+        "id": "norway-platforms",
+        "label": "Norwegian oil platforms",
+        "description": "Every major NCS platform plotted on a map.",
+        "action": {
+          "kind": "post-message",
+          "content": "Use the norway_platforms tool and show me all major Norwegian Continental Shelf oil & gas platforms on a map."
+        }
+      },
+      {
+        "id": "oslo-arrivals",
+        "label": "Arrivals into Oslo",
+        "description": "Live VATSIM arrivals to ENGM on a map.",
+        "action": {
+          "kind": "post-message",
+          "content": "Use the vatsim_arrivals tool with ICAO ENGM and show me live arrivals to Oslo Gardermoen on a map."
+        }
+      }
+    ]
+  }
+}

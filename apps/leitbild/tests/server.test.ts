@@ -25,7 +25,7 @@ const gateway = (): ModuleGateway => ({
       title: 'Halden Process Plant', currentRevisionId: 'revision-0123456789abcdef0123456789abcdef',
       capabilityIds: ['world.scenario.start'],
     } : {
-      ref: { workspaceId, moduleId, type: 'agents.room', id: 'control-room-script' },
+      ref: { workspaceId, moduleId, type: 'agents.room-definition', id: 'control-room-script' },
       title: 'Control Room', currentRevisionId: 'revision-0123456789abcdef0123456789abcdef',
       capabilityIds: ['agents.room-definition.start'],
     },

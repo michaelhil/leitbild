@@ -483,47 +483,6 @@ export const bootstrap = async (): Promise<void> => {
       await refreshPackGeodata(sharedPaths.packs())
     }
 
-    // Cross-Workspace auto-activate: when a new pack installs, add its
-    // Pack id to every room.activePacks across every live Workspace.
-    // Mirrors crossWorkspaceScrubActivePacks but adds (not removes). Per-
-    // room opt-out via the panel toggle still works.
-    const crossWorkspaceAutoActivatePack = async (
-      packId: string,
-    ): Promise<{ roomId: string; activePacks: ReadonlyArray<string> }[]> => {
-      const out: { roomId: string; activePacks: ReadonlyArray<string> }[] = []
-      const dirtyWorkspaces = new Set<WorkspaceId>()
-      for (const meta of registry.list()) {
-        const sys = registry.tryGetLive(meta.id)
-        if (!sys) continue
-        for (const profile of sys.rooms.listAllRooms()) {
-          const room = sys.rooms.getRoom(profile.id)
-          if (!room) continue
-          const before = room.getActivePacks()
-          if (before.includes(packId)) continue   // already active in this room
-          const after = [...before, packId]
-          room.setActivePacks(after)
-          out.push({ roomId: profile.id, activePacks: after })
-          dirtyWorkspaces.add(meta.id)
-          try {
-            wsManager?.broadcastToWorkspace(meta.id, {
-              type: 'pack_activation_changed', roomId: profile.id, activePacks: after,
-            })
-          } catch { /* ignore */ }
-        }
-      }
-      // Force-flush every affected Workspace's auto-saver so a crash within
-      // the 5s debounce doesn't lose the activation. Same pattern as
-      // crossWorkspaceScrubActivePacks.
-      for (const id of dirtyWorkspaces) {
-        const saver = registry.autoSaverFor(id)
-        if (!saver) continue
-        saver.flush().catch(err => {
-          console.error(`[packs] post-auto-activate snapshot flush failed for ${id}:`, err)
-        })
-      }
-      return out
-    }
-
     deployment.sharedToolRegistry.registerAll(createPackTools({
       packsDir: sharedPaths.packs(),
       toolRegistry: deployment.sharedToolRegistry,
@@ -531,7 +490,6 @@ export const bootstrap = async (): Promise<void> => {
       refreshAllAgentTools: crossWorkspaceRefreshAllAgentTools,
       notifyPacksChanged: crossWorkspaceNotifyPacksChanged,
       scrubActivePacks: crossWorkspaceScrubActivePacks,
-      autoActivateInAllRooms: crossWorkspaceAutoActivatePack,
       refreshPackGeodata: refreshPackGeodataAfterMutation,
     }))
   }
