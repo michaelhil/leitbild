@@ -98,6 +98,19 @@ export interface PackToolsDeps {
   // newly-removed) geodata categories show up in geo_lookup + the
   // overview UI without a server restart.
   readonly refreshPackGeodata?: () => Promise<void>
+  // Optional shared Script catalog refresh. Pack scripts are Deployment
+  // contributions, while active Script runs remain per Workspace.
+  readonly refreshPackScripts?: () => Promise<void>
+}
+
+const refreshPackCatalogs = async (deps: PackToolsDeps): Promise<void> => {
+  const refreshers = [deps.refreshPackGeodata, deps.refreshPackScripts]
+    .filter((refresh): refresh is () => Promise<void> => refresh !== undefined)
+  const results = await Promise.allSettled(refreshers.map(refresh => refresh()))
+  const failures = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
+  if (failures.length > 0) {
+    throw new AggregateError(failures, 'One or more Pack contribution catalogs failed to refresh')
+  }
 }
 
 // --- URL resolution ---
@@ -297,15 +310,11 @@ export const createInstallPackTool = (deps: PackToolsDeps): Tool => ({
       }
     }
 
-    try {
-      await deps.refreshAllAgentTools()
-      if (deps.refreshPackGeodata) {
-        try { await deps.refreshPackGeodata() }
-        catch (err) { console.error('[packs] refreshPackGeodata failed:', err) }
-      }
-    } catch (err) {
+    try { await deps.refreshAllAgentTools() } catch (err) {
       console.error(`[packs] refreshAllAgentTools failed after install "${packId}":`, err)
     }
+    try { await refreshPackCatalogs(deps) }
+    catch (err) { console.error('[packs] contribution catalog refresh failed:', err) }
     deps.notifyPacksChanged?.({
       action: 'installed', packId: packId,
       tools: result.tools, skills: result.skills,
@@ -469,15 +478,11 @@ export const createUpdatePackTool = (deps: PackToolsDeps): Tool => ({
     try { await rm(prevPath, { recursive: true, force: true }) }
     catch (err) { console.warn(`[packs] failed to clean .prev snapshot for "${packId}":`, err) }
 
-    try {
-      await deps.refreshAllAgentTools()
-      if (deps.refreshPackGeodata) {
-        try { await deps.refreshPackGeodata() }
-        catch (err) { console.error('[packs] refreshPackGeodata failed:', err) }
-      }
-    } catch (err) {
+    try { await deps.refreshAllAgentTools() } catch (err) {
       console.error(`[packs] refreshAllAgentTools failed after update "${packId}":`, err)
     }
+    try { await refreshPackCatalogs(deps) }
+    catch (err) { console.error('[packs] contribution catalog refresh failed:', err) }
     deps.notifyPacksChanged?.({
       action: 'updated', packId: packId,
       tools: result.tools, skills: result.skills,
@@ -558,15 +563,11 @@ export const createUninstallPackTool = (deps: PackToolsDeps): Tool => ({
     // some agent's tool list is stale until next spawn — log loudly,
     // don't fail the uninstall (the registry teardown already succeeded
     // and rolling back would leave a worse partial state).
-    try {
-      await deps.refreshAllAgentTools()
-      if (deps.refreshPackGeodata) {
-        try { await deps.refreshPackGeodata() }
-        catch (err) { console.error('[packs] refreshPackGeodata failed:', err) }
-      }
-    } catch (err) {
+    try { await deps.refreshAllAgentTools() } catch (err) {
       console.error(`[packs] refreshAllAgentTools failed after uninstall "${packId}":`, err)
     }
+    try { await refreshPackCatalogs(deps) }
+    catch (err) { console.error('[packs] contribution catalog refresh failed:', err) }
 
     // Step 4: notify clients of activation scrubs first (so per-room UIs
     // refresh before the global packs panel does), then the global change.
@@ -644,7 +645,7 @@ export const createListPacksTool = (deps: PackToolsDeps): Tool => ({
       wikis: p.manifest.wikis,
       uiExtensions: p.manifest.uiExtensions,
       tools: entries
-        .filter(e => e.source.kind === 'pack-bundled' && e.source.pack === p.id)
+        .filter(e => e.source.kind === 'pack-owned' && e.source.pack === p.id)
         .map(e => e.tool.name),
       skills: skills
         .filter(s => s.pack === p.id)

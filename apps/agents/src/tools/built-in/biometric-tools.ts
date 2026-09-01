@@ -1,10 +1,10 @@
 // Biometric capture tools — start / stop / read.
 //
 // These tools are implemented in core but registered with
-// source = { kind: 'pack-bundled', pack: 'biometrics' } when the
+// source = { kind: 'pack-owned', pack: 'biometrics' } when the
 // leitbild-biometrics pack is installed. That means:
 //   - Per-room activation filter (effectiveActivePacks) gates them just
-//     like any pack-bundled tool.
+//     like any pack-owned tool.
 //   - Uninstalling the pack removes them via the pack-tool unregister path
 //     (source.pack === 'biometrics' is the scrub key).
 //   - Installing the pack makes them appear without redeploying core.

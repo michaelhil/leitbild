@@ -100,7 +100,7 @@ const buildIndex = (features: ReadonlyArray<GeoFeature>): GeoIndex => {
 
 // ============================================================================
 // Merge — local + pack. Collision wins by precedence: pack > local.
-// Pack-bundled features are author-curated; user paste-imports yield to
+// Pack-owned features are author-curated; user paste-imports yield to
 // them. Each layer keeps its `properties.source` so callers can attribute.
 // The `pack` field is preserved so the room-aware filter can gate by
 // activation. (The historical 'discovered' layer was removed in commit Q
@@ -222,7 +222,7 @@ export const getCategory = async (id: string): Promise<CategoryMeta | null> => {
 }
 
 // Counts surface for the UI panel + geo_list_categories tool. Breaks down
-// by source: local (user paste-imports) and pack (pack-bundled). The
+// by source: local (user paste-imports) and pack (pack-owned). The
 // historical 'discovered' field was removed in commit Q.
 export const categoryStats = async (category: GeoCategory): Promise<{
   total: number

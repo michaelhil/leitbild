@@ -203,7 +203,7 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
     const script = system.scriptStore.get(scriptName)
     if (!script) return { ok: false, reason: `script "${scriptName}" not found` }
 
-    // Pack-bundled scripts require their owning Pack. Standalone scripts
+    // Pack-owned scripts require their owning Pack. Standalone scripts
     // are authored content and are available without Pack activation.
     const owningPack = script.pack
     const active = effectiveActivePackSet(room)

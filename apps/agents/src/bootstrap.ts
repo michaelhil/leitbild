@@ -125,9 +125,10 @@ export const bootstrap = async (): Promise<void> => {
   await loadSkills(resolve(process.cwd(), 'skills'), deployment.sharedSkillStore, deployment.sharedToolRegistry)
   await loadSkills(sharedPaths.skills(), deployment.sharedSkillStore, deployment.sharedToolRegistry)
   await loadAllPacks(sharedPaths.packs(), deployment.sharedToolRegistry, deployment.sharedSkillStore)
+  await deployment.sharedScriptStore.reload()
 
   // Bundled packs — compiled into the binary. Each pack's tools register
-  // with kind:'pack-bundled' + pack:<Pack id> so per-room activation
+  // with kind:'pack-owned' + pack:<Pack id> so per-room activation
   // (room.activePacks) actually gates them. The packs themselves are
   // declared in src/packs/bundled.ts (the single source of truth for their
   // manifests and tool loaders).
@@ -140,12 +141,12 @@ export const bootstrap = async (): Promise<void> => {
     for (const pack of BUNDLED_PACKS) {
       const packId = pack.manifest.descriptor.id
       for (const tool of await pack.loadTools()) {
-        deployment.sharedToolRegistry.registerWithSource(tool, { kind: 'pack-bundled', pack: packId, displayName: tool.name })
+        deployment.sharedToolRegistry.registerWithSource(tool, { kind: 'pack-owned', pack: packId, displayName: tool.name })
       }
     }
   }
 
-  // Pack-bundled geodata: scan ~/.leitbild/packs/<ns>/geodata/*.geojson and
+  // Pack-owned geodata: scan ~/.leitbild/packs/<ns>/geodata/*.geojson and
   // load into the in-memory pack-source cache. Features are tagged
   // source='pack', pack=<ns> so the room-aware filter can gate them per
   // activePacks. Failures per-pack are logged but don't abort boot —
@@ -164,9 +165,8 @@ export const bootstrap = async (): Promise<void> => {
     }
   }
 
-  // Bundled example scripts are loaded read-only from examples/scripts/ via
-  // ScriptStore's extraSourceDirs (wired in workspace-runtime.ts). The authoring scripts
-  // directory contains only deployment-authored scripts.
+  // Bundled examples, authored scripts, and Pack scripts now share one
+  // Deployment catalog. Script runs remain isolated inside each Workspace.
 
   // === Process-wide built-in tools (no per-Workspace state) ===
   // Anything that doesn't bind to a per-Workspace RoomDirectory registers ONCE here.
@@ -220,7 +220,7 @@ export const bootstrap = async (): Promise<void> => {
   // and leitbild never fetches them — they're external links surfaced in
   // the pack panel. Operators view + edit on GitHub Pages directly.
 
-  // Geodata: pack-bundled categories load via refreshPackGeodata above.
+  // Geodata: pack-owned categories load via refreshPackGeodata above.
   // The historical leitbild-geodata GitHub discovery + warm cache were
   // retired in commit Q — packs are now the only distribution mechanism
   // for non-user geodata.
@@ -253,6 +253,7 @@ export const bootstrap = async (): Promise<void> => {
   // Definite-assignment assertion (`!`) is fine: the assignment site below
   // runs synchronously before any registry consumer code.
   let wsManager!: ReturnType<typeof createWSManager>
+  const workspaceEventUnsubscribers = new Map<WorkspaceId, () => void>()
 
   // === WorkspaceRuntimeRegistry ===
   const registry = createWorkspaceRuntimeRegistry({
@@ -301,9 +302,11 @@ export const bootstrap = async (): Promise<void> => {
       // by the time any getOrLoad runs (see the `let wsManager!:` block
       // above). autoSaver is passed in directly because the registry map
       // entry isn't set until buildWorkspaceRuntime returns.
-      wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
+      workspaceEventUnsubscribers.set(id, wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id))
     },
     onWorkspaceRuntimeEvicted: (system, id) => {
+      workspaceEventUnsubscribers.get(id)?.()
+      workspaceEventUnsubscribers.delete(id)
       // Close WS sessions for this Workspace — they hold dangling references.
       for (const [token, sess] of [...wsManager.sessions]) {
         if (sess.workspaceId !== id) continue
@@ -467,6 +470,10 @@ export const bootstrap = async (): Promise<void> => {
       await refreshPackGeodata(sharedPaths.packs())
     }
 
+    const refreshPackScriptsAfterMutation = async (): Promise<void> => {
+      await deployment.sharedScriptStore.reload()
+    }
+
     deployment.sharedToolRegistry.registerAll(createPackTools({
       packsDir: sharedPaths.packs(),
       toolRegistry: deployment.sharedToolRegistry,
@@ -475,6 +482,7 @@ export const bootstrap = async (): Promise<void> => {
       notifyPacksChanged: crossWorkspaceNotifyPacksChanged,
       scrubActivePacks: crossWorkspaceScrubActivePacks,
       refreshPackGeodata: refreshPackGeodataAfterMutation,
+      refreshPackScripts: refreshPackScriptsAfterMutation,
     }))
   }
 
@@ -596,7 +604,7 @@ export const bootstrap = async (): Promise<void> => {
       switch (e.source.kind) {
         case 'built-in':       bump('built-in', 'tools'); break
         case 'external':       bump('authored', 'tools'); break
-        case 'pack-bundled':   bump(e.source.pack ?? 'unowned', 'tools'); break
+        case 'pack-owned':   bump(e.source.pack ?? 'unowned', 'tools'); break
         case 'skill-bundled':  bump(e.source.pack ?? 'unowned', 'tools'); break
       }
     }

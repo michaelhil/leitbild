@@ -1,5 +1,5 @@
 // ============================================================================
-// Pack-bundled geodata loader.
+// Pack-owned geodata loader.
 //
 // Each installed pack may ship `<pack>/geodata/*.geojson` — one or more
 // GeoJSON FeatureCollections. Files are loaded at boot and (re-)scanned
@@ -127,7 +127,7 @@ const parsePackFile = (
         ...cleanedProps,
         source: 'pack',
         pack: packNamespace,
-        // Pack-bundled features are curated by the pack author. Treat as
+        // Pack-owned features are curated by the pack author. Treat as
         // verified by default: discovered features default to false
         // (crowd-sourced, unvetted); pack features get author-vouched true.
         // Load-bearing — store.lookup at src/geo/store.ts:202 hides

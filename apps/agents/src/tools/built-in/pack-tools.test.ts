@@ -65,18 +65,26 @@ const buildRepo = async (parent: string, name: string): Promise<string> => {
   return `file://${repoDir}`
 }
 
-const makeDeps = async (): Promise<{ deps: PackToolsDeps; parent: string; refreshCount: { n: number } }> => {
+const makeDeps = async (): Promise<{
+  deps: PackToolsDeps
+  parent: string
+  refreshCount: { n: number }
+  catalogRefreshCount: { geodata: number; scripts: number }
+}> => {
   const parent = await mkdtemp(join(tmpdir(), 'pack-tools-'))
   const packsDir = join(parent, 'packs')
   await mkdir(packsDir, { recursive: true })
   const refreshCount = { n: 0 }
+  const catalogRefreshCount = { geodata: 0, scripts: 0 }
   const deps: PackToolsDeps = {
     packsDir,
     toolRegistry: createToolRegistry(),
     skillStore: createSkillStore(),
     refreshAllAgentTools: async () => { refreshCount.n += 1 },
+    refreshPackGeodata: async () => { catalogRefreshCount.geodata += 1 },
+    refreshPackScripts: async () => { catalogRefreshCount.scripts += 1 },
   }
-  return { deps, parent, refreshCount }
+  return { deps, parent, refreshCount, catalogRefreshCount }
 }
 
 describe('install_pack', () => {
@@ -102,6 +110,22 @@ describe('install_pack', () => {
     expect(env.deps.toolRegistry.has('atc_ping')).toBe(true)
     expect(env.deps.skillStore.get('atc/demo')).toBeDefined()
     expect(env.refreshCount.n).toBe(1)
+    expect(env.catalogRefreshCount).toEqual({ geodata: 1, scripts: 1 })
+  })
+
+  it('refreshes Pack contribution catalogs even when rebuilding live Agent tools fails', async () => {
+    const env = await makeDeps()
+    parent = env.parent
+    const url = await buildRepo(env.parent, 'atc')
+    const deps: PackToolsDeps = {
+      ...env.deps,
+      refreshAllAgentTools: async () => { throw new Error('agent refresh failed') },
+    }
+
+    const result = await createInstallPackTool(deps).execute({ source: url }, CTX)
+
+    expect(result.success).toBe(true)
+    expect(env.catalogRefreshCount).toEqual({ geodata: 1, scripts: 1 })
   })
 
   it('rejects a repository without the required descriptor manifest', async () => {
@@ -223,7 +247,7 @@ describe('uninstall_pack', () => {
     const url = await buildRepo(env.parent, 'atc')
 
     // Track scrubbed rooms via the wired callback. Mirrors what
-    // bootstrap.ts plumbs as crossInstanceScrubActivePacks.
+    // bootstrap.ts plumbs as crossWorkspaceScrubActivePacks.
     const fakeRooms = new Map<string, string[]>([
       ['room-a', ['atc', 'cafes']],
       ['room-b', ['atc']],

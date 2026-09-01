@@ -14,7 +14,7 @@ export interface RoomActivation {
 // has a single hook to extend.
 //
 // NOTE: this list is an ALLOWLIST for tool/skill/script visibility per room.
-// It does NOT govern resolution order for collisions. Pack-bundled geodata
+// It does NOT govern resolution order for collisions. Pack-owned geodata
 // category metadata (see src/geo/pack-source.ts:reload) is built once at
 // boot across ALL installed packs in filesystem-scan order — first-feature-
 // wins per category id, regardless of which packs are active in a given

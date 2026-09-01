@@ -10,12 +10,14 @@
 //     state, single URL list editable from any Workspace UI.
 //   - ProviderKeys + gateways — runtime key edits visible everywhere.
 //   - ProviderConfig — boot-time decision (order, single-Ollama mode, …).
-//   - sharedToolRegistry — external tools, skill-bundled tools, pack-bundled
+//   - sharedToolRegistry — external tools, skill-bundled tools, pack-owned
 //     tools, MCP tools, write_skill / write_tool / install_pack et al.
 //     Single FS scan at boot, no per-Workspace reload thrash. Pack installed
 //     in one Workspace is immediately available to another Workspace.
 //   - sharedSkillStore — every loaded skill (pack and free-standing). Each
 //     Workspace reads from the same store; install/uninstall mutate one place.
+//   - sharedScriptStore — one deployment catalog for authored, bundled, and
+//     Pack-owned script definitions. Script runs remain per Workspace.
 //
 // What stays per-Workspace (built fresh by createAgentsWorkspaceRuntime):
 //   - RoomDirectory (rooms, agents, artifacts, messages, members, mute/pause)
@@ -24,8 +26,6 @@
 //     createAddArtifactTool, etc.) layered above sharedToolRegistry.
 //   - Logging sink
 //   - Summary scheduler
-//   - Script store (still per-Workspace — file-backed; future Phase B'
-//     candidate, parallel to skillStore here)
 //   - All event-callback late-binding slots
 // ============================================================================
 
@@ -43,6 +43,10 @@ import { DEFAULT_MODEL_FALLBACK } from '../llm/models/catalog.ts'
 import { createToolRegistry } from './tool-registry.ts'
 import { createSkillStore } from '../skills/loader.ts'
 import { createLimitMetrics, type LimitMetrics } from './limit-metrics.ts'
+import { createScriptStore, type ScriptStore } from './scripts/script-store.ts'
+import { sharedPaths } from './paths.ts'
+import { scanPackSubdirs } from '../packs/scanner.ts'
+import { join } from 'node:path'
 
 export interface DeploymentRuntime {
   readonly providerConfig: ProviderConfig
@@ -62,7 +66,7 @@ export interface DeploymentRuntime {
   // mutator is the inc() method on the metrics object itself.
   readonly limitMetrics: LimitMetrics
   // Shared tool registry — populated at boot by bootstrap.ts (external tools,
-  // skill-bundled tools, pack-bundled tools, MCP tools) and subsequently
+  // skill-bundled tools, pack-owned tools, MCP tools) and subsequently
   // mutated only by install/uninstall_pack and write_skill/write_tool. Per-
   // Workspace runtimes wrap this in an overlay (createOverlayToolRegistry).
   readonly sharedToolRegistry: ToolRegistry
@@ -70,6 +74,10 @@ export interface DeploymentRuntime {
   // Workspace reads from the same store, so installing a Pack makes its
   // skills available to other Workspaces without reloading them.
   readonly sharedSkillStore: SkillStore
+  // Scripts are authored/installed at Deployment scope. One shared catalog
+  // prevents per-Workspace filesystem scans and stale cross-Workspace views;
+  // Script runs themselves remain strictly per Workspace.
+  readonly sharedScriptStore: ScriptStore
   // Cross-provider behavior. Production injects the providers.json-backed
   // implementation; focused runtimes use an isolated in-memory store.
   readonly providerPolicy: ProviderPolicyStore
@@ -140,6 +148,14 @@ export const createDeploymentRuntime = (
   // codegen/pack admin tools. createAgentsWorkspaceRuntime then wraps this in an overlay.
   const sharedToolRegistry = createToolRegistry()
   const sharedSkillStore = createSkillStore()
+  const sharedScriptStore = createScriptStore({
+    baseDir: sharedPaths.scripts(),
+    extraSourceDirs: [join(import.meta.dir, '../../examples/scripts')],
+    resolvePackDirs: () => scanPackSubdirs(sharedPaths.packs(), 'scripts'),
+  })
+  void sharedScriptStore.reload().catch(error => {
+    console.error(`[scripts] initial reload failed: ${error instanceof Error ? error.message : String(error)}`)
+  })
   let modelFallback = [...DEFAULT_MODEL_FALLBACK]
   return {
     providerConfig,
@@ -150,6 +166,7 @@ export const createDeploymentRuntime = (
     limitMetrics,
     sharedToolRegistry,
     sharedSkillStore,
+    sharedScriptStore,
     providerPolicy: opts.providerPolicy ?? {
       getModelFallback: () => modelFallback,
       setModelFallback: async (chain) => { modelFallback = chain ? [...chain] : [] },

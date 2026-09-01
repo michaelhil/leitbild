@@ -13,7 +13,7 @@
 // 1. RoomDirectory prompt + agent persona
 // 2. Skills (from getSkills, skill-store) — may be empty
 // 3. Active script context (from getScriptContext) — only when in a running script
-// 4. Wiki bindings + pack-bundled context — empty when none active
+// 4. Wiki bindings + pack-owned context — empty when none active
 // 5. Room participant profiles + room running summary
 // Each source can return empty; the assembled prompt skips empty sections.
 // Token budgeting is a single pass at the end (contextTokenBudget).

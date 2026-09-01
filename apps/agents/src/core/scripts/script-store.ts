@@ -91,7 +91,7 @@ export const createScriptStore = (init: ScriptStoreInit): ScriptStore => {
           )
         }
         seenAt.set(script.name, sourcePath)
-        // Tag Pack-bundled scripts. Authored and bundled-example scripts
+        // Tag Pack-owned scripts. Authored and bundled-example scripts
         // come from baseDir / extraSourceDirs
         // and have undefined Pack ownership, so activation does not gate them.
         merged.set(script.name, pack ? { ...script, pack } : script)

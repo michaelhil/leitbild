@@ -89,7 +89,7 @@ describe('executor: skill `allowed-tools` is no longer a runtime gate', () => {
     // Defends the second gate (pack activation). The skill removal must
     // not weaken this either.
     const registry = createToolRegistry()
-    registry.registerWithSource(mockTool('aviation_lookup'), { kind: 'pack-bundled', pack: 'aviation' })
+    registry.registerWithSource(mockTool('aviation_lookup'), { kind: 'pack-owned', pack: 'aviation' })
 
     const getRoomActivation = (roomId: string) =>
       roomId === 'room-active' ? { getActivePacks: () => ['aviation'] }

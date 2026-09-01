@@ -38,10 +38,10 @@ describe('pack activation — end-to-end with RoomDirectory + Room', () => {
     reg.registerWithSource(okTool('builtin_a'), { kind: 'built-in' })
     reg.registerWithSource(okTool('local_a'),   { kind: 'external', path: '/x' })
     reg.registerWithSource(okTool('av_atc'), {
-      kind: 'pack-bundled', pack: 'aviation', path: '/p/atc.ts', displayName: 'atc',
+      kind: 'pack-owned', pack: 'aviation', path: '/p/atc.ts', displayName: 'atc',
     })
     reg.registerWithSource(okTool('cafes_menu'), {
-      kind: 'pack-bundled', pack: 'cafes', path: '/p/menu.ts', displayName: 'menu',
+      kind: 'pack-owned', pack: 'cafes', path: '/p/menu.ts', displayName: 'menu',
     })
 
     const support = await buildToolSupport(
@@ -67,7 +67,7 @@ describe('pack activation — end-to-end with RoomDirectory + Room', () => {
     const reg = createToolRegistry()
     reg.registerWithSource(okTool('builtin_a'), { kind: 'built-in' })
     reg.registerWithSource(okTool('av_atc'), {
-      kind: 'pack-bundled', pack: 'aviation', path: '/p/atc.ts', displayName: 'atc',
+      kind: 'pack-owned', pack: 'aviation', path: '/p/atc.ts', displayName: 'atc',
     })
 
     const support = await buildToolSupport(
@@ -105,10 +105,10 @@ describe('pack activation — end-to-end with RoomDirectory + Room', () => {
     const reg = createToolRegistry()
     reg.registerWithSource(okTool('builtin_a'), { kind: 'built-in' })
     reg.registerWithSource(okTool('av_atc'), {
-      kind: 'pack-bundled', pack: 'aviation', path: '/p/atc.ts', displayName: 'atc',
+      kind: 'pack-owned', pack: 'aviation', path: '/p/atc.ts', displayName: 'atc',
     })
     reg.registerWithSource(okTool('cafes_menu'), {
-      kind: 'pack-bundled', pack: 'cafes', path: '/p/menu.ts', displayName: 'menu',
+      kind: 'pack-owned', pack: 'cafes', path: '/p/menu.ts', displayName: 'menu',
     })
 
     tower.setActivePacks(['aviation'])

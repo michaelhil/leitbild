@@ -13,7 +13,7 @@
 // strict providers refuse, so we trade compression for accuracy on those.
 //
 // No hard cap. Earlier versions of this module enforced a 2000-token budget
-// cap that silently dropped pack-bundled tools when registration order put
+// cap that silently dropped pack-owned tools when registration order put
 // other tools first — a brittleness landmine that caused production bugs
 // (the skill said "call biometrics_start" but the cap had stripped the tool
 // from the surface, so models rationalised "not supported in this

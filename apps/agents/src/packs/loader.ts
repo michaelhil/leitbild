@@ -1,9 +1,11 @@
 // Pack loader — orchestrates loading one or many packs under ~/.leitbild/packs.
 //
 // A pack is a directory that may contain:
-//   - pack.json              (optional manifest; name + description)
+//   - pack.json              (required strict descriptor + metadata)
 //   - tools/*.ts             (tools, namespaced as `<pack>_<name>`)
 //   - skills/<name>/SKILL.md (skills, namespaced as `<pack>/<name>`)
+//   - scripts/*.md           (declarative Agent Scripts)
+//   - geodata/*.geojson      (curated map context)
 //
 // Tool conflicts across packs are physically impossible thanks to the
 // namespace prefix. A pack tool cannot shadow a built-in (built-ins stay
@@ -67,7 +69,7 @@ export const loadPack = async (
   }
 
   const toolResult = await loadToolDirectory(join(pack.dirPath, 'tools'), toolRegistry, {
-    kind: 'pack-bundled',
+    kind: 'pack-owned',
     pack: pack.id,
     namespacePrefix: pack.id,
   })

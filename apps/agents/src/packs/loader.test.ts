@@ -124,12 +124,12 @@ describe('loadPack', () => {
     await loadPack(packFor(packDir, 'atc', ['tool']), registry, store)
 
     const entry = registry.getEntry('atc_plan')
-    expect(entry?.source.kind).toBe('pack-bundled')
+    expect(entry?.source.kind).toBe('pack-owned')
     expect(entry?.source.pack).toBe('atc')
     expect(entry?.source.displayName).toBe('plan')
   })
 
-  it('unregisterByPack removes every pack-bundled tool in one go', async () => {
+  it('unregisterByPack removes every pack-owned tool in one go', async () => {
     const packDir = join(root, 'atc')
     await mkdir(join(packDir, 'tools'), { recursive: true })
     await writeFile(join(packDir, 'tools', 'a.ts'), TOOL_SRC('a'))

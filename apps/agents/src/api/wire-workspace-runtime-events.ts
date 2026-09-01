@@ -38,7 +38,7 @@ export const wireWorkspaceRuntimeEvents = (
   wsManager: WSManager,
   autoSaver: ModuleAutoSaver,
   workspaceId: WorkspaceId,
-): void => {
+): (() => void) => {
   // Tag this Workspace as wired in the wsManager — the diagnostics endpoint
   // reads this to surface "Workspace X has its broadcast slots wired" so a
   // future regression of the silent-skip class doesn't go unnoticed.
@@ -80,9 +80,8 @@ export const wireWorkspaceRuntimeEvents = (
     sched()
   })
 
-  system.scriptStore.onChange(() => {
+  const unsubscribeScriptCatalog = system.scriptStore.onChange(() => {
     broadcast({ type: 'script_catalog_changed' })
-    sched()
   })
 
   system.setOnScriptEvent((roomId, event, detail) => {
@@ -296,4 +295,5 @@ export const wireWorkspaceRuntimeEvents = (
   }
   // (asAIAgent is imported for future use by other extracted blocks.)
   void asAIAgent
+  return unsubscribeScriptCatalog
 }

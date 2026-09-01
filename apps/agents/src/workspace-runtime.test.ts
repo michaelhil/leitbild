@@ -12,8 +12,18 @@ import { describe, test, expect } from 'bun:test'
 import { createAgentsWorkspaceRuntime } from './workspace-runtime.ts'
 import { SYSTEM_SENDER_ID } from './core/types/constants.ts'
 import { createHumanAgent } from './agents/human-agent.ts'
+import { createDeploymentRuntime } from './core/deployment-runtime.ts'
 
 describe('AgentsWorkspaceRuntime.resetState', () => {
+  test('shares the deployment Script catalog while keeping Workspace runs separate', () => {
+    const deployment = createDeploymentRuntime()
+    const first = createAgentsWorkspaceRuntime({ deployment, workspaceLabel: 'first' })
+    const second = createAgentsWorkspaceRuntime({ deployment, workspaceLabel: 'second' })
+    expect(first.scriptStore).toBe(deployment.sharedScriptStore)
+    expect(second.scriptStore).toBe(deployment.sharedScriptStore)
+    expect(first.scriptRunner).not.toBe(second.scriptRunner)
+  })
+
   test('clears rooms and agents, returns counts, preserves infrastructure', async () => {
     const system = createAgentsWorkspaceRuntime()
 

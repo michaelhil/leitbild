@@ -193,7 +193,7 @@ export interface SkillLoadResult {
 
 // When `namespacePrefix` is set, each skill's registry key becomes
 // `${prefix}/${frontmatter.name}` and any bundled tools under tools/ are
-// registered as pack-bundled with the same prefix. The raw frontmatter name
+// registered as pack-owned with the same prefix. The raw frontmatter name
 // is still validated against `VALID_NAME` — the prefix is applied after.
 export interface LoadSkillsOptions {
   readonly namespacePrefix?: string
@@ -265,14 +265,14 @@ export const loadSkills = async (
       : rawName
 
     // Load bundled tools from tools/ subdir. Pack-scoped skills get
-    // pack-bundled tools with the pack's namespace prefix; unscoped skills
+    // pack-owned tools with the pack's namespace prefix; unscoped skills
     // keep the existing skill-bundled pathway.
     const toolsDir = join(dirPath, 'tools')
     let bundledTools: ReadonlyArray<string> = []
     try {
       const toolResult = options.pack
         ? await loadToolDirectory(toolsDir, toolRegistry, {
-            kind: 'pack-bundled',
+            kind: 'pack-owned',
             pack: options.pack,
             namespacePrefix: options.pack,
           })

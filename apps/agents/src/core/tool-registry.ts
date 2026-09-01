@@ -38,7 +38,7 @@ export const createToolRegistry = (): ToolRegistry => {
     unregisterByPack: (pack: string): ReadonlyArray<string> => {
       const removed: string[] = []
       for (const [key, entry] of entries) {
-        if (entry.source.kind === 'pack-bundled' && entry.source.pack === pack) {
+        if (entry.source.kind === 'pack-owned' && entry.source.pack === pack) {
           entries.delete(key)
           removed.push(key)
         }

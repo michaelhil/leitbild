@@ -40,9 +40,9 @@ export const isTool = (value: unknown): value is Tool => {
 }
 
 export interface LoadSource {
-  readonly kind: 'external' | 'skill-bundled' | 'pack-bundled'
+  readonly kind: 'external' | 'skill-bundled' | 'pack-owned'
   readonly skill?: string          // owning skill name when kind is skill-bundled
-  readonly pack?: string           // owning pack namespace when kind is pack-bundled
+  readonly pack?: string           // owning pack namespace when kind is pack-owned
   readonly namespacePrefix?: string // registry key becomes `${prefix}_${toolName}` when set
 }
 
@@ -51,7 +51,7 @@ export interface LoadSource {
 // Source metadata is attached to each registered tool so the detail endpoint
 // and hot-reload path can locate the originating file.
 //
-// When `source.namespacePrefix` is set (pack-bundled), the registered key is
+// When `source.namespacePrefix` is set (pack-owned), the registered key is
 // `${prefix}_${candidate.name}` and the original name is preserved on
 // `source.displayName`. The tool's own `name` field is left untouched — the
 // registry key is the only thing that changes.

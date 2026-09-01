@@ -18,7 +18,6 @@ import { createWorkspaceSettings, type WorkspaceSettings } from './core/workspac
 import { createBookmarkStore, type BookmarkStore, type OnBookmarksChanged } from './core/workspaces/bookmark-store.ts'
 import type { SummaryScheduler, SummaryTarget } from './core/summaries/summary-scheduler.ts'
 import { createSummaryEngine } from './core/summaries/summary-engine.ts'
-import { scanPackSubdirs } from './packs/scanner.ts'
 import { effectiveActivePackSet } from './packs/activation.ts'
 import { createSummaryScheduler } from './core/summaries/summary-scheduler.ts'
 import { createTriggerScheduler, type TriggerScheduler } from './core/triggers/scheduler.ts'
@@ -70,7 +69,7 @@ import type { DocumentMetadata } from './documents/types.ts'
 import { dirname } from 'node:path'
 // Native-only tool calling — no capability probing needed
 import { type SkillStore } from './skills/loader.ts'
-import { createScriptStore, type ScriptStore } from './core/scripts/script-store.ts'
+import type { ScriptStore } from './core/scripts/script-store.ts'
 import { createScriptRunner, type ScriptRunner, type ScriptEventEmitter } from './core/scripts/script-runner.ts'
 import { createWriteScriptTool } from './tools/built-in/script-codegen.ts'
 import { sharedPaths } from './core/paths.ts'
@@ -579,7 +578,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
   // Register Room/Team-bound built-in tools into the per-Workspace overlay.
   // Process-wide tools (pass, get_time, web *, test_tool, list_skills,
   // write_skill / write_tool, install_pack et al, MCP tools, external tools,
-  // skill-bundled tools, pack-bundled tools) live in deployment.sharedToolRegistry
+  // skill-bundled tools, pack-owned tools) live in deployment.sharedToolRegistry
   // and are registered once at boot — see bootstrap.ts.
   toolRegistry.registerAll([
     // Room management — bound to per-Workspace rooms
@@ -622,12 +621,12 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
   // Biometrics tools — implementation lives in core (needs RoomDirectory + capture
   // registry), but registered with source.pack='biometrics' so the per-room
   // activePacks filter (effectiveActivePackSet) gates them exactly like a
-  // pack-bundled tool. Users discover and activate biometrics via the
+  // pack-owned tool. Users discover and activate biometrics via the
   // leitbild-biometrics pack repo; activating it in a room makes these
   // tools visible to agents in that room. See docs in
   // src/tools/built-in/biometric-tools.ts for the rationale.
   for (const tool of createBiometricsTools({ rooms, registry: getCaptureRegistry() })) {
-    toolRegistry.registerWithSource(tool, { kind: 'pack-bundled', pack: BIOMETRICS_PACK_NAMESPACE })
+    toolRegistry.registerWithSource(tool, { kind: 'pack-owned', pack: BIOMETRICS_PACK_NAMESPACE })
   }
 
   // Skill and script catalogs are deployment-scoped Pack contributions.
@@ -636,22 +635,10 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
   const scriptsDir = sharedPaths.scripts()
   const packsDir = sharedPaths.packs()
   const skillStore = deployment.sharedSkillStore
-  const bundledExamplesDir = `${process.cwd()}/examples/scripts`
-  // Pack-bundled scripts: each reload re-scans ~/.leitbild/packs/<ns>/scripts/
-  // and tags each loaded script with `pack: <ns>` so the runner gates by
-  // activation. install_pack / uninstall_pack hot-paths just call reload()
-  // and the new state is reflected without rebuilding the store.
-  const scriptStore = createScriptStore({
-    baseDir: scriptsDir,
-    extraSourceDirs: [bundledExamplesDir],
-    resolvePackDirs: () => scanPackSubdirs(packsDir, 'scripts'),
-  })
-  // Fire-and-forget initial load — store is empty until this completes,
-  // matching the skills loader pattern (which runs from bootstrap.ts).
-  void scriptStore.reload().catch(err => console.error('[scripts] reload failed:', err))
+  const scriptStore = deployment.sharedScriptStore
 
   // Per-room skills section. Filters by both the skill's declared `scope`
-  // (room-name match) and the room's active packs — a pack-bundled skill is
+  // (room-name match) and the room's active packs — a pack-owned skill is
   // visible only when its owning pack is active in this room. Standalone
   // skills (no pack field) are treated as 'local' and are always visible.
   const getSkillsForRoom = (roomId: string): string => {

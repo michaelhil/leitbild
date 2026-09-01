@@ -53,18 +53,18 @@ export interface Tool {
 //   'built-in'      — compiled into the binary; no filesystem path, no source serving
 //   'external'      — loaded from ./tools, ~/.leitbild/tools, or $LEITBILD_TOOLS_DIR
 //   'skill-bundled' — loaded from <skillsDir>/<skill>/tools/ (also via write_tool)
-//   'pack-bundled'  — loaded from ~/.leitbild/packs/<pack>/tools/; registry key
+//   'pack-owned'  — loaded from ~/.leitbild/packs/<pack>/tools/; registry key
 //                     is namespaced as `<pack>_<displayName>` to prevent
 //                     cross-pack collisions while keeping the LLM-facing name
 //                     valid under the OpenAI/Anthropic tool-name regex.
-export type ToolSourceKind = 'built-in' | 'external' | 'skill-bundled' | 'pack-bundled'
+export type ToolSourceKind = 'built-in' | 'external' | 'skill-bundled' | 'pack-owned'
 
 export interface ToolSourceMeta {
   readonly kind: ToolSourceKind
   readonly path?: string         // absolute filesystem path (omitted for built-ins)
   readonly skill?: string        // owning skill name (skill-bundled only)
-  readonly pack?: string         // owning pack namespace (pack-bundled only)
-  readonly displayName?: string  // unprefixed name (pack-bundled only — registry key is `<pack>_<displayName>`)
+  readonly pack?: string         // owning pack namespace (pack-owned only)
+  readonly displayName?: string  // unprefixed name (pack-owned only — registry key is `<pack>_<displayName>`)
 }
 
 export interface ToolRegistryEntry {
