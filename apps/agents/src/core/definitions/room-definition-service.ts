@@ -1,6 +1,4 @@
 import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
-import { BUNDLED_PACKS } from '../../packs/bundled.ts'
-import { scanPacks } from '../../packs/scanner.ts'
 import { SYSTEM_SENDER_ID } from '../types/constants.ts'
 import { owningPackFor } from '../types/tool-pack.ts'
 import { resolveWorkspaceDefaultModel } from '../workspaces/seed-workspace.ts'
@@ -15,15 +13,11 @@ export interface StartedRoomDefinition {
   readonly agents: ReadonlyArray<{ readonly id: string; readonly name: string }>
 }
 
-const requireKnownPacks = async (
+const requireKnownPacks = (
   system: AgentsWorkspaceRuntime,
   requested: ReadonlyArray<string>,
-): Promise<ReadonlyArray<string>> => {
-  const installed = await scanPacks(system.packsDir)
-  const known = new Set([
-    ...BUNDLED_PACKS.map(pack => pack.manifest.descriptor.id),
-    ...installed.map(pack => pack.id),
-  ])
+): ReadonlyArray<string> => {
+  const known = new Set(system.packCatalog.list().map(pack => pack.id))
   const missing = requested.filter(id => !known.has(id))
   if (missing.length > 0) throw new Error(`Required Packs are unavailable: ${missing.join(', ')}`)
   return [...new Set(requested)]
@@ -59,13 +53,10 @@ export const startRoomDefinition = async (
   definitionId: string,
   revisionId: string,
 ): Promise<StartedRoomDefinition> => {
-  const current = await library.get(definitionId)
-  if (!current) throw new Error(`Unknown Room Definition "${definitionId}"`)
-  if (current.currentRevisionId !== revisionId) throw new Error(`Room Definition Revision is not current: ${revisionId}`)
   const revision = await library.getRevision(revisionId)
   if (!revision || revision.definitionId !== definitionId) throw new Error(`Unknown Room Definition Revision "${revisionId}"`)
   const definition = revision.document
-  const activePacks = await requireKnownPacks(system, definition.room.packs)
+  const activePacks = requireKnownPacks(system, definition.room.packs)
   validateAgentTools(system, definition, new Set(activePacks))
   const human = system.team.listByKind('human').find(agent => agent.name === 'You')
     ?? system.team.listByKind('human')[0]

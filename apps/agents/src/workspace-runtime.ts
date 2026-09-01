@@ -48,7 +48,7 @@ import {
   // RoomDirectory-bound built-ins (registered into the per-Workspace overlay).
   // Process-wide built-ins (createPassTool, createGetTimeTool, createWebTools,
   // createTestToolTool, createListSkillsTool, createWriteSkillTool,
-  // createWriteToolTool, createPackTools) live in deployment.sharedToolRegistry —
+  // createWriteToolTool and Pack Manager adapters) live in deployment.sharedToolRegistry —
   // see bootstrap.ts.
   createListRoomsTool,
   createCreateRoomTool, createDeleteRoomTool, createAddToRoomTool, createRemoveFromRoomTool,
@@ -61,7 +61,7 @@ import {
 } from './tools/built-in/index.ts'
 import { createBiometricsTools, BIOMETRICS_PACK_NAMESPACE } from './tools/built-in/biometric-tools.ts'
 import { createEvalBuffer } from './diagnostics/eval-buffer.ts'
-import { getCaptureRegistry } from './core/biometrics/registry.ts'
+import { createCaptureRegistry, type CaptureRegistry } from './core/biometrics/registry.ts'
 import { createVectorStore, type VectorStore } from './embed/vector-store.ts'
 import { createMemoryIndexer, buildEmbeddingProvidersFromKeys } from './embed/memory-indexer.ts'
 import { createDocumentManager, type DocumentManager } from './documents/manager.ts'
@@ -74,6 +74,7 @@ import { createScriptRunner, type ScriptRunner, type ScriptEventEmitter } from '
 import { createWriteScriptTool } from './tools/built-in/script-codegen.ts'
 import { sharedPaths } from './core/paths.ts'
 import type { WorkspaceId } from '@leitbild/contracts'
+import type { AgentPackCatalog } from './packs/agent-pack-catalog.ts'
 
 import { createOllamaUrlRegistry, type OllamaUrlRegistry } from './core/ollama-urls.ts'
 export type { OllamaUrlRegistry }
@@ -94,6 +95,9 @@ export interface AgentsWorkspaceRuntime {
   readonly rooms: RoomDirectory
   readonly settings: WorkspaceSettings
   readonly bookmarks: BookmarkStore
+  // Ephemeral biometric state is isolated with the Workspace runtime and is
+  // cleared on Room removal and runtime eviction.
+  readonly captureRegistry: CaptureRegistry
   readonly team: Team
   readonly routeMessage: RouteMessage
   // Provider-neutral LLM access. All agents and callSystemLLM go through here.
@@ -105,7 +109,6 @@ export interface AgentsWorkspaceRuntime {
   readonly llmService: LLMService
   // Cross-provider LLM policy (system default fallback chain). Mutable —
   // UI reads/writes this; LLMService consults it at request time.
-  // Optional because tests / single-tenant headless paths may not load it.
   readonly providerPolicy: import('./llm/providers-store.ts').ProviderPolicyStore
   // Direct Ollama gateway (present iff Ollama is a configured provider).
   // Used by the Ollama dashboard UI for ps/loadModel; not for routing.
@@ -130,6 +133,7 @@ export interface AgentsWorkspaceRuntime {
   // it coexists with the wire-workspace-runtime-events broadcaster.
   readonly evalBuffer: import('./diagnostics/eval-buffer.ts').EvalBuffer
   readonly toolRegistry: ToolRegistry
+  readonly packCatalog: AgentPackCatalog
   // Refresh every AI agent's ToolExecutor / ToolDefinitions to reflect the
   // current registry. Called by the tool-rescan endpoint and by write_tool.
   readonly refreshAllAgentTools: () => Promise<void>
@@ -141,7 +145,6 @@ export interface AgentsWorkspaceRuntime {
   readonly setOnScriptEvent: (cb: ScriptEventEmitter) => void
   // Multi-subscriber observer slot (lateBinding.add). Returns an unsubscribe.
   readonly addScriptEventListener: (cb: ScriptEventEmitter) => () => void
-  readonly packsDir: string
   readonly knowledgeDir: string
   readonly providersStorePath: string
   // Trigger scheduler — REST handlers call invalidate() after mutating an
@@ -352,6 +355,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
   const summaryRunCompleted = lateBinding<(roomId: string, target: SummaryTarget, text: string) => void>('summaryRunCompleted')
   const summaryRunFailed = lateBinding<(roomId: string, target: SummaryTarget, reason: string) => void>('summaryRunFailed')
   const scriptEvent = lateBinding<ScriptEventEmitter>('scriptEvent')
+  const captureRegistry = createCaptureRegistry()
 
   // Diagnostics ring buffer — subscribes to the multi-subscriber eval-event
   // channel so it coexists with the wire-workspace-runtime-events broadcaster.
@@ -386,6 +390,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     onDeliveryModeChanged: deliveryModeChanged.proxy,
     onRoomCreated: roomCreated.proxy,
     onRoomDeleted: (roomId, roomName) => {
+      captureRegistry.clearForRoom(roomId)
       roomDeleted.proxy(roomId, roomName)
       schedulerRef?.onRoomRemoved(roomId)
     },
@@ -625,7 +630,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
   // leitbild-biometrics pack repo; activating it in a room makes these
   // tools visible to agents in that room. See docs in
   // src/tools/built-in/biometric-tools.ts for the rationale.
-  for (const tool of createBiometricsTools({ rooms, registry: getCaptureRegistry() })) {
+  for (const tool of createBiometricsTools({ rooms, registry: captureRegistry })) {
     toolRegistry.registerWithSource(tool, { kind: 'pack-owned', pack: BIOMETRICS_PACK_NAMESPACE })
   }
 
@@ -633,7 +638,6 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
   // Workspace and Room activation determine which contributions are effective.
   const skillsDir = sharedPaths.skills()
   const scriptsDir = sharedPaths.scripts()
-  const packsDir = sharedPaths.packs()
   const skillStore = deployment.sharedSkillStore
   const scriptStore = deployment.sharedScriptStore
 
@@ -898,13 +902,14 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     llm, llmService, ollama, providerConfig, providerKeys, gateways, monitors,
     providerPolicy: deployment.providerPolicy,
     refreshAvailableModels,
+    captureRegistry,
+    packCatalog: deployment.packCatalog,
     evalBuffer,
     toolRegistry, refreshAllAgentTools, skillStore, skillsDir,
     scriptStore, scriptsDir,
     scriptRunner,
     setOnScriptEvent: scriptEvent.set,
     addScriptEventListener: scriptEvent.add,
-    packsDir,
     knowledgeDir: sharedPaths.knowledge(),
     providersStorePath: sharedPaths.providers(),
     triggerScheduler,

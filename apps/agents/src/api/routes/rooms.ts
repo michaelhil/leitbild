@@ -136,31 +136,14 @@ export const roomRoutes: RouteEntry[] = [
       }
       const requested = [...new Set(body.activePacks as ReadonlyArray<string>)]
 
-      // Validate every requested Pack id against list_packs, the same
-      // contribution inventory used by the UI.
-      const listTool = system.toolRegistry.get('list_packs')
-      const listed = listTool
-        ? await listTool.execute({}, { callerId: 'api', callerName: 'api' })
-        : { success: false }
-      const known = listed.success && Array.isArray(listed.data)
-        ? (listed.data as Array<{ id: string }>)
-        : []
-      const knownSet = new Set(known.map(pack => pack.id))
+      const knownSet = new Set(system.packCatalog.list().map(pack => pack.id))
 
       const unknown = requested.filter(ns => !knownSet.has(ns))
       if (unknown.length > 0) return errorResponse(`unknown Pack ids: ${unknown.join(', ')}`, 400)
 
       room.setActivePacks(requested)
       const activePacks = room.getActivePacks()
-      // per-Workspace state — pack activation is scoped to one tenant's room.
-      // The previous global `broadcast(...)` fanned out to every connected
-      // tenant; their UI handlers no-oped on unfamiliar roomId but the
-      // re-fetch traffic was wasted. RouteContext.broadcastToWorkspace is
-      // typed optional (MCP-mode shape compatibility); pack-activation
-      // routes only register in HTTP mode where it's always wired.
-      try {
-        broadcastToWorkspace?.(workspaceId, { type: 'pack_activation_changed', roomId: room.profile.id, activePacks })
-      } catch { /* ignore */ }
+      broadcastToWorkspace(workspaceId, { type: 'pack_activation_changed', roomId: room.profile.id, activePacks })
       return json({ activePacks })
     },
   },
@@ -227,7 +210,7 @@ export const roomRoutes: RouteEntry[] = [
   {
     method: 'PUT',
     pattern: /^\/rooms\/([^/]+)\/pause$/,
-    handler: async (req, match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
+    handler: async (req, match, { system, workspaceId, broadcastToWorkspace }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
@@ -235,19 +218,18 @@ export const roomRoutes: RouteEntry[] = [
       if (typeof body.paused !== 'boolean') return errorResponse('paused must be a boolean')
       room.setPaused(body.paused)
       if (!body.paused) {
-        const script = system.scriptRunner?.getRun(room.profile.id)
-        if (script) void system.scriptRunner?.resume(room.profile.id)
+        const script = system.scriptRunner.getRun(room.profile.id)
+        if (script) void system.scriptRunner.resume(room.profile.id)
       }
       const evt = { type: 'delivery_mode_changed' as const, roomName: room.profile.name, mode: room.deliveryMode, paused: room.paused }
-      if (broadcastToWorkspace) broadcastToWorkspace(workspaceId, evt)
-      else broadcast(evt)
+      broadcastToWorkspace(workspaceId, evt)
       return json({ paused: room.paused })
     },
   },
   {
     method: 'PUT',
     pattern: /^\/rooms\/([^/]+)\/mute$/,
-    handler: async (req, match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
+    handler: async (req, match, { system, workspaceId, broadcastToWorkspace }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
@@ -258,8 +240,7 @@ export const roomRoutes: RouteEntry[] = [
       if (!agent) return errorResponse(`Agent "${body.agentName}" not found`, 404)
       room.setMuted(agent.id, body.muted)
       const evt = { type: 'mute_changed' as const, roomName: room.profile.name, agentName: agent.name, muted: body.muted }
-      if (broadcastToWorkspace) broadcastToWorkspace(workspaceId, evt)
-      else broadcast(evt)
+      broadcastToWorkspace(workspaceId, evt)
       return json({ muted: room.isMuted(agent.id) })
     },
   },

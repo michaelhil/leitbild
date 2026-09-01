@@ -46,6 +46,7 @@ import { createLimitMetrics, type LimitMetrics } from './limit-metrics.ts'
 import { createScriptStore, type ScriptStore } from './scripts/script-store.ts'
 import { sharedPaths } from './paths.ts'
 import { scanPackSubdirs } from '../packs/scanner.ts'
+import { createAgentPackCatalog, type AgentPackCatalog } from '../packs/agent-pack-catalog.ts'
 import { join } from 'node:path'
 
 export interface DeploymentRuntime {
@@ -78,6 +79,7 @@ export interface DeploymentRuntime {
   // prevents per-Workspace filesystem scans and stale cross-Workspace views;
   // Script runs themselves remain strictly per Workspace.
   readonly sharedScriptStore: ScriptStore
+  readonly packCatalog: AgentPackCatalog
   // Cross-provider behavior. Production injects the providers.json-backed
   // implementation; focused runtimes use an isolated in-memory store.
   readonly providerPolicy: ProviderPolicyStore
@@ -153,8 +155,10 @@ export const createDeploymentRuntime = (
     extraSourceDirs: [join(import.meta.dir, '../../examples/scripts')],
     resolvePackDirs: () => scanPackSubdirs(sharedPaths.packs(), 'scripts'),
   })
-  void sharedScriptStore.reload().catch(error => {
-    console.error(`[scripts] initial reload failed: ${error instanceof Error ? error.message : String(error)}`)
+  const packCatalog = createAgentPackCatalog({
+    packsDir: sharedPaths.packs(),
+    toolRegistry: sharedToolRegistry,
+    skillStore: sharedSkillStore,
   })
   let modelFallback = [...DEFAULT_MODEL_FALLBACK]
   return {
@@ -167,6 +171,7 @@ export const createDeploymentRuntime = (
     sharedToolRegistry,
     sharedSkillStore,
     sharedScriptStore,
+    packCatalog,
     providerPolicy: opts.providerPolicy ?? {
       getModelFallback: () => modelFallback,
       setModelFallback: async (chain) => { modelFallback = chain ? [...chain] : [] },

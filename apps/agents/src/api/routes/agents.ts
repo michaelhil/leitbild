@@ -128,7 +128,7 @@ export const agentRoutes: RouteEntry[] = [
   {
     method: 'POST',
     pattern: /^\/agents$/,
-    handler: async (req, _match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
+    handler: async (req, _match, { system, workspaceId, broadcastToWorkspace }) => {
       const body = await parseBody(req)
       if (!body.name || !body.model || !body.persona) {
         return errorResponse('name, model, and persona are required')
@@ -163,8 +163,7 @@ export const agentRoutes: RouteEntry[] = [
         })
         const aiA = asAIAgent(agent)
         const evt = { type: 'agent_joined' as const, agent: { id: agent.id, name: agent.name, kind: agent.kind, ...(aiA ? { model: aiA.getModel() } : {}) } }
-        if (broadcastToWorkspace) broadcastToWorkspace(workspaceId, evt)
-        else broadcast(evt)
+        broadcastToWorkspace(workspaceId, evt)
         return json({ id: agent.id, name: agent.name, modelStatus }, 201)
       } catch (err) {
         return errorResponse(err instanceof Error ? err.message : 'Failed to create agent')
@@ -178,7 +177,7 @@ export const agentRoutes: RouteEntry[] = [
   {
     method: 'POST',
     pattern: /^\/agents\/human$/,
-    handler: async (req, _match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
+    handler: async (req, _match, { system, workspaceId, broadcastToWorkspace }) => {
       const body = await parseBody(req)
       const name = typeof body.name === 'string' ? body.name.trim() : ''
       if (!name) return errorResponse('name is required')
@@ -197,8 +196,7 @@ export const agentRoutes: RouteEntry[] = [
           }
         }
         const evt = { type: 'agent_joined' as const, agent: { id: agent.id, name: agent.name, kind: agent.kind } }
-        if (broadcastToWorkspace) broadcastToWorkspace(workspaceId, evt)
-        else broadcast(evt)
+        broadcastToWorkspace(workspaceId, evt)
         return json({ id: agent.id, name: agent.name }, 201)
       } catch (err) {
         return errorResponse(err instanceof Error ? err.message : 'Failed to create human')
@@ -208,7 +206,7 @@ export const agentRoutes: RouteEntry[] = [
   {
     method: 'PATCH',
     pattern: /^\/agents\/([^/]+)$/,
-    handler: async (req, match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
+    handler: async (req, match, { system, workspaceId, broadcastToWorkspace }) => {
       const name = decodeURIComponent(match[1]!)
       const agent = system.team.getAgent(name)
       if (!agent) return errorResponse(`Agent "${name}" not found`, 404)
@@ -222,8 +220,7 @@ export const agentRoutes: RouteEntry[] = [
         const err = system.team.renameAgent(agent.id, body.name as string)
         if (err) return errorResponse(err, err.includes('already taken') ? 409 : 400)
         const evt = { type: 'agent_renamed' as const, id: agent.id, oldName, newName: agent.name }
-        if (broadcastToWorkspace) broadcastToWorkspace(workspaceId, evt)
-        else broadcast(evt)
+        broadcastToWorkspace(workspaceId, evt)
       }
       const aiAgent = asAIAgent(agent)
       let modelStatus: ModelStatus | undefined
@@ -350,7 +347,7 @@ export const agentRoutes: RouteEntry[] = [
   {
     method: 'DELETE',
     pattern: /^\/agents\/([^/]+)$/,
-    handler: (_req, match, { system, workspaceId, broadcast, broadcastToWorkspace }) => {
+    handler: (_req, match, { system, workspaceId, broadcastToWorkspace }) => {
       const name = decodeURIComponent(match[1]!)
       const agent = system.team.getAgent(name)
       if (!agent) return errorResponse(`Agent "${name}" not found`, 404)
@@ -358,8 +355,7 @@ export const agentRoutes: RouteEntry[] = [
       // system.removeAgent — see wireAgentTracking in bootstrap.ts.
       system.removeAgent(agent.id)
       const evt = { type: 'agent_removed' as const, agentName: name }
-      if (broadcastToWorkspace) broadcastToWorkspace(workspaceId, evt)
-      else broadcast(evt)
+      broadcastToWorkspace(workspaceId, evt)
       return json({ removed: true })
     },
   },

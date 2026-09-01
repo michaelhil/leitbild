@@ -39,9 +39,8 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
   {
     method: 'POST',
     pattern: /^\/scripts\/reload$/,
-    handler: async (_req, _match, { system, broadcast }) => {
+    handler: async (_req, _match, { system }) => {
       const names = await system.scriptStore.reload()
-      broadcast({ type: 'script_catalog_changed' })
       return json({ loaded: names.length, names })
     },
   },
@@ -66,13 +65,12 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
   {
     method: 'POST',
     pattern: /^\/scripts$/,
-    handler: async (req, _match, { system, broadcast }) => {
+    handler: async (req, _match, { system }) => {
       const body = await parseBody(req) as { name?: unknown; source?: unknown }
       if (typeof body.name !== 'string') return errorResponse('name (string) required')
       if (typeof body.source !== 'string') return errorResponse('source (markdown string) required')
       try {
         const script = await system.scriptStore.upsert(body.name, body.source)
-        broadcast({ type: 'script_catalog_changed' })
         return json({ ok: true, name: script.name, title: script.title })
       } catch (err) {
         return errorResponse(err instanceof Error ? err.message : 'invalid script', 400)
@@ -82,11 +80,10 @@ export const scriptRoutes: ReadonlyArray<RouteEntry> = [
   {
     method: 'DELETE',
     pattern: /^\/scripts\/([^/]+)$/,
-    handler: async (_req, match, { system, broadcast }) => {
+    handler: async (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const removed = await system.scriptStore.remove(name)
       if (!removed) return errorResponse(`Script "${name}" not found`, 404)
-      broadcast({ type: 'script_catalog_changed' })
       return json({ removed: true })
     },
   },

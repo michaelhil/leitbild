@@ -9,9 +9,8 @@ import { apiFetch } from "../api-client.ts"
 // Path C invariants:
 //   - The pack contributes only the *declaration*. The implementation lives
 //     in core, gated on the declaration.
-//   - Server has no authority over the name set; the browser silently no-ops
-//     on unknown names so a pack can declare an extension before any core
-//     release knows about it (forward-compat).
+//   - Unknown declarations are reported loudly: reviewed browser code must
+//     exist before a Pack can activate a UI extension.
 //   - mount() is async because v1 lazy-imports heavy modules (widget + panel)
 //     so the user pays nothing for unused extensions.
 //   - unmount() must release every resource the extension acquired —
@@ -96,12 +95,14 @@ export const reconcileExtensions = async (declared: ReadonlySet<string>): Promis
       mounted.delete(name)
     }
   }
-  // Mount what's declared but not mounted. Silently skip unknown names —
-  // forward-compat with packs declaring future extensions.
+  // Mount what's declared but not mounted.
   for (const name of declared) {
     if (mounted.has(name)) continue
     const thunk = KNOWN_UI_EXTENSIONS[name]
-    if (!thunk) continue
+    if (!thunk) {
+      console.error(`[extensions] ${name}: declared by a Pack but no reviewed browser implementation exists`)
+      continue
+    }
     try {
       const extension = await thunk()
       await extension.mount(buildApi())
@@ -115,22 +116,23 @@ export const reconcileExtensions = async (declared: ReadonlySet<string>): Promis
 // Pull the declared set from the /packs response. Reads Pack entries'
 // uiExtensions arrays and unions them. Only actual Packs participate.
 export const fetchDeclaredExtensions = async (): Promise<ReadonlySet<string>> => {
-  try {
-    const res = await apiFetch('/packs')
-    if (!res.ok) return new Set()
-    const body = await res.json() as Array<{ uiExtensions?: ReadonlyArray<string> }>
-    const set = new Set<string>()
-    for (const p of body) {
-      for (const name of p.uiExtensions ?? []) set.add(name)
-    }
-    return set
-  } catch {
-    return new Set()
+  const res = await apiFetch('/packs')
+  if (!res.ok) throw new Error(`Pack catalog fetch failed (${res.status})`)
+  const body = await res.json() as Array<{ uiExtensions?: ReadonlyArray<string> }>
+  const set = new Set<string>()
+  for (const p of body) {
+    for (const name of p.uiExtensions ?? []) set.add(name)
   }
+  return set
 }
 
 // Convenience: fetch + reconcile in one call. Used at boot and on every
 // `packs_changed` WS event.
 export const refreshExtensions = async (): Promise<void> => {
-  await reconcileExtensions(await fetchDeclaredExtensions())
+  try {
+    await reconcileExtensions(await fetchDeclaredExtensions())
+  } catch (error) {
+    // Preserve the currently mounted set on transient catalog failures.
+    console.error('[extensions] refresh failed; preserving mounted extensions', error)
+  }
 }

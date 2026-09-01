@@ -25,7 +25,7 @@ export interface WSManager {
   readonly wsConnections: Map<string, WSConnection>
   readonly releaseSessionForWorkspaceSwitch: (sessionToken: string, nextWorkspaceId: WorkspaceId) => boolean
   readonly safeSend: (ws: WSConnection, data: string) => boolean
-  readonly broadcast: (msg: WSOutbound) => void
+  readonly broadcastAllWorkspaces: (msg: WSOutbound) => void
   readonly broadcastToWorkspace: (workspaceId: WorkspaceId, msg: WSOutbound) => void
   readonly subscribeAgentState: (agent: Agent, workspaceId: WorkspaceId) => void
   readonly unsubscribeAgentState: (agentId: string) => void

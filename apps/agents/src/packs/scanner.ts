@@ -7,9 +7,9 @@ import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { readManifest } from './manifest.ts'
 
-// scanPacks runs on every install/update/uninstall (for list_packs), every
-// the Workspace-scoped Room Pack API (for activation validation), and every
-// refreshPackGeodata. Without dedup, an orphan .prev sibling would emit
+// scanPacks feeds the deployment Agent Pack Catalog during boot and Pack
+// lifecycle changes, plus contribution loaders such as geodata. Without
+// dedup, an orphan .prev sibling would emit
 // the warning once per call — flooding logs after a single crashed update.
 // Module-level Set lives for the process lifetime; bounded by operator's
 // failed updates.

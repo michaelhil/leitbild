@@ -30,7 +30,7 @@ export const triggerRoutes: RouteEntry[] = [
   {
     method: 'POST',
     pattern: /^\/agents\/([^/]+)\/triggers$/,
-    handler: async (req, match, { system, broadcast }) => {
+    handler: async (req, match, { system, workspaceId, broadcastToWorkspace }) => {
       const agent = system.team.getAgent(decodeURIComponent(match[1]!))
       if (!agent) return errorResponse('agent not found', 404)
       if (!agent.addTrigger) return errorResponse('agent does not support triggers', 400)
@@ -57,7 +57,7 @@ export const triggerRoutes: RouteEntry[] = [
       agent.addTrigger(trigger)
       system.triggerScheduler.invalidate()
       system.notifyAgentSettingsChanged()
-      try { broadcast({ type: 'triggers_changed', agentId: agent.id, action: 'created', triggerId: trigger.id }) } catch { /* ignore */ }
+      broadcastToWorkspace(workspaceId, { type: 'triggers_changed', agentId: agent.id, action: 'created', triggerId: trigger.id })
       return json({ ok: true, trigger }, 201)
     },
   },
@@ -65,7 +65,7 @@ export const triggerRoutes: RouteEntry[] = [
   {
     method: 'PUT',
     pattern: /^\/agents\/([^/]+)\/triggers\/([^/]+)$/,
-    handler: async (req, match, { system, broadcast }) => {
+    handler: async (req, match, { system, workspaceId, broadcastToWorkspace }) => {
       const agent = system.team.getAgent(decodeURIComponent(match[1]!))
       if (!agent) return errorResponse('agent not found', 404)
       if (!agent.updateTrigger || !agent.getTriggers) return errorResponse('agent does not support triggers', 400)
@@ -103,7 +103,7 @@ export const triggerRoutes: RouteEntry[] = [
       })
       system.triggerScheduler.invalidate()
       system.notifyAgentSettingsChanged()
-      try { broadcast({ type: 'triggers_changed', agentId: agent.id, action: 'updated', triggerId: id }) } catch { /* ignore */ }
+      broadcastToWorkspace(workspaceId, { type: 'triggers_changed', agentId: agent.id, action: 'updated', triggerId: id })
       return json({ ok: true })
     },
   },
@@ -111,7 +111,7 @@ export const triggerRoutes: RouteEntry[] = [
   {
     method: 'DELETE',
     pattern: /^\/agents\/([^/]+)\/triggers\/([^/]+)$/,
-    handler: async (_req, match, { system, broadcast }) => {
+    handler: async (_req, match, { system, workspaceId, broadcastToWorkspace }) => {
       const agent = system.team.getAgent(decodeURIComponent(match[1]!))
       if (!agent) return errorResponse('agent not found', 404)
       if (!agent.deleteTrigger) return errorResponse('agent does not support triggers', 400)
@@ -120,7 +120,7 @@ export const triggerRoutes: RouteEntry[] = [
       if (!removed) return errorResponse('trigger not found', 404)
       system.triggerScheduler.invalidate()
       system.notifyAgentSettingsChanged()
-      try { broadcast({ type: 'triggers_changed', agentId: agent.id, action: 'deleted', triggerId: id }) } catch { /* ignore */ }
+      broadcastToWorkspace(workspaceId, { type: 'triggers_changed', agentId: agent.id, action: 'deleted', triggerId: id })
       return json({ ok: true })
     },
   },

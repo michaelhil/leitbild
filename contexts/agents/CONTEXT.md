@@ -67,3 +67,11 @@ _Avoid_: production workflow or runtime controller
 **Agent Pack**:
 An extension owned by the Agents Module that contributes Agent-facing tools, skills, scripts, knowledge, geodata, or reviewed UI extensions.
 _Avoid_: universal Pack or cross-Module ownership
+
+**Agent Pack Catalog**:
+The deployment-scoped inventory of bundled and installed Agent Packs and their discovered contributions.
+_Avoid_: repeated filesystem discovery through Agent tools, universal Pack catalog
+
+**Agent Pack Manager**:
+The deployment-scoped service that installs, updates, uninstalls, and reloads Agent Packs while keeping contribution catalogs and Room Pack Sets consistent.
+_Avoid_: Pack lifecycle logic embedded in REST routes or Agent tools

@@ -44,7 +44,7 @@ export const wireWorkspaceRuntimeEvents = (
   // future regression of the silent-skip class doesn't go unnoticed.
   wsManager.markWired(workspaceId)
   const sched = (): void => autoSaver.scheduleSave()
-  const broadcast = (msg: Parameters<WSManager['broadcast']>[0]): void => {
+  const broadcast = (msg: Parameters<WSManager['broadcastToWorkspace']>[1]): void => {
     wsManager.broadcastToWorkspace(workspaceId, msg)
   }
   // Context is held only until the corresponding message is posted, then
@@ -82,6 +82,9 @@ export const wireWorkspaceRuntimeEvents = (
 
   const unsubscribeScriptCatalog = system.scriptStore.onChange(() => {
     broadcast({ type: 'script_catalog_changed' })
+  })
+  const unsubscribeBiometricStop = system.captureRegistry.onAgentStop(captureId => {
+    broadcast({ type: 'biometric_capture_stop_requested', captureId, reason: 'agent' })
   })
 
   system.setOnScriptEvent((roomId, event, detail) => {
@@ -275,7 +278,7 @@ export const wireWorkspaceRuntimeEvents = (
   // Health changes go to ALL connected clients regardless of Workspace —
   // that matches the underlying state (one gateway, one health value).
   system.ollama?.onHealthChange((health) => {
-    wsManager.broadcast({ type: 'ollama_health', health })
+    wsManager.broadcastAllWorkspaces({ type: 'ollama_health', health })
   })
 
   // === Snapshot-restored agents: subscribe at wire time ===
@@ -295,5 +298,8 @@ export const wireWorkspaceRuntimeEvents = (
   }
   // (asAIAgent is imported for future use by other extracted blocks.)
   void asAIAgent
-  return unsubscribeScriptCatalog
+  return () => {
+    unsubscribeScriptCatalog()
+    unsubscribeBiometricStop()
+  }
 }

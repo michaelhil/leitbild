@@ -39,7 +39,6 @@ import type { WSManager, WSConnection } from './ws-types.ts'
 import { wireWorkspaceRuntimeEvents } from './wire-workspace-runtime-events.ts'
 import { makeStubGateway, makeStubSetup, stubProviderConfig as baseConfig } from './__fixtures__/stub-gateway.ts'
 import type { BiometricSignalWire } from '../core/types/ws-protocol.ts'
-import { getCaptureRegistry } from '../core/biometrics/registry.ts'
 import { redactBiometricMessages } from '../core/storage/snapshot-redact.ts'
 
 const makeSetup = makeStubSetup
@@ -59,9 +58,6 @@ describe('biometrics capture flow (no mocks)', () => {
   let homeDir: string
 
   afterEach(async () => {
-    // Critical: clear the process-wide capture registry between tests so
-    // ids and snapshots from a prior test don't bleed in.
-    getCaptureRegistry().clearAll()
     if (homeDir) await rm(homeDir, { recursive: true, force: true })
     delete process.env.LEITBILD_HOME
   })
@@ -136,7 +132,7 @@ describe('biometrics capture flow (no mocks)', () => {
       system, wsManager,
     )
 
-    const captureRegistry = getCaptureRegistry()
+    const captureRegistry = system.captureRegistry
     const claimed = captureRegistry.get(captureId)
     expect(claimed?.status).toBe('active')
     expect(claimed?.claimedBy).toBe('tab-1')
@@ -274,18 +270,14 @@ describe('biometrics capture flow (no mocks)', () => {
     })
     wsManager = createWSManager({ getRuntime: (id) => registry.tryGetLive(id) })
 
-    // Subscribe to the registry hook the same way api/server.ts does at boot.
-    // No mocks — real capture registry, real listener.
     const stopRequests: string[] = []
-    const captureRegistry = getCaptureRegistry()
-    const unsubscribe = captureRegistry.onAgentStop((captureId) => {
-      stopRequests.push(captureId)
-    })
+    const cookieId = newWorkspaceId()
+    await moduleState.provision(cookieId)
+    const system = await registry.getOrLoad(cookieId)
+    const captureRegistry = system.captureRegistry
+    const unsubscribe = captureRegistry.onAgentStop(captureId => stopRequests.push(captureId))
 
     try {
-      const cookieId = newWorkspaceId()
-      await moduleState.provision(cookieId)
-      const system = await registry.getOrLoad(cookieId)
       const room = system.rooms.createRoom({ name: 'Biometrics Stop Test', createdBy: 'test' })
       room.setActivePacks(['biometrics'])
       const human = system.team.listAgents().find(a => a.kind === 'human')!
@@ -309,7 +301,7 @@ describe('biometrics capture flow (no mocks)', () => {
       expect(stopResult.success).toBe(true)
 
       // Registry listener fired exactly once for this captureId. This is the
-      // hook api/server.ts uses to broadcast biometric_capture_stop_requested
+      // hook Workspace event wiring uses to broadcast biometric_capture_stop_requested
       // so the live widget tears down its MediaStream.
       expect(stopRequests).toEqual([captureId])
 
@@ -370,12 +362,14 @@ describe('biometrics capture flow (no mocks)', () => {
     // Register both connections so wsManager.wsConnections can find them by token.
     wsManager.wsConnections.set('tab-A', tabA)
     wsManager.wsConnections.set('tab-B', tabB)
+    wsManager.sessions.set('tab-A', sessA)
+    wsManager.sessions.set('tab-B', sessB)
 
     await handleWSMessage(tabA, sessA, JSON.stringify({ type: 'biometric_capture_started', captureId }), system, wsManager)
     await handleWSMessage(tabB, sessB, JSON.stringify({ type: 'biometric_capture_started', captureId }), system, wsManager)
 
     // First claim wins. Registry shows tab-A as claimedBy.
-    const captureRegistry = getCaptureRegistry()
+    const captureRegistry = system.captureRegistry
     expect(captureRegistry.get(captureId)?.claimedBy).toBe('tab-A')
 
     // Tab B (the non-claimer) received the biometric_capture_claimed event.
@@ -388,5 +382,59 @@ describe('biometrics capture flow (no mocks)', () => {
     // after consent.
     const claimedAtA = sentA.filter(s => s.includes('biometric_capture_claimed') && s.includes(captureId))
     expect(claimedAtA.length).toBe(0)
+  })
+
+  test('capture state, signals, Room cleanup, and eviction are Workspace-isolated', async () => {
+    homeDir = await mkdtemp(join(tmpdir(), 'leitbild-bio-isolation-'))
+    process.env.LEITBILD_HOME = homeDir
+    const shared = createDeploymentRuntime({
+      providerConfig: baseConfig,
+      providerSetup: makeSetup(makeStubGateway()),
+    })
+    let wsManager!: WSManager
+    const moduleState = createAgentsModuleState()
+    const registry = createWorkspaceRuntimeRegistry({
+      deployment: shared,
+      moduleState,
+      onWorkspaceRuntimeCreated: async (system, id, autoSaver) => {
+        wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
+      },
+    })
+    wsManager = createWSManager({ getRuntime: id => registry.tryGetLive(id) })
+
+    const workspaceA = newWorkspaceId()
+    const workspaceB = newWorkspaceId()
+    await moduleState.provision(workspaceA)
+    await moduleState.provision(workspaceB)
+    const systemA = await registry.getOrLoad(workspaceA)
+    const systemB = await registry.getOrLoad(workspaceB)
+    const roomA = systemA.rooms.createRoom({ name: 'A', createdBy: 'test' })
+    const roomB = systemB.rooms.createRoom({ name: 'B', createdBy: 'test' })
+    const capture = {
+      captureId: 'same-id',
+      agentId: 'agent',
+      agentName: 'Agent',
+      reason: 'isolation test',
+    }
+    systemA.captureRegistry.create({ ...capture, roomId: roomA.profile.id })
+    systemB.captureRegistry.create({ ...capture, roomId: roomB.profile.id })
+
+    const connection: WSConnection = { send: () => {}, getBufferedAmount: () => 0, close: () => {} }
+    const session = { workspaceId: workspaceA, sessionToken: 'workspace-a-tab', lastActivity: Date.now() }
+    await handleWSMessage(
+      connection,
+      session,
+      JSON.stringify({ type: 'biometric_capture_signal', captureId: capture.captureId, snapshot: sampleSignal() }),
+      systemA,
+      wsManager,
+    )
+    expect(systemA.captureRegistry.get(capture.captureId)?.lastSnapshot).toBeDefined()
+    expect(systemB.captureRegistry.get(capture.captureId)?.lastSnapshot).toBeUndefined()
+
+    systemA.removeRoom(roomA.profile.id)
+    expect(systemA.captureRegistry.get(capture.captureId)).toBeNull()
+    const retainedRegistry = systemB.captureRegistry
+    await registry.evictOne(workspaceB)
+    expect(retainedRegistry.get(capture.captureId)).toBeNull()
   })
 })

@@ -16,6 +16,7 @@ import type { ClientSession, WSManager } from './ws-types.ts'
 import { newWorkspaceId } from '@leitbild/contracts'
 import { createWorkspaceSettings } from '../core/workspaces/settings.ts'
 import { createBookmarkStore } from '../core/workspaces/bookmark-store.ts'
+import { createLimitMetrics } from '../core/limit-metrics.ts'
 
 // === Helpers ===
 
@@ -78,6 +79,7 @@ const makeSystem = (): AgentsWorkspaceRuntime => {
     setOnProviderAllFailed: () => {},
     setOnProviderStreamFailed: () => {},
     dispatchProviderEvent: () => {},
+    limitMetrics: createLimitMetrics(),
     summaryScheduler: {
       onMessagePosted: () => {},
       onConfigChanged: () => {},

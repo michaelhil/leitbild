@@ -54,8 +54,8 @@ export const handleRoomCommand = async (msg: WSInbound, ctx: CommandContext): Pr
       if (!room) return true
       room.setPaused(msg.paused)
       if (!msg.paused) {
-        const script = system.scriptRunner?.getRun(room.profile.id)
-        if (script) void system.scriptRunner?.resume(room.profile.id)
+        const script = system.scriptRunner.getRun(room.profile.id)
+        if (script) void system.scriptRunner.resume(room.profile.id)
       }
       broadcastToSessionInstance({ type: 'delivery_mode_changed', roomName: room.profile.name, mode: room.deliveryMode, paused: room.paused })
       return true

@@ -19,7 +19,15 @@ import { accessContextSchema, newRequestId, newWorkspaceId } from '@leitbild/con
 
 const noopDeliver: DeliverFn = () => {}
 const noopBroadcast = (_msg: WSOutbound): void => {}
+const noopWorkspaceBroadcast = (): void => {}
 const noopSubscribe = (): void => {}
+const packManager = {
+  install: async () => ({ success: false, error: 'disabled in route test' }),
+  update: async () => ({ success: false, error: 'disabled in route test' }),
+  uninstall: async () => ({ success: false, error: 'disabled in route test' }),
+  list: async () => ({ success: true, data: [] }),
+  listAvailable: async () => ({ success: true, data: [] }),
+}
 const TEST_WORKSPACE_ID = newWorkspaceId()
 const TEST_ACCESS_CONTEXT = accessContextSchema.parse({
   workspaceId: TEST_WORKSPACE_ID,
@@ -51,6 +59,7 @@ const makeSystem = (): AgentsWorkspaceRuntime => {
     llm: { models: async () => [], chat: async () => ({ content: '', generationMs: 0, tokensUsed: { prompt: 0, completion: 0 } }) } as unknown as AgentsWorkspaceRuntime['llm'],
     ollama,
     providerConfig: { order: ['ollama'], ollamaUrl: 'http://localhost:11434', ollamaMaxConcurrent: 2, cloud: {}, ollamaOnly: false, forceFailProvider: null, droppedFromOrder: [], orderFromUser: false } as unknown as AgentsWorkspaceRuntime['providerConfig'],
+    scriptRunner: { getRun: () => undefined } as unknown as AgentsWorkspaceRuntime['scriptRunner'],
     routeMessage: () => [],
     removeAgent: (id: string) => team.removeAgent(id),
     removeRoom: (id: string) => rooms.removeRoom(id),
@@ -90,7 +99,9 @@ const req = (method: string, path: string, body?: unknown): Request => {
 
 const call = (system: AgentsWorkspaceRuntime, r: Request, path: string, opts: { remoteAddress?: string } = {}) =>
   handleAPI(r, path, system, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
-    broadcast: noopBroadcast,
+    broadcastAllWorkspaces: noopBroadcast,
+    broadcastToWorkspace: noopWorkspaceBroadcast,
+    packManager,
     subscribeAgentState: noopSubscribe,
     ...(opts.remoteAddress ? { remoteAddress: opts.remoteAddress } : {}),
   })

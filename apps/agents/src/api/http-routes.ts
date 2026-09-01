@@ -87,11 +87,12 @@ const allRoutes = [
 // server.ts → handleAPI seam stays narrow as new cross-cutting capabilities
 // land (Workspace context, diagnostics, …).
 export interface RouteDeps {
-  readonly broadcast: (msg: WSOutbound) => void
+  readonly broadcastAllWorkspaces: (msg: WSOutbound) => void
   readonly subscribeAgentState: RouteContext['subscribeAgentState']
   readonly unsubscribeAgentState?: (agentId: string) => void
   readonly remoteAddress?: string
-  readonly broadcastToWorkspace?: RouteContext['broadcastToWorkspace']
+  readonly broadcastToWorkspace: RouteContext['broadcastToWorkspace']
+  readonly packManager: RouteContext['packManager']
   readonly diagnostics?: RouteContext['diagnostics']
 }
 

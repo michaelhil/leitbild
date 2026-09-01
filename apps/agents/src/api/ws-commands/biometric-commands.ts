@@ -11,10 +11,8 @@
 
 import type { WSInbound, WSOutbound } from '../../core/types/ws-protocol.ts'
 import type { CommandContext } from './types.ts'
-import { getCaptureRegistry } from '../../core/biometrics/registry.ts'
-
 export const handleBiometricCommand = (msg: WSInbound, ctx: CommandContext): boolean => {
-  const registry = getCaptureRegistry()
+  const registry = ctx.system.captureRegistry
 
   switch (msg.type) {
     case 'biometric_capture_started': {
@@ -30,6 +28,7 @@ export const handleBiometricCommand = (msg: WSInbound, ctx: CommandContext): boo
         const data = JSON.stringify(payload)
         for (const [token, conn] of ctx.wsManager.wsConnections) {
           if (token === sessionId) continue
+          if (ctx.wsManager.sessions.get(token)?.workspaceId !== ctx.session.workspaceId) continue
           ctx.wsManager.safeSend(conn, data)
         }
       }

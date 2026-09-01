@@ -16,14 +16,13 @@
 //   3. Process tools  — pure / network / codegen tools registered once
 //                       into shared (gated by LEITBILD_ENABLE_*).
 //   4. WorkspaceRuntimeRegistry — onWorkspaceRuntimeCreated hook closes over wsManager (set in 5).
-//   5. wsManager      — assigned BEFORE any registry.getOrLoad runs, so
+//   5. Pack Manager   — closes over registry + the wsManager assigned in 6;
+//                       Agent tools are thin adapters over it.
+//   6. wsManager      — assigned BEFORE any registry.getOrLoad runs, so
 //                       the hook always sees a defined value. Failure to
 //                       respect this is how 5d73a8e happened: any lazily loaded
 //                       Workspace whose onWorkspaceRuntimeCreated fired with
 //                       wsManager undefined silently skipped wireWorkspaceRuntimeEvents.
-//   6. Pack admin     — install/update/uninstall_pack registered last
-//                       because they need the cross-Workspace refresh
-//                       callback that walks `registry.list()`.
 //   7. First runtime  — the Workspace Host provisions Modules, then the
 //                       URL-scoped request triggers getOrLoad.
 //   8. Janitor + timers + HTTP server.
@@ -45,8 +44,7 @@ import { loadAllPacks } from './packs/loader.ts'
 import { asAIAgent } from './agents/shared.ts'
 import { warmProviderModels } from './llm/providers-setup.ts'
 import { parseLogConfigFromEnv } from './logging/config.ts'
-import { sharedPaths, workspaceModulePaths } from './core/paths.ts'
-import { appendRoomsPendingScrub } from './core/storage/module-snapshots.ts'
+import { sharedPaths } from './core/paths.ts'
 import { createToolRegistry } from './core/tool-registry.ts'
 import { wireWorkspaceRuntimeEvents } from './api/wire-workspace-runtime-events.ts'
 import { wireAgentTracking } from './api/agent-tracking.ts'
@@ -63,6 +61,8 @@ import {
 } from './tools/built-in/index.ts'
 import { createAgentsModuleState } from './core/workspaces/module-state.ts'
 import { newWorkspaceId, type WorkspaceId } from '@leitbild/contracts'
+import { createPackManager, type PackManager } from './packs/manager.ts'
+import { createWorkspacePackScrubber } from './packs/workspace-pack-scrubber.ts'
 
 const DRAIN_TIMEOUT_MS = 5_000
 
@@ -124,7 +124,8 @@ export const bootstrap = async (): Promise<void> => {
   await loadExternalTools(deployment.sharedToolRegistry)
   await loadSkills(resolve(process.cwd(), 'skills'), deployment.sharedSkillStore, deployment.sharedToolRegistry)
   await loadSkills(sharedPaths.skills(), deployment.sharedSkillStore, deployment.sharedToolRegistry)
-  await loadAllPacks(sharedPaths.packs(), deployment.sharedToolRegistry, deployment.sharedSkillStore)
+  const loadedPacks = await loadAllPacks(sharedPaths.packs(), deployment.sharedToolRegistry, deployment.sharedSkillStore)
+  deployment.packCatalog.replaceInstalled(loadedPacks.map(result => result.pack))
   await deployment.sharedScriptStore.reload()
 
   // Bundled packs — compiled into the binary. Each pack's tools register
@@ -293,11 +294,6 @@ export const bootstrap = async (): Promise<void> => {
         subscribeAgentState: wsManager.subscribeAgentState,
         unsubscribeAgentState: wsManager.unsubscribeAgentState,
       })
-      // (Default-room fallback removed — Workspace seeding below handles
-      // the empty-Workspace case with a properly-themed 'demo' room and a
-      // Helper agent. The old `general` fallback always created a room
-      // BEFORE seed ran, so seed's `if rooms.length > 0 return` check
-      // would short-circuit and Helper never spawned.)
       // Wire WS broadcasts + autosave. wsManager is guaranteed assigned
       // by the time any getOrLoad runs (see the `let wsManager!:` block
       // above). autoSaver is passed in directly because the registry map
@@ -358,6 +354,7 @@ export const bootstrap = async (): Promise<void> => {
     readonly tools: ReadonlyArray<string>
     readonly skills: ReadonlyArray<string>
   }): void => {
+    wsManager.broadcastAllWorkspaces({ type: 'packs_changed' })
     const note = info.action === 'uninstalled'
       ? `[admin] Pack "${info.packId}" was uninstalled. ${info.tools.length} tools and ${info.skills.length} skills are no longer available.`
       : `[admin] Pack "${info.packId}" was ${info.action}. Tools available now: ${info.tools.join(', ') || '(none)'}. Skills: ${info.skills.join(', ') || '(none)'}. Disregard any earlier message claiming these were unavailable.`
@@ -387,103 +384,37 @@ export const bootstrap = async (): Promise<void> => {
       deployment.sharedToolRegistry, deployment.sharedSkillStore, crossWorkspaceRefreshAllAgentTools,
     ))
   }
+  const crossWorkspaceScrubActivePacks = createWorkspacePackScrubber({
+    registry,
+    broadcastToWorkspace: (workspaceId, message) => wsManager.broadcastToWorkspace(workspaceId, message),
+  })
+
+  // Re-scan pack geodata after install/update/uninstall so new
+  // <pack>/geodata/*.geojson contents surface in geo_lookup + the
+  // overview UI without a server restart.
+  const refreshPackGeodataAfterMutation = async (): Promise<void> => {
+    const { refreshPackGeodata } = await import('./geo/pack-source.ts')
+    await refreshPackGeodata(sharedPaths.packs())
+  }
+
+  const refreshPackScriptsAfterMutation = async (): Promise<void> => {
+    await deployment.sharedScriptStore.reload()
+  }
+
+  const packManager: PackManager = createPackManager({
+    mutationsEnabled: packsEnabled,
+    packsDir: sharedPaths.packs(),
+    toolRegistry: deployment.sharedToolRegistry,
+    skillStore: deployment.sharedSkillStore,
+    catalog: deployment.packCatalog,
+    refreshAllAgentTools: crossWorkspaceRefreshAllAgentTools,
+    notifyPacksChanged: crossWorkspaceNotifyPacksChanged,
+    scrubActivePacks: crossWorkspaceScrubActivePacks,
+    refreshPackGeodata: refreshPackGeodataAfterMutation,
+    refreshPackScripts: refreshPackScriptsAfterMutation,
+  })
   if (packsEnabled) {
-    // Cross-Workspace scrub: when a pack is uninstalled, remove its
-    // Pack id from every room.activePacks across every live Workspace,
-    // and broadcast pack_activation_changed per affected room. Returns
-    // the audit list so the uninstall response can include it.
-    const crossWorkspaceScrubActivePacks = async (
-      packId: string,
-    ): Promise<{ roomId: string; activePacks: ReadonlyArray<string> }[]> => {
-      const out: { roomId: string; activePacks: ReadonlyArray<string> }[] = []
-      const dirtyWorkspaces = new Set<WorkspaceId>()
-      for (const meta of registry.list()) {
-        const sys = registry.tryGetLive(meta.id)
-        if (!sys) continue
-        for (const profile of sys.rooms.listAllRooms()) {
-          const room = sys.rooms.getRoom(profile.id)
-          if (!room) continue
-          const before = room.getActivePacks()
-          if (!before.includes(packId)) continue
-          const after = before.filter(p => p !== packId)
-          room.setActivePacks(after)
-          out.push({ roomId: profile.id, activePacks: after })
-          dirtyWorkspaces.add(meta.id)
-          // Per-room WS event so any open packs panel re-renders. Best-
-          // effort — broadcast layer may not be wired in tests / MCP-only.
-          try {
-            wsManager?.broadcastToWorkspace(meta.id, {
-              type: 'pack_activation_changed', roomId: profile.id, activePacks: after,
-            })
-          } catch { /* ignore */ }
-        }
-      }
-      // M5: force-flush every affected Workspace's auto-saver. The default
-      // 5s debounce window is long enough that a server crash within it
-      // would lose the scrub mutation, and the next boot's snapshot would
-      // restore the deleted pack into room.activePacks. Fire-and-forget
-      // is fine — the in-memory state is already authoritative for the
-      // uninstall response; the flush is just durability.
-      for (const id of dirtyWorkspaces) {
-        const saver = registry.autoSaverFor(id)
-        if (!saver) continue
-        saver.flush().catch(err => {
-          console.error(`[packs] post-scrub snapshot flush failed for ${id}:`, err)
-        })
-      }
-      // M1: append a pendingScrub to every evicted Workspace's snapshot so
-      // the scrub applies on its next reload. Without this, an evicted
-      // Workspace reloaded post-uninstall restores the deleted pack as
-      // active, and a later same Pack id install would auto-activate
-      // without operator opt-in.
-      //
-      // B3 (round 3): awaited via Promise.all so the uninstall response
-      // only returns once every evicted Workspace's snapshot is durable on
-      // disk. Adds ~5-20ms × max(N) latency where N is evicted-Workspace
-      // count — bounded by deploy size.
-      const scheduledAt = new Date().toISOString()
-      const scrubPromises: Promise<unknown>[] = []
-      for (const meta of registry.list()) {
-        if (registry.tryGetLive(meta.id)) continue  // handled by live loop above
-        const snapshotPath = workspaceModulePaths(meta.id).rooms.snapshot
-        scrubPromises.push(
-          appendRoomsPendingScrub(snapshotPath, { packId: packId, scheduledAt })
-            .then(result => {
-              if (!result.applied && result.reason && result.reason !== 'no snapshot file' && result.reason !== 'already queued') {
-                console.warn(`[packs] could not queue scrub for evicted Workspace ${meta.id}: ${result.reason}`)
-              }
-            })
-            .catch(err => {
-              console.error(`[packs] appendPendingScrub failed for ${meta.id}:`, err)
-            }),
-        )
-      }
-      await Promise.all(scrubPromises)
-      return out
-    }
-
-    // Re-scan pack geodata after install/update/uninstall so new
-    // <pack>/geodata/*.geojson contents surface in geo_lookup + the
-    // overview UI without a server restart.
-    const refreshPackGeodataAfterMutation = async (): Promise<void> => {
-      const { refreshPackGeodata } = await import('./geo/pack-source.ts')
-      await refreshPackGeodata(sharedPaths.packs())
-    }
-
-    const refreshPackScriptsAfterMutation = async (): Promise<void> => {
-      await deployment.sharedScriptStore.reload()
-    }
-
-    deployment.sharedToolRegistry.registerAll(createPackTools({
-      packsDir: sharedPaths.packs(),
-      toolRegistry: deployment.sharedToolRegistry,
-      skillStore: deployment.sharedSkillStore,
-      refreshAllAgentTools: crossWorkspaceRefreshAllAgentTools,
-      notifyPacksChanged: crossWorkspaceNotifyPacksChanged,
-      scrubActivePacks: crossWorkspaceScrubActivePacks,
-      refreshPackGeodata: refreshPackGeodataAfterMutation,
-      refreshPackScripts: refreshPackScriptsAfterMutation,
-    }))
+    deployment.sharedToolRegistry.registerAll(createPackTools(packManager))
   }
 
   // === wsManager — assigned NOW (before any registry.getOrLoad runs) ===
@@ -529,11 +460,9 @@ export const bootstrap = async (): Promise<void> => {
     await moduleState.provision(headlessId)
     const system = await registry.getOrLoad(headlessId)
 
-    // wsManager not used in headless mode; create a stub so wireWorkspaceRuntimeEvents
-    // (called inside onWorkspaceRuntimeCreated) ran with `wsManager === undefined`
-    // and skipped wiring. That's intentional — there are no WS clients in
-    // headless. Provider events dispatch through the shared listener
-    // anyway; agent.dispatchProviderEvent still proxies to MCP if configured.
+    // The same Workspace event wiring runs in headless mode. There are no
+    // WebSocket sessions to receive its broadcasts, while MCP notifications
+    // use their own runtime subscriptions below.
 
     // Warm provider model caches (best-effort).
     const warmResults = await warmProviderModels(providerSetup.gateways)
@@ -642,7 +571,7 @@ export const bootstrap = async (): Promise<void> => {
   // Without this, every disconnected user accumulates forever until the
   // Workspace is evicted.
   const sessionSweepTimer = setInterval(() => {
-    try { wsManager?.sweepStaleSessions() } catch (err) {
+    try { wsManager.sweepStaleSessions() } catch (err) {
       console.error(`[ws] sweepStaleSessions: ${err instanceof Error ? err.message : String(err)}`)
     }
   }, 60 * 60 * 1000)
@@ -689,6 +618,7 @@ export const bootstrap = async (): Promise<void> => {
     wsManager,
     port: parseInt(process.env.PORT ?? String(DEFAULTS.port), 10),
     diagnostics,
+    packManager,
     workspaceHostUrl,
   })
 

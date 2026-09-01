@@ -63,7 +63,9 @@ export const createScriptStore = (init: ScriptStoreInit): ScriptStore => {
 
   const fireChange = (): void => {
     for (const fn of listeners) {
-      try { fn() } catch { /* listener errors must not break the store */ }
+      try { fn() } catch (error) {
+        console.error('[scripts] catalog change listener failed', error)
+      }
     }
   }
 

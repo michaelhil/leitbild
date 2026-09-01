@@ -1,4 +1,4 @@
-// Integration tests for pack-tools — install / update / uninstall / list.
+// Integration tests for the Pack Manager — install / update / uninstall / list.
 // Uses a real local git repo as the source and file:// as the transport,
 // so nothing leaves the machine.
 
@@ -7,17 +7,11 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $ } from 'bun'
-import {
-  createInstallPackTool, createUpdatePackTool,
-  createUninstallPackTool, createListPacksTool,
-  type PackToolsDeps,
-} from './pack-tools.ts'
-import { createToolRegistry } from '../../core/tool-registry.ts'
-import { createSkillStore } from '../../skills/loader.ts'
-import type { ToolContext } from '../../core/types/tool.ts'
-import { createAgentPackDescriptor } from '../../packs/manifest.ts'
-
-const CTX: ToolContext = { callerId: 'test', callerName: 'test' }
+import { createPackManager, type PackManagerDeps } from './manager.ts'
+import { createAgentPackCatalog } from './agent-pack-catalog.ts'
+import { createToolRegistry } from '../core/tool-registry.ts'
+import { createSkillStore } from '../skills/loader.ts'
+import { createAgentPackDescriptor } from './manifest.ts'
 
 const TOOL_SRC = (name: string) => `
 export default {
@@ -66,7 +60,7 @@ const buildRepo = async (parent: string, name: string): Promise<string> => {
 }
 
 const makeDeps = async (): Promise<{
-  deps: PackToolsDeps
+  deps: PackManagerDeps
   parent: string
   refreshCount: { n: number }
   catalogRefreshCount: { geodata: number; scripts: number }
@@ -76,13 +70,21 @@ const makeDeps = async (): Promise<{
   await mkdir(packsDir, { recursive: true })
   const refreshCount = { n: 0 }
   const catalogRefreshCount = { geodata: 0, scripts: 0 }
-  const deps: PackToolsDeps = {
+  const toolRegistry = createToolRegistry()
+  const skillStore = createSkillStore()
+  const catalog = createAgentPackCatalog({ packsDir, toolRegistry, skillStore })
+  await catalog.reload()
+  const deps: PackManagerDeps = {
+    mutationsEnabled: true,
     packsDir,
-    toolRegistry: createToolRegistry(),
-    skillStore: createSkillStore(),
+    toolRegistry,
+    skillStore,
+    catalog,
     refreshAllAgentTools: async () => { refreshCount.n += 1 },
     refreshPackGeodata: async () => { catalogRefreshCount.geodata += 1 },
     refreshPackScripts: async () => { catalogRefreshCount.scripts += 1 },
+    notifyPacksChanged: () => {},
+    scrubActivePacks: async () => [],
   }
   return { deps, parent, refreshCount, catalogRefreshCount }
 }
@@ -99,8 +101,8 @@ describe('install_pack', () => {
     parent = env.parent
     const url = await buildRepo(env.parent, 'atc')
 
-    const install = createInstallPackTool(env.deps)
-    const result = await install.execute({ source: url }, CTX)
+    const manager = createPackManager(env.deps)
+    const result = await manager.install(url)
 
     expect(result.success).toBe(true)
     const data = result.data as { id: string; tools: string[]; skills: string[] }
@@ -117,12 +119,12 @@ describe('install_pack', () => {
     const env = await makeDeps()
     parent = env.parent
     const url = await buildRepo(env.parent, 'atc')
-    const deps: PackToolsDeps = {
+    const deps: PackManagerDeps = {
       ...env.deps,
       refreshAllAgentTools: async () => { throw new Error('agent refresh failed') },
     }
 
-    const result = await createInstallPackTool(deps).execute({ source: url }, CTX)
+    const result = await createPackManager(deps).install(url)
 
     expect(result.success).toBe(true)
     expect(env.catalogRefreshCount).toEqual({ geodata: 1, scripts: 1 })
@@ -138,8 +140,8 @@ describe('install_pack', () => {
     await $`git -C ${repoDir} -c user.email=t@t -c user.name=t add .`.quiet()
     await $`git -C ${repoDir} -c user.email=t@t -c user.name=t commit -q -m init`.quiet()
 
-    const install = createInstallPackTool(env.deps)
-    const result = await install.execute({ source: `file://${repoDir}` }, CTX)
+    const manager = createPackManager(env.deps)
+    const result = await manager.install(`file://${repoDir}`)
 
     expect(result.success).toBe(false)
     expect(result.error).toContain('required Pack manifest')
@@ -150,9 +152,9 @@ describe('install_pack', () => {
     parent = env.parent
     const url = await buildRepo(env.parent, 'atc')
 
-    const install = createInstallPackTool(env.deps)
-    await install.execute({ source: url }, CTX)
-    const second = await install.execute({ source: url }, CTX)
+    const manager = createPackManager(env.deps)
+    await manager.install(url)
+    const second = await manager.install(url)
     expect(second.success).toBe(false)
     expect(second.error).toContain('already installed')
   })
@@ -160,28 +162,28 @@ describe('install_pack', () => {
   it('reports a clear error for invalid source', async () => {
     const env = await makeDeps()
     parent = env.parent
-    const install = createInstallPackTool(env.deps)
-    const result = await install.execute({ source: 'has.dots' }, CTX)
+    const manager = createPackManager(env.deps)
+    const result = await manager.install('has.dots')
     expect(result.success).toBe(false)
   })
 
   it('refuses to install the reserved built-in core namespace', async () => {
     const env = await makeDeps()
     parent = env.parent
-    const install = createInstallPackTool(env.deps)
+    const manager = createPackManager(env.deps)
 
     // Bare-name attempt
-    const bare = await install.execute({ source: 'core' }, CTX)
+    const bare = await manager.install('core')
     expect(bare.success).toBe(false)
     expect(bare.error).toContain('reserved')
 
     // Owner/repo attempt against the public mirror
-    const ownerRepo = await install.execute({ source: 'michaelhil/leitbild-core' }, CTX)
+    const ownerRepo = await manager.install('michaelhil/leitbild-core')
     expect(ownerRepo.success).toBe(false)
     expect(ownerRepo.error).toContain('reserved')
 
     // Full URL attempt
-    const url = await install.execute({ source: 'https://github.com/michaelhil/leitbild-core.git' }, CTX)
+    const url = await manager.install('https://github.com/michaelhil/leitbild-core.git')
     expect(url.success).toBe(false)
     expect(url.error).toContain('reserved')
 
@@ -190,11 +192,9 @@ describe('install_pack', () => {
   it('reports git failure without leaving a stray directory', async () => {
     const env = await makeDeps()
     parent = env.parent
-    const install = createInstallPackTool(env.deps)
+    const manager = createPackManager(env.deps)
     // file:// to a non-existent repo
-    const result = await install.execute({
-      source: `file://${env.parent}/does-not-exist`,
-    }, CTX)
+    const result = await manager.install(`file://${env.parent}/does-not-exist`)
     expect(result.success).toBe(false)
 
     const { stat } = await import('node:fs/promises')
@@ -216,12 +216,11 @@ describe('uninstall_pack', () => {
     parent = env.parent
     const url = await buildRepo(env.parent, 'atc')
 
-    const install = createInstallPackTool(env.deps)
-    const uninstall = createUninstallPackTool(env.deps)
-    await install.execute({ source: url }, CTX)
+    const manager = createPackManager(env.deps)
+    await manager.install(url)
     expect(env.deps.toolRegistry.has('atc_ping')).toBe(true)
 
-    const result = await uninstall.execute({ id: 'atc' }, CTX)
+    const result = await manager.uninstall('atc')
     expect(result.success).toBe(true)
     expect(env.deps.toolRegistry.has('atc_ping')).toBe(false)
     expect(env.deps.skillStore.get('atc/demo')).toBeUndefined()
@@ -236,8 +235,8 @@ describe('uninstall_pack', () => {
   it('refuses when pack is not installed', async () => {
     const env = await makeDeps()
     parent = env.parent
-    const uninstall = createUninstallPackTool(env.deps)
-    const result = await uninstall.execute({ id: 'nope' }, CTX)
+    const manager = createPackManager(env.deps)
+    const result = await manager.uninstall('nope')
     expect(result.success).toBe(false)
   })
 
@@ -254,7 +253,7 @@ describe('uninstall_pack', () => {
       ['room-c', ['cafes']],            // doesn't have atc — should NOT appear in scrub list
     ])
     const scrubbed: { roomId: string; activePacks: ReadonlyArray<string> }[] = []
-    const depsWithScrub: PackToolsDeps = {
+    const depsWithScrub: PackManagerDeps = {
       ...env.deps,
       scrubActivePacks: (ns: string) => {
         for (const [roomId, packs] of fakeRooms) {
@@ -267,11 +266,10 @@ describe('uninstall_pack', () => {
       },
     }
 
-    const install = createInstallPackTool(depsWithScrub)
-    const uninstall = createUninstallPackTool(depsWithScrub)
-    await install.execute({ source: url }, CTX)
+    const manager = createPackManager(depsWithScrub)
+    await manager.install(url)
 
-    const result = await uninstall.execute({ id: 'atc' }, CTX)
+    const result = await manager.uninstall('atc')
     expect(result.success).toBe(true)
     // Two rooms had atc active; one didn't — only the affected two
     // are reported.
@@ -301,8 +299,8 @@ describe('update_pack', () => {
     // Ensure branch name is predictable.
     await $`git -C ${repoDir} branch -M main`.quiet().nothrow()
 
-    const install = createInstallPackTool(env.deps)
-    await install.execute({ source: `file://${repoDir}` }, CTX)
+    const manager = createPackManager(env.deps)
+    await manager.install(`file://${repoDir}`)
     expect(env.deps.toolRegistry.has('atc_a')).toBe(true)
 
     // Add a new tool upstream.
@@ -310,8 +308,7 @@ describe('update_pack', () => {
     await $`git -C ${repoDir} -c user.email=t@t -c user.name=t add .`.quiet()
     await $`git -C ${repoDir} -c user.email=t@t -c user.name=t commit -q -m add-b`.quiet()
 
-    const update = createUpdatePackTool(env.deps)
-    const result = await update.execute({ id: 'atc' }, CTX)
+    const result = await manager.update('atc')
     expect(result.success).toBe(true)
     expect(env.deps.toolRegistry.has('atc_a')).toBe(true)
     expect(env.deps.toolRegistry.has('atc_b')).toBe(true)
@@ -329,8 +326,8 @@ describe('update_pack', () => {
     await $`git -C ${repoDir} -c user.email=t@t -c user.name=t commit -q -m init`.quiet()
     await $`git -C ${repoDir} branch -M main`.quiet().nothrow()
 
-    const install = createInstallPackTool(env.deps)
-    await install.execute({ source: `file://${repoDir}` }, CTX)
+    const manager = createPackManager(env.deps)
+    await manager.install(`file://${repoDir}`)
     expect(env.deps.toolRegistry.has('atc_good')).toBe(true)
 
     // Push a broken commit upstream — syntax error makes the new tool
@@ -339,8 +336,7 @@ describe('update_pack', () => {
     await $`git -C ${repoDir} -c user.email=t@t -c user.name=t add .`.quiet()
     await $`git -C ${repoDir} -c user.email=t@t -c user.name=t commit -q -m bad`.quiet()
 
-    const update = createUpdatePackTool(env.deps)
-    const result = await update.execute({ id: 'atc' }, CTX)
+    const result = await manager.update('atc')
 
     // Rollback contract:
     expect(result.success).toBe(false)
@@ -366,14 +362,13 @@ describe('update_pack', () => {
     await $`git -C ${repoDir} -c user.email=t@t -c user.name=t commit -q -m init`.quiet()
     await $`git -C ${repoDir} branch -M main`.quiet().nothrow()
 
-    const install = createInstallPackTool(env.deps)
-    await install.execute({ source: `file://${repoDir}` }, CTX)
+    const manager = createPackManager(env.deps)
+    await manager.install(`file://${repoDir}`)
 
     // Simulate orphan from a previous crashed update.
     await mkdir(join(env.deps.packsDir, 'atc.prev'), { recursive: true })
 
-    const update = createUpdatePackTool(env.deps)
-    const result = await update.execute({ id: 'atc' }, CTX)
+    const result = await manager.update('atc')
     expect(result.success).toBe(false)
     expect(String(result.error)).toContain('orphan .prev sibling')
   })
@@ -390,22 +385,21 @@ describe('update_pack', () => {
     await $`git -C ${repoDir} -c user.email=t@t -c user.name=t commit -q -m init`.quiet()
     await $`git -C ${repoDir} branch -M main`.quiet().nothrow()
 
-    const install = createInstallPackTool(env.deps)
-    await install.execute({ source: `file://${repoDir}` }, CTX)
+    const manager = createPackManager(env.deps)
+    await manager.install(`file://${repoDir}`)
 
     // Add upstream commits between updates so each pull does meaningful work.
     await writeFile(join(repoDir, 'tools', 'b.ts'), TOOL_SRC('b'))
     await $`git -C ${repoDir} -c user.email=t@t -c user.name=t add .`.quiet()
     await $`git -C ${repoDir} -c user.email=t@t -c user.name=t commit -q -m add-b`.quiet()
 
-    const update = createUpdatePackTool(env.deps)
     // Three concurrent updates on the same namespace. With per-namespace
     // chains, they serialise: first does the actual pull + reload, the
     // next two pull-no-op (already up to date) but never collide on .prev.
     const results = await Promise.all([
-      update.execute({ id: 'atc' }, CTX),
-      update.execute({ id: 'atc' }, CTX),
-      update.execute({ id: 'atc' }, CTX),
+      manager.update('atc'),
+      manager.update('atc'),
+      manager.update('atc'),
     ])
     for (const r of results) {
       expect(r.success).toBe(true)
@@ -429,10 +423,10 @@ describe('list_packs', () => {
     const env = await makeDeps()
     parent = env.parent
     const url = await buildRepo(env.parent, 'atc')
-    await createInstallPackTool(env.deps).execute({ source: url }, CTX)
+    const manager = createPackManager(env.deps)
+    await manager.install(url)
 
-    const list = createListPacksTool(env.deps)
-    const result = await list.execute({}, CTX)
+    const result = await manager.list()
     expect(result.success).toBe(true)
     const data = result.data as Array<{
       id: string

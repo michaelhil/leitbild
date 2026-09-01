@@ -521,7 +521,7 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
       kind: 'command',
       scope: { kind: 'definition', definitionType: ROOM_DEFINITION_TYPE },
       title: 'Start Room',
-      description: 'Creates a Room from the current immutable revision of this Room Definition.',
+      description: 'Creates a Room from the requested immutable Room Definition Revision.',
       risk: 'write',
       idempotent: false,
       inputSchema: z.toJSONSchema(emptyInputSchema),

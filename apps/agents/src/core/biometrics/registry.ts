@@ -1,4 +1,4 @@
-// In-memory capture registry — one per RoomDirectory instance. Holds the lifecycle
+// In-memory capture registry — one per Agents Workspace runtime. Holds the lifecycle
 // state and latest snapshot of every active biometric capture so the
 // `biometrics_read` tool can answer "what's the current user state" without
 // reaching back to the browser.
@@ -58,8 +58,8 @@ export interface CaptureRegistry {
   readonly listForRoom: (roomId: string) => ReadonlyArray<CaptureEntry>
   readonly clearForRoom: (roomId: string) => void
   readonly clearAll: () => void
-  // Subscribe to agent-initiated stop requests. The wire layer registers
-  // one listener at server boot to broadcast biometric_capture_stop_requested
+  // Subscribe to agent-initiated stop requests. The Workspace wire layer
+  // broadcasts biometric_capture_stop_requested only to that Workspace
   // so any live widget for that captureId tears down its MediaStream.
   readonly onAgentStop: (cb: (captureId: string) => void) => () => void
 }
@@ -123,14 +123,4 @@ export const createCaptureRegistry = (): CaptureRegistry => {
       return () => agentStopListeners.delete(cb)
     },
   }
-}
-
-// Process-wide singleton — pack-loaded tools reach the registry via this
-// getter rather than receiving it through the pack-tool dep-injection
-// contract (matches how built-ins access globally available state). The
-// soft layering violation is documented and accepted in the v4 plan.
-let singleton: CaptureRegistry | null = null
-export const getCaptureRegistry = (): CaptureRegistry => {
-  if (!singleton) singleton = createCaptureRegistry()
-  return singleton
 }

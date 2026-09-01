@@ -89,7 +89,7 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
     try { ws.send(data); return true } catch { return false }
   }
 
-  const broadcast = (msg: WSOutbound): void => {
+  const broadcastAllWorkspaces = (msg: WSOutbound): void => {
     const data = JSON.stringify(msg)
     for (const ws of wsConnections.values()) {
       safeSend(ws, data)
@@ -199,7 +199,7 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
 
   return {
     sessions, wsConnections, releaseSessionForWorkspaceSwitch,
-    safeSend, broadcast, broadcastToWorkspace,
+    safeSend, broadcastAllWorkspaces, broadcastToWorkspace,
     subscribeAgentState, unsubscribeAgentState, buildSnapshot, sweepStaleSessions,
     // --- Diagnostics ---
     markWired: (id: WorkspaceId) => { wiredWorkspaces.add(id) },
@@ -244,13 +244,12 @@ export const handleWSMessage = async (
     // /api/system/health without journalctl grep.
     console.warn(`[ws] invalid JSON from session ${session.sessionToken.slice(0, 8)}…:`,
       err instanceof Error ? err.message : String(err))
-    // Optional access: minimal test stubs may not provide limitMetrics.
-    system.limitMetrics?.inc('wsInvalidJson')
+    system.limitMetrics.inc('wsInvalidJson')
     sendError(wsManager, ws, 'Invalid JSON')
     return
   }
 
-  const ctx = { ws, session, system, broadcast: wsManager.broadcast, wsManager }
+  const ctx = { ws, session, system, wsManager }
 
   try {
     for (const handler of commandHandlers) {

@@ -417,6 +417,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
       try { opts.onWorkspaceRuntimeEvicted?.(entry.system, id) } catch (err) {
         console.error(`[registry] evict ${id} hook threw: ${err instanceof Error ? err.message : String(err)}`)
       }
+      entry.system.captureRegistry.clearAll()
       entry.autoSaver.dispose()
       // Stop the per-Workspace schedulers' setIntervals. Without this, the
       // timer closures pin the entire AgentsWorkspaceRuntime (RoomDirectory + agents + history) and

@@ -28,9 +28,11 @@ interface ToolDetailPayload {
   readonly returns?: string
   readonly parameters: Record<string, unknown>
   readonly source: {
-    readonly kind: 'built-in' | 'external' | 'skill-bundled'
+    readonly kind: 'built-in' | 'external' | 'skill-bundled' | 'pack-owned'
     readonly path?: string
     readonly skill?: string
+    readonly pack?: string
+    readonly displayName?: string
     readonly code?: string
   }
   readonly enabledFor: ReadonlyArray<{ readonly id: string; readonly name: string }>
@@ -43,6 +45,9 @@ const sourceLabel = (source: ToolDetailPayload['source']): string => {
     case 'skill-bundled': return source.skill
       ? `skill: ${source.skill}${source.path ? ` · ${source.path}` : ''}`
       : (source.path ?? 'skill-bundled')
+    case 'pack-owned': return source.pack
+      ? `pack: ${source.pack}${source.displayName ? ` · ${source.displayName}` : ''}${source.path ? ` · ${source.path}` : ''}`
+      : (source.path ?? 'pack-owned')
   }
 }
 

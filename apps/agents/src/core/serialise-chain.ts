@@ -12,7 +12,7 @@
 //   - src/core/storage/module-snapshots.ts — Module snapshot writes + pending scrubs
 //   - src/geo/pack-source.ts       — refreshPackGeodata (cross-Workspace)
 //   - src/core/scripts/script-store.ts — upsert / remove / reload
-//   - src/tools/built-in/pack-tools.ts — install / update / uninstall
+//   - src/packs/manager.ts — install / update / uninstall
 //
 // The fourth consumer is what triggered the extraction (see AGENTS.md
 // guidance on threshold for shared abstractions). Earlier consumers were

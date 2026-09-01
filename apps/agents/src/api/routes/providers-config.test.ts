@@ -50,6 +50,7 @@ const buildWorkspaceRuntime = async (
     providerKeys,
     providerConfig: { baseUrls: {} as Record<string, string | undefined> },
     gateways: {},
+    llm: { getOrder: () => [] },
     refreshAvailableModels: () => {},
     providerPolicy: createProviderPolicyStore(storePath, storeData),
   } as unknown as AgentsWorkspaceRuntime
@@ -71,7 +72,7 @@ describe('PUT /providers/:name', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pinnedModels: ['kimi-k2.6'] }),
     })
-    const res = await handler(req, match, { system, broadcast: () => {} } as never)
+    const res = await handler(req, match, { system, broadcastAllWorkspaces: () => {} } as never)
     expect(res.status).toBe(200)
 
     // The bug: this used to be ''. With the fix, env key survives.
@@ -92,7 +93,7 @@ describe('PUT /providers/:name', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ apiKey: null }),
     })
-    await handler(req, match, { system, broadcast: () => {} } as never)
+    await handler(req, match, { system, broadcastAllWorkspaces: () => {} } as never)
     expect(system.providerKeys.get('kimi')).toBe('')
   })
 
@@ -104,7 +105,7 @@ describe('PUT /providers/:name', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ apiKey: 'sk-fresh' }),
     })
-    await handler(req, match, { system, broadcast: () => {} } as never)
+    await handler(req, match, { system, broadcastAllWorkspaces: () => {} } as never)
     expect(system.providerKeys.get('kimi')).toBe('sk-fresh')
   })
 
@@ -130,7 +131,7 @@ describe('PUT /providers/:name', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pinnedModels: ['kimi-k2.6'] }),
     })
-    await handler(req, match, { system, broadcast: () => {} } as never)
+    await handler(req, match, { system, broadcastAllWorkspaces: () => {} } as never)
 
     const after = JSON.parse(await readFile(storePath, 'utf-8'))
     expect(after.order).toEqual(order)
@@ -151,7 +152,7 @@ describe('/providers/fallback', () => {
       body: JSON.stringify({ chain: ['openai:gpt-5.4-mini'] }),
     })
 
-    const res = await handler(req, match, { system, broadcast: () => {} } as never)
+    const res = await handler(req, match, { system, broadcastAllWorkspaces: () => {} } as never)
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ saved: true, chain: ['openai:gpt-5.4-mini'] })
 

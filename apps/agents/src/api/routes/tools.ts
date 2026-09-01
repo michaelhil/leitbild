@@ -84,6 +84,8 @@ export const toolRoutes: RouteEntry[] = [
           kind: source.kind,
           path: source.path,
           skill: source.skill,
+          pack: source.pack,
+          displayName: source.displayName,
           ...(code !== undefined ? { code } : {}),
         },
         enabledFor,

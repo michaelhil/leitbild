@@ -15,10 +15,10 @@ import {
 } from './auth.ts'
 import { handleAPI, handleUnscopedAPI } from './http-routes.ts'
 import { handleWSMessage } from './ws-handler.ts'
-import { getCaptureRegistry } from '../core/biometrics/registry.ts'
 import { createOpenAccessContext } from '../core/workspaces/request-context.ts'
 import { resolveApplicationApiPath } from './api-path.ts'
 import { handleAgentsModuleApi } from './workspace-module-api.ts'
+import type { PackManager } from '../packs/manager.ts'
 
 interface ServerConfig {
   readonly registry: WorkspaceRuntimeRegistry
@@ -29,6 +29,7 @@ interface ServerConfig {
   readonly uiPath?: string
   readonly workspaceHostUrl?: string
   readonly diagnostics: import('./routes/types.ts').DiagnosticsCapability
+  readonly packManager: PackManager
 }
 
 const MISSING_DIST_BANNER = `/* leitbild: dist.css missing — run "bun install && bun run build:css" */
@@ -122,10 +123,6 @@ export const createServer = (config: ServerConfig) => {
   const bindHost = config.bindHost ?? process.env.LEITBILD_BIND_HOST ?? '0.0.0.0'
   const uiPath = resolve(config.uiPath ?? `${import.meta.dir}/../ui`)
   const transpiler = new Bun.Transpiler({ loader: 'ts' })
-
-  getCaptureRegistry().onAgentStop(captureId => {
-    wsManager.broadcast({ type: 'biometric_capture_stop_requested', captureId, reason: 'agent' })
-  })
 
   const server = Bun.serve<WSData>({
     port,
@@ -232,11 +229,12 @@ export const createServer = (config: ServerConfig) => {
         workspaceId,
         createOpenAccessContext(workspaceId, request),
         {
-          broadcast: wsManager.broadcast,
+          broadcastAllWorkspaces: wsManager.broadcastAllWorkspaces,
           subscribeAgentState: wsManager.subscribeAgentState,
           unsubscribeAgentState: wsManager.unsubscribeAgentState,
           remoteAddress: bunServer.requestIP(request)?.address,
           broadcastToWorkspace: wsManager.broadcastToWorkspace,
+          packManager: config.packManager,
           diagnostics: config.diagnostics,
         },
       )

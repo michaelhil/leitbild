@@ -9,7 +9,6 @@ export interface CommandContext {
   readonly ws: WSConnection
   readonly session: ClientSession
   readonly system: AgentsWorkspaceRuntime
-  readonly broadcast: (msg: WSOutbound) => void
   readonly wsManager: WSManager
 }
 

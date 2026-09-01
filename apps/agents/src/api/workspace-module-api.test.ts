@@ -257,6 +257,18 @@ describe('Agents Workspace Module API', () => {
     expect(custom?.title).toBe('Revised briefing')
     expect(String(custom?.currentRevisionId)).toBe(updatedRef.revisionId)
 
+    const startOriginal = await request(
+      'POST',
+      `/internal/workspaces/${workspaceId}/capabilities/agents.room-definition.start/invoke`,
+      invokeBody(workspaceId, 'agents.room-definition.start', {}, { definition: createdRef }),
+    )
+    expect(startOriginal.status).toBe(201)
+    const originalRoom = (await startOriginal.json() as {
+      result: { room: { id: string; name: string }; revisionId: string }
+    }).result
+    expect(originalRoom.room.name).toBe('Custom briefing')
+    expect(originalRoom.revisionId).toBe(createdRef.revisionId)
+
     const staleUpdate = await request(
       'POST',
       `/internal/workspaces/${workspaceId}/capabilities/agents.room-definition.update/invoke`,

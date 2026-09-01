@@ -21,7 +21,7 @@ export const providersConfigRoutes: RouteEntry[] = [
   {
     method: 'PUT',
     pattern: /^\/providers\/order$/,
-    handler: async (req, _match, { system, broadcast }) => {
+    handler: async (req, _match, { system, broadcastAllWorkspaces }) => {
       const body = await parseBody(req)
       const incoming = body.order
       if (!Array.isArray(incoming)) return errorResponse('order must be an array of provider names')
@@ -41,7 +41,7 @@ export const providersConfigRoutes: RouteEntry[] = [
       const next: ProvidersFileShape = { ...store, order }
       await saveProviderStore(system.providersStorePath, next)
 
-      try { broadcast({ type: 'providers_changed', providers: order }) } catch { /* ignore */ }
+      broadcastAllWorkspaces({ type: 'providers_changed', providers: order })
 
       return json({ saved: true, order })
     },
@@ -51,7 +51,7 @@ export const providersConfigRoutes: RouteEntry[] = [
   {
     method: 'PUT',
     pattern: /^\/providers\/(?!fallback$)([^/]+)$/,
-    handler: async (req, match, { system, broadcast }) => {
+    handler: async (req, match, { system, broadcastAllWorkspaces }) => {
       const name = decodeURIComponent(match[1] ?? '')
       if (!name) return errorResponse('Provider name required')
       if (name !== 'ollama' && !isCloud(name)) {
@@ -179,7 +179,7 @@ export const providersConfigRoutes: RouteEntry[] = [
       void system.refreshAvailableModels()
 
       // Notify UIs so open model dropdowns re-render.
-      try { broadcast({ type: 'providers_changed', providers: [name] }) } catch { /* ignore */ }
+      broadcastAllWorkspaces({ type: 'providers_changed', providers: [name] })
 
       return json({
         saved: true,
@@ -209,7 +209,7 @@ export const providersConfigRoutes: RouteEntry[] = [
   {
     method: 'PUT',
     pattern: /^\/providers\/fallback$/,
-    handler: async (req, _match, { system, broadcast }) => {
+    handler: async (req, _match, { system, broadcastAllWorkspaces }) => {
       const body = await parseBody(req)
       const raw = body.chain
       let chain: ReadonlyArray<string> | undefined
@@ -223,7 +223,7 @@ export const providersConfigRoutes: RouteEntry[] = [
         return errorResponse(`failed to save policy: ${err instanceof Error ? err.message : String(err)}`, 500)
       }
       // UI dropdowns may show effective chain; nudge them via providers_changed.
-      try { broadcast({ type: 'providers_changed', providers: system.llm.getOrder() }) } catch { /* ignore */ }
+      broadcastAllWorkspaces({ type: 'providers_changed', providers: system.llm.getOrder() })
       return json({ saved: true, chain: system.providerPolicy.getModelFallback() })
     },
   },

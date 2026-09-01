@@ -179,7 +179,7 @@ export const providersTestRoutes: RouteEntry[] = [
   {
     method: 'POST',
     pattern: /^\/providers\/([^/]+)\/test$/,
-    handler: async (req, match, { system, broadcast }) => {
+    handler: async (req, match, { system, broadcastAllWorkspaces }) => {
       const name = decodeURIComponent(match[1] ?? '')
 
       // Ollama: ping /models, then run a concurrency probe against the
@@ -198,7 +198,7 @@ export const providersTestRoutes: RouteEntry[] = [
           // Same as the cloud branch: surface the test failure in monitor
           // state so the panel dot turns red instead of staying green.
           system.monitors.ollama?.markUnhealthy(reason.slice(0, 200), 'test_failed')
-          try { broadcast({ type: 'providers_changed', providers: ['ollama'] }) } catch { /* ignore */ }
+          broadcastAllWorkspaces({ type: 'providers_changed', providers: ['ollama'] })
           return json({ ok: false, error: reason, elapsedMs })
         }
         const elapsedMs = Math.round(performance.now() - startedAt)
@@ -228,7 +228,7 @@ export const providersTestRoutes: RouteEntry[] = [
             const top = Object.entries(probe.byFailure).sort(([, a], [, b]) => b - a)[0]
             ollamaMon.markUnhealthy(top ? `test probe failed (${top[0]})` : 'test probe failed', top?.[0] ?? 'test_failed')
           }
-          try { broadcast({ type: 'providers_changed', providers: ['ollama'] }) } catch { /* ignore */ }
+          broadcastAllWorkspaces({ type: 'providers_changed', providers: ['ollama'] })
         }
 
         return json({
@@ -297,7 +297,7 @@ export const providersTestRoutes: RouteEntry[] = [
         if (isCloudProviderError(err)) {
           system.monitors[name]?.markUnhealthy(reason.slice(0, 200), code)
         }
-        try { broadcast({ type: 'providers_changed', providers: [name] }) } catch { /* ignore */ }
+        broadcastAllWorkspaces({ type: 'providers_changed', providers: [name] })
         return json({ ok: false, error: reason, code, elapsedMs })
       }
       const elapsedMs = Math.round(performance.now() - startedAt)
@@ -335,7 +335,7 @@ export const providersTestRoutes: RouteEntry[] = [
           const reason = topFailure ? `test probe failed (${topFailure[0]})` : 'test probe failed'
           monitor.markUnhealthy(reason, topFailure?.[0] ?? 'test_failed')
         }
-        try { broadcast({ type: 'providers_changed', providers: [name] }) } catch { /* ignore */ }
+        broadcastAllWorkspaces({ type: 'providers_changed', providers: [name] })
       }
 
       return json({
