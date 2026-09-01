@@ -17,7 +17,7 @@ import {
   processPlantIcLifecycleCommandKind,
   processPlantIcLifecyclePayloadSchema,
 } from '../commands.ts'
-import { compileProcessPlantSystems } from '../process-systems.ts'
+import { compileProcessPlantSystems, processPlantPackConfigSchema } from '../process-systems.ts'
 import { validateProcessPlantControlWrite } from '../control-write-validation.ts'
 import { processPlantPackId } from '../model.ts'
 import { answerProcessPlantQuery, processPlantQueryKinds } from '../query.ts'
@@ -106,7 +106,8 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       ? null
       : processPlantRuntimeStateSchema.parse(rawRuntimeState) as ProcessPlantRuntimeState
     const runtimeConfig = processPlantRuntimeConfigFor(config)
-    const compiledSystems = compileProcessPlantSystems(config.scenario?.processSystems ?? [])
+    const packConfig = processPlantPackConfigSchema.parse(config.scenario?.runtimeConfig ?? {})
+    const compiledSystems = compileProcessPlantSystems(packConfig.systems)
     assertRuntimeConfigMatchesCompiledSystems({
       runtimeConfig,
       systemIds: new Set(compiledSystems.map(system => system.id)),

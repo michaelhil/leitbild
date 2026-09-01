@@ -1,7 +1,8 @@
 import type { WorkspaceId } from '@leitbild/contracts'
 import type { InteractionHandler } from '../model/index.ts'
 import type { ScenarioCatalog } from '../scenarios/catalog.ts'
-import type { ScenarioTemplate } from '../scenarios/config.ts'
+import type { ScenarioSource } from '../scenarios/config.ts'
+import type { ScenarioDefinition } from '../model/index.ts'
 import type { ScenarioAuthoringCatalog } from '../scenarios/authoring.ts'
 import type { ProcedureSourceService } from '../procedures/source.ts'
 import type { PackRuntimeAdapter } from '../../simulation/protocol.ts'
@@ -30,8 +31,8 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
   readonly dataDir: string
   readonly moduleState: WorldModuleState
   readonly scenarioCatalog: ScenarioCatalog
-  readonly scenarioTemplates: ReadonlyArray<ScenarioTemplate>
-  readonly compileScenarioDraft: (draft: unknown) => Promise<ScenarioTemplate>
+  readonly scenarioSources: ReadonlyArray<ScenarioSource>
+  readonly compileScenarioSource: (source: unknown) => Promise<ScenarioDefinition>
   readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
   readonly runtimeAdapters: ReadonlyArray<PackRuntimeAdapter>
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
@@ -47,8 +48,8 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
       dataDir: config.dataDir,
       workspaceId,
       scenarioCatalog: config.scenarioCatalog,
-      scenarioTemplates: config.scenarioTemplates,
-      compileScenarioDraft: config.compileScenarioDraft,
+      scenarioSources: config.scenarioSources,
+      compileScenarioSource: config.compileScenarioSource,
       scenarioAuthoringCatalog: config.scenarioAuthoringCatalog,
       runtimeAdapters: config.runtimeAdapters,
       ...(config.interactionHandlers === undefined ? {} : { interactionHandlers: config.interactionHandlers }),

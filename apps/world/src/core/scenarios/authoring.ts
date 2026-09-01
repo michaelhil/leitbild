@@ -22,7 +22,7 @@ const controlSchema = z.discriminatedUnion('kind', [
 ])
 
 const authoringFieldSchema = z.object({
-  target: z.enum(['item', 'system']),
+  target: z.enum(['item', 'linkedConfig']),
   path: pathSchema,
   label: z.string().min(1),
   control: controlSchema,
@@ -35,7 +35,8 @@ const authoringItemTypeSchema = z.object({
   idPrefix: z.string().regex(/^[a-z][a-z0-9-]*$/),
   defaultItem: z.record(z.string(), z.unknown()),
   placement: z.object({ target: z.literal('item'), path: pathSchema }).strict().optional(),
-  linkedSystem: z.object({
+  linkedConfig: z.object({
+    collectionPath: pathSchema,
     idPrefix: z.string().regex(/^[a-z][a-z0-9-]*$/),
     itemReferencePath: pathSchema,
     defaults: z.record(z.string(), z.unknown()),
@@ -43,34 +44,48 @@ const authoringItemTypeSchema = z.object({
   fields: z.array(authoringFieldSchema),
 }).strict()
 
-const scenarioAuthoringFeatureSchema = z.object({
+const scenarioAuthoringPackSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   description: z.string().default(''),
   categoryIds: z.array(z.string().min(1)),
+  runtimes: z.array(z.object({
+    id: z.string().min(1),
+    label: z.string().min(1),
+    kind: z.enum(['local', 'remote', 'replay']),
+  }).strict()),
+  defaultRuntimeId: z.string().min(1).optional(),
+  configSchema: z.record(z.string(), z.unknown()),
   itemTypes: z.array(authoringItemTypeSchema),
 }).strict()
 
 export const scenarioAuthoringCatalogSchema = z.object({
-  features: z.array(scenarioAuthoringFeatureSchema),
+  packs: z.array(scenarioAuthoringPackSchema),
 }).strict()
 
 export type ScenarioAuthoringCatalog = z.infer<typeof scenarioAuthoringCatalogSchema>
 
 export const scenarioAuthoringCatalogFor = (packs: ReadonlyArray<WorldPack>): ScenarioAuthoringCatalog => {
-  const features = packs.map(pack => ({
+  const authoringPacks = packs.map(pack => ({
     id: pack.descriptor.id,
     title: pack.descriptor.name,
     description: pack.descriptor.description ?? '',
     categoryIds: pack.presentation.categories.map(category => category.id),
+    runtimes: (pack.runtime?.runtimes ?? []).map(runtime => ({
+      id: runtime.id,
+      label: runtime.label,
+      kind: runtime.kind,
+    })),
+    ...(pack.runtime?.defaultRuntimeId === undefined ? {} : { defaultRuntimeId: pack.runtime.defaultRuntimeId }),
+    configSchema: z.toJSONSchema(pack.scenarioConfigSchema, { unrepresentable: 'any' }),
     itemTypes: pack.authoring?.itemTypes ?? [],
   }))
   const ids = new Set<string>()
-  for (const feature of features) {
-    if (ids.has(feature.id)) throw new Error(`duplicate Scenario authoring feature: ${feature.id}`)
-    ids.add(feature.id)
+  for (const pack of authoringPacks) {
+    if (ids.has(pack.id)) throw new Error(`duplicate Scenario authoring Pack: ${pack.id}`)
+    ids.add(pack.id)
   }
   return scenarioAuthoringCatalogSchema.parse({
-    features: features.sort((left, right) => left.title.localeCompare(right.title)),
+    packs: authoringPacks.sort((left, right) => left.title.localeCompare(right.title)),
   })
 }

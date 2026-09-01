@@ -226,7 +226,7 @@ describe('createAviationMultiPackRuntimeAdapter', () => {
         runtimeIds: ['aviation.multi'],
         world: { startsAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp, environment: { mode: 'test' } },
         initialObjects: [],
-        runtimeConfigs: {},
+        runtimeConfigByRuntimeId: {},
         runtimeConfig: { source: 'opensky' },
       },
     })

@@ -39,6 +39,7 @@ describe('Resource Summary contracts', () => {
     const resource = {
       ref: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-1' },
       title: 'Exercise',
+      uiPath: `/workspaces/${workspaceId}/world/runs/run-1`,
       links: [],
       capabilityIds: [],
       summary: [
@@ -61,11 +62,13 @@ describe('Inspection View contracts', () => {
     const definition = moduleDefinitionDescriptorSchema.parse({
       ref: { workspaceId, moduleId: 'world', type: 'world.scenario', id: 'exercise' },
       title: 'Exercise',
+      uiPath: `/workspaces/${workspaceId}/world/scenarios/new?definition=exercise`,
       currentRevisionId: 'revision-0123456789abcdef0123456789abcdef',
       capabilityIds: ['world.scenario.inspect'],
       inspectionCapabilityId: 'world.scenario.inspect',
     })
     expect(String(definition.inspectionCapabilityId)).toBe('world.scenario.inspect')
+    expect(definition.uiPath).toContain('definition=exercise')
     expect(() => moduleDefinitionDescriptorSchema.parse({
       ...definition,
       capabilityIds: [],

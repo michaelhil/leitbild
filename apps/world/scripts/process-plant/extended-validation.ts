@@ -310,8 +310,6 @@ const cases: ReadonlyArray<ValidationCase> = [
 
 const compiledSystem = (testCase: ValidationCase) => compileProcessPlantSystem({
   id: testCase.id,
-  pack: 'process-plant',
-  componentLibrary: 'process-plant',
   assemblyRef: processPlantPwrReferenceAssemblyRef,
   assemblyConfig: { loopCount: 4, title: `Extended Validation ${testCase.title}` },
   ...(testCase.parameters === undefined ? {} : { parameters: testCase.parameters }),

@@ -1,51 +1,40 @@
-import {
-  capabilityIdSchema,
-  definitionIdSchema,
-  definitionTypeSchema,
-  moduleIdSchema,
-  type CapabilityId,
-  type DefinitionId,
-  type DefinitionType,
-  type ModuleId,
-} from '@leitbild/contracts'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { z } from 'zod'
+import { capabilityIdSchema, definitionIdSchema, definitionTypeSchema, moduleIdSchema } from '@leitbild/contracts'
 
-export interface CompositionAction {
-  readonly capabilityId: CapabilityId
-  readonly moduleId: ModuleId
-  readonly definitionType: DefinitionType
-  readonly definitionId: DefinitionId
-}
+const compositionDefinitionSchema = z.object({
+  id: z.string().regex(/^[a-z][a-z0-9-]*$/),
+  title: z.string().trim().min(1).max(256),
+  description: z.string().trim().min(1).max(2048),
+  actions: z.array(z.object({
+    capabilityId: capabilityIdSchema,
+    moduleId: moduleIdSchema,
+    definitionType: definitionTypeSchema,
+    definitionId: definitionIdSchema,
+  }).strict()).min(1),
+}).strict().superRefine((composition, ctx) => {
+  composition.actions.forEach((action, index) => {
+    if (!action.capabilityId.startsWith(`${action.moduleId}.`)) {
+      ctx.addIssue({ code: 'custom', path: ['actions', index, 'capabilityId'], message: 'Capability must belong to its Module' })
+    }
+    if (!action.definitionType.startsWith(`${action.moduleId}.`)) {
+      ctx.addIssue({ code: 'custom', path: ['actions', index, 'definitionType'], message: 'Definition type must belong to its Module' })
+    }
+  })
+})
+export type CompositionDefinition = z.infer<typeof compositionDefinitionSchema>
 
-export interface CompositionDefinition {
-  readonly id: string
-  readonly title: string
-  readonly description: string
-  readonly actions: ReadonlyArray<CompositionAction>
-}
+const compositionDir = join(dirname(fileURLToPath(import.meta.url)), 'compositions')
+const readComposition = (fileName: string): CompositionDefinition =>
+  compositionDefinitionSchema.parse(JSON.parse(readFileSync(join(compositionDir, fileName), 'utf8')) as unknown)
 
 // Compositions intentionally contain only independent, apply-once Definition
 // starts. They resolve exact current revisions before invoking Modules.
 // They are not workflows: no output references, branching, schedules, or state.
 export const COMPOSITION_CATALOG: ReadonlyArray<CompositionDefinition> = [
-  {
-    id: 'halden-process-control-room',
-    title: 'Halden Process Control Room',
-    description: 'Starts the Halden process-plant World and a structured control-room Agents room.',
-    actions: [
-      {
-        capabilityId: capabilityIdSchema.parse('world.scenario.start'),
-        moduleId: moduleIdSchema.parse('world'),
-        definitionType: definitionTypeSchema.parse('world.scenario'),
-        definitionId: definitionIdSchema.parse('halden-process-plant-demo'),
-      },
-      {
-        capabilityId: capabilityIdSchema.parse('agents.room-definition.start'),
-        moduleId: moduleIdSchema.parse('agents'),
-        definitionType: definitionTypeSchema.parse('agents.room-definition'),
-        definitionId: definitionIdSchema.parse('control-room-script'),
-      },
-    ],
-  },
+  readComposition('halden-process-control-room.composition.json'),
 ]
 
 export const getComposition = (id: string): CompositionDefinition | undefined =>

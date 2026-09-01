@@ -6,8 +6,7 @@ import {
   type ProcessPlantProtectionConfig,
 } from '../runtime/index.ts'
 import { resolveProcessPlantIcConfig, resolveProcessPlantIcConfigForGraph } from '../specs/index.ts'
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import { processPlantSimRuntimeId } from './constants.ts'
+import { processPlantPackConfigSchema, type CompiledProcessPlantSystem } from '../process-systems.ts'
 
 export const processPlantRuntimeSystemConfigSchema = z.object({
   telemetry: processPlantTelemetryConfigSchema.optional(),
@@ -33,8 +32,10 @@ export type ProcessPlantRuntimeConfig = z.infer<typeof processPlantRuntimeConfig
 export const processPlantRuntimeConfigFor = (
   config: PackRuntimeConnectionConfig,
 ): ProcessPlantRuntimeConfig => {
-  const rawConfig = config.scenario?.runtimeConfigs?.[processPlantSimRuntimeId] ?? config.scenario?.runtimeConfig ?? {}
-  return processPlantRuntimeConfigSchema.parse(rawConfig)
+  const packConfig = processPlantPackConfigSchema.parse(config.scenario?.runtimeConfig ?? {})
+  return processPlantRuntimeConfigSchema.parse({
+    systems: Object.fromEntries(packConfig.systems.map(system => [system.id, system.runtime ?? {}])),
+  })
 }
 
 export const protectionConfigFor = (

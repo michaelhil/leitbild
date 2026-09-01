@@ -1,4 +1,5 @@
 import type { OperationalObject } from '../../core/model/index.ts'
+import { z } from 'zod'
 import type {
   WorldPack,
   PackCommandRequest,
@@ -54,10 +55,9 @@ const layerGroups: ReadonlyArray<PackMapLayerGroup> = [
   },
 ]
 
-// Pack-level runtime catalogue. Adapter registration (the actual factory
-// invocation, with env-derived credentials) happens in `src/index.ts`. The
-// scenario opts a Simulation Run into a non-default runtime via
-// runtimeOverrides — see norway-airspace.scenario.json.
+// Pack-level runtime catalogue. The application assembly registers adapters
+// with environment-derived credentials. A Scenario selects a runtime inside
+// its Aviation Pack entry.
 const aviationOpenSkyRuntime: PackRuntime = {
   id: aviationOpenSkyRuntimeId,
   version: '1.0.0',
@@ -82,6 +82,10 @@ const aviationMultiRuntime: PackRuntime = {
   label: 'Aviation (multi-source: OpenSky / VATSIM)',
   kind: 'remote',
 }
+
+const aviationPackConfigSchema = z.object({
+  source: z.enum(['opensky', 'vatsim']).optional(),
+}).strict()
 
 const parseAircraft = (object: OperationalObject): AircraftPackData | null => {
   if (!isAircraftKind(object.kind)) return null
@@ -137,6 +141,7 @@ export const aviationPack: WorldPack = {
     id: 'aviation', version: '1.0.0', name: 'Aviation',
     contributions: ['runtime', 'knowledge', 'reference-data', 'presentation', 'commands'],
   }),
+  scenarioConfigSchema: aviationPackConfigSchema,
   runtime: {
     runtimes: [aviationNoopRuntime, aviationOpenSkyRuntime, aviationVatsimRuntime, aviationMultiRuntime],
     defaultRuntimeId: aviationNoopRuntimeId,

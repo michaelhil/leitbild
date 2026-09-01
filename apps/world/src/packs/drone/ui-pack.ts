@@ -1,7 +1,7 @@
 import type { GeoJsonPoint, OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { WorldPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
-import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
+import { createWorldPackDescriptor, emptyPackScenarioConfigSchema } from '../../core/packs/protocol.ts'
 import {
   createDroneCommandKind,
   holdDroneCommandKind,
@@ -89,6 +89,7 @@ export const droneUiPack: WorldPack = {
     id: dronePackId, version: '1.0.0', name: 'Drone Operations',
     contributions: ['runtime', 'knowledge', 'presentation', 'commands', 'interactions'],
   }),
+  scenarioConfigSchema: emptyPackScenarioConfigSchema,
   runtime: {
     runtimes: [{ id: droneNativeRuntimeId, version: '1.0.0', label: 'Native drone runtime', kind: 'local' }],
     defaultRuntimeId: droneNativeRuntimeId,

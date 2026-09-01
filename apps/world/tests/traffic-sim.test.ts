@@ -132,7 +132,7 @@ describe('local traffic runtime', () => {
       objects: [],
       objectById: () => undefined,
       routing: createDirectRoutingAdapter(),
-      runtimeConfigs: {},
+      packConfigs: {},
     })
     const object = contribution.objects[0]!
     const ring = object.spatial.geometry?.type === 'Polygon' ? object.spatial.geometry.coordinates[0] : undefined

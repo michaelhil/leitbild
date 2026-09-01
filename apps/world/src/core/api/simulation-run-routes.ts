@@ -126,12 +126,13 @@ const simulationRunResponse = async (
 }> => {
   const snapshot = runtime.snapshot()
   const revision = await registry.scenarioRevisionForRun(runtime.id)
+  const scenario = revision === undefined ? undefined : await registry.compileScenarioRevision(revision)
   return {
     id: runtime.id,
     snapshot,
-    ...(revision === undefined ? {} : {
+    ...(revision === undefined || scenario === undefined ? {} : {
       scenarioRevisionId: revision.id,
-      scenario: revision.definition,
+      scenario,
     }),
   }
 }
@@ -153,7 +154,12 @@ const handleSimulationRunApiInner = async (
     const scenarioId = decodeURIComponent(scenarioMatch[1] ?? '')
     const revision = await config.registry.currentScenario(scenarioId)
     if (!revision) return apiError(404, 'scenario_not_found', 'scenario not found')
-    return json({ scenario: revision.definition, revisionId: revision.id, digest: revision.digest })
+    return json({
+      source: revision.document,
+      scenario: await config.registry.compileScenarioRevision(revision),
+      revisionId: revision.id,
+      digest: revision.digest,
+    })
   }
 
   const simulationRunMatch = pathname.match(/^\/simulation-runs\/([^/]+)$/)

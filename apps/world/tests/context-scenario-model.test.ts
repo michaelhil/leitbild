@@ -128,24 +128,20 @@ describe('object context, scenario, and mission model', () => {
     })).toThrow()
   })
 
-  test('ScenarioDefinition validates initial objects and initial contexts', () => {
+  test('ScenarioDefinition keeps object context with the object it describes', () => {
     const object = ambulanceObjectWithContext()
     const parsed = scenarioDefinitionSchema.parse({
       id: 'scenario:oslo-context-basic',
       schemaVersion: 1,
       title: 'Oslo context basic',
       packs: ['ambulance'],
-      runtimeOverrides: {},
+      packRuntimes: {},
+      packConfigs: { ambulance: { adapter: 'ambulance.local' } },
       world: {
         startsAt: nowIso(),
         environment: { weather: 'clear' },
       },
       initialObjects: [object],
-      initialContexts: [{
-        objectId: object.id,
-        context: object.context,
-      }],
-      runtimeConfigs: { ambulance: { adapter: 'ambulance.local' } },
       surface: {
         schemaVersion: 1,
         regions: [{
@@ -162,7 +158,7 @@ describe('object context, scenario, and mission model', () => {
     })
 
     expect(parsed.initialObjects).toHaveLength(1)
-    expect(parsed.initialContexts[0]?.context.facts[0]?.key).toBe('dispatch.current_call')
+    expect(parsed.initialObjects[0]?.context?.facts[0]?.key).toBe('dispatch.current_call')
   })
 
   test('AgentContextView is derivable and not required on stored objects', () => {

@@ -62,7 +62,7 @@
   let resources = $state<ReadonlyArray<ModuleResourceDescriptor>>([])
   let capabilities = $state<ReadonlyArray<ModuleCapabilityDescriptor>>([])
   let summaryClock = $state(Date.now())
-  let scenarioBuilderOpen = $state(false)
+  let scenarioEditorPath = $state<string | null>(null)
   const workspaceTitle = $derived(workspace?.name ?? workspace?.id ?? 'Workspace')
   const showingComposer = $derived(selectedWorldRunId !== null || selectedAgentsRoomId !== null)
   const continuableResources = $derived(resources.filter(resource => resource.uiPath !== undefined))
@@ -288,6 +288,10 @@
   }
 
   const capabilityFor = (id: string): ModuleCapabilityDescriptor | undefined => capabilities.find(item => item.id === id)
+  const acceptsEmptyInput = (capability: ModuleCapabilityDescriptor): boolean => {
+    const required = capability.inputSchema.required
+    return !Array.isArray(required) || required.length === 0
+  }
   const destructiveCapabilityFor = (resource: ModuleResourceDescriptor): ModuleCapabilityDescriptor | undefined =>
     resource.capabilityIds.map(capabilityFor).find(capability => capability?.risk === 'destructive')
   const definitionsFor = (moduleId: string): ReadonlyArray<ModuleDefinitionDescriptor> => definitions.filter(item => item.ref.moduleId === moduleId)
@@ -351,17 +355,17 @@
         {#if error}<p class="notice error">{error}</p>{/if}
         <section class="catalog-section-home scenario-builder-home">
           <header><h2>Create</h2><span>World scenario</span></header>
-          {#if scenarioBuilderOpen}
-            <div class="scenario-builder-frame"><button class="builder-close" type="button" onclick={() => { scenarioBuilderOpen = false }}>Close editor</button><iframe title="World Scenario Builder" src={`/workspaces/${encodeURIComponent(workspace.id)}/world/scenarios/new?embed=1`}></iframe></div>
+          {#if scenarioEditorPath}
+            <div class="scenario-builder-frame"><button class="builder-close" type="button" onclick={() => { scenarioEditorPath = null }}>Close editor</button><iframe title="World Scenario Editor" src={`${scenarioEditorPath}${scenarioEditorPath.includes('?') ? '&' : '?'}embed=1`}></iframe></div>
           {:else}
-            <article class="scenario-builder-launch"><div><h3>Build a scenario</h3><p>Pick World features, place assets on the map, and save the result as a reusable scenario.</p></div><button class="primary" onclick={() => { scenarioBuilderOpen = true }}>Open editor</button></article>
+            <article class="scenario-builder-launch"><div><h3>Build a scenario</h3><p>Pick World Packs, place assets on the map, and save the result as a reusable scenario.</p></div><button class="primary" onclick={() => { scenarioEditorPath = `/workspaces/${encodeURIComponent(workspace.id)}/world/scenarios/new` }}>Open editor</button></article>
           {/if}
         </section>
         {#if compositions.length > 0}<section class="catalog-section-home"><header><h2>Combined</h2><span>World + Agents</span></header><div class="catalog-grid">{#each compositions as composition (composition.id)}<article class="catalog-card"><div><h3>{composition.title}</h3><p>{composition.description}</p></div><button class="primary" disabled={busy} onclick={() => void startComposition(composition.id)}>Start</button></article>{/each}</div></section>{/if}
         {#each coreModuleIds as moduleId}
           <section class="catalog-section-home"><header><h2>{moduleTitles[moduleId]}</h2><span>{definitionsFor(moduleId).length} definitions</span></header><div class="catalog-grid">
             {#each definitionsFor(moduleId) as definition (`${definition.ref.type}:${definition.ref.id}`)}
-              <article class="catalog-card"><div>{#if definition.category}<span class="card-category">{definition.category}</span>{/if}<h3>{definition.title}</h3><p>{definition.description ?? definition.ref.id}</p></div><div class="card-actions">{#each definition.capabilityIds.filter(id => id !== definition.inspectionCapabilityId) as capabilityId}{@const capability = capabilityFor(capabilityId)}{#if capability}<button class:primary={capability.risk !== 'destructive'} class:danger={capability.risk === 'destructive'} disabled={busy} onclick={() => void invokeDefinition(definition, capability)}>{capability.title}</button>{/if}{/each}{#if definition.inspectionCapabilityId}<button disabled={inspectionLoading} onclick={() => void inspect({ kind: 'definition', descriptor: definition })}>Inspect</button>{/if}</div></article>
+              <article class="catalog-card"><div>{#if definition.category}<span class="card-category">{definition.category}</span>{/if}<h3>{definition.title}</h3><p>{definition.description ?? definition.ref.id}</p></div><div class="card-actions">{#if definition.uiPath}<button onclick={() => { scenarioEditorPath = definition.uiPath ?? null }}>Edit</button>{/if}{#each definition.capabilityIds.filter(id => id !== definition.inspectionCapabilityId) as capabilityId}{@const capability = capabilityFor(capabilityId)}{#if capability && acceptsEmptyInput(capability)}<button class:primary={capability.risk !== 'destructive'} class:danger={capability.risk === 'destructive'} disabled={busy} onclick={() => void invokeDefinition(definition, capability)}>{capability.title}</button>{/if}{/each}{#if definition.inspectionCapabilityId}<button disabled={inspectionLoading} onclick={() => void inspect({ kind: 'definition', descriptor: definition })}>Inspect</button>{/if}</div></article>
             {/each}
           </div></section>
         {/each}

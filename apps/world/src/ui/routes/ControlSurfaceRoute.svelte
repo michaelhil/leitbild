@@ -341,16 +341,15 @@
   //
   // Active source is tracked locally because it's runtime state, not part of
   // the scenario manifest after the first switch. We seed from the scenario's
-  // runtimeConfigs (the same payload the multi adapter consumes at connect
+  // Pack config (the same payload the multi adapter consumes at connect
   // time) and then update optimistically on each successful command.
   let aviationActiveSourceId = $state<'opensky' | 'vatsim'>('opensky')
   let pendingSourceSwitch = $state(false)
   $effect(() => {
     const scenario = scenarioDefinition
     if (!scenario) return
-    // runtimeConfigs is keyed by pack id, not runtime id — the catalog
-    // routes pack-id-keyed configs to the active runtime at connect time.
-    const cfg = (scenario.runtimeConfigs ?? {})['aviation'] as { source?: string } | undefined
+    // Pack config is keyed by Pack id and routed to the selected runtime.
+    const cfg = (scenario.packConfigs ?? {})['aviation'] as { source?: string } | undefined
     untrack(() => {
       const source = cfg?.source === 'vatsim' ? 'vatsim' : 'opensky'
       aviationActiveSourceId = source
@@ -371,7 +370,7 @@
 
   const railSourcePicker = $derived.by(() => {
     if (!activePack || !scenarioDefinition) return null
-    const activeRuntimeId = scenarioDefinition.runtimeOverrides[activePack.descriptor.id]
+    const activeRuntimeId = scenarioDefinition.packRuntimes[activePack.descriptor.id]
       ?? activePack.defaultRuntimeId
     if (activeRuntimeId !== 'aviation.multi') return null
     const sources = [

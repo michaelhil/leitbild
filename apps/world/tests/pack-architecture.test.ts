@@ -22,7 +22,7 @@ import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import type { SimulationRunId } from '../src/core/model/index.ts'
-import { createWorldPackDescriptor, type WorldPack, type PackObjectPresentation } from '../src/core/packs/protocol.ts'
+import { createWorldPackDescriptor, emptyPackScenarioConfigSchema, type WorldPack, type PackObjectPresentation } from '../src/core/packs/protocol.ts'
 
 describe('pack architecture', () => {
   test('registers static packs by unique id', () => {
@@ -209,6 +209,7 @@ describe('pack architecture', () => {
       descriptor: createWorldPackDescriptor({
         id: 'base-pack', version: '1.0.0', name: 'Base Pack', contributions: ['presentation', 'commands'],
       }),
+      scenarioConfigSchema: emptyPackScenarioConfigSchema,
       presentation: {
         categories: [{ id: 'base', label: 'Base', emptyLabel: 'No base objects', matches: candidate => candidate.packId === 'base-pack' }],
         presentObject: (): PackObjectPresentation => ({
@@ -312,6 +313,7 @@ describe('pack architecture', () => {
       descriptor: createWorldPackDescriptor({
         id: 'indexed-presenter', version: '1.0.0', name: 'Indexed Presenter', contributions: ['presentation', 'commands'],
       }),
+      scenarioConfigSchema: emptyPackScenarioConfigSchema,
       presentation: {
         categories: [{
           id: 'ambulances',
@@ -395,7 +397,7 @@ describe('pack architecture', () => {
       trafficSimRuntimeId,
       weatherSimRuntimeId,
     ].sort())
-    expect(runtime?.runtimeConfigs).toEqual({
+    expect(runtime?.runtimeConfigByRuntimeId).toEqual({
       [ambulanceSimRuntimeId]: {},
       [trafficSimRuntimeId]: {},
       [weatherSimRuntimeId]: {
@@ -407,6 +409,7 @@ describe('pack architecture', () => {
               default: 0,
               min: 0,
               max: 1,
+              interpolation: 'linear',
             },
           },
         },
@@ -414,13 +417,13 @@ describe('pack architecture', () => {
     })
   })
 
-  test('scenario catalog rejects runtime overrides outside the owning pack', () => {
+  test('scenario catalog rejects runtime selections outside the owning Pack', () => {
     expect(() => createScenarioCatalog({
       packs: [ambulancePack, trafficPack, weatherPack],
       scenarios: [{
         ...osloAmbulanceScenario,
         id: 'bad-runtime-override',
-        runtimeOverrides: {
+        packRuntimes: {
           ambulance: trafficSimRuntimeId,
         },
       }],

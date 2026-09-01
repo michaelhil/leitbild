@@ -1,12 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { createEmptyScenarioDraft, deepCopy, setValueAtPath, valueAtPath } from '../src/ui/scenario-builder-model.ts'
+import { createEmptyScenarioSource, deepCopy, setValueAtPath, valueAtPath } from '../src/ui/scenario-builder-model.ts'
 
 describe('Scenario Builder model', () => {
-  test('keeps map framing in the Surface definition', () => {
-    const draft = createEmptyScenarioDraft()
-    const map = draft.surface.regions.find(region => region.primitive === 'map')
-    expect(map?.config.center).toEqual([10.7522, 59.9139])
-    expect(map?.config.zoom).toBe(11)
+  test('keeps map framing in the compact authored view', () => {
+    const draft = createEmptyScenarioSource()
+    expect(draft.view.map.center).toEqual([10.7522, 59.9139])
+    expect(draft.view.map.zoom).toBe(11)
     expect('mapCenter' in draft.world).toBe(false)
   })
 

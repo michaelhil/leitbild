@@ -204,7 +204,7 @@ describe('drone pack native runtime', () => {
       objects: [],
       objectById: () => undefined,
       routing: createDirectRoutingAdapter(),
-      runtimeConfigs: { drone: { maxDrones: 10 } },
+      packConfigs: { drone: { maxDrones: 10 } },
     })
 
     const object = contribution.objects[0]!
@@ -261,7 +261,7 @@ describe('drone pack native runtime', () => {
         runtimeIds: [droneNativeRuntimeId],
         world: { startsAt: at, environment: {} },
         initialObjects: [initial],
-        runtimeConfigs: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 20 } },
+        runtimeConfigByRuntimeId: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 20 } },
         runtimeConfig: { stepIntervalMs: 10, projectionIntervalMs: 20 },
       },
     })
@@ -308,7 +308,7 @@ describe('drone pack native runtime', () => {
         runtimeIds: [droneNativeRuntimeId],
         world: { startsAt: at, environment: {} },
         initialObjects: [initial],
-        runtimeConfigs: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 20 } },
+        runtimeConfigByRuntimeId: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 20 } },
         runtimeConfig: { stepIntervalMs: 10, projectionIntervalMs: 20 },
       },
     })
@@ -349,7 +349,7 @@ describe('drone pack native runtime', () => {
         runtimeIds: [droneNativeRuntimeId],
         world: { startsAt: at, environment: {} },
         initialObjects: [initial],
-        runtimeConfigs: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 200, motionFrameIntervalMs: 10 } },
+        runtimeConfigByRuntimeId: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 200, motionFrameIntervalMs: 10 } },
         runtimeConfig: { stepIntervalMs: 10, projectionIntervalMs: 200, motionFrameIntervalMs: 10 },
       },
     })
@@ -387,7 +387,7 @@ describe('drone pack native runtime', () => {
         runtimeIds: [droneNativeRuntimeId],
         world: { startsAt: at, environment: {} },
         initialObjects: [initial],
-        runtimeConfigs: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 250, motionFrameIntervalMs: 10 } },
+        runtimeConfigByRuntimeId: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 250, motionFrameIntervalMs: 10 } },
         runtimeConfig: { stepIntervalMs: 10, projectionIntervalMs: 250, motionFrameIntervalMs: 10 },
       },
     })
@@ -447,7 +447,7 @@ describe('drone pack native runtime', () => {
         runtimeIds: [droneNativeRuntimeId],
         world: { startsAt: at, environment: {} },
         initialObjects: fleet,
-        runtimeConfigs: { [droneNativeRuntimeId]: { maxDrones: 10, stepIntervalMs: 10, projectionIntervalMs: 250, motionFrameIntervalMs: 10 } },
+        runtimeConfigByRuntimeId: { [droneNativeRuntimeId]: { maxDrones: 10, stepIntervalMs: 10, projectionIntervalMs: 250, motionFrameIntervalMs: 10 } },
         runtimeConfig: { maxDrones: 10, stepIntervalMs: 10, projectionIntervalMs: 250, motionFrameIntervalMs: 10 },
       },
     })
@@ -513,7 +513,7 @@ describe('drone pack native runtime', () => {
         runtimeIds: [droneNativeRuntimeId],
         world: { startsAt: at, environment: {} },
         initialObjects: [initial],
-        runtimeConfigs: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 20 } },
+        runtimeConfigByRuntimeId: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 20 } },
         runtimeConfig: { stepIntervalMs: 10, projectionIntervalMs: 20 },
       },
     })

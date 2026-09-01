@@ -13,7 +13,7 @@ import {
   type WeatherPackData,
   type WeatherState,
 } from './model.ts'
-import { weatherScenarioSupport } from './scenario.ts'
+import { weatherPackConfigSchema, weatherScenarioSupport } from './scenario.ts'
 import { weatherSimRuntimeId } from './sim/constants.ts'
 
 const parseWeatherData = (object: OperationalObject): WeatherPackData | null => {
@@ -127,6 +127,7 @@ export const weatherPack: WorldPack = {
     id: 'weather', version: '1.0.0', name: 'Weather Conditions',
     contributions: ['runtime', 'scenario', 'presentation', 'commands'],
   }),
+  scenarioConfigSchema: weatherPackConfigSchema,
   authoring: {
     itemTypes: [{
       id: 'weather_condition',

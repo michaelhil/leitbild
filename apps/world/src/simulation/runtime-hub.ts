@@ -31,9 +31,7 @@ const scenarioFor = (
     runtimeIds: scenario.runtimeIds,
     world: scenario.world,
     initialObjects: scenario.initialObjects.filter(object => object.packId === adapter.packId),
-    processSystems: (scenario.processSystems ?? []).filter(processSystem => processSystem.pack === adapter.packId),
-    runtimeConfigs: scenario.runtimeConfigs,
-    runtimeConfig: scenario.runtimeConfigs[adapter.id] ?? {},
+    runtimeConfig: scenario.runtimeConfigByRuntimeId?.[adapter.id] ?? scenario.runtimeConfig,
   }
 }
 

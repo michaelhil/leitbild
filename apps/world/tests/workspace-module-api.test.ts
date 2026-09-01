@@ -21,7 +21,7 @@ import {
   type WorldWorkspaceRuntimeRegistry,
 } from '../src/core/workspaces/runtime-registry.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioCatalog, testScenarioAuthoring } from './helpers.ts'
-import { scenarioTemplates } from '../src/scenarios/index.ts'
+import { builtinScenarioSources } from '../src/scenarios/index.ts'
 
 const registries: WorldWorkspaceRuntimeRegistry[] = []
 const temporaryDirectories: string[] = []
@@ -82,7 +82,7 @@ describe('World Module API', () => {
     expect(await registry.list()).toEqual([])
   })
 
-  test('discovers Pack authoring and saves the editable Draft with its compiled revision', async () => {
+  test('discovers Pack authoring and saves an editable Scenario Definition', async () => {
     const registry = await createRegistry()
     const workspaceId = newWorkspaceId()
     await provision(registry, workspaceId)
@@ -92,7 +92,7 @@ describe('World Module API', () => {
       actor: { kind: 'human', id: 'scenario-author' },
     })
     const describeId = capabilityIdSchema.parse('world.scenario-authoring.describe')
-    const described = await call<{ result: { features: Array<{ id: string; itemTypes: unknown[] }> } }>(
+    const described = await call<{ result: { packs: Array<{ id: string; itemTypes: unknown[]; runtimes: unknown[]; configSchema: unknown }> } }>(
       registry,
       `/internal/workspaces/${workspaceId}/capabilities/${describeId}/invoke`,
       {
@@ -101,11 +101,13 @@ describe('World Module API', () => {
         body: JSON.stringify({ workspaceId, capabilityId: describeId, input: {}, access }),
       },
     )
-    expect(described.body?.result.features.find(feature => feature.id === 'ambulance')?.itemTypes.length).toBeGreaterThan(0)
-    expect(described.body?.result.features.find(feature => feature.id === 'process-plant')?.itemTypes.length).toBeGreaterThan(0)
+    expect(described.body?.result.packs.find(pack => pack.id === 'ambulance')?.itemTypes.length).toBeGreaterThan(0)
+    expect(described.body?.result.packs.find(pack => pack.id === 'process-plant')?.itemTypes.length).toBeGreaterThan(0)
+    expect(described.body?.result.packs.find(pack => pack.id === 'aviation')?.runtimes.length).toBeGreaterThan(1)
+    expect(described.body?.result.packs.find(pack => pack.id === 'process-plant')?.configSchema).toBeTruthy()
 
-    const source = scenarioTemplates.find(template => template.draft.id === 'oslo-ambulance')!.draft
-    const draft = { ...source, id: 'custom-authoring-test', title: 'Custom authoring test' }
+    const source = builtinScenarioSources.find(source => source.id === 'oslo-ambulance')!
+    const definition = { ...source, id: 'custom-authoring-test', title: 'Custom authoring test' }
     const createId = capabilityIdSchema.parse('world.scenario.create')
     const created = await call<{ result: { definition: { id: string; revisionId: string } } }>(
       registry,
@@ -113,14 +115,47 @@ describe('World Module API', () => {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspaceId, capabilityId: createId, input: { draft }, access }),
+        body: JSON.stringify({ workspaceId, capabilityId: createId, input: { source: definition }, access }),
       },
     )
     expect(created.status).toBe(201)
-    expect(created.body?.result.definition.id).toBe(draft.id)
-    const revision = await registry.getLoaded(workspaceId)!.simulationRuns.currentScenario(draft.id)
-    expect(revision?.draft.title).toBe(draft.title)
-    expect(revision?.definition.initialObjects.length).toBeGreaterThan(0)
+    expect(created.body?.result.definition.id).toBe(definition.id)
+    const runs = registry.getLoaded(workspaceId)!.simulationRuns
+    const revision = await runs.currentScenario(definition.id)
+    expect(revision?.document.title).toBe(definition.title)
+    expect((await runs.compileScenarioRevision(revision!)).initialObjects.length).toBeGreaterThan(0)
+
+    const updateId = capabilityIdSchema.parse('world.scenario.update')
+    const updatedTitle = 'Updated authoring test'
+    const updated = await call<{ result: { definition: { id: string; revisionId: string }; title: string } }>(
+      registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${updateId}/invoke`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          capabilityId: updateId,
+          definition: {
+            workspaceId,
+            moduleId: 'world',
+            type: 'world.scenario',
+            id: definition.id,
+            revisionId: revision!.id,
+          },
+          input: { source: { ...definition, title: updatedTitle } },
+          access,
+        }),
+      },
+    )
+    expect(updated.status).toBe(200)
+    expect(updated.body?.result.title).toBe(updatedTitle)
+    expect(updated.body?.result.definition.revisionId).not.toBe(revision!.id)
+    const updatedDescriptor = moduleDefinitionCollectionSchema.parse(
+      (await call(registry, `/internal/workspaces/${workspaceId}/definitions`)).body,
+    ).definitions.find(candidate => candidate.ref.id === definition.id)!
+    expect(updatedDescriptor.title).toBe(updatedTitle)
+    expect(updatedDescriptor.uiPath).toContain(`definition=${definition.id}`)
   })
 
   test('discovers Scenario Definitions, starts an exact revision, and exposes agent-safe Run context', async () => {
@@ -164,7 +199,7 @@ describe('World Module API', () => {
       },
     )
     const parsedScenarioInspection = inspectionViewSchema.parse(scenarioInspection.body?.result)
-    expect(parsedScenarioInspection.sections.map(section => section.id)).toContain('authored-draft')
+    expect(parsedScenarioInspection.sections.map(section => section.id)).toContain('authored-definition')
     expect(parsedScenarioInspection.sections.map(section => section.id)).toContain('assets')
     expect(parsedScenarioInspection.sections.map(section => section.id)).toContain('timeline')
 

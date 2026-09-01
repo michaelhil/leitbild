@@ -9,7 +9,7 @@ A Workspace-owned reusable simulation setup that evolves through immutable Scena
 _Avoid_: Simulation Run, Workspace Template
 
 **Scenario Revision**:
-An immutable validated Definition Revision that retains its exact authored Scenario Definition and Compiled Scenario for one or more Simulation Runs.
+An immutable validated Definition Revision that retains its exact authored Scenario Definition. Its Compiled Scenario is reproduced through the selected Pack implementations when needed.
 _Avoid_: Scenario Draft, mutable startup state, current Scenario
 
 **Scenario Definition**:
@@ -25,7 +25,7 @@ One selected World Pack and its Pack-owned authored items, runtime choice, and c
 _Avoid_: Scenario Feature, Capability, or duplicated Pack ids across parallel configuration maps
 
 **Starting View**:
-Optional Scenario Definition data describing the initial map frame and Pack-owned layer preferences a Client should show when it first opens a Simulation Run.
+Scenario Definition data describing the initial map frame and optional object-rail preferences a Client should show when it first opens a Simulation Run.
 _Avoid_: persisted screen layout, Surface Definition, pane tree, or browser preference
 
 **Scenario Item**:
@@ -54,5 +54,5 @@ _Avoid_: full snapshot dump, future-event leak, copied solver state
 
 **World Pack**:
 A World-owned Pack that contributes scenario material, mechanics, Resources, Capabilities, or presentation.
-Its descriptor names `world` as its sole owning Module.
+Its descriptor names `world` as its sole owning Module. Its strict Scenario configuration schema validates Pack-owned settings and is published for discovery.
 _Avoid_: Simulation Pack, Leitbild Pack, universal Pack, Experience

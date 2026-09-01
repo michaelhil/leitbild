@@ -13,7 +13,7 @@ export interface ResolvedScenarioRuntime {
   readonly packs: ReadonlyArray<WorldPack>
   readonly runtimes: ReadonlyArray<ResolvedPackRuntime>
   readonly initialObjects: ReadonlyArray<OperationalObject>
-  readonly runtimeConfigs: Record<string, unknown>
+  readonly runtimeConfigByRuntimeId: Record<string, unknown>
   readonly scenario: ScenarioDefinition
 }
 
@@ -43,37 +43,21 @@ export const createScenarioCatalog = (config: {
     if (scenario.packs.length === 0) throw new Error(`scenario ${scenario.id} must declare at least one pack`)
     const objectIds = new Set<string>(scenario.initialObjects.map(object => object.id))
     if (objectIds.size !== scenario.initialObjects.length) throw new Error(`scenario ${scenario.id} has duplicate initial object ids`)
-    const unknownContextObjectIds = scenario.initialContexts
-      .map(initialContext => initialContext.objectId)
-      .filter(objectId => !objectIds.has(objectId))
-    if (unknownContextObjectIds.length > 0) {
-      throw new Error(`scenario ${scenario.id} has contexts for unknown objects: ${unknownContextObjectIds.join(', ')}`)
-    }
     for (const packId of scenario.packs) {
       const pack = packs.get(packId)
       if (!pack) throw new Error(`scenario ${scenario.id} references unknown pack: ${packId}`)
-      const runtimeId = scenario.runtimeOverrides[packId] ?? pack.runtime?.defaultRuntimeId
+      const runtimeId = scenario.packRuntimes[packId] ?? pack.runtime?.defaultRuntimeId
       if (!runtimeId) throw new Error(`scenario ${scenario.id} pack ${packId} has no default pack runtime`)
       const runtimes = pack.runtime?.runtimes ?? []
       if (!runtimes.some(runtime => runtime.id === runtimeId)) {
         throw new Error(`scenario ${scenario.id} runtime ${runtimeId} is not registered by pack ${packId}`)
       }
     }
-    for (const packId of Object.keys(scenario.runtimeOverrides)) {
-      if (!scenario.packs.includes(packId)) throw new Error(`scenario ${scenario.id} has runtime override for inactive pack: ${packId}`)
+    for (const packId of Object.keys(scenario.packRuntimes)) {
+      if (!scenario.packs.includes(packId)) throw new Error(`scenario ${scenario.id} selects a runtime for inactive Pack: ${packId}`)
     }
-    for (const packId of Object.keys(scenario.runtimeConfigs)) {
-      if (!scenario.packs.includes(packId)) throw new Error(`scenario ${scenario.id} has runtime config for inactive pack: ${packId}`)
-    }
-    const processSystemIds = new Set<string>()
-    for (const processSystem of scenario.processSystems) {
-      if (processSystemIds.has(processSystem.id)) {
-        throw new Error(`scenario ${scenario.id} has duplicate process system id: ${processSystem.id}`)
-      }
-      processSystemIds.add(processSystem.id)
-      if (!scenario.packs.includes(processSystem.pack)) {
-        throw new Error(`scenario ${scenario.id} has process system ${processSystem.id} for inactive pack: ${processSystem.pack}`)
-      }
+    for (const packId of Object.keys(scenario.packConfigs)) {
+      if (!scenario.packs.includes(packId)) throw new Error(`scenario ${scenario.id} configures inactive Pack: ${packId}`)
     }
     const activeCategoryIds = new Set(
       scenario.packs.flatMap(packId => packs.get(packId)?.presentation.categories.map(category => category.id) ?? []),
@@ -107,28 +91,20 @@ export const createScenarioCatalog = (config: {
   const sortedScenarios = (): ReadonlyArray<ScenarioDefinition> =>
     [...scenarios.values()].sort((left, right) => left.id.localeCompare(right.id))
 
-  const applyInitialContexts = (scenario: ScenarioDefinition): ReadonlyArray<OperationalObject> => {
-    const contextsByObjectId = new Map(scenario.initialContexts.map(initialContext => [initialContext.objectId, initialContext.context]))
-    return scenario.initialObjects.map(object => {
-      const context = contextsByObjectId.get(object.id)
-      return context ? { ...object, context } : object
-    })
-  }
-
   const resolveRuntime = (scenario: ScenarioDefinition): ResolvedScenarioRuntime => {
     validateScenario(scenario)
-    const initialObjects = applyInitialContexts(scenario)
+    const initialObjects = scenario.initialObjects
     const activePacks = scenario.packs.map(packId => packs.get(packId)!)
     const runtimes = scenario.packs.map(packId => {
       const pack = packs.get(packId)
-      if (!pack?.runtime?.defaultRuntimeId && scenario.runtimeOverrides[packId] === undefined) {
+      if (!pack?.runtime?.defaultRuntimeId && scenario.packRuntimes[packId] === undefined) {
         throw new Error(`scenario ${scenario.id} pack ${packId} has no default pack runtime`)
       }
-      const runtimeId = scenario.runtimeOverrides[packId] ?? pack!.runtime!.defaultRuntimeId
+      const runtimeId = scenario.packRuntimes[packId] ?? pack!.runtime!.defaultRuntimeId
       return {
         packId,
         runtimeId,
-        runtimeConfig: scenario.runtimeConfigs[packId] ?? {},
+        runtimeConfig: scenario.packConfigs[packId] ?? {},
       }
     })
     return {
@@ -137,7 +113,7 @@ export const createScenarioCatalog = (config: {
       packs: activePacks,
       runtimes,
       initialObjects,
-      runtimeConfigs: Object.fromEntries(runtimes.map(runtime => [runtime.runtimeId, runtime.runtimeConfig])),
+      runtimeConfigByRuntimeId: Object.fromEntries(runtimes.map(runtime => [runtime.runtimeId, runtime.runtimeConfig])),
     }
   }
 
@@ -147,7 +123,7 @@ export const createScenarioCatalog = (config: {
     initialObjectsFor: (id: string): ReadonlyArray<OperationalObject> | undefined => {
       const scenario = scenarios.get(id)
       if (!scenario) return undefined
-      return applyInitialContexts(scenario)
+      return scenario.initialObjects
     },
     runtimeFor: (id: string): ResolvedScenarioRuntime | undefined => {
       const scenario = scenarios.get(id)

@@ -85,7 +85,7 @@ const weatherMapFeatures = async (config: {
     runtimeIds: [weatherSimRuntimeId],
     world: osloAmbulanceScenario.world,
     initialObjects: osloAmbulanceScenario.initialObjects,
-    runtimeConfigs: {},
+    runtimeConfigByRuntimeId: {},
     runtimeConfig: {},
   } })
   try {
@@ -286,7 +286,7 @@ describe('weather pack', () => {
       runtimeIds: [weatherSimRuntimeId],
       world: osloAmbulanceScenario.world,
       initialObjects: osloAmbulanceScenario.initialObjects,
-      runtimeConfigs: {},
+      runtimeConfigByRuntimeId: {},
       runtimeConfig: {},
     } })
     await connection.setClock({ currentTime: start, updatedAt: nowIso(), paused: true, speed: 1 })

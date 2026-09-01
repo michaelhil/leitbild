@@ -12,7 +12,8 @@ import {
 import type { PackRuntimeAdapter } from '../../simulation/protocol.ts'
 import { createRuntimeHub } from '../../simulation/runtime-hub.ts'
 import type { ScenarioCatalog } from '../scenarios/catalog.ts'
-import type { ScenarioDraft, ScenarioTemplate } from '../scenarios/config.ts'
+import type { ScenarioSource } from '../scenarios/config.ts'
+import type { ScenarioDefinition } from '../model/index.ts'
 import type { ScenarioAuthoringCatalog } from '../scenarios/authoring.ts'
 import { createJsonlEventLog } from './event-log.ts'
 import { createJsonRuntimeStateStore } from './runtime-state-store.ts'
@@ -82,10 +83,11 @@ export interface SimulationRunRegistry {
   readonly leaseSummary: (id: SimulationRunId) => SimulationRunLeaseSummary
   readonly listScenarios: () => Promise<ReadonlyArray<ScenarioRecord>>
   readonly currentScenario: (id: string) => Promise<ScenarioRevision | undefined>
-  readonly createScenario: (draft: ScenarioDraft) => Promise<ScenarioRevision>
-  readonly updateScenario: (draft: ScenarioDraft, expectedRevisionId: ScenarioRevisionId) => Promise<ScenarioRevision>
+  readonly createScenario: (source: ScenarioSource) => Promise<ScenarioRevision>
+  readonly updateScenario: (source: ScenarioSource, expectedRevisionId: ScenarioRevisionId) => Promise<ScenarioRevision>
   readonly deleteScenario: (id: string, revisionId: ScenarioRevisionId) => Promise<boolean>
   readonly scenarioRevisionForRun: (id: SimulationRunId) => Promise<ScenarioRevision | undefined>
+  readonly compileScenarioRevision: (revision: ScenarioRevision) => Promise<ScenarioDefinition>
   readonly defaultScenarioId: () => string
   readonly close: (id: SimulationRunId) => Promise<boolean>
 }
@@ -95,8 +97,8 @@ export const createSimulationRunRegistry = (config: {
   readonly workspaceId: WorkspaceId
   readonly runtimeAdapters: ReadonlyArray<PackRuntimeAdapter>
   readonly scenarioCatalog: ScenarioCatalog
-  readonly scenarioTemplates: ReadonlyArray<ScenarioTemplate>
-  readonly compileScenarioDraft: (draft: unknown) => Promise<ScenarioTemplate>
+  readonly scenarioSources: ReadonlyArray<ScenarioSource>
+  readonly compileScenarioSource: (source: unknown) => Promise<ScenarioDefinition>
   readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
   readonly scenarioLibrary?: ScenarioLibrary
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
@@ -120,7 +122,7 @@ export const createSimulationRunRegistry = (config: {
   let scenarioLibraryReady: Promise<void> | null = null
 
   const ensureScenarioLibrary = (): Promise<void> => {
-    scenarioLibraryReady ??= scenarioLibrary.materializeTemplates(config.scenarioTemplates)
+    scenarioLibraryReady ??= scenarioLibrary.seed(config.scenarioSources)
     return scenarioLibraryReady
   }
 
@@ -270,10 +272,10 @@ export const createSimulationRunRegistry = (config: {
     }
     const revision = await scenarioLibrary.getRevision(scenarioRevisionIdFromManifest(manifest))
     if (!revision) throw new Error(`Scenario Revision not found: ${manifest.scenario.revisionId}`)
-    if (revision.scenarioId !== manifest.scenario.id || revision.digest !== manifest.scenario.digest) {
+    if (revision.definitionId !== manifest.scenario.id || revision.digest !== manifest.scenario.digest) {
       throw new Error(`Simulation Run Scenario Revision mismatch: ${manifest.id}`)
     }
-    const scenarioRuntime = config.scenarioCatalog.runtimeForDefinition(revision.definition)
+    const scenarioRuntime = config.scenarioCatalog.runtimeForDefinition(await config.compileScenarioSource(revision.document))
     const packVersions = new Map(scenarioRuntime.packs.map(pack => [pack.descriptor.id, pack.descriptor.version]))
     const adapterVersions = new Map(config.runtimeAdapters.map(adapter => [adapter.id, adapter.version]))
     for (const pack of manifest.packs) {
@@ -295,15 +297,15 @@ export const createSimulationRunRegistry = (config: {
       ? await scenarioLibrary.currentRevision(scenarioId)
       : await scenarioLibrary.getRevision(scenarioRevisionId)
     if (!revision) throw new Error(`unknown Scenario: ${scenarioId}`)
-    if (revision.scenarioId !== scenarioId) throw new Error(`Scenario Revision does not belong to Scenario: ${scenarioId}`)
-    const scenarioRuntime = config.scenarioCatalog.runtimeForDefinition(revision.definition)
+    if (revision.definitionId !== scenarioId) throw new Error(`Scenario Revision does not belong to Scenario: ${scenarioId}`)
+    const scenarioRuntime = config.scenarioCatalog.runtimeForDefinition(await config.compileScenarioSource(revision.document))
     const adaptersById = new Map(config.runtimeAdapters.map(adapter => [adapter.id, adapter]))
     return simulationRunManifestSchema.parse({
       schemaVersion: 1,
       id,
       workspaceId: config.workspaceId,
       scenario: {
-        id: revision.scenarioId,
+        id: revision.definitionId,
         revisionId: revision.id,
         digest: revision.digest,
       },
@@ -376,8 +378,7 @@ export const createSimulationRunRegistry = (config: {
         runtimeIds: scenarioRuntime.runtimes.map(runtime => runtime.runtimeId),
         world: scenarioRuntime.scenario.world,
         initialObjects: scenarioRuntime.initialObjects,
-        processSystems: scenarioRuntime.scenario.processSystems,
-        runtimeConfigs: scenarioRuntime.runtimeConfigs,
+        runtimeConfigByRuntimeId: scenarioRuntime.runtimeConfigByRuntimeId,
         runtimeConfig: {},
       },
       ...(restoredSnapshot ? { initialObjects: restoredSnapshot.objects } : {}),
@@ -515,7 +516,7 @@ export const createSimulationRunRegistry = (config: {
     const loaded = simulationRuns.get(id)
     await ensureScenarioLibrary()
     const revision = await scenarioLibrary.getRevision(scenarioRevisionIdFromManifest(manifest))
-    const scenarioTitle = revision?.definition.title ?? null
+    const scenarioTitle = revision?.document.title ?? null
     if (loaded) {
       const snapshot = loaded.snapshot()
       return {
@@ -626,21 +627,24 @@ export const createSimulationRunRegistry = (config: {
       await ensureScenarioLibrary()
       return await scenarioLibrary.currentRevision(id)
     },
-    createScenario: async draft => {
+    createScenario: async source => {
       await ensureScenarioLibrary()
-      return await scenarioLibrary.create(await config.compileScenarioDraft(draft))
+      await config.compileScenarioSource(source)
+      return await scenarioLibrary.create(source)
     },
-    updateScenario: async (draft, expectedRevisionId) => {
+    updateScenario: async (source, expectedRevisionId) => {
       await ensureScenarioLibrary()
-      return await scenarioLibrary.update(await config.compileScenarioDraft(draft), expectedRevisionId)
+      await config.compileScenarioSource(source)
+      return await scenarioLibrary.update(source, expectedRevisionId)
     },
     deleteScenario: async (id: string, revisionId: ScenarioRevisionId) => {
       await ensureScenarioLibrary()
       const current = await scenarioLibrary.currentRevision(id)
       if (!current || current.id !== revisionId) return false
-      return await scenarioLibrary.delete(id)
+      return await scenarioLibrary.delete(id, revisionId)
     },
     scenarioRevisionForRun,
+    compileScenarioRevision: revision => config.compileScenarioSource(revision.document),
     defaultScenarioId: () => config.scenarioCatalog.defaultScenarioId(),
     close,
   }

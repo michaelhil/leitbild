@@ -357,8 +357,6 @@ const compiledSystem = (
   initialState?: Record<string, unknown>,
 ) => compileProcessPlantSystem({
   id,
-  pack: 'process-plant',
-  componentLibrary: 'process-plant',
   assemblyRef: processPlantPwrReferenceAssemblyRef,
   assemblyConfig: { loopCount: 4, title: `Acceptance ${id}` },
   ...(parameters === undefined ? {} : { parameters }),

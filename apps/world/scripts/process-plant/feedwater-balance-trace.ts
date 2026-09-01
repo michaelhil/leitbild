@@ -271,8 +271,6 @@ const csvRows = (telemetry: ReadonlyArray<ProcessPlantTelemetrySeries>): string 
 const run = async (): Promise<void> => {
   const system = compileProcessPlantSystem({
     id: 'balance-trace',
-    pack: 'process-plant',
-    componentLibrary: 'process-plant',
     assemblyRef: processPlantPwrReferenceAssemblyRef,
     assemblyConfig: { loopCount: 4, title: 'Feedwater Balance Trace' },
   })

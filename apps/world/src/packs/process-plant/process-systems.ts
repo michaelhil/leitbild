@@ -1,4 +1,4 @@
-import type { ScenarioProcessSystemDefinition } from '../../core/model/index.ts'
+import { z } from 'zod'
 import {
   compilePlantGraph,
   assertPrimaryLoopTopologyValid,
@@ -19,6 +19,31 @@ export interface ProcessPlantInitialVariableValue {
   readonly path: VariablePath
   readonly value: ProcessVariableValue
 }
+
+export const processPlantSystemDefinitionSchema = z.object({
+  id: z.string().min(1),
+  graph: z.unknown().optional(),
+  graphRef: z.string().min(1).optional(),
+  assemblyRef: z.string().min(1).optional(),
+  assemblyConfig: z.record(z.string(), z.unknown()).optional(),
+  parameters: z.record(z.string(), z.unknown()).optional(),
+  initialState: z.record(z.string(), z.unknown()).optional(),
+  runtime: z.unknown().optional(),
+}).strict().superRefine((definition, ctx) => {
+  const sourceCount = [definition.graph, definition.graphRef, definition.assemblyRef]
+    .filter(value => value !== undefined).length
+  if (sourceCount !== 1) ctx.addIssue({ code: 'custom', message: 'process system must define exactly one of graph, graphRef, or assemblyRef' })
+  if (definition.assemblyConfig !== undefined && definition.assemblyRef === undefined) {
+    ctx.addIssue({ code: 'custom', path: ['assemblyConfig'], message: 'process system assemblyConfig requires assemblyRef' })
+  }
+})
+
+export type ProcessPlantSystemDefinition = z.infer<typeof processPlantSystemDefinitionSchema>
+
+export const processPlantPackConfigSchema = z.object({
+  systems: z.array(processPlantSystemDefinitionSchema).default([]),
+}).strict()
+export type ProcessPlantPackConfig = z.infer<typeof processPlantPackConfigSchema>
 
 export interface CompiledProcessPlantSystem {
   readonly id: string
@@ -90,7 +115,7 @@ const assertInitialStateTargetsDeclaredVariables = (
   }
 }
 
-const graphSourceFor = (definition: ScenarioProcessSystemDefinition): unknown => {
+const graphSourceFor = (definition: ProcessPlantSystemDefinition): unknown => {
   if (definition.assemblyRef !== undefined) {
     return resolveProcessPlantAssemblySpec(definition.assemblyRef, definition.assemblyConfig ?? {})
   }
@@ -98,14 +123,8 @@ const graphSourceFor = (definition: ScenarioProcessSystemDefinition): unknown =>
 }
 
 export const compileProcessPlantSystem = (
-  definition: ScenarioProcessSystemDefinition,
+  definition: ProcessPlantSystemDefinition,
 ): CompiledProcessPlantSystem => {
-  if (definition.pack !== 'process-plant') {
-    throw new Error(`process plant compiler received process system for pack ${definition.pack}`)
-  }
-  if (definition.componentLibrary !== 'process-plant') {
-    throw new Error(`unsupported process plant component library: ${definition.componentLibrary}`)
-  }
   const graph = applyComponentParameterOverlays(
     cloneGraphSpec(graphSourceFor(definition)),
     definition.parameters,
@@ -124,11 +143,9 @@ export const compileProcessPlantSystem = (
 }
 
 export const compileProcessPlantSystems = (
-  definitions: ReadonlyArray<ScenarioProcessSystemDefinition>,
+  definitions: ReadonlyArray<ProcessPlantSystemDefinition>,
 ): ReadonlyArray<CompiledProcessPlantSystem> => {
-  const systems = definitions
-    .filter(definition => definition.pack === 'process-plant')
-    .map(compileProcessPlantSystem)
+  const systems = definitions.map(compileProcessPlantSystem)
   const ids = new Set<string>()
   for (const system of systems) {
     if (ids.has(system.id)) throw new Error(`duplicate process plant system id: ${system.id}`)

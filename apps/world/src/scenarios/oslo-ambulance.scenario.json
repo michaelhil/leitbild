@@ -1,10 +1,328 @@
 {
   "id": "oslo-ambulance",
-  "schemaVersion": 1,
   "title": "Oslo ambulance tutorial",
   "description": "A timed Oslo ambulance dispatch scenario with existing transports, unresolved incidents, traffic conditions, and tutorial guidance.",
-  "packs": ["ambulance", "traffic", "weather"],
-  "runtimeOverrides": {},
+  "packs": [
+    {
+      "id": "ambulance",
+      "config": {},
+      "items": [
+        {
+          "type": "hospital",
+          "id": "facility:ous",
+          "label": "Oslo University Hospital",
+          "position": [
+            10.7387,
+            59.9365
+          ],
+          "traumaBeds": {
+            "total": 4,
+            "available": 2
+          }
+        },
+        {
+          "type": "hospital",
+          "id": "facility:lovisenberg",
+          "label": "Lovisenberg Hospital",
+          "position": [
+            10.7519,
+            59.9326
+          ],
+          "traumaBeds": {
+            "total": 5,
+            "available": 4
+          }
+        },
+        {
+          "type": "hospital",
+          "id": "facility:aker",
+          "label": "Aker Emergency Clinic",
+          "position": [
+            10.8001,
+            59.9391
+          ],
+          "traumaBeds": {
+            "total": 6,
+            "available": 5
+          }
+        },
+        {
+          "type": "ambulance",
+          "id": "amb:a12",
+          "label": "Ambulance A-12",
+          "atObject": "facility:ous",
+          "equipment": [
+            "defibrillator",
+            "ventilator"
+          ]
+        },
+        {
+          "type": "ambulance",
+          "id": "amb:a21",
+          "label": "Ambulance A-21",
+          "position": [
+            10.7707,
+            59.9146
+          ],
+          "equipment": [
+            "defibrillator"
+          ],
+          "patientsOnBoard": 1,
+          "targetId": "facility:ous",
+          "status": "transporting"
+        },
+        {
+          "type": "ambulance",
+          "id": "amb:a34",
+          "label": "Ambulance A-34",
+          "position": [
+            10.7828,
+            59.9237
+          ],
+          "equipment": [
+            "defibrillator"
+          ],
+          "patientsOnBoard": 1,
+          "targetId": "facility:lovisenberg",
+          "status": "transporting"
+        },
+        {
+          "type": "incident",
+          "id": "incident:storo-cleared",
+          "label": "Storo collision",
+          "position": [
+            10.7874,
+            59.946
+          ],
+          "triage": "yellow",
+          "victims": {
+            "state": "confirmed",
+            "count": 0
+          },
+          "status": "resolved"
+        },
+        {
+          "type": "incident",
+          "id": "incident:torshov-partial",
+          "label": "Torshov bicycle crash",
+          "position": [
+            10.775,
+            59.9328
+          ],
+          "triage": "yellow",
+          "victims": {
+            "state": "unknown"
+          }
+        },
+        {
+          "type": "incident",
+          "id": "incident:gronland-unattended",
+          "label": "Grønland multi-car crash",
+          "position": [
+            10.7628,
+            59.9124
+          ],
+          "triage": "red",
+          "victims": {
+            "state": "confirmed",
+            "count": 3
+          }
+        }
+      ]
+    },
+    {
+      "id": "traffic",
+      "config": {},
+      "items": [
+        {
+          "type": "traffic_condition",
+          "id": "traffic:ring2-slowdown",
+          "label": "Ring 2 slowdown",
+          "geometryMode": "road_segment",
+          "from": [
+            10.7019,
+            59.9294
+          ],
+          "to": [
+            10.7854,
+            59.9253
+          ],
+          "condition": "slowdown",
+          "severity": "high",
+          "speedFactor": 0.45,
+          "reason": "Queue spillback after minor collision"
+        }
+      ]
+    },
+    {
+      "id": "weather",
+      "config": {
+        "fields": {
+          "extensions": {
+            "research.operatorWeatherLoad": {
+              "type": "number",
+              "unit": "0..1",
+              "default": 0,
+              "min": 0,
+              "max": 1
+            }
+          }
+        }
+      },
+      "items": [
+        {
+          "type": "weather_condition",
+          "id": "weather:oslo-damp-background",
+          "label": "Damp Oslo background",
+          "truthResolution": 8,
+          "showAffectedCells": false,
+          "priority": 0,
+          "summary": "Mild damp overcast background conditions across central Oslo",
+          "atmosphere": {
+            "airTemperatureC": 6,
+            "humidity": 0.78,
+            "windSpeedMps": 4,
+            "windDirectionDeg": 225,
+            "visibilityM": 11000,
+            "cloudCover": 0.76,
+            "precipitation": {
+              "type": "none",
+              "intensityMmPerHour": 0
+            }
+          },
+          "surface": {
+            "groundTemperatureC": 5.8,
+            "wetness": 0.18,
+            "standingWater": 0.02,
+            "snow": 0,
+            "ice": 0,
+            "frost": 0
+          },
+          "keyframes": [
+            {
+              "atSeconds": 0,
+              "center": [
+                10.7522,
+                59.925
+              ],
+              "semiMajorAxisM": 9000,
+              "semiMinorAxisM": 6500,
+              "rotationDeg": 15,
+              "falloffCurve": [
+                {
+                  "x": 0,
+                  "y": 1
+                },
+                {
+                  "x": 0.85,
+                  "y": 1
+                },
+                {
+                  "x": 1,
+                  "y": 0.35
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "weather_condition",
+          "id": "weather:oslo-moving-rain-band",
+          "label": "Moving rain band",
+          "truthResolution": 8,
+          "priority": 10,
+          "summary": "A narrow rain band moves east across Oslo and briefly lowers road friction",
+          "extensions": {
+            "research.operatorWeatherLoad": 0.35
+          },
+          "atmosphere": {
+            "airTemperatureC": 5.5,
+            "humidity": 0.9,
+            "windSpeedMps": 7,
+            "windDirectionDeg": 250,
+            "visibilityM": 6500,
+            "cloudCover": 0.9,
+            "precipitation": {
+              "type": "rain",
+              "intensityMmPerHour": 1.8
+            }
+          },
+          "surface": {
+            "groundTemperatureC": 5,
+            "wetness": 0.5,
+            "standingWater": 0.08,
+            "snow": 0,
+            "ice": 0,
+            "frost": 0
+          },
+          "keyframes": [
+            {
+              "atSeconds": 0,
+              "center": [
+                10.69,
+                59.925
+              ],
+              "semiMajorAxisM": 5200,
+              "semiMinorAxisM": 1200,
+              "rotationDeg": 68,
+              "falloffCurve": [
+                {
+                  "x": 0,
+                  "y": 1
+                },
+                {
+                  "x": 0.65,
+                  "y": 0.85
+                },
+                {
+                  "x": 1,
+                  "y": 0
+                }
+              ]
+            },
+            {
+              "atSeconds": 420,
+              "center": [
+                10.835,
+                59.927
+              ],
+              "semiMajorAxisM": 6800,
+              "semiMinorAxisM": 1500,
+              "rotationDeg": 78,
+              "atmosphere": {
+                "precipitation": {
+                  "type": "rain",
+                  "intensityMmPerHour": 2.3
+                },
+                "visibilityM": 5200
+              },
+              "surface": {
+                "wetness": 0.62,
+                "standingWater": 0.12
+              },
+              "extensions": {
+                "research.operatorWeatherLoad": 0.65
+              },
+              "falloffCurve": [
+                {
+                  "x": 0,
+                  "y": 1
+                },
+                {
+                  "x": 0.65,
+                  "y": 0.85
+                },
+                {
+                  "x": 1,
+                  "y": 0
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
   "world": {
     "startsAt": "2026-01-01T09:00:00.000Z",
     "environment": {
@@ -12,288 +330,76 @@
       "mode": "tutorial"
     }
   },
-  "items": [
-    {
-      "pack": "ambulance",
-      "type": "hospital",
-      "id": "facility:ous",
-      "label": "Oslo University Hospital",
-      "position": [10.7387, 59.9365],
-      "traumaBeds": { "total": 4, "available": 2 }
-    },
-    {
-      "pack": "ambulance",
-      "type": "hospital",
-      "id": "facility:lovisenberg",
-      "label": "Lovisenberg Hospital",
-      "position": [10.7519, 59.9326],
-      "traumaBeds": { "total": 5, "available": 4 }
-    },
-    {
-      "pack": "ambulance",
-      "type": "hospital",
-      "id": "facility:aker",
-      "label": "Aker Emergency Clinic",
-      "position": [10.8001, 59.9391],
-      "traumaBeds": { "total": 6, "available": 5 }
-    },
-    {
-      "pack": "ambulance",
-      "type": "ambulance",
-      "id": "amb:a12",
-      "label": "Ambulance A-12",
-      "atObject": "facility:ous",
-      "equipment": ["defibrillator", "ventilator"]
-    },
-    {
-      "pack": "ambulance",
-      "type": "ambulance",
-      "id": "amb:a21",
-      "label": "Ambulance A-21",
-      "position": [10.7707, 59.9146],
-      "equipment": ["defibrillator"],
-      "patientsOnBoard": 1,
-      "targetId": "facility:ous",
-      "status": "transporting"
-    },
-    {
-      "pack": "ambulance",
-      "type": "ambulance",
-      "id": "amb:a34",
-      "label": "Ambulance A-34",
-      "position": [10.7828, 59.9237],
-      "equipment": ["defibrillator"],
-      "patientsOnBoard": 1,
-      "targetId": "facility:lovisenberg",
-      "status": "transporting"
-    },
-    {
-      "pack": "ambulance",
-      "type": "incident",
-      "id": "incident:storo-cleared",
-      "label": "Storo collision",
-      "position": [10.7874, 59.9460],
-      "triage": "yellow",
-      "victims": { "state": "confirmed", "count": 0 },
-      "status": "resolved"
-    },
-    {
-      "pack": "ambulance",
-      "type": "incident",
-      "id": "incident:torshov-partial",
-      "label": "Torshov bicycle crash",
-      "position": [10.7750, 59.9328],
-      "triage": "yellow",
-      "victims": { "state": "unknown" }
-    },
-    {
-      "pack": "ambulance",
-      "type": "incident",
-      "id": "incident:gronland-unattended",
-      "label": "Grønland multi-car crash",
-      "position": [10.7628, 59.9124],
-      "triage": "red",
-      "victims": { "state": "confirmed", "count": 3 }
-    },
-    {
-      "pack": "weather",
-      "type": "weather_condition",
-      "id": "weather:oslo-damp-background",
-      "label": "Damp Oslo background",
-      "truthResolution": 8,
-      "showAffectedCells": false,
-      "priority": 0,
-      "summary": "Mild damp overcast background conditions across central Oslo",
-      "atmosphere": {
-        "airTemperatureC": 6,
-        "humidity": 0.78,
-        "windSpeedMps": 4,
-        "windDirectionDeg": 225,
-        "visibilityM": 11000,
-        "cloudCover": 0.76,
-        "precipitation": { "type": "none", "intensityMmPerHour": 0 }
-      },
-      "surface": {
-        "groundTemperatureC": 5.8,
-        "wetness": 0.18,
-        "standingWater": 0.02,
-        "snow": 0,
-        "ice": 0,
-        "frost": 0
-      },
-      "keyframes": [
-        {
-          "atSeconds": 0,
-          "center": [10.7522, 59.9250],
-          "semiMajorAxisM": 9000,
-          "semiMinorAxisM": 6500,
-          "rotationDeg": 15,
-          "falloffCurve": [{ "x": 0, "y": 1 }, { "x": 0.85, "y": 1 }, { "x": 1, "y": 0.35 }]
-        }
+  "view": {
+    "map": {
+      "center": [
+        10.7522,
+        59.9139
+      ],
+      "zoom": 12,
+      "layers": [
+        "objects",
+        "routes",
+        "weather",
+        "traffic",
+        "highlights"
       ]
     },
-    {
-      "pack": "weather",
-      "type": "weather_condition",
-      "id": "weather:oslo-moving-rain-band",
-      "label": "Moving rain band",
-      "truthResolution": 8,
-      "priority": 10,
-      "summary": "A narrow rain band moves east across Oslo and briefly lowers road friction",
-      "extensions": {
-        "research.operatorWeatherLoad": 0.35
-      },
-      "atmosphere": {
-        "airTemperatureC": 5.5,
-        "humidity": 0.9,
-        "windSpeedMps": 7,
-        "windDirectionDeg": 250,
-        "visibilityM": 6500,
-        "cloudCover": 0.9,
-        "precipitation": { "type": "rain", "intensityMmPerHour": 1.8 }
-      },
-      "surface": {
-        "groundTemperatureC": 5,
-        "wetness": 0.5,
-        "standingWater": 0.08,
-        "snow": 0,
-        "ice": 0,
-        "frost": 0
-      },
-      "keyframes": [
+    "rail": {
+      "width": 360,
+      "sections": [
         {
-          "atSeconds": 0,
-          "center": [10.6900, 59.9250],
-          "semiMajorAxisM": 5200,
-          "semiMinorAxisM": 1200,
-          "rotationDeg": 68,
-          "falloffCurve": [{ "x": 0, "y": 1 }, { "x": 0.65, "y": 0.85 }, { "x": 1, "y": 0 }]
+          "categoryId": "hospitals",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": [
+            "trauma-beds"
+          ]
         },
         {
-          "atSeconds": 420,
-          "center": [10.8350, 59.9270],
-          "semiMajorAxisM": 6800,
-          "semiMinorAxisM": 1500,
-          "rotationDeg": 78,
-          "atmosphere": {
-            "precipitation": { "type": "rain", "intensityMmPerHour": 2.3 },
-            "visibilityM": 5200
-          },
-          "surface": {
-            "wetness": 0.62,
-            "standingWater": 0.12
-          },
-          "extensions": {
-            "research.operatorWeatherLoad": 0.65
-          },
-          "falloffCurve": [{ "x": 0, "y": 1 }, { "x": 0.65, "y": 0.85 }, { "x": 1, "y": 0 }]
-        }
-      ]
-    },
-    {
-      "pack": "traffic",
-      "type": "traffic_condition",
-      "id": "traffic:ring2-slowdown",
-      "label": "Ring 2 slowdown",
-      "geometryMode": "road_segment",
-      "from": [10.7019, 59.9294],
-      "to": [10.7854, 59.9253],
-      "condition": "slowdown",
-      "severity": "high",
-      "speedFactor": 0.45,
-      "reason": "Queue spillback after minor collision"
-    }
-  ],
-  "initialContexts": [],
-  "runtimeConfigs": {
-    "ambulance": {},
-    "traffic": {},
-    "weather": {
-      "fields": {
-        "extensions": {
-          "research.operatorWeatherLoad": {
-            "type": "number",
-            "unit": "0..1",
-            "default": 0,
-            "min": 0,
-            "max": 1
-          }
-        }
-      }
-    }
-  },
-  "surface": {
-    "schemaVersion": 1,
-    "regions": [
-      {
-        "id": "main-map",
-        "primitive": "map",
-        "visible": true,
-        "config": {
-          "center": [10.7522, 59.9139],
-          "zoom": 12,
-          "layers": ["objects", "routes", "weather", "traffic", "highlights"]
-        }
-      },
-      {
-        "id": "left-rail",
-        "primitive": "objectRail",
-        "visible": true,
-        "config": {
-          "width": 360,
-          "sections": [
-            {
-              "categoryId": "hospitals",
-              "visible": true,
-              "collapsed": false,
-              "visibleFields": ["trauma-beds"]
-            },
-            {
-              "categoryId": "ambulances",
-              "visible": true,
-              "collapsed": false,
-              "visibleFields": []
-            },
-            {
-              "categoryId": "incidents",
-              "visible": true,
-              "collapsed": false,
-              "visibleFields": ["victims"]
-            },
-            {
-              "categoryId": "weather",
-              "visible": true,
-              "collapsed": false,
-              "visibleFields": ["air-temperature", "precipitation", "surface"]
-            },
-            {
-              "categoryId": "traffic",
-              "visible": true,
-              "collapsed": false,
-              "visibleFields": ["severity", "reason"]
-            }
+          "categoryId": "ambulances",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": []
+        },
+        {
+          "categoryId": "incidents",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": [
+            "victims"
+          ]
+        },
+        {
+          "categoryId": "weather",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": [
+            "air-temperature",
+            "precipitation",
+            "surface"
+          ]
+        },
+        {
+          "categoryId": "traffic",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": [
+            "severity",
+            "reason"
           ]
         }
-      },
-      {
-        "id": "system-footer",
-        "primitive": "systemFooter",
-        "visible": true,
-        "config": {}
-      },
-      {
-        "id": "guidance-overlay",
-        "primitive": "guidanceOverlay",
-        "visible": true,
-        "config": {}
-      }
-    ]
+      ]
+    }
   },
   "timeline": {
     "cues": [
       {
         "id": "scenario-started",
-        "at": { "kind": "after_scenario_start", "seconds": 0 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 0
+        },
         "actions": [
           {
             "type": "show_guidance",
@@ -301,19 +407,30 @@
               "id": "welcome",
               "title": "Dispatch overview",
               "message": "Oslo is already active: one incident is resolved, one is partly handled, one red incident is unattended, and Ring 2 is slow. To dispatch, select an available ambulance in the rail or on the map, then click an incident or hospital target. A left-pointing arrow means outbound to an incident; a right-pointing arrow means inbound to a hospital. Dispatch enough ambulance capacity to cover the victims. Use the eye icons in the rail to show details such as victims, beds, traffic severity, and route information.",
-              "objectIds": ["amb:a12", "incident:gronland-unattended", "traffic:ring2-slowdown"],
+              "objectIds": [
+                "amb:a12",
+                "incident:gronland-unattended",
+                "traffic:ring2-slowdown"
+              ],
               "dismissible": true
             }
           },
           {
             "type": "highlight_objects",
-            "objectIds": ["amb:a12", "incident:gronland-unattended", "traffic:ring2-slowdown"]
+            "objectIds": [
+              "amb:a12",
+              "incident:gronland-unattended",
+              "traffic:ring2-slowdown"
+            ]
           }
         ]
       },
       {
         "id": "partial-incident-clarified",
-        "at": { "kind": "after_scenario_start", "seconds": 45 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 45
+        },
         "actions": [
           {
             "type": "update_object",
@@ -321,7 +438,10 @@
             "operation": {
               "pack": "ambulance",
               "type": "set_incident_victims",
-              "victims": { "state": "estimated", "count": 1 }
+              "victims": {
+                "state": "estimated",
+                "count": 1
+              }
             }
           },
           {
@@ -331,19 +451,26 @@
               "title": "New incident information",
               "tone": "update",
               "message": "Radio update: the Torshov bicycle crash has one remaining patient after the first ambulance departed with another patient.",
-              "objectIds": ["incident:torshov-partial"],
+              "objectIds": [
+                "incident:torshov-partial"
+              ],
               "dismissible": true
             }
           },
           {
             "type": "highlight_objects",
-            "objectIds": ["incident:torshov-partial"]
+            "objectIds": [
+              "incident:torshov-partial"
+            ]
           }
         ]
       },
       {
         "id": "marienlyst-traffic-created",
-        "at": { "kind": "after_scenario_start", "seconds": 90 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 90
+        },
         "actions": [
           {
             "type": "create_object",
@@ -354,11 +481,26 @@
               "label": "Marienlyst area slowdown",
               "geometryMode": "area",
               "polygon": [
-                [10.7235, 59.9338],
-                [10.7394, 59.9340],
-                [10.7420, 59.9252],
-                [10.7250, 59.9244],
-                [10.7235, 59.9338]
+                [
+                  10.7235,
+                  59.9338
+                ],
+                [
+                  10.7394,
+                  59.934
+                ],
+                [
+                  10.742,
+                  59.9252
+                ],
+                [
+                  10.725,
+                  59.9244
+                ],
+                [
+                  10.7235,
+                  59.9338
+                ]
               ],
               "condition": "congestion",
               "severity": "moderate",
@@ -373,19 +515,26 @@
               "title": "Traffic runtime update",
               "tone": "update",
               "message": "A traffic area has been added by the traffic pack. Watch for route impacts when ambulances cross affected areas.",
-              "objectIds": ["traffic:marienlyst-event"],
+              "objectIds": [
+                "traffic:marienlyst-event"
+              ],
               "dismissible": true
             }
           },
           {
             "type": "highlight_objects",
-            "objectIds": ["traffic:marienlyst-event"]
+            "objectIds": [
+              "traffic:marienlyst-event"
+            ]
           }
         ]
       },
       {
         "id": "majorstuen-created",
-        "at": { "kind": "after_scenario_start", "seconds": 120 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 120
+        },
         "actions": [
           {
             "type": "create_object",
@@ -394,9 +543,14 @@
               "type": "incident",
               "id": "incident:majorstuen-tram",
               "label": "Majorstuen tram stop fall",
-              "position": [10.7146, 59.9292],
+              "position": [
+                10.7146,
+                59.9292
+              ],
               "triage": "yellow",
-              "victims": { "state": "unknown" }
+              "victims": {
+                "state": "unknown"
+              }
             }
           },
           {
@@ -405,19 +559,26 @@
               "id": "majorstuen-created",
               "title": "New incident",
               "message": "A fall at Majorstuen tram stop has been reported. Victim count is unknown; dispatch decisions may need to account for uncertainty.",
-              "objectIds": ["incident:majorstuen-tram"],
+              "objectIds": [
+                "incident:majorstuen-tram"
+              ],
               "dismissible": true
             }
           },
           {
             "type": "highlight_objects",
-            "objectIds": ["incident:majorstuen-tram"]
+            "objectIds": [
+              "incident:majorstuen-tram"
+            ]
           }
         ]
       },
       {
         "id": "majorstuen-clarified",
-        "at": { "kind": "after_scenario_start", "seconds": 165 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 165
+        },
         "actions": [
           {
             "type": "update_object",
@@ -425,7 +586,10 @@
             "operation": {
               "pack": "ambulance",
               "type": "set_incident_victims",
-              "victims": { "state": "estimated", "count": 2 }
+              "victims": {
+                "state": "estimated",
+                "count": 2
+              }
             }
           },
           {
@@ -435,7 +599,9 @@
               "title": "Victim count updated",
               "tone": "update",
               "message": "Bystander report now estimates two patients at Majorstuen. Watch how the incident status changes as resources are assigned.",
-              "objectIds": ["incident:majorstuen-tram"],
+              "objectIds": [
+                "incident:majorstuen-tram"
+              ],
               "dismissible": true
             }
           }
@@ -443,7 +609,10 @@
       },
       {
         "id": "ring2-traffic-cleared",
-        "at": { "kind": "after_scenario_start", "seconds": 240 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 240
+        },
         "actions": [
           {
             "type": "delete_object",
@@ -456,7 +625,9 @@
               "title": "Traffic cleared",
               "tone": "update",
               "message": "The original Ring 2 slowdown has cleared. Traffic conditions can disappear while incidents continue.",
-              "objectIds": ["traffic:marienlyst-event"],
+              "objectIds": [
+                "traffic:marienlyst-event"
+              ],
               "dismissible": true
             }
           }
@@ -464,7 +635,10 @@
       },
       {
         "id": "ring-three-created",
-        "at": { "kind": "after_scenario_start", "seconds": 300 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 300
+        },
         "actions": [
           {
             "type": "create_object",
@@ -473,9 +647,15 @@
               "type": "incident",
               "id": "incident:ring3-pileup",
               "label": "Ring 3 pile-up",
-              "position": [10.8061, 59.9362],
+              "position": [
+                10.8061,
+                59.9362
+              ],
               "triage": "red",
-              "victims": { "state": "confirmed", "count": 4 }
+              "victims": {
+                "state": "confirmed",
+                "count": 4
+              }
             }
           },
           {
@@ -484,19 +664,26 @@
               "id": "ring-three-created",
               "title": "Escalation",
               "message": "A Ring 3 pile-up has four reported victims. This is deliberately too much for one ambulance and should force prioritization.",
-              "objectIds": ["incident:ring3-pileup"],
+              "objectIds": [
+                "incident:ring3-pileup"
+              ],
               "dismissible": true
             }
           },
           {
             "type": "highlight_objects",
-            "objectIds": ["incident:ring3-pileup"]
+            "objectIds": [
+              "incident:ring3-pileup"
+            ]
           }
         ]
       },
       {
         "id": "gronland-revised",
-        "at": { "kind": "after_scenario_start", "seconds": 360 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 360
+        },
         "actions": [
           {
             "type": "update_object",
@@ -504,7 +691,10 @@
             "operation": {
               "pack": "ambulance",
               "type": "set_incident_victims",
-              "victims": { "state": "estimated", "count": 2 }
+              "victims": {
+                "state": "estimated",
+                "count": 2
+              }
             }
           },
           {
@@ -518,7 +708,9 @@
               "title": "Assessment revised",
               "tone": "update",
               "message": "Police update: the Grønland victim estimate is revised from three to two, and the temporary Marienlyst traffic condition has cleared.",
-              "objectIds": ["incident:gronland-unattended"],
+              "objectIds": [
+                "incident:gronland-unattended"
+              ],
               "dismissible": true
             }
           }

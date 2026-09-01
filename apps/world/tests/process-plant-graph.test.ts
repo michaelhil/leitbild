@@ -35,6 +35,7 @@ import {
   processPlantPwrReferenceIcRefForLoopCount,
   processPlantPwrReferenceLoopInstancePresetRef,
   processPlantPwrReferenceLoopTemplateFragmentRef,
+  processPlantPackConfigSchema,
   listProcessPlantIcRefs,
   listProcessPlantGraphFragmentInstancePresetRefs,
   listProcessPlantGraphFragmentRefs,
@@ -51,6 +52,21 @@ import {
 import { scenarios } from '../src/scenarios/index.ts'
 
 const workspaceRoot = join(import.meta.dir, '..')
+
+const processSystemsFor = (scenario: ScenarioDefinition) =>
+  processPlantPackConfigSchema.parse(scenario.packConfigs['process-plant'] ?? {}).systems
+
+const processPlantScenario = (input: Record<string, unknown> & { processSystems: ReadonlyArray<unknown> }): ScenarioDefinition => {
+  const { processSystems, packConfigs, ...scenario } = input
+  const processPlantConfig = processPlantPackConfigSchema.parse({ systems: processSystems })
+  return scenarioDefinitionSchema.parse({
+    ...scenario,
+    packConfigs: {
+      ...(packConfigs && typeof packConfigs === 'object' && !Array.isArray(packConfigs) ? packConfigs : {}),
+      'process-plant': processPlantConfig,
+    },
+  }) as ScenarioDefinition
+}
 
 const genericLiquidLinkVariables = (labelPrefix: string) => [
   processLinkVariableDescriptorSchema.parse({
@@ -430,7 +446,7 @@ describe('process plant graph foundation', () => {
   })
 
   test('compiles a process plant system from scenario-owned graph data', () => {
-    const scenario = scenarioDefinitionSchema.parse({
+    const scenario = processPlantScenario({
       id: 'reactor-tube-leak-training',
       schemaVersion: 1,
       title: 'Reactor Tube Leak Training',
@@ -443,8 +459,6 @@ describe('process plant graph foundation', () => {
       processSystems: [
         {
           id: 'plant',
-          pack: 'process-plant',
-          componentLibrary: 'process-plant',
           graph: pressurizedWaterReactorPlantSpec,
         },
       ],
@@ -454,7 +468,7 @@ describe('process plant graph foundation', () => {
       },
     }) as ScenarioDefinition
 
-    const systems = compileProcessPlantSystems(scenario.processSystems)
+    const systems = compileProcessPlantSystems(processSystemsFor(scenario))
 
     expect(systems).toHaveLength(1)
     expect(systems[0]?.id).toBe('plant')
@@ -462,7 +476,7 @@ describe('process plant graph foundation', () => {
   })
 
   test('compiles a process plant system from a pack-owned graphRef', () => {
-    const scenario = scenarioDefinitionSchema.parse({
+    const scenario = processPlantScenario({
       id: 'multi-unit-site',
       schemaVersion: 1,
       title: 'Multi Unit Site',
@@ -475,8 +489,6 @@ describe('process plant graph foundation', () => {
       processSystems: [
         {
           id: 'unit-1',
-          pack: 'process-plant',
-          componentLibrary: 'process-plant',
           graphRef: processPlantPressurizedWaterReactorGraphRef,
         },
       ],
@@ -486,7 +498,7 @@ describe('process plant graph foundation', () => {
       },
     }) as ScenarioDefinition
 
-    const systems = compileProcessPlantSystems(scenario.processSystems)
+    const systems = compileProcessPlantSystems(processSystemsFor(scenario))
 
     expect(systems).toHaveLength(1)
     expect(systems[0]?.id).toBe('unit-1')
@@ -507,19 +519,17 @@ describe('process plant graph foundation', () => {
       'process-plant.pressurized-water-reactor-6-loop.ic.v1',
     ])
 
-    const systems = compileProcessPlantSystems(scenario.processSystems)
+    const systems = compileProcessPlantSystems(processSystemsFor(scenario))
     const haldenSixLoop = systems.find(system => system.id === 'halden-6-loop')
-    const demoRuntimeConfig = (input: ScenarioDefinition): { readonly systems?: Record<string, { readonly icRef?: string }> } => {
-      const config = input.runtimeConfigs['process-plant']
-      if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error(`missing process-plant runtime config for ${input.id}`)
-      return config as { readonly systems?: Record<string, { readonly icRef?: string }> }
-    }
-    const builtInProcessPlantScenarios = scenarios.filter(candidate => candidate.processSystems.length > 0)
-    const allBuiltInProcessSystems = builtInProcessPlantScenarios.flatMap(candidate => candidate.processSystems)
-    const allBuiltInProcessPlantRuntimeConfigs = builtInProcessPlantScenarios.flatMap(candidate =>
+    const demoRuntimeConfig = (input: ScenarioDefinition): { readonly systems: Record<string, { readonly icRef?: string }> } => ({
+      systems: Object.fromEntries(processSystemsFor(input).map(system => [system.id, system.runtime ?? {}])) as Record<string, { readonly icRef?: string }>,
+    })
+    const builtInProcessPlantScenarios = scenarios.filter(candidate => processSystemsFor(candidate).length > 0)
+    const allBuiltInProcessSystems = builtInProcessPlantScenarios.flatMap(candidate => processSystemsFor(candidate))
+    const allBuiltInProcessPlantRuntimeSettings = builtInProcessPlantScenarios.flatMap(candidate =>
       Object.values(demoRuntimeConfig(candidate).systems ?? {}),
     )
-    const powerFractions = scenario.processSystems.map(system => {
+    const powerFractions = processSystemsFor(scenario).map(system => {
       const parameters = system.parameters?.core
       if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) throw new Error(`missing core variation for ${system.id}`)
       const initialPowerFraction = (parameters as Record<string, unknown>).initialPowerFraction
@@ -539,22 +549,22 @@ describe('process plant graph foundation', () => {
 
     expect(systems).toHaveLength(7)
     expect(allBuiltInProcessSystems.some(system => system.graphRef !== undefined && fixedPwrGraphRefs.has(system.graphRef))).toBe(false)
-    expect(allBuiltInProcessPlantRuntimeConfigs.some(config => config.icRef !== undefined && fixedPwrIcRefs.has(config.icRef))).toBe(false)
-    expect(scenario.processSystems.every(system => system.graphRef === undefined)).toBe(true)
-    expect(scenario.processSystems.every(system => system.assemblyRef === processPlantPwrReferenceAssemblyRef)).toBe(true)
-    expect(scenario.processSystems.filter(system =>
+    expect(allBuiltInProcessPlantRuntimeSettings.some(config => config.icRef !== undefined && fixedPwrIcRefs.has(config.icRef))).toBe(false)
+    expect(processSystemsFor(scenario).every(system => system.graphRef === undefined)).toBe(true)
+    expect(processSystemsFor(scenario).every(system => system.assemblyRef === processPlantPwrReferenceAssemblyRef)).toBe(true)
+    expect(processSystemsFor(scenario).filter(system =>
       typeof system.assemblyConfig === 'object'
       && system.assemblyConfig !== null
       && !Array.isArray(system.assemblyConfig)
       && (system.assemblyConfig as Record<string, unknown>).loopCount === 4,
     )).toHaveLength(6)
-    expect(scenario.processSystems.find(system => system.id === 'halden-6-loop')?.assemblyConfig).toEqual({ loopCount: 6 })
+    expect(processSystemsFor(scenario).find(system => system.id === 'halden-6-loop')?.assemblyConfig).toEqual({ loopCount: 6 })
     expect(String(haldenSixLoop?.graph.specId)).toBe('process-plant.pressurized-water-reactor-6-loop.assembled.v2')
     expect(haldenSixLoop?.graph.components.filter(componentItem => componentItem.kind === 'steamGenerator')).toHaveLength(6)
     expect(Object.values(demoRuntimeConfig(scenario).systems ?? {}).every(config => config.icRef === processPlantPwrReferenceGraphIcRef)).toBe(true)
-    expect(osloScenario.processSystems.every(system => system.graphRef === undefined)).toBe(true)
-    expect(osloScenario.processSystems.every(system => system.assemblyRef === processPlantPwrReferenceAssemblyRef)).toBe(true)
-    expect(osloScenario.processSystems.every(system =>
+    expect(processSystemsFor(osloScenario).every(system => system.graphRef === undefined)).toBe(true)
+    expect(processSystemsFor(osloScenario).every(system => system.assemblyRef === processPlantPwrReferenceAssemblyRef)).toBe(true)
+    expect(processSystemsFor(osloScenario).every(system =>
       typeof system.assemblyConfig === 'object'
       && system.assemblyConfig !== null
       && !Array.isArray(system.assemblyConfig)
@@ -856,8 +866,6 @@ describe('process plant graph foundation', () => {
 
     expect(() => compileProcessPlantSystem({
       id: 'plant',
-      pack: 'process-plant',
-      componentLibrary: 'process-plant',
       graph: invalid,
     })).toThrow('primary loop A has multiple loop pumps')
   })
@@ -869,8 +877,6 @@ describe('process plant graph foundation', () => {
 
     expect(() => compileProcessPlantSystem({
       id: 'plant',
-      pack: 'process-plant',
-      componentLibrary: 'process-plant',
       graph: invalid,
     })).toThrow('primary loop A must have exactly one core hotLegA primaryCoolant outlet')
   })
@@ -878,8 +884,6 @@ describe('process plant graph foundation', () => {
   test('applies per-system component parameter overlays without changing topology', () => {
     const system = compileProcessPlantSystem({
       id: 'unit-parameterized',
-      pack: 'process-plant',
-      componentLibrary: 'process-plant',
       graphRef: processPlantPressurizedWaterReactorGraphRef,
       parameters: {
         core: {
@@ -896,8 +900,6 @@ describe('process plant graph foundation', () => {
   test('rejects parameter overlays for unknown components', () => {
     expect(() => compileProcessPlantSystem({
       id: 'bad-parameter-overlay',
-      pack: 'process-plant',
-      componentLibrary: 'process-plant',
       graphRef: processPlantPressurizedWaterReactorGraphRef,
       parameters: {
         missingComponent: {},
@@ -908,8 +910,6 @@ describe('process plant graph foundation', () => {
   test('rejects invalid per-system initialState paths and values before runtime starts', () => {
     expect(() => compileProcessPlantSystem({
       id: 'bad-initial-state-path',
-      pack: 'process-plant',
-      componentLibrary: 'process-plant',
       graphRef: processPlantPressurizedWaterReactorGraphRef,
       initialState: {
         'missing.variable': 1,
@@ -918,8 +918,6 @@ describe('process plant graph foundation', () => {
 
     expect(() => compileProcessPlantSystem({
       id: 'bad-initial-state-value',
-      pack: 'process-plant',
-      componentLibrary: 'process-plant',
       graphRef: processPlantPressurizedWaterReactorGraphRef,
       initialState: {
         'core.rodInsertionFraction': 2,
@@ -931,21 +929,17 @@ describe('process plant graph foundation', () => {
     expect(() => compileProcessPlantSystems([
       {
         id: 'unit',
-        pack: 'process-plant',
-        componentLibrary: 'process-plant',
         graphRef: processPlantPressurizedWaterReactorGraphRef,
       },
       {
         id: 'unit',
-        pack: 'process-plant',
-        componentLibrary: 'process-plant',
         graphRef: processPlantPressurizedWaterReactorGraphRef,
       },
     ])).toThrow('duplicate process plant system id: unit')
   })
 
   test('rejects process systems that mix inline graph and graphRef', () => {
-    expect(() => scenarioDefinitionSchema.parse({
+    expect(() => processPlantScenario({
       id: 'ambiguous-graph-source',
       schemaVersion: 1,
       title: 'Ambiguous Graph Source',
@@ -954,8 +948,6 @@ describe('process plant graph foundation', () => {
       initialObjects: [],
       processSystems: [{
         id: 'plant',
-        pack: 'process-plant',
-        componentLibrary: 'process-plant',
         graph: pressurizedWaterReactorPlantSpec,
         graphRef: processPlantPressurizedWaterReactorGraphRef,
       }],
@@ -967,7 +959,7 @@ describe('process plant graph foundation', () => {
   })
 
   test('rejects process systems without a graph source', () => {
-    expect(() => scenarioDefinitionSchema.parse({
+    expect(() => processPlantScenario({
       id: 'missing-graph-source',
       schemaVersion: 1,
       title: 'Missing Graph Source',
@@ -976,8 +968,6 @@ describe('process plant graph foundation', () => {
       initialObjects: [],
       processSystems: [{
         id: 'plant',
-        pack: 'process-plant',
-        componentLibrary: 'process-plant',
       }],
       surface: {
         schemaVersion: 1,
@@ -987,7 +977,7 @@ describe('process plant graph foundation', () => {
   })
 
   test('rejects process system assemblyConfig without assemblyRef', () => {
-    expect(() => scenarioDefinitionSchema.parse({
+    expect(() => processPlantScenario({
       id: 'assembly-config-without-ref',
       schemaVersion: 1,
       title: 'Assembly Config Without Ref',
@@ -996,8 +986,6 @@ describe('process plant graph foundation', () => {
       initialObjects: [],
       processSystems: [{
         id: 'plant',
-        pack: 'process-plant',
-        componentLibrary: 'process-plant',
         graphRef: processPlantPressurizedWaterReactorGraphRef,
         assemblyConfig: { loopCount: 5 },
       }],
@@ -1136,7 +1124,7 @@ describe('process plant graph foundation', () => {
       publishedVariables: ['sourceTank.levelPercent'],
     })
 
-    const scenario = scenarioDefinitionSchema.parse({
+    const scenario = processPlantScenario({
       id: 'modular-dairy-process',
       schemaVersion: 1,
       title: 'Modular Dairy Process',
@@ -1148,8 +1136,6 @@ describe('process plant graph foundation', () => {
       initialObjects: [],
       processSystems: [{
         id: 'plant',
-        pack: 'process-plant',
-        componentLibrary: 'process-plant',
         assemblyRef: processPlantModularGraphAssemblyRef,
         assemblyConfig: {
           id: 'process-plant.generic-dairy-two-line.v1',
@@ -1259,7 +1245,7 @@ describe('process plant graph foundation', () => {
       },
     }) as ScenarioDefinition
 
-    const system = compileProcessPlantSystem(scenario.processSystems[0]!)
+    const system = compileProcessPlantSystem(processSystemsFor(scenario)[0]!)
     expect(String(system.graph.specId)).toBe('process-plant.generic-dairy-two-line.v1')
     expect(system.graph.components.map(componentItem => String(componentItem.id))).toEqual(expect.arrayContaining([
       'sourceTank',
@@ -1343,7 +1329,7 @@ describe('process plant graph foundation', () => {
       ],
       connections: [],
     })
-    const scenario = scenarioDefinitionSchema.parse({
+    const scenario = processPlantScenario({
       id: 'modular-missing-fragment',
       schemaVersion: 1,
       title: 'Modular Missing Fragment',
@@ -1355,8 +1341,6 @@ describe('process plant graph foundation', () => {
       initialObjects: [],
       processSystems: [{
         id: 'plant',
-        pack: 'process-plant',
-        componentLibrary: 'process-plant',
         assemblyRef: processPlantModularGraphAssemblyRef,
         assemblyConfig: {
           id: 'process-plant.invalid-modular.v1',
@@ -1371,7 +1355,7 @@ describe('process plant graph foundation', () => {
       },
     }) as ScenarioDefinition
 
-    expect(() => compileProcessPlantSystem(scenario.processSystems[0]!)).toThrow('modular graph instance references unknown fragment: missing-fragment')
+    expect(() => compileProcessPlantSystem(processSystemsFor(scenario)[0]!)).toThrow('modular graph instance references unknown fragment: missing-fragment')
   })
 
   test('rejects modular graph assemblies that import unknown fragment refs', () => {
@@ -1390,7 +1374,7 @@ describe('process plant graph foundation', () => {
       ],
       connections: [],
     })
-    const scenario = scenarioDefinitionSchema.parse({
+    const scenario = processPlantScenario({
       id: 'modular-unknown-imported-fragment',
       schemaVersion: 1,
       title: 'Modular Unknown Imported Fragment',
@@ -1402,8 +1386,6 @@ describe('process plant graph foundation', () => {
       initialObjects: [],
       processSystems: [{
         id: 'plant',
-        pack: 'process-plant',
-        componentLibrary: 'process-plant',
         assemblyRef: processPlantModularGraphAssemblyRef,
         assemblyConfig: {
           id: 'process-plant.invalid-imported-fragment.v1',
@@ -1422,7 +1404,7 @@ describe('process plant graph foundation', () => {
       },
     }) as ScenarioDefinition
 
-    expect(() => compileProcessPlantSystem(scenario.processSystems[0]!)).toThrow('unknown process plant graph fragmentRef: process-plant.no-such-fragment.v1')
+    expect(() => compileProcessPlantSystem(processSystemsFor(scenario)[0]!)).toThrow('unknown process plant graph fragmentRef: process-plant.no-such-fragment.v1')
   })
 
   test('rejects modular graph assemblies that import unknown instance preset refs', () => {
@@ -1441,7 +1423,7 @@ describe('process plant graph foundation', () => {
       ],
       connections: [],
     })
-    const scenario = scenarioDefinitionSchema.parse({
+    const scenario = processPlantScenario({
       id: 'modular-unknown-instance-preset',
       schemaVersion: 1,
       title: 'Modular Unknown Instance Preset',
@@ -1453,8 +1435,6 @@ describe('process plant graph foundation', () => {
       initialObjects: [],
       processSystems: [{
         id: 'plant',
-        pack: 'process-plant',
-        componentLibrary: 'process-plant',
         assemblyRef: processPlantModularGraphAssemblyRef,
         assemblyConfig: {
           id: 'process-plant.invalid-instance-preset.v1',
@@ -1479,11 +1459,11 @@ describe('process plant graph foundation', () => {
       },
     }) as ScenarioDefinition
 
-    expect(() => compileProcessPlantSystem(scenario.processSystems[0]!)).toThrow('unknown process plant graph fragment instance presetRef: process-plant.no-such-instance-preset.v1')
+    expect(() => compileProcessPlantSystem(processSystemsFor(scenario)[0]!)).toThrow('unknown process plant graph fragment instance presetRef: process-plant.no-such-instance-preset.v1')
   })
 
   test('imports and customizes an existing process plant graph through generic modular assembly', () => {
-    const scenario = scenarioDefinitionSchema.parse({
+    const scenario = processPlantScenario({
       id: 'modular-pwr-reference-import',
       schemaVersion: 1,
       title: 'Modular PWR Reference Import',
@@ -1495,8 +1475,6 @@ describe('process plant graph foundation', () => {
       initialObjects: [],
       processSystems: [{
         id: 'plant',
-        pack: 'process-plant',
-        componentLibrary: 'process-plant',
         assemblyRef: processPlantModularGraphAssemblyRef,
         assemblyConfig: {
           id: 'process-plant.reference-pwr-overlaid.v1',
@@ -1522,7 +1500,7 @@ describe('process plant graph foundation', () => {
       },
     }) as ScenarioDefinition
 
-    const system = compileProcessPlantSystem(scenario.processSystems[0]!)
+    const system = compileProcessPlantSystem(processSystemsFor(scenario)[0]!)
     expect(String(system.graph.specId)).toBe('process-plant.reference-pwr-overlaid.v1')
     expect(system.sourceGraph.components).toHaveLength(pressurizedWaterReactorPlantSpec.components.length)
     expect(system.sourceGraph.connections).toHaveLength(pressurizedWaterReactorPlantSpec.connections.length)
@@ -1549,7 +1527,7 @@ describe('process plant graph foundation', () => {
       processPlantPwrReferenceLoopInstancePresetRef,
     ]))
 
-    const scenario = scenarioDefinitionSchema.parse({
+    const scenario = processPlantScenario({
       id: 'modular-pwr-imported-fragments',
       schemaVersion: 1,
       title: 'Modular PWR Imported Fragments',
@@ -1561,8 +1539,6 @@ describe('process plant graph foundation', () => {
       initialObjects: [],
       processSystems: [{
         id: 'plant',
-        pack: 'process-plant',
-        componentLibrary: 'process-plant',
         assemblyRef: processPlantModularGraphAssemblyRef,
         assemblyConfig: {
           id: 'process-plant.reference-pwr-two-loop.imported-fragments.v1',
@@ -1597,7 +1573,7 @@ describe('process plant graph foundation', () => {
       },
     }) as ScenarioDefinition
 
-    const system = compileProcessPlantSystem(scenario.processSystems[0]!)
+    const system = compileProcessPlantSystem(processSystemsFor(scenario)[0]!)
     expect(String(system.graph.specId)).toBe('process-plant.reference-pwr-two-loop.imported-fragments.v1')
     expect(system.graph.components.filter(componentItem => componentItem.kind === 'steamGenerator').map(componentItem => String(componentItem.id))).toEqual([
       'sgA',
@@ -1627,7 +1603,7 @@ describe('process plant graph foundation', () => {
 
   test('assembles reference PWR variants through process system assembly refs', () => {
     for (const loopCount of [2, 5, 9]) {
-      const scenario = scenarioDefinitionSchema.parse({
+      const scenario = processPlantScenario({
         id: `assembled-pwr-${loopCount}`,
         schemaVersion: 1,
         title: `Assembled PWR ${loopCount}`,
@@ -1639,8 +1615,6 @@ describe('process plant graph foundation', () => {
         initialObjects: [],
         processSystems: [{
           id: 'plant',
-          pack: 'process-plant',
-          componentLibrary: 'process-plant',
           assemblyRef: processPlantPwrReferenceAssemblyRef,
           assemblyConfig: { loopCount },
         }],
@@ -1650,7 +1624,7 @@ describe('process plant graph foundation', () => {
         },
       }) as ScenarioDefinition
 
-      const system = compileProcessPlantSystem(scenario.processSystems[0]!)
+      const system = compileProcessPlantSystem(processSystemsFor(scenario)[0]!)
       const loopIds = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.slice(0, loopCount).split('')
       const primaryLoopPumps = system.graph.components.filter(componentItem =>
         componentItem.kind === 'centrifugalPump'
@@ -1681,7 +1655,7 @@ describe('process plant graph foundation', () => {
   })
 
   test('uses the generic fragment assembly path for reference PWR variants with custom loop ids', () => {
-    const scenario = scenarioDefinitionSchema.parse({
+    const scenario = processPlantScenario({
       id: 'assembled-pwr-custom-loop-config',
       schemaVersion: 1,
       title: 'Assembled PWR Custom Loop Config',
@@ -1693,8 +1667,6 @@ describe('process plant graph foundation', () => {
       initialObjects: [],
       processSystems: [{
         id: 'plant',
-        pack: 'process-plant',
-        componentLibrary: 'process-plant',
         assemblyRef: processPlantPwrReferenceAssemblyRef,
         assemblyConfig: {
           loopCount: 3,
@@ -1707,7 +1679,7 @@ describe('process plant graph foundation', () => {
       },
     }) as ScenarioDefinition
 
-    const system = compileProcessPlantSystem(scenario.processSystems[0]!)
+    const system = compileProcessPlantSystem(processSystemsFor(scenario)[0]!)
     expect(system.graph.components.filter(componentItem => componentItem.kind === 'steamGenerator').map(componentItem => String(componentItem.id))).toEqual([
       'sgA',
       'sgD',
@@ -1740,7 +1712,7 @@ describe('process plant graph foundation', () => {
   })
 
   test('rejects inconsistent reference PWR assembly config explicitly', () => {
-    const scenarioFor = (assemblyConfig: Record<string, unknown>): ScenarioDefinition => scenarioDefinitionSchema.parse({
+    const scenarioFor = (assemblyConfig: Record<string, unknown>): ScenarioDefinition => processPlantScenario({
       id: 'assembled-pwr-invalid-config',
       schemaVersion: 1,
       title: 'Assembled PWR Invalid Config',
@@ -1752,8 +1724,6 @@ describe('process plant graph foundation', () => {
       initialObjects: [],
       processSystems: [{
         id: 'plant',
-        pack: 'process-plant',
-        componentLibrary: 'process-plant',
         assemblyRef: processPlantPwrReferenceAssemblyRef,
         assemblyConfig,
       }],
@@ -1763,19 +1733,19 @@ describe('process plant graph foundation', () => {
       },
     }) as ScenarioDefinition
 
-    expect(() => compileProcessPlantSystem(scenarioFor({
+    expect(() => compileProcessPlantSystem(processSystemsFor(scenarioFor({
       loopCount: 3,
       loopIds: ['A', 'B'],
-    }).processSystems[0]!)).toThrow('loopIds length must match loopCount')
+    }))[0]!)).toThrow('loopIds length must match loopCount')
 
-    expect(() => compileProcessPlantSystem(scenarioFor({
+    expect(() => compileProcessPlantSystem(processSystemsFor(scenarioFor({
       loopCount: 3,
       loopIds: ['A', 'B', 'A'],
-    }).processSystems[0]!)).toThrow('loopIds must be unique')
+    }))[0]!)).toThrow('loopIds must be unique')
   })
 
   test('generates loop-aware reference I&C for assembled PWR variants', () => {
-    const scenario = scenarioDefinitionSchema.parse({
+    const scenario = processPlantScenario({
       id: 'assembled-pwr-ic-9',
       schemaVersion: 1,
       title: 'Assembled PWR I&C 9',
@@ -1787,8 +1757,6 @@ describe('process plant graph foundation', () => {
       initialObjects: [],
       processSystems: [{
         id: 'plant',
-        pack: 'process-plant',
-        componentLibrary: 'process-plant',
         assemblyRef: processPlantPwrReferenceAssemblyRef,
         assemblyConfig: { loopCount: 9 },
       }],
@@ -1797,7 +1765,7 @@ describe('process plant graph foundation', () => {
         regions: [],
       },
     }) as ScenarioDefinition
-    const system = compileProcessPlantSystem(scenario.processSystems[0]!)
+    const system = compileProcessPlantSystem(processSystemsFor(scenario)[0]!)
     const ic = resolveProcessPlantIcConfig(processPlantPwrReferenceIcRefForLoopCount(9))
     const lowRcpFlowRule = ic.rules.find(ruleItem => ruleItem.id === 'reactor-low-rcp-flow-trip')
     if (!lowRcpFlowRule) throw new Error('expected low RCP flow rule')
@@ -1809,7 +1777,7 @@ describe('process plant graph foundation', () => {
   })
 
   test('derives reference PWR I&C loop ids from the compiled graph', () => {
-    const scenario = scenarioDefinitionSchema.parse({
+    const scenario = processPlantScenario({
       id: 'assembled-pwr-graph-derived-ic',
       schemaVersion: 1,
       title: 'Assembled PWR Graph Derived I&C',
@@ -1821,8 +1789,6 @@ describe('process plant graph foundation', () => {
       initialObjects: [],
       processSystems: [{
         id: 'plant',
-        pack: 'process-plant',
-        componentLibrary: 'process-plant',
         assemblyRef: processPlantPwrReferenceAssemblyRef,
         assemblyConfig: {
           loopCount: 3,
@@ -1834,7 +1800,7 @@ describe('process plant graph foundation', () => {
         regions: [],
       },
     }) as ScenarioDefinition
-    const system = compileProcessPlantSystem(scenario.processSystems[0]!)
+    const system = compileProcessPlantSystem(processSystemsFor(scenario)[0]!)
     const ic = resolveProcessPlantIcConfigForGraph(processPlantPwrReferenceGraphIcRef, system.graph)
     const lowRcpFlowRule = ic.rules.find(ruleItem => ruleItem.id === 'reactor-low-rcp-flow-trip')
     if (!lowRcpFlowRule) throw new Error('expected low RCP flow rule')
@@ -1848,7 +1814,7 @@ describe('process plant graph foundation', () => {
   })
 
   test('rejects unknown process plant assembly refs explicitly', () => {
-    const scenario = scenarioDefinitionSchema.parse({
+    const scenario = processPlantScenario({
       id: 'unknown-assembly-ref',
       schemaVersion: 1,
       title: 'Unknown Assembly Ref',
@@ -1860,8 +1826,6 @@ describe('process plant graph foundation', () => {
       initialObjects: [],
       processSystems: [{
         id: 'plant',
-        pack: 'process-plant',
-        componentLibrary: 'process-plant',
         assemblyRef: 'process-plant.unknown-assembly.v1',
         assemblyConfig: { loopCount: 5 },
       }],
@@ -1871,11 +1835,11 @@ describe('process plant graph foundation', () => {
       },
     }) as ScenarioDefinition
 
-    expect(() => compileProcessPlantSystem(scenario.processSystems[0]!)).toThrow('unknown process plant assemblyRef: process-plant.unknown-assembly.v1')
+    expect(() => compileProcessPlantSystem(processSystemsFor(scenario)[0]!)).toThrow('unknown process plant assemblyRef: process-plant.unknown-assembly.v1')
   })
 
   test('rejects unknown process plant graph refs explicitly', () => {
-    const scenario = scenarioDefinitionSchema.parse({
+    const scenario = processPlantScenario({
       id: 'unknown-graph-ref',
       schemaVersion: 1,
       title: 'Unknown Graph Ref',
@@ -1888,8 +1852,6 @@ describe('process plant graph foundation', () => {
       processSystems: [
         {
           id: 'plant',
-          pack: 'process-plant',
-          componentLibrary: 'process-plant',
           graphRef: 'process-plant.unknown.v1',
         },
       ],
@@ -1899,35 +1861,7 @@ describe('process plant graph foundation', () => {
       },
     }) as ScenarioDefinition
 
-    expect(() => compileProcessPlantSystem(scenario.processSystems[0]!)).toThrow('unknown process plant graphRef: process-plant.unknown.v1')
-  })
-
-  test('rejects old process pack ids instead of keeping compatibility aliases', () => {
-    const scenario = scenarioDefinitionSchema.parse({
-      id: 'old-pack-id',
-      schemaVersion: 1,
-      title: 'Old Pack Id',
-      packs: ['process-plant'],
-      world: {
-        startsAt: '2026-01-01T09:00:00.000Z',
-        environment: {},
-      },
-      initialObjects: [],
-      processSystems: [
-        {
-          id: 'plant',
-          pack: 'old-process-pack',
-          componentLibrary: 'process-plant',
-          graph: pressurizedWaterReactorPlantSpec,
-        },
-      ],
-      surface: {
-        schemaVersion: 1,
-        regions: [],
-      },
-    }) as ScenarioDefinition
-
-    expect(() => compileProcessPlantSystem(scenario.processSystems[0]!)).toThrow('process plant compiler received process system for pack old-process-pack')
+    expect(() => compileProcessPlantSystem(processSystemsFor(scenario)[0]!)).toThrow('unknown process plant graphRef: process-plant.unknown.v1')
   })
 
   test('rejects incompatible typed port connections before runtime', () => {

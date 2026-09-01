@@ -1,4 +1,4 @@
-import type { ActorId, ClientId, CommandEnvelope, CommandResult, SimulationRunEvent, InteractionSignal, OperationalObject, Provenance, ScenarioProcessSystemDefinition, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
+import type { ActorId, ClientId, CommandEnvelope, CommandResult, SimulationRunEvent, InteractionSignal, OperationalObject, Provenance, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
 import type { IsoTimestamp, ObjectId, SimulationRunId } from '../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../core/packs/protocol.ts'
 
@@ -92,8 +92,7 @@ export interface PackScenarioRuntimeConfig {
   readonly runtimeIds: ReadonlyArray<string>
   readonly world: ScenarioWorldDefinition
   readonly initialObjects: ReadonlyArray<OperationalObject>
-  readonly processSystems?: ReadonlyArray<ScenarioProcessSystemDefinition>
-  readonly runtimeConfigs: Record<string, unknown>
+  readonly runtimeConfigByRuntimeId?: Readonly<Record<string, unknown>>
   readonly runtimeConfig: unknown
 }
 

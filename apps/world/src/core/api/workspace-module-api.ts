@@ -15,7 +15,7 @@ import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
 import { simulationRunIdSchema } from '../model/index.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import { scenarioRevisionIdSchema } from '../scenarios/library.ts'
-import { scenarioDraftSchema } from '../scenarios/config.ts'
+import { scenarioSourceSchema } from '../scenarios/config.ts'
 import { scenarioAuthoringCatalogSchema } from '../scenarios/authoring.ts'
 import type { WorldWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
 import {
@@ -67,7 +67,8 @@ const queryPackInputSchema = z.object({
 const readObjectInputSchema = z.object({
   objectId: z.string().trim().min(1).max(128),
 }).strict()
-const createScenarioInputSchema = z.object({ draft: scenarioDraftSchema }).strict()
+const createScenarioInputSchema = z.object({ source: scenarioSourceSchema }).strict()
+const scenarioWriteInputJsonSchema = z.toJSONSchema(createScenarioInputSchema, { unrepresentable: 'any' })
 
 const SCENARIO_DEFINITION_TYPE = 'world.scenario'
 
@@ -83,6 +84,7 @@ const definitionsFor = async (registry: SimulationRunRegistry) => {
       },
       title: scenario.title,
       ...(scenario.description === undefined ? {} : { description: scenario.description }),
+      uiPath: `/workspaces/${encodeURIComponent(registry.workspaceId)}/world/scenarios/new?definition=${encodeURIComponent(scenario.id)}&revision=${encodeURIComponent(scenario.currentRevisionId)}`,
       currentRevisionId: scenario.currentRevisionId,
       capabilityIds: worldCapabilities.idsForDefinitionType(SCENARIO_DEFINITION_TYPE),
       inspectionCapabilityId: 'world.scenario.inspect',
@@ -174,7 +176,8 @@ const serializableInspection = (value: unknown) =>
 const scenarioSections = (definition: {
   readonly objectives?: ReadonlyArray<string>
   readonly packs: ReadonlyArray<string>
-  readonly runtimeOverrides: Readonly<Record<string, unknown>>
+  readonly packRuntimes: Readonly<Record<string, unknown>>
+  readonly packConfigs: Readonly<Record<string, unknown>>
   readonly world: unknown
   readonly initialObjects: ReadonlyArray<{
     readonly id: string
@@ -184,9 +187,6 @@ const scenarioSections = (definition: {
     readonly lifecycle: string
     readonly operational: { readonly status: string }
   }>
-  readonly initialContexts: ReadonlyArray<unknown>
-  readonly processSystems: ReadonlyArray<unknown>
-  readonly runtimeConfigs: Readonly<Record<string, unknown>>
   readonly surface: unknown
   readonly timeline?: unknown
 }) => [{
@@ -202,23 +202,20 @@ const scenarioSections = (definition: {
   title: 'Packs and runtime configuration',
   data: {
     packs: definition.packs,
-    runtimeOverrides: definition.runtimeOverrides,
-    runtimeConfigs: definition.runtimeConfigs,
+    packRuntimes: definition.packRuntimes,
+    packConfigs: definition.packConfigs,
   },
 }, {
   id: 'assets',
-  title: 'Assets and process systems',
-  description: 'Initial operational assets, their contexts, and configured process systems.',
+  title: 'Initial assets',
+  description: 'Initial operational assets. Pack-owned systems and settings remain inside each Pack configuration above.',
   data: {
     summary: {
       operationalObjects: definition.initialObjects.length,
-      processSystems: definition.processSystems.length,
       byPack: countBy(definition.initialObjects.map(object => object.packId)),
       byKind: countBy(definition.initialObjects.map(object => object.kind)),
     },
     operationalObjects: definition.initialObjects,
-    objectContexts: definition.initialContexts,
-    processSystems: definition.processSystems,
   },
 }, {
   id: 'timeline',
@@ -235,7 +232,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'workspace' },
       title: 'Describe Scenario Authoring',
-      description: 'Lists discoverable World features and the Scenario items each Pack exposes for authoring.',
+      description: 'Lists the discoverable World Packs and Scenario items each Pack exposes for authoring.',
       risk: 'read',
       idempotent: true,
       inputSchema: z.toJSONSchema(emptyInputSchema),
@@ -253,34 +250,65 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'command',
       scope: { kind: 'workspace' },
       title: 'Create Scenario',
-      description: 'Validates and saves a new editable Scenario Draft as an immutable Scenario Revision.',
+      description: 'Validates and saves a new editable Scenario Definition as an immutable revision.',
       risk: 'write',
       idempotent: false,
-      inputSchema: {
-        type: 'object',
-        required: ['draft'],
-        properties: { draft: { type: 'object', description: 'A World-owned Scenario Draft.' } },
-        additionalProperties: false,
-      },
+      inputSchema: scenarioWriteInputJsonSchema,
       outputSchema: { type: 'object' },
     },
     invoke: async (registry, invocation) => {
       const input = createScenarioInputSchema.parse(invocation.input)
       try {
-        const revision = await registry.createScenario(input.draft)
+        const revision = await registry.createScenario(input.source)
         return json({ result: {
           definition: {
             workspaceId: registry.workspaceId,
             moduleId: WORLD_MODULE_ID,
             type: SCENARIO_DEFINITION_TYPE,
-            id: revision.scenarioId,
+            id: revision.definitionId,
             revisionId: revision.id,
           },
-          title: revision.definition.title,
+          title: revision.document.title,
         } }, { status: 201 })
       } catch (error) {
-        if (error instanceof Error && error.message.startsWith('Scenario already exists:')) {
+        if (error instanceof Error && error.message.startsWith('Definition already exists:')) {
           return apiError(409, 'scenario_already_exists', error.message)
+        }
+        throw error
+      }
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.scenario.update',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'definition', definitionType: SCENARIO_DEFINITION_TYPE },
+      title: 'Update Scenario',
+      description: 'Creates a new immutable revision from edited Scenario Definition content.',
+      risk: 'write',
+      idempotent: false,
+      inputSchema: scenarioWriteInputJsonSchema,
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (registry, invocation) => {
+      const input = createScenarioInputSchema.parse(invocation.input)
+      const scenarioId = requireScenarioDefinitionId(invocation)
+      if (input.source.id !== scenarioId) {
+        return apiError(409, 'scenario_identity_mismatch', 'Edited Scenario id does not match the target Definition')
+      }
+      try {
+        const revision = await registry.updateScenario(
+          input.source,
+          scenarioRevisionIdSchema.parse(invocation.definition!.revisionId),
+        )
+        return json({ result: {
+          definition: { ...invocation.definition, revisionId: revision.id },
+          title: revision.document.title,
+        } })
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith('Definition Revision changed:')) {
+          return apiError(409, 'scenario_revision_changed', error.message)
         }
         throw error
       }
@@ -306,27 +334,27 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       if (!revision || String(revision.id) !== String(invocation.definition!.revisionId)) {
         return apiError(404, 'scenario_revision_not_found', 'Scenario Revision not found')
       }
+      const definition = await registry.compileScenarioRevision(revision)
       return json({ result: serializableInspection({
         target: { kind: 'definition', definition: invocation.definition },
-        title: revision.definition.title,
-        ...(revision.definition.description === undefined ? {} : { description: revision.definition.description }),
+        title: revision.document.title,
+        ...(revision.document.description === undefined ? {} : { description: revision.document.description }),
         observedAt: new Date().toISOString(),
         sections: [{
           id: 'identity',
           title: 'Identity and provenance',
           data: {
-            scenarioId: revision.scenarioId,
+            scenarioId: revision.definitionId,
             revisionId: revision.id,
             digest: revision.digest,
             createdAt: revision.createdAt,
-            schemaVersion: revision.definition.schemaVersion,
           },
         }, {
-          id: 'authored-draft',
-          title: 'Editable Scenario Draft',
-          description: 'The compact authored source retained with this immutable revision.',
-          data: revision.draft,
-        }, ...scenarioSections(revision.definition)],
+          id: 'authored-definition',
+          title: 'Editable Scenario Definition',
+          description: 'The Pack-grouped authored source retained with this immutable revision.',
+          data: revision.document,
+        }, ...scenarioSections(definition)],
       }) })
     },
   },
@@ -405,6 +433,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
         registry.listKnown(),
       ])
       if (!revision) return apiError(409, 'scenario_revision_unavailable', 'Simulation Run has no readable Scenario Revision')
+      const definition = await registry.compileScenarioRevision(revision)
       const summary = knownRuns.find(candidate => candidate.id === simulationRunId)
       if (!summary) return apiError(404, 'simulation_run_not_found', 'Simulation Run not found')
       const snapshot = runtime.snapshot()
@@ -424,8 +453,8 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       }))
       return json({ result: serializableInspection({
         target: { kind: 'resource', resource: invocation.resource },
-        title: revision.definition.title,
-        ...(revision.definition.description === undefined ? {} : { description: revision.definition.description }),
+        title: definition.title,
+        ...(definition.description === undefined ? {} : { description: definition.description }),
         observedAt: new Date().toISOString(),
         sections: [{
           id: 'identity',
@@ -458,7 +487,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
           id: 'available-operations',
           title: 'Simulation operations',
           data: runtime.capabilities(),
-        }, ...scenarioSections(revision.definition)],
+        }, ...scenarioSections(definition)],
       }) })
     },
   },
@@ -544,18 +573,19 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       const runtime = await registry.load(simulationRunId)
       const [revision] = await Promise.all([registry.scenarioRevisionForRun(simulationRunId)])
       if (!revision) return apiError(409, 'scenario_revision_unavailable', 'Simulation Run has no readable Scenario Revision')
+      const definition = await registry.compileScenarioRevision(revision)
       const snapshot = runtime.snapshot()
       return json({ result: {
         subject: {
           workspaceId: registry.workspaceId,
           simulationRunId,
-          scenarioId: revision.scenarioId,
+          scenarioId: revision.definitionId,
           scenarioRevisionId: revision.id,
         },
         briefing: {
-          title: revision.definition.title,
-          ...(revision.definition.description === undefined ? {} : { summary: revision.definition.description }),
-          objectives: revision.definition.objectives ?? [],
+          title: definition.title,
+          ...(definition.description === undefined ? {} : { summary: definition.description }),
+          objectives: definition.objectives ?? [],
         },
         situation: {
           observedAt: new Date().toISOString(),

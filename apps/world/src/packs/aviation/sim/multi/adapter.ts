@@ -61,8 +61,8 @@ const readInitialSource = (
   connectionConfig: PackRuntimeConnectionConfig,
   fallback: AviationSourceId,
 ): AviationSourceId => {
-  // The catalog routes scenario.runtimeConfigs[packId] to the active
-  // runtime's `runtimeConfig` slot — so we read the single value here.
+  // The catalog routes the Aviation Pack config to this runtime's single
+  // `runtimeConfig` slot.
   const raw = connectionConfig.scenario?.runtimeConfig
   if (raw && typeof raw === 'object' && 'source' in raw) {
     const source = (raw as { source?: unknown }).source

@@ -56,8 +56,6 @@ const variablePath = (value: string): VariablePath => value as VariablePath
 
 const compiledSystem = (id: string) => compileProcessPlantSystem({
   id,
-  pack: 'process-plant',
-  componentLibrary: 'process-plant',
   assemblyRef: processPlantPwrReferenceAssemblyRef,
   assemblyConfig: { loopCount: 4, title: `Benchmark ${id}` },
 })

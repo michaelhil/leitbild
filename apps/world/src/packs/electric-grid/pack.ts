@@ -18,6 +18,7 @@ import { asDatasetId } from '../../reference-data/types.ts'
 import { electricGridScenarioSupport } from './scenario.ts'
 import { electricGridRuntimeId } from './sim/constants.ts'
 import { electricGridPackId, parseElectricGridObjectData, type ElectricGridPackData } from './model.ts'
+import { electricGridPackConfigSchema } from './config.ts'
 
 const gridNorwayDatasetIdValue = asDatasetId('grid-norway')
 
@@ -197,6 +198,7 @@ export const electricGridPack: WorldPack = {
     id: electricGridPackId, version: '1.0.0', name: 'Electric Grid',
     contributions: ['runtime', 'knowledge', 'reference-data', 'scenario', 'presentation', 'commands'],
   }),
+  scenarioConfigSchema: electricGridPackConfigSchema,
   runtime: {
     runtimes: [{ id: electricGridRuntimeId, version: '1.0.0', label: 'Local electric grid runtime', kind: 'local' }],
     defaultRuntimeId: electricGridRuntimeId,

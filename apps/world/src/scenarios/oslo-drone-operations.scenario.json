@@ -1,10 +1,284 @@
 {
   "id": "oslo-drone-operations",
-  "schemaVersion": 1,
   "title": "Oslo drone operations",
   "description": "A shared native Leitbild drone-control and swarm scenario with ambulance targets and map-visible sensor/effect ranges.",
-  "packs": ["ambulance", "drone"],
-  "runtimeOverrides": {},
+  "packs": [
+    {
+      "id": "ambulance",
+      "config": {},
+      "items": [
+        {
+          "type": "hospital",
+          "id": "facility:ous-drone",
+          "label": "Oslo University Hospital",
+          "position": [
+            10.7387,
+            59.9365
+          ],
+          "traumaBeds": {
+            "total": 4,
+            "available": 2
+          }
+        },
+        {
+          "type": "ambulance",
+          "id": "amb:drone-target-a12",
+          "label": "Ambulance A-12",
+          "atObject": "facility:ous-drone",
+          "equipment": [
+            "defibrillator",
+            "ventilator"
+          ]
+        },
+        {
+          "type": "ambulance",
+          "id": "amb:drone-target-a21",
+          "label": "Ambulance A-21",
+          "position": [
+            10.7605,
+            59.9144
+          ],
+          "equipment": [
+            "defibrillator"
+          ]
+        },
+        {
+          "type": "incident",
+          "id": "incident:drone-search-zone",
+          "label": "Riverside missing patient search",
+          "position": [
+            10.7442,
+            59.9068
+          ],
+          "triage": "yellow",
+          "victims": {
+            "state": "unknown"
+          }
+        }
+      ]
+    },
+    {
+      "id": "drone",
+      "config": {
+        "maxDrones": 10,
+        "stepIntervalMs": 20,
+        "projectionIntervalMs": 33,
+        "batteryDrainPercentPerHour": 7,
+        "models": [
+          {
+            "id": "native-vision-micro",
+            "label": "Vision Micro",
+            "description": "Compact native Leitbild vision quad for quiet observation tasks.",
+            "airframe": {
+              "kind": "quadrotor",
+              "rotorCount": 4,
+              "massKg": 0.78,
+              "diagonalSizeM": 0.24
+            },
+            "flightEnvelope": {
+              "cruiseSpeedMps": 14,
+              "maxHorizontalSpeedMps": 26,
+              "maxVerticalSpeedMps": 5,
+              "maxAccelerationMps2": 8,
+              "maxYawRateDegPerSec": 130,
+              "arrivalRadiusM": 3
+            },
+            "capabilities": [
+              {
+                "id": "manual-control",
+                "kind": "manual_control",
+                "label": "Manual control",
+                "source": "runtime"
+              },
+              {
+                "id": "guided-navigation",
+                "kind": "guided_navigation",
+                "label": "Guided navigation",
+                "source": "runtime"
+              },
+              {
+                "id": "mission",
+                "kind": "mission",
+                "label": "Mission execution",
+                "source": "runtime"
+              },
+              {
+                "id": "surveillance",
+                "kind": "surveillance",
+                "label": "Surveillance",
+                "source": "payload"
+              }
+            ],
+            "sensors": [
+              {
+                "id": "wide-camera",
+                "kind": "electro_optical",
+                "label": "Wide camera",
+                "rangeM": 450,
+                "fovDeg": 100,
+                "updateIntervalMs": 500,
+                "source": "payload"
+              }
+            ],
+            "payloads": [],
+            "visual": {
+              "color": "#2563eb",
+              "accentColor": "#f5f3ff",
+              "scale": 0.78
+            }
+          },
+          {
+            "id": "native-effect-quad",
+            "label": "Effect Quad",
+            "description": "Native Leitbild quad with an operator-declared training effect payload.",
+            "airframe": {
+              "kind": "quadrotor",
+              "rotorCount": 4,
+              "massKg": 3.2,
+              "diagonalSizeM": 0.52
+            },
+            "flightEnvelope": {
+              "cruiseSpeedMps": 24,
+              "maxHorizontalSpeedMps": 48,
+              "maxVerticalSpeedMps": 11,
+              "maxAccelerationMps2": 16,
+              "maxYawRateDegPerSec": 170,
+              "arrivalRadiusM": 5
+            },
+            "capabilities": [
+              {
+                "id": "manual-control",
+                "kind": "manual_control",
+                "label": "Manual control",
+                "source": "runtime"
+              },
+              {
+                "id": "guided-navigation",
+                "kind": "guided_navigation",
+                "label": "Guided navigation",
+                "source": "runtime"
+              },
+              {
+                "id": "mission",
+                "kind": "mission",
+                "label": "Mission execution",
+                "source": "runtime"
+              },
+              {
+                "id": "effect-delivery",
+                "kind": "effect_delivery",
+                "label": "Effect delivery",
+                "source": "operator_declared"
+              }
+            ],
+            "sensors": [
+              {
+                "id": "tracking-camera",
+                "kind": "tracking_camera",
+                "label": "Tracking camera",
+                "rangeM": 900,
+                "fovDeg": 50,
+                "updateIntervalMs": 300,
+                "source": "payload"
+              }
+            ],
+            "payloads": [
+              {
+                "id": "kinetic-effect",
+                "kind": "kinetic",
+                "label": "Training effect",
+                "massKg": 0.7,
+                "quantity": 1,
+                "rangeM": 75,
+                "effect": {
+                  "kind": "training-effect",
+                  "damage": 0.65,
+                  "radiusM": 3,
+                  "cooldownSeconds": 8
+                },
+                "source": "operator_declared"
+              }
+            ],
+            "visual": {
+              "color": "#b91c1c",
+              "accentColor": "#fee2e2",
+              "scale": 1.08
+            }
+          }
+        ]
+      },
+      "items": [
+        {
+          "type": "drone",
+          "id": "drone:oslo-survey-1",
+          "label": "Survey 1",
+          "position": [
+            10.7488,
+            59.9141
+          ],
+          "modelId": "native-survey-quad",
+          "altitudeM": 55,
+          "headingDeg": 35,
+          "swarm": {
+            "swarmId": "swarm:oslo-blue",
+            "role": "leader",
+            "slot": [
+              0,
+              0,
+              0
+            ],
+            "separationRadiusM": 10
+          }
+        },
+        {
+          "type": "drone",
+          "id": "drone:oslo-survey-2",
+          "label": "Survey 2",
+          "position": [
+            10.7479,
+            59.9137
+          ],
+          "modelId": "native-vision-micro",
+          "altitudeM": 48,
+          "headingDeg": 35,
+          "swarm": {
+            "swarmId": "swarm:oslo-blue",
+            "role": "member",
+            "slot": [
+              18,
+              -18,
+              0
+            ],
+            "separationRadiusM": 8
+          }
+        },
+        {
+          "type": "drone",
+          "id": "drone:oslo-supply-1",
+          "label": "Supply 1",
+          "position": [
+            10.7429,
+            59.916
+          ],
+          "modelId": "native-gimbal-quad",
+          "altitudeM": 38,
+          "headingDeg": 92
+        },
+        {
+          "type": "drone",
+          "id": "drone:oslo-interceptor-1",
+          "label": "Interceptor 1",
+          "position": [
+            10.757,
+            59.9138
+          ],
+          "modelId": "native-effect-quad",
+          "altitudeM": 42,
+          "headingDeg": 260
+        }
+      ]
+    }
+  ],
   "world": {
     "startsAt": "2026-01-01T10:00:00.000Z",
     "environment": {
@@ -12,267 +286,73 @@
       "mode": "drone-operations"
     }
   },
-  "items": [
-    {
-      "pack": "ambulance",
-      "type": "hospital",
-      "id": "facility:ous-drone",
-      "label": "Oslo University Hospital",
-      "position": [10.7387, 59.9365],
-      "traumaBeds": { "total": 4, "available": 2 }
+  "view": {
+    "map": {
+      "center": [
+        10.7522,
+        59.9139
+      ],
+      "zoom": 13.5,
+      "layers": [
+        "objects",
+        "routes",
+        "highlights"
+      ]
     },
-    {
-      "pack": "ambulance",
-      "type": "ambulance",
-      "id": "amb:drone-target-a12",
-      "label": "Ambulance A-12",
-      "atObject": "facility:ous-drone",
-      "equipment": ["defibrillator", "ventilator"]
-    },
-    {
-      "pack": "ambulance",
-      "type": "ambulance",
-      "id": "amb:drone-target-a21",
-      "label": "Ambulance A-21",
-      "position": [10.7605, 59.9144],
-      "equipment": ["defibrillator"]
-    },
-    {
-      "pack": "ambulance",
-      "type": "incident",
-      "id": "incident:drone-search-zone",
-      "label": "Riverside missing patient search",
-      "position": [10.7442, 59.9068],
-      "triage": "yellow",
-      "victims": { "state": "unknown" }
-    },
-    {
-      "pack": "drone",
-      "type": "drone",
-      "id": "drone:oslo-survey-1",
-      "label": "Survey 1",
-      "position": [10.7488, 59.9141],
-      "modelId": "native-survey-quad",
-      "altitudeM": 55,
-      "headingDeg": 35,
-      "swarm": {
-        "swarmId": "swarm:oslo-blue",
-        "role": "leader",
-        "slot": [0, 0, 0],
-        "separationRadiusM": 10
-      }
-    },
-    {
-      "pack": "drone",
-      "type": "drone",
-      "id": "drone:oslo-survey-2",
-      "label": "Survey 2",
-      "position": [10.7479, 59.9137],
-      "modelId": "native-vision-micro",
-      "altitudeM": 48,
-      "headingDeg": 35,
-      "swarm": {
-        "swarmId": "swarm:oslo-blue",
-        "role": "member",
-        "slot": [18, -18, 0],
-        "separationRadiusM": 8
-      }
-    },
-    {
-      "pack": "drone",
-      "type": "drone",
-      "id": "drone:oslo-supply-1",
-      "label": "Supply 1",
-      "position": [10.7429, 59.9160],
-      "modelId": "native-gimbal-quad",
-      "altitudeM": 38,
-      "headingDeg": 92
-    },
-    {
-      "pack": "drone",
-      "type": "drone",
-      "id": "drone:oslo-interceptor-1",
-      "label": "Interceptor 1",
-      "position": [10.7570, 59.9138],
-      "modelId": "native-effect-quad",
-      "altitudeM": 42,
-      "headingDeg": 260
-    }
-  ],
-  "initialContexts": [],
-  "runtimeConfigs": {
-    "ambulance": {},
-    "drone": {
-      "maxDrones": 10,
-      "stepIntervalMs": 20,
-      "projectionIntervalMs": 33,
-      "batteryDrainPercentPerHour": 7,
-      "models": [
+    "rail": {
+      "width": 420,
+      "sections": [
         {
-          "id": "native-vision-micro",
-          "label": "Vision Micro",
-          "description": "Compact native Leitbild vision quad for quiet observation tasks.",
-          "airframe": {
-            "kind": "quadrotor",
-            "rotorCount": 4,
-            "massKg": 0.78,
-            "diagonalSizeM": 0.24
-          },
-          "flightEnvelope": {
-            "cruiseSpeedMps": 14,
-            "maxHorizontalSpeedMps": 26,
-            "maxVerticalSpeedMps": 5,
-            "maxAccelerationMps2": 8,
-            "maxYawRateDegPerSec": 130,
-            "arrivalRadiusM": 3
-          },
-          "capabilities": [
-            { "id": "manual-control", "kind": "manual_control", "label": "Manual control", "source": "runtime" },
-            { "id": "guided-navigation", "kind": "guided_navigation", "label": "Guided navigation", "source": "runtime" },
-            { "id": "mission", "kind": "mission", "label": "Mission execution", "source": "runtime" },
-            { "id": "surveillance", "kind": "surveillance", "label": "Surveillance", "source": "payload" }
-          ],
-          "sensors": [
-            {
-              "id": "wide-camera",
-              "kind": "electro_optical",
-              "label": "Wide camera",
-              "rangeM": 450,
-              "fovDeg": 100,
-              "updateIntervalMs": 500,
-              "source": "payload"
-            }
-          ],
-          "payloads": [],
-          "visual": {
-            "color": "#2563eb",
-            "accentColor": "#f5f3ff",
-            "scale": 0.78
-          }
+          "categoryId": "drones",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": [
+            "model",
+            "link",
+            "mode",
+            "altitude",
+            "battery",
+            "health",
+            "payloads"
+          ]
         },
         {
-          "id": "native-effect-quad",
-          "label": "Effect Quad",
-          "description": "Native Leitbild quad with an operator-declared training effect payload.",
-          "airframe": {
-            "kind": "quadrotor",
-            "rotorCount": 4,
-            "massKg": 3.2,
-            "diagonalSizeM": 0.52
-          },
-          "flightEnvelope": {
-            "cruiseSpeedMps": 24,
-            "maxHorizontalSpeedMps": 48,
-            "maxVerticalSpeedMps": 11,
-            "maxAccelerationMps2": 16,
-            "maxYawRateDegPerSec": 170,
-            "arrivalRadiusM": 5
-          },
-          "capabilities": [
-            { "id": "manual-control", "kind": "manual_control", "label": "Manual control", "source": "runtime" },
-            { "id": "guided-navigation", "kind": "guided_navigation", "label": "Guided navigation", "source": "runtime" },
-            { "id": "mission", "kind": "mission", "label": "Mission execution", "source": "runtime" },
-            { "id": "effect-delivery", "kind": "effect_delivery", "label": "Effect delivery", "source": "operator_declared" }
-          ],
-          "sensors": [
-            {
-              "id": "tracking-camera",
-              "kind": "tracking_camera",
-              "label": "Tracking camera",
-              "rangeM": 900,
-              "fovDeg": 50,
-              "updateIntervalMs": 300,
-              "source": "payload"
-            }
-          ],
-          "payloads": [
-            {
-              "id": "kinetic-effect",
-              "kind": "kinetic",
-              "label": "Training effect",
-              "massKg": 0.7,
-              "quantity": 1,
-              "rangeM": 75,
-              "effect": { "kind": "training-effect", "damage": 0.65, "radiusM": 3, "cooldownSeconds": 8 },
-              "source": "operator_declared"
-            }
-          ],
-          "visual": {
-            "color": "#b91c1c",
-            "accentColor": "#fee2e2",
-            "scale": 1.08
-          }
+          "categoryId": "ambulances",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": [
+            "destination",
+            "capabilities"
+          ]
+        },
+        {
+          "categoryId": "incidents",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": [
+            "triage",
+            "victims"
+          ]
         }
       ]
     }
-  },
-  "processSystems": [],
-  "surface": {
-    "schemaVersion": 1,
-    "regions": [
-      {
-        "id": "main-map",
-        "primitive": "map",
-        "visible": true,
-        "config": {
-          "center": [10.7522, 59.9139],
-          "zoom": 13.5,
-          "layers": ["objects", "routes", "highlights"]
-        }
-      },
-      {
-        "id": "rail",
-        "primitive": "objectRail",
-        "visible": true,
-        "config": {
-          "width": 420,
-          "sections": [
-            {
-              "categoryId": "drones",
-              "visible": true,
-              "collapsed": false,
-              "visibleFields": ["model", "link", "mode", "altitude", "battery", "health", "payloads"]
-            },
-            {
-              "categoryId": "ambulances",
-              "visible": true,
-              "collapsed": false,
-              "visibleFields": ["destination", "capabilities"]
-            },
-            {
-              "categoryId": "incidents",
-              "visible": true,
-              "collapsed": false,
-              "visibleFields": ["triage", "victims"]
-            }
-          ]
-        }
-      },
-      {
-        "id": "guidance",
-        "primitive": "guidanceOverlay",
-        "visible": true,
-        "config": {}
-      },
-      {
-        "id": "footer",
-        "primitive": "systemFooter",
-        "visible": true,
-        "config": {}
-      }
-    ]
   },
   "timeline": {
     "cues": [
       {
         "id": "drone-ops-auto-arm-survey",
-        "at": { "kind": "after_scenario_start", "seconds": 0.5 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 0.5
+        },
         "actions": [
           {
             "type": "issue_command",
             "command": {
               "kind": "drone.arm",
-              "targetObjectIds": ["drone:oslo-survey-1"],
+              "targetObjectIds": [
+                "drone:oslo-survey-1"
+              ],
               "payload": {
                 "droneId": "drone:oslo-survey-1",
                 "armed": true
@@ -283,13 +363,18 @@
       },
       {
         "id": "drone-ops-auto-takeoff-survey",
-        "at": { "kind": "after_scenario_start", "seconds": 1 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 1
+        },
         "actions": [
           {
             "type": "issue_command",
             "command": {
               "kind": "drone.takeoff",
-              "targetObjectIds": ["drone:oslo-survey-1"],
+              "targetObjectIds": [
+                "drone:oslo-survey-1"
+              ],
               "payload": {
                 "droneId": "drone:oslo-survey-1",
                 "altitudeM": 55
@@ -300,7 +385,10 @@
       },
       {
         "id": "drone-ops-briefing",
-        "at": { "kind": "after_scenario_start", "seconds": 2 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 2
+        },
         "actions": [
           {
             "type": "show_guidance",
@@ -308,7 +396,11 @@
               "id": "drone-ops-briefing",
               "title": "Drone operations",
               "message": "Select a drone to command it on the map, or open its flight window for direct keyboard/gamepad control. Drones are backed by Leitbild's native runtime and share this simulation run across connected browsers.",
-              "objectIds": ["drone:oslo-survey-1", "drone:oslo-survey-2", "drone:oslo-interceptor-1"],
+              "objectIds": [
+                "drone:oslo-survey-1",
+                "drone:oslo-survey-2",
+                "drone:oslo-interceptor-1"
+              ],
               "dismissible": true
             }
           }
@@ -316,17 +408,28 @@
       },
       {
         "id": "drone-ops-auto-survey-leg",
-        "at": { "kind": "after_scenario_start", "seconds": 4 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 4
+        },
         "actions": [
           {
             "type": "issue_command",
             "command": {
               "kind": "drone.goto",
-              "targetObjectIds": ["drone:oslo-survey-1"],
+              "targetObjectIds": [
+                "drone:oslo-survey-1"
+              ],
               "payload": {
                 "droneId": "drone:oslo-survey-1",
                 "target": {
-                  "point": { "type": "Point", "coordinates": [10.7442, 59.9068] },
+                  "point": {
+                    "type": "Point",
+                    "coordinates": [
+                      10.7442,
+                      59.9068
+                    ]
+                  },
                   "altitudeM": 55,
                   "speedMps": 18
                 }

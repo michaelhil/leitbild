@@ -3,6 +3,7 @@ import type { SimulationRunId, IsoTimestamp } from '../src/core/model/index.ts'
 import { geoPointFromLonLat } from '../src/core/model/index.ts'
 import {
   createWorldPackDescriptor,
+  emptyPackScenarioConfigSchema,
   type WorldPack,
   type PackMapAreaFeature,
   type PackQueryRequest,
@@ -45,6 +46,7 @@ const createPack = (requests: ReadonlyArray<PackQueryRequest>): WorldPack => ({
     name: 'Weather Test',
     contributions: ['presentation', 'commands', 'queries'],
   }),
+  scenarioConfigSchema: emptyPackScenarioConfigSchema,
   presentation: {
     categories: [],
     mapAreaFeatures: () => [featureFor('sync-feature')],

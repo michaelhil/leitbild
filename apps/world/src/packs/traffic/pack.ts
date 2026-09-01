@@ -1,7 +1,7 @@
 import type { KnowledgeFact, OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { WorldPack, PackCommandRequest, PackCreateObjectParameter, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
-import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
+import { createWorldPackDescriptor, emptyPackScenarioConfigSchema } from '../../core/packs/protocol.ts'
 import { createTrafficConditionCommandKind } from './commands.ts'
 import { trafficPackDataSchema, trafficPackId, type TrafficPackData, type TrafficSeverity } from './model.ts'
 import { createTrafficRouteImpactHandler } from './interactions.ts'
@@ -125,6 +125,7 @@ export const trafficPack: WorldPack = {
     id: 'traffic', version: '1.0.0', name: 'Traffic Conditions',
     contributions: ['runtime', 'scenario', 'presentation', 'commands', 'interactions'],
   }),
+  scenarioConfigSchema: emptyPackScenarioConfigSchema,
   runtime: {
     runtimes: [{ id: trafficSimRuntimeId, version: '1.0.0', label: 'Local traffic runtime', kind: 'local' }],
     defaultRuntimeId: trafficSimRuntimeId,

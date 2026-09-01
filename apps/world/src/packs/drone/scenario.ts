@@ -21,7 +21,7 @@ const lonLatSchema = z.tuple([
   z.number().finite().min(-90).max(90),
 ])
 
-const droneRuntimeConfigSchema = z.object({
+export const dronePackConfigSchema = z.object({
   maxDrones: z.number().int().positive().max(500).default(10),
   stepIntervalMs: z.number().int().min(5).max(100).default(20),
   projectionIntervalMs: z.number().int().min(10).max(250).default(33),
@@ -57,15 +57,15 @@ const setDroneSwarmOperationSchema = z.object({
 const pointFromLonLat = (value: readonly [number, number]): GeoJsonPoint =>
   geoPointFromLonLat(value[0], value[1])
 
-export const droneRuntimeConfigFromRuntimeConfigs = (
-  runtimeConfigs: Record<string, unknown>,
-): z.infer<typeof droneRuntimeConfigSchema> =>
-  droneRuntimeConfigSchema.parse(runtimeConfigs.drone ?? {})
+export const dronePackConfigFromSelections = (
+  packConfigs: Record<string, unknown>,
+): z.infer<typeof dronePackConfigSchema> =>
+  dronePackConfigSchema.parse(packConfigs.drone ?? {})
 
-export const droneVehicleModelsFromRuntimeConfigs = (
-  runtimeConfigs: Record<string, unknown>,
+export const droneVehicleModelsFromPackConfigs = (
+  packConfigs: Record<string, unknown>,
 ): ReadonlyArray<DroneVehicleModel> => {
-  const parsed = droneRuntimeConfigFromRuntimeConfigs(runtimeConfigs)
+  const parsed = dronePackConfigFromSelections(packConfigs)
   const modelById = new Map(defaultDroneVehicleModels.map(model => [model.id, model]))
   for (const model of droneVehicleModelCatalogSchema.parse({ models: parsed.models }).models) {
     modelById.set(model.id, model)
@@ -73,15 +73,15 @@ export const droneVehicleModelsFromRuntimeConfigs = (
   return [...modelById.values()]
 }
 
-export const droneProfilesFromRuntimeConfigs = droneVehicleModelsFromRuntimeConfigs
+export const droneProfilesFromPackConfigs = droneVehicleModelsFromPackConfigs
 
 export const droneScenarioSupport: PackScenarioSupport = {
   expandItem: (rawSpec: PackScenarioItemSpec, context) => {
     if (rawSpec.type !== 'drone') throw new Error(`unsupported drone scenario object type: ${rawSpec.type}`)
     const spec = droneSpecSchema.parse(rawSpec)
     const models = spec.model === undefined
-      ? droneVehicleModelsFromRuntimeConfigs(context.runtimeConfigs)
-      : [...droneVehicleModelsFromRuntimeConfigs(context.runtimeConfigs), spec.model]
+      ? droneVehicleModelsFromPackConfigs(context.packConfigs)
+      : [...droneVehicleModelsFromPackConfigs(context.packConfigs), spec.model]
     const model = spec.model ?? requireDroneVehicleModel(spec.modelId, models)
     return { objects: [createScenarioDroneObject({
       id: spec.id,

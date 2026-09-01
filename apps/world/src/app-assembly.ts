@@ -8,6 +8,18 @@ import { electricGridReferenceDatasetBuilders } from './packs/electric-grid/refe
 import { processPlantPack } from './packs/process-plant/pack.ts'
 import { trafficPack } from './packs/traffic/pack.ts'
 import { weatherPack } from './packs/weather/pack.ts'
+import type { RoutingAdapter } from './routing/protocol.ts'
+import type { PackRuntimeAdapter } from './simulation/protocol.ts'
+import { createLocalAmbulancePackRuntimeAdapter } from './packs/ambulance/sim/adapter.ts'
+import { createAviationNoopPackRuntimeAdapter } from './packs/aviation/sim/noop-adapter.ts'
+import { createOpenSkyPackRuntimeAdapter } from './packs/aviation/sim/opensky/adapter.ts'
+import { createVatsimPackRuntimeAdapter } from './packs/aviation/sim/vatsim/adapter.ts'
+import { createAviationMultiPackRuntimeAdapter } from './packs/aviation/sim/multi/adapter.ts'
+import { createLocalElectricGridPackRuntimeAdapter } from './packs/electric-grid/sim/adapter.ts'
+import { createDroneNativePackRuntimeAdapter } from './packs/drone/native/adapter.ts'
+import { createLocalProcessPlantPackRuntimeAdapter } from './packs/process-plant/sim/adapter.ts'
+import { createLocalTrafficPackRuntimeAdapter } from './packs/traffic/sim/adapter.ts'
+import { createLocalWeatherPackRuntimeAdapter } from './packs/weather/sim/adapter.ts'
 
 const withReferenceDatasetBuilders = (
   pack: WorldPack,
@@ -29,3 +41,42 @@ export const worldPacks: ReadonlyArray<WorldPack> = [
   withReferenceDatasetBuilders(aviationPack, aviationReferenceDatasetBuilders),
   withReferenceDatasetBuilders(electricGridPack, electricGridReferenceDatasetBuilders),
 ]
+
+export interface WorldApplicationAssembly {
+  readonly packs: ReadonlyArray<WorldPack>
+  readonly runtimeAdapters: ReadonlyArray<PackRuntimeAdapter>
+}
+
+export const createWorldApplicationAssembly = (config: {
+  readonly routing: RoutingAdapter
+  readonly env: Readonly<Record<string, string | undefined>>
+}): WorldApplicationAssembly => {
+  const opensky = config.env.OPENSKY_CLIENT_ID && config.env.OPENSKY_CLIENT_SECRET
+    ? createOpenSkyPackRuntimeAdapter({
+        clientId: config.env.OPENSKY_CLIENT_ID,
+        clientSecret: config.env.OPENSKY_CLIENT_SECRET,
+      })
+    : null
+  if (!opensky) console.warn('aviation: OPENSKY_CLIENT_ID / OPENSKY_CLIENT_SECRET not set — aviation.opensky runtime unavailable')
+  const vatsim = createVatsimPackRuntimeAdapter()
+  const aviationMulti = createAviationMultiPackRuntimeAdapter({
+    ...(opensky ? { opensky } : {}),
+    vatsim,
+    defaultSource: opensky ? 'opensky' : 'vatsim',
+  })
+  return {
+    packs: worldPacks,
+    runtimeAdapters: [
+      createLocalAmbulancePackRuntimeAdapter({ routing: config.routing }),
+      createLocalTrafficPackRuntimeAdapter({ routing: config.routing }),
+      createLocalWeatherPackRuntimeAdapter(),
+      createDroneNativePackRuntimeAdapter(),
+      createLocalProcessPlantPackRuntimeAdapter(),
+      createLocalElectricGridPackRuntimeAdapter(),
+      createAviationNoopPackRuntimeAdapter(),
+      ...(opensky ? [opensky] : []),
+      vatsim,
+      aviationMulti,
+    ],
+  }
+}

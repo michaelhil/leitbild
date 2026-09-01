@@ -1,7 +1,6 @@
 export const aviationRuntimePackId = 'aviation'
 
-// The B.1 noop runtime is still the pack default; scenarios opt into
-// `aviation.opensky` via runtimeOverrides. VATSIM lands in B.3.
+// The no-op runtime is the Pack default; Scenarios can select a live runtime.
 export const aviationNoopRuntimeId = 'aviation.noop'
 export const aviationNoopAdapterId = aviationNoopRuntimeId
 

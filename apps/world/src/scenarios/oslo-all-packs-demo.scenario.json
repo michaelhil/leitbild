@@ -1,10 +1,448 @@
 {
   "id": "oslo-all-packs-demo",
-  "schemaVersion": 1,
   "title": "Oslo all-packs screenshot demo",
   "description": "A city-wide Oslo demo showing ambulance, weather, electric grid, and four independently simulated process-plant units together for screenshots.",
-  "packs": ["ambulance", "weather", "electric-grid", "process-plant"],
-  "runtimeOverrides": {},
+  "packs": [
+    {
+      "id": "ambulance",
+      "config": {},
+      "items": [
+        {
+          "type": "hospital",
+          "id": "facility:oslo-demo-ous",
+          "label": "Oslo University Hospital",
+          "position": [
+            10.7387,
+            59.9365
+          ],
+          "traumaBeds": {
+            "total": 6,
+            "available": 3
+          }
+        },
+        {
+          "type": "hospital",
+          "id": "facility:oslo-demo-lovisenberg",
+          "label": "Lovisenberg Hospital",
+          "position": [
+            10.7519,
+            59.9326
+          ],
+          "traumaBeds": {
+            "total": 5,
+            "available": 4
+          }
+        },
+        {
+          "type": "incident",
+          "id": "incident:oslo-demo-harbor",
+          "label": "Harbor access injury",
+          "position": [
+            10.7447,
+            59.8919
+          ],
+          "triage": "yellow",
+          "victims": {
+            "state": "confirmed",
+            "count": 1
+          }
+        },
+        {
+          "type": "incident",
+          "id": "incident:oslo-demo-ring3",
+          "label": "Ring 3 multi-car crash",
+          "position": [
+            10.8061,
+            59.9362
+          ],
+          "triage": "red",
+          "victims": {
+            "state": "confirmed",
+            "count": 3
+          }
+        },
+        {
+          "type": "ambulance",
+          "id": "amb:oslo-demo-1",
+          "label": "Oslo Ambulance 1",
+          "atObject": "facility:oslo-demo-ous",
+          "equipment": [
+            "defibrillator",
+            "oxygen",
+            "stretcher"
+          ]
+        },
+        {
+          "type": "ambulance",
+          "id": "amb:oslo-demo-2",
+          "label": "Oslo Ambulance 2",
+          "position": [
+            10.7792,
+            59.9154
+          ],
+          "equipment": [
+            "defibrillator",
+            "ventilator"
+          ],
+          "targetId": "incident:oslo-demo-ring3",
+          "status": "en_route"
+        },
+        {
+          "type": "ambulance",
+          "id": "amb:oslo-demo-3",
+          "label": "Oslo Ambulance 3",
+          "position": [
+            10.7335,
+            59.8994
+          ],
+          "equipment": [
+            "stretcher",
+            "oxygen"
+          ],
+          "patientsOnBoard": 1,
+          "targetId": "facility:oslo-demo-lovisenberg",
+          "status": "transporting"
+        }
+      ]
+    },
+    {
+      "id": "weather",
+      "config": {},
+      "items": [
+        {
+          "type": "weather_condition",
+          "id": "weather:oslo-allpacks-background",
+          "label": "Oslo cool overcast",
+          "truthResolution": 8,
+          "showAffectedCells": false,
+          "priority": 0,
+          "summary": "Cool overcast background conditions across the Oslo operating picture.",
+          "atmosphere": {
+            "airTemperatureC": 4.5,
+            "humidity": 0.82,
+            "windSpeedMps": 5,
+            "windDirectionDeg": 210,
+            "visibilityM": 10000,
+            "cloudCover": 0.86,
+            "precipitation": {
+              "type": "none",
+              "intensityMmPerHour": 0
+            }
+          },
+          "surface": {
+            "groundTemperatureC": 4,
+            "wetness": 0.18,
+            "standingWater": 0.02,
+            "snow": 0,
+            "ice": 0,
+            "frost": 0
+          },
+          "keyframes": [
+            {
+              "atSeconds": 0,
+              "center": [
+                10.7522,
+                59.925
+              ],
+              "semiMajorAxisM": 15500,
+              "semiMinorAxisM": 11000,
+              "rotationDeg": 8,
+              "falloffCurve": [
+                {
+                  "x": 0,
+                  "y": 1
+                },
+                {
+                  "x": 0.9,
+                  "y": 1
+                },
+                {
+                  "x": 1,
+                  "y": 0.45
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "weather_condition",
+          "id": "weather:oslo-allpacks-rain-band",
+          "label": "Fjord rain band",
+          "truthResolution": 8,
+          "priority": 10,
+          "summary": "A narrow rain band crosses the fjord edge and central Oslo.",
+          "atmosphere": {
+            "airTemperatureC": 4,
+            "humidity": 0.92,
+            "windSpeedMps": 8,
+            "windDirectionDeg": 235,
+            "visibilityM": 6200,
+            "cloudCover": 0.94,
+            "precipitation": {
+              "type": "rain",
+              "intensityMmPerHour": 1.9
+            }
+          },
+          "surface": {
+            "groundTemperatureC": 3.6,
+            "wetness": 0.55,
+            "standingWater": 0.1,
+            "snow": 0,
+            "ice": 0,
+            "frost": 0
+          },
+          "keyframes": [
+            {
+              "atSeconds": 0,
+              "center": [
+                10.622,
+                59.895
+              ],
+              "semiMajorAxisM": 9500,
+              "semiMinorAxisM": 1900,
+              "rotationDeg": 68,
+              "falloffCurve": [
+                {
+                  "x": 0,
+                  "y": 1
+                },
+                {
+                  "x": 0.72,
+                  "y": 0.82
+                },
+                {
+                  "x": 1,
+                  "y": 0
+                }
+              ]
+            },
+            {
+              "atSeconds": 600,
+              "center": [
+                10.905,
+                59.94
+              ],
+              "semiMajorAxisM": 11200,
+              "semiMinorAxisM": 2200,
+              "rotationDeg": 74,
+              "atmosphere": {
+                "precipitation": {
+                  "type": "rain",
+                  "intensityMmPerHour": 2.4
+                },
+                "visibilityM": 5200
+              },
+              "surface": {
+                "wetness": 0.68,
+                "standingWater": 0.14
+              },
+              "falloffCurve": [
+                {
+                  "x": 0,
+                  "y": 1
+                },
+                {
+                  "x": 0.72,
+                  "y": 0.82
+                },
+                {
+                  "x": 1,
+                  "y": 0
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "electric-grid",
+      "config": {
+        "topology": {
+          "kind": "built-in",
+          "arenaId": "source-derived-norway-grid"
+        }
+      },
+      "items": [
+        {
+          "type": "regional_grid",
+          "id": "grid:oslo-allpacks-norway-arena",
+          "label": "Norway grid arena",
+          "position": [
+            10.7522,
+            59.925
+          ],
+          "arenaId": "source-derived-norway-grid",
+          "provenance": {
+            "method": "converted",
+            "sourceId": "source-derived-norway-grid-arena-v1",
+            "confidence": "medium"
+          }
+        }
+      ]
+    },
+    {
+      "id": "process-plant",
+      "config": {
+        "systems": [
+          {
+            "id": "oslo-west-plant",
+            "assemblyRef": "process-plant.pwr.reference.v2",
+            "assemblyConfig": {
+              "loopCount": 4
+            },
+            "parameters": {
+              "core": {
+                "initialPowerFraction": 0.992
+              },
+              "turbine": {
+                "initialLoadFraction": 0.992
+              }
+            },
+            "initialState": {
+              "pressurizer.pressureMPa": 15.48,
+              "sgA.levelPercent": 54.8,
+              "sgA.collapsedLevelPercent": 53,
+              "sgA.secondaryInventoryKg": 29680,
+              "sgA.steamMassKg": 11940,
+              "feedwaterControlValveA.positionFraction": 0.905
+            },
+            "runtime": {
+              "icRef": "process-plant.pwr.reference.graph.ic.v2"
+            }
+          },
+          {
+            "id": "oslo-north-plant",
+            "assemblyRef": "process-plant.pwr.reference.v2",
+            "assemblyConfig": {
+              "loopCount": 4
+            },
+            "parameters": {
+              "core": {
+                "initialPowerFraction": 1
+              },
+              "turbine": {
+                "initialLoadFraction": 1
+              }
+            },
+            "initialState": {
+              "pressurizer.pressureMPa": 15.52,
+              "sgA.levelPercent": 55.3,
+              "sgA.collapsedLevelPercent": 53.5,
+              "sgA.secondaryInventoryKg": 29960,
+              "sgA.steamMassKg": 12060,
+              "feedwaterControlValveA.positionFraction": 0.914
+            },
+            "runtime": {
+              "icRef": "process-plant.pwr.reference.graph.ic.v2"
+            }
+          },
+          {
+            "id": "oslo-east-plant",
+            "assemblyRef": "process-plant.pwr.reference.v2",
+            "assemblyConfig": {
+              "loopCount": 4
+            },
+            "parameters": {
+              "core": {
+                "initialPowerFraction": 0.986
+              },
+              "turbine": {
+                "initialLoadFraction": 0.986
+              }
+            },
+            "initialState": {
+              "pressurizer.pressureMPa": 15.49,
+              "sgA.levelPercent": 54.5,
+              "sgA.collapsedLevelPercent": 52.8,
+              "sgA.secondaryInventoryKg": 29570,
+              "sgA.steamMassKg": 11920,
+              "feedwaterControlValveA.positionFraction": 0.901
+            },
+            "runtime": {
+              "icRef": "process-plant.pwr.reference.graph.ic.v2"
+            }
+          },
+          {
+            "id": "oslo-south-plant",
+            "assemblyRef": "process-plant.pwr.reference.v2",
+            "assemblyConfig": {
+              "loopCount": 4
+            },
+            "parameters": {
+              "core": {
+                "initialPowerFraction": 0.997
+              },
+              "turbine": {
+                "initialLoadFraction": 0.997
+              }
+            },
+            "initialState": {
+              "pressurizer.pressureMPa": 15.51,
+              "sgA.levelPercent": 55.6,
+              "sgA.collapsedLevelPercent": 53.7,
+              "sgA.secondaryInventoryKg": 30070,
+              "sgA.steamMassKg": 12030,
+              "feedwaterControlValveA.positionFraction": 0.916
+            },
+            "runtime": {
+              "icRef": "process-plant.pwr.reference.graph.ic.v2"
+            }
+          }
+        ]
+      },
+      "items": [
+        {
+          "type": "unit",
+          "id": "plant:oslo-west",
+          "label": "Oslo West Plant",
+          "systemId": "oslo-west-plant",
+          "clusterId": "oslo-edge",
+          "coolingWater": "Oslofjord west intake",
+          "location": [
+            10.6125,
+            59.9285
+          ]
+        },
+        {
+          "type": "unit",
+          "id": "plant:oslo-north",
+          "label": "Oslo North Plant",
+          "systemId": "oslo-north-plant",
+          "clusterId": "oslo-edge",
+          "coolingWater": "Maridalen reservoir loop",
+          "location": [
+            10.744,
+            59.989
+          ]
+        },
+        {
+          "type": "unit",
+          "id": "plant:oslo-east",
+          "label": "Oslo East Plant",
+          "systemId": "oslo-east-plant",
+          "clusterId": "oslo-edge",
+          "coolingWater": "Alna process loop",
+          "location": [
+            10.915,
+            59.933
+          ]
+        },
+        {
+          "type": "unit",
+          "id": "plant:oslo-south",
+          "label": "Oslo South Plant",
+          "systemId": "oslo-south-plant",
+          "clusterId": "oslo-edge",
+          "coolingWater": "Oslofjord south intake",
+          "location": [
+            10.753,
+            59.8655
+          ]
+        }
+      ]
+    }
+  ],
   "world": {
     "startsAt": "2026-01-01T10:30:00.000Z",
     "environment": {
@@ -12,412 +450,132 @@
       "mode": "all-packs-screenshot-demo"
     }
   },
-  "items": [
-    {
-      "pack": "process-plant",
-      "type": "unit",
-      "id": "plant:oslo-west",
-      "label": "Oslo West Plant",
-      "systemId": "oslo-west-plant",
-      "clusterId": "oslo-edge",
-      "coolingWater": "Oslofjord west intake",
-      "location": [10.6125, 59.9285]
-    },
-    {
-      "pack": "process-plant",
-      "type": "unit",
-      "id": "plant:oslo-north",
-      "label": "Oslo North Plant",
-      "systemId": "oslo-north-plant",
-      "clusterId": "oslo-edge",
-      "coolingWater": "Maridalen reservoir loop",
-      "location": [10.7440, 59.9890]
-    },
-    {
-      "pack": "process-plant",
-      "type": "unit",
-      "id": "plant:oslo-east",
-      "label": "Oslo East Plant",
-      "systemId": "oslo-east-plant",
-      "clusterId": "oslo-edge",
-      "coolingWater": "Alna process loop",
-      "location": [10.9150, 59.9330]
-    },
-    {
-      "pack": "process-plant",
-      "type": "unit",
-      "id": "plant:oslo-south",
-      "label": "Oslo South Plant",
-      "systemId": "oslo-south-plant",
-      "clusterId": "oslo-edge",
-      "coolingWater": "Oslofjord south intake",
-      "location": [10.7530, 59.8655]
-    },
-    {
-      "pack": "ambulance",
-      "type": "hospital",
-      "id": "facility:oslo-demo-ous",
-      "label": "Oslo University Hospital",
-      "position": [10.7387, 59.9365],
-      "traumaBeds": { "total": 6, "available": 3 }
-    },
-    {
-      "pack": "ambulance",
-      "type": "hospital",
-      "id": "facility:oslo-demo-lovisenberg",
-      "label": "Lovisenberg Hospital",
-      "position": [10.7519, 59.9326],
-      "traumaBeds": { "total": 5, "available": 4 }
-    },
-    {
-      "pack": "ambulance",
-      "type": "incident",
-      "id": "incident:oslo-demo-harbor",
-      "label": "Harbor access injury",
-      "position": [10.7447, 59.8919],
-      "triage": "yellow",
-      "victims": { "state": "confirmed", "count": 1 }
-    },
-    {
-      "pack": "ambulance",
-      "type": "incident",
-      "id": "incident:oslo-demo-ring3",
-      "label": "Ring 3 multi-car crash",
-      "position": [10.8061, 59.9362],
-      "triage": "red",
-      "victims": { "state": "confirmed", "count": 3 }
-    },
-    {
-      "pack": "ambulance",
-      "type": "ambulance",
-      "id": "amb:oslo-demo-1",
-      "label": "Oslo Ambulance 1",
-      "atObject": "facility:oslo-demo-ous",
-      "equipment": ["defibrillator", "oxygen", "stretcher"]
-    },
-    {
-      "pack": "ambulance",
-      "type": "ambulance",
-      "id": "amb:oslo-demo-2",
-      "label": "Oslo Ambulance 2",
-      "position": [10.7792, 59.9154],
-      "equipment": ["defibrillator", "ventilator"],
-      "targetId": "incident:oslo-demo-ring3",
-      "status": "en_route"
-    },
-    {
-      "pack": "ambulance",
-      "type": "ambulance",
-      "id": "amb:oslo-demo-3",
-      "label": "Oslo Ambulance 3",
-      "position": [10.7335, 59.8994],
-      "equipment": ["stretcher", "oxygen"],
-      "patientsOnBoard": 1,
-      "targetId": "facility:oslo-demo-lovisenberg",
-      "status": "transporting"
-    },
-    {
-      "pack": "weather",
-      "type": "weather_condition",
-      "id": "weather:oslo-allpacks-background",
-      "label": "Oslo cool overcast",
-      "truthResolution": 8,
-      "showAffectedCells": false,
-      "priority": 0,
-      "summary": "Cool overcast background conditions across the Oslo operating picture.",
-      "atmosphere": {
-        "airTemperatureC": 4.5,
-        "humidity": 0.82,
-        "windSpeedMps": 5,
-        "windDirectionDeg": 210,
-        "visibilityM": 10000,
-        "cloudCover": 0.86,
-        "precipitation": { "type": "none", "intensityMmPerHour": 0 }
-      },
-      "surface": {
-        "groundTemperatureC": 4,
-        "wetness": 0.18,
-        "standingWater": 0.02,
-        "snow": 0,
-        "ice": 0,
-        "frost": 0
-      },
-      "keyframes": [
-        {
-          "atSeconds": 0,
-          "center": [10.7522, 59.9250],
-          "semiMajorAxisM": 15500,
-          "semiMinorAxisM": 11000,
-          "rotationDeg": 8,
-          "falloffCurve": [{ "x": 0, "y": 1 }, { "x": 0.9, "y": 1 }, { "x": 1, "y": 0.45 }]
-        }
+  "view": {
+    "map": {
+      "center": [
+        10.7522,
+        59.925
+      ],
+      "zoom": 10.2,
+      "layers": [
+        "objects",
+        "routes",
+        "weather",
+        "grid",
+        "highlights"
       ]
     },
-    {
-      "pack": "weather",
-      "type": "weather_condition",
-      "id": "weather:oslo-allpacks-rain-band",
-      "label": "Fjord rain band",
-      "truthResolution": 8,
-      "priority": 10,
-      "summary": "A narrow rain band crosses the fjord edge and central Oslo.",
-      "atmosphere": {
-        "airTemperatureC": 4,
-        "humidity": 0.92,
-        "windSpeedMps": 8,
-        "windDirectionDeg": 235,
-        "visibilityM": 6200,
-        "cloudCover": 0.94,
-        "precipitation": { "type": "rain", "intensityMmPerHour": 1.9 }
-      },
-      "surface": {
-        "groundTemperatureC": 3.6,
-        "wetness": 0.55,
-        "standingWater": 0.1,
-        "snow": 0,
-        "ice": 0,
-        "frost": 0
-      },
-      "keyframes": [
+    "rail": {
+      "width": 390,
+      "sections": [
         {
-          "atSeconds": 0,
-          "center": [10.6220, 59.8950],
-          "semiMajorAxisM": 9500,
-          "semiMinorAxisM": 1900,
-          "rotationDeg": 68,
-          "falloffCurve": [{ "x": 0, "y": 1 }, { "x": 0.72, "y": 0.82 }, { "x": 1, "y": 0 }]
+          "categoryId": "process-plants",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": [
+            "thermal-power",
+            "electric-output",
+            "pzr-pressure",
+            "sg-a-level",
+            "active-alarms",
+            "active-trips",
+            "runtime-performance"
+          ]
         },
         {
-          "atSeconds": 600,
-          "center": [10.9050, 59.9400],
-          "semiMajorAxisM": 11200,
-          "semiMinorAxisM": 2200,
-          "rotationDeg": 74,
-          "atmosphere": {
-            "precipitation": { "type": "rain", "intensityMmPerHour": 2.4 },
-            "visibilityM": 5200
-          },
-          "surface": {
-            "wetness": 0.68,
-            "standingWater": 0.14
-          },
-          "falloffCurve": [{ "x": 0, "y": 1 }, { "x": 0.72, "y": 0.82 }, { "x": 1, "y": 0 }]
-        }
-      ]
-    },
-    {
-      "pack": "electric-grid",
-      "type": "regional_grid",
-      "id": "grid:oslo-allpacks-norway-arena",
-      "label": "Norway grid arena",
-      "position": [10.7522, 59.9250],
-      "arenaId": "source-derived-norway-grid",
-      "provenance": {
-        "method": "converted",
-        "sourceId": "source-derived-norway-grid-arena-v1",
-        "confidence": "medium"
-      }
-    }
-  ],
-  "initialContexts": [],
-  "processSystems": [
-    {
-      "id": "oslo-west-plant",
-      "pack": "process-plant",
-      "componentLibrary": "process-plant",
-      "assemblyRef": "process-plant.pwr.reference.v2",
-      "assemblyConfig": { "loopCount": 4 },
-      "parameters": {
-        "core": { "initialPowerFraction": 0.992 },
-        "turbine": { "initialLoadFraction": 0.992 }
-      },
-      "initialState": {
-        "pressurizer.pressureMPa": 15.48,
-        "sgA.levelPercent": 54.8,
-        "sgA.collapsedLevelPercent": 53.0,
-        "sgA.secondaryInventoryKg": 29680,
-        "sgA.steamMassKg": 11940,
-        "feedwaterControlValveA.positionFraction": 0.905
-      }
-    },
-    {
-      "id": "oslo-north-plant",
-      "pack": "process-plant",
-      "componentLibrary": "process-plant",
-      "assemblyRef": "process-plant.pwr.reference.v2",
-      "assemblyConfig": { "loopCount": 4 },
-      "parameters": {
-        "core": { "initialPowerFraction": 1.0 },
-        "turbine": { "initialLoadFraction": 1.0 }
-      },
-      "initialState": {
-        "pressurizer.pressureMPa": 15.52,
-        "sgA.levelPercent": 55.3,
-        "sgA.collapsedLevelPercent": 53.5,
-        "sgA.secondaryInventoryKg": 29960,
-        "sgA.steamMassKg": 12060,
-        "feedwaterControlValveA.positionFraction": 0.914
-      }
-    },
-    {
-      "id": "oslo-east-plant",
-      "pack": "process-plant",
-      "componentLibrary": "process-plant",
-      "assemblyRef": "process-plant.pwr.reference.v2",
-      "assemblyConfig": { "loopCount": 4 },
-      "parameters": {
-        "core": { "initialPowerFraction": 0.986 },
-        "turbine": { "initialLoadFraction": 0.986 }
-      },
-      "initialState": {
-        "pressurizer.pressureMPa": 15.49,
-        "sgA.levelPercent": 54.5,
-        "sgA.collapsedLevelPercent": 52.8,
-        "sgA.secondaryInventoryKg": 29570,
-        "sgA.steamMassKg": 11920,
-        "feedwaterControlValveA.positionFraction": 0.901
-      }
-    },
-    {
-      "id": "oslo-south-plant",
-      "pack": "process-plant",
-      "componentLibrary": "process-plant",
-      "assemblyRef": "process-plant.pwr.reference.v2",
-      "assemblyConfig": { "loopCount": 4 },
-      "parameters": {
-        "core": { "initialPowerFraction": 0.997 },
-        "turbine": { "initialLoadFraction": 0.997 }
-      },
-      "initialState": {
-        "pressurizer.pressureMPa": 15.51,
-        "sgA.levelPercent": 55.6,
-        "sgA.collapsedLevelPercent": 53.7,
-        "sgA.secondaryInventoryKg": 30070,
-        "sgA.steamMassKg": 12030,
-        "feedwaterControlValveA.positionFraction": 0.916
-      }
-    }
-  ],
-  "runtimeConfigs": {
-    "ambulance": {},
-    "weather": {},
-    "electric-grid": {
-      "topology": {
-        "kind": "built-in",
-        "arenaId": "source-derived-norway-grid"
-      }
-    },
-    "process-plant": {
-      "systems": {
-        "oslo-west-plant": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
-        "oslo-north-plant": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
-        "oslo-east-plant": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
-        "oslo-south-plant": { "icRef": "process-plant.pwr.reference.graph.ic.v2" }
-      }
-    }
-  },
-  "surface": {
-    "schemaVersion": 1,
-    "regions": [
-      {
-        "id": "main-map",
-        "primitive": "map",
-        "visible": true,
-        "config": {
-          "center": [10.7522, 59.9250],
-          "zoom": 10.2,
-          "layers": ["objects", "routes", "weather", "grid", "highlights"]
-        }
-      },
-      {
-        "id": "left-rail",
-        "primitive": "objectRail",
-        "visible": true,
-        "config": {
-          "width": 390,
-          "sections": [
-            {
-              "categoryId": "process-plants",
-              "visible": true,
-              "collapsed": false,
-              "visibleFields": ["thermal-power", "electric-output", "pzr-pressure", "sg-a-level", "active-alarms", "active-trips", "runtime-performance"]
-            },
-            {
-              "categoryId": "grid-system",
-              "visible": true,
-              "collapsed": false,
-              "visibleFields": ["frequency", "generation", "load", "reserve", "alarms"]
-            },
-            {
-              "categoryId": "ambulances",
-              "visible": true,
-              "collapsed": false,
-              "visibleFields": []
-            },
-            {
-              "categoryId": "incidents",
-              "visible": true,
-              "collapsed": false,
-              "visibleFields": ["victims", "assigned-capacity"]
-            },
-            {
-              "categoryId": "hospitals",
-              "visible": true,
-              "collapsed": false,
-              "visibleFields": ["trauma-beds"]
-            },
-            {
-              "categoryId": "weather",
-              "visible": true,
-              "collapsed": false,
-              "visibleFields": ["air-temperature", "precipitation", "surface"]
-            },
-            {
-              "categoryId": "grid-generation",
-              "visible": true,
-              "collapsed": true,
-              "visibleFields": ["dispatch", "available", "state"]
-            },
-            {
-              "categoryId": "grid-consumers",
-              "visible": true,
-              "collapsed": true,
-              "visibleFields": ["served", "service"]
-            },
-            {
-              "categoryId": "grid-substations",
-              "visible": true,
-              "collapsed": true,
-              "visibleFields": ["voltage", "loading"]
-            },
-            {
-              "categoryId": "grid-branches",
-              "visible": true,
-              "collapsed": true,
-              "visibleFields": ["flow", "loading", "state"]
-            }
+          "categoryId": "grid-system",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": [
+            "frequency",
+            "generation",
+            "load",
+            "reserve",
+            "alarms"
+          ]
+        },
+        {
+          "categoryId": "ambulances",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": []
+        },
+        {
+          "categoryId": "incidents",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": [
+            "victims",
+            "assigned-capacity"
+          ]
+        },
+        {
+          "categoryId": "hospitals",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": [
+            "trauma-beds"
+          ]
+        },
+        {
+          "categoryId": "weather",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": [
+            "air-temperature",
+            "precipitation",
+            "surface"
+          ]
+        },
+        {
+          "categoryId": "grid-generation",
+          "visible": true,
+          "collapsed": true,
+          "visibleFields": [
+            "dispatch",
+            "available",
+            "state"
+          ]
+        },
+        {
+          "categoryId": "grid-consumers",
+          "visible": true,
+          "collapsed": true,
+          "visibleFields": [
+            "served",
+            "service"
+          ]
+        },
+        {
+          "categoryId": "grid-substations",
+          "visible": true,
+          "collapsed": true,
+          "visibleFields": [
+            "voltage",
+            "loading"
+          ]
+        },
+        {
+          "categoryId": "grid-branches",
+          "visible": true,
+          "collapsed": true,
+          "visibleFields": [
+            "flow",
+            "loading",
+            "state"
           ]
         }
-      },
-      {
-        "id": "system-footer",
-        "primitive": "systemFooter",
-        "visible": true,
-        "config": {}
-      },
-      {
-        "id": "guidance-overlay",
-        "primitive": "guidanceOverlay",
-        "visible": true,
-        "config": {}
-      }
-    ]
+      ]
+    }
   },
   "timeline": {
     "cues": [
       {
         "id": "highlight-screenshot-objects",
-        "at": { "kind": "after_scenario_start", "seconds": 0 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 0
+        },
         "actions": [
           {
             "type": "highlight_objects",

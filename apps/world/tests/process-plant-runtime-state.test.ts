@@ -37,7 +37,11 @@ const createMemoryStateStore = (): PackRuntimeStateStore => {
 const scenarioConfig = (
   processPlantConfig: unknown = {},
   processSystemOverrides: Record<string, unknown> = {},
-) => ({
+) => {
+  const runtimeSystems = processPlantConfig && typeof processPlantConfig === 'object' && !Array.isArray(processPlantConfig)
+    ? (processPlantConfig as { systems?: Record<string, unknown> }).systems ?? {}
+    : {}
+  return ({
   scenarioId: 'process-plant-test',
   runtimeIds: ['process-plant-local'],
   world: {
@@ -45,18 +49,16 @@ const scenarioConfig = (
     environment: {},
   },
   initialObjects: [],
-  processSystems: [{
-    id: 'plant',
-    pack: 'process-plant',
-    componentLibrary: 'process-plant',
-    graph: pressurizedWaterReactorPlantSpec,
-    ...processSystemOverrides,
-  }],
-  runtimeConfigs: {
-    'process-plant-local': processPlantConfig,
+  runtimeConfig: {
+    systems: [{
+      id: 'plant',
+      graph: pressurizedWaterReactorPlantSpec,
+      ...processSystemOverrides,
+      runtime: runtimeSystems.plant ?? {},
+    }],
   },
-  runtimeConfig: {},
 })
+}
 
 const query = (kind: string, payload: unknown = {}): PackQueryRequest => ({
   packId: 'process-plant',
@@ -113,7 +115,7 @@ describe('process plant pack runtime', () => {
           throw new Error('process plant unit expansion should not route')
         },
       },
-      runtimeConfigs: {},
+      packConfigs: {},
     })
     const unit = contribution.objects[0] as OperationalObject
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
@@ -303,7 +305,7 @@ describe('process plant pack runtime', () => {
   test('runs the Halden multi-unit PWR scenario and serves four-loop and six-loop overview surfaces after startup', async () => {
     const scenario = scenarios.find(candidate => candidate.id === 'halden-process-plant-demo')
     if (!scenario) throw new Error('missing Halden process-plant scenario')
-    const processPlantRuntimeConfig = scenario.runtimeConfigs['process-plant'] ?? {}
+    const processPlantRuntimeConfig = scenario.packConfigs['process-plant'] ?? {}
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       simulationRunId,
       scenario: {
@@ -311,8 +313,6 @@ describe('process plant pack runtime', () => {
         runtimeIds: ['process-plant-local'],
         world: scenario.world,
         initialObjects: scenario.initialObjects.filter(object => object.packId === 'process-plant'),
-        processSystems: scenario.processSystems,
-        runtimeConfigs: { 'process-plant-local': processPlantRuntimeConfig },
         runtimeConfig: processPlantRuntimeConfig,
       },
       runtimeStateStore: createMemoryStateStore(),
@@ -2198,20 +2198,6 @@ describe('process plant pack runtime', () => {
     })).rejects.toThrow('must not define both icRef and inline protection')
   })
 
-  test('rejects runtime config for an unknown process system', async () => {
-    await expect(createLocalProcessPlantPackRuntimeAdapter().connect({
-      simulationRunId,
-      scenario: scenarioConfig({
-        systems: {
-          missingPlant: {
-            icRef: processPlantPressurizedWaterReactorIcRef,
-          },
-        },
-      }),
-      runtimeStateStore: createMemoryStateStore(),
-    })).rejects.toThrow('process plant runtime config references unknown process system: missingPlant')
-  })
-
   test('rejects unknown process plant icRef explicitly', async () => {
     await expect(createLocalProcessPlantPackRuntimeAdapter().connect({
       simulationRunId,
@@ -2437,8 +2423,6 @@ describe('process plant pack runtime', () => {
   test('rejects restored I&C snapshots that reference unknown rule state', () => {
     const system = compileProcessPlantSystems([{
       id: 'plant',
-      pack: 'process-plant',
-      componentLibrary: 'process-plant',
       graph: pressurizedWaterReactorPlantSpec,
     }])[0]
     if (!system) throw new Error('expected compiled process plant system')

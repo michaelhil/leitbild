@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import { idSchema, objectIdSchema, signalIdSchema, type ObjectId, type SignalId } from './ids.ts'
 import { geoJsonPointSchema, type GeoJsonPoint } from './geo.ts'
-import { objectContextSchema, type ObjectContext } from './context.ts'
 import { interactionEndpointSchema, type InteractionEndpoint } from './interactions.ts'
 import { operationalObjectSchema, type OperationalObject } from './object.ts'
 import { isoTimestampSchema, type IsoTimestamp } from './time.ts'
@@ -60,23 +59,6 @@ export type SurfaceRegionDefinition =
 export interface SurfaceDefinition {
   readonly schemaVersion: 1
   readonly regions: ReadonlyArray<SurfaceRegionDefinition>
-}
-
-export interface ScenarioInitialObjectContext {
-  readonly objectId: string
-  readonly context: ObjectContext
-}
-
-export interface ScenarioProcessSystemDefinition {
-  readonly id: string
-  readonly pack: string
-  readonly componentLibrary: string
-  readonly graph?: unknown
-  readonly graphRef?: string
-  readonly assemblyRef?: string
-  readonly assemblyConfig?: Record<string, unknown>
-  readonly parameters?: Record<string, unknown>
-  readonly initialState?: Record<string, unknown>
 }
 
 export interface ScenarioGuidance {
@@ -175,12 +157,10 @@ export interface ScenarioDefinition {
   readonly description?: string
   readonly objectives?: ReadonlyArray<string>
   readonly packs: ReadonlyArray<string>
-  readonly runtimeOverrides: Record<string, string>
+  readonly packRuntimes: Record<string, string>
+  readonly packConfigs: Record<string, unknown>
   readonly world: ScenarioWorldDefinition
   readonly initialObjects: ReadonlyArray<OperationalObject>
-  readonly initialContexts: ReadonlyArray<ScenarioInitialObjectContext>
-  readonly processSystems: ReadonlyArray<ScenarioProcessSystemDefinition>
-  readonly runtimeConfigs: Record<string, unknown>
   readonly surface: SurfaceDefinition
   readonly timeline?: ScenarioTimeline
 }
@@ -268,42 +248,6 @@ export const surfaceDefinitionSchema = z.object({
       })
     }
     primitives.add(region.primitive)
-  }
-})
-
-export const scenarioInitialObjectContextSchema = z.object({
-  objectId: idSchema,
-  context: objectContextSchema,
-})
-
-export const scenarioProcessSystemDefinitionSchema = z.object({
-  id: idSchema,
-  pack: idSchema,
-  componentLibrary: idSchema,
-  graph: z.unknown().optional(),
-  graphRef: idSchema.optional(),
-  assemblyRef: idSchema.optional(),
-  assemblyConfig: z.record(z.string(), z.unknown()).optional(),
-  parameters: z.record(z.string(), z.unknown()).optional(),
-  initialState: z.record(z.string(), z.unknown()).optional(),
-}).superRefine((definition, ctx) => {
-  const hasGraph = definition.graph !== undefined
-  const hasGraphRef = definition.graphRef !== undefined
-  const hasAssemblyRef = definition.assemblyRef !== undefined
-  const sourceCount = [hasGraph, hasGraphRef, hasAssemblyRef].filter(Boolean).length
-  if (sourceCount !== 1) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'process system must define exactly one of graph, graphRef, or assemblyRef',
-      path: sourceCount > 1 ? ['assemblyRef'] : ['graph'],
-    })
-  }
-  if (definition.assemblyConfig !== undefined && !hasAssemblyRef) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'process system assemblyConfig requires assemblyRef',
-      path: ['assemblyConfig'],
-    })
   }
 })
 
@@ -408,12 +352,10 @@ export const scenarioDefinitionSchema = z.object({
   description: z.string().min(1).optional(),
   objectives: z.array(z.string().trim().min(1).max(2048)).optional(),
   packs: z.array(idSchema).default([]),
-  runtimeOverrides: z.record(z.string(), idSchema).default({}),
+  packRuntimes: z.record(z.string(), idSchema).default({}),
+  packConfigs: z.record(z.string(), z.unknown()).default({}),
   world: scenarioWorldDefinitionSchema,
   initialObjects: z.array(operationalObjectSchema),
-  initialContexts: z.array(scenarioInitialObjectContextSchema).default([]),
-  processSystems: z.array(scenarioProcessSystemDefinitionSchema).default([]),
-  runtimeConfigs: z.record(z.string(), z.unknown()).default({}),
   surface: surfaceDefinitionSchema,
   timeline: scenarioTimelineSchema.optional(),
 })

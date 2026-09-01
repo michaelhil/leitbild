@@ -41,15 +41,11 @@ import { createProcessPlantRuntimePerformance } from '../src/packs/process-plant
 
 const compiledSystem = () => compileProcessPlantSystem({
   id: 'plant',
-  pack: 'process-plant',
-  componentLibrary: 'process-plant',
   graph: pressurizedWaterReactorPlantSpec,
 })
 
 const compiledSystemWithParameters = (parameters: Record<string, Record<string, unknown>>) => compileProcessPlantSystem({
   id: 'plant',
-  pack: 'process-plant',
-  componentLibrary: 'process-plant',
   graph: pressurizedWaterReactorPlantSpec,
   parameters,
 })
@@ -63,8 +59,6 @@ const compiledSystemWithStaticFeedwaterValves = () => compiledSystemWithParamete
 
 const compiledSystemWithInitialState = (initialState: Record<string, unknown>) => compileProcessPlantSystem({
   id: 'plant',
-  pack: 'process-plant',
-  componentLibrary: 'process-plant',
   graph: pressurizedWaterReactorPlantSpec,
   initialState,
 })
@@ -74,8 +68,6 @@ const compiledSystemWithConnectionPhysical = (
   physical: Record<string, unknown>,
 ) => compileProcessPlantSystem({
   id: 'plant',
-  pack: 'process-plant',
-  componentLibrary: 'process-plant',
   graph: {
     ...pressurizedWaterReactorPlantSpec,
     connections: pressurizedWaterReactorPlantSpec.connections.map(connection => connection.id === connectionId
@@ -698,8 +690,6 @@ describe('process plant runtime', () => {
       {
         system: compileProcessPlantSystem({
           id: 'unit-1',
-          pack: 'process-plant',
-          componentLibrary: 'process-plant',
           graph: pressurizedWaterReactorPlantSpec,
         }),
         telemetry: {
@@ -711,8 +701,6 @@ describe('process plant runtime', () => {
       {
         system: compileProcessPlantSystem({
           id: 'unit-2',
-          pack: 'process-plant',
-          componentLibrary: 'process-plant',
           graph: pressurizedWaterReactorPlantSpec,
         }),
         telemetry: {
@@ -750,8 +738,6 @@ describe('process plant runtime', () => {
   test('per-system initialState is applied without mutating shared graphRef runtime state', () => {
     const unitA = compileProcessPlantSystem({
       id: 'unit-a',
-      pack: 'process-plant',
-      componentLibrary: 'process-plant',
       graph: pressurizedWaterReactorPlantSpec,
       initialState: {
         'core.rodInsertionFraction': 0.75,
@@ -760,8 +746,6 @@ describe('process plant runtime', () => {
     })
     const unitB = compileProcessPlantSystem({
       id: 'unit-b',
-      pack: 'process-plant',
-      componentLibrary: 'process-plant',
       graph: pressurizedWaterReactorPlantSpec,
     })
     const runtimeA = createProcessPlantRuntime({ system: unitA })
@@ -777,8 +761,6 @@ describe('process plant runtime', () => {
     const unitA = compiledSystem()
     const unitB = compileProcessPlantSystem({
       id: 'plant-b',
-      pack: 'process-plant',
-      componentLibrary: 'process-plant',
       graph: pressurizedWaterReactorPlantSpec,
     })
     const runtimeA = createProcessPlantRuntime({ system: unitA })
@@ -1012,7 +994,7 @@ describe('process plant runtime', () => {
         connect('hx-to-cold-return', 'hx.coldOut', 'coldReturn.inletA', { connectionKind: 'fluidFlow', service: 'coldLoop', nominalFluid: 'water', designPhase: 'liquid', solverModel: 'incompressibleLiquid', variables: liquidVariables(30, 1) }),
       ],
     })
-    const runtime = createProcessPlantRuntime({ system: compileProcessPlantSystem({ id: 'hx', pack: 'process-plant', componentLibrary: 'process-plant', graph }) })
+    const runtime = createProcessPlantRuntime({ system: compileProcessPlantSystem({ id: 'hx', graph }) })
 
     for (let index = 0; index < 20; index += 1) runtime.tick(100)
 
@@ -1058,7 +1040,7 @@ describe('process plant runtime', () => {
         }),
       ],
     })
-    const runtime = createProcessPlantRuntime({ system: compileProcessPlantSystem({ id: 'acc-containment', pack: 'process-plant', componentLibrary: 'process-plant', graph }) })
+    const runtime = createProcessPlantRuntime({ system: compileProcessPlantSystem({ id: 'acc-containment', graph }) })
     const initialInventory = Number(runtime.readVariable(valueOf('acc.liquidInventoryKg')))
     const initialSump = Number(runtime.readVariable(valueOf('containment.sumpInventoryKg')))
 
@@ -2133,7 +2115,7 @@ describe('process plant runtime', () => {
       ],
     })
     const runtime = createProcessPlantRuntime({
-      system: compileProcessPlantSystem({ id: 'electrical', pack: 'process-plant', componentLibrary: 'process-plant', graph }),
+      system: compileProcessPlantSystem({ id: 'electrical', graph }),
     })
 
     runtime.tick(1_000)

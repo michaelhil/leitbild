@@ -1,6 +1,7 @@
 import type { OperationalObject } from '../model/index.ts'
 import {
   createWorldPackDescriptor,
+  emptyPackScenarioConfigSchema,
   type WorldPack,
   type PackCommandRequest,
   type PackCreationGeometry,
@@ -119,6 +120,7 @@ export const createCompositePack = (config: {
       name: config.name,
       contributions: ['knowledge', 'reference-data', 'presentation', 'commands', 'interactions'],
     }),
+    scenarioConfigSchema: emptyPackScenarioConfigSchema,
     ...(wikiRefs.length === 0 ? {} : { knowledge: { wikiRefs } }),
     ...(referenceBuilders.length === 0 && referenceDatasetIds.length === 0
       ? {}

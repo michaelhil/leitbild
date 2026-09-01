@@ -3,15 +3,16 @@
   import ScenarioBuilderMap from '../ScenarioBuilderMap.svelte'
   import { parseControlSurfaceRoute } from '../simulation-run-route.ts'
   import {
-    createEmptyScenarioDraft,
+    createEmptyScenarioSource,
     deepCopy,
     itemTypeFor,
+    selectionFor,
     setValueAtPath,
     valueAtPath,
-    type AuthoringFeature,
+    type AuthoringPack,
     type AuthoringField,
     type AuthoringItemType,
-    type ScenarioDraftRecord,
+    type ScenarioSourceRecord,
   } from '../scenario-builder-model.ts'
 
   interface InvocationResponse {
@@ -30,22 +31,26 @@
     readonly title: string
   }
 
-  type Selection = { readonly kind: 'scenario' } | { readonly kind: 'feature'; readonly id: string } | { readonly kind: 'item'; readonly id: string }
+  type Selection = { readonly kind: 'scenario' } | { readonly kind: 'pack'; readonly id: string } | { readonly kind: 'item'; readonly id: string }
 
   const route = parseControlSurfaceRoute(location.pathname)
   if (route.mode !== 'scenario-builder') throw new Error('Scenario Builder route expected')
   const workspaceId = route.workspaceId
-  const embedded = new URLSearchParams(location.search).get('embed') === '1'
+  const query = new URLSearchParams(location.search)
+  const embedded = query.get('embed') === '1'
+  const definitionId = query.get('definition')
+  const requestedRevisionId = query.get('revision')
 
   let catalog = $state<ScenarioAuthoringCatalog | null>(null)
-  let draft = $state<ScenarioDraftRecord>(createEmptyScenarioDraft())
+  let draft = $state<ScenarioSourceRecord>(createEmptyScenarioSource())
   let selection = $state<Selection>({ kind: 'scenario' })
   let placementItemId = $state<string | null>(null)
-  let featureToAdd = $state('')
+  let packToAdd = $state('')
   let loading = $state(true)
   let saving = $state(false)
   let error = $state<string | null>(null)
   let saved = $state<CreateResult | null>(null)
+  let editing = $state<CreateResult['definition'] | null>(null)
 
   const invoke = async <T,>(capabilityId: string, input: unknown, definition?: CreateResult['definition']): Promise<T> => {
     const response = await fetch(
@@ -61,10 +66,32 @@
     return body
   }
 
-  const loadCatalog = async (): Promise<void> => {
+  const loadEditor = async (): Promise<void> => {
     try {
-      const response = await invoke<InvocationResponse>('world.scenario-authoring.describe', {})
-      catalog = response.result as ScenarioAuthoringCatalog
+      const [catalogResponse, definitionResponse] = await Promise.all([
+        invoke<InvocationResponse>('world.scenario-authoring.describe', {}),
+        definitionId === null
+          ? Promise.resolve(null)
+          : fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/world/scenarios/${encodeURIComponent(definitionId)}`).then(async response => {
+              const body = await response.json() as { source?: ScenarioSourceRecord; revisionId?: string; error?: { message?: string } }
+              if (!response.ok || !body.source || !body.revisionId) throw new Error(body.error?.message ?? `Request failed: ${response.status}`)
+              return body as { source: ScenarioSourceRecord; revisionId: string }
+            }),
+      ])
+      catalog = catalogResponse.result as ScenarioAuthoringCatalog
+      if (definitionResponse) {
+        if (requestedRevisionId !== null && requestedRevisionId !== definitionResponse.revisionId) {
+          throw new Error('This Scenario has changed. Reopen the editor from the Workspace homepage.')
+        }
+        draft = deepCopy(definitionResponse.source)
+        editing = {
+          workspaceId,
+          moduleId: 'world',
+          type: 'world.scenario',
+          id: definitionResponse.source.id,
+          revisionId: definitionResponse.revisionId,
+        }
+      }
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause)
     } finally {
@@ -72,39 +99,32 @@
     }
   }
 
-  const mapRegion = (): ScenarioDraftRecord['surface']['regions'][number] => {
-    const region = draft.surface.regions.find(candidate => candidate.primitive === 'map')
-    if (!region) throw new Error('Scenario Draft has no map region')
-    return region
-  }
-
-  const mapCenter = (): [number, number] => {
-    const value = mapRegion().config.center
-    return Array.isArray(value) && typeof value[0] === 'number' && typeof value[1] === 'number'
-      ? [value[0], value[1]]
-      : [10.7522, 59.9139]
-  }
-
-  const mapZoom = (): number => typeof mapRegion().config.zoom === 'number' ? mapRegion().config.zoom : 11
-  const activeFeatures = (): ReadonlyArray<AuthoringFeature> => catalog?.features.filter(feature => draft.packs.includes(feature.id)) ?? []
-  const availableFeatures = (): ReadonlyArray<AuthoringFeature> => catalog?.features.filter(feature => !draft.packs.includes(feature.id)) ?? []
-  const selectedItem = (): ScenarioDraftRecord['items'][number] | undefined => selection.kind === 'item'
-    ? draft.items.find(item => item.id === selection.id)
-    : undefined
+  const mapCenter = (): [number, number] => draft.view.map.center
+  const mapZoom = (): number => draft.view.map.zoom
+  const activePacks = (): ReadonlyArray<AuthoringPack> => catalog?.packs.filter(pack => selectionFor(draft, pack.id) !== undefined) ?? []
+  const availablePacks = (): ReadonlyArray<AuthoringPack> => catalog?.packs.filter(pack => selectionFor(draft, pack.id) === undefined) ?? []
+  const allItems = () => draft.packs.flatMap(pack => pack.items.map(item => ({ packId: pack.id, item })))
+  const selectedEntry = () => selection.kind === 'item' ? allItems().find(entry => entry.item.id === selection.id) : undefined
+  const selectedItem = () => selectedEntry()?.item
   const selectedType = (): AuthoringItemType | undefined => {
     const item = selectedItem()
-    return item && catalog ? itemTypeFor(catalog, item) : undefined
+    const entry = selectedEntry()
+    return entry && catalog ? itemTypeFor(catalog, entry.packId, entry.item) : undefined
   }
-  const selectedSystem = (): ScenarioDraftRecord['processSystems'][number] | undefined => {
+  const selectedLinkedConfig = (): Record<string, unknown> | undefined => {
     const item = selectedItem()
+    const entry = selectedEntry()
     const type = selectedType()
-    if (!item || !type?.linkedSystem) return undefined
-    const id = valueAtPath(item, type.linkedSystem.itemReferencePath)
-    return typeof id === 'string' ? draft.processSystems.find(system => system.id === id) : undefined
+    if (!item || !entry || !type?.linkedConfig) return undefined
+    const id = valueAtPath(item, type.linkedConfig.itemReferencePath)
+    const entries = valueAtPath(selectionFor(draft, entry.packId)?.config, type.linkedConfig.collectionPath)
+    return typeof id === 'string' && Array.isArray(entries)
+      ? entries.find(candidate => candidate && typeof candidate === 'object' && (candidate as { id?: unknown }).id === id) as Record<string, unknown> | undefined
+      : undefined
   }
 
-  const mapPoints = (): ReadonlyArray<{ id: string; label: string; coordinates: [number, number] }> => !catalog ? [] : draft.items.flatMap(item => {
-    const type = itemTypeFor(catalog, item)
+  const mapPoints = (): ReadonlyArray<{ id: string; label: string; coordinates: [number, number] }> => !catalog ? [] : allItems().flatMap(({ packId, item }) => {
+    const type = itemTypeFor(catalog, packId, item)
     if (!type?.placement) return []
     const value = valueAtPath(item, type.placement.path)
     return Array.isArray(value) && typeof value[0] === 'number' && typeof value[1] === 'number'
@@ -113,85 +133,87 @@
   })
 
   const updateRailSections = (): void => {
-    const rail = draft.surface.regions.find(region => region.primitive === 'objectRail')
-    if (!rail) return
-    rail.config.sections = activeFeatures().flatMap(feature => feature.categoryIds.map(categoryId => ({
+    if (!draft.view.rail) draft.view.rail = { width: 340, sections: [] }
+    draft.view.rail.sections = activePacks().flatMap(pack => pack.categoryIds.map(categoryId => ({
       categoryId, visible: true, collapsed: false, visibleFields: [],
     })))
   }
 
-  const addFeature = (): void => {
-    const feature = catalog?.features.find(candidate => candidate.id === featureToAdd)
-    if (!feature || draft.packs.includes(feature.id)) return
-    draft.packs.push(feature.id)
+  const addPack = (): void => {
+    const pack = catalog?.packs.find(candidate => candidate.id === packToAdd)
+    if (!pack || selectionFor(draft, pack.id)) return
+    draft.packs.push({ id: pack.id, config: {}, items: [] })
     updateRailSections()
     draft = { ...draft }
-    selection = { kind: 'feature', id: feature.id }
-    featureToAdd = ''
+    selection = { kind: 'pack', id: pack.id }
+    packToAdd = ''
   }
 
-  const removeFeature = (feature: AuthoringFeature): void => {
-    if (!confirm(`Remove ${feature.title} and all of its items from this draft?`)) return
-    const removedItems = draft.items.filter(item => item.pack === feature.id)
-    const linkedSystemIds = new Set(removedItems.flatMap(item => {
-      const type = itemTypeFor({ features: [feature] }, item)
-      const id = type?.linkedSystem ? valueAtPath(item, type.linkedSystem.itemReferencePath) : undefined
-      return typeof id === 'string' ? [id] : []
-    }))
-    draft.packs = draft.packs.filter(id => id !== feature.id)
-    draft.items = draft.items.filter(item => item.pack !== feature.id)
-    draft.processSystems = draft.processSystems.filter(system => !linkedSystemIds.has(system.id))
-    delete draft.runtimeConfigs[feature.id]
-    delete draft.runtimeOverrides[feature.id]
+  const removePack = (pack: AuthoringPack): void => {
+    if (!confirm(`Remove ${pack.title} and all of its items from this scenario?`)) return
+    const removedItems = selectionFor(draft, pack.id)?.items ?? []
+    draft.packs = draft.packs.filter(selection => selection.id !== pack.id)
     updateRailSections()
     draft = { ...draft }
     selection = { kind: 'scenario' }
     if (placementItemId && removedItems.some(item => item.id === placementItemId)) placementItemId = null
   }
 
-  const addItem = (feature: AuthoringFeature, type: AuthoringItemType): void => {
+  const addItem = (packDescription: AuthoringPack, type: AuthoringItemType): void => {
     const id = `${type.idPrefix}-${crypto.randomUUID()}`
-    const count = draft.items.filter(item => item.pack === feature.id && item.type === type.id).length + 1
+    const pack = selectionFor(draft, packDescription.id)
+    if (!pack) return
+    const count = pack.items.filter(item => item.type === type.id).length + 1
     const item = {
-      pack: feature.id,
       type: type.id,
       id,
       label: `${type.label} ${count}`,
       ...deepCopy(type.defaultItem),
     }
-    if (type.linkedSystem) {
-      const systemId = `${type.linkedSystem.idPrefix}-${crypto.randomUUID()}`
-      setValueAtPath(item, type.linkedSystem.itemReferencePath, systemId)
-      draft.processSystems.push({ id: systemId, ...deepCopy(type.linkedSystem.defaults) })
+    if (type.linkedConfig) {
+      const configId = `${type.linkedConfig.idPrefix}-${crypto.randomUUID()}`
+      setValueAtPath(item, type.linkedConfig.itemReferencePath, configId)
+      const current = valueAtPath(pack.config, type.linkedConfig.collectionPath)
+      const entries = Array.isArray(current) ? current : []
+      entries.push({ id: configId, ...deepCopy(type.linkedConfig.defaults) })
+      setValueAtPath(pack.config, type.linkedConfig.collectionPath, entries)
     }
-    draft.items.push(item)
+    pack.items.push(item)
     selection = { kind: 'item', id }
     if (type.placement) placementItemId = id
     draft = { ...draft }
   }
 
-  const removeItem = (item: ScenarioDraftRecord['items'][number]): void => {
-    const type = catalog ? itemTypeFor(catalog, item) : undefined
-    if (type?.linkedSystem) {
-      const systemId = valueAtPath(item, type.linkedSystem.itemReferencePath)
-      if (typeof systemId === 'string') draft.processSystems = draft.processSystems.filter(system => system.id !== systemId)
+  const removeItem = (item: ScenarioSourceRecord['packs'][number]['items'][number]): void => {
+    const entry = allItems().find(candidate => candidate.item.id === item.id)
+    if (!entry) return
+    const pack = selectionFor(draft, entry.packId)!
+    const type = catalog ? itemTypeFor(catalog, entry.packId, item) : undefined
+    if (type?.linkedConfig) {
+      const configId = valueAtPath(item, type.linkedConfig.itemReferencePath)
+      const current = valueAtPath(pack.config, type.linkedConfig.collectionPath)
+      if (typeof configId === 'string' && Array.isArray(current)) {
+        setValueAtPath(pack.config, type.linkedConfig.collectionPath, current.filter(candidate =>
+          !candidate || typeof candidate !== 'object' || (candidate as { id?: unknown }).id !== configId))
+      }
     }
-    draft.items = draft.items.filter(candidate => candidate.id !== item.id)
+    pack.items = pack.items.filter(candidate => candidate.id !== item.id)
     draft = { ...draft }
-    selection = { kind: 'feature', id: item.pack }
+    selection = { kind: 'pack', id: entry.packId }
     if (placementItemId === item.id) placementItemId = null
   }
 
   const setMapView = (center: [number, number], zoom: number): void => {
-    mapRegion().config.center = center
-    mapRegion().config.zoom = Math.round(zoom * 100) / 100
+    draft.view.map.center = center
+    draft.view.map.zoom = Math.round(zoom * 100) / 100
     draft = { ...draft }
   }
 
   const placeItem = (coordinates: [number, number]): void => {
     if (!placementItemId || !catalog) return
-    const item = draft.items.find(candidate => candidate.id === placementItemId)
-    const type = item ? itemTypeFor(catalog, item) : undefined
+    const entry = allItems().find(candidate => candidate.item.id === placementItemId)
+    const item = entry?.item
+    const type = item && entry ? itemTypeFor(catalog, entry.packId, item) : undefined
     if (!item || !type?.placement) return
     setValueAtPath(item, type.placement.path, coordinates)
     draft = { ...draft }
@@ -199,7 +221,7 @@
   }
 
   const updateField = (field: AuthoringField, value: unknown): void => {
-    const target = field.target === 'item' ? selectedItem() : selectedSystem()
+    const target = field.target === 'item' ? selectedItem() : selectedLinkedConfig()
     if (!target) return
     setValueAtPath(target, field.path, value)
     draft = { ...draft }
@@ -207,10 +229,10 @@
 
   const validationError = (): string | null => {
     if (draft.title.trim().length === 0) return 'Give the scenario a title.'
-    if (draft.packs.length === 0) return 'Add at least one feature.'
+    if (draft.packs.length === 0) return 'Add at least one Pack.'
     if (placementItemId) return 'Place the selected item on the map.'
-    if (catalog && draft.items.some(item => {
-      const type = itemTypeFor(catalog, item)
+    if (catalog && allItems().some(({ packId, item }) => {
+      const type = itemTypeFor(catalog, packId, item)
       return type?.placement && valueAtPath(item, type.placement.path) === undefined
     })) return 'Every map item needs a position.'
     return null
@@ -225,8 +247,11 @@
       draft.title = draft.title.trim()
       if (draft.description?.trim()) draft.description = draft.description.trim()
       else delete draft.description
-      const response = await invoke<InvocationResponse>('world.scenario.create', { draft })
+      const response = editing === null
+        ? await invoke<InvocationResponse>('world.scenario.create', { source: draft })
+        : await invoke<InvocationResponse>('world.scenario.update', { source: draft }, editing)
       saved = response.result as CreateResult
+      editing = saved.definition
       window.parent.postMessage({ type: 'leitbild:scenario-saved' }, location.origin)
       if (start) {
         const started = await invoke<InvocationResponse>('world.scenario.start', {}, saved.definition)
@@ -242,24 +267,25 @@
   }
 
   const reset = (): void => {
-    draft = createEmptyScenarioDraft()
+    draft = createEmptyScenarioSource()
+    editing = null
     selection = { kind: 'scenario' }
     placementItemId = null
     saved = null
     error = null
   }
 
-  void loadCatalog()
+  void loadEditor()
 </script>
 
 <main class:embedded class="scenario-builder">
   <header class="scenario-builder-header">
-    <div><p class="eyebrow">World</p><h1>Build a scenario</h1><p>Choose features, place items, then save the result as a reusable card.</p></div>
+    <div><p class="eyebrow">World</p><h1>{editing ? 'Edit scenario' : 'Build a scenario'}</h1><p>Choose Packs, place items, then save the result as a reusable card.</p></div>
     {#if !embedded}<a class="command-button" href={`/workspaces/${encodeURIComponent(workspaceId)}`}>Workspace home</a>{/if}
   </header>
 
   {#if loading}
-    <section class="builder-message">Discovering World features…</section>
+    <section class="builder-message">Discovering World Packs…</section>
   {:else if !catalog}
     <section class="builder-message error">{error ?? 'Scenario authoring is unavailable.'}</section>
   {:else if saved}
@@ -267,29 +293,29 @@
   {:else}
     <section class="builder-toolbar">
       <label>Scenario title <input maxlength="160" value={draft.title} oninput={event => { draft.title = event.currentTarget.value; draft = { ...draft } }} /></label>
-      <label class="feature-picker">Add feature <select bind:value={featureToAdd}><option value="">Choose…</option>{#each availableFeatures() as feature (feature.id)}<option value={feature.id}>{feature.title}</option>{/each}</select></label>
-      <button disabled={!featureToAdd} onclick={addFeature}>Add</button>
+      <label class="feature-picker">Add Pack <select bind:value={packToAdd}><option value="">Choose…</option>{#each availablePacks() as pack (pack.id)}<option value={pack.id}>{pack.title}</option>{/each}</select></label>
+      <button disabled={!packToAdd} onclick={addPack}>Add</button>
       <span class="builder-spacer"></span>
-      <button class="primary" disabled={saving} onclick={() => void save(false)}>Save</button>
+      <button class="primary" disabled={saving} onclick={() => void save(false)}>{editing ? 'Save revision' : 'Save'}</button>
       <button disabled={saving} onclick={() => void save(true)}>Save & start</button>
     </section>
     {#if error}<p class="builder-inline-error">{error}</p>{/if}
     <section class="builder-workbench">
       <aside class="builder-outline">
         <button class:active={selection.kind === 'scenario'} onclick={() => { selection = { kind: 'scenario' }; placementItemId = null }}><strong>Scenario</strong><small>Starting view</small></button>
-        {#each activeFeatures() as feature (feature.id)}
+        {#each activePacks() as pack (pack.id)}
           <section class="outline-feature">
-            <button class:active={selection.kind === 'feature' && selection.id === feature.id} onclick={() => { selection = { kind: 'feature', id: feature.id }; placementItemId = null }}><strong>{feature.title}</strong><small>{draft.items.filter(item => item.pack === feature.id).length} items</small></button>
-            {#each draft.items.filter(item => item.pack === feature.id) as item (item.id)}
+            <button class:active={selection.kind === 'pack' && selection.id === pack.id} onclick={() => { selection = { kind: 'pack', id: pack.id }; placementItemId = null }}><strong>{pack.title}</strong><small>{selectionFor(draft, pack.id)?.items.length ?? 0} items</small></button>
+            {#each selectionFor(draft, pack.id)?.items ?? [] as item (item.id)}
               <button class:active={selection.kind === 'item' && selection.id === item.id} class="outline-item" onclick={() => { selection = { kind: 'item', id: item.id }; placementItemId = null }}><span>{item.label}</span><small>{item.type}</small></button>
             {/each}
           </section>
         {/each}
-        {#if draft.packs.length === 0}<p class="outline-empty">Add a feature to begin.</p>{/if}
+        {#if draft.packs.length === 0}<p class="outline-empty">Add a Pack to begin.</p>{/if}
       </aside>
 
       <section class="builder-map-panel">
-        {#if placementItemId}<div class="placement-banner">Click the map to place {draft.items.find(item => item.id === placementItemId)?.label}. <button onclick={() => { placementItemId = null }}>Cancel</button></div>{/if}
+        {#if placementItemId}<div class="placement-banner">Click the map to place {allItems().find(entry => entry.item.id === placementItemId)?.item.label}. <button onclick={() => { placementItemId = null }}>Cancel</button></div>{/if}
         <ScenarioBuilderMap
           center={mapCenter()} zoom={mapZoom()} points={mapPoints()}
           selectedId={selection.kind === 'item' ? selection.id : null}
@@ -305,17 +331,28 @@
           <h2>Scenario</h2><p>The map position is the starting frame users will see.</p>
           <label>Description <textarea rows="4" placeholder="Optional" value={draft.description ?? ''} oninput={event => { draft.description = event.currentTarget.value; draft = { ...draft } }}></textarea></label>
           <dl><div><dt>Center</dt><dd>{mapCenter().map(value => value.toFixed(4)).join(', ')}</dd></div><div><dt>Zoom</dt><dd>{mapZoom().toFixed(1)}</dd></div></dl>
-        {:else if selection.kind === 'feature'}
-          {@const feature = catalog.features.find(candidate => candidate.id === selection.id)}
-          {#if feature}<h2>{feature.title}</h2><p>{feature.description}</p><h3>Add item</h3><div class="item-type-list">{#each feature.itemTypes as type (type.id)}<button onclick={() => addItem(feature, type)}><strong>{type.label}</strong><small>{type.description}</small></button>{/each}</div><button class="danger-text" onclick={() => removeFeature(feature)}>Remove feature</button>{/if}
+        {:else if selection.kind === 'pack'}
+          {@const pack = catalog.packs.find(candidate => candidate.id === selection.id)}
+          {#if pack}
+            {@const packSelection = selectionFor(draft, pack.id)}
+            <h2>{pack.title}</h2><p>{pack.description}</p>
+            {#if packSelection && pack.runtimes.length > 1}
+              <label>Runtime
+                <select value={packSelection.runtime ?? pack.defaultRuntimeId} onchange={event => { packSelection.runtime = event.currentTarget.value; draft = { ...draft } }}>
+                  {#each pack.runtimes as runtime (runtime.id)}<option value={runtime.id}>{runtime.label} · {runtime.kind}</option>{/each}
+                </select>
+              </label>
+            {/if}
+            <h3>Add item</h3><div class="item-type-list">{#each pack.itemTypes as type (type.id)}<button onclick={() => addItem(pack, type)}><strong>{type.label}</strong><small>{type.description}</small></button>{/each}</div><button class="danger-text" onclick={() => removePack(pack)}>Remove Pack</button>
+          {/if}
         {:else}
           {@const item = selectedItem()}
           {@const type = selectedType()}
           {#if item && type}
-            <p class="eyebrow">{catalog.features.find(feature => feature.id === item.pack)?.title}</p><h2>{type.label}</h2>
+            <p class="eyebrow">{catalog.packs.find(pack => pack.id === selectedEntry()?.packId)?.title}</p><h2>{type.label}</h2>
             <label>Name <input value={item.label} oninput={event => { item.label = event.currentTarget.value; draft = { ...draft } }} /></label>
             {#each type.fields as field (`${field.target}:${field.path.join('.')}`)}
-              {@const target = field.target === 'item' ? item : selectedSystem()}
+              {@const target = field.target === 'item' ? item : selectedLinkedConfig()}
               {#if target}
                 <label>{field.label}
                   {#if field.control.kind === 'select'}
@@ -338,4 +375,3 @@
     </section>
   {/if}
 </main>
-

@@ -1,7 +1,8 @@
-import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject, ScenarioProcessSystemDefinition, SurfaceMapLayer } from '../model/index.ts'
+import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject, SurfaceMapLayer } from '../model/index.ts'
 import type { RoutingAdapter } from '../../routing/protocol.ts'
 import type { DatasetConfig, DatasetId } from '../../reference-data/types.ts'
 import { packDescriptorSchema, type PackDescriptor } from '@leitbild/contracts'
+import { z } from 'zod'
 
 /** Builder a pack declares to contribute a reference dataset. The CLI reads `id`
  * for filtering and listing; `build` runs only when the pipeline actually
@@ -221,7 +222,6 @@ export interface PackScenarioItemSpec {
 
 export interface PackScenarioItemContribution {
   readonly objects: ReadonlyArray<OperationalObject>
-  readonly processSystems?: ReadonlyArray<ScenarioProcessSystemDefinition>
 }
 
 export type PackScenarioAuthoringControl =
@@ -231,7 +231,7 @@ export type PackScenarioAuthoringControl =
   | { readonly kind: 'select'; readonly defaultValue: string; readonly options: ReadonlyArray<{ readonly value: string; readonly label: string }> }
 
 export interface PackScenarioAuthoringField {
-  readonly target: 'item' | 'system'
+  readonly target: 'item' | 'linkedConfig'
   readonly path: ReadonlyArray<string | number>
   readonly label: string
   readonly control: PackScenarioAuthoringControl
@@ -247,7 +247,8 @@ export interface PackScenarioAuthoringItemType {
     readonly target: 'item'
     readonly path: ReadonlyArray<string | number>
   }
-  readonly linkedSystem?: {
+  readonly linkedConfig?: {
+    readonly collectionPath: ReadonlyArray<string | number>
     readonly idPrefix: string
     readonly itemReferencePath: ReadonlyArray<string | number>
     readonly defaults: Readonly<Record<string, unknown>>
@@ -270,7 +271,7 @@ export interface PackScenarioExpansionContext {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly objectById: (id: ObjectId) => OperationalObject | undefined
   readonly routing: RoutingAdapter
-  readonly runtimeConfigs: Record<string, unknown>
+  readonly packConfigs: Record<string, unknown>
 }
 
 export interface PackScenarioOperationContext extends PackScenarioExpansionContext {
@@ -363,6 +364,7 @@ export interface PackInteractionContribution {
 
 export interface WorldPack {
   readonly descriptor: PackDescriptor
+  readonly scenarioConfigSchema: z.ZodType
   readonly authoring?: PackScenarioAuthoringContribution
   readonly runtime?: PackRuntimeContribution
   readonly knowledge?: PackKnowledgeContribution
@@ -372,6 +374,8 @@ export interface WorldPack {
   readonly commands: PackCommandContribution
   readonly interactions?: PackInteractionContribution
 }
+
+export const emptyPackScenarioConfigSchema = z.object({}).strict()
 
 export const createWorldPackDescriptor = (config: {
   readonly id: string

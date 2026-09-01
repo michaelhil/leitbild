@@ -10,6 +10,7 @@ import {
 } from './ids.ts'
 import { accessContextSchema, actorContextSchema } from './access.ts'
 import { moduleQueryOutcomeSchema } from './modules.ts'
+import { relativeUiPathSchema } from './ui.ts'
 import {
   workspaceDefinitionRevisionReferenceSchema,
 } from './definitions.ts'
@@ -27,11 +28,6 @@ export const workspaceResourceReferenceSchema = z.object({
 export type WorkspaceResourceReference = z.infer<typeof workspaceResourceReferenceSchema>
 
 const jsonSchemaSchema = z.record(z.string(), z.unknown())
-
-export const relativeUiPathSchema = z.string().min(1).max(1024).superRefine((value, ctx) => {
-  if (!value.startsWith('/')) ctx.addIssue({ code: 'custom', message: 'UI path must start with /' })
-  if (value.includes('://')) ctx.addIssue({ code: 'custom', message: 'UI path must not contain an origin' })
-})
 
 export const moduleCapabilityDescriptorSchema = z.object({
   id: capabilityIdSchema,

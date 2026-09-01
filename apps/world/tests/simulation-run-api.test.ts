@@ -173,7 +173,7 @@ const createRun = async (
   return {
     id: runtime.id,
     snapshot: runtime.snapshot(),
-    ...(revision === undefined ? {} : { scenario: revision.definition }),
+    ...(revision === undefined ? {} : { scenario: await registry.compileScenarioRevision(revision) }),
   }
 }
 
@@ -192,12 +192,13 @@ describe('Simulation Run API', () => {
         readonly id: string
         readonly packs: readonly string[]
         readonly initialObjects: ReadonlyArray<{ readonly packId: string }>
-        readonly processSystems: readonly unknown[]
       }
+      readonly source: { readonly packs: ReadonlyArray<{ readonly id: string; readonly config: unknown }> }
     }>(registry, '/scenarios/halden-process-plant-demo')
     expect(fetched.body.scenario.packs).toEqual(['process-plant', 'ambulance', 'weather'])
     expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'process-plant')).toHaveLength(7)
-    expect(fetched.body.scenario.processSystems).toHaveLength(7)
+    const processPlant = fetched.body.source.packs.find(pack => pack.id === 'process-plant')
+    expect((processPlant?.config as { systems: readonly unknown[] }).systems).toHaveLength(7)
   })
 
   test('joins only existing runs and exposes their objects and capabilities', async () => {

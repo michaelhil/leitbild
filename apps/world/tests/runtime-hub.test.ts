@@ -81,7 +81,7 @@ describe('createRuntimeHub', () => {
         runtimeIds: ['active.runtime'],
         world: { startsAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp, environment: { mode: 'test' } },
         initialObjects: [],
-        runtimeConfigs: {},
+        runtimeConfigByRuntimeId: {},
         runtimeConfig: {},
       },
     })

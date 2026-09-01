@@ -6,6 +6,7 @@ import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
 import { processPlantControlWriteCommandKind } from './commands.ts'
 import { emptyProcessPlantProjection, processPlantPackId, processPlantUnitPackDataSchema, type ProcessPlantUnitPackData } from './model.ts'
 import { processPlantSimAdapterId, processPlantSimRuntimeId } from './sim/constants.ts'
+import { processPlantPackConfigSchema } from './process-systems.ts'
 
 const unsupported = (operation: string): never => {
   throw new Error(`process-plant pack does not support ${operation}`)
@@ -113,6 +114,7 @@ export const processPlantPack: WorldPack = {
     id: 'process-plant', version: '1.0.0', name: 'Process Plant',
     contributions: ['runtime', 'knowledge', 'scenario', 'presentation', 'commands'],
   }),
+  scenarioConfigSchema: processPlantPackConfigSchema,
   authoring: {
     itemTypes: [{
       id: 'unit',
@@ -121,18 +123,17 @@ export const processPlantPack: WorldPack = {
       idPrefix: 'plant',
       defaultItem: {},
       placement: { target: 'item', path: ['location'] },
-      linkedSystem: {
+      linkedConfig: {
+        collectionPath: ['systems'],
         idPrefix: 'plant-system',
         itemReferencePath: ['systemId'],
         defaults: {
-          pack: 'process-plant',
-          componentLibrary: 'process-plant',
           assemblyRef: 'process-plant.pwr.reference.v2',
           assemblyConfig: { loopCount: 4 },
         },
       },
       fields: [{
-        target: 'system', path: ['assemblyConfig', 'loopCount'], label: 'Primary loops',
+        target: 'linkedConfig', path: ['assemblyConfig', 'loopCount'], label: 'Primary loops',
         control: { kind: 'number', defaultValue: 4, min: 2, max: 6, step: 1 },
       }],
     }],

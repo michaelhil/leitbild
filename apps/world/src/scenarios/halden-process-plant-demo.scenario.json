@@ -1,10 +1,510 @@
 {
   "id": "halden-process-plant-demo",
-  "schemaVersion": 1,
   "title": "Halden process-plant multi-sim demo",
   "description": "Seven independently simulated process-plant units near Halden, including a six-loop PWR variant, running alongside ambulance response and moving weather.",
-  "packs": ["process-plant", "ambulance", "weather"],
-  "runtimeOverrides": {},
+  "packs": [
+    {
+      "id": "process-plant",
+      "config": {
+        "systems": [
+          {
+            "id": "halden-unit-a1",
+            "assemblyRef": "process-plant.pwr.reference.v2",
+            "assemblyConfig": {
+              "loopCount": 4
+            },
+            "parameters": {
+              "core": {
+                "initialPowerFraction": 0.992
+              },
+              "turbine": {
+                "initialLoadFraction": 0.992
+              }
+            },
+            "initialState": {
+              "pressurizer.pressureMPa": 15.47,
+              "sgA.levelPercent": 54.8,
+              "sgA.collapsedLevelPercent": 53,
+              "sgA.secondaryInventoryKg": 29680,
+              "sgA.steamMassKg": 11940,
+              "feedwaterControlValveA.positionFraction": 0.905
+            },
+            "runtime": {
+              "icRef": "process-plant.pwr.reference.graph.ic.v2"
+            }
+          },
+          {
+            "id": "halden-unit-a2",
+            "assemblyRef": "process-plant.pwr.reference.v2",
+            "assemblyConfig": {
+              "loopCount": 4
+            },
+            "parameters": {
+              "core": {
+                "initialPowerFraction": 1
+              },
+              "turbine": {
+                "initialLoadFraction": 1
+              }
+            },
+            "initialState": {
+              "pressurizer.pressureMPa": 15.53,
+              "sgA.levelPercent": 55.3,
+              "sgA.collapsedLevelPercent": 53.5,
+              "sgA.secondaryInventoryKg": 29960,
+              "sgA.steamMassKg": 12060,
+              "feedwaterControlValveA.positionFraction": 0.914
+            },
+            "runtime": {
+              "icRef": "process-plant.pwr.reference.graph.ic.v2"
+            }
+          },
+          {
+            "id": "halden-unit-a3",
+            "assemblyRef": "process-plant.pwr.reference.v2",
+            "assemblyConfig": {
+              "loopCount": 4
+            },
+            "parameters": {
+              "core": {
+                "initialPowerFraction": 0.986
+              },
+              "turbine": {
+                "initialLoadFraction": 0.986
+              }
+            },
+            "initialState": {
+              "pressurizer.pressureMPa": 15.49,
+              "sgA.levelPercent": 54.5,
+              "sgA.collapsedLevelPercent": 52.8,
+              "sgA.secondaryInventoryKg": 29570,
+              "sgA.steamMassKg": 11920,
+              "feedwaterControlValveA.positionFraction": 0.901
+            },
+            "runtime": {
+              "icRef": "process-plant.pwr.reference.graph.ic.v2"
+            }
+          },
+          {
+            "id": "halden-unit-b1",
+            "assemblyRef": "process-plant.pwr.reference.v2",
+            "assemblyConfig": {
+              "loopCount": 4
+            },
+            "parameters": {
+              "core": {
+                "initialPowerFraction": 0.997
+              },
+              "turbine": {
+                "initialLoadFraction": 0.997
+              }
+            },
+            "initialState": {
+              "pressurizer.pressureMPa": 15.51,
+              "sgA.levelPercent": 55.6,
+              "sgA.collapsedLevelPercent": 53.7,
+              "sgA.secondaryInventoryKg": 30070,
+              "sgA.steamMassKg": 12030,
+              "feedwaterControlValveA.positionFraction": 0.916
+            },
+            "runtime": {
+              "icRef": "process-plant.pwr.reference.graph.ic.v2"
+            }
+          },
+          {
+            "id": "halden-unit-b2",
+            "assemblyRef": "process-plant.pwr.reference.v2",
+            "assemblyConfig": {
+              "loopCount": 4
+            },
+            "parameters": {
+              "core": {
+                "initialPowerFraction": 0.989
+              },
+              "turbine": {
+                "initialLoadFraction": 0.989
+              }
+            },
+            "initialState": {
+              "pressurizer.pressureMPa": 15.46,
+              "sgA.levelPercent": 54.9,
+              "sgA.collapsedLevelPercent": 53.1,
+              "sgA.secondaryInventoryKg": 29740,
+              "sgA.steamMassKg": 11960,
+              "feedwaterControlValveA.positionFraction": 0.907
+            },
+            "runtime": {
+              "icRef": "process-plant.pwr.reference.graph.ic.v2"
+            }
+          },
+          {
+            "id": "halden-unit-b3",
+            "assemblyRef": "process-plant.pwr.reference.v2",
+            "assemblyConfig": {
+              "loopCount": 4
+            },
+            "parameters": {
+              "core": {
+                "initialPowerFraction": 0.994
+              },
+              "turbine": {
+                "initialLoadFraction": 0.994
+              }
+            },
+            "initialState": {
+              "pressurizer.pressureMPa": 15.52,
+              "sgA.levelPercent": 55.1,
+              "sgA.collapsedLevelPercent": 53.3,
+              "sgA.secondaryInventoryKg": 29850,
+              "sgA.steamMassKg": 12020,
+              "feedwaterControlValveA.positionFraction": 0.911
+            },
+            "runtime": {
+              "icRef": "process-plant.pwr.reference.graph.ic.v2"
+            }
+          },
+          {
+            "id": "halden-6-loop",
+            "assemblyRef": "process-plant.pwr.reference.v2",
+            "assemblyConfig": {
+              "loopCount": 6
+            },
+            "parameters": {
+              "core": {
+                "initialPowerFraction": 1
+              },
+              "turbine": {
+                "initialLoadFraction": 1
+              }
+            },
+            "initialState": {
+              "pressurizer.pressureMPa": 15.5,
+              "sgA.levelPercent": 55,
+              "sgA.collapsedLevelPercent": 53.2,
+              "sgA.secondaryInventoryKg": 29800,
+              "sgA.steamMassKg": 12000,
+              "feedwaterControlValveA.positionFraction": 0.91
+            },
+            "runtime": {
+              "icRef": "process-plant.pwr.reference.graph.ic.v2"
+            }
+          }
+        ]
+      },
+      "items": [
+        {
+          "type": "unit",
+          "id": "plant:halden-a1",
+          "label": "Halden Unit A1",
+          "systemId": "halden-unit-a1",
+          "clusterId": "cluster-a",
+          "coolingWater": "Tista river / Halden harbor",
+          "location": [
+            11.3714,
+            59.1198
+          ]
+        },
+        {
+          "type": "unit",
+          "id": "plant:halden-a2",
+          "label": "Halden Unit A2",
+          "systemId": "halden-unit-a2",
+          "clusterId": "cluster-a",
+          "coolingWater": "Tista river / Halden harbor",
+          "location": [
+            11.3744,
+            59.1206
+          ]
+        },
+        {
+          "type": "unit",
+          "id": "plant:halden-a3",
+          "label": "Halden Unit A3",
+          "systemId": "halden-unit-a3",
+          "clusterId": "cluster-a",
+          "coolingWater": "Tista river / Halden harbor",
+          "location": [
+            11.377,
+            59.1192
+          ]
+        },
+        {
+          "type": "unit",
+          "id": "plant:halden-b1",
+          "label": "Halden Unit B1",
+          "systemId": "halden-unit-b1",
+          "clusterId": "cluster-b",
+          "coolingWater": "Iddefjorden",
+          "location": [
+            11.4067,
+            59.1126
+          ]
+        },
+        {
+          "type": "unit",
+          "id": "plant:halden-b2",
+          "label": "Halden Unit B2",
+          "systemId": "halden-unit-b2",
+          "clusterId": "cluster-b",
+          "coolingWater": "Iddefjorden",
+          "location": [
+            11.4101,
+            59.1137
+          ]
+        },
+        {
+          "type": "unit",
+          "id": "plant:halden-b3",
+          "label": "Halden Unit B3",
+          "systemId": "halden-unit-b3",
+          "clusterId": "cluster-b",
+          "coolingWater": "Iddefjorden",
+          "location": [
+            11.413,
+            59.1121
+          ]
+        },
+        {
+          "type": "unit",
+          "id": "plant:halden-6-loop",
+          "label": "Halden 6-loop",
+          "systemId": "halden-6-loop",
+          "clusterId": "cluster-c",
+          "coolingWater": "Iddefjorden",
+          "location": [
+            11.3985,
+            59.117
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ambulance",
+      "config": {},
+      "items": [
+        {
+          "type": "hospital",
+          "id": "facility:halden-demo-hospital",
+          "label": "Halden Emergency Clinic",
+          "position": [
+            11.3761113,
+            59.1294303
+          ],
+          "traumaBeds": {
+            "total": 5,
+            "available": 4
+          }
+        },
+        {
+          "type": "hospital",
+          "id": "facility:kalnes-demo",
+          "label": "Østfold Hospital Kalnes",
+          "position": [
+            11.0328,
+            59.3197
+          ],
+          "traumaBeds": {
+            "total": 6,
+            "available": 5
+          }
+        },
+        {
+          "type": "incident",
+          "id": "incident:demo-harbor",
+          "label": "Harbor fall injury",
+          "position": [
+            11.3775431,
+            59.1183212
+          ],
+          "triage": "yellow",
+          "victims": {
+            "state": "confirmed",
+            "count": 1
+          }
+        },
+        {
+          "type": "incident",
+          "id": "incident:demo-bridge",
+          "label": "Bridge road collision",
+          "position": [
+            11.3923,
+            59.1265
+          ],
+          "triage": "red",
+          "victims": {
+            "state": "confirmed",
+            "count": 2
+          }
+        },
+        {
+          "type": "ambulance",
+          "id": "amb:demo-1",
+          "label": "Halden Ambulance 1",
+          "position": [
+            11.3888,
+            59.1234
+          ],
+          "equipment": [
+            "defibrillator",
+            "oxygen",
+            "stretcher"
+          ],
+          "targetId": "incident:demo-bridge",
+          "status": "en_route"
+        },
+        {
+          "type": "ambulance",
+          "id": "amb:demo-2",
+          "label": "Halden Ambulance 2",
+          "position": [
+            11.381,
+            59.1218
+          ],
+          "equipment": [
+            "defibrillator",
+            "ventilator"
+          ],
+          "targetId": "incident:demo-harbor",
+          "status": "en_route"
+        },
+        {
+          "type": "ambulance",
+          "id": "amb:demo-3",
+          "label": "Halden Ambulance 3",
+          "position": [
+            11.374,
+            59.1173
+          ],
+          "equipment": [
+            "stretcher",
+            "oxygen"
+          ],
+          "patientsOnBoard": 1,
+          "targetId": "facility:halden-demo-hospital",
+          "status": "transporting"
+        },
+        {
+          "type": "ambulance",
+          "id": "amb:demo-reserve-1",
+          "label": "Reserve Ambulance 1",
+          "atObject": "facility:halden-demo-hospital",
+          "equipment": [
+            "defibrillator",
+            "oxygen"
+          ]
+        },
+        {
+          "type": "ambulance",
+          "id": "amb:demo-reserve-2",
+          "label": "Reserve Ambulance 2",
+          "position": [
+            11.384,
+            59.1202
+          ],
+          "equipment": [
+            "stretcher",
+            "oxygen"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "weather",
+      "config": {},
+      "items": [
+        {
+          "type": "weather_condition",
+          "id": "weather:demo-rain-band",
+          "label": "Moving rain band",
+          "truthResolution": 8,
+          "showAffectedCells": true,
+          "priority": 6,
+          "summary": "A cool rain band moves across both process-plant clusters.",
+          "atmosphere": {
+            "airTemperatureC": 6,
+            "humidity": 0.88,
+            "windSpeedMps": 7,
+            "windDirectionDeg": 235,
+            "visibilityM": 8000,
+            "cloudCover": 0.85,
+            "precipitation": {
+              "type": "rain",
+              "intensityMmPerHour": 1.1
+            }
+          },
+          "surface": {
+            "groundTemperatureC": 5,
+            "wetness": 0.35,
+            "standingWater": 0.06,
+            "snow": 0,
+            "ice": 0,
+            "frost": 0
+          },
+          "keyframes": [
+            {
+              "atSeconds": 0,
+              "center": [
+                11.355,
+                59.124
+              ],
+              "semiMajorAxisM": 5500,
+              "semiMinorAxisM": 1500,
+              "rotationDeg": 105,
+              "falloffCurve": [
+                {
+                  "x": 0,
+                  "y": 1
+                },
+                {
+                  "x": 0.75,
+                  "y": 0.7
+                },
+                {
+                  "x": 1,
+                  "y": 0
+                }
+              ]
+            },
+            {
+              "atSeconds": 600,
+              "center": [
+                11.435,
+                59.11
+              ],
+              "semiMajorAxisM": 6200,
+              "semiMinorAxisM": 1700,
+              "rotationDeg": 112,
+              "atmosphere": {
+                "precipitation": {
+                  "type": "rain",
+                  "intensityMmPerHour": 1.6
+                },
+                "visibilityM": 6200
+              },
+              "surface": {
+                "wetness": 0.48,
+                "standingWater": 0.1
+              },
+              "falloffCurve": [
+                {
+                  "x": 0,
+                  "y": 1
+                },
+                {
+                  "x": 0.75,
+                  "y": 0.7
+                },
+                {
+                  "x": 1,
+                  "y": 0
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
   "world": {
     "startsAt": "2026-01-01T10:00:00.000Z",
     "environment": {
@@ -12,400 +512,81 @@
       "mode": "process-plant-demo"
     }
   },
-  "items": [
-    {
-      "pack": "process-plant",
-      "type": "unit",
-      "id": "plant:halden-a1",
-      "label": "Halden Unit A1",
-      "systemId": "halden-unit-a1",
-      "clusterId": "cluster-a",
-      "coolingWater": "Tista river / Halden harbor",
-      "location": [11.3714, 59.1198]
+  "view": {
+    "map": {
+      "center": [
+        11.389,
+        59.1185
+      ],
+      "zoom": 13,
+      "layers": [
+        "objects",
+        "routes",
+        "weather",
+        "highlights"
+      ]
     },
-    {
-      "pack": "process-plant",
-      "type": "unit",
-      "id": "plant:halden-a2",
-      "label": "Halden Unit A2",
-      "systemId": "halden-unit-a2",
-      "clusterId": "cluster-a",
-      "coolingWater": "Tista river / Halden harbor",
-      "location": [11.3744, 59.1206]
-    },
-    {
-      "pack": "process-plant",
-      "type": "unit",
-      "id": "plant:halden-a3",
-      "label": "Halden Unit A3",
-      "systemId": "halden-unit-a3",
-      "clusterId": "cluster-a",
-      "coolingWater": "Tista river / Halden harbor",
-      "location": [11.3770, 59.1192]
-    },
-    {
-      "pack": "process-plant",
-      "type": "unit",
-      "id": "plant:halden-b1",
-      "label": "Halden Unit B1",
-      "systemId": "halden-unit-b1",
-      "clusterId": "cluster-b",
-      "coolingWater": "Iddefjorden",
-      "location": [11.4067, 59.1126]
-    },
-    {
-      "pack": "process-plant",
-      "type": "unit",
-      "id": "plant:halden-b2",
-      "label": "Halden Unit B2",
-      "systemId": "halden-unit-b2",
-      "clusterId": "cluster-b",
-      "coolingWater": "Iddefjorden",
-      "location": [11.4101, 59.1137]
-    },
-    {
-      "pack": "process-plant",
-      "type": "unit",
-      "id": "plant:halden-b3",
-      "label": "Halden Unit B3",
-      "systemId": "halden-unit-b3",
-      "clusterId": "cluster-b",
-      "coolingWater": "Iddefjorden",
-      "location": [11.4130, 59.1121]
-    },
-    {
-      "pack": "process-plant",
-      "type": "unit",
-      "id": "plant:halden-6-loop",
-      "label": "Halden 6-loop",
-      "systemId": "halden-6-loop",
-      "clusterId": "cluster-c",
-      "coolingWater": "Iddefjorden",
-      "location": [11.3985, 59.1170]
-    },
-    {
-      "pack": "ambulance",
-      "type": "hospital",
-      "id": "facility:halden-demo-hospital",
-      "label": "Halden Emergency Clinic",
-      "position": [11.3761113, 59.1294303],
-      "traumaBeds": { "total": 5, "available": 4 }
-    },
-    {
-      "pack": "ambulance",
-      "type": "hospital",
-      "id": "facility:kalnes-demo",
-      "label": "Østfold Hospital Kalnes",
-      "position": [11.0328, 59.3197],
-      "traumaBeds": { "total": 6, "available": 5 }
-    },
-    {
-      "pack": "ambulance",
-      "type": "incident",
-      "id": "incident:demo-harbor",
-      "label": "Harbor fall injury",
-      "position": [11.3775431, 59.1183212],
-      "triage": "yellow",
-      "victims": { "state": "confirmed", "count": 1 }
-    },
-    {
-      "pack": "ambulance",
-      "type": "incident",
-      "id": "incident:demo-bridge",
-      "label": "Bridge road collision",
-      "position": [11.3923, 59.1265],
-      "triage": "red",
-      "victims": { "state": "confirmed", "count": 2 }
-    },
-    {
-      "pack": "ambulance",
-      "type": "ambulance",
-      "id": "amb:demo-1",
-      "label": "Halden Ambulance 1",
-      "position": [11.3888, 59.1234],
-      "equipment": ["defibrillator", "oxygen", "stretcher"],
-      "targetId": "incident:demo-bridge",
-      "status": "en_route"
-    },
-    {
-      "pack": "ambulance",
-      "type": "ambulance",
-      "id": "amb:demo-2",
-      "label": "Halden Ambulance 2",
-      "position": [11.3810, 59.1218],
-      "equipment": ["defibrillator", "ventilator"],
-      "targetId": "incident:demo-harbor",
-      "status": "en_route"
-    },
-    {
-      "pack": "ambulance",
-      "type": "ambulance",
-      "id": "amb:demo-3",
-      "label": "Halden Ambulance 3",
-      "position": [11.3740, 59.1173],
-      "equipment": ["stretcher", "oxygen"],
-      "patientsOnBoard": 1,
-      "targetId": "facility:halden-demo-hospital",
-      "status": "transporting"
-    },
-    {
-      "pack": "ambulance",
-      "type": "ambulance",
-      "id": "amb:demo-reserve-1",
-      "label": "Reserve Ambulance 1",
-      "atObject": "facility:halden-demo-hospital",
-      "equipment": ["defibrillator", "oxygen"]
-    },
-    {
-      "pack": "ambulance",
-      "type": "ambulance",
-      "id": "amb:demo-reserve-2",
-      "label": "Reserve Ambulance 2",
-      "position": [11.3840, 59.1202],
-      "equipment": ["stretcher", "oxygen"]
-    },
-    {
-      "pack": "weather",
-      "type": "weather_condition",
-      "id": "weather:demo-rain-band",
-      "label": "Moving rain band",
-      "truthResolution": 8,
-      "showAffectedCells": true,
-      "priority": 6,
-      "summary": "A cool rain band moves across both process-plant clusters.",
-      "atmosphere": {
-        "airTemperatureC": 6,
-        "humidity": 0.88,
-        "windSpeedMps": 7,
-        "windDirectionDeg": 235,
-        "visibilityM": 8000,
-        "cloudCover": 0.85,
-        "precipitation": { "type": "rain", "intensityMmPerHour": 1.1 }
-      },
-      "surface": {
-        "groundTemperatureC": 5,
-        "wetness": 0.35,
-        "standingWater": 0.06,
-        "snow": 0,
-        "ice": 0,
-        "frost": 0
-      },
-      "keyframes": [
+    "rail": {
+      "width": 390,
+      "sections": [
         {
-          "atSeconds": 0,
-          "center": [11.3550, 59.1240],
-          "semiMajorAxisM": 5500,
-          "semiMinorAxisM": 1500,
-          "rotationDeg": 105,
-          "falloffCurve": [{ "x": 0, "y": 1 }, { "x": 0.75, "y": 0.7 }, { "x": 1, "y": 0 }]
+          "categoryId": "process-plants",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": [
+            "thermal-power",
+            "electric-output",
+            "pzr-pressure",
+            "sg-a-level",
+            "active-alarms",
+            "active-trips",
+            "runtime-performance"
+          ]
         },
         {
-          "atSeconds": 600,
-          "center": [11.4350, 59.1100],
-          "semiMajorAxisM": 6200,
-          "semiMinorAxisM": 1700,
-          "rotationDeg": 112,
-          "atmosphere": {
-            "precipitation": { "type": "rain", "intensityMmPerHour": 1.6 },
-            "visibilityM": 6200
-          },
-          "surface": {
-            "wetness": 0.48,
-            "standingWater": 0.1
-          },
-          "falloffCurve": [{ "x": 0, "y": 1 }, { "x": 0.75, "y": 0.7 }, { "x": 1, "y": 0 }]
+          "categoryId": "hospitals",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": [
+            "trauma-beds"
+          ]
+        },
+        {
+          "categoryId": "ambulances",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": []
+        },
+        {
+          "categoryId": "incidents",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": [
+            "victims",
+            "assigned-capacity"
+          ]
+        },
+        {
+          "categoryId": "weather",
+          "visible": true,
+          "collapsed": false,
+          "visibleFields": [
+            "air-temperature",
+            "precipitation",
+            "surface"
+          ]
         }
       ]
     }
-  ],
-  "initialContexts": [],
-  "processSystems": [
-    {
-      "id": "halden-unit-a1",
-      "pack": "process-plant",
-      "componentLibrary": "process-plant",
-      "assemblyRef": "process-plant.pwr.reference.v2",
-      "assemblyConfig": { "loopCount": 4 },
-      "parameters": {
-        "core": { "initialPowerFraction": 0.992 },
-        "turbine": { "initialLoadFraction": 0.992 }
-      },
-      "initialState": {
-        "pressurizer.pressureMPa": 15.47,
-        "sgA.levelPercent": 54.8,
-        "sgA.collapsedLevelPercent": 53.0,
-        "sgA.secondaryInventoryKg": 29680,
-        "sgA.steamMassKg": 11940,
-        "feedwaterControlValveA.positionFraction": 0.905
-      }
-    },
-    {
-      "id": "halden-unit-a2",
-      "pack": "process-plant",
-      "componentLibrary": "process-plant",
-      "assemblyRef": "process-plant.pwr.reference.v2",
-      "assemblyConfig": { "loopCount": 4 },
-      "parameters": {
-        "core": { "initialPowerFraction": 1.0 },
-        "turbine": { "initialLoadFraction": 1.0 }
-      },
-      "initialState": {
-        "pressurizer.pressureMPa": 15.53,
-        "sgA.levelPercent": 55.3,
-        "sgA.collapsedLevelPercent": 53.5,
-        "sgA.secondaryInventoryKg": 29960,
-        "sgA.steamMassKg": 12060,
-        "feedwaterControlValveA.positionFraction": 0.914
-      }
-    },
-    {
-      "id": "halden-unit-a3",
-      "pack": "process-plant",
-      "componentLibrary": "process-plant",
-      "assemblyRef": "process-plant.pwr.reference.v2",
-      "assemblyConfig": { "loopCount": 4 },
-      "parameters": {
-        "core": { "initialPowerFraction": 0.986 },
-        "turbine": { "initialLoadFraction": 0.986 }
-      },
-      "initialState": {
-        "pressurizer.pressureMPa": 15.49,
-        "sgA.levelPercent": 54.5,
-        "sgA.collapsedLevelPercent": 52.8,
-        "sgA.secondaryInventoryKg": 29570,
-        "sgA.steamMassKg": 11920,
-        "feedwaterControlValveA.positionFraction": 0.901
-      }
-    },
-    {
-      "id": "halden-unit-b1",
-      "pack": "process-plant",
-      "componentLibrary": "process-plant",
-      "assemblyRef": "process-plant.pwr.reference.v2",
-      "assemblyConfig": { "loopCount": 4 },
-      "parameters": {
-        "core": { "initialPowerFraction": 0.997 },
-        "turbine": { "initialLoadFraction": 0.997 }
-      },
-      "initialState": {
-        "pressurizer.pressureMPa": 15.51,
-        "sgA.levelPercent": 55.6,
-        "sgA.collapsedLevelPercent": 53.7,
-        "sgA.secondaryInventoryKg": 30070,
-        "sgA.steamMassKg": 12030,
-        "feedwaterControlValveA.positionFraction": 0.916
-      }
-    },
-    {
-      "id": "halden-unit-b2",
-      "pack": "process-plant",
-      "componentLibrary": "process-plant",
-      "assemblyRef": "process-plant.pwr.reference.v2",
-      "assemblyConfig": { "loopCount": 4 },
-      "parameters": {
-        "core": { "initialPowerFraction": 0.989 },
-        "turbine": { "initialLoadFraction": 0.989 }
-      },
-      "initialState": {
-        "pressurizer.pressureMPa": 15.46,
-        "sgA.levelPercent": 54.9,
-        "sgA.collapsedLevelPercent": 53.1,
-        "sgA.secondaryInventoryKg": 29740,
-        "sgA.steamMassKg": 11960,
-        "feedwaterControlValveA.positionFraction": 0.907
-      }
-    },
-    {
-      "id": "halden-unit-b3",
-      "pack": "process-plant",
-      "componentLibrary": "process-plant",
-      "assemblyRef": "process-plant.pwr.reference.v2",
-      "assemblyConfig": { "loopCount": 4 },
-      "parameters": {
-        "core": { "initialPowerFraction": 0.994 },
-        "turbine": { "initialLoadFraction": 0.994 }
-      },
-      "initialState": {
-        "pressurizer.pressureMPa": 15.52,
-        "sgA.levelPercent": 55.1,
-        "sgA.collapsedLevelPercent": 53.3,
-        "sgA.secondaryInventoryKg": 29850,
-        "sgA.steamMassKg": 12020,
-        "feedwaterControlValveA.positionFraction": 0.911
-      }
-    },
-    {
-      "id": "halden-6-loop",
-      "pack": "process-plant",
-      "componentLibrary": "process-plant",
-      "assemblyRef": "process-plant.pwr.reference.v2",
-      "assemblyConfig": { "loopCount": 6 },
-      "parameters": {
-        "core": { "initialPowerFraction": 1.0 },
-        "turbine": { "initialLoadFraction": 1.0 }
-      },
-      "initialState": {
-        "pressurizer.pressureMPa": 15.50,
-        "sgA.levelPercent": 55.0,
-        "sgA.collapsedLevelPercent": 53.2,
-        "sgA.secondaryInventoryKg": 29800,
-        "sgA.steamMassKg": 12000,
-        "feedwaterControlValveA.positionFraction": 0.91
-      }
-    }
-  ],
-  "runtimeConfigs": {
-    "process-plant": {
-      "systems": {
-        "halden-unit-a1": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
-        "halden-unit-a2": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
-        "halden-unit-a3": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
-        "halden-unit-b1": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
-        "halden-unit-b2": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
-        "halden-unit-b3": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
-        "halden-6-loop": { "icRef": "process-plant.pwr.reference.graph.ic.v2" }
-      }
-    },
-    "ambulance": {},
-    "weather": {}
-  },
-  "surface": {
-    "schemaVersion": 1,
-    "regions": [
-      {
-        "id": "main-map",
-        "primitive": "map",
-        "visible": true,
-        "config": {
-          "center": [11.3890, 59.1185],
-          "zoom": 13,
-          "layers": ["objects", "routes", "weather", "highlights"]
-        }
-      },
-      {
-        "id": "left-rail",
-        "primitive": "objectRail",
-        "visible": true,
-        "config": {
-          "width": 390,
-          "sections": [
-            { "categoryId": "process-plants", "visible": true, "collapsed": false, "visibleFields": ["thermal-power", "electric-output", "pzr-pressure", "sg-a-level", "active-alarms", "active-trips", "runtime-performance"] },
-            { "categoryId": "hospitals", "visible": true, "collapsed": false, "visibleFields": ["trauma-beds"] },
-            { "categoryId": "ambulances", "visible": true, "collapsed": false, "visibleFields": [] },
-            { "categoryId": "incidents", "visible": true, "collapsed": false, "visibleFields": ["victims", "assigned-capacity"] },
-            { "categoryId": "weather", "visible": true, "collapsed": false, "visibleFields": ["air-temperature", "precipitation", "surface"] }
-          ]
-        }
-      },
-      { "id": "system-footer", "primitive": "systemFooter", "visible": true, "config": {} },
-      { "id": "guidance-overlay", "primitive": "guidanceOverlay", "visible": true, "config": {} }
-    ]
   },
   "timeline": {
     "cues": [
       {
         "id": "scenario-started",
-        "at": { "kind": "after_scenario_start", "seconds": 0 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 0
+        },
         "actions": [
           {
             "type": "show_guidance",
@@ -413,26 +594,47 @@
               "id": "halden-process-welcome",
               "title": "Halden process-plant demo",
               "message": "Seven process-plant units are running near Halden, including a Halden 6-loop variant with six steam generators. Watch Unit A2 and Unit B1 as scheduled faults develop. The plant rail values are projected from the process runtime; click the eye icon to choose which values stay visible.",
-              "objectIds": ["plant:halden-a2", "plant:halden-b1", "plant:halden-6-loop", "amb:demo-reserve-1"],
+              "objectIds": [
+                "plant:halden-a2",
+                "plant:halden-b1",
+                "plant:halden-6-loop",
+                "amb:demo-reserve-1"
+              ],
               "dismissible": true
             }
           },
           {
             "type": "highlight_objects",
-            "objectIds": ["plant:halden-a2", "plant:halden-b1", "plant:halden-6-loop", "amb:demo-reserve-1"]
+            "objectIds": [
+              "plant:halden-a2",
+              "plant:halden-b1",
+              "plant:halden-6-loop",
+              "amb:demo-reserve-1"
+            ]
           }
         ]
       },
       {
         "id": "plant-medical-demand",
-        "at": { "kind": "after_scenario_start", "seconds": 30 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 30
+        },
         "actions": [
           {
             "type": "emit_signal",
             "signal": {
               "id": "signal:halden-a2-medical-demand",
-              "source": { "kind": "object", "id": "plant:halden-a2" },
-              "targets": [{ "kind": "role", "id": "medical-transport" }],
+              "source": {
+                "kind": "object",
+                "id": "plant:halden-a2"
+              },
+              "targets": [
+                {
+                  "kind": "role",
+                  "id": "medical-transport"
+                }
+              ],
               "signalType": "operational.demand.requested",
               "severity": "warning",
               "payload": {
@@ -440,7 +642,13 @@
                 "demandId": "halden-a2-medical-demand",
                 "capability": "medical.transport",
                 "sourceObjectId": "plant:halden-a2",
-                "location": { "type": "Point", "coordinates": [11.3744, 59.1206] },
+                "location": {
+                  "type": "Point",
+                  "coordinates": [
+                    11.3744,
+                    59.1206
+                  ]
+                },
                 "quantity": 2,
                 "severity": "warning",
                 "title": "Medical pickup requested at Unit A2",
@@ -452,13 +660,18 @@
       },
       {
         "id": "a2-sgtr-ramp",
-        "at": { "kind": "after_scenario_start", "seconds": 60 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 60
+        },
         "actions": [
           {
             "type": "issue_command",
             "command": {
               "kind": "process-plant.control.ramp",
-              "targetObjectIds": ["plant:halden-a2"],
+              "targetObjectIds": [
+                "plant:halden-a2"
+              ],
               "payload": {
                 "systemId": "halden-unit-a2",
                 "path": "sgA.tubeLeakFraction",
@@ -471,7 +684,10 @@
       },
       {
         "id": "a2-sgtr-guidance",
-        "at": { "kind": "after_scenario_start", "seconds": 70 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 70
+        },
         "actions": [
           {
             "type": "show_guidance",
@@ -480,33 +696,49 @@
               "title": "Unit A2 abnormal indication",
               "tone": "update",
               "message": "Unit A2 has started a scheduled steam-generator tube leak transient. The process-plant status color should now be driven by actual I&C alarms and measured variables.",
-              "objectIds": ["plant:halden-a2"],
+              "objectIds": [
+                "plant:halden-a2"
+              ],
               "dismissible": true
             }
           },
           {
             "type": "highlight_objects",
-            "objectIds": ["plant:halden-a2"]
+            "objectIds": [
+              "plant:halden-a2"
+            ]
           }
         ]
       },
       {
         "id": "b1-main-feedwater-trip-a",
-        "at": { "kind": "after_scenario_start", "seconds": 120 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 120
+        },
         "actions": [
           {
             "type": "issue_command",
             "command": {
               "kind": "process-plant.control.write",
-              "targetObjectIds": ["plant:halden-b1"],
-              "payload": { "systemId": "halden-unit-b1", "path": "mainFeedwaterPumpA.running", "value": false }
+              "targetObjectIds": [
+                "plant:halden-b1"
+              ],
+              "payload": {
+                "systemId": "halden-unit-b1",
+                "path": "mainFeedwaterPumpA.running",
+                "value": false
+              }
             }
           }
         ]
       },
       {
         "id": "b1-feedwater-guidance",
-        "at": { "kind": "after_scenario_start", "seconds": 125 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 125
+        },
         "actions": [
           {
             "type": "show_guidance",
@@ -515,7 +747,9 @@
               "title": "Unit B1 feedwater degradation",
               "tone": "update",
               "message": "Unit B1 begins a feedwater degradation path. Its rail fields should show changing output, alarms, and trip counts without a dedicated plant UI.",
-              "objectIds": ["plant:halden-b1"],
+              "objectIds": [
+                "plant:halden-b1"
+              ],
               "dismissible": true
             }
           }
@@ -523,52 +757,160 @@
       },
       {
         "id": "b1-main-feedwater-trip-b",
-        "at": { "kind": "after_scenario_start", "seconds": 180 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 180
+        },
         "actions": [
           {
             "type": "issue_command",
             "command": {
               "kind": "process-plant.control.write",
-              "targetObjectIds": ["plant:halden-b1"],
-              "payload": { "systemId": "halden-unit-b1", "path": "mainFeedwaterPumpB.running", "value": false }
+              "targetObjectIds": [
+                "plant:halden-b1"
+              ],
+              "payload": {
+                "systemId": "halden-unit-b1",
+                "path": "mainFeedwaterPumpB.running",
+                "value": false
+              }
             }
           }
         ]
       },
       {
         "id": "clear-demo-highlights",
-        "at": { "kind": "after_scenario_start", "seconds": 240 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 240
+        },
         "actions": [
           {
             "type": "clear_highlights",
-            "objectIds": ["plant:halden-a2", "plant:halden-b1", "plant:halden-6-loop", "amb:demo-reserve-1"]
+            "objectIds": [
+              "plant:halden-a2",
+              "plant:halden-b1",
+              "plant:halden-6-loop",
+              "amb:demo-reserve-1"
+            ]
           }
         ]
       },
       {
         "id": "b1-reactor-coolant-pump-trip-a",
-        "at": { "kind": "after_scenario_start", "seconds": 300 },
-        "actions": [{ "type": "issue_command", "command": { "kind": "process-plant.control.write", "targetObjectIds": ["plant:halden-b1"], "payload": { "systemId": "halden-unit-b1", "path": "rcpA.running", "value": false } } }]
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 300
+        },
+        "actions": [
+          {
+            "type": "issue_command",
+            "command": {
+              "kind": "process-plant.control.write",
+              "targetObjectIds": [
+                "plant:halden-b1"
+              ],
+              "payload": {
+                "systemId": "halden-unit-b1",
+                "path": "rcpA.running",
+                "value": false
+              }
+            }
+          }
+        ]
       },
       {
         "id": "b1-reactor-coolant-pump-trip-b",
-        "at": { "kind": "after_scenario_start", "seconds": 330 },
-        "actions": [{ "type": "issue_command", "command": { "kind": "process-plant.control.write", "targetObjectIds": ["plant:halden-b1"], "payload": { "systemId": "halden-unit-b1", "path": "rcpB.running", "value": false } } }]
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 330
+        },
+        "actions": [
+          {
+            "type": "issue_command",
+            "command": {
+              "kind": "process-plant.control.write",
+              "targetObjectIds": [
+                "plant:halden-b1"
+              ],
+              "payload": {
+                "systemId": "halden-unit-b1",
+                "path": "rcpB.running",
+                "value": false
+              }
+            }
+          }
+        ]
       },
       {
         "id": "b1-reactor-coolant-pump-trip-c",
-        "at": { "kind": "after_scenario_start", "seconds": 360 },
-        "actions": [{ "type": "issue_command", "command": { "kind": "process-plant.control.write", "targetObjectIds": ["plant:halden-b1"], "payload": { "systemId": "halden-unit-b1", "path": "rcpC.running", "value": false } } }]
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 360
+        },
+        "actions": [
+          {
+            "type": "issue_command",
+            "command": {
+              "kind": "process-plant.control.write",
+              "targetObjectIds": [
+                "plant:halden-b1"
+              ],
+              "payload": {
+                "systemId": "halden-unit-b1",
+                "path": "rcpC.running",
+                "value": false
+              }
+            }
+          }
+        ]
       },
       {
         "id": "b1-reactor-coolant-pump-trip-d",
-        "at": { "kind": "after_scenario_start", "seconds": 390 },
-        "actions": [{ "type": "issue_command", "command": { "kind": "process-plant.control.write", "targetObjectIds": ["plant:halden-b1"], "payload": { "systemId": "halden-unit-b1", "path": "rcpD.running", "value": false } } }]
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 390
+        },
+        "actions": [
+          {
+            "type": "issue_command",
+            "command": {
+              "kind": "process-plant.control.write",
+              "targetObjectIds": [
+                "plant:halden-b1"
+              ],
+              "payload": {
+                "systemId": "halden-unit-b1",
+                "path": "rcpD.running",
+                "value": false
+              }
+            }
+          }
+        ]
       },
       {
         "id": "b1-load-reduction",
-        "at": { "kind": "after_scenario_start", "seconds": 480 },
-        "actions": [{ "type": "issue_command", "command": { "kind": "process-plant.control.ramp", "targetObjectIds": ["plant:halden-b1"], "payload": { "systemId": "halden-unit-b1", "path": "turbine.loadFraction", "targetValue": 0.35, "durationSeconds": 120 } } }]
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 480
+        },
+        "actions": [
+          {
+            "type": "issue_command",
+            "command": {
+              "kind": "process-plant.control.ramp",
+              "targetObjectIds": [
+                "plant:halden-b1"
+              ],
+              "payload": {
+                "systemId": "halden-unit-b1",
+                "path": "turbine.loadFraction",
+                "targetValue": 0.35,
+                "durationSeconds": 120
+              }
+            }
+          }
+        ]
       }
     ]
   }

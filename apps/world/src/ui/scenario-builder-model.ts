@@ -1,26 +1,27 @@
 import type { ScenarioAuthoringCatalog } from '../core/scenarios/authoring.ts'
 
-export type AuthoringFeature = ScenarioAuthoringCatalog['features'][number]
-export type AuthoringItemType = AuthoringFeature['itemTypes'][number]
+export type AuthoringPack = ScenarioAuthoringCatalog['packs'][number]
+export type AuthoringItemType = AuthoringPack['itemTypes'][number]
 export type AuthoringField = AuthoringItemType['fields'][number]
 export type Path = ReadonlyArray<string | number>
 
-export interface ScenarioDraftRecord {
+export interface ScenarioPackSelectionRecord {
   id: string
-  schemaVersion: 1
+  runtime?: string
+  config: Record<string, unknown>
+  items: Array<Record<string, unknown> & { type: string; id: string; label: string }>
+}
+
+export interface ScenarioSourceRecord {
+  id: string
   title: string
   description?: string
   objectives: Array<string>
-  packs: Array<string>
-  runtimeOverrides: Record<string, string>
+  packs: Array<ScenarioPackSelectionRecord>
   world: { startsAt: string; environment: Record<string, unknown> }
-  items: Array<Record<string, unknown> & { pack: string; type: string; id: string; label: string }>
-  initialContexts: Array<{ objectId: string; context: unknown }>
-  processSystems: Array<Record<string, unknown> & { id: string }>
-  runtimeConfigs: Record<string, unknown>
-  surface: {
-    schemaVersion: 1
-    regions: Array<Record<string, unknown> & { id: string; primitive: string; visible: boolean; config: Record<string, unknown> }>
+  view: {
+    map: Record<string, unknown> & { center: [number, number]; zoom: number; layers: Array<string> }
+    rail?: Record<string, unknown> & { width?: number; sections: Array<Record<string, unknown>> }
   }
   timeline: { cues: Array<unknown> }
 }
@@ -56,45 +57,31 @@ export const setValueAtPath = (value: unknown, path: Path, next: unknown): void 
   })
 }
 
-export const createEmptyScenarioDraft = (): ScenarioDraftRecord => ({
+export const createEmptyScenarioSource = (): ScenarioSourceRecord => ({
   id: `scenario-${crypto.randomUUID()}`,
-  schemaVersion: 1,
   title: 'Untitled scenario',
   objectives: [],
   packs: [],
-  runtimeOverrides: {},
   world: { startsAt: new Date().toISOString(), environment: {} },
-  items: [],
-  initialContexts: [],
-  processSystems: [],
-  runtimeConfigs: {},
-  surface: {
-    schemaVersion: 1,
-    regions: [{
-      id: 'main-map',
-      primitive: 'map',
-      visible: true,
-      config: {
+  view: {
+    map: {
         center: [10.7522, 59.9139],
         zoom: 11,
         layers: ['objects', 'routes', 'traffic', 'weather', 'grid', 'highlights'],
-      },
-    }, {
-      id: 'left-rail',
-      primitive: 'objectRail',
-      visible: true,
-      config: { width: 340, sections: [] },
-    }, {
-      id: 'system-footer', primitive: 'systemFooter', visible: true, config: {},
-    }, {
-      id: 'guidance-overlay', primitive: 'guidanceOverlay', visible: true, config: {},
-    }],
+    },
+    rail: { width: 340, sections: [] },
   },
   timeline: { cues: [] },
 })
 
+export const selectionFor = (
+  source: ScenarioSourceRecord,
+  packId: string,
+): ScenarioPackSelectionRecord | undefined => source.packs.find(selection => selection.id === packId)
+
 export const itemTypeFor = (
   catalog: ScenarioAuthoringCatalog,
-  item: { readonly pack: string; readonly type: string },
-): AuthoringItemType | undefined => catalog.features
-  .find(feature => feature.id === item.pack)?.itemTypes.find(type => type.id === item.type)
+  packId: string,
+  item: { readonly type: string },
+): AuthoringItemType | undefined => catalog.packs
+  .find(pack => pack.id === packId)?.itemTypes.find(type => type.id === item.type)

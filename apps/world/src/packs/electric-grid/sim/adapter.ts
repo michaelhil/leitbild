@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { electricGridPackConfigSchema } from '../config.ts'
 import type {
   CommandEnvelope,
   CommandResult,
@@ -65,15 +66,8 @@ const persistedRuntimeStateSchema = z.object({
     frequencyHz: z.number().finite(),
   }),
 })
-const runtimeConfigSchema = z.object({
-  topology: z.object({
-    kind: z.literal('built-in'),
-    arenaId: z.literal('source-derived-norway-grid'),
-  }).optional(),
-}).default({})
-
 const topologyForRuntimeConfig = (runtimeConfig: unknown): GridSolverTopology | null => {
-  const parsed = runtimeConfigSchema.parse(runtimeConfig ?? {})
+  const parsed = electricGridPackConfigSchema.parse(runtimeConfig ?? {})
   if (parsed.topology?.kind !== 'built-in') return null
   return norwayGridArenaTopology()
 }

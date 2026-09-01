@@ -8,6 +8,7 @@ import {
   workspaceIdSchema,
 } from './ids.ts'
 import { moduleQueryOutcomeSchema } from './modules.ts'
+import { relativeUiPathSchema } from './ui.ts'
 
 export const workspaceDefinitionReferenceSchema = z.object({
   workspaceId: workspaceIdSchema,
@@ -31,6 +32,7 @@ export const moduleDefinitionDescriptorSchema = z.object({
   title: z.string().trim().min(1).max(256),
   description: z.string().trim().min(1).max(4096).optional(),
   category: z.string().trim().min(1).max(128).optional(),
+  uiPath: relativeUiPathSchema.optional(),
   currentRevisionId: definitionRevisionIdSchema,
   capabilityIds: z.array(capabilityIdSchema),
   inspectionCapabilityId: capabilityIdSchema.optional(),

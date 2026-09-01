@@ -35,7 +35,7 @@
 - Scenario Definitions group each Pack's authored items, runtime choice, and Pack-owned configuration beneath one Pack Selection. Do not reintroduce parallel Pack-id arrays or maps.
 - Scenario Definitions may own a small Starting View, but browser layout, rails, footers, and Pack panels are derived UI. Do not persist the current screen composition as scenario truth.
 - Built-in scenarios should be authored as compact declarative JSON Scenario Definitions, then expanded through pack-owned scenario codecs into exact Compiled Scenarios. Do not put reusable object-construction logic inside individual scenario files.
-- Scenario Draft expansion must stay deterministic and ordered. Do not parallelize Item/action expansion when later specs may reference earlier created objects.
+- Scenario Definition compilation must stay deterministic and ordered. Do not parallelize Item/action expansion when later specs may reference earlier created objects.
 - Scenario scripts must stay declarative and must emit ordered Simulation Run events through the Simulation Run runtime. Do not add browser-only scenario/tutorial state, runtime-private scenario timers, or arbitrary scenario code execution.
 - Restored Simulation Runs must start from persisted snapshots/history, not by replaying or reapplying Scenario Definitions.
 - Treat Simulation Run Projected State as canonical current Leitbild truth. UI, API, AI agents, metrics, and interaction handlers must read shared operational state from the Simulation Run projection.

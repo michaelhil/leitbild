@@ -3,6 +3,7 @@ import {
   geoPointFromLonLat,
   idSchema,
   interactionEndpointSchema,
+  objectContextSchema,
   objectIdSchema,
   scenarioDefinitionSchema,
   scenarioTimelineCommandRequestSchema,
@@ -15,7 +16,6 @@ import {
   type ScenarioTimelineAction,
   type ScenarioTimelineCue,
   type SurfaceDefinition,
-  type SurfaceRegionDefinition,
 } from '../model/index.ts'
 import type { WorldPack, PackScenarioItemSpec, PackScenarioOperationSpec, PackScenarioItemContribution } from '../packs/protocol.ts'
 import type { RoutingAdapter } from '../../routing/protocol.ts'
@@ -25,12 +25,14 @@ const lonLatSchema = z.tuple([
   z.number().finite().min(-90).max(90),
 ])
 
-const scenarioItemDraftSchema = z.object({
-  pack: idSchema,
+const scenarioItemSchema = z.object({
   type: z.string().min(1),
   id: objectIdSchema,
   label: z.string().min(1),
+  context: objectContextSchema.optional(),
 }).passthrough()
+
+const timelineScenarioItemSchema = scenarioItemSchema.extend({ pack: idSchema })
 
 const scenarioOperationConfigSchema = z.object({
   pack: idSchema,
@@ -65,7 +67,7 @@ const scenarioTimelineActionConfigSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('create_object'),
-    object: scenarioItemDraftSchema,
+    object: timelineScenarioItemSchema,
   }),
   z.object({
     type: z.literal('update_object'),
@@ -128,106 +130,39 @@ const surfaceObjectRailRegionConfigSchema = z.object({
   sections: z.array(surfaceObjectRailSectionConfigSchema).default([]),
 })
 
-const surfaceRegionConfigSchema = z.discriminatedUnion('primitive', [
-  z.object({
-    id: idSchema,
-    primitive: z.literal('map'),
-    visible: z.boolean().default(true),
-    config: surfaceMapRegionConfigSchema,
-  }),
-  z.object({
-    id: idSchema,
-    primitive: z.literal('objectRail'),
-    visible: z.boolean().default(true),
-    config: surfaceObjectRailRegionConfigSchema,
-  }),
-  z.object({
-    id: idSchema,
-    primitive: z.literal('systemFooter'),
-    visible: z.boolean().default(true),
-    config: z.record(z.string(), z.never()).default({}),
-  }),
-  z.object({
-    id: idSchema,
-    primitive: z.literal('guidanceOverlay'),
-    visible: z.boolean().default(true),
-    config: z.record(z.string(), z.never()).default({}),
-  }),
-])
+const scenarioViewSchema = z.object({
+  map: surfaceMapRegionConfigSchema,
+  rail: surfaceObjectRailRegionConfigSchema.optional(),
+}).strict()
 
-const surfaceConfigSchema = z.object({
-  schemaVersion: z.literal(1),
-  regions: z.array(surfaceRegionConfigSchema).default([]),
-})
-
-export const scenarioDraftSchema = z.object({
+const scenarioPackSelectionSchema = z.object({
   id: idSchema,
-  schemaVersion: z.literal(1),
+  runtime: idSchema.optional(),
+  config: z.unknown().default({}),
+  items: z.array(scenarioItemSchema).default([]),
+}).strict()
+
+export const scenarioSourceSchema = z.object({
+  id: idSchema,
   title: z.string().min(1),
   description: z.string().min(1).optional(),
   objectives: z.array(z.string().min(1)).default([]),
-  packs: z.array(idSchema).min(1),
-  runtimeOverrides: z.record(z.string(), idSchema).default({}),
+  packs: z.array(scenarioPackSelectionSchema).min(1),
   world: z.object({
     startsAt: z.string().datetime(),
     environment: z.record(z.string(), z.unknown()).default({}),
   }),
-  items: z.array(scenarioItemDraftSchema).default([]),
-  initialContexts: z.array(z.object({
-    objectId: idSchema,
-    context: z.unknown(),
-  })).default([]),
-  processSystems: z.array(z.object({
-    id: idSchema,
-    pack: idSchema,
-    componentLibrary: idSchema,
-    graph: z.unknown().optional(),
-    graphRef: idSchema.optional(),
-    assemblyRef: idSchema.optional(),
-    assemblyConfig: z.record(z.string(), z.unknown()).optional(),
-    parameters: z.record(z.string(), z.unknown()).optional(),
-    initialState: z.record(z.string(), z.unknown()).optional(),
-  }).superRefine((definition, ctx) => {
-    const sourceCount = [definition.graph, definition.graphRef, definition.assemblyRef]
-      .filter(value => value !== undefined).length
-    if (sourceCount !== 1) {
-      ctx.addIssue({ code: 'custom', message: 'process system must define exactly one graph source' })
-    }
-    if (definition.assemblyConfig !== undefined && definition.assemblyRef === undefined) {
-      ctx.addIssue({ code: 'custom', path: ['assemblyConfig'], message: 'assemblyConfig requires assemblyRef' })
-    }
-  })).default([]),
-  runtimeConfigs: z.record(z.string(), z.unknown()).default({}),
-  surface: surfaceConfigSchema,
+  view: scenarioViewSchema,
   timeline: scenarioTimelineConfigSchema.optional(),
-}).superRefine((draft, ctx) => {
+}).strict().superRefine((source, ctx) => {
   const packs = new Set<string>()
-  draft.packs.forEach((pack, index) => {
-    if (packs.has(pack)) ctx.addIssue({ code: 'custom', path: ['packs', index], message: `duplicate Pack: ${pack}` })
-    packs.add(pack)
+  source.packs.forEach((selection, index) => {
+    if (packs.has(selection.id)) ctx.addIssue({ code: 'custom', path: ['packs', index, 'id'], message: `duplicate Pack: ${selection.id}` })
+    packs.add(selection.id)
   })
-  draft.items.forEach((item, index) => {
-    if (!packs.has(item.pack)) ctx.addIssue({ code: 'custom', path: ['items', index, 'pack'], message: `inactive Pack: ${item.pack}` })
-  })
-  draft.processSystems.forEach((system, index) => {
-    if (!packs.has(system.pack)) ctx.addIssue({ code: 'custom', path: ['processSystems', index, 'pack'], message: `inactive Pack: ${system.pack}` })
-  })
-  for (const pack of Object.keys(draft.runtimeOverrides)) {
-    if (!packs.has(pack)) ctx.addIssue({ code: 'custom', path: ['runtimeOverrides', pack], message: `inactive Pack: ${pack}` })
-  }
-  for (const pack of Object.keys(draft.runtimeConfigs)) {
-    if (!packs.has(pack)) ctx.addIssue({ code: 'custom', path: ['runtimeConfigs', pack], message: `inactive Pack: ${pack}` })
-  }
-  if (draft.surface.regions.filter(region => region.primitive === 'map' && region.visible).length !== 1) {
-    ctx.addIssue({ code: 'custom', path: ['surface', 'regions'], message: 'Scenario Draft requires exactly one visible map region' })
-  }
 })
 
-export type ScenarioDraft = z.infer<typeof scenarioDraftSchema>
-export interface ScenarioTemplate {
-  readonly draft: ScenarioDraft
-  readonly definition: ScenarioDefinition
-}
+export type ScenarioSource = z.infer<typeof scenarioSourceSchema>
 type ScenarioTimelineActionConfig = z.infer<typeof scenarioTimelineActionConfigSchema>
 
 const scenarioTime = (startsAt: IsoTimestamp, seconds: number): IsoTimestamp =>
@@ -243,6 +178,12 @@ const packFor = (packs: ReadonlyMap<string, WorldPack>, packId: string): WorldPa
   return pack
 }
 
+const registeredPackFor = (packs: ReadonlyMap<string, WorldPack>, packId: string): WorldPack => {
+  const pack = packs.get(packId)
+  if (!pack) throw new Error(`scenario references unknown pack: ${packId}`)
+  return pack
+}
+
 const expandItem = async (
   spec: PackScenarioItemSpec,
   context: {
@@ -250,7 +191,7 @@ const expandItem = async (
     readonly packs: ReadonlyMap<string, WorldPack>
     readonly objectMap: Map<ObjectId, OperationalObject>
     readonly routing: RoutingAdapter
-    readonly runtimeConfigs: Record<string, unknown>
+    readonly packConfigs: Record<string, unknown>
   },
 ): Promise<PackScenarioItemContribution> => {
   const pack = packFor(context.packs, spec.pack)
@@ -259,7 +200,7 @@ const expandItem = async (
     objects: [...context.objectMap.values()],
     objectById: (id: ObjectId) => context.objectMap.get(id),
     routing: context.routing,
-    runtimeConfigs: context.runtimeConfigs,
+    packConfigs: context.packConfigs,
   }
   return await pack.scenario!.expandItem(spec, expansionContext)
 }
@@ -271,7 +212,7 @@ const expandTimelineAction = async (
     readonly packs: ReadonlyMap<string, WorldPack>
     readonly objectMap: Map<ObjectId, OperationalObject>
     readonly routing: RoutingAdapter
-    readonly runtimeConfigs: Record<string, unknown>
+    readonly packConfigs: Record<string, unknown>
   },
 ): Promise<ScenarioTimelineAction> => {
   if (action.type === 'show_guidance' || action.type === 'highlight_objects') {
@@ -296,9 +237,7 @@ const expandTimelineAction = async (
   }
   if (action.type === 'create_object') {
     const contribution = await expandItem(action.object, context)
-    if (contribution.objects.length !== 1 || (contribution.processSystems?.length ?? 0) !== 0) {
-      throw new Error('scenario timeline create_object requires one object and no process systems')
-    }
+    if (contribution.objects.length !== 1) throw new Error('scenario timeline create_object requires one object')
     const object = contribution.objects[0]!
     if (context.objectMap.has(object.id)) throw new Error(`scenario timeline creates duplicate object id: ${object.id}`)
     context.objectMap.set(object.id, object)
@@ -313,70 +252,83 @@ const expandTimelineAction = async (
     objects: [...context.objectMap.values()],
     objectById: (id) => context.objectMap.get(id),
     routing: context.routing,
-    runtimeConfigs: context.runtimeConfigs,
+    packConfigs: context.packConfigs,
   })
   context.objectMap.set(updated.id, updated)
   return { type: 'upsert_object', object: updated }
 }
 
-const expandSurfaceRegion = (region: z.infer<typeof surfaceRegionConfigSchema>): SurfaceRegionDefinition => {
-  if (region.primitive === 'map') {
-    return {
-      ...region,
-      config: {
-        center: pointFromLonLat(region.config.center),
-        zoom: region.config.zoom,
-        layers: region.config.layers,
-      },
-    }
-  }
-  if (region.primitive === 'objectRail') {
-    return {
-      ...region,
-      config: {
-        ...(region.config.width === undefined ? {} : { width: region.config.width }),
-        sections: region.config.sections,
-      },
-    }
-  }
-  return region
-}
-
-const expandSurface = (surface: z.infer<typeof surfaceConfigSchema>): SurfaceDefinition => ({
-  schemaVersion: surface.schemaVersion,
-  regions: surface.regions.map(expandSurfaceRegion),
+const surfaceFromView = (
+  view: z.infer<typeof scenarioViewSchema>,
+  packs: ReadonlyArray<WorldPack>,
+): SurfaceDefinition => ({
+  schemaVersion: 1,
+  regions: [{
+    id: 'main-map',
+    primitive: 'map',
+    visible: true,
+    config: {
+      center: pointFromLonLat(view.map.center),
+      zoom: view.map.zoom,
+      layers: view.map.layers,
+    },
+  }, {
+    id: 'object-rail',
+    primitive: 'objectRail',
+    visible: true,
+    config: {
+      ...(view.rail?.width === undefined ? {} : { width: view.rail.width }),
+      sections: view.rail?.sections ?? packs.flatMap(pack =>
+        pack.presentation.categories.map(category => ({
+          categoryId: category.id,
+          visible: true,
+          collapsed: false,
+          visibleFields: [],
+        }))),
+    },
+  }, {
+    id: 'system-footer', primitive: 'systemFooter', visible: true, config: {},
+  }, {
+    id: 'guidance-overlay', primitive: 'guidanceOverlay', visible: true, config: {},
+  }],
 })
 
-export const scenarioDefinitionFromDraft = async (
-  rawDraft: unknown,
+export const compileScenarioSource = async (
+  rawSource: unknown,
   packs: ReadonlyArray<WorldPack>,
   options: { readonly routing: RoutingAdapter },
 ): Promise<ScenarioDefinition> => {
-  const draft = scenarioDraftSchema.parse(rawDraft)
+  const source = scenarioSourceSchema.parse(rawSource)
   const packsById = new Map(packs.map(pack => [pack.descriptor.id, pack]))
-  const startsAt = draft.world.startsAt as IsoTimestamp
+  const startsAt = source.world.startsAt as IsoTimestamp
+  const activePacks = source.packs.map(selection => registeredPackFor(packsById, selection.id))
+  const packConfigs = Object.fromEntries(source.packs.map(selection => {
+    const pack = registeredPackFor(packsById, selection.id)
+    return [selection.id, pack.scenarioConfigSchema.parse(selection.config)]
+  }))
   const objectMap = new Map<ObjectId, OperationalObject>()
   const initialObjects: OperationalObject[] = []
-  const processSystems = scenarioDefinitionSchema.shape.processSystems.parse(draft.processSystems)
-  for (const item of draft.items) {
-    const contribution = await expandItem(item as PackScenarioItemSpec, {
-      at: startsAt,
-      packs: packsById,
-      objectMap,
-      routing: options.routing,
-      runtimeConfigs: draft.runtimeConfigs,
-    })
-    for (const object of contribution.objects) {
-      if (objectMap.has(object.id)) throw new Error(`scenario ${draft.id} has duplicate object id: ${object.id}`)
-      objectMap.set(object.id, object)
-      initialObjects.push(object)
+  for (const selection of source.packs) {
+    for (const item of selection.items) {
+      const contribution = await expandItem({ ...item, pack: selection.id } as PackScenarioItemSpec, {
+        at: startsAt,
+        packs: packsById,
+        objectMap,
+        routing: options.routing,
+        packConfigs,
+      })
+      for (const expandedObject of contribution.objects) {
+        if (objectMap.has(expandedObject.id)) throw new Error(`scenario ${source.id} has duplicate object id: ${expandedObject.id}`)
+        const object = (item.context === undefined ? expandedObject : { ...expandedObject, context: item.context }) as OperationalObject
+        objectMap.set(object.id, object)
+        initialObjects.push(object)
+      }
     }
-    processSystems.push(...(contribution.processSystems ?? []))
   }
   let timeline: ScenarioDefinition['timeline'] | undefined
-  if (draft.timeline) {
+  if (source.timeline) {
     const cues: ScenarioTimelineCue[] = []
-    for (const cue of draft.timeline.cues) {
+    for (const cue of source.timeline.cues) {
       const actions: ScenarioTimelineAction[] = []
       for (const action of cue.actions) {
         actions.push(await expandTimelineAction(action, {
@@ -384,7 +336,7 @@ export const scenarioDefinitionFromDraft = async (
           packs: packsById,
           objectMap,
           routing: options.routing,
-          runtimeConfigs: draft.runtimeConfigs,
+          packConfigs,
         }))
       }
       cues.push({
@@ -398,34 +350,21 @@ export const scenarioDefinitionFromDraft = async (
   }
 
   return scenarioDefinitionSchema.parse({
-    id: draft.id,
-    schemaVersion: draft.schemaVersion,
-    title: draft.title,
-    ...(draft.description === undefined ? {} : { description: draft.description }),
-    objectives: draft.objectives,
-    packs: draft.packs,
-    runtimeOverrides: draft.runtimeOverrides,
+    id: source.id,
+    schemaVersion: 1,
+    title: source.title,
+    ...(source.description === undefined ? {} : { description: source.description }),
+    objectives: source.objectives,
+    packs: source.packs.map(selection => selection.id),
+    packRuntimes: Object.fromEntries(source.packs.flatMap(selection =>
+      selection.runtime === undefined ? [] : [[selection.id, selection.runtime]])),
+    packConfigs,
     world: {
       startsAt,
-      environment: draft.world.environment,
+      environment: source.world.environment,
     },
     initialObjects,
-    initialContexts: draft.initialContexts,
-    processSystems,
-    runtimeConfigs: draft.runtimeConfigs,
-    surface: expandSurface(draft.surface),
+    surface: surfaceFromView(source.view, activePacks),
     ...(timeline === undefined ? {} : { timeline }),
   }) as ScenarioDefinition
-}
-
-export const scenarioTemplateFromDraft = async (
-  rawDraft: unknown,
-  packs: ReadonlyArray<WorldPack>,
-  options: { readonly routing: RoutingAdapter },
-): Promise<ScenarioTemplate> => {
-  const draft = scenarioDraftSchema.parse(rawDraft)
-  return {
-    draft,
-    definition: await scenarioDefinitionFromDraft(draft, packs, options),
-  }
 }

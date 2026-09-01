@@ -62,14 +62,14 @@ const weatherConditionSpecSchema = z.object({
   keyframes: z.array(weatherKeyframeSpecSchema).min(1),
 })
 
-const weatherRuntimeConfigSchema = z.object({
+export const weatherPackConfigSchema = z.object({
   fields: z.object({
     extensions: weatherExtensionDefinitionsSchema,
-  }).default({ extensions: {} }),
-}).default({ fields: { extensions: {} } })
+  }).strict().default({ extensions: {} }),
+}).strict().default({ fields: { extensions: {} } })
 
-const weatherRuntimeConfigFor = (runtimeConfigs: Record<string, unknown>): z.infer<typeof weatherRuntimeConfigSchema> =>
-  weatherRuntimeConfigSchema.parse(runtimeConfigs.weather ?? {})
+const weatherRuntimeConfigFor = (packConfigs: Record<string, unknown>): z.infer<typeof weatherPackConfigSchema> =>
+  weatherPackConfigSchema.parse(packConfigs.weather ?? {})
 
 const extensionDefaultsFor = (definitions: WeatherExtensionDefinitions): WeatherExtensions =>
   Object.fromEntries(Object.entries(definitions).map(([key, definition]) => [key, definition.default]))
@@ -80,7 +80,7 @@ const validatedExtensions = (
 ): WeatherExtensions => {
   for (const [key, value] of Object.entries(extensions)) {
     const definition = definitions[key]
-    if (!definition) throw new Error(`weather extension "${key}" is not declared in runtimeConfigs.weather.fields.extensions`)
+    if (!definition) throw new Error(`weather extension "${key}" is not declared in the Weather Pack configuration`)
     if (typeof value !== definition.type) throw new Error(`weather extension "${key}" must be ${definition.type}`)
     if (definition.type === 'number') {
       const numericValue = value
@@ -235,7 +235,7 @@ const weatherConditionObject = (config: {
 export const weatherScenarioSupport: PackScenarioSupport = {
   expandItem: (rawSpec, context) => {
     const spec = weatherConditionSpecSchema.parse(rawSpec)
-    const runtimeConfig = weatherRuntimeConfigFor(context.runtimeConfigs)
+    const runtimeConfig = weatherRuntimeConfigFor(context.packConfigs)
     return { objects: [weatherConditionObject({
       spec,
       at: context.at,

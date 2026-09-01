@@ -104,7 +104,7 @@ describe('electric grid pack', () => {
         runtimeIds: [electricGridRuntimeId],
         world: scenario.world,
         initialObjects: scenario.initialObjects,
-        runtimeConfigs: {},
+        runtimeConfigByRuntimeId: {},
         runtimeConfig: sourceDerivedTopologyRuntimeConfig,
       },
     })
@@ -179,7 +179,7 @@ describe('electric grid pack', () => {
         runtimeIds: [electricGridRuntimeId],
         world: scenario.world,
         initialObjects: scenario.initialObjects,
-        runtimeConfigs: {},
+        runtimeConfigByRuntimeId: {},
         runtimeConfig: sourceDerivedTopologyRuntimeConfig,
       },
     })
@@ -248,7 +248,7 @@ describe('electric grid pack', () => {
         runtimeIds: [electricGridRuntimeId],
         world: scenario.world,
         initialObjects: scenario.initialObjects,
-        runtimeConfigs: {},
+        runtimeConfigByRuntimeId: {},
         runtimeConfig: sourceDerivedTopologyRuntimeConfig,
       },
     })
@@ -291,7 +291,7 @@ describe('electric grid pack', () => {
         runtimeIds: [electricGridRuntimeId],
         world: scenario.world,
         initialObjects: scenario.initialObjects,
-        runtimeConfigs: {},
+        runtimeConfigByRuntimeId: {},
         runtimeConfig: sourceDerivedTopologyRuntimeConfig,
       },
     })

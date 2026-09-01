@@ -710,8 +710,6 @@ const targets: ReadonlyArray<CredibilityTarget> = [
 const compiledSystem = (testCase: CredibilityCase): CompiledProcessPlantSystem =>
   compileProcessPlantSystem({
     id: testCase.id,
-    pack: 'process-plant',
-    componentLibrary: 'process-plant',
     assemblyRef: processPlantPwrReferenceAssemblyRef,
     assemblyConfig: { loopCount: 4, title: `Credibility ${testCase.title}` },
     ...(testCase.parameters === undefined ? {} : { parameters: testCase.parameters }),
