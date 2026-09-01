@@ -5,6 +5,7 @@ import { interactionEndpointSchema, type InteractionEndpoint } from './interacti
 import { operationalObjectSchema, type OperationalObject } from './object.ts'
 import { scenarioRecordingSelectionSchema, type ScenarioRecordingSelection } from './recording.ts'
 import { isoTimestampSchema, type IsoTimestamp } from './time.ts'
+import { electricalConnectionDefinitionSchema, type ElectricalConnectionDefinition } from './electrical.ts'
 
 export interface ScenarioWorldDefinition {
   readonly startsAt?: IsoTimestamp
@@ -160,6 +161,7 @@ export interface ScenarioDefinition {
   readonly packs: ReadonlyArray<string>
   readonly packRuntimes: Record<string, string>
   readonly packConfigs: Record<string, unknown>
+  readonly connections: ReadonlyArray<ElectricalConnectionDefinition>
   readonly world: ScenarioWorldDefinition
   readonly initialObjects: ReadonlyArray<OperationalObject>
   readonly surface: SurfaceDefinition
@@ -356,12 +358,28 @@ export const scenarioDefinitionSchema = z.object({
   packs: z.array(idSchema).default([]),
   packRuntimes: z.record(z.string(), idSchema).default({}),
   packConfigs: z.record(z.string(), z.unknown()).default({}),
+  connections: z.array(electricalConnectionDefinitionSchema).default([]),
   world: scenarioWorldDefinitionSchema,
   initialObjects: z.array(operationalObjectSchema),
   surface: surfaceDefinitionSchema,
   recording: z.array(scenarioRecordingSelectionSchema).default([]),
   timeline: scenarioTimelineSchema.optional(),
 }).superRefine((scenario, ctx) => {
+  const connectionIds = new Set<string>()
+  const connectedPorts = new Set<string>()
+  scenario.connections.forEach((connection, index) => {
+    if (connectionIds.has(connection.id)) {
+      ctx.addIssue({ code: 'custom', path: ['connections', index, 'id'], message: `duplicate electrical connection: ${connection.id}` })
+    }
+    connectionIds.add(connection.id)
+    for (const [side, endpoint] of [['system', connection.system], ['network', connection.network]] as const) {
+      const key = `${endpoint.objectId}:${endpoint.portId}`
+      if (connectedPorts.has(key)) {
+        ctx.addIssue({ code: 'custom', path: ['connections', index, side], message: `electrical port is connected more than once: ${key}` })
+      }
+      connectedPorts.add(key)
+    }
+  })
   const packIds = new Set<string>()
   scenario.recording.forEach((selection, index) => {
     if (packIds.has(selection.packId)) {

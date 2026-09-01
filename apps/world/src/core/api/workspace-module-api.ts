@@ -188,6 +188,7 @@ const scenarioSections = (definition: {
   readonly packs: ReadonlyArray<string>
   readonly packRuntimes: Readonly<Record<string, unknown>>
   readonly packConfigs: Readonly<Record<string, unknown>>
+  readonly connections: ReadonlyArray<unknown>
   readonly recording: ReadonlyArray<unknown>
   readonly world: unknown
   readonly initialObjects: ReadonlyArray<{
@@ -216,6 +217,7 @@ const scenarioSections = (definition: {
     packRuntimes: definition.packRuntimes,
     packConfigs: definition.packConfigs,
     recording: definition.recording,
+    connections: definition.connections,
   },
 }, {
   id: 'assets',

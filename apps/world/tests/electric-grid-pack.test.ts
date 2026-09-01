@@ -52,6 +52,7 @@ const connect = async (runtimeStateStore?: PackRuntimeStateStore): Promise<PackR
     scenario: {
       scenarioId: scenario.id,
       runtimeIds: [electricGridRuntimeId],
+      connections: [],
       world: scenario.world,
       initialObjects: scenario.initialObjects,
       runtimeConfigByRuntimeId: {},

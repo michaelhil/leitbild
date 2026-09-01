@@ -55,6 +55,7 @@ export const testScenarioRuntimeConfig = (): PackScenarioRuntimeConfig => {
   return {
     scenarioId: runtime.scenarioId,
     runtimeIds: runtime.runtimes.map(runtime => runtime.runtimeId),
+    connections: [],
     world: runtime.scenario.world,
     initialObjects: runtime.initialObjects,
     runtimeConfigByRuntimeId: runtime.runtimeConfigByRuntimeId,

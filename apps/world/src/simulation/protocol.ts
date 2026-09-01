@@ -1,4 +1,4 @@
-import type { ActorId, ClientId, CommandEnvelope, CommandResult, SimulationRunEvent, InteractionSignal, OperationalObject, PackRuntimeRecordingBatch, Provenance, ScenarioRecordingSelection, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
+import type { ActorId, ClientId, CommandEnvelope, CommandResult, ElectricalConnectionDefinition, SimulationRunEvent, InteractionSignal, OperationalObject, PackRuntimeRecordingBatch, Provenance, ScenarioRecordingSelection, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
 import type { IsoTimestamp, ObjectId, SimulationRunId } from '../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse, PackRuntimeClock } from '../core/packs/protocol.ts'
 
@@ -70,6 +70,7 @@ export interface PackRuntimeConnection {
   readonly commandEventHistory?: (command: CommandEnvelope) => PackRuntimeEventHistory
   readonly query: (request: PackQueryRequest) => Promise<PackQueryResponse>
   readonly observeCommittedEvents: (events: ReadonlyArray<SimulationRunEvent>) => Promise<void>
+  readonly observeInitialSnapshot?: (objects: ReadonlyArray<OperationalObject>) => Promise<void>
   readonly setClock: (clock: SimulationClockState) => Promise<void>
   readonly close: () => Promise<void>
 }
@@ -105,6 +106,7 @@ export interface PackScenarioRuntimeConfig {
   readonly runtimeIds: ReadonlyArray<string>
   readonly world: ScenarioWorldDefinition
   readonly initialObjects: ReadonlyArray<OperationalObject>
+  readonly connections: ReadonlyArray<ElectricalConnectionDefinition>
   readonly runtimeConfigByRuntimeId?: Readonly<Record<string, unknown>>
   readonly runtimeConfig: unknown
 }

@@ -83,6 +83,7 @@ const weatherMapFeatures = async (config: {
   const connection = await adapter.connect({ simulationRunId, scenario: {
     scenarioId: osloAmbulanceScenario.id,
     runtimeIds: [weatherSimRuntimeId],
+    connections: [],
     world: osloAmbulanceScenario.world,
     initialObjects: osloAmbulanceScenario.initialObjects,
     runtimeConfigByRuntimeId: {},
@@ -284,6 +285,7 @@ describe('weather pack', () => {
     const connection = await adapter.connect({ simulationRunId, scenario: {
       scenarioId: osloAmbulanceScenario.id,
       runtimeIds: [weatherSimRuntimeId],
+      connections: [],
       world: osloAmbulanceScenario.world,
       initialObjects: osloAmbulanceScenario.initialObjects,
       runtimeConfigByRuntimeId: {},

@@ -39,6 +39,7 @@ const createMemoryStateStore = (): PackRuntimeStateStore => {
 const scenarioWithPlants = (plants: ReadonlyArray<OperationalObject> = [basePlant]) => ({
   scenarioId: builtIn.id,
   runtimeIds: ['process-plant.local'],
+  connections: [],
   world: builtIn.world,
   initialObjects: plants,
   runtimeConfig: {},

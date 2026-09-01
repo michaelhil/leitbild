@@ -47,6 +47,7 @@ const scenarioFor = (
     runtimeIds: scenario.runtimeIds,
     world: scenario.world,
     initialObjects: scenario.initialObjects.filter(object => object.packId === adapter.packId),
+    connections: scenario.connections,
     runtimeConfig: scenario.runtimeConfigByRuntimeId?.[adapter.id] ?? scenario.runtimeConfig,
   }
 }
@@ -113,6 +114,20 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         if (result.status === 'rejected') throw result.reason
         return result.value
       })
+      const initialSnapshots = await Promise.all(connections.map(({ connection }) => connection.getSnapshot()))
+      const initialSnapshotObjects = initialSnapshots.flatMap(snapshot => snapshot.objects)
+      const initialDuplicates = duplicateObjectIds(initialSnapshotObjects)
+      if (initialDuplicates.length > 0) {
+        await Promise.allSettled(connections.map(({ connection }) => connection.close()))
+        throw new Error(`duplicate runtime object ids from runtimes: ${initialDuplicates.join(', ')}`)
+      }
+      try {
+        await Promise.all(connections.flatMap(({ connection }) =>
+          connection.observeInitialSnapshot ? [connection.observeInitialSnapshot(initialSnapshotObjects)] : []))
+      } catch (error) {
+        await Promise.allSettled(connections.map(({ connection }) => connection.close()))
+        throw error
+      }
       const commandTargets = new Map(connections.flatMap(target =>
         operationIds(target.adapter.operations, 'command').map(route => [route, target] as const)))
       const realtimeInputTargets = new Map(connections.flatMap(target =>

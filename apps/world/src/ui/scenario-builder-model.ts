@@ -18,6 +18,12 @@ export interface ScenarioSourceRecord {
   description?: string
   objectives: Array<string>
   recording: Array<{ packId: string; profileId: string; intervalMs?: number }>
+  connections: Array<{
+    id: string
+    type: 'electrical'
+    system: { objectId: string; portId: string }
+    network: { objectId: string; portId: string }
+  }>
   packs: Array<ScenarioPackSelectionRecord>
   world: { startsAt: string; environment: Record<string, unknown> }
   view: {
@@ -63,6 +69,7 @@ export const createEmptyScenarioSource = (): ScenarioSourceRecord => ({
   title: 'Untitled scenario',
   objectives: [],
   recording: [],
+  connections: [],
   packs: [],
   world: { startsAt: new Date().toISOString(), environment: {} },
   view: {

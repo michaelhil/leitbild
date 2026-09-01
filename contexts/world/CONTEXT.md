@@ -61,8 +61,16 @@ A stable bus, branch, generator, load, or storage identity inside a Grid Model a
 _Avoid_: Operational Object, map reference feature, anonymous solver variable
 
 **Electrical Connection Point**:
-A typed Grid Model boundary that identifies where another operational system may exchange power with the Grid. It exposes identity and limits without defining a generic cross-Pack binding engine.
+A Grid-owned Electrical Port in a Grid Model that identifies where another operational system may exchange power with the Grid.
 _Avoid_: hard-coded Plant link, arbitrary signal binding, Grid Asset synonym
+
+**Electrical Port**:
+A Pack-owned, named electrical boundary on an Operational Object. It declares voltage and exchange limits and may publish current active power, voltage, frequency, energization, and connection state.
+_Avoid_: arbitrary variable path, generic integration endpoint, duplicated remote asset
+
+**Electrical Connection**:
+A Scenario-authored continuous relationship between one system Electrical Port and one network Electrical Port. Compilation resolves compatible ports and effective limits; each Pack retains its own physics.
+_Avoid_: generic Binding language, Integration Pack, implicit Pack or object creation
 
 **Action Preset**:
 A discoverable parameterized Process Plant operation that resolves to validated commands, such as a turbine trip or a developing leak.

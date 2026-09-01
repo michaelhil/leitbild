@@ -259,6 +259,7 @@ describe('drone pack native runtime', () => {
       scenario: {
         scenarioId: 'scenario:native-manual-simple',
         runtimeIds: [droneNativeRuntimeId],
+        connections: [],
         world: { startsAt: at, environment: {} },
         initialObjects: [initial],
         runtimeConfigByRuntimeId: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 20 } },
@@ -306,6 +307,7 @@ describe('drone pack native runtime', () => {
       scenario: {
         scenarioId: 'scenario:native-manual-yaw',
         runtimeIds: [droneNativeRuntimeId],
+        connections: [],
         world: { startsAt: at, environment: {} },
         initialObjects: [initial],
         runtimeConfigByRuntimeId: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 20 } },
@@ -347,6 +349,7 @@ describe('drone pack native runtime', () => {
       scenario: {
         scenarioId: 'scenario:native-motion-frame',
         runtimeIds: [droneNativeRuntimeId],
+        connections: [],
         world: { startsAt: at, environment: {} },
         initialObjects: [initial],
         runtimeConfigByRuntimeId: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 200, motionFrameIntervalMs: 10 } },
@@ -385,6 +388,7 @@ describe('drone pack native runtime', () => {
       scenario: {
         scenarioId: 'scenario:native-manual-intent',
         runtimeIds: [droneNativeRuntimeId],
+        connections: [],
         world: { startsAt: at, environment: {} },
         initialObjects: [initial],
         runtimeConfigByRuntimeId: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 250, motionFrameIntervalMs: 10 } },
@@ -445,6 +449,7 @@ describe('drone pack native runtime', () => {
       scenario: {
         scenarioId: 'scenario:native-manual-stress',
         runtimeIds: [droneNativeRuntimeId],
+        connections: [],
         world: { startsAt: at, environment: {} },
         initialObjects: fleet,
         runtimeConfigByRuntimeId: { [droneNativeRuntimeId]: { maxDrones: 10, stepIntervalMs: 10, projectionIntervalMs: 250, motionFrameIntervalMs: 10 } },
@@ -511,6 +516,7 @@ describe('drone pack native runtime', () => {
       scenario: {
         scenarioId: 'scenario:native-test',
         runtimeIds: [droneNativeRuntimeId],
+        connections: [],
         world: { startsAt: at, environment: {} },
         initialObjects: [initial],
         runtimeConfigByRuntimeId: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 20 } },

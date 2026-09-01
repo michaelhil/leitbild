@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import {
   geoPointFromLonLat,
+  electricalConnectionSpecSchema,
+  electricalPortFromObject,
   idSchema,
   interactionEndpointSchema,
   objectContextSchema,
@@ -14,6 +16,7 @@ import {
   type ObjectId,
   type OperationalObject,
   type ScenarioDefinition,
+  type ElectricalConnectionDefinition,
   type ScenarioTimelineAction,
   type ScenarioTimelineCue,
   type SurfaceDefinition,
@@ -155,6 +158,7 @@ export const scenarioSourceSchema = z.object({
   }),
   view: scenarioViewSchema,
   recording: z.array(scenarioRecordingSelectionSchema).default([]),
+  connections: z.array(electricalConnectionSpecSchema).default([]),
   timeline: scenarioTimelineConfigSchema.optional(),
 }).strict().superRefine((source, ctx) => {
   const packs = new Set<string>()
@@ -178,6 +182,30 @@ const scenarioTime = (startsAt: IsoTimestamp, seconds: number): IsoTimestamp =>
 
 const pointFromLonLat = (value: readonly [number, number]): GeoJsonPoint =>
   geoPointFromLonLat(value[0], value[1])
+
+const compileElectricalConnections = (
+  specs: ScenarioSource['connections'],
+  objects: ReadonlyMap<ObjectId, OperationalObject>,
+): ReadonlyArray<ElectricalConnectionDefinition> => specs.map(spec => {
+  const systemObject = objects.get(spec.system.objectId)
+  if (!systemObject) throw new Error(`electrical connection ${spec.id} references unknown system object: ${spec.system.objectId}`)
+  const networkObject = objects.get(spec.network.objectId)
+  if (!networkObject) throw new Error(`electrical connection ${spec.id} references unknown network object: ${spec.network.objectId}`)
+  const systemPort = electricalPortFromObject(systemObject, spec.system.portId)
+  if (!systemPort) throw new Error(`electrical connection ${spec.id} references unknown system port: ${spec.system.objectId}:${spec.system.portId}`)
+  const networkPort = electricalPortFromObject(networkObject, spec.network.portId)
+  if (!networkPort) throw new Error(`electrical connection ${spec.id} references unknown network port: ${spec.network.objectId}:${spec.network.portId}`)
+  if (Math.abs(systemPort.nominalKv - networkPort.nominalKv) > 0.001) {
+    throw new Error(`electrical connection ${spec.id} voltage mismatch: ${systemPort.nominalKv} kV and ${networkPort.nominalKv} kV`)
+  }
+  return {
+    ...spec,
+    nominalKv: systemPort.nominalKv,
+    maximumSystemExportMw: Math.min(systemPort.maximumExportMw, networkPort.maximumImportMw),
+    maximumSystemImportMw: Math.min(systemPort.maximumImportMw, networkPort.maximumExportMw),
+    ...(systemPort.inertiaSeconds === undefined ? {} : { systemInertiaSeconds: systemPort.inertiaSeconds }),
+  }
+})
 
 const packFor = (packs: ReadonlyMap<string, WorldPack>, packId: string): WorldPack => {
   const pack = packs.get(packId)
@@ -356,6 +384,7 @@ export const compileScenarioSource = async (
     }
     timeline = { cues }
   }
+  const connections = compileElectricalConnections(source.connections, objectMap)
 
   return scenarioDefinitionSchema.parse({
     id: source.id,
@@ -367,6 +396,7 @@ export const compileScenarioSource = async (
     packRuntimes: Object.fromEntries(source.packs.flatMap(selection =>
       selection.runtime === undefined ? [] : [[selection.id, selection.runtime]])),
     packConfigs,
+    connections,
     world: {
       startsAt,
       environment: source.world.environment,

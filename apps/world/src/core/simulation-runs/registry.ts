@@ -455,6 +455,7 @@ export const createSimulationRunRegistry = (config: {
           runtimeIds: scenarioRuntime.runtimes.map(runtime => runtime.runtimeId),
           world: scenarioRuntime.scenario.world,
           initialObjects: scenarioRuntime.initialObjects,
+          connections: scenarioRuntime.scenario.connections,
           runtimeConfigByRuntimeId: scenarioRuntime.runtimeConfigByRuntimeId,
           runtimeConfig: {},
         },
