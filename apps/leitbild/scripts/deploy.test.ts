@@ -42,13 +42,3 @@ test('production artifact excludes development-only files', () => {
   expect(isProductionSourcePath('host', 'deploy/backup/backup-production.sh')).toBe(false)
   expect(isProductionSourcePath('host', 'deploy/Caddyfile')).toBe(true)
 })
-
-test('production proxy routes deployment-scoped Agents Pack APIs to Agents', async () => {
-  const caddyfile = await Bun.file(resolve(workspaceRoot, 'apps/leitbild/deploy/Caddyfile')).text()
-  const route = caddyfile.match(/^\s*@agents path_regexp agents (.+)$/m)?.[1]
-  expect(route).toBeDefined()
-  const agentsPath = new RegExp(route!)
-
-  expect(agentsPath.test('/api/packs')).toBe(true)
-  expect(agentsPath.test('/api/packs/registry')).toBe(true)
-})

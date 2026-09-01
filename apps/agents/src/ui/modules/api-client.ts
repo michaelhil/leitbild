@@ -14,8 +14,6 @@ const isDeploymentPath = (path: string): boolean =>
   path === '/auth'
   || path === '/system/info'
   || path === '/system/diagnostics'
-  || path === '/packs'
-  || path.startsWith('/packs/')
 
 export const apiPath = (path: string): string => {
   if (!path.startsWith('/')) throw new Error(`API path must start with /: ${path}`)
