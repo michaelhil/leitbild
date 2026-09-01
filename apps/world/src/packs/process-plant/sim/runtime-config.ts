@@ -6,7 +6,8 @@ import {
   type ProcessPlantProtectionConfig,
 } from '../runtime/index.ts'
 import { resolveProcessPlantIcConfig, resolveProcessPlantIcConfigForGraph } from '../specs/index.ts'
-import { processPlantPackConfigSchema, type CompiledProcessPlantSystem } from '../process-systems.ts'
+import { processPlantPackConfigSchema } from '../config.ts'
+import type { CompiledProcessPlantSystem } from '../process-systems.ts'
 
 export const processPlantRuntimeSystemConfigSchema = z.object({
   telemetry: processPlantTelemetryConfigSchema.optional(),

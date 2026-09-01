@@ -38,4 +38,16 @@ if (violations.length > 0) {
   for (const violation of violations) console.error(`- ${violation}`)
   process.exit(1)
 }
+
+const browserPackBuild = await Bun.build({
+  entrypoints: [resolve(repositoryRoot, 'apps/world/src/ui/pack-loader.ts')],
+  target: 'browser',
+  splitting: true,
+  write: false,
+})
+if (!browserPackBuild.success) {
+  console.error('World browser Pack boundary violations:')
+  for (const log of browserPackBuild.logs) console.error(log)
+  process.exit(1)
+}
 console.log('Application boundaries are intact.')

@@ -1,5 +1,6 @@
 export * from './catalog-contributions.ts'
 export * from './commands.ts'
+export * from './config.ts'
 export * from './assembly/index.ts'
 export * from './demo-transients.ts'
 export * from './graph/index.ts'
