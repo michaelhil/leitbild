@@ -1,4 +1,4 @@
-import type { SimulationRunId } from '../../core/model/index.ts'
+import type { OperationalObject, SimulationRunId } from '../../core/model/index.ts'
 import type { VariablePath } from '../../packs/process-plant/graph/index.ts'
 import type {
   CompiledProcessDisplay,
@@ -118,6 +118,10 @@ export interface ProcessPlantCatalog {
   readonly displays: ReadonlyArray<ProcessPlantCatalogEntry>
   readonly credibilityEvidence: ReadonlyArray<ProcessPlantCatalogEntry>
 }
+
+export const processPlantIdForObject = (
+  object: Pick<OperationalObject, 'id' | 'packId'>,
+): string | null => object.packId === 'process-plant' ? String(object.id) : null
 
 export type ProcessPlantCredibilityArtifactLanguage = 'json' | 'svg'
 

@@ -1,13 +1,8 @@
 import type { IsoTimestamp, ObjectId, OperationalObject, Provenance } from '../../../core/model/index.ts'
 import type { PackRuntimeEvent } from '../../../simulation/protocol.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
-import { processPlantUnitPackDataSchema } from '../model.ts'
+import { processPlantIdForObject } from '../model.ts'
 import { processPlantProjectionKey, projectedProcessPlantUnit } from '../projection.ts'
-
-export const processPlantUnitPlantId = (object: OperationalObject): string | null => {
-  const parsed = processPlantUnitPackDataSchema.safeParse(object.packData)
-  return parsed.success ? String(object.id) : null
-}
 
 export const initialProcessPlantObjects = (config: {
   readonly initialObjects?: ReadonlyArray<OperationalObject>
@@ -21,7 +16,7 @@ export const projectedInitialProcessPlantObjects = (config: {
   readonly at: IsoTimestamp
 }): ReadonlyArray<OperationalObject> =>
   config.objects.map(object => {
-    const plantId = processPlantUnitPlantId(object)
+    const plantId = processPlantIdForObject(object)
     return plantId === null
       ? object
       : projectedProcessPlantUnit({
@@ -39,7 +34,7 @@ export const processPlantProjectionEvents = (config: {
 }): ReadonlyArray<PackRuntimeEvent> => {
   const events: PackRuntimeEvent[] = []
   for (const object of config.objectsById.values()) {
-    const plantId = processPlantUnitPlantId(object)
+    const plantId = processPlantIdForObject(object)
     if (plantId === null) continue
     const next = projectedProcessPlantUnit({
       object,

@@ -51,7 +51,7 @@
   import ControlRail from '../ControlRail.svelte'
   import ScenarioGuidance from '../ScenarioGuidance.svelte'
   import StartupModal from '../StartupModal.svelte'
-  import type { ProcessPlantArtifactKind } from '../process-display/process-display-client.ts'
+  import { processPlantIdForObject, type ProcessPlantArtifactKind } from '../process-display/process-display-client.ts'
   import { readProcedureDocument, readProcedureRuns } from '../procedures/procedure-client.ts'
   import {
     procedureCurrentStep,
@@ -873,7 +873,7 @@
   }
 
   const openProcessPlantArtifact = (object: OperationalObject, artifact: ProcessPlantArtifactKind): void => {
-    if (processPlantSystemIdFor(object) === null) return
+    if (processPlantIdForObject(object) === null) return
     processPlantArtifactModal = { object, artifact }
     void loadProcessPlantArtifactModal()
   }
@@ -893,7 +893,7 @@
   }
 
   const openProcessPlantCredibility = (object: OperationalObject): void => {
-    if (processPlantSystemIdFor(object) === null) return
+    if (processPlantIdForObject(object) === null) return
     processPlantCredibilityModal = object
     void loadProcessPlantCredibilityModal()
   }
@@ -902,16 +902,8 @@
     processPlantCredibilityModal = null
   }
 
-  const processPlantSystemIdFor = (object: OperationalObject): string | null => {
-    if (object.packId !== 'process-plant') return null
-    const data = object.packData
-    if (typeof data !== 'object' || data === null || Array.isArray(data)) return null
-    const plantId = (data as Record<string, unknown>).plantId
-    return typeof plantId === 'string' && plantId.length > 0 ? plantId : null
-  }
-
   const procedureUnitContexts = $derived(objects.flatMap(object => {
-    const plantId = processPlantSystemIdFor(object)
+    const plantId = processPlantIdForObject(object)
     return plantId === null
       ? []
       : [{
@@ -947,7 +939,7 @@
     procedureSystemWindows.flatMap((entry, index) => {
       const object = objectById.get(entry.objectId)
       if (object === undefined) return []
-      const plantId = processPlantSystemIdFor(object)
+      const plantId = processPlantIdForObject(object)
       return plantId === null ? [] : [{ ...entry, object, plantId, index }]
     }),
   )
@@ -975,7 +967,7 @@
   })
 
   const procedureScopeForObject = (object: OperationalObject): ProcedureRunScope | null => {
-    const plantId = processPlantSystemIdFor(object)
+    const plantId = processPlantIdForObject(object)
     return plantId === null
       ? null
       : { plantId, targetObjectId: object.id, label: object.label }
@@ -1059,7 +1051,7 @@
   }
 
   const openProcedureSystemAt = (object: OperationalObject, summary?: ProcedureRunSummary): void => {
-    if (processPlantSystemIdFor(object) === null) return
+    if (processPlantIdForObject(object) === null) return
     const initialStepId = summary === undefined ? undefined : procedureLaunchStepFor(summary)
     procedureSystemWindows = [
       ...procedureSystemWindows,
@@ -1721,7 +1713,7 @@
 {/if}
 
 {#if processPlantArtifactModal && ProcessPlantArtifactModal && simulationRunId}
-  {@const artifactSystemId = processPlantSystemIdFor(processPlantArtifactModal.object)}
+  {@const artifactSystemId = processPlantIdForObject(processPlantArtifactModal.object)}
   {#if artifactSystemId}
     <ProcessPlantArtifactModal
       {simulationRunId}
@@ -1740,7 +1732,7 @@
 {/if}
 
 {#if processPlantCredibilityModal && ProcessPlantCredibilityModal && simulationRunId}
-  {@const credibilitySystemId = processPlantSystemIdFor(processPlantCredibilityModal)}
+  {@const credibilitySystemId = processPlantIdForObject(processPlantCredibilityModal)}
   {#if credibilitySystemId}
     <ProcessPlantCredibilityModal
       {simulationRunId}

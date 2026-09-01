@@ -25,7 +25,7 @@ import { processPlantDefinitionSchema, type ProcessPlantDefinition } from '../co
 import { createProcessPlantRecordingPlan } from '../recording.ts'
 import { compileProcessPlants } from '../plant-compiler.ts'
 import { validateProcessPlantControlWrite } from '../control-write-validation.ts'
-import { processPlantPackId, processPlantUnitPackDataSchema } from '../model.ts'
+import { processPlantIdForObject, processPlantPackId, processPlantUnitPackDataSchema } from '../model.ts'
 import { answerProcessPlantQuery, processPlantQueryKinds } from '../query.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { processPlantSimAdapterId, processPlantSimRuntimeId } from './constants.ts'
@@ -36,7 +36,6 @@ import {
 import {
   initialProcessPlantObjects,
   processPlantProjectionEvents,
-  processPlantUnitPlantId,
   projectedInitialProcessPlantObjects,
 } from './object-projection.ts'
 import { createProcessPlantRuntimePersistence } from './persistence.ts'
@@ -377,7 +376,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       },
       observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
         for (const event of events) {
-          if (event.type === 'object.upserted' && processPlantUnitPlantId(event.object) !== null) {
+          if (event.type === 'object.upserted' && processPlantIdForObject(event.object) !== null) {
             objectsById.set(event.object.id, event.object)
           }
           if (event.type === 'object.deleted') objectsById.delete(event.objectId)

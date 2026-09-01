@@ -5,6 +5,7 @@
     readProcessPlantCatalog,
     type ProcessPlantCatalog,
     type ProcessPlantCatalogEntry,
+    type ProcessPlantActionCatalogEntry,
   } from './process-display-client.ts'
 
   interface Props {
@@ -15,8 +16,10 @@
   interface CatalogSection {
     readonly id: string
     readonly title: string
-    readonly rows: ReadonlyArray<ProcessPlantCatalogEntry>
+    readonly rows: ReadonlyArray<CatalogEntry>
   }
+
+  type CatalogEntry = ProcessPlantCatalogEntry | ProcessPlantActionCatalogEntry
 
   let { simulationRunId, close }: Props = $props()
   let loading = $state(true)
@@ -24,6 +27,7 @@
   let catalog = $state<ProcessPlantCatalog | null>(null)
   let query = $state('')
   let copyStatus = $state<string | null>(null)
+  let expandedEntryKey = $state<string | null>(null)
 
   const sections = $derived<CatalogSection[]>(catalog === null ? [] : [
     { id: 'models', title: 'Plant models', rows: catalog.models },
@@ -46,6 +50,22 @@
         || (row.description?.toLowerCase().includes(normalizedQuery) ?? false)),
     })).filter(section => section.rows.length > 0))
   const entryCount = $derived(sections.reduce((count, section) => count + section.rows.length, 0))
+
+  const entryKey = (section: CatalogSection, row: CatalogEntry): string => `${section.id}:${row.id}`
+
+  const toggleEntry = (section: CatalogSection, row: CatalogEntry): void => {
+    const key = entryKey(section, row)
+    expandedEntryKey = expandedEntryKey === key ? null : key
+  }
+
+  const entryMetadata = (row: CatalogEntry): Readonly<Record<string, unknown>> | null => {
+    const metadata = {
+      ...(row.compatibleModelRefs === undefined ? {} : { compatibleModelRefs: row.compatibleModelRefs }),
+      ...(row.parameters === undefined ? {} : { parameters: row.parameters }),
+      ...('inputSchema' in row ? { inputSchema: row.inputSchema } : {}),
+    }
+    return Object.keys(metadata).length === 0 ? null : metadata
+  }
 
   const copyValue = async (value: string): Promise<void> => {
     try {
@@ -105,15 +125,37 @@
               <header><strong>{section.title}</strong><span>{section.rows.length}</span></header>
               <div class="process-catalog-rows">
                 {#each section.rows as row (row.id)}
-                  <div class="process-catalog-row">
-                    <div class="process-catalog-row-main">
+                  {@const expanded = expandedEntryKey === entryKey(section, row)}
+                  <div class="process-catalog-row" class:expanded>
+                    <button
+                      type="button"
+                      class="process-catalog-row-main"
+                      aria-expanded={expanded}
+                      aria-label="Inspect {row.title}"
+                      onclick={() => toggleEntry(section, row)}
+                    >
                       <code>{row.id}</code>
                       <strong>{row.title}</strong>
                       {#if row.description}<span>{row.description}</span>{/if}
-                    </div>
+                    </button>
                     <button class="process-catalog-copy-button" type="button" aria-label="Copy {row.id}" title="Copy" onclick={() => void copyValue(row.id)}>
                       <Copy size={15} aria-hidden="true" />
                     </button>
+                    {#if expanded}
+                      {@const metadata = entryMetadata(row)}
+                      <div class="process-catalog-row-detail">
+                        <div>
+                          <strong>{section.title}</strong>
+                          <code>{row.id}</code>
+                        </div>
+                        {#if row.description}<p>{row.description}</p>{/if}
+                        {#if metadata}
+                          <pre><code>{JSON.stringify(metadata, null, 2)}</code></pre>
+                        {:else}
+                          <p>No additional configuration is declared for this capability.</p>
+                        {/if}
+                      </div>
+                    {/if}
                   </div>
                 {/each}
               </div>

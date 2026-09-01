@@ -4,7 +4,7 @@
   import type { PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../core/packs/protocol.ts'
   import IconButton from './components/IconButton.svelte'
   import StatusIndicator from './components/StatusIndicator.svelte'
-  import type { ProcessPlantArtifactKind } from './process-display/process-display-client.ts'
+  import { processPlantIdForObject, type ProcessPlantArtifactKind } from './process-display/process-display-client.ts'
   import ProcedureRunBadges from './procedures/ProcedureRunBadges.svelte'
   import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from './procedures/procedure-run-selectors.ts'
 
@@ -102,13 +102,7 @@
   }
 
   const processDisplayAvailable = $derived(object.packId === 'process-plant' && openProcessDisplay !== undefined)
-  const processSystemIdAvailable = $derived.by((): boolean => {
-    const data = object.packData
-    return typeof data === 'object'
-      && data !== null
-      && !Array.isArray(data)
-      && typeof (data as Record<string, unknown>).plantId === 'string'
-  })
+  const processSystemIdAvailable = $derived(processPlantIdForObject(object) !== null)
   const procedureSystemAvailable = $derived(
     object.packId === 'process-plant'
       && openProcedureSystem !== undefined

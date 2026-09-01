@@ -18,6 +18,7 @@
     readProcessDisplay,
     readProcessDisplayProjection,
     readProcessDisplaySnapshot,
+    processPlantIdForObject,
     type ProcessDisplayProjection,
     type ProcessDisplayLensOption,
     type ProcessPlantActionCatalogEntry,
@@ -129,8 +130,9 @@
   }
 
   const plantIdFor = (candidate: OperationalObject): string => {
-    if (candidate.packId !== 'process-plant') throw new Error('process display requires a Process Plant object')
-    return String(candidate.id)
+    const plantId = processPlantIdForObject(candidate)
+    if (plantId === null) throw new Error('process display requires a valid Process Plant object')
+    return plantId
   }
   const processDisplayPlantId = untrack(() => plantIdFor(object))
 

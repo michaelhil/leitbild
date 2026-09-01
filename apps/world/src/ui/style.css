@@ -1905,6 +1905,11 @@ body.rail-resizing {
   background: color-mix(in srgb, var(--panel-strong) 58%, transparent);
 }
 
+.process-catalog-row.expanded {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel-strong));
+}
+
 .process-catalog-row-main {
   min-width: 0;
   display: grid;
@@ -1913,6 +1918,7 @@ body.rail-resizing {
   border: 0;
   color: inherit;
   background: transparent;
+  font: inherit;
   text-align: left;
   cursor: pointer;
 }
@@ -1960,6 +1966,48 @@ body.rail-resizing {
 .process-catalog-copy-button:hover {
   color: var(--text);
   background: color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.process-catalog-row-detail {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 10px 4px 5px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.process-catalog-row-detail > div {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.process-catalog-row-detail p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.process-catalog-row-detail pre {
+  max-height: 260px;
+  margin: 0;
+  overflow: auto;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--bg) 55%, var(--panel));
+}
+
+.process-catalog-row-detail pre code {
+  overflow: visible;
+  color: var(--text);
+  font-size: 11px;
+  text-overflow: clip;
+  white-space: pre;
 }
 
 .process-catalog-source-modal {
