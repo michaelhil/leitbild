@@ -1,10 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { effectiveActivePacks, effectiveActivePackSet, isPackActiveInRoom } from './activation.ts'
 
-// v24: room.activePacks IS the truth. The resolver is a passthrough — there
-// is no implicit augmentation. System packs are seeded into a room's
-// activePacks at construction (see src/core/rooms/room.ts) and the
-// activation route refuses to drop them.
+// room.activePacks is the exact truth. Built-in and authored contributions
+// are not Packs and therefore never appear here.
 
 const room = (packs: string[]) => ({ getActivePacks: () => packs })
 
@@ -14,8 +12,8 @@ describe('effectiveActivePacks', () => {
   })
 
   test('returns exactly what the room reports', () => {
-    expect(effectiveActivePacks(room(['core', 'local', 'demos', 'pwr-ops', 'aviation'])))
-      .toEqual(['core', 'local', 'demos', 'pwr-ops', 'aviation'])
+    expect(effectiveActivePacks(room(['demos', 'pwr-ops', 'aviation'])))
+      .toEqual(['demos', 'pwr-ops', 'aviation'])
   })
 
   test('preserves order verbatim', () => {
@@ -25,9 +23,8 @@ describe('effectiveActivePacks', () => {
 
 describe('effectiveActivePackSet', () => {
   test('mirrors room.activePacks as a Set', () => {
-    const s = effectiveActivePackSet(room(['core', 'local', 'aviation']))
-    expect(s.has('core')).toBe(true)
-    expect(s.has('local')).toBe(true)
+    const s = effectiveActivePackSet(room(['demos', 'aviation']))
+    expect(s.has('demos')).toBe(true)
     expect(s.has('aviation')).toBe(true)
     expect(s.has('cafes')).toBe(false)
   })
@@ -39,12 +36,12 @@ describe('effectiveActivePackSet', () => {
 
 describe('isPackActiveInRoom', () => {
   test('present in activePacks → true', () => {
-    expect(isPackActiveInRoom(room(['core', 'local']), 'core')).toBe(true)
-    expect(isPackActiveInRoom(room(['core', 'local']), 'local')).toBe(true)
+    expect(isPackActiveInRoom(room(['demos', 'aviation']), 'demos')).toBe(true)
+    expect(isPackActiveInRoom(room(['demos', 'aviation']), 'aviation')).toBe(true)
   })
 
-  test('absent → false (even for system packs — v24 does not implicitly add)', () => {
-    expect(isPackActiveInRoom(room([]), 'core')).toBe(false)
+  test('absent → false', () => {
+    expect(isPackActiveInRoom(room([]), 'demos')).toBe(false)
     expect(isPackActiveInRoom(room(['aviation']), 'cafes')).toBe(false)
   })
 })

@@ -109,9 +109,7 @@ export const roomRoutes: RouteEntry[] = [
     },
   },
   {
-    // List packs activated in this room. Implicit-active packs ('core',
-    // 'local') are NOT included — those are always active and not under
-    // operator control.
+    // List the exact Packs activated in this Room.
     method: 'GET',
     pattern: /^\/rooms\/([^/]+)\/packs$/,
     handler: async (_req, match, { system }) => {
@@ -123,20 +121,20 @@ export const roomRoutes: RouteEntry[] = [
   },
   {
     // Replace activation list. Validates each entry against the known-pack
-    // set (bundled + filesystem-installed). Refuses requests that would
-    // remove a system pack the room currently has. The request is
-    // atomic — any unknown namespace or system-pack-removal aborts the
-    // whole set (no partial writes).
+    // set (bundled + filesystem-installed). The request is atomic: any
+    // unknown Pack id aborts the whole replacement.
     method: 'PUT',
     pattern: /^\/rooms\/([^/]+)\/packs$/,
     handler: async (req, match, { system, broadcastToWorkspace, workspaceId }) => {
       const name = decodeURIComponent(match[1]!)
       const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
-      const body = await parseBody(req) as { activePacks?: ReadonlyArray<unknown> } | null
-      const requested = Array.isArray(body?.activePacks)
-        ? (body!.activePacks as unknown[]).filter((v): v is string => typeof v === 'string')
-        : []
+      const body = await parseBody(req) as { activePacks?: unknown } | null
+      if (!Array.isArray(body?.activePacks)
+        || !body.activePacks.every(value => typeof value === 'string' && value.length > 0)) {
+        return errorResponse('activePacks must be an array of Pack ids', 400)
+      }
+      const requested = [...new Set(body.activePacks as ReadonlyArray<string>)]
 
       // Validate every requested Pack id against list_packs, the same
       // contribution inventory used by the UI.
@@ -153,6 +151,7 @@ export const roomRoutes: RouteEntry[] = [
       if (unknown.length > 0) return errorResponse(`unknown Pack ids: ${unknown.join(', ')}`, 400)
 
       room.setActivePacks(requested)
+      const activePacks = room.getActivePacks()
       // per-Workspace state — pack activation is scoped to one tenant's room.
       // The previous global `broadcast(...)` fanned out to every connected
       // tenant; their UI handlers no-oped on unfamiliar roomId but the
@@ -160,9 +159,9 @@ export const roomRoutes: RouteEntry[] = [
       // typed optional (MCP-mode shape compatibility); pack-activation
       // routes only register in HTTP mode where it's always wired.
       try {
-        broadcastToWorkspace?.(workspaceId, { type: 'pack_activation_changed', roomId: room.profile.id, activePacks: requested })
+        broadcastToWorkspace?.(workspaceId, { type: 'pack_activation_changed', roomId: room.profile.id, activePacks })
       } catch { /* ignore */ }
-      return json({ activePacks: room.getActivePacks() })
+      return json({ activePacks })
     },
   },
   {

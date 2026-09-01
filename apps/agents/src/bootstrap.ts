@@ -143,8 +143,8 @@ export const bootstrap = async (): Promise<void> => {
   // Bundled packs — compiled into the binary. Each pack's tools register
   // with kind:'pack-bundled' + pack:<Pack id> so per-room activation
   // (room.activePacks) actually gates them. The packs themselves are
-  // declared in src/packs/bundled.ts (the BUNDLED_PACKS table — single
-  // source of truth for Pack id, system flag, default-active flag).
+  // declared in src/packs/bundled.ts (the single source of truth for their
+  // Pack descriptors).
   //
   // Bundled-pack tools are exempt from the `<pack>_<tool>` registry-key
   // prefix convention that filesystem packs follow (loadToolDirectory
@@ -180,8 +180,8 @@ export const bootstrap = async (): Promise<void> => {
   }
 
   // Bundled example scripts are loaded read-only from examples/scripts/ via
-  // ScriptStore's extraSourceDirs (wired in main.ts). The local Pack's scripts
-  // directory contains only authored scripts.
+  // ScriptStore's extraSourceDirs (wired in main.ts). The authoring scripts
+  // directory contains only deployment-authored scripts.
 
   // === Process-wide built-in tools (no per-Workspace state) ===
   // Anything that doesn't bind to a per-Workspace RoomDirectory registers ONCE here.
@@ -210,7 +210,7 @@ export const bootstrap = async (): Promise<void> => {
   deployment.sharedToolRegistry.register(createGetTimeTool())
   deployment.sharedToolRegistry.register(createTestToolTool(deployment.sharedToolRegistry))
   deployment.sharedToolRegistry.register(createListSkillsTool(deployment.sharedSkillStore))
-  // Register shared geodata tools against the canonical local-Pack layout.
+  // Register shared geodata tools against the canonical authoring layout.
   // Forward-bound resolver: registry is created later in this function,
   // but createGeoLookupTool is constructed now. We hand the tool a closure
   // that will read from `registry` at call time — by which point it's been
@@ -598,15 +598,8 @@ export const bootstrap = async (): Promise<void> => {
   // are uniform across Workspaces anyway.
   console.log(`Tools: ${deployment.sharedToolRegistry.list().map(t => t.name).join(', ')}`)
 
-  // Activation summary — operator-visible verification that the pack
-  // surface is what they expect. Counts fan out from the shared registry:
-  //   - 'core' tools: kind='built-in'
-  //   - 'local' tools: kind='external'
-  //   - per-pack tools: kind='pack-bundled', grouped by source.pack
-  // Skills counted similarly via the shared skill store.
-  // A new room with empty activePacks sees only core + local. The numbers
-  // here are upper bounds per pack — the per-room filter applies the
-  // 'core'/'local' implicit-active rule on top.
+  // Contribution summary. Built-in and authored contributions are always
+  // available; only Pack-owned contributions are gated by Room activation.
   {
     const entries = deployment.sharedToolRegistry.listEntries()
     const skillEntries = deployment.sharedSkillStore.list()
@@ -618,20 +611,20 @@ export const bootstrap = async (): Promise<void> => {
     }
     for (const e of entries) {
       switch (e.source.kind) {
-        case 'built-in':       bump('core', 'tools'); break
-        case 'external':       bump('local', 'tools'); break
-        case 'pack-bundled':   bump(e.source.pack ?? 'local', 'tools'); break
-        case 'skill-bundled':  bump(e.source.pack ?? 'local', 'tools'); break
+        case 'built-in':       bump('built-in', 'tools'); break
+        case 'external':       bump('authored', 'tools'); break
+        case 'pack-bundled':   bump(e.source.pack ?? 'unowned', 'tools'); break
+        case 'skill-bundled':  bump(e.source.pack ?? 'unowned', 'tools'); break
       }
     }
-    for (const s of skillEntries) bump(s.pack ?? 'local', 'skills')
+    for (const s of skillEntries) bump(s.pack ?? 'authored', 'skills')
     const ordered: ReadonlyArray<readonly [string, { tools: number; skills: number }]> = [
-      ['core',  counts.get('core')  ?? { tools: 0, skills: 0 }],
-      ['local', counts.get('local') ?? { tools: 0, skills: 0 }],
-      ...[...counts.entries()].filter(([k]) => k !== 'core' && k !== 'local').sort((a, b) => a[0].localeCompare(b[0])),
+      ['built-in', counts.get('built-in') ?? { tools: 0, skills: 0 }],
+      ['authored', counts.get('authored') ?? { tools: 0, skills: 0 }],
+      ...[...counts.entries()].filter(([k]) => k !== 'built-in' && k !== 'authored').sort((a, b) => a[0].localeCompare(b[0])),
     ]
     const fmt = ordered.map(([ns, c]) => `${ns}=${c.tools}t/${c.skills}s`).join(' ')
-    console.log(`[packs] activation surface: ${fmt}  (per-room: room.activePacks ⊕ core+local)`)
+    console.log(`[packs] contribution surface: ${fmt}`)
   }
 
   // === Explicit trash cleanup + idle runtime eviction ===

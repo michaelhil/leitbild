@@ -131,8 +131,7 @@ export const reconcileExtensions = async (declared: ReadonlySet<string>): Promis
 }
 
 // Pull the declared set from the /packs response. Reads Pack entries'
-// uiExtensions arrays and unions them. System Packs (core/local) don't
-// declare extensions; only user-installed packs can.
+// uiExtensions arrays and unions them. Only actual Packs participate.
 export const fetchDeclaredExtensions = async (): Promise<ReadonlySet<string>> => {
   try {
     const res = await apiFetch('/packs')

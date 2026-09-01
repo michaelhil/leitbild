@@ -43,9 +43,8 @@ export interface RoomState {
   readonly summaryConfig?: SummaryConfig
   readonly latestSummary?: string
   // Pack ids activated in this Room — the complete truth.
-  // Includes system packs (core, local) and bundled default-active packs
-  // (demos, pwr-ops). No implicit augmentation at read time. Empty list is
-  // valid ("user has deactivated everything") and distinguishable from absent.
+  // No implicit augmentation at read time. Empty means that no Pack-owned
+  // contributions are active; built-in and authored contributions are separate.
   readonly activePacks: ReadonlyArray<string>
 }
 
@@ -102,7 +101,7 @@ export interface Room {
   readonly getCurrentCompressionMessage: () => Message | undefined
 
   // Active Packs — the complete Pack-id list whose contributions are
-  // available in this Room. Built-in and local contributions are not Packs.
+  // available in this Room. Built-in and authored contributions are not Packs.
   readonly getActivePacks: () => ReadonlyArray<string>
   readonly setActivePacks: (packIds: ReadonlyArray<string>) => void
 
@@ -119,7 +118,7 @@ export interface RoomRestoreParams {
   readonly compressedIds?: ReadonlyArray<string>
   readonly summaryConfig?: SummaryConfig
   readonly latestSummary?: string
-  readonly activePacks?: ReadonlyArray<string>
+  readonly activePacks: ReadonlyArray<string>
 }
 
 // === CreateResult — returned when name uniqueness is enforced ===

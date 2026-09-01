@@ -141,7 +141,7 @@ describe('install_pack', () => {
     expect(result.success).toBe(false)
   })
 
-  it('refuses to install "core" — bundled with the binary, not pack-installable', async () => {
+  it('refuses to install the reserved built-in core namespace', async () => {
     const env = await makeDeps()
     parent = env.parent
     const install = createInstallPackTool(env.deps)
@@ -149,17 +149,17 @@ describe('install_pack', () => {
     // Bare-name attempt
     const bare = await install.execute({ source: 'core' }, CTX)
     expect(bare.success).toBe(false)
-    expect(bare.error).toContain('bundled')
+    expect(bare.error).toContain('reserved')
 
     // Owner/repo attempt against the public mirror
     const ownerRepo = await install.execute({ source: 'michaelhil/leitbild-core' }, CTX)
     expect(ownerRepo.success).toBe(false)
-    expect(ownerRepo.error).toContain('bundled')
+    expect(ownerRepo.error).toContain('reserved')
 
     // Full URL attempt
     const url = await install.execute({ source: 'https://github.com/michaelhil/leitbild-core.git' }, CTX)
     expect(url.success).toBe(false)
-    expect(url.error).toContain('bundled')
+    expect(url.error).toContain('reserved')
 
   })
 

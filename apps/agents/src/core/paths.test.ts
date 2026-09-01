@@ -31,6 +31,10 @@ describe('Leitbild path policy', () => {
     process.env.LEITBILD_HOME = '/tmp/x'
     expect(sharedPaths.providers()).toBe('/tmp/x/providers.json')
     expect(sharedPaths.packs()).toBe('/tmp/x/packs')
+    expect(sharedPaths.tools()).toBe('/tmp/x/authoring/tools')
+    expect(sharedPaths.skills()).toBe('/tmp/x/authoring/skills')
+    expect(sharedPaths.scripts()).toBe('/tmp/x/authoring/scripts')
+    expect(sharedPaths.geodata()).toBe('/tmp/x/authoring/geodata')
     expect(sharedPaths.workspacesRoot()).toBe('/tmp/x/workspaces')
   })
 

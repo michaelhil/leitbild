@@ -282,8 +282,8 @@ export const createRoom = (
       members: [...members],
       summaryConfig,
       ...(latestSummary ? { latestSummary } : {}),
-      // Always include — under v24 semantics activePacks is the full truth,
-      // including the empty case ("user deactivated everything").
+      // Always include: activePacks is the full truth, including the empty
+      // case ("the Room has no active Packs").
       activePacks: [...activePacks],
     }),
 
@@ -354,10 +354,7 @@ export const createRoom = (
       }
       if (state.summaryConfig) summaryConfig = state.summaryConfig
       if (state.latestSummary !== undefined) latestSummary = state.latestSummary
-      // Canonical snapshots always carry activePacks.
-      // (the full truth, including empty). The createRoom default-active
-      // seed is purely for fresh in-memory rooms; restore overwrites.
-      activePacks = state.activePacks ? [...state.activePacks] : []
+      activePacks = [...state.activePacks]
     },
   }
 }

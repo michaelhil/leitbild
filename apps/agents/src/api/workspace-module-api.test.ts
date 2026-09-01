@@ -255,7 +255,7 @@ describe('Agents Workspace Module API', () => {
     )
     const custom = listed.definitions.find(item => item.ref.id === definition.id)
     expect(custom?.title).toBe('Revised briefing')
-    expect(custom?.currentRevisionId).toBe(updatedRef.revisionId)
+    expect(String(custom?.currentRevisionId)).toBe(updatedRef.revisionId)
 
     const staleUpdate = await request(
       'POST',

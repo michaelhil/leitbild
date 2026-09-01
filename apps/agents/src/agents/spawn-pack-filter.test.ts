@@ -1,11 +1,6 @@
 // Verifies the pack-aware tool surface filter — the structural fix for
-// tool-context bloat. An agent in a room with only system packs (core, local)
-// active sees core/local tools; activating a pack adds only its own tools.
-//
-// v24 note: room.activePacks is the COMPLETE truth (no implicit augmentation).
-// A real room created via createRoom is seeded with bundled defaults
-// (core/local/demos/pwr-ops) — these tests construct rooms by hand so they
-// must include the relevant pack namespaces explicitly.
+// tool-context bloat. Built-in and authored tools remain independent of Pack
+// activation; activating a Pack adds only that Pack's tools.
 
 import { describe, expect, test } from 'bun:test'
 import { buildToolSupport } from './spawn.ts'
@@ -27,7 +22,7 @@ const stubProvider = {} as unknown as LLMProvider
 const makeRoom = (activePacks: string[]) => ({ getActivePacks: () => activePacks })
 
 describe('pack-aware tool surface filter', () => {
-  test('with only system packs active, agent sees core (built-in) + local (external) only', async () => {
+  test('with no Packs active, agent sees built-in and authored tools only', async () => {
     const registry = createToolRegistry()
     registry.registerWithSource(okTool('core_tool'), { kind: 'built-in' })
     registry.registerWithSource(okTool('local_tool'), { kind: 'external', path: '/x.ts' })
@@ -44,14 +39,14 @@ describe('pack-aware tool surface filter', () => {
       { id: 'a', name: 'Alice' },
       stubProvider,
       undefined,
-      (roomId: string) => roomId === 'r1' ? makeRoom(['core', 'local']) : undefined,
+      (roomId: string) => roomId === 'r1' ? makeRoom([]) : undefined,
     )
 
     expect(support.resolveToolDefinitions).toBeDefined()
     const defs = support.resolveToolDefinitions!('r1')
     expect(defs).not.toBeNull()
     const names = (defs ?? []).map(d => d.function.name).sort()
-    // 'pass' is auto-injected as kind='built-in', so it shows up in core too.
+    // 'pass' is auto-injected as another built-in tool.
     expect(names).toContain('core_tool')
     expect(names).toContain('local_tool')
     expect(names).not.toContain('aviation_atc')
@@ -74,7 +69,7 @@ describe('pack-aware tool surface filter', () => {
       { id: 'a', name: 'Alice' },
       stubProvider,
       undefined,
-      (roomId: string) => roomId === 'tower' ? makeRoom(['core', 'local', 'aviation']) : undefined,
+      (roomId: string) => roomId === 'tower' ? makeRoom(['aviation']) : undefined,
     )
 
     const defs = support.resolveToolDefinitions!('tower')
@@ -100,7 +95,7 @@ describe('pack-aware tool surface filter', () => {
     expect(support.resolveToolDefinitions!('does-not-exist')).toBeNull()
   })
 
-  test('without getRoomActivation, support has no resolver (legacy behavior)', async () => {
+  test('without a Room resolver, support keeps its static selected-tool surface', async () => {
     const registry = createToolRegistry()
     registry.registerWithSource(okTool('core_tool'), { kind: 'built-in' })
 

@@ -256,7 +256,7 @@ export interface SpawnOptions {
   readonly onEvalEvent?: (agentName: string, event: import('../core/types/agent-eval.ts').EvalEvent) => void
   // Per-room pack-activation resolver. When provided, the LLM tool surface
   // is filtered per eval to tools owned by packs active in the trigger
-  // room (plus implicit-active 'core' + 'local'). This is the structural
+  // room. Built-in and authored tools have no Pack owner. This is the structural
   // fix for tool-context bloat — without it, every agent sees every tool
   // the registry has registered.
   readonly getRoomActivation?: GetRoomActivation

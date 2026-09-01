@@ -160,7 +160,8 @@ export interface BuildContextDeps {
   readonly responseFormat?: string
   readonly history: AgentHistory
   // Per-room skills section. Implementation looks up the room by id and
-  // filters by skill scope ∩ room.activePacks (∪ implicit core/local).
+  // filters Pack-owned skills by scope ∩ room.activePacks; authored skills
+  // have no Pack owner and remain available independently.
   readonly getSkills?: (roomId: string) => string
   // Returns the per-room wikis catalog text (index.md + scope.md per bound
   // wiki), or '' when nothing is bound. Section gated by IncludePrompts.wikis.

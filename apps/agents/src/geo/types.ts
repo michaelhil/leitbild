@@ -41,7 +41,7 @@ export interface GeoProperties {
   readonly verified: boolean
   readonly source: GeoSource
   // When `source === 'pack'`, names the owning pack namespace. The room-
-  // aware filter (effectiveActivePacks ⊕ implicit core+local) gates pack
+  // aware filter gates Pack-owned geodata against the Room's exact Pack set.
   // features per room. Undefined for non-pack sources.
   readonly pack?: string
   readonly added_by?: 'user' | 'agent'

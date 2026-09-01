@@ -5,7 +5,7 @@
 // GeoJSON FeatureCollections. Files are loaded at boot and (re-)scanned
 // whenever the install/update/uninstall cycle calls `reload`. Features get
 // tagged with `properties.source = 'pack'` and `properties.pack = <ns>`
-// so the room-aware filter (effectiveActivePacks ⊕ implicit core+local)
+// so the room-aware filter (the Room's exact active Pack set)
 // can gate them per room.
 //
 // This is the local-disk parallel of discovered-cache.ts (which fetches

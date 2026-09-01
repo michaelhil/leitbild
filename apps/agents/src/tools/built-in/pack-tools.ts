@@ -184,15 +184,12 @@ export const createInstallPackTool = (deps: PackToolsDeps): Tool => ({
     const source = (params.source as string ?? '').trim()
     if (!source) return { success: false, error: 'source is required' }
 
-    // `core` is a system pack bundled into the binary; leitbild-core (its
-    // public read-only mirror) is intentionally NOT installable. Refuse
-    // any source that would resolve to a `core` packId, including
-    // direct attempts at the mirror URL. See README.md and
-    // .github/workflows/sync-core-mirror.yml.
+    // `core` is reserved for built-in functionality; leitbild-core is a
+    // read-only audit mirror, not an installable Pack.
     if (/(^|[/:])leitbild-core(\.git)?\/?$/i.test(source)) {
       return {
         success: false,
-        error: '"core" is bundled into leitbild at build time and cannot be installed as a pack. The leitbild-core mirror exists for audit only.',
+        error: '"core" is reserved for built-in functionality and cannot be installed as a Pack. The leitbild-core mirror exists for audit only.',
       }
     }
 
@@ -203,7 +200,7 @@ export const createInstallPackTool = (deps: PackToolsDeps): Tool => ({
     if (isBareName && source === 'core') {
       return {
         success: false,
-        error: '"core" is bundled into leitbild at build time and cannot be installed as a pack.',
+        error: '"core" is reserved for built-in functionality and cannot be installed as a Pack.',
       }
     }
     const resolved = isBareName ? await resolveBareName(source) : resolveSource(source)
@@ -245,7 +242,7 @@ export const createInstallPackTool = (deps: PackToolsDeps): Tool => ({
     const packId = manifest.descriptor.id
     if (packId === 'core') {
       await cleanup()
-      return { success: false, error: '"core" is bundled into Leitbild and cannot be installed as a Pack' }
+      return { success: false, error: '"core" is reserved for built-in functionality and cannot be installed as a Pack' }
     }
 
     // B2: serialise the post-packId-resolution work for this packId.
@@ -628,10 +625,7 @@ export const createListPacksTool = (deps: PackToolsDeps): Tool => ({
 
     const matchTool = (packId: string) => (entry: typeof entries[number]): boolean =>
       entry.source.pack === packId
-    const matchSkill = (ns: string) => (s: typeof skills[number]): boolean => {
-      if (ns === 'local') return !s.pack
-      return s.pack === ns
-    }
+    const matchSkill = (packId: string) => (skill: typeof skills[number]): boolean => skill.pack === packId
 
     const bundledEntries = BUNDLED_PACKS.map(pack => ({
       id: pack.descriptor.id,

@@ -124,7 +124,7 @@ Each Pack requires a strict `pack.json` containing the shared descriptor envelop
 
 Malformed manifests, duplicate ids, missing dependencies, and unsupported contribution declarations fail visibly. Packs are installed at Deployment scope; a Room's active Pack set is the effective allowlist for Agent tools and Pack geodata.
 
-Authored local extensions use the same layout under `$LEITBILD_HOME/packs/local/`. Leitbild does not migrate or interpret older extension layouts.
+Deployment-authored tools, skills, scripts, and geodata live under `$LEITBILD_HOME/authoring/`. They are not Packs and are independent of Room Pack activation. Leitbild does not migrate or interpret older extension layouts.
 
 ## Cross-Module tools
 

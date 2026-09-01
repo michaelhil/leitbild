@@ -701,7 +701,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     }
   }
 
-  // write_script updates the deployment-scoped local Pack script catalog.
+  // write_script updates the deployment-scoped authored script catalog.
   toolRegistry.register(createWriteScriptTool(scriptStore, () => { /* onChange already broadcasts */ }))
 
   // Forward-ref so the runner can call AgentsWorkspaceRuntime.* without a build-order cycle.

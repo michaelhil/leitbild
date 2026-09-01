@@ -91,9 +91,9 @@ export const createScriptStore = (init: ScriptStoreInit): ScriptStore => {
           )
         }
         seenAt.set(script.name, sourcePath)
-        // Tag pack-bundled scripts. Implicit-active 'core' / 'local' isn't
-        // stamped here — those scripts come from baseDir / extraSourceDirs
-        // and have undefined pack, which the runner treats as 'local'.
+        // Tag Pack-bundled scripts. Authored and bundled-example scripts
+        // come from baseDir / extraSourceDirs
+        // and have undefined Pack ownership, so activation does not gate them.
         merged.set(script.name, pack ? { ...script, pack } : script)
       }
     }
@@ -161,7 +161,7 @@ export const createScriptStore = (init: ScriptStoreInit): ScriptStore => {
 // === Filesystem scan ===
 //
 // Delegates to the shared scanMarkdownDir helper. The helper returns
-// `{ value, name, sourcePath }` per file; we adapt to the local ScanEntry
+// `{ value, name, sourcePath }` per file; we adapt to the internal ScanEntry
 // shape so the collision-diagnostic codepath above stays unchanged.
 
 interface ScanEntry {

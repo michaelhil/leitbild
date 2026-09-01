@@ -189,7 +189,7 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
     if (!script) return { ok: false, reason: `script "${scriptName}" not found` }
 
     // Pack-bundled scripts require their owning Pack. Standalone scripts
-    // are local authored content and are available without Pack activation.
+    // are authored content and are available without Pack activation.
     const owningPack = script.pack
     const active = effectiveActivePackSet(room)
     if (owningPack !== undefined && !active.has(owningPack)) {

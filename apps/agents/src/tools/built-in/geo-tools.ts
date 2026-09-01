@@ -35,8 +35,8 @@ export interface GeoToolsDeps {
   readonly getActivePacks?: (roomId: string) => ReadonlyArray<string> | undefined
 }
 
-// v24: room.activePacks is the COMPLETE truth — system packs (core, local)
-// are present explicitly, no implicit augmentation here.
+// room.activePacks is the complete Pack allowlist; local geodata is authored
+// content and does not pretend to be a Pack.
 const buildActiveSet = (
   deps: GeoToolsDeps | undefined,
   roomId: string | undefined,

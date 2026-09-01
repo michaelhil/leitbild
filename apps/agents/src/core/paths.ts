@@ -6,13 +6,12 @@
 // Layout:
 //   $LEITBILD_HOME/                              ← global / shared
 //     providers.json                            ← provider keys + order
-//     packs/                                    ← installed packs (shared)
-//       <namespace>/                            ← third-party packs
-//       local/                                  ← user's drop-in dirs
-//         tools/                                ← drop-in TS tools
-//         skills/<name>/                        ← drop-in skills
-//         scripts/*.md                          ← drop-in scripts
-//         geodata/<category>.geojson            ← user-paste geodata
+//     packs/<namespace>/                        ← installed Packs
+//     authoring/                                ← deployment-authored content
+//       tools/                                  ← drop-in TS tools
+//       skills/<name>/                          ← drop-in skills
+//       scripts/*.md                            ← drop-in scripts
+//       geodata/<category>.geojson              ← user-paste geodata
 //     geodata/.bundled/<version>/               ← cached leitbild-geodata snapshot (NOT user data)
 //     knowledge/                                ← shared knowledge files
 //     logs/admin.jsonl                          ← janitor + registry events
@@ -37,19 +36,19 @@ export const leitbildHome = (): string =>
 
 // Shared (global) paths — registries, configs, packs dirs.
 //
-// Authored tools, skills, scripts, and geodata live inside the local Pack.
-const localPack = (): string => join(leitbildHome(), 'packs', 'local')
+// Authored content is not a Pack and is never governed by Room Pack activation.
+const authoringRoot = (): string => join(leitbildHome(), 'authoring')
 
 export const sharedPaths = {
   root: (): string => leitbildHome(),
   providers: (): string => join(leitbildHome(), 'providers.json'),
   llmPolicy: (): string => join(leitbildHome(), 'llm-policy.json'),
   packs: (): string => join(leitbildHome(), 'packs'),
-  skills: (): string => join(localPack(), 'skills'),
-  scripts: (): string => join(localPack(), 'scripts'),
-  tools: (): string => join(localPack(), 'tools'),
+  skills: (): string => join(authoringRoot(), 'skills'),
+  scripts: (): string => join(authoringRoot(), 'scripts'),
+  tools: (): string => join(authoringRoot(), 'tools'),
   knowledge: (): string => join(leitbildHome(), 'knowledge'),
-  geodata: (): string => join(localPack(), 'geodata'),
+  geodata: (): string => join(authoringRoot(), 'geodata'),
   adminLog: (): string => join(leitbildHome(), 'logs', 'admin.jsonl'),
   workspacesRoot: (): string => join(leitbildHome(), 'workspaces'),
 }

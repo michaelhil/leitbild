@@ -45,7 +45,7 @@ export interface Script {
   readonly source: string                               // raw .md text — for round-trip / debug
   // Owning pack namespace, if loaded from a pack's scripts/ dir. Undefined
   // for scripts under the user's baseDir or bundled examples (they're
-  // implicitly 'local' / 'core' for activation purposes).
+  // independent of Pack activation).
   readonly pack?: string
 }
 
