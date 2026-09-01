@@ -8,35 +8,35 @@ export const moduleFailureSchema = z.object({
 }).strict()
 export type ModuleFailure = z.infer<typeof moduleFailureSchema>
 
-export const moduleMembershipSchema = z.object({
+export const moduleProvisioningStateSchema = z.object({
   moduleId: moduleIdSchema,
-  status: z.enum(['joining', 'ready', 'join_failed', 'leaving', 'leave_failed']),
+  status: z.enum(['provisioning', 'ready', 'provision_failed', 'removing', 'remove_failed']),
   failure: moduleFailureSchema.optional(),
   updatedAt: isoTimestampSchema,
-}).strict().superRefine((membership, ctx) => {
-  const failed = membership.status === 'join_failed' || membership.status === 'leave_failed'
-  if (failed && membership.failure === undefined) {
-    ctx.addIssue({ code: 'custom', path: ['failure'], message: `${membership.status} requires a failure` })
+}).strict().superRefine((state, ctx) => {
+  const failed = state.status === 'provision_failed' || state.status === 'remove_failed'
+  if (failed && state.failure === undefined) {
+    ctx.addIssue({ code: 'custom', path: ['failure'], message: `${state.status} requires a failure` })
   }
-  if (!failed && membership.failure !== undefined) {
-    ctx.addIssue({ code: 'custom', path: ['failure'], message: `${membership.status} cannot carry a failure` })
+  if (!failed && state.failure !== undefined) {
+    ctx.addIssue({ code: 'custom', path: ['failure'], message: `${state.status} cannot carry a failure` })
   }
 })
-export type ModuleMembership = z.infer<typeof moduleMembershipSchema>
+export type ModuleProvisioningState = z.infer<typeof moduleProvisioningStateSchema>
 
 export const workspaceSchema = z.object({
   id: workspaceIdSchema,
   name: z.string().trim().min(1).max(256).nullable(),
-  modules: z.array(moduleMembershipSchema),
+  modules: z.array(moduleProvisioningStateSchema),
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,
 }).strict().superRefine((workspace, ctx) => {
   const seen = new Set<string>()
-  workspace.modules.forEach((membership, index) => {
-    if (seen.has(membership.moduleId)) {
-      ctx.addIssue({ code: 'custom', path: ['modules', index, 'moduleId'], message: `duplicate Module Membership: ${membership.moduleId}` })
+  workspace.modules.forEach((state, index) => {
+    if (seen.has(state.moduleId)) {
+      ctx.addIssue({ code: 'custom', path: ['modules', index, 'moduleId'], message: `duplicate Module provisioning state: ${state.moduleId}` })
     }
-    seen.add(membership.moduleId)
+    seen.add(state.moduleId)
   })
 })
 export type Workspace = z.infer<typeof workspaceSchema>

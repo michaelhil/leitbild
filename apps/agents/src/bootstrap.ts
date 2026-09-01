@@ -130,19 +130,18 @@ export const bootstrap = async (): Promise<void> => {
   // with kind:'pack-bundled' + pack:<Pack id> so per-room activation
   // (room.activePacks) actually gates them. The packs themselves are
   // declared in src/packs/bundled.ts (the single source of truth for their
-  // Pack descriptors).
+  // manifests and tool loaders).
   //
   // Bundled-pack tools are exempt from the `<pack>_<tool>` registry-key
   // prefix convention that filesystem packs follow (loadToolDirectory
   // applies the prefix; bundled Packs intentionally keep their declared names).
   {
-    const { BUNDLED_DEMO_TOOLS } = await import('./packs/synthetic-demos/tools/index.ts')
-    for (const tool of BUNDLED_DEMO_TOOLS) {
-      deployment.sharedToolRegistry.registerWithSource(tool, { kind: 'pack-bundled', pack: 'demos', displayName: tool.name })
-    }
-    const { PWR_OPS_TOOLS } = await import('./packs/pwr-ops/index.ts')
-    for (const tool of PWR_OPS_TOOLS) {
-      deployment.sharedToolRegistry.registerWithSource(tool, { kind: 'pack-bundled', pack: 'pwr-ops', displayName: tool.name })
+    const { BUNDLED_PACKS } = await import('./packs/bundled.ts')
+    for (const pack of BUNDLED_PACKS) {
+      const packId = pack.manifest.descriptor.id
+      for (const tool of await pack.loadTools()) {
+        deployment.sharedToolRegistry.registerWithSource(tool, { kind: 'pack-bundled', pack: packId, displayName: tool.name })
+      }
     }
   }
 
@@ -564,7 +563,7 @@ export const bootstrap = async (): Promise<void> => {
   }
 
   // === HTTP mode ===
-  // No boot Workspace. The Workspace Host provisions Module membership;
+  // No boot Workspace. The Leitbild Host provisions Module state;
   // the first URL-scoped application request loads that state. validateBootstrap
   // runs on the first getOrLoad via onFirstLoad above.
 

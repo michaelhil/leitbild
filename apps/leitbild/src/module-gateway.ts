@@ -29,8 +29,8 @@ export type ModuleOperationResult = ModuleCallResult<undefined>
 export interface ModuleGateway {
   readonly list: () => ReadonlyArray<ModuleRegistration>
   readonly has: (moduleId: ModuleId) => boolean
-  readonly join: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleOperationResult>
-  readonly leave: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleOperationResult>
+  readonly provision: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleOperationResult>
+  readonly remove: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleOperationResult>
   readonly definitions: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleDefinitionCollection>>
   readonly resources: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleResourceCollection>>
   readonly capabilities: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleCapabilityCollection>>
@@ -135,7 +135,7 @@ export const createModuleGateway = (config: {
     }
     if (!response.ok) {
       return failure({
-        code: method === 'PUT' ? 'module_join_failed' : 'module_leave_failed',
+        code: method === 'PUT' ? 'module_provision_failed' : 'module_remove_failed',
         message: `Module lifecycle returned HTTP ${response.status}`,
         retryable: response.status >= 500,
       })
@@ -211,8 +211,8 @@ export const createModuleGateway = (config: {
   return {
     list: () => registrations,
     has: moduleId => byId.has(moduleIdSchema.parse(moduleId)),
-    join: (moduleId, workspaceId) => operate(moduleId, workspaceId, 'PUT'),
-    leave: (moduleId, workspaceId) => operate(moduleId, workspaceId, 'DELETE'),
+    provision: (moduleId, workspaceId) => operate(moduleId, workspaceId, 'PUT'),
+    remove: (moduleId, workspaceId) => operate(moduleId, workspaceId, 'DELETE'),
     definitions: (moduleId, workspaceId) => readCollection({
       moduleId,
       workspaceId,

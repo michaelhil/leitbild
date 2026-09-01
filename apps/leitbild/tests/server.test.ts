@@ -17,8 +17,8 @@ const gateway = (): ModuleGateway => ({
     moduleId, internalBaseUrl: `http://${moduleId}.internal`, manifestPath: '/manifest',
   })),
   has: moduleId => coreModuleIds.includes(moduleId),
-  join: async () => ({ ok: true, value: undefined }),
-  leave: async () => ({ ok: true, value: undefined }),
+  provision: async () => ({ ok: true, value: undefined }),
+  remove: async () => ({ ok: true, value: undefined }),
   definitions: async (moduleId, workspaceId) => ({ ok: true, value: moduleDefinitionCollectionSchema.parse({ definitions: [
     moduleId === 'world' ? {
       ref: { workspaceId, moduleId, type: 'world.scenario', id: 'halden-process-plant-demo' },
@@ -80,7 +80,7 @@ describe('Leitbild server', () => {
     expect((await fetch(`${baseUrl}/api/workspaces/${created.id}`)).status).toBe(404)
   })
 
-  test('does not expose user-controlled Module membership routes', async () => {
+  test('does not expose user-controlled Module provisioning routes', async () => {
     const { host, baseUrl } = startHost()
     const workspace = await host.create({ name: null })
     expect((await fetch(`${baseUrl}/api/workspaces/${workspace.id}/modules/world`, { method: 'DELETE' })).status).toBe(404)

@@ -14,6 +14,9 @@ const packLoaders: Record<KnownUiPackId, PackLoader> = {
   'electric-grid': async () => (await import('../packs/electric-grid/pack.ts')).electricGridPack,
 }
 
+/** Reviewed browser entry points. A parity test keeps this boundary aligned with the server assembly. */
+export const knownUiPackIds: ReadonlyArray<string> = Object.keys(packLoaders).sort()
+
 const loadedPacks = new Map<string, WorldPack>()
 
 const isKnownUiPackId = (packId: string): packId is KnownUiPackId =>

@@ -1,4 +1,4 @@
-// wiki_lookup — fetch a non-procedure page from the leitbild-wikis pwr-ops
+// wiki_lookup — fetch a non-procedure page from the configured PWR wiki
 // wiki (system descriptions, tag/setpoint catalogues, tech-spec extracts,
 // lineups). Companion to procedure_lookup.
 //

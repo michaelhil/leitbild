@@ -5,7 +5,7 @@ The Leitbild Platform gives World and Agents one product identity without absorb
 ## Language
 
 **Workspace**:
-A durable product container with one identity, optional display name, and a set of Module Memberships.
+A durable, isolated work area with one identity, an optional display name, and independently owned World and Agents state. Packs are selected by Module-owned Definitions inside the Workspace; they are not installed into the Workspace itself.
 _Avoid_: Instance, Suite, account, Room, or Simulation Run
 
 **Leitbild Host**:

@@ -265,7 +265,7 @@ export const ambulancePack: WorldPack = {
     id: 'ambulance',
     version: '1.0.0',
     name: 'Ambulance Dispatch',
-    contributions: ['runtime', 'knowledge', 'scenario', 'presentation', 'creation', 'targeting', 'interactions'],
+    contributions: ['runtime', 'scenario', 'presentation', 'creation', 'targeting', 'interactions'],
   }),
   scenarioConfigSchema: emptyPackScenarioConfigSchema,
   authoring: {
@@ -316,11 +316,6 @@ export const ambulancePack: WorldPack = {
       { id: ambulanceSimRuntimeId, version: '1.0.0', label: 'Local ambulance runtime', kind: 'local', clock: 'simulation' },
     ],
     defaultRuntimeId: ambulanceSimRuntimeId,
-  },
-  knowledge: {
-    wikiRefs: [
-      { name: 'Leitbild ambulance wiki', url: 'https://github.com/leitbild-wikis/leitbild-ambulance' },
-    ],
   },
   scenario: ambulanceScenarioSupport,
   presentation: {

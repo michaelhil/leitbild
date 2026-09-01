@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { moduleIdSchema, moduleMembershipSchema } from '@leitbild/contracts'
+import { moduleIdSchema, moduleProvisioningStateSchema } from '@leitbild/contracts'
 import { createWorkspaceStore } from '../src/store.ts'
 
 const temporaryDirectories: string[] = []
@@ -20,10 +20,10 @@ describe('Workspace Store', () => {
     const first = createWorkspaceStore(path)
     const created = first.create({ name: null, moduleIds: [moduleId] })
     expect(created.name).toBeNull()
-    expect(created.modules[0]?.status).toBe('joining')
-    first.setMembership(created.id, moduleMembershipSchema.parse({
+    expect(created.modules[0]?.status).toBe('provisioning')
+    first.setModuleState(created.id, moduleProvisioningStateSchema.parse({
       moduleId,
-      status: 'join_failed',
+      status: 'provision_failed',
       failure: { code: 'module_unavailable', message: 'offline', retryable: true },
       updatedAt: new Date().toISOString(),
     }))
@@ -33,7 +33,7 @@ describe('Workspace Store', () => {
     expect(reopened.get(created.id)).toMatchObject({
       id: created.id,
       name: null,
-      modules: [{ moduleId, status: 'join_failed', failure: { code: 'module_unavailable', retryable: true } }],
+      modules: [{ moduleId, status: 'provision_failed', failure: { code: 'module_unavailable', retryable: true } }],
     })
     reopened.close()
   })

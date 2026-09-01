@@ -21,7 +21,7 @@ const requireKnownPacks = async (
 ): Promise<ReadonlyArray<string>> => {
   const installed = await scanPacks(system.packsDir)
   const known = new Set([
-    ...BUNDLED_PACKS.map(pack => pack.descriptor.id),
+    ...BUNDLED_PACKS.map(pack => pack.manifest.descriptor.id),
     ...installed.map(pack => pack.id),
   ])
   const missing = requested.filter(id => !known.has(id))

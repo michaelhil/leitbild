@@ -120,12 +120,12 @@ describe('Leitbild Workspace Host', () => {
     store.close()
   })
 
-  test('records a failed core Module join and retries it', async () => {
+  test('records a failed core Module provision and retries it', async () => {
     const { modules, host, store } = createFixture()
     const world = modules.find(item => item.registration.moduleId === 'world')!
     world.state.available = false
     const workspace = await host.create({ name: null })
-    expect(workspace.modules.find(item => item.moduleId === 'world')).toMatchObject({ status: 'join_failed' })
+    expect(workspace.modules.find(item => item.moduleId === 'world')).toMatchObject({ status: 'provision_failed' })
     world.state.available = true
     expect((await host.retryModule(workspace.id, world.registration.moduleId)).modules.find(item => item.moduleId === 'world')?.status).toBe('ready')
     store.close()

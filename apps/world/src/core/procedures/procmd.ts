@@ -1,4 +1,4 @@
-import { nowIso, procedureDocumentSchema, type ProcedureDocument, type ProcedureSource, type ProcedureTag, type ProcedureTagId } from '../model/index.ts'
+import { procedureDocumentSchema, type ProcedureDocument, type ProcedureSource, type ProcedureTag, type ProcedureTagId } from '../model/index.ts'
 
 interface Frontmatter {
   readonly procedureId: string
@@ -284,13 +284,3 @@ export const parseProcedureMarkdown = (config: {
   }
   return procedureDocumentSchema.parse(document) as ProcedureDocument
 }
-
-export const emptyProcedureSource = (): ProcedureSource => ({
-  sourceId: 'pwr-ops',
-  label: 'PWR operations procedures',
-  repository: 'leitbild-wikis/pwr-ops',
-  ref: 'main',
-  path: 'wiki/procedures',
-  fetchedAt: nowIso(),
-  sourceUrl: 'https://github.com/leitbild-wikis/pwr-ops/tree/main/wiki/procedures',
-})

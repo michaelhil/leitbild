@@ -7,6 +7,7 @@ import { createRoutingAdapterFromEnv } from './routing/config.ts'
 import { builtinScenarioSources } from './scenarios/sources.ts'
 import { createWorldModuleState } from './core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry } from './core/workspaces/runtime-registry.ts'
+import { createConfiguredProcedureSourceService } from './procedure-sources.ts'
 
 const routing = createRoutingAdapterFromEnv()
 const assembly = createWorldApplicationAssembly({ routing, env: process.env })
@@ -29,6 +30,7 @@ const workspaces = createWorldWorkspaceRuntimeRegistry({
   compileScenarioSource: source => compileScenarioSource(source, worldPacks, { routing }),
   scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(worldPacks),
   runtimeAdapters: assembly.runtimeAdapters,
+  procedureSourceService: createConfiguredProcedureSourceService(),
 })
 
 const server = createServer({ workspaces, workspaceHostUrl })

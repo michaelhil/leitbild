@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { loadActivePackViews, loadUiPack } from '../src/ui/pack-loader.ts'
+import { worldPacks } from '../src/app-assembly.ts'
+import { knownUiPackIds, loadActivePackViews, loadUiPack } from '../src/ui/pack-loader.ts'
 
 describe('UI scenario pack loading', () => {
   test('loads only the packs declared by a scenario', async () => {
@@ -37,5 +38,9 @@ describe('UI scenario pack loading', () => {
     await expect(loadUiPack('missing')).rejects.toThrow('scenario references unknown UI pack: missing')
     await expect(loadActivePackViews(['ambulance', 'ambulance']))
       .rejects.toThrow('scenario declares duplicate packs: ambulance')
+  })
+
+  test('has one reviewed lazy loader for every assembled World Pack', () => {
+    expect(knownUiPackIds).toEqual(worldPacks.map(pack => pack.descriptor.id).sort())
   })
 })

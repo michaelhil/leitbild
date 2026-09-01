@@ -1,4 +1,4 @@
-// procedure_lookup — fetch a Westinghouse PWR EOP from the leitbild-wikis
+// procedure_lookup — fetch a Westinghouse PWR EOP from the configured wiki
 // pwr-ops wiki, parse procmd, render a ready-to-paste markdown reply OR
 // a structured JSON shape for agents that reason over the procedure.
 //

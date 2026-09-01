@@ -439,7 +439,7 @@ and emits triples with the following predicates:
 
 JSON-LD output includes a `@context` mapping these predicates to URIs
 under a stable placeholder ontology namespace
-(`https://leitbild-wikis.github.io/pwr-ops/ontology/v1#`). The URI need
+(`https://samsinn-wikis.github.io/pwr-ops/ontology/v1#`). The URI need
 not resolve in v0.5; it serves as a stable identifier for the predicate
 set. Formal SHACL/OWL schema is deferred.
 
@@ -728,7 +728,7 @@ recommended render — they carry operational importance.
 
 The mechanism is purely browser-side. The procmd source is canonical;
 no parallel rendered files exist. Reference implementation lives in
-`leitbild-wikis/pwr-ops` (`overrides/visibility.css`, `overrides/visibility.js`,
+`samsinn-wikis/pwr-ops` (`overrides/visibility.css`, `overrides/visibility.js`,
 `overrides/main.html` FOUC `<script>`, plus build-time wrapping in
 `scripts/render-procmd.ts`).
 

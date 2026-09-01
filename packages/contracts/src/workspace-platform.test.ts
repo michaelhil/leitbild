@@ -5,7 +5,7 @@ import {
   moduleCapabilityDescriptorSchema,
   moduleCapabilityInvocationSchema,
   moduleDefinitionDescriptorSchema,
-  moduleMembershipSchema,
+  moduleProvisioningStateSchema,
   moduleResourceDescriptorSchema,
   newWorkspaceId,
   toolGrantSetSchema,
@@ -34,25 +34,25 @@ describe('Workspace', () => {
     expect(() => createWorkspaceInputSchema.parse({ moduleIds: ['world'] })).toThrow()
   })
 
-  test('rejects duplicate Module Membership', () => {
-    const membership = { moduleId: 'world', status: 'ready', updatedAt: now }
+  test('rejects duplicate Module provisioning state', () => {
+    const state = { moduleId: 'world', status: 'ready', updatedAt: now }
     expect(() => workspaceSchema.parse({
       id: newWorkspaceId(),
       name: null,
-      modules: [membership, membership],
+      modules: [state, state],
       createdAt: now,
       updatedAt: now,
-    })).toThrow('duplicate Module Membership')
+    })).toThrow('duplicate Module provisioning state')
   })
 
   test('requires a structured failure only for failed lifecycle states', () => {
-    expect(() => moduleMembershipSchema.parse({
+    expect(() => moduleProvisioningStateSchema.parse({
       moduleId: 'world',
-      status: 'join_failed',
+      status: 'provision_failed',
       updatedAt: now,
     })).toThrow('requires a failure')
 
-    expect(() => moduleMembershipSchema.parse({
+    expect(() => moduleProvisioningStateSchema.parse({
       moduleId: 'world',
       status: 'ready',
       failure: { code: 'module_unavailable', message: 'offline', retryable: true },

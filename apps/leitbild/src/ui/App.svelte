@@ -66,6 +66,19 @@
   const workspaceTitle = $derived(workspace?.name ?? workspace?.id ?? 'Workspace')
   const showingComposer = $derived(selectedWorldRunId !== null || selectedAgentsRoomId !== null)
   const continuableResources = $derived(resources.filter(resource => resource.uiPath !== undefined))
+  const selectedWorldResource = $derived(resources.find(resource =>
+    resource.ref.moduleId === 'world' && resource.ref.id === selectedWorldRunId,
+  ))
+  const selectedAgentsResource = $derived(resources.find(resource =>
+    resource.ref.moduleId === 'agents' && resource.ref.id === selectedAgentsRoomId,
+  ))
+  const pageTitle = $derived(currentPage.kind === 'list'
+    ? 'Leitbild'
+    : `${selectedWorldResource?.title ?? selectedAgentsResource?.title ?? workspaceTitle} · Leitbild`)
+
+  $effect(() => {
+    document.title = pageTitle
+  })
 
   const request = async <T,>(path: string, options?: RequestInit): Promise<T> => {
     const response = await fetch(path, options)

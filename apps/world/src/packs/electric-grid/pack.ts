@@ -174,14 +174,13 @@ const layerGroups: ReadonlyArray<PackMapLayerGroup> = [
 export const electricGridPack: WorldPack = {
   descriptor: createWorldPackDescriptor({
     id: electricGridPackId, version: '1.0.0', name: 'Electric Grid',
-    contributions: ['runtime', 'knowledge', 'reference-data', 'scenario', 'presentation'],
+    contributions: ['runtime', 'reference-data', 'scenario', 'presentation'],
   }),
   scenarioConfigSchema: electricGridPackConfigSchema,
   runtime: {
     runtimes: [{ id: electricGridRuntimeId, version: '1.0.0', label: 'Local electric grid runtime', kind: 'local', clock: 'simulation' }],
     defaultRuntimeId: electricGridRuntimeId,
   },
-  knowledge: { wikiRefs: [{ name: 'Leitbild electric grid pack wiki', url: 'https://leitbild-wikis.github.io/leitbild/packs/electric-grid/' }] },
   referenceData: { builders: [], datasetIds: [gridNorwayDatasetIdValue] },
   scenario: electricGridScenarioSupport,
   presentation: {

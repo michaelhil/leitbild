@@ -61,14 +61,6 @@ export interface ProcedureSourceService {
 
 const defaultCacheTtlMs = 60 * 60 * 1000
 
-export const defaultProcedureSources: ReadonlyArray<ProcedureSourceConfig> = [{
-  sourceId: 'pwr-ops',
-  label: 'PWR operations procedures',
-  repository: 'leitbild-wikis/pwr-ops',
-  ref: 'main',
-  path: 'wiki/procedures',
-}]
-
 const githubApiHeaders = {
   Accept: 'application/vnd.github+json',
   'User-Agent': 'leitbild-procedure-source-loader',
@@ -255,7 +247,7 @@ export const createProcedureSourceService = (config: {
   readonly sources?: ReadonlyArray<ProcedureSourceConfig>
   readonly cacheTtlMs?: number
 } = {}): ProcedureSourceService => {
-  const sources = config.sources ?? defaultProcedureSources
+  const sources = config.sources ?? []
   const cacheTtlMs = config.cacheTtlMs ?? defaultCacheTtlMs
   const cache = new Map<ProcedureSourceId, Promise<ProcedureSourceCacheEntry>>()
   const statuses = new Map<ProcedureSourceId, ProcedureSourceLoadStatus>()

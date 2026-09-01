@@ -45,7 +45,7 @@ describe('Agents Module state', () => {
     expect(await Bun.file(paths.rooms.snapshot).exists()).toBe(false)
   })
 
-  test('rejects corrupt markers instead of inventing Module membership', async () => {
+  test('rejects corrupt markers instead of inventing Module state', async () => {
     const workspaceId = newWorkspaceId()
     const state = createAgentsModuleState()
     await state.provision(workspaceId)

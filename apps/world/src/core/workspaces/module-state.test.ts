@@ -40,7 +40,7 @@ describe('World Module state', () => {
     expect(await Bun.file(join(paths.workspaceRoot, 'agents', 'workspace.json')).exists()).toBe(true)
   })
 
-  test('rejects corrupt markers instead of inventing Module membership', async () => {
+  test('rejects corrupt markers instead of inventing Module state', async () => {
     const { dataDir, state } = await createState()
     const workspaceId = newWorkspaceId()
     await state.provision(workspaceId)

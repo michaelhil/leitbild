@@ -628,13 +628,13 @@ export const createListPacksTool = (deps: PackToolsDeps): Tool => ({
     const matchSkill = (packId: string) => (skill: typeof skills[number]): boolean => skill.pack === packId
 
     const bundledEntries = BUNDLED_PACKS.map(pack => ({
-      id: pack.descriptor.id,
+      id: pack.manifest.descriptor.id,
       deployment: 'bundled' as const,
-      descriptor: pack.descriptor,
-      wikis: [],
-      uiExtensions: [],
-      tools: entries.filter(matchTool(pack.descriptor.id)).map(e => e.tool.name),
-      skills: skills.filter(matchSkill(pack.descriptor.id)).map(s => s.name),
+      descriptor: pack.manifest.descriptor,
+      wikis: pack.manifest.wikis,
+      uiExtensions: pack.manifest.uiExtensions,
+      tools: entries.filter(matchTool(pack.manifest.descriptor.id)).map(e => e.tool.name),
+      skills: skills.filter(matchSkill(pack.manifest.descriptor.id)).map(s => s.name),
     }))
 
     const installedEntries = installedPacks.map(p => ({

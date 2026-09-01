@@ -3,7 +3,7 @@ import {
   coreModuleIds,
   createWorkspaceInputSchema,
   moduleIdSchema,
-  moduleMembershipSchema,
+  moduleProvisioningStateSchema,
   renameWorkspaceInputSchema,
   workspaceCapabilityCatalogSchema,
   workspaceDefinitionCatalogSchema,
@@ -16,7 +16,7 @@ import {
   type CreateWorkspaceInput,
   type InvokeCapabilityInput,
   type ModuleId,
-  type ModuleMembership,
+  type ModuleProvisioningState,
   type RenameWorkspaceInput,
   type Workspace,
   type WorkspaceCapabilityCatalog,
@@ -59,11 +59,11 @@ export interface WorkspaceHost {
   readonly installedModuleIds: () => ReadonlyArray<ModuleId>
 }
 
-const membership = (
+const provisioningState = (
   moduleId: ModuleId,
-  status: ModuleMembership['status'],
+  status: ModuleProvisioningState['status'],
   result?: ModuleOperationResult,
-): ModuleMembership => moduleMembershipSchema.parse({
+): ModuleProvisioningState => moduleProvisioningStateSchema.parse({
   moduleId,
   status,
   ...(result?.ok === false ? { failure: result.failure } : {}),
@@ -91,18 +91,18 @@ export const createWorkspaceHost = (config: {
     }
   }
 
-  const join = async (workspaceId: WorkspaceId, moduleId: ModuleId): Promise<Workspace> => {
-    const result = await config.modules.join(moduleId, workspaceId)
-    return config.store.setMembership(
+  const provision = async (workspaceId: WorkspaceId, moduleId: ModuleId): Promise<Workspace> => {
+    const result = await config.modules.provision(moduleId, workspaceId)
+    return config.store.setModuleState(
       workspaceId,
-      membership(moduleId, result.ok ? 'ready' : 'join_failed', result),
+      provisioningState(moduleId, result.ok ? 'ready' : 'provision_failed', result),
     )!
   }
 
-  const unavailableMembershipFailure = (item: ModuleMembership) => item.failure ?? {
+  const unavailableModuleFailure = (item: ModuleProvisioningState) => item.failure ?? {
     code: 'module_not_ready',
     message: `Module lifecycle is ${item.status}`,
-    retryable: item.status === 'joining' || item.status === 'leaving',
+    retryable: item.status === 'provisioning' || item.status === 'removing',
   }
 
   const invokeCapability = async (
@@ -154,7 +154,7 @@ export const createWorkspaceHost = (config: {
     create: async rawInput => {
       const input = createWorkspaceInputSchema.parse(rawInput)
       const workspace = config.store.create({ name: input.name ?? null, moduleIds: installedModuleIds })
-      await Promise.all(installedModuleIds.map(moduleId => join(workspace.id, moduleId)))
+      await Promise.all(installedModuleIds.map(moduleId => provision(workspace.id, moduleId)))
       return requireWorkspace(workspace.id)
     },
     rename: (rawId, rawInput) => {
@@ -167,16 +167,16 @@ export const createWorkspaceHost = (config: {
       const id = workspaceIdSchema.parse(rawId)
       const workspace = requireWorkspace(id)
       for (const item of workspace.modules) {
-        config.store.setMembership(id, membership(item.moduleId, 'leaving'))
+        config.store.setModuleState(id, provisioningState(item.moduleId, 'removing'))
       }
       const results = await Promise.all(workspace.modules.map(async item => ({
         moduleId: item.moduleId,
-        result: await config.modules.leave(item.moduleId, id),
+        result: await config.modules.remove(item.moduleId, id),
       })))
       const failures = results.filter(item => !item.result.ok)
       if (failures.length > 0) {
         for (const item of failures) {
-          if (!item.result.ok) config.store.setMembership(id, membership(item.moduleId, 'leave_failed', item.result))
+          if (!item.result.ok) config.store.setModuleState(id, provisioningState(item.moduleId, 'remove_failed', item.result))
         }
         throw hostError({
           status: 502,
@@ -194,11 +194,11 @@ export const createWorkspaceHost = (config: {
       const workspace = requireWorkspace(id)
       const existing = workspace.modules.find(item => item.moduleId === moduleId)
       if (!existing) {
-        throw hostError({ status: 404, code: 'module_membership_not_found', message: `Module does not belong to Workspace: ${moduleId}` })
+        throw hostError({ status: 404, code: 'module_state_not_found', message: `Module does not belong to Workspace: ${moduleId}` })
       }
-      if (existing.status === 'join_failed') {
-        config.store.setMembership(id, membership(moduleId, 'joining'))
-        return await join(id, moduleId)
+      if (existing.status === 'provision_failed') {
+        config.store.setModuleState(id, provisioningState(moduleId, 'provisioning'))
+        return await provision(id, moduleId)
       }
       throw hostError({ status: 409, code: 'module_not_retryable', message: `Module lifecycle is not failed: ${moduleId}` })
     },
@@ -207,7 +207,7 @@ export const createWorkspaceHost = (config: {
       const workspace = requireWorkspace(id)
       const results = await Promise.all(workspace.modules.map(async item => {
         if (item.status !== 'ready') {
-          return { moduleId: item.moduleId, result: { ok: false as const, failure: unavailableMembershipFailure(item) } }
+          return { moduleId: item.moduleId, result: { ok: false as const, failure: unavailableModuleFailure(item) } }
         }
         return { moduleId: item.moduleId, result: await config.modules.definitions(item.moduleId, id) }
       }))
@@ -234,7 +234,7 @@ export const createWorkspaceHost = (config: {
       const workspace = requireWorkspace(id)
       const results = await Promise.all(workspace.modules.map(async item => {
         if (item.status !== 'ready') {
-          return { moduleId: item.moduleId, result: { ok: false as const, failure: unavailableMembershipFailure(item) } }
+          return { moduleId: item.moduleId, result: { ok: false as const, failure: unavailableModuleFailure(item) } }
         }
         return { moduleId: item.moduleId, result: await config.modules.resources(item.moduleId, id) }
       }))
@@ -261,7 +261,7 @@ export const createWorkspaceHost = (config: {
       const workspace = requireWorkspace(id)
       const results = await Promise.all(workspace.modules.map(async item => {
         if (item.status !== 'ready') {
-          return { moduleId: item.moduleId, result: { ok: false as const, failure: unavailableMembershipFailure(item) } }
+          return { moduleId: item.moduleId, result: { ok: false as const, failure: unavailableModuleFailure(item) } }
         }
         return { moduleId: item.moduleId, result: await config.modules.capabilities(item.moduleId, id) }
       }))

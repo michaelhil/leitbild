@@ -1,8 +1,11 @@
-import type { PackDescriptor } from '@leitbild/contracts'
+import type { Tool } from '../core/types/tool.ts'
 import { createAgentPackDescriptor } from './manifest.ts'
+import { PWR_OPS_MANIFEST } from './pwr-ops/manifest.ts'
+import type { PackManifest } from './types.ts'
 
 export interface BundledPack {
-  readonly descriptor: PackDescriptor
+  readonly manifest: PackManifest
+  readonly loadTools: () => Promise<ReadonlyArray<Tool>>
 }
 
 const descriptor = (
@@ -10,7 +13,7 @@ const descriptor = (
   name: string,
   description: string,
   contributionKinds: ReadonlyArray<string>,
-): PackDescriptor => createAgentPackDescriptor({
+): PackManifest['descriptor'] => createAgentPackDescriptor({
   id,
   version: '1.0.0',
   name,
@@ -20,17 +23,18 @@ const descriptor = (
 
 export const BUNDLED_PACKS: ReadonlyArray<BundledPack> = [
   {
-    descriptor: descriptor('demos', 'Demos', 'Capability showcase tools.', ['tool']),
+    manifest: {
+      descriptor: descriptor('demos', 'Demos', 'Capability showcase tools.', ['tool']),
+      wikis: [],
+      uiExtensions: [],
+    },
+    loadTools: async () => (await import('./synthetic-demos/tools/index.ts')).BUNDLED_DEMO_TOOLS,
   },
   {
-    descriptor: descriptor(
-      'pwr-ops',
-      'PWR Operations',
-      'Westinghouse PWR Emergency Operating Procedures and wiki-backed tools.',
-      ['tool', 'wiki'],
-    ),
+    manifest: PWR_OPS_MANIFEST,
+    loadTools: async () => (await import('./pwr-ops/index.ts')).PWR_OPS_TOOLS,
   },
 ]
 
 export const getBundledPack = (packId: string): BundledPack | undefined =>
-  BUNDLED_PACKS.find(pack => pack.descriptor.id === packId)
+  BUNDLED_PACKS.find(pack => pack.manifest.descriptor.id === packId)

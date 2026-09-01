@@ -139,14 +139,13 @@ const aircraftColor = (data: AircraftPackData): string => {
 export const aviationPack: WorldPack = {
   descriptor: createWorldPackDescriptor({
     id: 'aviation', version: '1.0.0', name: 'Aviation',
-    contributions: ['runtime', 'knowledge', 'reference-data', 'presentation'],
+    contributions: ['runtime', 'reference-data', 'presentation'],
   }),
   scenarioConfigSchema: aviationPackConfigSchema,
   runtime: {
     runtimes: [aviationOpenSkyRuntime, aviationVatsimRuntime, aviationMultiRuntime],
     defaultRuntimeId: aviationMultiRuntimeId,
   },
-  knowledge: { wikiRefs: [{ name: 'Leitbild aviation pack wiki', url: 'https://leitbild-wikis.github.io/leitbild/packs/aviation/' }] },
   referenceData: { builders: [], datasetIds: [aeroNorwayDatasetIdValue] },
   presentation: {
     mapLayerGroups: layerGroups,

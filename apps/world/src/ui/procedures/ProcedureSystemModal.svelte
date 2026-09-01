@@ -1020,7 +1020,7 @@
       body,
       labels: 'procedure,leitbild',
     })
-    window.open(`https://github.com/leitbild-wikis/pwr-ops/issues/new?${params.toString()}`, '_blank', 'noopener,noreferrer')
+    window.open(`https://github.com/samsinn-wikis/pwr-ops/issues/new?${params.toString()}`, '_blank', 'noopener,noreferrer')
   }
 
   const textSegments = (text: string): ReadonlyArray<TextSegment> => {

@@ -3,13 +3,13 @@ import { dirname } from 'node:path'
 import { Database } from 'bun:sqlite'
 import {
   moduleIdSchema,
-  moduleMembershipSchema,
+  moduleProvisioningStateSchema,
   newWorkspaceId,
   workspaceIdSchema,
   workspaceSchema,
   type ModuleFailure,
   type ModuleId,
-  type ModuleMembership,
+  type ModuleProvisioningState,
   type Workspace,
   type WorkspaceId,
 } from '@leitbild/contracts'
@@ -21,10 +21,10 @@ interface WorkspaceRow {
   readonly updated_at: string
 }
 
-interface MembershipRow {
+interface ModuleStateRow {
   readonly workspace_id: string
   readonly module_id: string
-  readonly status: ModuleMembership['status']
+  readonly status: ModuleProvisioningState['status']
   readonly failure_code: string | null
   readonly failure_message: string | null
   readonly failure_retryable: number | null
@@ -38,14 +38,13 @@ export interface WorkspaceStore {
   readonly create: (input: { readonly name: string | null; readonly moduleIds: ReadonlyArray<ModuleId> }) => Workspace
   readonly rename: (id: WorkspaceId, name: string | null) => Workspace | undefined
   readonly delete: (id: WorkspaceId) => boolean
-  readonly setMembership: (id: WorkspaceId, membership: ModuleMembership) => Workspace | undefined
-  readonly removeMembership: (id: WorkspaceId, moduleId: ModuleId) => Workspace | undefined
+  readonly setModuleState: (id: WorkspaceId, state: ModuleProvisioningState) => Workspace | undefined
   readonly close: () => void
 }
 
 const CURRENT_SCHEMA = 1
 
-const toMembership = (row: MembershipRow): ModuleMembership => moduleMembershipSchema.parse({
+const toModuleState = (row: ModuleStateRow): ModuleProvisioningState => moduleProvisioningStateSchema.parse({
   moduleId: row.module_id,
   status: row.status,
   ...(row.failure_code === null || row.failure_message === null || row.failure_retryable === null
@@ -94,7 +93,7 @@ export const createWorkspaceStore = (path: string): WorkspaceStore => {
   const countQuery = database.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM workspaces')
   const listWorkspacesQuery = database.query<WorkspaceRow, []>('SELECT id, name, created_at, updated_at FROM workspaces ORDER BY created_at, id')
   const getWorkspaceQuery = database.query<WorkspaceRow, [string]>('SELECT id, name, created_at, updated_at FROM workspaces WHERE id = ?')
-  const listMembershipsQuery = database.query<MembershipRow, [string]>(`
+  const listModuleStatesQuery = database.query<ModuleStateRow, [string]>(`
     SELECT workspace_id, module_id, status, failure_code, failure_message, failure_retryable, updated_at
     FROM workspace_modules WHERE workspace_id = ? ORDER BY module_id
   `)
@@ -102,7 +101,7 @@ export const createWorkspaceStore = (path: string): WorkspaceStore => {
   const updateWorkspaceQuery = database.query('UPDATE workspaces SET name = ?, updated_at = ? WHERE id = ?')
   const touchWorkspaceQuery = database.query('UPDATE workspaces SET updated_at = ? WHERE id = ?')
   const deleteWorkspaceQuery = database.query('DELETE FROM workspaces WHERE id = ?')
-  const upsertMembershipQuery = database.query(`
+  const upsertModuleStateQuery = database.query(`
     INSERT INTO workspace_modules (
       workspace_id, module_id, status, failure_code, failure_message, failure_retryable, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -113,12 +112,10 @@ export const createWorkspaceStore = (path: string): WorkspaceStore => {
       failure_retryable = excluded.failure_retryable,
       updated_at = excluded.updated_at
   `)
-  const deleteMembershipQuery = database.query('DELETE FROM workspace_modules WHERE workspace_id = ? AND module_id = ?')
-
   const assemble = (row: WorkspaceRow): Workspace => workspaceSchema.parse({
     id: row.id,
     name: row.name,
-    modules: listMembershipsQuery.all(row.id).map(toMembership),
+    modules: listModuleStatesQuery.all(row.id).map(toModuleState),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   })
@@ -128,18 +125,18 @@ export const createWorkspaceStore = (path: string): WorkspaceStore => {
     return row === null ? undefined : assemble(row)
   }
 
-  const saveMembership = database.transaction((workspaceId: WorkspaceId, membership: ModuleMembership): void => {
-    const failure: ModuleFailure | undefined = membership.failure
-    upsertMembershipQuery.run(
+  const saveModuleState = database.transaction((workspaceId: WorkspaceId, state: ModuleProvisioningState): void => {
+    const failure: ModuleFailure | undefined = state.failure
+    upsertModuleStateQuery.run(
       workspaceId,
-      membership.moduleId,
-      membership.status,
+      state.moduleId,
+      state.status,
       failure?.code ?? null,
       failure?.message ?? null,
       failure === undefined ? null : failure.retryable ? 1 : 0,
-      membership.updatedAt,
+      state.updatedAt,
     )
-    touchWorkspaceQuery.run(membership.updatedAt, workspaceId)
+    touchWorkspaceQuery.run(state.updatedAt, workspaceId)
   })
 
   const create = database.transaction((input: { readonly name: string | null; readonly moduleIds: ReadonlyArray<ModuleId> }): Workspace => {
@@ -147,7 +144,7 @@ export const createWorkspaceStore = (path: string): WorkspaceStore => {
     const timestamp = new Date().toISOString()
     insertWorkspaceQuery.run(id, input.name, timestamp, timestamp)
     for (const moduleId of input.moduleIds) {
-      upsertMembershipQuery.run(id, moduleId, 'joining', null, null, null, timestamp)
+      upsertModuleStateQuery.run(id, moduleId, 'provisioning', null, null, null, timestamp)
     }
     return get(id)!
   })
@@ -167,18 +164,10 @@ export const createWorkspaceStore = (path: string): WorkspaceStore => {
       return result.changes === 0 ? undefined : get(parsedId)
     },
     delete: id => deleteWorkspaceQuery.run(workspaceIdSchema.parse(id)).changes > 0,
-    setMembership: (id, membership) => {
+    setModuleState: (id, state) => {
       const parsedId = workspaceIdSchema.parse(id)
       if (get(parsedId) === undefined) return undefined
-      saveMembership(parsedId, moduleMembershipSchema.parse(membership))
-      return get(parsedId)
-    },
-    removeMembership: (id, moduleId) => {
-      const parsedId = workspaceIdSchema.parse(id)
-      if (get(parsedId) === undefined) return undefined
-      const timestamp = new Date().toISOString()
-      deleteMembershipQuery.run(parsedId, moduleIdSchema.parse(moduleId))
-      touchWorkspaceQuery.run(timestamp, parsedId)
+      saveModuleState(parsedId, moduleProvisioningStateSchema.parse(state))
       return get(parsedId)
     },
     close: () => database.close(),
