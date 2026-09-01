@@ -12,7 +12,7 @@ import { createWorkspaceSettings } from '../core/workspaces/settings.ts'
 import { createBookmarkStore } from '../core/workspaces/bookmark-store.ts'
 import type { DeliverFn } from '../core/types/messaging.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
-import type { AgentsWorkspaceRuntime } from '../main.ts'
+import type { AgentsWorkspaceRuntime } from '../workspace-runtime.ts'
 import { accessContextSchema, newRequestId, newWorkspaceId } from '@leitbild/contracts'
 
 // === Helpers ===
@@ -327,57 +327,9 @@ describe('GET /system/limits (no auth)', () => {
     expect(data.configured.maxRateLimitKeys).toBe(4096)
   })
 
-  // --- POST /system/evict ---
-  // URL-scoped evict: drops the AgentsWorkspaceRuntime from memory; Module snapshots stay.
-  // Mirrors /system/reset's auth shape but without the countdown
-  // and without trashing the directory.
-
-  test('POST /system/evict returns 501 when evictWorkspace not wired', async () => {
-    const r = req('POST', '/system/evict')
-    const sys = makeSystem()
-    const res = await handleAPI(r, '/system/evict', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
-      broadcast: noopBroadcast,
-      subscribeAgentState: noopSubscribe,
-    })
-    expect(res?.status).toBe(501)
-  })
-
-  test('POST /system/evict calls evictWorkspace and returns 200 on success', async () => {
-    let calledWith: string | undefined
-    const evictWorkspace = async (workspaceId: typeof TEST_WORKSPACE_ID) => {
-      calledWith = workspaceId
-      return { ok: true as const, workspaceId: TEST_WORKSPACE_ID }
-    }
-    const r = new Request('http://test/system/evict', {
-      method: 'POST',
-    })
-    const sys = makeSystem()
-    const res = await handleAPI(r, '/system/evict', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
-      broadcast: noopBroadcast,
-      subscribeAgentState: noopSubscribe,
-      evictWorkspace,
-    })
-    expect(res?.status).toBe(200)
-    expect(calledWith).toBe(TEST_WORKSPACE_ID)
-    const body = await res!.json() as { evicted: boolean; workspaceId: string }
-    expect(body.evicted).toBe(true)
-    expect(body.workspaceId).toBe(TEST_WORKSPACE_ID)
-  })
-
-  test('POST /system/evict surfaces evictWorkspace failure as 400', async () => {
-    const evictWorkspace = async () => ({ ok: false as const, reason: 'eviction failed' })
-    const r = req('POST', '/system/evict')
-    const sys = makeSystem()
-    const res = await handleAPI(r, '/system/evict', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
-      broadcast: noopBroadcast,
-      subscribeAgentState: noopSubscribe,
-      evictWorkspace,
-    })
-    expect(res?.status).toBe(400)
-  })
 })
 
-// === Phase 2B: route handler coverage gaps surfaced by the audit ===
+// === Route handler coverage ===
 // Covers /agents and /agents/.../triggers and /providers route
 // shapes that http-routes integration tests didn't previously exercise.
 // Negative-path heavy by necessity — positive paths for POST /agents

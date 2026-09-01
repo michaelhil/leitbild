@@ -1,5 +1,11 @@
 # ADR 0009: Composite Simulation Providers and Traffic Conditions
 
+## Status
+
+Superseded by ADR 0025 and the current Pack Runtime protocol. Simulation Runs
+compose Pack Runtimes; the old generic provider vocabulary and composite
+provider abstraction are no longer used.
+
 ## Decision
 
 Leitbild will support multiple simulation providers inside one Simulation Run through a small Simulation Hub.

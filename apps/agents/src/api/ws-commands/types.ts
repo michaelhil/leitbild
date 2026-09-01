@@ -1,5 +1,5 @@
-import type { AgentsWorkspaceRuntime } from '../../main.ts'
-import type { ClientSession, WSManager, WSConnection } from '../ws-handler.ts'
+import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
+import type { ClientSession, WSManager, WSConnection } from '../ws-types.ts'
 import type { WSInbound, WSOutbound } from '../../core/types/ws-protocol.ts'
 
 export interface CommandContext {

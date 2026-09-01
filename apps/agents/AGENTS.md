@@ -2,41 +2,41 @@
 
 Rules for working in this repo. Architecture overview is in [README.md](README.md); everything below is non-discoverable — invariants and tripwires you'd miss by reading the code.
 
-## Version, workflow, commands
+## Workflow and commands
 
-- **Version**: `package.json` is the single source of truth. Boot log, `/api/system/info`, UI footer, and bug-report modal all resolve it dynamically. When bumping, only edit `package.json` + README's top-line `> v0.X.Y` reference + the README changelog row + the git tag. Do NOT add hardcoded versions anywhere in `src/`. The dev server caches the version at first `/api/system/info` hit; restart after a bump.
-- **Workflow**: commit each logical change as its own commit. Production iterations deploy directly from the local worktree; GitHub pushes are milestone/off-machine backups rather than a deployment prerequisite. Branches/worktrees are fine if the CLI uses them; merge back before close.
+- **Version**: the root `package.json` is the platform version. Module descriptor versions describe their own runtime contracts; do not present them as separate product releases.
+- **Workflow**: commit each logical change as its own commit. Production deploys from the root worktree through the platform deployer.
 - **Commands**:
   - `bun run check` — typecheck (always run after non-trivial edits)
   - `bun test` — full suite; `bun test -t '^(?!.*Ollama)'` skips Ollama integration (= `bun run test:unit`)
   - `bun test path/to/file.test.ts` — one file; `bun test -t "pattern"` filters by name
   - `bun run start` / `dev` / `headless` (MCP only) / `dev:remote` (`OLLAMA_URL=http://192.168.0.222:11434`)
-  - `bun run health` — codebase audit (typecheck + type-coverage + escape-hatch grep + dep-cruiser + knip). Writes `.health/YYYY-MM-DD.md`. Pre-push hook runs a fast subset (`scripts/install-hooks.sh` to install).
+  - `bun run health` — strict typecheck, type coverage, and dependency-boundary audit
 - **Runtime**: Bun 1.4.0 is pinned locally and in production. Some code uses `Bun.serve`, `Bun.file`, `bun:test`; do not assume Node.
-- **TypeScript toolchain**: `@typescript/native` supplies the TypeScript 7 `tsc` used by `bun run check`. The `typescript` dependency intentionally aliases `@typescript/typescript6` because API-based tools such as `type-coverage` still need the TypeScript 6 compiler API. Keep both until TypeScript 7 exposes a compatible API.
+- **TypeScript toolchain**: `@typescript/native` supplies the TypeScript 7 `tsc` used by `bun run check`. Standard `typescript` supplies the TypeScript 6 compiler API required by analysis tools. Keep both until those tools support the native compiler API.
 
 ## Stable invariants (would not be obvious from reading the code)
 
 - **One HTTP server** at `src/api/server.ts`, one MCP stdio server at `src/integrations/mcp/server.ts`. New routes go in `src/api/routes/`; new WS commands in `src/api/ws-commands/`. Never new servers.
 - **`System.llm` is the `ProviderRouter`, always.** All agent spawn / eval / `callSystemLLM` calls go through `system.llm.chat(...)`. `System.ollama` is `LLMGateway | undefined` — present only when ollama is in the order; used by the Ollama dashboard UI.
-- **Provider stack assembly canonically lives in `src/boot/provider-stack.ts`** — `buildProviderStack()` orders load → env-merge → providerKeys → setup → SharedRuntime. The four `src/llm/providers-*.ts` files are pieces; the assembly order matters and has bitten us three times (commits `d0c1f73` and successors).
+- **Provider stack assembly canonically lives in `src/boot/provider-stack.ts`** — `buildProviderStack()` orders load → env-merge → providerKeys → setup → DeploymentRuntime. The `src/llm/providers-*.ts` files are pieces; preserve this assembly order.
 - **Two delivery modes**: `broadcast` and `manual` (`src/core/rooms/delivery-modes.ts`). Plug new behavior into the mode switch; do not branch around it. Multi-agent orchestration belongs to the script engine, not the room.
 - **Module state is strict and independently owned.** Agents has one marker. Room and Agent Profile data use separate strict documents beneath `workspaces/{workspaceId}/agents`; obsolete shapes fail without migrations or compatibility parsers.
 - **Types import from the specific submodule** (`src/core/types/room.ts`, etc.), not a barrel.
-- **Functional style only.** Factory functions + object literals + composition. No classes anywhere. No mocks/stubs/placeholder code — use real implementations.
+- **Functional style only.** Factory functions + object literals + composition. No classes. Test doubles stay under test-only paths and never ship in production.
 - **Tests live next to source** (`foo.ts` + `foo.test.ts`).
 
 ## Rejected refactors (do not re-propose without significant new evidence)
 
 These have been evaluated and rejected as motion-without-progress. Re-propose only if you can demonstrate a *significant* new benefit absent at the time of rejection — a bug traced to the pattern, a second-consumer use case, a measurable correctness/performance gain.
 
-- **Replacing the `setOn*` late-bound callback slots in `main.ts`'s `createSystem` with an event bus.** The ~22 typed callback slots are intentional — parallel, independent, compile-time typed, localized. A `createEventBus<HouseEventMap>()` migration was evaluated: +33 net LOC, zero user-observable benefit, duplicated type information. YAGNI.
+- **Replacing the `setOn*` late-bound callback slots in `workspace-runtime.ts` with an event bus.** The typed callback slots are intentional: parallel, independent, compile-time typed, and localized.
 
-- **Extracting `createSystem` into 4 "boot phase" sub-functions.** Evaluated — spreads the slots across more files without eliminating them. If `main.ts` size is the problem, prefer targeted extractions of self-contained subsystems (as done for `ollama-urls.ts`, `ui-bootstrap-footer.ts`), not whole-factory splits.
+- **Extracting `createAgentsWorkspaceRuntime` into arbitrary boot-phase sub-functions.** Prefer targeted extraction of self-contained subsystems rather than scattering factory wiring.
 
 - **MCP-vs-REST tool-surface "parity".** Different audiences, intentional divergence. REST/built-in is the agent-facing surface (in-process AI agent: `list_rooms`, `pass`, `geo_lookup`, `install_pack`, `write_skill`). MCP is the host-facing surface (external Codex: `create_agent`, `update_agent_persona`, `wait_for_idle`, `export_room`, `reset_system`). Each side has tools the other doesn't, by design.
 
-- **Reviving the artifact / workspace system.** Removed in v18. Task lists, polls, documents, the workspace UI pane were torn out — agents handle the same workflows conversationally or via the script engine. Mermaid + map render inline as fenced code blocks. If a new workflow genuinely needs persistent shared objects (e.g. whiteboarding across many agents over time), name the specific second consumer and run it past the owner before scaffolding.
+- **Reviving a second artifact or workspace abstraction.** Agents handles workflows conversationally or through the script engine; Mermaid and maps render inline. If a workflow genuinely needs persistent shared objects, establish the specific second consumer before adding another abstraction.
 
 When in doubt: ugly ≠ broken. Move on.
 
@@ -46,9 +46,9 @@ When in doubt: ugly ≠ broken. Move on.
 
 - **Boot-once cache of derived state with external inputs.** The wiki bug fixed in `b660b3e`: `wikiRegistry.setWikis(merge(stored, discovered))` was called once at boot; CRUD endpoints re-synced but the GET handler didn't; `discovered` (GitHub org listing) changed externally → GET showed wikis the registry didn't know about. Lesson: if `X = compute(A, B)` is cached, invalidate when *either* input can change, or derive `X` fresh on each read (usually cheap). Pattern to watch: `setX(computeX())` at boot followed by reads that assume currency.
 
-- **Silent fallbacks** (`catch {}`, `?? null`, `?? []`, early-return-on-undefined): require explicit justification of why the failure shouldn't be loud. Would a thrown error or a `warning` event surface this to an operator? If yes, prefer that. Documented further in `.health/suppressed.md` `## anti-patterns`.
+- **Silent fallbacks** (`catch {}`, `?? null`, `?? []`, early-return-on-undefined): require explicit justification of why the failure should not be loud. Would a thrown error or warning surface this to an operator? If yes, prefer that.
 
-- **Persistence captures the wrong abstraction.** For each new persisted field: if you rename or restructure the referenced concept later, will the persisted value still mean the right thing? If no, flag it. See `.health/suppressed.md`.
+- **Persistence captures the wrong abstraction.** For each new persisted field: if you rename or restructure the referenced concept later, will the persisted value still mean the right thing? If no, flag it.
 
 - **Silently-ANDed permission gates with no single error path.** Two gates returning the same "not available" with no way to tell which fired produced the 2026-05-12 tool-loop incident. Each new access-control gate's failure path must carry a structured reason.
 

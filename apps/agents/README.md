@@ -2,7 +2,7 @@
 
 Leitbild Agents is a multi-agent collaboration environment. Humans and AI Agents work together in Rooms, with configurable delivery, tools, scripts, knowledge, and persistent Workspace state.
 
-Agents is one independently deployable Workspace Module. It imports no World or Host implementation code and composes with World or future Modules through shared contracts.
+Agents is an independently runnable and testable Workspace Module. Production ships it with Host and World in one Leitbild release; it imports no World or Host implementation code.
 
 ## Architecture
 
@@ -102,7 +102,7 @@ Rooms provide:
 - broadcast or manual delivery;
 - directed `[[AgentName]]` and `[[tag:name]]` addressing;
 - pause and per-Agent mute state;
-- summaries, bounded context compression, todos, scripts, triggers, and Room Pack activation.
+- summaries, bounded context compression, scripts, triggers, and Room Pack activation.
 
 AI Agents provide:
 
@@ -143,7 +143,6 @@ For a World Simulation Run, the Agent first requests `world.simulation-run.conte
 ```text
 $LEITBILD_HOME/
   providers.json
-  llm-policy.json
   packs/
   workspaces/{workspaceId}/
     agents/
@@ -161,7 +160,7 @@ The Agents Module accepts only its current strict Room and Agent Profile documen
 
 ## Configuration and auth posture
 
-Provider keys are configured through Settings or environment variables and are never returned by the API. Common Deployment settings are documented in [deploy/env.example](deploy/env.example).
+Provider keys are configured through Settings or environment variables and are never returned by the API. Common Deployment settings are documented in [agents.env.example](../leitbild/deploy/agents.env.example).
 
 Authentication remains deliberately simple while the architecture stabilizes:
 

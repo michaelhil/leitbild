@@ -6,7 +6,7 @@ import { estimateTokens } from '../../agents/context-builder.ts'
 import type { ContextSection, IncludeContext, IncludePrompts, PromptSection } from '../../core/types/agent.ts'
 import { toolGrantSetSchema } from '@leitbild/contracts'
 import type { ToolRegistry } from '../../core/types/tool.ts'
-import type { AgentsWorkspaceRuntime } from '../../main.ts'
+import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
 import type { RouteEntry } from './types.ts'
 import { parsePrefixedModel } from '../../llm/models/parse-prefix.ts'
 

@@ -71,7 +71,7 @@ export type WSOutbound =
   | { readonly type: 'agent_joined'; readonly agent: AgentProfile }
   | { readonly type: 'agent_removed'; readonly agentName: string }
   | { readonly type: 'agent_renamed'; readonly id: string; readonly oldName: string; readonly newName: string }
-  | { readonly type: 'snapshot'; readonly rooms: ReadonlyArray<RoomProfile>; readonly agents: ReadonlyArray<AgentProfile>; readonly agentId?: string; readonly roomStates?: Record<string, RoomState>; readonly sessionToken?: string }
+  | { readonly type: 'snapshot'; readonly rooms: ReadonlyArray<RoomProfile>; readonly agents: ReadonlyArray<AgentProfile>; readonly roomStates?: Record<string, RoomState>; readonly sessionToken?: string }
   | { readonly type: 'error'; readonly message: string }
   | { readonly type: 'delivery_mode_changed'; readonly roomName: string; readonly mode: DeliveryMode; readonly paused: boolean }
   | { readonly type: 'mute_changed'; readonly roomName: string; readonly agentName: string; readonly muted: boolean }
@@ -113,15 +113,6 @@ export type WSOutbound =
       readonly triggerId?: string
       readonly action: 'created' | 'updated' | 'deleted'
     }
-  // Sandbox reset lifecycle. `commitsAtMs` is an absolute epoch ms — UI
-  // computes its own countdown (no clock-skew handshake needed for ±1 s).
-  | { readonly type: 'reset_pending'; readonly commitsAtMs: number }
-  | { readonly type: 'reset_cancelled' }
-  | { readonly type: 'reset_failed'; readonly reason: string }
-  // per-Workspace reset committed. Browser should reload — its cookie has
-  // already been swapped via Set-Cookie on the same response that started
-  // the countdown. Old WS connections close on next eviction sweep.
-  | { readonly type: 'reset_committed'; readonly workspaceId: string }
   // Summary + compression
   | { readonly type: 'summary_config_changed'; readonly roomName: string; readonly config: SummaryConfig }
   | { readonly type: 'summary_run_started'; readonly roomName: string; readonly target: SummaryTarget }

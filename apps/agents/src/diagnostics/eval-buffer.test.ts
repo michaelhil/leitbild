@@ -9,7 +9,7 @@ import type { EvalEvent, OnEvalEvent } from '../core/types/agent-eval.ts'
 const evt = (e: EvalEvent): EvalEvent => e
 
 // Lightweight addListener stub: implements the multi-subscriber
-// contract used by lateBinding.add. Real impl in main.ts.
+// contract used by lateBinding.add. Real impl in workspace-runtime.ts.
 const makeAddListener = () => {
   const listeners: OnEvalEvent[] = []
   const addListener = (cb: OnEvalEvent): (() => void) => {

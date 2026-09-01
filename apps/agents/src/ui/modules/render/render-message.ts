@@ -52,7 +52,6 @@ const renderMarkdownContent = (el: HTMLElement, text: string): void => {
 export interface RenderMessageOptions {
   readonly container: HTMLElement
   readonly msg: UIMessage
-  readonly myAgentId: string
   readonly agents: Record<string, AgentInfo> | Map<string, AgentInfo>
   readonly onDelete?: (msgId: string) => void
   readonly onViewContext?: (msgId: string) => void
@@ -60,7 +59,7 @@ export interface RenderMessageOptions {
 }
 
 export const renderMessage = (opts: RenderMessageOptions): void => {
-  const { container, msg, myAgentId, agents, onDelete, onViewContext, onBookmark } = opts
+  const { container, msg, agents, onDelete, onViewContext, onBookmark } = opts
   const getAgent = (id: string): AgentInfo | undefined =>
     agents instanceof Map ? agents.get(id) : agents[id]
 
@@ -85,7 +84,6 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
   const isPass = msg.type === 'pass'
   const isError = msg.type === 'error'
   const isMute = msg.type === 'mute'
-  const isSelf = msg.senderId === myAgentId
   const isRoomSummary = msg.type === 'room_summary'
 
   if (isError) {
@@ -140,7 +138,7 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
     const senderInfo = getAgent(msg.senderId)
     const kindClass = senderInfo?.kind === 'human' ? 'msg-human'
       : senderInfo?.kind === 'ai' ? 'msg-agent'
-      : (isSelf ? 'msg-self' : 'msg-agent')
+      : 'msg-agent'
     div.className = `rounded-md px-3 py-2 text-sm border border-border shadow-sm ${kindClass}`
 
     const header = document.createElement('div')
@@ -278,7 +276,7 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
 
     div.appendChild(header)
 
-    // Persisted thinking (PR 4): renders above the response so reading
+    // Persisted thinking renders above the response so reading
     // order is reasoning → answer. `<details>` is open by default so
     // the user sees the model's chain-of-thought after a kimi-k2.6 or
     // o-series eval; when the user toggles the global "Thinking" piece

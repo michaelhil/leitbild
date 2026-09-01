@@ -30,7 +30,7 @@
 // ============================================================================
 
 import type { Agent } from '../core/types/agent.ts'
-import type { AgentsWorkspaceRuntime } from '../main.ts'
+import type { AgentsWorkspaceRuntime } from '../workspace-runtime.ts'
 import type { WorkspaceId } from '@leitbild/contracts'
 
 export interface AgentTrackingDeps {

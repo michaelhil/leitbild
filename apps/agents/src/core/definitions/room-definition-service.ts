@@ -1,4 +1,4 @@
-import type { AgentsWorkspaceRuntime } from '../../main.ts'
+import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
 import { BUNDLED_PACKS } from '../../packs/bundled.ts'
 import { scanPacks } from '../../packs/scanner.ts'
 import { SYSTEM_SENDER_ID } from '../types/constants.ts'

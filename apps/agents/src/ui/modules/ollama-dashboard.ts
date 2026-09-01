@@ -12,7 +12,7 @@ import { safeFetchJson } from './fetch-helpers.ts'
 export interface OllamaDashboardElements {
   readonly statusDot: HTMLElement
   readonly dashboard: HTMLDialogElement
-  // closeBtn dropped in v15+. Close via Escape or click outside.
+  // Close via Escape or click outside.
   readonly urlSelect: HTMLSelectElement
   readonly urlInput: HTMLInputElement
   readonly btnUrlAdd: HTMLElement

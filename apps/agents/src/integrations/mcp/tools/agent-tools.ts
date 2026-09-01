@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { AgentsWorkspaceRuntime } from '../../../main.ts'
+import type { AgentsWorkspaceRuntime } from '../../../workspace-runtime.ts'
 import type { AIAgent } from '../../../core/types/agent.ts'
 import type { ToolContext } from '../../../core/types/tool.ts'
 import { asAIAgent } from '../../../agents/shared.ts'

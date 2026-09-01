@@ -1,6 +1,6 @@
 import { json, errorResponse, parseBody } from './helpers.ts'
 import type { RouteEntry } from './types.ts'
-import type { AgentsWorkspaceRuntime } from '../../main.ts'
+import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
 import { parseOllamaConfigPatch, type OllamaGateway } from '../../llm/gateway.ts'
 
 // Guard: all /ollama/* routes need Ollama to be a configured provider.

@@ -29,7 +29,6 @@ export type { UIMessage, AgentInfo, RoomProfile }
 
 // === Identity ===
 
-export const $myAgentId = atom<string | null>(null)
 const SESSION_TOKEN_KEY = 'ta_session'
 export const $sessionToken = atom(
   typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SESSION_TOKEN_KEY) ?? '' : '',
@@ -391,11 +390,10 @@ export const $roomListView = batched(
 
 /** Combined agent list view — triggers one render when any input changes. */
 export const $agentListView = batched(
-  [$agents, $mutedAgents, $myAgentId, $selectedAgentId, $selectedRoomId, $roomMembers, $currentDeliveryMode],
+  [$agents, $mutedAgents, $selectedAgentId, $selectedRoomId, $roomMembers, $currentDeliveryMode],
   (
     agents: Record<string, AgentEntry>,
     mutedAgents: Set<string>,
-    myAgentId: string | null,
     selectedAgentId: string | null,
     selectedRoomId: string | null,
     roomMembers: Record<string, string[]>,
@@ -403,7 +401,6 @@ export const $agentListView = batched(
   ) => ({
     agents,
     mutedAgents,
-    myAgentId,
     selectedAgentId,
     selectedRoomId,
     roomMemberIds: selectedRoomId ? (roomMembers[selectedRoomId] ?? []) : [],

@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Promoted to Accepted in Phase B.4.
+Accepted.
 
 ## Context
 
@@ -88,7 +88,7 @@ The rail seeds initial state from `packLayerGroupVisibility` if present, otherwi
 - **No DOM event coupling.** The presenter / state module is pure TypeScript and unit-testable (matches existing presenter pattern in `control-rail-presenter.ts`).
 - **Layer-id pattern matching** uses a small glob matcher (`*` matches one segment between colons). 6–8 LOC + 5 tests. Avoids pulling in a glob library.
 - **Per-category granularity below a group** (e.g., toggle just CTA inside Airspace) is *not* exposed in the rail in v1. Scenario authors can pre-configure per-category visibility through the reference-data style module's `categories` array. Rail UI for per-category granularity is a future enhancement only if operators ask for it.
-- **The standalone `MapLayersPanel` Svelte component remains in the repo** for now (not mounted). If we never need it again, B.4 deletes it.
+- **The standalone `MapLayersPanel` was removed.** Visibility flows through Pack-owned layer groups.
 
 ## Test plan
 

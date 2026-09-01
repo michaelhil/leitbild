@@ -1,4 +1,4 @@
-// System-level room/membership operations — extracted from main.ts to keep
+// System-level room/membership operations — extracted from workspace-runtime.ts to keep
 // createAgentsWorkspaceRuntime focused on factory wiring. Pure dependency injection: the
 // factory closes over team/rooms/routeMessage and the late-bound callbacks
 // it needs, and returns four functions with the original signatures.

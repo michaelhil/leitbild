@@ -8,7 +8,7 @@
 // The dispatcher iterates the route table, matches method+pattern, calls handler.
 // ============================================================================
 
-import type { AgentsWorkspaceRuntime } from '../main.ts'
+import type { AgentsWorkspaceRuntime } from '../workspace-runtime.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
 import { authEnabled, isValidSession, sessionFromRequest } from './auth.ts'
 import { runtimeRoutes } from './routes/runtime.ts'
@@ -85,14 +85,12 @@ const allRoutes = [
 // Per-request dependencies: everything routes need that isn't `req` /
 // `pathname` / `system` / `workspaceId`. Bundled into one shape so the
 // server.ts → handleAPI seam stays narrow as new cross-cutting capabilities
-// land (resetWorkspace, Workspaces, diagnostics, …).
+// land (Workspace context, diagnostics, …).
 export interface RouteDeps {
   readonly broadcast: (msg: WSOutbound) => void
   readonly subscribeAgentState: RouteContext['subscribeAgentState']
   readonly unsubscribeAgentState?: (agentId: string) => void
   readonly remoteAddress?: string
-  readonly resetWorkspace?: RouteContext['resetWorkspace']
-  readonly evictWorkspace?: RouteContext['evictWorkspace']
   readonly broadcastToWorkspace?: RouteContext['broadcastToWorkspace']
   readonly diagnostics?: RouteContext['diagnostics']
 }

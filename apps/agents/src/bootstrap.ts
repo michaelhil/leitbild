@@ -42,7 +42,6 @@ import { resolve } from 'node:path'
 import { loadExternalTools } from './tools/loader.ts'
 import { loadSkills } from './skills/loader.ts'
 import { loadAllPacks } from './packs/loader.ts'
-import { createPolicyStore } from './llm/llm-policy-store.ts'
 import { asAIAgent } from './agents/shared.ts'
 import { warmProviderModels } from './llm/providers-setup.ts'
 import { parseLogConfigFromEnv } from './logging/config.ts'
@@ -90,19 +89,6 @@ export const bootstrap = async (): Promise<void> => {
   const moduleState = createAgentsModuleState()
   const providerSetup = deployment.providerSetup
 
-  // Load LLM policy (system default fallback chain). Persisted at
-  // ~/.leitbild/llm-policy.json; UI edits via Settings → Providers take
-  // effect at request time without restart. Bootstrapped from
-  // LEITBILD_DEFAULT_MODEL_FALLBACK env on first run if file is missing.
-  const envChainRaw = (process.env.LEITBILD_DEFAULT_MODEL_FALLBACK ?? '').trim()
-  const envChain = envChainRaw ? envChainRaw.split(',').map(s => s.trim()).filter(Boolean) : undefined
-  const { store: llmPolicyStore, warnings: policyWarnings } = await createPolicyStore({
-    path: sharedPaths.llmPolicy(),
-    ...(envChain && envChain.length > 0 ? { envChain } : {}),
-  })
-  for (const w of policyWarnings) console.warn(`[llm-policy] ${w}`)
-  deployment.llmPolicyStore = llmPolicyStore
-
   const pkg = await Bun.file(`${import.meta.dir}/../package.json`).json() as { version: string }
   console.log(`Leitbild v${pkg.version}${headless ? ' (headless)' : ''}`)
   if (ephemeral) console.log('[bootstrap] ephemeral mode — snapshot disabled')
@@ -132,7 +118,7 @@ export const bootstrap = async (): Promise<void> => {
   // === Process-wide tool/skill/pack scan — once, into shared ===
   // Single FS scan: external tools, free-standing skills (cwd + leitbild-home),
   // and packs all register into the SHARED registry/store. Per-Workspace
-  // Systems wrap this in an overlay (see createAgentsWorkspaceRuntime in main.ts).
+  // Systems wrap this in an overlay (see createAgentsWorkspaceRuntime in workspace-runtime.ts).
   // Replaces the old per-Workspace loaders that ran inside onWorkspaceRuntimeCreated
   // and re-scanned everything for every cookie that hit the server.
   await loadExternalTools(deployment.sharedToolRegistry)
@@ -180,7 +166,7 @@ export const bootstrap = async (): Promise<void> => {
   }
 
   // Bundled example scripts are loaded read-only from examples/scripts/ via
-  // ScriptStore's extraSourceDirs (wired in main.ts). The authoring scripts
+  // ScriptStore's extraSourceDirs (wired in workspace-runtime.ts). The authoring scripts
   // directory contains only deployment-authored scripts.
 
   // === Process-wide built-in tools (no per-Workspace state) ===
@@ -289,7 +275,7 @@ export const bootstrap = async (): Promise<void> => {
       // No per-Workspace FS scans: external tools, skills, packs and MCP
       // tools all live in deployment.sharedToolRegistry (populated above before
       // the registry was built). Per-Workspace toolRegistry is a thin overlay
-      // that adds Workspace-bound built-ins on top. See main.ts createAgentsWorkspaceRuntime.
+      // that adds Workspace-bound built-ins on top. See workspace-runtime.ts createAgentsWorkspaceRuntime.
       // Configure logging from env template.
       try {
         await system.logging.configure(bootLogConfig)
@@ -335,9 +321,8 @@ export const bootstrap = async (): Promise<void> => {
       // subscribeAgentState silently skips re-subscription, and the
       // restored agents' notifyState() calls fire to nowhere — no
       // 'generating' broadcast, no thinking indicator, no streaming
-      // visible in the UI even though chunks broadcast fine. Entire bug
-      // class is invisible to smoke-streaming.ts because that script
-      // exercises in-memory wired Workspaces, not evict-reload cycles.
+      // visible in the UI even though chunks broadcast fine. The registry
+      // eviction/reload integration test protects this boundary.
       for (const a of system.team.listAgents()) {
         registry.detachAgent(a.id)
         wsManager.unsubscribeAgentState(a.id)
@@ -501,9 +486,8 @@ export const bootstrap = async (): Promise<void> => {
   // originating Workspace via broadcastToWorkspace.
   // Order matters: this assignment MUST happen before the first getOrLoad,
   // otherwise the onWorkspaceRuntimeCreated hook would observe `wsManager` undefined
-  // and silently skip wireWorkspaceRuntimeEvents — that was the source of a long
-  // latent bug fixed in commit 5d73a8e. Pre-assigning wsManager keeps the
-  // hook's wiring path single, with no rescue branch elsewhere.
+  // and silently skip wireWorkspaceRuntimeEvents. Pre-assigning wsManager
+  // keeps the hook's wiring path single, with no rescue branch elsewhere.
   wsManager = createWSManager({
     getRuntime: (id) => registry.tryGetLive(id),
     limitMetrics: deployment.limitMetrics,
@@ -656,29 +640,6 @@ export const bootstrap = async (): Promise<void> => {
     }
   }, 60 * 60 * 1000)
 
-  // Reset both Leitbild Module shards while preserving the Host-owned Workspace.
-  const resetWorkspace = async (id: WorkspaceId) => {
-    try {
-      await registry.resetWorkspaceState(id)
-      return { ok: true as const, workspaceId: id }
-    } catch (err) {
-      return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }
-    }
-  }
-
-  // Drop the Workspace runtime from memory while leaving both Module
-  // snapshots untouched. The next URL-scoped request reloads it.
-  // Used by the post-deploy streaming probe to exercise the
-  // evict→reload boundary that hid the unsubscribeAgentState bug.
-  const evictWorkspace = async (id: WorkspaceId) => {
-    try {
-      await registry.evictOne(id)
-      return { ok: true as const, workspaceId: id }
-    } catch (err) {
-      return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }
-    }
-  }
-
   // === Diagnostics capability ===
   // Read-only health snapshot. Walks the registry + wsManager state to
   // expose per-Workspace broadcast wiring + last-broadcast timestamps. The
@@ -720,8 +681,6 @@ export const bootstrap = async (): Promise<void> => {
     moduleState,
     wsManager,
     port: parseInt(process.env.PORT ?? String(DEFAULTS.port), 10),
-    resetWorkspace,
-    evictWorkspace,
     diagnostics,
     workspaceHostUrl,
   })

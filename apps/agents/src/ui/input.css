@@ -43,7 +43,7 @@
 
   --color-thinking:           var(--thinking);
 
-  --color-msg-self:           var(--msg-self);
+  --color-msg-human:          var(--msg-human);
   --color-msg-agent:          var(--msg-agent);
 
   /* Elevation — drives Tailwind's shadow-{sm,md,lg}. shadow-xl stays the
@@ -196,4 +196,3 @@
     outline-offset: 1px;
   }
 }
-

@@ -50,7 +50,7 @@ export const providersConfigRoutes: RouteEntry[] = [
   // --- Set / clear a single provider's key / settings ---
   {
     method: 'PUT',
-    pattern: /^\/providers\/([^/]+)$/,
+    pattern: /^\/providers\/(?!fallback$)([^/]+)$/,
     handler: async (req, match, { system, broadcast }) => {
       const name = decodeURIComponent(match[1] ?? '')
       if (!name) return errorResponse('Provider name required')
@@ -196,21 +196,20 @@ export const providersConfigRoutes: RouteEntry[] = [
 
   // --- System default fallback chain (cross-provider LLM policy) ---
   // GET returns the current chain; PUT { chain: [...] | null } sets/clears.
-  // Persisted to ~/.leitbild/llm-policy.json; LLMService re-reads at every
+  // Persisted in providers.json; LLMService reads the live policy at every
   // request so changes take effect without restart.
   {
     method: 'GET',
-    pattern: /^\/llm-policy\/fallback$/,
+    pattern: /^\/providers\/fallback$/,
     handler: (_req, _match, { system }) => {
-      const chain = system.llmPolicyStore?.getModelFallback() ?? []
+      const chain = system.providerPolicy.getModelFallback()
       return json({ chain })
     },
   },
   {
     method: 'PUT',
-    pattern: /^\/llm-policy\/fallback$/,
+    pattern: /^\/providers\/fallback$/,
     handler: async (req, _match, { system, broadcast }) => {
-      if (!system.llmPolicyStore) return errorResponse('llm policy store unavailable', 500)
       const body = await parseBody(req)
       const raw = body.chain
       let chain: ReadonlyArray<string> | undefined
@@ -219,13 +218,13 @@ export const providersConfigRoutes: RouteEntry[] = [
       else if (typeof raw === 'string') chain = raw.split(',').map(s => s.trim()).filter(s => s.length > 0)
       else return errorResponse('chain must be an array, comma-separated string, or null', 400)
       try {
-        await system.llmPolicyStore.setModelFallback(chain && chain.length > 0 ? chain : undefined)
+        await system.providerPolicy.setModelFallback(chain && chain.length > 0 ? chain : undefined)
       } catch (err) {
         return errorResponse(`failed to save policy: ${err instanceof Error ? err.message : String(err)}`, 500)
       }
       // UI dropdowns may show effective chain; nudge them via providers_changed.
       try { broadcast({ type: 'providers_changed', providers: system.llm.getOrder() }) } catch { /* ignore */ }
-      return json({ saved: true, chain: system.llmPolicyStore.getModelFallback() ?? [] })
+      return json({ saved: true, chain: system.providerPolicy.getModelFallback() })
     },
   },
 ]

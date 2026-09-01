@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Promoted to Accepted once Phase B implementation lands and matches.
+Accepted.
 
 ## Context
 

@@ -2,7 +2,7 @@
 // Bug reporting — POST /bugs creates a GitHub issue on the configured
 // repo using a server-side PAT. The browser never sees the token.
 //
-// Config via env (set in /etc/leitbild/env on production):
+// Config via env (set in /etc/leitbild/agents.env on production):
 //   LEITBILD_GH_TOKEN  — fine-grained PAT with Issues: Read+Write on the repo
 //   LEITBILD_GH_REPO   — "owner/repo" (defaults to michaelhil/leitbild)
 //

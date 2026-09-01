@@ -1,7 +1,7 @@
-// Dependency-cruiser config for Samsinn — boundary + cycle rules.
+// Dependency-cruiser config for the Leitbild Agents module.
 //
 // Lives at repo root so `bunx dependency-cruiser src` picks it up automatically.
-// Boundaries reflect the codebase layering documented in CLAUDE.md.
+// Boundaries reflect the codebase layering documented in AGENTS.md.
 
 module.exports = {
   forbidden: [
@@ -51,6 +51,13 @@ module.exports = {
           '^src/integrations/mcp/server\\.ts$',
           '^src/integrations/mcp/tools/',
           '^src/tools/built-in/',
+          '^src/api/__fixtures__/',
+          '^src/api/ws-types\\.ts$',
+          '^src/core/types/',
+          '^src/logging/types\\.ts$',
+          '^src/tools/__fixtures__/',
+          '^src/ui/modules/extensions/types\\.ts$',
+          '^src/ui/modules/render/render-types\\.ts$',
           '^src/api/routes/',
           '^src/api/ws-commands/',
           '^src/skills/',
@@ -63,11 +70,7 @@ module.exports = {
     },
   ],
   options: {
-    // false → cycle detection ignores type-only imports.
-    // We confirmed during the spike (.health/spike-results.md) that cycles
-    // remain real even with this off — they're runtime imports through
-    // main.ts↔bootstrap.ts↔api/server.ts. Keeping false reduces noise so
-    // the report focuses on cycles that actually affect runtime behavior.
+    // Ignore type-only imports so the report focuses on runtime boundaries.
     tsPreCompilationDeps: false,
     doNotFollow: {
       path: 'node_modules',

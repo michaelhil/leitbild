@@ -2,7 +2,7 @@
 // validateBootstrap — single runtime contract check for the wired AgentsWorkspaceRuntime.
 //
 // Called once per AgentsWorkspaceRuntime construction (post bootstrap, pre-serve). Throws
-// loudly with a message that names the bug class each contract guards.
+// loudly with a message that names the violated contract.
 //
 // Why one function, not scattered asserts: every check lives in one file
 // you can grep + extend. When a new wiring contract surfaces (because a
@@ -15,20 +15,17 @@
 // will produce confusing follow-on errors. Keep checks in dependency order.
 // ============================================================================
 
-import type { AgentsWorkspaceRuntime } from '../main.ts'
+import type { AgentsWorkspaceRuntime } from '../workspace-runtime.ts'
 
 class BootstrapContractError extends Error {
-  constructor(message: string, public readonly bugRef: string) {
+  constructor(message: string) {
     super(message)
     this.name = 'BootstrapContractError'
   }
 }
 
-const fail = (message: string, bugRef: string): never => {
-  // bugRef is a commit SHA or doc anchor that explains why this contract
-  // exists. When a future engineer hits this in CI, the message tells them
-  // both what's missing AND how to look up why.
-  throw new BootstrapContractError(`${message} [see ${bugRef}]`, bugRef)
+const fail = (message: string): never => {
+  throw new BootstrapContractError(message)
 }
 
 export interface ValidateBootstrapContext {
@@ -47,7 +44,7 @@ export const validateBootstrap = (system: AgentsWorkspaceRuntime, ctx: ValidateB
   // every provider in the order — including keyless ones (anthropic) —
   // producing 401 auth errors on every chat call.
   if (!system.providerKeys) {
-    fail('providerKeys is missing on AgentsWorkspaceRuntime', 'commit d0c1f73')
+    fail('providerKeys is missing on AgentsWorkspaceRuntime')
   }
 
   // Contract 2: every gateway in the configured order must have a positive
@@ -60,10 +57,7 @@ export const validateBootstrap = (system: AgentsWorkspaceRuntime, ctx: ValidateB
     if (!gw) continue                   // not constructed for this build (e.g. pinned single-Ollama)
     const cfg = gw.getConfig()
     if (typeof cfg.maxConcurrent !== 'number' || cfg.maxConcurrent <= 0) {
-      fail(
-        `gateway[${name}].maxConcurrent must be a positive number; got ${String(cfg.maxConcurrent)}`,
-        'commit f04e61e',
-      )
+      fail(`gateway[${name}].maxConcurrent must be a positive number; got ${String(cfg.maxConcurrent)}`)
     }
   }
 
@@ -71,11 +65,11 @@ export const validateBootstrap = (system: AgentsWorkspaceRuntime, ctx: ValidateB
   // Trivially true on every code path today, but pinned because every other
   // contract assumes the router exists.
   if (!system.llm) {
-    fail('AgentsWorkspaceRuntime.llm (ProviderRouter) is missing', 'arch invariant')
+    fail('AgentsWorkspaceRuntime.llm (ProviderRouter) is missing')
   }
 
   // Contract 4: wsManager.isWired(id) must return true for this system by
-  // the time this contract runs. Captures the 5d73a8e invariant: every
+  // the time this contract runs. Every
   // per-Workspace system is wired by the registry's onWorkspaceRuntimeCreated hook,
   // which fires BEFORE onFirstLoad (where this validator is called from).
   // If wsManager was undefined when onWorkspaceRuntimeCreated fired, wireWorkspaceRuntimeEvents
@@ -83,9 +77,6 @@ export const validateBootstrap = (system: AgentsWorkspaceRuntime, ctx: ValidateB
   // broadcast nothing for three days unnoticed. Headless mode supplies
   // isWsWired=undefined (no WS clients to wire).
   if (ctx.isWsWired !== undefined && !ctx.isWsWired()) {
-    fail(
-      'wsManager.isWired returned false at first-load — wireWorkspaceRuntimeEvents was not called for this system',
-      'commit 5d73a8e',
-    )
+    fail('wsManager.isWired returned false at first-load — wireWorkspaceRuntimeEvents was not called for this system')
   }
 }

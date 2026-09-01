@@ -1,12 +1,12 @@
 // ============================================================================
 // E2E integration test: verifies createAgentsWorkspaceRuntime wires router routing events
 // through to the late-bound onProviderBound / onProviderAllFailed / onProvider
-// StreamFailed callbacks exposed on AgentsWorkspaceRuntime. Without this wiring, Phase 3
+// StreamFailed callbacks exposed on AgentsWorkspaceRuntime. Without this wiring, the
 // toast UI would never receive events.
 // ============================================================================
 
 import { describe, test, expect } from 'bun:test'
-import { createAgentsWorkspaceRuntime } from '../main.ts'
+import { createAgentsWorkspaceRuntime } from '../workspace-runtime.ts'
 import type { ProviderSetupResult } from './providers-setup.ts'
 import type { ProviderGateway } from './provider-gateway.ts'
 import type { ChatRequest, ChatResponse, GatewayMetrics, ProviderHealth } from '../core/types/llm.ts'

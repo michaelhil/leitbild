@@ -11,8 +11,8 @@ import { createHumanAgent } from '../agents/human-agent.ts'
 import type { DeliverFn, Message } from '../core/types/messaging.ts'
 import type { RouteMessage } from '../core/types/agent.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
-import type { AgentsWorkspaceRuntime } from '../main.ts'
-import type { ClientSession, WSManager } from './ws-handler.ts'
+import type { AgentsWorkspaceRuntime } from '../workspace-runtime.ts'
+import type { ClientSession, WSManager } from './ws-types.ts'
 import { newWorkspaceId } from '@leitbild/contracts'
 import { createWorkspaceSettings } from '../core/workspaces/settings.ts'
 import { createBookmarkStore } from '../core/workspaces/bookmark-store.ts'
@@ -320,15 +320,14 @@ describe('WS Handler', () => {
 
   // --- create_room ---
 
-  test('create_room with duplicate name does NOT auto-add (v15+ no WS-bound creator)', async () => {
+  test('create_room with duplicate name does not auto-add a viewer', async () => {
     let addCalled = false
     ;(system as unknown as Record<string, unknown>).addAgentToRoom = async () => { addCalled = true }
     const { ws, errors } = makeWS()
     await dispatch(ws, session, system, wsManager, { type: 'create_room', name: 'TestRoom' })
     // Duplicate names are allowed (createRoomSafe returns sanitised name) — no error expected
     expect(errors()).toHaveLength(0)
-    // v15+ semantics: WS sessions don't represent an agent, so create_room
-    // can't auto-add a creator. User adds members via the chip row.
+    // Viewer sessions have no creator to auto-add. Users add members via the chip row.
     expect(addCalled).toBe(false)
   })
 })
@@ -405,7 +404,7 @@ describe('WSManager.safeSend backpressure', () => {
     expect(result).toBeNull()
   })
 
-  test('sweepStaleSessions drops sessions with closed WS + old lastActivity, removes agent', async () => {
+  test('sweepStaleSessions drops stale viewer sessions without removing agents', async () => {
     const { createLimitMetrics } = await import('../core/limit-metrics.ts')
     const limitMetrics = createLimitMetrics()
     const removed: string[] = []
@@ -447,8 +446,7 @@ describe('WSManager.safeSend backpressure', () => {
     expect(wsManager.sessions.has('stale-token')).toBe(false)
     expect(wsManager.sessions.has('recent-token')).toBe(true)
     expect(wsManager.sessions.has('live-token')).toBe(true)
-    // v15+: sweep no longer removes agents from team. Sessions are pure
-    // viewers; agent removal only happens through the Workspace-scoped Agent API.
+    // Sessions are viewers; agent removal only happens through the Workspace-scoped Agent API.
     expect(removed).toEqual([])
     expect(limitMetrics.snapshot().staleSessionsEvicted).toBe(1)
   })
@@ -474,16 +472,10 @@ describe('WSManager.safeSend backpressure', () => {
   })
 
   test('post_message ack uses safeSend (drops on slow consumer)', async () => {
-    // End-to-end proof that command-handler responses go through safeSend
-    // after the Phase 1 widening — not direct ws.send.
-    const localSystem = (await import('./ws-handler.test.ts')) as never
-    void localSystem
     const wsManager = createWSManager({ getRuntime: () => undefined })
     const { ws, messages, setBuffered, closed } = makeWS()
     setBuffered(9 * 1024 * 1024)
-    // Direct safeSend invocation — proves the wire works. The end-to-end
-    // path is exercised by integration; covering the wire is the regression
-    // guard against future calls bypassing safeSend.
+    // Cover the shared transport guard against future direct sends.
     wsManager.safeSend(ws, JSON.stringify({ type: 'message', message: { id: 'x' } }))
     expect(messages()).toHaveLength(0)
     expect(closed()).toEqual({ code: 1009, reason: 'slow consumer' })

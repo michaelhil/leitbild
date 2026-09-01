@@ -5,7 +5,6 @@
 // app.ts and the render layer.
 
 import {
-  $myAgentId,
   $sessionToken,
   persistSessionToken,
   $rooms,
@@ -51,12 +50,6 @@ export const stateHandlers: StateHandlers = {
     if (msg.sessionToken) {
       persistSessionToken(msg.sessionToken)
     }
-    // v15+: snapshot.agentId is now optional and unused. WS sessions are
-    // pure viewers — there's no per-tab "my" agent. "Self" styling has
-    // been dropped from the UI; the per-room selected human is the actor.
-    if (msg.agentId) $myAgentId.set(msg.agentId)
-    else $myAgentId.set(null)
-
     // Populate rooms (UI-shaped via toUIRoomProfile; type inferred)
     const roomMap = Object.fromEntries(msg.rooms.map(r => [r.id, toUIRoomProfile(r)]))
     $rooms.set(roomMap)
@@ -126,11 +119,8 @@ export const stateHandlers: StateHandlers = {
     // Residual race: if a fetchRoomMessages from a prior room-switch is
     // still in flight, its eventual setKey could land after our clear and
     // write stale data. Accepted: rare, and the next snapshot re-clears.
-    // TODO: $thinkingPreviews / $thinkingTools / $agentContexts /
-    // $agentWarnings are cleared with bare set({}) above. If a future
-    // consumer's listener relies on `changedKey` semantics, the same
-    // listener-doesn't-fire trap will bite them. Convert to setKey
-    // iteration the moment that surfaces; no preemptive fix.
+    // The other transient stores are observed as whole values and therefore
+    // use a single set({}) above.
     const previouslyCached = Object.keys($roomMessages.get())
     for (const roomId of previouslyCached) {
       $roomMessages.setKey(roomId, [])

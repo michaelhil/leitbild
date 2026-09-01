@@ -1,7 +1,7 @@
 // ============================================================================
 // HTTP error mapping for OpenAI-compatible providers.
 //
-// Extracted from openai-compatible.ts (audit Finding 2.3.2 — partial split).
+// Extracted from openai-compatible.ts to isolate error translation.
 // Pure function: given (provider name, HTTP status, body, retry-after
 // header), classify into one of our typed CloudProviderError codes.
 //

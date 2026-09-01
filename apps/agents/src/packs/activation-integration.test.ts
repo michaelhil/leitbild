@@ -1,7 +1,7 @@
 // End-to-end activation test — exercises the full chain that the bloat
 // fix relies on:
 //   - tool surface filter (spawn-pack-filter)
-//   - skill section filter (main.ts getSkillsForRoom — covered indirectly
+//   - skill section filter (workspace-runtime.ts getSkillsForRoom — covered indirectly
 //     via context-builder)
 //   - script runner activation gate (script-runner.start)
 //

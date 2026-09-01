@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Promoted to Accepted once Phase A.7 confirms the landed code matches this decision.
+Accepted.
 
 Operational amendment (2026-08-28): scheduled pull units were retired. Reference
 builds remain explicit operator actions from the active immutable code release;

@@ -1,6 +1,6 @@
 // ============================================================================
 // Room membership operations — add/remove agents from rooms with join/leave
-// messages. Used by System methods (main.ts) and spawn.ts.
+// messages. Used by System methods (workspace-runtime.ts) and spawn.ts.
 //
 // Both functions resolve the agent from team, validate the room, update
 // membership, call agent.join/leave, and post a visible chat message.

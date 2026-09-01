@@ -1,6 +1,5 @@
 // ============================================================================
-// Provider stack construction — the wiring that bit us three times after
-// the wiki commit. Extracted from bootstrap.ts so the dependency order
+// Provider stack construction. Extracted from bootstrap.ts so the dependency order
 // (load store → providerKeys → providerSetup → DeploymentRuntime) lives in one
 // place and the contract between steps is visible.
 //
@@ -13,7 +12,7 @@ import { createDeploymentRuntime, type DeploymentRuntime } from '../core/deploym
 import { createLimitMetrics, type LimitMetrics } from '../core/limit-metrics.ts'
 import { parseProviderConfig, summariseProviderConfig, type ProviderConfig } from '../llm/providers-config.ts'
 import { buildProvidersFromConfig } from '../llm/providers-setup.ts'
-import { loadProviderStore, mergeWithEnv } from '../llm/providers-store.ts'
+import { createProviderPolicyStore, loadProviderStore, mergeWithEnv } from '../llm/providers-store.ts'
 import { createProviderKeys, type ProviderKeys } from '../llm/provider-keys.ts'
 
 export interface ProviderStack {
@@ -41,7 +40,6 @@ export const buildProviderStack = async (): Promise<ProviderStack> => {
   // isProviderEnabled filter is wired from providerKeys.isEnabled — without
   // it, the router walks every provider in the order, including keyless
   // ones (anthropic), and throws auth errors on every chat call.
-  // Bug class: commit d0c1f73.
   const providerKeys = createProviderKeys(fileStore)
   for (const [name, cc] of Object.entries(providerConfig.cloud)) {
     if (cc?.apiKey) providerKeys.set(name, cc.apiKey)
@@ -52,7 +50,8 @@ export const buildProviderStack = async (): Promise<ProviderStack> => {
 
   // 6. Construct DeploymentRuntime — same providerKeys, same limitMetrics, same
   // setup. Single source for live key edits.
-  const deployment = createDeploymentRuntime({ providerConfig, providerSetup, limitMetrics, providerKeys })
+  const providerPolicy = createProviderPolicyStore(providersStorePath, storeData)
+  const deployment = createDeploymentRuntime({ providerConfig, providerSetup, limitMetrics, providerKeys, providerPolicy })
 
   return { providerConfig, providerKeys, limitMetrics, deployment }
 }

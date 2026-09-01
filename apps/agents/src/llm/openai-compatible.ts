@@ -137,7 +137,7 @@ interface OAIModelsResponse {
 
 // === Error mapping ===
 // HTTP-status → CloudProviderError classification moved to
-// ./openai-compatible-errors.ts (audit Finding 2.3.2 — partial split).
+// ./openai-compatible-errors.ts.
 // Imported at the top of this file. Not re-exported: no caller outside
 // this module needed it (knip-confirmed during item #4 triage).
 

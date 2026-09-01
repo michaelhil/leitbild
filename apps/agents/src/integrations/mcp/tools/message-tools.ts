@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { MessageTarget } from '../../../core/types/messaging.ts'
-import type { AgentsWorkspaceRuntime } from '../../../main.ts'
+import type { AgentsWorkspaceRuntime } from '../../../workspace-runtime.ts'
 import { textResult, errorResult, resolveRoom } from './helpers.ts'
 import { asAIAgent } from '../../../agents/shared.ts'
 import { exportRoomConversation } from '../../../core/rooms/room-export.ts'

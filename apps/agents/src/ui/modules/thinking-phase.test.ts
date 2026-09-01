@@ -34,7 +34,7 @@ describe('derivePhase', () => {
       .toEqual({ kind: 'generating' })
   })
 
-  // Regression: commit 0de0800 — "thinking indicator restores correct phase label on room re-entry".
+  // Regression: thinking indicators restore the correct phase after room re-entry.
   // When the user leaves a room where an agent is already streaming and comes back,
   // the indicator is re-created; its phase must reflect the accumulated state
   // (context + first chunk already seen), not the default "Building context...".

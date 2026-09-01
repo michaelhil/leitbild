@@ -191,7 +191,7 @@ describe('stateHandlers.snapshot — stale cache eviction', () => {
 })
 
 // ---------------------------------------------------------------------------
-// PR 4 — thinking persistence on the assistant message bubble.
+// Thinking persistence on the assistant message bubble.
 // $liveThinking accumulates deltas during gen; the agent_activity handler
 // appends to it on `kind: 'thinking'`. The `message` handler transfers it
 // to $messageThinking keyed by m.id BEFORE setting $roomMessages so the
@@ -201,7 +201,7 @@ describe('stateHandlers.snapshot — stale cache eviction', () => {
 
 import { $liveThinking, $messageThinking } from '../../stores.ts'
 
-describe('stateHandlers — thinking persistence (PR 4)', () => {
+describe('stateHandlers — thinking persistence', () => {
   beforeEach(() => {
     $roomMessages.set({})
     $liveThinking.set({})

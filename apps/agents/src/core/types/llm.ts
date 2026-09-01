@@ -166,7 +166,7 @@ export interface LLMProvider {
 // === Provider routing event callbacks ===
 // Emitted by the provider router (src/llm/router.ts) when an agent's LLM
 // call is bound to a provider, or when all providers fail. Wired into the
-// system via late-binding in main.ts.
+// system via late-binding in workspace-runtime.ts.
 
 export interface ProviderAttempt {
   readonly provider: string

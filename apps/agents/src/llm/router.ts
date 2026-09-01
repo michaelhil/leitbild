@@ -218,8 +218,7 @@ export const createProviderRouter = (
   const listeners: ProviderRoutingListener[] = []
   const emit = (ev: ProviderRoutingEvent): void => {
     for (const l of listeners) {
-      // Loud-warn instead of silent-drop — same bug-class as commit 5d73a8e.
-      // A buggy listener should be visible, not eaten.
+      // A failing listener must be visible rather than silently dropped.
       try { l(ev) } catch (err) {
         console.warn(`[router:onRoutingEvent] listener threw on ${ev.type}:`, err)
       }

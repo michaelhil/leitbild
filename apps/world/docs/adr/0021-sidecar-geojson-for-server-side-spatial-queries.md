@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Promoted to Accepted once Phase A.7 confirms the landed code matches this decision.
+Accepted.
 
 ## Context
 

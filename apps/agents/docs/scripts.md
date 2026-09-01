@@ -7,8 +7,8 @@ original markdown source separate from a compact live status view.
 
 ## File format
 
-Scripts live at `$LEITBILD_HOME/scripts/<name>/script.md` (or flat
-`<name>.md`). The grammar is strict; bad input is rejected with a
+Scripts live as flat Markdown files in `$LEITBILD_HOME/authoring/scripts/`.
+Bundled examples live in `examples/scripts/`. The grammar is strict; bad input is rejected with a
 line-precise error.
 
 ```markdown
@@ -71,7 +71,7 @@ A non-cast message (you typing in the room) resets readiness AND the
 ## What the cast sees
 
 Cast members do NOT receive the normal context-builder output (house
-prompt, room participants, artifacts, message history). Their entire
+prompt, room participants, and message history). Their entire
 system prompt IS the rendered living document for their viewing
 perspective:
 

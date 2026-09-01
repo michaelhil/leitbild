@@ -13,10 +13,13 @@
 // queue (Promise<void> chain) prevents whisper races.
 // ============================================================================
 
-import type { AgentsWorkspaceRuntime } from '../../main.ts'
 import type { Script, ScriptRun, WhisperRecord, StepLog, DialogueEntry, CastMember } from '../types/script.ts'
 import type { Message, DeliveryMode } from '../types/messaging.ts'
-import type { AIAgentConfig } from '../types/agent.ts'
+import type { Agent, AIAgentConfig, Team } from '../types/agent.ts'
+import type { RemoveAgentFromRoomOptions } from '../types/room.ts'
+import type { RoomDirectory } from '../rooms/directory.ts'
+import type { ScriptStore } from './script-store.ts'
+import type { LLMService } from '../../llm/llm-service.ts'
 import { classifyWhisper } from './script-whisper.ts'
 import { renderLivingScript } from './script-render.ts'
 import { SYSTEM_SENDER_ID } from '../types/constants.ts'
@@ -58,8 +61,20 @@ export type ScriptEventEmitter = (
   detail: Record<string, unknown>,
 ) => void
 
+export interface ScriptRunnerRuntime {
+  readonly rooms: RoomDirectory
+  readonly team: Team
+  readonly scriptStore: ScriptStore
+  readonly llmService: LLMService
+  readonly spawnAIAgent: (config: AIAgentConfig) => Promise<Agent>
+  readonly addAgentToRoom: (agentId: string, roomId: string, invitedBy?: string) => Promise<void>
+  readonly removeAgentFromRoom: (agentId: string, roomId: string, removedBy?: string, options?: RemoveAgentFromRoomOptions) => void
+  readonly removeAgent: (agentId: string) => boolean
+  readonly activateAgentInRoom: (agentId: string, roomId: string) => { ok: boolean; queued: boolean; reason?: string }
+}
+
 export interface ScriptRunnerDeps {
-  readonly getRuntime: () => AgentsWorkspaceRuntime
+  readonly getRuntime: () => ScriptRunnerRuntime
   readonly emit?: ScriptEventEmitter
 }
 

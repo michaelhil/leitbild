@@ -282,7 +282,7 @@ export const renderAgentInspector = (container: HTMLElement, agentName: string):
 
         // Neutral timeout: 30s after save, if still pending, show neutral
         // toast and close the pending state (so later events are handled as
-        // ordinary transitions — see Phase 3 A1 resolution).
+        // ordinary transitions).
         setTimeout(() => {
           const current = $pendingModelChanges.get()[agentId]
           if (current && current.at === savedAt) {

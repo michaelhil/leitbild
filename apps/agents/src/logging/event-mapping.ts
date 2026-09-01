@@ -4,7 +4,7 @@
 //
 // Pure functions. Each `mk<Kind>` takes the native callback args and returns
 // a LogEvent. Callers supply the active `sessionId`. Kept here (not inlined
-// in `main.ts`) so we can test the translation without spinning up a System.
+// in `workspace-runtime.ts`) so we can test the translation without spinning up a System.
 //
 // Choice of which callbacks to log:
 //   INCLUDED — messagePosted, deliveryModeChanged, modeAutoSwitched,

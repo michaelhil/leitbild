@@ -17,6 +17,8 @@
 
 import { DEFAULTS } from '../core/types/constants.ts'
 import type { MergedProviders } from './providers-store.ts'
+import { PROVIDER_PROFILES, isLocal, type CloudProviderName } from './provider-catalog.ts'
+export { PROVIDER_PROFILES, isLocal, type CloudProviderName } from './provider-catalog.ts'
 
 // Cloud providers known to this build. Adding a new one needs:
 //   - entry in PROVIDER_PROFILES
@@ -27,30 +29,6 @@ import type { MergedProviders } from './providers-store.ts'
 // transport) and llamacpp (uses the OpenAI-compat transport) are local.
 // isLocal() below is the predicate to use at every site that asks
 // "does this provider need a key".
-export const PROVIDER_PROFILES = {
-  anthropic:  { baseUrl: 'https://api.anthropic.com/v1',                          defaultMaxConcurrent: 3, kind: 'cloud' },
-  openai:     { baseUrl: 'https://api.openai.com/v1',                             defaultMaxConcurrent: 3, kind: 'cloud' },
-  kimi:       { baseUrl: 'https://api.moonshot.ai/v1',                            defaultMaxConcurrent: 3, kind: 'cloud' },
-  gemini:     { baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', defaultMaxConcurrent: 3, kind: 'cloud' },
-  cerebras:   { baseUrl: 'https://api.cerebras.ai/v1',                            defaultMaxConcurrent: 2, kind: 'cloud' },
-  groq:       { baseUrl: 'https://api.groq.com/openai/v1',                        defaultMaxConcurrent: 3, kind: 'cloud' },
-  openrouter: { baseUrl: 'https://openrouter.ai/api/v1',                          defaultMaxConcurrent: 1, kind: 'cloud' },
-  mistral:    { baseUrl: 'https://api.mistral.ai/v1',                             defaultMaxConcurrent: 2, kind: 'cloud' },
-  sambanova:  { baseUrl: 'https://api.sambanova.ai/v1',                           defaultMaxConcurrent: 2, kind: 'cloud' },
-  llamacpp:   { baseUrl: 'http://localhost:8080',                                  defaultMaxConcurrent: 1, kind: 'local' },
-} as const
-
-export type CloudProviderName = keyof typeof PROVIDER_PROFILES
-
-// True for any provider that doesn't require an API key. ollama is handled
-// outside PROVIDER_PROFILES (its own transport), so it's checked by name;
-// everything else falls back to the kind flag.
-export const isLocal = (name: string): boolean => {
-  if (name === 'ollama') return true
-  const profile = (PROVIDER_PROFILES as Record<string, { kind: string } | undefined>)[name]
-  return profile?.kind === 'local'
-}
-
 export const DEFAULT_PROVIDER_ORDER: ReadonlyArray<string> =
   ['anthropic', 'openai', 'kimi', 'gemini', 'cerebras', 'groq', 'openrouter', 'mistral', 'sambanova', 'llamacpp', 'ollama']
 

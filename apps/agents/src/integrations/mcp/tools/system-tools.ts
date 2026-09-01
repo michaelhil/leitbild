@@ -10,7 +10,7 @@
 
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { AgentsWorkspaceRuntime } from '../../../main.ts'
+import type { AgentsWorkspaceRuntime } from '../../../workspace-runtime.ts'
 import type { LogConfig } from '../../../logging/types.ts'
 import { textResult, errorResult } from './helpers.ts'
 

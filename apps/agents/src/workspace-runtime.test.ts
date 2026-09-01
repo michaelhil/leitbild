@@ -1,7 +1,7 @@
 // ============================================================================
 // AgentsWorkspaceRuntime.resetState tests.
 //
-// resetState is the Phase 3 primitive that backs the `reset_system` MCP tool.
+// resetState backs the `reset_system` MCP tool.
 // It clears rooms and agents; preserves tool registry + skills + provider
 // state. Covered by a positive path + name-reuse path; the subprocess-level
 // integration is exercised end-to-end by experiments/batch-reset.test.ts
@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { describe, test, expect } from 'bun:test'
-import { createAgentsWorkspaceRuntime } from './main.ts'
+import { createAgentsWorkspaceRuntime } from './workspace-runtime.ts'
 import { SYSTEM_SENDER_ID } from './core/types/constants.ts'
 import { createHumanAgent } from './agents/human-agent.ts'
 

@@ -49,8 +49,8 @@ export { createListRoomsTool, createGetTimeTool } from './tools/built-in/index.t
 export { createOllamaProvider } from './llm/ollama.ts'
 
 // AgentsWorkspaceRuntime + Server
-export { createAgentsWorkspaceRuntime } from './main.ts'
-export type { AgentsWorkspaceRuntime } from './main.ts'
+export { createAgentsWorkspaceRuntime } from './workspace-runtime.ts'
+export type { AgentsWorkspaceRuntime } from './workspace-runtime.ts'
 export { createServer } from './api/server.ts'
 
 // MCP Server

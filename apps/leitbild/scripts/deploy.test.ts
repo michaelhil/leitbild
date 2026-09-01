@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
-import { PRODUCTION_DEPENDENCY_WORKSPACE_PATHS } from './deploy.ts'
+import { isProductionSourcePath, PRODUCTION_DEPENDENCY_WORKSPACE_PATHS } from './deploy.ts'
 
 const workspaceRoot = resolve(import.meta.dir, '../../..')
 const productionAppPaths = ['apps/leitbild', 'apps/world', 'apps/agents'] as const
@@ -21,4 +21,16 @@ test('production artifact includes every local workspace dependency', async () =
       if (version.startsWith('workspace:')) expect(includedNames.has(dependency)).toBe(true)
     }
   }
+})
+
+test('production artifact excludes development-only files', () => {
+  expect(isProductionSourcePath('agents', 'src/main.ts')).toBe(true)
+  expect(isProductionSourcePath('agents', 'examples/scripts/demo.md')).toBe(true)
+  expect(isProductionSourcePath('agents', 'src/api/server.test.ts')).toBe(false)
+  expect(isProductionSourcePath('agents', 'src/packs/example/fixtures/input.json')).toBe(false)
+  expect(isProductionSourcePath('agents', 'src/api/__fixtures__/stub-gateway.ts')).toBe(false)
+  expect(isProductionSourcePath('agents', 'docs/packs.md')).toBe(false)
+  expect(isProductionSourcePath('world', 'tests/api.test.ts')).toBe(false)
+  expect(isProductionSourcePath('host', 'deploy/backup/backup-production.sh')).toBe(false)
+  expect(isProductionSourcePath('host', 'deploy/Caddyfile')).toBe(true)
 })

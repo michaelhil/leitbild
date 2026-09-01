@@ -6,7 +6,7 @@
 // calls openAgentDetailModal here. On close, the listener clears
 // $selectedAgentId so the sidebar drops its selection highlight.
 //
-// v15+: no title bar, no × button. The inspector body's own header
+// No title bar or separate close button. The inspector body's own header
 // (dot · name · kind-icon) serves as the heading. Close affordances are
 // Escape (native dialog cancel) and backdrop click.
 // ============================================================================

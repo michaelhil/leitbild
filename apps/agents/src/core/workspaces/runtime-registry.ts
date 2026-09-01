@@ -20,7 +20,6 @@
 //   getOrLoad(id)           — single source of truth; touches lastTouchedAt
 //   evictOne(id)            — graceful: drain → flush → drop. Idempotent.
 //   evictIdle(now, idleMs)  — periodic sweep
-//   resetWorkspaceState(id)       — wipe state, return new id (for /api/system/reset)
 //   exists(id)              — disk OR memory
 //   list()                  — readonly meta for admin
 //   shutdown()              — flush all + clear
@@ -49,9 +48,9 @@
 // "look up the saver from the registry" into the hook.
 // ============================================================================
 
-import type { AgentsWorkspaceRuntime } from '../../main.ts'
+import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
 import type { DeploymentRuntime } from '../deployment-runtime.ts'
-import { createAgentsWorkspaceRuntime } from '../../main.ts'
+import { createAgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
 import {
   createModuleAutoSaver,
   loadWorkspaceModuleSnapshots,
@@ -148,9 +147,6 @@ export interface WorkspaceRuntimeRegistry {
   readonly getOrLoad: (id: WorkspaceId) => Promise<AgentsWorkspaceRuntime>
   readonly evictOne: (id: WorkspaceId) => Promise<void>
   readonly evictIdle: (now?: number) => Promise<number>
-  // Delete enabled Module payloads and drop the runtime from memory while
-  // preserving Host-provisioned Module membership for the same Workspace id.
-  readonly resetWorkspaceState: (id: WorkspaceId) => Promise<void>
   readonly exists: (id: WorkspaceId) => Promise<boolean>
   readonly list: () => ReadonlyArray<WorkspaceRuntimeMeta>
   // Enumerate every valid Workspace directory under LEITBILD_HOME/workspaces,
@@ -173,7 +169,7 @@ export interface WorkspaceRuntimeRegistry {
   // outs skip the missing Workspace. If you need a hard error or you
   // need to materialize the system, use `getOrLoad` instead. Adding a
   // call site that quietly skips when the answer should be "load this"
-  // is how silent-skip bugs hide — see CLAUDE.md "no silent skips on
+  // is how silent-skip bugs hide — see AGENTS.md "no silent skips on
   // optional dependencies."
   readonly tryGetLive: (id: WorkspaceId) => AgentsWorkspaceRuntime | undefined
   // Agent → Workspace reverse index for provider routing events. Bootstrap
@@ -465,19 +461,6 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     return targets.length
   }
 
-  const resetWorkspaceState = async (id: WorkspaceId): Promise<void> => {
-    if (!isValidWorkspaceId(id)) {
-      throw new Error(`[registry] invalid Workspace id: ${id}`)
-    }
-    // Drain + drop from memory.
-    if (map.has(id)) await evictOne(id)
-    // Reset is intentionally destructive. Snapshot compatibility is a clean
-    // break and this architecture pass does not retain migration/archive data.
-    if (!await opts.moduleState.has(id)) throw new Error(`Agents Workspace not provisioned: ${id}`)
-    await opts.moduleState.remove(id)
-    await opts.moduleState.provision(id)
-  }
-
   const exists = async (id: WorkspaceId): Promise<boolean> => {
     if (!isValidWorkspaceId(id)) return false
     if (map.has(id)) return true
@@ -551,7 +534,6 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     getOrLoad,
     evictOne,
     evictIdle,
-    resetWorkspaceState,
     exists,
     list,
     listOnDisk,

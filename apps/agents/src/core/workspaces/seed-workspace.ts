@@ -6,7 +6,7 @@
 // provider-aware default without duplicating provider policy.
 // ============================================================================
 
-import type { AgentsWorkspaceRuntime } from '../../main.ts'
+import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
 import { resolveDefaultModel, type ProviderSnapshot } from '../../llm/models/default-resolver.ts'
 import { CURATED_MODELS, DEFAULT_MODEL_ID } from '../../llm/models/catalog.ts'
 import { resolveProviderAvailability } from '../../llm/provider-availability.ts'

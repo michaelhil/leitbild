@@ -1,7 +1,6 @@
 // ============================================================================
 // Tests for validateBootstrap. Each contract gets a positive case (passes
-// with valid input) and a negative case (throws with the bug-class message
-// it documents).
+// with valid input) and a negative case.
 //
 // Note: this test constructs MINIMAL System-shaped objects matching the
 // surface validateBootstrap reads (.providerKeys, .providerConfig.order,
@@ -29,12 +28,12 @@ describe('validateBootstrap', () => {
     expect(() => validateBootstrap(validSystem())).not.toThrow()
   })
 
-  test('throws when providerKeys is missing (commit d0c1f73 contract)', () => {
+  test('throws when providerKeys is missing', () => {
     expect(() => validateBootstrap(validSystem({ providerKeys: undefined as never })))
-      .toThrow(/providerKeys is missing.*d0c1f73/)
+      .toThrow(/providerKeys is missing/)
   })
 
-  test('throws when a gateway has undefined maxConcurrent (commit f04e61e contract)', () => {
+  test('throws when a gateway has undefined maxConcurrent', () => {
     const sys = validSystem({
       gateways: {
         gemini: {
@@ -42,7 +41,7 @@ describe('validateBootstrap', () => {
         } as never,
       } as never,
     })
-    expect(() => validateBootstrap(sys)).toThrow(/maxConcurrent.*undefined.*f04e61e/)
+    expect(() => validateBootstrap(sys)).toThrow(/maxConcurrent.*undefined/)
   })
 
   test('throws when a gateway has zero maxConcurrent', () => {
@@ -72,9 +71,9 @@ describe('validateBootstrap', () => {
   })
 
   // Contract 4: wsManager.isWired must return true at first-load.
-  test('throws when isWsWired returns false (commit 5d73a8e contract)', () => {
+  test('throws when isWsWired returns false', () => {
     expect(() => validateBootstrap(validSystem(), { isWsWired: () => false }))
-      .toThrow(/wsManager\.isWired returned false.*5d73a8e/)
+      .toThrow(/wsManager\.isWired returned false/)
   })
 
   test('passes when isWsWired returns true', () => {

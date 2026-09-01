@@ -103,6 +103,31 @@ const trackedFiles = async (root: string): Promise<string[]> => {
   return raw.split('\0').filter(Boolean).sort()
 }
 
+const isDevelopmentOnlyPath = (path: string): boolean =>
+  /(?:^|\/)(?:tests?|fixtures|__fixtures__|__tests__|__snapshots__)(?:\/|$)/.test(path)
+  || /\.(?:test|spec)(?:-d)?\.[cm]?[jt]sx?$/.test(path)
+
+export const isProductionSourcePath = (workspace: 'host' | 'world' | 'agents' | 'package', path: string): boolean => {
+  if (isDevelopmentOnlyPath(path)) return false
+  if (workspace === 'host') {
+    return path === 'package.json'
+      || path.startsWith('src/')
+      || path === 'deploy/Caddyfile'
+      || /^deploy\/leitbild-(?:host|world|agents)\.service$/.test(path)
+      || path.startsWith('deploy/retired/')
+  }
+  if (workspace === 'world') return path === 'package.json' || path.startsWith('src/')
+  if (workspace === 'agents') {
+    return path === 'package.json'
+      || path === 'mcp-servers.json'
+      || path.startsWith('src/')
+      || path.startsWith('examples/scripts/')
+      || path.startsWith('skills/')
+      || path.startsWith('tools/')
+  }
+  return path === 'package.json' || path.startsWith('src/')
+}
+
 const directoryFiles = async (root: string, child: string): Promise<string[]> => {
   const files: string[] = []
   const visit = async (directory: string): Promise<void> => {
@@ -116,10 +141,16 @@ const directoryFiles = async (root: string, child: string): Promise<string[]> =>
   return files
 }
 
-const entriesFor = async (root: string, targetRoot: string, extra: ReadonlyArray<string> = []): Promise<ArtifactEntry[]> => {
+const entriesFor = async (
+  root: string,
+  targetRoot: string,
+  workspace: 'host' | 'world' | 'agents' | 'package',
+  extra: ReadonlyArray<string> = [],
+): Promise<ArtifactEntry[]> => {
   const entries: ArtifactEntry[] = []
   for (const path of [...new Set([...await trackedFiles(root), ...extra])].sort()) {
     if (path.startsWith('/') || path.split('/').includes('..')) throw new Error(`Unsafe source path: ${path}`)
+    if (!isProductionSourcePath(workspace, path)) continue
     const source = join(root, path)
     const stat = await lstat(source).catch(error => {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
@@ -168,12 +199,12 @@ const createArtifact = async () => {
   const stageRoot = join(tempRoot, 'stage')
   const archivePath = join(tempRoot, 'release.tgz')
   await mkdir(stageRoot)
-  const hostEntries = await entriesFor(HOST_ROOT, 'apps/leitbild', await directoryFiles(HOST_ROOT, 'src/ui/dist'))
-  const worldEntries = await entriesFor(WORLD_ROOT, 'apps/world', await directoryFiles(WORLD_ROOT, 'src/ui/dist'))
-  const agentsEntries = await entriesFor(AGENTS_ROOT, 'apps/agents', ['src/ui/dist.css'])
+  const hostEntries = await entriesFor(HOST_ROOT, 'apps/leitbild', 'host', await directoryFiles(HOST_ROOT, 'src/ui/dist'))
+  const worldEntries = await entriesFor(WORLD_ROOT, 'apps/world', 'world', await directoryFiles(WORLD_ROOT, 'src/ui/dist'))
+  const agentsEntries = await entriesFor(AGENTS_ROOT, 'apps/agents', 'agents', ['src/ui/dist.css'])
   const rootEntries: ArtifactEntry[] = ['package.json', 'bun.lock'].map(path => ({ source: join(WORKSPACE_ROOT, path), target: path }))
   const dependencyPackageEntries = (await Promise.all(
-    PRODUCTION_DEPENDENCY_WORKSPACES.map(workspace => entriesFor(workspace.source, workspace.target)),
+    PRODUCTION_DEPENDENCY_WORKSPACES.map(workspace => entriesFor(workspace.source, workspace.target, 'package')),
   )).flat()
   const entries = [...rootEntries, ...hostEntries, ...worldEntries, ...agentsEntries, ...dependencyPackageEntries]
   const sourceDigest = await digestEntries(entries)

@@ -41,7 +41,7 @@ export interface SchedulerDeps {
   // Optional: callback after a trigger is dispatched. Tests use it as a
   // signal; production might surface a "trigger fired" log line. Best-effort.
   readonly onFired?: (agentId: string, triggerId: string) => void
-  // Narrow capability for the start-script trigger mode. Wired in main.ts
+  // Narrow capability for the start-script trigger mode. Wired in workspace-runtime.ts
   // where scriptRunner exists. Optional so tests + headless boots that never
   // use this mode can omit it.
   readonly startScript?: (roomId: string, name: string) => Promise<{ ok: boolean; reason?: string }>

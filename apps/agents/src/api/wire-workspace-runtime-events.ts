@@ -20,9 +20,9 @@
 //     loaded AgentsWorkspaceRuntime gets the same wiring without ad-hoc setup code.
 // ============================================================================
 
-import type { AgentsWorkspaceRuntime } from '../main.ts'
+import type { AgentsWorkspaceRuntime } from '../workspace-runtime.ts'
 import type { ModuleAutoSaver } from '../core/storage/module-snapshots.ts'
-import type { WSManager } from './ws-handler.ts'
+import type { WSManager } from './ws-types.ts'
 import { asAIAgent } from '../agents/shared.ts'
 import type { WorkspaceId } from '@leitbild/contracts'
 

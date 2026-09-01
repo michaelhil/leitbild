@@ -14,7 +14,7 @@
 //   - src/core/scripts/script-store.ts — upsert / remove / reload
 //   - src/tools/built-in/pack-tools.ts — install / update / uninstall
 //
-// The fourth consumer is what triggered the extraction (see CLAUDE.md
+// The fourth consumer is what triggered the extraction (see AGENTS.md
 // guidance on threshold for shared abstractions). Earlier consumers were
 // consolidated here so the inline `let chain` /
 // serialise pattern lives in exactly one place.

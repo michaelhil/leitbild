@@ -15,7 +15,7 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import type { AgentsWorkspaceRuntime } from '../../main.ts'
+import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
 import type { OnDeliveryModeChanged, OnTurnChanged } from '../../core/types/room.ts'
 import { registerAllMCPTools } from './tools/index.ts'
 import { registerMCPResources } from './resources.ts'

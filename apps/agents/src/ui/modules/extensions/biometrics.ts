@@ -12,7 +12,7 @@
 // widgets in the DOM tear down cleanly (they own the MediaStream and
 // release it via this event handler).
 
-import type { UIExtension, ExtensionAPI } from './registry.ts'
+import type { UIExtension, ExtensionAPI } from './types.ts'
 
 export const createBiometricsExtension = (): UIExtension => {
   let unregisterPanel: (() => void) | null = null

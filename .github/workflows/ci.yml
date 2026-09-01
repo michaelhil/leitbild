@@ -2,21 +2,26 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
       - run: bun run check
-      - run: bun test
-      - run: bun run build:ui
+      - run: bun run test
+      - run: bun run build

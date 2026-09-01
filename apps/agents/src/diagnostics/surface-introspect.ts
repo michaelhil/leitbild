@@ -8,7 +8,7 @@
 // leaf (no diagnostic-shaped state seeping in).
 
 import type { ToolDefinition } from '../core/types/tool.ts'
-import type { AgentsWorkspaceRuntime } from '../main.ts'
+import type { AgentsWorkspaceRuntime } from '../workspace-runtime.ts'
 import { asAIAgent } from '../agents/shared.ts'
 import { createToolSurface, inferProviderFromModelRef, type GetRoomActivation } from '../tool-surface/index.ts'
 import { contributionSourceFor } from '../core/types/tool-pack.ts'

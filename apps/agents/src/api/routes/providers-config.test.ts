@@ -13,8 +13,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { providersConfigRoutes } from './providers-config.ts'
 import { createProviderKeys } from '../../llm/provider-keys.ts'
-import { mergeWithEnv } from '../../llm/providers-store.ts'
-import type { AgentsWorkspaceRuntime } from '../../main.ts'
+import { createProviderPolicyStore, mergeWithEnv } from '../../llm/providers-store.ts'
+import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
 
 const findHandler = (method: string, path: string) => {
   for (const entry of providersConfigRoutes) {
@@ -32,11 +32,16 @@ const buildWorkspaceRuntime = async (
 ): Promise<{ system: AgentsWorkspaceRuntime; storePath: string }> => {
   const dir = await mkdtemp(join(tmpdir(), 'leitbild-pc-'))
   const storePath = join(dir, 'providers.json')
-  await writeFile(storePath, JSON.stringify(providersJson))
+  const storeData = {
+    version: 1,
+    providers: providersJson as never,
+    defaults: { modelFallback: ['openai:gpt-4.1-mini'] },
+  }
+  await writeFile(storePath, JSON.stringify(storeData))
   // Seed providerKeys from the merged (env+store) shape, the way boot does.
   const prev = process.env[envKeyName]
   process.env[envKeyName] = envKeyValue
-  const merged = mergeWithEnv({ version: 1, providers: providersJson as never })
+  const merged = mergeWithEnv(storeData)
   if (prev === undefined) delete process.env[envKeyName]
   else process.env[envKeyName] = prev
   const providerKeys = createProviderKeys(merged)
@@ -46,6 +51,7 @@ const buildWorkspaceRuntime = async (
     providerConfig: { baseUrls: {} as Record<string, string | undefined> },
     gateways: {},
     refreshAvailableModels: () => {},
+    providerPolicy: createProviderPolicyStore(storePath, storeData),
   } as unknown as AgentsWorkspaceRuntime
   return { system, storePath }
 }
@@ -111,7 +117,12 @@ describe('PUT /providers/:name', () => {
     )
     // Re-write store with an order key (buildWorkspaceRuntime doesn't accept order).
     const { readFile } = await import('node:fs/promises')
-    await writeFile(storePath, JSON.stringify({ version: 1, providers: { kimi: { pinnedModels: [] } }, order }))
+    await writeFile(storePath, JSON.stringify({
+      version: 1,
+      providers: { kimi: { pinnedModels: [] } },
+      order,
+      defaults: { modelFallback: ['openai:gpt-4.1-mini'] },
+    }))
 
     const { handler, match } = findHandler('PUT', '/providers/kimi')
     const req = new Request('http://localhost/providers/kimi', {
@@ -123,5 +134,29 @@ describe('PUT /providers/:name', () => {
 
     const after = JSON.parse(await readFile(storePath, 'utf-8'))
     expect(after.order).toEqual(order)
+  })
+})
+
+describe('/providers/fallback', () => {
+  test('uses the policy route and persists without losing provider settings', async () => {
+    const { system, storePath } = await buildWorkspaceRuntime(
+      { openai: { apiKey: 'stored-key' } },
+      'OPENAI_API_KEY',
+      '',
+    )
+    const { handler, match } = findHandler('PUT', '/providers/fallback')
+    const req = new Request('http://localhost/providers/fallback', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chain: ['openai:gpt-5.4-mini'] }),
+    })
+
+    const res = await handler(req, match, { system, broadcast: () => {} } as never)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ saved: true, chain: ['openai:gpt-5.4-mini'] })
+
+    const stored = JSON.parse(await Bun.file(storePath).text())
+    expect(stored.providers.openai.apiKey).toBe('stored-key')
+    expect(stored.defaults.modelFallback).toEqual(['openai:gpt-5.4-mini'])
   })
 })

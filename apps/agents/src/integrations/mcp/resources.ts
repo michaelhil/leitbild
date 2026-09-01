@@ -1,6 +1,6 @@
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { AgentsWorkspaceRuntime } from '../../main.ts'
+import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
 
 export const registerMCPResources = (mcpServer: McpServer, system: AgentsWorkspaceRuntime): void => {
   mcpServer.resource(

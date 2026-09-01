@@ -8,26 +8,6 @@ dist/
 *.tsbuildinfo
 coverage/
 
-# Claude Code config — most is local-only; project-versioned bits opt in.
-# (Note: cannot re-include from an excluded parent dir, so list patterns instead.)
-.claude/settings.local.json
-.claude/launch.json
-.claude/context/
-.claude/cache/
-.claude/state/
-.claude/projects/
-.claude/worktrees/
-.claude/scheduled_tasks.lock
-
-# Health audit reports — only baseline + spike artifacts + suppression list +
-# the one-time test report commit; daily reports and last-run.txt are ephemeral.
-.health/*
-!.health/baseline.md
-!.health/spike-results.md
-!.health/spike-knip.txt
-!.health/suppressed.md
-!.health/test-report.md
-
 data/
 src/ui/dist.css
 experiments/out/

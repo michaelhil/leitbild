@@ -9,7 +9,7 @@
 //   2. Strict-provider behavior: gemini-style providers must NEVER receive
 //      a family dispatcher; they get the flat tool list.
 //
-// Budget cap was removed in PR 1 of the tool-surface redesign; the
+// The tool surface has no implicit budget cap; the
 // previous "drops tools to fit budget" test is gone with it. The surface
 // trusts user intent (pack activation) and never silently strips tools.
 
@@ -220,7 +220,7 @@ describe('dispatcher projection', () => {
 
   test('load-bearing FAMILY_DISPATCHER_NAMES filter: synthesised dispatcher appears ONCE, never twice', () => {
     // The filter in accept() prevents projection-time duplicate-function
-    // declarations on Gemini (commit b0fe8d3 was the prior incident).
+    // declarations on strict providers such as Gemini.
     // This test models a registry that contains BOTH the family members
     // AND a real tool that happens to share the dispatcher name
     // (e.g. a pack registers a tool called geo_tools, or — historically —

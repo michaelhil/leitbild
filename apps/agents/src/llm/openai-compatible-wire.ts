@@ -1,8 +1,7 @@
 // ============================================================================
 // OpenAI-compatible wire-format mapping.
 //
-// Extracted from openai-compatible.ts (audit Finding 2.3.2 — next seam
-// after the error-mapping extraction in commit ab97ca3). Holds the
+// Extracted from openai-compatible.ts to isolate wire translation. Holds the
 // ChatRequest ↔ OAI body translation, model-family detection (gpt-5/o-
 // series quirks), multimodal content-part building, and the Anthropic
 // cache-marker helper. Pure functions; no I/O.

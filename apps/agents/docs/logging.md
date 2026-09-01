@@ -29,27 +29,27 @@ LEITBILD_SESSION_ID=study-A-operator-1 \
 
 ```bash
 # Start logging with a specific session id
-curl -X PUT http://localhost:3000/api/logging \
+curl -X PUT http://localhost:3000/api/workspaces/<workspaceId>/agents/logging \
   -H 'Content-Type: application/json' \
   -d '{"enabled":true,"sessionId":"shift-morning-1"}'
 
 # Swap to a new session (without stopping leitbild)
-curl -X PUT http://localhost:3000/api/logging \
+curl -X PUT http://localhost:3000/api/workspaces/<workspaceId>/agents/logging \
   -H 'Content-Type: application/json' \
   -d '{"sessionId":"shift-afternoon-1"}'
 
 # Change directory
-curl -X PUT http://localhost:3000/api/logging \
+curl -X PUT http://localhost:3000/api/workspaces/<workspaceId>/agents/logging \
   -H 'Content-Type: application/json' \
   -d '{"dir":"/mnt/external-drive/leitbild-logs"}'
 
 # Stop
-curl -X PUT http://localhost:3000/api/logging \
+curl -X PUT http://localhost:3000/api/workspaces/<workspaceId>/agents/logging \
   -H 'Content-Type: application/json' \
   -d '{"enabled":false}'
 
 # Inspect state + stats
-curl http://localhost:3000/api/logging
+curl http://localhost:3000/api/workspaces/<workspaceId>/agents/logging
 ```
 
 ### At runtime (MCP)
@@ -66,7 +66,7 @@ get_logging()  →  {enabled, dir, sessionId, kinds, currentFile, stats: {eventC
 | Control | Env var | REST field | Default |
 |---|---|---|---|
 | On/off | `LEITBILD_LOG_ENABLED=1` | `enabled: true` | `false` |
-| Output directory | `LEITBILD_LOG_DIR` | `dir` | `$LEITBILD_HOME/workspaces/<workspaceId>/leitbild/logs/` |
+| Output directory | `LEITBILD_LOG_DIR` | `dir` | `$LEITBILD_HOME/workspaces/<workspaceId>/agents/rooms/logs/` |
 | Session identifier | `LEITBILD_SESSION_ID` | `sessionId` | `session-<ts>-<shortId>` |
 | Kind filter | `LEITBILD_LOG_KINDS` (comma-separated) | `kinds: string[]` | `["*"]` |
 
@@ -76,7 +76,7 @@ Changing `dir` at runtime behaves the same way — old file closes, new file ope
 
 ## File layout
 
-Each Workspace writes to its Leitbild-owned log directory under `$LEITBILD_HOME/workspaces/<workspaceId>/leitbild/logs/`. Override the per-Workspace default only when logs deliberately need another destination.
+Each Workspace writes to its Agents-owned log directory under `$LEITBILD_HOME/workspaces/<workspaceId>/agents/rooms/logs/`. Override the per-Workspace default only when logs deliberately need another destination.
 
 ```
 <dir>/
@@ -110,12 +110,10 @@ Fields:
 | `room.created` | A room is created |
 | `room.deleted` | A room is deleted |
 | `room.membership_changed` | Agent added to / removed from a room |
-| `room.delivery_mode_changed` | Room delivery mode changed (broadcast / macro / …) |
+| `room.delivery_mode_changed` | Room delivery mode changed (broadcast / manual) |
 | `room.mode_auto_switched` | Mode auto-changed (e.g. second AI joined) |
 | `message.posted` | Any message — includes full content, telemetry, toolTrace |
 | `agent.eval_event` | Tool start / tool result / warning during agent evaluation |
-| `artifact.changed` | Artifact added / updated / removed / resolved |
-| `macro.event` | Macro started / step completed / completed / cancelled |
 | `provider.bound` | LLM provider bound to an agent's call |
 | `provider.all_failed` | All providers failed for a model |
 | `provider.stream_failed` | Provider streaming error |
@@ -131,7 +129,7 @@ Deliberately not logged (noise):
 
 - `turn.changed` — fires many times per eval
 - `summary.run_delta` — per-chunk tokens during streaming
-- UI state events (`bookmarks.changed`, `macro_selection.changed`)
+- UI-only state events such as bookmark selection
 
 Filter with `kinds` to restrict:
 

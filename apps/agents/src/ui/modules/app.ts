@@ -49,7 +49,6 @@ import {
 import { initScriptPanel } from './panels/script-panel.ts'
 import { initScriptDocPanel } from './panels/script-doc-panel.ts'
 import {
-  $myAgentId,
   $sessionToken,
   $connected,
   $selectedRoomId,
@@ -212,7 +211,7 @@ const updateAgentsLabel = () => {
 // file's setup phase. Moving the subscriptions into the render layer
 // would force two-way imports (render-* → app for handlers, app →
 // render-* for init()) which is strictly worse coupling than the
-// current shape. Per CLAUDE.md "Rejected refactors": splits that don't
+// current shape. Per AGENTS.md "Rejected refactors": splits that don't
 // reduce coupling are motion-without-progress. Revisit only when handlers
 // + DOM bindings can also move out together.
 // ============================================================================
@@ -350,7 +349,7 @@ $selectedRoomId.listen((roomId, prevRoomId) => {
     const cached = $roomMessages.get()[roomId]
     if (cached) {
       for (const m of cached) renderMessage({
-        container: messagesDiv, msg: m, myAgentId: $myAgentId.get() ?? '',
+        container: messagesDiv, msg: m,
         agents: $agents.get() as unknown as Record<string, AgentInfo>,
         onDelete: handleDeleteMessage, onViewContext: handleViewContext, onBookmark: handleBookmark,
       })
@@ -428,7 +427,7 @@ $roomMessages.listen((allMessages, _old, changedRoomId) => {
   for (const m of msgs) {
     if (!existingIds.has(m.id)) {
       renderMessage({
-        container: messagesDiv, msg: m, myAgentId: $myAgentId.get() ?? '',
+        container: messagesDiv, msg: m,
         agents: $agents.get() as unknown as Record<string, AgentInfo>,
         onDelete: handleDeleteMessage, onViewContext: handleViewContext, onBookmark: handleBookmark,
       })
@@ -631,7 +630,6 @@ btnModeToggle.onclick = () => {
 initSummaryPanel({ onRefreshRoomControls: refreshRoomControls })
 initScriptPanel({ onRefreshRoomControls: refreshRoomControls })
 initScriptDocPanel()
-void import('./reset-button.ts').then(m => m.initResetPanel())
 
 roomForm.onsubmit = (e) => {
   e.preventDefault()

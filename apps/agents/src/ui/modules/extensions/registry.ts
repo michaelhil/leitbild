@@ -24,27 +24,9 @@ import { apiFetch } from "../api-client.ts"
 import {
   addPostRenderProcessor,
   removePostRenderProcessor,
-  type PostRenderProcessor,
 } from './post-render-registry.ts'
-
-export interface PanelSpec {
-  readonly id: string
-  readonly title: string
-  readonly mount: (host: HTMLElement) => void
-  readonly unmount?: () => void
-}
-
-export interface ExtensionAPI {
-  readonly addPostRenderProcessor: (name: string, fn: PostRenderProcessor) => void
-  readonly removePostRenderProcessor: (name: string) => void
-  readonly registerPanel: (spec: PanelSpec) => () => void
-}
-
-export interface UIExtension {
-  readonly name: string
-  readonly mount: (api: ExtensionAPI) => Promise<void>
-  readonly unmount: () => Promise<void>
-}
+import type { ExtensionAPI, UIExtension } from './types.ts'
+export type { ExtensionAPI, PanelSpec, UIExtension } from './types.ts'
 
 // Panel registration is lightweight — the panel renderer (Settings nav) polls
 // this list. Keeps the API surface in this file rather than reaching into

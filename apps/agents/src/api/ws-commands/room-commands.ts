@@ -9,9 +9,8 @@ export const handleRoomCommand = async (msg: WSInbound, ctx: CommandContext): Pr
   const broadcastToSessionInstance = (outbound: Parameters<typeof wsManager.broadcastToWorkspace>[1]): void => {
     wsManager.broadcastToWorkspace(ctx.session.workspaceId, outbound)
   }
-  // v15+: WS sessions don't own a default actor. Non-content commands
-  // attribute to 'system' as createdBy / initiator-name. Future PRs can
-  // plumb the per-room selected human through to these commands too.
+  // Viewer sessions do not own a default actor. Non-content commands are
+  // attributed to the system actor.
   const SYSTEM_ACTOR_ID = 'system'
   const SYSTEM_ACTOR_NAME = 'system'
 

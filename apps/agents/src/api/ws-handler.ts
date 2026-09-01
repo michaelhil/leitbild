@@ -8,7 +8,7 @@
 // The dispatch loop tries each handler in order; first match wins.
 // ============================================================================
 
-import type { AgentsWorkspaceRuntime } from '../main.ts'
+import type { AgentsWorkspaceRuntime } from '../workspace-runtime.ts'
 import type { Agent } from '../core/types/agent.ts'
 import type { AgentProfile } from '../core/types/messaging.ts'
 import type { RoomState } from '../core/types/room.ts'
@@ -23,6 +23,7 @@ import { sendError } from './ws-commands/types.ts'
 import { validateWSInbound } from './ws-commands/validate.ts'
 import type { LimitMetrics } from '../core/limit-metrics.ts'
 import type { WorkspaceId } from '@leitbild/contracts'
+import type { ClientSession, WSConnection, WSManager } from './ws-types.ts'
 
 // === Constants ===
 
@@ -39,81 +40,6 @@ const MAX_WS_BUFFERED_BYTES = 8 * 1024 * 1024
 // session entry deleted. 7 days strikes a balance: covers a long weekend or
 // vacation, prevents indefinite accumulation.
 const SESSION_STALE_MS = 7 * 24 * 60 * 60 * 1000
-
-// === Types ===
-
-// Stored ws value. ServerWebSocket from Bun has both methods natively;
-// the wider type lets callers apply backpressure + clean disconnect
-// without reaching past WSManager. Tests inject objects that conform.
-export interface WSConnection {
-  send: (data: string) => void
-  getBufferedAmount: () => number
-  close: (code: number, reason?: string) => void
-}
-
-// A WS session is a viewer of one Workspace — it doesn't bind to
-// any human agent. Each WS message that creates content names its actor
-// via senderId; non-content commands fall back to 'system' attribution.
-// The session map exists only for connection lifecycle (reconnect, sweep).
-export interface ClientSession {
-  readonly workspaceId: WorkspaceId
-  readonly sessionToken: string       // per-WS-connection unique id, matches the wsConnections map key
-  lastActivity: number
-}
-
-export interface WSData {
-  sessionToken: string
-  workspaceId: WorkspaceId
-  // An unavailable-Workspace handshake is upgraded only so the browser can
-  // receive a meaningful 4xxx close code. The open handler closes it
-  // before loading or materializing any AgentsWorkspaceRuntime.
-  terminalClose?: 'workspace-unavailable'
-}
-
-// === Session + State Management ===
-
-export interface WSManager {
-  readonly sessions: Map<string, ClientSession>
-  readonly wsConnections: Map<string, WSConnection>
-  // A browser tab keeps its viewer token across ordinary reconnects. When
-  // that tab intentionally switches Workspaces, release the old binding and
-  // close its tracked socket so the same token can bind to the new cookie.
-  readonly releaseSessionForWorkspaceSwitch: (sessionToken: string, nextWorkspaceId: WorkspaceId) => boolean
-  // Send to a single ws with backpressure protection. Used by the
-  // per-agent transport closures in server.ts. Returns true if the bytes
-  // were enqueued, false if the consumer was dropped for being too slow.
-  readonly safeSend: (ws: WSConnection, data: string) => boolean
-  // Global broadcast — used for shared state (Ollama health, reset, etc.)
-  // that applies regardless of which Workspace a client belongs to.
-  readonly broadcast: (msg: WSOutbound) => void
-  // Per-Workspace broadcast — only delivers to ws connections whose session
-  // has matching workspaceId. Used by wireWorkspaceRuntimeEvents so an event fired in
-  // Workspace A doesn't reach Workspace B's clients.
-  readonly broadcastToWorkspace: (workspaceId: WorkspaceId, msg: WSOutbound) => void
-  readonly subscribeAgentState: (agent: Agent, workspaceId: WorkspaceId) => void
-  readonly unsubscribeAgentState: (agentId: string) => void
-  // Returns null when the Workspace has been evicted between the WS upgrade
-  // and the snapshot build. Callers must close the socket (4001) instead of
-  // sending a fabricated empty snapshot — clients trust empty rooms+agents
-  // and would render a blank UI without knowing why.
-  readonly buildSnapshot: (workspaceId: WorkspaceId, sessionToken?: string) => Extract<WSOutbound, { type: 'snapshot' }> | null
-  // Drop sessions whose WS has been closed for more than SESSION_STALE_MS
-  // and remove the corresponding human agent from the team. Without this,
-  // every disconnected user accumulates a session entry forever (and an
-  // inactive human in team.listAgents()) until the Workspace is evicted.
-  // Returns the number of sessions dropped.
-  readonly sweepStaleSessions: (now?: number) => number
-  // Diagnostic surface — exposed via /api/system/diagnostics. Read-only.
-  // markWired(id) is called by wireWorkspaceRuntimeEvents on first call per Workspace
-  // so the diagnostics endpoint can report which Workspaces actually had
-  // their broadcast slots wired. lastBroadcastAt is the timestamp of the
-  // most recent broadcastToWorkspace call for that id (regardless of how
-  // many sessions received it).
-  readonly markWired: (workspaceId: WorkspaceId) => void
-  readonly isWired: (workspaceId: WorkspaceId) => boolean
-  readonly lastBroadcastAt: (workspaceId: WorkspaceId) => number | null
-  readonly sessionCount: () => number
-}
 
 // Resolver: given an workspaceId, return the live AgentsWorkspaceRuntime if currently in
 // memory, or undefined. WSManager uses this to scope buildSnapshot/state
@@ -262,8 +188,7 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
       // Skip live connections — their lastActivity is fresh anyway.
       if (wsConnections.has(token)) continue
       if (session.lastActivity > cutoff) continue
-      // v15+: WS sessions don't own an agent, so there's nothing to remove
-      // from the team. Just drop the session map entry.
+      // Viewer-session cleanup only removes transport state.
       void session
       sessions.delete(token)
       limitMetrics?.inc('staleSessionsEvicted')

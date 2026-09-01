@@ -1,4 +1,4 @@
-import type { AgentsWorkspaceRuntime } from '../../../main.ts'
+import type { AgentsWorkspaceRuntime } from '../../../workspace-runtime.ts'
 import type { Room } from '../../../core/types/room.ts'
 import type { Agent } from '../../../core/types/agent.ts'
 

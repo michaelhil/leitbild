@@ -1,5 +1,5 @@
-// System / orchestration events: Workspace reset lifecycle, packs/triggers/
-// providers config changes, summary config, errors. These mostly fan out
+// System / orchestration events: Packs, triggers, provider configuration,
+// summary configuration, and errors. These mostly fan out
 // via CustomEvents so independent panels can opt in without tight
 // coupling to this dispatcher.
 
@@ -62,24 +62,6 @@ export const systemHandlers: SystemHandlers = {
     // A trigger was created / updated / deleted on some agent. Open
     // triggers modals re-fetch their data.
     window.dispatchEvent(new CustomEvent('triggers-changed'))
-  },
-
-  reset_pending(msg) {
-    window.dispatchEvent(new CustomEvent('reset-pending', { detail: { commitsAtMs: msg.commitsAtMs } }))
-  },
-
-  reset_cancelled(_msg) {
-    window.dispatchEvent(new CustomEvent('reset-cancelled'))
-  },
-
-  reset_failed(msg) {
-    window.dispatchEvent(new CustomEvent('reset-failed', { detail: { reason: msg.reason } }))
-  },
-
-  reset_committed(msg) {
-    window.dispatchEvent(new CustomEvent('reset-committed', {
-      detail: { workspaceId: msg.workspaceId },
-    }))
   },
 
   summary_config_changed(_msg) {

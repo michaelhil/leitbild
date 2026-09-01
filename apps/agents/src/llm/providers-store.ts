@@ -10,8 +10,8 @@
 
 import { readFile, writeFile, rename, chmod, mkdir, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import type { CloudProviderName } from './providers-config.ts'
-import { PROVIDER_PROFILES, isLocal } from './providers-config.ts'
+import { PROVIDER_PROFILES, isLocal, type CloudProviderName } from './provider-catalog.ts'
+import { DEFAULT_MODEL_FALLBACK } from './models/catalog.ts'
 import { z } from 'zod'
 
 export const STORE_VERSION = 1
@@ -39,9 +39,16 @@ export interface ProvidersFileShape {
   // DEFAULT_PROVIDER_ORDER but is itself overridden by env PROVIDER_ORDER.
   // Unknown names ignored on load; missing names appended in default position.
   readonly order?: ReadonlyArray<string>
+  readonly defaults: {
+    readonly modelFallback: ReadonlyArray<string>
+  }
 }
 
-const EMPTY: ProvidersFileShape = { version: STORE_VERSION, providers: {} }
+const EMPTY: ProvidersFileShape = {
+  version: STORE_VERSION,
+  providers: {},
+  defaults: { modelFallback: DEFAULT_MODEL_FALLBACK },
+}
 
 const cloudEntrySchema = z.object({
   apiKey: z.string().optional(),
@@ -66,6 +73,9 @@ const providersFileSchema = z.object({
   version: z.literal(STORE_VERSION),
   providers: z.object(providerShape).strict(),
   order: z.array(z.string().min(1)).optional(),
+  defaults: z.object({
+    modelFallback: z.array(z.string().trim().min(1)),
+  }).strict(),
 }).strict()
 
 // === Load ===
@@ -83,8 +93,7 @@ export const loadProviderStore = async (path: string): Promise<LoadResult> => {
   } catch (err) {
     // Missing file is fine — return empty.
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { data: EMPTY, warnings }
-    warnings.push(`providers.json read failed: ${(err as Error).message}`)
-    return { data: EMPTY, warnings }
+    throw new Error(`Could not read ${path}`, { cause: err })
   }
 
   // Warn if file mode is wider than 0600 (group or world readable).
@@ -101,14 +110,12 @@ export const loadProviderStore = async (path: string): Promise<LoadResult> => {
 
   let parsed: unknown
   try { parsed = JSON.parse(raw) } catch (err) {
-    warnings.push(`providers.json is not valid JSON: ${(err as Error).message}`)
-    return { data: EMPTY, warnings }
+    throw new Error(`${path} is not valid JSON`, { cause: err })
   }
 
   const result = providersFileSchema.safeParse(parsed)
   if (!result.success) {
-    warnings.push('providers.json does not match the canonical schema — ignoring')
-    return { data: EMPTY, warnings }
+    throw new Error(`${path} does not match the canonical provider schema: ${result.error.message}`)
   }
   return { data: result.data as ProvidersFileShape, warnings }
 }
@@ -121,6 +128,30 @@ export const saveProviderStore = async (path: string, data: ProvidersFileShape):
   await writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf-8')
   try { await chmod(tmpPath, 0o600) } catch { /* best-effort */ }
   await rename(tmpPath, path)
+}
+
+export interface ProviderPolicyStore {
+  readonly getModelFallback: () => ReadonlyArray<string>
+  readonly setModelFallback: (chain: ReadonlyArray<string> | undefined) => Promise<void>
+}
+
+export const createProviderPolicyStore = (
+  path: string,
+  initial: ProvidersFileShape,
+): ProviderPolicyStore => {
+  let modelFallback = [...initial.defaults.modelFallback]
+  return {
+    getModelFallback: () => modelFallback,
+    setModelFallback: async (chain) => {
+      const { data } = await loadProviderStore(path)
+      const nextChain = chain ? [...chain] : []
+      await saveProviderStore(path, {
+        ...data,
+        defaults: { ...data.defaults, modelFallback: nextChain },
+      })
+      modelFallback = nextChain
+    },
+  }
 }
 
 // === Merge with env ===
@@ -153,12 +184,14 @@ export interface MergeOptions {
   readonly env?: Record<string, string | undefined>
 }
 
+export type ProviderMergeInput = Pick<ProvidersFileShape, 'version' | 'providers' | 'order'>
+
 // mergeWithEnv is the SINGLE source of truth for env-vs-stored precedence
 // for cloud-provider keys / maxConcurrent / baseUrl. parseProviderConfig
 // (providers-config.ts) consumes this output; it does NOT re-read those
 // env vars when given a fileStore.
 export const mergeWithEnv = (
-  store: ProvidersFileShape,
+  store: ProviderMergeInput,
   opts: MergeOptions = {},
 ): MergedProviders => {
   const env = opts.env ?? process.env

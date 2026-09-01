@@ -38,7 +38,8 @@ import type { SkillStore } from '../skills/loader.ts'
 import { parseProviderConfig } from '../llm/providers-config.ts'
 import { buildProvidersFromConfig } from '../llm/providers-setup.ts'
 import { createProviderKeys } from '../llm/provider-keys.ts'
-import { mergeWithEnv } from '../llm/providers-store.ts'
+import { mergeWithEnv, type ProviderPolicyStore } from '../llm/providers-store.ts'
+import { DEFAULT_MODEL_FALLBACK } from '../llm/models/catalog.ts'
 import { createToolRegistry } from './tool-registry.ts'
 import { createSkillStore } from '../skills/loader.ts'
 import { createLimitMetrics, type LimitMetrics } from './limit-metrics.ts'
@@ -69,22 +70,19 @@ export interface DeploymentRuntime {
   // Workspace reads from the same store, so installing a Pack makes its
   // skills available to other Workspaces without reloading them.
   readonly sharedSkillStore: SkillStore
-  // Cross-provider LLM policy (system default fallback chain). Loaded once
-  // at boot from ~/.leitbild/llm-policy.json, mutable through the UI at
-  // request time. Mutable because boot-vs-bootstrap construction order
-  // means we attach it after createDeploymentRuntime returns.
-  llmPolicyStore?: import('../llm/llm-policy-store.ts').PolicyStore
+  // Cross-provider behavior. Production injects the providers.json-backed
+  // implementation; focused runtimes use an isolated in-memory store.
+  readonly providerPolicy: ProviderPolicyStore
 }
 
 export interface CreateDeploymentRuntimeOptions {
   readonly providerConfig?: ProviderConfig
-  // TEST-ONLY: inject a pre-built setup (matches the previous
-  // CreateAgentsWorkspaceRuntimeOptions.providerSetup escape hatch). Production code
-  // does NOT pass this — bootstrap.ts goes through src/boot/provider-stack.ts
+  // TEST-ONLY: inject a pre-built setup. Production code goes through
+  // src/boot/provider-stack.ts
   // which constructs the setup once and passes it here together with
   // matching providerKeys. If you find yourself adding `providerSetup`
-  // outside a test, you're recreating the dual-path bug d0c1f73 fixed.
-  // The wiring contract is enforced by:
+  // outside a test, you are creating a second assembly path. The wiring
+  // contract is enforced by:
   //   - src/boot/validate.ts (checks providerKeys is on the System)
   //   - src/boot/bootstrap-e2e.test.ts (end-to-end boot path)
   readonly providerSetup?: ProviderSetupResult
@@ -100,6 +98,7 @@ export interface CreateDeploymentRuntimeOptions {
   // anthropic) was tried on every request → Helper got `[pass] LLM error:
   // anthropic auth error 401` on leitbild.app.
   readonly providerKeys?: ProviderKeys
+  readonly providerPolicy?: ProviderPolicyStore
 }
 
 export const createDeploymentRuntime = (
@@ -141,6 +140,7 @@ export const createDeploymentRuntime = (
   // codegen/pack admin tools. createAgentsWorkspaceRuntime then wraps this in an overlay.
   const sharedToolRegistry = createToolRegistry()
   const sharedSkillStore = createSkillStore()
+  let modelFallback = [...DEFAULT_MODEL_FALLBACK]
   return {
     providerConfig,
     providerKeys,
@@ -150,5 +150,9 @@ export const createDeploymentRuntime = (
     limitMetrics,
     sharedToolRegistry,
     sharedSkillStore,
+    providerPolicy: opts.providerPolicy ?? {
+      getModelFallback: () => modelFallback,
+      setModelFallback: async (chain) => { modelFallback = chain ? [...chain] : [] },
+    },
   }
 }

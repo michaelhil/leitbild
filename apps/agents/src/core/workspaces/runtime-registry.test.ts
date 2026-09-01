@@ -237,24 +237,6 @@ describe('WorkspaceRuntimeRegistry', () => {
     expect(await registry.exists(newWorkspaceId())).toBe(false)
   })
 
-  // --- Reset ---
-
-  it('resetWorkspaceState clears Module payloads while preserving provisioned membership', async () => {
-    const id = newWorkspaceId()
-    await provision(id)
-    const sys = await registry.getOrLoad(id)
-    sys.rooms.createRoomSafe({ name: 'reset-test', createdBy: 'system' })
-    await registry.evictOne(id)
-    expect(await registry.exists(id)).toBe(true)
-
-    await registry.resetWorkspaceState(id)
-    expect(await registry.exists(id)).toBe(true)
-
-    // Same id is now usable for a fresh empty RoomDirectory.
-    const sys2 = await registry.getOrLoad(id)
-    expect(sys2.rooms.listAllRooms().length).toBe(0)
-  })
-
   it('rejects loading an unprovisioned Workspace', async () => {
     await expect(registry.getOrLoad(newWorkspaceId())).rejects.toThrow('Agents Workspace not provisioned')
   })

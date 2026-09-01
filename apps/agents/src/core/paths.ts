@@ -42,7 +42,6 @@ const authoringRoot = (): string => join(leitbildHome(), 'authoring')
 export const sharedPaths = {
   root: (): string => leitbildHome(),
   providers: (): string => join(leitbildHome(), 'providers.json'),
-  llmPolicy: (): string => join(leitbildHome(), 'llm-policy.json'),
   packs: (): string => join(leitbildHome(), 'packs'),
   skills: (): string => join(authoringRoot(), 'skills'),
   scripts: (): string => join(authoringRoot(), 'scripts'),

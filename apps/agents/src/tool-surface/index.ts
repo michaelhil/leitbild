@@ -86,8 +86,8 @@ export const createToolSurface = (deps: CreateToolSurfaceDeps): ToolSurface => {
   // Family dispatcher names (geo_tools, fs, pack_admin, codegen_tools)
   // are universally excluded from the candidate set. THIS FILTER IS
   // LOAD-BEARING — it prevents projection-time duplicate-function
-  // declarations on Gemini (commit b0fe8d3 was the prior incident:
-  // synthesised geo_tools + stored geo_tools shared a name and the
+  // declarations on strict providers: synthesised geo_tools and stored
+  // geo_tools would otherwise share a name and the
   // request was rejected with HTTP 400 INVALID_ARGUMENT).
   //
   // Dispatcher registrations are execution infrastructure and never enter

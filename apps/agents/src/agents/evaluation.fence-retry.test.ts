@@ -1,4 +1,4 @@
-// Phase 3 retry-loop integration tests — drive evaluate() through a stub
+// Retry-loop integration tests — drive evaluate() through a stub
 // LLMProvider that returns a scripted sequence of responses, and assert the
 // retry behavior. We don't run a real provider; the stub records its calls
 // so we can verify (a) how many times the LLM was invoked, (b) what context

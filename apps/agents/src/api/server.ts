@@ -2,7 +2,7 @@ import { normalize, resolve } from 'node:path'
 import { workspaceIdSchema, type WorkspaceId } from '@leitbild/contracts'
 import type { WorkspaceRuntimeRegistry } from '../core/workspaces/runtime-registry.ts'
 import type { AgentsModuleState } from '../core/workspaces/module-state.ts'
-import type { WSManager } from './ws-handler.ts'
+import type { WSData, WSManager } from './ws-types.ts'
 import { DEFAULTS } from '../core/types/constants.ts'
 import {
   authEnabled,
@@ -14,7 +14,7 @@ import {
   validateToken,
 } from './auth.ts'
 import { handleAPI, handleUnscopedAPI } from './http-routes.ts'
-import { handleWSMessage, type WSData } from './ws-handler.ts'
+import { handleWSMessage } from './ws-handler.ts'
 import { getCaptureRegistry } from '../core/biometrics/registry.ts'
 import { createOpenAccessContext } from '../core/workspaces/request-context.ts'
 import { resolveApplicationApiPath } from './api-path.ts'
@@ -28,8 +28,6 @@ interface ServerConfig {
   readonly bindHost?: string
   readonly uiPath?: string
   readonly workspaceHostUrl?: string
-  readonly resetWorkspace: (workspaceId: WorkspaceId) => Promise<import('./routes/types.ts').ResetWorkspaceResult>
-  readonly evictWorkspace: (workspaceId: WorkspaceId) => Promise<import('./routes/types.ts').EvictWorkspaceResult>
   readonly diagnostics: import('./routes/types.ts').DiagnosticsCapability
 }
 
@@ -238,8 +236,6 @@ export const createServer = (config: ServerConfig) => {
           subscribeAgentState: wsManager.subscribeAgentState,
           unsubscribeAgentState: wsManager.unsubscribeAgentState,
           remoteAddress: bunServer.requestIP(request)?.address,
-          resetWorkspace: config.resetWorkspace,
-          evictWorkspace: config.evictWorkspace,
           broadcastToWorkspace: wsManager.broadcastToWorkspace,
           diagnostics: config.diagnostics,
         },

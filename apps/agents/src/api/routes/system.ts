@@ -1,9 +1,5 @@
 // ============================================================================
-// System-level admin routes — currently just shutdown.
-//
-// POST /system/shutdown triggers a graceful shutdown so a supervisor
-// (bun --watch, docker, systemd) can respawn with fresh env + providers.json.
-// Leitbild doesn't self-respawn; the user's orchestrator is responsible.
+// Process information, health, diagnostics, and authentication routes.
 // ============================================================================
 
 import { readFile } from 'node:fs/promises'
@@ -221,91 +217,4 @@ export const systemRoutes: RouteEntry[] = [
       })
     },
   },
-  {
-    method: 'POST',
-    pattern: /^\/system\/shutdown$/,
-    handler: async (_req, _match, _ctx) => {
-      // Schedule exit on the next tick so the response is flushed first.
-      // SIGTERM triggers the drain/snapshot-save shutdown handler in
-      // bootstrap.ts, reusing the existing graceful path.
-      setTimeout(() => {
-        try { process.kill(process.pid, 'SIGTERM') } catch { process.exit(0) }
-      }, 100)
-      return json({ shuttingDown: true, pid: process.pid })
-    },
-  },
-  {
-    // Per-Workspace reset — broadcasts a 10-second countdown to that
-    // Workspace's clients only. Cancellable via /reset/cancel during the
-    // window. Single-flight per Workspace.
-    method: 'POST',
-    pattern: /^\/system\/reset$/,
-    handler: async (_req, _match, ctx) => {
-      if (!ctx.resetWorkspace) return errorResponse('reset not supported in this mode', 501)
-      const id = ctx.workspaceId
-
-      if (resetTimers.has(id)) return errorResponse('reset already in progress', 409)
-      const commitsAtMs = Date.now() + RESET_COUNTDOWN_MS
-
-      // broadcastToWorkspace is always wired by HTTP-mode bootstrap. Headless
-      // / MCP mode never reaches this route. The previous `else ctx.broadcast`
-      // fallback would have leaked reset countdowns to every connected
-      // Workspace; deleted as unreachable + dangerous.
-      const sendToWorkspace = (msg: import('../../core/types/ws-protocol.ts').WSOutbound): void => {
-        ctx.broadcastToWorkspace?.(id, msg)
-      }
-
-      const timer = setTimeout(async () => {
-        const result = await ctx.resetWorkspace!(id)
-        if (!result.ok) {
-          sendToWorkspace({ type: 'reset_failed', reason: result.reason })
-          resetTimers.delete(id)
-          return
-        }
-        // The Host-owned Workspace remains; both Leitbild Module shards were
-        // reset and WS connections were closed by the eviction hook.
-        sendToWorkspace({ type: 'reset_committed', workspaceId: result.workspaceId })
-        resetTimers.delete(id)
-      }, RESET_COUNTDOWN_MS)
-      resetTimers.set(id, timer)
-
-      sendToWorkspace({ type: 'reset_pending', commitsAtMs })
-      console.log(`[reset] Workspace ${id}: initiated; commits at ${new Date(commitsAtMs).toISOString()}`)
-      return json({ resetting: true, commitsAtMs })
-    },
-  },
-  {
-    // Per-Workspace evict — drops the URL-scoped runtime from memory and
-    // leaves Module snapshots on disk. No countdown or broadcast: the WS close
-    // (handled by onWorkspaceRuntimeEvicted) is the user-visible signal, identical
-    // is the user-visible signal, identical to the idle-evict path.
-    method: 'POST',
-    pattern: /^\/system\/evict$/,
-    handler: async (_req, _match, ctx) => {
-      if (!ctx.evictWorkspace) return errorResponse('evict not supported in this mode', 501)
-      const result = await ctx.evictWorkspace(ctx.workspaceId)
-      if (!result.ok) return errorResponse(result.reason, 400)
-      return json({ evicted: true, workspaceId: result.workspaceId })
-    },
-  },
-  {
-    method: 'POST',
-    pattern: /^\/system\/reset\/cancel$/,
-    handler: async (_req, _match, ctx) => {
-      const id = ctx.workspaceId
-      const timer = resetTimers.get(id)
-      if (!timer) return errorResponse('no reset in progress', 404)
-      clearTimeout(timer)
-      resetTimers.delete(id)
-      const sendToWorkspace = (msg: import('../../core/types/ws-protocol.ts').WSOutbound): void => {
-        ctx.broadcastToWorkspace?.(id, msg)
-      }
-      sendToWorkspace({ type: 'reset_cancelled' })
-      return json({ cancelled: true })
-    },
-  },
 ]
-
-// --- Reset state — per URL-scoped Workspace ---
-const resetTimers = new Map<import('@leitbild/contracts').WorkspaceId, ReturnType<typeof setTimeout>>()
-const RESET_COUNTDOWN_MS = 10 * 1000

@@ -6,8 +6,7 @@ export const handleMessageCommand = (msg: WSInbound, ctx: CommandContext): boole
 
   switch (msg.type) {
     case 'post_message': {
-      // v15+: senderId is REQUIRED on post_message. The WS session no longer
-      // owns a default human agent; clients must name the actor explicitly.
+      // The WS session is a viewer; clients must name the human actor explicitly.
       // Validates: present, exists in this Workspace, is a human (AI agents
       // post via the eval path, not WS).
       if (!msg.senderId) {

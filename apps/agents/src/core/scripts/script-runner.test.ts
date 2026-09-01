@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { createAIAgent } from '../../agents/ai-agent.ts'
 import { createTeam } from '../../agents/team.ts'
-import type { AgentsWorkspaceRuntime } from '../../main.ts'
+import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
 import { createRoomDirectory } from '../rooms/directory.ts'
 import { createRoomOperations } from '../room-operations.ts'
 import type { TriggerScheduler } from '../triggers/scheduler.ts'

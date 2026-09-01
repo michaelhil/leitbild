@@ -72,7 +72,7 @@ const renderFallbackSection = async (container: HTMLElement): Promise<void> => {
 
   // Load current chain
   try {
-    const r = await apiFetch('/llm-policy/fallback')
+    const r = await apiFetch('/providers/fallback')
     if (r.ok) {
       const data = await r.json() as { chain: string[] }
       input.value = (data.chain ?? []).join(', ')
@@ -84,7 +84,7 @@ const renderFallbackSection = async (container: HTMLElement): Promise<void> => {
     saveBtn.disabled = true
     status.textContent = 'Saving…'
     try {
-      const r = await apiFetch('/llm-policy/fallback', {
+      const r = await apiFetch('/providers/fallback', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chain: value.length === 0 ? null : value }),
