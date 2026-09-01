@@ -30,6 +30,7 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       'waterTemperatureC',
       'steamTemperatureC',
       'heaterPowerMw',
+      'demandMw',
       'incoming electrical energized?',
       'sprayFlowKgPerS',
       'reliefValvePositionFraction',
@@ -52,6 +53,7 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       'waterTemperatureC',
       'steamTemperatureC',
       'reliefFlowKgPerS',
+      'demandMw',
     ],
     update: ({ system, component, context }): void => {
       const nominalPressure = parameterNumber(component, 'nominalPressureMPa')
@@ -68,6 +70,7 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       const heaterPower = componentHasElectricalPower(system, component, context)
         ? clamp(context.readNumber(componentVariablePath(component, 'heaterPowerMw')), 0, 50)
         : 0
+      context.write(componentVariablePath(component, 'demandMw'), heaterPower)
       const sprayFlow = clamp(context.readNumber(componentVariablePath(component, 'sprayFlowKgPerS')), 0, 500)
       const reliefValvePosition = clamp(context.readNumber(componentVariablePath(component, 'reliefValvePositionFraction')), 0, 1)
       const reliefValveFailureActive = context.readBoolean(componentVariablePath(component, 'reliefValveFailureActive'))

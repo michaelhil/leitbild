@@ -15,7 +15,7 @@ export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition>
     phase: 'solveFluidFlowComponents',
     componentKind: 'centrifugalPump',
     reads: ['running', 'speedFraction', 'incoming electrical energized?'],
-    writes: ['flowKgPerS', 'speedRpm'],
+    writes: ['flowKgPerS', 'speedRpm', 'demandMw'],
     update: ({ system, component, context }): void => {
       const running = context.readBoolean(componentVariablePath(component, 'running'))
         && componentHasElectricalPower(system, component, context)
@@ -28,7 +28,12 @@ export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition>
       const relaxedFlow = timeConstant > 0
         ? relaxToward(currentFlow, targetFlow, context.dtSeconds, timeConstant)
         : targetFlow
-      context.write(componentVariablePath(component, 'flowKgPerS'), approach(currentFlow, relaxedFlow, maxRamp * context.dtSeconds))
+      const flow = approach(currentFlow, relaxedFlow, maxRamp * context.dtSeconds)
+      context.write(componentVariablePath(component, 'flowKgPerS'), flow)
+      const head = running ? parameterNumber(component, 'nominalHeadPa') * speed * speed : 0
+      const density = optionalParameterNumber(component, 'fluidDensityKgPerM3', 800)
+      const efficiency = optionalParameterNumber(component, 'hydraulicEfficiencyFraction', 0.82)
+      context.write(componentVariablePath(component, 'demandMw'), running ? Math.max(0, flow * head / density / efficiency / 1_000_000) : 0)
     },
   },
   {
@@ -82,7 +87,7 @@ export const pumpInitialReconciliationDefinitions: ReadonlyArray<ComponentInitia
     id: 'centrifugal-pump-initial-state',
     componentKind: 'centrifugalPump',
     reads: ['running', 'speedFraction'],
-    writes: ['flowKgPerS', 'speedRpm', 'developedHeadPa', 'loopFlowTargetKgPerS', 'loopFlowKgPerS'],
+    writes: ['flowKgPerS', 'speedRpm', 'developedHeadPa', 'demandMw', 'loopFlowTargetKgPerS', 'loopFlowKgPerS'],
     reconcile: ({ system, component, context }): void => {
       const running = context.readBoolean(componentVariablePath(component, 'running'))
       const speed = clamp(context.readNumber(componentVariablePath(component, 'speedFraction')), 0, 1.2)
@@ -93,6 +98,9 @@ export const pumpInitialReconciliationDefinitions: ReadonlyArray<ComponentInitia
       context.write(componentVariablePath(component, 'flowKgPerS'), componentFlow)
       context.write(componentVariablePath(component, 'speedRpm'), running ? speed * optionalParameterNumber(component, 'nominalSpeedRpm', 3600) : 0)
       context.write(componentVariablePath(component, 'developedHeadPa'), developedHead)
+      context.write(componentVariablePath(component, 'demandMw'), running
+        ? componentFlow * developedHead / optionalParameterNumber(component, 'fluidDensityKgPerM3', 800) / optionalParameterNumber(component, 'hydraulicEfficiencyFraction', 0.82) / 1_000_000
+        : 0)
 
       const primaryLoopId = primaryLoopIdForPump(component)
       if (primaryLoopId === null) {

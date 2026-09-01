@@ -1,4 +1,5 @@
 import type { IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
+import { processPlantElectricalPortsAt } from './electrical-ports.ts'
 import type { PackObjectStatusTone } from '../../core/packs/protocol.ts'
 import type { ProcessPlantDisplayField } from './graph/index.ts'
 import {
@@ -93,6 +94,7 @@ export const projectedProcessPlantUnit = (config: {
   readonly object: OperationalObject
   readonly plant: ProcessPlantRuntimeInstance | undefined
   readonly at: IsoTimestamp
+  readonly connected?: boolean
 }): OperationalObject => {
   const parsed = processPlantUnitPackDataSchema.safeParse(config.object.packData)
   if (!parsed.success) return config.object
@@ -138,6 +140,7 @@ export const projectedProcessPlantUnit = (config: {
     },
     packData: {
       ...parsed.data,
+      electricalPorts: [...processPlantElectricalPortsAt({ plant, connected: config.connected ?? false, at: config.at })],
       projection,
     } satisfies ProcessPlantUnitPackData,
     timestamps: {
@@ -160,6 +163,10 @@ export const processPlantProjectionKey = (object: OperationalObject): string => 
               ...projection,
               updatedAt: '<ignored>',
             },
+        electricalPorts: parsed.data.electricalPorts.map(port => ({
+          ...port,
+          state: port.state === undefined ? undefined : { ...port.state, observedAt: '<ignored>' },
+        })),
       })
     : ''
 }

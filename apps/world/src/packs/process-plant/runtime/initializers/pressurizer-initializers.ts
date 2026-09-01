@@ -25,6 +25,7 @@ export const pressurizerInitialValueDefinitions: ReadonlyArray<ComponentInitialV
       if (localPath === 'waterTemperatureC') return optionalParameterNumber(component, 'initialWaterTemperatureC', 345)
       if (localPath === 'steamTemperatureC') return optionalParameterNumber(component, 'initialSteamTemperatureC', saturationTemperatureCFromPressureMPa(nominalPressure))
       if (localPath === 'heaterPowerMw') return 0
+      if (localPath === 'demandMw') return 0
       if (localPath === 'sprayFlowKgPerS') return 0
       if (localPath === 'reliefValvePositionFraction') return 0
       if (localPath === 'reliefValveFailureActive') return false

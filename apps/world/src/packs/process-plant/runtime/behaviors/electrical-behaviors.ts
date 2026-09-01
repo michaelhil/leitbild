@@ -114,7 +114,7 @@ const gridSourceBehavior: ComponentBehaviorDefinition = {
   id: 'electrical-grid-source',
   phase: 'solveElectrical',
   componentKind: 'electricalGridSource',
-  reads: ['available', 'voltageFraction'],
+  reads: ['available', 'voltageFraction', 'frequencyHz'],
   writes: ['energized', 'availablePowerMw', 'voltageFraction'],
   update: ({ component, context }): void => {
     const available = context.readBoolean(componentVariablePath(component, 'available'))

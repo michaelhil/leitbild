@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
   idSchema,
+  electricalPortDefinitionSchema,
   isoTimestampSchema,
   type IsoTimestamp,
   type OperationalObject,
@@ -41,6 +42,7 @@ export const processPlantUnitPackDataSchema = z.object({
   automation: processPlantAutomationSelectionSchema,
   clusterId: idSchema.optional(),
   coolingWater: z.string().min(1).optional(),
+  electricalPorts: z.array(electricalPortDefinitionSchema),
   projection: processPlantUnitProjectionSchema.optional(),
 }).strict()
 export type ProcessPlantUnitPackData = z.infer<typeof processPlantUnitPackDataSchema>

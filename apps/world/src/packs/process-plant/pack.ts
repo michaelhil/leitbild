@@ -18,6 +18,8 @@ import {
   processPlantPwrReferenceModelRef,
 } from './plant-definitions.ts'
 import { processPlantRecordingProfiles } from './recording.ts'
+import { compileProcessPlant } from './plant-compiler.ts'
+import { processPlantElectricalPortDefinitions } from './electrical-ports.ts'
 
 const unsupported = (operation: string): never => {
   throw new Error(`process-plant pack does not support ${operation}`)
@@ -55,12 +57,14 @@ const expandPlantObject = (spec: PackScenarioItemSpec, at: IsoTimestamp): Operat
   const model = processPlantModelSelectionSchema.parse(spec.model)
   const operatingPoint = processPlantOperatingPointSelectionSchema.parse(spec.operatingPoint)
   const automation = processPlantAutomationSelectionSchema.parse(spec.automation)
+  const compiledPlant = compileProcessPlant({ id: spec.id, model, operatingPoint, automation })
   const packData: ProcessPlantUnitPackData = {
     type: 'process-plant',
     schemaVersion: 1,
     model,
     operatingPoint,
     automation,
+    electricalPorts: [...processPlantElectricalPortDefinitions(compiledPlant)],
     ...optionalUnitData(spec, 'clusterId'),
     ...optionalUnitData(spec, 'coolingWater'),
     projection: emptyProcessPlantProjection(at),

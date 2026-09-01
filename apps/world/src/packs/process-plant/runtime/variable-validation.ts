@@ -27,7 +27,8 @@ export const assertProcessPlantValueWithinPhysicalBounds = (
   if (typeof value !== 'number') return
   const path = String(variable.path)
   const quantity = variable.descriptor.quantity
-  if (quantity === 'ratio' && variable.descriptor.unit === 'fraction' && (value < 0 || value > 1)) {
+  const hardRange = variable.descriptor.limits?.hardRange
+  if (quantity === 'ratio' && variable.descriptor.unit === 'fraction' && (hardRange?.max ?? 1) <= 1 && (value < 0 || value > 1)) {
     throw new Error(`process plant variable ${path} fraction value must be between 0 and 1`)
   }
   if (quantity === 'ratio' && variable.descriptor.unit === 'percent' && (value < 0 || value > 100)) {
@@ -44,7 +45,6 @@ export const assertProcessPlantValueWithinPhysicalBounds = (
   ) {
     throw new Error(`process plant variable ${path} ${quantity} value must be non-negative`)
   }
-  const hardRange = variable.descriptor.limits?.hardRange
   if (hardRange !== undefined && (value < hardRange.min || value > hardRange.max)) {
     throw new Error(`process plant variable ${path} value ${value} is outside hard range ${hardRange.min}..${hardRange.max}`)
   }

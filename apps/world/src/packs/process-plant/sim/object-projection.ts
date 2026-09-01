@@ -14,6 +14,7 @@ export const projectedInitialProcessPlantObjects = (config: {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
   readonly at: IsoTimestamp
+  readonly connectedPlantIds?: ReadonlySet<string>
 }): ReadonlyArray<OperationalObject> =>
   config.objects.map(object => {
     const plantId = processPlantIdForObject(object)
@@ -23,6 +24,7 @@ export const projectedInitialProcessPlantObjects = (config: {
           object,
           plant: config.plants.get(plantId),
           at: config.at,
+          connected: config.connectedPlantIds?.has(plantId) ?? false,
         })
   })
 
@@ -31,6 +33,7 @@ export const processPlantProjectionEvents = (config: {
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
   readonly at: IsoTimestamp
   readonly provenance: Provenance
+  readonly connectedPlantIds?: ReadonlySet<string>
 }): ReadonlyArray<PackRuntimeEvent> => {
   const events: PackRuntimeEvent[] = []
   for (const object of config.objectsById.values()) {
@@ -40,6 +43,7 @@ export const processPlantProjectionEvents = (config: {
       object,
       plant: config.plants.get(plantId),
       at: config.at,
+      connected: config.connectedPlantIds?.has(plantId) ?? false,
     })
     if (processPlantProjectionKey(object) === processPlantProjectionKey(next)) continue
     config.objectsById.set(next.id, next)

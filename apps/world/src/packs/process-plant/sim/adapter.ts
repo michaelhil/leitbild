@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, IsoTimestamp, PackRuntimeRecordingBatch, SimulationRunEvent, ObjectId, OperationalObject, SignalId, SimulationClockState } from '../../../core/model/index.ts'
-import { nowIso } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, ElectricalConnectionDefinition, IsoTimestamp, PackRuntimeRecordingBatch, SimulationRunEvent, ObjectId, OperationalObject, SignalId, SimulationClockState } from '../../../core/model/index.ts'
+import { electricalPortFromObject, nowIso } from '../../../core/model/index.ts'
 import type {
   PackRuntimeAdapter,
   PackRuntimeConnection,
@@ -40,8 +40,17 @@ import {
 } from './object-projection.ts'
 import { createProcessPlantRuntimePersistence } from './persistence.ts'
 import { createProcessPlantRuntimeInstances } from './runtime-instance-factory.ts'
+import { processPlantElectricalBoundaries } from '../electrical-ports.ts'
+import { componentVariablePath } from '../runtime/index.ts'
 
 const updateIntervalMs = 1_000
+const connectedPeerStaleAfterMs = 5_000
+
+const systemConnectionsFor = (
+  connections: ReadonlyArray<ElectricalConnectionDefinition>,
+  plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>,
+): ReadonlyArray<ElectricalConnectionDefinition> =>
+  connections.filter(connection => plants.has(connection.system.objectId))
 
 const processPlantDefinitionsFor = (
   objects: ReadonlyArray<OperationalObject>,
@@ -129,6 +138,38 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       compiledPlants,
       runtimeState,
     })
+    const systemConnections = systemConnectionsFor(config.scenario?.connections ?? [], plants)
+    const connectedPlantIds = new Set(systemConnections.map(connection => String(connection.system.objectId)))
+    const lastNetworkObservationWallMs = new Map<string, number>()
+    const networkAvailableByPlant = new Map<string, boolean>()
+
+    const queueNetworkState = (
+      connection: ElectricalConnectionDefinition,
+      state: { readonly connected: boolean; readonly energized: boolean; readonly voltagePu: number; readonly frequencyHz: number },
+    ): void => {
+      const plant = plants.get(connection.system.objectId)
+      if (!plant) return
+      const boundary = processPlantElectricalBoundaries(plant.plant)
+        .find(candidate => candidate.port.id === connection.system.portId)
+      if (!boundary) throw new Error(`process plant electrical boundary disappeared: ${connection.system.objectId}:${connection.system.portId}`)
+      const available = state.connected && state.energized
+      plant.runtime.writeCommand({ type: 'setVariable', path: componentVariablePath(boundary.component, 'available'), value: available })
+      plant.runtime.writeCommand({ type: 'setVariable', path: componentVariablePath(boundary.component, 'voltageFraction'), value: available ? state.voltagePu : 0 })
+      plant.runtime.writeCommand({ type: 'setVariable', path: componentVariablePath(boundary.component, 'frequencyHz'), value: available ? state.frequencyHz : 0 })
+      networkAvailableByPlant.set(String(connection.system.objectId), available)
+    }
+
+    const observeNetworkObjects = (objects: ReadonlyArray<OperationalObject>): void => {
+      const byId = new Map(objects.map(object => [object.id, object]))
+      for (const connection of systemConnections) {
+        const object = byId.get(connection.network.objectId)
+        if (!object) continue
+        const port = electricalPortFromObject(object, connection.network.portId)
+        if (!port?.state) throw new Error(`connected Grid port has no live state: ${connection.network.objectId}:${connection.network.portId}`)
+        queueNetworkState(connection, port.state)
+        lastNetworkObservationWallMs.set(String(connection.system.objectId), Date.now())
+      }
+    }
     const persistence = createProcessPlantRuntimePersistence({
       connection: config,
       plants,
@@ -154,6 +195,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         objects: initialObjects,
         plants,
         at: nowIso(),
+        connectedPlantIds,
       }).map(object => [object.id, object]),
     )
 
@@ -165,6 +207,13 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       const elapsedMs = clock.paused ? 0 : Math.round((nowWallMs - lastTickWallMs) * clock.speed)
       lastTickWallMs = nowWallMs
       if (elapsedMs <= 0 || plants.size === 0) return
+      for (const connection of systemConnections) {
+        const plantId = String(connection.system.objectId)
+        const observedAt = lastNetworkObservationWallMs.get(plantId)
+        if (observedAt !== undefined && Date.now() - observedAt > connectedPeerStaleAfterMs && networkAvailableByPlant.get(plantId) !== false) {
+          queueNetworkState(connection, { connected: false, energized: false, voltagePu: 0, frequencyHz: 0 })
+        }
+      }
       const events: PackRuntimeEvent[] = []
       for (const { runtime, ramps, protection, performance: runtimePerformance } of plants.values()) {
         const startedAt = performance.now()
@@ -185,6 +234,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         objectsById,
         plants,
         at: nowIso(),
+        connectedPlantIds,
         provenance: {
           source: 'simulator',
           adapterId: processPlantSimAdapterId,
@@ -381,6 +431,10 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           }
           if (event.type === 'object.deleted') objectsById.delete(event.objectId)
         }
+        observeNetworkObjects(events.flatMap(event => event.type === 'object.upserted' ? [event.object] : []))
+      },
+      observeInitialSnapshot: async (objects: ReadonlyArray<OperationalObject>): Promise<void> => {
+        observeNetworkObjects(objects)
       },
       setClock: async (nextClock: SimulationClockState): Promise<void> => {
         clock = nextClock

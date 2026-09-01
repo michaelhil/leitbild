@@ -8,6 +8,7 @@ export const electricalInitialValueDefinitions: ReadonlyArray<ComponentInitialVa
       const available = optionalParameterBoolean(component, 'initialAvailable', true)
       const voltageFraction = optionalParameterNumber(component, 'initialVoltageFraction', 1)
       if (localPath === 'available') return available
+      if (localPath === 'frequencyHz') return optionalParameterNumber(component, 'initialFrequencyHz', 50)
       if (localPath === 'energized') return available
       if (localPath === 'availablePowerMw') return available ? parameterNumber(component, 'nominalPowerMw') : 0
       if (localPath === 'voltageFraction') return available ? voltageFraction : 0

@@ -12,6 +12,7 @@ const unit = {
     model: { ref: 'process-plant.pwr-reference', parameters: {} },
     operatingPoint: { ref: 'process-plant.pwr-full-power' },
     automation: { ref: 'process-plant.pwr-reference' },
+    electricalPorts: [],
   },
 } as const
 

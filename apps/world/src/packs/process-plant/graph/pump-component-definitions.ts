@@ -24,6 +24,8 @@ export const pumpComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       coastdownTimeConstantS: z.number().finite().positive().optional(),
       loopResistanceCoefficient: z.number().finite().nonnegative().optional(),
       minimumNaturalCirculationFlowKgPerS: z.number().finite().nonnegative().optional(),
+      hydraulicEfficiencyFraction: z.number().finite().positive().max(1).optional(),
+      fluidDensityKgPerM3: z.number().finite().positive().optional(),
     }),
     variables: [
       variable({ path: 'running', label: 'Running', kind: 'discrete', discipline: 'control', writable: true, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),
@@ -31,6 +33,7 @@ export const pumpComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       variable({ path: 'speedRpm', label: 'Rotational speed', kind: 'derived', discipline: 'control', writable: false, publish: 'telemetry', quantity: 'rotationalSpeed', unit: 'rpm' }),
       variable({ path: 'flowKgPerS', label: 'Flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'developedHeadPa', label: 'Developed head', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'head', unit: 'Pa' }),
+      variable({ path: 'demandMw', label: 'Pump electrical demand', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
       variable({ path: 'loopFlowTargetKgPerS', label: 'Primary loop target flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'loopFlowKgPerS', label: 'Primary loop flow', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
     ],

@@ -2173,9 +2173,15 @@
       "kind": "electricalGridSource",
       "label": "Offsite Grid Source",
       "parameters": {
-        "nominalPowerMw": 1800,
+        "nominalPowerMw": 100,
         "initialAvailable": true,
-        "initialVoltageFraction": 1
+        "initialVoltageFraction": 1,
+        "initialFrequencyHz": 50,
+        "externalPortId": "grid-420kv",
+        "nominalVoltageKv": 420,
+        "maximumExportMw": 1100,
+        "maximumImportMw": 100,
+        "generatorInertiaSeconds": 6
       },
       "variables": [
         {
