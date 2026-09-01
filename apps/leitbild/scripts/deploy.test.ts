@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
-import { isProductionSourcePath, PRODUCTION_DEPENDENCY_WORKSPACE_PATHS } from './deploy.ts'
+import {
+  INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS,
+  isProductionSourcePath,
+  PRODUCTION_DEPENDENCY_WORKSPACE_PATHS,
+} from './deploy.ts'
 
 const workspaceRoot = resolve(import.meta.dir, '../../..')
 const productionAppPaths = ['apps/leitbild', 'apps/world', 'apps/agents'] as const
@@ -21,6 +25,10 @@ test('production artifact includes every local workspace dependency', async () =
       if (version.startsWith('workspace:')) expect(includedNames.has(dependency)).toBe(true)
     }
   }
+})
+
+test('production install includes manifests for development-only lockfile workspaces', () => {
+  expect(INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS).toEqual(['packages/integration-tests'])
 })
 
 test('production artifact excludes development-only files', () => {

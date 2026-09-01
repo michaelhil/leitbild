@@ -14,6 +14,9 @@ export const PRODUCTION_DEPENDENCY_WORKSPACE_PATHS = [
   'packages/contracts',
   'packages/module-runtime',
 ] as const
+export const INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS = [
+  'packages/integration-tests',
+] as const
 const PRODUCTION_DEPENDENCY_WORKSPACES = PRODUCTION_DEPENDENCY_WORKSPACE_PATHS.map(target => ({
   source: resolve(WORKSPACE_ROOT, target),
   target,
@@ -203,10 +206,21 @@ const createArtifact = async () => {
   const worldEntries = await entriesFor(WORLD_ROOT, 'apps/world', 'world', await directoryFiles(WORLD_ROOT, 'src/ui/dist'))
   const agentsEntries = await entriesFor(AGENTS_ROOT, 'apps/agents', 'agents', ['src/ui/dist.css'])
   const rootEntries: ArtifactEntry[] = ['package.json', 'bun.lock'].map(path => ({ source: join(WORKSPACE_ROOT, path), target: path }))
+  const installManifestEntries: ArtifactEntry[] = INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS.map(path => ({
+    source: join(WORKSPACE_ROOT, path, 'package.json'),
+    target: join(path, 'package.json'),
+  }))
   const dependencyPackageEntries = (await Promise.all(
     PRODUCTION_DEPENDENCY_WORKSPACES.map(workspace => entriesFor(workspace.source, workspace.target, 'package')),
   )).flat()
-  const entries = [...rootEntries, ...hostEntries, ...worldEntries, ...agentsEntries, ...dependencyPackageEntries]
+  const entries = [
+    ...rootEntries,
+    ...hostEntries,
+    ...worldEntries,
+    ...agentsEntries,
+    ...dependencyPackageEntries,
+    ...installManifestEntries,
+  ]
   const sourceDigest = await digestEntries(entries)
   const dependencyPackagesDigest = await digestEntries(dependencyPackageEntries)
   const createdAt = new Date().toISOString()
@@ -291,6 +305,7 @@ if test ! -d "$dep_dir/node_modules"; then
   cp "$incoming/apps/world/package.json" "$dep_tmp/apps/world/"
   cp "$incoming/apps/agents/package.json" "$dep_tmp/apps/agents/"
   ${PRODUCTION_DEPENDENCY_WORKSPACES.map(workspace => `cp -a "$incoming/${workspace.target}" "$dep_tmp/packages/"`).join('\n  ')}
+  ${INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS.map(path => `mkdir -p "$dep_tmp/${path}"; cp "$incoming/${path}/package.json" "$dep_tmp/${path}/"`).join('\n  ')}
   chown -R ${SERVICE_USER}:${SERVICE_USER} "$dep_tmp"
   sudo -u ${SERVICE_USER} sh -c 'cd "$1" && exec "$2" install --frozen-lockfile --production' sh "$dep_tmp" ${shellQuote(BUN_BIN)}
   mv "$dep_tmp" "$dep_dir"
