@@ -1,6 +1,7 @@
 import type {
   CommandEnvelope,
   CommandResult,
+  ElectricalConnectionDefinition,
   IsoTimestamp,
   ObjectId,
   OperationalObject,
@@ -9,7 +10,7 @@ import type {
   SimulationClockState,
   SimulationRunEvent,
 } from '../../../core/model/index.ts'
-import { nowIso } from '../../../core/model/index.ts'
+import { electricalPortFromObject, nowIso } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import type {
   PackRuntimeAdapter,
@@ -49,14 +50,21 @@ import { gridDefinitionSchema } from '../config.ts'
 import { electricGridPackDataSchema, electricGridPackId } from '../model.ts'
 import { answerElectricGridQuery, electricGridQueryOperations } from '../query.ts'
 import { createGridRecordingPlan } from '../recording.ts'
-import { createGridRuntimeInstance, type GridRuntimeInstance } from '../runtime/instance.ts'
+import { balanceInitialGridDispatch, createGridRuntimeInstance, type GridRuntimeInstance } from '../runtime/instance.ts'
 import { advanceGrid } from '../runtime/solver.ts'
-import { gridProjectionEvents, projectedInitialGridObjects } from './object-projection.ts'
+import { gridProjectionEvents, projectGridObject, projectedInitialGridObjects } from './object-projection.ts'
 import { createElectricGridRuntimePersistence } from './persistence.ts'
 import { electricGridRuntimeStateSchema, restoredGridRuntimeStateFor } from './runtime-state.ts'
 import { electricGridAdapterId, electricGridRuntimeId } from './constants.ts'
 
 const updateIntervalMs = 2_000
+const connectedPeerStaleAfterMs = 5_000
+
+const networkConnectionsFor = (
+  connections: ReadonlyArray<ElectricalConnectionDefinition>,
+  gridId: string,
+): ReadonlyArray<ElectricalConnectionDefinition> =>
+  connections.filter(connection => connection.network.objectId === gridId)
 
 const currentSimulationTime = (clock: SimulationClockState): IsoTimestamp => {
   if (clock.paused) return clock.currentTime
@@ -211,12 +219,15 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
     const runtimeState = rawState === undefined || rawState === null ? null : electricGridRuntimeStateSchema.parse(rawState)
     const initialAt = config.scenario?.world.startsAt ?? nowIso()
     const grids = new Map<string, GridRuntimeInstance>()
+    const initiallyBalancedGridIds = new Set<string>()
     for (const item of gridObjectDefinitions(initialObjects)) {
       const definition = compileGridDefinition(item.definition)
       const restored = restoredGridRuntimeStateFor(runtimeState, item.object.id, definition.definitionDigest)
+      if (restored !== undefined) initiallyBalancedGridIds.add(item.object.id)
       grids.set(item.object.id, createGridRuntimeInstance({
         definition,
         at: initialAt,
+        connections: networkConnectionsFor(config.scenario?.connections ?? [], item.object.id),
         ...(restored === undefined ? {} : { restored }),
       }))
     }
@@ -244,6 +255,40 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
     let lastSimulationMs = Date.parse(currentSimulationTime(clock))
     let closed = false
     let failure: string | null = null
+    const observedStartupConnections = new Set<string>()
+
+    const observeSystemObjects = (
+      objects: ReadonlyArray<OperationalObject>,
+      trackStartup: boolean,
+    ): void => {
+      const byId = new Map(objects.map(object => [object.id, object]))
+      for (const grid of grids.values()) {
+        for (const connection of grid.externalConnections.values()) {
+          const object = byId.get(connection.definition.system.objectId)
+          if (!object) continue
+          const port = electricalPortFromObject(object, connection.definition.system.portId)
+          if (!port?.state) throw new Error(`connected system port has no live state: ${connection.definition.system.objectId}:${connection.definition.system.portId}`)
+          connection.systemActivePowerMw = Math.max(
+            -connection.definition.maximumSystemImportMw,
+            Math.min(connection.definition.maximumSystemExportMw, port.state.activePowerMw),
+          )
+          connection.connected = port.state.connected && port.state.energized
+          connection.lastObservedWallMs = Date.now()
+          if (trackStartup) observedStartupConnections.add(`${grid.definition.gridId}\u0000${connection.definition.network.portId}`)
+        }
+      }
+    }
+
+    const balanceReadyStartingDispatch = (): void => {
+      for (const grid of grids.values()) {
+        if (initiallyBalancedGridIds.has(grid.definition.gridId)) continue
+        const allObserved = [...grid.externalConnections.values()].every(connection =>
+          observedStartupConnections.has(`${grid.definition.gridId}\u0000${connection.definition.network.portId}`))
+        if (!allObserved) continue
+        balanceInitialGridDispatch(grid)
+        initiallyBalancedGridIds.add(grid.definition.gridId)
+      }
+    }
 
     const rebuildRecordingPlan = (): void => {
       recordingPlan = recordingSelection === undefined || grids.size === 0
@@ -259,7 +304,15 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
       const simulationMs = Date.parse(at)
       const dtSeconds = Math.max(0, simulationMs - lastSimulationMs) / 1_000
       lastSimulationMs = simulationMs
-      for (const grid of grids.values()) advanceGrid(grid, dtSeconds, at)
+      for (const grid of grids.values()) {
+        for (const connection of grid.externalConnections.values()) {
+          if (connection.lastObservedWallMs !== null && Date.now() - connection.lastObservedWallMs > connectedPeerStaleAfterMs) {
+            connection.connected = false
+            connection.systemActivePowerMw = 0
+          }
+        }
+        advanceGrid(grid, dtSeconds, at)
+      }
       const events = gridProjectionEvents({
         objectsById,
         grids,
@@ -385,13 +438,30 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
           const definition = compileGridDefinition(gridDefinitionSchema.parse({ id: event.object.id, model: data.model, operatingPoint: data.operatingPoint, automation: data.automation }))
           const current = grids.get(event.object.id)
           if (!current || current.definition.definitionDigest !== definition.definitionDigest) {
-            const grid = createGridRuntimeInstance({ definition, at: event.at })
+            const grid = createGridRuntimeInstance({
+              definition,
+              at: event.at,
+              connections: networkConnectionsFor(config.scenario?.connections ?? [], event.object.id),
+            })
             advanceGrid(grid, 0, event.at)
             grids.set(event.object.id, grid)
             rebuildRecordingPlan()
           }
         }
+        observeSystemObjects(events.flatMap(event => event.type === 'object.upserted' ? [event.object] : []), true)
+        balanceReadyStartingDispatch()
         persistence.scheduleSave()
+      },
+      observeInitialSnapshot: async (objects: ReadonlyArray<OperationalObject>): Promise<void> => {
+        // The first combined snapshot can still contain a system waiting for its
+        // network boundary. Use it for live state, but only balance dispatch
+        // after every connection has published a committed runtime projection.
+        observeSystemObjects(objects, false)
+        for (const grid of grids.values()) {
+          advanceGrid(grid, 0, initialAt)
+          const object = objectsById.get(grid.definition.gridId as ObjectId)
+          if (object) objectsById.set(object.id, projectGridObject({ object, grid, at: initialAt }))
+        }
       },
       setClock: async (nextClock: SimulationClockState): Promise<void> => {
         clock = nextClock

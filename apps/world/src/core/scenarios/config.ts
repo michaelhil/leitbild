@@ -361,6 +361,9 @@ export const compileScenarioSource = async (
       }
     }
   }
+  // Connections describe the initial physical topology. Timeline expansion may
+  // create or delete later objects, but it must not rewrite that topology.
+  const connections = compileElectricalConnections(source.connections, objectMap)
   let timeline: ScenarioDefinition['timeline'] | undefined
   if (source.timeline) {
     const cues: ScenarioTimelineCue[] = []
@@ -384,8 +387,6 @@ export const compileScenarioSource = async (
     }
     timeline = { cues }
   }
-  const connections = compileElectricalConnections(source.connections, objectMap)
-
   return scenarioDefinitionSchema.parse({
     id: source.id,
     schemaVersion: 1,

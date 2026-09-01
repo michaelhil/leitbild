@@ -2171,7 +2171,7 @@
     {
       "id": "offsiteGrid",
       "kind": "electricalGridSource",
-      "label": "Offsite Grid Source",
+      "label": "420 kV Grid Interface",
       "parameters": {
         "nominalPowerMw": 100,
         "initialAvailable": true,

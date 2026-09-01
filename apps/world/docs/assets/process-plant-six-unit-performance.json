@@ -4,29 +4,29 @@
     "plantCount": 1,
     "componentCount": 86,
     "linkCount": 129,
-    "variableCount": 1137,
+    "variableCount": 1159,
     "simulatedMs": 300000,
-    "wallMs": 843.6357080000002,
+    "wallMs": 713.101083,
     "wallMsSamples": [
-      843.6357080000002,
-      735.459625,
-      886.1217919999999
+      879.3086250000001,
+      695.8009999999999,
+      713.101083
     ],
-    "realtimeFactor": 355.6037246351359
+    "realtimeFactor": 420.6977203539039
   },
   {
     "label": "six-plant",
     "plantCount": 6,
     "componentCount": 516,
     "linkCount": 774,
-    "variableCount": 6822,
+    "variableCount": 6954,
     "simulatedMs": 300000,
-    "wallMs": 4886.623458999999,
+    "wallMs": 4138.18975,
     "wallMsSamples": [
-      4923.490250000001,
-      4640.873917000001,
-      4886.623458999999
+      4179.299207999999,
+      4094.1360000000004,
+      4138.18975
     ],
-    "realtimeFactor": 61.39208443561808
+    "realtimeFactor": 72.49546737193481
   }
 ]

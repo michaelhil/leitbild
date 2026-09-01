@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { OperationalObject } from '../../core/model/index.ts'
+import { electricalPortDefinitionSchema } from '../../core/model/index.ts'
 import {
   gridAutomationSelectionSchema,
   gridModelSelectionSchema,
@@ -36,6 +37,7 @@ export const electricGridPackDataSchema = z.object({
   model: gridModelSelectionSchema,
   operatingPoint: gridOperatingPointSelectionSchema,
   automation: gridAutomationSelectionSchema,
+  electricalPorts: z.array(electricalPortDefinitionSchema),
   projection: gridProjectionSchema,
 }).strict()
 export type ElectricGridPackData = z.infer<typeof electricGridPackDataSchema>

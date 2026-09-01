@@ -173,7 +173,11 @@ describe('process plant discovery', () => {
 describe('built-in process plant scenarios', () => {
   test('compile Plants directly from Scenario Items with no Pack configuration shadow', () => {
     const builtIns = scenarios.filter(scenario => scenario.packs.includes('process-plant' as PackId))
-    expect(builtIns.map(scenario => scenario.id).sort()).toEqual(['halden-process-plant-demo', 'oslo-all-packs-demo'])
+    expect(builtIns.map(scenario => scenario.id).sort()).toEqual([
+      'halden-four-unit-grid',
+      'halden-process-plant-demo',
+      'oslo-all-packs-demo',
+    ])
 
     for (const scenario of builtIns) {
       expect(scenario.packConfigs['process-plant']).toEqual({})

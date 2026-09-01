@@ -358,15 +358,19 @@ export const answerElectricGridQuery = (config: {
     return ok(config.request, {
       gridId: payload.gridId,
       connectionPoints: grid.definition.model.connectionPoints.map(point => {
-        const loadState = grid.loads.get(point.assetId)
         const busState = grid.busStates.get(point.busId)
-        const currentMw = loadState?.servedMw ?? 0
+        const connection = grid.externalConnections.get(point.id)
         return {
           ...point,
-          currentMw,
-          availableMw: Math.max(0, point.maximumMw - currentMw),
+          system: connection === undefined ? null : {
+            objectId: connection.definition.system.objectId,
+            portId: connection.definition.system.portId,
+          },
+          systemActivePowerMw: connection?.systemActivePowerMw ?? 0,
+          connected: connection?.connected ?? false,
           energized: (busState?.voltagePu ?? 0) >= 0.8,
           voltagePu: busState?.voltagePu ?? 0,
+          frequencyHz: busState?.frequencyHz ?? grid.definition.model.nominalFrequencyHz,
         }
       }),
     })

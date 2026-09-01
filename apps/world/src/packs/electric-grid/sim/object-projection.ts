@@ -2,6 +2,7 @@ import type { IsoTimestamp, ObjectId, OperationalObject, Provenance } from '../.
 import type { PackRuntimeEvent, PackRuntimeEventHistory } from '../../../simulation/protocol.ts'
 import { electricGridPackDataSchema, gridIdForObject } from '../model.ts'
 import type { GridRuntimeInstance } from '../runtime/instance.ts'
+import { gridElectricalPortsAt } from '../electrical-ports.ts'
 
 const projectionKey = (grid: GridRuntimeInstance): string => {
   const value = grid.projection
@@ -42,7 +43,7 @@ export const projectGridObject = (config: {
       acknowledged: false,
     }],
     timestamps: { ...config.object.timestamps, updatedAt: config.at },
-    packData: { ...data, projection: config.grid.projection },
+    packData: { ...data, electricalPorts: [...gridElectricalPortsAt({ grid: config.grid, at: config.at })], projection: config.grid.projection },
   }
 }
 

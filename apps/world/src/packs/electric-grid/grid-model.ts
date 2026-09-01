@@ -90,10 +90,11 @@ export interface GridConnectionPointDefinition {
   readonly id: string
   readonly label: string
   readonly busId: string
-  readonly assetId: string
-  readonly role: 'supply' | 'demand' | 'bidirectional'
   readonly nominalKv: number
-  readonly maximumMw: number
+  /** Maximum power leaving the Grid through this point. */
+  readonly maximumExportMw: number
+  /** Maximum power entering the Grid through this point. */
+  readonly maximumImportMw: number
 }
 
 export interface GridModelDefinition {
@@ -153,6 +154,7 @@ export interface GridAutomationDefinition {
   readonly loadProfiles: boolean
   readonly storageFrequencyResponse: boolean
   readonly underFrequencyLoadShedding: boolean
+  readonly primaryFrequencyResponseMwPerHz: number
 }
 
 export interface CompiledGridDefinition {

@@ -129,9 +129,8 @@ describe('electric grid Pack', () => {
         packId: 'electric-grid',
         kind: 'electric-grid.connection-points.list',
         payload: { gridId: 'grid:norway' },
-      })).connectionPoints as ReadonlyArray<{ readonly assetId: string; readonly role: string }>
-      expect(connections.length).toBeGreaterThan(0)
-      expect(connections.every(connectionPoint => connectionPoint.assetId.startsWith('load:') && connectionPoint.role === 'demand')).toBe(true)
+      })).connectionPoints as ReadonlyArray<unknown>
+      expect(connections).toEqual([])
     } finally {
       await connection.close()
     }
@@ -227,7 +226,8 @@ describe('electric grid Pack', () => {
       generator.dispatchMw = 0
       generator.targetMw = 0
     }
-    advanceGrid(grid, 3_600, '2026-01-01T11:00:00.000Z' as IsoTimestamp)
+    advanceGrid(grid, 2, '2026-01-01T10:00:02.000Z' as IsoTimestamp)
+    advanceGrid(grid, 3_600, '2026-01-01T11:00:02.000Z' as IsoTimestamp)
     expect(grid.topologyPlan).toBe(firstPlan)
     expect(new Set([...grid.busStates.values()].map(state => state.islandId)).size).toBeGreaterThanOrEqual(grid.projection.activeIslandCount)
     expect(grid.projection.activeIslandCount).toBeGreaterThan(0)

@@ -37,12 +37,10 @@ export const gridFrequencyStep = (config: {
   readonly previousHz: number
   readonly generationMw: number
   readonly loadMw: number
-  readonly reserveMw: number
   readonly inertiaSeconds: number
   readonly dtSeconds: number
 }): number => {
-  const droopMw = clamp((config.nominalHz - config.previousHz) * 500, -config.reserveMw, config.reserveMw)
-  const imbalanceMw = config.generationMw + droopMw - config.loadMw
+  const imbalanceMw = config.generationMw - config.loadMw
   const equilibriumHz = config.nominalHz + clamp(imbalanceMw / Math.max(500, config.loadMw) * 2, -1.6, 0.6)
   const timeConstantSeconds = clamp(5 + config.inertiaSeconds / 100, 5, 20)
   const response = 1 - Math.exp(-Math.max(0, config.dtSeconds) / timeConstantSeconds)

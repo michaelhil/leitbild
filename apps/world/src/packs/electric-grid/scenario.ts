@@ -9,6 +9,9 @@ import {
 import { electricGridDefinitionCatalog } from './definition-refs.ts'
 import { electricGridPackId, emptyGridProjection, type ElectricGridPackData } from './model.ts'
 import { electricGridAdapterId } from './sim/constants.ts'
+import { compileGridDefinition } from './definitions.ts'
+import { gridDefinitionSchema } from './config.ts'
+import { gridElectricalPortDefinitions } from './electrical-ports.ts'
 
 const unsupported = (operation: string): never => {
   throw new Error(`electric-grid Pack does not support ${operation}`)
@@ -26,12 +29,16 @@ const expandGridObject = (spec: PackScenarioItemSpec, at: IsoTimestamp): Operati
   const model = gridModelSelectionSchema.parse(spec.model)
   const modelMetadata = electricGridDefinitionCatalog.models.find(candidate => candidate.id === model.ref)
   if (!modelMetadata) throw new Error(`unknown Grid Model: ${model.ref}`)
+  const operatingPoint = gridOperatingPointSelectionSchema.parse(spec.operatingPoint)
+  const automation = gridAutomationSelectionSchema.parse(spec.automation)
+  const compiledGrid = compileGridDefinition(gridDefinitionSchema.parse({ id: spec.id, model, operatingPoint, automation }))
   const packData: ElectricGridPackData = {
     type: 'electric-grid',
     schemaVersion: 1,
     model,
-    operatingPoint: gridOperatingPointSelectionSchema.parse(spec.operatingPoint),
-    automation: gridAutomationSelectionSchema.parse(spec.automation),
+    operatingPoint,
+    automation,
+    electricalPorts: [...gridElectricalPortDefinitions(compiledGrid)],
     projection: emptyGridProjection(at, modelMetadata.nominalFrequencyHz),
   }
   return {

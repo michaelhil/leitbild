@@ -8,6 +8,7 @@ import type {
   GridStorageDefinition,
 } from '../grid-model.ts'
 import type { GridProjection } from '../model.ts'
+import type { ElectricalConnectionDefinition } from '../../../core/model/index.ts'
 
 export interface GridBusState {
   readonly busId: string
@@ -99,11 +100,20 @@ export interface GridRuntimeInstance {
   readonly generators: Map<string, GridGeneratorState>
   readonly loads: Map<string, GridLoadState>
   readonly storage: Map<string, GridStorageState>
+  readonly externalConnections: Map<string, GridExternalConnectionState>
   busStates: Map<string, GridBusState>
   frequencyByIsland: Map<string, number>
   topologyPlan: GridTopologyPlan | null
   readonly diagnostics: GridRuntimeDiagnostics
   projection: GridProjection
+}
+
+export interface GridExternalConnectionState {
+  readonly definition: ElectricalConnectionDefinition
+  readonly busId: string
+  systemActivePowerMw: number
+  connected: boolean
+  lastObservedWallMs: number | null
 }
 
 export interface GridAssetSnapshot {
@@ -151,6 +161,7 @@ export const createGridRuntimeInstance = (config: {
   readonly definition: CompiledGridDefinition
   readonly at: string
   readonly restored?: RestoredGridRuntimeState
+  readonly connections?: ReadonlyArray<ElectricalConnectionDefinition>
 }): GridRuntimeInstance => {
   const targets = initialGenerationTargets(config.definition)
   const restoredBranches = new Map(config.restored?.branches.map(item => [item.id, item]))
@@ -205,6 +216,19 @@ export const createGridRuntimeInstance = (config: {
       state: 'idle',
     } satisfies GridStorageState]
   }))
+  const pointsById = new Map(config.definition.model.connectionPoints.map(point => [point.id, point]))
+  const externalConnections = new Map((config.connections ?? []).flatMap(connection => {
+    if (connection.network.objectId !== config.definition.gridId) return []
+    const point = pointsById.get(connection.network.portId)
+    if (!point) throw new Error(`Grid connection references unknown network port: ${connection.network.objectId}:${connection.network.portId}`)
+    return [[point.id, {
+      definition: connection,
+      busId: point.busId,
+      systemActivePowerMw: 0,
+      connected: false,
+      lastObservedWallMs: null,
+    } satisfies GridExternalConnectionState] as const]
+  }))
   return {
     definition: config.definition,
     elapsedMs: config.restored?.elapsedMs ?? 0,
@@ -213,6 +237,7 @@ export const createGridRuntimeInstance = (config: {
     generators,
     loads,
     storage,
+    externalConnections,
     busStates: new Map(),
     frequencyByIsland: new Map(config.restored?.frequencies.map(item => [item.islandId, item.frequencyHz])),
     topologyPlan: null,
@@ -245,6 +270,35 @@ export const createGridRuntimeInstance = (config: {
       tick: config.restored?.tick ?? 0,
       updatedAt: config.at,
     },
+  }
+}
+
+/** Balance the starting conventional dispatch after connected systems publish their initial exchange. */
+export const balanceInitialGridDispatch = (grid: GridRuntimeInstance): void => {
+  const demandByComponent = new Map<string, number>()
+  const externalByComponent = new Map<string, number>()
+  const dispatchByComponent = new Map<string, number>()
+  for (const load of grid.definition.model.loads) {
+    const component = grid.definition.index.staticComponentByBus.get(load.busId)!
+    demandByComponent.set(component, (demandByComponent.get(component) ?? 0) + grid.loads.get(load.id)!.demandMw)
+  }
+  for (const connection of grid.externalConnections.values()) {
+    if (!connection.connected) continue
+    const component = grid.definition.index.staticComponentByBus.get(connection.busId)!
+    externalByComponent.set(component, (externalByComponent.get(component) ?? 0) + connection.systemActivePowerMw)
+  }
+  for (const generator of grid.definition.model.generators) {
+    const component = grid.definition.index.staticComponentByBus.get(generator.busId)!
+    dispatchByComponent.set(component, (dispatchByComponent.get(component) ?? 0) + grid.generators.get(generator.id)!.dispatchMw)
+  }
+  for (const generator of grid.definition.model.generators) {
+    const component = grid.definition.index.staticComponentByBus.get(generator.busId)!
+    const current = dispatchByComponent.get(component) ?? 0
+    const required = Math.max(0, (demandByComponent.get(component) ?? 0) - (externalByComponent.get(component) ?? 0))
+    const factor = current <= 0 ? 0 : required / current
+    const state = grid.generators.get(generator.id)!
+    state.targetMw = Math.min(state.availableMw, state.targetMw * factor)
+    state.dispatchMw = Math.min(state.availableMw, state.dispatchMw * factor)
   }
 }
 
