@@ -29,20 +29,36 @@ describe('revisioned definition store', () => {
     })
   }
 
-  test('seeds only absent definitions and never overwrites an authored current revision', async () => {
+  test('refreshes untouched seeds and never overwrites an authored current revision', async () => {
     const definitions = await store()
     await definitions.seed([{ id: 'example', title: 'Example', value: 1 }])
-    const seeded = await definitions.currentRevision('example')
-    expect(seeded?.document.value).toBe(1)
+    const firstSeed = await definitions.currentRevision('example')
+    expect(firstSeed?.document.value).toBe(1)
+
+    await definitions.seed([{ id: 'example', title: 'Refreshed seed', value: 3 }])
+    const refreshedSeed = await definitions.currentRevision('example')
+    expect(refreshedSeed?.document.value).toBe(3)
+    expect((await definitions.get('example'))?.seedRevisionId).toBe(refreshedSeed?.id)
 
     const updated = await definitions.update(
       { id: 'example', title: 'Edited', value: 2 },
-      seeded!.id,
+      refreshedSeed!.id,
     )
-    await definitions.seed([{ id: 'example', title: 'Changed seed', value: 3 }])
+    await definitions.seed([{ id: 'example', title: 'Changed seed', value: 4 }])
 
     expect((await definitions.currentRevision('example'))?.id).toBe(updated.id)
     expect((await definitions.currentRevision('example'))?.document.value).toBe(2)
+    expect((await definitions.get('example'))?.seedRevisionId).not.toBe(updated.id)
+  })
+
+  test('does not claim or replace an authored definition that shares a seed id', async () => {
+    const definitions = await store()
+    const authored = await definitions.create({ id: 'example', title: 'Authored', value: 7 })
+    await definitions.seed([{ id: 'example', title: 'Seed', value: 1 }])
+
+    expect((await definitions.currentRevision('example'))?.id).toBe(authored.id)
+    expect((await definitions.currentRevision('example'))?.document.value).toBe(7)
+    expect((await definitions.get('example'))?.seedRevisionId).toBeUndefined()
   })
 
   test('retains immutable revisions and uses optimistic current-revision checks', async () => {

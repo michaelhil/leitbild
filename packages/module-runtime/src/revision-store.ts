@@ -12,6 +12,7 @@ const definitionRecordSchema = z.object({
   description: z.string().min(1).max(4096).optional(),
   category: z.string().min(1).max(128).optional(),
   currentRevisionId: revisionIdSchema,
+  seedRevisionId: revisionIdSchema.optional(),
   revisionIds: z.array(revisionIdSchema).min(1),
 }).strict()
 
@@ -27,6 +28,9 @@ const definitionIndexSchema = z.object({
     ids.add(definition.id)
     if (!definition.revisionIds.includes(definition.currentRevisionId)) {
       ctx.addIssue({ code: 'custom', path: ['definitions', definitionIndex, 'currentRevisionId'], message: 'current revision is absent from revision history' })
+    }
+    if (definition.seedRevisionId !== undefined && !definition.revisionIds.includes(definition.seedRevisionId)) {
+      ctx.addIssue({ code: 'custom', path: ['definitions', definitionIndex, 'seedRevisionId'], message: 'seed revision is absent from revision history' })
     }
   })
 })
@@ -170,12 +174,14 @@ export const createRevisionedDefinitionStore = <TDocument>(config: {
     metadata: DefinitionMetadata,
     revision: DefinitionRevision<TDocument>,
     previous?: DefinitionRecord,
+    seedRevisionId = previous?.seedRevisionId,
   ): DefinitionRecord => definitionRecordSchema.parse({
     id: metadata.id,
     title: metadata.title,
     ...(metadata.description === undefined ? {} : { description: metadata.description }),
     ...(metadata.category === undefined ? {} : { category: metadata.category }),
     currentRevisionId: revision.id,
+    ...(seedRevisionId === undefined ? {} : { seedRevisionId }),
     revisionIds: previous?.revisionIds.includes(revision.id)
       ? previous.revisionIds
       : [...(previous?.revisionIds ?? []), revision.id],
@@ -201,10 +207,22 @@ export const createRevisionedDefinitionStore = <TDocument>(config: {
       const records = new Map(index.definitions.map(record => [record.id, record]))
       for (const [documentIndex, document] of parsed.entries()) {
         const item = metadata[documentIndex]!
-        if (deleted.has(item.id) || records.has(item.id)) continue
+        if (deleted.has(item.id)) continue
         const revision = revisionFor(document)
+        const current = records.get(item.id)
+        if (current !== undefined && current.seedRevisionId === undefined) continue
         await writeRevision(revision)
-        records.set(item.id, recordFor(item, revision))
+        if (current === undefined || current.currentRevisionId === current.seedRevisionId) {
+          records.set(item.id, recordFor(item, revision, current, revision.id))
+          continue
+        }
+        records.set(item.id, definitionRecordSchema.parse({
+          ...current,
+          seedRevisionId: revision.id,
+          revisionIds: current.revisionIds.includes(revision.id)
+            ? current.revisionIds
+            : [...current.revisionIds, revision.id],
+        }))
       }
       await atomicWrite(indexPath, definitionIndexSchema.parse({
         workspaceId: config.workspaceId,
