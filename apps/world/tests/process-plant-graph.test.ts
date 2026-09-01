@@ -111,6 +111,44 @@ describe('process plant discovery', () => {
     expect(JSON.stringify(response.result)).not.toContain('sourcePath')
   })
 
+  test('links Plant specification components to their behavior and calculation source', () => {
+    const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:source-inspection' }))
+    const request: PackQueryRequest = {
+      packId: 'process-plant' as PackId,
+      kind: 'process-plant.artifact.read',
+      payload: { plantId: plant.id, artifact: 'authored-spec' },
+    }
+    const plants = new Map([[plant.id, { plant } as ProcessPlantRuntimeInstance]])
+    const response = answerProcessPlantQuery({ request, plants, at })
+
+    expect(response.ok).toBe(true)
+    if (!response.ok) throw new Error(response.reason)
+    const result = response.result as {
+      readonly components: ReadonlyArray<{
+        readonly id: string
+        readonly sourcePath: string | null
+        readonly sourceLinks: ReadonlyArray<{
+          readonly symbol: string
+          readonly targetPath: string
+          readonly targetLineIndex: number | null
+        }>
+      }>
+      readonly sourceFiles: ReadonlyArray<{ readonly path: string; readonly content: string }>
+    }
+    const core = result.components.find(component => component.id === 'core')
+    expect(core?.sourcePath).toBe('src/packs/process-plant/runtime/behaviors/reactor-behaviors.ts')
+    const kineticsLink = core?.sourceLinks.find(link => link.symbol === 'reactorKineticsPowerStep')
+    expect(kineticsLink).toMatchObject({
+      targetPath: 'src/packs/process-plant/runtime/physics.ts',
+    })
+    expect(kineticsLink?.targetLineIndex).toBeGreaterThanOrEqual(0)
+    expect(result.sourceFiles.find(file => file.path === core?.sourcePath)?.content)
+      .toContain('reactorKineticsPowerStep')
+    expect(result.sourceFiles.find(file => file.path === kineticsLink?.targetPath)?.content)
+      .toContain('export const reactorKineticsPowerStep')
+    expect(new Set(result.sourceFiles.map(file => file.path)).size).toBe(result.sourceFiles.length)
+  })
+
   test('validates procedure tags in one tolerant query', () => {
     const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:procedure-tags' }))
     const request: PackQueryRequest = {

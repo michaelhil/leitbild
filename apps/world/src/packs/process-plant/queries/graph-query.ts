@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { z } from 'zod'
 import type { IsoTimestamp } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
@@ -5,6 +6,7 @@ import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/pr
 import type { CompiledPlantGraph, ComponentId, ProcessPlantDisplayField } from '../graph/index.ts'
 import { plantGraphToMermaid } from '../graph/index.ts'
 import type { ProcessPlantVariableHandle } from '../runtime/variable-table.ts'
+import { processPlantComponentBehaviorSourcePathByKind } from '../runtime/behaviors/index.ts'
 import { compileProcessDisplay } from '../displays/compiler.ts'
 import { resolveProcessPlantDisplayDefinitionForGraph } from '../displays/catalog.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
@@ -20,6 +22,103 @@ interface ArtifactComponentView {
   readonly label: string
   readonly kind: string
   readonly shownOnOverview: boolean
+  readonly sourcePath: string | null
+  readonly sourceLinks: ReadonlyArray<ComponentSourceImportView>
+}
+
+interface ComponentSourceImportView {
+  readonly symbol: string
+  readonly importedName: string
+  readonly targetPath: string
+  readonly targetLineIndex: number | null
+}
+
+interface ArtifactSourceFileView {
+  readonly path: string
+  readonly content: string
+}
+
+const sourceRoot = new URL('../../../..', import.meta.url)
+const processPlantSourceRoot = new URL('src/packs/process-plant/', sourceRoot)
+const componentSourceCache = new Map<string, string>()
+const componentSourceImportCache = new Map<string, ReadonlyArray<ComponentSourceImportView>>()
+
+const sourceUrlFor = (sourcePath: string): URL => {
+  const url = new URL(sourcePath, sourceRoot)
+  if (!url.href.startsWith(processPlantSourceRoot.href)) {
+    throw new Error(`process plant source path leaves the Pack boundary: ${sourcePath}`)
+  }
+  return url
+}
+
+const sourceTextFor = (sourcePath: string): string => {
+  const existing = componentSourceCache.get(sourcePath)
+  if (existing !== undefined) return existing
+  const content = readFileSync(sourceUrlFor(sourcePath), 'utf8')
+  componentSourceCache.set(sourcePath, content)
+  return content
+}
+
+const importDeclarationPattern = /(?:^|\n)\s*import\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"]/g
+const identifierCharacters = /^[A-Za-z_$][A-Za-z0-9_$]*$/
+
+const relativeSourcePathFor = (url: URL): string | null => {
+  if (!url.href.startsWith(processPlantSourceRoot.href)) return null
+  return decodeURIComponent(url.href.slice(sourceRoot.href.length))
+}
+
+const resolveRelativeSourcePath = (sourcePath: string, importPath: string): string | null => {
+  if (!importPath.startsWith('.')) return null
+  const resolved = new URL(importPath, sourceUrlFor(sourcePath))
+  if (!resolved.pathname.endsWith('.ts')) resolved.pathname = `${resolved.pathname}.ts`
+  return relativeSourcePathFor(resolved)
+}
+
+const importedSymbolsFor = (importClause: string): ReadonlyArray<{ readonly symbol: string; readonly importedName: string }> => {
+  const namedImportBody = /\{([\s\S]*?)\}/.exec(importClause)?.[1]
+  if (namedImportBody === undefined) return []
+  return namedImportBody
+    .split(',')
+    .map(part => part.trim().replace(/^type\s+/, '').trim())
+    .filter(part => part.length > 0)
+    .flatMap(part => {
+      const [imported, alias] = part.split(/\s+as\s+/).map(value => value.trim())
+      if (!imported || !identifierCharacters.test(imported)) return []
+      const symbol = alias && identifierCharacters.test(alias) ? alias : imported
+      return [{ symbol, importedName: imported }]
+    })
+}
+
+const escapedIdentifier = (identifier: string): string => identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const definitionLineIndexFor = (content: string, exportedName: string): number | null => {
+  const pattern = new RegExp(`^\\s*export\\s+(?:const|function|interface|type|enum)\\s+${escapedIdentifier(exportedName)}\\b`)
+  const index = content.split(/\r\n|\r|\n/).findIndex(line => pattern.test(line))
+  return index < 0 ? null : index
+}
+
+const componentSourceImportsFor = (sourcePath: string): ReadonlyArray<ComponentSourceImportView> => {
+  const cached = componentSourceImportCache.get(sourcePath)
+  if (cached) return cached
+  const imports: ComponentSourceImportView[] = []
+  const seen = new Set<string>()
+  for (const match of sourceTextFor(sourcePath).matchAll(importDeclarationPattern)) {
+    const targetPath = resolveRelativeSourcePath(sourcePath, match[2] ?? '')
+    if (!targetPath) continue
+    const targetContent = sourceTextFor(targetPath)
+    for (const imported of importedSymbolsFor(match[1] ?? '')) {
+      const key = `${imported.symbol}:${targetPath}:${imported.importedName}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      imports.push({
+        ...imported,
+        targetPath,
+        targetLineIndex: definitionLineIndexFor(targetContent, imported.importedName),
+      })
+    }
+  }
+  componentSourceImportCache.set(sourcePath, imports)
+  return imports
 }
 
 const displayProfileReadQuerySchema = z.object({
@@ -75,12 +174,26 @@ const artifactComponents = (
   graph: CompiledPlantGraph,
   overviewComponentIds: ReadonlySet<ComponentId>,
 ): ReadonlyArray<ArtifactComponentView> => {
-  return graph.components.map(component => ({
-    id: component.id,
-    label: component.label,
-    kind: component.kind,
-    shownOnOverview: overviewComponentIds.has(component.id),
-  }))
+  return graph.components.map(component => {
+    const sourcePath = processPlantComponentBehaviorSourcePathByKind.get(component.kind) ?? null
+    return {
+      id: component.id,
+      label: component.label,
+      kind: component.kind,
+      shownOnOverview: overviewComponentIds.has(component.id),
+      sourcePath,
+      sourceLinks: sourcePath === null ? [] : componentSourceImportsFor(sourcePath),
+    }
+  })
+}
+
+const artifactSourceFiles = (components: ReadonlyArray<ArtifactComponentView>): ReadonlyArray<ArtifactSourceFileView> => {
+  const paths = new Set<string>()
+  for (const component of components) {
+    if (component.sourcePath !== null) paths.add(component.sourcePath)
+    for (const link of component.sourceLinks) paths.add(link.targetPath)
+  }
+  return [...paths].sort().map(path => ({ path, content: sourceTextFor(path) }))
 }
 
 const artifactView = (
@@ -97,6 +210,7 @@ const artifactView = (
       language: 'json',
       content: JSON.stringify(system.plant.sourceGraph, null, 2),
       components,
+      sourceFiles: artifactSourceFiles(components),
       metadata: artifactMetadata(system.plant.graph, overviewComponentIds),
     }
   }
@@ -107,6 +221,7 @@ const artifactView = (
     language: 'mermaid',
     content: plantGraphToMermaid(system.plant.graph, { highlightedComponentIds: overviewComponentIds }),
     components,
+    sourceFiles: artifactSourceFiles(components),
     metadata: artifactMetadata(system.plant.graph, overviewComponentIds),
   }
 }

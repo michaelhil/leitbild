@@ -1795,6 +1795,18 @@ body.rail-resizing {
   white-space: nowrap;
 }
 
+.process-artifact-component-row .source-icon {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.process-artifact-component-row .source-icon:hover {
+  color: var(--text);
+}
+
 .process-artifact-body pre .source-match {
   border-radius: 3px;
   color: #111827;
@@ -2217,6 +2229,136 @@ body.rail-resizing {
 .process-credibility-svg svg {
   display: block;
   max-width: none;
+}
+
+.process-component-source-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  display: grid;
+  place-items: center;
+  padding: 48px;
+  background: rgba(16, 24, 40, 0.12);
+}
+
+.process-imported-source-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 56px;
+  background: rgba(16, 24, 40, 0.18);
+}
+
+.process-component-source-modal {
+  width: min(760px, calc(100vw - 96px));
+  height: min(620px, calc(100vh - 96px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 24px 70px rgba(16, 24, 40, 0.34);
+}
+
+.process-component-source-modal header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel-strong) 82%, var(--panel));
+}
+
+.process-component-source-modal header > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.process-component-source-modal header strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-component-source-modal header span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-component-source-modal header button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.process-component-source-modal header button:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.process-component-source-modal pre {
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
+}
+
+.process-component-source-modal code {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+}
+
+.process-component-source-modal .source-link {
+  display: inline;
+  border: 0;
+  padding: 0 1px;
+  color: #1d4ed8;
+  background: color-mix(in srgb, #bfdbfe 58%, transparent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.process-component-source-modal .source-link:hover,
+.process-component-source-modal .source-link:focus-visible {
+  color: #1e40af;
+  background: #dbeafe;
+  outline: 1px solid #93c5fd;
+}
+
+.process-component-source-modal pre .active-line {
+  display: inline;
+  outline: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.process-imported-source-modal {
+  width: min(900px, calc(100vw - 112px));
+  height: min(680px, calc(100vh - 112px));
 }
 
 .procedure-backdrop {
