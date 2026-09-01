@@ -16,8 +16,7 @@
             64.7
           ],
           "model": {
-            "ref": "electric-grid.norway.transmission",
-            "parameters": {}
+            "ref": "electric-grid.norway.transmission"
           },
           "operatingPoint": {
             "ref": "electric-grid.norway.normal"
@@ -74,7 +73,7 @@
             "guidance": {
               "id": "grid-intro",
               "title": "Norway electric-grid operations",
-              "message": "Monitor frequency, branch loading, voltage health, generation dispatch, consumer supply, and EV charging. Select generators, lines, or loads in the rail to exercise accepted grid commands.",
+              "message": "Monitor frequency, branch loading, voltage health, generation dispatch, consumer supply, and EV charging. Open Grid operations from Tools, then use Assets to inspect and control substations, generators, lines, loads, and storage.",
               "objectIds": [
                 "grid:norway"
               ],

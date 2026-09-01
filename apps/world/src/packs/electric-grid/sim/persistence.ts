@@ -11,6 +11,7 @@ export interface ElectricGridRuntimePersistence {
 export const createElectricGridRuntimePersistence = (config: {
   readonly connection: PackRuntimeConnectionConfig
   readonly grids: ReadonlyMap<string, GridRuntimeInstance>
+  readonly onError?: (error: unknown) => void
 }): ElectricGridRuntimePersistence => {
   let dirty = false
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -29,8 +30,13 @@ export const createElectricGridRuntimePersistence = (config: {
       await config.connection.runtimeStateStore?.save(state)
     }
     const current = save()
-    saveQueue = current.catch(error => { void error })
-    await current
+    saveQueue = current.catch(() => undefined)
+    try {
+      await current
+    } catch (error) {
+      config.onError?.(error)
+      throw error
+    }
   }
   const saveNow = async (): Promise<void> => {
     clearTimer()
@@ -45,7 +51,9 @@ export const createElectricGridRuntimePersistence = (config: {
       timer = null
       if (!dirty) return
       dirty = false
-      void queueSave().catch(error => console.error('electric-grid runtime state save failed:', error))
+      void queueSave().catch(error => {
+        console.error('electric-grid runtime state save failed:', error)
+      })
     }, defaultSimulationRunRuntimePolicy.runtimePrivateStateFlushIntervalMs)
     timer.unref?.()
   }

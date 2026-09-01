@@ -1,4 +1,12 @@
-import type { CompiledGridDefinition, GridAssetKind, GridBranchDefinition, GridBusDefinition, GridGeneratorDefinition, GridLoadDefinition, GridStorageDefinition } from '../grid-model.ts'
+import type {
+  CompiledGridDefinition,
+  GridAssetDefinition,
+  GridAssetKind,
+  GridBranchDefinition,
+  GridGeneratorDefinition,
+  GridLoadDefinition,
+  GridStorageDefinition,
+} from '../grid-model.ts'
 import type { GridProjection } from '../model.ts'
 
 export interface GridBusState {
@@ -11,7 +19,7 @@ export interface GridBusState {
 }
 
 export interface GridBranchState {
-  state: 'closed' | 'open' | 'faulted' | 'derated'
+  state: 'closed' | 'open'
   availability: number
   flowMw: number
   loadingPercent: number
@@ -22,7 +30,7 @@ export interface GridBranchState {
 }
 
 export interface GridGeneratorState {
-  state: 'online' | 'offline' | 'tripped' | 'derated'
+  state: 'online' | 'offline' | 'tripped'
   availableMw: number
   dispatchMw: number
   targetMw: number
@@ -52,6 +60,10 @@ export interface GridTopologyIsland {
   readonly id: string
   readonly buses: ReadonlyArray<string>
   readonly busSet: ReadonlySet<string>
+  readonly branches: ReadonlyArray<GridBranchDefinition>
+  readonly generators: ReadonlyArray<GridGeneratorDefinition>
+  readonly loads: ReadonlyArray<GridLoadDefinition>
+  readonly storage: ReadonlyArray<GridStorageDefinition>
 }
 
 export interface GridLinearFactor {
@@ -67,6 +79,18 @@ export interface GridTopologyPlan {
   readonly factors: ReadonlyMap<string, GridLinearFactor>
 }
 
+export interface GridRuntimeDiagnostics {
+  lastSuccessfulTickAt: string | null
+  lastTickDurationMs: number
+  maximumTickDurationMs: number
+  topologyRebuildCount: number
+  lastTopologyRebuildDurationMs: number
+  queryCount: number
+  lastQueryDurationMs: number
+  persistenceFailureCount: number
+  lastPersistenceFailure: string | null
+}
+
 export interface GridRuntimeInstance {
   readonly definition: CompiledGridDefinition
   elapsedMs: number
@@ -78,6 +102,7 @@ export interface GridRuntimeInstance {
   busStates: Map<string, GridBusState>
   frequencyByIsland: Map<string, number>
   topologyPlan: GridTopologyPlan | null
+  readonly diagnostics: GridRuntimeDiagnostics
   projection: GridProjection
 }
 
@@ -85,7 +110,7 @@ export interface GridAssetSnapshot {
   readonly id: string
   readonly label: string
   readonly kind: GridAssetKind
-  readonly definition: GridBusDefinition | GridBranchDefinition | GridGeneratorDefinition | GridLoadDefinition | GridStorageDefinition
+  readonly definition: GridAssetDefinition
   readonly state?: GridBusState | GridBranchState | GridGeneratorState | GridLoadState | GridStorageState
 }
 
@@ -102,41 +127,23 @@ export interface RestoredGridRuntimeState {
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value))
 
 const initialGenerationTargets = (definition: CompiledGridDefinition): Map<string, number> => {
-  const adjacency = new Map(definition.model.buses.map(bus => [bus.id, new Set<string>()]))
-  for (const branch of definition.model.branches) {
-    adjacency.get(branch.fromBusId)?.add(branch.toBusId)
-    adjacency.get(branch.toBusId)?.add(branch.fromBusId)
-  }
-  const componentByBus = new Map<string, string>()
-  for (const bus of definition.model.buses) {
-    if (componentByBus.has(bus.id)) continue
-    const componentId = bus.id
-    const queue = [bus.id]
-    componentByBus.set(bus.id, componentId)
-    while (queue.length > 0) {
-      const current = queue.shift()!
-      for (const next of adjacency.get(current) ?? []) {
-        if (componentByBus.has(next)) continue
-        componentByBus.set(next, componentId)
-        queue.push(next)
-      }
-    }
-  }
   const loadByComponent = new Map<string, number>()
   const availableByComponent = new Map<string, number>()
   for (const load of definition.model.loads) {
-    const componentId = componentByBus.get(load.busId)!
-    loadByComponent.set(componentId, (loadByComponent.get(componentId) ?? 0) + load.demandMw * definition.operatingPoint.loadScale * definition.operatingPoint.generationScale)
+    const componentId = definition.index.staticComponentByBus.get(load.busId)!
+    loadByComponent.set(componentId, (loadByComponent.get(componentId) ?? 0) + load.demandMw * definition.operatingPoint.loadScale)
   }
   for (const generator of definition.model.generators) {
-    const componentId = componentByBus.get(generator.busId)!
-    availableByComponent.set(componentId, (availableByComponent.get(componentId) ?? 0) + generator.availableMw)
+    const componentId = definition.index.staticComponentByBus.get(generator.busId)!
+    const availableMw = Math.min(generator.capacityMw, generator.availableMw * definition.operatingPoint.generationAvailabilityScale)
+    availableByComponent.set(componentId, (availableByComponent.get(componentId) ?? 0) + availableMw)
   }
   return new Map(definition.model.generators.map(generator => {
-    const componentId = componentByBus.get(generator.busId)!
+    const componentId = definition.index.staticComponentByBus.get(generator.busId)!
     const demandMw = loadByComponent.get(componentId) ?? 0
     const availableMw = availableByComponent.get(componentId) ?? 0
-    return [generator.id, availableMw <= 0 ? 0 : Math.min(generator.availableMw, demandMw * generator.availableMw / availableMw)]
+    const generatorAvailableMw = Math.min(generator.capacityMw, generator.availableMw * definition.operatingPoint.generationAvailabilityScale)
+    return [generator.id, availableMw <= 0 ? 0 : Math.min(generatorAvailableMw, demandMw * generatorAvailableMw / availableMw)]
   }))
 }
 
@@ -166,9 +173,10 @@ export const createGridRuntimeInstance = (config: {
   const generators = new Map(config.definition.model.generators.map(generator => {
     const restored = restoredGenerators.get(generator.id)
     const targetMw = restored?.targetMw ?? targets.get(generator.id) ?? 0
+    const initialAvailableMw = generator.availableMw * config.definition.operatingPoint.generationAvailabilityScale
     return [generator.id, {
       state: restored?.state ?? 'online',
-      availableMw: clamp(restored?.availableMw ?? generator.availableMw, 0, generator.capacityMw),
+      availableMw: clamp(restored?.availableMw ?? initialAvailableMw, 0, generator.capacityMw),
       dispatchMw: clamp(restored?.dispatchMw ?? targetMw, 0, generator.capacityMw),
       targetMw: clamp(targetMw, 0, generator.capacityMw),
       reserveMw: generator.reserveMw,
@@ -208,6 +216,17 @@ export const createGridRuntimeInstance = (config: {
     busStates: new Map(),
     frequencyByIsland: new Map(config.restored?.frequencies.map(item => [item.islandId, item.frequencyHz])),
     topologyPlan: null,
+    diagnostics: {
+      lastSuccessfulTickAt: null,
+      lastTickDurationMs: 0,
+      maximumTickDurationMs: 0,
+      topologyRebuildCount: 0,
+      lastTopologyRebuildDurationMs: 0,
+      queryCount: 0,
+      lastQueryDurationMs: 0,
+      persistenceFailureCount: 0,
+      lastPersistenceFailure: null,
+    },
     projection: {
       statusTone: 'idle',
       statusLabel: 'Initializing',
@@ -229,10 +248,23 @@ export const createGridRuntimeInstance = (config: {
   }
 }
 
-export const gridAssetSnapshots = (grid: GridRuntimeInstance): ReadonlyArray<GridAssetSnapshot> => [
-  ...grid.definition.model.buses.map(definition => ({ id: definition.id, label: definition.label, kind: 'bus' as const, definition, ...(grid.busStates.get(definition.id) === undefined ? {} : { state: grid.busStates.get(definition.id)! }) })),
-  ...grid.definition.model.branches.map(definition => ({ id: definition.id, label: definition.label, kind: 'branch' as const, definition, state: grid.branches.get(definition.id)! })),
-  ...grid.definition.model.generators.map(definition => ({ id: definition.id, label: definition.label, kind: 'generator' as const, definition, state: grid.generators.get(definition.id)! })),
-  ...grid.definition.model.loads.map(definition => ({ id: definition.id, label: definition.label, kind: 'load' as const, definition, state: grid.loads.get(definition.id)! })),
-  ...grid.definition.model.storage.map(definition => ({ id: definition.id, label: definition.label, kind: 'storage' as const, definition, state: grid.storage.get(definition.id)! })),
-]
+export const gridAssetSnapshotFor = (grid: GridRuntimeInstance, assetId: string): GridAssetSnapshot | undefined => {
+  const entry = grid.definition.index.assetById.get(assetId)
+  if (!entry) return undefined
+  const state = entry.kind === 'bus'
+    ? grid.busStates.get(entry.id)
+    : entry.kind === 'branch'
+      ? grid.branches.get(entry.id)
+      : entry.kind === 'generator'
+        ? grid.generators.get(entry.id)
+        : entry.kind === 'load'
+          ? grid.loads.get(entry.id)
+          : grid.storage.get(entry.id)
+  return {
+    ...entry,
+    ...(state === undefined ? {} : { state }),
+  }
+}
+
+export const gridAssetSnapshots = (grid: GridRuntimeInstance): ReadonlyArray<GridAssetSnapshot> =>
+  grid.definition.index.assets.map(entry => gridAssetSnapshotFor(grid, entry.id)!)

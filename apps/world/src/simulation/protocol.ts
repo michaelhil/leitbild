@@ -87,6 +87,7 @@ export interface PackRuntimeOperationDescriptor {
   readonly title: string
   readonly description: string
   readonly inputSchema?: Readonly<Record<string, unknown>>
+  readonly outputSchema?: Readonly<Record<string, unknown>>
 }
 
 export interface PackRuntimeAdapter {

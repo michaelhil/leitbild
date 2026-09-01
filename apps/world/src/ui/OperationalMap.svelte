@@ -33,6 +33,7 @@
   } from './map-runtime/map-performance-diagnostics.ts'
   import type {
     MapRuntimeDiagnosticsSnapshot,
+    MapFocusRequest,
     MapRuntimeHandle,
   } from './map-runtime/types.ts'
 
@@ -70,6 +71,7 @@
     readonly referenceDatasetIds?: ReadonlyArray<string>
     readonly packAreaFeatureLayers?: ReadonlyArray<SurfaceMapLayer>
     readonly packAreaFeatureSourcePackIds?: ReadonlyArray<string>
+    readonly focusRequest?: MapFocusRequest | null
   }
 
   const {
@@ -101,6 +103,7 @@
     referenceDatasetIds = [],
     packAreaFeatureLayers = [],
     packAreaFeatureSourcePackIds = [],
+    focusRequest = null,
   }: Props = $props()
 
   let mapElement = $state<HTMLDivElement | null>(null)
@@ -110,6 +113,7 @@
   let cachedPackMapAreaFeatures = $state<ReadonlyArray<PackMapAreaFeature>>([])
   let appliedTheme: ThemeMode | null = null
   let appliedCameraKey: string | null = null
+  let appliedFocusRevision = -1
   let mapReadyNotified = false
 
   const createNoopMapInputDebugController = (): MapInputDebugController => ({
@@ -193,6 +197,21 @@
     const [lon, lat] = config.center.coordinates
     return `${lon}:${lat}:${config.zoom}`
   }
+
+  $effect(() => {
+    const request = focusRequest
+    const current = runtime?.map
+    if (!request || !current || request.revision === appliedFocusRevision) return
+    appliedFocusRevision = request.revision
+    if (request.target.kind === 'point') {
+      current.flyTo({ center: [request.target.center[0], request.target.center[1]], zoom: Math.max(current.getZoom(), 9), duration: 650 })
+      return
+    }
+    current.fitBounds(
+      [[request.target.bounds[0][0], request.target.bounds[0][1]], [request.target.bounds[1][0], request.target.bounds[1][1]]],
+      { padding: 80, maxZoom: 10, duration: 650 },
+    )
+  })
 
   const currentDisplayTime = (): IsoTimestamp | undefined =>
     simulationTimeAt(clock)

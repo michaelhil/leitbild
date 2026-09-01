@@ -8,6 +8,7 @@ import type {
   PackQueryRequest,
   PackTargetContext,
   PackTargetingContribution,
+  PackSurfacePanelContribution,
   WorldPack,
 } from './protocol.ts'
 
@@ -19,6 +20,7 @@ export interface ActivePackViews {
   readonly targeting?: PackTargetingContribution
   readonly referenceDatasetIds: ReadonlyArray<string>
   readonly mapAreaFeatureSourcePackIds: ReadonlyArray<string>
+  readonly surfacePanels: ReadonlyArray<PackSurfacePanelContribution>
   readonly packForObject: (object: OperationalObject) => WorldPack
   readonly defaultRuntimeIdFor: (packId: string) => string | undefined
 }
@@ -65,6 +67,8 @@ export const createActivePackViews = (packs: ReadonlyArray<WorldPack>): ActivePa
   }))]
   const mapLayerGroups = packs.flatMap(pack => pack.presentation.mapLayerGroups ?? [])
   assertUniqueIds(mapLayerGroups, 'map layer group')
+  const surfacePanels = packs.flatMap(pack => pack.ui?.surfacePanels ?? [])
+  assertUniqueIds(surfacePanels, 'surface panel')
 
   const referenceDatasetIds = [...new Set(packs.flatMap(pack => pack.referenceData?.datasetIds.map(String) ?? []))]
   const hasTargeting = packs.some(pack => pack.targeting !== undefined)
@@ -154,6 +158,7 @@ export const createActivePackViews = (packs: ReadonlyArray<WorldPack>): ActivePa
       : {}),
     referenceDatasetIds,
     mapAreaFeatureSourcePackIds,
+    surfacePanels,
     packForObject: ownerForObject,
     defaultRuntimeIdFor: packId => packsById.get(packId)?.runtime?.defaultRuntimeId,
   }

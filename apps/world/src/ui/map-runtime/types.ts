@@ -24,6 +24,15 @@ export type ColorRgba = readonly [number, number, number, number]
 export type Position2 = readonly [number, number]
 export type Position3 = readonly [number, number, number]
 
+export type MapFocusTarget =
+  | { readonly kind: 'point'; readonly center: Position2 }
+  | { readonly kind: 'bounds'; readonly bounds: readonly [Position2, Position2] }
+
+export interface MapFocusRequest {
+  readonly revision: number
+  readonly target: MapFocusTarget
+}
+
 export interface OperationalPointFeature {
   readonly id: string
   readonly object: OperationalObject

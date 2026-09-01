@@ -28,8 +28,11 @@ export const electricGridPack: WorldPack = {
       description: 'A map-visible Grid backed by a selected model, operating point, and automation definition.',
       idPrefix: 'grid',
       defaultItem: {
-        model: { ref: norwayGridModelRef, parameters: {} },
-        operatingPoint: { ref: norwayNormalOperatingPointRef },
+        model: { ref: norwayGridModelRef },
+        operatingPoint: {
+          ref: norwayNormalOperatingPointRef,
+          overrides: { loadScale: 1.03, generationAvailabilityScale: 1, storageStateOfCharge: 0.58 },
+        },
         automation: { ref: norwayStandardAutomationRef },
       },
       placement: { target: 'item', path: ['location'] },
@@ -42,6 +45,15 @@ export const electricGridPack: WorldPack = {
       }, {
         target: 'item', path: ['automation', 'ref'], label: 'Automation',
         control: { kind: 'select', defaultValue: norwayStandardAutomationRef, options: electricGridDefinitionCatalog.automations.map(automation => ({ value: automation.id, label: automation.title })) },
+      }, {
+        target: 'item', path: ['operatingPoint', 'overrides', 'loadScale'], label: 'Load scale',
+        control: { kind: 'number', defaultValue: 1.03, min: 0.01, step: 0.01 },
+      }, {
+        target: 'item', path: ['operatingPoint', 'overrides', 'generationAvailabilityScale'], label: 'Generation availability scale',
+        control: { kind: 'number', defaultValue: 1, min: 0, step: 0.01 },
+      }, {
+        target: 'item', path: ['operatingPoint', 'overrides', 'storageStateOfCharge'], label: 'Initial storage charge',
+        control: { kind: 'number', defaultValue: 0.58, min: 0, max: 1, step: 0.01 },
       }],
     }],
   },

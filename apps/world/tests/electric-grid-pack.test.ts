@@ -5,10 +5,12 @@ import { createScenarioCatalog } from '../src/core/scenarios/catalog.ts'
 import {
   gridDerateBranchCommandKind,
   gridDispatchGeneratorCommandKind,
+  gridReturnGeneratorToServiceCommandKind,
+  gridSetGeneratorAvailabilityCommandKind,
   gridTripGeneratorCommandKind,
 } from '../src/packs/electric-grid/commands.ts'
 import { gridDefinitionSchema } from '../src/packs/electric-grid/config.ts'
-import { compileGridDefinition } from '../src/packs/electric-grid/definitions.ts'
+import { compileGridDefinition, compileGridModelIndex } from '../src/packs/electric-grid/definitions.ts'
 import { electricGridPackDataSchema } from '../src/packs/electric-grid/model.ts'
 import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
 import { createGridRuntimeInstance } from '../src/packs/electric-grid/runtime/instance.ts'
@@ -77,6 +79,7 @@ describe('electric grid Pack', () => {
     expect(electricGridPack.authoring?.itemTypes.map(item => item.id)).toEqual(['grid'])
     expect(electricGridPack.presentation.categories.map(category => category.id)).toEqual(['electric-grids'])
     expect(electricGridPack.presentation.mapLayerGroups?.map(group => group.id)).toContain('electric-grid:reference-lines')
+    expect(createLocalElectricGridPackRuntimeAdapter().operations.every(operation => operation.inputSchema !== undefined && operation.outputSchema !== undefined)).toBe(true)
     expect(electricGridPackDataSchema.parse(gridObjects[0]?.packData)).toMatchObject({
       model: { ref: 'electric-grid.norway.transmission' },
       operatingPoint: { ref: 'electric-grid.norway.normal' },
@@ -102,6 +105,17 @@ describe('electric grid Pack', () => {
       }))
       expect(search.total).toBeGreaterThan(250)
       expect((search.assets as unknown[]).length).toBe(10)
+      expect((search.assets as ReadonlyArray<Record<string, unknown>>)[0]).toMatchObject({
+        kind: 'branch',
+        status: { tone: expect.any(String), label: expect.any(String) },
+        applicableOperationIds: expect.any(Array),
+        mapTarget: { kind: 'bounds' },
+      })
+      const firstBranch = (search.assets as ReadonlyArray<{ readonly id: string }>)[0]!
+      const branchDetail = okResult(await connection.query({
+        packId: 'electric-grid', kind: 'electric-grid.asset.get', payload: { gridId: 'grid:norway', assetId: firstBranch.id },
+      }))
+      expect(branchDetail.asset).toMatchObject({ definition: { sourceId: expect.any(String), sourceFeatureId: expect.any(String) } })
 
       const summary = okResult(await connection.query({
         packId: 'electric-grid',
@@ -147,11 +161,56 @@ describe('electric grid Pack', () => {
       const branch = okResult(await connection.query({ packId: 'electric-grid', kind: 'electric-grid.asset.get', payload: { gridId: 'grid:norway', assetId: branchId } }))
       const after = okResult(await connection.query({ packId: 'electric-grid', kind: 'electric-grid.grid.summary', payload: { gridId: 'grid:norway' } }))
       expect(generator.asset).toMatchObject({ state: { state: 'tripped', dispatchMw: 0, targetMw: 0 } })
-      expect(branch.asset).toMatchObject({ state: { state: 'derated', availability: 0.6 } })
+      expect(branch.asset).toMatchObject({ state: { state: 'closed', availability: 0.6 }, status: { label: 'Derated 60%' } })
       expect((after.projection as { readonly reserveMarginMw: number }).reserveMarginMw).toBeLessThanOrEqual(beforeReserve)
     } finally {
       await connection.close()
     }
+  })
+
+  test('keeps generator availability separate from lifecycle state', async () => {
+    const connection = await connect()
+    try {
+      const generators = okResult(await connection.query({
+        packId: 'electric-grid', kind: 'electric-grid.assets.search', payload: { gridId: 'grid:norway', kinds: ['generator'], limit: 1 },
+      })).assets as ReadonlyArray<{ readonly id: string }>
+      const generatorId = generators[0]!.id
+      expect((await connection.sendCommand(command({ kind: gridTripGeneratorCommandKind, gridId: 'grid:norway', payload: { assetId: generatorId } }))).ok).toBe(true)
+      expect((await connection.sendCommand(command({ kind: gridSetGeneratorAvailabilityCommandKind, gridId: 'grid:norway', payload: { assetId: generatorId, availableMw: 50 } }))).ok).toBe(true)
+      const tripped = okResult(await connection.query({ packId: 'electric-grid', kind: 'electric-grid.asset.get', payload: { gridId: 'grid:norway', assetId: generatorId } }))
+      expect(tripped.asset).toMatchObject({ state: { state: 'tripped', availableMw: 50 } })
+      expect((await connection.sendCommand(command({ kind: gridDispatchGeneratorCommandKind, gridId: 'grid:norway', payload: { assetId: generatorId, targetMw: 20 } }))).ok).toBe(false)
+      expect((await connection.sendCommand(command({ kind: gridReturnGeneratorToServiceCommandKind, gridId: 'grid:norway', payload: { assetId: generatorId } }))).ok).toBe(true)
+      expect((await connection.sendCommand(command({ kind: gridDispatchGeneratorCommandKind, gridId: 'grid:norway', payload: { assetId: generatorId, targetMw: 20 } }))).ok).toBe(true)
+    } finally {
+      await connection.close()
+    }
+  })
+
+  test('applies typed Operating Point overrides with exact generation semantics', () => {
+    const data = electricGridPackDataSchema.parse(gridScenario().initialObjects.find(object => object.id === 'grid:norway')?.packData)
+    const definition = compileGridDefinition(gridDefinitionSchema.parse({
+      id: 'grid:scaled',
+      model: data.model,
+      operatingPoint: { ...data.operatingPoint, overrides: { loadScale: 0.8, generationAvailabilityScale: 0.5, storageStateOfCharge: 0.25 } },
+      automation: data.automation,
+    }))
+    const grid = createGridRuntimeInstance({ definition, at: '2026-01-01T10:00:00.000Z' })
+    const generator = definition.model.generators[0]!
+    expect(grid.generators.get(generator.id)?.availableMw).toBeCloseTo(Math.min(generator.capacityMw, generator.availableMw * 0.5))
+    const load = definition.model.loads[0]!
+    expect(grid.loads.get(load.id)?.nominalDemandMw).toBeCloseTo(load.demandMw * 0.8)
+    expect([...grid.storage.values()][0]?.stateOfChargeFraction).toBeCloseTo(0.25)
+  })
+
+  test('rejects invalid Model identity and references during compilation', () => {
+    const data = electricGridPackDataSchema.parse(gridScenario().initialObjects.find(object => object.id === 'grid:norway')?.packData)
+    const definition = compileGridDefinition(gridDefinitionSchema.parse({ id: 'grid:norway', model: data.model, operatingPoint: data.operatingPoint, automation: data.automation }))
+    expect(() => compileGridModelIndex({ ...definition.model, buses: [...definition.model.buses, definition.model.buses[0]!] })).toThrow('duplicate bus ids')
+    expect(() => compileGridModelIndex({
+      ...definition.model,
+      branches: [{ ...definition.model.branches[0]!, fromBusId: 'missing:bus' }, ...definition.model.branches.slice(1)],
+    })).toThrow('references unknown bus')
   })
 
   test('tracks storage energy, island frequency, and cached topology in private runtime state', () => {
@@ -180,6 +239,21 @@ describe('electric grid Pack', () => {
     expect(grid.topologyPlan).not.toBe(firstPlan)
   })
 
+  test('keeps steady-topology Grid ticks within the lightweight runtime budget', () => {
+    const data = electricGridPackDataSchema.parse(gridScenario().initialObjects.find(object => object.id === 'grid:norway')?.packData)
+    const definition = compileGridDefinition(gridDefinitionSchema.parse({ id: 'grid:norway', model: data.model, operatingPoint: data.operatingPoint, automation: data.automation }))
+    const grid = createGridRuntimeInstance({ definition, at: '2026-01-01T10:00:00.000Z' })
+    advanceGrid(grid, 0, '2026-01-01T10:00:00.000Z' as IsoTimestamp)
+    const startedAtMs = performance.now()
+    for (let index = 1; index <= 40; index += 1) {
+      advanceGrid(grid, 2, new Date(Date.parse('2026-01-01T10:00:00.000Z') + index * 2_000).toISOString() as IsoTimestamp)
+    }
+    const averageTickMs = (performance.now() - startedAtMs) / 40
+    expect(averageTickMs).toBeLessThan(5)
+    expect(grid.diagnostics.topologyRebuildCount).toBe(1)
+    expect(grid.diagnostics.lastSuccessfulTickAt).not.toBeNull()
+  })
+
   test('records a compact Grid projection when an operator changes a private asset', async () => {
     const connection = await connect()
     try {
@@ -199,7 +273,7 @@ describe('electric grid Pack', () => {
     }
   })
 
-  test('restores private asset controls only against the same Grid Model', async () => {
+  test('restores private asset controls only against the exact resolved Grid definition', async () => {
     let stored: unknown = null
     const store: PackRuntimeStateStore = {
       load: async () => stored,
@@ -222,5 +296,10 @@ describe('electric grid Pack', () => {
     } finally {
       await restored.close()
     }
+
+    const invalid = structuredClone(stored) as { grids: Array<{ definitionDigest: string }> }
+    invalid.grids[0]!.definitionDigest = '0'.repeat(64)
+    stored = invalid
+    await expect(connect(store)).rejects.toThrow('does not match its resolved Model, Operating Point, and Automation definition')
   })
 })

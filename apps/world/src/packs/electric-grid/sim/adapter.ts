@@ -5,6 +5,7 @@ import type {
   ObjectId,
   OperationalObject,
   PackRuntimeRecordingBatch,
+  SignalId,
   SimulationClockState,
   SimulationRunEvent,
 } from '../../../core/model/index.ts'
@@ -33,8 +34,10 @@ import {
   gridOpenBranchPayloadSchema,
   gridRestoreLoadCommandKind,
   gridRestoreLoadPayloadSchema,
-  gridSetEvChargingPolicyCommandKind,
-  gridSetEvChargingPolicyPayloadSchema,
+  gridReturnGeneratorToServiceCommandKind,
+  gridReturnGeneratorToServicePayloadSchema,
+  gridSetEvChargingDemandCommandKind,
+  gridSetEvChargingDemandPayloadSchema,
   gridSetGeneratorAvailabilityCommandKind,
   gridSetGeneratorAvailabilityPayloadSchema,
   gridShedLoadCommandKind,
@@ -113,6 +116,7 @@ const applyCommand = (grid: GridRuntimeInstance, command: CommandEnvelope): void
     const payload = gridDispatchGeneratorPayloadSchema.parse(command.payload)
     const state = grid.generators.get(payload.assetId)
     if (!state) throw new Error(`generator Grid Asset not found: ${payload.assetId}`)
+    if (state.state !== 'online') throw new Error(`generator Grid Asset ${payload.assetId} is ${state.state}; return it to service before dispatching`)
     state.targetMw = Math.min(payload.targetMw, state.availableMw)
     return
   }
@@ -128,12 +132,23 @@ const applyCommand = (grid: GridRuntimeInstance, command: CommandEnvelope): void
   if (command.kind === gridSetGeneratorAvailabilityCommandKind) {
     const payload = gridSetGeneratorAvailabilityPayloadSchema.parse(command.payload)
     const state = grid.generators.get(payload.assetId)
-    const definition = grid.definition.model.generators.find(candidate => candidate.id === payload.assetId)
+    const entry = grid.definition.index.assetById.get(payload.assetId)
+    const definition = entry?.kind === 'generator' ? entry.definition : undefined
     if (!state || !definition) throw new Error(`generator Grid Asset not found: ${payload.assetId}`)
     state.availableMw = Math.min(payload.availableMw, definition.capacityMw)
     state.targetMw = Math.min(state.targetMw, state.availableMw)
     state.dispatchMw = Math.min(state.dispatchMw, state.availableMw)
-    state.state = state.availableMw > 0 ? 'online' : 'offline'
+    if (state.availableMw === 0 && state.state === 'online') state.state = 'offline'
+    return
+  }
+  if (command.kind === gridReturnGeneratorToServiceCommandKind) {
+    const payload = gridReturnGeneratorToServicePayloadSchema.parse(command.payload)
+    const state = grid.generators.get(payload.assetId)
+    if (!state) throw new Error(`generator Grid Asset not found: ${payload.assetId}`)
+    if (state.availableMw <= 0) throw new Error(`generator Grid Asset ${payload.assetId} has no available capacity`)
+    state.state = 'online'
+    state.dispatchMw = 0
+    state.targetMw = 0
     return
   }
   if (command.kind === gridOpenBranchCommandKind || command.kind === gridCloseBranchCommandKind || command.kind === gridDerateBranchCommandKind || command.kind === gridClearDerateCommandKind) {
@@ -147,38 +162,36 @@ const applyCommand = (grid: GridRuntimeInstance, command: CommandEnvelope): void
     const state = grid.branches.get(payload.assetId)
     if (!state) throw new Error(`branch Grid Asset not found: ${payload.assetId}`)
     if (command.kind === gridOpenBranchCommandKind) state.state = 'open'
-    if (command.kind === gridCloseBranchCommandKind || command.kind === gridClearDerateCommandKind) {
-      state.state = 'closed'
-      state.availability = 1
-    }
-    if (command.kind === gridDerateBranchCommandKind) {
-      state.state = 'derated'
-      state.availability = gridDerateBranchPayloadSchema.parse(command.payload).availability
-    }
-    grid.topologyPlan = null
+    if (command.kind === gridCloseBranchCommandKind) state.state = 'closed'
+    if (command.kind === gridClearDerateCommandKind) state.availability = 1
+    if (command.kind === gridDerateBranchCommandKind) state.availability = gridDerateBranchPayloadSchema.parse(command.payload).availability
+    if (command.kind === gridOpenBranchCommandKind || command.kind === gridCloseBranchCommandKind) grid.topologyPlan = null
     return
   }
   if (command.kind === gridShedLoadCommandKind) {
     const payload = gridShedLoadPayloadSchema.parse(command.payload)
     const state = grid.loads.get(payload.assetId)
-    const definition = grid.definition.model.loads.find(candidate => candidate.id === payload.assetId)
-    if (!state || !definition) throw new Error(`load Grid Asset not found: ${payload.assetId}`)
+    const entry = grid.definition.index.assetById.get(payload.assetId)
+    const definition = entry?.kind === 'load' ? entry.definition : undefined
+    if (!state || !definition || !definition.controllable) throw new Error(`controllable load Grid Asset not found: ${payload.assetId}`)
     state.nominalDemandMw = Math.max(definition.criticalMw, state.nominalDemandMw - payload.amountMw)
     return
   }
   if (command.kind === gridRestoreLoadCommandKind) {
     const payload = gridRestoreLoadPayloadSchema.parse(command.payload)
     const state = grid.loads.get(payload.assetId)
-    const definition = grid.definition.model.loads.find(candidate => candidate.id === payload.assetId)
-    if (!state || !definition) throw new Error(`load Grid Asset not found: ${payload.assetId}`)
+    const entry = grid.definition.index.assetById.get(payload.assetId)
+    const definition = entry?.kind === 'load' ? entry.definition : undefined
+    if (!state || !definition || !definition.controllable) throw new Error(`controllable load Grid Asset not found: ${payload.assetId}`)
     state.nominalDemandMw = definition.demandMw * grid.definition.operatingPoint.loadScale
     return
   }
-  if (command.kind === gridSetEvChargingPolicyCommandKind) {
-    const payload = gridSetEvChargingPolicyPayloadSchema.parse(command.payload)
+  if (command.kind === gridSetEvChargingDemandCommandKind) {
+    const payload = gridSetEvChargingDemandPayloadSchema.parse(command.payload)
     const state = grid.loads.get(payload.assetId)
-    const definition = grid.definition.model.loads.find(candidate => candidate.id === payload.assetId)
-    if (!state || !definition || definition.kind !== 'ev_charging') throw new Error(`EV charging Grid Asset not found: ${payload.assetId}`)
+    const entry = grid.definition.index.assetById.get(payload.assetId)
+    const definition = entry?.kind === 'load' ? entry.definition : undefined
+    if (!state || !definition || definition.kind !== 'ev_charging' || !definition.controllable) throw new Error(`controllable EV charging Grid Asset not found: ${payload.assetId}`)
     state.nominalDemandMw = Math.max(definition.criticalMw, payload.demandMw)
     return
   }
@@ -200,7 +213,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
     const grids = new Map<string, GridRuntimeInstance>()
     for (const item of gridObjectDefinitions(initialObjects)) {
       const definition = compileGridDefinition(item.definition)
-      const restored = restoredGridRuntimeStateFor(runtimeState, item.object.id, definition.model.id)
+      const restored = restoredGridRuntimeStateFor(runtimeState, item.object.id, definition.definitionDigest)
       grids.set(item.object.id, createGridRuntimeInstance({
         definition,
         at: initialAt,
@@ -211,15 +224,34 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
     const objectsById = new Map<ObjectId, OperationalObject>(projectedInitialGridObjects({ objects: initialObjects, grids, at: initialAt }).map(object => [object.id, object]))
     const projectionKeys = new Map<string, string>()
     const handlers = new Set<PackRuntimeEventHandler>()
-    const persistence = createElectricGridRuntimePersistence({ connection: config, grids })
+    const persistence = createElectricGridRuntimePersistence({
+      connection: config,
+      grids,
+      onError: error => {
+        const message = error instanceof Error ? error.message : String(error)
+        for (const grid of grids.values()) {
+          grid.diagnostics.persistenceFailureCount += 1
+          grid.diagnostics.lastPersistenceFailure = message
+        }
+      },
+    })
     if (config.recording?.packId !== undefined && config.recording.packId !== electricGridPackId) throw new Error(`electric-grid runtime received recording selection for Pack ${config.recording.packId}`)
-    const recordingPlan = config.recording === undefined ? null : createGridRecordingPlan({ selection: config.recording, grids })
+    const recordingSelection = config.recording
+    let recordingPlan = recordingSelection === undefined || grids.size === 0 ? null : createGridRecordingPlan({ selection: recordingSelection, grids })
     let recordingDescriptorsPending = recordingPlan !== null
     let nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
     let clock: SimulationClockState = { currentTime: initialAt, updatedAt: nowIso(), paused: false, speed: 1 }
     let lastSimulationMs = Date.parse(currentSimulationTime(clock))
     let closed = false
     let failure: string | null = null
+
+    const rebuildRecordingPlan = (): void => {
+      recordingPlan = recordingSelection === undefined || grids.size === 0
+        ? null
+        : createGridRecordingPlan({ selection: recordingSelection, grids })
+      recordingDescriptorsPending = recordingPlan !== null
+      nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
+    }
 
     const advanceAndEmit = (history: PackRuntimeEventHistory): void => {
       if (closed || clock.paused || failure !== null) return
@@ -264,16 +296,31 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
           summary: failure,
           updatedAt: at,
         }
+        const projectionEvents = gridProjectionEvents({
+          objectsById,
+          grids,
+          previousKeys: projectionKeys,
+          at,
+          provenance: { source: 'simulator', adapterId: electricGridAdapterId },
+          history: 'record',
+        })
         emit({
           handlers,
-          events: gridProjectionEvents({
-            objectsById,
-            grids,
-            previousKeys: projectionKeys,
+          events: [...projectionEvents, {
+            type: 'interaction.signal',
             at,
             provenance: { source: 'simulator', adapterId: electricGridAdapterId },
-            history: 'record',
-          }),
+            signal: {
+              id: `electric-grid-runtime-failed:${crypto.randomUUID()}` as SignalId,
+              simulationRunId: config.simulationRunId,
+              at,
+              source: { kind: 'simulation', id: electricGridRuntimeId },
+              targets: [{ kind: 'broadcast' }],
+              type: 'electric-grid.runtime.failed',
+              severity: 'critical',
+              payload: { runtimeId: electricGridRuntimeId, message: failure },
+            },
+          }],
         })
         console.error('electric-grid runtime failed:', error)
       }
@@ -308,14 +355,28 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
           return commandRejected(command, error instanceof Error ? error.message : String(error))
         }
       },
-      query: async (request: PackQueryRequest): Promise<PackQueryResponse> => failure === null
-        ? answerElectricGridQuery({ request, grids })
-        : { ok: false, packId: electricGridPackId, kind: request.kind, reason: `electric-grid runtime stopped after a failure: ${failure}`, generatedAt: nowIso() },
+      query: async (request: PackQueryRequest): Promise<PackQueryResponse> => {
+        if (failure !== null) return { ok: false, packId: electricGridPackId, kind: request.kind, reason: `electric-grid runtime stopped after a failure: ${failure}`, generatedAt: nowIso() }
+        const startedAtMs = performance.now()
+        const response = answerElectricGridQuery({ request, grids })
+        const gridId = typeof request.payload === 'object' && request.payload !== null && !Array.isArray(request.payload)
+          ? (request.payload as { readonly gridId?: unknown }).gridId
+          : undefined
+        if (typeof gridId === 'string') {
+          const grid = grids.get(gridId)
+          if (grid) {
+            grid.diagnostics.queryCount += 1
+            grid.diagnostics.lastQueryDurationMs = performance.now() - startedAtMs
+          }
+        }
+        return response
+      },
       observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
         for (const event of events) {
           if (event.type === 'object.deleted') {
-            grids.delete(event.objectId)
+            const removedGrid = grids.delete(event.objectId)
             objectsById.delete(event.objectId)
+            if (removedGrid) rebuildRecordingPlan()
             continue
           }
           if (event.type !== 'object.upserted' || event.object.packId !== electricGridPackId) continue
@@ -323,12 +384,14 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
           const data = electricGridPackDataSchema.parse(event.object.packData)
           const definition = compileGridDefinition(gridDefinitionSchema.parse({ id: event.object.id, model: data.model, operatingPoint: data.operatingPoint, automation: data.automation }))
           const current = grids.get(event.object.id)
-          if (!current || current.definition.model.id !== definition.model.id || current.definition.operatingPoint.id !== definition.operatingPoint.id || current.definition.automation.id !== definition.automation.id) {
+          if (!current || current.definition.definitionDigest !== definition.definitionDigest) {
             const grid = createGridRuntimeInstance({ definition, at: event.at })
             advanceGrid(grid, 0, event.at)
             grids.set(event.object.id, grid)
+            rebuildRecordingPlan()
           }
         }
+        persistence.scheduleSave()
       },
       setClock: async (nextClock: SimulationClockState): Promise<void> => {
         clock = nextClock

@@ -274,8 +274,7 @@
             59.925
           ],
           "model": {
-            "ref": "electric-grid.norway.transmission",
-            "parameters": {}
+            "ref": "electric-grid.norway.transmission"
           },
           "operatingPoint": {
             "ref": "electric-grid.norway.normal"

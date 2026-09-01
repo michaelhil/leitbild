@@ -4,7 +4,7 @@
   import type { PackCreateObjectType, PackMapLayerGroup, PackObjectPresentation } from '../core/packs/protocol.ts'
   import RailLayerGroupSection from './RailLayerGroupSection.svelte'
   import RailSourcePicker from './RailSourcePicker.svelte'
-  import { X } from 'lucide-svelte'
+  import { PanelRightOpen, X } from 'lucide-svelte'
   import CategorySection from './CategorySection.svelte'
   import IconButton from './components/IconButton.svelte'
   import type { ProcessPlantArtifactKind } from './process-display/process-display-client.ts'
@@ -71,6 +71,8 @@
       readonly activeId: string | null
       readonly onSelect?: (sourceId: string) => void
     } | null
+    readonly surfacePanels?: ReadonlyArray<{ readonly id: string; readonly label: string; readonly open: boolean }>
+    readonly toggleSurfacePanel?: (panelId: string) => void
   }
 
   let {
@@ -111,6 +113,8 @@
     mapLayerGroupVisibility = {},
     onMapLayerGroupToggle = () => undefined,
     sourcePicker = null,
+    surfacePanels = [],
+    toggleSurfacePanel = () => undefined,
   }: Props = $props()
 
   let collapsedCategoryIds = $state<Record<string, boolean>>({})
@@ -238,6 +242,17 @@
       onSelect={sourcePicker.onSelect}
     />
   {/if}
+  {#if surfacePanels.length > 0}
+    <section class="pack-tools">
+      <h2>Tools</h2>
+      {#each surfacePanels as panel}
+        <button type="button" class:active={panel.open} onclick={() => toggleSurfacePanel(panel.id)}>
+          <PanelRightOpen size={14} />
+          <span>{panel.label}</span>
+        </button>
+      {/each}
+    </section>
+  {/if}
 
   {#if footerVisible}
     <SystemFooter
@@ -251,3 +266,11 @@
     />
   {/if}
 </aside>
+
+<style>
+  .pack-tools { display: flex; flex-direction: column; gap: 5px; padding: 10px 12px; border-top: 1px solid var(--border-subtle, rgba(148, 163, 184, .25)); }
+  .pack-tools h2 { margin: 0 0 2px; color: var(--text-muted, #64748b); text-transform: uppercase; font-size: 10px; letter-spacing: .06em; }
+  .pack-tools button { display: flex; align-items: center; gap: 7px; width: 100%; padding: 7px 8px; color: inherit; text-align: left; border: 1px solid transparent; border-radius: 5px; background: transparent; cursor: pointer; font: inherit; font-size: 12px; }
+  .pack-tools button:hover { background: rgba(148, 163, 184, .1); }
+  .pack-tools button.active { border-color: rgba(59, 130, 246, .45); background: rgba(59, 130, 246, .1); }
+</style>

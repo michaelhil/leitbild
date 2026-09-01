@@ -3,6 +3,7 @@ import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandle
 import type { RoutingAdapter } from '../../routing/protocol.ts'
 import type { DatasetConfig, DatasetId } from '../../reference-data/types.ts'
 import { packDescriptorSchema, type PackDescriptor } from '@leitbild/contracts'
+import type { Component } from 'svelte'
 import { z } from 'zod'
 
 /** Builder a pack declares to contribute a reference dataset. The CLI reads `id`
@@ -401,6 +402,19 @@ export interface PackInteractionContribution {
   readonly handlers: ReadonlyArray<InteractionHandler>
 }
 
+/** Browser-only panel contributed by a Pack. The host owns placement and lifecycle;
+ * the Pack owns the lazily loaded panel implementation. */
+export interface PackSurfacePanelContribution {
+  readonly id: string
+  readonly label: string
+  readonly defaultOpen: boolean
+  readonly load: () => Promise<{ readonly default: Component }>
+}
+
+export interface PackUiContribution {
+  readonly surfacePanels: ReadonlyArray<PackSurfacePanelContribution>
+}
+
 export interface WorldPack {
   readonly descriptor: PackDescriptor
   readonly scenarioConfigSchema: z.ZodType
@@ -414,6 +428,7 @@ export interface WorldPack {
   readonly creation?: PackCreationContribution
   readonly targeting?: PackTargetingContribution
   readonly interactions?: PackInteractionContribution
+  readonly ui?: PackUiContribution
 }
 
 export const emptyPackScenarioConfigSchema = z.object({}).strict()

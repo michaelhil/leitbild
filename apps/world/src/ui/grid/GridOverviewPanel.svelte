@@ -1,17 +1,23 @@
 <script lang="ts">
-  import { X } from 'lucide-svelte'
+  import { Activity, ListTree, X } from 'lucide-svelte'
   import type { OperationalObject, SimulationRunId } from '../../core/model/index.ts'
   import { parseElectricGridObjectData } from '../../packs/electric-grid/model.ts'
   import { querySimulationRunPack } from '../simulation-run-client.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
+  import GridAssetBrowser from './GridAssetBrowser.svelte'
+
+  type MapTarget =
+    | { readonly kind: 'point'; readonly center: readonly [number, number] }
+    | { readonly kind: 'bounds'; readonly bounds: readonly [readonly [number, number], readonly [number, number]] }
 
   interface Props {
     readonly simulationRunId: SimulationRunId
     readonly objects: ReadonlyArray<OperationalObject>
     readonly onClose: () => void
+    readonly onFocusMap?: (target: MapTarget) => void
   }
 
-  const { simulationRunId, objects, onClose }: Props = $props()
+  const { simulationRunId, objects, onClose, onFocusMap = () => undefined }: Props = $props()
 
   interface GridOverviewSummary {
     readonly gridId: string
@@ -53,13 +59,17 @@
   let gesture = $state<PanelGesture | null>(null)
   let summary = $state<GridOverviewSummary | null>(null)
   let queryError = $state<string | null>(null)
+  let selectedGridId = $state<string | null>(null)
+  let view = $state<'summary' | 'assets'>('summary')
+  let summarySequence = 0
 
   const gridItems = $derived(objects.flatMap(object => {
     const data = parseElectricGridObjectData(object)
     return data ? [{ object, data }] : []
   }))
-  const gridId = $derived(gridItems[0]?.object.id ?? null)
-  const system = $derived(summary?.projection ?? gridItems[0]?.data.projection)
+  const gridId = $derived(gridItems.some(item => item.object.id === selectedGridId) ? selectedGridId : gridItems[0]?.object.id ?? null)
+  const selectedGridItem = $derived(gridItems.find(item => item.object.id === gridId) ?? gridItems[0])
+  const system = $derived(summary?.projection ?? selectedGridItem?.data.projection)
   const branches = $derived(summary?.constrainedBranches ?? [])
   const generators = $derived(summary?.generators ?? [])
   const loads = $derived(summary?.affectedLoads ?? [])
@@ -211,6 +221,34 @@
     ? `left: ${frame.left}px; top: ${frame.top}px; width: ${frame.width}px; height: ${frame.height}px;`
     : '')
 
+  const chooseGrid = (nextGridId: string): void => {
+    selectedGridId = nextGridId
+    summary = null
+    queryError = null
+    void loadSummary()
+  }
+
+  const loadSummary = async (): Promise<void> => {
+    const requestedGridId = gridId
+    if (!requestedGridId) return
+    const sequence = ++summarySequence
+    try {
+      const body = await querySimulationRunPack(simulationRunId, {
+        packId: 'electric-grid',
+        kind: 'electric-grid.grid.summary',
+        payload: { gridId: requestedGridId },
+      })
+      if (!body.response.ok) throw new Error(body.response.reason)
+      if (sequence !== summarySequence || gridId !== requestedGridId) return
+      summary = body.response.result as GridOverviewSummary
+      queryError = null
+    } catch (error) {
+      if (sequence === summarySequence && gridId === requestedGridId) {
+        queryError = error instanceof Error ? error.message : String(error)
+      }
+    }
+  }
+
   runOnMount(() => {
     ensureFrame()
     const parent = panelElement?.parentElement
@@ -219,27 +257,10 @@
       frame = clampFrame(frame ?? defaultFrame())
     })
     observer.observe(parent)
-    let stopped = false
-    const loadSummary = async (): Promise<void> => {
-      if (!gridId) return
-      try {
-        const body = await querySimulationRunPack(simulationRunId, {
-          packId: 'electric-grid',
-          kind: 'electric-grid.grid.summary',
-          payload: { gridId },
-        })
-        if (!body.response.ok) throw new Error(body.response.reason)
-        if (stopped) return
-        summary = body.response.result as GridOverviewSummary
-        queryError = null
-      } catch (error) {
-        if (!stopped) queryError = error instanceof Error ? error.message : String(error)
-      }
-    }
     void loadSummary()
     const refresh = setInterval(() => void loadSummary(), 2_000)
     return () => {
-      stopped = true
+      summarySequence += 1
       clearInterval(refresh)
       observer.disconnect()
     }
@@ -267,7 +288,7 @@
       >
         <div>
           <p class="eyebrow">Electric grid</p>
-          <h2>{summary?.model.title ?? gridItems[0]?.object.label ?? 'Grid overview'}</h2>
+          <h2>{summary?.model.title ?? selectedGridItem?.object.label ?? 'Grid overview'}</h2>
         </div>
         <div class="frequency" class:alert={frequencyClass === 'alert'} class:watch={frequencyClass === 'watch'}>
           <span>{system.frequencyHz.toFixed(3)}</span>
@@ -289,55 +310,77 @@
       </button>
     </header>
 
-    <div class="metric-grid">
-      <div class="metric">
-        <span>Generation</span>
-        <strong>{mw(system.totalGenerationMw)} MW</strong>
+    <div class="panel-navigation">
+      <div class="view-tabs" role="tablist" aria-label="Grid panel view">
+        <button type="button" class:active={view === 'summary'} onclick={() => { view = 'summary' }}><Activity size={13} />Overview</button>
+        <button type="button" class:active={view === 'assets'} onclick={() => { view = 'assets' }}><ListTree size={13} />Assets</button>
       </div>
-      <div class="metric">
-        <span>Served load</span>
-        <strong>{mw(system.servedLoadMw)} MW</strong>
-      </div>
-      <div class="metric">
-        <span>Reserve</span>
-        <strong>{mw(system.reserveMarginMw)} MW</strong>
-      </div>
-      <div class="metric">
-        <span>Lowest voltage</span>
-        <strong>{system.lowestVoltagePu.toFixed(3)} pu</strong>
-      </div>
+      {#if gridItems.length > 1}
+        <label>Grid
+          <select value={gridId ?? ''} onchange={(event) => chooseGrid(event.currentTarget.value)}>
+            {#each gridItems as item}<option value={item.object.id}>{item.object.label}</option>{/each}
+          </select>
+        </label>
+      {/if}
     </div>
 
-    <div class="split">
-      <div>
-        <h3>Constrained corridors</h3>
-        {#each branches as branch}
-          <div class="row">
-            <span>{branch.label}</span>
-            <strong>{Math.round(branch.state.loadingPercent)}%</strong>
+    {#if view === 'summary'}
+      <div class="summary-view">
+        <div class="metric-grid">
+          <div class="metric">
+            <span>Generation</span>
+            <strong>{mw(system.totalGenerationMw)} MW</strong>
           </div>
-        {/each}
-      </div>
-      <div>
-        <h3>Generation stack</h3>
-        {#each generators as generator}
-          <div class="row">
-            <span>{generator.label}</span>
-            <strong>{mw(generator.state.dispatchMw)} MW</strong>
+          <div class="metric">
+            <span>Served load</span>
+            <strong>{mw(system.servedLoadMw)} MW</strong>
           </div>
-        {/each}
-      </div>
-    </div>
-
-    <div class="supply">
-      <h3>Consumer supply</h3>
-      {#each loads as load}
-        <div class="row" class:problem={load.state.serviceState !== 'normal'}>
-          <span>{load.label}</span>
-          <strong>{Math.round(load.state.shedMw)} MW shed</strong>
+          <div class="metric">
+            <span>Reserve</span>
+            <strong>{mw(system.reserveMarginMw)} MW</strong>
+          </div>
+          <div class="metric">
+            <span>Lowest voltage</span>
+            <strong>{system.lowestVoltagePu.toFixed(3)} pu</strong>
+          </div>
         </div>
-      {/each}
-    </div>
+
+        <div class="split">
+          <div>
+            <h3>Constrained corridors</h3>
+            {#each branches as branch}
+              <div class="row">
+                <span>{branch.label}</span>
+                <strong>{Math.round(branch.state.loadingPercent)}%</strong>
+              </div>
+            {/each}
+          </div>
+          <div>
+            <h3>Generation stack</h3>
+            {#each generators as generator}
+              <div class="row">
+                <span>{generator.label}</span>
+                <strong>{mw(generator.state.dispatchMw)} MW</strong>
+              </div>
+            {/each}
+          </div>
+        </div>
+
+        <div class="supply">
+          <h3>Consumer supply</h3>
+          {#each loads as load}
+            <div class="row" class:problem={load.state.serviceState !== 'normal'}>
+              <span>{load.label}</span>
+              <strong>{Math.round(load.state.shedMw)} MW shed</strong>
+            </div>
+          {/each}
+        </div>
+      </div>
+    {:else if gridId}
+      {#key gridId}
+        <GridAssetBrowser {simulationRunId} {gridId} {onFocusMap} />
+      {/key}
+    {/if}
     {#if queryError}<p class="query-error">{queryError}</p>{/if}
     <button
       class="resize-grip"
@@ -353,7 +396,9 @@
   .grid-overview {
     position: absolute;
     z-index: 12;
-    overflow: auto;
+    display: flex;
+    overflow: hidden;
+    flex-direction: column;
     color: #0f172a;
     background: rgba(248, 250, 252, 0.94);
     border: 1px solid rgba(148, 163, 184, 0.55);
@@ -365,6 +410,21 @@
     min-width: 360px;
     min-height: 260px;
   }
+
+  .panel-navigation {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .view-tabs { display: flex; gap: 5px; }
+  .view-tabs button { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; color: inherit; border: 1px solid rgba(148, 163, 184, .4); border-radius: 5px; background: transparent; cursor: pointer; font-size: 11px; }
+  .view-tabs button.active { border-color: #3b82f6; background: rgba(59, 130, 246, .12); }
+  .panel-navigation label { display: flex; align-items: center; gap: 5px; color: #64748b; font-size: 10px; }
+  .panel-navigation select { max-width: 180px; padding: 4px 6px; color: inherit; border: 1px solid rgba(148, 163, 184, .4); border-radius: 4px; background: transparent; font: inherit; }
+  .summary-view { min-height: 0; overflow: auto; }
 
   :global(.dark) .grid-overview {
     color: #e5e7eb;

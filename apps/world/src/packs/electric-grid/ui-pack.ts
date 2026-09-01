@@ -88,4 +88,12 @@ export const electricGridUiPack: WorldPack = {
     }],
     presentObject: presentationForGrid,
   },
+  ui: {
+    surfacePanels: [{
+      id: 'electric-grid.overview',
+      label: 'Grid operations',
+      defaultOpen: true,
+      load: async () => await import('../../ui/grid/GridOverviewPanel.svelte'),
+    }],
+  },
 }

@@ -7,18 +7,18 @@ export const electricGridRuntimeStateSchema = z.object({
   schemaVersion: z.literal(1),
   grids: z.array(z.object({
     gridId: z.string().min(1),
-    modelRef: z.string().min(1),
+    definitionDigest: z.string().regex(/^[a-f0-9]{64}$/),
     elapsedMs: finite.nonnegative(),
     tick: z.number().int().nonnegative(),
     frequencies: z.array(z.object({ islandId: z.string().min(1), frequencyHz: finite.positive() }).strict()),
     branches: z.array(z.object({
       id: z.string().min(1),
-      state: z.enum(['closed', 'open', 'faulted', 'derated']),
+      state: z.enum(['closed', 'open']),
       availability: finite.min(0).max(1),
     }).strict()),
     generators: z.array(z.object({
       id: z.string().min(1),
-      state: z.enum(['online', 'offline', 'tripped', 'derated']),
+      state: z.enum(['online', 'offline', 'tripped']),
       availableMw: finite.nonnegative(),
       dispatchMw: finite.nonnegative(),
       targetMw: finite.nonnegative(),
@@ -37,7 +37,7 @@ export const runtimeStateForElectricGrids = (grids: ReadonlyMap<string, GridRunt
   schemaVersion: 1,
   grids: [...grids.values()].map(grid => ({
     gridId: grid.definition.gridId,
-    modelRef: grid.definition.model.id,
+    definitionDigest: grid.definition.definitionDigest,
     elapsedMs: grid.elapsedMs,
     tick: grid.tick,
     frequencies: [...grid.frequencyByIsland].map(([islandId, frequencyHz]) => ({ islandId, frequencyHz })),
@@ -51,10 +51,10 @@ export const runtimeStateForElectricGrids = (grids: ReadonlyMap<string, GridRunt
 export const restoredGridRuntimeStateFor = (
   state: ElectricGridRuntimeState | null,
   gridId: string,
-  modelRef: string,
+  definitionDigest: string,
 ): RestoredGridRuntimeState | undefined => {
   const grid = state?.grids.find(candidate => candidate.gridId === gridId)
   if (!grid) return undefined
-  if (grid.modelRef !== modelRef) throw new Error(`stored Grid ${gridId} uses Model ${grid.modelRef}, expected ${modelRef}`)
+  if (grid.definitionDigest !== definitionDigest) throw new Error(`stored Grid ${gridId} does not match its resolved Model, Operating Point, and Automation definition`)
   return grid
 }

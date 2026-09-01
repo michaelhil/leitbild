@@ -2,14 +2,19 @@ import { z } from 'zod'
 
 export const gridModelSelectionSchema = z.object({
   ref: z.string().min(1),
-  parameters: z.record(z.string(), z.unknown()),
 }).strict()
 export type GridModelSelection = z.infer<typeof gridModelSelectionSchema>
 
+export const gridOperatingPointOverridesSchema = z.object({
+  loadScale: z.number().finite().positive().optional(),
+  generationAvailabilityScale: z.number().finite().nonnegative().optional(),
+  storageStateOfCharge: z.number().finite().min(0).max(1).optional(),
+}).strict()
+export type GridOperatingPointOverrides = z.infer<typeof gridOperatingPointOverridesSchema>
+
 export const gridOperatingPointSelectionSchema = z.object({
   ref: z.string().min(1),
-  parameterOverrides: z.record(z.string(), z.unknown()).optional(),
-  valueOverrides: z.record(z.string(), z.unknown()).optional(),
+  overrides: gridOperatingPointOverridesSchema.optional(),
 }).strict()
 export type GridOperatingPointSelection = z.infer<typeof gridOperatingPointSelectionSchema>
 

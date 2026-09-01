@@ -82,7 +82,7 @@
   } from '../startup.ts'
   import { runtimeDiagnosticDetails } from '../map-runtime/map-diagnostics.ts'
   import { mapPerformanceDiagnostics } from '../map-runtime/map-performance-diagnostics.ts'
-  import type { MapRuntimeDiagnosticsSnapshot } from '../map-runtime/types.ts'
+  import type { MapFocusRequest, MapFocusTarget, MapRuntimeDiagnosticsSnapshot } from '../map-runtime/types.ts'
   import {
     browserDiagnostics,
     clearPackQueryDiagnostics,
@@ -98,7 +98,6 @@
   import type { CategoryRow, SimulationRunResponse, CreateDraft } from '../types.ts'
 
   const appVersion = __LEITBILD_VERSION__
-  const gridOverviewCategoryId = 'electric-grids'
   const emptyStringArray: ReadonlyArray<string> = []
   const emptyMapLayerGroups: NonNullable<PackPresentationContribution['mapLayerGroups']> = []
   const emptyMapAreaFeatureLayers: NonNullable<PackPresentationContribution['mapAreaFeatureLayers']> = []
@@ -164,7 +163,7 @@
   let CreateObjectModal = $state<Component | null>(null)
   let SettingsModal = $state<Component | null>(null)
   let ProcessDisplayModal = $state<Component | null>(null)
-  let GridOverviewPanel = $state<Component | null>(null)
+  let surfacePanelComponents = $state<Record<string, Component>>({})
   let ProcedureSystemModal = $state<Component | null>(null)
   let ProcessPlantArtifactModal = $state<Component | null>(null)
   let ProcessPlantCatalogModal = $state<Component | null>(null)
@@ -189,7 +188,9 @@
   let surfaceLoadGeneration = 0
   let operationalMapLoadPromise: Promise<Component> | null = null
   let processDisplayModalLoadPromise: Promise<Component> | null = null
-  let gridOverviewPanelLoadPromise: Promise<Component> | null = null
+  const surfacePanelLoadPromises = new Map<string, Promise<Component>>()
+  let surfacePanelOpen = $state<Record<string, boolean>>({})
+  let appliedSurfacePanelKey = ''
   let procedureSystemModalLoadPromise: Promise<Component> | null = null
   let processPlantArtifactModalLoadPromise: Promise<Component> | null = null
   let processPlantCatalogModalLoadPromise: Promise<Component> | null = null
@@ -203,6 +204,8 @@
   let startupDebugReported = false
   let startupDebugMarks: Array<{ readonly label: string; readonly atMs: number; readonly deltaMs: number }> = []
   let latestMapRuntimeDiagnostics = $state<MapRuntimeDiagnosticsSnapshot | null>(null)
+  let mapFocusRequest = $state<MapFocusRequest | null>(null)
+  let mapFocusRevision = 0
   let longTaskMonitor: LongTaskDiagnosticsMonitor | null = null
   let procedureRunRefreshInFlight = false
   let procedureRunRefreshQueued = false
@@ -242,10 +245,8 @@
   const footerVisible = $derived(surfaceHasPrimitive(surface, 'systemFooter'))
   const guidanceOverlayVisible = $derived(surfaceHasPrimitive(surface, 'guidanceOverlay'))
   let categoryMapVisibility = $state<Record<string, boolean>>({})
-  const gridOverviewAvailable = $derived(scenarioDefinition?.packs.includes('electric-grid') === true)
-  const gridOverviewVisible = $derived(
-    gridOverviewAvailable && (categoryMapVisibility[gridOverviewCategoryId] ?? true),
-  )
+  const surfacePanels = $derived(activePack?.surfacePanels ?? [])
+  const surfacePanelLaunchers = $derived(surfacePanels.map(panel => ({ id: panel.id, label: panel.label, open: surfacePanelOpen[panel.id] ?? panel.defaultOpen })))
   const mapStartupFailed = $derived(startupSteps.find(step => step.id === 'map')?.status === 'failed')
   const richOperationalUiReady = $derived(!mapVisible || mapReady || mapStartupFailed)
   const debugMapInput = $derived(new URLSearchParams(location.search).get('debugMapInput') === '1')
@@ -299,8 +300,19 @@
     setCategoryMapVisibility(categoryId, !(categoryMapVisibility[categoryId] ?? true))
   }
 
-  const closeGridOverviewPanel = (): void => {
-    setCategoryMapVisibility(gridOverviewCategoryId, false)
+  const setSurfacePanelOpen = (panelId: string, open: boolean): void => {
+    surfacePanelOpen = { ...surfacePanelOpen, [panelId]: open }
+  }
+
+  const toggleSurfacePanel = (panelId: string): void => {
+    const panel = surfacePanels.find(candidate => candidate.id === panelId)
+    if (!panel) return
+    setSurfacePanelOpen(panelId, !(surfacePanelOpen[panelId] ?? panel.defaultOpen))
+  }
+
+  const focusMapTarget = (target: MapFocusTarget): void => {
+    mapFocusRevision += 1
+    mapFocusRequest = { revision: mapFocusRevision, target }
   }
 
   // Pack-rail layer-group visibility. Active pack contributes mapLayerGroups
@@ -610,17 +622,21 @@
     }
   }
 
-  const loadGridOverviewPanel = async (): Promise<void> => {
-    if (GridOverviewPanel) return
-    gridOverviewPanelLoadPromise ??= (async (): Promise<Component> => {
-      const module = await import('../grid/GridOverviewPanel.svelte')
-      return module.default
-    })()
+  const loadSurfacePanel = async (panelId: string): Promise<void> => {
+    if (surfacePanelComponents[panelId]) return
+    const panel = surfacePanels.find(candidate => candidate.id === panelId)
+    if (!panel) throw new Error(`unknown Pack surface panel: ${panelId}`)
+    let loading = surfacePanelLoadPromises.get(panelId)
+    if (!loading) {
+      loading = panel.load().then(module => module.default)
+      surfacePanelLoadPromises.set(panelId, loading)
+    }
     try {
-      GridOverviewPanel = await gridOverviewPanelLoadPromise
-    } catch (err) {
-      gridOverviewPanelLoadPromise = null
-      throw err
+      const component = await loading
+      surfacePanelComponents = { ...surfacePanelComponents, [panelId]: component }
+    } catch (error) {
+      surfacePanelLoadPromises.delete(panelId)
+      throw error
     }
   }
 
@@ -1520,7 +1536,22 @@
   })
 
   $effect(() => {
-    if (gridOverviewVisible && richOperationalUiReady) void loadGridOverviewPanel()
+    const panels = surfacePanels
+    const key = panels.map(panel => panel.id).join('|')
+    if (key === appliedSurfacePanelKey) return
+    untrack(() => {
+      const next: Record<string, boolean> = {}
+      for (const panel of panels) next[panel.id] = surfacePanelOpen[panel.id] ?? panel.defaultOpen
+      surfacePanelOpen = next
+      appliedSurfacePanelKey = key
+    })
+  })
+
+  $effect(() => {
+    if (!richOperationalUiReady) return
+    for (const panel of surfacePanels) {
+      if (surfacePanelOpen[panel.id] ?? panel.defaultOpen) void loadSurfacePanel(panel.id)
+    }
   })
 
   $effect(() => {
@@ -1586,6 +1617,8 @@
         {mapLayerGroupVisibility}
         onMapLayerGroupToggle={toggleMapLayerGroup}
         sourcePicker={railSourcePicker}
+        surfacePanels={surfacePanelLaunchers}
+        {toggleSurfacePanel}
       />
       <button
         class="rail-resize-handle"
@@ -1628,14 +1661,20 @@
           referenceDatasetIds={activeReferenceDatasetIds}
           packAreaFeatureLayers={activePackAreaFeatureLayers}
           packAreaFeatureSourcePackIds={activePackAreaFeatureSourcePackIds}
+          focusRequest={mapFocusRequest}
         />
       {:else if mapVisible}
         <div class="map-loading">Starting map...</div>
       {:else}
         <div class="surface-empty"></div>
       {/if}
-      {#if gridOverviewVisible && richOperationalUiReady && GridOverviewPanel}
-        <GridOverviewPanel {simulationRunId} {objects} onClose={closeGridOverviewPanel} />
+      {#if richOperationalUiReady && simulationRunId}
+        {#each surfacePanels as panel (panel.id)}
+          {@const Panel = surfacePanelComponents[panel.id]}
+          {#if (surfacePanelOpen[panel.id] ?? panel.defaultOpen) && Panel}
+            <Panel {simulationRunId} {objects} onClose={() => setSurfacePanelOpen(panel.id, false)} onFocusMap={focusMapTarget} />
+          {/if}
+        {/each}
       {/if}
     </main>
 
