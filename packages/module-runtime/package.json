@@ -12,7 +12,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@leitbild/contracts": "workspace:*"
+    "@leitbild/contracts": "workspace:*",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bun": "1.4.0",

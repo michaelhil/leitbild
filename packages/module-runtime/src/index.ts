@@ -7,6 +7,8 @@ import {
   type ModuleId,
 } from '@leitbild/contracts'
 
+export * from './revision-store.ts'
+
 export type CapabilityRegistration<TContext, TResult> = Readonly<{
   descriptor: ModuleCapabilityDescriptorInput
   invoke: (context: TContext, invocation: ModuleCapabilityInvocation) => Promise<TResult>
