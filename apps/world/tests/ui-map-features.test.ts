@@ -12,7 +12,7 @@ import { inspectBaseMapReadiness } from '../src/ui/map-runtime/base-map-readines
 import { createMapFeatureStore } from '../src/ui/map-runtime/map-feature-store.ts'
 
 const presentationFor = (object: OperationalObject): PackObjectPresentation => ({
-  categoryId: object.packId === 'electric-grid' ? 'grid-branches' : object.packId,
+  categoryId: object.packId === 'electric-grid' ? 'electric-grids' : object.packId,
   icon: object.packId === 'electric-grid' ? 'line' : object.packId,
   color: object.operational.status === 'constrained' ? '#b45309' : '#16834f',
   summary: object.label,
@@ -298,7 +298,7 @@ describe('map feature store', () => {
     })
 
     const visible = updateStore([generator])
-    const hidden = updateStore([generator], { hiddenObjectCategoryIds: ['grid-branches'] })
+    const hidden = updateStore([generator], { hiddenObjectCategoryIds: ['electric-grids'] })
 
     expect(visible.points).toHaveLength(1)
     expect(hidden.points).toHaveLength(0)

@@ -1,15 +1,32 @@
 <script lang="ts">
   import { X } from 'lucide-svelte'
-  import type { OperationalObject } from '../../core/model/index.ts'
+  import type { OperationalObject, SimulationRunId } from '../../core/model/index.ts'
   import { parseElectricGridObjectData } from '../../packs/electric-grid/model.ts'
+  import { querySimulationRunPack } from '../simulation-run-client.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
 
   interface Props {
+    readonly simulationRunId: SimulationRunId
     readonly objects: ReadonlyArray<OperationalObject>
     readonly onClose: () => void
   }
 
-  const { objects, onClose }: Props = $props()
+  const { simulationRunId, objects, onClose }: Props = $props()
+
+  interface GridOverviewSummary {
+    readonly gridId: string
+    readonly model: { readonly title: string }
+    readonly projection: {
+      readonly frequencyHz: number
+      readonly totalGenerationMw: number
+      readonly servedLoadMw: number
+      readonly reserveMarginMw: number
+      readonly lowestVoltagePu: number
+    }
+    readonly constrainedBranches: ReadonlyArray<{ readonly id: string; readonly label: string; readonly state: { readonly loadingPercent: number } }>
+    readonly generators: ReadonlyArray<{ readonly id: string; readonly label: string; readonly state: { readonly dispatchMw: number } }>
+    readonly affectedLoads: ReadonlyArray<{ readonly id: string; readonly label: string; readonly state: { readonly shedMw: number; readonly serviceState: string } }>
+  }
 
   interface PanelFrame {
     readonly left: number
@@ -34,26 +51,18 @@
   let panelElement = $state<HTMLElement | null>(null)
   let frame = $state<PanelFrame | null>(null)
   let gesture = $state<PanelGesture | null>(null)
+  let summary = $state<GridOverviewSummary | null>(null)
+  let queryError = $state<string | null>(null)
 
   const gridItems = $derived(objects.flatMap(object => {
     const data = parseElectricGridObjectData(object)
     return data ? [{ object, data }] : []
   }))
-  const system = $derived(gridItems.find(item => item.data.type === 'grid_system')?.data)
-  const branches = $derived(gridItems
-    .filter(item => item.data.type === 'grid_branch')
-    .map(item => ({ object: item.object, data: item.data }))
-    .sort((left, right) => right.data.loadingPercent - left.data.loadingPercent)
-    .slice(0, 4))
-  const generators = $derived(gridItems
-    .filter(item => item.data.type === 'grid_generator')
-    .map(item => ({ object: item.object, data: item.data }))
-    .sort((left, right) => right.data.dispatchMw - left.data.dispatchMw))
-  const loads = $derived(gridItems
-    .filter(item => item.data.type === 'grid_load')
-    .map(item => ({ object: item.object, data: item.data }))
-    .sort((left, right) => right.data.shedMw - left.data.shedMw)
-    .slice(0, 4))
+  const gridId = $derived(gridItems[0]?.object.id ?? null)
+  const system = $derived(summary?.projection ?? gridItems[0]?.data.projection)
+  const branches = $derived(summary?.constrainedBranches ?? [])
+  const generators = $derived(summary?.generators ?? [])
+  const loads = $derived(summary?.affectedLoads ?? [])
 
   const frequencyClass = $derived(!system
     ? 'idle'
@@ -210,7 +219,30 @@
       frame = clampFrame(frame ?? defaultFrame())
     })
     observer.observe(parent)
-    return () => observer.disconnect()
+    let stopped = false
+    const loadSummary = async (): Promise<void> => {
+      if (!gridId) return
+      try {
+        const body = await querySimulationRunPack(simulationRunId, {
+          packId: 'electric-grid',
+          kind: 'electric-grid.grid.summary',
+          payload: { gridId },
+        })
+        if (!body.response.ok) throw new Error(body.response.reason)
+        if (stopped) return
+        summary = body.response.result as GridOverviewSummary
+        queryError = null
+      } catch (error) {
+        if (!stopped) queryError = error instanceof Error ? error.message : String(error)
+      }
+    }
+    void loadSummary()
+    const refresh = setInterval(() => void loadSummary(), 2_000)
+    return () => {
+      stopped = true
+      clearInterval(refresh)
+      observer.disconnect()
+    }
   })
 </script>
 
@@ -235,7 +267,7 @@
       >
         <div>
           <p class="eyebrow">Electric grid</p>
-          <h2>Norway operating overview</h2>
+          <h2>{summary?.model.title ?? gridItems[0]?.object.label ?? 'Grid overview'}</h2>
         </div>
         <div class="frequency" class:alert={frequencyClass === 'alert'} class:watch={frequencyClass === 'watch'}>
           <span>{system.frequencyHz.toFixed(3)}</span>
@@ -281,8 +313,8 @@
         <h3>Constrained corridors</h3>
         {#each branches as branch}
           <div class="row">
-            <span>{branch.object.label}</span>
-            <strong>{Math.round(branch.data.loadingPercent)}%</strong>
+            <span>{branch.label}</span>
+            <strong>{Math.round(branch.state.loadingPercent)}%</strong>
           </div>
         {/each}
       </div>
@@ -290,8 +322,8 @@
         <h3>Generation stack</h3>
         {#each generators as generator}
           <div class="row">
-            <span>{generator.object.label}</span>
-            <strong>{mw(generator.data.dispatchMw)} MW</strong>
+            <span>{generator.label}</span>
+            <strong>{mw(generator.state.dispatchMw)} MW</strong>
           </div>
         {/each}
       </div>
@@ -300,12 +332,13 @@
     <div class="supply">
       <h3>Consumer supply</h3>
       {#each loads as load}
-        <div class="row" class:problem={load.data.serviceState !== 'normal'}>
-          <span>{load.object.label}</span>
-          <strong>{Math.round(load.data.shedMw)} MW shed</strong>
+        <div class="row" class:problem={load.state.serviceState !== 'normal'}>
+          <span>{load.label}</span>
+          <strong>{Math.round(load.state.shedMw)} MW shed</strong>
         </div>
       {/each}
     </div>
+    {#if queryError}<p class="query-error">{queryError}</p>{/if}
     <button
       class="resize-grip"
       type="button"

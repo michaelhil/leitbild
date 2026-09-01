@@ -1,85 +1,16 @@
-import type { IsoTimestamp, ObjectId, OperationalObject } from '../../../core/model/index.ts'
-import {
-  electricGridPackDataSchema,
-  type ElectricGridPackData,
-  type GridBranchData,
-  type GridBusState,
-  type GridGeneratorData,
-  type GridLoadData,
-  type GridStorageData,
-  type GridSubstationData,
-  type GridSystemData,
-} from '../model.ts'
+import type { IsoTimestamp } from '../../../core/model/index.ts'
+import type { GridBranchDefinition, GridGeneratorDefinition, GridLoadDefinition } from '../grid-model.ts'
+import type {
+  GridLinearFactor,
+  GridRuntimeInstance,
+  GridTopologyIsland,
+  GridTopologyPlan,
+} from './instance.ts'
 
-export interface GridRuntimeState {
-  readonly tick: number
-  readonly frequencyHz: number
-  readonly busStates: ReadonlyMap<string, GridBusState>
-}
+const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value))
 
-export interface GridSolverTopologyBus {
-  readonly busId: string
-  readonly nominalKv: number
-}
-
-export interface GridSolverTopologyBranch {
-  readonly objectId: string
-  readonly label: string
-  readonly fromBusId: string
-  readonly toBusId: string
-  readonly nominalKv: number
-  readonly ratingMw: number
-  readonly emergencyRatingMw: number
-  readonly reactancePu: number
-  readonly resistancePu: number
-  readonly state: GridBranchData['state']
-  readonly availability: number
-  readonly weatherExposure: GridBranchData['weatherExposure']
-}
-
-export interface GridSolverTopology {
-  readonly buses: ReadonlyArray<GridSolverTopologyBus>
-  readonly branches: ReadonlyArray<GridSolverTopologyBranch>
-}
-
-export interface SolvedGridState {
-  readonly objects: ReadonlyArray<OperationalObject>
-  readonly runtimeState: GridRuntimeState
-  readonly summary: GridSystemData
-}
-
-interface ParsedGridObject {
-  readonly object: OperationalObject
-  readonly data: ElectricGridPackData
-}
-
-interface Island {
-  readonly id: string
-  readonly buses: ReadonlyArray<string>
-}
-
-const nominalFrequencyHz = 50
-const defaultBusVoltagePu = 1
-const defaultFrequencyHz = 50
-
-const parseGridObjects = (objects: ReadonlyArray<OperationalObject>): ReadonlyArray<ParsedGridObject> =>
-  objects.flatMap(object => {
-    const parsed = electricGridPackDataSchema.safeParse(object.packData)
-    return parsed.success ? [{ object, data: parsed.data }] : []
-  })
-
-const clamp = (value: number, min: number, max: number): number =>
-  Math.max(min, Math.min(max, value))
-
-const ramp = (current: number, target: number, maxDelta: number): number => {
-  if (target > current) return Math.min(target, current + maxDelta)
-  return Math.max(target, current - maxDelta)
-}
-
-const secondsFromIso = (timestamp: IsoTimestamp): number => {
-  const ms = Date.parse(timestamp)
-  return Number.isFinite(ms) ? ms / 1000 : 0
-}
+const ramp = (current: number, target: number, maxDelta: number): number =>
+  target > current ? Math.min(target, current + maxDelta) : Math.max(target, current - maxDelta)
 
 const stableUnitFor = (value: string): number => {
   let hash = 2166136261
@@ -90,273 +21,127 @@ const stableUnitFor = (value: string): number => {
   return (hash >>> 0) / 0xffffffff
 }
 
-const loadDailyFactor = (load: GridLoadData, hour: number): number => {
+const loadDailyFactor = (load: GridLoadDefinition, hour: number): number => {
   const phase = 2 * Math.PI * hour / 24
-  if (load.loadKind === 'residential') {
-    return 1.0
-      + 0.055 * Math.sin(phase - 0.6)
-      + 0.050 * Math.sin(2 * phase - 2.2)
-  }
-  if (load.loadKind === 'commercial' || load.loadKind === 'airport') {
-    return 0.98
-      + 0.080 * Math.sin(phase - 1.35)
-      + 0.025 * Math.sin(2 * phase - 1.8)
-  }
-  if (load.loadKind === 'ev_charging') {
-    return 0.96
-      + 0.105 * Math.sin(phase - 2.35)
-      + 0.035 * Math.sin(2 * phase - 2.9)
-  }
-  if (load.loadKind === 'industry' || load.loadKind === 'data_center' || load.loadKind === 'process_plant') {
-    return 1.0 + 0.018 * Math.sin(phase - 0.9)
-  }
-  if (load.loadKind === 'hospital') {
-    return 1.0 + 0.010 * Math.sin(phase - 0.4)
-  }
+  if (load.kind === 'residential') return 1 + 0.055 * Math.sin(phase - 0.6) + 0.05 * Math.sin(2 * phase - 2.2)
+  if (load.kind === 'commercial' || load.kind === 'airport') return 0.98 + 0.08 * Math.sin(phase - 1.35) + 0.025 * Math.sin(2 * phase - 1.8)
+  if (load.kind === 'ev_charging') return 0.96 + 0.105 * Math.sin(phase - 2.35) + 0.035 * Math.sin(2 * phase - 2.9)
+  if (load.kind === 'industry' || load.kind === 'data_center' || load.kind === 'process_plant') return 1 + 0.018 * Math.sin(phase - 0.9)
+  if (load.kind === 'hospital') return 1 + 0.01 * Math.sin(phase - 0.4)
   return 1
 }
 
-const profiledLoad = (
-  objectId: string,
-  load: GridLoadData,
-  at: IsoTimestamp,
-): GridLoadData => {
-  const seconds = secondsFromIso(at)
-  const secondsOfDay = ((seconds % 86400) + 86400) % 86400
-  const hour = secondsOfDay / 3600
-  const seed = stableUnitFor(`${objectId}:${load.loadKind}`)
-  const commonRegulationFactor = 0.006 * Math.sin(seconds / 95 + 0.8)
-    + 0.003 * Math.sin(seconds / 29 + 1.7)
-  const fastFactor = 0.012 * Math.sin(seconds / (41 + seed * 23) + seed * Math.PI * 2)
+const profiledDemand = (load: GridLoadDefinition, nominalDemandMw: number, at: IsoTimestamp): number => {
+  const seconds = Date.parse(at) / 1_000
+  const hour = (((seconds % 86_400) + 86_400) % 86_400) / 3_600
+  const seed = stableUnitFor(`${load.id}:${load.kind}`)
+  const regulation = 0.006 * Math.sin(seconds / 95 + 0.8) + 0.003 * Math.sin(seconds / 29 + 1.7)
+  const local = 0.012 * Math.sin(seconds / (41 + seed * 23) + seed * Math.PI * 2)
     + 0.006 * Math.sin(seconds / (113 + seed * 31) + seed * Math.PI * 5)
-  const nominalDemandMw = load.nominalDemandMw ?? load.demandMw
-  const nominalInterruptibleMw = load.nominalInterruptibleMw ?? load.interruptibleMw
-  const nominalReactiveDemandMvar = load.nominalReactiveDemandMvar ?? load.reactiveDemandMvar
-  const demandMw = Math.max(
-    load.criticalMw,
-    nominalDemandMw * clamp(loadDailyFactor(load, hour) + commonRegulationFactor + fastFactor, 0.78, 1.22),
-  )
-  const nominalInterruptibleShare = nominalDemandMw <= 0 ? 0 : nominalInterruptibleMw / nominalDemandMw
-  const nominalReactiveShare = nominalDemandMw <= 0 ? 0 : nominalReactiveDemandMvar / nominalDemandMw
-  return {
-    ...load,
-    nominalDemandMw,
-    nominalInterruptibleMw,
-    nominalReactiveDemandMvar,
-    demandMw,
-    interruptibleMw: Math.max(0, Math.min(demandMw - load.criticalMw, demandMw * nominalInterruptibleShare)),
-    reactiveDemandMvar: Math.max(0, demandMw * nominalReactiveShare),
-  }
+  return Math.max(load.criticalMw, nominalDemandMw * clamp(loadDailyFactor(load, hour) + regulation + local, 0.78, 1.22))
 }
 
-const solveLinear = (
-  matrix: number[][],
-  rhs: number[],
-): number[] => {
-  const n = rhs.length
-  const a = matrix.map((row, index) => [...row, rhs[index] ?? 0])
-  for (let col = 0; col < n; col += 1) {
-    let pivot = col
-    for (let row = col + 1; row < n; row += 1) {
-      if (Math.abs(a[row]?.[col] ?? 0) > Math.abs(a[pivot]?.[col] ?? 0)) pivot = row
-    }
-    if (Math.abs(a[pivot]?.[col] ?? 0) < 1e-9) continue
-    if (pivot !== col) {
-      const tmp = a[pivot]
-      a[pivot] = a[col]!
-      a[col] = tmp!
-    }
-    const pivotValue = a[col]?.[col] ?? 1
-    for (let k = col; k <= n; k += 1) a[col]![k] = (a[col]?.[k] ?? 0) / pivotValue
-    for (let row = 0; row < n; row += 1) {
-      if (row === col) continue
-      const factor = a[row]?.[col] ?? 0
-      if (Math.abs(factor) < 1e-12) continue
-      for (let k = col; k <= n; k += 1) {
-        a[row]![k] = (a[row]?.[k] ?? 0) - factor * (a[col]?.[k] ?? 0)
-      }
-    }
-  }
-  return a.map(row => row[n] ?? 0)
+const activeBranch = (grid: GridRuntimeInstance, branch: GridBranchDefinition): boolean => {
+  const state = grid.branches.get(branch.id)?.state
+  return state === 'closed' || state === 'derated'
 }
 
-const activeBranch = (branch: GridBranchData): boolean =>
-  branch.state === 'closed' || branch.state === 'derated'
+const topologySignature = (grid: GridRuntimeInstance): string => grid.definition.model.branches
+  .map(branch => `${branch.id}:${activeBranch(grid, branch) ? '1' : '0'}`)
+  .join('|')
 
-const branchDataFromTopology = (
-  branch: GridSolverTopologyBranch,
-  override: GridBranchData | undefined,
-): GridBranchData => ({
-  type: 'grid_branch',
-  schemaVersion: 1,
-  assetKind: 'branch',
-  branchKind: 'ac_line',
-  fromBusId: branch.fromBusId,
-  toBusId: branch.toBusId,
-  nominalKv: branch.nominalKv,
-  ratingMw: branch.ratingMw,
-  emergencyRatingMw: branch.emergencyRatingMw,
-  reactancePu: branch.reactancePu,
-  resistancePu: branch.resistancePu,
-  state: override?.state ?? branch.state,
-  availability: override?.availability ?? branch.availability,
-  flowMw: override?.flowMw ?? 0,
-  loadingPercent: override?.loadingPercent ?? 0,
-  voltageFromPu: override?.voltageFromPu ?? 1,
-  voltageToPu: override?.voltageToPu ?? 1,
-  frequencyHz: override?.frequencyHz ?? defaultFrequencyHz,
-  lossesMw: override?.lossesMw ?? 0,
-  weatherExposure: branch.weatherExposure,
-  provenance: override?.provenance ?? {
-    method: 'converted',
-    sourceId: 'electric-grid:private-topology',
-    confidence: 'medium',
-  },
-})
-
-const topologyBranchesForSolve = (
-  topology: GridSolverTopology,
-  operationalBranches: ReadonlyMap<string, GridBranchData>,
-): ReadonlyArray<{ readonly objectId: string; readonly data: GridBranchData }> =>
-  topology.branches.map(branch => ({
-    objectId: branch.objectId,
-    data: branchDataFromTopology(branch, operationalBranches.get(branch.objectId)),
-  }))
-
-const islandsFor = (
-  buses: ReadonlyArray<string>,
-  branches: ReadonlyArray<GridBranchData>,
-): ReadonlyArray<Island> => {
-  const adjacency = new Map<string, Set<string>>()
-  for (const bus of buses) adjacency.set(bus, new Set())
-  for (const branch of branches) {
-    if (!activeBranch(branch)) continue
+const islandsFor = (grid: GridRuntimeInstance): ReadonlyArray<GridTopologyIsland> => {
+  const adjacency = new Map(grid.definition.model.buses.map(bus => [bus.id, new Set<string>()]))
+  for (const branch of grid.definition.model.branches) {
+    if (!activeBranch(grid, branch)) continue
     adjacency.get(branch.fromBusId)?.add(branch.toBusId)
     adjacency.get(branch.toBusId)?.add(branch.fromBusId)
   }
   const seen = new Set<string>()
-  const islands: Island[] = []
-  for (const bus of buses) {
-    if (seen.has(bus)) continue
-    const queue = [bus]
-    const islandBuses: string[] = []
-    seen.add(bus)
+  const islands: GridTopologyIsland[] = []
+  for (const bus of grid.definition.model.buses) {
+    if (seen.has(bus.id)) continue
+    const queue = [bus.id]
+    const buses: string[] = []
+    seen.add(bus.id)
     while (queue.length > 0) {
       const current = queue.shift()!
-      islandBuses.push(current)
+      buses.push(current)
       for (const next of adjacency.get(current) ?? []) {
         if (seen.has(next)) continue
         seen.add(next)
         queue.push(next)
       }
     }
-    islands.push({ id: `island-${islands.length + 1}`, buses: islandBuses })
+    const id = `island:${[...buses].sort()[0]}`
+    islands.push({ id, buses, busSet: new Set(buses) })
   }
   return islands
 }
 
-const busIdsFor = (
-  items: ReadonlyArray<ParsedGridObject>,
-  topology: GridSolverTopology | null,
-): ReadonlyArray<string> => {
-  const busIds = new Set<string>(topology?.buses.map(bus => bus.busId) ?? [])
-  for (const { data } of items) {
-    if (data.type === 'grid_substation') busIds.add(data.busId)
-    if (data.type === 'grid_generator') busIds.add(data.busId)
-    if (data.type === 'grid_load') busIds.add(data.busId)
-    if (data.type === 'grid_storage') busIds.add(data.busId)
-    if (data.type === 'grid_branch') {
-      busIds.add(data.fromBusId)
-      busIds.add(data.toBusId)
-    }
-  }
-  return [...busIds].sort()
-}
-
-const injectionByBus = (
-  buses: ReadonlyArray<string>,
-  generators: ReadonlyArray<GridGeneratorData>,
-  loads: ReadonlyArray<GridLoadData>,
-  storage: ReadonlyArray<GridStorageData>,
-): Map<string, number> => {
-  const injections = new Map(buses.map(bus => [bus, 0]))
-  for (const generator of generators) {
-    injections.set(generator.busId, (injections.get(generator.busId) ?? 0) + generator.dispatchMw)
-  }
-  for (const item of storage) {
-    injections.set(item.busId, (injections.get(item.busId) ?? 0) + item.dispatchMw)
-  }
-  for (const load of loads) {
-    injections.set(load.busId, (injections.get(load.busId) ?? 0) - load.servedMw)
-  }
-  return injections
-}
-
-const solveAngles = (
-  island: Island,
-  branches: ReadonlyArray<GridBranchData>,
-  injections: ReadonlyMap<string, number>,
-): Map<string, number> => {
-  if (island.buses.length <= 1) return new Map(island.buses.map(bus => [bus, 0]))
-  const slack = island.buses[0]!
-  const nonSlack = island.buses.filter(bus => bus !== slack)
-  const indexByBus = new Map(nonSlack.map((bus, index) => [bus, index]))
-  const matrix = nonSlack.map(() => nonSlack.map(() => 0))
-  const rhs = nonSlack.map(bus => injections.get(bus) ?? 0)
+const factorFor = (
+  island: GridTopologyIsland,
+  branches: ReadonlyArray<GridBranchDefinition>,
+): GridLinearFactor => {
+  const buses = island.buses.slice(1)
+  const indexByBus = new Map(buses.map((bus, index) => [bus, index]))
+  const matrix = buses.map(() => buses.map(() => 0))
   for (const branch of branches) {
-    if (!activeBranch(branch)) continue
-    if (!island.buses.includes(branch.fromBusId) || !island.buses.includes(branch.toBusId)) continue
+    if (!island.busSet.has(branch.fromBusId) || !island.busSet.has(branch.toBusId)) continue
     const susceptance = 1 / Math.max(0.0001, branch.reactancePu)
     const i = indexByBus.get(branch.fromBusId)
     const j = indexByBus.get(branch.toBusId)
-    if (i !== undefined) {
-      const row = matrix[i]
-      if (row) row[i] = (row[i] ?? 0) + susceptance
-    }
-    if (j !== undefined) {
-      const row = matrix[j]
-      if (row) row[j] = (row[j] ?? 0) + susceptance
-    }
+    if (i !== undefined) matrix[i]![i] = (matrix[i]![i] ?? 0) + susceptance
+    if (j !== undefined) matrix[j]![j] = (matrix[j]![j] ?? 0) + susceptance
     if (i !== undefined && j !== undefined) {
-      const iRow = matrix[i]
-      const jRow = matrix[j]
-      if (iRow) iRow[j] = (iRow[j] ?? 0) - susceptance
-      if (jRow) jRow[i] = (jRow[i] ?? 0) - susceptance
+      matrix[i]![j] = (matrix[i]![j] ?? 0) - susceptance
+      matrix[j]![i] = (matrix[j]![i] ?? 0) - susceptance
     }
   }
-  const solved = solveLinear(matrix, rhs)
-  return new Map([
-    [slack, 0],
-    ...nonSlack.map((bus, index) => [bus, solved[index] ?? 0] as const),
-  ])
+  const lower = buses.map(() => buses.map(() => 0))
+  for (let row = 0; row < buses.length; row += 1) {
+    for (let col = 0; col <= row; col += 1) {
+      let value = matrix[row]![col]!
+      for (let k = 0; k < col; k += 1) value -= lower[row]![k]! * lower[col]![k]!
+      lower[row]![col] = row === col
+        ? Math.sqrt(Math.max(value, 1e-9))
+        : value / Math.max(lower[col]![col]!, 1e-9)
+    }
+  }
+  const upper = buses.map((_, row) => buses.map((__, col) => lower[col]?.[row] ?? 0))
+  return { buses, lower, upper }
 }
 
-const totalByBus = <T extends { readonly busId: string }>(
-  items: ReadonlyArray<T>,
-  amount: (item: T) => number,
-): Map<string, number> => {
-  const totals = new Map<string, number>()
-  for (const item of items) totals.set(item.busId, (totals.get(item.busId) ?? 0) + amount(item))
-  return totals
+const topologyPlanFor = (grid: GridRuntimeInstance): GridTopologyPlan => {
+  const signature = topologySignature(grid)
+  if (grid.topologyPlan?.signature === signature) return grid.topologyPlan
+  const islands = islandsFor(grid)
+  const activeBranches = grid.definition.model.branches.filter(branch => activeBranch(grid, branch))
+  const factors = new Map(islands.map(island => [island.id, factorFor(island, activeBranches)]))
+  const islandIdByBus = new Map(islands.flatMap(island => island.buses.map(bus => [bus, island.id] as const)))
+  const plan = { signature, islands, factors, islandIdByBus }
+  grid.topologyPlan = plan
+  return plan
 }
 
-const islandIdForBus = (islands: ReadonlyArray<Island>, busId: string): string =>
-  islands.find(island => island.buses.includes(busId))?.id ?? 'island-unknown'
-
-const voltageForBus = (config: {
-  readonly busId: string
-  readonly generationMw: number
-  readonly servedLoadMw: number
-  readonly reactiveDemandMvar: number
-  readonly branchLoadingPercent: number
-}): number => {
-  const loadStress = config.servedLoadMw <= 0 ? 0 : Math.min(0.055, config.reactiveDemandMvar / Math.max(1, config.servedLoadMw) * 0.035)
-  const flowStress = Math.max(0, config.branchLoadingPercent - 82) * 0.0015
-  const generationSupport = Math.min(0.018, config.generationMw / Math.max(1, config.servedLoadMw + 100) * 0.01)
-  return clamp(defaultBusVoltagePu - loadStress - flowStress + generationSupport, 0.88, 1.06)
+const solveFactor = (factor: GridLinearFactor, rhs: ReadonlyArray<number>): ReadonlyArray<number> => {
+  const y = rhs.map(() => 0)
+  for (let row = 0; row < rhs.length; row += 1) {
+    let value = rhs[row] ?? 0
+    for (let col = 0; col < row; col += 1) value -= factor.lower[row]![col]! * y[col]!
+    y[row] = value / Math.max(factor.lower[row]![row]!, 1e-9)
+  }
+  const result = rhs.map(() => 0)
+  for (let row = rhs.length - 1; row >= 0; row -= 1) {
+    let value = y[row] ?? 0
+    for (let col = row + 1; col < rhs.length; col += 1) value -= factor.upper[row]![col]! * result[col]!
+    result[row] = value / Math.max(factor.upper[row]![row]!, 1e-9)
+  }
+  return result
 }
 
 const frequencyStep = (config: {
+  readonly nominalHz: number
   readonly previousHz: number
   readonly generationMw: number
   readonly loadMw: number
@@ -364,304 +149,210 @@ const frequencyStep = (config: {
   readonly inertiaSeconds: number
   readonly dtSeconds: number
 }): number => {
-  const imbalanceMw = config.generationMw - config.loadMw
-  const droopMw = clamp((nominalFrequencyHz - config.previousHz) * 1800, -config.reserveMw, config.reserveMw)
-  const dampingMw = (config.previousHz - nominalFrequencyHz) * 240
-  const denominator = Math.max(500, 2 * Math.max(1, config.inertiaSeconds) * 900)
-  const df = (nominalFrequencyHz / denominator) * (imbalanceMw + droopMw - dampingMw) * config.dtSeconds
-  return clamp(config.previousHz + df, 48.4, 50.6)
+  const droopMw = clamp((config.nominalHz - config.previousHz) * 500, -config.reserveMw, config.reserveMw)
+  const imbalanceMw = config.generationMw + droopMw - config.loadMw
+  const equilibriumHz = config.nominalHz + clamp(imbalanceMw / Math.max(500, config.loadMw) * 2, -1.6, 0.6)
+  const timeConstantSeconds = clamp(5 + config.inertiaSeconds / 100, 5, 20)
+  const response = 1 - Math.exp(-Math.max(0, config.dtSeconds) / timeConstantSeconds)
+  return clamp(
+    config.previousHz + (equilibriumHz - config.previousHz) * response,
+    config.nominalHz - 1.6,
+    config.nominalHz + 0.6,
+  )
 }
 
-const updateObject = (
-  object: OperationalObject,
-  data: ElectricGridPackData,
-  at: IsoTimestamp,
-): OperationalObject => {
-  const previous = JSON.stringify(object.packData)
-  const next = JSON.stringify(data)
-  if (previous === next) return object
-  return {
-    ...object,
-    revision: object.revision + 1,
-    operational: {
-      ...object.operational,
-      status: statusForData(data),
-      priority: priorityForData(data),
-    },
-    alerts: alertsForData(object.id, data, at),
-    timestamps: { ...object.timestamps, updatedAt: at },
-    packData: data,
-  }
-}
+const generatorsOn = (state: string): boolean => state === 'online' || state === 'derated'
 
-const statusForData = (data: ElectricGridPackData): string => {
-  if (data.type === 'grid_system') return data.activeAlarmCount > 0 ? 'constrained' : 'normal'
-  if (data.type === 'grid_branch') {
-    if (data.state === 'open' || data.state === 'faulted') return data.state
-    if (data.loadingPercent >= 100) return 'overloaded'
-    if (data.loadingPercent >= 85) return 'high_loading'
-    return 'normal'
-  }
-  if (data.type === 'grid_generator') return data.state
-  if (data.type === 'grid_load') return data.serviceState
-  if (data.type === 'grid_substation') return data.state
-  if (data.type === 'grid_storage') return data.state
-  if (data.type === 'grid_market_area') return data.constrained ? 'constrained' : 'normal'
-  return 'normal'
-}
+const generatorDefinitionsOnBus = (grid: GridRuntimeInstance, busSet: ReadonlySet<string>): ReadonlyArray<GridGeneratorDefinition> =>
+  grid.definition.model.generators.filter(generator => busSet.has(generator.busId))
 
-const priorityForData = (data: ElectricGridPackData): NonNullable<OperationalObject['operational']['priority']> => {
-  if (data.type === 'grid_system') return data.activeAlarmCount > 0 ? 'high' : 'normal'
-  if (data.type === 'grid_branch' && data.loadingPercent >= 100) return 'critical'
-  if (data.type === 'grid_branch' && data.loadingPercent >= 85) return 'high'
-  if (data.type === 'grid_load' && data.serviceState === 'outage') return 'critical'
-  if (data.type === 'grid_load' && data.serviceState !== 'normal') return data.priority === 'critical' ? 'critical' : 'high'
-  if (data.type === 'grid_substation' && data.state !== 'normal') return data.state === 'outage' ? 'critical' : 'high'
-  return 'normal'
-}
+export const advanceGrid = (grid: GridRuntimeInstance, dtSeconds: number, at: IsoTimestamp): void => {
+  const model = grid.definition.model
+  const plan = topologyPlanFor(grid)
+  const busById = new Map(model.buses.map(bus => [bus.id, bus]))
+  const loadById = new Map(model.loads.map(load => [load.id, load]))
+  const dynamicSeconds = Math.max(0, dtSeconds)
+  grid.elapsedMs += dynamicSeconds * 1_000
+  grid.tick += 1
 
-const alertsForData = (
-  objectId: ObjectId,
-  data: ElectricGridPackData,
-  at: IsoTimestamp,
-): OperationalObject['alerts'] => {
-  if (data.type === 'grid_branch' && data.loadingPercent >= 100) {
-    return [{ id: `${objectId}:overload`, kind: 'grid_branch_overload', severity: 'critical', message: `Branch overloaded at ${Math.round(data.loadingPercent)}%`, raisedAt: at, acknowledged: false }]
+  for (const generator of model.generators) {
+    const state = grid.generators.get(generator.id)!
+    const target = generatorsOn(state.state) ? Math.min(state.targetMw, state.availableMw) : 0
+    state.dispatchMw = ramp(state.dispatchMw, target, generator.rampRateMwPerMinute * dynamicSeconds / 60)
   }
-  if (data.type === 'grid_branch' && data.loadingPercent >= 85) {
-    return [{ id: `${objectId}:high-loading`, kind: 'grid_branch_loading', severity: 'warning', message: `High branch loading at ${Math.round(data.loadingPercent)}%`, raisedAt: at, acknowledged: false }]
+  for (const load of model.loads) {
+    const state = grid.loads.get(load.id)!
+    state.demandMw = grid.definition.automation.loadProfiles ? profiledDemand(load, state.nominalDemandMw, at) : state.nominalDemandMw
+    state.servedMw = state.demandMw
+    state.shedMw = 0
   }
-  if (data.type === 'grid_system' && (data.frequencyHz < 49.85 || data.frequencyHz > 50.15)) {
-    return [{ id: `${objectId}:frequency`, kind: 'grid_frequency', severity: data.frequencyHz < 49.5 ? 'critical' : 'warning', message: `Frequency ${data.frequencyHz.toFixed(2)} Hz`, raisedAt: at, acknowledged: false }]
-  }
-  if (data.type === 'grid_load' && data.serviceState !== 'normal') {
-    return [{ id: `${objectId}:service`, kind: 'grid_supply', severity: data.serviceState === 'outage' ? 'critical' : 'warning', message: `${data.serviceState.replaceAll('_', ' ')}: ${Math.round(data.shedMw)} MW shed`, raisedAt: at, acknowledged: false }]
-  }
-  if (data.type === 'grid_substation' && data.voltagePu < 0.94) {
-    return [{ id: `${objectId}:voltage`, kind: 'grid_voltage', severity: data.voltagePu < 0.9 ? 'critical' : 'warning', message: `Voltage ${data.voltagePu.toFixed(2)} pu`, raisedAt: at, acknowledged: false }]
-  }
-  return []
-}
 
-export const solveGrid = (config: {
-  readonly objects: ReadonlyArray<OperationalObject>
-  readonly runtimeState: GridRuntimeState | null
-  readonly topology?: GridSolverTopology | null
-  readonly dtSeconds: number
-  readonly at: IsoTimestamp
-}): SolvedGridState => {
-  const parsed = parseGridObjects(config.objects)
-  const topology = config.topology ?? null
-  const buses = busIdsFor(parsed, topology)
-  const operationalBranches = new Map(parsed.flatMap(item =>
-    item.data.type === 'grid_branch' ? [[item.object.id, item.data] as const] : []))
-  const branchItems = topology
-    ? topologyBranchesForSolve(topology, operationalBranches)
-    : parsed.flatMap(item => item.data.type === 'grid_branch'
-        ? [{ objectId: item.object.id, data: item.data }]
-        : [])
-  const branches = branchItems.map(item => item.data)
-  const generators = parsed.flatMap(item => item.data.type === 'grid_generator' ? [item.data] : [])
-  const loads = parsed.flatMap(item => item.data.type === 'grid_load' ? [profiledLoad(item.object.id, item.data, config.at)] : [])
-  const storage = parsed.flatMap(item => item.data.type === 'grid_storage' ? [item.data] : [])
-  const islands = islandsFor(buses, branches)
-  const availableReserveMw = generators.reduce((sum, generator) => sum + generator.reserveMw, 0)
-  const previousFrequency = config.runtimeState?.frequencyHz ?? defaultFrequencyHz
-  const generationBeforeRamp = generators.reduce((sum, generator) => sum + generator.dispatchMw, 0)
-  const requestedLoadMw = loads.reduce((sum, load) => sum + load.demandMw, 0)
-  const inertiaSeconds = generators.reduce((sum, generator) => sum + generator.inertiaSeconds * Math.max(0.1, generator.dispatchMw / Math.max(1, generator.capacityMw)), 0)
-  const frequencyHz = frequencyStep({
-    previousHz: previousFrequency,
-    generationMw: generationBeforeRamp,
-    loadMw: requestedLoadMw,
-    reserveMw: availableReserveMw,
-    inertiaSeconds,
-    dtSeconds: config.dtSeconds,
-  })
-  const underFrequencyShedFraction = frequencyHz < 49.15 ? 0.45 : frequencyHz < 49.35 ? 0.28 : frequencyHz < 49.65 ? 0.12 : 0
-
-  const solvedLoads = loads.map(load => {
-    const maxShedMw = load.interruptibleMw * underFrequencyShedFraction
-    const servedMw = Math.max(load.criticalMw, load.demandMw - maxShedMw)
-    return {
-      ...load,
-      servedMw,
-      shedMw: Math.max(0, load.demandMw - servedMw),
-      frequencyHz,
-      serviceState: servedMw <= 0 ? 'outage' : servedMw < load.demandMw ? 'shed' : frequencyHz < 49.8 ? 'constrained' : 'normal',
-    } satisfies GridLoadData
-  })
-
-  const servedLoadMw = solvedLoads.reduce((sum, load) => sum + load.servedMw, 0)
-  const generationTargetMw = servedLoadMw + Math.max(0, (nominalFrequencyHz - frequencyHz) * 140)
-  const onlineGenerators = generators.filter(generator => generator.state === 'online' || generator.state === 'derated')
-  const onlineCapacity = onlineGenerators.reduce((sum, generator) => sum + Math.min(generator.availableMw, generator.capacityMw), 0)
-  const solvedGenerators = generators.map(generator => {
-    const desired = generator.state === 'online' || generator.state === 'derated'
-      ? Math.min(generator.availableMw, onlineCapacity > 0 ? generationTargetMw * Math.min(generator.availableMw, generator.capacityMw) / onlineCapacity : generator.targetMw)
-      : 0
-    const maxDelta = generator.rampRateMwPerMinute * config.dtSeconds / 60
-    return {
-      ...generator,
-      dispatchMw: ramp(generator.dispatchMw, desired, maxDelta),
-    } satisfies GridGeneratorData
-  })
-
-  const generationMw = solvedGenerators.reduce((sum, generator) => sum + generator.dispatchMw, 0)
-  const solvedStorage = storage.map(item => {
-    const dispatchMw = frequencyHz < 49.85
-      ? Math.min(item.maxDischargeMw, (1 - item.stateOfChargeFraction) < 0.98 ? item.maxDischargeMw : 0)
-      : frequencyHz > 50.08
-        ? -Math.min(item.maxChargeMw, item.maxChargeMw)
-        : 0
-    return {
-      ...item,
-      dispatchMw,
-      state: dispatchMw > 0 ? 'discharging' : dispatchMw < 0 ? 'charging' : 'idle',
-    } satisfies GridStorageData
-  })
-
-  const injections = injectionByBus(buses, solvedGenerators, solvedLoads, solvedStorage)
-  const angles = new Map<string, number>()
-  for (const island of islands) {
-    for (const [bus, angle] of solveAngles(island, branches, injections)) angles.set(bus, angle)
-  }
-  const generationByBus = totalByBus(solvedGenerators, generator => generator.dispatchMw)
-  const loadByBus = totalByBus(solvedLoads, load => load.servedMw)
-  const reactiveByBus = totalByBus(solvedLoads, load => load.reactiveDemandMvar)
-  const roughBranchLoadingByBus = new Map<string, number>()
-  const solvedBranchItems = branchItems.map(item => {
-    const branch = item.data
-    const flowMw = activeBranch(branch)
-      ? (angles.get(branch.fromBusId) ?? 0) - (angles.get(branch.toBusId) ?? 0)
-      : 0
-    const scaledFlowMw = flowMw / Math.max(0.0001, branch.reactancePu)
-    const ratingMw = branch.state === 'derated' ? branch.ratingMw * branch.availability : branch.ratingMw
-    const loadingPercent = Math.abs(scaledFlowMw) / Math.max(1, ratingMw) * 100
-    roughBranchLoadingByBus.set(branch.fromBusId, Math.max(roughBranchLoadingByBus.get(branch.fromBusId) ?? 0, loadingPercent))
-    roughBranchLoadingByBus.set(branch.toBusId, Math.max(roughBranchLoadingByBus.get(branch.toBusId) ?? 0, loadingPercent))
-    return {
-      objectId: item.objectId,
-      data: {
-        ...branch,
-        flowMw: scaledFlowMw,
-        loadingPercent,
-        frequencyHz,
-        lossesMw: Math.abs(scaledFlowMw) * branch.resistancePu * 0.006,
-      } satisfies GridBranchData,
+  const frequencyByIsland = new Map<string, number>()
+  for (const island of plan.islands) {
+    const generators = generatorDefinitionsOnBus(grid, island.busSet)
+    const loads = model.loads.filter(load => island.busSet.has(load.busId))
+    const storage = model.storage.filter(item => island.busSet.has(item.busId))
+    const generationMw = generators.reduce((sum, generator) => sum + grid.generators.get(generator.id)!.dispatchMw, 0)
+    const loadMw = loads.reduce((sum, load) => sum + grid.loads.get(load.id)!.demandMw, 0)
+    const reserveMw = generators.reduce((sum, generator) => {
+      const state = grid.generators.get(generator.id)!
+      return sum + (generatorsOn(state.state) ? Math.min(state.reserveMw, Math.max(0, state.availableMw - state.dispatchMw)) : 0)
+    }, 0)
+    const inertiaSeconds = generators.reduce((sum, generator) => {
+      const state = grid.generators.get(generator.id)!
+      return sum + (generatorsOn(state.state) ? generator.inertiaSeconds * Math.max(0.1, state.dispatchMw / Math.max(1, generator.capacityMw)) : 0)
+    }, 0)
+    const previousHz = grid.frequencyByIsland.get(island.id) ?? model.nominalFrequencyHz
+    const frequencyHz = frequencyStep({
+      nominalHz: model.nominalFrequencyHz,
+      previousHz,
+      generationMw,
+      loadMw,
+      reserveMw,
+      inertiaSeconds,
+      dtSeconds: dynamicSeconds,
+    })
+    frequencyByIsland.set(island.id, frequencyHz)
+    const shedFraction = !grid.definition.automation.underFrequencyLoadShedding
+      ? 0
+      : frequencyHz < model.nominalFrequencyHz - 0.85
+        ? 0.45
+        : frequencyHz < model.nominalFrequencyHz - 0.65
+          ? 0.28
+          : frequencyHz < model.nominalFrequencyHz - 0.35
+            ? 0.12
+            : 0
+    for (const load of loads) {
+      const state = grid.loads.get(load.id)!
+      const interruptibleMw = Math.max(0, state.demandMw - load.criticalMw)
+      state.shedMw = interruptibleMw * shedFraction
+      state.servedMw = Math.max(load.criticalMw, state.demandMw - state.shedMw)
+      state.frequencyHz = frequencyHz
+      state.serviceState = state.servedMw <= 0 ? 'outage' : state.shedMw > 0 ? 'shed' : Math.abs(frequencyHz - model.nominalFrequencyHz) >= 0.2 ? 'constrained' : 'normal'
     }
-  })
-  const solvedBranches = solvedBranchItems.map(item => item.data)
+    for (const item of storage) {
+      const state = grid.storage.get(item.id)!
+      const canDischarge = state.stateOfChargeFraction > 0.02
+      const canCharge = state.stateOfChargeFraction < 0.98
+      state.dispatchMw = !grid.definition.automation.storageFrequencyResponse
+        ? 0
+        : frequencyHz < model.nominalFrequencyHz - 0.15 && canDischarge
+          ? item.maxDischargeMw
+          : frequencyHz > model.nominalFrequencyHz + 0.08 && canCharge
+            ? -item.maxChargeMw
+            : 0
+      const energyMwh = state.dispatchMw >= 0
+        ? state.dispatchMw * dynamicSeconds / 3_600 / 0.92
+        : state.dispatchMw * dynamicSeconds / 3_600 * 0.92
+      state.stateOfChargeFraction = clamp(state.stateOfChargeFraction - energyMwh / item.capacityMwh, 0, 1)
+      state.frequencyHz = frequencyHz
+      state.state = state.dispatchMw > 0 ? 'discharging' : state.dispatchMw < 0 ? 'charging' : 'idle'
+    }
+    for (const generator of generators) grid.generators.get(generator.id)!.frequencyHz = frequencyHz
+  }
+  grid.frequencyByIsland = frequencyByIsland
 
-  const busStates = new Map<string, GridBusState>()
-  for (const bus of buses) {
-    const voltagePu = voltageForBus({
-      busId: bus,
-      generationMw: generationByBus.get(bus) ?? 0,
-      servedLoadMw: loadByBus.get(bus) ?? 0,
-      reactiveDemandMvar: reactiveByBus.get(bus) ?? 0,
-      branchLoadingPercent: roughBranchLoadingByBus.get(bus) ?? 0,
-    })
-    busStates.set(bus, {
-      busId: bus,
-      nominalKv: parsed.flatMap(item => item.data.type === 'grid_substation' && item.data.busId === bus ? [item.data.nominalKv] : [])[0] ?? 132,
-      voltagePu,
-      frequencyHz,
-      angleRad: angles.get(bus) ?? 0,
-      islandId: islandIdForBus(islands, bus),
-      netInjectionMw: injections.get(bus) ?? 0,
-    })
+  const injections = new Map(model.buses.map(bus => [bus.id, 0]))
+  for (const generator of model.generators) injections.set(generator.busId, (injections.get(generator.busId) ?? 0) + grid.generators.get(generator.id)!.dispatchMw)
+  for (const load of model.loads) injections.set(load.busId, (injections.get(load.busId) ?? 0) - grid.loads.get(load.id)!.servedMw)
+  for (const item of model.storage) injections.set(item.busId, (injections.get(item.busId) ?? 0) + grid.storage.get(item.id)!.dispatchMw)
+
+  const angles = new Map<string, number>()
+  for (const island of plan.islands) {
+    const factor = plan.factors.get(island.id)!
+    const solved = solveFactor(factor, factor.buses.map(bus => injections.get(bus) ?? 0))
+    angles.set(island.buses[0]!, 0)
+    for (let index = 0; index < factor.buses.length; index += 1) angles.set(factor.buses[index]!, solved[index] ?? 0)
   }
 
-  const solvedSubstations = parsed.flatMap(item => {
-    if (item.data.type !== 'grid_substation') return []
-    const busId = item.data.busId
-    const bus = busStates.get(busId)
-    const connectedBranchCount = solvedBranches.filter(branch => branch.fromBusId === busId || branch.toBusId === busId).length
-    const loadingPercent = Math.max(0, roughBranchLoadingByBus.get(busId) ?? 0)
-    const voltagePu = bus?.voltagePu ?? defaultBusVoltagePu
-    const isolatedBus = islands.length > 1 && connectedBranchCount === 0
-    return [{
-      ...item.data,
-      voltagePu,
-      frequencyHz,
-      connectedBranchCount,
-      loadingPercent,
-      reactiveMarginMvar: Math.max(-200, 260 - (reactiveByBus.get(item.data.busId) ?? 0) - Math.max(0, loadingPercent - 80) * 2),
-      state: voltagePu < 0.9 ? 'constrained' : voltagePu < 0.95 ? 'voltage_watch' : isolatedBus ? 'islanded' : 'normal',
-    } satisfies GridSubstationData]
-  })
+  const branchLoadingByBus = new Map<string, number>()
+  for (const branch of model.branches) {
+    const state = grid.branches.get(branch.id)!
+    const flowMw = activeBranch(grid, branch)
+      ? ((angles.get(branch.fromBusId) ?? 0) - (angles.get(branch.toBusId) ?? 0)) / Math.max(0.0001, branch.reactancePu)
+      : 0
+    const ratingMw = state.state === 'derated' ? branch.ratingMw * state.availability : branch.ratingMw
+    state.flowMw = flowMw
+    state.loadingPercent = Math.abs(flowMw) / Math.max(1, ratingMw) * 100
+    state.frequencyHz = frequencyByIsland.get(plan.islandIdByBus.get(branch.fromBusId) ?? '') ?? model.nominalFrequencyHz
+    state.lossesMw = Math.abs(flowMw) * branch.resistancePu * 0.006
+    branchLoadingByBus.set(branch.fromBusId, Math.max(branchLoadingByBus.get(branch.fromBusId) ?? 0, state.loadingPercent))
+    branchLoadingByBus.set(branch.toBusId, Math.max(branchLoadingByBus.get(branch.toBusId) ?? 0, state.loadingPercent))
+  }
 
-  const highestBranchLoadingPercent = solvedBranches.reduce((highest, branch) => Math.max(highest, branch.loadingPercent), 0)
-  const lowestVoltagePu = [...busStates.values()].reduce((lowest, bus) => Math.min(lowest, bus.voltagePu), 1)
-  const totalShedMw = solvedLoads.reduce((sum, load) => sum + load.shedMw, 0)
+  const generationByBus = new Map<string, number>()
+  const loadByBus = new Map<string, number>()
+  const reactiveByBus = new Map<string, number>()
+  for (const generator of model.generators) generationByBus.set(generator.busId, (generationByBus.get(generator.busId) ?? 0) + grid.generators.get(generator.id)!.dispatchMw)
+  for (const load of model.loads) {
+    loadByBus.set(load.busId, (loadByBus.get(load.busId) ?? 0) + grid.loads.get(load.id)!.servedMw)
+    const state = grid.loads.get(load.id)!
+    const reactive = load.demandMw <= 0 ? 0 : load.reactiveDemandMvar * state.demandMw / load.demandMw
+    reactiveByBus.set(load.busId, (reactiveByBus.get(load.busId) ?? 0) + reactive)
+  }
+  const busStates = new Map<string, GridRuntimeInstance['busStates'] extends Map<string, infer T> ? T : never>()
+  for (const bus of model.buses) {
+    const servedLoadMw = loadByBus.get(bus.id) ?? 0
+    const loadStress = servedLoadMw <= 0 ? 0 : Math.min(0.055, (reactiveByBus.get(bus.id) ?? 0) / Math.max(1, servedLoadMw) * 0.035)
+    const flowStress = Math.max(0, (branchLoadingByBus.get(bus.id) ?? 0) - 82) * 0.0015
+    const generationSupport = Math.min(0.018, (generationByBus.get(bus.id) ?? 0) / Math.max(1, servedLoadMw + 100) * 0.01)
+    const islandId = plan.islandIdByBus.get(bus.id)!
+    busStates.set(bus.id, {
+      busId: bus.id,
+      voltagePu: clamp(1 - loadStress - flowStress + generationSupport, 0.88, 1.06),
+      frequencyHz: frequencyByIsland.get(islandId) ?? model.nominalFrequencyHz,
+      angleRad: angles.get(bus.id) ?? 0,
+      islandId,
+      netInjectionMw: injections.get(bus.id) ?? 0,
+    })
+  }
+  grid.busStates = busStates
+  for (const branch of model.branches) {
+    const state = grid.branches.get(branch.id)!
+    state.voltageFromPu = busStates.get(branch.fromBusId)?.voltagePu ?? 1
+    state.voltageToPu = busStates.get(branch.toBusId)?.voltagePu ?? 1
+  }
+  for (const load of model.loads) grid.loads.get(load.id)!.voltagePu = busStates.get(load.busId)?.voltagePu ?? 1
+  for (const item of model.storage) grid.storage.get(item.id)!.voltagePu = busStates.get(item.busId)?.voltagePu ?? 1
+
+  const totalGenerationMw = [...grid.generators.values()].reduce((sum, item) => sum + item.dispatchMw, 0)
+  const totalLoadMw = [...grid.loads.values()].reduce((sum, item) => sum + item.demandMw, 0)
+  const servedLoadMw = [...grid.loads.values()].reduce((sum, item) => sum + item.servedMw, 0)
+  const unservedLoadMw = totalLoadMw - servedLoadMw
+  const reserveMarginMw = [...grid.generators.values()].reduce((sum, item) => sum + (generatorsOn(item.state) ? Math.min(item.reserveMw, Math.max(0, item.availableMw - item.dispatchMw)) : 0), 0)
+  const highestBranchLoadingPercent = [...grid.branches.values()].reduce((highest, item) => Math.max(highest, item.loadingPercent), 0)
+  const lowestVoltagePu = [...busStates.values()].reduce((lowest, item) => Math.min(lowest, item.voltagePu), 1)
+  const totalWeight = model.loads.reduce((sum, load) => sum + grid.loads.get(load.id)!.demandMw, 0)
+  const frequencyHz = totalWeight <= 0
+    ? model.nominalFrequencyHz
+    : model.loads.reduce((sum, load) => sum + grid.loads.get(load.id)!.frequencyHz * grid.loads.get(load.id)!.demandMw, 0) / totalWeight
   const activeAlarmCount = [
-    frequencyHz < 49.85 || frequencyHz > 50.15,
+    Math.abs(frequencyHz - model.nominalFrequencyHz) >= 0.15,
     highestBranchLoadingPercent >= 85,
     lowestVoltagePu < 0.95,
-    totalShedMw > 0,
+    unservedLoadMw > 0.1,
   ].filter(Boolean).length
-  const summary: GridSystemData = {
-    type: 'grid_system',
-    schemaVersion: 1,
-    assetKind: 'system',
-    nominalFrequencyHz,
+  const activeIslandCount = plan.islands.filter(island =>
+    model.generators.some(generator => island.busSet.has(generator.busId))
+    || model.loads.some(load => island.busSet.has(load.busId))
+    || model.storage.some(item => island.busSet.has(item.busId))).length
+  const statusTone = activeAlarmCount > 0 ? 'error' as const : Math.abs(frequencyHz - model.nominalFrequencyHz) >= 0.05 ? 'working' as const : 'ready' as const
+  grid.projection = {
+    statusTone,
+    statusLabel: activeAlarmCount > 0 ? `${activeAlarmCount} active alarm${activeAlarmCount === 1 ? '' : 's'}` : 'Normal',
+    summary: `${frequencyHz.toFixed(2)} Hz · ${Math.round(servedLoadMw).toLocaleString()} MW served · ${activeAlarmCount} alarms`,
+    nominalFrequencyHz: model.nominalFrequencyHz,
     frequencyHz,
-    totalGenerationMw: generationMw,
-    totalLoadMw: requestedLoadMw,
+    totalGenerationMw,
+    totalLoadMw,
     servedLoadMw,
-    unservedLoadMw: totalShedMw,
-    reserveMarginMw: availableReserveMw - Math.max(0, requestedLoadMw - generationMw),
+    unservedLoadMw,
+    reserveMarginMw,
     highestBranchLoadingPercent,
     lowestVoltagePu,
-    activeIslandCount: islands.length,
+    activeIslandCount: Math.max(1, activeIslandCount),
     activeAlarmCount,
-    tick: (config.runtimeState?.tick ?? 0) + 1,
-    updatedAt: config.at,
-    busStates: [...busStates.values()],
-    provenance: {
-      method: 'configured',
-      sourceId: 'electric-grid-runtime',
-      confidence: 'medium',
-    },
-  }
-
-  const dataByObjectId = new Map<string, ElectricGridPackData>()
-  let generatorIndex = 0
-  let loadIndex = 0
-  let storageIndex = 0
-  let branchIndex = 0
-  let substationIndex = 0
-  for (const item of parsed) {
-    if (item.data.type === 'grid_system') dataByObjectId.set(item.object.id, summary)
-    if (item.data.type === 'grid_generator') dataByObjectId.set(item.object.id, solvedGenerators[generatorIndex++] ?? item.data)
-    if (item.data.type === 'grid_load') dataByObjectId.set(item.object.id, solvedLoads[loadIndex++] ?? item.data)
-    if (item.data.type === 'grid_storage') dataByObjectId.set(item.object.id, solvedStorage[storageIndex++] ?? item.data)
-    if (item.data.type === 'grid_branch') {
-      dataByObjectId.set(item.object.id, solvedBranchItems.find(branch => branch.objectId === item.object.id)?.data ?? solvedBranches[branchIndex++] ?? item.data)
-    }
-    if (item.data.type === 'grid_substation') dataByObjectId.set(item.object.id, solvedSubstations[substationIndex++] ?? item.data)
-    if (item.data.type === 'grid_market_area') {
-      dataByObjectId.set(item.object.id, {
-        ...item.data,
-        generationMw,
-        loadMw: servedLoadMw,
-        netExportMw: generationMw - servedLoadMw,
-        constrained: activeAlarmCount > 0,
-      })
-    }
-  }
-
-  return {
-    objects: config.objects.map(object => {
-      const data = dataByObjectId.get(object.id)
-      return data ? updateObject(object, data, config.at) : object
-    }),
-    runtimeState: {
-      tick: summary.tick,
-      frequencyHz,
-      busStates,
-    },
-    summary,
+    tick: grid.tick,
+    updatedAt: at,
   }
 }

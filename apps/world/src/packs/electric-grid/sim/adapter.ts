@@ -1,14 +1,15 @@
-import { z } from 'zod'
-import { electricGridPackConfigSchema } from '../config.ts'
 import type {
   CommandEnvelope,
   CommandResult,
-  SimulationRunEvent,
   IsoTimestamp,
+  ObjectId,
   OperationalObject,
+  PackRuntimeRecordingBatch,
   SimulationClockState,
+  SimulationRunEvent,
 } from '../../../core/model/index.ts'
 import { nowIso } from '../../../core/model/index.ts'
+import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import type {
   PackRuntimeAdapter,
   PackRuntimeConnection,
@@ -17,434 +18,327 @@ import type {
   PackRuntimeEventHandler,
   PackRuntimeEventHistory,
 } from '../../../simulation/protocol.ts'
-import { definePackRuntimeOperations } from '../../../simulation/operations.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
-import { defaultSimulationRunRuntimePolicy } from '../../../core/simulation-runs/runtime-persistence-policy.ts'
 import {
   electricGridCommandKinds,
+  electricGridCommandOperations,
   gridClearDerateCommandKind,
+  gridClearDeratePayloadSchema,
   gridCloseBranchCommandKind,
+  gridCloseBranchPayloadSchema,
   gridDerateBranchCommandKind,
+  gridDerateBranchPayloadSchema,
   gridDispatchGeneratorCommandKind,
+  gridDispatchGeneratorPayloadSchema,
   gridOpenBranchCommandKind,
+  gridOpenBranchPayloadSchema,
   gridRestoreLoadCommandKind,
+  gridRestoreLoadPayloadSchema,
   gridSetEvChargingPolicyCommandKind,
+  gridSetEvChargingPolicyPayloadSchema,
   gridSetGeneratorAvailabilityCommandKind,
+  gridSetGeneratorAvailabilityPayloadSchema,
   gridShedLoadCommandKind,
+  gridShedLoadPayloadSchema,
   gridTripGeneratorCommandKind,
+  gridTripGeneratorPayloadSchema,
 } from '../commands.ts'
-import { answerElectricGridQuery, electricGridQueryKinds } from '../query.ts'
-import { electricGridAdapterId, electricGridRuntimeId, electricGridRuntimePackId } from './constants.ts'
-import { electricGridPackDataSchema, type ElectricGridPackData } from '../model.ts'
-import { norwayGridArenaTopology } from '../arena/norway-grid-arena.ts'
-import { solveGrid, type GridRuntimeState, type GridSolverTopology } from '../runtime/solver.ts'
+import { gridDefinitionSchema } from '../config.ts'
+import { electricGridPackDataSchema, electricGridPackId } from '../model.ts'
+import { answerElectricGridQuery, electricGridQueryOperations } from '../query.ts'
+import { createGridRecordingPlan } from '../recording.ts'
+import { createGridRuntimeInstance, type GridRuntimeInstance } from '../runtime/instance.ts'
+import { advanceGrid } from '../runtime/solver.ts'
+import { gridProjectionEvents, projectedInitialGridObjects } from './object-projection.ts'
+import { createElectricGridRuntimePersistence } from './persistence.ts'
+import { electricGridRuntimeStateSchema, restoredGridRuntimeStateFor } from './runtime-state.ts'
+import { electricGridAdapterId, electricGridRuntimeId } from './constants.ts'
 
 const updateIntervalMs = 2_000
-const runtimeStateFlushIntervalMs = defaultSimulationRunRuntimePolicy.runtimePrivateStateFlushIntervalMs
-const projectedChangeThresholds = {
-  branchFlowMw: 50,
-  branchLoadingPercent: 5,
-  branchFrequencyHz: 0.05,
-  generatorMw: 1,
-  loadMw: 2,
-  shedMw: 1,
-  loadFrequencyHz: 0.02,
-  substationVoltagePu: 0.002,
-  substationLoadingPercent: 2,
-  storageMw: 1,
-  stateOfChargeFraction: 0.005,
-  marketAreaMw: 10,
-} as const
 
-const targetMwSchema = z.object({ targetMw: z.number().finite().nonnegative() })
-const availabilitySchema = z.object({ availableMw: z.number().finite().nonnegative() })
-const derateSchema = z.object({ availability: z.number().finite().min(0.05).max(1) })
-const shedLoadSchema = z.object({ shedMw: z.number().finite().nonnegative() })
-const evPolicySchema = z.object({ demandMw: z.number().finite().nonnegative() })
-const persistedRuntimeStateSchema = z.object({
-  runtimeState: z.object({
-    tick: z.number().int().nonnegative(),
-    frequencyHz: z.number().finite(),
-  }),
-})
-const topologyForRuntimeConfig = (runtimeConfig: unknown): GridSolverTopology | null => {
-  const parsed = electricGridPackConfigSchema.parse(runtimeConfig ?? {})
-  if (parsed.topology?.kind !== 'built-in') return null
-  return norwayGridArenaTopology()
+const currentSimulationTime = (clock: SimulationClockState): IsoTimestamp => {
+  if (clock.paused) return clock.currentTime
+  const current = Date.parse(clock.currentTime)
+  const updated = Date.parse(clock.updatedAt)
+  if (!Number.isFinite(current) || !Number.isFinite(updated)) throw new Error('electric-grid runtime received an invalid simulation clock')
+  return new Date(current + Math.max(0, Date.now() - updated) * clock.speed).toISOString() as IsoTimestamp
 }
 
-const restoreGridObject = (object: OperationalObject): OperationalObject => {
-  const parsed = electricGridPackDataSchema.safeParse(object.packData)
-  if (!parsed.success) throw new Error(`invalid restored electric-grid object ${object.id}: ${parsed.error.message}`)
-  return { ...object, packData: parsed.data }
+const emit = (config: {
+  readonly handlers: ReadonlySet<PackRuntimeEventHandler>
+  readonly events: ReadonlyArray<PackRuntimeEvent>
+  readonly recording?: PackRuntimeRecordingBatch
+}): void => {
+  if (config.events.length === 0 && config.recording === undefined) return
+  const emittedAt = nowIso()
+  for (const handler of config.handlers) handler({
+    type: 'event.emission',
+    runtimeId: electricGridRuntimeId,
+    emittedAt,
+    events: config.events,
+    ...(config.recording === undefined ? {} : { recording: config.recording }),
+  })
 }
 
-const emit = (
-  handlers: ReadonlySet<PackRuntimeEventHandler>,
-  events: ReadonlyArray<PackRuntimeEvent>,
-  at: IsoTimestamp,
-): void => {
-  if (events.length === 0) return
-  for (const handler of handlers) {
-    handler({
-      type: 'event.emission',
-      runtimeId: electricGridRuntimeId,
-      emittedAt: at,
-      events,
-    })
-  }
-}
-
-const commandAccepted = (command: CommandEnvelope, acceptedAt: IsoTimestamp): CommandResult => ({
-  ok: true,
-  commandId: command.id,
-  acceptedAt,
-})
-
-const commandRejected = (command: CommandEnvelope, rejectedAt: IsoTimestamp, reason: string): CommandResult => ({
+const commandRejected = (command: CommandEnvelope, reason: string): CommandResult => ({
   ok: false,
   commandId: command.id,
-  rejectedAt,
+  rejectedAt: nowIso(),
   reason,
 })
 
-const updatedWithPackData = (
-  object: OperationalObject,
-  data: ElectricGridPackData,
-  at: IsoTimestamp,
-): OperationalObject => ({
-  ...object,
-  revision: object.revision + 1,
-  timestamps: { ...object.timestamps, updatedAt: at },
-  packData: data,
+const gridObjectDefinitions = (objects: ReadonlyArray<OperationalObject>) => objects.flatMap(object => {
+  if (object.packId !== electricGridPackId) return []
+  const data = electricGridPackDataSchema.parse(object.packData)
+  return [{
+    object,
+    definition: gridDefinitionSchema.parse({
+      id: object.id,
+      model: data.model,
+      operatingPoint: data.operatingPoint,
+      automation: data.automation,
+    }),
+  }]
 })
 
-const changedByAtLeast = (left: number, right: number, threshold: number): boolean =>
-  Math.abs(left - right) >= threshold
-
-const projectedGridChangeIsMeaningful = (
-  previous: ElectricGridPackData,
-  next: ElectricGridPackData,
-): boolean => {
-  if (previous.type !== next.type) return true
-  if (next.type === 'grid_system') return true
-  if (previous.type === 'grid_branch' && next.type === 'grid_branch') {
-    return previous.state !== next.state
-      || changedByAtLeast(previous.flowMw, next.flowMw, projectedChangeThresholds.branchFlowMw)
-      || changedByAtLeast(previous.loadingPercent, next.loadingPercent, projectedChangeThresholds.branchLoadingPercent)
-      || changedByAtLeast(previous.frequencyHz, next.frequencyHz, projectedChangeThresholds.branchFrequencyHz)
-  }
-  if (previous.type === 'grid_generator' && next.type === 'grid_generator') {
-    return previous.state !== next.state
-      || changedByAtLeast(previous.dispatchMw, next.dispatchMw, projectedChangeThresholds.generatorMw)
-      || changedByAtLeast(previous.availableMw, next.availableMw, projectedChangeThresholds.generatorMw)
-      || changedByAtLeast(previous.targetMw, next.targetMw, projectedChangeThresholds.generatorMw)
-  }
-  if (previous.type === 'grid_load' && next.type === 'grid_load') {
-    return previous.serviceState !== next.serviceState
-      || changedByAtLeast(previous.demandMw, next.demandMw, projectedChangeThresholds.loadMw)
-      || changedByAtLeast(previous.servedMw, next.servedMw, projectedChangeThresholds.loadMw)
-      || changedByAtLeast(previous.shedMw, next.shedMw, projectedChangeThresholds.shedMw)
-      || changedByAtLeast(previous.frequencyHz, next.frequencyHz, projectedChangeThresholds.loadFrequencyHz)
-  }
-  if (previous.type === 'grid_substation' && next.type === 'grid_substation') {
-    return previous.state !== next.state
-      || changedByAtLeast(previous.voltagePu, next.voltagePu, projectedChangeThresholds.substationVoltagePu)
-      || changedByAtLeast(previous.loadingPercent, next.loadingPercent, projectedChangeThresholds.substationLoadingPercent)
-      || changedByAtLeast(previous.connectedBranchCount, next.connectedBranchCount, 1)
-  }
-  if (previous.type === 'grid_storage' && next.type === 'grid_storage') {
-    return previous.state !== next.state
-      || changedByAtLeast(previous.dispatchMw, next.dispatchMw, projectedChangeThresholds.storageMw)
-      || changedByAtLeast(
-        previous.stateOfChargeFraction,
-        next.stateOfChargeFraction,
-        projectedChangeThresholds.stateOfChargeFraction,
-      )
-  }
-  if (previous.type === 'grid_market_area' && next.type === 'grid_market_area') {
-    return previous.constrained !== next.constrained
-      || changedByAtLeast(previous.generationMw, next.generationMw, projectedChangeThresholds.marketAreaMw)
-      || changedByAtLeast(previous.loadMw, next.loadMw, projectedChangeThresholds.marketAreaMw)
-      || changedByAtLeast(previous.netExportMw, next.netExportMw, projectedChangeThresholds.marketAreaMw)
-  }
-  return JSON.stringify(previous) !== JSON.stringify(next)
+const requireGrid = (grids: ReadonlyMap<string, GridRuntimeInstance>, command: CommandEnvelope): GridRuntimeInstance => {
+  if (command.targetObjectIds.length !== 1) throw new Error('electric-grid commands require exactly one target Grid object')
+  const gridId = command.targetObjectIds[0]!
+  const grid = grids.get(gridId)
+  if (!grid) throw new Error(`target Grid not found: ${gridId}`)
+  return grid
 }
 
-const shouldEmitProjectedObjectUpdate = (
-  previous: OperationalObject | undefined,
-  next: OperationalObject,
-): boolean => {
-  if (!previous) return true
-  if (previous.revision === next.revision) return false
-  const previousData = electricGridPackDataSchema.safeParse(previous.packData)
-  const nextData = electricGridPackDataSchema.safeParse(next.packData)
-  if (!previousData.success || !nextData.success) return true
-  return projectedGridChangeIsMeaningful(previousData.data, nextData.data)
-}
-
-const applyCommandToObject = (
-  object: OperationalObject,
-  command: CommandEnvelope,
-  at: IsoTimestamp,
-): OperationalObject | null => {
-  const data = electricGridPackDataSchema.safeParse(object.packData)
-  if (!data.success) return null
-  if (command.kind === gridDispatchGeneratorCommandKind && data.data.type === 'grid_generator') {
-    const payload = targetMwSchema.parse(command.payload)
-    return updatedWithPackData(object, { ...data.data, targetMw: Math.min(payload.targetMw, data.data.availableMw) }, at)
+const applyCommand = (grid: GridRuntimeInstance, command: CommandEnvelope): void => {
+  if (command.kind === gridDispatchGeneratorCommandKind) {
+    const payload = gridDispatchGeneratorPayloadSchema.parse(command.payload)
+    const state = grid.generators.get(payload.assetId)
+    if (!state) throw new Error(`generator Grid Asset not found: ${payload.assetId}`)
+    state.targetMw = Math.min(payload.targetMw, state.availableMw)
+    return
   }
-  if (command.kind === gridTripGeneratorCommandKind && data.data.type === 'grid_generator') {
-    return updatedWithPackData(object, { ...data.data, state: 'tripped', targetMw: 0, dispatchMw: 0, availableMw: 0 }, at)
+  if (command.kind === gridTripGeneratorCommandKind) {
+    const payload = gridTripGeneratorPayloadSchema.parse(command.payload)
+    const state = grid.generators.get(payload.assetId)
+    if (!state) throw new Error(`generator Grid Asset not found: ${payload.assetId}`)
+    state.state = 'tripped'
+    state.dispatchMw = 0
+    state.targetMw = 0
+    return
   }
-  if (command.kind === gridSetGeneratorAvailabilityCommandKind && data.data.type === 'grid_generator') {
-    const payload = availabilitySchema.parse(command.payload)
-    return updatedWithPackData(object, { ...data.data, availableMw: Math.min(payload.availableMw, data.data.capacityMw), state: payload.availableMw > 0 ? 'online' : 'offline' }, at)
+  if (command.kind === gridSetGeneratorAvailabilityCommandKind) {
+    const payload = gridSetGeneratorAvailabilityPayloadSchema.parse(command.payload)
+    const state = grid.generators.get(payload.assetId)
+    const definition = grid.definition.model.generators.find(candidate => candidate.id === payload.assetId)
+    if (!state || !definition) throw new Error(`generator Grid Asset not found: ${payload.assetId}`)
+    state.availableMw = Math.min(payload.availableMw, definition.capacityMw)
+    state.targetMw = Math.min(state.targetMw, state.availableMw)
+    state.dispatchMw = Math.min(state.dispatchMw, state.availableMw)
+    state.state = state.availableMw > 0 ? 'online' : 'offline'
+    return
   }
-  if (command.kind === gridOpenBranchCommandKind && data.data.type === 'grid_branch') {
-    return updatedWithPackData(object, { ...data.data, state: 'open', flowMw: 0, loadingPercent: 0 }, at)
+  if (command.kind === gridOpenBranchCommandKind || command.kind === gridCloseBranchCommandKind || command.kind === gridDerateBranchCommandKind || command.kind === gridClearDerateCommandKind) {
+    const payload = command.kind === gridOpenBranchCommandKind
+      ? gridOpenBranchPayloadSchema.parse(command.payload)
+      : command.kind === gridCloseBranchCommandKind
+        ? gridCloseBranchPayloadSchema.parse(command.payload)
+        : command.kind === gridDerateBranchCommandKind
+          ? gridDerateBranchPayloadSchema.parse(command.payload)
+          : gridClearDeratePayloadSchema.parse(command.payload)
+    const state = grid.branches.get(payload.assetId)
+    if (!state) throw new Error(`branch Grid Asset not found: ${payload.assetId}`)
+    if (command.kind === gridOpenBranchCommandKind) state.state = 'open'
+    if (command.kind === gridCloseBranchCommandKind || command.kind === gridClearDerateCommandKind) {
+      state.state = 'closed'
+      state.availability = 1
+    }
+    if (command.kind === gridDerateBranchCommandKind) {
+      state.state = 'derated'
+      state.availability = gridDerateBranchPayloadSchema.parse(command.payload).availability
+    }
+    grid.topologyPlan = null
+    return
   }
-  if (command.kind === gridCloseBranchCommandKind && data.data.type === 'grid_branch') {
-    return updatedWithPackData(object, { ...data.data, state: 'closed', availability: 1 }, at)
+  if (command.kind === gridShedLoadCommandKind) {
+    const payload = gridShedLoadPayloadSchema.parse(command.payload)
+    const state = grid.loads.get(payload.assetId)
+    const definition = grid.definition.model.loads.find(candidate => candidate.id === payload.assetId)
+    if (!state || !definition) throw new Error(`load Grid Asset not found: ${payload.assetId}`)
+    state.nominalDemandMw = Math.max(definition.criticalMw, state.nominalDemandMw - payload.amountMw)
+    return
   }
-  if (command.kind === gridDerateBranchCommandKind && data.data.type === 'grid_branch') {
-    const payload = derateSchema.parse(command.payload)
-    return updatedWithPackData(object, { ...data.data, state: 'derated', availability: payload.availability }, at)
+  if (command.kind === gridRestoreLoadCommandKind) {
+    const payload = gridRestoreLoadPayloadSchema.parse(command.payload)
+    const state = grid.loads.get(payload.assetId)
+    const definition = grid.definition.model.loads.find(candidate => candidate.id === payload.assetId)
+    if (!state || !definition) throw new Error(`load Grid Asset not found: ${payload.assetId}`)
+    state.nominalDemandMw = definition.demandMw * grid.definition.operatingPoint.loadScale
+    return
   }
-  if (command.kind === gridClearDerateCommandKind && data.data.type === 'grid_branch') {
-    return updatedWithPackData(object, { ...data.data, state: 'closed', availability: 1 }, at)
+  if (command.kind === gridSetEvChargingPolicyCommandKind) {
+    const payload = gridSetEvChargingPolicyPayloadSchema.parse(command.payload)
+    const state = grid.loads.get(payload.assetId)
+    const definition = grid.definition.model.loads.find(candidate => candidate.id === payload.assetId)
+    if (!state || !definition || definition.kind !== 'ev_charging') throw new Error(`EV charging Grid Asset not found: ${payload.assetId}`)
+    state.nominalDemandMw = Math.max(definition.criticalMw, payload.demandMw)
+    return
   }
-  if (command.kind === gridShedLoadCommandKind && data.data.type === 'grid_load') {
-    const payload = shedLoadSchema.parse(command.payload)
-    const nominalDemandMw = data.data.nominalDemandMw ?? data.data.demandMw
-    const shedMw = Math.min(data.data.nominalInterruptibleMw ?? data.data.interruptibleMw, payload.shedMw)
-    const nextNominalDemandMw = Math.max(data.data.criticalMw, nominalDemandMw - shedMw)
-    return updatedWithPackData(object, {
-      ...data.data,
-      nominalDemandMw: nextNominalDemandMw,
-      demandMw: nextNominalDemandMw,
-      servedMw: nextNominalDemandMw,
-      shedMw,
-      serviceState: shedMw > 0 ? 'shed' : data.data.serviceState,
-    }, at)
-  }
-  if (command.kind === gridRestoreLoadCommandKind && data.data.type === 'grid_load') {
-    const restoredDemandMw = data.data.criticalMw + (data.data.nominalInterruptibleMw ?? data.data.interruptibleMw)
-    return updatedWithPackData(object, {
-      ...data.data,
-      nominalDemandMw: restoredDemandMw,
-      demandMw: restoredDemandMw,
-      shedMw: 0,
-      serviceState: 'normal',
-    }, at)
-  }
-  if (command.kind === gridSetEvChargingPolicyCommandKind && data.data.type === 'grid_load' && data.data.loadKind === 'ev_charging') {
-    const payload = evPolicySchema.parse(command.payload)
-    return updatedWithPackData(object, {
-      ...data.data,
-      nominalDemandMw: payload.demandMw,
-      nominalInterruptibleMw: Math.max(0, payload.demandMw - data.data.criticalMw),
-      demandMw: payload.demandMw,
-      interruptibleMw: Math.max(0, payload.demandMw - data.data.criticalMw),
-      servedMw: Math.min(payload.demandMw, data.data.servedMw),
-    }, at)
-  }
-  return null
-}
-
-const currentSimulationTime = (
-  clock: SimulationClockState | null,
-  fallbackTime?: IsoTimestamp,
-): IsoTimestamp => {
-  if (!clock) return fallbackTime ?? nowIso()
-  if (clock.paused) return clock.currentTime
-  const currentTimeMs = Date.parse(clock.currentTime)
-  const updatedAtMs = Date.parse(clock.updatedAt)
-  if (!Number.isFinite(currentTimeMs) || !Number.isFinite(updatedAtMs)) return nowIso()
-  return new Date(currentTimeMs + Math.max(0, Date.now() - updatedAtMs) * clock.speed).toISOString() as IsoTimestamp
+  throw new Error(`electric-grid runtime does not accept command kind: ${command.kind}`)
 }
 
 export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter => ({
   id: electricGridRuntimeId,
   version: '1.0.0',
-  packId: electricGridRuntimePackId,
+  packId: electricGridPackId,
   clock: 'simulation',
-  operations: definePackRuntimeOperations({ commands: electricGridCommandKinds, queries: electricGridQueryKinds }),
+  operations: [...electricGridCommandOperations, ...electricGridQueryOperations],
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
-    const topology = topologyForRuntimeConfig(config.scenario?.runtimeConfig)
-    const runtimeStateStore = config.runtimeStateStore
-    const restoredRuntimeState = runtimeStateStore
-      ? persistedRuntimeStateSchema.parse(await runtimeStateStore.load() ?? { runtimeState: { tick: 0, frequencyHz: 50 } }).runtimeState
-      : null
-    const initialObjects = (config.initialObjects ?? config.scenario?.initialObjects ?? [])
-      .filter(object => object.packId === electricGridRuntimePackId)
-      .map(restoreGridObject)
-    const objects = new Map(initialObjects.map(object => [object.id, object]))
+    const { compileGridDefinition } = await import('../definitions.ts')
+    const initialObjects = (config.initialObjects ?? config.scenario?.initialObjects ?? []).filter(object => object.packId === electricGridPackId)
+    const rawState = await config.runtimeStateStore?.load()
+    const runtimeState = rawState === undefined || rawState === null ? null : electricGridRuntimeStateSchema.parse(rawState)
+    const initialAt = config.scenario?.world.startsAt ?? nowIso()
+    const grids = new Map<string, GridRuntimeInstance>()
+    for (const item of gridObjectDefinitions(initialObjects)) {
+      const definition = compileGridDefinition(item.definition)
+      const restored = restoredGridRuntimeStateFor(runtimeState, item.object.id, definition.model.id)
+      grids.set(item.object.id, createGridRuntimeInstance({
+        definition,
+        at: initialAt,
+        ...(restored === undefined ? {} : { restored }),
+      }))
+    }
+    for (const grid of grids.values()) advanceGrid(grid, 0, initialAt)
+    const objectsById = new Map<ObjectId, OperationalObject>(projectedInitialGridObjects({ objects: initialObjects, grids, at: initialAt }).map(object => [object.id, object]))
+    const projectionKeys = new Map<string, string>()
     const handlers = new Set<PackRuntimeEventHandler>()
-    let runtimeState: GridRuntimeState | null = restoredRuntimeState
-      ? { ...restoredRuntimeState, busStates: new Map() }
-      : null
+    const persistence = createElectricGridRuntimePersistence({ connection: config, grids })
+    if (config.recording?.packId !== undefined && config.recording.packId !== electricGridPackId) throw new Error(`electric-grid runtime received recording selection for Pack ${config.recording.packId}`)
+    const recordingPlan = config.recording === undefined ? null : createGridRecordingPlan({ selection: config.recording, grids })
+    let recordingDescriptorsPending = recordingPlan !== null
+    let nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
+    let clock: SimulationClockState = { currentTime: initialAt, updatedAt: nowIso(), paused: false, speed: 1 }
+    let lastSimulationMs = Date.parse(currentSimulationTime(clock))
     let closed = false
-    let clock: SimulationClockState | null = null
-    let interval: ReturnType<typeof setInterval> | null = null
-    let runtimeStateSaveDirty = false
-    let runtimeStateSaveTimer: ReturnType<typeof setTimeout> | null = null
-    let runtimeStateSaveQueue: Promise<void> = Promise.resolve()
-    const initialScenarioTime = config.scenario?.world.startsAt
-    let lastSolveSimulationMs = Date.parse(currentSimulationTime(clock, initialScenarioTime))
+    let failure: string | null = null
 
-    const clearRuntimeStateSaveTimer = (): void => {
-      if (runtimeStateSaveTimer === null) return
-      clearTimeout(runtimeStateSaveTimer)
-      runtimeStateSaveTimer = null
-    }
-
-    const queueRuntimeStateSave = async (): Promise<void> => {
-      if (!runtimeStateStore || !runtimeState) return
-      const payload = {
-        runtimeState: {
-          tick: runtimeState.tick,
-          frequencyHz: runtimeState.frequencyHz,
-        },
-      }
-      const previousSave = runtimeStateSaveQueue
-      const currentSave = async (): Promise<void> => {
-        try {
-          await previousSave
-        } catch (err) {
-          void err
-        }
-        await runtimeStateStore.save(payload)
-      }
-      const nextSave = currentSave()
-      runtimeStateSaveQueue = (async (): Promise<void> => {
-        try {
-          await nextSave
-        } catch (err) {
-          void err
-        }
-      })()
-      await nextSave
-    }
-
-    const scheduleRuntimeStateSave = (): void => {
-      if (!runtimeStateStore || !runtimeState) return
-      runtimeStateSaveDirty = true
-      if (runtimeStateSaveTimer !== null) return
-      runtimeStateSaveTimer = setTimeout(() => {
-        runtimeStateSaveTimer = null
-        if (!runtimeStateSaveDirty) return
-        runtimeStateSaveDirty = false
-        const save = async (): Promise<void> => {
-          try {
-            await queueRuntimeStateSave()
-          } catch (err) {
-            console.error('electric-grid runtime state save failed:', err)
-          }
-        }
-        void save()
-      }, runtimeStateFlushIntervalMs)
-      runtimeStateSaveTimer.unref?.()
-    }
-
-    const flushRuntimeStateSave = async (): Promise<void> => {
-      clearRuntimeStateSaveTimer()
-      if (runtimeStateSaveDirty) {
-        runtimeStateSaveDirty = false
-        await queueRuntimeStateSave()
-        return
-      }
-      await runtimeStateSaveQueue
-    }
-
-    const solveAndEmit = (history: PackRuntimeEventHistory = 'snapshot-only'): void => {
-      if (closed || clock?.paused) return
-      const at = currentSimulationTime(clock, initialScenarioTime)
+    const advanceAndEmit = (history: PackRuntimeEventHistory): void => {
+      if (closed || clock.paused || failure !== null) return
+      const at = currentSimulationTime(clock)
       const simulationMs = Date.parse(at)
-      const dtSeconds = Number.isFinite(simulationMs) && Number.isFinite(lastSolveSimulationMs)
-        ? Math.max(0, simulationMs - lastSolveSimulationMs) / 1_000
-        : 0
-      lastSolveSimulationMs = simulationMs
-      const solved = solveGrid({ objects: [...objects.values()], runtimeState, topology, dtSeconds, at })
-      runtimeState = solved.runtimeState
-      const events: PackRuntimeEvent[] = []
-      for (const next of solved.objects) {
-        const previous = objects.get(next.id)
-        objects.set(next.id, next)
-        const shouldEmit = history === 'record'
-          ? (!previous || previous.revision !== next.revision)
-          : shouldEmitProjectedObjectUpdate(previous, next)
-        if (shouldEmit) {
-          events.push({ type: 'object.upserted', object: next, at, provenance: next.provenance, history })
-        }
-      }
-      scheduleRuntimeStateSave()
-      emit(handlers, events, at)
+      const dtSeconds = Math.max(0, simulationMs - lastSimulationMs) / 1_000
+      lastSimulationMs = simulationMs
+      for (const grid of grids.values()) advanceGrid(grid, dtSeconds, at)
+      const events = gridProjectionEvents({
+        objectsById,
+        grids,
+        previousKeys: projectionKeys,
+        at,
+        provenance: { source: 'simulator', adapterId: electricGridAdapterId },
+        history,
+      })
+      const elapsedMs = Math.min(...[...grids.values()].map(grid => grid.elapsedMs))
+      const recording = recordingPlan !== null && elapsedMs >= nextRecordingElapsedMs
+        ? (() => {
+            nextRecordingElapsedMs = elapsedMs + recordingPlan.intervalMs
+            const sampled = recordingPlan.sample({ observedAt: nowIso(), simulationTime: at })
+            if (!recordingDescriptorsPending) return sampled
+            recordingDescriptorsPending = false
+            return { ...sampled, descriptors: [...recordingPlan.descriptors] }
+          })()
+        : undefined
+      persistence.scheduleSave()
+      emit({ handlers, events, ...(recording === undefined ? {} : { recording }) })
     }
 
-    solveAndEmit('snapshot-only')
-    interval = setInterval(() => solveAndEmit('snapshot-only'), updateIntervalMs)
+    const interval = setInterval(() => {
+      try {
+        advanceAndEmit('snapshot-only')
+      } catch (error) {
+        failure = error instanceof Error ? error.message : String(error)
+        clearInterval(interval)
+        const at = nowIso()
+        for (const grid of grids.values()) grid.projection = {
+          ...grid.projection,
+          statusTone: 'error',
+          statusLabel: 'Runtime failed',
+          summary: failure,
+          updatedAt: at,
+        }
+        emit({
+          handlers,
+          events: gridProjectionEvents({
+            objectsById,
+            grids,
+            previousKeys: projectionKeys,
+            at,
+            provenance: { source: 'simulator', adapterId: electricGridAdapterId },
+            history: 'record',
+          }),
+        })
+        console.error('electric-grid runtime failed:', error)
+      }
+    }, updateIntervalMs)
 
     return {
-      getSnapshot: async () => ({
-        simulationRunId: config.simulationRunId,
-        objects: [...objects.values()],
-        capturedAt: nowIso(),
-      }),
-      subscribe: (handler) => {
+      getSnapshot: async () => ({ simulationRunId: config.simulationRunId, objects: [...objectsById.values()], capturedAt: nowIso() }),
+      subscribe: handler => {
         handlers.add(handler)
-        return () => {
-          handlers.delete(handler)
-        }
+        return () => handlers.delete(handler)
       },
       sendCommand: async (command: CommandEnvelope): Promise<CommandResult> => {
-        const acceptedAt = nowIso()
-        if (!electricGridCommandKinds.includes(command.kind as typeof electricGridCommandKinds[number])) {
-          return commandRejected(command, acceptedAt, `electric-grid runtime does not accept command kind: ${command.kind}`)
-        }
-        const targets = command.targetObjectIds.length > 0 ? command.targetObjectIds : [...objects.keys()]
-        const commandEvents: PackRuntimeEvent[] = []
+        if (failure !== null) return commandRejected(command, `electric-grid runtime stopped after a failure: ${failure}`)
+        if (!electricGridCommandKinds.includes(command.kind as typeof electricGridCommandKinds[number])) return commandRejected(command, `electric-grid runtime does not accept command kind: ${command.kind}`)
         try {
-          for (const targetId of targets) {
-            const object = objects.get(targetId)
-            if (!object) continue
-            const next = applyCommandToObject(object, command, acceptedAt)
-            if (!next) continue
-            objects.set(next.id, next)
-            commandEvents.push({
-              type: 'object.upserted',
-              object: next,
-              at: acceptedAt,
-              provenance: { source: 'operator', causedByCommandId: command.id },
-              history: 'record',
-            })
-          }
-        } catch (err) {
-          return commandRejected(command, acceptedAt, err instanceof Error ? err.message : String(err))
+          const grid = requireGrid(grids, command)
+          applyCommand(grid, command)
+          const at = currentSimulationTime(clock)
+          advanceGrid(grid, 0, at)
+          const events = gridProjectionEvents({
+            objectsById,
+            grids: new Map([[grid.definition.gridId, grid]]),
+            previousKeys: projectionKeys,
+            at,
+            provenance: { source: 'operator', causedByCommandId: command.id },
+            history: 'record',
+          })
+          await persistence.saveNow()
+          emit({ handlers, events })
+          return { ok: true, commandId: command.id, acceptedAt: nowIso() }
+        } catch (error) {
+          return commandRejected(command, error instanceof Error ? error.message : String(error))
         }
-        emit(handlers, commandEvents, acceptedAt)
-        solveAndEmit('snapshot-only')
-        return commandAccepted(command, acceptedAt)
       },
-      query: async (request: PackQueryRequest): Promise<PackQueryResponse> =>
-        answerElectricGridQuery({ request, objects: [...objects.values()] }),
+      query: async (request: PackQueryRequest): Promise<PackQueryResponse> => failure === null
+        ? answerElectricGridQuery({ request, grids })
+        : { ok: false, packId: electricGridPackId, kind: request.kind, reason: `electric-grid runtime stopped after a failure: ${failure}`, generatedAt: nowIso() },
       observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
         for (const event of events) {
-          if (event.type === 'object.upserted' && event.object.packId === electricGridRuntimePackId) {
-            objects.set(event.object.id, restoreGridObject(event.object))
+          if (event.type === 'object.deleted') {
+            grids.delete(event.objectId)
+            objectsById.delete(event.objectId)
+            continue
           }
-          if (event.type === 'object.deleted') objects.delete(event.objectId)
+          if (event.type !== 'object.upserted' || event.object.packId !== electricGridPackId) continue
+          objectsById.set(event.object.id, event.object)
+          const data = electricGridPackDataSchema.parse(event.object.packData)
+          const definition = compileGridDefinition(gridDefinitionSchema.parse({ id: event.object.id, model: data.model, operatingPoint: data.operatingPoint, automation: data.automation }))
+          const current = grids.get(event.object.id)
+          if (!current || current.definition.model.id !== definition.model.id || current.definition.operatingPoint.id !== definition.operatingPoint.id || current.definition.automation.id !== definition.automation.id) {
+            const grid = createGridRuntimeInstance({ definition, at: event.at })
+            advanceGrid(grid, 0, event.at)
+            grids.set(event.object.id, grid)
+          }
         }
       },
       setClock: async (nextClock: SimulationClockState): Promise<void> => {
         clock = nextClock
-        lastSolveSimulationMs = Date.parse(currentSimulationTime(clock, initialScenarioTime))
+        lastSimulationMs = Date.parse(currentSimulationTime(clock))
       },
       close: async (): Promise<void> => {
         closed = true
+        clearInterval(interval)
         handlers.clear()
-        if (interval) clearInterval(interval)
-        await flushRuntimeStateSave()
+        await persistence.saveNow()
       },
     }
   },

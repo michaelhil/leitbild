@@ -1,30 +1,29 @@
 {
   "id": "norway-electric-grid",
   "title": "Norway electric-grid operations",
-  "description": "A source-derived Norway electric-grid demonstration using real OSM/NVE reference topology for the operational grid arena, with hydro generation, consumer zones, frequency/voltage dynamics, branch loading, storage, EV charging, and load-shedding behavior.",
+  "description": "A source-derived Norway electric-grid demonstration using real OSM/NVE reference topology, with hydro generation, consumer zones, frequency and voltage dynamics, branch loading, storage, EV charging, and load-shedding behavior.",
   "packs": [
     {
       "id": "electric-grid",
-      "config": {
-        "topology": {
-          "kind": "built-in",
-          "arenaId": "source-derived-norway-grid"
-        }
-      },
+      "config": {},
       "items": [
         {
-          "type": "regional_grid",
-          "id": "grid:source-derived-norway-arena",
-          "label": "Source-derived Norway grid arena",
-          "position": [
+          "type": "grid",
+          "id": "grid:norway",
+          "label": "Norway transmission grid",
+          "location": [
             15.5,
             64.7
           ],
-          "arenaId": "source-derived-norway-grid",
-          "provenance": {
-            "method": "converted",
-            "sourceId": "source-derived-norway-grid-arena-v1",
-            "confidence": "medium"
+          "model": {
+            "ref": "electric-grid.norway.transmission",
+            "parameters": {}
+          },
+          "operatingPoint": {
+            "ref": "electric-grid.norway.normal"
+          },
+          "automation": {
+            "ref": "electric-grid.norway.standard"
           }
         }
       ]
@@ -54,23 +53,7 @@
       "width": 330,
       "sections": [
         {
-          "categoryId": "grid-system",
-          "collapsed": false
-        },
-        {
-          "categoryId": "grid-generation",
-          "collapsed": false
-        },
-        {
-          "categoryId": "grid-consumers",
-          "collapsed": false
-        },
-        {
-          "categoryId": "grid-branches",
-          "collapsed": true
-        },
-        {
-          "categoryId": "grid-substations",
+          "categoryId": "electric-grids",
           "collapsed": true
         }
       ]
@@ -93,7 +76,7 @@
               "title": "Norway electric-grid operations",
               "message": "Monitor frequency, branch loading, voltage health, generation dispatch, consumer supply, and EV charging. Select generators, lines, or loads in the rail to exercise accepted grid commands.",
               "objectIds": [
-                "grid:norway-system"
+                "grid:norway"
               ],
               "dismissible": true,
               "tone": "default"

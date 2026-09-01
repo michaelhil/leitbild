@@ -1,71 +1,19 @@
 import { z } from 'zod'
 import type { OperationalObject } from '../../core/model/index.ts'
+import {
+  gridAutomationSelectionSchema,
+  gridModelSelectionSchema,
+  gridOperatingPointSelectionSchema,
+} from './config.ts'
 
 export const electricGridPackId = 'electric-grid' as const
 
-export const gridAssetKindSchema = z.enum([
-  'system',
-  'substation',
-  'branch',
-  'generator',
-  'load',
-  'storage',
-  'ev_charging',
-  'market_area',
-])
-
-export type GridAssetKind = z.infer<typeof gridAssetKindSchema>
-
-export const gridBranchKindSchema = z.enum(['ac_line', 'transformer', 'hvdc_link', 'switch'])
-export type GridBranchKind = z.infer<typeof gridBranchKindSchema>
-
-export const gridGenerationKindSchema = z.enum(['hydro', 'wind', 'solar', 'thermal', 'nuclear', 'battery', 'import'])
-export type GridGenerationKind = z.infer<typeof gridGenerationKindSchema>
-
-export const gridLoadKindSchema = z.enum([
-  'residential',
-  'commercial',
-  'hospital',
-  'airport',
-  'industry',
-  'data_center',
-  'ev_charging',
-  'process_plant',
-])
-
-export type GridLoadKind = z.infer<typeof gridLoadKindSchema>
-
-export const gridProvenanceMethodSchema = z.enum(['observed', 'converted', 'inferred', 'configured', 'defaulted', 'unknown'])
-export type GridProvenanceMethod = z.infer<typeof gridProvenanceMethodSchema>
-
-export const gridPropertyProvenanceSchema = z.object({
-  method: gridProvenanceMethodSchema,
-  sourceId: z.string().min(1),
-  sourceUrl: z.string().url().optional(),
-  confidence: z.enum(['high', 'medium', 'low']),
-})
-
-export type GridPropertyProvenance = z.infer<typeof gridPropertyProvenanceSchema>
-
 const finiteNumber = z.number().finite()
-const fraction = finiteNumber.min(0).max(1)
 
-export const gridBusStateSchema = z.object({
-  busId: z.string().min(1),
-  nominalKv: finiteNumber.positive(),
-  voltagePu: finiteNumber.positive(),
-  frequencyHz: finiteNumber.positive(),
-  angleRad: finiteNumber,
-  islandId: z.string().min(1),
-  netInjectionMw: finiteNumber,
-})
-
-export type GridBusState = z.infer<typeof gridBusStateSchema>
-
-export const gridSystemDataSchema = z.object({
-  type: z.literal('grid_system'),
-  schemaVersion: z.literal(1),
-  assetKind: z.literal('system'),
+export const gridProjectionSchema = z.object({
+  statusTone: z.enum(['ready', 'working', 'error', 'idle']),
+  statusLabel: z.string().min(1),
+  summary: z.string().min(1),
   nominalFrequencyHz: finiteNumber.positive(),
   frequencyHz: finiteNumber.positive(),
   totalGenerationMw: finiteNumber.nonnegative(),
@@ -79,180 +27,46 @@ export const gridSystemDataSchema = z.object({
   activeAlarmCount: z.number().int().nonnegative(),
   tick: z.number().int().nonnegative(),
   updatedAt: z.string().min(1),
-  busStates: z.array(gridBusStateSchema),
-  provenance: gridPropertyProvenanceSchema,
-})
+}).strict()
+export type GridProjection = z.infer<typeof gridProjectionSchema>
 
-export type GridSystemData = z.infer<typeof gridSystemDataSchema>
-
-export const gridBranchDataSchema = z.object({
-  type: z.literal('grid_branch'),
+export const electricGridPackDataSchema = z.object({
+  type: z.literal('electric-grid'),
   schemaVersion: z.literal(1),
-  assetKind: z.literal('branch'),
-  branchKind: gridBranchKindSchema,
-  fromBusId: z.string().min(1),
-  toBusId: z.string().min(1),
-  nominalKv: finiteNumber.positive(),
-  ratingMw: finiteNumber.positive(),
-  emergencyRatingMw: finiteNumber.positive(),
-  reactancePu: finiteNumber.positive(),
-  resistancePu: finiteNumber.nonnegative(),
-  state: z.enum(['closed', 'open', 'faulted', 'derated']),
-  availability: fraction,
-  flowMw: finiteNumber,
-  loadingPercent: finiteNumber.nonnegative(),
-  voltageFromPu: finiteNumber.positive(),
-  voltageToPu: finiteNumber.positive(),
-  frequencyHz: finiteNumber.positive(),
-  lossesMw: finiteNumber.nonnegative(),
-  weatherExposure: z.enum(['low', 'medium', 'high']),
-  provenance: gridPropertyProvenanceSchema,
-})
-
-export type GridBranchData = z.infer<typeof gridBranchDataSchema>
-
-export const gridGeneratorDataSchema = z.object({
-  type: z.literal('grid_generator'),
-  schemaVersion: z.literal(1),
-  assetKind: z.literal('generator'),
-  generationKind: gridGenerationKindSchema,
-  busId: z.string().min(1),
-  capacityMw: finiteNumber.positive(),
-  availableMw: finiteNumber.nonnegative(),
-  dispatchMw: finiteNumber.nonnegative(),
-  targetMw: finiteNumber.nonnegative(),
-  reserveMw: finiteNumber.nonnegative(),
-  rampRateMwPerMinute: finiteNumber.positive(),
-  inertiaSeconds: finiteNumber.nonnegative(),
-  voltageSetpointPu: finiteNumber.positive(),
-  state: z.enum(['online', 'offline', 'tripped', 'derated']),
-  resourceFraction: fraction.optional(),
-  annualProductionGwh: finiteNumber.nonnegative().optional(),
-  operator: z.string().min(1).optional(),
-  priceArea: z.string().min(1).optional(),
-  provenance: gridPropertyProvenanceSchema,
-})
-
-export type GridGeneratorData = z.infer<typeof gridGeneratorDataSchema>
-
-export const gridLoadDataSchema = z.object({
-  type: z.literal('grid_load'),
-  schemaVersion: z.literal(1),
-  assetKind: z.union([z.literal('load'), z.literal('ev_charging')]),
-  loadKind: gridLoadKindSchema,
-  busId: z.string().min(1),
-  nominalDemandMw: finiteNumber.nonnegative().optional(),
-  nominalInterruptibleMw: finiteNumber.nonnegative().optional(),
-  nominalReactiveDemandMvar: finiteNumber.nonnegative().optional(),
-  demandMw: finiteNumber.nonnegative(),
-  servedMw: finiteNumber.nonnegative(),
-  shedMw: finiteNumber.nonnegative(),
-  criticalMw: finiteNumber.nonnegative(),
-  interruptibleMw: finiteNumber.nonnegative(),
-  reactiveDemandMvar: finiteNumber.nonnegative(),
-  voltagePu: finiteNumber.positive(),
-  frequencyHz: finiteNumber.positive(),
-  priority: z.enum(['critical', 'high', 'normal', 'low']),
-  serviceState: z.enum(['normal', 'constrained', 'shed', 'outage']),
-  controllable: z.boolean(),
-  provenance: gridPropertyProvenanceSchema,
-})
-
-export type GridLoadData = z.infer<typeof gridLoadDataSchema>
-
-export const gridSubstationDataSchema = z.object({
-  type: z.literal('grid_substation'),
-  schemaVersion: z.literal(1),
-  assetKind: z.literal('substation'),
-  busId: z.string().min(1),
-  nominalKv: finiteNumber.positive(),
-  voltagePu: finiteNumber.positive(),
-  frequencyHz: finiteNumber.positive(),
-  connectedBranchCount: z.number().int().nonnegative(),
-  transformerCapacityMw: finiteNumber.nonnegative(),
-  loadingPercent: finiteNumber.nonnegative(),
-  reactiveMarginMvar: finiteNumber,
-  state: z.enum(['normal', 'voltage_watch', 'constrained', 'islanded', 'outage']),
-  provenance: gridPropertyProvenanceSchema,
-})
-
-export type GridSubstationData = z.infer<typeof gridSubstationDataSchema>
-
-export const gridStorageDataSchema = z.object({
-  type: z.literal('grid_storage'),
-  schemaVersion: z.literal(1),
-  assetKind: z.literal('storage'),
-  busId: z.string().min(1),
-  capacityMwh: finiteNumber.positive(),
-  stateOfChargeFraction: fraction,
-  maxChargeMw: finiteNumber.nonnegative(),
-  maxDischargeMw: finiteNumber.nonnegative(),
-  dispatchMw: finiteNumber,
-  voltagePu: finiteNumber.positive(),
-  frequencyHz: finiteNumber.positive(),
-  state: z.enum(['idle', 'charging', 'discharging', 'unavailable']),
-  provenance: gridPropertyProvenanceSchema,
-})
-
-export type GridStorageData = z.infer<typeof gridStorageDataSchema>
-
-export const gridMarketAreaDataSchema = z.object({
-  type: z.literal('grid_market_area'),
-  schemaVersion: z.literal(1),
-  assetKind: z.literal('market_area'),
-  areaId: z.string().min(1),
-  priceNokPerMwh: finiteNumber.nonnegative(),
-  generationMw: finiteNumber.nonnegative(),
-  loadMw: finiteNumber.nonnegative(),
-  netExportMw: finiteNumber,
-  constrained: z.boolean(),
-  provenance: gridPropertyProvenanceSchema,
-})
-
-export type GridMarketAreaData = z.infer<typeof gridMarketAreaDataSchema>
-
-export const electricGridPackDataSchema = z.discriminatedUnion('type', [
-  gridSystemDataSchema,
-  gridSubstationDataSchema,
-  gridBranchDataSchema,
-  gridGeneratorDataSchema,
-  gridLoadDataSchema,
-  gridStorageDataSchema,
-  gridMarketAreaDataSchema,
-])
-
+  model: gridModelSelectionSchema,
+  operatingPoint: gridOperatingPointSelectionSchema,
+  automation: gridAutomationSelectionSchema,
+  projection: gridProjectionSchema,
+}).strict()
 export type ElectricGridPackData = z.infer<typeof electricGridPackDataSchema>
 
-export const isElectricGridPackData = (value: unknown): value is ElectricGridPackData =>
-  electricGridPackDataSchema.safeParse(value).success
-
-interface ElectricGridObjectDataCacheEntry {
-  readonly revision: number
-  readonly data: ElectricGridPackData | null
-}
-
-const objectDataCache = new Map<string, ElectricGridObjectDataCacheEntry>()
-const maxObjectDataCacheEntries = 2_000
-
-const pruneObjectDataCache = (): void => {
-  if (objectDataCache.size <= maxObjectDataCacheEntries) return
-  const deleteCount = objectDataCache.size - maxObjectDataCacheEntries
-  let deleted = 0
-  for (const key of objectDataCache.keys()) {
-    objectDataCache.delete(key)
-    deleted += 1
-    if (deleted >= deleteCount) return
-  }
-}
+export const emptyGridProjection = (at: string, nominalFrequencyHz: number): GridProjection => ({
+  statusTone: 'idle',
+  statusLabel: 'Initializing',
+  summary: 'Grid runtime is initializing',
+  nominalFrequencyHz,
+  frequencyHz: nominalFrequencyHz,
+  totalGenerationMw: 0,
+  totalLoadMw: 0,
+  servedLoadMw: 0,
+  unservedLoadMw: 0,
+  reserveMarginMw: 0,
+  highestBranchLoadingPercent: 0,
+  lowestVoltagePu: 1,
+  activeIslandCount: 1,
+  activeAlarmCount: 0,
+  tick: 0,
+  updatedAt: at,
+})
 
 export const parseElectricGridObjectData = (
-  object: Pick<OperationalObject, 'id' | 'revision' | 'packData'>,
+  object: Pick<OperationalObject, 'packId' | 'packData'>,
 ): ElectricGridPackData | null => {
-  const cached = objectDataCache.get(object.id)
-  if (cached?.revision === object.revision) return cached.data
+  if (object.packId !== electricGridPackId) return null
   const parsed = electricGridPackDataSchema.safeParse(object.packData)
-  const data = parsed.success ? parsed.data : null
-  objectDataCache.set(object.id, { revision: object.revision, data })
-  pruneObjectDataCache()
-  return data
+  return parsed.success ? parsed.data : null
 }
+
+export const gridIdForObject = (
+  object: Pick<OperationalObject, 'id' | 'packId' | 'packData'>,
+): string | null => parseElectricGridObjectData(object) === null ? null : object.id

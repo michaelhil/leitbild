@@ -263,26 +263,25 @@
     },
     {
       "id": "electric-grid",
-      "config": {
-        "topology": {
-          "kind": "built-in",
-          "arenaId": "source-derived-norway-grid"
-        }
-      },
+      "config": {},
       "items": [
         {
-          "type": "regional_grid",
-          "id": "grid:oslo-allpacks-norway-arena",
-          "label": "Norway grid arena",
-          "position": [
+          "type": "grid",
+          "id": "grid:oslo-allpacks-norway",
+          "label": "Norway transmission grid",
+          "location": [
             10.7522,
             59.925
           ],
-          "arenaId": "source-derived-norway-grid",
-          "provenance": {
-            "method": "converted",
-            "sourceId": "source-derived-norway-grid-arena-v1",
-            "confidence": "medium"
+          "model": {
+            "ref": "electric-grid.norway.transmission",
+            "parameters": {}
+          },
+          "operatingPoint": {
+            "ref": "electric-grid.norway.normal"
+          },
+          "automation": {
+            "ref": "electric-grid.norway.standard"
           }
         }
       ]
@@ -490,7 +489,7 @@
           ]
         },
         {
-          "categoryId": "grid-system",
+          "categoryId": "electric-grids",
           "visible": true,
           "collapsed": false,
           "visibleFields": [
@@ -532,44 +531,6 @@
             "air-temperature",
             "precipitation",
             "surface"
-          ]
-        },
-        {
-          "categoryId": "grid-generation",
-          "visible": true,
-          "collapsed": true,
-          "visibleFields": [
-            "dispatch",
-            "available",
-            "state"
-          ]
-        },
-        {
-          "categoryId": "grid-consumers",
-          "visible": true,
-          "collapsed": true,
-          "visibleFields": [
-            "served",
-            "service"
-          ]
-        },
-        {
-          "categoryId": "grid-substations",
-          "visible": true,
-          "collapsed": true,
-          "visibleFields": [
-            "voltage",
-            "loading"
-          ]
-        },
-        {
-          "categoryId": "grid-branches",
-          "visible": true,
-          "collapsed": true,
-          "visibleFields": [
-            "flow",
-            "loading",
-            "state"
           ]
         }
       ]

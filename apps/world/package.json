@@ -27,6 +27,7 @@
     "reference:prune": "bun run scripts/reference/prune.ts",
     "reference:status": "bun run scripts/reference/status.ts",
     "reference:rebuild": "bun run scripts/reference/rebuild.ts",
+    "grid:model:build": "bun run scripts/electric-grid/build-norway-grid-model.ts",
     "process-plant:benchmark": "bun run scripts/process-plant/six-unit-benchmark.ts",
     "process-plant:acceptance": "bun run scripts/process-plant/acceptance-traces.ts",
     "process-plant:extended-validation": "bun run scripts/process-plant/extended-validation.ts",

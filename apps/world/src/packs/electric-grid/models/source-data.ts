@@ -1,17 +1,13 @@
-import type { PackScenarioItemSpec } from '../../../core/packs/protocol.ts'
-
-export interface SourceDerivedSubstation {
+export interface SourceGridSubstation {
   readonly externalId: string
   readonly name: string
   readonly lon: number
   readonly lat: number
-  readonly voltageKv: ReadonlyArray<number>
   readonly maxVoltageKv: number
-  readonly operator: string | null
   readonly sourceId: string
 }
 
-export interface SourceDerivedBranch {
+export interface SourceGridBranch {
   readonly externalId: string
   readonly name: string
   readonly category: 'line' | 'cable'
@@ -19,12 +15,10 @@ export interface SourceDerivedBranch {
   readonly toExternalId: string
   readonly nominalKv: number
   readonly lengthKm: number
-  readonly operator: string | null
-  readonly path: ReadonlyArray<readonly [number, number]>
   readonly sourceId: string
 }
 
-export interface SourceDerivedGenerator {
+export interface SourceGridGenerator {
   readonly externalId: string
   readonly name: string
   readonly generationKind: 'hydro' | 'wind' | 'solar' | 'thermal' | 'nuclear' | 'battery' | 'import'
@@ -38,7 +32,7 @@ export interface SourceDerivedGenerator {
   readonly augmentationSourceId: string | null
 }
 
-export interface InferredLoadZone {
+export interface SourceGridLoadZone {
   readonly id: string
   readonly label: string
   readonly loadKind: 'residential' | 'commercial' | 'hospital' | 'airport' | 'industry' | 'data_center' | 'ev_charging' | 'process_plant'
@@ -52,19 +46,15 @@ export interface InferredLoadZone {
   readonly controllable?: boolean
 }
 
-export interface SourceDerivedGridArenaData {
+export interface SourceGridModelData {
   readonly sourceBuild: {
     readonly id: string
     readonly generatedAt: string
     readonly sourceIds: ReadonlyArray<string>
     readonly notes: ReadonlyArray<string>
   }
-  readonly substations: ReadonlyArray<SourceDerivedSubstation>
-  readonly branches: ReadonlyArray<SourceDerivedBranch>
-  readonly generators: ReadonlyArray<SourceDerivedGenerator>
-  readonly loads: ReadonlyArray<InferredLoadZone>
-}
-
-export type GridArenaScenarioObjectSpec = PackScenarioItemSpec & {
-  readonly pack: 'electric-grid'
+  readonly substations: ReadonlyArray<SourceGridSubstation>
+  readonly branches: ReadonlyArray<SourceGridBranch>
+  readonly generators: ReadonlyArray<SourceGridGenerator>
+  readonly loads: ReadonlyArray<SourceGridLoadZone>
 }

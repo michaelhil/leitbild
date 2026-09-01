@@ -1,6 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 
 interface GeoJsonFeature {
   readonly id?: string
@@ -22,7 +21,6 @@ interface CandidateSubstation {
   readonly lat: number
   readonly voltageKv: ReadonlyArray<number>
   readonly maxVoltageKv: number
-  readonly operator: string | null
   readonly sourceId: string
 }
 
@@ -34,8 +32,6 @@ interface CandidateBranch {
   readonly toExternalId: string
   readonly nominalKv: number
   readonly lengthKm: number
-  readonly operator: string | null
-  readonly path: ReadonlyArray<readonly [number, number]>
   readonly sourceId: string
 }
 
@@ -61,21 +57,8 @@ interface NveGenerationAugmentation {
   readonly priceArea: string | null
 }
 
-interface ExistingArenaDataModule {
-  readonly norwayGridArenaData?: {
-    readonly generators?: ReadonlyArray<{
-      readonly name: string
-      readonly capacityMw: number
-      readonly annualProductionGwh: number | null
-      readonly operator: string | null
-      readonly priceArea: string | null
-      readonly augmentationSourceId: string | null
-    }>
-  }
-}
-
 const inputPath = resolve(process.argv[2] ?? 'data/reference-local/builds/grid-norway/20260528-225211/grid-norway.features.geojson')
-const outputPath = resolve(process.argv[3] ?? 'src/packs/electric-grid/arena/norway-grid-arena-data.ts')
+const outputPath = resolve(process.argv[3] ?? 'src/packs/electric-grid/models/norway-source-data.generated.ts')
 
 const toRad = (value: number): number => value * Math.PI / 180
 
@@ -131,7 +114,7 @@ const lineLengthKm = (coordinates: ReadonlyArray<readonly [number, number]>): nu
   return length
 }
 
-const inArenaRegion = (coordinate: readonly [number, number]): boolean =>
+const inModelRegion = (coordinate: readonly [number, number]): boolean =>
   coordinate[0] >= 4.0 && coordinate[0] <= 31.5 && coordinate[1] >= 57.5 && coordinate[1] <= 71.5
 
 const backboneVoltageThresholdKv = 300
@@ -162,25 +145,6 @@ const eligibleOperationalVoltage = (
   maxVoltageKv >= backboneVoltageThresholdKv ||
   (maxVoltageKv >= regionalNorthVoltageThresholdKv && coordinate[1] >= northCoverageLatitude) ||
   (maxVoltageKv >= regionalEastVoltageThresholdKv && coordinate[0] >= eastCoverageLongitude)
-
-const simplifyPath = (
-  coordinates: ReadonlyArray<readonly [number, number]>,
-  maxPoints: number,
-): ReadonlyArray<readonly [number, number]> => {
-  if (coordinates.length <= maxPoints) return coordinates.map(roundPoint)
-  const simplified: Array<readonly [number, number]> = []
-  const last = coordinates.length - 1
-  for (let index = 0; index < maxPoints; index += 1) {
-    const sourceIndex = Math.round(index * last / (maxPoints - 1))
-    simplified.push(roundPoint(coordinates[sourceIndex]!))
-  }
-  return simplified
-}
-
-const roundPoint = (point: readonly [number, number]): readonly [number, number] => [
-  Number(point[0].toFixed(6)),
-  Number(point[1].toFixed(6)),
-]
 
 const sourceKey = (value: string): string =>
   value
@@ -259,64 +223,30 @@ const fetchNveGenerationIndex = async (): Promise<ReadonlyMap<string, NveGenerat
   ] as const
   const index = new Map<string, NveGenerationAugmentation>()
   for (const [sourceId, url] of endpoints) {
-    try {
-      const response = await fetch(url, { headers: { accept: 'application/json' } })
-      if (!response.ok) continue
-      const records = await response.json() as ReadonlyArray<Record<string, unknown>>
-      for (const record of records) {
-        const name = stringOrNull(record.Navn)
-        if (!name) continue
-        const augmentation: NveGenerationAugmentation = {
-          sourceId: `${sourceId}:${name}`,
-          capacityMw: sourceId === 'nve:vannkraftdatabase'
-            ? numberOrNull(record.MaksYtelse)
-            : numberOrNull(record.InstallertEffekt_MW),
-          annualProductionGwh: sourceId === 'nve:vannkraftdatabase'
-            ? numberOrNull(record.MidProd_91_20)
-            : numberOrNull(record.NormalAArsproduksjon_GWh),
-          operator: stringOrNull(record.HovedEier) ?? stringOrNull(record.HovedEierNavn),
-          priceArea: stringOrNull(record.ElspotomraadeNummer),
-        }
-        for (const key of generationLookupKeys(name)) {
-          const existing = index.get(key)
-          if (!existing || (augmentation.capacityMw ?? 0) > (existing.capacityMw ?? 0)) index.set(key, augmentation)
-        }
+    const response = await fetch(url, { headers: { accept: 'application/json' } })
+    if (!response.ok) throw new Error(`${sourceId} request failed: ${response.status}`)
+    const records = await response.json() as ReadonlyArray<Record<string, unknown>>
+    for (const record of records) {
+      const name = stringOrNull(record.Navn)
+      if (!name) continue
+      const augmentation: NveGenerationAugmentation = {
+        sourceId: `${sourceId}:${name}`,
+        capacityMw: sourceId === 'nve:vannkraftdatabase'
+          ? numberOrNull(record.MaksYtelse)
+          : numberOrNull(record.InstallertEffekt_MW),
+        annualProductionGwh: sourceId === 'nve:vannkraftdatabase'
+          ? numberOrNull(record.MidProd_91_20)
+          : numberOrNull(record.NormalAArsproduksjon_GWh),
+        operator: stringOrNull(record.HovedEier) ?? stringOrNull(record.HovedEierNavn),
+        priceArea: stringOrNull(record.ElspotomraadeNummer),
       }
-    } catch (error) {
-      console.warn(`warning: could not augment generation provenance from ${sourceId}: ${String(error)}`)
+      for (const key of generationLookupKeys(name)) {
+        const existing = index.get(key)
+        if (!existing || (augmentation.capacityMw ?? 0) > (existing.capacityMw ?? 0)) index.set(key, augmentation)
+      }
     }
   }
   return index
-}
-
-const cachedGenerationIndex = async (): Promise<ReadonlyMap<string, NveGenerationAugmentation>> => {
-  try {
-    const module = await import(pathToFileURL(outputPath).href) as ExistingArenaDataModule
-    const index = new Map<string, NveGenerationAugmentation>()
-    for (const generator of module.norwayGridArenaData?.generators ?? []) {
-      if (generator.augmentationSourceId === null) continue
-      const augmentation: NveGenerationAugmentation = {
-        sourceId: generator.augmentationSourceId,
-        capacityMw: generator.capacityMw,
-        annualProductionGwh: generator.annualProductionGwh,
-        operator: generator.operator,
-        priceArea: generator.priceArea,
-      }
-      for (const key of generationLookupKeys(generator.name)) {
-        index.set(key, augmentation)
-      }
-    }
-    return index
-  } catch {
-    // The generated arena file may not exist yet; live NVE fetch remains the authoritative path.
-    return new Map()
-  }
-}
-
-const generationAugmentationIndex = async (): Promise<ReadonlyMap<string, NveGenerationAugmentation>> => {
-  const cached = await cachedGenerationIndex()
-  const fetched = await fetchNveGenerationIndex()
-  return new Map([...cached, ...fetched])
 }
 
 const branchEndpointIsKnown = (
@@ -371,12 +301,12 @@ const loadZones = (substations: ReadonlyArray<CandidateSubstation>) => {
 
 const main = async (): Promise<void> => {
   const raw = JSON.parse(await readFile(inputPath, 'utf8')) as GeoJsonCollection
-  const nveGeneration = await generationAugmentationIndex()
+  const nveGeneration = await fetchNveGenerationIndex()
   const substations = raw.features.flatMap((feature): ReadonlyArray<CandidateSubstation> => {
     if (feature.properties.category !== 'substation') return []
     const maxVoltageKv = numberOrNull(feature.properties.maxVoltageKv) ?? 0
     const coordinate = pointOf(feature.geometry)
-    if (!coordinate || !inArenaRegion(coordinate)) return []
+    if (!coordinate || !inModelRegion(coordinate)) return []
     if (!eligibleOperationalVoltage(maxVoltageKv, coordinate)) return []
     const name = propertyName(feature)
     if (!hasOperatorLabel(name)) return []
@@ -387,7 +317,6 @@ const main = async (): Promise<void> => {
       lat: Number(coordinate[1].toFixed(6)),
       voltageKv: numberArray(feature.properties.voltageKv),
       maxVoltageKv,
-      operator: stringOrNull(feature.properties.operator),
       sourceId: sourceIdOf(feature),
     }]
   })
@@ -398,7 +327,7 @@ const main = async (): Promise<void> => {
     const coordinates = lineCoordinates(feature.geometry)
     if (coordinates.length < 2) return []
     const mid = coordinates[Math.floor(coordinates.length / 2)]!
-    if (!inArenaRegion(mid)) return []
+    if (!inModelRegion(mid)) return []
     if (!eligibleOperationalVoltage(nominalKv, mid)) return []
     const voltageKv = numberArray(feature.properties.voltageKv)
     const nearest = (coordinate: readonly [number, number]): { readonly substation: CandidateSubstation; readonly distanceKm: number } | null => {
@@ -424,17 +353,15 @@ const main = async (): Promise<void> => {
       toExternalId: to.substation.externalId,
       nominalKv,
       lengthKm: Number(lengthKm.toFixed(2)),
-      operator: stringOrNull(feature.properties.operator),
-      path: simplifyPath(coordinates, 18),
       sourceId: sourceIdOf(feature),
     }]
   })
 
-  const arenaSubstations = substations
+  const modelSubstations = substations
     .sort((left, right) => left.name.localeCompare(right.name))
-  const arenaSubstationIds = new Set(arenaSubstations.map(substation => substation.externalId))
-  const arenaBranches = branches
-    .filter(branch => branchEndpointIsKnown(branch, arenaSubstationIds))
+  const modelSubstationIds = new Set(modelSubstations.map(substation => substation.externalId))
+  const modelBranches = branches
+    .filter(branch => branchEndpointIsKnown(branch, modelSubstationIds))
     .sort((left, right) => right.nominalKv - left.nominalKv || right.lengthKm - left.lengthKm)
 
   const candidateGenerators = raw.features
@@ -443,7 +370,7 @@ const main = async (): Promise<void> => {
       const capacityMw = numberOrNull(feature.properties.outputMw) ?? 0
       if (capacityMw < 14) return []
       const coordinate = pointOf(feature.geometry)
-      if (!coordinate || !inArenaRegion(coordinate)) return []
+      if (!coordinate || !inModelRegion(coordinate)) return []
       const name = propertyName(feature)
       if (!hasOperatorLabel(name)) return []
       const generationKind = generationKindFor(stringOrNull(feature.properties.plantSource))
@@ -469,35 +396,36 @@ const main = async (): Promise<void> => {
       }]
     })
 
-  const arenaGenerators = [...dedupeGenerators(candidateGenerators)]
+  const modelGenerators = [...dedupeGenerators(candidateGenerators)]
     .sort((left, right) => right.capacityMw - left.capacityMw)
     .slice(0, 70)
 
-  const moduleText = `import type { SourceDerivedGridArenaData } from './types.ts'
+  const generatedSubstations = modelSubstations.map(({ voltageKv, ...substation }) => substation)
+  const moduleText = `import type { SourceGridModelData } from './source-data.ts'
 
-export const norwayGridArenaData: SourceDerivedGridArenaData = ${JSON.stringify({
+export const norwayGridSourceData: SourceGridModelData = ${JSON.stringify({
     sourceBuild: {
-      id: 'source-derived-norway-grid-arena-v1',
+      id: 'norway-transmission-model-source-v1',
       generatedAt: new Date().toISOString(),
       sourceIds: ['osm:pbf-power:NO', 'nve:vannkraftdatabase', 'nve:vindkraftdatabase'],
       notes: [
-        'Operational arena generated from the grid-norway OSM PBF reference sidecar at national Norway scope.',
-        'The operational graph is transmission-focused: dense OSM reference segments remain reference map geometry, while the runtime arena keeps national 300 kV+ backbone assets, northern 132 kV+ regional assets, eastern 220 kV+ regional assets, major generation, and aggregate consumer zones.',
+        'Operational model generated from the grid-norway OSM PBF reference sidecar at national Norway scope.',
+        'The operational graph is transmission-focused: dense OSM reference segments remain reference map geometry, while the runtime model keeps national 300 kV+ backbone assets, northern 132 kV+ regional assets, eastern 220 kV+ regional assets, major generation, and aggregate consumer zones.',
         'NVE hydropower and wind APIs are used to augment generator capacity, annual production, operator, and price-area provenance where names match.',
         'Co-located OSM plant/generator duplicates are collapsed when a larger plant-level feature covers smaller same-family unit nodes.',
         'Consumer load zones are inferred operational demand aggregates attached to real high-voltage buses.',
       ],
     },
-    substations: arenaSubstations,
-    branches: arenaBranches,
-    generators: arenaGenerators,
-    loads: loadZones(arenaSubstations),
+    substations: generatedSubstations,
+    branches: modelBranches,
+    generators: modelGenerators,
+    loads: loadZones(modelSubstations),
   }, null, 2)} as const
 `
   await mkdir(dirname(outputPath), { recursive: true })
   await writeFile(outputPath, moduleText)
   console.log(`wrote ${outputPath}`)
-  console.log(`${arenaSubstations.length} substations, ${arenaBranches.length} branches, ${arenaGenerators.length} generators`)
+  console.log(`${modelSubstations.length} substations, ${modelBranches.length} branches, ${modelGenerators.length} generators`)
 }
 
 await main()

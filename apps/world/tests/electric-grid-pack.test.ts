@@ -1,37 +1,37 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, SimulationRunId, IsoTimestamp, ObjectId } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, IsoTimestamp, ObjectId, SimulationRunId } from '../src/core/model/index.ts'
 import { nowIso } from '../src/core/model/index.ts'
 import { createScenarioCatalog } from '../src/core/scenarios/catalog.ts'
-import { gridDerateBranchCommandKind, gridTripGeneratorCommandKind } from '../src/packs/electric-grid/commands.ts'
-import { electricGridPackDataSchema, type ElectricGridPackData, type GridBranchData, type GridGeneratorData, type GridLoadData, type GridSystemData } from '../src/packs/electric-grid/model.ts'
+import {
+  gridDerateBranchCommandKind,
+  gridDispatchGeneratorCommandKind,
+  gridTripGeneratorCommandKind,
+} from '../src/packs/electric-grid/commands.ts'
+import { gridDefinitionSchema } from '../src/packs/electric-grid/config.ts'
+import { compileGridDefinition } from '../src/packs/electric-grid/definitions.ts'
+import { electricGridPackDataSchema } from '../src/packs/electric-grid/model.ts'
 import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
-import { norwayGridArenaTopology } from '../src/packs/electric-grid/arena/norway-grid-arena.ts'
-import { solveGrid } from '../src/packs/electric-grid/runtime/solver.ts'
+import { createGridRuntimeInstance } from '../src/packs/electric-grid/runtime/instance.ts'
+import { advanceGrid } from '../src/packs/electric-grid/runtime/solver.ts'
 import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric-grid/sim/adapter.ts'
 import { electricGridRuntimeId } from '../src/packs/electric-grid/sim/constants.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { scenarios } from '../src/scenarios/index.ts'
-import type { PackRuntimeEvent } from '../src/simulation/protocol.ts'
+import type { PackRuntimeConnection, PackRuntimeEvent, PackRuntimeStateStore } from '../src/simulation/protocol.ts'
 
 const simulationRunId = 'run-electric-grid-test' as SimulationRunId
 const actorId = 'actor:electric-grid-test' as ActorId
-const sourceDerivedTopologyRuntimeConfig = {
-  topology: {
-    kind: 'built-in',
-    arenaId: 'source-derived-norway-grid',
-  },
-} as const
 
 const command = (config: {
   readonly kind: string
-  readonly targetObjectIds: ReadonlyArray<ObjectId>
+  readonly gridId: string
   readonly payload: unknown
 }): CommandEnvelope => ({
   id: `command:${crypto.randomUUID()}` as CommandId,
   simulationRunId,
   actorId,
   kind: config.kind,
-  targetObjectIds: config.targetObjectIds,
+  targetObjectIds: [config.gridId as ObjectId],
   payload: config.payload,
   issuedAt: nowIso(),
 })
@@ -42,275 +42,185 @@ const gridScenario = () => {
   return scenario
 }
 
-const parsedPackData = <T extends ElectricGridPackData['type']>(
-  object: { readonly packData?: unknown },
-  type: T,
-): Extract<ElectricGridPackData, { readonly type: T }> => {
-  const data = electricGridPackDataSchema.parse(object.packData)
-  if (data.type !== type) throw new Error(`expected ${type}, got ${data.type}`)
-  return data as Extract<ElectricGridPackData, { readonly type: T }>
+const connect = async (runtimeStateStore?: PackRuntimeStateStore): Promise<PackRuntimeConnection> => {
+  const scenario = gridScenario()
+  return await createLocalElectricGridPackRuntimeAdapter().connect({
+    simulationRunId,
+    ...(runtimeStateStore === undefined ? {} : { runtimeStateStore }),
+    scenario: {
+      scenarioId: scenario.id,
+      runtimeIds: [electricGridRuntimeId],
+      world: scenario.world,
+      initialObjects: scenario.initialObjects,
+      runtimeConfigByRuntimeId: {},
+      runtimeConfig: {},
+    },
+  })
 }
 
-describe('electric grid pack', () => {
-  test('loads the built-in Norway grid scenario as a real electric-grid runtime', () => {
+const okResult = (response: Awaited<ReturnType<PackRuntimeConnection['query']>>): Record<string, unknown> => {
+  if (!response.ok) throw new Error(response.reason)
+  if (typeof response.result !== 'object' || response.result === null || Array.isArray(response.result)) throw new Error('malformed query result')
+  return response.result as Record<string, unknown>
+}
+
+describe('electric grid Pack', () => {
+  test('compiles a Scenario to one Grid object with discoverable selections', () => {
     const scenario = gridScenario()
-    const catalog = createScenarioCatalog({
-      packs: [electricGridPack, weatherPack],
-      scenarios: [scenario],
-      defaultScenarioId: scenario.id,
-    })
+    const catalog = createScenarioCatalog({ packs: [electricGridPack, weatherPack], scenarios: [scenario], defaultScenarioId: scenario.id })
     const runtime = catalog.runtimeFor(scenario.id)
     const gridObjects = scenario.initialObjects.filter(object => object.packId === 'electric-grid')
 
-    expect(runtime?.runtimes).toContainEqual({
-      packId: 'electric-grid',
-      runtimeId: electricGridRuntimeId,
-      runtimeConfig: sourceDerivedTopologyRuntimeConfig,
-    })
-    expect(electricGridPack.presentation.mapLayerGroups?.map(group => group.id)).not.toContain('electric-grid:branches')
+    expect(runtime?.runtimes).toContainEqual({ packId: 'electric-grid', runtimeId: electricGridRuntimeId, runtimeConfig: {} })
+    expect(gridObjects).toHaveLength(1)
+    expect(String(gridObjects[0]?.id)).toBe('grid:norway')
+    expect(electricGridPack.authoring?.itemTypes.map(item => item.id)).toEqual(['grid'])
+    expect(electricGridPack.presentation.categories.map(category => category.id)).toEqual(['electric-grids'])
     expect(electricGridPack.presentation.mapLayerGroups?.map(group => group.id)).toContain('electric-grid:reference-lines')
-    expect(scenario.surface.regions.find(region => region.primitive === 'map')?.config.layers).toContain('grid')
-    expect(gridObjects.length).toBeGreaterThanOrEqual(250)
-    expect(gridObjects.some(object => {
-      const parsed = electricGridPackDataSchema.safeParse(object.packData)
-      return parsed.success && parsed.data.type === 'grid_branch' && parsed.data.provenance.sourceId === 'osm:pbf-power:NO'
-    })).toBe(true)
-    expect(gridObjects.every(object => {
-      const parsed = electricGridPackDataSchema.safeParse(object.packData)
-      return !parsed.success || parsed.data.type !== 'grid_branch' || object.spatial.geometry === undefined
-    })).toBe(true)
-    expect(gridObjects.some(object => object.provenance.externalId?.includes('leitbild-demo-grid-v1') === true)).toBe(false)
-    expect(gridObjects.some(object => {
-      const parsed = electricGridPackDataSchema.safeParse(object.packData)
-      return parsed.success && parsed.data.type === 'grid_load' && parsed.data.loadKind === 'ev_charging'
-    })).toBe(true)
-    expect(gridObjects.some(object => {
-      const parsed = electricGridPackDataSchema.safeParse(object.packData)
-      return parsed.success &&
-        parsed.data.type === 'grid_generator' &&
-        parsed.data.provenance.sourceId.startsWith('nve:vannkraftdatabase:') &&
-        parsed.data.annualProductionGwh !== undefined &&
-        parsed.data.operator !== undefined &&
-        parsed.data.priceArea?.startsWith('NO') === true
-    })).toBe(true)
+    expect(electricGridPackDataSchema.parse(gridObjects[0]?.packData)).toMatchObject({
+      model: { ref: 'electric-grid.norway.transmission' },
+      operatingPoint: { ref: 'electric-grid.norway.normal' },
+      automation: { ref: 'electric-grid.norway.standard' },
+    })
   })
 
-  test('solves frequency, voltage, branches, and consumer service on connect', async () => {
-    const scenario = gridScenario()
-    const connection = await createLocalElectricGridPackRuntimeAdapter().connect({
-      simulationRunId,
-      scenario: {
-        scenarioId: scenario.id,
-        runtimeIds: [electricGridRuntimeId],
-        world: scenario.world,
-        initialObjects: scenario.initialObjects,
-        runtimeConfigByRuntimeId: {},
-        runtimeConfig: sourceDerivedTopologyRuntimeConfig,
-      },
-    })
-
+  test('keeps the shared snapshot compact while exposing private Grid Assets through bounded queries', async () => {
+    const connection = await connect()
     try {
       const snapshot = await connection.getSnapshot()
-      if (!scenario.world.startsAt) throw new Error('grid scenario must declare a deterministic start time')
-      const systemObject = snapshot.objects.find(object => object.id === 'grid:norway-system')
-      if (!systemObject) throw new Error('missing grid system object')
-      const system = parsedPackData(systemObject, 'grid_system') as GridSystemData
-      const branches = snapshot.objects
-        .map(object => electricGridPackDataSchema.parse(object.packData))
-        .filter(data => data.type === 'grid_branch') as ReadonlyArray<GridBranchData>
+      expect(snapshot.objects).toHaveLength(1)
+      expect(JSON.stringify(snapshot).length).toBeLessThan(5_000)
+      const data = electricGridPackDataSchema.parse(snapshot.objects[0]?.packData)
+      expect(data.projection.tick).toBeGreaterThanOrEqual(1)
+      expect(data.projection.totalGenerationMw).toBeGreaterThan(0)
+      expect(data.projection.servedLoadMw).toBeGreaterThan(0)
 
-      expect(system.tick).toBeGreaterThanOrEqual(1)
-      expect(system.frequencyHz).toBeGreaterThan(48.4)
-      expect(system.frequencyHz).toBeLessThan(50.6)
-      expect(system.busStates.length).toBeGreaterThanOrEqual(5)
-      expect(system.totalGenerationMw).toBeGreaterThan(0)
-      expect(system.servedLoadMw).toBeGreaterThan(0)
-      expect(branches.some(branch => Math.abs(branch.flowMw) > 0)).toBe(true)
-      expect(system.updatedAt).toBe(scenario.world.startsAt)
-      expect(system.lowestVoltagePu).toBeGreaterThan(0.98)
-      expect(system.activeIslandCount).toBeGreaterThanOrEqual(1)
-      expect(system.activeAlarmCount).toBe(0)
+      const search = okResult(await connection.query({
+        packId: 'electric-grid',
+        kind: 'electric-grid.assets.search',
+        payload: { gridId: 'grid:norway', kinds: ['branch'], limit: 10 },
+      }))
+      expect(search.total).toBeGreaterThan(250)
+      expect((search.assets as unknown[]).length).toBe(10)
+
+      const summary = okResult(await connection.query({
+        packId: 'electric-grid',
+        kind: 'electric-grid.grid.summary',
+        payload: { gridId: 'grid:norway' },
+      }))
+      expect(summary.assetCounts).toMatchObject({ bus: 255, generator: 70, load: 22, storage: 1 })
+      expect((summary.constrainedBranches as unknown[]).length).toBeLessThanOrEqual(8)
+      const connections = okResult(await connection.query({
+        packId: 'electric-grid',
+        kind: 'electric-grid.connection-points.list',
+        payload: { gridId: 'grid:norway' },
+      })).connectionPoints as ReadonlyArray<{ readonly assetId: string; readonly role: string }>
+      expect(connections.length).toBeGreaterThan(0)
+      expect(connections.every(connectionPoint => connectionPoint.assetId.startsWith('load:') && connectionPoint.role === 'demand')).toBe(true)
     } finally {
       await connection.close()
     }
   })
 
-  test('applies deterministic operating demand profiles without drifting load baselines', () => {
-    const scenario = gridScenario()
-    const topology = norwayGridArenaTopology()
-    const first = solveGrid({
-      objects: scenario.initialObjects,
-      runtimeState: null,
-      topology,
-      dtSeconds: 1,
-      at: '2026-01-01T10:00:00.000Z' as IsoTimestamp,
-    })
-    const second = solveGrid({
-      objects: first.objects,
-      runtimeState: first.runtimeState,
-      topology,
-      dtSeconds: 90,
-      at: '2026-01-01T10:01:30.000Z' as IsoTimestamp,
-    })
-    const firstLoad = first.objects
-      .flatMap(object => {
-        const parsed = electricGridPackDataSchema.safeParse(object.packData)
-        return parsed.success ? [parsed.data] : []
-      })
-      .find(data => data.type === 'grid_load') as GridLoadData | undefined
-    const secondLoad = second.objects
-      .flatMap(object => {
-        const parsed = electricGridPackDataSchema.safeParse(object.packData)
-        return parsed.success ? [parsed.data] : []
-      })
-      .find(data => data.type === 'grid_load') as GridLoadData | undefined
-
-    expect(firstLoad?.nominalDemandMw).toBeGreaterThan(0)
-    expect(secondLoad?.nominalDemandMw).toBe(firstLoad?.nominalDemandMw)
-    expect(Math.abs(second.summary.totalLoadMw - first.summary.totalLoadMw)).toBeGreaterThan(1)
-  })
-
-  test('accepts operational commands and exposes query snapshots', async () => {
-    const scenario = gridScenario()
-    const connection = await createLocalElectricGridPackRuntimeAdapter().connect({
-      simulationRunId,
-      scenario: {
-        scenarioId: scenario.id,
-        runtimeIds: [electricGridRuntimeId],
-        world: scenario.world,
-        initialObjects: scenario.initialObjects,
-        runtimeConfigByRuntimeId: {},
-        runtimeConfig: sourceDerivedTopologyRuntimeConfig,
-      },
-    })
-
+  test('targets private assets explicitly and persists command consequences on the Grid', async () => {
+    const connection = await connect()
     try {
-      const initial = await connection.getSnapshot()
-      const generator = initial.objects.find(object => {
-        const parsed = electricGridPackDataSchema.safeParse(object.packData)
-        return parsed.success && parsed.data.type === 'grid_generator'
-      })
-      const branch = initial.objects.find(object => {
-        const parsed = electricGridPackDataSchema.safeParse(object.packData)
-        return parsed.success && parsed.data.type === 'grid_branch'
-      })
-      if (!generator || !branch) throw new Error('missing command targets')
+      const generators = okResult(await connection.query({
+        packId: 'electric-grid', kind: 'electric-grid.assets.search', payload: { gridId: 'grid:norway', kinds: ['generator'], limit: 1 },
+      })).assets as ReadonlyArray<{ readonly id: string }>
+      const branches = okResult(await connection.query({
+        packId: 'electric-grid', kind: 'electric-grid.assets.search', payload: { gridId: 'grid:norway', kinds: ['branch'], limit: 1 },
+      })).assets as ReadonlyArray<{ readonly id: string }>
+      const generatorId = generators[0]!.id
+      const branchId = branches[0]!.id
+      const before = okResult(await connection.query({ packId: 'electric-grid', kind: 'electric-grid.grid.summary', payload: { gridId: 'grid:norway' } }))
+      const beforeReserve = (before.projection as { readonly reserveMarginMw: number }).reserveMarginMw
 
-      const trip = await connection.sendCommand(command({
-        kind: gridTripGeneratorCommandKind,
-        targetObjectIds: [generator.id],
-        payload: {},
-      }))
-      const derate = await connection.sendCommand(command({
-        kind: gridDerateBranchCommandKind,
-        targetObjectIds: [branch.id],
-        payload: { availability: 0.6 },
-      }))
-      const snapshot = await connection.getSnapshot()
-      const nextGenerator = snapshot.objects.find(object => object.id === generator.id)
-      const nextBranch = snapshot.objects.find(object => object.id === branch.id)
-      if (!nextGenerator || !nextBranch) throw new Error('missing updated targets')
-      const generatorData = parsedPackData(nextGenerator, 'grid_generator') as GridGeneratorData
-      const branchData = parsedPackData(nextBranch, 'grid_branch') as GridBranchData
-      const summary = await connection.query({
-        packId: 'electric-grid',
-        kind: 'electric-grid.network.summary',
-        payload: {},
-      })
-
+      const dispatch = await connection.sendCommand(command({ kind: gridDispatchGeneratorCommandKind, gridId: 'grid:norway', payload: { assetId: generatorId, targetMw: 0 } }))
+      const trip = await connection.sendCommand(command({ kind: gridTripGeneratorCommandKind, gridId: 'grid:norway', payload: { assetId: generatorId } }))
+      const derate = await connection.sendCommand(command({ kind: gridDerateBranchCommandKind, gridId: 'grid:norway', payload: { assetId: branchId, availability: 0.6 } }))
+      expect(dispatch.ok).toBe(true)
       expect(trip.ok).toBe(true)
       expect(derate.ok).toBe(true)
-      expect(generatorData.state).toBe('tripped')
-      expect(generatorData.dispatchMw).toBe(0)
-      expect(branchData.state).toBe('derated')
-      expect(branchData.availability).toBe(0.6)
-      expect(summary.ok).toBe(true)
-      if (summary.ok) {
-        expect(summary.result).toMatchObject({
-          assetCounts: {
-            branch: expect.any(Number),
-            generator: expect.any(Number),
-            load: expect.any(Number),
-          },
-        })
-      }
+
+      const generator = okResult(await connection.query({ packId: 'electric-grid', kind: 'electric-grid.asset.get', payload: { gridId: 'grid:norway', assetId: generatorId } }))
+      const branch = okResult(await connection.query({ packId: 'electric-grid', kind: 'electric-grid.asset.get', payload: { gridId: 'grid:norway', assetId: branchId } }))
+      const after = okResult(await connection.query({ packId: 'electric-grid', kind: 'electric-grid.grid.summary', payload: { gridId: 'grid:norway' } }))
+      expect(generator.asset).toMatchObject({ state: { state: 'tripped', dispatchMw: 0, targetMw: 0 } })
+      expect(branch.asset).toMatchObject({ state: { state: 'derated', availability: 0.6 } })
+      expect((after.projection as { readonly reserveMarginMw: number }).reserveMarginMw).toBeLessThanOrEqual(beforeReserve)
     } finally {
       await connection.close()
     }
   })
 
-  test('keeps solver projections projected while persisting command mutations', async () => {
-    const scenario = gridScenario()
-    const connection = await createLocalElectricGridPackRuntimeAdapter().connect({
-      simulationRunId,
-      scenario: {
-        scenarioId: scenario.id,
-        runtimeIds: [electricGridRuntimeId],
-        world: scenario.world,
-        initialObjects: scenario.initialObjects,
-        runtimeConfigByRuntimeId: {},
-        runtimeConfig: sourceDerivedTopologyRuntimeConfig,
-      },
-    })
+  test('tracks storage energy, island frequency, and cached topology in private runtime state', () => {
+    const data = electricGridPackDataSchema.parse(gridScenario().initialObjects.find(object => object.id === 'grid:norway')?.packData)
+    const definition = compileGridDefinition(gridDefinitionSchema.parse({ id: 'grid:norway', model: data.model, operatingPoint: data.operatingPoint, automation: data.automation }))
+    const grid = createGridRuntimeInstance({ definition, at: '2026-01-01T10:00:00.000Z' })
+    advanceGrid(grid, 0, '2026-01-01T10:00:00.000Z' as IsoTimestamp)
+    const firstPlan = grid.topologyPlan
+    const storage = [...grid.storage.values()][0]!
+    const initialCharge = storage.stateOfChargeFraction
+    for (const generator of grid.generators.values()) {
+      generator.state = 'tripped'
+      generator.dispatchMw = 0
+      generator.targetMw = 0
+    }
+    advanceGrid(grid, 3_600, '2026-01-01T11:00:00.000Z' as IsoTimestamp)
+    expect(grid.topologyPlan).toBe(firstPlan)
+    expect(new Set([...grid.busStates.values()].map(state => state.islandId)).size).toBeGreaterThanOrEqual(grid.projection.activeIslandCount)
+    expect(grid.projection.activeIslandCount).toBeGreaterThan(0)
+    expect(storage.dispatchMw).toBeGreaterThan(0)
+    expect(storage.stateOfChargeFraction).toBeLessThan(initialCharge)
 
+    const branchId = definition.model.branches[0]!.id
+    grid.branches.get(branchId)!.state = 'open'
+    advanceGrid(grid, 1, '2026-01-01T11:00:01.000Z' as IsoTimestamp)
+    expect(grid.topologyPlan).not.toBe(firstPlan)
+  })
+
+  test('records a compact Grid projection when an operator changes a private asset', async () => {
+    const connection = await connect()
     try {
       const emitted: ReadonlyArray<PackRuntimeEvent>[] = []
-      const unsubscribe = connection.subscribe(emission => {
-        emitted.push(emission.events)
-      })
-      const snapshot = await connection.getSnapshot()
-      const generator = snapshot.objects.find(object => {
-        const parsed = electricGridPackDataSchema.safeParse(object.packData)
-        return parsed.success && parsed.data.type === 'grid_generator'
-      })
-      if (!generator) throw new Error('missing command target')
-
-      const trip = await connection.sendCommand(command({
-        kind: gridTripGeneratorCommandKind,
-        targetObjectIds: [generator.id],
-        payload: {},
-      }))
+      const unsubscribe = connection.subscribe(emission => emitted.push(emission.events))
+      const generators = okResult(await connection.query({
+        packId: 'electric-grid', kind: 'electric-grid.assets.search', payload: { gridId: 'grid:norway', kinds: ['generator'], limit: 1 },
+      })).assets as ReadonlyArray<{ readonly id: string }>
+      const result = await connection.sendCommand(command({ kind: gridTripGeneratorCommandKind, gridId: 'grid:norway', payload: { assetId: generators[0]!.id } }))
       unsubscribe()
-
-      expect(trip.ok).toBe(true)
+      expect(result.ok).toBe(true)
       const objectEvents = emitted.flat().filter(event => event.type === 'object.upserted')
-      expect(objectEvents.some(event => event.history === 'record')).toBe(true)
-      expect(objectEvents.some(event => event.history === 'snapshot-only')).toBe(true)
+      expect(objectEvents).toHaveLength(1)
+      expect(objectEvents[0]).toMatchObject({ history: 'record', object: { id: 'grid:norway' } })
     } finally {
       await connection.close()
     }
   })
 
-  test('coalesces steady-state projected emissions after the initial catch-up', async () => {
-    const scenario = gridScenario()
-    const gridObjectCount = scenario.initialObjects.filter(object => object.packId === 'electric-grid').length
-    const connection = await createLocalElectricGridPackRuntimeAdapter().connect({
-      simulationRunId,
-      scenario: {
-        scenarioId: scenario.id,
-        runtimeIds: [electricGridRuntimeId],
-        world: scenario.world,
-        initialObjects: scenario.initialObjects,
-        runtimeConfigByRuntimeId: {},
-        runtimeConfig: sourceDerivedTopologyRuntimeConfig,
-      },
-    })
+  test('restores private asset controls only against the same Grid Model', async () => {
+    let stored: unknown = null
+    const store: PackRuntimeStateStore = {
+      load: async () => stored,
+      save: async state => { stored = state },
+    }
+    const first = await connect(store)
+    const generators = okResult(await first.query({
+      packId: 'electric-grid', kind: 'electric-grid.assets.search', payload: { gridId: 'grid:norway', kinds: ['generator'], limit: 1 },
+    })).assets as ReadonlyArray<{ readonly id: string }>
+    const generatorId = generators[0]!.id
+    expect((await first.sendCommand(command({ kind: gridTripGeneratorCommandKind, gridId: 'grid:norway', payload: { assetId: generatorId } }))).ok).toBe(true)
+    await first.close()
 
+    const restored = await connect(store)
     try {
-      const emitted: number[] = []
-      const unsubscribe = connection.subscribe(emission => {
-        emitted.push(emission.events.length)
-      })
-      await Bun.sleep(4_500)
-      unsubscribe()
-
-      expect(emitted.length).toBeGreaterThanOrEqual(2)
-      expect(emitted[0]).toBeLessThan(gridObjectCount)
-      const lastEmissionCount = emitted.at(-1)
-      if (lastEmissionCount === undefined) throw new Error('missing projected grid emission')
-      expect(lastEmissionCount).toBeLessThan(40)
+      const generator = okResult(await restored.query({
+        packId: 'electric-grid', kind: 'electric-grid.asset.get', payload: { gridId: 'grid:norway', assetId: generatorId },
+      }))
+      expect(generator.asset).toMatchObject({ state: { state: 'tripped', dispatchMw: 0, targetMw: 0 } })
     } finally {
-      await connection.close()
+      await restored.close()
     }
   })
 })

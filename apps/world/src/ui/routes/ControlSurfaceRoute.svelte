@@ -98,7 +98,7 @@
   import type { CategoryRow, SimulationRunResponse, CreateDraft } from '../types.ts'
 
   const appVersion = __LEITBILD_VERSION__
-  const gridOverviewCategoryId = 'grid-system'
+  const gridOverviewCategoryId = 'electric-grids'
   const emptyStringArray: ReadonlyArray<string> = []
   const emptyMapLayerGroups: NonNullable<PackPresentationContribution['mapLayerGroups']> = []
   const emptyMapAreaFeatureLayers: NonNullable<PackPresentationContribution['mapAreaFeatureLayers']> = []
@@ -1635,7 +1635,7 @@
         <div class="surface-empty"></div>
       {/if}
       {#if gridOverviewVisible && richOperationalUiReady && GridOverviewPanel}
-        <GridOverviewPanel {objects} onClose={closeGridOverviewPanel} />
+        <GridOverviewPanel {simulationRunId} {objects} onClose={closeGridOverviewPanel} />
       {/if}
     </main>
 

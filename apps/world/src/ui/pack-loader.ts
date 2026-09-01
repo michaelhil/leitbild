@@ -11,7 +11,7 @@ const packLoaders: Record<KnownUiPackId, PackLoader> = {
   drone: async () => (await import('../packs/drone/ui-pack.ts')).droneUiPack,
   'process-plant': async () => (await import('../packs/process-plant/pack.ts')).processPlantPack,
   aviation: async () => (await import('../packs/aviation/pack.ts')).aviationPack,
-  'electric-grid': async () => (await import('../packs/electric-grid/pack.ts')).electricGridPack,
+  'electric-grid': async () => (await import('../packs/electric-grid/ui-pack.ts')).electricGridUiPack,
 }
 
 /** Reviewed browser entry points. A parity test keeps this boundary aligned with the server assembly. */
