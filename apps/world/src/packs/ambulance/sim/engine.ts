@@ -81,6 +81,7 @@ const upsertEvent = (object: OperationalObject, at: IsoTimestamp): PackRuntimeEv
   type: 'object.upserted',
   object,
   at,
+  history: 'snapshot-only',
   provenance: {
     source: 'simulator',
     adapterId: ambulanceSimAdapterId,
@@ -92,6 +93,7 @@ const deleteEvent = (objectId: ObjectId, at: IsoTimestamp): PackRuntimeEvent => 
   type: 'object.deleted',
   objectId,
   at,
+  history: 'record',
   provenance: {
     source: 'simulator',
     adapterId: ambulanceSimAdapterId,

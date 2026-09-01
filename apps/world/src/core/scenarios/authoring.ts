@@ -53,6 +53,7 @@ const scenarioAuthoringPackSchema = z.object({
     id: z.string().min(1),
     label: z.string().min(1),
     kind: z.enum(['local', 'remote', 'replay']),
+    clock: z.enum(['simulation', 'live', 'none']),
   }).strict()),
   defaultRuntimeId: z.string().min(1).optional(),
   configSchema: z.record(z.string(), z.unknown()),
@@ -65,7 +66,45 @@ export const scenarioAuthoringCatalogSchema = z.object({
 
 export type ScenarioAuthoringCatalog = z.infer<typeof scenarioAuthoringCatalogSchema>
 
+const valueAt = (root: Readonly<Record<string, unknown>>, path: ReadonlyArray<string | number>): unknown => {
+  let value: unknown = root
+  for (const segment of path) {
+    if (typeof value !== 'object' || value === null || !(segment in value)) return undefined
+    value = (value as Record<string | number, unknown>)[segment]
+  }
+  return value
+}
+
+const validateAuthoring = (pack: WorldPack): void => {
+  const itemTypeIds = new Set<string>()
+  for (const itemType of pack.authoring?.itemTypes ?? []) {
+    if (itemTypeIds.has(itemType.id)) throw new Error(`duplicate authoring item type ${itemType.id} in Pack ${pack.descriptor.id}`)
+    itemTypeIds.add(itemType.id)
+    for (const field of itemType.fields) {
+      const defaults = field.target === 'item' ? itemType.defaultItem : itemType.linkedConfig?.defaults
+      if (!defaults) throw new Error(`authoring field ${itemType.id}.${field.label} targets missing linked config`)
+      const defaultValue = valueAt(defaults, field.path)
+      if (defaultValue === undefined) throw new Error(`authoring field ${itemType.id}.${field.label} has no value at ${field.path.join('.')}`)
+      if (defaultValue !== field.control.defaultValue) {
+        throw new Error(`authoring field ${itemType.id}.${field.label} default does not match its document value`)
+      }
+      if (field.control.kind === 'select' && !field.control.options.some(option => option.value === field.control.defaultValue)) {
+        throw new Error(`authoring field ${itemType.id}.${field.label} default is not a selectable option`)
+      }
+      if (field.control.kind === 'number') {
+        if (field.control.min !== undefined && field.control.defaultValue < field.control.min) {
+          throw new Error(`authoring field ${itemType.id}.${field.label} default is below its minimum`)
+        }
+        if (field.control.max !== undefined && field.control.defaultValue > field.control.max) {
+          throw new Error(`authoring field ${itemType.id}.${field.label} default is above its maximum`)
+        }
+      }
+    }
+  }
+}
+
 export const scenarioAuthoringCatalogFor = (packs: ReadonlyArray<WorldPack>): ScenarioAuthoringCatalog => {
+  for (const pack of packs) validateAuthoring(pack)
   const authoringPacks = packs.map(pack => ({
     id: pack.descriptor.id,
     title: pack.descriptor.name,
@@ -75,6 +114,7 @@ export const scenarioAuthoringCatalogFor = (packs: ReadonlyArray<WorldPack>): Sc
       id: runtime.id,
       label: runtime.label,
       kind: runtime.kind,
+      clock: runtime.clock,
     })),
     ...(pack.runtime?.defaultRuntimeId === undefined ? {} : { defaultRuntimeId: pack.runtime.defaultRuntimeId }),
     configSchema: z.toJSONSchema(pack.scenarioConfigSchema, { unrepresentable: 'any' }),

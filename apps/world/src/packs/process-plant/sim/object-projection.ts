@@ -53,7 +53,7 @@ export const processPlantProjectionEvents = (config: {
       object: next,
       at: config.at,
       provenance: config.provenance,
-      persistence: 'projected',
+      history: 'snapshot-only',
     })
   }
   return events

@@ -7,6 +7,7 @@ import type {
   PackRuntimeEvent,
   PackRuntimeEventHandler,
 } from '../../../../simulation/protocol.ts'
+import { definePackRuntimeOperations } from '../../../../simulation/operations.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../../core/packs/protocol.ts'
 import { aviationRuntimePackId } from '../constants.ts'
 import {
@@ -81,8 +82,8 @@ export const createAviationMultiPackRuntimeAdapter = (
     id: aviationMultiRuntimeId,
     version: '1.0.0',
     packId: aviationRuntimePackId,
-    acceptedCommandKinds: [aviationSetSourceCommandKind],
-    queryKinds: ['aviation.source_status'],
+    clock: 'live',
+    operations: definePackRuntimeOperations({ commands: [aviationSetSourceCommandKind], queries: ['aviation.source_status'] }),
     connect: async (connectionConfig: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
       const handlers = new Set<PackRuntimeEventHandler>()
       // Object ids currently forwarded to the rail; cleared on source switch.
@@ -164,6 +165,7 @@ export const createAviationMultiPackRuntimeAdapter = (
             type: 'object.deleted',
             objectId: id as ObjectId,
             at,
+            history: 'snapshot-only',
             provenance: activeProvenanceTemplate!,
           }))
           trackedIds.clear()

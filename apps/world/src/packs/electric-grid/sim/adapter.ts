@@ -15,8 +15,9 @@ import type {
   PackRuntimeConnectionConfig,
   PackRuntimeEvent,
   PackRuntimeEventHandler,
-  PackRuntimeEventPersistence,
+  PackRuntimeEventHistory,
 } from '../../../simulation/protocol.ts'
+import { definePackRuntimeOperations } from '../../../simulation/operations.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import { defaultSimulationRunRuntimePolicy } from '../../../core/simulation-runs/runtime-persistence-policy.ts'
 import {
@@ -267,8 +268,8 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
   id: electricGridRuntimeId,
   version: '1.0.0',
   packId: electricGridRuntimePackId,
-  acceptedCommandKinds: electricGridCommandKinds,
-  queryKinds: electricGridQueryKinds,
+  clock: 'simulation',
+  operations: definePackRuntimeOperations({ commands: electricGridCommandKinds, queries: electricGridQueryKinds }),
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const topology = topologyForRuntimeConfig(config.scenario?.runtimeConfig)
     const runtimeStateStore = config.runtimeStateStore
@@ -290,6 +291,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
     let runtimeStateSaveTimer: ReturnType<typeof setTimeout> | null = null
     let runtimeStateSaveQueue: Promise<void> = Promise.resolve()
     const initialScenarioTime = config.scenario?.world.startsAt
+    let lastSolveSimulationMs = Date.parse(currentSimulationTime(clock, initialScenarioTime))
 
     const clearRuntimeStateSaveTimer = (): void => {
       if (runtimeStateSaveTimer === null) return
@@ -355,31 +357,33 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
       await runtimeStateSaveQueue
     }
 
-    const solveAndEmit = (
-      dtSeconds: number,
-      persistence: PackRuntimeEventPersistence = 'projected',
-    ): void => {
+    const solveAndEmit = (history: PackRuntimeEventHistory = 'snapshot-only'): void => {
       if (closed || clock?.paused) return
       const at = currentSimulationTime(clock, initialScenarioTime)
+      const simulationMs = Date.parse(at)
+      const dtSeconds = Number.isFinite(simulationMs) && Number.isFinite(lastSolveSimulationMs)
+        ? Math.max(0, simulationMs - lastSolveSimulationMs) / 1_000
+        : 0
+      lastSolveSimulationMs = simulationMs
       const solved = solveGrid({ objects: [...objects.values()], runtimeState, topology, dtSeconds, at })
       runtimeState = solved.runtimeState
       const events: PackRuntimeEvent[] = []
       for (const next of solved.objects) {
         const previous = objects.get(next.id)
         objects.set(next.id, next)
-        const shouldEmit = persistence === 'durable'
+        const shouldEmit = history === 'record'
           ? (!previous || previous.revision !== next.revision)
           : shouldEmitProjectedObjectUpdate(previous, next)
         if (shouldEmit) {
-          events.push({ type: 'object.upserted', object: next, at, provenance: next.provenance, persistence })
+          events.push({ type: 'object.upserted', object: next, at, provenance: next.provenance, history })
         }
       }
       scheduleRuntimeStateSave()
       emit(handlers, events, at)
     }
 
-    solveAndEmit(updateIntervalMs / 1000, 'projected')
-    interval = setInterval(() => solveAndEmit(updateIntervalMs / 1000, 'projected'), updateIntervalMs)
+    solveAndEmit('snapshot-only')
+    interval = setInterval(() => solveAndEmit('snapshot-only'), updateIntervalMs)
 
     return {
       getSnapshot: async () => ({
@@ -412,14 +416,14 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
               object: next,
               at: acceptedAt,
               provenance: { source: 'operator', causedByCommandId: command.id },
-              persistence: 'durable',
+              history: 'record',
             })
           }
         } catch (err) {
           return commandRejected(command, acceptedAt, err instanceof Error ? err.message : String(err))
         }
         emit(handlers, commandEvents, acceptedAt)
-        solveAndEmit(1, 'projected')
+        solveAndEmit('snapshot-only')
         return commandAccepted(command, acceptedAt)
       },
       query: async (request: PackQueryRequest): Promise<PackQueryResponse> =>
@@ -434,6 +438,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
       },
       setClock: async (nextClock: SimulationClockState): Promise<void> => {
         clock = nextClock
+        lastSolveSimulationMs = Date.parse(currentSimulationTime(clock, initialScenarioTime))
       },
       close: async (): Promise<void> => {
         closed = true

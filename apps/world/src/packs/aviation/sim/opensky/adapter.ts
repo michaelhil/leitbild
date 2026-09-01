@@ -6,6 +6,7 @@ import type {
   PackRuntimeEvent,
   PackRuntimeEventHandler,
 } from '../../../../simulation/protocol.ts'
+import { definePackRuntimeOperations } from '../../../../simulation/operations.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../../core/packs/protocol.ts'
 import {
   aviationRuntimePackId,
@@ -142,6 +143,7 @@ const diffAndEmit = (
       type: 'object.upserted',
       object: updated,
       at,
+      history: 'snapshot-only',
       provenance: updated.provenance,
     })
   }
@@ -154,6 +156,7 @@ const diffAndEmit = (
         type: 'object.deleted',
         objectId: id as ObjectId,
         at,
+        history: 'snapshot-only',
         provenance: entry.object.provenance,
       })
       state.delete(id)
@@ -200,8 +203,8 @@ export const createOpenSkyPackRuntimeAdapter = (config: OpenSkyAdapterConfig): P
     id: aviationOpenSkyRuntimeId,
     version: '1.0.0',
     packId: aviationRuntimePackId,
-    acceptedCommandKinds: [],
-    queryKinds: ['aviation.source_status'],
+    clock: 'live',
+    operations: definePackRuntimeOperations({ queries: ['aviation.source_status'] }),
     connect: async (connectionConfig: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
       const state = new Map<string, AircraftState>()
       const handlers = new Set<PackRuntimeEventHandler>()

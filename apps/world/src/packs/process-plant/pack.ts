@@ -1,7 +1,7 @@
 import type { PackId, GeoJsonPoint, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
 import { geoPointFromLonLat, meters, objectIdSchema } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
-import type { WorldPack, PackCommandRequest, PackCreationGeometry, PackObjectPresentation, PackScenarioItemSpec } from '../../core/packs/protocol.ts'
+import type { WorldPack, PackObjectPresentation, PackScenarioItemSpec } from '../../core/packs/protocol.ts'
 import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
 import { processPlantControlWriteCommandKind } from './commands.ts'
 import { emptyProcessPlantProjection, processPlantPackId, processPlantUnitPackDataSchema, type ProcessPlantUnitPackData } from './model.ts'
@@ -112,7 +112,7 @@ const presentationForUnit = (object: OperationalObject, data: ProcessPlantUnitPa
 export const processPlantPack: WorldPack = {
   descriptor: createWorldPackDescriptor({
     id: 'process-plant', version: '1.0.0', name: 'Process Plant',
-    contributions: ['runtime', 'knowledge', 'scenario', 'presentation', 'commands'],
+    contributions: ['runtime', 'knowledge', 'scenario', 'presentation'],
   }),
   scenarioConfigSchema: processPlantPackConfigSchema,
   authoring: {
@@ -139,7 +139,7 @@ export const processPlantPack: WorldPack = {
     }],
   },
   runtime: {
-    runtimes: [{ id: processPlantSimRuntimeId, version: '1.0.0', label: 'Local process plant runtime', kind: 'local' }],
+    runtimes: [{ id: processPlantSimRuntimeId, version: '1.0.0', label: 'Local process plant runtime', kind: 'local', clock: 'simulation' }],
     defaultRuntimeId: processPlantSimRuntimeId,
   },
   knowledge: { wikiRefs: [{ name: 'Leitbild PWR operations wiki', url: 'https://github.com/michaelhil/leitbild/blob/main/docs/wiki/pwr-ops.md' }] },
@@ -165,16 +165,6 @@ export const processPlantPack: WorldPack = {
         fields: [packField('warning', 'Warning', 'Object is outside the process-plant pack vocabulary')],
       }
     },
-  },
-  commands: {
-    createObjectTypes: [],
-    defaultObjectLabel: (typeId: string): string => unsupported(`default label for create type ${typeId}`),
-    buildCreateObjectCommand: (typeId: string, _label: string, _geometry: PackCreationGeometry, _parameters?: unknown): PackCommandRequest =>
-      unsupported(`create-object command for type ${typeId}`),
-    isController: (): boolean => false,
-    isTarget: (): boolean => false,
-    buildSetTargetCommand: (): PackCommandRequest => unsupported('target commands'),
-    buildCancelTargetCommand: (): PackCommandRequest => unsupported('cancel-target commands'),
   },
 }
 

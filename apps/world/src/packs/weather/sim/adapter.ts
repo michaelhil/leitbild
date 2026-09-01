@@ -16,6 +16,7 @@ import type {
   PackRuntimeEvent,
   PackRuntimeEventHandler,
 } from '../../../simulation/protocol.ts'
+import { definePackRuntimeOperations } from '../../../simulation/operations.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import {
   createWeatherSparseField,
@@ -249,8 +250,8 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
   id: weatherSimRuntimeId,
   version: '1.0.0',
   packId: weatherPackId,
-  acceptedCommandKinds: [createWeatherAreaCommandKind],
-  queryKinds: weatherQueryKinds,
+  clock: 'simulation',
+  operations: definePackRuntimeOperations({ commands: [createWeatherAreaCommandKind], queries: weatherQueryKinds }),
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const objects = new Map<string, OperationalObject>()
     const initialObjects = (config.initialObjects ?? config.scenario?.initialObjects ?? [])
@@ -303,6 +304,7 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
           type: 'object.upserted',
           object: updated,
           at,
+          history: 'snapshot-only',
           provenance: updated.provenance,
         })
       }
@@ -321,6 +323,7 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
           type: 'object.upserted',
           object: updated,
           at,
+          history: 'snapshot-only',
           provenance: updated.provenance,
         })
       }
@@ -385,6 +388,7 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
           type: 'object.upserted',
           object,
           at: acceptedAt,
+          history: 'record',
           provenance: object.provenance,
         }], acceptedAt)
         return { ok: true, commandId: command.id, acceptedAt }

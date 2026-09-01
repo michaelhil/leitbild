@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { CommandEnvelope, CommandResult, SimulationRunEvent, GeoJsonLineString, GeoJsonPolygon, IsoTimestamp, ObjectId, OperationalObject } from '../../../core/model/index.ts'
 import { confirmedFact, interactionSignalSchema, nowIso, type InteractionSignal, type SignalId } from '../../../core/model/index.ts'
 import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler } from '../../../simulation/protocol.ts'
+import { definePackRuntimeOperations } from '../../../simulation/operations.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import { createDirectRoutingAdapter } from '../../../routing/direct-adapter.ts'
@@ -147,8 +148,8 @@ export const createLocalTrafficPackRuntimeAdapter = (adapterConfig: {
   id: trafficSimRuntimeId,
   version: '1.0.0',
   packId: trafficPackId,
-  acceptedCommandKinds: [createTrafficConditionCommandKind],
-  queryKinds: trafficQueryKinds,
+  clock: 'none',
+  operations: definePackRuntimeOperations({ commands: [createTrafficConditionCommandKind], queries: trafficQueryKinds }),
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const routing = adapterConfig.routing ?? createDirectRoutingAdapter()
     const objects = new Map<string, OperationalObject>()
@@ -210,6 +211,7 @@ export const createLocalTrafficPackRuntimeAdapter = (adapterConfig: {
             type: 'object.upserted',
             object,
             at: acceptedAt,
+            history: 'record',
             provenance: object.provenance,
           },
           trafficChangedSignalEvent(command, object, acceptedAt),

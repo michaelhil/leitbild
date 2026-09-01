@@ -7,7 +7,7 @@ export const dronePack: WorldPack = {
   ...droneUiPack,
   descriptor: createWorldPackDescriptor({
     id: 'drone', version: '1.0.0', name: 'Drone Operations',
-    contributions: ['runtime', 'knowledge', 'scenario', 'presentation', 'commands', 'interactions'],
+    contributions: ['runtime', 'knowledge', 'scenario', 'presentation', 'creation', 'targeting', 'interactions'],
   }),
   scenarioConfigSchema: dronePackConfigSchema,
   scenario: droneScenarioSupport,

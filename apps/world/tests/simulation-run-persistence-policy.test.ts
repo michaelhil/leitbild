@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { ActorId, AdapterId, CommandEnvelope, SimulationRunId, SimulationRunEvent, PackId, ObjectId, OperationalObject } from '../src/core/model/index.ts'
 import { geoPointFromLonLat, meters, nowIso } from '../src/core/model/index.ts'
-import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEventHandler, PackRuntimeEventPersistence } from '../src/simulation/protocol.ts'
+import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEventHandler, PackRuntimeEventHistory } from '../src/simulation/protocol.ts'
 import { createJsonlEventLog } from '../src/core/simulation-runs/event-log.ts'
 import { createSimulationRunSnapshotStore, type SimulationRunSnapshotStore } from '../src/core/simulation-runs/snapshot-store.ts'
 import { createSimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
@@ -58,7 +58,7 @@ const makeObject = (config?: {
 const createControlledRuntimeConnection = (
   initialObject: OperationalObject,
   config: {
-    readonly commandEventPersistence?: (command: CommandEnvelope) => PackRuntimeEventPersistence
+    readonly commandEventHistory?: (command: CommandEnvelope) => PackRuntimeEventHistory
     readonly sendCommand?: PackRuntimeConnection['sendCommand']
   } = {},
 ): {
@@ -85,7 +85,7 @@ const createControlledRuntimeConnection = (
         rejectedAt: nowIso(),
         reason: 'test connection does not accept commands',
       })),
-      ...(config.commandEventPersistence === undefined ? {} : { commandEventPersistence: config.commandEventPersistence }),
+      ...(config.commandEventHistory === undefined ? {} : { commandEventHistory: config.commandEventHistory }),
       query: async request => ({
         ok: false,
         packId: request.packId,
@@ -163,6 +163,7 @@ describe('simulation run persistence policy', () => {
       type: 'object.upserted',
       object: movedObject,
       at: nowIso(),
+      history: 'snapshot-only',
       provenance: movedObject.provenance,
     }])
     await waitFor(
@@ -185,7 +186,7 @@ describe('simulation run persistence policy', () => {
       object: assignedObject,
       at: nowIso(),
       provenance: assignedObject.provenance,
-      persistence: 'durable',
+      history: 'record',
     }])
     await waitFor(
       async () => (await readEventLog(eventLogPath)).length === 1,
@@ -197,7 +198,7 @@ describe('simulation run persistence policy', () => {
     await runtime.close()
   })
 
-  test('keeps runtime projection-only pack data updates out of the durable journal', async () => {
+  test('uses explicit runtime history policy instead of interpreting Pack data fields', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
     const eventLogPath = join(dataDir, 'events.jsonl')
     const initialObject = makeObject({
@@ -238,6 +239,7 @@ describe('simulation run persistence policy', () => {
       type: 'object.upserted',
       object: projectionUpdate,
       at: nowIso(),
+      history: 'snapshot-only',
       provenance: projectionUpdate.provenance,
     }])
     await waitFor(
@@ -265,7 +267,7 @@ describe('simulation run persistence policy', () => {
       object: packTruthUpdate,
       at: nowIso(),
       provenance: packTruthUpdate.provenance,
-      persistence: 'durable',
+      history: 'record',
     }])
     await waitFor(
       async () => (await readEventLog(eventLogPath)).length === 1,
@@ -277,7 +279,7 @@ describe('simulation run persistence policy', () => {
     await runtime.close()
   })
 
-  test('defaults runtime object upserts to projected even when object meaning changes', async () => {
+  test('keeps explicitly snapshot-only runtime object upserts out of history even when meaning changes', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
     const eventLogPath = join(dataDir, 'events.jsonl')
     const initialObject = makeObject({
@@ -311,6 +313,7 @@ describe('simulation run persistence policy', () => {
       type: 'object.upserted',
       object: projectedObject,
       at: nowIso(),
+      history: 'snapshot-only',
       provenance: projectedObject.provenance,
     }])
     await waitFor(
@@ -329,7 +332,7 @@ describe('simulation run persistence policy', () => {
     const eventLogPath = join(dataDir, 'events.jsonl')
     const initialObject = makeObject()
     const runtimeConnection = createControlledRuntimeConnection(initialObject, {
-      commandEventPersistence: command => command.kind === 'test.fast-control' ? 'projected' : 'durable',
+      commandEventHistory: command => command.kind === 'test.fast-control' ? 'snapshot-only' : 'record',
       sendCommand: async command => ({
         ok: true,
         commandId: command.id,
@@ -392,6 +395,7 @@ describe('simulation run persistence policy', () => {
       type: 'object.upserted',
       object: projectedObject,
       at: nowIso(),
+      history: 'snapshot-only',
       provenance: projectedObject.provenance,
     }])
     await waitFor(

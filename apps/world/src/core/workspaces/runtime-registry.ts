@@ -1,5 +1,4 @@
 import type { WorkspaceId } from '@leitbild/contracts'
-import type { InteractionHandler } from '../model/index.ts'
 import type { ScenarioCatalog } from '../scenarios/catalog.ts'
 import type { ScenarioSource } from '../scenarios/config.ts'
 import type { ScenarioDefinition } from '../model/index.ts'
@@ -35,7 +34,6 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
   readonly compileScenarioSource: (source: unknown) => Promise<ScenarioDefinition>
   readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
   readonly runtimeAdapters: ReadonlyArray<PackRuntimeAdapter>
-  readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
   readonly idleRuntimeCloseDelayMs?: number
   readonly procedureSourceService?: ProcedureSourceService
 }): WorldWorkspaceRuntimeRegistry => {
@@ -52,7 +50,6 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
       compileScenarioSource: config.compileScenarioSource,
       scenarioAuthoringCatalog: config.scenarioAuthoringCatalog,
       runtimeAdapters: config.runtimeAdapters,
-      ...(config.interactionHandlers === undefined ? {} : { interactionHandlers: config.interactionHandlers }),
       ...(config.idleRuntimeCloseDelayMs === undefined ? {} : { idleRuntimeCloseDelayMs: config.idleRuntimeCloseDelayMs }),
       ...(config.procedureSourceService === undefined ? {} : { procedureSourceService: config.procedureSourceService }),
     }),

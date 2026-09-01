@@ -4,15 +4,6 @@ export type SimulationRunEventPersistenceDisposition = 'durable' | 'projected'
 
 const stableJson = (value: unknown): string => JSON.stringify(value)
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
-
-const stablePackData = (value: unknown): string => {
-  if (!isRecord(value) || !Object.hasOwn(value, 'projection')) return stableJson(value)
-  const { projection: _projection, ...withoutProjection } = value
-  return stableJson(withoutProjection)
-}
-
 const routeMeaningChanged = (previous: OperationalObject, next: OperationalObject): boolean => {
   const previousRoute = previous.spatial.route
   const nextRoute = next.spatial.route
@@ -34,7 +25,7 @@ const isMeaningfulObjectUpsert = (previous: OperationalObject | undefined, next:
   if (stableJson(previous.operational) !== stableJson(next.operational)) return true
   if (stableJson(previous.tasking) !== stableJson(next.tasking)) return true
   if (stableJson(previous.alerts) !== stableJson(next.alerts)) return true
-  if (stablePackData(previous.packData) !== stablePackData(next.packData)) return true
+  if (stableJson(previous.packData) !== stableJson(next.packData)) return true
   if (routeMeaningChanged(previous, next)) return true
   if (communicationMeaningChanged(previous, next)) return true
   return false

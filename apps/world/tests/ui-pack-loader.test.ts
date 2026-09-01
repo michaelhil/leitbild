@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { createScenarioControlPack, loadUiPack } from '../src/ui/pack-loader.ts'
+import { loadActivePackViews, loadUiPack } from '../src/ui/pack-loader.ts'
 
 describe('UI scenario pack loading', () => {
   test('loads only the packs declared by a scenario', async () => {
-    const pack = await createScenarioControlPack(['ambulance'])
+    const pack = await loadActivePackViews(['ambulance'])
 
-    expect(pack.descriptor.id).toBe('scenario-control-ambulance')
+    expect(pack.packIds).toEqual(['ambulance'])
     expect(pack.presentation.categories.map(category => category.id)).toEqual([
       'hospitals',
       'ambulances',
@@ -13,7 +13,7 @@ describe('UI scenario pack loading', () => {
     ])
     expect(pack.presentation.categories.map(category => category.id)).not.toContain('traffic')
     expect(pack.presentation.categories.map(category => category.id)).not.toContain('process-plants')
-    expect(pack.commands.createObjectTypes.map(type => type.id).sort()).toEqual([
+    expect(pack.creation?.createObjectTypes.map(type => type.id).sort()).toEqual([
       'ambulance',
       'hospital',
       'incident',
@@ -21,19 +21,21 @@ describe('UI scenario pack loading', () => {
   })
 
   test('combines scenario packs in declared order', async () => {
-    const pack = await createScenarioControlPack(['traffic', 'weather'])
+    const pack = await loadActivePackViews(['traffic', 'weather'])
 
-    expect(pack.descriptor.id).toBe('scenario-control-traffic-weather')
+    expect(pack.packIds).toEqual(['traffic', 'weather'])
     expect(pack.presentation.categories.map(category => category.id)).toEqual(['traffic', 'weather'])
-    expect(pack.commands.createObjectTypes.map(type => type.id).sort()).toEqual([
+    expect(pack.creation?.createObjectTypes.map(type => type.id).sort()).toEqual([
       'traffic_area',
       'traffic_road_segment',
+      'weather_area',
+      'weather_probe',
     ].sort())
   })
 
   test('rejects unknown and duplicate scenario pack ids visibly', async () => {
     await expect(loadUiPack('missing')).rejects.toThrow('scenario references unknown UI pack: missing')
-    await expect(createScenarioControlPack(['ambulance', 'ambulance']))
+    await expect(loadActivePackViews(['ambulance', 'ambulance']))
       .rejects.toThrow('scenario declares duplicate packs: ambulance')
   })
 })

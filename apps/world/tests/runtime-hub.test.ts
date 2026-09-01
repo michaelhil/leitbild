@@ -6,16 +6,22 @@ import type {
   SimulationRunId,
   IsoTimestamp,
   SimulationClockState,
+  ObjectId,
+  PackId,
 } from '../src/core/model/index.ts'
 import { createRuntimeHub } from '../src/simulation/runtime-hub.ts'
 import type {
   PackRuntimeAdapter,
   PackRuntimeConnection,
   PackRuntimeConnectionConfig,
+  PackRuntimeEmission,
 } from '../src/simulation/protocol.ts'
+import { definePackRuntimeOperations } from '../src/simulation/operations.ts'
 
 interface StubAdapter extends PackRuntimeAdapter {
   readonly connectCount: () => number
+  readonly closeCount: () => number
+  readonly emit: (emission: PackRuntimeEmission) => void
 }
 
 const rejectedCommand = (command: CommandEnvelope) => ({
@@ -27,11 +33,14 @@ const rejectedCommand = (command: CommandEnvelope) => ({
 
 const createStubAdapter = (id: string, packId: string, commandKind: string): StubAdapter => {
   let connectCount = 0
+  let closeCount = 0
+  const handlers = new Set<(emission: PackRuntimeEmission) => void>()
   const adapter: PackRuntimeAdapter = {
     id,
     version: '1.0.0',
     packId,
-    acceptedCommandKinds: [commandKind],
+    clock: 'none',
+    operations: definePackRuntimeOperations({ commands: [commandKind] }),
     connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
       connectCount += 1
       return {
@@ -40,7 +49,10 @@ const createStubAdapter = (id: string, packId: string, commandKind: string): Stu
           objects: [],
           capturedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
         }),
-        subscribe: () => () => undefined,
+        subscribe: handler => {
+          handlers.add(handler)
+          return () => handlers.delete(handler)
+        },
         sendCommand: async command => rejectedCommand(command),
         query: async request => ({
           ok: true,
@@ -51,11 +63,20 @@ const createStubAdapter = (id: string, packId: string, commandKind: string): Stu
         }),
         observeCommittedEvents: async () => undefined,
         setClock: async (_clock: SimulationClockState) => undefined,
-        close: async () => undefined,
+        close: async () => {
+          closeCount += 1
+        },
       }
     },
   }
-  return { ...adapter, connectCount: () => connectCount }
+  return {
+    ...adapter,
+    connectCount: () => connectCount,
+    closeCount: () => closeCount,
+    emit: emission => {
+      for (const handler of handlers) handler(emission)
+    },
+  }
 }
 
 const command = (kind: string): CommandEnvelope => ({
@@ -94,5 +115,59 @@ describe('createRuntimeHub', () => {
     if (!inactiveCommand.ok) expect(inactiveCommand.reason).toMatch(/no pack runtime accepts/)
 
     await connection.close()
+  })
+
+  test('rejects ambiguous active command routes before connecting runtimes', async () => {
+    const first = createStubAdapter('first.runtime', 'first-pack', 'shared.command')
+    const second = createStubAdapter('second.runtime', 'second-pack', 'shared.command')
+    const hub = createRuntimeHub([first, second])
+
+    await expect(hub.connect({ simulationRunId: 'run-test' as SimulationRunId })).rejects.toThrow('duplicate command route')
+    expect(first.connectCount()).toBe(0)
+    expect(second.connectCount()).toBe(0)
+  })
+
+  test('drops emissions that claim another runtime or Pack identity', async () => {
+    const adapter = createStubAdapter('trusted.runtime', 'trusted-pack', 'trusted.command')
+    const connection = await createRuntimeHub([adapter]).connect({ simulationRunId: 'run-test' as SimulationRunId })
+    const received: PackRuntimeEmission[] = []
+    connection.subscribe(emission => received.push(emission))
+    const at = '2026-01-01T00:00:00.000Z' as IsoTimestamp
+    const baseEmission: PackRuntimeEmission = {
+      type: 'event.emission',
+      emittedAt: at,
+      runtimeId: 'other.runtime',
+      events: [],
+    }
+
+    adapter.emit(baseEmission)
+    adapter.emit({
+      ...baseEmission,
+      runtimeId: 'trusted.runtime',
+      events: [{
+        type: 'object.upserted',
+        at,
+        history: 'record',
+        provenance: { source: 'simulator' },
+        object: {
+          id: 'object:foreign' as ObjectId,
+          kind: 'facility',
+          packId: 'foreign-pack' as PackId,
+          label: 'Foreign',
+          lifecycle: 'active',
+          revision: 0,
+          spatial: { frame: { kind: 'wgs84' } },
+          operational: { status: 'ready', priority: 'normal', mode: 'simulated' },
+          alerts: [],
+          provenance: { source: 'simulator' },
+          timestamps: { createdAt: at, updatedAt: at },
+          packData: {},
+        },
+      }],
+    })
+
+    expect(received).toEqual([])
+    await connection.close()
+    expect(adapter.closeCount()).toBe(1)
   })
 })

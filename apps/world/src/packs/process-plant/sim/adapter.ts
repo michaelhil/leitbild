@@ -8,6 +8,7 @@ import type {
   PackRuntimeEvent,
   PackRuntimeEventHandler,
 } from '../../../simulation/protocol.ts'
+import { definePackRuntimeOperations } from '../../../simulation/operations.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import {
   processPlantControlRampCommandKind,
@@ -94,12 +95,11 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
   id: processPlantSimRuntimeId,
   version: '1.0.0',
   packId: processPlantPackId,
-  acceptedCommandKinds: [
-    processPlantControlWriteCommandKind,
-    processPlantControlRampCommandKind,
-    processPlantIcLifecycleCommandKind,
-  ],
-  queryKinds: processPlantQueryKinds,
+  clock: 'simulation',
+  operations: definePackRuntimeOperations({
+    commands: [processPlantControlWriteCommandKind, processPlantControlRampCommandKind, processPlantIcLifecycleCommandKind],
+    queries: processPlantQueryKinds,
+  }),
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const handlers = new Set<PackRuntimeEventHandler>()
     const rawRuntimeState = await config.runtimeStateStore?.load()

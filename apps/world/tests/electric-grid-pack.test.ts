@@ -274,8 +274,8 @@ describe('electric grid pack', () => {
 
       expect(trip.ok).toBe(true)
       const objectEvents = emitted.flat().filter(event => event.type === 'object.upserted')
-      expect(objectEvents.some(event => event.persistence === 'durable')).toBe(true)
-      expect(objectEvents.some(event => event.persistence === 'projected')).toBe(true)
+      expect(objectEvents.some(event => event.history === 'record')).toBe(true)
+      expect(objectEvents.some(event => event.history === 'snapshot-only')).toBe(true)
     } finally {
       await connection.close()
     }

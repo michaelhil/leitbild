@@ -78,17 +78,24 @@ describe('Simulation Run registry', () => {
       )) as {
         readonly id: string
         readonly workspaceId: string
-        readonly scenario: { readonly id: string; readonly revisionId: string; readonly digest: string }
+        readonly scenario: { readonly id: string; readonly revisionId: string; readonly digest: string; readonly compiledDigest: string }
         readonly packs: ReadonlyArray<{ readonly id: string; readonly version: string }>
-        readonly runtimes: ReadonlyArray<{ readonly id: string; readonly version: string }>
+        readonly runtimes: ReadonlyArray<{ readonly id: string; readonly version: string; readonly clock: string }>
       }
       expect(manifest.id).toBe(runtime.id)
       expect(manifest.workspaceId).toBe(workspaceId)
       expect(manifest.scenario.id).toBe('oslo-ambulance')
       expect(manifest.scenario.revisionId).toMatch(/^revision-[a-f0-9]{32}$/)
       expect(manifest.scenario.digest).toMatch(/^[a-f0-9]{64}$/)
+      expect(manifest.scenario.compiledDigest).toMatch(/^[a-f0-9]{64}$/)
       expect(manifest.packs.every(pack => pack.version.length > 0)).toBe(true)
       expect(manifest.runtimes.every(adapter => adapter.version.length > 0)).toBe(true)
+      expect(manifest.runtimes.map(adapter => adapter.clock).sort()).toEqual(['none', 'simulation', 'simulation'])
+      const compiledScenario = JSON.parse(await readFile(
+        join(simulationRunDir(dataDir, workspaceId, runtime.id), 'compiled-scenario.json'),
+        'utf8',
+      )) as { readonly id: string }
+      expect(compiledScenario.id).toBe(manifest.scenario.id)
     } finally {
       await registry.close(runtime.id)
     }
@@ -239,6 +246,22 @@ describe('Simulation Run registry', () => {
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 
     await expect(createRegistry(dataDir, workspaceId).load(id)).rejects.toThrow('Pack version mismatch')
+  })
+
+  test('rejects a modified compiled Scenario artifact', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-run-registry-'))
+    const workspaceId = newWorkspaceId()
+    const firstRegistry = createRegistry(dataDir, workspaceId)
+    const runtime = await firstRegistry.create()
+    const id = runtime.id
+    await firstRegistry.close(id)
+    const compiledPath = join(simulationRunDir(dataDir, workspaceId, id), 'compiled-scenario.json')
+    const compiled = JSON.parse(await readFile(compiledPath, 'utf8')) as { title: string; [key: string]: unknown }
+    compiled.title = 'Modified after Run creation'
+    await writeFile(compiledPath, `${JSON.stringify(compiled, null, 2)}\n`, 'utf8')
+
+    await expect(createRegistry(dataDir, workspaceId).load(id))
+      .rejects.toThrow('Compiled Scenario integrity mismatch')
   })
 
   test('rejects cross-run interaction signals', async () => {

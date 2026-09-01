@@ -1,9 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { confirmedFact, geoPointFromLonLat, nowIso, type AdapterId, type ObjectId, type OperationalObject, type PackId } from '../src/core/model/index.ts'
-import { createCompositePack } from '../src/core/packs/composite.ts'
+import { createActivePackViews } from '../src/core/packs/active-views.ts'
 import { createPackPresentationComposer } from '../src/core/packs/presentation-composer.ts'
 import { packField, packStatus } from '../src/core/packs/presentation.ts'
-import { createPackRegistry } from '../src/core/packs/registry.ts'
 import { createScenarioCatalog } from '../src/core/scenarios/catalog.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { ambulancePackDataSchema, hospitalPackDataSchema, type HospitalPackData } from '../src/packs/ambulance/model.ts'
@@ -25,14 +24,6 @@ import type { SimulationRunId } from '../src/core/model/index.ts'
 import { createWorldPackDescriptor, emptyPackScenarioConfigSchema, type WorldPack, type PackObjectPresentation } from '../src/core/packs/protocol.ts'
 
 describe('pack architecture', () => {
-  test('registers static packs by unique id', () => {
-    const registry = createPackRegistry([ambulancePack])
-
-    expect(registry.require('ambulance')).toBe(ambulancePack)
-    expect(registry.list().map(pack => pack.descriptor.id)).toEqual(['ambulance'])
-    expect(() => createPackRegistry([ambulancePack, ambulancePack])).toThrow('duplicate pack id')
-  })
-
   test('ambulance pack builds pack commands behind the generic pack interface', () => {
     const engine = createAmbulanceSimEngine({
       simulationRunId: 'run-pack-architecture' as SimulationRunId,
@@ -40,17 +31,17 @@ describe('pack architecture', () => {
       routing: createDirectRoutingAdapter(),
     })
     const objects = engine.snapshot().objects
-    const controller = objects.find(object => ambulancePack.commands.isController(object))
-    const target = objects.find(object => controller && object.id !== controller.id && ambulancePack.commands.isTarget(controller, object, { objects }))
+    const controller = objects.find(object => ambulancePack.targeting?.isController(object))
+    const target = objects.find(object => controller && object.id !== controller.id && ambulancePack.targeting?.isTarget(controller, object, { objects }))
     if (!controller || !target) throw new Error('scenario missing pack controller or target')
 
-    const createCommand = ambulancePack.commands.buildCreateObjectCommand(
+    const createCommand = ambulancePack.creation!.buildCreateObjectCommand(
       'hospital',
       'Hospital 2',
       { kind: 'point', point: geoPointFromLonLat(10.75, 59.92) },
     )
-    const setTargetCommand = ambulancePack.commands.buildSetTargetCommand(controller, target, { objects })
-    const cancelCommand = ambulancePack.commands.buildCancelTargetCommand(controller, { objects })
+    const setTargetCommand = ambulancePack.targeting!.buildSetTargetCommand(controller, target, { objects })
+    const cancelCommand = ambulancePack.targeting!.buildCancelTargetCommand(controller, { objects })
 
     expect(createCommand.kind).toBe(createObjectCommandKind)
     expect(setTargetCommand.kind).toBe(setDestinationCommandKind)
@@ -66,7 +57,7 @@ describe('pack architecture', () => {
       routing: createDirectRoutingAdapter(),
     })
     const objects = engine.snapshot().objects
-    const ambulance = objects.find(object => ambulancePack.commands.isController(object))
+    const ambulance = objects.find(object => ambulancePack.targeting?.isController(object))
     const incident = objects.find(object => object.kind === 'incident')
     const hospital = objects.find(object => object.kind === 'facility')
     if (!ambulance || !incident || !hospital) throw new Error('scenario missing ambulance presentation fixtures')
@@ -146,32 +137,24 @@ describe('pack architecture', () => {
     expect(fullPresentation.status?.label).toBe('No trauma beds available (0/3)')
   })
 
-  test('composite packs reject ambiguous pack surfaces', () => {
-    expect(() => createCompositePack({
-      id: 'duplicate-categories',
-      version: '1.0.0',
-      name: 'Duplicate Categories',
-      packs: [ambulancePack, ambulancePack],
-    })).toThrow('duplicate object category')
+  test('active Pack views reject ambiguous surfaces without inventing a composite Pack', () => {
+    expect(() => createActivePackViews([ambulancePack, ambulancePack])).toThrow('duplicate Pack ids')
 
-    const composite = createCompositePack({
-      id: 'clear-composite',
-      version: '1.0.0',
-      name: 'Clear Composite',
-      packs: [ambulancePack, trafficPack, weatherPack],
-    })
+    const activeViews = createActivePackViews([ambulancePack, trafficPack, weatherPack])
 
-    expect(composite.commands.createObjectTypes.map(type => type.id).sort()).toEqual([
+    expect(activeViews.creation?.createObjectTypes.map(type => type.id).sort()).toEqual([
       'ambulance',
       'hospital',
       'incident',
       'traffic_area',
       'traffic_road_segment',
+      'weather_area',
+      'weather_probe',
     ].sort())
-    expect(() => composite.commands.defaultObjectLabel('missing', { objects: [] })).toThrow('unknown create object type')
+    expect(() => activeViews.creation?.defaultObjectLabel('missing', { objects: [] })).toThrow('unknown create object type')
   })
 
-  test('composite contextual fields are detail-tier only so map and rail summaries stay cheap', () => {
+  test('active Pack contextual fields are detail-tier only so map and rail summaries stay cheap', () => {
     const at = nowIso()
     const object: OperationalObject = {
       id: 'object:contextual-field-target' as ObjectId,
@@ -207,7 +190,7 @@ describe('pack architecture', () => {
     let contextualFieldCalls = 0
     const basePack: WorldPack = {
       descriptor: createWorldPackDescriptor({
-        id: 'base-pack', version: '1.0.0', name: 'Base Pack', contributions: ['presentation', 'commands'],
+        id: 'base-pack', version: '1.0.0', name: 'Base Pack', contributions: ['presentation'],
       }),
       scenarioConfigSchema: emptyPackScenarioConfigSchema,
       presentation: {
@@ -221,20 +204,11 @@ describe('pack architecture', () => {
           fields: [packField('base', 'Base', 'yes')],
         }),
       },
-      commands: {
-        createObjectTypes: [],
-        defaultObjectLabel: () => 'Base object',
-        buildCreateObjectCommand: () => { throw new Error('not used') },
-        isController: () => false,
-        isTarget: () => false,
-        buildSetTargetCommand: () => { throw new Error('not used') },
-        buildCancelTargetCommand: () => { throw new Error('not used') },
-      },
     }
     const enrichmentPack: WorldPack = {
       ...basePack,
       descriptor: createWorldPackDescriptor({
-        id: 'enrichment-pack', version: '1.0.0', name: 'Enrichment Pack', contributions: ['presentation', 'commands'],
+        id: 'enrichment-pack', version: '1.0.0', name: 'Enrichment Pack', contributions: ['presentation'],
       }),
       presentation: {
         ...basePack.presentation,
@@ -245,25 +219,20 @@ describe('pack architecture', () => {
         },
       },
     }
-    const composite = createCompositePack({
-      id: 'contextual-field-composite',
-      version: '1.0.0',
-      name: 'Contextual Field Composite',
-      packs: [basePack, enrichmentPack],
-    })
+    const activeViews = createActivePackViews([basePack, enrichmentPack])
 
-    const summaryPresentation = composite.presentation.presentObject(object, { objects: [object] })
+    const summaryPresentation = activeViews.presentation.presentObject(object, { objects: [object] })
     expect(contextualFieldCalls).toBe(0)
     expect(summaryPresentation.fields.map(field => field.key)).toEqual(['base'])
 
-    const mapPresentation = composite.presentation.presentObject(object, {
+    const mapPresentation = activeViews.presentation.presentObject(object, {
       objects: [object],
       tier: 'map',
     })
     expect(contextualFieldCalls).toBe(0)
     expect(mapPresentation.fields.map(field => field.key)).toEqual(['base'])
 
-    const detailPresentation = composite.presentation.presentObject(object, {
+    const detailPresentation = activeViews.presentation.presentObject(object, {
       objects: [object],
       tier: 'detail',
     })
@@ -271,30 +240,25 @@ describe('pack architecture', () => {
     expect(detailPresentation.fields.map(field => field.key)).toEqual(['base', 'contextual'])
   })
 
-  test('composite packs aggregate map-area feature activation layers once', () => {
+  test('active Pack views aggregate map-area feature activation layers once', () => {
     const packWithWeatherLayer: WorldPack = {
       ...ambulancePack,
       descriptor: createWorldPackDescriptor({
-        id: 'weather-layer-one', version: '1.0.0', name: 'Weather Layer One', contributions: ['presentation', 'commands'],
+        id: 'weather-layer-one', version: '1.0.0', name: 'Weather Layer One', contributions: ['presentation'],
       }),
       presentation: { ...ambulancePack.presentation, categories: [], mapAreaFeatureLayers: ['weather'] },
     }
     const secondPackWithWeatherLayer: WorldPack = {
       ...trafficPack,
       descriptor: createWorldPackDescriptor({
-        id: 'weather-layer-two', version: '1.0.0', name: 'Weather Layer Two', contributions: ['presentation', 'commands'],
+        id: 'weather-layer-two', version: '1.0.0', name: 'Weather Layer Two', contributions: ['presentation'],
       }),
       presentation: { ...trafficPack.presentation, categories: [], mapAreaFeatureLayers: ['weather'] },
     }
 
-    const composite = createCompositePack({
-      id: 'map-area-layer-composite',
-      version: '1.0.0',
-      name: 'Map Area Layer Composite',
-      packs: [packWithWeatherLayer, secondPackWithWeatherLayer],
-    })
+    const activeViews = createActivePackViews([packWithWeatherLayer, secondPackWithWeatherLayer])
 
-    expect(composite.presentation.mapAreaFeatureLayers).toEqual(['weather'])
+    expect(activeViews.presentation.mapAreaFeatureLayers).toEqual(['weather'])
   })
 
   test('presentation composer caches by tier and exposes pack object indexes', () => {
@@ -311,7 +275,7 @@ describe('pack architecture', () => {
     const currentTime = nowIso()
     const pack: WorldPack = {
       descriptor: createWorldPackDescriptor({
-        id: 'indexed-presenter', version: '1.0.0', name: 'Indexed Presenter', contributions: ['presentation', 'commands'],
+        id: 'ambulance', version: '1.0.0', name: 'Indexed Presenter', contributions: ['presentation'],
       }),
       scenarioConfigSchema: emptyPackScenarioConfigSchema,
       presentation: {
@@ -333,19 +297,11 @@ describe('pack architecture', () => {
           }
         },
       },
-      commands: {
-        createObjectTypes: [],
-        defaultObjectLabel: () => 'Unused',
-        buildCreateObjectCommand: () => { throw new Error('not used') },
-        isController: () => false,
-        isTarget: () => false,
-        buildSetTargetCommand: () => { throw new Error('not used') },
-        buildCancelTargetCommand: () => { throw new Error('not used') },
-      },
     }
+    const activeViews = createActivePackViews([pack])
     const composer = createPackPresentationComposer({
       getContext: () => ({
-        pack,
+        pack: activeViews,
         objects,
         currentTime,
       }),
@@ -417,6 +373,33 @@ describe('pack architecture', () => {
     })
   })
 
+  test('keeps runtime-free Packs active without inventing no-op runtimes', () => {
+    const passivePack: WorldPack = {
+      descriptor: createWorldPackDescriptor({
+        id: 'passive', version: '1.0.0', name: 'Passive', contributions: ['presentation'],
+      }),
+      scenarioConfigSchema: emptyPackScenarioConfigSchema,
+      presentation: {
+        categories: [],
+        presentObject: () => { throw new Error('passive Pack does not own objects') },
+      },
+    }
+    const scenario = {
+      ...osloAmbulanceScenario,
+      id: 'passive-only',
+      title: 'Passive only',
+      packs: ['passive'],
+      packRuntimes: {},
+      packConfigs: {},
+      initialObjects: [],
+      surface: { schemaVersion: 1 as const, regions: [] },
+    }
+    const runtime = createScenarioCatalog({ packs: [passivePack], scenarios: [scenario] }).runtimeFor('passive-only')
+
+    expect(runtime?.packs).toEqual([passivePack])
+    expect(runtime?.runtimes).toEqual([])
+  })
+
   test('scenario catalog rejects runtime selections outside the owning Pack', () => {
     expect(() => createScenarioCatalog({
       packs: [ambulancePack, trafficPack, weatherPack],
@@ -427,6 +410,6 @@ describe('pack architecture', () => {
           ambulance: trafficSimRuntimeId,
         },
       }],
-    })).toThrow('runtime traffic-local is not registered by pack ambulance')
+    })).toThrow('runtime traffic.local is not registered by pack ambulance')
   })
 })

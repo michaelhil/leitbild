@@ -10,6 +10,9 @@ import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
+import { createActivePackViews } from '../src/core/packs/active-views.ts'
+
+const ambulanceViews = createActivePackViews([ambulancePack])
 
 const scenarioObjects = () =>
   createAmbulanceSimEngine({
@@ -18,9 +21,11 @@ const scenarioObjects = () =>
     routing: createDirectRoutingAdapter(),
   }).snapshot().objects
 
+const ambulanceObjects = () => scenarioObjects().filter(object => object.packId === 'ambulance')
+
 describe('control surface selectors', () => {
   test('builds category rows through the active pack vocabulary', () => {
-    const rows = categoryRowsFor(scenarioObjects(), ambulancePack)
+    const rows = categoryRowsFor(ambulanceObjects(), ambulanceViews)
 
     expect(rows.map(row => [row.category.id, row.objects.length, row.createType?.id])).toEqual([
       ['hospitals', 3, 'hospital'],
@@ -30,8 +35,8 @@ describe('control surface selectors', () => {
   })
 
   test('keeps category object order deterministic regardless of incoming object order', () => {
-    const objects = scenarioObjects()
-    const ambulance = objects.find(object => ambulancePack.commands.isController(object))
+    const objects = ambulanceObjects()
+    const ambulance = objects.find(object => ambulancePack.targeting?.isController(object))
     if (!ambulance) throw new Error('scenario fixture missing ambulance')
     const laterAmbulance = {
       ...ambulance,
@@ -44,7 +49,7 @@ describe('control surface selectors', () => {
       label: 'Ambulance A-1',
     }
 
-    const rows = categoryRowsFor([laterAmbulance, ...objects, earlierAmbulance], ambulancePack)
+    const rows = categoryRowsFor([laterAmbulance, ...objects, earlierAmbulance], ambulanceViews)
     const ambulanceRow = rows.find(row => row.category.id === 'ambulances')
 
     expect(ambulanceRow?.objects.map(object => object.label)).toEqual([
@@ -58,29 +63,29 @@ describe('control surface selectors', () => {
 
   test('selects controllers only when the active pack accepts the object as controllable', () => {
     const objects = scenarioObjects()
-    const ambulance = objects.find(object => ambulancePack.commands.isController(object))
+    const ambulance = objects.find(object => ambulancePack.targeting?.isController(object))
     const hospital = objects.find(object => object.id === 'facility:ous')
     if (!ambulance || !hospital) throw new Error('scenario fixture missing expected objects')
 
-    expect(selectedControllerObjectFor(objects, ambulance.id, ambulancePack)?.id).toBe(ambulance.id)
-    expect(selectedControllerObjectFor(objects, hospital.id, ambulancePack)).toBeNull()
-    expect(selectedControllerObjectFor(objects, 'object:missing', ambulancePack)).toBeNull()
+    expect(selectedControllerObjectFor(objects, ambulance.id, ambulanceViews)?.id).toBe(ambulance.id)
+    expect(selectedControllerObjectFor(objects, hospital.id, ambulanceViews)).toBeNull()
+    expect(selectedControllerObjectFor(objects, 'object:missing', ambulanceViews)).toBeNull()
   })
 
   test('creates placement cursor data and rejects unknown pack icons visibly', () => {
-    const ambulanceCreateType = ambulancePack.commands.createObjectTypes.find(type => type.id === 'ambulance')
+    const ambulanceCreateType = ambulancePack.creation?.createObjectTypes.find(type => type.id === 'ambulance')
     if (!ambulanceCreateType) throw new Error('ambulance create type missing')
 
-    expect(placementCursorFor(ambulanceCreateType, ambulancePack)).toEqual({
+    expect(placementCursorFor(ambulanceCreateType, ambulanceViews)).toEqual({
       icon: 'ambulance',
       color: '#22845d',
     })
-    expect(placementCursorFor(null, ambulancePack)).toBeNull()
+    expect(placementCursorFor(null, ambulanceViews)).toBeNull()
 
     const invalidCreateType: PackCreateObjectType = {
       ...ambulanceCreateType,
       icon: 'not-a-real-icon',
     }
-    expect(() => placementCursorFor(invalidCreateType, ambulancePack)).toThrow('unknown create cursor icon')
+    expect(() => placementCursorFor(invalidCreateType, ambulanceViews)).toThrow('unknown create cursor icon')
   })
 })

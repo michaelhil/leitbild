@@ -1,4 +1,4 @@
-import { createCompositePack } from '../core/packs/composite.ts'
+import { createActivePackViews, type ActivePackViews } from '../core/packs/active-views.ts'
 import type { WorldPack } from '../core/packs/protocol.ts'
 
 type PackLoader = () => Promise<WorldPack>
@@ -29,9 +29,9 @@ export const loadUiPack = async (packId: string): Promise<WorldPack> => {
   return pack
 }
 
-export const createScenarioControlPack = async (
+export const loadActivePackViews = async (
   packIds: ReadonlyArray<string>,
-): Promise<WorldPack> => {
+): Promise<ActivePackViews> => {
   if (packIds.length === 0) throw new Error('scenario declares no active packs')
   const uniquePackIds = new Set(packIds)
   if (uniquePackIds.size !== packIds.length) {
@@ -39,10 +39,5 @@ export const createScenarioControlPack = async (
     throw new Error(`scenario declares duplicate packs: ${[...new Set(duplicates)].join(', ')}`)
   }
   const packs = await Promise.all(packIds.map(loadUiPack))
-  return createCompositePack({
-    id: `scenario-control-${packIds.join('-')}`,
-    version: '1.0.0',
-    name: 'Scenario Control',
-    packs,
-  })
+  return createActivePackViews(packs)
 }

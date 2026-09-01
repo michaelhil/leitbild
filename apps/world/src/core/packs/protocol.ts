@@ -1,3 +1,4 @@
+import { geoJsonPointSchema, geoJsonPolygonSchema, isoTimestampSchema } from '../model/index.ts'
 import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject, SurfaceMapLayer } from '../model/index.ts'
 import type { RoutingAdapter } from '../../routing/protocol.ts'
 import type { DatasetConfig, DatasetId } from '../../reference-data/types.ts'
@@ -170,6 +171,34 @@ export interface PackMapAreaFeatureSymbol {
   readonly size?: number
 }
 
+export const packMapAreaFeatureSchema = z.object({
+  id: z.string().min(1),
+  categoryId: z.string().min(1),
+  geometry: geoJsonPolygonSchema,
+  anchorPoint: geoJsonPointSchema.optional(),
+  animation: z.object({
+    fromGeometry: geoJsonPolygonSchema,
+    toGeometry: geoJsonPolygonSchema,
+    fromAnchorPoint: geoJsonPointSchema.optional(),
+    toAnchorPoint: geoJsonPointSchema.optional(),
+    fromTime: isoTimestampSchema,
+    toTime: isoTimestampSchema,
+  }).strict().optional(),
+  symbol: z.object({
+    icon: z.string().min(1),
+    tone: z.enum(['ready', 'working', 'error', 'idle']).optional(),
+    opacity: z.number().finite().min(0).max(1).optional(),
+    size: z.number().finite().positive().optional(),
+  }).strict().optional(),
+  color: z.string().min(1),
+  summary: z.string(),
+  opacity: z.number().finite().min(0).max(1).optional(),
+  lineColor: z.string().min(1).optional(),
+  lineOpacity: z.number().finite().min(0).max(1).optional(),
+  lineWidth: z.number().finite().nonnegative().optional(),
+  sortKey: z.number().finite().optional(),
+}).strict()
+
 export interface PackQueryRequest {
   readonly packId: string
   readonly kind: string
@@ -200,11 +229,14 @@ export interface PackTargetContext {
   readonly objects: ReadonlyArray<OperationalObject>
 }
 
+export type PackRuntimeClock = 'simulation' | 'live' | 'none'
+
 export interface PackRuntime {
   readonly id: string
   readonly version: string
   readonly label: string
   readonly kind: 'local' | 'remote' | 'replay'
+  readonly clock: PackRuntimeClock
 }
 
 export interface PackWikiRef {
@@ -329,7 +361,7 @@ export interface PackPresentationContribution {
   readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
 }
 
-export interface PackCommandContribution {
+export interface PackCreationContribution {
   readonly createObjectTypes: ReadonlyArray<PackCreateObjectType>
   readonly defaultObjectLabel: (
     typeId: string,
@@ -341,6 +373,9 @@ export interface PackCommandContribution {
     geometry: PackCreationGeometry,
     parameters?: unknown,
   ) => PackCommandRequest
+}
+
+export interface PackTargetingContribution {
   readonly isController: (object: OperationalObject) => boolean
   readonly isTarget: (
     controller: OperationalObject,
@@ -371,7 +406,8 @@ export interface WorldPack {
   readonly referenceData?: PackReferenceDataContribution
   readonly scenario?: PackScenarioSupport
   readonly presentation: PackPresentationContribution
-  readonly commands: PackCommandContribution
+  readonly creation?: PackCreationContribution
+  readonly targeting?: PackTargetingContribution
   readonly interactions?: PackInteractionContribution
 }
 

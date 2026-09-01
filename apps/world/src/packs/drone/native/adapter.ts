@@ -2,6 +2,7 @@ import type { CommandEnvelope, CommandResult, SimulationRunEvent, GeoJsonPoint, 
 import { nowIso, objectIdSchema } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeRealtimeMessage, PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
+import { definePackRuntimeOperations } from '../../../simulation/operations.ts'
 import {
   armDroneCommandKind,
   armDronePayloadSchema,
@@ -84,12 +85,15 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
   id: droneNativeRuntimeId,
   version: '1.0.0',
   packId: dronePackId,
-  acceptedCommandKinds: droneCommandKinds,
-  acceptedRealtimeInputTypes: [droneManualIntentRealtimeInputType],
-  commandEventPersistence: {
-    [manualControlCommandKind]: 'projected',
+  clock: 'simulation',
+  operations: definePackRuntimeOperations({
+    commands: droneCommandKinds,
+    queries: droneQueryKinds,
+    realtimeInputs: [droneManualIntentRealtimeInputType],
+  }),
+  commandEventHistory: {
+    [manualControlCommandKind]: 'snapshot-only',
   },
-  queryKinds: droneQueryKinds,
   connect: async (config): Promise<PackRuntimeConnection> => {
     const runtimeConfig = parseDroneNativeRuntimeConfig(config.scenario?.runtimeConfig ?? {})
     const objects = new Map<string, OperationalObject>()
@@ -141,10 +145,25 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
     const handlers = new Set<PackRuntimeEventHandler>()
     let closed = false
+    let clock: SimulationClockState = {
+      currentTime: config.scenario?.world.startsAt ?? nowIso(),
+      updatedAt: nowIso(),
+      paused: false,
+      speed: 1,
+    }
+    const currentSimulationMs = (): number => {
+      const currentTimeMs = Date.parse(clock.currentTime)
+      const updatedAtMs = Date.parse(clock.updatedAt)
+      if (!Number.isFinite(currentTimeMs) || !Number.isFinite(updatedAtMs)) {
+        throw new Error(`drone runtime received an invalid Simulation Clock`)
+      }
+      if (clock.paused) return currentTimeMs
+      return currentTimeMs + Math.max(0, Date.now() - updatedAtMs) * clock.speed
+    }
     const fixedStepScheduler = createDroneFixedStepScheduler({
       stepMs: runtimeConfig.stepIntervalMs,
       maxCatchUpSteps: maxRuntimeCatchUpSteps,
-      initialWallMs: Date.now(),
+      initialWallMs: currentSimulationMs(),
     })
     let lastProjectionMs = 0
     let lastMotionFrameMs = 0
@@ -195,14 +214,14 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
     const emitObjectUpsert = (
       object: OperationalObject,
       at: IsoTimestamp,
-      persistence: 'durable' | 'projected',
+      history: 'record' | 'snapshot-only',
       command?: CommandEnvelope,
     ): void => {
       emit([{
         type: 'object.upserted',
         object,
         at,
-        persistence,
+        history,
         provenance: {
           source: command ? 'operator' : 'simulator',
           adapterId: droneNativeAdapterId,
@@ -216,12 +235,12 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       object: OperationalObject,
       data: DronePackData,
       at: IsoTimestamp,
-      persistence: 'durable' | 'projected',
+      history: 'record' | 'snapshot-only',
       command?: CommandEnvelope,
     ): OperationalObject => {
       const next = withDronePackData(object, data, at)
       setRuntimeDrone(next, data)
-      emitObjectUpsert(next, at, persistence, command)
+      emitObjectUpsert(next, at, history, command)
       return next
     }
 
@@ -230,8 +249,8 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
     }
 
     const stepAll = (): void => {
-      if (closed) return
-      const nowMs = Date.now()
+      if (closed || clock.paused) return
+      const nowMs = currentSimulationMs()
       const stepPlan = fixedStepScheduler.advance(nowMs)
       if (stepPlan.steps.length === 0) return
       for (const step of stepPlan.steps) {
@@ -250,7 +269,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
           upsertRuntimeObject(next)
         }
       }
-      const at = nowIso()
+      const at = new Date(nowMs).toISOString() as IsoTimestamp
       emitMotionFrames(at, nowMs)
       if (nowMs - lastProjectionMs < runtimeConfig.projectionIntervalMs) return
       lastProjectionMs = nowMs
@@ -259,7 +278,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
         type: 'object.upserted' as const,
         object,
         at,
-        persistence: 'projected' as const,
+        history: 'snapshot-only' as const,
         provenance: {
           source: 'simulator' as const,
           adapterId: droneNativeAdapterId,
@@ -312,7 +331,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
         },
       }
       if (input.emitProjectedObject) {
-        updateObject(object, next, at, 'projected', input.command)
+        updateObject(object, next, at, 'snapshot-only', input.command)
         return
       }
       const updated = withDronePackData(object, next, at)
@@ -339,7 +358,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
         const record = upsertRuntimeObject(object)
         if (!record) throw new Error(`created object is not a valid native drone: ${object.id}`)
         homePoints.set(object.id, payload.point)
-        emitObjectUpsert(object, createdAt, 'durable', command)
+        emitObjectUpsert(object, createdAt, 'record', command)
         return
       }
 
@@ -361,7 +380,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
             ? data.velocity
             : { eastMps: 0, northMps: 0, downMps: 0, groundSpeedMps: 0, verticalSpeedMps: 0 },
         }
-        updateObject(object, next, at, 'durable', command)
+        updateObject(object, next, at, 'record', command)
         return
       }
 
@@ -384,7 +403,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
         assertTargetAllowed(payload.droneId, payload.target.point)
         if (!data.arming.armed) throw new Error('goto requires an armed drone')
         const at = nowIso()
-        updateObject(object, createGuidedTarget(data, payload.target, at), at, 'durable', command)
+        updateObject(object, createGuidedTarget(data, payload.target, at), at, 'record', command)
         return
       }
 
@@ -404,7 +423,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
             },
             lastCommandAt: at,
           },
-        }, at, 'durable', command)
+        }, at, 'record', command)
         return
       }
 
@@ -418,7 +437,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
             ...setDroneNavigation(data, 'hold', 'hold', at),
             control: { ...data.control, guidedTarget: undefined, manualAxes: undefined, inputExpiresAt: at },
             velocity: { eastMps: 0, northMps: 0, downMps: 0, groundSpeedMps: 0, verticalSpeedMps: 0 },
-          }, at, 'durable', command)
+          }, at, 'record', command)
           return
         }
         const targetPoint = command.kind === returnToLaunchDroneCommandKind
@@ -436,7 +455,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
             }),
             lastCommandAt: at,
           },
-        }, at, 'durable', command)
+        }, at, 'record', command)
         return
       }
 
@@ -455,7 +474,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
             planId: payload.planId,
             updatedAt: at,
           },
-        }, at, 'durable', command)
+        }, at, 'record', command)
         return
       }
 
@@ -469,7 +488,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
           updateObject(object, {
             ...setDroneNavigation(data, 'hold', 'mission paused', at),
             mission: { ...data.mission, state: 'paused', updatedAt: at },
-          }, at, 'durable', command)
+          }, at, 'record', command)
           return
         }
         const item = mission.items[mission.currentIndex]
@@ -484,7 +503,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
             planId: mission.planId,
             updatedAt: at,
           },
-        }, at, 'durable', command)
+        }, at, 'record', command)
         return
       }
 
@@ -497,7 +516,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
           ...setDroneNavigation(data, 'hold', 'hold', at),
           mission: { state: 'idle', updatedAt: at },
           control: { ...data.control, guidedTarget: undefined },
-        }, at, 'durable', command)
+        }, at, 'record', command)
         return
       }
 
@@ -513,7 +532,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
             breachStatus: targetInsideGeofence(data.pose.point, payload.polygons) ? 'clear' : 'breached',
             updatedAt: at,
           },
-        }, at, 'durable', command)
+        }, at, 'record', command)
         return
       }
 
@@ -525,7 +544,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
         updateObject(object, {
           ...data,
           geofence: { loaded: false, breachStatus: 'clear', updatedAt: at },
-        }, at, 'durable', command)
+        }, at, 'record', command)
         return
       }
 
@@ -540,7 +559,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
             gimbalPitchDeg: payload.pitchDeg,
             gimbalYawDeg: payload.yawDeg,
           },
-        }, at, 'durable', command)
+        }, at, 'record', command)
         return
       }
 
@@ -562,7 +581,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
             payloads: model.payloads,
             visual: model.visual,
           },
-        }, at, 'durable', command)
+        }, at, 'record', command)
         return
       }
 
@@ -573,7 +592,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
         const at = nowIso()
         targets.forEach(({ object, data }, index) => {
           if (payload.command.kind === 'hold') {
-            updateObject(object, setDroneNavigation(data, 'hold', 'hold', at), at, 'durable', command)
+            updateObject(object, setDroneNavigation(data, 'hold', 'hold', at), at, 'record', command)
             return
           }
           if (payload.command.kind === 'land') {
@@ -584,7 +603,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
                 guidedTarget: nativeGuidedTarget({ point: data.pose.point, altitudeM: 0, speedMps: data.vehicle.flightEnvelope.cruiseSpeedMps }),
                 lastCommandAt: at,
               },
-            }, at, 'durable', command)
+            }, at, 'record', command)
             return
           }
           if (payload.command.kind === 'navigate') {
@@ -597,7 +616,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
               ...payload.command.target,
               point: targetPoint,
               altitudeM: payload.command.target.altitudeM + row * payload.command.formation.altitudeStepM,
-            }), at), at, 'durable', command)
+              }), at), at, 'record', command)
             return
           }
           if (payload.command.kind === 'search_area') {
@@ -611,7 +630,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
               point: targetPoint,
               altitudeM: payload.command.altitudeM + index * payload.command.formation.altitudeStepM,
               speedMps: data.vehicle.flightEnvelope.cruiseSpeedMps,
-            }), at), at, 'durable', command)
+            }), at), at, 'record', command)
             return
           }
           if (payload.command.kind === 'disperse') {
@@ -625,7 +644,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
               point: targetPoint,
               altitudeM: data.pose.altitudeM,
               speedMps: data.vehicle.flightEnvelope.cruiseSpeedMps,
-            }), at), at, 'durable', command)
+            }), at), at, 'record', command)
           }
         })
         return
@@ -645,7 +664,6 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
             causationId: command.id,
           }),
           at,
-          persistence: 'durable',
           provenance: { source: 'operator', adapterId: droneNativeAdapterId, causedByCommandId: command.id },
         }])
         return
@@ -700,7 +718,13 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
           }
         }
       },
-      setClock: async (_clock: SimulationClockState): Promise<void> => {},
+      setClock: async (nextClock: SimulationClockState): Promise<void> => {
+        clock = nextClock
+        const simulationMs = currentSimulationMs()
+        fixedStepScheduler.reset(simulationMs)
+        lastProjectionMs = simulationMs
+        lastMotionFrameMs = simulationMs
+      },
       close: async (): Promise<void> => {
         closed = true
         clearInterval(interval)

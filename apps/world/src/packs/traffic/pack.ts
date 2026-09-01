@@ -69,10 +69,6 @@ const trafficCreateParameters: ReadonlyArray<PackCreateObjectParameter> = [
   },
 ]
 
-const unsupportedCommand = (): PackCommandRequest => {
-  throw new Error('traffic pack does not support object creation or target commands yet')
-}
-
 const trafficCreationParameters = (parameters: unknown): Required<TrafficCreationParameters> => {
   if (typeof parameters !== 'object' || parameters === null) {
     return { severity: 'high', speedFactor: 0.55, reason: 'Operator-created traffic condition' }
@@ -123,11 +119,11 @@ const buildTrafficCreatePayload = (
 export const trafficPack: WorldPack = {
   descriptor: createWorldPackDescriptor({
     id: 'traffic', version: '1.0.0', name: 'Traffic Conditions',
-    contributions: ['runtime', 'scenario', 'presentation', 'commands', 'interactions'],
+    contributions: ['runtime', 'scenario', 'presentation', 'creation', 'interactions'],
   }),
   scenarioConfigSchema: emptyPackScenarioConfigSchema,
   runtime: {
-    runtimes: [{ id: trafficSimRuntimeId, version: '1.0.0', label: 'Local traffic runtime', kind: 'local' }],
+    runtimes: [{ id: trafficSimRuntimeId, version: '1.0.0', label: 'Local traffic runtime', kind: 'local', clock: 'none' }],
     defaultRuntimeId: trafficSimRuntimeId,
   },
   scenario: trafficScenarioSupport,
@@ -150,7 +146,7 @@ export const trafficPack: WorldPack = {
       }
     },
   },
-  commands: {
+  creation: {
     createObjectTypes: [
       { id: 'traffic_road_segment', label: 'Road traffic', categoryId: 'traffic', icon: 'traffic', color: '#c2410c', placementKind: 'route', parameters: trafficCreateParameters },
       { id: 'traffic_area', label: 'Traffic area', categoryId: 'traffic', icon: 'traffic', color: '#c2410c', placementKind: 'polygon', parameters: trafficCreateParameters },
@@ -166,10 +162,6 @@ export const trafficPack: WorldPack = {
       targetObjectIds: [],
       payload: buildTrafficCreatePayload(typeId, label, geometry, parameters),
     }),
-    isController: () => false,
-    isTarget: () => false,
-    buildSetTargetCommand: (): PackCommandRequest => unsupportedCommand(),
-    buildCancelTargetCommand: (): PackCommandRequest => unsupportedCommand(),
   },
   interactions: {
     handlers: [createTrafficRouteImpactHandler()],

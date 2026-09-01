@@ -92,10 +92,6 @@ const samplePointFor = (object: OperationalObject): GeoJsonPoint | null => {
   return object.spatial.position?.point ?? (object.spatial.geometry?.type === 'Point' ? object.spatial.geometry : null)
 }
 
-const unsupportedCommand = (): PackCommandRequest => {
-  throw new Error('weather pack does not support target commands')
-}
-
 const buildWeatherCreatePayload = (
   typeId: string,
   label: string,
@@ -125,7 +121,7 @@ const buildWeatherCreatePayload = (
 export const weatherPack: WorldPack = {
   descriptor: createWorldPackDescriptor({
     id: 'weather', version: '1.0.0', name: 'Weather Conditions',
-    contributions: ['runtime', 'scenario', 'presentation', 'commands'],
+    contributions: ['runtime', 'scenario', 'presentation', 'creation'],
   }),
   scenarioConfigSchema: weatherPackConfigSchema,
   authoring: {
@@ -184,7 +180,7 @@ export const weatherPack: WorldPack = {
     }],
   },
   runtime: {
-    runtimes: [{ id: weatherSimRuntimeId, version: '1.0.0', label: 'Local weather runtime', kind: 'local' }],
+    runtimes: [{ id: weatherSimRuntimeId, version: '1.0.0', label: 'Local weather runtime', kind: 'local', clock: 'simulation' }],
     defaultRuntimeId: weatherSimRuntimeId,
   },
   scenario: weatherScenarioSupport,
@@ -234,8 +230,11 @@ export const weatherPack: WorldPack = {
       return [packField('weather', 'Weather', weatherValue(sample.state))]
     },
   },
-  commands: {
-    createObjectTypes: [],
+  creation: {
+    createObjectTypes: [
+      { id: 'weather_probe', label: 'Weather probe', categoryId: 'weather', icon: 'weather', color: '#2563eb', placementKind: 'point' },
+      { id: 'weather_area', label: 'Weather area', categoryId: 'weather', icon: 'weather', color: '#2563eb', placementKind: 'point' },
+    ],
     defaultObjectLabel: (typeId, context): string => {
       if (typeId !== 'weather_probe' && typeId !== 'weather_area') throw new Error(`unsupported weather create type: ${typeId}`)
       const count = context.objects.filter(object => parseWeatherData(object) !== null).length + 1
@@ -246,9 +245,5 @@ export const weatherPack: WorldPack = {
       targetObjectIds: [],
       payload: buildWeatherCreatePayload(typeId, label, geometry, parameters),
     }),
-    isController: () => false,
-    isTarget: () => false,
-    buildSetTargetCommand: (): PackCommandRequest => unsupportedCommand(),
-    buildCancelTargetCommand: (): PackCommandRequest => unsupportedCommand(),
   },
 }

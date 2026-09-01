@@ -2,7 +2,7 @@ import { lstat, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ZodError } from 'zod'
 import { semanticVersionSchema, type WorkspaceId } from '@leitbild/contracts'
-import type { SimulationRunId, InteractionHandler } from '../model/index.ts'
+import type { SimulationRunId } from '../model/index.ts'
 import {
   simulationRunIdSchema,
   newSimulationRunId,
@@ -23,6 +23,7 @@ import type { SimulationRunRuntimeMetricsSnapshot } from './runtime-metrics.ts'
 import { defaultSimulationRunRuntimePolicy } from './runtime-persistence-policy.ts'
 import { createSimulationRunSnapshotStore } from './snapshot-store.ts'
 import type { SimulationClockState, SimulationRunEvent } from '../model/index.ts'
+import { compiledScenarioDigest, createCompiledScenarioStore } from './compiled-scenario-store.ts'
 import { worldWorkspacePaths } from '../workspaces/paths.ts'
 import { createProcedureSourceService, type ProcedureSourceService } from '../procedures/source.ts'
 import { createLocalScenarioLibrary, type ScenarioLibrary, type ScenarioRecord, type ScenarioRevision, type ScenarioRevisionId } from '../scenarios/library.ts'
@@ -101,7 +102,6 @@ export const createSimulationRunRegistry = (config: {
   readonly compileScenarioSource: (source: unknown) => Promise<ScenarioDefinition>
   readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
   readonly scenarioLibrary?: ScenarioLibrary
-  readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
   readonly idleRuntimeCloseDelayMs?: number
   readonly procedureSourceService?: ProcedureSourceService
 }): SimulationRunRegistry => {
@@ -120,10 +120,22 @@ export const createSimulationRunRegistry = (config: {
     rootDir: workspacePaths.scenarios,
   })
   let scenarioLibraryReady: Promise<void> | null = null
+  const compiledScenarios = new Map<ScenarioRevisionId, Promise<ScenarioDefinition>>()
 
   const ensureScenarioLibrary = (): Promise<void> => {
     scenarioLibraryReady ??= scenarioLibrary.seed(config.scenarioSources)
     return scenarioLibraryReady
+  }
+
+  const compileRevision = (revision: ScenarioRevision): Promise<ScenarioDefinition> => {
+    const existing = compiledScenarios.get(revision.id)
+    if (existing) return existing
+    const compiling = config.compileScenarioSource(revision.document)
+    compiledScenarios.set(revision.id, compiling)
+    void compiling.catch(() => {
+      if (compiledScenarios.get(revision.id) === compiling) compiledScenarios.delete(revision.id)
+    })
+    return compiling
   }
 
   const clearIdleRuntimeCloseTimer = (id: SimulationRunId): void => {
@@ -203,33 +215,40 @@ export const createSimulationRunRegistry = (config: {
         scenarioId: null,
         scenarioRevisionId,
         activePackIds: [],
-        acceptedCommandKinds: [],
-        queryKinds: {},
+        runtimes: [],
+        operations: [],
         wikiRefs: [],
       }
     }
     const activeRuntimeIds = new Set(scenarioRuntime.runtimes.map(runtime => runtime.runtimeId))
     const activeAdapters = config.runtimeAdapters.filter(adapter => activeRuntimeIds.has(adapter.id))
-    const queryKinds = Object.fromEntries(
-      scenarioRuntime.scenario.packs.map(packId => [
-        packId,
-        [...new Set(activeAdapters
-          .filter(adapter => adapter.packId === packId)
-          .flatMap(adapter => adapter.queryKinds ?? []))]
-          .sort(),
-      ]),
-    )
+    const coreOperationIds = [deleteObjectCommandKind, ...procedureCommandKindSchema.options]
+    const operations = [
+      ...coreOperationIds.map(id => ({
+        id,
+        type: 'command' as const,
+        title: id.split('.').at(-1)?.replaceAll('_', ' ').replaceAll('-', ' ') ?? id,
+        description: `World core command ${id}`,
+        packId: 'world',
+        runtimeId: 'world.core',
+      })),
+      ...activeAdapters.flatMap(adapter => adapter.operations.map(operation => ({
+        ...operation,
+        packId: adapter.packId,
+        runtimeId: adapter.id,
+      }))),
+    ].sort((left, right) => left.id.localeCompare(right.id) || left.runtimeId.localeCompare(right.runtimeId))
     return {
       workspaceId: config.workspaceId,
       scenarioId: scenarioRuntime.scenarioId,
       scenarioRevisionId,
       activePackIds: [...scenarioRuntime.scenario.packs],
-      acceptedCommandKinds: [...new Set([
-        deleteObjectCommandKind,
-        ...procedureCommandKindSchema.options,
-        ...activeAdapters.flatMap(adapter => adapter.acceptedCommandKinds),
-      ])].sort(),
-      queryKinds,
+      runtimes: activeAdapters.map(adapter => ({
+        id: adapter.id,
+        packId: adapter.packId,
+        clock: adapter.clock,
+      })).sort((left, right) => left.id.localeCompare(right.id)),
+      operations,
       wikiRefs: scenarioRuntime.packs.flatMap(pack => pack.knowledge?.wikiRefs ?? []),
     }
   }
@@ -275,32 +294,57 @@ export const createSimulationRunRegistry = (config: {
     if (revision.definitionId !== manifest.scenario.id || revision.digest !== manifest.scenario.digest) {
       throw new Error(`Simulation Run Scenario Revision mismatch: ${manifest.id}`)
     }
-    const scenarioRuntime = config.scenarioCatalog.runtimeForDefinition(await config.compileScenarioSource(revision.document))
+    const compiledScenario = await createCompiledScenarioStore(join(simulationRunRoot, manifest.id, 'compiled-scenario.json')).load()
+    if (compiledScenario.id !== revision.definitionId) {
+      throw new Error(`Simulation Run Compiled Scenario mismatch for ${manifest.id}: expected ${revision.definitionId}, got ${compiledScenario.id}`)
+    }
+    if (compiledScenarioDigest(compiledScenario) !== manifest.scenario.compiledDigest) {
+      throw new Error(`Simulation Run Compiled Scenario integrity mismatch: ${manifest.id}`)
+    }
+    const scenarioRuntime = config.scenarioCatalog.runtimeForDefinition(compiledScenario)
     const packVersions = new Map(scenarioRuntime.packs.map(pack => [pack.descriptor.id, pack.descriptor.version]))
-    const adapterVersions = new Map(config.runtimeAdapters.map(adapter => [adapter.id, adapter.version]))
+    const installedAdapters = new Map(config.runtimeAdapters.map(adapter => [adapter.id, adapter]))
+    const expectedPackIds = manifest.packs.map(pack => pack.id).sort()
+    const resolvedPackIds = scenarioRuntime.packs.map(pack => pack.descriptor.id).sort()
+    if (JSON.stringify(expectedPackIds) !== JSON.stringify(resolvedPackIds)) {
+      throw new Error(`Simulation Run resolved Pack set mismatch: ${manifest.id}`)
+    }
+    const expectedRuntimeIds = manifest.runtimes.map(runtime => runtime.id).sort()
+    const resolvedRuntimeIds = scenarioRuntime.runtimes.map(runtime => runtime.runtimeId).sort()
+    if (JSON.stringify(expectedRuntimeIds) !== JSON.stringify(resolvedRuntimeIds)) {
+      throw new Error(`Simulation Run resolved Pack Runtime set mismatch: ${manifest.id}`)
+    }
     for (const pack of manifest.packs) {
       if (packVersions.get(pack.id) !== pack.version) {
         throw new Error(`Simulation Run Pack version mismatch for ${pack.id}: expected ${pack.version}, installed ${packVersions.get(pack.id) ?? 'missing'}`)
       }
     }
     for (const runtime of manifest.runtimes) {
-      if (adapterVersions.get(runtime.id) !== runtime.version) {
-        throw new Error(`Simulation Run runtime version mismatch for ${runtime.id}: expected ${runtime.version}, installed ${adapterVersions.get(runtime.id) ?? 'missing'}`)
+      const installed = installedAdapters.get(runtime.id)
+      if (installed?.version !== runtime.version) {
+        throw new Error(`Simulation Run runtime version mismatch for ${runtime.id}: expected ${runtime.version}, installed ${installed?.version ?? 'missing'}`)
+      }
+      if (installed.packId !== runtime.packId || installed.clock !== runtime.clock) {
+        throw new Error(`Simulation Run Pack Runtime contract mismatch for ${runtime.id}`)
       }
     }
     return { revision, scenarioRuntime }
   }
 
-  const createManifest = async (id: SimulationRunId, scenarioId: string, scenarioRevisionId?: ScenarioRevisionId): Promise<SimulationRunManifest> => {
+  const createManifest = async (id: SimulationRunId, scenarioId: string, scenarioRevisionId?: ScenarioRevisionId): Promise<{
+    readonly manifest: SimulationRunManifest
+    readonly compiledScenario: ScenarioDefinition
+  }> => {
     await ensureScenarioLibrary()
     const revision = scenarioRevisionId === undefined
       ? await scenarioLibrary.currentRevision(scenarioId)
       : await scenarioLibrary.getRevision(scenarioRevisionId)
     if (!revision) throw new Error(`unknown Scenario: ${scenarioId}`)
     if (revision.definitionId !== scenarioId) throw new Error(`Scenario Revision does not belong to Scenario: ${scenarioId}`)
-    const scenarioRuntime = config.scenarioCatalog.runtimeForDefinition(await config.compileScenarioSource(revision.document))
+    const compiledScenario = await compileRevision(revision)
+    const scenarioRuntime = config.scenarioCatalog.runtimeForDefinition(compiledScenario)
     const adaptersById = new Map(config.runtimeAdapters.map(adapter => [adapter.id, adapter]))
-    return simulationRunManifestSchema.parse({
+    const manifest = simulationRunManifestSchema.parse({
       schemaVersion: 1,
       id,
       workspaceId: config.workspaceId,
@@ -308,6 +352,7 @@ export const createSimulationRunRegistry = (config: {
         id: revision.definitionId,
         revisionId: revision.id,
         digest: revision.digest,
+        compiledDigest: compiledScenarioDigest(compiledScenario),
       },
       packs: scenarioRuntime.packs.map(pack => ({
         id: pack.descriptor.id,
@@ -320,10 +365,12 @@ export const createSimulationRunRegistry = (config: {
           id: runtime.runtimeId,
           version: semanticVersionSchema.parse(adapter.version),
           packId: runtime.packId,
+          clock: adapter.clock,
         }
       }),
       createdAt: new Date().toISOString(),
     })
+    return { manifest, compiledScenario }
   }
 
   const createRuntime = async (createConfig: {
@@ -332,6 +379,12 @@ export const createSimulationRunRegistry = (config: {
   }): Promise<SimulationRunRuntime> => {
     await ensureScenarioLibrary()
     const { scenarioRuntime } = await resolveManifest(createConfig.manifest)
+    const interactionHandlers = scenarioRuntime.packs.flatMap(pack => pack.interactions?.handlers ?? [])
+    const interactionHandlerIds = new Set<string>()
+    for (const handler of interactionHandlers) {
+      if (interactionHandlerIds.has(handler.id)) throw new Error(`duplicate active interaction handler id: ${handler.id}`)
+      interactionHandlerIds.add(handler.id)
+    }
     const id = createConfig.manifest.id
     const runDir = join(simulationRunRoot, id)
     const eventLog = createJsonlEventLog(join(runDir, 'events.jsonl'))
@@ -389,7 +442,7 @@ export const createSimulationRunRegistry = (config: {
       runtimeConnection,
       eventLog,
       snapshotStore,
-      ...(config.interactionHandlers ? { interactionHandlers: config.interactionHandlers } : {}),
+      ...(interactionHandlers.length === 0 ? {} : { interactionHandlers }),
       ...(restoredSnapshot ? { restoredSnapshot } : {}),
       ...(restoredEvents.length === 0 ? {} : { restoredEvents }),
       ...(createConfig?.initialSeq === undefined && maxEventSeq === 0 ? {} : { initialSeq: Math.max(createConfig.initialSeq ?? 0, maxEventSeq) }),
@@ -410,8 +463,9 @@ export const createSimulationRunRegistry = (config: {
     const requestedScenarioId = createConfig?.scenarioId ?? config.scenarioCatalog.defaultScenarioId()
     const id = newSimulationRunId()
     if (simulationRuns.has(id) || creatingSimulationRuns.has(id)) throw new Error(`simulation run already exists: ${id}`)
-    const manifest = await createManifest(id, requestedScenarioId, createConfig?.scenarioRevisionId)
+    const { manifest, compiledScenario } = await createManifest(id, requestedScenarioId, createConfig?.scenarioRevisionId)
     await manifestStoreFor(id).create(manifest)
+    await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).create(compiledScenario)
     const creating = createRuntime({
       manifest,
     }).finally(() => {
@@ -644,7 +698,7 @@ export const createSimulationRunRegistry = (config: {
       return await scenarioLibrary.delete(id, revisionId)
     },
     scenarioRevisionForRun,
-    compileScenarioRevision: revision => config.compileScenarioSource(revision.document),
+    compileScenarioRevision: compileRevision,
     defaultScenarioId: () => config.scenarioCatalog.defaultScenarioId(),
     close,
   }

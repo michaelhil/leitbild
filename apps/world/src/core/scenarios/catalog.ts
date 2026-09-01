@@ -47,7 +47,7 @@ export const createScenarioCatalog = (config: {
       const pack = packs.get(packId)
       if (!pack) throw new Error(`scenario ${scenario.id} references unknown pack: ${packId}`)
       const runtimeId = scenario.packRuntimes[packId] ?? pack.runtime?.defaultRuntimeId
-      if (!runtimeId) throw new Error(`scenario ${scenario.id} pack ${packId} has no default pack runtime`)
+      if (!runtimeId) continue
       const runtimes = pack.runtime?.runtimes ?? []
       if (!runtimes.some(runtime => runtime.id === runtimeId)) {
         throw new Error(`scenario ${scenario.id} runtime ${runtimeId} is not registered by pack ${packId}`)
@@ -95,17 +95,17 @@ export const createScenarioCatalog = (config: {
     validateScenario(scenario)
     const initialObjects = scenario.initialObjects
     const activePacks = scenario.packs.map(packId => packs.get(packId)!)
-    const runtimes = scenario.packs.map(packId => {
+    const runtimes = scenario.packs.flatMap(packId => {
       const pack = packs.get(packId)
       if (!pack?.runtime?.defaultRuntimeId && scenario.packRuntimes[packId] === undefined) {
-        throw new Error(`scenario ${scenario.id} pack ${packId} has no default pack runtime`)
+        return []
       }
       const runtimeId = scenario.packRuntimes[packId] ?? pack!.runtime!.defaultRuntimeId
-      return {
+      return [{
         packId,
         runtimeId,
         runtimeConfig: scenario.packConfigs[packId] ?? {},
-      }
+      }]
     })
     return {
       scenarioId: scenario.id,

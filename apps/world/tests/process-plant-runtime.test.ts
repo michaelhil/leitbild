@@ -107,7 +107,7 @@ const runWithReferenceProtection = (input: {
       runtime: input.runtime,
       elapsedMs: input.runtime.elapsedMs(),
       simulationRunId: 'run-runtime-protection-test' as SimulationRunId,
-      sourceRuntimeId: 'process-plant-local',
+      sourceRuntimeId: 'process-plant.local',
     })
     elapsedMs = nextElapsedMs
   }
@@ -244,7 +244,7 @@ describe('process plant runtime', () => {
         runtime,
         elapsedMs: runtime.elapsedMs(),
         simulationRunId: 'run-runtime-protection-test' as SimulationRunId,
-        sourceRuntimeId: 'process-plant-local',
+        sourceRuntimeId: 'process-plant.local',
       })
       expect(activeLifecycleIds(protection.snapshot())).toEqual({
         alarms: [],
@@ -398,7 +398,7 @@ describe('process plant runtime', () => {
           runtime,
           elapsedMs: runtime.elapsedMs(),
           simulationRunId: 'run-runtime-surface-alarm-test' as SimulationRunId,
-          sourceRuntimeId: 'process-plant-local',
+          sourceRuntimeId: 'process-plant.local',
         })
       }
 
@@ -1112,7 +1112,7 @@ describe('process plant runtime', () => {
         runtime,
         elapsedMs: runtime.elapsedMs(),
         simulationRunId: 'run-runtime-rps-test' as SimulationRunId,
-        sourceRuntimeId: 'process-plant-local',
+        sourceRuntimeId: 'process-plant.local',
       })
       const currentLevel = Number(runtime.readVariable(valueOf('sgA.levelPercent')))
       maxLevel = Math.max(maxLevel, currentLevel)

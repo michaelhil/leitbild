@@ -87,11 +87,11 @@ const pointForTarget = (target: OperationalObject): GeoJsonPoint => {
 export const droneUiPack: WorldPack = {
   descriptor: createWorldPackDescriptor({
     id: dronePackId, version: '1.0.0', name: 'Drone Operations',
-    contributions: ['runtime', 'knowledge', 'presentation', 'commands', 'interactions'],
+    contributions: ['runtime', 'knowledge', 'presentation', 'creation', 'targeting', 'interactions'],
   }),
   scenarioConfigSchema: emptyPackScenarioConfigSchema,
   runtime: {
-    runtimes: [{ id: droneNativeRuntimeId, version: '1.0.0', label: 'Native drone runtime', kind: 'local' }],
+    runtimes: [{ id: droneNativeRuntimeId, version: '1.0.0', label: 'Native drone runtime', kind: 'local', clock: 'simulation' }],
     defaultRuntimeId: droneNativeRuntimeId,
   },
   knowledge: { wikiRefs: [{ name: 'Drone operations', url: '/docs/wiki/drone-ops.md' }] },
@@ -150,7 +150,7 @@ export const droneUiPack: WorldPack = {
       return [packField('nearby-drones', 'Nearby drones', nearby.map(item => `${item.label} ${Math.round(item.distanceM)} m ${item.mode}`).join(', '))]
     },
   },
-  commands: {
+  creation: {
     createObjectTypes: [
     {
       id: 'drone',
@@ -191,6 +191,8 @@ export const droneUiPack: WorldPack = {
       },
     }
   },
+  },
+  targeting: {
     isController: (object): boolean => {
     const data = parseDroneData(object)
     return data !== null && data.health.state !== 'destroyed' && data.link.state !== 'lost'

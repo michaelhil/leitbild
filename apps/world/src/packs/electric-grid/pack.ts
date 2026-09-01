@@ -1,19 +1,7 @@
 import type { OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
-import type { WorldPack, PackCommandRequest, PackMapLayerGroup, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
+import type { WorldPack, PackMapLayerGroup, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
-import {
-  gridClearDerateCommandKind,
-  gridCloseBranchCommandKind,
-  gridDerateBranchCommandKind,
-  gridDispatchGeneratorCommandKind,
-  gridOpenBranchCommandKind,
-  gridRestoreLoadCommandKind,
-  gridSetEvChargingPolicyCommandKind,
-  gridSetGeneratorAvailabilityCommandKind,
-  gridShedLoadCommandKind,
-  gridTripGeneratorCommandKind,
-} from './commands.ts'
 import { asDatasetId } from '../../reference-data/types.ts'
 import { electricGridScenarioSupport } from './scenario.ts'
 import { electricGridRuntimeId } from './sim/constants.ts'
@@ -156,12 +144,6 @@ const summaryFor = (data: ElectricGridPackData): string => {
   return `${data.areaId} · ${Math.round(data.priceNokPerMwh)} NOK/MWh`
 }
 
-const commandFor = (kind: string, object: OperationalObject, payload: unknown): PackCommandRequest => ({
-  kind,
-  targetObjectIds: [object.id],
-  payload,
-})
-
 const layerGroups: ReadonlyArray<PackMapLayerGroup> = [
   {
     id: 'electric-grid:reference-lines',
@@ -189,18 +171,14 @@ const layerGroups: ReadonlyArray<PackMapLayerGroup> = [
   },
 ]
 
-const unsupportedCommand = (): PackCommandRequest => {
-  throw new Error('electric-grid pack does not support this interaction')
-}
-
 export const electricGridPack: WorldPack = {
   descriptor: createWorldPackDescriptor({
     id: electricGridPackId, version: '1.0.0', name: 'Electric Grid',
-    contributions: ['runtime', 'knowledge', 'reference-data', 'scenario', 'presentation', 'commands'],
+    contributions: ['runtime', 'knowledge', 'reference-data', 'scenario', 'presentation'],
   }),
   scenarioConfigSchema: electricGridPackConfigSchema,
   runtime: {
-    runtimes: [{ id: electricGridRuntimeId, version: '1.0.0', label: 'Local electric grid runtime', kind: 'local' }],
+    runtimes: [{ id: electricGridRuntimeId, version: '1.0.0', label: 'Local electric grid runtime', kind: 'local', clock: 'simulation' }],
     defaultRuntimeId: electricGridRuntimeId,
   },
   knowledge: { wikiRefs: [{ name: 'Leitbild electric grid pack wiki', url: 'https://leitbild-wikis.github.io/leitbild/packs/electric-grid/' }] },
@@ -251,33 +229,6 @@ export const electricGridPack: WorldPack = {
       ...(mapIconSizePx === undefined ? {} : { mapIconSizePx }),
       noteworthyUpdates: data.assetKind === 'system' || tone !== 'ready',
     }
-    },
-  },
-  commands: {
-    createObjectTypes: [],
-    defaultObjectLabel: (typeId: string): string => {
-      throw new Error(`electric-grid pack does not support object creation yet: ${typeId}`)
-    },
-    buildCreateObjectCommand: (): PackCommandRequest => unsupportedCommand(),
-    isController: (object: OperationalObject): boolean => {
-      const data = parseGridData(object)
-      return data?.type === 'grid_generator' || data?.type === 'grid_branch' || data?.type === 'grid_load'
-    },
-    isTarget: () => false,
-    buildSetTargetCommand: (controller: OperationalObject): PackCommandRequest => {
-      const data = parseGridData(controller)
-      if (data?.type === 'grid_generator') return commandFor(gridDispatchGeneratorCommandKind, controller, { targetMw: Math.max(0, data.targetMw * 0.9) })
-      if (data?.type === 'grid_branch') return commandFor(data.state === 'closed' ? gridDerateBranchCommandKind : gridClearDerateCommandKind, controller, data.state === 'closed' ? { availability: 0.65 } : {})
-      if (data?.type === 'grid_load') return commandFor(gridShedLoadCommandKind, controller, { shedMw: data.interruptibleMw * 0.25 })
-      return unsupportedCommand()
-    },
-    buildCancelTargetCommand: (controller: OperationalObject): PackCommandRequest => {
-      const data = parseGridData(controller)
-      if (data?.type === 'grid_generator') return commandFor(data.state === 'tripped' ? gridSetGeneratorAvailabilityCommandKind : gridTripGeneratorCommandKind, controller, data.state === 'tripped' ? { availableMw: data.capacityMw } : {})
-      if (data?.type === 'grid_branch') return commandFor(data.state === 'open' ? gridCloseBranchCommandKind : gridOpenBranchCommandKind, controller, {})
-      if (data?.type === 'grid_load' && data.loadKind === 'ev_charging') return commandFor(gridSetEvChargingPolicyCommandKind, controller, { demandMw: Math.max(data.criticalMw, data.demandMw * 0.65) })
-      if (data?.type === 'grid_load') return commandFor(gridRestoreLoadCommandKind, controller, {})
-      return unsupportedCommand()
     },
   },
 }

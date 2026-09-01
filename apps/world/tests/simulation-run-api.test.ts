@@ -22,6 +22,7 @@ import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/
 import type { ProcedureSourceLoadStatus, ProcedureSourceService } from '../src/core/procedures/source.ts'
 import { parseProcedureMarkdown } from '../src/core/procedures/procmd.ts'
 import { setDestinationCommandKind } from '../src/packs/ambulance/commands.ts'
+import { ambulanceSimRuntimeId } from '../src/packs/ambulance/sim/constants.ts'
 import { assetArrivedAtTargetSignalType } from '../src/packs/ambulance/sim/interactions.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioCatalog, testPacks, testScenarioAuthoring } from './helpers.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
@@ -127,7 +128,6 @@ const createTestRegistry = async (config: {
     scenarioCatalog: createTestScenarioCatalog(),
     ...testScenarioAuthoring(),
     runtimeAdapters: createTestPackRuntimeAdapters(),
-    interactionHandlers: testPacks.flatMap(pack => pack.interactions?.handlers ?? []),
     ...(config.procedureSourceService === undefined
       ? {}
       : { procedureSourceService: config.procedureSourceService }),
@@ -221,14 +221,16 @@ describe('Simulation Run API', () => {
         readonly simulationRunId: SimulationRunId
         readonly scenarioId: string
         readonly activePackIds: readonly string[]
-        readonly acceptedCommandKinds: readonly string[]
+        readonly runtimes: ReadonlyArray<{ readonly id: string; readonly packId: string; readonly clock: string }>
+        readonly operations: ReadonlyArray<{ readonly id: string; readonly type: string }>
       }>(registry, runPath(created.id, '/capabilities'))
       expect(capabilities.body).toMatchObject({
         simulationRunId: created.id,
         scenarioId: 'oslo-ambulance',
         activePackIds: ['ambulance', 'traffic', 'weather'],
       })
-      expect(capabilities.body.acceptedCommandKinds).toContain(setDestinationCommandKind)
+      expect(capabilities.body.runtimes).toContainEqual({ id: ambulanceSimRuntimeId, packId: 'ambulance', clock: 'simulation' })
+      expect(capabilities.body.operations.some(operation => operation.type === 'command' && operation.id === setDestinationCommandKind)).toBe(true)
 
       const missing = await callRoute<{ readonly error: { readonly code: string } }>(
         registry,

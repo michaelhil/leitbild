@@ -1,12 +1,12 @@
 import type { IsoTimestamp, OperationalObject } from '../model/index.ts'
 import type {
-  WorldPack,
   PackObjectPresentation,
   PackObjectPresentationTier,
 } from './protocol.ts'
+import type { ActivePackViews } from './active-views.ts'
 
 export interface PackPresentationComposerContext {
-  readonly pack: WorldPack | null
+  readonly pack: ActivePackViews | null
   readonly objects: ReadonlyArray<OperationalObject>
   readonly currentTime?: IsoTimestamp
 }
@@ -72,7 +72,7 @@ const snapshotDiagnostics = (
 
 const contextKeyFor = (
   context: PackPresentationComposerContext,
-): string => `${context.pack?.descriptor.id ?? 'no-pack'}:${context.currentTime ?? 'no-time'}`
+): string => `${context.pack?.packIds.join(',') ?? 'no-pack'}:${context.currentTime ?? 'no-time'}`
 
 const objectsForPackLookup = (
   objects: ReadonlyArray<OperationalObject>,

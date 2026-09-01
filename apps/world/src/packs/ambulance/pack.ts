@@ -265,7 +265,7 @@ export const ambulancePack: WorldPack = {
     id: 'ambulance',
     version: '1.0.0',
     name: 'Ambulance Dispatch',
-    contributions: ['runtime', 'knowledge', 'scenario', 'presentation', 'commands', 'interactions'],
+    contributions: ['runtime', 'knowledge', 'scenario', 'presentation', 'creation', 'targeting', 'interactions'],
   }),
   scenarioConfigSchema: emptyPackScenarioConfigSchema,
   authoring: {
@@ -313,7 +313,7 @@ export const ambulancePack: WorldPack = {
   },
   runtime: {
     runtimes: [
-      { id: ambulanceSimRuntimeId, version: '1.0.0', label: 'Local ambulance runtime', kind: 'local' },
+      { id: ambulanceSimRuntimeId, version: '1.0.0', label: 'Local ambulance runtime', kind: 'local', clock: 'simulation' },
     ],
     defaultRuntimeId: ambulanceSimRuntimeId,
   },
@@ -358,7 +358,7 @@ export const ambulancePack: WorldPack = {
       }
     },
   },
-  commands: {
+  creation: {
     createObjectTypes: [
       { id: 'hospital', label: 'Hospital', categoryId: 'hospitals', icon: 'hospital', color: '#245b9f', placementKind: 'point' },
       { id: 'ambulance', label: 'Ambulance', categoryId: 'ambulances', icon: 'ambulance', color: '#22845d', placementKind: 'point' },
@@ -366,7 +366,7 @@ export const ambulancePack: WorldPack = {
     ],
     defaultObjectLabel: (typeId, context): string => {
       const type = assertCreatableType(typeId)
-      const definition = ambulancePack.commands.createObjectTypes.find(candidate => candidate.id === type)
+      const definition = ambulancePack.creation?.createObjectTypes.find(candidate => candidate.id === type)
       if (!definition) throw new Error(`missing create type definition: ${type}`)
       const index = countForCategory(context.objects, definition.categoryId) + 1
       return `${definition.label} ${index}`
@@ -383,6 +383,8 @@ export const ambulancePack: WorldPack = {
         },
       }
     },
+  },
+  targeting: {
     isController: (object): boolean => parseAmbulanceData(object) !== null,
     isTarget: (_controller, candidate): boolean =>
       parseIncidentData(candidate) !== null || parseHospitalData(candidate) !== null,

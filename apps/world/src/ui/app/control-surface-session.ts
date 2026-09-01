@@ -1,11 +1,11 @@
 import type { SimulationRunId, OperationalObject, ScenarioExecutionState, SimulationClockState } from '../../core/model/index.ts'
-import type { WorldPack } from '../../core/packs/protocol.ts'
+import type { ActivePackViews } from '../../core/packs/active-views.ts'
 import type { StartupStepId } from '../startup.ts'
 import type { SimulationRunResponse } from '../types.ts'
 
 export interface ControlSurfaceSnapshotStartupConfig {
   readonly response: SimulationRunResponse
-  readonly pack: WorldPack
+  readonly pack: ActivePackViews
   readonly startStep: (id: StartupStepId) => void
   readonly completeStep: (id: StartupStepId) => void
   readonly setActiveStartupStep: (id: StartupStepId) => void
@@ -35,7 +35,7 @@ export const completeControlSurfaceStartupFromSnapshot = async (
   config.setClock(snapshot.clock)
   if (!snapshot.scenario?.scenarioId) throw new Error('simulation run snapshot is missing scenario state')
   config.setExpectedRealtimeScenarioId(snapshot.scenario.scenarioId)
-  config.setSelectedControllerId(snapshot.objects.find(object => config.pack.commands.isController(object))?.id ?? null)
+  config.setSelectedControllerId(snapshot.objects.find(object => config.pack.targeting?.isController(object) === true)?.id ?? null)
   config.setSeenRevisions(new Map(snapshot.objects.map(object => [object.id, object.revision])))
   config.setSnapshotReady(true)
   config.completeStep('snapshot')

@@ -43,7 +43,7 @@ const scenarioConfig = (
     : {}
   return ({
   scenarioId: 'process-plant-test',
-  runtimeIds: ['process-plant-local'],
+  runtimeIds: ['process-plant.local'],
   world: {
     startsAt,
     environment: {},
@@ -310,7 +310,7 @@ describe('process plant pack runtime', () => {
       simulationRunId,
       scenario: {
         scenarioId: scenario.id,
-        runtimeIds: ['process-plant-local'],
+        runtimeIds: ['process-plant.local'],
         world: scenario.world,
         initialObjects: scenario.initialObjects.filter(object => object.packId === 'process-plant'),
         runtimeConfig: processPlantRuntimeConfig,

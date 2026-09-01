@@ -15,6 +15,7 @@ const resolvedRuntimeSchema = z.object({
   id: z.string().min(1),
   version: semanticVersionSchema,
   packId: z.string().min(1),
+  clock: z.enum(['simulation', 'live', 'none']),
 }).strict()
 
 export const simulationRunManifestSchema = z.object({
@@ -25,9 +26,10 @@ export const simulationRunManifestSchema = z.object({
     id: z.string().min(1),
     revisionId: z.string().regex(/^revision-[a-f0-9]{32}$/),
     digest: z.string().regex(/^[a-f0-9]{64}$/),
+    compiledDigest: z.string().regex(/^[a-f0-9]{64}$/),
   }).strict(),
   packs: z.array(resolvedPackSchema).min(1),
-  runtimes: z.array(resolvedRuntimeSchema).min(1),
+  runtimes: z.array(resolvedRuntimeSchema),
   createdAt: z.string().datetime({ offset: true }),
 }).strict().superRefine((manifest, ctx) => {
   const packIds = new Set(manifest.packs.map(pack => pack.id))

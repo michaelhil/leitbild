@@ -1,5 +1,6 @@
 import type { SimulationRunId, GeoJsonPolygon, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
-import type { WorldPack, PackMapAreaFeature, PackQueryRequest } from '../../core/packs/protocol.ts'
+import { packMapAreaFeatureSchema, type PackMapAreaFeature, type PackQueryRequest } from '../../core/packs/protocol.ts'
+import type { ActivePackViews } from '../../core/packs/active-views.ts'
 import { querySimulationRunPack, type SimulationRunRequestOptions } from '../simulation-run-client.ts'
 import type { PackQueryApiResponse } from '../types.ts'
 
@@ -11,7 +12,7 @@ export interface MapAreaFeatureLoaderContext {
 }
 
 export interface MapAreaFeatureRuntimeConfig {
-  readonly pack: () => WorldPack | null
+  readonly pack: () => ActivePackViews | null
   readonly objects: () => ReadonlyArray<OperationalObject>
   readonly simulationRunId: () => SimulationRunId | null
   readonly currentTime: () => IsoTimestamp | undefined
@@ -31,7 +32,11 @@ const mapFeaturesFromQueryResult = (result: unknown): ReadonlyArray<PackMapAreaF
   }
   const features = (result as { readonly features?: unknown }).features
   if (!Array.isArray(features)) throw new Error('pack map feature query features field is not an array')
-  return features as ReadonlyArray<PackMapAreaFeature>
+  return features.map((feature, index) => {
+    const parsed = packMapAreaFeatureSchema.safeParse(feature)
+    if (!parsed.success) throw new Error(`pack map feature query returned invalid feature ${index}: ${parsed.error.message}`)
+    return parsed.data as PackMapAreaFeature
+  })
 }
 
 const createAbortSignalWithTimeout = (

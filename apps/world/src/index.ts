@@ -4,7 +4,7 @@ import { compileScenarioSource } from './core/scenarios/config.ts'
 import { scenarioAuthoringCatalogFor } from './core/scenarios/authoring.ts'
 import { createWorldApplicationAssembly } from './app-assembly.ts'
 import { createRoutingAdapterFromEnv } from './routing/config.ts'
-import { builtinScenarioSources } from './scenarios/index.ts'
+import { builtinScenarioSources } from './scenarios/sources.ts'
 import { createWorldModuleState } from './core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry } from './core/workspaces/runtime-registry.ts'
 
@@ -29,7 +29,6 @@ const workspaces = createWorldWorkspaceRuntimeRegistry({
   compileScenarioSource: source => compileScenarioSource(source, worldPacks, { routing }),
   scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(worldPacks),
   runtimeAdapters: assembly.runtimeAdapters,
-  interactionHandlers: worldPacks.flatMap(pack => pack.interactions?.handlers ?? []),
 })
 
 const server = createServer({ workspaces, workspaceHostUrl })

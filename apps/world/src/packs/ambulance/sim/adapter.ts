@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler } from '../../../simulation/protocol.ts'
+import { definePackRuntimeOperations } from '../../../simulation/operations.ts'
 import type { CommandEnvelope, CommandResult, GeoJsonPoint, InteractionSignal, OperationalObject, SignalId } from '../../../core/model/index.ts'
 import { assetRoutePlannedSignalType, interactionSignalSchema, nowIso } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
@@ -123,13 +124,11 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
   id: ambulanceSimRuntimeId,
   version: '1.0.0',
   packId: ambulancePackId,
-  acceptedCommandKinds: [
-    assignToIncidentCommandKind,
-    cancelDestinationCommandKind,
-    createObjectCommandKind,
-    setDestinationCommandKind,
-  ],
-  queryKinds: ambulanceQueryKinds,
+  clock: 'simulation',
+  operations: definePackRuntimeOperations({
+    commands: [assignToIncidentCommandKind, cancelDestinationCommandKind, createObjectCommandKind, setDestinationCommandKind],
+    queries: ambulanceQueryKinds,
+  }),
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const objects = await restoreMissingRuntimeRoutes(initialObjectsFor(config), adapterConfig.routing)
     const engine = createAmbulanceSimEngine({
@@ -158,6 +157,7 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
           type: 'object.upserted',
           object,
           at: snapshot.capturedAt,
+          history: 'record',
           provenance: object.provenance,
         }))
         const routeSignals: PackRuntimeEvent[] = snapshot.objects

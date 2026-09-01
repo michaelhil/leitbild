@@ -6,7 +6,8 @@ import { builtinScenarioSources, osloAmbulanceScenario, scenarios } from '../src
 import { compileScenarioSource } from '../src/core/scenarios/config.ts'
 import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
-import { createAviationNoopPackRuntimeAdapter } from '../src/packs/aviation/sim/noop-adapter.ts'
+import { createVatsimPackRuntimeAdapter } from '../src/packs/aviation/sim/vatsim/adapter.ts'
+import { createAviationMultiPackRuntimeAdapter } from '../src/packs/aviation/sim/multi/adapter.ts'
 import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { trafficPack } from '../src/packs/traffic/pack.ts'
 import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
@@ -34,15 +35,19 @@ export const testScenarioAuthoring = () => ({
   scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(testPacks),
 })
 
-export const createTestPackRuntimeAdapters = (): ReadonlyArray<PackRuntimeAdapter> => [
-  createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
-  createAviationNoopPackRuntimeAdapter(),
-  createLocalTrafficPackRuntimeAdapter(),
-  createLocalWeatherPackRuntimeAdapter(),
-  createDroneNativePackRuntimeAdapter(),
-  createLocalProcessPlantPackRuntimeAdapter(),
-  createLocalElectricGridPackRuntimeAdapter(),
-]
+export const createTestPackRuntimeAdapters = (): ReadonlyArray<PackRuntimeAdapter> => {
+  const vatsim = createVatsimPackRuntimeAdapter()
+  return [
+    createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
+    createLocalTrafficPackRuntimeAdapter(),
+    createLocalWeatherPackRuntimeAdapter(),
+    createDroneNativePackRuntimeAdapter(),
+    createLocalProcessPlantPackRuntimeAdapter(),
+    createLocalElectricGridPackRuntimeAdapter(),
+    vatsim,
+    createAviationMultiPackRuntimeAdapter({ vatsim, defaultSource: 'vatsim' }),
+  ]
+}
 
 export const testScenarioRuntimeConfig = (): PackScenarioRuntimeConfig => {
   const runtime = createTestScenarioCatalog().runtimeFor(osloAmbulanceScenario.id)

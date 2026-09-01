@@ -10,6 +10,7 @@ import type {
   PackRuntimeEvent,
   PackRuntimeEventHandler,
 } from '../src/simulation/protocol.ts'
+import { definePackRuntimeOperations } from '../src/simulation/operations.ts'
 
 // Tiny stub PackRuntimeAdapter the multi-adapter can wrap. Each instance
 // exposes an `emit(events)` test seam plus tallies for connect/close.
@@ -30,8 +31,8 @@ const createStubAdapter = (id: string): StubAdapter => {
     id,
     version: '1.0.0',
     packId: aviationPackId,
-    acceptedCommandKinds: [],
-    queryKinds: [],
+    clock: 'live',
+    operations: definePackRuntimeOperations({}),
     connect: async (config): Promise<PackRuntimeConnection> => {
       connectCount += 1
       const connHandlers = new Set<PackRuntimeEventHandler>()
@@ -90,6 +91,7 @@ const createStubAdapter = (id: string): StubAdapter => {
 
 const upsertEvent = (id: string, runtimeId: string): PackRuntimeEvent => ({
   type: 'object.upserted',
+  history: 'snapshot-only',
   object: {
     id: id as ObjectId,
     kind: 'aircraft',

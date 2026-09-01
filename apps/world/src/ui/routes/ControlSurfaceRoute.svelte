@@ -17,7 +17,8 @@
   } from '../../core/model/index.ts'
   import { deleteObjectCommandKind } from '../../core/model/index.ts'
   import { createPackPresentationComposer } from '../../core/packs/presentation-composer.ts'
-  import type { WorldPack, PackCreateObjectType, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
+  import type { PackCreateObjectType, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation, PackPresentationContribution } from '../../core/packs/protocol.ts'
+  import type { ActivePackViews } from '../../core/packs/active-views.ts'
   import {
     fetchScenario,
     joinSimulationRun as joinSimulationRunClient,
@@ -37,7 +38,7 @@
   import { installPlacementGlobalEvents } from '../app/placement-global-events.ts'
   import { createRealtimeConnectionController } from '../app/realtime-connection.ts'
   import { completeControlSurfaceStartupFromSnapshot } from '../app/control-surface-session.ts'
-  import { createScenarioControlPack } from '../pack-loader.ts'
+  import { loadActivePackViews } from '../pack-loader.ts'
   import {
     categoryRowsFor,
     placementCursorFor,
@@ -99,8 +100,8 @@
   const appVersion = __LEITBILD_VERSION__
   const gridOverviewCategoryId = 'grid-system'
   const emptyStringArray: ReadonlyArray<string> = []
-  const emptyMapLayerGroups: NonNullable<WorldPack['presentation']['mapLayerGroups']> = []
-  const emptyMapAreaFeatureLayers: NonNullable<WorldPack['presentation']['mapAreaFeatureLayers']> = []
+  const emptyMapLayerGroups: NonNullable<PackPresentationContribution['mapLayerGroups']> = []
+  const emptyMapAreaFeatureLayers: NonNullable<PackPresentationContribution['mapAreaFeatureLayers']> = []
   const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], completed: [] }
 
   interface ProcessSurfaceWindowEntry {
@@ -138,7 +139,7 @@
     readonly systemId: string
     readonly index: number
   }
-  let activePack = $state<WorldPack | null>(null)
+  let activePack = $state<ActivePackViews | null>(null)
   let simulationRunId = $state<SimulationRunId | null>(null)
   let objects = $state<OperationalObject[]>([])
   let scenarioState = $state<ScenarioExecutionState | undefined>(undefined)
@@ -370,8 +371,8 @@
 
   const railSourcePicker = $derived.by(() => {
     if (!activePack || !scenarioDefinition) return null
-    const activeRuntimeId = scenarioDefinition.packRuntimes[activePack.descriptor.id]
-      ?? activePack.defaultRuntimeId
+    const activeRuntimeId = scenarioDefinition.packRuntimes['aviation']
+      ?? activePack.defaultRuntimeIdFor('aviation')
     if (activeRuntimeId !== 'aviation.multi') return null
     const sources = [
       { id: 'opensky', label: 'OpenSky Network (live ADS-B)' },
@@ -388,7 +389,7 @@
   const currentPackTime = (): IsoTimestamp | undefined =>
     simulationTimeAt(clock)
 
-  const requireActivePack = (): WorldPack => {
+  const requireActivePack = (): ActivePackViews => {
     if (!activePack) throw new Error('scenario packs are not loaded')
     return activePack
   }
@@ -1115,15 +1116,18 @@
 
   const loadScenarioDefinitionAndPackFromDefinition = async (scenario: ScenarioDefinition): Promise<ScenarioDefinition> => {
     markStartup('pack-load:start')
-    const nextPack = await createScenarioControlPack(scenario.packs)
+    const nextPack = await loadActivePackViews(scenario.packs)
     markStartup('pack-load:done')
     scenarioDefinition = scenario
     activePack = nextPack
     return scenario
   }
 
-  const defaultName = (type: PackCreateObjectType): string =>
-    requireActivePack().commands.defaultObjectLabel(type.id, { objects })
+  const defaultName = (type: PackCreateObjectType): string => {
+    const creation = requireActivePack().creation
+    if (!creation) throw new Error(`no active Pack can create ${type.id}`)
+    return creation.defaultObjectLabel(type.id, { objects })
+  }
 
   const syncSimulationRunSnapshot = async (): Promise<void> => {
     if (!simulationRunId) return
@@ -1187,7 +1191,8 @@
     placement.clearDraft()
     commandStatus = `Creating ${draft.objectType.label}`
     const pack = requireActivePack()
-    const command = pack.commands.buildCreateObjectCommand(
+    if (!pack.creation) throw new Error('active Packs do not support object creation')
+    const command = pack.creation.buildCreateObjectCommand(
       draft.objectType.id,
       draft.label.trim() || defaultName(draft.objectType),
       draft.geometry,
@@ -1204,22 +1209,22 @@
     }
     if (destination.id === controller.id) return
     const pack = requireActivePack()
-    if (!pack.commands.isTarget(controller, destination, { objects })) return
+    if (!pack.targeting?.isTarget(controller, destination, { objects })) return
     commandStatus = `Sending ${controller.label} to ${destination.label}`
-    const command = pack.commands.buildSetTargetCommand(controller, destination, { objects })
+    const command = pack.targeting.buildSetTargetCommand(controller, destination, { objects })
     await sendCommand(command.kind, command.payload, command.targetObjectIds)
   }
 
   const selectObject = (object: OperationalObject): void => {
     markSeen(object)
     const pack = requireActivePack()
-    if (pack.commands.isController(object)) {
+    if (pack.targeting?.isController(object)) {
       selectedControllerId = object.id
       commandStatus = `Selected ${object.label}; click a valid target`
       return
     }
     const controller = selectedControllerObject
-    if (controller && pack.commands.isTarget(controller, object, { objects })) {
+    if (controller && pack.targeting?.isTarget(controller, object, { objects })) {
       void setDestination(object)
     }
   }

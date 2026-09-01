@@ -642,7 +642,7 @@ describe('drone pack native runtime', () => {
     expect(fieldsByKey.get('link')).toBe('connected')
     expect(presentation.summary).toContain('Gimbal Quad')
 
-    const commandRequest = dronePack.commands.buildCreateObjectCommand('drone', 'New native drone', {
+    const commandRequest = dronePack.creation!.buildCreateObjectCommand('drone', 'New native drone', {
       kind: 'point',
       point: point(10.7, 59.9),
     }, {
@@ -674,6 +674,6 @@ describe('drone pack native runtime', () => {
   })
 
   test('hold command is part of the native runtime command surface', () => {
-    expect(dronePack.commands.buildCancelTargetCommand(drone({ id: 'drone:cancel' }), { objects: [] }).kind).toBe(holdDroneCommandKind)
+    expect(dronePack.targeting!.buildCancelTargetCommand(drone({ id: 'drone:cancel' }), { objects: [] }).kind).toBe(holdDroneCommandKind)
   })
 })

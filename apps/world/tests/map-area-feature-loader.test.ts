@@ -11,6 +11,7 @@ import {
 import { createMapAreaFeatureLoader } from '../src/ui/app/map-area-feature-loader.ts'
 import type { SimulationRunRequestOptions } from '../src/ui/simulation-run-client.ts'
 import type { PackQueryApiResponse } from '../src/ui/types.ts'
+import { createActivePackViews } from '../src/core/packs/active-views.ts'
 
 const generatedAt = '2026-05-30T00:00:00.000Z' as IsoTimestamp
 
@@ -44,7 +45,7 @@ const createPack = (requests: ReadonlyArray<PackQueryRequest>): WorldPack => ({
     id: 'weather-test',
     version: '1.0.0',
     name: 'Weather Test',
-    contributions: ['presentation', 'commands', 'queries'],
+    contributions: ['presentation'],
   }),
   scenarioConfigSchema: emptyPackScenarioConfigSchema,
   presentation: {
@@ -60,22 +61,13 @@ const createPack = (requests: ReadonlyArray<PackQueryRequest>): WorldPack => ({
       status: { tone: 'ready', label: 'Ready', indicator: { shape: 'dot' } },
     }),
   },
-  commands: {
-    createObjectTypes: [],
-    defaultObjectLabel: () => 'unused',
-    buildCreateObjectCommand: () => ({ kind: 'unused', payload: {}, targetObjectIds: [] }),
-    isController: () => false,
-    isTarget: () => false,
-    buildSetTargetCommand: () => ({ kind: 'unused', payload: {}, targetObjectIds: [] }),
-    buildCancelTargetCommand: () => ({ kind: 'unused', payload: {}, targetObjectIds: [] }),
-  },
 })
 
 describe('MapAreaFeatureLoader', () => {
   test('runs pack map-area queries concurrently and preserves sync features', async () => {
     const requests: ReadonlyArray<PackQueryRequest> = [
-      { packId: 'weather', kind: 'first', payload: {} },
-      { packId: 'weather', kind: 'second', payload: {} },
+      { packId: 'weather-test', kind: 'first', payload: {} },
+      { packId: 'weather-test', kind: 'second', payload: {} },
     ]
     let activeQueries = 0
     let maxActiveQueries = 0
@@ -100,7 +92,7 @@ describe('MapAreaFeatureLoader', () => {
       }
     }
     const loader = createMapAreaFeatureLoader({
-      pack: () => createPack(requests),
+      pack: () => createActivePackViews([createPack(requests)]),
       objects: () => [],
       simulationRunId: () => 'run-test' as SimulationRunId,
       currentTime: () => generatedAt,

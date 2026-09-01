@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { CommandEnvelope, CommandResult, SimulationRunEvent, EventId, SimulationRunId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, ProcedureCatalog, ProcedureDocument, ProcedureId, ProcedureSourceId, Provenance, ScenarioExecutionState, ScenarioTimeline, ScenarioTimelineAction, ScenarioTimelineCue, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
 import { actorIdSchema, commandEnvelopeSchema, deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, notificationIdSchema, nowIso, simulationClockUpdateSchema } from '../model/index.ts'
 import type { PackQueryRequest, PackQueryResponse, PackWikiRef } from '../packs/protocol.ts'
-import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent, PackRuntimeRealtimeInput, PackRuntimeRealtimeMessage } from '../../simulation/protocol.ts'
+import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent, PackRuntimeOperationDescriptor, PackRuntimeRealtimeInput, PackRuntimeRealtimeMessage } from '../../simulation/protocol.ts'
 import type { EventLog } from './event-log.ts'
 import { createSimulationRunStateStore, type SimulationRunStateSnapshot } from './state-store.ts'
 import type { SimulationRunSnapshotStore } from './snapshot-store.ts'
@@ -27,8 +27,8 @@ const scenarioRunnerActor: Actor = {
 }
 
 interface PublishManyOptions {
-  readonly persistence?: SimulationRunEventPersistenceDisposition
-  readonly persistenceForEvent?: (
+  readonly history?: SimulationRunEventPersistenceDisposition
+  readonly historyForEvent?: (
     event: SimulationRunEvent,
     previousObject: OperationalObject | undefined,
     index: number,
@@ -68,8 +68,15 @@ export interface SimulationRunCapabilities {
   readonly scenarioId: string | null
   readonly scenarioRevisionId: ScenarioRevisionId | null
   readonly activePackIds: ReadonlyArray<string>
-  readonly acceptedCommandKinds: ReadonlyArray<string>
-  readonly queryKinds: Readonly<Record<string, ReadonlyArray<string>>>
+  readonly runtimes: ReadonlyArray<{
+    readonly id: string
+    readonly packId: string
+    readonly clock: 'simulation' | 'live' | 'none'
+  }>
+  readonly operations: ReadonlyArray<PackRuntimeOperationDescriptor & {
+    readonly packId: string
+    readonly runtimeId: string
+  }>
   readonly wikiRefs: ReadonlyArray<PackWikiRef>
 }
 
@@ -226,8 +233,8 @@ export const createSimulationRunRuntime = async (config: {
     for (const [index, event] of simulationRunEvents.entries()) {
       const previousObject = event.type === 'object.upserted' ? state.getObject(event.object.id) : undefined
       state.apply(event)
-      const persistence = options?.persistence
-        ?? options?.persistenceForEvent?.(event, previousObject, index)
+      const persistence = options?.history
+        ?? options?.historyForEvent?.(event, previousObject, index)
         ?? persistenceDispositionFor(event, previousObject)
       if (persistence === 'durable') {
         durableEvents.push(event)
@@ -249,6 +256,7 @@ export const createSimulationRunRuntime = async (config: {
     }
     const notification: SimulationRunEventNotification = { type: 'event.notification', events: simulationRunEvents }
     for (const handler of handlers) handler(notification)
+    await config.runtimeConnection.observeCommittedEvents(simulationRunEvents)
   }
 
   const enqueuePublish = async (work: () => Promise<void>): Promise<void> => {
@@ -384,18 +392,6 @@ export const createSimulationRunRuntime = async (config: {
       return { ...nextBase(simEvent), type: 'interaction.signal.received', signal: simEvent.signal }
     }
     return { ...nextBase(simEvent), type: 'telemetry.sampled', objectId: simEvent.objectId, telemetry: simEvent.telemetry }
-  }
-
-  const persistenceForPackRuntimeEvent = (
-    event: PackRuntimeEvent,
-  ): SimulationRunEventPersistenceDisposition | undefined => {
-    if (event.persistence !== undefined) return event.persistence
-    if (
-      event.type === 'object.upserted'
-      || event.type === 'object.deleted'
-      || event.type === 'telemetry.sampled'
-    ) return 'projected'
-    return undefined
   }
 
   const simulationRunEventFromInteractionEffect = (
@@ -538,8 +534,7 @@ export const createSimulationRunRuntime = async (config: {
       }
     }
     try {
-      const events = await publishGenerated(() => coreDeleteEvents(command, at))
-      await config.runtimeConnection.observeCommittedEvents(events)
+      await publishGenerated(() => coreDeleteEvents(command, at))
       return { ok: true, commandId: command.id, acceptedAt: at }
     } catch (error) {
       return {
@@ -560,7 +555,6 @@ export const createSimulationRunRuntime = async (config: {
     const parsedEffects = effects.map(effect => interactionEffectSchema.parse(effect) as InteractionEffect)
     const simulationRunEvents = parsedEffects.map(effect => simulationRunEventFromInteractionEffect(effect, at, provenance))
     await publishManyNow(simulationRunEvents)
-    await config.runtimeConnection.observeCommittedEvents(simulationRunEvents)
   }
 
   const handleInteractionSignalNow = async (
@@ -602,7 +596,7 @@ export const createSimulationRunRuntime = async (config: {
         const events = pendingEvents.splice(0, pendingEvents.length)
         const persistences = pendingPersistences.splice(0, pendingPersistences.length)
         await publishManyNow(events, {
-          persistenceForEvent: (_event, _previousObject, index) => persistences[index],
+          historyForEvent: (_event, _previousObject, index) => persistences[index],
         })
       }
 
@@ -611,9 +605,8 @@ export const createSimulationRunRuntime = async (config: {
           await flushPendingEvents()
           await handleInteractionSignalNow(event.signal, event.provenance)
         } else {
-          const persistence = persistenceForPackRuntimeEvent(event)
           pendingEvents.push(simulationRunEventFromPackRuntimeEvent(event))
-          pendingPersistences.push(persistence ?? 'projected')
+          pendingPersistences.push(event.history === 'record' ? 'durable' : 'projected')
         }
       }
       await flushPendingEvents()
@@ -698,7 +691,8 @@ export const createSimulationRunRuntime = async (config: {
     if (!canIssueCommand(actor, command)) {
       return { ok: false, commandId: command.id, rejectedAt: nowIso(), reason: `role ${actor.role} may not issue command ${command.kind}` }
     }
-    const commandEventPersistence = config.runtimeConnection.commandEventPersistence?.(command) ?? 'durable'
+    const commandEventHistory = config.runtimeConnection.commandEventHistory?.(command) ?? 'record'
+    const commandEventDisposition = commandEventHistory === 'record' ? 'durable' : 'projected'
     await publishOneGenerated(() => ({
       id: eventId(),
       simulationRunId: config.id,
@@ -707,7 +701,7 @@ export const createSimulationRunRuntime = async (config: {
       provenance: { source: commandSource },
       type: 'command.issued',
       command,
-    }), { persistence: commandEventPersistence })
+    }), { history: commandEventDisposition })
     const result = await handleCoreCommand(command) ?? await config.runtimeConnection.sendCommand(command)
     await publishQueue
     await publishOneGenerated(() => ({
@@ -718,7 +712,7 @@ export const createSimulationRunRuntime = async (config: {
       provenance: { source: 'simulator', causedByCommandId: command.id },
       type: 'command.result',
       result,
-    }), { persistence: commandEventPersistence })
+    }), { history: commandEventDisposition })
     return result
   }
 
@@ -739,8 +733,7 @@ export const createSimulationRunRuntime = async (config: {
     }) as CommandEnvelope
 
   const publishScenarioCue = async (cue: ScenarioTimelineCue, at: IsoTimestamp): Promise<void> => {
-    const cueEvent = await publishOneGenerated(() => scenarioCueStartedEvent(cue, at))
-    await config.runtimeConnection.observeCommittedEvents([cueEvent])
+    await publishOneGenerated(() => scenarioCueStartedEvent(cue, at))
 
     for (const action of cue.actions) {
       if (action.type === 'emit_signal') {
@@ -758,9 +751,7 @@ export const createSimulationRunRuntime = async (config: {
         if (!result.ok) throw new Error(result.reason)
         continue
       }
-      const events = await publishGenerated(() => simulationRunEventsForScenarioActions([action], at))
-      if (events.length === 0) continue
-      await config.runtimeConnection.observeCommittedEvents(events)
+      await publishGenerated(() => simulationRunEventsForScenarioActions([action], at))
     }
   }
 
@@ -876,8 +867,8 @@ export const createSimulationRunRuntime = async (config: {
       scenarioId: config.capabilities?.scenarioId ?? state.snapshot().scenario?.scenarioId ?? null,
       scenarioRevisionId: config.capabilities?.scenarioRevisionId ?? null,
       activePackIds: config.capabilities?.activePackIds ?? [],
-      acceptedCommandKinds: config.capabilities?.acceptedCommandKinds ?? [],
-      queryKinds: config.capabilities?.queryKinds ?? {},
+      runtimes: config.capabilities?.runtimes ?? [],
+      operations: config.capabilities?.operations ?? [],
       wikiRefs: config.capabilities?.wikiRefs ?? [],
     }),
     snapshot: () => snapshotWithCurrentClock(),

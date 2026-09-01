@@ -10,8 +10,8 @@ import { trafficPack } from './packs/traffic/pack.ts'
 import { weatherPack } from './packs/weather/pack.ts'
 import type { RoutingAdapter } from './routing/protocol.ts'
 import type { PackRuntimeAdapter } from './simulation/protocol.ts'
+import { validateWorldAssembly } from './core/packs/assembly.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from './packs/ambulance/sim/adapter.ts'
-import { createAviationNoopPackRuntimeAdapter } from './packs/aviation/sim/noop-adapter.ts'
 import { createOpenSkyPackRuntimeAdapter } from './packs/aviation/sim/opensky/adapter.ts'
 import { createVatsimPackRuntimeAdapter } from './packs/aviation/sim/vatsim/adapter.ts'
 import { createAviationMultiPackRuntimeAdapter } from './packs/aviation/sim/multi/adapter.ts'
@@ -64,19 +64,16 @@ export const createWorldApplicationAssembly = (config: {
     vatsim,
     defaultSource: opensky ? 'opensky' : 'vatsim',
   })
-  return {
-    packs: worldPacks,
-    runtimeAdapters: [
+  const runtimeAdapters: ReadonlyArray<PackRuntimeAdapter> = [
       createLocalAmbulancePackRuntimeAdapter({ routing: config.routing }),
       createLocalTrafficPackRuntimeAdapter({ routing: config.routing }),
       createLocalWeatherPackRuntimeAdapter(),
       createDroneNativePackRuntimeAdapter(),
       createLocalProcessPlantPackRuntimeAdapter(),
       createLocalElectricGridPackRuntimeAdapter(),
-      createAviationNoopPackRuntimeAdapter(),
       ...(opensky ? [opensky] : []),
       vatsim,
       aviationMulti,
-    ],
-  }
+    ]
+  return validateWorldAssembly({ packs: worldPacks, runtimeAdapters })
 }

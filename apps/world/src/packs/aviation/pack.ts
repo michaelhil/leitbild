@@ -2,8 +2,6 @@ import type { OperationalObject } from '../../core/model/index.ts'
 import { z } from 'zod'
 import type {
   WorldPack,
-  PackCommandRequest,
-  PackCreationGeometry,
   PackObjectField,
   PackObjectPresentation,
   PackMapLayerGroup,
@@ -12,7 +10,6 @@ import type {
 import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
 import { asDatasetId } from '../../reference-data/types.ts'
-import { aviationNoopRuntime, aviationNoopRuntimeId } from './sim/noop-adapter.ts'
 import { aviationOpenSkyRuntimeId, aviationVatsimRuntimeId } from './sim/constants.ts'
 import { aviationMultiRuntimeId } from './sim/multi/constants.ts'
 import {
@@ -63,6 +60,7 @@ const aviationOpenSkyRuntime: PackRuntime = {
   version: '1.0.0',
   label: 'OpenSky Network (live ADS-B)',
   kind: 'remote',
+  clock: 'live',
 }
 
 const aviationVatsimRuntime: PackRuntime = {
@@ -70,6 +68,7 @@ const aviationVatsimRuntime: PackRuntime = {
   version: '1.0.0',
   label: 'VATSIM (live flight-sim network)',
   kind: 'remote',
+  clock: 'live',
 }
 
 // The multi runtime exposes a single id that owns runtime source-swap. Scenarios
@@ -81,6 +80,7 @@ const aviationMultiRuntime: PackRuntime = {
   version: '1.0.0',
   label: 'Aviation (multi-source: OpenSky / VATSIM)',
   kind: 'remote',
+  clock: 'live',
 }
 
 const aviationPackConfigSchema = z.object({
@@ -139,12 +139,12 @@ const aircraftColor = (data: AircraftPackData): string => {
 export const aviationPack: WorldPack = {
   descriptor: createWorldPackDescriptor({
     id: 'aviation', version: '1.0.0', name: 'Aviation',
-    contributions: ['runtime', 'knowledge', 'reference-data', 'presentation', 'commands'],
+    contributions: ['runtime', 'knowledge', 'reference-data', 'presentation'],
   }),
   scenarioConfigSchema: aviationPackConfigSchema,
   runtime: {
-    runtimes: [aviationNoopRuntime, aviationOpenSkyRuntime, aviationVatsimRuntime, aviationMultiRuntime],
-    defaultRuntimeId: aviationNoopRuntimeId,
+    runtimes: [aviationOpenSkyRuntime, aviationVatsimRuntime, aviationMultiRuntime],
+    defaultRuntimeId: aviationMultiRuntimeId,
   },
   knowledge: { wikiRefs: [{ name: 'Leitbild aviation pack wiki', url: 'https://leitbild-wikis.github.io/leitbild/packs/aviation/' }] },
   referenceData: { builders: [], datasetIds: [aeroNorwayDatasetIdValue] },
@@ -185,21 +185,6 @@ export const aviationPack: WorldPack = {
       fields: aircraftFields(data),
       muted: data.onGround,
     }
-    },
-  },
-  commands: {
-    createObjectTypes: [],
-    defaultObjectLabel: (typeId: string): string => typeId,
-    buildCreateObjectCommand: (typeId: string, _label: string, _geometry: PackCreationGeometry): PackCommandRequest => {
-      throw new Error(`aviation pack cannot create object of type ${typeId} — aircraft are observed, not created`)
-    },
-    isController: (_object: OperationalObject): boolean => false,
-    isTarget: (_controller: OperationalObject, _candidate: OperationalObject): boolean => false,
-    buildSetTargetCommand: (_controller: OperationalObject, _target: OperationalObject): PackCommandRequest => {
-      throw new Error('aviation pack does not support targeting in this phase')
-    },
-    buildCancelTargetCommand: (_controller: OperationalObject): PackCommandRequest => {
-      throw new Error('aviation pack does not support targeting in this phase')
     },
   },
 }

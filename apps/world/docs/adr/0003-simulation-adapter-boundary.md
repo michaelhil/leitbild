@@ -23,7 +23,7 @@ After events are committed, simulation providers may observe committed events to
 - The browser never talks directly to the simulator.
 - Local simulators must use the same adapter boundary as remote simulators.
 - Multiple providers in one Simulation Run must be coordinated through the Simulation Hub, not merged into one domain provider.
-- Providers declare accepted command kinds so commands can be routed explicitly.
+- Pack runtimes publish operation descriptors so commands, queries, and realtime inputs can be discovered and routed explicitly.
 - Commands have explicit issued, accepted, and rejected lifecycle events.
 - Canonical current object state for UI, API, metrics, and AI agents comes from Simulation Run Projected State.
 - Simulation providers may maintain private state, but must treat committed Simulation Run events as the shared operational picture.
