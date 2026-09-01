@@ -32,6 +32,38 @@ _Avoid_: persisted screen layout, Surface Definition, pane tree, or browser pref
 A compact Pack-owned authored element such as an ambulance, weather area, or plant unit that is expanded into validated runtime startup state.
 _Avoid_: assuming every Item is exactly one Operational Object
 
+**Plant Model**:
+A reusable Process Plant topology and its design parameters, expressed as a validated component graph.
+_Avoid_: running Plant, Process System, graph assembly
+
+**Operating Point**:
+A reusable set of initial process values applied to a compatible Plant Model when a Plant starts.
+_Avoid_: Plant Model parameters, transient, runtime snapshot
+
+**Plant**:
+A Process Plant Scenario Item that selects one Plant Model, Operating Point, automation, and location. A Plant becomes independently stateful only inside a Simulation Run.
+_Avoid_: Unit and Process System as separate authored records
+
+**Automation Definition**:
+A reusable Process Plant I&C configuration containing typed control, protection, alarm, trip, permissive, and interlock rules.
+_Avoid_: Procedure, arbitrary script, hidden control path
+
+**Action Preset**:
+A discoverable parameterized Process Plant operation that resolves to validated commands, such as a turbine trip or a developing leak.
+_Avoid_: Demo Transient, runtime-private schedule, executable scenario code
+
+**Process Display**:
+A validated Process Plant visualization definition whose widgets bind to signals in a compatible Plant Model.
+_Avoid_: Process Surface, Starting View, generated UI code
+
+**Historian**:
+An optional Simulation Run service that stores explicitly selected observation series. The Durable Journal separately retains meaningful committed events; together they support historical inspection without making dense samples canonical World state.
+_Avoid_: Durable Journal, runtime snapshot, automatic capture of every private variable
+
+**Recording Profile**:
+A Pack-owned named choice of operational signals and allowed sampling cadence that may be selected by a Scenario.
+_Avoid_: Recording Policy, hand-authored signal list, universal logging rule
+
 **Scenario Timeline**:
 An ordered collection of declarative Cues evaluated against Simulation Run time or committed World events.
 _Avoid_: Scenario Script, arbitrary code, simulator-private timer

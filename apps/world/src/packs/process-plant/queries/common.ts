@@ -2,10 +2,10 @@ import { z } from 'zod'
 import type { IsoTimestamp } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
-import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
+import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 
-export const systemQuerySchema = z.object({
-  systemId: idSchema,
+export const plantQuerySchema = z.object({
+  plantId: idSchema,
 })
 
 export const success = (
@@ -32,11 +32,11 @@ export const failure = (
   generatedAt,
 })
 
-export const requireSystem = (
-  systems: ReadonlyMap<string, ProcessPlantSystemRuntime>,
-  systemId: string,
-): ProcessPlantSystemRuntime => {
-  const system = systems.get(systemId)
-  if (!system) throw new Error(`process plant system not found: ${systemId}`)
-  return system
+export const requirePlant = (
+  plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>,
+  plantId: string,
+): ProcessPlantRuntimeInstance => {
+  const plant = plants.get(plantId)
+  if (!plant) throw new Error(`process plant not found: ${plantId}`)
+  return plant
 }

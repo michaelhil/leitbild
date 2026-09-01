@@ -1,6 +1,6 @@
 import type { CompiledComponent, CompiledPlantGraph, CompiledProcessLink } from '../graph/index.ts'
 import { primaryLoopIdForLink, primaryLoopIdForPump } from '../graph/index.ts'
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
+import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import { physicalNumber } from './links/process-link-physical.ts'
 import { isMainSteamService, isServiceDemandTerminal, serviceMatches } from './service-profiles.ts'
 
@@ -18,12 +18,12 @@ export interface MainSteamTopology {
   readonly pathSets: ReadonlyArray<MainSteamPathSet>
 }
 
-const downstreamDemandPathCache = new WeakMap<CompiledProcessPlantSystem, Map<number, ReadonlyArray<ProcessLinkPath>>>()
-const mainSteamTopologyCache = new WeakMap<CompiledProcessPlantSystem, MainSteamTopology>()
+const downstreamDemandPathCache = new WeakMap<CompiledProcessPlant, Map<number, ReadonlyArray<ProcessLinkPath>>>()
+const mainSteamTopologyCache = new WeakMap<CompiledProcessPlant, MainSteamTopology>()
 const primaryLoopResistanceCache = new WeakMap<CompiledPlantGraph, ReadonlyMap<number, number>>()
 
 const isFluidDemandTerminal = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   componentIndex: number,
   service: CompiledProcessLink['service'],
 ): boolean => {
@@ -32,7 +32,7 @@ const isFluidDemandTerminal = (
 }
 
 const collectDownstreamDemandPaths = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   componentIndex: number,
   service: CompiledProcessLink['service'],
   visited: ReadonlySet<number>,
@@ -55,7 +55,7 @@ const collectDownstreamDemandPaths = (
 }
 
 export const downstreamDemandPathsForLink = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   link: CompiledProcessLink,
 ): ReadonlyArray<ProcessLinkPath> => {
   let cachedForSystem = downstreamDemandPathCache.get(system)
@@ -71,7 +71,7 @@ export const downstreamDemandPathsForLink = (
 }
 
 const collectMainSteamPaths = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   fromComponentIndex: number,
   targetComponentIndex: number,
   visited: ReadonlySet<number>,
@@ -93,7 +93,7 @@ const collectMainSteamPaths = (
 }
 
 export const mainSteamTopologyForSystem = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
 ): MainSteamTopology => {
   const cached = mainSteamTopologyCache.get(system)
   if (cached) return cached

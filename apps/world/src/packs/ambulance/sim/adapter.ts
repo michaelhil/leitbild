@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler } from '../../../simulation/protocol.ts'
 import { definePackRuntimeOperations } from '../../../simulation/operations.ts'
-import type { CommandEnvelope, CommandResult, GeoJsonPoint, InteractionSignal, OperationalObject, SignalId } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, GeoJsonPoint, InteractionSignal, IsoTimestamp, OperationalObject, PackRuntimeRecordingBatch, SignalId, SimulationClockState } from '../../../core/model/index.ts'
 import { assetRoutePlannedSignalType, interactionSignalSchema, nowIso } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import { ambulancePackDataSchema, ambulancePackId, hospitalPackDataSchema, incidentPackDataSchema } from '../model.ts'
@@ -15,18 +15,21 @@ import {
   setDestinationCommandKind,
 } from '../commands.ts'
 import { ambulanceQueryKinds, answerAmbulanceQuery } from '../query.ts'
+import { createAmbulanceRecordingPlan } from '../recording.ts'
 
 const emit = (
   handlers: ReadonlySet<PackRuntimeEventHandler>,
   events: ReadonlyArray<PackRuntimeEvent>,
+  recording?: PackRuntimeRecordingBatch,
 ): void => {
   const firstEvent = events[0]
-  if (!firstEvent) return
+  if (!firstEvent && recording === undefined) return
   for (const handler of handlers) {
     handler({
       type: 'event.emission',
       events,
-      emittedAt: firstEvent.at,
+      ...(recording === undefined ? {} : { recording }),
+      emittedAt: firstEvent?.at ?? nowIso(),
       runtimeId: ambulanceSimRuntimeId,
     })
   }
@@ -137,16 +140,35 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
       objects,
     })
     const handlers = new Set<PackRuntimeEventHandler>()
-    let clock = {
-      currentTime: nowIso(),
+    const recordingPlan = config.recording === undefined ? null : createAmbulanceRecordingPlan(config.recording)
+    let elapsedMs = 0
+    let nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
+    let clock: SimulationClockState = {
+      currentTime: config.scenario?.world.startsAt ?? nowIso(),
       updatedAt: nowIso(),
       paused: false,
       speed: 1,
     }
+    let simulationTimeOffsetMs = Date.parse(clock.currentTime)
     const interval = setInterval(() => {
       if (clock.paused) return
-      const events = engine.tick(Math.round(1000 * clock.speed))
-      emit(handlers, events)
+      const tickMs = Math.round(1_000 * clock.speed)
+      if (tickMs <= 0) return
+      elapsedMs += tickMs
+      const events = engine.tick(tickMs)
+      const recording = recordingPlan !== null && elapsedMs >= nextRecordingElapsedMs
+        ? (() => {
+            nextRecordingElapsedMs = elapsedMs + recordingPlan.intervalMs
+            const observedAt = nowIso()
+            return recordingPlan.sample({
+              objects: engine.snapshot().objects,
+              observedAt,
+              simulationTime: new Date(simulationTimeOffsetMs + elapsedMs).toISOString() as IsoTimestamp,
+              elapsedMs,
+            })
+          })()
+        : undefined
+      emit(handlers, events, recording)
     }, 1000)
 
     const sendCommand = async (command: CommandEnvelope): Promise<CommandResult> => {
@@ -213,6 +235,7 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
       },
       setClock: async (nextClock): Promise<void> => {
         clock = nextClock
+        simulationTimeOffsetMs = Date.parse(nextClock.currentTime) - elapsedMs
       },
       sendCommand,
       close: async (): Promise<void> => {

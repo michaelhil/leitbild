@@ -9,16 +9,16 @@ import {
   processPlantSignalView,
   resolveProcessPlantSignalBinding,
 } from '../signals.ts'
-import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
-import { requireSystem, success } from './common.ts'
+import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
+import { requirePlant, success } from './common.ts'
 
 const signalsResolveQuerySchema = z.object({
-  systemId: idSchema,
+  plantId: idSchema,
   signals: z.array(processPlantSignalReferenceSchema).min(1),
 })
 
 const signalsSearchQuerySchema = z.object({
-  systemId: idSchema.optional(),
+  plantId: idSchema.optional(),
   text: z.string().min(1).optional(),
   tagId: processSignalTagIdSchema.optional(),
   equipmentId: idSchema.optional(),
@@ -57,25 +57,25 @@ const matchesSignalSearch = (
 
 export const answerProcessPlantSignalQuery = (config: {
   readonly request: PackQueryRequest
-  readonly systems: ReadonlyMap<string, ProcessPlantSystemRuntime>
+  readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
   readonly at: IsoTimestamp
 }): PackQueryResponse | undefined => {
   if (!processPlantSignalQueryKinds.some(kind => kind === config.request.kind)) return undefined
   if (config.request.kind === 'process-plant.signals.resolve') {
     const payload = signalsResolveQuerySchema.parse(config.request.payload)
-    const system = requireSystem(config.systems, payload.systemId)
+    const system = requirePlant(config.plants, payload.plantId)
     return success(config.request, {
-      systemId: payload.systemId,
-      signals: payload.signals.map(signal => processPlantSignalView(resolveProcessPlantSignalBinding(system.system.graph, signal))),
+      plantId: payload.plantId,
+      signals: payload.signals.map(signal => processPlantSignalView(resolveProcessPlantSignalBinding(system.plant.graph, signal))),
     }, config.at)
   }
   if (config.request.kind === 'process-plant.signals.read') {
     const payload = signalsResolveQuerySchema.parse(config.request.payload)
-    const system = requireSystem(config.systems, payload.systemId)
+    const system = requirePlant(config.plants, payload.plantId)
     return success(config.request, {
-      systemId: payload.systemId,
+      plantId: payload.plantId,
       signals: payload.signals.map(signal => {
-        const binding = resolveProcessPlantSignalBinding(system.system.graph, signal)
+        const binding = resolveProcessPlantSignalBinding(system.plant.graph, signal)
         const variable = system.runtime.readVariableSnapshot(binding.path)
         return {
           signal: processPlantSignalView(binding),
@@ -86,13 +86,13 @@ export const answerProcessPlantSignalQuery = (config: {
     }, config.at)
   }
   const payload = signalsSearchQuerySchema.parse(config.request.payload)
-  const systems = payload.systemId === undefined
-    ? [...config.systems.values()]
-    : [requireSystem(config.systems, payload.systemId)]
+  const plants = payload.plantId === undefined
+    ? [...config.plants.values()]
+    : [requirePlant(config.plants, payload.plantId)]
   return success(config.request, {
-    systems: systems.map(system => ({
-      systemId: system.system.id,
-      signals: system.system.graph.signalBindings
+    plants: plants.map(system => ({
+      plantId: system.plant.id,
+      signals: system.plant.graph.signalBindings
         .map(processPlantSignalView)
         .filter(binding => matchesSignalSearch(binding, payload)),
     })),

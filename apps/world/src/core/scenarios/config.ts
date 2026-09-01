@@ -8,6 +8,7 @@ import {
   scenarioDefinitionSchema,
   scenarioTimelineCommandRequestSchema,
   signalIdSchema,
+  scenarioRecordingSelectionSchema,
   type GeoJsonPoint,
   type IsoTimestamp,
   type ObjectId,
@@ -153,12 +154,19 @@ export const scenarioSourceSchema = z.object({
     environment: z.record(z.string(), z.unknown()).default({}),
   }),
   view: scenarioViewSchema,
+  recording: z.array(scenarioRecordingSelectionSchema).default([]),
   timeline: scenarioTimelineConfigSchema.optional(),
 }).strict().superRefine((source, ctx) => {
   const packs = new Set<string>()
   source.packs.forEach((selection, index) => {
     if (packs.has(selection.id)) ctx.addIssue({ code: 'custom', path: ['packs', index, 'id'], message: `duplicate Pack: ${selection.id}` })
     packs.add(selection.id)
+  })
+  const recordedPacks = new Set<string>()
+  source.recording.forEach((selection, index) => {
+    if (!packs.has(selection.packId)) ctx.addIssue({ code: 'custom', path: ['recording', index, 'packId'], message: `recording selects inactive Pack: ${selection.packId}` })
+    if (recordedPacks.has(selection.packId)) ctx.addIssue({ code: 'custom', path: ['recording', index, 'packId'], message: `duplicate recording selection for Pack: ${selection.packId}` })
+    recordedPacks.add(selection.packId)
   })
 })
 
@@ -365,6 +373,7 @@ export const compileScenarioSource = async (
     },
     initialObjects,
     surface: surfaceFromView(source.view, activePacks),
+    recording: source.recording,
     ...(timeline === undefined ? {} : { timeline }),
   }) as ScenarioDefinition
 }

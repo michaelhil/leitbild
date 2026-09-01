@@ -1,5 +1,5 @@
 import { geoJsonPointSchema, geoJsonPolygonSchema, isoTimestampSchema } from '../model/index.ts'
-import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject, SurfaceMapLayer } from '../model/index.ts'
+import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject, RecordingProfileDescriptor, SurfaceMapLayer } from '../model/index.ts'
 import type { RoutingAdapter } from '../../routing/protocol.ts'
 import type { DatasetConfig, DatasetId } from '../../reference-data/types.ts'
 import { packDescriptorSchema, type PackDescriptor } from '@leitbild/contracts'
@@ -326,6 +326,10 @@ export interface PackRuntimeContribution {
   readonly defaultRuntimeId: string
 }
 
+export interface PackRecordingContribution {
+  readonly profiles: ReadonlyArray<RecordingProfileDescriptor>
+}
+
 export interface PackKnowledgeContribution {
   readonly wikiRefs: ReadonlyArray<PackWikiRef>
 }
@@ -402,6 +406,7 @@ export interface WorldPack {
   readonly scenarioConfigSchema: z.ZodType
   readonly authoring?: PackScenarioAuthoringContribution
   readonly runtime?: PackRuntimeContribution
+  readonly recording?: PackRecordingContribution
   readonly knowledge?: PackKnowledgeContribution
   readonly referenceData?: PackReferenceDataContribution
   readonly scenario?: PackScenarioSupport

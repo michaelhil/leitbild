@@ -106,6 +106,7 @@
   const allItems = () => draft.packs.flatMap(pack => pack.items.map(item => ({ packId: pack.id, item })))
   const selectedEntry = () => selection.kind === 'item' ? allItems().find(entry => entry.item.id === selection.id) : undefined
   const selectedItem = () => selectedEntry()?.item
+  const recordingSelectionFor = (packId: string) => draft.recording.find(selection => selection.packId === packId)
   const selectedType = (): AuthoringItemType | undefined => {
     const item = selectedItem()
     const entry = selectedEntry()
@@ -153,10 +154,26 @@
     if (!confirm(`Remove ${pack.title} and all of its items from this scenario?`)) return
     const removedItems = selectionFor(draft, pack.id)?.items ?? []
     draft.packs = draft.packs.filter(selection => selection.id !== pack.id)
+    draft.recording = draft.recording.filter(selection => selection.packId !== pack.id)
     updateRailSections()
     draft = { ...draft }
     selection = { kind: 'scenario' }
     if (placementItemId && removedItems.some(item => item.id === placementItemId)) placementItemId = null
+  }
+
+  const setRecordingProfile = (pack: AuthoringPack, profileId: string): void => {
+    draft.recording = draft.recording.filter(selection => selection.packId !== pack.id)
+    const profile = pack.recordingProfiles.find(candidate => candidate.id === profileId)
+    if (profile) draft.recording.push({ packId: pack.id, profileId: profile.id, intervalMs: profile.defaultIntervalMs })
+    draft = { ...draft }
+  }
+
+  const setRecordingInterval = (pack: AuthoringPack, seconds: number): void => {
+    const selection = recordingSelectionFor(pack.id)
+    const profile = pack.recordingProfiles.find(candidate => candidate.id === selection?.profileId)
+    if (!selection || !profile || !Number.isFinite(seconds)) return
+    selection.intervalMs = Math.max(profile.minimumIntervalMs, Math.round(seconds * 1_000))
+    draft = { ...draft }
   }
 
   const addItem = (packDescription: AuthoringPack, type: AuthoringItemType): void => {
@@ -342,6 +359,24 @@
                   {#each pack.runtimes as runtime (runtime.id)}<option value={runtime.id}>{runtime.label} · {runtime.kind}</option>{/each}
                 </select>
               </label>
+            {/if}
+            {#if pack.recordingProfiles.length > 0}
+              {@const recording = recordingSelectionFor(pack.id)}
+              <label>Recording
+                <select value={recording?.profileId ?? ''} onchange={event => setRecordingProfile(pack, event.currentTarget.value)}>
+                  <option value="">Off</option>
+                  {#each pack.recordingProfiles as profile (profile.id)}<option value={profile.id}>{profile.title}</option>{/each}
+                </select>
+              </label>
+              {#if recording}
+                {@const profile = pack.recordingProfiles.find(candidate => candidate.id === recording.profileId)}
+                {#if profile}
+                  <p>{profile.description}</p>
+                  <label>Sample interval (seconds)
+                    <input type="number" min={profile.minimumIntervalMs / 1_000} step={profile.minimumIntervalMs / 1_000} value={(recording.intervalMs ?? profile.defaultIntervalMs) / 1_000} onchange={event => setRecordingInterval(pack, event.currentTarget.valueAsNumber)} />
+                  </label>
+                {/if}
+              {/if}
             {/if}
             <h3>Add item</h3><div class="item-type-list">{#each pack.itemTypes as type (type.id)}<button onclick={() => addItem(pack, type)}><strong>{type.label}</strong><small>{type.description}</small></button>{/each}</div><button class="danger-text" onclick={() => removePack(pack)}>Remove Pack</button>
           {/if}

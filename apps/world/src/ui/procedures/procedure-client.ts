@@ -211,80 +211,173 @@ const requireOkPackResult = (value: unknown, message: string): Record<string, un
   return assertRecord(response.result, `${message}: missing result`)
 }
 
+const normalizedSourceKey = (value: string): string => value.trim().toLowerCase().replace(/[-_.\s]/g, '')
+const normalizedUnit = (value: string): string => value.trim().toLowerCase().replace(/\s/g, '')
+
+const unitsCompatible = (requested: string | undefined, actual: string): boolean => {
+  if (requested === undefined) return true
+  const left = normalizedUnit(requested)
+  const right = normalizedUnit(actual)
+  if (left === right) return true
+  if ((left === 'bool' || left === 'boolean') && right === 'boolean') return true
+  if (left.startsWith('enum[') && (right === 'boolean' || right === 'fraction' || right === 'percent')) return true
+  return (left === 'degf' && right === 'degc')
+    || (left === 'gpm' && right === 'kg/s')
+    || (left === 'psig' && (right === 'mpa' || right === 'pa'))
+    || (left === 'inhga' && right === 'pa')
+    || (left === 'percent_collapsed_liquid' && right === 'percent')
+    || (left === 'steps_withdrawn' && right === 'fraction')
+}
+
+const formattedNumber = (value: number, digits: number): string => {
+  if (Number.isInteger(value)) return value.toFixed(0)
+  if (Math.abs(value) > 0 && Math.abs(value) < 0.001) return value.toExponential(3)
+  return value.toFixed(digits)
+}
+
+const enumValue = (unit: string, value: number | boolean): string => {
+  const options = unit.slice(5, -1).split(',').map(option => option.trim()).filter(Boolean)
+  if (typeof value === 'boolean') {
+    if (options.includes('RUNNING') || options.includes('STOPPED')) return value ? 'RUNNING' : 'STOPPED'
+    if (options.includes('OPEN') || options.includes('CLOSED')) return value ? 'OPEN' : 'CLOSED'
+    if (options.includes('ALIGNED') || options.includes('ISOLATED')) return value ? 'ALIGNED' : 'ISOLATED'
+    return value ? 'TRUE' : 'FALSE'
+  }
+  if (options.includes('OPEN') && options.includes('CLOSED')) {
+    if (value >= 0.95) return 'OPEN'
+    if (value <= 0.05) return 'CLOSED'
+    if (options.includes('INTERMEDIATE')) return 'INTERMEDIATE'
+  }
+  return `${formattedNumber(value * 100, 1)} percent`
+}
+
+const procedureSignalValue = (config: {
+  readonly requestedUnit?: string
+  readonly actualUnit: string
+  readonly quantity: string
+  readonly value: unknown
+}): { readonly value: unknown; readonly formatted: string; readonly unit: string } => {
+  const requested = config.requestedUnit
+  const unit = requested ?? config.actualUnit
+  if (typeof config.value !== 'number' && typeof config.value !== 'boolean') {
+    return { value: config.value, formatted: `${String(config.value)} ${unit}`, unit }
+  }
+  const normalized = requested === undefined ? '' : normalizedUnit(requested)
+  if (normalized.startsWith('enum[')) {
+    const value = enumValue(requested ?? '', config.value)
+    return { value, formatted: value, unit }
+  }
+  if (typeof config.value === 'boolean') return { value: config.value, formatted: `${String(config.value)} ${unit}`, unit }
+  if (normalized === 'degf' && config.actualUnit === 'degC') {
+    const value = config.quantity === 'temperatureDelta' ? config.value * 9 / 5 : config.value * 9 / 5 + 32
+    return { value, formatted: `${formattedNumber(value, 1)} degF`, unit }
+  }
+  if (normalized === 'gpm' && config.actualUnit === 'kg/s') {
+    const value = config.value * 15.850323
+    return { value, formatted: `${formattedNumber(value, 1)} gpm`, unit }
+  }
+  if (normalized === 'psig' && config.actualUnit === 'MPa') {
+    const value = config.value * 145.037738 - 14.6959
+    return { value, formatted: `${formattedNumber(value, 1)} psig`, unit }
+  }
+  if (normalized === 'psig' && config.actualUnit === 'Pa') {
+    const value = config.value * 0.000145037738 - 14.6959
+    return { value, formatted: `${formattedNumber(value, 1)} psig`, unit }
+  }
+  if (normalized === 'inhga' && config.actualUnit === 'Pa') {
+    const value = config.value * 0.000295299875
+    return { value, formatted: `${formattedNumber(value, 2)} inHgA`, unit }
+  }
+  if (normalized === 'steps_withdrawn' && config.actualUnit === 'fraction') {
+    const value = Math.max(0, Math.min(1, 1 - config.value)) * 228
+    return { value, formatted: `${formattedNumber(value, 0)} steps withdrawn`, unit }
+  }
+  const suffix = normalized === 'percent_collapsed_liquid' ? 'percent collapsed liquid' : unit
+  return { value: config.value, formatted: `${formattedNumber(config.value, 3)} ${suffix}`, unit }
+}
+
+const queryProcedureSignal = async (
+  simulationRunId: SimulationRunId,
+  plantId: string,
+  tagId: string,
+  read: boolean,
+): Promise<Record<string, unknown> | null> => {
+  const body = await querySimulationRunPack(simulationRunId, {
+    packId: 'process-plant',
+    kind: read ? 'process-plant.signals.read' : 'process-plant.signals.resolve',
+    payload: { plantId, signals: [{ tagId }] },
+  })
+  const envelope = assertRecord(body.response, 'process signal query returned malformed response')
+  if (envelope.ok !== true) return null
+  const result = assertRecord(envelope.result, 'process signal query returned no result')
+  const first = assertArray(result.signals, 'process signal query returned no signals')[0]
+  return first === undefined ? null : assertRecord(first, 'process signal query returned malformed signal')
+}
+
 export const validateProcedureTags = async (
   simulationRunId: SimulationRunId,
-  systemId: string,
+  plantId: string,
   tags: ReadonlyArray<ProcedureTag>,
 ): Promise<ReadonlyMap<string, ProcedureTagValidation>> => {
   if (tags.length === 0) return new Map()
-  const body = await querySimulationRunPack(simulationRunId, {
-    packId: 'process-plant',
-    kind: 'process-plant.procedure-tags.validate',
-    payload: {
-      systemId,
-      tags: tags.map(tag => ({
-        id: tag.id,
-        ...(tag.description === undefined ? {} : { description: tag.description }),
-        ...(tag.simPath === undefined ? {} : { simPath: tag.simPath }),
-        ...(tag.units === undefined ? {} : { units: tag.units }),
-        ...(tag.equipment === undefined ? {} : { equipment: tag.equipment }),
-      })),
-    },
-  })
-  const result = requireOkPackResult(body.response, 'procedure tag validation failed')
-  return new Map(assertArray(result.tags, 'procedure tag validation returned no tags').map(item => {
-    const row = assertRecord(item, 'procedure tag validation row is malformed')
-    const id = assertString(row.id, 'procedure tag validation row requires id')
-    const status = assertString(row.status, 'procedure tag validation row requires status')
-    return [id, {
-      id,
-      status: status === 'resolved' || status === 'resolved-with-warnings' ? status : 'missing',
-      ...(typeof row.signal === 'object' && row.signal !== null ? { signal: row.signal as Record<string, unknown> } : {}),
-      warnings: assertArray(row.warnings, 'procedure tag validation row requires warnings').filter((warning): warning is string => typeof warning === 'string'),
+  const rows = await Promise.all(tags.map(async (tag): Promise<readonly [string, ProcedureTagValidation]> => {
+    const signal = await queryProcedureSignal(simulationRunId, plantId, tag.id, false)
+    if (signal === null) return [tag.id, { id: tag.id, status: 'missing', warnings: [] }]
+    const path = stringOrUndefined(signal.path)
+    const unit = stringOrUndefined(signal.unit) ?? ''
+    const equipment = stringOrUndefined(signal.equipmentId)
+    const externalRefs = Array.isArray(signal.externalRefs)
+      ? signal.externalRefs.filter((value): value is string => typeof value === 'string')
+      : []
+    const resolvedByExternalReference = externalRefs.includes(tag.id)
+      || (tag.simPath !== undefined && externalRefs.includes(tag.simPath))
+    const warnings = [
+      ...(tag.simPath !== undefined && tag.simPath !== path && !externalRefs.includes(tag.simPath)
+        ? [`sim-path ${tag.simPath} does not match process path ${path ?? 'unknown'}`]
+        : []),
+      ...(!resolvedByExternalReference && !unitsCompatible(tag.units, unit)
+        ? [`units ${tag.units} do not match process unit ${unit}`]
+        : []),
+      ...(tag.equipment !== undefined && equipment !== undefined
+        && normalizedSourceKey(tag.equipment) !== normalizedSourceKey(equipment)
+        && !resolvedByExternalReference
+        ? [`equipment ${tag.equipment} does not match process equipment ${equipment}`]
+        : []),
+    ]
+    return [tag.id, {
+      id: tag.id,
+      status: warnings.length === 0 ? 'resolved' as const : 'resolved-with-warnings' as const,
+      signal,
+      warnings,
     }]
   }))
+  return new Map(rows)
 }
 
 export const readProcedureTagValue = async (
   simulationRunId: SimulationRunId,
-  systemId: string,
+  plantId: string,
   tag: ProcedureTag,
 ): Promise<ProcedureTagValue> => {
-  const body = await querySimulationRunPack(simulationRunId, {
-    packId: 'process-plant',
-    kind: 'process-plant.procedure-tags.read',
-    payload: {
-      systemId,
-      tags: [{
-        id: tag.id,
-        ...(tag.description === undefined ? {} : { description: tag.description }),
-        ...(tag.simPath === undefined ? {} : { simPath: tag.simPath }),
-        ...(tag.units === undefined ? {} : { units: tag.units }),
-        ...(tag.equipment === undefined ? {} : { equipment: tag.equipment }),
-      }],
-    },
-  })
-  const result = requireOkPackResult(body.response, 'procedure tag read failed')
-  const rows = assertArray(result.tags, 'procedure tag read returned no tags')
-  const first = assertRecord(rows[0], 'procedure tag read row is malformed')
-  const status = assertString(first.status, 'procedure tag read row requires status')
-  if (status === 'missing') throw new Error('not resolved to a Leitbild signal')
+  const first = await queryProcedureSignal(simulationRunId, plantId, tag.id, true)
+  if (first === null) throw new Error('not resolved to a Leitbild signal')
   const signal = assertRecord(first.signal, 'procedure tag read row requires signal')
   const variable = assertRecord(first.variable, 'procedure tag read row requires variable')
-  const procedureValue = typeof first.procedureValue === 'object' && first.procedureValue !== null
-    ? assertRecord(first.procedureValue, 'procedure tag read row has malformed procedure value')
-    : null
+  const actualUnit = assertString(signal.unit, 'process signal requires unit')
+  const procedureValue = procedureSignalValue({
+    ...(tag.units === undefined ? {} : { requestedUnit: tag.units }),
+    actualUnit,
+    quantity: assertString(signal.quantity, 'process signal requires quantity'),
+    value: variable.value,
+  })
+  const quality = optionalRecord(first.quality)
   return {
     tagId: tag.id,
     label: typeof signal.label === 'string' ? signal.label : tag.id,
-    value: procedureValue?.value ?? variable.value,
-    formatted: typeof procedureValue?.formatted === 'string'
-      ? procedureValue.formatted
-      : `${String(variable.value)}${typeof signal.unit === 'string' ? ` ${signal.unit}` : ''}`,
-    ...(typeof procedureValue?.unit === 'string'
-      ? { unit: procedureValue.unit }
-      : typeof signal.unit === 'string' ? { unit: signal.unit } : {}),
-    ...(typeof first.quality === 'string' ? { quality: first.quality } : {}),
+    value: procedureValue.value,
+    formatted: procedureValue.formatted,
+    unit: procedureValue.unit,
+    ...(typeof quality?.status === 'string' ? { quality: quality.status } : {}),
     ...(typeof signal.path === 'string' ? { path: signal.path } : {}),
   }
 }
@@ -313,23 +406,23 @@ const parseProcedureCsfSignalRead = (value: unknown): ProcedureCsfSignalRead => 
 
 export const evaluateProcedureCsfs = async (
   simulationRunId: SimulationRunId,
-  systemId: string,
+  plantId: string,
   csfs: ReadonlyArray<string>,
 ): Promise<ReadonlyMap<string, ProcedureCsfEvaluation>> => {
   if (csfs.length === 0) return new Map()
   const body = await querySimulationRunPack(simulationRunId, {
     packId: 'process-plant',
-    kind: 'process-plant.procedure-csfs.evaluate',
+    kind: 'process-plant.assessments.evaluate',
     payload: {
-      systemId,
-      csfs,
+      plantId,
+      assessmentIds: csfs,
     },
   })
   const result = requireOkPackResult(body.response, 'procedure CSF evaluation failed')
-  return new Map(assertArray(result.csfs, 'procedure CSF evaluation returned no statuses').map(item => {
+  return new Map(assertArray(result.assessments, 'procedure CSF evaluation returned no statuses').map(item => {
     const row = assertRecord(item, 'procedure CSF row is malformed')
     const id = assertString(row.id, 'procedure CSF row requires id')
-    const label = assertString(row.label, 'procedure CSF row requires label')
+    const label = assertString(row.title, 'procedure CSF row requires title')
     const status = assertString(row.status, 'procedure CSF row requires status')
     const signalsRead = assertArray(row.signalsRead, 'procedure CSF row requires signalsRead')
     const signals = signalsRead.map(parseProcedureCsfSignalRead)

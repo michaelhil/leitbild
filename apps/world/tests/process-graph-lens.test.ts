@@ -1,17 +1,18 @@
 import { describe, expect, test } from 'bun:test'
 import {
   compilePlantGraph,
-  compileProcessSurface,
-  pressurizedWaterReactorPlantSpec,
-  processPlantUnitOverviewSurface,
+  compileProcessDisplay,
+  assemblePwrReferencePlantGraph,
+  processPlantUnitOverviewDisplay,
   processPlantComponentRegistry,
-  projectCompiledProcessSurface,
+  projectCompiledProcessDisplay,
   projectProcessGraph,
   type ComponentId,
   type ConnectionId,
   type ConnectionService,
 } from '../src/packs/process-plant/index.ts'
 
+const pressurizedWaterReactorPlantSpec = assemblePwrReferencePlantGraph({ loopCount: 4 })
 const graph = () => compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
 
 describe('process graph lens', () => {
@@ -144,10 +145,10 @@ describe('process graph lens', () => {
     })).toThrow('requires a service')
   })
 
-  test('projects compiled process surfaces from graph visibility without guessing by widget id', () => {
+  test('projects compiled process displays from graph visibility without guessing by widget id', () => {
     const compiled = graph()
-    const surface = compileProcessSurface({
-      definition: processPlantUnitOverviewSurface,
+    const display = compileProcessDisplay({
+      definition: processPlantUnitOverviewDisplay,
       graph: compiled,
     })
     const graphProjection = projectProcessGraph({
@@ -155,14 +156,14 @@ describe('process graph lens', () => {
       mode: 'service-layer',
       service: 'primaryCoolant' as ConnectionService,
     })
-    const surfaceProjection = projectCompiledProcessSurface({ surface, graphProjection })
+    const displayProjection = projectCompiledProcessDisplay({ display, graphProjection })
 
-    expect(surfaceProjection.visibleWidgets.map(widget => widget.id)).toContain('reactor-vessel')
-    expect(surfaceProjection.visibleWidgets.map(widget => widget.id)).toContain('rcp-a')
-    expect(surfaceProjection.visibleWidgets.map(widget => widget.id)).toContain('sg-a')
-    expect(surfaceProjection.visibleWidgets.map(widget => widget.id)).toContain('unit-status-banner')
-    expect(surfaceProjection.visiblePaths.map(path => path.id)).toContain('primary-hot-leg-a')
-    expect(surfaceProjection.visiblePaths.map(path => path.id)).not.toContain('turbine-exhaust-to-condenser')
-    expect(surfaceProjection.hiddenPaths.map(path => path.id)).toContain('turbine-exhaust-to-condenser')
+    expect(displayProjection.visibleWidgets.map(widget => widget.id)).toContain('reactor-vessel')
+    expect(displayProjection.visibleWidgets.map(widget => widget.id)).toContain('rcp-a')
+    expect(displayProjection.visibleWidgets.map(widget => widget.id)).toContain('sg-a')
+    expect(displayProjection.visibleWidgets.map(widget => widget.id)).toContain('unit-status-banner')
+    expect(displayProjection.visiblePaths.map(path => path.id)).toContain('primary-hot-leg-a')
+    expect(displayProjection.visiblePaths.map(path => path.id)).not.toContain('turbine-exhaust-to-condenser')
+    expect(displayProjection.hiddenPaths.map(path => path.id)).toContain('turbine-exhaust-to-condenser')
   })
 })

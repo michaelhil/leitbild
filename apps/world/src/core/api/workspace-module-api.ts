@@ -67,6 +67,16 @@ const queryPackInputSchema = z.object({
 const readObjectInputSchema = z.object({
   objectId: z.string().trim().min(1).max(128),
 }).strict()
+const historyTimestampSchema = z.string().datetime({ offset: true })
+const readHistoryInputSchema = z.object({
+  runtimeId: z.string().trim().min(1).max(128).optional(),
+  seriesId: z.string().trim().min(1).max(128).optional(),
+  subjectId: z.string().trim().min(1).max(128).optional(),
+  signalId: z.string().trim().min(1).max(512).optional(),
+  from: historyTimestampSchema.optional(),
+  to: historyTimestampSchema.optional(),
+  limit: z.number().int().positive().max(10_000).optional(),
+}).strict()
 const createScenarioInputSchema = z.object({ source: scenarioSourceSchema }).strict()
 const scenarioWriteInputJsonSchema = z.toJSONSchema(createScenarioInputSchema, { unrepresentable: 'any' })
 
@@ -178,6 +188,7 @@ const scenarioSections = (definition: {
   readonly packs: ReadonlyArray<string>
   readonly packRuntimes: Readonly<Record<string, unknown>>
   readonly packConfigs: Readonly<Record<string, unknown>>
+  readonly recording: ReadonlyArray<unknown>
   readonly world: unknown
   readonly initialObjects: ReadonlyArray<{
     readonly id: string
@@ -204,11 +215,12 @@ const scenarioSections = (definition: {
     packs: definition.packs,
     packRuntimes: definition.packRuntimes,
     packConfigs: definition.packConfigs,
+    recording: definition.recording,
   },
 }, {
   id: 'assets',
   title: 'Initial assets',
-  description: 'Initial operational assets. Pack-owned systems and settings remain inside each Pack configuration above.',
+  description: 'Initial operational assets compiled from the Scenario Items above.',
   data: {
     summary: {
       operationalObjects: definition.initialObjects.length,
@@ -321,7 +333,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'definition', definitionType: SCENARIO_DEFINITION_TYPE },
       title: 'Inspect Scenario',
-      description: 'Shows the exact Scenario Revision configuration, Packs, initial assets, process systems, and timeline.',
+      description: 'Shows the exact Scenario Revision configuration, Packs, initial assets, Plants, and timeline.',
       risk: 'read',
       idempotent: true,
       inputSchema: z.toJSONSchema(emptyInputSchema),
@@ -629,6 +641,38 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       return object
         ? json({ result: object })
         : apiError(404, 'operational_object_not_found', 'Operational Object not found')
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.history',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Read Simulation History',
+      description: 'Discovers recorded series and reads bounded historical samples selected by Scenario Recording Profiles.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: z.toJSONSchema(readHistoryInputSchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async (registry, invocation) => {
+      const runtime = await registry.load(requireSimulationRunResource(invocation))
+      const input = readHistoryInputSchema.parse(invocation.input)
+      const query = {
+        ...(input.runtimeId === undefined ? {} : { runtimeId: input.runtimeId }),
+        ...(input.seriesId === undefined ? {} : { seriesId: input.seriesId }),
+        ...(input.subjectId === undefined ? {} : { subjectId: input.subjectId }),
+        ...(input.signalId === undefined ? {} : { signalId: input.signalId }),
+        ...(input.from === undefined ? {} : { from: new Date(input.from).toISOString() }),
+        ...(input.to === undefined ? {} : { to: new Date(input.to).toISOString() }),
+        ...(input.limit === undefined ? {} : { limit: input.limit }),
+      }
+      return json({ result: {
+        status: runtime.recordingStatus(),
+        series: runtime.recordingSeries(),
+        samples: runtime.recordedSamples(query),
+      } })
     },
   },
   {

@@ -2,7 +2,6 @@ import type {
   ComponentBehaviorDefinition,
   ComponentInitialReconciliationDefinition,
 } from '../behavior-contract.ts'
-import type { ComponentKind } from '../../graph/index.ts'
 import { accumulatorBehaviorDefinitions } from './accumulator-behaviors.ts'
 import { balanceOfPlantBehaviorDefinitions } from './balance-of-plant-behaviors.ts'
 import { containmentBehaviorDefinitions } from './containment-behaviors.ts'
@@ -73,29 +72,3 @@ export const componentInitialReconciliationDefinitions: ReadonlyArray<ComponentI
   ...pumpInitialReconciliationDefinitions,
   ...electricalInitialReconciliationDefinitions,
 ]
-
-export const processPlantComponentBehaviorSourcePathByKind: ReadonlyMap<ComponentKind, string> = new Map([
-  ['reactorCore' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/reactor-behaviors.ts'],
-  ['reactorVessel' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/reactor-behaviors.ts'],
-  ['processTank' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/balance-of-plant-behaviors.ts'],
-  ['turbineLoadSink' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/balance-of-plant-behaviors.ts'],
-  ['condenserSink' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/balance-of-plant-behaviors.ts'],
-  ['heatExchanger' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/heat-exchanger-behaviors.ts'],
-  ['containmentVolume' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/containment-behaviors.ts'],
-  ['accumulator' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/accumulator-behaviors.ts'],
-  ['processHeader' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/junction/header-behaviors.ts'],
-  ['steamHeader' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/junction/header-behaviors.ts'],
-  ['processValve' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/junction/valve-behaviors.ts'],
-  ['steamValve' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/junction/valve-behaviors.ts'],
-  ['electricalGridSource' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/electrical-behaviors.ts'],
-  ['electricalBus' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/electrical-behaviors.ts'],
-  ['electricalBreaker' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/electrical-behaviors.ts'],
-  ['electricalTransformer' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/electrical-behaviors.ts'],
-  ['dieselGenerator' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/electrical-behaviors.ts'],
-  ['battery' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/electrical-behaviors.ts'],
-  ['inverter' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/electrical-behaviors.ts'],
-  ['electricalLoad' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/electrical-behaviors.ts'],
-  ['centrifugalPump' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/pump-behaviors.ts'],
-  ['steamGenerator' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/steam-generator-behaviors.ts'],
-  ['pressurizer' as ComponentKind, 'src/packs/process-plant/runtime/behaviors/pressurizer-behaviors.ts'],
-])

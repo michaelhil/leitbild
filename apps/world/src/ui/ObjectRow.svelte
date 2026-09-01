@@ -4,7 +4,7 @@
   import type { PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../core/packs/protocol.ts'
   import IconButton from './components/IconButton.svelte'
   import StatusIndicator from './components/StatusIndicator.svelte'
-  import type { ProcessPlantArtifactKind } from './process-surface/process-surface-client.ts'
+  import type { ProcessPlantArtifactKind } from './process-display/process-display-client.ts'
   import ProcedureRunBadges from './procedures/ProcedureRunBadges.svelte'
   import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from './procedures/procedure-run-selectors.ts'
 
@@ -21,7 +21,7 @@
     readonly selectObject: (object: OperationalObject) => void
     readonly deleteObject: (object: OperationalObject) => Promise<void>
     readonly detailPresentationFor?: (object: OperationalObject) => PackObjectPresentation
-    readonly openProcessSurface?: (object: OperationalObject) => void
+    readonly openProcessDisplay?: (object: OperationalObject) => void
     readonly openProcedureSystem?: (object: OperationalObject) => void
     readonly openProcedureSystemAt?: (object: OperationalObject, summary?: ProcedureRunSummary) => void
     readonly openProcessPlantArtifact?: (object: OperationalObject, artifact: ProcessPlantArtifactKind) => void
@@ -44,7 +44,7 @@
     selectObject,
     deleteObject,
     detailPresentationFor,
-    openProcessSurface,
+    openProcessDisplay,
     openProcedureSystem,
     openProcedureSystemAt,
     openProcessPlantArtifact,
@@ -101,13 +101,13 @@
     markSeen(object)
   }
 
-  const processSurfaceAvailable = $derived(object.packId === 'process-plant' && openProcessSurface !== undefined)
+  const processDisplayAvailable = $derived(object.packId === 'process-plant' && openProcessDisplay !== undefined)
   const processSystemIdAvailable = $derived.by((): boolean => {
     const data = object.packData
     return typeof data === 'object'
       && data !== null
       && !Array.isArray(data)
-      && typeof (data as Record<string, unknown>).systemId === 'string'
+      && typeof (data as Record<string, unknown>).plantId === 'string'
   })
   const procedureSystemAvailable = $derived(
     object.packId === 'process-plant'
@@ -185,14 +185,14 @@
             new
           </button>
         {/if}
-        {#if processSurfaceAvailable}
+        {#if processDisplayAvailable}
           <IconButton
             label="Open process display for {object.label}"
             title="Open process display"
             icon={MonitorCog}
             size={13}
             variant="bare"
-            onClick={() => openProcessSurface?.(object)}
+            onClick={() => openProcessDisplay?.(object)}
           />
         {/if}
         {#if procedureSystemAvailable}

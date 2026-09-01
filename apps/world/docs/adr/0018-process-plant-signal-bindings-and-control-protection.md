@@ -17,26 +17,26 @@ The Leitbild PWR operations wiki already uses procedure tags and simulator bindi
 
 ## Decision
 
-Process signal identity is graph-owned metadata compiled into each process system.
+Process signal identity is graph-owned metadata compiled into each Plant.
 
 The source of truth for a process signal is the compiled variable:
 
 ```text
-{ simulationRunId, systemId, variablePath }
+{ simulationRunId, plantId, variablePath }
 ```
 
-`systemId` is always explicit. There is no implicit current unit, fleet-wide alias, or shared cross-unit namespace. Multi-unit scenarios are represented as multiple independent process systems.
+`plantId` is always explicit. There is no implicit current Plant, fleet-wide alias, or shared cross-Plant namespace. Multi-Plant scenarios contain multiple independent Plants.
 
 Component and link variable descriptors may declare:
 
 - `tagId`: a procedure/operator-facing signal identifier such as `PT-455`
 - `equipmentId`: the equipment or component reference associated with the signal
 - `description`: a concise human/agent description
-- `externalRefs`: optional stable external references, including `process-plant://{systemId}/{variablePath}` when useful
+- `externalRefs`: optional stable external references, including `process-plant://{plantId}/{variablePath}` when useful
 - `capabilities`: optional operational visibility metadata when the derived defaults are insufficient
 - `limits`: optional normal, operating, hard, and alarm ranges
 
-`tagId` is unique only within one compiled process system. The same tag can exist in another system because API calls include `systemId`.
+`tagId` is unique only within one compiled Plant. The same tag can exist in another Plant because API calls include `plantId`.
 
 The previous `sensorId` and `actuatorId` split is rejected. A signal is one identity. Whether it can be written is determined by the variable descriptor's `writable` flag.
 
@@ -51,7 +51,7 @@ The process-plant compiler builds a signal index from graph variables:
 - searchable by text, tag, equipment, quantity, domain, writable flag, and publication policy
 - carrying compiled capabilities and limits
 
-No separate binding table is introduced in V1.
+No separate binding table is introduced.
 
 The pack query/API surface resolves tags directly:
 
@@ -60,7 +60,7 @@ The pack query/API surface resolves tags directly:
   "packId": "process-plant",
   "kind": "process-plant.signals.read",
   "payload": {
-    "systemId": "unit-1",
+    "plantId": "unit-1",
     "signals": [{ "tagId": "PT-455" }]
   }
 }
@@ -72,7 +72,7 @@ Commands use the same explicit signal reference shape:
 {
   "kind": "process-plant.control.write",
   "payload": {
-    "systemId": "unit-1",
+    "plantId": "unit-1",
     "tagId": "PORV-456A",
     "value": 1
   }
@@ -94,7 +94,7 @@ The substrate is layered:
 
 External procedures remain outside the process-plant pack for now. A procedure runner, human operator, or AI agent can ask "what is this signal value?" and "is this named condition true?", then issue a command through the normal command path. The process-plant pack exposes the facts and condition evaluation surface needed for procedures, but it does not own the procedure document, procedure branching state, or human/AI procedure execution policy.
 
-The implemented V1 I&C rule language supports only typed primitives:
+The I&C rule language supports only typed primitives:
 
 - variable comparison/equality
 - `all`, `any`, `not`, and voting conditions
@@ -104,17 +104,13 @@ The implemented V1 I&C rule language supports only typed primitives:
 - effects: `alarm.enter`, `trip.enter`, and `writeSignal`
 - command gates for permissives and interlocks
 
-Arbitrary expressions, user-authored code, and hidden procedure engines are out of scope for V1.
+Arbitrary expressions, user-authored code, and hidden procedure engines are out of scope.
 
-The runtime now performs semantic validation before a process system starts. `alarm` rules may only emit alarm lifecycle effects. `normalControl` rules may only request validated writes. `protection` rules may only emit trip lifecycle effects and/or request validated writes. `permissive` and `interlock` rules must use `commandGates` and must not emit lifecycle effects. This keeps the I&C vocabulary small but real, and prevents a rule from pretending to be one kind of automation while behaving like another.
+The runtime now performs semantic validation before a Plant starts. `alarm` rules may only emit alarm lifecycle effects. `normalControl` rules may only request validated writes. `protection` rules may only emit trip lifecycle effects and/or request validated writes. `permissive` and `interlock` rules must use `commandGates` and must not emit lifecycle effects. This keeps the I&C vocabulary small but real, and prevents a rule from pretending to be one kind of automation while behaving like another.
 
 Command gates use the same signal-reference shape as reads and writes. A permissive gate must evaluate true before the target write is accepted. An interlock gate blocks the target write when its condition evaluates true. Gates apply to external operator, AI, scenario, and internal I&C write requests through the same queued write path; there is no privileged bypass. Gate conditions are evaluated against the current fixed-step runtime snapshot, not against un-applied queued commands.
 
-Definitions may be provided by process-plant catalog contributions, process-system configuration, or scenario provider configuration. Reusable graph/assembly contributions may ship I&C refs for their plant model; a scenario may enable an I&C ref or provide inline rules for one explicit `systemId`. There is no fleet-wide I&C definition and no cross-system defaulting.
-
-Reference I&C definitions are explicit, not automatic. Fixed refs such as `process-plant.pressurized-water-reactor.ic.v1` may target a specific reference graph. Graph-aware refs such as `process-plant.pwr.reference.graph.ic.v2` may derive their loop set from the compiled graph, which keeps assembled plant variants from duplicating I&C definitions. The reference behavior is plant automation and annunciation only. It may energize simple automatic controls, actuate protection-like reference functions, emit alarm/trip lifecycle state, and expose condition truth. It must not encode emergency procedures, diagnosis trees, operator instructions, or external procedure branch state.
-
-For V1, `icRef` and inline `protection` are mutually exclusive for one system. The pack rejects both together so scenarios cannot accidentally rely on hidden merge order.
+Each Scenario Plant selects one Automation Definition compatible with its Plant Model. The Automation Definition derives its exact signals and loop set from the compiled graph. There is no inline protection overlay, merge order, fleet-wide I&C definition, or cross-Plant defaulting. Reference automation may energize normal controls, actuate protection functions, emit alarm/trip lifecycle state, and expose condition truth. It must not encode emergency procedures, diagnosis trees, operator instructions, or external procedure branch state.
 
 ## Runtime Ordering
 
@@ -125,7 +121,7 @@ Each provider tick uses this order:
 3. Evaluate control/protection rules against the completed tick snapshot.
 4. Queue any rule writes for the next solver tick.
 5. Emit alarm/trip interaction signals for state transitions.
-6. Record telemetry/read-only trend samples.
+6. Emit selected observations to the optional Run Historian.
 
 This keeps continuous physics single-sourced in the variable table and prevents mid-solver mutation.
 
@@ -152,17 +148,17 @@ Pack commands:
 - `process-plant.control.write`
 - `process-plant.ic.lifecycle`
 
-`process-plant.conditions.evaluate` accepts one explicit `systemId` and a typed condition. It returns `matches` plus the full list of signal reads used during evaluation, including compound condition children. This makes external procedure/AI reasoning inspectable without letting process-plant execute the procedure itself.
+`process-plant.conditions.evaluate` accepts one explicit `plantId` and a typed condition. It returns `matches` plus the full list of signal reads used during evaluation, including compound condition children. This makes external procedure/AI reasoning inspectable without letting process-plant execute the procedure itself.
 
 `process-plant.procedure-tags.validate` accepts extracted procedure tag appendix rows and resolves them against the same graph-owned signal bindings. It reports missing tags and metadata mismatches for optional `simPath`, `units`, and `equipment` fields. It does not parse procedure documents, decide procedure branches, or create a second simulator-binding table.
 
 `process-plant.control.validate` accepts the same payload shape as `process-plant.control.write` and dry-runs the same validation path: signal resolution, writable-signal check, type and hard-range validation, and permissive/interlock evaluation. It is read-only and exists so operator surfaces, scenario tooling, and AI agents can explain whether an action is currently allowed before issuing it.
 
-`process-plant.ic.catalog` exposes configured rule metadata for one explicit process system: rule class, mode label, watched signals, write effects, command gates, and annunciator metadata. It is an inspection surface, not an execution path.
+`process-plant.ic.catalog` exposes configured rule metadata for one explicit Plant: rule class, mode label, watched signals, write effects, command gates, and annunciator metadata. It is an inspection surface, not an execution path.
 
 `process-plant.ic.lifecycle` accepts one explicit lifecycle action for one alarm/trip lifecycle id. Lifecycle actions affect acknowledgement, reset, suppression, and shelving state only; they do not alter process variables and do not execute procedure logic. The payload may include operator/client provenance such as `reason` and may include `shelveDurationMs` for time-bounded shelving.
 
-`process-plant.ic.status` returns current rule, alarm, trip, and failure state for one explicit process system. Alarm/trip state includes active, acknowledged, latched, suppressed, shelved, resettable, phase, first-out, transition timestamps, and transition counts. Acknowledgement is an explicit command and never clears the underlying condition.
+`process-plant.ic.status` returns current rule, alarm, trip, and failure state for one explicit Plant. Alarm/trip state includes active, acknowledged, latched, suppressed, shelved, resettable, phase, first-out, transition timestamps, and transition counts. Acknowledgement is an explicit command and never clears the underlying condition.
 
 `process-plant.alarms.status`, `process-plant.alarms.summary`, and `process-plant.alarms.history` are alarm-board and AI-monitor views over the same pack-owned lifecycle state. They expose current alarms/trips, grouped summary counts, first-out entries, and bounded transition history with actor/client/reason provenance. They do not create a second alarm state store.
 
@@ -171,7 +167,7 @@ Pack commands:
 - AI agents can resolve procedure tags directly through the process-plant pack query surface.
 - Procedure bindings live with the graph that defines the plant; they cannot silently diverge into a side table.
 - `tagId` is readable and compact for operators, while `variablePath` remains stable and code-friendly.
-- Multi-unit scenarios stay simple: every read/write includes `systemId`.
+- Multi-Plant scenarios stay simple: every read/write includes `plantId`.
 - Writable controls and read-only indications use the same signal shape and differ only by `writable`.
 - Control/protection behavior is deterministic, replayable, and testable without adding a general scripting engine.
 - Interaction signals are used for alarms/trips and operator-facing notifications, not for continuous physics.
@@ -182,9 +178,9 @@ Pack commands:
 
 - Do not reintroduce `sensorId` or `actuatorId`.
 - Do not add a separate binding catalog unless graph-owned signal metadata hits a documented limitation.
-- Do not allow tag lookup without explicit `systemId`.
+- Do not allow tag lookup without explicit `plantId`.
 - Do not add unit-context aliases, fleet-level shortcuts, or cross-unit defaulting.
-- Do not make procedure tags globally unique across independent process systems.
+- Do not make procedure tags globally unique across independent Plants.
 - Do not let control/protection rules write variables directly during a solver phase.
 - Do not add arbitrary expression evaluation, JavaScript snippets, or generated runtime code to scenario-authored protection rules.
 - Do not hide API failures behind fallbacks from tag to path or path to tag.
@@ -192,4 +188,4 @@ Pack commands:
 - Do not turn reference I&C behavior into a second procedure system. Procedure documents and procedure execution remain external.
 - Do not model normal controllers, protection functions, alarms, permissives, and interlocks as unrelated mechanisms. They are one I&C substrate with distinct semantics.
 - Do not model alarms only as transient events. Current alarm state is authoritative pack-owned state and transition events are history.
-- Do not add fleet-wide protection, alarm, or condition state. Every I&C definition and state belongs to one explicit process system.
+- Do not add fleet-wide protection, alarm, or condition state. Every I&C definition and state belongs to one explicit Plant.

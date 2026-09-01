@@ -1,13 +1,15 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import {
-  compileProcessPlantSystem,
-  createProcessPlantTelemetryRecorder,
+  compileProcessPlant,
+  createPwrReferencePlantDefinition,
   createProcessPlantRuntime,
-  processPlantPwrReferenceAssemblyRef,
-  type ProcessPlantTelemetrySeries,
   type VariablePath,
 } from '../../src/packs/process-plant/index.ts'
+import {
+  createProcessPlantTelemetryRecorder,
+  type ProcessPlantTelemetrySeries,
+} from '../../src/packs/process-plant/engineering/index.ts'
 
 const durationMs = 180_000
 const stepMs = 100
@@ -269,14 +271,13 @@ const csvRows = (telemetry: ReadonlyArray<ProcessPlantTelemetrySeries>): string 
 }
 
 const run = async (): Promise<void> => {
-  const system = compileProcessPlantSystem({
+  const system = compileProcessPlant(createPwrReferencePlantDefinition({
     id: 'balance-trace',
-    assemblyRef: processPlantPwrReferenceAssemblyRef,
-    assemblyConfig: { loopCount: 4, title: 'Feedwater Balance Trace' },
-  })
+    title: 'Feedwater Balance Trace',
+  }))
   const runtime = createProcessPlantRuntime({ system })
   const telemetry = createProcessPlantTelemetryRecorder({
-    systemId: system.id,
+    plantId: system.id,
     telemetry: {
       sampleIntervalMs,
       variables: telemetryVariables.map(variablePath),

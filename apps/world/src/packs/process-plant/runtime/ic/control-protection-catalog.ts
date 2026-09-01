@@ -1,4 +1,4 @@
-import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
+import type { CompiledProcessPlant } from '../../plant-compiler.ts'
 import { processPlantSignalView, resolveProcessPlantSignalBinding } from '../../signals.ts'
 import type { ProcessPlantSignalReference, ProcessPlantSignalView } from '../../signals.ts'
 import type { ProcessPlantIcCondition, ProcessPlantIcEffect, ProcessPlantIcRule } from './control-protection-model.ts'
@@ -30,7 +30,7 @@ export interface ProcessPlantIcRuleCatalogEntry {
 }
 
 export interface ProcessPlantIcCatalog {
-  readonly systemId: string
+  readonly plantId: string
   readonly ruleCount: number
   readonly rules: ReadonlyArray<ProcessPlantIcRuleCatalogEntry>
 }
@@ -51,7 +51,7 @@ const collectConditionSignals = (
 }
 
 const uniqueSignalViews = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   references: ReadonlyArray<ProcessPlantSignalReference>,
 ): ReadonlyArray<ProcessPlantSignalView> => {
   const byPath = new Map<string, ProcessPlantSignalView>()
@@ -63,7 +63,7 @@ const uniqueSignalViews = (
 }
 
 const effectCatalogEntry = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   effect: ProcessPlantIcEffect,
 ): ProcessPlantIcEffectCatalogEntry => {
   if (effect.type === 'writeSignal') {
@@ -84,10 +84,10 @@ const effectCatalogEntry = (
 }
 
 export const catalogForProcessPlantIcRules = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   rules: ReadonlyArray<ProcessPlantIcRule>,
 ): ProcessPlantIcCatalog => ({
-  systemId: system.id,
+  plantId: system.id,
   ruleCount: rules.length,
   rules: rules.map(rule => {
     const watchedSignals: ProcessPlantSignalReference[] = []

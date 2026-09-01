@@ -1,5 +1,5 @@
 import type { CompiledComponent } from '../graph/index.ts'
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
+import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import { componentVariablePath } from './behavior-contract.ts'
 import type { ProcessPlantVariableHandle, ProcessPlantVariableTable } from './variable-table.ts'
 
@@ -174,19 +174,19 @@ export interface PwrTransientDiagnostics {
 }
 
 const componentOfKind = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   kind: string,
 ): CompiledComponent | null =>
   system.graph.components.find(component => String(component.kind) === kind) ?? null
 
 const componentById = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   id: string,
 ): CompiledComponent | null =>
   system.graph.components.find(component => String(component.id) === id) ?? null
 
 const componentsOfKind = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   kind: string,
 ): ReadonlyArray<CompiledComponent> =>
   system.graph.components.filter(component => String(component.kind) === kind)
@@ -286,7 +286,7 @@ const maxAbs = (
 }
 
 export const compilePwrTransientKernel = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   table: ProcessPlantVariableTable,
 ): PwrTransientKernel => {
   const steamGenerators = componentsOfKind(system, 'steamGenerator')

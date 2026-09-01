@@ -7,7 +7,7 @@
   import { X } from 'lucide-svelte'
   import CategorySection from './CategorySection.svelte'
   import IconButton from './components/IconButton.svelte'
-  import type { ProcessPlantArtifactKind } from './process-surface/process-surface-client.ts'
+  import type { ProcessPlantArtifactKind } from './process-display/process-display-client.ts'
   import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from './procedures/procedure-run-selectors.ts'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import type { CategoryRow } from './types.ts'
@@ -47,7 +47,7 @@
     readonly markSeen: (object: OperationalObject) => void
     readonly selectObject: (object: OperationalObject) => void
     readonly deleteObject: (object: OperationalObject) => Promise<void>
-    readonly openProcessSurface?: (object: OperationalObject) => void
+    readonly openProcessDisplay?: (object: OperationalObject) => void
     readonly openProcedureSystem?: (object: OperationalObject) => void
     readonly openProcedureSystemAt?: (object: OperationalObject, summary?: ProcedureRunSummary) => void
     readonly openProcessPlantArtifact?: (object: OperationalObject, artifact: ProcessPlantArtifactKind) => void
@@ -92,7 +92,7 @@
     markSeen,
     selectObject,
     deleteObject,
-    openProcessSurface,
+    openProcessDisplay,
     openProcedureSystem,
     openProcedureSystemAt,
     openProcessPlantArtifact,
@@ -211,7 +211,7 @@
       {selectObject}
       {deleteObject}
       {detailPresentationFor}
-      {openProcessSurface}
+      {openProcessDisplay}
       {openProcedureSystem}
       {openProcedureSystemAt}
       {openProcessPlantArtifact}

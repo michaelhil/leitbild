@@ -22,7 +22,7 @@ const source = {
   sourceUrl: 'https://github.com/leitbild-wikis/pwr-ops/tree/main/wiki/procedures',
 }
 const unitScope = {
-  systemId: 'halden-unit-a',
+  plantId: 'halden-unit-a',
   label: 'Halden Unit A',
 } as const
 
@@ -151,7 +151,7 @@ describe('procedure run selectors', () => {
       ...activeRun,
       runId: 'procedure-run:test-b',
       scope: {
-        systemId: 'halden-unit-b',
+        plantId: 'halden-unit-b',
         label: 'Halden Unit B',
       },
     } satisfies ProcedureRunState

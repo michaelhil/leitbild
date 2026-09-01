@@ -17,6 +17,7 @@ export interface ScenarioSourceRecord {
   title: string
   description?: string
   objectives: Array<string>
+  recording: Array<{ packId: string; profileId: string; intervalMs?: number }>
   packs: Array<ScenarioPackSelectionRecord>
   world: { startsAt: string; environment: Record<string, unknown> }
   view: {
@@ -61,6 +62,7 @@ export const createEmptyScenarioSource = (): ScenarioSourceRecord => ({
   id: `scenario-${crypto.randomUUID()}`,
   title: 'Untitled scenario',
   objectives: [],
+  recording: [],
   packs: [],
   world: { startsAt: new Date().toISOString(), environment: {} },
   view: {

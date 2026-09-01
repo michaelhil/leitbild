@@ -31,12 +31,12 @@ export const phaseForProcessPlantIcLifecycle = (
 }
 
 const signalIdFor = (
-  systemId: string,
+  plantId: string,
   ruleId: string,
   effectId: string,
   phase: string,
   elapsedMs: number,
-): SignalId => `process-plant:${systemId}:${ruleId}:${effectId}:${phase}:${Math.trunc(elapsedMs)}` as SignalId
+): SignalId => `process-plant:${plantId}:${ruleId}:${effectId}:${phase}:${Math.trunc(elapsedMs)}` as SignalId
 
 export const mutableLifecycleFor = (
   effect: Extract<ProcessPlantIcEffect, { readonly type: 'alarm.enter' | 'trip.enter' }>,
@@ -97,7 +97,7 @@ export const mutableLifecycleFor = (
 export const eventForProcessPlantIcLifecycleTransition = (config: {
   readonly simulationRunId: SimulationRunId
   readonly sourceRuntimeId: string
-  readonly systemId: string
+  readonly plantId: string
   readonly rule: ProcessPlantIcRule
   readonly lifecycle: ProcessPlantIcLifecycleState
   readonly transition: ProcessPlantIcLifecycleTransition
@@ -108,7 +108,7 @@ export const eventForProcessPlantIcLifecycleTransition = (config: {
 }): PackRuntimeEvent => {
   const at = nowIso()
   const signal: InteractionSignal = {
-    id: signalIdFor(config.systemId, config.rule.id, config.lifecycle.effectId, config.transition, config.elapsedMs),
+    id: signalIdFor(config.plantId, config.rule.id, config.lifecycle.effectId, config.transition, config.elapsedMs),
     simulationRunId: config.simulationRunId,
     at,
     source: { kind: 'simulation', id: config.sourceRuntimeId },
@@ -116,7 +116,7 @@ export const eventForProcessPlantIcLifecycleTransition = (config: {
     type: `process-plant.${config.lifecycle.kind}.${config.transition}`,
     severity: config.lifecycle.severity,
     payload: {
-      systemId: config.systemId,
+      plantId: config.plantId,
       ruleId: config.rule.id,
       ruleClass: config.rule.ruleClass,
       effectId: config.lifecycle.effectId,

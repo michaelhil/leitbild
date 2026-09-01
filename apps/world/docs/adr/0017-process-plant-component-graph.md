@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Accepted for the component-graph and solver boundaries. The former Scenario construction, catalog, schedule, telemetry, and Process Surface decisions are superseded by [ADR 0027](./0027-single-source-process-plants-and-run-historian.md).
 
 ## Context
 

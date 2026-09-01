@@ -12,15 +12,15 @@ import {
   type ProcessPlantCredibilityEvidenceCatalogEntry,
 } from '../catalog-contributions.ts'
 import type { CompiledPlantGraph } from '../graph/index.ts'
-import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
-import { requireSystem, success } from './common.ts'
+import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
+import { requirePlant, success } from './common.ts'
 
 const credibilityListPayloadSchema = z.object({
-  systemId: idSchema,
+  plantId: idSchema,
 }).strict()
 
 const credibilityReadPayloadSchema = z.object({
-  systemId: idSchema,
+  plantId: idSchema,
   evidenceId: idSchema,
   artifactId: idSchema,
 }).strict()
@@ -73,15 +73,15 @@ export const processPlantCredibilityEvidenceForGraph = (
 ): ReadonlyArray<ProcessPlantCredibilityEvidenceCatalogEntry> =>
   [...catalog.credibilityEvidenceById.values()].filter(evidence => evidence.appliesToGraph(graph))
 
-const evidenceForSystem = (system: ProcessPlantSystemRuntime): ReadonlyArray<ProcessPlantCredibilityEvidenceCatalogEntry> =>
-  processPlantCredibilityEvidenceForGraph(system.system.graph)
+const evidenceForSystem = (system: ProcessPlantRuntimeInstance): ReadonlyArray<ProcessPlantCredibilityEvidenceCatalogEntry> =>
+  processPlantCredibilityEvidenceForGraph(system.plant.graph)
 
 const requireEvidence = (
-  system: ProcessPlantSystemRuntime,
+  system: ProcessPlantRuntimeInstance,
   evidenceId: string,
 ): ProcessPlantCredibilityEvidenceCatalogEntry => {
   const evidence = evidenceForSystem(system).find(candidate => candidate.id === evidenceId)
-  if (!evidence) throw new Error(`process plant credibility evidence not found for system ${system.system.id}: ${evidenceId}`)
+  if (!evidence) throw new Error(`process plant credibility evidence not found for system ${system.plant.id}: ${evidenceId}`)
   return evidence
 }
 
@@ -96,24 +96,24 @@ const requireArtifact = (
 
 export const answerProcessPlantCredibilityQuery = (config: {
   readonly request: PackQueryRequest
-  readonly systems: ReadonlyMap<string, ProcessPlantSystemRuntime>
+  readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
   readonly at: IsoTimestamp
 }): PackQueryResponse | undefined => {
   if (!processPlantCredibilityQueryKinds.some(kind => kind === config.request.kind)) return undefined
   if (config.request.kind === 'process-plant.credibility.list') {
     const payload = credibilityListPayloadSchema.parse(config.request.payload)
-    const system = requireSystem(config.systems, payload.systemId)
+    const system = requirePlant(config.plants, payload.plantId)
     return success(config.request, {
-      systemId: payload.systemId,
+      plantId: payload.plantId,
       evidence: evidenceForSystem(system).map(evidenceRefView),
     }, config.at)
   }
   const payload = credibilityReadPayloadSchema.parse(config.request.payload)
-  const system = requireSystem(config.systems, payload.systemId)
+  const system = requirePlant(config.plants, payload.plantId)
   const evidence = requireEvidence(system, payload.evidenceId)
   const artifact = requireArtifact(evidence, payload.artifactId)
   return success(config.request, {
-    systemId: payload.systemId,
+    plantId: payload.plantId,
     evidence: evidenceRefView(evidence),
     artifact: artifactRefView(artifact),
     content: artifactContentFor(artifact.path),

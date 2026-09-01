@@ -1,4 +1,4 @@
-import type { ActorId, ClientId, CommandEnvelope, CommandResult, SimulationRunEvent, InteractionSignal, OperationalObject, Provenance, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
+import type { ActorId, ClientId, CommandEnvelope, CommandResult, SimulationRunEvent, InteractionSignal, OperationalObject, PackRuntimeRecordingBatch, Provenance, ScenarioRecordingSelection, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
 import type { IsoTimestamp, ObjectId, SimulationRunId } from '../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse, PackRuntimeClock } from '../core/packs/protocol.ts'
 
@@ -55,6 +55,7 @@ export interface PackRuntimeEmission {
   readonly type: 'event.emission'
   readonly events: ReadonlyArray<PackRuntimeEvent>
   readonly realtimeMessages?: ReadonlyArray<PackRuntimeRealtimeMessage>
+  readonly recording?: PackRuntimeRecordingBatch
   readonly emittedAt: IsoTimestamp
   readonly runtimeId: string
 }
@@ -113,4 +114,6 @@ export interface PackRuntimeConnectionConfig {
   readonly initialObjects?: ReadonlyArray<OperationalObject>
   readonly runtimeStateStore?: PackRuntimeStateStore
   readonly runtimeStateStores?: Readonly<Record<string, PackRuntimeStateStore>>
+  readonly recording?: ScenarioRecordingSelection
+  readonly recordingByRuntimeId?: Readonly<Record<string, ScenarioRecordingSelection>>
 }

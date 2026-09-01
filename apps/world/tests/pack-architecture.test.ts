@@ -391,6 +391,7 @@ describe('pack architecture', () => {
       packs: ['passive'],
       packRuntimes: {},
       packConfigs: {},
+      recording: [],
       initialObjects: [],
       surface: { schemaVersion: 1 as const, regions: [] },
     }

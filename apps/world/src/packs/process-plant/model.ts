@@ -1,5 +1,10 @@
 import { z } from 'zod'
 import { idSchema, isoTimestampSchema, type IsoTimestamp } from '../../core/model/index.ts'
+import {
+  processPlantAutomationSelectionSchema,
+  processPlantModelSelectionSchema,
+  processPlantOperatingPointSelectionSchema,
+} from './config.ts'
 
 export const processPlantPackId = 'process-plant' as const
 
@@ -24,9 +29,11 @@ export const processPlantUnitProjectionSchema = z.object({
 export type ProcessPlantUnitProjection = z.infer<typeof processPlantUnitProjectionSchema>
 
 export const processPlantUnitPackDataSchema = z.object({
-  type: z.literal('process-plant-unit'),
+  type: z.literal('process-plant'),
   schemaVersion: z.literal(1),
-  systemId: idSchema,
+  model: processPlantModelSelectionSchema,
+  operatingPoint: processPlantOperatingPointSelectionSchema,
+  automation: processPlantAutomationSelectionSchema,
   clusterId: idSchema.optional(),
   coolingWater: z.string().min(1).optional(),
   projection: processPlantUnitProjectionSchema.optional(),

@@ -1,6 +1,6 @@
 import type { SimulationRunId } from '../../../../core/model/index.ts'
 import type { PackRuntimeEvent } from '../../../../simulation/protocol.ts'
-import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
+import type { CompiledProcessPlant } from '../../plant-compiler.ts'
 import type { ProcessPlantSignalReference } from '../../signals.ts'
 import type { ProcessPlantRuntime } from '../model.ts'
 import { evaluateProcessPlantIcCondition } from './control-protection-conditions.ts'
@@ -75,7 +75,7 @@ export interface ProcessPlantProtectionRunner {
 }
 
 const shouldResetLatchedState = (config: {
-  readonly system: CompiledProcessPlantSystem
+  readonly system: CompiledProcessPlant
   readonly runtime: ProcessPlantRuntime
   readonly rule: ProcessPlantIcRule
 }): boolean => {
@@ -108,7 +108,7 @@ const assignFirstOut = (
 }
 
 const evaluateRuleCondition = (config: {
-  readonly system: CompiledProcessPlantSystem
+  readonly system: CompiledProcessPlant
   readonly runtime: ProcessPlantRuntime
   readonly rule: ProcessPlantIcRule
 }): boolean => {
@@ -128,7 +128,7 @@ const evaluateRuleCondition = (config: {
 }
 
 const evaluateAlarmClearCondition = (config: {
-  readonly system: CompiledProcessPlantSystem
+  readonly system: CompiledProcessPlant
   readonly runtime: ProcessPlantRuntime
   readonly rule: ProcessPlantIcRule
   readonly setConditionMatches: boolean
@@ -150,7 +150,7 @@ const evaluateAlarmClearCondition = (config: {
 }
 
 export const createProcessPlantProtectionRunner = (config: {
-  readonly system: CompiledProcessPlantSystem
+  readonly system: CompiledProcessPlant
   readonly protection: ProcessPlantIcConfig
   readonly restoredSnapshot?: ProcessPlantIcSnapshot
 }): ProcessPlantProtectionRunner => {
@@ -262,7 +262,7 @@ export const createProcessPlantProtectionRunner = (config: {
     return [eventForProcessPlantIcLifecycleTransition({
       simulationRunId: input.simulationRunId,
       sourceRuntimeId: input.sourceRuntimeId,
-      systemId: config.system.id,
+      plantId: config.system.id,
       rule: input.rule,
       lifecycle,
       transition: 'entered',
@@ -294,7 +294,7 @@ export const createProcessPlantProtectionRunner = (config: {
       events.push(eventForProcessPlantIcLifecycleTransition({
         simulationRunId: input.simulationRunId,
         sourceRuntimeId: input.sourceRuntimeId,
-        systemId: config.system.id,
+        plantId: config.system.id,
         rule,
         lifecycle,
         transition: 'shelveExpired',
@@ -338,7 +338,7 @@ export const createProcessPlantProtectionRunner = (config: {
       events.push(eventForProcessPlantIcLifecycleTransition({
         simulationRunId: input.simulationRunId,
         sourceRuntimeId: input.sourceRuntimeId,
-        systemId: config.system.id,
+        plantId: config.system.id,
         rule: input.rule,
         lifecycle,
         transition: 'cleared',
@@ -532,7 +532,7 @@ export const createProcessPlantProtectionRunner = (config: {
       events.push(eventForProcessPlantIcLifecycleTransition({
         simulationRunId: input.simulationRunId,
         sourceRuntimeId: input.sourceRuntimeId,
-        systemId: config.system.id,
+        plantId: config.system.id,
         rule,
         lifecycle,
         transition,

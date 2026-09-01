@@ -25,7 +25,7 @@ import { createSimulationRunSnapshotStore } from './snapshot-store.ts'
 import type { SimulationClockState, SimulationRunEvent } from '../model/index.ts'
 import { compiledScenarioDigest, createCompiledScenarioStore } from './compiled-scenario-store.ts'
 import { worldWorkspacePaths } from '../workspaces/paths.ts'
-import { createProcedureSourceService, type ProcedureSourceService } from '../procedures/source.ts'
+import { createProcedureSourceService, type ProcedureSourceService } from '../../features/procedures/source.ts'
 import { createLocalScenarioLibrary, type ScenarioLibrary, type ScenarioRecord, type ScenarioRevision, type ScenarioRevisionId } from '../scenarios/library.ts'
 import {
   createSimulationRunManifestStore,
@@ -33,6 +33,7 @@ import {
   simulationRunManifestSchema,
   type SimulationRunManifest,
 } from './manifest.ts'
+import { createRunHistorian } from '../../features/historian/store.ts'
 
 const maxRestoredEventHistoryBytes = 8 * 1024 * 1024
 
@@ -218,6 +219,7 @@ export const createSimulationRunRegistry = (config: {
         runtimes: [],
         operations: [],
         wikiRefs: [],
+        recording: { selections: [], profiles: [] },
       }
     }
     const activeRuntimeIds = new Set(scenarioRuntime.runtimes.map(runtime => runtime.runtimeId))
@@ -250,6 +252,18 @@ export const createSimulationRunRegistry = (config: {
       })).sort((left, right) => left.id.localeCompare(right.id)),
       operations,
       wikiRefs: scenarioRuntime.packs.flatMap(pack => pack.knowledge?.wikiRefs ?? []),
+      recording: {
+        selections: scenarioRuntime.scenario.recording,
+        profiles: scenarioRuntime.packs.flatMap(pack => {
+          const runtimeId = scenarioRuntime.runtimes.find(runtime => runtime.packId === pack.descriptor.id)?.runtimeId
+          if (runtimeId === undefined) return []
+          return (pack.recording?.profiles ?? []).map(profile => ({
+            ...profile,
+            packId: pack.descriptor.id,
+            runtimeId,
+          }))
+        }),
+      },
     }
   }
 
@@ -424,36 +438,59 @@ export const createSimulationRunRegistry = (config: {
     if (restoredSnapshot && restoredSnapshot.seq < maxEventSeq) {
       throw new Error(`snapshot sequence ${restoredSnapshot.seq} is behind event log sequence ${maxEventSeq} for ${id}`)
     }
-    const runtimeConnection = await createRuntimeHub(config.runtimeAdapters).connect({
-      simulationRunId: id,
-      scenario: {
-        scenarioId: scenarioRuntime.scenarioId,
-        runtimeIds: scenarioRuntime.runtimes.map(runtime => runtime.runtimeId),
-        world: scenarioRuntime.scenario.world,
-        initialObjects: scenarioRuntime.initialObjects,
-        runtimeConfigByRuntimeId: scenarioRuntime.runtimeConfigByRuntimeId,
-        runtimeConfig: {},
-      },
-      ...(restoredSnapshot ? { initialObjects: restoredSnapshot.objects } : {}),
-      runtimeStateStores,
-    })
-    const runtime = await createSimulationRunRuntime({
-      id,
-      runtimeConnection,
-      eventLog,
-      snapshotStore,
-      ...(interactionHandlers.length === 0 ? {} : { interactionHandlers }),
-      ...(restoredSnapshot ? { restoredSnapshot } : {}),
-      ...(restoredEvents.length === 0 ? {} : { restoredEvents }),
-      ...(createConfig?.initialSeq === undefined && maxEventSeq === 0 ? {} : { initialSeq: Math.max(createConfig.initialSeq ?? 0, maxEventSeq) }),
-      scenario: {
-        id: scenarioRuntime.scenarioId,
-        ...(scenarioRuntime.scenario.world.startsAt === undefined ? {} : { startsAt: scenarioRuntime.scenario.world.startsAt }),
-        ...(scenarioRuntime.scenario.timeline === undefined ? {} : { timeline: scenarioRuntime.scenario.timeline }),
-      },
-      capabilities: capabilitiesFor(scenarioRuntime, scenarioRevisionIdFromManifest(createConfig.manifest)),
-      procedureSourceService,
-    })
+    const recordingByRuntimeId = Object.fromEntries(scenarioRuntime.scenario.recording.map(selection => {
+      const runtime = scenarioRuntime.runtimes.find(candidate => candidate.packId === selection.packId)
+      if (!runtime) throw new Error(`recording selection has no active Pack Runtime: ${selection.packId}`)
+      return [runtime.runtimeId, selection]
+    }))
+    const historian = scenarioRuntime.scenario.recording.length === 0
+      ? undefined
+      : createRunHistorian(join(runDir, 'history.sqlite'))
+    let runtimeConnection
+    try {
+      runtimeConnection = await createRuntimeHub(config.runtimeAdapters).connect({
+        simulationRunId: id,
+        scenario: {
+          scenarioId: scenarioRuntime.scenarioId,
+          runtimeIds: scenarioRuntime.runtimes.map(runtime => runtime.runtimeId),
+          world: scenarioRuntime.scenario.world,
+          initialObjects: scenarioRuntime.initialObjects,
+          runtimeConfigByRuntimeId: scenarioRuntime.runtimeConfigByRuntimeId,
+          runtimeConfig: {},
+        },
+        ...(restoredSnapshot ? { initialObjects: restoredSnapshot.objects } : {}),
+        runtimeStateStores,
+        recordingByRuntimeId,
+      })
+    } catch (error) {
+      historian?.close()
+      throw error
+    }
+    let runtime
+    try {
+      runtime = await createSimulationRunRuntime({
+        id,
+        runtimeConnection,
+        eventLog,
+        snapshotStore,
+        ...(interactionHandlers.length === 0 ? {} : { interactionHandlers }),
+        ...(restoredSnapshot ? { restoredSnapshot } : {}),
+        ...(restoredEvents.length === 0 ? {} : { restoredEvents }),
+        ...(createConfig?.initialSeq === undefined && maxEventSeq === 0 ? {} : { initialSeq: Math.max(createConfig.initialSeq ?? 0, maxEventSeq) }),
+        scenario: {
+          id: scenarioRuntime.scenarioId,
+          ...(scenarioRuntime.scenario.world.startsAt === undefined ? {} : { startsAt: scenarioRuntime.scenario.world.startsAt }),
+          ...(scenarioRuntime.scenario.timeline === undefined ? {} : { timeline: scenarioRuntime.scenario.timeline }),
+        },
+        capabilities: capabilitiesFor(scenarioRuntime, scenarioRevisionIdFromManifest(createConfig.manifest)),
+        procedureSourceService,
+        ...(historian === undefined ? {} : { historian }),
+      })
+    } catch (error) {
+      await runtimeConnection.close()
+      historian?.close()
+      throw error
+    }
     simulationRuns.set(id, runtime)
     scheduleIdleRuntimeCloseIfUnleased(id)
     return runtime
@@ -514,6 +551,9 @@ export const createSimulationRunRegistry = (config: {
       rm(join(runDir, 'snapshot.json'), { force: true }),
       rm(join(runDir, 'events.jsonl'), { force: true }),
       rm(join(runDir, 'runtimes'), { recursive: true, force: true }),
+      rm(join(runDir, 'history.sqlite'), { force: true }),
+      rm(join(runDir, 'history.sqlite-wal'), { force: true }),
+      rm(join(runDir, 'history.sqlite-shm'), { force: true }),
     ])
     return createRuntime({
       manifest,

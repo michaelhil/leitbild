@@ -1,7 +1,7 @@
 import type { PackRuntimeConnectionConfig } from '../../../simulation/protocol.ts'
 import { defaultSimulationRunRuntimePolicy } from '../../../core/simulation-runs/runtime-persistence-policy.ts'
-import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
-import { runtimeStateForProcessPlantSystems } from './runtime-state.ts'
+import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
+import { runtimeStateForProcessPlants } from './runtime-state.ts'
 
 export interface ProcessPlantRuntimePersistence {
   readonly saveNow: () => Promise<void>
@@ -12,7 +12,7 @@ const runtimeStateFlushIntervalMs = defaultSimulationRunRuntimePolicy.runtimePri
 
 export const createProcessPlantRuntimePersistence = (config: {
   readonly connection: PackRuntimeConnectionConfig
-  readonly systems: ReadonlyMap<string, ProcessPlantSystemRuntime>
+  readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
 }): ProcessPlantRuntimePersistence => {
   let dirty = false
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -25,8 +25,8 @@ export const createProcessPlantRuntimePersistence = (config: {
   }
 
   const queueSave = async (): Promise<void> => {
-    if (!config.connection.runtimeStateStore || config.systems.size === 0) return
-    const state = runtimeStateForProcessPlantSystems(config.systems)
+    if (!config.connection.runtimeStateStore || config.plants.size === 0) return
+    const state = runtimeStateForProcessPlants(config.plants)
     const previousSave = saveQueue
     const save = async (): Promise<void> => {
       try {
@@ -54,7 +54,7 @@ export const createProcessPlantRuntimePersistence = (config: {
   }
 
   const scheduleSave = (): void => {
-    if (!config.connection.runtimeStateStore || config.systems.size === 0) return
+    if (!config.connection.runtimeStateStore || config.plants.size === 0) return
     dirty = true
     if (timer !== null) return
     timer = setTimeout(() => {

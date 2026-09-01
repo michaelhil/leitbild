@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1774" viewBox="0 0 1200 1774">
   <rect width="1200" height="1774" fill="#eef2f7"/>
   <text x="50" y="42" font-family="Inter, system-ui, sans-serif" font-size="26" font-weight="800" fill="#111827">PWR Credibility Target Report</text>
-  <text x="50" y="68" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#475569">Source-backed target envelopes against the modular PWR assembly. Gate failures: 0; watch misses: 0; wall 15594ms.</text>
+  <text x="50" y="68" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#475569">Source-backed target envelopes against the modular PWR assembly. Gate failures: 0; watch misses: 0; wall 15989ms.</text>
   <text x="50" y="92" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#64748b">Scope: operational/training credibility, not licensing-basis safety analysis.</text>
   
       <g>
@@ -12,7 +12,7 @@
           <rect x="0" y="-21" width="1096" height="30" rx="4" fill="#ffffff" stroke="#e5e7eb"/>
           <text x="12" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#15803d">PASS</text>
           <text x="82" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#111827">Pressurizer pressure remains in the reference operating band</text>
-          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 15.475 / target 14.8 to 15.8</text>
+          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 15.484 / target 14.8 to 15.8</text>
         </g>
         <g transform="translate(52 192)">
           <rect x="0" y="-21" width="1096" height="30" rx="4" fill="#f8fafc" stroke="#e5e7eb"/>
@@ -24,7 +24,7 @@
           <rect x="0" y="-21" width="1096" height="30" rx="4" fill="#ffffff" stroke="#e5e7eb"/>
           <text x="12" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#15803d">PASS</text>
           <text x="82" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#111827">Electric output remains in the reference plant range</text>
-          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 801.513 / target 650 to 950</text>
+          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 801.585 / target 650 to 950</text>
         </g>
       </g>
       <g>
@@ -47,7 +47,7 @@
           <rect x="0" y="-21" width="1096" height="30" rx="4" fill="#ffffff" stroke="#e5e7eb"/>
           <text x="12" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#15803d">PASS</text>
           <text x="82" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#111827">AFW recovery avoids SG dryout in the demo window</text>
-          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 25.102 / target &gt;= 5</text>
+          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 25.098 / target &gt;= 5</text>
         </g>
       </g>
       <g>
@@ -70,7 +70,7 @@
           <rect x="0" y="-21" width="1096" height="30" rx="4" fill="#ffffff" stroke="#e5e7eb"/>
           <text x="12" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#15803d">PASS</text>
           <text x="82" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#111827">Automatic AFW preserves usable SG heat transfer</text>
-          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 125.183 / target &gt;= 120</text>
+          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 125.184 / target &gt;= 120</text>
         </g>
       </g>
       <g>
@@ -116,13 +116,13 @@
           <rect x="0" y="-21" width="1096" height="30" rx="4" fill="#ffffff" stroke="#e5e7eb"/>
           <text x="12" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#15803d">PASS</text>
           <text x="82" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#111827">Steam bypass opens to absorb the load rejection</text>
-          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 510.577 / target &gt;= 100</text>
+          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 510.588 / target &gt;= 100</text>
         </g>
         <g transform="translate(52 860)">
           <rect x="0" y="-21" width="1096" height="30" rx="4" fill="#f8fafc" stroke="#e5e7eb"/>
           <text x="12" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#15803d">PASS</text>
           <text x="82" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#111827">Main steam pressure challenge is visible</text>
-          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 8.878 / target &gt;= 8.2</text>
+          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 8.861 / target &gt;= 8.2</text>
         </g>
       </g>
       <g>
@@ -133,19 +133,19 @@
           <rect x="0" y="-21" width="1096" height="30" rx="4" fill="#ffffff" stroke="#e5e7eb"/>
           <text x="12" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#15803d">PASS</text>
           <text x="82" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#111827">Pressurizer relief flow occurs during overpressure challenge</text>
-          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 87.518 / target &gt;= 10</text>
+          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 87.523 / target &gt;= 10</text>
         </g>
         <g transform="translate(52 976)">
           <rect x="0" y="-21" width="1096" height="30" rx="4" fill="#f8fafc" stroke="#e5e7eb"/>
           <text x="12" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#15803d">PASS</text>
           <text x="82" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#111827">Pressurizer pressure returns below high-trip challenge band</text>
-          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 15.491 / target 14.8 to 16.25</text>
+          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 15.538 / target 14.8 to 16.25</text>
         </g>
         <g transform="translate(52 1010)">
           <rect x="0" y="-21" width="1096" height="30" rx="4" fill="#ffffff" stroke="#e5e7eb"/>
           <text x="12" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#15803d">PASS</text>
           <text x="82" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#111827">Relief path is visible in primary inventory accounting</text>
-          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 87.632 / target &gt;= 5</text>
+          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 87.636 / target &gt;= 5</text>
         </g>
       </g>
       <g>
@@ -156,19 +156,19 @@
           <rect x="0" y="-21" width="1096" height="30" rx="4" fill="#ffffff" stroke="#e5e7eb"/>
           <text x="12" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#15803d">PASS</text>
           <text x="82" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#111827">SGTR produces measurable primary-to-secondary leakage</text>
-          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 110.712 / target 40 to 220</text>
+          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 110.430 / target 40 to 220</text>
         </g>
         <g transform="translate(52 1126)">
           <rect x="0" y="-21" width="1096" height="30" rx="4" fill="#f8fafc" stroke="#e5e7eb"/>
           <text x="12" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#15803d">PASS</text>
           <text x="82" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#111827">SGTR drains primary inventory</text>
-          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs -54049.012 / target -80000 to -8000</text>
+          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs -59179.070 / target -80000 to -8000</text>
         </g>
         <g transform="translate(52 1160)">
           <rect x="0" y="-21" width="1096" height="30" rx="4" fill="#ffffff" stroke="#e5e7eb"/>
           <text x="12" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#15803d">PASS</text>
           <text x="82" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#111827">Affected secondary radiation rises</text>
-          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 75.798 / target &gt;= 20</text>
+          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 75.712 / target &gt;= 20</text>
         </g>
       </g>
       <g>
@@ -179,19 +179,19 @@
           <rect x="0" y="-21" width="1096" height="30" rx="4" fill="#ffffff" stroke="#e5e7eb"/>
           <text x="12" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#15803d">PASS</text>
           <text x="82" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#111827">Primary boundary leak creates containment release flow</text>
-          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 891.933 / target &gt;= 50</text>
+          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 890.809 / target &gt;= 50</text>
         </g>
         <g transform="translate(52 1276)">
           <rect x="0" y="-21" width="1096" height="30" rx="4" fill="#f8fafc" stroke="#e5e7eb"/>
           <text x="12" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#15803d">PASS</text>
           <text x="82" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#111827">Containment pressure rises after release</text>
-          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 0.281 / target &gt;= 0.01</text>
+          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 0.232 / target &gt;= 0.01</text>
         </g>
         <g transform="translate(52 1310)">
           <rect x="0" y="-21" width="1096" height="30" rx="4" fill="#ffffff" stroke="#e5e7eb"/>
           <text x="12" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#15803d">PASS</text>
           <text x="82" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#111827">Accumulator injects after depressurization</text>
-          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 52.357 / target &gt;= 1</text>
+          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs 51.763 / target &gt;= 1</text>
         </g>
       </g>
       <g>

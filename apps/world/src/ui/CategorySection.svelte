@@ -3,7 +3,7 @@
   import type { OperationalObject } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
   import IconButton from './components/IconButton.svelte'
-  import type { ProcessPlantArtifactKind } from './process-surface/process-surface-client.ts'
+  import type { ProcessPlantArtifactKind } from './process-display/process-display-client.ts'
   import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from './procedures/procedure-run-selectors.ts'
   import FieldVisibilityMenu from './FieldVisibilityMenu.svelte'
   import ObjectRow from './ObjectRow.svelte'
@@ -30,7 +30,7 @@
     readonly selectObject: (object: OperationalObject) => void
     readonly deleteObject: (object: OperationalObject) => Promise<void>
     readonly detailPresentationFor?: (object: OperationalObject) => PackObjectPresentation
-    readonly openProcessSurface?: (object: OperationalObject) => void
+    readonly openProcessDisplay?: (object: OperationalObject) => void
     readonly openProcedureSystem?: (object: OperationalObject) => void
     readonly openProcedureSystemAt?: (object: OperationalObject, summary?: ProcedureRunSummary) => void
     readonly openProcessPlantArtifact?: (object: OperationalObject, artifact: ProcessPlantArtifactKind) => void
@@ -61,7 +61,7 @@
     selectObject,
     deleteObject,
     detailPresentationFor,
-    openProcessSurface,
+    openProcessDisplay,
     openProcedureSystem,
     openProcedureSystemAt,
     openProcessPlantArtifact,
@@ -136,7 +136,7 @@
         {selectObject}
         {deleteObject}
         {detailPresentationFor}
-        {openProcessSurface}
+        {openProcessDisplay}
         {openProcedureSystem}
         {openProcedureSystemAt}
         {openProcessPlantArtifact}

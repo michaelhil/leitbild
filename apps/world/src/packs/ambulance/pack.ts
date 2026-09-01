@@ -19,6 +19,7 @@ import {
   type InjurySummary,
 } from './model.ts'
 import { ambulanceSimRuntimeId } from './sim/constants.ts'
+import { ambulanceRecordingProfiles } from './recording.ts'
 import { createAmbulanceArrivalInteractionHandler } from './sim/interactions.ts'
 import { ambulanceScenarioSupport } from './scenario.ts'
 
@@ -265,7 +266,7 @@ export const ambulancePack: WorldPack = {
     id: 'ambulance',
     version: '1.0.0',
     name: 'Ambulance Dispatch',
-    contributions: ['runtime', 'scenario', 'presentation', 'creation', 'targeting', 'interactions'],
+    contributions: ['runtime', 'recording', 'scenario', 'presentation', 'creation', 'targeting', 'interactions'],
   }),
   scenarioConfigSchema: emptyPackScenarioConfigSchema,
   authoring: {
@@ -317,6 +318,7 @@ export const ambulancePack: WorldPack = {
     ],
     defaultRuntimeId: ambulanceSimRuntimeId,
   },
+  recording: { profiles: ambulanceRecordingProfiles },
   scenario: ambulanceScenarioSupport,
   presentation: {
     categories: [

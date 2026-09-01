@@ -1,5 +1,5 @@
 import type { CompiledComponent, CompiledProcessLink, VariablePath } from '../graph/index.ts'
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
+import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import type { ProcessPlantSolverPhase, ProcessPlantValue } from './model.ts'
 import type { ProcessPlantVariableTable } from './variable-table.ts'
 import { assertProcessPlantValueIsFinite } from './variable-validation.ts'
@@ -59,7 +59,7 @@ export interface ComponentBehaviorDefinition {
   readonly reads: ReadonlyArray<string>
   readonly writes: ReadonlyArray<string>
   readonly update: (input: {
-    readonly system: CompiledProcessPlantSystem
+    readonly system: CompiledProcessPlant
     readonly component: CompiledComponent
     readonly context: ProcessPlantBehaviorContext
   }) => void
@@ -71,7 +71,7 @@ export interface ComponentInitialReconciliationDefinition {
   readonly reads: ReadonlyArray<string>
   readonly writes: ReadonlyArray<string>
   readonly reconcile: (input: {
-    readonly system: CompiledProcessPlantSystem
+    readonly system: CompiledProcessPlant
     readonly component: CompiledComponent
     readonly context: ProcessPlantBehaviorContext
   }) => void
@@ -84,7 +84,7 @@ export interface ProcessLinkBehaviorDefinition {
   readonly writes: ReadonlyArray<string>
   readonly appliesTo: (link: CompiledProcessLink) => boolean
   readonly update: (input: {
-    readonly system: CompiledProcessPlantSystem
+    readonly system: CompiledProcessPlant
     readonly link: CompiledProcessLink
     readonly context: ProcessPlantBehaviorContext
   }) => void

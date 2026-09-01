@@ -1,6 +1,6 @@
 import { primaryLoopPumpForLink } from '../../graph/index.ts'
 import type { CompiledProcessLink } from '../../graph/index.ts'
-import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
+import type { CompiledProcessPlant } from '../../plant-compiler.ts'
 import { componentVariablePath } from '../behavior-contract.ts'
 import type { LinkBehaviorReadContext } from './link-flow-helpers.ts'
 import {
@@ -20,7 +20,7 @@ export interface ProcessLinkFlowSource {
 }
 
 export const processLinkFlowSourceFor = (config: {
-  readonly system: CompiledProcessPlantSystem
+  readonly system: CompiledProcessPlant
   readonly link: CompiledProcessLink
   readonly context: LinkBehaviorReadContext
 }): ProcessLinkFlowSource => {

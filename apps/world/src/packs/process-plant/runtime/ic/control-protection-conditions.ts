@@ -1,4 +1,4 @@
-import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
+import type { CompiledProcessPlant } from '../../plant-compiler.ts'
 import { processPlantSignalView, resolveProcessPlantSignalBinding } from '../../signals.ts'
 import type { ProcessPlantSignalView } from '../../signals.ts'
 import type { ProcessPlantRuntime, ProcessPlantVariableSnapshot } from '../model.ts'
@@ -33,7 +33,7 @@ const compareValues = (
 }
 
 export const evaluateProcessPlantIcCondition = (config: {
-  readonly system: CompiledProcessPlantSystem
+  readonly system: CompiledProcessPlant
   readonly runtime: ProcessPlantRuntime
   readonly condition: ProcessPlantIcCondition
 }): ProcessPlantIcConditionEvaluation => {

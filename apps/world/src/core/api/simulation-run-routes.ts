@@ -240,6 +240,34 @@ const handleSimulationRunApiInner = async (
     return json({ events, nextSeq: events.at(-1)?.seq ?? afterSeq ?? 0 })
   }
 
+  const historySamplesMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/history\/samples$/)
+  if (historySamplesMatch && req.method === 'GET') {
+    const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(historySamplesMatch[1] ?? ''))
+    const runtime = config.registry.get(simulationRunId)
+    if (!runtime) return apiError(404, 'simulation_run_not_found', 'simulation run not found')
+    const optional = (name: string): string | undefined => url.searchParams.get(name) ?? undefined
+    const limitParam = optional('limit')
+    const historyTimestamp = z.string().datetime({ offset: true }).transform(value => new Date(value).toISOString())
+    const query = {
+      ...(optional('runtimeId') === undefined ? {} : { runtimeId: z.string().min(1).max(128).parse(optional('runtimeId')) }),
+      ...(optional('seriesId') === undefined ? {} : { seriesId: z.string().min(1).max(128).parse(optional('seriesId')) }),
+      ...(optional('subjectId') === undefined ? {} : { subjectId: z.string().min(1).max(128).parse(optional('subjectId')) }),
+      ...(optional('signalId') === undefined ? {} : { signalId: z.string().min(1).max(512).parse(optional('signalId')) }),
+      ...(optional('from') === undefined ? {} : { from: historyTimestamp.parse(optional('from')) }),
+      ...(optional('to') === undefined ? {} : { to: historyTimestamp.parse(optional('to')) }),
+      ...(limitParam === undefined ? {} : { limit: z.coerce.number().int().positive().max(10_000).parse(limitParam) }),
+    }
+    return json({ samples: runtime.recordedSamples(query) })
+  }
+
+  const historyMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/history$/)
+  if (historyMatch && req.method === 'GET') {
+    const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(historyMatch[1] ?? ''))
+    const runtime = config.registry.get(simulationRunId)
+    if (!runtime) return apiError(404, 'simulation_run_not_found', 'simulation run not found')
+    return json({ status: runtime.recordingStatus(), series: runtime.recordingSeries() })
+  }
+
   const queryMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/queries$/)
   if (queryMatch && req.method === 'POST') {
     const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(queryMatch[1] ?? ''))

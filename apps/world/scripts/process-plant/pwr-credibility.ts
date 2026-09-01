@@ -1,15 +1,15 @@
 import {
-  compileProcessPlantSystem,
-  createProcessPlantMultiSystemTestbed,
-  processPlantPwrReferenceAssemblyRef,
-  processPlantPwrReferenceGraphIcRef,
-  resolveProcessPlantIcConfigForGraph,
+  compileProcessPlant,
+  createPwrReferencePlantDefinition,
   type CompiledComponent,
-  type CompiledProcessPlantSystem,
-  type ProcessPlantMultiSystemConfig,
-  type ProcessPlantScheduledAction,
+  type CompiledProcessPlant,
   type VariablePath,
 } from '../../src/packs/process-plant/index.ts'
+import {
+  createProcessPlantMultiPlantTestbed,
+  type ProcessPlantMultiPlantConfig,
+  type ProcessPlantScheduledAction,
+} from '../../src/packs/process-plant/engineering/index.ts'
 import {
   evaluateProcessPlantCredibilityTarget,
   processPlantCredibilityCaseResultSummaries,
@@ -95,7 +95,7 @@ interface CredibilityCase {
   readonly sourceRefs: ReadonlyArray<SourceRefId>
   readonly parameters?: Record<string, Record<string, unknown>>
   readonly initialState?: Record<string, unknown>
-  readonly actions: (system: CompiledProcessPlantSystem) => ReadonlyArray<ProcessPlantScheduledAction>
+  readonly actions: (plant: CompiledProcessPlant) => ReadonlyArray<ProcessPlantScheduledAction>
 }
 
 type CredibilityTarget = ProcessPlantCredibilityTarget<CaseId, SourceRefId>
@@ -125,29 +125,29 @@ const setVariable = (
 })
 
 const componentsMatching = (
-  system: CompiledProcessPlantSystem,
+  plant: CompiledProcessPlant,
   predicate: (component: CompiledComponent) => boolean,
 ): ReadonlyArray<CompiledComponent> =>
-  system.graph.components.filter(predicate)
+  plant.graph.components.filter(predicate)
 
 const tripComponentsMatching = (
-  system: CompiledProcessPlantSystem,
+  plant: CompiledProcessPlant,
   atMs: number,
   idPrefix: string,
   predicate: (component: CompiledComponent) => boolean,
 ): ReadonlyArray<ProcessPlantScheduledAction> =>
-  componentsMatching(system, predicate).map(component =>
+  componentsMatching(plant, predicate).map(component =>
     scheduledComponentTrip(`${idPrefix}-${component.id}`, atMs, String(component.id)),
   )
 
 const setValvePositionsMatching = (
-  system: CompiledProcessPlantSystem,
+  plant: CompiledProcessPlant,
   atMs: number,
   idPrefix: string,
   positionFraction: number,
   predicate: (component: CompiledComponent) => boolean,
 ): ReadonlyArray<ProcessPlantScheduledAction> =>
-  componentsMatching(system, predicate).map(component =>
+  componentsMatching(plant, predicate).map(component =>
     setVariable(`${idPrefix}-${component.id}`, atMs, `${component.id}.positionFraction`, positionFraction),
   )
 
@@ -707,22 +707,21 @@ const targets: ReadonlyArray<CredibilityTarget> = [
   },
 ]
 
-const compiledSystem = (testCase: CredibilityCase): CompiledProcessPlantSystem =>
-  compileProcessPlantSystem({
+const compiledSystem = (testCase: CredibilityCase): CompiledProcessPlant =>
+  compileProcessPlant(createPwrReferencePlantDefinition({
     id: testCase.id,
-    assemblyRef: processPlantPwrReferenceAssemblyRef,
-    assemblyConfig: { loopCount: 4, title: `Credibility ${testCase.title}` },
-    ...(testCase.parameters === undefined ? {} : { parameters: testCase.parameters }),
-    ...(testCase.initialState === undefined ? {} : { initialState: testCase.initialState }),
-  })
+    title: `Credibility ${testCase.title}`,
+    ...(testCase.parameters === undefined ? {} : { parameterOverrides: testCase.parameters }),
+    ...(testCase.initialState === undefined ? {} : { valueOverrides: testCase.initialState }),
+  }))
 
-const configs = (): ReadonlyArray<ProcessPlantMultiSystemConfig> =>
+const configs = (): ReadonlyArray<ProcessPlantMultiPlantConfig> =>
   cases.map(testCase => {
-    const system = compiledSystem(testCase)
+    const plant = compiledSystem(testCase)
     return {
-      system,
-      schedule: { actions: testCase.actions(system) },
-      protection: resolveProcessPlantIcConfigForGraph(processPlantPwrReferenceGraphIcRef, system.graph),
+      plant,
+      schedule: { actions: testCase.actions(plant) },
+      protection: plant.automation,
       telemetry: {
         sampleIntervalMs,
         variables: telemetryVariables.map(variablePath),
@@ -733,13 +732,13 @@ const configs = (): ReadonlyArray<ProcessPlantMultiSystemConfig> =>
 const main = async (): Promise<void> => {
   const runConfigs = configs()
   const started = performance.now()
-  const traces = createProcessPlantMultiSystemTestbed(runConfigs).runFor(durationMs, stepMs)
+  const traces = createProcessPlantMultiPlantTestbed(runConfigs).runFor(durationMs, stepMs)
   const wallMs = performance.now() - started
   const results = targets.map(target => evaluateProcessPlantCredibilityTarget(processPlantCredibilityTraceForCase(traces, target.caseId), target))
   const caseResults = processPlantCredibilityCaseResultSummaries(cases, results)
   const failedGateTargets = results.filter(result => !result.passed && result.severity === 'gate')
   const failedWatchTargets = results.filter(result => !result.passed && result.severity === 'watch')
-  const firstGraph = runConfigs[0]?.system.graph
+  const firstGraph = runConfigs[0]?.plant.graph
 
   const summary = {
     schemaVersion: 1,
@@ -747,8 +746,8 @@ const main = async (): Promise<void> => {
     durationMs,
     stepMs,
     sampleIntervalMs,
-    assemblyRef: processPlantPwrReferenceAssemblyRef,
-    assemblyConfig: { loopCount: 4 },
+    modelRef: runConfigs[0]?.plant.modelRef,
+    modelParameters: { loopCount: 4 },
     caseCount: cases.length,
     targetCount: targets.length,
     failedGateTargetCount: failedGateTargets.length,
@@ -766,7 +765,7 @@ const main = async (): Promise<void> => {
     cases,
     caseResults,
     results,
-    icRef: processPlantPwrReferenceGraphIcRef,
+    automationRef: runConfigs[0]?.plant.automationRef,
     artifacts: {
       summaryJsonPath,
       reportSvgPath,

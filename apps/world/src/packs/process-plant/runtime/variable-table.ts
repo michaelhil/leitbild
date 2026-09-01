@@ -1,6 +1,6 @@
 import type { CompiledComponent, CompiledVariable, VariablePath } from '../graph/index.ts'
 import { deriveProcessVariableCapabilities } from '../graph/index.ts'
-import type { CompiledProcessPlantSystem, ProcessPlantInitialVariableValue } from '../process-systems.ts'
+import type { CompiledProcessPlant, ProcessPlantInitialVariableValue } from '../plant-compiler.ts'
 import type { ProcessPlantCommand, ProcessPlantValue, ProcessPlantVariableSnapshot } from './model.ts'
 import { toCanonicalProcessValue } from './units.ts'
 import {
@@ -24,6 +24,7 @@ export interface ProcessPlantVariableTable {
   readonly snapshotVariable: (path: VariablePath) => ProcessPlantVariableSnapshot
   readonly snapshotHandle: (handle: ProcessPlantVariableHandle) => ProcessPlantVariableSnapshot
   readonly snapshot: () => ReadonlyArray<ProcessPlantVariableSnapshot>
+  readonly snapshotValues: () => ReadonlyArray<ProcessPlantValue>
   readonly publishedSnapshot: () => ReadonlyArray<ProcessPlantVariableSnapshot>
   readonly assertInvariants: () => void
 }
@@ -62,9 +63,9 @@ const snapshotVariable = (
 }
 
 export const createProcessPlantVariableTable = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   initialComponentValueFor: (component: CompiledComponent, path: VariablePath) => ProcessPlantValue,
-  restoredVariables?: ReadonlyArray<ProcessPlantVariableSnapshot>,
+  restoredValues?: ReadonlyArray<ProcessPlantValue>,
   restoredCommands?: ReadonlyArray<ProcessPlantCommand>,
   initialVariables?: ReadonlyArray<ProcessPlantInitialVariableValue>,
 ): ProcessPlantVariableTable => {
@@ -75,29 +76,16 @@ export const createProcessPlantVariableTable = (
   )
   const values: ProcessPlantValue[] = new Array(variables.length)
   const commands: ProcessPlantCommand[] = []
-  const restoredValues = restoredVariables === undefined
-    ? null
-    : new Map(restoredVariables.map(variable => [variable.path, variable.value]))
-
-  if (restoredValues) {
-    for (const restoredVariable of restoredVariables ?? []) {
-      if (!variableByPath.has(restoredVariable.path)) {
-        throw new Error(`restored process plant variable is not declared by graph: ${restoredVariable.path}`)
-      }
-    }
-    for (const variable of variables) {
-      if (!restoredValues.has(variable.path)) {
-        throw new Error(`restored process plant state is missing variable: ${variable.path}`)
-      }
-      assertProcessPlantVariableValueValid(variable, restoredValues.get(variable.path)!)
-    }
+  if (restoredValues !== undefined && restoredValues.length !== variables.length) {
+    throw new Error(`restored process plant value count ${restoredValues.length} does not match model variable count ${variables.length}`)
   }
 
   for (let slot = 0; slot < variables.length; slot += 1) {
     const variable = variables[slot]
     if (!variable) throw new Error(`compiled process plant graph has missing variable slot: ${slot}`)
-    const restoredValue = restoredValues?.get(variable.path)
+    const restoredValue = restoredValues?.[slot]
     if (restoredValue !== undefined) {
+      assertProcessPlantVariableValueValid(variable, restoredValue)
       values[slot] = restoredValue
       continue
     }
@@ -111,7 +99,7 @@ export const createProcessPlantVariableTable = (
     values[slot] = variable.initialValue
   }
 
-  if (!restoredValues) {
+  if (restoredValues === undefined) {
     for (const initial of initialVariables ?? []) {
       const entry = variableByPath.get(initial.path)
       if (!entry) throw new Error(`process plant initialState references unknown variable: ${initial.path}`)
@@ -216,6 +204,7 @@ export const createProcessPlantVariableTable = (
     },
     snapshot: (): ReadonlyArray<ProcessPlantVariableSnapshot> =>
       variables.map((variable, slot) => snapshotVariable(values, variable, slot)),
+    snapshotValues: (): ReadonlyArray<ProcessPlantValue> => [...values],
     publishedSnapshot: (): ReadonlyArray<ProcessPlantVariableSnapshot> =>
       publishedHandles.map(handle => snapshotVariable(values, handle.variable, handle.slot)),
     assertInvariants: (): void => {

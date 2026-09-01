@@ -1,11 +1,11 @@
-import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
+import type { CompiledProcessPlant } from '../../plant-compiler.ts'
 import { resolveProcessPlantSignalBinding } from '../../signals.ts'
 import type { ProcessPlantSignalReference } from '../../signals.ts'
 import { assertProcessPlantVariableValueValid } from '../variable-validation.ts'
 import type { ProcessPlantIcCondition, ProcessPlantIcEffect, ProcessPlantIcRule } from './control-protection-model.ts'
 
 const assertConditionSignalsValid = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   rule: ProcessPlantIcRule,
   condition: ProcessPlantIcCondition,
 ): void => {
@@ -31,7 +31,7 @@ const assertConditionSignalsValid = (
 }
 
 const variableFor = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   reference: ProcessPlantSignalReference,
 ) => {
   const binding = resolveProcessPlantSignalBinding(system.graph, reference)
@@ -41,7 +41,7 @@ const variableFor = (
 }
 
 const assertWriteEffectValid = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   rule: ProcessPlantIcRule,
   effect: Extract<ProcessPlantIcEffect, { readonly type: 'writeSignal' }>,
 ): void => {
@@ -84,7 +84,7 @@ const assertRuleShapeValid = (rule: ProcessPlantIcRule): void => {
 }
 
 export const assertProcessPlantIcRulesValid = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   rules: ReadonlyArray<ProcessPlantIcRule>,
 ): void => {
   for (const rule of rules) {

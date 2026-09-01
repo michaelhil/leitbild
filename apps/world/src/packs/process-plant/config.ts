@@ -1,27 +1,31 @@
 import { z } from 'zod'
 
-export const processPlantSystemDefinitionSchema = z.object({
-  id: z.string().min(1),
-  graph: z.unknown().optional(),
-  graphRef: z.string().min(1).optional(),
-  assemblyRef: z.string().min(1).optional(),
-  assemblyConfig: z.record(z.string(), z.unknown()).optional(),
-  parameters: z.record(z.string(), z.unknown()).optional(),
-  initialState: z.record(z.string(), z.unknown()).optional(),
-  runtime: z.unknown().optional(),
-}).strict().superRefine((definition, ctx) => {
-  const sourceCount = [definition.graph, definition.graphRef, definition.assemblyRef]
-    .filter(value => value !== undefined).length
-  if (sourceCount !== 1) ctx.addIssue({ code: 'custom', message: 'process system must define exactly one of graph, graphRef, or assemblyRef' })
-  if (definition.assemblyConfig !== undefined && definition.assemblyRef === undefined) {
-    ctx.addIssue({ code: 'custom', path: ['assemblyConfig'], message: 'process system assemblyConfig requires assemblyRef' })
-  }
-})
-
-export type ProcessPlantSystemDefinition = z.infer<typeof processPlantSystemDefinitionSchema>
-
-export const processPlantPackConfigSchema = z.object({
-  systems: z.array(processPlantSystemDefinitionSchema).default([]),
+export const processPlantModelSelectionSchema = z.object({
+  ref: z.string().min(1),
+  parameters: z.record(z.string(), z.unknown()),
 }).strict()
+export type ProcessPlantModelSelection = z.infer<typeof processPlantModelSelectionSchema>
 
+export const processPlantOperatingPointSelectionSchema = z.object({
+  ref: z.string().min(1),
+  parameterOverrides: z.record(z.string(), z.unknown()).optional(),
+  valueOverrides: z.record(z.string(), z.unknown()).optional(),
+}).strict()
+export type ProcessPlantOperatingPointSelection = z.infer<typeof processPlantOperatingPointSelectionSchema>
+
+export const processPlantAutomationSelectionSchema = z.object({
+  ref: z.string().min(1),
+}).strict()
+export type ProcessPlantAutomationSelection = z.infer<typeof processPlantAutomationSelectionSchema>
+
+export const processPlantDefinitionSchema = z.object({
+  id: z.string().min(1),
+  model: processPlantModelSelectionSchema,
+  operatingPoint: processPlantOperatingPointSelectionSchema,
+  automation: processPlantAutomationSelectionSchema,
+}).strict()
+export type ProcessPlantDefinition = z.infer<typeof processPlantDefinitionSchema>
+
+/** Process Plants are authored as Scenario Items. Pack config is intentionally empty. */
+export const processPlantPackConfigSchema = z.object({}).strict()
 export type ProcessPlantPackConfig = z.infer<typeof processPlantPackConfigSchema>

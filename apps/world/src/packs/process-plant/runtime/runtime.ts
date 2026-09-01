@@ -1,9 +1,9 @@
 import type { VariablePath } from '../graph/index.ts'
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
+import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import { initialComponentValueFor } from './component-behaviors.ts'
 import { assertProcessPlantRuntimeInvariants } from './behavior-contract.ts'
 import { compileProcessPlantExecutionPlan, runProcessPlantExecutionPhase, runProcessPlantInitialReconciliation, type ProcessPlantExecutionPlan } from './execution-plan.ts'
-import { processPlantSolverPhases, type ProcessPlantCommand, type ProcessPlantRuntime, type ProcessPlantRuntimeSnapshot, type ProcessPlantTickResult, type ProcessPlantValue } from './model.ts'
+import { processPlantSolverPhases, type ProcessPlantCommand, type ProcessPlantRuntime, type ProcessPlantRuntimeCheckpoint, type ProcessPlantRuntimeSnapshot, type ProcessPlantTickResult, type ProcessPlantValue } from './model.ts'
 import { createProcessPlantVariableTable, type ProcessPlantVariableTable } from './variable-table.ts'
 import { compilePwrTransientKernel, evaluatePwrTransientKernel, type PwrTransientDiagnostics, type PwrTransientKernel } from './pwr-transient-kernel.ts'
 
@@ -12,27 +12,18 @@ interface RuntimeClock {
   remainderMs: number
 }
 
-const assertRestoredSnapshotMatchesSystem = (
-  system: CompiledProcessPlantSystem,
-  restoredSnapshot: ProcessPlantRuntimeSnapshot | undefined,
+const assertRestoredCheckpointMatchesSystem = (
+  system: CompiledProcessPlant,
+  restoredCheckpoint: ProcessPlantRuntimeCheckpoint | undefined,
 ): void => {
-  if (!restoredSnapshot) return
-  if (restoredSnapshot.graphSpecId !== String(system.graph.specId)) {
-    throw new Error(`restored process plant graph ${restoredSnapshot.graphSpecId} does not match system graph ${system.graph.specId}`)
-  }
-  const expectedVariablePaths = system.graph.variables.map(variable => variable.path)
-  if (restoredSnapshot.variablePaths.length !== expectedVariablePaths.length) {
-    throw new Error(`restored process plant variable path count ${restoredSnapshot.variablePaths.length} does not match system graph ${expectedVariablePaths.length}`)
-  }
-  for (let index = 0; index < expectedVariablePaths.length; index += 1) {
-    if (restoredSnapshot.variablePaths[index] !== expectedVariablePaths[index]) {
-      throw new Error(`restored process plant variable path ${restoredSnapshot.variablePaths[index]} does not match system graph path ${expectedVariablePaths[index]} at slot ${index}`)
-    }
+  if (!restoredCheckpoint) return
+  if (restoredCheckpoint.modelDigest !== system.modelDigest) {
+    throw new Error(`restored process plant model ${restoredCheckpoint.modelDigest} does not match Plant model ${system.modelDigest}`)
   }
 }
 
 const step = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   table: ProcessPlantVariableTable,
   plan: ProcessPlantExecutionPlan,
   clock: RuntimeClock,
@@ -53,28 +44,28 @@ const step = (
 }
 
 export const createProcessPlantRuntime = (config: {
-  readonly system: CompiledProcessPlantSystem
-  readonly restoredSnapshot?: ProcessPlantRuntimeSnapshot
+  readonly system: CompiledProcessPlant
+  readonly restoredCheckpoint?: ProcessPlantRuntimeCheckpoint
   readonly assertInvariants?: boolean
 }): ProcessPlantRuntime => {
   const system = config.system
-  assertRestoredSnapshotMatchesSystem(system, config.restoredSnapshot)
+  assertRestoredCheckpointMatchesSystem(system, config.restoredCheckpoint)
   const table = createProcessPlantVariableTable(
     system,
     initialComponentValueFor,
-    config.restoredSnapshot?.variables,
-    config.restoredSnapshot?.queuedCommands,
+    config.restoredCheckpoint?.values,
+    config.restoredCheckpoint?.queuedCommands,
     system.initialState,
   )
   const fixedStepMs = system.graph.timestep.fixedStepMs
   const plan = compileProcessPlantExecutionPlan(system)
-  if (!config.restoredSnapshot) {
+  if (!config.restoredCheckpoint) {
     runProcessPlantInitialReconciliation({ system, table, plan })
   }
   const assertInvariants = config.assertInvariants ?? false
   const clock: RuntimeClock = {
-    elapsedMs: config.restoredSnapshot?.elapsedMs ?? 0,
-    remainderMs: config.restoredSnapshot?.remainderMs ?? 0,
+    elapsedMs: config.restoredCheckpoint?.elapsedMs ?? 0,
+    remainderMs: config.restoredCheckpoint?.remainderMs ?? 0,
   }
   let pwrKernel: PwrTransientKernel | null = null
   let lastPwrTransientDiagnostics: PwrTransientDiagnostics | null = null
@@ -96,6 +87,14 @@ export const createProcessPlantRuntime = (config: {
     remainderMs: clock.remainderMs,
     queuedCommands: table.queuedCommands(),
     variables: table.snapshot(),
+  })
+
+  const checkpoint = (): ProcessPlantRuntimeCheckpoint => ({
+    modelDigest: system.modelDigest,
+    elapsedMs: clock.elapsedMs,
+    remainderMs: clock.remainderMs,
+    queuedCommands: table.queuedCommands(),
+    values: table.snapshotValues(),
   })
 
   return {
@@ -127,5 +126,6 @@ export const createProcessPlantRuntime = (config: {
     },
     pwrTransientDiagnostics,
     snapshot,
+    checkpoint,
   }
 }

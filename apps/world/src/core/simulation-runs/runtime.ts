@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, SimulationRunEvent, EventId, SimulationRunId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, ProcedureCatalog, ProcedureDocument, ProcedureId, ProcedureSourceId, Provenance, ScenarioExecutionState, ScenarioTimeline, ScenarioTimelineAction, ScenarioTimelineCue, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
+import type { CommandEnvelope, CommandResult, SimulationRunEvent, EventId, SimulationRunId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, ProcedureCatalog, ProcedureDocument, ProcedureId, ProcedureSourceId, Provenance, RecordedSample, RecordingProfileDescriptor, RecordingSeriesDescriptor, RecordingSeriesQuery, ScenarioExecutionState, ScenarioRecordingSelection, ScenarioTimeline, ScenarioTimelineAction, ScenarioTimelineCue, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
 import { actorIdSchema, commandEnvelopeSchema, deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, notificationIdSchema, nowIso, simulationClockUpdateSchema } from '../model/index.ts'
 import type { PackQueryRequest, PackQueryResponse, PackWikiRef } from '../packs/protocol.ts'
 import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent, PackRuntimeOperationDescriptor, PackRuntimeRealtimeInput, PackRuntimeRealtimeMessage } from '../../simulation/protocol.ts'
@@ -14,10 +14,11 @@ import {
   type SimulationRunRuntimeMetricsSnapshot,
 } from './runtime-metrics.ts'
 import { defaultSimulationRunRuntimePolicy } from './runtime-persistence-policy.ts'
-import { createProcedureSourceService, type ProcedureSourceLoadStatus, type ProcedureSourceService } from '../procedures/source.ts'
-import { procedureCommandEvents } from '../procedures/run-state.ts'
+import { createProcedureSourceService, type ProcedureSourceLoadStatus, type ProcedureSourceService } from '../../features/procedures/source.ts'
+import { procedureCommandEvents } from '../../features/procedures/run-state.ts'
 import type { WorkspaceId } from '@leitbild/contracts'
 import type { ScenarioRevisionId } from '../scenarios/library.ts'
+import type { RunHistorian, RunHistorianStatus } from '../../features/historian/store.ts'
 
 const projectedSnapshotFlushIntervalMs = defaultSimulationRunRuntimePolicy.projectedSnapshotFlushIntervalMs
 const scenarioRunnerActor: Actor = {
@@ -59,6 +60,9 @@ export interface SimulationRunRuntime {
   readonly procedureDocument: (config: { readonly sourceId?: ProcedureSourceId; readonly procedureId: ProcedureId; readonly refresh?: boolean }) => Promise<ProcedureDocument>
   readonly publishInteractionSignal: (signal: InteractionSignal, provenance: Provenance) => Promise<void>
   readonly metrics: () => SimulationRunRuntimeMetricsSnapshot
+  readonly recordingStatus: () => RunHistorianStatus | null
+  readonly recordingSeries: () => ReadonlyArray<RecordingSeriesDescriptor & { readonly runtimeId: string }>
+  readonly recordedSamples: (query: RecordingSeriesQuery) => ReadonlyArray<RecordedSample>
   readonly close: () => Promise<void>
 }
 
@@ -78,6 +82,13 @@ export interface SimulationRunCapabilities {
     readonly runtimeId: string
   }>
   readonly wikiRefs: ReadonlyArray<PackWikiRef>
+  readonly recording: {
+    readonly selections: ReadonlyArray<ScenarioRecordingSelection>
+    readonly profiles: ReadonlyArray<RecordingProfileDescriptor & {
+      readonly packId: string
+      readonly runtimeId: string
+    }>
+  }
 }
 
 const eventId = (): EventId => `event:${randomUUID()}` as EventId
@@ -98,6 +109,7 @@ export const createSimulationRunRuntime = async (config: {
   }
   readonly capabilities?: Omit<SimulationRunCapabilities, 'simulationRunId'>
   readonly procedureSourceService?: ProcedureSourceService
+  readonly historian?: RunHistorian
 }): Promise<SimulationRunRuntime> => {
   const state = createSimulationRunStateStore()
   const metrics = createSimulationRunRuntimeMetricsRecorder({
@@ -587,6 +599,10 @@ export const createSimulationRunRuntime = async (config: {
 
   const publishPackRuntimeEmission = async (emission: PackRuntimeEmission): Promise<void> => {
     metrics.recordPackEmission(emission.runtimeId, emission.events.length, emission.emittedAt)
+    if (emission.recording !== undefined) {
+      if (!config.historian) throw new Error(`Pack Runtime ${emission.runtimeId} emitted recording samples without an active Run Historian`)
+      config.historian.record(emission.runtimeId, emission.recording)
+    }
     await enqueuePublish(async () => {
       const pendingEvents: SimulationRunEvent[] = []
       const pendingPersistences: SimulationRunEventPersistenceDisposition[] = []
@@ -870,6 +886,7 @@ export const createSimulationRunRuntime = async (config: {
       runtimes: config.capabilities?.runtimes ?? [],
       operations: config.capabilities?.operations ?? [],
       wikiRefs: config.capabilities?.wikiRefs ?? [],
+      recording: config.capabilities?.recording ?? { selections: [], profiles: [] },
     }),
     snapshot: () => snapshotWithCurrentClock(),
     setClock,
@@ -896,12 +913,16 @@ export const createSimulationRunRuntime = async (config: {
       })
     },
     metrics: () => metrics.snapshot(),
+    recordingStatus: () => config.historian?.status() ?? null,
+    recordingSeries: () => config.historian?.listSeries() ?? [],
+    recordedSamples: (query) => config.historian?.query(query) ?? [],
     close: async (): Promise<void> => {
       scenarioRunner?.close()
       unsubscribeRuntime()
       await config.runtimeConnection.close()
       await publishQueue
       await flushProjectedSnapshot()
+      config.historian?.close()
       metrics.markClosed(nowIso())
       handlers.clear()
     },

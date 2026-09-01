@@ -51,7 +51,7 @@
   import ControlRail from '../ControlRail.svelte'
   import ScenarioGuidance from '../ScenarioGuidance.svelte'
   import StartupModal from '../StartupModal.svelte'
-  import type { ProcessPlantArtifactKind } from '../process-surface/process-surface-client.ts'
+  import type { ProcessPlantArtifactKind } from '../process-display/process-display-client.ts'
   import { readProcedureDocument, readProcedureRuns } from '../procedures/procedure-client.ts'
   import {
     procedureCurrentStep,
@@ -104,7 +104,7 @@
   const emptyMapAreaFeatureLayers: NonNullable<PackPresentationContribution['mapAreaFeatureLayers']> = []
   const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], completed: [] }
 
-  interface ProcessSurfaceWindowEntry {
+  interface ProcessDisplayWindowEntry {
     readonly id: string
     readonly objectId: ObjectId
   }
@@ -124,7 +124,7 @@
     readonly initialNavigationRevision: number
   }
 
-  interface ProcessSurfaceWindowModel extends ProcessSurfaceWindowEntry {
+  interface ProcessDisplayWindowModel extends ProcessDisplayWindowEntry {
     readonly object: OperationalObject
     readonly index: number
   }
@@ -136,7 +136,7 @@
 
   interface ProcedureSystemWindowModel extends ProcedureSystemWindowEntry {
     readonly object: OperationalObject
-    readonly systemId: string
+    readonly plantId: string
     readonly index: number
   }
   let activePack = $state<ActivePackViews | null>(null)
@@ -163,7 +163,7 @@
   let OperationalMap = $state<Component | null>(null)
   let CreateObjectModal = $state<Component | null>(null)
   let SettingsModal = $state<Component | null>(null)
-  let ProcessSurfaceModal = $state<Component | null>(null)
+  let ProcessDisplayModal = $state<Component | null>(null)
   let GridOverviewPanel = $state<Component | null>(null)
   let ProcedureSystemModal = $state<Component | null>(null)
   let ProcessPlantArtifactModal = $state<Component | null>(null)
@@ -171,7 +171,7 @@
   let ProcessPlantCredibilityModal = $state<Component | null>(null)
   let DroneControlModal = $state<Component | null>(null)
   let DroneProfileEditorModal = $state<Component | null>(null)
-  let processSurfaceWindows = $state<ReadonlyArray<ProcessSurfaceWindowEntry>>([])
+  let processDisplayWindows = $state<ReadonlyArray<ProcessDisplayWindowEntry>>([])
   let droneControlWindows = $state<ReadonlyArray<DroneWindowEntry>>([])
   let droneProfileEditorWindows = $state<ReadonlyArray<DroneWindowEntry>>([])
   let procedureSystemWindows = $state<ReadonlyArray<ProcedureSystemWindowEntry>>([])
@@ -188,7 +188,7 @@
   let weatherLayerVisible = $state(true)
   let surfaceLoadGeneration = 0
   let operationalMapLoadPromise: Promise<Component> | null = null
-  let processSurfaceModalLoadPromise: Promise<Component> | null = null
+  let processDisplayModalLoadPromise: Promise<Component> | null = null
   let gridOverviewPanelLoadPromise: Promise<Component> | null = null
   let procedureSystemModalLoadPromise: Promise<Component> | null = null
   let processPlantArtifactModalLoadPromise: Promise<Component> | null = null
@@ -545,9 +545,9 @@
     runWhenIdle(() => {
       void (async (): Promise<void> => {
         try {
-          markStartup('process-surface-preload:start')
-          await loadProcessSurfaceModal()
-          markStartup('process-surface-preload:done')
+          markStartup('process-display-preload:start')
+          await loadProcessDisplayModal()
+          markStartup('process-display-preload:done')
         } catch (err) {
           if (debugStartup) console.warn(err)
         }
@@ -596,16 +596,16 @@
     SettingsModal = module.default
   }
 
-  const loadProcessSurfaceModal = async (): Promise<void> => {
-    if (ProcessSurfaceModal) return
-    processSurfaceModalLoadPromise ??= (async (): Promise<Component> => {
-      const module = await import('../process-surface/ProcessSurfaceModal.svelte')
+  const loadProcessDisplayModal = async (): Promise<void> => {
+    if (ProcessDisplayModal) return
+    processDisplayModalLoadPromise ??= (async (): Promise<Component> => {
+      const module = await import('../process-display/ProcessDisplayModal.svelte')
       return module.default
     })()
     try {
-      ProcessSurfaceModal = await processSurfaceModalLoadPromise
+      ProcessDisplayModal = await processDisplayModalLoadPromise
     } catch (err) {
-      processSurfaceModalLoadPromise = null
+      processDisplayModalLoadPromise = null
       throw err
     }
   }
@@ -641,7 +641,7 @@
   const loadProcessPlantArtifactModal = async (): Promise<void> => {
     if (ProcessPlantArtifactModal) return
     processPlantArtifactModalLoadPromise ??= (async (): Promise<Component> => {
-      const module = await import('../process-surface/ProcessPlantArtifactModal.svelte')
+      const module = await import('../process-display/ProcessPlantArtifactModal.svelte')
       return module.default
     })()
     try {
@@ -655,7 +655,7 @@
   const loadProcessPlantCatalogModal = async (): Promise<void> => {
     if (ProcessPlantCatalogModal) return
     processPlantCatalogModalLoadPromise ??= (async (): Promise<Component> => {
-      const module = await import('../process-surface/ProcessPlantCatalogModal.svelte')
+      const module = await import('../process-display/ProcessPlantCatalogModal.svelte')
       return module.default
     })()
     try {
@@ -669,7 +669,7 @@
   const loadProcessPlantCredibilityModal = async (): Promise<void> => {
     if (ProcessPlantCredibilityModal) return
     processPlantCredibilityModalLoadPromise ??= (async (): Promise<Component> => {
-      const module = await import('../process-surface/ProcessPlantCredibilityModal.svelte')
+      const module = await import('../process-display/ProcessPlantCredibilityModal.svelte')
       return module.default
     })()
     try {
@@ -825,19 +825,19 @@
     return `${prefix}:${objectId}:${floatingWindowSequence}`
   }
 
-  const openProcessSurface = (object: OperationalObject): void => {
-    processSurfaceWindows = [
-      ...processSurfaceWindows,
+  const openProcessDisplay = (object: OperationalObject): void => {
+    processDisplayWindows = [
+      ...processDisplayWindows,
       {
-        id: nextFloatingWindowId('process-surface', object.id),
+        id: nextFloatingWindowId('process-display', object.id),
         objectId: object.id,
       },
     ]
-    void loadProcessSurfaceModal()
+    void loadProcessDisplayModal()
   }
 
-  const closeProcessSurface = (windowId: string): void => {
-    processSurfaceWindows = processSurfaceWindows.filter(entry => entry.id !== windowId)
+  const closeProcessDisplay = (windowId: string): void => {
+    processDisplayWindows = processDisplayWindows.filter(entry => entry.id !== windowId)
   }
 
   const openDroneControl = (object: OperationalObject): void => {
@@ -906,24 +906,24 @@
     if (object.packId !== 'process-plant') return null
     const data = object.packData
     if (typeof data !== 'object' || data === null || Array.isArray(data)) return null
-    const systemId = (data as Record<string, unknown>).systemId
-    return typeof systemId === 'string' && systemId.length > 0 ? systemId : null
+    const plantId = (data as Record<string, unknown>).plantId
+    return typeof plantId === 'string' && plantId.length > 0 ? plantId : null
   }
 
   const procedureUnitContexts = $derived(objects.flatMap(object => {
-    const systemId = processPlantSystemIdFor(object)
-    return systemId === null
+    const plantId = processPlantSystemIdFor(object)
+    return plantId === null
       ? []
       : [{
-          systemId,
+          plantId,
           targetObjectId: object.id,
           label: object.label,
           status: statusPresentationFor(object),
         }]
   }))
 
-  const processSurfaceWindowModels = $derived<ReadonlyArray<ProcessSurfaceWindowModel>>(
-    processSurfaceWindows.flatMap((entry, index) => {
+  const processDisplayWindowModels = $derived<ReadonlyArray<ProcessDisplayWindowModel>>(
+    processDisplayWindows.flatMap((entry, index) => {
       const object = objectById.get(entry.objectId)
       return object === undefined ? [] : [{ ...entry, object, index }]
     }),
@@ -947,17 +947,17 @@
     procedureSystemWindows.flatMap((entry, index) => {
       const object = objectById.get(entry.objectId)
       if (object === undefined) return []
-      const systemId = processPlantSystemIdFor(object)
-      return systemId === null ? [] : [{ ...entry, object, systemId, index }]
+      const plantId = processPlantSystemIdFor(object)
+      return plantId === null ? [] : [{ ...entry, object, plantId, index }]
     }),
   )
 
   $effect(() => {
     const liveObjectIds = new Set(objects.map(object => object.id))
     untrack(() => {
-      const nextProcessSurfaceWindows = processSurfaceWindows.filter(entry => liveObjectIds.has(entry.objectId))
-      if (nextProcessSurfaceWindows.length !== processSurfaceWindows.length) {
-        processSurfaceWindows = nextProcessSurfaceWindows
+      const nextProcessDisplayWindows = processDisplayWindows.filter(entry => liveObjectIds.has(entry.objectId))
+      if (nextProcessDisplayWindows.length !== processDisplayWindows.length) {
+        processDisplayWindows = nextProcessDisplayWindows
       }
       const nextDroneControlWindows = droneControlWindows.filter(entry => liveObjectIds.has(entry.objectId))
       if (nextDroneControlWindows.length !== droneControlWindows.length) {
@@ -975,10 +975,10 @@
   })
 
   const procedureScopeForObject = (object: OperationalObject): ProcedureRunScope | null => {
-    const systemId = processPlantSystemIdFor(object)
-    return systemId === null
+    const plantId = processPlantSystemIdFor(object)
+    return plantId === null
       ? null
-      : { systemId, targetObjectId: object.id, label: object.label }
+      : { plantId, targetObjectId: object.id, label: object.label }
   }
 
   const scopedProcedureRuns = (nextRuns: ReadonlyArray<ProcedureRunState>): ReadonlyArray<ProcedureRunState> =>
@@ -987,7 +987,7 @@
       return typeof raw.scope === 'object'
         && raw.scope !== null
         && !Array.isArray(raw.scope)
-        && typeof (raw.scope as Record<string, unknown>).systemId === 'string'
+        && typeof (raw.scope as Record<string, unknown>).plantId === 'string'
     })
 
   const procedureRunDocumentIds = (nextRuns: ReadonlyArray<ProcedureRunState>): ReadonlyArray<ProcedureId> =>
@@ -1575,7 +1575,7 @@
         {markSeen}
         {selectObject}
         {deleteObject}
-        {openProcessSurface}
+        {openProcessDisplay}
         {openProcedureSystem}
         {openProcedureSystemAt}
         {openProcessPlantArtifact}
@@ -1686,9 +1686,9 @@
   {/each}
 {/if}
 
-{#if ProcessSurfaceModal && simulationRunId}
-  {#each processSurfaceWindowModels as windowEntry (windowEntry.id)}
-    <ProcessSurfaceModal
+{#if ProcessDisplayModal && simulationRunId}
+  {#each processDisplayWindowModels as windowEntry (windowEntry.id)}
+    <ProcessDisplayModal
       {simulationRunId}
       object={windowEntry.object}
       unitStatus={statusPresentationFor(windowEntry.object)}
@@ -1697,7 +1697,7 @@
       {procedureRevision}
       windowOffsetIndex={windowEntry.index}
       openProcedureSystemAt={(summary) => openProcedureSystemAt(windowEntry.object, summary)}
-      close={() => closeProcessSurface(windowEntry.id)}
+      close={() => closeProcessDisplay(windowEntry.id)}
     />
   {/each}
 {/if}
@@ -1706,7 +1706,7 @@
   {#each procedureSystemWindowModels as windowEntry (windowEntry.id)}
     <ProcedureSystemModal
       {simulationRunId}
-      systemId={windowEntry.systemId}
+      plantId={windowEntry.plantId}
       unitName={windowEntry.object.label}
       unitStatus={statusPresentationFor(windowEntry.object)}
       unitContexts={procedureUnitContexts}
@@ -1725,7 +1725,7 @@
   {#if artifactSystemId}
     <ProcessPlantArtifactModal
       {simulationRunId}
-      systemId={artifactSystemId}
+      plantId={artifactSystemId}
       artifact={processPlantArtifactModal.artifact}
       close={closeProcessPlantArtifact}
     />
@@ -1744,7 +1744,7 @@
   {#if credibilitySystemId}
     <ProcessPlantCredibilityModal
       {simulationRunId}
-      systemId={credibilitySystemId}
+      plantId={credibilitySystemId}
       close={closeProcessPlantCredibility}
     />
   {/if}

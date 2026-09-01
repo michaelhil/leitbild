@@ -205,7 +205,7 @@ describe('simulation run persistence policy', () => {
       packData: {
         type: 'test-unit',
         schemaVersion: 1,
-        systemId: 'system-a',
+        plantId: 'system-a',
         projection: {
           summary: 'starting',
           updatedAt: nowIso(),
@@ -228,7 +228,7 @@ describe('simulation run persistence policy', () => {
       packData: {
         type: 'test-unit',
         schemaVersion: 1,
-        systemId: 'system-a',
+        plantId: 'system-a',
         projection: {
           summary: 'running',
           updatedAt: nowIso(),
@@ -255,7 +255,7 @@ describe('simulation run persistence policy', () => {
       packData: {
         type: 'test-unit',
         schemaVersion: 1,
-        systemId: 'system-b',
+        plantId: 'system-b',
         projection: {
           summary: 'running',
           updatedAt: nowIso(),

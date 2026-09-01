@@ -15,7 +15,7 @@ export type ProcedureTagId = z.infer<typeof procedureTagIdSchema>
 export type ProcedureRunId = z.infer<typeof procedureRunIdSchema>
 
 export const procedureRunScopeSchema = z.object({
-  systemId: idSchema,
+  plantId: idSchema,
   targetObjectId: objectIdSchema.optional(),
   label: z.string().min(1).max(160).optional(),
 })

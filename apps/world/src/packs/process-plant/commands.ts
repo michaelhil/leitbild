@@ -4,16 +4,25 @@ import {
   processPlantControlWriteCommandKind,
   processPlantControlRampCommandKind,
   processPlantIcLifecycleCommandKind,
+  processPlantActionInvokeCommandKind,
 } from './command-kinds.ts'
 
 export {
   processPlantControlWriteCommandKind,
   processPlantControlRampCommandKind,
   processPlantIcLifecycleCommandKind,
+  processPlantActionInvokeCommandKind,
 }
 
+export const processPlantActionInvokePayloadSchema = z.object({
+  plantId: z.string().min(1),
+  actionId: z.string().min(1),
+  parameters: z.record(z.string(), z.unknown()).default({}),
+}).strict()
+export type ProcessPlantActionInvokePayload = z.infer<typeof processPlantActionInvokePayloadSchema>
+
 export const processPlantControlWritePayloadSchema = z.object({
-  systemId: z.string().min(1),
+  plantId: z.string().min(1),
   path: variablePathSchema.optional(),
   tagId: processSignalTagIdSchema.optional(),
   value: processVariableValueSchema,
@@ -30,7 +39,7 @@ export const processPlantControlWritePayloadSchema = z.object({
 export type ProcessPlantControlWritePayload = z.infer<typeof processPlantControlWritePayloadSchema>
 
 export const processPlantControlRampPayloadSchema = z.object({
-  systemId: z.string().min(1),
+  plantId: z.string().min(1),
   path: variablePathSchema.optional(),
   tagId: processSignalTagIdSchema.optional(),
   targetValue: z.number().finite(),
@@ -57,7 +66,7 @@ const processPlantIcCommandLifecycleActionSchema = z.enum([
 ])
 
 export const processPlantIcLifecyclePayloadSchema = z.object({
-  systemId: z.string().min(1),
+  plantId: z.string().min(1),
   lifecycleId: z.string().min(1),
   action: processPlantIcCommandLifecycleActionSchema,
   reason: z.string().min(1).optional(),

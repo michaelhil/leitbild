@@ -2,18 +2,36 @@
   "id": "halden-process-plant-demo",
   "title": "Halden process-plant multi-sim demo",
   "description": "Seven independently simulated process-plant units near Halden, including a six-loop PWR variant, running alongside ambulance response and moving weather.",
+  "recording": [
+    {
+      "packId": "process-plant",
+      "profileId": "operations"
+    }
+  ],
   "packs": [
     {
       "id": "process-plant",
-      "config": {
-        "systems": [
-          {
-            "id": "halden-unit-a1",
-            "assemblyRef": "process-plant.pwr.reference.v2",
-            "assemblyConfig": {
-              "loopCount": 4
-            },
+      "config": {},
+      "items": [
+        {
+          "type": "plant",
+          "id": "plant:halden-a1",
+          "label": "Halden Unit A1",
+          "clusterId": "cluster-a",
+          "coolingWater": "Tista river / Halden harbor",
+          "location": [
+            11.3714,
+            59.1198
+          ],
+          "model": {
+            "ref": "process-plant.pwr.reference",
             "parameters": {
+              "loopCount": 4
+            }
+          },
+          "operatingPoint": {
+            "ref": "process-plant.pwr.full-power",
+            "parameterOverrides": {
               "core": {
                 "initialPowerFraction": 0.992
               },
@@ -21,25 +39,38 @@
                 "initialLoadFraction": 0.992
               }
             },
-            "initialState": {
+            "valueOverrides": {
               "pressurizer.pressureMPa": 15.47,
               "sgA.levelPercent": 54.8,
               "sgA.collapsedLevelPercent": 53,
               "sgA.secondaryInventoryKg": 29680,
               "sgA.steamMassKg": 11940,
               "feedwaterControlValveA.positionFraction": 0.905
-            },
-            "runtime": {
-              "icRef": "process-plant.pwr.reference.graph.ic.v2"
             }
           },
-          {
-            "id": "halden-unit-a2",
-            "assemblyRef": "process-plant.pwr.reference.v2",
-            "assemblyConfig": {
-              "loopCount": 4
-            },
+          "automation": {
+            "ref": "process-plant.pwr.standard"
+          }
+        },
+        {
+          "type": "plant",
+          "id": "plant:halden-a2",
+          "label": "Halden Unit A2",
+          "clusterId": "cluster-a",
+          "coolingWater": "Tista river / Halden harbor",
+          "location": [
+            11.3744,
+            59.1206
+          ],
+          "model": {
+            "ref": "process-plant.pwr.reference",
             "parameters": {
+              "loopCount": 4
+            }
+          },
+          "operatingPoint": {
+            "ref": "process-plant.pwr.full-power",
+            "parameterOverrides": {
               "core": {
                 "initialPowerFraction": 1
               },
@@ -47,25 +78,38 @@
                 "initialLoadFraction": 1
               }
             },
-            "initialState": {
+            "valueOverrides": {
               "pressurizer.pressureMPa": 15.53,
               "sgA.levelPercent": 55.3,
               "sgA.collapsedLevelPercent": 53.5,
               "sgA.secondaryInventoryKg": 29960,
               "sgA.steamMassKg": 12060,
               "feedwaterControlValveA.positionFraction": 0.914
-            },
-            "runtime": {
-              "icRef": "process-plant.pwr.reference.graph.ic.v2"
             }
           },
-          {
-            "id": "halden-unit-a3",
-            "assemblyRef": "process-plant.pwr.reference.v2",
-            "assemblyConfig": {
-              "loopCount": 4
-            },
+          "automation": {
+            "ref": "process-plant.pwr.standard"
+          }
+        },
+        {
+          "type": "plant",
+          "id": "plant:halden-a3",
+          "label": "Halden Unit A3",
+          "clusterId": "cluster-a",
+          "coolingWater": "Tista river / Halden harbor",
+          "location": [
+            11.377,
+            59.1192
+          ],
+          "model": {
+            "ref": "process-plant.pwr.reference",
             "parameters": {
+              "loopCount": 4
+            }
+          },
+          "operatingPoint": {
+            "ref": "process-plant.pwr.full-power",
+            "parameterOverrides": {
               "core": {
                 "initialPowerFraction": 0.986
               },
@@ -73,25 +117,38 @@
                 "initialLoadFraction": 0.986
               }
             },
-            "initialState": {
+            "valueOverrides": {
               "pressurizer.pressureMPa": 15.49,
               "sgA.levelPercent": 54.5,
               "sgA.collapsedLevelPercent": 52.8,
               "sgA.secondaryInventoryKg": 29570,
               "sgA.steamMassKg": 11920,
               "feedwaterControlValveA.positionFraction": 0.901
-            },
-            "runtime": {
-              "icRef": "process-plant.pwr.reference.graph.ic.v2"
             }
           },
-          {
-            "id": "halden-unit-b1",
-            "assemblyRef": "process-plant.pwr.reference.v2",
-            "assemblyConfig": {
-              "loopCount": 4
-            },
+          "automation": {
+            "ref": "process-plant.pwr.standard"
+          }
+        },
+        {
+          "type": "plant",
+          "id": "plant:halden-b1",
+          "label": "Halden Unit B1",
+          "clusterId": "cluster-b",
+          "coolingWater": "Iddefjorden",
+          "location": [
+            11.4067,
+            59.1126
+          ],
+          "model": {
+            "ref": "process-plant.pwr.reference",
             "parameters": {
+              "loopCount": 4
+            }
+          },
+          "operatingPoint": {
+            "ref": "process-plant.pwr.full-power",
+            "parameterOverrides": {
               "core": {
                 "initialPowerFraction": 0.997
               },
@@ -99,25 +156,38 @@
                 "initialLoadFraction": 0.997
               }
             },
-            "initialState": {
+            "valueOverrides": {
               "pressurizer.pressureMPa": 15.51,
               "sgA.levelPercent": 55.6,
               "sgA.collapsedLevelPercent": 53.7,
               "sgA.secondaryInventoryKg": 30070,
               "sgA.steamMassKg": 12030,
               "feedwaterControlValveA.positionFraction": 0.916
-            },
-            "runtime": {
-              "icRef": "process-plant.pwr.reference.graph.ic.v2"
             }
           },
-          {
-            "id": "halden-unit-b2",
-            "assemblyRef": "process-plant.pwr.reference.v2",
-            "assemblyConfig": {
-              "loopCount": 4
-            },
+          "automation": {
+            "ref": "process-plant.pwr.standard"
+          }
+        },
+        {
+          "type": "plant",
+          "id": "plant:halden-b2",
+          "label": "Halden Unit B2",
+          "clusterId": "cluster-b",
+          "coolingWater": "Iddefjorden",
+          "location": [
+            11.4101,
+            59.1137
+          ],
+          "model": {
+            "ref": "process-plant.pwr.reference",
             "parameters": {
+              "loopCount": 4
+            }
+          },
+          "operatingPoint": {
+            "ref": "process-plant.pwr.full-power",
+            "parameterOverrides": {
               "core": {
                 "initialPowerFraction": 0.989
               },
@@ -125,25 +195,38 @@
                 "initialLoadFraction": 0.989
               }
             },
-            "initialState": {
+            "valueOverrides": {
               "pressurizer.pressureMPa": 15.46,
               "sgA.levelPercent": 54.9,
               "sgA.collapsedLevelPercent": 53.1,
               "sgA.secondaryInventoryKg": 29740,
               "sgA.steamMassKg": 11960,
               "feedwaterControlValveA.positionFraction": 0.907
-            },
-            "runtime": {
-              "icRef": "process-plant.pwr.reference.graph.ic.v2"
             }
           },
-          {
-            "id": "halden-unit-b3",
-            "assemblyRef": "process-plant.pwr.reference.v2",
-            "assemblyConfig": {
-              "loopCount": 4
-            },
+          "automation": {
+            "ref": "process-plant.pwr.standard"
+          }
+        },
+        {
+          "type": "plant",
+          "id": "plant:halden-b3",
+          "label": "Halden Unit B3",
+          "clusterId": "cluster-b",
+          "coolingWater": "Iddefjorden",
+          "location": [
+            11.413,
+            59.1121
+          ],
+          "model": {
+            "ref": "process-plant.pwr.reference",
             "parameters": {
+              "loopCount": 4
+            }
+          },
+          "operatingPoint": {
+            "ref": "process-plant.pwr.full-power",
+            "parameterOverrides": {
               "core": {
                 "initialPowerFraction": 0.994
               },
@@ -151,25 +234,38 @@
                 "initialLoadFraction": 0.994
               }
             },
-            "initialState": {
+            "valueOverrides": {
               "pressurizer.pressureMPa": 15.52,
               "sgA.levelPercent": 55.1,
               "sgA.collapsedLevelPercent": 53.3,
               "sgA.secondaryInventoryKg": 29850,
               "sgA.steamMassKg": 12020,
               "feedwaterControlValveA.positionFraction": 0.911
-            },
-            "runtime": {
-              "icRef": "process-plant.pwr.reference.graph.ic.v2"
             }
           },
-          {
-            "id": "halden-6-loop",
-            "assemblyRef": "process-plant.pwr.reference.v2",
-            "assemblyConfig": {
-              "loopCount": 6
-            },
+          "automation": {
+            "ref": "process-plant.pwr.standard"
+          }
+        },
+        {
+          "type": "plant",
+          "id": "plant:halden-6-loop",
+          "label": "Halden 6-loop",
+          "clusterId": "cluster-c",
+          "coolingWater": "Iddefjorden",
+          "location": [
+            11.3985,
+            59.117
+          ],
+          "model": {
+            "ref": "process-plant.pwr.reference",
             "parameters": {
+              "loopCount": 6
+            }
+          },
+          "operatingPoint": {
+            "ref": "process-plant.pwr.full-power",
+            "parameterOverrides": {
               "core": {
                 "initialPowerFraction": 1
               },
@@ -177,104 +273,18 @@
                 "initialLoadFraction": 1
               }
             },
-            "initialState": {
+            "valueOverrides": {
               "pressurizer.pressureMPa": 15.5,
               "sgA.levelPercent": 55,
               "sgA.collapsedLevelPercent": 53.2,
               "sgA.secondaryInventoryKg": 29800,
               "sgA.steamMassKg": 12000,
               "feedwaterControlValveA.positionFraction": 0.91
-            },
-            "runtime": {
-              "icRef": "process-plant.pwr.reference.graph.ic.v2"
             }
+          },
+          "automation": {
+            "ref": "process-plant.pwr.standard"
           }
-        ]
-      },
-      "items": [
-        {
-          "type": "unit",
-          "id": "plant:halden-a1",
-          "label": "Halden Unit A1",
-          "systemId": "halden-unit-a1",
-          "clusterId": "cluster-a",
-          "coolingWater": "Tista river / Halden harbor",
-          "location": [
-            11.3714,
-            59.1198
-          ]
-        },
-        {
-          "type": "unit",
-          "id": "plant:halden-a2",
-          "label": "Halden Unit A2",
-          "systemId": "halden-unit-a2",
-          "clusterId": "cluster-a",
-          "coolingWater": "Tista river / Halden harbor",
-          "location": [
-            11.3744,
-            59.1206
-          ]
-        },
-        {
-          "type": "unit",
-          "id": "plant:halden-a3",
-          "label": "Halden Unit A3",
-          "systemId": "halden-unit-a3",
-          "clusterId": "cluster-a",
-          "coolingWater": "Tista river / Halden harbor",
-          "location": [
-            11.377,
-            59.1192
-          ]
-        },
-        {
-          "type": "unit",
-          "id": "plant:halden-b1",
-          "label": "Halden Unit B1",
-          "systemId": "halden-unit-b1",
-          "clusterId": "cluster-b",
-          "coolingWater": "Iddefjorden",
-          "location": [
-            11.4067,
-            59.1126
-          ]
-        },
-        {
-          "type": "unit",
-          "id": "plant:halden-b2",
-          "label": "Halden Unit B2",
-          "systemId": "halden-unit-b2",
-          "clusterId": "cluster-b",
-          "coolingWater": "Iddefjorden",
-          "location": [
-            11.4101,
-            59.1137
-          ]
-        },
-        {
-          "type": "unit",
-          "id": "plant:halden-b3",
-          "label": "Halden Unit B3",
-          "systemId": "halden-unit-b3",
-          "clusterId": "cluster-b",
-          "coolingWater": "Iddefjorden",
-          "location": [
-            11.413,
-            59.1121
-          ]
-        },
-        {
-          "type": "unit",
-          "id": "plant:halden-6-loop",
-          "label": "Halden 6-loop",
-          "systemId": "halden-6-loop",
-          "clusterId": "cluster-c",
-          "coolingWater": "Iddefjorden",
-          "location": [
-            11.3985,
-            59.117
-          ]
         }
       ]
     },
@@ -673,7 +683,7 @@
                 "plant:halden-a2"
               ],
               "payload": {
-                "systemId": "halden-unit-a2",
+                "plantId": "plant:halden-a2",
                 "path": "sgA.tubeLeakFraction",
                 "targetValue": 0.018,
                 "durationSeconds": 300
@@ -725,7 +735,7 @@
                 "plant:halden-b1"
               ],
               "payload": {
-                "systemId": "halden-unit-b1",
+                "plantId": "plant:halden-b1",
                 "path": "mainFeedwaterPumpA.running",
                 "value": false
               }
@@ -770,7 +780,7 @@
                 "plant:halden-b1"
               ],
               "payload": {
-                "systemId": "halden-unit-b1",
+                "plantId": "plant:halden-b1",
                 "path": "mainFeedwaterPumpB.running",
                 "value": false
               }
@@ -811,7 +821,7 @@
                 "plant:halden-b1"
               ],
               "payload": {
-                "systemId": "halden-unit-b1",
+                "plantId": "plant:halden-b1",
                 "path": "rcpA.running",
                 "value": false
               }
@@ -834,7 +844,7 @@
                 "plant:halden-b1"
               ],
               "payload": {
-                "systemId": "halden-unit-b1",
+                "plantId": "plant:halden-b1",
                 "path": "rcpB.running",
                 "value": false
               }
@@ -857,7 +867,7 @@
                 "plant:halden-b1"
               ],
               "payload": {
-                "systemId": "halden-unit-b1",
+                "plantId": "plant:halden-b1",
                 "path": "rcpC.running",
                 "value": false
               }
@@ -880,7 +890,7 @@
                 "plant:halden-b1"
               ],
               "payload": {
-                "systemId": "halden-unit-b1",
+                "plantId": "plant:halden-b1",
                 "path": "rcpD.running",
                 "value": false
               }
@@ -903,7 +913,7 @@
                 "plant:halden-b1"
               ],
               "payload": {
-                "systemId": "halden-unit-b1",
+                "plantId": "plant:halden-b1",
                 "path": "turbine.loadFraction",
                 "targetValue": 0.35,
                 "durationSeconds": 120

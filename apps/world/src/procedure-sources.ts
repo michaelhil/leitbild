@@ -2,7 +2,7 @@ import {
   createProcedureSourceService,
   type ProcedureSourceConfig,
   type ProcedureSourceService,
-} from './core/procedures/source.ts'
+} from './features/procedures/source.ts'
 
 /** Product-owned procedure catalogs. The generic World procedure engine does not choose content. */
 export const procedureSources: ReadonlyArray<ProcedureSourceConfig> = [{

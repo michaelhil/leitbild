@@ -1,5 +1,5 @@
 import type { CompiledComponent, CompiledProcessLink } from '../../graph/index.ts'
-import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
+import type { CompiledProcessPlant } from '../../plant-compiler.ts'
 import { componentVariablePath } from '../behavior-contract.ts'
 import { parameterNumber } from '../component-helpers.ts'
 import { componentValveAvailabilityForLink, type LinkBehaviorReadContext } from './link-flow-helpers.ts'
@@ -16,7 +16,7 @@ const turbineSteamDemandKgPerS = (
 }
 
 const pathAvailability = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   paths: ReadonlyArray<ProcessLinkPath>,
   context: LinkBehaviorReadContext,
 ): number => {
@@ -33,7 +33,7 @@ const pathAvailability = (
 }
 
 const sourceAvailabilityToTurbine = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   sourceLink: CompiledProcessLink,
   turbine: CompiledComponent,
   context: LinkBehaviorReadContext,
@@ -46,7 +46,7 @@ const sourceAvailabilityToTurbine = (
 }
 
 export const topologyAwareMainSteamDemandForSourceLink = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   sourceLink: CompiledProcessLink,
   context: LinkBehaviorReadContext,
 ): number => {
@@ -83,7 +83,7 @@ const matchingSteamReleaseService = (
 }
 
 const collectReleasePaths = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   fromComponentIndex: number,
   visited: ReadonlySet<number>,
   hasReleaseValve: boolean,
@@ -108,7 +108,7 @@ const collectReleasePaths = (
 }
 
 export const topologyAwareMainSteamReleaseAvailabilityForSourceLink = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   sourceLink: CompiledProcessLink,
   context: LinkBehaviorReadContext,
 ): number => {

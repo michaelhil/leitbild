@@ -1,25 +1,25 @@
 import type { CompiledComponent } from '../graph/index.ts'
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
+import type { CompiledProcessPlant } from '../plant-compiler.ts'
 
 const uniqueComponentByKind = (
-  system: CompiledProcessPlantSystem,
+  plant: CompiledProcessPlant,
   kind: string,
 ): CompiledComponent | null => {
-  const matches = system.graph.components.filter(component => String(component.kind) === kind)
+  const matches = plant.graph.components.filter(component => String(component.kind) === kind)
   if (matches.length > 1) {
-    throw new Error(`process plant system ${system.id} has multiple ${kind} components; declare explicit coupling before using this behavior`)
+    throw new Error(`process plant ${plant.id} has multiple ${kind} components; declare explicit coupling before using this behavior`)
   }
   return matches[0] ?? null
 }
 
 export const primarySystemPressurizer = (
-  system: CompiledProcessPlantSystem,
-): CompiledComponent | null => uniqueComponentByKind(system, 'pressurizer')
+  plant: CompiledProcessPlant,
+): CompiledComponent | null => uniqueComponentByKind(plant, 'pressurizer')
 
 export const primarySystemReactorVessel = (
-  system: CompiledProcessPlantSystem,
-): CompiledComponent | null => uniqueComponentByKind(system, 'reactorVessel')
+  plant: CompiledProcessPlant,
+): CompiledComponent | null => uniqueComponentByKind(plant, 'reactorVessel')
 
 export const primarySystemReactorCore = (
-  system: CompiledProcessPlantSystem,
-): CompiledComponent | null => uniqueComponentByKind(system, 'reactorCore')
+  plant: CompiledProcessPlant,
+): CompiledComponent | null => uniqueComponentByKind(plant, 'reactorCore')

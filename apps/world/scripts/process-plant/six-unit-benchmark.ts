@@ -2,17 +2,19 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { cpus, hostname, platform, release } from 'node:os'
 import { dirname } from 'node:path'
 import {
-  compileProcessPlantSystem,
-  createProcessPlantMultiSystemTestbed,
-  processPlantPwrReferenceAssemblyRef,
-  type ProcessPlantMultiSystemConfig,
-  type ProcessPlantTelemetrySeries,
+  compileProcessPlant,
+  createPwrReferencePlantDefinition,
   type VariablePath,
 } from '../../src/packs/process-plant/index.ts'
+import {
+  createProcessPlantMultiPlantTestbed,
+  type ProcessPlantMultiPlantConfig,
+  type ProcessPlantTelemetrySeries,
+} from '../../src/packs/process-plant/engineering/index.ts'
 
 interface BenchmarkResult {
   readonly label: string
-  readonly systemCount: number
+  readonly plantCount: number
   readonly componentCount: number
   readonly linkCount: number
   readonly variableCount: number
@@ -54,25 +56,24 @@ const telemetryVariables = [
 
 const variablePath = (value: string): VariablePath => value as VariablePath
 
-const compiledSystem = (id: string) => compileProcessPlantSystem({
+const compiledPlant = (id: string) => compileProcessPlant(createPwrReferencePlantDefinition({
   id,
-  assemblyRef: processPlantPwrReferenceAssemblyRef,
-  assemblyConfig: { loopCount: 4, title: `Benchmark ${id}` },
-})
+  title: `Benchmark ${id}`,
+}))
 
 const telemetryConfig = {
   sampleIntervalMs,
   variables: telemetryVariables.map(variablePath),
 }
 
-const unitConfigs = (): ReadonlyArray<ProcessPlantMultiSystemConfig> => [
+const unitConfigs = (): ReadonlyArray<ProcessPlantMultiPlantConfig> => [
   {
-    system: compiledSystem('unit-1'),
+    plant: compiledPlant('unit-1'),
     telemetry: telemetryConfig,
     schedule: { actions: [] },
   },
   {
-    system: compiledSystem('unit-2'),
+    plant: compiledPlant('unit-2'),
     telemetry: telemetryConfig,
     schedule: {
       actions: [{
@@ -84,7 +85,7 @@ const unitConfigs = (): ReadonlyArray<ProcessPlantMultiSystemConfig> => [
     },
   },
   {
-    system: compiledSystem('unit-3'),
+    plant: compiledPlant('unit-3'),
     telemetry: telemetryConfig,
     schedule: {
       actions: [{
@@ -96,7 +97,7 @@ const unitConfigs = (): ReadonlyArray<ProcessPlantMultiSystemConfig> => [
     },
   },
   {
-    system: compiledSystem('unit-4'),
+    plant: compiledPlant('unit-4'),
     telemetry: telemetryConfig,
     schedule: {
       actions: [
@@ -116,7 +117,7 @@ const unitConfigs = (): ReadonlyArray<ProcessPlantMultiSystemConfig> => [
     },
   },
   {
-    system: compiledSystem('unit-5'),
+    plant: compiledPlant('unit-5'),
     telemetry: telemetryConfig,
     schedule: {
       actions: [{
@@ -129,7 +130,7 @@ const unitConfigs = (): ReadonlyArray<ProcessPlantMultiSystemConfig> => [
     },
   },
   {
-    system: compiledSystem('unit-6'),
+    plant: compiledPlant('unit-6'),
     telemetry: telemetryConfig,
     schedule: {
       actions: [
@@ -158,18 +159,18 @@ const median = (values: ReadonlyArray<number>): number => {
 
 const runBenchmarkOnce = (
   label: string,
-  configs: ReadonlyArray<ProcessPlantMultiSystemConfig>,
-): { readonly result: BenchmarkResult; readonly traces: ReturnType<ReturnType<typeof createProcessPlantMultiSystemTestbed>['runFor']> } => {
+  configs: ReadonlyArray<ProcessPlantMultiPlantConfig>,
+): { readonly result: BenchmarkResult; readonly traces: ReturnType<ReturnType<typeof createProcessPlantMultiPlantTestbed>['runFor']> } => {
   const started = performance.now()
-  const traces = createProcessPlantMultiSystemTestbed(configs).runFor(durationMs, stepMs)
+  const traces = createProcessPlantMultiPlantTestbed(configs).runFor(durationMs, stepMs)
   const wallMs = performance.now() - started
-  const graph = configs[0]?.system.graph
-  if (!graph) throw new Error('process plant benchmark requires at least one system')
+  const graph = configs[0]?.plant.graph
+  if (!graph) throw new Error('process plant benchmark requires at least one Plant')
   return {
     traces,
     result: {
       label,
-      systemCount: configs.length,
+      plantCount: configs.length,
       componentCount: graph.components.length * configs.length,
       linkCount: graph.links.length * configs.length,
       variableCount: graph.variables.length * configs.length,
@@ -183,8 +184,8 @@ const runBenchmarkOnce = (
 
 const runBenchmark = (
   label: string,
-  configFactory: () => ReadonlyArray<ProcessPlantMultiSystemConfig>,
-): { readonly result: BenchmarkResult; readonly traces: ReturnType<ReturnType<typeof createProcessPlantMultiSystemTestbed>['runFor']> } => {
+  configFactory: () => ReadonlyArray<ProcessPlantMultiPlantConfig>,
+): { readonly result: BenchmarkResult; readonly traces: ReturnType<ReturnType<typeof createProcessPlantMultiPlantTestbed>['runFor']> } => {
   const repeatCount = 3
   runBenchmarkOnce(label, configFactory())
   const runs = Array.from({ length: repeatCount }, () => runBenchmarkOnce(label, configFactory()))
@@ -240,7 +241,7 @@ const svgEscape = (value: string): string =>
   value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
 
 const renderSvg = (
-  traces: ReturnType<ReturnType<typeof createProcessPlantMultiSystemTestbed>['runFor']>,
+  traces: ReturnType<ReturnType<typeof createProcessPlantMultiPlantTestbed>['runFor']>,
   performance: ReadonlyArray<BenchmarkResult>,
 ): string => {
   const width = 1200
@@ -255,7 +256,7 @@ const renderSvg = (
   const levelColor = '#0f766e'
   const turbineColor = '#dc2626'
   const panels = traces.map((trace, index) => {
-    if (!trace.telemetry) throw new Error(`benchmark trace ${trace.systemId} has no telemetry`)
+    if (!trace.telemetry) throw new Error(`benchmark trace ${trace.plantId} has no telemetry`)
     const col = index % 3
     const row = Math.floor(index / 3)
     const bounds = {
@@ -270,7 +271,7 @@ const renderSvg = (
     return `
       <g>
         <rect x="${bounds.x - 12}" y="${bounds.y - 36}" width="${bounds.width + 24}" height="${bounds.height + 56}" rx="10" fill="#ffffff" stroke="#d1d5db"/>
-        <text x="${bounds.x}" y="${bounds.y - 14}" font-family="Inter, system-ui, sans-serif" font-size="16" font-weight="700" fill="#111827">${svgEscape(trace.systemId)}</text>
+        <text x="${bounds.x}" y="${bounds.y - 14}" font-family="Inter, system-ui, sans-serif" font-size="16" font-weight="700" fill="#111827">${svgEscape(trace.plantId)}</text>
         <line x1="${bounds.x}" y1="${bounds.y + bounds.height}" x2="${bounds.x + bounds.width}" y2="${bounds.y + bounds.height}" stroke="#9ca3af"/>
         <line x1="${bounds.x}" y1="${bounds.y}" x2="${bounds.x}" y2="${bounds.y + bounds.height}" stroke="#9ca3af"/>
         <path d="${scaledPath(core, bounds, 2500, 3200)}" fill="none" stroke="${coreColor}" stroke-width="2.4"/>
@@ -280,14 +281,14 @@ const renderSvg = (
       </g>`
   }).join('')
   const single = performance.find(result => result.label === 'single-unit')
-  const multiSystem = performance.find(result => result.label === 'six-system')
-  if (!single || !multiSystem) throw new Error('benchmark performance summary is incomplete')
+  const multiPlant = performance.find(result => result.label === 'six-plant')
+  if (!single || !multiPlant) throw new Error('benchmark performance summary is incomplete')
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="title desc">
   <title id="title">Multi-system process plant benchmark trace</title>
   <desc id="desc">A two by three grid of process variable traces for six independently scheduled process plant units.</desc>
   <rect width="100%" height="100%" fill="#f8fafc"/>
   <text x="70" y="38" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="700" fill="#111827">Multi-system process plant benchmark</text>
-  <text x="70" y="62" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#4b5563">Single system ${single.wallMs.toFixed(1)} ms; six systems ${multiSystem.wallMs.toFixed(1)} ms; wall-clock ratio ${(multiSystem.wallMs / single.wallMs).toFixed(2)}x; simulated ${durationMs / 1000}s.</text>
+  <text x="70" y="62" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#4b5563">Single Plant ${single.wallMs.toFixed(1)} ms; six Plants ${multiPlant.wallMs.toFixed(1)} ms; wall-clock ratio ${(multiPlant.wallMs / single.wallMs).toFixed(2)}x; simulated ${durationMs / 1000}s.</text>
   ${panels}
   <g font-family="Inter, system-ui, sans-serif" font-size="13" fill="#374151">
     <line x1="70" y1="640" x2="100" y2="640" stroke="${coreColor}" stroke-width="3"/><text x="110" y="644">Core power MW, scaled 2500-3200</text>
@@ -299,17 +300,17 @@ const renderSvg = (
 }
 
 const renderCsv = (
-  traces: ReturnType<ReturnType<typeof createProcessPlantMultiSystemTestbed>['runFor']>,
+  traces: ReturnType<ReturnType<typeof createProcessPlantMultiPlantTestbed>['runFor']>,
 ): string => {
-  const rows = ['systemId,seconds,corePowerMw,sgALevelPercent,turbineElectricMw']
+  const rows = ['plantId,seconds,corePowerMw,sgALevelPercent,turbineElectricMw']
   for (const trace of traces) {
-    if (!trace.telemetry) throw new Error(`benchmark trace ${trace.systemId} has no telemetry`)
+    if (!trace.telemetry) throw new Error(`benchmark trace ${trace.plantId} has no telemetry`)
     const core = numericPoints(trace.telemetry, 'core.powerMw')
     const level = numericPoints(trace.telemetry, 'sgA.levelPercent')
     const turbine = numericPoints(trace.telemetry, 'turbine.electricMw')
     for (const [index, point] of core.entries()) {
       rows.push([
-        trace.systemId,
+        trace.plantId,
         point.x.toFixed(0),
         point.y.toFixed(2),
         level[index]?.y.toFixed(2) ?? '',
@@ -334,7 +335,7 @@ const benchmarkEnvironment = (): BenchmarkEnvironment => {
 
 const main = async (): Promise<void> => {
   const oneUnit = runBenchmark('single-unit', () => [unitConfigs()[0]!])
-  const sixUnit = runBenchmark('six-system', unitConfigs)
+  const sixUnit = runBenchmark('six-plant', unitConfigs)
   const performance = [oneUnit.result, sixUnit.result]
   if (shouldWriteArtifacts) {
     await mkdir(dirname(traceSvgPath), { recursive: true })

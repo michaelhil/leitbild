@@ -8,13 +8,7 @@ import { pressurizerReferenceIcRules } from './reference-ic-pressurizer.ts'
 import { reactorReferenceIcRules } from './reference-ic-reactor.ts'
 import { reactorCoolantPumpReferenceIcRules } from './reference-ic-rcp.ts'
 import { steamGeneratorReferenceIcRules } from './reference-ic-steam-generator.ts'
-import { fourLoopReferenceLetters, sixLoopReferenceLetters, type ProcessPlantReferenceLoop } from './reference-loop.ts'
-
-export const processPlantPressurizedWaterReactorIcRef = 'process-plant.pressurized-water-reactor.ic.v1'
-export const processPlantPressurizedWaterReactorSixLoopIcRef = 'process-plant.pressurized-water-reactor-6-loop.ic.v1'
-export const processPlantPwrReferenceGraphIcRef = 'process-plant.pwr.reference.graph.ic.v2'
-export const processPlantPwrReferenceIcRefForLoopCount = (loopCount: number): string =>
-  `process-plant.pwr.reference.${loopCount}-loop.ic.v2`
+import { fourLoopReferenceLetters, type ProcessPlantReferenceLoop } from './reference-loop.ts'
 
 export const pressurizedWaterReactorReferenceIcFor = (
   loops: ReadonlyArray<ProcessPlantReferenceLoop>,
@@ -32,7 +26,6 @@ export const pressurizedWaterReactorReferenceIcFor = (
 })
 
 export const pressurizedWaterReactorReferenceIc: ProcessPlantIcConfig = pressurizedWaterReactorReferenceIcFor(fourLoopReferenceLetters)
-export const pressurizedWaterReactorSixLoopReferenceIc: ProcessPlantIcConfig = pressurizedWaterReactorReferenceIcFor(sixLoopReferenceLetters)
 
 interface GraphLoopEntry {
   readonly loopId: ProcessPlantReferenceLoop

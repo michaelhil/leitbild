@@ -57,6 +57,14 @@ export interface ProcessPlantRuntimeSnapshot {
   readonly variables: ReadonlyArray<ProcessPlantVariableSnapshot>
 }
 
+export interface ProcessPlantRuntimeCheckpoint {
+  readonly modelDigest: string
+  readonly elapsedMs: number
+  readonly remainderMs: number
+  readonly queuedCommands: ReadonlyArray<ProcessPlantCommand>
+  readonly values: ReadonlyArray<ProcessPlantValue>
+}
+
 export interface ProcessPlantRuntime {
   readonly tick: (elapsedMs: number) => ProcessPlantTickResult
   readonly elapsedMs: () => number
@@ -68,4 +76,5 @@ export interface ProcessPlantRuntime {
   readonly writeCommand: (command: ProcessPlantCommand) => void
   readonly pwrTransientDiagnostics: () => PwrTransientDiagnostics
   readonly snapshot: () => ProcessPlantRuntimeSnapshot
+  readonly checkpoint: () => ProcessPlantRuntimeCheckpoint
 }

@@ -1,37 +1,8 @@
-import { z } from 'zod'
 import type { IsoTimestamp } from '../../core/model/index.ts'
-import { idSchema } from '../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
 import type { ProcessPlantIcLifecycleState, ProcessPlantIcSnapshot } from './runtime/index.ts'
-import type { ProcessPlantSystemRuntime } from './system-runtime.ts'
-
-const systemQuerySchema = z.object({
-  systemId: idSchema,
-})
-
-const success = (
-  request: PackQueryRequest,
-  result: unknown,
-  generatedAt: IsoTimestamp,
-): PackQueryResponse => ({
-  ok: true,
-  packId: request.packId,
-  kind: request.kind,
-  result,
-  generatedAt,
-})
-
-const failure = (
-  request: PackQueryRequest,
-  reason: string,
-  generatedAt: IsoTimestamp,
-): PackQueryResponse => ({
-  ok: false,
-  packId: request.packId,
-  kind: request.kind,
-  reason,
-  generatedAt,
-})
+import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
+import { failure, plantQuerySchema, requirePlant, success } from './queries/common.ts'
 
 export const processPlantIcQueryKinds = [
   'process-plant.ic.status',
@@ -40,15 +11,6 @@ export const processPlantIcQueryKinds = [
   'process-plant.alarms.summary',
   'process-plant.alarms.history',
 ] as const
-
-const requireSystem = (
-  systems: ReadonlyMap<string, ProcessPlantSystemRuntime>,
-  systemId: string,
-): ProcessPlantSystemRuntime => {
-  const system = systems.get(systemId)
-  if (!system) throw new Error(`process plant system not found: ${systemId}`)
-  return system
-}
 
 const alarmLifecycleStates = (
   snapshot: ProcessPlantIcSnapshot,
@@ -102,7 +64,7 @@ const alarmSummaryFor = (snapshot: ProcessPlantIcSnapshot): unknown => {
 
 export const answerProcessPlantIcQuery = (config: {
   readonly request: PackQueryRequest
-  readonly systems: ReadonlyMap<string, ProcessPlantSystemRuntime>
+  readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
   readonly at: IsoTimestamp
 }): PackQueryResponse | undefined => {
   const supportedKinds = new Set<string>(processPlantIcQueryKinds)
@@ -110,19 +72,19 @@ export const answerProcessPlantIcQuery = (config: {
     return undefined
   }
   try {
-    const payload = systemQuerySchema.parse(config.request.payload)
-    const system = requireSystem(config.systems, payload.systemId)
-    if (!system.protection) return failure(config.request, `process plant I&C is not configured for system: ${payload.systemId}`, config.at)
+    const payload = plantQuerySchema.parse(config.request.payload)
+    const system = requirePlant(config.plants, payload.plantId)
+    if (!system.protection) return failure(config.request, `process plant I&C is not configured for plant: ${payload.plantId}`, config.at)
     const snapshot = system.protection.snapshot()
     if (config.request.kind === 'process-plant.ic.status') {
       return success(config.request, {
-        systemId: payload.systemId,
+        plantId: payload.plantId,
         ic: snapshot,
       }, config.at)
     }
     if (config.request.kind === 'process-plant.alarms.status') {
       return success(config.request, {
-        systemId: payload.systemId,
+        plantId: payload.plantId,
         alarms: snapshot.alarms,
         trips: snapshot.trips,
         summary: alarmSummaryFor(snapshot),
@@ -130,18 +92,18 @@ export const answerProcessPlantIcQuery = (config: {
     }
     if (config.request.kind === 'process-plant.alarms.summary') {
       return success(config.request, {
-        systemId: payload.systemId,
+        plantId: payload.plantId,
         summary: alarmSummaryFor(snapshot),
       }, config.at)
     }
     if (config.request.kind === 'process-plant.alarms.history') {
       return success(config.request, {
-        systemId: payload.systemId,
+        plantId: payload.plantId,
         history: snapshot.history,
       }, config.at)
     }
     return success(config.request, {
-      systemId: payload.systemId,
+      plantId: payload.plantId,
       ic: system.protection.catalog(),
     }, config.at)
   } catch (err) {

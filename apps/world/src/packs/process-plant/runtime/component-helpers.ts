@@ -1,5 +1,5 @@
 import type { CompiledComponent, VariablePath } from '../graph/index.ts'
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
+import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import { componentVariablePath } from './behavior-contract.ts'
 import { boundedApproach, firstOrderLag } from './physics.ts'
 
@@ -70,7 +70,7 @@ export const averageFor = (
 }
 
 export const sumComponentValueByKind = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   kind: string,
   localPath: string,
   context: ComponentNumericReadContext,

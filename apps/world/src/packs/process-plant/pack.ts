@@ -6,7 +6,18 @@ import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
 import { processPlantControlWriteCommandKind } from './commands.ts'
 import { emptyProcessPlantProjection, processPlantPackId, processPlantUnitPackDataSchema, type ProcessPlantUnitPackData } from './model.ts'
 import { processPlantSimAdapterId, processPlantSimRuntimeId } from './sim/constants.ts'
-import { processPlantPackConfigSchema } from './config.ts'
+import {
+  processPlantAutomationSelectionSchema,
+  processPlantModelSelectionSchema,
+  processPlantOperatingPointSelectionSchema,
+  processPlantPackConfigSchema,
+} from './config.ts'
+import {
+  processPlantPwrFullPowerOperatingPointRef,
+  processPlantPwrReferenceAutomationRef,
+  processPlantPwrReferenceModelRef,
+} from './plant-definitions.ts'
+import { processPlantRecordingProfiles } from './recording.ts'
 
 const unsupported = (operation: string): never => {
   throw new Error(`process-plant pack does not support ${operation}`)
@@ -25,12 +36,6 @@ const pointFromSpec = (spec: PackScenarioItemSpec): GeoJsonPoint => {
   return geoPointFromLonLat(location[0], location[1])
 }
 
-const requiredString = (spec: PackScenarioItemSpec, key: string): string => {
-  const value = spec[key]
-  if (typeof value !== 'string' || value.length === 0) throw new Error(`process-plant unit ${spec.id} requires ${key}`)
-  return value
-}
-
 const optionalString = (spec: PackScenarioItemSpec, key: string): string | undefined => {
   const value = spec[key]
   if (value === undefined) return undefined
@@ -46,12 +51,16 @@ const optionalUnitData = (
   return value === undefined ? {} : { [key]: value }
 }
 
-const expandUnitObject = (spec: PackScenarioItemSpec, at: IsoTimestamp): OperationalObject => {
-  const systemId = requiredString(spec, 'systemId')
+const expandPlantObject = (spec: PackScenarioItemSpec, at: IsoTimestamp): OperationalObject => {
+  const model = processPlantModelSelectionSchema.parse(spec.model)
+  const operatingPoint = processPlantOperatingPointSelectionSchema.parse(spec.operatingPoint)
+  const automation = processPlantAutomationSelectionSchema.parse(spec.automation)
   const packData: ProcessPlantUnitPackData = {
-    type: 'process-plant-unit',
+    type: 'process-plant',
     schemaVersion: 1,
-    systemId,
+    model,
+    operatingPoint,
+    automation,
     ...optionalUnitData(spec, 'clusterId'),
     ...optionalUnitData(spec, 'coolingWater'),
     projection: emptyProcessPlantProjection(at),
@@ -81,7 +90,7 @@ const expandUnitObject = (spec: PackScenarioItemSpec, at: IsoTimestamp): Operati
     provenance: {
       source: 'simulator',
       adapterId: processPlantSimAdapterId,
-      externalId: systemId,
+      externalId: spec.id,
     },
     timestamps: {
       createdAt: at,
@@ -100,7 +109,8 @@ const presentationForUnit = (object: OperationalObject, data: ProcessPlantUnitPa
     summary: projection.summary,
     status: packStatus(projection.statusTone, projection.statusLabel),
     fields: [
-      packField('system-id', 'System', data.systemId),
+      packField('model', 'Model', data.model.ref),
+      packField('operating-point', 'Operating point', data.operatingPoint.ref),
       ...(data.clusterId === undefined ? [] : [packField('cluster', 'Cluster', data.clusterId)]),
       ...(data.coolingWater === undefined ? [] : [packField('cooling-water', 'Cooling water', data.coolingWater)]),
       ...projection.fields,
@@ -112,28 +122,26 @@ const presentationForUnit = (object: OperationalObject, data: ProcessPlantUnitPa
 export const processPlantPack: WorldPack = {
   descriptor: createWorldPackDescriptor({
     id: 'process-plant', version: '1.0.0', name: 'Process Plant',
-    contributions: ['runtime', 'knowledge', 'scenario', 'presentation'],
+    contributions: ['runtime', 'recording', 'knowledge', 'scenario', 'presentation'],
   }),
   scenarioConfigSchema: processPlantPackConfigSchema,
   authoring: {
     itemTypes: [{
-      id: 'unit',
+      id: 'plant',
       label: 'Process plant',
-      description: 'A map-visible process plant backed by a reference PWR process system.',
+      description: 'A map-visible Plant backed by a selected model, operating point, and automation definition.',
       idPrefix: 'plant',
-      defaultItem: {},
-      placement: { target: 'item', path: ['location'] },
-      linkedConfig: {
-        collectionPath: ['systems'],
-        idPrefix: 'plant-system',
-        itemReferencePath: ['systemId'],
-        defaults: {
-          assemblyRef: 'process-plant.pwr.reference.v2',
-          assemblyConfig: { loopCount: 4 },
+      defaultItem: {
+        model: {
+          ref: processPlantPwrReferenceModelRef,
+          parameters: { loopCount: 4 },
         },
+        operatingPoint: { ref: processPlantPwrFullPowerOperatingPointRef },
+        automation: { ref: processPlantPwrReferenceAutomationRef },
       },
+      placement: { target: 'item', path: ['location'] },
       fields: [{
-        target: 'linkedConfig', path: ['assemblyConfig', 'loopCount'], label: 'Primary loops',
+        target: 'item', path: ['model', 'parameters', 'loopCount'], label: 'Primary loops',
         control: { kind: 'number', defaultValue: 4, min: 2, max: 6, step: 1 },
       }],
     }],
@@ -142,12 +150,13 @@ export const processPlantPack: WorldPack = {
     runtimes: [{ id: processPlantSimRuntimeId, version: '1.0.0', label: 'Local process plant runtime', kind: 'local', clock: 'simulation' }],
     defaultRuntimeId: processPlantSimRuntimeId,
   },
+  recording: { profiles: processPlantRecordingProfiles },
   knowledge: { wikiRefs: [{ name: 'Leitbild PWR operations wiki', url: 'https://github.com/michaelhil/leitbild/blob/main/docs/wiki/pwr-ops.md' }] },
   scenario: {
     expandItem: (spec, context) => {
       if (spec.pack !== 'process-plant') unsupported(`scenario pack ${spec.pack}`)
-      if (spec.type !== 'unit') unsupported(`scenario object type ${spec.type}`)
-      return { objects: [expandUnitObject(spec, context.at)] }
+      if (spec.type !== 'plant') unsupported(`scenario object type ${spec.type}`)
+      return { objects: [expandPlantObject(spec, context.at)] }
     },
     applyOperation: () => unsupported('scenario operations'),
   },

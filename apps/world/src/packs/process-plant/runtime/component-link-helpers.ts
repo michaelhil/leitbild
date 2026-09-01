@@ -1,5 +1,5 @@
 import type { CompiledComponent, CompiledProcessLink, VariablePath } from '../graph/index.ts'
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
+import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import { processLinkVariablePath } from './behavior-contract.ts'
 
 export type ComponentLinkReadContext = {
@@ -8,7 +8,7 @@ export type ComponentLinkReadContext = {
 }
 
 export const incomingComponentLinks = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   component: CompiledComponent,
   linkMatches: (link: CompiledProcessLink) => boolean = () => true,
 ): ReadonlyArray<CompiledProcessLink> =>
@@ -17,7 +17,7 @@ export const incomingComponentLinks = (
     .filter((link): link is CompiledProcessLink => link !== undefined && linkMatches(link))
 
 export const outgoingComponentLinks = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   component: CompiledComponent,
   linkMatches: (link: CompiledProcessLink) => boolean = () => true,
 ): ReadonlyArray<CompiledProcessLink> =>
@@ -50,7 +50,7 @@ export const sumProcessLinkValue = (
 }
 
 export const averageIncomingComponentLinkValue = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   component: CompiledComponent,
   localPath: string,
   context: ComponentLinkReadContext,
@@ -71,7 +71,7 @@ export const averageIncomingComponentLinkValue = (
 }
 
 export const averageOutgoingComponentLinkValue = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   component: CompiledComponent,
   localPath: string,
   context: ComponentLinkReadContext,
@@ -92,7 +92,7 @@ export const averageOutgoingComponentLinkValue = (
 }
 
 export const sumIncomingComponentLinkValue = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   component: CompiledComponent,
   localPath: string,
   context: ComponentLinkReadContext,
@@ -111,7 +111,7 @@ export const sumIncomingComponentLinkValue = (
 }
 
 export const sumOutgoingComponentLinkValue = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   component: CompiledComponent,
   localPath: string,
   context: ComponentLinkReadContext,
@@ -130,7 +130,7 @@ export const sumOutgoingComponentLinkValue = (
 }
 
 export const sumProcessLinkValueByService = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   localPath: string,
   context: ComponentLinkReadContext,
   service: string,
@@ -148,7 +148,7 @@ export const sumProcessLinkValueByService = (
 }
 
 export const flowWeightedProcessLinkValueByService = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   localPath: string,
   context: ComponentLinkReadContext,
   service: string,

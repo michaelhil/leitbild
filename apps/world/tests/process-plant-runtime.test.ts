@@ -2,34 +2,35 @@ import { describe, expect, test } from 'bun:test'
 import type { SimulationRunId, IsoTimestamp } from '../src/core/model/index.ts'
 import {
   componentVariablePath,
+  assemblePwrReferencePlantGraph,
   compileProcessPlantExecutionPlan,
-  compileProcessPlantSystem,
+  compileResolvedProcessPlant,
+  commandsForProcessPlantAction,
   component,
   connect,
   createBehaviorContext,
   createProcessPlantProtectionRunner,
   createProcessPlantRampRunner,
-  createProcessPlantScheduleRunner,
-  createProcessPlantMultiSystemTestbed,
   createProcessPlantRuntime,
-  createProcessPlantTestbed,
-  defaultProcessPlantDemoTransientInputs,
   plantGraph,
-  pressurizedWaterReactorPlantSpec,
+  pressurizedWaterReactorReferenceIc,
   processLinkVariableDescriptorSchema,
-  processPlantDemoTransientCommands,
-  processPlantDemoTransients,
+  processPlantActions,
   processPlantSolverPhases,
   processPlantComponentRegistry,
   processPlantServices,
-  processPlantPressurizedWaterReactorIcRef,
-  resolveProcessPlantIcConfig,
   type ComponentId,
   type ConnectionId,
   type ConnectionService,
+  type PlantGraphSpec,
   type VariablePath,
 } from '../src/packs/process-plant/index.ts'
-import { answerProcessPlantSurfaceQuery } from '../src/packs/process-plant/queries/surface-query.ts'
+import {
+  createProcessPlantMultiPlantTestbed,
+  createProcessPlantScheduleRunner,
+  createProcessPlantTestbed,
+} from '../src/packs/process-plant/engineering/index.ts'
+import { answerProcessPlantDisplayQuery } from '../src/packs/process-plant/queries/display-query.ts'
 import { componentBehaviorDefinitions, initialComponentValueFor } from '../src/packs/process-plant/runtime/component-behaviors.ts'
 import { componentInitialValueDefinitions } from '../src/packs/process-plant/runtime/component-initial-values.ts'
 import { componentInitialReconciliationDefinitions } from '../src/packs/process-plant/runtime/component-behaviors.ts'
@@ -37,14 +38,32 @@ import { processLinkBehaviorDefinitions } from '../src/packs/process-plant/runti
 import { latentHeatSteamMjPerKg } from '../src/packs/process-plant/runtime/thermophysics.ts'
 import { createProcessPlantVariableTable } from '../src/packs/process-plant/runtime/variable-table.ts'
 import { componentFlowBalanceForService } from '../src/packs/process-plant/runtime/links/link-flow-helpers.ts'
-import { createProcessPlantRuntimePerformance } from '../src/packs/process-plant/system-runtime.ts'
+import { createProcessPlantRuntimePerformance } from '../src/packs/process-plant/runtime-instance.ts'
 
-const compiledSystem = () => compileProcessPlantSystem({
+const pressurizedWaterReactorPlantSpec = assemblePwrReferencePlantGraph({ loopCount: 4 })
+
+const compileTestSystem = (definition: {
+  readonly id: string
+  readonly graph: PlantGraphSpec
+  readonly parameters?: Readonly<Record<string, unknown>>
+  readonly initialState?: Readonly<Record<string, unknown>>
+}) => compileResolvedProcessPlant({
+  id: definition.id,
+  modelRef: 'test.model',
+  operatingPointRef: 'test.operating-point',
+  automationRef: 'test.automation',
+  graph: definition.graph,
+  ...(definition.parameters === undefined ? {} : { parameterOverrides: definition.parameters }),
+  ...(definition.initialState === undefined ? {} : { valueOverrides: definition.initialState }),
+  automationForGraph: () => ({ rules: [] }),
+})
+
+const compiledSystem = () => compileTestSystem({
   id: 'plant',
   graph: pressurizedWaterReactorPlantSpec,
 })
 
-const compiledSystemWithParameters = (parameters: Record<string, Record<string, unknown>>) => compileProcessPlantSystem({
+const compiledSystemWithParameters = (parameters: Record<string, Record<string, unknown>>) => compileTestSystem({
   id: 'plant',
   graph: pressurizedWaterReactorPlantSpec,
   parameters,
@@ -57,7 +76,7 @@ const compiledSystemWithStaticFeedwaterValves = () => compiledSystemWithParamete
   feedwaterControlValveD: { initialPositionFraction: 1, controller: undefined },
 })
 
-const compiledSystemWithInitialState = (initialState: Record<string, unknown>) => compileProcessPlantSystem({
+const compiledSystemWithInitialState = (initialState: Record<string, unknown>) => compileTestSystem({
   id: 'plant',
   graph: pressurizedWaterReactorPlantSpec,
   initialState,
@@ -66,7 +85,7 @@ const compiledSystemWithInitialState = (initialState: Record<string, unknown>) =
 const compiledSystemWithConnectionPhysical = (
   connectionId: string,
   physical: Record<string, unknown>,
-) => compileProcessPlantSystem({
+) => compileTestSystem({
   id: 'plant',
   graph: {
     ...pressurizedWaterReactorPlantSpec,
@@ -96,7 +115,7 @@ const runWithReferenceProtection = (input: {
   const stepMs = input.stepMs ?? 1_000
   const protection = createProcessPlantProtectionRunner({
     system: input.system,
-    protection: resolveProcessPlantIcConfig(processPlantPressurizedWaterReactorIcRef),
+    protection: pressurizedWaterReactorReferenceIc,
   })
   let elapsedMs = 0
   while (elapsedMs < input.durationMs) {
@@ -114,35 +133,35 @@ const runWithReferenceProtection = (input: {
   return protection.snapshot()
 }
 
-const surfaceAlarmIdsFor = (input: {
+const displayAlarmIdsFor = (input: {
   readonly system: ReturnType<typeof compiledSystem>
   readonly runtime: ReturnType<typeof createProcessPlantRuntime>
   readonly protection: ReturnType<typeof createProcessPlantProtectionRunner>
 }): ReadonlyArray<string> => {
-  const systems = new Map([[
+  const plants = new Map([[
     input.system.id,
     {
-      system: input.system,
+      plant: input.system,
       runtime: input.runtime,
       ramps: createProcessPlantRampRunner({ runtime: input.runtime }),
       protection: input.protection,
       performance: createProcessPlantRuntimePerformance(),
     },
   ]])
-  const response = answerProcessPlantSurfaceQuery({
+  const response = answerProcessPlantDisplayQuery({
     request: {
       packId: 'process-plant',
-      kind: 'process-plant.surface.snapshot',
+      kind: 'process-plant.display.snapshot',
       payload: {
-        systemId: input.system.id,
-        surfaceId: 'unit-overview',
+        plantId: input.system.id,
+        displayId: 'unit-overview',
       },
     },
-    systems,
+    plants,
     at: '2026-06-02T00:00:00.000Z' as IsoTimestamp,
   })
   expect(response?.ok).toBe(true)
-  if (response === undefined || !response.ok) throw new Error(response?.reason ?? 'surface alarm snapshot query did not resolve')
+  if (response === undefined || !response.ok) throw new Error(response?.reason ?? 'display alarm snapshot query did not resolve')
   const alarms = (response.result as {
     readonly alarms: {
       readonly active: ReadonlyArray<{ readonly id: string }>
@@ -235,7 +254,7 @@ describe('process plant runtime', () => {
     const runtime = createProcessPlantRuntime({ system })
     const protection = createProcessPlantProtectionRunner({
       system,
-      protection: resolveProcessPlantIcConfig(processPlantPressurizedWaterReactorIcRef),
+      protection: pressurizedWaterReactorReferenceIc,
     })
 
     for (let elapsedMs = 1_000; elapsedMs <= 600_000; elapsedMs += 1_000) {
@@ -285,13 +304,13 @@ describe('process plant runtime', () => {
     expect(activeLifecycleIds(snapshot).alarms).toContain('alarm:offsite-grid-degraded-voltage:offsite-grid-degraded-voltage')
   })
 
-  test('demo transient catalog produces reference I&C lifecycle indications', () => {
+  test('demo action catalog produces reference I&C lifecycle indications', () => {
     const expectedLifecycleIds = new Map<string, ReadonlyArray<string>>([
-      ['sg-a-tube-leak', [
+      ['steam-generator-tube-leak-a', [
         'alarm:sg-a-tube-leak-indication:tube-leak',
         'alarm:sg-a-secondary-radiation-high:secondary-radiation-high',
       ]],
-      ['trip-all-rcps', [
+      ['trip-reactor-coolant-pumps', [
         'alarm:rcp-a-trip:not-running',
         'alarm:rcp-b-trip:not-running',
         'alarm:rcp-c-trip:not-running',
@@ -301,7 +320,7 @@ describe('process plant runtime', () => {
       ['loss-main-feedwater', [
         'alarm:main-feedwater-pump-trip:main-feedwater-pump-unavailable',
       ]],
-      ['sg-b-feedwater-runback', [
+      ['steam-generator-b-feedwater-runback', [
         'alarm:sg-b-feedwater-flow-low:feedwater-flow-low',
       ]],
       ['pressurizer-relief-open', [
@@ -316,16 +335,12 @@ describe('process plant runtime', () => {
       ]],
     ])
 
-    for (const transient of processPlantDemoTransients) {
-      const expected = expectedLifecycleIds.get(transient.id)
-      if (expected === undefined) throw new Error(`missing lifecycle expectation for demo transient ${transient.id}`)
+    for (const action of processPlantActions) {
+      const expected = expectedLifecycleIds.get(action.id)
+      if (expected === undefined) throw new Error(`missing lifecycle expectation for demo action ${action.id}`)
       const system = compiledSystem()
       const runtime = createProcessPlantRuntime({ system })
-      const commands = processPlantDemoTransientCommands(
-        transient,
-        defaultProcessPlantDemoTransientInputs(transient),
-        { variablePaths: system.graph.variables.map(variable => variable.path) },
-      )
+      const commands = commandsForProcessPlantAction({ actionId: action.id, parameters: {}, graph: system.graph })
       for (const command of commands) {
         runtime.writeCommand({
           type: 'setVariable',
@@ -336,17 +351,17 @@ describe('process plant runtime', () => {
       const snapshot = runWithReferenceProtection({ system, runtime, durationMs: 90_000 })
       const active = activeLifecycleIds(snapshot)
       const activeIds = [...active.alarms, ...active.trips]
-      expect(activeIds, transient.id).toEqual(expect.arrayContaining(expected))
+      expect(activeIds, action.id).toEqual(expect.arrayContaining(expected))
     }
   })
 
-  test('demo transient catalog reaches the overview alarm panel snapshot', () => {
+  test('demo action catalog reaches the overview alarm panel snapshot', () => {
     const expectedLifecycleIds = new Map<string, ReadonlyArray<string>>([
-      ['sg-a-tube-leak', [
+      ['steam-generator-tube-leak-a', [
         'alarm:sg-a-tube-leak-indication:tube-leak',
         'alarm:sg-a-secondary-radiation-high:secondary-radiation-high',
       ]],
-      ['trip-all-rcps', [
+      ['trip-reactor-coolant-pumps', [
         'alarm:rcp-a-trip:not-running',
         'alarm:rcp-b-trip:not-running',
         'alarm:rcp-c-trip:not-running',
@@ -356,7 +371,7 @@ describe('process plant runtime', () => {
       ['loss-main-feedwater', [
         'alarm:main-feedwater-pump-trip:main-feedwater-pump-unavailable',
       ]],
-      ['sg-b-feedwater-runback', [
+      ['steam-generator-b-feedwater-runback', [
         'alarm:sg-b-feedwater-flow-low:feedwater-flow-low',
       ]],
       ['pressurizer-relief-open', [
@@ -371,20 +386,16 @@ describe('process plant runtime', () => {
       ]],
     ])
 
-    for (const transient of processPlantDemoTransients) {
-      const expected = expectedLifecycleIds.get(transient.id)
-      if (expected === undefined) throw new Error(`missing surface alarm expectation for demo transient ${transient.id}`)
+    for (const action of processPlantActions) {
+      const expected = expectedLifecycleIds.get(action.id)
+      if (expected === undefined) throw new Error(`missing display alarm expectation for demo action ${action.id}`)
       const system = compiledSystem()
       const runtime = createProcessPlantRuntime({ system })
       const protection = createProcessPlantProtectionRunner({
         system,
-        protection: resolveProcessPlantIcConfig(processPlantPressurizedWaterReactorIcRef),
+        protection: pressurizedWaterReactorReferenceIc,
       })
-      const commands = processPlantDemoTransientCommands(
-        transient,
-        defaultProcessPlantDemoTransientInputs(transient),
-        { variablePaths: system.graph.variables.map(variable => variable.path) },
-      )
+      const commands = commandsForProcessPlantAction({ actionId: action.id, parameters: {}, graph: system.graph })
       for (const command of commands) {
         runtime.writeCommand({
           type: 'setVariable',
@@ -397,12 +408,12 @@ describe('process plant runtime', () => {
         protection.evaluate({
           runtime,
           elapsedMs: runtime.elapsedMs(),
-          simulationRunId: 'run-runtime-surface-alarm-test' as SimulationRunId,
+          simulationRunId: 'run-runtime-display-alarm-test' as SimulationRunId,
           sourceRuntimeId: 'process-plant.local',
         })
       }
 
-      expect(surfaceAlarmIdsFor({ system, runtime, protection }), transient.id)
+      expect(displayAlarmIdsFor({ system, runtime, protection }), action.id)
         .toEqual(expect.arrayContaining(expected))
     }
   })
@@ -677,7 +688,7 @@ describe('process plant runtime', () => {
     expect(Number(oneBigTick.readVariable(valueOf('core.powerMw')))).toBeLessThan(2890)
   })
 
-  test('testbed runs the compiled system and returns a runtime snapshot', () => {
+  test('testbed runs the compiled Plant and returns a runtime snapshot', () => {
     const testbed = createProcessPlantTestbed(compiledSystem())
     const snapshot = testbed.runFor(500)
 
@@ -685,10 +696,10 @@ describe('process plant runtime', () => {
     expect(snapshot.variables.length).toBeGreaterThan(0)
   })
 
-  test('multi-system testbed runs independent systems with isolated scheduled faults and telemetry', () => {
-    const multiSystem = createProcessPlantMultiSystemTestbed([
+  test('multi-Plant testbed runs independent Plants with isolated scheduled faults and telemetry', () => {
+    const multiPlant = createProcessPlantMultiPlantTestbed([
       {
-        system: compileProcessPlantSystem({
+        plant: compileTestSystem({
           id: 'unit-1',
           graph: pressurizedWaterReactorPlantSpec,
         }),
@@ -699,7 +710,7 @@ describe('process plant runtime', () => {
         schedule: { actions: [] },
       },
       {
-        system: compileProcessPlantSystem({
+        plant: compileTestSystem({
           id: 'unit-2',
           graph: pressurizedWaterReactorPlantSpec,
         }),
@@ -718,14 +729,14 @@ describe('process plant runtime', () => {
       },
     ])
 
-    const snapshots = multiSystem.runFor(5_000, 1_000)
-    const bySystem = new Map(snapshots.map(snapshot => [snapshot.systemId, snapshot]))
+    const snapshots = multiPlant.runFor(5_000, 1_000)
+    const bySystem = new Map(snapshots.map(snapshot => [snapshot.plantId, snapshot]))
     const unit1 = bySystem.get('unit-1')
     const unit2 = bySystem.get('unit-2')
     if (!unit1 || !unit2) throw new Error('expected both process plant unit snapshots')
     expect(unit1.runtime.variables.find(variable => variable.path === valueOf('rcpA.running'))?.value).toBe(true)
     expect(unit2.runtime.variables.find(variable => variable.path === valueOf('rcpA.running'))?.value).toBe(false)
-    expect(unit1.telemetry?.find(series => series.path === valueOf('turbine.electricMw'))?.systemId).toBe('unit-1')
+    expect(unit1.telemetry?.find(series => series.path === valueOf('turbine.electricMw'))?.plantId).toBe('unit-1')
     expect(unit1.telemetry?.find(series => series.path === valueOf('turbine.electricMw'))?.points.length).toBe(6)
     expect(unit1.telemetry?.find(series => series.path === valueOf('turbine.electricMw'))?.points.at(-1)).toMatchObject({
       quantity: 'power',
@@ -735,8 +746,8 @@ describe('process plant runtime', () => {
     expect(unit2.telemetry?.find(series => series.path === valueOf('rcpA.running'))?.points.at(-1)?.value).toBe(false)
   })
 
-  test('per-system initialState is applied without mutating shared graphRef runtime state', () => {
-    const unitA = compileProcessPlantSystem({
+  test('per-Plant initial state is applied without mutating the shared Plant Model', () => {
+    const unitA = compileTestSystem({
       id: 'unit-a',
       graph: pressurizedWaterReactorPlantSpec,
       initialState: {
@@ -744,7 +755,7 @@ describe('process plant runtime', () => {
         'sgA.secondaryInventoryKg': 48_000,
       },
     })
-    const unitB = compileProcessPlantSystem({
+    const unitB = compileTestSystem({
       id: 'unit-b',
       graph: pressurizedWaterReactorPlantSpec,
     })
@@ -757,9 +768,9 @@ describe('process plant runtime', () => {
     expect(runtimeB.readVariable(valueOf('sgA.secondaryInventoryKg'))).not.toBe(48_000)
   })
 
-  test('per-system restore preserves each unit independently', () => {
+  test('per-Plant restore preserves each Plant independently', () => {
     const unitA = compiledSystem()
-    const unitB = compileProcessPlantSystem({
+    const unitB = compileTestSystem({
       id: 'plant-b',
       graph: pressurizedWaterReactorPlantSpec,
     })
@@ -769,8 +780,8 @@ describe('process plant runtime', () => {
     runtimeA.tick(1_000)
     runtimeB.tick(1_000)
 
-    const restoredA = createProcessPlantRuntime({ system: unitA, restoredSnapshot: runtimeA.snapshot() })
-    const restoredB = createProcessPlantRuntime({ system: unitB, restoredSnapshot: runtimeB.snapshot() })
+    const restoredA = createProcessPlantRuntime({ system: unitA, restoredCheckpoint: runtimeA.checkpoint() })
+    const restoredB = createProcessPlantRuntime({ system: unitB, restoredCheckpoint: runtimeB.checkpoint() })
 
     expect(restoredA.readVariable(valueOf('rcpA.running'))).toBe(false)
     expect(restoredB.readVariable(valueOf('rcpA.running'))).toBe(true)
@@ -890,31 +901,32 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('sgA.boilingEnergyResidualMw')))).toBeCloseTo(0, 6)
   })
 
-  test('runtime snapshots carry graph identity and reject mismatched graph restores', () => {
+  test('runtime checkpoints carry model identity and reject mismatched restores', () => {
     const system = compiledSystem()
     const runtime = createProcessPlantRuntime({ system })
     runtime.tick(1_000)
     const snapshot = runtime.snapshot()
+    const checkpoint = runtime.checkpoint()
 
     expect(snapshot.graphSpecId).toBe(String(system.graph.specId))
     expect(snapshot.variablePaths).toEqual(system.graph.variables.map(variable => variable.path))
     expect(() => createProcessPlantRuntime({
       system,
-      restoredSnapshot: {
-        ...snapshot,
-        graphSpecId: 'process-plant.other-graph.v1',
+      restoredCheckpoint: {
+        ...checkpoint,
+        modelDigest: '0'.repeat(64),
       },
-    })).toThrow('does not match system graph')
+    })).toThrow('does not match Plant model')
     expect(() => createProcessPlantRuntime({
       system,
-      restoredSnapshot: {
-        ...snapshot,
-        variablePaths: snapshot.variablePaths.slice(1),
+      restoredCheckpoint: {
+        ...checkpoint,
+        values: checkpoint.values.slice(1),
       },
-    })).toThrow('variable path count')
+    })).toThrow('value count')
   })
 
-  test('process link sensors and component valves behave as readable control surfaces', () => {
+  test('process link sensors and component valves behave as readable control displays', () => {
     const runtime = createProcessPlantRuntime({ system: compiledSystem() })
 
     runtime.tick(1_000)
@@ -994,7 +1006,7 @@ describe('process plant runtime', () => {
         connect('hx-to-cold-return', 'hx.coldOut', 'coldReturn.inletA', { connectionKind: 'fluidFlow', service: 'coldLoop', nominalFluid: 'water', designPhase: 'liquid', solverModel: 'incompressibleLiquid', variables: liquidVariables(30, 1) }),
       ],
     })
-    const runtime = createProcessPlantRuntime({ system: compileProcessPlantSystem({ id: 'hx', graph }) })
+    const runtime = createProcessPlantRuntime({ system: compileTestSystem({ id: 'hx', graph }) })
 
     for (let index = 0; index < 20; index += 1) runtime.tick(100)
 
@@ -1040,7 +1052,7 @@ describe('process plant runtime', () => {
         }),
       ],
     })
-    const runtime = createProcessPlantRuntime({ system: compileProcessPlantSystem({ id: 'acc-containment', graph }) })
+    const runtime = createProcessPlantRuntime({ system: compileTestSystem({ id: 'acc-containment', graph }) })
     const initialInventory = Number(runtime.readVariable(valueOf('acc.liquidInventoryKg')))
     const initialSump = Number(runtime.readVariable(valueOf('containment.sumpInventoryKg')))
 
@@ -1095,7 +1107,7 @@ describe('process plant runtime', () => {
     const runtime = createProcessPlantRuntime({ system })
     const protection = createProcessPlantProtectionRunner({
       system,
-      protection: resolveProcessPlantIcConfig(processPlantPressurizedWaterReactorIcRef),
+      protection: pressurizedWaterReactorReferenceIc,
     })
 
     for (let index = 0; index < 50; index += 1) runtime.tick(100)
@@ -1576,7 +1588,7 @@ describe('process plant runtime', () => {
 
     for (let index = 0; index < 40; index += 1) runtime.tick(100)
 
-    const table = createProcessPlantVariableTable(system, initialComponentValueFor, runtime.snapshot().variables)
+    const table = createProcessPlantVariableTable(system, initialComponentValueFor, runtime.checkpoint().values)
     const componentIndex = (componentId: string): number => {
       const index = system.graph.componentIndexById.get(componentId as never)
       if (index === undefined) throw new Error(`missing process plant component in test graph: ${componentId}`)
@@ -1792,7 +1804,7 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('rcp-a-to-core.flowKgPerS')))).toBeCloseTo(reducedHotLegFlow, 6)
     expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.pressureDropMPa')))).toBeLessThan(initialHotLegPressureDrop)
 
-    const table = createProcessPlantVariableTable(system, initialComponentValueFor, runtime.snapshot().variables)
+    const table = createProcessPlantVariableTable(system, initialComponentValueFor, runtime.checkpoint().values)
     const componentIndex = (componentId: string): number => {
       const index = system.graph.componentIndexById.get(componentId as never)
       if (index === undefined) throw new Error(`missing process plant component in test graph: ${componentId}`)
@@ -1891,7 +1903,7 @@ describe('process plant runtime', () => {
     runtime.writeCommand({ type: 'setVariable', path: valueOf('rcpA.running'), value: false })
     for (let index = 0; index < 30; index += 1) runtime.tick(100)
     const beforeRestore = Number(runtime.readVariable(valueOf('rcpA.loopFlowKgPerS')))
-    const restored = createProcessPlantRuntime({ system, restoredSnapshot: runtime.snapshot() })
+    const restored = createProcessPlantRuntime({ system, restoredCheckpoint: runtime.checkpoint() })
 
     expect(Number(restored.readVariable(valueOf('rcpA.loopFlowKgPerS')))).toBeCloseTo(beforeRestore, 6)
     restored.tick(100)
@@ -1991,7 +2003,7 @@ describe('process plant runtime', () => {
     expect(() => context.write(componentVariablePath(component, 'powerMw'), 10)).toThrow('cannot write undeclared variable')
   })
 
-  test('behavior definitions declare read and write surfaces for auditability', () => {
+  test('behavior definitions declare read and write displays for auditability', () => {
     const behaviorIds = new Set<string>()
     for (const behavior of [...componentInitialReconciliationDefinitions, ...componentBehaviorDefinitions, ...processLinkBehaviorDefinitions]) {
       expect(behavior.reads.length).toBeGreaterThan(0)
@@ -2115,7 +2127,7 @@ describe('process plant runtime', () => {
       ],
     })
     const runtime = createProcessPlantRuntime({
-      system: compileProcessPlantSystem({ id: 'electrical', graph }),
+      system: compileTestSystem({ id: 'electrical', graph }),
     })
 
     runtime.tick(1_000)

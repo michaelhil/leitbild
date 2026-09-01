@@ -1,5 +1,5 @@
 import type { VariablePath } from '../graph/index.ts'
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
+import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import {
   componentVariablePath,
   createReusableBehaviorContext,
@@ -107,7 +107,7 @@ const assertDeclaredLinkReadPathsExist = (
 }
 
 export const compileProcessPlantExecutionPlan = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
 ): ProcessPlantExecutionPlan => {
   const invocationsByPhase = new Map<ProcessPlantSolverPhase, ProcessPlantExecutionInvocation[]>()
   const initialReconciliationInvocations: ProcessPlantInitialReconciliationInvocation[] = []
@@ -184,7 +184,7 @@ export const compileProcessPlantExecutionPlan = (
 }
 
 export const runProcessPlantInitialReconciliation = (config: {
-  readonly system: CompiledProcessPlantSystem
+  readonly system: CompiledProcessPlant
   readonly table: ProcessPlantVariableTable
   readonly plan: ProcessPlantExecutionPlan
 }): void => {
@@ -221,7 +221,7 @@ export const runProcessPlantInitialReconciliation = (config: {
 }
 
 export const runProcessPlantExecutionPhase = (config: {
-  readonly system: CompiledProcessPlantSystem
+  readonly system: CompiledProcessPlant
   readonly table: ProcessPlantVariableTable
   readonly plan: ProcessPlantExecutionPlan
   readonly phase: ProcessPlantSolverPhase

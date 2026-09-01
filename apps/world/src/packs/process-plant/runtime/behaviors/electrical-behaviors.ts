@@ -6,7 +6,7 @@ import {
   type ProcessPlantBehaviorContext,
 } from '../behavior-contract.ts'
 import { clamp, optionalParameterNumber, parameterNumber } from '../component-helpers.ts'
-import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
+import type { CompiledProcessPlant } from '../../plant-compiler.ts'
 
 const sourcePowerForComponent = (
   source: CompiledComponent,
@@ -33,7 +33,7 @@ const sourcePowerForComponent = (
 }
 
 export const incomingElectricalPower = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   component: CompiledComponent,
   context: ProcessPlantBehaviorContext,
 ): { readonly energized: boolean; readonly availablePowerMw: number; readonly voltageFraction: number } => {
@@ -57,14 +57,14 @@ export const incomingElectricalPower = (
 }
 
 const hasIncomingElectricalPowerPort = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   component: CompiledComponent,
 ): boolean =>
   (system.graph.incomingLinksByComponent[component.index] ?? [])
     .some(linkIndex => system.graph.links[linkIndex]?.kind === 'electricalPower')
 
 export const componentHasElectricalPower = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   component: CompiledComponent,
   context: ProcessPlantBehaviorContext,
 ): boolean => {
@@ -74,7 +74,7 @@ export const componentHasElectricalPower = (
 }
 
 const outgoingLoadDemand = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   component: CompiledComponent,
   context: ProcessPlantBehaviorContext,
 ): number => {
@@ -95,7 +95,7 @@ const outgoingLoadDemand = (
 }
 
 const passThroughAvailablePower = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   component: CompiledComponent,
   context: ProcessPlantBehaviorContext,
   capacityMw: number,

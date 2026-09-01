@@ -1,16 +1,18 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import {
-  compileProcessPlantSystem,
-  createProcessPlantMultiSystemTestbed,
-  processPlantPwrReferenceAssemblyRef,
-  type ProcessPlantMultiSystemConfig,
-  type ProcessPlantMultiSystemSnapshot,
-  type ProcessPlantScheduledAction,
-  type ProcessPlantTelemetrySeries,
+  compileProcessPlant,
+  createPwrReferencePlantDefinition,
   type PwrTransientDiagnostics,
   type VariablePath,
 } from '../../src/packs/process-plant/index.ts'
+import {
+  createProcessPlantMultiPlantTestbed,
+  type ProcessPlantMultiPlantConfig,
+  type ProcessPlantMultiPlantSnapshot,
+  type ProcessPlantScheduledAction,
+  type ProcessPlantTelemetrySeries,
+} from '../../src/packs/process-plant/engineering/index.ts'
 
 const durationMs = 240_000
 const stepMs = 1_000
@@ -355,17 +357,16 @@ const compiledSystem = (
   id: string,
   parameters?: Record<string, Record<string, unknown>>,
   initialState?: Record<string, unknown>,
-) => compileProcessPlantSystem({
+) => compileProcessPlant(createPwrReferencePlantDefinition({
   id,
-  assemblyRef: processPlantPwrReferenceAssemblyRef,
-  assemblyConfig: { loopCount: 4, title: `Acceptance ${id}` },
-  ...(parameters === undefined ? {} : { parameters }),
-  ...(initialState === undefined ? {} : { initialState }),
-})
+  title: `Acceptance ${id}`,
+  ...(parameters === undefined ? {} : { parameterOverrides: parameters }),
+  ...(initialState === undefined ? {} : { valueOverrides: initialState }),
+}))
 
-const configs = (): ReadonlyArray<ProcessPlantMultiSystemConfig> =>
+const configs = (): ReadonlyArray<ProcessPlantMultiPlantConfig> =>
   cases.map(testCase => ({
-    system: compiledSystem(testCase.id, testCase.parameters, testCase.initialState),
+    plant: compiledSystem(testCase.id, testCase.parameters, testCase.initialState),
     schedule: { actions: testCase.actions },
     telemetry: {
       sampleIntervalMs,
@@ -931,14 +932,14 @@ const renderPanel = (
 }
 
 const renderSvg = (
-  traces: ReadonlyArray<ProcessPlantMultiSystemSnapshot>,
+  traces: ReadonlyArray<ProcessPlantMultiPlantSnapshot>,
   checks: ReadonlyArray<AcceptanceCheck>,
 ): string => {
   const columns = 3
   const panelRows = Math.ceil(cases.length / columns)
   const svgHeight = 92 + panelRows * 268 + 72
   const panels = cases.map((testCase, index) => {
-    const trace = traces.find(candidate => candidate.systemId === testCase.id)
+    const trace = traces.find(candidate => candidate.plantId === testCase.id)
     if (!trace?.telemetry) throw new Error(`acceptance trace missing telemetry for ${testCase.id}`)
     return renderPanel(testCase, trace.telemetry, 50 + (index % columns) * 380, 92 + Math.floor(index / columns) * 268)
   }).join('')
@@ -952,14 +953,14 @@ const renderSvg = (
 }
 
 const csvRowsFor = (
-  traces: ReadonlyArray<ProcessPlantMultiSystemSnapshot>,
+  traces: ReadonlyArray<ProcessPlantMultiPlantSnapshot>,
 ): ReadonlyArray<string> => {
   const rows = ['case,path,elapsedMs,value,canonicalValue,unit']
   for (const trace of traces) {
-    if (!trace.telemetry) throw new Error(`acceptance trace missing telemetry for ${trace.systemId}`)
+    if (!trace.telemetry) throw new Error(`acceptance trace missing telemetry for ${trace.plantId}`)
     for (const series of trace.telemetry) {
       for (const point of series.points) {
-        rows.push(`${trace.systemId},${series.path},${point.elapsedMs},${point.value},${point.canonicalValue},${point.unit}`)
+        rows.push(`${trace.plantId},${series.path},${point.elapsedMs},${point.value},${point.canonicalValue},${point.unit}`)
       }
     }
   }
@@ -969,20 +970,20 @@ const csvRowsFor = (
 const main = async (): Promise<void> => {
   const runConfigs = configs()
   const started = performance.now()
-  const traces = createProcessPlantMultiSystemTestbed(runConfigs).runFor(durationMs, stepMs)
+  const traces = createProcessPlantMultiPlantTestbed(runConfigs).runFor(durationMs, stepMs)
   const wallMs = performance.now() - started
   const checks = traces.flatMap(trace => {
-    if (!trace.telemetry) throw new Error(`acceptance trace missing telemetry for ${trace.systemId}`)
+    if (!trace.telemetry) throw new Error(`acceptance trace missing telemetry for ${trace.plantId}`)
     return [
-      ...evaluateCase(trace.systemId as CaseId, trace.telemetry),
-      ...evaluateKernelDiagnostics(trace.systemId as CaseId, trace.pwrTransientDiagnostics),
-      ...evaluateTelemetryIntegrity(trace.systemId as CaseId, trace.telemetry),
+      ...evaluateCase(trace.plantId as CaseId, trace.telemetry),
+      ...evaluateKernelDiagnostics(trace.plantId as CaseId, trace.pwrTransientDiagnostics),
+      ...evaluateTelemetryIntegrity(trace.plantId as CaseId, trace.telemetry),
     ]
   })
   const failed = checks.filter(candidate => !candidate.passed)
   const realtimeFactor = durationMs / wallMs
-  const firstGraph = runConfigs[0]?.system.graph
-  if (!firstGraph) throw new Error('process plant acceptance requires at least one compiled system')
+  const firstGraph = runConfigs[0]?.plant.graph
+  if (!firstGraph) throw new Error('process plant acceptance requires at least one compiled Plant')
   const performanceChecks = [
     check('baseline', 'multi-case acceptance run remains comfortably faster than realtime', realtimeFactor >= minRealtimeFactor, `realtimeFactor=${realtimeFactor.toFixed(1)}x min=${minRealtimeFactor.toFixed(1)}x`),
   ] satisfies ReadonlyArray<AcceptanceCheck>
@@ -996,7 +997,7 @@ const main = async (): Promise<void> => {
     stepMs,
     sampleIntervalMs,
     caseCount: cases.length,
-    systemCount: cases.length,
+    plantCount: cases.length,
     componentCount: firstGraph.components.length * cases.length,
     linkCount: firstGraph.links.length * cases.length,
     variableCount: firstGraph.variables.length * cases.length,

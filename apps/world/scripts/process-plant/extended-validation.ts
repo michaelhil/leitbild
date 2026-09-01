@@ -1,17 +1,19 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import {
-  compileProcessPlantSystem,
+  compileProcessPlant,
+  createPwrReferencePlantDefinition,
   createProcessPlantRuntime,
-  createProcessPlantScheduleRunner,
-  createProcessPlantTelemetryRecorder,
-  processPlantPwrReferenceAssemblyRef,
   type ProcessPlantRuntime,
-  type ProcessPlantScheduledAction,
-  type ProcessPlantTelemetrySeries,
   type ProcessPlantVariableSnapshot,
   type VariablePath,
 } from '../../src/packs/process-plant/index.ts'
+import {
+  createProcessPlantScheduleRunner,
+  createProcessPlantTelemetryRecorder,
+  type ProcessPlantScheduledAction,
+  type ProcessPlantTelemetrySeries,
+} from '../../src/packs/process-plant/engineering/index.ts'
 
 const durationMs = 600_000
 const stepMs = 1_000
@@ -308,13 +310,12 @@ const cases: ReadonlyArray<ValidationCase> = [
   },
 ]
 
-const compiledSystem = (testCase: ValidationCase) => compileProcessPlantSystem({
+const compiledSystem = (testCase: ValidationCase) => compileProcessPlant(createPwrReferencePlantDefinition({
   id: testCase.id,
-  assemblyRef: processPlantPwrReferenceAssemblyRef,
-  assemblyConfig: { loopCount: 4, title: `Extended Validation ${testCase.title}` },
-  ...(testCase.parameters === undefined ? {} : { parameters: testCase.parameters }),
-  ...(testCase.initialState === undefined ? {} : { initialState: testCase.initialState }),
-})
+  title: `Extended Validation ${testCase.title}`,
+  ...(testCase.parameters === undefined ? {} : { parameterOverrides: testCase.parameters }),
+  ...(testCase.initialState === undefined ? {} : { valueOverrides: testCase.initialState }),
+}))
 
 const seriesFor = (
   telemetry: ReadonlyArray<ProcessPlantTelemetrySeries>,
@@ -635,7 +636,7 @@ const runCase = (testCase: ValidationCase): ValidationTrace => {
   const runtime = createProcessPlantRuntime({ system, assertInvariants: true })
   const schedule = createProcessPlantScheduleRunner({ system, schedule: { actions: testCase.actions } })
   const telemetry = createProcessPlantTelemetryRecorder({
-    systemId: testCase.id,
+    plantId: testCase.id,
     telemetry: {
       sampleIntervalMs,
       variables: telemetryVariables.map(variablePath),

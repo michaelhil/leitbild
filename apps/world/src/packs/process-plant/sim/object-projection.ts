@@ -1,12 +1,12 @@
 import type { IsoTimestamp, ObjectId, OperationalObject, Provenance } from '../../../core/model/index.ts'
 import type { PackRuntimeEvent } from '../../../simulation/protocol.ts'
-import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
+import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { processPlantUnitPackDataSchema } from '../model.ts'
 import { processPlantProjectionKey, projectedProcessPlantUnit } from '../projection.ts'
 
-export const processPlantUnitSystemId = (object: OperationalObject): string | null => {
+export const processPlantUnitPlantId = (object: OperationalObject): string | null => {
   const parsed = processPlantUnitPackDataSchema.safeParse(object.packData)
-  return parsed.success ? parsed.data.systemId : null
+  return parsed.success ? String(object.id) : null
 }
 
 export const initialProcessPlantObjects = (config: {
@@ -17,33 +17,33 @@ export const initialProcessPlantObjects = (config: {
 
 export const projectedInitialProcessPlantObjects = (config: {
   readonly objects: ReadonlyArray<OperationalObject>
-  readonly systems: ReadonlyMap<string, ProcessPlantSystemRuntime>
+  readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
   readonly at: IsoTimestamp
 }): ReadonlyArray<OperationalObject> =>
   config.objects.map(object => {
-    const systemId = processPlantUnitSystemId(object)
-    return systemId === null
+    const plantId = processPlantUnitPlantId(object)
+    return plantId === null
       ? object
       : projectedProcessPlantUnit({
           object,
-          system: config.systems.get(systemId),
+          plant: config.plants.get(plantId),
           at: config.at,
         })
   })
 
 export const processPlantProjectionEvents = (config: {
   readonly objectsById: Map<ObjectId, OperationalObject>
-  readonly systems: ReadonlyMap<string, ProcessPlantSystemRuntime>
+  readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
   readonly at: IsoTimestamp
   readonly provenance: Provenance
 }): ReadonlyArray<PackRuntimeEvent> => {
   const events: PackRuntimeEvent[] = []
   for (const object of config.objectsById.values()) {
-    const systemId = processPlantUnitSystemId(object)
-    if (systemId === null) continue
+    const plantId = processPlantUnitPlantId(object)
+    if (plantId === null) continue
     const next = projectedProcessPlantUnit({
       object,
-      system: config.systems.get(systemId),
+      plant: config.plants.get(plantId),
       at: config.at,
     })
     if (processPlantProjectionKey(object) === processPlantProjectionKey(next)) continue

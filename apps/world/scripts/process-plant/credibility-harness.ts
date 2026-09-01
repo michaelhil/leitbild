@@ -1,10 +1,12 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type {
-  ProcessPlantMultiSystemSnapshot,
-  ProcessPlantTelemetrySeries,
   VariablePath,
 } from '../../src/packs/process-plant/index.ts'
+import type {
+  ProcessPlantMultiPlantSnapshot,
+  ProcessPlantTelemetrySeries,
+} from '../../src/packs/process-plant/engineering/index.ts'
 
 export type ProcessPlantCredibilityMeasurement =
   | {
@@ -153,10 +155,10 @@ export const evaluateProcessPlantCredibilityTarget = <
   TCaseId extends string,
   TSourceRefId extends string,
 >(
-  trace: ProcessPlantMultiSystemSnapshot,
+  trace: ProcessPlantMultiPlantSnapshot,
   target: ProcessPlantCredibilityTarget<TCaseId, TSourceRefId>,
 ): ProcessPlantCredibilityTargetResult<TCaseId, TSourceRefId> => {
-  if (!trace.telemetry) throw new Error(`process plant credibility trace missing telemetry for ${trace.systemId}`)
+  if (!trace.telemetry) throw new Error(`process plant credibility trace missing telemetry for ${trace.plantId}`)
   const observed = measureValue(trace.telemetry, target.measure)
   return {
     targetId: target.id,
@@ -173,10 +175,10 @@ export const evaluateProcessPlantCredibilityTarget = <
 }
 
 export const processPlantCredibilityTraceForCase = <TCaseId extends string>(
-  traces: ReadonlyArray<ProcessPlantMultiSystemSnapshot>,
+  traces: ReadonlyArray<ProcessPlantMultiPlantSnapshot>,
   caseId: TCaseId,
-): ProcessPlantMultiSystemSnapshot => {
-  const trace = traces.find(candidate => candidate.systemId === caseId)
+): ProcessPlantMultiPlantSnapshot => {
+  const trace = traces.find(candidate => candidate.plantId === caseId)
   if (!trace) throw new Error(`missing process plant credibility trace for case: ${caseId}`)
   return trace
 }

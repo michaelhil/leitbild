@@ -1,5 +1,5 @@
 import type { CompiledProcessLink, VariablePath } from '../../graph/index.ts'
-import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
+import type { CompiledProcessPlant } from '../../plant-compiler.ts'
 import { componentVariablePath, processLinkVariablePath } from '../behavior-contract.ts'
 import { clamp } from '../component-helpers.ts'
 import { downstreamDemandPathsForLink } from '../topology-cache.ts'
@@ -32,7 +32,7 @@ export const serviceMatches = (link: CompiledProcessLink, service: CompiledProce
   service !== undefined && link.service === service
 
 export const componentValveFactorForInboundLink = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   link: CompiledProcessLink,
   context: LinkBehaviorReadContext,
 ): number => {
@@ -45,7 +45,7 @@ export const componentValveFactorForInboundLink = (
 }
 
 export const componentValveCapacityForInboundLink = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   link: CompiledProcessLink,
   context: LinkBehaviorReadContext,
 ): number => {
@@ -62,13 +62,13 @@ export const componentValveCapacityForInboundLink = (
 }
 
 export const componentValveAvailabilityForLink = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   link: CompiledProcessLink,
   context: LinkBehaviorReadContext,
 ): number => componentValveFactorForInboundLink(system, link, context)
 
 export const sumIncomingLinkValue = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   componentIndex: number,
   localPath: string,
   context: Pick<LinkBehaviorReadContext, 'has' | 'readNumber'>,
@@ -86,7 +86,7 @@ export const sumIncomingLinkValue = (
 }
 
 export const incomingLinkValueStats = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   componentIndex: number,
   localPath: string,
   context: Pick<LinkBehaviorReadContext, 'has' | 'readNumber'>,
@@ -108,7 +108,7 @@ export const incomingLinkValueStats = (
 }
 
 export const averageIncomingLinkValue = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   componentIndex: number,
   localPath: string,
   context: Pick<LinkBehaviorReadContext, 'has' | 'readNumber'>,
@@ -128,7 +128,7 @@ export const averageIncomingLinkValue = (
 }
 
 export const flowWeightedIncomingLinkValue = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   componentIndex: number,
   localPath: string,
   context: Pick<LinkBehaviorReadContext, 'has' | 'readNumber'>,
@@ -151,7 +151,7 @@ export const flowWeightedIncomingLinkValue = (
 }
 
 const downstreamValveDemandWeight = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   link: CompiledProcessLink,
   context: LinkBehaviorReadContext,
 ): number | null => {
@@ -179,14 +179,14 @@ const downstreamValveDemandWeight = (
 }
 
 const outgoingDemandWeight = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   link: CompiledProcessLink,
   context: LinkBehaviorReadContext,
 ): number =>
   downstreamValveDemandWeight(system, link, context) ?? 1
 
 export const outgoingDemandWeightTotal = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   componentIndex: number,
   service: CompiledProcessLink['service'],
   context: LinkBehaviorReadContext,
@@ -201,7 +201,7 @@ export const outgoingDemandWeightTotal = (
 }
 
 export const distributeFlowFromComponent = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   link: CompiledProcessLink,
   context: LinkBehaviorReadContext,
   availableFlowKgPerS: number,
@@ -212,7 +212,7 @@ export const distributeFlowFromComponent = (
 }
 
 export const downstreamServiceDemandFraction = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   link: CompiledProcessLink,
   context: LinkBehaviorReadContext,
 ): number => {
@@ -231,7 +231,7 @@ export const downstreamServiceDemandFraction = (
 }
 
 export const passiveFlowFromIncomingService = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   link: CompiledProcessLink,
   context: LinkBehaviorReadContext,
 ): number => {
@@ -250,7 +250,7 @@ export interface ComponentFlowBalance {
 }
 
 export const componentFlowBalanceForService = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   componentIndex: number,
   service: CompiledProcessLink['service'],
   context: Pick<LinkBehaviorReadContext, 'has' | 'readNumber'>,
@@ -279,7 +279,7 @@ export const componentFlowBalanceForService = (
 }
 
 export const sourceLimitedPumpFlow = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   link: CompiledProcessLink,
   context: Pick<LinkBehaviorReadContext, 'has' | 'readNumber'>,
   pumpFlow: number,

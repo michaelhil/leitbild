@@ -180,7 +180,7 @@ const sameProcedureScope = (
   left: ProcedureRunScope,
   right: ProcedureRunScope,
 ): boolean =>
-  left.systemId === right.systemId
+  left.plantId === right.plantId
     && left.targetObjectId === right.targetObjectId
 
 const procedureRunMatchesScope = (

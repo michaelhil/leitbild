@@ -56,6 +56,13 @@ const scenarioAuthoringPackSchema = z.object({
     clock: z.enum(['simulation', 'live', 'none']),
   }).strict()),
   defaultRuntimeId: z.string().min(1).optional(),
+  recordingProfiles: z.array(z.object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    description: z.string().min(1),
+    defaultIntervalMs: z.number().int().positive(),
+    minimumIntervalMs: z.number().int().positive(),
+  }).strict()),
   configSchema: z.record(z.string(), z.unknown()),
   itemTypes: z.array(authoringItemTypeSchema),
 }).strict()
@@ -117,6 +124,7 @@ export const scenarioAuthoringCatalogFor = (packs: ReadonlyArray<WorldPack>): Sc
       clock: runtime.clock,
     })),
     ...(pack.runtime?.defaultRuntimeId === undefined ? {} : { defaultRuntimeId: pack.runtime.defaultRuntimeId }),
+    recordingProfiles: pack.recording?.profiles ?? [],
     configSchema: z.toJSONSchema(pack.scenarioConfigSchema, { unrepresentable: 'any' }),
     itemTypes: pack.authoring?.itemTypes ?? [],
   }))

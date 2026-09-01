@@ -10,7 +10,7 @@ import {
 } from './model.ts'
 import type { ProcessPlantIcLifecycleState } from './runtime/index.ts'
 import type { ProcessPlantVariableHandle } from './runtime/variable-table.ts'
-import type { ProcessPlantSystemRuntime } from './system-runtime.ts'
+import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
 
 const railDisplayProfileId = 'leitbild-rail'
 
@@ -27,8 +27,8 @@ const formatValue = (value: unknown, unit: string, digits = 1): string => {
   return `${String(value)} ${unit}`.trim()
 }
 
-const formatRuntimePerformance = (system: ProcessPlantSystemRuntime): string => {
-  const sample = system.performance.snapshot()
+const formatRuntimePerformance = (plant: ProcessPlantRuntimeInstance): string => {
+  const sample = plant.performance.snapshot()
   if (sample === null || sample.simulatedMs <= 0) return 'pending'
   return `RT x${sample.realtimeFactor.toFixed(0)} (${sample.wallMs.toFixed(1)} ms)`
 }
@@ -38,37 +38,37 @@ interface RailDisplayFieldPlan {
   readonly handle: ProcessPlantVariableHandle
 }
 
-const railDisplayFieldPlanCache = new WeakMap<ProcessPlantSystemRuntime, ReadonlyArray<RailDisplayFieldPlan>>()
+const railDisplayFieldPlanCache = new WeakMap<ProcessPlantRuntimeInstance, ReadonlyArray<RailDisplayFieldPlan>>()
 
 const railDisplayFieldPlansFor = (
-  system: ProcessPlantSystemRuntime,
+  plant: ProcessPlantRuntimeInstance,
 ): ReadonlyArray<RailDisplayFieldPlan> => {
-  const existing = railDisplayFieldPlanCache.get(system)
+  const existing = railDisplayFieldPlanCache.get(plant)
   if (existing) return existing
-  const profile = system.system.graph.displayProfiles.find(candidate => candidate.id === railDisplayProfileId)
+  const profile = plant.plant.graph.displayProfiles.find(candidate => candidate.id === railDisplayProfileId)
   const plans = profile === undefined
     ? []
     : profile.groups.flatMap(group => group.fields.map(field => ({
         field,
-        handle: system.runtime.resolveVariableHandle(field.path),
+        handle: plant.runtime.resolveVariableHandle(field.path),
       })))
-  railDisplayFieldPlanCache.set(system, plans)
+  railDisplayFieldPlanCache.set(plant, plans)
   return plans
 }
 
 const readField = (
-  system: ProcessPlantSystemRuntime,
+  plant: ProcessPlantRuntimeInstance,
   plan: RailDisplayFieldPlan,
 ): ReturnType<typeof processPlantField> => {
-  const variable = system.runtime.readVariableSnapshotHandle(plan.handle)
+  const variable = plant.runtime.readVariableSnapshotHandle(plan.handle)
   const label = plan.field.label ?? variable.label
   return processPlantField(plan.field.key, label, formatValue(variable.value, variable.unit, plan.field.digits))
 }
 
 const activeLifecycles = (
-  system: ProcessPlantSystemRuntime,
+  plant: ProcessPlantRuntimeInstance,
 ): ReadonlyArray<ProcessPlantIcLifecycleState> => {
-  const snapshot = system.protection?.snapshot()
+  const snapshot = plant.protection?.snapshot()
   if (!snapshot) return []
   return [...snapshot.alarms, ...snapshot.trips].filter(lifecycle => lifecycle.active)
 }
@@ -91,12 +91,12 @@ const statusFor = (
 
 export const projectedProcessPlantUnit = (config: {
   readonly object: OperationalObject
-  readonly system: ProcessPlantSystemRuntime | undefined
+  readonly plant: ProcessPlantRuntimeInstance | undefined
   readonly at: IsoTimestamp
 }): OperationalObject => {
   const parsed = processPlantUnitPackDataSchema.safeParse(config.object.packData)
   if (!parsed.success) return config.object
-  if (!config.system) {
+  if (!config.plant) {
     return {
       ...config.object,
       packData: {
@@ -105,15 +105,15 @@ export const projectedProcessPlantUnit = (config: {
       } satisfies ProcessPlantUnitPackData,
     }
   }
-  const system = config.system
-  const lifecycles = activeLifecycles(system)
+  const plant = config.plant
+  const lifecycles = activeLifecycles(plant)
   const status = statusFor(lifecycles)
   const activeTripCount = lifecycles.filter(lifecycle => lifecycle.kind === 'trip').length
   const fields = [
-    ...railDisplayFieldPlansFor(system).map(plan => readField(system, plan)),
+    ...railDisplayFieldPlansFor(plant).map(plan => readField(plant, plan)),
     processPlantField('active-alarms', 'Active alarms', String(lifecycles.filter(lifecycle => lifecycle.kind === 'alarm').length)),
     processPlantField('active-trips', 'Active trips', String(activeTripCount)),
-    processPlantField('runtime-performance', 'Runtime', formatRuntimePerformance(config.system)),
+    processPlantField('runtime-performance', 'Runtime', formatRuntimePerformance(plant)),
   ]
   const power = fields.find(field => field.key === 'thermal-power')?.value ?? 'unknown'
   const electric = fields.find(field => field.key === 'electric-output')?.value ?? 'unknown'

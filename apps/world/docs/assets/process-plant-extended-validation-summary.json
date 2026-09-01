@@ -6,8 +6,8 @@
   "caseCount": 15,
   "checkCount": 117,
   "failedCheckCount": 0,
-  "wallMs": 31021.4905,
-  "realtimeFactor": 290.12145628528066,
+  "wallMs": 25263.630291,
+  "realtimeFactor": 356.24333859913196,
   "minRealtimeFactor": 12,
   "checks": [
     {
@@ -50,7 +50,7 @@
       "caseId": "long-steady-state",
       "description": "long-run pressure remains plausible",
       "passed": true,
-      "details": "end=15.19MPa"
+      "details": "end=13.43MPa"
     },
     {
       "caseId": "long-steady-state",
@@ -116,13 +116,13 @@
       "caseId": "moderate-sgtr",
       "description": "feedwater headers preserve flow balance",
       "passed": true,
-      "details": "main=4.55e-13 aux=0.00e+0kg/s"
+      "details": "main=2.27e-13 aux=0.00e+0kg/s"
     },
     {
       "caseId": "moderate-sgtr",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=54.4 max=65.0%"
+      "details": "min=54.4 max=64.7%"
     },
     {
       "caseId": "moderate-sgtr",
@@ -134,19 +134,19 @@
       "caseId": "moderate-sgtr",
       "description": "SGTR produces leak flow",
       "passed": true,
-      "details": "leak=135.09kg/s"
+      "details": "leak=132.26kg/s"
     },
     {
       "caseId": "moderate-sgtr",
       "description": "SGTR raises secondary radiation",
       "passed": true,
-      "details": "radiation=95.914mSv/h"
+      "details": "radiation=94.055mSv/h"
     },
     {
       "caseId": "moderate-sgtr",
       "description": "SGTR drains primary inventory",
       "passed": true,
-      "details": "before=284982 end=261786kg"
+      "details": "before=284184 end=258804kg"
     },
     {
       "caseId": "multi-sg-leak",
@@ -164,7 +164,7 @@
       "caseId": "multi-sg-leak",
       "description": "feedwater headers preserve flow balance",
       "passed": true,
-      "details": "main=4.55e-13 aux=0.00e+0kg/s"
+      "details": "main=2.27e-13 aux=0.00e+0kg/s"
     },
     {
       "caseId": "multi-sg-leak",
@@ -182,13 +182,13 @@
       "caseId": "multi-sg-leak",
       "description": "first secondary leak path becomes active",
       "passed": true,
-      "details": "sgB=70.09kg/s"
+      "details": "sgB=68.70kg/s"
     },
     {
       "caseId": "multi-sg-leak",
       "description": "second secondary leak path becomes active independently",
       "passed": true,
-      "details": "sgC=83.01kg/s"
+      "details": "sgC=78.28kg/s"
     },
     {
       "caseId": "loss-feedwater-no-recovery",
@@ -458,7 +458,7 @@
       "caseId": "cooling-water-loss",
       "description": "cooling-water loss raises condenser backpressure",
       "passed": true,
-      "details": "before=19779 peak=73111Pa"
+      "details": "before=19761 peak=73111Pa"
     },
     {
       "caseId": "pressurizer-control-challenge",
@@ -494,13 +494,13 @@
       "caseId": "pressurizer-control-challenge",
       "description": "relief path carries steam when opened",
       "passed": true,
-      "details": "relief=33.85kg/s"
+      "details": "relief=35.33kg/s"
     },
     {
       "caseId": "pressurizer-control-challenge",
       "description": "pressurizer pressure remains bounded through challenge",
       "passed": true,
-      "details": "min=15.74 max=16.51MPa"
+      "details": "min=15.61 max=16.51MPa"
     },
     {
       "caseId": "main-steam-isolation-release",
@@ -542,7 +542,7 @@
       "caseId": "main-steam-isolation-release",
       "description": "main steam safety path releases steam to containment",
       "passed": true,
-      "details": "release=691.4kg/s"
+      "details": "release=692.2kg/s"
     },
     {
       "caseId": "main-steam-isolation-release",
@@ -590,13 +590,13 @@
       "caseId": "boration-and-letdown",
       "description": "vessel boron concentration rises after borated makeup",
       "passed": true,
-      "details": "before=1232.6 end=1424.6ppm"
+      "details": "before=1229.1 end=1403.7ppm"
     },
     {
       "caseId": "boration-and-letdown",
       "description": "boron increase produces negative reactivity feedback",
       "passed": true,
-      "details": "minBoronFeedback=-18.0pcm"
+      "details": "minBoronFeedback=-16.3pcm"
     },
     {
       "caseId": "large-break-loca",
@@ -632,19 +632,19 @@
       "caseId": "large-break-loca",
       "description": "large break produces primary leak flow",
       "passed": true,
-      "details": "release=1102.7kg/s"
+      "details": "release=1083.5kg/s"
     },
     {
       "caseId": "large-break-loca",
       "description": "containment receives released primary mass",
       "passed": true,
-      "details": "incomingMass=1106.0kg/s sump=14kg"
+      "details": "incomingMass=1086.8kg/s sump=14kg"
     },
     {
       "caseId": "large-break-loca",
       "description": "accumulator injects during depressurization",
       "passed": true,
-      "details": "injection=40.9kg/s"
+      "details": "injection=40.6kg/s"
     },
     {
       "caseId": "large-break-loca",
@@ -674,7 +674,7 @@
       "caseId": "combined-stress",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=39.1 max=77.5%"
+      "details": "min=39.1 max=74.9%"
     },
     {
       "caseId": "combined-stress",
@@ -686,7 +686,7 @@
       "caseId": "combined-stress",
       "description": "combined stress includes SGTR leak",
       "passed": true,
-      "details": "sgtr=103.23kg/s"
+      "details": "sgtr=101.12kg/s"
     },
     {
       "caseId": "combined-stress",
@@ -704,13 +704,13 @@
       "caseId": "combined-stress",
       "description": "combined stress lowers turbine output after load cut",
       "passed": true,
-      "details": "before=544.3 end=286.0MW"
+      "details": "before=542.8 end=286.0MW"
     },
     {
       "caseId": "long-steady-state",
       "description": "extended validation remains faster than realtime",
       "passed": true,
-      "details": "realtimeFactor=290.1x min=12.0x"
+      "details": "realtimeFactor=356.2x min=12.0x"
     }
   ],
   "artifacts": {

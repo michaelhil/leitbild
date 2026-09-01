@@ -59,6 +59,15 @@ export const createScenarioCatalog = (config: {
     for (const packId of Object.keys(scenario.packConfigs)) {
       if (!scenario.packs.includes(packId)) throw new Error(`scenario ${scenario.id} configures inactive Pack: ${packId}`)
     }
+    for (const selection of scenario.recording) {
+      if (!scenario.packs.includes(selection.packId)) throw new Error(`scenario ${scenario.id} records inactive Pack: ${selection.packId}`)
+      const pack = packs.get(selection.packId)!
+      const profile = pack.recording?.profiles.find(candidate => candidate.id === selection.profileId)
+      if (!profile) throw new Error(`scenario ${scenario.id} selects unknown recording profile ${selection.profileId} for Pack ${selection.packId}`)
+      if (selection.intervalMs !== undefined && selection.intervalMs < profile.minimumIntervalMs) {
+        throw new Error(`scenario ${scenario.id} recording interval for ${selection.packId} must be at least ${profile.minimumIntervalMs} ms`)
+      }
+    }
     const activeCategoryIds = new Set(
       scenario.packs.flatMap(packId => packs.get(packId)?.presentation.categories.map(category => category.id) ?? []),
     )

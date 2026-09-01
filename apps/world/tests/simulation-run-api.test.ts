@@ -19,12 +19,12 @@ import type {
 import { deleteObjectCommandKind, geoPointFromLonLat } from '../src/core/model/index.ts'
 import { handleSimulationRunApi } from '../src/core/api/simulation-run-routes.ts'
 import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
-import type { ProcedureSourceLoadStatus, ProcedureSourceService } from '../src/core/procedures/source.ts'
-import { parseProcedureMarkdown } from '../src/core/procedures/procmd.ts'
+import type { ProcedureSourceLoadStatus, ProcedureSourceService } from '../src/features/procedures/source.ts'
+import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
 import { setDestinationCommandKind } from '../src/packs/ambulance/commands.ts'
 import { ambulanceSimRuntimeId } from '../src/packs/ambulance/sim/constants.ts'
 import { assetArrivedAtTargetSignalType } from '../src/packs/ambulance/sim/interactions.ts'
-import { createTestPackRuntimeAdapters, createTestScenarioCatalog, testPacks, testScenarioAuthoring } from './helpers.ts'
+import { createTestPackRuntimeAdapters, createTestScenarioCatalog, testPacks, testScenarioAuthoring, waitForCondition } from './helpers.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 
 interface ApiResponse<T> {
@@ -193,12 +193,13 @@ describe('Simulation Run API', () => {
         readonly packs: readonly string[]
         readonly initialObjects: ReadonlyArray<{ readonly packId: string }>
       }
-      readonly source: { readonly packs: ReadonlyArray<{ readonly id: string; readonly config: unknown }> }
+      readonly source: { readonly packs: ReadonlyArray<{ readonly id: string; readonly config: unknown; readonly items: readonly unknown[] }> }
     }>(registry, '/scenarios/halden-process-plant-demo')
     expect(fetched.body.scenario.packs).toEqual(['process-plant', 'ambulance', 'weather'])
     expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'process-plant')).toHaveLength(7)
     const processPlant = fetched.body.source.packs.find(pack => pack.id === 'process-plant')
-    expect((processPlant?.config as { systems: readonly unknown[] }).systems).toHaveLength(7)
+    expect(processPlant?.config).toEqual({})
+    expect(processPlant?.items).toHaveLength(7)
   })
 
   test('joins only existing runs and exposes their objects and capabilities', async () => {
@@ -280,6 +281,71 @@ describe('Simulation Run API', () => {
         body: JSON.stringify({ packId: 'ambulance', kind: 'ambulance.dispatchState', payload: {} }),
       })
       expect(ambulance.body.response.result?.ambulances?.length).toBeGreaterThan(0)
+    } finally {
+      await closeAll(registry)
+    }
+  })
+
+  test('records selected Pack observations in the Run Historian and exposes bounded history', async () => {
+    const registry = await createTestRegistry()
+    try {
+      const created = await createRun(registry, 'halden-process-plant-demo')
+      const runtime = registry.get(created.id)
+      if (!runtime) throw new Error('expected loaded Run')
+      await waitForCondition('historian samples', () => (runtime.recordingStatus()?.sampleCount ?? 0) > 0, {
+        timeoutMs: 5_000,
+        intervalMs: 100,
+      })
+      const history = await callRoute<{
+        readonly status: { readonly seriesCount: number; readonly sampleCount: number }
+        readonly series: ReadonlyArray<{ readonly id: string; readonly subjectId: string; readonly signalId: string }>
+      }>(registry, runPath(created.id, '/history'))
+      expect(history.status).toBe(200)
+      expect(history.body.status.seriesCount).toBeGreaterThan(0)
+      expect(history.body.status.sampleCount).toBeGreaterThan(0)
+      const powerSeries = history.body.series.find(series => series.signalId === 'core.totalThermalPowerMw')
+      expect(powerSeries).toBeTruthy()
+      if (!powerSeries) throw new Error('expected recorded thermal power series')
+
+      const samples = await callRoute<{ readonly samples: ReadonlyArray<{ readonly seriesId: string; readonly value: unknown }> }>(
+        registry,
+        runPath(created.id, `/history/samples?seriesId=${encodeURIComponent(powerSeries.id)}&limit=2`),
+      )
+      expect(samples.status).toBe(200)
+      expect(samples.body.samples.length).toBeGreaterThan(0)
+      expect(samples.body.samples.every(sample => sample.seriesId === powerSeries.id)).toBe(true)
+    } finally {
+      await closeAll(registry)
+    }
+  })
+
+  test('records dynamically discovered ambulance assets through the same Historian boundary', async () => {
+    const registry = await createTestRegistry()
+    try {
+      const created = await createRun(registry, 'oslo-ambulance')
+      const runtime = registry.get(created.id)
+      if (!runtime) throw new Error('expected loaded Run')
+      await waitForCondition('ambulance historian samples', () => (runtime.recordingStatus()?.sampleCount ?? 0) > 0, {
+        timeoutMs: 5_000,
+        intervalMs: 100,
+      })
+      const history = await callRoute<{
+        readonly series: ReadonlyArray<{ readonly id: string; readonly runtimeId: string; readonly subjectId: string; readonly signalId: string }>
+      }>(registry, runPath(created.id, '/history'))
+      const statusSeries = history.body.series.find(series =>
+        series.runtimeId === ambulanceSimRuntimeId
+        && series.subjectId === 'amb:a12'
+        && series.signalId === 'operational.status'
+      )
+      expect(statusSeries).toBeTruthy()
+      if (!statusSeries) throw new Error('expected ambulance status series')
+
+      const samples = await callRoute<{ readonly samples: ReadonlyArray<{ readonly value: unknown }> }>(
+        registry,
+        runPath(created.id, `/history/samples?seriesId=${encodeURIComponent(statusSeries.id)}&limit=1`),
+      )
+      expect(samples.body.samples).toHaveLength(1)
+      expect(typeof samples.body.samples[0]?.value).toBe('string')
     } finally {
       await closeAll(registry)
     }
@@ -441,7 +507,7 @@ describe('Simulation Run API', () => {
             sourceId: 'pwr-ops',
             procedureId: 'E-0',
             scope: {
-              systemId: 'procedure-api-unit',
+              plantId: 'procedure-api-unit',
               targetObjectId: 'object:procedure-api-unit',
               label: 'Procedure API unit',
             },

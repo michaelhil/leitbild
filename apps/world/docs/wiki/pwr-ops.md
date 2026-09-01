@@ -6,99 +6,56 @@ type: pack
 # PWR Operations
 
 !!! note "Status"
-    Leitbild now has a pack-owned PWR transient diagnostic kernel in the process-plant pack. The model is a deterministic lumped operational simulator, not a licensing-basis thermal-hydraulic safety analysis code.
+    Leitbild's reference PWR is a deterministic lumped operational simulator for scenarios, displays, procedures, and agent context. It is not licensing-basis thermal-hydraulic safety-analysis software.
 
-PWR operations in Leitbild live in the `process-plant` pack. PWR is a catalog contributor: it contributes fixed reference graph refs, a modular reference assembly, reusable loop/base fragments, graph-aware reference I&C, and the unit overview surface to the generic process-plant catalog.
+PWR operations live inside the `process-plant` World Pack. A Scenario Plant selects three discoverable definitions:
 
-The current fixed reference graph is `process-plant.pressurized-water-reactor.v1`. Modular PWR scenarios should prefer `assemblyRef: "process-plant.pwr.reference.v2"` with an explicit loop-count/loop-id config, then use graph-aware I&C through `icRef: "process-plant.pwr.reference.graph.ic.v2"` so alarms, trips, controllers, and overview displays derive their loop set from the compiled graph.
+- Plant Model `process-plant.pwr.reference`, parameterized by two to six primary loops
+- Operating Point `process-plant.pwr.full-power`
+- Automation Definition `process-plant.pwr.standard`
 
-The process-plant catalog view exposes the fixed PWR refs, the modular assembly ref, the reusable fragment refs, and the dynamic I&C pattern `process-plant.pwr.reference.<loopCount>-loop.ic.v2`.
+The Scenario Item is the only authored Plant record. Its compiled graph drives the runtime, I&C, displays, signal discovery, actions, assessments, and recording; there is no separate process-system configuration to keep synchronized.
 
-## Runtime Model
+## Runtime model
 
-The PWR runtime uses the normal process-plant architecture:
+The Pack compiles validated graph data into indexed components, process links, signal bindings, and a fixed-step execution plan. Each running Plant owns an independent variable table, queued writes, automation state, ramp state, and compact restart checkpoint. Plants with the same Model may share immutable compiled structures but never runtime state.
 
-- scenario-owned component graph and parameters
-- catalog-backed graph refs, modular assemblies, graph fragments, I&C refs, and process surfaces
-- typed component/link variables with stable paths, units, tags, and writability
-- fixed-step runtime with validated commands
-- reference I&C rules for alarms, trips, permissives, interlocks, and automatic writes
-- read-only pack queries for UI, procedures, and AI agents
+Continuous calculations remain inside the Pack runtime. Operators, Scenario Timeline Cues, and agents use the same validated command boundary. Meaningful alarms, trips, and operational transitions enter the Run journal; dense process variables do not.
 
-The transient diagnostic kernel is compiled from the graph and reads canonical runtime variables after each fixed step. It does not mutate state.
+## Discovery and control
 
-## Transient Diagnostics
+Use `process-plant.catalog.list` to discover Models, Operating Points, Automation Definitions, Action Presets, named assessments, Process Displays, recording profiles, and credibility evidence.
 
-Use the pack query `process-plant.transient.diagnostics` with `{ "systemId": "..." }`.
+Queries that address a running Plant always include its explicit `plantId`. Important query families include:
 
-The response summarizes:
+- `process-plant.plants.list` and `process-plant.runtime.status`
+- `process-plant.graph.*` for authored and compiled topology
+- `process-plant.variables.*` and `process-plant.signals.*`
+- `process-plant.ic.*` for rules and lifecycle state
+- `process-plant.display.*` for definitions, projections, and current values
+- `process-plant.transient.diagnostics`
 
-- **Primary**: inventory, inventory fraction, pressure, pressure bias, boundary leak, safety injection, SG tube leak flow, aggregate reactor-coolant flow, and running RCP count
-- **Secondary**: SG inventory, steam mass, level, voiding, tube coverage, heat transfer, steam outflow, feedwater flow, feedwater tank state, and auxiliary-feedwater reserve/flow
-- **Balance of plant**: turbine output/steam use, condenser backpressure, heat rejection, hotwell inventory, and cooling-water availability
-- **Containment**: pressure, sump inventory, incoming release, radiation source term
-- **Core**: fission power, decay heat, total thermal power, cooling availability, heat-removal deficit, fuel heatup rate
-- **Safety systems**: accumulator inventory/outflow, safety bus state, running diesels
-- **Electrical**: bus voltage/energization, degraded bus count, served/demand load, and unserved load count
-- **Conservation**: primary inventory residual, SG liquid/steam residuals, SG boiling residuals, pressurizer residuals
-- **I&C**: configured state, active alarm/trip/rule/failure counts, highest active severity, active first-out annunciators, and compact active lifecycle summaries when protection is configured
+Validated controls use `process-plant.control.write`, `process-plant.control.ramp`, `process-plant.ic.lifecycle`, or `process-plant.action.invoke`. Action Presets such as loss of feedwater, turbine trip, pump trip, or a developing leak resolve to ordinary queued writes and do not bypass signal permissions or physical limits.
 
-This is the recommended overview/query surface for PWR operations displays, procedure context, AI context, and scenario acceptance checks.
+## Process Displays and procedures
 
-## Steam Generator Behavior
+Process Displays are validated data definitions bound to graph-owned signals. Pack-owned reviewed widgets render them; display definitions do not contain generated UI code or process calculations.
 
-Steam generators now expose tube-bundle coverage variables:
+Procedures are an optional World feature, not a Process Plant sub-engine. They inspect Pack signals and named assessments through generic operations, then issue the same validated commands as other actors.
 
-- `sgX.tubeCoverageFraction`
-- `sgX.tubeUncoveredFraction`
-- `sgX.availableHeatTransferFraction`
+## Recording
 
-As SG level falls below the configured tube-bundle top, available heat transfer degrades. This gives overview displays and diagnostics a direct way to distinguish ordinary level change from tube uncovering and heat-removal degradation.
+The `operations` Recording Profile samples published operator-facing variables at a one-second default cadence. The slower `engineering` profile samples every declared Plant variable. Recording is explicitly selected by the Scenario and stored by the Run Historian; it is not retained in runtime checkpoints.
 
-## Core Cooling Behavior
+## Engineering evidence
 
-The core now exposes:
-
-- `core.coreCoolingAvailabilityFraction`
-- `core.coreHeatRemovalDeficitMw`
-- `core.fuelHeatupRateCPerS`
-
-Primary-flow loss affects core cooling availability and fuel heatup. The model remains compact and deterministic, but RCP coastdown and loss-of-flow scenarios now have a clearer thermal consequence. Reference I&C trips the reactor on low RCP flow while the RCP loop variables continue to show coastdown toward natural-circulation flow.
-
-## Credibility Evidence
-
-Use these local checks before demoing PWR behavior:
+Run these checks after changing PWR topology, physics, or automation:
 
 - `bun run process-plant:acceptance`
 - `bun run process-plant:extended-validation`
 - `bun run process-plant:credibility`
+- `bun run process-plant:benchmark`
 
-The acceptance and extended-validation harnesses now compile the modular PWR assembly, not the fixed graph, so they exercise the same path used by modular PWR scenarios. The credibility runner records source-backed operational target envelopes in `docs/assets/process-plant-pwr-credibility-summary.json` and `docs/assets/process-plant-pwr-credibility-report.svg`; it also runs graph-aware reference I&C so protection response is part of transient credibility. The runner uses the generic process-plant credibility harness for target evaluation/report generation, while the PWR script owns PWR cases, targets, sources, assembly config, and I&C setup. The process-unit UI exposes these artifacts through the generic process-plant credibility evidence view.
+The credibility artifacts describe source-backed operational target envelopes. A green report means the simplified training model meets those declared envelopes, not that it is an engineering safety code.
 
-The current credibility run has no gate or watch failures across 10 transient cases and 34 active targets. This means the simplified operational target envelopes are green; it does not mean the model is licensing-grade thermal-hydraulics.
-
-Primary inventory accounting now caps fan-out charging/injection branches by their source component flow. This prevents a modular loop assembly from turning one charging pump into one independent makeup source per loop.
-
-## Typed PWR Fault Actions
-
-Scenario schedules may use typed PWR fault actions. They compile to ordinary validated runtime writes and do not bypass limits or writability.
-
-- `primaryBoundaryLeak`: sets a process-link leak area fraction
-- `steamGeneratorTubeLeak`: sets an SG tube leak fraction
-- `reactorCoolantPumpTrip`: trips an RCP running state
-- `lossOfOffsitePower`: opens the offsite breakers
-
-Use these for major scenario setup instead of raw path writes when the scenario intent is one of these standard PWR faults.
-
-## Engineering Boundaries
-
-The current model is suitable for operational scenario behavior, overview displays, procedure exercises, and AI/runbook context. It is not a RELAP/TRACE/CFD replacement.
-
-Future deepening should keep the same boundaries:
-
-- add acceptance traces per design-basis scenario family
-- replace heuristics with compact documented correlations where they materially improve behavior
-- keep continuous physics inside the process-plant pack runtime
-- keep durable event logs for meaningful accepted events, not high-frequency process projections
-
-Application ADR: `docs/adr/0024-pwr-transient-kernel.md`.
+See [ADR 0027](../adr/0027-single-source-process-plants-and-run-historian.md) for the current architecture.

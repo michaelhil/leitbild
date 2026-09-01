@@ -17,6 +17,7 @@ const assertUnique = (ids: ReadonlyArray<string>, kind: string): void => {
 
 const declaredContributionIds = (pack: WorldPack): ReadonlyArray<string> => [
   ...(pack.runtime ? ['runtime'] : []),
+  ...(pack.recording ? ['recording'] : []),
   ...(pack.knowledge ? ['knowledge'] : []),
   ...(pack.referenceData ? ['reference-data'] : []),
   ...(pack.scenario || pack.authoring ? ['scenario'] : []),
@@ -96,6 +97,10 @@ export const validateWorldAssembly = (config: {
   assertUnique(packs.flatMap(pack => pack.presentation.categories.map(category => category.id)), 'object category id')
   assertUnique(packs.flatMap(pack => pack.creation?.createObjectTypes.map(type => type.id) ?? []), 'create object type id')
   assertUnique(packs.flatMap(pack => pack.interactions?.handlers.map(handler => handler.id) ?? []), 'interaction handler id')
+  for (const pack of packs) {
+    assertUnique(pack.recording?.profiles.map(profile => profile.id) ?? [], `recording profile id in Pack ${pack.descriptor.id}`)
+    if (pack.recording && !pack.runtime) throw new Error(`Pack ${pack.descriptor.id} contributes recording profiles without a Pack Runtime`)
+  }
   const categoryIds = new Set(packs.flatMap(pack => pack.presentation.categories.map(category => category.id)))
   for (const type of packs.flatMap(pack => pack.creation?.createObjectTypes ?? [])) {
     if (!categoryIds.has(type.categoryId)) {

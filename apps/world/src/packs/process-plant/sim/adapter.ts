@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, SimulationRunEvent, ObjectId, OperationalObject, SignalId, SimulationClockState } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, IsoTimestamp, PackRuntimeRecordingBatch, SimulationRunEvent, ObjectId, OperationalObject, SignalId, SimulationClockState } from '../../../core/model/index.ts'
 import { nowIso } from '../../../core/model/index.ts'
 import type {
   PackRuntimeAdapter,
@@ -17,13 +17,17 @@ import {
   processPlantControlWritePayloadSchema,
   processPlantIcLifecycleCommandKind,
   processPlantIcLifecyclePayloadSchema,
+  processPlantActionInvokeCommandKind,
+  processPlantActionInvokePayloadSchema,
 } from '../commands.ts'
-import { processPlantPackConfigSchema } from '../config.ts'
-import { compileProcessPlantSystems } from '../process-systems.ts'
+import { commandsForProcessPlantAction } from '../actions.ts'
+import { processPlantDefinitionSchema, type ProcessPlantDefinition } from '../config.ts'
+import { createProcessPlantRecordingPlan } from '../recording.ts'
+import { compileProcessPlants } from '../plant-compiler.ts'
 import { validateProcessPlantControlWrite } from '../control-write-validation.ts'
-import { processPlantPackId } from '../model.ts'
+import { processPlantPackId, processPlantUnitPackDataSchema } from '../model.ts'
 import { answerProcessPlantQuery, processPlantQueryKinds } from '../query.ts'
-import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
+import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { processPlantSimAdapterId, processPlantSimRuntimeId } from './constants.ts'
 import {
   processPlantRuntimeStateSchema,
@@ -32,14 +36,26 @@ import {
 import {
   initialProcessPlantObjects,
   processPlantProjectionEvents,
-  processPlantUnitSystemId,
+  processPlantUnitPlantId,
   projectedInitialProcessPlantObjects,
 } from './object-projection.ts'
-import { assertRuntimeConfigMatchesCompiledSystems, processPlantRuntimeConfigFor } from './runtime-config.ts'
 import { createProcessPlantRuntimePersistence } from './persistence.ts'
-import { createProcessPlantSystemRuntimes } from './system-runtime-factory.ts'
+import { createProcessPlantRuntimeInstances } from './runtime-instance-factory.ts'
 
 const updateIntervalMs = 1_000
+
+const processPlantDefinitionsFor = (
+  objects: ReadonlyArray<OperationalObject>,
+): ReadonlyArray<ProcessPlantDefinition> => objects.flatMap(object => {
+  if (object.packId !== processPlantPackId) return []
+  const data = processPlantUnitPackDataSchema.parse(object.packData)
+  return [processPlantDefinitionSchema.parse({
+    id: object.id,
+    model: data.model,
+    operatingPoint: data.operatingPoint,
+    automation: data.automation,
+  })]
+})
 
 const fail = (request: PackQueryRequest, reason: string): PackQueryResponse => ({
   ok: false,
@@ -52,13 +68,15 @@ const fail = (request: PackQueryRequest, reason: string): PackQueryResponse => (
 const emitPackRuntimeEvents = (
   handlers: ReadonlySet<PackRuntimeEventHandler>,
   events: ReadonlyArray<PackRuntimeEvent>,
+  recording?: PackRuntimeRecordingBatch,
 ): void => {
-  if (events.length === 0) return
+  if (events.length === 0 && recording === undefined) return
   const emittedAt = nowIso()
   for (const handler of handlers) {
     handler({
       type: 'event.emission',
       events,
+      ...(recording === undefined ? {} : { recording }),
       emittedAt,
       runtimeId: processPlantSimRuntimeId,
     })
@@ -97,7 +115,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
   packId: processPlantPackId,
   clock: 'simulation',
   operations: definePackRuntimeOperations({
-    commands: [processPlantControlWriteCommandKind, processPlantControlRampCommandKind, processPlantIcLifecycleCommandKind],
+    commands: [processPlantControlWriteCommandKind, processPlantControlRampCommandKind, processPlantIcLifecycleCommandKind, processPlantActionInvokeCommandKind],
     queries: processPlantQueryKinds,
   }),
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
@@ -106,22 +124,24 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
     const runtimeState = rawRuntimeState === undefined || rawRuntimeState === null
       ? null
       : processPlantRuntimeStateSchema.parse(rawRuntimeState) as ProcessPlantRuntimeState
-    const runtimeConfig = processPlantRuntimeConfigFor(config)
-    const packConfig = processPlantPackConfigSchema.parse(config.scenario?.runtimeConfig ?? {})
-    const compiledSystems = compileProcessPlantSystems(packConfig.systems)
-    assertRuntimeConfigMatchesCompiledSystems({
-      runtimeConfig,
-      systemIds: new Set(compiledSystems.map(system => system.id)),
-    })
-    const systems = createProcessPlantSystemRuntimes({
-      compiledSystems,
-      runtimeConfig,
+    const initialObjects = initialProcessPlantObjects(config)
+    const compiledPlants = compileProcessPlants(processPlantDefinitionsFor(initialObjects))
+    const plants = createProcessPlantRuntimeInstances({
+      compiledPlants,
       runtimeState,
     })
     const persistence = createProcessPlantRuntimePersistence({
       connection: config,
-      systems,
+      plants,
     })
+    if (config.recording?.packId !== undefined && config.recording.packId !== processPlantPackId) {
+      throw new Error(`process plant runtime received recording selection for Pack ${config.recording.packId}`)
+    }
+    const recordingPlan = config.recording === undefined
+      ? null
+      : createProcessPlantRecordingPlan({ selection: config.recording, plants })
+    let recordingDescriptorsPending = recordingPlan !== null
+    let nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
     let clock: SimulationClockState = {
       currentTime: config.scenario?.world.startsAt ?? nowIso(),
       updatedAt: nowIso(),
@@ -129,10 +149,11 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       speed: 1,
     }
     let lastTickWallMs = Date.now()
+    let simulationTimeOffsetMs = Date.parse(clock.currentTime)
     const objectsById = new Map<ObjectId, OperationalObject>(
       projectedInitialProcessPlantObjects({
-        objects: initialProcessPlantObjects(config),
-        systems,
+        objects: initialObjects,
+        plants,
         at: nowIso(),
       }).map(object => [object.id, object]),
     )
@@ -144,9 +165,9 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       const nowWallMs = Date.now()
       const elapsedMs = clock.paused ? 0 : Math.round((nowWallMs - lastTickWallMs) * clock.speed)
       lastTickWallMs = nowWallMs
-      if (elapsedMs <= 0 || systems.size === 0) return
+      if (elapsedMs <= 0 || plants.size === 0) return
       const events: PackRuntimeEvent[] = []
-      for (const { runtime, ramps, telemetry, protection, performance: runtimePerformance } of systems.values()) {
+      for (const { runtime, ramps, protection, performance: runtimePerformance } of plants.values()) {
         const startedAt = performance.now()
         ramps.apply(runtime.elapsedMs() + elapsedMs)
         const tick = runtime.tick(elapsedMs)
@@ -156,7 +177,6 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           simulationRunId: config.simulationRunId,
           sourceRuntimeId: processPlantSimRuntimeId,
         }) ?? []))
-        telemetry?.recordDueSamples(runtime)
         runtimePerformance.record({
           wallMs: performance.now() - startedAt,
           simulatedMs: tick.simulatedMs,
@@ -164,14 +184,27 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       }
       events.push(...processPlantProjectionEvents({
         objectsById,
-        systems,
+        plants,
         at: nowIso(),
         provenance: {
           source: 'simulator',
           adapterId: processPlantSimAdapterId,
         },
       }))
-      emitPackRuntimeEvents(handlers, events)
+      const recordedElapsedMs = Math.min(...[...plants.values()].map(plant => plant.runtime.elapsedMs()))
+      const recording = recordingPlan !== null && recordedElapsedMs >= nextRecordingElapsedMs
+        ? (() => {
+            nextRecordingElapsedMs = recordedElapsedMs + recordingPlan.intervalMs
+            const sampled = recordingPlan.sample({
+              observedAt: nowIso(),
+              simulationTime: new Date(simulationTimeOffsetMs + recordedElapsedMs).toISOString() as IsoTimestamp,
+            })
+            if (!recordingDescriptorsPending) return sampled
+            recordingDescriptorsPending = false
+            return { ...sampled, descriptors: [...recordingPlan.descriptors] }
+          })()
+        : undefined
+      emitPackRuntimeEvents(handlers, events, recording)
       persistence.scheduleSave()
     }
 
@@ -209,17 +242,49 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         if (runtimeFailureReason !== null) {
           return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant runtime has stopped after a runtime failure: ${runtimeFailureReason}` }
         }
+        if (command.kind === processPlantActionInvokeCommandKind) {
+          const payload = processPlantActionInvokePayloadSchema.safeParse(command.payload)
+          if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: payload.error.message }
+          const plant = plants.get(payload.data.plantId)
+          if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant not found: ${payload.data.plantId}` }
+          try {
+            const commands = commandsForProcessPlantAction({
+              actionId: payload.data.actionId,
+              parameters: payload.data.parameters,
+              graph: plant.plant.graph,
+            })
+            const validated = commands.map(actionCommand => {
+              const result = validateProcessPlantControlWrite({
+                system: plant.plant,
+                runtime: plant.runtime,
+                ...(plant.protection === undefined ? {} : { protection: plant.protection }),
+                payload: {
+                  plantId: payload.data.plantId,
+                  path: actionCommand.path,
+                  value: actionCommand.value,
+                },
+              })
+              if (!result.accepted) throw new Error(result.reason)
+              return { type: 'setVariable' as const, path: result.targetPath, value: actionCommand.value }
+            })
+            for (const actionCommand of validated) plant.runtime.writeCommand(actionCommand)
+            await persistence.saveNow()
+            return { ok: true, commandId: command.id, acceptedAt }
+          } catch (err) {
+            return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: err instanceof Error ? err.message : String(err) }
+          }
+        }
         if (command.kind === processPlantIcLifecycleCommandKind) {
           const payload = processPlantIcLifecyclePayloadSchema.safeParse(command.payload)
           if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: payload.error.message }
-          const system = systems.get(payload.data.systemId)
-          if (!system) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant system not found: ${payload.data.systemId}` }
-          if (!system.protection) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant I&C is not configured for system: ${payload.data.systemId}` }
+          const plant = plants.get(payload.data.plantId)
+          if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant not found: ${payload.data.plantId}` }
+          if (!plant.protection) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant I&C is not configured for plant: ${payload.data.plantId}` }
           try {
-            const events = system.protection.applyLifecycleAction({
+            const events = plant.protection.applyLifecycleAction({
               id: payload.data.lifecycleId,
               action: payload.data.action,
-              elapsedMs: system.runtime.elapsedMs(),
+              elapsedMs: plant.runtime.elapsedMs(),
               simulationRunId: config.simulationRunId,
               sourceRuntimeId: processPlantSimRuntimeId,
               actorId: command.actorId,
@@ -242,21 +307,21 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         if (command.kind === processPlantControlRampCommandKind) {
           const payload = processPlantControlRampPayloadSchema.safeParse(command.payload)
           if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: payload.error.message }
-          const system = systems.get(payload.data.systemId)
-          if (!system) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant system not found: ${payload.data.systemId}` }
+          const plant = plants.get(payload.data.plantId)
+          if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant not found: ${payload.data.plantId}` }
           const validation = validateProcessPlantControlWrite({
-            system: system.system,
-            runtime: system.runtime,
-            ...(system.protection === undefined ? {} : { protection: system.protection }),
+            system: plant.plant,
+            runtime: plant.runtime,
+            ...(plant.protection === undefined ? {} : { protection: plant.protection }),
             payload: {
-              systemId: payload.data.systemId,
+              plantId: payload.data.plantId,
               ...(payload.data.path === undefined ? {} : { path: payload.data.path }),
               ...(payload.data.tagId === undefined ? {} : { tagId: payload.data.tagId }),
               value: payload.data.targetValue,
             },
           })
           if (!validation.accepted) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: validation.reason }
-          system.ramps.start({
+          plant.ramps.start({
             id: command.id,
             path: validation.targetPath,
             target: payload.data.targetValue,
@@ -275,17 +340,17 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         }
         const payload = processPlantControlWritePayloadSchema.safeParse(command.payload)
         if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: payload.error.message }
-        const system = systems.get(payload.data.systemId)
-        if (!system) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant system not found: ${payload.data.systemId}` }
+        const plant = plants.get(payload.data.plantId)
+        if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant not found: ${payload.data.plantId}` }
         try {
           const validation = validateProcessPlantControlWrite({
-            system: system.system,
-            runtime: system.runtime,
-            ...(system.protection === undefined ? {} : { protection: system.protection }),
+            system: plant.plant,
+            runtime: plant.runtime,
+            ...(plant.protection === undefined ? {} : { protection: plant.protection }),
             payload: payload.data,
           })
           if (!validation.accepted) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: validation.reason }
-          system.runtime.writeCommand({
+          plant.runtime.writeCommand({
             type: 'setVariable',
             path: validation.targetPath,
             value: payload.data.value,
@@ -303,16 +368,16 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       },
       query: async (request: PackQueryRequest): Promise<PackQueryResponse> => {
         if (runtimeFailureReason !== null) return fail(request, `process plant runtime has stopped after a runtime failure: ${runtimeFailureReason}`)
-        if (systems.size === 0) return fail(request, 'process plant runtime is not active for this scenario')
+        if (plants.size === 0) return fail(request, 'process plant runtime is not active for this scenario')
         return answerProcessPlantQuery({
           request,
-          systems,
+          plants,
           at: nowIso(),
         })
       },
       observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
         for (const event of events) {
-          if (event.type === 'object.upserted' && processPlantUnitSystemId(event.object) !== null) {
+          if (event.type === 'object.upserted' && processPlantUnitPlantId(event.object) !== null) {
             objectsById.set(event.object.id, event.object)
           }
           if (event.type === 'object.deleted') objectsById.delete(event.objectId)
@@ -321,6 +386,8 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       setClock: async (nextClock: SimulationClockState): Promise<void> => {
         clock = nextClock
         lastTickWallMs = Date.now()
+        const elapsedMs = plants.size === 0 ? 0 : Math.min(...[...plants.values()].map(plant => plant.runtime.elapsedMs()))
+        simulationTimeOffsetMs = Date.parse(nextClock.currentTime) - elapsedMs
       },
       close: async (): Promise<void> => {
         clearInterval(interval)

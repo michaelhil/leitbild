@@ -1,6 +1,6 @@
 import type { ProcessPlantControlWritePayload } from './commands.ts'
 import type { VariablePath } from './graph/index.ts'
-import type { CompiledProcessPlantSystem } from './process-systems.ts'
+import type { CompiledProcessPlant } from './plant-compiler.ts'
 import type { ProcessPlantProtectionRunner, ProcessPlantRuntime, ProcessPlantValue } from './runtime/index.ts'
 import { assertProcessPlantVariableValueValid } from './runtime/variable-validation.ts'
 import {
@@ -32,7 +32,7 @@ export const signalReferenceForControlWrite = (payload: ProcessPlantControlWrite
 }
 
 export const validateProcessPlantControlWrite = (config: {
-  readonly system: CompiledProcessPlantSystem
+  readonly system: CompiledProcessPlant
   readonly runtime: ProcessPlantRuntime
   readonly protection?: ProcessPlantProtectionRunner
   readonly payload: ProcessPlantControlWritePayload

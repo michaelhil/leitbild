@@ -3,6 +3,7 @@ import { idSchema, objectIdSchema, signalIdSchema, type ObjectId, type SignalId 
 import { geoJsonPointSchema, type GeoJsonPoint } from './geo.ts'
 import { interactionEndpointSchema, type InteractionEndpoint } from './interactions.ts'
 import { operationalObjectSchema, type OperationalObject } from './object.ts'
+import { scenarioRecordingSelectionSchema, type ScenarioRecordingSelection } from './recording.ts'
 import { isoTimestampSchema, type IsoTimestamp } from './time.ts'
 
 export interface ScenarioWorldDefinition {
@@ -162,6 +163,7 @@ export interface ScenarioDefinition {
   readonly world: ScenarioWorldDefinition
   readonly initialObjects: ReadonlyArray<OperationalObject>
   readonly surface: SurfaceDefinition
+  readonly recording: ReadonlyArray<ScenarioRecordingSelection>
   readonly timeline?: ScenarioTimeline
 }
 
@@ -357,5 +359,14 @@ export const scenarioDefinitionSchema = z.object({
   world: scenarioWorldDefinitionSchema,
   initialObjects: z.array(operationalObjectSchema),
   surface: surfaceDefinitionSchema,
+  recording: z.array(scenarioRecordingSelectionSchema).default([]),
   timeline: scenarioTimelineSchema.optional(),
+}).superRefine((scenario, ctx) => {
+  const packIds = new Set<string>()
+  scenario.recording.forEach((selection, index) => {
+    if (packIds.has(selection.packId)) {
+      ctx.addIssue({ code: 'custom', path: ['recording', index, 'packId'], message: `duplicate recording selection for Pack: ${selection.packId}` })
+    }
+    packIds.add(selection.packId)
+  })
 })

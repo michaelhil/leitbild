@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { idSchema } from '../../core/model/index.ts'
 import type {
   CompiledPlantGraph,
   ProcessSignalBinding,
@@ -26,21 +25,6 @@ export const processPlantSignalReferenceSchema = z.object({
   }
 })
 export type ProcessPlantSignalReference = z.infer<typeof processPlantSignalReferenceSchema>
-
-export const processPlantSystemSignalReferenceSchema = z.object({
-  systemId: idSchema,
-  path: variablePathSchema.optional(),
-  tagId: processSignalTagIdSchema.optional(),
-}).strict().superRefine((reference, ctx) => {
-  const referenceCount = Number(reference.path !== undefined) + Number(reference.tagId !== undefined)
-  if (referenceCount !== 1) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'process system signal reference must define exactly one of path or tagId',
-    })
-  }
-})
-export type ProcessPlantSystemSignalReference = z.infer<typeof processPlantSystemSignalReferenceSchema>
 
 export const resolveProcessPlantSignalBinding = (
   graph: CompiledPlantGraph,

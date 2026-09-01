@@ -1,4 +1,4 @@
-systemId,seconds,corePowerMw,sgALevelPercent,turbineElectricMw
+plantId,seconds,corePowerMw,sgALevelPercent,turbineElectricMw
 unit-1,0,2890.00,55.00,935.00
 unit-1,5,2825.02,57.20,653.42
 unit-1,10,2784.29,58.51,595.63

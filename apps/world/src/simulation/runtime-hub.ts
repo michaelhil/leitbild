@@ -97,6 +97,9 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
             ...(config.runtimeStateStores?.[adapter.id] === undefined
               ? {}
               : { runtimeStateStore: config.runtimeStateStores[adapter.id] }),
+            ...(config.recordingByRuntimeId?.[adapter.id] === undefined
+              ? {}
+              : { recording: config.recordingByRuntimeId[adapter.id] }),
           }),
         }
       }))

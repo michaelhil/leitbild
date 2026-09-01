@@ -62,7 +62,7 @@
 
   interface Props {
     readonly simulationRunId: SimulationRunId
-    readonly systemId: string
+    readonly plantId: string
     readonly unitName?: string
     readonly unitStatus?: PackObjectStatusPresentation
     readonly unitContexts?: ReadonlyArray<ProcedureUnitContext>
@@ -75,7 +75,7 @@
   }
 
   interface ProcedureUnitContext {
-    readonly systemId: string
+    readonly plantId: string
     readonly targetObjectId?: ObjectId
     readonly label: string
     readonly status?: PackObjectStatusPresentation
@@ -131,7 +131,7 @@
 
   let {
     simulationRunId,
-    systemId,
+    plantId,
     unitName = undefined,
     unitStatus = undefined,
     unitContexts = [],
@@ -185,9 +185,9 @@
   let csfRefreshInFlight = false
   let toastTimer: number | null = null
 
-  const currentUnitContext = $derived(unitContexts.find(unit => unit.systemId === systemId) ?? {
-    systemId,
-    label: unitName ?? systemId,
+  const currentUnitContext = $derived(unitContexts.find(unit => unit.plantId === plantId) ?? {
+    plantId,
+    label: unitName ?? plantId,
     ...(unitStatus === undefined ? {} : { status: unitStatus }),
   } satisfies ProcedureUnitContext)
   const currentScope = $derived(procedureScopeFor(currentUnitContext))
@@ -337,7 +337,7 @@
   }
 
   const procedureScopeFor = (unit: ProcedureUnitContext): ProcedureRunScope => ({
-    systemId: unit.systemId,
+    plantId: unit.plantId,
     ...(unit.targetObjectId === undefined ? {} : { targetObjectId: unit.targetObjectId }),
     label: unit.label,
   })
@@ -382,7 +382,7 @@
     procedureRunSummariesForScope(runs, procedureScopeFor(unit), runDocuments)
 
   const statusForUnit = (unit: ProcedureUnitContext): PackObjectStatusPresentation =>
-    unit.status ?? (unit.systemId === systemId ? displayUnitStatus : {
+    unit.status ?? (unit.plantId === plantId ? displayUnitStatus : {
       tone: 'idle',
       label: 'Unit status unavailable',
       indicator: { shape: 'dot' },
@@ -394,7 +394,7 @@
       return typeof raw.scope === 'object'
         && raw.scope !== null
         && !Array.isArray(raw.scope)
-        && typeof (raw.scope as Record<string, unknown>).systemId === 'string'
+        && typeof (raw.scope as Record<string, unknown>).plantId === 'string'
     })
     if (scoped.length !== nextRuns.length) {
       error = `${nextRuns.length - scoped.length} unscoped procedure run(s) were ignored; reset affected procedure state before continuing runs.`
@@ -585,7 +585,7 @@
       const loadTagValidation = async (): Promise<ReadonlyMap<string, ProcedureTagValidation>> => {
         try {
           setLoadStage('tags', 'running', `${nextDocument.tags.length} tags`)
-          const nextTagValidation = await validateProcedureTags(simulationRunId, systemId, nextDocument.tags)
+          const nextTagValidation = await validateProcedureTags(simulationRunId, plantId, nextDocument.tags)
           const missingCount = [...nextTagValidation.values()].filter(validation => validation.status === 'missing').length
           setLoadStage('tags', 'done', missingCount === 0
             ? `${nextDocument.tags.length} tags resolved`
@@ -599,7 +599,7 @@
       const loadCsfEvaluations = async (): Promise<ReadonlyMap<string, ProcedureCsfEvaluation>> => {
         try {
           setLoadStage('csfs', 'running', `${csfIds.length} functions`)
-          const nextCsfEvaluations = await evaluateProcedureCsfs(simulationRunId, systemId, csfIds)
+          const nextCsfEvaluations = await evaluateProcedureCsfs(simulationRunId, plantId, csfIds)
           setLoadStage('csfs', 'done', `${nextCsfEvaluations.size} functions evaluated`)
           return nextCsfEvaluations
         } catch (err) {
@@ -658,7 +658,7 @@
   }
 
   const openProcedureRunSummary = async (summary: ProcedureRunSummary, unit: ProcedureUnitContext): Promise<void> => {
-    if (unit.systemId !== systemId) {
+    if (unit.plantId !== plantId) {
       showProcedureToast(`Open ${unit.label}'s procedure system to navigate to ${procedureRunSummaryText(summary)}.`)
       return
     }
@@ -973,7 +973,7 @@
     try {
       csfRefreshInFlight = true
       csfError = null
-      csfEvaluations = await evaluateProcedureCsfs(simulationRunId, systemId, csfs)
+      csfEvaluations = await evaluateProcedureCsfs(simulationRunId, plantId, csfs)
     } catch (err) {
       csfError = err instanceof Error ? err.message : String(err)
     } finally {
@@ -992,7 +992,7 @@
       return
     }
     try {
-      hoveredTagValue = await readProcedureTagValue(simulationRunId, systemId, tag)
+      hoveredTagValue = await readProcedureTagValue(simulationRunId, plantId, tag)
     } catch (err) {
       hoveredTagError = err instanceof Error ? err.message : String(err)
     }
@@ -1117,10 +1117,10 @@
       </div>
 
       <div class="procedure-cross-unit-strip" aria-label="Cross-unit procedure status">
-        {#each procedureUnits as unit (unit.systemId)}
+        {#each procedureUnits as unit (unit.plantId)}
           {@const unitStatusPresentation = statusForUnit(unit)}
           {@const unitSummaries = unitProcedureSummariesFor(unit)}
-          <div class="procedure-cross-unit" class:current={unit.systemId === systemId}>
+          <div class="procedure-cross-unit" class:current={unit.plantId === plantId}>
             <StatusIndicator tone={unitStatusPresentation.tone} label={unitStatusPresentation.label} indicator={unitStatusPresentation.indicator} />
             <span class="procedure-cross-unit-name">{unit.label}</span>
             <ProcedureRunBadges

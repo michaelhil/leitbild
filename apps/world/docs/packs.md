@@ -34,6 +34,7 @@ Pack's private runtime state.
 `WorldPack` contains optional, orthogonal contributions:
 
 - `runtime`: available runtime implementations and a default
+- `recording`: named, bounded observation profiles implemented by the Pack runtime
 - `scenario`: compile Pack-owned source items and operations
 - `authoring`: editable item metadata for the generic Scenario editor
 - `presentation`: categories, object views, contextual fields, map areas, and layers
@@ -59,8 +60,9 @@ metadata.
    that resolved definition beside the immutable run manifest.
 5. The Runtime Hub connects only selected adapters and closes already-connected
    adapters if startup is only partially successful.
-6. Adapters emit Pack runtime events. The hub validates runtime and Pack identity;
-   core orders, validates, commits, projects, publishes, and persists them.
+6. Adapters emit Pack runtime events and, when selected, batches of described
+   observations. The hub validates runtime and Pack identity; core orders,
+   validates, commits, projects, publishes, and persists them.
 7. Every committed batch is offered to every active runtime observer. Observer
    failures are isolated and reported rather than breaking the committed batch.
 8. Closing the Run unsubscribes and closes every active adapter.
@@ -119,8 +121,15 @@ or fallback behavior merely to satisfy a generic interface.
 
 ## Historian boundary
 
-A future historian should consume the single committed-event stream plus explicit
-runtime clock and history metadata. It should be an optional capability at the Run
-or Workspace boundary, not a second simulation path and not logic copied into
-individual Packs. Dense Pack-private telemetry may need opt-in sampling or export
-adapters; it should not automatically become canonical operational history.
+Recording is optional and selected in the Scenario by Pack and Recording Profile.
+The Pack owns the mapping from that stable profile name to its real runtime signals;
+core never reaches into Pack-private state. The runtime emits typed series
+descriptors and batched samples beside its normal events. The Run Historian stores
+those observations in one Run-local SQLite database and exposes bounded discovery
+and query operations.
+
+The ordered JSONL journal remains the record of meaningful committed events.
+Historian samples are analytical observations, not canonical current state and not
+a second event stream. Runtime checkpoints contain only restart state, never time
+series. There is deliberately no generic recording-rule language, automatic
+capture of every private variable, or Workspace-wide database.

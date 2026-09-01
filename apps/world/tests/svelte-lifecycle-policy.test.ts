@@ -56,9 +56,9 @@ describe('Svelte lifecycle policy', () => {
     expect(mapRuntime).toContain('setWorkerUrl')
   })
 
-  test('process-surface child modals opt back into pointer events', () => {
+  test('process-display child modals opt back into pointer events', () => {
     const css = readFileSync(join(uiRoot, 'style.css'), 'utf8')
-    const processLayer = css.match(/\.process-surface-window-layer\s*\{[^}]*\}/)?.[0] ?? ''
+    const processLayer = css.match(/\.process-display-window-layer\s*\{[^}]*\}/)?.[0] ?? ''
     const artifactBackdrop = css.match(/\.process-artifact-backdrop\s*\{[^}]*\}/)?.[0] ?? ''
     const procedureBackdrop = css.match(/\.procedure-backdrop\s*\{[^}]*\}/)?.[0] ?? ''
 
@@ -68,24 +68,24 @@ describe('Svelte lifecycle policy', () => {
   })
 
   test('process display loader stays independent from live object telemetry and window geometry', () => {
-    const source = readFileSync(join(uiRoot, 'process-surface', 'ProcessSurfaceModal.svelte'), 'utf8')
+    const source = readFileSync(join(uiRoot, 'process-display', 'ProcessDisplayModal.svelte'), 'utf8')
     const loadEffectStart = source.lastIndexOf('$effect(() => {')
     const loadEffect = source.slice(loadEffectStart, source.indexOf('</script>', loadEffectStart))
 
-    expect(loadEffect).toContain('const selectedSystemId = processSurfaceSystemId')
+    expect(loadEffect).toContain('const selectedPlantId = processDisplayPlantId')
     expect(loadEffect).toContain('untrack(() => windowBounds)')
     expect(loadEffect).not.toContain('selectedObject = object')
-    expect(loadEffect).not.toContain('systemIdFor(object)')
+    expect(loadEffect).not.toContain('plantIdFor(object)')
     expect(loadEffect).not.toContain('?? windowBounds')
   })
 
   test('floating window drag guards ignore icon clicks inside buttons', () => {
     const procedureSource = readFileSync(join(uiRoot, 'procedures', 'ProcedureSystemModal.svelte'), 'utf8')
-    const processSurfaceSource = readFileSync(join(uiRoot, 'process-surface', 'ProcessSurfaceModal.svelte'), 'utf8')
+    const processDisplaySource = readFileSync(join(uiRoot, 'process-display', 'ProcessDisplayModal.svelte'), 'utf8')
 
     expect(procedureSource).toContain('target instanceof Element && target.closest')
-    expect(processSurfaceSource).toContain('target instanceof Element && target.closest')
+    expect(processDisplaySource).toContain('target instanceof Element && target.closest')
     expect(procedureSource).not.toContain('target instanceof HTMLElement && target.closest')
-    expect(processSurfaceSource).not.toContain('target instanceof HTMLElement && target.closest')
+    expect(processDisplaySource).not.toContain('target instanceof HTMLElement && target.closest')
   })
 })

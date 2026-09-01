@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandEnvelope, SimulationRunEvent, SimulationRunId, EventId, IsoTimestamp, ProcedureDocument } from '../src/core/model/index.ts'
 import { nowIso } from '../src/core/model/index.ts'
 import { createSimulationRunStateStore } from '../src/core/simulation-runs/state-store.ts'
-import { parseProcedureMarkdown } from '../src/core/procedures/procmd.ts'
-import { procedureCommandEvents } from '../src/core/procedures/run-state.ts'
+import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
+import { procedureCommandEvents } from '../src/features/procedures/run-state.ts'
 
 const source = {
   sourceId: 'pwr-ops',
@@ -61,12 +61,12 @@ const parseFixture = (): ProcedureDocument =>
   })
 
 const unitAScope = {
-  systemId: 'halden-unit-a',
+  plantId: 'halden-unit-a',
   label: 'Halden Unit A',
 } as const
 
 const unitBScope = {
-  systemId: 'halden-unit-b',
+  plantId: 'halden-unit-b',
   label: 'Halden Unit B',
 } as const
 
@@ -223,7 +223,7 @@ describe('procedure system', () => {
       store.apply(events[0] as SimulationRunEvent)
     }
 
-    expect(store.snapshot().procedures?.runs.map(run => run.scope.systemId).sort()).toEqual([
+    expect(store.snapshot().procedures?.runs.map(run => run.scope.plantId).sort()).toEqual([
       'halden-unit-a',
       'halden-unit-b',
     ])
@@ -263,6 +263,6 @@ describe('procedure system', () => {
     if (!reset) throw new Error('procedure reset command was not handled')
     store.apply(reset[0] as SimulationRunEvent)
 
-    expect(store.snapshot().procedures?.runs.map(run => run.scope.systemId)).toEqual(['halden-unit-b'])
+    expect(store.snapshot().procedures?.runs.map(run => run.scope.plantId)).toEqual(['halden-unit-b'])
   })
 })

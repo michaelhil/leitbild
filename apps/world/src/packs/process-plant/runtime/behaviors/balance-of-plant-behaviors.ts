@@ -1,5 +1,5 @@
 import type { CompiledComponent } from '../../graph/index.ts'
-import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
+import type { CompiledProcessPlant } from '../../plant-compiler.ts'
 import { componentVariablePath, type ComponentBehaviorDefinition, type ProcessPlantBehaviorContext } from '../behavior-contract.ts'
 import { approach, clamp, optionalParameterNumber, parameterNumber, relaxToward } from '../component-helpers.ts'
 import {
@@ -11,7 +11,7 @@ import { inventoryBalanceStep } from '../physics.ts'
 import { heatMwFromWaterFlowAndDeltaT, latentHeatSteamMjPerKg } from '../thermophysics.ts'
 
 const downstreamCondenserBackPressurePa = (
-  system: CompiledProcessPlantSystem,
+  system: CompiledProcessPlant,
   component: CompiledComponent,
   context: ProcessPlantBehaviorContext,
 ): number | null => {
