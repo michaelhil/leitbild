@@ -37,16 +37,32 @@ A reusable Process Plant topology and its design parameters, expressed as a vali
 _Avoid_: running Plant, Process System, graph assembly
 
 **Operating Point**:
-A reusable set of initial process values applied to a compatible Plant Model when a Plant starts.
-_Avoid_: Plant Model parameters, transient, runtime snapshot
+A reusable set of initial values applied to a compatible Model when an operational system starts, such as a Plant or Grid.
+_Avoid_: Model parameters, transient, runtime snapshot
 
 **Plant**:
 A Process Plant Scenario Item that selects one Plant Model, Operating Point, automation, and location. A Plant becomes independently stateful only inside a Simulation Run.
 _Avoid_: Unit and Process System as separate authored records
 
 **Automation Definition**:
-A reusable Process Plant I&C configuration containing typed control, protection, alarm, trip, permissive, and interlock rules.
+A reusable Pack-owned set of typed automatic behavior selected by an operational system. Examples include Process Plant I&C rules and Grid load, storage, and protection policies.
 _Avoid_: Procedure, arbitrary script, hidden control path
+
+**Grid Model**:
+A reusable electrical topology containing stable Grid Assets, design parameters, source provenance, and typed connection points. Reference-map geometry remains separate.
+_Avoid_: running Grid, reference dataset, Operational Object collection
+
+**Grid**:
+An Electric Grid Scenario Item that selects one Grid Model, Operating Point, Automation Definition, and location. One Grid is one Operational Object; it becomes independently stateful only inside a Simulation Run.
+_Avoid_: Grid Model, regional runtime container, collection of top-level asset objects
+
+**Grid Asset**:
+A stable bus, branch, generator, load, or storage identity inside a Grid Model and Grid runtime. Grid Assets are discoverable and controllable through bounded Pack queries and commands, but are not independent Operational Objects.
+_Avoid_: Operational Object, map reference feature, anonymous solver variable
+
+**Electrical Connection Point**:
+A typed Grid Model boundary that identifies where another operational system may exchange power with the Grid. It exposes identity and limits without defining a generic cross-Pack binding engine.
+_Avoid_: hard-coded Plant link, arbitrary signal binding, Grid Asset synonym
 
 **Action Preset**:
 A discoverable parameterized Process Plant operation that resolves to validated commands, such as a turbine trip or a developing leak.
