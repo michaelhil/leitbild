@@ -25,7 +25,7 @@ export const scanPacks = async (rootDir: string): Promise<ReadonlyArray<Pack>> =
     return []
   }
 
-  const entries = await readdir(rootDir)
+  const entries = (await readdir(rootDir)).sort((left, right) => left.localeCompare(right))
   const packs: Pack[] = []
 
   for (const entry of entries) {
@@ -72,7 +72,7 @@ export const scanPackSubdirs = async (
     const candidate = join(p.dirPath, subdir)
     try {
       const s = await stat(candidate)
-    if (s.isDirectory()) out.push({ pack: p.id, dir: candidate })
+      if (s.isDirectory()) out.push({ pack: p.id, dir: candidate })
     } catch { /* no such subdir — fine, packs choose what to ship */ }
   }
   return out
