@@ -15,7 +15,7 @@ World is Leitbild's map-based simulation Module. It retains an independent domai
 
 Every Simulation Run has a manifest that pins its Workspace, Scenario Revision and digest, selected Packs, Pack versions, runtime versions, and creation metadata. Restore either reproduces that pinned configuration or fails visibly.
 
-The canonical language and runtime boundaries are documented in [CONTEXT.md](CONTEXT.md).
+The canonical language and runtime boundaries are documented in the [World context](../../contexts/world/CONTEXT.md).
 
 ## API and URLs
 

@@ -18,7 +18,7 @@ Rooms and Agent Profiles share one runtime and publish one manifest, lifecycle, 
 
 Workspace identity is URL-carried. No local directory, display name, cookie, or Leitbild record is allowed to become a second Workspace authority. Cross-Workspace reads, writes, realtime subscriptions, and persistence paths are rejected by construction.
 
-The canonical domain language is documented in [CONTEXT.md](CONTEXT.md). The cross-application boundaries are documented in the repository [context map](../../CONTEXT-MAP.md).
+The canonical domain language is documented in the [Agents context](../../contexts/agents/CONTEXT.md). The cross-application boundaries are documented in the repository [context map](../../CONTEXT-MAP.md).
 
 ## Quick start
 

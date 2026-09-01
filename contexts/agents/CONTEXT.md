@@ -44,6 +44,14 @@ _Avoid_: Composition Definition, persistent cross-Module Resource link
 Permission for an Agent to invoke a named Capability under an explicit scope.
 _Avoid_: implicit tool availability, Agent-to-Resource connection
 
+**Room Pack Set**:
+The complete set of installed Agent Packs whose contributions are available in one Room.
+_Avoid_: treating every installed Pack as active, or treating Pack activation as an Agent tool grant
+
+**Agent Tool Selection**:
+The exact set of Agents tools one Agent may use. Pack activation makes a tool available to the Room but never adds it to an Agent Tool Selection.
+_Avoid_: implicit Pack-wide grants, required-tools preflight lists, or conflating Agents tools with Workspace Capabilities
+
 **Context View**:
 A bounded, derived representation of relevant Workspace and Resource state supplied to an Agent for one decision.
 _Avoid_: copied domain state, persisted generated prompt

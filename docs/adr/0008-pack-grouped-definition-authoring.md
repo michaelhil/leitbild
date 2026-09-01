@@ -1,0 +1,5 @@
+# Pack-grouped Definition authoring with module-specific Pack runtimes
+
+World Scenario Definitions group each selected Pack's authored items, runtime choice, and Pack-owned configuration beneath one Pack selection. Agents Room Definitions use the same selected-versus-active lifecycle but retain their own Agent, tool, Prompt Deck, and Script structures. Both Modules share revision persistence and discovery semantics, while Pack compilation, runtime behavior, and UI remain Module-owned.
+
+This replaces parallel World `packs`, `items`, `runtimeOverrides`, `runtimeConfigs`, `processSystems`, and persisted UI-region structures. It also rejects a universal Pack runtime, arbitrary recursive scenario tree, schema-generated universal editor, and shared workflow engine: those abstractions would conflate simulation mechanics, Agent collaboration, and browser presentation. World compile-time Packs retain an explicit reviewed browser boundary; Agents may continue loading validated deployment Packs dynamically.

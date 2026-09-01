@@ -31,11 +31,10 @@
 - Shared spatial indexing belongs in `src/core/spatial/*`. The `h3-js` dependency may only be imported by the core spatial wrapper; packs and UI must consume Leitbild spatial interfaces instead of depending on H3 directly.
 - Weather field computation belongs inside the weather pack. UI may request runtime-projected map features through the pack query protocol, but must not import weather models, weather cell math, or weather condition calculators.
 - Pack map-feature animation metadata is presentation-only. It can smooth rendered geometry and attached symbol anchors between runtime query refreshes, but it must not become a simulation update path or a substitute for runtime-owned truth.
-- New Simulation Runs must start from a validated top-level Scenario Definition resolved through the Scenario Catalog. Do not add pack seed factories, hidden runtime defaults, pack-owned scenario files, or parallel startup formats.
-- Scenario Definitions name active `packs`; runtime ids are internal wiring resolved from pack defaults or explicit scenario runtime overrides.
-- Scenario Definitions own initial UI assembly through a validated Surface Definition. Do not render hardcoded operational map/rail/footer surfaces before the scenario surface is loaded.
-- Surface Definitions may configure only safe built-in primitives. Do not allow scenario JSON, AI output, or pack code to inject arbitrary Svelte components, HTML, scripts, or hidden fallback viewports.
-- Built-in scenarios should be authored as compact declarative JSON Scenario Drafts, then expanded through pack-owned scenario codecs into full validated Scenario Definitions. Do not put reusable object-construction logic inside individual scenario files.
+- New Simulation Runs must start from a validated Scenario Definition Revision resolved through the Scenario Library. Do not add pack seed factories, hidden runtime defaults, pack-owned scenario files, or parallel startup formats.
+- Scenario Definitions group each Pack's authored items, runtime choice, and Pack-owned configuration beneath one Pack Selection. Do not reintroduce parallel Pack-id arrays or maps.
+- Scenario Definitions may own a small Starting View, but browser layout, rails, footers, and Pack panels are derived UI. Do not persist the current screen composition as scenario truth.
+- Built-in scenarios should be authored as compact declarative JSON Scenario Definitions, then expanded through pack-owned scenario codecs into exact Compiled Scenarios. Do not put reusable object-construction logic inside individual scenario files.
 - Scenario Draft expansion must stay deterministic and ordered. Do not parallelize Item/action expansion when later specs may reference earlier created objects.
 - Scenario scripts must stay declarative and must emit ordered Simulation Run events through the Simulation Run runtime. Do not add browser-only scenario/tutorial state, runtime-private scenario timers, or arbitrary scenario code execution.
 - Restored Simulation Runs must start from persisted snapshots/history, not by replaying or reapplying Scenario Definitions.
@@ -54,7 +53,7 @@
 - Process-plant procedures remain external for now. Procedure runners, operators, and AI agents may query signal values and condition truth through pack queries and may issue validated commands, but process-plant must not become an embedded emergency procedure engine.
 - Process-plant alarms are persistent current state plus transition events. Do not model alarms only as transient interaction events or clear them merely because they were acknowledged.
 - Process-plant automatic actions from normal control or protection must flow through the same validated queued write path as operator, scenario, and AI commands. Do not create a privileged mutation path that bypasses writability, limits, type checks, or solver phase boundaries.
-- Process system topology is scenario-owned config/data. Keep reusable component definitions and solver behavior in code, but do not make hardcoded TypeScript plant graphs the canonical runtime source of truth.
+- Process system topology is process-plant-owned authored data inside its Scenario Pack Selection. Keep reusable component definitions and solver behavior in code, but do not make hardcoded TypeScript plant graphs the canonical runtime source of truth or expose process-system schema from World core.
 - Keep `packData` and `context` conceptually separate: `packData` is pack-owned operational truth, while `context` is structured, perspective-bearing awareness for assets, operators, system processes, and AI agents.
 - Do not store generated prompts, raw full event logs, or unbounded memory dumps in object `context`; derive bounded agent context views instead.
 - Model cross-object and cross-runtime interaction through scoped interaction signals and registered handlers. Objects may be the source or subject of signals/events, but objects are data, not active executable actors.

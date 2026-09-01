@@ -9,16 +9,24 @@ A Workspace-owned reusable simulation setup that evolves through immutable Scena
 _Avoid_: Simulation Run, Workspace Template
 
 **Scenario Revision**:
-An immutable validated Definition Revision that retains its editable Scenario Draft and exact compiled startup Definition for one or more Simulation Runs.
-_Avoid_: mutable startup state, current Scenario
+An immutable validated Definition Revision that retains its exact authored Scenario Definition and Compiled Scenario for one or more Simulation Runs.
+_Avoid_: Scenario Draft, mutable startup state, current Scenario
 
-**Scenario Draft**:
-The editable source of a Scenario: identity, selected Packs, compact Pack-owned Items, process systems, initial presentation, and Timeline.
-_Avoid_: Scenario Config, compiled startup Definition, mutable Simulation Run
+**Scenario Definition**:
+The authored reusable source of a Scenario: metadata, starting conditions, Starting View, Pack Selections, and optional Timeline. An unsaved editor value may be called a draft, but Draft is not a persisted domain type.
+_Avoid_: Scenario Config, Compiled Scenario, mutable Simulation Run
 
-**Scenario Feature**:
-A World Pack selected in a Scenario Draft. “Feature” is the author-facing view; the Pack remains the technical owner of its behavior and data.
-_Avoid_: Capability, plugin, universal module
+**Compiled Scenario**:
+The internal deterministic startup artifact produced from one Scenario Definition Revision by the selected World Packs.
+_Avoid_: authored Scenario Definition, Scenario Template, live Simulation Run state
+
+**Pack Selection**:
+One selected World Pack and its Pack-owned authored items, runtime choice, and configuration inside a Scenario Definition.
+_Avoid_: Scenario Feature, Capability, or duplicated Pack ids across parallel configuration maps
+
+**Starting View**:
+Optional Scenario Definition data describing the initial map frame and Pack-owned layer preferences a Client should show when it first opens a Simulation Run.
+_Avoid_: persisted screen layout, Surface Definition, pane tree, or browser preference
 
 **Scenario Item**:
 A compact Pack-owned authored element such as an ambulance, weather area, or plant unit that is expanded into validated runtime startup state.
