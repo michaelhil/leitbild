@@ -15,13 +15,20 @@ const servers: Bun.Server<unknown>[] = []
 afterEach(() => { for (const server of servers.splice(0)) server.stop(true) })
 
 const createModule = (moduleId: ModuleId) => {
-  const state = { available: true, failLeave: false, workspaces: new Set<string>() }
+  const state: {
+    available: boolean
+    failLeave: boolean
+    manifestRequests: number
+    invokeFailure?: { readonly status: number; readonly code: string; readonly message: string }
+    workspaces: Set<string>
+  } = { available: true, failLeave: false, manifestRequests: 0, workspaces: new Set<string>() }
   const server = Bun.serve({
     port: 0,
     hostname: '127.0.0.1',
     async fetch(request) {
       const url = new URL(request.url)
       if (url.pathname === '/manifest') {
+        state.manifestRequests++
         if (!state.available) return new Response('offline', { status: 503 })
         return Response.json({
           module: { id: moduleId, title: String(moduleId) },
@@ -58,7 +65,7 @@ const createModule = (moduleId: ModuleId) => {
         const workspaceId = decodeURIComponent(definitions[1] ?? '')
         const item = moduleId === 'world'
           ? { type: 'world.scenario', id: 'halden-process-plant-demo', title: 'Halden Process Plant', capabilityId: 'world.scenario.start' }
-          : { type: 'agents.room-definition', id: 'control-room-script', title: 'Control Room', capabilityId: 'agents.room-definition.start' }
+          : { type: 'agents.room-definition', id: 'halden-process-control-room', title: 'Halden Process Control Room', capabilityId: 'agents.room-definition.start' }
         return Response.json({ definitions: [{
           ref: { workspaceId, moduleId, type: item.type, id: item.id },
           title: item.title,
@@ -86,6 +93,13 @@ const createModule = (moduleId: ModuleId) => {
         }] : [])] })
       }
       if (new RegExp(`^/internal/${moduleId}/workspaces/[^/]+/capabilities/[^/]+/invoke$`).test(url.pathname)) {
+        if (state.invokeFailure) {
+          return Response.json({ error: {
+            code: state.invokeFailure.code,
+            message: state.invokeFailure.message,
+            retryable: false,
+          } }, { status: state.invokeFailure.status })
+        }
         const invocation = await request.json() as { resource?: { id: string }; input: unknown }
         return Response.json({ result: { resourceId: invocation.resource?.id, input: invocation.input } })
       }
@@ -132,7 +146,7 @@ describe('Leitbild Workspace Host', () => {
   })
 
   test('aggregates and invokes dynamically discovered capabilities', async () => {
-    const { host, store } = createFixture()
+    const { modules, host, store } = createFixture()
     const workspace = await host.create({ name: null })
     const resources = await host.resources(workspace.id)
     expect(resources.resources.map(resource => String(resource.ref.id))).toEqual(['run-01'])
@@ -146,6 +160,29 @@ describe('Leitbild Workspace Host', () => {
       accessContextSchema.parse({ workspaceId: workspace.id, requestId: newRequestId(), actor: { kind: 'ai', id: 'agent:test' } }),
     )
     expect(result).toEqual({ result: { resourceId: 'run-01', input: { include: 'summary' } } })
+    expect(modules.every(item => item.state.manifestRequests === 1)).toBe(true)
+    store.close()
+  })
+
+  test('preserves a Module capability error across the Host boundary', async () => {
+    const { modules, host, store } = createFixture()
+    const workspace = await host.create({ name: null })
+    const world = modules.find(item => item.registration.moduleId === 'world')!
+    world.state.invokeFailure = {
+      status: 409,
+      code: 'scenario_revision_unavailable',
+      message: 'Simulation Run has no readable Scenario Revision',
+    }
+    const resources = await host.resources(workspace.id)
+    await expect(host.invoke(
+      workspace.id,
+      capabilityIdSchema.parse('world.simulation-run.read'),
+      { resource: resources.resources[0]!.ref, input: {} },
+      accessContextSchema.parse({ workspaceId: workspace.id, requestId: newRequestId(), actor: { kind: 'ai', id: 'agent:test' } }),
+    )).rejects.toMatchObject({
+      code: 'scenario_revision_unavailable',
+      message: 'Simulation Run has no readable Scenario Revision',
+    })
     store.close()
   })
 

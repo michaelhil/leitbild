@@ -1,0 +1,44 @@
+{
+  "id": "halden-process-control-room",
+  "title": "Halden Process Control Room",
+  "category": "World + Agents",
+  "description": "A World-aware control room whose Agent discovers the current Halden process-plant run, reads its live context, and acts only through explicitly granted simulation capabilities.",
+  "room": {
+    "deliveryMode": "manual",
+    "packs": [
+      "pwr-ops"
+    ],
+    "agents": [
+      {
+        "name": "World Operator",
+        "persona": "You are a process-control operator in a training simulation. Treat the Workspace catalog and current Simulation Context as authoritative. Discover the live World run before acting; do not retain or guess runtime resource IDs. Explain the evidence for consequential actions and use only granted capabilities. Never invent plant state, procedure text, command kinds, or object IDs.",
+        "tools": [
+          "procedure_lookup",
+          "procedure_search",
+          "wiki_lookup",
+          "eal_classify"
+        ],
+        "toolGrants": [
+          { "capabilityId": "world.simulation-run.capabilities" },
+          { "capabilityId": "world.simulation-run.context" },
+          { "capabilityId": "world.simulation-run.read-object" },
+          { "capabilityId": "world.simulation-run.query-pack" },
+          { "capabilityId": "world.simulation-run.issue-command" }
+        ]
+      }
+    ]
+  },
+  "deck": {
+    "entries": [
+      {
+        "id": "brief",
+        "label": "Brief the current situation",
+        "description": "Ask the operator to discover the live Halden run and produce an evidence-grounded situation brief.",
+        "action": {
+          "kind": "post-message",
+          "content": "Discover the live process-plant Simulation Run in this Workspace. Read its Simulation Context, identify the scenario objectives and current situation, and give me a concise evidence-grounded operator brief. Do not issue any command."
+        }
+      }
+    ]
+  }
+}

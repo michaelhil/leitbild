@@ -55,4 +55,12 @@ describe('bundled Room Definitions', () => {
     expect(script.cast).toHaveLength(4)
     expect(script.steps).toHaveLength(3)
   })
+
+  test('Halden control room is connected through semantic World Capability grants', () => {
+    const definition = getBundledRoomDefinition('halden-process-control-room')!
+    const operator = definition.room.agents[0]!
+    expect(operator.tools).not.toContain('workspace_invoke')
+    expect(operator.toolGrants?.map(grant => String(grant.capabilityId))).toContain('world.simulation-run.context')
+    expect(operator.toolGrants?.map(grant => String(grant.capabilityId))).toContain('world.simulation-run.issue-command')
+  })
 })

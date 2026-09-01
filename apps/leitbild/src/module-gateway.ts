@@ -7,6 +7,7 @@ import {
   moduleIdSchema,
   moduleRegistrationSchema,
   moduleResourceCollectionSchema,
+  platformErrorSchema,
   workspaceModuleManifestSchema,
   type ModuleCapabilityCollection,
   type ModuleCapabilityInvocation,
@@ -50,6 +51,21 @@ const failure = <T>(config: ModuleFailure): ModuleCallResult<T> => ({
   failure: moduleFailureSchema.parse(config),
 })
 
+const responseFailure = async <T>(
+  response: Response,
+  fallback: { readonly code: string; readonly message: string },
+): Promise<ModuleCallResult<T>> => {
+  const body = await response.json().catch(() => undefined)
+  const parsed = platformErrorSchema.safeParse(body)
+  return failure({
+    code: parsed.success ? parsed.data.error.code : fallback.code,
+    message: parsed.success ? parsed.data.error.message : fallback.message,
+    retryable: parsed.success
+      ? (parsed.data.error.retryable ?? response.status >= 500)
+      : response.status >= 500,
+  })
+}
+
 const expandWorkspacePath = (baseUrl: string, pathTemplate: string, workspaceId: WorkspaceId): string =>
   `${baseUrl}${pathTemplate.replaceAll('{workspaceId}', encodeURIComponent(workspaceId))}`
 
@@ -71,8 +87,9 @@ export const createModuleGateway = (config: {
   }))
   const byId = new Map(registrations.map(registration => [registration.moduleId, registration]))
   if (byId.size !== registrations.length) throw new Error('Module registrations must have unique ids')
+  const manifestCache = new Map<ModuleId, Promise<WorkspaceModuleManifest | ModuleFailure>>()
 
-  const discover = async (registration: ModuleRegistration): Promise<WorkspaceModuleManifest | ModuleFailure> => {
+  const fetchManifest = async (registration: ModuleRegistration): Promise<WorkspaceModuleManifest | ModuleFailure> => {
     let response: Response
     try {
       response = await fetchImpl(`${registration.internalBaseUrl}${registration.manifestPath}`, {
@@ -111,6 +128,20 @@ export const createModuleGateway = (config: {
     }
   }
 
+  // A Module manifest is a deployment contract, not Workspace state. Cache
+  // successful discovery once per registered Module and discard failures so a
+  // temporarily unavailable Module can recover on the next operation.
+  const discover = async (registration: ModuleRegistration): Promise<WorkspaceModuleManifest | ModuleFailure> => {
+    let pending = manifestCache.get(registration.moduleId)
+    if (pending === undefined) {
+      pending = fetchManifest(registration)
+      manifestCache.set(registration.moduleId, pending)
+    }
+    const result = await pending
+    if ('code' in result) manifestCache.delete(registration.moduleId)
+    return result
+  }
+
   const operate = async (moduleId: ModuleId, workspaceId: WorkspaceId, method: 'PUT' | 'DELETE'): Promise<ModuleOperationResult> => {
     const registration = byId.get(moduleId)
     if (!registration) {
@@ -134,10 +165,9 @@ export const createModuleGateway = (config: {
       })
     }
     if (!response.ok) {
-      return failure({
+      return await responseFailure(response, {
         code: method === 'PUT' ? 'module_provision_failed' : 'module_remove_failed',
         message: `Module lifecycle returned HTTP ${response.status}`,
-        retryable: response.status >= 500,
       })
     }
     return { ok: true, value: undefined }
@@ -161,10 +191,9 @@ export const createModuleGateway = (config: {
       return failure({ code: 'module_unavailable', message: error instanceof Error ? error.message : String(error), retryable: true })
     }
     if (!response.ok) {
-      return failure({
+      return await responseFailure(response, {
         code: 'module_query_failed',
         message: `Module ${config.endpoint} query returned HTTP ${response.status}`,
-        retryable: response.status >= 500,
       })
     }
     try {
@@ -195,10 +224,9 @@ export const createModuleGateway = (config: {
       return failure({ code: 'module_unavailable', message: error instanceof Error ? error.message : String(error), retryable: true })
     }
     if (!response.ok) {
-      return failure({
+      return await responseFailure(response, {
         code: 'capability_invocation_failed',
         message: `Module Capability invocation returned HTTP ${response.status}`,
-        retryable: response.status >= 500,
       })
     }
     try {

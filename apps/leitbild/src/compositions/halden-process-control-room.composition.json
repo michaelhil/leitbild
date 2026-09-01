@@ -13,7 +13,7 @@
       "capabilityId": "agents.room-definition.start",
       "moduleId": "agents",
       "definitionType": "agents.room-definition",
-      "definitionId": "control-room-script"
+      "definitionId": "halden-process-control-room"
     }
   ]
 }

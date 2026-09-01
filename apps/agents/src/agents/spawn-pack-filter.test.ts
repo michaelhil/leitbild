@@ -3,7 +3,8 @@
 // activation; activating a Pack adds only that Pack's tools.
 
 import { describe, expect, test } from 'bun:test'
-import { buildToolSupport } from './spawn.ts'
+import { capabilityIdSchema } from '@leitbild/contracts'
+import { buildToolSupport, effectiveAgentToolSelection } from './spawn.ts'
 import { createToolRegistry } from '../core/tool-registry.ts'
 import type { Tool, ToolResult } from '../core/types/tool.ts'
 import type { LLMProvider } from '../core/types/llm.ts'
@@ -22,15 +23,30 @@ const stubProvider = {} as unknown as LLMProvider
 const makeRoom = (activePacks: string[]) => ({ getActivePacks: () => activePacks })
 
 describe('pack-aware tool surface filter', () => {
+  test('Capability grants derive the generic Workspace broker tools without persisting them', () => {
+    expect(effectiveAgentToolSelection({
+      name: 'Operator',
+      model: 'test',
+      persona: 'Observe the World.',
+      tools: ['procedure_lookup'],
+      toolGrants: [{ capabilityId: capabilityIdSchema.parse('world.simulation-run.context') }],
+    })).toEqual([
+      'procedure_lookup',
+      'workspace_catalog',
+      'workspace_capabilities',
+      'workspace_invoke',
+    ])
+  })
+
   test('with no Packs active, agent sees built-in and authored tools only', async () => {
     const registry = createToolRegistry()
     registry.registerWithSource(okTool('core_tool'), { kind: 'built-in' })
     registry.registerWithSource(okTool('local_tool'), { kind: 'external', path: '/x.ts' })
     registry.registerWithSource(okTool('aviation_atc'), {
-      kind: 'pack-bundled', pack: 'aviation', path: '/p/atc.ts', displayName: 'atc',
+      kind: 'pack-owned', pack: 'aviation', path: '/p/atc.ts', displayName: 'atc',
     })
     registry.registerWithSource(okTool('cafes_menu'), {
-      kind: 'pack-bundled', pack: 'cafes', path: '/p/menu.ts', displayName: 'menu',
+      kind: 'pack-owned', pack: 'cafes', path: '/p/menu.ts', displayName: 'menu',
     })
 
     const support = await buildToolSupport(
@@ -57,10 +73,10 @@ describe('pack-aware tool surface filter', () => {
     const registry = createToolRegistry()
     registry.registerWithSource(okTool('core_tool'), { kind: 'built-in' })
     registry.registerWithSource(okTool('aviation_atc'), {
-      kind: 'pack-bundled', pack: 'aviation', path: '/p/atc.ts', displayName: 'atc',
+      kind: 'pack-owned', pack: 'aviation', path: '/p/atc.ts', displayName: 'atc',
     })
     registry.registerWithSource(okTool('cafes_menu'), {
-      kind: 'pack-bundled', pack: 'cafes', path: '/p/menu.ts', displayName: 'menu',
+      kind: 'pack-owned', pack: 'cafes', path: '/p/menu.ts', displayName: 'menu',
     })
 
     const support = await buildToolSupport(

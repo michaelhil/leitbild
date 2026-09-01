@@ -134,6 +134,8 @@ Leitbild contains no World- or application-specific integration client. AI Agent
 - `workspace_capabilities` discovers callable operations;
 - `workspace_invoke` invokes a granted Capability against an exact Definition Revision or Resource selected for that call.
 
+An Agent Profile with one or more Tool Grants receives this broker surface automatically at runtime. Room Definitions select domain-facing Agents tools only; they do not repeat these infrastructure tool names. Removing all Tool Grants removes the derived broker surface again.
+
 For a World Simulation Run, the Agent first requests `world.simulation-run.context` to learn its Scenario, objectives, current situation, operational objects, and supported operations, then reads a specific object or invokes a permitted command. Context is bounded and current; future Scenario Timeline events and solver-private state are not exposed. This keeps Agent behavior configurable and makes future Modules available without another integration subsystem. A concrete continuous cross-Module behavior must be implemented and owned explicitly; ordinary discovery and commands create no persistent relationship.
 
 ## Persistence

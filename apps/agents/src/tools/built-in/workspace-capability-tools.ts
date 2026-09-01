@@ -21,6 +21,15 @@ export interface WorkspaceCapabilityToolsDeps {
   readonly fetchImpl?: typeof fetch
 }
 
+// Capability grants imply access to this generic broker surface. These names
+// are derived runtime infrastructure, not authored Agent behavior, so Room
+// Definitions never need to repeat them alongside every Tool Grant.
+export const WORKSPACE_CAPABILITY_TOOL_NAMES = [
+  'workspace_catalog',
+  'workspace_capabilities',
+  'workspace_invoke',
+] as const
+
 const hostBaseUrl = (raw: string): string => {
   const url = new URL(raw)
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
@@ -69,7 +78,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
   const workspacePath = `${baseUrl}/api/workspaces/${encodeURIComponent(deps.workspaceId)}`
 
   const catalog: Tool = {
-    name: 'workspace_catalog',
+    name: WORKSPACE_CAPABILITY_TOOL_NAMES[0],
     description: 'List reusable Definitions and live Resources exposed by Modules in this Workspace.',
     usage: 'Discover Definition and Resource identities immediately before invoking a scoped Workspace Capability. Do not remember runtime Resource ids as Agent configuration.',
     returns: '{ workspaceId, definitions[], resources[] } with stable references, provenance, UI paths, links, and advertised capabilityIds.',
@@ -122,7 +131,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
   }
 
   const capabilities: Tool = {
-    name: 'workspace_capabilities',
+    name: WORKSPACE_CAPABILITY_TOOL_NAMES[1],
     description: 'List Capabilities exposed by Modules in this Workspace, including input schemas, Resource scope, risk, and whether this Agent has a grant.',
     usage: 'Discover operations dynamically. A Capability can be invoked only when the Agent Profile grants its capabilityId.',
     returns: '{ workspaceId, modules, capabilities[] } where each Capability includes granted: boolean.',
@@ -170,7 +179,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
   }
 
   const invoke: Tool = {
-    name: 'workspace_invoke',
+    name: WORKSPACE_CAPABILITY_TOOL_NAMES[2],
     description: 'Invoke one granted Workspace Capability against the current Workspace and an optional Definition or Resource selected from workspace_catalog.',
     usage: 'Copy capabilityId from workspace_capabilities. Pass either definition or resource for a scoped operation; Workspace scope is supplied automatically.',
     returns: 'The owning Module result, or a structured failure code such as capability_not_granted or workspace_host_request_failed.',

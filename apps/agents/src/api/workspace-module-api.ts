@@ -45,7 +45,12 @@ const createAgentSchema = z.object({
   name: z.string().trim().min(1).max(128),
   model: z.string().trim().min(1).max(256),
   persona: z.string().max(64_000),
+  tools: z.array(z.string().trim().min(1).max(128)).default([]),
   toolGrants: toolGrantSetSchema.optional(),
+  temperature: z.number().finite().optional(),
+}).strict()
+const readRoomSchema = z.object({
+  limit: z.number().int().min(1).max(500).default(100),
 }).strict()
 const runPromptDeckEntrySchema = z.object({
   entryId: z.string().trim().min(1).max(128),
@@ -94,7 +99,11 @@ const resourcesFor = async (
             revisionId: profile.sourceDefinition.revisionId,
           },
         }),
-        links: [],
+        links: memberIds.flatMap(id => runtime.team.getAgent(id)?.kind === 'ai' ? [{
+          rel: 'member',
+          ref: { workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.agent', id },
+          title: runtime.team.getAgent(id)?.name,
+        }] : []),
         uiPath: `/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(profile.id)}`,
         capabilityIds: agentsCapabilities.idsForResourceType('agents.room'),
         inspectionCapabilityId: 'agents.room.inspect',
@@ -128,8 +137,16 @@ const resourcesFor = async (
       ref: { workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.agent', id: agent.id },
       title: agent.name,
       ...(agent.getDescription?.() ? { description: agent.getDescription!() } : {}),
-      links: [],
+      links: runtime.rooms.getRoomsForAgent(agent.id).map(room => ({
+        rel: 'member-of',
+        ref: { workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.room', id: room.profile.id },
+        title: room.profile.name,
+      })),
       capabilityIds: agentsCapabilities.idsForResourceType('agents.agent'),
+      summary: [
+        { key: 'status', label: 'Status', kind: 'status' as const, value: agent.state.get() },
+        { key: 'room-count', label: 'Rooms', kind: 'count' as const, value: runtime.rooms.getRoomsForAgent(agent.id).length },
+      ],
       observedAt,
     })),
   ] }).resources
@@ -378,16 +395,22 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'agents.room' },
       title: 'Read Room',
-      description: 'Reads the selected Room profile, state, and recent messages.',
+      description: 'Reads the selected Room profile, state, and a bounded recent-message window.',
       risk: 'read',
       idempotent: true,
-      inputSchema: { type: 'object', additionalProperties: false },
+      inputSchema: z.toJSONSchema(readRoomSchema),
       outputSchema: { type: 'object' },
     },
     invoke: async (runtime, invocation) => {
       const room = runtime.rooms.getRoom(requireResourceId(invocation, 'agents.room'))
+      const input = readRoomSchema.parse(invocation.input)
       return room
-        ? json({ result: { profile: room.profile, state: room.getRoomState(), messages: room.getRecent(room.getMessageCount()) } })
+        ? json({ result: {
+            profile: room.profile,
+            state: room.getRoomState(),
+            messageCount: room.getMessageCount(),
+            messages: room.getRecent(input.limit),
+          } })
         : apiError(404, 'room_not_found', 'Room not found')
     },
   },

@@ -267,6 +267,7 @@ export const agentRoutes: RouteEntry[] = [
           const grants = toolGrantSetSchema.safeParse(body.toolGrants)
           if (!grants.success) return errorResponse(grants.error.message, 400)
           aiAgent.updateToolGrants(grants.data)
+          await system.refreshAllAgentTools()
         }
       }
       if (typeof body.description === 'string' && agent.updateDescription) {

@@ -22,6 +22,7 @@ import { callLLM, streamLLM } from './evaluation.ts'
 import { addAgentToRoom } from './actions.ts'
 import { createToolSurface, inferProviderFromModelRef, FAMILY_DISPATCHER_NAMES } from '../tool-surface/index.ts'
 import { CURATED_MODELS } from '../llm/models/catalog.ts'
+import { WORKSPACE_CAPABILITY_TOOL_NAMES } from '../tools/built-in/workspace-capability-tools.ts'
 
 // --- Tool executor ---
 
@@ -217,6 +218,13 @@ export const buildToolSupport = async (
   return support
 }
 
+export const effectiveAgentToolSelection = (config: AIAgentConfig): ReadonlyArray<string> => {
+  const selectedTools = config.tools ?? []
+  return config.toolGrants && config.toolGrants.length > 0
+    ? [...new Set([...selectedTools, ...WORKSPACE_CAPABILITY_TOOL_NAMES])]
+    : selectedTools
+}
+
 const resolveAgentTools = async (
   config: AIAgentConfig,
   llmProvider: LLMProvider,
@@ -225,7 +233,7 @@ const resolveAgentTools = async (
   getRoomActivation?: GetRoomActivation,
 ): Promise<AgentToolSupport> => {
   if (!toolRegistry) return {}
-  const requestedTools = config.tools ?? []
+  const requestedTools = effectiveAgentToolSelection(config)
 
   if (requestedTools.length > 0) {
     warnMissingTools(config.name, requestedTools, toolRegistry)
