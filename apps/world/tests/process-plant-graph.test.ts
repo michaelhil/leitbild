@@ -19,6 +19,7 @@ import {
   type PlantGraphSpec,
 } from '../src/packs/process-plant/index.ts'
 import { scenarios } from '../src/scenarios/index.ts'
+import type { ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 
 const at = '2026-01-01T09:00:00.000Z' as IsoTimestamp
 
@@ -108,6 +109,54 @@ describe('process plant discovery', () => {
       displays: [{ id: 'unit-overview' }],
     })
     expect(JSON.stringify(response.result)).not.toContain('sourcePath')
+  })
+
+  test('validates procedure tags in one tolerant query', () => {
+    const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:procedure-tags' }))
+    const request: PackQueryRequest = {
+      packId: 'process-plant' as PackId,
+      kind: 'process-plant.procedure-tags.validate',
+      payload: {
+        plantId: plant.id,
+        tags: [
+          {
+            id: 'PT-455',
+            simPath: 'rcs.pressurizer.pressure_wr',
+            units: 'psig',
+            equipment: 'pressurizer',
+          },
+          {
+            id: 'NIS-PR-AVG',
+            simPath: 'nis.power_range.avg',
+            units: 'percent',
+            equipment: 'nuclear-instrumentation',
+          },
+          {
+            id: 'SI-SIG',
+            simPath: 'ess.si.actuation_signal',
+            units: 'bool',
+            equipment: 'si-system',
+          },
+        ],
+      },
+    }
+    const plants = new Map([[plant.id, { plant } as ProcessPlantRuntimeInstance]])
+    const response = answerProcessPlantQuery({ request, plants, at })
+
+    expect(response.ok).toBe(true)
+    if (!response.ok) throw new Error(response.reason)
+    expect(response.result).toMatchObject({
+      plantId: plant.id,
+      tags: [
+        {
+          id: 'PT-455',
+          status: 'resolved-with-warnings',
+          warnings: ['sim-path rcs.pressurizer.pressure_wr does not match process path pressurizer.pressureMPa'],
+        },
+        { id: 'NIS-PR-AVG', status: 'resolved', warnings: [] },
+        { id: 'SI-SIG', status: 'missing', warnings: [] },
+      ],
+    })
   })
 
   test('rejects duplicate display contributions', () => {

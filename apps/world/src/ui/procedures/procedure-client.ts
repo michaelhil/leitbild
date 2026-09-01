@@ -211,23 +211,7 @@ const requireOkPackResult = (value: unknown, message: string): Record<string, un
   return assertRecord(response.result, `${message}: missing result`)
 }
 
-const normalizedSourceKey = (value: string): string => value.trim().toLowerCase().replace(/[-_.\s]/g, '')
 const normalizedUnit = (value: string): string => value.trim().toLowerCase().replace(/\s/g, '')
-
-const unitsCompatible = (requested: string | undefined, actual: string): boolean => {
-  if (requested === undefined) return true
-  const left = normalizedUnit(requested)
-  const right = normalizedUnit(actual)
-  if (left === right) return true
-  if ((left === 'bool' || left === 'boolean') && right === 'boolean') return true
-  if (left.startsWith('enum[') && (right === 'boolean' || right === 'fraction' || right === 'percent')) return true
-  return (left === 'degf' && right === 'degc')
-    || (left === 'gpm' && right === 'kg/s')
-    || (left === 'psig' && (right === 'mpa' || right === 'pa'))
-    || (left === 'inhga' && right === 'pa')
-    || (left === 'percent_collapsed_liquid' && right === 'percent')
-    || (left === 'steps_withdrawn' && right === 'fraction')
-}
 
 const formattedNumber = (value: number, digits: number): string => {
   if (Number.isInteger(value)) return value.toFixed(0)
@@ -320,37 +304,30 @@ export const validateProcedureTags = async (
   tags: ReadonlyArray<ProcedureTag>,
 ): Promise<ReadonlyMap<string, ProcedureTagValidation>> => {
   if (tags.length === 0) return new Map()
-  const rows = await Promise.all(tags.map(async (tag): Promise<readonly [string, ProcedureTagValidation]> => {
-    const signal = await queryProcedureSignal(simulationRunId, plantId, tag.id, false)
-    if (signal === null) return [tag.id, { id: tag.id, status: 'missing', warnings: [] }]
-    const path = stringOrUndefined(signal.path)
-    const unit = stringOrUndefined(signal.unit) ?? ''
-    const equipment = stringOrUndefined(signal.equipmentId)
-    const externalRefs = Array.isArray(signal.externalRefs)
-      ? signal.externalRefs.filter((value): value is string => typeof value === 'string')
-      : []
-    const resolvedByExternalReference = externalRefs.includes(tag.id)
-      || (tag.simPath !== undefined && externalRefs.includes(tag.simPath))
-    const warnings = [
-      ...(tag.simPath !== undefined && tag.simPath !== path && !externalRefs.includes(tag.simPath)
-        ? [`sim-path ${tag.simPath} does not match process path ${path ?? 'unknown'}`]
-        : []),
-      ...(!resolvedByExternalReference && !unitsCompatible(tag.units, unit)
-        ? [`units ${tag.units} do not match process unit ${unit}`]
-        : []),
-      ...(tag.equipment !== undefined && equipment !== undefined
-        && normalizedSourceKey(tag.equipment) !== normalizedSourceKey(equipment)
-        && !resolvedByExternalReference
-        ? [`equipment ${tag.equipment} does not match process equipment ${equipment}`]
-        : []),
-    ]
-    return [tag.id, {
-      id: tag.id,
-      status: warnings.length === 0 ? 'resolved' as const : 'resolved-with-warnings' as const,
-      signal,
+  const body = await querySimulationRunPack(simulationRunId, {
+    packId: 'process-plant',
+    kind: 'process-plant.procedure-tags.validate',
+    payload: { plantId, tags },
+  })
+  const result = requireOkPackResult(body.response, 'procedure tag validation failed')
+  const rows = assertArray(result.tags, 'procedure tag validation returned no tags').map((value): readonly [string, ProcedureTagValidation] => {
+    const row = assertRecord(value, 'procedure tag validation row is malformed')
+    const id = assertString(row.id, 'procedure tag validation row requires id')
+    const status = assertString(row.status, 'procedure tag validation row requires status')
+    if (status !== 'resolved' && status !== 'resolved-with-warnings' && status !== 'missing') {
+      throw new Error(`procedure tag validation returned unsupported status: ${status}`)
+    }
+    const warnings = assertArray(row.warnings, 'procedure tag validation row requires warnings').map(warning =>
+      assertString(warning, 'procedure tag validation warning must be a string'),
+    )
+    const signal = optionalRecord(row.signal)
+    return [id, {
+      id,
+      status,
+      ...(signal === null ? {} : { signal }),
       warnings,
     }]
-  }))
+  })
   return new Map(rows)
 }
 

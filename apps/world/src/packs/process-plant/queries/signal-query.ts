@@ -4,6 +4,7 @@ import { idSchema } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import { processQuantitySchema, processSignalTagIdSchema, variableDisciplineSchema } from '../graph/index.ts'
 import {
+  findProcessPlantSignalBinding,
   processPlantSignalQuality,
   processPlantSignalReferenceSchema,
   processPlantSignalView,
@@ -29,11 +30,87 @@ const signalsSearchQuerySchema = z.object({
   publishedOnly: z.boolean().default(false),
 })
 
+const procedureTagSchema = z.object({
+  id: processSignalTagIdSchema,
+  description: z.string().min(1).optional(),
+  simPath: z.string().min(1).optional(),
+  units: z.string().min(1).optional(),
+  equipment: z.string().min(1).optional(),
+  source: z.string().min(1).optional(),
+  range: z.array(z.number().finite()).length(2).optional(),
+}).strict()
+
+const procedureTagsValidateQuerySchema = z.object({
+  plantId: idSchema,
+  tags: z.array(procedureTagSchema),
+}).strict()
+
 export const processPlantSignalQueryKinds = [
   'process-plant.signals.resolve',
   'process-plant.signals.read',
   'process-plant.signals.search',
+  'process-plant.procedure-tags.validate',
 ] as const
+
+const normalizedSourceKey = (value: string): string =>
+  value.trim().toLowerCase().replace(/[-_.\s]/g, '')
+
+const normalizedUnit = (value: string): string =>
+  value.trim().toLowerCase().replace(/\s/g, '')
+
+const procedureUnitsCompatible = (requested: string | undefined, actual: string): boolean => {
+  if (requested === undefined) return true
+  const left = normalizedUnit(requested)
+  const right = normalizedUnit(actual)
+  if (left === right) return true
+  if ((left === 'bool' || left === 'boolean') && right === 'boolean') return true
+  if (left.startsWith('enum[') && (right === 'boolean' || right === 'fraction' || right === 'percent')) return true
+  return (left === 'degf' && right === 'degc')
+    || (left === 'gpm' && right === 'kg/s')
+    || (left === 'psig' && (right === 'mpa' || right === 'pa'))
+    || (left === 'inhga' && right === 'pa')
+    || (left === 'percent_collapsed_liquid' && right === 'percent')
+    || (left === 'steps_withdrawn' && right === 'fraction')
+}
+
+interface ProcessPlantProcedureTagValidation {
+  readonly id: string
+  readonly status: 'resolved' | 'resolved-with-warnings' | 'missing'
+  readonly signal?: ReturnType<typeof processPlantSignalView>
+  readonly warnings: ReadonlyArray<string>
+}
+
+const validateProcedureTags = (
+  system: ProcessPlantRuntimeInstance,
+  tags: ReadonlyArray<z.infer<typeof procedureTagSchema>>,
+): ReadonlyArray<ProcessPlantProcedureTagValidation> => tags.map(tag => {
+  const binding = findProcessPlantSignalBinding(system.plant.graph, { tagId: tag.id })
+  if (binding === undefined) return { id: tag.id, status: 'missing', warnings: [] }
+
+  const signal = processPlantSignalView(binding)
+  const externalRefs = signal.externalRefs ?? []
+  const resolvedByExternalReference = externalRefs.includes(tag.id)
+    || (tag.simPath !== undefined && externalRefs.includes(tag.simPath))
+  const warnings = [
+    ...(tag.simPath !== undefined && tag.simPath !== signal.path && !externalRefs.includes(tag.simPath)
+      ? [`sim-path ${tag.simPath} does not match process path ${signal.path}`]
+      : []),
+    ...(!resolvedByExternalReference && !procedureUnitsCompatible(tag.units, signal.unit)
+      ? [`units ${tag.units} do not match process unit ${signal.unit}`]
+      : []),
+    ...(tag.equipment !== undefined && signal.equipmentId !== undefined
+      && normalizedSourceKey(tag.equipment) !== normalizedSourceKey(signal.equipmentId)
+      && !resolvedByExternalReference
+      ? [`equipment ${tag.equipment} does not match process equipment ${signal.equipmentId}`]
+      : []),
+  ]
+  return {
+    id: tag.id,
+    status: warnings.length === 0 ? 'resolved' : 'resolved-with-warnings',
+    signal,
+    warnings,
+  }
+})
 
 const matchesSignalSearch = (
   binding: ReturnType<typeof processPlantSignalView>,
@@ -61,6 +138,14 @@ export const answerProcessPlantSignalQuery = (config: {
   readonly at: IsoTimestamp
 }): PackQueryResponse | undefined => {
   if (!processPlantSignalQueryKinds.some(kind => kind === config.request.kind)) return undefined
+  if (config.request.kind === 'process-plant.procedure-tags.validate') {
+    const payload = procedureTagsValidateQuerySchema.parse(config.request.payload)
+    const system = requirePlant(config.plants, payload.plantId)
+    return success(config.request, {
+      plantId: payload.plantId,
+      tags: validateProcedureTags(system, payload.tags),
+    }, config.at)
+  }
   if (config.request.kind === 'process-plant.signals.resolve') {
     const payload = signalsResolveQuerySchema.parse(config.request.payload)
     const system = requirePlant(config.plants, payload.plantId)
