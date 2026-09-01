@@ -7,9 +7,10 @@ backup_account="$(id -un)"
 backup_account_id="$(id -u)"
 backup_account_root="$(dscl . -read "/Users/$backup_account" NFSHomeDirectory | awk '{print $2}')"
 backup_launch_dir="$backup_account_root/Library/LaunchAgents"
-backup_log_root="/Users/hilde/Documents/ChatGPT/server-backups/logs"
+backup_log_root="$backup_account_root/Documents/ChatGPT/server-backups/logs"
 
 mkdir -p "$backup_launch_dir" "$backup_log_root"
+
 for backup_template in "$backup_template_dir"/*.plist.in; do
   backup_name="$(basename "$backup_template" .in)"
   backup_target="$backup_launch_dir/$backup_name"

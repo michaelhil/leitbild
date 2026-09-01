@@ -8,7 +8,6 @@
   <key>StartCalendarInterval</key>
   <dict><key>Day</key><integer>1</integer><key>Hour</key><integer>6</integer></dict>
   <key>ProcessType</key><string>Background</string>
-  <key>LowPriorityIO</key><true/>
   <key>StandardOutPath</key><string>__LOG_ROOT__/verify.log</string>
   <key>StandardErrorPath</key><string>__LOG_ROOT__/verify.error.log</string>
 </dict>

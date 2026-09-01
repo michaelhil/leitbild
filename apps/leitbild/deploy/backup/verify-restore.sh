@@ -8,7 +8,9 @@ if [[ "$backup_scope" != critical && "$backup_scope" != static && "$backup_scope
 fi
 
 backup_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-backup_repository="${LEITBILD_BACKUP_REPOSITORY:-/Users/hilde/Documents/ChatGPT/server-backups/restic-repository}"
+backup_account="$(id -un)"
+backup_account_root="$(dscl . -read "/Users/$backup_account" NFSHomeDirectory | awk '{print $2}')"
+backup_repository="${LEITBILD_BACKUP_REPOSITORY:-$backup_account_root/Documents/ChatGPT/server-backups/restic-repository}"
 backup_password_command="$backup_script_dir/restic-password.sh"
 backup_restic_bin="${LEITBILD_RESTIC_BIN:-/opt/homebrew/bin/restic}"
 backup_restore_root="$(mktemp -d /tmp/leitbild-restore-drill.XXXXXX)"
@@ -20,23 +22,24 @@ backup_restore_scope() {
   mkdir "$backup_scope_root"
   "$backup_restic_bin" --repo "$backup_repository" --password-command "$backup_password_command" \
     dump --host leitbild-production --tag "$backup_requested_scope" latest \
-    "leitbild-stack-${backup_requested_scope}.tar" |
+    "leitbild-${backup_requested_scope}.tar" |
     tar -xf - -C "$backup_scope_root"
 
   if [[ "$backup_requested_scope" == critical ]]; then
-    [[ -d "$backup_scope_root/var/lib/leitbild" ]]
-    [[ -d "$backup_scope_root/opt/leitbild/data" ]]
+    [[ -s "$backup_scope_root/var/lib/leitbild/host/workspaces.sqlite" ]]
+    [[ -d "$backup_scope_root/var/lib/leitbild/world" ]]
+    [[ -d "$backup_scope_root/var/lib/leitbild/agents" ]]
     [[ -s "$backup_scope_root/etc/caddy/Caddyfile" ]]
-    [[ -s "$backup_scope_root/etc/systemd/system/leitbild.service" ]]
-    [[ -s "$backup_scope_root/etc/systemd/system/leitbild.service" ]]
+    [[ -s "$backup_scope_root/etc/systemd/system/leitbild-world.service" ]]
+    [[ -s "$backup_scope_root/etc/systemd/system/leitbild-agents.service" ]]
+    [[ -s "$backup_scope_root/etc/systemd/system/leitbild-host.service" ]]
     [[ -s "$backup_scope_root/backup-metadata/leitbild-osrm.inspect.json" ]]
+    [[ -s "$backup_scope_root/backup-metadata/current-release.txt" ]]
   else
-    [[ -d "$backup_scope_root/opt/leitbild/maps" ]]
-    [[ -d "$backup_scope_root/opt/leitbild/reference" ]]
-    [[ -d "$backup_scope_root/opt/leitbild/osrm-data" ]]
-    find "$backup_scope_root/opt/leitbild/maps" -type f -print -quit | grep -q .
-    find "$backup_scope_root/opt/leitbild/reference" -type f -print -quit | grep -q .
-    find "$backup_scope_root/opt/leitbild/osrm-data" -type f -print -quit | grep -q .
+    for backup_path in maps reference osrm-data; do
+      [[ -d "$backup_scope_root/opt/leitbild/$backup_path" ]]
+      find "$backup_scope_root/opt/leitbild/$backup_path" -type f -print -quit | grep -q .
+    done
   fi
   echo "Restore drill passed for $backup_requested_scope backup."
 }

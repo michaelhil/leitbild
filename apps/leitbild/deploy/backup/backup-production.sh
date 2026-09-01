@@ -8,10 +8,12 @@ if [[ "$backup_scope" != critical && "$backup_scope" != static ]]; then
 fi
 
 backup_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-backup_repository="${LEITBILD_BACKUP_REPOSITORY:-/Users/hilde/Documents/ChatGPT/server-backups/restic-repository}"
-backup_ssh_host="${LEITBILD_SSH_HOST:-leitbild}"
+backup_account="$(id -un)"
+backup_account_root="$(dscl . -read "/Users/$backup_account" NFSHomeDirectory | awk '{print $2}')"
+backup_repository="${LEITBILD_BACKUP_REPOSITORY:-$backup_account_root/Documents/ChatGPT/server-backups/restic-repository}"
+backup_ssh_host="${LEITBILD_SSH_HOST:-samsinn}"
 backup_password_command="$backup_script_dir/restic-password.sh"
-backup_archive_name="leitbild-stack-${backup_scope}.tar"
+backup_archive_name="leitbild-${backup_scope}.tar"
 backup_restic_bin="${LEITBILD_RESTIC_BIN:-/opt/homebrew/bin/restic}"
 
 [[ -x "$backup_restic_bin" ]] || { echo "restic is required at $backup_restic_bin" >&2; exit 1; }
