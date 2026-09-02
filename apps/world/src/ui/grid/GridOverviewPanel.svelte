@@ -225,7 +225,6 @@
     selectedGridId = nextGridId
     summary = null
     queryError = null
-    void loadSummary()
   }
 
   const loadSummary = async (): Promise<void> => {
@@ -249,6 +248,11 @@
     }
   }
 
+  $effect(() => {
+    selectedGridItem?.object.revision
+    void loadSummary()
+  })
+
   runOnMount(() => {
     ensureFrame()
     const parent = panelElement?.parentElement
@@ -257,11 +261,8 @@
       frame = clampFrame(frame ?? defaultFrame())
     })
     observer.observe(parent)
-    void loadSummary()
-    const refresh = setInterval(() => void loadSummary(), 2_000)
     return () => {
       summarySequence += 1
-      clearInterval(refresh)
       observer.disconnect()
     }
   })
@@ -378,7 +379,7 @@
       </div>
     {:else if gridId}
       {#key gridId}
-        <GridAssetBrowser {simulationRunId} {gridId} {onFocusMap} />
+        <GridAssetBrowser {simulationRunId} {gridId} refreshRevision={selectedGridItem?.object.revision ?? 0} {onFocusMap} />
       {/key}
     {/if}
     {#if queryError}<p class="query-error">{queryError}</p>{/if}

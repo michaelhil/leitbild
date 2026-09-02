@@ -159,14 +159,24 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       networkAvailableByPlant.set(String(connection.system.objectId), available)
     }
 
-    const observeNetworkObjects = (objects: ReadonlyArray<OperationalObject>): void => {
+    const observeNetworkObjects = (
+      objects: ReadonlyArray<OperationalObject>,
+      initialSnapshot = false,
+    ): void => {
       const byId = new Map(objects.map(object => [object.id, object]))
       for (const connection of systemConnections) {
         const object = byId.get(connection.network.objectId)
         if (!object) continue
         const port = electricalPortFromObject(object, connection.network.portId)
         if (!port?.state) throw new Error(`connected Grid port has no live state: ${connection.network.objectId}:${connection.network.portId}`)
-        queueNetworkState(connection, port.state)
+        // At bootstrap the Grid has already solved its bus state, but it cannot
+        // have observed this Plant's first projection yet. The declared
+        // connection plus an energized Grid boundary is sufficient for initial
+        // offsite-power availability; normal committed updates use live
+        // connection state after the runtimes begin exchanging projections.
+        queueNetworkState(connection, initialSnapshot
+          ? { ...port.state, connected: port.state.energized }
+          : port.state)
         lastNetworkObservationWallMs.set(String(connection.system.objectId), Date.now())
       }
     }
@@ -177,7 +187,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
     if (config.recording?.packId !== undefined && config.recording.packId !== processPlantPackId) {
       throw new Error(`process plant runtime received recording selection for Pack ${config.recording.packId}`)
     }
-    const recordingPlan = config.recording === undefined
+    let recordingPlan = config.recording === undefined
       ? null
       : createProcessPlantRecordingPlan({ selection: config.recording, plants })
     let recordingDescriptorsPending = recordingPlan !== null
@@ -200,6 +210,14 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
     )
 
     let runtimeFailureReason: string | null = null
+
+    const rebuildRecordingPlan = (): void => {
+      recordingPlan = config.recording === undefined || plants.size === 0
+        ? null
+        : createProcessPlantRecordingPlan({ selection: config.recording, plants })
+      recordingDescriptorsPending = recordingPlan !== null
+      nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
+    }
 
     const advance = async (): Promise<void> => {
       if (runtimeFailureReason !== null) return
@@ -425,16 +443,34 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         })
       },
       observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
+        let plantRemoved = false
         for (const event of events) {
           if (event.type === 'object.upserted' && processPlantIdForObject(event.object) !== null) {
             objectsById.set(event.object.id, event.object)
           }
-          if (event.type === 'object.deleted') objectsById.delete(event.objectId)
+          if (event.type !== 'object.deleted') continue
+          objectsById.delete(event.objectId)
+          if (plants.delete(event.objectId)) {
+            const plantId = String(event.objectId)
+            connectedPlantIds.delete(plantId)
+            lastNetworkObservationWallMs.delete(plantId)
+            networkAvailableByPlant.delete(plantId)
+            plantRemoved = true
+          }
+          for (const connection of systemConnections) {
+            if (connection.network.objectId !== event.objectId) continue
+            queueNetworkState(connection, { connected: false, energized: false, voltagePu: 0, frequencyHz: 0 })
+            lastNetworkObservationWallMs.delete(String(connection.system.objectId))
+          }
         }
         observeNetworkObjects(events.flatMap(event => event.type === 'object.upserted' ? [event.object] : []))
+        if (plantRemoved) {
+          rebuildRecordingPlan()
+          await persistence.saveNow()
+        }
       },
       observeInitialSnapshot: async (objects: ReadonlyArray<OperationalObject>): Promise<void> => {
-        observeNetworkObjects(objects)
+        observeNetworkObjects(objects, true)
       },
       setClock: async (nextClock: SimulationClockState): Promise<void> => {
         clock = nextClock

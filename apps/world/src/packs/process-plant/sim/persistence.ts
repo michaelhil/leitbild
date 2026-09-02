@@ -25,7 +25,7 @@ export const createProcessPlantRuntimePersistence = (config: {
   }
 
   const queueSave = async (): Promise<void> => {
-    if (!config.connection.runtimeStateStore || config.plants.size === 0) return
+    if (!config.connection.runtimeStateStore) return
     const state = runtimeStateForProcessPlants(config.plants)
     const previousSave = saveQueue
     const save = async (): Promise<void> => {
@@ -54,7 +54,7 @@ export const createProcessPlantRuntimePersistence = (config: {
   }
 
   const scheduleSave = (): void => {
-    if (!config.connection.runtimeStateStore || config.plants.size === 0) return
+    if (!config.connection.runtimeStateStore) return
     dirty = true
     if (timer !== null) return
     timer = setTimeout(() => {

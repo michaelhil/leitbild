@@ -19,6 +19,11 @@ const projectionKey = (grid: GridRuntimeInstance): string => {
     lowestVoltagePu: Math.round(value.lowestVoltagePu * 500) / 500,
     activeIslandCount: value.activeIslandCount,
     activeAlarmCount: value.activeAlarmCount,
+    externalConnections: [...grid.externalConnections].map(([id, connection]) => ({
+      id,
+      connected: connection.connected,
+      activePowerMw: Math.round(connection.systemActivePowerMw),
+    })),
   })
 }
 

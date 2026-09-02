@@ -6,6 +6,7 @@ import type {
   ObjectId,
   OperationalObject,
   PackRuntimeRecordingBatch,
+  Provenance,
   SignalId,
   SimulationClockState,
   SimulationRunEvent,
@@ -260,7 +261,8 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
     const observeSystemObjects = (
       objects: ReadonlyArray<OperationalObject>,
       trackStartup: boolean,
-    ): void => {
+    ): ReadonlySet<string> => {
+      const affectedGridIds = new Set<string>()
       const byId = new Map(objects.map(object => [object.id, object]))
       for (const grid of grids.values()) {
         for (const connection of grid.externalConnections.values()) {
@@ -268,15 +270,65 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
           if (!object) continue
           const port = electricalPortFromObject(object, connection.definition.system.portId)
           if (!port?.state) throw new Error(`connected system port has no live state: ${connection.definition.system.objectId}:${connection.definition.system.portId}`)
-          connection.systemActivePowerMw = Math.max(
+          const nextPowerMw = Math.max(
             -connection.definition.maximumSystemImportMw,
             Math.min(connection.definition.maximumSystemExportMw, port.state.activePowerMw),
           )
-          connection.connected = port.state.connected && port.state.energized
+          const nextConnected = port.state.connected && port.state.energized
+          if (connection.systemActivePowerMw !== nextPowerMw || connection.connected !== nextConnected) {
+            affectedGridIds.add(grid.definition.gridId)
+          }
+          connection.systemActivePowerMw = nextPowerMw
+          connection.connected = nextConnected
           connection.lastObservedWallMs = Date.now()
           if (trackStartup) observedStartupConnections.add(`${grid.definition.gridId}\u0000${connection.definition.network.portId}`)
         }
       }
+      return affectedGridIds
+    }
+
+    const disconnectSystemObject = (objectId: ObjectId): ReadonlySet<string> => {
+      const affectedGridIds = new Set<string>()
+      for (const grid of grids.values()) {
+        for (const connection of grid.externalConnections.values()) {
+          if (connection.definition.system.objectId !== objectId) continue
+          if (connection.connected || connection.systemActivePowerMw !== 0) affectedGridIds.add(grid.definition.gridId)
+          connection.connected = false
+          connection.systemActivePowerMw = 0
+          connection.lastObservedWallMs = null
+        }
+      }
+      return affectedGridIds
+    }
+
+    const emitAffectedGridProjections = (config: {
+      readonly gridIds: ReadonlySet<string>
+      readonly at: IsoTimestamp
+      readonly cause?: Provenance
+    }): void => {
+      if (config.gridIds.size === 0) return
+      const affectedGrids = new Map<string, GridRuntimeInstance>()
+      for (const gridId of config.gridIds) {
+        const grid = grids.get(gridId)
+        if (!grid) continue
+        advanceGrid(grid, 0, config.at)
+        affectedGrids.set(gridId, grid)
+      }
+      emit({
+        handlers,
+        events: gridProjectionEvents({
+          objectsById,
+          grids: affectedGrids,
+          previousKeys: projectionKeys,
+          at: config.at,
+          provenance: {
+            source: 'simulator',
+            adapterId: electricGridAdapterId,
+            ...(config.cause?.causedByCommandId === undefined ? {} : { causedByCommandId: config.cause.causedByCommandId }),
+          },
+          history: 'snapshot-only',
+        }),
+      })
     }
 
     const balanceReadyStartingDispatch = (): void => {
@@ -425,11 +477,19 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
         return response
       },
       observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
+        const affectedGridIds = new Set<string>()
+        let structuralChange = false
+        let latestCause: SimulationRunEvent | undefined
         for (const event of events) {
           if (event.type === 'object.deleted') {
             const removedGrid = grids.delete(event.objectId)
             objectsById.delete(event.objectId)
-            if (removedGrid) rebuildRecordingPlan()
+            if (removedGrid) {
+              structuralChange = true
+              rebuildRecordingPlan()
+            }
+            for (const gridId of disconnectSystemObject(event.objectId)) affectedGridIds.add(gridId)
+            if (affectedGridIds.size > 0) latestCause = event
             continue
           }
           if (event.type !== 'object.upserted' || event.object.packId !== electricGridPackId) continue
@@ -446,11 +506,17 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
             advanceGrid(grid, 0, event.at)
             grids.set(event.object.id, grid)
             rebuildRecordingPlan()
+            structuralChange = true
           }
         }
-        observeSystemObjects(events.flatMap(event => event.type === 'object.upserted' ? [event.object] : []), true)
+        const systemEvents = events.flatMap(event => event.type === 'object.upserted' ? [event] : [])
+        const gridsAffectedBySystemUpdates = observeSystemObjects(systemEvents.map(event => event.object), true)
+        for (const gridId of gridsAffectedBySystemUpdates) affectedGridIds.add(gridId)
+        if (systemEvents.length > 0 && gridsAffectedBySystemUpdates.size > 0) latestCause = systemEvents.at(-1)
         balanceReadyStartingDispatch()
-        persistence.scheduleSave()
+        if (latestCause) emitAffectedGridProjections({ gridIds: affectedGridIds, at: latestCause.at, cause: latestCause.provenance })
+        if (structuralChange) await persistence.saveNow()
+        else persistence.scheduleSave()
       },
       observeInitialSnapshot: async (objects: ReadonlyArray<OperationalObject>): Promise<void> => {
         // The first combined snapshot can still contain a system waiting for its

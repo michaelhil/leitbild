@@ -22,7 +22,7 @@ export const createElectricGridRuntimePersistence = (config: {
     timer = null
   }
   const queueSave = async (): Promise<void> => {
-    if (!config.connection.runtimeStateStore || config.grids.size === 0) return
+    if (!config.connection.runtimeStateStore) return
     const state = runtimeStateForElectricGrids(config.grids)
     const previous = saveQueue
     const save = async (): Promise<void> => {
@@ -44,7 +44,7 @@ export const createElectricGridRuntimePersistence = (config: {
     await queueSave()
   }
   const scheduleSave = (): void => {
-    if (!config.connection.runtimeStateStore || config.grids.size === 0) return
+    if (!config.connection.runtimeStateStore) return
     dirty = true
     if (timer !== null) return
     timer = setTimeout(() => {

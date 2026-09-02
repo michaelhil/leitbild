@@ -143,4 +143,85 @@ describe('electrical Pack connection', () => {
       await connection.close()
     }
   }, 20_000)
+
+  test('removes a Plant runtime and its Grid exchange immediately on committed deletion', async () => {
+    const scenario = scenarios.find(candidate => candidate.id === 'halden-four-unit-grid')
+    if (!scenario) throw new Error('missing Halden four-unit scenario')
+    const connection = await createRuntimeHub([
+      createLocalProcessPlantPackRuntimeAdapter(),
+      createLocalElectricGridPackRuntimeAdapter(),
+    ]).connect({
+      simulationRunId,
+      scenario: {
+        scenarioId: scenario.id,
+        runtimeIds: [processPlantSimRuntimeId, electricGridRuntimeId],
+        connections: scenario.connections,
+        world: scenario.world,
+        initialObjects: scenario.initialObjects,
+        runtimeConfigByRuntimeId: {},
+        runtimeConfig: {},
+      },
+    })
+    try {
+      const before = await connection.query({
+        packId: 'electric-grid',
+        kind: 'electric-grid.connection-points.list',
+        payload: { gridId: 'grid:halden-four-unit' },
+      })
+      if (!before.ok) throw new Error(before.reason)
+      const beforePoints = (before.result as { connectionPoints: ReadonlyArray<{ connected: boolean; systemActivePowerMw: number }> }).connectionPoints
+      expect(beforePoints).toHaveLength(4)
+      expect(beforePoints.every(point => point.connected && point.systemActivePowerMw > 800)).toBe(true)
+
+      const deletedAt = nowIso()
+      await connection.observeCommittedEvents([{
+        id: 'event:delete-halden-unit-1' as EventId,
+        simulationRunId,
+        seq: 1,
+        at: deletedAt,
+        provenance: { source: 'operator' },
+        type: 'object.deleted',
+        objectId: 'plant:halden-1' as ObjectId,
+      }])
+
+      const plants = await connection.query({
+        packId: 'process-plant',
+        kind: 'process-plant.plants.list',
+        payload: {},
+      })
+      if (!plants.ok) throw new Error(plants.reason)
+      expect((plants.result as { plants: ReadonlyArray<{ id: string }> }).plants.map(plant => plant.id))
+        .toEqual(['plant:halden-2', 'plant:halden-3', 'plant:halden-4'])
+
+      const after = await connection.query({
+        packId: 'electric-grid',
+        kind: 'electric-grid.connection-points.list',
+        payload: { gridId: 'grid:halden-four-unit' },
+      })
+      if (!after.ok) throw new Error(after.reason)
+      const afterPoints = (after.result as { connectionPoints: ReadonlyArray<{ id: string; connected: boolean; systemActivePowerMw: number }> }).connectionPoints
+      expect(afterPoints.find(point => point.id === 'unit-1-420kv')).toMatchObject({ connected: false, systemActivePowerMw: 0 })
+      expect(afterPoints.filter(point => point.connected)).toHaveLength(3)
+
+      const snapshot = await connection.getSnapshot()
+      const grid = snapshot.objects.find(object => object.id === 'grid:halden-four-unit' as ObjectId)
+      if (!grid) throw new Error('Grid disappeared after connected Plant deletion')
+      expect(electricalPortFromObject(grid, 'unit-1-420kv')?.state).toMatchObject({ connected: false, activePowerMw: 0 })
+
+      const switchyard = await connection.query({
+        packId: 'electric-grid',
+        kind: 'electric-grid.asset.get',
+        payload: { gridId: 'grid:halden-four-unit', assetId: 'bus:halden-pwr-switchyard-420' },
+      })
+      if (!switchyard.ok) throw new Error(switchyard.reason)
+      expect(switchyard.result).toMatchObject({
+        asset: {
+          status: { tone: 'working', label: '3/4 connected' },
+          summary: expect.stringContaining('MW supplied'),
+        },
+      })
+    } finally {
+      await connection.close()
+    }
+  })
 })

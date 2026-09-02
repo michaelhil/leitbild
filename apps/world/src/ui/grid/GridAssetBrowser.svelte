@@ -41,10 +41,11 @@
   interface Props {
     readonly simulationRunId: SimulationRunId
     readonly gridId: string
+    readonly refreshRevision: number
     readonly onFocusMap?: (target: MapTarget) => void
   }
 
-  const { simulationRunId, gridId, onFocusMap = () => undefined }: Props = $props()
+  const { simulationRunId, gridId, refreshRevision, onFocusMap = () => undefined }: Props = $props()
   const pageSize = 40
   const kindOptions: ReadonlyArray<{ readonly value: AssetKind | 'all'; readonly label: string }> = [
     { value: 'all', label: 'All' },
@@ -228,11 +229,13 @@
     return JSON.stringify(value)
   }
 
-  runOnMount(() => {
+  $effect(() => {
+    refreshRevision
     void loadAssets()
-    const refresh = setInterval(() => void loadAssets(), 2_000)
+  })
+
+  runOnMount(() => {
     return () => {
-      clearInterval(refresh)
       if (searchTimer) clearTimeout(searchTimer)
     }
   })

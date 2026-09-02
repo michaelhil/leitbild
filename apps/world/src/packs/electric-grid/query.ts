@@ -199,9 +199,26 @@ const assetPresentationFor = (grid: GridRuntimeInstance, asset: GridAssetSnapsho
     const state = grid.busStates.get(asset.id)
     const definition = asset.definition as typeof grid.definition.model.buses[number]
     const voltage = state?.voltagePu ?? 1
-    tone = voltage < 0.95 ? 'error' : voltage < 0.98 ? 'working' : 'ready'
-    statusLabel = state ? `${state.voltagePu.toFixed(3)} pu` : 'Initializing'
-    summary = `${definition.nominalKv} kV · ${state?.frequencyHz.toFixed(2) ?? grid.definition.model.nominalFrequencyHz.toFixed(2)} Hz`
+    const frequency = state?.frequencyHz ?? grid.definition.model.nominalFrequencyHz
+    const frequencyDeviation = Math.abs(frequency - grid.definition.model.nominalFrequencyHz)
+    const connections = [...grid.externalConnections.values()].filter(connection => connection.busId === asset.id)
+    const connectedCount = connections.filter(connection => connection.connected).length
+    const externalSupplyMw = connections.reduce((total, connection) =>
+      total + (connection.connected ? connection.systemActivePowerMw : 0), 0)
+    tone = voltage < 0.95 || frequencyDeviation >= 0.5
+      ? 'error'
+      : voltage < 0.98 || frequencyDeviation >= 0.1 || (connections.length > 0 && connectedCount < connections.length)
+        ? 'working'
+        : 'ready'
+    const externalPowerLabel = externalSupplyMw >= 0
+      ? `${Math.round(externalSupplyMw).toLocaleString()} MW supplied`
+      : `${Math.round(Math.abs(externalSupplyMw)).toLocaleString()} MW drawn`
+    statusLabel = connections.length === 0
+      ? state ? `${state.voltagePu.toFixed(3)} pu` : 'Initializing'
+      : `${connectedCount}/${connections.length} connected`
+    summary = connections.length === 0
+      ? `${definition.nominalKv} kV · ${frequency.toFixed(2)} Hz`
+      : `${externalPowerLabel} · ${voltage.toFixed(3)} pu · ${frequency.toFixed(2)} Hz`
   } else if (asset.kind === 'branch') {
     const state = grid.branches.get(asset.id)!
     const definition = asset.definition as typeof grid.definition.model.branches[number]

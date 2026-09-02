@@ -15,7 +15,7 @@ import {
 export const createProcessPlantRuntimeInstances = (config: {
   readonly compiledPlants: ReadonlyArray<CompiledProcessPlant>
   readonly runtimeState: ProcessPlantRuntimeState | null
-}): ReadonlyMap<string, ProcessPlantRuntimeInstance> => new Map(config.compiledPlants.map(plant => [
+}): Map<string, ProcessPlantRuntimeInstance> => new Map(config.compiledPlants.map(plant => [
   plant.id,
   (() => {
     const restoredRuntimeCheckpoint = restoredRuntimeCheckpointFor(config.runtimeState, plant.id)

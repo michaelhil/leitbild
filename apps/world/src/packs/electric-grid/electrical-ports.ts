@@ -23,7 +23,7 @@ export const gridElectricalPortsAt = (config: {
 }): ReadonlyArray<ElectricalPortDefinition> => config.grid.definition.model.connectionPoints.map(point => {
   const bus = config.grid.busStates.get(point.busId)
   const connection = config.grid.externalConnections.get(point.id)
-  const connected = connection !== undefined
+  const connected = connection?.connected === true
   return electricalPortDefinitionSchema.parse({
     id: point.id,
     label: point.label,
