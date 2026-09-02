@@ -47,3 +47,10 @@ The local fix is deliberately smaller than a window framework or shared cache:
   real Halden display opening/reopening, and on-demand plant actions.
 - Supplemental Host Svelte checking passes. World retains the previously known
   50 errors and one warning in 14 unrelated UI files; no new diagnostics.
+
+Production release `20260902T180430Z-97316a2fbc-894adeff0c` passed all platform
+checks, builds, and 2,113 tests (two existing skips). Browser smoke tests verified
+the creation card, live display, action discovery, and saved Run rename on
+`leitbild.app`. The disposable verification Workspace and Run were then deleted;
+existing user content was not modified. Host, World, Agents, Caddy, OSRM, and
+public HTTPS health checks passed after activation.
