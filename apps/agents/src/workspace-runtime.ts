@@ -14,6 +14,8 @@ import type {
   OnTurnChanged,
 } from './core/types/room.ts'
 import { createRoomDirectory, type RoomDirectory, type RoomDirectoryCallbacks } from './core/rooms/directory.ts'
+import { agentsStorageBudget } from './core/storage/admission.ts'
+import { workspaceModulePaths } from './core/paths.ts'
 import { createWorkspaceSettings, type WorkspaceSettings } from './core/workspaces/settings.ts'
 import { createBookmarkStore, type BookmarkStore, type OnBookmarksChanged } from './core/workspaces/bookmark-store.ts'
 import type { SummaryScheduler, SummaryTarget } from './core/summaries/summary-scheduler.ts'
@@ -92,6 +94,7 @@ import {
 } from './logging/event-mapping.ts'
 
 export interface AgentsWorkspaceRuntime {
+  readonly createRoom: (config: Parameters<RoomDirectory['createRoomSafe']>[0]) => Promise<ReturnType<RoomDirectory['createRoomSafe']>>
   readonly rooms: RoomDirectory
   readonly settings: WorkspaceSettings
   readonly bookmarks: BookmarkStore
@@ -232,6 +235,8 @@ export interface LoggingHandle {
 }
 
 export interface CreateAgentsWorkspaceRuntimeOptions {
+  /** Registry-owned admissions (including autonomous tools) must drain on removal. */
+  readonly runWorkspaceOperation?: <T>(work: () => Promise<T>) => Promise<T>
   // Pre-built deployment runtime. When passed, createAgentsWorkspaceRuntime skips internal
   // provider construction and uses these. WorkspaceRuntimeRegistry passes
   // one deployment runtime to many workspace runtime factories.
@@ -403,6 +408,14 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     onSummaryUpdated: summaryUpdated.proxy,
   }
   const rooms = createRoomDirectory(roomCallbacks)
+  const createRoom: AgentsWorkspaceRuntime['createRoom'] = async config => {
+    const root = options.workspaceId === undefined ? sharedPaths.root() : workspaceModulePaths(options.workspaceId).agents.root
+    // Reserve initial metadata headroom; ongoing conversations remain authoritative
+    // and are never silently discarded by optional-observation retention.
+    const work = () => agentsStorageBudget().withGrowth(root, 64 * 1024 + Buffer.byteLength(JSON.stringify(config)), async () => rooms.createRoomSafe(config))
+    // Standalone/headless runtimes have no evicting Workspace registry.
+    return options.runWorkspaceOperation ? options.runWorkspaceOperation(work) : work()
+  }
   const settings = createWorkspaceSettings()
   const bookmarks = createBookmarkStore(bookmarksChanged.proxy)
   const routeMessage = createMessageRouter({ rooms, limitMetrics: deployment.limitMetrics })
@@ -588,7 +601,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
   toolRegistry.registerAll([
     // Room management — bound to per-Workspace rooms
     createListRoomsTool(rooms),
-    createCreateRoomTool(rooms, systemAddAgentToRoom),
+    createCreateRoomTool(createRoom, systemAddAgentToRoom),
     createDeleteRoomTool(systemRemoveRoom, rooms),
     createSetRoomPromptTool(rooms),
     createPauseRoomTool(rooms),
@@ -898,7 +911,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
   }
 
   const system: AgentsWorkspaceRuntime = {
-    rooms, settings, bookmarks, team, routeMessage,
+    rooms, createRoom, settings, bookmarks, team, routeMessage,
     llm, llmService, ollama, providerConfig, providerKeys, gateways, monitors,
     providerPolicy: deployment.providerPolicy,
     refreshAvailableModels,

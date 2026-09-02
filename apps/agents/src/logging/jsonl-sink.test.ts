@@ -13,6 +13,20 @@ const mkEvent = (session: string, kind: string, i: number): LogEvent => ({
 })
 
 describe('createJsonlFileSink — round-trip', () => {
+  test('aggregate directory ceiling covers older sessions without deleting them', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'log-directory-budget-'))
+    const first = await createJsonlFileSink({ dir, sessionId: 'old', maxDirectoryBytes: 400, rotateAtBytes: 400 })
+    const second = await createJsonlFileSink({ dir, sessionId: 'new', maxDirectoryBytes: 400, rotateAtBytes: 400 })
+    try {
+      first.write({ ts: 1, kind: 'test', session: 'old', payload: { text: 'x'.repeat(210) } })
+      await first.flush()
+      const before = await readFile(join(dir, 'old.jsonl'), 'utf8')
+      second.write({ ts: 2, kind: 'test', session: 'new', payload: { text: 'y'.repeat(210) } })
+      await second.flush()
+      expect(second.stats().droppedCount).toBe(1)
+      expect(await readFile(join(dir, 'old.jsonl'), 'utf8')).toBe(before)
+    } finally { await first.close(); await second.close(); await rm(dir, { recursive: true, force: true }) }
+  })
   test('write → close flushes all queued events to a single file', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'leitbild-sink-'))
     try {

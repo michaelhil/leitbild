@@ -20,13 +20,14 @@ export const roomRoutes: RouteEntry[] = [
       const body = await parseBody(req)
       if (!body.name || typeof body.name !== 'string') return errorResponse('name is required')
       try {
-        const result = system.rooms.createRoomSafe({
+        const result = await system.createRoom({
           name: body.name,
           roomPrompt: body.roomPrompt as string | undefined,
           createdBy: (body.createdBy as string) ?? SYSTEM_SENDER_ID,
         })
         return json(result, 201)
       } catch (err) {
+        if (err instanceof Error && 'code' in err && err.code === 'storage_budget_exceeded') return errorResponse(err.message, 507)
         return errorResponse(err instanceof Error ? err.message : 'Failed to create room')
       }
     },

@@ -36,7 +36,7 @@ export const registerRoomTools = (mcpServer: McpServer, system: AgentsWorkspaceR
     },
   )
 
-  const createRoom = createCreateRoomTool(system.rooms, system.addAgentToRoom)
+  const createRoom = createCreateRoomTool(system.createRoom, system.addAgentToRoom)
   mcpServer.tool(
     createRoom.name,
     createRoom.description,

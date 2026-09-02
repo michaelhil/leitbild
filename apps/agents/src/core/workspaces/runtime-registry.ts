@@ -194,7 +194,10 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     if (shuttingDown || removing.has(id)) throw Object.assign(new Error('Agents Workspace is closing'), { code: 'workspace_closing' })
     let operations = workspaceOperations.get(id)
     if (!operations) { operations = createOperationScope(`Agents Workspace ${id}`); workspaceOperations.set(id, operations) }
-    return await operations.run(work)
+    return await operations.run(async () => {
+      if (!await opts.moduleState.has(id)) throw new Error(`Workspace not found: ${id}`)
+      return await work()
+    })
   }
   const definitionsFor = (id: WorkspaceId): RoomDefinitionLibrary => {
     if (shuttingDown || removing.has(id)) throw Object.assign(new Error('Agents Workspace is closing'), { code: 'workspace_closing' })
@@ -265,6 +268,10 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     const system = createAgentsWorkspaceRuntime({
       deployment: opts.deployment,
       workspaceLabel: id,
+      runWorkspaceOperation: work => withWorkspace(id, async () => {
+        if (map.get(id)?.system !== system || map.get(id)?.state !== 'active') throw Object.assign(new Error('Agents Workspace runtime is no longer active'), { code: 'workspace_closing' })
+        return await work()
+      }),
       ...(opts.workspaceHostUrl === undefined ? {} : { workspaceId: id, workspaceHostUrl: opts.workspaceHostUrl }),
       vectorsFile: paths.agents.vectors,
     })
@@ -441,6 +448,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     if (loading) await loading
     const entry = map.get(id)
     if (!entry) return
+    if (workspaceOperations.get(id)?.activeCount()) throw Object.assign(new Error('Agents Workspace has active requests'), { code: 'workspace_busy' })
     if (entry.state === 'evicting' && entry.evictionPromise) {
       return entry.evictionPromise
     }

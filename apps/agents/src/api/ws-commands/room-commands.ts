@@ -16,7 +16,7 @@ export const handleRoomCommand = async (msg: WSInbound, ctx: CommandContext): Pr
 
   switch (msg.type) {
     case 'create_room': {
-      const result = system.rooms.createRoomSafe({
+      const result = await system.createRoom({
         name: msg.name,
         roomPrompt: msg.roomPrompt,
         createdBy: SYSTEM_ACTOR_ID,

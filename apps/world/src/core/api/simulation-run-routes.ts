@@ -220,7 +220,8 @@ const handleSimulationRunApiInner = async (
     const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(historyMatch[1] ?? ''))
     const runtime = config.registry.get(simulationRunId)
     if (!runtime) return apiError(404, 'simulation_run_not_found', 'simulation run not found')
-    return json({ status: runtime.recordingStatus(), series: runtime.recordingSeries() })
+    const status = runtime.recordingStatus()
+    return json({ status, series: status?.captureState === 'unavailable' ? null : runtime.recordingSeries() })
   }
 
   const invocationMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/capabilities\/([^/]+)\/invoke$/)
@@ -331,6 +332,8 @@ export const handleSimulationRunApi = async (
     if (match && req.method !== 'DELETE' && !url.pathname.endsWith('/reset')) release = config.registry.acquireLease(simulationRunIdSchema.parse(decodeURIComponent(match[1]!)), 'api')
     return await handleSimulationRunApiInner(req, url, config)
   } catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === 'storage_budget_exceeded') return apiError(507, 'storage_budget_exceeded', err.message)
+    if (err instanceof Error && 'code' in err && err.code === 'history_unavailable') return apiError(503, 'history_unavailable', err.message)
     if (err instanceof Error && 'code' in err && err.code === 'simulation_run_busy') return apiError(409, 'simulation_run_busy', err.message)
     if (err instanceof SyntaxError) return apiError(400, 'invalid_json', err.message)
     if (err instanceof z.ZodError) return apiError(400, 'invalid_request', err.message)

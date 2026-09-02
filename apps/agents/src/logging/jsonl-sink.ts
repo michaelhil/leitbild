@@ -1,7 +1,8 @@
 // Optional observations: two files per session, not a Room journal. Queue and
 // file byte limits are independent. Directory/session retention is operator policy.
 import { appendFile, mkdir, rename, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { createStorageBudget, type StorageBudget } from '@leitbild/module-runtime'
 import type { LogEvent, LogSink, LogSinkStats } from './types.ts'
 
 export interface JsonlFileSinkOptions {
@@ -11,7 +12,10 @@ export interface JsonlFileSinkOptions {
   readonly flushIntervalMs?: number
   readonly queueCap?: number
   readonly queueBytes?: number
+  readonly maxDirectoryBytes?: number
 }
+
+const directoryBudgets = new Map<string, { budget: StorageBudget; users: number; limit: number }>()
 
 export const createJsonlFileSink = async (options: JsonlFileSinkOptions): Promise<LogSink> => {
   const rotateAtBytes = options.rotateAtBytes ?? Number(process.env.LEITBILD_LOG_MAX_BYTES ?? 50 * 1024 * 1024)
@@ -38,6 +42,16 @@ export const createJsonlFileSink = async (options: JsonlFileSinkOptions): Promis
   try { currentFileBytes = (await stat(currentFilePath)).size } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
+  const directory = resolve(options.dir)
+  const directoryLimit = options.maxDirectoryBytes ?? Number(process.env.LEITBILD_LOG_DIRECTORY_MAX_BYTES ?? 512 * 1024 * 1024)
+  let shared = directoryBudgets.get(directory)
+  if (shared && shared.limit !== directoryLimit) throw new Error('Conflicting logging directory budgets')
+  if (!shared) {
+    shared = { budget: createStorageBudget({ root: directory, maxBytes: directoryLimit, maxWorkspaceBytes: directoryLimit }), users: 0, limit: directoryLimit }
+    directoryBudgets.set(directory, shared)
+  }
+  shared.users++
+  const directoryBudget = shared
 
   const drop = (kind: string): void => {
     droppedCount++
@@ -83,7 +97,7 @@ export const createJsonlFileSink = async (options: JsonlFileSinkOptions): Promis
         let bytes = 0
         while (end < pending.length && currentFileBytes + bytes + pending[end]!.bytes <= rotateAtBytes) bytes += pending[end++]!.bytes
         const chunk = pending.slice(offset, end)
-        await appendFile(currentFilePath, chunk.map(entry => entry.line).join(''), 'utf-8')
+        await directoryBudget.budget.withGrowth(directory, bytes, () => appendFile(currentFilePath, chunk.map(entry => entry.line).join(''), 'utf-8'))
         currentFileBytes += bytes
         eventCount += chunk.filter(entry => entry.kind !== 'log.dropped').length
         offset = end
@@ -119,7 +133,9 @@ export const createJsonlFileSink = async (options: JsonlFileSinkOptions): Promis
       if (!closing) {
         closed = true
         clearInterval(timer)
-        closing = flush()
+        closing = flush().finally(() => {
+          if (--directoryBudget.users === 0) directoryBudgets.delete(directory)
+        })
       }
       return closing
     },

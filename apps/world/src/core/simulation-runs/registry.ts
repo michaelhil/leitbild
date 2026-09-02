@@ -1,9 +1,10 @@
 import { semanticVersionSchema,type WorkspaceId } from '@leitbild/contracts'
-import { createOperationScope } from '@leitbild/module-runtime'
+import { createOperationScope, createStorageBudget, type StorageBudget } from '@leitbild/module-runtime'
+import { createCaptureAdmission } from '../../features/historian/capture-admission.ts'
 import { lstat,readdir,rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z,ZodError } from 'zod'
-import { createRunHistorian } from '../../features/historian/store.ts'
+import { openRunHistorian } from '../../features/historian/store.ts'
 import { createProcedureSourceService,type ProcedureSourceService } from '../../features/procedures/source.ts'
 import { capabilityJsonSchema } from '../../simulation/capabilities.ts'
 import { worldCoreCapabilities } from '../../simulation/core-capabilities.ts'
@@ -116,6 +117,7 @@ export const createSimulationRunRegistry = (config: {
   readonly compileScenarioDefinition: (source: unknown) => Promise<CompiledScenario>
   readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
   readonly scenarioLibrary?: ScenarioLibrary
+  readonly storageBudget?: StorageBudget
   readonly idleRuntimeCloseDelayMs?: number
   readonly procedureSourceService?: ProcedureSourceService
 }): SimulationRunRegistry => {
@@ -132,6 +134,7 @@ export const createSimulationRunRegistry = (config: {
   let nextLeaseNumber = 0
   const workspacePaths = worldWorkspacePaths(config.dataDir, config.workspaceId)
   const workspaceRoot = workspacePaths.root
+  const storageBudget = config.storageBudget ?? createStorageBudget({ root: config.dataDir })
   const simulationRunRoot = workspacePaths.simulationRuns
   const scenarioLibrary = config.scenarioLibrary ?? createLocalScenarioLibrary({
     workspaceId: config.workspaceId,
@@ -513,7 +516,7 @@ export const createSimulationRunRegistry = (config: {
     }))
     const historian = scenarioRuntime.scenario.recording.length === 0
       ? undefined
-      : createRunHistorian(join(runDir, 'history.sqlite'))
+      : openRunHistorian(join(runDir, 'history.sqlite'), { captureAdmission: await createCaptureAdmission(storageBudget, workspaceRoot) })
     let runtimeConnection
     const runClock = createSimulationClock({
       currentTime: restoredSnapshot?.clock?.currentTime ?? scenarioRuntime.scenario.world.startsAt,
@@ -587,12 +590,14 @@ export const createSimulationRunRegistry = (config: {
     const requestedScenarioId = z.string().min(1).parse(createConfig.scenarioId)
     const id = newSimulationRunId()
     if (simulationRuns.has(id) || creatingSimulationRuns.has(id)) throw new Error(`simulation run already exists: ${id}`)
-    const creating = (async () => {
+    // Conservative admission reservation for initial graphs/checkpoints; ongoing
+    // observation growth is checked separately and never blocks control commands.
+    const creating = storageBudget.withGrowth(workspaceRoot, 16 * 1024 * 1024, async () => {
       const { manifest, compiledScenario } = await createManifest(id, requestedScenarioId, createConfig?.scenarioRevisionId)
       await manifestStoreFor(id).create(manifest)
       await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).create(compiledScenario)
       return await createRuntime({ manifest })
-    })().finally(() => {
+    }).finally(() => {
       creatingSimulationRuns.delete(id)
       scheduleIdleRuntimeCloseIfUnleased(id)
     })
@@ -888,7 +893,7 @@ export const createSimulationRunRegistry = (config: {
     createScenario: source => definitionOperations.run(async () => {
       await ensureScenarioLibrary()
       await compileValidatedDefinition(source)
-      return await scenarioLibrary.create(source)
+      return await storageBudget.withGrowth(workspaceRoot, Buffer.byteLength(JSON.stringify(source)) * 2, () => scenarioLibrary.create(source))
     }),
     previewScenario: source => definitionOperations.run(async () => {
       const compiled = await compileValidatedDefinition(source)
@@ -897,7 +902,7 @@ export const createSimulationRunRegistry = (config: {
     updateScenario: (source, expectedRevisionId) => definitionOperations.run(async () => {
       await ensureScenarioLibrary()
       await compileValidatedDefinition(source)
-      return await scenarioLibrary.update(source, expectedRevisionId)
+      return await storageBudget.withGrowth(workspaceRoot, Buffer.byteLength(JSON.stringify(source)) * 2, () => scenarioLibrary.update(source, expectedRevisionId))
     }),
     deleteScenario: (id: string, revisionId: ScenarioRevisionId) => definitionOperations.run(async () => {
       await ensureScenarioLibrary()

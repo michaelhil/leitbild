@@ -62,12 +62,12 @@ export const startRoomDefinition = async (
     ?? system.team.listByKind('human')[0]
   if (!human) throw new Error('This Workspace has no human agent')
 
-  const room = system.rooms.createRoomSafe({
+  const room = (await system.createRoom({
     name: definition.title,
     roomPrompt: definition.room.prompt,
     createdBy: SYSTEM_SENDER_ID,
     sourceDefinition: { id: definition.id, revisionId: revision.id },
-  }).value
+  })).value
   const createdAgents: Array<{ id: string; name: string }> = []
   try {
     room.setActivePacks(activePacks)

@@ -46,6 +46,23 @@ describe('WorkspaceRuntimeRegistry', () => {
 
   // --- Validity ---
 
+  it('new Room admission fails before mutation and old runtimes cannot create after eviction', async () => {
+    const id = newWorkspaceId()
+    await provision(id)
+    const runtime = await registry.getOrLoad(id)
+    const previous = process.env.LEITBILD_STORAGE_MAX_BYTES
+    process.env.LEITBILD_STORAGE_MAX_BYTES = '1'
+    try {
+      await expect(runtime.createRoom({ name: 'Too large', createdBy: 'system' })).rejects.toThrow('budget reached')
+      expect(runtime.rooms.listAllRooms()).toHaveLength(0)
+      await registry.evictOne(id)
+      await expect(runtime.createRoom({ name: 'Stale', createdBy: 'system' })).rejects.toThrow('no longer active')
+    } finally {
+      if (previous === undefined) delete process.env.LEITBILD_STORAGE_MAX_BYTES
+      else process.env.LEITBILD_STORAGE_MAX_BYTES = previous
+    }
+  })
+
   it('drains accepted definition work before removal and closes stale library references', async () => {
     const id = newWorkspaceId()
     await provision(id)

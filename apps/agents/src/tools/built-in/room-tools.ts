@@ -19,7 +19,7 @@ export const createListRoomsTool = (rooms: RoomDirectory): Tool => ({
   }),
 })
 
-export const createCreateRoomTool = (rooms: RoomDirectory, addAgentToRoom: AddToRoomFn): Tool => ({
+export const createCreateRoomTool = (createRoom: (config: RoomConfig) => Promise<ReturnType<RoomDirectory['createRoomSafe']>>, addAgentToRoom: AddToRoomFn): Tool => ({
   name: 'create_room',
   description: 'Create a room and add yourself to it. Returns the assigned name (may differ on conflict).',
   usage: 'Set up a workspace. The calling agent is added automatically. Optional roomPrompt sets purpose/constraints.',
@@ -41,7 +41,7 @@ export const createCreateRoomTool = (rooms: RoomDirectory, addAgentToRoom: AddTo
         roomPrompt: params.roomPrompt as string | undefined,
         createdBy: context.callerId,
       }
-      const result = rooms.createRoomSafe(config)
+      const result = await createRoom(config)
       await addAgentToRoom(context.callerId, result.value.profile.id)
       return {
         success: true,

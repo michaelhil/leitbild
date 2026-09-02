@@ -56,6 +56,7 @@ const makeSystem = (): AgentsWorkspaceRuntime => {
   }
   return {
     rooms, settings, bookmarks, team, toolRegistry,
+    createRoom: async (config: Parameters<AgentsWorkspaceRuntime['createRoom']>[0]) => rooms.createRoomSafe(config),
     llm: { models: async () => [], chat: async () => ({ content: '', generationMs: 0, tokensUsed: { prompt: 0, completion: 0 } }) } as unknown as AgentsWorkspaceRuntime['llm'],
     ollama,
     providerConfig: { order: ['ollama'], ollamaUrl: 'http://localhost:11434', ollamaMaxConcurrent: 2, cloud: {}, ollamaOnly: false, forceFailProvider: null, droppedFromOrder: [], orderFromUser: false } as unknown as AgentsWorkspaceRuntime['providerConfig'],

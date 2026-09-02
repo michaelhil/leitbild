@@ -8,6 +8,19 @@ import { join } from 'node:path'
 const at = (value: string): IsoTimestamp => value as IsoTimestamp
 
 describe('Run Historian', () => {
+  test('storage accounting includes live WAL and shared-memory files', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'historian-wal-'))
+    const path = join(dir, 'history.sqlite')
+    const historian = createRunHistorian(path, { limits: { minFreeBytes: 0 } })
+    try {
+      historian.record('test', { descriptors: [{ id: 's', subjectId: 'asset', signalId: 'n', title: 'N', valueType: 'number' }], samples: [{ seriesId: 's', value: 1, observedAt: at(new Date().toISOString()), quality: 'good' }] })
+      const status = historian.status()
+      expect(status.walBytes).toBeGreaterThan(0)
+      const sizes = await Promise.all([path, `${path}-wal`, `${path}-shm`].map(file => stat(file)))
+      expect(status.storageBytes).toBe(sizes.reduce((sum, value) => sum + value.size, 0))
+      expect(status.databaseBytes).toBe(sizes[0]!.size)
+    } finally { historian.close(); await rm(dir, { recursive: true, force: true }) }
+  })
   test('an existing oversized history remains queryable and untouched, including retention', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'historian-budget-'))
     const path = join(dir, 'history.sqlite')

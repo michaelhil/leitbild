@@ -1,6 +1,7 @@
 import type { WorkspaceId } from '@leitbild/contracts'
 import { randomUUID } from 'node:crypto'
-import type { RunHistorian,RunHistorianStatus } from '../../features/historian/store.ts'
+import type { RunHistorian } from '../../features/historian/store.ts'
+import type { RunHistorianStatus } from '../../features/historian/policy.ts'
 import type { RecordingPage } from '../model/recording.ts'
 import { prepareProcedureCommand } from '../../features/procedures/run-state.ts'
 import { createProcedureSourceService,type ProcedureSourceService } from '../../features/procedures/source.ts'

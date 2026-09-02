@@ -7,6 +7,7 @@ import {
   type RevisionedDefinitionStore,
 } from '@leitbild/module-runtime'
 import { workspaceModulePaths } from '../paths.ts'
+import { agentsStorageBudget } from '../storage/admission.ts'
 import {
   BUNDLED_ROOM_DEFINITIONS,
   roomDefinitionSchema,
@@ -29,6 +30,8 @@ export interface RoomDefinitionLibrary {
 
 export const createRoomDefinitionLibrary = (workspaceId: WorkspaceId): RoomDefinitionLibrary => {
   const operations = createOperationScope('Agents definition library')
+  const storage = agentsStorageBudget()
+  const root = workspaceModulePaths(workspaceId).agents.root
   const store: RevisionedDefinitionStore<RoomDefinition> = createRevisionedDefinitionStore({
     workspaceId,
     rootDir: `${workspaceModulePaths(workspaceId).agents.root}/definitions`,
@@ -50,11 +53,11 @@ export const createRoomDefinitionLibrary = (workspaceId: WorkspaceId): RoomDefin
     close: () => operations.close(),
     create: definition => operations.run(async () => {
       await ensureReady()
-      return await store.create(definition)
+      return await storage.withGrowth(root, Buffer.byteLength(JSON.stringify(definition)) * 2, () => store.create(definition))
     }),
     update: (definition, expectedRevisionId) => operations.run(async () => {
       await ensureReady()
-      return await store.update(definition, expectedRevisionId)
+      return await storage.withGrowth(root, Buffer.byteLength(JSON.stringify(definition)) * 2, () => store.update(definition, expectedRevisionId))
     }),
     list: () => operations.run(async () => {
       await ensureReady()

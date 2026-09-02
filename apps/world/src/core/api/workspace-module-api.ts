@@ -1,3 +1,4 @@
+import { runHistorianStatusSchema } from '../../features/historian/policy.ts'
 import {
   inspectionViewSchema,
   moduleCapabilityCollectionSchema,
@@ -208,6 +209,7 @@ const simulationRunContextSchema = z.object({
     observedAt: isoTimestampSchema,
     sequence: z.number().int().nonnegative(),
     runtimeHealth: z.array(runtimeHealthSchema),
+    historian: runHistorianStatusSchema.nullable(),
     clock: simulationClockStateSchema.optional(),
     guidance: scenarioGuidanceSchema.optional(),
     procedures: procedureControlStateSchema,
@@ -252,17 +254,7 @@ const simulationChangesSchema = z.object({
 }).strict()
 
 const simulationHistorySchema = z.object({
-  status: z.object({
-    seriesCount: z.number().int().nonnegative(),
-    sampleCount: z.number().int().nonnegative(),
-    firstObservedAt: isoTimestampSchema.nullable(),
-    lastObservedAt: isoTimestampSchema.nullable(),
-    captureState: z.enum(['recording', 'limited']),
-    lastError: z.string().nullable(),
-    discardedSinceOpen: z.number().int().nonnegative(),
-    storageBytes: z.number().int().nonnegative(),
-    limits: z.object({ maxSamples: z.number(), maxAgeMs: z.number(), maxBytes: z.number(), minFreeBytes: z.number() }).strict(),
-  }).strict().nullable(),
+  status: runHistorianStatusSchema.nullable(),
   series: z.array(recordingSeriesDescriptorSchema.extend({ runtimeId: z.string().min(1) }).strict()),
   samples: z.array(recordingSampleSchema.extend({ runtimeId: z.string().min(1), sequence: z.number().int().positive() }).strict()),
   hasMore: z.boolean(),
@@ -741,6 +733,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
             clock: snapshot.clock ?? null,
             scenario: snapshot.scenario ?? null,
             runtimeHealth: runtime.health(),
+            historian: runtime.recordingStatus(),
           },
         }, {
           id: 'live-assets',
@@ -881,6 +874,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
           observedAt: new Date().toISOString(),
           sequence: snapshot.seq,
           runtimeHealth: runtime.health(),
+          historian: runtime.recordingStatus(),
           ...(snapshot.clock === undefined ? {} : { clock: snapshot.clock }),
           ...(snapshot.scenario?.guidance === undefined ? {} : { guidance: snapshot.scenario.guidance }),
           procedures: snapshot.procedures ?? { runs: [] },
@@ -1174,6 +1168,8 @@ export const handleWorldModuleApi = async (
 
     return null
   } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'storage_budget_exceeded') return apiError(507, 'storage_budget_exceeded', error.message)
+    if (error instanceof Error && 'code' in error && error.code === 'history_unavailable') return apiError(503, 'history_unavailable', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'workspace_closing') return apiError(409, 'workspace_closing', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'simulation_run_busy') return apiError(409, 'simulation_run_busy', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'workspace_capacity_exceeded') return apiError(503, 'workspace_capacity_exceeded', error.message)

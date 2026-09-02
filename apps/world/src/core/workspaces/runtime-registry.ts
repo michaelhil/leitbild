@@ -1,5 +1,5 @@
 import type { WorkspaceId } from '@leitbild/contracts'
-import { createOperationScope } from '@leitbild/module-runtime'
+import { createOperationScope, createStorageBudget } from '@leitbild/module-runtime'
 import type { ProcedureSourceService } from '../../features/procedures/source.ts'
 import type { PackRuntimeAdapter } from '../../simulation/protocol.ts'
 import type { CompiledScenario } from '../model/index.ts'
@@ -42,6 +42,7 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
   readonly maxLoadedWorkspaces?: number
 }): WorldWorkspaceRuntimeRegistry => {
   const loaded = new Map<WorkspaceId, WorldWorkspaceRuntime>()
+  const storageBudget = createStorageBudget({ root: config.dataDir })
   const operations = new Map<WorkspaceId, ReturnType<typeof createOperationScope>>()
   // Insertion order is last-use order. Only containers without work can be reclaimed.
   const maxLoadedWorkspaces = config.maxLoadedWorkspaces ?? 64
@@ -54,6 +55,7 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
     simulationRuns: createSimulationRunRegistry({
       dataDir: config.dataDir,
       workspaceId,
+      storageBudget,
       scenarioRuntimeResolver: config.scenarioRuntimeResolver,
       scenarioDefinitions: config.scenarioDefinitions,
       compileScenarioDefinition: config.compileScenarioDefinition,

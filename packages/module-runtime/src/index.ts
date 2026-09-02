@@ -9,6 +9,7 @@ import {
 
 export * from './revision-store.ts'
 export * from './operation-scope.ts'
+export * from './storage-budget.ts'
 
 export type CapabilityRegistration<TContext, TResult> = Readonly<{
   descriptor: ModuleCapabilityDescriptorInput

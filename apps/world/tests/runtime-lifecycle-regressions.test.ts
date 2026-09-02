@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, readFile } from 'node:fs/promises'
+import { Database } from 'bun:sqlite'
 import type { PackRuntimeConnectionConfig } from '../src/simulation/protocol.ts'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,6 +12,28 @@ import { testScenarioDefinitions } from './fixtures/scenarios.ts'
 
 const workspaceId = 'bc98c19c-af60-442b-b65a-6d0a1975cba3' as never
 const deferred = () => { let resolve!: () => void; const promise = new Promise<void>(r => { resolve = r }); return { promise, resolve } }
+
+test('damaged optional history does not prevent checkpoint restore or masquerade as empty history', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'run-unavailable-history-'))
+  const registry = createSimulationRunRegistry({ dataDir, workspaceId, ...testScenarioAuthoring(), runtimeAdapters: createTestPackRuntimeAdapters(), scenarioRuntimeResolver: createTestScenarioRuntimeResolver(), idleRuntimeCloseDelayMs: -1 })
+  try {
+    const run = await registry.create({ scenarioId: 'test-response' })
+    const objectIds = run.snapshot().objects.map(object => object.id)
+    await registry.close(run.id)
+    const path = join(dataDir, 'workspaces', workspaceId, 'world', 'simulation-runs', run.id, 'history.sqlite')
+    const damaged = new Database(path)
+    damaged.exec('DROP TABLE recording_samples')
+    damaged.close()
+    const original = await readFile(path)
+    const restored = await registry.load(run.id)
+    expect(restored.snapshot().objects.map(object => object.id)).toEqual(objectIds)
+    expect(restored.recordingStatus()).toMatchObject({ captureState: 'unavailable', sampleCount: null, lastError: expect.stringContaining('recording_samples') })
+    expect(() => restored.recordedSamples({})).toThrow('Historian unavailable')
+    await restored.setClock({ paused: false })
+    await registry.close(run.id)
+    expect(await readFile(path)).toEqual(original)
+  } finally { await registry.shutdown(); await rm(dataDir, { recursive: true, force: true }) }
+})
 
 test('regression: deleting during cold load does not resurrect a deleted Run', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'audit-run-race-'))

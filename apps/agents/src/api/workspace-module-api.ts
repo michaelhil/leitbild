@@ -69,6 +69,7 @@ const readJson = async (request: Request): Promise<unknown> => {
   try {
     return await request.json()
   } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'storage_budget_exceeded') return apiError(507, 'storage_budget_exceeded', error.message)
     throw new SyntaxError('Request body must be valid JSON', { cause: error })
   }
 }
@@ -299,7 +300,7 @@ const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorks
     },
     invoke: async ({ runtime }, invocation) => {
       const input = createRoomSchema.parse(invocation.input)
-      const room = runtime.rooms.createRoomSafe({
+      const room = await runtime.createRoom({
         name: input.name,
         createdBy: invocation.access.actor.id ?? 'system',
         ...(input.roomPrompt ? { roomPrompt: input.roomPrompt } : {}),

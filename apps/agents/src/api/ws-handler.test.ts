@@ -55,6 +55,7 @@ const makeSystem = (): AgentsWorkspaceRuntime => {
 
   return {
     rooms, settings, bookmarks, team,
+    createRoom: async (config: Parameters<AgentsWorkspaceRuntime['createRoom']>[0]) => rooms.createRoomSafe(config),
     routeMessage,
     llm: makeLLMProvider(),
     ollama: makeLLMProvider(),

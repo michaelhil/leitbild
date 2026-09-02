@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, statfsSync, statSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { Database } from 'bun:sqlite'
+import { resolveHistorianLimits, type RunHistorianStatus, type HistorianLimits } from './policy.ts'
 import {
   packRuntimeRecordingBatchSchema,
   type PackRuntimeRecordingBatch,
@@ -35,31 +36,6 @@ interface SampleRow {
   readonly quality: RecordedSample['quality']
 }
 
-export interface RunHistorianStatus {
-  readonly seriesCount: number
-  readonly sampleCount: number
-  readonly firstObservedAt: string | null
-  readonly lastObservedAt: string | null
-  readonly captureState: 'recording' | 'limited'
-  readonly lastError: string | null
-  readonly discardedSinceOpen: number
-  readonly storageBytes: number
-  readonly limits: HistorianLimits
-}
-
-export interface HistorianLimits {
-  readonly maxSamples: number
-  readonly maxAgeMs: number
-  readonly maxBytes: number
-  readonly minFreeBytes: number
-}
-
-// Observation storage is expendable; canonical Run state is not. Leave room for
-// checkpoints and other Workspaces, even when one Run records at high frequency.
-export const defaultHistorianLimits: HistorianLimits = {
-  maxSamples: 250_000, maxAgeMs: 7 * 86_400_000, maxBytes: 256 * 1024 * 1024, minFreeBytes: 1024 * 1024 * 1024,
-}
-
 export interface RunHistorian {
   readonly record: (runtimeId: string, batch: PackRuntimeRecordingBatch) => void
   readonly listSeries: () => ReadonlyArray<RecordingSeriesDescriptor & { readonly runtimeId: string }>
@@ -69,6 +45,37 @@ export interface RunHistorian {
 }
 
 const currentSchema = 1
+
+const historyStorage = (path: string) => {
+  const bytes = (file: string) => {
+    if (path === ':memory:') return 0
+    try { return statSync(file).size } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0
+      throw error
+    }
+  }
+  const databaseBytes = bytes(path), walBytes = bytes(`${path}-wal`)
+  return { databaseBytes, walBytes, storageBytes: databaseBytes + walBytes + bytes(`${path}-shm`) }
+}
+
+/** Optional storage may fail independently. Never invent empty successful history or repair its files. */
+export const openRunHistorian = (path: string, options: Parameters<typeof createRunHistorian>[1] = {}): RunHistorian => {
+  const limits = resolveHistorianLimits(options.limits)
+  try { return createRunHistorian(path, options) }
+  catch (error) {
+    const message = `Historian unavailable: ${error instanceof Error ? error.message : String(error)}`
+    console.error(message)
+    let discardedSinceOpen = 0
+    const status = (): RunHistorianStatus => ({
+      seriesCount: null, sampleCount: null, firstObservedAt: null, lastObservedAt: null,
+      captureState: 'unavailable', lastError: message, discardedSinceOpen,
+      storageBytes: null, databaseBytes: null, walBytes: null,
+      limits,
+    })
+    const unavailable = (): never => { throw Object.assign(new Error(message), { code: 'history_unavailable', status: status() }) }
+    return { record: (_runtimeId, batch) => { discardedSinceOpen += batch.samples.length }, status, listSeries: unavailable, query: unavailable, close: () => {} }
+  }
+}
 
 const valueColumns = (value: RecordedSample['value']): {
   readonly type: 'number' | 'boolean' | 'string'
@@ -99,14 +106,13 @@ const descriptorFromRow = (row: SeriesRow): RecordingSeriesDescriptor & { readon
   ...(row.unit === null ? {} : { unit: row.unit }),
 })
 
-export const createRunHistorian = (path: string, options: { readonly limits?: Partial<HistorianLimits>; readonly now?: () => number } = {}): RunHistorian => {
-  const limits = { ...defaultHistorianLimits, ...options.limits }
-  for (const value of Object.values(limits)) if (!Number.isSafeInteger(value) || value < 0) throw new Error('Historian limits must be nonnegative safe integers')
-  if (limits.maxSamples < 1 || limits.maxBytes < 64 * 1024 || limits.maxAgeMs < 1) throw new Error('Historian retention budget is too small')
+export const createRunHistorian = (path: string, options: { readonly limits?: Partial<HistorianLimits>; readonly now?: () => number; readonly captureAdmission?: () => string | null } = {}): RunHistorian => {
+  const limits = resolveHistorianLimits(options.limits)
   const now = options.now ?? Date.now
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
-  const oversizedAtOpen = path !== ':memory:' && existsSync(path) && statSync(path).size > limits.maxBytes
+  const oversizedAtOpen = path !== ':memory:' && existsSync(path) && historyStorage(path).storageBytes > limits.maxBytes
   const database = new Database(path, { create: !oversizedAtOpen, readonly: oversizedAtOpen, strict: true })
+  try {
   database.exec('PRAGMA foreign_keys = ON')
   if (!oversizedAtOpen) {
     database.exec('PRAGMA journal_mode = WAL')
@@ -147,7 +153,6 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
       PRAGMA user_version = 1;
     `)
   } else if (version !== currentSchema) {
-    database.close()
     throw new Error(`unsupported historian schema: ${version}`)
   }
   // Indexes are physical access paths, not a second storage format or a migration.
@@ -161,7 +166,7 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
   let discardedSinceOpen = 0
   let lastError: string | null = null
   let lastMaintenanceAt = -Infinity
-  let storageBytes = path === ':memory:' ? 0 : statSync(path).size
+  let storage = historyStorage(path)
   let storageAllowed = !oversizedAtOpen
   const storageLimitMessage = 'Historian byte/free-space budget reached; capture paused, simulation continues. Retained data remains queryable.'
   if (oversizedAtOpen) lastError = storageLimitMessage
@@ -171,11 +176,20 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
   const maintenance = (): void => {
     lastMaintenanceAt = now()
     if (oversizedAtOpen) return
+    const admissionError = options.captureAdmission?.()
+    if (admissionError) { storageAllowed = false; lastError = admissionError; return }
+    storageAllowed = true
     if (path !== ':memory:') {
       database.exec('PRAGMA wal_checkpoint(PASSIVE)')
-      storageBytes = statSync(path).size
+      storage = historyStorage(path)
+      // A completed checkpoint can leave a large reusable WAL. Reclaim it only
+      // when no reader prevents truncation; SQLite returns busy rather than waiting.
+      if (storage.walBytes > Math.min(4 * 1024 * 1024, limits.maxBytes / 4)) {
+        database.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+        storage = historyStorage(path)
+      }
       const fs = statfsSync(dirname(path))
-      storageAllowed = fs.bavail * fs.bsize >= limits.minFreeBytes && storageBytes <= limits.maxBytes
+      storageAllowed = fs.bavail * fs.bsize >= limits.minFreeBytes && storage.storageBytes <= limits.maxBytes
       if (!storageAllowed) { lastError = storageLimitMessage; return }
     }
     const expiredBefore = new Date(now() - limits.maxAgeMs).toISOString()
@@ -330,7 +344,7 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
         sampleCount,
         firstObservedAt: first?.observed_at ?? null,
         lastObservedAt: last?.observed_at ?? null,
-        captureState: lastError ? 'limited' : 'recording', lastError, discardedSinceOpen, storageBytes, limits,
+        captureState: lastError ? 'limited' : 'recording', lastError, discardedSinceOpen, ...historyStorage(path), limits,
       }
     },
     close: (): void => {
@@ -338,5 +352,9 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
         if (!oversizedAtOpen) database.exec('PRAGMA wal_checkpoint(PASSIVE)')
       } finally { database.close() }
     },
+  }
+  } catch (error) {
+    database.close()
+    throw error
   }
 }
