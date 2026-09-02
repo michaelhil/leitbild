@@ -165,7 +165,7 @@ const withSecurityHeaders = (response: Response): Response => {
   })
 }
 
-export const createServer = (config: ServerConfig): { readonly stop: () => void; readonly port: number } => {
+export const createServer = (config: ServerConfig): { readonly stop: () => Promise<void>; readonly port: number } => {
   const port = config.port ?? Number(process.env.PORT ?? 3000)
   const bindHost = config.bindHost ?? process.env.LEITBILD_BIND_HOST ?? '0.0.0.0'
   const uiDistPath = resolve(config.uiDistPath ?? `${import.meta.dir}/../../ui/dist`)
@@ -418,13 +418,20 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
     },
   })
 
+  let stopping: Promise<void> | undefined
   return {
     port: server.port ?? port,
     stop: () => {
-      for (const { realtime } of realtimeByWorkspace.values()) realtime.stop()
-      realtimeByWorkspace.clear()
-      void config.workspaces.shutdown()
-      server.stop()
+      stopping ??= (async () => {
+        // Stop admitting work and detach viewers before draining operations and
+        // checkpointing Pack mechanics together with the final Run clock.
+        const stopped = server.stop(true)
+        for (const { realtime } of realtimeByWorkspace.values()) realtime.stop()
+        realtimeByWorkspace.clear()
+        await config.workspaces.shutdown()
+        await stopped
+      })()
+      return stopping
     },
   }
 }

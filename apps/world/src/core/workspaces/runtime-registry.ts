@@ -128,7 +128,9 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
     shutdown: async () => {
       shuttingDown = true
       await lifecycle.drain()
-      for (const id of [...loaded.keys()]) await close(id)
+      const results = await Promise.allSettled([...loaded.keys()].map(close))
+      const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'World Workspace shutdown failed')
     },
   }
 }

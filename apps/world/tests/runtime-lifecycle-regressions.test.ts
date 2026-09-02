@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test, spyOn } from 'bun:test'
 import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { Database } from 'bun:sqlite'
 import type { PackRuntimeConnectionConfig } from '../src/simulation/protocol.ts'
@@ -12,6 +12,33 @@ import { testScenarioDefinitions } from './fixtures/scenarios.ts'
 
 const workspaceId = 'bc98c19c-af60-442b-b65a-6d0a1975cba3' as never
 const deferred = () => { let resolve!: () => void; const promise = new Promise<void>(r => { resolve = r }); return { promise, resolve } }
+
+test('shutdown waits for healthy sibling checkpoints before reporting a failed Run close', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'world-shutdown-drain-'))
+  const registry = createSimulationRunRegistry({ dataDir, workspaceId, ...testScenarioAuthoring(), runtimeAdapters: createTestPackRuntimeAdapters(), scenarioRuntimeResolver: createTestScenarioRuntimeResolver(), idleRuntimeCloseDelayMs: -1 })
+  const first = await registry.create({ scenarioId: 'test-response' })
+  const second = await registry.create({ scenarioId: 'test-response' })
+  const gate = deferred(), entered = deferred()
+  const originalClose = second.close
+  const failure = spyOn(first, 'close').mockRejectedValue(new Error('Checkpoint failure'))
+  const delayed = spyOn(second, 'close').mockImplementation(async () => { entered.resolve(); await gate.promise; await originalClose() })
+  let settled = false
+  const closing = registry.shutdown().then(() => { settled = true; return null }, error => { settled = true; return error })
+  try {
+    await entered.promise
+    await Bun.sleep(5)
+    expect(settled).toBe(false)
+    gate.resolve()
+    expect(await closing).toBeInstanceOf(AggregateError)
+    expect(registry.get(second.id)).toBeUndefined()
+  } finally {
+    gate.resolve()
+    await closing
+    failure.mockRestore(); delayed.mockRestore()
+    await registry.shutdown()
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
 
 test('damaged optional history does not prevent checkpoint restore or masquerade as empty history', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'run-unavailable-history-'))

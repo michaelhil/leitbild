@@ -135,13 +135,14 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
 
   const capabilities: Tool = {
     name: WORKSPACE_CAPABILITY_TOOL_NAMES[1],
-    description: 'List Capabilities exposed by Modules in this Workspace, including input schemas, Resource scope, risk, and whether this Agent has a grant.',
+    description: 'List Capabilities exposed by Modules in this Workspace, with scope, risk and grant state. Includes input schemas for granted capabilities; omits output schemas and ungranted input schemas to keep discovery compact. Filter by capabilityId for one operation.',
     usage: 'Discover Capabilities dynamically. A Capability can be invoked only when the Agent Profile grants its capabilityId.',
-    returns: '{ workspaceId, modules, capabilities[] } where each Capability includes granted: boolean.',
+    returns: '{ workspaceId, modules, capabilities[] } with granted: boolean and inputSchema when granted. Full output schemas remain available through the Host capability API.',
     parameters: {
       type: 'object',
       properties: {
         moduleId: { type: 'string' },
+        capabilityId: { type: 'string', description: 'Exact Capability ID from discovery; narrows the result to one operation.' },
         risk: { type: 'string', enum: ['read', 'write', 'destructive'] },
         kind: { type: 'string', enum: ['query', 'command'] },
       },
@@ -151,6 +152,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
       try {
         const moduleId = params.moduleId === undefined ? undefined : moduleIdSchema.parse(params.moduleId)
         const risk = params.risk === undefined ? undefined : params.risk
+        const capabilityId = params.capabilityId === undefined ? undefined : capabilityIdSchema.parse(params.capabilityId)
         const kind = params.kind === undefined ? undefined : params.kind
         if (risk !== undefined && !['read', 'write', 'destructive'].includes(String(risk))) {
           return failure('invalid_tool_input', 'risk must be read, write, or destructive')
@@ -170,9 +172,13 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
             capabilities: catalog.capabilities
               .filter(capability =>
                 (moduleId === undefined || capability.moduleId === moduleId)
+                && (capabilityId === undefined || capability.id === capabilityId)
                 && (risk === undefined || capability.risk === risk)
                 && (kind === undefined || capability.kind === kind))
-              .map(capability => ({ ...capability, granted: grants.has(capability.id) })),
+              .map(({ inputSchema, outputSchema: _outputSchema, ...capability }) => {
+                const granted = grants.has(capability.id)
+                return { ...capability, granted, ...(granted ? { inputSchema } : {}) }
+              }),
           },
         }
       } catch (error) {

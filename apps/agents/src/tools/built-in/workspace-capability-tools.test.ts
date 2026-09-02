@@ -56,6 +56,23 @@ const catalogFetch = (requests: Request[]): typeof fetch => (async (input, init)
 }) as typeof fetch
 
 describe('Workspace Capability tools', () => {
+  test('capability discovery omits output schemas and unauthorized input schemas', async () => {
+    let granted = false
+    const tools = createWorkspaceCapabilityTools({ workspaceId, hostBaseUrl: 'https://host.test', getToolGrants: () => granted ? [{ capabilityId }] : [], fetchImpl: catalogFetch([]) })
+    const context = { callerId: 'agent', callerName: 'Analyst' }
+    const denied = await tools[1]!.execute({ capabilityId }, context)
+    const deniedDescriptor = (denied.data as { capabilities: Record<string, unknown>[] }).capabilities[0]!
+    expect(deniedDescriptor.granted).toBe(false)
+    expect(deniedDescriptor.inputSchema).toBeUndefined()
+    expect(deniedDescriptor.outputSchema).toBeUndefined()
+    granted = true
+    const allowed = await tools[1]!.execute({ capabilityId }, context)
+    const allowedDescriptor = (allowed.data as { capabilities: Record<string, unknown>[] }).capabilities[0]!
+    expect(allowedDescriptor.inputSchema).toEqual({ type: 'object' })
+    expect(allowedDescriptor.outputSchema).toBeUndefined()
+    const absent = await tools[1]!.execute({ capabilityId: 'world.missing.operation' }, context)
+    expect(absent.data).toMatchObject({ capabilities: [] })
+  })
   test('current Room association remains discoverable when filtering for World resources', async () => {
     const ref = { workspaceId, moduleId, type: resourceType, id: resourceId }
     const linked = { ref: { workspaceId, moduleId: 'agents', type: 'agents.room', id: 'room' }, title: 'Conversation', capabilityIds: [], links: [{ rel: 'companion-of', ref }], observedAt: new Date().toISOString() }

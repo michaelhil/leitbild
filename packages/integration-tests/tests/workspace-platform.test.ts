@@ -69,7 +69,7 @@ describe('Workspace Host with real Modules', () => {
       uiDistPath: uiDir,
       mapArtifacts: { rootDir: join(dataDir, 'maps') },
     })
-    cleanup.push(async () => { await worldRegistry.shutdown(); worldServer.stop() })
+    cleanup.push(() => worldServer.stop())
 
     const leitbildState = createAgentsModuleState()
     const leitbildServer = Bun.serve({

@@ -33,4 +33,16 @@ const workspaces = createWorldWorkspaceRuntimeRegistry({
 
 const server = createServer({ workspaces, workspaceHostUrl })
 
+let shuttingDown = false
+const shutdown = (): void => {
+  if (shuttingDown) return
+  shuttingDown = true
+  void server.stop().then(() => process.exit(0), error => {
+    console.error('World shutdown failed:', error)
+    process.exit(1)
+  })
+}
+process.on('SIGTERM', shutdown)
+process.on('SIGINT', shutdown)
+
 console.log(`Leitbild running at http://localhost:${server.port}`)

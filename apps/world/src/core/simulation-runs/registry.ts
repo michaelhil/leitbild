@@ -876,9 +876,11 @@ export const createSimulationRunRegistry = (config: {
       await definitionOperations.close()
       await Promise.allSettled([...creatingSimulationRuns.values()])
       await lifecycle.drain()
-      await Promise.all([...simulationRuns.keys()].map(close))
+      const results = await Promise.allSettled([...simulationRuns.keys()].map(close))
       compiledScenarios.clear()
       pinnedTitles.clear()
+      const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'Simulation Run shutdown failed')
     },
     leaseSummary,
     isIdle: () => simulationRuns.size === 0 && creatingSimulationRuns.size === 0 && definitionOperations.activeCount() === 0 && leasesBySimulationRun.size === 0,
