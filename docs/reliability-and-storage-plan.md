@@ -1,6 +1,6 @@
 # Reliability and bounded storage implementation
 
-Status: implementation and standalone/combined automated verification complete; production activation pending. Source audit: 2 September 2026, `5f7d4ab2`.
+Status: implemented and verified in production. Deployed code: `e9af450c`, release `20260902T220840Z-e9af450caa-0e52b4892e`. Source audit: 2 September 2026, `5f7d4ab2`.
 
 Operator decision: no backups exist and the owner explicitly declined setup. No backup work is planned; potential permanent data loss remains accepted, not a deployment blocker.
 
@@ -14,7 +14,7 @@ Operator decision: no backups exist and the owner explicitly declined setup. No 
 - [x] Bound Module requests and preserve errors; reject unsupported keyed retries; keep metadata discovery lazy and read Run context from pinned artifacts.
 - [x] Permit incomplete local scenario edits while retaining strict Save/Start validation.
 - [x] Audit other persistent growth, implement scoped safeguards, document the owner's no-backup decision and a possible future restore procedure.
-- [ ] Run regression, full-module, combined, production and UI verification; commit logical stages and deploy.
+- [x] Run regression, full-module, combined, production and UI verification; commit logical stages and deploy.
 
 ## Historian design
 
@@ -52,4 +52,6 @@ No compatibility aliases, hidden fallback formats, universal Pack engine, blanke
 
 ## Verification
 
-Full predeployment checks and builds passed. Automated suites: 18 Contracts, 7 Module Runtime, 1,425 Agents (2 optional soak cases skipped), 610 World, 20 Host (including command deadline semantics), and 1 full-platform integration test. The dry run also produced the immutable artifact successfully. Existing large browser chunks still produce advisory build warnings; no new framework or bundling workaround is part of this reliability pass.
+Full predeployment checks and builds passed. Automated suites: 18 Contracts, 7 Module Runtime, 1,425 Agents (2 optional soak cases skipped), 610 World, 19 Host (including command deadline semantics), and 1 full-platform integration test: 2,080 passed. Both dry run and production deployment completed. [CI for the deployed code](https://github.com/michaelhil/leitbild/actions/runs/33688760362) passed.
+
+Production: Host, World, Agents, Caddy, OSRM and public HTTPS health passed; all three application services reported zero restart loops. Browser verification covered the current Workspace catalog, rendered editor map and applying one valid cue while another remained incomplete. No browser errors were reported; the local test draft was closed without saving. No production Run was reset and no user data was deleted by this work. Existing large browser chunks still produce advisory build warnings; no new framework or bundling workaround is part of this reliability pass.

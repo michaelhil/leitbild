@@ -38,6 +38,8 @@ Next physical-layout change: numeric series keys, numeric UTC timestamps, a comp
 
 Read-only host inspection: 75 GB disk, about 36 GB used and 37 GB available; World state 4.2 GB, including one 2.5 GB historian; map assets 9.2 GB; routing artifacts 3.1 GB; reference assets 247 MB; dependencies 519 MB; releases 20 MB; system journal about 307 MB. These measurements are not permanent capacities.
 
+Release-time recheck: about 31 GB used and 41 GB available (44%). The earlier World data was already absent before activation; only the current Michael Workspace remained, with approximately 48 KB of World state. This work did not delete that older data. The original measurements explain the growth defect, not the current disk footprint. Small empty Agents Workspace containers also remain; include them in the scoped maintenance report rather than treating every UUID directory as live authored state.
+
 | Owner/data | Growth mechanism | Required policy |
 | --- | --- | --- |
 | World history | Signal count × sampling rate × time; WAL; inactive Runs | Capture reduction, bounded retention and quotas; deliberate offline compaction |
