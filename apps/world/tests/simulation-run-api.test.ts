@@ -490,7 +490,8 @@ describe('Simulation Run API', () => {
       )
       expect(document.body.procedure.steps.map(step => step.id)).toEqual(['verify-reactor-trip'])
 
-      await callRoute(registry, capabilityPath(created.id, 'world.procedure.run.start'), {
+      const targetObject = registry.get(created.id)!.snapshot().objects[0]!
+      const started = await callRoute<{ readonly kind: string; readonly result: { readonly ok: boolean } }>(registry, capabilityPath(created.id, 'world.procedure.run.start'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -499,13 +500,14 @@ describe('Simulation Run API', () => {
             sourceRevision: procedureSource.revision,
             procedureId: 'E-0',
             scope: {
-              plantId: 'procedure-api-unit',
-              targetObjectId: 'object:procedure-api-unit',
+              plantId: targetObject.id,
+              targetObjectId: targetObject.id,
               label: 'Procedure API unit',
             },
           },
         }),
       })
+      expect(started.body.result.ok).toBe(true)
       const runs = await callRoute<{
         readonly procedures: { readonly runs: ReadonlyArray<{ readonly procedureId: string; readonly status: string }> }
       }>(registry, runPath(created.id, '/procedure-runs'))

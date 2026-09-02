@@ -15,7 +15,7 @@ import {
 } from './runtime-metrics.ts'
 import { defaultSimulationRunRuntimePolicy } from './runtime-persistence-policy.ts'
 import { createProcedureSourceService, type ProcedureSourceService } from '../../features/procedures/source.ts'
-import { procedureCommandEvents } from '../../features/procedures/run-state.ts'
+import { prepareProcedureCommand } from '../../features/procedures/run-state.ts'
 import type { WorkspaceId } from '@leitbild/contracts'
 import type { ScenarioRevisionId } from '../scenarios/library.ts'
 import type { RunHistorian, RunHistorianStatus } from '../../features/historian/store.ts'
@@ -566,20 +566,21 @@ export const createSimulationRunRuntime = async (config: {
     const at = nowIso()
     if (command.kind !== deleteObjectCommandKind) {
       try {
-        const events = await procedureCommandEvents({
-          simulationRunId: config.id,
-          at,
+        const commit = await prepareProcedureCommand({
           command,
           procedures: state.snapshot().procedures,
-          factory: {
-            eventId,
-            nextSeq: () => ++seq,
-          },
           readDocument: async documentConfig =>
             await procedureSourceService.readDocument(documentConfig),
         })
-        if (events === null) return null
-        await publishGenerated(() => events)
+        if (commit === null) return null
+        await publishGenerated(() => {
+          const snapshot = state.snapshot()
+          return commit({
+            simulationRunId: config.id, at: nowIso(), procedures: snapshot.procedures,
+            objectIds: new Set(snapshot.objects.map(object => object.id)),
+            factory: { eventId, nextSeq: () => ++seq },
+          })
+        })
         return { ok: true, commandId: command.id, acceptedAt: at }
       } catch (error) {
         return {

@@ -6,6 +6,8 @@ import {
   procedureStepUpdateCommandKind,
   procedureRunCloseCommandKind,
   procedureRunResetCommandKind,
+  procedureRunTransitionCommandKind,
+  procedureRunTransitionPayloadSchema,
   procedureRunClosePayloadSchema,
   procedureRunResetPayloadSchema,
   procedureRunStartPayloadSchema,
@@ -59,6 +61,13 @@ export const worldCoreCapabilities: ReadonlyArray<SimulationCapability> = [
     title: 'Update procedure step',
     description: 'Records an assessment, note, favorite, or current-step change in an active procedure run.',
     input: procedureStepUpdatePayloadSchema,
+    targets: () => [],
+  }),
+  command({
+    id: procedureRunTransitionCommandKind,
+    title: 'Transition to a procedure',
+    description: 'Atomically follows a declared procedure branch from the source Run\u2019s pinned document. Records the source step, closes the source, and starts or reuses the destination in the same unit. Read the pinned document to select stepId and branchIndex.',
+    input: procedureRunTransitionPayloadSchema,
     targets: () => [],
   }),
   command({

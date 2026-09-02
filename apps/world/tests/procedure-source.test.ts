@@ -142,5 +142,8 @@ describe('procedure source discovery', () => {
 
     expect(document.source.revision).toBe(revisionA)
     expect(calls).toEqual([rawUrl])
+    await expect(service.readDocument({ procedureId: 'WRONG', sourceRevision: revisionA,
+      sourcePath: 'wiki/procedures/E-0.md' })).rejects.toThrow('expected WRONG')
+    expect(calls).toEqual([rawUrl])
   })
 })

@@ -1,8 +1,7 @@
 <script lang="ts">
-  import type { Component } from 'svelte'
   import { untrack } from 'svelte'
   import { ClipboardList, Eye, Play, X, Zap } from 'lucide-svelte'
-  import type { SimulationRunId, ObjectId, OperationalObject } from '../../core/model/index.ts'
+  import type { SimulationRunId, OperationalObject } from '../../core/model/index.ts'
   import type { PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
   import { processPlantActionInvokeCommandKind } from '../../packs/process-plant/command-kinds.ts'
   import type { CompiledProcessDisplay, ProcessDisplayValue } from '../../packs/process-plant/displays/index.ts'
@@ -43,16 +42,9 @@
     readonly simulationRunId: SimulationRunId
     readonly object: OperationalObject
     readonly unitStatus?: PackObjectStatusPresentation
-    readonly unitContexts?: ReadonlyArray<{
-      readonly plantId: string
-      readonly targetObjectId?: ObjectId
-      readonly label: string
-      readonly status?: PackObjectStatusPresentation
-    }>
     readonly procedureSummaries?: ProcedureRunSummaryGroup
-    readonly procedureRevision: number
     readonly windowOffsetIndex?: number
-    readonly openProcedureSystemAt?: (summary?: ProcedureRunSummary) => void
+    readonly openProcedureSystemAt: (summary?: ProcedureRunSummary) => void
     readonly close: () => void
   }
 
@@ -62,11 +54,9 @@
     simulationRunId,
     object,
     unitStatus = undefined,
-    unitContexts = [],
     procedureSummaries = emptyProcedureRunSummaries,
-    procedureRevision,
     windowOffsetIndex = 0,
-    openProcedureSystemAt = undefined,
+    openProcedureSystemAt,
     close,
   }: Props = $props()
 
@@ -94,15 +84,11 @@
   let transientRunningId = $state<string | null>(null)
   let availableActions = $state<ReadonlyArray<ProcessPlantActionCatalogEntry>>([])
   let transientInputs = $state<Record<string, Record<string, number>>>({})
-  let procedureModalOpen = $state(false)
-  let procedureModalError = $state<string | null>(null)
-  let ProcedureSystemModal = $state<Component | null>(null)
   let widgetPositions = $state<ProcessDisplayLayout>({})
   let loadedPlantId = $state<string | null>(null)
   let windowBounds = $state<ProcessDisplayWindowBounds>({ x: 72, y: 72, width: 1120, height: 720 })
   let windowDragState = $state<WindowDragState | null>(null)
   let boundsInitialized = false
-  let procedureModalLoadPromise: Promise<Component> | null = null
 
   const defaultWindowBounds = (): ProcessDisplayWindowBounds => {
     if (typeof window === 'undefined') return windowBounds
@@ -166,37 +152,7 @@
           : 'idle',
   ))
 
-  const loadProcedureSystemModal = async (): Promise<void> => {
-    if (ProcedureSystemModal) return
-    procedureModalLoadPromise ??= (async (): Promise<Component> => {
-      const module = await import('../procedures/ProcedureSystemModal.svelte')
-      return module.default
-    })()
-    try {
-      ProcedureSystemModal = await procedureModalLoadPromise
-    } catch (err) {
-      procedureModalLoadPromise = null
-      throw err
-    }
-  }
-
-  const openProcedureSystem = async (): Promise<void> => {
-    procedureModalOpen = true
-    procedureModalError = null
-    try {
-      await loadProcedureSystemModal()
-    } catch (err) {
-      procedureModalError = err instanceof Error ? err.message : String(err)
-    }
-  }
-
-  const openProcedureSummary = (summary: ProcedureRunSummary): void => {
-    if (openProcedureSystemAt) {
-      openProcedureSystemAt(summary)
-      return
-    }
-    void openProcedureSystem()
-  }
+  const openProcedureSummary = (summary: ProcedureRunSummary): void => openProcedureSystemAt(summary)
 
   const updateTransientInput = (config: {
     readonly transientId: string
@@ -502,13 +458,7 @@
           class="process-display-icon-button"
           aria-label="Open computer-based procedures"
           title="Computer-based procedures"
-          onclick={() => {
-            if (openProcedureSystemAt) {
-              openProcedureSystemAt()
-              return
-            }
-            void openProcedureSystem()
-          }}
+          onclick={() => openProcedureSystemAt()}
         >
           <ClipboardList size={17} aria-hidden="true" />
         </button>
@@ -683,31 +633,6 @@
             </article>
           {/each}
         </div>
-      </div>
-    </div>
-  {/if}
-  {#if procedureModalOpen && loadedPlantId && ProcedureSystemModal}
-    <ProcedureSystemModal
-      {simulationRunId}
-      plantId={loadedPlantId}
-      unitName={object.label}
-      {unitStatus}
-      {unitContexts}
-      realtimeRevision={procedureRevision}
-      close={() => { procedureModalOpen = false }}
-    />
-  {:else if procedureModalOpen}
-    <div class="procedure-backdrop" role="presentation" onmousedown={() => { procedureModalOpen = false }}>
-      <div class="procedure-modal loading" role="dialog" aria-modal="true" aria-label="Computer-based procedure system loading" tabindex="-1" onmousedown={(event) => event.stopPropagation()}>
-        <header class="procedure-header">
-          <div>
-            <strong>{object.label}</strong>
-            <span>{procedureModalError ?? 'Loading procedure system...'}</span>
-          </div>
-          <button type="button" aria-label="Close procedures" title="Close procedures" onclick={() => { procedureModalOpen = false }}>
-            <X size={20} aria-hidden="true" />
-          </button>
-        </header>
       </div>
     </div>
   {/if}

@@ -29,6 +29,7 @@
           { "capabilityId": "world.procedure.runs.list" },
           { "capabilityId": "world.procedure.run.start" },
           { "capabilityId": "world.procedure.step.update" },
+          { "capabilityId": "world.procedure.run.transition" },
           { "capabilityId": "world.procedure.run.close" },
           { "capabilityId": "world.procedure.run.reset" },
           { "capabilityId": "world.process-plant.catalog.list" },

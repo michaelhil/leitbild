@@ -94,10 +94,10 @@
 ## Commands
 
 - `bun test` runs tests.
-- `bun run check` should run type checking once configured.
-- `bun run health` should run project health checks once configured.
-- `bun run deploy` validates, packages, and deploys an immutable code-only release through the configured `ssh leitbild` alias. Use `--test <path>` for relevant tests or `--full` for all tests. It never publishes map/reference/OSRM artifacts.
+- `bun run check` runs TypeScript checking.
+- `bun run health` runs World checks, tests and UI build.
+- From the repository root, `bun run deploy -- --yes` validates all modules, packages, and deploys one immutable code-only release. `--dry-run` validates and packages without contacting production. It never publishes map/reference/OSRM artifacts.
 
 ## Delivery Rule
 
-- After completing code changes, deploy from the local worktree to `leitbild.leitbild.app` unless the user explicitly says not to. Commit logical changes locally; push `main` to GitHub at useful backup/milestone points rather than as a deployment prerequisite.
+- After completing code changes, deploy from the local worktree to `leitbild.app` unless the user explicitly says not to. Commit logical changes locally; push `main` to GitHub at useful backup/milestone points rather than as a deployment prerequisite.

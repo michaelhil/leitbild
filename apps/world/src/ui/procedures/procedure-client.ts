@@ -3,6 +3,10 @@ import {
   procedureRunResetCommandKind,
   procedureRunStartCommandKind,
   procedureStepUpdateCommandKind,
+  procedureRunTransitionCommandKind,
+  procedureCatalogSchema,
+  procedureDocumentSchema,
+  procedureControlStateSchema,
 } from '../../core/model/index.ts'
 import type {
   SimulationRunId,
@@ -94,15 +98,15 @@ const readJson = async <T>(response: Response, message: string): Promise<T> => {
 
 export const readProcedureCatalog = async (
   simulationRunId: SimulationRunId,
-  config: { readonly sourceId?: string; readonly refresh?: boolean } = {},
+  config: { readonly sourceId?: string; readonly refresh?: boolean; readonly signal?: AbortSignal } = {},
 ): Promise<ProcedureCatalog> => {
   const params = new URLSearchParams()
   if (config.sourceId) params.set('sourceId', config.sourceId)
   if (config.refresh) params.set('refresh', 'true')
   const suffix = params.size > 0 ? `?${params.toString()}` : ''
-  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/procedures${suffix}`), { cache: 'no-store' })
+  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/procedures${suffix}`), { cache: 'no-store', signal: config.signal ?? null })
   const body = await readJson<{ readonly catalog: ProcedureCatalog }>(response, 'procedure catalog fetch failed')
-  return body.catalog
+  return procedureCatalogSchema.parse(body.catalog) as ProcedureCatalog
 }
 
 export const readProcedureDocument = async (
@@ -112,6 +116,7 @@ export const readProcedureDocument = async (
     readonly sourceId?: string
     readonly sourceRevision?: string
     readonly sourcePath?: string
+    readonly signal?: AbortSignal
   } = {},
 ): Promise<ProcedureDocument> => {
   const params = new URLSearchParams()
@@ -119,17 +124,27 @@ export const readProcedureDocument = async (
   if (config.sourceRevision) params.set('sourceRevision', config.sourceRevision)
   if (config.sourcePath) params.set('sourcePath', config.sourcePath)
   const suffix = params.size > 0 ? `?${params.toString()}` : ''
-  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/procedures/${encodeURIComponent(procedureId)}${suffix}`), { cache: 'no-store' })
+  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/procedures/${encodeURIComponent(procedureId)}${suffix}`), { cache: 'no-store', signal: config.signal ?? null })
   const body = await readJson<{ readonly procedure: ProcedureDocument }>(response, 'procedure fetch failed')
-  return body.procedure
+  return procedureDocumentSchema.parse(body.procedure) as ProcedureDocument
 }
 
 export const readProcedureRuns = async (
   simulationRunId: SimulationRunId,
+  signal?: AbortSignal,
 ): Promise<ProcedureRunsResponse> => {
-  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/procedure-runs`), { cache: 'no-store' })
+  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/procedure-runs`), { cache: 'no-store', signal: signal ?? null })
   const body = await readJson<{ readonly procedures: ProcedureRunsResponse }>(response, 'procedure runs fetch failed')
-  return body.procedures
+  return procedureControlStateSchema.parse(body.procedures) as ProcedureRunsResponse
+}
+
+export const transitionProcedureRun = async (
+  simulationRunId: SimulationRunId,
+  input: { readonly runId: string; readonly stepId: string; readonly branchIndex: number },
+): Promise<void> => {
+  const response = await invokeSimulationRunCapability(simulationRunId, { capabilityId: procedureRunTransitionCommandKind, input })
+  if (response.kind !== 'command') throw new Error('procedure transition is not a command')
+  if (!response.result.ok) throw new Error(response.result.reason ?? 'procedure transition rejected')
 }
 
 export const startProcedureRun = async (

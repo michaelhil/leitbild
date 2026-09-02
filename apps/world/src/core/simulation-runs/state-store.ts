@@ -229,7 +229,7 @@ const updateProcedureRunStep = (
   }
   return {
     ...run,
-    currentStepId: config.currentStepId ?? (config.stepId as ProcedureRunState['currentStepId']),
+    ...(config.currentStepId === undefined ? {} : { currentStepId: config.currentStepId }),
     stepStates: existing === undefined
       ? [...run.stepStates, nextStep]
       : run.stepStates.map(step => step.stepId === config.stepId ? nextStep : step),

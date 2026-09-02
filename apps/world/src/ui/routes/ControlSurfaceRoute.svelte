@@ -10,7 +10,6 @@
     ProcedureId,
     ProcedureRunScope,
     ProcedureRunState,
-    ProcedureStepId,
     ScenarioDefinition,
     ScenarioExecutionState,
     SimulationClockState,
@@ -52,10 +51,8 @@
   import ScenarioGuidance from '../ScenarioGuidance.svelte'
   import StartupModal from '../StartupModal.svelte'
   import { processPlantIdForObject, type ProcessPlantArtifactKind } from '../process-display/process-display-client.ts'
-  import { readProcedureDocument, readProcedureRuns } from '../procedures/procedure-client.ts'
+  import { createProcedureSession, type ProcedureSession } from '../procedures/procedure-session.ts'
   import {
-    procedureCurrentStep,
-    procedureRunDocumentKey,
     procedureRunSummariesForScope,
     type ProcedureRunSummary,
     type ProcedureRunSummaryGroup,
@@ -120,8 +117,6 @@
     readonly id: string
     readonly objectId: ObjectId
     readonly initialProcedureId?: ProcedureId
-    readonly initialStepId?: ProcedureStepId
-    readonly initialNavigationRevision: number
   }
 
   interface ProcessDisplayWindowModel extends ProcessDisplayWindowEntry {
@@ -176,6 +171,7 @@
   let droneProfileEditorWindows = $state<ReadonlyArray<DroneWindowEntry>>([])
   let procedureSystemWindows = $state<ReadonlyArray<ProcedureSystemWindowEntry>>([])
   let floatingWindowSequence = 0
+  let procedureSession = $state<ProcedureSession | null>(null)
   let procedureRuns = $state<ReadonlyArray<ProcedureRunState>>([])
   let procedureRunDocuments = $state<ReadonlyMap<string, ProcedureDocument>>(new Map())
   let processPlantArtifactModal = $state<{
@@ -208,10 +204,6 @@
   let mapFocusRequest = $state<MapFocusRequest | null>(null)
   let mapFocusRevision = 0
   let longTaskMonitor: LongTaskDiagnosticsMonitor | null = null
-  let procedureRunRefreshInFlight = false
-  let procedureRunRefreshQueued = false
-  let procedureRunRefreshKey = ''
-  let procedureRunDocumentSimulationRunId: SimulationRunId | null = null
   let latestDroneMotionFrames: ReadonlyArray<DroneMotionFrame> = []
   const droneMotionFrameConsumers = new Set<DroneMotionFrameConsumer>()
   const realtimeConnection = createRealtimeConnectionController()
@@ -996,71 +988,6 @@
       : { plantId, targetObjectId: object.id, label: object.label }
   }
 
-  const scopedProcedureRuns = (nextRuns: ReadonlyArray<ProcedureRunState>): ReadonlyArray<ProcedureRunState> =>
-    nextRuns.filter(run => {
-      const raw = run as ProcedureRunState & { readonly scope?: unknown }
-      return typeof raw.scope === 'object'
-        && raw.scope !== null
-        && !Array.isArray(raw.scope)
-        && typeof (raw.scope as Record<string, unknown>).plantId === 'string'
-    })
-
-  const ensureProcedureRunDocuments = async (
-    controlId: SimulationRunId,
-    nextRuns: ReadonlyArray<ProcedureRunState>,
-  ): Promise<void> => {
-    const uniqueRuns = new Map(nextRuns
-      .filter(run => run.status === 'active' || run.status === 'completed')
-      .map(run => [procedureRunDocumentKey(run), run] as const))
-    const missing = [...uniqueRuns].filter(([key]) => !procedureRunDocuments.has(key))
-    if (missing.length === 0) return
-    const loaded = await Promise.all(missing.map(async ([key, run]) => [
-      key,
-      await readProcedureDocument(controlId, run.procedureId, {
-        sourceId: run.sourceId,
-        sourceRevision: run.sourceRevision,
-        sourcePath: run.sourcePath,
-      }),
-    ] as const))
-    procedureRunDocuments = new Map([
-      ...procedureRunDocuments,
-      ...loaded,
-    ])
-  }
-
-  const refreshProcedureRunState = async (): Promise<void> => {
-    const controlId = simulationRunId
-    if (!controlId || scenarioDefinition?.packs.includes('process-plant') !== true) {
-      procedureRuns = []
-      procedureRunDocuments = new Map()
-      procedureRunRefreshKey = ''
-      procedureRunDocumentSimulationRunId = null
-      return
-    }
-    if (procedureRunDocumentSimulationRunId !== controlId) {
-      procedureRuns = []
-      procedureRunDocuments = new Map()
-      procedureRunDocumentSimulationRunId = controlId
-    }
-    if (procedureRunRefreshInFlight) {
-      procedureRunRefreshQueued = true
-      return
-    }
-    procedureRunRefreshInFlight = true
-    try {
-      do {
-        procedureRunRefreshQueued = false
-        const nextRuns = scopedProcedureRuns((await readProcedureRuns(controlId)).runs)
-        await ensureProcedureRunDocuments(controlId, nextRuns)
-        if (simulationRunId === controlId) procedureRuns = nextRuns
-      } while (procedureRunRefreshQueued)
-    } catch (err) {
-      commandStatus = err instanceof Error ? err.message : 'Unable to refresh procedure run status'
-    } finally {
-      procedureRunRefreshInFlight = false
-    }
-  }
-
   const procedureSummariesForObject = (object: OperationalObject): ProcedureRunSummaryGroup => {
     const scope = procedureScopeForObject(object)
     return scope
@@ -1068,23 +995,14 @@
       : emptyProcedureRunSummaries
   }
 
-  const procedureLaunchStepFor = (summary: ProcedureRunSummary): ProcedureStepId | undefined => {
-    const document = procedureRunDocuments.get(procedureRunDocumentKey(summary.run))
-    const current = document ? procedureCurrentStep(summary.run, document) : null
-    return (current?.step.id ?? summary.step?.stepId) as ProcedureStepId | undefined
-  }
-
   const openProcedureSystemAt = (object: OperationalObject, summary?: ProcedureRunSummary): void => {
     if (processPlantIdForObject(object) === null) return
-    const initialStepId = summary === undefined ? undefined : procedureLaunchStepFor(summary)
     procedureSystemWindows = [
       ...procedureSystemWindows,
       {
         id: nextFloatingWindowId('procedure-system', object.id),
         objectId: object.id,
         ...(summary?.procedureId === undefined ? {} : { initialProcedureId: summary.procedureId }),
-        ...(initialStepId === undefined ? {} : { initialStepId }),
-        initialNavigationRevision: floatingWindowSequence,
       },
     ]
     void loadProcedureSystemModal()
@@ -1573,18 +1491,33 @@
   })
 
   $effect(() => {
-    const controlId = simulationRunId
-    const hasProcessPlant = scenarioDefinition?.packs.includes('process-plant') === true
-    const refreshKey = controlId && hasProcessPlant ? `${controlId}:${procedureRevision}` : ''
-    if (refreshKey === procedureRunRefreshKey) return
-    procedureRunRefreshKey = refreshKey
-    if (!refreshKey) {
-      procedureRuns = []
-      procedureRunDocuments = new Map()
-      return
-    }
-    void refreshProcedureRunState()
+    const id = simulationRunId
+    if (!id) return
+    const next = createProcedureSession({
+      simulationRunId: id,
+      onError: error => { console.warn('Background procedure document load failed; selecting it will retry.', error) },
+    })
+    untrack(() => {
+      procedureSession = next
+      next.subscribe(state => { procedureRuns = state.runs; procedureRunDocuments = state.documents })
+    })
+    return () => { next.dispose() }
   })
+
+  $effect(() => {
+    const session = procedureSession
+    const revision = procedureRevision
+    const hasProcessPlant = scenarioDefinition?.packs.includes('process-plant') === true
+    if (!session || !hasProcessPlant) return
+    let active = true
+    untrack(() => {
+      void session.refreshRuns().catch(error => {
+        if (active) commandStatus = error instanceof Error ? error.message : String(error)
+      })
+    })
+    return () => { active = false }
+  })
+
 </script>
 
 {#if !surface}
@@ -1741,17 +1674,15 @@
       {simulationRunId}
       object={windowEntry.object}
       unitStatus={statusPresentationFor(windowEntry.object)}
-      unitContexts={procedureUnitContexts}
       procedureSummaries={procedureSummariesForObject(windowEntry.object)}
-      {procedureRevision}
       windowOffsetIndex={windowEntry.index}
-      openProcedureSystemAt={(summary) => openProcedureSystemAt(windowEntry.object, summary)}
+      openProcedureSystemAt={(summary?: ProcedureRunSummary) => openProcedureSystemAt(windowEntry.object, summary)}
       close={() => closeProcessDisplay(windowEntry.id)}
     />
   {/each}
 {/if}
 
-{#if ProcedureSystemModal && simulationRunId}
+{#if ProcedureSystemModal && simulationRunId && procedureSession}
   {#each procedureSystemWindowModels as windowEntry (windowEntry.id)}
     <ProcedureSystemModal
       {simulationRunId}
@@ -1759,12 +1690,10 @@
       unitName={windowEntry.object.label}
       unitStatus={statusPresentationFor(windowEntry.object)}
       unitContexts={procedureUnitContexts}
-      realtimeRevision={procedureRevision}
+      session={procedureSession}
       initialProcedureId={windowEntry.initialProcedureId}
-      initialStepId={windowEntry.initialStepId}
-      initialNavigationRevision={windowEntry.initialNavigationRevision}
       windowOffsetIndex={windowEntry.index}
-      selectUnit={(objectId) => retargetProcedureSystem(windowEntry.id, objectId)}
+      selectUnit={(objectId: ObjectId) => retargetProcedureSystem(windowEntry.id, objectId)}
       close={() => closeProcedureSystem(windowEntry.id)}
     />
   {/each}

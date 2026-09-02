@@ -284,7 +284,13 @@ export const createProcedureSourceService = (config: {
     const sourcePath = sourceDocumentPathSchema.parse(readConfig.sourcePath ?? manifestEntry?.file)
     const cacheKey = `${source.sourceId}:${revision}:${sourcePath}`
     const cached = documentCache.get(cacheKey)
-    if (cached) return await cached
+    if (cached) {
+      const document = await cached
+      if (document.procedureId !== readConfig.procedureId) {
+        throw new Error(`procedure source ${sourcePath} contains ${document.procedureId}, expected ${readConfig.procedureId}`)
+      }
+      return document
+    }
 
     const loading = (async (): Promise<ProcedureDocument> => {
       const rawMarkdown = await fetchText(fetchFn, rawUrlFor(source, revision, sourcePath), {

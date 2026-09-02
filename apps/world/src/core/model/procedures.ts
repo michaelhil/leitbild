@@ -25,8 +25,6 @@ export type ProcedureRunScope = z.infer<typeof procedureRunScopeSchema>
 export const procedureAssessmentSchema = z.enum(['blank', 'complete', 'failed', 'unknown'])
 export type ProcedureAssessment = z.infer<typeof procedureAssessmentSchema>
 
-export const procedureStepStatusSchema = z.enum(['met', 'not-met', 'unknown'])
-export type ProcedureStepStatus = z.infer<typeof procedureStepStatusSchema>
 
 export const procedureSourceSchema = z.object({
   sourceId: procedureSourceIdSchema,
@@ -190,6 +188,12 @@ export const procedureRunClosePayloadSchema = z.object({
 })
 export type ProcedureRunClosePayload = z.infer<typeof procedureRunClosePayloadSchema>
 
+export const procedureRunTransitionPayloadSchema = z.object({
+  runId: procedureRunIdSchema,
+  stepId: procedureStepIdSchema,
+  branchIndex: z.number().int().nonnegative(),
+})
+
 export const procedureRunResetPayloadSchema = z.object({
   sourceId: procedureSourceIdSchema,
   procedureId: procedureIdSchema,
@@ -237,12 +241,14 @@ export const procedureRunStartCommandKind = 'world.procedure.run.start'
 export const procedureStepUpdateCommandKind = 'world.procedure.step.update'
 export const procedureRunCloseCommandKind = 'world.procedure.run.close'
 export const procedureRunResetCommandKind = 'world.procedure.run.reset'
+export const procedureRunTransitionCommandKind = 'world.procedure.run.transition'
 
 export const procedureCommandKindSchema = z.enum([
   procedureRunStartCommandKind,
   procedureStepUpdateCommandKind,
   procedureRunCloseCommandKind,
   procedureRunResetCommandKind,
+  procedureRunTransitionCommandKind,
 ])
 export type ProcedureCommandKind = z.infer<typeof procedureCommandKindSchema>
 

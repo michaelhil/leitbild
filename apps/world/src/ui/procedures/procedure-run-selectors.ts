@@ -34,7 +34,7 @@ export interface ProcedureRunSummaryGroup {
   readonly completed: ReadonlyArray<ProcedureRunSummary>
 }
 
-export const procedureRunDocumentKey = (run: ProcedureRunState): string =>
+export const procedureRunDocumentKey = (run: Pick<ProcedureRunState, 'sourceId' | 'sourceRevision' | 'sourcePath' | 'procedureId'>): string =>
   `${run.sourceId}:${run.sourceRevision}:${run.sourcePath}:${run.procedureId}`
 
 export const sameProcedureScope = (

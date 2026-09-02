@@ -3,7 +3,12 @@ import type { ActorId, CommandEnvelope, SimulationRunEvent, SimulationRunId, Eve
 import { nowIso } from '../src/core/model/index.ts'
 import { createSimulationRunStateStore } from '../src/core/simulation-runs/state-store.ts'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { procedureCommandEvents } from '../src/features/procedures/run-state.ts'
+import { prepareProcedureCommand, type ProcedureCommitContext } from '../src/features/procedures/run-state.ts'
+
+const procedureCommandEvents = async (config: Parameters<typeof prepareProcedureCommand>[0] & Omit<ProcedureCommitContext, 'objectIds'>) => {
+  const commit = await prepareProcedureCommand(config)
+  return commit?.({ ...config, objectIds: new Set(['halden-unit-a', 'halden-unit-b']) }) ?? null
+}
 
 const source = {
   sourceId: 'pwr-ops',

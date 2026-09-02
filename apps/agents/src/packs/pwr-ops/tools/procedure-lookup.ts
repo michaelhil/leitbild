@@ -129,7 +129,9 @@ export const buildProcedureLookupTool = (deps: PwrEopsToolDeps): Tool => {
       'Fetches an emergency operating procedure (EOP) from the pwr-ops wiki. ' +
       'Default returns a complete, ready-to-paste markdown response — step list, mermaid flowchart, source citation. ' +
       'Paste the markdown `data` verbatim into your reply unless you set `format: "json"`, in which case `data` is structured and is for your own reasoning, not for pasting. ' +
-      'Call with no `id` to list available procedures.',
+      'Call with no `id` to list available procedures. This is current wiki reference material, not a live World Run document. ' +
+      'For a running simulation, discover world.procedure.runs.list and world.procedure.document.read and use the Run\'s pinned sourceId, sourceRevision and sourcePath. ' +
+      'Use world.procedure.run.transition for declared live procedure branches; do not substitute current wiki text for a Run\'s pinned revision.',
     usage:
       'Pass `id` (e.g. "E-0", "ECA-0.0", "FR-S.1"). ' +
       'Optional: `format: "json"` returns the parsed shape for reasoning; `step: "<step-id>"` returns only that step; `mode: "summary"` returns frontmatter + entry conditions + step-id list only. ' +
