@@ -64,6 +64,49 @@ const provision = async (registry: WorldWorkspaceRuntimeRegistry, workspaceId: W
   })
 
 describe('World Module API', () => {
+  test('Agent history queries preserve simulation time and pagination through the capability boundary', async () => {
+    const registry = await createRegistry()
+    const workspaceId = newWorkspaceId()
+    await provision(registry, workspaceId)
+    const runs = registry.getLoaded(workspaceId)!.simulationRuns
+    const source = structuredClone(testScenarioDefinitions.find(item => item.id === 'halden-power-complex')!)
+    await runs.createScenario({ ...source, id: 'history-api', world: { ...source.world, startsAt: '2026-01-01T00:00:00.000Z' } })
+    const run = await runs.create({ scenarioId: 'history-api' })
+    for (let attempt = 0; attempt < 30 && (run.recordingStatus()?.sampleCount ?? 0) === 0; attempt++) await Bun.sleep(100)
+    expect(run.recordingStatus()!.sampleCount).toBeGreaterThan(0)
+    await run.setClock({ paused: true })
+    const access = accessContextSchema.parse({ workspaceId, requestId: newRequestId(), actor: { kind: 'ai', id: 'history-reader' } })
+    const capabilityId = 'world.simulation-run.history'
+    const read = (input: unknown) => call<{ result: { samples: Array<{ sequence: number }>; nextBeforeSequence: number | null } }>(registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${capabilityId}/invoke`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, capabilityId, resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }, input, access }),
+      })
+    const first = await read({ timeAxis: 'simulation', to: '2026-01-02T00:00:00Z', limit: 2 })
+    expect(first.body!.result.samples).toHaveLength(2)
+    const cursor = first.body!.result.nextBeforeSequence!
+    const second = await read({ timeAxis: 'simulation', to: '2026-01-02T00:00:00Z', beforeSequence: cursor, limit: 2 })
+    expect(second.body!.result.samples).toHaveLength(2)
+    expect(second.body!.result.samples.every(sample => sample.sequence < cursor)).toBe(true)
+    const observed = await read({ timeAxis: 'observed', to: '2026-01-02T00:00:00Z', limit: 2 })
+    expect(observed.body!.result.samples).toEqual([])
+    expect(runs.leaseSummary(run.id).leasesByKind.api).toBe(0)
+  })
+  test('container admission is bounded without evicting active definition owners', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'world-container-cap-'))
+    temporaryDirectories.push(dataDir)
+    const moduleState = createWorldModuleState({ dataDir })
+    const registry = createWorldWorkspaceRuntimeRegistry({ dataDir, moduleState, maxLoadedWorkspaces: 1,
+      scenarioRuntimeResolver: createTestScenarioRuntimeResolver(), ...testScenarioAuthoring(), runtimeAdapters: createTestPackRuntimeAdapters() })
+    registries.push(registry)
+    const a = newWorkspaceId(), b = newWorkspaceId()
+    await moduleState.provision(a); await moduleState.provision(b)
+    const first = await registry.getOrLoad(a)
+    await expect(registry.getOrLoad(b)).rejects.toThrow('capacity')
+    expect(registry.getLoaded(a)).toBe(first)
+    await registry.close(a)
+    expect((await registry.getOrLoad(b)).workspaceId).toBe(b)
+  })
   test('publishes the strict Module manifest', async () => {
     const registry = await createRegistry()
     const response = await call(registry, '/.well-known/workspace-module')

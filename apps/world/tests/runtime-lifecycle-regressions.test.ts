@@ -98,7 +98,7 @@ test('regression: unrelated observation does not clear health during a persisten
   } finally {await hub.close()}
 })
 
-test('regression: fixing one cue is blocked by a separate unfinished cue',async()=>{
+test('boundary: Save still rejects a separate unfinished cue after another cue is fixed',async()=>{
   const dataDir=await mkdtemp(join(tmpdir(),'audit-editor-'))
   const registry=createSimulationRunRegistry({dataDir,workspaceId,...testScenarioAuthoring(),runtimeAdapters:createTestPackRuntimeAdapters(),scenarioRuntimeResolver:createTestScenarioRuntimeResolver()})
   try {
@@ -108,4 +108,25 @@ test('regression: fixing one cue is blocked by a separate unfinished cue',async(
     await expect(registry.previewScenario({...source,timeline:{cues:[validCue,unfinishedCue]}} as never)).rejects.toThrow()
     await expect(registry.previewScenario({...source,timeline:{cues:[validCue]}} as never)).resolves.toBeDefined()
   } finally {await rm(dataDir,{recursive:true,force:true})}
+})
+
+test('request and explicit background ownership protect a Run until released', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'run-ownership-'))
+  const registry = createSimulationRunRegistry({ dataDir, workspaceId, ...testScenarioAuthoring(), runtimeAdapters: createTestPackRuntimeAdapters(), scenarioRuntimeResolver: createTestScenarioRuntimeResolver(), idleRuntimeCloseDelayMs: 40 })
+  try {
+    const run = await registry.create({ scenarioId: 'test-response' })
+    const release = registry.acquireLease(run.id, 'api')
+    await expect(registry.delete(run.id)).rejects.toThrow('active requests')
+    await expect(registry.reset(run.id)).rejects.toThrow('active requests')
+    await Bun.sleep(80)
+    expect(registry.get(run.id)).toBe(run)
+    await registry.setBackgroundExecution(run.id, true)
+    release()
+    await Bun.sleep(80)
+    expect(registry.get(run.id)).toBe(run)
+    expect(registry.leaseSummary(run.id).leasesByKind.background).toBe(1)
+    await registry.setBackgroundExecution(run.id, false)
+    await Bun.sleep(100)
+    expect(registry.get(run.id)).toBeUndefined()
+  } finally { await registry.shutdown(); await rm(dataDir, { recursive: true, force: true }) }
 })

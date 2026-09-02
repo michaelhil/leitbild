@@ -1,4 +1,4 @@
-import { mkdirSync, statfsSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, statfsSync, statSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { Database } from 'bun:sqlite'
 import {
@@ -105,10 +105,13 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
   if (limits.maxSamples < 1 || limits.maxBytes < 64 * 1024 || limits.maxAgeMs < 1) throw new Error('Historian retention budget is too small')
   const now = options.now ?? Date.now
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
-  const database = new Database(path, { create: true, strict: true })
+  const oversizedAtOpen = path !== ':memory:' && existsSync(path) && statSync(path).size > limits.maxBytes
+  const database = new Database(path, { create: !oversizedAtOpen, readonly: oversizedAtOpen, strict: true })
   database.exec('PRAGMA foreign_keys = ON')
-  database.exec('PRAGMA journal_mode = WAL')
-  database.exec('PRAGMA wal_autocheckpoint = 256; PRAGMA journal_size_limit = 4194304')
+  if (!oversizedAtOpen) {
+    database.exec('PRAGMA journal_mode = WAL')
+    database.exec('PRAGMA wal_autocheckpoint = 256; PRAGMA journal_size_limit = 4194304')
+  }
   const version = database.query<{ user_version: number }, []>('PRAGMA user_version').get()?.user_version ?? 0
   if (version === 0) {
     database.exec(`
@@ -148,9 +151,9 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
     throw new Error(`unsupported historian schema: ${version}`)
   }
   // Indexes are physical access paths, not a second storage format or a migration.
-  database.exec('CREATE INDEX IF NOT EXISTS recording_samples_time ON recording_samples(observed_at, sequence)')
+  if (!oversizedAtOpen) database.exec('CREATE INDEX IF NOT EXISTS recording_samples_time ON recording_samples(observed_at, sequence)')
   const pageSize = database.query<{ page_size: number }, []>('PRAGMA page_size').get()!.page_size
-  database.exec(`PRAGMA max_page_count = ${Math.floor(limits.maxBytes / pageSize)}`)
+  if (!oversizedAtOpen) database.exec(`PRAGMA max_page_count = ${Math.floor(limits.maxBytes / pageSize)}`)
   const described = new Map<string, RecordingSeriesDescriptor>()
   const keyFor = (runtimeId: string, seriesId: string) => JSON.stringify([runtimeId, seriesId])
   for (const row of database.query<SeriesRow, []>('SELECT * FROM recording_series').all()) described.set(keyFor(row.runtime_id, row.series_id), descriptorFromRow(row))
@@ -158,9 +161,23 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
   let discardedSinceOpen = 0
   let lastError: string | null = null
   let lastMaintenanceAt = -Infinity
-  let storageBytes = 0
-  let storageAllowed = true
+  let storageBytes = path === ':memory:' ? 0 : statSync(path).size
+  let storageAllowed = !oversizedAtOpen
+  const storageLimitMessage = 'Historian byte/free-space budget reached; capture paused, simulation continues. Retained data remains queryable.'
+  if (oversizedAtOpen) lastError = storageLimitMessage
+  // Large existing histories remain untouched: calculate their bounds once,
+  // never build a new multi-million-row index or prune them during Run startup.
+  const frozenBounds = oversizedAtOpen ? database.query<{ first: string | null; last: string | null }, []>('SELECT MIN(observed_at) AS first, MAX(observed_at) AS last FROM recording_samples').get() : null
   const maintenance = (): void => {
+    lastMaintenanceAt = now()
+    if (oversizedAtOpen) return
+    if (path !== ':memory:') {
+      database.exec('PRAGMA wal_checkpoint(PASSIVE)')
+      storageBytes = statSync(path).size
+      const fs = statfsSync(dirname(path))
+      storageAllowed = fs.bavail * fs.bsize >= limits.minFreeBytes && storageBytes <= limits.maxBytes
+      if (!storageAllowed) { lastError = storageLimitMessage; return }
+    }
     const expiredBefore = new Date(now() - limits.maxAgeMs).toISOString()
     const expired = database.query('DELETE FROM recording_samples WHERE sequence IN (SELECT sequence FROM recording_samples WHERE observed_at < ? ORDER BY observed_at, sequence LIMIT 5000)').run(expiredBefore).changes
     sampleCount -= expired
@@ -170,14 +187,6 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
       sampleCount -= removed
       discardedSinceOpen += removed
     }
-    if (path !== ':memory:') {
-      database.exec('PRAGMA wal_checkpoint(PASSIVE)')
-      storageBytes = statSync(path).size
-      const fs = statfsSync(dirname(path))
-      storageAllowed = fs.bavail * fs.bsize >= limits.minFreeBytes && storageBytes <= limits.maxBytes
-      if (!storageAllowed) lastError = 'Historian byte/free-space budget reached; capture paused, simulation continues. Retained data remains queryable.'
-    }
-    lastMaintenanceAt = now()
   }
 
   const insertSeries = database.prepare(`
@@ -240,13 +249,18 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
       }
       try {
         if (now() - lastMaintenanceAt >= 10_000 || sampleCount + batch.samples.length > limits.maxSamples) maintenance()
-        if (!storageAllowed || sampleCount > limits.maxSamples) { discardedSinceOpen += batch.samples.length; return }
+        if (!storageAllowed || sampleCount > limits.maxSamples) {
+          if (storageAllowed) lastError = 'Sample retention maintenance is catching up; capture is paused'
+          discardedSinceOpen += batch.samples.length
+          return
+        }
         const samples = batch.samples.map(sample => ({ ...sample, observedAt: new Date(sample.observedAt).toISOString(), ...(sample.simulationTime === undefined ? {} : { simulationTime: new Date(sample.simulationTime).toISOString() }) })) as PackRuntimeRecordingBatch['samples']
         writeBatch(runtimeId, { ...batch, samples })
         for (const descriptor of batch.descriptors) described.set(keyFor(runtimeId, descriptor.id), descriptor)
         sampleCount += samples.length
-        if (sampleCount > limits.maxSamples) maintenance()
         lastError = null
+        if (sampleCount > limits.maxSamples) maintenance()
+        if (sampleCount > limits.maxSamples && lastError === null) lastError = 'Sample retention maintenance is catching up; capture is paused'
       } catch (error) {
         // Optional observations must not stop physics or its canonical checkpoint.
         lastError = error instanceof Error ? error.message : String(error)
@@ -309,8 +323,8 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
       return { samples, hasMore: rows.length > limit, nextBeforeSequence: rows.length > limit ? samples.at(-1)!.sequence : null, retainedFromSequence, retentionGap: query.beforeSequence !== undefined && retainedFromSequence !== null && query.beforeSequence <= retainedFromSequence }
     },
     status: (): RunHistorianStatus => {
-      const first = database.query<{ observed_at: string }, []>('SELECT observed_at FROM recording_samples ORDER BY observed_at LIMIT 1').get()
-      const last = database.query<{ observed_at: string }, []>('SELECT observed_at FROM recording_samples ORDER BY observed_at DESC LIMIT 1').get()
+      const first = frozenBounds ? { observed_at: frozenBounds.first } : database.query<{ observed_at: string }, []>('SELECT observed_at FROM recording_samples ORDER BY observed_at LIMIT 1').get()
+      const last = frozenBounds ? { observed_at: frozenBounds.last } : database.query<{ observed_at: string }, []>('SELECT observed_at FROM recording_samples ORDER BY observed_at DESC LIMIT 1').get()
       return {
         seriesCount: described.size,
         sampleCount,
@@ -319,6 +333,10 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
         captureState: lastError ? 'limited' : 'recording', lastError, discardedSinceOpen, storageBytes, limits,
       }
     },
-    close: (): void => database.close(),
+    close: (): void => {
+      try {
+        if (!oversizedAtOpen) database.exec('PRAGMA wal_checkpoint(PASSIVE)')
+      } finally { database.close() }
+    },
   }
 }

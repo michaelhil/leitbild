@@ -132,6 +132,10 @@ _Avoid_: generic workflow step, arbitrary expression
 A persistent execution of exactly one Scenario Revision inside one Workspace, with an optional independent display name. Editing or deleting the reusable Scenario does not rename or delete its Runs.
 _Avoid_: Instance, session, Scenario
 
+**Background Execution**:
+Explicit ownership that keeps a loaded Simulation Run available without viewers. It is distinct from whether its clock is paused, and ends when the Run is unloaded or the service stops.
+_Avoid_: viewer presence as execution policy, automatic restart policy
+
 **Operational Object**:
 A World entity with independent operational identity, state, visibility, or command relevance. It is discoverable inside Simulation Context before deeper object reads or commands.
 _Avoid_: internal solver variable, runtime-private state, Platform Resource as a synonym

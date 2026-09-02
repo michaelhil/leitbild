@@ -37,9 +37,13 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
   readonly runtimeAdapters: ReadonlyArray<PackRuntimeAdapter>
   readonly idleRuntimeCloseDelayMs?: number
   readonly procedureSourceService?: ProcedureSourceService
+  readonly maxLoadedWorkspaces?: number
 }): WorldWorkspaceRuntimeRegistry => {
   const loaded = new Map<WorkspaceId, WorldWorkspaceRuntime>()
-  const pendingLoads = new Map<WorkspaceId, Promise<WorldWorkspaceRuntime>>()
+  // A finite admission limit bounds idle containers and their compiled caches.
+  // Do not LRU-evict a container while callers may hold its definition-write queue.
+  const maxLoadedWorkspaces = config.maxLoadedWorkspaces ?? 64
+  if (!Number.isSafeInteger(maxLoadedWorkspaces) || maxLoadedWorkspaces < 1) throw new Error('maxLoadedWorkspaces must be a positive integer')
   const lifecycle = createKeyedOperations<WorkspaceId>()
   let shuttingDown = false
 
@@ -62,18 +66,11 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
     if (shuttingDown) throw new Error('World runtime registry is shutting down')
     const current = loaded.get(id)
     if (current) return current
-    const pending = pendingLoads.get(id)
-    if (pending) return await pending
-    const loading = (async (): Promise<WorldWorkspaceRuntime> => {
-      if (!await config.moduleState.get(id)) throw new Error(`World Module not provisioned: ${id}`)
-      const runtime = build(id)
-      loaded.set(id, runtime)
-      return runtime
-    })().finally(() => {
-      pendingLoads.delete(id)
-    })
-    pendingLoads.set(id, loading)
-    return await loading
+    if (!await config.moduleState.get(id)) throw new Error(`World Module not provisioned: ${id}`)
+    if (loaded.size >= maxLoadedWorkspaces) throw Object.assign(new Error(`World Workspace runtime capacity (${maxLoadedWorkspaces}) reached; close a Workspace runtime before loading another`), { code: 'workspace_capacity_exceeded' })
+    const runtime = build(id)
+    loaded.set(id, runtime)
+    return runtime
   })
 
   const provision = async (id: WorkspaceId) => {

@@ -325,11 +325,15 @@ export const handleSimulationRunApi = async (
   url: URL,
   config: SimulationRunRouteConfig,
 ): Promise<Response | null> => {
+  let release: (() => void) | undefined
   try {
+    const match = url.pathname.match(/\/world\/simulation-runs\/([^/]+)(?:\/|$)/)
+    if (match && req.method !== 'DELETE' && !url.pathname.endsWith('/reset')) release = config.registry.acquireLease(simulationRunIdSchema.parse(decodeURIComponent(match[1]!)), 'api')
     return await handleSimulationRunApiInner(req, url, config)
   } catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === 'simulation_run_busy') return apiError(409, 'simulation_run_busy', err.message)
     if (err instanceof SyntaxError) return apiError(400, 'invalid_json', err.message)
     if (err instanceof z.ZodError) return apiError(400, 'invalid_request', err.message)
     throw err
-  }
+  } finally { release?.() }
 }

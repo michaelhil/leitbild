@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto'
-import { mkdir,readFile,rename,writeFile } from 'node:fs/promises'
+import { writeAtomic } from '../storage/atomic-write.ts'
+import { mkdir,readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { compiledScenarioSchema,type CompiledScenario } from '../model/index.ts'
 
@@ -20,8 +20,6 @@ export const createCompiledScenarioStore = (path: string): CompiledScenarioStore
   create: async scenario => {
     const validated = compiledScenarioSchema.parse(scenario)
     await mkdir(dirname(path), { recursive: true })
-    const temporaryPath = `${path}.${randomUUID()}.tmp`
-    await writeFile(temporaryPath, `${JSON.stringify(validated, null, 2)}\n`, 'utf8')
-    await rename(temporaryPath, path)
+    await writeAtomic(path, `${JSON.stringify(validated, null, 2)}\n`)
   },
 })

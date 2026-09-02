@@ -723,6 +723,7 @@ export const handleAgentsModuleApi = async (
     }
     return null
   } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'workspace_capacity_exceeded') return apiError(503, 'workspace_capacity_exceeded', error.message)
     if (error instanceof SyntaxError) return apiError(400, 'invalid_json', error.message)
     if (error instanceof z.ZodError) return apiError(400, 'invalid_request', error.message)
     if (error instanceof Error && error.message.includes('Workspace not found:')) return apiError(404, 'workspace_not_found', 'Module Workspace not found')

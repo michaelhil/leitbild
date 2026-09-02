@@ -90,6 +90,7 @@ export interface SimulationRunRegistry {
   readonly summary: (id: SimulationRunId) => Promise<SimulationRunSummary>
   readonly status: () => Promise<SimulationRunRegistryStatus>
   readonly acquireLease: (id: SimulationRunId, kind: SimulationRunLeaseKind) => () => void
+  readonly setBackgroundExecution: (id: SimulationRunId, enabled: boolean) => Promise<SimulationRunLeaseSummary>
   readonly leaseSummary: (id: SimulationRunId) => SimulationRunLeaseSummary
   readonly listScenarios: () => Promise<ReadonlyArray<ScenarioRecord>>
   readonly currentScenario: (id: string) => Promise<ScenarioRevision | undefined>
@@ -122,6 +123,7 @@ export const createSimulationRunRegistry = (config: {
   const procedureSourceService = config.procedureSourceService ?? createProcedureSourceService()
   const creatingSimulationRuns = new Map<SimulationRunId, Promise<SimulationRunRuntime>>()
   const leasesBySimulationRun = new Map<SimulationRunId, Map<string, SimulationRunLeaseKind>>()
+  const backgroundReleases = new Map<SimulationRunId, () => void>()
   const idleRuntimeCloseTimers = new Map<SimulationRunId, ReturnType<typeof setTimeout>>()
   const idleRuntimeCloseDelayMs = config.idleRuntimeCloseDelayMs ?? defaultSimulationRunRuntimePolicy.idleRuntimeCloseDelayMs
   let nextLeaseNumber = 0
@@ -230,7 +232,9 @@ export const createSimulationRunRegistry = (config: {
       if (!simulationRuns.has(id)) return
       const closeIdleRuntime = async (): Promise<void> => {
         try {
-          await close(id)
+          await lifecycle.run(id, async () => {
+            if (leaseCountFor(id) === 0) await closeLoaded(id)
+          })
         } catch (err) {
           console.error(`idle simulation run close failed for ${id}:`, err)
         }
@@ -247,6 +251,7 @@ export const createSimulationRunRegistry = (config: {
       .sort((left, right) => left.simulationRunId.localeCompare(right.simulationRunId))
 
   const acquireLease = (id: SimulationRunId, kind: SimulationRunLeaseKind): (() => void) => {
+    if (shuttingDown) throw new Error('Simulation Run registry is shutting down')
     clearIdleRuntimeCloseTimer(id)
     const leaseId = `${kind}:${++nextLeaseNumber}`
     const leases = leasesBySimulationRun.get(id) ?? new Map<string, SimulationRunLeaseKind>()
@@ -618,6 +623,9 @@ export const createSimulationRunRegistry = (config: {
     await creatingSimulationRuns.get(id)?.catch(() => undefined)
     const runtime = simulationRuns.get(id)
     if (!runtime) return false
+    if (!shuttingDown && leaseSummary(id).leasesByKind.api > 0) throw Object.assign(new Error('Simulation Run has active requests; retry after they complete'), { code: 'simulation_run_busy' })
+    backgroundReleases.get(id)?.()
+    backgroundReleases.delete(id)
     clearIdleRuntimeCloseTimer(id)
     leasesBySimulationRun.delete(id)
     await runtime.close()
@@ -627,6 +635,7 @@ export const createSimulationRunRegistry = (config: {
   const close = (id: SimulationRunId): Promise<boolean> => lifecycle.run(id, () => closeLoaded(id))
 
   const reset = (id: SimulationRunId): Promise<SimulationRunRuntime> => lifecycle.run(id, async () => {
+    if (leaseSummary(id).leasesByKind.api > 0) throw Object.assign(new Error('Simulation Run has active requests; retry after they complete'), { code: 'simulation_run_busy' })
     const manifest = await manifestStoreFor(id).load()
     if (!manifest) throw new Error(`Simulation Run not found: ${id}`)
     const existing = simulationRuns.get(id)
@@ -766,9 +775,8 @@ export const createSimulationRunRegistry = (config: {
     return summaries
   }
 
-  let displayNameQueue: Promise<unknown> = Promise.resolve()
   const renameRun = (id: SimulationRunId, name: string | null, expectedTitle: string): Promise<SimulationRunSummary> => {
-    const change = displayNameQueue.then(async () => {
+    return lifecycle.run(id, async () => {
       runDisplayNameSchema.parse(name)
       const current = await summaryFor(id)
       if (current.scenarioId === null) throw new Error(`Simulation Run not found: ${id}`)
@@ -776,8 +784,6 @@ export const createSimulationRunRegistry = (config: {
       await writeRunDisplayName(join(simulationRunRoot, id, 'display-name.json'), name)
       return await summaryFor(id)
     })
-    displayNameQueue = change.then(() => undefined, () => undefined)
-    return change
   }
 
   const scenarioRevisionForRun = async (id: SimulationRunId): Promise<ScenarioRevision | undefined> => {
@@ -844,8 +850,18 @@ export const createSimulationRunRegistry = (config: {
     acquireLease,
     compiledScenarioForRun: async id => {
       const stored = await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).load()
-      if (!stored) throw new Error(`Compiled Scenario is missing for ${id}`)
+      const manifest = await manifestStoreFor(id).load()
+      if (!manifest || manifest.workspaceId !== config.workspaceId || stored.id !== manifest.scenario.id || compiledScenarioDigest(stored) !== manifest.scenario.compiledDigest) throw new Error(`Compiled Scenario integrity mismatch: ${id}`)
       return stored
+    },
+    setBackgroundExecution: async (id, enabled) => {
+      await load(id)
+      return lifecycle.run(id, async () => {
+        if (!simulationRuns.has(id)) throw new Error(`Simulation Run not loaded: ${id}`)
+        if (enabled && !backgroundReleases.has(id)) backgroundReleases.set(id, acquireLease(id, 'background'))
+        if (!enabled) { backgroundReleases.get(id)?.(); backgroundReleases.delete(id) }
+        return leaseSummary(id)
+      })
     },
     shutdown: async () => {
       shuttingDown = true

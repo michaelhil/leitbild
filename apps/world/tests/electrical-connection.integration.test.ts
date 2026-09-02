@@ -138,11 +138,14 @@ describe('electrical Pack connection', () => {
       })
       const beforePoints = (beforeQuery as { connectionPoints: ReadonlyArray<{ connected: boolean; systemActivePowerMw: number }> }).connectionPoints
       expect(beforePoints).toHaveLength(4)
-      expect(beforePoints.every(point => point.connected && point.systemActivePowerMw > 800)).toBe(true)
+      expect(beforePoints.every(point => point.connected && point.systemActivePowerMw > 1000)).toBe(true)
       const summaryBefore = await connection.invokeQuery({ capabilityId: 'world.electric-grid.grid.summary', input: { gridId: 'grid:halden-four-unit' } })
       const projectionBefore = (summaryBefore as { projection: { activeAlarmCount: number; frequencyHz: number; highestBranchLoadingPercent: number; totalGenerationMw: number } }).projection
-      expect(projectionBefore.activeAlarmCount).toBe(0)
-      expect(projectionBefore.highestBranchLoadingPercent).toBeLessThan(85)
+      // Four actual full-power units can oversupply the connected demand island
+      // and overload inferred transmission lines. Never suppress those alarms or
+      // inflate line ratings just to preserve the old underpowered baseline.
+      expect(Number.isFinite(projectionBefore.frequencyHz)).toBe(true)
+      expect(projectionBefore.totalGenerationMw).toBeGreaterThanOrEqual(beforePoints.reduce((sum, point) => sum + point.systemActivePowerMw, 0))
 
       const trip = await connection.sendCommand({
         id: 'command:trip-halden-unit-1' as CommandId,
@@ -168,8 +171,8 @@ describe('electrical Pack connection', () => {
       expect(afterPoints.find(point => point.system.objectId === 'plant:halden-1')?.systemActivePowerMw).toBeLessThan(beforePoints[0]!.systemActivePowerMw * 0.45)
       const summaryAfter = await connection.invokeQuery({ capabilityId: 'world.electric-grid.grid.summary', input: { gridId: 'grid:halden-four-unit' } })
       const projectionAfter = (summaryAfter as { projection: { frequencyHz: number; totalGenerationMw: number } }).projection
-      expect(projectionAfter.frequencyHz).toBeLessThan(projectionBefore.frequencyHz - 0.1)
-      expect(projectionAfter.totalGenerationMw).toBeLessThan(projectionBefore.totalGenerationMw)
+      expect(projectionAfter.frequencyHz).toBeLessThan(projectionBefore.frequencyHz)
+      expect(projectionAfter.totalGenerationMw).toBeLessThan(projectionBefore.totalGenerationMw - 500)
     } finally {
       unsubscribe()
       await connection.close()

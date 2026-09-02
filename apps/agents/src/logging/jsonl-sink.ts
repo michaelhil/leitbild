@@ -1,197 +1,128 @@
-// ============================================================================
-// JSONL file sink — append-only event stream for observational logging.
-//
-// Writes newline-delimited JSON to `<dir>/<sessionId>.jsonl`. When the active
-// file passes `rotateAtBytes`, the next write opens `<sessionId>.1.jsonl`,
-// then `<sessionId>.2.jsonl`, etc. Rotation is purely size-based; no
-// time-based rotation (deployments handling that add their own post-process).
-//
-// Robustness:
-// - write() is synchronous (queue-only); flushing happens off the event loop
-// - queue cap = 10,000 events. On overflow, drop oldest with loud stderr
-//   warning; when the sink next successfully writes, it emits a synthetic
-//   `log.dropped` event so analysts see the gap in the stream.
-// - Sink errors (EACCES, ENOSPC, etc.) → stderr, sink keeps running. A single
-//   unrecoverable failure does not bring down leitbild.
-// - close() drains the queue before returning.
-// ============================================================================
-
-import { appendFile, mkdir, rename, rm, stat } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+// Optional observations: two files per session, not a Room journal. Queue and
+// file byte limits are independent. Directory/session retention is operator policy.
+import { appendFile, mkdir, rename, stat } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { LogEvent, LogSink, LogSinkStats } from './types.ts'
 
 export interface JsonlFileSinkOptions {
   readonly dir: string
   readonly sessionId: string
-  readonly rotateAtBytes?: number   // default from LEITBILD_LOG_MAX_BYTES or 50 MB
-  readonly flushIntervalMs?: number // default 1000
-  readonly queueCap?: number        // default 10,000
+  readonly rotateAtBytes?: number
+  readonly flushIntervalMs?: number
+  readonly queueCap?: number
+  readonly queueBytes?: number
 }
-
-// Per-file byte cap. Rotation maintains a 2-file ring: <base>.jsonl is
-// the active file; on overflow it is renamed to <base>.1.jsonl (overwriting
-// any prior .1) and a fresh <base>.jsonl is started. per-Workspace footprint
-// is therefore bounded at 2 × rotateAtBytes — important on multi-tenant
-// deployments where each Workspace has its own log directory.
-const rotateBytesFromEnv = (): number => {
-  const v = process.env.LEITBILD_LOG_MAX_BYTES
-  if (!v) return 50 * 1024 * 1024
-  const n = Number(v)
-  return Number.isFinite(n) && n > 0 ? n : 50 * 1024 * 1024
-}
-const DEFAULT_FLUSH_INTERVAL_MS = 1000
-const DEFAULT_QUEUE_CAP = 10_000
 
 export const createJsonlFileSink = async (options: JsonlFileSinkOptions): Promise<LogSink> => {
-  const rotateAtBytes = options.rotateAtBytes ?? rotateBytesFromEnv()
-  const flushIntervalMs = options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS
-  const queueCap = options.queueCap ?? DEFAULT_QUEUE_CAP
-
-  // Queue of serialized JSONL lines paired with their event kind. The
-  // kind is retained so a queue-overflow drop can be attributed by kind
-  // in the synthetic log.dropped line (B3) — bare counts don't tell the
-  // operator what was lost.
-  let queue: { kind: string; line: string }[] = []
+  const rotateAtBytes = options.rotateAtBytes ?? Number(process.env.LEITBILD_LOG_MAX_BYTES ?? 50 * 1024 * 1024)
+  const flushIntervalMs = options.flushIntervalMs ?? 1000
+  const queueCap = options.queueCap ?? 10_000
+  const queueBytes = options.queueBytes ?? 8 * 1024 * 1024
+  for (const [name, value] of Object.entries({ rotateAtBytes, flushIntervalMs, queueCap, queueBytes })) {
+    if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`Invalid logging ${name}: ${value}`)
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(options.sessionId)) throw new Error('Invalid log session id')
+  type Entry = { kind: string; line: string; bytes: number }
+  let queue: Entry[] = []
+  let queuedBytes = 0
   let eventCount = 0
   let droppedCount = 0
-  let pendingDropNotice = 0  // drops since last successful write — emitted as synthetic log.dropped
-  // Per-drop kind tally; emitted with the next log.dropped notice and
-  // cleared after.
+  let pendingDrops = 0
   const droppedKinds = new Map<string, number>()
-
-  // Rotation state. currentFilePath is always <base>.jsonl (the active file).
-  // On rotation it's renamed to <base>.1.jsonl (overwriting any prior .1).
   let currentFileBytes = 0
   let closed = false
-
+  let closing: Promise<void> | undefined
+  let writing: Promise<void> | undefined
   const currentFilePath = join(options.dir, `${options.sessionId}.jsonl`)
   const rolledFilePath = join(options.dir, `${options.sessionId}.1.jsonl`)
-
-  // On construction, seed currentFileBytes from any existing file so we
-  // don't over-append past rotation. Awaited (B1): the previous fire-and-
-  // forget version meant the first batch could land before currentFileBytes
-  // was populated, skipping the rotation check (`currentFileBytes > 0`
-  // short-circuits) and growing the file past the cap.
-  try {
-    const s = await stat(currentFilePath)
-    currentFileBytes = s.size
-  } catch { /* no pre-existing file — fine */ }
-
-  // Ensure dir exists before the first write. Cached to avoid per-flush mkdir.
-  let dirEnsured = false
-  const ensureDir = async (): Promise<void> => {
-    if (dirEnsured) return
-    await mkdir(dirname(currentFilePath), { recursive: true })
-    dirEnsured = true
+  try { currentFileBytes = (await stat(currentFilePath)).size } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
 
-  const serialize = (event: LogEvent): string => {
-    // JSON.stringify can throw on circular refs — extremely unlikely for our
-    // event shapes, but defend anyway so a bad payload can't take down the flush loop.
-    try {
-      return JSON.stringify(event) + '\n'
-    } catch (err) {
-      return JSON.stringify({
-        ts: event.ts,
-        kind: 'log.serialize_failed',
-        session: event.session,
-        payload: { originalKind: event.kind, error: err instanceof Error ? err.message : String(err) },
-      }) + '\n'
+  const drop = (kind: string): void => {
+    droppedCount++
+    pendingDrops++
+    const bucket = droppedKinds.has(kind) || droppedKinds.size < 64 ? kind : 'other'
+    droppedKinds.set(bucket, (droppedKinds.get(bucket) ?? 0) + 1)
+    if (droppedCount === 1 || droppedCount % 100 === 0) console.error(`[logging] observation dropped by queue/file limit or I/O failure (total: ${droppedCount})`)
+  }
+  const serialize = (event: LogEvent): Entry => {
+    let line: string
+    try { line = JSON.stringify(event) + '\n' } catch (error) {
+      line = JSON.stringify({ ts: event.ts, kind: 'log.serialize_failed', session: event.session,
+        payload: { originalKind: event.kind, error: String(error) } }) + '\n'
     }
+    return { kind: event.kind, line, bytes: Buffer.byteLength(line) }
   }
 
-  const flushNow = async (): Promise<void> => {
-    if (queue.length === 0) return
-
-    // Snapshot the queue and prepend synthetic drop-notice if needed.
-    const pending: string[] = []
-    const emittingDropNotice = pendingDropNotice > 0
-    if (emittingDropNotice) {
-      // B3: include per-kind tally so operators can see WHAT was lost,
-      // not just how many. Encoded as `kind×N` for kinds with N>1, bare
-      // kind otherwise — keeps the JSON compact for high-cardinality drops.
-      const kindsArr = [...droppedKinds.entries()].map(([k, n]) => n > 1 ? `${k}×${n}` : k)
-      const notice: LogEvent = {
-        ts: Date.now(),
-        kind: 'log.dropped',
-        session: options.sessionId,
-        payload: { count: pendingDropNotice, reason: 'queue overflow', kinds: kindsArr },
-      }
-      pending.push(serialize(notice))
-      pendingDropNotice = 0
+  const flushBatch = async (): Promise<void> => {
+    if (!queue.length && !pendingDrops) return
+    const pending = queue
+    queue = []
+    queuedBytes = 0
+    if (pendingDrops) {
+      const notice = serialize({ ts: Date.now(), kind: 'log.dropped', session: options.sessionId,
+        payload: { count: pendingDrops, reason: 'queue/file limit or I/O failure', kinds: [...droppedKinds].map(([kind, count]) => count > 1 ? `${kind}×${count}` : kind) } })
+      // With a tiny file budget the notice itself may not fit. Counters/stderr
+      // still report the loss; never break the byte limit to record that notice.
+      if (notice.bytes <= rotateAtBytes) pending.unshift(notice)
+      else console.error(`[logging] ${pendingDrops} dropped observations; notice exceeds file limit`)
+      pendingDrops = 0
       droppedKinds.clear()
     }
-    for (const entry of queue) pending.push(entry.line)
-    queue = []
-
-    const batch = pending.join('')
-    const batchBytes = Buffer.byteLength(batch, 'utf-8')
-
+    let offset = 0
     try {
-      await ensureDir()
-
-      // Rotate first if this batch would push past the threshold.
-      // 2-file ring: rm any prior .1, mv current → .1, start fresh active.
-      if (currentFileBytes > 0 && currentFileBytes + batchBytes > rotateAtBytes) {
-        try { await rm(rolledFilePath, { force: true }) } catch { /* missing is fine */ }
-        try { await rename(currentFilePath, rolledFilePath) } catch { /* if missing, fall through */ }
-        currentFileBytes = 0
+      await mkdir(options.dir, { recursive: true })
+      while (offset < pending.length) {
+        if (currentFileBytes > 0 && currentFileBytes + pending[offset]!.bytes > rotateAtBytes) {
+          // Atomic replacement of the previous ring member; do not hide I/O errors.
+          await rename(currentFilePath, rolledFilePath)
+          currentFileBytes = 0
+        }
+        let end = offset
+        let bytes = 0
+        while (end < pending.length && currentFileBytes + bytes + pending[end]!.bytes <= rotateAtBytes) bytes += pending[end++]!.bytes
+        const chunk = pending.slice(offset, end)
+        await appendFile(currentFilePath, chunk.map(entry => entry.line).join(''), 'utf-8')
+        currentFileBytes += bytes
+        eventCount += chunk.filter(entry => entry.kind !== 'log.dropped').length
+        offset = end
       }
-
-      await appendFile(currentFilePath, batch, 'utf-8')
-      currentFileBytes += batchBytes
-      // Real events written = pending.length minus the synthetic notice (if any).
-      eventCount += pending.length - (emittingDropNotice ? 1 : 0)
-    } catch (err) {
-      // mkdir failure, disk full, permission denied, etc. Log once; drop this
-      // batch so we don't loop forever on a broken disk. Queue is already cleared.
-      droppedCount += pending.length
-      pendingDropNotice += pending.length
-      console.error(`[logging] sink write failed for ${currentFilePath}: ${err instanceof Error ? err.message : String(err)}`)
+    } catch (error) {
+      for (const entry of pending.slice(offset)) if (entry.kind !== 'log.dropped') drop(entry.kind)
+      console.error(`[logging] sink write failed for ${currentFilePath}: ${String(error)}`)
     }
   }
-
-  // Background flush loop. setInterval returns a Timer; unref() so it doesn't
-  // block process exit if close() hasn't been called.
-  const timer = setInterval(() => {
-    void flushNow().catch(err => {
-      console.error(`[logging] flush loop error: ${err instanceof Error ? err.message : String(err)}`)
-    })
-  }, flushIntervalMs)
+  const flush = async (): Promise<void> => {
+    if (writing) await writing
+    if (!queue.length && !pendingDrops) return
+    if (!writing) writing = flushBatch().finally(() => { writing = undefined })
+    await writing
+  }
+  const timer = setInterval(() => { void flush().catch(error => console.error('[logging] flush failed', error)) }, flushIntervalMs)
   timer.unref?.()
-
   return {
-    write: (event: LogEvent): void => {
-      if (closed) return
-      if (queue.length >= queueCap) {
-        // Drop the oldest event, tally its kind, increment counters, emit
-        // stderr warning once per overflow batch (every 100th drop suffices —
-        // we still surface count).
-        const dropped = queue.shift()
-        if (dropped) droppedKinds.set(dropped.kind, (droppedKinds.get(dropped.kind) ?? 0) + 1)
-        droppedCount++
-        pendingDropNotice++
-        if (droppedCount === 1 || droppedCount % 100 === 0) {
-          console.error(`[logging] queue overflow, dropping oldest (total dropped: ${droppedCount})`)
-        }
+    write: event => {
+      if (closed) return // Late observers cannot reopen a closed sink.
+      const entry = serialize(event)
+      if (entry.bytes > rotateAtBytes || entry.bytes > queueBytes) { drop(event.kind); return }
+      while (queue.length && (queue.length >= queueCap || queuedBytes + entry.bytes > queueBytes)) {
+        const oldest = queue.shift()!
+        queuedBytes -= oldest.bytes
+        drop(oldest.kind)
       }
-      queue.push({ kind: event.kind, line: serialize(event) })
+      queue.push(entry)
+      queuedBytes += entry.bytes
     },
-    flush: async (): Promise<void> => {
-      await flushNow()
+    flush,
+    close: () => {
+      if (!closing) {
+        closed = true
+        clearInterval(timer)
+        closing = flush()
+      }
+      return closing
     },
-    close: async (): Promise<void> => {
-      if (closed) return
-      closed = true
-      clearInterval(timer)
-      await flushNow()
-    },
-    stats: (): LogSinkStats => ({
-      eventCount,
-      droppedCount,
-      queuedCount: queue.length,
-      currentFile: currentFilePath,
-      currentFileBytes,
-    }),
+    stats: (): LogSinkStats => ({ eventCount, droppedCount, queuedCount: queue.length, currentFile: currentFilePath, currentFileBytes }),
   }
 }

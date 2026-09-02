@@ -762,6 +762,24 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
   },
   {
     descriptor: {
+      id: 'world.simulation-run.execution',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Set Background Execution',
+      description: 'Keeps this loaded Run executing without viewers until disabled, unloaded, deleted or the service stops. Does not resume a paused clock or configure automatic restart.',
+      risk: 'write',
+      idempotent: true,
+      inputSchema: capabilityJsonSchema(z.object({ background: z.boolean() }).strict()),
+      outputSchema: capabilityJsonSchema(z.object({ simulationRunId: z.string(), leaseCount: z.number(), leasesByKind: z.object({ realtime: z.number(), api: z.number(), background: z.number() }) })),
+    },
+    invoke: async (registry, invocation) => {
+      const input = z.object({ background: z.boolean() }).strict().parse(invocation.input)
+      return json({ result: await registry.setBackgroundExecution(requireSimulationRunResource(invocation), input.background) })
+    },
+  },
+  {
+    descriptor: {
       id: 'world.simulation-run.rename',
       moduleId: WORLD_MODULE_ID,
       kind: 'command',
@@ -1043,6 +1061,8 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       const runtime = await registry.load(requireSimulationRunResource(invocation))
       const input = readHistoryInputSchema.parse(invocation.input)
       const query = {
+        ...(input.timeAxis === undefined ? {} : { timeAxis: input.timeAxis }),
+        ...(input.beforeSequence === undefined ? {} : { beforeSequence: input.beforeSequence }),
         ...(input.runtimeId === undefined ? {} : { runtimeId: input.runtimeId }),
         ...(input.seriesId === undefined ? {} : { seriesId: input.seriesId }),
         ...(input.subjectId === undefined ? {} : { subjectId: input.subjectId }),
@@ -1070,29 +1090,34 @@ const invokeCapability = async (
   if (invocation.capabilityId !== capabilityId) return apiError(409, 'capability_scope_mismatch', 'Invocation Capability does not match the route')
   if (invocation.idempotencyKey !== undefined && worldCapabilities.descriptors.some(descriptor => descriptor.id === capabilityId)) return apiError(400, 'idempotency_not_supported', 'This Capability does not support keyed retries; inspect the Resource after an uncertain result.')
 
-  const response = await worldCapabilities.invoke(capabilityId, registry, invocation)
-  if (response) return response
+  const release = invocation.resource?.type === 'world.simulation-run' && capabilityId !== 'world.simulation-run.delete'
+    ? registry.acquireLease(requireSimulationRunResource(invocation), 'api') : undefined
+  try {
 
-  const descriptor = runtimeCapabilityDescriptorsFor(registry).find(candidate => candidate.id === capabilityId)
-  if (!descriptor) return apiError(404, 'capability_not_found', 'Capability not found')
-  const simulationRunId = requireSimulationRunResource(invocation)
-  const runtime = await registry.load(simulationRunId)
-  if (!runtime.capabilities().capabilities.some(candidate => candidate.id === capabilityId)) {
-    return apiError(409, 'capability_not_active', `Capability is not active in this Simulation Run: ${capabilityId}`)
-  }
-  const actor = buildSimulationRunActor(actorIdForAccessContext(invocation.access))
-  const outcome = await runtime.invokeCapability(actor, {
-    capabilityId,
-    input: invocation.input,
-    ...(invocation.expectedRevision === undefined ? {} : { expectedRevision: invocation.expectedRevision }),
-    ...(invocation.idempotencyKey === undefined ? {} : { idempotencyKey: invocation.idempotencyKey }),
-  })
-  if (outcome.kind === 'command' && !outcome.result.ok) {
-    return apiError(409, 'simulation_command_rejected', outcome.result.reason)
-  }
-  return json({
-    result: outcome.result,
-  })
+    const response = await worldCapabilities.invoke(capabilityId, registry, invocation)
+    if (response) return response
+
+    const descriptor = runtimeCapabilityDescriptorsFor(registry).find(candidate => candidate.id === capabilityId)
+    if (!descriptor) return apiError(404, 'capability_not_found', 'Capability not found')
+    const simulationRunId = requireSimulationRunResource(invocation)
+    const runtime = await registry.load(simulationRunId)
+    if (!runtime.capabilities().capabilities.some(candidate => candidate.id === capabilityId)) {
+      return apiError(409, 'capability_not_active', `Capability is not active in this Simulation Run: ${capabilityId}`)
+    }
+    const actor = buildSimulationRunActor(actorIdForAccessContext(invocation.access))
+    const outcome = await runtime.invokeCapability(actor, {
+      capabilityId,
+      input: invocation.input,
+      ...(invocation.expectedRevision === undefined ? {} : { expectedRevision: invocation.expectedRevision }),
+      ...(invocation.idempotencyKey === undefined ? {} : { idempotencyKey: invocation.idempotencyKey }),
+    })
+    if (outcome.kind === 'command' && !outcome.result.ok) {
+      return apiError(409, 'simulation_command_rejected', outcome.result.reason)
+    }
+    return json({
+      result: outcome.result,
+    })
+  } finally { release?.() }
 }
 
 export const handleWorldModuleApi = async (
@@ -1153,6 +1178,8 @@ export const handleWorldModuleApi = async (
 
     return null
   } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'simulation_run_busy') return apiError(409, 'simulation_run_busy', error.message)
+    if (error instanceof Error && 'code' in error && error.code === 'workspace_capacity_exceeded') return apiError(503, 'workspace_capacity_exceeded', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'simulation_run_name_changed') {
       return apiError(409, 'simulation_run_name_changed', error.message)
     }

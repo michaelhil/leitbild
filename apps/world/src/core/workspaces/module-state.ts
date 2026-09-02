@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto'
-import { mkdir, readdir, readFile, rename, rm, rmdir, writeFile } from 'node:fs/promises'
+import { writeAtomic } from '../storage/atomic-write.ts'
+import { mkdir, readdir, readFile, rm, rmdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import {
@@ -77,9 +77,7 @@ export const createWorldModuleState = (config: {
       })
       const path = worldWorkspacePaths(config.dataDir, workspaceId).marker
       await mkdir(dirname(path), { recursive: true })
-      const temporaryPath = `${path}.${randomUUID()}.tmp`
-      await writeFile(temporaryPath, `${JSON.stringify(marker, null, 2)}\n`, 'utf8')
-      await rename(temporaryPath, path)
+      await writeAtomic(path, `${JSON.stringify(marker, null, 2)}\n`)
       return { marker, created: true }
     }),
     remove: workspaceId => mutate(async () => {

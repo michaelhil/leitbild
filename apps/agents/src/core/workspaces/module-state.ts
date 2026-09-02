@@ -45,8 +45,12 @@ export const createAgentsModuleState = (): AgentsModuleState => {
       const path = workspaceModulePaths(workspaceId).agents.marker
       await mkdir(dirname(path), { recursive: true })
       const temporaryPath = `${path}.${crypto.randomUUID()}.tmp`
-      await Bun.write(temporaryPath, `${JSON.stringify(marker, null, 2)}\n`)
-      await rename(temporaryPath, path)
+      try {
+        await Bun.write(temporaryPath, `${JSON.stringify(marker, null, 2)}\n`)
+        await rename(temporaryPath, path)
+      } finally {
+        await rm(temporaryPath, { force: true })
+      }
       return { marker, created: true }
     }),
     remove: workspaceId => mutate(async () => {

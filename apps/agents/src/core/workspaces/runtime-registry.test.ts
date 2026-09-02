@@ -46,6 +46,36 @@ describe('WorkspaceRuntimeRegistry', () => {
 
   // --- Validity ---
 
+  it('disposes startup resources when the construction hook fails', async () => {
+    const id = newWorkspaceId()
+    await provision(id)
+    const disposed: WorkspaceId[] = []
+    const failed = createWorkspaceRuntimeRegistry({ deployment: createDeploymentRuntime(), moduleState,
+      onWorkspaceRuntimeCreated: () => { throw new Error('startup hook failed') },
+      onWorkspaceRuntimeEvicted: (_system, workspaceId) => { disposed.push(workspaceId) },
+    })
+    await expect(failed.getOrLoad(id)).rejects.toThrow('startup hook failed')
+    expect(disposed).toEqual([id])
+    expect(failed.list()).toEqual([])
+    await failed.shutdown()
+  })
+
+  it('does not evict autonomous summary work for idle or capacity', async () => {
+    const busy = createWorkspaceRuntimeRegistry({ deployment: createDeploymentRuntime(), moduleState, maxLoadedWorkspaces: 1, idleMs: 1 })
+    const a = newWorkspaceId(), b = newWorkspaceId()
+    await provision(a); await provision(b)
+    try {
+      const system = await busy.getOrLoad(a)
+      system.rooms.createRoomSafe({ name: 'scheduled', createdBy: 'system' })
+      const room = system.rooms.getRoom(system.rooms.listAllRooms()[0]!.id)!
+      room.setSummaryConfig({ ...room.summaryConfig, summary: { ...room.summaryConfig.summary, enabled: true, schedule: { kind: 'time', everySeconds: 3600 } } })
+      expect(await busy.evictIdle(Date.now() + 10_000)).toBe(0)
+      await expect(busy.getOrLoad(b)).rejects.toThrow('occupied by active work')
+      expect(busy.tryGetLive(a)).toBe(system)
+      expect(busy.tryGetLive(b)).toBeUndefined()
+    } finally { await busy.shutdown() }
+  })
+
   it('rejects invalid Workspace ids at runtime', async () => {
     await expect(registry.getOrLoad('bad' as WorkspaceId)).rejects.toThrow(/invalid Workspace id/)
     await expect(registry.getOrLoad('../etc/passwd' as WorkspaceId)).rejects.toThrow(/invalid Workspace id/)

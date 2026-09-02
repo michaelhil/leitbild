@@ -99,9 +99,9 @@ describe('createJsonlFileSink — rotation', () => {
       const sessionId = 'seed-test'
       const activePath = join(dir, `${sessionId}.jsonl`)
       const rolledPath = join(dir, `${sessionId}.1.jsonl`)
-      // Pre-create a file at 90% of the rotation threshold.
-      const rotateAtBytes = 200
-      await Bun.write(activePath, 'x'.repeat(180))
+      // Less than one event remains before the byte limit.
+      const rotateAtBytes = 1000
+      await Bun.write(activePath, 'x'.repeat(980))
 
       const sink = await createJsonlFileSink({ dir, sessionId, rotateAtBytes })
       // First batch — large enough to trigger rotation given the seeded size.
@@ -110,12 +110,11 @@ describe('createJsonlFileSink — rotation', () => {
       await sink.close()
 
       // Rotation must have happened: rolled file exists with the original
-      // 180-byte body. Active file contains ONLY the new events (no
-      // pre-existing 180 bytes carried over).
+      // original body. Active file contains only new events.
       const rolledContent = await Bun.file(rolledPath).text()
-      expect(rolledContent.length).toBe(180)
+      expect(rolledContent.length).toBe(980)
       const activeContent = await Bun.file(activePath).text()
-      expect(activeContent.includes('x'.repeat(180))).toBe(false)
+      expect(activeContent.includes('x'.repeat(980))).toBe(false)
       expect(activeContent.split('\n').filter(Boolean).length).toBe(5)
     } finally {
       await rm(dir, { recursive: true })
@@ -223,6 +222,36 @@ describe('createJsonlFileSink — error containment', () => {
 })
 
 describe('createJsonlFileSink — stats', () => {
+  test('large batches stay within byte limits during concurrent flush and close', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'leitbild-sink-bounds-'))
+    try {
+      const sink = await createJsonlFileSink({ dir, sessionId: 'bounded', rotateAtBytes: 500, queueBytes: 1000 })
+      for (let i = 0; i < 10; i++) sink.write(mkEvent('bounded', 'test', i))
+      const first = sink.flush()
+      for (let i = 10; i < 20; i++) sink.write(mkEvent('bounded', 'test', i))
+      await Promise.all([first, sink.flush(), sink.close(), sink.close()])
+      expect(sink.stats().queuedCount).toBe(0)
+      expect(sink.stats().eventCount).toBe(20)
+      const files = await readdir(dir)
+      expect(files).toHaveLength(2)
+      for (const file of files) {
+        const bytes = await readFile(join(dir, file))
+        expect(bytes.byteLength).toBeLessThanOrEqual(500)
+        for (const line of bytes.toString().trim().split('\n')) expect(() => JSON.parse(line)).not.toThrow()
+      }
+    } finally { await rm(dir, { recursive: true }) }
+  })
+
+  test('oversized individual events are dropped without producing an oversized file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'leitbild-sink-event-'))
+    try {
+      const sink = await createJsonlFileSink({ dir, sessionId: 'large', rotateAtBytes: 500 })
+      sink.write({ ...mkEvent('large', 'large.event', 0), payload: { body: 'x'.repeat(2000) } })
+      await sink.close()
+      expect(sink.stats().droppedCount).toBe(1)
+      expect((await readFile(join(dir, 'large.jsonl'))).byteLength).toBeLessThanOrEqual(500)
+    } finally { await rm(dir, { recursive: true }) }
+  })
   test('stats reports currentFile + bytes + counts', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'leitbild-sink-'))
     try {

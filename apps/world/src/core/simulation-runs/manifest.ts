@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { writeAtomic } from '../storage/atomic-write.ts'
+import { mkdir, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 import { semanticVersionSchema, workspaceIdSchema } from '@leitbild/contracts'
@@ -72,9 +72,7 @@ export const createSimulationRunManifestStore = (path: string): SimulationRunMan
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
     }
     await mkdir(dirname(path), { recursive: true })
-    const temporaryPath = `${path}.${randomUUID()}.tmp`
-    await writeFile(temporaryPath, `${JSON.stringify(validated, null, 2)}\n`, 'utf8')
-    await rename(temporaryPath, path)
+    await writeAtomic(path, `${JSON.stringify(validated, null, 2)}\n`)
   },
 })
 

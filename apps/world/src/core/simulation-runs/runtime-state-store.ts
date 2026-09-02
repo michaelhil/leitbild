@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { writeAtomic } from '../storage/atomic-write.ts'
+import { mkdir, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 import { idSchema, nowIso } from '../model/index.ts'
@@ -46,9 +46,7 @@ export const createJsonRuntimeStateStore = (config: {
       savedAt: nowIso(),
       state,
     }
-    const temporaryPath = `${config.path}.${randomUUID()}.tmp`
-    await writeFile(temporaryPath, `${JSON.stringify(payload)}\n`, 'utf8')
-    await rename(temporaryPath, config.path)
+    await writeAtomic(config.path, `${JSON.stringify(payload)}\n`)
   }
 
   return { load, save }

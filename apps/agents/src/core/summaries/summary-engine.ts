@@ -151,6 +151,7 @@ export const createSummaryEngine = (deps: SummaryEngineDeps) => {
       temperature: 0.3,
     }, opts.abort)
     const text = await streamToString(iter, opts.onDelta)
+    opts.abort?.throwIfAborted()
     if (text) room.setLatestSummary(text)
     return text
   }
@@ -180,6 +181,7 @@ export const createSummaryEngine = (deps: SummaryEngineDeps) => {
       temperature: 0.3,
     }, opts.abort)
     const text = await streamToString(iter, opts.onDelta)
+    opts.abort?.throwIfAborted()
     if (!text) return null
     const compressedIds = candidates.map(m => m.id)
     // Capture content for indexers BEFORE replaceCompression splices the
@@ -192,6 +194,7 @@ export const createSummaryEngine = (deps: SummaryEngineDeps) => {
     if (deps.onCompressionStart) {
       await deps.onCompressionStart(room.profile.id, candidates, text)
     }
+    opts.abort?.throwIfAborted()
     room.replaceCompression(compressedIds, text)
     return { text, compressedIds }
   }

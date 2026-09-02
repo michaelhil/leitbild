@@ -106,7 +106,6 @@ export interface WorkspaceModuleOnDisk {
 interface WorkspaceRuntimeEntry {
   readonly system: AgentsWorkspaceRuntime
   readonly autoSaver: ModuleAutoSaver
-  readonly onIdle: () => Promise<void>          // hook called by registry on evict
   lastTouchedAt: number
   state: 'active' | 'evicting' | 'save-failed'
   evictionPromise?: Promise<void>               // present iff state='evicting'
@@ -260,37 +259,68 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
       vectorsFile: paths.agents.vectors,
     })
 
-    // Rooms and Agent runtime data remain separate strict documents inside
-    // the Agents Module. Corrupt or obsolete state fails the load.
-    const snapshots = await loadWorkspaceModuleSnapshots(paths)
-    await restoreWorkspaceModuleSnapshots(system, snapshots)
+    let autoSaver: ModuleAutoSaver | undefined
+    try {
+      // Rooms and Agent runtime data remain separate strict documents inside
+      // the Agents Module. Corrupt or obsolete state fails the load.
+      const snapshots = await loadWorkspaceModuleSnapshots(paths)
+      await restoreWorkspaceModuleSnapshots(system, snapshots)
 
-    const autoSaver = createModuleAutoSaver(system, paths)
+      autoSaver = createModuleAutoSaver(system, paths)
 
-    // Notify the registry's caller (e.g. WS broadcast wiring). autoSaver
-    // is passed explicitly because the map entry isn't installed until
-    // buildWorkspaceRuntime returns; an autoSaverFor(id) lookup inside the hook
-    // would return null.
-    //
-    // AWAITED on purpose: the hook installs wireAgentTracking (the spawn
-    // wrapper that installs per-agent state subscriptions, provider-event
-    // attach, etc.) and wireWorkspaceRuntimeEvents (the system-wide WS broadcast
-    // subscribers). The hook is async because of logging.configure and must
-    // complete before any seeded identity is created.
-    await opts.onWorkspaceRuntimeCreated?.(system, id, autoSaver)
+      // Notify the registry's caller (e.g. WS broadcast wiring). autoSaver
+      // is passed explicitly because the map entry isn't installed until
+      // buildWorkspaceRuntime returns; an autoSaverFor(id) lookup inside the hook
+      // would return null.
+      //
+      // AWAITED on purpose: the hook installs wireAgentTracking (the spawn
+      // wrapper that installs per-agent state subscriptions, provider-event
+      // attach, etc.) and wireWorkspaceRuntimeEvents (the system-wide WS broadcast
+      // subscribers). The hook is async because of logging.configure and must
+      // complete before any seeded identity is created.
+      await opts.onWorkspaceRuntimeCreated?.(system, id, autoSaver)
 
-    // First-run seeding creates only the human identity. Rooms and AI Agents
-    // are explicit Resources and never implicit Workspace defaults.
-    const shouldSeed = snapshots.rooms === null
-      && snapshots.agents === null
-      && process.env.LEITBILD_SEED_WORKSPACE !== '0'
-    if (shouldSeed) {
-      await seedWorkspaceIdentity(system)
-      await autoSaver.flush()
+      // First-run seeding creates only the human identity. Rooms and AI Agents
+      // are explicit Resources and never implicit Workspace defaults.
+      const shouldSeed = snapshots.rooms === null
+        && snapshots.agents === null
+        && process.env.LEITBILD_SEED_WORKSPACE !== '0'
+      if (shouldSeed) {
+        await seedWorkspaceIdentity(system)
+        await autoSaver.flush()
+      }
+
+      return { system, autoSaver }
+    } catch (error) {
+      await disposeUninstalled(system, id, autoSaver)
+      throw error
     }
-
-    return { system, autoSaver }
   }
+
+  // Construction and capacity admission share the same resource ownership rule.
+  // An uninstalled runtime must not retain producers, callback wiring or log timers.
+  const disposeUninstalled = async (system: AgentsWorkspaceRuntime, id: WorkspaceId, autoSaver?: ModuleAutoSaver): Promise<void> => {
+    system.triggerScheduler.stop()
+    system.summaryScheduler.dispose()
+    await Promise.all(system.scriptRunner.listRuns().map(run => system.scriptRunner.stop(run.roomId)))
+    await drainAgents(system)
+    await autoSaver?.dispose()
+    await system.logging.configure({ enabled: false })
+    system.captureRegistry.clearAll()
+    opts.onWorkspaceRuntimeEvicted?.(system, id)
+    for (const [agentId, workspaceId] of agentWorkspaceMap) if (workspaceId === id) agentWorkspaceMap.delete(agentId)
+  }
+
+  const ownsAutonomousWork = (system: AgentsWorkspaceRuntime): boolean =>
+    system.scriptRunner.listRuns().some(run => !run.ended)
+    || system.team.listAgents().some(agent => agent.state.get() === 'generating' || agent.getTriggers?.().some(trigger => trigger.enabled))
+    || system.rooms.listAllRooms().some(profile => {
+      const room = system.rooms.getRoom(profile.id)
+      if (!room) throw new Error(`Listed Room is missing: ${profile.id}`)
+      return system.summaryScheduler.isRunning(profile.id, 'summary')
+        || system.summaryScheduler.isRunning(profile.id, 'compression')
+        || [room.summaryConfig.summary, room.summaryConfig.compression].some(config => config.enabled && config.schedule.kind === 'time')
+    })
 
   // --- Public API ---
 
@@ -311,10 +341,11 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     const excess = map.size - maxLoadedWorkspaces + 1
     if (excess <= 0) return 0
     const targets = [...map.entries()]
-      .filter(([, entry]) => entry.state === 'active')
+      .filter(([, entry]) => entry.state === 'active' && !ownsAutonomousWork(entry.system))
       .sort((a, b) => a[1].lastTouchedAt - b[1].lastTouchedAt)
       .slice(0, excess)
       .map(([id]) => id)
+    if (targets.length < excess) throw Object.assign(new Error('Agents runtime capacity is occupied by active work'), { code: 'workspace_capacity_exceeded' })
     await Promise.all(targets.map(evictOne))
     return targets.length
   }
@@ -371,13 +402,19 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
           autoSaver,
           lastTouchedAt: Date.now(),
           state: 'active',
-          onIdle: async () => { /* set later if needed */ },
         }
-        const evicted = await installLoadedEntry(id, entry)
+        let evicted: number
+        try {
+          evicted = await installLoadedEntry(id, entry)
+          fireFirstLoadOnce(system, id)
+        } catch (error) {
+          map.delete(id)
+          await disposeUninstalled(system, id, autoSaver)
+          throw error
+        }
         if (evicted > 0) {
           console.warn(`[registry] capacity ${maxLoadedWorkspaces} reached; evicted ${evicted} least-recently-used Workspace(s)`)
         }
-        fireFirstLoadOnce(system, id)
         return system
       } finally {
         pendingLoads.delete(id)
@@ -399,23 +436,25 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     }
 
     const evictionPromise = (async (): Promise<void> => {
-      // Quiesce producers before draining consumers and publishing the final generation.
-      entry.system.triggerScheduler.stop()
-      entry.system.summaryScheduler.dispose()
-      await Promise.all(entry.system.scriptRunner.listRuns().map(run => entry.system.scriptRunner.stop(run.roomId)))
-      await drainAgents(entry.system)
       try {
+        // Quiesce producers before draining consumers and publishing the final generation.
+        entry.system.triggerScheduler.stop()
+        entry.system.summaryScheduler.dispose()
+        await Promise.all(entry.system.scriptRunner.listRuns().map(run => entry.system.scriptRunner.stop(run.roomId)))
+        await drainAgents(entry.system)
         await entry.autoSaver.flush()
+        await entry.system.logging.configure({ enabled: false })
+        opts.onWorkspaceRuntimeEvicted?.(entry.system, id)
+        entry.system.captureRegistry.clearAll()
+        await entry.autoSaver.dispose()
+        map.delete(id)
+        for (const [agentId, workspaceId] of agentWorkspaceMap) if (workspaceId === id) agentWorkspaceMap.delete(agentId)
       } catch (error) {
-        // Do not discard the only recoverable dirty state after a storage failure.
+        // Preserve the quiesced runtime for an explicit retry after a close/save failure.
         entry.state = 'save-failed'
         entry.evictionPromise = undefined
         throw error
       }
-      opts.onWorkspaceRuntimeEvicted?.(entry.system, id)
-      entry.system.captureRegistry.clearAll()
-      await entry.autoSaver.dispose()
-      map.delete(id)
     })()
 
     entry.state = 'evicting'
@@ -426,7 +465,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   const evictIdle = async (now: number = Date.now()): Promise<number> => {
     const targets: WorkspaceId[] = []
     for (const [id, entry] of map) {
-      if (entry.state === 'active' && now - entry.lastTouchedAt > idleMs) {
+      if (entry.state === 'active' && !ownsAutonomousWork(entry.system) && now - entry.lastTouchedAt > idleMs) {
         targets.push(id)
       }
     }
@@ -452,8 +491,9 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     let entries: string[]
     try {
       entries = await readdir(root)
-    } catch {
-      return []   // root doesn't exist yet — first boot
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [] // First boot.
+      throw error
     }
     const out: WorkspaceModuleOnDisk[] = []
     for (const name of entries) {

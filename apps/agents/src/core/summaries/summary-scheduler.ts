@@ -48,6 +48,7 @@ interface RoomTrackers {
   compressionTimer?: ReturnType<typeof setInterval>
   summaryInFlight: boolean
   compressionInFlight: boolean
+  readonly abort: AbortController
 }
 
 export interface SchedulerDeps {
@@ -62,11 +63,12 @@ export interface SchedulerDeps {
 
 export const createSummaryScheduler = (deps: SchedulerDeps): SummaryScheduler => {
   const trackers = new Map<string, RoomTrackers>()
+  let disposed = false
 
   const getTracker = (roomId: string): RoomTrackers => {
     let t = trackers.get(roomId)
     if (!t) {
-      t = { sinceSummary: 0, sinceCompression: 0, summaryInFlight: false, compressionInFlight: false }
+      t = { sinceSummary: 0, sinceCompression: 0, summaryInFlight: false, compressionInFlight: false, abort: new AbortController() }
       trackers.set(roomId, t)
     }
     return t
@@ -83,6 +85,7 @@ export const createSummaryScheduler = (deps: SchedulerDeps): SummaryScheduler =>
   }
 
   const runSummaryForRoom = async (roomId: string, options: TriggerOptions = {}): Promise<void> => {
+    if (disposed) return // Shutdown must not admit work from late Room callbacks.
     const room = deps.getRoom(roomId)
     if (!room) return
     const t = getTracker(roomId)
@@ -93,7 +96,7 @@ export const createSummaryScheduler = (deps: SchedulerDeps): SummaryScheduler =>
     try {
       const text = await deps.engine.runSummary(room, {
         onDelta: fanoutDelta(roomId, 'summary', options.onDelta),
-        abort: options.abort,
+        abort: options.abort ? AbortSignal.any([options.abort, t.abort.signal]) : t.abort.signal,
       })
       deps.onRunCompleted?.(roomId, 'summary', text)
     } catch (err) {
@@ -104,6 +107,7 @@ export const createSummaryScheduler = (deps: SchedulerDeps): SummaryScheduler =>
   }
 
   const runCompressionForRoom = async (roomId: string, options: TriggerOptions = {}): Promise<void> => {
+    if (disposed) return
     const room = deps.getRoom(roomId)
     if (!room) return
     const t = getTracker(roomId)
@@ -114,7 +118,7 @@ export const createSummaryScheduler = (deps: SchedulerDeps): SummaryScheduler =>
     try {
       const result = await deps.engine.runCompression(room, {
         onDelta: fanoutDelta(roomId, 'compression', options.onDelta),
-        abort: options.abort,
+        abort: options.abort ? AbortSignal.any([options.abort, t.abort.signal]) : t.abort.signal,
       })
       deps.onRunCompleted?.(roomId, 'compression', result?.text ?? '')
     } catch (err) {
@@ -125,6 +129,7 @@ export const createSummaryScheduler = (deps: SchedulerDeps): SummaryScheduler =>
   }
 
   const configureTimers = (roomId: string): void => {
+    if (disposed) return
     const room = deps.getRoom(roomId)
     if (!room) return
     const t = getTracker(roomId)
@@ -149,6 +154,7 @@ export const createSummaryScheduler = (deps: SchedulerDeps): SummaryScheduler =>
   }
 
   const onMessagePosted = (roomId: string, message: Message): void => {
+    if (disposed) return
     if (message.type !== 'chat') return
     const room = deps.getRoom(roomId)
     if (!room) return
@@ -194,11 +200,16 @@ export const createSummaryScheduler = (deps: SchedulerDeps): SummaryScheduler =>
     const t = trackers.get(roomId)
     if (!t) return
     clearTimers(t)
+    t.abort.abort(new Error('Room removed'))
     trackers.delete(roomId)
   }
 
   const dispose = (): void => {
-    for (const t of trackers.values()) clearTimers(t)
+    disposed = true
+    for (const t of trackers.values()) {
+      clearTimers(t)
+      t.abort.abort(new Error('Summary scheduler stopped'))
+    }
     trackers.clear()
   }
 

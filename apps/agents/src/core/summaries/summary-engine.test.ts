@@ -4,6 +4,7 @@ import type { ChatRequest, LLMProvider, StreamChunk } from '../types/llm.ts'
 import type { RoomProfile } from '../types/messaging.ts'
 import { DEFAULT_SUMMARY_CONFIG } from '../types/summary.ts'
 import { compressionDue, createSummaryEngine, pickCompressionCandidates } from './summary-engine.ts'
+import { createSummaryScheduler } from './summary-scheduler.ts'
 
 const makeProfile = (): RoomProfile => ({
   id: 'r1', name: 'Test', createdBy: 'system', createdAt: Date.now(),
@@ -35,6 +36,25 @@ const configureCompression = (room: ReturnType<typeof createRoom>, keepFresh: nu
 }
 
 describe('summary-engine', () => {
+  test('scheduler disposal prevents a late provider result from mutating a closed Room', async () => {
+    const room = createRoom(makeProfile())
+    room.post({ senderId: 'a', content: 'hello', type: 'chat' })
+    let finish!: () => void
+    const gate = new Promise<void>(resolve => { finish = resolve })
+    const llm: LLMProvider = { ...makeStreamingProvider('unused'), stream: async function* () {
+      await gate // Deliberately ignore cancellation to exercise the mutation boundary.
+      yield { delta: 'late summary', done: true }
+    } }
+    const engine = createSummaryEngine({ llm, defaultModel: () => 'test-only' })
+    const scheduler = createSummaryScheduler({ engine, getRoom: () => room })
+    const running = scheduler.triggerNow('r1', 'summary')
+    scheduler.dispose()
+    finish()
+    await running
+    expect(room.getLatestSummary()).toBeUndefined()
+    await scheduler.triggerNow('r1', 'summary')
+    expect(room.getLatestSummary()).toBeUndefined()
+  })
   test('compressionDue returns false when disabled', () => {
     const room = createRoom(makeProfile())
     for (let i = 0; i < 100; i++) room.post({ senderId: 'a', content: `m${i}`, type: 'chat' })
