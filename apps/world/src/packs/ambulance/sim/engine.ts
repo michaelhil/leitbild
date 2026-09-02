@@ -1,5 +1,18 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, SimulationRunEvent, GeoJsonLineString, GeoJsonPoint, InteractionSignal, IsoTimestamp, MotionProfileSet, ObjectId, OperationalObject, SimulationRunId } from '../../../core/model/index.ts'
+import type {
+  RouteImpact,
+  CommandEnvelope,
+  CommandResult,
+  SimulationRunEvent,
+  GeoJsonLineString,
+  GeoJsonPoint,
+  InteractionSignal,
+  IsoTimestamp,
+  MotionProfileSet,
+  ObjectId,
+  OperationalObject,
+  SimulationRunId,
+} from '../../../core/model/index.ts'
 import { advanceAlongRoute, defaultMotionProfile, interactionSignalSchema, meters, motionProfileFor, nowIso, pointFromPosition, remainingDistanceAlongRoute, routeDistanceMeters } from '../../../core/model/index.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import type { PackRuntimeEvent, PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
@@ -44,6 +57,7 @@ interface EngineState {
 
 export interface AmbulanceSimEngine {
   readonly snapshot: () => PackRuntimeSnapshot
+  readonly setRoadWeatherImpact: (objectId: ObjectId, impact: RouteImpact | undefined) => PackRuntimeEvent | undefined
   readonly tick: (dtMs: number) => ReadonlyArray<PackRuntimeEvent>
   readonly handleCommand: (command: CommandEnvelope) => Promise<CommandResult>
   readonly observeCommittedEvents: (events: ReadonlyArray<SimulationRunEvent>) => void
@@ -198,9 +212,12 @@ const initialSegmentIndexFor = (currentPoint: GeoJsonPoint, route: GeoJsonLineSt
 }
 
 const routeSpeedFactor = (object: OperationalObject): number =>
-  Math.min(1, ...((object.spatial.route?.impacts ?? [])
+  Math.min(
+    1,
+    ...(object.spatial.route?.impacts ?? [])
     .map(impact => impact.speedFactor ?? 1)
-    .filter(factor => factor > 0)))
+    .filter((factor) => factor >= 0),
+  )
 
 const stopAmbulance = (ambulance: OperationalObject, at: IsoTimestamp, status: string, causedByCommandId?: CommandEnvelope['id']): OperationalObject => {
   const { route: _route, ...spatialWithoutRoute } = ambulance.spatial
@@ -314,15 +331,20 @@ export const createAmbulanceSimEngine = (config: {
       const segmentIndex = arrived ? motion.segmentIndex : routeAdvance.segmentIndex
       const remainingDistanceM = remainingDistanceAlongRoute(motion.route, nextPoint, segmentIndex)
       const effectiveSpeedMps = motion.metersPerSecond * routeSpeedFactor(ambulance)
-      const etaSeconds = arrived ? 0 : Math.ceil(remainingDistanceM / effectiveSpeedMps)
+      const etaSeconds = arrived
+        ? 0
+        : effectiveSpeedMps > 0
+          ? Math.ceil(remainingDistanceM / effectiveSpeedMps)
+          : undefined
+      const { etaSeconds: _previousEta, ...routeWithoutEta } = currentRoute
       const moving: OperationalObject = {
         ...ambulance,
         revision: ambulance.revision + 1,
         spatial: {
           ...ambulance.spatial,
           route: {
-            ...currentRoute,
-            etaSeconds,
+            ...routeWithoutEta,
+            ...(etaSeconds === undefined ? {} : { etaSeconds }),
             progress: {
               segmentIndex,
               remainingDistanceM,
@@ -495,6 +517,8 @@ export const createAmbulanceSimEngine = (config: {
   const observeCommittedEvents = (events: ReadonlyArray<SimulationRunEvent>): void => {
     for (const event of events) {
       if (event.type === 'object.upserted') {
+        const current = state.objectProjection.get(event.object.id)
+        if (current && current.revision >= event.object.revision) continue
         state.objectProjection.set(event.object.id, event.object)
       }
       if (event.type === 'object.deleted') {
@@ -504,5 +528,26 @@ export const createAmbulanceSimEngine = (config: {
     }
   }
 
-  return { snapshot, tick, handleCommand, observeCommittedEvents }
+  const setRoadWeatherImpact = (id: ObjectId, impact: RouteImpact | undefined): PackRuntimeEvent | undefined => {
+    const object = state.objectProjection.get(id)
+    if (!object?.spatial.route) return
+    const old = object.spatial.route.impacts ?? []
+    const remaining = old.filter(
+      (entry) => entry.source.kind !== 'runtime' || entry.source.id !== 'ambulance.road-weather',
+    )
+    const impacts = impact ? [...remaining, impact] : remaining
+    // Timestamp changes alone do not create redundant projected object revisions.
+    const stable = (entries: ReadonlyArray<RouteImpact>) => entries.map(({ updatedAt: _, ...entry }) => entry)
+    if (JSON.stringify(stable(old)) === JSON.stringify(stable(impacts))) return
+    const at = nowIso()
+    const updated: OperationalObject = {
+      ...object,
+      revision: object.revision + 1,
+      timestamps: { ...object.timestamps, updatedAt: at },
+      spatial: { ...object.spatial, route: { ...object.spatial.route, impacts } },
+    }
+    state.objectProjection.set(id, updated)
+    return { type: 'object.upserted', object: updated, at, provenance: updated.provenance, history: 'snapshot-only' }
+  }
+  return { snapshot, tick, handleCommand, observeCommittedEvents, setRoadWeatherImpact }
 }

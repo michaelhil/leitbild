@@ -1,0 +1,214 @@
+{
+  "id": "halden-weather-response",
+  "title": "Halden weather response",
+  "description": "An ambulance travels through rain, freezing conditions and clearing weather. Road speed responds to sampled ground wetness, ice, snow and visibility using the editable Ambulance policy. This is a heuristic training model, not a forecast or tire-friction model.",
+  "objectives": [
+    "Compare the probe readings, the ambulance's visible route impact and its actual movement.",
+    "Edit or disable the weather area; observe that accumulated ground water and ice remain until they dry or melt.",
+    "Change the Ambulance road-weather policy without changing the Weather model."
+  ],
+  "world": {
+    "startsAt": "2026-01-01T10:00:00.000Z",
+    "environment": {
+      "city": "Halden"
+    }
+  },
+  "view": {
+    "map": {
+      "center": [
+        11.42,
+        59.13
+      ],
+      "zoom": 11,
+      "layers": [
+        "objects",
+        "routes",
+        "weather",
+        "highlights"
+      ]
+    },
+    "rail": {
+      "width": 340,
+      "sections": [
+        {
+          "categoryId": "ambulances",
+          "visible": true
+        },
+        {
+          "categoryId": "incidents",
+          "visible": true
+        },
+        {
+          "categoryId": "hospitals",
+          "visible": true
+        },
+        {
+          "categoryId": "weather",
+          "visible": true
+        }
+      ]
+    }
+  },
+  "recording": [
+    {
+      "packId": "weather",
+      "profileId": "probes",
+      "intervalMs": 5000
+    }
+  ],
+  "packs": [
+    {
+      "id": "weather",
+      "config": {
+        "gridResolution": 8,
+        "atmosphere": {
+          "airTemperatureC": 2,
+          "humidity": 0.7,
+          "windSpeedMps": 4,
+          "windDirectionDeg": 240,
+          "visibilityM": 12000,
+          "cloudCover": 0.5,
+          "precipitation": {
+            "type": "none",
+            "intensityMmPerHour": 0
+          }
+        },
+        "surface": {
+          "groundTemperatureC": -2,
+          "wetness": 0.4,
+          "standingWater": 0,
+          "snow": 0,
+          "ice": 0,
+          "frost": 0
+        }
+      },
+      "items": [
+        {
+          "type": "weather_area",
+          "id": "weather:halden-front",
+          "label": "Halden rain / freeze / clearing",
+          "center": [
+            11.41,
+            59.13
+          ],
+          "semiMajorAxisM": 6500,
+          "semiMinorAxisM": 4200,
+          "rotationDeg": 15,
+          "falloff": "linear",
+          "atmosphere": {
+            "airTemperatureC": 2,
+            "humidity": 0.9,
+            "windSpeedMps": 6,
+            "windDirectionDeg": 250,
+            "visibilityM": 700,
+            "cloudCover": 0.95,
+            "precipitation": {
+              "type": "rain",
+              "intensityMmPerHour": 30
+            }
+          },
+          "keyframes": [
+            {
+              "atSeconds": 120,
+              "atmosphere": {
+                "airTemperatureC": -8,
+                "visibilityM": 500,
+                "precipitation": {
+                  "type": "freezing_rain",
+                  "intensityMmPerHour": 15
+                }
+              }
+            },
+            {
+              "atSeconds": 360,
+              "atmosphere": {
+                "airTemperatureC": -8,
+                "visibilityM": 1500,
+                "precipitation": {
+                  "type": "snow",
+                  "intensityMmPerHour": 10
+                }
+              }
+            },
+            {
+              "atSeconds": 600,
+              "atmosphere": {
+                "airTemperatureC": 15,
+                "windSpeedMps": 12,
+                "visibilityM": 20000,
+                "cloudCover": 0.1,
+                "precipitation": {
+                  "type": "none",
+                  "intensityMmPerHour": 0
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "weather_probe",
+          "id": "weather-probe:halden",
+          "label": "Halden ground probe",
+          "point": [
+            11.41,
+            59.13
+          ]
+        },
+        {
+          "type": "weather_probe",
+          "id": "weather-probe:north",
+          "label": "Northern route probe",
+          "point": [
+            11.4,
+            59.18
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ambulance",
+      "config": {
+        "roadWeather": {
+          "enabled": true
+        }
+      },
+      "items": [
+        {
+          "type": "hospital",
+          "id": "facility:halden",
+          "label": "Halden receiving station",
+          "traumaBeds": { "total": 4, "available": 4 },
+          "position": [
+            11.39,
+            59.19
+          ]
+        },
+        {
+          "type": "incident",
+          "id": "incident:halden-weather",
+          "label": "Weather response destination",
+          "position": [
+            11.48,
+            59.08
+          ],
+          "triage": "yellow",
+          "victims": {
+            "state": "confirmed",
+            "count": 1
+          }
+        },
+        {
+          "type": "ambulance",
+          "id": "amb:weather-response",
+          "label": "Weather response ambulance",
+          "status": "en_route",
+          "position": [
+            11.36,
+            59.2
+          ],
+          "targetId": "incident:halden-weather"
+        }
+      ]
+    }
+  ]
+}

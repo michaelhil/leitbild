@@ -145,7 +145,9 @@ describe('Workspace Host with real Modules', () => {
     expect(definitionCatalog.status).toBe(200)
     const scenario = (await definitionCatalog.json() as {
       definitions: Array<{ ref: Record<string, string>; currentRevisionId: string }>
-    }).definitions.find(definition => definition.ref.type === 'world.scenario')!
+    }).definitions.find(
+      (definition) => definition.ref.type === 'world.scenario' && definition.ref.id === 'halden-weather-response',
+    )!
     const createRunResponse = await fetch(
       `${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.scenario.start/invoke`,
       {
@@ -170,7 +172,11 @@ describe('Workspace Host with real Modules', () => {
             name: 'World Observer',
             model: 'test-model',
             persona: 'Inspect available Workspace Resources when asked.',
-            toolGrants: [{ capabilityId: 'world.simulation-run.read' }],
+            toolGrants: [
+              { capabilityId: 'world.simulation-run.read' },
+              { capabilityId: 'world.weather.sample-at-point' },
+              { capabilityId: 'world.weather.intervene-ground' },
+            ],
           },
           actor: { kind: 'human', id: 'operator', displayName: 'Operator' },
         }),
@@ -210,6 +216,45 @@ describe('Workspace Host with real Modules', () => {
     }, context)
     expect(read.success).toBe(true)
     expect((read.data as { id: string }).id).toBe(runId)
+
+    const weatherPoint = { type: 'Point', coordinates: [11.41, 59.13] }
+    const weatherRead = await invoke!.execute(
+      { capabilityId: 'world.weather.sample-at-point', resource: currentRun.ref, input: { point: weatherPoint } },
+      context,
+    )
+    expect(weatherRead.success).toBe(true)
+    expect((weatherRead.data as { quality: { model: string } }).quality.model).toBe(
+      'prescribed-atmosphere/heuristic-ground',
+    )
+    const intervention = await invoke!.execute(
+      {
+        capabilityId: 'world.weather.intervene-ground',
+        resource: currentRun.ref,
+        input: {
+          area: {
+            type: 'Polygon',
+            coordinates: [
+              [
+                [11.4, 59.12],
+                [11.42, 59.12],
+                [11.42, 59.14],
+                [11.4, 59.14],
+                [11.4, 59.12],
+              ],
+            ],
+          },
+          surface: { ice: 0.8 },
+        },
+      },
+      context,
+    )
+    expect(intervention).toMatchObject({ success: true })
+    const afterWeather = await invoke!.execute(
+      { capabilityId: 'world.weather.sample-at-point', resource: currentRun.ref, input: { point: weatherPoint } },
+      context,
+    )
+    expect(afterWeather.success).toBe(true)
+    expect((afterWeather.data as { state: { surface: { ice: number } } }).state.surface.ice).toBeCloseTo(0.8, 1)
 
     const deleteRun = await fetch(
       `${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.simulation-run.delete/invoke`,

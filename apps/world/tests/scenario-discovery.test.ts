@@ -5,8 +5,11 @@ import { join } from 'node:path'
 import { builtinScenarioSources, discoverScenarioSources } from '../src/scenarios/sources.ts'
 
 describe('bundled scenario discovery', () => {
-  test('ships only the new editable Halden definition', () => {
-    expect(builtinScenarioSources.map(source => source.id)).toEqual(['halden-power-complex'])
+  test('ships the editable power-complex and weather-response definitions', () => {
+    expect(builtinScenarioSources.map(source => source.id)).toEqual([
+      'halden-power-complex',
+      'halden-weather-response',
+    ])
     expect(builtinScenarioSources[0]?.packs.map(pack => pack.id)).toEqual(['process-plant', 'electric-grid'])
   })
   test('accepts an empty catalog and discovers new files without a registry edit', async () => {

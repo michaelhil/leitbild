@@ -92,6 +92,14 @@ _Avoid_: Weather Probe, road-speed policy, reference-map layer
 A named point that samples Weather conditions in a Simulation Run without changing them.
 _Avoid_: Weather Influence, physical sensor feed unless a real source supplies it
 
+**Ground Conditions**:
+Accumulated environmental surface state that can remain after a Weather Influence moves or stops, including wetness, standing water, snow, ice and frost.
+_Avoid_: atmospheric target, road friction coefficient, reference-map appearance
+
+**Road-weather Policy**:
+An optional mobility-owned rule that translates sampled conditions into an explained movement constraint. It changes the asset's response, not the weather.
+_Avoid_: Weather Influence, hidden rerouting, calibrated tire model
+
 **Procedure Source**:
 A read-only procedure corpus discovered through one validated Manifest whose revision identifies the immutable document set.
 _Avoid_: hard-coded procedure list, human-readable index scraping, eagerly loaded procedure bundle

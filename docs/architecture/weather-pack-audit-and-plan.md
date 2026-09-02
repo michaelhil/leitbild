@@ -1,6 +1,33 @@
 # Weather Pack audit and proposed rebuild
 
-Date: 2026-09-02. Weather findings are based on the current implementation, including direct local runtime experiments. Weather changes below are proposed for approval, not implemented. Aviation and Traffic removal is separately completed.
+Date: 2026-09-02. The audit below records the pre-rebuild findings and approved proposal. Aviation and Traffic removal is completed. The Weather rebuild is implemented; verification and delivery notes follow here.
+
+## Implementation outcome
+
+- One authoritative sampler now serves probes, asset inspection, map projection, other Packs and Agents. Browser-side reconstruction, condition aliases, extension registries, ineffective render flags and duplicate constructors are gone.
+- Areas and probes use the same strict definitions in authoring and live commands. The editor discovers background/grid settings, ground initial conditions, probes and ordinary keyframe records. Existing sparse keyframes display inherited values rather than unrelated defaults.
+- Ground state persists independently of recording, advances in fixed one-second simulation steps, and survives removal of forcing. Rewinds and excessive work reject explicitly before changing the shared clock. Degraded runtimes report their failure instead of serving stale samples as healthy data.
+- H3 remains the shared geographic primitive. Coverage preserves holes and is bounded before allocation; geometry, evaluated keyframes and repeated map queries are cached with limits. Generic map rendering uses declared layer/style metadata, not Weather ID prefixes. Symbol filtering keeps stable render-data references.
+- Probe quantities and compact field counts can be recorded with the existing Historian. Command payloads remain in the existing journal; there is no new logging service.
+- Ambulance has an optional editable, persistent road-weather policy. It uses schema-validated run-local queries, changes real movement, publishes explained route impacts, supports stopping, and removes only its own effects when disabled. Both Packs still operate independently. An explicitly enabled missing provider is an error.
+- Added **Halden weather response**, an ordinary editable scenario with an ambulance, two probes, rain/freezing/clearing keyframes and optional recording. The existing power-complex scenario is retained.
+- The real Agents/Host/World test exercises granted Weather reads and a ground intervention. It exposed and fixed an unrelated response-envelope error: World was returning an undeclared outer `replayed` property. Internal idempotency behavior is unchanged.
+
+### Deliberate boundaries
+
+The first mobility response samples the **current vehicle location**, not the entire planned route. This models local traction/visibility without slowing a vehicle because of distant weather; route-wide risk planning/rerouting remains separate. No terrain/material model, validated friction coefficient, forecast feed, Fire solver or Grid weather failures are claimed.
+
+Ground resolution changes require a new run/reset. Sub-cell influences still affect exact atmospheric samples; unresolved ground detail is not artificially enlarged. Geographic area coverage across the dateline is explicitly unsupported. Forward work is capped; shared snapshots and private checkpoints are not crash-atomic. Missing/incompatible history is reported, not reconstructed by a compatibility shim.
+
+One existing production run, `run-b96456dd-ae59-4e41-98f2-85f16bde3c92`, uses the retired Weather definition. Its saved data is preserved, but it cannot resume under the new schema. Recreate it if needed; no migration or automatic deletion is included.
+
+### Measurements and verification
+
+Local Bun 1.4.0 measurement on the authored Halden example: 159 materialized ground cells; ten simulated minutes in **309 ms**; a cold 512-point batch in **28.7 ms**; a cold map response in **15.6 ms**; 100 identical cached map reads in **5.1 ms** total. The sampled map response contained 303 features / 167,685 JSON bytes. These are local single-run observations, not capacity guarantees or comparisons against a measured old-version benchmark.
+
+Root type/boundary checks and all production builds pass. Full platform tests plus focused additions cover field determinism, restore, pause/edit timing, holes/budgets, canonical sampling, map layer visibility, real vehicle movement, provider removal, combined restart and Agent access. The supplemental Svelte check is not clean: it reports the existing 49 Svelte errors/1 warning plus an unchanged Electric Grid component-typing diagnostic when TypeScript diagnostics are included. No new editor/context-query diagnostics were reported.
+
+See [ADR 0029](../../apps/world/docs/adr/0029-authoritative-weather-and-read-only-pack-dependencies.md) for the architectural decision and trade-offs.
 
 ## Recommendation
 
