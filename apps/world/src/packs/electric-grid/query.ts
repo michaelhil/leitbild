@@ -218,7 +218,7 @@ const assetPresentationFor = (grid: GridRuntimeInstance, asset: GridAssetSnapsho
       : `${connectedCount}/${connections.length} connected`
     summary = connections.length === 0
       ? `${definition.nominalKv} kV · ${frequency.toFixed(2)} Hz`
-      : `${externalPowerLabel} · ${voltage.toFixed(3)} pu · ${frequency.toFixed(2)} Hz`
+      : `${externalPowerLabel} · ${connectedCount}/${connections.length} connected · ${frequency.toFixed(2)} Hz`
   } else if (asset.kind === 'branch') {
     const state = grid.branches.get(asset.id)!
     const definition = asset.definition as typeof grid.definition.model.branches[number]

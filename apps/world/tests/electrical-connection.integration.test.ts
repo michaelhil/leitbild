@@ -217,7 +217,7 @@ describe('electrical Pack connection', () => {
       expect(switchyard.result).toMatchObject({
         asset: {
           status: { tone: 'working', label: '3/4 connected' },
-          summary: expect.stringContaining('MW supplied'),
+          summary: expect.stringMatching(/MW supplied · 3\/4 connected/),
         },
       })
     } finally {
