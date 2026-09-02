@@ -7,6 +7,7 @@ import type {
   ScenarioRecordingSelection,
 } from '../../core/model/index.ts'
 import type { GridRuntimeInstance } from './runtime/instance.ts'
+import type { CompiledGridDefinition } from './grid-model.ts'
 
 export const electricGridRecordingProfiles: ReadonlyArray<RecordingProfileDescriptor> = [{
   id: 'operations',
@@ -61,25 +62,32 @@ const series = (config: {
   value: config.value,
 })
 
-const operationsSeries = (grid: GridRuntimeInstance): ReadonlyArray<GridRecordingSeries> => [{
-  signalId: 'grid.frequency', title: 'Frequency', quantity: 'frequency', unit: 'Hz', value: () => grid.projection.frequencyHz,
+const operations = [{
+  signalId: 'grid.frequency', title: 'Frequency', quantity: 'frequency', unit: 'Hz', key: 'frequencyHz',
 }, {
-  signalId: 'grid.generation', title: 'Generation', quantity: 'active-power', unit: 'MW', value: () => grid.projection.totalGenerationMw,
+  signalId: 'grid.generation', title: 'Generation', quantity: 'active-power', unit: 'MW', key: 'totalGenerationMw',
 }, {
-  signalId: 'grid.load', title: 'Demand', quantity: 'active-power', unit: 'MW', value: () => grid.projection.totalLoadMw,
+  signalId: 'grid.load', title: 'Demand', quantity: 'active-power', unit: 'MW', key: 'totalLoadMw',
 }, {
-  signalId: 'grid.served-load', title: 'Served load', quantity: 'active-power', unit: 'MW', value: () => grid.projection.servedLoadMw,
+  signalId: 'grid.served-load', title: 'Served load', quantity: 'active-power', unit: 'MW', key: 'servedLoadMw',
 }, {
-  signalId: 'grid.unserved-load', title: 'Unserved load', quantity: 'active-power', unit: 'MW', value: () => grid.projection.unservedLoadMw,
+  signalId: 'grid.unserved-load', title: 'Unserved load', quantity: 'active-power', unit: 'MW', key: 'unservedLoadMw',
 }, {
-  signalId: 'grid.reserve', title: 'Reserve margin', quantity: 'active-power', unit: 'MW', value: () => grid.projection.reserveMarginMw,
+  signalId: 'grid.reserve', title: 'Reserve margin', quantity: 'active-power', unit: 'MW', key: 'reserveMarginMw',
 }, {
-  signalId: 'grid.maximum-branch-loading', title: 'Maximum branch loading', quantity: 'ratio', unit: '%', value: () => grid.projection.highestBranchLoadingPercent,
+  signalId: 'grid.maximum-branch-loading', title: 'Maximum branch loading', quantity: 'ratio', unit: '%', key: 'highestBranchLoadingPercent',
 }, {
-  signalId: 'grid.minimum-voltage', title: 'Minimum voltage', quantity: 'voltage-ratio', unit: 'pu', value: () => grid.projection.lowestVoltagePu,
+  signalId: 'grid.minimum-voltage', title: 'Minimum voltage', quantity: 'voltage-ratio', unit: 'pu', key: 'lowestVoltagePu',
 }, {
-  signalId: 'grid.active-alarms', title: 'Active alarms', quantity: 'count', unit: '1', value: () => grid.projection.activeAlarmCount,
-}].map(item => series({ grid, ...item }))
+  signalId: 'grid.active-alarms', title: 'Active alarms', quantity: 'count', unit: '1', key: 'activeAlarmCount',
+}] as const
+const operationsSeries = (grid: GridRuntimeInstance): ReadonlyArray<GridRecordingSeries> => operations.map(({ key, ...item }) => series({ grid, ...item, value: () => grid.projection[key] }))
+
+export const gridRecordingSeriesCount = (definition: CompiledGridDefinition, profileId: string): number => {
+  const model = definition.model
+  return operations.length + (profileId === 'engineering'
+    ? model.buses.length * 2 + model.branches.length * 2 + model.generators.length + model.loads.length + model.storage.length : 0)
+}
 
 const engineeringSeries = (grid: GridRuntimeInstance): ReadonlyArray<GridRecordingSeries> => [
   ...grid.definition.model.buses.flatMap(bus => {

@@ -35,7 +35,7 @@ interface Observation {
   readonly unit?: string
 }
 
-const observationsFor = (object: OperationalObject): ReadonlyArray<Observation> => {
+export const observationsFor = (object: OperationalObject): ReadonlyArray<Observation> => {
   const observations: Observation[] = [{
     signalId: 'operational.status',
     title: 'Status',

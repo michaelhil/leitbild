@@ -10,7 +10,7 @@ import {
   processPlantPackConfigSchema,
 } from './config.ts'
 import { processPlantElectricalPortDefinitions } from './electrical-ports.ts'
-import { emptyProcessPlantProjection,processPlantPackId,type ProcessPlantUnitPackData } from './model.ts'
+import { emptyProcessPlantProjection,processPlantPackId,processPlantUnitPackDataSchema,type ProcessPlantUnitPackData } from './model.ts'
 import { compileProcessPlant } from './plant-compiler.ts'
 import {
   processPlantDefinitionCatalog,
@@ -18,7 +18,7 @@ import {
   processPlantPwrReferenceAutomationRef,
   processPlantPwrReferenceModelRef,
 } from './plant-definitions.ts'
-import { processPlantRecordingProfiles } from './recording.ts'
+import { processPlantRecordingProfiles, recordedPlantVariables } from './recording.ts'
 import { processPlantSimAdapterId } from './sim/constants.ts'
 import { processPlantPackView } from './ui-pack.ts'
 
@@ -142,7 +142,14 @@ export const processPlantPack: WorldPack = {
       }],
     }],
   },
-  recording: { profiles: processPlantRecordingProfiles },
+  recording: {
+    profiles: processPlantRecordingProfiles,
+    estimateSeries: (objects, profileId) => objects.reduce((sum, object) => {
+      const data = processPlantUnitPackDataSchema.parse(object.packData)
+      const plant = compileProcessPlant({ id: object.id, model: data.model, operatingPoint: data.operatingPoint, automation: data.automation })
+      return sum + recordedPlantVariables(plant, profileId).length
+    }, 0),
+  },
   knowledge: { wikiRefs: [{ name: 'Leitbild PWR operations wiki', url: 'https://github.com/michaelhil/leitbild/blob/main/docs/wiki/pwr-ops.md' }] },
   scenario: {
     itemSchemas: { plant: processPlantScenarioItemSchema },

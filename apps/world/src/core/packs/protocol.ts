@@ -325,6 +325,8 @@ export interface PackRuntimeContribution {
 
 export interface PackRecordingContribution {
   readonly profiles: ReadonlyArray<RecordingProfileDescriptor>
+  /** Initial series only; dynamic assets/optional observations may change this count. */
+  readonly estimateSeries?: (objects: ReadonlyArray<OperationalObject>, profileId: string) => number
 }
 
 export interface PackKnowledgeContribution {

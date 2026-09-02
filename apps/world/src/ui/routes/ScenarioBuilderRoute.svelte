@@ -535,6 +535,14 @@
                   <label>Sample interval (seconds)
                     <input type="number" min={profile.minimumIntervalMs / 1_000} step={profile.minimumIntervalMs / 1_000} value={(recording.intervalMs ?? profile.defaultIntervalMs) / 1_000} onchange={event => setRecordingInterval(pack, event.currentTarget.valueAsNumber)} />
                   </label>
+                  {#if preview?.recording}
+                    {@const estimate = preview.recording.selections.find(selection => selection.packId === pack.id)}
+                    <p>{estimate?.initialSeriesCount ?? 'Unknown'} initial series · {estimate?.samplesPerSimulationSecond?.toFixed(1) ?? 'unknown'} samples/s at full sampling, measured in simulation time.</p>
+                    {#if preview.recording.sampleWindowSimulationSeconds !== null}
+                      <p>All selected Packs share {preview.recording.sampleBudget.toLocaleString()} samples: approximately {Math.round(preview.recording.sampleWindowSimulationSeconds).toLocaleString()} simulation seconds at full sampling. Unchanged-value suppression may extend this; new assets may shorten it.</p>
+                    {/if}
+                    <p>History also stops at its byte budget ({Math.round(preview.recording.byteBudget / 1024 / 1024)} MiB); observations expire after at most {Math.round(preview.recording.ageLimitSeconds / 86400)} real days. These are ceilings, not guaranteed retention.</p>
+                  {/if}
                 {/if}
               {/if}
             {/if}

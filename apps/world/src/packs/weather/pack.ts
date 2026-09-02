@@ -136,7 +136,7 @@ export const weatherPack: WorldPack = {
       },
     ],
   },
-  recording: { profiles: weatherRecordingProfiles },
+  recording: { profiles: weatherRecordingProfiles, estimateSeries: objects => 2 + objects.filter(object => dataFor(object)?.definition.type === 'weather_probe').length * weatherQuantities.length },
   runtime: {
     runtimes: [
       { id: weatherSimRuntimeId, version: '1.0.0', label: 'Local weather', kind: 'local', clock: 'simulation' },

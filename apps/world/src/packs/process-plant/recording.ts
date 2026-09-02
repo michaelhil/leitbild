@@ -8,6 +8,10 @@ import type {
 } from '../../core/model/index.ts'
 import type { ProcessPlantVariableHandle } from './runtime/variable-table.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
+import type { CompiledProcessPlant } from './plant-compiler.ts'
+
+export const recordedPlantVariables = (plant: CompiledProcessPlant, profileId: string) => plant.graph.variables.filter(variable =>
+  profileId === 'engineering' || ['state', 'control', 'discrete'].includes(variable.descriptor.kind) || variable.descriptor.tagId !== undefined || variable.descriptor.quantity === 'power')
 
 export const processPlantRecordingProfiles: ReadonlyArray<RecordingProfileDescriptor> = [{
   id: 'operations',
@@ -55,8 +59,7 @@ export const createProcessPlantRecordingPlan = (config: {
     throw new Error(`process plant recording profile ${profile.id} requires an interval of at least ${profile.minimumIntervalMs} ms`)
   }
   const series: ProcessPlantRecordingSeriesPlan[] = [...config.plants.values()].flatMap(plant =>
-    plant.plant.graph.variables
-      .filter(variable => profile.id === 'engineering' || ['state', 'control', 'discrete'].includes(variable.descriptor.kind) || variable.descriptor.tagId !== undefined || variable.descriptor.quantity === 'power')
+    recordedPlantVariables(plant.plant, profile.id)
       .map(variable => ({
         plant,
         handle: plant.runtime.resolveVariableHandle(variable.path),

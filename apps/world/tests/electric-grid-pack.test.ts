@@ -14,7 +14,7 @@ import { compileGridDefinition, compileGridModelIndex } from '../src/packs/elect
 import { electricGridPackDataSchema } from '../src/packs/electric-grid/model.ts'
 import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
 import { addGridModelAssets, gridModelAdditionSchema, gridModelAdditions } from '../src/packs/electric-grid/model-additions.ts'
-import { createGridRuntimeInstance } from '../src/packs/electric-grid/runtime/instance.ts'
+import { balanceInitialGridDispatch, createGridRuntimeInstance } from '../src/packs/electric-grid/runtime/instance.ts'
 import { advanceGrid } from '../src/packs/electric-grid/runtime/solver.ts'
 import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric-grid/sim/adapter.ts'
 import { electricGridRuntimeId } from '../src/packs/electric-grid/sim/constants.ts'
@@ -254,6 +254,37 @@ describe('electric grid Pack', () => {
     grid.branches.get(branchId)!.state = 'open'
     advanceGrid(grid, 1, '2026-01-01T11:00:01.000Z' as IsoTimestamp)
     expect(grid.topologyPlan).not.toBe(firstPlan)
+  })
+
+  test('external supply loss lowers the connected island frequency against a time-aligned control', () => {
+    const scenario = scenarios.find(candidate => candidate.id === 'halden-power-complex')!
+    const object = scenario.initialObjects.find(candidate => candidate.packId === 'electric-grid')!
+    const data = electricGridPackDataSchema.parse(object.packData)
+    const definition = compileGridDefinition(gridDefinitionSchema.parse({ id: object.id, model: data.model, operatingPoint: data.operatingPoint, automation: data.automation }))
+    const at = '2026-01-01T10:00:00.000Z' as IsoTimestamp
+    const setup = () => {
+      const grid = createGridRuntimeInstance({ definition, at, connections: scenario.connections.filter(connection => connection.type === 'electrical') })
+      // A controlled, non-saturated operating point isolates the coupling. The
+      // authored four-full-power-unit scenario is deliberately left unchanged.
+      for (const point of grid.externalConnections.values()) { point.connected = true; point.systemActivePowerMw = 200 }
+      balanceInitialGridDispatch(grid)
+      advanceGrid(grid, 0, at)
+      return grid
+    }
+    const control = setup(), tripped = setup()
+    const lost = [...tripped.externalConnections.values()][0]!
+    lost.systemActivePowerMw = 0
+    const islandId = tripped.busStates.get(lost.busId)!.islandId
+    for (let second = 1; second <= 10; second += 1) {
+      const time = new Date(Date.parse(at) + second * 1_000).toISOString() as IsoTimestamp
+      advanceGrid(control, 1, time)
+      advanceGrid(tripped, 1, time)
+    }
+    expect(tripped.busStates.get(lost.busId)!.frequencyHz).toBeLessThan(control.busStates.get(lost.busId)!.frequencyHz - 0.01)
+    expect(tripped.projection.totalGenerationMw).toBeLessThan(control.projection.totalGenerationMw)
+    for (const [id, state] of tripped.busStates) {
+      if (state.islandId !== islandId) expect(state.frequencyHz).toBe(control.busStates.get(id)!.frequencyHz)
+    }
   })
 
   test('keeps steady-topology Grid ticks within the lightweight runtime budget', () => {

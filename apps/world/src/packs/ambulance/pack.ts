@@ -17,7 +17,7 @@ import {
   type IncidentPackData,
   type InjurySummary
 } from './model.ts'
-import { ambulanceRecordingProfiles } from './recording.ts'
+import { ambulanceRecordingProfiles, observationsFor } from './recording.ts'
 import { ambulancePackConfigSchema,roadWeatherFields } from './road-weather.ts'
 import { ambulanceScenarioSupport } from './scenario.ts'
 import { ambulanceSimRuntimeId } from './sim/constants.ts'
@@ -321,7 +321,7 @@ export const ambulancePack: WorldPack = {
     ],
     defaultRuntimeId: ambulanceSimRuntimeId,
   },
-  recording: { profiles: ambulanceRecordingProfiles },
+  recording: { profiles: ambulanceRecordingProfiles, estimateSeries: objects => objects.reduce((sum, object) => sum + observationsFor(object).length, 0) },
   scenario: ambulanceScenarioSupport,
   presentation: {
     categories: [
