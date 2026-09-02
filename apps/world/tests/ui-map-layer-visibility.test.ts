@@ -21,14 +21,17 @@ const emptySnapshot = (): OperationalRenderSnapshot => ({
     },
     {
       id: 'weather:a',
-      kind: 'weather-line',
-      path: [[10, 59], [11, 60]],
+      kind: 'object-line',
+      path: [
+        [10, 59],
+        [11, 60],
+      ],
       color: [1, 2, 3, 255],
       casingColor: [255, 255, 255, 255],
       widthPx: 3,
       selected: false,
       priority: 1,
-      signature: 'weather-line',
+      signature: 'object-line',
     },
   ],
   areas: [],
@@ -47,7 +50,7 @@ describe('operational deck layer visibility', () => {
   test('filters paths by scenario layer families before they reach deck', () => {
     const layers = createOperationalDeckLayers({
       snapshot: emptySnapshot(),
-      visibleFamilies: new Set(['objects', 'routes']),
+      visibleFamilies: new Set(['routes']),
       onObjectSelected: () => undefined,
       onObjectSeen: () => undefined,
       onObjectHover: () => undefined,
@@ -68,6 +71,7 @@ describe('operational deck layer visibility', () => {
 
     expect(second.visiblePaths).toBe(first.visiblePaths)
     expect(second.visibleAreas).toBe(first.visibleAreas)
+    expect(second.visibleAreaSymbols).toBe(first.visibleAreaSymbols)
     expect(second.newInfoPoints).toBe(first.newInfoPoints)
     expect(second.placementPoints).toBe(first.placementPoints)
   })

@@ -1,442 +1,364 @@
 import type {
   CommandEnvelope,
   CommandResult,
-  SimulationRunEvent,
-  GeoJsonPoint,
   IsoTimestamp,
-  ObjectId,
   OperationalObject,
+  PackRuntimeRecordingBatch,
   SimulationClockState,
 } from '../../../core/model/index.ts'
-import { commandResultSchema, geoPointFromLonLat, nowIso } from '../../../core/model/index.ts'
+import { commandResultSchema, geoPointFromLonLat, nowIso, recordingSeriesIdFor } from '../../../core/model/index.ts'
+import { hexCellsForPolygon, hexResolution } from '../../../core/spatial/index.ts'
 import type {
   PackRuntimeAdapter,
   PackRuntimeConnection,
-  PackRuntimeConnectionConfig,
   PackRuntimeEvent,
   PackRuntimeEventHandler,
-  PackRuntimeQuery,
+  PackRuntimeHealth,
 } from '../../../simulation/protocol.ts'
 import { defineSimulationCommandCapability } from '../../../simulation/capabilities.ts'
 import {
-  createWeatherSparseField,
-  updateWeatherSparseField,
-  weatherSampleAtPointFromSparseField,
-  weatherGridForObjects,
-  type WeatherSparseField,
+  advanceWeather,
+  checkpointWeatherField,
+  createWeatherField,
+  interveneGround,
+  sampleWeather,
+  setWeatherObjects,
+  type WeatherField,
 } from '../cell-field.ts'
-import { createWeatherAreaCommandKind } from '../commands.ts'
-import { defaultAtmosphere, defaultSurface } from '../defaults.ts'
-import { weatherDataAtTime, weatherObjectCurrentCenter } from '../influence.ts'
-import {
-  createWeatherConditionPayloadSchema,
-  weatherAtmosphereSchema,
-  weatherPackDataSchema,
-  weatherPackId,
-  weatherInfluenceSchema,
-  weatherSurfaceSchema,
-  type CreateWeatherAreaPayload,
-  type WeatherPackData,
-  type WeatherSample,
-  type WeatherState,
-} from '../model.ts'
-import { createWeatherPackData } from '../scenario.ts'
+import { weatherCommandSchemas } from '../commands.ts'
+import { frameAt } from '../influence.ts'
+import { weatherItemSchema, weatherPackConfigSchema, weatherPackDataSchema } from '../model.ts'
+import { createWeatherObject } from '../scenario.ts'
 import { answerWeatherQuery, weatherQueryCapabilities } from '../query.ts'
-import { weatherSimAdapterId, weatherSimPackId, weatherSimRuntimeId } from './constants.ts'
+import { weatherQuantities, weatherRecordingProfiles } from '../quantities.ts'
+import { weatherSimRuntimeId } from './constants.ts'
 
-const updateIntervalMs = 5_000
-const minimumSurfaceDelta = 0.01
-
-const restoreWeatherObject = (object: OperationalObject): OperationalObject => {
-  const parsed = weatherPackDataSchema.safeParse(object.packData)
-  if (!parsed.success) throw new Error(`invalid restored weather object pack data for ${object.id}: ${parsed.error.message}`)
-  return { ...object, packData: parsed.data }
+const descriptions: Record<keyof typeof weatherCommandSchemas, [string, string]> = {
+  'world.weather.create': [
+    'Create weather area or probe',
+    'Uses the same complete item definition as scenario authoring. Area keyframes start at current simulation time; no ground state is reset.',
+  ],
+  'world.weather.update': [
+    'Update weather area or probe',
+    'Replace an item definition with revision checking. Identity and type are stable; keyframes retain their original start time.',
+  ],
+  'world.weather.set-enabled': [
+    'Enable or disable weather area',
+    'Toggle atmospheric forcing with revision checking. Existing ground conditions remain and continue evolving.',
+  ],
+  'world.weather.intervene-ground': [
+    'Set ground conditions in an area',
+    'One-shot explicit ground intervention at the configured H3 resolution. Excludes holes and rejects unresolvable or excessive coverage.',
+  ],
 }
-
-const nextNumberAfter = (objects: Iterable<OperationalObject>): number => {
-  let highest = 0
-  for (const object of objects) {
-    const match = object.id.match(/^weather:condition-(\d+)$/)
-    if (!match) continue
-    const value = Number(match[1])
-    if (Number.isInteger(value) && value > highest) highest = value
-  }
-  return highest + 1
-}
-
-const emit = (
-  handlers: ReadonlySet<PackRuntimeEventHandler>,
-  events: ReadonlyArray<PackRuntimeEvent>,
-  at: IsoTimestamp,
-): void => {
-  if (events.length === 0) return
-  for (const handler of handlers) {
-    handler({
-      type: 'event.emission',
-      runtimeId: weatherSimRuntimeId,
-      emittedAt: at,
-      events,
-    })
-  }
-}
-
-const spatialFor = (config: {
-  readonly point?: GeoJsonPoint
-  readonly at: IsoTimestamp
-}): OperationalObject['spatial'] => {
-  const point = config.point
-  return {
-    ...(point ? {
-      position: {
-        point,
-        observedAt: config.at,
-        staleAfterMs: 600000,
-      },
-    } : {}),
-    frame: { kind: 'wgs84' },
-  }
-}
-
-const operationalStatusFor = (): OperationalObject['operational'] => ({
-  status: 'active',
-  priority: 'low',
-  mode: 'simulated',
-})
-
-const createWeatherConditionObject = (config: {
-  readonly id: ObjectId
-  readonly label: string
-  readonly point?: GeoJsonPoint
-  readonly data: WeatherPackData
-  readonly at: IsoTimestamp
-  readonly causedByCommandId?: CommandEnvelope['id']
-}): OperationalObject => ({
-  id: config.id,
-  kind: 'zone',
-  packId: weatherSimPackId,
-  label: config.label,
-  lifecycle: 'active',
-  revision: 0,
-  spatial: spatialFor(config),
-  operational: operationalStatusFor(),
-  alerts: [],
-  provenance: {
-    source: config.causedByCommandId ? 'operator' : 'simulator',
-    adapterId: weatherSimAdapterId,
-    externalId: config.id,
-    ...(config.causedByCommandId ? { causedByCommandId: config.causedByCommandId } : {}),
-  },
-  timestamps: {
-    createdAt: config.at,
-    updatedAt: config.at,
-  },
-  packData: config.data,
-})
-
-const weatherProbeDataFromSample = (config: {
-  readonly sample: WeatherSample
-  readonly at: IsoTimestamp
-  readonly summary: string
-}): WeatherPackData => weatherPackDataSchema.parse({
-  type: 'weather_condition',
-  schemaVersion: 1,
-  conditionKind: 'point_observation',
-  state: config.sample.state,
-  quality: {
-    ...config.sample.quality,
-    provenance: config.sample.activeInfluenceIds.length > 0 ? 'inferred' : config.sample.quality.provenance,
-    validAt: config.at,
-  },
-  summary: config.summary,
-})
-
-const resampleWeatherProbe = (
-  object: OperationalObject,
-  field: WeatherSparseField,
-  at: IsoTimestamp,
-): OperationalObject | null => {
-  const previous = weatherPackDataSchema.parse(object.packData)
-  if (previous.conditionKind !== 'point_observation') return null
-  const point = object.spatial.position?.point
-  if (!point) throw new Error(`weather probe ${object.id} is missing a point`)
-  const sample = weatherSampleAtPointFromSparseField({ field, point, at })
-  const next = weatherProbeDataFromSample({
-    sample,
-    at,
-    summary: previous.summary,
-  })
-  if (!dataChangedMeaningfully(previous, next)) return null
-  return {
-    ...object,
-    revision: object.revision + 1,
-    operational: operationalStatusFor(),
-    timestamps: {
-      ...object.timestamps,
-      updatedAt: at,
-    },
-    packData: next,
-  }
-}
-
-const dataChangedMeaningfully = (previous: WeatherPackData, next: WeatherPackData): boolean => (
-  previous.state.atmosphere.precipitation.type !== next.state.atmosphere.precipitation.type ||
-  Math.abs(previous.state.atmosphere.precipitation.intensityMmPerHour - next.state.atmosphere.precipitation.intensityMmPerHour) >= 0.05 ||
-  Math.abs(previous.state.atmosphere.airTemperatureC - next.state.atmosphere.airTemperatureC) >= 0.1 ||
-  Math.abs(previous.state.surface.groundTemperatureC - next.state.surface.groundTemperatureC) >= 0.1 ||
-  Math.abs(previous.state.surface.wetness - next.state.surface.wetness) >= minimumSurfaceDelta ||
-  Math.abs(previous.state.surface.snow - next.state.surface.snow) >= minimumSurfaceDelta ||
-  Math.abs(previous.state.surface.ice - next.state.surface.ice) >= minimumSurfaceDelta ||
-  Math.abs(previous.state.surface.frost - next.state.surface.frost) >= minimumSurfaceDelta ||
-  JSON.stringify(previous.state.extensions) !== JSON.stringify(next.state.extensions)
-)
-
-const pointChangedMeaningfully = (previous: GeoJsonPoint | undefined, next: GeoJsonPoint | null): boolean => {
-  if (!previous && !next) return false
-  if (!previous || !next) return true
-  return (
-    Math.abs(previous.coordinates[0] - next.coordinates[0]) > 0.000001 ||
-    Math.abs(previous.coordinates[1] - next.coordinates[1]) > 0.000001
-  )
-}
-
-const createOperatorWeatherAreaData = (
-  payload: CreateWeatherAreaPayload,
-  at: IsoTimestamp,
-): WeatherPackData => {
-  if (!payload.center || payload.semiMajorAxisM === undefined || payload.semiMinorAxisM === undefined) {
-    throw new Error('weather area creation requires center, semiMajorAxisM, and semiMinorAxisM')
-  }
-  const atmosphere = weatherAtmosphereSchema.parse({
-    ...defaultAtmosphere(at),
-    ...payload.atmosphere,
-    precipitation: {
-      ...defaultAtmosphere(at).precipitation,
-      ...payload.atmosphere?.precipitation,
-    },
-  })
-  const surface = weatherSurfaceSchema.parse({
-    ...defaultSurface(),
-    ...payload.surface,
-  })
-  const state: WeatherState = { atmosphere, surface, extensions: payload.extensions ?? {} }
-  const influence = weatherInfluenceSchema.parse({
-    priority: 0,
-    keyframes: [{
-      atSeconds: 0,
-      center: payload.center,
-      semiMajorAxisM: payload.semiMajorAxisM,
-      semiMinorAxisM: payload.semiMinorAxisM,
-      rotationDeg: payload.rotationDeg,
-      state,
-      falloffCurve: payload.falloffCurve,
-    }],
-  })
-  const data = createWeatherPackData({
-    at,
-    summary: payload.summary,
-    state,
-    influence,
-  })
-  return {
-    ...data,
-    quality: {
-      ...data.quality,
-      provenance: 'intervention',
-    },
-  }
-}
-
 export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
   id: weatherSimRuntimeId,
   version: '1.0.0',
-  packId: weatherPackId,
+  packId: 'weather',
   clock: 'simulation',
   capabilities: [
-    defineSimulationCommandCapability({ id: createWeatherAreaCommandKind, title: 'Create weather condition', description: 'Creates a weather influence area or point observation with explicit geometry and conditions.', input: createWeatherConditionPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [], payload: createWeatherConditionPayloadSchema.parse(input) }) }),
+    ...Object.entries(weatherCommandSchemas).map(([id, input]) =>
+      defineSimulationCommandCapability({
+        id,
+        title: descriptions[id as keyof typeof weatherCommandSchemas][0],
+        description: descriptions[id as keyof typeof weatherCommandSchemas][1],
+        input,
+        output: commandResultSchema,
+        idempotent: false,
+        schedulable: true,
+        buildCommand: (raw) => {
+          const parsed = input.parse(raw)
+          const targets = 'objectId' in parsed ? [parsed.objectId] : 'item' in parsed ? [parsed.item.id] : []
+          return { targetObjectIds: targets, payload: parsed }
+        },
+      }),
+    ),
     ...weatherQueryCapabilities,
   ],
-  connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
+  connect: async (config) => {
+    const settings = weatherPackConfigSchema.parse(config.scenario.runtimeConfig)
     const objects = new Map<string, OperationalObject>()
-    const initialObjects = (config.initialObjects ?? config.scenario.initialObjects)
-      .filter(object => object.packId === weatherPackId)
-    for (const object of initialObjects) objects.set(object.id, restoreWeatherObject(object))
-    let nextConditionNumber = nextNumberAfter(objects.values())
+    for (const object of config.initialObjects ?? config.scenario.initialObjects) {
+      if (object.packId !== 'weather') continue
+      weatherPackDataSchema.parse(object.packData)
+      objects.set(object.id, object)
+    }
+    const restored = await config.runtimeStateStore?.load()
+    if (config.initialObjects && config.runtimeStateStore && !restored) {
+      throw new Error(
+        'Weather ground checkpoint is missing. Create a new run; existing ground history cannot be reconstructed.',
+      )
+    }
+    let field = createWeatherField(settings, config.scenario.world.startsAt, restored)
+    setWeatherObjects(field, [...objects.values()])
     const handlers = new Set<PackRuntimeEventHandler>()
-    const startedAt = config.scenario.world.startsAt
-    let clock: SimulationClockState = { currentTime: startedAt, updatedAt: startedAt, paused: false, speed: 1 }
-    let lastTickWallMs = Date.now()
-    let sparseField: WeatherSparseField = createWeatherSparseField(weatherGridForObjects({
-      gridId: `${config.simulationRunId}:weather`,
-      objects: [...objects.values()],
-      fallbackPoint: objects.values().next().value?.spatial.position?.point ?? geoPointFromLonLat(0, 0),
-    }))
-    sparseField = updateWeatherSparseField({
-      field: sparseField,
-      objects: [...objects.values()],
-      at: clock.currentTime,
-      elapsedSeconds: 0,
-    }).field
-
-    const advance = (): void => {
-      const nowWallMs = Date.now()
-      const elapsedSeconds = clock.paused ? 0 : ((nowWallMs - lastTickWallMs) / 1000) * clock.speed
-      lastTickWallMs = nowWallMs
-      if (elapsedSeconds <= 0) return
-      const at = new Date(Date.parse(clock.currentTime) + elapsedSeconds * 1000).toISOString() as IsoTimestamp
-      clock = { ...clock, currentTime: at, updatedAt: nowIso() }
+    let clock: SimulationClockState = { currentTime: field.at, updatedAt: nowIso(), paused: false, speed: 1 }
+    let wallAnchor = Date.now()
+    let lastSaved = 0
+    let lastRecorded = -Infinity
+    const profile = config.recording
+      ? weatherRecordingProfiles.find((p) => p.id === config.recording!.profileId)
+      : undefined
+    if (
+      config.recording &&
+      (!profile || (config.recording.intervalMs ?? profile.defaultIntervalMs) < profile.minimumIntervalMs)
+    )
+      throw new Error('Invalid Weather recording selection')
+    let saving: Promise<void> = Promise.resolve()
+    let health: PackRuntimeHealth = {
+      runtimeId: weatherSimRuntimeId,
+      state: 'ready',
+      failureCount: 0,
+      lastSuccessfulInteractionAt: nowIso(),
+    }
+    const fail = (operation: string, error: unknown): void => {
+      health = {
+        ...health,
+        state: 'degraded',
+        failureCount: health.failureCount + 1,
+        lastFailure: { operation, at: nowIso(), message: error instanceof Error ? error.message : String(error) },
+      }
+    }
+    const save = async (): Promise<void> => {
+      if (!config.runtimeStateStore) return
+      const checkpoint = structuredClone(checkpointWeatherField(field))
+      saving = saving.catch(() => {}).then(() => config.runtimeStateStore!.save(checkpoint))
+      await saving
+      lastSaved = Date.now()
+    }
+    const recording = (): PackRuntimeRecordingBatch | undefined => {
+      if (!config.recording) return
+      const profile = weatherRecordingProfiles.find((p) => p.id === config.recording!.profileId)
+      if (!profile) throw new Error('Unknown Weather recording profile')
+      const interval = config.recording.intervalMs ?? profile.defaultIntervalMs
+      if (interval < profile.minimumIntervalMs) throw new Error('Weather recording interval is below minimum')
+      const time = Date.parse(field.at)
+      if (time - lastRecorded < interval) return
+      lastRecorded = time
+      const descriptors: PackRuntimeRecordingBatch['descriptors'] = []
+      const samples: PackRuntimeRecordingBatch['samples'] = []
+      for (const [signalId, value] of [
+        ['cell-count', field.cells.size],
+        ['influence-count', field.influences.length],
+      ] as const) {
+        const id = recordingSeriesIdFor(weatherSimRuntimeId, signalId)
+        descriptors.push({
+          id,
+          subjectId: weatherSimRuntimeId,
+          signalId,
+          title: signalId,
+          valueType: 'number',
+          unit: 'count',
+        })
+        samples.push({ seriesId: id, value, quality: 'good', observedAt: nowIso(), simulationTime: field.at })
+      }
+      for (const object of objects.values()) {
+        const data = weatherPackDataSchema.parse(object.packData)
+        if (data.definition.type !== 'weather_probe') continue
+        for (const quantity of weatherQuantities) {
+          const value = quantity.value(data.sample.state)
+          const id = recordingSeriesIdFor(object.id, quantity.id)
+          descriptors.push({
+            id,
+            subjectId: object.id,
+            signalId: quantity.id,
+            title: quantity.title,
+            unit: quantity.unit,
+            valueType: typeof value === 'number' ? 'number' : 'string',
+          })
+          samples.push({
+            seriesId: id,
+            value,
+            quality: 'good',
+            observedAt: nowIso(),
+            simulationTime: field.at,
+            elapsedMs: Math.max(0, time - Date.parse(field.epoch)),
+          })
+        }
+      }
+      return { descriptors, samples }
+    }
+    const project = (recordIds = new Set<string>(), emit = true): void => {
       const events: PackRuntimeEvent[] = []
       for (const object of objects.values()) {
-        const previous = weatherPackDataSchema.parse(object.packData)
-        if (previous.conditionKind === 'point_observation') continue
-        const next = weatherDataAtTime(previous, at)
-        const center = weatherObjectCurrentCenter(next, at)
-        if (!dataChangedMeaningfully(previous, next) && !pointChangedMeaningfully(object.spatial.position?.point, center)) continue
+        const data = weatherPackDataSchema.parse(object.packData)
+        const coordinates =
+          data.definition.type === 'weather_probe'
+            ? data.definition.point
+            : frameAt(
+                { objectId: object.id, label: object.label, area: data.definition, startsAt: data.startsAt },
+                field.at,
+              ).center
+        const point = geoPointFromLonLat(...coordinates)
+        const sample = sampleWeather(field, point)
+        if (JSON.stringify(data.sample) === JSON.stringify(sample) && !recordIds.has(object.id)) continue
         const updated: OperationalObject = {
           ...object,
           revision: object.revision + 1,
-          spatial: spatialFor({ ...(center ? { point: center } : {}), at }),
-          operational: operationalStatusFor(),
-          timestamps: {
-            ...object.timestamps,
-            updatedAt: at,
-          },
-          packData: next,
+          spatial: { ...object.spatial, position: { point, observedAt: field.at, staleAfterMs: 600000 } },
+          timestamps: { ...object.timestamps, updatedAt: field.at },
+          packData: { ...data, sample },
         }
-        objects.set(updated.id, updated)
+        objects.set(object.id, updated)
         events.push({
           type: 'object.upserted',
           object: updated,
-          at,
-          history: 'snapshot-only',
+          at: field.at,
           provenance: updated.provenance,
+          history: recordIds.has(object.id) ? 'record' : 'snapshot-only',
         })
       }
-      const weatherObjectsAfterZoneEvolution = [...objects.values()]
-      sparseField = updateWeatherSparseField({
-        field: sparseField,
-        objects: weatherObjectsAfterZoneEvolution,
-        at,
-        elapsedSeconds,
-      }).field
-      for (const object of weatherObjectsAfterZoneEvolution) {
-        const updated = resampleWeatherProbe(object, sparseField, at)
-        if (!updated) continue
-        objects.set(updated.id, updated)
-        events.push({
-          type: 'object.upserted',
-          object: updated,
-          at,
-          history: 'snapshot-only',
-          provenance: updated.provenance,
-        })
-      }
-      emit(handlers, events, at)
+      if (!emit) return
+      const batch = recording()
+      if (events.length || batch?.samples.length)
+        for (const handler of handlers)
+          handler({
+            type: 'event.emission',
+            runtimeId: weatherSimRuntimeId,
+            emittedAt: nowIso(),
+            events,
+            ...(batch ? { recording: batch } : {}),
+          })
     }
-
-    const interval = setInterval(advance, updateIntervalMs)
-
-    return {
+    project(new Set(), false)
+    // Save a fresh field before the run can become restorable.
+    if (!restored) await save()
+    const targetNow = (): IsoTimestamp =>
+      new Date(
+        Date.parse(clock.currentTime) + (clock.paused ? 0 : (Date.now() - wallAnchor) * clock.speed),
+      ).toISOString() as IsoTimestamp
+    const tick = (): void => {
+      if (clock.paused || health.state === 'degraded') return
+      try {
+        advanceWeather(field, targetNow())
+        project()
+        if (Date.now() - lastSaved >= 10_000) void save().catch((error) => fail('checkpoint', error))
+      } catch (error) {
+        fail('advance', error)
+      }
+    }
+    const interval = setInterval(tick, 1000)
+    let prepared: { time: string; revision: number; field: WeatherField } | undefined
+    const prepareClock = (next: SimulationClockState): WeatherField => {
+      if (prepared?.time === next.currentTime && prepared.revision === field.revision) return prepared.field
+      const staged = { ...field, cells: new Map(field.cells) }
+      advanceWeather(staged, next.currentTime)
+      prepared = { time: next.currentTime, revision: field.revision, field: staged }
+      return staged
+    }
+    const sendCommand = async (command: CommandEnvelope): Promise<CommandResult> => {
+      const at = nowIso()
+      try {
+        const schema = weatherCommandSchemas[command.kind as keyof typeof weatherCommandSchemas]
+        if (!schema) throw new Error('Unknown Weather command: ' + command.kind)
+        schema.parse(command.payload)
+        const candidates = new Map(objects)
+        const recordIds = new Set<string>()
+        if (command.kind === 'world.weather.intervene-ground') {
+          const payload = weatherCommandSchemas['world.weather.intervene-ground'].parse(command.payload)
+          const ids = hexCellsForPolygon(payload.area, hexResolution(settings.gridResolution))
+          if (!ids.length) throw new Error('Intervention has no resolved ground cell centers')
+          interveneGround(field, ids, payload.surface)
+        } else if (command.kind === 'world.weather.create') {
+          const item = weatherItemSchema.parse(command.payload)
+          if (objects.has(item.id)) throw new Error('Weather object already exists: ' + item.id)
+          candidates.set(item.id, createWeatherObject(item, field.at, settings))
+          recordIds.add(item.id)
+        } else {
+          const payload =
+            command.kind === 'world.weather.update'
+              ? weatherCommandSchemas['world.weather.update'].parse(command.payload)
+              : weatherCommandSchemas['world.weather.set-enabled'].parse(command.payload)
+          const id = 'item' in payload ? payload.item.id : payload.objectId
+          const object = objects.get(id)
+          if (!object) throw new Error('Weather object not found: ' + id)
+          if (object.revision !== payload.expectedRevision)
+            throw new Error('Weather revision conflict; inspect the object and retry')
+          const data = weatherPackDataSchema.parse(object.packData)
+          if (!('item' in payload) && data.definition.type !== 'weather_area')
+            throw new Error('Only weather areas can be enabled')
+          const definition = 'item' in payload ? payload.item : { ...data.definition, enabled: payload.enabled }
+          if (definition.type !== data.definition.type) throw new Error('Weather item type cannot be changed')
+          candidates.set(id, {
+            ...object,
+            label: definition.label,
+            packData: { ...data, definition: weatherItemSchema.parse(definition) },
+          })
+          recordIds.add(id)
+        }
+        setWeatherObjects(field, [...candidates.values()])
+        objects.clear()
+        for (const [id, object] of candidates) objects.set(id, object)
+        field.revision++
+        prepared = undefined
+        project(recordIds)
+        return { ok: true, commandId: command.id, acceptedAt: at }
+      } catch (error) {
+        return {
+          ok: false,
+          commandId: command.id,
+          rejectedAt: at,
+          reason: error instanceof Error ? error.message : String(error),
+        }
+      }
+    }
+    const connection: PackRuntimeConnection = {
       getSnapshot: async () => ({
         simulationRunId: config.simulationRunId,
         objects: [...objects.values()],
         capturedAt: nowIso(),
       }),
-      subscribe: (handler: PackRuntimeEventHandler): (() => void) => {
+      subscribe: (handler) => {
         handlers.add(handler)
         return () => {
           handlers.delete(handler)
         }
       },
-      sendCommand: async (command: CommandEnvelope): Promise<CommandResult> => {
-        const acceptedAt = nowIso()
-        if (command.kind !== createWeatherAreaCommandKind) {
-          return {
-            ok: false,
-            commandId: command.id,
-            rejectedAt: acceptedAt,
-            reason: `weather runtime does not accept command kind: ${command.kind}`,
-          }
+      sendCommand,
+      invokeQuery: async (request) => {
+        if (health.state === 'degraded' && request.capabilityId !== 'world.weather.field-stats' && request.capabilityId !== 'world.weather.describe') {
+          throw new Error('Weather runtime is degraded: ' + health.lastFailure?.message)
         }
-        const payload = createWeatherConditionPayloadSchema.safeParse(command.payload)
-        if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: payload.error.message }
-        const object = payload.data.objectType === 'weather_probe'
-          ? createWeatherConditionObject({
-              id: `weather:condition-${nextConditionNumber++}` as ObjectId,
-              label: payload.data.label,
-              point: payload.data.point,
-              data: weatherProbeDataFromSample({
-                sample: weatherSampleAtPointFromSparseField({ field: sparseField, point: payload.data.point, at: acceptedAt }),
-                at: acceptedAt,
-                summary: 'Weather probe sample',
-              }),
-              at: acceptedAt,
-              causedByCommandId: command.id,
-            })
-          : createWeatherConditionObject({
-              id: `weather:condition-${nextConditionNumber++}` as ObjectId,
-              label: payload.data.label,
-              ...(payload.data.center ? { point: payload.data.center } : {}),
-              data: createOperatorWeatherAreaData(payload.data, acceptedAt),
-              at: acceptedAt,
-              causedByCommandId: command.id,
-        })
-        objects.set(object.id, object)
-        sparseField = updateWeatherSparseField({
-          field: sparseField,
-          objects: [...objects.values()],
-          at: acceptedAt,
-          elapsedSeconds: 0,
-        }).field
-        emit(handlers, [{
-          type: 'object.upserted',
-          object,
-          at: acceptedAt,
-          history: 'record',
-          provenance: object.provenance,
-        }], acceptedAt)
-        return { ok: true, commandId: command.id, acceptedAt }
+        return answerWeatherQuery(field, request)
       },
-      invokeQuery: async (request: PackRuntimeQuery): Promise<unknown> =>
-        answerWeatherQuery({
-          request,
-          field: sparseField,
-          objects: [...objects.values()],
-          at: clock.currentTime,
-        }),
-      observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
+      observeCommittedEvents: async (events) => {
         let changed = false
         for (const event of events) {
-          if (event.type === 'object.upserted' && event.object.packId === weatherPackId) {
-            objects.set(event.object.id, restoreWeatherObject(event.object))
+          if (event.type === 'object.deleted') changed = objects.delete(event.objectId) || changed
+          if (event.type === 'object.upserted' && event.object.packId === 'weather') {
+            const previous = objects.get(event.object.id)
+            // Ignore echoes of our own projections and stale events.
+            if (previous && previous.revision >= event.object.revision) continue
+            weatherPackDataSchema.parse(event.object.packData)
+            objects.set(event.object.id, event.object)
             changed = true
-          }
-          if (event.type === 'object.deleted') {
-            changed = objects.delete(event.objectId) || changed
           }
         }
         if (changed) {
-          sparseField = updateWeatherSparseField({
-            field: sparseField,
-            objects: [...objects.values()],
-            at: clock.currentTime,
-            elapsedSeconds: 0,
-          }).field
+          setWeatherObjects(field, [...objects.values()])
+          field.revision++
+          prepared = undefined
+          project()
         }
       },
-      setClock: async (nextClock: SimulationClockState): Promise<void> => {
-        clock = nextClock
-        lastTickWallMs = Date.now()
-        sparseField = updateWeatherSparseField({
-          field: sparseField,
-          objects: [...objects.values()],
-          at: clock.currentTime,
-          elapsedSeconds: 0,
-        }).field
+      validateClock: async (next) => {
+        prepareClock(next)
       },
-      close: async (): Promise<void> => {
+      setClock: async (next) => {
+        field = prepareClock(next)
+        prepared = undefined
+        clock = next
+        wallAnchor = Date.now()
+        health = { ...health, state: 'ready', lastSuccessfulInteractionAt: nowIso() }
+        project()
+      },
+      health: () => [health],
+      close: async () => {
         clearInterval(interval)
         handlers.clear()
+        await save()
       },
     }
+    return connection
   },
 })

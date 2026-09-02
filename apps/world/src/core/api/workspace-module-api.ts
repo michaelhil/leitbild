@@ -1118,7 +1118,6 @@ const invokeCapability = async (
   }
   return json({
     result: outcome.result,
-    ...(outcome.kind === 'command' ? { replayed: outcome.replayed } : {}),
   })
 }
 

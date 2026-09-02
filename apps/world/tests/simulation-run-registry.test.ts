@@ -372,3 +372,16 @@ describe('Simulation Run registry', () => {
       .rejects.toThrow('event log simulation run mismatch')
   })
 })
+
+
+test('a rejected Weather rewind leaves the shared clock unchanged', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-weather-clock-'))
+  const registry = createRegistry(dataDir)
+  const runtime = await registry.create({ scenarioId: 'test-response' })
+  try {
+    await runtime.setClock({ paused: true })
+    const before = runtime.snapshot().clock
+    await expect(runtime.setClock({ currentTime: '2025-01-01T00:00:00.000Z' as import('../src/core/model/index.ts').IsoTimestamp })).rejects.toThrow('backward')
+    expect(runtime.snapshot().clock).toEqual(before)
+  } finally { await registry.close(runtime.id) }
+})

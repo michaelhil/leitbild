@@ -12,7 +12,7 @@ The earlier weather implementation used pack-local axial hex math for visual cel
 
 ## Decision
 
-Use H3 as Leitbild's V1 global hexagonal spatial field index, but hide the dependency behind `src/core/spatial/*`.
+Use H3 as Leitbild's global hexagonal spatial field index, but hide the dependency behind `src/core/spatial/*`.
 
 Rules:
 
@@ -20,17 +20,17 @@ Rules:
 - packs use core spatial functions such as `hexCellAtPoint`, `hexCellsForPolygon`, `hexCellBoundary`, and `hexParentCell`
 - UI does not import H3 or pack field internals
 - weather field computation remains inside the weather pack
-- MapLibre receives provider-projected pack map features, split into base grid, affected cells, and influence shapes
+- the generic map renderer receives provider-projected Pack map features with declared layer and style metadata
 
 The weather pack now uses an H3 sparse field for ground truth computation. Default global conditions are implicit. Materialized cells are those currently affected by weather influence objects, those still evolving after a prior influence, or stable non-default cells that should remain queryable.
 
-The UI receives weather as projected map features, not as a weather field store. The generic UI asks the active pack for map feature query requests, then calls the generic Simulation Run pack query API. The weather provider answers `weather.mapFeatures` from its sparse H3 field. Weather map projection is split into:
+The UI receives weather as projected map features, not as a weather field store. The generic UI asks the active Pack for map feature query requests, then invokes the Simulation Run Capability. The Weather provider answers `world.weather.map-features` from its authoritative sampler. Weather map projection is split into:
 
 - base H3 grid outlines for the current viewport and zoom
-- affected H3 cells derived from active weather influence objects
+- affected H3 cells, including persistent ground conditions after an influence is removed
 - weather influence shapes derived from keyframed ovals
 
-Those feature families are rendered with generic MapLibre sources and layers. The generic map must not import weather sparse-field code, weather condition calculators, or H3 directly.
+Those feature families use the generic map feature renderer. The generic map must not import weather sparse-field code, weather condition calculators, or H3 directly. [ADR 0029](0029-authoritative-weather-and-read-only-pack-dependencies.md) defines authoritative sampling, bounded coverage and persistent ground mechanics.
 
 ## Consequences
 

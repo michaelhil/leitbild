@@ -41,7 +41,7 @@
     readonly categoryMapVisibility?: Readonly<Record<string, boolean>>
     readonly deferObjectRows?: boolean
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
-    readonly detailPresentationFor?: (object: OperationalObject) => PackObjectPresentation
+    readonly detailPresentationFor?: (object: OperationalObject) => PackObjectPresentation | Promise<PackObjectPresentation>
     readonly hasNewInfo: (object: OperationalObject) => boolean
     readonly markSeen: (object: OperationalObject) => void
     readonly selectObject: (object: OperationalObject) => void

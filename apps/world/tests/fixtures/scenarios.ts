@@ -139,27 +139,22 @@ const fixtures = [
       {
         "id": "weather",
         "config": {
-          "fields": {
-            "extensions": {
-              "research.operatorWeatherLoad": {
-                "type": "number",
-                "unit": "0..1",
-                "default": 0,
-                "min": 0,
-                "max": 1
-              }
-            }
-          }
+          "gridResolution": 8
         },
         "items": [
           {
-            "type": "weather_condition",
+            "type": "weather_area",
             "id": "weather:oslo-damp-background",
             "label": "Damp Oslo background",
-            "truthResolution": 8,
-            "showAffectedCells": false,
+            "center": [
+              10.7522,
+              59.925
+            ],
+            "semiMajorAxisM": 9000,
+            "semiMinorAxisM": 6500,
+            "rotationDeg": 15,
             "priority": 0,
-            "summary": "Mild damp overcast background conditions across central Oslo",
+            "falloff": "linear",
             "atmosphere": {
               "airTemperatureC": 6,
               "humidity": 0.78,
@@ -172,51 +167,21 @@ const fixtures = [
                 "intensityMmPerHour": 0
               }
             },
-            "surface": {
-              "groundTemperatureC": 5.8,
-              "wetness": 0.18,
-              "standingWater": 0.02,
-              "snow": 0,
-              "ice": 0,
-              "frost": 0
-            },
-            "keyframes": [
-              {
-                "atSeconds": 0,
-                "center": [
-                  10.7522,
-                  59.925
-                ],
-                "semiMajorAxisM": 9000,
-                "semiMinorAxisM": 6500,
-                "rotationDeg": 15,
-                "falloffCurve": [
-                  {
-                    "x": 0,
-                    "y": 1
-                  },
-                  {
-                    "x": 0.85,
-                    "y": 1
-                  },
-                  {
-                    "x": 1,
-                    "y": 0.35
-                  }
-                ]
-              }
-            ]
+            "keyframes": []
           },
           {
-            "type": "weather_condition",
+            "type": "weather_area",
             "id": "weather:oslo-moving-rain-band",
             "label": "Moving rain band",
-            "truthResolution": 8,
+            "center": [
+              10.69,
+              59.925
+            ],
+            "semiMajorAxisM": 5200,
+            "semiMinorAxisM": 1200,
+            "rotationDeg": 68,
             "priority": 10,
-            "summary": "A narrow rain band moves east across Oslo and briefly lowers road friction",
-            "extensions": {
-              "research.operatorWeatherLoad": 0.35
-            },
+            "falloff": "linear",
             "atmosphere": {
               "airTemperatureC": 5.5,
               "humidity": 0.9,
@@ -229,39 +194,7 @@ const fixtures = [
                 "intensityMmPerHour": 1.8
               }
             },
-            "surface": {
-              "groundTemperatureC": 5,
-              "wetness": 0.5,
-              "standingWater": 0.08,
-              "snow": 0,
-              "ice": 0,
-              "frost": 0
-            },
             "keyframes": [
-              {
-                "atSeconds": 0,
-                "center": [
-                  10.69,
-                  59.925
-                ],
-                "semiMajorAxisM": 5200,
-                "semiMinorAxisM": 1200,
-                "rotationDeg": 68,
-                "falloffCurve": [
-                  {
-                    "x": 0,
-                    "y": 1
-                  },
-                  {
-                    "x": 0.65,
-                    "y": 0.85
-                  },
-                  {
-                    "x": 1,
-                    "y": 0
-                  }
-                ]
-              },
               {
                 "atSeconds": 420,
                 "center": [
@@ -277,28 +210,7 @@ const fixtures = [
                     "intensityMmPerHour": 2.3
                   },
                   "visibilityM": 5200
-                },
-                "surface": {
-                  "wetness": 0.62,
-                  "standingWater": 0.12
-                },
-                "extensions": {
-                  "research.operatorWeatherLoad": 0.65
-                },
-                "falloffCurve": [
-                  {
-                    "x": 0,
-                    "y": 1
-                  },
-                  {
-                    "x": 0.65,
-                    "y": 0.85
-                  },
-                  {
-                    "x": 1,
-                    "y": 0
-                  }
-                ]
+                }
               }
             ]
           }

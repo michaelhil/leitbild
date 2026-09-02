@@ -52,7 +52,7 @@ export interface OperationalPointFeature {
 
 export interface OperationalPathFeature {
   readonly id: string
-  readonly kind: 'route' | 'weather-line'
+  readonly kind: 'route' | 'object-line'
   readonly path: ReadonlyArray<Position2>
   readonly color: ColorRgba
   readonly casingColor: ColorRgba
@@ -64,7 +64,7 @@ export interface OperationalPathFeature {
 
 export interface OperationalAreaFeature {
   readonly id: string
-  readonly kind: 'weather-base' | 'weather-cell' | 'weather-influence'
+  readonly layerId: string
   readonly polygon: GeoJsonPolygon
   readonly color: ColorRgba
   readonly lineColor: ColorRgba
@@ -75,6 +75,7 @@ export interface OperationalAreaFeature {
 }
 
 export interface OperationalSymbolFeature {
+  readonly layerId: string
   readonly id: string
   readonly position: Position3
   readonly symbolId: string

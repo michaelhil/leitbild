@@ -27,6 +27,7 @@ export interface OperationalDeckLayerConfig {
 export interface OperationalDeckLayerData {
   readonly visiblePaths: ReadonlyArray<OperationalPathFeature>
   readonly visibleAreas: ReadonlyArray<OperationalAreaFeature>
+  readonly visibleAreaSymbols: ReadonlyArray<OperationalSymbolFeature>
   readonly newInfoPoints: ReadonlyArray<OperationalPointFeature>
   readonly placementPoints: ReadonlyArray<{ readonly id: string; readonly position: Position3 }>
 }
@@ -90,27 +91,15 @@ const deckPath = (
 ): number[] =>
   path.path as unknown as number[]
 
-const pathCasingWidth = (
-  path: OperationalPathFeature,
-): number =>
-  path.kind === 'weather-line' ? 0 : path.widthPx + 4
+const pathCasingWidth = (path: OperationalPathFeature): number => (path.kind === 'object-line' ? 0 : path.widthPx + 4)
 
-const pathFamilyIsVisible = (
-  path: OperationalPathFeature,
-  visibleFamilies: ReadonlySet<string>,
-): boolean => {
+const pathFamilyIsVisible = (path: OperationalPathFeature, visibleFamilies: ReadonlySet<string>): boolean => {
   if (path.kind === 'route') return visible(visibleFamilies, 'routes')
-  return visible(visibleFamilies, 'weather')
+  return visible(visibleFamilies, 'objects')
 }
 
-const areaFamilyIsVisible = (
-  area: OperationalAreaFeature,
-  visibleFamilies: ReadonlySet<string>,
-): boolean => {
-  if (area.kind === 'weather-base' || area.kind === 'weather-cell' || area.kind === 'weather-influence') {
-    return visible(visibleFamilies, 'weather')
-  }
-  return true
+const areaFamilyIsVisible = (area: OperationalAreaFeature, visibleFamilies: ReadonlySet<string>): boolean => {
+  return visible(visibleFamilies, area.layerId)
 }
 
 const emptyPaths: ReadonlyArray<OperationalPathFeature> = []
@@ -128,6 +117,9 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
   let pointsRevision = -1
   let newInfoPoints: ReadonlyArray<OperationalPointFeature> = emptyPoints
   let placementRevision = -1
+  let symbolsRevision = -1
+  let symbolsVisibleKey = ''
+  let visibleAreaSymbols: ReadonlyArray<OperationalSymbolFeature> = []
   let placementPoints: ReadonlyArray<{ readonly id: string; readonly position: Position3 }> = emptyPlacementPoints
 
   const reset = (): void => {
@@ -140,12 +132,20 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
     pointsRevision = -1
     newInfoPoints = emptyPoints
     placementRevision = -1
+    symbolsRevision = -1
+    symbolsVisibleKey = ''
+    visibleAreaSymbols = []
     placementPoints = emptyPlacementPoints
   }
 
   return {
     dataFor: (snapshot, visibleFamilies) => {
       const nextVisibleKey = visibleFamiliesKey(visibleFamilies)
+      if (symbolsRevision !== snapshot.revisions.areaSymbols || symbolsVisibleKey !== nextVisibleKey) {
+        symbolsRevision = snapshot.revisions.areaSymbols
+        symbolsVisibleKey = nextVisibleKey
+        visibleAreaSymbols = snapshot.areaSymbols.filter(symbol => visible(visibleFamilies, symbol.layerId))
+      }
       if (pathsRevision !== snapshot.revisions.paths || pathsVisibleKey !== nextVisibleKey) {
         pathsRevision = snapshot.revisions.paths
         pathsVisibleKey = nextVisibleKey
@@ -166,7 +166,7 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
           ? emptyPlacementPoints
           : placementPointObjects(snapshot.placementPoints)
       }
-      return { visiblePaths, visibleAreas, newInfoPoints, placementPoints }
+      return { visiblePaths, visibleAreas, visibleAreaSymbols, newInfoPoints, placementPoints }
     },
     reset,
   }
@@ -183,9 +183,7 @@ export const createOperationalDeckLayerFactory = (): OperationalDeckLayerFactory
   }
 }
 
-export const createOperationalDeckLayers = (
-  config: OperationalDeckLayerConfig,
-): ReadonlyArray<Layer> => {
+export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig): ReadonlyArray<Layer> => {
   const snapshot = config.snapshot
   const visibleFamilies = config.visibleFamilies
   const layerData = config.layerData ?? createOperationalDeckLayerDataCache().dataFor(snapshot, visibleFamilies)
@@ -337,9 +335,8 @@ export const createOperationalDeckLayers = (
     }),
     new IconLayer<OperationalSymbolFeature>({
       id: 'leitbild-area-symbols',
-      data: snapshot.areaSymbols,
+      data: layerData.visibleAreaSymbols,
       pickable: false,
-      visible: visible(visibleFamilies, 'weather'),
       iconAtlas: atlasUrl,
       iconMapping,
       sizeUnits: 'pixels',

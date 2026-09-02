@@ -85,6 +85,8 @@ export interface PackRuntimeConnection {
   readonly observeCommittedEvents: (events: ReadonlyArray<SimulationRunEvent>) => Promise<void>
   readonly observeInitialSnapshot?: (objects: ReadonlyArray<OperationalObject>) => Promise<void>
   readonly setClock: (clock: SimulationClockState) => Promise<void>
+  /** Reject unsupported time changes before any runtime or the shared clock is mutated. */
+  readonly validateClock?: (clock: SimulationClockState) => Promise<void>
   readonly health?: () => ReadonlyArray<PackRuntimeHealth>
   readonly close: () => Promise<void>
 }
@@ -143,7 +145,13 @@ export interface PackScenarioRuntimeConfig {
   readonly runtimeConfig: unknown
 }
 
+export interface PackRuntimeQueries {
+  readonly has: (capabilityId: string) => boolean
+  readonly invoke: (query: PackRuntimeQuery) => Promise<unknown>
+}
 export interface PackRuntimeConnectionConfig {
+  /** Read-only, schema-validated access to active providers within this run. */
+  readonly queries?: PackRuntimeQueries
   readonly simulationRunId: SimulationRunId
   readonly scenario: PackScenarioRuntimeConfig
   /** Restored Pack objects when resuming a run. Fresh runs use the compiled

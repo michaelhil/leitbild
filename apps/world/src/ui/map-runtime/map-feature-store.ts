@@ -176,9 +176,8 @@ const lineObjectPathFor = (
   presentation: PackObjectPresentation,
 ): OperationalPathFeature | null => {
   if (object.spatial.geometry?.type !== 'LineString') return null
-  const category = presentation.categoryId
-  if (category !== 'weather') return null
-  const kind = 'weather-line'
+  if (!presentation.mapLineVisible) return null
+  const kind = 'object-line'
   const path = lineStringPositions(object.spatial.geometry)
   const tone = presentationTone(presentation)
   const widthPx = 2.5
@@ -195,51 +194,20 @@ const lineObjectPathFor = (
   }
 }
 
-const areaKindFor = (feature: PackMapAreaFeature): OperationalAreaFeature['kind'] => {
-  if (feature.id.startsWith('weather-grid:')) return 'weather-base'
-  if (feature.id.startsWith('weather-cell:')) return 'weather-cell'
-  return 'weather-influence'
-}
-
-const packAreaGeometrySignature = (
-  feature: PackMapAreaFeature,
-  kind: OperationalAreaFeature['kind'],
-): string =>
-  kind === 'weather-cell' || kind === 'weather-base'
-    ? feature.id
-    : polygonSignature(feature.geometry)
-
-const baseGridPathFor = (feature: PackMapAreaFeature): OperationalPathFeature | null => {
-  if (!feature.id.startsWith('weather-grid:')) return null
-  const ring = feature.geometry.coordinates[0] ?? []
-  return {
-    id: `weather-grid:${feature.id}`,
-    kind: 'weather-line',
-    path: ring.map(coordinate => [coordinate[0], coordinate[1]] as const),
-    color: colorWithAlpha(hexToRgba(feature.lineColor ?? feature.color), (feature.lineOpacity ?? 0.055) * 255),
-    casingColor: colorWithAlpha(hexToRgba(feature.lineColor ?? feature.color), 0),
-    widthPx: feature.lineWidth ?? 0.35,
-    selected: false,
-    priority: 5,
-    signature: `weather-grid:${feature.id}:${feature.lineColor ?? feature.color}:${feature.lineOpacity ?? 0.055}:${feature.lineWidth ?? 0.35}`,
-  }
-}
-
-const areaFor = (feature: PackMapAreaFeature): OperationalAreaFeature | null => {
-  const kind = areaKindFor(feature)
-  if (kind === 'weather-base') return null
-  const opacity = feature.opacity ?? (kind === 'weather-cell' ? 0.12 : 0.10)
+const areaFor = (feature: PackMapAreaFeature): OperationalAreaFeature => {
+  const opacity = feature.opacity ?? 0.10
   const lineColor = feature.lineColor ?? feature.color
+  const layerId = feature.layerId ?? 'objects'
   return {
     id: `area:${feature.id}`,
-    kind,
+    layerId,
     polygon: feature.geometry,
     color: colorWithAlpha(hexToRgba(feature.color), opacity * 255),
     lineColor: colorWithAlpha(hexToRgba(lineColor), (feature.lineOpacity ?? 0.16) * 255),
     opacity,
     lineWidthPx: feature.lineWidth ?? 0.6,
     sortKey: feature.sortKey ?? 0,
-    signature: `area:${feature.id}:${kind}:${feature.color}:${opacity}:${packAreaGeometrySignature(feature, kind)}`,
+    signature: `area:${feature.id}:${layerId}:${feature.color}:${opacity}:${lineColor}:${feature.lineOpacity}:${feature.lineWidth}:${feature.sortKey}:${polygonSignature(feature.geometry)}`,
   }
 }
 
@@ -252,13 +220,14 @@ const areaSymbolFor = (feature: PackMapAreaFeature): OperationalSymbolFeature | 
   const sizePx = (feature.symbol.size ?? 0.82) * symbolSizePx(symbolId)
   return {
     id: `area-symbol:${feature.id}`,
+    layerId: feature.layerId ?? 'objects',
     position,
     symbolId,
     color: colorWithAlpha(toneColor(tone), opacity * 255),
     opacity,
     sizePx,
     summary: feature.summary,
-    signature: `area-symbol:${feature.id}:${positionSignature(position)}:${symbolId}:${tone}:${opacity}:${sizePx}`,
+    signature: `area-symbol:${feature.id}:${feature.layerId ?? 'objects'}:${positionSignature(position)}:${symbolId}:${tone}:${opacity}:${sizePx}`,
   }
 }
 
@@ -302,21 +271,8 @@ const projectObjects = (
   }
 }
 
-const projectPackAreaPaths = (
-  features: ReadonlyArray<PackMapAreaFeature>,
-): ReadonlyArray<OperationalPathFeature> =>
-  features.flatMap(feature => {
-    const path = baseGridPathFor(feature)
-    return path ? [path] : []
-  })
-
-const projectPackAreas = (
-  features: ReadonlyArray<PackMapAreaFeature>,
-): ReadonlyArray<OperationalAreaFeature> =>
-  features.flatMap(feature => {
-    const area = areaFor(feature)
-    return area ? [area] : []
-  })
+const projectPackAreas = (features: ReadonlyArray<PackMapAreaFeature>): ReadonlyArray<OperationalAreaFeature> =>
+  features.map(areaFor)
 
 const projectPackAreaSymbols = (
   features: ReadonlyArray<PackMapAreaFeature>,
@@ -336,7 +292,9 @@ const sortAreas = (
 ): ReadonlyArray<OperationalAreaFeature> =>
   [...areas].sort((left, right) => left.sortKey - right.sortKey || left.id.localeCompare(right.id))
 
-const projectFeatures = (input: OperationalRenderInput): {
+const projectFeatures = (
+  input: OperationalRenderInput,
+): {
   readonly points: ReadonlyArray<OperationalPointFeature>
   readonly paths: ReadonlyArray<OperationalPathFeature>
   readonly areas: ReadonlyArray<OperationalAreaFeature>
@@ -344,12 +302,11 @@ const projectFeatures = (input: OperationalRenderInput): {
   readonly placementPoints: ReadonlyArray<Position3>
 } => {
   const objectFeatures = projectObjects(input, projectionContextFor(input))
-  const packAreaPaths = projectPackAreaPaths(input.packAreaFeatures)
   const areaFeatures = projectPackAreas(input.packAreaFeatures)
   const areaSymbols = projectPackAreaSymbols(input.packAreaFeatures)
   return {
     points: objectFeatures.points,
-    paths: sortPaths([...objectFeatures.objectPaths, ...packAreaPaths]),
+    paths: sortPaths(objectFeatures.objectPaths),
     areas: sortAreas(areaFeatures),
     areaSymbols,
     placementPoints: input.placementPoints.map(placementPosition),
@@ -412,10 +369,7 @@ export const createMapFeatureStore = (): MapFeatureStore => {
         syncFamily(points, objectFeatures.points)
       }
       if (shouldUpdatePaths && objectFeatures) {
-        syncFamily(paths, sortPaths([
-          ...objectFeatures.objectPaths,
-          ...projectPackAreaPaths(input.packAreaFeatures),
-        ]))
+        syncFamily(paths, sortPaths(objectFeatures.objectPaths))
       }
       if (shouldUpdateAreas && objectFeatures) {
         syncFamily(areas, sortAreas(projectPackAreas(input.packAreaFeatures)))

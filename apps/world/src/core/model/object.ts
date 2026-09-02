@@ -7,7 +7,7 @@ import { telemetryStateSchema, type TelemetryState } from './telemetry.ts'
 import { alertStateSchema, type AlertState } from './alerts.ts'
 import { objectContextSchema, type ObjectContext } from './context.ts'
 
-export const objectKindSchema = z.enum(['mobile_entity', 'incident', 'facility', 'zone', 'patient'])
+export const objectKindSchema = z.enum(['mobile_entity', 'incident', 'facility', 'zone', 'patient', 'observation'])
 export type ObjectKind = z.infer<typeof objectKindSchema>
 
 export const objectLifecycleSchema = z.enum(['active', 'inactive', 'resolved', 'removed'])
@@ -38,7 +38,7 @@ export interface RouteProgress {
 }
 
 export interface RouteImpact {
-  readonly sourceObjectId: ObjectId
+  readonly source: { readonly kind: 'object' | 'runtime'; readonly id: string }
   readonly label: string
   readonly severity: 'low' | 'moderate' | 'high' | 'blocked'
   readonly speedFactor?: number
@@ -130,14 +130,18 @@ export const routeGeometrySchema = z.object({
     advancedDistanceM: metersSchema.optional(),
     updatedAt: isoTimestampSchema,
   }).optional(),
-  impacts: z.array(z.object({
-    sourceObjectId: objectIdSchema,
-    label: z.string().min(1),
-    severity: z.enum(['low', 'moderate', 'high', 'blocked']),
-    speedFactor: z.number().finite().positive().optional(),
-    delaySeconds: z.number().finite().nonnegative().optional(),
-    updatedAt: isoTimestampSchema,
-  })).optional(),
+  impacts: z
+    .array(
+      z.object({
+        source: z.object({ kind: z.enum(['object', 'runtime']), id: z.string().min(1) }).strict(),
+        label: z.string().min(1),
+        severity: z.enum(['low', 'moderate', 'high', 'blocked']),
+        speedFactor: z.number().finite().min(0).max(1).optional(),
+        delaySeconds: z.number().finite().nonnegative().optional(),
+        updatedAt: isoTimestampSchema,
+      }),
+    )
+    .optional(),
   source: z.enum(['simulator', 'operator', 'ai', 'import']),
 })
 

@@ -47,6 +47,13 @@ const authoringItemTypeSchema = z.object({
     defaults: z.record(z.string(), z.unknown()),
   }).strict().optional(),
   fields: z.array(authoringFieldSchema),
+  collections: z.array(z.object({
+    path: pathSchema,
+    label: z.string().min(1),
+    defaultItem: z.record(z.string(), z.unknown()),
+    fields: z.array(authoringFieldSchema),
+    maxItems: z.number().int().min(1).max(256),
+  }).strict()).default([]),
 }).strict()
 
 const scenarioAuthoringPackSchema = z.object({
@@ -69,6 +76,8 @@ const scenarioAuthoringPackSchema = z.object({
     minimumIntervalMs: z.number().int().positive(),
   }).strict()),
   configSchema: z.record(z.string(), z.unknown()),
+  configDefaults: z.record(z.string(), z.unknown()),
+  configFields: z.array(authoringFieldSchema),
   itemTypes: z.array(authoringItemTypeSchema),
 }).strict()
 
@@ -105,7 +114,11 @@ const setValueAt = (root: Record<string, unknown>, path: ReadonlyArray<string | 
 }
 
 const validateAuthoring = (pack: WorldPack): void => {
-  pack.scenarioConfigSchema.parse({})
+  const configDefaults = pack.scenarioConfigSchema.parse({}) as Record<string, unknown>
+  for (const field of pack.authoring?.configFields ?? []) {
+    if (field.target !== 'item') throw new Error('Pack config fields cannot target linked item configuration')
+    if (valueAt(configDefaults, field.path) !== field.control.defaultValue) throw new Error(`Pack config field ${pack.descriptor.id}.${field.label} default does not match configuration`)
+  }
   const itemTypeIds = new Set<string>()
   for (const itemType of pack.authoring?.itemTypes ?? []) {
     if (itemTypeIds.has(itemType.id)) throw new Error(`duplicate authoring item type ${itemType.id} in Pack ${pack.descriptor.id}`)
@@ -132,6 +145,15 @@ const validateAuthoring = (pack: WorldPack): void => {
       setValueAt(candidate, itemType.linkedConfig.itemReferencePath, `${itemType.linkedConfig.idPrefix}-authoring-check`)
     }
     pack.scenario.itemSchemas[itemType.id]!.parse(candidate)
+    for (const collection of itemType.collections ?? []) {
+      if (!Array.isArray(valueAt(itemType.defaultItem, collection.path))) throw new Error('Authoring collection must refer to an array')
+      const withRow = structuredClone(candidate)
+      setValueAt(withRow, collection.path, [structuredClone(collection.defaultItem)])
+      pack.scenario.itemSchemas[itemType.id]!.parse(withRow)
+      for (const field of collection.fields) {
+        if (field.target !== 'item' || valueAt(collection.defaultItem, field.path) !== field.control.defaultValue) throw new Error(`Collection field ${field.label} has inconsistent defaults`)
+      }
+    }
     for (const field of itemType.fields) {
       const defaults = field.target === 'item' ? itemType.defaultItem : itemType.linkedConfig?.defaults
       if (!defaults) throw new Error(`authoring field ${itemType.id}.${field.label} targets missing linked config`)
@@ -171,6 +193,8 @@ export const scenarioAuthoringCatalogFor = (packs: ReadonlyArray<WorldPack>): Sc
     ...(pack.runtime?.defaultRuntimeId === undefined ? {} : { defaultRuntimeId: pack.runtime.defaultRuntimeId }),
     recordingProfiles: pack.recording?.profiles ?? [],
     configSchema: z.toJSONSchema(pack.scenarioConfigSchema, { unrepresentable: 'any' }),
+    configDefaults: pack.scenarioConfigSchema.parse({}),
+    configFields: pack.authoring?.configFields ?? [],
     itemTypes: (pack.authoring?.itemTypes ?? []).map(itemType => ({
       ...itemType,
       itemSchema: z.toJSONSchema(pack.scenario!.itemSchemas[itemType.id]!, { unrepresentable: 'any' }),

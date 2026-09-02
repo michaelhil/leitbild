@@ -386,6 +386,8 @@ export const compileScenarioSource = async (
       }
     }
   }
+  for (const pack of activePacks)
+    pack.scenario?.validateInitialObjects?.(initialObjects, packConfigs[pack.descriptor.id], startsAt)
   // Connections describe the initial physical topology. Timeline expansion may
   // create or delete later objects, but it must not rewrite that topology.
   const connections = compileElectricalConnections(source.connections, objectMap)

@@ -78,6 +78,8 @@ export const createActivePackViews = (packs: ReadonlyArray<WorldPackView>): Acti
     packIds: packs.map(pack => pack.descriptor.id),
     presentation: {
       categories,
+      contextualFieldQueries: (object) =>
+        packs.flatMap((pack) => pack.presentation.contextualFieldQueries?.(object) ?? []),
       presentObject: (object, context) => {
         const owner = ownerForObject(object)
         const presentation = owner.presentation.presentObject(object, context)

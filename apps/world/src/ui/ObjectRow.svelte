@@ -20,7 +20,7 @@
     readonly markSeen: (object: OperationalObject) => void
     readonly selectObject: (object: OperationalObject) => void
     readonly deleteObject: (object: OperationalObject) => Promise<void>
-    readonly detailPresentationFor?: (object: OperationalObject) => PackObjectPresentation
+    readonly detailPresentationFor?: (object: OperationalObject) => PackObjectPresentation | Promise<PackObjectPresentation>
     readonly openProcessDisplay?: (object: OperationalObject) => void
     readonly openProcedureSystem?: (object: OperationalObject) => void
     readonly openProcedureSystemAt?: (object: OperationalObject, summary?: ProcedureRunSummary) => void
@@ -74,10 +74,21 @@
       : presentation,
   )
 
-  const loadDetailPresentation = (): void => {
-    if (detailPresentationKey === currentPresentationKey && detailPresentation !== null) return
-    detailPresentation = detailPresentationFor?.(object) ?? presentation
-    detailPresentationKey = currentPresentationKey
+  let loadingDetailKey: string | null = null
+  const loadDetailPresentation = async (): Promise<void> => {
+    const key = currentPresentationKey
+    if ((detailPresentationKey === key && detailPresentation !== null) || loadingDetailKey === key) return
+    loadingDetailKey = key
+    try {
+      const next = await (detailPresentationFor?.(object) ?? presentation)
+      if (key !== currentPresentationKey) return
+      detailPresentation = next
+      detailPresentationKey = key
+    } catch (error) {
+      if (key !== currentPresentationKey) return
+      detailPresentation = { ...presentation, fields: [...presentation.fields, { key: 'context-error', label: 'Context unavailable', value: error instanceof Error ? error.message : String(error) }] }
+      detailPresentationKey = key
+    } finally { if (loadingDetailKey === key) loadingDetailKey = null }
   }
 
   const showNewInfoTooltip = (): void => {

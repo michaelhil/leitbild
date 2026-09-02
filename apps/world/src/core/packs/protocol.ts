@@ -44,6 +44,7 @@ export interface PackObjectPresentation {
   readonly status?: PackObjectStatusPresentation
   readonly muted?: boolean
   readonly mapIconVisible?: boolean
+  readonly mapLineVisible?: boolean
   readonly mapIconSizePx?: number
   readonly noteworthyUpdates?: boolean
 }
@@ -143,6 +144,7 @@ export interface PackMapRenderContext {
 }
 
 export interface PackMapAreaFeature {
+  readonly layerId?: string
   readonly id: string
   readonly categoryId: string
   readonly geometry: GeoJsonPolygon
@@ -174,12 +176,14 @@ export interface PackMapAreaFeatureSymbol {
   readonly size?: number
 }
 
-export const packMapAreaFeatureSchema = z.object({
-  id: z.string().min(1),
-  categoryId: z.string().min(1),
-  geometry: geoJsonPolygonSchema,
-  anchorPoint: geoJsonPointSchema.optional(),
-  animation: z.object({
+export const packMapAreaFeatureSchema = z
+  .object({
+    layerId: z.string().min(1).optional(),
+    id: z.string().min(1),
+    categoryId: z.string().min(1),
+    geometry: geoJsonPolygonSchema,
+    anchorPoint: geoJsonPointSchema.optional(),
+    animation: z.object({
     fromGeometry: geoJsonPolygonSchema,
     toGeometry: geoJsonPolygonSchema,
     fromAnchorPoint: geoJsonPointSchema.optional(),
@@ -187,20 +191,21 @@ export const packMapAreaFeatureSchema = z.object({
     fromTime: isoTimestampSchema,
     toTime: isoTimestampSchema,
   }).strict().optional(),
-  symbol: z.object({
+    symbol: z.object({
     icon: z.string().min(1),
     tone: z.enum(['ready', 'working', 'error', 'idle']).optional(),
     opacity: z.number().finite().min(0).max(1).optional(),
     size: z.number().finite().positive().optional(),
   }).strict().optional(),
-  color: z.string().min(1),
-  summary: z.string(),
-  opacity: z.number().finite().min(0).max(1).optional(),
-  lineColor: z.string().min(1).optional(),
-  lineOpacity: z.number().finite().min(0).max(1).optional(),
-  lineWidth: z.number().finite().nonnegative().optional(),
-  sortKey: z.number().finite().optional(),
-}).strict()
+    color: z.string().min(1),
+    summary: z.string(),
+    opacity: z.number().finite().min(0).max(1).optional(),
+    lineColor: z.string().min(1).optional(),
+    lineOpacity: z.number().finite().min(0).max(1).optional(),
+    lineWidth: z.number().finite().nonnegative().optional(),
+    sortKey: z.number().finite().optional(),
+  })
+  .strict()
 
 export interface PackMapAreaFeatureQuery {
   readonly capabilityId: string
@@ -255,6 +260,14 @@ export interface PackScenarioAuthoringField {
   readonly control: PackScenarioAuthoringControl
 }
 
+/** One-level repeated records, not a recursive form language. */
+export interface PackScenarioAuthoringCollection {
+  readonly path: ReadonlyArray<string | number>
+  readonly label: string
+  readonly defaultItem: Readonly<Record<string, unknown>>
+  readonly fields: ReadonlyArray<PackScenarioAuthoringField>
+  readonly maxItems: number
+}
 export interface PackScenarioAuthoringItemType {
   readonly id: string
   readonly label: string
@@ -273,9 +286,11 @@ export interface PackScenarioAuthoringItemType {
     readonly defaults: Readonly<Record<string, unknown>>
   }
   readonly fields: ReadonlyArray<PackScenarioAuthoringField>
+  readonly collections?: ReadonlyArray<PackScenarioAuthoringCollection>
 }
 
 export interface PackScenarioAuthoringContribution {
+  readonly configFields?: ReadonlyArray<PackScenarioAuthoringField>
   readonly itemTypes: ReadonlyArray<PackScenarioAuthoringItemType>
 }
 
@@ -298,6 +313,11 @@ export interface PackScenarioMutationContext extends PackScenarioExpansionContex
 }
 
 export interface PackScenarioSupport {
+  readonly validateInitialObjects?: (
+    objects: ReadonlyArray<OperationalObject>,
+    config: unknown,
+    at: IsoTimestamp,
+  ) => void
   readonly itemSchemas: Readonly<Record<string, z.ZodType>>
   readonly mutationSchemas?: Readonly<Record<string, z.ZodType>>
   readonly expandItem: (
@@ -328,7 +348,11 @@ export interface PackReferenceDataContribution {
   readonly datasetIds: ReadonlyArray<DatasetId>
 }
 
+export interface PackContextualFieldQuery extends PackMapAreaFeatureQuery {
+  readonly toFields: (result: unknown) => ReadonlyArray<PackObjectField>
+}
 export interface PackPresentationContribution {
+  readonly contextualFieldQueries?: (object: OperationalObject) => ReadonlyArray<PackContextualFieldQuery>
   readonly categories: ReadonlyArray<PackObjectCategory>
   readonly presentObject: (
     object: OperationalObject,

@@ -75,24 +75,43 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
       assertUniqueRoutes(activeAdapters, adapter => capabilityIds(adapter.capabilities, 'command'), 'command')
       assertUniqueRoutes(activeAdapters, adapter => adapter.realtimeInputTypes ?? [], 'realtime input')
       assertUniqueRoutes(activeAdapters, adapter => capabilityIds(adapter.capabilities, 'query'), 'query')
-      const connectionResults = await Promise.allSettled(activeAdapters.map(async adapter => {
-        const initialObjects = restoredObjectsFor(adapter, config.initialObjects)
-        const scenario = scenarioFor(adapter, config.scenario)
-        return {
-          adapter,
-          connection: await adapter.connect({
-            simulationRunId: config.simulationRunId,
-            scenario,
-            ...(initialObjects === undefined ? {} : { initialObjects }),
-            ...(config.runtimeStateStores?.[adapter.id] === undefined
+      const readers = new Map<
+        string,
+        { connection: PackRuntimeConnection; capability: PackRuntimeAdapter['capabilities'][number] }
+      >()
+      const availableQueries = new Set(
+        activeAdapters.flatMap((adapter) => capabilityIds(adapter.capabilities, 'query')),
+      )
+      const queries = {
+        has: (id: string) => availableQueries.has(id),
+        invoke: async (query: PackRuntimeQuery): Promise<unknown> => {
+          const reader = readers.get(query.capabilityId)
+          if (!reader) throw new Error('Active query provider is not ready: ' + query.capabilityId)
+          const input = reader.capability.input.parse(query.input)
+          return reader.capability.output.parse(await reader.connection.invokeQuery({ ...query, input }))
+        },
+      }
+      const connectionResults = await Promise.allSettled(
+        activeAdapters.map(async (adapter) => {
+          const initialObjects = restoredObjectsFor(adapter, config.initialObjects)
+          const scenario = scenarioFor(adapter, config.scenario)
+          return {
+            adapter,
+            connection: await adapter.connect({
+              simulationRunId: config.simulationRunId,
+              queries,
+              scenario,
+              ...(initialObjects === undefined ? {} : { initialObjects }),
+              ...(config.runtimeStateStores?.[adapter.id] === undefined
               ? {}
               : { runtimeStateStore: config.runtimeStateStores[adapter.id] }),
-            ...(config.recordingByRuntimeId?.[adapter.id] === undefined
+              ...(config.recordingByRuntimeId?.[adapter.id] === undefined
               ? {}
               : { recording: config.recordingByRuntimeId[adapter.id] }),
-          }),
-        }
-      }))
+            }),
+          }
+        }),
+      )
       const failedConnection = connectionResults.find(result => result.status === 'rejected')
       if (failedConnection) {
         await Promise.allSettled(connectionResults.flatMap(result =>
@@ -103,6 +122,10 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         if (result.status === 'rejected') throw result.reason
         return result.value
       })
+      for (const target of connections)
+        for (const capability of target.adapter.capabilities) {
+          if (capability.kind === 'query') readers.set(capability.id, { connection: target.connection, capability })
+        }
       const healthByRuntime = new Map<string, PackRuntimeHealth>(connections.map(({ adapter }) => [adapter.id, {
         runtimeId: adapter.id,
         state: 'ready',
@@ -268,7 +291,11 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
             }
           })
         },
+        validateClock: async (clock): Promise<void> => {
+          await Promise.all(connections.map(({ connection }) => connection.validateClock?.(clock)))
+        },
         setClock: async (clock): Promise<void> => {
+          await Promise.all(connections.map(({ connection }) => connection.validateClock?.(clock)))
           const results = await Promise.allSettled(connections.map(({ connection }) => connection.setClock(clock)))
           results.forEach((result, index) => {
             if (result.status === 'rejected') markFailure(connections[index]!.adapter.id, 'set-clock', result.reason)
@@ -277,8 +304,16 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
           const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
           if (failures.length > 0) throw new AggregateError(failures.map(failure => failure.reason), 'one or more Pack Runtimes rejected the simulation clock')
         },
-        health: (): ReadonlyArray<PackRuntimeHealth> => [...healthByRuntime.values()]
-          .sort((left, right) => left.runtimeId.localeCompare(right.runtimeId)),
+        health: (): ReadonlyArray<PackRuntimeHealth> =>
+          [...healthByRuntime.values()]
+            .map((health) => {
+              const local = connections
+                .find((target) => target.adapter.id === health.runtimeId)
+                ?.connection.health?.()
+                .find((entry) => entry.runtimeId === health.runtimeId)
+              return local?.state === 'degraded' ? local : health
+            })
+            .sort((left, right) => left.runtimeId.localeCompare(right.runtimeId)),
         close: async (): Promise<void> => {
           for (const unsubscribe of unsubscribes) unsubscribe()
           handlers.clear()

@@ -1,478 +1,360 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, SimulationRunId, PackId, GeoJsonPolygon, IsoTimestamp } from '../src/core/model/index.ts'
-import { geoPointFromLonLat, nowIso } from '../src/core/model/index.ts'
-import { createWeatherAreaCommandKind } from '../src/packs/weather/commands.ts'
 import {
-  createWeatherSparseField,
-  updateWeatherSparseField,
-  weatherCellForPoint,
-  weatherSampleAtPointFromSparseField,
-  weatherSparseFieldStats,
-  type WeatherGridDefinition,
+  commandEnvelopeSchema,
+  geoPointFromLonLat,
+  geoJsonPolygonSchema,
+  nowIso,
+  type CommandEnvelope,
+  type IsoTimestamp,
+  type SimulationRunId,
+  type OperationalObject,
+} from '../src/core/model/index.ts'
+import {
+  advanceWeather,
+  checkpointWeatherField,
+  createWeatherField,
+  interveneGround,
+  sampleWeather,
+  setWeatherObjects,
 } from '../src/packs/weather/cell-field.ts'
-import { hexResolution } from '../src/core/spatial/index.ts'
-import { defaultAtmosphere, defaultSurface, evolveWeatherData, weatherSampleAtPoint } from '../src/packs/weather/conditions.ts'
-import { weatherPackDataSchema } from '../src/packs/weather/model.ts'
-import { weatherPack } from '../src/packs/weather/pack.ts'
+import {
+  weatherItemSchema,
+  weatherPackConfigSchema,
+  weatherPackDataSchema,
+  weatherSampleSchema,
+} from '../src/packs/weather/model.ts'
+import { createWeatherObject } from '../src/packs/weather/scenario.ts'
+import { frameAt } from '../src/packs/weather/influence.ts'
 import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
-import { weatherSimRuntimeId } from '../src/packs/weather/sim/constants.ts'
-import { responseScenario } from './fixtures/scenarios.ts'
-import type { PackMapAreaFeature } from '../src/core/packs/protocol.ts'
+import {
+  hexCellAtPoint,
+  hexCellBoundary,
+  hexCellCenter,
+  hexCellsForPolygon,
+  hexResolution,
+} from '../src/core/spatial/index.ts'
+import { answerWeatherQuery, weatherQueryCapabilities } from '../src/packs/weather/query.ts'
+import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
+import { weatherPack } from '../src/packs/weather/pack.ts'
 import { testRuntimeConnectionConfig } from './helpers.ts'
 
-const simulationRunId = 'run-weather-pack' as SimulationRunId
-const actorId = 'actor:test-operator' as ActorId
+const at = '2026-01-01T00:00:00.000Z' as IsoTimestamp
+const later = (seconds: number) => new Date(Date.parse(at) + seconds * 1000).toISOString() as IsoTimestamp
+const point = geoPointFromLonLat(10.7522, 59.9139)
+const settings = weatherPackConfigSchema.parse({})
+const area = (extra: Record<string, unknown> = {}) =>
+  weatherItemSchema.parse({
+    pack: 'weather',
+    type: 'weather_area',
+    id: 'weather:rain',
+    label: 'Rain',
+    center: point.coordinates,
+    semiMajorAxisM: 1500,
+    semiMinorAxisM: 1500,
+    falloff: 'uniform',
+    atmosphere: { precipitation: { type: 'rain', intensityMmPerHour: 30 } },
+    ...extra,
+  })
+const object = (extra: Record<string, unknown> = {}) => createWeatherObject(area(extra), at, settings)
+const fieldWith = (objects = [object()]) => {
+  const field = createWeatherField(settings, at)
+  setWeatherObjects(field, objects)
+  return field
+}
+const polygon = (west: number, south: number, east: number, north: number) =>
+  geoJsonPolygonSchema.parse({
+    type: 'Polygon',
+    coordinates: [
+      [
+        [west, south],
+        [east, south],
+        [east, north],
+        [west, north],
+        [west, south],
+      ],
+    ],
+  })
+const envelope = (kind: string, payload: unknown): CommandEnvelope =>
+  commandEnvelopeSchema.parse({
+    id: 'command:' + crypto.randomUUID(),
+    actorId: 'actor:test',
+    simulationRunId: 'run-test',
+    kind,
+    targetObjectIds: [],
+    issuedAt: nowIso(),
+    payload,
+  }) as CommandEnvelope
+const connect = (objects: OperationalObject[] = [], extra: Record<string, unknown> = {}) => {
+  const config = testRuntimeConnectionConfig({
+    simulationRunId: 'run-test' as SimulationRunId,
+    runtimeIds: ['weather.local'],
+  })
+  return createLocalWeatherPackRuntimeAdapter().connect({
+    ...config,
+    ...extra,
+    scenario: { ...config.scenario, initialObjects: objects },
+  })
+}
 
-const command = (payload: unknown): CommandEnvelope => ({
-  id: `command:${crypto.randomUUID()}` as CommandId,
-  simulationRunId,
-  actorId,
-  kind: createWeatherAreaCommandKind,
-  targetObjectIds: [],
-  payload,
-  issuedAt: nowIso(),
+describe('authoritative Weather field', () => {
+  test('authored areas and probes share the live schema and discoverable catalog', () => {
+    const catalog = scenarioAuthoringCatalogFor([weatherPack])
+    expect(catalog.packs[0]?.itemTypes.map((t) => t.id)).toEqual(['weather_area', 'weather_probe'])
+    expect(() => area({ surface: { wetness: 1 } })).toThrow()
+    expect(() => area({ type: 'weather_condition' })).toThrow()
+    expect(() => weatherPackConfigSchema.parse({ gridResolution: 12 })).toThrow()
+    expect(weatherPackConfigSchema.parse({ gridResolution: 0 }).gridResolution).toBe(0)
+  })
+  test('rejects unordered keyframes and missing starting quantities', () => {
+    expect(() => area({ keyframes: [{ atSeconds: 20 }, { atSeconds: 10 }] })).toThrow('increasing')
+    expect(() => area({ keyframes: [{ atSeconds: 10, atmosphere: { windSpeedMps: 10 } }] })).toThrow('starting')
+  })
+  test('interpolates only explicit quantities and uses shortest wind rotation', () => {
+    const definition = area({
+      atmosphere: { windSpeedMps: 5, windDirectionDeg: 350 },
+      keyframes: [{ atSeconds: 10, atmosphere: { windSpeedMps: 15, windDirectionDeg: 10 } }],
+    })
+    if (definition.type !== 'weather_area') throw Error()
+    const frame = frameAt(
+      { objectId: definition.id, label: definition.label, area: definition, startsAt: at },
+      later(5),
+    )
+    expect(frame.atmosphere.windSpeedMps).toBe(10)
+    expect(frame.atmosphere.windDirectionDeg).toBe(0)
+    expect(frame.atmosphere.airTemperatureC).toBeUndefined()
+  })
+  test('precipitation fades without pairing a nonzero rate with no precipitation', () => {
+    expect(() => area({ atmosphere: { precipitation: { type: 'none', intensityMmPerHour: 1 } } })).toThrow()
+    const definition = area({
+      atmosphere: { precipitation: { type: 'none', intensityMmPerHour: 0 } },
+      keyframes: [{ atSeconds: 10, atmosphere: { precipitation: { type: 'rain', intensityMmPerHour: 10 } } }],
+    })
+    if (definition.type !== 'weather_area') throw Error()
+    expect(frameAt({ objectId: definition.id, label: definition.label, area: definition, startsAt: at }, later(2)).atmosphere.precipitation)
+      .toEqual({ type: 'rain', intensityMmPerHour: 2 })
+    const field = fieldWith([object({ falloff: 'linear' })])
+    const edgePoint = geoPointFromLonLat(point.coordinates[0], point.coordinates[1] + 1000 / 111320)
+    const sample = weatherSampleSchema.parse(sampleWeather(field, edgePoint))
+    expect(sample.state.atmosphere.precipitation.type).toBe('rain')
+    expect(sample.state.atmosphere.precipitation.intensityMmPerHour).toBeCloseTo(10)
+  })
+  test('zero-time observations never repeatedly blend ground state', () => {
+    const field = fieldWith()
+    for (let i = 0; i < 5; i++) {
+      setWeatherObjects(field, [object()])
+      advanceWeather(field, at)
+    }
+    expect(sampleWeather(field, point).state.surface.wetness).toBe(0)
+    expect(sampleWeather(field, point).state.atmosphere.precipitation.intensityMmPerHour).toBe(30)
+  })
+  test('tick partition does not change ground physics', () => {
+    const a = fieldWith(),
+      b = fieldWith()
+    advanceWeather(a, later(12))
+    for (const t of [0.3, 1.4, 3, 6.8, 12]) advanceWeather(b, later(t))
+    expect(checkpointWeatherField(b)).toEqual(checkpointWeatherField(a))
+    expect(sampleWeather(a, point).state.surface.wetness).toBeGreaterThan(0)
+  })
+  test('restart preserves ground state and rejects incompatible checkpoints', () => {
+    const field = fieldWith()
+    advanceWeather(field, later(30))
+    const restored = createWeatherField(settings, at, checkpointWeatherField(field))
+    setWeatherObjects(restored, [object()])
+    expect(sampleWeather(restored, point)).toEqual(sampleWeather(field, point))
+    expect(() => createWeatherField({ ...settings, gridResolution: 7 }, at, checkpointWeatherField(field))).toThrow(
+      'mismatch',
+    )
+  })
+  test('deleting or disabling forcing retains ground history', () => {
+    const field = fieldWith()
+    advanceWeather(field, later(30))
+    const wet = sampleWeather(field, point).state.surface.wetness
+    setWeatherObjects(field, [])
+    expect(sampleWeather(field, point).state.surface.wetness).toBe(wet)
+    expect(sampleWeather(field, point).state.atmosphere.precipitation.type).toBe('none')
+    setWeatherObjects(field, [object({ enabled: false })])
+    expect(field.influences).toHaveLength(0)
+  })
+  test('sub-cell influence affects precise atmospheric samples without inflating ground coverage', () => {
+    const field = fieldWith([object({ semiMajorAxisM: 1, semiMinorAxisM: 1 })])
+    expect(sampleWeather(field, point).state.atmosphere.precipitation.type).toBe('rain')
+    advanceWeather(field, later(1))
+    expect(field.cells.size).toBe(0)
+  })
+  test('queries agree and never advance time or mutate physics', () => {
+    const field = fieldWith()
+    advanceWeather(field, later(3))
+    const before = checkpointWeatherField(field)
+    const sample = answerWeatherQuery(field, { capabilityId: 'world.weather.sample-at-point', input: { point } })
+    expect(sample).toEqual(sampleWeather(field, point))
+    const batch = answerWeatherQuery(field, { capabilityId: 'world.weather.sample-points', input: { points: [point] } })
+    expect(batch).toEqual([{ point, sample }])
+    expect(checkpointWeatherField(field)).toEqual(before)
+    for (const cap of weatherQueryCapabilities) expect(cap.output).toBeDefined()
+  })
+  test('polygon holes exclude ground cells and huge geometry rejects before allocation', () => {
+    const center = hexCellAtPoint(point, hexResolution(8))
+    const outer = polygon(10.7, 59.89, 10.8, 59.94)
+    const hole = polygon(10.74, 59.905, 10.77, 59.925)
+    expect(
+      hexCellsForPolygon(
+        { ...outer, coordinates: [...outer.coordinates, ...hole.coordinates] },
+        hexResolution(8),
+      ).includes(center),
+    ).toBe(false)
+    expect(() => hexCellsForPolygon(polygon(-100, -50, 100, 50), hexResolution(11))).toThrow()
+  })
+  test('ground interventions are local and sampling includes unaffected background', () => {
+    const field = fieldWith([])
+    const cell = hexCellAtPoint(point, hexResolution(8))
+    interveneGround(field, [cell], { ice: 0.8 })
+    expect(sampleWeather(field, hexCellCenter(cell)).state.surface.ice).toBe(0.8)
+    expect(sampleWeather(field, geoPointFromLonLat(11, 60)).state.surface.ice).toBe(0)
+    const result = answerWeatherQuery(field, {
+      capabilityId: 'world.weather.summarize-area',
+      input: { area: hexCellBoundary(cell) },
+    }) as { cellCount: number }
+    expect(result.cellCount).toBeGreaterThan(0)
+  })
+  test('bounded routes and rewind rejection are explicit and atomic', () => {
+    const field = fieldWith()
+    advanceWeather(field, later(5))
+    const before = checkpointWeatherField(field)
+    expect(() => advanceWeather(field, at)).toThrow('backward')
+    expect(() => advanceWeather(field, later(8000))).toThrow('budget')
+    expect(() =>
+      answerWeatherQuery(field, {
+        capabilityId: 'world.weather.sample-along-route',
+        input: {
+          route: {
+            type: 'LineString',
+            coordinates: [
+              [10, 59],
+              [12, 60],
+            ],
+          },
+          intervalM: 10,
+        },
+      }),
+    ).toThrow('budget')
+    expect(checkpointWeatherField(field)).toEqual(before)
+  })
+  test('map work is bounded and display zoom never changes physics', () => {
+    const field = fieldWith()
+    advanceWeather(field, later(10))
+    const before = checkpointWeatherField(field)
+    for (const zoom of [5, 10, 16]) {
+      const result = answerWeatherQuery(field, {
+        capabilityId: 'world.weather.map-features',
+        input: {
+          viewport: polygon(10.6, 59.8, 10.9, 60),
+          zoom,
+          layers: ['baseGrid', 'affectedCells', 'influenceShapes'],
+        },
+      })
+      weatherQueryCapabilities.find((c) => c.id === 'world.weather.map-features')!.output.parse(result)
+    }
+    expect(checkpointWeatherField(field)).toEqual(before)
+  })
 })
 
-const osloViewport: GeoJsonPolygon = {
-  type: 'Polygon',
-  coordinates: [[
-    geoPointFromLonLat(10.62, 59.88).coordinates,
-    geoPointFromLonLat(10.88, 59.88).coordinates,
-    geoPointFromLonLat(10.88, 59.98).coordinates,
-    geoPointFromLonLat(10.62, 59.98).coordinates,
-    geoPointFromLonLat(10.62, 59.88).coordinates,
-  ]],
-}
-
-const osloWeatherGrid: WeatherGridDefinition = {
-  gridId: 'weather-grid:oslo-test',
-  truthResolution: hexResolution(8),
-}
-
-const polygonBounds = (polygons: ReadonlyArray<{ readonly coordinates: ReadonlyArray<ReadonlyArray<readonly [number, number]>> }>) => {
-  const coordinates = polygons.flatMap(polygon => polygon.coordinates.flatMap(ring => ring))
-  if (coordinates.length === 0) throw new Error('expected polygon coordinates')
-  return coordinates.reduce((bounds, coordinate) => ({
-    west: Math.min(bounds.west, coordinate[0]),
-    south: Math.min(bounds.south, coordinate[1]),
-    east: Math.max(bounds.east, coordinate[0]),
-    north: Math.max(bounds.north, coordinate[1]),
-  }), {
-    west: Number.POSITIVE_INFINITY,
-    south: Number.POSITIVE_INFINITY,
-    east: Number.NEGATIVE_INFINITY,
-    north: Number.NEGATIVE_INFINITY,
-  })
-}
-
-const polygonCentroid = (polygon: { readonly coordinates: ReadonlyArray<ReadonlyArray<readonly [number, number]>> }) => {
-  const ring = polygon.coordinates[0]
-  if (!ring || ring.length === 0) throw new Error('expected polygon ring')
-  const unique = ring.slice(0, -1)
-  const sum = unique.reduce((acc, coordinate) => ({
-    lon: acc.lon + coordinate[0],
-    lat: acc.lat + coordinate[1],
-  }), { lon: 0, lat: 0 })
-  return { lon: sum.lon / unique.length, lat: sum.lat / unique.length }
-}
-
-const weatherMapFeatures = async (config: {
-  readonly viewport: GeoJsonPolygon
-  readonly zoom: number
-}): Promise<ReadonlyArray<PackMapAreaFeature>> => {
-  const adapter = createLocalWeatherPackRuntimeAdapter()
-  const connection = await adapter.connect({ simulationRunId, scenario: {
-    scenarioId: responseScenario.id,
-    runtimeIds: [weatherSimRuntimeId],
-    connections: [],
-    world: responseScenario.world,
-    initialObjects: responseScenario.initialObjects,
-    runtimeConfigByRuntimeId: {},
-    runtimeConfig: {},
-  } })
-  try {
-    const result = await connection.invokeQuery({
-      capabilityId: 'world.weather.map-features',
-      input: {
-        viewport: config.viewport,
-        zoom: config.zoom,
-        layers: ['baseGrid', 'affectedCells', 'influenceShapes'],
-      },
-    })
-    return (result as { readonly features: ReadonlyArray<PackMapAreaFeature> }).features
-  } finally {
-    await connection.close()
-  }
-}
-
-const weatherMapQueryLayersForZoom = (zoom: number): ReadonlyArray<string> => {
-  const queries = weatherPack.presentation.mapAreaFeatureQueries?.({
-    objects: [],
-    map: { viewport: osloViewport, zoom },
-  }) ?? []
-  const query = queries[0]
-  if (!query || typeof query.input !== 'object' || query.input === null || !('layers' in query.input)) {
-    throw new Error('weather map query did not include layers')
-  }
-  const layers = (query.input as { readonly layers: unknown }).layers
-  if (!Array.isArray(layers)) throw new Error('weather map query layers were not an array')
-  return layers.map(layer => String(layer))
-}
-
-describe('weather pack', () => {
-  test('validates generic atmosphere and surface condition data', () => {
-    const at = nowIso()
-    const state = {
-      atmosphere: {
-        ...defaultAtmosphere(at),
-        precipitation: { type: 'rain' as const, intensityMmPerHour: 0.8 },
-      },
-      surface: {
-        ...defaultSurface(),
-        wetness: 0.4,
-      },
-      extensions: {
-        'test.blah': 0.6,
-      },
-    }
-    const parsed = weatherPackDataSchema.parse({
-      type: 'weather_condition',
-      schemaVersion: 1,
-      conditionKind: 'weather_influence',
-      state,
-      quality: { provenance: 'scenario', confidence: 1, validAt: at },
-      influence: {
-        priority: 0,
-        keyframes: [{
-          atSeconds: 0,
-          center: geoPointFromLonLat(10.7522, 59.9139),
-          semiMajorAxisM: 1000,
-          semiMinorAxisM: 500,
-          rotationDeg: 0,
-          state,
-          falloffCurve: [{ x: 0, y: 1 }, { x: 1, y: 0 }],
-        }],
-      },
-      summary: 'Light rain over the operating area',
-    })
-
-    expect(parsed.state.atmosphere.humidity).toBe(0.65)
-    expect(parsed.state.surface.wetness).toBe(0.4)
-    expect(parsed.state.extensions['test.blah']).toBe(0.6)
-  })
-
-  test('evolves precipitation into surface conditions without making routing decisions', () => {
-    const at = '2026-01-01T10:00:00.000Z' as IsoTimestamp
-    const base = weatherPackDataSchema.parse({
-      type: 'weather_condition',
-      schemaVersion: 1,
-      conditionKind: 'weather_influence',
-      state: {
-        atmosphere: {
-          ...defaultAtmosphere(at),
-          airTemperatureC: -1,
-          precipitation: { type: 'freezing_rain', intensityMmPerHour: 1.4 },
-        },
-        surface: {
-          ...defaultSurface(),
-          groundTemperatureC: -1,
-          wetness: 0.35,
-        },
-        extensions: {},
-      },
-      quality: { provenance: 'scenario', confidence: 1, validAt: at },
-      influence: {
-        priority: 0,
-        keyframes: [{
-          atSeconds: 0,
-          center: geoPointFromLonLat(10.7522, 59.9139),
-          semiMajorAxisM: 1000,
-          semiMinorAxisM: 500,
-          rotationDeg: 0,
-          state: {
-            atmosphere: {
-              ...defaultAtmosphere(at),
-              airTemperatureC: -1,
-              precipitation: { type: 'freezing_rain', intensityMmPerHour: 1.4 },
-            },
-            surface: {
-              ...defaultSurface(),
-              groundTemperatureC: -1,
-              wetness: 0.35,
-            },
-            extensions: {},
-          },
-          falloffCurve: [{ x: 0, y: 1 }, { x: 1, y: 0 }],
-        }],
-      },
-      summary: 'Freezing rain test',
-    })
-
-    const evolved = evolveWeatherData(base, '2026-01-01T10:10:00.000Z' as IsoTimestamp, 600)
-
-    expect(evolved.state.surface.ice).toBeGreaterThan(base.state.surface.ice)
-    expect(evolved.state.surface.wetness).toBeLessThanOrEqual(1)
-    expect(evolved.type).toBe('weather_condition')
-  })
-
-  test('built-in scenarios include the weather pack as a sampleable condition runtime', () => {
-    const weatherObject = responseScenario.initialObjects.find(object => object.packId === 'weather')
-    if (!weatherObject) throw new Error('Oslo scenario missing weather condition')
-
-    const presentation = weatherPack.presentation.presentObject(weatherObject, { objects: responseScenario.initialObjects })
-    const parsedWeather = weatherPackDataSchema.parse(weatherObject.packData)
-
-    expect(responseScenario.packs).toContain('weather')
-    expect(presentation.categoryId).toBe('weather')
-    expect(presentation.noteworthyUpdates).toBe(false)
-    expect(presentation.mapIconVisible).toBe(false)
-    expect(presentation.fields.map(field => field.key)).toContain('surface')
-    expect(parsedWeather.render?.truthResolution).toBe(8)
-    expect(parsedWeather.conditionKind).toBe('weather_influence')
-    expect(weatherObject.spatial.position?.point.type).toBe('Point')
-    const sample = weatherSampleAtPoint(responseScenario.initialObjects, geoPointFromLonLat(10.7522, 59.9139), nowIso())
-    expect(sample.activeInfluenceIds.length).toBeGreaterThan(0)
-    expect(['none', 'rain']).toContain(sample.state.atmosphere.precipitation.type)
-  })
-
-  test('runtime-backed map query exposes H3 base grid cells for the requested viewport', async () => {
-    const features = await weatherMapFeatures({ viewport: osloViewport, zoom: 12 })
-    const baseGrid = features.filter(feature => feature.id.startsWith('weather-grid:'))
-    const bounds = polygonBounds(baseGrid.map(feature => feature.geometry))
-
-    expect(baseGrid.length).toBeGreaterThan(0)
-    expect(bounds.west).toBeLessThanOrEqual(10.62)
-    expect(bounds.east).toBeGreaterThanOrEqual(10.88)
-    expect(bounds.south).toBeLessThanOrEqual(59.88)
-    expect(bounds.north).toBeGreaterThanOrEqual(59.98)
-  })
-
-  test('pack map feature queries skip the base grid at national overview zoom', () => {
-    expect(weatherMapQueryLayersForZoom(5)).toEqual(['affectedCells', 'influenceShapes'])
-    expect(weatherMapQueryLayersForZoom(7)).toEqual(['baseGrid', 'affectedCells', 'influenceShapes'])
-  })
-
-  test('runtime-backed map query separates base grid, affected cells, and influence shapes', async () => {
-    const wideViewport: GeoJsonPolygon = {
-      type: 'Polygon',
-      coordinates: [[
-        geoPointFromLonLat(10.35, 59.72).coordinates,
-        geoPointFromLonLat(11.10, 59.72).coordinates,
-        geoPointFromLonLat(11.10, 60.10).coordinates,
-        geoPointFromLonLat(10.35, 60.10).coordinates,
-        geoPointFromLonLat(10.35, 59.72).coordinates,
-      ]],
-    }
-    const features = await weatherMapFeatures({ viewport: wideViewport, zoom: 12 })
-    const baseGrid = features.filter(feature => feature.id.startsWith('weather-grid:'))
-    const affectedCells = features.filter(feature => feature.id.startsWith('weather-cell:'))
-    const influenceShapes = features.filter(feature => feature.id.startsWith('weather:'))
-
-    expect(baseGrid.length).toBeGreaterThan(0)
-    expect(affectedCells.length).toBeGreaterThan(0)
-    expect(influenceShapes.length).toBeGreaterThan(0)
-    expect(baseGrid.length).toBeLessThanOrEqual(4_000)
-    expect(affectedCells.length).toBeLessThanOrEqual(8_000)
-  })
-
-  test('moving weather influence shapes follow simulation time', async () => {
-    const start = responseScenario.world.startsAt
-    if (!start) throw new Error('expected Oslo scenario start time')
-    const later = new Date(Date.parse(start) + 420_000).toISOString() as IsoTimestamp
-    const adapter = createLocalWeatherPackRuntimeAdapter()
-    const connection = await adapter.connect({ simulationRunId, scenario: {
-      scenarioId: responseScenario.id,
-      runtimeIds: [weatherSimRuntimeId],
-      connections: [],
-      world: responseScenario.world,
-      initialObjects: responseScenario.initialObjects,
-      runtimeConfigByRuntimeId: {},
-      runtimeConfig: {},
-    } })
-    await connection.setClock({ currentTime: start, updatedAt: nowIso(), paused: true, speed: 1 })
-    const startResponse = await connection.invokeQuery({
-      capabilityId: 'world.weather.map-features',
-      input: { viewport: osloViewport, zoom: 12, layers: ['influenceShapes'], at: start, animationDurationMs: 2000 },
-    })
-    await connection.setClock({ currentTime: later, updatedAt: nowIso(), paused: true, speed: 1 })
-    const laterResponse = await connection.invokeQuery({
-      capabilityId: 'world.weather.map-features',
-      input: { viewport: osloViewport, zoom: 12, layers: ['influenceShapes'] },
-    })
-    await connection.close()
-    const startFeatures = (startResponse as { readonly features: ReadonlyArray<PackMapAreaFeature> }).features
-    const laterFeatures = (laterResponse as { readonly features: ReadonlyArray<PackMapAreaFeature> }).features
-    const startOuter = startFeatures.find(feature => feature.id === 'weather:weather:oslo-moving-rain-band')
-    const laterOuter = laterFeatures.find(feature => feature.id === 'weather:weather:oslo-moving-rain-band')
-    if (!startOuter || !laterOuter) throw new Error('expected moving weather influence features')
-    const startCenter = polygonCentroid(startOuter.geometry)
-    const laterCenter = polygonCentroid(laterOuter.geometry)
-
-    expect(laterCenter.lon).toBeGreaterThan(startCenter.lon + 0.1)
-    expect(startOuter.animation?.fromTime).toBe(start)
-    expect(startOuter.animation?.toGeometry.coordinates.length).toBe(startOuter.geometry.coordinates.length)
-  })
-
-  test('sparse field default query is global without materializing cells', () => {
-    const at = '2026-01-01T10:00:00.000Z' as IsoTimestamp
-    const field = createWeatherSparseField(osloWeatherGrid)
-    const sample = weatherSampleAtPointFromSparseField({
-      field,
-      point: geoPointFromLonLat(-73.9857, 40.7484),
+describe('Weather runtime controls and lifecycle', () => {
+  test('paused create and update immediately refresh probes at simulation time', async () => {
+    const probe = createWeatherObject(
+      weatherItemSchema.parse({
+        pack: 'weather',
+        type: 'weather_probe',
+        id: 'probe:one',
+        label: 'Probe',
+        point: point.coordinates,
+      }),
       at,
-    })
-
-    expect(weatherSparseFieldStats(field)).toEqual({ cellCount: 0, activeCellCount: 0 })
-    expect(sample.activeInfluenceIds).toHaveLength(0)
-    expect(sample.state.atmosphere.airTemperatureC).toBe(defaultAtmosphere(at).airTemperatureC)
-    expect(sample.state.surface.wetness).toBe(defaultSurface().wetness)
-  })
-
-  test('sparse field materializes only cells touched by weather objects', () => {
-    const start = responseScenario.world.startsAt
-    if (!start) throw new Error('expected Oslo scenario start time')
-    const field = createWeatherSparseField(osloWeatherGrid)
-    const updated = updateWeatherSparseField({
-      field,
-      objects: responseScenario.initialObjects,
-      at: start,
-      elapsedSeconds: 60,
-    })
-
-    expect(updated.field.cells.size).toBeGreaterThan(0)
-    expect(updated.field.activeCellIds.size).toBeGreaterThan(0)
-    expect(updated.touchedCellIds.size).toBe(updated.field.cells.size)
-  })
-
-  test('sparse field preserves surface memory after a weather object moves away', () => {
-    const start = responseScenario.world.startsAt
-    if (!start) throw new Error('expected Oslo scenario start time')
-    const startField = updateWeatherSparseField({
-      field: createWeatherSparseField(osloWeatherGrid),
-      objects: responseScenario.initialObjects,
-      at: start,
-      elapsedSeconds: 180,
-    }).field
-    const rememberedCell = [...startField.cells.values()].find(cell => cell.state.surface.wetness > defaultSurface().wetness)
-    if (!rememberedCell) throw new Error('expected rain band to wet at least one weather cell')
-    const later = new Date(Date.parse(start) + 900_000).toISOString() as IsoTimestamp
-    const laterField = updateWeatherSparseField({
-      field: startField,
-      objects: responseScenario.initialObjects,
-      at: later,
-      elapsedSeconds: 60,
-    }).field
-    const remembered = laterField.cells.get(rememberedCell.id)
-
-    expect(remembered).toBeDefined()
-    expect(remembered?.state.surface.wetness).toBeGreaterThan(defaultSurface().wetness)
-  })
-
-  test('stable non-default sparse cells remain queryable without staying active', () => {
-    const at = '2026-01-01T10:00:00.000Z' as IsoTimestamp
-    const point = geoPointFromLonLat(10.7522, 59.9139)
-    const id = weatherCellForPoint(osloWeatherGrid, point)
-    const storedSurface = {
-      ...defaultSurface(),
-      groundTemperatureC: -8,
-      snow: 0.55,
+      settings,
+    )
+    const connection = await connect([probe])
+    try {
+      await connection.setClock({ currentTime: at, updatedAt: nowIso(), paused: true, speed: 1 })
+      expect(
+        (await connection.sendCommand(envelope('world.weather.create', area({ atmosphere: { windSpeedMps: 15 } })))).ok,
+      ).toBe(true)
+      const snapshot = await connection.getSnapshot()
+      const sample = weatherPackDataSchema.parse(snapshot.objects.find((o) => o.id === probe.id)!.packData).sample
+      expect(sample.quality.validAt).toBe(at)
+      expect(sample.state.atmosphere.windSpeedMps).toBe(15)
+      expect(sample).toEqual(
+        weatherSampleSchema.parse(
+          await connection.invokeQuery({ capabilityId: 'world.weather.sample-at-point', input: { point } }),
+        ),
+      )
+      const obj = snapshot.objects.find((o) => o.id === 'weather:rain')!
+      const result = await connection.sendCommand(
+        envelope('world.weather.set-enabled', { objectId: obj.id, enabled: false, expectedRevision: obj.revision }),
+      )
+      expect(result.ok).toBe(true)
+      expect(
+        weatherSampleSchema.parse(
+          await connection.invokeQuery({ capabilityId: 'world.weather.sample-at-point', input: { point } }),
+        ).state.atmosphere.windSpeedMps,
+      ).toBe(3)
+      expect(
+        (
+          await connection.sendCommand(
+            envelope('world.weather.set-enabled', { objectId: obj.id, enabled: true, expectedRevision: obj.revision }),
+          )
+        ).ok,
+      ).toBe(false)
+    } finally {
+      await connection.close()
     }
-    const field = {
-      grid: osloWeatherGrid,
-      cells: new Map([[id, {
-        id,
-        resolution: osloWeatherGrid.truthResolution,
-        center: point,
-        state: {
-          atmosphere: {
-            ...defaultAtmosphere(at),
-            airTemperatureC: -8,
-          },
-          surface: storedSurface,
-          extensions: {},
-        },
-        activeInfluenceIds: [],
-        residual: 0,
-        updatedAt: at,
-      }]]),
-      activeCellIds: new Set([id]),
-    }
-    const updated = updateWeatherSparseField({
-      field,
-      objects: [],
-      at,
-      elapsedSeconds: 0,
-    }).field
-    const sample = weatherSampleAtPointFromSparseField({
-      field: updated,
-      point,
-      at,
-    })
-
-    expect(updated.cells.has(id)).toBe(true)
-    expect(updated.activeCellIds.has(id)).toBe(false)
-    expect(sample.state.surface.snow).toBeGreaterThan(0.5)
   })
-
-  test('overlapping weather objects blend through the same sparse cell update pass', () => {
-    const start = responseScenario.world.startsAt
-    if (!start) throw new Error('expected Oslo scenario start time')
-    const weatherObjects = responseScenario.initialObjects.filter(object => object.packId === 'weather')
-    expect(weatherObjects.length).toBeGreaterThanOrEqual(2)
-    const updated = updateWeatherSparseField({
-      field: createWeatherSparseField(osloWeatherGrid),
-      objects: weatherObjects,
-      at: start,
-      elapsedSeconds: 60,
-    }).field
-    const overlapped = [...updated.cells.values()].find(cell => cell.activeInfluenceIds.length > 1)
-
-    expect(overlapped).toBeDefined()
-    expect(overlapped?.state.surface.wetness).toBeGreaterThan(defaultSurface().wetness)
-  })
-
-  test('local runtime accepts real weather area commands', async () => {
-    const adapter = createLocalWeatherPackRuntimeAdapter()
-    const connection = await adapter.connect(testRuntimeConnectionConfig({ simulationRunId, runtimeIds: [adapter.id], initialObjects: [] }))
-    const result = await connection.sendCommand(command({
-      objectType: 'weather_area',
-      label: 'Operator rain area',
-      center: geoPointFromLonLat(10.71, 59.91),
-      semiMajorAxisM: 1800,
-      semiMinorAxisM: 700,
-      rotationDeg: 20,
-      summary: 'Operator-created rain area',
-      atmosphere: {
-        precipitation: { type: 'rain', intensityMmPerHour: 1 },
+  test('private checkpoints survive close and restore', async () => {
+    let stored: unknown = null
+    const store = {
+      load: async () => stored,
+      save: async (value: unknown) => {
+        stored = structuredClone(value)
       },
-    }))
+    }
+    const connection = await connect([object()], { runtimeStateStore: store })
+    await connection.setClock({ currentTime: later(20), updatedAt: nowIso(), paused: true, speed: 1 })
+    const sample = await connection.invokeQuery({ capabilityId: 'world.weather.sample-at-point', input: { point } })
     const snapshot = await connection.getSnapshot()
     await connection.close()
-
-    expect(adapter.id).toBe(weatherSimRuntimeId)
-    expect(result.ok).toBe(true)
-    expect(snapshot.objects).toHaveLength(1)
-    expect(snapshot.objects[0]?.packId).toBe('weather' as PackId)
+    const restored = await connect([], { runtimeStateStore: store, initialObjects: snapshot.objects })
+    try {
+      expect(await restored.invokeQuery({ capabilityId: 'world.weather.sample-at-point', input: { point } })).toEqual(
+        sample,
+      )
+    } finally {
+      await restored.close()
+    }
   })
-
-  test('local runtime creates weather probes as point observations sampled from active zones', async () => {
-    const adapter = createLocalWeatherPackRuntimeAdapter()
-    const zone = responseScenario.initialObjects.find(object => object.packId === 'weather')
-    if (!zone) throw new Error('Oslo scenario missing weather condition')
-    const connection = await adapter.connect(testRuntimeConnectionConfig({ simulationRunId, runtimeIds: [adapter.id], initialObjects: [zone] }))
-    const result = await connection.sendCommand(command({
-      objectType: 'weather_probe',
-      label: 'Oslo probe',
-      point: geoPointFromLonLat(10.7522, 59.9139),
-    }))
-    const snapshot = await connection.getSnapshot()
-    await connection.close()
-
-    const probe = snapshot.objects.find(object => object.label === 'Oslo probe')
-    const parsed = weatherPackDataSchema.parse(probe?.packData)
-    expect(result.ok).toBe(true)
-    expect(probe?.spatial.position?.point.coordinates).toEqual(geoPointFromLonLat(10.7522, 59.9139).coordinates)
-    expect(parsed.conditionKind).toBe('point_observation')
-    expect(['none', 'rain']).toContain(parsed.state.atmosphere.precipitation.type)
+  test('configured probe recording uses canonical samples and actual simulation time', async () => {
+    const probe = createWeatherObject(
+      weatherItemSchema.parse({
+        pack: 'weather',
+        type: 'weather_probe',
+        id: 'probe:one',
+        label: 'Probe',
+        point: point.coordinates,
+      }),
+      at,
+      settings,
+    )
+    const connection = await connect([probe], {
+      recording: { packId: 'weather', profileId: 'probes', intervalMs: 1000 },
+    })
+    const batches: unknown[] = []
+    connection.subscribe((e) => {
+      if (e.recording) batches.push(e.recording)
+    })
+    try {
+      await connection.setClock({ currentTime: later(1), updatedAt: nowIso(), paused: true, speed: 1 })
+      expect(batches.length).toBe(1)
+      expect(JSON.stringify(batches)).toContain('windSpeedMps')
+      expect(JSON.stringify(batches)).toContain(later(1))
+    } finally {
+      await connection.close()
+    }
   })
 })

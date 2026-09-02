@@ -1,199 +1,144 @@
 import { z } from 'zod'
-import { geoJsonPointSchema } from '../../core/model/index.ts'
+import { objectIdSchema } from '../../core/model/index.ts'
 
 export const weatherPackId = 'weather' as const
-
 export const precipitationTypeSchema = z.enum(['none', 'rain', 'snow', 'sleet', 'freezing_rain', 'hail'])
-export type PrecipitationType = z.infer<typeof precipitationTypeSchema>
-
-export const weatherProvenanceKindSchema = z.enum(['scenario', 'forecast', 'observed', 'inferred', 'intervention'])
-export type WeatherProvenanceKind = z.infer<typeof weatherProvenanceKindSchema>
-
-const normalizedSchema = z.number().finite().min(0).max(1)
-
-const precipitationSchema = z.object({
-  type: precipitationTypeSchema,
-  intensityMmPerHour: z.number().finite().nonnegative(),
-})
-
-export const weatherAtmosphereSchema = z.object({
-  airTemperatureC: z.number().finite(),
-  humidity: normalizedSchema.optional(),
-  windSpeedMps: z.number().finite().nonnegative(),
-  windDirectionDeg: z.number().finite().min(0).max(360),
-  visibilityM: z.number().finite().nonnegative(),
-  cloudCover: normalizedSchema.optional(),
-  precipitation: precipitationSchema,
-})
-export type WeatherAtmosphere = z.infer<typeof weatherAtmosphereSchema>
-export const weatherAtmospherePatchSchema = weatherAtmosphereSchema.partial()
-export type WeatherAtmospherePatch = z.infer<typeof weatherAtmospherePatchSchema>
-
-export const weatherSurfaceSchema = z.object({
-  groundTemperatureC: z.number().finite(),
-  wetness: normalizedSchema,
-  standingWater: normalizedSchema,
-  snow: normalizedSchema,
-  ice: normalizedSchema,
-  frost: normalizedSchema,
-})
-export type WeatherSurface = z.infer<typeof weatherSurfaceSchema>
-export const weatherSurfacePatchSchema = weatherSurfaceSchema.partial()
-export type WeatherSurfacePatch = z.infer<typeof weatherSurfacePatchSchema>
-
-export const weatherExtensionValueSchema = z.union([
-  z.number().finite(),
-  z.string(),
-  z.boolean(),
-])
-export type WeatherExtensionValue = z.infer<typeof weatherExtensionValueSchema>
-
-export const weatherExtensionsSchema = z.record(z.string(), weatherExtensionValueSchema).default({})
-export type WeatherExtensions = z.infer<typeof weatherExtensionsSchema>
-
-export const weatherExtensionDefinitionSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('number'),
-    default: z.number().finite(),
-    unit: z.string().min(1).optional(),
-    min: z.number().finite().optional(),
-    max: z.number().finite().optional(),
-    interpolation: z.literal('linear').default('linear'),
-  }),
-  z.object({
-    type: z.literal('string'),
-    default: z.string(),
-    interpolation: z.literal('step').default('step'),
-  }),
-  z.object({
-    type: z.literal('boolean'),
-    default: z.boolean(),
-    interpolation: z.literal('step').default('step'),
-  }),
-])
-export type WeatherExtensionDefinition = z.infer<typeof weatherExtensionDefinitionSchema>
-
-export const weatherExtensionDefinitionsSchema = z.record(z.string(), weatherExtensionDefinitionSchema).default({})
-export type WeatherExtensionDefinitions = z.infer<typeof weatherExtensionDefinitionsSchema>
-
-export const weatherQualitySchema = z.object({
-  provenance: weatherProvenanceKindSchema,
-  confidence: normalizedSchema,
-  validAt: z.string().datetime(),
-})
-export type WeatherQuality = z.infer<typeof weatherQualitySchema>
-
-export const weatherRenderSchema = z.object({
-  truthResolution: z.number().int().min(0).max(15).default(8),
-  showAffectedCells: z.boolean().default(true),
-  showInfluenceShape: z.boolean().default(true),
-  showIcon: z.boolean().default(true),
-})
-export type WeatherRender = z.infer<typeof weatherRenderSchema>
-
-export const weatherStateSchema = z.object({
-  atmosphere: weatherAtmosphereSchema,
-  surface: weatherSurfaceSchema,
-  extensions: weatherExtensionsSchema,
-})
-export type WeatherState = z.infer<typeof weatherStateSchema>
-
-export const weatherFalloffPointSchema = z.object({
-  x: normalizedSchema,
-  y: normalizedSchema,
-})
-export type WeatherFalloffPoint = z.infer<typeof weatherFalloffPointSchema>
-
-export const weatherFalloffCurveSchema = z.array(weatherFalloffPointSchema).min(2)
-  .superRefine((points, ctx) => {
-    let previousX = Number.NEGATIVE_INFINITY
-    for (const [index, point] of points.entries()) {
-      if (point.x < previousX) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'falloff curve x values must be sorted ascending',
-          path: [index, 'x'],
-        })
-      }
-      previousX = point.x
-    }
+const fraction = z.number().finite().min(0).max(1)
+export const weatherAtmosphereSchema = z
+  .object({
+    airTemperatureC: z.number().finite().min(-100).max(70),
+    humidity: fraction,
+    windSpeedMps: z.number().finite().min(0).max(150),
+    windDirectionDeg: z.number().finite().min(0).max(360),
+    visibilityM: z.number().finite().min(0).max(100_000),
+    cloudCover: fraction,
+    precipitation: z
+      .object({ type: precipitationTypeSchema, intensityMmPerHour: z.number().finite().min(0).max(500) })
+      .strict()
+      .refine(value => value.type !== 'none' || value.intensityMmPerHour === 0, 'No precipitation requires a zero rate'),
   })
-export type WeatherFalloffCurve = z.infer<typeof weatherFalloffCurveSchema>
-
-export const weatherInfluenceKeyframeSchema = z.object({
-  atSeconds: z.number().finite().nonnegative(),
-  center: geoJsonPointSchema,
-  semiMajorAxisM: z.number().finite().positive(),
-  semiMinorAxisM: z.number().finite().positive(),
-  rotationDeg: z.number().finite(),
-  state: weatherStateSchema,
-  falloffCurve: weatherFalloffCurveSchema,
-})
-export type WeatherInfluenceKeyframe = z.infer<typeof weatherInfluenceKeyframeSchema>
-
-export const weatherInfluenceSchema = z.object({
-  priority: z.number().int().default(0),
-  keyframes: z.array(weatherInfluenceKeyframeSchema).min(1),
-})
-export type WeatherInfluence = z.infer<typeof weatherInfluenceSchema>
-
-export const weatherPackDataSchema = z.object({
-  type: z.literal('weather_condition'),
-  schemaVersion: z.literal(1),
-  conditionKind: z.enum(['weather_influence', 'point_observation']),
-  state: weatherStateSchema,
-  quality: weatherQualitySchema,
-  influence: weatherInfluenceSchema.optional(),
-  render: weatherRenderSchema.optional(),
-  summary: z.string().min(1),
-})
-export type WeatherPackData = z.infer<typeof weatherPackDataSchema>
-
-export const createWeatherAreaPayloadSchema = z.object({
-  objectType: z.literal('weather_area'),
-  label: z.string().min(1).max(80),
-  summary: z.string().min(1).max(180).default('Operator-created weather area'),
-  atmosphere: weatherAtmospherePatchSchema.optional(),
-  surface: weatherSurfacePatchSchema.optional(),
-  extensions: weatherExtensionsSchema.optional(),
-  center: geoJsonPointSchema.optional(),
-  semiMajorAxisM: z.number().finite().positive().optional(),
-  semiMinorAxisM: z.number().finite().positive().optional(),
-  rotationDeg: z.number().finite().default(0),
-  falloffCurve: weatherFalloffCurveSchema.default([{ x: 0, y: 1 }, { x: 1, y: 0 }]),
-}).superRefine((payload, ctx) => {
-  if (!payload.center) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'weather area requires center', path: ['center'] })
-  }
-  if (payload.semiMajorAxisM === undefined) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'weather area requires semiMajorAxisM', path: ['semiMajorAxisM'] })
-  }
-  if (payload.semiMinorAxisM === undefined) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'weather area requires semiMinorAxisM', path: ['semiMinorAxisM'] })
-  }
-})
-export type CreateWeatherAreaPayload = z.infer<typeof createWeatherAreaPayloadSchema>
-
-export const createWeatherProbePayloadSchema = z.object({
-  objectType: z.literal('weather_probe'),
-  label: z.string().min(1).max(80),
-  point: geoJsonPointSchema,
-})
-export type CreateWeatherProbePayload = z.infer<typeof createWeatherProbePayloadSchema>
-
-export const createWeatherConditionPayloadSchema = z.union([
-  createWeatherAreaPayloadSchema,
-  createWeatherProbePayloadSchema,
-])
-export type CreateWeatherConditionPayload = z.infer<typeof createWeatherConditionPayloadSchema>
-
-export interface WeatherSample {
-  readonly state: WeatherState
-  readonly quality: WeatherQuality
-  readonly activeInfluenceIds: ReadonlyArray<string>
+  .strict()
+export const weatherAtmospherePatchSchema = weatherAtmosphereSchema.partial()
+export type WeatherAtmosphere = z.infer<typeof weatherAtmosphereSchema>
+export type WeatherAtmospherePatch = z.infer<typeof weatherAtmospherePatchSchema>
+export const weatherSurfaceSchema = z
+  .object({
+    groundTemperatureC: z.number().finite().min(-100).max(100),
+    wetness: fraction,
+    standingWater: fraction,
+    snow: fraction,
+    ice: fraction,
+    frost: fraction,
+  })
+  .strict()
+export const weatherSurfacePatchSchema = weatherSurfaceSchema.partial()
+export type WeatherSurface = z.infer<typeof weatherSurfaceSchema>
+export const weatherStateSchema = z
+  .object({ atmosphere: weatherAtmosphereSchema, surface: weatherSurfaceSchema })
+  .strict()
+export type WeatherState = z.infer<typeof weatherStateSchema>
+export const backgroundAtmosphere: WeatherAtmosphere = {
+  airTemperatureC: 8,
+  humidity: 0.65,
+  windSpeedMps: 3,
+  windDirectionDeg: 240,
+  visibilityM: 12000,
+  cloudCover: 0.45,
+  precipitation: { type: 'none', intensityMmPerHour: 0 },
 }
-export const weatherSampleSchema = z.object({
-  state: weatherStateSchema,
-  quality: weatherQualitySchema,
-  activeInfluenceIds: z.array(z.string().min(1)),
-}).strict()
+export const initialGround: WeatherSurface = {
+  groundTemperatureC: 8,
+  wetness: 0,
+  standingWater: 0,
+  snow: 0,
+  ice: 0,
+  frost: 0,
+}
+export const weatherPackConfigSchema = z
+  .object({
+    gridResolution: z.number().int().min(0).max(11).default(8),
+    atmosphere: weatherAtmosphereSchema.default(backgroundAtmosphere),
+    surface: weatherSurfaceSchema.default(initialGround),
+  })
+  .strict()
+  .default({ gridResolution: 8, atmosphere: backgroundAtmosphere, surface: initialGround })
+export type WeatherConfig = z.infer<typeof weatherPackConfigSchema>
+const position = z.tuple([z.number().finite().min(-180).max(180), z.number().finite().min(-80).max(80)])
+const radius = z.number().finite().min(1).max(100_000)
+const geometry = {
+  center: position,
+  semiMajorAxisM: radius.default(4000),
+  semiMinorAxisM: radius.default(2000),
+  rotationDeg: z.number().finite().min(0).max(360).default(0),
+}
+export const weatherKeyframeSchema = z
+  .object({
+    atSeconds: z.number().finite().min(0).max(31_536_000),
+    center: position.optional(),
+    semiMajorAxisM: radius.optional(),
+    semiMinorAxisM: radius.optional(),
+    rotationDeg: z.number().finite().min(0).max(360).optional(),
+    atmosphere: weatherAtmospherePatchSchema.default({}),
+  })
+  .strict()
+const identity = { pack: z.literal('weather'), id: objectIdSchema, label: z.string().trim().min(1).max(160) }
+export const weatherAreaSchema = z
+  .object({
+    ...identity,
+    type: z.literal('weather_area'),
+    ...geometry,
+    enabled: z.boolean().default(true),
+    priority: z.number().int().min(-1000).max(1000).default(0),
+    falloff: z.enum(['linear', 'uniform']).default('linear'),
+    atmosphere: weatherAtmospherePatchSchema.default({}),
+    keyframes: z.array(weatherKeyframeSchema).max(128).default([]),
+  })
+  .strict()
+  .superRefine((area, ctx) => {
+    let previous = -1
+    area.keyframes.forEach((frame, index) => {
+      if (frame.atSeconds <= previous)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['keyframes', index, 'atSeconds'],
+          message: 'Keyframe times must be strictly increasing',
+        })
+      for (const key of Object.keys(frame.atmosphere)) {
+        if (!(key in area.atmosphere))
+          ctx.addIssue({
+            code: 'custom',
+            path: ['keyframes', index, 'atmosphere', key],
+            message: 'Animated quantities require an explicit starting value in the area atmosphere',
+          })
+      }
+      previous = frame.atSeconds
+    })
+  })
+export const weatherProbeSchema = z.object({ ...identity, type: z.literal('weather_probe'), point: position }).strict()
+export const weatherItemSchema = z.discriminatedUnion('type', [weatherAreaSchema, weatherProbeSchema])
+export type WeatherArea = z.infer<typeof weatherAreaSchema>
+export type WeatherItem = z.infer<typeof weatherItemSchema>
+export const weatherSampleSchema = z
+  .object({
+    state: weatherStateSchema,
+    quality: z
+      .object({
+        provenance: z.literal('scenario'),
+        validAt: z.string().datetime(),
+        model: z.literal('prescribed-atmosphere/heuristic-ground'),
+      })
+      .strict(),
+    activeInfluenceIds: z.array(z.string()),
+    resolution: z.number().int().min(0).max(11),
+    fieldRevision: z.number().int().nonnegative(),
+  })
+  .strict()
+export type WeatherSample = z.infer<typeof weatherSampleSchema>
+export const weatherPackDataSchema = z
+  .object({
+    definition: weatherItemSchema,
+    startsAt: z.string().datetime(),
+    sample: weatherSampleSchema,
+  })
+  .strict()
+export type WeatherPackData = z.infer<typeof weatherPackDataSchema>

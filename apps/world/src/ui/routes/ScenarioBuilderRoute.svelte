@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ScenarioAuthoringCatalog } from '../../core/scenarios/authoring.ts'
+  import AuthoringFields from '../AuthoringFields.svelte'
   import ScenarioBuilderMap from '../ScenarioBuilderMap.svelte'
   import { parseControlSurfaceRoute } from '../simulation-run-route.ts'
   import {
@@ -219,7 +220,7 @@
   const addPack = (): void => {
     const pack = catalog?.packs.find(candidate => candidate.id === packToAdd)
     if (!pack || selectionFor(draft, pack.id)) return
-    draft.packs.push({ id: pack.id, config: {}, items: [] })
+    draft.packs.push({ id: pack.id, config: deepCopy(pack.configDefaults), items: [] })
     updateRailSections()
     draft = { ...draft }
     selection = { kind: 'pack', id: pack.id }
@@ -594,6 +595,9 @@
                 {/if}
               {/if}
             {/if}
+            {#if packSelection}
+              <AuthoringFields fields={pack.configFields} targetFor={()=>packSelection.config} onchange={(field,value)=>{setValueAtPath(packSelection.config,field.path,value);draft={...draft}}} />
+            {/if}
             <h3>Add item</h3><div class="item-type-list">{#each pack.itemTypes as type (type.id)}<button onclick={() => addItem(pack, type)}><strong>{type.label}</strong><small>{type.description}</small></button>{/each}</div><button class="danger-text" onclick={() => removePack(pack)}>Remove Pack</button>
           {/if}
         {:else}
@@ -602,21 +606,25 @@
           {#if item && type}
             <p class="eyebrow">{catalog.packs.find(pack => pack.id === selectedEntry()?.packId)?.title}</p><h2>{type.label}</h2>
             <label>Name <input value={item.label} oninput={event => { item.label = event.currentTarget.value; draft = { ...draft } }} /></label>
-            {#each type.fields as field (`${field.target}:${field.path.join('.')}`)}
-              {@const target = field.target === 'item' ? item : selectedLinkedConfig()}
-              {#if target}
-                <label>{field.label}
-                  {#if field.control.kind === 'select'}
-                    <select value={String(valueAtPath(target, field.path) ?? field.control.defaultValue)} onchange={event => updateField(field, event.currentTarget.value)}>{#each field.control.options as option (option.value)}<option value={option.value}>{option.label}</option>{/each}</select>
-                  {:else if field.control.kind === 'boolean'}
-                    <input type="checkbox" checked={Boolean(valueAtPath(target, field.path) ?? field.control.defaultValue)} onchange={event => updateField(field, event.currentTarget.checked)} />
-                  {:else if field.control.kind === 'number'}
-                    <input type="number" value={Number(valueAtPath(target, field.path) ?? field.control.defaultValue)} min={field.control.min} max={field.control.max} step={field.control.step} onchange={event => updateField(field, event.currentTarget.valueAsNumber)} />
-                  {:else}
-                    <input value={String(valueAtPath(target, field.path) ?? field.control.defaultValue)} oninput={event => updateField(field, event.currentTarget.value)} />
-                  {/if}
-                </label>
-              {/if}
+            <AuthoringFields fields={type.fields} targetFor={field => field.target === 'item' ? item : selectedLinkedConfig()} onchange={updateField} />
+            {#each type.collections as collection (collection.path.join('.'))}
+              {@const rows = (valueAtPath(item,collection.path) ?? []) as Record<string,unknown>[]}
+              <h3>{collection.label}</h3>
+              {#each rows as row, index}
+                <details class="authoring-record">
+                  <summary>Change {index + 1}</summary>
+                  <AuthoringFields fields={collection.fields} targetFor={field => [row,...rows.slice(0,index).reverse(),item,collection.defaultItem].find(candidate => valueAtPath(candidate,field.path)!==undefined)} onchange={(field,value)=>{setValueAtPath(row,field.path,value);draft={...draft}}} />
+                  <button class="danger-text" onclick={()=>{rows.splice(index,1);setValueAtPath(item,collection.path,rows);draft={...draft}}}>Remove change</button>
+                </details>
+              {/each}
+              <button disabled={rows.length >= collection.maxItems} onclick={()=>{
+                const row=deepCopy(collection.defaultItem)
+                for(const field of collection.fields){
+                  const value=valueAtPath(item,field.path)
+                  if(value!==undefined)setValueAtPath(row,field.path,deepCopy(value))
+                }
+                setValueAtPath(item,collection.path,[...rows,row]);draft={...draft}
+              }}>Add change</button>
             {/each}
             {#if type.placement}<button onclick={() => beginPlacement(item.id)}>Move on map</button>{/if}
             <button class="danger-text" onclick={() => removeItem(item)}>Remove item</button>

@@ -906,6 +906,8 @@ export const createSimulationRunRuntime = async (config: {
       paused: parsedUpdate.paused ?? current.paused,
       speed: parsedUpdate.speed ?? current.speed,
     }
+    await config.runtimeConnection.validateClock?.(nextClock)
+    await config.runtimeConnection.setClock(nextClock)
     await publishOneGenerated(() => ({
       id: eventId(),
       simulationRunId: config.id,
@@ -915,7 +917,6 @@ export const createSimulationRunRuntime = async (config: {
       type: 'clock.updated',
       clock: nextClock,
     }))
-    await config.runtimeConnection.setClock(nextClock)
     if (config.scenario.timeline) {
       if (nextClock.paused) {
         scenarioRunner?.close()

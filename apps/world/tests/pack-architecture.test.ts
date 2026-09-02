@@ -316,24 +316,12 @@ describe('pack architecture', () => {
     expect(composer.diagnostics().tiers.summary.calls).toBe(0)
   })
 
-  test('weather contextual fields use the presentation object index instead of scanning all objects', () => {
-    const object = responseScenario.initialObjects.find(candidate => candidate.packId === 'ambulance')
-    const weatherObject = responseScenario.initialObjects.find(candidate => candidate.packId === 'weather')
-    if (!object || !weatherObject) throw new Error('scenario missing ambulance or weather object')
-    let requestedPackId = ''
-
-    const fields = weatherPack.presentation.contextualFields?.(object, {
-      objects: [object],
-      objectsForPack: packId => {
-        requestedPackId = packId
-        return [weatherObject]
-      },
-      currentTime: responseScenario.world.startsAt ?? nowIso(),
-      tier: 'detail',
-    }) ?? []
-
-    expect(requestedPackId).toBe('weather')
-    expect(fields.map(field => field.key)).toEqual(['weather'])
+  test('weather inspection reads the authoritative runtime instead of reconstructing conditions in the browser', () => {
+    const object = responseScenario.initialObjects.find((candidate) => candidate.packId === 'ambulance')!
+    const requests = weatherPack.presentation.contextualFieldQueries?.(object) ?? []
+    expect(requests.map((request) => request.capabilityId)).toEqual(['world.weather.sample-at-point'])
+    expect(requests[0]?.input).toEqual({ point: object.spatial.position?.point })
+    expect(weatherPack.presentation.contextualFields).toBeUndefined()
   })
 
   test('scenario catalog resolves scenario packs to internal pack runtimes', () => {
@@ -348,21 +336,8 @@ describe('pack architecture', () => {
       weatherSimRuntimeId,
     ].sort())
     expect(runtime?.runtimeConfigByRuntimeId).toEqual({
-      [ambulanceSimRuntimeId]: {},
-      [weatherSimRuntimeId]: {
-        fields: {
-          extensions: {
-            'research.operatorWeatherLoad': {
-              type: 'number',
-              unit: '0..1',
-              default: 0,
-              min: 0,
-              max: 1,
-              interpolation: 'linear',
-            },
-          },
-        },
-      },
+      [ambulanceSimRuntimeId]: ambulancePack.scenarioConfigSchema.parse({}),
+      [weatherSimRuntimeId]: weatherPack.scenarioConfigSchema.parse({ gridResolution: 8 }),
     })
   })
 

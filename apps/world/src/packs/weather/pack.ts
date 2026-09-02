@@ -1,249 +1,267 @@
-import type { GeoJsonPoint, OperationalObject } from '../../core/model/index.ts'
-import { nowIso } from '../../core/model/index.ts'
+import type { OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
-import type { WorldPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
+import type { WorldPack, PackScenarioAuthoringField } from '../../core/packs/protocol.ts'
 import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
-import { createWeatherAreaCommandKind } from './commands.ts'
-import { weatherPresentationSeverityForState, weatherSampleAtPoint, type WeatherPresentationSeverity } from './conditions.ts'
+import { weatherPresentationSeverityForState } from './conditions.ts'
 import {
-  createWeatherAreaPayloadSchema,
-  createWeatherProbePayloadSchema,
+  backgroundAtmosphere,
+  precipitationTypeSchema,
+  weatherItemSchema,
+  weatherSampleSchema,
   weatherPackDataSchema,
-  weatherPackId,
-  type WeatherPackData,
-  type WeatherState,
+  weatherPackConfigSchema,
 } from './model.ts'
-import { weatherPackConfigSchema, weatherScenarioSupport } from './scenario.ts'
+import { weatherScenarioSupport } from './scenario.ts'
+import { weatherQuantities, weatherRecordingProfiles } from './quantities.ts'
 import { weatherSimRuntimeId } from './sim/constants.ts'
 
-const parseWeatherData = (object: OperationalObject): WeatherPackData | null => {
+const dataFor = (object: OperationalObject) => {
   const parsed = weatherPackDataSchema.safeParse(object.packData)
-  return parsed.success ? parsed.data : null
+  return object.packId === 'weather' && parsed.success ? parsed.data : null
 }
-
-const oneDecimal = (value: number): string =>
-  `${Math.round(value * 10) / 10}`
-
-const percent = (value: number | undefined): string =>
-  value === undefined ? 'unknown' : `${Math.round(value * 100)}%`
-
-const surfaceSummary = (state: WeatherState): string => {
-  const parts = [
-    ...(state.surface.wetness > 0.2 ? ['wet'] : []),
-    ...(state.surface.standingWater > 0.2 ? ['standing water'] : []),
-    ...(state.surface.snow > 0.2 ? ['snow'] : []),
-    ...(state.surface.ice > 0.2 ? ['ice'] : []),
-    ...(state.surface.frost > 0.2 ? ['frost'] : []),
-  ]
-  return parts.length > 0 ? parts.join(', ') : 'dry'
-}
-
-const weatherFields = (data: WeatherPackData): ReadonlyArray<PackObjectField> => [
-  packField('air-temperature', 'Air temperature', `${oneDecimal(data.state.atmosphere.airTemperatureC)} °C`),
-  packField('ground-temperature', 'Ground temperature', `${oneDecimal(data.state.surface.groundTemperatureC)} °C`),
-  packField('precipitation', 'Precipitation', `${data.state.atmosphere.precipitation.type.replaceAll('_', ' ')} · ${oneDecimal(data.state.atmosphere.precipitation.intensityMmPerHour)} mm/h`),
-  packField('humidity', 'Humidity', percent(data.state.atmosphere.humidity)),
-  packField('visibility', 'Visibility', `${Math.round(data.state.atmosphere.visibilityM)} m`),
-  packField('wind', 'Wind', `${oneDecimal(data.state.atmosphere.windSpeedMps)} m/s from ${Math.round(data.state.atmosphere.windDirectionDeg)}°`),
-  packField('cloud-cover', 'Cloud cover', percent(data.state.atmosphere.cloudCover)),
-  packField('surface', 'Surface', surfaceSummary(data.state)),
-  packField('wetness', 'Wetness', percent(data.state.surface.wetness)),
-  packField('snow', 'Snow', percent(data.state.surface.snow)),
-  packField('ice', 'Ice', percent(data.state.surface.ice)),
-  ...Object.entries(data.state.extensions).map(([key, value]) => packField(`extension:${key}`, key, String(value))),
-]
-
-const weatherValue = (state: WeatherState): string => {
-  const precipitation = state.atmosphere.precipitation
-  return [
-    `${oneDecimal(state.atmosphere.airTemperatureC)} °C air`,
-    `${oneDecimal(state.surface.groundTemperatureC)} °C road`,
-    precipitation.type === 'none'
-      ? 'no precipitation'
-      : `${precipitation.type.replaceAll('_', ' ')} ${oneDecimal(precipitation.intensityMmPerHour)} mm/h`,
-    surfaceSummary(state),
-    `wet ${percent(state.surface.wetness)}`,
-  ].join(' · ')
-}
-
-const weatherMapFeatureLayersForZoom = (zoom: number): ReadonlyArray<'baseGrid' | 'affectedCells' | 'influenceShapes'> =>
-  zoom < 7
-    ? ['affectedCells', 'influenceShapes']
-    : ['baseGrid', 'affectedCells', 'influenceShapes']
-
-const weatherColor = (severity: WeatherPresentationSeverity | undefined, data: WeatherPackData | null): string => {
-  if (severity === 'hazard') return '#dc2626'
-  if (severity === 'adverse') return '#d97706'
-  if (severity === 'notice') {
-    if (data?.state.atmosphere.precipitation.type === 'snow') return '#0891b2'
-    return '#2563eb'
-  }
-  return '#16834f'
-}
-
-const statusToneFor = (severity: WeatherPresentationSeverity | undefined): 'ready' | 'working' | 'error' | 'idle' => {
-  if (severity === 'hazard') return 'error'
-  if (severity === 'adverse' || severity === 'notice') return 'working'
-  return 'ready'
-}
-
-const samplePointFor = (object: OperationalObject): GeoJsonPoint | null => {
-  if (object.packId === weatherPackId) return null
-  return object.spatial.position?.point ?? (object.spatial.geometry?.type === 'Point' ? object.spatial.geometry : null)
-}
-
-const buildWeatherCreatePayload = (
-  typeId: string,
+const number = (
+  path: (string | number)[],
   label: string,
-  geometry: PackCreationGeometry,
-  parameters: unknown,
-): unknown => {
-  if (typeId === 'weather_probe') {
-    if (geometry.kind !== 'point') throw new Error(`weather probe creation requires point geometry, got ${geometry.kind}`)
-    return createWeatherProbePayloadSchema.parse({
-      objectType: 'weather_probe',
-      label,
-      point: geometry.point,
-    })
-  }
-  if (typeId === 'weather_area') {
-    if (geometry.kind !== 'point') throw new Error(`weather area creation requires point geometry, got ${geometry.kind}`)
-    return createWeatherAreaPayloadSchema.parse({
-      objectType: 'weather_area',
-      label,
-      center: geometry.point,
-      ...(typeof parameters === 'object' && parameters !== null ? parameters : {}),
-    })
-  }
-  throw new Error(`unsupported weather create type: ${typeId}`)
+  defaultValue: number,
+  min: number,
+  max: number,
+  step = 1,
+): PackScenarioAuthoringField => ({
+  target: 'item',
+  path,
+  label,
+  control: { kind: 'number', defaultValue, min, max, step },
+})
+export const atmosphereFields: ReadonlyArray<PackScenarioAuthoringField> = [
+  number(['atmosphere', 'airTemperatureC'], 'Air temperature (°C)', 8, -100, 70),
+  number(['atmosphere', 'humidity'], 'Humidity (0–1)', 0.65, 0, 1, 0.05),
+  number(['atmosphere', 'windSpeedMps'], 'Wind (m/s)', 3, 0, 150, 0.5),
+  number(['atmosphere', 'windDirectionDeg'], 'Wind FROM (°)', 240, 0, 360),
+  number(['atmosphere', 'visibilityM'], 'Visibility (m)', 12000, 0, 100000, 100),
+  number(['atmosphere', 'cloudCover'], 'Cloud cover (0–1)', 0.45, 0, 1, 0.05),
+  {
+    target: 'item',
+    path: ['atmosphere', 'precipitation', 'type'],
+    label: 'Precipitation',
+    control: {
+      kind: 'select',
+      defaultValue: 'none',
+      options: precipitationTypeSchema.options.map((value) => ({ value, label: value.replaceAll('_', ' ') })),
+    },
+  },
+  number(['atmosphere', 'precipitation', 'intensityMmPerHour'], 'Precipitation (mm/h)', 0, 0, 500, 0.5),
+]
+export const areaDefault = {
+  semiMajorAxisM: 4000,
+  semiMinorAxisM: 2000,
+  rotationDeg: 0,
+  enabled: true,
+  priority: 0,
+  falloff: 'linear',
+  atmosphere: backgroundAtmosphere,
+  keyframes: [],
 }
-
 export const weatherPack: WorldPack = {
   descriptor: createWorldPackDescriptor({
-    id: 'weather', version: '1.0.0', name: 'Weather Conditions',
-    description: 'Spatial and time-varying weather fields that influence routes, areas, and operational assets.',
-    contributions: ['runtime', 'scenario', 'presentation', 'creation'],
+    id: 'weather',
+    version: '1.0.0',
+    name: 'Weather',
+    description:
+      'Prescribed atmosphere and persistent heuristic ground conditions. Editable areas, timed changes and probes; no forecast feed or terrain hydrology.',
+    contributions: ['runtime', 'scenario', 'presentation', 'creation', 'recording'],
   }),
   scenarioConfigSchema: weatherPackConfigSchema,
   authoring: {
-    itemTypes: [{
-      id: 'weather_condition',
-      label: 'Weather area',
-      description: 'A stationary weather influence area with editable size and conditions.',
-      idPrefix: 'weather',
-      defaultItem: {
-        summary: 'Configured weather area',
-        truthResolution: 8,
-        showAffectedCells: true,
-        showInfluenceShape: true,
-        showIcon: true,
-        priority: 0,
-        atmosphere: {
-          airTemperatureC: 8,
-          humidity: 0.75,
-          windSpeedMps: 4,
-          windDirectionDeg: 220,
-          visibilityM: 10_000,
-          cloudCover: 0.7,
-          precipitation: { type: 'rain', intensityMmPerHour: 1 },
-        },
-        surface: { groundTemperatureC: 7, wetness: 0.25, standingWater: 0, snow: 0, ice: 0, frost: 0 },
-        extensions: {},
-        falloffCurve: [{ x: 0, y: 1 }, { x: 1, y: 0 }],
-        keyframes: [{
-          atSeconds: 0,
-          center: [10.7522, 59.9139],
-          semiMajorAxisM: 4_000,
-          semiMinorAxisM: 2_000,
-          rotationDeg: 0,
-          atmosphere: {},
-          surface: {},
-          extensions: {},
-        }],
+    configFields: [
+      number(['gridResolution'], 'Ground H3 resolution (restart required)', 8, 0, 11),
+      ...atmosphereFields,
+      number(['surface', 'groundTemperatureC'], 'Initial ground temperature (°C)', 8, -100, 100),
+      ...(['wetness', 'standingWater', 'snow', 'ice', 'frost'] as const).map((key) =>
+        number(['surface', key], 'Initial ' + key, 0, 0, 1, 0.05),
+      ),
+    ],
+    itemTypes: [
+      {
+        id: 'weather_area',
+        label: 'Weather area',
+        description:
+          'An elliptical atmospheric influence; ground evolves underneath at the configured mesh resolution.',
+        idPrefix: 'weather',
+        defaultItem: areaDefault,
+        placement: { target: 'item', kind: 'point', path: ['center'] },
+        collections: [
+          {
+            path: ['keyframes'],
+            label: 'Timed changes (seconds after area creation)',
+            maxItems: 128,
+            defaultItem: {
+              atSeconds: 300,
+              center: [10.7522, 59.9139],
+              semiMajorAxisM: 4000,
+              semiMinorAxisM: 2000,
+              rotationDeg: 0,
+              atmosphere: backgroundAtmosphere,
+            },
+            fields: [
+              number(['atSeconds'], 'At simulation seconds', 300, 0, 31536000),
+              number(['center', 0], 'Center longitude', 10.7522, -180, 180, 0.001),
+              number(['center', 1], 'Center latitude', 59.9139, -80, 80, 0.001),
+              number(['semiMajorAxisM'], 'Length radius (m)', 4000, 1, 100000, 100),
+              number(['semiMinorAxisM'], 'Width radius (m)', 2000, 1, 100000, 100),
+              number(['rotationDeg'], 'Rotation (°)', 0, 0, 360),
+              ...atmosphereFields,
+            ],
+          },
+        ],
+        fields: [
+          number(['semiMajorAxisM'], 'Length radius (m)', 4000, 1, 100000, 100),
+          number(['semiMinorAxisM'], 'Width radius (m)', 2000, 1, 100000, 100),
+          number(['rotationDeg'], 'Rotation (°)', 0, 0, 360),
+          number(['priority'], 'Priority', 0, -1000, 1000),
+          { target: 'item', path: ['enabled'], label: 'Enabled', control: { kind: 'boolean', defaultValue: true } },
+          {
+            target: 'item',
+            path: ['falloff'],
+            label: 'Edge blend',
+            control: {
+              kind: 'select',
+              defaultValue: 'linear',
+              options: [
+                { value: 'linear', label: 'Linear' },
+                { value: 'uniform', label: 'Uniform' },
+              ],
+            },
+          },
+          ...atmosphereFields,
+        ],
       },
-      placement: { target: 'item', kind: 'point', path: ['keyframes', 0, 'center'] },
-      fields: [{
-        target: 'item', path: ['summary'], label: 'Summary',
-        control: { kind: 'text', defaultValue: 'Configured weather area' },
-      }, {
-        target: 'item', path: ['keyframes', 0, 'semiMajorAxisM'], label: 'Length radius (m)',
-        control: { kind: 'number', defaultValue: 4_000, min: 100, step: 100 },
-      }, {
-        target: 'item', path: ['keyframes', 0, 'semiMinorAxisM'], label: 'Width radius (m)',
-        control: { kind: 'number', defaultValue: 2_000, min: 100, step: 100 },
-      }, {
-        target: 'item', path: ['atmosphere', 'airTemperatureC'], label: 'Air temperature (°C)',
-        control: { kind: 'number', defaultValue: 8, step: 1 },
-      }, {
-        target: 'item', path: ['atmosphere', 'precipitation', 'intensityMmPerHour'], label: 'Rain (mm/h)',
-        control: { kind: 'number', defaultValue: 1, min: 0, step: 0.1 },
-      }],
-    }],
+      {
+        id: 'weather_probe',
+        label: 'Weather probe',
+        description:
+          'A named observation point sampling the authoritative field; optionally recorded by the Historian.',
+        idPrefix: 'weather-probe',
+        defaultItem: {},
+        placement: { target: 'item', kind: 'point', path: ['point'] },
+        fields: [],
+      },
+    ],
   },
+  recording: { profiles: weatherRecordingProfiles },
   runtime: {
-    runtimes: [{ id: weatherSimRuntimeId, version: '1.0.0', label: 'Local weather runtime', kind: 'local', clock: 'simulation' }],
+    runtimes: [
+      { id: weatherSimRuntimeId, version: '1.0.0', label: 'Local weather', kind: 'local', clock: 'simulation' },
+    ],
     defaultRuntimeId: weatherSimRuntimeId,
   },
   scenario: weatherScenarioSupport,
   presentation: {
-    categories: [{
-      id: 'weather',
-      label: 'Weather',
-      emptyLabel: 'No weather conditions',
-      matches: (object: OperationalObject): boolean => parseWeatherData(object) !== null,
-    }],
+    contextualFieldQueries: (object) =>
+      object.packId !== 'weather' && object.spatial.position
+        ? [
+            {
+              capabilityId: 'world.weather.sample-at-point',
+              input: { point: object.spatial.position.point },
+              toFields: (result) => {
+                const sample = weatherSampleSchema.parse(result)
+                return [
+                  ...weatherQuantities.map((q) =>
+                    packField('weather:' + q.id, 'Weather · ' + q.title, `${q.value(sample.state)} ${q.unit}`.trim()),
+                  ),
+                  packField('weather:time', 'Weather sample time', sample.quality.validAt),
+                ]
+              },
+            },
+          ]
+        : [],
+    categories: [
+      {
+        id: 'weather',
+        label: 'Weather',
+        emptyLabel: 'No weather areas or probes',
+        matches: (object) => dataFor(object) !== null,
+      },
+    ],
     mapAreaFeatureLayers: ['weather'],
-    mapAreaFeatureSourcePackIds: [weatherPackId],
-    presentObject: (object): PackObjectPresentation => {
-    const data = parseWeatherData(object)
-    const severity = data ? weatherPresentationSeverityForState(data.state) : undefined
-    const tone = statusToneFor(severity)
-    return {
-      categoryId: 'weather',
-      icon: 'weather',
-      color: weatherColor(severity, data),
-      summary: data ? `${data.summary} · ${severity}` : object.operational.status,
-      status: packStatus(tone, data ? `${severity} weather` : 'Invalid weather data'),
-      fields: data ? weatherFields(data) : [packField('error', 'Error', 'Invalid weather pack data')],
-      mapIconVisible: data?.conditionKind !== 'weather_influence',
-      noteworthyUpdates: false,
-    }
+    mapAreaFeatureSourcePackIds: ['weather'],
+    presentObject: (object) => {
+      const data = dataFor(object)
+      const severity = data ? weatherPresentationSeverityForState(data.sample.state) : 'hazard'
+      const tone = severity === 'hazard' ? 'error' : severity === 'normal' ? 'ready' : 'working'
+      return {
+        categoryId: 'weather',
+        icon: 'weather',
+        color: severity === 'hazard' ? '#dc2626' : severity === 'adverse' ? '#d97706' : '#2563eb',
+        summary: data
+          ? `${data.definition.type === 'weather_probe' ? 'Probe' : data.definition.enabled ? 'Area' : 'Disabled area'} · ${severity}`
+          : 'Invalid Weather data',
+        status: packStatus(tone, severity),
+        fields: data
+          ? [
+              ...weatherQuantities.map((q) =>
+                packField(q.id, q.title, `${q.value(data.sample.state)} ${q.unit}`.trim()),
+              ),
+              packField('sample-at', 'Simulation time', data.sample.quality.validAt),
+              packField('model', 'Model', data.sample.quality.model),
+              packField('resolution', 'Ground H3 resolution', String(data.sample.resolution)),
+              packField('influences', 'Influences', data.sample.activeInfluenceIds.join(', ') || 'Background'),
+            ]
+          : [packField('error', 'Error', 'Invalid Weather definition')],
+        mapIconVisible: data?.definition.type === 'weather_probe',
+        noteworthyUpdates: false,
+      }
     },
-    mapAreaFeatureQueries: (context) => context.map
-    ? [{
-        capabilityId: 'world.weather.map-features',
-        input: {
-          viewport: context.map.viewport,
-          zoom: context.map.zoom,
-          ...(context.currentTime ? { at: context.currentTime } : {}),
-          animationDurationMs: 2_000,
-          layers: weatherMapFeatureLayersForZoom(context.map.zoom),
-        },
-      }]
-    : [],
-    contextualFields: (object, context): ReadonlyArray<PackObjectField> => {
-      const point = samplePointFor(object)
-      if (!point) return []
-      const weatherObjects = context.objectsForPack?.(weatherPackId)
-        ?? context.objects.filter(candidate => candidate.packId === weatherPackId)
-      const sample = weatherSampleAtPoint(weatherObjects, point, context.currentTime ?? nowIso())
-      return [packField('weather', 'Weather', weatherValue(sample.state))]
-    },
+    mapAreaFeatureQueries: (context) =>
+      context.map
+        ? [
+            {
+              capabilityId: 'world.weather.map-features',
+              input: {
+                viewport: context.map.viewport,
+                zoom: context.map.zoom,
+                layers:
+                  context.map.zoom < 7
+                    ? ['affectedCells', 'influenceShapes']
+                    : ['baseGrid', 'affectedCells', 'influenceShapes'],
+              },
+            },
+          ]
+        : [],
   },
   creation: {
     createObjectTypes: [
-      { id: 'weather_probe', label: 'Weather probe', categoryId: 'weather', icon: 'weather', color: '#2563eb', placementKind: 'point' },
-      { id: 'weather_area', label: 'Weather area', categoryId: 'weather', icon: 'weather', color: '#2563eb', placementKind: 'point' },
+      {
+        id: 'weather_probe',
+        label: 'Weather probe',
+        categoryId: 'weather',
+        icon: 'weather',
+        color: '#2563eb',
+        placementKind: 'point',
+      },
+      {
+        id: 'weather_area',
+        label: 'Weather area',
+        categoryId: 'weather',
+        icon: 'weather',
+        color: '#2563eb',
+        placementKind: 'point',
+      },
     ],
-    defaultObjectLabel: (typeId, context): string => {
-      if (typeId !== 'weather_probe' && typeId !== 'weather_area') throw new Error(`unsupported weather create type: ${typeId}`)
-      const count = context.objects.filter(object => parseWeatherData(object) !== null).length + 1
-      return typeId === 'weather_probe' ? `Weather probe ${count}` : `Weather area ${count}`
+    defaultObjectLabel: (typeId, context) =>
+      `${typeId === 'weather_probe' ? 'Weather probe' : 'Weather area'} ${context.objects.filter((o) => o.packId === 'weather').length + 1}`,
+    buildCreateObjectCommand: (typeId, label, geometry, parameters) => {
+      if (geometry.kind !== 'point') throw new Error('Weather creation requires a point')
+      const item = weatherItemSchema.parse({
+        ...(typeId === 'weather_area'
+          ? { ...areaDefault, center: geometry.point.coordinates }
+          : { point: geometry.point.coordinates }),
+        ...(parameters && typeof parameters === 'object' ? parameters : {}),
+        pack: 'weather',
+        type: typeId,
+        id: 'weather:' + crypto.randomUUID(),
+        label,
+      })
+      return { kind: 'world.weather.create', targetObjectIds: [], payload: item }
     },
-    buildCreateObjectCommand: (typeId: string, label: string, geometry: PackCreationGeometry, parameters?: unknown): PackCommandRequest => ({
-      kind: createWeatherAreaCommandKind,
-      targetObjectIds: [],
-      payload: buildWeatherCreatePayload(typeId, label, geometry, parameters),
-    }),
   },
 }

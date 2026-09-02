@@ -363,8 +363,17 @@
     return presentationComposer.present(object, options)
   }
 
-  const detailPresentationFor = (object: OperationalObject): PackObjectPresentation =>
-    presentationFor(object, { tier: 'detail' })
+  const detailPresentationFor = async (object: OperationalObject): Promise<PackObjectPresentation> => {
+    const presentation = presentationFor(object, { tier: 'detail' })
+    const runId = simulationRunId
+    if (!runId) return presentation
+    const requests = activePack?.presentation.contextualFieldQueries?.(object) ?? []
+    const fields = await Promise.all(requests.map(async request => {
+      const result = await invokeSimulationRunCapability(runId, { capabilityId: request.capabilityId, input: request.input })
+      return request.toFields(result.result)
+    }))
+    return { ...presentation, fields: [...presentation.fields, ...fields.flat()] }
+  }
 
   const mapPresentationFor = (object: OperationalObject): PackObjectPresentation =>
     presentationFor(object, { tier: 'map' })

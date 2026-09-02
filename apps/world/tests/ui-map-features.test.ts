@@ -17,6 +17,7 @@ const presentationFor = (object: OperationalObject): PackObjectPresentation => (
   color: object.operational.status === 'constrained' ? '#b45309' : '#16834f',
   summary: object.label,
   fields: [],
+  mapLineVisible: object.id === 'weather:line',
   status: {
     tone: object.operational.status === 'constrained' ? 'working' : 'ready',
     label: object.operational.status,
@@ -155,7 +156,7 @@ describe('map feature store', () => {
 
     const snapshot = updateStore([weather, grid])
 
-    expect(snapshot.paths.map(path => path.kind).sort()).toEqual(['weather-line'])
+    expect(snapshot.paths.map(path => path.kind).sort()).toEqual(['object-line'])
   })
 
   test('projects pack area features and symbols into deck-ready area families', () => {
@@ -172,6 +173,7 @@ describe('map feature store', () => {
       {
         id: 'weather-grid:8:cell-1',
         categoryId: 'weather',
+        layerId: 'weather',
         geometry: polygon,
         color: '#2563eb',
         summary: 'base cell',
@@ -179,6 +181,7 @@ describe('map feature store', () => {
       {
         id: 'weather:test-area',
         categoryId: 'weather',
+        layerId: 'weather',
         geometry: polygon,
         anchorPoint: geoPointFromLonLat(10.75, 59.91),
         symbol: { icon: 'weather', tone: 'working' },
@@ -189,8 +192,8 @@ describe('map feature store', () => {
 
     const snapshot = updateStore([], { packAreaFeatures: features })
 
-    expect(snapshot.paths.map(path => path.kind)).toEqual(['weather-line'])
-    expect(snapshot.areas.map(area => area.kind)).toEqual(['weather-influence'])
+    expect(snapshot.paths.map(path => path.kind)).toEqual([])
+    expect(snapshot.areas.map((area) => area.layerId)).toEqual(['weather', 'weather'])
     expect(snapshot.areaSymbols).toHaveLength(1)
     expect(snapshot.areaSymbols[0]?.symbolId).toBe('weather')
   })
