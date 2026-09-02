@@ -708,6 +708,7 @@ export const handleAgentsModuleApi = async (
       }
     }
 
+    return await config.registry.withWorkspace(workspaceId, async () => {
     await requireModule(config.state, workspaceId)
     if (collection === 'definitions' && request.method === 'GET') {
       return json(moduleDefinitionCollectionSchema.parse({ definitions: await definitionsFor(workspaceId, config.registry.definitionsFor(workspaceId)) }))
@@ -722,7 +723,9 @@ export const handleAgentsModuleApi = async (
       return await invoke(capabilityId, workspaceId, await readJson(request), config.registry)
     }
     return null
+    })
   } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'workspace_closing') return apiError(409, 'workspace_closing', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'workspace_capacity_exceeded') return apiError(503, 'workspace_capacity_exceeded', error.message)
     if (error instanceof SyntaxError) return apiError(400, 'invalid_json', error.message)
     if (error instanceof z.ZodError) return apiError(400, 'invalid_request', error.message)

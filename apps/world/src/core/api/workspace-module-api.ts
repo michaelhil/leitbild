@@ -1148,36 +1148,33 @@ export const handleWorldModuleApi = async (
     const resourcesMatch = url.pathname.match(/^\/internal\/workspaces\/([^/]+)\/resources$/)
     if (resourcesMatch && request.method === 'GET') {
       const workspaceId = workspaceIdSchema.parse(decodeURIComponent(resourcesMatch[1] ?? ''))
-      const runtime = await workspaces.getOrLoad(workspaceId)
-      return json(moduleResourceCollectionSchema.parse({ resources: await resourcesFor(runtime.simulationRuns) }))
+      return await workspaces.withRuntime(workspaceId, async runtime => json(moduleResourceCollectionSchema.parse({ resources: await resourcesFor(runtime.simulationRuns) })))
     }
 
     const definitionsMatch = url.pathname.match(/^\/internal\/workspaces\/([^/]+)\/definitions$/)
     if (definitionsMatch && request.method === 'GET') {
       const workspaceId = workspaceIdSchema.parse(decodeURIComponent(definitionsMatch[1] ?? ''))
-      const runtime = await workspaces.getOrLoad(workspaceId)
-      return json(moduleDefinitionCollectionSchema.parse({ definitions: await definitionsFor(runtime.simulationRuns) }))
+      return await workspaces.withRuntime(workspaceId, async runtime => json(moduleDefinitionCollectionSchema.parse({ definitions: await definitionsFor(runtime.simulationRuns) })))
     }
 
     const capabilitiesMatch = url.pathname.match(/^\/internal\/workspaces\/([^/]+)\/capabilities$/)
     if (capabilitiesMatch && request.method === 'GET') {
       const workspaceId = workspaceIdSchema.parse(decodeURIComponent(capabilitiesMatch[1] ?? ''))
-      const runtime = await workspaces.getOrLoad(workspaceId)
-      return json(moduleCapabilityCollectionSchema.parse({
+      return await workspaces.withRuntime(workspaceId, async runtime => json(moduleCapabilityCollectionSchema.parse({
         capabilities: [...worldCapabilities.descriptors, ...runtimeCapabilityDescriptorsFor(runtime.simulationRuns)],
-      }))
+      })))
     }
 
     const invocationMatch = url.pathname.match(/^\/internal\/workspaces\/([^/]+)\/capabilities\/([^/]+)\/invoke$/)
     if (invocationMatch && request.method === 'POST') {
       const workspaceId = workspaceIdSchema.parse(decodeURIComponent(invocationMatch[1] ?? ''))
       const capabilityId = decodeURIComponent(invocationMatch[2] ?? '')
-      const runtime = await workspaces.getOrLoad(workspaceId)
-      return await invokeCapability(runtime.simulationRuns, capabilityId, await readJson(request))
+      return await workspaces.withRuntime(workspaceId, async runtime => invokeCapability(runtime.simulationRuns, capabilityId, await readJson(request)))
     }
 
     return null
   } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'workspace_closing') return apiError(409, 'workspace_closing', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'simulation_run_busy') return apiError(409, 'simulation_run_busy', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'workspace_capacity_exceeded') return apiError(503, 'workspace_capacity_exceeded', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'simulation_run_name_changed') {

@@ -1,6 +1,7 @@
 import type { WorkspaceId } from '@leitbild/contracts'
 import {
   createRevisionedDefinitionStore,
+  createOperationScope,
   type DefinitionRecord,
   type DefinitionRevision,
   type RevisionedDefinitionStore,
@@ -16,6 +17,7 @@ export type RoomDefinitionRecord = DefinitionRecord
 export type RoomDefinitionRevision = DefinitionRevision<RoomDefinition>
 
 export interface RoomDefinitionLibrary {
+  readonly close: () => Promise<void>
   readonly create: (definition: RoomDefinition) => Promise<RoomDefinitionRevision>
   readonly update: (definition: RoomDefinition, expectedRevisionId: string) => Promise<RoomDefinitionRevision>
   readonly list: () => Promise<ReadonlyArray<RoomDefinitionRecord>>
@@ -26,6 +28,7 @@ export interface RoomDefinitionLibrary {
 }
 
 export const createRoomDefinitionLibrary = (workspaceId: WorkspaceId): RoomDefinitionLibrary => {
+  const operations = createOperationScope('Agents definition library')
   const store: RevisionedDefinitionStore<RoomDefinition> = createRevisionedDefinitionStore({
     workspaceId,
     rootDir: `${workspaceModulePaths(workspaceId).agents.root}/definitions`,
@@ -44,33 +47,34 @@ export const createRoomDefinitionLibrary = (workspaceId: WorkspaceId): RoomDefin
   }
 
   return {
-    create: async definition => {
+    close: () => operations.close(),
+    create: definition => operations.run(async () => {
       await ensureReady()
       return await store.create(definition)
-    },
-    update: async (definition, expectedRevisionId) => {
+    }),
+    update: (definition, expectedRevisionId) => operations.run(async () => {
       await ensureReady()
       return await store.update(definition, expectedRevisionId)
-    },
-    list: async () => {
+    }),
+    list: () => operations.run(async () => {
       await ensureReady()
       return await store.list()
-    },
-    get: async definitionId => {
+    }),
+    get: definitionId => operations.run(async () => {
       await ensureReady()
       return await store.get(definitionId)
-    },
-    currentRevision: async definitionId => {
+    }),
+    currentRevision: definitionId => operations.run(async () => {
       await ensureReady()
       return await store.currentRevision(definitionId)
-    },
-    getRevision: async revisionId => {
+    }),
+    getRevision: revisionId => operations.run(async () => {
       await ensureReady()
       return await store.getRevision(revisionId)
-    },
-    delete: async (definitionId, expectedRevisionId) => {
+    }),
+    delete: (definitionId, expectedRevisionId) => operations.run(async () => {
       await ensureReady()
       return await store.delete(definitionId, expectedRevisionId)
-    },
+    }),
   }
 }

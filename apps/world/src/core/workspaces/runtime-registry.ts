@@ -1,4 +1,5 @@
 import type { WorkspaceId } from '@leitbild/contracts'
+import { createOperationScope } from '@leitbild/module-runtime'
 import type { ProcedureSourceService } from '../../features/procedures/source.ts'
 import type { PackRuntimeAdapter } from '../../simulation/protocol.ts'
 import type { CompiledScenario } from '../model/index.ts'
@@ -21,6 +22,7 @@ export interface WorldWorkspaceRuntimeRegistry {
     readonly created: boolean
   }>
   readonly getOrLoad: (id: WorkspaceId) => Promise<WorldWorkspaceRuntime>
+  readonly withRuntime: <T>(id: WorkspaceId, work: (runtime: WorldWorkspaceRuntime) => Promise<T>) => Promise<T>
   readonly getLoaded: (id: WorkspaceId) => WorldWorkspaceRuntime | undefined
   readonly close: (id: WorkspaceId) => Promise<boolean>
   readonly remove: (id: WorkspaceId) => Promise<boolean>
@@ -40,8 +42,8 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
   readonly maxLoadedWorkspaces?: number
 }): WorldWorkspaceRuntimeRegistry => {
   const loaded = new Map<WorkspaceId, WorldWorkspaceRuntime>()
-  // A finite admission limit bounds idle containers and their compiled caches.
-  // Do not LRU-evict a container while callers may hold its definition-write queue.
+  const operations = new Map<WorkspaceId, ReturnType<typeof createOperationScope>>()
+  // Insertion order is last-use order. Only containers without work can be reclaimed.
   const maxLoadedWorkspaces = config.maxLoadedWorkspaces ?? 64
   if (!Number.isSafeInteger(maxLoadedWorkspaces) || maxLoadedWorkspaces < 1) throw new Error('maxLoadedWorkspaces must be a positive integer')
   const lifecycle = createKeyedOperations<WorkspaceId>()
@@ -62,16 +64,32 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
     }),
   })
 
-  const getOrLoad = (id: WorkspaceId): Promise<WorldWorkspaceRuntime> => lifecycle.run(id, async () => {
+  const loadNow = async (id: WorkspaceId): Promise<WorldWorkspaceRuntime> => {
     if (shuttingDown) throw new Error('World runtime registry is shutting down')
     const current = loaded.get(id)
-    if (current) return current
+    if (current) { loaded.delete(id); loaded.set(id, current); return current }
     if (!await config.moduleState.get(id)) throw new Error(`World Module not provisioned: ${id}`)
-    if (loaded.size >= maxLoadedWorkspaces) throw Object.assign(new Error(`World Workspace runtime capacity (${maxLoadedWorkspaces}) reached; close a Workspace runtime before loading another`), { code: 'workspace_capacity_exceeded' })
+    while (loaded.size >= maxLoadedWorkspaces) {
+      const candidate = [...loaded].find(([key, runtime]) => operations.get(key)!.activeCount() === 0 && runtime.simulationRuns.isIdle())
+      if (!candidate) throw Object.assign(new Error(`World Workspace runtime capacity (${maxLoadedWorkspaces}) is occupied by active work`), { code: 'workspace_capacity_exceeded' })
+      await lifecycle.run(candidate[0], async () => {
+        const runtime = loaded.get(candidate[0])
+        if (runtime && operations.get(candidate[0])!.activeCount() === 0 && runtime.simulationRuns.isIdle()) await closeLoaded(candidate[0])
+      })
+    }
     const runtime = build(id)
+    operations.set(id, createOperationScope(`World Workspace ${id}`))
     loaded.set(id, runtime)
     return runtime
-  })
+  }
+  const getOrLoad = (id: WorkspaceId): Promise<WorldWorkspaceRuntime> => lifecycle.run(id, () => loadNow(id))
+  const withRuntime = async <T>(id: WorkspaceId, work: (runtime: WorldWorkspaceRuntime) => Promise<T>): Promise<T> => {
+    const { runtime, release } = await lifecycle.run(id, async () => {
+      const runtime = await loadNow(id)
+      return { runtime, release: operations.get(id)!.acquire() }
+    })
+    try { return await work(runtime) } finally { release() }
+  }
 
   const provision = async (id: WorkspaceId) => {
     const provisioned = await config.moduleState.provision(id)
@@ -84,8 +102,10 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
   const closeLoaded = async (id: WorkspaceId): Promise<boolean> => {
     const runtime = loaded.get(id)
     if (!runtime) return false
+    await operations.get(id)!.close()
     await runtime.simulationRuns.shutdown()
     loaded.delete(id)
+    operations.delete(id)
     return true
   }
   const close = (id: WorkspaceId): Promise<boolean> => lifecycle.run(id, () => closeLoaded(id))
@@ -99,6 +119,7 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
     list: () => config.moduleState.list(),
     provision,
     getOrLoad,
+    withRuntime,
     getLoaded: id => loaded.get(id),
     close,
     remove,

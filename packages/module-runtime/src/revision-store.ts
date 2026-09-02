@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { workspaceIdSchema, type WorkspaceId } from '@leitbild/contracts'
@@ -82,8 +82,10 @@ export const stableJson = (value: unknown): string => {
 const atomicWrite = async (path: string, value: unknown): Promise<void> => {
   await mkdir(dirname(path), { recursive: true })
   const temporaryPath = `${path}.${randomUUID()}.tmp`
-  await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
-  await rename(temporaryPath, path)
+  try {
+    await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+    await rename(temporaryPath, path)
+  } finally { await rm(temporaryPath, { force: true }) }
 }
 
 export const createRevisionedDefinitionStore = <TDocument>(config: {

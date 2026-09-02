@@ -1,4 +1,5 @@
 import { createRoomDefinitionLibrary, type RoomDefinitionLibrary } from "../definitions/room-definition-library.ts"
+import { createOperationScope } from '@leitbild/module-runtime'
 // ============================================================================
 // WorkspaceRuntimeRegistry — per-tenant RoomDirectory lifecycle keyed by Workspace ID.
 //
@@ -144,6 +145,7 @@ export interface WorkspaceRuntimeRegistryOptions {
 }
 
 export interface WorkspaceRuntimeRegistry {
+  readonly withWorkspace: <T>(id: WorkspaceId, work: () => Promise<T>) => Promise<T>
   readonly definitionsFor: (id: WorkspaceId) => RoomDefinitionLibrary
   readonly getOrLoad: (id: WorkspaceId) => Promise<AgentsWorkspaceRuntime>
   readonly evictOne: (id: WorkspaceId) => Promise<void>
@@ -187,7 +189,15 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   // Definition writes must share one queue even across Room-runtime eviction.
   // Keeping this lightweight service separate also keeps catalog reads lazy.
   const definitionLibraries = new Map<WorkspaceId, RoomDefinitionLibrary>()
+  const workspaceOperations = new Map<WorkspaceId, ReturnType<typeof createOperationScope>>()
+  const withWorkspace = async <T>(id: WorkspaceId, work: () => Promise<T>): Promise<T> => {
+    if (shuttingDown || removing.has(id)) throw Object.assign(new Error('Agents Workspace is closing'), { code: 'workspace_closing' })
+    let operations = workspaceOperations.get(id)
+    if (!operations) { operations = createOperationScope(`Agents Workspace ${id}`); workspaceOperations.set(id, operations) }
+    return await operations.run(work)
+  }
   const definitionsFor = (id: WorkspaceId): RoomDefinitionLibrary => {
+    if (shuttingDown || removing.has(id)) throw Object.assign(new Error('Agents Workspace is closing'), { code: 'workspace_closing' })
     let library = definitionLibraries.get(id)
     if (!library) {
       library = createRoomDefinitionLibrary(id)
@@ -203,7 +213,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   }
   const map = new Map<WorkspaceId, WorkspaceRuntimeEntry>()
   const pendingLoads = new Map<WorkspaceId, Promise<AgentsWorkspaceRuntime>>()
-  const removing = new Set<WorkspaceId>()
+  const removing = new Map<WorkspaceId, Promise<void>>()
   let shuttingDown = false
   // Reverse index for provider event routing. Populated when an agent
   // is spawned in an Workspace; cleared on agent removal or Workspace evict.
@@ -341,7 +351,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     const excess = map.size - maxLoadedWorkspaces + 1
     if (excess <= 0) return 0
     const targets = [...map.entries()]
-      .filter(([, entry]) => entry.state === 'active' && !ownsAutonomousWork(entry.system))
+      .filter(([id, entry]) => entry.state === 'active' && !workspaceOperations.get(id)?.activeCount() && !ownsAutonomousWork(entry.system))
       .sort((a, b) => a[1].lastTouchedAt - b[1].lastTouchedAt)
       .slice(0, excess)
       .map(([id]) => id)
@@ -465,7 +475,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   const evictIdle = async (now: number = Date.now()): Promise<number> => {
     const targets: WorkspaceId[] = []
     for (const [id, entry] of map) {
-      if (entry.state === 'active' && !ownsAutonomousWork(entry.system) && now - entry.lastTouchedAt > idleMs) {
+      if (entry.state === 'active' && !workspaceOperations.get(id)?.activeCount() && !ownsAutonomousWork(entry.system) && now - entry.lastTouchedAt > idleMs) {
         targets.push(id)
       }
     }
@@ -520,6 +530,8 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   // handler in bootstrap.ts (replaces the single-system flush).
   const shutdown = async (): Promise<void> => {
     shuttingDown = true
+    await Promise.all([...workspaceOperations.values()].map(scope => scope.close()))
+    await Promise.all([...definitionLibraries.values()].map(library => library.close()))
     await Promise.allSettled([...pendingLoads.values()])
     const ids = [...map.keys()]
     await Promise.all(ids.map(evictOne))
@@ -546,15 +558,23 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   }
 
   return {
+    withWorkspace,
     getOrLoad,
     definitionsFor,
     evictOne,
-    remove: async id => {
-      removing.add(id)
-      try {
+    remove: id => {
+      const existing = removing.get(id)
+      if (existing) return existing
+      const removingWorkspace = (async () => {
+        await workspaceOperations.get(id)?.close()
+        await definitionLibraries.get(id)?.close()
         await evictOne(id)
         await opts.moduleState.remove(id)
-      } finally { removing.delete(id) }
+        definitionLibraries.delete(id)
+        workspaceOperations.delete(id)
+      })().finally(() => removing.delete(id))
+      removing.set(id, removingWorkspace)
+      return removingWorkspace
     },
     evictIdle,
     exists,

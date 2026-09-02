@@ -221,6 +221,7 @@ export const createServer = (config: ServerConfig) => {
         return secure(Response.json({ error: { code: 'workspace_not_provisioned', message: 'Leitbild is not enabled in this Workspace' } }, { status: 404 }))
       }
 
+      return await registry.withWorkspace(workspaceId, async () => {
       const runtime = await registry.getOrLoad(workspaceId)
       const apiResponse = await handleAPI(
         request,
@@ -239,6 +240,7 @@ export const createServer = (config: ServerConfig) => {
         },
       )
       return secure(apiResponse ?? Response.json({ error: { code: 'route_not_found', message: 'Unknown API route' } }, { status: 404 }))
+      })
     },
 
     websocket: {
@@ -268,13 +270,13 @@ export const createServer = (config: ServerConfig) => {
           return
         }
         session.lastActivity = Date.now()
-        await handleWSMessage(
+        await registry.withWorkspace(ws.data.workspaceId, async () => handleWSMessage(
           ws,
           session,
           typeof raw === 'string' ? raw : raw.toString(),
           await registry.getOrLoad(ws.data.workspaceId),
           wsManager,
-        )
+        ))
       },
       close(ws) {
         if (wsManager.wsConnections.get(ws.data.sessionToken) === ws) {

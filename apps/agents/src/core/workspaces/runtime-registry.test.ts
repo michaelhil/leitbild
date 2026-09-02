@@ -46,6 +46,42 @@ describe('WorkspaceRuntimeRegistry', () => {
 
   // --- Validity ---
 
+  it('drains accepted definition work before removal and closes stale library references', async () => {
+    const id = newWorkspaceId()
+    await provision(id)
+    const library = registry.definitionsFor(id)
+    const records = await library.list()
+    const source = (await library.currentRevision(records[0]!.id))!.document
+    let resume!: () => void, entered!: () => void
+    const gate = new Promise<void>(r => { resume = r })
+    const started = new Promise<void>(r => { entered = r })
+    const saving = registry.withWorkspace(id, async () => {
+      entered(); await gate
+      return library.create({ ...source, id: 'pending-definition', title: 'Pending' })
+    })
+    await started
+    let removed = false
+    const deleting = registry.remove(id).then(() => { removed = true })
+    await Bun.sleep(10)
+    expect(removed).toBe(false)
+    resume()
+    await saving; await deleting
+    expect(await moduleState.has(id)).toBe(false)
+    await expect(library.create({ ...source, id: 'late-definition' })).rejects.toThrow('closing')
+    await expect(stat(workspaceModulePaths(id).agents.root)).rejects.toThrow()
+  })
+
+  it('does not evict a Workspace with an ordinary request in progress', async () => {
+    const id = newWorkspaceId()
+    await provision(id)
+    await registry.getOrLoad(id)
+    await registry.withWorkspace(id, async () => {
+      expect(await registry.evictIdle(Date.now() + 2_000_000)).toBe(0)
+      expect(registry.tryGetLive(id)).toBeDefined()
+    })
+    expect(await registry.evictIdle(Date.now() + 2_000_000)).toBe(1)
+  })
+
   it('disposes startup resources when the construction hook fails', async () => {
     const id = newWorkspaceId()
     await provision(id)

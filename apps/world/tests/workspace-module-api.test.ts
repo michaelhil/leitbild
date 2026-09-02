@@ -102,10 +102,12 @@ describe('World Module API', () => {
     const a = newWorkspaceId(), b = newWorkspaceId()
     await moduleState.provision(a); await moduleState.provision(b)
     const first = await registry.getOrLoad(a)
+    const run = await first.simulationRuns.create({ scenarioId: 'test-response' })
     await expect(registry.getOrLoad(b)).rejects.toThrow('capacity')
     expect(registry.getLoaded(a)).toBe(first)
-    await registry.close(a)
+    await first.simulationRuns.close(run.id)
     expect((await registry.getOrLoad(b)).workspaceId).toBe(b)
+    expect(registry.getLoaded(a)).toBeUndefined()
   })
   test('publishes the strict Module manifest', async () => {
     const registry = await createRegistry()

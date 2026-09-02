@@ -170,17 +170,20 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
   const bindHost = config.bindHost ?? process.env.LEITBILD_BIND_HOST ?? '0.0.0.0'
   const uiDistPath = resolve(config.uiDistPath ?? `${import.meta.dir}/../../ui/dist`)
   const mapArtifacts = config.mapArtifacts ?? createMapArtifactConfigFromEnv()
-  const realtimeByWorkspace = new Map<WorkspaceId, SimulationRunRealtimeManager<ServerWebSocket<WSData>>>()
+  const realtimeByWorkspace = new Map<WorkspaceId, { runtime: WorldWorkspaceRuntime; realtime: SimulationRunRealtimeManager<ServerWebSocket<WSData>> }>()
 
   const realtimeFor = (workspaceRuntime: WorldWorkspaceRuntime): SimulationRunRealtimeManager<ServerWebSocket<WSData>> => {
+    for (const [id, entry] of realtimeByWorkspace) {
+      if (config.workspaces.getLoaded(id) !== entry.runtime) { entry.realtime.stop(); realtimeByWorkspace.delete(id) }
+    }
     const current = realtimeByWorkspace.get(workspaceRuntime.workspaceId)
-    if (current) return current
+    if (current) return current.realtime
     const realtime = createSimulationRunRealtimeManager<ServerWebSocket<WSData>>({
       registry: workspaceRuntime.simulationRuns,
       send: (socket, message) => socket.send(JSON.stringify(message)),
       sendReady: (socket, message) => socket.send(JSON.stringify(message)),
     })
-    realtimeByWorkspace.set(workspaceRuntime.workspaceId, realtime)
+    realtimeByWorkspace.set(workspaceRuntime.workspaceId, { runtime: workspaceRuntime, realtime })
     return realtime
   }
 
@@ -218,14 +221,19 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
     capabilityId: string,
     rawInvocation: unknown,
   ) => {
-    const runtime = config.workspaces.getLoaded(workspaceId)?.simulationRuns.get(simulationRunId)
+    return await config.workspaces.withRuntime(workspaceId, async workspace => {
+    const runtime = workspace.simulationRuns.get(simulationRunId)
     if (!runtime) throw new Error('simulation run not found')
+    const release = workspace.simulationRuns.acquireLease(simulationRunId, 'api')
+    try {
     const invocation = capabilityInvocationRequestSchema.parse(rawInvocation)
     return await runtime.invokeCapability(buildSimulationRunActor(defaultRealtimeInputActorId), {
       capabilityId,
       input: invocation.input,
       ...(invocation.expectedRevision === undefined ? {} : { expectedRevision: invocation.expectedRevision }),
       ...(invocation.idempotencyKey === undefined ? {} : { idempotencyKey: invocation.idempotencyKey }),
+    })
+    } finally { release() }
     })
   }
 
@@ -305,7 +313,7 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
               createdAt: workspace.createdAt,
               loaded: runtime !== undefined,
               ...(runtime === undefined ? {} : { registry: await runtime.simulationRuns.status() }),
-              realtime: realtimeByWorkspace.get(workspace.workspaceId)?.status() ?? emptyRealtimeStatus(),
+              realtime: realtimeByWorkspace.get(workspace.workspaceId)?.realtime.status() ?? emptyRealtimeStatus(),
             }
           })),
         }))
@@ -352,15 +360,8 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
         const workspaceIdResult = workspaceIdSchema.safeParse(decodeURIComponent(workspaceScopeMatch[1] ?? ''))
         if (!workspaceIdResult.success) return secure(apiError(400, 'invalid_request', workspaceIdResult.error.message))
         const workspaceId = workspaceIdResult.data
-        let workspaceRuntime: WorldWorkspaceRuntime
         try {
-          workspaceRuntime = await config.workspaces.getOrLoad(workspaceId)
-        } catch (err) {
-          if ((err as Error).message.startsWith('World Module not provisioned:')) {
-            return secure(apiError(404, 'workspace_not_found', 'World is not enabled in this Workspace'))
-          }
-          throw err
-        }
+          return await config.workspaces.withRuntime(workspaceId, async workspaceRuntime => {
         const realtime = realtimeFor(workspaceRuntime)
       const simulationRunApiResponse = await handleSimulationRunApi(req, url, {
           registry: workspaceRuntime.simulationRuns,
@@ -388,6 +389,14 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
         const upgraded = serverApi.upgrade(req, { data: { workspaceId, simulationRunId } })
         return upgraded ? undefined : secure(new Response('WebSocket upgrade failed', { status: 400 }))
         }
+        return secure(new Response('Not found', { status: 404 }))
+          })
+        } catch (err) {
+          if ((err as Error).message.startsWith('World Module not provisioned:')) return secure(apiError(404, 'workspace_not_found', 'World is not enabled in this Workspace'))
+          if (err instanceof Error && 'code' in err && err.code === 'workspace_closing') return secure(apiError(409, 'workspace_closing', err.message))
+          if (err instanceof Error && 'code' in err && err.code === 'workspace_capacity_exceeded') return secure(apiError(503, 'workspace_capacity_exceeded', err.message))
+          throw err
+        }
       }
 
       const staticResponse = await serveStatic(url.pathname, uiDistPath)
@@ -401,7 +410,7 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
         realtimeFor(workspaceRuntime).addClient(socket.data.simulationRunId, socket)
       },
       close(socket) {
-        realtimeByWorkspace.get(socket.data.workspaceId)?.removeClient(socket.data.simulationRunId, socket)
+        realtimeByWorkspace.get(socket.data.workspaceId)?.realtime.removeClient(socket.data.simulationRunId, socket)
       },
       message(socket, message) {
         void handleRealtimeClientMessage(socket, message)
@@ -412,7 +421,7 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
   return {
     port: server.port ?? port,
     stop: () => {
-      for (const realtime of realtimeByWorkspace.values()) realtime.stop()
+      for (const { realtime } of realtimeByWorkspace.values()) realtime.stop()
       realtimeByWorkspace.clear()
       void config.workspaces.shutdown()
       server.stop()

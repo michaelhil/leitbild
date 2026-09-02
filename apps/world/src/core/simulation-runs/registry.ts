@@ -1,4 +1,5 @@
 import { semanticVersionSchema,type WorkspaceId } from '@leitbild/contracts'
+import { createOperationScope } from '@leitbild/module-runtime'
 import { lstat,readdir,rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z,ZodError } from 'zod'
@@ -103,6 +104,7 @@ export interface SimulationRunRegistry {
   readonly compiledScenarioForRun: (id: SimulationRunId) => Promise<CompiledScenario>
   readonly shutdown: () => Promise<void>
   readonly close: (id: SimulationRunId) => Promise<boolean>
+  readonly isIdle: () => boolean
 }
 
 export const createSimulationRunRegistry = (config: {
@@ -120,6 +122,7 @@ export const createSimulationRunRegistry = (config: {
   const simulationRuns = new Map<SimulationRunId, SimulationRunRuntime>()
   const lifecycle = createKeyedOperations<SimulationRunId>()
   let shuttingDown = false
+  const definitionOperations = createOperationScope('World scenario library')
   const procedureSourceService = config.procedureSourceService ?? createProcedureSourceService()
   const creatingSimulationRuns = new Map<SimulationRunId, Promise<SimulationRunRuntime>>()
   const leasesBySimulationRun = new Map<SimulationRunId, Map<string, SimulationRunLeaseKind>>()
@@ -865,6 +868,7 @@ export const createSimulationRunRegistry = (config: {
     },
     shutdown: async () => {
       shuttingDown = true
+      await definitionOperations.close()
       await Promise.allSettled([...creatingSimulationRuns.values()])
       await lifecycle.drain()
       await Promise.all([...simulationRuns.keys()].map(close))
@@ -872,34 +876,35 @@ export const createSimulationRunRegistry = (config: {
       pinnedTitles.clear()
     },
     leaseSummary,
-    listScenarios: async () => {
+    isIdle: () => simulationRuns.size === 0 && creatingSimulationRuns.size === 0 && definitionOperations.activeCount() === 0 && leasesBySimulationRun.size === 0,
+    listScenarios: () => definitionOperations.run(async () => {
       await ensureScenarioLibrary()
       return await scenarioLibrary.list()
-    },
-    currentScenario: async (id: string) => {
+    }),
+    currentScenario: (id: string) => definitionOperations.run(async () => {
       await ensureScenarioLibrary()
       return await scenarioLibrary.currentRevision(id)
-    },
-    createScenario: async source => {
+    }),
+    createScenario: source => definitionOperations.run(async () => {
       await ensureScenarioLibrary()
       await compileValidatedDefinition(source)
       return await scenarioLibrary.create(source)
-    },
-    previewScenario: async source => {
+    }),
+    previewScenario: source => definitionOperations.run(async () => {
       const compiled = await compileValidatedDefinition(source)
       return scenarioPreviewFor(compiled, config.scenarioRuntimeResolver.resolve(compiled).packs)
-    },
-    updateScenario: async (source, expectedRevisionId) => {
+    }),
+    updateScenario: (source, expectedRevisionId) => definitionOperations.run(async () => {
       await ensureScenarioLibrary()
       await compileValidatedDefinition(source)
       return await scenarioLibrary.update(source, expectedRevisionId)
-    },
-    deleteScenario: async (id: string, revisionId: ScenarioRevisionId) => {
+    }),
+    deleteScenario: (id: string, revisionId: ScenarioRevisionId) => definitionOperations.run(async () => {
       await ensureScenarioLibrary()
       const current = await scenarioLibrary.currentRevision(id)
       if (!current || current.id !== revisionId) return false
       return await scenarioLibrary.delete(id, revisionId)
-    },
+    }),
     scenarioRevisionForRun,
     compileScenarioRevision: compileRevision,
     close,

@@ -8,6 +8,7 @@ import {
 } from '@leitbild/contracts'
 
 export * from './revision-store.ts'
+export * from './operation-scope.ts'
 
 export type CapabilityRegistration<TContext, TResult> = Readonly<{
   descriptor: ModuleCapabilityDescriptorInput
