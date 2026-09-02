@@ -1,11 +1,11 @@
+import { sourceDocumentPathSchema,sourceRevisionSchema,type AccessContext } from '@leitbild/contracts'
 import { z } from 'zod'
-import { actorIdSchema, clientIdSchema, simulationRunIdSchema, interactionEndpointSchema, interactionSignalSchema, nowIso, objectIdSchema, procedureIdSchema, procedureSourceIdSchema, simulationClockUpdateSchema, type SimulationRunId, type InteractionSignal, type ScenarioDefinition } from '../model/index.ts'
+import { actorIdSchema,clientIdSchema,interactionEndpointSchema,interactionSignalSchema,nowIso,objectIdSchema,procedureIdSchema,procedureSourceIdSchema,simulationClockUpdateSchema,simulationRunIdSchema,type CompiledScenario,type InteractionSignal,type SimulationRunId } from '../model/index.ts'
 import type { Actor } from '../simulation-runs/actors.ts'
+import { CommandIdempotencyConflictError } from '../simulation-runs/command-idempotency.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../simulation-runs/runtime.ts'
-import { apiError, json, readJson } from './responses.ts'
-import { sourceDocumentPathSchema, sourceRevisionSchema, type AccessContext } from '@leitbild/contracts'
-import { CommandIdempotencyConflictError } from '../simulation-runs/command-idempotency.ts'
+import { apiError,json,readJson } from './responses.ts'
 
 const defaultOperatorActorId = actorIdSchema.parse('actor:operator')
 
@@ -77,7 +77,7 @@ const simulationRunResponse = async (
   readonly id: typeof runtime.id
   readonly snapshot: ReturnType<SimulationRunRuntime['snapshot']>
   readonly scenarioRevisionId?: string
-  readonly scenario?: ScenarioDefinition
+  readonly scenario?: CompiledScenario
 }> => {
   const snapshot = runtime.snapshot()
   const revision = await registry.scenarioRevisionForRun(runtime.id)

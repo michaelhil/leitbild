@@ -1,23 +1,23 @@
+import type { z } from 'zod'
 import {
   commandResultSchema,
-  objectIdSchema,
   deleteObjectCommandKind,
   deleteObjectPayloadSchema,
-  procedureRunStartCommandKind,
-  procedureStepUpdateCommandKind,
+  objectIdSchema,
   procedureRunCloseCommandKind,
+  procedureRunClosePayloadSchema,
   procedureRunResetCommandKind,
+  procedureRunResetPayloadSchema,
+  procedureRunStartCommandKind,
+  procedureRunStartPayloadSchema,
   procedureRunTransitionCommandKind,
   procedureRunTransitionPayloadSchema,
-  procedureRunClosePayloadSchema,
-  procedureRunResetPayloadSchema,
-  procedureRunStartPayloadSchema,
+  procedureStepUpdateCommandKind,
   procedureStepUpdatePayloadSchema,
   type ObjectId,
 } from '../core/model/index.ts'
-import type { z } from 'zod'
-import type { SimulationCapability } from './protocol.ts'
 import { defineSimulationCapability } from './capabilities.ts'
+import type { SimulationCapability } from './protocol.ts'
 
 const command = <T>(config: {
   readonly id: string
@@ -26,6 +26,7 @@ const command = <T>(config: {
   readonly input: z.ZodType<T>
   readonly targets: (input: T) => ReadonlyArray<ObjectId>
   readonly risk?: 'write' | 'destructive'
+  readonly schedulable?: boolean
 }): SimulationCapability => defineSimulationCapability({
   id: config.id,
   kind: 'command',
@@ -33,6 +34,7 @@ const command = <T>(config: {
   description: config.description,
   risk: config.risk ?? 'write',
   idempotent: false,
+  ...(config.schedulable === undefined ? {} : { schedulable: config.schedulable }),
   input: config.input,
   output: commandResultSchema,
   buildCommand: raw => {
@@ -49,6 +51,7 @@ export const worldCoreCapabilities: ReadonlyArray<SimulationCapability> = [
     input: deleteObjectPayloadSchema,
     targets: input => [input.objectId],
     risk: 'destructive',
+    schedulable: true,
   }),
   command({
     id: procedureRunStartCommandKind,

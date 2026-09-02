@@ -1,5 +1,4 @@
-import type { OperationalObject, ScenarioDefinition } from '../model/index.ts'
-import { scenarioDefinitionSchema } from '../model/index.ts'
+import type { CompiledScenario,OperationalObject } from '../model/index.ts'
 import type { WorldPack } from '../packs/protocol.ts'
 
 export interface ResolvedPackRuntime {
@@ -14,11 +13,11 @@ export interface ResolvedScenarioRuntime {
   readonly runtimes: ReadonlyArray<ResolvedPackRuntime>
   readonly initialObjects: ReadonlyArray<OperationalObject>
   readonly runtimeConfigByRuntimeId: Record<string, unknown>
-  readonly scenario: ScenarioDefinition
+  readonly scenario: CompiledScenario
 }
 
 export interface ScenarioRuntimeResolver {
-  readonly resolve: (scenario: ScenarioDefinition) => ResolvedScenarioRuntime
+  readonly resolve: (scenario: CompiledScenario) => ResolvedScenarioRuntime
 }
 
 export const createScenarioRuntimeResolver = (config: {
@@ -31,7 +30,7 @@ export const createScenarioRuntimeResolver = (config: {
     packs.set(pack.descriptor.id, pack)
   }
 
-  const validateScenario = (scenario: ScenarioDefinition): void => {
+  const validateScenario = (scenario: CompiledScenario): void => {
     if (scenario.packs.length === 0) throw new Error(`scenario ${scenario.id} must declare at least one pack`)
     const objectIds = new Set<string>(scenario.initialObjects.map(object => object.id))
     if (objectIds.size !== scenario.initialObjects.length) throw new Error(`scenario ${scenario.id} has duplicate initial object ids`)
@@ -63,10 +62,9 @@ export const createScenarioRuntimeResolver = (config: {
     const activeCategoryIds = new Set(
       scenario.packs.flatMap(packId => packs.get(packId)?.presentation.categories.map(category => category.id) ?? []),
     )
-    for (const region of scenario.surface.regions) {
-      if (region.primitive !== 'objectRail') continue
+    {
       const sectionCategoryIds = new Set<string>()
-      for (const section of region.config.sections) {
+      for (const section of scenario.view.rail.sections) {
         if (sectionCategoryIds.has(section.categoryId)) {
           throw new Error(`scenario ${scenario.id} surface rail has duplicate category section: ${section.categoryId}`)
         }
@@ -78,8 +76,9 @@ export const createScenarioRuntimeResolver = (config: {
     }
   }
 
-  const resolveRuntime = (input: ScenarioDefinition): ResolvedScenarioRuntime => {
-    scenarioDefinitionSchema.parse(input)
+  const resolveRuntime = (input: CompiledScenario): ResolvedScenarioRuntime => {
+    // Compilation and persisted-artifact loading validate the full wire shape.
+    // Resolution checks installed ownership and selections, not the same JSON twice.
     const scenario = input
     validateScenario(scenario)
     const initialObjects = scenario.initialObjects

@@ -1,4 +1,5 @@
 import type { ScenarioAuthoringCatalog } from '../core/scenarios/authoring.ts'
+import type { ScenarioDefinition } from '../core/scenarios/definition.ts'
 
 export type AuthoringPack = ScenarioAuthoringCatalog['packs'][number]
 export type AuthoringItemType = AuthoringPack['itemTypes'][number]
@@ -9,28 +10,13 @@ export interface ScenarioPackSelectionRecord {
   id: string
   runtime?: string
   config: Record<string, unknown>
+  recording?: { profileId: string; intervalMs?: number }
   items: Array<Record<string, unknown> & { type: string; id: string; label: string }>
 }
 
-export interface ScenarioSourceRecord {
-  id: string
-  title: string
-  description?: string
-  objectives: Array<string>
-  recording: Array<{ packId: string; profileId: string; intervalMs?: number }>
-  connections: Array<{
-    id: string
-    type: 'electrical'
-    system: { objectId: string; portId: string }
-    network: { objectId: string; portId: string }
-  }>
+export type ScenarioDraft = Omit<ScenarioDefinition, 'packs' | 'timeline'> & {
   packs: Array<ScenarioPackSelectionRecord>
-  world: { startsAt: string; environment: Record<string, unknown> }
-  view: {
-    map: Record<string, unknown> & { center: [number, number]; zoom: number; layers: Array<string> }
-    rail?: Record<string, unknown> & { width?: number; sections: Array<Record<string, unknown>> }
-  }
-  timeline: { cues: Array<unknown> }
+  timeline: NonNullable<ScenarioDefinition['timeline']>
 }
 
 // Authoring metadata is JSON data. JSON cloning also strips Svelte's reactive
@@ -46,13 +32,34 @@ export const valueAtPath = (value: unknown, path: Path): unknown => {
   return current
 }
 
+export const needsPlacement = (item: unknown, placement: AuthoringItemType['placement']): boolean =>
+  !!placement && valueAtPath(item, placement.path) === undefined
+  && !(placement.orReference && valueAtPath(item, placement.orReference))
+
 export const setValueAtPath = (value: unknown, path: Path, next: unknown): void => {
   if (path.length === 0) throw new Error('authoring path cannot be empty')
+  if (next === undefined) {
+    // A tuple coordinate is one optional value, not a sparse JSON array.
+    if (typeof path.at(-1) === 'number' && path.length > 1) { setValueAtPath(value, path.slice(0, -1), undefined); return }
+    const remove = (node: unknown, depth: number): void => {
+      if (!node || typeof node !== 'object') return
+      const record = node as Record<string | number, unknown>
+      const key = path[depth]!
+      if (depth === path.length - 1) delete record[key]
+      else {
+        remove(record[key], depth + 1)
+        if (record[key] && typeof record[key] === 'object' && Object.keys(record[key] as object).length === 0) delete record[key]
+      }
+    }
+    remove(value, 0)
+    return
+  }
   let current = value
   path.forEach((segment, index) => {
     if (current === null || typeof current !== 'object') throw new Error(`invalid authoring path at ${String(segment)}`)
     if (index === path.length - 1) {
-      ;(current as Record<string | number, unknown>)[segment] = next
+      if (next === undefined) delete (current as Record<string | number, unknown>)[segment]
+      else (current as Record<string | number, unknown>)[segment] = next
       return
     }
     const candidate = (current as Record<string | number, unknown>)[segment]
@@ -64,11 +71,20 @@ export const setValueAtPath = (value: unknown, path: Path, next: unknown): void 
   })
 }
 
-export const createEmptyScenarioSource = (): ScenarioSourceRecord => ({
+export const newCollectionRow = (collection: AuthoringItemType['collections'][number], rows: ReadonlyArray<Record<string, unknown>>): Record<string, unknown> => {
+  const row = deepCopy(collection.defaultItem)
+  if (collection.keyframes) {
+    const { timePath, increment } = collection.keyframes
+    const latest = Math.max(0, ...rows.map(row => Number(valueAtPath(row, timePath)) || 0))
+    setValueAtPath(row, timePath, latest + increment)
+  }
+  return row
+}
+
+export const createEmptyScenarioDefinition = (): ScenarioDraft => ({
   id: `scenario-${crypto.randomUUID()}`,
   title: 'Untitled scenario',
   objectives: [],
-  recording: [],
   connections: [],
   packs: [],
   world: { startsAt: new Date().toISOString(), environment: {} },
@@ -76,15 +92,15 @@ export const createEmptyScenarioSource = (): ScenarioSourceRecord => ({
     map: {
         center: [10.7522, 59.9139],
         zoom: 11,
-        layers: ['objects', 'routes', 'weather', 'grid', 'highlights'],
+        hiddenLayers: [],
     },
-    rail: { width: 340, sections: [] },
+    rail: { sections: [] },
   },
   timeline: { cues: [] },
 })
 
 export const selectionFor = (
-  source: ScenarioSourceRecord,
+  source: ScenarioDraft,
   packId: string,
 ): ScenarioPackSelectionRecord | undefined => source.packs.find(selection => selection.id === packId)
 

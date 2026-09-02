@@ -1,24 +1,19 @@
 import { z } from 'zod'
-import { reactorInitialThermalState } from './reactor-initial-conditions.ts'
-import type { PlantGraphSpec, CompiledPlantGraph } from './graph/index.ts'
-import type { ProcessPlantProtectionConfig } from './runtime/ic/control-protection-model.ts'
-import { assemblePwrReferencePlantGraph } from './assembly/pwr-reference-assembly.ts'
-import { pressurizedWaterReactorReferenceIcForGraph } from './specs/reference-ic.ts'
+import { assemblePwrReferencePlantGraph,pwrReferenceParametersSchema } from './assembly/pwr-reference-assembly.ts'
 import type {
-  ProcessPlantDefinition,
   ProcessPlantAutomationSelection,
+  ProcessPlantDefinition,
   ProcessPlantModelSelection,
   ProcessPlantOperatingPointSelection,
 } from './config.ts'
+import type { CompiledPlantGraph,PlantGraphSpec } from './graph/index.ts'
+import { reactorInitialThermalState } from './reactor-initial-conditions.ts'
+import type { ProcessPlantProtectionConfig } from './runtime/ic/control-protection-model.ts'
+import { pressurizedWaterReactorReferenceIcForGraph } from './specs/reference-ic.ts'
 
 export const processPlantPwrReferenceModelRef = 'process-plant.pwr.reference'
 export const processPlantPwrFullPowerOperatingPointRef = 'process-plant.pwr.full-power'
 export const processPlantPwrReferenceAutomationRef = 'process-plant.pwr.standard'
-
-export const pwrReferenceParametersSchema = z.object({
-  loopCount: z.number().int().min(2).max(6),
-  title: z.string().min(1).optional(),
-}).strict()
 
 export interface ResolvedProcessPlantOperatingPoint {
   readonly parameterOverrides: Readonly<Record<string, unknown>>

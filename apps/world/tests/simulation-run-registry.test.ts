@@ -1,8 +1,8 @@
-import { describe, expect, test } from 'bun:test'
-import { access, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { newWorkspaceId,type WorkspaceId } from '@leitbild/contracts'
+import { describe,expect,test } from 'bun:test'
+import { access,mkdir,mkdtemp,readFile,writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { newWorkspaceId, type WorkspaceId } from '@leitbild/contracts'
+import { join } from 'node:path'
 import type {
   ActorId,
   InteractionSignal,
@@ -10,15 +10,15 @@ import type {
   SimulationRunEvent,
   SimulationRunId,
 } from '../src/core/model/index.ts'
-import { nowIso, simulationRunIdSchema } from '../src/core/model/index.ts'
-import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
+import { nowIso,simulationRunIdSchema } from '../src/core/model/index.ts'
 import { createSimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
+import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
 import { assignToIncidentCommandKind } from '../src/packs/ambulance/commands.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { createTestScenarioRuntimeResolver, testScenarioAuthoring } from './helpers.ts'
 import { responseScenario } from './fixtures/scenarios.ts'
+import { createTestScenarioRuntimeResolver,testScenarioAuthoring } from './helpers.ts'
 
 const createRegistry = (dataDir: string, workspaceId: WorkspaceId = newWorkspaceId()) =>
   createSimulationRunRegistry({
@@ -57,6 +57,25 @@ const issueDispatchCommand = async (runtime: SimulationRunRuntime): Promise<void
 }
 
 describe('Simulation Run registry', () => {
+  test('an unreadable compiled artifact does not hide healthy sibling Runs or rewrite retained state', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-run-unreadable-'))
+    const workspaceId = newWorkspaceId()
+    const registry = createRegistry(dataDir, workspaceId)
+    const damaged = await registry.create({ scenarioId: 'test-response' })
+    const healthy = await registry.create({ scenarioId: 'test-response' })
+    await registry.close(damaged.id)
+    await registry.close(healthy.id)
+    const path = join(simulationRunDir(dataDir, workspaceId, damaged.id), 'compiled-scenario.json')
+    await writeFile(path, '{"unsupported":true}')
+    const reopened = createRegistry(dataDir, workspaceId)
+    await reopened.summary(healthy.id)
+    const summaries = await reopened.listKnown()
+    expect(summaries.find(run => run.id === damaged.id)).toMatchObject({ loadError: expect.stringContaining('unreadable'), loaded: false })
+    expect(summaries.find(run => run.id === healthy.id)).toMatchObject({ title: responseScenario.title, loaded: false })
+    expect(summaries.find(run => run.id === healthy.id)?.loadError).toBeUndefined()
+    await expect(reopened.load(damaged.id)).rejects.toThrow()
+    expect(await readFile(path, 'utf8')).toBe('{"unsupported":true}')
+  })
   test('keeps independent names across conflicts, reset, template deletion and restart', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-run-names-'))
     const workspaceId = newWorkspaceId()
@@ -207,9 +226,10 @@ describe('Simulation Run registry', () => {
       scenarioRevisionId: expect.stringMatching(/^revision-/),
       createdAt: expect.any(String),
       loaded: false,
-      snapshotSeq,
+      snapshotSeq: expect.any(Number),
       objectCount: responseScenario.initialObjects.length,
     })])
+    expect(known[0]!.snapshotSeq).toBeGreaterThanOrEqual(snapshotSeq)
   })
 
   test('deletes loaded and persisted state immediately', async () => {

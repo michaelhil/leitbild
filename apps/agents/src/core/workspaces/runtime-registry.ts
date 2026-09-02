@@ -245,13 +245,8 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   // Note: we DO NOT mkdir here. The Workspace dir is created lazily by
   // saveSnapshot's own mkdir(recursive) on the first real autosave write.
   //
-  // Drive-by traffic (bots, monitoring probes, anonymous home-page hits)
-  // is now stopped one layer up: server.ts serves static paths before
-  // getOrLoad runs, and handleAPI rejects cookieless /api/* with 401.
-  // So this factory is reached only when there's a deliberate session
-  // signal (the UI opening /ws, or an explicit /api call from a cookie
-  // holder). Stale cookies for purged ids are soft-expired by server.ts
-  // before they reach getOrLoad.
+  // The Host addresses a provisioned Workspace explicitly. Static requests
+  // and definition catalog reads do not instantiate its Agents runtime.
   const buildWorkspaceRuntime = async (id: WorkspaceId): Promise<{ system: AgentsWorkspaceRuntime; autoSaver: ModuleAutoSaver }> => {
     const paths = workspaceModulePaths(id)
     if (!await opts.moduleState.has(id)) throw new Error(`Agents Workspace not provisioned: ${id}`)

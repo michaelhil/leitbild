@@ -1,7 +1,6 @@
-import { ambulancePackConfigSchema, roadWeatherFields } from './road-weather.ts'
-import type { KnowledgeFact, OperationalObject } from '../../core/model/index.ts'
-import { packField, packStatus } from '../../core/packs/presentation.ts'
-import type { WorldPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
+import type { KnowledgeFact,OperationalObject } from '../../core/model/index.ts'
+import { packField,packStatus } from '../../core/packs/presentation.ts'
+import type { PackCommandRequest,PackCreationGeometry,PackObjectField,PackObjectPresentation,PackObjectStatusPresentation,WorldPack } from '../../core/packs/protocol.ts'
 import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
 import {
   cancelDestinationCommandKind,
@@ -11,18 +10,18 @@ import {
 } from './commands.ts'
 import {
   ambulancePackDataSchema,
-  ambulancePackId,
   hospitalPackDataSchema,
   incidentPackDataSchema,
   type AmbulancePackData,
   type HospitalPackData,
   type IncidentPackData,
-  type InjurySummary,
+  type InjurySummary
 } from './model.ts'
-import { ambulanceSimRuntimeId } from './sim/constants.ts'
 import { ambulanceRecordingProfiles } from './recording.ts'
-import { createAmbulanceArrivalInteractionHandler } from './sim/interactions.ts'
+import { ambulancePackConfigSchema,roadWeatherFields } from './road-weather.ts'
 import { ambulanceScenarioSupport } from './scenario.ts'
+import { ambulanceSimRuntimeId } from './sim/constants.ts'
+import { createAmbulanceArrivalInteractionHandler } from './sim/interactions.ts'
 
 const factText = <T>(fact: KnowledgeFact<T> | undefined, formatter: (value: T) => string = String): string =>
   !fact || fact.state === 'unknown' ? 'unknown' : formatter(fact.value)
@@ -275,21 +274,26 @@ export const ambulancePack: WorldPack = {
       description: 'A dispatchable ambulance placed on the map.',
       idPrefix: 'ambulance',
       defaultItem: { equipment: [] },
-      placement: { target: 'item', kind: 'point', path: ['position'] },
-      fields: [],
+      placement: { kind: 'point', path: ['position'], orReference: ['atObject'] },
+      fields: [
+        { path: ['atObject'], label: 'Start at asset (when no map position)', control: { kind: 'reference', itemTypes: ['hospital', 'incident', 'ambulance'] } },
+        { path: ['targetId'], label: 'Initial destination', control: { kind: 'reference', itemTypes: ['hospital', 'incident'] } },
+        { path: ['equipment'], label: 'Equipment (one per line)', control: { kind: 'string-list' } },
+        { path: ['patientsOnBoard'], label: 'Patients on board', control: { kind: 'number', step: 1 } },
+      ],
     }, {
       id: 'hospital',
       label: 'Hospital',
       description: 'A receiving hospital with configurable trauma-bed capacity.',
       idPrefix: 'hospital',
       defaultItem: { traumaBeds: { total: 5, available: 5 } },
-      placement: { target: 'item', kind: 'point', path: ['position'] },
+      placement: { kind: 'point', path: ['position'] },
       fields: [{
-        target: 'item', path: ['traumaBeds', 'total'], label: 'Trauma beds',
-        control: { kind: 'number', defaultValue: 5, min: 0, step: 1 },
+        path: ['traumaBeds', 'total'], label: 'Trauma beds',
+        control: { kind: 'number', min: 0, step: 1 },
       }, {
-        target: 'item', path: ['traumaBeds', 'available'], label: 'Available beds',
-        control: { kind: 'number', defaultValue: 5, min: 0, step: 1 },
+        path: ['traumaBeds', 'available'], label: 'Available beds',
+        control: { kind: 'number', min: 0, step: 1 },
       }],
     }, {
       id: 'incident',
@@ -297,17 +301,17 @@ export const ambulancePack: WorldPack = {
       description: 'An emergency incident with triage severity and victim count.',
       idPrefix: 'incident',
       defaultItem: { triage: 'yellow', victims: { state: 'estimated', count: 1 } },
-      placement: { target: 'item', kind: 'point', path: ['position'] },
+      placement: { kind: 'point', path: ['position'] },
       fields: [{
-        target: 'item', path: ['triage'], label: 'Triage',
-        control: { kind: 'select', defaultValue: 'yellow', options: [
+        path: ['triage'], label: 'Triage',
+        control: { kind: 'select', options: [
           { value: 'green', label: 'Green' },
           { value: 'yellow', label: 'Yellow' },
           { value: 'red', label: 'Red' },
         ] },
       }, {
-        target: 'item', path: ['victims', 'count'], label: 'Victims',
-        control: { kind: 'number', defaultValue: 1, min: 0, step: 1 },
+        path: ['victims', 'count'], label: 'Victims',
+        control: { kind: 'number', min: 0, step: 1 },
       }],
     }],
   },

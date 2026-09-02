@@ -1,7 +1,6 @@
-import type { ActorId, ClientId, CommandEnvelope, CommandResult, ElectricalConnectionDefinition, SimulationRunEvent, InteractionSignal, OperationalObject, PackRuntimeRecordingBatch, Provenance, ScenarioRecordingSelection, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
-import type { IsoTimestamp, ObjectId, SimulationRunId } from '../core/model/index.ts'
-import type { PackRuntimeClock } from '../core/packs/protocol.ts'
 import type { z } from 'zod'
+import type { ActorId,ClientId,CommandEnvelope,CommandResult,ElectricalConnectionDefinition,InteractionSignal,IsoTimestamp,ObjectId,OperationalObject,PackRuntimeRecordingBatch,Provenance,ScenarioRecordingSelection,ScenarioWorldDefinition,SimulationClockState,SimulationRunEvent,SimulationRunId,TelemetryState } from '../core/model/index.ts'
+import type { PackRuntimeClock } from '../core/packs/protocol.ts'
 
 export interface PackRuntimeSnapshot {
   readonly simulationRunId: SimulationRunId
@@ -130,6 +129,8 @@ export interface PackRuntimeAdapter {
   readonly packId: string
   readonly clock: PackRuntimeClock
   readonly capabilities: ReadonlyArray<SimulationCapability>
+  /** Conditional read-only dependencies, validated before saving or loading. */
+  readonly requiredQueries?: (runtimeConfig: unknown) => ReadonlyArray<string>
   readonly realtimeInputTypes?: ReadonlyArray<string>
   readonly commandEventHistory?: Readonly<Record<string, PackRuntimeEventHistory>>
   readonly connect: (config: PackRuntimeConnectionConfig) => Promise<PackRuntimeConnection>
@@ -150,6 +151,8 @@ export interface PackRuntimeQueries {
   readonly invoke: (query: PackRuntimeQuery) => Promise<unknown>
 }
 export interface PackRuntimeConnectionConfig {
+  /** The owning Run's clock. Standalone Pack hosts may own a local clock instead. */
+  readonly runClock?: import('../core/model/time.ts').SimulationClockReader
   /** Read-only, schema-validated access to active providers within this run. */
   readonly queries?: PackRuntimeQueries
   readonly simulationRunId: SimulationRunId

@@ -1,18 +1,18 @@
 import type { OperationalObject } from '../../core/model/index.ts'
-import { packField, packStatus } from '../../core/packs/presentation.ts'
-import type { WorldPack, PackScenarioAuthoringField } from '../../core/packs/protocol.ts'
+import { packField,packStatus } from '../../core/packs/presentation.ts'
+import type { PackScenarioAuthoringField,WorldPack } from '../../core/packs/protocol.ts'
 import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
 import { weatherPresentationSeverityForState } from './conditions.ts'
 import {
   backgroundAtmosphere,
   precipitationTypeSchema,
   weatherItemSchema,
-  weatherSampleSchema,
-  weatherPackDataSchema,
   weatherPackConfigSchema,
+  weatherPackDataSchema,
+  weatherSampleSchema,
 } from './model.ts'
+import { formatWeatherQuantity,weatherQuantities,weatherRecordingProfiles } from './quantities.ts'
 import { weatherScenarioSupport } from './scenario.ts'
-import { formatWeatherQuantity, weatherQuantities, weatherRecordingProfiles } from './quantities.ts'
 import { weatherSimRuntimeId } from './sim/constants.ts'
 
 const dataFor = (object: OperationalObject) => {
@@ -27,10 +27,9 @@ const number = (
   max: number,
   step = 1,
 ): PackScenarioAuthoringField => ({
-  target: 'item',
-  path,
+    path,
   label,
-  control: { kind: 'number', defaultValue, min, max, step },
+  control: { kind: 'number', min, max, step },
 })
 export const atmosphereFields: ReadonlyArray<PackScenarioAuthoringField> = [
   number(['atmosphere', 'airTemperatureC'], 'Air temperature (°C)', 8, -100, 70),
@@ -40,12 +39,10 @@ export const atmosphereFields: ReadonlyArray<PackScenarioAuthoringField> = [
   number(['atmosphere', 'visibilityM'], 'Visibility (m)', 12000, 0, 100000, 100),
   number(['atmosphere', 'cloudCover'], 'Cloud cover (0–1)', 0.45, 0, 1, 0.05),
   {
-    target: 'item',
-    path: ['atmosphere', 'precipitation', 'type'],
+        path: ['atmosphere', 'precipitation', 'type'],
     label: 'Precipitation',
     control: {
       kind: 'select',
-      defaultValue: 'none',
       options: precipitationTypeSchema.options.map((value) => ({ value, label: value.replaceAll('_', ' ') })),
     },
   },
@@ -88,20 +85,14 @@ export const weatherPack: WorldPack = {
           'An elliptical atmospheric influence; ground evolves underneath at the configured mesh resolution.',
         idPrefix: 'weather',
         defaultItem: areaDefault,
-        placement: { target: 'item', kind: 'point', path: ['center'] },
+        placement: { kind: 'point', path: ['center'] },
         collections: [
           {
             path: ['keyframes'],
             label: 'Timed changes (seconds after area creation)',
             maxItems: 128,
-            defaultItem: {
-              atSeconds: 300,
-              center: [10.7522, 59.9139],
-              semiMajorAxisM: 4000,
-              semiMinorAxisM: 2000,
-              rotationDeg: 0,
-              atmosphere: backgroundAtmosphere,
-            },
+            defaultItem: { atSeconds: 300 },
+            keyframes: { timePath: ['atSeconds'], increment: 300 },
             fields: [
               number(['atSeconds'], 'At simulation seconds', 300, 0, 31536000),
               number(['center', 0], 'Center longitude', 10.7522, -180, 180, 0.001),
@@ -118,14 +109,12 @@ export const weatherPack: WorldPack = {
           number(['semiMinorAxisM'], 'Width radius (m)', 2000, 1, 100000, 100),
           number(['rotationDeg'], 'Rotation (°)', 0, 0, 360),
           number(['priority'], 'Priority', 0, -1000, 1000),
-          { target: 'item', path: ['enabled'], label: 'Enabled', control: { kind: 'boolean', defaultValue: true } },
+          { path: ['enabled'], label: 'Enabled', control: { kind: 'boolean',} },
           {
-            target: 'item',
-            path: ['falloff'],
+                        path: ['falloff'],
             label: 'Edge blend',
             control: {
               kind: 'select',
-              defaultValue: 'linear',
               options: [
                 { value: 'linear', label: 'Linear' },
                 { value: 'uniform', label: 'Uniform' },
@@ -142,7 +131,7 @@ export const weatherPack: WorldPack = {
           'A named observation point sampling the authoritative field; optionally recorded by the Historian.',
         idPrefix: 'weather-probe',
         defaultItem: {},
-        placement: { target: 'item', kind: 'point', path: ['point'] },
+        placement: { kind: 'point', path: ['point'] },
         fields: [],
       },
     ],

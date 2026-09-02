@@ -1,14 +1,22 @@
-import { describe, expect, test } from 'bun:test'
+import { describe,expect,test } from 'bun:test'
 import {
   commandEnvelopeSchema,
-  geoPointFromLonLat,
   geoJsonPolygonSchema,
+  geoPointFromLonLat,
   nowIso,
   type CommandEnvelope,
   type IsoTimestamp,
-  type SimulationRunId,
   type OperationalObject,
+  type SimulationRunId,
 } from '../src/core/model/index.ts'
+import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
+import {
+  hexCellAtPoint,
+  hexCellBoundary,
+  hexCellCenter,
+  hexCellsForPolygon,
+  hexResolution,
+} from '../src/core/spatial/index.ts'
 import {
   advanceWeather,
   checkpointWeatherField,
@@ -17,26 +25,18 @@ import {
   sampleWeather,
   setWeatherObjects,
 } from '../src/packs/weather/cell-field.ts'
+import { frameAt } from '../src/packs/weather/influence.ts'
 import {
   weatherItemSchema,
   weatherPackConfigSchema,
   weatherPackDataSchema,
   weatherSampleSchema,
 } from '../src/packs/weather/model.ts'
-import { createWeatherObject } from '../src/packs/weather/scenario.ts'
-import { frameAt } from '../src/packs/weather/influence.ts'
-import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
-import {
-  hexCellAtPoint,
-  hexCellBoundary,
-  hexCellCenter,
-  hexCellsForPolygon,
-  hexResolution,
-} from '../src/core/spatial/index.ts'
-import { answerWeatherQuery, weatherQueryCapabilities } from '../src/packs/weather/query.ts'
-import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { formatWeatherQuantity } from '../src/packs/weather/quantities.ts'
+import { answerWeatherQuery,weatherQueryCapabilities } from '../src/packs/weather/query.ts'
+import { createWeatherObject } from '../src/packs/weather/scenario.ts'
+import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { testRuntimeConnectionConfig } from './helpers.ts'
 
 const at = '2026-01-01T00:00:00.000Z' as IsoTimestamp
@@ -56,7 +56,7 @@ const area = (extra: Record<string, unknown> = {}) =>
     atmosphere: { precipitation: { type: 'rain', intensityMmPerHour: 30 } },
     ...extra,
   })
-const object = (extra: Record<string, unknown> = {}) => createWeatherObject(area(extra), at, settings)
+const object = (extra: Record<string, unknown> = {}) => createWeatherObject(area(extra), at, settings, at)
 const fieldWith = (objects = [object()]) => {
   const field = createWeatherField(settings, at)
   setWeatherObjects(field, objects)
@@ -276,6 +276,7 @@ describe('Weather runtime controls and lifecycle', () => {
       }),
       at,
       settings,
+      at,
     )
     const connection = await connect([probe])
     try {
@@ -294,7 +295,7 @@ describe('Weather runtime controls and lifecycle', () => {
       )
       const obj = snapshot.objects.find((o) => o.id === 'weather:rain')!
       const result = await connection.sendCommand(
-        envelope('world.weather.set-enabled', { objectId: obj.id, enabled: false, expectedRevision: obj.revision }),
+        envelope('world.weather.set-enabled', { objectId: obj.id, enabled: false }),
       )
       expect(result.ok).toBe(true)
       expect(
@@ -305,7 +306,7 @@ describe('Weather runtime controls and lifecycle', () => {
       expect(
         (
           await connection.sendCommand(
-            envelope('world.weather.set-enabled', { objectId: obj.id, enabled: true, expectedRevision: obj.revision }),
+            envelope('world.weather.update', { item: weatherPackDataSchema.parse(obj.packData).definition, expectedRevision: obj.revision }),
           )
         ).ok,
       ).toBe(false)
@@ -346,6 +347,7 @@ describe('Weather runtime controls and lifecycle', () => {
       }),
       at,
       settings,
+      at,
     )
     const connection = await connect([probe], {
       recording: { packId: 'weather', profileId: 'probes', intervalMs: 1000 },

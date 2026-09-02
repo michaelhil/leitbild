@@ -1,12 +1,12 @@
-import { describe, expect, test } from 'bun:test'
+import { describe,expect,test } from 'bun:test'
 import type { IsoTimestamp } from '../src/core/model/index.ts'
-import { scenarioDefinitionSchema } from '../src/core/model/index.ts'
+import { compiledScenarioSchema } from '../src/core/model/index.ts'
 import { dueScenarioTimelineCues } from '../src/core/simulation-runs/timeline-runner.ts'
-import { responseScenario, scenarios } from './fixtures/scenarios.ts'
+import { responseScenario,scenarios } from './fixtures/scenarios.ts'
 
 describe('scenario timeline model', () => {
   test('validates timed scenario cues and declarative actions', () => {
-    const parsed = scenarioDefinitionSchema.parse(responseScenario)
+    const parsed = compiledScenarioSchema.parse(responseScenario)
 
     expect(parsed.packs).toEqual(['ambulance', 'weather'])
     expect(parsed.initialObjects.some(object => object.id === 'incident:gronland-unattended')).toBe(true)
@@ -14,15 +14,15 @@ describe('scenario timeline model', () => {
     expect(parsed.timeline?.cues.some(cue =>
       cue.actions.some(action => action.type === 'show_guidance'))).toBe(true)
     expect(parsed.timeline?.cues.some(cue =>
-      cue.actions.some(action => action.type === 'upsert_object'))).toBe(true)
+      cue.actions.some(action => action.type === 'invoke_capability' && action.capabilityId === 'world.ambulance.create-incident'))).toBe(true)
     expect(parsed.timeline?.cues.some(cue =>
-      cue.actions.some(action => action.type === 'delete_object' && action.objectId === 'incident:majorstuen-tram'))).toBe(true)
+      cue.actions.some(action => action.type === 'invoke_capability' && action.capabilityId === 'world.object.delete'))).toBe(true)
   })
 
   test('drone scenario invokes discoverable startup capabilities through the scenario runner', () => {
     const droneScenario = scenarios.find(scenario => scenario.id === 'test-drone')
     if (!droneScenario) throw new Error('missing drone scenario')
-    const parsed = scenarioDefinitionSchema.parse(droneScenario)
+    const parsed = compiledScenarioSchema.parse(droneScenario)
     const commandActions = parsed.timeline?.cues.flatMap(cue =>
       cue.actions.filter(action => action.type === 'invoke_capability')) ?? []
 
@@ -34,7 +34,7 @@ describe('scenario timeline model', () => {
   })
 
   test('rejects duplicate scenario timeline cue ids', () => {
-    expect(() => scenarioDefinitionSchema.parse({
+    expect(() => compiledScenarioSchema.parse({
       ...responseScenario,
       timeline: {
         cues: [

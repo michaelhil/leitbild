@@ -3,6 +3,7 @@
   import { getWorkerUrl, Map as MapLibre, NavigationControl, setWorkerUrl, type GeoJSONSource, type Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl'
   import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
+  import type { ScenarioPreview } from '../core/scenarios/authoring-preview.ts'
 
   interface BuilderPoint {
     readonly id: string
@@ -14,6 +15,7 @@
     readonly center: readonly [number, number]
     readonly zoom: number
     readonly points: ReadonlyArray<BuilderPoint>
+    readonly assets?: ScenarioPreview['assets']
     readonly selectedId: string | null
     readonly placementActive: boolean
     readonly editView: boolean
@@ -22,19 +24,22 @@
     readonly onselect: (id: string) => void
   }
 
-  const { center, zoom, points, selectedId, placementActive, editView, onviewchange, onplace, onselect }: Props = $props()
+  const { center, zoom, points, assets = [], selectedId, placementActive, editView, onviewchange, onplace, onselect }: Props = $props()
   let element = $state<HTMLDivElement | null>(null)
   let map = $state<MapLibreMap | null>(null)
   let ready = $state(false)
 
   const data = () => ({
     type: 'FeatureCollection' as const,
-    features: points.map(point => ({
+    features: [...assets.flatMap(asset => asset.geometry && (asset.geometry.type !== 'Point' || !points.some(point => point.id === asset.id)) ? [{
+      type: 'Feature' as const, id: asset.id, geometry: asset.geometry,
+      properties: { id: asset.id, label: asset.label, selected: asset.id === selectedId },
+    }] : []), ...points.map(point => ({
       type: 'Feature' as const,
       id: point.id,
       properties: { id: point.id, label: point.label, selected: point.id === selectedId },
       geometry: { type: 'Point' as const, coordinates: [...point.coordinates] },
-    })),
+    }))],
   })
 
   const updateSource = (): void => {
@@ -48,7 +53,7 @@
       onplace([event.lngLat.lng, event.lngLat.lat])
       return
     }
-    const feature = map.queryRenderedFeatures(event.point, { layers: ['scenario-item-circles'] })[0]
+    const feature = map.queryRenderedFeatures(event.point, { layers: ['scenario-item-circles', 'scenario-item-areas'] })[0]
     const id = feature?.properties?.id
     if (typeof id === 'string') onselect(id)
   }
@@ -67,10 +72,13 @@
     instance.addControl(new NavigationControl({ showCompass: false }), 'bottom-right')
     instance.on('load', () => {
       instance.addSource('scenario-items', { type: 'geojson', data: data() })
+      instance.addLayer({ id: 'scenario-item-areas', type: 'fill', source: 'scenario-items', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#4188d8', 'fill-opacity': 0.22 } })
+      instance.addLayer({ id: 'scenario-item-boundaries', type: 'line', source: 'scenario-items', filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': '#2162a8', 'line-width': 2 } })
       instance.addLayer({
         id: 'scenario-item-circles',
         type: 'circle',
         source: 'scenario-items',
+        filter: ['==', ['geometry-type'], 'Point'],
         paint: {
           'circle-radius': ['case', ['get', 'selected'], 9, 7],
           'circle-color': ['case', ['get', 'selected'], '#f59e0b', '#1d66d2'],
@@ -82,6 +90,7 @@
         id: 'scenario-item-labels',
         type: 'symbol',
         source: 'scenario-items',
+        filter: ['==', ['geometry-type'], 'Point'],
         layout: {
           'text-field': ['get', 'label'],
           'text-size': 12,
@@ -109,11 +118,16 @@
 
   $effect(() => {
     points
+    assets
     selectedId
     ready
     updateSource()
   })
+  $effect(() => {
+    if (!ready || !map) return
+    const current = map.getCenter()
+    if (Math.abs(current.lng - center[0]) > 1e-8 || Math.abs(current.lat - center[1]) > 1e-8 || Math.abs(map.getZoom() - zoom) > 0.02) map.jumpTo({ center: [...center], zoom })
+  })
 </script>
 
 <div class:placing={placementActive} class="scenario-builder-map" bind:this={element} aria-label="Scenario map"></div>
-

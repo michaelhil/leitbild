@@ -21,7 +21,7 @@ The internal deterministic startup artifact produced from one Scenario Definitio
 _Avoid_: authored Scenario Definition, Scenario Template, live Simulation Run state
 
 **Pack Selection**:
-One selected World Pack and its Pack-owned authored items, runtime choice, and configuration inside a Scenario Definition.
+One selected World Pack and its Pack-owned authored items, runtime choice, configuration, and optional Recording Profile inside a Scenario Definition.
 _Avoid_: Scenario Feature, Capability, or duplicated Pack ids across parallel configuration maps
 
 **Starting View**:
@@ -121,7 +121,7 @@ A Pack-owned named choice of operational signals and allowed sampling cadence th
 _Avoid_: Recording Policy, hand-authored signal list, universal logging rule
 
 **Scenario Timeline**:
-An ordered collection of declarative Cues evaluated against Simulation Run time. Cues may change scenario presentation/state or invoke a Capability explicitly marked schedulable.
+An ordered collection of declarative Cues evaluated against Simulation Run time. Cues may change guidance/highlights, emit interaction signals or invoke a Capability explicitly marked schedulable. Object changes use live commands, not precompiled object snapshots. Equal-time cues retain authored order.
 _Avoid_: Scenario Script, arbitrary code, simulator-private timer
 
 **Cue**:

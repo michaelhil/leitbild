@@ -1,10 +1,10 @@
-import { geoJsonPointSchema, geoJsonPolygonSchema, isoTimestampSchema } from '../model/index.ts'
-import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject, RecordingProfileDescriptor, SurfaceMapLayer } from '../model/index.ts'
-import type { RoutingAdapter } from '../../routing/protocol.ts'
-import type { DatasetConfig, DatasetId } from '../../reference-data/types.ts'
-import { packDescriptorSchema, type PackDescriptor } from '@leitbild/contracts'
+import { packDescriptorSchema,type PackDescriptor } from '@leitbild/contracts'
 import type { Component } from 'svelte'
 import { z } from 'zod'
+import type { DatasetConfig,DatasetId } from '../../reference-data/types.ts'
+import type { RoutingAdapter } from '../../routing/protocol.ts'
+import type { GeoJsonPoint,GeoJsonPolygon,InteractionHandler,IsoTimestamp,MapLayerId,ObjectId,OperationalObject,RecordingProfileDescriptor } from '../model/index.ts'
+import { geoJsonPointSchema,geoJsonPolygonSchema,isoTimestampSchema } from '../model/index.ts'
 
 export type WorldPackDescriptor = PackDescriptor & { readonly description: string }
 
@@ -248,13 +248,14 @@ export interface PackScenarioItemContribution {
 }
 
 export type PackScenarioAuthoringControl =
-  | { readonly kind: 'text'; readonly defaultValue: string }
-  | { readonly kind: 'number'; readonly defaultValue: number; readonly min?: number; readonly max?: number; readonly step?: number }
-  | { readonly kind: 'boolean'; readonly defaultValue: boolean }
-  | { readonly kind: 'select'; readonly defaultValue: string; readonly options: ReadonlyArray<{ readonly value: string; readonly label: string }> }
+  | { readonly kind: 'text' }
+  | { readonly kind: 'number'; readonly min?: number; readonly max?: number; readonly step?: number }
+  | { readonly kind: 'boolean' }
+  | { readonly kind: 'select'; readonly options: ReadonlyArray<{ readonly value: string; readonly label: string; readonly compatibleWith?: { readonly path: ReadonlyArray<string | number>; readonly values: ReadonlyArray<string> } }>; readonly extendFromConfig?: { readonly path: ReadonlyArray<string | number>; readonly valueKey: string; readonly labelKey: string } }
+  | { readonly kind: 'reference'; readonly itemTypes: ReadonlyArray<string> }
+  | { readonly kind: 'string-list' }
 
 export interface PackScenarioAuthoringField {
-  readonly target: 'item' | 'linkedConfig'
   readonly path: ReadonlyArray<string | number>
   readonly label: string
   readonly control: PackScenarioAuthoringControl
@@ -267,6 +268,8 @@ export interface PackScenarioAuthoringCollection {
   readonly defaultItem: Readonly<Record<string, unknown>>
   readonly fields: ReadonlyArray<PackScenarioAuthoringField>
   readonly maxItems: number
+  /** Sparse, ordered keyframes inherit missing values from preceding records. */
+  readonly keyframes?: { readonly timePath: ReadonlyArray<string | number>; readonly increment: number }
 }
 export interface PackScenarioAuthoringItemType {
   readonly id: string
@@ -275,15 +278,9 @@ export interface PackScenarioAuthoringItemType {
   readonly idPrefix: string
   readonly defaultItem: Readonly<Record<string, unknown>>
   readonly placement?: {
-    readonly target: 'item'
-    readonly kind: 'point' | 'route' | 'polygon'
+    readonly kind: 'point'
     readonly path: ReadonlyArray<string | number>
-  }
-  readonly linkedConfig?: {
-    readonly collectionPath: ReadonlyArray<string | number>
-    readonly idPrefix: string
-    readonly itemReferencePath: ReadonlyArray<string | number>
-    readonly defaults: Readonly<Record<string, unknown>>
+    readonly orReference?: ReadonlyArray<string | number>
   }
   readonly fields: ReadonlyArray<PackScenarioAuthoringField>
   readonly collections?: ReadonlyArray<PackScenarioAuthoringCollection>
@@ -294,11 +291,6 @@ export interface PackScenarioAuthoringContribution {
   readonly itemTypes: ReadonlyArray<PackScenarioAuthoringItemType>
 }
 
-export interface PackScenarioMutationSpec {
-  readonly pack: string
-  readonly type: string
-  readonly [key: string]: unknown
-}
 
 export interface PackScenarioExpansionContext {
   readonly at: IsoTimestamp
@@ -308,26 +300,22 @@ export interface PackScenarioExpansionContext {
   readonly packConfigs: Record<string, unknown>
 }
 
-export interface PackScenarioMutationContext extends PackScenarioExpansionContext {
-  readonly object: OperationalObject
-}
 
 export interface PackScenarioSupport {
+  /** Startup dependencies on other authored objects, independent of item order. */
+  readonly referencedObjects?: (spec: PackScenarioItemSpec) => ReadonlyArray<string>
+  /** Static authored footprint. No runtime connection or physical advancement. */
+  readonly previewGeometry?: (object: OperationalObject) => import('../model/geo.ts').GeoJsonGeometry | undefined
   readonly validateInitialObjects?: (
     objects: ReadonlyArray<OperationalObject>,
     config: unknown,
     at: IsoTimestamp,
   ) => void
   readonly itemSchemas: Readonly<Record<string, z.ZodType>>
-  readonly mutationSchemas?: Readonly<Record<string, z.ZodType>>
   readonly expandItem: (
     spec: PackScenarioItemSpec,
     context: PackScenarioExpansionContext,
   ) => PackScenarioItemContribution | Promise<PackScenarioItemContribution>
-  readonly applyMutation?: (
-    mutation: PackScenarioMutationSpec,
-    context: PackScenarioMutationContext,
-  ) => OperationalObject | Promise<OperationalObject>
 }
 
 export interface PackRuntimeContribution {
@@ -365,7 +353,7 @@ export interface PackPresentationContribution {
   readonly mapAreaFeatures?: (
     context: PackObjectPresentationContext,
   ) => ReadonlyArray<PackMapAreaFeature>
-  readonly mapAreaFeatureLayers?: ReadonlyArray<SurfaceMapLayer>
+  readonly mapAreaFeatureLayers?: ReadonlyArray<MapLayerId>
   /**
    * Object pack ids whose object revisions can invalidate map-area features.
    * Defaults to the contributing pack id when omitted. Use ['*'] only for

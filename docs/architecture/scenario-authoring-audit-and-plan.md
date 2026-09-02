@@ -1,6 +1,6 @@
 # Scenario authoring: audit and cleanup proposal
 
-Date: 2026-09-02. Status: **scenario addition implemented; architectural changes proposed for approval**.
+Date: 2026-09-02. Status: **approved and implemented; see [implementation outcome](scenario-authoring-implementation.md)**. The inventory and reproductions below describe the pre-refactor baseline.
 
 ## Outcome and recommendation
 
@@ -62,7 +62,7 @@ Create/update save calls use this compiler before persisting. Runtime selection/
 
 Core `context` is another mismatch: the outer Scenario Item schema accepts it, but a valid `{ schemaVersion: 1 }` context is rejected as an unknown key by the strict Plant item schema. The intended post-expansion attachment is never reached. Core-owned context should be validated and separated before the Pack parses its own fields; weakening Pack strictness is not the fix.
 
-Sources: [compiler](../../apps/world/src/core/scenarios/config.ts), [runtime resolver](../../apps/world/src/core/scenarios/runtime-resolver.ts), [save/preview registry](../../apps/world/src/core/simulation-runs/registry.ts), [Capability API](../../apps/world/src/core/api/workspace-module-api.ts).
+Sources: [compiler](../../apps/world/src/core/scenarios/compiler.ts), [runtime resolver](../../apps/world/src/core/scenarios/runtime-resolver.ts), [save/preview registry](../../apps/world/src/core/simulation-runs/registry.ts), [Capability API](../../apps/world/src/core/api/workspace-module-api.ts).
 
 ### 2. The old Timeline mutation path is a second write model
 
@@ -74,7 +74,7 @@ Weather has a related metadata problem: every command is marked schedulable, inc
 
 Use live validated commands for runtime mutations. Preserve discrete guidance/highlight actions and genuine interaction signals. Weather curves remain local interpolation, and process-plant transient profiles remain Pack-owned numerical behavior; neither should become hundreds of scheduled commands.
 
-Sources: [compiler actions](../../apps/world/src/core/scenarios/config.ts), [Timeline runner](../../apps/world/src/core/simulation-runs/timeline-runner.ts), [runtime execution](../../apps/world/src/core/simulation-runs/runtime.ts), [Weather capabilities](../../apps/world/src/packs/weather/sim/adapter.ts).
+Sources: [compiler actions](../../apps/world/src/core/scenarios/compiler.ts), [Timeline runner](../../apps/world/src/core/simulation-runs/timeline-runner.ts), [runtime execution](../../apps/world/src/core/simulation-runs/runtime.ts), [Weather capabilities](../../apps/world/src/packs/weather/sim/adapter.ts).
 
 ### 3. A named Operating Point does not mean what its label says
 
@@ -101,7 +101,7 @@ Map layer names are hardcoded in both source/compiled schemas and the empty-draf
 
 The editor renders everything as a point—even an atmospheric ellipse—and its unused route/polygon branches do not provide a real geometry editor. Reuse Pack-owned static geometry projection for a bounded GeoJSON draft preview; show Weather's actual footprint and existing Plant/Grid anchors. Do not run physics to preview geometry or build a new rendering framework.
 
-Sources: [source/view compiler](../../apps/world/src/core/scenarios/config.ts), [compiled model](../../apps/world/src/core/model/scenario.ts), [surface selectors](../../apps/world/src/ui/surface.ts), [draft factory](../../apps/world/src/ui/scenario-builder-model.ts).
+Sources: [source/view compiler](../../apps/world/src/core/scenarios/compiler.ts), [compiled model](../../apps/world/src/core/model/scenario.ts), [surface selectors](../../apps/world/src/ui/starting-view.ts), [draft factory](../../apps/world/src/ui/scenario-builder-model.ts).
 
 ### 6. Editor behavior and preview costs need targeted work, not a worker farm
 

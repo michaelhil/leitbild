@@ -1,5 +1,34 @@
-import { createSimulationClock } from '../../../core/model/time.ts'
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
+import type { CommandEnvelope,CommandResult,GeoJsonPoint,InteractionSignal,IsoTimestamp,OperationalObject,PackRuntimeRecordingBatch,SignalId,SimulationClockState } from '../../../core/model/index.ts'
+import { assetRoutePlannedSignalType,commandResultSchema,interactionSignalSchema,nowIso } from '../../../core/model/index.ts'
+import { createSimulationClock } from '../../../core/model/time.ts'
+import type { RoutingAdapter } from '../../../routing/protocol.ts'
+import { defineSimulationCommandCapability,defineSimulationQueryCapability } from '../../../simulation/capabilities.ts'
+import type {
+  PackRuntimeAdapter,
+  PackRuntimeConnection,
+  PackRuntimeConnectionConfig,
+  PackRuntimeEvent,
+  PackRuntimeEventHandler,
+  PackRuntimeHealth,
+  PackRuntimeQuery,
+} from '../../../simulation/protocol.ts'
+import {
+  assignToIncidentCommandKind,
+  assignToIncidentPayloadSchema,
+  cancelDestinationCommandKind,
+  cancelDestinationPayloadSchema,
+  createIncidentCommandKind,createIncidentPayloadSchema,
+  createObjectCommandKind,
+  createObjectPayloadSchema,
+  setDestinationCommandKind,
+  setDestinationPayloadSchema,
+  setIncidentVictimsCommandKind,setIncidentVictimsPayloadSchema,
+} from '../commands.ts'
+import { ambulancePackDataSchema,ambulancePackId,hospitalPackDataSchema,incidentPackDataSchema } from '../model.ts'
+import { ambulanceQueryCapabilities,answerAmbulanceQuery } from '../query.ts'
+import { createAmbulanceRecordingPlan } from '../recording.ts'
 import {
   ambulancePackConfigSchema,
   roadWeatherCapability,
@@ -8,36 +37,8 @@ import {
   roadWeatherSamplesSchema,
   setRoadWeatherPolicyCapability,
 } from '../road-weather.ts'
-import { randomUUID } from 'node:crypto'
-import type {
-  PackRuntimeAdapter,
-  PackRuntimeConnection,
-  PackRuntimeConnectionConfig,
-  PackRuntimeEvent,
-  PackRuntimeEventHandler,
-  PackRuntimeQuery,
-  PackRuntimeHealth,
-} from '../../../simulation/protocol.ts'
-import { commandResultSchema } from '../../../core/model/index.ts'
-import { defineSimulationCommandCapability, defineSimulationQueryCapability } from '../../../simulation/capabilities.ts'
-import type { CommandEnvelope, CommandResult, GeoJsonPoint, InteractionSignal, IsoTimestamp, OperationalObject, PackRuntimeRecordingBatch, SignalId, SimulationClockState } from '../../../core/model/index.ts'
-import { assetRoutePlannedSignalType, interactionSignalSchema, nowIso } from '../../../core/model/index.ts'
-import { ambulancePackDataSchema, ambulancePackId, hospitalPackDataSchema, incidentPackDataSchema } from '../model.ts'
+import { ambulanceSimAdapterId,ambulanceSimRuntimeId } from './constants.ts'
 import { createAmbulanceSimEngine } from './engine.ts'
-import { ambulanceSimAdapterId, ambulanceSimRuntimeId } from './constants.ts'
-import type { RoutingAdapter } from '../../../routing/protocol.ts'
-import {
-  assignToIncidentCommandKind,
-  assignToIncidentPayloadSchema,
-  cancelDestinationCommandKind,
-  cancelDestinationPayloadSchema,
-  createObjectCommandKind,
-  createObjectPayloadSchema,
-  setDestinationCommandKind,
-  setDestinationPayloadSchema,
-} from '../commands.ts'
-import { ambulanceQueryCapabilities, answerAmbulanceQuery } from '../query.ts'
-import { createAmbulanceRecordingPlan } from '../recording.ts'
 
 const emit = (
   handlers: ReadonlySet<PackRuntimeEventHandler>,
@@ -151,6 +152,8 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
   packId: ambulancePackId,
   clock: 'simulation',
   capabilities: [
+    defineSimulationCommandCapability({ id: createIncidentCommandKind, title: 'Create incident', description: 'Creates an incident using the same definition and constructor as Scenario authoring. Its explicit id can be targeted by later actions.', input: createIncidentPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [], payload: createIncidentPayloadSchema.parse(input) }) }),
+    defineSimulationCommandCapability({ id: setIncidentVictimsCommandKind, title: 'Set incident victim count', description: 'Changes only the victim count on the current incident; preserves live assignments, progress and other state.', input: setIncidentVictimsPayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [setIncidentVictimsPayloadSchema.parse(input).objectId], payload: setIncidentVictimsPayloadSchema.parse(input) }) }),
     defineSimulationCommandCapability({ id: assignToIncidentCommandKind, title: 'Assign ambulance to incident', description: 'Assigns one ambulance to one incident and plans its response route.', input: assignToIncidentPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [assignToIncidentPayloadSchema.parse(input).ambulanceId], payload: assignToIncidentPayloadSchema.parse(input) }) }),
     defineSimulationCommandCapability({ id: cancelDestinationCommandKind, title: 'Cancel ambulance destination', description: 'Cancels the active destination and route for one ambulance.', input: cancelDestinationPayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [cancelDestinationPayloadSchema.parse(input).ambulanceId], payload: cancelDestinationPayloadSchema.parse(input) }) }),
     defineSimulationCommandCapability({ id: createObjectCommandKind, title: 'Create ambulance asset', description: 'Creates an ambulance, hospital, or incident at an explicit map point.', input: createObjectPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [], payload: createObjectPayloadSchema.parse(input) }) }),
@@ -176,6 +179,7 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
     }),
     ...ambulanceQueryCapabilities,
   ],
+  requiredQueries: runtimeConfig => ambulancePackConfigSchema.parse(runtimeConfig).roadWeather.enabled ? [roadWeatherCapability] : [],
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const settings = ambulancePackConfigSchema.parse(config.scenario.runtimeConfig)
     const savedPolicy = await config.runtimeStateStore?.load()
@@ -250,8 +254,9 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
       paused: false,
       speed: 1,
     }
-    let simulationTimeOffsetMs = Date.parse(clock.currentTime)
-    const runClock = createSimulationClock(clock)
+    clock = config.runClock?.read() ?? clock
+    const localClock = config.runClock ? null : createSimulationClock(clock)
+    const runClock = config.runClock ?? localClock!
     let clockInitialized = false
     let lastSimulationMs = Date.parse(clock.currentTime)
     const advance = async (): Promise<void> => {
@@ -261,7 +266,7 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
         const tickMs = Math.max(0, simulationMs - lastSimulationMs)
         lastSimulationMs = simulationMs
         if (tickMs <= 0) return
-        elapsedMs += tickMs
+        elapsedMs = simulationMs - Date.parse(config.scenario.world.startsAt)
         const events = engine.tick(tickMs)
         const recording = recordingPlan !== null && elapsedMs >= nextRecordingElapsedMs
         ? (() => {
@@ -270,7 +275,7 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
             return recordingPlan.sample({
               objects: engine.snapshot().objects,
               observedAt,
-              simulationTime: new Date(simulationTimeOffsetMs + elapsedMs).toISOString() as IsoTimestamp,
+              simulationTime: new Date(simulationMs).toISOString() as IsoTimestamp,
               elapsedMs,
             })
           })()
@@ -400,9 +405,8 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
         if (clockInitialized) await advance()
         clockInitialized = true
         clock = nextClock
-        runClock.set(nextClock)
+        localClock?.set(nextClock)
         lastSimulationMs = Date.parse(runClock.read().currentTime)
-        simulationTimeOffsetMs = Date.parse(nextClock.currentTime) - elapsedMs
       }),
       health: () => [health],
       sendCommand: (command) => serialize(() => sendCommand(command)),

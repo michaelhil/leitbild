@@ -1,5 +1,5 @@
-import type { CommandResult, SimulationRunId, OperationalObject, ScenarioDefinition, ScenarioExecutionState, SimulationClockState } from '../core/model/index.ts'
-import type { PackCreateObjectType, PackCreationGeometry, PackObjectCategory } from '../core/packs/protocol.ts'
+import type { CommandResult,CompiledScenario,OperationalObject,ScenarioExecutionState,SimulationClockState,SimulationRunId } from '../core/model/index.ts'
+import type { PackCreateObjectType,PackCreationGeometry,PackObjectCategory } from '../core/packs/protocol.ts'
 
 export interface SimulationRunSnapshot {
   readonly objects: ReadonlyArray<OperationalObject>
@@ -11,11 +11,11 @@ export interface SimulationRunSnapshot {
 export interface SimulationRunResponse {
   readonly id: SimulationRunId
   readonly snapshot: SimulationRunSnapshot
-  readonly scenario?: ScenarioDefinition
+  readonly scenario?: CompiledScenario
 }
 
 export interface ScenarioResponse {
-  readonly scenario: ScenarioDefinition
+  readonly scenario: CompiledScenario
 }
 
 export type CapabilityInvocationResponse =

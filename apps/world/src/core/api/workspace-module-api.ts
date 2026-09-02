@@ -1,4 +1,3 @@
-import { z } from 'zod'
 import {
   inspectionViewSchema,
   moduleCapabilityCollectionSchema,
@@ -9,18 +8,15 @@ import {
   resourceRenameInputSchema,
   sourceDocumentPathSchema,
   sourceRevisionSchema,
-  workspaceDefinitionRevisionReferenceSchema,
   workspaceIdSchema,
   workspaceModuleManifestSchema,
   type ModuleCapabilityDescriptor,
-  type ModuleResourceDescriptor,
-  type WorkspaceId,
+  type ModuleResourceDescriptor
 } from '@leitbild/contracts'
 import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
+import { z } from 'zod'
+import { capabilityJsonSchema } from '../../simulation/capabilities.ts'
 import {
-  electricalConnectionDefinitionSchema,
-  electricalPortDefinitionSchema,
-  electricalPortsFromObject,
   isoTimestampSchema,
   operationalObjectSchema,
   procedureCatalogSchema,
@@ -34,20 +30,19 @@ import {
   simulationClockStateSchema,
   simulationRunEventSchema,
   simulationRunIdSchema,
-  type OperationalObject,
+  type OperationalObject
 } from '../model/index.ts'
-import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
-import { scenarioRevisionIdSchema } from '../scenarios/library.ts'
-import { scenarioSourceSchema } from '../scenarios/config.ts'
 import { scenarioAuthoringCatalogSchema } from '../scenarios/authoring.ts'
+import { scenarioDefinitionSchema } from '../scenarios/definition.ts'
+import { scenarioRevisionIdSchema } from '../scenarios/library.ts'
+import { CommandIdempotencyConflictError } from '../simulation-runs/command-idempotency.ts'
+import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { WorldWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
+import { apiError,json,readJson } from './responses.ts'
 import {
   actorIdForAccessContext,
   buildSimulationRunActor,
 } from './simulation-run-routes.ts'
-import { apiError, json, readJson } from './responses.ts'
-import { capabilityJsonSchema } from '../../simulation/capabilities.ts'
-import { CommandIdempotencyConflictError } from '../simulation-runs/command-idempotency.ts'
 
 const WORLD_MODULE_ID = moduleIdSchema.parse('world')
 const CONTEXT_OBJECT_LIMIT = 50
@@ -113,26 +108,10 @@ const readHistoryInputSchema = z.object({
   to: historyTimestampSchema.optional(),
   limit: z.number().int().positive().max(10_000).optional(),
 }).strict()
-const createScenarioInputSchema = z.object({ source: scenarioSourceSchema }).strict()
+const createScenarioInputSchema = z.object({ source: scenarioDefinitionSchema }).strict()
 const scenarioWriteInputJsonSchema = z.toJSONSchema(createScenarioInputSchema, { unrepresentable: 'any' })
 
-const scenarioWriteResultSchema = z.object({
-  definition: workspaceDefinitionRevisionReferenceSchema,
-  title: z.string().min(1),
-}).strict()
-
-const scenarioPreviewSchema = z.object({
-  scenarioId: z.string().min(1),
-  packs: z.array(z.string().min(1)),
-  assets: z.array(z.object({
-    id: z.string().min(1),
-    label: z.string().min(1),
-    kind: z.string().min(1),
-    packId: z.string().min(1),
-    electricalPorts: z.array(electricalPortDefinitionSchema),
-  }).strict()),
-  connections: z.array(electricalConnectionDefinitionSchema),
-}).strict()
+import { scenarioPreviewSchema,scenarioWriteResultSchema } from '../scenarios/authoring-preview.ts'
 
 const scenarioStartResultSchema = z.object({
   id: simulationRunIdSchema,
@@ -450,7 +429,7 @@ const scenarioSections = (definition: {
     readonly lifecycle: string
     readonly operational: { readonly status: string }
   }>
-  readonly surface: unknown
+  readonly view: unknown
   readonly timeline?: unknown
 }) => [{
   id: 'scenario-setup',
@@ -458,7 +437,7 @@ const scenarioSections = (definition: {
   data: {
     objectives: definition.objectives ?? [],
     world: definition.world,
-    surface: definition.surface,
+    view: definition.view,
   },
 }, {
   id: 'packs-and-runtimes',
@@ -559,18 +538,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     invoke: async (registry, invocation) => {
       const input = createScenarioInputSchema.parse(invocation.input)
       const scenario = await registry.previewScenario(input.source)
-      return json({ result: {
-        scenarioId: scenario.id,
-        packs: scenario.packs,
-        assets: scenario.initialObjects.map(object => ({
-          id: object.id,
-          label: object.label,
-          kind: object.kind,
-          packId: object.packId,
-          electricalPorts: electricalPortsFromObject(object),
-        })),
-        connections: scenario.connections,
-      } })
+      return json({ result: scenario })
     },
   },
   {

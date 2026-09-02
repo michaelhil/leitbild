@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { IsoTimestamp, RouteImpact } from '../../core/model/index.ts'
+import type { IsoTimestamp,RouteImpact } from '../../core/model/index.ts'
 import { geoJsonPointSchema } from '../../core/model/index.ts'
 import type { PackScenarioAuthoringField } from '../../core/packs/protocol.ts'
 
@@ -64,22 +64,18 @@ export const roadWeatherImpact = (policy: RoadWeatherPolicy, sample: RoadWeather
     updatedAt: sample.quality.validAt as IsoTimestamp,
   }
 }
-const defaults = roadWeatherPolicySchema.parse({})
 export const roadWeatherFields: ReadonlyArray<PackScenarioAuthoringField> = [
   {
-    target: 'item',
-    path: ['roadWeather', 'enabled'],
+        path: ['roadWeather', 'enabled'],
     label: 'Respond to Weather (requires Weather Pack)',
-    control: { kind: 'boolean', defaultValue: false },
+    control: { kind: 'boolean' },
   },
   ...(['wetnessFactor', 'iceFactor', 'snowFactor', 'lowVisibilityFactor', 'visibilityThresholdM'] as const).map(
     (key) => ({
-      target: 'item' as const,
       path: ['roadWeather', key],
       label: key === 'visibilityThresholdM' ? 'Low visibility below (m)' : key.replace('Factor', ' speed factor'),
       control: {
         kind: 'number' as const,
-        defaultValue: defaults[key],
         min: key === 'visibilityThresholdM' ? 1 : 0,
         max: key === 'visibilityThresholdM' ? 100000 : 1,
         step: key === 'visibilityThresholdM' ? 100 : 0.05,

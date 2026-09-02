@@ -10,7 +10,7 @@
     ProcedureId,
     ProcedureRunScope,
     ProcedureRunState,
-    ScenarioDefinition,
+    CompiledScenario,
     ScenarioExecutionState,
     SimulationClockState,
   } from '../../core/model/index.ts'
@@ -59,11 +59,8 @@
   } from '../procedures/procedure-run-selectors.ts'
   import type { StatusTone } from '../components/StatusDot.svelte'
   import {
-    categoryRowsForSurface,
-    surfaceHasPrimitive,
-    surfaceMapConfig,
-    surfaceObjectRailConfig,
-  } from '../surface.ts'
+    categoryRowsForStartingView,
+  } from '../starting-view.ts'
   import { getTheme, initialTheme, toggleTheme as toggleThemeMode, type ThemeMode } from '../theme.ts'
   import {
     completeStartupStep,
@@ -139,7 +136,7 @@
   let objects = $state<OperationalObject[]>([])
   let scenarioState = $state<ScenarioExecutionState | undefined>(undefined)
   let clock = $state<SimulationClockState | undefined>(undefined)
-  let scenarioDefinition = $state<ScenarioDefinition | null>(null)
+  let scenarioDefinition = $state<CompiledScenario | null>(null)
   let selectedControllerId = $state<string | null>(null)
   let status = $state('Starting')
   let commandStatus = $state('')
@@ -222,9 +219,9 @@
     ? selectedControllerObjectFor(objects, selectedControllerId, activePack)
     : null)
   const allCategoryRows = $derived<ReadonlyArray<CategoryRow>>(activePack ? categoryRowsFor(objects, activePack) : [])
-  const surface = $derived(scenarioDefinition?.surface ?? null)
-  const railConfig = $derived(surfaceObjectRailConfig(surface))
-  const mapConfig = $derived(surfaceMapConfig(surface))
+  const startingView = $derived(scenarioDefinition?.view ?? null)
+  const railConfig = $derived(startingView?.rail ?? null)
+  const mapConfig = $derived(startingView?.map ?? null)
   const effectiveMapConfig = $derived(mapConfig === null
     ? null
     : {
@@ -235,8 +232,8 @@
       })
   const mapVisible = $derived(mapConfig !== null)
   const railVisible = $derived(railConfig !== null)
-  const footerVisible = $derived(surfaceHasPrimitive(surface, 'systemFooter'))
-  const guidanceOverlayVisible = $derived(surfaceHasPrimitive(surface, 'guidanceOverlay'))
+  const footerVisible = true
+  const guidanceOverlayVisible = true
   let categoryMapVisibility = $state<Record<string, boolean>>({})
   const surfacePanels = $derived(activePack?.surfacePanels ?? [])
   const surfacePanelLaunchers = $derived(surfacePanels.map(panel => ({ id: panel.id, label: panel.label, open: surfacePanelOpen[panel.id] ?? panel.defaultOpen })))
@@ -244,7 +241,7 @@
   const richOperationalUiReady = $derived(!mapVisible || mapReady || mapStartupFailed)
   const debugMapInput = $derived(new URLSearchParams(location.search).get('debugMapInput') === '1')
   const debugStartup = new URLSearchParams(location.search).get('debugStartup') === '1'
-  const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForSurface(allCategoryRows, railConfig))
+  const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForStartingView(allCategoryRows, railConfig))
   const objectById = $derived(new Map(objects.map(object => [object.id, object])))
   $effect(() => {
     const rows = categoryRows
@@ -741,7 +738,7 @@
     const scenario = scenarioDefinition?.id === scenarioId
       ? scenarioDefinition
       : await loadScenarioDefinitionAndPack(scenarioId)
-    if (surfaceHasPrimitive(scenario.surface, 'map')) {
+    if (scenario.view.map) {
       mapReady = false
       startStep('map')
       markStartup('map-module:start')
@@ -1009,14 +1006,14 @@
   const scenarioIdForReset = (): string | undefined =>
     scenarioState?.scenarioId
 
-  const loadScenarioDefinitionAndPack = async (scenarioId: string): Promise<ScenarioDefinition> => {
+  const loadScenarioDefinitionAndPack = async (scenarioId: string): Promise<CompiledScenario> => {
     markStartup('scenario-fetch:start')
     const body = await fetchScenario(scenarioId)
     markStartup('scenario-fetch:done')
     return await loadScenarioDefinitionAndPackFromDefinition(body.scenario)
   }
 
-  const loadScenarioDefinitionAndPackFromDefinition = async (scenario: ScenarioDefinition): Promise<ScenarioDefinition> => {
+  const loadScenarioDefinitionAndPackFromDefinition = async (scenario: CompiledScenario): Promise<CompiledScenario> => {
     markStartup('pack-load:start')
     const nextPack = await loadActivePackViews(scenario.packs)
     markStartup('pack-load:done')
@@ -1482,7 +1479,7 @@
 
 </script>
 
-{#if !surface}
+{#if !startingView}
   <div class="boot-shell"></div>
 {:else}
   <div

@@ -1,6 +1,7 @@
-import { describe, expect, test } from 'bun:test'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { describe,expect,test } from 'bun:test'
+import { readdirSync,readFileSync,statSync } from 'node:fs'
 import { join } from 'node:path'
+import ts from 'typescript'
 
 const uiRoot = join(import.meta.dir, '..', 'src', 'ui')
 
@@ -14,13 +15,13 @@ const svelteFiles = (dir: string): readonly string[] =>
 
 const effectSnippets = (source: string): readonly string[] => {
   const snippets: string[] = []
-  let index = 0
-  while (index >= 0) {
-    index = source.indexOf('$effect(', index)
-    if (index < 0) break
-    snippets.push(source.slice(index, index + 800))
-    index += '$effect('.length
+  const script = source.match(/<script[^>]*>([\s\S]*?)<\/script>/)?.[1] ?? ''
+  const ast = ts.createSourceFile('component.ts', script, ts.ScriptTarget.Latest, true)
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && node.expression.getText(ast) === '$effect') snippets.push(node.getText(ast))
+    ts.forEachChild(node, visit)
   }
+  visit(ast)
   return snippets
 }
 

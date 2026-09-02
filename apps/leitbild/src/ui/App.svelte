@@ -56,6 +56,8 @@
   let capabilities = $state<ReadonlyArray<ModuleCapabilityDescriptor>>([])
   let summaryClock = $state(Date.now())
   let scenarioEditorPath = $state<string | null>(null)
+  let scenarioEditorFrame = $state<HTMLIFrameElement | null>(null)
+  let scenarioEditorDirty = $state(false)
   const workspaceTitle = $derived(workspace?.name ?? workspace?.id ?? 'Workspace')
   const showingComposer = $derived(selectedWorldRunId !== null || selectedAgentsRoomId !== null)
   const continuableResources = $derived(resources.filter(resource => resource.uiPath !== undefined))
@@ -108,7 +110,9 @@
   const handleWindowMessage = (event: MessageEvent): void => {
     if (event.origin !== location.origin || !workspace) return
     if (typeof event.data !== 'object' || event.data === null) return
-    const data = event.data as { readonly type?: unknown }
+    if (event.source !== scenarioEditorFrame?.contentWindow) return
+    const data = event.data as { readonly type?: unknown; readonly dirty?: unknown }
+    if (data.type === 'leitbild:scenario-dirty') scenarioEditorDirty = data.dirty === true
     if (data.type === 'leitbild:scenario-saved') void run(() => loadWorkspaceCatalog(workspace!.id))
   }
 
@@ -335,7 +339,7 @@
         <section class="catalog-section-home scenario-builder-home">
           <header><h2>Create</h2><span>World scenario</span></header>
           {#if scenarioEditorPath}
-            <div class="scenario-builder-frame"><button class="builder-close" type="button" onclick={() => { scenarioEditorPath = null }}>Close editor</button><iframe title="World Scenario Editor" src={`${scenarioEditorPath}${scenarioEditorPath.includes('?') ? '&' : '?'}embed=1`}></iframe></div>
+            <div class="scenario-builder-frame"><button class="builder-close" type="button" onclick={() => { if (!scenarioEditorDirty || confirm('Discard unsaved scenario changes?')) { scenarioEditorPath = null; scenarioEditorDirty = false } }}>Close editor</button><iframe bind:this={scenarioEditorFrame} title="World Scenario Editor" src={`${scenarioEditorPath}${scenarioEditorPath.includes('?') ? '&' : '?'}embed=1`}></iframe></div>
           {:else}
             <article class="scenario-builder-launch"><div><h3>Build a scenario</h3><p>Pick World Packs, place assets on the map, and save the result as a reusable scenario.</p></div><button class="primary" onclick={() => { if (workspace) scenarioEditorPath = `/workspaces/${encodeURIComponent(workspace.id)}/world/scenarios/new` }}>Open editor</button></article>
           {/if}

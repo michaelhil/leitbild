@@ -1,9 +1,10 @@
 import { z } from 'zod'
-import { geoJsonPointSchema, geoJsonPolygonSchema, objectIdSchema } from '../../core/model/index.ts'
+import { geoJsonPointSchema,geoJsonPolygonSchema,objectIdSchema } from '../../core/model/index.ts'
 import {
   droneGuidedTargetSchema,
   droneInputSourceSchema,
   droneManualAxesSchema,
+  droneSwarmMembershipSchema,
   droneVehicleModelSchema,
 } from './model.ts'
 
@@ -23,7 +24,8 @@ export const uploadDroneGeofenceCommandKind = 'world.drone.upload-geofence'
 export const clearDroneGeofenceCommandKind = 'world.drone.clear-geofence'
 export const setDroneGimbalCommandKind = 'world.drone.set-gimbal'
 export const configureDroneVehicleModelCommandKind = 'world.drone.configure-vehicle-model'
-export const configureDroneProfileCommandKind = configureDroneVehicleModelCommandKind
+export const setDroneSwarmCommandKind = 'world.drone.set-swarm'
+export const setDroneSwarmPayloadSchema = z.object({ droneId: objectIdSchema, swarm: droneSwarmMembershipSchema.nullable() }).strict()
 export const swarmCommandKind = 'world.drone.swarm-command'
 export const attackCommandKind = 'world.drone.attack'
 
@@ -109,7 +111,6 @@ export const configureDroneVehicleModelPayloadSchema = z.object({
 }).strict()
 export type ConfigureDroneVehicleModelPayload = z.infer<typeof configureDroneVehicleModelPayloadSchema>
 
-export const configureDroneProfilePayloadSchema = configureDroneVehicleModelPayloadSchema
 export type ConfigureDroneProfilePayload = ConfigureDroneVehicleModelPayload
 
 export const swarmFormationSchema = z.object({
@@ -161,6 +162,7 @@ export const attackPayloadSchema = z.object({
 export type AttackPayload = z.infer<typeof attackPayloadSchema>
 
 export const droneCommandKinds = [
+  setDroneSwarmCommandKind,
   createDroneCommandKind,
   armDroneCommandKind,
   manualControlCommandKind,

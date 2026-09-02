@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { OperationalObject, SimulationClockState } from '../core/model/index.ts'
-  import type { SurfaceObjectRailRegionConfig } from '../core/model/index.ts'
+  import type { StartingRailView } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackMapLayerGroup, PackObjectPresentation } from '../core/packs/protocol.ts'
   import RailLayerGroupSection from './RailLayerGroupSection.svelte'
   import { PanelRightOpen, X } from 'lucide-svelte'
@@ -15,10 +15,10 @@
     type FieldVisibilityState,
   } from './control-rail-presenter.ts'
   import {
-    collapsedCategoryIdsForSurface,
-    surfaceConfigKey,
-    visibleFieldsForSurface,
-  } from './surface.ts'
+    collapsedCategoryIdsForStartingView,
+    startingViewKey,
+    visibleFieldsForStartingView,
+  } from './starting-view.ts'
   import SystemFooter from './SystemFooter.svelte'
   import type { StatusTone } from './components/StatusDot.svelte'
 
@@ -35,7 +35,7 @@
     readonly footerVisible: boolean
     readonly collapsed: boolean
     readonly categoryRows: ReadonlyArray<CategoryRow>
-    readonly railConfig: SurfaceObjectRailRegionConfig
+    readonly railConfig: StartingRailView
     readonly placementMode: PackCreateObjectType | null
     readonly selectedControllerId: string | null
     readonly categoryMapVisibility?: Readonly<Record<string, boolean>>
@@ -159,10 +159,10 @@
   })
 
   $effect(() => {
-    const nextKey = surfaceConfigKey(railConfig)
+    const nextKey = startingViewKey(railConfig)
     if (appliedSurfaceConfigKey === nextKey) return
-    collapsedCategoryIds = collapsedCategoryIdsForSurface(railConfig)
-    visibleFieldsByCategory = visibleFieldsForSurface(railConfig)
+    collapsedCategoryIds = collapsedCategoryIdsForStartingView(railConfig)
+    visibleFieldsByCategory = visibleFieldsForStartingView(railConfig)
     openFieldCategoryId = null
     appliedSurfaceConfigKey = nextKey
   })

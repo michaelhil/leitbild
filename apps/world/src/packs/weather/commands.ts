@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { objectIdSchema, geoJsonPolygonSchema } from '../../core/model/index.ts'
-import { weatherItemSchema, weatherSurfacePatchSchema } from './model.ts'
+import { geoJsonPolygonSchema,objectIdSchema } from '../../core/model/index.ts'
+import { weatherItemSchema,weatherSurfacePatchSchema } from './model.ts'
 
 export const weatherCommandSchemas = {
   'world.weather.create': weatherItemSchema,
@@ -8,7 +8,7 @@ export const weatherCommandSchemas = {
     .object({ item: weatherItemSchema, expectedRevision: z.number().int().nonnegative() })
     .strict(),
   'world.weather.set-enabled': z
-    .object({ objectId: objectIdSchema, enabled: z.boolean(), expectedRevision: z.number().int().nonnegative() })
+    .object({ objectId: objectIdSchema, enabled: z.boolean() })
     .strict(),
   'world.weather.intervene-ground': z
     .object({

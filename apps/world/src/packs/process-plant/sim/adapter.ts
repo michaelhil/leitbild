@@ -1,7 +1,7 @@
-import { createSimulationClock } from '../../../core/model/time.ts'
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, ElectricalConnectionDefinition, IsoTimestamp, PackRuntimeRecordingBatch, SimulationRunEvent, ObjectId, OperationalObject, SignalId, SimulationClockState } from '../../../core/model/index.ts'
-import { electricalPortFromObject, nowIso } from '../../../core/model/index.ts'
+import type { CommandEnvelope,CommandResult,ElectricalConnectionDefinition,IsoTimestamp,ObjectId,OperationalObject,PackRuntimeRecordingBatch,SignalId,SimulationClockState,SimulationRunEvent } from '../../../core/model/index.ts'
+import { electricalPortFromObject,nowIso } from '../../../core/model/index.ts'
+import { createSimulationClock } from '../../../core/model/time.ts'
 import type {
   PackRuntimeAdapter,
   PackRuntimeConnection,
@@ -10,29 +10,28 @@ import type {
   PackRuntimeEventHandler,
   PackRuntimeQuery,
 } from '../../../simulation/protocol.ts'
+import { commandsForProcessPlantAction } from '../actions.ts'
+import { processPlantCapabilities } from '../capabilities.ts'
 import {
+  processPlantActionInvokeCommandKind,
+  processPlantActionInvokePayloadSchema,
   processPlantControlRampCommandKind,
   processPlantControlRampPayloadSchema,
   processPlantControlWriteCommandKind,
   processPlantControlWritePayloadSchema,
   processPlantIcLifecycleCommandKind,
   processPlantIcLifecyclePayloadSchema,
-  processPlantActionInvokeCommandKind,
-  processPlantActionInvokePayloadSchema,
 } from '../commands.ts'
-import { commandsForProcessPlantAction } from '../actions.ts'
-import { processPlantDefinitionSchema, type ProcessPlantDefinition } from '../config.ts'
-import { createProcessPlantRecordingPlan } from '../recording.ts'
-import { compileProcessPlants } from '../plant-compiler.ts'
+import { processPlantDefinitionSchema,type ProcessPlantDefinition } from '../config.ts'
 import { validateProcessPlantControlWrite } from '../control-write-validation.ts'
-import { processPlantIdForObject, processPlantPackId, processPlantUnitPackDataSchema } from '../model.ts'
+import { processPlantElectricalBoundaries } from '../electrical-ports.ts'
+import { processPlantIdForObject,processPlantPackId,processPlantUnitPackDataSchema } from '../model.ts'
+import { compileProcessPlants } from '../plant-compiler.ts'
 import { answerProcessPlantQuery } from '../query.ts'
+import { createProcessPlantRecordingPlan } from '../recording.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
-import { processPlantSimAdapterId, processPlantSimRuntimeId } from './constants.ts'
-import {
-  processPlantRuntimeStateSchema,
-  type ProcessPlantRuntimeState,
-} from './runtime-state.ts'
+import { componentVariablePath } from '../runtime/index.ts'
+import { processPlantSimAdapterId,processPlantSimRuntimeId } from './constants.ts'
 import {
   initialProcessPlantObjects,
   processPlantProjectionEvents,
@@ -40,9 +39,10 @@ import {
 } from './object-projection.ts'
 import { createProcessPlantRuntimePersistence } from './persistence.ts'
 import { createProcessPlantRuntimeInstances } from './runtime-instance-factory.ts'
-import { processPlantElectricalBoundaries } from '../electrical-ports.ts'
-import { componentVariablePath } from '../runtime/index.ts'
-import { processPlantCapabilities } from '../capabilities.ts'
+import {
+  processPlantRuntimeStateSchema,
+  type ProcessPlantRuntimeState,
+} from './runtime-state.ts'
 
 const updateIntervalMs = 1_000
 const connectedPeerStaleAfterMs = 5_000
@@ -188,10 +188,11 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       paused: false,
       speed: 1,
     }
-    const runClock = createSimulationClock(clock)
+    clock = config.runClock?.read() ?? clock
+    const localClock = config.runClock ? null : createSimulationClock(clock)
+    const runClock = config.runClock ?? localClock!
     let clockInitialized = false
     let lastSimulationMs = Date.parse(clock.currentTime)
-    let simulationTimeOffsetMs = Date.parse(clock.currentTime)
     const objectsById = new Map<ObjectId, OperationalObject>(
       projectedInitialProcessPlantObjects({
         objects: initialObjects,
@@ -250,13 +251,13 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           adapterId: processPlantSimAdapterId,
         },
       }))
-      const recordedElapsedMs = Math.min(...[...plants.values()].map(plant => plant.runtime.elapsedMs()))
+      const recordedElapsedMs = simulationMs - Date.parse(config.scenario.world.startsAt)
       const recording = recordingPlan !== null && recordedElapsedMs >= nextRecordingElapsedMs
         ? (() => {
             nextRecordingElapsedMs = recordedElapsedMs + recordingPlan.intervalMs
             const sampled = recordingPlan.sample({
               observedAt: nowIso(),
-              simulationTime: new Date(simulationTimeOffsetMs + recordedElapsedMs).toISOString() as IsoTimestamp,
+              simulationTime: new Date(simulationMs).toISOString() as IsoTimestamp,
             })
             if (!recordingDescriptorsPending) return sampled
             recordingDescriptorsPending = false
@@ -467,10 +468,8 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         if (clockInitialized) await advance()
         clockInitialized = true
         clock = nextClock
-        runClock.set(nextClock)
+        localClock?.set(nextClock)
         lastSimulationMs = Date.parse(runClock.read().currentTime)
-        const elapsedMs = plants.size === 0 ? 0 : Math.min(...[...plants.values()].map(plant => plant.runtime.elapsedMs()))
-        simulationTimeOffsetMs = Date.parse(nextClock.currentTime) - elapsedMs
       },
       close: async (): Promise<void> => {
         clearInterval(interval)

@@ -1,7 +1,7 @@
 export interface DroneFixedStepSchedulerConfig {
   readonly stepMs: number
   readonly maxCatchUpSteps: number
-  readonly initialWallMs: number
+  readonly initialSimulationMs: number
 }
 
 export interface DroneFixedStep {
@@ -11,13 +11,12 @@ export interface DroneFixedStep {
 
 export interface DroneFixedStepPlan {
   readonly steps: ReadonlyArray<DroneFixedStep>
-  readonly droppedMs: number
   readonly accumulatedMs: number
 }
 
 export interface DroneFixedStepScheduler {
-  readonly advance: (wallNowMs: number) => DroneFixedStepPlan
-  readonly reset: (wallNowMs: number) => void
+  readonly advance: (simulationNowMs: number) => DroneFixedStepPlan
+  readonly reset: (simulationNowMs: number) => void
 }
 
 const positiveFinite = (value: number, fallback: number): number =>
@@ -28,30 +27,20 @@ export const createDroneFixedStepScheduler = (
 ): DroneFixedStepScheduler => {
   const stepMs = positiveFinite(config.stepMs, 20)
   const maxCatchUpSteps = Math.max(1, Math.floor(positiveFinite(config.maxCatchUpSteps, 5)))
-  const maxCatchUpMs = stepMs * maxCatchUpSteps
-  let lastWallMs = config.initialWallMs
-  let simulatedMs = config.initialWallMs
+  let lastTargetMs = config.initialSimulationMs
+  let simulatedMs = config.initialSimulationMs
   let accumulatedMs = 0
 
-  const reset = (wallNowMs: number): void => {
-    lastWallMs = wallNowMs
-    simulatedMs = wallNowMs
+  const reset = (simulationNowMs: number): void => {
+    lastTargetMs = simulationNowMs
+    simulatedMs = simulationNowMs
     accumulatedMs = 0
   }
 
-  const advance = (wallNowMs: number): DroneFixedStepPlan => {
-    const elapsedMs = Math.max(0, wallNowMs - lastWallMs)
-    lastWallMs = wallNowMs
-
-    let droppedMs = 0
-    if (elapsedMs > maxCatchUpMs) {
-      droppedMs = elapsedMs - maxCatchUpMs
-      accumulatedMs = 0
-      simulatedMs = wallNowMs - maxCatchUpMs
-      accumulatedMs += maxCatchUpMs
-    } else {
-      accumulatedMs += elapsedMs
-    }
+  const advance = (simulationNowMs: number): DroneFixedStepPlan => {
+    const elapsedMs = Math.max(0, simulationNowMs - lastTargetMs)
+    lastTargetMs = Math.max(lastTargetMs, simulationNowMs)
+    accumulatedMs += elapsedMs
 
     const steps: DroneFixedStep[] = []
     while (accumulatedMs + Number.EPSILON >= stepMs && steps.length < maxCatchUpSteps) {
@@ -65,7 +54,6 @@ export const createDroneFixedStepScheduler = (
 
     return {
       steps,
-      droppedMs,
       accumulatedMs,
     }
   }

@@ -1,10 +1,10 @@
 import type { WorldPack } from '../../core/packs/protocol.ts'
 import { electricGridPackConfigSchema } from './config.ts'
 import {
+  electricGridDefinitionCatalog,
   norwayGridModelRef,
   norwayNormalOperatingPointRef,
   norwayStandardAutomationRef,
-  electricGridDefinitionCatalog,
 } from './definition-refs.ts'
 import { electricGridRecordingProfiles } from './recording.ts'
 import { electricGridScenarioSupport } from './scenario.ts'
@@ -28,25 +28,25 @@ export const electricGridPack: WorldPack = {
         },
         automation: { ref: norwayStandardAutomationRef },
       },
-      placement: { target: 'item', kind: 'point', path: ['location'] },
+      placement: { kind: 'point', path: ['location'] },
       fields: [{
-        target: 'item', path: ['model', 'ref'], label: 'Grid Model',
-        control: { kind: 'select', defaultValue: norwayGridModelRef, options: electricGridDefinitionCatalog.models.map(model => ({ value: model.id, label: model.title })) },
+        path: ['model', 'ref'], label: 'Grid Model',
+        control: { kind: 'select', options: electricGridDefinitionCatalog.models.map(model => ({ value: model.id, label: model.title })) },
       }, {
-        target: 'item', path: ['operatingPoint', 'ref'], label: 'Operating Point',
-        control: { kind: 'select', defaultValue: norwayNormalOperatingPointRef, options: electricGridDefinitionCatalog.operatingPoints.map(point => ({ value: point.id, label: point.title })) },
+        path: ['operatingPoint', 'ref'], label: 'Operating Point',
+        control: { kind: 'select', options: electricGridDefinitionCatalog.operatingPoints.map(point => ({ value: point.id, label: point.title, compatibleWith: { path: ['model', 'ref'], values: point.compatibleModelRefs } })) },
       }, {
-        target: 'item', path: ['automation', 'ref'], label: 'Automation',
-        control: { kind: 'select', defaultValue: norwayStandardAutomationRef, options: electricGridDefinitionCatalog.automations.map(automation => ({ value: automation.id, label: automation.title })) },
+        path: ['automation', 'ref'], label: 'Automation',
+        control: { kind: 'select', options: electricGridDefinitionCatalog.automations.map(automation => ({ value: automation.id, label: automation.title, compatibleWith: { path: ['model', 'ref'], values: automation.compatibleModelRefs } })) },
       }, {
-        target: 'item', path: ['operatingPoint', 'overrides', 'loadScale'], label: 'Load scale',
-        control: { kind: 'number', defaultValue: 1.03, min: 0.01, step: 0.01 },
+        path: ['operatingPoint', 'overrides', 'loadScale'], label: 'Load scale',
+        control: { kind: 'number', min: 0.01, step: 0.01 },
       }, {
-        target: 'item', path: ['operatingPoint', 'overrides', 'generationAvailabilityScale'], label: 'Generation availability scale',
-        control: { kind: 'number', defaultValue: 1, min: 0, step: 0.01 },
+        path: ['operatingPoint', 'overrides', 'generationAvailabilityScale'], label: 'Generation availability scale',
+        control: { kind: 'number', min: 0, step: 0.01 },
       }, {
-        target: 'item', path: ['operatingPoint', 'overrides', 'storageStateOfCharge'], label: 'Initial storage charge',
-        control: { kind: 'number', defaultValue: 0.58, min: 0, max: 1, step: 0.01 },
+        path: ['operatingPoint', 'overrides', 'storageStateOfCharge'], label: 'Initial storage charge',
+        control: { kind: 'number', min: 0, max: 1, step: 0.01 },
       }],
     }],
   },

@@ -1,4 +1,4 @@
-import type { ScenarioExecutionState, ScenarioTimeline, ScenarioTimelineCue } from '../model/index.ts'
+import type { ScenarioExecutionState,ScenarioTimeline,ScenarioTimelineCue } from '../model/index.ts'
 
 export interface TimelineDueCueConfig {
   readonly timeline: ScenarioTimeline
@@ -31,8 +31,7 @@ export const dueScenarioTimelineCues = (config: TimelineDueCueConfig): ReadonlyA
     .filter(cue => !firedCueIds.has(cue.id))
     .filter(cue => cueDueAtMs(cue, scenarioStartedAtMs) <= config.nowMs)
     .sort((left, right) =>
-      cueDueAtMs(left, scenarioStartedAtMs) - cueDueAtMs(right, scenarioStartedAtMs)
-      || left.id.localeCompare(right.id))
+      cueDueAtMs(left, scenarioStartedAtMs) - cueDueAtMs(right, scenarioStartedAtMs))
 }
 
 export const createScenarioTimelineRunner = (config: {
@@ -43,12 +42,15 @@ export const createScenarioTimelineRunner = (config: {
   readonly onCueDue: (cue: ScenarioTimelineCue) => Promise<void>
   readonly onCueFailed?: (cue: ScenarioTimelineCue, error: unknown) => Promise<void>
 }): ScenarioTimelineRunner => {
-  const timeoutIds = new Set<ReturnType<typeof setTimeout>>()
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
   let closed = false
+  let running = false
+  const pending = config.timeline.cues
+    .filter(cue => !config.state.timeline?.firedCueIds.includes(cue.id))
+    .sort((a, b) => a.at.seconds - b.at.seconds)
 
   const clearTimers = (): void => {
-    for (const timeoutId of timeoutIds) clearTimeout(timeoutId)
-    timeoutIds.clear()
+    clearTimeout(timeoutId)
   }
 
   const runCue = async (cue: ScenarioTimelineCue): Promise<void> => {
@@ -62,22 +64,23 @@ export const createScenarioTimelineRunner = (config: {
 
   const start = (): void => {
     clearTimers()
+    if (closed || running) return
     const timelineState = config.state.timeline
     if (!timelineState) return
     const scenarioStartedAtMs = timeMs(timelineState.startedAt)
-    const firedCueIds = new Set(timelineState.firedCueIds)
-    for (const cue of config.timeline.cues) {
-      if (firedCueIds.has(cue.id)) continue
+    const cue = pending[0]
+    if (cue) {
       const nowMs = config.nowMs()
       const dueAtMs = cueDueAtMs(cue, scenarioStartedAtMs)
       const delayMs = config.delayMs
         ? config.delayMs(dueAtMs, nowMs)
         : Math.max(0, dueAtMs - nowMs)
-      const timeoutId = setTimeout(() => {
-        timeoutIds.delete(timeoutId)
-        void runCue(cue)
-      }, delayMs)
-      timeoutIds.add(timeoutId)
+      timeoutId = setTimeout(() => {
+        if (config.nowMs() < dueAtMs) { start(); return }
+        running = true
+        pending.shift()
+        void runCue(cue).finally(() => { running = false; start() })
+      }, Math.min(delayMs, 2_147_483_647))
     }
   }
 

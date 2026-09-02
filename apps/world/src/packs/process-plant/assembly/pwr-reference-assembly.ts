@@ -13,7 +13,7 @@ import { pwrReferenceTemplate } from '../specs/pwr-reference-template.ts'
 const availableLoopIds = ['A', 'B', 'C', 'D', 'E', 'F'] as const
 type LoopId = typeof availableLoopIds[number]
 
-const pwrReferenceModelParametersSchema = z.object({
+export const pwrReferenceParametersSchema = z.object({
   loopCount: z.number().int().min(2).max(availableLoopIds.length),
   title: z.string().min(1).optional(),
 }).strict()
@@ -145,7 +145,7 @@ const displayProfilesFor = (config: {
 })).filter(profile => profile.groups.length > 0)
 
 export const assemblePwrReferencePlantGraph = (input: unknown): PlantGraphSpec => {
-  const parameters = pwrReferenceModelParametersSchema.parse(input)
+  const parameters = pwrReferenceParametersSchema.parse(input)
   const selectedLoopIds = availableLoopIds.slice(0, parameters.loopCount)
   const selectedLoopSet = new Set<LoopId>(selectedLoopIds)
   const source = structuredClone(pwrReferenceTemplate) as PlantGraphSpec

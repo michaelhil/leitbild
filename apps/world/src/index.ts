@@ -1,13 +1,13 @@
-import { createServer } from './core/api/server.ts'
-import { createScenarioRuntimeResolver } from './core/scenarios/runtime-resolver.ts'
-import { compileScenarioSource } from './core/scenarios/config.ts'
-import { scenarioAuthoringCatalogFor } from './core/scenarios/authoring.ts'
 import { createWorldApplicationAssembly } from './app-assembly.ts'
-import { createRoutingAdapterFromEnv } from './routing/config.ts'
-import { builtinScenarioSources } from './scenarios/sources.ts'
+import { createServer } from './core/api/server.ts'
+import { scenarioAuthoringCatalogFor } from './core/scenarios/authoring.ts'
+import { compileScenarioDefinition } from './core/scenarios/compiler.ts'
+import { createScenarioRuntimeResolver } from './core/scenarios/runtime-resolver.ts'
 import { createWorldModuleState } from './core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry } from './core/workspaces/runtime-registry.ts'
 import { createConfiguredProcedureSourceService } from './procedure-sources.ts'
+import { createRoutingAdapterFromEnv } from './routing/config.ts'
+import { builtinScenarioDefinitions } from './scenarios/definitions.ts'
 
 const routing = createRoutingAdapterFromEnv()
 const assembly = createWorldApplicationAssembly({ routing })
@@ -24,8 +24,8 @@ const workspaces = createWorldWorkspaceRuntimeRegistry({
   dataDir,
   moduleState,
   scenarioRuntimeResolver,
-  scenarioSources: builtinScenarioSources,
-  compileScenarioSource: source => compileScenarioSource(source, worldPacks, { routing }),
+  scenarioDefinitions: builtinScenarioDefinitions,
+  compileScenarioDefinition: source => compileScenarioDefinition(source, worldPacks, { routing }),
   scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(worldPacks),
   runtimeAdapters: assembly.runtimeAdapters,
   procedureSourceService: createConfiguredProcedureSourceService(),

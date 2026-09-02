@@ -1,31 +1,31 @@
-import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, SimulationRunEvent, EventId, SimulationRunId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, ProcedureCatalog, ProcedureDocument, ProcedureId, ProcedureSourceId, Provenance, RecordedSample, RecordingProfileDescriptor, RecordingSeriesDescriptor, RecordingSeriesQuery, ScenarioExecutionState, ScenarioRecordingSelection, ScenarioTimeline, ScenarioTimelineAction, ScenarioTimelineCue, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
-import { actorIdSchema, commandEnvelopeSchema, deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, notificationIdSchema, nowIso, simulationClockUpdateSchema } from '../model/index.ts'
-import { createSimulationClock } from '../model/time.ts'
-import type { PackWikiRef } from '../packs/protocol.ts'
-import type { SimulationCapability, PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent, PackRuntimeHealth, PackRuntimeRealtimeInput, PackRuntimeRealtimeMessage } from '../../simulation/protocol.ts'
-import type { EventLog } from './event-log.ts'
-import { createSimulationRunStateStore, type SimulationRunStateSnapshot } from './state-store.ts'
-import type { SimulationRunSnapshotStore } from './snapshot-store.ts'
-import { canIssueCommand, type Actor } from './actors.ts'
-import { persistenceDispositionFor, type SimulationRunEventPersistenceDisposition } from './persistence-policy.ts'
-import { createScenarioTimelineRunner, dueScenarioTimelineCues, type ScenarioTimelineRunner } from './timeline-runner.ts'
-import {
-  createSimulationRunRuntimeMetricsRecorder,
-  type SimulationRunRuntimeMetricsSnapshot,
-} from './runtime-metrics.ts'
-import { defaultSimulationRunRuntimePolicy } from './runtime-persistence-policy.ts'
-import { createProcedureSourceService, type ProcedureSourceService } from '../../features/procedures/source.ts'
-import { prepareProcedureCommand } from '../../features/procedures/run-state.ts'
 import type { WorkspaceId } from '@leitbild/contracts'
+import { randomUUID } from 'node:crypto'
+import type { RunHistorian,RunHistorianStatus } from '../../features/historian/store.ts'
+import { prepareProcedureCommand } from '../../features/procedures/run-state.ts'
+import { createProcedureSourceService,type ProcedureSourceService } from '../../features/procedures/source.ts'
+import type { PackRuntimeConnection,PackRuntimeEmission,PackRuntimeEvent,PackRuntimeHealth,PackRuntimeRealtimeInput,PackRuntimeRealtimeMessage,SimulationCapability } from '../../simulation/protocol.ts'
+import type { CommandEnvelope,CommandResult,EventId,InteractionEffect,InteractionHandler,InteractionSignal,IsoTimestamp,ObjectId,OperationalObject,ProcedureCatalog,ProcedureDocument,ProcedureId,ProcedureSourceId,Provenance,RecordedSample,RecordingProfileDescriptor,RecordingSeriesDescriptor,RecordingSeriesQuery,ScenarioExecutionState,ScenarioRecordingSelection,ScenarioTimeline,ScenarioTimelineAction,ScenarioTimelineCue,SimulationClockState,SimulationClockUpdate,SimulationRunEvent,SimulationRunId } from '../model/index.ts'
+import { actorIdSchema,commandEnvelopeSchema,deleteObjectCommandKind,deleteObjectPayloadSchema,interactionEffectSchema,interactionSignalSchema,notificationIdSchema,nowIso,simulationClockUpdateSchema } from '../model/index.ts'
+import { createSimulationClock,type SimulationClock } from '../model/time.ts'
+import type { PackWikiRef } from '../packs/protocol.ts'
 import type { ScenarioRevisionId } from '../scenarios/library.ts'
-import type { RunHistorian, RunHistorianStatus } from '../../features/historian/store.ts'
+import { canIssueCommand,type Actor } from './actors.ts'
 import {
   CommandIdempotencyConflictError,
   commandIdempotencyConfigFromEnv,
   createCommandIdempotencyStore,
   issueCommandWithIdempotency,
 } from './command-idempotency.ts'
+import type { EventLog } from './event-log.ts'
+import { persistenceDispositionFor,type SimulationRunEventPersistenceDisposition } from './persistence-policy.ts'
+import {
+  createSimulationRunRuntimeMetricsRecorder,
+  type SimulationRunRuntimeMetricsSnapshot,
+} from './runtime-metrics.ts'
+import { defaultSimulationRunRuntimePolicy } from './runtime-persistence-policy.ts'
+import type { SimulationRunSnapshotStore } from './snapshot-store.ts'
+import { createSimulationRunStateStore,type SimulationRunStateSnapshot } from './state-store.ts'
+import { createScenarioTimelineRunner,dueScenarioTimelineCues,type ScenarioTimelineRunner } from './timeline-runner.ts'
 
 const projectedSnapshotFlushIntervalMs = defaultSimulationRunRuntimePolicy.projectedSnapshotFlushIntervalMs
 const scenarioRunnerActor: Actor = {
@@ -135,6 +135,7 @@ const eventId = (): EventId => `event:${randomUUID()}` as EventId
 export const createSimulationRunRuntime = async (config: {
   readonly id: SimulationRunId
   readonly runtimeConnection: PackRuntimeConnection
+  readonly runClock?: SimulationClock
   readonly eventLog: EventLog
   readonly snapshotStore: SimulationRunSnapshotStore
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
@@ -181,7 +182,7 @@ export const createSimulationRunRuntime = async (config: {
     await Promise.allSettled([publish])
   }
 
-  const runClock = createSimulationClock({
+  const runClock = config.runClock ?? createSimulationClock({
     currentTime: config.restoredSnapshot?.clock?.currentTime ?? config.scenario.startsAt,
     paused: config.restoredSnapshot?.clock?.paused ?? false,
     speed: config.restoredSnapshot?.clock?.speed ?? 1,
@@ -267,16 +268,6 @@ export const createSimulationRunRuntime = async (config: {
     projectedSnapshotTimer.unref?.()
   }
 
-  const flushProjectedSnapshot = async (): Promise<void> => {
-    clearProjectedSnapshotTimer()
-    if (projectedSnapshotDirty) {
-      projectedSnapshotDirty = false
-      metrics.recordProjectedSnapshotFlushed()
-      await queueSnapshotSave()
-      return
-    }
-    await snapshotSaveQueue
-  }
 
   const publishManyNow = async (
     simulationRunEvents: ReadonlyArray<SimulationRunEvent>,
@@ -378,11 +369,7 @@ export const createSimulationRunRuntime = async (config: {
         ...(action.objectIds === undefined ? {} : { objectIds: action.objectIds }),
       }
     }
-    if (action.type === 'upsert_object') {
-      return { ...nextScenarioBase(at), type: 'object.upserted', object: action.object }
-    }
-    if (action.type === 'emit_signal' || action.type === 'invoke_capability') return null
-    return { ...nextScenarioBase(at), type: 'object.deleted', objectId: action.objectId }
+    return null // Commands and signals use their validated live dispatch paths.
   }
 
   const scenarioSignalForAction = (
@@ -720,7 +707,12 @@ export const createSimulationRunRuntime = async (config: {
     await config.snapshotStore.save(snapshotWithCurrentClock())
   }
   const hydratedClock = state.snapshot().clock
-  if (hydratedClock) await config.runtimeConnection.setClock(hydratedClock)
+  if (hydratedClock) {
+    const initial = { ...hydratedClock, paused: config.restoredSnapshot?.clock?.paused ?? false }
+    await config.runtimeConnection.setClock(initial)
+    runClock.set(initial)
+    state.hydrate({ ...state.snapshot(), clock: initial })
+  }
 
   let scenarioRunner: ScenarioTimelineRunner | null = null
 
@@ -807,7 +799,7 @@ export const createSimulationRunRuntime = async (config: {
     }
   }
 
-  const publishScenarioCue = async (cue: ScenarioTimelineCue, at: IsoTimestamp): Promise<void> => {
+  const executeScenarioCue = async (cue: ScenarioTimelineCue, at: IsoTimestamp): Promise<void> => {
     await publishOneGenerated(() => scenarioCueStartedEvent(cue, at))
 
     for (const action of cue.actions) {
@@ -830,6 +822,17 @@ export const createSimulationRunRuntime = async (config: {
       }
       await publishGenerated(() => simulationRunEventsForScenarioActions([action], at))
     }
+  }
+
+  let cueQueue: Promise<void> = Promise.resolve()
+  const publishScenarioCue = (cue: ScenarioTimelineCue, at: IsoTimestamp): Promise<void> => {
+    const pending = cueQueue.then(async () => {
+      if (state.snapshot().scenario?.timeline?.firedCueIds.includes(cue.id)) return
+      try { await executeScenarioCue(cue, at) }
+      catch (error) { await publishOneGenerated(() => scenarioCueFailedEvent(cue, error, nowIso())) }
+    })
+    cueQueue = pending.catch(() => {})
+    return pending
   }
 
   const runDueScenarioCues = async (): Promise<void> => {
@@ -879,8 +882,10 @@ export const createSimulationRunRuntime = async (config: {
     await config.runtimeConnection.receiveRealtimeInput(input)
   }
 
-  const setClock = async (update: SimulationClockUpdate): Promise<SimulationClockState> => {
+  let clockQueue: Promise<unknown> = Promise.resolve()
+  const applyClockUpdate = async (update: SimulationClockUpdate): Promise<SimulationClockState> => {
     const parsedUpdate = simulationClockUpdateSchema.parse(update) as SimulationClockUpdate
+    await cueQueue
     const currentClock = state.snapshot().clock
     if (!currentClock) throw new Error('simulation run clock is not initialized')
     const current = runClock.read()
@@ -891,8 +896,19 @@ export const createSimulationRunRuntime = async (config: {
       paused: parsedUpdate.paused ?? current.paused,
       speed: parsedUpdate.speed ?? current.speed,
     }
-    await config.runtimeConnection.validateClock?.(nextClock)
-    await config.runtimeConnection.setClock(nextClock)
+    scenarioRunner?.close()
+    scenarioRunner = null
+    const stopped = { ...current, paused: true }
+    runClock.set(stopped)
+    try { await config.runtimeConnection.validateClock?.(nextClock) }
+    catch (error) { runClock.set(current); startScenarioRunner(); throw error }
+    try { await config.runtimeConnection.setClock(nextClock) }
+    catch (error) {
+      // A failing adapter may already have accepted the new rate. The shared
+      // clock remains frozen: no Pack can advance a partially changed Run.
+      await publishOneGenerated(() => ({ id: eventId(), simulationRunId: config.id, seq: ++seq, at: nowIso(), provenance: { source: 'system' }, type: 'clock.updated', clock: stopped }))
+      throw error
+    }
     runClock.set(nextClock)
     await publishOneGenerated(() => ({
       id: eventId(),
@@ -905,7 +921,6 @@ export const createSimulationRunRuntime = async (config: {
     }))
     if (config.scenario.timeline) {
       if (nextClock.paused) {
-        scenarioRunner?.close()
         scenarioRunner = null
       } else {
         await runDueScenarioCues()
@@ -913,6 +928,12 @@ export const createSimulationRunRuntime = async (config: {
       }
     }
     return nextClock
+  }
+  const setClock = (update: SimulationClockUpdate): Promise<SimulationClockState> => {
+    const parsed = simulationClockUpdateSchema.parse(update) as SimulationClockUpdate
+    const pending = clockQueue.then(() => applyClockUpdate(parsed))
+    clockQueue = pending.catch(() => {})
+    return pending
   }
 
   const invokeCapability = async (
@@ -979,10 +1000,21 @@ export const createSimulationRunRuntime = async (config: {
     recordedSamples: (query) => config.historian?.query(query) ?? [],
     close: async (): Promise<void> => {
       scenarioRunner?.close()
-      unsubscribeRuntime()
+      await clockQueue
+      await cueQueue
+      scenarioRunner?.close()
+      const current = runClock.read()
+      const stopped = { ...current, paused: true }
+      runClock.set(stopped)
+      await config.runtimeConnection.setClock(stopped)
       await config.runtimeConnection.close()
+      unsubscribeRuntime()
       await publishQueue
-      await flushProjectedSnapshot()
+      if (projectedSnapshotTimer !== null) clearTimeout(projectedSnapshotTimer)
+      projectedSnapshotTimer = null
+      projectedSnapshotDirty = false
+      await snapshotSaveQueue
+      await config.snapshotStore.save({ ...state.snapshot(), clock: { ...stopped, paused: current.paused } })
       config.historian?.close()
       metrics.markClosed(nowIso())
       handlers.clear()

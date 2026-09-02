@@ -1,20 +1,20 @@
 import type { SimulationRunId } from '../src/core/model/index.ts'
-import { createScenarioRuntimeResolver, type ScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
-import { ambulancePack } from '../src/packs/ambulance/pack.ts'
-import { testScenarioSources, responseScenario, scenarios } from './fixtures/scenarios.ts'
-import { compileScenarioSource } from '../src/core/scenarios/config.ts'
 import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
+import { compileScenarioDefinition } from '../src/core/scenarios/compiler.ts'
+import { createScenarioRuntimeResolver,type ScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
+import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
-import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
-import { weatherPack } from '../src/packs/weather/pack.ts'
-import { processPlantPack } from '../src/packs/process-plant/pack.ts'
-import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
-import { dronePack } from '../src/packs/drone/pack.ts'
 import { createDroneNativePackRuntimeAdapter } from '../src/packs/drone/native/adapter.ts'
+import { dronePack } from '../src/packs/drone/pack.ts'
 import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
 import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric-grid/sim/adapter.ts'
+import { processPlantPack } from '../src/packs/process-plant/pack.ts'
+import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
+import { weatherPack } from '../src/packs/weather/pack.ts'
+import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import type { PackRuntimeAdapter, PackRuntimeConnectionConfig, PackScenarioRuntimeConfig } from '../src/simulation/protocol.ts'
+import type { PackRuntimeAdapter,PackRuntimeConnectionConfig,PackScenarioRuntimeConfig } from '../src/simulation/protocol.ts'
+import { responseScenario,testScenarioDefinitions } from './fixtures/scenarios.ts'
 
 export const testPacks = [ambulancePack, weatherPack, dronePack, processPlantPack, electricGridPack] as const
 
@@ -23,8 +23,8 @@ export const createTestScenarioRuntimeResolver = (): ScenarioRuntimeResolver => 
 })
 
 export const testScenarioAuthoring = () => ({
-  scenarioSources: testScenarioSources,
-  compileScenarioSource: (source: unknown) => compileScenarioSource(source, testPacks, { routing: createDirectRoutingAdapter() }),
+  scenarioDefinitions: testScenarioDefinitions,
+  compileScenarioDefinition: (source: unknown) => compileScenarioDefinition(source, testPacks, { routing: createDirectRoutingAdapter() }),
   scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(testPacks),
 })
 

@@ -1,12 +1,12 @@
 import type { WorkspaceId } from '@leitbild/contracts'
-import type { ScenarioRuntimeResolver } from '../scenarios/runtime-resolver.ts'
-import type { ScenarioSource } from '../scenarios/config.ts'
-import type { ScenarioDefinition } from '../model/index.ts'
-import type { ScenarioAuthoringCatalog } from '../scenarios/authoring.ts'
 import type { ProcedureSourceService } from '../../features/procedures/source.ts'
 import type { PackRuntimeAdapter } from '../../simulation/protocol.ts'
-import { createSimulationRunRegistry, type SimulationRunRegistry } from '../simulation-runs/registry.ts'
-import type { WorldModuleMarker, WorldModuleState } from './module-state.ts'
+import type { CompiledScenario } from '../model/index.ts'
+import type { ScenarioAuthoringCatalog } from '../scenarios/authoring.ts'
+import type { ScenarioDefinition } from '../scenarios/definition.ts'
+import type { ScenarioRuntimeResolver } from '../scenarios/runtime-resolver.ts'
+import { createSimulationRunRegistry,type SimulationRunRegistry } from '../simulation-runs/registry.ts'
+import type { WorldModuleMarker,WorldModuleState } from './module-state.ts'
 
 export interface WorldWorkspaceRuntime {
   readonly workspaceId: WorkspaceId
@@ -30,8 +30,8 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
   readonly dataDir: string
   readonly moduleState: WorldModuleState
   readonly scenarioRuntimeResolver: ScenarioRuntimeResolver
-  readonly scenarioSources: ReadonlyArray<ScenarioSource>
-  readonly compileScenarioSource: (source: unknown) => Promise<ScenarioDefinition>
+  readonly scenarioDefinitions: ReadonlyArray<ScenarioDefinition>
+  readonly compileScenarioDefinition: (source: unknown) => Promise<CompiledScenario>
   readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
   readonly runtimeAdapters: ReadonlyArray<PackRuntimeAdapter>
   readonly idleRuntimeCloseDelayMs?: number
@@ -46,8 +46,8 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
       dataDir: config.dataDir,
       workspaceId,
       scenarioRuntimeResolver: config.scenarioRuntimeResolver,
-      scenarioSources: config.scenarioSources,
-      compileScenarioSource: config.compileScenarioSource,
+      scenarioDefinitions: config.scenarioDefinitions,
+      compileScenarioDefinition: config.compileScenarioDefinition,
       scenarioAuthoringCatalog: config.scenarioAuthoringCatalog,
       runtimeAdapters: config.runtimeAdapters,
       ...(config.idleRuntimeCloseDelayMs === undefined ? {} : { idleRuntimeCloseDelayMs: config.idleRuntimeCloseDelayMs }),

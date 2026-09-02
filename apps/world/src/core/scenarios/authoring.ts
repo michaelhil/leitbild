@@ -1,31 +1,34 @@
 import { z } from 'zod'
-import type { WorldPack } from '../packs/protocol.ts'
+import type { PackScenarioAuthoringField,WorldPack } from '../packs/protocol.ts'
 
 const pathSegmentSchema = z.union([z.string().min(1), z.number().int().nonnegative()])
 const pathSchema = z.array(pathSegmentSchema).min(1)
 
 const controlSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('text'), defaultValue: z.string() }).strict(),
+  z.object({ kind: z.literal('text'), defaultValue: z.string().optional() }).strict(),
   z.object({
     kind: z.literal('number'),
-    defaultValue: z.number().finite(),
+    defaultValue: z.number().finite().optional(),
     min: z.number().finite().optional(),
     max: z.number().finite().optional(),
     step: z.number().finite().positive().optional(),
   }).strict(),
-  z.object({ kind: z.literal('boolean'), defaultValue: z.boolean() }).strict(),
+  z.object({ kind: z.literal('boolean'), defaultValue: z.boolean().optional() }).strict(),
   z.object({
     kind: z.literal('select'),
-    defaultValue: z.string(),
-    options: z.array(z.object({ value: z.string(), label: z.string().min(1) }).strict()).min(1),
+    defaultValue: z.string().optional(),
+    options: z.array(z.object({ value: z.string(), label: z.string().min(1), compatibleWith: z.object({ path: pathSchema, values: z.array(z.string()) }).strict().optional() }).strict()).min(1),
+    extendFromConfig: z.object({ path: pathSchema, valueKey: z.string(), labelKey: z.string() }).strict().optional(),
   }).strict(),
+  z.object({ kind: z.literal('reference'), itemTypes: z.array(z.string()), defaultValue: z.string().optional() }).strict(),
+  z.object({ kind: z.literal('string-list'), defaultValue: z.array(z.string()).optional() }).strict(),
 ])
 
 const authoringFieldSchema = z.object({
-  target: z.enum(['item', 'linkedConfig']),
   path: pathSchema,
   label: z.string().min(1),
   control: controlSchema,
+  optional: z.boolean().default(false),
 }).strict()
 
 const authoringItemTypeSchema = z.object({
@@ -36,15 +39,9 @@ const authoringItemTypeSchema = z.object({
   defaultItem: z.record(z.string(), z.unknown()),
   itemSchema: z.record(z.string(), z.unknown()),
   placement: z.object({
-    target: z.literal('item'),
-    kind: z.enum(['point', 'route', 'polygon']),
+    kind: z.literal('point'),
     path: pathSchema,
-  }).strict().optional(),
-  linkedConfig: z.object({
-    collectionPath: pathSchema,
-    idPrefix: z.string().regex(/^[a-z][a-z0-9-]*$/),
-    itemReferencePath: pathSchema,
-    defaults: z.record(z.string(), z.unknown()),
+    orReference: pathSchema.optional(),
   }).strict().optional(),
   fields: z.array(authoringFieldSchema),
   collections: z.array(z.object({
@@ -53,6 +50,7 @@ const authoringItemTypeSchema = z.object({
     defaultItem: z.record(z.string(), z.unknown()),
     fields: z.array(authoringFieldSchema),
     maxItems: z.number().int().min(1).max(256),
+    keyframes: z.object({ timePath: pathSchema, increment: z.number().finite().positive() }).strict().optional(),
   }).strict()).default([]),
 }).strict()
 
@@ -83,6 +81,9 @@ const scenarioAuthoringPackSchema = z.object({
 
 export const scenarioAuthoringCatalogSchema = z.object({
   packs: z.array(scenarioAuthoringPackSchema),
+  commands: z.array(z.object({
+    id: z.string(), title: z.string(), description: z.string(), packId: z.string(), runtimeId: z.string(), inputSchema: z.record(z.string(), z.unknown()),
+  }).strict()).default([]),
 }).strict()
 
 export type ScenarioAuthoringCatalog = z.infer<typeof scenarioAuthoringCatalogSchema>
@@ -114,11 +115,6 @@ const setValueAt = (root: Record<string, unknown>, path: ReadonlyArray<string | 
 }
 
 const validateAuthoring = (pack: WorldPack): void => {
-  const configDefaults = pack.scenarioConfigSchema.parse({}) as Record<string, unknown>
-  for (const field of pack.authoring?.configFields ?? []) {
-    if (field.target !== 'item') throw new Error('Pack config fields cannot target linked item configuration')
-    if (valueAt(configDefaults, field.path) !== field.control.defaultValue) throw new Error(`Pack config field ${pack.descriptor.id}.${field.label} default does not match configuration`)
-  }
   const itemTypeIds = new Set<string>()
   for (const itemType of pack.authoring?.itemTypes ?? []) {
     if (itemTypeIds.has(itemType.id)) throw new Error(`duplicate authoring item type ${itemType.id} in Pack ${pack.descriptor.id}`)
@@ -134,15 +130,7 @@ const validateAuthoring = (pack: WorldPack): void => {
       ...structuredClone(itemType.defaultItem),
     }
     if (itemType.placement) {
-      const placementValue = itemType.placement.kind === 'point'
-        ? [0, 0]
-        : itemType.placement.kind === 'route'
-          ? [[0, 0], [0.01, 0.01]]
-          : [[0, 0], [0.01, 0], [0.01, 0.01], [0, 0]]
-      setValueAt(candidate, itemType.placement.path, placementValue)
-    }
-    if (itemType.linkedConfig) {
-      setValueAt(candidate, itemType.linkedConfig.itemReferencePath, `${itemType.linkedConfig.idPrefix}-authoring-check`)
+      setValueAt(candidate, itemType.placement.path, [0, 0])
     }
     pack.scenario.itemSchemas[itemType.id]!.parse(candidate)
     for (const collection of itemType.collections ?? []) {
@@ -150,32 +138,31 @@ const validateAuthoring = (pack: WorldPack): void => {
       const withRow = structuredClone(candidate)
       setValueAt(withRow, collection.path, [structuredClone(collection.defaultItem)])
       pack.scenario.itemSchemas[itemType.id]!.parse(withRow)
-      for (const field of collection.fields) {
-        if (field.target !== 'item' || valueAt(collection.defaultItem, field.path) !== field.control.defaultValue) throw new Error(`Collection field ${field.label} has inconsistent defaults`)
-      }
-    }
-    for (const field of itemType.fields) {
-      const defaults = field.target === 'item' ? itemType.defaultItem : itemType.linkedConfig?.defaults
-      if (!defaults) throw new Error(`authoring field ${itemType.id}.${field.label} targets missing linked config`)
-      const defaultValue = valueAt(defaults, field.path)
-      if (defaultValue === undefined) throw new Error(`authoring field ${itemType.id}.${field.label} has no value at ${field.path.join('.')}`)
-      if (defaultValue !== field.control.defaultValue) {
-        throw new Error(`authoring field ${itemType.id}.${field.label} default does not match its document value`)
-      }
-      if (field.control.kind === 'select' && !field.control.options.some(option => option.value === field.control.defaultValue)) {
-        throw new Error(`authoring field ${itemType.id}.${field.label} default is not a selectable option`)
-      }
-      if (field.control.kind === 'number') {
-        if (field.control.min !== undefined && field.control.defaultValue < field.control.min) {
-          throw new Error(`authoring field ${itemType.id}.${field.label} default is below its minimum`)
-        }
-        if (field.control.max !== undefined && field.control.defaultValue > field.control.max) {
-          throw new Error(`authoring field ${itemType.id}.${field.label} default is above its maximum`)
-        }
-      }
     }
   }
 }
+
+type SchemaNode = { properties?: Record<string, SchemaNode>; items?: SchemaNode; required?: string[]; minimum?: number; maximum?: number; enum?: string[]; default?: unknown }
+const schemaAt = (schema: SchemaNode, path: ReadonlyArray<string | number>): { node: SchemaNode; optional: boolean } => {
+  let node = schema
+  let optional = false
+  for (const segment of path) {
+    optional ||= typeof segment === 'string' && !(node.required ?? []).includes(segment)
+    node = (typeof segment === 'number' ? node.items : node.properties?.[segment]) ?? {}
+  }
+  return { node, optional }
+}
+const describeFields = (fields: ReadonlyArray<PackScenarioAuthoringField>, seed: Readonly<Record<string, unknown>>, schema: SchemaNode) => fields.map(field => {
+  const { node, optional } = schemaAt(schema, field.path)
+  const defaultValue = valueAt(seed, field.path) ?? node.default
+  const control = { ...field.control, ...(defaultValue === undefined ? {} : { defaultValue }) }
+  if (control.kind === 'number') {
+    if (node.minimum !== undefined) control.min = node.minimum
+    if (node.maximum !== undefined) control.max = node.maximum
+  }
+  if (control.kind === 'select' && node.enum) control.options = node.enum.map(value => ({ value, label: control.options.find(option => option.value === value)?.label ?? value }))
+  return { ...field, optional, control }
+})
 
 export const scenarioAuthoringCatalogFor = (packs: ReadonlyArray<WorldPack>): ScenarioAuthoringCatalog => {
   for (const pack of packs) validateAuthoring(pack)
@@ -194,10 +181,15 @@ export const scenarioAuthoringCatalogFor = (packs: ReadonlyArray<WorldPack>): Sc
     recordingProfiles: pack.recording?.profiles ?? [],
     configSchema: z.toJSONSchema(pack.scenarioConfigSchema, { unrepresentable: 'any' }),
     configDefaults: pack.scenarioConfigSchema.parse({}),
-    configFields: pack.authoring?.configFields ?? [],
+    configFields: describeFields(pack.authoring?.configFields ?? [], pack.scenarioConfigSchema.parse({}) as Record<string, unknown>, z.toJSONSchema(pack.scenarioConfigSchema) as SchemaNode),
     itemTypes: (pack.authoring?.itemTypes ?? []).map(itemType => ({
       ...itemType,
       itemSchema: z.toJSONSchema(pack.scenario!.itemSchemas[itemType.id]!, { unrepresentable: 'any' }),
+      fields: describeFields(itemType.fields, itemType.defaultItem, z.toJSONSchema(pack.scenario!.itemSchemas[itemType.id]!, { io: 'input' }) as SchemaNode),
+      collections: (itemType.collections ?? []).map(collection => ({
+        ...collection,
+        fields: describeFields(collection.fields, collection.defaultItem, schemaAt(z.toJSONSchema(pack.scenario!.itemSchemas[itemType.id]!, { io: 'input' }) as SchemaNode, [...collection.path, 0]).node),
+      })),
     })),
   }))
   const ids = new Set<string>()

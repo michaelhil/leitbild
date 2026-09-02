@@ -7,8 +7,8 @@
     IsoTimestamp,
     OperationalObject,
     SimulationClockState,
-    SurfaceMapLayer,
-    SurfaceMapRegionConfig,
+    MapLayerId,
+    StartingMapView,
   } from '../core/model/index.ts'
   import { geoPointFromLonLat } from '../core/model/index.ts'
   import type {
@@ -44,7 +44,7 @@
     readonly placementCursor: { readonly icon: string; readonly color: string } | null
     readonly placementPoints: ReadonlyArray<GeoJsonPoint>
     readonly theme: ThemeMode
-    readonly mapConfig: SurfaceMapRegionConfig
+    readonly mapConfig: StartingMapView
     readonly clock?: SimulationClockState
     readonly routeRevision: number
     readonly debugMapInput?: boolean
@@ -69,7 +69,7 @@
     readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
     readonly mapLayerGroupVisibility?: Readonly<Record<string, boolean>>
     readonly referenceDatasetIds?: ReadonlyArray<string>
-    readonly packAreaFeatureLayers?: ReadonlyArray<SurfaceMapLayer>
+    readonly packAreaFeatureLayers?: ReadonlyArray<MapLayerId>
     readonly packAreaFeatureSourcePackIds?: ReadonlyArray<string>
     readonly focusRequest?: MapFocusRequest | null
   }
@@ -193,7 +193,7 @@
   const styleUrlFor = (mode: ThemeMode): string =>
     `/map/style.json?theme=${encodeURIComponent(mode)}`
 
-  const cameraKeyFor = (config: SurfaceMapRegionConfig): string => {
+  const cameraKeyFor = (config: StartingMapView): string => {
     const [lon, lat] = config.center.coordinates
     return `${lon}:${lat}:${config.zoom}`
   }
@@ -226,7 +226,7 @@
     return enabled
   }
 
-  const mapLayerEnabled = (layer: SurfaceMapLayer): boolean =>
+  const mapLayerEnabled = (layer: MapLayerId): boolean =>
     visibleFamilies().has(layer)
 
   const packAreaFeaturesEnabled = (): boolean =>

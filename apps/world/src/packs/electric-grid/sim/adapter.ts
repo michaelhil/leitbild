@@ -1,4 +1,3 @@
-import { createSimulationClock } from '../../../core/model/time.ts'
 import type {
   CommandEnvelope,
   CommandResult,
@@ -12,7 +11,8 @@ import type {
   SimulationClockState,
   SimulationRunEvent,
 } from '../../../core/model/index.ts'
-import { electricalPortFromObject, nowIso } from '../../../core/model/index.ts'
+import { electricalPortFromObject,nowIso } from '../../../core/model/index.ts'
+import { createSimulationClock } from '../../../core/model/time.ts'
 import type {
   PackRuntimeAdapter,
   PackRuntimeConnection,
@@ -23,8 +23,8 @@ import type {
   PackRuntimeQuery,
 } from '../../../simulation/protocol.ts'
 import {
-  electricGridCommandKinds,
   electricGridCommandCapabilities,
+  electricGridCommandKinds,
   gridClearDerateCommandKind,
   gridClearDeratePayloadSchema,
   gridCloseBranchCommandKind,
@@ -49,15 +49,15 @@ import {
   gridTripGeneratorPayloadSchema,
 } from '../commands.ts'
 import { gridDefinitionSchema } from '../config.ts'
-import { electricGridPackDataSchema, electricGridPackId } from '../model.ts'
-import { answerElectricGridQuery, electricGridQueryCapabilities } from '../query.ts'
+import { electricGridPackDataSchema,electricGridPackId } from '../model.ts'
+import { answerElectricGridQuery,electricGridQueryCapabilities } from '../query.ts'
 import { createGridRecordingPlan } from '../recording.ts'
-import { balanceInitialGridDispatch, createGridRuntimeInstance, type GridRuntimeInstance } from '../runtime/instance.ts'
+import { balanceInitialGridDispatch,createGridRuntimeInstance,type GridRuntimeInstance } from '../runtime/instance.ts'
 import { advanceGrid } from '../runtime/solver.ts'
-import { gridProjectionEvents, projectGridObject, projectedInitialGridObjects } from './object-projection.ts'
+import { electricGridAdapterId,electricGridRuntimeId } from './constants.ts'
+import { gridProjectionEvents,projectGridObject,projectedInitialGridObjects } from './object-projection.ts'
 import { createElectricGridRuntimePersistence } from './persistence.ts'
-import { electricGridRuntimeStateSchema, restoredGridRuntimeStateFor } from './runtime-state.ts'
-import { electricGridAdapterId, electricGridRuntimeId } from './constants.ts'
+import { electricGridRuntimeStateSchema,restoredGridRuntimeStateFor } from './runtime-state.ts'
 
 const updateIntervalMs = 2_000
 const connectedPeerStaleAfterMs = 5_000
@@ -246,7 +246,9 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
     let recordingDescriptorsPending = recordingPlan !== null
     let nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
     let clock: SimulationClockState = { currentTime: initialAt, updatedAt: nowIso(), paused: false, speed: 1 }
-    const runClock = createSimulationClock(clock)
+    clock = config.runClock?.read() ?? clock
+    const localClock = config.runClock ? null : createSimulationClock(clock)
+    const runClock = config.runClock ?? localClock!
     let clockInitialized = false
     const currentSimulationTime = (): IsoTimestamp => runClock.read().currentTime
     let lastSimulationMs = Date.parse(currentSimulationTime())
@@ -369,7 +371,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
         provenance: { source: 'simulator', adapterId: electricGridAdapterId },
         history,
       })
-      const elapsedMs = Math.min(...[...grids.values()].map(grid => grid.elapsedMs))
+      const elapsedMs = simulationMs - Date.parse(config.scenario.world.startsAt)
       const recording = recordingPlan !== null && elapsedMs >= nextRecordingElapsedMs
         ? (() => {
             nextRecordingElapsedMs = elapsedMs + recordingPlan.intervalMs
@@ -445,7 +447,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
             objectsById,
             grids: new Map([[grid.definition.gridId, grid]]),
             previousKeys: projectionKeys,
-            at,
+            at: nowIso(),
             provenance: { source: 'operator', causedByCommandId: command.id },
             history: 'record',
           })
@@ -529,7 +531,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
         if (clockInitialized) advanceAndEmit('snapshot-only')
         clockInitialized = true
         clock = nextClock
-        runClock.set(nextClock)
+        localClock?.set(nextClock)
         lastSimulationMs = Date.parse(currentSimulationTime())
       },
       close: async (): Promise<void> => {
@@ -542,4 +544,4 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
   },
 })
 
-export { electricGridAdapterId, electricGridRuntimeId }
+export { electricGridAdapterId,electricGridRuntimeId }

@@ -1,9 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type {
-  RouteImpact,
   CommandEnvelope,
   CommandResult,
-  SimulationRunEvent,
   GeoJsonLineString,
   GeoJsonPoint,
   InteractionSignal,
@@ -11,23 +9,28 @@ import type {
   MotionProfileSet,
   ObjectId,
   OperationalObject,
+  RouteImpact,
+  SimulationRunEvent,
   SimulationRunId,
 } from '../../../core/model/index.ts'
-import { advanceAlongRoute, defaultMotionProfile, interactionSignalSchema, meters, motionProfileFor, nowIso, pointFromPosition, remainingDistanceAlongRoute, routeDistanceMeters } from '../../../core/model/index.ts'
+import { advanceAlongRoute,defaultMotionProfile,interactionSignalSchema,meters,motionProfileFor,nowIso,pointFromPosition,remainingDistanceAlongRoute,routeDistanceMeters } from '../../../core/model/index.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
-import type { PackRuntimeEvent, PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
+import type { PackRuntimeEvent,PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
 import {
   assignToIncidentCommandKind,
   assignToIncidentPayloadSchema,
   cancelDestinationCommandKind,
   cancelDestinationPayloadSchema,
+  createIncidentCommandKind,createIncidentPayloadSchema,
   createObjectCommandKind,
   createObjectPayloadSchema,
   setDestinationCommandKind,
   setDestinationPayloadSchema,
+  setIncidentVictimsCommandKind,setIncidentVictimsPayloadSchema,
 } from '../commands.ts'
 import type { IncidentPackData } from '../model.ts'
-import { ambulanceSimAdapterId, ambulanceSimRuntimeId } from './constants.ts'
+import { ambulanceScenarioSupport,withIncidentVictimCount } from '../scenario.ts'
+import { ambulanceSimAdapterId,ambulanceSimRuntimeId } from './constants.ts'
 import { assetArrivedAtTargetSignalType } from './interactions.ts'
 import {
   createAddedAmbulanceObject,
@@ -392,6 +395,22 @@ export const createAmbulanceSimEngine = (config: {
 
   const handleCommand = async (command: CommandEnvelope): Promise<CommandResult> => {
     const at3 = nowIso()
+    if (command.kind === createIncidentCommandKind || command.kind === setIncidentVictimsCommandKind) {
+      try {
+        if (command.kind === createIncidentCommandKind) {
+          const item = createIncidentPayloadSchema.parse(command.payload)
+          if (state.objectProjection.has(item.id)) throw new Error(`Object already exists: ${item.id}`)
+          const contribution = await ambulanceScenarioSupport.expandItem({ ...item, pack: 'ambulance', type: 'incident' }, { at: at3, routing: config.routing, objects: [...state.objectProjection.values()], objectById: id => state.objectProjection.get(id), packConfigs: {} })
+          for (const object of contribution.objects) state.objectProjection.set(object.id, object)
+        } else {
+          const input = setIncidentVictimsPayloadSchema.parse(command.payload)
+          const object = state.objectProjection.get(input.objectId)
+          if (!object || object.kind !== 'incident') throw new Error(`Incident not found: ${input.objectId}`)
+          state.objectProjection.set(object.id, withIncidentVictimCount(object, input.victims, at3))
+        }
+        return { ok: true, commandId: command.id, acceptedAt: at3 }
+      } catch (error) { return { ok: false, commandId: command.id, rejectedAt: at3, reason: error instanceof Error ? error.message : String(error) } }
+    }
     if (command.kind === createObjectCommandKind) {
       const payload = createObjectPayloadSchema.safeParse(command.payload)
       if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: at3, reason: payload.error.message }

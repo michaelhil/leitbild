@@ -1,8 +1,8 @@
+import type { CommandEnvelope,CommandResult,GeoJsonPoint,GeoJsonPolygon,IsoTimestamp,OperationalObject,SimulationClockState,SimulationRunEvent } from '../../../core/model/index.ts'
+import { commandResultSchema,nowIso,objectIdSchema } from '../../../core/model/index.ts'
 import { createSimulationClock } from '../../../core/model/time.ts'
-import type { CommandEnvelope, CommandResult, SimulationRunEvent, GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, OperationalObject, SimulationClockState } from '../../../core/model/index.ts'
-import { commandResultSchema, nowIso, objectIdSchema } from '../../../core/model/index.ts'
-import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeQuery, PackRuntimeRealtimeMessage, PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
 import { defineSimulationCommandCapability } from '../../../simulation/capabilities.ts'
+import type { PackRuntimeAdapter,PackRuntimeConnection,PackRuntimeEmission,PackRuntimeEvent,PackRuntimeEventHandler,PackRuntimeQuery,PackRuntimeRealtimeMessage,PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
 import {
   armDroneCommandKind,
   armDronePayloadSchema,
@@ -13,9 +13,7 @@ import {
   configureDroneVehicleModelCommandKind,
   configureDroneVehicleModelPayloadSchema,
   createDroneCommandKind,
-  createDronePayloadSchema,
-  droneCommandKinds,
-  holdDroneCommandKind,
+  createDronePayloadSchema,holdDroneCommandKind,
   landDroneCommandKind,
   manualControlCommandKind,
   manualControlPayloadSchema,
@@ -24,8 +22,7 @@ import {
   pauseDroneMissionCommandKind,
   returnToLaunchDroneCommandKind,
   setDroneGimbalCommandKind,
-  setDroneGimbalPayloadSchema,
-  singleDronePayloadSchema,
+  setDroneGimbalPayloadSchema,setDroneSwarmCommandKind,setDroneSwarmPayloadSchema,singleDronePayloadSchema,
   startDroneMissionCommandKind,
   swarmCommandKind,
   swarmCommandPayloadSchema,
@@ -34,12 +31,12 @@ import {
   uploadDroneGeofenceCommandKind,
   uploadDroneGeofencePayloadSchema,
   uploadDroneMissionCommandKind,
-  uploadDroneMissionPayloadSchema,
+  uploadDroneMissionPayloadSchema
 } from '../commands.ts'
 import { droneManualControlReadiness } from '../control-readiness.ts'
 import { droneAttackSignal } from '../interactions.ts'
-import { dronePackId, requireDroneVehicleModel, type DroneGuidedTarget, type DronePackData, type DroneVehicleModel } from '../model.ts'
-import { answerDroneQuery, droneQueryCapabilities } from '../query.ts'
+import { dronePackId,requireDroneVehicleModel,type DroneGuidedTarget,type DronePackData,type DroneVehicleModel } from '../model.ts'
+import { answerDroneQuery,droneQueryCapabilities } from '../query.ts'
 import {
   droneManualIntentPayloadSchema,
   droneManualIntentRealtimeInputType,
@@ -49,10 +46,10 @@ import {
 } from '../realtime.ts'
 import { movePointByMeters } from '../spatial.ts'
 import { parseDroneNativeRuntimeConfig } from './config.ts'
-import { droneNativeAdapterId, droneNativeRuntimeId } from './constants.ts'
+import { droneNativeAdapterId,droneNativeRuntimeId } from './constants.ts'
 import { createDroneFixedStepScheduler } from './fixed-step.ts'
-import { missionTarget, nativeGuidedTarget, setDroneNavigation, stepDroneObject, targetInsideGeofence, type NativeMissionPlan } from './flight-loop.ts'
-import { createScenarioDroneObject, parseDroneObject, withDronePackData } from './object-state.ts'
+import { missionTarget,nativeGuidedTarget,setDroneNavigation,stepDroneObject,targetInsideGeofence,type NativeMissionPlan } from './flight-loop.ts'
+import { createScenarioDroneObject,parseDroneObject,withDronePackData } from './object-state.ts'
 
 const commandAccepted = (command: CommandEnvelope, acceptedAt: IsoTimestamp): CommandResult => ({
   ok: true,
@@ -87,6 +84,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
   packId: dronePackId,
   clock: 'simulation',
   capabilities: [
+    defineSimulationCommandCapability({ id: setDroneSwarmCommandKind, title: 'Set drone swarm membership', description: 'Sets or clears membership on the live drone without replacing its vehicle or flight state.', input: setDroneSwarmPayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [setDroneSwarmPayloadSchema.parse(input).droneId], payload: setDroneSwarmPayloadSchema.parse(input) }) }),
     defineSimulationCommandCapability({ id: createDroneCommandKind, title: 'Create drone', description: 'Creates a Drone Pack vehicle from a validated vehicle model.', input: createDronePayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [], payload: createDronePayloadSchema.parse(input) }) }),
     defineSimulationCommandCapability({ id: armDroneCommandKind, title: 'Set drone arming', description: 'Arms or disarms one drone after validating its current readiness.', input: armDronePayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [armDronePayloadSchema.parse(input).droneId], payload: armDronePayloadSchema.parse(input) }) }),
     defineSimulationCommandCapability({ id: manualControlCommandKind, title: 'Apply drone manual control', description: 'Applies a short-lived validated manual-control sample to one drone.', input: manualControlPayloadSchema, output: commandResultSchema, idempotent: false, buildCommand: input => ({ targetObjectIds: [manualControlPayloadSchema.parse(input).droneId], payload: manualControlPayloadSchema.parse(input) }) }),
@@ -170,13 +168,15 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       paused: false,
       speed: 1,
     }
-    const runClock = createSimulationClock(clock)
+    clock = config.runClock?.read() ?? clock
+    const localClock = config.runClock ? null : createSimulationClock(clock)
+    const runClock = config.runClock ?? localClock!
     let clockInitialized = false
     const currentSimulationMs = (): number => Date.parse(runClock.read().currentTime)
     const fixedStepScheduler = createDroneFixedStepScheduler({
       stepMs: runtimeConfig.stepIntervalMs,
       maxCatchUpSteps: maxRuntimeCatchUpSteps,
-      initialWallMs: currentSimulationMs(),
+      initialSimulationMs: currentSimulationMs(),
     })
     let lastProjectionMs = 0
     let lastMotionFrameMs = 0
@@ -261,10 +261,18 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       if (!targetInsideGeofence(target, geofences.get(droneId))) throw new Error(`target is outside loaded geofence for ${droneId}`)
     }
 
-    const stepAll = (): void => {
-      if (closed || clock.paused) return
-      const nowMs = currentSimulationMs()
+    let backlogMs = 0
+    let lastStepAt = nowIso()
+    let backlogEpisodes = 0
+    let wasBehind = false
+    const stepAll = (nowMs = currentSimulationMs(), synchronize = false): void => {
+      if (closed || (clock.paused && !synchronize)) return
       const stepPlan = fixedStepScheduler.advance(nowMs)
+      backlogMs = stepPlan.accumulatedMs
+      const behind = backlogMs >= runtimeConfig.stepIntervalMs * maxRuntimeCatchUpSteps
+      if (behind && !wasBehind) backlogEpisodes++
+      wasBehind = behind
+      lastStepAt = nowIso()
       if (stepPlan.steps.length === 0) return
       for (const step of stepPlan.steps) {
         const at = nowIso()
@@ -300,7 +308,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       })))
     }
 
-    const interval = setInterval(stepAll, runtimeConfig.stepIntervalMs)
+    const interval = setInterval(() => stepAll(), runtimeConfig.stepIntervalMs)
     stepAll()
 
     const createGuidedTarget = (
@@ -576,6 +584,13 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
         return
       }
 
+      if (command.kind === setDroneSwarmCommandKind) {
+        const payload = setDroneSwarmPayloadSchema.parse(command.payload)
+        const { object, data } = droneRecord(payload.droneId)
+        const { swarm: _swarm, ...base } = data
+        updateObject(object, payload.swarm === null ? base : { ...base, swarm: payload.swarm }, nowIso(), 'record', command)
+        return
+      }
       if (command.kind === configureDroneVehicleModelCommandKind) {
         const payload = configureDroneVehicleModelPayloadSchema.parse(command.payload)
         const { object, data } = droneRecord(payload.droneId)
@@ -732,15 +747,22 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
         }
       },
       setClock: async (nextClock: SimulationClockState): Promise<void> => {
-        if (clockInitialized) stepAll()
+        const targetMs = Date.parse(nextClock.currentTime)
+        if (clockInitialized) {
+          stepAll(targetMs, true)
+          while (backlogMs >= runtimeConfig.stepIntervalMs) {
+            await new Promise(resolve => setTimeout(resolve, 0))
+            stepAll(targetMs, true)
+          }
+        } else fixedStepScheduler.reset(targetMs)
         clockInitialized = true
         clock = nextClock
-        runClock.set(nextClock)
+        localClock?.set(nextClock)
         const simulationMs = currentSimulationMs()
-        fixedStepScheduler.reset(simulationMs)
         lastProjectionMs = simulationMs
         lastMotionFrameMs = simulationMs
       },
+      health: () => [{ runtimeId: droneNativeRuntimeId, state: wasBehind ? 'degraded' : 'ready', failureCount: backlogEpisodes, lastSuccessfulInteractionAt: lastStepAt, ...(wasBehind ? { lastFailure: { at: lastStepAt, operation: 'simulation-backlog', message: `Drone solver is ${Math.round(backlogMs)} simulation milliseconds behind the Run clock; elapsed time is retained, not skipped.` } } : {}) }],
       close: async (): Promise<void> => {
         closed = true
         clearInterval(interval)

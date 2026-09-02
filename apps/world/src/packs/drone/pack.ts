@@ -1,13 +1,21 @@
 import type { WorldPack } from '../../core/packs/protocol.ts'
-import { dronePackConfigSchema, droneScenarioSupport } from './scenario.ts'
-import { dronePackView } from './ui-pack.ts'
+import { dronePackConfigSchema } from './config.ts'
 import { createDroneAttackInteractionHandler } from './interactions.ts'
 import { defaultDroneVehicleModels } from './model.ts'
+import { droneScenarioSupport } from './scenario.ts'
+import { dronePackView } from './ui-pack.ts'
 
 export const dronePack: WorldPack = {
   ...dronePackView,
   scenarioConfigSchema: dronePackConfigSchema,
   authoring: {
+    configFields: [
+      { path: ['maxDrones'], label: 'Maximum drones', control: { kind: 'number', step: 1 } },
+      { path: ['stepIntervalMs'], label: 'Physics step (ms)', control: { kind: 'number', step: 1 } },
+      { path: ['projectionIntervalMs'], label: 'Projection interval (ms)', control: { kind: 'number', step: 1 } },
+      { path: ['motionFrameIntervalMs'], label: 'Motion frame interval (ms)', control: { kind: 'number', step: 1 } },
+      { path: ['batteryDrainPercentPerHour'], label: 'Battery drain (%/hour)', control: { kind: 'number', step: 1 } },
+    ],
     itemTypes: [{
       id: 'drone',
       label: 'Drone',
@@ -18,20 +26,20 @@ export const dronePack: WorldPack = {
         altitudeM: 35,
         headingDeg: 0,
       },
-      placement: { target: 'item', kind: 'point', path: ['position'] },
+      placement: { kind: 'point', path: ['position'] },
       fields: [{
-        target: 'item', path: ['modelId'], label: 'Vehicle model',
+        path: ['modelId'], label: 'Vehicle model',
         control: {
           kind: 'select',
-          defaultValue: 'native-survey-quad',
           options: defaultDroneVehicleModels.map(model => ({ value: model.id, label: model.label })),
+          extendFromConfig: { path: ['models'], valueKey: 'id', labelKey: 'label' },
         },
       }, {
-        target: 'item', path: ['altitudeM'], label: 'Altitude (m)',
-        control: { kind: 'number', defaultValue: 35, min: 0, max: 500, step: 5 },
+        path: ['altitudeM'], label: 'Altitude (m)',
+        control: { kind: 'number', step: 5 },
       }, {
-        target: 'item', path: ['headingDeg'], label: 'Heading (degrees)',
-        control: { kind: 'number', defaultValue: 0, min: 0, max: 360, step: 5 },
+        path: ['headingDeg'], label: 'Heading (degrees)',
+        control: { kind: 'number', min: 0, max: 360, step: 5 },
       }],
     }],
   },

@@ -1,5 +1,5 @@
+import { capabilityIds,capabilityJsonSchema } from '../../simulation/capabilities.ts'
 import type { PackRuntimeAdapter } from '../../simulation/protocol.ts'
-import { capabilityIds, capabilityJsonSchema } from '../../simulation/capabilities.ts'
 import type { WorldPack } from './protocol.ts'
 
 export interface ValidatedWorldAssembly {
@@ -117,13 +117,6 @@ export const validateWorldAssembly = (config: {
     const authoringItemTypeIds = (pack.authoring?.itemTypes ?? []).map(item => item.id).sort()
     if (JSON.stringify(scenarioItemTypeIds) !== JSON.stringify(authoringItemTypeIds)) {
       throw new Error(`Pack ${pack.descriptor.id} Scenario item types and authoring item types differ: Scenario ${scenarioItemTypeIds.join(', ')}, authoring ${authoringItemTypeIds.join(', ')}`)
-    }
-    const mutationTypeIds = Object.keys(pack.scenario?.mutationSchemas ?? {})
-    if (mutationTypeIds.length > 0 && !pack.scenario?.applyMutation) {
-      throw new Error(`Pack ${pack.descriptor.id} declares Scenario mutations without a mutation handler`)
-    }
-    if (pack.scenario?.applyMutation && mutationTypeIds.length === 0) {
-      throw new Error(`Pack ${pack.descriptor.id} declares a Scenario mutation handler without mutation schemas`)
     }
   }
   assertUnique(packs.flatMap(pack => pack.presentation.categories.map(category => category.id)), 'object category id')

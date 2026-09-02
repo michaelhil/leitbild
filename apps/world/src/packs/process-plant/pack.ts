@@ -1,25 +1,26 @@
-import type { PackId, GeoJsonPoint, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
-import { geoPointFromLonLat, meters, objectIdSchema } from '../../core/model/index.ts'
-import type { WorldPack, PackScenarioItemSpec } from '../../core/packs/protocol.ts'
+import { z } from 'zod'
+import type { GeoJsonPoint,IsoTimestamp,OperationalObject,PackId } from '../../core/model/index.ts'
+import { geoPointFromLonLat,meters,objectIdSchema } from '../../core/model/index.ts'
+import type { PackScenarioItemSpec,WorldPack } from '../../core/packs/protocol.ts'
 import { processPlantControlWriteCommandKind } from './commands.ts'
-import { emptyProcessPlantProjection, processPlantPackId, type ProcessPlantUnitPackData } from './model.ts'
-import { processPlantSimAdapterId } from './sim/constants.ts'
 import {
   processPlantAutomationSelectionSchema,
   processPlantModelSelectionSchema,
   processPlantOperatingPointSelectionSchema,
   processPlantPackConfigSchema,
 } from './config.ts'
+import { processPlantElectricalPortDefinitions } from './electrical-ports.ts'
+import { emptyProcessPlantProjection,processPlantPackId,type ProcessPlantUnitPackData } from './model.ts'
+import { compileProcessPlant } from './plant-compiler.ts'
 import {
+  processPlantDefinitionCatalog,
   processPlantPwrFullPowerOperatingPointRef,
   processPlantPwrReferenceAutomationRef,
   processPlantPwrReferenceModelRef,
 } from './plant-definitions.ts'
 import { processPlantRecordingProfiles } from './recording.ts'
+import { processPlantSimAdapterId } from './sim/constants.ts'
 import { processPlantPackView } from './ui-pack.ts'
-import { compileProcessPlant } from './plant-compiler.ts'
-import { processPlantElectricalPortDefinitions } from './electrical-ports.ts'
-import { z } from 'zod'
 
 const processPlantScenarioItemSchema = z.object({
   pack: z.literal('process-plant'),
@@ -132,10 +133,12 @@ export const processPlantPack: WorldPack = {
         operatingPoint: { ref: processPlantPwrFullPowerOperatingPointRef },
         automation: { ref: processPlantPwrReferenceAutomationRef },
       },
-      placement: { target: 'item', kind: 'point', path: ['location'] },
-      fields: [{
-        target: 'item', path: ['model', 'parameters', 'loopCount'], label: 'Primary loops',
-        control: { kind: 'number', defaultValue: 4, min: 2, max: 6, step: 1 },
+      placement: { kind: 'point', path: ['location'] },
+      fields: [{ path: ['model', 'ref'], label: 'Model', control: { kind: 'select', options: processPlantDefinitionCatalog().models.map(model => ({ value: model.id, label: model.title })) } },
+      { path: ['operatingPoint', 'ref'], label: 'Operating point', control: { kind: 'select', options: processPlantDefinitionCatalog().operatingPoints.map(point => ({ value: point.id, label: point.title, compatibleWith: { path: ['model', 'ref'], values: point.compatibleModelRefs } })) } },
+      { path: ['automation', 'ref'], label: 'Automation', control: { kind: 'select', options: processPlantDefinitionCatalog().automations.map(automation => ({ value: automation.id, label: automation.title, compatibleWith: { path: ['model', 'ref'], values: automation.compatibleModelRefs } })) } }, {
+        path: ['model', 'parameters', 'loopCount'], label: 'Primary loops',
+        control: { kind: 'number', min: 2, max: 6, step: 1 },
       }],
     }],
   },

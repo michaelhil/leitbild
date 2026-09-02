@@ -1,4 +1,3 @@
-import { createSimulationClock } from '../../../core/model/time.ts'
 import type {
   CommandEnvelope,
   CommandResult,
@@ -7,8 +6,10 @@ import type {
   PackRuntimeRecordingBatch,
   SimulationClockState,
 } from '../../../core/model/index.ts'
-import { commandResultSchema, geoPointFromLonLat, nowIso, recordingSeriesIdFor } from '../../../core/model/index.ts'
-import { hexCellsForPolygon, hexResolution } from '../../../core/spatial/index.ts'
+import { commandResultSchema,geoPointFromLonLat,nowIso,recordingSeriesIdFor } from '../../../core/model/index.ts'
+import { createSimulationClock } from '../../../core/model/time.ts'
+import { hexCellsForPolygon,hexResolution } from '../../../core/spatial/index.ts'
+import { defineSimulationCommandCapability } from '../../../simulation/capabilities.ts'
 import type {
   PackRuntimeAdapter,
   PackRuntimeConnection,
@@ -16,7 +17,6 @@ import type {
   PackRuntimeEventHandler,
   PackRuntimeHealth,
 } from '../../../simulation/protocol.ts'
-import { defineSimulationCommandCapability } from '../../../simulation/capabilities.ts'
 import {
   advanceWeather,
   checkpointWeatherField,
@@ -28,10 +28,10 @@ import {
 } from '../cell-field.ts'
 import { weatherCommandSchemas } from '../commands.ts'
 import { frameAt } from '../influence.ts'
-import { weatherItemSchema, weatherPackConfigSchema, weatherPackDataSchema } from '../model.ts'
+import { weatherItemSchema,weatherPackConfigSchema,weatherPackDataSchema } from '../model.ts'
+import { weatherQuantities,weatherRecordingProfiles } from '../quantities.ts'
+import { answerWeatherQuery,weatherQueryCapabilities } from '../query.ts'
 import { createWeatherObject } from '../scenario.ts'
-import { answerWeatherQuery, weatherQueryCapabilities } from '../query.ts'
-import { weatherQuantities, weatherRecordingProfiles } from '../quantities.ts'
 import { weatherSimRuntimeId } from './constants.ts'
 
 const descriptions: Record<keyof typeof weatherCommandSchemas, [string, string]> = {
@@ -45,7 +45,7 @@ const descriptions: Record<keyof typeof weatherCommandSchemas, [string, string]>
   ],
   'world.weather.set-enabled': [
     'Enable or disable weather area',
-    'Toggle atmospheric forcing with revision checking. Existing ground conditions remain and continue evolving.',
+    'Sets atmospheric forcing on or off without replacing other item fields. Existing ground conditions remain and continue evolving.',
   ],
   'world.weather.intervene-ground': [
     'Set ground conditions in an area',
@@ -65,8 +65,10 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
         description: descriptions[id as keyof typeof weatherCommandSchemas][1],
         input,
         output: commandResultSchema,
-        idempotent: false,
-        schedulable: true,
+        idempotent: id === 'world.weather.set-enabled',
+        // Revision-guarded replacements need a current revision, which is not
+        // knowable when a future cue is authored. Keep their CAS protection.
+        schedulable: id !== 'world.weather.update',
         buildCommand: (raw) => {
           const parsed = input.parse(raw)
           const targets = 'objectId' in parsed ? [parsed.objectId] : 'item' in parsed ? [parsed.item.id] : []
@@ -94,7 +96,9 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
     setWeatherObjects(field, [...objects.values()])
     const handlers = new Set<PackRuntimeEventHandler>()
     let clock: SimulationClockState = { currentTime: field.at, updatedAt: nowIso(), paused: false, speed: 1 }
-    const runClock = createSimulationClock(clock)
+    clock = config.runClock?.read() ?? clock
+    const localClock = config.runClock ? null : createSimulationClock(clock)
+    const runClock = config.runClock ?? localClock!
     let lastSaved = 0
     let lastRecorded = -Infinity
     const profile = config.recording
@@ -250,6 +254,7 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
         const schema = weatherCommandSchemas[command.kind as keyof typeof weatherCommandSchemas]
         if (!schema) throw new Error('Unknown Weather command: ' + command.kind)
         schema.parse(command.payload)
+        advanceWeather(field, runClock.read().currentTime)
         const candidates = new Map(objects)
         const recordIds = new Set<string>()
         if (command.kind === 'world.weather.intervene-ground') {
@@ -260,7 +265,7 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
         } else if (command.kind === 'world.weather.create') {
           const item = weatherItemSchema.parse(command.payload)
           if (objects.has(item.id)) throw new Error('Weather object already exists: ' + item.id)
-          candidates.set(item.id, createWeatherObject(item, field.at, settings))
+          candidates.set(item.id, createWeatherObject(item, field.at, settings, at))
           recordIds.add(item.id)
         } else {
           const payload =
@@ -270,7 +275,7 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
           const id = 'item' in payload ? payload.item.id : payload.objectId
           const object = objects.get(id)
           if (!object) throw new Error('Weather object not found: ' + id)
-          if (object.revision !== payload.expectedRevision)
+          if ('item' in payload && object.revision !== payload.expectedRevision)
             throw new Error('Weather revision conflict; inspect the object and retry')
           const data = weatherPackDataSchema.parse(object.packData)
           if (!('item' in payload) && data.definition.type !== 'weather_area')
@@ -346,7 +351,7 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
         field = prepareClock(next)
         prepared = undefined
         clock = next
-        runClock.set(next)
+        localClock?.set(next)
         health = { ...health, state: 'ready', lastSuccessfulInteractionAt: nowIso() }
         project()
       },

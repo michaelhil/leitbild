@@ -1,8 +1,8 @@
-import type { OperationalObject, ScenarioDefinition } from '../core/model/index.ts'
+import type { CompiledScenario,OperationalObject } from '../core/model/index.ts'
 import type { PackPresentationDiagnosticsSnapshot } from '../core/packs/presentation-composer.ts'
-import type { StartupStep } from './startup.ts'
 import type { MapPerformanceDiagnosticsSnapshot } from './map-runtime/map-performance-diagnostics.ts'
 import type { MapRuntimeDiagnosticsSnapshot } from './map-runtime/types.ts'
+import type { StartupStep } from './startup.ts'
 
 export interface InternalDiagnosticsRouteSnapshot {
   readonly href: string
@@ -189,7 +189,7 @@ const objectCountsByPack = (
 }
 
 export const scenarioDiagnosticsFor = (
-  scenario: ScenarioDefinition | null,
+  scenario: CompiledScenario | null,
   objects: ReadonlyArray<OperationalObject>,
 ): InternalDiagnosticsScenarioSnapshot => ({
   id: scenario?.id ?? null,

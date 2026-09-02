@@ -1,19 +1,5 @@
-import { z } from 'zod'
-import {
-  defaultDroneVehicleModels,
-  droneVehicleModelCatalogSchema,
-  droneVehicleModelSchema,
-  type DroneVehicleModel,
-} from '../model.ts'
-
-const runtimeConfigSchema = z.object({
-  maxDrones: z.number().int().positive().max(500).default(10),
-  stepIntervalMs: z.number().int().min(5).max(100).default(20),
-  projectionIntervalMs: z.number().int().min(10).max(250).default(33),
-  motionFrameIntervalMs: z.number().int().min(10).max(250).default(20),
-  batteryDrainPercentPerHour: z.number().finite().nonnegative().max(100).default(8),
-  models: z.array(droneVehicleModelSchema).default([]),
-}).strict()
+import { droneModelsForConfig,dronePackConfigSchema } from '../config.ts'
+import type { DroneVehicleModel } from '../model.ts'
 
 export interface DroneNativeRuntimeConfig {
   readonly maxDrones: number
@@ -25,17 +11,13 @@ export interface DroneNativeRuntimeConfig {
 }
 
 export const parseDroneNativeRuntimeConfig = (rawConfig: unknown): DroneNativeRuntimeConfig => {
-  const parsed = runtimeConfigSchema.parse(rawConfig ?? {})
-  const modelById = new Map(defaultDroneVehicleModels.map(model => [model.id, model]))
-  for (const model of droneVehicleModelCatalogSchema.parse({ models: parsed.models }).models) {
-    modelById.set(model.id, model)
-  }
+  const parsed = dronePackConfigSchema.parse(rawConfig ?? {})
   return {
     maxDrones: parsed.maxDrones,
     stepIntervalMs: parsed.stepIntervalMs,
     projectionIntervalMs: parsed.projectionIntervalMs,
     motionFrameIntervalMs: parsed.motionFrameIntervalMs,
     batteryDrainPercentPerHour: parsed.batteryDrainPercentPerHour,
-    models: [...modelById.values()],
+    models: droneModelsForConfig(parsed),
   }
 }

@@ -1,19 +1,28 @@
 <script lang="ts">
-  import type { ScenarioAuthoringCatalog } from '../../core/scenarios/authoring.ts'
+  import { untrack } from 'svelte'
+  import { scenarioAuthoringCatalogSchema, type ScenarioAuthoringCatalog } from '../../core/scenarios/authoring.ts'
+  import { scenarioDefinitionSchema } from '../../core/scenarios/definition.ts'
+  import { scenarioPreviewSchema, scenarioWriteResultSchema, type ScenarioPreview } from '../../core/scenarios/authoring-preview.ts'
+  import { createLatestPreview } from '../latest-preview.ts'
+  import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import AuthoringFields from '../AuthoringFields.svelte'
+  import AdvancedConfiguration from '../AdvancedConfiguration.svelte'
+  import TimelineEditor from '../TimelineEditor.svelte'
   import ScenarioBuilderMap from '../ScenarioBuilderMap.svelte'
   import { parseControlSurfaceRoute } from '../simulation-run-route.ts'
   import {
-    createEmptyScenarioSource,
+    createEmptyScenarioDefinition,
     deepCopy,
     itemTypeFor,
+    newCollectionRow,
+    needsPlacement,
     selectionFor,
     setValueAtPath,
     valueAtPath,
     type AuthoringPack,
     type AuthoringField,
     type AuthoringItemType,
-    type ScenarioSourceRecord,
+    type ScenarioDraft,
   } from '../scenario-builder-model.ts'
 
   interface InvocationResponse {
@@ -21,36 +30,7 @@
     readonly createdResources?: ReadonlyArray<{ readonly moduleId: string; readonly type: string; readonly id: string }>
   }
 
-  interface CreateResult {
-    readonly definition: {
-      readonly workspaceId: string
-      readonly moduleId: 'world'
-      readonly type: 'world.scenario'
-      readonly id: string
-      readonly revisionId: string
-    }
-    readonly title: string
-  }
-
-  interface ScenarioPreview {
-    readonly scenarioId: string
-    readonly packs: ReadonlyArray<string>
-    readonly assets: ReadonlyArray<{
-      readonly id: string
-      readonly label: string
-      readonly kind: string
-      readonly packId: string
-      readonly electricalPorts: ReadonlyArray<{
-        readonly id: string
-        readonly label: string
-        readonly role: 'system' | 'network'
-        readonly nominalKv: number
-        readonly maximumExportMw: number
-        readonly maximumImportMw: number
-      }>
-    }>
-    readonly connections: ReadonlyArray<unknown>
-  }
+  type CreateResult = import('zod').z.infer<typeof scenarioWriteResultSchema>
 
   type Selection = { readonly kind: 'scenario' } | { readonly kind: 'pack'; readonly id: string } | { readonly kind: 'item'; readonly id: string }
 
@@ -63,10 +43,9 @@
   const requestedRevisionId = query.get('revision')
 
   let catalog = $state<ScenarioAuthoringCatalog | null>(null)
-  let draft = $state<ScenarioSourceRecord>(createEmptyScenarioSource())
+  let draft = $state<ScenarioDraft>(createEmptyScenarioDefinition())
   let selection = $state<Selection>({ kind: 'scenario' })
   let placementItemId = $state<string | null>(null)
-  let placementCoordinates = $state<Array<[number, number]>>([])
   let packToAdd = $state('')
   let loading = $state(true)
   let saving = $state(false)
@@ -77,7 +56,8 @@
   let previewError = $state<string | null>(null)
   let systemEndpointKey = $state('')
   let networkEndpointKey = $state('')
-  let previewTimer: ReturnType<typeof setTimeout> | null = null
+  let savedDocument = $state('')
+  const dirty = $derived(!loading && savedDocument !== JSON.stringify(draft))
 
   const invoke = async <T,>(capabilityId: string, input: unknown, definition?: CreateResult['definition']): Promise<T> => {
     const response = await fetch(
@@ -100,17 +80,18 @@
         definitionId === null
           ? Promise.resolve(null)
           : fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/world/scenarios/${encodeURIComponent(definitionId)}`).then(async response => {
-              const body = await response.json() as { source?: ScenarioSourceRecord; revisionId?: string; error?: { message?: string } }
+              const body = await response.json() as { source?: ScenarioDraft; revisionId?: string; error?: { message?: string } }
               if (!response.ok || !body.source || !body.revisionId) throw new Error(body.error?.message ?? `Request failed: ${response.status}`)
-              return body as { source: ScenarioSourceRecord; revisionId: string }
+              return body as { source: ScenarioDraft; revisionId: string }
             }),
       ])
-      catalog = catalogResponse.result as ScenarioAuthoringCatalog
+      catalog = scenarioAuthoringCatalogSchema.parse(catalogResponse.result)
       if (definitionResponse) {
         if (requestedRevisionId !== null && requestedRevisionId !== definitionResponse.revisionId) {
           throw new Error('This Scenario has changed. Reopen the editor from the Workspace homepage.')
         }
-        draft = deepCopy(definitionResponse.source)
+        const parsed = scenarioDefinitionSchema.parse(definitionResponse.source)
+        draft = deepCopy({ ...parsed, timeline: parsed.timeline ?? { cues: [] } }) as ScenarioDraft
         editing = {
           workspaceId,
           moduleId: 'world',
@@ -119,6 +100,7 @@
           revisionId: definitionResponse.revisionId,
         }
       }
+      savedDocument = JSON.stringify(draft)
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause)
     } finally {
@@ -149,22 +131,11 @@
     return current.kind === 'pack' ? catalog?.packs.find(pack => pack.id === current.id) : undefined
   }
   const selectedItem = () => selectedEntry()?.item
-  const recordingSelectionFor = (packId: string) => draft.recording.find(selection => selection.packId === packId)
+  const recordingSelectionFor = (packId: string) => selectionFor(draft, packId)?.recording
   const selectedType = (): AuthoringItemType | undefined => {
     const item = selectedItem()
     const entry = selectedEntry()
     return entry && catalog ? itemTypeFor(catalog, entry.packId, entry.item) : undefined
-  }
-  const selectedLinkedConfig = (): Record<string, unknown> | undefined => {
-    const item = selectedItem()
-    const entry = selectedEntry()
-    const type = selectedType()
-    if (!item || !entry || !type?.linkedConfig) return undefined
-    const id = valueAtPath(item, type.linkedConfig.itemReferencePath)
-    const entries = valueAtPath(selectionFor(draft, entry.packId)?.config, type.linkedConfig.collectionPath)
-    return typeof id === 'string' && Array.isArray(entries)
-      ? entries.find(candidate => candidate && typeof candidate === 'object' && (candidate as { id?: unknown }).id === id) as Record<string, unknown> | undefined
-      : undefined
   }
 
   const placementFor = (itemId: string | null): AuthoringItemType['placement'] | undefined => {
@@ -173,48 +144,34 @@
     return entry ? itemTypeFor(catalog, entry.packId, entry.item)?.placement : undefined
   }
 
-  const mapPoints = (): ReadonlyArray<{ id: string; label: string; coordinates: [number, number] }> => !catalog ? [] : [
-    ...allItems().flatMap(({ packId, item }) => {
-    const type = catalog ? itemTypeFor(catalog, packId, item) : undefined
+  const mapPoints = (): ReadonlyArray<{ id: string; label: string; coordinates: [number, number] }> => !catalog ? [] : allItems().flatMap(({ packId, item }) => {
+    const type = itemTypeFor(catalog!, packId, item)
     if (!type?.placement) return []
     const value = valueAtPath(item, type.placement.path)
-    if (type.placement.kind === 'point') {
-      return Array.isArray(value) && typeof value[0] === 'number' && typeof value[1] === 'number'
-        ? [{ id: item.id, label: item.label, coordinates: [value[0], value[1]] as [number, number] }]
-        : []
-    }
-    if (!Array.isArray(value)) return []
-    const coordinates = value.filter((candidate): candidate is [number, number] =>
-      Array.isArray(candidate) && typeof candidate[0] === 'number' && typeof candidate[1] === 'number')
-    if (coordinates.length === 0) return []
-    const center: [number, number] = [
-      coordinates.reduce((sum, coordinate) => sum + coordinate[0], 0) / coordinates.length,
-      coordinates.reduce((sum, coordinate) => sum + coordinate[1], 0) / coordinates.length,
-    ]
-    return [{ id: item.id, label: item.label, coordinates: center }]
-  }),
-    ...placementCoordinates.map((coordinates, index) => ({
-      id: `placement-${index}`,
-      label: String(index + 1),
-      coordinates,
-    })),
-  ]
+    return Array.isArray(value) && typeof value[0] === 'number' && typeof value[1] === 'number'
+      ? [{ id: item.id, label: item.label, coordinates: [value[0], value[1]] as [number, number] }]
+      : []
+  })
 
   const beginPlacement = (itemId: string): void => {
     placementItemId = itemId
-    placementCoordinates = []
   }
 
   const cancelPlacement = (): void => {
+    const entry = allItems().find(entry => entry.item.id === placementItemId)
+    const placement = placementFor(placementItemId)
+    if (entry && needsPlacement(entry.item, placement)) {
+      const pack = selectionFor(draft, entry.packId)!
+      pack.items = pack.items.filter(item => item.id !== entry.item.id)
+      if (selection.kind === 'item' && selection.id === entry.item.id) selection = { kind: 'pack', id: entry.packId }
+    }
     placementItemId = null
-    placementCoordinates = []
   }
 
   const updateRailSections = (): void => {
-    if (!draft.view.rail) draft.view.rail = { width: 340, sections: [] }
-    draft.view.rail.sections = activePacks().flatMap(pack => pack.categoryIds.map(categoryId => ({
-      categoryId, visible: true, collapsed: false, visibleFields: [],
-    })))
+    if (!draft.view.rail) return
+    const active = new Set(activePacks().flatMap(pack => pack.categoryIds))
+    draft.view.rail.sections = draft.view.rail.sections.filter(section => active.has(section.categoryId))
   }
 
   const addPack = (): void => {
@@ -234,7 +191,6 @@
     const removedIds = new Set(removedItems.map(item => item.id))
     draft.connections = draft.connections.filter(connection =>
       !removedIds.has(connection.system.objectId) && !removedIds.has(connection.network.objectId))
-    draft.recording = draft.recording.filter(selection => selection.packId !== pack.id)
     updateRailSections()
     draft = { ...draft }
     selection = { kind: 'scenario' }
@@ -242,9 +198,11 @@
   }
 
   const setRecordingProfile = (pack: AuthoringPack, profileId: string): void => {
-    draft.recording = draft.recording.filter(selection => selection.packId !== pack.id)
+    const selection = selectionFor(draft, pack.id)
+    if (!selection) return
     const profile = pack.recordingProfiles.find(candidate => candidate.id === profileId)
-    if (profile) draft.recording.push({ packId: pack.id, profileId: profile.id, intervalMs: profile.defaultIntervalMs })
+    if (profile) selection.recording = { profileId: profile.id, intervalMs: profile.defaultIntervalMs }
+    else delete selection.recording
     draft = { ...draft }
   }
 
@@ -267,39 +225,56 @@
       label: `${type.label} ${count}`,
       ...deepCopy(type.defaultItem),
     }
-    if (type.linkedConfig) {
-      const configId = `${type.linkedConfig.idPrefix}-${crypto.randomUUID()}`
-      setValueAtPath(item, type.linkedConfig.itemReferencePath, configId)
-      const current = valueAtPath(pack.config, type.linkedConfig.collectionPath)
-      const entries = Array.isArray(current) ? current : []
-      entries.push({ id: configId, ...deepCopy(type.linkedConfig.defaults) })
-      setValueAtPath(pack.config, type.linkedConfig.collectionPath, entries)
-    }
     pack.items.push(item)
     selection = { kind: 'item', id }
     if (type.placement) beginPlacement(id)
     draft = { ...draft }
   }
 
-  const removeItem = (item: ScenarioSourceRecord['packs'][number]['items'][number]): void => {
+  const removeItem = (item: ScenarioDraft['packs'][number]['items'][number]): void => {
     const entry = allItems().find(candidate => candidate.item.id === item.id)
     if (!entry) return
     const pack = selectionFor(draft, entry.packId)!
-    const type = catalog ? itemTypeFor(catalog, entry.packId, item) : undefined
-    if (type?.linkedConfig) {
-      const configId = valueAtPath(item, type.linkedConfig.itemReferencePath)
-      const current = valueAtPath(pack.config, type.linkedConfig.collectionPath)
-      if (typeof configId === 'string' && Array.isArray(current)) {
-        setValueAtPath(pack.config, type.linkedConfig.collectionPath, current.filter(candidate =>
-          !candidate || typeof candidate !== 'object' || (candidate as { id?: unknown }).id !== configId))
-      }
-    }
     pack.items = pack.items.filter(candidate => candidate.id !== item.id)
     draft.connections = draft.connections.filter(connection =>
       connection.system.objectId !== item.id && connection.network.objectId !== item.id)
     draft = { ...draft }
     selection = { kind: 'pack', id: entry.packId }
     if (placementItemId === item.id) cancelPlacement()
+  }
+
+  const duplicateItem = (): void => {
+    const entry = selectedEntry()
+    if (!entry) return
+    const item = { ...deepCopy(entry.item), id: `${selectedType()!.idPrefix}-${crypto.randomUUID()}`, label: `${entry.item.label} copy` }
+    selectionFor(draft, entry.packId)!.items.push(item)
+    selection = { kind: 'item', id: item.id }
+  }
+
+  const applyAdvanced = async (value: unknown, target: 'scenario' | 'pack' | 'item'): Promise<void> => {
+    let candidate = deepCopy(draft)
+    if (target === 'scenario') {
+      const parsed = scenarioDefinitionSchema.parse(value)
+      candidate = { ...parsed, timeline: parsed.timeline ?? { cues: [] } } as ScenarioDraft
+    }
+    else if (target === 'pack') selectionFor(candidate, selectedPack()!.id)!.config = value as Record<string, unknown>
+    else {
+      const entry = selectedEntry()!
+      const pack = selectionFor(candidate, entry.packId)!
+      const replacement = value as typeof entry.item
+      if (replacement.id !== entry.item.id || replacement.type !== entry.item.type) throw new Error('Use Duplicate to create a new identity; item id and type cannot be changed here.')
+      pack.items = pack.items.map(item => item.id === entry.item.id ? replacement : item)
+    }
+    scenarioPreviewSchema.parse((await invoke<InvocationResponse>('world.scenario.preview', { source: candidate })).result)
+    draft = candidate
+  }
+
+  const launchSaved = async (): Promise<void> => {
+    if (!saved) return
+    const started = await invoke<InvocationResponse>('world.scenario.start', {}, saved.definition)
+    const run = started.createdResources?.find(resource => resource.type === 'world.simulation-run')
+    if (!run) throw new Error('Scenario was saved, but the Simulation Run was not returned')
+    window.parent.location.href = `/workspaces/${encodeURIComponent(workspaceId)}?world=${encodeURIComponent(run.id)}`
   }
 
   const setMapView = (center: [number, number], zoom: number): void => {
@@ -309,47 +284,24 @@
   }
 
   const placeItem = (coordinates: [number, number]): void => {
-    if (!placementItemId || !catalog) return
-    const entry = allItems().find(candidate => candidate.item.id === placementItemId)
-    const item = entry?.item
-    const type = item && entry ? itemTypeFor(catalog, entry.packId, item) : undefined
-    if (!item || !type?.placement) return
-    if (type.placement.kind === 'point') {
-      setValueAtPath(item, type.placement.path, coordinates)
-      draft = { ...draft }
-      cancelPlacement()
-      return
-    }
-    placementCoordinates = [...placementCoordinates, coordinates]
-    if (type.placement.kind === 'route' && placementCoordinates.length === 2) {
-      setValueAtPath(item, type.placement.path, placementCoordinates)
-      draft = { ...draft }
-      cancelPlacement()
-    }
-  }
-
-  const finishPolygonPlacement = (): void => {
     const entry = allItems().find(candidate => candidate.item.id === placementItemId)
     const type = entry && catalog ? itemTypeFor(catalog, entry.packId, entry.item) : undefined
-    if (!entry || type?.placement?.kind !== 'polygon' || placementCoordinates.length < 3) return
-    setValueAtPath(entry.item, type.placement.path, [...placementCoordinates, placementCoordinates[0]!])
+    if (!entry || !type?.placement) return
+    setValueAtPath(entry.item, type.placement.path, coordinates)
+    if (type.placement.orReference) setValueAtPath(entry.item, type.placement.orReference, undefined)
     draft = { ...draft }
     cancelPlacement()
   }
 
-  const placementInstruction = (): string => {
-    const kind = placementFor(placementItemId)?.kind
-    if (kind === 'route') return placementCoordinates.length === 0 ? 'Click the route start.' : 'Click the route end.'
-    if (kind === 'polygon') return placementCoordinates.length < 3
-      ? `Click area corners (${3 - placementCoordinates.length} more minimum).`
-      : 'Add more corners or finish the area.'
-    return 'Click the map to place the item.'
-  }
-
   const updateField = (field: AuthoringField, value: unknown): void => {
-    const target = field.target === 'item' ? selectedItem() : selectedLinkedConfig()
+    const target = selectedItem()
     if (!target) return
     setValueAtPath(target, field.path, value)
+    const placement = selectedType()?.placement
+    if (value && placement?.orReference?.join('.') === field.path.join('.')) {
+      setValueAtPath(target, placement.path, undefined)
+      placementItemId = null
+    }
     draft = { ...draft }
   }
 
@@ -396,9 +348,8 @@
     if (placementItemId) return 'Place the selected item on the map.'
     if (catalog && allItems().some(({ packId, item }) => {
       const type = catalog ? itemTypeFor(catalog, packId, item) : undefined
-      return type?.placement && valueAtPath(item, type.placement.path) === undefined
+      return needsPlacement(item, type?.placement)
     })) return 'Every map item needs a position.'
-    if (previewError) return previewError
     return null
   }
 
@@ -411,18 +362,15 @@
       draft.title = draft.title.trim()
       if (draft.description?.trim()) draft.description = draft.description.trim()
       else delete draft.description
+      const document = JSON.stringify(draft)
       const response = editing === null
-        ? await invoke<InvocationResponse>('world.scenario.create', { source: draft })
-        : await invoke<InvocationResponse>('world.scenario.update', { source: draft }, editing)
-      saved = response.result as CreateResult
+        ? await invoke<InvocationResponse>('world.scenario.create', { source: JSON.parse(document) })
+        : await invoke<InvocationResponse>('world.scenario.update', { source: JSON.parse(document) }, editing)
+      saved = scenarioWriteResultSchema.parse(response.result)
+      savedDocument = document
       editing = saved.definition
       window.parent.postMessage({ type: 'leitbild:scenario-saved' }, location.origin)
-      if (start) {
-        const started = await invoke<InvocationResponse>('world.scenario.start', {}, saved.definition)
-        const run = started.createdResources?.find(resource => resource.type === 'world.simulation-run')
-        if (!run) throw new Error('Scenario was saved, but the Simulation Run was not returned')
-        window.parent.location.href = `/workspaces/${encodeURIComponent(workspaceId)}?world=${encodeURIComponent(run.id)}`
-      }
+      if (start) await launchSaved()
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause)
     } finally {
@@ -431,45 +379,41 @@
   }
 
   const reset = (): void => {
-    draft = createEmptyScenarioSource()
+    draft = createEmptyScenarioDefinition()
     editing = null
     selection = { kind: 'scenario' }
     placementItemId = null
-    placementCoordinates = []
     saved = null
     error = null
+    savedDocument = JSON.stringify(draft)
   }
 
+  const previews = createLatestPreview({
+    delayMs: 250,
+    run: async (source: ScenarioDraft) => scenarioPreviewSchema.parse((await invoke<InvocationResponse>('world.scenario.preview', { source })).result),
+    success: result => { preview = result; previewError = null },
+    failure: cause => { preview = null; previewError = cause instanceof Error ? cause.message : String(cause) },
+  })
+  const structuralKey = $derived(JSON.stringify({ packs: draft.packs, connections: draft.connections, timeline: draft.timeline, world: draft.world }))
   $effect(() => {
-    const source = JSON.stringify(draft)
+    void structuralKey
     if (loading || catalog === null) return
     if (draft.packs.length === 0) {
+      previews.cancel()
       preview = null
       previewError = null
       return
     }
-    let current = true
-    if (previewTimer !== null) clearTimeout(previewTimer)
-    previewTimer = setTimeout(() => {
-      void invoke<InvocationResponse>('world.scenario.preview', { source: JSON.parse(source) })
-        .then(response => {
-          if (!current) return // Ignore a response for an obsolete draft.
-          preview = response.result as ScenarioPreview
-          previewError = null
-        })
-        .catch(cause => {
-          if (!current) return
-          preview = null
-          previewError = cause instanceof Error ? cause.message : String(cause)
-        })
-    }, 250)
-    return () => {
-      current = false
-      if (previewTimer !== null) clearTimeout(previewTimer)
-    }
+    untrack(() => previews.schedule(deepCopy(draft)))
   })
 
-  void loadEditor()
+  $effect(() => { window.parent.postMessage({ type: 'leitbild:scenario-dirty', dirty }, location.origin) })
+  runOnMount(() => {
+    void loadEditor()
+    const warn = (event: BeforeUnloadEvent) => { if (dirty) { event.preventDefault(); event.returnValue = '' } }
+    window.addEventListener('beforeunload', warn)
+    return () => { previews.dispose(); window.removeEventListener('beforeunload', warn) }
+  })
 </script>
 
 <main class:embedded class="scenario-builder">
@@ -482,8 +426,6 @@
     <section class="builder-message">Discovering World Packs…</section>
   {:else if !catalog}
     <section class="builder-message error">{error ?? 'Scenario authoring is unavailable.'}</section>
-  {:else if saved}
-    <section class="builder-success"><p class="eyebrow">Saved</p><h2>{saved.title}</h2><p>The scenario is now available on the Workspace homepage.</p><div><button class="command-button primary" onclick={reset}>Build another</button><a class="command-button" target="_top" href={`/workspaces/${encodeURIComponent(workspaceId)}`}>Back to Workspace</a></div></section>
   {:else}
     <section class="builder-toolbar">
       <label>Scenario title <input maxlength="160" value={draft.title} oninput={event => { draft.title = event.currentTarget.value; draft = { ...draft } }} /></label>
@@ -494,6 +436,7 @@
       <button disabled={saving} onclick={() => void save(true)}>Save & start</button>
     </section>
     {#if error}<p class="builder-inline-error">{error}</p>{/if}
+    {#if saved}<p role="status">Saved: {saved.title}{dirty ? ' · Unsaved changes' : ''}. <button disabled={saving || dirty} onclick={async () => { saving = true; error = null; try { await launchSaved() } catch (cause) { error = cause instanceof Error ? cause.message : String(cause) } finally { saving = false } }}>Start saved revision</button> <button onclick={() => { if (!dirty || confirm('Discard unsaved changes?')) reset() }}>Build another</button></p>{/if}
     <section class="builder-workbench">
       <aside class="builder-outline">
         <button class:active={selection.kind === 'scenario'} onclick={() => { selection = { kind: 'scenario' }; cancelPlacement() }}><strong>Scenario</strong><small>Starting view</small></button>
@@ -509,12 +452,11 @@
       </aside>
 
       <section class="builder-map-panel">
-        {#if placementItemId}<div class="placement-banner">{placementInstruction()} {allItems().find(entry => entry.item.id === placementItemId)?.item.label}
-          {#if placementFor(placementItemId)?.kind === 'polygon'}<button disabled={placementCoordinates.length < 3} onclick={finishPolygonPlacement}>Finish area</button>{/if}
+        {#if placementItemId}<div class="placement-banner">Click the map to place {allItems().find(entry => entry.item.id === placementItemId)?.item.label}
           <button onclick={cancelPlacement}>Cancel</button>
         </div>{/if}
         <ScenarioBuilderMap
-          center={mapCenter()} zoom={mapZoom()} points={mapPoints()}
+          center={mapCenter()} zoom={mapZoom()} points={mapPoints()} assets={preview?.assets ?? []}
           selectedId={selection.kind === 'item' ? selection.id : null}
           placementActive={placementItemId !== null} editView={selection.kind === 'scenario'}
           onviewchange={setMapView} onplace={placeItem}
@@ -526,6 +468,8 @@
       <aside class="builder-properties">
         {#if selection.kind === 'scenario'}
           <h2>Scenario</h2><p>The map position is the starting frame users will see.</p>
+          <AdvancedConfiguration value={draft} onapply={value => applyAdvanced(value, 'scenario')} />
+          <TimelineEditor cues={draft.timeline.cues} commands={catalog.commands.filter(command => command.runtimeId === 'world.core' || activePacks().some(pack => command.packId === pack.id && command.runtimeId === (selectionFor(draft, pack.id)?.runtime ?? pack.defaultRuntimeId)))} onchange={cues => { draft.timeline = { cues } }} validate={async cues => { await invoke('world.scenario.preview', { source: { ...deepCopy(draft), timeline: { cues } } }) }} />
           <label>Objectives <textarea rows="3" placeholder="One objective per line" value={draft.objectives.join('\n')} onchange={event => { draft.objectives = event.currentTarget.value.split('\n').map(line => line.trim()).filter(Boolean) }}></textarea></label>
           <label>Description <textarea rows="4" placeholder="Optional" value={draft.description ?? ''} oninput={event => { draft.description = event.currentTarget.value; draft = { ...draft } }}></textarea></label>
           <dl><div><dt>Center</dt><dd>{mapCenter().map(value => value.toFixed(4)).join(', ')}</dd></div><div><dt>Zoom</dt><dd>{mapZoom().toFixed(1)}</dd></div></dl>
@@ -597,6 +541,7 @@
             {/if}
             {#if packSelection}
               <AuthoringFields fields={pack.configFields} targetFor={()=>packSelection.config} onchange={(field,value)=>{setValueAtPath(packSelection.config,field.path,value);draft={...draft}}} />
+              <AdvancedConfiguration value={packSelection.config} onapply={value => applyAdvanced(value, 'pack')} />
             {/if}
             <h3>Add item</h3><div class="item-type-list">{#each pack.itemTypes as type (type.id)}<button onclick={() => addItem(pack, type)}><strong>{type.label}</strong><small>{type.description}</small></button>{/each}</div><button class="danger-text" onclick={() => removePack(pack)}>Remove Pack</button>
           {/if}
@@ -606,28 +551,25 @@
           {#if item && type}
             <p class="eyebrow">{catalog.packs.find(pack => pack.id === selectedEntry()?.packId)?.title}</p><h2>{type.label}</h2>
             <label>Name <input value={item.label} oninput={event => { item.label = event.currentTarget.value; draft = { ...draft } }} /></label>
-            <AuthoringFields fields={type.fields} targetFor={field => field.target === 'item' ? item : selectedLinkedConfig()} onchange={updateField} />
+            <AuthoringFields fields={type.fields} targetFor={() => item} items={allItems().filter(entry => entry.item.id !== item.id).map(entry => entry.item)} packConfig={selectionFor(draft, selectedEntry()!.packId)!.config} onchange={updateField} />
             {#each type.collections as collection (collection.path.join('.'))}
               {@const rows = (valueAtPath(item,collection.path) ?? []) as Record<string,unknown>[]}
               <h3>{collection.label}</h3>
               {#each rows as row, index}
                 <details class="authoring-record">
-                  <summary>Change {index + 1}</summary>
-                  <AuthoringFields fields={collection.fields} targetFor={field => [row,...rows.slice(0,index).reverse(),item,collection.defaultItem].find(candidate => valueAtPath(candidate,field.path)!==undefined)} onchange={(field,value)=>{setValueAtPath(row,field.path,value);draft={...draft}}} />
-                  <button class="danger-text" onclick={()=>{rows.splice(index,1);setValueAtPath(item,collection.path,rows);draft={...draft}}}>Remove change</button>
+                  <summary>{collection.keyframes ? 'Keyframe' : 'Record'} {index + 1}</summary>
+                  <AuthoringFields fields={collection.fields} targetFor={() => row} fallbackFor={field => collection.keyframes ? [ ...rows.slice(0,index).reverse(),item ].map(candidate => valueAtPath(candidate,field.path)).find(value => value !== undefined) : undefined} onchange={(field,value)=>{setValueAtPath(row,field.path,value);draft={...draft}}} />
+                  <button class="danger-text" onclick={()=>{rows.splice(index,1);setValueAtPath(item,collection.path,rows);draft={...draft}}}>Remove record</button>
                 </details>
               {/each}
               <button disabled={rows.length >= collection.maxItems} onclick={()=>{
-                const row=deepCopy(collection.defaultItem)
-                for(const field of collection.fields){
-                  const value=valueAtPath(item,field.path)
-                  if(value!==undefined)setValueAtPath(row,field.path,deepCopy(value))
-                }
-                setValueAtPath(item,collection.path,[...rows,row]);draft={...draft}
-              }}>Add change</button>
+                setValueAtPath(item,collection.path,[...rows,newCollectionRow(collection, rows)]);draft={...draft}
+              }}>Add record</button>
             {/each}
             {#if type.placement}<button onclick={() => beginPlacement(item.id)}>Move on map</button>{/if}
             <button class="danger-text" onclick={() => removeItem(item)}>Remove item</button>
+            <button onclick={duplicateItem}>Duplicate item</button>
+            <AdvancedConfiguration value={item} onapply={value => applyAdvanced(value, 'item')} />
           {/if}
         {/if}
       </aside>

@@ -79,6 +79,20 @@ const invokeBody = (workspaceId: WorkspaceId, capabilityId: string, input: unkno
 })
 
 describe('Agents Workspace Module API', () => {
+  test('definition writes reject unavailable Packs, tools and scripts before persistence', async () => {
+    const workspaceId = newWorkspaceId()
+    await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
+    const base = { id: 'invalid', title: 'Invalid', description: 'Invalid configuration', room: { deliveryMode: 'manual', packs: [], agents: [] }, deck: { entries: [] } }
+    for (const definition of [
+      { ...base, room: { ...base.room, packs: ['missing-pack'] } },
+      { ...base, room: { ...base.room, agents: [{ name: 'Agent', persona: 'Tester', tools: ['missing-tool'] }] } },
+      { ...base, deck: { entries: [{ id: 'entry', label: 'Missing script', description: 'Missing script', action: { kind: 'start-script', scriptName: 'does-not-exist' } }] } },
+    ]) {
+      const response = await request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.room-definition.create/invoke`, invokeBody(workspaceId, 'agents.room-definition.create', { definition }))
+      expect(response.status).toBe(400)
+    }
+    expect(await registry.definitionsFor(workspaceId).currentRevision('invalid')).toBeUndefined()
+  })
   test('concurrent definition revisions have one winner and catalog ownership survives runtime eviction', async () => {
     const workspaceId = newWorkspaceId()
     await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })

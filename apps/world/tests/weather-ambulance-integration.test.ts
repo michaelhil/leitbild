@@ -1,26 +1,26 @@
-import { describe, expect, test } from 'bun:test'
-import { createRuntimeHub } from '../src/simulation/runtime-hub.ts'
-import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
-import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
-import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
-import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { compileScenarioSource } from '../src/core/scenarios/config.ts'
-import { builtinScenarioSources } from '../src/scenarios/sources.ts'
+import { describe,expect,test } from 'bun:test'
 import { worldPacks } from '../src/app-assembly.ts'
 import {
   commandEnvelopeSchema,
-  operationalObjectSchema,
   nowIso,
+  operationalObjectSchema,
   type CommandEnvelope,
-  type SimulationRunId,
   type SimulationRunEvent,
+  type SimulationRunId,
 } from '../src/core/model/index.ts'
-import { weatherItemSchema, weatherPackDataSchema } from '../src/packs/weather/model.ts'
-import { roadWeatherImpact, roadWeatherPolicySchema } from '../src/packs/ambulance/road-weather.ts'
+import { compileScenarioDefinition } from '../src/core/scenarios/compiler.ts'
+import { roadWeatherImpact,roadWeatherPolicySchema } from '../src/packs/ambulance/road-weather.ts'
+import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
+import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
+import { weatherItemSchema,weatherPackDataSchema } from '../src/packs/weather/model.ts'
+import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
+import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
+import { builtinScenarioDefinitions } from '../src/scenarios/definitions.ts'
+import { createRuntimeHub } from '../src/simulation/runtime-hub.ts'
 
 const routing = createDirectRoutingAdapter()
-const source = builtinScenarioSources.find((s) => s.id === 'halden-weather-response')!
-const compiled = await compileScenarioSource(source, worldPacks, { routing })
+const source = builtinScenarioDefinitions.find((s) => s.id === 'halden-weather-response')!
+const compiled = await compileScenarioDefinition(source, worldPacks, { routing })
 const config = {
   simulationRunId: 'run-weather-integration' as SimulationRunId,
   scenario: {

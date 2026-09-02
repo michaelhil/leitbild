@@ -1,25 +1,25 @@
-import { describe, expect, test } from 'bun:test'
-import { confirmedFact, geoPointFromLonLat, nowIso, type AdapterId, type ObjectId, type OperationalObject, type PackId } from '../src/core/model/index.ts'
+import { describe,expect,test } from 'bun:test'
+import type { SimulationRunId } from '../src/core/model/index.ts'
+import { confirmedFact,geoPointFromLonLat,nowIso,type AdapterId,type ObjectId,type OperationalObject,type PackId } from '../src/core/model/index.ts'
 import { createActivePackViews } from '../src/core/packs/active-views.ts'
 import { createPackPresentationComposer } from '../src/core/packs/presentation-composer.ts'
-import { packField, packStatus } from '../src/core/packs/presentation.ts'
+import { packField,packStatus } from '../src/core/packs/presentation.ts'
+import { createWorldPackDescriptor,emptyPackScenarioConfigSchema,type PackObjectPresentation,type WorldPack } from '../src/core/packs/protocol.ts'
 import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
-import { ambulancePack } from '../src/packs/ambulance/pack.ts'
-import { ambulancePackDataSchema, hospitalPackDataSchema, type HospitalPackData } from '../src/packs/ambulance/model.ts'
-import { weatherPack } from '../src/packs/weather/pack.ts'
-import { weatherSimRuntimeId } from '../src/packs/weather/sim/constants.ts'
-import { expectFieldKeys, expectStatusIndicator } from './helpers/pack-presentation.ts'
 import {
   cancelDestinationCommandKind,
   createObjectCommandKind,
   setDestinationCommandKind,
 } from '../src/packs/ambulance/commands.ts'
+import { ambulancePackDataSchema,hospitalPackDataSchema,type HospitalPackData } from '../src/packs/ambulance/model.ts'
+import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { ambulanceSimRuntimeId } from '../src/packs/ambulance/sim/constants.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
-import { responseScenario } from './fixtures/scenarios.ts'
+import { weatherPack } from '../src/packs/weather/pack.ts'
+import { weatherSimRuntimeId } from '../src/packs/weather/sim/constants.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import type { SimulationRunId } from '../src/core/model/index.ts'
-import { createWorldPackDescriptor, emptyPackScenarioConfigSchema, type WorldPack, type PackObjectPresentation } from '../src/core/packs/protocol.ts'
+import { responseScenario } from './fixtures/scenarios.ts'
+import { expectFieldKeys,expectStatusIndicator } from './helpers/pack-presentation.ts'
 
 describe('pack architecture', () => {
   test('ambulance Pack builds commands behind the Simulation Capability interface', () => {
@@ -361,7 +361,7 @@ describe('pack architecture', () => {
       packConfigs: {},
       recording: [],
       initialObjects: [],
-      surface: { schemaVersion: 1 as const, regions: [] },
+      view: { ...responseScenario.view, rail: { sections: [] } },
     }
     const runtime = createScenarioRuntimeResolver({ packs: [passivePack] }).resolve(scenario)
 

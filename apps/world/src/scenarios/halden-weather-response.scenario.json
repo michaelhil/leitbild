@@ -19,43 +19,9 @@
         11.42,
         59.13
       ],
-      "zoom": 11,
-      "layers": [
-        "objects",
-        "routes",
-        "weather",
-        "highlights"
-      ]
-    },
-    "rail": {
-      "width": 340,
-      "sections": [
-        {
-          "categoryId": "ambulances",
-          "visible": true
-        },
-        {
-          "categoryId": "incidents",
-          "visible": true
-        },
-        {
-          "categoryId": "hospitals",
-          "visible": true
-        },
-        {
-          "categoryId": "weather",
-          "visible": true
-        }
-      ]
+      "zoom": 11
     }
   },
-  "recording": [
-    {
-      "packId": "weather",
-      "profileId": "probes",
-      "intervalMs": 5000
-    }
-  ],
   "packs": [
     {
       "id": "weather",
@@ -163,7 +129,11 @@
             59.18
           ]
         }
-      ]
+      ],
+      "recording": {
+        "profileId": "probes",
+        "intervalMs": 5000
+      }
     },
     {
       "id": "ambulance",
@@ -177,7 +147,10 @@
           "type": "hospital",
           "id": "facility:halden",
           "label": "Halden receiving station",
-          "traumaBeds": { "total": 4, "available": 4 },
+          "traumaBeds": {
+            "total": 4,
+            "available": 4
+          },
           "position": [
             11.39,
             59.19

@@ -53,9 +53,12 @@ export const createSimulationClock = (initial: SimulationClockState, source = {
     read,
     set: (next: SimulationClockState): void => {
       reading = simulationClockStateSchema.parse(next) as SimulationClockState
-      // Account for transport/queue delay once, then use only monotonic time.
-      reading = { ...reading, currentTime: simulationTimeAt(reading, source.wallMs()) }
+      // This is an explicit synchronization boundary, not a network estimate.
+      // Never interpret wall-clock changes (including NTP corrections) as work.
       anchorMs = source.monotonicMs()
     },
   }
 }
+
+export type SimulationClock = ReturnType<typeof createSimulationClock>
+export type SimulationClockReader = Pick<SimulationClock, 'read'>

@@ -1,7 +1,7 @@
-import type { CommandEnvelope, CommandResult, SimulationRunEvent, OperationalObject } from '../core/model/index.ts'
+import type { CommandEnvelope,CommandResult,OperationalObject,SimulationRunEvent } from '../core/model/index.ts'
 import { nowIso } from '../core/model/index.ts'
-import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEmission, PackRuntimeEventHandler, PackRuntimeHealth, PackRuntimeQuery, PackRuntimeRealtimeInput, PackScenarioRuntimeConfig, PackRuntimeSnapshot } from './protocol.ts'
 import { capabilityIds } from './capabilities.ts'
+import type { PackRuntimeAdapter,PackRuntimeConnection,PackRuntimeConnectionConfig,PackRuntimeEmission,PackRuntimeEventHandler,PackRuntimeHealth,PackRuntimeQuery,PackRuntimeRealtimeInput,PackRuntimeSnapshot,PackScenarioRuntimeConfig } from './protocol.ts'
 
 const duplicateObjectIds = (objects: ReadonlyArray<OperationalObject>): ReadonlyArray<string> => {
   const seen = new Set<string>()
@@ -99,6 +99,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
             adapter,
             connection: await adapter.connect({
               simulationRunId: config.simulationRunId,
+              ...(config.runClock ? { runClock: config.runClock } : {}),
               queries,
               scenario,
               ...(initialObjects === undefined ? {} : { initialObjects }),

@@ -1,8 +1,9 @@
 // Behavioral fixtures, deliberately independent of the shipped demo catalog.
 import { worldPacks } from '../../src/app-assembly.ts'
-import { compileScenarioSource, scenarioSourceSchema } from '../../src/core/scenarios/config.ts'
+import { compileScenarioDefinition } from '../../src/core/scenarios/compiler.ts'
+import { scenarioDefinitionSchema } from '../../src/core/scenarios/definition.ts'
 import { createDirectRoutingAdapter } from '../../src/routing/direct-adapter.ts'
-import { builtinScenarioSources } from '../../src/scenarios/sources.ts'
+import { builtinScenarioDefinitions } from '../../src/scenarios/definitions.ts'
 
 const fixtures = [
   {
@@ -134,7 +135,10 @@ const fixtures = [
               "count": 3
             }
           }
-        ]
+        ],
+        "recording": {
+          "profileId": "operations"
+        }
       },
       {
         "id": "weather",
@@ -217,12 +221,6 @@ const fixtures = [
         ]
       }
     ],
-    "recording": [
-      {
-        "packId": "ambulance",
-        "profileId": "operations"
-      }
-    ],
     "world": {
       "startsAt": "2026-01-01T09:00:00.000Z",
       "environment": {}
@@ -233,16 +231,9 @@ const fixtures = [
           10.7522,
           59.9139
         ],
-        "zoom": 12,
-        "layers": [
-          "objects",
-          "routes",
-          "weather",
-          "highlights"
-        ]
+        "zoom": 12
       },
       "rail": {
-        "width": 360,
         "sections": [
           {
             "categoryId": "hospitals",
@@ -318,11 +309,10 @@ const fixtures = [
           },
           "actions": [
             {
-              "type": "update_object",
-              "objectId": "incident:torshov-partial",
-              "mutation": {
-                "pack": "ambulance",
-                "type": "set_incident_victims",
+              "type": "invoke_capability",
+              "capabilityId": "world.ambulance.set-incident-victims",
+              "input": {
+                "objectId": "incident:torshov-partial",
                 "victims": {
                   "state": "estimated",
                   "count": 1
@@ -358,10 +348,9 @@ const fixtures = [
           },
           "actions": [
             {
-              "type": "create_object",
-              "object": {
-                "pack": "ambulance",
-                "type": "incident",
+              "type": "invoke_capability",
+              "capabilityId": "world.ambulance.create-incident",
+              "input": {
                 "id": "incident:majorstuen-tram",
                 "label": "Majorstuen tram stop fall",
                 "position": [
@@ -402,11 +391,10 @@ const fixtures = [
           },
           "actions": [
             {
-              "type": "update_object",
-              "objectId": "incident:majorstuen-tram",
-              "mutation": {
-                "pack": "ambulance",
-                "type": "set_incident_victims",
+              "type": "invoke_capability",
+              "capabilityId": "world.ambulance.set-incident-victims",
+              "input": {
+                "objectId": "incident:majorstuen-tram",
                 "victims": {
                   "state": "estimated",
                   "count": 2
@@ -436,10 +424,9 @@ const fixtures = [
           },
           "actions": [
             {
-              "type": "create_object",
-              "object": {
-                "pack": "ambulance",
-                "type": "incident",
+              "type": "invoke_capability",
+              "capabilityId": "world.ambulance.create-incident",
+              "input": {
                 "id": "incident:ring3-pileup",
                 "label": "Ring 3 pile-up",
                 "position": [
@@ -481,11 +468,10 @@ const fixtures = [
           },
           "actions": [
             {
-              "type": "update_object",
-              "objectId": "incident:gronland-unattended",
-              "mutation": {
-                "pack": "ambulance",
-                "type": "set_incident_victims",
+              "type": "invoke_capability",
+              "capabilityId": "world.ambulance.set-incident-victims",
+              "input": {
+                "objectId": "incident:gronland-unattended",
                 "victims": {
                   "state": "estimated",
                   "count": 2
@@ -515,8 +501,11 @@ const fixtures = [
           },
           "actions": [
             {
-              "type": "delete_object",
-              "objectId": "incident:majorstuen-tram"
+              "type": "invoke_capability",
+              "capabilityId": "world.object.delete",
+              "input": {
+                "objectId": "incident:majorstuen-tram"
+              }
             }
           ]
         }
@@ -814,15 +803,9 @@ const fixtures = [
           10.7522,
           59.9139
         ],
-        "zoom": 13.5,
-        "layers": [
-          "objects",
-          "routes",
-          "highlights"
-        ]
+        "zoom": 13.5
       },
       "rail": {
-        "width": 420,
         "sections": [
           {
             "categoryId": "drones",
@@ -952,12 +935,6 @@ const fixtures = [
   {
     "id": "test-plant",
     "title": "Plant persistence fixture",
-    "recording": [
-      {
-        "packId": "process-plant",
-        "profileId": "operations"
-      }
-    ],
     "packs": [
       {
         "id": "process-plant",
@@ -1002,7 +979,10 @@ const fixtures = [
               "ref": "process-plant.pwr.standard"
             }
           }
-        ]
+        ],
+        "recording": {
+          "profileId": "operations"
+        }
       }
     ],
     "world": {
@@ -1015,13 +995,7 @@ const fixtures = [
           11.389,
           59.1185
         ],
-        "zoom": 13,
-        "layers": [
-          "objects",
-          "routes",
-          "weather",
-          "highlights"
-        ]
+        "zoom": 13
       }
     },
     "timeline": {
@@ -1068,15 +1042,9 @@ const fixtures = [
           10.5,
           62.4
         ],
-        "zoom": 5,
-        "layers": [
-          "objects",
-          "grid",
-          "highlights"
-        ]
+        "zoom": 5
       },
       "rail": {
-        "width": 330,
         "sections": [
           {
             "categoryId": "electric-grids",
@@ -1116,7 +1084,7 @@ const fixtures = [
   }
 ]
 
-export const testScenarioSources = [...fixtures.map(source => scenarioSourceSchema.parse(source)), ...builtinScenarioSources]
-export const scenarios = await Promise.all(testScenarioSources.map(source =>
-  compileScenarioSource(source, worldPacks, { routing: createDirectRoutingAdapter() })))
+export const testScenarioDefinitions = [...fixtures.map(source => scenarioDefinitionSchema.parse(source)), ...builtinScenarioDefinitions]
+export const scenarios = await Promise.all(testScenarioDefinitions.map(source =>
+  compileScenarioDefinition(source, worldPacks, { routing: createDirectRoutingAdapter() })))
 export const responseScenario = scenarios.find(scenario => scenario.id === 'test-response')!

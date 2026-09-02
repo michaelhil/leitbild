@@ -1,18 +1,18 @@
-import { describe, expect, test } from 'bun:test'
+import { describe,expect,test } from 'bun:test'
 import {
   agentContextViewSchema,
+  compiledScenarioSchema,
   confirmedFact,
   geoPointFromLonLat,
   nowIso,
   objectContextSchema,
   operationalObjectSchema,
-  scenarioDefinitionSchema,
-  type SimulationRunId,
   type ObjectId,
+  type SimulationRunId,
 } from '../src/core/model/index.ts'
-import { responseScenario } from './fixtures/scenarios.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
+import { responseScenario } from './fixtures/scenarios.ts'
 
 const ambulanceObjects = () =>
   createAmbulanceSimEngine({
@@ -128,9 +128,9 @@ describe('object context, scenario, and mission model', () => {
     })).toThrow()
   })
 
-  test('ScenarioDefinition keeps object context with the object it describes', () => {
+  test('CompiledScenario keeps object context with the object it describes', () => {
     const object = ambulanceObjectWithContext()
-    const parsed = scenarioDefinitionSchema.parse({
+    const parsed = compiledScenarioSchema.parse({
       id: 'scenario:oslo-context-basic',
       schemaVersion: 1,
       title: 'Oslo context basic',
@@ -142,18 +142,13 @@ describe('object context, scenario, and mission model', () => {
         environment: { weather: 'clear' },
       },
       initialObjects: [object],
-      surface: {
-        schemaVersion: 1,
-        regions: [{
-          id: 'main-map',
-          primitive: 'map',
-          visible: true,
-          config: {
+      view: {
+          map: {
             center: geoPointFromLonLat(10.7522, 59.9139),
             zoom: 12,
             layers: ['objects'],
           },
-        }],
+          rail: { sections: [] },
       },
     })
 

@@ -1,5 +1,11 @@
 import { z } from 'zod'
-import { geoJsonPointSchema, objectIdSchema } from '../../core/model/index.ts'
+import { geoJsonPointSchema,objectIdSchema } from '../../core/model/index.ts'
+import { incidentSpecSchema,victimCountSchema } from './scenario.ts'
+
+export const createIncidentCommandKind = 'world.ambulance.create-incident'
+export const createIncidentPayloadSchema = incidentSpecSchema.omit({ pack: true, type: true })
+export const setIncidentVictimsCommandKind = 'world.ambulance.set-incident-victims'
+export const setIncidentVictimsPayloadSchema = z.object({ objectId: objectIdSchema, victims: victimCountSchema }).strict()
 
 export const assignToIncidentCommandKind = 'world.ambulance.assign-to-incident'
 export const createObjectCommandKind = 'world.ambulance.create-object'

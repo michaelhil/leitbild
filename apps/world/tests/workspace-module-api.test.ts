@@ -1,7 +1,3 @@
-import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { join } from 'node:path'
-import { tmpdir } from 'node:os'
 import {
   accessContextSchema,
   capabilityIdSchema,
@@ -14,14 +10,18 @@ import {
   workspaceModuleManifestSchema,
   type WorkspaceId,
 } from '@leitbild/contracts'
+import { afterEach,describe,expect,test } from 'bun:test'
+import { mkdtemp,rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { handleWorldModuleApi } from '../src/core/api/workspace-module-api.ts'
 import { createWorldModuleState } from '../src/core/workspaces/module-state.ts'
 import {
   createWorldWorkspaceRuntimeRegistry,
   type WorldWorkspaceRuntimeRegistry,
 } from '../src/core/workspaces/runtime-registry.ts'
-import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testScenarioAuthoring } from './helpers.ts'
-import { testScenarioSources } from './fixtures/scenarios.ts'
+import { testScenarioDefinitions } from './fixtures/scenarios.ts'
+import { createTestPackRuntimeAdapters,createTestScenarioRuntimeResolver,testScenarioAuthoring } from './helpers.ts'
 
 const registries: WorldWorkspaceRuntimeRegistry[] = []
 const temporaryDirectories: string[] = []
@@ -106,7 +106,7 @@ describe('World Module API', () => {
     expect(described.body?.result.packs.map(pack => pack.id).sort()).toEqual(['ambulance', 'drone', 'electric-grid', 'process-plant', 'weather'])
     expect(described.body?.result.packs.find(pack => pack.id === 'process-plant')?.configSchema).toBeTruthy()
 
-    const previewSource = testScenarioSources.find(source => source.id === 'halden-power-complex')!
+    const previewSource = testScenarioDefinitions.find(source => source.id === 'halden-power-complex')!
     const previewId = capabilityIdSchema.parse('world.scenario.preview')
     const previewed = await call<{ result: { assets: Array<{ id: string; electricalPorts: Array<{ role: string }> }>; connections: unknown[] } }>(
       registry,
@@ -124,7 +124,7 @@ describe('World Module API', () => {
     expect(electricalRoles.filter(role => role === 'network')).toHaveLength(4)
     expect(previewed.body?.result.connections).toHaveLength(4)
 
-    const source = testScenarioSources.find(source => source.id === 'test-response')!
+    const source = testScenarioDefinitions.find(source => source.id === 'test-response')!
     const definition = { ...source, id: 'custom-authoring-test', title: 'Custom authoring test' }
     const createId = capabilityIdSchema.parse('world.scenario.create')
     const created = await call<{ result: { definition: { id: string; revisionId: string } } }>(

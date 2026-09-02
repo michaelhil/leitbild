@@ -1,4 +1,3 @@
-import { z } from 'zod'
 import type { WorkspaceId } from '@leitbild/contracts'
 import {
   createRevisionedDefinitionStore,
@@ -6,7 +5,8 @@ import {
   type DefinitionRevision,
   type RevisionedDefinitionStore,
 } from '@leitbild/module-runtime'
-import { scenarioSourceSchema, type ScenarioSource } from './config.ts'
+import { z } from 'zod'
+import { scenarioDefinitionSchema,type ScenarioDefinition } from './definition.ts'
 
 export const scenarioRevisionIdSchema = z.string()
   .regex(/^revision-[a-f0-9]{32}$/)
@@ -14,14 +14,14 @@ export const scenarioRevisionIdSchema = z.string()
 export type ScenarioRevisionId = z.infer<typeof scenarioRevisionIdSchema>
 
 export type ScenarioRecord = DefinitionRecord
-export type ScenarioRevision = Omit<DefinitionRevision<ScenarioSource>, 'id'> & {
+export type ScenarioRevision = Omit<DefinitionRevision<ScenarioDefinition>, 'id'> & {
   readonly id: ScenarioRevisionId
 }
 
 export interface ScenarioLibrary {
-  readonly seed: (sources: ReadonlyArray<ScenarioSource>) => Promise<void>
-  readonly create: (source: ScenarioSource) => Promise<ScenarioRevision>
-  readonly update: (source: ScenarioSource, expectedRevisionId: ScenarioRevisionId) => Promise<ScenarioRevision>
+  readonly seed: (sources: ReadonlyArray<ScenarioDefinition>) => Promise<void>
+  readonly create: (source: ScenarioDefinition) => Promise<ScenarioRevision>
+  readonly update: (source: ScenarioDefinition, expectedRevisionId: ScenarioRevisionId) => Promise<ScenarioRevision>
   readonly list: () => Promise<ReadonlyArray<ScenarioRecord>>
   readonly get: (scenarioId: string) => Promise<ScenarioRecord | undefined>
   readonly getRevision: (revisionId: ScenarioRevisionId) => Promise<ScenarioRevision | undefined>
@@ -30,17 +30,17 @@ export interface ScenarioLibrary {
 }
 
 const asScenarioRevision = (
-  revision: DefinitionRevision<ScenarioSource>,
+  revision: DefinitionRevision<ScenarioDefinition>,
 ): ScenarioRevision => ({ ...revision, id: scenarioRevisionIdSchema.parse(revision.id) })
 
 export const createLocalScenarioLibrary = (config: {
   readonly workspaceId: WorkspaceId
   readonly rootDir: string
 }): ScenarioLibrary => {
-  const store: RevisionedDefinitionStore<ScenarioSource> = createRevisionedDefinitionStore({
+  const store: RevisionedDefinitionStore<ScenarioDefinition> = createRevisionedDefinitionStore({
     workspaceId: config.workspaceId,
     rootDir: config.rootDir,
-    documentSchema: scenarioSourceSchema,
+    documentSchema: scenarioDefinitionSchema,
     metadata: source => ({
       id: source.id,
       title: source.title,
