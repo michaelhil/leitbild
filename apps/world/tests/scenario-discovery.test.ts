@@ -10,7 +10,7 @@ describe('bundled scenario discovery', () => {
       'halden-power-complex',
       'halden-weather-response',
     ])
-    expect(builtinScenarioSources[0]?.packs.map(pack => pack.id)).toEqual(['process-plant', 'electric-grid'])
+    expect(builtinScenarioSources[0]?.packs.map(pack => pack.id)).toEqual(['process-plant', 'electric-grid', 'weather'])
   })
   test('accepts an empty catalog and discovers new files without a registry edit', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'leitbild-scenario-discovery-'))

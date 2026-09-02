@@ -1,11 +1,12 @@
 {
   "id": "halden-power-complex",
   "title": "Halden four-unit power complex",
-  "description": "Four independently simulated PWR units supply a dedicated 420 kV switchyard in the Norwegian transmission grid. Plant output and station-service demand participate directly in grid balance, flow, voltage, and frequency.",
+  "description": "Four independently simulated PWR units supply a dedicated 420 kV switchyard in the Norwegian transmission grid. Plant output and station-service demand participate directly in grid balance, flow, voltage, and frequency. Local weather evolves from rain through freezing conditions to clearing, with recorded ground probes. Weather is observable context; it does not yet change Plant or Grid physics.",
   "objectives": [
     "Operate four independent PWR units while monitoring their combined effect on the transmission grid.",
     "Observe actual grid frequency, reserve, voltage, and branch-flow response when a unit changes output or trips.",
-    "Maintain offsite station-service power from the connected grid."
+    "Maintain offsite station-service power from the connected grid.",
+    "Inspect local weather and persistent ground conditions at the complex and compare with the northern probe. Weather does not automatically cause equipment failures."
   ],
   "recording": [
     {
@@ -15,6 +16,11 @@
     {
       "packId": "electric-grid",
       "profileId": "operations"
+    },
+    {
+      "packId": "weather",
+      "profileId": "probes",
+      "intervalMs": 5000
     }
   ],
   "connections": [
@@ -221,6 +227,74 @@
           }
         }
       ]
+    },
+    {
+      "id": "weather",
+      "config": {
+        "gridResolution": 8,
+        "surface": {
+          "groundTemperatureC": 2,
+          "wetness": 0.1,
+          "standingWater": 0,
+          "snow": 0,
+          "ice": 0,
+          "frost": 0
+        }
+      },
+      "items": [
+        {
+          "type": "weather_area",
+          "id": "weather:halden-complex",
+          "label": "Halden complex weather",
+          "center": [11.48, 59.084],
+          "semiMajorAxisM": 6500,
+          "semiMinorAxisM": 4200,
+          "rotationDeg": 15,
+          "falloff": "uniform",
+          "atmosphere": {
+            "airTemperatureC": 4,
+            "humidity": 0.85,
+            "windSpeedMps": 6,
+            "windDirectionDeg": 250,
+            "visibilityM": 8000,
+            "cloudCover": 0.9,
+            "precipitation": { "type": "rain", "intensityMmPerHour": 12 }
+          },
+          "keyframes": [
+            {
+              "atSeconds": 600,
+              "atmosphere": {
+                "airTemperatureC": -6,
+                "windSpeedMps": 12,
+                "visibilityM": 1500,
+                "precipitation": { "type": "freezing_rain", "intensityMmPerHour": 8 }
+              }
+            },
+            {
+              "atSeconds": 1200,
+              "atmosphere": {
+                "airTemperatureC": 10,
+                "windSpeedMps": 5,
+                "visibilityM": 20000,
+                "cloudCover": 0.2,
+                "precipitation": { "type": "none", "intensityMmPerHour": 0 }
+              }
+            }
+          ]
+        },
+        {
+          "type": "weather_probe",
+          "id": "weather-probe:halden-complex",
+          "label": "Power complex ground probe",
+          "point": [11.48, 59.084]
+        },
+        {
+          "type": "weather_probe",
+          "id": "weather-probe:halden-north",
+          "label": "Northern background probe",
+          "point": [11.4, 59.18]
+        }
+      ]
     }
   ],
   "world": {
@@ -239,6 +313,7 @@
       "layers": [
         "objects",
         "grid",
+        "weather",
         "highlights"
       ]
     }

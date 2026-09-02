@@ -8,6 +8,7 @@ import {
   type ObjectId,
   type SimulationRunEvent,
   type SimulationRunId,
+  type ScenarioDefinition,
 } from '../src/core/model/index.ts'
 import { scenarios } from './fixtures/scenarios.ts'
 import { testScenarioSources } from './fixtures/scenarios.ts'
@@ -15,33 +16,75 @@ import { compileScenarioSource } from '../src/core/scenarios/config.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { processPlantPack } from '../src/packs/process-plant/pack.ts'
 import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
+import { weatherPack } from '../src/packs/weather/pack.ts'
+import { weatherSampleSchema } from '../src/packs/weather/model.ts'
+import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
+import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric-grid/sim/adapter.ts'
-import { electricGridRuntimeId } from '../src/packs/electric-grid/sim/constants.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
-import { processPlantSimRuntimeId } from '../src/packs/process-plant/sim/constants.ts'
 import { processPlantActionInvokeCommandKind } from '../src/packs/process-plant/commands.ts'
 import { createRuntimeHub } from '../src/simulation/runtime-hub.ts'
 
 const simulationRunId = 'run:halden-four-unit-integration' as SimulationRunId
+const packs = [processPlantPack, electricGridPack, weatherPack]
+const connectScenario = (scenario: ScenarioDefinition) => {
+  const resolved = createScenarioRuntimeResolver({ packs }).resolve(scenario)
+  return createRuntimeHub([
+    createLocalProcessPlantPackRuntimeAdapter(),
+    createLocalElectricGridPackRuntimeAdapter(),
+    createLocalWeatherPackRuntimeAdapter(),
+  ]).connect({
+    simulationRunId,
+    scenario: {
+      scenarioId: scenario.id,
+      runtimeIds: resolved.runtimes.map(runtime => runtime.runtimeId),
+      connections: scenario.connections,
+      world: scenario.world,
+      initialObjects: scenario.initialObjects,
+      runtimeConfigByRuntimeId: resolved.runtimeConfigByRuntimeId,
+      runtimeConfig: {},
+    },
+  })
+}
 
 describe('electrical Pack connection', () => {
+  test('Weather composes without modifying Plant/Grid definitions or their electrical connections', async () => {
+    const source = testScenarioSources.find(candidate => candidate.id === 'halden-power-complex')!
+    const withoutWeather = {
+      ...source,
+      packs: source.packs.filter(pack => pack.id !== 'weather'),
+      recording: source.recording.filter(selection => selection.packId !== 'weather'),
+    }
+    const standalone = await compileScenarioSource(withoutWeather, packs, { routing: createDirectRoutingAdapter() })
+    const combined = scenarios.find(candidate => candidate.id === source.id)!
+    expect(combined.initialObjects.filter(object => object.packId !== 'weather')).toEqual([...standalone.initialObjects])
+    expect(combined.connections).toEqual(standalone.connections)
+    expect(combined.initialObjects.filter(object => object.packId === 'weather')).toHaveLength(3)
+    const rail = combined.surface.regions.find(region => region.primitive === 'objectRail')
+    expect(rail?.config.sections.map(section => section.categoryId)).toContain('weather')
+    const connection = await connectScenario(standalone)
+    try {
+      const result = await connection.invokeQuery({ capabilityId: 'world.process-plant.plants.list', input: {} }) as { plants: unknown[] }
+      expect(result.plants).toHaveLength(4)
+    } finally { await connection.close() }
+  })
   test('rejects unresolved and multiply connected electrical ports at Scenario compilation', async () => {
     const source = testScenarioSources.find(candidate => candidate.id === 'halden-power-complex')
     if (!source) throw new Error('missing Halden four-unit Scenario source')
     const badPort = structuredClone(source)
     badPort.connections[0]!.network.portId = 'missing-port'
-    await expect(compileScenarioSource(badPort, [processPlantPack, electricGridPack], { routing: createDirectRoutingAdapter() }))
+    await expect(compileScenarioSource(badPort, packs, { routing: createDirectRoutingAdapter() }))
       .rejects.toThrow('unknown network port')
 
     const reversedRoles = structuredClone(source)
     const original = reversedRoles.connections[0]!
     reversedRoles.connections[0] = { ...original, system: original.network, network: original.system }
-    await expect(compileScenarioSource(reversedRoles, [processPlantPack, electricGridPack], { routing: createDirectRoutingAdapter() }))
+    await expect(compileScenarioSource(reversedRoles, packs, { routing: createDirectRoutingAdapter() }))
       .rejects.toThrow('system endpoint is not a system port')
 
     const duplicated = structuredClone(source)
     duplicated.connections[1]!.system = { ...duplicated.connections[0]!.system }
-    await expect(compileScenarioSource(duplicated, [processPlantPack, electricGridPack], { routing: createDirectRoutingAdapter() }))
+    await expect(compileScenarioSource(duplicated, packs, { routing: createDirectRoutingAdapter() }))
       .rejects.toThrow('electrical port is connected more than once')
 
     const laterDeletion = structuredClone(source)
@@ -50,28 +93,14 @@ describe('electrical Pack connection', () => {
       at: { kind: 'after_scenario_start', seconds: 60 },
       actions: [{ type: 'delete_object', objectId: 'plant:halden-1' as ObjectId }],
     }] }
-    const compiled = await compileScenarioSource(laterDeletion, [processPlantPack, electricGridPack], { routing: createDirectRoutingAdapter() })
+    const compiled = await compileScenarioSource(laterDeletion, packs, { routing: createDirectRoutingAdapter() })
     expect(compiled.connections.map(connection => connection.id)).toContain('halden-unit-1-grid')
   })
 
   test('couples four independent Plants to Grid flow and frequency without duplicate generators', async () => {
     const scenario = scenarios.find(candidate => candidate.id === 'halden-power-complex')
     if (!scenario) throw new Error('missing Halden four-unit scenario')
-    const connection = await createRuntimeHub([
-      createLocalProcessPlantPackRuntimeAdapter(),
-      createLocalElectricGridPackRuntimeAdapter(),
-    ]).connect({
-      simulationRunId,
-      scenario: {
-        scenarioId: scenario.id,
-        runtimeIds: [processPlantSimRuntimeId, electricGridRuntimeId],
-        connections: scenario.connections,
-        world: scenario.world,
-        initialObjects: scenario.initialObjects,
-        runtimeConfigByRuntimeId: {},
-        runtimeConfig: {},
-      },
-    })
+    const connection = await connectScenario(scenario)
     let sequence = 0
     let committed = Promise.resolve()
     const unsubscribe = connection.subscribe(emission => {
@@ -94,6 +123,12 @@ describe('electrical Pack connection', () => {
       const gridBefore = before.objects.find(object => object.id === 'grid:halden-four-unit' as ObjectId)
       const plantBefore = before.objects.find(object => object.id === 'plant:halden-1' as ObjectId)
       if (!gridBefore || !plantBefore) throw new Error('connected runtime snapshot is incomplete')
+      const weather = weatherSampleSchema.parse(await connection.invokeQuery({
+        capabilityId: 'world.weather.sample-at-point', input: { point: plantBefore.spatial.position!.point },
+      }))
+      expect(weather.activeInfluenceIds).toContain('weather:halden-complex')
+      expect(weather.state.atmosphere.precipitation.intensityMmPerHour).toBeGreaterThan(0)
+      expect(before.objects.filter(object => object.packId === 'weather')).toHaveLength(3)
       const plantPortBefore = electricalPortFromObject(plantBefore, 'grid-420kv')
       const gridPortBefore = electricalPortFromObject(gridBefore, 'unit-1-420kv')
       expect(plantPortBefore?.state?.connected).toBe(true)
@@ -147,21 +182,7 @@ describe('electrical Pack connection', () => {
   test('removes a Plant runtime and its Grid exchange immediately on committed deletion', async () => {
     const scenario = scenarios.find(candidate => candidate.id === 'halden-power-complex')
     if (!scenario) throw new Error('missing Halden four-unit scenario')
-    const connection = await createRuntimeHub([
-      createLocalProcessPlantPackRuntimeAdapter(),
-      createLocalElectricGridPackRuntimeAdapter(),
-    ]).connect({
-      simulationRunId,
-      scenario: {
-        scenarioId: scenario.id,
-        runtimeIds: [processPlantSimRuntimeId, electricGridRuntimeId],
-        connections: scenario.connections,
-        world: scenario.world,
-        initialObjects: scenario.initialObjects,
-        runtimeConfigByRuntimeId: {},
-        runtimeConfig: {},
-      },
-    })
+    const connection = await connectScenario(scenario)
     try {
       const before = await connection.invokeQuery({
         capabilityId: 'world.electric-grid.connection-points.list',
