@@ -17,11 +17,11 @@ import {
   processPlantPwrReferenceModelRef,
   processPlantUnitPackDataSchema,
 } from '../src/packs/process-plant/index.ts'
-import { scenarios } from '../src/scenarios/index.ts'
+import { scenarios } from './fixtures/scenarios.ts'
 
 const simulationRunId = 'run:process-plant-test' as SimulationRunId
 const issuedAt = '2026-01-01T09:00:00.000Z' as IsoTimestamp
-const builtIn = scenarios.find(scenario => scenario.id === 'halden-process-plant-demo')
+const builtIn = scenarios.find(scenario => scenario.id === 'test-plant')
 if (builtIn === undefined) throw new Error('Halden Process Plant scenario is required by runtime tests')
 const basePlant = builtIn.initialObjects.find(object => object.packId === 'process-plant')
 if (basePlant === undefined) throw new Error('Halden Process Plant scenario has no Plant')

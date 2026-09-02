@@ -10,7 +10,7 @@ import {
   removeOperationalObject,
   upsertOperationalObject,
 } from '../src/ui/simulation-run-events.ts'
-import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
+import { responseScenario } from './fixtures/scenarios.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { workspaceIdSchema } from '@leitbild/contracts'
@@ -21,7 +21,7 @@ const messageScope = { workspaceId, simulationRunId: 'run-event-helper-test' }
 const scenarioObjects = () =>
   createAmbulanceSimEngine({
     simulationRunId: 'run-event-helper-test' as SimulationRunId,
-    objects: osloAmbulanceScenario.initialObjects,
+    objects: responseScenario.initialObjects,
     routing: createDirectRoutingAdapter(),
   }).snapshot().objects
 
@@ -45,14 +45,14 @@ describe('simulation run event helpers', () => {
     const parsed = parseSimulationRunEventBatchMessage(JSON.stringify({
       type: 'events',
       ...messageScope,
-      scenarioId: 'oslo-ambulance',
+      scenarioId: 'test-response',
       snapshotSeq: 1,
       events: [{ type: 'object.upserted', object }],
     }))
 
     expect(parsed?.events[0]?.type).toBe('object.upserted')
     expect(parsed?.events[0]?.object?.id).toBe(object.id)
-    expect(parsed?.scenarioId).toBe('oslo-ambulance')
+    expect(parsed?.scenarioId).toBe('test-response')
     expect(parseSimulationRunEventBatchMessage(JSON.stringify({ type: 'snapshot' }))).toBeNull()
   })
 
@@ -103,7 +103,7 @@ describe('simulation run event helpers', () => {
     const parsed = parseSimulationRunWebSocketMessage(JSON.stringify({
       type: 'runtime.realtime',
       ...messageScope,
-      scenarioId: 'oslo-drone-operations',
+      scenarioId: 'test-drone',
       snapshotSeq: 42,
       messages: [{
         type: 'drone.motion.frames',

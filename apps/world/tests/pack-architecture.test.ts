@@ -3,7 +3,7 @@ import { confirmedFact, geoPointFromLonLat, nowIso, type AdapterId, type ObjectI
 import { createActivePackViews } from '../src/core/packs/active-views.ts'
 import { createPackPresentationComposer } from '../src/core/packs/presentation-composer.ts'
 import { packField, packStatus } from '../src/core/packs/presentation.ts'
-import { createScenarioCatalog } from '../src/core/scenarios/catalog.ts'
+import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { ambulancePackDataSchema, hospitalPackDataSchema, type HospitalPackData } from '../src/packs/ambulance/model.ts'
 import { trafficPack } from '../src/packs/traffic/pack.ts'
@@ -18,7 +18,7 @@ import {
 } from '../src/packs/ambulance/commands.ts'
 import { ambulanceSimRuntimeId } from '../src/packs/ambulance/sim/constants.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
-import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
+import { responseScenario } from './fixtures/scenarios.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import type { SimulationRunId } from '../src/core/model/index.ts'
 import { createWorldPackDescriptor, emptyPackScenarioConfigSchema, type WorldPack, type PackObjectPresentation } from '../src/core/packs/protocol.ts'
@@ -27,7 +27,7 @@ describe('pack architecture', () => {
   test('ambulance Pack builds commands behind the Simulation Capability interface', () => {
     const engine = createAmbulanceSimEngine({
       simulationRunId: 'run-pack-architecture' as SimulationRunId,
-      objects: osloAmbulanceScenario.initialObjects,
+      objects: responseScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const objects = engine.snapshot().objects
@@ -53,7 +53,7 @@ describe('pack architecture', () => {
   test('ambulance pack exposes structured fields and semantic status indicators', () => {
     const engine = createAmbulanceSimEngine({
       simulationRunId: 'run-pack-presentation' as SimulationRunId,
-      objects: osloAmbulanceScenario.initialObjects,
+      objects: responseScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const objects = engine.snapshot().objects
@@ -100,7 +100,7 @@ describe('pack architecture', () => {
   test('ambulance pack presents hospital trauma beds as available capacity', () => {
     const engine = createAmbulanceSimEngine({
       simulationRunId: 'run-hospital-capacity-presentation' as SimulationRunId,
-      objects: osloAmbulanceScenario.initialObjects,
+      objects: responseScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const hospital = engine.snapshot().objects.find(object => object.kind === 'facility')
@@ -264,7 +264,7 @@ describe('pack architecture', () => {
   test('presentation composer caches by tier and exposes pack object indexes', () => {
     let presentCalls = 0
     let indexedWeatherObjectCount = -1
-    const object = osloAmbulanceScenario.initialObjects.find(candidate => candidate.packId === 'ambulance')
+    const object = responseScenario.initialObjects.find(candidate => candidate.packId === 'ambulance')
     if (!object) throw new Error('scenario missing ambulance object')
     const weatherObject = {
       ...object,
@@ -321,8 +321,8 @@ describe('pack architecture', () => {
   })
 
   test('weather contextual fields use the presentation object index instead of scanning all objects', () => {
-    const object = osloAmbulanceScenario.initialObjects.find(candidate => candidate.packId === 'ambulance')
-    const weatherObject = osloAmbulanceScenario.initialObjects.find(candidate => candidate.packId === 'weather')
+    const object = responseScenario.initialObjects.find(candidate => candidate.packId === 'ambulance')
+    const weatherObject = responseScenario.initialObjects.find(candidate => candidate.packId === 'weather')
     if (!object || !weatherObject) throw new Error('scenario missing ambulance or weather object')
     let requestedPackId = ''
 
@@ -332,7 +332,7 @@ describe('pack architecture', () => {
         requestedPackId = packId
         return [weatherObject]
       },
-      currentTime: osloAmbulanceScenario.world.startsAt ?? nowIso(),
+      currentTime: responseScenario.world.startsAt ?? nowIso(),
       tier: 'detail',
     }) ?? []
 
@@ -341,13 +341,12 @@ describe('pack architecture', () => {
   })
 
   test('scenario catalog resolves scenario packs to internal pack runtimes', () => {
-    const catalog = createScenarioCatalog({
+    const catalog = createScenarioRuntimeResolver({
       packs: [ambulancePack, trafficPack, weatherPack],
-      scenarios: [osloAmbulanceScenario],
     })
-    const runtime = catalog.runtimeFor('oslo-ambulance')
+    const runtime = catalog.resolve(responseScenario)
 
-    expect(catalog.listScenarios()[0]?.packs).toEqual(['ambulance', 'traffic', 'weather'])
+    expect(runtime.scenario.packs).toEqual(['ambulance', 'traffic', 'weather'])
     expect(runtime?.runtimes.map(runtime => runtime.runtimeId).sort()).toEqual([
       ambulanceSimRuntimeId,
       trafficSimRuntimeId,
@@ -385,7 +384,7 @@ describe('pack architecture', () => {
       },
     }
     const scenario = {
-      ...osloAmbulanceScenario,
+      ...responseScenario,
       id: 'passive-only',
       title: 'Passive only',
       packs: ['passive'],
@@ -395,22 +394,21 @@ describe('pack architecture', () => {
       initialObjects: [],
       surface: { schemaVersion: 1 as const, regions: [] },
     }
-    const runtime = createScenarioCatalog({ packs: [passivePack], scenarios: [scenario] }).runtimeFor('passive-only')
+    const runtime = createScenarioRuntimeResolver({ packs: [passivePack] }).resolve(scenario)
 
     expect(runtime?.packs).toEqual([passivePack])
     expect(runtime?.runtimes).toEqual([])
   })
 
   test('scenario catalog rejects runtime selections outside the owning Pack', () => {
-    expect(() => createScenarioCatalog({
+    expect(() => createScenarioRuntimeResolver({
       packs: [ambulancePack, trafficPack, weatherPack],
-      scenarios: [{
-        ...osloAmbulanceScenario,
+    }).resolve({
+        ...responseScenario,
         id: 'bad-runtime-override',
         packRuntimes: {
           ambulance: trafficSimRuntimeId,
         },
-      }],
     })).toThrow('runtime traffic.local is not registered by pack ambulance')
   })
 })

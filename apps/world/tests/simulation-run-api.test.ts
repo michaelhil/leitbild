@@ -24,8 +24,8 @@ import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
 import { setDestinationCommandKind } from '../src/packs/ambulance/commands.ts'
 import { ambulanceSimRuntimeId } from '../src/packs/ambulance/sim/constants.ts'
 import { assetArrivedAtTargetSignalType } from '../src/packs/ambulance/sim/interactions.ts'
-import { createTestPackRuntimeAdapters, createTestScenarioCatalog, testPacks, testScenarioAuthoring, waitForCondition } from './helpers.ts'
-import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
+import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testPacks, testScenarioAuthoring, waitForCondition } from './helpers.ts'
+import { responseScenario } from './fixtures/scenarios.ts'
 
 interface ApiResponse<T> {
   readonly status: number
@@ -115,7 +115,7 @@ const createTestRegistry = async (config: {
   return createSimulationRunRegistry({
     dataDir,
     workspaceId: newWorkspaceId(),
-    scenarioCatalog: createTestScenarioCatalog(),
+    scenarioRuntimeResolver: createTestScenarioRuntimeResolver(),
     ...testScenarioAuthoring(),
     runtimeAdapters: createTestPackRuntimeAdapters(),
     ...(config.procedureSourceService === undefined
@@ -158,7 +158,7 @@ const createRun = async (
   registry: SimulationRunRegistry,
   scenarioId?: string,
 ): Promise<CreatedRunResponse> => {
-  const runtime = await registry.create(scenarioId === undefined ? {} : { scenarioId })
+  const runtime = await registry.create({ scenarioId: scenarioId ?? 'test-response' })
   const revision = await registry.scenarioRevisionForRun(runtime.id)
   return {
     id: runtime.id,
@@ -187,12 +187,12 @@ describe('Simulation Run API', () => {
         readonly initialObjects: ReadonlyArray<{ readonly packId: string }>
       }
       readonly source: { readonly packs: ReadonlyArray<{ readonly id: string; readonly config: unknown; readonly items: readonly unknown[] }> }
-    }>(registry, '/scenarios/halden-process-plant-demo')
-    expect(fetched.body.scenario.packs).toEqual(['process-plant', 'ambulance', 'weather'])
-    expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'process-plant')).toHaveLength(7)
+    }>(registry, '/scenarios/halden-power-complex')
+    expect(fetched.body.scenario.packs).toEqual(['process-plant', 'electric-grid'])
+    expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'process-plant')).toHaveLength(4)
     const processPlant = fetched.body.source.packs.find(pack => pack.id === 'process-plant')
     expect(processPlant?.config).toEqual({})
-    expect(processPlant?.items).toHaveLength(7)
+    expect(processPlant?.items).toHaveLength(4)
   })
 
   test('joins only existing runs and exposes their objects and capabilities', async () => {
@@ -203,13 +203,13 @@ describe('Simulation Run API', () => {
       const joined = await callRoute<CreatedRunResponse>(registry, runPath(created.id))
       expect(joined.status).toBe(200)
       expect(joined.body.id).toBe(created.id)
-      expect(joined.body.snapshot.objects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
+      expect(joined.body.snapshot.objects).toHaveLength(responseScenario.initialObjects.length)
 
       const objects = await callRoute<{ readonly objects: readonly OperationalObject[] }>(
         registry,
         runPath(created.id, '/objects'),
       )
-      expect(objects.body.objects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
+      expect(objects.body.objects).toHaveLength(responseScenario.initialObjects.length)
 
       const capabilities = await callRoute<{
         readonly simulationRunId: SimulationRunId
@@ -220,7 +220,7 @@ describe('Simulation Run API', () => {
       }>(registry, runPath(created.id, '/capabilities'))
       expect(capabilities.body).toMatchObject({
         simulationRunId: created.id,
-        scenarioId: 'oslo-ambulance',
+        scenarioId: 'test-response',
         activePackIds: ['ambulance', 'traffic', 'weather'],
       })
       expect(capabilities.body.runtimes).toContainEqual({ id: ambulanceSimRuntimeId, packId: 'ambulance', clock: 'simulation' })
@@ -280,7 +280,7 @@ describe('Simulation Run API', () => {
   test('records selected Pack observations in the Run Historian and exposes bounded history', async () => {
     const registry = await createTestRegistry()
     try {
-      const created = await createRun(registry, 'halden-process-plant-demo')
+      const created = await createRun(registry, 'test-plant')
       const runtime = registry.get(created.id)
       if (!runtime) throw new Error('expected loaded Run')
       await waitForCondition('historian samples', () => (runtime.recordingStatus()?.sampleCount ?? 0) > 0, {
@@ -313,7 +313,7 @@ describe('Simulation Run API', () => {
   test('records dynamically discovered ambulance assets through the same Historian boundary', async () => {
     const registry = await createTestRegistry()
     try {
-      const created = await createRun(registry, 'oslo-ambulance')
+      const created = await createRun(registry, 'test-response')
       const runtime = registry.get(created.id)
       if (!runtime) throw new Error('expected loaded Run')
       await waitForCondition('ambulance historian samples', () => (runtime.recordingStatus()?.sampleCount ?? 0) > 0, {
@@ -345,7 +345,7 @@ describe('Simulation Run API', () => {
   test('reset restores the pinned Scenario without accepting replacement configuration', async () => {
     const registry = await createTestRegistry()
     try {
-      const created = await createRun(registry, 'halden')
+      const created = await createRun(registry, 'test-response')
       const runtime = registry.get(created.id)
       if (!runtime) throw new Error('expected loaded run')
       const notifications: SimulationRunEvent[][] = []
@@ -367,12 +367,12 @@ describe('Simulation Run API', () => {
       unsubscribe()
       const resetEvent = notifications.flat().find(event => event.type === 'simulationRun.reset')
       expect(reset.status).toBe(200)
-      expect(reset.body.snapshot.scenario?.scenarioId).toBe('halden')
+      expect(reset.body.snapshot.scenario?.scenarioId).toBe('test-response')
       expect(reset.body.snapshot.objects.some(object => object.id === facility.id)).toBe(true)
       expect(resetEvent).toMatchObject({
         previousSeq,
-        previousScenarioId: 'halden',
-        scenarioId: 'halden',
+        previousScenarioId: 'test-response',
+        scenarioId: 'test-response',
       })
     } finally {
       await closeAll(registry)

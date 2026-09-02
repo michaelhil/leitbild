@@ -12,8 +12,8 @@ import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/s
 import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { createTestScenarioCatalog, testScenarioAuthoring } from './helpers.ts'
-import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
+import { createTestScenarioRuntimeResolver, testScenarioAuthoring } from './helpers.ts'
+import { responseScenario } from './fixtures/scenarios.ts'
 import { setDestinationCommandKind } from '../src/packs/ambulance/commands.ts'
 
 interface CapturedRealtimeClient {
@@ -96,7 +96,7 @@ describe('server health', () => {
     const registry = createSimulationRunRegistry({
       dataDir,
       workspaceId: newWorkspaceId(),
-      scenarioCatalog: createTestScenarioCatalog(),
+      scenarioRuntimeResolver: createTestScenarioRuntimeResolver(),
       ...testScenarioAuthoring(),
       runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
@@ -104,7 +104,7 @@ describe('server health', () => {
         createLocalWeatherPackRuntimeAdapter(),
       ],
     })
-    const runtime = await registry.create()
+    const runtime = await registry.create({ scenarioId: 'test-response' })
     try {
       const details = await createHealthDetails({ registry, mapArtifacts: { rootDir: mapRoot } })
 
@@ -114,9 +114,9 @@ describe('server health', () => {
       expect(details.registry.storage.totalBytes).toBeGreaterThan(0)
       expect(details.registry.simulationRuns).toContainEqual(expect.objectContaining({
         id: runtime.id,
-        scenarioId: 'oslo-ambulance',
+        scenarioId: 'test-response',
         loaded: true,
-        objectCount: osloAmbulanceScenario.initialObjects.length,
+        objectCount: responseScenario.initialObjects.length,
         snapshotSeq: runtime.snapshot().seq,
       }))
       expect(details.realtime.websocketClientCount).toBe(0)
@@ -137,7 +137,7 @@ describe('server health', () => {
     const registry = createSimulationRunRegistry({
       dataDir,
       workspaceId: newWorkspaceId(),
-      scenarioCatalog: createTestScenarioCatalog(),
+      scenarioRuntimeResolver: createTestScenarioRuntimeResolver(),
       ...testScenarioAuthoring(),
       runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
@@ -155,21 +155,21 @@ describe('server health', () => {
     })
     let simulationRunId: SimulationRunId | undefined
     try {
-      const runtimeBeforeReset = await registry.create()
+      const runtimeBeforeReset = await registry.create({ scenarioId: 'test-response' })
       simulationRunId = runtimeBeforeReset.id
       realtime.addClient(simulationRunId, client)
       expect(realtime.status().subscribedSimulationRunCount).toBe(1)
-      expect(client.readyMessages).toContain('oslo-ambulance')
+      expect(client.readyMessages).toContain('test-response')
 
       await registry.reset(simulationRunId)
       const resetEvent = client.events.find(event => event.type === 'simulationRun.reset')
       expect(resetEvent).toMatchObject({
         type: 'simulationRun.reset',
-        previousScenarioId: 'oslo-ambulance',
-        scenarioId: 'oslo-ambulance',
+        previousScenarioId: 'test-response',
+        scenarioId: 'test-response',
       })
       realtime.reconcile()
-      expect(client.readyMessages.filter(id => id === 'oslo-ambulance')).toHaveLength(2)
+      expect(client.readyMessages.filter(id => id === 'test-response')).toHaveLength(2)
 
       const runtime = registry.get(simulationRunId)
       if (!runtime) throw new Error('expected simulation run runtime after reset')
@@ -185,7 +185,7 @@ describe('server health', () => {
       const postResetEventMessages = client.eventMessages.filter(message =>
         !message.events.some(event => event.type === 'simulationRun.reset'),
       )
-      expect(postResetEventMessages.every(message => message.scenarioId === 'oslo-ambulance')).toBe(true)
+      expect(postResetEventMessages.every(message => message.scenarioId === 'test-response')).toBe(true)
       realtime.removeClient(simulationRunId, client)
       expect(realtime.status().subscribedSimulationRunCount).toBe(0)
       expect(registry.get(simulationRunId)).toBe(runtime)
@@ -200,7 +200,7 @@ describe('server health', () => {
     const registry = createSimulationRunRegistry({
       dataDir,
       workspaceId: newWorkspaceId(),
-      scenarioCatalog: createTestScenarioCatalog(),
+      scenarioRuntimeResolver: createTestScenarioRuntimeResolver(),
       ...testScenarioAuthoring(),
       runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
@@ -219,22 +219,22 @@ describe('server health', () => {
     })
     let simulationRunId: SimulationRunId | undefined
     try {
-      const runtime = await registry.create()
+      const runtime = await registry.create({ scenarioId: 'test-response' })
       simulationRunId = runtime.id
       realtime.addClient(simulationRunId, firstClient)
-      expect(firstClient.readyMessages).toEqual(['oslo-ambulance'])
+      expect(firstClient.readyMessages).toEqual(['test-response'])
       expect(realtime.status().subscribedSimulationRunCount).toBe(1)
 
       realtime.addClient(simulationRunId, secondClient)
-      expect(secondClient.readyMessages).toEqual(['oslo-ambulance'])
-      expect(firstClient.readyMessages).toEqual(['oslo-ambulance'])
+      expect(secondClient.readyMessages).toEqual(['test-response'])
+      expect(firstClient.readyMessages).toEqual(['test-response'])
       expect(realtime.status().websocketClientCount).toBe(2)
       expect(realtime.status().subscribedSimulationRunCount).toBe(1)
 
       await registry.reset(simulationRunId)
       realtime.reconcile()
-      expect(firstClient.readyMessages).toEqual(['oslo-ambulance', 'oslo-ambulance'])
-      expect(secondClient.readyMessages).toEqual(['oslo-ambulance', 'oslo-ambulance'])
+      expect(firstClient.readyMessages).toEqual(['test-response', 'test-response'])
+      expect(secondClient.readyMessages).toEqual(['test-response', 'test-response'])
     } finally {
       realtime.stop()
       if (simulationRunId) await registry.close(simulationRunId)
@@ -308,7 +308,7 @@ describe('server health', () => {
     const registry = createSimulationRunRegistry({
       dataDir,
       workspaceId: newWorkspaceId(),
-      scenarioCatalog: createTestScenarioCatalog(),
+      scenarioRuntimeResolver: createTestScenarioRuntimeResolver(),
       ...testScenarioAuthoring(),
       idleRuntimeCloseDelayMs: 5,
       runtimeAdapters: [
@@ -327,7 +327,7 @@ describe('server health', () => {
     })
     let simulationRunId: SimulationRunId | undefined
     try {
-      const runtime = await registry.create()
+      const runtime = await registry.create({ scenarioId: 'test-response' })
       simulationRunId = runtime.id
       realtime.addClient(simulationRunId, client)
       expect(registry.get(simulationRunId)).toBe(runtime)

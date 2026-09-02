@@ -72,7 +72,7 @@ describe('Inspection View contracts', () => {
     expect(() => moduleDefinitionDescriptorSchema.parse({
       ...definition,
       capabilityIds: [],
-    })).toThrow('Inspection Capability must be included')
+    })).toThrow('Card Capability must be included')
 
     const view = {
       target: {

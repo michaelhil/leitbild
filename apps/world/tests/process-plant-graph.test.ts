@@ -18,7 +18,7 @@ import {
   variablePathSchema,
   type PlantGraphSpec,
 } from '../src/packs/process-plant/index.ts'
-import { scenarios } from '../src/scenarios/index.ts'
+import { scenarios } from './fixtures/scenarios.ts'
 import type { ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 
 
@@ -202,9 +202,8 @@ describe('built-in process plant scenarios', () => {
   test('compile Plants directly from Scenario Items with no Pack configuration shadow', () => {
     const builtIns = scenarios.filter(scenario => scenario.packs.includes('process-plant' as PackId))
     expect(builtIns.map(scenario => scenario.id).sort()).toEqual([
-      'halden-four-unit-grid',
-      'halden-process-plant-demo',
-      'oslo-integrated-operations',
+      'halden-power-complex',
+      'test-plant',
     ])
 
     for (const scenario of builtIns) {

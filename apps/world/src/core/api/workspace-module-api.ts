@@ -6,6 +6,7 @@ import {
   moduleDefinitionCollectionSchema,
   moduleIdSchema,
   moduleResourceCollectionSchema,
+  resourceRenameInputSchema,
   sourceDocumentPathSchema,
   sourceRevisionSchema,
   workspaceDefinitionRevisionReferenceSchema,
@@ -150,6 +151,8 @@ const simulationRunDeleteResultSchema = z.object({
 
 const simulationRunSummarySchema = z.object({
   id: simulationRunIdSchema,
+  name: z.string().trim().min(1).max(256).nullable(),
+  title: z.string().trim().min(1).max(256),
   scenarioId: z.string().min(1).nullable(),
   scenarioTitle: z.string().min(1).nullable(),
   scenarioRevisionId: z.string().min(1).nullable(),
@@ -296,6 +299,8 @@ const definitionsFor = async (registry: SimulationRunRegistry) => {
       currentRevisionId: scenario.currentRevisionId,
       capabilityIds: worldCapabilities.idsForDefinitionType(SCENARIO_DEFINITION_TYPE),
       inspectionCapabilityId: 'world.scenario.inspect',
+      primaryCapabilityId: 'world.scenario.start',
+      deleteCapabilityId: 'world.scenario.delete',
     })),
   }).definitions
 }
@@ -322,7 +327,7 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
           type: 'world.simulation-run',
           id: simulationRun.id,
         },
-        title: simulationRun.scenarioTitle ?? simulationRun.scenarioId ?? simulationRun.id,
+        title: simulationRun.title,
         ...(simulationRun.loadError === undefined ? {} : { description: simulationRun.loadError }),
         ...(simulationRun.scenarioId === null || simulationRun.scenarioRevisionId === null ? {} : {
           sourceDefinition: {
@@ -340,6 +345,8 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
           ...simulationRun.activeCapabilityIds,
         ],
         inspectionCapabilityId: 'world.simulation-run.inspect',
+        deleteCapabilityId: 'world.simulation-run.delete',
+        renameCapabilityId: 'world.simulation-run.rename',
         summary: [
           ...(simulationRun.createdAt === null ? [] : [{
             key: 'started-at',
@@ -715,15 +722,13 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     invoke: async (registry, invocation) => {
       emptyInputSchema.parse(invocation.input)
       const simulationRunId = requireSimulationRunResource(invocation)
-      const [runtime, revision, knownRuns] = await Promise.all([
+      const [runtime, revision, summary] = await Promise.all([
         registry.load(simulationRunId),
         registry.scenarioRevisionForRun(simulationRunId),
-        registry.listKnown(),
+        registry.summary(simulationRunId),
       ])
       if (!revision) return apiError(409, 'scenario_revision_unavailable', 'Simulation Run has no readable Scenario Revision')
       const definition = await registry.compileScenarioRevision(revision)
-      const summary = knownRuns.find(candidate => candidate.id === simulationRunId)
-      if (!summary) return apiError(404, 'simulation_run_not_found', 'Simulation Run not found')
       const snapshot = runtime.snapshot()
       const leaseSummary = registry.leaseSummary(simulationRunId)
       const assetSummaries = snapshot.objects.map(object => ({
@@ -741,7 +746,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       }))
       return json({ result: serializableInspection({
         target: { kind: 'resource', resource: invocation.resource },
-        title: definition.title,
+        title: summary.title,
         ...(definition.description === undefined ? {} : { description: definition.description }),
         observedAt: new Date().toISOString(),
         sections: [{
@@ -778,6 +783,25 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
           data: runtime.capabilities(),
         }, ...scenarioSections(definition)],
       }) })
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.rename',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Rename Simulation Run',
+      description: 'Sets an independent Run display name. Null restores the pinned Scenario title. Does not modify simulation state or its source Scenario.',
+      risk: 'write',
+      idempotent: false,
+      inputSchema: capabilityJsonSchema(resourceRenameInputSchema),
+      outputSchema: capabilityJsonSchema(simulationRunSummarySchema),
+    },
+    invoke: async (registry, invocation) => {
+      const input = resourceRenameInputSchema.parse(invocation.input)
+      const summary = await registry.rename(requireSimulationRunResource(invocation), input.name, input.expectedTitle)
+      return json({ result: summary })
     },
   },
   {
@@ -842,7 +866,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       emptyInputSchema.parse(invocation.input)
       const simulationRunId = requireSimulationRunResource(invocation)
       const runtime = await registry.load(simulationRunId)
-      const [revision] = await Promise.all([registry.scenarioRevisionForRun(simulationRunId)])
+      const [revision, summary] = await Promise.all([registry.scenarioRevisionForRun(simulationRunId), registry.summary(simulationRunId)])
       if (!revision) return apiError(409, 'scenario_revision_unavailable', 'Simulation Run has no readable Scenario Revision')
       const definition = await registry.compileScenarioRevision(revision)
       const snapshot = runtime.snapshot()
@@ -858,7 +882,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
           scenarioRevisionId: revision.id,
         },
         briefing: {
-          title: definition.title,
+          title: summary.title,
           ...(definition.description === undefined ? {} : { summary: definition.description }),
           objectives: definition.objectives ?? [],
         },
@@ -1156,6 +1180,9 @@ export const handleWorldModuleApi = async (
 
     return null
   } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'simulation_run_name_changed') {
+      return apiError(409, 'simulation_run_name_changed', error.message)
+    }
     if (error instanceof SyntaxError) return apiError(400, 'invalid_json', error.message)
     if (error instanceof z.ZodError) return apiError(400, 'invalid_request', error.message)
     if (error instanceof CommandIdempotencyConflictError) return apiError(error.status, error.code, error.message)

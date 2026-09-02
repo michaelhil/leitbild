@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { addGridModelAssets, gridModelAdditions } from './model-additions.ts'
 import { gridOperatingPointOverridesSchema, type GridDefinition } from './config.ts'
 import type {
   CompiledGridModelIndex,
@@ -11,7 +12,6 @@ import type {
 } from './grid-model.ts'
 import {
   norwayGridModelRef,
-  haldenFourUnitGridModelRef,
   haldenFourUnitOperatingPointRef,
   norwayNormalOperatingPointRef,
   norwayStandardAutomationRef,
@@ -168,66 +168,14 @@ const norwayGridModel = (): GridModelDefinition => {
   }
 }
 
-const haldenFourUnitGridModel = (): GridModelDefinition => {
-  const base = norwayGridModel()
-  const catalogEntry = electricGridDefinitionCatalog.models.find(candidate => candidate.id === haldenFourUnitGridModelRef)!
-  const switchyard = {
-    id: 'bus:halden-pwr-switchyard-420',
-    label: 'Halden PWR switchyard',
-    nominalKv: 420,
-    location: [11.48, 59.08] as const,
-    sourceId: 'leitbild:halden-four-unit-engineering-model',
-    sourceFeatureId: 'halden-pwr-switchyard-420',
-  }
-  const targets = [{
-    id: busIdFor('Hasle trafostasjon', 420, 'way/60495669'),
-    location: [11.155404, 59.314144] as const,
-    label: 'Hasle',
-  }, {
-    id: busIdFor('Tegneby koblingsstasjon', 420, 'way/29578389'),
-    location: [10.747226, 59.51735] as const,
-    label: 'Tegneby',
-  }]
-  for (const target of targets) {
-    if (!base.buses.some(bus => bus.id === target.id)) throw new Error(`Halden Grid Model target bus is absent: ${target.id}`)
-  }
-  const exportBranches = targets.flatMap(target => [1, 2, 3].map(circuit => ({
-    id: `branch:halden-pwr-${target.label.toLowerCase()}-${circuit}`,
-    label: `Halden PWR – ${target.label} circuit ${circuit}`,
-    kind: 'ac_line' as const,
-    fromBusId: switchyard.id,
-    toBusId: target.id,
-    nominalKv: 420,
-    ...inferBranchElectricalParameters({
-      nominalKv: 420,
-      lengthKm: haversineKm(switchyard.location, target.location),
-      category: 'line',
-      name: `Halden PWR – ${target.label} circuit ${circuit}`,
-    }),
-    sourceId: 'leitbild:halden-four-unit-engineering-model',
-    sourceFeatureId: `halden-pwr-${target.label.toLowerCase()}-${circuit}`,
-  })))
-  return {
-    ...base,
-    ...catalogEntry,
-    sourceIds: [...base.sourceIds, 'leitbild:halden-four-unit-engineering-model'],
-    buses: [...base.buses, switchyard],
-    branches: [...base.branches, ...exportBranches],
-    connectionPoints: [1, 2, 3, 4].map(unit => ({
-      id: `unit-${unit}-420kv`,
-      label: `Halden unit ${unit} 420 kV bay`,
-      busId: switchyard.id,
-      nominalKv: 420,
-      maximumExportMw: 100,
-      maximumImportMw: 1_100,
-    })),
-  }
+const baseModels = new Map<string, GridModelDefinition>([[norwayGridModelRef, norwayGridModel()]])
+const models = new Map(baseModels)
+for (const addition of gridModelAdditions) {
+  const base = baseModels.get(addition.baseModelRef)
+  if (!base) throw new Error(`Grid Model base is unavailable: ${addition.baseModelRef}`)
+  if (models.has(addition.id)) throw new Error(`duplicate Grid Model: ${addition.id}`)
+  models.set(addition.id, addGridModelAssets(base, addition))
 }
-
-const models = new Map<string, GridModelDefinition>([
-  [norwayGridModelRef, norwayGridModel()],
-  [haldenFourUnitGridModelRef, haldenFourUnitGridModel()],
-])
 const operatingPoints = new Map<string, GridOperatingPointDefinition>([[norwayNormalOperatingPointRef, {
   id: norwayNormalOperatingPointRef,
   title: electricGridDefinitionCatalog.operatingPoints.find(candidate => candidate.id === norwayNormalOperatingPointRef)!.title,

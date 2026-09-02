@@ -20,8 +20,8 @@ import {
   createWorldWorkspaceRuntimeRegistry,
   type WorldWorkspaceRuntimeRegistry,
 } from '../src/core/workspaces/runtime-registry.ts'
-import { createTestPackRuntimeAdapters, createTestScenarioCatalog, testScenarioAuthoring } from './helpers.ts'
-import { builtinScenarioSources } from '../src/scenarios/index.ts'
+import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testScenarioAuthoring } from './helpers.ts'
+import { testScenarioSources } from './fixtures/scenarios.ts'
 
 const registries: WorldWorkspaceRuntimeRegistry[] = []
 const temporaryDirectories: string[] = []
@@ -32,7 +32,7 @@ const createRegistry = async (): Promise<WorldWorkspaceRuntimeRegistry> => {
   const registry = createWorldWorkspaceRuntimeRegistry({
     dataDir,
     moduleState: createWorldModuleState({ dataDir }),
-    scenarioCatalog: createTestScenarioCatalog(),
+    scenarioRuntimeResolver: createTestScenarioRuntimeResolver(),
     ...testScenarioAuthoring(),
     runtimeAdapters: createTestPackRuntimeAdapters(),
   })
@@ -106,7 +106,7 @@ describe('World Module API', () => {
     expect(described.body?.result.packs.find(pack => pack.id === 'aviation')?.runtimes.length).toBeGreaterThan(1)
     expect(described.body?.result.packs.find(pack => pack.id === 'process-plant')?.configSchema).toBeTruthy()
 
-    const previewSource = builtinScenarioSources.find(source => source.id === 'halden-four-unit-grid')!
+    const previewSource = testScenarioSources.find(source => source.id === 'halden-power-complex')!
     const previewId = capabilityIdSchema.parse('world.scenario.preview')
     const previewed = await call<{ result: { assets: Array<{ id: string; electricalPorts: Array<{ role: string }> }>; connections: unknown[] } }>(
       registry,
@@ -124,7 +124,7 @@ describe('World Module API', () => {
     expect(electricalRoles.filter(role => role === 'network')).toHaveLength(4)
     expect(previewed.body?.result.connections).toHaveLength(4)
 
-    const source = builtinScenarioSources.find(source => source.id === 'oslo-ambulance')!
+    const source = testScenarioSources.find(source => source.id === 'test-response')!
     const definition = { ...source, id: 'custom-authoring-test', title: 'Custom authoring test' }
     const createId = capabilityIdSchema.parse('world.scenario.create')
     const created = await call<{ result: { definition: { id: string; revisionId: string } } }>(
@@ -194,7 +194,7 @@ describe('World Module API', () => {
     )
     const definitions = await call(registry, `/internal/workspaces/${workspaceId}/definitions`)
     const parsedDefinitions = moduleDefinitionCollectionSchema.parse(definitions.body)
-    const scenario = parsedDefinitions.definitions.find(definition => definition.ref.id === 'oslo-ambulance')!
+    const scenario = parsedDefinitions.definitions.find(definition => definition.ref.id === 'test-response')!
     expect(String(scenario.inspectionCapabilityId)).toBe('world.scenario.inspect')
 
     const access = accessContextSchema.parse({
@@ -252,6 +252,18 @@ describe('World Module API', () => {
     expect(run?.summary.find(item => item.key === 'viewer-count')).toMatchObject({ kind: 'count', value: 0 })
     expect(run?.summary.find(item => item.key === 'status')).toMatchObject({ kind: 'status', value: 'Running' })
     expect(String(run?.inspectionCapabilityId)).toBe('world.simulation-run.inspect')
+    expect(String(run?.renameCapabilityId)).toBe('world.simulation-run.rename')
+    const renameCapabilityId = capabilityIdSchema.parse('world.simulation-run.rename')
+    const renameRequest = {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspaceId, capabilityId: renameCapabilityId, resource: run!.ref,
+        input: { name: 'Training shift', expectedTitle: run!.title }, access }),
+    }
+    const renamed = await call<{ result: { title: string } }>(registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${renameCapabilityId}/invoke`, renameRequest)
+    expect(renamed.status).toBe(200)
+    expect(renamed.body?.result.title).toBe('Training shift')
+    expect((await call(registry, `/internal/workspaces/${workspaceId}/capabilities/${renameCapabilityId}/invoke`, renameRequest)).status).toBe(409)
 
     const inspectRunCapabilityId = capabilityIdSchema.parse('world.simulation-run.inspect')
     const runInspection = await call<{ result: unknown }>(
@@ -289,7 +301,7 @@ describe('World Module API', () => {
         }),
       },
     )
-    expect(context.body?.result.briefing.title).toBeTruthy()
+    expect(context.body?.result.briefing.title).toBe('Training shift')
     expect(Array.isArray(context.body?.result.objects.items)).toBe(true)
     expect(context.body?.result.objects.returned).toBeLessThanOrEqual(50)
     expect(context.body?.result.objects.total).toBeGreaterThanOrEqual(context.body?.result.objects.returned ?? 0)

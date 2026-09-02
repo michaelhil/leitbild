@@ -107,6 +107,7 @@ const resourcesFor = async (
         uiPath: `/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(profile.id)}`,
         capabilityIds: agentsCapabilities.idsForResourceType('agents.room'),
         inspectionCapabilityId: 'agents.room.inspect',
+        deleteCapabilityId: 'agents.room.delete',
         summary: [
           {
             key: 'created-at',
@@ -168,6 +169,8 @@ const definitionsFor = async (workspaceId: WorkspaceId) => {
     currentRevisionId: definition.currentRevisionId,
     capabilityIds: agentsCapabilities.idsForDefinitionType(ROOM_DEFINITION_TYPE),
     inspectionCapabilityId: 'agents.room-definition.inspect',
+    primaryCapabilityId: 'agents.room-definition.start',
+    deleteCapabilityId: 'agents.room-definition.delete',
   })) }).definitions
 }
 

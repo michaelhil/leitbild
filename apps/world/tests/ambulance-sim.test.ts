@@ -8,7 +8,7 @@ import {
   setDestinationCommandKind,
 } from '../src/packs/ambulance/commands.ts'
 import { ambulancePackDataSchema, hospitalPackDataSchema, incidentPackDataSchema, type AmbulancePackData, type HospitalPackData, type IncidentPackData } from '../src/packs/ambulance/model.ts'
-import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
+import { responseScenario } from './fixtures/scenarios.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createAmbulanceSimEngine, type AmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { createAmbulanceArrivalInteractionHandler } from '../src/packs/ambulance/sim/interactions.ts'
@@ -223,7 +223,7 @@ describe('local ambulance runtime', () => {
   test('evolves incident and hospital facts through runtime events', () => {
     const engine = createAmbulanceSimEngine({
       simulationRunId,
-      objects: osloAmbulanceScenario.initialObjects,
+      objects: responseScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
 
@@ -255,7 +255,7 @@ describe('local ambulance runtime', () => {
     const firstRoutePoint = geoPointFromLonLat(10.7387, 59.9364)
     const engine = createAmbulanceSimEngine({
       simulationRunId,
-      objects: osloAmbulanceScenario.initialObjects,
+      objects: responseScenario.initialObjects,
       routing: {
         id: 'test-shaped-route',
         route: async () => ({
@@ -297,7 +297,7 @@ describe('local ambulance runtime', () => {
   test('starts moving immediately when the route begins at the ambulance position', async () => {
     const engine = createAmbulanceSimEngine({
       simulationRunId,
-      objects: osloAmbulanceScenario.initialObjects,
+      objects: responseScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const initial = engine.snapshot()
@@ -322,14 +322,14 @@ describe('local ambulance runtime', () => {
   })
 
   test('consumes the full movement budget across dense route geometry', async () => {
-    const start = osloAmbulanceScenario.initialObjects.find(object => object.kind === 'mobile_entity')?.spatial.position?.point
+    const start = responseScenario.initialObjects.find(object => object.kind === 'mobile_entity')?.spatial.position?.point
     if (!start) throw new Error('scenario missing ambulance start')
     const [startLon, startLat] = start.coordinates
     const denseCoordinates = Array.from({ length: 50 }, (_value, index) =>
       geoPointFromLonLat(startLon, startLat + index * 0.00001).coordinates)
     const engine = createAmbulanceSimEngine({
       simulationRunId,
-      objects: osloAmbulanceScenario.initialObjects,
+      objects: responseScenario.initialObjects,
       routing: {
         id: 'test-dense-route',
         route: async () => ({
@@ -370,7 +370,7 @@ describe('local ambulance runtime', () => {
   test('uses the same default motion profile for new and restored motion', async () => {
     const engine = createAmbulanceSimEngine({
       simulationRunId: 'run-test-motion-profile' as SimulationRunId,
-      objects: osloAmbulanceScenario.initialObjects,
+      objects: responseScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const initial = engine.snapshot()
@@ -486,7 +486,7 @@ describe('local ambulance runtime', () => {
   })
 
   test('loads patients and reduces victims when an empty ambulance reaches an incident', async () => {
-    const baseObjects = osloAmbulanceScenario.initialObjects
+    const baseObjects = responseScenario.initialObjects
     const baseAmbulance = baseObjects.find(object => object.id === 'amb:a12')
     const baseIncident = baseObjects.find(object => object.id === 'incident:gronland-unattended')
     if (!baseAmbulance || !baseIncident || !baseAmbulance.spatial.position || !baseIncident.spatial.position) {
@@ -540,7 +540,7 @@ describe('local ambulance runtime', () => {
   test('marks an incident resolved when arriving ambulance capacity covers all victims', async () => {
     const baseObjects = createAmbulanceSimEngine({
       simulationRunId,
-      objects: osloAmbulanceScenario.initialObjects,
+      objects: responseScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     }).snapshot().objects
     const initialObjects = baseObjects.map(object => {
@@ -581,7 +581,7 @@ describe('local ambulance runtime', () => {
   test('unloads patients and updates hospital capacity when a loaded ambulance reaches a hospital', async () => {
     const baseObjects = createAmbulanceSimEngine({
       simulationRunId,
-      objects: osloAmbulanceScenario.initialObjects,
+      objects: responseScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     }).snapshot().objects
     const initialObjects = baseObjects.map(object => object.kind === 'mobile_entity' ? withAmbulancePatients(object, 1, 1) : object)
@@ -617,7 +617,7 @@ describe('local ambulance runtime', () => {
   test('keeps loaded ambulance waiting when hospital has no receiving capacity', async () => {
     const baseObjects = createAmbulanceSimEngine({
       simulationRunId,
-      objects: osloAmbulanceScenario.initialObjects,
+      objects: responseScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     }).snapshot().objects
     const initialObjects = baseObjects.map(object => {

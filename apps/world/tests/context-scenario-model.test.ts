@@ -10,14 +10,14 @@ import {
   type SimulationRunId,
   type ObjectId,
 } from '../src/core/model/index.ts'
-import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
+import { responseScenario } from './fixtures/scenarios.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 
 const ambulanceObjects = () =>
   createAmbulanceSimEngine({
     simulationRunId: 'run-context-model-test' as SimulationRunId,
-    objects: osloAmbulanceScenario.initialObjects,
+    objects: responseScenario.initialObjects,
     routing: createDirectRoutingAdapter(),
   }).snapshot().objects
 

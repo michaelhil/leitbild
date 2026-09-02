@@ -6,7 +6,7 @@ import { newWorkspaceId } from '@leitbild/contracts'
 import { createWorldModuleState } from './module-state.ts'
 import { worldWorkspacePaths } from './paths.ts'
 import { createWorldWorkspaceRuntimeRegistry, type WorldWorkspaceRuntimeRegistry } from './runtime-registry.ts'
-import { createTestPackRuntimeAdapters, createTestScenarioCatalog, testScenarioAuthoring } from '../../../tests/helpers.ts'
+import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testScenarioAuthoring } from '../../../tests/helpers.ts'
 
 const temporaryDirectories: string[] = []
 const registries: WorldWorkspaceRuntimeRegistry[] = []
@@ -22,7 +22,7 @@ const createRegistry = async () => {
   const registry = createWorldWorkspaceRuntimeRegistry({
     dataDir,
     moduleState: createWorldModuleState({ dataDir }),
-    scenarioCatalog: createTestScenarioCatalog(),
+    scenarioRuntimeResolver: createTestScenarioRuntimeResolver(),
     ...testScenarioAuthoring(),
     runtimeAdapters: createTestPackRuntimeAdapters(),
   })
@@ -46,8 +46,8 @@ describe('World Workspace runtime registry', () => {
     const { registry } = await createRegistry()
     const first = (await registry.provision(newWorkspaceId())).runtime
     const second = (await registry.provision(newWorkspaceId())).runtime
-    const firstRun = await first.simulationRuns.create()
-    const secondRun = await second.simulationRuns.create()
+    const firstRun = await first.simulationRuns.create({ scenarioId: 'test-response' })
+    const secondRun = await second.simulationRuns.create({ scenarioId: 'test-response' })
     expect(firstRun.id).not.toBe(secondRun.id)
     expect(await first.simulationRuns.listKnown()).toHaveLength(1)
     expect(await second.simulationRuns.listKnown()).toHaveLength(1)
@@ -57,7 +57,7 @@ describe('World Workspace runtime registry', () => {
     const { dataDir, registry } = await createRegistry()
     const workspaceId = newWorkspaceId()
     const workspace = (await registry.provision(workspaceId)).runtime
-    const simulationRun = await workspace.simulationRuns.create()
+    const simulationRun = await workspace.simulationRuns.create({ scenarioId: 'test-response' })
     expect(await registry.close(workspaceId)).toBe(true)
     expect((await registry.getOrLoad(workspaceId)).simulationRuns.listKnown()).resolves.toContainEqual(
       expect.objectContaining({ id: simulationRun.id }),

@@ -11,7 +11,7 @@ import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/s
 import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { createTestScenarioCatalog, testScenarioAuthoring } from './helpers.ts'
+import { createTestScenarioRuntimeResolver, testScenarioAuthoring } from './helpers.ts'
 import { deferred, procedureTestCatalog, procedureTestDocument, procedureTestSource } from './procedure-fixtures.ts'
 import type { ProcedureSourceService } from '../src/features/procedures/source.ts'
 import { procedureRunFor } from '../src/ui/procedures/procedure-run-selectors.ts'
@@ -23,12 +23,12 @@ describe('procedure commands through the real publish queue and realtime project
     const actorB = { id: actorIdSchema.parse('operator:b'), label: 'B', role: 'operator' as const }
     let readDocument: ProcedureSourceService['readDocument'] = async input => procedureTestDocument(input.procedureId, input.sourceRevision)
     const registry = createSimulationRunRegistry({
-      dataDir, workspaceId: newWorkspaceId(), scenarioCatalog: createTestScenarioCatalog(), ...testScenarioAuthoring(),
+      dataDir, workspaceId: newWorkspaceId(), scenarioRuntimeResolver: createTestScenarioRuntimeResolver(), ...testScenarioAuthoring(),
       runtimeAdapters: [createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
         createLocalTrafficPackRuntimeAdapter(), createLocalWeatherPackRuntimeAdapter()],
       procedureSourceService: { listSources: () => [], readCatalog: async () => procedureTestCatalog(), readDocument: async input => await readDocument(input) },
     })
-    const runtime = await registry.create()
+    const runtime = await registry.create({ scenarioId: 'test-response' })
     const clients = [createSimulationRunStateStore(), createSimulationRunStateStore()]
     const batches: ReadonlyArray<SimulationRunEvent>[] = []
     const realtime = createSimulationRunRealtimeManager<(typeof clients)[number]>({ registry,

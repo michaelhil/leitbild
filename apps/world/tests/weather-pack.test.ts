@@ -16,7 +16,7 @@ import { weatherPackDataSchema } from '../src/packs/weather/model.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { weatherSimRuntimeId } from '../src/packs/weather/sim/constants.ts'
-import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
+import { responseScenario } from './fixtures/scenarios.ts'
 import type { PackMapAreaFeature } from '../src/core/packs/protocol.ts'
 import { testRuntimeConnectionConfig } from './helpers.ts'
 
@@ -82,11 +82,11 @@ const weatherMapFeatures = async (config: {
 }): Promise<ReadonlyArray<PackMapAreaFeature>> => {
   const adapter = createLocalWeatherPackRuntimeAdapter()
   const connection = await adapter.connect({ simulationRunId, scenario: {
-    scenarioId: osloAmbulanceScenario.id,
+    scenarioId: responseScenario.id,
     runtimeIds: [weatherSimRuntimeId],
     connections: [],
-    world: osloAmbulanceScenario.world,
-    initialObjects: osloAmbulanceScenario.initialObjects,
+    world: responseScenario.world,
+    initialObjects: responseScenario.initialObjects,
     runtimeConfigByRuntimeId: {},
     runtimeConfig: {},
   } })
@@ -216,13 +216,13 @@ describe('weather pack', () => {
   })
 
   test('built-in scenarios include the weather pack as a sampleable condition runtime', () => {
-    const weatherObject = osloAmbulanceScenario.initialObjects.find(object => object.packId === 'weather')
+    const weatherObject = responseScenario.initialObjects.find(object => object.packId === 'weather')
     if (!weatherObject) throw new Error('Oslo scenario missing weather condition')
 
-    const presentation = weatherPack.presentation.presentObject(weatherObject, { objects: osloAmbulanceScenario.initialObjects })
+    const presentation = weatherPack.presentation.presentObject(weatherObject, { objects: responseScenario.initialObjects })
     const parsedWeather = weatherPackDataSchema.parse(weatherObject.packData)
 
-    expect(osloAmbulanceScenario.packs).toContain('weather')
+    expect(responseScenario.packs).toContain('weather')
     expect(presentation.categoryId).toBe('weather')
     expect(presentation.noteworthyUpdates).toBe(false)
     expect(presentation.mapIconVisible).toBe(false)
@@ -230,7 +230,7 @@ describe('weather pack', () => {
     expect(parsedWeather.render?.truthResolution).toBe(8)
     expect(parsedWeather.conditionKind).toBe('weather_influence')
     expect(weatherObject.spatial.position?.point.type).toBe('Point')
-    const sample = weatherSampleAtPoint(osloAmbulanceScenario.initialObjects, geoPointFromLonLat(10.7522, 59.9139), nowIso())
+    const sample = weatherSampleAtPoint(responseScenario.initialObjects, geoPointFromLonLat(10.7522, 59.9139), nowIso())
     expect(sample.activeInfluenceIds.length).toBeGreaterThan(0)
     expect(['none', 'rain']).toContain(sample.state.atmosphere.precipitation.type)
   })
@@ -276,16 +276,16 @@ describe('weather pack', () => {
   })
 
   test('moving weather influence shapes follow simulation time', async () => {
-    const start = osloAmbulanceScenario.world.startsAt
+    const start = responseScenario.world.startsAt
     if (!start) throw new Error('expected Oslo scenario start time')
     const later = new Date(Date.parse(start) + 420_000).toISOString() as IsoTimestamp
     const adapter = createLocalWeatherPackRuntimeAdapter()
     const connection = await adapter.connect({ simulationRunId, scenario: {
-      scenarioId: osloAmbulanceScenario.id,
+      scenarioId: responseScenario.id,
       runtimeIds: [weatherSimRuntimeId],
       connections: [],
-      world: osloAmbulanceScenario.world,
-      initialObjects: osloAmbulanceScenario.initialObjects,
+      world: responseScenario.world,
+      initialObjects: responseScenario.initialObjects,
       runtimeConfigByRuntimeId: {},
       runtimeConfig: {},
     } })
@@ -329,12 +329,12 @@ describe('weather pack', () => {
   })
 
   test('sparse field materializes only cells touched by weather objects', () => {
-    const start = osloAmbulanceScenario.world.startsAt
+    const start = responseScenario.world.startsAt
     if (!start) throw new Error('expected Oslo scenario start time')
     const field = createWeatherSparseField(osloWeatherGrid)
     const updated = updateWeatherSparseField({
       field,
-      objects: osloAmbulanceScenario.initialObjects,
+      objects: responseScenario.initialObjects,
       at: start,
       elapsedSeconds: 60,
     })
@@ -345,11 +345,11 @@ describe('weather pack', () => {
   })
 
   test('sparse field preserves surface memory after a weather object moves away', () => {
-    const start = osloAmbulanceScenario.world.startsAt
+    const start = responseScenario.world.startsAt
     if (!start) throw new Error('expected Oslo scenario start time')
     const startField = updateWeatherSparseField({
       field: createWeatherSparseField(osloWeatherGrid),
-      objects: osloAmbulanceScenario.initialObjects,
+      objects: responseScenario.initialObjects,
       at: start,
       elapsedSeconds: 180,
     }).field
@@ -358,7 +358,7 @@ describe('weather pack', () => {
     const later = new Date(Date.parse(start) + 900_000).toISOString() as IsoTimestamp
     const laterField = updateWeatherSparseField({
       field: startField,
-      objects: osloAmbulanceScenario.initialObjects,
+      objects: responseScenario.initialObjects,
       at: later,
       elapsedSeconds: 60,
     }).field
@@ -415,9 +415,9 @@ describe('weather pack', () => {
   })
 
   test('overlapping weather objects blend through the same sparse cell update pass', () => {
-    const start = osloAmbulanceScenario.world.startsAt
+    const start = responseScenario.world.startsAt
     if (!start) throw new Error('expected Oslo scenario start time')
-    const weatherObjects = osloAmbulanceScenario.initialObjects.filter(object => object.packId === 'weather')
+    const weatherObjects = responseScenario.initialObjects.filter(object => object.packId === 'weather')
     expect(weatherObjects.length).toBeGreaterThanOrEqual(2)
     const updated = updateWeatherSparseField({
       field: createWeatherSparseField(osloWeatherGrid),
@@ -457,7 +457,7 @@ describe('weather pack', () => {
 
   test('local runtime creates weather probes as point observations sampled from active zones', async () => {
     const adapter = createLocalWeatherPackRuntimeAdapter()
-    const zone = osloAmbulanceScenario.initialObjects.find(object => object.packId === 'weather')
+    const zone = responseScenario.initialObjects.find(object => object.packId === 'weather')
     if (!zone) throw new Error('Oslo scenario missing weather condition')
     const connection = await adapter.connect(testRuntimeConnectionConfig({ simulationRunId, runtimeIds: [adapter.id], initialObjects: [zone] }))
     const result = await connection.sendCommand(command({

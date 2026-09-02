@@ -2,11 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import type { IsoTimestamp } from '../src/core/model/index.ts'
 import { scenarioDefinitionSchema } from '../src/core/model/index.ts'
 import { dueScenarioTimelineCues } from '../src/core/simulation-runs/timeline-runner.ts'
-import { osloAmbulanceScenario, scenarios } from '../src/scenarios/index.ts'
+import { responseScenario, scenarios } from './fixtures/scenarios.ts'
 
 describe('scenario timeline model', () => {
   test('validates timed scenario cues and declarative actions', () => {
-    const parsed = scenarioDefinitionSchema.parse(osloAmbulanceScenario)
+    const parsed = scenarioDefinitionSchema.parse(responseScenario)
 
     expect(parsed.packs).toEqual(['ambulance', 'traffic', 'weather'])
     expect(parsed.initialObjects.some(object => object.id === 'traffic:ring2-slowdown')).toBe(true)
@@ -20,7 +20,7 @@ describe('scenario timeline model', () => {
   })
 
   test('drone scenario invokes discoverable startup capabilities through the scenario runner', () => {
-    const droneScenario = scenarios.find(scenario => scenario.id === 'oslo-drone-operations')
+    const droneScenario = scenarios.find(scenario => scenario.id === 'test-drone')
     if (!droneScenario) throw new Error('missing drone scenario')
     const parsed = scenarioDefinitionSchema.parse(droneScenario)
     const commandActions = parsed.timeline?.cues.flatMap(cue =>
@@ -35,24 +35,24 @@ describe('scenario timeline model', () => {
 
   test('rejects duplicate scenario timeline cue ids', () => {
     expect(() => scenarioDefinitionSchema.parse({
-      ...osloAmbulanceScenario,
+      ...responseScenario,
       timeline: {
         cues: [
-          osloAmbulanceScenario.timeline?.cues[0],
-          osloAmbulanceScenario.timeline?.cues[0],
+          responseScenario.timeline?.cues[0],
+          responseScenario.timeline?.cues[0],
         ],
       },
     })).toThrow('duplicate scenario timeline cue id')
   })
 
   test('computes due timeline cues from scenario start and fired cue ids', () => {
-    const timeline = osloAmbulanceScenario.timeline
+    const timeline = responseScenario.timeline
     if (!timeline) throw new Error('scenario missing timeline')
     const startedAt = '2026-01-01T09:00:00.000Z' as IsoTimestamp
     const dueAtThreeMinutes = dueScenarioTimelineCues({
       timeline,
       state: {
-        scenarioId: osloAmbulanceScenario.id,
+        scenarioId: responseScenario.id,
         highlightedObjectIds: [],
         timeline: {
           startedAt,

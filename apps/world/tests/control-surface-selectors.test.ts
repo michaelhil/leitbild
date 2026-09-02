@@ -7,7 +7,7 @@ import {
   selectedControllerObjectFor,
 } from '../src/ui/control-surface-selectors.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
-import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
+import { responseScenario } from './fixtures/scenarios.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createActivePackViews } from '../src/core/packs/active-views.ts'
@@ -17,7 +17,7 @@ const ambulanceViews = createActivePackViews([ambulancePack])
 const scenarioObjects = () =>
   createAmbulanceSimEngine({
     simulationRunId: 'run-control-surface-selectors' as SimulationRunId,
-    objects: osloAmbulanceScenario.initialObjects,
+    objects: responseScenario.initialObjects,
     routing: createDirectRoutingAdapter(),
   }).snapshot().objects
 

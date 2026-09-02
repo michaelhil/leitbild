@@ -79,6 +79,11 @@ export const resourceSummaryItemSchema = z.discriminatedUnion('kind', [
 ])
 export type ResourceSummaryItem = z.infer<typeof resourceSummaryItemSchema>
 
+export const resourceRenameInputSchema = z.object({
+  name: z.string().trim().min(1).max(256).nullable(),
+  expectedTitle: z.string().trim().min(1).max(256),
+}).strict()
+
 export const moduleResourceDescriptorSchema = z.object({
   ref: workspaceResourceReferenceSchema,
   title: z.string().trim().min(1).max(256),
@@ -88,6 +93,8 @@ export const moduleResourceDescriptorSchema = z.object({
   uiPath: relativeUiPathSchema.optional(),
   capabilityIds: z.array(capabilityIdSchema),
   inspectionCapabilityId: capabilityIdSchema.optional(),
+  deleteCapabilityId: capabilityIdSchema.optional(),
+  renameCapabilityId: capabilityIdSchema.optional(),
   summary: z.array(resourceSummaryItemSchema).max(8).default([]),
   observedAt: isoTimestampSchema,
 }).strict().superRefine((resource, ctx) => {
@@ -101,15 +108,10 @@ export const moduleResourceDescriptorSchema = z.object({
     }
     seen.add(capabilityId)
   })
-  if (
-    resource.inspectionCapabilityId !== undefined
-    && !seen.has(resource.inspectionCapabilityId)
-  ) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['inspectionCapabilityId'],
-      message: 'Inspection Capability must be included in Resource capabilityIds',
-    })
+  for (const field of ['inspectionCapabilityId', 'deleteCapabilityId', 'renameCapabilityId'] as const) {
+    if (resource[field] !== undefined && !seen.has(resource[field])) {
+      ctx.addIssue({ code: 'custom', path: [field], message: 'Card Capability must be included in Resource capabilityIds' })
+    }
   }
   if (resource.sourceDefinition !== undefined && (
     resource.sourceDefinition.workspaceId !== resource.ref.workspaceId

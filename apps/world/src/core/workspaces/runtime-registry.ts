@@ -1,5 +1,5 @@
 import type { WorkspaceId } from '@leitbild/contracts'
-import type { ScenarioCatalog } from '../scenarios/catalog.ts'
+import type { ScenarioRuntimeResolver } from '../scenarios/runtime-resolver.ts'
 import type { ScenarioSource } from '../scenarios/config.ts'
 import type { ScenarioDefinition } from '../model/index.ts'
 import type { ScenarioAuthoringCatalog } from '../scenarios/authoring.ts'
@@ -29,7 +29,7 @@ export interface WorldWorkspaceRuntimeRegistry {
 export const createWorldWorkspaceRuntimeRegistry = (config: {
   readonly dataDir: string
   readonly moduleState: WorldModuleState
-  readonly scenarioCatalog: ScenarioCatalog
+  readonly scenarioRuntimeResolver: ScenarioRuntimeResolver
   readonly scenarioSources: ReadonlyArray<ScenarioSource>
   readonly compileScenarioSource: (source: unknown) => Promise<ScenarioDefinition>
   readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
@@ -45,7 +45,7 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
     simulationRuns: createSimulationRunRegistry({
       dataDir: config.dataDir,
       workspaceId,
-      scenarioCatalog: config.scenarioCatalog,
+      scenarioRuntimeResolver: config.scenarioRuntimeResolver,
       scenarioSources: config.scenarioSources,
       compileScenarioSource: config.compileScenarioSource,
       scenarioAuthoringCatalog: config.scenarioAuthoringCatalog,

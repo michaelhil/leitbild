@@ -9,7 +9,7 @@ import {
 } from '../model/index.ts'
 import type { PackRuntimeAdapter } from '../../simulation/protocol.ts'
 import { createRuntimeHub } from '../../simulation/runtime-hub.ts'
-import type { ScenarioCatalog } from '../scenarios/catalog.ts'
+import type { ScenarioRuntimeResolver } from '../scenarios/runtime-resolver.ts'
 import type { ScenarioSource } from '../scenarios/config.ts'
 import type { ScenarioDefinition } from '../model/index.ts'
 import type { ScenarioAuthoringCatalog } from '../scenarios/authoring.ts'
@@ -34,6 +34,7 @@ import {
 import { createRunHistorian } from '../../features/historian/store.ts'
 import { worldCoreCapabilities } from '../../simulation/core-capabilities.ts'
 import { capabilityJsonSchema } from '../../simulation/capabilities.ts'
+import { readRunDisplayName, writeRunDisplayName, runDisplayNameSchema } from './display-name.ts'
 
 const maxRestoredEventHistoryBytes = 8 * 1024 * 1024
 
@@ -47,6 +48,8 @@ export interface SimulationRunLeaseSummary {
 
 export interface SimulationRunSummary {
   readonly id: SimulationRunId
+  readonly name: string | null
+  readonly title: string
   readonly scenarioId: string | null
   readonly scenarioTitle: string | null
   readonly scenarioRevisionId: string | null
@@ -75,13 +78,15 @@ export interface SimulationRunRegistry {
   readonly workspaceId: WorkspaceId
   readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
   readonly installedCapabilities: ReadonlyArray<ActiveSimulationCapability>
-  readonly create: (config?: { readonly scenarioId?: string; readonly scenarioRevisionId?: ScenarioRevisionId }) => Promise<SimulationRunRuntime>
+  readonly create: (config: { readonly scenarioId: string; readonly scenarioRevisionId?: ScenarioRevisionId }) => Promise<SimulationRunRuntime>
   readonly load: (id: SimulationRunId) => Promise<SimulationRunRuntime>
   readonly reset: (id: SimulationRunId) => Promise<SimulationRunRuntime>
   readonly delete: (id: SimulationRunId) => Promise<boolean>
+  readonly rename: (id: SimulationRunId, name: string | null, expectedTitle: string) => Promise<SimulationRunSummary>
   readonly get: (id: SimulationRunId) => SimulationRunRuntime | undefined
   readonly list: () => ReadonlyArray<SimulationRunRuntime>
   readonly listKnown: () => Promise<ReadonlyArray<SimulationRunSummary>>
+  readonly summary: (id: SimulationRunId) => Promise<SimulationRunSummary>
   readonly status: () => Promise<SimulationRunRegistryStatus>
   readonly acquireLease: (id: SimulationRunId, kind: SimulationRunLeaseKind) => () => void
   readonly leaseSummary: (id: SimulationRunId) => SimulationRunLeaseSummary
@@ -93,7 +98,6 @@ export interface SimulationRunRegistry {
   readonly deleteScenario: (id: string, revisionId: ScenarioRevisionId) => Promise<boolean>
   readonly scenarioRevisionForRun: (id: SimulationRunId) => Promise<ScenarioRevision | undefined>
   readonly compileScenarioRevision: (revision: ScenarioRevision) => Promise<ScenarioDefinition>
-  readonly defaultScenarioId: () => string
   readonly close: (id: SimulationRunId) => Promise<boolean>
 }
 
@@ -101,7 +105,7 @@ export const createSimulationRunRegistry = (config: {
   readonly dataDir: string
   readonly workspaceId: WorkspaceId
   readonly runtimeAdapters: ReadonlyArray<PackRuntimeAdapter>
-  readonly scenarioCatalog: ScenarioCatalog
+  readonly scenarioRuntimeResolver: ScenarioRuntimeResolver
   readonly scenarioSources: ReadonlyArray<ScenarioSource>
   readonly compileScenarioSource: (source: unknown) => Promise<ScenarioDefinition>
   readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
@@ -125,6 +129,7 @@ export const createSimulationRunRegistry = (config: {
   })
   let scenarioLibraryReady: Promise<void> | null = null
   const compiledScenarios = new Map<ScenarioRevisionId, Promise<ScenarioDefinition>>()
+  const pinnedTitles = new Map<string, string>()
   const installedCapabilities: ReadonlyArray<ActiveSimulationCapability> = [
     ...worldCoreCapabilities.map(capability => ({ packId: 'world', runtimeId: 'world.core', capability })),
     ...config.runtimeAdapters.flatMap(adapter =>
@@ -222,21 +227,9 @@ export const createSimulationRunRegistry = (config: {
   }
 
   const capabilitiesFor = (
-    scenarioRuntime: ReturnType<ScenarioCatalog['runtimeFor']>,
+    scenarioRuntime: ReturnType<ScenarioRuntimeResolver['resolve']>,
     scenarioRevisionId: ScenarioRevision['id'],
   ): Omit<SimulationRunCapabilities, 'simulationRunId'> => {
-    if (!scenarioRuntime) {
-      return {
-        workspaceId: config.workspaceId,
-        scenarioId: null,
-        scenarioRevisionId,
-        activePackIds: [],
-        runtimes: [],
-        capabilities: [],
-        wikiRefs: [],
-        recording: { selections: [], profiles: [] },
-      }
-    }
     const activeRuntimeIds = new Set(scenarioRuntime.runtimes.map(runtime => runtime.runtimeId))
     const activeAdapters = config.runtimeAdapters.filter(adapter => activeRuntimeIds.has(adapter.id))
     const capabilities = [
@@ -327,7 +320,7 @@ export const createSimulationRunRegistry = (config: {
 
   const resolveManifest = async (manifest: SimulationRunManifest): Promise<{
     readonly revision: ScenarioRevision
-    readonly scenarioRuntime: NonNullable<ReturnType<ScenarioCatalog['runtimeForDefinition']>>
+    readonly scenarioRuntime: NonNullable<ReturnType<ScenarioRuntimeResolver['resolve']>>
   }> => {
     if (manifest.workspaceId !== config.workspaceId) {
       throw new Error(`Simulation Run Workspace mismatch: expected ${config.workspaceId}, got ${manifest.workspaceId}`)
@@ -344,7 +337,7 @@ export const createSimulationRunRegistry = (config: {
     if (compiledScenarioDigest(compiledScenario) !== manifest.scenario.compiledDigest) {
       throw new Error(`Simulation Run Compiled Scenario integrity mismatch: ${manifest.id}`)
     }
-    const scenarioRuntime = config.scenarioCatalog.runtimeForDefinition(compiledScenario)
+    const scenarioRuntime = config.scenarioRuntimeResolver.resolve(compiledScenario)
     const packVersions = new Map(scenarioRuntime.packs.map(pack => [pack.descriptor.id, pack.descriptor.version]))
     const installedAdapters = new Map(config.runtimeAdapters.map(adapter => [adapter.id, adapter]))
     const expectedPackIds = manifest.packs.map(pack => pack.id).sort()
@@ -385,7 +378,7 @@ export const createSimulationRunRegistry = (config: {
     if (!revision) throw new Error(`unknown Scenario: ${scenarioId}`)
     if (revision.definitionId !== scenarioId) throw new Error(`Scenario Revision does not belong to Scenario: ${scenarioId}`)
     const compiledScenario = await compileRevision(revision)
-    const scenarioRuntime = config.scenarioCatalog.runtimeForDefinition(compiledScenario)
+    const scenarioRuntime = config.scenarioRuntimeResolver.resolve(compiledScenario)
     const adaptersById = new Map(config.runtimeAdapters.map(adapter => [adapter.id, adapter]))
     const manifest = simulationRunManifestSchema.parse({
       schemaVersion: 1,
@@ -529,8 +522,8 @@ export const createSimulationRunRegistry = (config: {
     return runtime
   }
 
-  const create = async (createConfig?: { readonly scenarioId?: string; readonly scenarioRevisionId?: ScenarioRevisionId }): Promise<SimulationRunRuntime> => {
-    const requestedScenarioId = createConfig?.scenarioId ?? config.scenarioCatalog.defaultScenarioId()
+  const create = async (createConfig: { readonly scenarioId: string; readonly scenarioRevisionId?: ScenarioRevisionId }): Promise<SimulationRunRuntime> => {
+    const requestedScenarioId = z.string().min(1).parse(createConfig.scenarioId)
     const id = newSimulationRunId()
     if (simulationRuns.has(id) || creatingSimulationRuns.has(id)) throw new Error(`simulation run already exists: ${id}`)
     const { manifest, compiledScenario } = await createManifest(id, requestedScenarioId, createConfig?.scenarioRevisionId)
@@ -629,6 +622,8 @@ export const createSimulationRunRegistry = (config: {
     if (!manifest) {
       return {
         id,
+        name: null,
+        title: id,
         scenarioId: null,
         scenarioTitle: null,
         scenarioRevisionId: null,
@@ -642,16 +637,22 @@ export const createSimulationRunRegistry = (config: {
       }
     }
     const loaded = simulationRuns.get(id)
-    await ensureScenarioLibrary()
-    // Resource discovery needs display metadata, not the pinned Scenario body.
-    // Keeping it on the catalog index prevents one unreadable revision from
-    // taking the entire Workspace Resource catalog down.
-    const scenario = await scenarioLibrary.get(manifest.scenario.id)
-    const scenarioTitle = scenario?.title ?? null
+    // Names must not follow a mutable or deleted catalog entry. Read the pinned
+    // compiled artifact; it also remains readable if the authored revision fails.
+    let scenarioTitle = pinnedTitles.get(manifest.scenario.compiledDigest)
+    if (scenarioTitle === undefined) {
+      const scenario = await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).load()
+      scenarioTitle = scenario.title
+      pinnedTitles.set(manifest.scenario.compiledDigest, scenarioTitle)
+    }
+    const name = await readRunDisplayName(join(simulationRunRoot, id, 'display-name.json'))
+    const title = name ?? scenarioTitle
     if (loaded) {
       const snapshot = loaded.snapshot()
       return {
         id,
+        name,
+        title,
         scenarioId: manifest.scenario.id,
         scenarioTitle,
         scenarioRevisionId: manifest.scenario.revisionId,
@@ -678,6 +679,8 @@ export const createSimulationRunRegistry = (config: {
     }
     return {
       id,
+      name,
+      title,
       scenarioId: manifest.scenario.id,
       scenarioTitle,
       scenarioRevisionId: manifest.scenario.revisionId,
@@ -696,6 +699,20 @@ export const createSimulationRunRegistry = (config: {
     const summaries: SimulationRunSummary[] = []
     for (const id of [...ids].sort()) summaries.push(await summaryFor(id))
     return summaries
+  }
+
+  let displayNameQueue: Promise<unknown> = Promise.resolve()
+  const renameRun = (id: SimulationRunId, name: string | null, expectedTitle: string): Promise<SimulationRunSummary> => {
+    const change = displayNameQueue.then(async () => {
+      runDisplayNameSchema.parse(name)
+      const current = await summaryFor(id)
+      if (current.scenarioId === null) throw new Error(`Simulation Run not found: ${id}`)
+      if (current.title !== expectedTitle) throw Object.assign(new Error('Simulation Run name changed; refresh before renaming'), { code: 'simulation_run_name_changed' })
+      await writeRunDisplayName(join(simulationRunRoot, id, 'display-name.json'), name)
+      return await summaryFor(id)
+    })
+    displayNameQueue = change.then(() => undefined, () => undefined)
+    return change
   }
 
   const scenarioRevisionForRun = async (id: SimulationRunId): Promise<ScenarioRevision | undefined> => {
@@ -747,9 +764,11 @@ export const createSimulationRunRegistry = (config: {
     load,
     reset,
     delete: deleteSimulationRun,
+    rename: renameRun,
     get: (id: SimulationRunId) => simulationRuns.get(id),
     list: () => [...simulationRuns.values()],
     listKnown,
+    summary: summaryFor,
     status,
     acquireLease,
     leaseSummary,
@@ -780,7 +799,6 @@ export const createSimulationRunRegistry = (config: {
     },
     scenarioRevisionForRun,
     compileScenarioRevision: compileRevision,
-    defaultScenarioId: () => config.scenarioCatalog.defaultScenarioId(),
     close,
   }
 }

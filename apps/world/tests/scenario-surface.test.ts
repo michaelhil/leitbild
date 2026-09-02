@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'bun:test'
-import { createScenarioCatalog } from '../src/core/scenarios/catalog.ts'
+import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import { scenarioDefinitionSchema, type ScenarioDefinition } from '../src/core/model/index.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { trafficPack } from '../src/packs/traffic/pack.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
-import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
+import { responseScenario } from './fixtures/scenarios.ts'
 import { categoryRowsForSurface, surfaceMapConfig, surfaceObjectRailConfig } from '../src/ui/surface.ts'
 
 describe('scenario surface model', () => {
   test('expands the Oslo scenario surface into safe primitives', () => {
-    const parsed = scenarioDefinitionSchema.parse(osloAmbulanceScenario) as ScenarioDefinition
+    const parsed = scenarioDefinitionSchema.parse(responseScenario) as ScenarioDefinition
     const mapConfig = surfaceMapConfig(parsed.surface)
     const railConfig = surfaceObjectRailConfig(parsed.surface)
 
@@ -28,7 +28,7 @@ describe('scenario surface model', () => {
 
   test('rejects map surfaces without an explicit viewport', () => {
     expect(() => scenarioDefinitionSchema.parse({
-      ...osloAmbulanceScenario,
+      ...responseScenario,
       surface: {
         schemaVersion: 1,
         regions: [{
@@ -50,7 +50,7 @@ describe('scenario surface model', () => {
       { category: weatherPack.presentation.categories[0]!, objects: [] },
       { category: ambulancePack.presentation.categories[0]!, objects: [] },
       { category: ambulancePack.presentation.categories[2]!, objects: [] },
-    ], surfaceObjectRailConfig(osloAmbulanceScenario.surface))
+    ], surfaceObjectRailConfig(responseScenario.surface))
 
     expect(rows.map(row => row.category.id)).toEqual([
       'hospitals',
@@ -63,12 +63,12 @@ describe('scenario surface model', () => {
 
   test('rejects rail sections for inactive pack categories', () => {
     const scenario = scenarioDefinitionSchema.parse({
-      ...osloAmbulanceScenario,
+      ...responseScenario,
       packs: ['ambulance'],
       packConfigs: { ambulance: {} },
       surface: {
-        ...osloAmbulanceScenario.surface,
-        regions: osloAmbulanceScenario.surface.regions.map(region => (
+        ...responseScenario.surface,
+        regions: responseScenario.surface.regions.map(region => (
           region.primitive === 'objectRail'
             ? {
                 ...region,
@@ -90,9 +90,8 @@ describe('scenario surface model', () => {
       },
     }) as ScenarioDefinition
 
-    expect(() => createScenarioCatalog({
+    expect(() => createScenarioRuntimeResolver({
       packs: [ambulancePack, trafficPack, weatherPack],
-      scenarios: [scenario],
-    })).toThrow('surface rail references inactive category: weather')
+    }).resolve(scenario)).toThrow('surface rail references inactive category: weather')
   })
 })

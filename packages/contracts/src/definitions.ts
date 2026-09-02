@@ -36,6 +36,8 @@ export const moduleDefinitionDescriptorSchema = z.object({
   currentRevisionId: definitionRevisionIdSchema,
   capabilityIds: z.array(capabilityIdSchema),
   inspectionCapabilityId: capabilityIdSchema.optional(),
+  primaryCapabilityId: capabilityIdSchema.optional(),
+  deleteCapabilityId: capabilityIdSchema.optional(),
 }).strict().superRefine((definition, ctx) => {
   const seen = new Set<string>()
   definition.capabilityIds.forEach((capabilityId, index) => {
@@ -47,15 +49,10 @@ export const moduleDefinitionDescriptorSchema = z.object({
     }
     seen.add(capabilityId)
   })
-  if (
-    definition.inspectionCapabilityId !== undefined
-    && !seen.has(definition.inspectionCapabilityId)
-  ) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['inspectionCapabilityId'],
-      message: 'Inspection Capability must be included in Definition capabilityIds',
-    })
+  for (const field of ['inspectionCapabilityId', 'primaryCapabilityId', 'deleteCapabilityId'] as const) {
+    if (definition[field] !== undefined && !seen.has(definition[field])) {
+      ctx.addIssue({ code: 'custom', path: [field], message: 'Card Capability must be included in Definition capabilityIds' })
+    }
   }
 })
 export type ModuleDefinitionDescriptor = z.infer<typeof moduleDefinitionDescriptorSchema>

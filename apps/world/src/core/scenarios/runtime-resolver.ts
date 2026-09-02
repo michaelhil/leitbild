@@ -17,21 +17,13 @@ export interface ResolvedScenarioRuntime {
   readonly scenario: ScenarioDefinition
 }
 
-export interface ScenarioCatalog {
-  readonly listScenarios: () => ReadonlyArray<ScenarioDefinition>
-  readonly getScenario: (id: string) => ScenarioDefinition | undefined
-  readonly initialObjectsFor: (id: string) => ReadonlyArray<OperationalObject> | undefined
-  readonly runtimeFor: (id: string) => ResolvedScenarioRuntime | undefined
-  readonly runtimeForDefinition: (scenario: ScenarioDefinition) => ResolvedScenarioRuntime
-  readonly defaultScenarioId: () => string
+export interface ScenarioRuntimeResolver {
+  readonly resolve: (scenario: ScenarioDefinition) => ResolvedScenarioRuntime
 }
 
-export const createScenarioCatalog = (config: {
+export const createScenarioRuntimeResolver = (config: {
   readonly packs: ReadonlyArray<WorldPack>
-  readonly scenarios: ReadonlyArray<ScenarioDefinition>
-  readonly defaultScenarioId?: string
-}): ScenarioCatalog => {
-  const scenarios = new Map<string, ScenarioDefinition>()
+}): ScenarioRuntimeResolver => {
   const packs = new Map<string, WorldPack>()
 
   for (const pack of config.packs) {
@@ -86,21 +78,9 @@ export const createScenarioCatalog = (config: {
     }
   }
 
-  for (const scenarioCandidate of config.scenarios) {
-    const scenario = scenarioDefinitionSchema.parse(scenarioCandidate) as ScenarioDefinition
-    validateScenario(scenario)
-    if (scenarios.has(scenario.id)) throw new Error(`duplicate scenario id: ${scenario.id}`)
-    scenarios.set(scenario.id, scenario)
-  }
-
-  const defaultScenarioId = config.defaultScenarioId ?? config.scenarios[0]?.id
-  if (!defaultScenarioId) throw new Error('scenario catalog has no scenarios')
-  if (!scenarios.has(defaultScenarioId)) throw new Error(`default scenario is not registered: ${defaultScenarioId}`)
-
-  const sortedScenarios = (): ReadonlyArray<ScenarioDefinition> =>
-    [...scenarios.values()].sort((left, right) => left.id.localeCompare(right.id))
-
-  const resolveRuntime = (scenario: ScenarioDefinition): ResolvedScenarioRuntime => {
+  const resolveRuntime = (input: ScenarioDefinition): ResolvedScenarioRuntime => {
+    scenarioDefinitionSchema.parse(input)
+    const scenario = input
     validateScenario(scenario)
     const initialObjects = scenario.initialObjects
     const activePacks = scenario.packs.map(packId => packs.get(packId)!)
@@ -126,20 +106,5 @@ export const createScenarioCatalog = (config: {
     }
   }
 
-  return {
-    listScenarios: sortedScenarios,
-    getScenario: (id: string): ScenarioDefinition | undefined => scenarios.get(id),
-    initialObjectsFor: (id: string): ReadonlyArray<OperationalObject> | undefined => {
-      const scenario = scenarios.get(id)
-      if (!scenario) return undefined
-      return scenario.initialObjects
-    },
-    runtimeFor: (id: string): ResolvedScenarioRuntime | undefined => {
-      const scenario = scenarios.get(id)
-      if (!scenario) return undefined
-      return resolveRuntime(scenario)
-    },
-    runtimeForDefinition: resolveRuntime,
-    defaultScenarioId: (): string => defaultScenarioId,
-  }
+  return { resolve: resolveRuntime }
 }

@@ -1,5 +1,5 @@
 import { createServer } from './core/api/server.ts'
-import { createScenarioCatalog } from './core/scenarios/catalog.ts'
+import { createScenarioRuntimeResolver } from './core/scenarios/runtime-resolver.ts'
 import { compileScenarioSource } from './core/scenarios/config.ts'
 import { scenarioAuthoringCatalogFor } from './core/scenarios/authoring.ts'
 import { createWorldApplicationAssembly } from './app-assembly.ts'
@@ -12,9 +12,7 @@ import { createConfiguredProcedureSourceService } from './procedure-sources.ts'
 const routing = createRoutingAdapterFromEnv()
 const assembly = createWorldApplicationAssembly({ routing, env: process.env })
 const worldPacks = assembly.packs
-const scenarios = await Promise.all(builtinScenarioSources.map(source =>
-  compileScenarioSource(source, worldPacks, { routing })))
-const scenarioCatalog = createScenarioCatalog({ packs: worldPacks, scenarios })
+const scenarioRuntimeResolver = createScenarioRuntimeResolver({ packs: worldPacks })
 
 const dataDir = process.env.LEITBILD_DATA_DIR ?? 'data'
 const workspaceHostUrl = process.env.WORKSPACE_HOST_URL
@@ -25,7 +23,7 @@ const moduleState = createWorldModuleState({ dataDir })
 const workspaces = createWorldWorkspaceRuntimeRegistry({
   dataDir,
   moduleState,
-  scenarioCatalog,
+  scenarioRuntimeResolver,
   scenarioSources: builtinScenarioSources,
   compileScenarioSource: source => compileScenarioSource(source, worldPacks, { routing }),
   scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(worldPacks),

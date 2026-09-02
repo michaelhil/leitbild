@@ -39,7 +39,8 @@ import { droneScenarioSupport } from '../src/packs/drone/scenario.ts'
 import { babylonYawRadForHeadingDeg, bodyVelocityInBabylonFrame, horizontalVelocityFromBabylonBodyFrame } from '../src/packs/drone/spatial.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { loadDroneWorldTerrainStatus, localPointFromLonLat } from '../src/ui/drone/drone-map-world.ts'
-import { createTestScenarioCatalog, testRuntimeConnectionConfig, waitForCondition } from './helpers.ts'
+import { createTestScenarioRuntimeResolver, testRuntimeConnectionConfig, waitForCondition } from './helpers.ts'
+import { scenarios } from './fixtures/scenarios.ts'
 
 const simulationRunId = 'run-test-drone-control' as SimulationRunId
 const actorId = 'actor:test-pilot' as ActorId
@@ -659,8 +660,8 @@ describe('drone pack native runtime', () => {
   })
 
   test('built-in drone scenario resolves through native runtime', () => {
-    const catalog = createTestScenarioCatalog()
-    const scenario = catalog.runtimeFor('oslo-drone-operations')
+    const catalog = createTestScenarioRuntimeResolver()
+    const scenario = catalog.resolve(scenarios.find(candidate => candidate.id === 'test-drone')!)
     expect(scenario?.runtimes.some(runtime => runtime.runtimeId === droneNativeRuntimeId)).toBe(true)
     expect(scenario?.initialObjects.some(object => object.packId === dronePackId)).toBe(true)
   })

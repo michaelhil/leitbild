@@ -9,8 +9,8 @@ import {
   type SimulationRunEvent,
   type SimulationRunId,
 } from '../src/core/model/index.ts'
-import { scenarios } from '../src/scenarios/index.ts'
-import { builtinScenarioSources } from '../src/scenarios/index.ts'
+import { scenarios } from './fixtures/scenarios.ts'
+import { testScenarioSources } from './fixtures/scenarios.ts'
 import { compileScenarioSource } from '../src/core/scenarios/config.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { processPlantPack } from '../src/packs/process-plant/pack.ts'
@@ -26,7 +26,7 @@ const simulationRunId = 'run:halden-four-unit-integration' as SimulationRunId
 
 describe('electrical Pack connection', () => {
   test('rejects unresolved and multiply connected electrical ports at Scenario compilation', async () => {
-    const source = builtinScenarioSources.find(candidate => candidate.id === 'halden-four-unit-grid')
+    const source = testScenarioSources.find(candidate => candidate.id === 'halden-power-complex')
     if (!source) throw new Error('missing Halden four-unit Scenario source')
     const badPort = structuredClone(source)
     badPort.connections[0]!.network.portId = 'missing-port'
@@ -55,7 +55,7 @@ describe('electrical Pack connection', () => {
   })
 
   test('couples four independent Plants to Grid flow and frequency without duplicate generators', async () => {
-    const scenario = scenarios.find(candidate => candidate.id === 'halden-four-unit-grid')
+    const scenario = scenarios.find(candidate => candidate.id === 'halden-power-complex')
     if (!scenario) throw new Error('missing Halden four-unit scenario')
     const connection = await createRuntimeHub([
       createLocalProcessPlantPackRuntimeAdapter(),
@@ -145,7 +145,7 @@ describe('electrical Pack connection', () => {
   }, 20_000)
 
   test('removes a Plant runtime and its Grid exchange immediately on committed deletion', async () => {
-    const scenario = scenarios.find(candidate => candidate.id === 'halden-four-unit-grid')
+    const scenario = scenarios.find(candidate => candidate.id === 'halden-power-complex')
     if (!scenario) throw new Error('missing Halden four-unit scenario')
     const connection = await createRuntimeHub([
       createLocalProcessPlantPackRuntimeAdapter(),

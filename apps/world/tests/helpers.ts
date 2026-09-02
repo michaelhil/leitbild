@@ -1,8 +1,8 @@
 import type { SimulationRunId } from '../src/core/model/index.ts'
-import { createScenarioCatalog, type ScenarioCatalog } from '../src/core/scenarios/catalog.ts'
+import { createScenarioRuntimeResolver, type ScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { aviationPack } from '../src/packs/aviation/pack.ts'
-import { builtinScenarioSources, osloAmbulanceScenario, scenarios } from '../src/scenarios/index.ts'
+import { testScenarioSources, responseScenario, scenarios } from './fixtures/scenarios.ts'
 import { compileScenarioSource } from '../src/core/scenarios/config.ts'
 import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
@@ -23,14 +23,12 @@ import type { PackRuntimeAdapter, PackRuntimeConnectionConfig, PackScenarioRunti
 
 export const testPacks = [ambulancePack, trafficPack, weatherPack, dronePack, processPlantPack, aviationPack, electricGridPack] as const
 
-export const createTestScenarioCatalog = (): ScenarioCatalog => createScenarioCatalog({
+export const createTestScenarioRuntimeResolver = (): ScenarioRuntimeResolver => createScenarioRuntimeResolver({
   packs: testPacks,
-  scenarios,
-  defaultScenarioId: osloAmbulanceScenario.id,
 })
 
 export const testScenarioAuthoring = () => ({
-  scenarioSources: builtinScenarioSources,
+  scenarioSources: testScenarioSources,
   compileScenarioSource: (source: unknown) => compileScenarioSource(source, testPacks, { routing: createDirectRoutingAdapter() }),
   scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(testPacks),
 })
@@ -50,8 +48,8 @@ export const createTestPackRuntimeAdapters = (): ReadonlyArray<PackRuntimeAdapte
 }
 
 export const testScenarioRuntimeConfig = (): PackScenarioRuntimeConfig => {
-  const runtime = createTestScenarioCatalog().runtimeFor(osloAmbulanceScenario.id)
-  if (!runtime) throw new Error(`missing test scenario runtime: ${osloAmbulanceScenario.id}`)
+  const runtime = createTestScenarioRuntimeResolver().resolve(responseScenario)
+  if (!runtime) throw new Error(`missing test scenario runtime: ${responseScenario.id}`)
   return {
     scenarioId: runtime.scenarioId,
     runtimeIds: runtime.runtimes.map(runtime => runtime.runtimeId),

@@ -105,7 +105,7 @@ A simulation-time trigger with ordered declarative actions and Capability invoca
 _Avoid_: generic workflow step, arbitrary expression
 
 **Simulation Run**:
-A persistent execution of exactly one Scenario Revision inside one Workspace.
+A persistent execution of exactly one Scenario Revision inside one Workspace, with an optional independent display name. Editing or deleting the reusable Scenario does not rename or delete its Runs.
 _Avoid_: Instance, session, Scenario
 
 **Operational Object**:

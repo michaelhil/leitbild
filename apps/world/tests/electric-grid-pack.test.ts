@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandEnvelope, CommandId, IsoTimestamp, ObjectId, SimulationRunId } from '../src/core/model/index.ts'
 import { nowIso } from '../src/core/model/index.ts'
-import { createScenarioCatalog } from '../src/core/scenarios/catalog.ts'
+import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import {
   gridDerateBranchCommandKind,
   gridDispatchGeneratorCommandKind,
@@ -13,12 +13,13 @@ import { gridDefinitionSchema } from '../src/packs/electric-grid/config.ts'
 import { compileGridDefinition, compileGridModelIndex } from '../src/packs/electric-grid/definitions.ts'
 import { electricGridPackDataSchema } from '../src/packs/electric-grid/model.ts'
 import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
+import { addGridModelAssets, gridModelAdditionSchema, gridModelAdditions } from '../src/packs/electric-grid/model-additions.ts'
 import { createGridRuntimeInstance } from '../src/packs/electric-grid/runtime/instance.ts'
 import { advanceGrid } from '../src/packs/electric-grid/runtime/solver.ts'
 import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric-grid/sim/adapter.ts'
 import { electricGridRuntimeId } from '../src/packs/electric-grid/sim/constants.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
-import { scenarios } from '../src/scenarios/index.ts'
+import { scenarios } from './fixtures/scenarios.ts'
 import type { PackRuntimeConnection, PackRuntimeEvent, PackRuntimeStateStore } from '../src/simulation/protocol.ts'
 
 const simulationRunId = 'run-electric-grid-test' as SimulationRunId
@@ -39,8 +40,8 @@ const command = (config: {
 })
 
 const gridScenario = () => {
-  const scenario = scenarios.find(candidate => candidate.id === 'norway-electric-grid')
-  if (!scenario) throw new Error('missing built-in norway-electric-grid scenario')
+  const scenario = scenarios.find(candidate => candidate.id === 'test-grid')
+  if (!scenario) throw new Error('missing built-in test-grid scenario')
   return scenario
 }
 
@@ -67,10 +68,29 @@ const objectResult = (response: unknown): Record<string, unknown> => {
 }
 
 describe('electric grid Pack', () => {
+  test('discovers declarative topology additions without coupling the compiler to Halden', () => {
+    const definition = (modelRef: string, operatingPointRef: string) => compileGridDefinition(gridDefinitionSchema.parse({
+      id: 'grid:test', model: { ref: modelRef }, operatingPoint: { ref: operatingPointRef }, automation: { ref: 'electric-grid.norway.standard' },
+    }))
+    const base = definition('electric-grid.norway.transmission', 'electric-grid.norway.normal').model
+    const addition = gridModelAdditionSchema.parse({ ...gridModelAdditions[0], id: 'electric-grid.test.addition', title: 'Test addition' })
+    const combined = addGridModelAssets(base, addition)
+    expect(combined.id).toBe('electric-grid.test.addition')
+    expect(combined.buses.length).toBe(base.buses.length + addition.buses.length)
+    expect(combined.generators).toEqual(base.generators)
+    expect(() => compileGridModelIndex(combined)).not.toThrow()
+    expect(() => compileGridModelIndex({ ...combined, connectionPoints: [{ ...combined.connectionPoints[0]!, busId: 'missing' }] })).toThrow()
+    expect(() => addGridModelAssets(base, { ...addition, baseModelRef: 'missing' })).toThrow('base mismatch')
+    // A published model is an immutable artifact used by persisted Run state.
+    expect(definition('electric-grid.halden.four-unit', 'electric-grid.halden.four-unit.normal').definitionDigest)
+      .toBe('2f785ba0ebb800eb206d3d3890f8e3713d6bb6c06bd9802832b3c8dc889b8ac0')
+    expect(definition('electric-grid.halden.four-unit', 'electric-grid.norway.normal').model.connectionPoints).toHaveLength(4)
+  })
+
   test('compiles a Scenario to one Grid object with discoverable selections', () => {
     const scenario = gridScenario()
-    const catalog = createScenarioCatalog({ packs: [electricGridPack, weatherPack], scenarios: [scenario], defaultScenarioId: scenario.id })
-    const runtime = catalog.runtimeFor(scenario.id)
+    const resolver = createScenarioRuntimeResolver({ packs: [electricGridPack, weatherPack] })
+    const runtime = resolver.resolve(scenario)
     const gridObjects = scenario.initialObjects.filter(object => object.packId === 'electric-grid')
 
     expect(runtime?.runtimes).toContainEqual({ packId: 'electric-grid', runtimeId: electricGridRuntimeId, runtimeConfig: {} })
