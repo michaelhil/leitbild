@@ -116,3 +116,23 @@ Implementation and verification results are recorded below as phases complete.
   id. An omitted optional target reference or changed display label cannot split
   one unit into duplicate procedure scopes. Command validation still rejects a
   contradictory target reference. Backend, projection and UI now share this rule.
+
+### Production verification, 2026-09-02
+
+Deployed application commit `ec2a5e4a` in immutable release
+`20260902T163844Z-ec2a5e4ac8-eed997f51e` after the full deployment gate passed.
+All three services, Caddy, local health endpoints, OSRM and public HTTPS passed.
+An isolated temporary four-unit Simulation Run verified:
+
+- An external API operator's step-12 assessment arrived live in the browser.
+- Switching away and back returned to step 12 with the shared checkmark.
+- The Run and both units' procedure state survived the deployment restart.
+- Deleting a unit closed its procedure window and removed it from the rail and
+  other units' procedure summaries.
+- Starting the same procedure with the optional target reference omitted was
+  correctly rejected as a duplicate.
+- No browser console errors were reported for the final production test.
+
+The temporary production test Run was removed after closing its viewer; existing
+user Runs and scenarios were not altered. The remaining code-quality follow-up
+from this pass is broader Svelte typing debt/check integration, described above.
