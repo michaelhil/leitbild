@@ -35,7 +35,7 @@
   }
 </script>
 
-<span class="inline-name card-control">
+<span class="inline-name" class:editing>
   {#if editing}
     <input bind:this={input} bind:value={draft} aria-label={label} placeholder={fallback} maxlength="256" disabled={saving}
       onkeydown={event => {
@@ -46,6 +46,9 @@
       onblur={() => { if (!saving && !error) editing = false }} />
     {#if error}<small class="inline-error" role="alert">{error}</small>{/if}
   {:else}
-    <button class="name-button" type="button" title="Click to rename" aria-label={label} onclick={() => void edit()}>{value || fallback}</button>
+    <span class="name-text">{value || fallback}</span>
+    <button class="name-edit card-control" type="button" title="Rename" aria-label={label} onclick={() => void edit()}>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5M3 21l5-1L21 7a3.5 3.5 0 0 0-5-5L3 15z" /></svg>
+    </button>
   {/if}
 </span>
