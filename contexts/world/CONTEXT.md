@@ -40,6 +40,14 @@ _Avoid_: running Plant, Process System, graph assembly
 A reusable set of initial values applied to a compatible Model when an operational system starts, such as a Plant or Grid.
 _Avoid_: Model parameters, transient, runtime snapshot
 
+**Simulation Time**:
+The time within one Simulation Run, shared by its scenario behavior and simulated systems. It advances at the Run's selected speed, stops when paused or unloaded, and resumes from saved progress.
+_Avoid_: wall-clock observation time, a component's independent clock, relabeling current state as time travel
+
+**Observation Time**:
+The wall time at which operational state or an event was observed or accepted. It is separate from the Simulation Time represented by that state.
+_Avoid_: scenario epoch, solver elapsed time
+
 **Plant**:
 A Process Plant Scenario Item that selects one Plant Model, Operating Point, automation, and location. A Plant becomes independently stateful only inside a Simulation Run.
 _Avoid_: Unit and Process System as separate authored records

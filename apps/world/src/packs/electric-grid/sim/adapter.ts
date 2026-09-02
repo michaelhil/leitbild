@@ -1,3 +1,4 @@
+import { createSimulationClock } from '../../../core/model/time.ts'
 import type {
   CommandEnvelope,
   CommandResult,
@@ -66,14 +67,6 @@ const networkConnectionsFor = (
   gridId: string,
 ): ReadonlyArray<ElectricalConnectionDefinition> =>
   connections.filter(connection => connection.network.objectId === gridId)
-
-const currentSimulationTime = (clock: SimulationClockState): IsoTimestamp => {
-  if (clock.paused) return clock.currentTime
-  const current = Date.parse(clock.currentTime)
-  const updated = Date.parse(clock.updatedAt)
-  if (!Number.isFinite(current) || !Number.isFinite(updated)) throw new Error('electric-grid runtime received an invalid simulation clock')
-  return new Date(current + Math.max(0, Date.now() - updated) * clock.speed).toISOString() as IsoTimestamp
-}
 
 const emit = (config: {
   readonly handlers: ReadonlySet<PackRuntimeEventHandler>
@@ -253,7 +246,10 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
     let recordingDescriptorsPending = recordingPlan !== null
     let nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
     let clock: SimulationClockState = { currentTime: initialAt, updatedAt: nowIso(), paused: false, speed: 1 }
-    let lastSimulationMs = Date.parse(currentSimulationTime(clock))
+    const runClock = createSimulationClock(clock)
+    let clockInitialized = false
+    const currentSimulationTime = (): IsoTimestamp => runClock.read().currentTime
+    let lastSimulationMs = Date.parse(currentSimulationTime())
     let closed = false
     let failure: string | null = null
     const observedStartupConnections = new Set<string>()
@@ -352,7 +348,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
 
     const advanceAndEmit = (history: PackRuntimeEventHistory): void => {
       if (closed || clock.paused || failure !== null) return
-      const at = currentSimulationTime(clock)
+      const at = currentSimulationTime()
       const simulationMs = Date.parse(at)
       const dtSeconds = Math.max(0, simulationMs - lastSimulationMs) / 1_000
       lastSimulationMs = simulationMs
@@ -369,7 +365,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
         objectsById,
         grids,
         previousKeys: projectionKeys,
-        at,
+        at: nowIso(),
         provenance: { source: 'simulator', adapterId: electricGridAdapterId },
         history,
       })
@@ -443,7 +439,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
         try {
           const grid = requireGrid(grids, command)
           applyCommand(grid, command)
-          const at = currentSimulationTime(clock)
+          const at = currentSimulationTime()
           advanceGrid(grid, 0, at)
           const events = gridProjectionEvents({
             objectsById,
@@ -530,8 +526,11 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
         }
       },
       setClock: async (nextClock: SimulationClockState): Promise<void> => {
+        if (clockInitialized) advanceAndEmit('snapshot-only')
+        clockInitialized = true
         clock = nextClock
-        lastSimulationMs = Date.parse(currentSimulationTime(clock))
+        runClock.set(nextClock)
+        lastSimulationMs = Date.parse(currentSimulationTime())
       },
       close: async (): Promise<void> => {
         closed = true

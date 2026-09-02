@@ -1,3 +1,4 @@
+import { createSimulationClock } from '../../../core/model/time.ts'
 import { randomUUID } from 'node:crypto'
 import type { CommandEnvelope, CommandResult, ElectricalConnectionDefinition, IsoTimestamp, PackRuntimeRecordingBatch, SimulationRunEvent, ObjectId, OperationalObject, SignalId, SimulationClockState } from '../../../core/model/index.ts'
 import { electricalPortFromObject, nowIso } from '../../../core/model/index.ts'
@@ -187,7 +188,9 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       paused: false,
       speed: 1,
     }
-    let lastTickWallMs = Date.now()
+    const runClock = createSimulationClock(clock)
+    let clockInitialized = false
+    let lastSimulationMs = Date.parse(clock.currentTime)
     let simulationTimeOffsetMs = Date.parse(clock.currentTime)
     const objectsById = new Map<ObjectId, OperationalObject>(
       projectedInitialProcessPlantObjects({
@@ -210,9 +213,9 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
 
     const advance = async (): Promise<void> => {
       if (runtimeFailureReason !== null) return
-      const nowWallMs = Date.now()
-      const elapsedMs = clock.paused ? 0 : Math.round((nowWallMs - lastTickWallMs) * clock.speed)
-      lastTickWallMs = nowWallMs
+      const simulationMs = Date.parse(runClock.read().currentTime)
+      const elapsedMs = Math.max(0, simulationMs - lastSimulationMs)
+      lastSimulationMs = simulationMs
       if (elapsedMs <= 0 || plants.size === 0) return
       for (const connection of systemConnections) {
         const plantId = String(connection.system.objectId)
@@ -461,8 +464,11 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         observeNetworkObjects(objects, true)
       },
       setClock: async (nextClock: SimulationClockState): Promise<void> => {
+        if (clockInitialized) await advance()
+        clockInitialized = true
         clock = nextClock
-        lastTickWallMs = Date.now()
+        runClock.set(nextClock)
+        lastSimulationMs = Date.parse(runClock.read().currentTime)
         const elapsedMs = plants.size === 0 ? 0 : Math.min(...[...plants.values()].map(plant => plant.runtime.elapsedMs()))
         simulationTimeOffsetMs = Date.parse(nextClock.currentTime) - elapsedMs
       },

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { CommandEnvelope, CommandResult, SimulationRunEvent, EventId, SimulationRunId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, ProcedureCatalog, ProcedureDocument, ProcedureId, ProcedureSourceId, Provenance, RecordedSample, RecordingProfileDescriptor, RecordingSeriesDescriptor, RecordingSeriesQuery, ScenarioExecutionState, ScenarioRecordingSelection, ScenarioTimeline, ScenarioTimelineAction, ScenarioTimelineCue, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
 import { actorIdSchema, commandEnvelopeSchema, deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, notificationIdSchema, nowIso, simulationClockUpdateSchema } from '../model/index.ts'
+import { createSimulationClock } from '../model/time.ts'
 import type { PackWikiRef } from '../packs/protocol.ts'
 import type { SimulationCapability, PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent, PackRuntimeHealth, PackRuntimeRealtimeInput, PackRuntimeRealtimeMessage } from '../../simulation/protocol.ts'
 import type { EventLog } from './event-log.ts'
@@ -180,25 +181,19 @@ export const createSimulationRunRuntime = async (config: {
     await Promise.allSettled([publish])
   }
 
-  const deriveClock = (clock: SimulationClockState): SimulationClockState => {
-    if (clock.paused) return clock
-    const updatedAtMs = Date.parse(clock.updatedAt)
-    const currentTimeMs = Date.parse(clock.currentTime)
-    const nowMs = Date.now()
-    if (!Number.isFinite(updatedAtMs) || !Number.isFinite(currentTimeMs)) return clock
-    return {
-      ...clock,
-      currentTime: new Date(currentTimeMs + Math.max(0, nowMs - updatedAtMs) * clock.speed).toISOString() as IsoTimestamp,
-      updatedAt: nowIso(),
-    }
-  }
+  const runClock = createSimulationClock({
+    currentTime: config.restoredSnapshot?.clock?.currentTime ?? config.scenario.startsAt,
+    paused: config.restoredSnapshot?.clock?.paused ?? false,
+    speed: config.restoredSnapshot?.clock?.speed ?? 1,
+    updatedAt: nowIso(),
+  })
 
   const snapshotWithCurrentClock = (): SimulationRunStateSnapshot => {
     const snapshot = state.snapshot()
     if (!snapshot.clock) return snapshot
     return {
       ...snapshot,
-      clock: deriveClock(snapshot.clock),
+      clock: runClock.read(),
     }
   }
 
@@ -711,12 +706,7 @@ export const createSimulationRunRuntime = async (config: {
   if (config.restoredSnapshot) {
     state.hydrate({
       ...config.restoredSnapshot,
-      clock: config.restoredSnapshot.clock ?? {
-        currentTime: config.scenario.startsAt,
-        updatedAt: nowIso(),
-        paused: false,
-        speed: 1,
-      },
+      clock: runClock.read(),
     })
   } else {
     const snapshot = await config.runtimeConnection.getSnapshot()
@@ -724,12 +714,7 @@ export const createSimulationRunRuntime = async (config: {
     state.hydrate({
       objects: snapshot.objects,
       seq,
-      clock: {
-        currentTime: config.scenario.startsAt,
-        updatedAt: nowIso(),
-        paused: false,
-        speed: 1,
-      },
+      clock: runClock.read(),
       scenario: scenarioState,
     })
     await config.snapshotStore.save(snapshotWithCurrentClock())
@@ -898,16 +883,17 @@ export const createSimulationRunRuntime = async (config: {
     const parsedUpdate = simulationClockUpdateSchema.parse(update) as SimulationClockUpdate
     const currentClock = state.snapshot().clock
     if (!currentClock) throw new Error('simulation run clock is not initialized')
-    const current = deriveClock(currentClock)
+    const current = runClock.read()
     const at = nowIso()
     const nextClock: SimulationClockState = {
-      currentTime: parsedUpdate.currentTime ?? current.currentTime,
+      currentTime: current.currentTime,
       updatedAt: at,
       paused: parsedUpdate.paused ?? current.paused,
       speed: parsedUpdate.speed ?? current.speed,
     }
     await config.runtimeConnection.validateClock?.(nextClock)
     await config.runtimeConnection.setClock(nextClock)
+    runClock.set(nextClock)
     await publishOneGenerated(() => ({
       id: eventId(),
       simulationRunId: config.id,

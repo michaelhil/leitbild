@@ -1,3 +1,4 @@
+import { createSimulationClock } from '../../../core/model/time.ts'
 import type { CommandEnvelope, CommandResult, SimulationRunEvent, GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, OperationalObject, SimulationClockState } from '../../../core/model/index.ts'
 import { commandResultSchema, nowIso, objectIdSchema } from '../../../core/model/index.ts'
 import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeQuery, PackRuntimeRealtimeMessage, PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
@@ -169,15 +170,9 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       paused: false,
       speed: 1,
     }
-    const currentSimulationMs = (): number => {
-      const currentTimeMs = Date.parse(clock.currentTime)
-      const updatedAtMs = Date.parse(clock.updatedAt)
-      if (!Number.isFinite(currentTimeMs) || !Number.isFinite(updatedAtMs)) {
-        throw new Error(`drone runtime received an invalid Simulation Clock`)
-      }
-      if (clock.paused) return currentTimeMs
-      return currentTimeMs + Math.max(0, Date.now() - updatedAtMs) * clock.speed
-    }
+    const runClock = createSimulationClock(clock)
+    let clockInitialized = false
+    const currentSimulationMs = (): number => Date.parse(runClock.read().currentTime)
     const fixedStepScheduler = createDroneFixedStepScheduler({
       stepMs: runtimeConfig.stepIntervalMs,
       maxCatchUpSteps: maxRuntimeCatchUpSteps,
@@ -272,7 +267,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       const stepPlan = fixedStepScheduler.advance(nowMs)
       if (stepPlan.steps.length === 0) return
       for (const step of stepPlan.steps) {
-        const at = new Date(step.nowMs).toISOString() as IsoTimestamp
+        const at = nowIso()
         for (const { object, data } of liveDroneRecords()) {
           const next = stepDroneObject({
             object,
@@ -287,7 +282,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
           upsertRuntimeObject(next)
         }
       }
-      const at = new Date(nowMs).toISOString() as IsoTimestamp
+      const at = nowIso()
       emitMotionFrames(at, nowMs)
       if (nowMs - lastProjectionMs < runtimeConfig.projectionIntervalMs) return
       lastProjectionMs = nowMs
@@ -737,7 +732,10 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
         }
       },
       setClock: async (nextClock: SimulationClockState): Promise<void> => {
+        if (clockInitialized) stepAll()
+        clockInitialized = true
         clock = nextClock
+        runClock.set(nextClock)
         const simulationMs = currentSimulationMs()
         fixedStepScheduler.reset(simulationMs)
         lastProjectionMs = simulationMs

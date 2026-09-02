@@ -1,3 +1,4 @@
+import { createSimulationClock } from '../../../core/model/time.ts'
 import type {
   CommandEnvelope,
   CommandResult,
@@ -93,7 +94,7 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
     setWeatherObjects(field, [...objects.values()])
     const handlers = new Set<PackRuntimeEventHandler>()
     let clock: SimulationClockState = { currentTime: field.at, updatedAt: nowIso(), paused: false, speed: 1 }
-    let wallAnchor = Date.now()
+    const runClock = createSimulationClock(clock)
     let lastSaved = 0
     let lastRecorded = -Infinity
     const profile = config.recording
@@ -195,15 +196,15 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
         const updated: OperationalObject = {
           ...object,
           revision: object.revision + 1,
-          spatial: { ...object.spatial, position: { point, observedAt: field.at, staleAfterMs: 600000 } },
-          timestamps: { ...object.timestamps, updatedAt: field.at },
+          spatial: { ...object.spatial, position: { point, observedAt: nowIso(), staleAfterMs: 600000 } },
+          timestamps: { ...object.timestamps, updatedAt: nowIso() },
           packData: { ...data, sample },
         }
         objects.set(object.id, updated)
         events.push({
           type: 'object.upserted',
           object: updated,
-          at: field.at,
+          at: nowIso(),
           provenance: updated.provenance,
           history: recordIds.has(object.id) ? 'record' : 'snapshot-only',
         })
@@ -223,10 +224,7 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
     project(new Set(), false)
     // Save a fresh field before the run can become restorable.
     if (!restored) await save()
-    const targetNow = (): IsoTimestamp =>
-      new Date(
-        Date.parse(clock.currentTime) + (clock.paused ? 0 : (Date.now() - wallAnchor) * clock.speed),
-      ).toISOString() as IsoTimestamp
+    const targetNow = (): IsoTimestamp => runClock.read().currentTime
     const tick = (): void => {
       if (clock.paused || health.state === 'degraded') return
       try {
@@ -348,7 +346,7 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
         field = prepareClock(next)
         prepared = undefined
         clock = next
-        wallAnchor = Date.now()
+        runClock.set(next)
         health = { ...health, state: 'ready', lastSuccessfulInteractionAt: nowIso() }
         project()
       },

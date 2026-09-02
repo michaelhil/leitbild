@@ -241,7 +241,9 @@ export const stepDroneObject = (input: {
   let arrived = false
 
   const inputExpiresAtMs = data.control.inputExpiresAt === undefined ? 0 : Date.parse(data.control.inputExpiresAt)
-  const manualActive = data.navigation.kind === 'manual' && data.control.manualAxes !== undefined && inputExpiresAtMs >= nowMs
+  // Pilot input leases are wall-time safety bounds; mission holds below use
+  // simulation time. A different scenario epoch must not make input immortal.
+  const manualActive = data.navigation.kind === 'manual' && data.control.manualAxes !== undefined && inputExpiresAtMs >= Date.parse(at)
   const mission = missionPlans.get(object.id)
 
   if (manualActive) {

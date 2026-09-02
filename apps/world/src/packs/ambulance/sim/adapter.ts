@@ -1,3 +1,4 @@
+import { createSimulationClock } from '../../../core/model/time.ts'
 import { z } from 'zod'
 import {
   ambulancePackConfigSchema,
@@ -250,14 +251,15 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
       speed: 1,
     }
     let simulationTimeOffsetMs = Date.parse(clock.currentTime)
-    let tickPending = false
-    const interval = setInterval(() => {
-      if (closed || tickPending) return
-      tickPending = true
-      void serialize(async () => {
+    const runClock = createSimulationClock(clock)
+    let clockInitialized = false
+    let lastSimulationMs = Date.parse(clock.currentTime)
+    const advance = async (): Promise<void> => {
         if (clock.paused || closed) return
         const roadEvents = await refreshRoadWeather()
-        const tickMs = Math.round(1_000 * clock.speed)
+        const simulationMs = Date.parse(runClock.read().currentTime)
+        const tickMs = Math.max(0, simulationMs - lastSimulationMs)
+        lastSimulationMs = simulationMs
         if (tickMs <= 0) return
         elapsedMs += tickMs
         const events = engine.tick(tickMs)
@@ -275,7 +277,12 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
         : undefined
         emit(handlers, [...roadEvents, ...events], recording)
         health = { ...health, state: 'ready', lastSuccessfulInteractionAt: nowIso() }
-      })
+    }
+    let tickPending = false
+    const interval = setInterval(() => {
+      if (closed || tickPending) return
+      tickPending = true
+      void serialize(advance)
         .catch((error) => {
           health = {
             ...health,
@@ -390,7 +397,11 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
         }),
       setClock: (nextClock) =>
         serialize(async () => {
+        if (clockInitialized) await advance()
+        clockInitialized = true
         clock = nextClock
+        runClock.set(nextClock)
+        lastSimulationMs = Date.parse(runClock.read().currentTime)
         simulationTimeOffsetMs = Date.parse(nextClock.currentTime) - elapsedMs
       }),
       health: () => [health],

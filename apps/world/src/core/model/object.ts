@@ -88,7 +88,9 @@ export interface CommunicationState {
 }
 
 export interface ObjectTimestamps {
+  /** Observation/acceptance wall time. Physical sample time belongs to Pack data. */
   readonly createdAt: IsoTimestamp
+  /** Observation/acceptance wall time, consistent across all Packs. */
   readonly updatedAt: IsoTimestamp
 }
 

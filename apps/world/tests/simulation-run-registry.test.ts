@@ -154,6 +154,7 @@ describe('Simulation Run registry', () => {
     const first = await firstRegistry.create({ scenarioId: 'test-response' })
     const id = first.id
     await issueDispatchCommand(first)
+    await first.setClock({ paused: true })
     const expectedSeq = first.snapshot().seq
     await firstRegistry.close(id)
 
@@ -374,14 +375,15 @@ describe('Simulation Run registry', () => {
 })
 
 
-test('a rejected Weather rewind leaves the shared clock unchanged', async () => {
+test('pause and speed controls retain simulation progress', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-weather-clock-'))
   const registry = createRegistry(dataDir)
   const runtime = await registry.create({ scenarioId: 'test-response' })
   try {
     await runtime.setClock({ paused: true })
     const before = runtime.snapshot().clock
-    await expect(runtime.setClock({ currentTime: '2025-01-01T00:00:00.000Z' as import('../src/core/model/index.ts').IsoTimestamp })).rejects.toThrow('backward')
-    expect(runtime.snapshot().clock).toEqual(before)
+    await runtime.setClock({ speed: 2 })
+    expect(runtime.snapshot().clock?.currentTime).toBe(before?.currentTime)
+    expect(runtime.snapshot().clock?.paused).toBe(true)
   } finally { await registry.close(runtime.id) }
 })

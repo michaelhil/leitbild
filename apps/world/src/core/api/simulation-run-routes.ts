@@ -301,7 +301,6 @@ const handleSimulationRunApiInner = async (
     const update = {
       ...(parsed.paused === undefined ? {} : { paused: parsed.paused }),
       ...(parsed.speed === undefined ? {} : { speed: parsed.speed }),
-      ...(parsed.currentTime === undefined ? {} : { currentTime: parsed.currentTime }),
     }
     const clock = await runtime.setClock(update)
     return json({ clock })
