@@ -82,14 +82,14 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
   const catalog: Tool = {
     name: WORKSPACE_CAPABILITY_TOOL_NAMES[0],
     description: 'List reusable Definitions and live Resources exposed by Modules in this Workspace. Includes currentRoom and its links, even when filters exclude Rooms; use companion-of to identify the resource this conversation accompanies.',
-    usage: 'Discover Definition and Resource identities immediately before invoking a scoped Workspace Capability. Do not remember runtime Resource ids as Agent configuration.',
+    usage: 'Call with {} for initial discovery; then use exact identifiers from the catalog as optional filters. Discover identities immediately before invoking a scoped Capability. Do not remember runtime Resource ids as Agent configuration.',
     returns: '{ workspaceId, definitions[], resources[] } with stable references, provenance, UI paths, links, and advertised capabilityIds.',
     parameters: {
       type: 'object',
       properties: {
-        moduleId: { type: 'string' },
-        definitionType: { type: 'string' },
-        resourceType: { type: 'string' },
+        moduleId: { type: 'string', description: 'Exact Module ID from discovery; omit for initial discovery.' },
+        definitionType: { type: 'string', description: 'Exact namespaced Definition type from discovery, not a display label.' },
+        resourceType: { type: 'string', description: 'Exact namespaced Resource type from discovery, not a display label; omit to discover all types.' },
         capabilityId: { type: 'string' },
       },
       additionalProperties: false,

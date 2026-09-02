@@ -253,7 +253,16 @@ const createArtifact = async () => {
   }
 }
 
+export const moduleRoutingPreflight = (): string => `for module in world agents; do
+  env_file="/etc/leitbild/$module.env"
+  if test -f "$env_file" && grep -Eq '^[[:space:]]*WORKSPACE_HOST_URL[[:space:]]*=' "$env_file"; then
+    echo "Remove WORKSPACE_HOST_URL from $env_file: production Module routing is owned by its service definition, not provider settings." >&2
+    exit 1
+  fi
+done`
+
 const remotePreflight = (install: boolean): string => `set -euo pipefail
+${moduleRoutingPreflight()}
 test "$(/opt/leitbild/runtime/bun --version)" = ${shellQuote(REQUIRED_BUN_VERSION)}
 test "$(systemctl is-active caddy.service)" = active
 test "$(systemctl is-active docker.service)" = active
@@ -329,6 +338,15 @@ if ! systemctl restart ${SERVICES.join(' ')}; then
   exit 1
 fi
 for port in 3000 4177 3100; do for attempt in $(seq 1 60); do curl -fsS -o /dev/null "http://127.0.0.1:$port/health" && break; sleep 1; done; curl -fsS -o /dev/null "http://127.0.0.1:$port/health"; done
+# Verify the effective process routing, not just standalone service health.
+for module in world agents; do
+  module_pid="$(systemctl show "leitbild-$module" --property=MainPID --value)"
+  if ! tr '\\0' '\\n' < "/proc/$module_pid/environ" | grep -Fx 'WORKSPACE_HOST_URL=http://127.0.0.1:3100' > /dev/null; then
+    echo "leitbild-$module is not routed to the internal Workspace Host" >&2
+    exit 1
+  fi
+done
+curl -fsS -o /dev/null http://127.0.0.1:3100/api/workspaces
 caddy_backup="/etc/caddy/Caddyfile.pre-leitbild-$release_id"
 cp /etc/caddy/Caddyfile "$caddy_backup"
 caddy validate --config "$release_dir/apps/leitbild/deploy/Caddyfile"
