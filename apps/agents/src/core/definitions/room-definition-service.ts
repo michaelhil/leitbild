@@ -56,8 +56,8 @@ export const startRoomDefinition = async (
   const revision = await library.getRevision(revisionId)
   if (!revision || revision.definitionId !== definitionId) throw new Error(`Unknown Room Definition Revision "${revisionId}"`)
   const definition = revision.document
-  const activePacks = requireKnownPacks(system, definition.room.packs)
-  validateAgentTools(system, definition, new Set(activePacks))
+  validateRoomDefinition(system, definition)
+  const activePacks = definition.room.packs
   const human = system.team.listByKind('human').find(agent => agent.name === 'You')
     ?? system.team.listByKind('human')[0]
   if (!human) throw new Error('This Workspace has no human agent')
@@ -100,6 +100,16 @@ export const startRoomDefinition = async (
     for (const agent of createdAgents) system.removeAgent(agent.id)
     system.removeRoom(room.profile.id)
     throw error
+  }
+}
+
+export const validateRoomDefinition = (system: AgentsWorkspaceRuntime, definition: RoomDefinition): void => {
+  const activePacks = requireKnownPacks(system, definition.room.packs)
+  validateAgentTools(system, definition, new Set(activePacks))
+  for (const entry of definition.deck.entries) {
+    if (entry.action.kind === 'start-script' && !system.scriptStore.get(entry.action.scriptName)) {
+      throw new Error(`Prompt Deck entry ${entry.id} selects unavailable script ${entry.action.scriptName}`)
+    }
   }
 }
 

@@ -9,13 +9,14 @@ import {
   toolGrantSetSchema,
   workspaceIdSchema,
   workspaceModuleManifestSchema,
+  workspaceDefinitionRevisionReferenceSchema,
   type ModuleResourceDescriptor,
   type WorkspaceId,
 } from '@leitbild/contracts'
 import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
 import { asAIAgent } from '../agents/shared.ts'
-import { runPromptDeckEntry, startRoomDefinition } from '../core/definitions/room-definition-service.ts'
-import { createRoomDefinitionLibrary } from '../core/definitions/room-definition-library.ts'
+import { runPromptDeckEntry, startRoomDefinition, validateRoomDefinition } from '../core/definitions/room-definition-service.ts'
+import type { RoomDefinitionLibrary } from '../core/definitions/room-definition-library.ts'
 import { roomDefinitionSchema, type RoomDefinition } from '../core/definitions/room-definition-catalog.ts'
 import type { AgentsModuleState } from '../core/workspaces/module-state.ts'
 import type { WorkspaceRuntimeRegistry } from '../core/workspaces/runtime-registry.ts'
@@ -153,8 +154,7 @@ const resourcesFor = async (
   ] }).resources
 }
 
-const definitionsFor = async (workspaceId: WorkspaceId) => {
-  const library = createRoomDefinitionLibrary(workspaceId)
+const definitionsFor = async (workspaceId: WorkspaceId, library: RoomDefinitionLibrary) => {
   const definitions = await library.list()
   return moduleDefinitionCollectionSchema.parse({ definitions: definitions.map(definition => ({
     ref: {
@@ -223,7 +223,22 @@ const roomDefinitionSections = (definition: RoomDefinition) => [{
   },
 }]
 
-const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime, Response>(AGENTS_MODULE_ID, [
+const definitionWriteResultSchema = z.object({
+  definition: workspaceDefinitionRevisionReferenceSchema,
+  title: z.string(),
+}).strict()
+
+const parseRoomDefinitionWrite = (runtime: AgentsWorkspaceRuntime, raw: unknown) => {
+  const input = writeRoomDefinitionSchema.parse(raw)
+  try {
+    validateRoomDefinition(runtime, input.definition)
+  } catch (error) {
+    throw new z.ZodError([{ code: 'custom', path: ['definition'], message: error instanceof Error ? error.message : String(error) }])
+  }
+  return input
+}
+
+const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorkspaceRuntime; library: RoomDefinitionLibrary }, Response>(AGENTS_MODULE_ID, [
   {
     descriptor: {
       id: 'agents.room-definition.create',
@@ -235,12 +250,12 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
       risk: 'write',
       idempotent: false,
       inputSchema: z.toJSONSchema(writeRoomDefinitionSchema),
-      outputSchema: { type: 'object' },
+      outputSchema: z.toJSONSchema(definitionWriteResultSchema),
     },
-    invoke: async (_runtime, invocation) => {
-      const input = writeRoomDefinitionSchema.parse(invocation.input)
+    invoke: async ({ runtime, library }, invocation) => {
+      const input = parseRoomDefinitionWrite(runtime, invocation.input)
       try {
-        const revision = await createRoomDefinitionLibrary(invocation.workspaceId).create(input.definition)
+        const revision = await library.create(input.definition)
         return json({ result: {
           definition: {
             workspaceId: invocation.workspaceId,
@@ -272,7 +287,7 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
       inputSchema: z.toJSONSchema(createRoomSchema),
       outputSchema: { type: 'object' },
     },
-    invoke: async (runtime, invocation) => {
+    invoke: async ({ runtime }, invocation) => {
       const input = createRoomSchema.parse(invocation.input)
       const room = runtime.rooms.createRoomSafe({
         name: input.name,
@@ -303,7 +318,7 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
       inputSchema: z.toJSONSchema(emptyInputSchema),
       outputSchema: z.toJSONSchema(inspectionViewSchema),
     },
-    invoke: async (runtime, invocation) => {
+    invoke: async ({ runtime, library }, invocation) => {
       emptyInputSchema.parse(invocation.input)
       const room = runtime.rooms.getRoom(requireResourceId(invocation, 'agents.room'))
       if (!room) return apiError(404, 'room_not_found', 'Room not found')
@@ -322,7 +337,7 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
       const recentMessages = room.getRecent(20)
       const sourceRevision = room.profile.sourceDefinition === undefined
         ? undefined
-        : await createRoomDefinitionLibrary(invocation.workspaceId).getRevision(room.profile.sourceDefinition.revisionId)
+        : await library.getRevision(room.profile.sourceDefinition.revisionId)
       return json({ result: serializableInspection({
         target: { kind: 'resource', resource: invocation.resource },
         title: room.profile.name,
@@ -383,7 +398,7 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
       inputSchema: z.toJSONSchema(emptyInputSchema),
       outputSchema: { type: 'object' },
     },
-    invoke: async (runtime, invocation) => {
+    invoke: async ({ runtime }, invocation) => {
       emptyInputSchema.parse(invocation.input)
       const roomId = requireResourceId(invocation, 'agents.room')
       return runtime.removeRoom(roomId)
@@ -404,7 +419,7 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
       inputSchema: z.toJSONSchema(readRoomSchema),
       outputSchema: { type: 'object' },
     },
-    invoke: async (runtime, invocation) => {
+    invoke: async ({ runtime }, invocation) => {
       const room = runtime.rooms.getRoom(requireResourceId(invocation, 'agents.room'))
       const input = readRoomSchema.parse(invocation.input)
       return room
@@ -430,7 +445,7 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
       inputSchema: z.toJSONSchema(postMessageSchema),
       outputSchema: { type: 'object' },
     },
-    invoke: async (runtime, invocation) => {
+    invoke: async ({ runtime }, invocation) => {
       const room = runtime.rooms.getRoom(requireResourceId(invocation, 'agents.room'))
       if (!room) return apiError(404, 'room_not_found', 'Room not found')
       const input = postMessageSchema.parse(invocation.input)
@@ -457,10 +472,10 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
       inputSchema: z.toJSONSchema(emptyInputSchema),
       outputSchema: z.toJSONSchema(inspectionViewSchema),
     },
-    invoke: async (_runtime, invocation) => {
+    invoke: async ({ library }, invocation) => {
       emptyInputSchema.parse(invocation.input)
       const definitionId = requireRoomDefinitionId(invocation)
-      const revision = await createRoomDefinitionLibrary(invocation.workspaceId).getRevision(invocation.definition!.revisionId)
+      const revision = await library.getRevision(invocation.definition!.revisionId)
       if (!revision || revision.definitionId !== definitionId) {
         return apiError(404, 'room_definition_revision_not_found', 'Room Definition Revision not found')
       }
@@ -492,16 +507,16 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
       risk: 'write',
       idempotent: false,
       inputSchema: z.toJSONSchema(writeRoomDefinitionSchema),
-      outputSchema: { type: 'object' },
+      outputSchema: z.toJSONSchema(definitionWriteResultSchema),
     },
-    invoke: async (_runtime, invocation) => {
-      const input = writeRoomDefinitionSchema.parse(invocation.input)
+    invoke: async ({ runtime, library }, invocation) => {
+      const input = parseRoomDefinitionWrite(runtime, invocation.input)
       const definitionId = requireRoomDefinitionId(invocation)
       if (input.definition.id !== definitionId) {
         return apiError(409, 'room_definition_identity_mismatch', 'Edited Room Definition id does not match the target Definition')
       }
       try {
-        const revision = await createRoomDefinitionLibrary(invocation.workspaceId).update(
+        const revision = await library.update(
           input.definition,
           invocation.definition!.revisionId,
         )
@@ -530,11 +545,11 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
       inputSchema: z.toJSONSchema(emptyInputSchema),
       outputSchema: { type: 'object' },
     },
-    invoke: async (runtime, invocation) => {
+    invoke: async ({ runtime, library }, invocation) => {
       emptyInputSchema.parse(invocation.input)
       const started = await startRoomDefinition(
         runtime,
-        createRoomDefinitionLibrary(invocation.workspaceId),
+        library,
         requireRoomDefinitionId(invocation),
         invocation.definition!.revisionId,
       )
@@ -567,10 +582,10 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
       inputSchema: z.toJSONSchema(emptyInputSchema),
       outputSchema: { type: 'object' },
     },
-    invoke: async (_runtime, invocation) => {
+    invoke: async ({ library }, invocation) => {
       emptyInputSchema.parse(invocation.input)
       const definitionId = requireRoomDefinitionId(invocation)
-      return await createRoomDefinitionLibrary(invocation.workspaceId).delete(definitionId, invocation.definition!.revisionId)
+      return await library.delete(definitionId, invocation.definition!.revisionId)
         ? json({ result: { deleted: true, definitionId } })
         : apiError(404, 'room_definition_not_found', 'Room Definition not found')
     },
@@ -588,12 +603,12 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
       inputSchema: z.toJSONSchema(runPromptDeckEntrySchema),
       outputSchema: { type: 'object' },
     },
-    invoke: async (runtime, invocation) => {
+    invoke: async ({ runtime, library }, invocation) => {
       const roomId = requireResourceId(invocation, 'agents.room')
       const input = runPromptDeckEntrySchema.parse(invocation.input)
       return json({ result: await runPromptDeckEntry(
         runtime,
-        createRoomDefinitionLibrary(invocation.workspaceId),
+        library,
         roomId,
         input.entryId,
       ) })
@@ -612,7 +627,7 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
       inputSchema: z.toJSONSchema(createAgentSchema),
       outputSchema: { type: 'object' },
     },
-    invoke: async (runtime, invocation) => {
+    invoke: async ({ runtime }, invocation) => {
       const input = createAgentSchema.parse(invocation.input)
       const agent = await runtime.spawnAIAgent(input)
       return json({ result: { id: agent.id, name: agent.name, kind: agent.kind } }, 201)
@@ -631,7 +646,7 @@ const agentsCapabilities = createModuleCapabilityRegistry<AgentsWorkspaceRuntime
       inputSchema: { type: 'object', additionalProperties: false },
       outputSchema: { type: 'object' },
     },
-    invoke: async (runtime, invocation) => {
+    invoke: async ({ runtime }, invocation) => {
       const agent = runtime.team.getAgent(requireResourceId(invocation, 'agents.agent'))
       const ai = agent ? asAIAgent(agent) : undefined
       return ai
@@ -651,7 +666,7 @@ const invoke = async (
   if (invocation.workspaceId !== workspaceId) return apiError(409, 'workspace_scope_mismatch', 'Invocation belongs to another Workspace')
   if (invocation.capabilityId !== capabilityId) return apiError(409, 'capability_scope_mismatch', 'Invocation Capability does not match the route')
   const runtime = await registry.getOrLoad(workspaceId)
-  const response = await agentsCapabilities.invoke(capabilityId, runtime, invocation)
+  const response = await agentsCapabilities.invoke(capabilityId, { runtime, library: registry.definitionsFor(workspaceId) }, invocation)
   return response ?? apiError(404, 'capability_not_found', 'Capability not found')
 }
 
@@ -686,7 +701,7 @@ export const handleAgentsModuleApi = async (
 
     await requireModule(config.state, workspaceId)
     if (collection === 'definitions' && request.method === 'GET') {
-      return json(moduleDefinitionCollectionSchema.parse({ definitions: await definitionsFor(workspaceId) }))
+      return json(moduleDefinitionCollectionSchema.parse({ definitions: await definitionsFor(workspaceId, config.registry.definitionsFor(workspaceId)) }))
     }
     if (collection === 'resources' && request.method === 'GET') {
       return json(moduleResourceCollectionSchema.parse({ resources: await resourcesFor(workspaceId, config.registry) }))

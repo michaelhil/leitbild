@@ -79,6 +79,21 @@ const invokeBody = (workspaceId: WorkspaceId, capabilityId: string, input: unkno
 })
 
 describe('Agents Workspace Module API', () => {
+  test('concurrent definition revisions have one winner and catalog ownership survives runtime eviction', async () => {
+    const workspaceId = newWorkspaceId()
+    await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
+    const library = registry.definitionsFor(workspaceId)
+    const definition = { id: 'race', title: 'Race', description: 'Concurrent editing', room: { deliveryMode: 'manual' as const, packs: [], agents: [] }, deck: { entries: [] } }
+    const created = await library.create(definition)
+    const target = { definition: { type: 'agents.room-definition', id: definition.id, revisionId: created.id } }
+    const writes = await Promise.all(['A', 'B'].map(title => request('POST',
+      `/internal/workspaces/${workspaceId}/capabilities/agents.room-definition.update/invoke`,
+      invokeBody(workspaceId, 'agents.room-definition.update', { definition: { ...definition, title } }, target))))
+    expect(writes.map(response => response.status).sort()).toEqual([200, 409])
+    await registry.evictOne(workspaceId)
+    expect(registry.definitionsFor(workspaceId)).toBe(library)
+  })
+
   test('publishes one strict Agents manifest', async () => {
     const body = await (await request('GET', '/.well-known/workspace-module')).json()
     expect(workspaceModuleManifestSchema.parse(body)).toEqual(agentsModuleManifest)

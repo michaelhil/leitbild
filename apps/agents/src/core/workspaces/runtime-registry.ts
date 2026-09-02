@@ -1,3 +1,4 @@
+import { createRoomDefinitionLibrary, type RoomDefinitionLibrary } from "../definitions/room-definition-library.ts"
 // ============================================================================
 // WorkspaceRuntimeRegistry — per-tenant RoomDirectory lifecycle keyed by Workspace ID.
 //
@@ -144,6 +145,7 @@ export interface WorkspaceRuntimeRegistryOptions {
 }
 
 export interface WorkspaceRuntimeRegistry {
+  readonly definitionsFor: (id: WorkspaceId) => RoomDefinitionLibrary
   readonly getOrLoad: (id: WorkspaceId) => Promise<AgentsWorkspaceRuntime>
   readonly evictOne: (id: WorkspaceId) => Promise<void>
   readonly evictIdle: (now?: number) => Promise<number>
@@ -182,6 +184,17 @@ export interface WorkspaceRuntimeRegistry {
 // ============================================================================
 
 export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOptions): WorkspaceRuntimeRegistry => {
+  // Definition writes must share one queue even across Room-runtime eviction.
+  // Keeping this lightweight service separate also keeps catalog reads lazy.
+  const definitionLibraries = new Map<WorkspaceId, RoomDefinitionLibrary>()
+  const definitionsFor = (id: WorkspaceId): RoomDefinitionLibrary => {
+    let library = definitionLibraries.get(id)
+    if (!library) {
+      library = createRoomDefinitionLibrary(id)
+      definitionLibraries.set(id, library)
+    }
+    return library
+  }
   const idleMs = opts.idleMs ?? idleMsFromEnv()
   const drainMs = opts.drainMs ?? DEFAULT_DRAIN_MS
   const maxLoadedWorkspaces = opts.maxLoadedWorkspaces ?? maxLoadedWorkspacesFromEnv()
@@ -533,6 +546,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
 
   return {
     getOrLoad,
+    definitionsFor,
     evictOne,
     evictIdle,
     exists,
