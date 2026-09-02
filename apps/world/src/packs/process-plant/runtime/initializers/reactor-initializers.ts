@@ -1,6 +1,7 @@
 import { primaryLoopIdForPump } from '../../graph/index.ts'
 import { clamp, optionalParameterBoolean, optionalParameterNumber, parameterNumber } from '../component-helpers.ts'
 import type { ComponentInitialValueDefinition } from './model.ts'
+import { reactorInitialThermalState } from '../../reactor-initial-conditions.ts'
 
 export const reactorInitialValueDefinitions: ReadonlyArray<ComponentInitialValueDefinition> = [
   {
@@ -9,13 +10,7 @@ export const reactorInitialValueDefinitions: ReadonlyArray<ComponentInitialValue
       const ratedPowerMw = parameterNumber(component, 'ratedPowerMw')
       const initialPowerFraction = parameterNumber(component, 'initialPowerFraction')
       const initialFissionPower = ratedPowerMw * initialPowerFraction
-      const initialCoolantInlet = optionalParameterNumber(component, 'initialCoolantInletTemperatureC', 290)
-      const initialCoolantOutlet = initialCoolantInlet + 32
-      const initialFuelRise = optionalParameterNumber(component, 'fuelTemperatureRiseAtRatedPowerC', 140) * initialPowerFraction
-      const initialFuelLower = initialCoolantOutlet + initialFuelRise * 0.88
-      const initialFuelMid = initialCoolantOutlet + initialFuelRise * 1.08
-      const initialFuelUpper = initialCoolantOutlet + initialFuelRise * 1.00
-      const initialFuelAverage = (initialFuelLower + initialFuelMid + initialFuelUpper) / 3
+      const { inlet: initialCoolantInlet, outlet: initialCoolantOutlet, lower: initialFuelLower, mid: initialFuelMid, upper: initialFuelUpper, average: initialFuelAverage } = reactorInitialThermalState(component.parameters as Record<string, unknown>)
       const initialDecayHeat = initialFissionPower * optionalParameterNumber(component, 'decayHeatFractionAtPower', 0.06)
       if (localPath === 'powerMw') return initialFissionPower
       if (localPath === 'fissionPowerMw') return initialFissionPower

@@ -16,6 +16,9 @@ describe('authoritative PWR full-power operating point', () => {
       for (const component of system.sourceGraph.components.filter(component => component.kind === 'steamGenerator')) {
         expect(read(`${component.id}.steamFlowKgPerS`)).toBe(335)
       }
+      runtime.tick(100)
+      expect(read('core.temperatureFeedbackPcm')).toBeCloseTo(0, 10)
+      expect(read('core.powerMw')).toBeCloseTo(3400, 8)
       // The operating point initializes real state; it must never clamp power.
       runtime.writeCommand({ type: 'setVariable', path: 'core.rodInsertionFraction' as VariablePath, value: 1 })
       for (let step = 0; step < 150; step++) runtime.tick(100)

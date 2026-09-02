@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { reactorInitialThermalState } from './reactor-initial-conditions.ts'
 import type { PlantGraphSpec, CompiledPlantGraph } from './graph/index.ts'
 import type { ProcessPlantProtectionConfig } from './runtime/ic/control-protection-model.ts'
 import { assemblePwrReferencePlantGraph } from './assembly/pwr-reference-assembly.ts'
@@ -101,6 +102,15 @@ export const resolveProcessPlantOperatingPoint = (
     if (authored[id] === undefined) continue
     const overlay = z.record(z.string(), z.unknown()).parse(authored[id])
     parameterOverrides[id] = { ...initial, ...overlay }
+  }
+  for (const component of graph.components.filter(component => component.kind === 'reactorCore')) {
+    const overrides = parameterOverrides[component.id] as Record<string, unknown>
+    const thermal = reactorInitialThermalState({ ...component.parameters as Record<string, unknown>, ...overrides })
+    parameterOverrides[component.id] = {
+      referenceCoolantOutletTemperatureC: thermal.outlet,
+      referenceFuelTemperatureC: thermal.average,
+      ...overrides,
+    }
   }
   return {
     parameterOverrides,
