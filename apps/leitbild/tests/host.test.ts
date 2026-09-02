@@ -64,7 +64,7 @@ const createModule = (moduleId: ModuleId) => {
       if (definitions) {
         const workspaceId = decodeURIComponent(definitions[1] ?? '')
         const item = moduleId === 'world'
-          ? { type: 'world.scenario', id: 'halden-four-unit-grid', title: 'Halden Four-Unit Grid', capabilityId: 'world.scenario.start' }
+          ? { type: 'world.scenario', id: 'test-scenario', title: 'Test Scenario', capabilityId: 'world.scenario.start' }
           : { type: 'agents.room-definition', id: 'halden-integrated-control-room', title: 'Halden Integrated Control Room', capabilityId: 'agents.room-definition.start' }
         return Response.json({ definitions: [{
           ref: { workspaceId, moduleId, type: item.type, id: item.id },
@@ -186,18 +186,6 @@ describe('Leitbild Workspace Host', () => {
     store.close()
   })
 
-  test('starts a Composition as independent Definition Capability calls', async () => {
-    const { host, store } = createFixture()
-    const workspace = await host.create({ name: null })
-    const access = accessContextSchema.parse({ workspaceId: workspace.id, requestId: newRequestId(), actor: { kind: 'human', id: 'operator' } })
-    const application = await host.startComposition(workspace.id, 'halden-integrated-control-room', access)
-    expect(application.status).toBe('applied')
-    expect(application.outcomes.map(outcome => String(outcome.capabilityId))).toEqual([
-      'world.scenario.start',
-      'agents.room-definition.start',
-    ])
-    store.close()
-  })
 
   test('keeps a Workspace visible when any Module cleanup fails', async () => {
     const { modules, host, store } = createFixture()

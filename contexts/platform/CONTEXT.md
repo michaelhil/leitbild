@@ -61,10 +61,6 @@ A Module-owned extension interpreted only by its owning Module.
 World and Agents enforce their own Pack contracts and lifecycles; the shared architectural seam is the Platform Resource and Capability model, not a universal Pack runtime.
 _Avoid_: Module, universal plugin, cross-Module runtime, forced shared Pack format
 
-**Composition Definition**:
-An apply-once Host-owned list of Module Definition references. The Host resolves each current revision at launch and creates ordinary independent Resources.
-_Avoid_: Workspace Template, Blueprint, workflow, controller, reconciliation, persistent wiring
-
 ## Relationships
 
 - A Leitbild Host can manage many Workspaces.
@@ -74,4 +70,3 @@ _Avoid_: Workspace Template, Blueprint, workflow, controller, reconciliation, pe
 - Packs in different Modules interoperate through discovered Workspace Resources and Capabilities, never by importing each other's runtime internals.
 - A Resource belongs to exactly one Module and one Workspace and may identify the Definition Revision that created it.
 - A Capability is advertised by exactly one Module and may apply to a Definition type, Resource type, or Workspace.
-- A Composition Definition may create Resources in several Modules but never controls them afterward.

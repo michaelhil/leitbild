@@ -21,8 +21,8 @@ const gateway = (): ModuleGateway => ({
   remove: async () => ({ ok: true, value: undefined }),
   definitions: async (moduleId, workspaceId) => ({ ok: true, value: moduleDefinitionCollectionSchema.parse({ definitions: [
     moduleId === 'world' ? {
-      ref: { workspaceId, moduleId, type: 'world.scenario', id: 'halden-four-unit-grid' },
-      title: 'Halden Four-Unit Grid', currentRevisionId: 'revision-0123456789abcdef0123456789abcdef',
+      ref: { workspaceId, moduleId, type: 'world.scenario', id: 'test-scenario' },
+      title: 'Test Scenario', currentRevisionId: 'revision-0123456789abcdef0123456789abcdef',
       capabilityIds: ['world.scenario.start'],
     } : {
       ref: { workspaceId, moduleId, type: 'agents.room-definition', id: 'halden-integrated-control-room' },
@@ -86,13 +86,8 @@ describe('Leitbild server', () => {
     expect((await fetch(`${baseUrl}/api/workspaces/${workspace.id}/modules/world`, { method: 'DELETE' })).status).toBe(404)
   })
 
-  test('publishes and starts cross-Module Compositions', async () => {
-    const { host, baseUrl } = startHost()
-    const workspace = await host.create({ name: null })
-    const catalog = await (await fetch(`${baseUrl}/api/compositions`)).json() as { compositions: Array<{ id: string }> }
-    expect(catalog.compositions.map(composition => composition.id)).toContain('halden-integrated-control-room')
-    const response = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/compositions/halden-integrated-control-room/start`, { method: 'POST' })
-    expect(response.status).toBe(200)
-    expect((await response.json() as { application: { status: string } }).application.status).toBe('applied')
+  test('does not expose a retired Combined launcher', async () => {
+    const { baseUrl } = startHost()
+    expect((await fetch(`${baseUrl}/api/compositions`)).status).toBe(404)
   })
 })

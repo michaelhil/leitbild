@@ -35,10 +35,6 @@
   })
 </script>
 
-{#if !location.pathname.endsWith('/scenarios/new')}
-  <a class="workspace-back" href="/">Workspaces</a>
-{/if}
-
 {#if Route}
   <Route />
 {:else}

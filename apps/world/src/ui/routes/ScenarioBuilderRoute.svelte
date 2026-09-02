@@ -139,7 +139,14 @@
   }))) ?? []
   const systemElectricalEndpoints = () => electricalEndpoints().filter(endpoint => endpoint.role === 'system')
   const networkElectricalEndpoints = () => electricalEndpoints().filter(endpoint => endpoint.role === 'network')
-  const selectedEntry = () => selection.kind === 'item' ? allItems().find(entry => entry.item.id === selection.id) : undefined
+  const selectedEntry = () => {
+    const current = selection
+    return current.kind === 'item' ? allItems().find(entry => entry.item.id === current.id) : undefined
+  }
+  const selectedPack = () => {
+    const current = selection
+    return current.kind === 'pack' ? catalog?.packs.find(pack => pack.id === current.id) : undefined
+  }
   const selectedItem = () => selectedEntry()?.item
   const recordingSelectionFor = (packId: string) => draft.recording.find(selection => selection.packId === packId)
   const selectedType = (): AuthoringItemType | undefined => {
@@ -167,7 +174,7 @@
 
   const mapPoints = (): ReadonlyArray<{ id: string; label: string; coordinates: [number, number] }> => !catalog ? [] : [
     ...allItems().flatMap(({ packId, item }) => {
-    const type = itemTypeFor(catalog, packId, item)
+    const type = catalog ? itemTypeFor(catalog, packId, item) : undefined
     if (!type?.placement) return []
     const value = valueAtPath(item, type.placement.path)
     if (type.placement.kind === 'point') {
@@ -387,7 +394,7 @@
     if (draft.packs.length === 0) return 'Add at least one Pack.'
     if (placementItemId) return 'Place the selected item on the map.'
     if (catalog && allItems().some(({ packId, item }) => {
-      const type = itemTypeFor(catalog, packId, item)
+      const type = catalog ? itemTypeFor(catalog, packId, item) : undefined
       return type?.placement && valueAtPath(item, type.placement.path) === undefined
     })) return 'Every map item needs a position.'
     if (previewError) return previewError
@@ -440,19 +447,23 @@
       previewError = null
       return
     }
+    let current = true
     if (previewTimer !== null) clearTimeout(previewTimer)
     previewTimer = setTimeout(() => {
       void invoke<InvocationResponse>('world.scenario.preview', { source: JSON.parse(source) })
         .then(response => {
+          if (!current) return // Ignore a response for an obsolete draft.
           preview = response.result as ScenarioPreview
           previewError = null
         })
         .catch(cause => {
+          if (!current) return
           preview = null
           previewError = cause instanceof Error ? cause.message : String(cause)
         })
     }, 250)
     return () => {
+      current = false
       if (previewTimer !== null) clearTimeout(previewTimer)
     }
   })
@@ -514,6 +525,7 @@
       <aside class="builder-properties">
         {#if selection.kind === 'scenario'}
           <h2>Scenario</h2><p>The map position is the starting frame users will see.</p>
+          <label>Objectives <textarea rows="3" placeholder="One objective per line" value={draft.objectives.join('\n')} onchange={event => { draft.objectives = event.currentTarget.value.split('\n').map(line => line.trim()).filter(Boolean) }}></textarea></label>
           <label>Description <textarea rows="4" placeholder="Optional" value={draft.description ?? ''} oninput={event => { draft.description = event.currentTarget.value; draft = { ...draft } }}></textarea></label>
           <dl><div><dt>Center</dt><dd>{mapCenter().map(value => value.toFixed(4)).join(', ')}</dd></div><div><dt>Zoom</dt><dd>{mapZoom().toFixed(1)}</dd></div></dl>
           <h3>Electrical connections</h3>
@@ -553,7 +565,7 @@
             </div>
           {/if}
         {:else if selection.kind === 'pack'}
-          {@const pack = catalog.packs.find(candidate => candidate.id === selection.id)}
+          {@const pack = selectedPack()}
           {#if pack}
             {@const packSelection = selectionFor(draft, pack.id)}
             <h2>{pack.title}</h2><p>{pack.description}</p>

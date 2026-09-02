@@ -27,21 +27,6 @@ import {
 import { hostError } from './errors.ts'
 import type { ModuleGateway, ModuleOperationResult } from './module-gateway.ts'
 import type { WorkspaceStore } from './store.ts'
-import { COMPOSITION_CATALOG, getComposition, type CompositionDefinition } from './compositions.ts'
-
-export interface CompositionActionOutcome {
-  readonly capabilityId: CapabilityId
-  readonly status: 'applied' | 'failed'
-  readonly result?: unknown
-  readonly createdResources?: ReadonlyArray<import('@leitbild/contracts').WorkspaceResourceReference>
-  readonly error?: string
-}
-
-export interface CompositionApplication {
-  readonly compositionId: string
-  readonly status: 'applied' | 'partial' | 'failed'
-  readonly outcomes: ReadonlyArray<CompositionActionOutcome>
-}
 
 export interface WorkspaceHost {
   readonly list: () => ReadonlyArray<Workspace>
@@ -54,8 +39,6 @@ export interface WorkspaceHost {
   readonly resources: (id: WorkspaceId) => Promise<WorkspaceResourceCatalog>
   readonly capabilities: (id: WorkspaceId) => Promise<WorkspaceCapabilityCatalog>
   readonly invoke: (id: WorkspaceId, capabilityId: CapabilityId, input: InvokeCapabilityInput, access: AccessContext) => Promise<import('@leitbild/contracts').ModuleCapabilityInvocationResult>
-  readonly compositions: () => ReadonlyArray<CompositionDefinition>
-  readonly startComposition: (id: WorkspaceId, compositionId: string, access: AccessContext) => Promise<CompositionApplication>
   readonly installedModuleIds: () => ReadonlyArray<ModuleId>
 }
 
@@ -285,44 +268,6 @@ export const createWorkspaceHost = (config: {
       return workspaceCapabilityCatalogSchema.parse({ workspaceId: id, modules: outcomes, capabilities })
     },
     invoke: invokeCapability,
-    compositions: () => COMPOSITION_CATALOG,
-    startComposition: async (rawId, compositionId, access) => {
-      const id = workspaceIdSchema.parse(rawId)
-      requireWorkspace(id)
-      const composition = getComposition(compositionId)
-      if (!composition) throw hostError({ status: 404, code: 'composition_not_found', message: 'Composition not found' })
-      const outcomes = await Promise.all(composition.actions.map(async action => {
-        try {
-          const definitions = await config.modules.definitions(action.moduleId, id)
-          if (!definitions.ok) throw new Error(definitions.failure.message)
-          const definition = definitions.value.definitions.find(candidate =>
-            candidate.ref.type === action.definitionType && candidate.ref.id === action.definitionId)
-          if (!definition) throw new Error(`Composition Definition is unavailable: ${action.definitionType}:${action.definitionId}`)
-          const invoked = await invokeCapability(id, action.capabilityId, {
-            definition: { ...definition.ref, revisionId: definition.currentRevisionId },
-            input: {},
-          }, access)
-          return {
-            capabilityId: action.capabilityId,
-            status: 'applied' as const,
-            result: invoked.result,
-            ...(invoked.createdResources === undefined ? {} : { createdResources: invoked.createdResources }),
-          }
-        } catch (error) {
-          return {
-            capabilityId: action.capabilityId,
-            status: 'failed' as const,
-            error: error instanceof Error ? error.message : String(error),
-          }
-        }
-      }))
-      const applied = outcomes.filter(outcome => outcome.status === 'applied').length
-      return {
-        compositionId: composition.id,
-        status: applied === outcomes.length ? 'applied' : applied === 0 ? 'failed' : 'partial',
-        outcomes,
-      }
-    },
     installedModuleIds: () => config.modules.list().map(registration => registration.moduleId),
   }
 }

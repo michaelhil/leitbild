@@ -11,7 +11,7 @@ These rules apply across the repository. Module-local `AGENTS.md` files may add 
 - A Binding is allowed only for continuous system behavior that must persist without an Agent choosing on every action.
 - Packs belong to exactly one Module. Do not create a universal Pack runtime.
 - Pack descriptors declare provenance and contribution identities; exact callable operations belong to the owning Module's Capability Registry. Do not derive vague Pack capabilities from contribution kinds.
-- A Composition Definition is an apply-once cross-Module composition that references Module-owned Definitions and resolves their exact revisions at launch. It may request creation of Resources but must not embed Module-private configuration, contain an automation language, or reconcile Resources after launch.
+- The Host launches Module Definitions only through their published Capabilities. Do not add a separate Host-owned demo catalog or hidden cross-Module launch logic.
 - Definitions, Resources, and Capabilities are the common orchestration model. Modules own Definition schemas and compilation, Resource state, Capability handlers, and ongoing automation.
 - Reusable composition fragments belong to one Module. Do not add a universal fragment runtime, arbitrary inheritance, merge-patch language, or cross-Module fragment.
 - Workspace identity is carried in canonical URL paths. Cookies must not select or override a Workspace.

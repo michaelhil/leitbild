@@ -8,6 +8,6 @@
   <section class="run-panel empty-world">
     <h1>World</h1>
     <p>Choose a Scenario or existing Simulation Run from the Workspace home.</p>
-    <a class="command-button" href={`/workspaces/${encodeURIComponent(route.workspaceId)}`}>Workspace home</a>
+    <a class="command-button" target="_top" href={`/workspaces/${encodeURIComponent(route.workspaceId)}`}>Workspace home</a>
   </section>
 </main>

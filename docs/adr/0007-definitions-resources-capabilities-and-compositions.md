@@ -1,8 +1,8 @@
-# Definitions, Resources, Capabilities, and Compositions form the orchestration model
+# Definitions, Resources, and Capabilities form the orchestration model
 
 Leitbild uses Module-owned Definitions to describe repeatable setup, immutable Definition Revisions to make launches reproducible, Resources for live state, and typed Capabilities for every meaningful external operation. A created Resource records its source Definition Revision when one exists. Reusable fragments remain inside one Module and compile into normalized revisions.
 
-The Host may own small apply-once Composition Definitions that reference stable Module Definition identities. At launch it discovers each Definition, resolves its current revision, and independently invokes the owning Module. A Composition has no Module-private payloads, step-output references, branches, schedules, rollback fiction, reconciliation, or runtime state. Partial outcomes remain visible and operable. Ongoing automation belongs to World Timelines, Agent Scripts, or another explicit domain owner.
+The separate Host Composition catalog and launcher were removed in the September 2026 catalog cleanup: the only consumer was a retired demo. The Host discovers Module-owned Definitions and their explicit launch Capabilities without another catalog or hidden multi-Module startup behavior. Ongoing automation belongs to World Timelines, Agent Scripts, or another explicit domain owner.
 
 This rejects both a universal scenario tree/runtime and browser-owned launch procedures. A universal engine would conflate simulation time, continuous mechanics, wall-clock schedules, and multi-Agent turn-taking. Browser procedures are not durable, discoverable, revisioned, or AI-invocable.
 
