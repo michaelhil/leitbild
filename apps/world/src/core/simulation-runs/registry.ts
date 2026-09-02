@@ -317,8 +317,10 @@ export const createSimulationRunRegistry = (config: {
   const isUnreadableSnapshotError = (err: unknown): boolean =>
     err instanceof SyntaxError || err instanceof ZodError
 
-  const unreadableSnapshotMessage = (err: unknown): string =>
-    err instanceof Error ? err.message : 'snapshot could not be read'
+  const unreadableSnapshotMessage = (err: unknown): string => {
+    const message = err instanceof Error ? err.message : 'snapshot could not be read'
+    return message.length <= 2_000 ? message : `${message.slice(0, 1_997)}...`
+  }
 
   const manifestStoreFor = (id: SimulationRunId) =>
     createSimulationRunManifestStore(join(simulationRunRoot, id, 'manifest.json'))
@@ -641,8 +643,11 @@ export const createSimulationRunRegistry = (config: {
     }
     const loaded = simulationRuns.get(id)
     await ensureScenarioLibrary()
-    const revision = await scenarioLibrary.getRevision(scenarioRevisionIdFromManifest(manifest))
-    const scenarioTitle = revision?.document.title ?? null
+    // Resource discovery needs display metadata, not the pinned Scenario body.
+    // Keeping it on the catalog index prevents one unreadable revision from
+    // taking the entire Workspace Resource catalog down.
+    const scenario = await scenarioLibrary.get(manifest.scenario.id)
+    const scenarioTitle = scenario?.title ?? null
     if (loaded) {
       const snapshot = loaded.snapshot()
       return {

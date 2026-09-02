@@ -223,6 +223,37 @@ describe('Simulation Run registry', () => {
     })])
   })
 
+  test('lists Run resources without parsing their pinned Scenario bodies', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-run-registry-'))
+    const workspaceId = newWorkspaceId()
+    const registry = createRegistry(dataDir, workspaceId)
+    const runtime = await registry.create({ scenarioId: 'oslo-ambulance' })
+    const id = runtime.id
+    await registry.close(id)
+    const manifest = JSON.parse(await readFile(
+      join(simulationRunDir(dataDir, workspaceId, id), 'manifest.json'),
+      'utf8',
+    )) as { readonly scenario: { readonly revisionId: string } }
+    const revisionPath = join(
+      dataDir,
+      'workspaces',
+      workspaceId,
+      'world',
+      'scenarios',
+      'revisions',
+      `${manifest.scenario.revisionId}.json`,
+    )
+    const revision = JSON.parse(await readFile(revisionPath, 'utf8')) as { document: Record<string, unknown> }
+    revision.document = { id: 'invalid-pinned-scenario' }
+    await writeFile(revisionPath, `${JSON.stringify(revision)}\n`, 'utf8')
+
+    expect(await registry.listKnown()).toEqual([expect.objectContaining({
+      id,
+      scenarioId: 'oslo-ambulance',
+      scenarioTitle: 'Oslo ambulance tutorial',
+    })])
+  })
+
   test('fails visibly when pinned Pack versions are unavailable', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-run-registry-'))
     const workspaceId = newWorkspaceId()
