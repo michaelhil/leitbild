@@ -1,5 +1,7 @@
 import type { PackDescriptor } from '@leitbild/contracts'
 
+export type AgentPackDescriptor = PackDescriptor & { readonly description: string }
+
 export interface WikiSourceBinding {
   readonly org: string
   readonly repo: string
@@ -18,7 +20,7 @@ export interface WikiRef {
 
 /** Strict, Agents-Module metadata wrapped around the shared Pack Descriptor. */
 export interface PackManifest {
-  readonly descriptor: PackDescriptor
+  readonly descriptor: AgentPackDescriptor
   readonly wikis: ReadonlyArray<WikiRef>
   readonly uiExtensions: ReadonlyArray<string>
 }

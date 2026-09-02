@@ -115,6 +115,18 @@ describe('install_pack', () => {
     expect(env.catalogRefreshCount).toEqual({ geodata: 1, scripts: 1 })
   })
 
+  it('refuses to shadow a bundled Pack', async () => {
+    const env = await makeDeps()
+    parent = env.parent
+    const url = await buildRepo(env.parent, 'demos')
+
+    const result = await createPackManager(env.deps).install(url)
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('reserved for built-in functionality')
+    expect(env.deps.toolRegistry.has('demos_ping')).toBe(false)
+  })
+
   it('refreshes Pack contribution catalogs even when rebuilding live Agent tools fails', async () => {
     const env = await makeDeps()
     parent = env.parent

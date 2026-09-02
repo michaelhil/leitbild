@@ -13,6 +13,7 @@ const writePack = async (root: string, id: string): Promise<void> => {
       id,
       version: '1.0.0',
       name: id,
+      description: `Test Pack ${id}`,
       contributions: [{ kind: 'tool' }],
     }),
     wikis: [],
@@ -63,7 +64,7 @@ describe('scanPacks', () => {
     await mkdir(wrongDir)
     await writeFile(join(wrongDir, 'pack.json'), JSON.stringify({
       descriptor: createAgentPackDescriptor({
-        id: 'actual', version: '1.0.0', name: 'Actual', contributions: [{ kind: 'tool' }],
+        id: 'actual', version: '1.0.0', name: 'Actual', description: 'Test Pack actual', contributions: [{ kind: 'tool' }],
       }),
       wikis: [],
       uiExtensions: [],

@@ -27,6 +27,7 @@ const writePackManifest = async (root: string, directoryId: string, packId = dir
       id: packId,
       version: '1.0.0',
       name: packId,
+      description: `Test Pack ${packId}`,
       contributions: [{ kind: 'geodata' }],
     }),
     wikis: [],

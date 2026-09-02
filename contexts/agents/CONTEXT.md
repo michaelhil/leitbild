@@ -58,6 +58,7 @@ _Avoid_: implicit Pack-wide grants, required-tools preflight lists, or conflatin
 
 **Context View**:
 A bounded, derived representation of relevant Workspace and Resource state supplied to an Agent for one decision.
+World context presents a capped operational-object index; an Agent narrows it with the object-search Capability and reads details only when needed.
 _Avoid_: copied domain state, persisted generated prompt
 
 **Evaluation**:
@@ -66,6 +67,7 @@ _Avoid_: production workflow or runtime controller
 
 **Agent Pack**:
 An extension owned by the Agents Module that contributes Agent-facing tools, skills, scripts, knowledge, geodata, or reviewed UI extensions.
+Its descriptor is self-describing, belongs only to `agents`, and its exact selected id makes contributions available to a Room without granting them to every Agent.
 _Avoid_: universal Pack or cross-Module ownership
 
 **Agent Pack Catalog**:

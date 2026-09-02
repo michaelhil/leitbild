@@ -30,6 +30,7 @@ const manifestFor = (id: string, kinds: ReadonlyArray<string>): PackManifest => 
     id,
     version: '1.0.0',
     name: id,
+    description: `Test Pack ${id}`,
     contributions: kinds.map(kind => ({ kind })),
   }),
   wikis: [],

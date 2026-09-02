@@ -48,6 +48,9 @@ describe('Agent Pack manifest', () => {
 
     expect(() => parsePackManifest({ ...validManifest(), legacyName: 'atc' })).toThrow('Unrecognized key')
     expect(() => parsePackManifest({ descriptor: { id: 'atc' } })).toThrow()
+    const base = validManifest()
+    const { description: _description, ...withoutDescription } = base.descriptor
+    expect(() => parsePackManifest({ ...base, descriptor: withoutDescription })).toThrow('require a discovery description')
   })
 
   it('rejects Packs for other Modules and incompatible contract versions', () => {
@@ -67,6 +70,7 @@ describe('Agent Pack manifest', () => {
       id: 'procedures',
       version: '1.0.0',
       name: 'Procedures',
+      description: 'Procedure tools and references.',
       contributions: [{ kind: 'wiki' }],
     })
     const manifest = parsePackManifest({
@@ -88,6 +92,7 @@ describe('Agent Pack manifest', () => {
       id: 'biometrics',
       version: '1.0.0',
       name: 'Biometrics',
+      description: 'Biometric observation tools.',
       contributions: [{ kind: 'ui-extension', id: 'biometrics' }],
     })
     expect(parsePackManifest({ descriptor, uiExtensions: ['biometrics'], wikis: [] }).uiExtensions).toEqual(['biometrics'])

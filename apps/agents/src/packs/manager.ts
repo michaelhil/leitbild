@@ -33,6 +33,7 @@ import { scanPacks } from './scanner.ts'
 import { resolvePackLoadOrder } from './catalog.ts'
 import { invalidateRegistryCache } from './registry.ts'
 import { formatShellError } from '../core/redact.ts'
+import { getBundledPack } from './bundled.ts'
 import { createSerialiseChain, type SerialiseChain } from '../core/serialise-chain.ts'
 import { stat, mkdtemp, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -245,9 +246,9 @@ const installPack = (deps: PackManagerDeps) => async (rawSource: string): Promis
       return { success: false, error: error instanceof Error ? error.message : String(error) }
     }
     const packId = manifest.descriptor.id
-    if (packId === 'core') {
+    if (packId === 'core' || getBundledPack(packId) !== undefined) {
       await cleanup()
-      return { success: false, error: '"core" is reserved for built-in functionality and cannot be installed as a Pack' }
+      return { success: false, error: `"${packId}" is reserved for built-in functionality and cannot be installed as a Pack` }
     }
 
     // B2: serialise the post-packId-resolution work for this packId.

@@ -9,6 +9,7 @@ import { createWorldWorkspaceRuntimeRegistry } from '../../../apps/world/src/cor
 import { createTestPackRuntimeAdapters, createTestScenarioCatalog, testScenarioAuthoring } from '../../../apps/world/tests/helpers.ts'
 import { handleAgentsModuleApi } from '../../../apps/agents/src/api/workspace-module-api.ts'
 import { asAIAgent } from '../../../apps/agents/src/agents/shared.ts'
+import { BUNDLED_ROOM_DEFINITIONS } from '../../../apps/agents/src/core/definitions/room-definition-catalog.ts'
 import { createDeploymentRuntime } from '../../../apps/agents/src/core/deployment-runtime.ts'
 import { createAgentsModuleState } from '../../../apps/agents/src/core/workspaces/module-state.ts'
 import {
@@ -124,6 +125,21 @@ describe('Workspace Host with real Modules', () => {
       ['agents', 'ready'],
       ['world', 'ready'],
     ])
+
+    const capabilityCatalogResponse = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities`)
+    expect(capabilityCatalogResponse.status).toBe(200)
+    const capabilityIds = new Set((await capabilityCatalogResponse.json() as {
+      capabilities: Array<{ id: string }>
+    }).capabilities.map(capability => capability.id))
+    const integratedRoom = BUNDLED_ROOM_DEFINITIONS
+      .find(definition => definition.id === 'halden-integrated-control-room')
+    if (!integratedRoom) throw new Error('Missing integrated Room Definition')
+    const worldGrants = integratedRoom.room.agents
+      .flatMap(agent => agent.toolGrants ?? [])
+      .map(grant => String(grant.capabilityId))
+      .filter(capabilityId => capabilityId.startsWith('world.'))
+    expect(worldGrants.length).toBeGreaterThan(0)
+    expect(worldGrants.filter(capabilityId => !capabilityIds.has(capabilityId))).toEqual([])
 
     const definitionCatalog = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/definitions`)
     expect(definitionCatalog.status).toBe(200)

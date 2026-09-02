@@ -15,6 +15,7 @@ const pack = (
       id,
       version,
       name: id,
+      description: `Test Pack ${id}`,
       contributions: [{ kind: 'tool' }],
       dependencies,
     }),

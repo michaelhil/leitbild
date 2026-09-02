@@ -20,6 +20,7 @@
         ],
         "toolGrants": [
           { "capabilityId": "world.simulation-run.context" },
+          { "capabilityId": "world.simulation-run.objects.search" },
           { "capabilityId": "world.simulation-run.read-object" },
           { "capabilityId": "world.simulation-run.changes" },
           { "capabilityId": "world.simulation-run.history" },

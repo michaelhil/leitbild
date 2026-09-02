@@ -42,6 +42,9 @@ export const createAgentPackCatalog = (deps: {
   let installedPacks: ReadonlyArray<Pack> = []
 
   const replaceInstalled = (packs: ReadonlyArray<Pack>): void => {
+    const bundledIds = new Set(BUNDLED_PACKS.map(pack => pack.manifest.descriptor.id))
+    const override = packs.find(pack => bundledIds.has(pack.id))
+    if (override) throw new Error(`Installed Pack ${override.id} conflicts with a bundled Pack`)
     installedPacks = [...packs]
   }
 
@@ -59,13 +62,15 @@ export const createAgentPackCatalog = (deps: {
         descriptor: manifest.descriptor,
         wikis: manifest.wikis,
         uiExtensions: manifest.uiExtensions,
-        tools: tools.filter(entry => entry.source.pack === id).map(entry => entry.tool.name),
-        skills: skills.filter(skill => skill.pack === id).map(skill => skill.name),
+        tools: tools.filter(entry => entry.source.pack === id).map(entry => entry.tool.name).sort(),
+        skills: skills.filter(skill => skill.pack === id).map(skill => skill.name).sort(),
       }
     }
     return [
       ...BUNDLED_PACKS.map(pack => entryFor(pack.manifest, 'bundled')),
-      ...installedPacks.map(pack => entryFor(pack.manifest, 'installed')),
+      ...installedPacks
+        .map(pack => entryFor(pack.manifest, 'installed'))
+        .sort((left, right) => left.id.localeCompare(right.id)),
     ]
   }
 

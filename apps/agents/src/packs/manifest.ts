@@ -1,8 +1,8 @@
-import { packDescriptorSchema, type PackDescriptor } from '@leitbild/contracts'
+import { packDescriptorSchema } from '@leitbild/contracts'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import type { PackManifest } from './types.ts'
+import type { AgentPackDescriptor, PackManifest } from './types.ts'
 
 const MANIFEST_FILENAME = 'pack.json'
 export const AGENT_PACK_SCHEMA_VERSION = '1.0.0'
@@ -66,6 +66,13 @@ export const agentPackManifestSchema = z.object({
       code: 'custom',
       path: ['descriptor', 'moduleId'],
       message: 'The Agents Module can only load Packs whose moduleId is agents',
+    })
+  }
+  if (!descriptor.description?.trim()) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['descriptor', 'description'],
+      message: 'Agent Packs require a discovery description',
     })
   }
   if (descriptor.platformVersionRange !== AGENT_PACK_PLATFORM_VERSION_RANGE) {
@@ -151,7 +158,7 @@ export const parsePackManifest = (value: unknown, filePath = MANIFEST_FILENAME):
       .join('; ')
     throw packManifestError(filePath, details)
   }
-  return result.data
+  return result.data as PackManifest
 }
 
 export const readManifest = async (dirPath: string): Promise<PackManifest> => {
@@ -176,17 +183,17 @@ export const createAgentPackDescriptor = (input: {
   readonly id: string
   readonly version: string
   readonly name: string
-  readonly description?: string
+  readonly description: string
   readonly contributions: ReadonlyArray<{ readonly kind: string; readonly id?: string }>
   readonly dependencies?: ReadonlyArray<{ readonly id: string; readonly versionRange: string }>
-}): PackDescriptor => packDescriptorSchema.parse({
+}): AgentPackDescriptor => packDescriptorSchema.parse({
   schemaVersion: AGENT_PACK_SCHEMA_VERSION,
   id: input.id,
   moduleId: 'agents',
   version: input.version,
   name: input.name,
-  ...(input.description ? { description: input.description } : {}),
+  description: input.description,
   platformVersionRange: AGENT_PACK_PLATFORM_VERSION_RANGE,
   dependencies: [...(input.dependencies ?? [])],
   contributions: [...input.contributions],
-})
+}) as AgentPackDescriptor
