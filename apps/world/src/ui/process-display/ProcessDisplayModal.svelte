@@ -2,7 +2,6 @@
   import { untrack } from 'svelte'
   import { ClipboardList, Eye, Play, X, Zap } from 'lucide-svelte'
   import type { SimulationRunId, OperationalObject } from '../../core/model/index.ts'
-  import type { PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
   import { processPlantActionInvokeCommandKind } from '../../packs/process-plant/command-kinds.ts'
   import type { CompiledProcessDisplay, ProcessDisplayValue } from '../../packs/process-plant/displays/index.ts'
   import { statusToneColor } from '../status-presentation.ts'
@@ -10,17 +9,17 @@
   import ProcedureRunBadges from '../procedures/ProcedureRunBadges.svelte'
   import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from '../procedures/procedure-run-selectors.ts'
   import ProcessDisplayRenderer from './ProcessDisplayRenderer.svelte'
+  import { runOnMount } from '../svelte-lifecycle.svelte.ts'
+  import { createProcessDisplaySession } from './process-display-session.ts'
   import {
     emptyProcessDisplayAlarmSnapshot,
-    listProcessDisplays,
     readProcessPlantCatalog,
-    readProcessDisplay,
     readProcessDisplayProjection,
-    readProcessDisplaySnapshot,
     processPlantIdForObject,
     type ProcessDisplayProjection,
     type ProcessDisplayLensOption,
     type ProcessPlantActionCatalogEntry,
+    type ProcessDisplaySnapshot,
   } from './process-display-client.ts'
   import type { ProcessDisplayAlarmSnapshot } from '../../packs/process-plant/displays/index.ts'
   import {
@@ -41,7 +40,6 @@
   interface Props {
     readonly simulationRunId: SimulationRunId
     readonly object: OperationalObject
-    readonly unitStatus?: PackObjectStatusPresentation
     readonly procedureSummaries?: ProcedureRunSummaryGroup
     readonly windowOffsetIndex?: number
     readonly openProcedureSystemAt: (summary?: ProcedureRunSummary) => void
@@ -53,7 +51,6 @@
   let {
     simulationRunId,
     object,
-    unitStatus = undefined,
     procedureSummaries = emptyProcedureRunSummaries,
     windowOffsetIndex = 0,
     openProcedureSystemAt,
@@ -74,6 +71,7 @@
 
   let loading = $state(true)
   let error = $state<string | null>(null)
+  let refreshError = $state<string | null>(null)
   let display = $state<CompiledProcessDisplay | null>(null)
   let values = $state<ReadonlyMap<string, ProcessDisplayValue>>(new Map())
   let alarms = $state<ProcessDisplayAlarmSnapshot>(emptyProcessDisplayAlarmSnapshot)
@@ -82,13 +80,16 @@
   let lensMenuOpen = $state(false)
   let transientModalOpen = $state(false)
   let transientRunningId = $state<string | null>(null)
-  let availableActions = $state<ReadonlyArray<ProcessPlantActionCatalogEntry>>([])
+  let availableActions = $state<ReadonlyArray<ProcessPlantActionCatalogEntry> | null>(null)
+  let actionsLoading = $state(false)
+  let actionsError = $state<string | null>(null)
   let transientInputs = $state<Record<string, Record<string, number>>>({})
   let widgetPositions = $state<ProcessDisplayLayout>({})
   let loadedPlantId = $state<string | null>(null)
   let windowBounds = $state<ProcessDisplayWindowBounds>({ x: 72, y: 72, width: 1120, height: 720 })
   let windowDragState = $state<WindowDragState | null>(null)
-  let boundsInitialized = false
+  let disposed = false
+  let lensRequest = 0
 
   const defaultWindowBounds = (): ProcessDisplayWindowBounds => {
     if (typeof window === 'undefined') return windowBounds
@@ -121,15 +122,36 @@
     return plantId
   }
   const processDisplayPlantId = untrack(() => plantIdFor(object))
+  const processDisplayRunId = untrack(() => simulationRunId)
 
-  const refreshSnapshot = async (
-    runId: SimulationRunId,
-    plantId: string,
-    displayId: string,
-  ): Promise<void> => {
-    const snapshot = await readProcessDisplaySnapshot(runId, plantId, displayId)
+  const applySnapshot = (snapshot: ProcessDisplaySnapshot): void => {
     values = new Map(snapshot.values.map(value => [value.path, value]))
     alarms = snapshot.alarms
+  }
+  const session = createProcessDisplaySession({
+    runId: processDisplayRunId,
+    plantId: processDisplayPlantId,
+    onSnapshot: applySnapshot,
+    onRefreshError: (message) => { refreshError = message },
+  })
+
+  const loadActions = async (): Promise<void> => {
+    if (disposed || actionsLoading || availableActions !== null) return
+    actionsLoading = true
+    actionsError = null
+    try {
+      const catalog = await readProcessPlantCatalog(processDisplayRunId)
+      if (disposed) return
+      availableActions = catalog.actions
+      transientInputs = Object.fromEntries(catalog.actions.map(action => [
+        action.id,
+        Object.fromEntries(action.parameters.map(parameter => [parameter.id, parameter.defaultValue])),
+      ]))
+    } catch (err) {
+      if (!disposed) actionsError = err instanceof Error ? err.message : String(err)
+    } finally {
+      if (!disposed) actionsLoading = false
+    }
   }
 
   const visibleWidgetIds = $derived(projection
@@ -171,7 +193,6 @@
   const runDemoTransient = async (transient: ProcessPlantActionCatalogEntry): Promise<void> => {
     if (transientRunningId !== null) return
     const plantId = loadedPlantId ?? plantIdFor(object)
-    const currentDisplay = display
     transientModalOpen = false
     transientRunningId = transient.id
     error = null
@@ -188,11 +209,11 @@
       if (!response.result.ok) {
         throw new Error(response.result.reason ?? `process plant rejected ${transient.id}`)
       }
-      if (currentDisplay) await refreshSnapshot(simulationRunId, plantId, currentDisplay.id)
+      await session.refresh()
     } catch (err) {
-      error = `${transient.title} failed: ${err instanceof Error ? err.message : String(err)}`
+      if (!disposed) error = `${transient.title} failed: ${err instanceof Error ? err.message : String(err)}`
     } finally {
-      transientRunningId = null
+      if (!disposed) transientRunningId = null
     }
   }
 
@@ -285,104 +306,72 @@
     plantId: string,
     displayId: string,
   ): Promise<void> => {
-    activeLensId = lens.id
+    const request = ++lensRequest
+    error = null
     if (lens.lens === undefined) {
+      activeLensId = lens.id
       projection = null
       return
     }
-    projection = await readProcessDisplayProjection(simulationRunId, plantId, displayId, lens.lens)
-  }
-
-  const startSnapshotRefresh = (config: {
-    readonly runId: SimulationRunId
-    readonly plantId: string
-    readonly displayId: string
-    readonly isCancelled: () => boolean
-  }): (() => void) => {
-    const refreshSafely = async (): Promise<void> => {
-      try {
-        await refreshSnapshot(config.runId, config.plantId, config.displayId)
-      } catch (err) {
-        if (!config.isCancelled()) error = err instanceof Error ? err.message : String(err)
+    try {
+      const next = await readProcessDisplayProjection(processDisplayRunId, plantId, displayId, lens.lens)
+      if (!disposed && request === lensRequest) {
+        projection = next
+        activeLensId = lens.id
       }
-    }
-    const interval = setInterval(() => {
-      void refreshSafely()
-    }, 1_000)
-    return () => {
-      clearInterval(interval)
+    } catch (err) {
+      if (!disposed && request === lensRequest) error = err instanceof Error ? err.message : String(err)
     }
   }
 
-  $effect(() => {
-    const selectedPlantId = processDisplayPlantId
-    const selectedSimulationRunId = simulationRunId
-    let cancelled = false
-    let stopRefresh: (() => void) | null = null
-
-    if (!boundsInitialized) {
-      windowBounds = clampWindowBounds(defaultWindowBounds())
-      boundsInitialized = true
-    }
-
-    const load = async (): Promise<void> => {
-      try {
-        loading = true
-        error = null
-        values = new Map()
-        availableActions = []
-        alarms = emptyProcessDisplayAlarmSnapshot
-        const displays = await listProcessDisplays(selectedSimulationRunId, selectedPlantId)
-        const catalog = await readProcessPlantCatalog(selectedSimulationRunId)
-        const first = displays[0]
-        if (!first) throw new Error(`no process displays are available for ${selectedPlantId}`)
-        const nextDisplay = await readProcessDisplay(selectedSimulationRunId, selectedPlantId, first.id)
-        if (cancelled) return
-        loadedPlantId = selectedPlantId
-        display = nextDisplay
-        availableActions = catalog.actions
-        transientInputs = Object.fromEntries(catalog.actions.map(action => [
-          action.id,
-          Object.fromEntries(action.parameters.map(parameter => [parameter.id, parameter.defaultValue])),
-        ]))
-        projection = null
-        activeLensId = nextDisplay.lenses[0]?.id ?? 'all'
-        widgetPositions = readProcessDisplayLayout({
-          simulationRunId: selectedSimulationRunId,
-          plantId: selectedPlantId,
-          displayId: nextDisplay.id,
-        })
-        const currentWindowBounds = untrack(() => windowBounds)
-        windowBounds = clampWindowBounds(readProcessDisplayWindowBounds({
-          simulationRunId: selectedSimulationRunId,
-          plantId: selectedPlantId,
-          displayId: nextDisplay.id,
-        }) ?? currentWindowBounds)
-        await refreshSnapshot(selectedSimulationRunId, selectedPlantId, first.id)
-        if (cancelled) return
-        stopRefresh = startSnapshotRefresh({
-          runId: selectedSimulationRunId,
-          plantId: selectedPlantId,
-          displayId: first.id,
-          isCancelled: () => cancelled,
-        })
-      } catch (err) {
-        if (!cancelled) error = err instanceof Error ? err.message : String(err)
-      } finally {
-        if (!cancelled) loading = false
+  const loadDisplay = async (): Promise<void> => {
+    loading = true
+    error = null
+    try {
+      const loaded = await session.load()
+      if (disposed || !loaded) return
+      const address = {
+        simulationRunId: processDisplayRunId,
+        plantId: processDisplayPlantId,
+        displayId: loaded.display.id,
       }
+      const layout = readProcessDisplayLayout(address)
+      const bounds = clampWindowBounds(readProcessDisplayWindowBounds(address) ?? windowBounds)
+      const firstLens = loaded.display.lenses[0]
+      if (firstLens) await applyLens(firstLens, processDisplayPlantId, loaded.display.id)
+      if (disposed) return
+      // Reveal the renderer only after its data and final geometry are ready.
+      widgetPositions = layout
+      windowBounds = bounds
+      loadedPlantId = processDisplayPlantId
+      display = loaded.display
+      applySnapshot(loaded.snapshot)
+      session.startRefreshing()
+    } catch (err) {
+      if (!disposed) error = err instanceof Error ? err.message : String(err)
+    } finally {
+      if (!disposed) loading = false
     }
+  }
 
-    void load()
-
+  runOnMount(() => {
+    windowBounds = clampWindowBounds(defaultWindowBounds())
+    void loadDisplay()
     return () => {
-      cancelled = true
-      stopRefresh?.()
+      disposed = true
+      session.close()
     }
   })
 </script>
 
 <div class="process-display-window-layer">
+  {#if loading}
+    <div class="process-display-loading" style:top="{60 + windowOffsetIndex * 52}px">
+      <span class="process-display-spinner" aria-hidden="true"></span>
+      <span role="status">Opening {object.label}…</span>
+      <button type="button" aria-label="Cancel opening process display" onclick={close}><X size={18} aria-hidden="true" /></button>
+    </div>
+  {:else}
   <section
     class="process-display-window"
     style="left: {windowBounds.x}px; top: {windowBounds.y}px; width: {windowBounds.width}px; height: {windowBounds.height}px;"
@@ -449,6 +438,7 @@
           onclick={() => {
             lensMenuOpen = false
             transientModalOpen = true
+            void loadActions()
           }}
         >
           <Zap size={17} aria-hidden="true" />
@@ -474,11 +464,7 @@
       </div>
     </header>
     <div class="process-display-window-body">
-      {#if loading}
-        <div class="process-display-message">Loading process display...</div>
-      {:else if error}
-        <div class="process-display-error">{error}</div>
-      {:else if display}
+      {#if display}
         <ProcessDisplayRenderer
           {display}
           {values}
@@ -488,8 +474,17 @@
           {visiblePathIds}
           onWidgetPositionChange={updateWidgetPosition}
         />
+        {#if error || refreshError}
+          <div class="process-display-notice" role="status">
+            {error ?? `Live refresh unavailable; showing last received values. ${refreshError}`}
+            {#if error}<button type="button" aria-label="Dismiss display error" onclick={() => { error = null }}><X size={16} /></button>{/if}
+          </div>
+        {/if}
       {:else}
-        <div class="process-display-error">Process display did not load.</div>
+        <div class="process-display-error" role="alert">
+          <span>{error ?? 'Process display did not load.'}</span>
+          <button type="button" onclick={() => { void loadDisplay() }}>Retry</button>
+        </div>
       {/if}
     </div>
     <div
@@ -569,6 +564,7 @@
       onpointercancel={finishWindowDrag}
     ></div>
   </section>
+  {/if}
   {#if transientModalOpen}
     <div class="process-transient-backdrop" role="presentation" onmousedown={() => { transientModalOpen = false }}>
       <div
@@ -589,7 +585,15 @@
           </button>
         </header>
         <div class="process-transient-list">
-          {#each availableActions as transient (transient.id)}
+          {#if actionsLoading}
+            <p role="status">Loading plant actions…</p>
+          {:else if actionsError}
+            <p role="alert">{actionsError}</p>
+            <button type="button" onclick={() => { void loadActions() }}>Retry</button>
+          {:else if availableActions?.length === 0}
+            <p>No actions are available for this plant.</p>
+          {/if}
+          {#each availableActions ?? [] as transient (transient.id)}
             <article class="process-transient-row">
               <div class="process-transient-copy">
                 <strong>{transient.title}</strong>

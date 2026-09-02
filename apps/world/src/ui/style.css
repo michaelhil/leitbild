@@ -1504,9 +1504,65 @@ body.rail-resizing {
 }
 
 .process-display-window-body {
+  position: relative;
   min-height: 0;
   padding: 0;
   overflow: hidden;
+}
+
+.process-display-loading {
+  position: absolute;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-strong);
+  box-shadow: 0 8px 28px #0003;
+  pointer-events: auto;
+}
+
+.process-display-loading button,
+.process-display-notice button {
+  display: inline-flex;
+  border: 0;
+  padding: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.process-display-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: process-display-spin 900ms linear infinite;
+}
+
+@keyframes process-display-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .process-display-spinner { animation: none; }
+}
+
+.process-display-notice {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  color: var(--critical);
+  font-size: 13px;
 }
 
 .process-display-resize-handle {

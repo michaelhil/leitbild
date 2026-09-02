@@ -835,14 +835,18 @@
   }
 
   const openProcessDisplay = (object: OperationalObject): void => {
+    const windowId = nextFloatingWindowId('process-display', object.id)
     processDisplayWindows = [
       ...processDisplayWindows,
       {
-        id: nextFloatingWindowId('process-display', object.id),
+        id: windowId,
         objectId: object.id,
       },
     ]
-    void loadProcessDisplayModal()
+    void loadProcessDisplayModal().catch(err => {
+      closeProcessDisplay(windowId)
+      status = `Could not open process display: ${err instanceof Error ? err.message : String(err)}`
+    })
   }
 
   const closeProcessDisplay = (windowId: string): void => {
@@ -1673,7 +1677,6 @@
     <ProcessDisplayModal
       {simulationRunId}
       object={windowEntry.object}
-      unitStatus={statusPresentationFor(windowEntry.object)}
       procedureSummaries={procedureSummariesForObject(windowEntry.object)}
       windowOffsetIndex={windowEntry.index}
       openProcedureSystemAt={(summary?: ProcedureRunSummary) => openProcedureSystemAt(windowEntry.object, summary)}
