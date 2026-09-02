@@ -61,6 +61,8 @@ describe('authoritative PWR full-power operating point', () => {
     expect(restored.snapshot()).toEqual(runtime.snapshot())
   })
 
+  // This executes 6,000 real solver steps; the shared CI runner can take more
+  // than Bun's five-second default. It is a correctness test, not a CPU benchmark.
   test('full-power balance stays bounded through ten minutes without forcing output', () => {
     const runtime = createProcessPlantRuntime({ system: compileProcessPlant(createPwrReferencePlantDefinition({ id: 'test:steady' })) })
     for (let step = 0; step < 6000; step++) {
@@ -71,5 +73,5 @@ describe('authoritative PWR full-power operating point', () => {
         expect(Number(runtime.readVariable('vessel.primaryCoolantInventoryKg' as VariablePath))).toBeCloseTo(285000, 5)
       }
     }
-  })
+  }, 20_000)
 })

@@ -17,7 +17,7 @@ The Halden grid is not a calibrated, balanced four-reactor operating point. Desc
 - [x] Isolate historian startup failures, preserve damaged files, expose unavailability, and include WAL in storage accounting.
 - [x] Add a focused aggregate storage admission/log budget and expose retention/rate information, with bounded cost and explicit errors.
 - [x] Clarify Halden's authored starting conditions without changing physics or existing progressed Runs.
-- [ ] Validate standalone and combined tests/builds, commit, push, deploy and verify production.
+- [x] Validate standalone and combined tests/builds, commit, push, deploy and verify production.
 
 No backup setup, compatibility layer, generic event bus, new telemetry service, automatic authored-data deletion or historical-file compaction is included.
 
@@ -32,3 +32,11 @@ Observation logs additionally have a 512 MiB ceiling per configured directory, a
 Historian accounting includes database, WAL and shared-memory files. Budgets are checked at maintenance boundaries; an in-flight SQLite transaction or an external pinned reader can temporarily exceed the observed threshold. Capture then stops rather than claiming a hard physical cap. Corrupt/unopenable history is unavailable, not an empty dataset: its count is unknown, historical queries return a structured error, Run inspection and Agent context expose the reason, and current simulation remains usable.
 
 Scenario previews ask Pack-owned estimators for initial series counts and show aggregate sample-limited retention in simulation seconds, independently of the observation-age ceiling in real days. Counts can change with assets/state, and actual value suppression can reduce traffic. Estimation does not start Pack runtimes. Historian sampling/deadband controls and downsampling remain the separate follow-on design; no such controls are claimed here.
+
+## Release verification
+
+Application release `20260902T223953Z-f8ed7a52b2-8f4188e39a` passed all checks, 2,095 tests (two existing optional tests skipped), and Host/World/Agents builds before activation. Production health passed for all three services, Caddy, OSRM and public HTTPS. The host had 41 GiB available (44% used); the five-minute warning-level service journal was empty.
+
+Browser verification opened the existing Halden definition without saving: the vector map and all assets rendered; Plant Operations showed 1,816 initial series and a 137-second aggregate sample-limited window. Changing the interval to 5.25 seconds updated the estimate to 345.9 samples/second and 701 seconds. No production scenario/run/history was deleted or reset.
+
+Validation also corrected two test assumptions without changing production physics: frequency response now has a deterministic island-local, time-aligned control instead of comparing whole-grid weighted averages during startup; the 6,000-step full-power correctness test has a 20-second explicit deadline because the GitHub runner exceeded Bun's five-second default. Its full ten-minute simulation and all assertions are retained. The subsequent test/documentation-only commit does not change the deployed application artifact.
