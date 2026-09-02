@@ -112,3 +112,7 @@ Implementation and verification results are recorded below as phases complete.
   Using identical dependencies, the previous commit reported 70 errors and two
   warnings; this pass reports 55 errors and one warning, with zero errors in
   `ProcedureSystemModal.svelte` or `ProcessDisplayModal.svelte`.
+- Final integration review unified scope equality on the canonical live object
+  id. An omitted optional target reference or changed display label cannot split
+  one unit into duplicate procedure scopes. Command validation still rejects a
+  contradictory target reference. Backend, projection and UI now share this rule.

@@ -1,3 +1,4 @@
+import { sameProcedureScope } from '../../core/model/index.ts'
 import type {
   ProcedureBranch,
   ProcedureDocument,
@@ -36,13 +37,6 @@ export interface ProcedureRunSummaryGroup {
 
 export const procedureRunDocumentKey = (run: Pick<ProcedureRunState, 'sourceId' | 'sourceRevision' | 'sourcePath' | 'procedureId'>): string =>
   `${run.sourceId}:${run.sourceRevision}:${run.sourcePath}:${run.procedureId}`
-
-export const sameProcedureScope = (
-  left: ProcedureRunScope,
-  right: ProcedureRunScope,
-): boolean =>
-  left.plantId === right.plantId
-    && left.targetObjectId === right.targetObjectId
 
 export const procedureStepDisplayName = (step: ProcedureStep): string => {
   const fallback = `Step ${step.label}`

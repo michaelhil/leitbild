@@ -16,11 +16,15 @@ export type ProcedureTagId = z.infer<typeof procedureTagIdSchema>
 export type ProcedureRunId = z.infer<typeof procedureRunIdSchema>
 
 export const procedureRunScopeSchema = z.object({
-  plantId: idSchema,
+  plantId: idSchema.describe('Canonical id of the live operational object this procedure concerns.'),
   targetObjectId: objectIdSchema.optional(),
   label: z.string().min(1).max(160).optional(),
 })
 export type ProcedureRunScope = z.infer<typeof procedureRunScopeSchema>
+
+// Optional display/reference metadata must not create a second operational scope.
+export const sameProcedureScope = (left: ProcedureRunScope, right: ProcedureRunScope): boolean =>
+  left.plantId === right.plantId
 
 export const procedureAssessmentSchema = z.enum(['blank', 'complete', 'failed', 'unknown'])
 export type ProcedureAssessment = z.infer<typeof procedureAssessmentSchema>

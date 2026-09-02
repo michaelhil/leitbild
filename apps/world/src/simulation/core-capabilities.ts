@@ -1,5 +1,6 @@
 import {
   commandResultSchema,
+  objectIdSchema,
   deleteObjectCommandKind,
   deleteObjectPayloadSchema,
   procedureRunStartCommandKind,
@@ -54,7 +55,7 @@ export const worldCoreCapabilities: ReadonlyArray<SimulationCapability> = [
     title: 'Start procedure run',
     description: 'Starts a procedure for an explicit operational scope.',
     input: procedureRunStartPayloadSchema,
-    targets: input => input.scope.targetObjectId ? [input.scope.targetObjectId] : [],
+    targets: input => [objectIdSchema.parse(input.scope.plantId)],
   }),
   command({
     id: procedureStepUpdateCommandKind,
@@ -82,6 +83,6 @@ export const worldCoreCapabilities: ReadonlyArray<SimulationCapability> = [
     title: 'Reset procedure run',
     description: 'Clears current procedure state for an explicit operational scope.',
     input: procedureRunResetPayloadSchema,
-    targets: input => input.scope.targetObjectId ? [input.scope.targetObjectId] : [],
+    targets: input => [objectIdSchema.parse(input.scope.plantId)],
   }),
 ]

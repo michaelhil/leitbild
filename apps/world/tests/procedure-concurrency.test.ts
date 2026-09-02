@@ -14,6 +14,7 @@ import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestScenarioCatalog, testScenarioAuthoring } from './helpers.ts'
 import { deferred, procedureTestCatalog, procedureTestDocument, procedureTestSource } from './procedure-fixtures.ts'
 import type { ProcedureSourceService } from '../src/features/procedures/source.ts'
+import { procedureRunFor } from '../src/ui/procedures/procedure-run-selectors.ts'
 
 describe('procedure commands through the real publish queue and realtime projection', () => {
   test('two operators, transactional transitions, reset/deletion races, and durable restore', async () => {
@@ -47,7 +48,7 @@ describe('procedure commands through the real publish queue and realtime project
       expect(result.ok).toBe(true)
       if (!result.ok) throw new Error(result.reason)
     }
-    const reset = () => mustCommand('world.procedure.run.reset', startInput)
+    const reset = () => mustCommand('world.procedure.run.reset', { ...startInput, scope: { plantId: scope.plantId } })
     const current = () => runtime.snapshot().procedures!.runs.find(run => run.procedureId === 'E-0')!
     try {
       await runtime.setClock({ paused: true })
@@ -66,6 +67,12 @@ describe('procedure commands through the real publish queue and realtime project
       expect(results.filter(result => result.ok)).toHaveLength(1)
       expect(runtime.snapshot().procedures?.runs).toHaveLength(1)
       readDocument = async input => procedureTestDocument(input.procedureId, input.sourceRevision)
+
+      expect((await command('world.procedure.run.start', { ...startInput, scope: { plantId: unit.id } }, actorB)).ok).toBe(false)
+      expect(procedureRunFor(runtime.snapshot().procedures!.runs, { sourceId: startInput.sourceId,
+        procedureId: startInput.procedureId, scope: { plantId: unit.id } })?.runId).toBe(current().runId)
+      expect((await command('world.procedure.run.start', { ...startInput,
+        scope: { plantId: unit.id, targetObjectId: 'plant:other' } }, actorB)).ok).toBe(false)
 
       await mustCommand('world.procedure.step.update', { runId: current().runId, stepId: 'second', currentStepId: 'second', assessment: 'complete' }, actorA)
       await mustCommand('world.procedure.step.update', { runId: current().runId, stepId: 'first', comment: 'Operator B note', favorite: true }, actorB)

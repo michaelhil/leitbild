@@ -3,7 +3,7 @@ import type {
   ProcedureControlState, ProcedureDocument, ProcedureRunScope, ProcedureRunState,
 } from '../../core/model/index.ts'
 import {
-  createProcedureRunId, procedureCommandKindSchema, procedureRunClosePayloadSchema,
+  sameProcedureScope, createProcedureRunId, procedureCommandKindSchema, procedureRunClosePayloadSchema,
   procedureRunResetPayloadSchema, procedureRunStartPayloadSchema, procedureStepUpdatePayloadSchema,
   procedureRunTransitionPayloadSchema,
 } from '../../core/model/index.ts'
@@ -23,12 +23,9 @@ const activeRunFor = (procedures: ProcedureControlState | undefined, runId: stri
   return run
 }
 
-const sameScope = (a: ProcedureRunScope, b: ProcedureRunScope): boolean =>
-  a.plantId === b.plantId && a.targetObjectId === b.targetObjectId
-
 const currentRunFor = (state: ProcedureControlState | undefined, sourceId: string, procedureId: string, scope: ProcedureRunScope) =>
   state?.runs.find(run => run.sourceId === sourceId && run.procedureId === procedureId
-    && sameScope(run.scope, scope) && run.status !== 'abandoned')
+    && sameProcedureScope(run.scope, scope) && run.status !== 'abandoned')
 
 const assertLiveScope = (context: ProcedureCommitContext, scope: ProcedureRunScope): void => {
   if (scope.targetObjectId !== undefined && scope.targetObjectId !== scope.plantId) {

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { operationalObjectSchema, procedureControlStateSchema, scenarioExecutionStateSchema, simulationClockStateSchema, type SimulationRunEvent, type ObjectId, type OperationalObject, type ProcedureControlState, type ProcedureId, type ProcedureRunScope, type ProcedureRunState, type ProcedureSourceId, type ProcedureStepRunState, type ScenarioExecutionState, type SimulationClockState } from '../model/index.ts'
+import { sameProcedureScope, operationalObjectSchema, procedureControlStateSchema, scenarioExecutionStateSchema, simulationClockStateSchema, type SimulationRunEvent, type ObjectId, type OperationalObject, type ProcedureControlState, type ProcedureId, type ProcedureRunScope, type ProcedureRunState, type ProcedureSourceId, type ProcedureStepRunState, type ScenarioExecutionState, type SimulationClockState } from '../model/index.ts'
 
 export interface SimulationRunStateSnapshot {
   readonly objects: ReadonlyArray<OperationalObject>
@@ -182,13 +182,6 @@ export const createSimulationRunStateStore = (): SimulationRunStateStore => {
     getObject: (id: ObjectId) => objects.get(id),
   }
 }
-
-const sameProcedureScope = (
-  left: ProcedureRunScope,
-  right: ProcedureRunScope,
-): boolean =>
-  left.plantId === right.plantId
-    && left.targetObjectId === right.targetObjectId
 
 const procedureRunMatchesScope = (
   run: ProcedureRunState,

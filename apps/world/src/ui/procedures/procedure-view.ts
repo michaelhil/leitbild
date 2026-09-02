@@ -1,7 +1,7 @@
 import type { ProcedureCatalogItem, ProcedureDocument, ProcedureRunScope } from '../../core/model/index.ts'
 
 export const procedureViewKey = (document: ProcedureDocument, scope: ProcedureRunScope): string =>
-  JSON.stringify([scope.plantId, scope.targetObjectId, document.source.sourceId, document.source.revision, document.sourcePath, document.procedureId])
+  JSON.stringify([scope.plantId, document.source.sourceId, document.source.revision, document.sourcePath, document.procedureId])
 
 export const procedureCategories = (procedures: ReadonlyArray<ProcedureCatalogItem>) => {
   const groups = new Map<string, ProcedureCatalogItem[]>()
