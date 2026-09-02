@@ -38,7 +38,7 @@ export interface WorkspaceHost {
   readonly definitions: (id: WorkspaceId) => Promise<WorkspaceDefinitionCatalog>
   readonly resources: (id: WorkspaceId) => Promise<WorkspaceResourceCatalog>
   readonly capabilities: (id: WorkspaceId) => Promise<WorkspaceCapabilityCatalog>
-  readonly invoke: (id: WorkspaceId, capabilityId: CapabilityId, input: InvokeCapabilityInput, access: AccessContext) => Promise<import('@leitbild/contracts').ModuleCapabilityInvocationResult>
+  readonly invoke: (id: WorkspaceId, capabilityId: CapabilityId, input: InvokeCapabilityInput, access: AccessContext, signal?: AbortSignal) => Promise<import('@leitbild/contracts').ModuleCapabilityInvocationResult>
   readonly installedModuleIds: () => ReadonlyArray<ModuleId>
 }
 
@@ -93,6 +93,7 @@ export const createWorkspaceHost = (config: {
     rawCapabilityId: CapabilityId,
     rawInput: InvokeCapabilityInput,
     access: AccessContext,
+    signal?: AbortSignal,
   ): Promise<import('@leitbild/contracts').ModuleCapabilityInvocationResult> => {
     const id = workspaceIdSchema.parse(rawId)
     const capabilityId = capabilityIdSchema.parse(rawCapabilityId)
@@ -120,14 +121,14 @@ export const createWorkspaceHost = (config: {
       ...(rawInput.idempotencyKey === undefined ? {} : { idempotencyKey: rawInput.idempotencyKey }),
       input: rawInput.input,
       access,
-    })
+    }, signal)
     if (!result.ok) {
       throw hostError({
-        status: 502,
+        status: result.failure.status ?? 502,
         code: result.failure.code,
         message: result.failure.message,
         retryable: result.failure.retryable,
-        details: { moduleId, capabilityId },
+        details: { ...result.failure.details, moduleId, capabilityId },
       })
     }
     return result.value

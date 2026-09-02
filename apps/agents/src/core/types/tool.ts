@@ -24,6 +24,7 @@ export interface ToolLLMRequest {
 }
 
 export interface ToolContext {
+  readonly signal?: AbortSignal
   readonly callerId: string
   readonly callerName: string
   readonly roomId?: string          // current trigger room ID — available when tool is called from a room context
@@ -85,7 +86,7 @@ export interface ToolRegistry {
   readonly listEntries: () => ReadonlyArray<ToolRegistryEntry>
 }
 
-export type ToolExecutor = (calls: ReadonlyArray<ToolCall>, roomId?: string) => Promise<ReadonlyArray<ToolResult>>
+export type ToolExecutor = (calls: ReadonlyArray<ToolCall>, roomId?: string, signal?: AbortSignal) => Promise<ReadonlyArray<ToolResult>>
 
 // === Native tool calling (OpenAI/Ollama-compatible) ===
 

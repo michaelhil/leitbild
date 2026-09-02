@@ -124,7 +124,7 @@ export const createWorkspaceHostServer = (config: {
             actor: requestInput.actor ?? { kind: 'anonymous' },
             client: { id: 'workspace-host', kind: 'service' },
           })
-          return Response.json(await config.host.invoke(workspaceId, capabilityId, input, access))
+          return Response.json(await config.host.invoke(workspaceId, capabilityId, input, access, request.signal))
         }
 
         const resourcesMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/resources$/)

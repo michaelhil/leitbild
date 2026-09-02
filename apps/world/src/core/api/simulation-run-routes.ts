@@ -80,15 +80,12 @@ const simulationRunResponse = async (
   readonly scenario?: CompiledScenario
 }> => {
   const snapshot = runtime.snapshot()
-  const revision = await registry.scenarioRevisionForRun(runtime.id)
-  const scenario = revision === undefined ? undefined : await registry.compileScenarioRevision(revision)
+  const [scenario, summary] = await Promise.all([registry.compiledScenarioForRun(runtime.id), registry.summary(runtime.id)])
   return {
     id: runtime.id,
     snapshot,
-    ...(revision === undefined || scenario === undefined ? {} : {
-      scenarioRevisionId: revision.id,
-      scenario,
-    }),
+    ...(summary.scenarioRevisionId === null ? {} : { scenarioRevisionId: summary.scenarioRevisionId }),
+    scenario,
   }
 }
 

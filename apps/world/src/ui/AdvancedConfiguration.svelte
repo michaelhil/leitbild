@@ -16,7 +16,7 @@
 </script>
 <button type="button" onclick={open}>{label}…</button>
 <dialog bind:this={dialog} oncancel={event => { event.preventDefault(); close() }}>
-  <h2>{label}</h2><p>Edits are validated against the full scenario before applying. Unchanged sections are preserved.</p>
+  <h2>{label}</h2><p>Apply changes to this draft. The complete scenario is validated when you save or start it.</p>
   <textarea aria-label={label} bind:value={text} spellcheck="false" disabled={busy}></textarea>
   {#if error}<p role="alert">{error}</p>{/if}
   <footer><button onclick={close} disabled={busy}>Cancel</button><button onclick={() => void apply()} disabled={busy}>{busy ? 'Validating…' : 'Apply'}</button></footer>

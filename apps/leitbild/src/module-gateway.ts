@@ -35,7 +35,7 @@ export interface ModuleGateway {
   readonly definitions: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleDefinitionCollection>>
   readonly resources: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleResourceCollection>>
   readonly capabilities: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleCapabilityCollection>>
-  readonly invoke: (moduleId: ModuleId, invocation: ModuleCapabilityInvocation) => Promise<ModuleCallResult<ModuleCapabilityInvocationResult>>
+  readonly invoke: (moduleId: ModuleId, invocation: ModuleCapabilityInvocation, signal?: AbortSignal) => Promise<ModuleCallResult<ModuleCapabilityInvocationResult>>
 }
 
 const normalizeBaseUrl = (value: string): string => {
@@ -60,6 +60,8 @@ const responseFailure = async <T>(
   return failure({
     code: parsed.success ? parsed.data.error.code : fallback.code,
     message: parsed.success ? parsed.data.error.message : fallback.message,
+    status: response.status,
+    ...(parsed.success && parsed.data.error.details ? { details: parsed.data.error.details } : {}),
     retryable: parsed.success
       ? (parsed.data.error.retryable ?? response.status >= 500)
       : response.status >= 500,
@@ -79,8 +81,12 @@ const expandInvocationPath = (
 export const createModuleGateway = (config: {
   readonly registrations: ReadonlyArray<ModuleRegistration>
   readonly fetch?: typeof fetch
+  readonly requestTimeoutMs?: number
 }): ModuleGateway => {
-  const fetchImpl = config.fetch ?? fetch
+  const transport = config.fetch ?? fetch
+  const fetchImpl = (input: string, init?: RequestInit): Promise<Response> => transport(input, { ...init,
+    signal: AbortSignal.any([AbortSignal.timeout(config.requestTimeoutMs ?? 30_000), ...(init?.signal ? [init.signal] : [])]),
+  })
   const registrations = config.registrations.map(registration => moduleRegistrationSchema.parse({
     ...registration,
     internalBaseUrl: normalizeBaseUrl(registration.internalBaseUrl),
@@ -206,6 +212,7 @@ export const createModuleGateway = (config: {
   const invoke = async (
     moduleId: ModuleId,
     rawInvocation: ModuleCapabilityInvocation,
+    signal?: AbortSignal,
   ): Promise<ModuleCallResult<ModuleCapabilityInvocationResult>> => {
     const registration = byId.get(moduleId)
     if (!registration) return failure({ code: 'module_not_installed', message: `Module is not installed: ${moduleId}`, retryable: false })
@@ -217,11 +224,13 @@ export const createModuleGateway = (config: {
     try {
       response = await fetchImpl(url, {
         method: 'POST',
+        ...(signal ? { signal } : {}),
         headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify(invocation),
       })
     } catch (error) {
-      return failure({ code: 'module_unavailable', message: error instanceof Error ? error.message : String(error), retryable: true })
+      return failure({ code: 'module_outcome_unknown', message: error instanceof Error ? error.message : String(error), retryable: false,
+        status: 504, details: { outcome: 'unknown', advice: 'Inspect the Resource before retrying this invocation.' } })
     }
     if (!response.ok) {
       return await responseFailure(response, {

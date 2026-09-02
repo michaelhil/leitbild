@@ -20,6 +20,8 @@ import type { RoomDefinitionLibrary } from '../core/definitions/room-definition-
 import { roomDefinitionSchema, type RoomDefinition } from '../core/definitions/room-definition-catalog.ts'
 import type { AgentsModuleState } from '../core/workspaces/module-state.ts'
 import type { WorkspaceRuntimeRegistry } from '../core/workspaces/runtime-registry.ts'
+import { workspaceModulePaths } from '../core/paths.ts'
+import { loadWorkspaceModuleSnapshots } from '../core/storage/module-snapshots.ts'
 
 export const agentsModuleManifest = workspaceModuleManifestSchema.parse({
   module: {
@@ -79,15 +81,23 @@ const resourcesFor = async (
   workspaceId: WorkspaceId,
   registry: WorkspaceRuntimeRegistry,
 ): Promise<ReadonlyArray<ModuleResourceDescriptor>> => {
-  const runtime = await registry.getOrLoad(workspaceId)
+  const runtime = registry.tryGetLive(workspaceId)
+  const saved = runtime ? null : await loadWorkspaceModuleSnapshots(workspaceModulePaths(workspaceId))
+  const agents = runtime ? runtime.team.listByKind('ai').map(agent => ({ id: agent.id, name: agent.name, description: agent.getDescription?.(), state: agent.state.get() }))
+    : (saved?.agents?.agents ?? []).map(agent => ({ id: agent.id, name: agent.config.name, description: agent.config.persona, state: 'Unloaded' }))
+  const agentById = new Map(agents.map(agent => [agent.id, agent]))
+  const rooms = runtime ? runtime.rooms.listAllRooms().map(profile => {
+    const room = runtime.rooms.getRoom(profile.id)
+    if (!room) throw new Error(`Room disappeared during Resource discovery: ${profile.id}`)
+    return { profile, members: room.getParticipantIds(), paused: room.paused, deliveryMode: room.deliveryMode, messageCount: room.getMessageCount(), latestMessage: room.getRecent(1)[0] }
+  }) : (saved?.rooms?.rooms ?? []).map(room => ({ ...room, messageCount: room.messages.length, latestMessage: room.messages.at(-1) }))
   const observedAt = new Date().toISOString()
   return moduleResourceCollectionSchema.parse({ resources: [
-    ...runtime.rooms.listAllRooms().map(profile => {
-      const room = runtime.rooms.getRoom(profile.id)
-      if (!room) throw new Error(`Room disappeared during Resource discovery: ${profile.id}`)
-      const memberIds = room.getParticipantIds()
-      const aiMemberCount = memberIds.filter(id => runtime.team.getAgent(id)?.kind === 'ai').length
-      const latestMessage = room.getRecent(1)[0]
+    ...rooms.map(room => {
+      const profile = room.profile
+      const memberIds = room.members
+      const aiMemberCount = memberIds.filter(id => agentById.has(id)).length
+      const latestMessage = room.latestMessage
       return {
         ref: { workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.room', id: profile.id },
         title: profile.name,
@@ -100,10 +110,10 @@ const resourcesFor = async (
             revisionId: profile.sourceDefinition.revisionId,
           },
         }),
-        links: memberIds.flatMap(id => runtime.team.getAgent(id)?.kind === 'ai' ? [{
+        links: memberIds.flatMap(id => agentById.has(id) ? [{
           rel: 'member',
           ref: { workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.agent', id },
-          title: runtime.team.getAgent(id)?.name,
+          title: agentById.get(id)?.name,
         }] : []),
         uiPath: `/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(profile.id)}`,
         capabilityIds: agentsCapabilities.idsForResourceType('agents.room'),
@@ -124,7 +134,7 @@ const resourcesFor = async (
           },
           { key: 'member-count', label: 'Members', kind: 'count' as const, value: memberIds.length },
           { key: 'ai-member-count', label: 'AI agents', kind: 'count' as const, value: aiMemberCount },
-          { key: 'message-count', label: 'Messages', kind: 'count' as const, value: room.getMessageCount() },
+          { key: 'message-count', label: 'Messages', kind: 'count' as const, value: room.messageCount },
           ...(latestMessage === undefined ? [] : [{
             key: 'last-activity-at',
             label: 'Last activity',
@@ -135,19 +145,19 @@ const resourcesFor = async (
         observedAt,
       }
     }),
-    ...runtime.team.listByKind('ai').map(agent => ({
+    ...agents.map(agent => ({
       ref: { workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.agent', id: agent.id },
       title: agent.name,
-      ...(agent.getDescription?.() ? { description: agent.getDescription!() } : {}),
-      links: runtime.rooms.getRoomsForAgent(agent.id).map(room => ({
+      ...(agent.description ? { description: agent.description } : {}),
+      links: rooms.filter(room => room.members.includes(agent.id)).map(room => ({
         rel: 'member-of',
         ref: { workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.room', id: room.profile.id },
         title: room.profile.name,
       })),
       capabilityIds: agentsCapabilities.idsForResourceType('agents.agent'),
       summary: [
-        { key: 'status', label: 'Status', kind: 'status' as const, value: agent.state.get() },
-        { key: 'room-count', label: 'Rooms', kind: 'count' as const, value: runtime.rooms.getRoomsForAgent(agent.id).length },
+        { key: 'status', label: 'Status', kind: 'status' as const, value: agent.state },
+        { key: 'room-count', label: 'Rooms', kind: 'count' as const, value: rooms.filter(room => room.members.includes(agent.id)).length },
       ],
       observedAt,
     })),
@@ -665,6 +675,7 @@ const invoke = async (
   const invocation = moduleCapabilityInvocationSchema.parse(raw)
   if (invocation.workspaceId !== workspaceId) return apiError(409, 'workspace_scope_mismatch', 'Invocation belongs to another Workspace')
   if (invocation.capabilityId !== capabilityId) return apiError(409, 'capability_scope_mismatch', 'Invocation Capability does not match the route')
+  if (invocation.idempotencyKey !== undefined) return apiError(400, 'idempotency_not_supported', 'This Capability does not support keyed retries; inspect the Resource after an uncertain result.')
   const runtime = await registry.getOrLoad(workspaceId)
   const response = await agentsCapabilities.invoke(capabilityId, { runtime, library: registry.definitionsFor(workspaceId) }, invocation)
   return response ?? apiError(404, 'capability_not_found', 'Capability not found')

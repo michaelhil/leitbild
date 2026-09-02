@@ -265,7 +265,6 @@
       if (replacement.id !== entry.item.id || replacement.type !== entry.item.type) throw new Error('Use Duplicate to create a new identity; item id and type cannot be changed here.')
       pack.items = pack.items.map(item => item.id === entry.item.id ? replacement : item)
     }
-    scenarioPreviewSchema.parse((await invoke<InvocationResponse>('world.scenario.preview', { source: candidate })).result)
     draft = candidate
   }
 
@@ -469,7 +468,7 @@
         {#if selection.kind === 'scenario'}
           <h2>Scenario</h2><p>The map position is the starting frame users will see.</p>
           <AdvancedConfiguration value={draft} onapply={value => applyAdvanced(value, 'scenario')} />
-          <TimelineEditor cues={draft.timeline.cues} commands={catalog.commands.filter(command => command.runtimeId === 'world.core' || activePacks().some(pack => command.packId === pack.id && command.runtimeId === (selectionFor(draft, pack.id)?.runtime ?? pack.defaultRuntimeId)))} onchange={cues => { draft.timeline = { cues } }} validate={async cues => { await invoke('world.scenario.preview', { source: { ...deepCopy(draft), timeline: { cues } } }) }} />
+          <TimelineEditor cues={draft.timeline.cues} commands={catalog.commands.filter(command => command.runtimeId === 'world.core' || activePacks().some(pack => command.packId === pack.id && command.runtimeId === (selectionFor(draft, pack.id)?.runtime ?? pack.defaultRuntimeId)))} onchange={cues => { draft.timeline = { cues } }} />
           <label>Objectives <textarea rows="3" placeholder="One objective per line" value={draft.objectives.join('\n')} onchange={event => { draft.objectives = event.currentTarget.value.split('\n').map(line => line.trim()).filter(Boolean) }}></textarea></label>
           <label>Description <textarea rows="4" placeholder="Optional" value={draft.description ?? ''} oninput={event => { draft.description = event.currentTarget.value; draft = { ...draft } }}></textarea></label>
           <dl><div><dt>Center</dt><dd>{mapCenter().map(value => value.toFixed(4)).join(', ')}</dd></div><div><dt>Zoom</dt><dd>{mapZoom().toFixed(1)}</dd></div></dl>

@@ -64,9 +64,11 @@ const readHostError = async (response: Response): Promise<ToolResult> => {
   })
 }
 
-const getJson = async (fetchImpl: typeof fetch, url: string): Promise<Response> => {
+const requestSignal = (signal?: AbortSignal): AbortSignal => AbortSignal.any([AbortSignal.timeout(30_000), ...(signal ? [signal] : [])])
+
+const getJson = async (fetchImpl: typeof fetch, url: string, signal?: AbortSignal): Promise<Response> => {
   try {
-    return await fetchImpl(url, { headers: { Accept: 'application/json' } })
+    return await fetchImpl(url, { signal: requestSignal(signal), headers: { Accept: 'application/json' } })
   } catch (error) {
     throw new Error(`Workspace Host is unreachable: ${error instanceof Error ? error.message : String(error)}`, { cause: error })
   }
@@ -92,15 +94,15 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
       },
       additionalProperties: false,
     },
-    execute: async params => {
+    execute: async (params, context) => {
       try {
         const moduleId = params.moduleId === undefined ? undefined : moduleIdSchema.parse(params.moduleId)
         const definitionType = params.definitionType === undefined ? undefined : definitionTypeSchema.parse(params.definitionType)
         const resourceType = params.resourceType === undefined ? undefined : resourceTypeSchema.parse(params.resourceType)
         const capabilityId = params.capabilityId === undefined ? undefined : capabilityIdSchema.parse(params.capabilityId)
         const [definitionResponse, resourceResponse] = await Promise.all([
-          getJson(fetchImpl, `${workspacePath}/definitions`),
-          getJson(fetchImpl, `${workspacePath}/resources`),
+          getJson(fetchImpl, `${workspacePath}/definitions`, context.signal),
+          getJson(fetchImpl, `${workspacePath}/resources`, context.signal),
         ])
         if (!definitionResponse.ok) return await readHostError(definitionResponse)
         if (!resourceResponse.ok) return await readHostError(resourceResponse)
@@ -155,7 +157,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         if (kind !== undefined && !['query', 'command'].includes(String(kind))) {
           return failure('invalid_tool_input', 'kind must be query or command')
         }
-        const response = await getJson(fetchImpl, `${workspacePath}/capabilities`)
+        const response = await getJson(fetchImpl, `${workspacePath}/capabilities`, context.signal)
         if (!response.ok) return await readHostError(response)
         const catalog = workspaceCapabilityCatalogSchema.parse(await response.json())
         const grants = new Set((deps.getToolGrants(context.callerId) ?? []).map(grant => grant.capabilityId))
@@ -268,6 +270,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
       try {
         const response = await fetchImpl(`${workspacePath}/capabilities/${encodeURIComponent(capabilityId)}/invoke`, {
           method: 'POST',
+          signal: requestSignal(context.signal),
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({
             ...(definition === undefined ? {} : { definition }),
@@ -283,7 +286,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         if (!Object.hasOwn(body, 'result')) return failure('workspace_host_contract_invalid', 'Workspace Host response omitted result')
         return { success: true, data: body.result }
       } catch (error) {
-        return failure('workspace_host_unreachable', error instanceof Error ? error.message : String(error))
+        return failure('workspace_outcome_unknown', error instanceof Error ? error.message : String(error), { retryable: false, advice: 'Inspect the Resource before retrying this invocation.' })
       }
     },
   }

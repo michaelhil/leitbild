@@ -7,6 +7,8 @@ import {
   resourceTypeSchema,
 } from '@leitbild/contracts'
 import { createWorkspaceCapabilityTools } from './workspace-capability-tools.ts'
+import { __testSeam } from '../../agents/spawn.ts'
+import { createToolRegistry } from '../../core/tool-registry.ts'
 
 const workspaceId = newWorkspaceId()
 const capabilityId = capabilityIdSchema.parse('world.simulation-run.read')
@@ -54,6 +56,24 @@ const catalogFetch = (requests: Request[]): typeof fetch => (async (input, init)
 }) as typeof fetch
 
 describe('Workspace Capability tools', () => {
+  test('executor cancellation reaches the Workspace broker transport', async () => {
+    let observedSignal: AbortSignal | undefined
+    const started = Promise.withResolvers<void>()
+    const transport = (async (_input, init) => {
+      observedSignal = init?.signal ?? undefined
+      started.resolve()
+      return await new Promise<Response>((_resolve, reject) => observedSignal!.addEventListener('abort', () => reject(observedSignal!.reason), { once: true }))
+    }) as typeof fetch
+    const registry = createToolRegistry()
+    registry.registerAll(createWorkspaceCapabilityTools({ workspaceId, hostBaseUrl: 'https://host.test', getToolGrants: () => [{ capabilityId }], fetchImpl: transport }))
+    const executor = __testSeam.createToolExecutor(registry, ['workspace_invoke'], { callerId: 'agent', callerName: 'Analyst' })
+    const controller = new AbortController()
+    const result = executor([{ tool: 'workspace_invoke', arguments: { capabilityId, input: {} } }], undefined, controller.signal)
+    await started.promise
+    controller.abort(new Error('Evaluation cancelled'))
+    expect((await result)[0]?.success).toBe(false)
+    expect(observedSignal?.aborted).toBe(true)
+  })
   test('discovers Resources and shows grant state without persisting a Resource id', async () => {
     const requests: Request[] = []
     const tools = createWorkspaceCapabilityTools({

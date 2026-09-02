@@ -5,6 +5,8 @@ export const moduleFailureSchema = z.object({
   code: z.string().min(1).max(128).regex(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/),
   message: z.string().min(1).max(2048),
   retryable: z.boolean(),
+  status: z.number().int().min(400).max(599).optional(),
+  details: z.record(z.string(), z.unknown()).optional(),
 }).strict()
 export type ModuleFailure = z.infer<typeof moduleFailureSchema>
 

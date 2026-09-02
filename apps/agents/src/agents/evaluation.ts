@@ -382,7 +382,7 @@ export const evaluate = async (
           const call = calls[i]!
           onEvent?.({ kind: 'tool_start', tool: call.tool, callId: String(i) })
         }
-        const results = await toolExecutor(calls, triggerRoomId)
+        const results = await toolExecutor(calls, triggerRoomId, signal)
         for (let i = 0; i < results.length; i++) {
           const call = calls[i]
           const result = results[i]

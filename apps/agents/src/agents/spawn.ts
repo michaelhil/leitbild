@@ -37,7 +37,7 @@ const createToolExecutor = (
 ): ToolExecutor => {
   const allowed = new Set(allowedTools)
 
-  return async (calls: ReadonlyArray<ToolCall>, roomId?: string): Promise<ReadonlyArray<ToolResult>> => {
+  return async (calls: ReadonlyArray<ToolCall>, roomId?: string, signal?: AbortSignal): Promise<ReadonlyArray<ToolResult>> => {
     const results: ToolResult[] = []
     const callContext: ToolContext = roomId ? { ...context, roomId } : context
 
@@ -51,6 +51,7 @@ const createToolExecutor = (
     // and overloaded "skill metadata" with "permission policy."
     // Removed 2026-05-12; see the PR that deletes spawn-allowed-tools.test.ts.
     for (const call of calls) {
+      signal?.throwIfAborted()
       // Rejections name the exact dimension that needs changing. The operator's mental
       // model is "I see this tool in the inspector → it should work." When
       // it doesn't, the message must name what to change: the agent's
@@ -74,11 +75,16 @@ const createToolExecutor = (
         continue
       }
 
+      const controller = new AbortController()
+      const callSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal
+      const timer = setTimeout(() => controller.abort(new Error(`Tool "${call.tool}" timed out after 30s; inspect state before retrying a command`)), 30_000)
+      let rejectAbort: () => void = () => {}
       try {
-        const timeout = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`Tool "${call.tool}" timed out after 30s`)), 30_000),
-        )
-        const result = await Promise.race([entry.tool.execute(call.arguments, callContext), timeout])
+        const cancelled = new Promise<never>((_, reject) => {
+          rejectAbort = () => reject(callSignal.reason)
+          callSignal.addEventListener('abort', rejectAbort, { once: true })
+        })
+        const result = await Promise.race([entry.tool.execute(call.arguments, { ...callContext, signal: callSignal }), cancelled])
         results.push(result)
       } catch (err) {
         // Log to operator so a tool throwing a fresh error class doesn't lose
@@ -86,6 +92,9 @@ const createToolExecutor = (
         // sanitized message; the operator sees the full error.
         console.error(`[tool] "${call.tool}" execution failed:`, err)
         results.push({ success: false, error: err instanceof Error ? err.message : 'Tool execution failed' })
+      } finally {
+        clearTimeout(timer)
+        callSignal.removeEventListener('abort', rejectAbort)
       }
     }
 

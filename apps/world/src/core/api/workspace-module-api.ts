@@ -690,13 +690,11 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     invoke: async (registry, invocation) => {
       emptyInputSchema.parse(invocation.input)
       const simulationRunId = requireSimulationRunResource(invocation)
-      const [runtime, revision, summary] = await Promise.all([
+      const [runtime, definition, summary] = await Promise.all([
         registry.load(simulationRunId),
-        registry.scenarioRevisionForRun(simulationRunId),
+        registry.compiledScenarioForRun(simulationRunId),
         registry.summary(simulationRunId),
       ])
-      if (!revision) return apiError(409, 'scenario_revision_unavailable', 'Simulation Run has no readable Scenario Revision')
-      const definition = await registry.compileScenarioRevision(revision)
       const snapshot = runtime.snapshot()
       const leaseSummary = registry.leaseSummary(simulationRunId)
       const assetSummaries = snapshot.objects.map(object => ({
@@ -722,8 +720,6 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
           title: 'Run identity and provenance',
           data: {
             ...summary,
-            scenarioDigest: revision.digest,
-            scenarioRevisionCreatedAt: revision.createdAt,
             connections: leaseSummary,
           },
         }, {
@@ -834,9 +830,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       emptyInputSchema.parse(invocation.input)
       const simulationRunId = requireSimulationRunResource(invocation)
       const runtime = await registry.load(simulationRunId)
-      const [revision, summary] = await Promise.all([registry.scenarioRevisionForRun(simulationRunId), registry.summary(simulationRunId)])
-      if (!revision) return apiError(409, 'scenario_revision_unavailable', 'Simulation Run has no readable Scenario Revision')
-      const definition = await registry.compileScenarioRevision(revision)
+      const [definition, summary] = await Promise.all([registry.compiledScenarioForRun(simulationRunId), registry.summary(simulationRunId)])
       const snapshot = runtime.snapshot()
       const objectSummaries = snapshot.objects
         .map(summarizeOperationalObject)
@@ -846,8 +840,8 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
         subject: {
           workspaceId: registry.workspaceId,
           simulationRunId,
-          scenarioId: revision.definitionId,
-          scenarioRevisionId: revision.id,
+          scenarioId: summary.scenarioId,
+          scenarioRevisionId: summary.scenarioRevisionId,
         },
         briefing: {
           title: summary.title,
@@ -1063,6 +1057,7 @@ const invokeCapability = async (
   const invocation = moduleCapabilityInvocationSchema.parse(rawInvocation)
   if (invocation.workspaceId !== registry.workspaceId) return apiError(409, 'workspace_scope_mismatch', 'Invocation belongs to another Workspace')
   if (invocation.capabilityId !== capabilityId) return apiError(409, 'capability_scope_mismatch', 'Invocation Capability does not match the route')
+  if (invocation.idempotencyKey !== undefined && worldCapabilities.descriptors.some(descriptor => descriptor.id === capabilityId)) return apiError(400, 'idempotency_not_supported', 'This Capability does not support keyed retries; inspect the Resource after an uncertain result.')
 
   const response = await worldCapabilities.invoke(capabilityId, registry, invocation)
   if (response) return response

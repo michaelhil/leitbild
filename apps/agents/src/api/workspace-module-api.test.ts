@@ -79,6 +79,18 @@ const invokeBody = (workspaceId: WorkspaceId, capabilityId: string, input: unkno
 })
 
 describe('Agents Workspace Module API', () => {
+  test('resource discovery stays lazy and keyed retries are rejected before loading', async () => {
+    const workspaceId = newWorkspaceId()
+    await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
+    expect(registry.tryGetLive(workspaceId)).toBeUndefined()
+    const response = await request('GET', `/internal/workspaces/${workspaceId}/resources`)
+    expect(response.status).toBe(200)
+    expect(moduleResourceCollectionSchema.parse(await response.json()).resources).toEqual([])
+    expect(registry.tryGetLive(workspaceId)).toBeUndefined()
+    const keyed = await request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.room.create/invoke`, { ...invokeBody(workspaceId, 'agents.room.create', { name: 'Test' }), idempotencyKey: 'retry' })
+    expect(keyed.status).toBe(400)
+    expect(registry.tryGetLive(workspaceId)).toBeUndefined()
+  })
   test('definition writes reject unavailable Packs, tools and scripts before persistence', async () => {
     const workspaceId = newWorkspaceId()
     await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
