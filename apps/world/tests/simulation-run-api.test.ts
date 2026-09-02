@@ -188,7 +188,8 @@ describe('Simulation Run API', () => {
       }
       readonly source: { readonly packs: ReadonlyArray<{ readonly id: string; readonly config: unknown; readonly items: readonly unknown[] }> }
     }>(registry, '/scenarios/halden-power-complex')
-    expect(fetched.body.scenario.packs).toEqual(['process-plant', 'electric-grid'])
+    expect(fetched.body.scenario.packs).toEqual(['process-plant', 'electric-grid', 'weather'])
+    expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'weather')).toHaveLength(3)
     expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'process-plant')).toHaveLength(4)
     const processPlant = fetched.body.source.packs.find(pack => pack.id === 'process-plant')
     expect(processPlant?.config).toEqual({})
