@@ -14,7 +14,7 @@ import {
   type SimulationRunRuntimeMetricsSnapshot,
 } from './runtime-metrics.ts'
 import { defaultSimulationRunRuntimePolicy } from './runtime-persistence-policy.ts'
-import { createProcedureSourceService, type ProcedureSourceLoadStatus, type ProcedureSourceService } from '../../features/procedures/source.ts'
+import { createProcedureSourceService, type ProcedureSourceService } from '../../features/procedures/source.ts'
 import { procedureCommandEvents } from '../../features/procedures/run-state.ts'
 import type { WorkspaceId } from '@leitbild/contracts'
 import type { ScenarioRevisionId } from '../scenarios/library.ts'
@@ -60,9 +60,13 @@ export interface SimulationRunRuntime {
   readonly publishResetBoundary: (config: { readonly scenarioId?: string }) => Promise<SimulationRunEvent>
   readonly invokeCapability: (actor: Actor, invocation: SimulationRunCapabilityInvocation) => Promise<SimulationRunCapabilityInvocationResult>
   readonly receiveRealtimeInput: (input: PackRuntimeRealtimeInput) => Promise<void>
-  readonly procedureSourceStatus: (config?: { readonly sourceId?: ProcedureSourceId }) => ProcedureSourceLoadStatus
   readonly procedureCatalog: (config?: { readonly sourceId?: ProcedureSourceId; readonly refresh?: boolean }) => Promise<ProcedureCatalog>
-  readonly procedureDocument: (config: { readonly sourceId?: ProcedureSourceId; readonly procedureId: ProcedureId; readonly refresh?: boolean }) => Promise<ProcedureDocument>
+  readonly procedureDocument: (config: {
+    readonly sourceId?: ProcedureSourceId
+    readonly procedureId: ProcedureId
+    readonly sourceRevision?: string
+    readonly sourcePath?: string
+  }) => Promise<ProcedureDocument>
   readonly publishInteractionSignal: (signal: InteractionSignal, provenance: Provenance) => Promise<void>
   readonly metrics: () => SimulationRunRuntimeMetricsSnapshot
   readonly health: () => ReadonlyArray<PackRuntimeHealth>
@@ -571,11 +575,8 @@ export const createSimulationRunRuntime = async (config: {
             eventId,
             nextSeq: () => ++seq,
           },
-          readDocument: async (sourceId, procedureId) =>
-            await procedureSourceService.readDocument({
-              sourceId,
-              procedureId,
-            }),
+          readDocument: async documentConfig =>
+            await procedureSourceService.readDocument(documentConfig),
         })
         if (events === null) return null
         await publishGenerated(() => events)
@@ -976,7 +977,6 @@ export const createSimulationRunRuntime = async (config: {
     publishResetBoundary,
     invokeCapability,
     receiveRealtimeInput,
-    procedureSourceStatus: (statusConfig = {}) => procedureSourceService.readStatus(statusConfig),
     procedureCatalog: async (catalogConfig = {}) => await procedureSourceService.readCatalog(catalogConfig),
     procedureDocument: async (documentConfig) => await procedureSourceService.readDocument(documentConfig),
     publishInteractionSignal: async (signal: InteractionSignal, provenance: Provenance): Promise<void> => {

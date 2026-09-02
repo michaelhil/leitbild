@@ -29,15 +29,12 @@ const FIXTURE_INDEX = JSON.stringify({
 
 const stubSource = {
   binding: {} as any,
-  fetchIndex: async () => '',
-  fetchManifest: async () => null,
-  fetchProcedure: async () => '',
-  fetchPage: async (path: string) => {
+  fetchManifest: async () => { throw new Error('not used') },
+  fetchDocument: async (path: string) => {
     if (path === 'wiki/_search-index.json') return FIXTURE_INDEX
     throw new Error(`unexpected path: ${path}`)
   },
   citationUrl: (id: string) => `https://example.com/${id}`,
-  rawUrl: (id: string) => `https://example.com/raw/${id}`,
 }
 
 const context = { callerId: 'test', callerName: 'Test' } as any

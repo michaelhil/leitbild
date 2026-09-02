@@ -34,6 +34,9 @@ export interface ProcedureRunSummaryGroup {
   readonly completed: ReadonlyArray<ProcedureRunSummary>
 }
 
+export const procedureRunDocumentKey = (run: ProcedureRunState): string =>
+  `${run.sourceId}:${run.sourceRevision}:${run.sourcePath}:${run.procedureId}`
+
 export const sameProcedureScope = (
   left: ProcedureRunScope,
   right: ProcedureRunScope,
@@ -179,11 +182,11 @@ export const procedureRunSummaryFor = (
 export const procedureRunSummariesForScope = (
   runs: ReadonlyArray<ProcedureRunState>,
   scope: ProcedureRunScope,
-  documents: ReadonlyMap<ProcedureId, ProcedureDocument>,
+  documents: ReadonlyMap<string, ProcedureDocument>,
 ): ProcedureRunSummaryGroup => {
   const summaries = runs
     .filter(run => sameProcedureScope(run.scope, scope))
-    .map(run => procedureRunSummaryFor(run, documents.get(run.procedureId)))
+    .map(run => procedureRunSummaryFor(run, documents.get(procedureRunDocumentKey(run))))
     .filter((summary): summary is ProcedureRunSummary => summary !== null)
   return {
     active: summaries.filter(summary => summary.status === 'active'),

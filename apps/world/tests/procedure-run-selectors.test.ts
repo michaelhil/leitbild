@@ -4,6 +4,7 @@ import {
   furthestTouchedStep,
   procedureCurrentStep,
   procedureBranchActionText,
+  procedureRunDocumentKey,
   procedureRunSummariesForScope,
   procedureRunSummaryText,
   procedureStepDisplayName,
@@ -17,7 +18,7 @@ const source = {
   repository: 'leitbild-wikis/pwr-ops',
   ref: 'main',
   path: 'wiki/procedures',
-  commitSha: 'test-revision',
+  revision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   fetchedAt: at,
   sourceUrl: 'https://github.com/leitbild-wikis/pwr-ops/tree/main/wiki/procedures',
 }
@@ -64,7 +65,8 @@ const procedure = {
 const activeRun = {
   runId: 'procedure-run:test-a',
   sourceId: 'pwr-ops',
-  sourceRevision: 'test-revision',
+  sourceRevision: source.revision,
+  sourcePath: 'wiki/procedures/E-0.md',
   procedureId: 'E-0',
   scope: unitScope,
   title: 'Reactor Trip or Safety Injection',
@@ -158,7 +160,7 @@ describe('procedure run selectors', () => {
     const summaries = procedureRunSummariesForScope(
       [activeRun, otherUnitRun],
       unitScope,
-      new Map([['E-0', procedure]]),
+      new Map([[procedureRunDocumentKey(activeRun), procedure]]),
     )
     expect(summaries.active.map(procedureRunSummaryText)).toEqual(['E-0:6'])
     expect(summaries.completed).toEqual([])

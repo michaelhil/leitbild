@@ -10,7 +10,9 @@ export const procedureSources: ReadonlyArray<ProcedureSourceConfig> = [{
   label: 'PWR operations procedures',
   repository: 'samsinn-wikis/pwr-ops',
   ref: 'main',
-  path: 'wiki/procedures',
+  manifestUrl: 'https://samsinn-wikis.github.io/pwr-ops/_manifest.json',
+  manifestPath: 'wiki/_manifest.json',
+  procedurePath: 'wiki/procedures',
 }]
 
 export const createConfiguredProcedureSourceService = (): ProcedureSourceService =>

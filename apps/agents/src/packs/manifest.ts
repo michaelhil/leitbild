@@ -13,19 +13,12 @@ const httpUrlSchema = z.url().refine(value => {
   return protocol === 'http:' || protocol === 'https:'
 }, 'must use http or https')
 
-const relativePathSchema = z.string().min(1).refine(
-  value => !value.startsWith('/') && !value.split('/').includes('..'),
-  'must be a relative path without parent traversal',
-)
-
 const wikiSourceBindingSchema = z.object({
   org: z.string().min(1),
   repo: z.string().min(1),
   branch: z.string().min(1),
-  procedureDir: relativePathSchema,
-  indexFile: relativePathSchema,
   citationBase: httpUrlSchema,
-  manifestFile: relativePathSchema.optional(),
+  manifestUrl: httpUrlSchema,
 }).strict()
 
 const wikiRefSchema = z.object({

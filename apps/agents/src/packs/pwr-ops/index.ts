@@ -6,20 +6,22 @@
 // the manifest remains the authoritative metadata either way.
 
 import type { Tool } from '../../core/types/tool.ts'
-import { createProcedureLookupTool } from './tools/procedure-lookup.ts'
-import { createWikiLookupTool } from './tools/wiki-lookup.ts'
-import { createEalClassifyTool } from './tools/eal-classify.ts'
-import { createProcedureSearchTool } from './tools/procedure-search.ts'
+import { createWikiSource } from '../../wikis/wiki-fetcher.ts'
+import { buildProcedureLookupTool } from './tools/procedure-lookup.ts'
+import { buildWikiLookupTool } from './tools/wiki-lookup.ts'
+import { buildEalClassifyTool } from './tools/eal-classify.ts'
+import { buildProcedureSearchTool } from './tools/procedure-search.ts'
 import { PWR_OPS_MANIFEST } from './manifest.ts'
 
 const wiki = PWR_OPS_MANIFEST.wikis[0]
 if (!wiki || !wiki.source) {
   throw new Error('[packs/pwr-ops] pack.json must declare wikis[0].source — fix the manifest')
 }
+const source = createWikiSource(wiki.source)
 
 export const PWR_OPS_TOOLS: ReadonlyArray<Tool> = [
-  createProcedureLookupTool(wiki.source, wiki.name, wiki.url),
-  createWikiLookupTool(wiki.source, wiki.name, wiki.url),
-  createEalClassifyTool(wiki.source, wiki.name),
-  createProcedureSearchTool(wiki.source, wiki.name, wiki.url),
+  buildProcedureLookupTool({ source, wikiName: wiki.name, wikiHomepage: wiki.url }),
+  buildWikiLookupTool({ source, wikiName: wiki.name, wikiHomepage: wiki.url }),
+  buildEalClassifyTool({ source, wikiName: wiki.name }),
+  buildProcedureSearchTool({ source, wikiName: wiki.name, wikiHomepage: wiki.url }),
 ]

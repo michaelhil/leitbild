@@ -27,14 +27,12 @@
     readProcedureCatalog,
     readProcedureDocument,
     readProcedureRuns,
-    readProcedureSourceStatus,
     readProcedureTagValue,
     resetProcedureRun,
     startProcedureRun,
     updateProcedureStep,
     validateProcedureTags,
     type ProcedureCsfEvaluation,
-    type ProcedureSourceLoadStatus,
     type ProcedureTagValidation,
     type ProcedureTagValue,
   } from './procedure-client.ts'
@@ -44,6 +42,7 @@
     procedureBranchActionText,
     procedureFirstStep,
     procedureRunFor,
+    procedureRunDocumentKey,
     procedureRunSummariesForScope,
     procedureRunSummaryText,
     procedureRunVisualStateFor as selectedProcedureRunVisualStateFor,
@@ -157,7 +156,7 @@
   let catalog = $state<ProcedureCatalog | null>(null)
   let document = $state<ProcedureDocument | null>(null)
   let runs = $state<ReadonlyArray<ProcedureRunState>>([])
-  let runDocuments = $state<ReadonlyMap<ProcedureId, ProcedureDocument>>(new Map())
+  let runDocuments = $state<ReadonlyMap<string, ProcedureDocument>>(new Map())
   let selectedProcedureId = $state<string | null>(null)
   let confirmation = $state<ProcedureConfirmation | null>(null)
   let tagValidation = $state<ReadonlyMap<string, ProcedureTagValidation>>(new Map())
@@ -170,7 +169,6 @@
   let commentDrafts = $state<Record<string, string>>({})
   let pendingTransition = $state<ProcedureTransition | null>(null)
   let procedureToast = $state<ProcedureToast | null>(null)
-  let procedureSourceStatus = $state<ProcedureSourceLoadStatus | null>(null)
   let loadStages = $state<Record<LoadStageId, LoadStage>>(createLoadStages())
   let procedureTocMode = $state<ProcedureTocMode>('detail')
   let procedureFontScale = $state(1)
@@ -207,7 +205,7 @@
     : null)
   const procedureFamilies = $derived(groupCatalog(catalog?.procedures ?? []))
   const sourceLabel = $derived(catalog
-    ? `${catalog.source.repository}@${catalog.source.ref}`
+    ? `${catalog.source.repository}@${catalog.source.revision.slice(0, 8)}`
     : 'Procedure source')
   const displayUnitName = $derived(currentUnitContext.label)
   const displayUnitStatus = $derived(currentUnitContext.status ?? unitStatus ?? {
@@ -328,7 +326,7 @@
 
   function createLoadStages(): Record<LoadStageId, LoadStage> {
     return {
-      source: { id: 'source', label: 'Load procedure source', status: 'pending' },
+      source: { id: 'source', label: 'Discover procedure catalog', status: 'pending' },
       runs: { id: 'runs', label: 'Read active runs', status: 'pending' },
       document: { id: 'document', label: 'Load selected procedure', status: 'pending' },
       tags: { id: 'tags', label: 'Resolve plant tags', status: 'pending' },
@@ -342,34 +340,56 @@
     label: unit.label,
   })
 
-  const runDocumentIds = (nextRuns: ReadonlyArray<ProcedureRunState>): ReadonlyArray<ProcedureId> =>
-    [...new Set(nextRuns
-      .filter(run => run.status === 'active' || run.status === 'completed')
-      .map(run => run.procedureId))]
+  const documentKeyFor = (nextDocument: ProcedureDocument): string =>
+    `${nextDocument.source.sourceId}:${nextDocument.source.revision}:${nextDocument.sourcePath}:${nextDocument.procedureId}`
 
   const rememberProcedureDocument = (nextDocument: ProcedureDocument): void => {
-    runDocuments = new Map([...runDocuments, [nextDocument.procedureId, nextDocument]])
+    runDocuments = new Map([...runDocuments, [documentKeyFor(nextDocument), nextDocument]])
   }
 
   const ensureRunDocuments = async (nextRuns: ReadonlyArray<ProcedureRunState>): Promise<void> => {
-    const missing = runDocumentIds(nextRuns).filter(procedureId => !runDocuments.has(procedureId))
+    const uniqueRuns = new Map(nextRuns
+      .filter(run => run.status === 'active' || run.status === 'completed')
+      .map(run => [procedureRunDocumentKey(run), run] as const))
+    const missing = [...uniqueRuns].filter(([key]) => !runDocuments.has(key))
     if (missing.length === 0) return
-    const loaded = await Promise.all(missing.map(async procedureId =>
-      await readProcedureDocument(simulationRunId, procedureId, {
-        sourceId: nextRuns.find(run => run.procedureId === procedureId)?.sourceId,
+    const loaded = await Promise.all(missing.map(async ([key, run]) =>
+      [key, await readProcedureDocument(simulationRunId, run.procedureId, {
+        sourceId: run.sourceId,
+        sourceRevision: run.sourceRevision,
+        sourcePath: run.sourcePath,
       }),
-    ))
+      ] as const))
     runDocuments = new Map([
       ...runDocuments,
-      ...loaded.map(nextDocument => [nextDocument.procedureId, nextDocument] as const),
+      ...loaded,
     ])
   }
 
-  const readAndRememberProcedureDocument = async (procedureId: ProcedureId): Promise<ProcedureDocument> => {
-    const cached = runDocuments.get(procedureId)
+  const readAndRememberProcedureDocument = async (
+    procedureId: ProcedureId,
+    sourceConfig: {
+      readonly sourceId?: string
+      readonly sourceRevision?: string
+      readonly sourcePath?: string
+    } = {},
+  ): Promise<ProcedureDocument> => {
+    const sourceId = sourceConfig.sourceId ?? catalog?.source.sourceId
+    const sourceRevision = sourceConfig.sourceRevision ?? catalog?.source.revision
+    const sourcePath = sourceConfig.sourcePath ?? (
+      sourceRevision === catalog?.source.revision
+        ? catalog?.procedures.find(item => item.procedureId === procedureId)?.sourcePath
+        : undefined
+    )
+    const key = sourceId && sourceRevision && sourcePath
+      ? `${sourceId}:${sourceRevision}:${sourcePath}:${procedureId}`
+      : null
+    const cached = key ? runDocuments.get(key) : undefined
     if (cached) return cached
     const loaded = await readProcedureDocument(simulationRunId, procedureId, {
-      sourceId: catalog?.source.sourceId,
+      ...(sourceId === undefined ? {} : { sourceId }),
+      ...(sourceRevision === undefined ? {} : { sourceRevision }),
+      ...(sourcePath === undefined ? {} : { sourcePath }),
     })
     rememberProcedureDocument(loaded)
     return loaded
@@ -422,34 +442,8 @@
     })
   }
 
-  const sourceProgressDetail = (status: ProcedureSourceLoadStatus | null): string | undefined => {
-    if (!status) return undefined
-    if (status.stage === 'listing') return `Reading ${status.repository}/${status.path}`
-    if (status.stage === 'loading-documents') {
-      const count = status.totalItems === undefined
-        ? `${status.loadedItems}`
-        : `${status.loadedItems}/${status.totalItems}`
-      return status.currentItem ? `${count} Markdown files · ${status.currentItem}` : `${count} Markdown files`
-    }
-    if (status.stage === 'ready') return `${status.loadedItems} procedures available`
-    if (status.stage === 'failed') return status.error ?? 'Procedure source failed'
-    return 'Waiting for source loader'
-  }
-
-  const sourceStageStatus = (status: ProcedureSourceLoadStatus | null): LoadStageStatus => {
-    if (!status) return loadStages.source.status
-    if (status.stage === 'ready') return 'done'
-    if (status.stage === 'failed') return 'failed'
-    if (status.stage === 'idle') return loadStages.source.status
-    return 'running'
-  }
-
   const procedureLoadRows = $derived<ReadonlyArray<LoadStage>>([
-    {
-      ...loadStages.source,
-      status: sourceStageStatus(procedureSourceStatus),
-      ...(sourceProgressDetail(procedureSourceStatus) === undefined ? {} : { detail: sourceProgressDetail(procedureSourceStatus) }),
-    },
+    loadStages.source,
     loadStages.runs,
     loadStages.document,
     loadStages.tags,
@@ -494,56 +488,31 @@
     return 'Machine evaluation unavailable for this step; checkbox is the human placekeeping state'
   }
 
-  const pollProcedureSourceStatus = (sourceId?: string): (() => void) => {
-    let stopped = false
-    let inFlight = false
-    const poll = async (): Promise<void> => {
-      if (stopped || inFlight) return
-      try {
-        inFlight = true
-        procedureSourceStatus = await readProcedureSourceStatus(simulationRunId, { sourceId })
-      } catch (err) {
-        setLoadStage('source', 'failed', errorMessage(err))
-      } finally {
-        inFlight = false
-      }
-    }
-    void poll()
-    const interval = window.setInterval(() => {
-      void poll()
-    }, 500)
-    return () => {
-      stopped = true
-      window.clearInterval(interval)
-    }
-  }
-
   const loadCatalogAndRuns = async (refresh = false): Promise<void> => {
-    let stopSourceStatusPolling: (() => void) | null = null
     try {
       loading = true
       refreshing = refresh
       error = null
       loadStages = createLoadStages()
-      procedureSourceStatus = null
-      setLoadStage('source', 'running', refresh ? 'Refreshing source files' : 'Starting source loader')
-      stopSourceStatusPolling = pollProcedureSourceStatus(catalog?.source.sourceId)
-      const nextCatalog = await readProcedureCatalog(simulationRunId, { refresh })
-      stopSourceStatusPolling()
-      stopSourceStatusPolling = null
-      procedureSourceStatus = await readProcedureSourceStatus(simulationRunId, { sourceId: nextCatalog.source.sourceId })
-      setLoadStage('source', 'done', `${nextCatalog.procedures.length} procedures available`)
+      setLoadStage('source', 'running', refresh ? 'Refreshing manifest' : 'Reading manifest')
       setLoadStage('runs', 'running')
-      const nextRuns = await readProcedureRuns(simulationRunId)
+      const [nextCatalog, nextRuns] = await Promise.all([
+        readProcedureCatalog(simulationRunId, { refresh }),
+        readProcedureRuns(simulationRunId),
+      ])
+      setLoadStage('source', 'done', `${nextCatalog.procedures.length} procedures available`)
       const nextScopedRuns = scopedProcedureRuns(nextRuns.runs)
-      await ensureRunDocuments(nextScopedRuns)
       catalog = nextCatalog
       runs = nextScopedRuns
       setLoadStage('runs', 'done', `${nextScopedRuns.length} tracked runs`)
       selectedProcedureId = selectedProcedureId ?? initialProcedureId ?? nextCatalog.procedures[0]?.procedureId ?? null
-      if (selectedProcedureId && (!document || document.procedureId !== selectedProcedureId || refresh)) {
-        await loadProcedure(selectedProcedureId, refresh)
+      if (selectedProcedureId) {
+        await Promise.all([
+          ensureRunDocuments(nextScopedRuns),
+          loadProcedure(selectedProcedureId, false),
+        ])
       } else {
+        await ensureRunDocuments(nextScopedRuns)
         setLoadStage('document', 'done', document ? `${document.procedureId} already loaded` : 'No procedure selected')
         setLoadStage('tags', 'done', document ? `${document.tags.length} tags already resolved` : 'No tags')
         setLoadStage('csfs', 'done', `${csfIds.length} CSFs already evaluated`)
@@ -553,7 +522,6 @@
       const activeStage = procedureLoadRows.find(stage => stage.status === 'running')
       if (activeStage) setLoadStage(activeStage.id, 'failed', error)
     } finally {
-      stopSourceStatusPolling?.()
       loading = false
       refreshing = false
     }
@@ -569,15 +537,29 @@
     }
   }
 
-  const loadProcedure = async (procedureId: string, refresh = false): Promise<void> => {
+  const loadProcedure = async (
+    procedureId: string,
+    showLoading = true,
+    sourceConfig: {
+      readonly sourceId?: string
+      readonly sourceRevision?: string
+      readonly sourcePath?: string
+    } = {},
+  ): Promise<void> => {
     try {
-      loading = true
+      if (showLoading) loading = true
       error = null
       selectedProcedureId = procedureId
       setLoadStage('document', 'running', procedureId)
+      const currentRun = procedureRunFor(runs, {
+        sourceId: sourceConfig.sourceId ?? catalog?.source.sourceId,
+        procedureId: procedureId as ProcedureId,
+        scope: currentScope,
+      })
       const nextDocument = await readProcedureDocument(simulationRunId, procedureId, {
-        sourceId: catalog?.source.sourceId,
-        refresh,
+        sourceId: sourceConfig.sourceId ?? currentRun?.sourceId ?? catalog?.source.sourceId,
+        sourceRevision: sourceConfig.sourceRevision ?? currentRun?.sourceRevision,
+        sourcePath: sourceConfig.sourcePath ?? currentRun?.sourcePath,
       })
       document = nextDocument
       rememberProcedureDocument(nextDocument)
@@ -616,7 +598,7 @@
     } catch (err) {
       error = errorMessage(err)
     } finally {
-      loading = false
+      if (showLoading) loading = false
     }
   }
 
@@ -626,6 +608,7 @@
     try {
       await startProcedureRun(simulationRunId, {
         sourceId: current.source.sourceId,
+        sourceRevision: current.source.revision,
         procedureId: current.procedureId,
         scope: currentScope,
       })
@@ -663,8 +646,12 @@
       return
     }
     try {
-      const nextDocument = await readAndRememberProcedureDocument(summary.procedureId)
-      await loadProcedure(summary.procedureId)
+      await loadProcedure(summary.procedureId, true, {
+        sourceId: summary.run.sourceId,
+        sourceRevision: summary.run.sourceRevision,
+        sourcePath: summary.run.sourcePath,
+      })
+      const nextDocument = runDocuments.get(procedureRunDocumentKey(summary.run))
       const currentStep = procedureCurrentStep(summary.run, nextDocument)
       if (currentStep) scrollToProcedureStep(currentStep.step.id)
     } catch (err) {
@@ -686,7 +673,10 @@
 
   const targetDocumentForBranch = (branch: ProcedureBranch): ProcedureDocument | undefined =>
     branch.targetKind === 'procedure'
-      ? runDocuments.get(branch.target as ProcedureId)
+      ? [...runDocuments.values()].find(candidate =>
+          candidate.source.sourceId === document?.source.sourceId
+            && candidate.source.revision === document?.source.revision
+            && candidate.procedureId === branch.target)
       : undefined
 
   const branchActionTextFor = (branch: ProcedureBranch): string =>
@@ -746,7 +736,10 @@
   const openProcedureTransition = async (fromStep: ProcedureStep, branch: ProcedureBranch): Promise<void> => {
     if (!selectedRun || !document || branch.targetKind !== 'procedure') return
     try {
-      const targetProcedure = await readAndRememberProcedureDocument(branch.target as ProcedureId)
+      const targetProcedure = await readAndRememberProcedureDocument(branch.target as ProcedureId, {
+        sourceId: document.source.sourceId,
+        sourceRevision: document.source.revision,
+      })
       const targetStep = procedureFirstStep(targetProcedure)
       if (!targetStep) {
         error = `Procedure ${targetProcedure.procedureId} has no steps to enter.`
@@ -800,6 +793,7 @@
       if (!targetRun) {
         await startProcedureRun(simulationRunId, {
           sourceId: transition.targetProcedure.source.sourceId,
+          sourceRevision: transition.targetProcedure.source.revision,
           procedureId: transition.targetProcedure.procedureId,
           scope: currentScope,
         })
@@ -823,7 +817,11 @@
       })
       await waitMs(1_000)
       await closeProcedureRun(simulationRunId, { runId: sourceRun.runId, status: 'completed' })
-      await loadProcedure(transition.targetProcedure.procedureId)
+      await loadProcedure(transition.targetProcedure.procedureId, true, {
+        sourceId: transition.targetProcedure.source.sourceId,
+        sourceRevision: transition.targetProcedure.source.revision,
+        sourcePath: transition.targetProcedure.sourcePath,
+      })
       await refreshRuns()
     } catch (err) {
       error = errorMessage(err)
@@ -1010,7 +1008,7 @@
       `Procedure: ${document.procedureId} - ${document.title}`,
       `Step: ${step.label} (${step.id})`,
       `Source: ${document.sourceUrl}`,
-      `Source revision: ${document.source.commitSha ?? `${document.source.repository}@${document.source.ref}`}`,
+      `Source revision: ${document.source.revision}`,
       `Leitbild simulation run: ${simulationRunId}`,
       '',
       'Describe the procedure text or procedure-system problem here:',

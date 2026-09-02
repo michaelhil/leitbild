@@ -84,6 +84,14 @@ _Avoid_: Process Surface, Starting View, generated UI code
 An optional Simulation Run service that stores explicitly selected observation series. The Durable Journal separately retains meaningful committed events; together they support historical inspection without making dense samples canonical World state.
 _Avoid_: Durable Journal, runtime snapshot, automatic capture of every private variable
 
+**Procedure Source**:
+A read-only procedure corpus discovered through one validated Manifest whose revision identifies the immutable document set.
+_Avoid_: hard-coded procedure list, human-readable index scraping, eagerly loaded procedure bundle
+
+**Procedure Run**:
+The operational progress state for one procedure in one Plant scope, pinned to the exact Procedure Source Revision from which it began.
+_Avoid_: reading a mutable latest procedure during an active Run, Procedure Document
+
 **Recording Profile**:
 A Pack-owned named choice of operational signals and allowed sampling cadence that may be selected by a Scenario.
 _Avoid_: Recording Policy, hand-authored signal list, universal logging rule

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { sourceDocumentPathSchema, sourceRevisionSchema } from '@leitbild/contracts'
 import { actorIdSchema, commandIdSchema, idSchema, objectIdSchema } from './ids.ts'
 import { isoTimestampSchema } from './time.ts'
 
@@ -33,7 +34,7 @@ export const procedureSourceSchema = z.object({
   repository: z.string().min(1),
   ref: z.string().min(1),
   path: z.string().min(1),
-  commitSha: z.string().min(1).optional(),
+  revision: sourceRevisionSchema,
   fetchedAt: isoTimestampSchema,
   sourceUrl: z.string().url(),
 })
@@ -88,7 +89,7 @@ export const procedureDocumentSchema = z.object({
   csfsMonitored: z.array(idSchema).default([]),
   entryTriggers: z.array(idSchema).default([]),
   description: z.string().default(''),
-  sourcePath: z.string().min(1),
+  sourcePath: sourceDocumentPathSchema,
   sourceUrl: z.string().url(),
   rawMarkdown: z.string(),
   steps: z.array(procedureStepSchema).default([]),
@@ -106,7 +107,7 @@ export const procedureCatalogItemSchema = z.object({
   entryTriggers: z.array(idSchema).default([]),
   stepCount: z.number().int().nonnegative(),
   tagCount: z.number().int().nonnegative(),
-  sourcePath: z.string().min(1),
+  sourcePath: sourceDocumentPathSchema,
   sourceUrl: z.string().url(),
 })
 export type ProcedureCatalogItem = z.infer<typeof procedureCatalogItemSchema>
@@ -133,7 +134,8 @@ export type ProcedureRunStatus = z.infer<typeof procedureRunStatusSchema>
 export const procedureRunStateSchema = z.object({
   runId: procedureRunIdSchema,
   sourceId: procedureSourceIdSchema,
-  sourceRevision: z.string().min(1).optional(),
+  sourceRevision: sourceRevisionSchema,
+  sourcePath: sourceDocumentPathSchema,
   procedureId: procedureIdSchema,
   scope: procedureRunScopeSchema,
   title: z.string().min(1),
@@ -154,6 +156,7 @@ export type ProcedureControlState = z.infer<typeof procedureControlStateSchema>
 
 export const procedureRunStartPayloadSchema = z.object({
   sourceId: procedureSourceIdSchema,
+  sourceRevision: sourceRevisionSchema,
   procedureId: procedureIdSchema,
   scope: procedureRunScopeSchema,
 })

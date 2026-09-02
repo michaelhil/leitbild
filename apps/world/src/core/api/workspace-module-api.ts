@@ -6,6 +6,8 @@ import {
   moduleDefinitionCollectionSchema,
   moduleIdSchema,
   moduleResourceCollectionSchema,
+  sourceDocumentPathSchema,
+  sourceRevisionSchema,
   workspaceDefinitionRevisionReferenceSchema,
   workspaceIdSchema,
   workspaceModuleManifestSchema,
@@ -87,9 +89,19 @@ const procedureCatalogInputSchema = z.object({
   sourceId: procedureSourceIdSchema.optional(),
   refresh: z.boolean().default(false),
 }).strict()
-const procedureDocumentInputSchema = procedureCatalogInputSchema.extend({
+const procedureDocumentInputSchema = z.object({
+  sourceId: procedureSourceIdSchema.optional(),
   procedureId: procedureIdSchema,
-}).strict()
+  sourceRevision: sourceRevisionSchema.optional(),
+  sourcePath: sourceDocumentPathSchema.optional(),
+}).strict().superRefine((input, ctx) => {
+  if (input.sourcePath !== undefined && input.sourceRevision === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'sourcePath requires sourceRevision',
+    })
+  }
+})
 const historyTimestampSchema = z.string().datetime({ offset: true })
 const readHistoryInputSchema = z.object({
   runtimeId: z.string().trim().min(1).max(128).optional(),
@@ -964,8 +976,9 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       const input = procedureDocumentInputSchema.parse(invocation.input)
       return json({ result: await runtime.procedureDocument({
         procedureId: input.procedureId,
-        refresh: input.refresh,
         ...(input.sourceId === undefined ? {} : { sourceId: input.sourceId }),
+        ...(input.sourceRevision === undefined ? {} : { sourceRevision: input.sourceRevision }),
+        ...(input.sourcePath === undefined ? {} : { sourcePath: input.sourcePath }),
       }) })
     },
   },

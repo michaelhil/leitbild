@@ -145,7 +145,7 @@ export const buildProcedureSearchTool = (deps: SearchDeps): Tool => {
     if (indexCache && now - indexCache.fetchedAt < INDEX_TTL_MS) return indexCache
     let raw: string
     try {
-      raw = await deps.source.fetchPage('wiki/_search-index.json')
+      raw = await deps.source.fetchDocument('wiki/_search-index.json')
     } catch {
       return null
     }

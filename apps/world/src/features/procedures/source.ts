@@ -1,256 +1,210 @@
-import { createHash } from 'node:crypto'
-import { nowIso, procedureCatalogSchema, procedureDocumentSchema, type IsoTimestamp, type ProcedureCatalog, type ProcedureCatalogItem, type ProcedureDocument, type ProcedureId, type ProcedureSource, type ProcedureSourceId } from '../../core/model/index.ts'
+import {
+  sourceDocumentPathSchema,
+  sourceRevisionSchema,
+  wikiManifestSchema,
+  type ProcedureManifestEntry,
+  type WikiManifest,
+} from '@leitbild/contracts'
+import {
+  nowIso,
+  procedureCatalogSchema,
+  procedureDocumentSchema,
+  procedureIdSchema,
+  type ProcedureCatalog,
+  type ProcedureDocument,
+  type ProcedureId,
+  type ProcedureSource,
+  type ProcedureSourceId,
+} from '../../core/model/index.ts'
 import { parseProcedureMarkdown } from './procmd.ts'
-
-interface GitHubContentItem {
-  readonly name?: unknown
-  readonly path?: unknown
-  readonly type?: unknown
-  readonly download_url?: unknown
-  readonly html_url?: unknown
-  readonly sha?: unknown
-}
 
 export interface ProcedureSourceConfig {
   readonly sourceId: ProcedureSourceId
   readonly label: string
   readonly repository: string
   readonly ref: string
-  readonly path: string
+  readonly manifestUrl: string
+  readonly manifestPath: string
+  readonly procedurePath: string
 }
 
-interface ProcedureSourceCacheEntry {
+interface ProcedureCatalogCacheEntry {
   readonly loadedAtMs: number
+  readonly manifest: WikiManifest
   readonly catalog: ProcedureCatalog
-  readonly documents: ReadonlyMap<ProcedureId, ProcedureDocument>
-}
-
-interface ProcedureSourceItem {
-  readonly name: string
-  readonly path: string
-  readonly downloadUrl: string
-  readonly htmlUrl: string
-  readonly sha: string
-}
-
-export type ProcedureSourceLoadStage = 'idle' | 'listing' | 'loading-documents' | 'ready' | 'failed'
-
-export interface ProcedureSourceLoadStatus {
-  readonly sourceId: ProcedureSourceId
-  readonly label: string
-  readonly repository: string
-  readonly ref: string
-  readonly path: string
-  readonly stage: ProcedureSourceLoadStage
-  readonly loadedItems: number
-  readonly totalItems?: number
-  readonly currentItem?: string
-  readonly startedAt?: IsoTimestamp
-  readonly updatedAt?: IsoTimestamp
-  readonly completedAt?: IsoTimestamp
-  readonly cached: boolean
-  readonly error?: string
 }
 
 export interface ProcedureSourceService {
   readonly listSources: () => ReadonlyArray<ProcedureSourceConfig>
-  readonly readStatus: (config?: { readonly sourceId?: ProcedureSourceId }) => ProcedureSourceLoadStatus
-  readonly readCatalog: (config?: { readonly sourceId?: ProcedureSourceId; readonly refresh?: boolean }) => Promise<ProcedureCatalog>
-  readonly readDocument: (config: { readonly sourceId?: ProcedureSourceId; readonly procedureId: ProcedureId; readonly refresh?: boolean }) => Promise<ProcedureDocument>
+  readonly readCatalog: (config?: {
+    readonly sourceId?: ProcedureSourceId
+    readonly refresh?: boolean
+  }) => Promise<ProcedureCatalog>
+  readonly readDocument: (config: {
+    readonly sourceId?: ProcedureSourceId
+    readonly procedureId: ProcedureId
+    readonly sourceRevision?: string
+    readonly sourcePath?: string
+  }) => Promise<ProcedureDocument>
 }
 
 const defaultCacheTtlMs = 60 * 60 * 1000
+const defaultFetchTimeoutMs = 8_000
+const supportedProcmdVersion = '0.7'
 
-const githubApiHeaders = {
-  Accept: 'application/vnd.github+json',
-  'User-Agent': 'leitbild-procedure-source-loader',
-}
-
-const isGitHubItem = (value: unknown): value is GitHubContentItem =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
-
-const assertString = (value: unknown, message: string): string => {
-  if (typeof value !== 'string' || value.length === 0) throw new Error(message)
-  return value
-}
-
-const sourceUrlFor = (source: ProcedureSourceConfig): string =>
-  `https://github.com/${source.repository}/tree/${encodeURIComponent(source.ref)}/${source.path}`
-
-const corpusRevisionFor = (items: ReadonlyArray<ProcedureSourceItem>): string =>
-  createHash('sha256')
-    .update(items.map(item => `${item.path}:${item.sha}`).join('\n'))
-    .digest('hex')
-
-const apiUrlFor = (source: ProcedureSourceConfig): string =>
-  `https://api.github.com/repos/${source.repository}/contents/${source.path}?ref=${encodeURIComponent(source.ref)}`
-
-const idleStatusFor = (source: ProcedureSourceConfig): ProcedureSourceLoadStatus => ({
-  sourceId: source.sourceId,
-  label: source.label,
-  repository: source.repository,
-  ref: source.ref,
-  path: source.path,
-  stage: 'idle',
-  loadedItems: 0,
-  cached: false,
-})
-
-const sourceStatusFor = (
-  source: ProcedureSourceConfig,
-  overrides: Omit<ProcedureSourceLoadStatus, 'sourceId' | 'label' | 'repository' | 'ref' | 'path'>,
-): ProcedureSourceLoadStatus => ({
-  ...idleStatusFor(source),
-  ...overrides,
-})
-
-const sourceFrom = (source: ProcedureSourceConfig, fetchedAt: IsoTimestamp, commitSha?: string): ProcedureSource => ({
-  sourceId: source.sourceId,
-  label: source.label,
-  repository: source.repository,
-  ref: source.ref,
-  path: source.path,
-  fetchedAt,
-  sourceUrl: sourceUrlFor(source),
-  ...(commitSha === undefined ? {} : { commitSha }),
-})
-
-const fetchJson = async (url: string): Promise<unknown> => {
-  const response = await fetch(url, { headers: githubApiHeaders, cache: 'no-store' })
+const fetchText = async (
+  fetchFn: typeof fetch,
+  url: string,
+  config: { readonly refresh?: boolean; readonly timeoutMs: number },
+): Promise<string> => {
+  const response = await fetchFn(url, {
+    headers: {
+      Accept: 'application/json, text/markdown;q=0.9, text/plain;q=0.8',
+      'Cache-Control': config.refresh ? 'no-cache' : 'max-age=0',
+      'User-Agent': 'leitbild-procedure-source',
+    },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(config.timeoutMs),
+  })
   if (!response.ok) throw new Error(`procedure source fetch failed for ${url}: ${response.status}`)
-  return await response.json() as unknown
-}
-
-const fetchText = async (url: string): Promise<string> => {
-  const response = await fetch(url, { headers: { 'User-Agent': githubApiHeaders['User-Agent'] }, cache: 'no-store' })
-  if (!response.ok) throw new Error(`procedure markdown fetch failed for ${url}: ${response.status}`)
   return await response.text()
 }
 
-const readProcedureItems = async (source: ProcedureSourceConfig): Promise<ReadonlyArray<ProcedureSourceItem>> => {
-  const raw = await fetchJson(apiUrlFor(source))
-  if (!Array.isArray(raw)) throw new Error(`procedure source path is not a directory: ${source.repository}/${source.path}`)
-  return raw
-    .filter(isGitHubItem)
-    .filter(item => item.type === 'file' && typeof item.name === 'string' && item.name.endsWith('.md'))
-    .map(item => ({
-      name: assertString(item.name, 'procedure source item requires name'),
-      path: assertString(item.path, 'procedure source item requires path'),
-      downloadUrl: assertString(item.download_url, 'procedure source item requires download URL'),
-      htmlUrl: assertString(item.html_url, 'procedure source item requires HTML URL'),
-      sha: assertString(item.sha, 'procedure source item requires SHA'),
-    }))
-    .sort((left, right) => left.name.localeCompare(right.name))
+const repositoryUrlFor = (source: ProcedureSourceConfig): string =>
+  `https://github.com/${source.repository}`
+
+const rawUrlFor = (
+  source: ProcedureSourceConfig,
+  revision: string,
+  sourcePath: string,
+): string =>
+  `https://raw.githubusercontent.com/${source.repository}/${revision}/${sourcePath}`
+
+const sourceUrlFor = (
+  source: ProcedureSourceConfig,
+  revision: string,
+  sourcePath = source.procedurePath,
+): string =>
+  `${repositoryUrlFor(source)}/tree/${revision}/${sourcePath}`
+
+const documentUrlFor = (
+  source: ProcedureSourceConfig,
+  revision: string,
+  sourcePath: string,
+): string =>
+  `${repositoryUrlFor(source)}/blob/${revision}/${sourcePath}`
+
+const procedureSourceFor = (
+  source: ProcedureSourceConfig,
+  revision: string,
+): ProcedureSource => ({
+  sourceId: source.sourceId,
+  label: source.label,
+  repository: source.repository,
+  ref: source.ref,
+  path: source.procedurePath,
+  revision: sourceRevisionSchema.parse(revision),
+  fetchedAt: nowIso(),
+  sourceUrl: sourceUrlFor(source, revision),
+})
+
+const catalogItemFor = (
+  source: ProcedureSourceConfig,
+  revision: string,
+  entry: ProcedureManifestEntry,
+) => ({
+  sourceId: source.sourceId,
+  procedureId: procedureIdSchema.parse(entry.id),
+  title: entry.title,
+  ...(entry.profile === undefined ? {} : { profile: entry.profile }),
+  ...(entry.category === undefined ? {} : { category: entry.category }),
+  csfsMonitored: entry.csfsMonitored,
+  entryTriggers: entry.entryTriggers,
+  stepCount: entry.stepCount,
+  tagCount: entry.tagDefinitionCount,
+  sourcePath: entry.file,
+  sourceUrl: documentUrlFor(source, revision, entry.file),
+})
+
+const assertManifestMatchesSource = (
+  source: ProcedureSourceConfig,
+  manifest: WikiManifest,
+): void => {
+  if (manifest.wiki !== source.sourceId) {
+    throw new Error(`procedure manifest ${manifest.wiki} does not match configured source ${source.sourceId}`)
+  }
+  if (manifest.procmdVersion !== supportedProcmdVersion) {
+    throw new Error(`unsupported procmd version ${manifest.procmdVersion}; expected ${supportedProcmdVersion}`)
+  }
+  const prefix = `${source.procedurePath.replace(/\/$/, '')}/`
+  for (const procedure of manifest.procedures) {
+    if (!procedure.file.startsWith(prefix)) {
+      throw new Error(`procedure ${procedure.id} is outside configured path ${source.procedurePath}`)
+    }
+  }
 }
 
-const loadSource = async (
-  source: ProcedureSourceConfig,
-  updateStatus: (status: ProcedureSourceLoadStatus) => void,
-): Promise<ProcedureSourceCacheEntry> => {
-  const startedAt = nowIso()
+const loadCatalog = async (config: {
+  readonly source: ProcedureSourceConfig
+  readonly fetchFn: typeof fetch
+  readonly refresh: boolean
+  readonly timeoutMs: number
+}): Promise<ProcedureCatalogCacheEntry> => {
+  const raw = await fetchText(config.fetchFn, config.source.manifestUrl, {
+    refresh: config.refresh,
+    timeoutMs: config.timeoutMs,
+  })
+  let decoded: unknown
   try {
-    updateStatus(sourceStatusFor(source, {
-      stage: 'listing',
-      loadedItems: 0,
-      startedAt,
-      updatedAt: startedAt,
-      cached: false,
-    }))
-    const fetchedAt = nowIso()
-    const items = await readProcedureItems(source)
-    updateStatus(sourceStatusFor(source, {
-      stage: 'loading-documents',
-      loadedItems: 0,
-      totalItems: items.length,
-      startedAt,
-      updatedAt: nowIso(),
-      cached: false,
-    }))
-    const sourceMetadata = sourceFrom(source, fetchedAt, corpusRevisionFor(items))
-    const documents = new Map<ProcedureId, ProcedureDocument>()
-    for (const [index, item] of items.entries()) {
-      updateStatus(sourceStatusFor(source, {
-        stage: 'loading-documents',
-        loadedItems: index,
-        totalItems: items.length,
-        currentItem: item.name,
-        startedAt,
-        updatedAt: nowIso(),
-        cached: false,
-      }))
-      const rawMarkdown = await fetchText(item.downloadUrl)
-      const parsed = parseProcedureMarkdown({
-        source: sourceMetadata,
-        sourcePath: item.path,
-        sourceUrl: item.htmlUrl,
-        rawMarkdown,
-      })
-      if (documents.has(parsed.procedureId)) throw new Error(`duplicate procedure id in source ${source.sourceId}: ${parsed.procedureId}`)
-      documents.set(parsed.procedureId, procedureDocumentSchema.parse(parsed) as ProcedureDocument)
-      updateStatus(sourceStatusFor(source, {
-        stage: 'loading-documents',
-        loadedItems: index + 1,
-        totalItems: items.length,
-        currentItem: item.name,
-        startedAt,
-        updatedAt: nowIso(),
-        cached: false,
-      }))
-    }
-    const procedures: ProcedureCatalogItem[] = [...documents.values()]
-      .map(document => ({
-        sourceId: document.source.sourceId,
-        procedureId: document.procedureId,
-        title: document.title,
-        ...(document.profile === undefined ? {} : { profile: document.profile }),
-        ...(document.category === undefined ? {} : { category: document.category }),
-        csfsMonitored: document.csfsMonitored,
-        entryTriggers: document.entryTriggers,
-        stepCount: document.steps.length,
-        tagCount: document.tags.length,
-        sourcePath: document.sourcePath,
-        sourceUrl: document.sourceUrl,
-      }))
-      .sort((left, right) => left.procedureId.localeCompare(right.procedureId))
-    const completedAt = nowIso()
-    updateStatus(sourceStatusFor(source, {
-      stage: 'ready',
-      loadedItems: items.length,
-      totalItems: items.length,
-      startedAt,
-      updatedAt: completedAt,
-      completedAt,
-      cached: true,
-    }))
-    return {
-      loadedAtMs: Date.now(),
-      catalog: procedureCatalogSchema.parse({
-        source: sourceMetadata,
-        procedures,
-      }) as ProcedureCatalog,
-      documents,
-    }
-  } catch (err) {
-    updateStatus(sourceStatusFor(source, {
-      stage: 'failed',
-      loadedItems: 0,
-      startedAt,
-      updatedAt: nowIso(),
-      error: err instanceof Error ? err.message : String(err),
-      cached: false,
-    }))
-    throw err
+    decoded = JSON.parse(raw) as unknown
+  } catch {
+    throw new Error(`procedure manifest is not valid JSON: ${config.source.manifestUrl}`)
+  }
+  const manifest = wikiManifestSchema.parse(decoded)
+  assertManifestMatchesSource(config.source, manifest)
+  const sourceMetadata = procedureSourceFor(config.source, manifest.revision)
+  return {
+    loadedAtMs: Date.now(),
+    manifest,
+    catalog: procedureCatalogSchema.parse({
+      source: sourceMetadata,
+      procedures: manifest.procedures
+        .map(entry => catalogItemFor(config.source, manifest.revision, entry))
+        .sort((left, right) => left.procedureId.localeCompare(right.procedureId)),
+    }) as ProcedureCatalog,
+  }
+}
+
+const assertDocumentMatchesManifest = (
+  document: ProcedureDocument,
+  entry: ProcedureManifestEntry | undefined,
+): void => {
+  if (!entry) return
+  if (document.title !== entry.title) {
+    throw new Error(`procedure ${document.procedureId} title does not match its manifest entry`)
+  }
+  if (document.steps.length !== entry.stepCount) {
+    throw new Error(`procedure ${document.procedureId} step count does not match its manifest entry`)
+  }
+  if (document.tags.length !== entry.tagDefinitionCount) {
+    throw new Error(`procedure ${document.procedureId} tag count does not match its manifest entry`)
   }
 }
 
 export const createProcedureSourceService = (config: {
   readonly sources?: ReadonlyArray<ProcedureSourceConfig>
   readonly cacheTtlMs?: number
+  readonly fetchFn?: typeof fetch
+  readonly fetchTimeoutMs?: number
 } = {}): ProcedureSourceService => {
   const sources = config.sources ?? []
   const cacheTtlMs = config.cacheTtlMs ?? defaultCacheTtlMs
-  const cache = new Map<ProcedureSourceId, Promise<ProcedureSourceCacheEntry>>()
-  const statuses = new Map<ProcedureSourceId, ProcedureSourceLoadStatus>()
+  const fetchFn = config.fetchFn ?? globalThis.fetch
+  const fetchTimeoutMs = config.fetchTimeoutMs ?? defaultFetchTimeoutMs
+  const catalogCache = new Map<ProcedureSourceId, ProcedureCatalogCacheEntry>()
+  const catalogLoads = new Map<ProcedureSourceId, Promise<ProcedureCatalogCacheEntry>>()
+  const revisionManifestCache = new Map<string, Promise<WikiManifest>>()
+  const documentCache = new Map<string, Promise<ProcedureDocument>>()
 
   const sourceFor = (sourceId?: ProcedureSourceId): ProcedureSourceConfig => {
     const id = sourceId ?? sources[0]?.sourceId
@@ -259,54 +213,108 @@ export const createProcedureSourceService = (config: {
     return source
   }
 
-  const setStatus = (source: ProcedureSourceConfig, status: ProcedureSourceLoadStatus): void => {
-    statuses.set(source.sourceId, status)
+  const readCatalogEntry = async (
+    sourceId?: ProcedureSourceId,
+    refresh = false,
+  ): Promise<ProcedureCatalogCacheEntry> => {
+    const source = sourceFor(sourceId)
+    const inFlight = catalogLoads.get(source.sourceId)
+    if (inFlight) return await inFlight
+
+    const cached = catalogCache.get(source.sourceId)
+    if (!refresh && cached && Date.now() - cached.loadedAtMs < cacheTtlMs) return cached
+
+    const loading = loadCatalog({ source, fetchFn, refresh, timeoutMs: fetchTimeoutMs })
+    catalogLoads.set(source.sourceId, loading)
+    try {
+      const loaded = await loading
+      catalogCache.set(source.sourceId, loaded)
+      return loaded
+    } finally {
+      if (catalogLoads.get(source.sourceId) === loading) catalogLoads.delete(source.sourceId)
+    }
   }
 
-  const readEntry = async (sourceId?: ProcedureSourceId, refresh = false): Promise<ProcedureSourceCacheEntry> => {
-    const source = sourceFor(sourceId)
-    const existing = cache.get(source.sourceId)
-    if (existing && !refresh) {
+  const readDocument = async (readConfig: {
+    readonly sourceId?: ProcedureSourceId
+    readonly procedureId: ProcedureId
+    readonly sourceRevision?: string
+    readonly sourcePath?: string
+  }): Promise<ProcedureDocument> => {
+    const source = sourceFor(readConfig.sourceId)
+    if (readConfig.sourcePath !== undefined && readConfig.sourceRevision === undefined) {
+      throw new Error('procedure sourcePath requires sourceRevision')
+    }
+    const current = catalogCache.get(source.sourceId)
+    const currentOrLoaded = readConfig.sourceRevision === undefined
+      ? await readCatalogEntry(source.sourceId)
+      : current
+    const revision = sourceRevisionSchema.parse(readConfig.sourceRevision ?? currentOrLoaded?.manifest.revision)
+    let manifest = currentOrLoaded?.manifest.revision === revision
+      ? currentOrLoaded.manifest
+      : undefined
+    if (!manifest && readConfig.sourcePath === undefined) {
+      const manifestKey = `${source.sourceId}:${revision}`
+      let loadingManifest = revisionManifestCache.get(manifestKey)
+      if (!loadingManifest) {
+        loadingManifest = (async () => {
+          const raw = await fetchText(fetchFn, rawUrlFor(source, revision, source.manifestPath), {
+            timeoutMs: fetchTimeoutMs,
+          })
+          const parsed = wikiManifestSchema.parse(JSON.parse(raw) as unknown)
+          assertManifestMatchesSource(source, parsed)
+          return parsed
+        })()
+        revisionManifestCache.set(manifestKey, loadingManifest)
+      }
       try {
-        const resolved = await existing
-        if (Date.now() - resolved.loadedAtMs < cacheTtlMs) {
-          const completedAt = nowIso()
-          setStatus(source, sourceStatusFor(source, {
-            stage: 'ready',
-            loadedItems: resolved.documents.size,
-            totalItems: resolved.documents.size,
-            updatedAt: completedAt,
-            completedAt,
-            cached: true,
-          }))
-          return resolved
-        }
-      } catch {
-        cache.delete(source.sourceId)
+        manifest = await loadingManifest
+      } catch (error) {
+        if (revisionManifestCache.get(manifestKey) === loadingManifest) revisionManifestCache.delete(manifestKey)
+        throw error
       }
     }
-    const loading = loadSource(source, status => setStatus(source, status))
-    cache.set(source.sourceId, loading)
+    const manifestEntry = manifest?.procedures.find(entry => entry.id === readConfig.procedureId)
+    if (manifestEntry === undefined && readConfig.sourcePath === undefined) {
+      throw new Error(`procedure ${readConfig.procedureId} not found in source ${source.sourceId}`)
+    }
+    if (manifestEntry && readConfig.sourcePath && manifestEntry.file !== readConfig.sourcePath) {
+      throw new Error(`procedure ${readConfig.procedureId} source path does not match its manifest entry`)
+    }
+    const sourcePath = sourceDocumentPathSchema.parse(readConfig.sourcePath ?? manifestEntry?.file)
+    const cacheKey = `${source.sourceId}:${revision}:${sourcePath}`
+    const cached = documentCache.get(cacheKey)
+    if (cached) return await cached
+
+    const loading = (async (): Promise<ProcedureDocument> => {
+      const rawMarkdown = await fetchText(fetchFn, rawUrlFor(source, revision, sourcePath), {
+        timeoutMs: fetchTimeoutMs,
+      })
+      const parsed = procedureDocumentSchema.parse(parseProcedureMarkdown({
+        source: procedureSourceFor(source, revision),
+        sourcePath,
+        sourceUrl: documentUrlFor(source, revision, sourcePath),
+        rawMarkdown,
+      })) as ProcedureDocument
+      if (parsed.procedureId !== readConfig.procedureId) {
+        throw new Error(`procedure source ${sourcePath} contains ${parsed.procedureId}, expected ${readConfig.procedureId}`)
+      }
+      assertDocumentMatchesManifest(parsed, manifestEntry)
+      return parsed
+    })()
+    documentCache.set(cacheKey, loading)
     try {
       return await loading
     } catch (error) {
-      if (cache.get(source.sourceId) === loading) cache.delete(source.sourceId)
+      if (documentCache.get(cacheKey) === loading) documentCache.delete(cacheKey)
       throw error
     }
   }
 
   return {
     listSources: () => [...sources],
-    readStatus: (statusConfig = {}) => {
-      const source = sourceFor(statusConfig.sourceId)
-      return statuses.get(source.sourceId) ?? idleStatusFor(source)
-    },
-    readCatalog: async (readConfig = {}) => (await readEntry(readConfig.sourceId, readConfig.refresh)).catalog,
-    readDocument: async (readConfig) => {
-      const entry = await readEntry(readConfig.sourceId, readConfig.refresh)
-      const document = entry.documents.get(readConfig.procedureId)
-      if (!document) throw new Error(`procedure ${readConfig.procedureId} not found in source ${readConfig.sourceId ?? sourceFor().sourceId}`)
-      return document
-    },
+    readCatalog: async (readConfig = {}) =>
+      (await readCatalogEntry(readConfig.sourceId, readConfig.refresh)).catalog,
+    readDocument,
   }
 }

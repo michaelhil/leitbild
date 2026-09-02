@@ -22,23 +22,6 @@ export interface ProcedureRunsResponse {
   readonly runs: ReadonlyArray<ProcedureRunState>
 }
 
-export interface ProcedureSourceLoadStatus {
-  readonly sourceId: string
-  readonly label: string
-  readonly repository: string
-  readonly ref: string
-  readonly path: string
-  readonly stage: 'idle' | 'listing' | 'loading-documents' | 'ready' | 'failed'
-  readonly loadedItems: number
-  readonly totalItems?: number
-  readonly currentItem?: string
-  readonly startedAt?: string
-  readonly updatedAt?: string
-  readonly completedAt?: string
-  readonly cached: boolean
-  readonly error?: string
-}
-
 export interface ProcedureTagValidation {
   readonly id: string
   readonly status: 'resolved' | 'resolved-with-warnings' | 'missing'
@@ -122,26 +105,19 @@ export const readProcedureCatalog = async (
   return body.catalog
 }
 
-export const readProcedureSourceStatus = async (
-  simulationRunId: SimulationRunId,
-  config: { readonly sourceId?: string } = {},
-): Promise<ProcedureSourceLoadStatus> => {
-  const params = new URLSearchParams()
-  if (config.sourceId) params.set('sourceId', config.sourceId)
-  const suffix = params.size > 0 ? `?${params.toString()}` : ''
-  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/procedure-source-status${suffix}`), { cache: 'no-store' })
-  const body = await readJson<{ readonly status: ProcedureSourceLoadStatus }>(response, 'procedure source status fetch failed')
-  return body.status
-}
-
 export const readProcedureDocument = async (
   simulationRunId: SimulationRunId,
   procedureId: string,
-  config: { readonly sourceId?: string; readonly refresh?: boolean } = {},
+  config: {
+    readonly sourceId?: string
+    readonly sourceRevision?: string
+    readonly sourcePath?: string
+  } = {},
 ): Promise<ProcedureDocument> => {
   const params = new URLSearchParams()
   if (config.sourceId) params.set('sourceId', config.sourceId)
-  if (config.refresh) params.set('refresh', 'true')
+  if (config.sourceRevision) params.set('sourceRevision', config.sourceRevision)
+  if (config.sourcePath) params.set('sourcePath', config.sourcePath)
   const suffix = params.size > 0 ? `?${params.toString()}` : ''
   const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/procedures/${encodeURIComponent(procedureId)}${suffix}`), { cache: 'no-store' })
   const body = await readJson<{ readonly procedure: ProcedureDocument }>(response, 'procedure fetch failed')
@@ -158,7 +134,12 @@ export const readProcedureRuns = async (
 
 export const startProcedureRun = async (
   simulationRunId: SimulationRunId,
-  config: { readonly sourceId: string; readonly procedureId: string; readonly scope: ProcedureRunScope },
+  config: {
+    readonly sourceId: string
+    readonly sourceRevision: string
+    readonly procedureId: string
+    readonly scope: ProcedureRunScope
+  },
 ): Promise<void> => {
   const response = await invokeSimulationRunCapability(simulationRunId, {
     capabilityId: procedureRunStartCommandKind,

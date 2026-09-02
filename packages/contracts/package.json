@@ -12,7 +12,8 @@
     "./packs": "./src/packs.ts",
     "./workspaces": "./src/workspaces.ts",
     "./modules": "./src/modules.ts",
-    "./resources": "./src/resources.ts"
+    "./resources": "./src/resources.ts",
+    "./procedure-sources": "./src/procedure-sources.ts"
   },
   "scripts": {
     "check": "tsc --noEmit",

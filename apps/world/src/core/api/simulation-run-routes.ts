@@ -4,7 +4,7 @@ import type { Actor } from '../simulation-runs/actors.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../simulation-runs/runtime.ts'
 import { apiError, json, readJson } from './responses.ts'
-import type { AccessContext } from '@leitbild/contracts'
+import { sourceDocumentPathSchema, sourceRevisionSchema, type AccessContext } from '@leitbild/contracts'
 import { CommandIdempotencyConflictError } from '../simulation-runs/command-idempotency.ts'
 
 const defaultOperatorActorId = actorIdSchema.parse('actor:operator')
@@ -262,18 +262,6 @@ const handleSimulationRunApiInner = async (
     return json({ catalog })
   }
 
-  const procedureSourceStatusMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/procedure-source-status$/)
-  if (procedureSourceStatusMatch && req.method === 'GET') {
-    const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(procedureSourceStatusMatch[1] ?? ''))
-    const runtime = config.registry.get(simulationRunId)
-    if (!runtime) return apiError(404, 'simulation_run_not_found', 'simulation run not found')
-    const sourceIdParam = url.searchParams.get('sourceId')
-    const status = runtime.procedureSourceStatus({
-      ...(sourceIdParam === null ? {} : { sourceId: procedureSourceIdSchema.parse(sourceIdParam) }),
-    })
-    return json({ status })
-  }
-
   const procedureDocumentMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/procedures\/([^/]+)$/)
   if (procedureDocumentMatch && req.method === 'GET') {
     const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(procedureDocumentMatch[1] ?? ''))
@@ -281,11 +269,16 @@ const handleSimulationRunApiInner = async (
     const runtime = config.registry.get(simulationRunId)
     if (!runtime) return apiError(404, 'simulation_run_not_found', 'simulation run not found')
     const sourceIdParam = url.searchParams.get('sourceId')
-    const refresh = url.searchParams.get('refresh') === 'true'
+    const sourceRevisionParam = url.searchParams.get('sourceRevision')
+    const sourcePathParam = url.searchParams.get('sourcePath')
+    if (sourcePathParam !== null && sourceRevisionParam === null) {
+      return apiError(400, 'invalid_procedure_source_reference', 'sourcePath requires sourceRevision')
+    }
     const procedure = await runtime.procedureDocument({
       procedureId,
       ...(sourceIdParam === null ? {} : { sourceId: procedureSourceIdSchema.parse(sourceIdParam) }),
-      refresh,
+      ...(sourceRevisionParam === null ? {} : { sourceRevision: sourceRevisionSchema.parse(sourceRevisionParam) }),
+      ...(sourcePathParam === null ? {} : { sourcePath: sourceDocumentPathSchema.parse(sourcePathParam) }),
     })
     return json({ procedure })
   }

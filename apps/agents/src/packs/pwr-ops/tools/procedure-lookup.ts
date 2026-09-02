@@ -7,7 +7,7 @@
 
 import type { Tool, ToolResult } from '../../../core/types/tool.ts'
 import type { WikiSourceBinding } from '../../types.ts'
-import { createWikiSource, extractProcedureIds, type WikiSource, type WikiManifest } from '../../../wikis/wiki-fetcher.ts'
+import { createWikiSource, type WikiSource, type WikiManifest } from '../../../wikis/wiki-fetcher.ts'
 import { parseProcedure } from '../../../procmd-core/index.ts'
 import type { ParsedProcedure, ParsedStep } from '../../../procmd-core/index.ts'
 import { renderProcedure, renderIndex } from '../procmd/renderer.ts'
@@ -37,7 +37,7 @@ export interface ProcedureLookupTelemetry {
   readonly step: string | null
   readonly success: boolean
   readonly durationMs: number
-  readonly indexSource: 'manifest' | 'regex' | 'none'
+  readonly indexSource: 'manifest' | 'none'
   readonly parseWarnings: number
   readonly errorClass?: 'unknown-id' | 'unknown-step' | 'fetch-failed' | 'parse-failed' | 'index-failed'
 }
@@ -53,10 +53,8 @@ const defaultTelemetry = (event: ProcedureLookupTelemetry): void => {
 
 interface IndexCache {
   ids: ReadonlyArray<string>
-  manifest: WikiManifest | null
-  fetchedAt: number
+  manifest: WikiManifest
 }
-const INDEX_TTL_MS = 5 * 60 * 1000
 
 const fuzzyMatch = (query: string, candidates: ReadonlyArray<string>): ReadonlyArray<string> => {
   const q = query.toLowerCase().trim()
@@ -116,25 +114,13 @@ const renderSummaryFragment = (parsed: ParsedProcedure, citationUrl: string): st
   return lines.join('\n\n')
 }
 
-const buildTool = (deps: PwrEopsToolDeps): Tool => {
-  let indexCache: IndexCache | null = null
-
-  const refreshIndex = async (): Promise<IndexCache> => {
+export const buildProcedureLookupTool = (deps: PwrEopsToolDeps): Tool => {
+  const getIndex = async (): Promise<IndexCache> => {
     const manifest = await deps.source.fetchManifest()
-    if (manifest && manifest.procedures.length > 0) {
-      const ids = manifest.procedures.map(p => p.id)
-      return { ids, manifest, fetchedAt: Date.now() }
+    if (manifest.procedures.length === 0) {
+      throw new Error('procedure manifest contains no procedures')
     }
-    const raw = await deps.source.fetchIndex()
-    return { ids: extractProcedureIds(raw), manifest: null, fetchedAt: Date.now() }
-  }
-
-  const getIndex = async (): Promise<{ ids: ReadonlyArray<string>; source: 'manifest' | 'regex' }> => {
-    const now = Date.now()
-    if (!indexCache || now - indexCache.fetchedAt >= INDEX_TTL_MS) {
-      indexCache = await refreshIndex()
-    }
-    return { ids: indexCache.ids, source: indexCache.manifest ? 'manifest' : 'regex' }
+    return { ids: manifest.procedures.map(procedure => procedure.id), manifest }
   }
 
   return {
@@ -179,7 +165,7 @@ const buildTool = (deps: PwrEopsToolDeps): Tool => {
       const format = params.format === 'json' ? 'json' : 'markdown'
       const mode = params.mode === 'summary' ? 'summary' : 'full'
       const stepId = typeof params.step === 'string' ? params.step.trim() : ''
-      let indexSource: 'manifest' | 'regex' | 'none' = 'none'
+      let indexSource: 'manifest' | 'none' = 'none'
       let parseWarnings = 0
       const emit = deps.telemetry ?? defaultTelemetry
       const fire = (success: boolean, errorClass?: ProcedureLookupTelemetry['errorClass']): void => {
@@ -203,7 +189,7 @@ const buildTool = (deps: PwrEopsToolDeps): Tool => {
       if (!rawId) {
         try {
           const idx = await getIndex()
-          indexSource = idx.source
+          indexSource = 'manifest'
           if (format === 'json') {
             fire(true)
             return { success: true, data: { kind: 'index', wikiName: deps.wikiName, wikiHomepage: deps.wikiHomepage, ids: idx.ids } }
@@ -217,28 +203,28 @@ const buildTool = (deps: PwrEopsToolDeps): Tool => {
         }
       }
 
-      let ids: ReadonlyArray<string>
+      let index: IndexCache
       try {
-        const idx = await getIndex()
-        ids = idx.ids
-        indexSource = idx.source
+        index = await getIndex()
+        indexSource = 'manifest'
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         fire(false, 'index-failed')
         return { success: false, error: `Could not validate procedure id "${rawId}" — index fetch failed: ${msg}. Try again in a minute.` }
       }
-      if (!ids.includes(rawId)) {
-        const suggestions = fuzzyMatch(rawId, ids)
+      if (!index.ids.includes(rawId)) {
+        const suggestions = fuzzyMatch(rawId, index.ids)
         const hint = suggestions.length > 0
           ? ` Did you mean: ${suggestions.join(', ')}?`
-          : ` Available ids: ${ids.slice(0, 10).join(', ')}${ids.length > 10 ? `, ... (${ids.length} total)` : ''}.`
+          : ` Available ids: ${index.ids.slice(0, 10).join(', ')}${index.ids.length > 10 ? `, ... (${index.ids.length} total)` : ''}.`
         fire(false, 'unknown-id')
         return { success: false, error: `Procedure "${rawId}" not found in ${deps.wikiName}.${hint}` }
       }
 
       let raw: string
       try {
-        raw = await deps.source.fetchProcedure(rawId)
+        const entry = index.manifest.procedures.find(procedure => procedure.id === rawId)!
+        raw = await deps.source.fetchDocument(entry.file, index.manifest.revision)
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         fire(false, 'fetch-failed')
@@ -316,7 +302,7 @@ export const createProcedureLookupTool = (
   wikiName: string,
   wikiHomepage: string,
   telemetry?: (event: ProcedureLookupTelemetry) => void,
-): Tool => buildTool({
+): Tool => buildProcedureLookupTool({
   source: createWikiSource(binding),
   wikiName,
   wikiHomepage,

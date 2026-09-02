@@ -21,10 +21,8 @@
         "org": "samsinn-wikis",
         "repo": "pwr-ops",
         "branch": "main",
-        "procedureDir": "wiki/procedures",
-        "indexFile": "wiki/index.md",
-        "manifestFile": "wiki/_manifest.json",
-        "citationBase": "https://samsinn-wikis.github.io/pwr-ops/procedures/"
+        "citationBase": "https://samsinn-wikis.github.io/pwr-ops/procedures/",
+        "manifestUrl": "https://samsinn-wikis.github.io/pwr-ops/_manifest.json"
       }
     }
   ],

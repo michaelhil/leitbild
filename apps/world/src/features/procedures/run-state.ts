@@ -31,7 +31,12 @@ export interface ProcedureCommandContext {
   readonly command: CommandEnvelope
   readonly procedures: ProcedureControlState | undefined
   readonly factory: ProcedureEventFactory
-  readonly readDocument: (sourceId: ProcedureSourceId, procedureId: ProcedureId) => Promise<ProcedureDocument>
+  readonly readDocument: (config: {
+    readonly sourceId: ProcedureSourceId
+    readonly procedureId: ProcedureId
+    readonly sourceRevision: string
+    readonly sourcePath?: string
+  }) => Promise<ProcedureDocument>
 }
 
 const procedureBase = (
@@ -87,14 +92,19 @@ export const procedureCommandEvents = async (
     if (runHasCurrentState(context.procedures, payload)) {
       throw new Error(`procedure ${payload.procedureId} already has current run state for ${payload.scope.plantId}; reset it before starting another run`)
     }
-    const document = await context.readDocument(payload.sourceId, payload.procedureId)
+    const document = await context.readDocument({
+      sourceId: payload.sourceId,
+      procedureId: payload.procedureId,
+      sourceRevision: payload.sourceRevision,
+    })
     return [{
       ...procedureBase(context),
       type: 'procedure.run.started',
       run: {
         runId: createProcedureRunId(),
         sourceId: payload.sourceId,
-        sourceRevision: document.source.commitSha ?? `${document.source.repository}@${document.source.ref}`,
+        sourceRevision: document.source.revision,
+        sourcePath: document.sourcePath,
         procedureId: document.procedureId,
         scope: payload.scope,
         title: document.title,
@@ -110,7 +120,12 @@ export const procedureCommandEvents = async (
   if (kind.data === 'world.procedure.step.update') {
     const payload = procedureStepUpdatePayloadSchema.parse(context.command.payload)
     const run = activeRunFor(context.procedures, payload.runId)
-    const document = await context.readDocument(run.sourceId, run.procedureId)
+    const document = await context.readDocument({
+      sourceId: run.sourceId,
+      procedureId: run.procedureId,
+      sourceRevision: run.sourceRevision,
+      sourcePath: run.sourcePath,
+    })
     if (!document.steps.some(step => step.id === payload.stepId)) {
       throw new Error(`procedure step ${payload.stepId} is not part of ${run.procedureId}`)
     }

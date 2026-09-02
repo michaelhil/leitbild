@@ -19,7 +19,7 @@ import type {
 import { deleteObjectCommandKind, geoPointFromLonLat } from '../src/core/model/index.ts'
 import { handleSimulationRunApi } from '../src/core/api/simulation-run-routes.ts'
 import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
-import type { ProcedureSourceLoadStatus, ProcedureSourceService } from '../src/features/procedures/source.ts'
+import type { ProcedureSourceService } from '../src/features/procedures/source.ts'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
 import { setDestinationCommandKind } from '../src/packs/ambulance/commands.ts'
 import { ambulanceSimRuntimeId } from '../src/packs/ambulance/sim/constants.ts'
@@ -38,7 +38,7 @@ const procedureSource = {
   repository: 'leitbild-wikis/pwr-ops',
   ref: 'main',
   path: 'wiki/procedures',
-  commitSha: 'api-test-revision',
+  revision: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
   fetchedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
   sourceUrl: 'https://github.com/leitbild-wikis/pwr-ops/tree/main/wiki/procedures',
 }
@@ -82,20 +82,10 @@ const createProcedureSourceService = (document = createProcedureDocument()): Pro
     label: document.source.label,
     repository: document.source.repository,
     ref: document.source.ref,
-    path: document.source.path,
+    manifestUrl: 'https://example.test/_manifest.json',
+    manifestPath: 'wiki/_manifest.json',
+    procedurePath: document.source.path,
   }],
-  readStatus: (): ProcedureSourceLoadStatus => ({
-    sourceId: document.source.sourceId,
-    label: document.source.label,
-    repository: document.source.repository,
-    ref: document.source.ref,
-    path: document.source.path,
-    stage: 'ready',
-    loadedItems: 1,
-    totalItems: 1,
-    completedAt: document.source.fetchedAt,
-    cached: true,
-  }),
   readCatalog: async (): Promise<ProcedureCatalog> => ({
     source: document.source,
     procedures: [{
@@ -494,12 +484,6 @@ describe('Simulation Run API', () => {
       )
       expect(catalog.body.catalog.procedures.map(procedure => procedure.procedureId)).toEqual(['E-0'])
 
-      const status = await callRoute<{ readonly status: ProcedureSourceLoadStatus }>(
-        registry,
-        `${runPath(created.id, '/procedure-source-status')}?sourceId=pwr-ops`,
-      )
-      expect(status.body.status).toMatchObject({ sourceId: 'pwr-ops', stage: 'ready', cached: true })
-
       const document = await callRoute<{ readonly procedure: ProcedureDocument }>(
         registry,
         runPath(created.id, '/procedures/E-0'),
@@ -512,6 +496,7 @@ describe('Simulation Run API', () => {
         body: JSON.stringify({
           input: {
             sourceId: 'pwr-ops',
+            sourceRevision: procedureSource.revision,
             procedureId: 'E-0',
             scope: {
               plantId: 'procedure-api-unit',

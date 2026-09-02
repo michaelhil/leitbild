@@ -6,10 +6,8 @@ export interface WikiSourceBinding {
   readonly org: string
   readonly repo: string
   readonly branch: string
-  readonly procedureDir: string
-  readonly indexFile: string
   readonly citationBase: string
-  readonly manifestFile?: string
+  readonly manifestUrl: string
 }
 
 export interface WikiRef {

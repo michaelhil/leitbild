@@ -11,7 +11,7 @@ const source = {
   repository: 'leitbild-wikis/pwr-ops',
   ref: 'main',
   path: 'wiki/procedures',
-  commitSha: 'test-revision',
+  revision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   fetchedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
   sourceUrl: 'https://github.com/leitbild-wikis/pwr-ops/tree/main/wiki/procedures',
 }
@@ -129,7 +129,12 @@ describe('procedure system', () => {
       actorId: 'actor:operator' as ActorId,
       kind: 'world.procedure.run.start',
       targetObjectIds: [],
-      payload: { sourceId: 'pwr-ops', procedureId: 'E-0', scope: unitAScope },
+      payload: {
+        sourceId: 'pwr-ops',
+        sourceRevision: source.revision,
+        procedureId: 'E-0',
+        scope: unitAScope,
+      },
       issuedAt: at,
     }
     const started = await procedureCommandEvents({
@@ -213,7 +218,12 @@ describe('procedure system', () => {
         command: {
           ...baseCommand,
           id: id as CommandEnvelope['id'],
-          payload: { sourceId: 'pwr-ops', procedureId: 'E-0', scope },
+          payload: {
+            sourceId: 'pwr-ops',
+            sourceRevision: source.revision,
+            procedureId: 'E-0',
+            scope,
+          },
         },
         procedures: store.snapshot().procedures,
         factory: commandFactory,
@@ -236,7 +246,12 @@ describe('procedure system', () => {
         command: {
           ...baseCommand,
           id: 'command:duplicate-a' as CommandEnvelope['id'],
-          payload: { sourceId: 'pwr-ops', procedureId: 'E-0', scope: unitAScope },
+          payload: {
+            sourceId: 'pwr-ops',
+            sourceRevision: source.revision,
+            procedureId: 'E-0',
+            scope: unitAScope,
+          },
         },
         procedures: store.snapshot().procedures,
         factory: commandFactory,

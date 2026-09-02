@@ -4,12 +4,12 @@ import { join } from 'node:path'
 import { createProcedureLookupTool, type ProcedureLookupTelemetry } from './procedure-lookup.ts'
 import type { WikiSourceBinding } from '../../types.ts'
 
+const REVISION = 'b'.repeat(40)
 const BINDING: WikiSourceBinding = {
   org: 'leitbild-wikis',
   repo: 'pwr-ops',
   branch: 'main',
-  procedureDir: 'wiki/procedures',
-  indexFile: 'wiki/index.md',
+  manifestUrl: 'https://leitbild-wikis.github.io/pwr-ops/_manifest.json',
   citationBase: 'https://leitbild-wikis.github.io/pwr-ops/procedures/',
 }
 
@@ -25,8 +25,30 @@ const installFetchMock = (responder: (url: string) => Response | Promise<Respons
   return () => { globalThis.fetch = original }
 }
 
+const manifestEntry = (id: string, title: string) => ({
+  id,
+  title,
+  file: `wiki/procedures/${id}.md`,
+  csfsMonitored: [],
+  entryTriggers: [],
+  coverage: 'developed',
+  stepCount: 1,
+  tagDefinitionCount: 0,
+})
+const manifest = (procedures = [
+  manifestEntry('E-0', 'Reactor Trip'),
+  manifestEntry('FR-S.1', 'ATWS'),
+]) => ({
+  version: 1,
+  wiki: 'pwr-ops',
+  revision: REVISION,
+  procmdVersion: '0.7',
+  procedures,
+  pages: [],
+})
+
 const fixtureResponder = (url: string): Response => {
-  if (url.endsWith('/wiki/index.md')) return new Response(fixture('index.md'), { status: 200 })
+  if (url.endsWith('/_manifest.json')) return new Response(JSON.stringify(manifest()), { status: 200 })
   if (url.endsWith('/wiki/procedures/E-0.md')) return new Response(fixture('E-0.md'), { status: 200 })
   if (url.endsWith('/wiki/procedures/FR-S.1.md')) return new Response(fixture('FR-S.1.md'), { status: 200 })
   return new Response('not found', { status: 404 })
@@ -161,7 +183,7 @@ describe('procedure_lookup — telemetry', () => {
     expect(events[0]!.tool).toBe('procedure_lookup')
     expect(events[0]!.success).toBe(true)
     expect(events[0]!.id).toBe('E-0')
-    expect(events[0]!.indexSource).toBe('regex')  // BINDING has no manifestFile
+    expect(events[0]!.indexSource).toBe('manifest')
     expect(events[0]!.callerId).toBe('t')
     expect(typeof events[0]!.durationMs).toBe('number')
   })
@@ -178,14 +200,14 @@ describe('procedure_lookup — telemetry', () => {
   test('indexSource reports "manifest" when manifest is consumed', async () => {
     restore()
     restore = installFetchMock((url) => {
-      if (url.endsWith('/wiki/_manifest.json')) return new Response(JSON.stringify({
-        version: 1, wiki: 'pwr-ops', procedures: [{ id: 'E-0', title: 'Reactor Trip' }], pages: [],
+      if (url.endsWith('/_manifest.json')) return new Response(JSON.stringify({
+        ...manifest([manifestEntry('E-0', 'Reactor Trip')]),
       }), { status: 200 })
       return fixtureResponder(url)
     })
     const events: ProcedureLookupTelemetry[] = []
     const tool = createProcedureLookupTool(
-      { ...BINDING, manifestFile: 'wiki/_manifest.json' },
+      BINDING,
       'PWR EOPs', 'https://leitbild-wikis.github.io/pwr-ops/',
       e => events.push(e),
     )
@@ -194,26 +216,14 @@ describe('procedure_lookup — telemetry', () => {
   })
 })
 
-describe('procedure_lookup — manifest-driven index', () => {
+describe('procedure_lookup — strict manifest discovery', () => {
   let restore: () => void
   afterEach(() => restore?.())
 
-  test('binding with manifestFile prefers the manifest over regex on indexFile', async () => {
-    const MANIFEST = {
-      version: 1,
-      wiki: 'pwr-ops',
-      procmdVersion: '0.6',
-      procedures: [
-        { id: 'E-0', title: 'Reactor Trip', coverage: 'developed', stepCount: 18 },
-        { id: 'FR-S.1', title: 'ATWS', coverage: 'stub', stepCount: 4 },
-        // Procedure that does NOT appear in index.md — manifest is authoritative
-        { id: 'AOP-1', title: 'Generic AOP', coverage: 'developed', stepCount: 10 },
-      ],
-      pages: [],
-    }
+  test('discovers a procedure solely from its manifest entry', async () => {
+    const aop = manifestEntry('AOP-1', 'Generic AOP')
     restore = installFetchMock((url) => {
-      if (url.endsWith('/wiki/_manifest.json')) return new Response(JSON.stringify(MANIFEST), { status: 200 })
-      if (url.endsWith('/wiki/index.md')) return new Response('# Old index\n[[E-0]]', { status: 200 })  // stale on purpose
+      if (url.endsWith('/_manifest.json')) return new Response(JSON.stringify(manifest([aop])), { status: 200 })
       if (url.endsWith('/wiki/procedures/AOP-1.md')) return new Response(`---
 procedure-id: AOP-1
 title: Generic AOP
@@ -227,43 +237,37 @@ Check: ok
       return new Response('not found', { status: 404 })
     })
     const tool = createProcedureLookupTool(
-      { ...BINDING, manifestFile: 'wiki/_manifest.json' },
+      BINDING,
       'PWR EOPs',
       'https://leitbild-wikis.github.io/pwr-ops/',
     )
-    // AOP-1 is in manifest but NOT in index.md — should still resolve
     const r = await tool.execute({ id: 'AOP-1' }, ctx)
     expect(r.success).toBe(true)
     expect(r.data as string).toContain('AOP-1')
   })
 
-  test('manifest fetch failure falls through to regex on indexFile', async () => {
-    restore = installFetchMock((url) => {
-      if (url.endsWith('/wiki/_manifest.json')) return new Response('', { status: 404 })
-      return fixtureResponder(url)
-    })
+  test('manifest fetch failure fails clearly without a second discovery mechanism', async () => {
+    restore = installFetchMock(() => new Response('', { status: 404 }))
     const tool = createProcedureLookupTool(
-      { ...BINDING, manifestFile: 'wiki/_manifest.json' },
+      BINDING,
       'PWR EOPs',
       'https://leitbild-wikis.github.io/pwr-ops/',
     )
-    // Should fall back to regex extraction from the existing index.md fixture
     const r = await tool.execute({ id: 'E-0' }, ctx)
-    expect(r.success).toBe(true)
+    expect(r.success).toBe(false)
+    expect(r.error).toContain('index fetch failed')
   })
 
-  test('malformed manifest is rejected and falls through to regex', async () => {
-    restore = installFetchMock((url) => {
-      if (url.endsWith('/wiki/_manifest.json')) return new Response('{"version":2,"procedures":[]}', { status: 200 })  // unsupported version
-      return fixtureResponder(url)
-    })
+  test('malformed manifest is rejected', async () => {
+    restore = installFetchMock(() => new Response('{"version":2,"procedures":[]}', { status: 200 }))
     const tool = createProcedureLookupTool(
-      { ...BINDING, manifestFile: 'wiki/_manifest.json' },
+      BINDING,
       'PWR EOPs',
       'https://leitbild-wikis.github.io/pwr-ops/',
     )
     const r = await tool.execute({ id: 'E-0' }, ctx)
-    expect(r.success).toBe(true)  // regex fallback should still find E-0
+    expect(r.success).toBe(false)
+    expect(r.error).toContain('index fetch failed')
   })
 })
 
@@ -273,7 +277,7 @@ describe('procedure_lookup — failure modes', () => {
 
   test('GitHub 5xx on procedure fetch → structured error mentioning the id', async () => {
     restore = installFetchMock((url) => {
-      if (url.endsWith('/wiki/index.md')) return new Response(fixture('index.md'), { status: 200 })
+      if (url.endsWith('/_manifest.json')) return new Response(JSON.stringify(manifest()), { status: 200 })
       return new Response('boom', { status: 503 })
     })
     const tool = createProcedureLookupTool(BINDING, 'PWR EOPs', 'https://leitbild-wikis.github.io/pwr-ops/')

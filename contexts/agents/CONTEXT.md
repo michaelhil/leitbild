@@ -74,6 +74,10 @@ _Avoid_: universal Pack or cross-Module ownership
 The deployment-scoped inventory of bundled and installed Agent Packs and their discovered contributions.
 _Avoid_: repeated filesystem discovery through Agent tools, universal Pack catalog
 
+**Wiki Source**:
+A read-only Agent Pack knowledge source whose documents and metadata are discovered through one validated, revisioned manifest.
+_Avoid_: guessed document paths, scraped human index, tool-specific source clients
+
 **Agent Pack Manager**:
 The deployment-scoped service that installs, updates, uninstalls, and reloads Agent Packs while keeping contribution catalogs and Room Pack Sets consistent.
 _Avoid_: Pack lifecycle logic embedded in REST routes or Agent tools

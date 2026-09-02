@@ -30,7 +30,7 @@ export interface WikiLookupTelemetry {
   readonly id: string | null
   readonly success: boolean
   readonly durationMs: number
-  readonly errorClass?: 'no-manifest' | 'no-pages' | 'unknown-type' | 'unknown-id' | 'fetch-failed'
+  readonly errorClass?: 'manifest-failed' | 'no-pages' | 'unknown-type' | 'unknown-id' | 'fetch-failed'
 }
 
 const defaultTelemetry = (event: WikiLookupTelemetry): void => {
@@ -96,7 +96,7 @@ const renderPageList = (pages: ReadonlyArray<WikiManifestPageEntry>, wikiName: s
   return lines.join('\n')
 }
 
-const buildTool = (deps: WikiLookupDeps): Tool => ({
+export const buildWikiLookupTool = (deps: WikiLookupDeps): Tool => ({
   name: 'wiki_lookup',
   description:
     'Fetches a reference page from the pwr-ops wiki — system descriptions, the tag catalogue, the setpoint catalogue, operations docs, human-factors pages, scenarios, and any future page type the wiki publishes. ' +
@@ -142,10 +142,12 @@ const buildTool = (deps: WikiLookupDeps): Tool => ({
       })
     }
 
-    const manifest = await deps.source.fetchManifest()
-    if (!manifest) {
-      fire(false, 'no-manifest')
-      return { success: false, error: `${deps.wikiName} manifest is unavailable. Try again in a minute, or use procedure_lookup for procedures.` }
+    let manifest
+    try {
+      manifest = await deps.source.fetchManifest()
+    } catch (error) {
+      fire(false, 'manifest-failed')
+      return { success: false, error: `${deps.wikiName} manifest is unavailable: ${error instanceof Error ? error.message : String(error)}` }
     }
     const pages = manifest.pages
     if (pages.length === 0) {
@@ -187,7 +189,7 @@ const buildTool = (deps: WikiLookupDeps): Tool => ({
 
     let body: string
     try {
-      body = await deps.source.fetchPage(match.file)
+      body = await deps.source.fetchDocument(match.file, manifest.revision)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       fire(false, 'fetch-failed')
@@ -209,7 +211,7 @@ export const createWikiLookupTool = (
   wikiName: string,
   wikiHomepage: string,
   telemetry?: (event: WikiLookupTelemetry) => void,
-): Tool => buildTool({
+): Tool => buildWikiLookupTool({
   source: createWikiSource(binding),
   wikiName,
   wikiHomepage,

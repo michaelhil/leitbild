@@ -79,7 +79,7 @@ const normalizeInjections = (raw: unknown): ScenarioInjection[] => {
   return out
 }
 
-const buildTool = (deps: EalDeps): Tool => {
+export const buildEalClassifyTool = (deps: EalDeps): Tool => {
   let rulesCache: RulesCache | null = null
 
   const getRules = async (): Promise<EalRulesFile | null> => {
@@ -87,7 +87,7 @@ const buildTool = (deps: EalDeps): Tool => {
     if (rulesCache && now - rulesCache.fetchedAt < RULES_TTL_MS) return rulesCache.rules
     let raw: string
     try {
-      raw = await deps.source.fetchPage('wiki/_eal-rules.json')
+      raw = await deps.source.fetchDocument('wiki/_eal-rules.json')
     } catch {
       return null
     }
@@ -167,7 +167,10 @@ const buildTool = (deps: EalDeps): Tool => {
         // Fetch + parse the scenario
         let raw: string
         try {
-          raw = await deps.source.fetchPage(`wiki/scenarios/${scenarioId}.md`)
+          const manifest = await deps.source.fetchManifest()
+          const scenario = manifest.pages.find(page => page.type === 'scenario' && page.id === scenarioId)
+          if (!scenario) throw new Error(`scenario is not declared in manifest revision ${manifest.revision}`)
+          raw = await deps.source.fetchDocument(scenario.file, manifest.revision)
         } catch (err) {
           fire(scenarioId, null, null, 'unknown-scenario')
           return { success: false, error: `Could not fetch scenario '${scenarioId}': ${(err as Error).message}` }
@@ -228,7 +231,7 @@ export const createEalClassifyTool = (
   binding: WikiSourceBinding,
   wikiName: string,
   telemetry?: (event: EalTelemetry) => void,
-): Tool => buildTool({
+): Tool => buildEalClassifyTool({
   source: createWikiSource(binding),
   wikiName,
   ...(telemetry ? { telemetry } : {}),
