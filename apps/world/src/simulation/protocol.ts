@@ -62,7 +62,7 @@ export interface PackRuntimeEmission {
 
 export interface PackRuntimeHealth {
   readonly runtimeId: string
-  readonly state: 'ready' | 'degraded'
+  readonly state: 'ready' | 'degraded' | 'failed'
   readonly failureCount: number
   readonly lastSuccessfulInteractionAt: IsoTimestamp
   readonly lastFailure?: {
@@ -151,6 +151,8 @@ export interface PackRuntimeQueries {
   readonly invoke: (query: PackRuntimeQuery) => Promise<unknown>
 }
 export interface PackRuntimeConnectionConfig {
+  /** Provider execution availability, independent of physical signal age or simulation pause. */
+  readonly isObjectProviderAvailable?: (objectId: ObjectId) => boolean
   /** The owning Run's clock. Standalone Pack hosts may own a local clock instead. */
   readonly runClock?: import('../core/model/time.ts').SimulationClockReader
   /** Read-only, schema-validated access to active providers within this run. */

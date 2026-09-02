@@ -145,8 +145,12 @@ A self-describing command or query with one stable id, risk and idempotency meta
 _Avoid_: generic command/query tunnel, untyped operation list, UI-only action
 
 **Pack Runtime Health**:
-A compact readiness/degradation record maintained by the runtime hub for each active Pack Runtime from actual interactions.
+A compact account of an active Pack Runtime's execution availability and operation failures. A stopped solver is failed, even when its last snapshot remains readable; a paused simulation is not a failed provider.
 _Avoid_: separate monitoring store, swallowed runtime failure, fabricated heartbeat
+
+**History Retention**:
+The bounded observation history a Run keeps for inspection, expressed independently of which signals are discoverable or selected for recording. Removing old observations does not remove current operational state or authored Scenarios.
+_Avoid_: deleting a Run, hiding a signal, restart checkpoint
 
 **World Pack**:
 A World-owned Pack that contributes scenario material, mechanics, Resources, Capabilities, or presentation.

@@ -94,7 +94,7 @@ const maxLoadedWorkspacesFromEnv = (): number => {
 export interface WorkspaceRuntimeMeta {
   readonly id: WorkspaceId
   readonly lastTouchedAt: number
-  readonly state: 'active' | 'evicting'
+  readonly state: 'active' | 'evicting' | 'save-failed'
 }
 
 export interface WorkspaceModuleOnDisk {
@@ -108,7 +108,7 @@ interface WorkspaceRuntimeEntry {
   readonly autoSaver: ModuleAutoSaver
   readonly onIdle: () => Promise<void>          // hook called by registry on evict
   lastTouchedAt: number
-  state: 'active' | 'evicting'
+  state: 'active' | 'evicting' | 'save-failed'
   evictionPromise?: Promise<void>               // present iff state='evicting'
 }
 
@@ -148,6 +148,7 @@ export interface WorkspaceRuntimeRegistry {
   readonly definitionsFor: (id: WorkspaceId) => RoomDefinitionLibrary
   readonly getOrLoad: (id: WorkspaceId) => Promise<AgentsWorkspaceRuntime>
   readonly evictOne: (id: WorkspaceId) => Promise<void>
+  readonly remove: (id: WorkspaceId) => Promise<void>
   readonly evictIdle: (now?: number) => Promise<number>
   readonly exists: (id: WorkspaceId) => Promise<boolean>
   readonly list: () => ReadonlyArray<WorkspaceRuntimeMeta>
@@ -203,6 +204,8 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   }
   const map = new Map<WorkspaceId, WorkspaceRuntimeEntry>()
   const pendingLoads = new Map<WorkspaceId, Promise<AgentsWorkspaceRuntime>>()
+  const removing = new Set<WorkspaceId>()
+  let shuttingDown = false
   // Reverse index for provider event routing. Populated when an agent
   // is spawned in an Workspace; cleared on agent removal or Workspace evict.
   const agentWorkspaceMap = new Map<string, WorkspaceId>()
@@ -332,12 +335,17 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   }
 
   const getOrLoad = async (id: WorkspaceId): Promise<AgentsWorkspaceRuntime> => {
+    if (shuttingDown || removing.has(id)) throw new Error('Agents Workspace is closing')
     if (!isValidWorkspaceId(id)) {
       throw new Error(`[registry] invalid Workspace id: ${id}`)
     }
 
     // Fast path: in-map and not evicting.
     const existing = map.get(id)
+    if (existing?.state === 'save-failed') {
+      await evictOne(id)
+      return getOrLoad(id)
+    }
     if (existing && existing.state === 'active') {
       existing.lastTouchedAt = Date.now()
       fireFirstLoadOnce(existing.system, id)
@@ -382,6 +390,8 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   // Idempotent: calling evictOne twice (or while another caller is also
   // evicting) returns the same in-flight promise.
   const evictOne = async (id: WorkspaceId): Promise<void> => {
+    const loading = pendingLoads.get(id)
+    if (loading) await loading
     const entry = map.get(id)
     if (!entry) return
     if (entry.state === 'evicting' && entry.evictionPromise) {
@@ -389,68 +399,22 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     }
 
     const evictionPromise = (async (): Promise<void> => {
-      await drainAgents(entry.system).catch(err => {
-        console.error(`[registry] evict ${id} drain failed (continuing): ${err instanceof Error ? err.message : String(err)}`)
-      })
-
-      // Bounded-retry flush. Originally this was a single try/catch that
-      // dropped the entry from memory regardless — meaning a failed save
-      // (disk full, perm flip) silently lost recent state on next load.
-      // Retry with backoff; only force-evict (with ERROR log noting the
-      // data-loss risk) if every attempt fails.
-      const backoffMs = [5_000, 15_000, 60_000]
-      let lastErr: unknown = null
-      let flushed = false
-      for (let attempt = 0; attempt < backoffMs.length; attempt++) {
-        try {
-          await entry.autoSaver.flush()
-          flushed = true
-          break
-        } catch (err) {
-          lastErr = err
-          opts.deployment.limitMetrics.inc('evictionFlushRetries')
-          const reason = err instanceof Error ? err.message : String(err)
-          console.error(`[registry] evict ${id} flush attempt ${attempt + 1}/${backoffMs.length} failed: ${reason}`)
-          if (attempt < backoffMs.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, backoffMs[attempt]))
-          }
-        }
-      }
-      if (!flushed) {
-        opts.deployment.limitMetrics.inc('evictionForceEvicts')
-        const reason = lastErr instanceof Error ? lastErr.message : String(lastErr)
-        console.error(`[registry] evict ${id}: flush exhausted retries — FORCING EVICTION; recent state may be lost. last error: ${reason}`)
-      }
-
-      try { opts.onWorkspaceRuntimeEvicted?.(entry.system, id) } catch (err) {
-        console.error(`[registry] evict ${id} hook threw: ${err instanceof Error ? err.message : String(err)}`)
-      }
-      entry.system.captureRegistry.clearAll()
-      entry.autoSaver.dispose()
-      // Stop the per-Workspace schedulers' setIntervals. Without this, the
-      // timer closures pin the entire AgentsWorkspaceRuntime (RoomDirectory + agents + history) and
-      // keep firing every tick on an evicted Workspace — memory leak +
-      // wasted CPU proportional to (evicted-with-active-schedulers) ×
-      // tick frequency. autoSaver.dispose handles its own debounce timer;
-      // these handle theirs.
-      try { entry.system.triggerScheduler.stop() } catch (err) {
-        console.error(`[registry] evict ${id} triggerScheduler.stop threw: ${err instanceof Error ? err.message : String(err)}`)
-      }
-      try { entry.system.summaryScheduler.dispose() } catch (err) {
-        console.error(`[registry] evict ${id} summaryScheduler.dispose threw: ${err instanceof Error ? err.message : String(err)}`)
-      }
-      // Stop any active script runs. Less leak risk than the scheduler
-      // intervals (no setInterval pinning the AgentsWorkspaceRuntime), but in-flight LLM
-      // whisper calls + bounded setTimeouts keep the closure alive briefly;
-      // explicit stop releases queue chains and any spawned cast that
-      // wasn't already drained. Best-effort — eviction proceeds regardless.
+      // Quiesce producers before draining consumers and publishing the final generation.
+      entry.system.triggerScheduler.stop()
+      entry.system.summaryScheduler.dispose()
+      await Promise.all(entry.system.scriptRunner.listRuns().map(run => entry.system.scriptRunner.stop(run.roomId)))
+      await drainAgents(entry.system)
       try {
-        for (const run of entry.system.scriptRunner.listRuns()) {
-          void entry.system.scriptRunner.stop(run.roomId).catch(() => { /* best-effort */ })
-        }
-      } catch (err) {
-        console.error(`[registry] evict ${id} scriptRunner cleanup threw: ${err instanceof Error ? err.message : String(err)}`)
+        await entry.autoSaver.flush()
+      } catch (error) {
+        // Do not discard the only recoverable dirty state after a storage failure.
+        entry.state = 'save-failed'
+        entry.evictionPromise = undefined
+        throw error
       }
+      opts.onWorkspaceRuntimeEvicted?.(entry.system, id)
+      entry.system.captureRegistry.clearAll()
+      await entry.autoSaver.dispose()
       map.delete(id)
     })()
 
@@ -515,6 +479,8 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   // Final flush of every active Workspace. Called from the SIGINT/SIGTERM
   // handler in bootstrap.ts (replaces the single-system flush).
   const shutdown = async (): Promise<void> => {
+    shuttingDown = true
+    await Promise.allSettled([...pendingLoads.values()])
     const ids = [...map.keys()]
     await Promise.all(ids.map(evictOne))
   }
@@ -543,6 +509,13 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     getOrLoad,
     definitionsFor,
     evictOne,
+    remove: async id => {
+      removing.add(id)
+      try {
+        await evictOne(id)
+        await opts.moduleState.remove(id)
+      } finally { removing.delete(id) }
+    },
     evictIdle,
     exists,
     list,

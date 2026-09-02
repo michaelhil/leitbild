@@ -45,7 +45,6 @@ import {
 } from './runtime-state.ts'
 
 const updateIntervalMs = 1_000
-const connectedPeerStaleAfterMs = 5_000
 
 const systemConnectionsFor = (
   connections: ReadonlyArray<ElectricalConnectionDefinition>,
@@ -130,7 +129,6 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
     })
     const systemConnections = systemConnectionsFor(config.scenario.connections, plants)
     const connectedPlantIds = new Set(systemConnections.map(connection => String(connection.system.objectId)))
-    const lastNetworkObservationWallMs = new Map<string, number>()
     const networkAvailableByPlant = new Map<string, boolean>()
 
     const queueNetworkState = (
@@ -167,7 +165,6 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         queueNetworkState(connection, initialSnapshot
           ? { ...port.state, connected: port.state.energized }
           : port.state)
-        lastNetworkObservationWallMs.set(String(connection.system.objectId), Date.now())
       }
     }
     const persistence = createProcessPlantRuntimePersistence({
@@ -203,6 +200,8 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
     )
 
     let runtimeFailureReason: string | null = null
+    let failureAt = nowIso()
+    let lastSuccessfulInteractionAt = nowIso()
 
     const rebuildRecordingPlan = (): void => {
       recordingPlan = config.recording === undefined || plants.size === 0
@@ -220,8 +219,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       if (elapsedMs <= 0 || plants.size === 0) return
       for (const connection of systemConnections) {
         const plantId = String(connection.system.objectId)
-        const observedAt = lastNetworkObservationWallMs.get(plantId)
-        if (observedAt !== undefined && Date.now() - observedAt > connectedPeerStaleAfterMs && networkAvailableByPlant.get(plantId) !== false) {
+        if (config.isObjectProviderAvailable?.(connection.network.objectId) === false && networkAvailableByPlant.get(plantId) !== false) {
           queueNetworkState(connection, { connected: false, energized: false, voltagePu: 0, frequencyHz: 0 })
         }
       }
@@ -265,6 +263,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           })()
         : undefined
       emitPackRuntimeEvents(handlers, events, recording)
+      lastSuccessfulInteractionAt = nowIso()
       persistence.scheduleSave()
     }
 
@@ -274,6 +273,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           await advance()
         } catch (error) {
           runtimeFailureReason = error instanceof Error ? error.message : String(error)
+          failureAt = nowIso()
           clearInterval(interval)
           emitRuntimeFailure({
             handlers,
@@ -286,6 +286,9 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
     }, updateIntervalMs)
 
     return {
+      health: () => [{ runtimeId: processPlantSimRuntimeId, state: runtimeFailureReason === null ? 'ready' : 'failed',
+        failureCount: runtimeFailureReason === null ? 0 : 1, lastSuccessfulInteractionAt,
+        ...(runtimeFailureReason === null ? {} : { lastFailure: { at: failureAt, operation: 'advance', message: runtimeFailureReason } }) }],
       getSnapshot: async () => ({
         simulationRunId: config.simulationRunId,
         objects: [...objectsById.values()],
@@ -445,14 +448,12 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           if (plants.delete(event.objectId)) {
             const plantId = String(event.objectId)
             connectedPlantIds.delete(plantId)
-            lastNetworkObservationWallMs.delete(plantId)
             networkAvailableByPlant.delete(plantId)
             plantRemoved = true
           }
           for (const connection of systemConnections) {
             if (connection.network.objectId !== event.objectId) continue
             queueNetworkState(connection, { connected: false, energized: false, voltagePu: 0, frequencyHz: 0 })
-            lastNetworkObservationWallMs.delete(String(connection.system.objectId))
           }
         }
         observeNetworkObjects(events.flatMap(event => event.type === 'object.upserted' ? [event.object] : []))

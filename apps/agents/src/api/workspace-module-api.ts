@@ -688,13 +688,11 @@ export const handleAgentsModuleApi = async (
       if (request.method === 'PUT') {
         const input = lifecycleSchema.parse(await readJson(request))
         if (input.workspaceId !== workspaceId) return apiError(409, 'workspace_scope_mismatch', 'Lifecycle body and route disagree')
-        await config.registry.evictOne(workspaceId)
         const provisioned = await config.state.provision(workspaceId)
         return json({ workspaceId, moduleId: 'agents' }, provisioned.created ? 201 : 200)
       }
       if (request.method === 'DELETE') {
-        await config.registry.evictOne(workspaceId)
-        await config.state.remove(workspaceId)
+        await config.registry.remove(workspaceId)
         return new Response(null, { status: 204 })
       }
     }

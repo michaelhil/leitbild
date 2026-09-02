@@ -52,6 +52,36 @@ const runtime = () => {
 }
 
 describe('Workspace Module snapshots', () => {
+  test('reads one committed generation after a partial document publication', async () => {
+    temporaryRoot = await mkdtemp(join(tmpdir(), 'module-commit-'))
+    const priorHome = process.env.LEITBILD_HOME
+    process.env.LEITBILD_HOME = temporaryRoot
+    const originalWrite = Bun.write
+    try {
+      const paths = workspaceModulePaths(newWorkspaceId())
+      const source = runtime()
+      source.settings.setPrompt('old')
+      source.rooms.createRoom({ name: 'Before', createdBy: 'operator' })
+      await saveWorkspaceModuleSnapshots(serializeModuleSnapshots(source), paths)
+      source.settings.setPrompt('new')
+      source.rooms.createRoom({ name: 'After', createdBy: 'operator' })
+      Bun.write = (async (...args: Parameters<typeof Bun.write>) => {
+        if (String(args[0]).startsWith(`${paths.agents.snapshot}.`)) throw new Error('document publication interrupted')
+        return originalWrite(...args)
+      }) as typeof Bun.write
+      await expect(saveWorkspaceModuleSnapshots(serializeModuleSnapshots(source), paths)).rejects.toThrow('interrupted')
+      const loaded = await loadWorkspaceModuleSnapshots(paths)
+      expect(loaded.agents?.workspacePrompt).toBe('new')
+      expect(loaded.rooms?.rooms).toHaveLength(2)
+      Bun.write = originalWrite
+      await saveWorkspaceModuleSnapshots(serializeModuleSnapshots(source), paths)
+      expect(await Bun.file(join(paths.agents.root, 'snapshot-commit.json')).exists()).toBe(false)
+    } finally {
+      Bun.write = originalWrite
+      if (priorHome === undefined) delete process.env.LEITBILD_HOME
+      else process.env.LEITBILD_HOME = priorHome
+    }
+  })
   test('separates Room state from Agent Profiles inside the Agents Module', () => {
     const source = runtime()
     const room = source.rooms.createRoom({ name: 'Operations', createdBy: 'human-1' })

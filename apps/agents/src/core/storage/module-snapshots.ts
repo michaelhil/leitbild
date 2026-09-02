@@ -1,5 +1,5 @@
 import { mkdir, rename, rm } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { toolGrantSetSchema } from '@leitbild/contracts'
 import type { Agent, AIAgentConfig } from '../types/agent.ts'
@@ -11,7 +11,6 @@ import type { Trigger } from '../triggers/types.ts'
 import type { WorkspaceModulePaths } from '../paths.ts'
 import { asAIAgent } from '../../agents/shared.ts'
 import { DEFAULT_RESPONSE_FORMAT, DEFAULT_WORKSPACE_PROMPT } from '../workspaces/settings.ts'
-import { createSerialiseChain } from '../serialise-chain.ts'
 import { redactBiometricMessages } from './snapshot-redact.ts'
 
 export const ROOMS_SNAPSHOT_SCHEMA = 1
@@ -318,14 +317,23 @@ export const serializeModuleSnapshots = (runtime: SerializableRuntime): {
   }
 }
 
-const writeChain = createSerialiseChain()
+const pendingWrites = new Map<string, Promise<unknown>>()
+const withSnapshotLock = <T>(path: string, action: () => Promise<T>): Promise<T> => {
+  const next = (pendingWrites.get(path) ?? Promise.resolve()).catch(() => undefined).then(action)
+  pendingWrites.set(path, next)
+  const release = () => { if (pendingWrites.get(path) === next) pendingWrites.delete(path) }
+  void next.then(release, release)
+  return next
+}
 
-const writeSnapshot = (snapshot: unknown, path: string): Promise<void> => writeChain.run(async () => {
+const writeSnapshot = async (snapshot: unknown, path: string): Promise<void> => {
   await mkdir(dirname(path), { recursive: true })
   const temporaryPath = `${path}.${crypto.randomUUID()}.tmp`
-  await Bun.write(temporaryPath, `${JSON.stringify(snapshot, null, 2)}\n`)
-  await rename(temporaryPath, path)
-})
+  try {
+    await Bun.write(temporaryPath, `${JSON.stringify(snapshot, null, 2)}\n`)
+    await rename(temporaryPath, path)
+  } finally { await rm(temporaryPath, { force: true }) }
+}
 
 const removeSnapshot = async (path: string): Promise<void> => {
   try {
@@ -346,15 +354,31 @@ const agentsIsEmpty = (snapshot: AgentsSnapshot): boolean =>
   && snapshot.responseFormat === undefined
   && (snapshot.ollamaUrls === undefined || snapshot.ollamaUrls.length === 0)
 
-export const saveWorkspaceModuleSnapshots = async (
+const committedSnapshotSchema = z.object({ rooms: roomsSnapshotSchema.nullable(), agents: agentsSnapshotSchema.nullable() }).strict()
+type SnapshotPaths = {
+  readonly rooms: Pick<WorkspaceModulePaths['rooms'], 'snapshot'>
+  readonly agents: Pick<WorkspaceModulePaths['agents'], 'root' | 'snapshot'>
+}
+const commitPath = (paths: SnapshotPaths): string => join(paths.agents.root, 'snapshot-commit.json')
+
+// One atomic commit record is authoritative until both strict documents have
+// been materialized. A crash between document writes cannot expose mixed generations.
+const publishSnapshots = async (snapshots: WorkspaceModuleSnapshots, paths: SnapshotPaths): Promise<void> => {
+  await writeSnapshot(committedSnapshotSchema.parse(snapshots), commitPath(paths))
+  if (snapshots.rooms === null) await removeSnapshot(paths.rooms.snapshot)
+  else await writeSnapshot(snapshots.rooms, paths.rooms.snapshot)
+  if (snapshots.agents === null) await removeSnapshot(paths.agents.snapshot)
+  else await writeSnapshot(snapshots.agents, paths.agents.snapshot)
+  await removeSnapshot(commitPath(paths))
+}
+
+export const saveWorkspaceModuleSnapshots = (
   snapshots: { readonly rooms: RoomsSnapshot; readonly agents: AgentsSnapshot },
   paths: WorkspaceModulePaths,
-): Promise<void> => {
-  if (roomsIsEmpty(snapshots.rooms)) await removeSnapshot(paths.rooms.snapshot)
-  else await writeSnapshot(roomsSnapshotSchema.parse(snapshots.rooms), paths.rooms.snapshot)
-  if (agentsIsEmpty(snapshots.agents)) await removeSnapshot(paths.agents.snapshot)
-  else await writeSnapshot(agentsSnapshotSchema.parse(snapshots.agents), paths.agents.snapshot)
-}
+): Promise<void> => withSnapshotLock(commitPath(paths), () => publishSnapshots({
+  rooms: roomsIsEmpty(snapshots.rooms) ? null : roomsSnapshotSchema.parse(snapshots.rooms),
+  agents: agentsIsEmpty(snapshots.agents) ? null : agentsSnapshotSchema.parse(snapshots.agents),
+}, paths))
 
 const loadStrict = async <T>(path: string, schema: z.ZodType<T>): Promise<T | null> => {
   const file = Bun.file(path)
@@ -362,12 +386,14 @@ const loadStrict = async <T>(path: string, schema: z.ZodType<T>): Promise<T | nu
   return schema.parse(JSON.parse(await file.text()) as unknown)
 }
 
-export const loadWorkspaceModuleSnapshots = async (
-  paths: WorkspaceModulePaths,
-): Promise<WorkspaceModuleSnapshots> => ({
-  rooms: await loadStrict(paths.rooms.snapshot, roomsSnapshotSchema),
-  agents: await loadStrict(paths.agents.snapshot, agentsSnapshotSchema),
-})
+const readSnapshots = async (paths: SnapshotPaths): Promise<WorkspaceModuleSnapshots> => {
+  const committed = await loadStrict(commitPath(paths), committedSnapshotSchema)
+  if (committed) return committed
+  return { rooms: await loadStrict(paths.rooms.snapshot, roomsSnapshotSchema), agents: await loadStrict(paths.agents.snapshot, agentsSnapshotSchema) }
+}
+
+export const loadWorkspaceModuleSnapshots = (paths: WorkspaceModulePaths): Promise<WorkspaceModuleSnapshots> =>
+  withSnapshotLock(commitPath(paths), () => readSnapshots(paths))
 
 interface RestorableRuntime {
   readonly rooms: { readonly restoreRoom: (profile: RoomProfile) => Room }
@@ -455,8 +481,12 @@ export const restoreWorkspaceModuleSnapshots = async (
 export const appendRoomsPendingScrub = (
   path: string,
   scrub: PendingScrub,
-): Promise<{ readonly applied: boolean; readonly reason?: string }> => writeChain.run(async () => {
-  const snapshot = await loadStrict(path, roomsSnapshotSchema)
+): Promise<{ readonly applied: boolean; readonly reason?: string }> => {
+  const root = dirname(dirname(path))
+  const paths = { rooms: { snapshot: path }, agents: { root, snapshot: join(root, 'snapshot.json') } }
+  return withSnapshotLock(commitPath(paths), async () => {
+  const current = await readSnapshots(paths)
+  const snapshot = current.rooms
   if (!snapshot) return { applied: false, reason: 'no Rooms snapshot' }
   if ((snapshot.pendingScrubs ?? []).some(item => item.packId === scrub.packId)) {
     return { applied: false, reason: 'already queued' }
@@ -465,21 +495,20 @@ export const appendRoomsPendingScrub = (
     ...snapshot,
     pendingScrubs: [...(snapshot.pendingScrubs ?? []), scrub],
   })
-  await mkdir(dirname(path), { recursive: true })
-  const temporaryPath = `${path}.${crypto.randomUUID()}.tmp`
-  await Bun.write(temporaryPath, `${JSON.stringify(next, null, 2)}\n`)
-  await rename(temporaryPath, path)
+  await publishSnapshots({ ...current, rooms: next }, paths)
   return { applied: true }
 })
+}
 
 export interface ModuleAutoSaver {
   readonly scheduleSave: () => void
   readonly flush: () => Promise<void>
-  readonly dispose: () => void
+  readonly dispose: () => Promise<void>
 }
 
 const MAX_DEFER_MS = 30_000
-const SAVE_RETRY_BACKOFF_MS: ReadonlyArray<number> = [5_000, 15_000, 60_000]
+// One retry budget, also used by shutdown (comfortably below the 90s service stop budget).
+const SAVE_RETRY_BACKOFF_MS: ReadonlyArray<number> = [250, 1_000, 3_000]
 
 export const createModuleAutoSaver = (
   runtime: SerializableRuntime,
@@ -487,47 +516,46 @@ export const createModuleAutoSaver = (
   debounceMs = 5_000,
 ): ModuleAutoSaver => {
   let timer: Timer | undefined
-  let saving = false
-  let pendingSave = false
+  let pending: Promise<void> | null = null
+  let dirty = false
+  let disposed = false
   let firstDeferredAt: number | null = null
 
   const runScheduledSave = (): void => {
-    void doSave().catch(error => {
+    void save().catch(error => {
       console.error('[workspace-snapshot] scheduled Module save failed', error)
     })
   }
 
-  const doSave = async (): Promise<void> => {
-    saving = true
-    pendingSave = false
-    firstDeferredAt = null
-    try {
-      const snapshots = serializeModuleSnapshots(runtime)
-      let lastError: unknown = null
-      for (let attempt = 0; attempt <= SAVE_RETRY_BACKOFF_MS.length; attempt += 1) {
-        try {
-          await saveWorkspaceModuleSnapshots(snapshots, paths)
-          return
-        } catch (error) {
-          lastError = error
-          if (attempt < SAVE_RETRY_BACKOFF_MS.length) {
-            await new Promise(resolve => setTimeout(resolve, SAVE_RETRY_BACKOFF_MS[attempt]))
+  const save = (): Promise<void> => {
+    if (pending) return pending
+    pending = (async () => {
+      try {
+        let failures = 0
+        while (dirty) {
+          dirty = false
+          firstDeferredAt = null
+          try {
+            await saveWorkspaceModuleSnapshots(serializeModuleSnapshots(runtime), paths)
+          } catch (error) {
+            dirty = true
+            const delay = SAVE_RETRY_BACKOFF_MS[failures++]
+            if (delay === undefined) throw error
+            await new Promise(resolve => setTimeout(resolve, delay))
           }
         }
+      } finally {
+        pending = null
       }
-      throw lastError
-    } finally {
-      saving = false
-      if (pendingSave) timer = setTimeout(runScheduledSave, debounceMs)
-    }
+    })()
+    return pending
   }
 
   const scheduleSave = (): void => {
-    if (saving) {
-      pendingSave = true
-      return
-    }
-    const now = Date.now()
+    if (disposed) return // Detached producers cannot restart persistence after disposal.
+    dirty = true
+    if (pending) return
+    const now = performance.now()
     if (firstDeferredAt === null) firstDeferredAt = now
     const delay = now - firstDeferredAt >= MAX_DEFER_MS ? 0 : debounceMs
     if (timer) clearTimeout(timer)
@@ -537,16 +565,17 @@ export const createModuleAutoSaver = (
   const flush = async (): Promise<void> => {
     if (timer) clearTimeout(timer)
     timer = undefined
-    pendingSave = false
-    firstDeferredAt = null
-    await doSave()
+    if (disposed) throw new Error('Workspace autosaver is disposed')
+    dirty = true
+    await save()
   }
 
-  const dispose = (): void => {
+  const dispose = async (): Promise<void> => {
+    disposed = true
     if (timer) clearTimeout(timer)
     timer = undefined
-    pendingSave = false
     firstDeferredAt = null
+    await pending
   }
 
   return { scheduleSave, flush, dispose }

@@ -6,6 +6,7 @@ import type { ScenarioAuthoringCatalog } from '../scenarios/authoring.ts'
 import type { ScenarioDefinition } from '../scenarios/definition.ts'
 import type { ScenarioRuntimeResolver } from '../scenarios/runtime-resolver.ts'
 import { createSimulationRunRegistry,type SimulationRunRegistry } from '../simulation-runs/registry.ts'
+import { createKeyedOperations } from '../storage/keyed-operations.ts'
 import type { WorldModuleMarker,WorldModuleState } from './module-state.ts'
 
 export interface WorldWorkspaceRuntime {
@@ -39,6 +40,8 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
 }): WorldWorkspaceRuntimeRegistry => {
   const loaded = new Map<WorkspaceId, WorldWorkspaceRuntime>()
   const pendingLoads = new Map<WorkspaceId, Promise<WorldWorkspaceRuntime>>()
+  const lifecycle = createKeyedOperations<WorkspaceId>()
+  let shuttingDown = false
 
   const build = (workspaceId: WorkspaceId): WorldWorkspaceRuntime => ({
     workspaceId,
@@ -55,7 +58,8 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
     }),
   })
 
-  const getOrLoad = async (id: WorkspaceId): Promise<WorldWorkspaceRuntime> => {
+  const getOrLoad = (id: WorkspaceId): Promise<WorldWorkspaceRuntime> => lifecycle.run(id, async () => {
+    if (shuttingDown) throw new Error('World runtime registry is shutting down')
     const current = loaded.get(id)
     if (current) return current
     const pending = pendingLoads.get(id)
@@ -70,7 +74,7 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
     })
     pendingLoads.set(id, loading)
     return await loading
-  }
+  })
 
   const provision = async (id: WorkspaceId) => {
     const provisioned = await config.moduleState.provision(id)
@@ -80,20 +84,19 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
     }
   }
 
-  const close = async (id: WorkspaceId): Promise<boolean> => {
+  const closeLoaded = async (id: WorkspaceId): Promise<boolean> => {
     const runtime = loaded.get(id)
     if (!runtime) return false
-    for (const simulationRun of runtime.simulationRuns.list()) {
-      await runtime.simulationRuns.close(simulationRun.id)
-    }
+    await runtime.simulationRuns.shutdown()
     loaded.delete(id)
     return true
   }
+  const close = (id: WorkspaceId): Promise<boolean> => lifecycle.run(id, () => closeLoaded(id))
 
-  const remove = async (id: WorkspaceId): Promise<boolean> => {
-    await close(id)
+  const remove = (id: WorkspaceId): Promise<boolean> => lifecycle.run(id, async () => {
+    await closeLoaded(id)
     return await config.moduleState.remove(id)
-  }
+  })
 
   return {
     list: () => config.moduleState.list(),
@@ -103,6 +106,8 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
     close,
     remove,
     shutdown: async () => {
+      shuttingDown = true
+      await lifecycle.drain()
       for (const id of [...loaded.keys()]) await close(id)
     },
   }

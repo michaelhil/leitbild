@@ -113,7 +113,6 @@ export interface GridExternalConnectionState {
   readonly busId: string
   systemActivePowerMw: number
   connected: boolean
-  lastObservedWallMs: number | null
 }
 
 export interface GridAssetSnapshot {
@@ -226,7 +225,6 @@ export const createGridRuntimeInstance = (config: {
       busId: point.busId,
       systemActivePowerMw: 0,
       connected: false,
-      lastObservedWallMs: null,
     } satisfies GridExternalConnectionState] as const]
   }))
   return {

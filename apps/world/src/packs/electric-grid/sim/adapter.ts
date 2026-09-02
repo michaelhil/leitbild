@@ -60,7 +60,6 @@ import { createElectricGridRuntimePersistence } from './persistence.ts'
 import { electricGridRuntimeStateSchema,restoredGridRuntimeStateFor } from './runtime-state.ts'
 
 const updateIntervalMs = 2_000
-const connectedPeerStaleAfterMs = 5_000
 
 const networkConnectionsFor = (
   connections: ReadonlyArray<ElectricalConnectionDefinition>,
@@ -254,6 +253,8 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
     let lastSimulationMs = Date.parse(currentSimulationTime())
     let closed = false
     let failure: string | null = null
+    let failureAt = nowIso()
+    let lastSuccessfulInteractionAt = nowIso()
     const observedStartupConnections = new Set<string>()
 
     const observeSystemObjects = (
@@ -278,7 +279,6 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
           }
           connection.systemActivePowerMw = nextPowerMw
           connection.connected = nextConnected
-          connection.lastObservedWallMs = Date.now()
           if (trackStartup) observedStartupConnections.add(`${grid.definition.gridId}\u0000${connection.definition.network.portId}`)
         }
       }
@@ -293,7 +293,6 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
           if (connection.connected || connection.systemActivePowerMw !== 0) affectedGridIds.add(grid.definition.gridId)
           connection.connected = false
           connection.systemActivePowerMw = 0
-          connection.lastObservedWallMs = null
         }
       }
       return affectedGridIds
@@ -356,7 +355,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
       lastSimulationMs = simulationMs
       for (const grid of grids.values()) {
         for (const connection of grid.externalConnections.values()) {
-          if (connection.lastObservedWallMs !== null && Date.now() - connection.lastObservedWallMs > connectedPeerStaleAfterMs) {
+          if (config.isObjectProviderAvailable?.(connection.definition.system.objectId) === false) {
             connection.connected = false
             connection.systemActivePowerMw = 0
           }
@@ -383,6 +382,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
         : undefined
       persistence.scheduleSave()
       emit({ handlers, events, ...(recording === undefined ? {} : { recording }) })
+      lastSuccessfulInteractionAt = nowIso()
     }
 
     const interval = setInterval(() => {
@@ -390,6 +390,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
         advanceAndEmit('snapshot-only')
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error)
+        failureAt = nowIso()
         clearInterval(interval)
         const at = nowIso()
         for (const grid of grids.values()) grid.projection = {
@@ -430,6 +431,9 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
     }, updateIntervalMs)
 
     return {
+      health: () => [{ runtimeId: electricGridRuntimeId, state: failure === null ? 'ready' : 'failed',
+        failureCount: failure === null ? 0 : 1, lastSuccessfulInteractionAt,
+        ...(failure === null ? {} : { lastFailure: { at: failureAt, operation: 'advance', message: failure } }) }],
       getSnapshot: async () => ({ simulationRunId: config.simulationRunId, objects: [...objectsById.values()], capturedAt: nowIso() }),
       subscribe: handler => {
         handlers.add(handler)

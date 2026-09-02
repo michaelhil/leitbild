@@ -35,6 +35,7 @@ import { createJsonRuntimeStateStore } from './runtime-state-store.ts'
 import type { SimulationRunCapabilities } from './runtime.ts'
 import { createSimulationRunRuntime,type ActiveSimulationCapability,type SimulationRunRuntime } from './runtime.ts'
 import { createSimulationRunSnapshotStore } from './snapshot-store.ts'
+import { createKeyedOperations } from '../storage/keyed-operations.ts'
 
 const maxRestoredEventHistoryBytes = 8 * 1024 * 1024
 
@@ -98,6 +99,8 @@ export interface SimulationRunRegistry {
   readonly deleteScenario: (id: string, revisionId: ScenarioRevisionId) => Promise<boolean>
   readonly scenarioRevisionForRun: (id: SimulationRunId) => Promise<ScenarioRevision | undefined>
   readonly compileScenarioRevision: (revision: ScenarioRevision) => Promise<CompiledScenario>
+  readonly compiledScenarioForRun: (id: SimulationRunId) => Promise<CompiledScenario>
+  readonly shutdown: () => Promise<void>
   readonly close: (id: SimulationRunId) => Promise<boolean>
 }
 
@@ -114,6 +117,8 @@ export const createSimulationRunRegistry = (config: {
   readonly procedureSourceService?: ProcedureSourceService
 }): SimulationRunRegistry => {
   const simulationRuns = new Map<SimulationRunId, SimulationRunRuntime>()
+  const lifecycle = createKeyedOperations<SimulationRunId>()
+  let shuttingDown = false
   const procedureSourceService = config.procedureSourceService ?? createProcedureSourceService()
   const creatingSimulationRuns = new Map<SimulationRunId, Promise<SimulationRunRuntime>>()
   const leasesBySimulationRun = new Map<SimulationRunId, Map<string, SimulationRunLeaseKind>>()
@@ -184,6 +189,8 @@ export const createSimulationRunRegistry = (config: {
     if (existing) return existing
     const compiling = compileValidatedDefinition(revision.document)
     compiledScenarios.set(revision.id, compiling)
+    // Revisions are immutable; keep only a small working set, not every edit forever.
+    if (compiledScenarios.size > 32) compiledScenarios.delete(compiledScenarios.keys().next().value!)
     void compiling.catch(() => {
       if (compiledScenarios.get(revision.id) === compiling) compiledScenarios.delete(revision.id)
     })
@@ -568,24 +575,30 @@ export const createSimulationRunRegistry = (config: {
   }
 
   const create = async (createConfig: { readonly scenarioId: string; readonly scenarioRevisionId?: ScenarioRevisionId }): Promise<SimulationRunRuntime> => {
+    if (shuttingDown) throw new Error('Workspace runtime is closing')
     const requestedScenarioId = z.string().min(1).parse(createConfig.scenarioId)
     const id = newSimulationRunId()
     if (simulationRuns.has(id) || creatingSimulationRuns.has(id)) throw new Error(`simulation run already exists: ${id}`)
-    const { manifest, compiledScenario } = await createManifest(id, requestedScenarioId, createConfig?.scenarioRevisionId)
-    await manifestStoreFor(id).create(manifest)
-    await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).create(compiledScenario)
-    const creating = createRuntime({
-      manifest,
-    }).finally(() => {
+    const creating = (async () => {
+      const { manifest, compiledScenario } = await createManifest(id, requestedScenarioId, createConfig?.scenarioRevisionId)
+      await manifestStoreFor(id).create(manifest)
+      await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).create(compiledScenario)
+      return await createRuntime({ manifest })
+    })().finally(() => {
       creatingSimulationRuns.delete(id)
+      scheduleIdleRuntimeCloseIfUnleased(id)
     })
     creatingSimulationRuns.set(id, creating)
     return await creating
   }
 
-  const load = async (id: SimulationRunId): Promise<SimulationRunRuntime> => {
+  const load = (id: SimulationRunId): Promise<SimulationRunRuntime> => lifecycle.run(id, async () => {
+    if (shuttingDown) throw new Error('Workspace runtime is closing')
     const existing = simulationRuns.get(id)
-    if (existing) return existing
+    if (existing) {
+      scheduleIdleRuntimeCloseIfUnleased(id)
+      return existing
+    }
     const creating = creatingSimulationRuns.get(id)
     if (creating) return await creating
     const loading = (async (): Promise<SimulationRunRuntime> => {
@@ -594,12 +607,15 @@ export const createSimulationRunRegistry = (config: {
       return await createRuntime({ manifest })
     })().finally(() => {
       creatingSimulationRuns.delete(id)
+      scheduleIdleRuntimeCloseIfUnleased(id)
     })
     creatingSimulationRuns.set(id, loading)
     return await loading
-  }
+  })
 
-  const close = async (id: SimulationRunId): Promise<boolean> => {
+  const closeLoaded = async (id: SimulationRunId): Promise<boolean> => {
+    // A failed construction has already released its resources; close still succeeds as a no-op.
+    await creatingSimulationRuns.get(id)?.catch(() => undefined)
     const runtime = simulationRuns.get(id)
     if (!runtime) return false
     clearIdleRuntimeCloseTimer(id)
@@ -608,15 +624,16 @@ export const createSimulationRunRegistry = (config: {
     simulationRuns.delete(id)
     return true
   }
+  const close = (id: SimulationRunId): Promise<boolean> => lifecycle.run(id, () => closeLoaded(id))
 
-  const reset = async (id: SimulationRunId): Promise<SimulationRunRuntime> => {
+  const reset = (id: SimulationRunId): Promise<SimulationRunRuntime> => lifecycle.run(id, async () => {
     const manifest = await manifestStoreFor(id).load()
     if (!manifest) throw new Error(`Simulation Run not found: ${id}`)
     const existing = simulationRuns.get(id)
     const resetEvent = existing
       ? await existing.publishResetBoundary({ scenarioId: manifest.scenario.id })
       : undefined
-    await close(id)
+    await closeLoaded(id)
     const runDir = join(simulationRunRoot, id)
     await Promise.all([
       rm(join(runDir, 'snapshot.json'), { force: true }),
@@ -630,10 +647,10 @@ export const createSimulationRunRegistry = (config: {
       manifest,
       ...(resetEvent === undefined ? {} : { initialSeq: resetEvent.seq + 1 }),
     })
-  }
+  })
 
-  const deleteSimulationRun = async (id: SimulationRunId): Promise<boolean> => {
-    const wasLoaded = await close(id)
+  const deleteSimulationRun = (id: SimulationRunId): Promise<boolean> => lifecycle.run(id, async () => {
+    const wasLoaded = await closeLoaded(id)
     pinnedTitles.delete(id)
     const runDir = join(simulationRunRoot, id)
     let existedOnDisk = true
@@ -645,7 +662,7 @@ export const createSimulationRunRegistry = (config: {
     }
     if (existedOnDisk) await rm(runDir, { recursive: true, force: true })
     return wasLoaded || existedOnDisk
-  }
+  })
 
   const listPersistedIds = async (): Promise<ReadonlyArray<SimulationRunId>> => {
     let entries: ReadonlyArray<{ readonly isDirectory: () => boolean; readonly name: string }>
@@ -825,6 +842,19 @@ export const createSimulationRunRegistry = (config: {
     summary: summaryFor,
     status,
     acquireLease,
+    compiledScenarioForRun: async id => {
+      const stored = await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).load()
+      if (!stored) throw new Error(`Compiled Scenario is missing for ${id}`)
+      return stored
+    },
+    shutdown: async () => {
+      shuttingDown = true
+      await Promise.allSettled([...creatingSimulationRuns.values()])
+      await lifecycle.drain()
+      await Promise.all([...simulationRuns.keys()].map(close))
+      compiledScenarios.clear()
+      pinnedTitles.clear()
+    },
     leaseSummary,
     listScenarios: async () => {
       await ensureScenarioLibrary()

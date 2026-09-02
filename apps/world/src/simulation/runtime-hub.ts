@@ -72,6 +72,8 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
       if (missingRuntimeIds.length > 0) throw new Error(`missing pack runtimes: ${missingRuntimeIds.join(', ')}`)
       const activeRuntimeIds = new Set(config.scenario.runtimeIds)
       const activeAdapters = adapters.filter(adapter => activeRuntimeIds.has(adapter.id))
+      const objectOwners = new Map((config.initialObjects ?? config.scenario.initialObjects).map(object => [object.id, object.packId]))
+      const providerAvailable = new Map<string, () => boolean>()
       assertUniqueRoutes(activeAdapters, adapter => capabilityIds(adapter.capabilities, 'command'), 'command')
       assertUniqueRoutes(activeAdapters, adapter => adapter.realtimeInputTypes ?? [], 'realtime input')
       assertUniqueRoutes(activeAdapters, adapter => capabilityIds(adapter.capabilities, 'query'), 'query')
@@ -98,6 +100,12 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
           return {
             adapter,
             connection: await adapter.connect({
+              isObjectProviderAvailable: objectId => {
+                const owner = objectOwners.get(objectId)
+                if (!owner) return false
+                // During connect the peer has not yet installed its health reader.
+                return providerAvailable.get(owner)?.() ?? true
+              },
               simulationRunId: config.simulationRunId,
               ...(config.runClock ? { runClock: config.runClock } : {}),
               queries,
@@ -123,6 +131,10 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         if (result.status === 'rejected') throw result.reason
         return result.value
       })
+      const unsubscribes: Array<() => void> = []
+      try {
+      for (const { adapter, connection } of connections) providerAvailable.set(adapter.packId,
+        () => !connection.health?.().some(health => health.state === 'failed'))
       for (const target of connections)
         for (const capability of target.adapter.capabilities) {
           if (capability.kind === 'query') readers.set(capability.id, { connection: target.connection, capability })
@@ -133,18 +145,23 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         failureCount: 0,
         lastSuccessfulInteractionAt: nowIso(),
       }]))
-      const markHealthy = (runtimeId: string): void => {
+      const failedOperations = new Map<string, Set<string>>()
+      const markHealthy = (runtimeId: string, operation: string): void => {
         const current = healthByRuntime.get(runtimeId)
         if (!current) return
+        failedOperations.get(runtimeId)?.delete(operation)
         healthByRuntime.set(runtimeId, {
           ...current,
-          state: 'ready',
+          state: failedOperations.get(runtimeId)?.size ? 'degraded' : 'ready',
           lastSuccessfulInteractionAt: nowIso(),
         })
       }
       const markFailure = (runtimeId: string, operation: string, error: unknown): void => {
         const current = healthByRuntime.get(runtimeId)
         if (!current) return
+        const operations = failedOperations.get(runtimeId) ?? new Set<string>()
+        operations.add(operation)
+        failedOperations.set(runtimeId, operations)
         const at = nowIso()
         healthByRuntime.set(runtimeId, {
           ...current,
@@ -159,18 +176,13 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
       }
       const initialSnapshots = await Promise.all(connections.map(({ connection }) => connection.getSnapshot()))
       const initialSnapshotObjects = initialSnapshots.flatMap(snapshot => snapshot.objects)
+      for (const object of initialSnapshotObjects) objectOwners.set(object.id, object.packId)
       const initialDuplicates = duplicateObjectIds(initialSnapshotObjects)
       if (initialDuplicates.length > 0) {
-        await Promise.allSettled(connections.map(({ connection }) => connection.close()))
         throw new Error(`duplicate runtime object ids from runtimes: ${initialDuplicates.join(', ')}`)
       }
-      try {
         await Promise.all(connections.flatMap(({ connection }) =>
           connection.observeInitialSnapshot ? [connection.observeInitialSnapshot(initialSnapshotObjects)] : []))
-      } catch (error) {
-        await Promise.allSettled(connections.map(({ connection }) => connection.close()))
-        throw error
-      }
       const commandTargets = new Map(connections.flatMap(target =>
         capabilityIds(target.adapter.capabilities, 'command').map(route => [route, target] as const)))
       const realtimeInputTargets = new Map(connections.flatMap(target =>
@@ -178,7 +190,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
       const queryTargets = new Map(connections.flatMap(target =>
         capabilityIds(target.adapter.capabilities, 'query').map(route => [route, target] as const)))
       const handlers = new Set<PackRuntimeEventHandler>()
-      const unsubscribes = connections.map(({ adapter, connection }) => connection.subscribe((emission: PackRuntimeEmission) => {
+      for (const { adapter, connection } of connections) unsubscribes.push(connection.subscribe((emission: PackRuntimeEmission) => {
         if (emission.runtimeId !== adapter.id) {
           console.error(`dropped Pack Runtime emission from ${adapter.id}: claimed runtime ${emission.runtimeId}`)
           return
@@ -188,7 +200,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
           console.error(`dropped Pack Runtime emission from ${adapter.id}: object ${foreignObject.object.id} belongs to Pack ${foreignObject.object.packId}`)
           return
         }
-        markHealthy(adapter.id)
+        markHealthy(adapter.id, 'emission')
         for (const handler of handlers) handler(emission)
       }))
 
@@ -196,7 +208,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         const results = await Promise.allSettled(connections.map(({ connection }) => connection.getSnapshot()))
         results.forEach((result, index) => {
           if (result.status === 'rejected') markFailure(connections[index]!.adapter.id, 'get-snapshot', result.reason)
-          else markHealthy(connections[index]!.adapter.id)
+          else markHealthy(connections[index]!.adapter.id, 'get-snapshot')
         })
         const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
         if (failure) throw failure.reason
@@ -228,7 +240,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         }
         try {
           const result = await target.connection.sendCommand(command)
-          markHealthy(target.adapter.id)
+          markHealthy(target.adapter.id, command.kind)
           return result
         } catch (error) {
           markFailure(target.adapter.id, command.kind, error)
@@ -242,7 +254,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         if (!target.connection.receiveRealtimeInput) throw new Error(`pack runtime cannot receive realtime input type: ${input.type}`)
         try {
           await target.connection.receiveRealtimeInput(input)
-          markHealthy(target.adapter.id)
+          markHealthy(target.adapter.id, input.type)
         } catch (error) {
           markFailure(target.adapter.id, input.type, error)
           throw error
@@ -261,7 +273,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         }
         try {
           const result = await target.connection.invokeQuery(query)
-          markHealthy(target.adapter.id)
+          markHealthy(target.adapter.id, query.capabilityId)
           return result
         } catch (error) {
           markFailure(target.adapter.id, query.capabilityId, error)
@@ -282,13 +294,17 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         commandEventHistory,
         invokeQuery,
         observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
+          for (const event of events) {
+            if (event.type === 'object.upserted') objectOwners.set(event.object.id, event.object.packId)
+            if (event.type === 'object.deleted') objectOwners.delete(event.objectId)
+          }
           const observations = await Promise.allSettled(connections.map(({ connection }) => connection.observeCommittedEvents(events)))
           observations.forEach((result, index) => {
             if (result.status === 'rejected') {
               markFailure(connections[index]!.adapter.id, 'observe-committed-events', result.reason)
               console.error(`pack runtime ${connections[index]!.adapter.id} failed to observe committed events:`, result.reason)
             } else {
-              markHealthy(connections[index]!.adapter.id)
+              markHealthy(connections[index]!.adapter.id, 'observe-committed-events')
             }
           })
         },
@@ -300,7 +316,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
           const results = await Promise.allSettled(connections.map(({ connection }) => connection.setClock(clock)))
           results.forEach((result, index) => {
             if (result.status === 'rejected') markFailure(connections[index]!.adapter.id, 'set-clock', result.reason)
-            else markHealthy(connections[index]!.adapter.id)
+            else markHealthy(connections[index]!.adapter.id, 'set-clock')
           })
           const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
           if (failures.length > 0) throw new AggregateError(failures.map(failure => failure.reason), 'one or more Pack Runtimes rejected the simulation clock')
@@ -312,7 +328,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
                 .find((target) => target.adapter.id === health.runtimeId)
                 ?.connection.health?.()
                 .find((entry) => entry.runtimeId === health.runtimeId)
-              return local?.state === 'degraded' ? local : health
+              return local && local.state !== 'ready' ? local : health
             })
             .sort((left, right) => left.runtimeId.localeCompare(right.runtimeId)),
         close: async (): Promise<void> => {
@@ -322,6 +338,11 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
           const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
           if (failures.length > 0) throw new AggregateError(failures.map(failure => failure.reason), 'one or more Pack Runtimes failed to close')
         },
+      }
+      } catch (error) {
+        for (const unsubscribe of unsubscribes) unsubscribe()
+        await Promise.allSettled(connections.map(({ connection }) => connection.close()))
+        throw error
       }
     },
   }

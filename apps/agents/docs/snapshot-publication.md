@@ -1,0 +1,5 @@
+# Workspace snapshot publication
+
+Rooms and Agent Profiles remain independently validated documents. A save first atomically publishes one commit record containing both documents, then materializes their normal files and removes the commit record. Reads are serialized with saves and prefer a present commit record: after an interrupted publication they see the complete new generation rather than a mixture. This is crash recovery of the current write protocol, not a migration or a second snapshot format for old application schemas.
+
+The autosaver has one in-flight operation and one dirty flag per Workspace. Flush joins the operation and includes changes that arrived while saving; retries recapture the latest state and have one 4.25-second backoff budget. Eviction stops producers, drains consumers, flushes, then disposes. A failed final save retains the quiesced Workspace in memory for an explicit retry instead of discarding its last recoverable state. No shutdown layer adds another retry budget.

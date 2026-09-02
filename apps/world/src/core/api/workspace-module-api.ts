@@ -146,7 +146,7 @@ const simulationRunSummarySchema = z.object({
 
 const runtimeHealthSchema = z.object({
   runtimeId: z.string().min(1),
-  state: z.enum(['ready', 'degraded']),
+  state: z.enum(['ready', 'degraded', 'failed']),
   failureCount: z.number().int().nonnegative(),
   lastSuccessfulInteractionAt: isoTimestampSchema,
   lastFailure: z.object({
