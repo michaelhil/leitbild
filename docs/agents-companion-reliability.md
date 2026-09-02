@@ -11,4 +11,12 @@ Live verification uses the existing Halden Run and the configured OpenAI provide
 
 That live check also exposed an independent World restart defect: the application entry point had no signal handler and the server's stop method did not await Workspace shutdown. A service restart could therefore interrupt final checkpoints and leave Weather ahead of the canonical Run clock. World now handles SIGTERM/SIGINT, stops incoming traffic, drains work, waits for every Run/Workspace checkpoint even if a sibling fails, and exits only after shutdown completes. A regression test launches the actual application process, runs a Weather scenario, terminates it and restores the Run in a new process. Already inconsistent Run checkpoints are not silently rewound or fabricated; recovery requires an explicit reset decision.
 
-Capability discovery for an AI now omits output schemas and ungranted input schemas, and supports an exact Capability filter. A production read-only catalog previously put roughly 120,000 tokens into one response; full schemas remain available in the Host API for inspection.
+Capability discovery for an AI now omits output schemas and ungranted input schemas, and supports an exact Capability filter. The first live discovery turn reported roughly 120,000 prompt tokens. For the same 62 read-only World capabilities, the catalog representation shrank from 239,763 to 22,279 bytes (91%); full schemas remain available in the Host API for inspection.
+
+## Verification
+
+- Deployed code: `58fee8fb`; release `20260902T231128Z-58fee8fbae-b234aa3cf3`.
+- Full checks, build and CI passed: 2,105 tests passed, two skipped.
+- Actual OpenAI `gpt-5.4` reply read the weather-response Run through catalog, capability discovery and context invocation, correctly reporting its title and six operational objects.
+- A further production World service restart retained that Run, its running clock, six objects and the existing companion Room. Reopening reused the Room rather than creating a duplicate.
+- The already inconsistent four-plant Run was not reset or silently repaired. Its scenario and companion conversation remain intact; resetting simulation progress requires the owner's decision.
