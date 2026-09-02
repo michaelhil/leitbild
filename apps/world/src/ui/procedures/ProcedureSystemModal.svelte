@@ -158,6 +158,7 @@
   let runs = $state<ReadonlyArray<ProcedureRunState>>([])
   let runDocuments = $state<ReadonlyMap<string, ProcedureDocument>>(new Map())
   let selectedProcedureId = $state<string | null>(null)
+  let loadingProcedureId = $state<string | null>(null)
   let confirmation = $state<ProcedureConfirmation | null>(null)
   let tagValidation = $state<ReadonlyMap<string, ProcedureTagValidation>>(new Map())
   let csfEvaluations = $state<ReadonlyMap<string, ProcedureCsfEvaluation>>(new Map())
@@ -182,6 +183,7 @@
   let boundsInitialized = false
   let csfRefreshInFlight = false
   let toastTimer: number | null = null
+  let latestProcedureLoadRequest = 0
 
   const currentUnitContext = $derived(unitContexts.find(unit => unit.plantId === plantId) ?? {
     plantId,
@@ -539,17 +541,18 @@
 
   const loadProcedure = async (
     procedureId: string,
-    showLoading = true,
+    showSelectionLoading = true,
     sourceConfig: {
       readonly sourceId?: string
       readonly sourceRevision?: string
       readonly sourcePath?: string
     } = {},
   ): Promise<void> => {
+    const requestId = ++latestProcedureLoadRequest
     try {
-      if (showLoading) loading = true
       error = null
       selectedProcedureId = procedureId
+      if (showSelectionLoading) loadingProcedureId = procedureId
       setLoadStage('document', 'running', procedureId)
       const currentRun = procedureRunFor(runs, {
         sourceId: sourceConfig.sourceId ?? catalog?.source.sourceId,
@@ -561,8 +564,10 @@
         sourceRevision: sourceConfig.sourceRevision ?? currentRun?.sourceRevision,
         sourcePath: sourceConfig.sourcePath ?? currentRun?.sourcePath,
       })
+      if (requestId !== latestProcedureLoadRequest) return
       document = nextDocument
       rememberProcedureDocument(nextDocument)
+      loadingProcedureId = null
       setLoadStage('document', 'done', `${nextDocument.steps.length} steps`)
       const loadTagValidation = async (): Promise<ReadonlyMap<string, ProcedureTagValidation>> => {
         try {
@@ -593,12 +598,15 @@
         loadTagValidation(),
         loadCsfEvaluations(),
       ])
+      if (requestId !== latestProcedureLoadRequest) return
       tagValidation = nextTagValidation
       csfEvaluations = nextCsfEvaluations
     } catch (err) {
+      if (requestId !== latestProcedureLoadRequest) return
       error = errorMessage(err)
+      selectedProcedureId = document?.procedureId ?? null
     } finally {
-      if (showLoading) loading = false
+      if (requestId === latestProcedureLoadRequest) loadingProcedureId = null
     }
   }
 
@@ -1202,8 +1210,10 @@
                   <button
                     type="button"
                     class:active={selectedProcedureId === item.procedureId}
+                    class:loading={loadingProcedureId === item.procedureId}
                     class:run-active={runState === 'active'}
                     class:run-completed={runState === 'completed'}
+                    aria-busy={loadingProcedureId === item.procedureId}
                     onclick={() => void loadProcedure(item.procedureId)}
                   >
                     <span class="procedure-book-icon {runState}">
