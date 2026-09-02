@@ -19,7 +19,7 @@ import { createDroneNativePackRuntimeAdapter } from '../src/packs/drone/native/a
 import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
 import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric-grid/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import type { PackRuntimeAdapter, PackScenarioRuntimeConfig } from '../src/simulation/protocol.ts'
+import type { PackRuntimeAdapter, PackRuntimeConnectionConfig, PackScenarioRuntimeConfig } from '../src/simulation/protocol.ts'
 
 export const testPacks = [ambulancePack, trafficPack, weatherPack, dronePack, processPlantPack, aviationPack, electricGridPack] as const
 
@@ -65,6 +65,24 @@ export const testScenarioRuntimeConfig = (): PackScenarioRuntimeConfig => {
 
 export const testSimulationRunId = (suffix: string): SimulationRunId =>
   `run-${suffix}` as SimulationRunId
+
+export const testRuntimeConnectionConfig = (config: {
+  readonly simulationRunId: SimulationRunId
+  readonly runtimeIds: ReadonlyArray<string>
+  readonly initialObjects?: PackScenarioRuntimeConfig['initialObjects']
+  readonly runtimeConfig?: unknown
+}): PackRuntimeConnectionConfig => ({
+  simulationRunId: config.simulationRunId,
+  scenario: {
+    scenarioId: 'scenario:test-runtime',
+    runtimeIds: config.runtimeIds,
+    connections: [],
+    world: { startsAt: '2026-01-01T00:00:00.000Z' as PackScenarioRuntimeConfig['world']['startsAt'], environment: { mode: 'test' } },
+    initialObjects: config.initialObjects ?? [],
+    runtimeConfig: config.runtimeConfig ?? {},
+  },
+  ...(config.initialObjects === undefined ? {} : { initialObjects: config.initialObjects }),
+})
 
 export const waitForCondition = async (
   label: string,

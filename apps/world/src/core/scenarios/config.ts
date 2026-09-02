@@ -49,38 +49,38 @@ const scenarioGuidanceConfigSchema = z.object({
   objectIds: z.array(objectIdSchema).default([]),
   dismissible: z.boolean().default(true),
   tone: z.enum(['default', 'update']).default('default'),
-})
+}).strict()
 
 const scenarioTimelineActionConfigSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('show_guidance'),
     guidance: scenarioGuidanceConfigSchema,
-  }),
+  }).strict(),
   z.object({
     type: z.literal('hide_guidance'),
     guidanceId: idSchema.optional(),
-  }),
+  }).strict(),
   z.object({
     type: z.literal('highlight_objects'),
     objectIds: z.array(objectIdSchema).min(1),
-  }),
+  }).strict(),
   z.object({
     type: z.literal('clear_highlights'),
     objectIds: z.array(objectIdSchema).optional(),
-  }),
+  }).strict(),
   z.object({
     type: z.literal('create_object'),
     object: timelineScenarioItemSchema,
-  }),
+  }).strict(),
   z.object({
     type: z.literal('update_object'),
     objectId: objectIdSchema,
     mutation: scenarioMutationConfigSchema,
-  }),
+  }).strict(),
   z.object({
     type: z.literal('delete_object'),
     objectId: objectIdSchema,
-  }),
+  }).strict(),
   z.object({
     type: z.literal('emit_signal'),
     signal: z.object({
@@ -94,12 +94,12 @@ const scenarioTimelineActionConfigSchema = z.discriminatedUnion('type', [
       causationId: idSchema.optional(),
       ttlMs: z.number().finite().positive().optional(),
     }).strict(),
-  }),
+  }).strict(),
   z.object({
     type: z.literal('invoke_capability'),
     capabilityId: z.string().regex(/^world\.[a-z][a-z0-9-]*(?:[._-][a-z0-9-]+)+$/),
     input: z.custom<unknown>(value => value !== undefined, 'input is required'),
-  }),
+  }).strict(),
 ])
 
 const scenarioTimelineCueConfigSchema = z.object({
@@ -107,32 +107,32 @@ const scenarioTimelineCueConfigSchema = z.object({
   at: z.object({
     kind: z.literal('after_scenario_start'),
     seconds: z.number().finite().nonnegative(),
-  }),
+  }).strict(),
   title: z.string().min(1).optional(),
   actions: z.array(scenarioTimelineActionConfigSchema).min(1),
-})
+}).strict()
 
 const scenarioTimelineConfigSchema = z.object({
   cues: z.array(scenarioTimelineCueConfigSchema).default([]),
-})
+}).strict()
 
 const surfaceMapRegionConfigSchema = z.object({
   center: lonLatSchema,
   zoom: z.number().finite().min(0).max(24),
   layers: z.array(z.enum(['objects', 'routes', 'traffic', 'weather', 'grid', 'highlights'])).default(['objects', 'routes', 'traffic', 'weather', 'grid', 'highlights']),
-})
+}).strict()
 
 const surfaceObjectRailSectionConfigSchema = z.object({
   categoryId: idSchema,
   visible: z.boolean().default(true),
   collapsed: z.boolean().default(false),
   visibleFields: z.array(idSchema).default([]),
-})
+}).strict()
 
 const surfaceObjectRailRegionConfigSchema = z.object({
   width: z.number().finite().min(0).max(900).optional(),
   sections: z.array(surfaceObjectRailSectionConfigSchema).default([]),
-})
+}).strict()
 
 const scenarioViewSchema = z.object({
   map: surfaceMapRegionConfigSchema,
@@ -155,7 +155,7 @@ export const scenarioSourceSchema = z.object({
   world: z.object({
     startsAt: z.string().datetime(),
     environment: z.record(z.string(), z.unknown()).default({}),
-  }),
+  }).strict(),
   view: scenarioViewSchema,
   recording: z.array(scenarioRecordingSelectionSchema).default([]),
   connections: z.array(electricalConnectionSpecSchema).default([]),

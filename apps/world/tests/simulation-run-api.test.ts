@@ -257,7 +257,7 @@ describe('Simulation Run API', () => {
     expect(invalidId.body.error.code).toBe('invalid_request')
   })
 
-  test('invokes typed Pack queries through the run-pinned Capability set', async () => {
+  test('invokes typed query Capabilities through the run-pinned Capability set', async () => {
     const registry = await createTestRegistry()
     try {
       const created = await createRun(registry)

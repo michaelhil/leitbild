@@ -1,8 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { z } from 'zod'
-import type { IsoTimestamp } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
+import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import type { CompiledPlantGraph, ComponentId, ProcessPlantDisplayField } from '../graph/index.ts'
 import { plantGraphToMermaid } from '../graph/index.ts'
 import type { ProcessPlantVariableHandle } from '../runtime/variable-table.ts'
@@ -10,12 +9,12 @@ import { processPlantComponentBehaviorSourcePathByKind } from '../runtime/behavi
 import { compileProcessDisplay } from '../displays/compiler.ts'
 import { resolveProcessPlantDisplayDefinitionForGraph } from '../displays/catalog.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
-import { requirePlant, success, plantQuerySchema } from './common.ts'
+import { requirePlant, plantQuerySchema } from './common.ts'
 
 export const artifactReadQuerySchema = z.object({
   plantId: idSchema,
   artifact: z.enum(['authored-spec', 'compiled-graph-mermaid']),
-})
+}).strict()
 
 interface ArtifactComponentView {
   readonly id: ComponentId
@@ -124,7 +123,7 @@ const componentSourceImportsFor = (sourcePath: string): ReadonlyArray<ComponentS
 export const displayProfileReadQuerySchema = z.object({
   plantId: idSchema,
   profileId: idSchema,
-})
+}).strict()
 
 export const processPlantGraphQueryKinds = [
   'world.process-plant.plants.list',
@@ -292,13 +291,12 @@ const displayProfileView = (
 }
 
 export const answerProcessPlantGraphQuery = (config: {
-  readonly request: PackQueryRequest
+  readonly request: PackRuntimeQuery
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
-  readonly at: IsoTimestamp
-}): PackQueryResponse | undefined => {
-  if (!processPlantGraphQueryKinds.some(kind => kind === config.request.kind)) return undefined
-  if (config.request.kind === 'world.process-plant.plants.list') {
-    return success(config.request, {
+}): unknown | undefined => {
+  if (!processPlantGraphQueryKinds.some(kind => kind === config.request.capabilityId)) return undefined
+  if (config.request.capabilityId === 'world.process-plant.plants.list') {
+    return {
       plants: [...config.plants.values()].map(({ plant, runtime }) => ({
         id: plant.id,
         componentLibrary: plant.componentLibrary,
@@ -308,19 +306,19 @@ export const answerProcessPlantGraphQuery = (config: {
         variableCount: plant.graph.variables.length,
         elapsedMs: runtime.elapsedMs(),
       })),
-    }, config.at)
+    }
   }
-  if (config.request.kind === 'world.process-plant.graph.read') {
-    const payload = plantQuerySchema.parse(config.request.payload)
+  if (config.request.capabilityId === 'world.process-plant.graph.read') {
+    const payload = plantQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
-    return success(config.request, { graph: graphView(system.plant.graph) }, config.at)
+    return { graph: graphView(system.plant.graph) }
   }
-  if (config.request.kind === 'world.process-plant.artifact.read') {
-    const payload = artifactReadQuerySchema.parse(config.request.payload)
+  if (config.request.capabilityId === 'world.process-plant.artifact.read') {
+    const payload = artifactReadQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
-    return success(config.request, artifactView(system, payload.artifact), config.at)
+    return artifactView(system, payload.artifact)
   }
-  const payload = displayProfileReadQuerySchema.parse(config.request.payload)
+  const payload = displayProfileReadQuerySchema.parse(config.request.input)
   const system = requirePlant(config.plants, payload.plantId)
-  return success(config.request, displayProfileView(system, payload.profileId), config.at)
+  return displayProfileView(system, payload.profileId)
 }

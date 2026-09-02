@@ -1,14 +1,13 @@
 import { z } from 'zod'
-import type { IsoTimestamp } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
+import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import {
   projectProcessGraph,
   type VariablePath,
 } from '../graph/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import type { ProcessPlantVariableHandle } from '../runtime/variable-table.ts'
-import { requirePlant, success } from './common.ts'
+import { requirePlant } from './common.ts'
 import { compileProcessDisplay } from '../displays/compiler.ts'
 import {
   listProcessPlantDisplayDefinitionsForGraph,
@@ -30,11 +29,11 @@ import type { ProcessPlantIcLifecycleState } from '../runtime/index.ts'
 export const displayQuerySchema = z.object({
   plantId: idSchema,
   displayId: idSchema,
-})
+}).strict()
 
 export const graphLensQuerySchema = displayQuerySchema.extend({
   lens: processDisplayGraphLensSchema,
-})
+}).strict()
 
 export const processPlantDisplayQueryKinds = [
   'world.process-plant.displays.list',
@@ -201,16 +200,15 @@ const alarmSnapshotFor = (system: ProcessPlantRuntimeInstance): ProcessDisplayAl
 }
 
 export const answerProcessPlantDisplayQuery = (config: {
-  readonly request: PackQueryRequest
+  readonly request: PackRuntimeQuery
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
-  readonly at: IsoTimestamp
-}): PackQueryResponse | undefined => {
-  if (!processPlantDisplayQueryKinds.some(kind => kind === config.request.kind)) return undefined
-  if (config.request.kind === 'world.process-plant.displays.list') {
-    const payload = z.object({ plantId: idSchema }).parse(config.request.payload)
+}): unknown | undefined => {
+  if (!processPlantDisplayQueryKinds.some(kind => kind === config.request.capabilityId)) return undefined
+  if (config.request.capabilityId === 'world.process-plant.displays.list') {
+    const payload = z.object({ plantId: idSchema }).strict().parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
     const displays = listProcessPlantDisplayDefinitionsForGraph(system.plant.graph)
-    return success(config.request, {
+    return {
       plantId: system.plant.id,
       displays: displays.map(display => ({
         id: display.id,
@@ -218,17 +216,17 @@ export const answerProcessPlantDisplayQuery = (config: {
         description: display.description,
         lenses: display.lenses,
       })),
-    }, config.at)
+    }
   }
-  const payload = displayQuerySchema.parse(config.request.payload)
+  const payload = displayQuerySchema.parse(config.request.input)
   const system = requirePlant(config.plants, payload.plantId)
   const plan = compiledDisplayFor(system, payload.displayId)
   const display = plan.display
-  if (config.request.kind === 'world.process-plant.display.read') {
-    return success(config.request, { plantId: system.plant.id, display }, config.at)
+  if (config.request.capabilityId === 'world.process-plant.display.read') {
+    return { plantId: system.plant.id, display }
   }
-  if (config.request.kind === 'world.process-plant.display.project') {
-    const projectPayload = graphLensQuerySchema.parse(config.request.payload)
+  if (config.request.capabilityId === 'world.process-plant.display.project') {
+    const projectPayload = graphLensQuerySchema.parse(config.request.input)
     const graphProjection = projectProcessGraph({
       graph: system.plant.graph,
       ...projectPayload.lens,
@@ -237,7 +235,7 @@ export const answerProcessPlantDisplayQuery = (config: {
       display,
       graphProjection,
     })
-    return success(config.request, {
+    return {
       plantId: system.plant.id,
       displayId: display.id,
       graphProjection: {
@@ -251,12 +249,12 @@ export const answerProcessPlantDisplayQuery = (config: {
         hiddenWidgetIds: displayProjection.hiddenWidgets.map(widget => widget.id),
         hiddenPathIds: displayProjection.hiddenPaths.map(path => path.id),
       },
-    }, config.at)
+    }
   }
-  return success(config.request, {
+  return {
     plantId: system.plant.id,
     displayId: display.id,
     values: snapshotValuesFor(system, plan),
     alarms: alarmSnapshotFor(system),
-  }, config.at)
+  }
 }

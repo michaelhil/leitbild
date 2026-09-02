@@ -5,9 +5,9 @@ import type {
   PackRuntimeConnectionConfig,
   PackRuntimeEvent,
   PackRuntimeEventHandler,
+  PackRuntimeQuery,
 } from '../../../../simulation/protocol.ts'
 import { aviationSourceStatusCapability, aviationSourceStatusQueryKind } from '../../capabilities.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../../core/packs/protocol.ts'
 import {
   aviationRuntimePackId,
   aviationOpenSkyAdapterId,
@@ -210,7 +210,7 @@ export const createOpenSkyPackRuntimeAdapter = (config: OpenSkyAdapterConfig): P
       const handlers = new Set<PackRuntimeEventHandler>()
       const poll: ActivePoll = { handle: null, inFlight: null }
       let clock: SimulationClockState = {
-        currentTime: connectionConfig.scenario?.world.startsAt ?? runtime.nowIso(),
+        currentTime: connectionConfig.scenario.world.startsAt,
         updatedAt: runtime.nowIso(),
         paused: false,
         speed: 1,
@@ -281,28 +281,16 @@ export const createOpenSkyPackRuntimeAdapter = (config: OpenSkyAdapterConfig): P
           rejectedAt: runtime.nowIso(),
           reason: `aviation.opensky does not accept commands (kind=${command.kind})`,
         }),
-        query: async (request: PackQueryRequest): Promise<PackQueryResponse> => {
-          if (request.kind === aviationSourceStatusQueryKind) {
+        invokeQuery: async (request: PackRuntimeQuery): Promise<unknown> => {
+          if (request.capabilityId === aviationSourceStatusQueryKind) {
             return {
-              ok: true,
-              packId: request.packId,
-              kind: request.kind,
-              result: {
-                source: 'opensky',
-                aircraftInBbox: state.size,
-                lastError,
-                polling: poll.handle !== null,
-              },
-              generatedAt: runtime.nowIso(),
+              source: 'opensky',
+              aircraftInBbox: state.size,
+              lastError,
+              polling: poll.handle !== null,
             }
           }
-          return {
-            ok: false,
-            packId: request.packId,
-            kind: request.kind,
-            reason: `opensky adapter does not answer query kind: ${request.kind}`,
-            generatedAt: runtime.nowIso(),
-          }
+          throw new Error(`OpenSky runtime does not implement query Capability: ${request.capabilityId}`)
         },
         observeCommittedEvents: async (_events: ReadonlyArray<SimulationRunEvent>): Promise<void> => undefined,
         setClock: async (next: SimulationClockState): Promise<void> => { clock = next },

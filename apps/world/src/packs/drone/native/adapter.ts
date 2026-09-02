@@ -1,8 +1,7 @@
 import type { CommandEnvelope, CommandResult, SimulationRunEvent, GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, OperationalObject, SimulationClockState } from '../../../core/model/index.ts'
 import { commandResultSchema, nowIso, objectIdSchema } from '../../../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
-import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeRealtimeMessage, PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
-import { definePackCommandCapability } from '../../../simulation/capabilities.ts'
+import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeQuery, PackRuntimeRealtimeMessage, PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
+import { defineSimulationCommandCapability } from '../../../simulation/capabilities.ts'
 import {
   armDroneCommandKind,
   armDronePayloadSchema,
@@ -87,11 +86,11 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
   packId: dronePackId,
   clock: 'simulation',
   capabilities: [
-    definePackCommandCapability({ id: createDroneCommandKind, title: 'Create drone', description: 'Creates a Drone Pack vehicle from a validated vehicle model.', input: createDronePayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [], payload: createDronePayloadSchema.parse(input) }) }),
-    definePackCommandCapability({ id: armDroneCommandKind, title: 'Set drone arming', description: 'Arms or disarms one drone after validating its current readiness.', input: armDronePayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [armDronePayloadSchema.parse(input).droneId], payload: armDronePayloadSchema.parse(input) }) }),
-    definePackCommandCapability({ id: manualControlCommandKind, title: 'Apply drone manual control', description: 'Applies a short-lived validated manual-control sample to one drone.', input: manualControlPayloadSchema, output: commandResultSchema, idempotent: false, buildCommand: input => ({ targetObjectIds: [manualControlPayloadSchema.parse(input).droneId], payload: manualControlPayloadSchema.parse(input) }) }),
-    definePackCommandCapability({ id: navigateDroneCommandKind, title: 'Navigate drone', description: 'Commands one drone to navigate to a validated guided target.', input: navigateDronePayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [navigateDronePayloadSchema.parse(input).droneId], payload: navigateDronePayloadSchema.parse(input) }) }),
-    definePackCommandCapability({ id: takeoffDroneCommandKind, title: 'Take off drone', description: 'Commands one armed drone to take off to an explicit altitude.', input: takeoffDronePayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [takeoffDronePayloadSchema.parse(input).droneId], payload: takeoffDronePayloadSchema.parse(input) }) }),
+    defineSimulationCommandCapability({ id: createDroneCommandKind, title: 'Create drone', description: 'Creates a Drone Pack vehicle from a validated vehicle model.', input: createDronePayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [], payload: createDronePayloadSchema.parse(input) }) }),
+    defineSimulationCommandCapability({ id: armDroneCommandKind, title: 'Set drone arming', description: 'Arms or disarms one drone after validating its current readiness.', input: armDronePayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [armDronePayloadSchema.parse(input).droneId], payload: armDronePayloadSchema.parse(input) }) }),
+    defineSimulationCommandCapability({ id: manualControlCommandKind, title: 'Apply drone manual control', description: 'Applies a short-lived validated manual-control sample to one drone.', input: manualControlPayloadSchema, output: commandResultSchema, idempotent: false, buildCommand: input => ({ targetObjectIds: [manualControlPayloadSchema.parse(input).droneId], payload: manualControlPayloadSchema.parse(input) }) }),
+    defineSimulationCommandCapability({ id: navigateDroneCommandKind, title: 'Navigate drone', description: 'Commands one drone to navigate to a validated guided target.', input: navigateDronePayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [navigateDronePayloadSchema.parse(input).droneId], payload: navigateDronePayloadSchema.parse(input) }) }),
+    defineSimulationCommandCapability({ id: takeoffDroneCommandKind, title: 'Take off drone', description: 'Commands one armed drone to take off to an explicit altitude.', input: takeoffDronePayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [takeoffDronePayloadSchema.parse(input).droneId], payload: takeoffDronePayloadSchema.parse(input) }) }),
     ...[
       [landDroneCommandKind, 'Land drone', 'Commands one drone to land.'],
       [returnToLaunchDroneCommandKind, 'Return drone to launch', 'Commands one drone to return to its launch point.'],
@@ -100,13 +99,13 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       [pauseDroneMissionCommandKind, 'Pause drone mission', 'Pauses the current mission for one drone.'],
       [clearDroneMissionCommandKind, 'Clear drone mission', 'Clears the uploaded mission for one drone.'],
       [clearDroneGeofenceCommandKind, 'Clear drone geofence', 'Clears the configured geofence for one drone.'],
-    ].map(([id, title, description]) => definePackCommandCapability({ id: id!, title: title!, description: description!, input: singleDronePayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [singleDronePayloadSchema.parse(input).droneId], payload: singleDronePayloadSchema.parse(input) }) })),
-    definePackCommandCapability({ id: uploadDroneMissionCommandKind, title: 'Upload drone mission', description: 'Uploads a validated ordered mission plan to one drone.', input: uploadDroneMissionPayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [uploadDroneMissionPayloadSchema.parse(input).droneId], payload: uploadDroneMissionPayloadSchema.parse(input) }) }),
-    definePackCommandCapability({ id: uploadDroneGeofenceCommandKind, title: 'Upload drone geofence', description: 'Sets validated geofence polygons for one drone.', input: uploadDroneGeofencePayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [uploadDroneGeofencePayloadSchema.parse(input).droneId], payload: uploadDroneGeofencePayloadSchema.parse(input) }) }),
-    definePackCommandCapability({ id: setDroneGimbalCommandKind, title: 'Set drone gimbal', description: 'Sets the gimbal pitch and yaw of one drone.', input: setDroneGimbalPayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [setDroneGimbalPayloadSchema.parse(input).droneId], payload: setDroneGimbalPayloadSchema.parse(input) }) }),
-    definePackCommandCapability({ id: configureDroneVehicleModelCommandKind, title: 'Configure drone vehicle model', description: 'Replaces one drone vehicle model with a validated model definition.', input: configureDroneVehicleModelPayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [configureDroneVehicleModelPayloadSchema.parse(input).droneId], payload: configureDroneVehicleModelPayloadSchema.parse(input) }) }),
-    definePackCommandCapability({ id: swarmCommandKind, title: 'Command drone swarm', description: 'Applies a validated formation or navigation command to an explicit swarm or drone set.', input: swarmCommandPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: swarmCommandPayloadSchema.parse(input).droneIds, payload: swarmCommandPayloadSchema.parse(input) }) }),
-    definePackCommandCapability({ id: attackCommandKind, title: 'Apply drone payload effect', description: 'Invokes one validated drone payload effect against an explicit target object.', input: attackPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [attackPayloadSchema.parse(input).attackerId], payload: attackPayloadSchema.parse(input) }) }),
+    ].map(([id, title, description]) => defineSimulationCommandCapability({ id: id!, title: title!, description: description!, input: singleDronePayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [singleDronePayloadSchema.parse(input).droneId], payload: singleDronePayloadSchema.parse(input) }) })),
+    defineSimulationCommandCapability({ id: uploadDroneMissionCommandKind, title: 'Upload drone mission', description: 'Uploads a validated ordered mission plan to one drone.', input: uploadDroneMissionPayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [uploadDroneMissionPayloadSchema.parse(input).droneId], payload: uploadDroneMissionPayloadSchema.parse(input) }) }),
+    defineSimulationCommandCapability({ id: uploadDroneGeofenceCommandKind, title: 'Upload drone geofence', description: 'Sets validated geofence polygons for one drone.', input: uploadDroneGeofencePayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [uploadDroneGeofencePayloadSchema.parse(input).droneId], payload: uploadDroneGeofencePayloadSchema.parse(input) }) }),
+    defineSimulationCommandCapability({ id: setDroneGimbalCommandKind, title: 'Set drone gimbal', description: 'Sets the gimbal pitch and yaw of one drone.', input: setDroneGimbalPayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [setDroneGimbalPayloadSchema.parse(input).droneId], payload: setDroneGimbalPayloadSchema.parse(input) }) }),
+    defineSimulationCommandCapability({ id: configureDroneVehicleModelCommandKind, title: 'Configure drone vehicle model', description: 'Replaces one drone vehicle model with a validated model definition.', input: configureDroneVehicleModelPayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [configureDroneVehicleModelPayloadSchema.parse(input).droneId], payload: configureDroneVehicleModelPayloadSchema.parse(input) }) }),
+    defineSimulationCommandCapability({ id: swarmCommandKind, title: 'Command drone swarm', description: 'Applies a validated formation or navigation command to an explicit swarm or drone set.', input: swarmCommandPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: swarmCommandPayloadSchema.parse(input).droneIds, payload: swarmCommandPayloadSchema.parse(input) }) }),
+    defineSimulationCommandCapability({ id: attackCommandKind, title: 'Apply drone payload effect', description: 'Invokes one validated drone payload effect against an explicit target object.', input: attackPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [attackPayloadSchema.parse(input).attackerId], payload: attackPayloadSchema.parse(input) }) }),
     ...droneQueryCapabilities,
   ],
   realtimeInputTypes: [droneManualIntentRealtimeInputType],
@@ -114,7 +113,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
     [manualControlCommandKind]: 'snapshot-only',
   },
   connect: async (config): Promise<PackRuntimeConnection> => {
-    const runtimeConfig = parseDroneNativeRuntimeConfig(config.scenario?.runtimeConfig ?? {})
+    const runtimeConfig = parseDroneNativeRuntimeConfig(config.scenario.runtimeConfig)
     const objects = new Map<string, OperationalObject>()
     const homePoints = new Map<string, GeoJsonPoint>()
     const missionPlans = new Map<string, NativeMissionPlan>()
@@ -157,7 +156,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       return record
     }
 
-    for (const object of config.initialObjects ?? config.scenario?.initialObjects ?? []) {
+    for (const object of config.initialObjects ?? config.scenario.initialObjects) {
       const record = upsertRuntimeObject(object)
       if (record) homePoints.set(object.id, record.data.pose.point)
     }
@@ -165,7 +164,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
     const handlers = new Set<PackRuntimeEventHandler>()
     let closed = false
     let clock: SimulationClockState = {
-      currentTime: config.scenario?.world.startsAt ?? nowIso(),
+      currentTime: config.scenario.world.startsAt,
       updatedAt: nowIso(),
       paused: false,
       speed: 1,
@@ -722,7 +721,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
           emitProjectedObject: false,
         })
       },
-      query: async (request: PackQueryRequest): Promise<PackQueryResponse> =>
+      invokeQuery: async (request: PackRuntimeQuery): Promise<unknown> =>
         answerDroneQuery({ request, objects: [...objects.values()], models: runtimeConfig.models }),
       observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
         for (const event of events) {

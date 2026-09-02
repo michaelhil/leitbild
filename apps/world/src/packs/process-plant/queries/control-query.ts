@@ -1,13 +1,12 @@
 import { z } from 'zod'
-import type { IsoTimestamp } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
+import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import { evaluateProcessPlantAssessments } from '../assessments.ts'
 import { processPlantControlWritePayloadSchema } from '../commands.ts'
 import { validateProcessPlantControlWrite } from '../control-write-validation.ts'
 import { evaluateProcessPlantIcCondition, processPlantIcConditionSchema } from '../runtime/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
-import { requirePlant, success } from './common.ts'
+import { requirePlant } from './common.ts'
 
 export const conditionsEvaluateQuerySchema = z.object({
   plantId: idSchema,
@@ -26,39 +25,38 @@ export const processPlantControlQueryKinds = [
 ] as const
 
 export const answerProcessPlantControlQuery = (config: {
-  readonly request: PackQueryRequest
+  readonly request: PackRuntimeQuery
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
-  readonly at: IsoTimestamp
-}): PackQueryResponse | undefined => {
-  if (!processPlantControlQueryKinds.some(kind => kind === config.request.kind)) return undefined
-  if (config.request.kind === 'world.process-plant.conditions.evaluate') {
-    const payload = conditionsEvaluateQuerySchema.parse(config.request.payload)
+}): unknown | undefined => {
+  if (!processPlantControlQueryKinds.some(kind => kind === config.request.capabilityId)) return undefined
+  if (config.request.capabilityId === 'world.process-plant.conditions.evaluate') {
+    const payload = conditionsEvaluateQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
     const evaluation = evaluateProcessPlantIcCondition({
       system: system.plant,
       runtime: system.runtime,
       condition: payload.condition,
     })
-    return success(config.request, {
+    return {
       plantId: payload.plantId,
       matches: evaluation.matches,
       signalsRead: evaluation.signalsRead,
-    }, config.at)
+    }
   }
-  if (config.request.kind === 'world.process-plant.assessments.evaluate') {
-    const payload = assessmentsEvaluateQuerySchema.parse(config.request.payload)
+  if (config.request.capabilityId === 'world.process-plant.assessments.evaluate') {
+    const payload = assessmentsEvaluateQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
-    return success(config.request, {
+    return {
       plantId: payload.plantId,
       assessments: evaluateProcessPlantAssessments(system, payload.assessmentIds),
-    }, config.at)
+    }
   }
-  const payload = processPlantControlWritePayloadSchema.parse(config.request.payload)
+  const payload = processPlantControlWritePayloadSchema.parse(config.request.input)
   const system = requirePlant(config.plants, payload.plantId)
-  return success(config.request, validateProcessPlantControlWrite({
+  return validateProcessPlantControlWrite({
     system: system.plant,
     runtime: system.runtime,
     ...(system.protection === undefined ? {} : { protection: system.protection }),
     payload,
-  }), config.at)
+  })
 }

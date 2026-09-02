@@ -6,6 +6,8 @@ import { packDescriptorSchema, type PackDescriptor } from '@leitbild/contracts'
 import type { Component } from 'svelte'
 import { z } from 'zod'
 
+export type WorldPackDescriptor = PackDescriptor & { readonly description: string }
+
 /** Builder a pack declares to contribute a reference dataset. The CLI reads `id`
  * for filtering and listing; `build` runs only when the pipeline actually
  * builds the dataset (so env reads happen at the right moment). */
@@ -200,28 +202,6 @@ export const packMapAreaFeatureSchema = z.object({
   sortKey: z.number().finite().optional(),
 }).strict()
 
-export interface PackQueryRequest {
-  readonly packId: string
-  readonly kind: string
-  readonly payload: unknown
-}
-
-export type PackQueryResponse =
-  | {
-      readonly ok: true
-      readonly packId: string
-      readonly kind: string
-      readonly result: unknown
-      readonly generatedAt: IsoTimestamp
-    }
-  | {
-      readonly ok: false
-      readonly packId: string
-      readonly kind: string
-      readonly reason: string
-      readonly generatedAt: IsoTimestamp
-    }
-
 export interface PackMapAreaFeatureQuery {
   readonly capabilityId: string
   readonly input: unknown
@@ -283,6 +263,7 @@ export interface PackScenarioAuthoringItemType {
   readonly defaultItem: Readonly<Record<string, unknown>>
   readonly placement?: {
     readonly target: 'item'
+    readonly kind: 'point' | 'route' | 'polygon'
     readonly path: ReadonlyArray<string | number>
   }
   readonly linkedConfig?: {
@@ -422,20 +403,29 @@ export interface PackUiContribution {
   readonly surfacePanels: ReadonlyArray<PackSurfacePanelContribution>
 }
 
-export interface WorldPack {
-  readonly descriptor: PackDescriptor
+/** The browser-safe projection of a World Pack. It contains only contributions
+ * used by the generic World UI and may be loaded without runtime, compilation,
+ * persistence, or build-time dependencies. */
+export interface WorldPackView {
+  readonly descriptor: WorldPackDescriptor
+  readonly runtime?: PackRuntimeContribution
+  readonly referenceData?: Pick<PackReferenceDataContribution, 'datasetIds'>
+  readonly presentation: PackPresentationContribution
+  readonly creation?: PackCreationContribution
+  readonly targeting?: PackTargetingContribution
+  readonly ui?: PackUiContribution
+}
+
+/** Complete server-side Pack definition. World Pack views are projections of
+ * this contract, never partial World Packs with fabricated schemas. */
+export interface WorldPack extends WorldPackView {
   readonly scenarioConfigSchema: z.ZodType
   readonly authoring?: PackScenarioAuthoringContribution
-  readonly runtime?: PackRuntimeContribution
   readonly recording?: PackRecordingContribution
   readonly knowledge?: PackKnowledgeContribution
   readonly referenceData?: PackReferenceDataContribution
   readonly scenario?: PackScenarioSupport
-  readonly presentation: PackPresentationContribution
-  readonly creation?: PackCreationContribution
-  readonly targeting?: PackTargetingContribution
   readonly interactions?: PackInteractionContribution
-  readonly ui?: PackUiContribution
 }
 
 export const emptyPackScenarioConfigSchema = z.object({}).strict()
@@ -444,16 +434,16 @@ export const createWorldPackDescriptor = (config: {
   readonly id: string
   readonly version: string
   readonly name: string
-  readonly description?: string
+  readonly description: string
   readonly contributions: ReadonlyArray<string>
-}): PackDescriptor => packDescriptorSchema.parse({
+}): WorldPackDescriptor => packDescriptorSchema.parse({
   schemaVersion: '1.0.0',
   id: config.id,
   moduleId: 'world',
   version: config.version,
   name: config.name,
-  ...(config.description === undefined ? {} : { description: config.description }),
+  description: config.description,
   platformVersionRange: '^1.0.0',
   dependencies: [],
   contributions: config.contributions.map(kind => ({ kind })),
-})
+}) as WorldPackDescriptor

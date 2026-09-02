@@ -17,21 +17,32 @@ const lonLatSchema = z.tuple([
   z.number().finite().min(-90).max(90),
 ])
 
-export const trafficConditionSpecSchema = z.object({
+const trafficConditionBaseSchema = z.object({
   pack: z.literal('traffic'),
-  type: z.literal('traffic_condition'),
   id: objectIdSchema,
   label: z.string().min(1),
-  geometryMode: z.enum(['road_segment', 'area']),
-  path: z.array(lonLatSchema).min(2).optional(),
-  from: lonLatSchema.optional(),
-  to: lonLatSchema.optional(),
-  polygon: z.array(lonLatSchema).min(4).optional(),
   condition: z.enum(['free_flow', 'congestion', 'closure', 'slowdown', 'access_restricted']).default('slowdown'),
   severity: trafficSeveritySchema,
   speedFactor: z.number().finite().positive().max(1).optional(),
   reason: z.string().min(1),
 })
+
+export const trafficRoadConditionSpecSchema = trafficConditionBaseSchema.extend({
+  type: z.literal('road_condition'),
+  path: z.array(lonLatSchema).min(2).optional(),
+  from: lonLatSchema.optional(),
+  to: lonLatSchema.optional(),
+}).strict()
+
+export const trafficAreaConditionSpecSchema = trafficConditionBaseSchema.extend({
+  type: z.literal('area_condition'),
+  polygon: z.array(lonLatSchema).min(4),
+}).strict()
+
+export const trafficConditionSpecSchema = z.discriminatedUnion('type', [
+  trafficRoadConditionSpecSchema,
+  trafficAreaConditionSpecSchema,
+])
 
 const lineStringFromPath = (path: ReadonlyArray<readonly [number, number]>): GeoJsonLineString => ({
   type: 'LineString',
@@ -92,7 +103,7 @@ const trafficConditionObject = (config: {
   packData: {
     type: 'traffic_condition',
     schemaVersion: 2,
-    geometryMode: config.spec.geometryMode as TrafficGeometryMode,
+    geometryMode: (config.spec.type === 'road_condition' ? 'road_segment' : 'area') as TrafficGeometryMode,
     condition: config.spec.condition,
     severity: config.spec.severity,
     affectedModes: ['road_vehicle', 'emergency_vehicle'],
@@ -108,7 +119,7 @@ const geometryFor = async (
   spec: z.infer<typeof trafficConditionSpecSchema>,
   context: Parameters<PackScenarioSupport['expandItem']>[1],
 ): Promise<GeoJsonLineString | GeoJsonPolygon> => {
-  if (spec.geometryMode === 'road_segment') {
+  if (spec.type === 'road_condition') {
     if (spec.from && spec.to) {
       const route = await context.routing.route({
         from: geoPointFromLonLat(spec.from[0], spec.from[1]),
@@ -124,7 +135,10 @@ const geometryFor = async (
 }
 
 export const trafficScenarioSupport: PackScenarioSupport = {
-  itemSchemas: { traffic_condition: trafficConditionSpecSchema },
+  itemSchemas: {
+    road_condition: trafficRoadConditionSpecSchema,
+    area_condition: trafficAreaConditionSpecSchema,
+  },
   expandItem: async (rawSpec, context) => {
     const spec = trafficConditionSpecSchema.parse(rawSpec)
     const object = trafficConditionObject({ spec, geometry: await geometryFor(spec, context), at: context.at })

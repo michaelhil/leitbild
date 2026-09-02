@@ -26,11 +26,11 @@ const lonLatSchema = z.tuple([
 const victimCountSchema = z.union([
   z.object({
     state: z.literal('unknown'),
-  }),
+  }).strict(),
   z.object({
     state: z.enum(['estimated', 'confirmed']).default('estimated'),
     count: z.number().int().nonnegative(),
-  }),
+  }).strict(),
 ])
 
 export const hospitalSpecSchema = z.object({
@@ -42,8 +42,8 @@ export const hospitalSpecSchema = z.object({
   traumaBeds: z.object({
     total: z.number().int().nonnegative(),
     available: z.number().int().nonnegative(),
-  }),
-})
+  }).strict(),
+}).strict()
 
 export const ambulanceSpecSchema = z.object({
   pack: z.literal('ambulance'),
@@ -56,7 +56,7 @@ export const ambulanceSpecSchema = z.object({
   patientsOnBoard: z.number().int().nonnegative().optional(),
   targetId: objectIdSchema.optional(),
   status: z.string().min(1).optional(),
-})
+}).strict()
 
 export const incidentSpecSchema = z.object({
   pack: z.literal('ambulance'),
@@ -67,13 +67,13 @@ export const incidentSpecSchema = z.object({
   triage: z.enum(['green', 'yellow', 'red']),
   victims: victimCountSchema.default({ state: 'unknown' }),
   status: z.enum(['open', 'assigned', 'responding', 'resolved']).optional(),
-})
+}).strict()
 
 const setIncidentVictimsMutationSchema = z.object({
   pack: z.literal('ambulance'),
   type: z.literal('set_incident_victims'),
   victims: victimCountSchema,
-})
+}).strict()
 
 const pointFromLonLat = (value: readonly [number, number]): GeoJsonPoint =>
   geoPointFromLonLat(value[0], value[1])

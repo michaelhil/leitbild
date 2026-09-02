@@ -24,7 +24,7 @@ import type { SimulationRunId } from '../src/core/model/index.ts'
 import { createWorldPackDescriptor, emptyPackScenarioConfigSchema, type WorldPack, type PackObjectPresentation } from '../src/core/packs/protocol.ts'
 
 describe('pack architecture', () => {
-  test('ambulance pack builds pack commands behind the generic pack interface', () => {
+  test('ambulance Pack builds commands behind the Simulation Capability interface', () => {
     const engine = createAmbulanceSimEngine({
       simulationRunId: 'run-pack-architecture' as SimulationRunId,
       objects: osloAmbulanceScenario.initialObjects,
@@ -190,7 +190,7 @@ describe('pack architecture', () => {
     let contextualFieldCalls = 0
     const basePack: WorldPack = {
       descriptor: createWorldPackDescriptor({
-        id: 'base-pack', version: '1.0.0', name: 'Base Pack', contributions: ['presentation'],
+        id: 'base-pack', version: '1.0.0', name: 'Base Pack', description: 'Test Pack.', contributions: ['presentation'],
       }),
       scenarioConfigSchema: emptyPackScenarioConfigSchema,
       presentation: {
@@ -208,7 +208,7 @@ describe('pack architecture', () => {
     const enrichmentPack: WorldPack = {
       ...basePack,
       descriptor: createWorldPackDescriptor({
-        id: 'enrichment-pack', version: '1.0.0', name: 'Enrichment Pack', contributions: ['presentation'],
+        id: 'enrichment-pack', version: '1.0.0', name: 'Enrichment Pack', description: 'Test Pack.', contributions: ['presentation'],
       }),
       presentation: {
         ...basePack.presentation,
@@ -244,14 +244,14 @@ describe('pack architecture', () => {
     const packWithWeatherLayer: WorldPack = {
       ...ambulancePack,
       descriptor: createWorldPackDescriptor({
-        id: 'weather-layer-one', version: '1.0.0', name: 'Weather Layer One', contributions: ['presentation'],
+        id: 'weather-layer-one', version: '1.0.0', name: 'Weather Layer One', description: 'Test Pack.', contributions: ['presentation'],
       }),
       presentation: { ...ambulancePack.presentation, categories: [], mapAreaFeatureLayers: ['weather'] },
     }
     const secondPackWithWeatherLayer: WorldPack = {
       ...trafficPack,
       descriptor: createWorldPackDescriptor({
-        id: 'weather-layer-two', version: '1.0.0', name: 'Weather Layer Two', contributions: ['presentation'],
+        id: 'weather-layer-two', version: '1.0.0', name: 'Weather Layer Two', description: 'Test Pack.', contributions: ['presentation'],
       }),
       presentation: { ...trafficPack.presentation, categories: [], mapAreaFeatureLayers: ['weather'] },
     }
@@ -275,7 +275,7 @@ describe('pack architecture', () => {
     const currentTime = nowIso()
     const pack: WorldPack = {
       descriptor: createWorldPackDescriptor({
-        id: 'ambulance', version: '1.0.0', name: 'Indexed Presenter', contributions: ['presentation'],
+        id: 'ambulance', version: '1.0.0', name: 'Indexed Presenter', description: 'Test Pack.', contributions: ['presentation'],
       }),
       scenarioConfigSchema: emptyPackScenarioConfigSchema,
       presentation: {
@@ -376,7 +376,7 @@ describe('pack architecture', () => {
   test('keeps runtime-free Packs active without inventing no-op runtimes', () => {
     const passivePack: WorldPack = {
       descriptor: createWorldPackDescriptor({
-        id: 'passive', version: '1.0.0', name: 'Passive', contributions: ['presentation'],
+        id: 'passive', version: '1.0.0', name: 'Passive', description: 'Test Pack.', contributions: ['presentation'],
       }),
       scenarioConfigSchema: emptyPackScenarioConfigSchema,
       presentation: {

@@ -26,7 +26,7 @@ export const electricGridScenarioItemSchema = z.object({
   model: gridModelSelectionSchema,
   operatingPoint: gridOperatingPointSelectionSchema,
   automation: gridAutomationSelectionSchema,
-})
+}).strict()
 
 const unsupported = (operation: string): never => {
   throw new Error(`electric-grid Pack does not support ${operation}`)

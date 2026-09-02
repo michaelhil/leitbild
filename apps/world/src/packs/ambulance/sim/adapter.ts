@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler } from '../../../simulation/protocol.ts'
+import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import { commandResultSchema } from '../../../core/model/index.ts'
-import { definePackCommandCapability } from '../../../simulation/capabilities.ts'
+import { defineSimulationCommandCapability } from '../../../simulation/capabilities.ts'
 import type { CommandEnvelope, CommandResult, GeoJsonPoint, InteractionSignal, IsoTimestamp, OperationalObject, PackRuntimeRecordingBatch, SignalId, SimulationClockState } from '../../../core/model/index.ts'
 import { assetRoutePlannedSignalType, interactionSignalSchema, nowIso } from '../../../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import { ambulancePackDataSchema, ambulancePackId, hospitalPackDataSchema, incidentPackDataSchema } from '../model.ts'
 import { createAmbulanceSimEngine } from './engine.ts'
 import { ambulanceSimAdapterId, ambulanceSimRuntimeId } from './constants.ts'
@@ -60,7 +59,7 @@ const validateAmbulanceRuntimeObject = (object: OperationalObject): OperationalO
 }
 
 const initialObjectsFor = (config: PackRuntimeConnectionConfig): ReadonlyArray<OperationalObject> => {
-  const objects = config.initialObjects ?? config.scenario?.initialObjects
+  const objects = config.initialObjects ?? config.scenario.initialObjects
   if (!objects) throw new Error(`ambulance runtime requires scenario or restored objects for simulation run ${config.simulationRunId}`)
   return objects
     .filter(object => object.packId === ambulancePackId)
@@ -134,10 +133,10 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
   packId: ambulancePackId,
   clock: 'simulation',
   capabilities: [
-    definePackCommandCapability({ id: assignToIncidentCommandKind, title: 'Assign ambulance to incident', description: 'Assigns one ambulance to one incident and plans its response route.', input: assignToIncidentPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [assignToIncidentPayloadSchema.parse(input).ambulanceId], payload: assignToIncidentPayloadSchema.parse(input) }) }),
-    definePackCommandCapability({ id: cancelDestinationCommandKind, title: 'Cancel ambulance destination', description: 'Cancels the active destination and route for one ambulance.', input: cancelDestinationPayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [cancelDestinationPayloadSchema.parse(input).ambulanceId], payload: cancelDestinationPayloadSchema.parse(input) }) }),
-    definePackCommandCapability({ id: createObjectCommandKind, title: 'Create ambulance asset', description: 'Creates an ambulance, hospital, or incident at an explicit map point.', input: createObjectPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [], payload: createObjectPayloadSchema.parse(input) }) }),
-    definePackCommandCapability({ id: setDestinationCommandKind, title: 'Set ambulance destination', description: 'Sets one ambulance destination and plans a route to it.', input: setDestinationPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [setDestinationPayloadSchema.parse(input).ambulanceId], payload: setDestinationPayloadSchema.parse(input) }) }),
+    defineSimulationCommandCapability({ id: assignToIncidentCommandKind, title: 'Assign ambulance to incident', description: 'Assigns one ambulance to one incident and plans its response route.', input: assignToIncidentPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [assignToIncidentPayloadSchema.parse(input).ambulanceId], payload: assignToIncidentPayloadSchema.parse(input) }) }),
+    defineSimulationCommandCapability({ id: cancelDestinationCommandKind, title: 'Cancel ambulance destination', description: 'Cancels the active destination and route for one ambulance.', input: cancelDestinationPayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [cancelDestinationPayloadSchema.parse(input).ambulanceId], payload: cancelDestinationPayloadSchema.parse(input) }) }),
+    defineSimulationCommandCapability({ id: createObjectCommandKind, title: 'Create ambulance asset', description: 'Creates an ambulance, hospital, or incident at an explicit map point.', input: createObjectPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [], payload: createObjectPayloadSchema.parse(input) }) }),
+    defineSimulationCommandCapability({ id: setDestinationCommandKind, title: 'Set ambulance destination', description: 'Sets one ambulance destination and plans a route to it.', input: setDestinationPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [setDestinationPayloadSchema.parse(input).ambulanceId], payload: setDestinationPayloadSchema.parse(input) }) }),
     ...ambulanceQueryCapabilities,
   ],
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
@@ -152,7 +151,7 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
     let elapsedMs = 0
     let nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
     let clock: SimulationClockState = {
-      currentTime: config.scenario?.world.startsAt ?? nowIso(),
+      currentTime: config.scenario.world.startsAt,
       updatedAt: nowIso(),
       paused: false,
       speed: 1,
@@ -229,7 +228,7 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
           handlers.delete(handler)
         }
       },
-      query: async (request: PackQueryRequest): Promise<PackQueryResponse> =>
+      invokeQuery: async (request: PackRuntimeQuery): Promise<unknown> =>
         answerAmbulanceQuery({
           request,
           objects: engine.snapshot().objects,

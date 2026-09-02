@@ -1,23 +1,22 @@
-import type { WorldPack } from '../../core/packs/protocol.ts'
-import { createWorldPackDescriptor, emptyPackScenarioConfigSchema } from '../../core/packs/protocol.ts'
+import type { WorldPackView } from '../../core/packs/protocol.ts'
+import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
 import { processPlantPackId } from './model.ts'
 import { processPlantPresentation } from './presentation.ts'
 import { processPlantSimRuntimeId } from './sim/constants.ts'
 
 /** Browser-only Pack view. Simulation compilation and runtime code stay outside
  * the UI dependency graph. */
-export const processPlantUiPack: WorldPack = {
+export const processPlantPackView = {
   descriptor: createWorldPackDescriptor({
     id: processPlantPackId,
     version: '1.0.0',
     name: 'Process Plant',
-    contributions: ['runtime', 'knowledge', 'presentation'],
+    description: 'Configurable component-graph process plants with transient dynamics, procedures, controls, and engineering views.',
+    contributions: ['runtime', 'recording', 'knowledge', 'scenario', 'presentation'],
   }),
-  scenarioConfigSchema: emptyPackScenarioConfigSchema,
   runtime: {
     runtimes: [{ id: processPlantSimRuntimeId, version: '1.0.0', label: 'Local process plant runtime', kind: 'local', clock: 'simulation' }],
     defaultRuntimeId: processPlantSimRuntimeId,
   },
-  knowledge: { wikiRefs: [{ name: 'Leitbild PWR operations wiki', url: 'https://github.com/michaelhil/leitbild/blob/main/docs/wiki/pwr-ops.md' }] },
   presentation: processPlantPresentation,
-}
+} satisfies WorldPackView

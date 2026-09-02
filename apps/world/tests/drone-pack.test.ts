@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandEnvelope, SimulationRunId, GeoJsonPoint, IsoTimestamp, ObjectId, OperationalObject, PackId } from '../src/core/model/index.ts'
 import { geoPointFromLonLat } from '../src/core/model/index.ts'
-import type { PackQueryResponse } from '../src/core/packs/protocol.ts'
 import {
   armDroneCommandKind,
   createDroneCommandKind,
@@ -40,7 +39,7 @@ import { droneScenarioSupport } from '../src/packs/drone/scenario.ts'
 import { babylonYawRadForHeadingDeg, bodyVelocityInBabylonFrame, horizontalVelocityFromBabylonBodyFrame } from '../src/packs/drone/spatial.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { loadDroneWorldTerrainStatus, localPointFromLonLat } from '../src/ui/drone/drone-map-world.ts'
-import { createTestScenarioCatalog, waitForCondition } from './helpers.ts'
+import { createTestScenarioCatalog, testRuntimeConnectionConfig, waitForCondition } from './helpers.ts'
 
 const simulationRunId = 'run-test-drone-control' as SimulationRunId
 const actorId = 'actor:test-pilot' as ActorId
@@ -155,11 +154,6 @@ const droneData = (object: OperationalObject) => {
   const parsed = dronePackDataSchema.safeParse(object.packData)
   if (!parsed.success) throw new Error(`invalid drone data for ${object.id}`)
   return parsed.data
-}
-
-const okResult = (response: PackQueryResponse): unknown => {
-  if (!response.ok) throw new Error(response.reason)
-  return response.result
 }
 
 const horizontalDistanceM = (
@@ -570,7 +564,7 @@ describe('drone pack native runtime', () => {
 
   test('native create command does not require telemetry', async () => {
     const adapter = createDroneNativePackRuntimeAdapter()
-    const connection = await adapter.connect({ simulationRunId, initialObjects: [] })
+    const connection = await adapter.connect(testRuntimeConnectionConfig({ simulationRunId, runtimeIds: [adapter.id], initialObjects: [] }))
     try {
       const result = await connection.sendCommand(command(createDroneCommandKind, {
         objectType: 'drone',
@@ -606,10 +600,10 @@ describe('drone pack native runtime', () => {
     expect(droneControllerBindings(objects)[0]?.inputKind).toBe('keyboard')
     expect(droneSensorContacts(objects)).toEqual([])
 
-    const scene = okResult(answerDroneQuery({ request: { packId: dronePackId, kind: droneSceneQueryKind, payload: {} }, objects })) as { drones: ReadonlyArray<unknown> }
-    const models = okResult(answerDroneQuery({ request: { packId: dronePackId, kind: droneVehicleModelsQueryKind, payload: {} }, objects, models: [model] })) as { models: ReadonlyArray<DroneVehicleModel> }
-    const features = okResult(answerDroneQuery({ request: { packId: dronePackId, kind: droneMapFeaturesQueryKind, payload: {} }, objects })) as { features: ReadonlyArray<unknown> }
-    const bindings = okResult(answerDroneQuery({ request: { packId: dronePackId, kind: droneControllerBindingsQueryKind, payload: {} }, objects })) as { bindings: ReadonlyArray<unknown> }
+    const scene = answerDroneQuery({ request: { capabilityId: droneSceneQueryKind, input: {} }, objects }) as { drones: ReadonlyArray<unknown> }
+    const models = answerDroneQuery({ request: { capabilityId: droneVehicleModelsQueryKind, input: {} }, objects, models: [model] }) as { models: ReadonlyArray<DroneVehicleModel> }
+    const features = answerDroneQuery({ request: { capabilityId: droneMapFeaturesQueryKind, input: {} }, objects }) as { features: ReadonlyArray<unknown> }
+    const bindings = answerDroneQuery({ request: { capabilityId: droneControllerBindingsQueryKind, input: {} }, objects }) as { bindings: ReadonlyArray<unknown> }
 
     expect(scene.drones).toHaveLength(1)
     expect(models.models[0]?.id).toBe(model.id)

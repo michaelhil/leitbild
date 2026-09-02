@@ -1,8 +1,6 @@
 import { z } from 'zod'
-import { nowIso } from '../../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
-import type { SimulationCapability } from '../../simulation/protocol.ts'
-import { definePackQueryCapability } from '../../simulation/capabilities.ts'
+import type { PackRuntimeQuery, SimulationCapability } from '../../simulation/protocol.ts'
+import { defineSimulationQueryCapability } from '../../simulation/capabilities.ts'
 import {
   gridClearDerateCommandKind,
   gridCloseBranchCommandKind,
@@ -112,7 +110,7 @@ const query = (config: {
   readonly description: string
   readonly input: z.ZodType
   readonly output: z.ZodType
-}): SimulationCapability => definePackQueryCapability({
+}): SimulationCapability => defineSimulationQueryCapability({
   id: config.id,
   title: config.title,
   description: config.description,
@@ -129,21 +127,7 @@ export const electricGridQueryCapabilities: ReadonlyArray<SimulationCapability> 
   query({ id: electricGridQueryKinds[5], title: 'List connection points', description: 'Lists typed electrical connection points and their current exchange state.', input: gridPayloadSchema, output: connectionPointResultSchema }),
 ]
 
-const ok = (request: PackQueryRequest, result: unknown): PackQueryResponse => ({
-  ok: true,
-  packId: electricGridPackId,
-  kind: request.kind,
-  result,
-  generatedAt: nowIso(),
-})
-
-const fail = (request: PackQueryRequest, reason: string): PackQueryResponse => ({
-  ok: false,
-  packId: electricGridPackId,
-  kind: request.kind,
-  reason,
-  generatedAt: nowIso(),
-})
+const fail = (reason: string): never => { throw new Error(reason) }
 
 const gridFor = (grids: ReadonlyMap<string, GridRuntimeInstance>, gridId: string): GridRuntimeInstance => {
   const grid = grids.get(gridId)
@@ -304,16 +288,16 @@ const summaryFor = (grid: GridRuntimeInstance) => {
 }
 
 export const answerElectricGridQuery = (config: {
-  readonly request: PackQueryRequest
+  readonly request: PackRuntimeQuery
   readonly grids: ReadonlyMap<string, GridRuntimeInstance>
-}): PackQueryResponse => {
-  if (!electricGridQueryKinds.includes(config.request.kind as typeof electricGridQueryKinds[number])) {
-    return fail(config.request, `unsupported electric-grid query: ${config.request.kind}`)
+}): unknown => {
+  if (!electricGridQueryKinds.includes(config.request.capabilityId as typeof electricGridQueryKinds[number])) {
+    return fail(`unsupported Electric Grid query Capability: ${config.request.capabilityId}`)
   }
   try {
-    if (config.request.kind === electricGridQueryKinds[0]) {
-      emptyPayloadSchema.parse(config.request.payload)
-      return ok(config.request, {
+    if (config.request.capabilityId === electricGridQueryKinds[0]) {
+      emptyPayloadSchema.parse(config.request.input)
+      return {
         ...electricGridDefinitionCatalog,
         operatingPointOverridesSchema: z.toJSONSchema(gridOperatingPointOverridesSchema),
         grids: [...config.grids.values()].map(grid => ({
@@ -326,53 +310,53 @@ export const answerElectricGridQuery = (config: {
             runtime: { ...grid.diagnostics },
           },
         })),
-      })
+      }
     }
-    if (config.request.kind === electricGridQueryKinds[1]) {
-      const payload = gridPayloadSchema.parse(config.request.payload)
-      return ok(config.request, summaryFor(gridFor(config.grids, payload.gridId)))
+    if (config.request.capabilityId === electricGridQueryKinds[1]) {
+      const payload = gridPayloadSchema.parse(config.request.input)
+      return summaryFor(gridFor(config.grids, payload.gridId))
     }
-    if (config.request.kind === electricGridQueryKinds[2]) {
-      const payload = searchPayloadSchema.parse(config.request.payload)
+    if (config.request.capabilityId === electricGridQueryKinds[2]) {
+      const payload = searchPayloadSchema.parse(config.request.input)
       const grid = gridFor(config.grids, payload.gridId)
       const needle = payload.text.trim().toLowerCase()
       const matched = grid.definition.index.assets.filter(asset =>
         (payload.kinds === undefined || payload.kinds.includes(asset.kind))
         && (needle.length === 0 || asset.id.toLowerCase().includes(needle) || asset.label.toLowerCase().includes(needle)))
       const page = matched.slice(payload.offset, payload.offset + payload.limit)
-      return ok(config.request, {
+      return {
         gridId: payload.gridId,
         total: matched.length,
         offset: payload.offset,
         limit: payload.limit,
         assets: page.map(entry => assetPresentationFor(grid, gridAssetSnapshotFor(grid, entry.id)!)),
-      })
+      }
     }
-    if (config.request.kind === electricGridQueryKinds[3]) {
-      const payload = assetPayloadSchema.parse(config.request.payload)
+    if (config.request.capabilityId === electricGridQueryKinds[3]) {
+      const payload = assetPayloadSchema.parse(config.request.input)
       const grid = gridFor(config.grids, payload.gridId)
       const asset = gridAssetSnapshotFor(grid, payload.assetId)
-      if (!asset) return fail(config.request, `Grid Asset not found: ${payload.assetId}`)
-      return ok(config.request, {
+      if (!asset) return fail(`Grid Asset not found: ${payload.assetId}`)
+      return {
         gridId: payload.gridId,
         asset: { ...assetPresentationFor(grid, asset), definition: asset.definition, ...(asset.state === undefined ? {} : { state: asset.state }) },
-      })
+      }
     }
-    if (config.request.kind === electricGridQueryKinds[4]) {
-      const payload = powerFlowPayloadSchema.parse(config.request.payload)
+    if (config.request.capabilityId === electricGridQueryKinds[4]) {
+      const payload = powerFlowPayloadSchema.parse(config.request.input)
       const grid = gridFor(config.grids, payload.gridId)
       const branches = grid.definition.model.branches.map(definition => ({ definition, state: grid.branches.get(definition.id)! }))
-      return ok(config.request, {
+      return {
         gridId: payload.gridId,
         total: branches.length,
         offset: payload.offset,
         limit: payload.limit,
         branches: branches.slice(payload.offset, payload.offset + payload.limit),
-      })
+      }
     }
-    const payload = gridPayloadSchema.parse(config.request.payload)
+    const payload = gridPayloadSchema.parse(config.request.input)
     const grid = gridFor(config.grids, payload.gridId)
-    return ok(config.request, {
+    return {
       gridId: payload.gridId,
       connectionPoints: grid.definition.model.connectionPoints.map(point => {
         const busState = grid.busStates.get(point.busId)
@@ -390,8 +374,8 @@ export const answerElectricGridQuery = (config: {
           frequencyHz: busState?.frequencyHz ?? grid.definition.model.nominalFrequencyHz,
         }
       }),
-    })
+    }
   } catch (error) {
-    return fail(config.request, error instanceof Error ? error.message : String(error))
+    return fail(error instanceof Error ? error.message : String(error))
   }
 }

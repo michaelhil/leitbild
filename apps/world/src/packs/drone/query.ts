@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import { geoJsonPointSchema, geoJsonPolygonSchema, isoTimestampSchema, nowIso, objectIdSchema, type GeoJsonPoint, type IsoTimestamp, type OperationalObject } from '../../core/model/index.ts'
-import { packMapAreaFeatureSchema, type PackMapAreaFeature, type PackQueryRequest, type PackQueryResponse } from '../../core/packs/protocol.ts'
-import type { SimulationCapability } from '../../simulation/protocol.ts'
-import { definePackQueryCapability } from '../../simulation/capabilities.ts'
+import { geoJsonPointSchema, geoJsonPolygonSchema, isoTimestampSchema, objectIdSchema, type GeoJsonPoint, type IsoTimestamp, type OperationalObject } from '../../core/model/index.ts'
+import { packMapAreaFeatureSchema, type PackMapAreaFeature } from '../../core/packs/protocol.ts'
+import type { PackRuntimeQuery, SimulationCapability } from '../../simulation/protocol.ts'
+import { defineSimulationQueryCapability } from '../../simulation/capabilities.ts'
 import {
   defaultDroneVehicleModels,
   dronePackDataSchema,
@@ -17,7 +17,6 @@ import { movePointByMeters } from './spatial.ts'
 export const droneSceneQueryKind = 'world.drone.scene'
 export const droneControllerBindingsQueryKind = 'world.drone.controller-bindings'
 export const droneVehicleModelsQueryKind = 'world.drone.vehicle-models'
-export const droneProfilesQueryKind = droneVehicleModelsQueryKind
 export const droneMapFeaturesQueryKind = 'world.drone.map-features'
 export const droneSensorContactsQueryKind = 'world.drone.sensor-contacts'
 
@@ -71,28 +70,14 @@ const sensorContactSchema = z.object({
 }).strict()
 
 export const droneQueryCapabilities: ReadonlyArray<SimulationCapability> = [
-  definePackQueryCapability({ id: droneSceneQueryKind, title: 'Read drone scene', description: 'Returns bounded current render and status data for active drones.', input: z.object({}).strict(), output: z.object({ drones: z.array(droneSceneObjectSchema) }).strict() }),
-  definePackQueryCapability({ id: droneControllerBindingsQueryKind, title: 'Read drone controller bindings', description: 'Returns current operator and client input bindings for active drones.', input: z.object({}).strict(), output: z.object({ bindings: z.array(controllerBindingSchema) }).strict() }),
-  definePackQueryCapability({ id: droneVehicleModelsQueryKind, title: 'List drone vehicle models', description: 'Lists the validated vehicle models available to the Drone runtime.', input: z.object({}).strict(), output: z.object({ models: z.array(droneVehicleModelSchema) }).strict() }),
-  definePackQueryCapability({ id: droneMapFeaturesQueryKind, title: 'Read drone map features', description: 'Projects current sensor, effect, and swarm envelopes into map features.', input: mapFeaturesPayloadSchema, output: z.object({ features: z.array(packMapAreaFeatureSchema) }).strict() }),
-  definePackQueryCapability({ id: droneSensorContactsQueryKind, title: 'Read drone sensor contacts', description: 'Returns current contacts reported by Drone Pack sensors.', input: z.object({}).strict(), output: z.object({ contacts: z.array(sensorContactSchema) }).strict() }),
+  defineSimulationQueryCapability({ id: droneSceneQueryKind, title: 'Read drone scene', description: 'Returns bounded current render and status data for active drones.', input: z.object({}).strict(), output: z.object({ drones: z.array(droneSceneObjectSchema) }).strict() }),
+  defineSimulationQueryCapability({ id: droneControllerBindingsQueryKind, title: 'Read drone controller bindings', description: 'Returns current operator and client input bindings for active drones.', input: z.object({}).strict(), output: z.object({ bindings: z.array(controllerBindingSchema) }).strict() }),
+  defineSimulationQueryCapability({ id: droneVehicleModelsQueryKind, title: 'List drone vehicle models', description: 'Lists the validated vehicle models available to the Drone runtime.', input: z.object({}).strict(), output: z.object({ models: z.array(droneVehicleModelSchema) }).strict() }),
+  defineSimulationQueryCapability({ id: droneMapFeaturesQueryKind, title: 'Read drone map features', description: 'Projects current sensor, effect, and swarm envelopes into map features.', input: mapFeaturesPayloadSchema, output: z.object({ features: z.array(packMapAreaFeatureSchema) }).strict() }),
+  defineSimulationQueryCapability({ id: droneSensorContactsQueryKind, title: 'Read drone sensor contacts', description: 'Returns current contacts reported by Drone Pack sensors.', input: z.object({}).strict(), output: z.object({ contacts: z.array(sensorContactSchema) }).strict() }),
 ]
 
-const ok = (request: PackQueryRequest, result: unknown, at: IsoTimestamp): PackQueryResponse => ({
-  ok: true,
-  packId: request.packId,
-  kind: request.kind,
-  result,
-  generatedAt: at,
-})
-
-const fail = (request: PackQueryRequest, reason: string, at: IsoTimestamp): PackQueryResponse => ({
-  ok: false,
-  packId: request.packId,
-  kind: request.kind,
-  reason,
-  generatedAt: at,
-})
+const fail = (reason: string): never => { throw new Error(reason) }
 
 const droneDataFor = (object: OperationalObject) => {
   const parsed = dronePackDataSchema.safeParse(object.packData)
@@ -221,31 +206,30 @@ const mapFeatures = (
 }
 
 export const answerDroneQuery = (config: {
-  readonly request: PackQueryRequest
+  readonly request: PackRuntimeQuery
   readonly objects: ReadonlyArray<OperationalObject>
   readonly at?: IsoTimestamp
   readonly models?: ReadonlyArray<DroneVehicleModel>
-}): PackQueryResponse => {
-  const at = config.at ?? nowIso()
+}): unknown => {
   try {
-    if (config.request.kind === droneSceneQueryKind) {
-      return ok(config.request, { drones: droneSceneObjects(config.objects) }, at)
+    if (config.request.capabilityId === droneSceneQueryKind) {
+      return { drones: droneSceneObjects(config.objects) }
     }
-    if (config.request.kind === droneControllerBindingsQueryKind) {
-      return ok(config.request, { bindings: droneControllerBindings(config.objects) }, at)
+    if (config.request.capabilityId === droneControllerBindingsQueryKind) {
+      return { bindings: droneControllerBindings(config.objects) }
     }
-    if (config.request.kind === droneVehicleModelsQueryKind) {
-      return ok(config.request, { models: config.models ?? defaultDroneVehicleModels }, at)
+    if (config.request.capabilityId === droneVehicleModelsQueryKind) {
+      return { models: config.models ?? defaultDroneVehicleModels }
     }
-    if (config.request.kind === droneSensorContactsQueryKind) {
-      return ok(config.request, { contacts: droneSensorContacts(config.objects) }, at)
+    if (config.request.capabilityId === droneSensorContactsQueryKind) {
+      return { contacts: droneSensorContacts(config.objects) }
     }
-    if (config.request.kind === droneMapFeaturesQueryKind) {
-      const payload = mapFeaturesPayloadSchema.parse(config.request.payload)
-      return ok(config.request, { features: mapFeatures(config.objects, payload.layers) }, at)
+    if (config.request.capabilityId === droneMapFeaturesQueryKind) {
+      const payload = mapFeaturesPayloadSchema.parse(config.request.input)
+      return { features: mapFeatures(config.objects, payload.layers) }
     }
-    return fail(config.request, `unsupported drone query kind: ${config.request.kind}`, at)
+    return fail(`unsupported Drone query Capability: ${config.request.capabilityId}`)
   } catch (err) {
-    return fail(config.request, err instanceof Error ? err.message : String(err), at)
+    return fail(err instanceof Error ? err.message : String(err))
   }
 }

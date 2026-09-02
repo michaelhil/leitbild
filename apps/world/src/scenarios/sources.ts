@@ -10,7 +10,7 @@ const readScenarioSource = (fileName: string): ScenarioSource =>
 
 export const builtinScenarioSources: ReadonlyArray<ScenarioSource> = [
   readScenarioSource('oslo-ambulance.scenario.json'),
-  readScenarioSource('oslo-all-packs-demo.scenario.json'),
+  readScenarioSource('oslo-integrated-operations.scenario.json'),
   readScenarioSource('oslo-drone-operations.scenario.json'),
   readScenarioSource('halden.scenario.json'),
   readScenarioSource('halden-process-plant-demo.scenario.json'),

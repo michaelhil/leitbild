@@ -1,7 +1,7 @@
 import type { OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
-import type { PackMapLayerGroup, PackObjectPresentation, WorldPack } from '../../core/packs/protocol.ts'
-import { createWorldPackDescriptor, emptyPackScenarioConfigSchema } from '../../core/packs/protocol.ts'
+import type { PackMapLayerGroup, PackObjectPresentation, WorldPackView } from '../../core/packs/protocol.ts'
+import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
 import { asDatasetId } from '../../reference-data/types.ts'
 import { electricGridPackId, parseElectricGridObjectData } from './model.ts'
 import { electricGridRuntimeId } from './sim/constants.ts'
@@ -65,19 +65,19 @@ const presentationForGrid = (object: OperationalObject): PackObjectPresentation 
   }
 }
 
-export const electricGridUiPack: WorldPack = {
+export const electricGridPackView: WorldPackView = {
   descriptor: createWorldPackDescriptor({
     id: electricGridPackId,
     version: '1.0.0',
     name: 'Electric Grid',
-    contributions: ['runtime', 'reference-data', 'presentation'],
+    description: 'Configurable electrical networks with topology, dispatch, dynamics, protection, and live operating views.',
+    contributions: ['runtime', 'recording', 'reference-data', 'scenario', 'presentation'],
   }),
-  scenarioConfigSchema: emptyPackScenarioConfigSchema,
   runtime: {
     runtimes: [{ id: electricGridRuntimeId, version: '1.0.0', label: 'Local electric grid runtime', kind: 'local', clock: 'simulation' }],
     defaultRuntimeId: electricGridRuntimeId,
   },
-  referenceData: { builders: [], datasetIds: [asDatasetId('grid-norway')] },
+  referenceData: { datasetIds: [asDatasetId('grid-norway')] },
   presentation: {
     mapLayerGroups: layerGroups,
     categories: [{

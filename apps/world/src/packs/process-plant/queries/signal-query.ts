@@ -1,7 +1,6 @@
 import { z } from 'zod'
-import type { IsoTimestamp } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
+import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import { processQuantitySchema, processSignalTagIdSchema, variableDisciplineSchema } from '../graph/index.ts'
 import {
   findProcessPlantSignalBinding,
@@ -11,12 +10,12 @@ import {
   resolveProcessPlantSignalBinding,
 } from '../signals.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
-import { requirePlant, success } from './common.ts'
+import { requirePlant } from './common.ts'
 
 export const signalsResolveQuerySchema = z.object({
   plantId: idSchema,
   signals: z.array(processPlantSignalReferenceSchema).min(1),
-})
+}).strict()
 
 export const signalsSearchQuerySchema = z.object({
   plantId: idSchema.optional(),
@@ -28,7 +27,7 @@ export const signalsSearchQuerySchema = z.object({
   writable: z.boolean().optional(),
   procedureRelevant: z.boolean().optional(),
   publishedOnly: z.boolean().default(false),
-})
+}).strict()
 
 const procedureTagSchema = z.object({
   id: processSignalTagIdSchema,
@@ -133,31 +132,30 @@ const matchesSignalSearch = (
 }
 
 export const answerProcessPlantSignalQuery = (config: {
-  readonly request: PackQueryRequest
+  readonly request: PackRuntimeQuery
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
-  readonly at: IsoTimestamp
-}): PackQueryResponse | undefined => {
-  if (!processPlantSignalQueryKinds.some(kind => kind === config.request.kind)) return undefined
-  if (config.request.kind === 'world.process-plant.procedure-tags.validate') {
-    const payload = procedureTagsValidateQuerySchema.parse(config.request.payload)
+}): unknown | undefined => {
+  if (!processPlantSignalQueryKinds.some(kind => kind === config.request.capabilityId)) return undefined
+  if (config.request.capabilityId === 'world.process-plant.procedure-tags.validate') {
+    const payload = procedureTagsValidateQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
-    return success(config.request, {
+    return {
       plantId: payload.plantId,
       tags: validateProcedureTags(system, payload.tags),
-    }, config.at)
+    }
   }
-  if (config.request.kind === 'world.process-plant.signals.resolve') {
-    const payload = signalsResolveQuerySchema.parse(config.request.payload)
+  if (config.request.capabilityId === 'world.process-plant.signals.resolve') {
+    const payload = signalsResolveQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
-    return success(config.request, {
+    return {
       plantId: payload.plantId,
       signals: payload.signals.map(signal => processPlantSignalView(resolveProcessPlantSignalBinding(system.plant.graph, signal))),
-    }, config.at)
+    }
   }
-  if (config.request.kind === 'world.process-plant.signals.read') {
-    const payload = signalsResolveQuerySchema.parse(config.request.payload)
+  if (config.request.capabilityId === 'world.process-plant.signals.read') {
+    const payload = signalsResolveQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
-    return success(config.request, {
+    return {
       plantId: payload.plantId,
       signals: payload.signals.map(signal => {
         const binding = resolveProcessPlantSignalBinding(system.plant.graph, signal)
@@ -168,18 +166,18 @@ export const answerProcessPlantSignalQuery = (config: {
           quality: processPlantSignalQuality(variable),
         }
       }),
-    }, config.at)
+    }
   }
-  const payload = signalsSearchQuerySchema.parse(config.request.payload)
+  const payload = signalsSearchQuerySchema.parse(config.request.input)
   const plants = payload.plantId === undefined
     ? [...config.plants.values()]
     : [requirePlant(config.plants, payload.plantId)]
-  return success(config.request, {
+  return {
     plants: plants.map(system => ({
       plantId: system.plant.id,
       signals: system.plant.graph.signalBindings
         .map(processPlantSignalView)
         .filter(binding => matchesSignalSearch(binding, payload)),
     })),
-  }, config.at)
+  }
 }

@@ -73,8 +73,6 @@ export const droneVehicleModelsFromPackConfigs = (
   return [...modelById.values()]
 }
 
-export const droneProfilesFromPackConfigs = droneVehicleModelsFromPackConfigs
-
 export const droneScenarioSupport: PackScenarioSupport = {
   itemSchemas: { drone: droneSpecSchema },
   mutationSchemas: {

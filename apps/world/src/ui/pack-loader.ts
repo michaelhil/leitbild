@@ -1,28 +1,29 @@
 import { createActivePackViews, type ActivePackViews } from '../core/packs/active-views.ts'
-import type { WorldPack } from '../core/packs/protocol.ts'
+import type { WorldPackView } from '../core/packs/protocol.ts'
 
-type PackLoader = () => Promise<WorldPack>
-type KnownUiPackId = 'ambulance' | 'traffic' | 'weather' | 'drone' | 'process-plant' | 'aviation' | 'electric-grid'
+type PackLoader = () => Promise<WorldPackView>
 
-const packLoaders: Record<KnownUiPackId, PackLoader> = {
+const packLoaders = {
   ambulance: async () => (await import('../packs/ambulance/pack.ts')).ambulancePack,
   traffic: async () => (await import('../packs/traffic/pack.ts')).trafficPack,
   weather: async () => (await import('../packs/weather/pack.ts')).weatherPack,
-  drone: async () => (await import('../packs/drone/ui-pack.ts')).droneUiPack,
-  'process-plant': async () => (await import('../packs/process-plant/ui-pack.ts')).processPlantUiPack,
+  drone: async () => (await import('../packs/drone/ui-pack.ts')).dronePackView,
+  'process-plant': async () => (await import('../packs/process-plant/ui-pack.ts')).processPlantPackView,
   aviation: async () => (await import('../packs/aviation/pack.ts')).aviationPack,
-  'electric-grid': async () => (await import('../packs/electric-grid/ui-pack.ts')).electricGridUiPack,
-}
+  'electric-grid': async () => (await import('../packs/electric-grid/ui-pack.ts')).electricGridPackView,
+} satisfies Record<string, PackLoader>
+
+type KnownUiPackId = keyof typeof packLoaders
 
 /** Reviewed browser entry points. A parity test keeps this boundary aligned with the server assembly. */
 export const knownUiPackIds: ReadonlyArray<string> = Object.keys(packLoaders).sort()
 
-const loadedPacks = new Map<string, WorldPack>()
+const loadedPacks = new Map<string, WorldPackView>()
 
 const isKnownUiPackId = (packId: string): packId is KnownUiPackId =>
   Object.hasOwn(packLoaders, packId)
 
-export const loadUiPack = async (packId: string): Promise<WorldPack> => {
+export const loadUiPack = async (packId: string): Promise<WorldPackView> => {
   const loaded = loadedPacks.get(packId)
   if (loaded) return loaded
   if (!isKnownUiPackId(packId)) throw new Error(`scenario references unknown UI pack: ${packId}`)

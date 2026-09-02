@@ -18,6 +18,7 @@ import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/a
 import { weatherSimRuntimeId } from '../src/packs/weather/sim/constants.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 import type { PackMapAreaFeature } from '../src/core/packs/protocol.ts'
+import { testRuntimeConnectionConfig } from './helpers.ts'
 
 const simulationRunId = 'run-weather-pack' as SimulationRunId
 const actorId = 'actor:test-operator' as ActorId
@@ -90,18 +91,15 @@ const weatherMapFeatures = async (config: {
     runtimeConfig: {},
   } })
   try {
-    const response = await connection.query({
-      packId: 'weather',
-      kind: 'world.weather.map-features',
-      payload: {
+    const result = await connection.invokeQuery({
+      capabilityId: 'world.weather.map-features',
+      input: {
         viewport: config.viewport,
         zoom: config.zoom,
         layers: ['baseGrid', 'affectedCells', 'influenceShapes'],
       },
     })
-    if (!response.ok) throw new Error(response.reason)
-    const result = response.result as { readonly features: ReadonlyArray<PackMapAreaFeature> }
-    return result.features
+    return (result as { readonly features: ReadonlyArray<PackMapAreaFeature> }).features
   } finally {
     await connection.close()
   }
@@ -292,22 +290,18 @@ describe('weather pack', () => {
       runtimeConfig: {},
     } })
     await connection.setClock({ currentTime: start, updatedAt: nowIso(), paused: true, speed: 1 })
-    const startResponse = await connection.query({
-      packId: 'weather',
-      kind: 'world.weather.map-features',
-      payload: { viewport: osloViewport, zoom: 12, layers: ['influenceShapes'], at: start, animationDurationMs: 2000 },
+    const startResponse = await connection.invokeQuery({
+      capabilityId: 'world.weather.map-features',
+      input: { viewport: osloViewport, zoom: 12, layers: ['influenceShapes'], at: start, animationDurationMs: 2000 },
     })
     await connection.setClock({ currentTime: later, updatedAt: nowIso(), paused: true, speed: 1 })
-    const laterResponse = await connection.query({
-      packId: 'weather',
-      kind: 'world.weather.map-features',
-      payload: { viewport: osloViewport, zoom: 12, layers: ['influenceShapes'] },
+    const laterResponse = await connection.invokeQuery({
+      capabilityId: 'world.weather.map-features',
+      input: { viewport: osloViewport, zoom: 12, layers: ['influenceShapes'] },
     })
     await connection.close()
-    if (!startResponse.ok) throw new Error(startResponse.reason)
-    if (!laterResponse.ok) throw new Error(laterResponse.reason)
-    const startFeatures = (startResponse.result as { readonly features: ReadonlyArray<PackMapAreaFeature> }).features
-    const laterFeatures = (laterResponse.result as { readonly features: ReadonlyArray<PackMapAreaFeature> }).features
+    const startFeatures = (startResponse as { readonly features: ReadonlyArray<PackMapAreaFeature> }).features
+    const laterFeatures = (laterResponse as { readonly features: ReadonlyArray<PackMapAreaFeature> }).features
     const startOuter = startFeatures.find(feature => feature.id === 'weather:weather:oslo-moving-rain-band')
     const laterOuter = laterFeatures.find(feature => feature.id === 'weather:weather:oslo-moving-rain-band')
     if (!startOuter || !laterOuter) throw new Error('expected moving weather influence features')
@@ -439,7 +433,7 @@ describe('weather pack', () => {
 
   test('local runtime accepts real weather area commands', async () => {
     const adapter = createLocalWeatherPackRuntimeAdapter()
-    const connection = await adapter.connect({ simulationRunId, initialObjects: [] })
+    const connection = await adapter.connect(testRuntimeConnectionConfig({ simulationRunId, runtimeIds: [adapter.id], initialObjects: [] }))
     const result = await connection.sendCommand(command({
       objectType: 'weather_area',
       label: 'Operator rain area',
@@ -465,7 +459,7 @@ describe('weather pack', () => {
     const adapter = createLocalWeatherPackRuntimeAdapter()
     const zone = osloAmbulanceScenario.initialObjects.find(object => object.packId === 'weather')
     if (!zone) throw new Error('Oslo scenario missing weather condition')
-    const connection = await adapter.connect({ simulationRunId, initialObjects: [zone] })
+    const connection = await adapter.connect(testRuntimeConnectionConfig({ simulationRunId, runtimeIds: [adapter.id], initialObjects: [zone] }))
     const result = await connection.sendCommand(command({
       objectType: 'weather_probe',
       label: 'Oslo probe',

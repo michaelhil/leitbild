@@ -1,36 +1,14 @@
 import { z } from 'zod'
-import type { IsoTimestamp } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 
 export const plantQuerySchema = z.object({
   plantId: idSchema,
-})
-
-export const success = (
-  request: PackQueryRequest,
-  result: unknown,
-  generatedAt: IsoTimestamp,
-): PackQueryResponse => ({
-  ok: true,
-  packId: request.packId,
-  kind: request.kind,
-  result,
-  generatedAt,
-})
+}).strict()
 
 export const failure = (
-  request: PackQueryRequest,
   reason: string,
-  generatedAt: IsoTimestamp,
-): PackQueryResponse => ({
-  ok: false,
-  packId: request.packId,
-  kind: request.kind,
-  reason,
-  generatedAt,
-})
+): never => { throw new Error(reason) }
 
 export const requirePlant = (
   plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>,

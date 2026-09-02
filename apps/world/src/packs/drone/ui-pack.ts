@@ -1,14 +1,13 @@
 import type { GeoJsonPoint, OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
-import type { WorldPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
-import { createWorldPackDescriptor, emptyPackScenarioConfigSchema } from '../../core/packs/protocol.ts'
+import type { WorldPackView, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
+import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
 import {
   createDroneCommandKind,
   holdDroneCommandKind,
   navigateDroneCommandKind,
   type CreatableDroneObjectType,
 } from './commands.ts'
-import { createDroneAttackInteractionHandler } from './interactions.ts'
 import {
   defaultDroneVehicleModels,
   droneHasCapability,
@@ -85,17 +84,16 @@ const pointForTarget = (target: OperationalObject): GeoJsonPoint => {
   return point
 }
 
-export const droneUiPack: WorldPack = {
+export const dronePackView = {
   descriptor: createWorldPackDescriptor({
     id: dronePackId, version: '1.0.0', name: 'Drone Operations',
-    contributions: ['runtime', 'knowledge', 'presentation', 'creation', 'targeting', 'interactions'],
+    description: 'Native multi-drone operations with vehicle models, sensors, targeting, swarms, and direct control.',
+    contributions: ['runtime', 'knowledge', 'scenario', 'presentation', 'creation', 'targeting', 'interactions'],
   }),
-  scenarioConfigSchema: emptyPackScenarioConfigSchema,
   runtime: {
     runtimes: [{ id: droneNativeRuntimeId, version: '1.0.0', label: 'Native drone runtime', kind: 'local', clock: 'simulation' }],
     defaultRuntimeId: droneNativeRuntimeId,
   },
-  knowledge: { wikiRefs: [{ name: 'Drone operations', url: '/docs/wiki/drone-ops.md' }] },
   presentation: {
     categories: [
     {
@@ -226,7 +224,4 @@ export const droneUiPack: WorldPack = {
       payload: { droneId: controller.id },
     }),
   },
-  interactions: {
-    handlers: [createDroneAttackInteractionHandler()],
-  },
-}
+} satisfies WorldPackView

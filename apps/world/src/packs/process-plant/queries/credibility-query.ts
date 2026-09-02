@@ -2,9 +2,8 @@ import { readFileSync } from 'node:fs'
 import { normalize } from 'node:path/posix'
 import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
-import type { IsoTimestamp } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
+import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import {
   processPlantCatalog,
   type ProcessPlantCatalog,
@@ -13,7 +12,7 @@ import {
 } from '../catalog-contributions.ts'
 import type { CompiledPlantGraph } from '../graph/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
-import { requirePlant, success } from './common.ts'
+import { requirePlant } from './common.ts'
 
 export const credibilityListPayloadSchema = z.object({
   plantId: idSchema,
@@ -95,27 +94,26 @@ const requireArtifact = (
 }
 
 export const answerProcessPlantCredibilityQuery = (config: {
-  readonly request: PackQueryRequest
+  readonly request: PackRuntimeQuery
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
-  readonly at: IsoTimestamp
-}): PackQueryResponse | undefined => {
-  if (!processPlantCredibilityQueryKinds.some(kind => kind === config.request.kind)) return undefined
-  if (config.request.kind === 'world.process-plant.credibility.list') {
-    const payload = credibilityListPayloadSchema.parse(config.request.payload)
+}): unknown | undefined => {
+  if (!processPlantCredibilityQueryKinds.some(kind => kind === config.request.capabilityId)) return undefined
+  if (config.request.capabilityId === 'world.process-plant.credibility.list') {
+    const payload = credibilityListPayloadSchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
-    return success(config.request, {
+    return {
       plantId: payload.plantId,
       evidence: evidenceForSystem(system).map(evidenceRefView),
-    }, config.at)
+    }
   }
-  const payload = credibilityReadPayloadSchema.parse(config.request.payload)
+  const payload = credibilityReadPayloadSchema.parse(config.request.input)
   const system = requirePlant(config.plants, payload.plantId)
   const evidence = requireEvidence(system, payload.evidenceId)
   const artifact = requireArtifact(evidence, payload.artifactId)
-  return success(config.request, {
+  return {
     plantId: payload.plantId,
     evidence: evidenceRefView(evidence),
     artifact: artifactRefView(artifact),
     content: artifactContentFor(artifact.path),
-  }, config.at)
+  }
 }

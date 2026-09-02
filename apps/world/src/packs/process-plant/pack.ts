@@ -1,10 +1,9 @@
 import type { PackId, GeoJsonPoint, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
 import { geoPointFromLonLat, meters, objectIdSchema } from '../../core/model/index.ts'
 import type { WorldPack, PackScenarioItemSpec } from '../../core/packs/protocol.ts'
-import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
 import { processPlantControlWriteCommandKind } from './commands.ts'
 import { emptyProcessPlantProjection, processPlantPackId, type ProcessPlantUnitPackData } from './model.ts'
-import { processPlantSimAdapterId, processPlantSimRuntimeId } from './sim/constants.ts'
+import { processPlantSimAdapterId } from './sim/constants.ts'
 import {
   processPlantAutomationSelectionSchema,
   processPlantModelSelectionSchema,
@@ -17,10 +16,10 @@ import {
   processPlantPwrReferenceModelRef,
 } from './plant-definitions.ts'
 import { processPlantRecordingProfiles } from './recording.ts'
+import { processPlantPackView } from './ui-pack.ts'
 import { compileProcessPlant } from './plant-compiler.ts'
 import { processPlantElectricalPortDefinitions } from './electrical-ports.ts'
 import { z } from 'zod'
-import { processPlantPresentation } from './presentation.ts'
 
 const processPlantScenarioItemSchema = z.object({
   pack: z.literal('process-plant'),
@@ -36,7 +35,7 @@ const processPlantScenarioItemSchema = z.object({
   automation: processPlantAutomationSelectionSchema,
   clusterId: z.string().min(1).optional(),
   coolingWater: z.string().min(1).optional(),
-})
+}).strict()
 
 const unsupported = (operation: string): never => {
   throw new Error(`process-plant pack does not support ${operation}`)
@@ -117,10 +116,7 @@ const expandPlantObject = (spec: PackScenarioItemSpec, at: IsoTimestamp): Operat
 }
 
 export const processPlantPack: WorldPack = {
-  descriptor: createWorldPackDescriptor({
-    id: 'process-plant', version: '1.0.0', name: 'Process Plant',
-    contributions: ['runtime', 'recording', 'knowledge', 'scenario', 'presentation'],
-  }),
+  ...processPlantPackView,
   scenarioConfigSchema: processPlantPackConfigSchema,
   authoring: {
     itemTypes: [{
@@ -136,16 +132,12 @@ export const processPlantPack: WorldPack = {
         operatingPoint: { ref: processPlantPwrFullPowerOperatingPointRef },
         automation: { ref: processPlantPwrReferenceAutomationRef },
       },
-      placement: { target: 'item', path: ['location'] },
+      placement: { target: 'item', kind: 'point', path: ['location'] },
       fields: [{
         target: 'item', path: ['model', 'parameters', 'loopCount'], label: 'Primary loops',
         control: { kind: 'number', defaultValue: 4, min: 2, max: 6, step: 1 },
       }],
     }],
-  },
-  runtime: {
-    runtimes: [{ id: processPlantSimRuntimeId, version: '1.0.0', label: 'Local process plant runtime', kind: 'local', clock: 'simulation' }],
-    defaultRuntimeId: processPlantSimRuntimeId,
   },
   recording: { profiles: processPlantRecordingProfiles },
   knowledge: { wikiRefs: [{ name: 'Leitbild PWR operations wiki', url: 'https://github.com/michaelhil/leitbild/blob/main/docs/wiki/pwr-ops.md' }] },
@@ -157,7 +149,6 @@ export const processPlantPack: WorldPack = {
       return { objects: [expandPlantObject(spec, context.at)] }
     },
   },
-  presentation: processPlantPresentation,
 }
 
 export { processPlantControlWriteCommandKind }

@@ -1,5 +1,4 @@
 import type { WorldPack } from '../../core/packs/protocol.ts'
-import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
 import { electricGridPackConfigSchema } from './config.ts'
 import {
   norwayGridModelRef,
@@ -7,20 +6,14 @@ import {
   norwayStandardAutomationRef,
   electricGridDefinitionCatalog,
 } from './definition-refs.ts'
-import { electricGridPackId } from './model.ts'
 import { electricGridRecordingProfiles } from './recording.ts'
 import { electricGridScenarioSupport } from './scenario.ts'
-import { electricGridUiPack } from './ui-pack.ts'
+import { electricGridPackView } from './ui-pack.ts'
 
 export const electricGridPack: WorldPack = {
-  ...electricGridUiPack,
-  descriptor: createWorldPackDescriptor({
-    id: electricGridPackId,
-    version: '1.0.0',
-    name: 'Electric Grid',
-    contributions: ['runtime', 'recording', 'reference-data', 'scenario', 'presentation'],
-  }),
+  ...electricGridPackView,
   scenarioConfigSchema: electricGridPackConfigSchema,
+  referenceData: { builders: [], datasetIds: electricGridPackView.referenceData?.datasetIds ?? [] },
   authoring: {
     itemTypes: [{
       id: 'grid',
@@ -35,7 +28,7 @@ export const electricGridPack: WorldPack = {
         },
         automation: { ref: norwayStandardAutomationRef },
       },
-      placement: { target: 'item', path: ['location'] },
+      placement: { target: 'item', kind: 'point', path: ['location'] },
       fields: [{
         target: 'item', path: ['model', 'ref'], label: 'Grid Model',
         control: { kind: 'select', defaultValue: norwayGridModelRef, options: electricGridDefinitionCatalog.models.map(model => ({ value: model.id, label: model.title })) },

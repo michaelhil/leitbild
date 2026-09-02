@@ -1,8 +1,8 @@
 import { z } from 'zod'
 import { commandResultSchema, objectIdSchema } from '../../core/model/index.ts'
 import {
-  definePackCommandCapability,
-  definePackQueryCapability,
+  defineSimulationCommandCapability,
+  defineSimulationQueryCapability,
 } from '../../simulation/capabilities.ts'
 import {
   processPlantActionInvokeCommandKind,
@@ -157,7 +157,7 @@ const processPlantQueryCapabilities = processPlantQueryKinds.map(id => {
   const output = queryOutputById[id]
   if (!input) throw new Error(`missing Process Plant capability input schema: ${id}`)
   if (!output) throw new Error(`missing Process Plant capability output schema: ${id}`)
-  return definePackQueryCapability({
+  return defineSimulationQueryCapability({
     id,
     title: titleFor(id),
     description: `Read ${titleFor(id)} from the active Process Plant runtime.`,
@@ -172,7 +172,7 @@ const commandCapability = <T extends { readonly plantId: string }>(config: {
   readonly description: string
   readonly input: z.ZodType<T>
   readonly risk?: 'write' | 'destructive'
-}) => definePackCommandCapability({
+}) => defineSimulationCommandCapability({
   ...config,
   risk: config.risk ?? 'write',
   idempotent: false,

@@ -6,9 +6,9 @@ import { processPlantProjectionKey, projectedProcessPlantUnit } from '../project
 
 export const initialProcessPlantObjects = (config: {
   readonly initialObjects?: ReadonlyArray<OperationalObject>
-  readonly scenario?: { readonly initialObjects?: ReadonlyArray<OperationalObject> }
+  readonly scenario: { readonly initialObjects: ReadonlyArray<OperationalObject> }
 }): ReadonlyArray<OperationalObject> =>
-  config.initialObjects ?? config.scenario?.initialObjects ?? []
+  config.initialObjects ?? config.scenario.initialObjects
 
 export const projectedInitialProcessPlantObjects = (config: {
   readonly objects: ReadonlyArray<OperationalObject>

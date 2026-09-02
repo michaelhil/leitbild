@@ -65,6 +65,7 @@
   let draft = $state<ScenarioSourceRecord>(createEmptyScenarioSource())
   let selection = $state<Selection>({ kind: 'scenario' })
   let placementItemId = $state<string | null>(null)
+  let placementCoordinates = $state<Array<[number, number]>>([])
   let packToAdd = $state('')
   let loading = $state(true)
   let saving = $state(false)
@@ -158,14 +159,48 @@
       : undefined
   }
 
-  const mapPoints = (): ReadonlyArray<{ id: string; label: string; coordinates: [number, number] }> => !catalog ? [] : allItems().flatMap(({ packId, item }) => {
+  const placementFor = (itemId: string | null): AuthoringItemType['placement'] | undefined => {
+    if (!itemId || !catalog) return undefined
+    const entry = allItems().find(candidate => candidate.item.id === itemId)
+    return entry ? itemTypeFor(catalog, entry.packId, entry.item)?.placement : undefined
+  }
+
+  const mapPoints = (): ReadonlyArray<{ id: string; label: string; coordinates: [number, number] }> => !catalog ? [] : [
+    ...allItems().flatMap(({ packId, item }) => {
     const type = itemTypeFor(catalog, packId, item)
     if (!type?.placement) return []
     const value = valueAtPath(item, type.placement.path)
-    return Array.isArray(value) && typeof value[0] === 'number' && typeof value[1] === 'number'
-      ? [{ id: item.id, label: item.label, coordinates: [value[0], value[1]] }]
-      : []
-  })
+    if (type.placement.kind === 'point') {
+      return Array.isArray(value) && typeof value[0] === 'number' && typeof value[1] === 'number'
+        ? [{ id: item.id, label: item.label, coordinates: [value[0], value[1]] as [number, number] }]
+        : []
+    }
+    if (!Array.isArray(value)) return []
+    const coordinates = value.filter((candidate): candidate is [number, number] =>
+      Array.isArray(candidate) && typeof candidate[0] === 'number' && typeof candidate[1] === 'number')
+    if (coordinates.length === 0) return []
+    const center: [number, number] = [
+      coordinates.reduce((sum, coordinate) => sum + coordinate[0], 0) / coordinates.length,
+      coordinates.reduce((sum, coordinate) => sum + coordinate[1], 0) / coordinates.length,
+    ]
+    return [{ id: item.id, label: item.label, coordinates: center }]
+  }),
+    ...placementCoordinates.map((coordinates, index) => ({
+      id: `placement-${index}`,
+      label: String(index + 1),
+      coordinates,
+    })),
+  ]
+
+  const beginPlacement = (itemId: string): void => {
+    placementItemId = itemId
+    placementCoordinates = []
+  }
+
+  const cancelPlacement = (): void => {
+    placementItemId = null
+    placementCoordinates = []
+  }
 
   const updateRailSections = (): void => {
     if (!draft.view.rail) draft.view.rail = { width: 340, sections: [] }
@@ -195,7 +230,7 @@
     updateRailSections()
     draft = { ...draft }
     selection = { kind: 'scenario' }
-    if (placementItemId && removedItems.some(item => item.id === placementItemId)) placementItemId = null
+    if (placementItemId && removedItems.some(item => item.id === placementItemId)) cancelPlacement()
   }
 
   const setRecordingProfile = (pack: AuthoringPack, profileId: string): void => {
@@ -234,7 +269,7 @@
     }
     pack.items.push(item)
     selection = { kind: 'item', id }
-    if (type.placement) placementItemId = id
+    if (type.placement) beginPlacement(id)
     draft = { ...draft }
   }
 
@@ -256,7 +291,7 @@
       connection.system.objectId !== item.id && connection.network.objectId !== item.id)
     draft = { ...draft }
     selection = { kind: 'pack', id: entry.packId }
-    if (placementItemId === item.id) placementItemId = null
+    if (placementItemId === item.id) cancelPlacement()
   }
 
   const setMapView = (center: [number, number], zoom: number): void => {
@@ -271,9 +306,36 @@
     const item = entry?.item
     const type = item && entry ? itemTypeFor(catalog, entry.packId, item) : undefined
     if (!item || !type?.placement) return
-    setValueAtPath(item, type.placement.path, coordinates)
+    if (type.placement.kind === 'point') {
+      setValueAtPath(item, type.placement.path, coordinates)
+      draft = { ...draft }
+      cancelPlacement()
+      return
+    }
+    placementCoordinates = [...placementCoordinates, coordinates]
+    if (type.placement.kind === 'route' && placementCoordinates.length === 2) {
+      setValueAtPath(item, type.placement.path, placementCoordinates)
+      draft = { ...draft }
+      cancelPlacement()
+    }
+  }
+
+  const finishPolygonPlacement = (): void => {
+    const entry = allItems().find(candidate => candidate.item.id === placementItemId)
+    const type = entry && catalog ? itemTypeFor(catalog, entry.packId, entry.item) : undefined
+    if (!entry || type?.placement?.kind !== 'polygon' || placementCoordinates.length < 3) return
+    setValueAtPath(entry.item, type.placement.path, [...placementCoordinates, placementCoordinates[0]!])
     draft = { ...draft }
-    placementItemId = null
+    cancelPlacement()
+  }
+
+  const placementInstruction = (): string => {
+    const kind = placementFor(placementItemId)?.kind
+    if (kind === 'route') return placementCoordinates.length === 0 ? 'Click the route start.' : 'Click the route end.'
+    if (kind === 'polygon') return placementCoordinates.length < 3
+      ? `Click area corners (${3 - placementCoordinates.length} more minimum).`
+      : 'Add more corners or finish the area.'
+    return 'Click the map to place the item.'
   }
 
   const updateField = (field: AuthoringField, value: unknown): void => {
@@ -365,6 +427,7 @@
     editing = null
     selection = { kind: 'scenario' }
     placementItemId = null
+    placementCoordinates = []
     saved = null
     error = null
   }
@@ -421,12 +484,12 @@
     {#if error}<p class="builder-inline-error">{error}</p>{/if}
     <section class="builder-workbench">
       <aside class="builder-outline">
-        <button class:active={selection.kind === 'scenario'} onclick={() => { selection = { kind: 'scenario' }; placementItemId = null }}><strong>Scenario</strong><small>Starting view</small></button>
+        <button class:active={selection.kind === 'scenario'} onclick={() => { selection = { kind: 'scenario' }; cancelPlacement() }}><strong>Scenario</strong><small>Starting view</small></button>
         {#each activePacks() as pack (pack.id)}
           <section class="outline-feature">
-            <button class:active={selection.kind === 'pack' && selection.id === pack.id} onclick={() => { selection = { kind: 'pack', id: pack.id }; placementItemId = null }}><strong>{pack.title}</strong><small>{selectionFor(draft, pack.id)?.items.length ?? 0} items</small></button>
+            <button class:active={selection.kind === 'pack' && selection.id === pack.id} onclick={() => { selection = { kind: 'pack', id: pack.id }; cancelPlacement() }}><strong>{pack.title}</strong><small>{selectionFor(draft, pack.id)?.items.length ?? 0} items</small></button>
             {#each selectionFor(draft, pack.id)?.items ?? [] as item (item.id)}
-              <button class:active={selection.kind === 'item' && selection.id === item.id} class="outline-item" onclick={() => { selection = { kind: 'item', id: item.id }; placementItemId = null }}><span>{item.label}</span><small>{item.type}</small></button>
+              <button class:active={selection.kind === 'item' && selection.id === item.id} class="outline-item" onclick={() => { selection = { kind: 'item', id: item.id }; cancelPlacement() }}><span>{item.label}</span><small>{item.type}</small></button>
             {/each}
           </section>
         {/each}
@@ -434,13 +497,16 @@
       </aside>
 
       <section class="builder-map-panel">
-        {#if placementItemId}<div class="placement-banner">Click the map to place {allItems().find(entry => entry.item.id === placementItemId)?.item.label}. <button onclick={() => { placementItemId = null }}>Cancel</button></div>{/if}
+        {#if placementItemId}<div class="placement-banner">{placementInstruction()} {allItems().find(entry => entry.item.id === placementItemId)?.item.label}
+          {#if placementFor(placementItemId)?.kind === 'polygon'}<button disabled={placementCoordinates.length < 3} onclick={finishPolygonPlacement}>Finish area</button>{/if}
+          <button onclick={cancelPlacement}>Cancel</button>
+        </div>{/if}
         <ScenarioBuilderMap
           center={mapCenter()} zoom={mapZoom()} points={mapPoints()}
           selectedId={selection.kind === 'item' ? selection.id : null}
           placementActive={placementItemId !== null} editView={selection.kind === 'scenario'}
           onviewchange={setMapView} onplace={placeItem}
-          onselect={id => { selection = { kind: 'item', id }; placementItemId = null }}
+          onselect={id => { selection = { kind: 'item', id }; cancelPlacement() }}
         />
         {#if selection.kind === 'scenario'}<span class="map-hint">Pan and zoom to set the starting view</span>{/if}
       </section>
@@ -540,7 +606,7 @@
                 </label>
               {/if}
             {/each}
-            {#if type.placement}<button onclick={() => { placementItemId = item.id }}>Move on map</button>{/if}
+            {#if type.placement}<button onclick={() => beginPlacement(item.id)}>Move on map</button>{/if}
             <button class="danger-text" onclick={() => removeItem(item)}>Remove item</button>
           {/if}
         {/if}

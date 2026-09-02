@@ -1,7 +1,6 @@
 import type { CommandEnvelope, CommandResult, SimulationRunEvent, OperationalObject } from '../core/model/index.ts'
 import { nowIso } from '../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../core/packs/protocol.ts'
-import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEmission, PackRuntimeEventHandler, PackRuntimeHealth, PackRuntimeRealtimeInput, PackScenarioRuntimeConfig, PackRuntimeSnapshot } from './protocol.ts'
+import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEmission, PackRuntimeEventHandler, PackRuntimeHealth, PackRuntimeQuery, PackRuntimeRealtimeInput, PackScenarioRuntimeConfig, PackRuntimeSnapshot } from './protocol.ts'
 import { capabilityIds } from './capabilities.ts'
 
 const duplicateObjectIds = (objects: ReadonlyArray<OperationalObject>): ReadonlyArray<string> => {
@@ -40,8 +39,7 @@ const restoredObjectsFor = (
 const scenarioFor = (
   adapter: PackRuntimeAdapter,
   scenario: PackRuntimeConnectionConfig['scenario'],
-): PackScenarioRuntimeConfig | undefined => {
-  if (!scenario) return undefined
+): PackScenarioRuntimeConfig => {
   return {
     scenarioId: scenario.scenarioId,
     runtimeIds: scenario.runtimeIds,
@@ -70,12 +68,10 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
     capabilities: adapters.flatMap(adapter => adapter.capabilities),
     realtimeInputTypes: adapters.flatMap(adapter => adapter.realtimeInputTypes ?? []),
     connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
-      const missingRuntimeIds = config.scenario?.runtimeIds.filter(runtimeId => !adapterIds.has(runtimeId)) ?? []
+      const missingRuntimeIds = config.scenario.runtimeIds.filter(runtimeId => !adapterIds.has(runtimeId))
       if (missingRuntimeIds.length > 0) throw new Error(`missing pack runtimes: ${missingRuntimeIds.join(', ')}`)
-      const activeRuntimeIds = config.scenario ? new Set(config.scenario.runtimeIds) : null
-      const activeAdapters = activeRuntimeIds
-        ? adapters.filter(adapter => activeRuntimeIds.has(adapter.id))
-        : adapters
+      const activeRuntimeIds = new Set(config.scenario.runtimeIds)
+      const activeAdapters = adapters.filter(adapter => activeRuntimeIds.has(adapter.id))
       assertUniqueRoutes(activeAdapters, adapter => capabilityIds(adapter.capabilities, 'command'), 'command')
       assertUniqueRoutes(activeAdapters, adapter => adapter.realtimeInputTypes ?? [], 'realtime input')
       assertUniqueRoutes(activeAdapters, adapter => capabilityIds(adapter.capabilities, 'query'), 'query')
@@ -86,7 +82,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
           adapter,
           connection: await adapter.connect({
             simulationRunId: config.simulationRunId,
-            ...(scenario === undefined ? {} : { scenario }),
+            scenario,
             ...(initialObjects === undefined ? {} : { initialObjects }),
             ...(config.runtimeStateStores?.[adapter.id] === undefined
               ? {}
@@ -157,7 +153,6 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         (target.adapter.realtimeInputTypes ?? []).map(route => [route, target] as const)))
       const queryTargets = new Map(connections.flatMap(target =>
         capabilityIds(target.adapter.capabilities, 'query').map(route => [route, target] as const)))
-      const activePackIds = new Set(connections.map(({ adapter }) => adapter.packId))
       const handlers = new Set<PackRuntimeEventHandler>()
       const unsubscribes = connections.map(({ adapter, connection }) => connection.subscribe((emission: PackRuntimeEmission) => {
         if (emission.runtimeId !== adapter.id) {
@@ -235,35 +230,17 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         return target?.adapter.commandEventHistory?.[command.kind] ?? 'record'
       }
 
-      const query = async (request: PackQueryRequest): Promise<PackQueryResponse> => {
-        const target = queryTargets.get(request.kind)
+      const invokeQuery = async (query: PackRuntimeQuery): Promise<unknown> => {
+        const target = queryTargets.get(query.capabilityId)
         if (!target) {
-          const packIsActive = activePackIds.has(request.packId)
-          return {
-            ok: false,
-            packId: request.packId,
-            kind: request.kind,
-            reason: packIsActive
-              ? `active Pack Runtime does not declare query kind: ${request.kind}`
-              : `no Pack Runtime is active for Pack: ${request.packId}`,
-            generatedAt: nowIso(),
-          }
-        }
-        if (target.adapter.packId !== request.packId) {
-          return {
-            ok: false,
-            packId: request.packId,
-            kind: request.kind,
-            reason: `capability ${request.kind} belongs to Pack ${target.adapter.packId}, not ${request.packId}`,
-            generatedAt: nowIso(),
-          }
+          throw new Error(`no active Pack Runtime declares query Capability: ${query.capabilityId}`)
         }
         try {
-          const result = await target.connection.query(request)
+          const result = await target.connection.invokeQuery(query)
           markHealthy(target.adapter.id)
           return result
         } catch (error) {
-          markFailure(target.adapter.id, request.kind, error)
+          markFailure(target.adapter.id, query.capabilityId, error)
           throw error
         }
       }
@@ -279,7 +256,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         sendCommand,
         receiveRealtimeInput,
         commandEventHistory,
-        query,
+        invokeQuery,
         observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
           const observations = await Promise.allSettled(connections.map(({ connection }) => connection.observeCommittedEvents(events)))
           observations.forEach((result, index) => {

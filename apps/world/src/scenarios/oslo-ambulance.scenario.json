@@ -135,10 +135,9 @@
       "config": {},
       "items": [
         {
-          "type": "traffic_condition",
+          "type": "road_condition",
           "id": "traffic:ring2-slowdown",
           "label": "Ring 2 slowdown",
-          "geometryMode": "road_segment",
           "from": [
             10.7019,
             59.9294
@@ -482,10 +481,9 @@
             "type": "create_object",
             "object": {
               "pack": "traffic",
-              "type": "traffic_condition",
+              "type": "area_condition",
               "id": "traffic:marienlyst-event",
               "label": "Marienlyst area slowdown",
-              "geometryMode": "area",
               "polygon": [
                 [
                   10.7235,

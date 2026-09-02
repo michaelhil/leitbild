@@ -100,18 +100,15 @@ describe('electrical Pack connection', () => {
       expect(plantPortBefore?.state?.activePowerMw).toBeGreaterThan(800)
       expect(gridPortBefore?.state?.activePowerMw).toBeLessThan(-800)
 
-      const beforeQuery = await connection.query({
-        packId: 'electric-grid',
-        kind: 'world.electric-grid.connection-points.list',
-        payload: { gridId: 'grid:halden-four-unit' },
+      const beforeQuery = await connection.invokeQuery({
+        capabilityId: 'world.electric-grid.connection-points.list',
+        input: { gridId: 'grid:halden-four-unit' },
       })
-      if (!beforeQuery.ok) throw new Error(beforeQuery.reason)
-      const beforePoints = (beforeQuery.result as { connectionPoints: ReadonlyArray<{ connected: boolean; systemActivePowerMw: number }> }).connectionPoints
+      const beforePoints = (beforeQuery as { connectionPoints: ReadonlyArray<{ connected: boolean; systemActivePowerMw: number }> }).connectionPoints
       expect(beforePoints).toHaveLength(4)
       expect(beforePoints.every(point => point.connected && point.systemActivePowerMw > 800)).toBe(true)
-      const summaryBefore = await connection.query({ packId: 'electric-grid', kind: 'world.electric-grid.grid.summary', payload: { gridId: 'grid:halden-four-unit' } })
-      if (!summaryBefore.ok) throw new Error(summaryBefore.reason)
-      const projectionBefore = (summaryBefore.result as { projection: { activeAlarmCount: number; frequencyHz: number; highestBranchLoadingPercent: number; totalGenerationMw: number } }).projection
+      const summaryBefore = await connection.invokeQuery({ capabilityId: 'world.electric-grid.grid.summary', input: { gridId: 'grid:halden-four-unit' } })
+      const projectionBefore = (summaryBefore as { projection: { activeAlarmCount: number; frequencyHz: number; highestBranchLoadingPercent: number; totalGenerationMw: number } }).projection
       expect(projectionBefore.activeAlarmCount).toBe(0)
       expect(projectionBefore.highestBranchLoadingPercent).toBeLessThan(85)
 
@@ -131,17 +128,14 @@ describe('electrical Pack connection', () => {
       const plantAfter = after.objects.find(object => object.id === 'plant:halden-1' as ObjectId)
       if (!plantAfter) throw new Error('tripped Plant disappeared')
       expect(electricalPortFromObject(plantAfter, 'grid-420kv')?.state?.activePowerMw).toBeLessThan(plantPortBefore!.state!.activePowerMw * 0.45)
-      const afterQuery = await connection.query({
-        packId: 'electric-grid',
-        kind: 'world.electric-grid.connection-points.list',
-        payload: { gridId: 'grid:halden-four-unit' },
+      const afterQuery = await connection.invokeQuery({
+        capabilityId: 'world.electric-grid.connection-points.list',
+        input: { gridId: 'grid:halden-four-unit' },
       })
-      if (!afterQuery.ok) throw new Error(afterQuery.reason)
-      const afterPoints = (afterQuery.result as { connectionPoints: ReadonlyArray<{ system: { objectId: string }; systemActivePowerMw: number }> }).connectionPoints
+      const afterPoints = (afterQuery as { connectionPoints: ReadonlyArray<{ system: { objectId: string }; systemActivePowerMw: number }> }).connectionPoints
       expect(afterPoints.find(point => point.system.objectId === 'plant:halden-1')?.systemActivePowerMw).toBeLessThan(beforePoints[0]!.systemActivePowerMw * 0.45)
-      const summaryAfter = await connection.query({ packId: 'electric-grid', kind: 'world.electric-grid.grid.summary', payload: { gridId: 'grid:halden-four-unit' } })
-      if (!summaryAfter.ok) throw new Error(summaryAfter.reason)
-      const projectionAfter = (summaryAfter.result as { projection: { frequencyHz: number; totalGenerationMw: number } }).projection
+      const summaryAfter = await connection.invokeQuery({ capabilityId: 'world.electric-grid.grid.summary', input: { gridId: 'grid:halden-four-unit' } })
+      const projectionAfter = (summaryAfter as { projection: { frequencyHz: number; totalGenerationMw: number } }).projection
       expect(projectionAfter.frequencyHz).toBeLessThan(projectionBefore.frequencyHz - 0.1)
       expect(projectionAfter.totalGenerationMw).toBeLessThan(projectionBefore.totalGenerationMw)
     } finally {
@@ -169,13 +163,11 @@ describe('electrical Pack connection', () => {
       },
     })
     try {
-      const before = await connection.query({
-        packId: 'electric-grid',
-        kind: 'world.electric-grid.connection-points.list',
-        payload: { gridId: 'grid:halden-four-unit' },
+      const before = await connection.invokeQuery({
+        capabilityId: 'world.electric-grid.connection-points.list',
+        input: { gridId: 'grid:halden-four-unit' },
       })
-      if (!before.ok) throw new Error(before.reason)
-      const beforePoints = (before.result as { connectionPoints: ReadonlyArray<{ connected: boolean; systemActivePowerMw: number }> }).connectionPoints
+      const beforePoints = (before as { connectionPoints: ReadonlyArray<{ connected: boolean; systemActivePowerMw: number }> }).connectionPoints
       expect(beforePoints).toHaveLength(4)
       expect(beforePoints.every(point => point.connected && point.systemActivePowerMw > 800)).toBe(true)
 
@@ -190,22 +182,18 @@ describe('electrical Pack connection', () => {
         objectId: 'plant:halden-1' as ObjectId,
       }])
 
-      const plants = await connection.query({
-        packId: 'process-plant',
-        kind: 'world.process-plant.plants.list',
-        payload: {},
+      const plants = await connection.invokeQuery({
+        capabilityId: 'world.process-plant.plants.list',
+        input: {},
       })
-      if (!plants.ok) throw new Error(plants.reason)
-      expect((plants.result as { plants: ReadonlyArray<{ id: string }> }).plants.map(plant => plant.id))
+      expect((plants as { plants: ReadonlyArray<{ id: string }> }).plants.map(plant => plant.id))
         .toEqual(['plant:halden-2', 'plant:halden-3', 'plant:halden-4'])
 
-      const after = await connection.query({
-        packId: 'electric-grid',
-        kind: 'world.electric-grid.connection-points.list',
-        payload: { gridId: 'grid:halden-four-unit' },
+      const after = await connection.invokeQuery({
+        capabilityId: 'world.electric-grid.connection-points.list',
+        input: { gridId: 'grid:halden-four-unit' },
       })
-      if (!after.ok) throw new Error(after.reason)
-      const afterPoints = (after.result as { connectionPoints: ReadonlyArray<{ id: string; connected: boolean; systemActivePowerMw: number }> }).connectionPoints
+      const afterPoints = (after as { connectionPoints: ReadonlyArray<{ id: string; connected: boolean; systemActivePowerMw: number }> }).connectionPoints
       expect(afterPoints.find(point => point.id === 'unit-1-420kv')).toMatchObject({ connected: false, systemActivePowerMw: 0 })
       expect(afterPoints.filter(point => point.connected)).toHaveLength(3)
 
@@ -214,13 +202,11 @@ describe('electrical Pack connection', () => {
       if (!grid) throw new Error('Grid disappeared after connected Plant deletion')
       expect(electricalPortFromObject(grid, 'unit-1-420kv')?.state).toMatchObject({ connected: false, activePowerMw: 0 })
 
-      const switchyard = await connection.query({
-        packId: 'electric-grid',
-        kind: 'world.electric-grid.asset.get',
-        payload: { gridId: 'grid:halden-four-unit', assetId: 'bus:halden-pwr-switchyard-420' },
+      const switchyard = await connection.invokeQuery({
+        capabilityId: 'world.electric-grid.asset.get',
+        input: { gridId: 'grid:halden-four-unit', assetId: 'bus:halden-pwr-switchyard-420' },
       })
-      if (!switchyard.ok) throw new Error(switchyard.reason)
-      expect(switchyard.result).toMatchObject({
+      expect(switchyard).toMatchObject({
         asset: {
           status: { tone: 'working', label: '3/4 connected' },
           summary: expect.stringMatching(/MW supplied · 3\/4 connected/),

@@ -42,7 +42,7 @@ const weatherKeyframeSpecSchema = z.object({
   atmosphere: weatherAtmospherePatchSchema.default({}),
   surface: weatherSurfacePatchSchema.default({}),
   extensions: weatherExtensionsSchema,
-})
+}).strict()
 
 export const weatherConditionSpecSchema = z.object({
   pack: z.literal('weather'),
@@ -60,7 +60,7 @@ export const weatherConditionSpecSchema = z.object({
   extensions: weatherExtensionsSchema,
   falloffCurve: weatherFalloffCurveSchema.default([{ x: 0, y: 1 }, { x: 1, y: 0 }]),
   keyframes: z.array(weatherKeyframeSpecSchema).min(1),
-})
+}).strict()
 
 export const weatherPackConfigSchema = z.object({
   fields: z.object({

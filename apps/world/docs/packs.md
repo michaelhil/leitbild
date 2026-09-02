@@ -93,8 +93,11 @@ durable Capability path. Each route has one active owner; ambiguous routes are a
 startup error, never first-match dispatch.
 
 Simulation Context exposes the active Packs, runtimes and clock modes, exact
-Capabilities with input/output schemas, recording choices, and knowledge links.
-The Workspace Capability catalog publishes the same callable contracts to Agents.
+Capabilities with input/output schemas, recording choices, knowledge links, and
+a bounded summary/index of current operational objects. Agents page or filter the
+full current object set through `world.simulation-run.objects.search`, then read
+one canonical object through `world.simulation-run.read-object`. The Workspace
+Capability catalog publishes the same callable contracts to Agents.
 
 ## UI boundary
 

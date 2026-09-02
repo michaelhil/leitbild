@@ -7,11 +7,9 @@ import type {
   ObjectId,
   OperationalObject,
   PackRuntimeRecordingBatch,
-  PackId,
   SimulationRunId,
 } from '../src/core/model/index.ts'
-import type { PackQueryRequest } from '../src/core/packs/protocol.ts'
-import type { PackRuntimeStateStore } from '../src/simulation/protocol.ts'
+import type { PackRuntimeQuery, PackRuntimeStateStore } from '../src/simulation/protocol.ts'
 import {
   createLocalProcessPlantPackRuntimeAdapter,
   processPlantControlRampCommandKind,
@@ -45,10 +43,9 @@ const scenarioWithPlants = (plants: ReadonlyArray<OperationalObject> = [basePlan
   runtimeConfig: {},
 })
 
-const query = (kind: string, payload: unknown = {}): PackQueryRequest => ({
-  packId: 'process-plant' as PackId,
-  kind,
-  payload,
+const query = (capabilityId: string, input: unknown = {}): PackRuntimeQuery => ({
+  capabilityId,
+  input,
 })
 
 const command = (kind: string, payload: unknown): CommandEnvelope => ({
@@ -75,13 +72,11 @@ describe('process plant Pack runtime lifecycle', () => {
       expect(data.model.ref).toBe(processPlantPwrReferenceModelRef)
       expect(data.projection?.fields.map(field => field.key)).toContain('thermal-power')
 
-      const read = await connection.query(query('world.process-plant.variables.read', {
+      const read = await connection.invokeQuery(query('world.process-plant.variables.read', {
         plantId: basePlant.id,
         paths: ['core.totalThermalPowerMw', 'pressurizer.pressureMPa'],
       }))
-      expect(read.ok).toBe(true)
-      if (!read.ok) throw new Error(read.reason)
-      expect((read.result as { variables: ReadonlyArray<unknown> }).variables).toHaveLength(2)
+      expect((read as { variables: ReadonlyArray<unknown> }).variables).toHaveLength(2)
     } finally {
       await connection.close()
     }
@@ -108,17 +103,16 @@ describe('process plant Pack runtime lifecycle', () => {
       expect(accepted.ok).toBe(true)
       await Bun.sleep(1_100)
 
-      const first = await connection.query(query('world.process-plant.variables.read', {
+      const first = await connection.invokeQuery(query('world.process-plant.variables.read', {
         plantId: basePlant.id,
         paths: ['rcpA.running'],
       }))
-      const second = await connection.query(query('world.process-plant.variables.read', {
+      const second = await connection.invokeQuery(query('world.process-plant.variables.read', {
         plantId: secondPlant.id,
         paths: ['rcpA.running'],
       }))
-      if (!first.ok || !second.ok) throw new Error('Plant variable query failed')
-      expect((first.result as { variables: ReadonlyArray<{ value: unknown }> }).variables[0]?.value).toBe(false)
-      expect((second.result as { variables: ReadonlyArray<{ value: unknown }> }).variables[0]?.value).toBe(true)
+      expect((first as { variables: ReadonlyArray<{ value: unknown }> }).variables[0]?.value).toBe(false)
+      expect((second as { variables: ReadonlyArray<{ value: unknown }> }).variables[0]?.value).toBe(true)
     } finally {
       await connection.close()
     }
@@ -145,12 +139,11 @@ describe('process plant Pack runtime lifecycle', () => {
     })
     try {
       await Bun.sleep(1_100)
-      const read = await restored.query(query('world.process-plant.variables.read', {
+      const read = await restored.invokeQuery(query('world.process-plant.variables.read', {
         plantId: basePlant.id,
         paths: ['rcpA.running'],
       }))
-      if (!read.ok) throw new Error(read.reason)
-      expect((read.result as { variables: ReadonlyArray<{ value: unknown }> }).variables[0]?.value).toBe(false)
+      expect((read as { variables: ReadonlyArray<{ value: unknown }> }).variables[0]?.value).toBe(false)
     } finally {
       await restored.close()
     }
@@ -171,24 +164,20 @@ describe('process plant Pack runtime lifecycle', () => {
       }))).ok).toBe(true)
       await Bun.sleep(1_100)
 
-      const read = await connection.query(query('world.process-plant.variables.read', {
+      const read = await connection.invokeQuery(query('world.process-plant.variables.read', {
         plantId: basePlant.id,
         paths: ['turbine.loadFraction'],
       }))
-      if (!read.ok) throw new Error(read.reason)
-      expect((read.result as { variables: ReadonlyArray<{ value: number }> }).variables[0]?.value).toBeCloseTo(0.5, 2)
+      expect((read as { variables: ReadonlyArray<{ value: number }> }).variables[0]?.value).toBeCloseTo(0.5, 2)
 
-      const displays = await connection.query(query('world.process-plant.displays.list', { plantId: basePlant.id }))
-      if (!displays.ok) throw new Error(displays.reason)
-      expect((displays.result as { displays: ReadonlyArray<{ id: string }> }).displays).toContainEqual(expect.objectContaining({ id: 'unit-overview' }))
+      const displays = await connection.invokeQuery(query('world.process-plant.displays.list', { plantId: basePlant.id }))
+      expect((displays as { displays: ReadonlyArray<{ id: string }> }).displays).toContainEqual(expect.objectContaining({ id: 'unit-overview' }))
 
-      const automation = await connection.query(query('world.process-plant.ic.catalog', { plantId: basePlant.id }))
-      if (!automation.ok) throw new Error(automation.reason)
-      expect((automation.result as { ic: { rules: ReadonlyArray<unknown> } }).ic.rules.length).toBeGreaterThan(0)
+      const automation = await connection.invokeQuery(query('world.process-plant.ic.catalog', { plantId: basePlant.id }))
+      expect((automation as { ic: { rules: ReadonlyArray<unknown> } }).ic.rules.length).toBeGreaterThan(0)
 
-      const catalog = await connection.query(query('world.process-plant.catalog.list'))
-      if (!catalog.ok) throw new Error(catalog.reason)
-      expect(catalog.result).toMatchObject({ models: [{ id: processPlantPwrReferenceModelRef }] })
+      const catalog = await connection.invokeQuery(query('world.process-plant.catalog.list'))
+      expect(catalog).toMatchObject({ models: [{ id: processPlantPwrReferenceModelRef }] })
     } finally {
       await connection.close()
     }

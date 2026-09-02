@@ -1,10 +1,9 @@
 import { z } from 'zod'
 import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
-import { geoJsonLineStringSchema, geoJsonPointSchema, geoJsonPolygonSchema, nowIso, pointFromPosition, routeDistanceMeters } from '../../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
+import { geoJsonLineStringSchema, geoJsonPointSchema, geoJsonPolygonSchema, pointFromPosition, routeDistanceMeters } from '../../core/model/index.ts'
 import { packMapAreaFeatureSchema } from '../../core/packs/protocol.ts'
-import type { SimulationCapability } from '../../simulation/protocol.ts'
-import { definePackQueryCapability } from '../../simulation/capabilities.ts'
+import type { PackRuntimeQuery, SimulationCapability } from '../../simulation/protocol.ts'
+import { defineSimulationQueryCapability } from '../../simulation/capabilities.ts'
 import type { WeatherSparseField } from './cell-field.ts'
 import { weatherSampleAtPointFromSparseField, weatherSparseFieldStats } from './cell-field.ts'
 import { weatherPresentationSeverityForState } from './conditions.ts'
@@ -13,16 +12,16 @@ import { weatherSampleSchema } from './model.ts'
 
 const weatherPointQuerySchema = z.object({
   point: geoJsonPointSchema,
-})
+}).strict()
 
 const weatherRouteQuerySchema = z.object({
   route: geoJsonLineStringSchema,
   intervalM: z.number().finite().positive().max(5000).default(500),
-})
+}).strict()
 
 const weatherAreaQuerySchema = z.object({
   area: geoJsonPolygonSchema,
-})
+}).strict()
 
 const weatherMapFeaturesQuerySchema = z.object({
   viewport: geoJsonPolygonSchema,
@@ -30,7 +29,7 @@ const weatherMapFeaturesQuerySchema = z.object({
   at: z.string().datetime().optional(),
   animationDurationMs: z.number().finite().positive().max(10_000).optional(),
   layers: z.array(z.enum(['baseGrid', 'affectedCells', 'influenceShapes'])).default(['baseGrid', 'affectedCells', 'influenceShapes']),
-})
+}).strict()
 
 export const weatherQueryKinds = [
   'world.weather.sample-at-point',
@@ -52,36 +51,14 @@ const weatherFieldStatsSchema = z.object({
 }).strict()
 
 export const weatherQueryCapabilities: ReadonlyArray<SimulationCapability> = [
-  definePackQueryCapability({ id: weatherQueryKinds[0], title: 'Sample weather at point', description: 'Returns current atmospheric and surface conditions at a geographic point.', input: weatherPointQuerySchema, output: weatherSampleSchema }),
-  definePackQueryCapability({ id: weatherQueryKinds[1], title: 'Sample weather along route', description: 'Returns bounded weather samples and a severity summary along a route.', input: weatherRouteQuerySchema, output: z.object({ samples: z.array(z.object({ point: geoJsonPointSchema, sample: weatherSampleSchema }).strict()), summary: weatherSummarySchema }).strict() }),
-  definePackQueryCapability({ id: weatherQueryKinds[2], title: 'Summarize weather area', description: 'Summarizes current weather severity across cells inside a polygon.', input: weatherAreaQuerySchema, output: z.object({ cellCount: z.number().int().nonnegative(), summary: weatherSummarySchema }).strict() }),
-  definePackQueryCapability({ id: weatherQueryKinds[3], title: 'Read weather map features', description: 'Projects current weather truth into bounded map features for a viewport.', input: weatherMapFeaturesQuerySchema, output: z.object({ features: z.array(packMapAreaFeatureSchema), metadata: weatherFieldStatsSchema }).strict() }),
-  definePackQueryCapability({ id: weatherQueryKinds[4], title: 'Read weather field statistics', description: 'Returns current sparse weather-field size and truth resolution.', input: z.object({}).strict(), output: weatherFieldStatsSchema }),
+  defineSimulationQueryCapability({ id: weatherQueryKinds[0], title: 'Sample weather at point', description: 'Returns current atmospheric and surface conditions at a geographic point.', input: weatherPointQuerySchema, output: weatherSampleSchema }),
+  defineSimulationQueryCapability({ id: weatherQueryKinds[1], title: 'Sample weather along route', description: 'Returns bounded weather samples and a severity summary along a route.', input: weatherRouteQuerySchema, output: z.object({ samples: z.array(z.object({ point: geoJsonPointSchema, sample: weatherSampleSchema }).strict()), summary: weatherSummarySchema }).strict() }),
+  defineSimulationQueryCapability({ id: weatherQueryKinds[2], title: 'Summarize weather area', description: 'Summarizes current weather severity across cells inside a polygon.', input: weatherAreaQuerySchema, output: z.object({ cellCount: z.number().int().nonnegative(), summary: weatherSummarySchema }).strict() }),
+  defineSimulationQueryCapability({ id: weatherQueryKinds[3], title: 'Read weather map features', description: 'Projects current weather truth into bounded map features for a viewport.', input: weatherMapFeaturesQuerySchema, output: z.object({ features: z.array(packMapAreaFeatureSchema), metadata: weatherFieldStatsSchema }).strict() }),
+  defineSimulationQueryCapability({ id: weatherQueryKinds[4], title: 'Read weather field statistics', description: 'Returns current sparse weather-field size and truth resolution.', input: z.object({}).strict(), output: weatherFieldStatsSchema }),
 ]
 
-const success = (
-  request: PackQueryRequest,
-  result: unknown,
-  generatedAt: IsoTimestamp = nowIso(),
-): PackQueryResponse => ({
-  ok: true,
-  packId: request.packId,
-  kind: request.kind,
-  result,
-  generatedAt,
-})
-
-const failure = (
-  request: PackQueryRequest,
-  reason: string,
-  generatedAt: IsoTimestamp = nowIso(),
-): PackQueryResponse => ({
-  ok: false,
-  packId: request.packId,
-  kind: request.kind,
-  reason,
-  generatedAt,
-})
+const failure = (reason: string): never => { throw new Error(reason) }
 
 const interpolatePoint = (
   from: GeoJsonPoint,
@@ -156,46 +133,46 @@ const summarizeSamples = (
 }
 
 export const answerWeatherQuery = (config: {
-  readonly request: PackQueryRequest
+  readonly request: PackRuntimeQuery
   readonly field: WeatherSparseField
   readonly objects: ReadonlyArray<OperationalObject>
   readonly at: IsoTimestamp
-}): PackQueryResponse => {
+}): unknown => {
   try {
-    if (config.request.kind === weatherQueryKinds[0]) {
-      const payload = weatherPointQuerySchema.parse(config.request.payload)
-      return success(config.request, weatherSampleAtPointFromSparseField({
+    if (config.request.capabilityId === weatherQueryKinds[0]) {
+      const payload = weatherPointQuerySchema.parse(config.request.input)
+      return weatherSampleAtPointFromSparseField({
         field: config.field,
         point: payload.point,
         at: config.at,
-      }), config.at)
+      })
     }
-    if (config.request.kind === weatherQueryKinds[1]) {
-      const payload = weatherRouteQuerySchema.parse(config.request.payload)
+    if (config.request.capabilityId === weatherQueryKinds[1]) {
+      const payload = weatherRouteQuerySchema.parse(config.request.input)
       const points = samplePointsAlongRoute(payload.route, payload.intervalM)
       const samples = points.map(point => ({
         point,
         sample: weatherSampleAtPointFromSparseField({ field: config.field, point, at: config.at }),
       }))
-      return success(config.request, {
+      return {
         samples,
         summary: summarizeSamples(samples.map(item => item.sample)),
-      }, config.at)
+      }
     }
-    if (config.request.kind === weatherQueryKinds[2]) {
-      const payload = weatherAreaQuerySchema.parse(config.request.payload)
+    if (config.request.capabilityId === weatherQueryKinds[2]) {
+      const payload = weatherAreaQuerySchema.parse(config.request.input)
       const cells = [...config.field.cells.values()].filter(cell => pointInPolygon(cell.center, payload.area))
-      return success(config.request, {
+      return {
         cellCount: cells.length,
         summary: summarizeSamples(cells.map(cell => ({
           state: cell.state,
           quality: { provenance: cell.activeInfluenceIds.length > 0 ? 'inferred' : 'scenario', confidence: 0.7, validAt: cell.updatedAt },
           activeInfluenceIds: cell.activeInfluenceIds,
         }))),
-      }, config.at)
+      }
     }
-    if (config.request.kind === weatherQueryKinds[3]) {
-      const payload = weatherMapFeaturesQuerySchema.parse(config.request.payload)
+    if (config.request.capabilityId === weatherQueryKinds[3]) {
+      const payload = weatherMapFeaturesQuerySchema.parse(config.request.input)
       const at = (payload.at ?? config.at) as IsoTimestamp
       const features = projectWeatherFieldForMap({
         field: config.field,
@@ -206,22 +183,22 @@ export const answerWeatherQuery = (config: {
         layers: payload.layers,
         ...(payload.animationDurationMs === undefined ? {} : { animationDurationMs: payload.animationDurationMs }),
       })
-      return success(config.request, {
+      return {
         features,
         metadata: {
           ...weatherSparseFieldStats(config.field),
           truthResolution: config.field.grid.truthResolution,
         },
-      }, config.at)
+      }
     }
-    if (config.request.kind === weatherQueryKinds[4]) {
-      return success(config.request, {
+    if (config.request.capabilityId === weatherQueryKinds[4]) {
+      return {
         ...weatherSparseFieldStats(config.field),
         truthResolution: config.field.grid.truthResolution,
-      }, config.at)
+      }
     }
-    return failure(config.request, `weather pack does not support query kind: ${config.request.kind}`, config.at)
+    return failure(`weather Pack does not support query Capability: ${config.request.capabilityId}`)
   } catch (err) {
-    return failure(config.request, err instanceof Error ? err.message : String(err), config.at)
+    return failure(err instanceof Error ? err.message : String(err))
   }
 }

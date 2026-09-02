@@ -35,7 +35,11 @@ const authoringItemTypeSchema = z.object({
   idPrefix: z.string().regex(/^[a-z][a-z0-9-]*$/),
   defaultItem: z.record(z.string(), z.unknown()),
   itemSchema: z.record(z.string(), z.unknown()),
-  placement: z.object({ target: z.literal('item'), path: pathSchema }).strict().optional(),
+  placement: z.object({
+    target: z.literal('item'),
+    kind: z.enum(['point', 'route', 'polygon']),
+    path: pathSchema,
+  }).strict().optional(),
   linkedConfig: z.object({
     collectionPath: pathSchema,
     idPrefix: z.string().regex(/^[a-z][a-z0-9-]*$/),
@@ -83,7 +87,25 @@ const valueAt = (root: Readonly<Record<string, unknown>>, path: ReadonlyArray<st
   return value
 }
 
+const setValueAt = (root: Record<string, unknown>, path: ReadonlyArray<string | number>, next: unknown): void => {
+  let value: unknown = root
+  path.forEach((segment, index) => {
+    if (value === null || typeof value !== 'object') throw new Error(`invalid authoring path at ${String(segment)}`)
+    if (index === path.length - 1) {
+      ;(value as Record<string | number, unknown>)[segment] = next
+      return
+    }
+    const candidate = (value as Record<string | number, unknown>)[segment]
+    if (candidate === null || typeof candidate !== 'object') {
+      const following = path[index + 1]
+      ;(value as Record<string | number, unknown>)[segment] = typeof following === 'number' ? [] : {}
+    }
+    value = (value as Record<string | number, unknown>)[segment]
+  })
+}
+
 const validateAuthoring = (pack: WorldPack): void => {
+  pack.scenarioConfigSchema.parse({})
   const itemTypeIds = new Set<string>()
   for (const itemType of pack.authoring?.itemTypes ?? []) {
     if (itemTypeIds.has(itemType.id)) throw new Error(`duplicate authoring item type ${itemType.id} in Pack ${pack.descriptor.id}`)
@@ -91,6 +113,25 @@ const validateAuthoring = (pack: WorldPack): void => {
     if (!pack.scenario?.itemSchemas[itemType.id]) {
       throw new Error(`authoring item type ${itemType.id} in Pack ${pack.descriptor.id} has no Scenario item schema`)
     }
+    const candidate: Record<string, unknown> = {
+      pack: pack.descriptor.id,
+      type: itemType.id,
+      id: `${itemType.idPrefix}-authoring-check`,
+      label: itemType.label,
+      ...structuredClone(itemType.defaultItem),
+    }
+    if (itemType.placement) {
+      const placementValue = itemType.placement.kind === 'point'
+        ? [0, 0]
+        : itemType.placement.kind === 'route'
+          ? [[0, 0], [0.01, 0.01]]
+          : [[0, 0], [0.01, 0], [0.01, 0.01], [0, 0]]
+      setValueAt(candidate, itemType.placement.path, placementValue)
+    }
+    if (itemType.linkedConfig) {
+      setValueAt(candidate, itemType.linkedConfig.itemReferencePath, `${itemType.linkedConfig.idPrefix}-authoring-check`)
+    }
+    pack.scenario.itemSchemas[itemType.id]!.parse(candidate)
     for (const field of itemType.fields) {
       const defaults = field.target === 'item' ? itemType.defaultItem : itemType.linkedConfig?.defaults
       if (!defaults) throw new Error(`authoring field ${itemType.id}.${field.label} targets missing linked config`)
@@ -119,7 +160,7 @@ export const scenarioAuthoringCatalogFor = (packs: ReadonlyArray<WorldPack>): Sc
   const authoringPacks = packs.map(pack => ({
     id: pack.descriptor.id,
     title: pack.descriptor.name,
-    description: pack.descriptor.description ?? '',
+    description: pack.descriptor.description,
     categoryIds: pack.presentation.categories.map(category => category.id),
     runtimes: (pack.runtime?.runtimes ?? []).map(runtime => ({
       id: runtime.id,

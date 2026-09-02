@@ -7,8 +7,8 @@ import type {
   PackRuntimeConnectionConfig,
   PackRuntimeEvent,
   PackRuntimeEventHandler,
+  PackRuntimeQuery,
 } from '../../../simulation/protocol.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import {
   processPlantControlRampCommandKind,
   processPlantControlRampPayloadSchema,
@@ -63,14 +63,6 @@ const processPlantDefinitionsFor = (
     operatingPoint: data.operatingPoint,
     automation: data.automation,
   })]
-})
-
-const fail = (request: PackQueryRequest, reason: string): PackQueryResponse => ({
-  ok: false,
-  packId: request.packId,
-  kind: request.kind,
-  reason,
-  generatedAt: nowIso(),
 })
 
 const emitPackRuntimeEvents = (
@@ -135,7 +127,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       compiledPlants,
       runtimeState,
     })
-    const systemConnections = systemConnectionsFor(config.scenario?.connections ?? [], plants)
+    const systemConnections = systemConnectionsFor(config.scenario.connections, plants)
     const connectedPlantIds = new Set(systemConnections.map(connection => String(connection.system.objectId)))
     const lastNetworkObservationWallMs = new Map<string, number>()
     const networkAvailableByPlant = new Map<string, boolean>()
@@ -190,7 +182,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
     let recordingDescriptorsPending = recordingPlan !== null
     let nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
     let clock: SimulationClockState = {
-      currentTime: config.scenario?.world.startsAt ?? nowIso(),
+      currentTime: config.scenario.world.startsAt,
       updatedAt: nowIso(),
       paused: false,
       speed: 1,
@@ -430,13 +422,12 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           }
         }
       },
-      query: async (request: PackQueryRequest): Promise<PackQueryResponse> => {
-        if (runtimeFailureReason !== null) return fail(request, `process plant runtime has stopped after a runtime failure: ${runtimeFailureReason}`)
-        if (plants.size === 0) return fail(request, 'process plant runtime is not active for this scenario')
+      invokeQuery: async (request: PackRuntimeQuery): Promise<unknown> => {
+        if (runtimeFailureReason !== null) throw new Error(`Process Plant runtime has stopped after a runtime failure: ${runtimeFailureReason}`)
+        if (plants.size === 0) throw new Error('Process Plant runtime is not active for this Scenario')
         return answerProcessPlantQuery({
           request,
           plants,
-          at: nowIso(),
         })
       },
       observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {

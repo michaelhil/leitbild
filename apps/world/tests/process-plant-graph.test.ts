@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import type { IsoTimestamp, PackId } from '../src/core/model/index.ts'
-import type { PackQueryRequest } from '../src/core/packs/protocol.ts'
+import type { PackId } from '../src/core/model/index.ts'
+import type { PackRuntimeQuery } from '../src/simulation/protocol.ts'
 import {
   answerProcessPlantQuery,
   assemblePwrReferencePlantGraph,
@@ -21,7 +21,6 @@ import {
 import { scenarios } from '../src/scenarios/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 
-const at = '2026-01-01T09:00:00.000Z' as IsoTimestamp
 
 describe('process plant model composition', () => {
   test('builds and validates every supported PWR loop count from one model source', () => {
@@ -96,34 +95,28 @@ describe('process plant discovery', () => {
   })
 
   test('answers catalog discovery without exposing implementation source files', () => {
-    const request: PackQueryRequest = {
-      packId: 'process-plant' as PackId,
-      kind: 'world.process-plant.catalog.list',
-      payload: {},
+    const request: PackRuntimeQuery = {
+      capabilityId: 'world.process-plant.catalog.list',
+      input: {},
     }
-    const response = answerProcessPlantQuery({ request, plants: new Map(), at })
-    expect(response.ok).toBe(true)
-    if (!response.ok) throw new Error(response.reason)
-    expect(response.result).toMatchObject({
+    const response = answerProcessPlantQuery({ request, plants: new Map() })
+    expect(response).toMatchObject({
       models: [{ id: processPlantPwrReferenceModelRef }],
       displays: [{ id: 'unit-overview' }],
     })
-    expect(JSON.stringify(response.result)).not.toContain('sourcePath')
+    expect(JSON.stringify(response)).not.toContain('sourcePath')
   })
 
   test('links Plant specification components to their behavior and calculation source', () => {
     const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:source-inspection' }))
-    const request: PackQueryRequest = {
-      packId: 'process-plant' as PackId,
-      kind: 'world.process-plant.artifact.read',
-      payload: { plantId: plant.id, artifact: 'authored-spec' },
+    const request: PackRuntimeQuery = {
+      capabilityId: 'world.process-plant.artifact.read',
+      input: { plantId: plant.id, artifact: 'authored-spec' },
     }
     const plants = new Map([[plant.id, { plant } as ProcessPlantRuntimeInstance]])
-    const response = answerProcessPlantQuery({ request, plants, at })
+    const response = answerProcessPlantQuery({ request, plants })
 
-    expect(response.ok).toBe(true)
-    if (!response.ok) throw new Error(response.reason)
-    const result = response.result as {
+    const result = response as {
       readonly components: ReadonlyArray<{
         readonly id: string
         readonly sourcePath: string | null
@@ -151,10 +144,9 @@ describe('process plant discovery', () => {
 
   test('validates procedure tags in one tolerant query', () => {
     const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:procedure-tags' }))
-    const request: PackQueryRequest = {
-      packId: 'process-plant' as PackId,
-      kind: 'world.process-plant.procedure-tags.validate',
-      payload: {
+    const request: PackRuntimeQuery = {
+      capabilityId: 'world.process-plant.procedure-tags.validate',
+      input: {
         plantId: plant.id,
         tags: [
           {
@@ -179,11 +171,9 @@ describe('process plant discovery', () => {
       },
     }
     const plants = new Map([[plant.id, { plant } as ProcessPlantRuntimeInstance]])
-    const response = answerProcessPlantQuery({ request, plants, at })
+    const response = answerProcessPlantQuery({ request, plants })
 
-    expect(response.ok).toBe(true)
-    if (!response.ok) throw new Error(response.reason)
-    expect(response.result).toMatchObject({
+    expect(response).toMatchObject({
       plantId: plant.id,
       tags: [
         {
@@ -214,7 +204,7 @@ describe('built-in process plant scenarios', () => {
     expect(builtIns.map(scenario => scenario.id).sort()).toEqual([
       'halden-four-unit-grid',
       'halden-process-plant-demo',
-      'oslo-all-packs-demo',
+      'oslo-integrated-operations',
     ])
 
     for (const scenario of builtIns) {

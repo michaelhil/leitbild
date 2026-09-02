@@ -1,9 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { CommandEnvelope, CommandResult, SimulationRunEvent, GeoJsonLineString, GeoJsonPolygon, IsoTimestamp, ObjectId, OperationalObject } from '../../../core/model/index.ts'
 import { commandResultSchema, confirmedFact, interactionSignalSchema, nowIso, type InteractionSignal, type SignalId } from '../../../core/model/index.ts'
-import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler } from '../../../simulation/protocol.ts'
-import { definePackCommandCapability } from '../../../simulation/capabilities.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
+import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeQuery } from '../../../simulation/protocol.ts'
+import { defineSimulationCommandCapability } from '../../../simulation/capabilities.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import { createDirectRoutingAdapter } from '../../../routing/direct-adapter.ts'
 import { createTrafficConditionCommandKind } from '../commands.ts'
@@ -150,7 +149,7 @@ export const createLocalTrafficPackRuntimeAdapter = (adapterConfig: {
   packId: trafficPackId,
   clock: 'none',
   capabilities: [
-    definePackCommandCapability({
+    defineSimulationCommandCapability({
       id: createTrafficConditionCommandKind,
       title: 'Create traffic condition',
       description: 'Creates a route or area traffic condition with explicit severity and speed impact.',
@@ -165,7 +164,7 @@ export const createLocalTrafficPackRuntimeAdapter = (adapterConfig: {
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const routing = adapterConfig.routing ?? createDirectRoutingAdapter()
     const objects = new Map<string, OperationalObject>()
-    const initialObjects = (config.initialObjects ?? config.scenario?.initialObjects ?? [])
+    const initialObjects = (config.initialObjects ?? config.scenario.initialObjects)
       .filter(object => object.packId === trafficPackId)
     for (const object of initialObjects) objects.set(object.id, restoreTrafficObject(object))
     let nextConditionNumber = nextNumberAfter(objects.values())
@@ -230,7 +229,7 @@ export const createLocalTrafficPackRuntimeAdapter = (adapterConfig: {
         ], acceptedAt)
         return { ok: true, commandId: command.id, acceptedAt }
       },
-      query: async (request: PackQueryRequest): Promise<PackQueryResponse> =>
+      invokeQuery: async (request: PackRuntimeQuery): Promise<unknown> =>
         answerTrafficQuery({
           request,
           objects: [...objects.values()],

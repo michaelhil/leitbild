@@ -11,7 +11,8 @@ import type {
   PackRuntimeEvent,
   PackRuntimeEventHandler,
 } from '../src/simulation/protocol.ts'
-import { definePackQueryCapability } from '../src/simulation/capabilities.ts'
+import { defineSimulationQueryCapability } from '../src/simulation/capabilities.ts'
+import { testRuntimeConnectionConfig } from './helpers.ts'
 
 // Tiny stub PackRuntimeAdapter the multi-adapter can wrap. Each instance
 // exposes an `emit(events)` test seam plus tallies for connect/close.
@@ -33,7 +34,7 @@ const createStubAdapter = (id: string): StubAdapter => {
     version: '1.0.0',
     packId: aviationPackId,
     clock: 'live',
-    capabilities: [definePackQueryCapability({
+    capabilities: [defineSimulationQueryCapability({
       id: 'world.aviation.stub-status',
       title: 'Read stub source status',
       description: 'Reads the status of the test aviation source.',
@@ -70,13 +71,7 @@ const createStubAdapter = (id: string): StubAdapter => {
           rejectedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
           reason: 'stub rejects commands',
         }),
-        query: async (request) => ({
-          ok: true,
-          packId: request.packId,
-          kind: request.kind,
-          result: { stubId: id },
-          generatedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
-        }),
+        invokeQuery: async () => ({ stubId: id }),
         observeCommittedEvents: async () => undefined,
         setClock: async () => undefined,
         close: async () => {
@@ -141,9 +136,10 @@ describe('createAviationMultiPackRuntimeAdapter', () => {
     const opensky = createStubAdapter(aviationOpenSkyRuntimeId)
     const vatsim = createStubAdapter(aviationVatsimRuntimeId)
     const multi = createAviationMultiPackRuntimeAdapter({ opensky, vatsim })
-    const connection = await multi.connect({
+    const connection = await multi.connect(testRuntimeConnectionConfig({
       simulationRunId: 'run-test' as SimulationRunId,
-    })
+      runtimeIds: [multi.id],
+    }))
 
     const emissions: { runtimeId: string; events: ReadonlyArray<PackRuntimeEvent> }[] = []
     connection.subscribe((emission) => {
@@ -165,9 +161,10 @@ describe('createAviationMultiPackRuntimeAdapter', () => {
     const opensky = createStubAdapter(aviationOpenSkyRuntimeId)
     const vatsim = createStubAdapter(aviationVatsimRuntimeId)
     const multi = createAviationMultiPackRuntimeAdapter({ opensky, vatsim })
-    const connection = await multi.connect({
+    const connection = await multi.connect(testRuntimeConnectionConfig({
       simulationRunId: 'run-test' as SimulationRunId,
-    })
+      runtimeIds: [multi.id],
+    }))
     const emissions: ReadonlyArray<PackRuntimeEvent>[] = []
     connection.subscribe((emission) => {
       if (emission.type === 'event.emission') emissions.push(emission.events)
@@ -202,9 +199,10 @@ describe('createAviationMultiPackRuntimeAdapter', () => {
     const opensky = createStubAdapter(aviationOpenSkyRuntimeId)
     const vatsim = createStubAdapter(aviationVatsimRuntimeId)
     const multi = createAviationMultiPackRuntimeAdapter({ opensky, vatsim })
-    const connection = await multi.connect({
+    const connection = await multi.connect(testRuntimeConnectionConfig({
       simulationRunId: 'run-test' as SimulationRunId,
-    })
+      runtimeIds: [multi.id],
+    }))
     const bad = await connection.sendCommand({
       ...issueSetSource('opensky'),
       payload: { source: 'mlat' },
@@ -216,19 +214,20 @@ describe('createAviationMultiPackRuntimeAdapter', () => {
   it('rejects set_source for an unconfigured source', async () => {
     const vatsim = createStubAdapter(aviationVatsimRuntimeId)
     const multi = createAviationMultiPackRuntimeAdapter({ vatsim, defaultSource: 'vatsim' })
-    const connection = await multi.connect({
+    const connection = await multi.connect(testRuntimeConnectionConfig({
       simulationRunId: 'run-test' as SimulationRunId,
-    })
+      runtimeIds: [multi.id],
+    }))
     const result = await connection.sendCommand(issueSetSource('opensky'))
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.reason).toMatch(/not available/)
     await connection.close()
   })
 
-  it('falls back to the first registered source when scenario config names an unavailable source', async () => {
+  it('rejects a scenario that names an unavailable initial source', async () => {
     const vatsim = createStubAdapter(aviationVatsimRuntimeId)
     const multi = createAviationMultiPackRuntimeAdapter({ vatsim, defaultSource: 'opensky' })
-    const connection = await multi.connect({
+    await expect(multi.connect({
       simulationRunId: 'run-test' as SimulationRunId,
       scenario: {
         scenarioId: 'scenario:aviation',
@@ -239,13 +238,7 @@ describe('createAviationMultiPackRuntimeAdapter', () => {
         runtimeConfigByRuntimeId: {},
         runtimeConfig: { source: 'opensky' },
       },
-    })
-
-    expect(vatsim.connectCount()).toBe(1)
-    const status = await connection.query({ packId: 'aviation', kind: 'world.aviation.source-status', payload: {} })
-    expect(status.ok).toBe(true)
-    if (status.ok) expect((status.result as { multi?: { activeSource?: string } }).multi?.activeSource).toBe('vatsim')
-
-    await connection.close()
+    })).rejects.toThrow('configured source is not registered: opensky')
+    expect(vatsim.connectCount()).toBe(0)
   })
 })

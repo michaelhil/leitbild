@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { SimulationCapability } from '../../simulation/protocol.ts'
 import { commandResultSchema, objectIdSchema } from '../../core/model/index.ts'
-import { definePackCommandCapability } from '../../simulation/capabilities.ts'
+import { defineSimulationCommandCapability } from '../../simulation/capabilities.ts'
 
 export const gridDispatchGeneratorCommandKind = 'world.electric-grid.dispatch-generator'
 export const gridTripGeneratorCommandKind = 'world.electric-grid.trip-generator'
@@ -49,7 +49,7 @@ const command = <Shape extends z.ZodRawShape>(
   payloadSchema: z.ZodObject<Shape>,
 ): SimulationCapability => {
   const input = payloadSchema.extend({ gridId: objectIdSchema })
-  return definePackCommandCapability({
+  return defineSimulationCommandCapability({
     id,
     title,
     description,

@@ -31,6 +31,7 @@ import {
   simulationClockStateSchema,
   simulationRunEventSchema,
   simulationRunIdSchema,
+  type OperationalObject,
 } from '../model/index.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import { scenarioRevisionIdSchema } from '../scenarios/library.ts'
@@ -46,6 +47,7 @@ import { capabilityJsonSchema } from '../../simulation/capabilities.ts'
 import { CommandIdempotencyConflictError } from '../simulation-runs/command-idempotency.ts'
 
 const WORLD_MODULE_ID = moduleIdSchema.parse('world')
+const CONTEXT_OBJECT_LIMIT = 50
 
 export const worldModuleManifest = workspaceModuleManifestSchema.parse({
   module: {
@@ -69,6 +71,13 @@ const lifecycleInputSchema = z.object({ workspaceId: workspaceIdSchema }).strict
 const emptyInputSchema = z.object({}).strict()
 const readObjectInputSchema = z.object({
   objectId: z.string().trim().min(1).max(128),
+}).strict()
+const searchObjectsInputSchema = z.object({
+  packId: z.string().trim().min(1).max(128).optional(),
+  kind: z.string().trim().min(1).max(128).optional(),
+  text: z.string().trim().max(256).optional(),
+  offset: z.number().int().nonnegative().default(0),
+  limit: z.number().int().min(1).max(200).default(50),
 }).strict()
 const readChangesInputSchema = z.object({
   afterSequence: z.number().int().nonnegative().default(0),
@@ -167,6 +176,26 @@ const availableSimulationCapabilitySchema = z.object({
   runtimeId: z.string().min(1),
 }).strict()
 
+const operationalObjectSummarySchema = z.object({
+  id: z.string().min(1),
+  kind: z.string().min(1),
+  packId: z.string().min(1),
+  label: z.string().min(1),
+  lifecycle: z.string().min(1),
+  revision: z.number().int().nonnegative(),
+  status: z.string().min(1),
+  priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
+  intent: z.string().min(1).optional(),
+  updatedAt: isoTimestampSchema,
+}).strict()
+
+const objectSearchResultSchema = z.object({
+  total: z.number().int().nonnegative(),
+  offset: z.number().int().nonnegative(),
+  limit: z.number().int().positive(),
+  objects: z.array(operationalObjectSummarySchema),
+}).strict()
+
 const simulationRunContextSchema = z.object({
   subject: z.object({
     workspaceId: workspaceIdSchema,
@@ -187,18 +216,14 @@ const simulationRunContextSchema = z.object({
     guidance: scenarioGuidanceSchema.optional(),
     procedures: procedureControlStateSchema,
   }).strict(),
-  operationalObjects: z.array(z.object({
-    id: z.string().min(1),
-    kind: z.string().min(1),
-    packId: z.string().min(1),
-    label: z.string().min(1),
-    lifecycle: z.string().min(1),
-    revision: z.number().int().nonnegative(),
-    status: z.string().min(1),
-    priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
-    intent: z.string().min(1).optional(),
-    updatedAt: isoTimestampSchema,
-  }).strict()),
+  objects: z.object({
+    total: z.number().int().nonnegative(),
+    returned: z.number().int().nonnegative(),
+    truncated: z.boolean(),
+    byPack: z.record(z.string(), z.number().int().nonnegative()),
+    byKind: z.record(z.string(), z.number().int().nonnegative()),
+    items: z.array(operationalObjectSummarySchema),
+  }).strict(),
   affordances: z.object({
     workspaceId: workspaceIdSchema.nullable(),
     simulationRunId: simulationRunIdSchema,
@@ -341,8 +366,24 @@ const requireSimulationRunResource = (
   return simulationRunIdSchema.parse(invocation.resource.id)
 }
 
-const countBy = (values: ReadonlyArray<string>): Readonly<Record<string, number>> =>
-  Object.fromEntries([...new Set(values)].sort().map(value => [value, values.filter(candidate => candidate === value).length]))
+const countBy = (values: ReadonlyArray<string>): Readonly<Record<string, number>> => {
+  const counts = new Map<string, number>()
+  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1)
+  return Object.fromEntries([...counts.entries()].sort(([left], [right]) => left.localeCompare(right)))
+}
+
+const summarizeOperationalObject = (object: OperationalObject) => ({
+  id: object.id,
+  kind: object.kind,
+  packId: object.packId,
+  label: object.label,
+  lifecycle: object.lifecycle,
+  revision: object.revision,
+  status: object.operational.status,
+  ...(object.operational.priority === undefined ? {} : { priority: object.operational.priority }),
+  ...(object.operational.intent === undefined ? {} : { intent: object.operational.intent }),
+  updatedAt: object.timestamps.updatedAt,
+})
 
 const serializableInspection = (value: unknown) =>
   inspectionViewSchema.parse(JSON.parse(JSON.stringify(value)) as unknown)
@@ -793,6 +834,10 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       if (!revision) return apiError(409, 'scenario_revision_unavailable', 'Simulation Run has no readable Scenario Revision')
       const definition = await registry.compileScenarioRevision(revision)
       const snapshot = runtime.snapshot()
+      const objectSummaries = snapshot.objects
+        .map(summarizeOperationalObject)
+        .sort((left, right) => left.id.localeCompare(right.id))
+      const contextObjects = objectSummaries.slice(0, CONTEXT_OBJECT_LIMIT)
       return json({ result: {
         subject: {
           workspaceId: registry.workspaceId,
@@ -813,19 +858,47 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
           ...(snapshot.scenario?.guidance === undefined ? {} : { guidance: snapshot.scenario.guidance }),
           procedures: snapshot.procedures ?? { runs: [] },
         },
-        operationalObjects: snapshot.objects.map(object => ({
-          id: object.id,
-          kind: object.kind,
-          packId: object.packId,
-          label: object.label,
-          lifecycle: object.lifecycle,
-          revision: object.revision,
-          status: object.operational.status,
-          ...(object.operational.priority === undefined ? {} : { priority: object.operational.priority }),
-          ...(object.operational.intent === undefined ? {} : { intent: object.operational.intent }),
-          updatedAt: object.timestamps.updatedAt,
-        })),
+        objects: {
+          total: objectSummaries.length,
+          returned: contextObjects.length,
+          truncated: contextObjects.length < objectSummaries.length,
+          byPack: countBy(snapshot.objects.map(object => object.packId)),
+          byKind: countBy(snapshot.objects.map(object => object.kind)),
+          items: contextObjects,
+        },
         affordances: runtime.capabilities(),
+      } })
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.objects.search',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Search Operational Objects',
+      description: 'Searches current operational-object summaries by Pack, kind, or text with bounded pagination.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: capabilityJsonSchema(searchObjectsInputSchema),
+      outputSchema: capabilityJsonSchema(objectSearchResultSchema),
+    },
+    invoke: async (registry, invocation) => {
+      const runtime = await registry.load(requireSimulationRunResource(invocation))
+      const input = searchObjectsInputSchema.parse(invocation.input)
+      const needle = input.text?.toLocaleLowerCase()
+      const objects = runtime.snapshot().objects
+        .filter(object => input.packId === undefined || object.packId === input.packId)
+        .filter(object => input.kind === undefined || object.kind === input.kind)
+        .filter(object => needle === undefined || [object.id, object.label, object.operational.status]
+          .some(value => value.toLocaleLowerCase().includes(needle)))
+        .map(summarizeOperationalObject)
+        .sort((left, right) => left.id.localeCompare(right.id))
+      return json({ result: {
+        total: objects.length,
+        offset: input.offset,
+        limit: input.limit,
+        objects: objects.slice(input.offset, input.offset + input.limit),
       } })
     },
   },
@@ -836,7 +909,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'Read Operational Object',
-      description: 'Reads current canonical projected state for one operational object discovered through Simulation Context.',
+      description: 'Reads current canonical projected state for one operational object discovered through context or object search.',
       risk: 'read',
       idempotent: true,
       inputSchema: z.toJSONSchema(readObjectInputSchema),

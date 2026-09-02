@@ -118,5 +118,9 @@ _Avoid_: separate monitoring store, swallowed runtime failure, fabricated heartb
 
 **World Pack**:
 A World-owned Pack that contributes scenario material, mechanics, Resources, Capabilities, or presentation.
-Its descriptor names `world` as its sole owning Module. Its strict Scenario configuration schema validates Pack-owned settings and is published for discovery.
+Its descriptor names `world` as its sole owning Module. Its strict Scenario configuration schema validates Pack-owned settings and is published for discovery. A selected Pack is compiled into startup state, creates one explicit runtime, and exposes operations only as typed Simulation Capabilities. Browser code consumes an honest presentation view rather than a partial fake runtime Pack.
 _Avoid_: Simulation Pack, Leitbild Pack, universal Pack, Experience
+
+**World Pack Catalog**:
+The deterministic inventory of complete server-side World Packs. It validates descriptor, capability, scenario-authoring, runtime, and contribution consistency before any Scenario can use a Pack.
+_Avoid_: discovering browser modules from the filesystem, accepting structurally incomplete Packs, universal Pack catalog

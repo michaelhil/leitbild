@@ -79,6 +79,7 @@ describe('reference-data registry (collector)', () => {
         id: 'aviation-clone',
         version: aviationPack.descriptor.version,
         name: 'Aviation Clone',
+        description: 'Test Pack.',
         contributions: aviationPack.descriptor.contributions.map(contribution => contribution.kind),
       }),
     }

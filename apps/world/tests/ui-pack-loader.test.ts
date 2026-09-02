@@ -43,4 +43,18 @@ describe('UI scenario pack loading', () => {
   test('has one reviewed lazy loader for every assembled World Pack', () => {
     expect(knownUiPackIds).toEqual(worldPacks.map(pack => pack.descriptor.id).sort())
   })
+
+  test('publishes the same Pack identity through server and browser assemblies', async () => {
+    for (const pack of worldPacks) {
+      expect((await loadUiPack(pack.descriptor.id)).descriptor).toEqual(pack.descriptor)
+    }
+  })
+
+  test('heavy browser views do not masquerade as complete server Packs', async () => {
+    for (const packId of ['drone', 'process-plant', 'electric-grid']) {
+      const view = await loadUiPack(packId)
+      expect(Object.hasOwn(view, 'scenarioConfigSchema')).toBe(false)
+      expect(Object.hasOwn(view, 'scenario')).toBe(false)
+    }
+  })
 })

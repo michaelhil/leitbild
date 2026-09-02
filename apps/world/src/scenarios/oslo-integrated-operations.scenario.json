@@ -1,7 +1,7 @@
 {
-  "id": "oslo-all-packs-demo",
-  "title": "Oslo all-packs screenshot demo",
-  "description": "A city-wide Oslo demo showing ambulance, weather, electric grid, and four independently simulated process-plant units together for screenshots.",
+  "id": "oslo-integrated-operations",
+  "title": "Oslo integrated operations",
+  "description": "A city-wide Oslo scenario combining ambulance, weather, electric grid, and four independently simulated process-plant units.",
   "recording": [
     {
       "packId": "process-plant",

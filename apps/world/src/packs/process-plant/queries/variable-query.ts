@@ -1,17 +1,16 @@
 import { z } from 'zod'
-import type { IsoTimestamp } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
+import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import type { VariablePath } from '../graph/index.ts'
 import { processQuantitySchema, variableDisciplineSchema, variablePathSchema } from '../graph/index.ts'
 import type { ProcessPlantVariableSnapshot } from '../runtime/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
-import { requirePlant, success } from './common.ts'
+import { requirePlant } from './common.ts'
 
 export const variablesReadQuerySchema = z.object({
   plantId: idSchema,
   paths: z.array(variablePathSchema).min(1),
-})
+}).strict()
 
 export const variablesSearchQuerySchema = z.object({
   plantId: idSchema.optional(),
@@ -19,7 +18,7 @@ export const variablesSearchQuerySchema = z.object({
   discipline: variableDisciplineSchema.optional(),
   quantity: processQuantitySchema.optional(),
   publishedOnly: z.boolean().default(false),
-})
+}).strict()
 
 export const processPlantVariableQueryKinds = [
   'world.process-plant.variables.read',
@@ -52,24 +51,23 @@ const matchesSearch = (
 }
 
 export const answerProcessPlantVariableQuery = (config: {
-  readonly request: PackQueryRequest
+  readonly request: PackRuntimeQuery
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
-  readonly at: IsoTimestamp
-}): PackQueryResponse | undefined => {
-  if (!processPlantVariableQueryKinds.some(kind => kind === config.request.kind)) return undefined
-  if (config.request.kind === 'world.process-plant.variables.read') {
-    const payload = variablesReadQuerySchema.parse(config.request.payload)
+}): unknown | undefined => {
+  if (!processPlantVariableQueryKinds.some(kind => kind === config.request.capabilityId)) return undefined
+  if (config.request.capabilityId === 'world.process-plant.variables.read') {
+    const payload = variablesReadQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
-    return success(config.request, { variables: snapshotsFor(system, payload.paths) }, config.at)
+    return { variables: snapshotsFor(system, payload.paths) }
   }
-  const payload = variablesSearchQuerySchema.parse(config.request.payload)
+  const payload = variablesSearchQuerySchema.parse(config.request.input)
   const plants = payload.plantId === undefined
     ? [...config.plants.values()]
     : [requirePlant(config.plants, payload.plantId)]
-  return success(config.request, {
+  return {
     plants: plants.map(system => ({
       plantId: system.plant.id,
       variables: system.runtime.snapshot().variables.filter(variable => matchesSearch(variable, payload)),
     })),
-  }, config.at)
+  }
 }

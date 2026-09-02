@@ -136,9 +136,9 @@ export const createSimulationRunRuntime = async (config: {
   readonly restoredSnapshot?: SimulationRunStateSnapshot
   readonly restoredEvents?: ReadonlyArray<SimulationRunEvent>
   readonly initialSeq?: number
-  readonly scenario?: {
+  readonly scenario: {
     readonly id: string
-    readonly startsAt?: IsoTimestamp
+    readonly startsAt: IsoTimestamp
     readonly timeline?: ScenarioTimeline
   }
   readonly capabilities?: Omit<SimulationRunCapabilities, 'simulationRunId'>
@@ -693,27 +693,24 @@ export const createSimulationRunRuntime = async (config: {
     void publishPackRuntimeEmissionSafely(emission)
   })
 
-  const initialScenarioState = (): ScenarioExecutionState | undefined => {
-    if (!config.scenario) return undefined
-    return {
-      scenarioId: config.scenario.id,
-      highlightedObjectIds: [],
-      ...(config.scenario.timeline === undefined
-        ? {}
-        : {
-            timeline: {
-              startedAt: config.scenario.startsAt ?? nowIso(),
-              firedCueIds: [],
-            },
-          }),
-    }
-  }
+  const initialScenarioState = (): ScenarioExecutionState => ({
+    scenarioId: config.scenario.id,
+    highlightedObjectIds: [],
+    ...(config.scenario.timeline === undefined
+      ? {}
+      : {
+          timeline: {
+            startedAt: config.scenario.startsAt,
+            firedCueIds: [],
+          },
+        }),
+  })
 
   if (config.restoredSnapshot) {
     state.hydrate({
       ...config.restoredSnapshot,
       clock: config.restoredSnapshot.clock ?? {
-        currentTime: config.scenario?.startsAt ?? nowIso(),
+        currentTime: config.scenario.startsAt,
         updatedAt: nowIso(),
         paused: false,
         speed: 1,
@@ -726,12 +723,12 @@ export const createSimulationRunRuntime = async (config: {
       objects: snapshot.objects,
       seq,
       clock: {
-        currentTime: config.scenario?.startsAt ?? nowIso(),
+        currentTime: config.scenario.startsAt,
         updatedAt: nowIso(),
         paused: false,
         speed: 1,
       },
-      ...(scenarioState === undefined ? {} : { scenario: scenarioState }),
+      scenario: scenarioState,
     })
     await config.snapshotStore.save(snapshotWithCurrentClock())
   }
@@ -788,13 +785,11 @@ export const createSimulationRunRuntime = async (config: {
     }
     const input = active.capability.input.parse(invocation.input)
     if (active.capability.kind === 'query') {
-      const response = await config.runtimeConnection.query({
-        packId: active.packId,
-        kind: active.capability.id,
-        payload: input,
+      const result = await config.runtimeConnection.invokeQuery({
+        capabilityId: active.capability.id,
+        input,
       })
-      if (!response.ok) throw new Error(response.reason)
-      return { kind: 'query', result: active.capability.output.parse(response.result) }
+      return { kind: 'query', result: active.capability.output.parse(result) }
     }
     const built = active.capability.buildCommand?.(input)
     if (!built) throw new Error(`Simulation command Capability cannot build a command: ${active.capability.id}`)
@@ -851,7 +846,7 @@ export const createSimulationRunRuntime = async (config: {
   }
 
   const runDueScenarioCues = async (): Promise<void> => {
-    if (!config.scenario?.timeline || !state.snapshot().scenario?.timeline) return
+    if (!config.scenario.timeline || !state.snapshot().scenario?.timeline) return
     const dueCues = dueScenarioTimelineCues({
       timeline: config.scenario.timeline,
       state: state.snapshot().scenario!,
@@ -868,7 +863,7 @@ export const createSimulationRunRuntime = async (config: {
     const clock = state.snapshot().clock
     if (clock?.paused) return
     const runnerScenarioState = state.snapshot().scenario
-    if (!config.scenario?.timeline || !runnerScenarioState?.timeline) return
+    if (!config.scenario.timeline || !runnerScenarioState?.timeline) return
     scenarioRunner = createScenarioTimelineRunner({
       timeline: config.scenario.timeline,
       state: runnerScenarioState,
@@ -887,7 +882,7 @@ export const createSimulationRunRuntime = async (config: {
     scenarioRunner?.start()
   }
 
-  if (config.scenario?.timeline && state.snapshot().scenario?.timeline) {
+  if (config.scenario.timeline && state.snapshot().scenario?.timeline) {
     await runDueScenarioCues()
     startScenarioRunner()
   }
@@ -919,7 +914,7 @@ export const createSimulationRunRuntime = async (config: {
       clock: nextClock,
     }))
     await config.runtimeConnection.setClock(nextClock)
-    if (config.scenario?.timeline) {
+    if (config.scenario.timeline) {
       if (nextClock.paused) {
         scenarioRunner?.close()
         scenarioRunner = null
@@ -958,7 +953,7 @@ export const createSimulationRunRuntime = async (config: {
     capabilities: (): SimulationRunCapabilities => ({
       workspaceId: config.capabilities?.workspaceId ?? null,
       simulationRunId: config.id,
-      scenarioId: config.capabilities?.scenarioId ?? state.snapshot().scenario?.scenarioId ?? null,
+      scenarioId: config.capabilities?.scenarioId ?? config.scenario.id,
       scenarioRevisionId: config.capabilities?.scenarioRevisionId ?? null,
       activePackIds: config.capabilities?.activePackIds ?? [],
       runtimes: config.capabilities?.runtimes ?? [],

@@ -1,6 +1,6 @@
 import type { ActorId, ClientId, CommandEnvelope, CommandResult, ElectricalConnectionDefinition, SimulationRunEvent, InteractionSignal, OperationalObject, PackRuntimeRecordingBatch, Provenance, ScenarioRecordingSelection, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
 import type { IsoTimestamp, ObjectId, SimulationRunId } from '../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse, PackRuntimeClock } from '../core/packs/protocol.ts'
+import type { PackRuntimeClock } from '../core/packs/protocol.ts'
 import type { z } from 'zod'
 
 export interface PackRuntimeSnapshot {
@@ -81,12 +81,19 @@ export interface PackRuntimeConnection {
   readonly sendCommand: (command: CommandEnvelope) => Promise<CommandResult>
   readonly receiveRealtimeInput?: (input: PackRuntimeRealtimeInput) => Promise<void>
   readonly commandEventHistory?: (command: CommandEnvelope) => PackRuntimeEventHistory
-  readonly query: (request: PackQueryRequest) => Promise<PackQueryResponse>
+  readonly invokeQuery: (query: PackRuntimeQuery) => Promise<unknown>
   readonly observeCommittedEvents: (events: ReadonlyArray<SimulationRunEvent>) => Promise<void>
   readonly observeInitialSnapshot?: (objects: ReadonlyArray<OperationalObject>) => Promise<void>
   readonly setClock: (clock: SimulationClockState) => Promise<void>
   readonly health?: () => ReadonlyArray<PackRuntimeHealth>
   readonly close: () => Promise<void>
+}
+
+/** Private runtime invocation. Public callers use the same Capability id and
+ * schemas through the Workspace Capability Broker. */
+export interface PackRuntimeQuery {
+  readonly capabilityId: string
+  readonly input: unknown
 }
 
 export interface PackRuntimeStateStore {
@@ -138,7 +145,9 @@ export interface PackScenarioRuntimeConfig {
 
 export interface PackRuntimeConnectionConfig {
   readonly simulationRunId: SimulationRunId
-  readonly scenario?: PackScenarioRuntimeConfig
+  readonly scenario: PackScenarioRuntimeConfig
+  /** Restored Pack objects when resuming a run. Fresh runs use the compiled
+   * Scenario objects in `scenario.initialObjects`. */
   readonly initialObjects?: ReadonlyArray<OperationalObject>
   readonly runtimeStateStore?: PackRuntimeStateStore
   readonly runtimeStateStores?: Readonly<Record<string, PackRuntimeStateStore>>

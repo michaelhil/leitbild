@@ -53,13 +53,12 @@ The process-plant compiler builds a signal index from graph variables:
 
 No separate binding table is introduced.
 
-The pack query/API surface resolves tags directly:
+The Process Plant query Capability surface resolves tags directly:
 
 ```json
 {
-  "packId": "process-plant",
-  "kind": "process-plant.signals.read",
-  "payload": {
+  "capabilityId": "world.process-plant.signals.read",
+  "input": {
     "plantId": "unit-1",
     "signals": [{ "tagId": "PT-455" }]
   }
@@ -70,8 +69,8 @@ Commands use the same explicit signal reference shape:
 
 ```json
 {
-  "kind": "process-plant.control.write",
-  "payload": {
+  "capabilityId": "world.process-plant.control.write",
+  "input": {
     "plantId": "unit-1",
     "tagId": "PORV-456A",
     "value": 1
@@ -129,19 +128,19 @@ Automatic actions from normal controllers and protection functions intentionally
 
 ## Implemented Surface
 
-Pack queries:
+Query Capabilities:
 
-- `process-plant.signals.resolve`
-- `process-plant.signals.read`
-- `process-plant.signals.search`
-- `process-plant.conditions.evaluate`
-- `process-plant.procedure-tags.validate`
-- `process-plant.control.validate`
-- `process-plant.ic.status`
-- `process-plant.ic.catalog`
-- `process-plant.alarms.status`
-- `process-plant.alarms.summary`
-- `process-plant.alarms.history`
+- `world.process-plant.signals.resolve`
+- `world.process-plant.signals.read`
+- `world.process-plant.signals.search`
+- `world.process-plant.conditions.evaluate`
+- `world.process-plant.procedure-tags.validate`
+- `world.process-plant.control.validate`
+- `world.process-plant.ic.status`
+- `world.process-plant.ic.catalog`
+- `world.process-plant.alarms.status`
+- `world.process-plant.alarms.summary`
+- `world.process-plant.alarms.history`
 
 Pack commands:
 

@@ -1,12 +1,10 @@
 import { z } from 'zod'
-import type { IsoTimestamp } from '../../../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
+import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import { processPlantCatalog } from '../catalog-contributions.ts'
 import { processPlantActionCatalog } from '../actions.ts'
 import { processPlantAssessmentCatalog } from '../assessments.ts'
 import { processPlantDefinitionCatalog } from '../plant-definitions.ts'
 import { processPlantRecordingProfiles } from '../recording.ts'
-import { success } from './common.ts'
 
 export const processPlantCatalogInputSchema = z.object({}).strict()
 
@@ -36,10 +34,9 @@ const catalogView = (): Record<string, unknown> => ({
 })
 
 export const answerProcessPlantCatalogQuery = (config: {
-  readonly request: PackQueryRequest
-  readonly at: IsoTimestamp
-}): PackQueryResponse | undefined => {
-  if (config.request.kind !== 'world.process-plant.catalog.list') return undefined
-  processPlantCatalogInputSchema.parse(config.request.payload ?? {})
-  return success(config.request, catalogView(), config.at)
+  readonly request: PackRuntimeQuery
+}): unknown | undefined => {
+  if (config.request.capabilityId !== 'world.process-plant.catalog.list') return undefined
+  processPlantCatalogInputSchema.parse(config.request.input)
+  return catalogView()
 }

@@ -1,8 +1,7 @@
-import type { IsoTimestamp } from '../../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
+import type { PackRuntimeQuery } from '../../simulation/protocol.ts'
 import type { ProcessPlantIcLifecycleState, ProcessPlantIcSnapshot } from './runtime/index.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
-import { failure, plantQuerySchema, requirePlant, success } from './queries/common.ts'
+import { failure, plantQuerySchema, requirePlant } from './queries/common.ts'
 
 export const processPlantIcQueryKinds = [
   'world.process-plant.ic.status',
@@ -63,50 +62,45 @@ const alarmSummaryFor = (snapshot: ProcessPlantIcSnapshot): unknown => {
 }
 
 export const answerProcessPlantIcQuery = (config: {
-  readonly request: PackQueryRequest
+  readonly request: PackRuntimeQuery
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
-  readonly at: IsoTimestamp
-}): PackQueryResponse | undefined => {
+}): unknown | undefined => {
   const supportedKinds = new Set<string>(processPlantIcQueryKinds)
-  if (!supportedKinds.has(config.request.kind)) {
+  if (!supportedKinds.has(config.request.capabilityId)) {
     return undefined
   }
-  try {
-    const payload = plantQuerySchema.parse(config.request.payload)
-    const system = requirePlant(config.plants, payload.plantId)
-    if (!system.protection) return failure(config.request, `process plant I&C is not configured for plant: ${payload.plantId}`, config.at)
-    const snapshot = system.protection.snapshot()
-    if (config.request.kind === 'world.process-plant.ic.status') {
-      return success(config.request, {
+  const payload = plantQuerySchema.parse(config.request.input)
+  const system = requirePlant(config.plants, payload.plantId)
+  if (!system.protection) return failure(`process plant I&C is not configured for plant: ${payload.plantId}`)
+  const snapshot = system.protection.snapshot()
+  if (config.request.capabilityId === 'world.process-plant.ic.status') {
+    return {
         plantId: payload.plantId,
         ic: snapshot,
-      }, config.at)
-    }
-    if (config.request.kind === 'world.process-plant.alarms.status') {
-      return success(config.request, {
+      }
+  }
+  if (config.request.capabilityId === 'world.process-plant.alarms.status') {
+    return {
         plantId: payload.plantId,
         alarms: snapshot.alarms,
         trips: snapshot.trips,
         summary: alarmSummaryFor(snapshot),
-      }, config.at)
-    }
-    if (config.request.kind === 'world.process-plant.alarms.summary') {
-      return success(config.request, {
+      }
+  }
+  if (config.request.capabilityId === 'world.process-plant.alarms.summary') {
+    return {
         plantId: payload.plantId,
         summary: alarmSummaryFor(snapshot),
-      }, config.at)
-    }
-    if (config.request.kind === 'world.process-plant.alarms.history') {
-      return success(config.request, {
+      }
+  }
+  if (config.request.capabilityId === 'world.process-plant.alarms.history') {
+    return {
         plantId: payload.plantId,
         history: snapshot.history,
-      }, config.at)
-    }
-    return success(config.request, {
-      plantId: payload.plantId,
-      ic: system.protection.catalog(),
-    }, config.at)
-  } catch (err) {
-    return failure(config.request, err instanceof Error ? err.message : String(err), config.at)
+      }
+  }
+  return {
+    plantId: payload.plantId,
+    ic: system.protection.catalog(),
   }
 }

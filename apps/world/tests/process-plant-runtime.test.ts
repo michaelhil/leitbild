@@ -150,19 +150,16 @@ const displayAlarmIdsFor = (input: {
   ]])
   const response = answerProcessPlantDisplayQuery({
     request: {
-      packId: 'process-plant',
-      kind: 'world.process-plant.display.snapshot',
-      payload: {
+      capabilityId: 'world.process-plant.display.snapshot',
+      input: {
         plantId: input.system.id,
         displayId: 'unit-overview',
       },
     },
     plants,
-    at: '2026-06-02T00:00:00.000Z' as IsoTimestamp,
   })
-  expect(response?.ok).toBe(true)
-  if (response === undefined || !response.ok) throw new Error(response?.reason ?? 'display alarm snapshot query did not resolve')
-  const alarms = (response.result as {
+  if (response === undefined) throw new Error('display alarm snapshot query did not resolve')
+  const alarms = (response as {
     readonly alarms: {
       readonly active: ReadonlyArray<{ readonly id: string }>
     }

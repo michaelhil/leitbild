@@ -106,10 +106,9 @@
       "config": {},
       "items": [
         {
-          "type": "traffic_condition",
+          "type": "road_condition",
           "id": "traffic:halden-center-slowdown",
           "label": "Halden center slowdown",
-          "geometryMode": "road_segment",
           "from": [
             11.3705,
             59.1223
@@ -375,10 +374,9 @@
             "type": "create_object",
             "object": {
               "pack": "traffic",
-              "type": "traffic_condition",
+              "type": "road_condition",
               "id": "traffic:halden-south-queue",
               "label": "South bridge queue",
-              "geometryMode": "road_segment",
               "from": [
                 11.3773,
                 59.1157

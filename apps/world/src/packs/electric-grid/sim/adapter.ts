@@ -12,7 +12,6 @@ import type {
   SimulationRunEvent,
 } from '../../../core/model/index.ts'
 import { electricalPortFromObject, nowIso } from '../../../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import type {
   PackRuntimeAdapter,
   PackRuntimeConnection,
@@ -20,6 +19,7 @@ import type {
   PackRuntimeEvent,
   PackRuntimeEventHandler,
   PackRuntimeEventHistory,
+  PackRuntimeQuery,
 } from '../../../simulation/protocol.ts'
 import {
   electricGridCommandKinds,
@@ -215,10 +215,10 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
   capabilities: [...electricGridCommandCapabilities, ...electricGridQueryCapabilities],
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const { compileGridDefinition } = await import('../definitions.ts')
-    const initialObjects = (config.initialObjects ?? config.scenario?.initialObjects ?? []).filter(object => object.packId === electricGridPackId)
+    const initialObjects = (config.initialObjects ?? config.scenario.initialObjects).filter(object => object.packId === electricGridPackId)
     const rawState = await config.runtimeStateStore?.load()
     const runtimeState = rawState === undefined || rawState === null ? null : electricGridRuntimeStateSchema.parse(rawState)
-    const initialAt = config.scenario?.world.startsAt ?? nowIso()
+    const initialAt = config.scenario.world.startsAt
     const grids = new Map<string, GridRuntimeInstance>()
     const initiallyBalancedGridIds = new Set<string>()
     for (const item of gridObjectDefinitions(initialObjects)) {
@@ -228,7 +228,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
       grids.set(item.object.id, createGridRuntimeInstance({
         definition,
         at: initialAt,
-        connections: networkConnectionsFor(config.scenario?.connections ?? [], item.object.id),
+        connections: networkConnectionsFor(config.scenario.connections, item.object.id),
         ...(restored === undefined ? {} : { restored }),
       }))
     }
@@ -460,12 +460,12 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
           return commandRejected(command, error instanceof Error ? error.message : String(error))
         }
       },
-      query: async (request: PackQueryRequest): Promise<PackQueryResponse> => {
-        if (failure !== null) return { ok: false, packId: electricGridPackId, kind: request.kind, reason: `electric-grid runtime stopped after a failure: ${failure}`, generatedAt: nowIso() }
+      invokeQuery: async (request: PackRuntimeQuery): Promise<unknown> => {
+        if (failure !== null) throw new Error(`Electric Grid runtime stopped after a failure: ${failure}`)
         const startedAtMs = performance.now()
         const response = answerElectricGridQuery({ request, grids })
-        const gridId = typeof request.payload === 'object' && request.payload !== null && !Array.isArray(request.payload)
-          ? (request.payload as { readonly gridId?: unknown }).gridId
+        const gridId = typeof request.input === 'object' && request.input !== null && !Array.isArray(request.input)
+          ? (request.input as { readonly gridId?: unknown }).gridId
           : undefined
         if (typeof gridId === 'string') {
           const grid = grids.get(gridId)
@@ -501,7 +501,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
             const grid = createGridRuntimeInstance({
               definition,
               at: event.at,
-              connections: networkConnectionsFor(config.scenario?.connections ?? [], event.object.id),
+              connections: networkConnectionsFor(config.scenario.connections, event.object.id),
             })
             advanceGrid(grid, 0, event.at)
             grids.set(event.object.id, grid)

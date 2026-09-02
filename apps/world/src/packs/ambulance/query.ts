@@ -1,18 +1,17 @@
 import { z } from 'zod'
 import type { IsoTimestamp, ObjectId, OperationalObject } from '../../core/model/index.ts'
 import { objectIdSchema, operationalObjectSchema } from '../../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
-import type { SimulationCapability } from '../../simulation/protocol.ts'
-import { definePackQueryCapability } from '../../simulation/capabilities.ts'
+import type { PackRuntimeQuery, SimulationCapability } from '../../simulation/protocol.ts'
+import { defineSimulationQueryCapability } from '../../simulation/capabilities.ts'
 import { ambulancePackDataSchema, ambulancePackId, hospitalPackDataSchema, incidentPackDataSchema } from './model.ts'
 
 const objectQuerySchema = z.object({
   objectId: objectIdSchema,
-})
+}).strict()
 
 const objectsQuerySchema = z.object({
   type: z.enum(['ambulance', 'hospital', 'incident']).optional(),
-})
+}).strict()
 
 export const ambulanceQueryKinds = [
   'world.ambulance.objects',
@@ -39,38 +38,24 @@ const ambulanceDispatchStateResultSchema = z.object({
 }).strict()
 
 export const ambulanceQueryCapabilities: ReadonlyArray<SimulationCapability> = [
-  definePackQueryCapability({
+  defineSimulationQueryCapability({
     id: ambulanceQueryKinds[0], title: 'List ambulance assets',
     description: 'Lists current ambulances, hospitals, and incidents, optionally filtered by asset type.',
     input: objectsQuerySchema, output: ambulanceObjectsResultSchema,
   }),
-  definePackQueryCapability({
+  defineSimulationQueryCapability({
     id: ambulanceQueryKinds[1], title: 'Read ambulance asset',
     description: 'Reads one current Ambulance Pack Operational Object by its object id.',
     input: objectQuerySchema, output: ambulanceObjectResultSchema,
   }),
-  definePackQueryCapability({
+  defineSimulationQueryCapability({
     id: ambulanceQueryKinds[2], title: 'Read dispatch state',
     description: 'Returns current ambulance assignments, incident coverage, and receiving hospitals.',
     input: z.object({}).strict(), output: ambulanceDispatchStateResultSchema,
   }),
 ]
 
-const success = (request: PackQueryRequest, result: unknown, generatedAt: IsoTimestamp): PackQueryResponse => ({
-  ok: true,
-  packId: request.packId,
-  kind: request.kind,
-  result,
-  generatedAt,
-})
-
-const failure = (request: PackQueryRequest, reason: string, generatedAt: IsoTimestamp): PackQueryResponse => ({
-  ok: false,
-  packId: request.packId,
-  kind: request.kind,
-  reason,
-  generatedAt,
-})
+const failure = (reason: string): never => { throw new Error(reason) }
 
 const ambulanceTypeOf = (object: OperationalObject): 'ambulance' | 'hospital' | 'incident' | null => {
   if (ambulancePackDataSchema.safeParse(object.packData).success) return 'ambulance'
@@ -93,27 +78,27 @@ const assignedCapacityFor = (
     }, 0)
 
 export const answerAmbulanceQuery = (config: {
-  readonly request: PackQueryRequest
+  readonly request: PackRuntimeQuery
   readonly objects: ReadonlyArray<OperationalObject>
   readonly at: IsoTimestamp
-}): PackQueryResponse => {
+}): unknown => {
   try {
     const packObjects = config.objects.filter(object => object.packId === ambulancePackId)
-    if (config.request.kind === ambulanceQueryKinds[0]) {
-      const payload = objectsQuerySchema.parse(config.request.payload)
+    if (config.request.capabilityId === ambulanceQueryKinds[0]) {
+      const payload = objectsQuerySchema.parse(config.request.input)
       const objects = payload.type
         ? packObjects.filter(object => ambulanceTypeOf(object) === payload.type)
         : packObjects
-      return success(config.request, { objects }, config.at)
+      return { objects }
     }
-    if (config.request.kind === ambulanceQueryKinds[1]) {
-      const payload = objectQuerySchema.parse(config.request.payload)
+    if (config.request.capabilityId === ambulanceQueryKinds[1]) {
+      const payload = objectQuerySchema.parse(config.request.input)
       const object = packObjects.find(candidate => candidate.id === payload.objectId)
-      if (!object) return failure(config.request, `ambulance pack object not found: ${payload.objectId}`, config.at)
-      return success(config.request, { object, type: ambulanceTypeOf(object) }, config.at)
+      if (!object) return failure(`ambulance pack object not found: ${payload.objectId}`)
+      return { object, type: ambulanceTypeOf(object) }
     }
-    if (config.request.kind === ambulanceQueryKinds[2]) {
-      return success(config.request, {
+    if (config.request.capabilityId === ambulanceQueryKinds[2]) {
+      return {
         ambulances: packObjects
           .filter(object => ambulanceTypeOf(object) === 'ambulance')
           .map(object => ({
@@ -127,10 +112,10 @@ export const answerAmbulanceQuery = (config: {
             assignedCapacity: assignedCapacityFor(object, packObjects),
           })),
         hospitals: packObjects.filter(object => ambulanceTypeOf(object) === 'hospital'),
-      }, config.at)
+      }
     }
-    return failure(config.request, `ambulance pack does not support query kind: ${config.request.kind}`, config.at)
+    return failure(`ambulance Pack does not support query Capability: ${config.request.capabilityId}`)
   } catch (err) {
-    return failure(config.request, err instanceof Error ? err.message : String(err), config.at)
+    return failure(err instanceof Error ? err.message : String(err))
   }
 }

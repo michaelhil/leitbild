@@ -8,7 +8,7 @@ import { isoTimestampSchema, type IsoTimestamp } from './time.ts'
 import { electricalConnectionDefinitionSchema, type ElectricalConnectionDefinition } from './electrical.ts'
 
 export interface ScenarioWorldDefinition {
-  readonly startsAt?: IsoTimestamp
+  readonly startsAt: IsoTimestamp
   readonly environment: Record<string, unknown>
 }
 
@@ -163,7 +163,7 @@ export interface ScenarioDefinition {
 }
 
 export const scenarioWorldDefinitionSchema = z.object({
-  startsAt: isoTimestampSchema.optional(),
+  startsAt: isoTimestampSchema,
   environment: z.record(z.string(), z.unknown()).default({}),
 })
 

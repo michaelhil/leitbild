@@ -266,6 +266,7 @@ export const ambulancePack: WorldPack = {
     id: 'ambulance',
     version: '1.0.0',
     name: 'Ambulance Dispatch',
+    description: 'Emergency medical incidents, hospitals, ambulances, dispatch, routing, and patient transport.',
     contributions: ['runtime', 'recording', 'scenario', 'presentation', 'creation', 'targeting', 'interactions'],
   }),
   scenarioConfigSchema: emptyPackScenarioConfigSchema,
@@ -276,7 +277,7 @@ export const ambulancePack: WorldPack = {
       description: 'A dispatchable ambulance placed on the map.',
       idPrefix: 'ambulance',
       defaultItem: { equipment: [] },
-      placement: { target: 'item', path: ['position'] },
+      placement: { target: 'item', kind: 'point', path: ['position'] },
       fields: [],
     }, {
       id: 'hospital',
@@ -284,7 +285,7 @@ export const ambulancePack: WorldPack = {
       description: 'A receiving hospital with configurable trauma-bed capacity.',
       idPrefix: 'hospital',
       defaultItem: { traumaBeds: { total: 5, available: 5 } },
-      placement: { target: 'item', path: ['position'] },
+      placement: { target: 'item', kind: 'point', path: ['position'] },
       fields: [{
         target: 'item', path: ['traumaBeds', 'total'], label: 'Trauma beds',
         control: { kind: 'number', defaultValue: 5, min: 0, step: 1 },
@@ -298,7 +299,7 @@ export const ambulancePack: WorldPack = {
       description: 'An emergency incident with triage severity and victim count.',
       idPrefix: 'incident',
       defaultItem: { triage: 'yellow', victims: { state: 'estimated', count: 1 } },
-      placement: { target: 'item', path: ['position'] },
+      placement: { target: 'item', kind: 'point', path: ['position'] },
       fields: [{
         target: 'item', path: ['triage'], label: 'Triage',
         control: { kind: 'select', defaultValue: 'yellow', options: [

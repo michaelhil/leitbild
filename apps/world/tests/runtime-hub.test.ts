@@ -17,7 +17,7 @@ import type {
   PackRuntimeConnectionConfig,
   PackRuntimeEmission,
 } from '../src/simulation/protocol.ts'
-import { definePackCommandCapability, definePackQueryCapability } from '../src/simulation/capabilities.ts'
+import { defineSimulationCommandCapability, defineSimulationQueryCapability } from '../src/simulation/capabilities.ts'
 
 interface StubAdapter extends PackRuntimeAdapter {
   readonly connectCount: () => number
@@ -48,7 +48,7 @@ const createStubAdapter = (
     packId,
     clock: 'none',
     capabilities: [
-      definePackCommandCapability({
+      defineSimulationCommandCapability({
         id: commandKind,
         title: commandKind,
         description: `Test command ${commandKind}`,
@@ -57,7 +57,7 @@ const createStubAdapter = (
         output: z.object({}).passthrough(),
         buildCommand: input => ({ targetObjectIds: [], payload: input }),
       }),
-      ...(config.queryKind === undefined ? [] : [definePackQueryCapability({
+      ...(config.queryKind === undefined ? [] : [defineSimulationQueryCapability({
         id: config.queryKind,
         title: config.queryKind,
         description: `Test query ${config.queryKind}`,
@@ -78,18 +78,12 @@ const createStubAdapter = (
           return () => handlers.delete(handler)
         },
         sendCommand: async command => rejectedCommand(command),
-        query: async request => {
+        invokeQuery: async () => {
           if (queryFailures > 0) {
             queryFailures -= 1
             throw new Error('stub query failure')
           }
-          return {
-            ok: true,
-            packId: request.packId,
-            kind: request.kind,
-            result: { adapterId: id },
-            generatedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
-          }
+          return { adapterId: id }
         },
         observeCommittedEvents: async () => undefined,
         setClock: async (_clock: SimulationClockState) => undefined,
@@ -117,6 +111,18 @@ const command = (kind: string): CommandEnvelope => ({
   targetObjectIds: [],
   payload: {},
   issuedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
+})
+
+const connectionConfig = (runtimeIds: ReadonlyArray<string>): PackRuntimeConnectionConfig => ({
+  simulationRunId: 'run-test' as SimulationRunId,
+  scenario: {
+    scenarioId: 'scenario:test',
+    runtimeIds,
+    connections: [],
+    world: { startsAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp, environment: { mode: 'test' } },
+    initialObjects: [],
+    runtimeConfig: {},
+  },
 })
 
 describe('createRuntimeHub', () => {
@@ -153,14 +159,14 @@ describe('createRuntimeHub', () => {
     const second = createStubAdapter('second.runtime', 'second-pack', 'world.shared.command')
     const hub = createRuntimeHub([first, second])
 
-    await expect(hub.connect({ simulationRunId: 'run-test' as SimulationRunId })).rejects.toThrow('duplicate command route')
+    await expect(hub.connect(connectionConfig([first.id, second.id]))).rejects.toThrow('duplicate command route')
     expect(first.connectCount()).toBe(0)
     expect(second.connectCount()).toBe(0)
   })
 
   test('drops emissions that claim another runtime or Pack identity', async () => {
     const adapter = createStubAdapter('trusted.runtime', 'trusted-pack', 'world.trusted.command')
-    const connection = await createRuntimeHub([adapter]).connect({ simulationRunId: 'run-test' as SimulationRunId })
+    const connection = await createRuntimeHub([adapter]).connect(connectionConfig([adapter.id]))
     const received: PackRuntimeEmission[] = []
     connection.subscribe(emission => received.push(emission))
     const at = '2026-01-01T00:00:00.000Z' as IsoTimestamp
@@ -207,9 +213,9 @@ describe('createRuntimeHub', () => {
       queryKind: 'world.health.status',
       queryFailures: 1,
     })
-    const connection = await createRuntimeHub([adapter]).connect({ simulationRunId: 'run-test' as SimulationRunId })
+    const connection = await createRuntimeHub([adapter]).connect(connectionConfig([adapter.id]))
 
-    await expect(connection.query({ packId: 'health-pack', kind: 'world.health.status', payload: {} }))
+    await expect(connection.invokeQuery({ capabilityId: 'world.health.status', input: {} }))
       .rejects.toThrow('stub query failure')
     expect(connection.health?.()).toEqual([expect.objectContaining({
       runtimeId: 'health.runtime',
@@ -218,7 +224,7 @@ describe('createRuntimeHub', () => {
       lastFailure: expect.objectContaining({ operation: 'world.health.status', message: 'stub query failure' }),
     })])
 
-    expect((await connection.query({ packId: 'health-pack', kind: 'world.health.status', payload: {} })).ok).toBe(true)
+    expect(await connection.invokeQuery({ capabilityId: 'world.health.status', input: {} })).toEqual({ adapterId: 'health.runtime' })
     expect(connection.health?.()).toEqual([expect.objectContaining({
       runtimeId: 'health.runtime',
       state: 'ready',

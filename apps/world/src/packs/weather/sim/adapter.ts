@@ -15,9 +15,9 @@ import type {
   PackRuntimeConnectionConfig,
   PackRuntimeEvent,
   PackRuntimeEventHandler,
+  PackRuntimeQuery,
 } from '../../../simulation/protocol.ts'
-import { definePackCommandCapability } from '../../../simulation/capabilities.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
+import { defineSimulationCommandCapability } from '../../../simulation/capabilities.ts'
 import {
   createWeatherSparseField,
   updateWeatherSparseField,
@@ -252,17 +252,17 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
   packId: weatherPackId,
   clock: 'simulation',
   capabilities: [
-    definePackCommandCapability({ id: createWeatherAreaCommandKind, title: 'Create weather condition', description: 'Creates a weather influence area or point observation with explicit geometry and conditions.', input: createWeatherConditionPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [], payload: createWeatherConditionPayloadSchema.parse(input) }) }),
+    defineSimulationCommandCapability({ id: createWeatherAreaCommandKind, title: 'Create weather condition', description: 'Creates a weather influence area or point observation with explicit geometry and conditions.', input: createWeatherConditionPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [], payload: createWeatherConditionPayloadSchema.parse(input) }) }),
     ...weatherQueryCapabilities,
   ],
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const objects = new Map<string, OperationalObject>()
-    const initialObjects = (config.initialObjects ?? config.scenario?.initialObjects ?? [])
+    const initialObjects = (config.initialObjects ?? config.scenario.initialObjects)
       .filter(object => object.packId === weatherPackId)
     for (const object of initialObjects) objects.set(object.id, restoreWeatherObject(object))
     let nextConditionNumber = nextNumberAfter(objects.values())
     const handlers = new Set<PackRuntimeEventHandler>()
-    const startedAt = config.scenario?.world.startsAt ?? nowIso()
+    const startedAt = config.scenario.world.startsAt
     let clock: SimulationClockState = { currentTime: startedAt, updatedAt: startedAt, paused: false, speed: 1 }
     let lastTickWallMs = Date.now()
     let sparseField: WeatherSparseField = createWeatherSparseField(weatherGridForObjects({
@@ -396,7 +396,7 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
         }], acceptedAt)
         return { ok: true, commandId: command.id, acceptedAt }
       },
-      query: async (request: PackQueryRequest): Promise<PackQueryResponse> =>
+      invokeQuery: async (request: PackRuntimeQuery): Promise<unknown> =>
         answerWeatherQuery({
           request,
           field: sparseField,

@@ -1,8 +1,7 @@
-import type { IsoTimestamp } from '../../../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
+import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import type { ProcessPlantIcLifecycleState } from '../runtime/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
-import { failure, requirePlant, success, plantQuerySchema } from './common.ts'
+import { failure, requirePlant, plantQuerySchema } from './common.ts'
 
 const icSummaryFor = (plant: ProcessPlantRuntimeInstance): {
   readonly configured: boolean
@@ -80,13 +79,12 @@ export const processPlantRuntimeQueryKinds = [
 ] as const
 
 export const answerProcessPlantRuntimeQuery = (config: {
-  readonly request: PackQueryRequest
+  readonly request: PackRuntimeQuery
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
-  readonly at: IsoTimestamp
-}): PackQueryResponse | undefined => {
-  if (!processPlantRuntimeQueryKinds.some(kind => kind === config.request.kind)) return undefined
-  if (config.request.kind === 'world.process-plant.runtime.status') {
-    return success(config.request, {
+}): unknown | undefined => {
+  if (!processPlantRuntimeQueryKinds.some(kind => kind === config.request.capabilityId)) return undefined
+  if (config.request.capabilityId === 'world.process-plant.runtime.status') {
+    return {
       active: config.plants.size > 0,
       plantCount: config.plants.size,
       plants: [...config.plants.values()].map(({ plant, runtime }) => {
@@ -99,16 +97,16 @@ export const answerProcessPlantRuntimeQuery = (config: {
           variableCount: snapshot.variables.length,
         }
       }),
-    }, config.at)
+    }
   }
-  if (config.request.kind === 'world.process-plant.transient.diagnostics') {
-    const payload = plantQuerySchema.parse(config.request.payload)
+  if (config.request.capabilityId === 'world.process-plant.transient.diagnostics') {
+    const payload = plantQuerySchema.parse(config.request.input)
     const plant = requirePlant(config.plants, payload.plantId)
-    return success(config.request, {
+    return {
       plantId: payload.plantId,
       diagnostics: plant.runtime.pwrTransientDiagnostics(),
       ic: icSummaryFor(plant),
-    }, config.at)
+    }
   }
-  return failure(config.request, `process plant pack does not support query kind: ${config.request.kind}`, config.at)
+  return failure(`Process Plant does not support query Capability: ${config.request.capabilityId}`)
 }

@@ -119,9 +119,85 @@ const buildTrafficCreatePayload = (
 export const trafficPack: WorldPack = {
   descriptor: createWorldPackDescriptor({
     id: 'traffic', version: '1.0.0', name: 'Traffic Conditions',
+    description: 'Road closures, congestion, access restrictions, and their effects on routes and vehicles.',
     contributions: ['runtime', 'scenario', 'presentation', 'creation', 'interactions'],
   }),
   scenarioConfigSchema: emptyPackScenarioConfigSchema,
+  authoring: {
+    itemTypes: [{
+      id: 'road_condition',
+      label: 'Road condition',
+      description: 'A congestion, slowdown, closure, or access restriction along a mapped road route.',
+      idPrefix: 'traffic-road',
+      defaultItem: {
+        condition: 'slowdown',
+        severity: 'high',
+        speedFactor: 0.55,
+        reason: 'Configured road condition',
+      },
+      placement: { target: 'item', kind: 'route', path: ['path'] },
+      fields: [{
+        target: 'item', path: ['condition'], label: 'Condition',
+        control: { kind: 'select', defaultValue: 'slowdown', options: [
+          { value: 'free_flow', label: 'Free flow' },
+          { value: 'congestion', label: 'Congestion' },
+          { value: 'closure', label: 'Closure' },
+          { value: 'slowdown', label: 'Slowdown' },
+          { value: 'access_restricted', label: 'Access restricted' },
+        ] },
+      }, {
+        target: 'item', path: ['severity'], label: 'Severity',
+        control: { kind: 'select', defaultValue: 'high', options: [
+          { value: 'low', label: 'Low' },
+          { value: 'moderate', label: 'Moderate' },
+          { value: 'high', label: 'High' },
+          { value: 'blocked', label: 'Blocked' },
+        ] },
+      }, {
+        target: 'item', path: ['speedFactor'], label: 'Speed factor',
+        control: { kind: 'number', defaultValue: 0.55, min: 0.05, max: 1, step: 0.05 },
+      }, {
+        target: 'item', path: ['reason'], label: 'Reason',
+        control: { kind: 'text', defaultValue: 'Configured road condition' },
+      }],
+    }, {
+      id: 'area_condition',
+      label: 'Traffic area',
+      description: 'A congestion, closure, or access restriction covering a mapped area.',
+      idPrefix: 'traffic-area',
+      defaultItem: {
+        condition: 'access_restricted',
+        severity: 'high',
+        speedFactor: 0.55,
+        reason: 'Configured traffic area',
+      },
+      placement: { target: 'item', kind: 'polygon', path: ['polygon'] },
+      fields: [{
+        target: 'item', path: ['condition'], label: 'Condition',
+        control: { kind: 'select', defaultValue: 'access_restricted', options: [
+          { value: 'free_flow', label: 'Free flow' },
+          { value: 'congestion', label: 'Congestion' },
+          { value: 'closure', label: 'Closure' },
+          { value: 'slowdown', label: 'Slowdown' },
+          { value: 'access_restricted', label: 'Access restricted' },
+        ] },
+      }, {
+        target: 'item', path: ['severity'], label: 'Severity',
+        control: { kind: 'select', defaultValue: 'high', options: [
+          { value: 'low', label: 'Low' },
+          { value: 'moderate', label: 'Moderate' },
+          { value: 'high', label: 'High' },
+          { value: 'blocked', label: 'Blocked' },
+        ] },
+      }, {
+        target: 'item', path: ['speedFactor'], label: 'Speed factor',
+        control: { kind: 'number', defaultValue: 0.55, min: 0.05, max: 1, step: 0.05 },
+      }, {
+        target: 'item', path: ['reason'], label: 'Reason',
+        control: { kind: 'text', defaultValue: 'Configured traffic area' },
+      }],
+    }],
+  },
   runtime: {
     runtimes: [{ id: trafficSimRuntimeId, version: '1.0.0', label: 'Local traffic runtime', kind: 'local', clock: 'none' }],
     defaultRuntimeId: trafficSimRuntimeId,

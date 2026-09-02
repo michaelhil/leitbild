@@ -121,6 +121,7 @@ const buildWeatherCreatePayload = (
 export const weatherPack: WorldPack = {
   descriptor: createWorldPackDescriptor({
     id: 'weather', version: '1.0.0', name: 'Weather Conditions',
+    description: 'Spatial and time-varying weather fields that influence routes, areas, and operational assets.',
     contributions: ['runtime', 'scenario', 'presentation', 'creation'],
   }),
   scenarioConfigSchema: weatherPackConfigSchema,
@@ -160,7 +161,7 @@ export const weatherPack: WorldPack = {
           extensions: {},
         }],
       },
-      placement: { target: 'item', path: ['keyframes', 0, 'center'] },
+      placement: { target: 'item', kind: 'point', path: ['keyframes', 0, 'center'] },
       fields: [{
         target: 'item', path: ['summary'], label: 'Summary',
         control: { kind: 'text', defaultValue: 'Configured weather area' },

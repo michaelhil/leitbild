@@ -1,5 +1,4 @@
-import type { IsoTimestamp } from '../../core/model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
+import type { PackRuntimeQuery } from '../../simulation/protocol.ts'
 import { answerProcessPlantIcQuery, processPlantIcQueryKinds } from './ic-query.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
 import { failure } from './queries/common.ts'
@@ -27,22 +26,15 @@ export const processPlantQueryKinds = [
 ] as const
 
 export const answerProcessPlantQuery = (config: {
-  readonly request: PackQueryRequest
+  readonly request: PackRuntimeQuery
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
-  readonly at: IsoTimestamp
-}): PackQueryResponse => {
-  try {
-    return answerProcessPlantCatalogQuery(config)
-      ?? answerProcessPlantCredibilityQuery(config)
-      ?? answerProcessPlantIcQuery(config)
-      ?? answerProcessPlantGraphQuery(config)
-      ?? answerProcessPlantVariableQuery(config)
-      ?? answerProcessPlantSignalQuery(config)
-      ?? answerProcessPlantControlQuery(config)
-      ?? answerProcessPlantRuntimeQuery(config)
-      ?? answerProcessPlantDisplayQuery(config)
-      ?? failure(config.request, `process plant pack does not support query kind: ${config.request.kind}`, config.at)
-  } catch (err) {
-    return failure(config.request, err instanceof Error ? err.message : String(err), config.at)
-  }
-}
+}): unknown => answerProcessPlantCatalogQuery(config)
+  ?? answerProcessPlantCredibilityQuery(config)
+  ?? answerProcessPlantIcQuery(config)
+  ?? answerProcessPlantGraphQuery(config)
+  ?? answerProcessPlantVariableQuery(config)
+  ?? answerProcessPlantSignalQuery(config)
+  ?? answerProcessPlantControlQuery(config)
+  ?? answerProcessPlantRuntimeQuery(config)
+  ?? answerProcessPlantDisplayQuery(config)
+  ?? failure(`Process Plant does not support query Capability: ${config.request.capabilityId}`)

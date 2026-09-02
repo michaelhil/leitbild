@@ -9,11 +9,11 @@ import type {
   PackTargetContext,
   PackTargetingContribution,
   PackSurfacePanelContribution,
-  WorldPack,
+  WorldPackView,
 } from './protocol.ts'
 
 export interface ActivePackViews {
-  readonly packs: ReadonlyArray<WorldPack>
+  readonly packs: ReadonlyArray<WorldPackView>
   readonly packIds: ReadonlyArray<string>
   readonly presentation: PackPresentationContribution
   readonly creation?: PackCreationContribution
@@ -21,7 +21,7 @@ export interface ActivePackViews {
   readonly referenceDatasetIds: ReadonlyArray<string>
   readonly mapAreaFeatureSourcePackIds: ReadonlyArray<string>
   readonly surfacePanels: ReadonlyArray<PackSurfacePanelContribution>
-  readonly packForObject: (object: OperationalObject) => WorldPack
+  readonly packForObject: (object: OperationalObject) => WorldPackView
   readonly defaultRuntimeIdFor: (packId: string) => string | undefined
 }
 
@@ -33,7 +33,7 @@ const assertUniqueIds = (values: ReadonlyArray<{ readonly id: string }>, kind: s
   }
 }
 
-export const createActivePackViews = (packs: ReadonlyArray<WorldPack>): ActivePackViews => {
+export const createActivePackViews = (packs: ReadonlyArray<WorldPackView>): ActivePackViews => {
   if (packs.length === 0) throw new Error('active Pack views require at least one Pack')
   const packsById = new Map(packs.map(pack => [pack.descriptor.id, pack]))
   if (packsById.size !== packs.length) throw new Error('active Pack views contain duplicate Pack ids')
@@ -49,7 +49,7 @@ export const createActivePackViews = (packs: ReadonlyArray<WorldPack>): ActivePa
     for (const type of pack.creation.createObjectTypes) creationOwners.set(type.id, pack.creation)
   }
 
-  const ownerForObject = (object: OperationalObject): WorldPack => {
+  const ownerForObject = (object: OperationalObject): WorldPackView => {
     const owner = packsById.get(object.packId)
     if (!owner) throw new Error(`object ${object.id} belongs to inactive Pack ${object.packId}`)
     return owner

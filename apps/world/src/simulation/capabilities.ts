@@ -22,10 +22,10 @@ export const defineSimulationCapability = (config: SimulationCapability): Simula
   return Object.freeze(config)
 }
 
-export const definePackQueryCapability = (config: Omit<SimulationCapability, 'kind' | 'risk' | 'idempotent' | 'schedulable' | 'buildCommand'>): SimulationCapability =>
+export const defineSimulationQueryCapability = (config: Omit<SimulationCapability, 'kind' | 'risk' | 'idempotent' | 'schedulable' | 'buildCommand'>): SimulationCapability =>
   defineSimulationCapability({ ...config, kind: 'query', risk: 'read', idempotent: true })
 
-export const definePackCommandCapability = (config: Omit<SimulationCapability, 'kind' | 'risk'> & {
+export const defineSimulationCommandCapability = (config: Omit<SimulationCapability, 'kind' | 'risk'> & {
   readonly risk?: 'write' | 'destructive'
 }): SimulationCapability => defineSimulationCapability({ ...config, kind: 'command', risk: config.risk ?? 'write' })
 

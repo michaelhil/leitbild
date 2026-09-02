@@ -9,10 +9,11 @@ import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEventHandle
 import { createJsonlEventLog } from '../src/core/simulation-runs/event-log.ts'
 import { createSimulationRunSnapshotStore, type SimulationRunSnapshotStore } from '../src/core/simulation-runs/snapshot-store.ts'
 import { createSimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
-import { definePackCommandCapability } from '../src/simulation/capabilities.ts'
+import { defineSimulationCommandCapability } from '../src/simulation/capabilities.ts'
 
 const simulationRunId = 'run-persistence-policy-test' as SimulationRunId
 const objectId = 'object:test-mobile' as ObjectId
+const testScenario = { id: 'scenario:test-persistence', startsAt: nowIso() }
 
 const makeObject = (config?: {
   readonly point?: ReturnType<typeof geoPointFromLonLat>
@@ -88,13 +89,7 @@ const createControlledRuntimeConnection = (
         reason: 'test connection does not accept commands',
       })),
       ...(config.commandEventHistory === undefined ? {} : { commandEventHistory: config.commandEventHistory }),
-      query: async request => ({
-        ok: false,
-        packId: request.packId,
-        kind: request.kind,
-        reason: 'test connection does not accept queries',
-        generatedAt: nowIso(),
-      }),
+      invokeQuery: async () => { throw new Error('test connection does not accept query Capabilities') },
       observeCommittedEvents: async () => {},
       setClock: async () => {},
       close: async () => {
@@ -149,6 +144,7 @@ describe('simulation run persistence policy', () => {
     const runtimeConnection = createControlledRuntimeConnection(initialObject)
     const runtime = await createSimulationRunRuntime({
       id: simulationRunId,
+      scenario: testScenario,
       runtimeConnection: runtimeConnection.connection,
       eventLog: createJsonlEventLog(eventLogPath),
       snapshotStore: createSimulationRunSnapshotStore({
@@ -217,6 +213,7 @@ describe('simulation run persistence policy', () => {
     const runtimeConnection = createControlledRuntimeConnection(initialObject)
     const runtime = await createSimulationRunRuntime({
       id: simulationRunId,
+      scenario: testScenario,
       runtimeConnection: runtimeConnection.connection,
       eventLog: createJsonlEventLog(eventLogPath),
       snapshotStore: createSimulationRunSnapshotStore({
@@ -294,6 +291,7 @@ describe('simulation run persistence policy', () => {
     const runtimeConnection = createControlledRuntimeConnection(initialObject)
     const runtime = await createSimulationRunRuntime({
       id: simulationRunId,
+      scenario: testScenario,
       runtimeConnection: runtimeConnection.connection,
       eventLog: createJsonlEventLog(eventLogPath),
       snapshotStore: createSimulationRunSnapshotStore({
@@ -343,6 +341,7 @@ describe('simulation run persistence policy', () => {
     })
     const runtime = await createSimulationRunRuntime({
       id: simulationRunId,
+      scenario: testScenario,
       runtimeConnection: runtimeConnection.connection,
       eventLog: createJsonlEventLog(eventLogPath),
       snapshotStore: createSimulationRunSnapshotStore({
@@ -352,7 +351,7 @@ describe('simulation run persistence policy', () => {
       runtimeCapabilities: [{
         packId: 'packId:test',
         runtimeId: 'runtime:test',
-        capability: definePackCommandCapability({
+        capability: defineSimulationCommandCapability({
           id: 'world.test.fast-control',
           title: 'Test fast control',
           description: 'Exercises projected command lifecycle persistence.',
@@ -392,6 +391,7 @@ describe('simulation run persistence policy', () => {
     }
     const runtime = await createSimulationRunRuntime({
       id: simulationRunId,
+      scenario: testScenario,
       runtimeConnection: runtimeConnection.connection,
       eventLog: createJsonlEventLog(eventLogPath),
       snapshotStore,

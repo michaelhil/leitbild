@@ -67,6 +67,9 @@ export const validateWorldAssembly = (config: {
       if (capability.id.trim() === '' || capability.title.trim() === '' || capability.description.trim() === '') {
         throw new Error(`Pack Runtime ${adapter.id} has incomplete ${capability.kind} capability metadata`)
       }
+      if (!capability.id.startsWith(`world.${adapter.packId}.`)) {
+        throw new Error(`Pack Runtime ${adapter.id} exposes foreign Capability ${capability.id}; expected world.${adapter.packId}.*`)
+      }
     }
     assertUnique(adapter.realtimeInputTypes ?? [], `realtime input in Pack Runtime ${adapter.id}`)
     const commandIds = new Set(capabilityIds(adapter.capabilities, 'command'))
@@ -78,6 +81,8 @@ export const validateWorldAssembly = (config: {
   }
 
   const packs = config.packs.map(pack => {
+    if (!pack.descriptor.description?.trim()) throw new Error(`Pack ${pack.descriptor.id} has no discovery description`)
+    pack.scenarioConfigSchema.parse({})
     if (pack.runtime && !pack.runtime.runtimes.some(runtime => runtime.id === pack.runtime!.defaultRuntimeId)) {
       throw new Error(`Pack ${pack.descriptor.id} default runtime is not declared: ${pack.runtime.defaultRuntimeId}`)
     }
@@ -108,6 +113,11 @@ export const validateWorldAssembly = (config: {
 
   for (const pack of packs) assertContributionDescriptor(pack)
   for (const pack of packs) {
+    const scenarioItemTypeIds = Object.keys(pack.scenario?.itemSchemas ?? {}).sort()
+    const authoringItemTypeIds = (pack.authoring?.itemTypes ?? []).map(item => item.id).sort()
+    if (JSON.stringify(scenarioItemTypeIds) !== JSON.stringify(authoringItemTypeIds)) {
+      throw new Error(`Pack ${pack.descriptor.id} Scenario item types and authoring item types differ: Scenario ${scenarioItemTypeIds.join(', ')}, authoring ${authoringItemTypeIds.join(', ')}`)
+    }
     const mutationTypeIds = Object.keys(pack.scenario?.mutationSchemas ?? {})
     if (mutationTypeIds.length > 0 && !pack.scenario?.applyMutation) {
       throw new Error(`Pack ${pack.descriptor.id} declares Scenario mutations without a mutation handler`)

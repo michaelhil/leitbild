@@ -10,7 +10,7 @@ A Scenario contains a `grid` item. The item selects exactly three reusable defin
 - an **Operating Point**: initial load, generation, and storage conditions;
 - an **Automation Definition**: automatic load profiles, storage frequency response, and load shedding.
 
-Compilation produces one Grid Operational Object. Buses, branches, generators, loads, and storage are private **Grid Assets**, not hundreds of top-level World objects. They retain stable ids and remain discoverable through Pack queries and controllable through Pack commands.
+Compilation produces one Grid Operational Object. Buses, branches, generators, loads, and storage are private **Grid Assets**, not hundreds of top-level World objects. They retain stable ids and remain discoverable and controllable through typed Simulation Capabilities.
 
 This is deliberately similar to Process Plant at the lifecycle boundary—Model, Operating Point, Automation, one operational system—but the Pack does not force electrical and process internals into a universal component graph.
 

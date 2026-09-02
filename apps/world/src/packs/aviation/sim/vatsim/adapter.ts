@@ -5,9 +5,9 @@ import type {
   PackRuntimeConnectionConfig,
   PackRuntimeEvent,
   PackRuntimeEventHandler,
+  PackRuntimeQuery,
 } from '../../../../simulation/protocol.ts'
 import { aviationSourceStatusCapability, aviationSourceStatusQueryKind } from '../../capabilities.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../../../../core/packs/protocol.ts'
 import { aviationRuntimePackId, aviationVatsimRuntimeId } from '../constants.ts'
 import type { HttpFetch } from '../opensky/auth.ts'
 import {
@@ -151,7 +151,7 @@ export const createVatsimPackRuntimeAdapter = (config: VatsimAdapterConfig = {})
       const handlers = new Set<PackRuntimeEventHandler>()
       const poll: ActivePoll = { handle: null, inFlight: null }
       let clock: SimulationClockState = {
-        currentTime: connectionConfig.scenario?.world.startsAt ?? runtime.nowIso(),
+        currentTime: connectionConfig.scenario.world.startsAt,
         updatedAt: runtime.nowIso(),
         paused: false,
         speed: 1,
@@ -221,28 +221,16 @@ export const createVatsimPackRuntimeAdapter = (config: VatsimAdapterConfig = {})
           rejectedAt: runtime.nowIso(),
           reason: `aviation.vatsim does not accept commands (kind=${command.kind})`,
         }),
-        query: async (request: PackQueryRequest): Promise<PackQueryResponse> => {
-          if (request.kind === aviationSourceStatusQueryKind) {
+        invokeQuery: async (request: PackRuntimeQuery): Promise<unknown> => {
+          if (request.capabilityId === aviationSourceStatusQueryKind) {
             return {
-              ok: true,
-              packId: request.packId,
-              kind: request.kind,
-              result: {
-                source: 'vatsim',
-                aircraftInBbox: state.size,
-                lastError,
-                polling: poll.handle !== null,
-              },
-              generatedAt: runtime.nowIso(),
+              source: 'vatsim',
+              aircraftInBbox: state.size,
+              lastError,
+              polling: poll.handle !== null,
             }
           }
-          return {
-            ok: false,
-            packId: request.packId,
-            kind: request.kind,
-            reason: `vatsim adapter does not answer query kind: ${request.kind}`,
-            generatedAt: runtime.nowIso(),
-          }
+          throw new Error(`VATSIM runtime does not implement query Capability: ${request.capabilityId}`)
         },
         observeCommittedEvents: async (_events: ReadonlyArray<SimulationRunEvent>): Promise<void> => undefined,
         setClock: async (next: SimulationClockState): Promise<void> => { clock = next },

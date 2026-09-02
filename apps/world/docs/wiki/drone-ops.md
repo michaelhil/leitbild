@@ -2,7 +2,7 @@
 
 The `drone` pack uses Leitbild's native server-side drone runtime. There is no separate drone simulator process, external controller runner, or flight-control protocol bridge in the active stack.
 
-Drone operations live in `src/packs/drone`. The pack contributes drone object creation, scenario expansion, vehicle model validation, interaction effects, read-only pack queries, map presentation, and pack-specific UI modals. The default runtime is `drone.native`.
+Drone operations live in `src/packs/drone`. The Pack contributes drone object creation, Scenario expansion, vehicle model validation, interaction effects, read-only Simulation Capabilities, map presentation, and Pack-specific UI modals. The default runtime is `drone.native`.
 
 The browser owns input capture and rendering only. It sends normal Simulation Run commands and renders projected object/query state. It does not own authoritative drone motion.
 
@@ -12,7 +12,7 @@ The browser owns input capture and rendering only. It sends normal Simulation Ru
 - per-drone vehicle model metadata for airframe, flight envelope, capabilities, sensors, payloads, and visual profile
 - arm/disarm, manual control, guided goto, takeoff, land, return-to-launch, hold, mission upload/start/pause/clear, geofence upload/clear, gimbal, vehicle model, swarm, and effect commands
 - runtime projection for link state, arming, navigation mode, global pose, velocity, attitude, battery, health, mission, geofence, payload, and controller binding state
-- map-visible drones, sensor footprints, effect ranges, and swarm envelopes from pack queries
+- map-visible drones, sensor footprints, effect ranges, and swarm envelopes from query Capabilities
 - validated drone effect commands through the generic interaction-signal/effect path
 - a formal mission definition for drone search, support, and effect demonstration
 
@@ -91,17 +91,17 @@ The drone flight modal uses Babylon.js for the 3D flight view. It renders:
 
 Babylon owns only presentation. It interpolates projected object state for smooth rendering and uses adaptive pixel ratio, cached asset containers, bounded scenery streaming, and mesh reuse to keep performance predictable.
 
-## Queries
+## Query Capabilities
 
-The drone runtime exposes read-only pack queries:
+The drone runtime exposes read-only Simulation Capabilities:
 
-- `drone.scene`: scene/read-model state for drones
-- `drone.controllerBindings`: controller binding metadata
-- `drone.vehicleModels`: active vehicle model catalog
+- `world.drone.scene`: scene/read-model state for drones
+- `world.drone.controller-bindings`: controller binding metadata
+- `world.drone.vehicle-models`: active vehicle model catalog
 - `world.drone.map-features`: sensor footprints, effect ranges, and swarm envelopes
-- `drone.sensorContacts`: external contact surface, currently empty until a real contact source is added
+- `world.drone.sensor-contacts`: detected contacts from configured real sensor inputs
 
-Queries do not mutate runtime state. UI, AI, and procedure tooling should use queries for rich drone read models rather than copying runtime-private mechanics into core objects.
+Queries do not mutate runtime state. UI, AI, and procedure tooling should invoke these Capabilities for rich drone read models rather than copying runtime-private mechanics into core objects.
 
 ## Effects
 

@@ -4,6 +4,7 @@ import type { SimulationRunId, IsoTimestamp } from '../src/core/model/index.ts'
 import { createOpenSkyPackRuntimeAdapter } from '../src/packs/aviation/sim/opensky/adapter.ts'
 import type { HttpFetch } from '../src/packs/aviation/sim/opensky/auth.ts'
 import type { PackRuntimeEvent, PackRuntimeEventHandler } from '../src/simulation/protocol.ts'
+import { testRuntimeConnectionConfig } from './helpers.ts'
 
 const TOKEN_FIXTURE = new URL('./fixtures/opensky-token-response.json', import.meta.url)
 const STATES_FIXTURE = new URL('./fixtures/opensky-states-all.json', import.meta.url)
@@ -100,9 +101,10 @@ describe('createOpenSkyPackRuntimeAdapter', () => {
       staleAfterMs: 30_000,
     })
 
-    const connection = await adapter.connect({
+    const connection = await adapter.connect(testRuntimeConnectionConfig({
       simulationRunId: 'run-test' as SimulationRunId,
-    })
+      runtimeIds: [adapter.id],
+    }))
 
     const batches: PackRuntimeEvent[][] = []
     connection.subscribe(collectEvents(batches))
@@ -153,9 +155,10 @@ describe('createOpenSkyPackRuntimeAdapter', () => {
       setIntervalFn: timer.setIntervalFn,
       clearIntervalFn: timer.clearIntervalFn,
     })
-    const connection = await adapter.connect({
+    const connection = await adapter.connect(testRuntimeConnectionConfig({
       simulationRunId: 'run-test' as SimulationRunId,
-    })
+      runtimeIds: [adapter.id],
+    }))
 
     const batches: PackRuntimeEvent[][] = []
     connection.subscribe(collectEvents(batches))
@@ -189,22 +192,19 @@ describe('createOpenSkyPackRuntimeAdapter', () => {
       setIntervalFn: timer.setIntervalFn,
       clearIntervalFn: timer.clearIntervalFn,
     })
-    const connection = await adapter.connect({
+    const connection = await adapter.connect(testRuntimeConnectionConfig({
       simulationRunId: 'run-test' as SimulationRunId,
-    })
+      runtimeIds: [adapter.id],
+    }))
     connection.subscribe(() => undefined)
     await Bun.sleep(10)
 
-    const response = await connection.query({ packId: 'aviation', kind: 'world.aviation.source-status', payload: {} })
-    expect(response.ok).toBe(true)
-    if (!response.ok) return
-    const result = response.result as { source: string; aircraftInBbox: number; polling: boolean }
+    const result = await connection.invokeQuery({ capabilityId: 'world.aviation.source-status', input: {} }) as { source: string; aircraftInBbox: number; polling: boolean }
     expect(result.source).toBe('opensky')
     expect(result.aircraftInBbox).toBe(2)
     expect(result.polling).toBe(true)
 
-    const unknown = await connection.query({ packId: 'aviation', kind: 'aviation.unknown', payload: {} })
-    expect(unknown.ok).toBe(false)
+    await expect(connection.invokeQuery({ capabilityId: 'world.aviation.unknown', input: {} })).rejects.toThrow('does not implement')
 
     await connection.close()
   })

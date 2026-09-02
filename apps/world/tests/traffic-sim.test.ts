@@ -7,6 +7,7 @@ import { trafficConditionChangedSignalType } from '../src/packs/traffic/interact
 import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { trafficScenarioSupport } from '../src/packs/traffic/scenario.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
+import { testRuntimeConnectionConfig } from './helpers.ts'
 
 const simulationRunId = 'run-traffic-sim-test' as SimulationRunId
 
@@ -23,7 +24,7 @@ const makeCommand = (payload: unknown): CommandEnvelope => ({
 describe('local traffic runtime', () => {
   test('rejects previous traffic condition data instead of migrating it silently', () => {
     expect(() => trafficPackDataSchema.parse({
-      type: 'traffic_condition',
+      type: 'area_condition',
       schemaVersion: 1,
       condition: 'slowdown',
       severity: 'high',
@@ -42,7 +43,7 @@ describe('local traffic runtime', () => {
 
   test('creates road-segment traffic from routed start and end points', async () => {
     const adapter = createLocalTrafficPackRuntimeAdapter({ routing: createDirectRoutingAdapter() })
-    const connection = await adapter.connect({ simulationRunId })
+    const connection = await adapter.connect(testRuntimeConnectionConfig({ simulationRunId, runtimeIds: [adapter.id] }))
     try {
       const emittedTypes: string[] = []
       const unsubscribe = connection.subscribe(emission => {
@@ -78,7 +79,7 @@ describe('local traffic runtime', () => {
 
   test('creates area traffic from a polygon', async () => {
     const adapter = createLocalTrafficPackRuntimeAdapter()
-    const connection = await adapter.connect({ simulationRunId })
+    const connection = await adapter.connect(testRuntimeConnectionConfig({ simulationRunId, runtimeIds: [adapter.id] }))
     try {
       const result = await connection.sendCommand(makeCommand({
         objectType: 'traffic_area',
@@ -114,10 +115,9 @@ describe('local traffic runtime', () => {
   test('scenario traffic area specs are closed into valid GeoJSON polygons', async () => {
     const contribution = await trafficScenarioSupport.expandItem({
       pack: 'traffic',
-      type: 'traffic_condition',
+      type: 'area_condition',
       id: 'traffic:test-open-polygon',
       label: 'Open polygon config',
-      geometryMode: 'area',
       polygon: [
         [10.70, 59.90],
         [10.72, 59.90],

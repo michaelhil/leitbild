@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { commandResultSchema } from '../../core/model/index.ts'
 import type { SimulationCapability } from '../../simulation/protocol.ts'
-import { definePackCommandCapability, definePackQueryCapability } from '../../simulation/capabilities.ts'
+import { defineSimulationCommandCapability, defineSimulationQueryCapability } from '../../simulation/capabilities.ts'
 import { aviationSetSourceCommandKind, aviationSources } from './sim/multi/constants.ts'
 
 export const aviationSourceStatusQueryKind = 'world.aviation.source-status'
@@ -17,7 +17,7 @@ export const aviationSourceStatusResultSchema = z.object({
   }).strict().optional(),
 }).strict()
 
-export const aviationSourceStatusCapability: SimulationCapability = definePackQueryCapability({
+export const aviationSourceStatusCapability: SimulationCapability = defineSimulationQueryCapability({
   id: aviationSourceStatusQueryKind,
   title: 'Read aviation source status',
   description: 'Returns the active live-aircraft source, polling health, and current aircraft count.',
@@ -27,7 +27,7 @@ export const aviationSourceStatusCapability: SimulationCapability = definePackQu
 
 export const aviationSetSourcePayloadSchema = z.object({ source: z.enum(aviationSources) }).strict()
 
-export const aviationSetSourceCapability: SimulationCapability = definePackCommandCapability({
+export const aviationSetSourceCapability: SimulationCapability = defineSimulationCommandCapability({
   id: aviationSetSourceCommandKind,
   title: 'Set aviation source',
   description: 'Switches the active live-aircraft source for a multi-source Aviation runtime.',

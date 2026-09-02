@@ -44,6 +44,7 @@ const createPack = (requests: ReadonlyArray<PackMapAreaFeatureQuery>): WorldPack
     id: 'weather-test',
     version: '1.0.0',
     name: 'Weather Test',
+    description: 'Test Pack.',
     contributions: ['presentation'],
   }),
   scenarioConfigSchema: emptyPackScenarioConfigSchema,

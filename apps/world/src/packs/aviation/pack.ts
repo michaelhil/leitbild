@@ -139,6 +139,7 @@ const aircraftColor = (data: AircraftPackData): string => {
 export const aviationPack: WorldPack = {
   descriptor: createWorldPackDescriptor({
     id: 'aviation', version: '1.0.0', name: 'Aviation',
+    description: 'Live aircraft and Norwegian aviation reference data from selectable external sources.',
     contributions: ['runtime', 'reference-data', 'presentation'],
   }),
   scenarioConfigSchema: aviationPackConfigSchema,
