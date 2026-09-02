@@ -12,8 +12,8 @@
   {#each cues as cue, index (cue.id)}
     <details>
       <summary>{cue.at.seconds}s · {cue.title ?? cue.id}</summary>
-      <label>Title <input value={cue.title ?? ''} onchange={event => replace(index, { ...cue, title: event.currentTarget.value })} /></label>
-      <label>Seconds after start <input type="number" min="0" value={cue.at.seconds} onchange={event => { if (Number.isFinite(event.currentTarget.valueAsNumber)) replace(index, { ...cue, at: { ...cue.at, seconds: event.currentTarget.valueAsNumber } }) }} /></label>
+      <label>Title <input value={cue.title ?? ''} oninput={event => replace(index, { ...cue, title: event.currentTarget.value })} /></label>
+      <label>Seconds after start <input type="number" min="0" value={cue.at.seconds} oninput={event => { if (Number.isFinite(event.currentTarget.valueAsNumber)) replace(index, { ...cue, at: { ...cue.at, seconds: event.currentTarget.valueAsNumber } }) }} /></label>
       {#each cue.actions as action, actionIndex}
         {#if action.type === 'invoke_capability'}
           {@const command = commands.find(command => command.id === action.capabilityId)}
