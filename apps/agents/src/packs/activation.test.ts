@@ -12,8 +12,8 @@ describe('effectiveActivePacks', () => {
   })
 
   test('returns exactly what the room reports', () => {
-    expect(effectiveActivePacks(room(['demos', 'pwr-ops', 'aviation'])))
-      .toEqual(['demos', 'pwr-ops', 'aviation'])
+    expect(effectiveActivePacks(room(['demos', 'pwr-ops', 'site-survey'])))
+      .toEqual(['demos', 'pwr-ops', 'site-survey'])
   })
 
   test('preserves order verbatim', () => {
@@ -23,9 +23,9 @@ describe('effectiveActivePacks', () => {
 
 describe('effectiveActivePackSet', () => {
   test('mirrors room.activePacks as a Set', () => {
-    const s = effectiveActivePackSet(room(['demos', 'aviation']))
+    const s = effectiveActivePackSet(room(['demos', 'site-survey']))
     expect(s.has('demos')).toBe(true)
-    expect(s.has('aviation')).toBe(true)
+    expect(s.has('site-survey')).toBe(true)
     expect(s.has('cafes')).toBe(false)
   })
 
@@ -36,12 +36,12 @@ describe('effectiveActivePackSet', () => {
 
 describe('isPackActiveInRoom', () => {
   test('present in activePacks → true', () => {
-    expect(isPackActiveInRoom(room(['demos', 'aviation']), 'demos')).toBe(true)
-    expect(isPackActiveInRoom(room(['demos', 'aviation']), 'aviation')).toBe(true)
+    expect(isPackActiveInRoom(room(['demos', 'site-survey']), 'demos')).toBe(true)
+    expect(isPackActiveInRoom(room(['demos', 'site-survey']), 'site-survey')).toBe(true)
   })
 
   test('absent → false', () => {
     expect(isPackActiveInRoom(room([]), 'demos')).toBe(false)
-    expect(isPackActiveInRoom(room(['aviation']), 'cafes')).toBe(false)
+    expect(isPackActiveInRoom(room(['site-survey']), 'cafes')).toBe(false)
   })
 })

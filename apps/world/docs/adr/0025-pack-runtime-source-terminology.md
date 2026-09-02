@@ -6,7 +6,7 @@ Accepted.
 
 ## Context
 
-Leitbild originally used `domain` for object ownership and `provider` for the active simulation implementation behind a pack. Those names became ambiguous as packs grew beyond classical domains. Weather is a capability pack, not a domain. Aviation uses live data sources as well as a runtime that can switch between them. The planned electric grid pack will combine topology, state estimation, load-flow, live data, and scenario behavior behind one capability boundary.
+Leitbild originally used `domain` for object ownership and `provider` for the active simulation implementation behind a pack. Those names became ambiguous as packs grew beyond classical domains. Weather is a capability pack, not a domain. Electric Grid combines topology, state estimation, load-flow, live data, and scenario behavior behind one capability boundary.
 
 The older vocabulary now obscures the architecture:
 
@@ -51,7 +51,6 @@ Keep `source` where it truly means a source:
 - reference-data `SourceId` and source loaders
 - MapLibre sources and source layers
 - route geometry source provenance
-- aviation active source (`opensky`, `vatsim`)
 - process-link source/target endpoints
 - displayed source code paths
 

@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import { scenarioDefinitionSchema, type ScenarioDefinition } from '../src/core/model/index.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
-import { trafficPack } from '../src/packs/traffic/pack.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { responseScenario } from './fixtures/scenarios.ts'
 import { categoryRowsForSurface, surfaceMapConfig, surfaceObjectRailConfig } from '../src/ui/surface.ts'
@@ -16,13 +15,12 @@ describe('scenario surface model', () => {
     expect(Number(mapConfig?.center.coordinates[0])).toBe(10.7522)
     expect(Number(mapConfig?.center.coordinates[1])).toBe(59.9139)
     expect(mapConfig?.zoom).toBe(12)
-    expect(mapConfig?.layers).toEqual(['objects', 'routes', 'weather', 'traffic', 'highlights'])
+    expect(mapConfig?.layers).toEqual(['objects', 'routes', 'weather', 'highlights'])
     expect(railConfig?.sections.map(section => section.categoryId)).toEqual([
       'hospitals',
       'ambulances',
       'incidents',
       'weather',
-      'traffic',
     ])
   })
 
@@ -46,7 +44,6 @@ describe('scenario surface model', () => {
   test('orders and filters rail categories from scenario surface config', () => {
     const rows = categoryRowsForSurface([
       { category: ambulancePack.presentation.categories[1]!, objects: [] },
-      { category: trafficPack.presentation.categories[0]!, objects: [] },
       { category: weatherPack.presentation.categories[0]!, objects: [] },
       { category: ambulancePack.presentation.categories[0]!, objects: [] },
       { category: ambulancePack.presentation.categories[2]!, objects: [] },
@@ -57,7 +54,6 @@ describe('scenario surface model', () => {
       'ambulances',
       'incidents',
       'weather',
-      'traffic',
     ])
   })
 
@@ -77,7 +73,7 @@ describe('scenario surface model', () => {
                   sections: [
                     ...region.config.sections,
                     {
-                      categoryId: 'traffic',
+                      categoryId: 'weather',
                       visible: true,
                       collapsed: false,
                       visibleFields: [],
@@ -91,7 +87,7 @@ describe('scenario surface model', () => {
     }) as ScenarioDefinition
 
     expect(() => createScenarioRuntimeResolver({
-      packs: [ambulancePack, trafficPack, weatherPack],
+      packs: [ambulancePack, weatherPack],
     }).resolve(scenario)).toThrow('surface rail references inactive category: weather')
   })
 })

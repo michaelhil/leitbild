@@ -9,7 +9,6 @@ import { createHealthDetails, staticContentTypeForPath } from '../src/core/api/s
 import { createSimulationRunRealtimeManager, type RealtimeEventBatchMessage, type RealtimeOutboundMessage } from '../src/core/api/realtime.ts'
 import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
-import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestScenarioRuntimeResolver, testScenarioAuthoring } from './helpers.ts'
@@ -100,7 +99,6 @@ describe('server health', () => {
       ...testScenarioAuthoring(),
       runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
-        createLocalTrafficPackRuntimeAdapter(),
         createLocalWeatherPackRuntimeAdapter(),
       ],
     })
@@ -141,7 +139,6 @@ describe('server health', () => {
       ...testScenarioAuthoring(),
       runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
-        createLocalTrafficPackRuntimeAdapter(),
         createLocalWeatherPackRuntimeAdapter(),
       ],
     })
@@ -204,7 +201,6 @@ describe('server health', () => {
       ...testScenarioAuthoring(),
       runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
-        createLocalTrafficPackRuntimeAdapter(),
         createLocalWeatherPackRuntimeAdapter(),
       ],
     })
@@ -313,7 +309,6 @@ describe('server health', () => {
       idleRuntimeCloseDelayMs: 5,
       runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
-        createLocalTrafficPackRuntimeAdapter(),
         createLocalWeatherPackRuntimeAdapter(),
       ],
     })

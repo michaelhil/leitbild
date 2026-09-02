@@ -21,7 +21,6 @@ export const datasetManifestSchema = z.object({
   datasetId: z.string().min(1),
   builtAt: z.string().min(1),
   buildId: z.string().min(1),
-  airac: z.string().min(1).optional(),
   artifact: z.object({
     pmtilesPath: z.string().min(1),
     sidecarGeoJsonPath: z.string().min(1),
@@ -90,7 +89,6 @@ export interface BuildManifestInput<P> {
   readonly buildId: BuildId
   readonly pmtilesRelativePath: string
   readonly sidecarRelativePath: string
-  readonly airac?: string
 }
 
 export const composeDatasetManifest = <P>(input: BuildManifestInput<P>): DatasetManifest => {
@@ -101,7 +99,6 @@ export const composeDatasetManifest = <P>(input: BuildManifestInput<P>): Dataset
     datasetId: String(input.config.id),
     builtAt: String(input.builtAt),
     buildId: String(input.buildId),
-    ...(input.airac ? { airac: input.airac } : {}),
     artifact: {
       pmtilesPath: input.pmtilesRelativePath,
       sidecarGeoJsonPath: input.sidecarRelativePath,

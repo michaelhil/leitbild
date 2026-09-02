@@ -49,7 +49,7 @@ const nativeCallsToToolCalls = (native: ReadonlyArray<NativeToolCall>): Readonly
 // === Tool result injection ===
 //
 // No artificial cap on tool result size. Fence-emitting tools
-// (procedure_lookup, vatsim_arrivals, norway_platforms, the map/mermaid/
+// (procedure_lookup, norway_platforms, the map/mermaid/
 // geojson tools) routinely produce 5-50 KB payloads that MUST reach the
 // model intact — truncating mid-fence breaks the renderer downstream.
 // If a tool genuinely returns runaway output, fix the tool; do not paper

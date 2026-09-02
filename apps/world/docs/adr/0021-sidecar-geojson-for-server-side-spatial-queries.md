@@ -45,7 +45,7 @@ The interface is intentionally one method. Additional spatial predicates (`featu
 
 ## Consequences
 
-- **Disk usage roughly doubles** per dataset. For `aero-norway`, expected PMTiles size is on the order of single-digit megabytes; the sidecar GeoJSON will be perhaps 1.5×–3× the PMTiles size. Total per-dataset footprint stays in the tens of megabytes. Disk is not a constraint at this scale.
+- **Disk usage roughly doubles** per dataset. Sidecar size depends on geometry and properties; check artifact sizes before publication rather than assuming the tile archive is the only storage cost.
 - **Server memory grows by the size of currently loaded sidecars.** Lazy loading means only consulted datasets occupy memory. With a handful of datasets we expect tens to low hundreds of megabytes of resident feature data, which is negligible for the existing single-server deployment.
 - **Build atomicity** must include both files. The build writes both into the build directory before the promote symlink swap. Tile and sidecar are guaranteed to come from the same source build because they are produced from the same in-memory feature collection.
 - **No PMTiles parsing on the server**, which means no dependency on `@protomaps/pmtiles` or related libraries in the runtime bundle.

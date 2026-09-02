@@ -202,21 +202,21 @@ describe('local ambulance runtime', () => {
   test('ignores committed object upserts owned by other pack runtimes', async () => {
     const runtime = testScenarioRuntimeConfig()
     const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ simulationRunId, scenario: runtime })
-    const trafficObject = runtime.initialObjects.find(object => object.packId === 'traffic')
-    if (!trafficObject) throw new Error('scenario missing traffic object')
+    const weatherObject = runtime.initialObjects.find(object => object.packId === 'weather')
+    if (!weatherObject) throw new Error('scenario missing weather object')
 
     await connection.observeCommittedEvents([{
-      id: 'event:test-traffic-upsert' as SimulationRunEvent['id'],
+      id: 'event:test-weather-upsert' as SimulationRunEvent['id'],
       simulationRunId,
       seq: 1,
       at: nowIso(),
       provenance: { source: 'simulator' },
       type: 'object.upserted',
-      object: trafficObject,
+      object: weatherObject,
     }])
 
     const snapshot = await connection.getSnapshot()
-    expect(snapshot.objects.some(object => object.packId === 'traffic')).toBe(false)
+    expect(snapshot.objects.some(object => object.packId === 'weather')).toBe(false)
     await connection.close()
   })
 

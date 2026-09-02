@@ -10,7 +10,7 @@ import { createWorldWorkspaceRuntimeRegistry } from './core/workspaces/runtime-r
 import { createConfiguredProcedureSourceService } from './procedure-sources.ts'
 
 const routing = createRoutingAdapterFromEnv()
-const assembly = createWorldApplicationAssembly({ routing, env: process.env })
+const assembly = createWorldApplicationAssembly({ routing })
 const worldPacks = assembly.packs
 const scenarioRuntimeResolver = createScenarioRuntimeResolver({ packs: worldPacks })
 

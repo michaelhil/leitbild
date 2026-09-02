@@ -42,8 +42,8 @@ describe('pack-aware tool surface filter', () => {
     const registry = createToolRegistry()
     registry.registerWithSource(okTool('core_tool'), { kind: 'built-in' })
     registry.registerWithSource(okTool('local_tool'), { kind: 'external', path: '/x.ts' })
-    registry.registerWithSource(okTool('aviation_atc'), {
-      kind: 'pack-owned', pack: 'aviation', path: '/p/atc.ts', displayName: 'atc',
+    registry.registerWithSource(okTool('site-survey_atc'), {
+      kind: 'pack-owned', pack: 'site-survey', path: '/p/atc.ts', displayName: 'atc',
     })
     registry.registerWithSource(okTool('cafes_menu'), {
       kind: 'pack-owned', pack: 'cafes', path: '/p/menu.ts', displayName: 'menu',
@@ -65,15 +65,15 @@ describe('pack-aware tool surface filter', () => {
     // 'pass' is auto-injected as another built-in tool.
     expect(names).toContain('core_tool')
     expect(names).toContain('local_tool')
-    expect(names).not.toContain('aviation_atc')
+    expect(names).not.toContain('site-survey_atc')
     expect(names).not.toContain('cafes_menu')
   })
 
   test('activating a pack exposes only that pack', async () => {
     const registry = createToolRegistry()
     registry.registerWithSource(okTool('core_tool'), { kind: 'built-in' })
-    registry.registerWithSource(okTool('aviation_atc'), {
-      kind: 'pack-owned', pack: 'aviation', path: '/p/atc.ts', displayName: 'atc',
+    registry.registerWithSource(okTool('site-survey_atc'), {
+      kind: 'pack-owned', pack: 'site-survey', path: '/p/atc.ts', displayName: 'atc',
     })
     registry.registerWithSource(okTool('cafes_menu'), {
       kind: 'pack-owned', pack: 'cafes', path: '/p/menu.ts', displayName: 'menu',
@@ -85,13 +85,13 @@ describe('pack-aware tool surface filter', () => {
       { id: 'a', name: 'Alice' },
       stubProvider,
       undefined,
-      (roomId: string) => roomId === 'tower' ? makeRoom(['aviation']) : undefined,
+      (roomId: string) => roomId === 'tower' ? makeRoom(['site-survey']) : undefined,
     )
 
     const defs = support.resolveToolDefinitions!('tower')
     const names = (defs ?? []).map(d => d.function.name)
     expect(names).toContain('core_tool')
-    expect(names).toContain('aviation_atc')
+    expect(names).toContain('site-survey_atc')
     expect(names).not.toContain('cafes_menu')
   })
 

@@ -1,7 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { aviationPack } from '../src/packs/aviation/pack.ts'
-import { aeroNorwayDatasetId } from '../src/packs/aviation/datasets/aero-norway.ts'
-import { aviationReferenceDatasetBuilders } from '../src/packs/aviation/reference-datasets.ts'
 import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
 import { gridNorwayDatasetId } from '../src/packs/electric-grid/datasets/grid-norway.ts'
 import { electricGridReferenceDatasetBuilders } from '../src/packs/electric-grid/reference-datasets.ts'
@@ -13,16 +10,8 @@ import {
 import type { WorldPack } from '../src/core/packs/protocol.ts'
 import { createWorldPackDescriptor } from '../src/core/packs/protocol.ts'
 
-const okEnv: RegistryEnvironment = { OPENAIP_API_KEY: 'test-key' }
 const emptyEnv: RegistryEnvironment = {}
 
-const aviationPackWithReferenceDatasets: WorldPack = {
-  ...aviationPack,
-  referenceData: {
-    builders: aviationReferenceDatasetBuilders,
-    datasetIds: aviationPack.referenceData?.datasetIds ?? [],
-  },
-}
 const electricGridPackWithReferenceDatasets: WorldPack = {
   ...electricGridPack,
   referenceData: {
@@ -31,29 +20,13 @@ const electricGridPackWithReferenceDatasets: WorldPack = {
   },
 }
 const packs: ReadonlyArray<WorldPack> = [
-  aviationPackWithReferenceDatasets,
   electricGridPackWithReferenceDatasets,
 ]
 
 describe('reference-data registry (collector)', () => {
   test('lists pack-owned reference dataset contributions', () => {
     const datasets = collectRegisteredDatasets(packs)
-    expect(datasets.map(d => String(d.id))).toContain(String(aeroNorwayDatasetId))
     expect(datasets.map(d => String(d.id))).toContain(String(gridNorwayDatasetId))
-  })
-
-  test('build() throws when OPENAIP_API_KEY is missing', () => {
-    const descriptor = findRegisteredDataset(String(aeroNorwayDatasetId), packs)
-    expect(descriptor).not.toBeNull()
-    expect(() => descriptor!.build(emptyEnv)).toThrow(/OPENAIP_API_KEY/)
-  })
-
-  test('build() returns a valid DatasetConfig when env is set', () => {
-    const descriptor = findRegisteredDataset(String(aeroNorwayDatasetId), packs)!
-    const config = descriptor.build(okEnv)
-    expect(String(config.id)).toBe(String(aeroNorwayDatasetId))
-    expect(config.sources.length).toBe(3)
-    expect(config.licences.length).toBe(3)
   })
 
   test('grid-norway build() returns a raw OSM PBF dataset config by default', () => {
@@ -74,15 +47,15 @@ describe('reference-data registry (collector)', () => {
 
   test('duplicate dataset id across packs throws', () => {
     const dup: WorldPack = {
-      ...aviationPackWithReferenceDatasets,
+      ...electricGridPackWithReferenceDatasets,
       descriptor: createWorldPackDescriptor({
-        id: 'aviation-clone',
-        version: aviationPack.descriptor.version,
-        name: 'Aviation Clone',
+        id: 'grid-clone',
+        version: electricGridPack.descriptor.version,
+        name: 'Grid Clone',
         description: 'Test Pack.',
-        contributions: aviationPack.descriptor.contributions.map(contribution => contribution.kind),
+        contributions: electricGridPack.descriptor.contributions.map(contribution => contribution.kind),
       }),
     }
-    expect(() => collectRegisteredDatasets([aviationPackWithReferenceDatasets, dup])).toThrow(/duplicate dataset id/)
+    expect(() => collectRegisteredDatasets([electricGridPackWithReferenceDatasets, dup])).toThrow(/duplicate dataset id/)
   })
 })

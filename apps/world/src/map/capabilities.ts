@@ -202,7 +202,6 @@ export const referenceTilesetSchema = z.object({
   schemaVersion: z.literal(1),
   builtAt: z.string().min(1),
   buildId: z.string().min(1),
-  airac: z.string().min(1).optional(),
   artifact: z.object({
     pmtilesPath: z.string().min(1),
     sidecarGeoJsonPath: z.string().min(1),

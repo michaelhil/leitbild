@@ -2,7 +2,7 @@ import type { WorldPack } from '../core/packs/protocol.ts'
 import type { DatasetConfig, DatasetId } from './types.ts'
 
 // Reference-data dataset registry.
-// Datasets are pack-owned (ADR 0022). The CLI and pipeline collect dataset
+// Datasets are pack-owned (ADR 0019). The CLI and pipeline collect dataset
 // contributions from all active Leitbild packs at runtime via
 // `collectRegisteredDatasets`. Packs that need external API keys read them
 // from the supplied environment when the CLI calls `build()` — missing env
@@ -16,7 +16,7 @@ export interface RegisteredDataset {
   readonly id: DatasetId
   /**
    * Construct the DatasetConfig from the supplied environment. Throws if a
-   * required env var (e.g. OPENAIP_API_KEY) is missing.
+   * required env var (a source-specific access key) is missing.
    */
   readonly build: (env: RegistryEnvironment) => DatasetConfig
 }

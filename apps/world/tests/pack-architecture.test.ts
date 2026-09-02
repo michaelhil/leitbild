@@ -6,8 +6,6 @@ import { packField, packStatus } from '../src/core/packs/presentation.ts'
 import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { ambulancePackDataSchema, hospitalPackDataSchema, type HospitalPackData } from '../src/packs/ambulance/model.ts'
-import { trafficPack } from '../src/packs/traffic/pack.ts'
-import { trafficSimRuntimeId } from '../src/packs/traffic/sim/constants.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { weatherSimRuntimeId } from '../src/packs/weather/sim/constants.ts'
 import { expectFieldKeys, expectStatusIndicator } from './helpers/pack-presentation.ts'
@@ -140,14 +138,12 @@ describe('pack architecture', () => {
   test('active Pack views reject ambiguous surfaces without inventing a composite Pack', () => {
     expect(() => createActivePackViews([ambulancePack, ambulancePack])).toThrow('duplicate Pack ids')
 
-    const activeViews = createActivePackViews([ambulancePack, trafficPack, weatherPack])
+    const activeViews = createActivePackViews([ambulancePack, weatherPack])
 
     expect(activeViews.creation?.createObjectTypes.map(type => type.id).sort()).toEqual([
       'ambulance',
       'hospital',
       'incident',
-      'traffic_area',
-      'traffic_road_segment',
       'weather_area',
       'weather_probe',
     ].sort())
@@ -249,11 +245,11 @@ describe('pack architecture', () => {
       presentation: { ...ambulancePack.presentation, categories: [], mapAreaFeatureLayers: ['weather'] },
     }
     const secondPackWithWeatherLayer: WorldPack = {
-      ...trafficPack,
+      ...weatherPack,
       descriptor: createWorldPackDescriptor({
         id: 'weather-layer-two', version: '1.0.0', name: 'Weather Layer Two', description: 'Test Pack.', contributions: ['presentation'],
       }),
-      presentation: { ...trafficPack.presentation, categories: [], mapAreaFeatureLayers: ['weather'] },
+      presentation: { ...weatherPack.presentation, categories: [], mapAreaFeatureLayers: ['weather'] },
     }
 
     const activeViews = createActivePackViews([packWithWeatherLayer, secondPackWithWeatherLayer])
@@ -342,19 +338,17 @@ describe('pack architecture', () => {
 
   test('scenario catalog resolves scenario packs to internal pack runtimes', () => {
     const catalog = createScenarioRuntimeResolver({
-      packs: [ambulancePack, trafficPack, weatherPack],
+      packs: [ambulancePack, weatherPack],
     })
     const runtime = catalog.resolve(responseScenario)
 
-    expect(runtime.scenario.packs).toEqual(['ambulance', 'traffic', 'weather'])
+    expect(runtime.scenario.packs).toEqual(['ambulance', 'weather'])
     expect(runtime?.runtimes.map(runtime => runtime.runtimeId).sort()).toEqual([
       ambulanceSimRuntimeId,
-      trafficSimRuntimeId,
       weatherSimRuntimeId,
     ].sort())
     expect(runtime?.runtimeConfigByRuntimeId).toEqual({
       [ambulanceSimRuntimeId]: {},
-      [trafficSimRuntimeId]: {},
       [weatherSimRuntimeId]: {
         fields: {
           extensions: {
@@ -402,13 +396,13 @@ describe('pack architecture', () => {
 
   test('scenario catalog rejects runtime selections outside the owning Pack', () => {
     expect(() => createScenarioRuntimeResolver({
-      packs: [ambulancePack, trafficPack, weatherPack],
+      packs: [ambulancePack, weatherPack],
     }).resolve({
         ...responseScenario,
         id: 'bad-runtime-override',
         packRuntimes: {
-          ambulance: trafficSimRuntimeId,
+          ambulance: weatherSimRuntimeId,
         },
-    })).toThrow('runtime traffic.local is not registered by pack ambulance')
+    })).toThrow('runtime weather.local is not registered by pack ambulance')
   })
 })

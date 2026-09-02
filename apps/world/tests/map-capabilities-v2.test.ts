@@ -35,12 +35,12 @@ const writeReferenceManifest = async (
       outputLayer: 'aero',
     },
     categories: [{ category: 'tma', minZoom: 6, maxZoom: 14, featureCount: 8 }],
-    sources: [{ id: 'openaip:airspaces:NO', kind: 'remote' }],
+    sources: [{ id: 'reference:areas', kind: 'remote' }],
     licences: [{
       id: 'cc-by-nc-sa-4.0',
       name: 'CC BY-NC-SA 4.0',
       url: 'https://creativecommons.org/licenses/by-nc-sa/4.0/',
-      attribution: '© OpenAIP',
+      attribution: '© Test data',
       commercialUseAllowed: false,
       redistributionAllowed: true,
       shareAlike: true,
@@ -241,12 +241,12 @@ describe('loadMapCapabilityManifest (disk reads)', () => {
 
   test('discovers a promoted reference dataset and appends it', async () => {
     const root = await refRoot()
-    await writeReferenceManifest(root, 'aero-norway', '20260526-2000')
+    await writeReferenceManifest(root, 'reference-areas', '20260526-2000')
     const manifest = await loadMapCapabilityManifest({ referenceRoot: root })
     expect(manifest.tilesets.length).toBe(4)
     const refs = findReferenceTilesets(manifest)
     expect(refs.length).toBe(1)
-    expect(refs[0]!.datasetId).toBe('aero-norway')
+    expect(refs[0]!.datasetId).toBe('reference-areas')
     expect(refs[0]!.buildId).toBe('20260526-2000')
   })
 
@@ -275,12 +275,12 @@ describe('loadMapCapabilityManifest (disk reads)', () => {
 
   test('cache invalidates when symlink target changes', async () => {
     const root = await refRoot()
-    await writeReferenceManifest(root, 'aero-norway', '20260526-2000')
+    await writeReferenceManifest(root, 'reference-areas', '20260526-2000')
     const first = await loadMapCapabilityManifest({ referenceRoot: root })
     expect(findReferenceTilesets(first)[0]!.buildId).toBe('20260526-2000')
 
     // Replace the symlink target by promoting a second build.
-    await writeReferenceManifest(root, 'aero-norway', '20260526-2100', { buildId: '20260526-2100' })
+    await writeReferenceManifest(root, 'reference-areas', '20260526-2100', { buildId: '20260526-2100' })
     // The writer added a fresh symlink at the same path? Actually we'd need to
     // remove the old symlink first. Simulate atomically by clearing cache.
     __clearManifestCacheForTests()
@@ -290,10 +290,10 @@ describe('loadMapCapabilityManifest (disk reads)', () => {
 
   test('multiple datasets are listed alphabetically', async () => {
     const root = await refRoot()
-    await writeReferenceManifest(root, 'aero-norway', 'b1')
+    await writeReferenceManifest(root, 'reference-areas', 'b1')
     await writeReferenceManifest(root, 'b-dataset', 'b1', { datasetId: 'b-dataset' })
     const manifest = await loadMapCapabilityManifest({ referenceRoot: root })
     const ids = findReferenceTilesets(manifest).map(t => t.datasetId)
-    expect(ids).toEqual(['aero-norway', 'b-dataset'])
+    expect(ids).toEqual(['b-dataset', 'reference-areas'])
   })
 })

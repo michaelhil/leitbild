@@ -61,7 +61,7 @@ const etaText = (object: OperationalObject): string | null =>
 const routeImpactText = (object: OperationalObject): string | null => {
   const impacts = object.spatial.route?.impacts ?? []
   if (impacts.length === 0) return null
-  return `Traffic impact: ${impacts.map(impact => `${impact.label} (${impact.severity})`).join(', ')}`
+  return `Route impact: ${impacts.map(impact => `${impact.label} (${impact.severity})`).join(', ')}`
 }
 
 const parseAmbulanceData = (object: OperationalObject): AmbulancePackData | null => {
@@ -86,7 +86,7 @@ const ambulanceDetails = (
 ): ReadonlyArray<PackObjectField> => [
   packField('destination', 'Destination', targetLabel(object, objects)),
   ...(etaText(object) ? [packField('eta', 'ETA', etaText(object)!.replace(/^ETA: /, ''))] : []),
-  ...(routeImpactText(object) ? [packField('traffic-impact', 'Traffic impact', routeImpactText(object)!.replace(/^Traffic impact: /, ''))] : []),
+  ...(routeImpactText(object) ? [packField('route-impact', 'Route impact', routeImpactText(object)!.replace(/^Route impact: /, ''))] : []),
   packField('capabilities', 'Capabilities', listText(data.capabilities)),
   packField('crew', 'Crew', factText(data.crew.level)),
   packField('seats', 'Seats', factText(data.crew.availableSeats)),

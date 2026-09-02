@@ -89,31 +89,31 @@ describe('executor: skill `allowed-tools` is no longer a runtime gate', () => {
     // Defends the second gate (pack activation). The skill removal must
     // not weaken this either.
     const registry = createToolRegistry()
-    registry.registerWithSource(mockTool('aviation_lookup'), { kind: 'pack-owned', pack: 'aviation' })
+    registry.registerWithSource(mockTool('site-survey_lookup'), { kind: 'pack-owned', pack: 'site-survey' })
 
     const getRoomActivation = (roomId: string) =>
-      roomId === 'room-active' ? { getActivePacks: () => ['aviation'] }
+      roomId === 'room-active' ? { getActivePacks: () => ['site-survey'] }
         : roomId === 'room-inactive' ? { getActivePacks: () => [] }
           : undefined
 
     const executor = createToolExecutor(
       registry,
-      ['aviation_lookup'],                          // selected by the Agent
+      ['site-survey_lookup'],                          // selected by the Agent
       fakeContext,
       getRoomActivation,
     )
 
-    const activeRoom = await executor([{ tool: 'aviation_lookup', arguments: {} }], 'room-active')
+    const activeRoom = await executor([{ tool: 'site-survey_lookup', arguments: {} }], 'room-active')
     expect(activeRoom[0]!.success).toBe(true)
 
-    const inactiveRoom = await executor([{ tool: 'aviation_lookup', arguments: {} }], 'room-inactive')
+    const inactiveRoom = await executor([{ tool: 'site-survey_lookup', arguments: {} }], 'room-inactive')
     expect(inactiveRoom[0]!.success).toBe(false)
     expect(inactiveRoom[0]!.error).toContain('is not active in this Room')
     // Rejection must name WHICH gate fired (AGENTS.md tripwire on silently-
     // ANDed permission gates). When a known pack-owned tool is unavailable
     // because the room hasn't activated the owning pack, the error must say
     // so — operator's mental model is "I see the tool, it should work."
-    expect(inactiveRoom[0]!.error).toContain('Pack "aviation"')
+    expect(inactiveRoom[0]!.error).toContain('Pack "site-survey"')
   })
 
 

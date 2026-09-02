@@ -17,21 +17,6 @@ mkdir -p /opt/leitbild/reference/sources
 mkdir -p /opt/leitbild/reference/builds
 mkdir -p /opt/leitbild/reference/releases
 
-# 3. Lock down the secrets directory.
-mkdir -p /etc/leitbild
-chmod 700 /etc/leitbild
-if [ ! -f /etc/leitbild/reference.env ]; then
-  cat > /etc/leitbild/reference.env <<'EOF'
-# Reference-data pipeline secrets. Owned by root, chmod 600.
-# See docs/reference-data-pipeline.md.
-OPENAIP_API_KEY=
-EOF
-  chmod 600 /etc/leitbild/reference.env
-  echo "Created /etc/leitbild/reference.env — fill in OPENAIP_API_KEY"
-else
-  echo "/etc/leitbild/reference.env already present (left untouched)"
-fi
-
 # Reference builds are intentionally manual. From the active immutable release,
-# load /etc/leitbild/reference.env and run the relevant reference:* command.
+# run the relevant reference:* command with its documented environment.
 echo "Reference tooling ready; no timer was installed"

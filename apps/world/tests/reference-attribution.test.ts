@@ -1,17 +1,17 @@
 import { describe, expect, test } from 'bun:test'
 import { composeAttribution, composeAttributionFromManifest } from '../src/ui/map/reference-attribution.ts'
-import { ccByNcSa40, nlod20, repoOwned } from '../src/reference-data/licences.ts'
+import { osmOdbl, nveNlod20, repoOwned } from '../src/reference-data/licences.ts'
 
 describe('composeAttribution', () => {
   test('joins per-licence attribution lines with middot', () => {
-    const out = composeAttribution([ccByNcSa40, nlod20])
-    expect(out).toContain('OpenAIP')
-    expect(out).toContain('Avinor')
+    const out = composeAttribution([osmOdbl, nveNlod20])
+    expect(out).toContain('OpenStreetMap')
+    expect(out).toContain('NVE')
     expect(out).toContain(' • ')
   })
 
   test('deduplicates by licence id', () => {
-    const out = composeAttribution([ccByNcSa40, ccByNcSa40, nlod20])
+    const out = composeAttribution([osmOdbl, osmOdbl, nveNlod20])
     expect(out.split(' • ').length).toBe(2)
   })
 

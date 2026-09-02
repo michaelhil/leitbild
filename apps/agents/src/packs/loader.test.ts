@@ -62,10 +62,10 @@ describe('loadPack', () => {
     const packDir = join(root, 'atc')
     await mkdir(join(packDir, 'tools'), { recursive: true })
     await mkdir(join(packDir, 'skills', 'chart-reader'), { recursive: true })
-    await writeFile(join(packDir, 'tools', 'vatsim.ts'), TOOL_SRC('vatsim'))
+    await writeFile(join(packDir, 'tools', 'station_status.ts'), TOOL_SRC('station_status'))
     await writeFile(
       join(packDir, 'skills', 'chart-reader', 'SKILL.md'),
-      SKILL_MD('chart-reader', 'Read aviation charts'),
+      SKILL_MD('chart-reader', 'Read site-survey charts'),
     )
 
     const registry = createToolRegistry()
@@ -76,10 +76,10 @@ describe('loadPack', () => {
       store,
     )
 
-    expect(result.tools).toEqual(['atc_vatsim'])
+    expect(result.tools).toEqual(['atc_station_status'])
     expect(result.skills).toEqual(['atc/chart-reader'])
-    expect(registry.has('atc_vatsim')).toBe(true)
-    expect(registry.has('vatsim')).toBe(false)
+    expect(registry.has('atc_station_status')).toBe(true)
+    expect(registry.has('station_status')).toBe(false)
     expect(store.get('atc/chart-reader')).toBeDefined()
     expect(store.get('atc/chart-reader')?.pack).toBe('atc')
     expect(store.get('atc/chart-reader')?.displayName).toBe('chart-reader')

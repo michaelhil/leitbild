@@ -38,7 +38,7 @@ describe('pack activation — end-to-end with RoomDirectory + Room', () => {
     reg.registerWithSource(okTool('builtin_a'), { kind: 'built-in' })
     reg.registerWithSource(okTool('local_a'),   { kind: 'external', path: '/x' })
     reg.registerWithSource(okTool('av_atc'), {
-      kind: 'pack-owned', pack: 'aviation', path: '/p/atc.ts', displayName: 'atc',
+      kind: 'pack-owned', pack: 'site-survey', path: '/p/atc.ts', displayName: 'atc',
     })
     reg.registerWithSource(okTool('cafes_menu'), {
       kind: 'pack-owned', pack: 'cafes', path: '/p/menu.ts', displayName: 'menu',
@@ -67,7 +67,7 @@ describe('pack activation — end-to-end with RoomDirectory + Room', () => {
     const reg = createToolRegistry()
     reg.registerWithSource(okTool('builtin_a'), { kind: 'built-in' })
     reg.registerWithSource(okTool('av_atc'), {
-      kind: 'pack-owned', pack: 'aviation', path: '/p/atc.ts', displayName: 'atc',
+      kind: 'pack-owned', pack: 'site-survey', path: '/p/atc.ts', displayName: 'atc',
     })
 
     const support = await buildToolSupport(
@@ -84,7 +84,7 @@ describe('pack activation — end-to-end with RoomDirectory + Room', () => {
     expect(before).toContain('builtin_a')
     expect(before).not.toContain('av_atc')
 
-    room.setActivePacks(['aviation'])
+    room.setActivePacks(['site-survey'])
 
     // Next resolve sees the change without any explicit invalidation —
     // the resolver is pure over (room state, registry).
@@ -92,8 +92,8 @@ describe('pack activation — end-to-end with RoomDirectory + Room', () => {
     expect(after).toContain('builtin_a')
     expect(after).toContain('av_atc')
 
-    // Remove aviation again.
-    room.setActivePacks(room.getActivePacks().filter(p => p !== 'aviation'))
+    // Remove site-survey again.
+    room.setActivePacks(room.getActivePacks().filter(p => p !== 'site-survey'))
     const reset = (support.resolveToolDefinitions!(room.profile.id) ?? []).map(d => d.function.name).sort()
     expect(reset).not.toContain('av_atc')
   })
@@ -105,13 +105,13 @@ describe('pack activation — end-to-end with RoomDirectory + Room', () => {
     const reg = createToolRegistry()
     reg.registerWithSource(okTool('builtin_a'), { kind: 'built-in' })
     reg.registerWithSource(okTool('av_atc'), {
-      kind: 'pack-owned', pack: 'aviation', path: '/p/atc.ts', displayName: 'atc',
+      kind: 'pack-owned', pack: 'site-survey', path: '/p/atc.ts', displayName: 'atc',
     })
     reg.registerWithSource(okTool('cafes_menu'), {
       kind: 'pack-owned', pack: 'cafes', path: '/p/menu.ts', displayName: 'menu',
     })
 
-    tower.setActivePacks(['aviation'])
+    tower.setActivePacks(['site-survey'])
     cafe.setActivePacks(['cafes'])
 
     const support = await buildToolSupport(
@@ -143,9 +143,9 @@ describe('pack activation — end-to-end with RoomDirectory + Room', () => {
   test('snapshot-style restore round-trips activePacks', () => {
     const house = createRoomDirectory({})
     const room = house.createRoom({ name: 'X', createdBy: SYSTEM_SENDER_ID })
-    room.setActivePacks(['aviation', 'cafes'])
+    room.setActivePacks(['site-survey', 'cafes'])
     const state = room.getRoomState()
-    expect(state.activePacks).toEqual(['aviation', 'cafes'])
+    expect(state.activePacks).toEqual(['site-survey', 'cafes'])
 
     // Fresh room from snapshot data.
     const house2 = createRoomDirectory({})
@@ -157,6 +157,6 @@ describe('pack activation — end-to-end with RoomDirectory + Room', () => {
       paused: false,
       activePacks: state.activePacks,
     })
-    expect(restored.getActivePacks()).toEqual(['aviation', 'cafes'])
+    expect(restored.getActivePacks()).toEqual(['site-survey', 'cafes'])
   })
 })

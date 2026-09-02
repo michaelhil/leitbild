@@ -5,7 +5,6 @@ import {
   type DatasetStyleModule,
   type ReferenceLayerSpec,
 } from './reference-layer-factory.ts'
-import { aeroNorwayStyleModule } from '../../packs/aviation/ui/aero-norway-style.ts'
 import { gridNorwayStyleModule } from '../../packs/electric-grid/ui/grid-norway-style.ts'
 
 // Imperative controller that fetches /map/capabilities.json, registers
@@ -25,7 +24,6 @@ interface ReferenceTilesetForController {
   readonly schemaVersion: number
   readonly builtAt: string
   readonly buildId: string
-  readonly airac?: string
   readonly artifact: {
     readonly pmtilesPath: string
     readonly sidecarGeoJsonPath: string
@@ -50,7 +48,6 @@ const isReference = (entry: { readonly kind: string }): entry is ReferenceTilese
   entry.kind === 'reference'
 
 const styleModuleFor = (datasetId: string): DatasetStyleModule | null => {
-  if (datasetId === 'aero-norway') return aeroNorwayStyleModule
   if (datasetId === 'grid-norway') return gridNorwayStyleModule
   return null
 }

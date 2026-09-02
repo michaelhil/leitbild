@@ -1,15 +1,10 @@
 import type { SimulationRunId } from '../src/core/model/index.ts'
 import { createScenarioRuntimeResolver, type ScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
-import { aviationPack } from '../src/packs/aviation/pack.ts'
 import { testScenarioSources, responseScenario, scenarios } from './fixtures/scenarios.ts'
 import { compileScenarioSource } from '../src/core/scenarios/config.ts'
 import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
-import { createVatsimPackRuntimeAdapter } from '../src/packs/aviation/sim/vatsim/adapter.ts'
-import { createAviationMultiPackRuntimeAdapter } from '../src/packs/aviation/sim/multi/adapter.ts'
-import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
-import { trafficPack } from '../src/packs/traffic/pack.ts'
 import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { processPlantPack } from '../src/packs/process-plant/pack.ts'
@@ -21,7 +16,7 @@ import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import type { PackRuntimeAdapter, PackRuntimeConnectionConfig, PackScenarioRuntimeConfig } from '../src/simulation/protocol.ts'
 
-export const testPacks = [ambulancePack, trafficPack, weatherPack, dronePack, processPlantPack, aviationPack, electricGridPack] as const
+export const testPacks = [ambulancePack, weatherPack, dronePack, processPlantPack, electricGridPack] as const
 
 export const createTestScenarioRuntimeResolver = (): ScenarioRuntimeResolver => createScenarioRuntimeResolver({
   packs: testPacks,
@@ -34,16 +29,12 @@ export const testScenarioAuthoring = () => ({
 })
 
 export const createTestPackRuntimeAdapters = (): ReadonlyArray<PackRuntimeAdapter> => {
-  const vatsim = createVatsimPackRuntimeAdapter()
   return [
     createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
-    createLocalTrafficPackRuntimeAdapter(),
     createLocalWeatherPackRuntimeAdapter(),
     createDroneNativePackRuntimeAdapter(),
     createLocalProcessPlantPackRuntimeAdapter(),
     createLocalElectricGridPackRuntimeAdapter(),
-    vatsim,
-    createAviationMultiPackRuntimeAdapter({ vatsim, defaultSource: 'vatsim' }),
   ]
 }
 

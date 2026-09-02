@@ -31,8 +31,8 @@ export interface PackMapLayerGroup {
   readonly defaultVisible: boolean
   /**
    * MapLibre layer-id pattern. Glob style: '*' matches a single ':'-separated
-   * segment. Example: 'reference:aero-norway:*:*' matches all four-segment
-   * reference-data layers belonging to the aero-norway dataset.
+   * segment. Example: 'reference:grid-norway:*:*' matches all four-segment
+   * reference-data layers belonging to the grid-norway dataset.
    */
   readonly layerIdPattern: string
 }
@@ -55,7 +55,6 @@ The controller is constructed once when the map style finishes loading, the same
 
 ### Source picker (separate but adjacent)
 
-The aviation pack's source picker (OpenSky vs VATSIM) is a *different* surface — it dispatches a command (`aviation.set_source`), not a visibility toggle. It does not pass through this protocol. The aviation pack contributes it via its own rail-section renderer alongside the `mapLayerGroups` toggles. Future packs that don't have a source picker do not see one.
 
 ### Scenario-side overrides
 
@@ -70,8 +69,8 @@ A scenario may pin or override the default visibility of any group by writing:
         "primitive": "objectRail",
         "config": {
           "packLayerGroupVisibility": {
-            "aviation:airspace": false,
-            "aviation:airports": true
+            "electric-grid:lines": false,
+            "electric-grid:substations": true
           }
         }
       }
@@ -92,7 +91,7 @@ The rail seeds initial state from `packLayerGroupVisibility` if present, otherwi
 
 ## Test plan
 
-- Unit tests for the glob matcher (`reference:aero-norway:*:*` matches `reference:aero-norway:tma:fill` but not `reference:other:tma:fill`).
+- Unit tests for the glob matcher (`reference:grid-norway:*:*` matches `reference:grid-norway:line:fill` but not `reference:other:line:fill`).
 - Presenter tests for rail-section state (initial → toggle → bulk apply → persist).
 - Integration test: a fake pack with `mapLayerGroups` plus a fake `MapLibreMap` shows expected `setLayoutProperty` calls.
 - Existing `svelte-lifecycle-policy` test must continue to pass — no new `$effect` patterns that violate it.

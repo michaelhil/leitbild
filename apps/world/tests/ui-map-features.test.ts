@@ -131,10 +131,10 @@ describe('map feature store', () => {
     expect(route.coordinates[0]).toEqual(geoPointFromLonLat(10.75, 59.91).coordinates)
   })
 
-  test('projects traffic and weather line objects while leaving grid reference geometry out of operational paths', () => {
-    const traffic = makeObject('traffic:line', {
+  test('projects weather line objects while leaving grid reference geometry out of operational paths', () => {
+    const weather = makeObject('weather:line', {
       kind: 'zone',
-      packId: 'traffic' as PackId,
+      packId: 'weather' as PackId,
       spatial: {
         frame: { kind: 'wgs84' },
         geometry: {
@@ -146,21 +146,16 @@ describe('map feature store', () => {
         },
       },
     })
-    const weather = makeObject('weather:line', {
-      kind: 'zone',
-      packId: 'weather' as PackId,
-      spatial: traffic.spatial,
-    })
     const grid = makeObject('grid:branch', {
       kind: 'zone',
       packId: 'electric-grid' as PackId,
-      spatial: traffic.spatial,
+      spatial: weather.spatial,
       operational: { status: 'constrained', mode: 'simulated' },
     })
 
-    const snapshot = updateStore([traffic, weather, grid])
+    const snapshot = updateStore([weather, grid])
 
-    expect(snapshot.paths.map(path => path.kind).sort()).toEqual(['traffic', 'weather-line'])
+    expect(snapshot.paths.map(path => path.kind).sort()).toEqual(['weather-line'])
   })
 
   test('projects pack area features and symbols into deck-ready area families', () => {

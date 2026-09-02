@@ -1,7 +1,7 @@
 # World Packs
 
 A World **Pack** is one namespaced operational capability. Ambulance, weather,
-traffic, drone, aviation, electric grid, and process plant are Packs. A Pack is
+drone, electric grid, and process plant are Packs. A Pack is
 not a simulator and does not need a runtime: presentation-only, knowledge-only,
 or scenario-only Packs are valid.
 

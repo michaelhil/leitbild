@@ -33,7 +33,7 @@ const flagArgs = (config: TilebuildConfig): string[] => {
   //     overflow the 500 KB MVT cap.
   //   --no-feature-limit: keep all 455+ ENOR polygons in a single tile when
   //     they fit, without artificial per-tile feature caps.
-  //   --simplification: aggressive Douglas-Peucker (10) trims jagged airspace
+  //   --simplification: aggressive Douglas-Peucker (10) trims jagged polygon
   //     boundaries to keep tiles small at low zooms.
   // We DO NOT use --no-tile-size-limit or --extend-zooms-if-still-dropping:
   // for ENOR they pushed the PMTiles archive past 400 MB by extending zoom

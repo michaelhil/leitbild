@@ -84,6 +84,14 @@ _Avoid_: Process Surface, Starting View, generated UI code
 An optional Simulation Run service that stores explicitly selected observation series. The Durable Journal separately retains meaningful committed events; together they support historical inspection without making dense samples canonical World state.
 _Avoid_: Durable Journal, runtime snapshot, automatic capture of every private variable
 
+**Weather Influence**:
+A Weather-owned spatial and time-varying input to environmental conditions. It is not a measurement or an asset's response to those conditions.
+_Avoid_: Weather Probe, road-speed policy, reference-map layer
+
+**Weather Probe**:
+A named point that samples Weather conditions in a Simulation Run without changing them.
+_Avoid_: Weather Influence, physical sensor feed unless a real source supplies it
+
 **Procedure Source**:
 A read-only procedure corpus discovered through one validated Manifest whose revision identifies the immutable document set.
 _Avoid_: hard-coded procedure list, human-readable index scraping, eagerly loaded procedure bundle

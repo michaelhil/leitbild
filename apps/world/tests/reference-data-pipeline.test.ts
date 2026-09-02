@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { ccByNcSa40, nlod20, repoOwned } from '../src/reference-data/licences.ts'
+import { osmOdbl, nveNlod20, repoOwned } from '../src/reference-data/licences.ts'
 import { buildDataset, currentBuildId, promoteBuild, removeStaleBuilds } from '../src/reference-data/pipeline.ts'
 import { manualSource } from '../src/reference-data/sources/manual.ts'
 import {
@@ -14,7 +14,7 @@ import {
 } from '../src/reference-data/types.ts'
 import { createFetchCache } from '../src/reference-data/fetch-cache.ts'
 
-const fixturePath = join(import.meta.dir, 'fixtures', 'halden-zone.geojson')
+const fixturePath = join(import.meta.dir, 'fixtures', 'reference-area.geojson')
 
 const tilebuild: TilebuildConfig = {
   outputLayer: 'exclusion',
@@ -37,7 +37,7 @@ const validConfig: DatasetConfig = {
   id: asDatasetId('test-exclusion'),
   schemaVersion: 1,
   featureSchema,
-  sources: [manualSource({ id: 'halden-zone-fixture', path: fixturePath })],
+  sources: [manualSource({ id: 'reference-area-fixture', path: fixturePath })],
   tilebuild,
   licences: [repoOwned],
   featureToCategory: (f: NormalizedFeature): string => String(f.properties.category ?? 'unknown'),
@@ -111,10 +111,10 @@ describe('buildDataset', () => {
 
   test('multiple licences are all recorded', async () => {
     const env = await mkEnv()
-    const config: DatasetConfig = { ...validConfig, licences: [ccByNcSa40, nlod20] }
+    const config: DatasetConfig = { ...validConfig, licences: [osmOdbl, nveNlod20] }
     const outcome = await buildDataset(config, env)
     const manifest = JSON.parse(await readFile(join(outcome.buildDir, 'test-exclusion.manifest.json'), 'utf8'))
-    expect(manifest.licences.map((l: { id: string }) => l.id).sort()).toEqual(['cc-by-nc-sa-4.0', 'nlod-2.0'])
+    expect(manifest.licences.map((l: { id: string }) => l.id).sort()).toEqual(['nve-nlod-2.0', 'osm-odbl-1.0'])
   })
 })
 

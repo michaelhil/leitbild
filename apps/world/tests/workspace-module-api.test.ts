@@ -103,7 +103,7 @@ describe('World Module API', () => {
     )
     expect(described.body?.result.packs.find(pack => pack.id === 'ambulance')?.itemTypes.length).toBeGreaterThan(0)
     expect(described.body?.result.packs.find(pack => pack.id === 'process-plant')?.itemTypes.length).toBeGreaterThan(0)
-    expect(described.body?.result.packs.find(pack => pack.id === 'aviation')?.runtimes.length).toBeGreaterThan(1)
+    expect(described.body?.result.packs.map(pack => pack.id).sort()).toEqual(['ambulance', 'drone', 'electric-grid', 'process-plant', 'weather'])
     expect(described.body?.result.packs.find(pack => pack.id === 'process-plant')?.configSchema).toBeTruthy()
 
     const previewSource = testScenarioSources.find(source => source.id === 'halden-power-complex')!

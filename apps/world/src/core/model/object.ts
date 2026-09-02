@@ -7,7 +7,7 @@ import { telemetryStateSchema, type TelemetryState } from './telemetry.ts'
 import { alertStateSchema, type AlertState } from './alerts.ts'
 import { objectContextSchema, type ObjectContext } from './context.ts'
 
-export const objectKindSchema = z.enum(['mobile_entity', 'incident', 'facility', 'zone', 'patient', 'aircraft'])
+export const objectKindSchema = z.enum(['mobile_entity', 'incident', 'facility', 'zone', 'patient'])
 export type ObjectKind = z.infer<typeof objectKindSchema>
 
 export const objectLifecycleSchema = z.enum(['active', 'inactive', 'resolved', 'removed'])

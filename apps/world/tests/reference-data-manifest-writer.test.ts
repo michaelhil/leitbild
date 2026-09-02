@@ -3,7 +3,7 @@ import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { ccByNcSa40, repoOwned } from '../src/reference-data/licences.ts'
+import { osmOdbl, repoOwned } from '../src/reference-data/licences.ts'
 import { composeDatasetManifest, datasetManifestSchema, writeAuditReport, writeDatasetManifest } from '../src/reference-data/manifest-writer.ts'
 import { manualSource } from '../src/reference-data/sources/manual.ts'
 import {
@@ -28,7 +28,7 @@ const config: DatasetConfig = {
   featureSchema: z.object({ category: z.string() }),
   sources: [manualSource({ id: 'fixture', path: '/dev/null' })],
   tilebuild,
-  licences: [repoOwned, ccByNcSa40],
+  licences: [repoOwned, osmOdbl],
   featureToCategory: (f: NormalizedFeature): string => String(f.properties.category ?? 'unknown'),
 }
 
@@ -50,22 +50,8 @@ describe('composeDatasetManifest', () => {
     })
     expect(manifest.datasetId).toBe('test-dataset')
     expect(manifest.categories?.[0]?.featureCount).toBe(3)
-    expect(manifest.licences.map(l => l.id).sort()).toEqual(['cc-by-nc-sa-4.0', 'repo-owned'])
+    expect(manifest.licences.map(l => l.id).sort()).toEqual(['osm-odbl-1.0', 'repo-owned'])
     expect(manifest.sources?.[0]?.id).toBe('fixture')
-    expect(manifest.airac).toBeUndefined()
-  })
-
-  test('includes optional airac when supplied', () => {
-    const manifest = composeDatasetManifest({
-      config,
-      features: [sampleFeature],
-      builtAt: asIso8601('2026-05-26T18:30:00Z'),
-      buildId: asBuildId('20260526-1830'),
-      pmtilesRelativePath: 'x.pmtiles',
-      sidecarRelativePath: 'x.features.geojson',
-      airac: '2606/01',
-    })
-    expect(manifest.airac).toBe('2606/01')
   })
 
   test('schema parses round-trip', () => {

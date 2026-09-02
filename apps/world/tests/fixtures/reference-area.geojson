@@ -1,0 +1,7 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature", "id": "area-1", "geometry": { "type": "Polygon", "coordinates": [[[10, 59], [10.1, 59], [10.1, 59.1], [10, 59.1], [10, 59]]] }, "properties": { "category": "exclusion", "name": "Test area 1", "floorM": 0, "ceilingM": 100, "source": "test" } },
+    { "type": "Feature", "id": "area-2", "geometry": { "type": "Polygon", "coordinates": [[[11, 60], [11.1, 60], [11.1, 60.1], [11, 60.1], [11, 60]]] }, "properties": { "category": "exclusion", "name": "Test area 2", "floorM": 0, "ceilingM": 200, "source": "test" } }
+  ]
+}

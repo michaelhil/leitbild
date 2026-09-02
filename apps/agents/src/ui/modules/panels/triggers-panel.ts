@@ -110,7 +110,7 @@ export const openTriggerForm = async (
   const nameLabel = document.createElement('label')
   nameLabel.className = 'block text-xs text-text-muted'
   nameLabel.textContent = 'Name'
-  const nameInput = createInput({ value: existing?.name ?? '', placeholder: 'Check vatsim status' })
+  const nameInput = createInput({ value: existing?.name ?? '', placeholder: 'Check system status' })
   body.appendChild(nameLabel); body.appendChild(nameInput)
 
   // --- Mode (AI gets execute + post + start-script; human gets post + start-script) ---

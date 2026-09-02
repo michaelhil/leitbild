@@ -292,7 +292,7 @@ const installPack = (deps: PackManagerDeps) => async (rawSource: string): Promis
     // directory) and return a typed failure. The agent must not be able to
     // see `success: true` while only half the pack's capabilities exist —
     // that is exactly the inconsistent-state bug that left agents claiming
-    // VATSIM tools they didn't have.
+    // Pack tools they didn't have.
     if (result.errors.length > 0) {
       deps.toolRegistry.unregisterByPack(packId)
       deps.skillStore.removeByPack(packId)

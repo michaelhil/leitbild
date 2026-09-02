@@ -13,7 +13,6 @@ interface DatasetStatus {
   readonly id: string
   readonly currentBuild: string | null
   readonly builds: ReadonlyArray<string>
-  readonly airac?: string
   readonly builtAt?: string
   readonly featureCount?: number
 }
@@ -40,11 +39,10 @@ const collect = async (): Promise<ReadonlyArray<DatasetStatus>> => {
     try {
       const manifestPath = join(root, 'releases', id, 'current', `${id}.manifest.json`)
       const raw = await readFile(manifestPath, 'utf8')
-      const parsed = JSON.parse(raw) as { airac?: string; builtAt?: string; categories?: Array<{ featureCount?: number }> }
+      const parsed = JSON.parse(raw) as { builtAt?: string; categories?: Array<{ featureCount?: number }> }
       const featureCount = parsed.categories?.reduce((s, c) => s + (c.featureCount ?? 0), 0)
       out.push({
         ...baseEntry,
-        ...(parsed.airac ? { airac: parsed.airac } : {}),
         ...(parsed.builtAt ? { builtAt: parsed.builtAt } : {}),
         ...(typeof featureCount === 'number' ? { featureCount } : {}),
       })
@@ -65,7 +63,6 @@ if (flags.json) {
     console.log('')
     console.log(`  ${s.id}`)
     console.log(`    current build : ${s.currentBuild ?? '<none>'}`)
-    if (s.airac) console.log(`    airac         : ${s.airac}`)
     if (s.builtAt) console.log(`    built at      : ${s.builtAt}`)
     if (typeof s.featureCount === 'number') console.log(`    features      : ${s.featureCount}`)
     console.log(`    builds on disk: ${s.builds.length}`)

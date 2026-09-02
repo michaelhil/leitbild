@@ -50,11 +50,11 @@ const makeFakeMap = () => {
 }
 
 const referenceManifestBody = (extra: Partial<{ datasetId: string; categories: ReadonlyArray<string> }> = {}) => {
-  const datasetId = extra.datasetId ?? 'aero-norway'
-  const categories = (extra.categories ?? ['tma', 'ctr', 'airport']).map(category => ({
+  const datasetId = extra.datasetId ?? 'grid-norway'
+  const categories = (extra.categories ?? ['substation', 'plant', 'generator']).map(category => ({
     category, minZoom: 6, maxZoom: 14, featureCount: 5,
   }))
-  const outputLayer = datasetId === 'grid-norway' ? 'grid' : 'aero'
+  const outputLayer = 'grid'
   return {
     schemaVersion: 2,
     tilesets: [
@@ -74,8 +74,8 @@ const referenceManifestBody = (extra: Partial<{ datasetId: string; categories: R
           outputLayer,
         },
         categories,
-        sources: [{ id: 'openaip', kind: 'remote' }],
-        licences: [{ id: 'cc-by-nc-sa-4.0', attribution: '© OpenAIP · CC BY-NC-SA 4.0' }],
+        sources: [{ id: 'osm', kind: 'remote' }],
+        licences: [{ id: 'odbl-1.0', attribution: '© OpenStreetMap contributors · ODbL' }],
       },
     ],
   }
@@ -88,22 +88,22 @@ const fakeFetch = (status: number, body: unknown) => async (_input: string): Pro
   })
 
 describe('createReferenceDataController', () => {
-  test('registers source + fill/line/point/label layers for aero-norway', async () => {
+  test('registers source + fill/line/point/label layers for grid-norway', async () => {
     const { map, layers, sources } = makeFakeMap()
     const controller = await createReferenceDataController({
       map,
       fetchFn: fakeFetch(200, referenceManifestBody()),
     })
     expect(controller.registered.length).toBe(1)
-    expect(controller.registered[0]!.datasetId).toBe('aero-norway')
-    expect(sources.get('reference:aero-norway')).toBeDefined()
-    expect(sources.get('reference:aero-norway')!.tiles[0]).toContain('/map/datasets/aero-norway/current/')
-    // tma + ctr each have fill + line; airport has fill + line + point + label.
-    expect(layers.has('reference:aero-norway:tma:fill')).toBe(true)
-    expect(layers.has('reference:aero-norway:tma:line')).toBe(true)
-    expect(layers.has('reference:aero-norway:airport:fill')).toBe(true)
-    expect(layers.has('reference:aero-norway:airport:point')).toBe(true)
-    expect(layers.has('reference:aero-norway:airport:label')).toBe(true)
+    expect(controller.registered[0]!.datasetId).toBe('grid-norway')
+    expect(sources.get('reference:grid-norway')).toBeDefined()
+    expect(sources.get('reference:grid-norway')!.tiles[0]).toContain('/map/datasets/grid-norway/current/')
+    // Site categories expose polygon outlines, markers and labels.
+    expect(layers.has('reference:grid-norway:substation:fill')).toBe(true)
+    expect(layers.has('reference:grid-norway:substation:line')).toBe(true)
+    expect(layers.has('reference:grid-norway:generator:fill')).toBe(true)
+    expect(layers.has('reference:grid-norway:generator:point')).toBe(true)
+    expect(layers.has('reference:grid-norway:generator:label')).toBe(true)
   })
 
   test('registers grid-norway reference lines and site markers', async () => {
@@ -131,11 +131,11 @@ describe('createReferenceDataController', () => {
       map,
       fetchFn: fakeFetch(200, referenceManifestBody()),
     })
-    controller.setCategoryVisibility('aero-norway', 'tma', false)
-    expect(layers.get('reference:aero-norway:tma:fill')!.visibility).toBe('none')
-    expect(layers.get('reference:aero-norway:tma:line')!.visibility).toBe('none')
-    controller.setCategoryVisibility('aero-norway', 'tma', true)
-    expect(layers.get('reference:aero-norway:tma:fill')!.visibility).toBe('visible')
+    controller.setCategoryVisibility('grid-norway', 'substation', false)
+    expect(layers.get('reference:grid-norway:substation:fill')!.visibility).toBe('none')
+    expect(layers.get('reference:grid-norway:substation:line')!.visibility).toBe('none')
+    controller.setCategoryVisibility('grid-norway', 'substation', true)
+    expect(layers.get('reference:grid-norway:substation:fill')!.visibility).toBe('visible')
   })
 
   test('setBulkVisibility applies a whole map of categories', async () => {
@@ -144,10 +144,10 @@ describe('createReferenceDataController', () => {
       map,
       fetchFn: fakeFetch(200, referenceManifestBody()),
     })
-    controller.setBulkVisibility('aero-norway', { tma: false, ctr: false, airport: true })
-    expect(layers.get('reference:aero-norway:tma:fill')!.visibility).toBe('none')
-    expect(layers.get('reference:aero-norway:ctr:fill')!.visibility).toBe('none')
-    expect(layers.get('reference:aero-norway:airport:fill')!.visibility).toBe('visible')
+    controller.setBulkVisibility('grid-norway', { substation: false, plant: false, generator: true })
+    expect(layers.get('reference:grid-norway:substation:fill')!.visibility).toBe('none')
+    expect(layers.get('reference:grid-norway:plant:fill')!.visibility).toBe('none')
+    expect(layers.get('reference:grid-norway:generator:fill')!.visibility).toBe('visible')
   })
 
   test('manifest 404 results in zero registered datasets, no throw', async () => {
@@ -187,18 +187,18 @@ describe('createReferenceDataController', () => {
     const { map, sources } = makeFakeMap()
     const controller = await createReferenceDataController({
       map,
-      datasetIds: ['aero-norway'],
+      datasetIds: ['grid-norway'],
       fetchFn: fakeFetch(200, {
         schemaVersion: 2,
         tilesets: [
-          referenceManifestBody({ datasetId: 'aero-norway' }).tilesets[1],
+          referenceManifestBody({ datasetId: 'grid-norway' }).tilesets[1],
           referenceManifestBody({ datasetId: 'other-dataset' }).tilesets[1],
         ],
       }),
     })
 
-    expect(controller.registered.map(entry => entry.datasetId)).toEqual(['aero-norway'])
-    expect(sources.get('reference:aero-norway')).toBeDefined()
+    expect(controller.registered.map(entry => entry.datasetId)).toEqual(['grid-norway'])
+    expect(sources.get('reference:grid-norway')).toBeDefined()
     expect(sources.get('reference:other-dataset')).toBeUndefined()
   })
 
@@ -215,7 +215,7 @@ describe('createReferenceDataController', () => {
     })
 
     expect(controller.registered).toEqual([])
-    expect(sources.get('reference:aero-norway')).toBeUndefined()
+    expect(sources.get('reference:grid-norway')).toBeUndefined()
     expect(fetches).toBe(0)
   })
 
@@ -248,14 +248,14 @@ describe('createReferenceDataController', () => {
 
   test('layer-id partitioning groups by category', () => {
     const layerIds = [
-      'reference:aero-norway:tma:fill',
-      'reference:aero-norway:tma:line',
-      'reference:aero-norway:ctr:fill',
-      'reference:aero-norway:airport:label',
+      'reference:grid-norway:substation:fill',
+      'reference:grid-norway:substation:line',
+      'reference:grid-norway:plant:fill',
+      'reference:grid-norway:generator:label',
     ]
     const grouped = __internals.collectLayerIdsByCategory(layerIds.map(id => ({ id } as never)))
-    expect(grouped['tma']!.sort()).toEqual(['reference:aero-norway:tma:fill', 'reference:aero-norway:tma:line'])
-    expect(grouped['ctr']).toEqual(['reference:aero-norway:ctr:fill'])
-    expect(grouped['airport']).toEqual(['reference:aero-norway:airport:label'])
+    expect(grouped['substation']!.sort()).toEqual(['reference:grid-norway:substation:fill', 'reference:grid-norway:substation:line'])
+    expect(grouped['plant']).toEqual(['reference:grid-norway:plant:fill'])
+    expect(grouped['generator']).toEqual(['reference:grid-norway:generator:label'])
   })
 })

@@ -221,7 +221,7 @@ describe('Simulation Run API', () => {
       expect(capabilities.body).toMatchObject({
         simulationRunId: created.id,
         scenarioId: 'test-response',
-        activePackIds: ['ambulance', 'traffic', 'weather'],
+        activePackIds: ['ambulance', 'weather'],
       })
       expect(capabilities.body.runtimes).toContainEqual({ id: ambulanceSimRuntimeId, packId: 'ambulance', clock: 'simulation' })
       expect(capabilities.body.capabilities.some(capability => capability.kind === 'command' && capability.id === setDestinationCommandKind)).toBe(true)

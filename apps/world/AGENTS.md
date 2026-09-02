@@ -43,7 +43,7 @@
 - Pack runtimes may keep private mechanics and runtime-local projections, but those are not canonical shared object state. Runtimes must rehydrate private mechanics from canonical objects on connect; do not make the UI infer or drive runtime motion.
 - Use the Runtime Hub for multiple pack runtimes in one Simulation Run. Do not merge a new pack runtime into an existing pack runtime just to get a short-term demo.
 - Pack runtimes must declare accepted command kinds; do not rely on broad command broadcast as the long-term command-routing model.
-- Runtime-owned read models must be exposed as typed Simulation Capabilities. Do not add a private Pack-query envelope or Pack-specific HTTP endpoint families such as `/api/weather/*`, `/api/traffic/*`, or `/api/ambulance/*` without a new ADR.
+- Runtime-owned read models must be exposed as typed Simulation Capabilities. Do not add a private Pack-query envelope or Pack-specific HTTP endpoint families such as `/api/weather/*` or `/api/ambulance/*` without a new ADR.
 - Query Capabilities must be read-only. They must not issue commands, mutate runtime state, emit events, or commit canonical changes.
 - Process-control Packs such as `process-plant` must keep continuous physics inside the Pack-owned runtime. Use validated component graphs, typed ports, compiled runtime indices, typed query Capabilities, and discrete Simulation Run events; do not turn internal process variables into `OperationalObject`s or use event messages as the continuous physics solver.
 - Process-plant signal bindings are graph-owned metadata. Use `tagId` plus explicit `plantId`; do not reintroduce `sensorId`, `actuatorId`, implicit current-Plant lookup, fleet-wide aliases, or separate binding catalogs without an ADR.
@@ -59,8 +59,7 @@
 - Model cross-object and cross-runtime interaction through scoped interaction signals and registered handlers. Objects may be the source or subject of signals/events, but objects are data, not active executable actors.
 - Interaction handlers must return constrained effects for the simulation-run runtime to validate, order, persist, and broadcast. Handlers must not directly mutate shared state or call other objects.
 - Pack runtimes observe committed Simulation Run events; do not add second authoritative mutation paths that mirror canonical object state into a runtime as if the runtime owned shared truth.
-- Traffic conditions should first be aggregate zone/segment objects. Do not add individual traffic vehicles until a feature actually needs per-vehicle behavior and culling/performance rules are in place.
-- Route impacts from traffic must be canonical and visible. Do not silently reroute a mobile asset without an explicit command or declared automation policy.
+- Route impacts must be canonical and visible. Do not silently reroute a mobile asset without an explicit command or declared automation policy.
 - Treat AI outputs as untrusted input: AI agents may issue commands or emit interaction signals, but only validated handlers and committed Simulation Run events can change canonical state.
 - Treat the self-hosted vector map artifact as contextual data, not operational truth. Pack runtimes and UI surfaces must discover map-context capabilities through `/map/capabilities.json` instead of hard-coding tile assumptions.
 - Do not reintroduce raster OSM base maps or raster fallback paths. Leitbild's base map is vector-only.

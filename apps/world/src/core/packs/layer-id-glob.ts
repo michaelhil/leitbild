@@ -7,9 +7,9 @@
 //   layer ids are partitioned cleanly.
 //
 // Examples:
-//   `reference:aero-norway:*:*` matches `reference:aero-norway:tma:fill`
-//   `reference:aero-norway:airport:*` matches `reference:aero-norway:airport:label`
-//   `reference:aero-norway:*:*` does NOT match `reference:aero-norway:tma:fill:extra`
+//   `reference:grid-norway:*:*` matches `reference:grid-norway:line:fill`
+//   `reference:grid-norway:substation:*` matches `reference:grid-norway:substation:label`
+//   `reference:grid-norway:*:*` does NOT match `reference:grid-norway:line:fill:extra`
 //   (segment count must match)
 
 const escapeRegexLiteral = (s: string): string => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')

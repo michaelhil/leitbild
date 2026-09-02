@@ -29,7 +29,7 @@ describe('Workspace Pack scrubber', () => {
     await moduleState.provision(workspaceId)
     const runtime = await registry.getOrLoad(workspaceId)
     const room = runtime.rooms.createRoom({ name: 'Scrub me', createdBy: 'test' })
-    room.setActivePacks(['aviation', 'biometrics'])
+    room.setActivePacks(['site-survey', 'biometrics'])
     await registry.autoSaverFor(workspaceId)!.flush()
     await registry.evictOne(workspaceId)
     expect(registry.list()).toHaveLength(0)
@@ -38,7 +38,7 @@ describe('Workspace Pack scrubber', () => {
       registry,
       broadcastToWorkspace: () => {},
     })
-    expect(await scrub('aviation')).toEqual([])
+    expect(await scrub('site-survey')).toEqual([])
 
     const restored = await registry.getOrLoad(workspaceId)
     expect(restored.rooms.getRoom(room.profile.id)?.getActivePacks()).toEqual(['biometrics'])

@@ -309,7 +309,7 @@
   }
 
   // Pack-rail layer-group visibility. Active pack contributes mapLayerGroups
-  // (e.g. aviation pack: airspace, airports, aircraft); the rail renders
+  // (e.g. electric grid: lines, cables, substations); the rail renders
   // toggles and writes here; OperationalMap re-applies on change.
   const activeMapLayerGroups = $derived(activePack?.presentation.mapLayerGroups ?? emptyMapLayerGroups)
   const activePackAreaFeatureLayers = $derived(activePack?.presentation.mapAreaFeatureLayers ?? emptyMapAreaFeatureLayers)
@@ -339,57 +339,6 @@
       [groupId]: !(mapLayerGroupVisibility[groupId] ?? activeMapLayerGroups.find(g => g.id === groupId)?.defaultVisible ?? true),
     }
   }
-
-  // Rail source picker (Phase B.3). Only meaningful when the scenario binds
-  // the aviation pack to aviation.multi — that runtime is the only one
-  // exposing world.aviation.set-source, so picking a source on a single-source
-  // runtime would do nothing.
-  //
-  // Active source is tracked locally because it's runtime state, not part of
-  // the scenario manifest after the first switch. We seed from the scenario's
-  // Pack config (the same payload the multi adapter consumes at connect
-  // time) and then update optimistically on each successful command.
-  let aviationActiveSourceId = $state<'opensky' | 'vatsim'>('opensky')
-  let pendingSourceSwitch = $state(false)
-  $effect(() => {
-    const scenario = scenarioDefinition
-    if (!scenario) return
-    // Pack config is keyed by Pack id and routed to the selected runtime.
-    const cfg = (scenario.packConfigs ?? {})['aviation'] as { source?: string } | undefined
-    untrack(() => {
-      const source = cfg?.source === 'vatsim' ? 'vatsim' : 'opensky'
-      aviationActiveSourceId = source
-    })
-  })
-
-  const setAviationSource = async (sourceId: string): Promise<void> => {
-    if (sourceId !== 'opensky' && sourceId !== 'vatsim') return
-    if (sourceId === aviationActiveSourceId || pendingSourceSwitch) return
-    pendingSourceSwitch = true
-    try {
-      await sendCommand('world.aviation.set-source', { source: sourceId })
-      aviationActiveSourceId = sourceId
-    } finally {
-      pendingSourceSwitch = false
-    }
-  }
-
-  const railSourcePicker = $derived.by(() => {
-    if (!activePack || !scenarioDefinition) return null
-    const activeRuntimeId = scenarioDefinition.packRuntimes['aviation']
-      ?? activePack.defaultRuntimeIdFor('aviation')
-    if (activeRuntimeId !== 'aviation.multi') return null
-    const sources = [
-      { id: 'opensky', label: 'OpenSky Network (live ADS-B)' },
-      { id: 'vatsim', label: 'VATSIM (flight-sim network)' },
-    ]
-    return {
-      title: 'Aircraft source',
-      sources,
-      activeId: aviationActiveSourceId,
-      onSelect: (sourceId: string) => { void setAviationSource(sourceId) },
-    }
-  })
 
   const currentPackTime = (): IsoTimestamp | undefined =>
     simulationTimeAt(clock)
@@ -1571,7 +1520,6 @@
         mapLayerGroups={activeMapLayerGroups}
         {mapLayerGroupVisibility}
         onMapLayerGroupToggle={toggleMapLayerGroup}
-        sourcePicker={railSourcePicker}
         surfacePanels={surfacePanelLaunchers}
         {toggleSurfacePanel}
       />

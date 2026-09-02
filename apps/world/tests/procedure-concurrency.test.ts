@@ -8,7 +8,6 @@ import { createSimulationRunRegistry } from '../src/core/simulation-runs/registr
 import { createSimulationRunStateStore } from '../src/core/simulation-runs/state-store.ts'
 import { createSimulationRunRealtimeManager } from '../src/core/api/realtime.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
-import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestScenarioRuntimeResolver, testScenarioAuthoring } from './helpers.ts'
@@ -24,8 +23,10 @@ describe('procedure commands through the real publish queue and realtime project
     let readDocument: ProcedureSourceService['readDocument'] = async input => procedureTestDocument(input.procedureId, input.sourceRevision)
     const registry = createSimulationRunRegistry({
       dataDir, workspaceId: newWorkspaceId(), scenarioRuntimeResolver: createTestScenarioRuntimeResolver(), ...testScenarioAuthoring(),
-      runtimeAdapters: [createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
-        createLocalTrafficPackRuntimeAdapter(), createLocalWeatherPackRuntimeAdapter()],
+      runtimeAdapters: [
+        createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
+        createLocalWeatherPackRuntimeAdapter(),
+      ],
       procedureSourceService: { listSources: () => [], readCatalog: async () => procedureTestCatalog(), readDocument: async input => await readDocument(input) },
     })
     const runtime = await registry.create({ scenarioId: 'test-response' })

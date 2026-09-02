@@ -219,7 +219,6 @@
   const visibleFamilies = (): ReadonlySet<string> => {
     const enabled = new Set<string>()
     for (const layer of mapConfig.layers) {
-      if (layer === 'traffic' && !activePackIds.includes('traffic')) continue
       if (layer === 'weather' && !activePackIds.includes('weather')) continue
       if (layer === 'grid' && !activePackIds.includes('electric-grid')) continue
       enabled.add(layer)

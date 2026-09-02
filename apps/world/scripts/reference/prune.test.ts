@@ -7,8 +7,8 @@ describe('reference prune arguments', () => {
   })
 
   test('accepts an explicit dataset, count, and confirmation', () => {
-    expect(parsePruneArgs(['--dataset', 'aero-norway', '--retain', '5', '--yes'])).toEqual({
-      dataset: 'aero-norway',
+    expect(parsePruneArgs(['--dataset', 'grid-norway', '--retain', '5', '--yes'])).toEqual({
+      dataset: 'grid-norway',
       retain: 5,
       yes: true,
     })

@@ -177,11 +177,11 @@ const lineObjectPathFor = (
 ): OperationalPathFeature | null => {
   if (object.spatial.geometry?.type !== 'LineString') return null
   const category = presentation.categoryId
-  if (category !== 'traffic' && category !== 'weather') return null
-  const kind = category === 'traffic' ? 'traffic' : 'weather-line'
+  if (category !== 'weather') return null
+  const kind = 'weather-line'
   const path = lineStringPositions(object.spatial.geometry)
   const tone = presentationTone(presentation)
-  const widthPx = category === 'traffic' ? 4.0 : 2.5
+  const widthPx = 2.5
   return {
     id: `${kind}:${object.id}`,
     kind,
@@ -192,25 +192,6 @@ const lineObjectPathFor = (
     selected: false,
     priority: tone === 'error' ? 85 : tone === 'working' ? 70 : 35,
     signature: `${kind}:${object.id}:${presentation.color}:${tone}:${pathSignature(path)}`,
-  }
-}
-
-const trafficAreaFor = (
-  object: OperationalObject,
-  presentation: PackObjectPresentation,
-): OperationalAreaFeature | null => {
-  if (object.spatial.geometry?.type !== 'Polygon' || presentation.categoryId !== 'traffic') return null
-  const polygon = object.spatial.geometry
-  return {
-    id: `traffic-area:${object.id}`,
-    kind: 'traffic',
-    polygon,
-    color: colorWithAlpha(hexToRgba(presentation.color), 58),
-    lineColor: colorWithAlpha(hexToRgba(presentation.color), 210),
-    opacity: 0.22,
-    lineWidthPx: 2,
-    sortKey: 20,
-    signature: `traffic-area:${object.id}:${presentation.color}:${polygonSignature(polygon)}`,
   }
 }
 
@@ -287,7 +268,6 @@ const placementPosition = (point: GeoJsonPoint): Position3 =>
 interface ProjectedObjectFeatures {
   readonly points: ReadonlyArray<OperationalPointFeature>
   readonly objectPaths: ReadonlyArray<OperationalPathFeature>
-  readonly objectAreas: ReadonlyArray<OperationalAreaFeature>
 }
 
 const projectionContextFor = (
@@ -306,7 +286,6 @@ const projectObjects = (
 ): ProjectedObjectFeatures => {
   const points: OperationalPointFeature[] = []
   const objectPaths: OperationalPathFeature[] = []
-  const objectAreas: OperationalAreaFeature[] = []
   for (const object of input.objects) {
     const presentation = context.presentationFor(object)
     if (context.hiddenObjectCategoryIds.has(presentation.categoryId)) continue
@@ -316,13 +295,10 @@ const projectObjects = (
     if (route) objectPaths.push(route)
     const line = lineObjectPathFor(object, presentation)
     if (line) objectPaths.push(line)
-    const area = trafficAreaFor(object, presentation)
-    if (area) objectAreas.push(area)
   }
   return {
     points: points.sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id)),
     objectPaths,
-    objectAreas,
   }
 }
 
@@ -374,7 +350,7 @@ const projectFeatures = (input: OperationalRenderInput): {
   return {
     points: objectFeatures.points,
     paths: sortPaths([...objectFeatures.objectPaths, ...packAreaPaths]),
-    areas: sortAreas([...objectFeatures.objectAreas, ...areaFeatures]),
+    areas: sortAreas(areaFeatures),
     areaSymbols,
     placementPoints: input.placementPoints.map(placementPosition),
   }
@@ -442,10 +418,7 @@ export const createMapFeatureStore = (): MapFeatureStore => {
         ]))
       }
       if (shouldUpdateAreas && objectFeatures) {
-        syncFamily(areas, sortAreas([
-          ...objectFeatures.objectAreas,
-          ...projectPackAreas(input.packAreaFeatures),
-        ]))
+        syncFamily(areas, sortAreas(projectPackAreas(input.packAreaFeatures)))
         syncFamily(areaSymbols, projectPackAreaSymbols(input.packAreaFeatures))
       }
       if (families.has('placement')) {

@@ -76,7 +76,7 @@ export const createEmptyScenarioSource = (): ScenarioSourceRecord => ({
     map: {
         center: [10.7522, 59.9139],
         zoom: 11,
-        layers: ['objects', 'routes', 'traffic', 'weather', 'grid', 'highlights'],
+        layers: ['objects', 'routes', 'weather', 'grid', 'highlights'],
     },
     rail: { width: 340, sections: [] },
   },

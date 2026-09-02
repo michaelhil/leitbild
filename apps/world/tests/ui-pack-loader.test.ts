@@ -12,7 +12,7 @@ describe('UI scenario pack loading', () => {
       'ambulances',
       'incidents',
     ])
-    expect(pack.presentation.categories.map(category => category.id)).not.toContain('traffic')
+    expect(pack.presentation.categories.map(category => category.id)).not.toContain('weather')
     expect(pack.presentation.categories.map(category => category.id)).not.toContain('process-plants')
     expect(pack.creation?.createObjectTypes.map(type => type.id).sort()).toEqual([
       'ambulance',
@@ -22,13 +22,14 @@ describe('UI scenario pack loading', () => {
   })
 
   test('combines scenario packs in declared order', async () => {
-    const pack = await loadActivePackViews(['traffic', 'weather'])
+    const pack = await loadActivePackViews(['ambulance', 'weather'])
 
-    expect(pack.packIds).toEqual(['traffic', 'weather'])
-    expect(pack.presentation.categories.map(category => category.id)).toEqual(['traffic', 'weather'])
+    expect(pack.packIds).toEqual(['ambulance', 'weather'])
+    expect(pack.presentation.categories.map(category => category.id)).toEqual(['hospitals', 'ambulances', 'incidents', 'weather'])
     expect(pack.creation?.createObjectTypes.map(type => type.id).sort()).toEqual([
-      'traffic_area',
-      'traffic_road_segment',
+      'ambulance',
+      'hospital',
+      'incident',
       'weather_area',
       'weather_probe',
     ].sort())

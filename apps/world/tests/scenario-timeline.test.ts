@@ -8,15 +8,15 @@ describe('scenario timeline model', () => {
   test('validates timed scenario cues and declarative actions', () => {
     const parsed = scenarioDefinitionSchema.parse(responseScenario)
 
-    expect(parsed.packs).toEqual(['ambulance', 'traffic', 'weather'])
-    expect(parsed.initialObjects.some(object => object.id === 'traffic:ring2-slowdown')).toBe(true)
+    expect(parsed.packs).toEqual(['ambulance', 'weather'])
+    expect(parsed.initialObjects.some(object => object.id === 'incident:gronland-unattended')).toBe(true)
     expect(parsed.timeline?.cues.map(cue => cue.id)).toContain('majorstuen-created')
     expect(parsed.timeline?.cues.some(cue =>
       cue.actions.some(action => action.type === 'show_guidance'))).toBe(true)
     expect(parsed.timeline?.cues.some(cue =>
       cue.actions.some(action => action.type === 'upsert_object'))).toBe(true)
     expect(parsed.timeline?.cues.some(cue =>
-      cue.actions.some(action => action.type === 'delete_object' && action.objectId === 'traffic:ring2-slowdown'))).toBe(true)
+      cue.actions.some(action => action.type === 'delete_object' && action.objectId === 'incident:majorstuen-tram'))).toBe(true)
   })
 
   test('drone scenario invokes discoverable startup capabilities through the scenario runner', () => {
@@ -64,7 +64,6 @@ describe('scenario timeline model', () => {
 
     expect(dueAtThreeMinutes.map(cue => cue.id)).toEqual([
       'partial-incident-clarified',
-      'marienlyst-traffic-created',
       'majorstuen-created',
       'majorstuen-clarified',
     ])

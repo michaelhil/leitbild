@@ -9,8 +9,8 @@ import {
 } from './types.ts'
 
 const validBody = (): Record<string, unknown> => ({
-  name: 'Check vatsim',
-  prompt: 'Check vatsim status and report changes.',
+  name: 'Check station_status',
+  prompt: 'Check station_status status and report changes.',
   mode: 'execute',
   intervalSec: 300,
   enabled: true,

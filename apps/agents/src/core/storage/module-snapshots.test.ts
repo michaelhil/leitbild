@@ -171,14 +171,14 @@ describe('Workspace Module snapshots', () => {
     try {
       const paths = workspaceModulePaths(newWorkspaceId())
       const source = runtime()
-      source.rooms.createRoom({ name: 'Operations', createdBy: 'human-1' }).setActivePacks(['aviation'])
+      source.rooms.createRoom({ name: 'Operations', createdBy: 'human-1' }).setActivePacks(['site-survey'])
       await saveWorkspaceModuleSnapshots(serializeModuleSnapshots(source), paths)
       expect((await appendRoomsPendingScrub(paths.rooms.snapshot, {
-        packId: 'aviation',
+        packId: 'site-survey',
         scheduledAt: '2026-08-29T18:00:00.000Z',
       })).applied).toBe(true)
       const loaded = await loadWorkspaceModuleSnapshots(paths)
-      expect(loaded.rooms?.pendingScrubs?.[0]?.packId).toBe('aviation')
+      expect(loaded.rooms?.pendingScrubs?.[0]?.packId).toBe('site-survey')
     } finally {
       if (priorHome === undefined) delete process.env.LEITBILD_HOME
       else process.env.LEITBILD_HOME = priorHome

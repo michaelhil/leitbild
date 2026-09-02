@@ -12,10 +12,8 @@ export type LeitbildSymbolId =
   | 'ambulance'
   | 'hospital'
   | 'incident'
-  | 'traffic'
   | 'weather'
   | 'plant'
-  | 'aircraft'
   | 'grid'
   | 'generator'
   | 'substation'
@@ -30,17 +28,14 @@ export interface LeitbildSymbolDefinition {
   readonly id: LeitbildSymbolId
   readonly label: string
   readonly defaultSizePx: number
-  readonly canRotate: boolean
 }
 
 const symbolIds: ReadonlyArray<LeitbildSymbolId> = [
   'ambulance',
   'hospital',
   'incident',
-  'traffic',
   'weather',
   'plant',
-  'aircraft',
   'grid',
   'generator',
   'substation',
@@ -55,8 +50,7 @@ const symbolIds: ReadonlyArray<LeitbildSymbolId> = [
 export const leitbildSymbolDefinitions: ReadonlyArray<LeitbildSymbolDefinition> = symbolIds.map(id => ({
   id,
   label: id.replaceAll('-', ' '),
-  defaultSizePx: id === 'aircraft' ? 24 : id === 'incident' ? 25 : 23,
-  canRotate: id === 'aircraft',
+  defaultSizePx: id === 'incident' ? 25 : 23,
 }))
 
 export const leitbildSymbolIds = new Set<string>(symbolIds)
@@ -93,14 +87,10 @@ const iconShape = (id: LeitbildSymbolId, x: number, y: number): string => {
       return group(`${rect(8, 5, 32, 42, 4)}${rect(20, 12, 8, 22, 1)}${rect(13, 19, 22, 8, 1)}${rect(15, 36, 6, 6, 1)}${rect(27, 36, 6, 6, 1)}`)
     case 'incident':
       return group(path('M24 2 30 17 46 10 36 25 49 34 33 33 28 49 21 34 4 37 17 25 6 11 22 17Z'))
-    case 'traffic':
-      return group(`${circle(24, 24, 10)}${rect(21, 2, 6, 13, 3)}${rect(21, 33, 6, 13, 3)}${rect(2, 21, 13, 6, 3)}${rect(33, 21, 13, 6, 3)}`)
     case 'weather':
       return group(path('M18 39H37C43 39 48 34 48 28 48 22 44 17 38 16 35 9 29 5 21 6 12 7 6 14 6 23 6 32 10 39 18 39ZM13 43H17V49H13ZM24 43H28V49H24ZM35 43H39V49H35Z'))
     case 'plant':
       return group(path('M5 46H46V12H36V30L25 23V30L14 23V46H5ZM12 12H22V21L12 15V12ZM33 10H43V6H33V10Z'))
-    case 'aircraft':
-      return group(path('M26 3 31 21 47 31 45 38 30 33 27 47 21 47 18 33 3 38 1 31 17 21 22 3Z'))
     case 'grid':
       return group(`${rect(6, 7, 8, 8, 4)}${rect(34, 7, 8, 8, 4)}${rect(6, 33, 8, 8, 4)}${rect(34, 33, 8, 8, 4)}${rect(13, 10, 22, 3, 1)}${rect(13, 36, 22, 3, 1)}${rect(9, 14, 3, 20, 1)}${rect(37, 14, 3, 20, 1)}`)
     case 'generator':

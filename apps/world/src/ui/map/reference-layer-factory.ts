@@ -75,7 +75,7 @@ const sourceTilesFor = (datasetId: string, manifestPmtilesPath: string): Readonl
   // the Leitbild API under /map/datasets/<id>/current/<file-base>. We construct
   // an ordinary HTTP MVT template so MapLibre does not depend on a browser-side
   // PMTiles custom protocol during startup.
-  // pmtilesPath is the file name only ("aero-norway.pmtiles") per A.1.
+  // pmtilesPath is the file name only ("grid-norway.pmtiles") per A.1.
   const pmtilesBaseName = manifestPmtilesPath.replace(/\.pmtiles$/, '')
   return [`/map/datasets/${datasetId}/current/${pmtilesBaseName}/{z}/{x}/{y}.mvt`]
 }

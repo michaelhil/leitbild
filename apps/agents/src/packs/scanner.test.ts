@@ -74,8 +74,8 @@ describe('scanPacks', () => {
 
   it('orphan .prev warning fires once per path across many scans', async () => {
     __resetScannerWarnings()
-    await mkdir(join(root, 'aviation.prev'))
-    await writePack(root, 'aviation')
+    await mkdir(join(root, 'site-survey.prev'))
+    await writePack(root, 'site-survey')
 
     let warnings = 0
     const origWarn = console.warn

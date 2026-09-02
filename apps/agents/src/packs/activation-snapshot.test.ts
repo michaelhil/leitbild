@@ -41,15 +41,15 @@ describe('evicted Room Pack scrub round-trip', () => {
     const live = buildRuntime()
     const cafe = live.rooms.createRoom({ name: 'Cafe', createdBy: SYSTEM_SENDER_ID })
     const office = live.rooms.createRoom({ name: 'Office', createdBy: SYSTEM_SENDER_ID })
-    cafe.setActivePacks(['aviation', 'menus'])
-    office.setActivePacks(['aviation'])
+    cafe.setActivePacks(['site-survey', 'menus'])
+    office.setActivePacks(['site-survey'])
 
     await saveWorkspaceModuleSnapshots(
       serializeModuleSnapshots(live),
       paths,
     )
     const queued = await appendRoomsPendingScrub(paths.rooms.snapshot, {
-      packId: 'aviation',
+      packId: 'site-survey',
       scheduledAt: '2026-08-29T18:00:00.000Z',
     })
     expect(queued.applied).toBe(true)

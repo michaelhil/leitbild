@@ -5,11 +5,9 @@ type PackLoader = () => Promise<WorldPackView>
 
 const packLoaders = {
   ambulance: async () => (await import('../packs/ambulance/pack.ts')).ambulancePack,
-  traffic: async () => (await import('../packs/traffic/pack.ts')).trafficPack,
   weather: async () => (await import('../packs/weather/pack.ts')).weatherPack,
   drone: async () => (await import('../packs/drone/ui-pack.ts')).dronePackView,
   'process-plant': async () => (await import('../packs/process-plant/ui-pack.ts')).processPlantPackView,
-  aviation: async () => (await import('../packs/aviation/pack.ts')).aviationPack,
   'electric-grid': async () => (await import('../packs/electric-grid/ui-pack.ts')).electricGridPackView,
 } satisfies Record<string, PackLoader>
 

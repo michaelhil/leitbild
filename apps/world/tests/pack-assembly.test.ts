@@ -34,7 +34,7 @@ describe('World Pack assembly contract', () => {
   })
 
   test('rejects Scenario types that the authoring catalog cannot construct', () => {
-    const source = testPacks.find(pack => pack.descriptor.id === 'traffic')!
+    const source = testPacks.find(pack => pack.descriptor.id === 'weather')!
     const pack: WorldPack = {
       ...source,
       authoring: { itemTypes: source.authoring!.itemTypes.slice(1) },

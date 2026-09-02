@@ -15,7 +15,6 @@ import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.t
 import { createSimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import { assignToIncidentCommandKind } from '../src/packs/ambulance/commands.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
-import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestScenarioRuntimeResolver, testScenarioAuthoring } from './helpers.ts'
@@ -29,7 +28,6 @@ const createRegistry = (dataDir: string, workspaceId: WorkspaceId = newWorkspace
     ...testScenarioAuthoring(),
     runtimeAdapters: [
       createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
-      createLocalTrafficPackRuntimeAdapter(),
       createLocalWeatherPackRuntimeAdapter(),
     ],
   })
@@ -122,7 +120,7 @@ describe('Simulation Run registry', () => {
       expect(manifest.scenario.compiledDigest).toMatch(/^[a-f0-9]{64}$/)
       expect(manifest.packs.every(pack => pack.version.length > 0)).toBe(true)
       expect(manifest.runtimes.every(adapter => adapter.version.length > 0)).toBe(true)
-      expect(manifest.runtimes.map(adapter => adapter.clock).sort()).toEqual(['none', 'simulation', 'simulation'])
+      expect(manifest.runtimes.map(adapter => adapter.clock).sort()).toEqual(['simulation', 'simulation'])
       const compiledScenario = JSON.parse(await readFile(
         join(simulationRunDir(dataDir, workspaceId, runtime.id), 'compiled-scenario.json'),
         'utf8',

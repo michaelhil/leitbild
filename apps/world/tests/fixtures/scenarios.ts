@@ -137,29 +137,6 @@ const fixtures = [
         ]
       },
       {
-        "id": "traffic",
-        "config": {},
-        "items": [
-          {
-            "type": "road_condition",
-            "id": "traffic:ring2-slowdown",
-            "label": "Ring 2 slowdown",
-            "from": [
-              10.7019,
-              59.9294
-            ],
-            "to": [
-              10.7854,
-              59.9253
-            ],
-            "condition": "slowdown",
-            "severity": "high",
-            "speedFactor": 0.45,
-            "reason": "Queue spillback after minor collision"
-          }
-        ]
-      },
-      {
         "id": "weather",
         "config": {
           "fields": {
@@ -349,7 +326,6 @@ const fixtures = [
           "objects",
           "routes",
           "weather",
-          "traffic",
           "highlights"
         ]
       },
@@ -387,15 +363,6 @@ const fixtures = [
               "precipitation",
               "surface"
             ]
-          },
-          {
-            "categoryId": "traffic",
-            "visible": true,
-            "collapsed": false,
-            "visibleFields": [
-              "severity",
-              "reason"
-            ]
           }
         ]
       }
@@ -417,8 +384,7 @@ const fixtures = [
                 "message": "Fixture guidance",
                 "objectIds": [
                   "amb:a12",
-                  "incident:gronland-unattended",
-                  "traffic:ring2-slowdown"
+                  "incident:gronland-unattended"
                 ],
                 "dismissible": true
               }
@@ -427,8 +393,7 @@ const fixtures = [
               "type": "highlight_objects",
               "objectIds": [
                 "amb:a12",
-                "incident:gronland-unattended",
-                "traffic:ring2-slowdown"
+                "incident:gronland-unattended"
               ]
             }
           ]
@@ -469,69 +434,6 @@ const fixtures = [
               "type": "highlight_objects",
               "objectIds": [
                 "incident:torshov-partial"
-              ]
-            }
-          ]
-        },
-        {
-          "id": "marienlyst-traffic-created",
-          "at": {
-            "kind": "after_scenario_start",
-            "seconds": 90
-          },
-          "actions": [
-            {
-              "type": "create_object",
-              "object": {
-                "pack": "traffic",
-                "type": "area_condition",
-                "id": "traffic:marienlyst-event",
-                "label": "Marienlyst area slowdown",
-                "polygon": [
-                  [
-                    10.7235,
-                    59.9338
-                  ],
-                  [
-                    10.7394,
-                    59.934
-                  ],
-                  [
-                    10.742,
-                    59.9252
-                  ],
-                  [
-                    10.725,
-                    59.9244
-                  ],
-                  [
-                    10.7235,
-                    59.9338
-                  ]
-                ],
-                "condition": "congestion",
-                "severity": "moderate",
-                "speedFactor": 0.65,
-                "reason": "Event crowding around Marienlyst"
-              }
-            },
-            {
-              "type": "show_guidance",
-              "guidance": {
-                "id": "marienlyst-traffic-created",
-                "title": "Traffic runtime update",
-                "tone": "update",
-                "message": "Fixture guidance",
-                "objectIds": [
-                  "traffic:marienlyst-event"
-                ],
-                "dismissible": true
-              }
-            },
-            {
-              "type": "highlight_objects",
-              "objectIds": [
-                "traffic:marienlyst-event"
               ]
             }
           ]
@@ -615,32 +517,6 @@ const fixtures = [
           ]
         },
         {
-          "id": "ring2-traffic-cleared",
-          "at": {
-            "kind": "after_scenario_start",
-            "seconds": 240
-          },
-          "actions": [
-            {
-              "type": "delete_object",
-              "objectId": "traffic:ring2-slowdown"
-            },
-            {
-              "type": "show_guidance",
-              "guidance": {
-                "id": "ring2-traffic-cleared",
-                "title": "Traffic cleared",
-                "tone": "update",
-                "message": "Fixture guidance",
-                "objectIds": [
-                  "traffic:marienlyst-event"
-                ],
-                "dismissible": true
-              }
-            }
-          ]
-        },
-        {
           "id": "ring-three-created",
           "at": {
             "kind": "after_scenario_start",
@@ -705,10 +581,6 @@ const fixtures = [
               }
             },
             {
-              "type": "delete_object",
-              "objectId": "traffic:marienlyst-event"
-            },
-            {
               "type": "show_guidance",
               "guidance": {
                 "id": "gronland-revised",
@@ -720,6 +592,19 @@ const fixtures = [
                 ],
                 "dismissible": true
               }
+            }
+          ]
+        },
+        {
+          "id": "majorstuen-removed",
+          "at": {
+            "kind": "after_scenario_start",
+            "seconds": 420
+          },
+          "actions": [
+            {
+              "type": "delete_object",
+              "objectId": "incident:majorstuen-tram"
             }
           ]
         }

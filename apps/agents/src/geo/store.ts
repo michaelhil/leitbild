@@ -142,8 +142,8 @@ export const listCategory = async (category: GeoCategory): Promise<ReadonlyArray
 // Room-aware variant: filters pack-sourced features by `activePacks`.
 // Local features (user paste-imports) are always included since they have
 // no pack origin to gate on. Use this from the agent surface (geo_lookup,
-// etc.) so an agent in a room with `aviation` deactivated doesn't see
-// aviation's airports.
+// etc.) so an agent in a room with a geodata Pack deactivated doesn't see
+// that Pack's locations.
 export const listCategoryForRoom = async (
   category: GeoCategory,
   activePacks: ReadonlySet<string>,

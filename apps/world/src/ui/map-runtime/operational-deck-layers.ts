@@ -100,7 +100,6 @@ const pathFamilyIsVisible = (
   visibleFamilies: ReadonlySet<string>,
 ): boolean => {
   if (path.kind === 'route') return visible(visibleFamilies, 'routes')
-  if (path.kind === 'traffic') return visible(visibleFamilies, 'traffic')
   return visible(visibleFamilies, 'weather')
 }
 
@@ -108,7 +107,6 @@ const areaFamilyIsVisible = (
   area: OperationalAreaFeature,
   visibleFamilies: ReadonlySet<string>,
 ): boolean => {
-  if (area.kind === 'traffic') return visible(visibleFamilies, 'traffic')
   if (area.kind === 'weather-base' || area.kind === 'weather-cell' || area.kind === 'weather-influence') {
     return visible(visibleFamilies, 'weather')
   }

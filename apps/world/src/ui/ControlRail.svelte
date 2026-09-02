@@ -3,7 +3,6 @@
   import type { SurfaceObjectRailRegionConfig } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackMapLayerGroup, PackObjectPresentation } from '../core/packs/protocol.ts'
   import RailLayerGroupSection from './RailLayerGroupSection.svelte'
-  import RailSourcePicker from './RailSourcePicker.svelte'
   import { PanelRightOpen, X } from 'lucide-svelte'
   import CategorySection from './CategorySection.svelte'
   import IconButton from './components/IconButton.svelte'
@@ -65,12 +64,6 @@
     readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
     readonly mapLayerGroupVisibility?: Readonly<Record<string, boolean>>
     readonly onMapLayerGroupToggle?: (groupId: string) => void
-    readonly sourcePicker?: {
-      readonly title: string
-      readonly sources: ReadonlyArray<{ readonly id: string; readonly label: string; readonly disabled?: boolean; readonly hint?: string }>
-      readonly activeId: string | null
-      readonly onSelect?: (sourceId: string) => void
-    } | null
     readonly surfacePanels?: ReadonlyArray<{ readonly id: string; readonly label: string; readonly open: boolean }>
     readonly toggleSurfacePanel?: (panelId: string) => void
   }
@@ -112,7 +105,6 @@
     mapLayerGroups = [],
     mapLayerGroupVisibility = {},
     onMapLayerGroupToggle = () => undefined,
-    sourcePicker = null,
     surfacePanels = [],
     toggleSurfacePanel = () => undefined,
   }: Props = $props()
@@ -234,14 +226,6 @@
     onToggle={onMapLayerGroupToggle}
   />
 
-  {#if sourcePicker}
-    <RailSourcePicker
-      title={sourcePicker.title}
-      sources={sourcePicker.sources}
-      activeId={sourcePicker.activeId}
-      onSelect={sourcePicker.onSelect}
-    />
-  {/if}
   {#if surfacePanels.length > 0}
     <section class="pack-tools">
       <h2>Tools</h2>

@@ -86,7 +86,7 @@ describe('createTriggerScheduler', () => {
 
   test('execute-mode trigger dispatches via fireTriggerExecute on AI agent', async () => {
     const trigger: Trigger = {
-      id: 't1', name: 'check vatsim', prompt: 'check vatsim and report changes',
+      id: 't1', name: 'check station_status', prompt: 'check station_status and report changes',
       mode: 'execute', intervalSec: 60, enabled: true, roomId: 'r1',
       lastFiredAt: 0,
     }
@@ -100,7 +100,7 @@ describe('createTriggerScheduler', () => {
       now: () => 1_000_000,
     })
     await sched.tickNow()
-    expect(agent.executedPrompts).toEqual(['check vatsim and report changes'])
+    expect(agent.executedPrompts).toEqual(['check station_status and report changes'])
     expect(agent.postedFromTrigger).toEqual([])  // execute does NOT post-as-agent
     sched.stop()
   })

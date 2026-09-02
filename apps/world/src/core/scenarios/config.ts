@@ -119,7 +119,7 @@ const scenarioTimelineConfigSchema = z.object({
 const surfaceMapRegionConfigSchema = z.object({
   center: lonLatSchema,
   zoom: z.number().finite().min(0).max(24),
-  layers: z.array(z.enum(['objects', 'routes', 'traffic', 'weather', 'grid', 'highlights'])).default(['objects', 'routes', 'traffic', 'weather', 'grid', 'highlights']),
+  layers: z.array(z.enum(['objects', 'routes', 'weather', 'grid', 'highlights'])).default(['objects', 'routes', 'weather', 'grid', 'highlights']),
 }).strict()
 
 const surfaceObjectRailSectionConfigSchema = z.object({

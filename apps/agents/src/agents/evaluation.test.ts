@@ -458,7 +458,7 @@ describe('evaluate (tool loop)', () => {
   })
 
   test('large tool results are passed through verbatim (no truncation)', async () => {
-    // Fence-emitting tools like procedure_lookup / vatsim_arrivals routinely
+    // Fence-emitting tools like procedure_lookup / station_status_arrivals routinely
     // produce 5-50 KB payloads that must reach the model intact. Any cap
     // here would slice the fence mid-content and break the renderer.
     const huge = 'x'.repeat(10_000)

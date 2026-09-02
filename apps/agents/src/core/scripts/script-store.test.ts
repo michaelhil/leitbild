@@ -209,22 +209,22 @@ describe('ScriptStore.upsert size cap', () => {
 
   test('packDirs tag scripts with their owning pack namespace', async () => {
     const baseDir = await mkdtemp(join(tmpdir(), 'leitbild-scripts-'))
-    const aviationDir = await mkdtemp(join(tmpdir(), 'leitbild-pack-aviation-'))
+    const surveyDir = await mkdtemp(join(tmpdir(), 'leitbild-pack-site-survey-'))
     try {
       await writeFile(join(baseDir, 'standalone.md'), VALID, 'utf-8')
-      await writeFile(join(aviationDir, 'pack-script.md'), VALID, 'utf-8')
+      await writeFile(join(surveyDir, 'pack-script.md'), VALID, 'utf-8')
       const store = createScriptStore({
         baseDir,
-        resolvePackDirs: async () => [{ pack: 'aviation', dir: aviationDir }],
+        resolvePackDirs: async () => [{ pack: 'site-survey', dir: surveyDir }],
       })
       await store.reload()
       const standalone = store.get('standalone')
       const packed = store.get('pack-script')
       expect(standalone?.pack).toBeUndefined()
-      expect(packed?.pack).toBe('aviation')
+      expect(packed?.pack).toBe('site-survey')
     } finally {
       await rm(baseDir, { recursive: true, force: true })
-      await rm(aviationDir, { recursive: true, force: true })
+      await rm(surveyDir, { recursive: true, force: true })
     }
   })
 
@@ -236,7 +236,7 @@ describe('ScriptStore.upsert size cap', () => {
       await writeFile(join(packDir, 'shared-name.md'), VALID, 'utf-8')
       const store = createScriptStore({
         baseDir,
-        resolvePackDirs: async () => [{ pack: 'aviation', dir: packDir }],
+        resolvePackDirs: async () => [{ pack: 'site-survey', dir: packDir }],
       })
       await expect(store.reload()).rejects.toThrow(/name collision for "shared-name"/)
     } finally {
