@@ -10,12 +10,14 @@ import {
   workspaceIdSchema,
   workspaceModuleManifestSchema,
   workspaceDefinitionRevisionReferenceSchema,
+  workspaceResourceReferenceSchema,
   type ModuleResourceDescriptor,
   type WorkspaceId,
 } from '@leitbild/contracts'
 import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
 import { asAIAgent } from '../agents/shared.ts'
 import { runPromptDeckEntry, startRoomDefinition, validateRoomDefinition } from '../core/definitions/room-definition-service.ts'
+import { ensureCompanionRoom } from '../core/definitions/companion-room.ts'
 import type { RoomDefinitionLibrary } from '../core/definitions/room-definition-library.ts'
 import { roomDefinitionSchema, type RoomDefinition } from '../core/definitions/room-definition-catalog.ts'
 import type { AgentsModuleState } from '../core/workspaces/module-state.ts'
@@ -60,6 +62,7 @@ const runPromptDeckEntrySchema = z.object({
 }).strict()
 const writeRoomDefinitionSchema = z.object({ definition: roomDefinitionSchema }).strict()
 const emptyInputSchema = z.object({}).strict()
+const companionInputSchema = z.object({ resource: workspaceResourceReferenceSchema, title: z.string().trim().min(1).max(256) }).strict()
 const ROOM_DEFINITION_TYPE = 'agents.room-definition'
 
 const json = (body: unknown, status = 200): Response => Response.json(body, { status })
@@ -69,7 +72,6 @@ const readJson = async (request: Request): Promise<unknown> => {
   try {
     return await request.json()
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'storage_budget_exceeded') return apiError(507, 'storage_budget_exceeded', error.message)
     throw new SyntaxError('Request body must be valid JSON', { cause: error })
   }
 }
@@ -111,11 +113,11 @@ const resourcesFor = async (
             revisionId: profile.sourceDefinition.revisionId,
           },
         }),
-        links: memberIds.flatMap(id => agentById.has(id) ? [{
+        links: [...(profile.companionOf ? [{ rel: 'companion-of', ref: profile.companionOf }] : []), ...memberIds.flatMap(id => agentById.has(id) ? [{
           rel: 'member',
           ref: { workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.agent', id },
           title: agentById.get(id)?.name,
-        }] : []),
+        }] : [])],
         uiPath: `/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(profile.id)}`,
         capabilityIds: agentsCapabilities.idsForResourceType('agents.room'),
         inspectionCapabilityId: 'agents.room.inspect',
@@ -167,21 +169,26 @@ const resourcesFor = async (
 
 const definitionsFor = async (workspaceId: WorkspaceId, library: RoomDefinitionLibrary) => {
   const definitions = await library.list()
-  return moduleDefinitionCollectionSchema.parse({ definitions: definitions.map(definition => ({
-    ref: {
-      workspaceId,
-      moduleId: AGENTS_MODULE_ID,
-      type: ROOM_DEFINITION_TYPE,
-      id: definition.id,
-    },
-    title: definition.title,
-    ...(definition.description === undefined ? {} : { description: definition.description }),
-    ...(definition.category === undefined ? {} : { category: definition.category }),
-    currentRevisionId: definition.currentRevisionId,
-    capabilityIds: agentsCapabilities.idsForDefinitionType(ROOM_DEFINITION_TYPE),
-    inspectionCapabilityId: 'agents.room-definition.inspect',
-    primaryCapabilityId: 'agents.room-definition.start',
-    deleteCapabilityId: 'agents.room-definition.delete',
+  return moduleDefinitionCollectionSchema.parse({ definitions: await Promise.all(definitions.map(async definition => {
+    const revision = await library.getRevision(definition.currentRevisionId)
+    if (!revision) throw new Error(`Room Definition Revision not found: ${definition.currentRevisionId}`)
+    return {
+      ...(revision.document.companionFor ? { companion: { resourceType: revision.document.companionFor, capabilityId: 'agents.room-definition.ensure-companion' } } : {}),
+      ref: {
+        workspaceId,
+        moduleId: AGENTS_MODULE_ID,
+        type: ROOM_DEFINITION_TYPE,
+        id: definition.id,
+      },
+      title: definition.title,
+      ...(definition.description === undefined ? {} : { description: definition.description }),
+      ...(definition.category === undefined ? {} : { category: definition.category }),
+      currentRevisionId: definition.currentRevisionId,
+      capabilityIds: agentsCapabilities.idsForDefinitionType(ROOM_DEFINITION_TYPE),
+      inspectionCapabilityId: 'agents.room-definition.inspect',
+      primaryCapabilityId: 'agents.room-definition.start',
+      deleteCapabilityId: 'agents.room-definition.delete',
+    }
   })) }).definitions
 }
 
@@ -213,6 +220,7 @@ const roomDefinitionSections = (definition: RoomDefinition) => [{
   id: 'room-configuration',
   title: 'Room configuration',
   data: {
+    companionFor: definition.companionFor ?? null,
     prompt: definition.room.prompt ?? null,
     deliveryMode: definition.room.deliveryMode,
     packs: definition.room.packs,
@@ -249,7 +257,24 @@ const parseRoomDefinitionWrite = (runtime: AgentsWorkspaceRuntime, raw: unknown)
   return input
 }
 
-const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorkspaceRuntime; library: RoomDefinitionLibrary }, Response>(AGENTS_MODULE_ID, [
+const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorkspaceRuntime; library: RoomDefinitionLibrary; flush: () => Promise<void> }, Response>(AGENTS_MODULE_ID, [
+  {
+    descriptor: {
+      id: 'agents.room-definition.ensure-companion', moduleId: AGENTS_MODULE_ID,
+      kind: 'command', scope: { kind: 'definition', definitionType: ROOM_DEFINITION_TYPE },
+      title: 'Open companion Room',
+      description: 'Reuses the Room associated with a Resource, or creates it from this matching Room Definition. The association does not grant access or automate simulation behavior.',
+      risk: 'write', idempotent: true,
+      inputSchema: z.toJSONSchema(companionInputSchema),
+      outputSchema: z.toJSONSchema(z.object({ resource: workspaceResourceReferenceSchema }).strict()),
+    },
+    invoke: async ({ runtime, library, flush }, invocation) => {
+      const input = companionInputSchema.parse(invocation.input)
+      if (input.resource.workspaceId !== invocation.workspaceId) return apiError(409, 'workspace_scope_mismatch', 'Companion Resource belongs to another Workspace')
+      const room = await ensureCompanionRoom(runtime, library, requireRoomDefinitionId(invocation), invocation.definition!.revisionId, input.resource, input.title, flush)
+      return json({ result: { resource: { workspaceId: invocation.workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.room', id: room.id } } })
+    },
+  },
   {
     descriptor: {
       id: 'agents.room-definition.create',
@@ -678,7 +703,14 @@ const invoke = async (
   if (invocation.capabilityId !== capabilityId) return apiError(409, 'capability_scope_mismatch', 'Invocation Capability does not match the route')
   if (invocation.idempotencyKey !== undefined) return apiError(400, 'idempotency_not_supported', 'This Capability does not support keyed retries; inspect the Resource after an uncertain result.')
   const runtime = await registry.getOrLoad(workspaceId)
-  const response = await agentsCapabilities.invoke(capabilityId, { runtime, library: registry.definitionsFor(workspaceId) }, invocation)
+  const response = await agentsCapabilities.invoke(capabilityId, {
+    runtime, library: registry.definitionsFor(workspaceId),
+    flush: async () => {
+      const saver = registry.autoSaverFor(workspaceId)
+      if (!saver) throw new Error('Workspace persistence is unavailable')
+      await saver.flush()
+    },
+  }, invocation)
   return response ?? apiError(404, 'capability_not_found', 'Capability not found')
 }
 
@@ -727,6 +759,7 @@ export const handleAgentsModuleApi = async (
     })
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'workspace_closing') return apiError(409, 'workspace_closing', error.message)
+    if (error instanceof Error && 'code' in error && error.code === 'storage_budget_exceeded') return apiError(507, 'storage_budget_exceeded', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'workspace_capacity_exceeded') return apiError(503, 'workspace_capacity_exceeded', error.message)
     if (error instanceof SyntaxError) return apiError(400, 'invalid_json', error.message)
     if (error instanceof z.ZodError) return apiError(400, 'invalid_request', error.message)

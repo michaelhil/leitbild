@@ -5,6 +5,7 @@ import {
   definitionRevisionIdSchema,
   definitionTypeSchema,
   moduleIdSchema,
+  resourceTypeSchema,
   workspaceIdSchema,
 } from './ids.ts'
 import { moduleQueryOutcomeSchema } from './modules.ts'
@@ -38,6 +39,10 @@ export const moduleDefinitionDescriptorSchema = z.object({
   inspectionCapabilityId: capabilityIdSchema.optional(),
   primaryCapabilityId: capabilityIdSchema.optional(),
   deleteCapabilityId: capabilityIdSchema.optional(),
+  companion: z.object({
+    resourceType: resourceTypeSchema,
+    capabilityId: capabilityIdSchema,
+  }).strict().optional(),
 }).strict().superRefine((definition, ctx) => {
   const seen = new Set<string>()
   definition.capabilityIds.forEach((capabilityId, index) => {
@@ -53,6 +58,9 @@ export const moduleDefinitionDescriptorSchema = z.object({
     if (definition[field] !== undefined && !seen.has(definition[field])) {
       ctx.addIssue({ code: 'custom', path: [field], message: 'Card Capability must be included in Definition capabilityIds' })
     }
+  }
+  if (definition.companion && !seen.has(definition.companion.capabilityId)) {
+    ctx.addIssue({ code: 'custom', path: ['companion', 'capabilityId'], message: 'Companion Capability must be included in Definition capabilityIds' })
   }
 })
 export type ModuleDefinitionDescriptor = z.infer<typeof moduleDefinitionDescriptorSchema>

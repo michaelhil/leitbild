@@ -130,6 +130,7 @@ export interface CreateResult<T> {
 }
 
 export interface RoomConfig {
+  readonly companionOf?: RoomProfile['companionOf']
   readonly name: string
   readonly roomPrompt?: string
   readonly createdBy: string

@@ -12,6 +12,10 @@ _Avoid_: Workspace, channel, Simulation Run
 The relationship that permits an Actor to participate in one Room.
 _Avoid_: Workspace access policy, Module provisioning state
 
+**Companion Room**:
+A Room accompanying one Resource in the same Workspace. Its association gives participants discoverable context, not permission or automatic control. The conversation can outlive the Resource and the Definition that created it.
+_Avoid_: default Room, Binding, hard-coded simulation controller
+
 **Message**:
 A durable contribution by an Actor to a Room.
 _Avoid_: simulation event, Capability invocation

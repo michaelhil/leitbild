@@ -56,6 +56,20 @@ const catalogFetch = (requests: Request[]): typeof fetch => (async (input, init)
 }) as typeof fetch
 
 describe('Workspace Capability tools', () => {
+  test('current Room association remains discoverable when filtering for World resources', async () => {
+    const ref = { workspaceId, moduleId, type: resourceType, id: resourceId }
+    const linked = { ref: { workspaceId, moduleId: 'agents', type: 'agents.room', id: 'room' }, title: 'Conversation', capabilityIds: [], links: [{ rel: 'companion-of', ref }], observedAt: new Date().toISOString() }
+    const base = catalogFetch([])
+    const tools = createWorkspaceCapabilityTools({ workspaceId, hostBaseUrl: 'https://host.test', getToolGrants: () => [{ capabilityId }], fetchImpl: (async (input, init) => {
+      const response = await base(input, init)
+      if (!String(input).endsWith('/resources')) return response
+      const body = await response.json() as { resources: unknown[] }
+      return Response.json({ ...body, resources: [...body.resources, linked] })
+    }) as typeof fetch })
+    const result = await tools[0]!.execute({ moduleId: 'world' }, { callerId: 'agent', callerName: 'Analyst', roomId: 'room' })
+    expect(result.success).toBe(true)
+    expect(result.data).toMatchObject({ currentRoom: linked, resources: [{ ref }] })
+  })
   test('executor cancellation reaches the Workspace broker transport', async () => {
     let observedSignal: AbortSignal | undefined
     const started = Promise.withResolvers<void>()

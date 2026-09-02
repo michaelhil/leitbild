@@ -16,6 +16,7 @@
   import InlineName from './InlineName.svelte'
   import { request, jsonRequest } from './api.ts'
   import { cardCapability } from './card-actions.ts'
+  import { openCompanion } from './companion.ts'
 
   type Page = { readonly kind: 'list' } | { readonly kind: 'workspace'; readonly id: string }
   interface InvocationResponse {
@@ -43,6 +44,8 @@
   let loading = $state(true)
   let busy = $state(false)
   let error = $state<string | null>(null)
+  let companionLoading = $state(false)
+  let companionError = $state<string | null>(null)
   let inspectionDialog = $state<HTMLDialogElement | null>(null)
   let inspectionSubject = $state<InspectionSubject | null>(null)
   let inspectionView = $state<InspectionView | null>(null)
@@ -128,12 +131,33 @@
           request<{ workspace: Workspace }>(`/api/workspaces/${workspaceId}`).then(response => { workspace = response.workspace }),
           loadWorkspaceCatalog(currentPage.id),
         ])
+        if (selectedWorldRunId && !selectedAgentsResource) void prepareCompanion(false)
       }
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause)
     } finally {
       loading = false
     }
+  }
+
+  const prepareCompanion = async (refresh = true): Promise<void> => {
+    if (companionLoading || !workspace) return
+    companionLoading = true
+    companionError = null
+    try {
+      // Refresh on retries: a deleted Room or edited Definition may have changed
+      // since the page first opened. Never treat failed discovery as an empty catalog.
+      if (refresh) await loadWorkspaceCatalog(workspace.id)
+      if (catalogFailures.length) throw new Error(catalogFailures.map(outcome => outcome.status === 'failed' ? outcome.failure.message : '').join('; '))
+      if (!selectedWorldResource) throw new Error('This simulation is no longer available.')
+      const room = await openCompanion(selectedWorldResource, definitions, resources)
+      selectedAgentsRoomId = room.id
+      const url = new URL(location.href)
+      url.searchParams.set('agents', room.id)
+      history.replaceState(null, '', url)
+    } catch (cause) {
+      companionError = cause instanceof Error ? cause.message : String(cause)
+    } finally { companionLoading = false }
   }
 
   const run = async (action: () => Promise<void>): Promise<void> => {
@@ -259,6 +283,8 @@
     const params = new URLSearchParams()
     if (resource.ref.type === 'world.simulation-run') params.set('world', resource.ref.id)
     if (resource.ref.type === 'agents.room') params.set('agents', resource.ref.id)
+    const world = resource.links.find(link => link.rel === 'companion-of' && link.ref.type === 'world.simulation-run')
+    if (world && resources.some(candidate => candidate.ref.type === world.ref.type && candidate.ref.id === world.ref.id)) params.set('world', world.ref.id)
     if (params.size > 0) location.href = `${location.pathname}?${params}`
     else if (resource.uiPath) location.href = resource.uiPath
   }
@@ -332,7 +358,7 @@
     {#each catalogFailures as outcome (outcome.moduleId)}{#if outcome.status === 'failed'}<p class="notice error" role="alert">{moduleTitles[outcome.moduleId]}: {outcome.failure.message}</p>{/if}{/each}
     {#if refreshError}<p class="notice error" role="alert">Catalog refresh failed: {refreshError}</p>{/if}
     {#if showingComposer}
-      <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} agentsRoomId={selectedAgentsRoomId} />
+    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} agentsRoomId={selectedAgentsRoomId} {companionLoading} {companionError} retryCompanion={() => prepareCompanion()} />
     {:else}
       <section class="workspace-home">
         {#if error}<p class="notice error">{error}</p>{/if}

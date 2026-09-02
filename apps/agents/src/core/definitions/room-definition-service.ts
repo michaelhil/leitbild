@@ -4,6 +4,7 @@ import { owningPackFor } from '../types/tool-pack.ts'
 import { resolveWorkspaceDefaultModel } from '../workspaces/seed-workspace.ts'
 import type { RoomDefinition, PromptDeckEntry } from './room-definition-catalog.ts'
 import type { RoomDefinitionLibrary } from './room-definition-library.ts'
+import type { WorkspaceResourceReference } from '@leitbild/contracts'
 
 export interface StartedRoomDefinition {
   readonly definition: RoomDefinition
@@ -52,6 +53,7 @@ export const startRoomDefinition = async (
   library: RoomDefinitionLibrary,
   definitionId: string,
   revisionId: string,
+  companion?: { readonly resource: WorkspaceResourceReference; readonly title: string },
 ): Promise<StartedRoomDefinition> => {
   const revision = await library.getRevision(revisionId)
   if (!revision || revision.definitionId !== definitionId) throw new Error(`Unknown Room Definition Revision "${revisionId}"`)
@@ -63,7 +65,8 @@ export const startRoomDefinition = async (
   if (!human) throw new Error('This Workspace has no human agent')
 
   const room = (await system.createRoom({
-    name: definition.title,
+    name: companion ? `${companion.title.slice(0, 115)} · Agents` : definition.title,
+    ...(companion ? { companionOf: companion.resource } : {}),
     roomPrompt: definition.room.prompt,
     createdBy: SYSTEM_SENDER_ID,
     sourceDefinition: { id: definition.id, revisionId: revision.id },
@@ -83,8 +86,8 @@ export const startRoomDefinition = async (
         ...(agentDefinition.toolGrants ? { toolGrants: agentDefinition.toolGrants } : {}),
         ...(agentDefinition.temperature !== undefined ? { temperature: agentDefinition.temperature } : {}),
       })
-      await system.addAgentToRoom(agent.id, room.profile.id, 'demo')
       createdAgents.push({ id: agent.id, name: agent.name })
+      await system.addAgentToRoom(agent.id, room.profile.id, 'demo')
     }
     // Joining a second AI intentionally auto-switches ordinary rooms to
     // manual. A Room Definition is authoritative, so restore its declared mode.

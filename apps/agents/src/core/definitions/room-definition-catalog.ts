@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { toolGrantSetSchema } from '@leitbild/contracts'
+import { resourceTypeSchema, toolGrantSetSchema } from '@leitbild/contracts'
 
 const agentDefinitionSchema = z.object({
   name: z.string().trim().min(1).max(128),
@@ -42,6 +42,7 @@ const roomSetupSchema = z.object({
 const promptDeckSchema = z.object({ entries: z.array(promptDeckEntrySchema) }).strict()
 
 export const roomDefinitionSchema = z.object({
+  companionFor: resourceTypeSchema.optional(),
   id: z.string().min(1).max(128),
   title: z.string().min(1).max(256),
   category: z.string().min(1).max(128).optional(),

@@ -3,6 +3,9 @@
     readonly workspaceId: string
     readonly worldRunId: string | null
     readonly agentsRoomId: string | null
+    readonly companionLoading: boolean
+    readonly companionError: string | null
+    readonly retryCompanion: () => Promise<void>
   }
 
   type CollapsedPane = 'world' | 'agents' | null
@@ -11,7 +14,7 @@
   const collapseThreshold = 12
   const minimumOpenShare = 20
 
-  let { workspaceId, worldRunId, agentsRoomId }: Props = $props()
+  let { workspaceId, worldRunId, agentsRoomId, companionLoading, companionError, retryCompanion }: Props = $props()
   let splitPercent = $state(initialSplit)
   let lastOpenSplit = $state(initialSplit)
   let collapsedPane = $state<CollapsedPane>(null)
@@ -118,6 +121,17 @@
   ><span></span></button>
 
   <section class="module-pane agents-pane" class:collapsed={collapsedPane === 'agents'} aria-label="Agents room">
+    {#if companionLoading || companionError}
+      <div class="companion-status" role="status">
+        {#if companionLoading}
+          <p>Opening your simulation conversation…</p>
+        {:else}
+          <p>{companionError}</p>
+          <button onclick={retryCompanion}>Retry room setup</button>
+          <a href={`/workspaces/${encodeURIComponent(workspaceId)}`}>Back to workspace</a>
+        {/if}
+      </div>
+    {:else}
     <iframe
       class="module-frame active"
       src={agentsRoomId === null
@@ -125,6 +139,7 @@
         : `/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(agentsRoomId)}`}
       title="Agents room"
     ></iframe>
+    {/if}
   </section>
 
   {#if collapsedPane === 'world'}
@@ -133,3 +148,7 @@
     <button class="reopen-handle right" type="button" aria-label="Reopen Agents" onclick={restoreSplit}>‹</button>
   {/if}
 </section>
+
+<style>
+  .companion-status { height: 100%; display: flex; flex-direction: column; gap: 1rem; align-items: center; justify-content: center; padding: 2rem; text-align: center; }
+</style>

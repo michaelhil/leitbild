@@ -2,7 +2,9 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { moduleRegistrationSchema, workspaceIdSchema } from '@leitbild/contracts'
+import { moduleRegistrationSchema, workspaceIdSchema, workspaceDefinitionCatalogSchema, workspaceResourceCatalogSchema } from '@leitbild/contracts'
+import { openCompanion } from '../../../apps/leitbild/src/ui/companion.ts'
+import { request as hostRequest } from '../../../apps/leitbild/src/ui/api.ts'
 import { createServer as createWorldServer } from '../../../apps/world/src/core/api/server.ts'
 import { createWorldModuleState } from '../../../apps/world/src/core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry } from '../../../apps/world/src/core/workspaces/runtime-registry.ts'
@@ -37,7 +39,7 @@ describe('Workspace Host with real Modules', () => {
     const originalSeed = process.env.LEITBILD_SEED_WORKSPACE
     process.env.LEITBILD_HOME = leitbildHome
     process.env.PROVIDER = 'ollama'
-    process.env.LEITBILD_SEED_WORKSPACE = '0'
+    delete process.env.LEITBILD_SEED_WORKSPACE
 
     let leitbildRegistry: AgentsWorkspaceRuntimeRegistry | undefined
     cleanup.push(async () => {
@@ -67,7 +69,7 @@ describe('Workspace Host with real Modules', () => {
       uiDistPath: uiDir,
       mapArtifacts: { rootDir: join(dataDir, 'maps') },
     })
-    cleanup.push(() => worldServer.stop())
+    cleanup.push(async () => { await worldRegistry.shutdown(); worldServer.stop() })
 
     const leitbildState = createAgentsModuleState()
     const leitbildServer = Bun.serve({
@@ -161,6 +163,23 @@ describe('Workspace Host with real Modules', () => {
     )
     expect(createRunResponse.status).toBe(200)
     const runId = (await createRunResponse.json() as { result: { id: string } }).result.id
+
+    // Exercise the same discovery → Host broker → Agents Definition → Room
+    // path as opening a World run in the browser, with both real Modules.
+    const definitions = workspaceDefinitionCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/definitions`)).json()).definitions
+    const resources = workspaceResourceCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/resources`)).json()).resources
+    const worldRun = resources.find(resource => resource.ref.id === runId)!
+    const companionRef = await openCompanion(worldRun, definitions, resources, (path, init) => hostRequest(`${baseUrl}${path}`, init))
+    const companionRuntime = await leitbildRegistry.getOrLoad(workspaceIdSchema.parse(workspace.id))
+    const companionRoom = companionRuntime.rooms.getRoom(companionRef.id)!
+    const assistant = companionRoom.getParticipantIds().map(id => companionRuntime.team.getAgent(id)).find(agent => agent?.kind === 'ai')!
+    expect(companionRoom.getParticipantIds()).toHaveLength(2)
+    expect(JSON.stringify(asAIAgent(assistant)!.getConfig())).not.toContain(runId)
+    const companionContext = { callerId: assistant.id, callerName: assistant.name, roomId: companionRef.id }
+    const companionDiscovery = await companionRuntime.toolRegistry.get('workspace_catalog')!.execute({ moduleId: 'world' }, companionContext)
+    expect(companionDiscovery).toMatchObject({ success: true, data: { currentRoom: { links: expect.arrayContaining([{ rel: 'companion-of', ref: worldRun.ref }]) } } })
+    expect(await companionRuntime.toolRegistry.get('workspace_invoke')!.execute({ capabilityId: 'world.simulation-run.context', resource: worldRun.ref, input: {} }, companionContext)).toMatchObject({ success: true })
+    expect(await companionRuntime.toolRegistry.get('workspace_invoke')!.execute({ capabilityId: 'world.simulation-run.delete', resource: worldRun.ref, input: {} }, companionContext)).toMatchObject({ success: false, error: expect.stringContaining('capability_not_granted') })
 
     const createAgentResponse = await fetch(
       `${baseUrl}/api/workspaces/${workspace.id}/capabilities/agents.agent.create/invoke`,
@@ -265,6 +284,7 @@ describe('Workspace Host with real Modules', () => {
       },
     )
     expect(deleteRun.status).toBe(200)
+    expect(companionRuntime.rooms.getRoom(companionRef.id)).toBeDefined()
     const resourcesAfterDelete = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/resources`)
     expect(resourcesAfterDelete.status).toBe(200)
     expect((await resourcesAfterDelete.json() as {

@@ -81,7 +81,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
 
   const catalog: Tool = {
     name: WORKSPACE_CAPABILITY_TOOL_NAMES[0],
-    description: 'List reusable Definitions and live Resources exposed by Modules in this Workspace.',
+    description: 'List reusable Definitions and live Resources exposed by Modules in this Workspace. Includes currentRoom and its links, even when filters exclude Rooms; use companion-of to identify the resource this conversation accompanies.',
     usage: 'Discover Definition and Resource identities immediately before invoking a scoped Workspace Capability. Do not remember runtime Resource ids as Agent configuration.',
     returns: '{ workspaceId, definitions[], resources[] } with stable references, provenance, UI paths, links, and advertised capabilityIds.',
     parameters: {
@@ -112,6 +112,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
           success: true,
           data: {
             workspaceId: resources.workspaceId,
+            currentRoom: resources.resources.find(resource => resource.ref.type === 'agents.room' && resource.ref.id === context.roomId) ?? null,
             modules: {
               definitions: definitions.modules,
               resources: resources.modules,

@@ -1,7 +1,7 @@
 import { mkdir, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
-import { toolGrantSetSchema } from '@leitbild/contracts'
+import { toolGrantSetSchema, workspaceResourceReferenceSchema } from '@leitbild/contracts'
 import type { Agent, AIAgentConfig } from '../types/agent.ts'
 import type { DeliveryMode, Message, RoomProfile } from '../types/messaging.ts'
 import type { Room } from '../types/room.ts'
@@ -99,6 +99,7 @@ const triggerSchema = z.object({
 }).strict()
 
 const roomProfileSchema = z.object({
+  companionOf: workspaceResourceReferenceSchema.optional(),
   id: z.string(),
   name: z.string(),
   roomPrompt: z.string().optional(),

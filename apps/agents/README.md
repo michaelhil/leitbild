@@ -50,6 +50,8 @@ The Leitbild Host is the sole owner of Workspace identity, names, Module provisi
 - `/workspaces/{workspaceId}/agents` is the focused application URL.
 - `/workspaces` is the Host-managed Workspace collection UI.
 - Agents discover the current Workspace's Resources and Capabilities through the Host.
+
+Opening a Simulation Run in the Host reuses or creates a **companion Room**, using the Room Definition that advertises that Resource type. The bundled Simulation assistant is an ordinary editable Definition with read-only World grants, not an automatically seeded Workspace default. Its Room publishes a `companion-of` link; `workspace_catalog` exposes the current Room and its links so the assistant can identify the right simulation without IDs in its configuration. Reopening preserves conversation state and user edits. Deleting the simulation retains the conversation; deleting the Room allows a new companion on a subsequent open.
 - Agent Tool Grants store Capability ids only. The Agent selects a Resource at invocation time.
 
 Rooms and Agents never copy Module base URLs, discovery URLs, or external Resource ids.
