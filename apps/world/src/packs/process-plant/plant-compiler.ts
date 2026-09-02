@@ -167,6 +167,7 @@ export const compileProcessPlant = (
   const operatingPoint = resolveProcessPlantOperatingPoint(
     definition.operatingPoint,
     definition.model.ref,
+    graph,
   )
   return compileResolvedProcessPlant({
     id: definition.id,

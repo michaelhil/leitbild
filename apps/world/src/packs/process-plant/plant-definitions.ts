@@ -14,7 +14,7 @@ export const processPlantPwrReferenceModelRef = 'process-plant.pwr.reference'
 export const processPlantPwrFullPowerOperatingPointRef = 'process-plant.pwr.full-power'
 export const processPlantPwrReferenceAutomationRef = 'process-plant.pwr.standard'
 
-const pwrReferenceParametersSchema = z.object({
+export const pwrReferenceParametersSchema = z.object({
   loopCount: z.number().int().min(2).max(6),
   title: z.string().min(1).optional(),
 }).strict()
@@ -78,6 +78,7 @@ export const resolveProcessPlantModel = (selection: ProcessPlantModelSelection):
 export const resolveProcessPlantOperatingPoint = (
   selection: ProcessPlantOperatingPointSelection,
   modelRef: string,
+  graph: PlantGraphSpec,
 ): ResolvedProcessPlantOperatingPoint => {
   if (selection.ref !== processPlantPwrFullPowerOperatingPointRef) {
     throw new Error(`unknown process plant operating point: ${selection.ref}`)
@@ -85,8 +86,24 @@ export const resolveProcessPlantOperatingPoint = (
   if (modelRef !== processPlantPwrReferenceModelRef) {
     throw new Error(`operating point ${selection.ref} is not compatible with process plant model ${modelRef}`)
   }
+  // Operating conditions belong to the selected operating point, not to a
+  // scenario or the topology template. Resolve every selected loop by kind.
+  const defaults = Object.fromEntries(graph.components.flatMap(component => {
+    const parameters = component.kind === 'reactorCore' ? { initialPowerFraction: 1 }
+      : component.kind === 'turbineLoadSink' ? { initialLoadFraction: 1 }
+      : component.kind === 'steamGenerator' ? { initialSteamFlowFraction: 1 }
+      : undefined
+    return parameters === undefined ? [] : [[component.id, parameters]]
+  }))
+  const authored = selection.parameterOverrides ?? {}
+  const parameterOverrides = { ...defaults, ...authored }
+  for (const [id, initial] of Object.entries(defaults)) {
+    if (authored[id] === undefined) continue
+    const overlay = z.record(z.string(), z.unknown()).parse(authored[id])
+    parameterOverrides[id] = { ...initial, ...overlay }
+  }
   return {
-    parameterOverrides: selection.parameterOverrides ?? {},
+    parameterOverrides,
     valueOverrides: selection.valueOverrides ?? {},
   }
 }
@@ -110,20 +127,12 @@ export const processPlantDefinitionCatalog = (): ProcessPlantDefinitionCatalogVi
     id: processPlantPwrReferenceModelRef,
     title: 'Reference pressurized-water reactor',
     description: 'Validated two- through six-loop PWR training model with coupled primary, secondary, safety, containment, and electrical systems.',
-    parameters: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['loopCount'],
-      properties: {
-        loopCount: { type: 'integer', minimum: 2, maximum: 6, title: 'Primary loops' },
-        title: { type: 'string', minLength: 1, title: 'Model title' },
-      },
-    },
+    parameters: z.toJSONSchema(pwrReferenceParametersSchema),
   }],
   operatingPoints: [{
     id: processPlantPwrFullPowerOperatingPointRef,
     title: 'Full power',
-    description: 'Reference full-power initial condition; sparse component-parameter and variable overrides may tailor an individual Plant.',
+    description: 'Initial reactor power, turbine load and every selected steam-generator flow are 100% of their rated values. Sparse component-parameter and variable overrides may explicitly tailor an individual Plant; this is an initial condition, not a power clamp.',
     compatibleModelRefs: [processPlantPwrReferenceModelRef],
   }],
   automations: [{
