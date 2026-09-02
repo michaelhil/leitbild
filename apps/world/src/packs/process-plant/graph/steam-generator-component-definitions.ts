@@ -18,6 +18,7 @@ export const steamGeneratorComponentDefinitions: ReadonlyArray<ComponentDefiniti
       nominalLevelPercent: normalized,
       heatTransferCoefficientMwPerK: z.number().finite().positive(),
       initialPrimaryInletTemperatureC: z.number().finite().optional(),
+      initialPrimaryOutletTemperatureC: z.number().finite().optional(),
       initialSecondaryTemperatureC: z.number().finite().optional(),
       nominalSecondaryInventoryKg: z.number().finite().positive().optional(),
       nominalSteamFlowKgPerS: z.number().finite().positive().optional(),

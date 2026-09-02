@@ -11,6 +11,7 @@ import {
   averageOutgoingComponentLinkValue as averageOutgoingLinkValue,
 } from '../component-link-helpers.ts'
 import { inventoryBalanceStep } from '../physics.ts'
+import { steamGeneratorOperatingLevel } from '../../steam-generator-operating-level.ts'
 import {
   energyBalanceTemperatureStep,
   heatMwFromWaterFlowAndDeltaT,
@@ -248,7 +249,8 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       const steamMassPressureBias = optionalParameterNumber(component, 'steamMassPressureGainFraction', 1)
         * nominalPressure
         * (clamp(nextSteamMass / nominalSteamMass, 0.2, 1.6) - 1)
-      const inventoryPressureBias = ((nextInventory / nominalInventory) - parameterNumber(component, 'nominalLevelPercent')) * optionalParameterNumber(component, 'pressureInventoryGainMPaPerFraction', 0.6)
+      const nominalCollapsedLevel = steamGeneratorOperatingLevel(component.parameters as Record<string, unknown>).collapsed / 100
+      const inventoryPressureBias = ((nextInventory / nominalInventory) - nominalCollapsedLevel) * optionalParameterNumber(component, 'pressureInventoryGainMPaPerFraction', 0.6)
       const demandPressureBias = (boilingRate - mainSteamOutflow) * optionalParameterNumber(component, 'steamPressureGainMPaPerKgS', 0.006)
       const pressureTarget = nominalPressure + steamMassPressureBias + demandPressureBias + temperaturePressureBias + inventoryPressureBias
       context.write(componentVariablePath(component, 'steamMassPressureBiasMPa'), steamMassPressureBias)

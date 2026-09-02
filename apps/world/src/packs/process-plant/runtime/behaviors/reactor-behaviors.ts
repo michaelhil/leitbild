@@ -264,7 +264,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       const inletTemperature = flowWeightedIncomingLinkValue(system, component.index, 'temperatureC', context, primaryInletLink)
         ?? averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'primaryCoolant')
         ?? context.readNumber(componentVariablePath(component, 'coolantInletTemperatureC'))
-      const flow = Math.max(1, averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'primaryCoolant') ?? 1)
+      const flow = Math.max(1, sumIncomingLinkValue(system, component.index, 'flowKgPerS', context, link => link.service === 'primaryCoolant'))
       const heatToCoolant = context.readNumber(componentVariablePath(component, 'heatToCoolantMw'))
       const outletTarget = clamp(inletTemperature + waterDeltaTFromHeatMw(heatToCoolant, flow), 220, 360)
       const currentOutlet = context.readNumber(componentVariablePath(component, 'coolantOutletTemperatureC'))

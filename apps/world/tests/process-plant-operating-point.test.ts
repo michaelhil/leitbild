@@ -3,8 +3,14 @@ import { compileProcessPlant } from '../src/packs/process-plant/plant-compiler.t
 import { createPwrReferencePlantDefinition, processPlantDefinitionCatalog } from '../src/packs/process-plant/plant-definitions.ts'
 import { createProcessPlantRuntime } from '../src/packs/process-plant/runtime/runtime.ts'
 import type { VariablePath } from '../src/packs/process-plant/graph/index.ts'
+import { saturationTemperatureCFromPressureMPa } from '../src/packs/process-plant/runtime/thermophysics.ts'
 
 describe('authoritative PWR full-power operating point', () => {
+  test('saturation temperature agrees with the IAPWS region 4 verification points', () => {
+    for (const [pressure, kelvin] of [[0.1, 372.755919], [1, 453.035632], [10, 584.149488]]) {
+      expect(saturationTemperatureCFromPressureMPa(pressure!) + 273.15).toBeCloseTo(kelvin!, 6)
+    }
+  })
   for (const loopCount of [2, 3, 4, 5, 6]) {
     test(`resolves real initialized power and all ${loopCount} steam generators`, () => {
       const system = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'test:plant', loopCount }))
@@ -14,11 +20,18 @@ describe('authoritative PWR full-power operating point', () => {
       expect(read('turbine.electricMw')).toBe(1100)
       expect(read('turbine.loadFraction')).toBe(1)
       for (const component of system.sourceGraph.components.filter(component => component.kind === 'steamGenerator')) {
-        expect(read(`${component.id}.steamFlowKgPerS`)).toBe(335)
+        expect(read(`${component.id}.steamFlowKgPerS`)).toBeCloseTo(3604 / 2.26 / loopCount, 8)
       }
       runtime.tick(100)
       expect(read('core.temperatureFeedbackPcm')).toBeCloseTo(0, 10)
       expect(read('core.powerMw')).toBeCloseTo(3400, 8)
+      expect(read('sgA.heatTransferMw')).toBeCloseTo(3604 / loopCount, 8)
+      expect(runtime.readVariable('safetyBusA.energized' as VariablePath)).toBe(true)
+      for (let step = 1; step < 600; step++) runtime.tick(100)
+      // Normal CVCS heat exchange is a small transient, not a 15–50% collapse.
+      expect(read('turbine.electricMw')).toBeGreaterThan(1070)
+      expect(read('turbine.electricMw')).toBeLessThanOrEqual(1101)
+      expect(read('vessel.primaryCoolantInventoryKg')).toBeCloseTo(285000, 6)
       // The operating point initializes real state; it must never clamp power.
       runtime.writeCommand({ type: 'setVariable', path: 'core.rodInsertionFraction' as VariablePath, value: 1 })
       for (let step = 0; step < 150; step++) runtime.tick(100)
@@ -46,5 +59,17 @@ describe('authoritative PWR full-power operating point', () => {
     const checkpoint = runtime.checkpoint()
     const restored = createProcessPlantRuntime({ system, restoredCheckpoint: checkpoint })
     expect(restored.snapshot()).toEqual(runtime.snapshot())
+  })
+
+  test('full-power balance stays bounded through ten minutes without forcing output', () => {
+    const runtime = createProcessPlantRuntime({ system: compileProcessPlant(createPwrReferencePlantDefinition({ id: 'test:steady' })) })
+    for (let step = 0; step < 6000; step++) {
+      runtime.tick(100)
+      if (step % 600 === 599) {
+        expect(Number(runtime.readVariable('turbine.electricMw' as VariablePath))).toBeGreaterThan(1070)
+        expect(Number(runtime.readVariable('turbine.electricMw' as VariablePath))).toBeLessThanOrEqual(1101)
+        expect(Number(runtime.readVariable('vessel.primaryCoolantInventoryKg' as VariablePath))).toBeCloseTo(285000, 5)
+      }
+    }
   })
 })

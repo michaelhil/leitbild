@@ -7,7 +7,7 @@ import type {
   ProcessPlantOperatingPointSelection,
 } from './config.ts'
 import type { CompiledPlantGraph,PlantGraphSpec } from './graph/index.ts'
-import { reactorInitialThermalState } from './reactor-initial-conditions.ts'
+import { pwrFullPowerParameters } from './assembly/pwr-operating-point.ts'
 import type { ProcessPlantProtectionConfig } from './runtime/ic/control-protection-model.ts'
 import { pressurizedWaterReactorReferenceIcForGraph } from './specs/reference-ic.ts'
 
@@ -84,29 +84,7 @@ export const resolveProcessPlantOperatingPoint = (
   }
   // Operating conditions belong to the selected operating point, not to a
   // scenario or the topology template. Resolve every selected loop by kind.
-  const defaults = Object.fromEntries(graph.components.flatMap(component => {
-    const parameters = component.kind === 'reactorCore' ? { initialPowerFraction: 1 }
-      : component.kind === 'turbineLoadSink' ? { initialLoadFraction: 1 }
-      : component.kind === 'steamGenerator' ? { initialSteamFlowFraction: 1 }
-      : undefined
-    return parameters === undefined ? [] : [[component.id, parameters]]
-  }))
-  const authored = selection.parameterOverrides ?? {}
-  const parameterOverrides = { ...defaults, ...authored }
-  for (const [id, initial] of Object.entries(defaults)) {
-    if (authored[id] === undefined) continue
-    const overlay = z.record(z.string(), z.unknown()).parse(authored[id])
-    parameterOverrides[id] = { ...initial, ...overlay }
-  }
-  for (const component of graph.components.filter(component => component.kind === 'reactorCore')) {
-    const overrides = parameterOverrides[component.id] as Record<string, unknown>
-    const thermal = reactorInitialThermalState({ ...component.parameters as Record<string, unknown>, ...overrides })
-    parameterOverrides[component.id] = {
-      referenceCoolantOutletTemperatureC: thermal.outlet,
-      referenceFuelTemperatureC: thermal.average,
-      ...overrides,
-    }
-  }
+  const parameterOverrides = pwrFullPowerParameters(graph, selection.parameterOverrides ?? {})
   return {
     parameterOverrides,
     valueOverrides: selection.valueOverrides ?? {},

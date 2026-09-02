@@ -270,12 +270,7 @@ export const electricalBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefin
   loadBehavior,
 ]
 
-export const electricalInitialReconciliationDefinitions: ReadonlyArray<ComponentInitialReconciliationDefinition> = [
-  {
-    id: 'electrical-initial-state',
-    componentKind: 'electricalBus',
-    reads: ['incoming electrical availablePowerMw'],
-    writes: ['energized', 'availablePowerMw', 'voltageFraction', 'servedLoadMw', 'marginMw', 'degraded'],
-    reconcile: busBehavior.update,
-  },
-]
+export const electricalInitialReconciliationDefinitions: ReadonlyArray<ComponentInitialReconciliationDefinition> = electricalBehaviorDefinitions.map(behavior => ({
+  id: `${behavior.id}-initial-state`, componentKind: behavior.componentKind,
+  reads: behavior.reads, writes: behavior.writes, reconcile: behavior.update,
+}))

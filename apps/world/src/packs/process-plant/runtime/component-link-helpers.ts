@@ -70,6 +70,23 @@ export const averageIncomingComponentLinkValue = (
   return count === 0 ? null : total / count
 }
 
+export const flowWeightedIncomingComponentLinkValue = (
+  system: CompiledProcessPlant, component: CompiledComponent, localPath: string,
+  context: ComponentLinkReadContext, linkMatches: (link: CompiledProcessLink) => boolean,
+): number | null => {
+  let weighted = 0
+  let totalFlow = 0
+  for (const link of incomingComponentLinks(system, component, linkMatches)) {
+    const path = processLinkVariablePath(link, localPath)
+    const flowPath = processLinkVariablePath(link, 'flowKgPerS')
+    if (!context.has(path) || !context.has(flowPath)) continue
+    const flow = Math.max(0, context.readNumber(flowPath))
+    weighted += context.readNumber(path) * flow
+    totalFlow += flow
+  }
+  return totalFlow > 0 ? weighted / totalFlow : null
+}
+
 export const averageOutgoingComponentLinkValue = (
   system: CompiledProcessPlant,
   component: CompiledComponent,

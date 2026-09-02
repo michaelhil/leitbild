@@ -182,8 +182,14 @@ const outgoingDemandWeight = (
   system: CompiledProcessPlant,
   link: CompiledProcessLink,
   context: LinkBehaviorReadContext,
-): number =>
-  downstreamValveDemandWeight(system, link, context) ?? 1
+): number => {
+  const target = system.graph.components[link.toComponentIndex]
+  if (target?.kind === 'centrifugalPump') {
+    const nominal = Number((target.parameters as Record<string, unknown>).nominalFlowKgPerS)
+    return Math.max(0, context.readNumber(componentVariablePath(target, 'flowKgPerS'))) / nominal
+  }
+  return downstreamValveDemandWeight(system, link, context) ?? 1
+}
 
 export const outgoingDemandWeightTotal = (
   system: CompiledProcessPlant,

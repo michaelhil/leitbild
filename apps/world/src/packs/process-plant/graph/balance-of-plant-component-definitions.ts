@@ -40,6 +40,8 @@ export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefiniti
     },
     parametersSchema: z.object({
       nominalElectricMw: z.number().finite().positive(),
+      nominalBackPressurePa: z.number().finite().positive().optional(),
+      nominalSteamPressureMPa: z.number().finite().positive().optional(),
       initialLoadFraction: normalized,
       nominalSteamFlowKgPerS: z.number().finite().positive(),
       electricalTimeConstantS: z.number().finite().positive().optional(),
@@ -66,6 +68,8 @@ export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefiniti
     },
     parametersSchema: z.object({
       coolingWaterTemperatureC: z.number().finite(),
+      initialSteamFlowFraction: normalized.optional(),
+      initialSteamTemperatureC: z.number().finite().optional(),
       nominalCoolingWaterFlowKgPerS: z.number().finite().positive(),
       coolingWaterDesignDeltaTK: z.number().finite().positive(),
       nominalSteamFlowKgPerS: z.number().finite().positive(),

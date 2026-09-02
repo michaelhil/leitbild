@@ -149,6 +149,9 @@ export const assemblePwrReferencePlantGraph = (input: unknown): PlantGraphSpec =
   const selectedLoopIds = availableLoopIds.slice(0, parameters.loopCount)
   const selectedLoopSet = new Set<LoopId>(selectedLoopIds)
   const source = structuredClone(pwrReferenceTemplate) as PlantGraphSpec
+  const coreParameters = source.components.find(component => component.kind === 'reactorCore')?.parameters as Record<string, unknown> | undefined
+  if (!coreParameters) throw new Error('PWR template has no reactor core')
+  const primaryFlowPerLoop = Number(coreParameters.nominalPrimaryFlowKgPerS) / selectedLoopIds.length
   const loopByComponentId = componentLoops(source.components)
   const loopByConnectionId = new Map<string, LoopId>(source.connections.flatMap(connection => {
     const loopId = loopIdForConnection(connection, loopByComponentId)
@@ -178,9 +181,12 @@ export const assemblePwrReferencePlantGraph = (input: unknown): PlantGraphSpec =
     })
     .map(connection => {
       const loopId = loopByConnectionId.get(String(connection.id))
+      const sized = connection.service === 'primaryCoolant' && connection.physical?.nominalFlowKgPerS !== undefined
+        ? { ...connection, physical: { ...connection.physical, nominalFlowKgPerS: primaryFlowPerLoop } }
+        : connection
       return loopId === undefined
-        ? connection
-        : { ...connection, metadata: loopMetadata(selectedLoopIds, loopId, connection.metadata) }
+        ? sized
+        : { ...sized, metadata: loopMetadata(selectedLoopIds, loopId, connection.metadata) }
     })
 
   const publishedVariables = source.publishedVariables.filter(path => {

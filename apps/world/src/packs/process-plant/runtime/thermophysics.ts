@@ -17,8 +17,17 @@ export const steamFlowKgPerSFromHeatMw = (heatMw: number): number =>
   Math.max(0, heatMw / latentHeatSteamMjPerKg)
 
 export const saturationTemperatureCFromPressureMPa = (pressureMPa: number): number => {
-  const pressure = clampValue(pressureMPa, 0.2, 16)
-  return clampValue(100 + 92.5 * Math.log10(pressure * 10), 100, 345)
+  // IAPWS-IF97, region 4, equation 31 / table 34 (R7-97, 2012).
+  // https://iapws.org/public/documents/UWTF-/IF97-Rev.pdf
+  // This helper describes saturation only, not a full water/steam property model.
+  const pressure = clampValue(pressureMPa, 0.000611213, 22.064)
+  const beta = pressure ** 0.25
+  const e = beta * beta - 17.073846940092 * beta + 14.915108613530
+  const f = 1167.0521452767 * beta * beta + 12020.824702470 * beta - 4823.2657361591
+  const g = -724213.16703206 * beta * beta - 3232555.0322333 * beta + 405113.40542057
+  const d = 2 * g / (-f - Math.sqrt(f * f - 4 * e * g))
+  const n10 = 650.17534844798
+  return (n10 + d - Math.sqrt((n10 + d) ** 2 - 4 * (-0.23855557567849 + n10 * d))) / 2 - 273.15
 }
 
 export const energyBalanceTemperatureStep = (config: {

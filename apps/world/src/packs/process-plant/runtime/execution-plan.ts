@@ -176,6 +176,29 @@ export const compileProcessPlantExecutionPlan = (
     }
   }
 
+  // Electrical propagation follows its declared supply graph, not component-kind
+  // registration order. Otherwise a new transformer/breaker adds a startup outage
+  // and a tick of propagation latency. This simplified supply model is directed.
+  const incoming = new Map(system.graph.components.map(component => [component.index, 0]))
+  const outgoing = new Map<number, number[]>()
+  for (const link of system.graph.links.filter(link => link.kind === 'electricalPower')) {
+    incoming.set(link.toComponentIndex, incoming.get(link.toComponentIndex)! + 1)
+    outgoing.set(link.fromComponentIndex, [...outgoing.get(link.fromComponentIndex) ?? [], link.toComponentIndex])
+  }
+  const ready = [...incoming].filter(([, count]) => count === 0).map(([index]) => index)
+  const order = new Map<number, number>()
+  for (let cursor = 0; cursor < ready.length; cursor++) {
+    const index = ready[cursor]!
+    order.set(index, cursor)
+    for (const target of outgoing.get(index) ?? []) {
+      const remaining = incoming.get(target)! - 1
+      incoming.set(target, remaining)
+      if (remaining === 0) ready.push(target)
+    }
+  }
+  if (order.size !== system.graph.components.length) throw new Error('Process Plant electrical supply graph contains a directed cycle; this propagation model requires directed acyclic supplies')
+  initialReconciliationInvocations.sort((left, right) => order.get(left.componentIndex)! - order.get(right.componentIndex)!)
+  invocationsByPhase.get('solveElectrical')?.sort((left, right) => left.kind === 'component' && right.kind === 'component' ? order.get(left.componentIndex)! - order.get(right.componentIndex)! : 0)
   return {
     invocationsByPhase,
     initialReconciliationInvocations,

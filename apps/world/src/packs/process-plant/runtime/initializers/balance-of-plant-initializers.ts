@@ -1,5 +1,6 @@
 import { optionalParameterNumber, parameterNumber } from '../component-helpers.ts'
 import type { ComponentInitialValueDefinition } from './model.ts'
+import { condenserThermalBalance } from '../condenser-thermodynamics.ts'
 
 export const balanceOfPlantInitialValueDefinitions: ReadonlyArray<ComponentInitialValueDefinition> = [
   {
@@ -36,19 +37,21 @@ export const balanceOfPlantInitialValueDefinitions: ReadonlyArray<ComponentIniti
   {
     componentKind: 'condenserSink',
     initialValueFor: (component, localPath) => {
-      if (localPath === 'steamFlowKgPerS') return 0
-      if (localPath === 'condensateProductionKgPerS') return 0
-      if (localPath === 'heatRejectedMw') return 0
+      const flow = parameterNumber(component, 'nominalSteamFlowKgPerS') * optionalParameterNumber(component, 'initialSteamFlowFraction', 0)
+      const balance = condenserThermalBalance({ steamFlow: flow, steamTemperature: optionalParameterNumber(component, 'initialSteamTemperatureC', 145), nominalSteamFlow: parameterNumber(component, 'nominalSteamFlowKgPerS'), coolingWaterFlow: parameterNumber(component, 'nominalCoolingWaterFlowKgPerS'), coolingWaterInletTemperature: parameterNumber(component, 'coolingWaterTemperatureC'), coolingWaterDesignDeltaT: parameterNumber(component, 'coolingWaterDesignDeltaTK'), condensateApproach: parameterNumber(component, 'condensateApproachTemperatureK') })
+      if (localPath === 'steamFlowKgPerS') return flow
+      if (localPath === 'condensateProductionKgPerS') return balance.condensateProduction
+      if (localPath === 'heatRejectedMw') return balance.heatRejected
       if (localPath === 'condensateInventoryKg') return parameterNumber(component, 'nominalCondensateInventoryKg') * parameterNumber(component, 'initialCondensateInventoryFraction')
       if (localPath === 'condensateLevelPercent') return parameterNumber(component, 'initialCondensateInventoryFraction') * 100
       if (localPath === 'availableCondensateOutletFlowKgPerS') return parameterNumber(component, 'maxCondensateOutletFlowKgPerS')
-      if (localPath === 'condensateTemperatureC') return parameterNumber(component, 'coolingWaterTemperatureC') + parameterNumber(component, 'condensateApproachTemperatureK')
-      if (localPath === 'backPressurePa') return 8_000
+      if (localPath === 'condensateTemperatureC') return balance.targetCondensateTemperature
+      if (localPath === 'backPressurePa') return balance.targetBackPressure
       if (localPath === 'coolingWaterFlowKgPerS') return parameterNumber(component, 'nominalCoolingWaterFlowKgPerS')
       if (localPath === 'coolingWaterInletTemperatureC') return parameterNumber(component, 'coolingWaterTemperatureC')
-      if (localPath === 'coolingWaterOutletTemperatureC') return parameterNumber(component, 'coolingWaterTemperatureC') + parameterNumber(component, 'coolingWaterDesignDeltaTK')
+      if (localPath === 'coolingWaterOutletTemperatureC') return balance.coolingWaterOutletTemperature
       if (localPath === 'coolingWaterHeatCapacityMw') {
-        return parameterNumber(component, 'nominalCoolingWaterFlowKgPerS') * 4.186 * parameterNumber(component, 'coolingWaterDesignDeltaTK') / 1_000
+        return balance.coolingWaterHeatCapacity
       }
       if (localPath === 'coolingWaterAvailabilityFraction') return 1
       return undefined

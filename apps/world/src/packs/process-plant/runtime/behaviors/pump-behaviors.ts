@@ -89,7 +89,7 @@ export const pumpInitialReconciliationDefinitions: ReadonlyArray<ComponentInitia
     reads: ['running', 'speedFraction'],
     writes: ['flowKgPerS', 'speedRpm', 'developedHeadPa', 'demandMw', 'loopFlowTargetKgPerS', 'loopFlowKgPerS'],
     reconcile: ({ system, component, context }): void => {
-      const running = context.readBoolean(componentVariablePath(component, 'running'))
+      const running = context.readBoolean(componentVariablePath(component, 'running')) && componentHasElectricalPower(system, component, context)
       const speed = clamp(context.readNumber(componentVariablePath(component, 'speedFraction')), 0, 1.2)
       const nominalFlow = parameterNumber(component, 'nominalFlowKgPerS')
       const nominalHead = parameterNumber(component, 'nominalHeadPa')

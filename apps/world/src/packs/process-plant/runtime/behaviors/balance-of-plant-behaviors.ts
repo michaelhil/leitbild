@@ -6,9 +6,11 @@ import {
   averageIncomingComponentLinkValue as averageIncomingLinkValue,
   sumIncomingComponentLinkValue as sumIncomingLinkValue,
   sumOutgoingComponentLinkValue as sumOutgoingLinkValue,
+  flowWeightedIncomingComponentLinkValue,
 } from '../component-link-helpers.ts'
 import { inventoryBalanceStep } from '../physics.ts'
 import { heatMwFromWaterFlowAndDeltaT, latentHeatSteamMjPerKg } from '../thermophysics.ts'
+import { condenserThermalBalance } from '../condenser-thermodynamics.ts'
 
 const downstreamCondenserBackPressurePa = (
   system: CompiledProcessPlant,
@@ -25,9 +27,9 @@ const downstreamCondenserBackPressurePa = (
   return null
 }
 
-const condenserBackPressureAvailability = (backPressurePa: number | null): number => {
+const condenserBackPressureAvailability = (backPressurePa: number | null, nominalBackPressurePa: number): number => {
   if (backPressurePa === null) return 1
-  return clamp(1 - Math.max(0, backPressurePa - 12_000) / 55_000, 0.25, 1)
+  return clamp(1 - Math.max(0, backPressurePa - nominalBackPressurePa) / 55_000, 0.25, 1)
 }
 
 export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
@@ -43,10 +45,11 @@ export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       const nominalSteamFlow = parameterNumber(component, 'nominalSteamFlowKgPerS')
       const load = clamp(context.readNumber(componentVariablePath(component, 'loadFraction')), 0, 1)
       const backPressurePa = downstreamCondenserBackPressurePa(system, component, context)
-      const backPressureAvailability = condenserBackPressureAvailability(backPressurePa)
+      const backPressureAvailability = condenserBackPressureAvailability(backPressurePa, optionalParameterNumber(component, 'nominalBackPressurePa', 12_000))
       const steamDemand = nominalSteamFlow * load * backPressureAvailability
       const steamAvailability = clamp(inletSteamFlow / Math.max(1, steamDemand), 0, 1.2)
-      const pressureAvailability = clamp((averageSteamPressure ?? 6.9) / 6.9, 0, 1.2)
+      const nominalSteamPressure = optionalParameterNumber(component, 'nominalSteamPressureMPa', 6.9)
+      const pressureAvailability = clamp((averageSteamPressure ?? nominalSteamPressure) / nominalSteamPressure, 0, 1.2)
       const target = parameterNumber(component, 'nominalElectricMw') * load * Math.min(steamAvailability, pressureAvailability, backPressureAvailability)
       const current = context.readNumber(componentVariablePath(component, 'electricMw'))
       const noLoadExhaust = optionalParameterNumber(component, 'exhaustTemperatureAtNoLoadC', 105)
@@ -153,24 +156,14 @@ export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
     ],
     update: ({ system, component, context }): void => {
       const steamFlow = sumIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'exhaustSteam' || link.service === 'mainSteam')
-      const steamTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'exhaustSteam' || link.service === 'mainSteam')
+      const steamTemperature = flowWeightedIncomingComponentLinkValue(system, component, 'temperatureC', context, link => link.service === 'exhaustSteam' || link.service === 'mainSteam')
         ?? optionalParameterNumber(component, 'exhaustCondensationTemperatureC', 120)
       const nominalSteamFlow = parameterNumber(component, 'nominalSteamFlowKgPerS')
       const coolingWaterFlow = sumIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'coolingWater')
       const coolingWaterInletTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'coolingWater')
         ?? parameterNumber(component, 'coolingWaterTemperatureC')
       const coolingWaterDesignDeltaT = parameterNumber(component, 'coolingWaterDesignDeltaTK')
-      const coolingWaterHeatCapacity = coolingWaterFlow * 4.186 * coolingWaterDesignDeltaT / 1_000
-      const unconstrainedTargetCondensateTemperature = coolingWaterInletTemperature
-        + parameterNumber(component, 'condensateApproachTemperatureK')
-        + clamp(steamFlow / nominalSteamFlow, 0, 1.5) * 18
-        + clamp((steamTemperature - 120) / 80, 0, 1) * 8
-      const unconstrainedSensibleHeatMw = heatMwFromWaterFlowAndDeltaT(steamFlow, Math.max(0, steamTemperature - unconstrainedTargetCondensateTemperature))
-      const unconstrainedLatentHeatMw = steamFlow * latentHeatSteamMjPerKg
-      const requiredHeatRemoval = unconstrainedLatentHeatMw + unconstrainedSensibleHeatMw
-      const heatSinkAvailability = requiredHeatRemoval > 0 ? clamp(coolingWaterHeatCapacity / requiredHeatRemoval, 0, 1.2) : 1
-      const condensingAvailability = clamp(heatSinkAvailability, 0.05, 1)
-      const condensateProduction = steamFlow * condensingAvailability
+      const { coolingWaterHeatCapacity, condensingAvailability, condensateProduction, targetCondensateTemperature, heatRejected, coolingWaterOutletTemperature, targetBackPressure } = condenserThermalBalance({ steamFlow, steamTemperature, nominalSteamFlow, coolingWaterFlow, coolingWaterInletTemperature, coolingWaterDesignDeltaT, condensateApproach: parameterNumber(component, 'condensateApproachTemperatureK') })
       const outgoingCondensateFlow = sumOutgoingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'condensate')
       const nominalInventory = parameterNumber(component, 'nominalCondensateInventoryKg')
       const currentInventory = context.readNumber(componentVariablePath(component, 'condensateInventoryKg'))
@@ -184,19 +177,6 @@ export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       })
       const maxOutletFlow = parameterNumber(component, 'maxCondensateOutletFlowKgPerS')
       const inventoryLimitedOutlet = context.dtSeconds > 0 ? nextInventory / context.dtSeconds : maxOutletFlow
-      const targetCondensateTemperature = unconstrainedTargetCondensateTemperature
-        + (1 - condensingAvailability) * 45
-      const sensibleHeatMw = heatMwFromWaterFlowAndDeltaT(condensateProduction, Math.max(0, steamTemperature - targetCondensateTemperature))
-      const latentHeatMw = condensateProduction * latentHeatSteamMjPerKg
-      const heatRejected = latentHeatMw + sensibleHeatMw
-      const coolingWaterOutletTemperature = coolingWaterFlow > 0
-        ? coolingWaterInletTemperature + (heatRejected * 1_000) / (coolingWaterFlow * 4.186)
-        : coolingWaterInletTemperature
-      const targetBackPressure = 7_000
-        + clamp(steamFlow / nominalSteamFlow, 0, 1.5) * 5_000
-        + clamp((coolingWaterInletTemperature - 28) / 70, 0, 1) * 35_000
-        + (1 - condensingAvailability) * 65_000
-        + clamp((targetCondensateTemperature - (coolingWaterInletTemperature + parameterNumber(component, 'condensateApproachTemperatureK'))) / 30, 0, 1) * 2_000
       context.write(componentVariablePath(component, 'steamFlowKgPerS'), steamFlow)
       context.write(componentVariablePath(component, 'condensateProductionKgPerS'), condensateProduction)
       context.write(componentVariablePath(component, 'heatRejectedMw'), heatRejected)
