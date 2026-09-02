@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, statfsSync, statSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { Database } from 'bun:sqlite'
 import {
@@ -7,6 +7,7 @@ import {
   type RecordedSample,
   type RecordingSeriesDescriptor,
   type RecordingSeriesQuery,
+  type RecordingPage,
 } from '../../core/model/index.ts'
 
 interface SeriesRow {
@@ -21,6 +22,7 @@ interface SeriesRow {
 }
 
 interface SampleRow {
+  readonly sequence: number
   readonly runtime_id: string
   readonly series_id: string
   readonly observed_at: string
@@ -38,12 +40,30 @@ export interface RunHistorianStatus {
   readonly sampleCount: number
   readonly firstObservedAt: string | null
   readonly lastObservedAt: string | null
+  readonly captureState: 'recording' | 'limited'
+  readonly lastError: string | null
+  readonly discardedSinceOpen: number
+  readonly storageBytes: number
+  readonly limits: HistorianLimits
+}
+
+export interface HistorianLimits {
+  readonly maxSamples: number
+  readonly maxAgeMs: number
+  readonly maxBytes: number
+  readonly minFreeBytes: number
+}
+
+// Observation storage is expendable; canonical Run state is not. Leave room for
+// checkpoints and other Workspaces, even when one Run records at high frequency.
+export const defaultHistorianLimits: HistorianLimits = {
+  maxSamples: 250_000, maxAgeMs: 7 * 86_400_000, maxBytes: 256 * 1024 * 1024, minFreeBytes: 1024 * 1024 * 1024,
 }
 
 export interface RunHistorian {
   readonly record: (runtimeId: string, batch: PackRuntimeRecordingBatch) => void
   readonly listSeries: () => ReadonlyArray<RecordingSeriesDescriptor & { readonly runtimeId: string }>
-  readonly query: (query: RecordingSeriesQuery) => ReadonlyArray<RecordedSample>
+  readonly query: (query: RecordingSeriesQuery) => RecordingPage
   readonly status: () => RunHistorianStatus
   readonly close: () => void
 }
@@ -79,11 +99,16 @@ const descriptorFromRow = (row: SeriesRow): RecordingSeriesDescriptor & { readon
   ...(row.unit === null ? {} : { unit: row.unit }),
 })
 
-export const createRunHistorian = (path: string): RunHistorian => {
+export const createRunHistorian = (path: string, options: { readonly limits?: Partial<HistorianLimits>; readonly now?: () => number } = {}): RunHistorian => {
+  const limits = { ...defaultHistorianLimits, ...options.limits }
+  for (const value of Object.values(limits)) if (!Number.isSafeInteger(value) || value < 0) throw new Error('Historian limits must be nonnegative safe integers')
+  if (limits.maxSamples < 1 || limits.maxBytes < 64 * 1024 || limits.maxAgeMs < 1) throw new Error('Historian retention budget is too small')
+  const now = options.now ?? Date.now
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
   const database = new Database(path, { create: true, strict: true })
   database.exec('PRAGMA foreign_keys = ON')
   database.exec('PRAGMA journal_mode = WAL')
+  database.exec('PRAGMA wal_autocheckpoint = 256; PRAGMA journal_size_limit = 4194304')
   const version = database.query<{ user_version: number }, []>('PRAGMA user_version').get()?.user_version ?? 0
   if (version === 0) {
     database.exec(`
@@ -121,6 +146,38 @@ export const createRunHistorian = (path: string): RunHistorian => {
   } else if (version !== currentSchema) {
     database.close()
     throw new Error(`unsupported historian schema: ${version}`)
+  }
+  // Indexes are physical access paths, not a second storage format or a migration.
+  database.exec('CREATE INDEX IF NOT EXISTS recording_samples_time ON recording_samples(observed_at, sequence)')
+  const pageSize = database.query<{ page_size: number }, []>('PRAGMA page_size').get()!.page_size
+  database.exec(`PRAGMA max_page_count = ${Math.floor(limits.maxBytes / pageSize)}`)
+  const described = new Map<string, RecordingSeriesDescriptor>()
+  const keyFor = (runtimeId: string, seriesId: string) => JSON.stringify([runtimeId, seriesId])
+  for (const row of database.query<SeriesRow, []>('SELECT * FROM recording_series').all()) described.set(keyFor(row.runtime_id, row.series_id), descriptorFromRow(row))
+  let sampleCount = database.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM recording_samples').get()!.count
+  let discardedSinceOpen = 0
+  let lastError: string | null = null
+  let lastMaintenanceAt = -Infinity
+  let storageBytes = 0
+  let storageAllowed = true
+  const maintenance = (): void => {
+    const expiredBefore = new Date(now() - limits.maxAgeMs).toISOString()
+    const expired = database.query('DELETE FROM recording_samples WHERE sequence IN (SELECT sequence FROM recording_samples WHERE observed_at < ? ORDER BY observed_at, sequence LIMIT 5000)').run(expiredBefore).changes
+    sampleCount -= expired
+    discardedSinceOpen += expired
+    if (sampleCount > limits.maxSamples) {
+      const removed = database.query('DELETE FROM recording_samples WHERE sequence IN (SELECT sequence FROM recording_samples ORDER BY sequence LIMIT ?)').run(Math.min(5000, sampleCount - limits.maxSamples)).changes
+      sampleCount -= removed
+      discardedSinceOpen += removed
+    }
+    if (path !== ':memory:') {
+      database.exec('PRAGMA wal_checkpoint(PASSIVE)')
+      storageBytes = statSync(path).size
+      const fs = statfsSync(dirname(path))
+      storageAllowed = fs.bavail * fs.bsize >= limits.minFreeBytes && storageBytes <= limits.maxBytes
+      if (!storageAllowed) lastError = 'Historian byte/free-space budget reached; capture paused, simulation continues. Retained data remains queryable.'
+    }
+    lastMaintenanceAt = now()
   }
 
   const insertSeries = database.prepare(`
@@ -169,7 +226,32 @@ export const createRunHistorian = (path: string): RunHistorian => {
     record: (runtimeId, input): void => {
       const batch = packRuntimeRecordingBatchSchema.parse(input) as PackRuntimeRecordingBatch
       if (batch.samples.length === 0 && batch.descriptors.length === 0) return
-      writeBatch(runtimeId, batch)
+      if (batch.samples.length > 20_000 || described.size + batch.descriptors.filter(item => !described.has(keyFor(runtimeId, item.id))).length > 20_000) throw new Error('Historian batch/series limit exceeded (20,000)')
+      const pending = new Map<string, RecordingSeriesDescriptor>()
+      for (const descriptor of batch.descriptors) {
+        const key = keyFor(runtimeId, descriptor.id)
+        const previous = pending.get(key) ?? described.get(key)
+        if (previous && (previous.subjectId !== descriptor.subjectId || previous.signalId !== descriptor.signalId || previous.valueType !== descriptor.valueType || previous.unit !== descriptor.unit || previous.quantity !== descriptor.quantity)) throw new Error(`Historian series semantics changed: ${runtimeId}/${descriptor.id}`)
+        pending.set(key, descriptor)
+      }
+      for (const sample of batch.samples) {
+        const descriptor = pending.get(keyFor(runtimeId, sample.seriesId)) ?? described.get(keyFor(runtimeId, sample.seriesId))
+        if (!descriptor || typeof sample.value !== descriptor.valueType) throw new Error(`Historian sample does not match its descriptor: ${runtimeId}/${sample.seriesId}`)
+      }
+      try {
+        if (now() - lastMaintenanceAt >= 10_000 || sampleCount + batch.samples.length > limits.maxSamples) maintenance()
+        if (!storageAllowed || sampleCount > limits.maxSamples) { discardedSinceOpen += batch.samples.length; return }
+        const samples = batch.samples.map(sample => ({ ...sample, observedAt: new Date(sample.observedAt).toISOString(), ...(sample.simulationTime === undefined ? {} : { simulationTime: new Date(sample.simulationTime).toISOString() }) })) as PackRuntimeRecordingBatch['samples']
+        writeBatch(runtimeId, { ...batch, samples })
+        for (const descriptor of batch.descriptors) described.set(keyFor(runtimeId, descriptor.id), descriptor)
+        sampleCount += samples.length
+        if (sampleCount > limits.maxSamples) maintenance()
+        lastError = null
+      } catch (error) {
+        // Optional observations must not stop physics or its canonical checkpoint.
+        lastError = error instanceof Error ? error.message : String(error)
+        discardedSinceOpen += batch.samples.length
+      }
     },
     listSeries: (): ReadonlyArray<RecordingSeriesDescriptor & { readonly runtimeId: string }> =>
       database.query<SeriesRow, []>(`
@@ -177,7 +259,7 @@ export const createRunHistorian = (path: string): RunHistorian => {
         FROM recording_series
         ORDER BY runtime_id, subject_id, signal_id
       `).all().map(descriptorFromRow),
-    query: (query): ReadonlyArray<RecordedSample> => {
+    query: (query): RecordingPage => {
       const predicates: string[] = []
       const values: Array<string | number> = []
       for (const [column, value] of [
@@ -199,19 +281,23 @@ export const createRunHistorian = (path: string): RunHistorian => {
         if (query.subjectId !== undefined) values.push(query.subjectId)
         if (query.signalId !== undefined) values.push(query.signalId)
       }
-      if (query.from !== undefined) { predicates.push('observed_at >= ?'); values.push(query.from) }
-      if (query.to !== undefined) { predicates.push('observed_at <= ?'); values.push(query.to) }
+      const timeColumn = query.timeAxis === 'simulation' ? 'simulation_time' : 'observed_at'
+      if (query.from !== undefined) { predicates.push(`${timeColumn} >= ?`); values.push(new Date(query.from).toISOString()) }
+      if (query.to !== undefined) { predicates.push(`${timeColumn} <= ?`); values.push(new Date(query.to).toISOString()) }
+      if (query.beforeSequence !== undefined) { predicates.push('sequence < ?'); values.push(query.beforeSequence) }
       const limit = Math.min(10_000, Math.max(1, query.limit ?? 2_000))
-      values.push(limit)
+      values.push(limit + 1)
       const rows = database.query<SampleRow, Array<string | number>>(`
-        SELECT runtime_id, series_id, observed_at, simulation_time, elapsed_ms,
+        SELECT sequence, runtime_id, series_id, observed_at, simulation_time, elapsed_ms,
                value_type, value_number, value_text, value_boolean, quality
         FROM recording_samples
         ${predicates.length === 0 ? '' : `WHERE ${predicates.join(' AND ')}`}
-        ORDER BY observed_at, sequence
+        ORDER BY sequence DESC
         LIMIT ?
       `).all(...values)
-      return rows.map(row => ({
+      const retainedFromSequence = database.query<{ sequence: number }, []>('SELECT sequence FROM recording_samples ORDER BY sequence LIMIT 1').get()?.sequence ?? null
+      const samples = rows.slice(0, limit).map(row => ({
+        sequence: row.sequence,
         runtimeId: row.runtime_id,
         seriesId: row.series_id,
         observedAt: row.observed_at as RecordedSample['observedAt'],
@@ -220,26 +306,17 @@ export const createRunHistorian = (path: string): RunHistorian => {
         value: valueFromRow(row),
         quality: row.quality,
       }))
+      return { samples, hasMore: rows.length > limit, nextBeforeSequence: rows.length > limit ? samples.at(-1)!.sequence : null, retainedFromSequence, retentionGap: query.beforeSequence !== undefined && retainedFromSequence !== null && query.beforeSequence <= retainedFromSequence }
     },
     status: (): RunHistorianStatus => {
-      const row = database.query<{
-        series_count: number
-        sample_count: number
-        first_observed_at: string | null
-        last_observed_at: string | null
-      }, []>(`
-        SELECT
-          (SELECT COUNT(*) FROM recording_series) AS series_count,
-          COUNT(*) AS sample_count,
-          MIN(observed_at) AS first_observed_at,
-          MAX(observed_at) AS last_observed_at
-        FROM recording_samples
-      `).get()
+      const first = database.query<{ observed_at: string }, []>('SELECT observed_at FROM recording_samples ORDER BY observed_at LIMIT 1').get()
+      const last = database.query<{ observed_at: string }, []>('SELECT observed_at FROM recording_samples ORDER BY observed_at DESC LIMIT 1').get()
       return {
-        seriesCount: row?.series_count ?? 0,
-        sampleCount: row?.sample_count ?? 0,
-        firstObservedAt: row?.first_observed_at ?? null,
-        lastObservedAt: row?.last_observed_at ?? null,
+        seriesCount: described.size,
+        sampleCount,
+        firstObservedAt: first?.observed_at ?? null,
+        lastObservedAt: last?.observed_at ?? null,
+        captureState: lastError ? 'limited' : 'recording', lastError, discardedSinceOpen, storageBytes, limits,
       }
     },
     close: (): void => database.close(),

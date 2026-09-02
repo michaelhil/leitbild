@@ -12,7 +12,7 @@ import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
 export const processPlantRecordingProfiles: ReadonlyArray<RecordingProfileDescriptor> = [{
   id: 'operations',
   title: 'Operations',
-  description: 'Operator-facing, alarm, and telemetry variables published by each Plant Model.',
+  description: 'State, operator controls, discrete states, tagged instruments and power balances. Other derived engineering diagnostics are excluded. Unchanged values are recorded at most once per minute.',
   defaultIntervalMs: 1_000,
   minimumIntervalMs: 250,
 }, {
@@ -56,7 +56,7 @@ export const createProcessPlantRecordingPlan = (config: {
   }
   const series: ProcessPlantRecordingSeriesPlan[] = [...config.plants.values()].flatMap(plant =>
     plant.plant.graph.variables
-      .filter(variable => profile.id === 'engineering' || variable.published)
+      .filter(variable => profile.id === 'engineering' || ['state', 'control', 'discrete'].includes(variable.descriptor.kind) || variable.descriptor.tagId !== undefined || variable.descriptor.quantity === 'power')
       .map(variable => ({
         plant,
         handle: plant.runtime.resolveVariableHandle(variable.path),
@@ -72,22 +72,27 @@ export const createProcessPlantRecordingPlan = (config: {
       })),
   )
   const descriptors = series.map(item => item.descriptor)
+  const lastRecorded = new Map<string, { value: number | boolean; at: number }>()
   return {
     profile,
     intervalMs,
     descriptors,
     sample: ({ observedAt, simulationTime }) => ({
       descriptors: [],
-      samples: series.map(item => {
+      samples: series.flatMap(item => {
         const variable = item.plant.runtime.readVariableSnapshotHandle(item.handle)
-        return {
+        const at = Date.parse(simulationTime)
+        const previous = lastRecorded.get(item.descriptor.id)
+        if (previous && previous.value === variable.value && at >= previous.at && at - previous.at < 60_000) return []
+        lastRecorded.set(item.descriptor.id, { value: variable.value, at })
+        return [{
           seriesId: item.descriptor.id,
           observedAt,
           simulationTime,
           elapsedMs: item.plant.runtime.elapsedMs(),
           value: variable.value,
           quality: 'good' as const,
-        }
+        }]
       }),
     }),
   }

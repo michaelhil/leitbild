@@ -5,6 +5,33 @@ import type { IsoTimestamp } from '../src/core/model/index.ts'
 const at = (value: string): IsoTimestamp => value as IsoTimestamp
 
 describe('Run Historian', () => {
+  test('rejects changed units and mismatched value types atomically', () => {
+    const historian = createRunHistorian(':memory:')
+    const descriptor = { id: 'series:power', subjectId: 'plant', signalId: 'power', title: 'Power', valueType: 'number' as const, unit: 'MW' }
+    historian.record('plant.local', { descriptors: [descriptor], samples: [] })
+    expect(() => historian.record('plant.local', { descriptors: [{ ...descriptor, unit: 'kW' }], samples: [] })).toThrow('semantics changed')
+    expect(() => historian.record('plant.local', { descriptors: [], samples: [{ seriesId: descriptor.id, value: 'oops', observedAt: at(new Date().toISOString()), quality: 'good' }] })).toThrow('does not match')
+    expect(historian.status().sampleCount).toBe(0)
+    historian.close()
+  })
+
+  test('retains a bounded recent window and paginates equal times by sequence on either time axis', () => {
+    let now = Date.parse('2026-01-01T00:00:10.000Z')
+    const historian = createRunHistorian(':memory:', { limits: { maxSamples: 3, maxAgeMs: 20_000 }, now: () => now })
+    const observedAt = at('2026-01-01T00:00:10.000Z')
+    const simulationTime = at('2026-01-01T10:00:10.000Z')
+    historian.record('test.local', { descriptors: [{ id: 'series:value', subjectId: 'asset', signalId: 'value', title: 'Value', valueType: 'number' }], samples: [1, 2, 3, 4, 5].map(value => ({ seriesId: 'series:value', observedAt, simulationTime, value, quality: 'good' })) })
+    expect(historian.status()).toMatchObject({ sampleCount: 3, discardedSinceOpen: 2 })
+    const page = historian.query({ limit: 2, timeAxis: 'simulation', from: '2026-01-01T12:00:00+02:00' })
+    expect(page.samples.map(sample => sample.value)).toEqual([5, 4])
+    expect(page.hasMore).toBe(true)
+    expect(historian.query({ beforeSequence: page.nextBeforeSequence! }).samples.map(sample => sample.value)).toEqual([3])
+    expect(historian.query({ beforeSequence: 2 }).retentionGap).toBe(true)
+    now += 30_000
+    historian.record('test.local', { descriptors: [], samples: [{ seriesId: 'series:value', observedAt: at(new Date(now).toISOString()), value: 6, quality: 'good' }] })
+    expect(historian.status()).toMatchObject({ sampleCount: 1, discardedSinceOpen: 5 })
+    historian.close()
+  })
   test('persists typed samples, exposes descriptors, and applies bounded filters', () => {
     const historian = createRunHistorian(':memory:')
     try {
@@ -43,7 +70,7 @@ describe('Run Historian', () => {
         }],
       })
 
-      expect(historian.status()).toEqual({
+      expect(historian.status()).toMatchObject({
         seriesCount: 2,
         sampleCount: 2,
         firstObservedAt: '2026-01-01T00:00:01.000Z',
@@ -55,12 +82,12 @@ describe('Run Historian', () => {
         subjectId: 'plant:test',
         unit: 'MW',
       }))
-      expect(historian.query({ subjectId: 'plant:test', signalId: 'core.tripped' })).toEqual([expect.objectContaining({
+      expect(historian.query({ subjectId: 'plant:test', signalId: 'core.tripped' }).samples).toEqual([expect.objectContaining({
         seriesId: 'series:trip',
         value: false,
         elapsedMs: 1_000,
       })])
-      expect(historian.query({ from: '2026-01-01T00:00:02.000Z' })).toEqual([])
+      expect(historian.query({ from: '2026-01-01T00:00:02.000Z' }).samples).toEqual([])
     } finally {
       historian.close()
     }

@@ -209,7 +209,10 @@ const handleSimulationRunApiInner = async (
       ...(optional('to') === undefined ? {} : { to: historyTimestamp.parse(optional('to')) }),
       ...(limitParam === undefined ? {} : { limit: z.coerce.number().int().positive().max(10_000).parse(limitParam) }),
     }
-    return json({ samples: runtime.recordedSamples(query) })
+    return json(runtime.recordedSamples({ ...query,
+      ...(optional('timeAxis') === undefined ? {} : { timeAxis: z.enum(['observed', 'simulation']).parse(optional('timeAxis')) }),
+      ...(optional('beforeSequence') === undefined ? {} : { beforeSequence: z.coerce.number().int().positive().parse(optional('beforeSequence')) }),
+    }))
   }
 
   const historyMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/history$/)

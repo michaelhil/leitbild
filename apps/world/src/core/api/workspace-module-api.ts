@@ -107,6 +107,8 @@ const readHistoryInputSchema = z.object({
   from: historyTimestampSchema.optional(),
   to: historyTimestampSchema.optional(),
   limit: z.number().int().positive().max(10_000).optional(),
+  timeAxis: z.enum(['observed', 'simulation']).optional(),
+  beforeSequence: z.number().int().positive().optional(),
 }).strict()
 const createScenarioInputSchema = z.object({ source: scenarioDefinitionSchema }).strict()
 const scenarioWriteInputJsonSchema = z.toJSONSchema(createScenarioInputSchema, { unrepresentable: 'any' })
@@ -255,9 +257,18 @@ const simulationHistorySchema = z.object({
     sampleCount: z.number().int().nonnegative(),
     firstObservedAt: isoTimestampSchema.nullable(),
     lastObservedAt: isoTimestampSchema.nullable(),
+    captureState: z.enum(['recording', 'limited']),
+    lastError: z.string().nullable(),
+    discardedSinceOpen: z.number().int().nonnegative(),
+    storageBytes: z.number().int().nonnegative(),
+    limits: z.object({ maxSamples: z.number(), maxAgeMs: z.number(), maxBytes: z.number(), minFreeBytes: z.number() }).strict(),
   }).strict().nullable(),
   series: z.array(recordingSeriesDescriptorSchema.extend({ runtimeId: z.string().min(1) }).strict()),
-  samples: z.array(recordingSampleSchema.extend({ runtimeId: z.string().min(1) }).strict()),
+  samples: z.array(recordingSampleSchema.extend({ runtimeId: z.string().min(1), sequence: z.number().int().positive() }).strict()),
+  hasMore: z.boolean(),
+  nextBeforeSequence: z.number().int().positive().nullable(),
+  retainedFromSequence: z.number().int().positive().nullable(),
+  retentionGap: z.boolean(),
 }).strict()
 
 const SCENARIO_DEFINITION_TYPE = 'world.scenario'
@@ -1043,7 +1054,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       return json({ result: {
         status: runtime.recordingStatus(),
         series: runtime.recordingSeries(),
-        samples: runtime.recordedSamples(query),
+        ...runtime.recordedSamples(query),
       } })
     },
   },

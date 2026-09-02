@@ -1,6 +1,7 @@
 import type { WorkspaceId } from '@leitbild/contracts'
 import { randomUUID } from 'node:crypto'
 import type { RunHistorian,RunHistorianStatus } from '../../features/historian/store.ts'
+import type { RecordingPage } from '../model/recording.ts'
 import { prepareProcedureCommand } from '../../features/procedures/run-state.ts'
 import { createProcedureSourceService,type ProcedureSourceService } from '../../features/procedures/source.ts'
 import type { PackRuntimeConnection,PackRuntimeEmission,PackRuntimeEvent,PackRuntimeHealth,PackRuntimeRealtimeInput,PackRuntimeRealtimeMessage,SimulationCapability } from '../../simulation/protocol.ts'
@@ -73,7 +74,7 @@ export interface SimulationRunRuntime {
   readonly health: () => ReadonlyArray<PackRuntimeHealth>
   readonly recordingStatus: () => RunHistorianStatus | null
   readonly recordingSeries: () => ReadonlyArray<RecordingSeriesDescriptor & { readonly runtimeId: string }>
-  readonly recordedSamples: (query: RecordingSeriesQuery) => ReadonlyArray<RecordedSample>
+  readonly recordedSamples: (query: RecordingSeriesQuery) => RecordingPage
   readonly close: () => Promise<void>
 }
 
@@ -997,7 +998,7 @@ export const createSimulationRunRuntime = async (config: {
     health: () => config.runtimeConnection.health?.() ?? [],
     recordingStatus: () => config.historian?.status() ?? null,
     recordingSeries: () => config.historian?.listSeries() ?? [],
-    recordedSamples: (query) => config.historian?.query(query) ?? [],
+    recordedSamples: (query) => config.historian?.query(query) ?? { samples: [], hasMore: false, nextBeforeSequence: null, retainedFromSequence: null, retentionGap: false },
     close: async (): Promise<void> => {
       scenarioRunner?.close()
       await clockQueue

@@ -56,10 +56,21 @@ export interface RecordingSeriesQuery {
   readonly from?: string
   readonly to?: string
   readonly limit?: number
+  readonly timeAxis?: 'observed' | 'simulation'
+  readonly beforeSequence?: number
 }
 
 export interface RecordedSample extends RecordingSample {
   readonly runtimeId: string
+  readonly sequence: number
+}
+
+export interface RecordingPage {
+  readonly samples: ReadonlyArray<RecordedSample>
+  readonly hasMore: boolean
+  readonly nextBeforeSequence: number | null
+  readonly retainedFromSequence: number | null
+  readonly retentionGap: boolean
 }
 
 const hash32 = (value: string, seed: number): string => {
