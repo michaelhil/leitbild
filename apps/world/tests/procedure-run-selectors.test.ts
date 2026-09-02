@@ -148,6 +148,19 @@ describe('procedure run selectors', () => {
     })
   })
 
+  test('keeps the shared current step when a transitioned procedure is no longer active', () => {
+    const transitionedRun = {
+      ...activeRun,
+      status: 'completed',
+      currentStepId: 'verify-phase-a-isolation',
+    } satisfies ProcedureRunState
+    expect(procedureCurrentStep(transitionedRun, procedure)?.progress).toEqual({
+      stepId: 'verify-phase-a-isolation',
+      label: '6',
+      name: 'verify-phase-a-isolation',
+    })
+  })
+
   test('separates active and completed runs by unit scope', () => {
     const otherUnitRun = {
       ...activeRun,

@@ -55,6 +55,7 @@
   import { readProcedureDocument, readProcedureRuns } from '../procedures/procedure-client.ts'
   import {
     procedureCurrentStep,
+    procedureRunDocumentKey,
     procedureRunSummariesForScope,
     type ProcedureRunSummary,
     type ProcedureRunSummaryGroup,
@@ -176,7 +177,7 @@
   let procedureSystemWindows = $state<ReadonlyArray<ProcedureSystemWindowEntry>>([])
   let floatingWindowSequence = 0
   let procedureRuns = $state<ReadonlyArray<ProcedureRunState>>([])
-  let procedureRunDocuments = $state<ReadonlyMap<ProcedureId, ProcedureDocument>>(new Map())
+  let procedureRunDocuments = $state<ReadonlyMap<string, ProcedureDocument>>(new Map())
   let processPlantArtifactModal = $state<{
     readonly object: OperationalObject
     readonly artifact: ProcessPlantArtifactKind
@@ -979,6 +980,12 @@
       if (nextProcedureSystemWindows.length !== procedureSystemWindows.length) {
         procedureSystemWindows = nextProcedureSystemWindows
       }
+      if (processPlantArtifactModal && !liveObjectIds.has(processPlantArtifactModal.object.id)) {
+        processPlantArtifactModal = null
+      }
+      if (processPlantCredibilityModal && !liveObjectIds.has(processPlantCredibilityModal.id)) {
+        processPlantCredibilityModal = null
+      }
     })
   })
 
@@ -998,25 +1005,26 @@
         && typeof (raw.scope as Record<string, unknown>).plantId === 'string'
     })
 
-  const procedureRunDocumentIds = (nextRuns: ReadonlyArray<ProcedureRunState>): ReadonlyArray<ProcedureId> =>
-    [...new Set(nextRuns
-      .filter(run => run.status === 'active' || run.status === 'completed')
-      .map(run => run.procedureId))]
-
   const ensureProcedureRunDocuments = async (
     controlId: SimulationRunId,
     nextRuns: ReadonlyArray<ProcedureRunState>,
   ): Promise<void> => {
-    const missing = procedureRunDocumentIds(nextRuns).filter(procedureId => !procedureRunDocuments.has(procedureId))
+    const uniqueRuns = new Map(nextRuns
+      .filter(run => run.status === 'active' || run.status === 'completed')
+      .map(run => [procedureRunDocumentKey(run), run] as const))
+    const missing = [...uniqueRuns].filter(([key]) => !procedureRunDocuments.has(key))
     if (missing.length === 0) return
-    const loaded = await Promise.all(missing.map(async procedureId =>
-      await readProcedureDocument(controlId, procedureId, {
-        sourceId: nextRuns.find(run => run.procedureId === procedureId)?.sourceId,
+    const loaded = await Promise.all(missing.map(async ([key, run]) => [
+      key,
+      await readProcedureDocument(controlId, run.procedureId, {
+        sourceId: run.sourceId,
+        sourceRevision: run.sourceRevision,
+        sourcePath: run.sourcePath,
       }),
-    ))
+    ] as const))
     procedureRunDocuments = new Map([
       ...procedureRunDocuments,
-      ...loaded.map(document => [document.procedureId, document] as const),
+      ...loaded,
     ])
   }
 
@@ -1061,7 +1069,7 @@
   }
 
   const procedureLaunchStepFor = (summary: ProcedureRunSummary): ProcedureStepId | undefined => {
-    const document = procedureRunDocuments.get(summary.procedureId)
+    const document = procedureRunDocuments.get(procedureRunDocumentKey(summary.run))
     const current = document ? procedureCurrentStep(summary.run, document) : null
     return (current?.step.id ?? summary.step?.stepId) as ProcedureStepId | undefined
   }
@@ -1088,6 +1096,12 @@
 
   const closeProcedureSystem = (windowId: string): void => {
     procedureSystemWindows = procedureSystemWindows.filter(entry => entry.id !== windowId)
+  }
+
+  const retargetProcedureSystem = (windowId: string, objectId: ObjectId): void => {
+    procedureSystemWindows = procedureSystemWindows.map(entry => entry.id === windowId
+      ? { ...entry, objectId }
+      : entry)
   }
 
   const closeSettings = (): void => {
@@ -1308,7 +1322,7 @@
         if (applied.routesChanged) {
           routeRevision += 1
         }
-        if (parsed.events.some(event => event.type.startsWith('procedure.'))) {
+        if (parsed.events.some(event => event.type.startsWith('procedure.') || event.type === 'object.deleted')) {
           procedureRevision += 1
         }
       },
@@ -1750,6 +1764,7 @@
       initialStepId={windowEntry.initialStepId}
       initialNavigationRevision={windowEntry.initialNavigationRevision}
       windowOffsetIndex={windowEntry.index}
+      selectUnit={(objectId) => retargetProcedureSystem(windowEntry.id, objectId)}
       close={() => closeProcedureSystem(windowEntry.id)}
     />
   {/each}

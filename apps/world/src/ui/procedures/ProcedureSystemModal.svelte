@@ -1,5 +1,6 @@
 <script lang="ts">
   import { BookOpen, Bug, Check, ChevronLeft, ChevronRight, ExternalLink, HelpCircle, MessageSquare, Play, RefreshCw, Star, X } from 'lucide-svelte'
+  import { tick } from 'svelte'
   import type {
     SimulationRunId,
     ObjectId,
@@ -44,7 +45,6 @@
     procedureRunFor,
     procedureRunDocumentKey,
     procedureRunSummariesForScope,
-    procedureRunSummaryText,
     procedureRunVisualStateFor as selectedProcedureRunVisualStateFor,
     procedureStepById,
     procedureStepDisplayName,
@@ -70,6 +70,7 @@
     readonly initialStepId?: ProcedureStepId
     readonly initialNavigationRevision?: number
     readonly windowOffsetIndex?: number
+    readonly selectUnit?: (objectId: ObjectId) => void
     readonly close: () => void
   }
 
@@ -139,6 +140,7 @@
     initialStepId = undefined,
     initialNavigationRevision = 0,
     windowOffsetIndex = 0,
+    selectUnit = undefined,
     close,
   }: Props = $props()
 
@@ -149,6 +151,7 @@
   const minProcedureFontScale = 0.65
   const maxProcedureFontScale = 1.6
   const procedureFontScaleStep = 0.1
+  const backgroundPrefetchConcurrency = 4
 
   let loading = $state(true)
   let refreshing = $state(false)
@@ -159,6 +162,7 @@
   let runDocuments = $state<ReadonlyMap<string, ProcedureDocument>>(new Map())
   let selectedProcedureId = $state<string | null>(null)
   let loadingProcedureId = $state<string | null>(null)
+  let activeUnitPlantId = $state(plantId)
   let confirmation = $state<ProcedureConfirmation | null>(null)
   let tagValidation = $state<ReadonlyMap<string, ProcedureTagValidation>>(new Map())
   let csfEvaluations = $state<ReadonlyMap<string, ProcedureCsfEvaluation>>(new Map())
@@ -184,10 +188,15 @@
   let csfRefreshInFlight = false
   let toastTimer: number | null = null
   let latestProcedureLoadRequest = 0
+  let backgroundPrefetchGeneration = 0
+  let procedureDocumentBodyElement: HTMLDivElement | null = null
+  const procedureDocuments = new Map<string, ProcedureDocument>()
+  const procedureDocumentLoads = new Map<string, Promise<ProcedureDocument>>()
+  const procedureScrollPositions = new Map<string, number>()
 
-  const currentUnitContext = $derived(unitContexts.find(unit => unit.plantId === plantId) ?? {
-    plantId,
-    label: unitName ?? plantId,
+  const currentUnitContext = $derived(unitContexts.find(unit => unit.plantId === activeUnitPlantId) ?? {
+    plantId: activeUnitPlantId,
+    label: unitName ?? activeUnitPlantId,
     ...(unitStatus === undefined ? {} : { status: unitStatus }),
   } satisfies ProcedureUnitContext)
   const currentScope = $derived(procedureScopeFor(currentUnitContext))
@@ -346,7 +355,7 @@
     `${nextDocument.source.sourceId}:${nextDocument.source.revision}:${nextDocument.sourcePath}:${nextDocument.procedureId}`
 
   const rememberProcedureDocument = (nextDocument: ProcedureDocument): void => {
-    runDocuments = new Map([...runDocuments, [documentKeyFor(nextDocument), nextDocument]])
+    procedureDocuments.set(documentKeyFor(nextDocument), nextDocument)
   }
 
   const ensureRunDocuments = async (nextRuns: ReadonlyArray<ProcedureRunState>): Promise<void> => {
@@ -356,7 +365,7 @@
     const missing = [...uniqueRuns].filter(([key]) => !runDocuments.has(key))
     if (missing.length === 0) return
     const loaded = await Promise.all(missing.map(async ([key, run]) =>
-      [key, await readProcedureDocument(simulationRunId, run.procedureId, {
+      [key, await readAndRememberProcedureDocument(run.procedureId, {
         sourceId: run.sourceId,
         sourceRevision: run.sourceRevision,
         sourcePath: run.sourcePath,
@@ -386,15 +395,74 @@
     const key = sourceId && sourceRevision && sourcePath
       ? `${sourceId}:${sourceRevision}:${sourcePath}:${procedureId}`
       : null
-    const cached = key ? runDocuments.get(key) : undefined
+    const cached = key ? procedureDocuments.get(key) : undefined
     if (cached) return cached
-    const loaded = await readProcedureDocument(simulationRunId, procedureId, {
-      ...(sourceId === undefined ? {} : { sourceId }),
-      ...(sourceRevision === undefined ? {} : { sourceRevision }),
-      ...(sourcePath === undefined ? {} : { sourcePath }),
-    })
-    rememberProcedureDocument(loaded)
-    return loaded
+    const inFlight = key ? procedureDocumentLoads.get(key) : undefined
+    if (inFlight) return await inFlight
+    const loadingDocument = readProcedureDocument(simulationRunId, procedureId, {
+        ...(sourceId === undefined ? {} : { sourceId }),
+        ...(sourceRevision === undefined ? {} : { sourceRevision }),
+        ...(sourcePath === undefined ? {} : { sourcePath }),
+      })
+    if (key) procedureDocumentLoads.set(key, loadingDocument)
+    try {
+      const loaded = await loadingDocument
+      rememberProcedureDocument(loaded)
+      return loaded
+    } finally {
+      if (key && procedureDocumentLoads.get(key) === loadingDocument) procedureDocumentLoads.delete(key)
+    }
+  }
+
+  const procedureDocumentCached = (
+    procedureId: ProcedureId,
+    sourceConfig: {
+      readonly sourceId?: string
+      readonly sourceRevision?: string
+      readonly sourcePath?: string
+    },
+  ): boolean => {
+    const sourceId = sourceConfig.sourceId ?? catalog?.source.sourceId
+    const sourceRevision = sourceConfig.sourceRevision ?? catalog?.source.revision
+    const sourcePath = sourceConfig.sourcePath ?? (
+      sourceRevision === catalog?.source.revision
+        ? catalog?.procedures.find(item => item.procedureId === procedureId)?.sourcePath
+        : undefined
+    )
+    return sourceId !== undefined
+      && sourceRevision !== undefined
+      && sourcePath !== undefined
+      && procedureDocuments.has(`${sourceId}:${sourceRevision}:${sourcePath}:${procedureId}`)
+  }
+
+  const prefetchRemainingProcedures = (nextCatalog: ProcedureCatalog): void => {
+    const generation = ++backgroundPrefetchGeneration
+    const pending = nextCatalog.procedures.filter(item => !procedureDocumentCached(item.procedureId, {
+      sourceId: nextCatalog.source.sourceId,
+      sourceRevision: nextCatalog.source.revision,
+      sourcePath: item.sourcePath,
+    }))
+    let cursor = 0
+    const worker = async (): Promise<void> => {
+      while (generation === backgroundPrefetchGeneration) {
+        const item = pending[cursor]
+        cursor += 1
+        if (!item) return
+        try {
+          await readAndRememberProcedureDocument(item.procedureId, {
+            sourceId: nextCatalog.source.sourceId,
+            sourceRevision: nextCatalog.source.revision,
+            sourcePath: item.sourcePath,
+          })
+        } catch {
+          // Background warming is opportunistic; a foreground selection retries visibly.
+        }
+      }
+    }
+    void Promise.all(Array.from(
+      { length: Math.min(backgroundPrefetchConcurrency, pending.length) },
+      () => worker(),
+    ))
   }
 
   const unitProcedureSummariesFor = (unit: ProcedureUnitContext): {
@@ -404,7 +472,7 @@
     procedureRunSummariesForScope(runs, procedureScopeFor(unit), runDocuments)
 
   const statusForUnit = (unit: ProcedureUnitContext): PackObjectStatusPresentation =>
-    unit.status ?? (unit.plantId === plantId ? displayUnitStatus : {
+    unit.status ?? (unit.plantId === activeUnitPlantId ? displayUnitStatus : {
       tone: 'idle',
       label: 'Unit status unavailable',
       indicator: { shape: 'dot' },
@@ -492,6 +560,7 @@
 
   const loadCatalogAndRuns = async (refresh = false): Promise<void> => {
     try {
+      backgroundPrefetchGeneration += 1
       loading = true
       refreshing = refresh
       error = null
@@ -503,8 +572,8 @@
         readProcedureRuns(simulationRunId),
       ])
       setLoadStage('source', 'done', `${nextCatalog.procedures.length} procedures available`)
-      const nextScopedRuns = scopedProcedureRuns(nextRuns.runs)
       catalog = nextCatalog
+      const nextScopedRuns = scopedProcedureRuns(nextRuns.runs)
       runs = nextScopedRuns
       setLoadStage('runs', 'done', `${nextScopedRuns.length} tracked runs`)
       selectedProcedureId = selectedProcedureId ?? initialProcedureId ?? nextCatalog.procedures[0]?.procedureId ?? null
@@ -513,6 +582,7 @@
           ensureRunDocuments(nextScopedRuns),
           loadProcedure(selectedProcedureId, false),
         ])
+        prefetchRemainingProcedures(nextCatalog)
       } else {
         await ensureRunDocuments(nextScopedRuns)
         setLoadStage('document', 'done', document ? `${document.procedureId} already loaded` : 'No procedure selected')
@@ -526,6 +596,7 @@
     } finally {
       loading = false
       refreshing = false
+      if (document) await restoreProcedurePosition(document, currentScope)
     }
   }
 
@@ -546,33 +617,40 @@
       readonly sourceId?: string
       readonly sourceRevision?: string
       readonly sourcePath?: string
+      readonly rememberCurrentPosition?: boolean
     } = {},
   ): Promise<void> => {
     const requestId = ++latestProcedureLoadRequest
+    const targetUnit = currentUnitContext
+    const targetScope = procedureScopeFor(targetUnit)
     try {
+      if (sourceConfig.rememberCurrentPosition !== false) rememberCurrentProcedureScroll()
       error = null
       selectedProcedureId = procedureId
-      if (showSelectionLoading) loadingProcedureId = procedureId
       setLoadStage('document', 'running', procedureId)
       const currentRun = procedureRunFor(runs, {
         sourceId: sourceConfig.sourceId ?? catalog?.source.sourceId,
         procedureId: procedureId as ProcedureId,
-        scope: currentScope,
+        scope: targetScope,
       })
-      const nextDocument = await readProcedureDocument(simulationRunId, procedureId, {
+      const resolvedSourceConfig = {
         sourceId: sourceConfig.sourceId ?? currentRun?.sourceId ?? catalog?.source.sourceId,
         sourceRevision: sourceConfig.sourceRevision ?? currentRun?.sourceRevision,
         sourcePath: sourceConfig.sourcePath ?? currentRun?.sourcePath,
-      })
+      }
+      if (showSelectionLoading && !procedureDocumentCached(procedureId as ProcedureId, resolvedSourceConfig)) {
+        loadingProcedureId = procedureId
+      }
+      const nextDocument = await readAndRememberProcedureDocument(procedureId as ProcedureId, resolvedSourceConfig)
       if (requestId !== latestProcedureLoadRequest) return
       document = nextDocument
-      rememberProcedureDocument(nextDocument)
       loadingProcedureId = null
       setLoadStage('document', 'done', `${nextDocument.steps.length} steps`)
+      await restoreProcedurePosition(nextDocument, targetScope, requestId)
       const loadTagValidation = async (): Promise<ReadonlyMap<string, ProcedureTagValidation>> => {
         try {
           setLoadStage('tags', 'running', `${nextDocument.tags.length} tags`)
-          const nextTagValidation = await validateProcedureTags(simulationRunId, plantId, nextDocument.tags)
+          const nextTagValidation = await validateProcedureTags(simulationRunId, targetUnit.plantId, nextDocument.tags)
           const missingCount = [...nextTagValidation.values()].filter(validation => validation.status === 'missing').length
           setLoadStage('tags', 'done', missingCount === 0
             ? `${nextDocument.tags.length} tags resolved`
@@ -586,7 +664,7 @@
       const loadCsfEvaluations = async (): Promise<ReadonlyMap<string, ProcedureCsfEvaluation>> => {
         try {
           setLoadStage('csfs', 'running', `${csfIds.length} functions`)
-          const nextCsfEvaluations = await evaluateProcedureCsfs(simulationRunId, plantId, csfIds)
+          const nextCsfEvaluations = await evaluateProcedureCsfs(simulationRunId, targetUnit.plantId, csfIds)
           setLoadStage('csfs', 'done', `${nextCsfEvaluations.size} functions evaluated`)
           return nextCsfEvaluations
         } catch (err) {
@@ -636,32 +714,68 @@
     }
   }
 
-  const procedureStepElementId = (stepId: string): string =>
-    `procedure-step-${stepId}`
+  const procedurePositionKey = (
+    nextDocument: ProcedureDocument,
+    scope: ProcedureRunScope,
+  ): string =>
+    `${scope.plantId}:${scope.targetObjectId ?? ''}:${documentKeyFor(nextDocument)}`
 
-  const scrollToProcedureStep = (stepId: string): void => {
+  const rememberCurrentProcedureScroll = (): void => {
+    if (!document || !procedureDocumentBodyElement) return
+    procedureScrollPositions.set(
+      procedurePositionKey(document, currentScope),
+      procedureDocumentBodyElement.scrollTop,
+    )
+  }
+
+  const scrollToProcedureStep = (
+    stepId: string,
+    behavior: ScrollBehavior = 'smooth',
+  ): void => {
     window.requestAnimationFrame(() => {
-      window.document.getElementById(procedureStepElementId(stepId))?.scrollIntoView({
+      const stepElement = [...(procedureDocumentBodyElement?.querySelectorAll<HTMLElement>('[data-procedure-step-id]') ?? [])]
+        .find(element => element.dataset.procedureStepId === stepId)
+      stepElement?.scrollIntoView({
         block: 'start',
-        behavior: 'smooth',
+        behavior,
       })
     })
   }
 
-  const openProcedureRunSummary = async (summary: ProcedureRunSummary, unit: ProcedureUnitContext): Promise<void> => {
-    if (unit.plantId !== plantId) {
-      showProcedureToast(`Open ${unit.label}'s procedure system to navigate to ${procedureRunSummaryText(summary)}.`)
+  const restoreProcedurePosition = async (
+    nextDocument: ProcedureDocument,
+    scope: ProcedureRunScope,
+    requestId = latestProcedureLoadRequest,
+  ): Promise<void> => {
+    await tick()
+    if (requestId !== latestProcedureLoadRequest || !procedureDocumentBodyElement) return
+    const run = procedureRunFor(runs, {
+      sourceId: nextDocument.source.sourceId,
+      procedureId: nextDocument.procedureId,
+      scope,
+    })
+    const sharedStep = run ? procedureCurrentStep(run, nextDocument) : null
+    if (sharedStep) {
+      scrollToProcedureStep(sharedStep.step.id, 'auto')
       return
     }
+    procedureDocumentBodyElement.scrollTop = procedureScrollPositions.get(
+      procedurePositionKey(nextDocument, scope),
+    ) ?? 0
+  }
+
+  const openProcedureRunSummary = async (summary: ProcedureRunSummary, unit: ProcedureUnitContext): Promise<void> => {
     try {
+      rememberCurrentProcedureScroll()
+      activeUnitPlantId = unit.plantId
+      if (unit.targetObjectId !== undefined) selectUnit?.(unit.targetObjectId)
+      await tick()
       await loadProcedure(summary.procedureId, true, {
         sourceId: summary.run.sourceId,
         sourceRevision: summary.run.sourceRevision,
         sourcePath: summary.run.sourcePath,
+        rememberCurrentPosition: false,
       })
-      const nextDocument = runDocuments.get(procedureRunDocumentKey(summary.run))
-      const currentStep = procedureCurrentStep(summary.run, nextDocument)
-      if (currentStep) scrollToProcedureStep(currentStep.step.id)
     } catch (err) {
       error = errorMessage(err)
     }
@@ -673,7 +787,7 @@
     appliedInitialNavigationRevision = initialNavigationRevision
     try {
       if (document?.procedureId !== procedureId) await loadProcedure(procedureId)
-      if (initialStepId) scrollToProcedureStep(initialStepId)
+      if (initialStepId) scrollToProcedureStep(initialStepId, 'auto')
     } catch (err) {
       error = errorMessage(err)
     }
@@ -681,7 +795,7 @@
 
   const targetDocumentForBranch = (branch: ProcedureBranch): ProcedureDocument | undefined =>
     branch.targetKind === 'procedure'
-      ? [...runDocuments.values()].find(candidate =>
+      ? [...procedureDocuments.values()].find(candidate =>
           candidate.source.sourceId === document?.source.sourceId
             && candidate.source.revision === document?.source.revision
             && candidate.procedureId === branch.target)
@@ -979,7 +1093,7 @@
     try {
       csfRefreshInFlight = true
       csfError = null
-      csfEvaluations = await evaluateProcedureCsfs(simulationRunId, plantId, csfs)
+      csfEvaluations = await evaluateProcedureCsfs(simulationRunId, currentUnitContext.plantId, csfs)
     } catch (err) {
       csfError = err instanceof Error ? err.message : String(err)
     } finally {
@@ -998,7 +1112,7 @@
       return
     }
     try {
-      hoveredTagValue = await readProcedureTagValue(simulationRunId, plantId, tag)
+      hoveredTagValue = await readProcedureTagValue(simulationRunId, currentUnitContext.plantId, tag)
     } catch (err) {
       hoveredTagError = err instanceof Error ? err.message : String(err)
     }
@@ -1072,6 +1186,13 @@
   })
 
   $effect(() => {
+    if (unitContexts.length === 0 || unitContexts.some(unit => unit.plantId === activeUnitPlantId)) return
+    activeUnitPlantId = unitContexts.find(unit => unit.plantId === plantId)?.plantId
+      ?? unitContexts[0]?.plantId
+      ?? plantId
+  })
+
+  $effect(() => {
     void applyInitialNavigation()
   })
 </script>
@@ -1126,7 +1247,7 @@
         {#each procedureUnits as unit (unit.plantId)}
           {@const unitStatusPresentation = statusForUnit(unit)}
           {@const unitSummaries = unitProcedureSummariesFor(unit)}
-          <div class="procedure-cross-unit" class:current={unit.plantId === plantId}>
+          <div class="procedure-cross-unit" class:current={unit.plantId === activeUnitPlantId}>
             <StatusIndicator tone={unitStatusPresentation.tone} label={unitStatusPresentation.label} indicator={unitStatusPresentation.indicator} />
             <span class="procedure-cross-unit-name">{unit.label}</span>
             <ProcedureRunBadges
@@ -1210,7 +1331,6 @@
                   <button
                     type="button"
                     class:active={selectedProcedureId === item.procedureId}
-                    class:loading={loadingProcedureId === item.procedureId}
                     class:run-active={runState === 'active'}
                     class:run-completed={runState === 'completed'}
                     aria-busy={loadingProcedureId === item.procedureId}
@@ -1242,7 +1362,11 @@
           {/if}
         </button>
 
-        <main class="procedure-document" class:completed-run={selectedProcedureRun?.status === 'completed'}>
+        <main
+          class="procedure-document"
+          class:completed-run={selectedProcedureRun?.status === 'completed'}
+          aria-busy={loadingProcedureId !== null}
+        >
           {#if document}
           <div class="procedure-document-toolbar">
             <div class="procedure-document-title">
@@ -1281,12 +1405,16 @@
             </div>
           </div>
 
-          <div class="procedure-document-body">
+          <div
+            class="procedure-document-body"
+            bind:this={procedureDocumentBodyElement}
+            onscroll={rememberCurrentProcedureScroll}
+          >
             <div class="procedure-steps">
               {#each document.steps as step (step.id)}
                 {@const state = stepStates.get(step.id)}
                 {@const machineStatus = machineStatusFor(step)}
-                <article id={procedureStepElementId(step.id)} class="procedure-step" class:complete={state?.assessment === 'complete'} class:failed={state?.assessment === 'failed'}>
+                <article data-procedure-step-id={step.id} class="procedure-step" class:complete={state?.assessment === 'complete'} class:failed={state?.assessment === 'failed'}>
                   <div class="procedure-step-main">
                     <button
                       type="button"
@@ -1363,6 +1491,12 @@
               {/each}
             </div>
           </div>
+          {#if loadingProcedureId !== null}
+            <div class="procedure-document-loading" role="status" aria-live="polite" aria-label="Loading procedure {loadingProcedureId}">
+              <span class="procedure-document-spinner" aria-hidden="true"></span>
+              <strong>Loading {loadingProcedureId}</strong>
+            </div>
+          {/if}
         {:else}
           <div class="procedure-loading">No procedure selected.</div>
         {/if}

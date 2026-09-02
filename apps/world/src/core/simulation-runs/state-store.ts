@@ -44,6 +44,13 @@ export const createSimulationRunStateStore = (): SimulationRunStateStore => {
     }
     if (event.type === 'object.deleted') {
       objects.delete(event.objectId)
+      if (procedures) {
+        procedures = {
+          runs: procedures.runs.filter(run =>
+            run.scope.targetObjectId !== event.objectId
+              && run.scope.plantId !== String(event.objectId)),
+        }
+      }
       return
     }
     if (event.type === 'telemetry.sampled') {

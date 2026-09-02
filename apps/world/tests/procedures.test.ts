@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, SimulationRunEvent, SimulationRunId, EventId, IsoTimestamp, ProcedureDocument } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, SimulationRunEvent, SimulationRunId, EventId, IsoTimestamp, ObjectId, ProcedureDocument } from '../src/core/model/index.ts'
 import { nowIso } from '../src/core/model/index.ts'
 import { createSimulationRunStateStore } from '../src/core/simulation-runs/state-store.ts'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
@@ -279,5 +279,17 @@ describe('procedure system', () => {
     store.apply(reset[0] as SimulationRunEvent)
 
     expect(store.snapshot().procedures?.runs.map(run => run.scope.plantId)).toEqual(['halden-unit-b'])
+
+    store.apply({
+      id: 'event:unit-b-deleted' as EventId,
+      simulationRunId,
+      seq: ++seq,
+      at,
+      provenance: { source: 'operator' },
+      type: 'object.deleted',
+      objectId: unitBScope.plantId as ObjectId,
+    })
+
+    expect(store.snapshot().procedures?.runs).toEqual([])
   })
 })

@@ -2954,31 +2954,6 @@ body.rail-resizing {
   box-shadow: inset 3px 0 0 #2563eb;
 }
 
-@keyframes procedure-selection-loading {
-  0%, 100% {
-    border-color: #2563eb;
-    box-shadow: inset 3px 0 0 #2563eb, 0 0 0 0 rgba(37, 99, 235, 0);
-  }
-  50% {
-    border-color: #93c5fd;
-    box-shadow: inset 3px 0 0 #93c5fd, 0 0 0 3px rgba(37, 99, 235, 0.1);
-  }
-}
-
-.procedure-list button.loading,
-.procedure-list button.run-active.loading,
-.procedure-list button.run-completed.loading {
-  animation: procedure-selection-loading 1.8s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .procedure-list button.loading,
-  .procedure-list button.run-active.loading,
-  .procedure-list button.run-completed.loading {
-    animation: none;
-  }
-}
-
 .procedure-list button.run-active {
   border-color: #bbf7d0;
   color: #166534;
@@ -3037,11 +3012,47 @@ body.rail-resizing {
 }
 
 .procedure-document {
+  position: relative;
   min-height: 0;
   display: grid;
   grid-template-rows: auto 1fr;
   overflow: hidden;
   background: #f8fafc;
+}
+
+.procedure-document-loading {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  color: #1e3a5f;
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.procedure-document-loading strong {
+  font-size: 14px;
+}
+
+.procedure-document-spinner {
+  width: 46px;
+  height: 46px;
+  border: 5px solid #bfdbfe;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: procedure-document-spin 0.9s linear infinite;
+}
+
+@keyframes procedure-document-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .procedure-document-spinner {
+    animation: none;
+  }
 }
 
 .procedure-document-toolbar {
