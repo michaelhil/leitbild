@@ -69,14 +69,17 @@ describe('Svelte lifecycle policy', () => {
 
   test('process display loader stays independent from live object telemetry and window geometry', () => {
     const source = readFileSync(join(uiRoot, 'process-display', 'ProcessDisplayModal.svelte'), 'utf8')
-    const loadEffectStart = source.lastIndexOf('$effect(() => {')
-    const loadEffect = source.slice(loadEffectStart, source.indexOf('</script>', loadEffectStart))
+    const mountStart = source.indexOf('runOnMount(() => {')
+    const mount = source.slice(mountStart, source.indexOf('</script>', mountStart))
 
-    expect(loadEffect).toContain('const selectedPlantId = processDisplayPlantId')
-    expect(loadEffect).toContain('untrack(() => windowBounds)')
-    expect(loadEffect).not.toContain('selectedObject = object')
-    expect(loadEffect).not.toContain('plantIdFor(object)')
-    expect(loadEffect).not.toContain('?? windowBounds')
+    // Startup is deliberately non-reactive. Live telemetry and dragging must
+    // never restart discovery, blank the renderer, or install another poller.
+    expect(source).not.toContain('$effect(')
+    expect(source).toContain('untrack(() => plantIdFor(object))')
+    expect(source).toContain('untrack(() => simulationRunId)')
+    expect(mount).toContain('void loadDisplay()')
+    expect(mount).toContain('disposed = true')
+    expect(mount).toContain('session.close()')
   })
 
   test('floating window drag guards ignore icon clicks inside buttons', () => {
