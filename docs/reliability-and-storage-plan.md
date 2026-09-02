@@ -1,20 +1,26 @@
 # Reliability and bounded storage implementation
 
-Status: in progress. Source audit: 2 September 2026, `5f7d4ab2`.
+Status: implementation and standalone/combined automated verification complete; production activation pending. Source audit: 2 September 2026, `5f7d4ab2`.
+
+Operator decision: no backups exist and the owner explicitly declined setup. No backup work is planned; potential permanent data loss remains accepted, not a deployment blocker.
 
 ## Delivery stages
 
-- [ ] Serialize Run and Workspace lifecycle; own pending startup resources; protect requests and autonomous work; bound idle caches.
-- [ ] Serialize Agents snapshots and final flush; quiesce producers before shutdown; publish one committed snapshot generation with a single retry budget.
-- [ ] Separate electrical provider availability from physical connection state; preserve connections through pauses; make terminal runtime health authoritative.
-- [ ] Balance the reference Plant's initial thermal, fluid and electrical operating point against the actual equations and support all configured loop counts without clamping output.
-- [ ] Bound historian capture and storage, expose honest query/truncation/retention metadata, and validate series semantics.
-- [ ] Bound Module requests and preserve errors; reject unsupported keyed retries; keep metadata discovery lazy and read Run context from pinned artifacts.
-- [ ] Permit incomplete local scenario edits while retaining strict Save/Start validation.
-- [ ] Audit other persistent growth, implement scoped safeguards, document backup coverage and a restore procedure.
+- [x] Serialize Run and Workspace lifecycle; own pending startup resources; protect requests and autonomous work; bound idle caches.
+- [x] Serialize Agents snapshots and final flush; quiesce producers before shutdown; publish one committed snapshot generation with a single retry budget.
+- [x] Separate electrical provider availability from physical connection state; preserve connections through pauses; make terminal runtime health authoritative.
+- [x] Balance the reference Plant's initial thermal, fluid and electrical operating point against the actual equations and support all configured loop counts without clamping output.
+- [x] Bound historian capture and storage, expose honest query/truncation/retention metadata, and validate series semantics.
+- [x] Bound Module requests and preserve errors; reject unsupported keyed retries; keep metadata discovery lazy and read Run context from pinned artifacts.
+- [x] Permit incomplete local scenario edits while retaining strict Save/Start validation.
+- [x] Audit other persistent growth, implement scoped safeguards, document the owner's no-backup decision and a possible future restore procedure.
 - [ ] Run regression, full-module, combined, production and UI verification; commit logical stages and deploy.
 
 ## Historian design
+
+Detailed delivery boundary, measurements and follow-on stages: [Historian and storage management](./historian-and-storage.md). The Plant's model limits and changed combined-grid baseline are documented in [Reference PWR operating point](../apps/world/docs/pwr-operating-point.md).
+
+Lifecycle limits: World admits at most 64 Workspace containers per registry and keeps at most 32 compiled revisions per container. It rejects excess admission instead of evicting a container whose definition queue a caller may still own. Agents retains its configurable 128-runtime limit and does not evict autonomous work to make room. World requests hold scoped leases; the discoverable Background Execution command keeps an unloaded-by-idle Run from disappearing, but is deliberately not an auto-restart scheduler or a command to resume its clock.
 
 Keep one SQLite historian per Run, owned by World. A historian is optional observation history, not restart state, a second event journal, or an external database service. Keep the same typed sample/descriptor boundary usable by any Pack; a future Agents historian can adopt equivalent semantics without sharing a runtime.
 
@@ -43,3 +49,7 @@ Inventory Run journals/snapshots/private checkpoints, Agents messages/documents/
 - Plant equilibrium must emerge from consistent parameters and equations, not hard-coded power restoration.
 
 No compatibility aliases, hidden fallback formats, universal Pack engine, blanket recording, or automatic deletion of user-authored content.
+
+## Verification
+
+Full predeployment checks and builds passed. Automated suites: 18 Contracts, 7 Module Runtime, 1,425 Agents (2 optional soak cases skipped), 610 World, 20 Host (including command deadline semantics), and 1 full-platform integration test. The dry run also produced the immutable artifact successfully. Existing large browser chunks still produce advisory build warnings; no new framework or bundling workaround is part of this reliability pass.

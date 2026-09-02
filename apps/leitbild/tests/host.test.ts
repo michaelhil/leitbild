@@ -20,6 +20,7 @@ const createModule = (moduleId: ModuleId) => {
     failLeave: boolean
     manifestRequests: number
     invokeFailure?: { readonly status: number; readonly code: string; readonly message: string }
+    invokeDelayMs?: number
     workspaces: Set<string>
   } = { available: true, failLeave: false, manifestRequests: 0, workspaces: new Set<string>() }
   const server = Bun.serve({
@@ -42,6 +43,7 @@ const createModule = (moduleId: ModuleId) => {
           ui: { workspace: `/workspaces/{workspaceId}/${moduleId}` },
         })
       }
+      if (url.pathname.endsWith('/invoke') && state.invokeDelayMs) await Bun.sleep(state.invokeDelayMs)
       const root = url.pathname.match(new RegExp(`^/internal/${moduleId}/workspaces/([^/]+)$`))
       if (root && request.method === 'PUT') {
         state.workspaces.add(decodeURIComponent(root[1] ?? ''))
@@ -121,6 +123,24 @@ const createFixture = () => {
 }
 
 describe('Leitbild Workspace Host', () => {
+  test('a Module command deadline reports unknown outcome rather than promising a safe retry', async () => {
+    const { modules, host, store } = createFixture()
+    try {
+      const workspace = await host.create({ name: null })
+      const gateway = createModuleGateway({ registrations: modules.map(item => item.registration), requestTimeoutMs: 50 })
+      const world = modules.find(item => item.registration.moduleId === 'world')!
+      await gateway.resources(world.registration.moduleId, workspace.id)
+      world.state.invokeDelayMs = 200
+      const result = await gateway.invoke(world.registration.moduleId, {
+        workspaceId: workspace.id,
+        capabilityId: capabilityIdSchema.parse('world.scenario.start'),
+        definition: { workspaceId: workspace.id, moduleId: world.registration.moduleId, type: 'world.scenario', id: 'test-scenario', revisionId: 'revision-0123456789abcdef0123456789abcdef' } as never,
+        input: {},
+        access: accessContextSchema.parse({ workspaceId: workspace.id, requestId: newRequestId(), actor: { kind: 'ai', id: 'timeout-test' } }),
+      })
+      expect(result).toMatchObject({ ok: false, failure: { code: 'module_outcome_unknown', status: 504, retryable: false } })
+    } finally { store.close() }
+  })
   test('provisions every core Module and owns the complete lifecycle', async () => {
     const { modules, host, store } = createFixture()
     const workspace = await host.create({ name: null })
