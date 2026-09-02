@@ -180,6 +180,9 @@ const createRun = async (
 const runPath = (id: SimulationRunId, suffix = ''): string =>
   `/simulation-runs/${encodeURIComponent(id)}${suffix}`
 
+const capabilityPath = (id: SimulationRunId, capabilityId: string): string =>
+  runPath(id, `/capabilities/${encodeURIComponent(capabilityId)}/invoke`)
+
 const closeAll = async (registry: SimulationRunRegistry): Promise<void> => {
   for (const runtime of registry.list()) await registry.close(runtime.id)
 }
@@ -223,7 +226,7 @@ describe('Simulation Run API', () => {
         readonly scenarioId: string
         readonly activePackIds: readonly string[]
         readonly runtimes: ReadonlyArray<{ readonly id: string; readonly packId: string; readonly clock: string }>
-        readonly operations: ReadonlyArray<{ readonly id: string; readonly type: string }>
+        readonly capabilities: ReadonlyArray<{ readonly id: string; readonly kind: string }>
       }>(registry, runPath(created.id, '/capabilities'))
       expect(capabilities.body).toMatchObject({
         simulationRunId: created.id,
@@ -231,7 +234,7 @@ describe('Simulation Run API', () => {
         activePackIds: ['ambulance', 'traffic', 'weather'],
       })
       expect(capabilities.body.runtimes).toContainEqual({ id: ambulanceSimRuntimeId, packId: 'ambulance', clock: 'simulation' })
-      expect(capabilities.body.operations.some(operation => operation.type === 'command' && operation.id === setDestinationCommandKind)).toBe(true)
+      expect(capabilities.body.capabilities.some(capability => capability.kind === 'command' && capability.id === setDestinationCommandKind)).toBe(true)
 
       const missing = await callRoute<{ readonly error: { readonly code: string } }>(
         registry,
@@ -254,33 +257,31 @@ describe('Simulation Run API', () => {
     expect(invalidId.body.error.code).toBe('invalid_request')
   })
 
-  test('routes generic Pack queries through the run-pinned runtime set', async () => {
+  test('invokes typed Pack queries through the run-pinned Capability set', async () => {
     const registry = await createTestRegistry()
     try {
       const created = await createRun(registry)
       const weather = await callRoute<{
-        readonly response: { readonly ok: boolean; readonly result?: { readonly state?: unknown } }
-      }>(registry, runPath(created.id, '/queries'), {
+        readonly kind: 'query'; readonly result: { readonly state?: unknown }
+      }>(registry, capabilityPath(created.id, 'world.weather.sample-at-point'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          packId: 'weather',
-          kind: 'weather.sampleAtPoint',
-          payload: { point: geoPointFromLonLat(10.7522, 59.9139) },
+          input: { point: geoPointFromLonLat(10.7522, 59.9139) },
         }),
       })
       expect(weather.status).toBe(200)
-      expect(weather.body.response.ok).toBe(true)
-      expect(weather.body.response.result?.state).toBeTruthy()
+      expect(weather.body.kind).toBe('query')
+      expect(weather.body.result.state).toBeTruthy()
 
       const ambulance = await callRoute<{
-        readonly response: { readonly ok: boolean; readonly result?: { readonly ambulances?: readonly unknown[] } }
-      }>(registry, runPath(created.id, '/queries'), {
+        readonly kind: 'query'; readonly result: { readonly ambulances?: readonly unknown[] }
+      }>(registry, capabilityPath(created.id, 'world.ambulance.dispatch-state'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ packId: 'ambulance', kind: 'ambulance.dispatchState', payload: {} }),
+        body: JSON.stringify({ input: {} }),
       })
-      expect(ambulance.body.response.result?.ambulances?.length).toBeGreaterThan(0)
+      expect(ambulance.body.result.ambulances?.length).toBeGreaterThan(0)
     } finally {
       await closeAll(registry)
     }
@@ -361,13 +362,11 @@ describe('Simulation Run API', () => {
       const unsubscribe = runtime.subscribe(notification => notifications.push([...notification.events]))
       const facility = created.snapshot.objects.find(object => object.kind === 'facility')
       if (!facility) throw new Error('expected facility')
-      await callRoute(registry, runPath(created.id, '/commands'), {
+      await callRoute(registry, capabilityPath(created.id, deleteObjectCommandKind), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          kind: deleteObjectCommandKind,
-          targetObjectIds: [facility.id],
-          payload: { objectId: facility.id },
+          input: { objectId: facility.id },
         }),
       })
       const previousSeq = runtime.snapshot().seq
@@ -413,31 +412,43 @@ describe('Simulation Run API', () => {
     expect(await registry.listKnown()).toEqual([])
   })
 
-  test('records attributed commands and interaction effects in run-scoped events', async () => {
+  test('records access-context Capability commands and interaction effects in run-scoped events', async () => {
     const registry = await createTestRegistry()
     try {
       const created = await createRun(registry)
       const ambulance = created.snapshot.objects.find(object => object.kind === 'mobile_entity')
       const incident = created.snapshot.objects.find(object => object.kind === 'incident')
       if (!ambulance || !incident) throw new Error('expected ambulance and incident')
+      const idempotencyKey = `api-attribution-${crypto.randomUUID()}`
 
       const command = await callRoute<{ readonly result: { readonly ok: boolean } }>(
         registry,
-        runPath(created.id, '/commands'),
+        capabilityPath(created.id, setDestinationCommandKind),
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            actorId: 'actor:test-api-operator',
-            clientId: 'client:test-map',
-            idempotencyKey: `api-attribution-${crypto.randomUUID()}`,
-            kind: setDestinationCommandKind,
-            targetObjectIds: [ambulance.id, incident.id],
-            payload: { ambulanceId: ambulance.id, destinationId: incident.id },
+            idempotencyKey,
+            input: { ambulanceId: ambulance.id, destinationId: incident.id },
           }),
         },
       )
       expect(command.body.result.ok).toBe(true)
+
+      const conflict = await callRoute<{ readonly error: { readonly code: string } }>(
+        registry,
+        capabilityPath(created.id, setDestinationCommandKind),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            idempotencyKey,
+            input: { ambulanceId: ambulance.id, destinationId: ambulance.id },
+          }),
+        },
+      )
+      expect(conflict.status).toBe(409)
+      expect(conflict.body.error.code).toBe('idempotency_conflict')
 
       const signal = await callRoute<{ readonly signal: { readonly type: string } }>(
         registry,
@@ -464,10 +475,8 @@ describe('Simulation Run API', () => {
         }>
       }>(registry, runPath(created.id, '/events'))
       expect(events.body.events.every(event => event.simulationRunId === created.id)).toBe(true)
-      expect(events.body.events.find(event => event.type === 'command.issued')?.command).toMatchObject({
-        actorId: 'actor:test-api-operator',
-        clientId: 'client:test-map',
-      })
+      expect(events.body.events.find(event => event.type === 'command.issued')?.command?.actorId)
+        .toBe('actor:operator')
       expect(events.body.events.some(event => event.type === 'interaction.signal.received')).toBe(true)
       expect(events.body.events.some(event => event.type === 'notification.emitted')).toBe(true)
     } finally {
@@ -475,7 +484,7 @@ describe('Simulation Run API', () => {
     }
   })
 
-  test('exposes procedure sources and synchronizes procedure run state through commands', async () => {
+  test('exposes procedure sources and synchronizes procedure state through Capabilities', async () => {
     const registry = await createTestRegistry({ procedureSourceService: createProcedureSourceService() })
     try {
       const created = await createRun(registry)
@@ -497,13 +506,11 @@ describe('Simulation Run API', () => {
       )
       expect(document.body.procedure.steps.map(step => step.id)).toEqual(['verify-reactor-trip'])
 
-      await callRoute(registry, runPath(created.id, '/commands'), {
+      await callRoute(registry, capabilityPath(created.id, 'world.procedure.run.start'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          kind: 'procedure.run.start',
-          targetObjectIds: [],
-          payload: {
+          input: {
             sourceId: 'pwr-ops',
             procedureId: 'E-0',
             scope: {

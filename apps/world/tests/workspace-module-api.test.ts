@@ -106,6 +106,24 @@ describe('World Module API', () => {
     expect(described.body?.result.packs.find(pack => pack.id === 'aviation')?.runtimes.length).toBeGreaterThan(1)
     expect(described.body?.result.packs.find(pack => pack.id === 'process-plant')?.configSchema).toBeTruthy()
 
+    const previewSource = builtinScenarioSources.find(source => source.id === 'halden-four-unit-grid')!
+    const previewId = capabilityIdSchema.parse('world.scenario.preview')
+    const previewed = await call<{ result: { assets: Array<{ id: string; electricalPorts: Array<{ role: string }> }>; connections: unknown[] } }>(
+      registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${previewId}/invoke`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, capabilityId: previewId, input: { source: previewSource }, access }),
+      },
+    )
+    expect(previewed.status).toBe(200)
+    expect(previewed.body?.result.assets.filter(asset => asset.electricalPorts.length > 0)).toHaveLength(5)
+    const electricalRoles = previewed.body?.result.assets.flatMap(asset => asset.electricalPorts.map(port => port.role)) ?? []
+    expect(electricalRoles.filter(role => role === 'system')).toHaveLength(4)
+    expect(electricalRoles.filter(role => role === 'network')).toHaveLength(4)
+    expect(previewed.body?.result.connections).toHaveLength(4)
+
     const source = builtinScenarioSources.find(source => source.id === 'oslo-ambulance')!
     const definition = { ...source, id: 'custom-authoring-test', title: 'Custom authoring test' }
     const createId = capabilityIdSchema.parse('world.scenario.create')
@@ -171,9 +189,12 @@ describe('World Module API', () => {
     expect((capabilities.body as { capabilities: Array<{ id: string }> }).capabilities.map(item => item.id)).toContain(
       'world.simulation-run.delete',
     )
+    expect((capabilities.body as { capabilities: Array<{ id: string }> }).capabilities.map(item => item.id)).toContain(
+      'world.object.delete',
+    )
     const definitions = await call(registry, `/internal/workspaces/${workspaceId}/definitions`)
     const parsedDefinitions = moduleDefinitionCollectionSchema.parse(definitions.body)
-    const scenario = parsedDefinitions.definitions[0]!
+    const scenario = parsedDefinitions.definitions.find(definition => definition.ref.id === 'oslo-ambulance')!
     expect(String(scenario.inspectionCapabilityId)).toBe('world.scenario.inspect')
 
     const access = accessContextSchema.parse({
@@ -250,10 +271,10 @@ describe('World Module API', () => {
     )
     const parsedRunInspection = inspectionViewSchema.parse(runInspection.body?.result)
     expect(parsedRunInspection.sections.map(section => section.id)).toContain('live-assets')
-    expect(parsedRunInspection.sections.map(section => section.id)).toContain('available-operations')
+    expect(parsedRunInspection.sections.map(section => section.id)).toContain('available-capabilities')
 
     const contextCapabilityId = capabilityIdSchema.parse('world.simulation-run.context')
-    const context = await call<{ result: { briefing: { title: string }; operationalObjects: unknown[]; affordances: unknown } }>(
+    const context = await call<{ result: { briefing: { title: string }; operationalObjects: Array<{ id: string }>; affordances: unknown } }>(
       registry,
       `/internal/workspaces/${workspaceId}/capabilities/${contextCapabilityId}/invoke`,
       {
@@ -271,6 +292,86 @@ describe('World Module API', () => {
     expect(context.body?.result.briefing.title).toBeTruthy()
     expect(Array.isArray(context.body?.result.operationalObjects)).toBe(true)
     expect(JSON.stringify(context.body)).not.toContain('timeline')
+
+    const packCapabilityId = capabilityIdSchema.parse('world.ambulance.dispatch-state')
+    const publishedCapabilities = moduleCapabilityCollectionSchema.parse(capabilities.body)
+    const contextDescriptor = publishedCapabilities.capabilities.find(capability => capability.id === contextCapabilityId)
+    expect(contextDescriptor?.outputSchema).toMatchObject({
+      type: 'object',
+      properties: {
+        subject: { type: 'object' },
+        briefing: { type: 'object' },
+        situation: { type: 'object' },
+        operationalObjects: { type: 'array' },
+        affordances: { type: 'object' },
+      },
+    })
+    const packCapability = publishedCapabilities.capabilities.find(capability => capability.id === packCapabilityId)
+    expect(packCapability).toMatchObject({ kind: 'query', scope: { kind: 'resource', resourceType: 'world.simulation-run' } })
+    expect(packCapability?.outputSchema).toMatchObject({
+      type: 'object',
+      properties: {
+        ambulances: { type: 'array' },
+        incidents: { type: 'array' },
+        hospitals: { type: 'array' },
+      },
+    })
+    const packQuery = await call<{ result: { ambulances: unknown[]; incidents: unknown[]; hospitals: unknown[] } }>(
+      registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${packCapabilityId}/invoke`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          capabilityId: packCapabilityId,
+          resource: run!.ref,
+          input: {},
+          access,
+        }),
+      },
+    )
+    expect(packQuery.status).toBe(200)
+    expect(packQuery.body?.result.ambulances.length).toBeGreaterThan(0)
+
+    const deleteObjectCapabilityId = capabilityIdSchema.parse('world.object.delete')
+    const deletedObject = await call<{ result: { ok: boolean } }>(
+      registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${deleteObjectCapabilityId}/invoke`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          capabilityId: deleteObjectCapabilityId,
+          resource: run!.ref,
+          input: { objectId: context.body!.result.operationalObjects[0]!.id },
+          access,
+        }),
+      },
+    )
+    expect(deletedObject.status).toBe(200)
+    expect(deletedObject.body?.result.ok).toBe(true)
+
+    const changesCapabilityId = capabilityIdSchema.parse('world.simulation-run.changes')
+    const changes = await call<{ result: { currentSequence: number; events: unknown[]; hasMore: boolean } }>(
+      registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${changesCapabilityId}/invoke`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          capabilityId: changesCapabilityId,
+          resource: run!.ref,
+          input: { afterSequence: 0, limit: 2 },
+          access,
+        }),
+      },
+    )
+    expect(changes.status).toBe(200)
+    expect(changes.body?.result.events.length).toBeLessThanOrEqual(2)
+    expect(changes.body?.result.currentSequence).toBeGreaterThanOrEqual(changes.body?.result.events.length ?? 0)
 
     const readCapabilityId = capabilityIdSchema.parse('world.simulation-run.read')
     const read = await call<{ result: { id: string } }>(

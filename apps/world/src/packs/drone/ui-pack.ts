@@ -18,6 +18,7 @@ import {
   type DronePackData,
 } from './model.ts'
 import { droneNativeRuntimeId } from './native/constants.ts'
+import { droneMapFeaturesQueryKind } from './query.ts'
 
 const parseDroneData = (object: OperationalObject): DronePackData | null => {
   if (object.packId !== dronePackId) return null
@@ -108,9 +109,8 @@ export const droneUiPack: WorldPack = {
     mapAreaFeatureSourcePackIds: [dronePackId],
     mapAreaFeatureQueries: (context) => context.map
       ? [{
-          packId: dronePackId,
-          kind: 'drone.mapFeatures',
-          payload: {
+          capabilityId: droneMapFeaturesQueryKind,
+          input: {
             viewport: context.map.viewport,
             zoom: context.map.zoom,
             layers: ['sensor-footprints', 'effect-ranges', 'swarm-envelopes'],

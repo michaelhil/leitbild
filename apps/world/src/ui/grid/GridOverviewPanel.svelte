@@ -2,7 +2,7 @@
   import { Activity, ListTree, X } from 'lucide-svelte'
   import type { OperationalObject, SimulationRunId } from '../../core/model/index.ts'
   import { parseElectricGridObjectData } from '../../packs/electric-grid/model.ts'
-  import { querySimulationRunPack } from '../simulation-run-client.ts'
+  import { querySimulationRunCapability } from '../simulation-run-client.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import GridAssetBrowser from './GridAssetBrowser.svelte'
 
@@ -232,14 +232,13 @@
     if (!requestedGridId) return
     const sequence = ++summarySequence
     try {
-      const body = await querySimulationRunPack(simulationRunId, {
-        packId: 'electric-grid',
-        kind: 'electric-grid.grid.summary',
-        payload: { gridId: requestedGridId },
-      })
-      if (!body.response.ok) throw new Error(body.response.reason)
+      const result = await querySimulationRunCapability<GridOverviewSummary>(
+        simulationRunId,
+        'world.electric-grid.grid.summary',
+        { gridId: requestedGridId },
+      )
       if (sequence !== summarySequence || gridId !== requestedGridId) return
-      summary = body.response.result as GridOverviewSummary
+      summary = result
       queryError = null
     } catch (error) {
       if (sequence === summarySequence && gridId === requestedGridId) {

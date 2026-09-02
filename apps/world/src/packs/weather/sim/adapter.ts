@@ -8,7 +8,7 @@ import type {
   OperationalObject,
   SimulationClockState,
 } from '../../../core/model/index.ts'
-import { geoPointFromLonLat, nowIso } from '../../../core/model/index.ts'
+import { commandResultSchema, geoPointFromLonLat, nowIso } from '../../../core/model/index.ts'
 import type {
   PackRuntimeAdapter,
   PackRuntimeConnection,
@@ -16,7 +16,7 @@ import type {
   PackRuntimeEvent,
   PackRuntimeEventHandler,
 } from '../../../simulation/protocol.ts'
-import { definePackRuntimeOperations } from '../../../simulation/operations.ts'
+import { definePackCommandCapability } from '../../../simulation/capabilities.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import {
   createWeatherSparseField,
@@ -41,7 +41,7 @@ import {
   type WeatherState,
 } from '../model.ts'
 import { createWeatherPackData } from '../scenario.ts'
-import { answerWeatherQuery, weatherQueryKinds } from '../query.ts'
+import { answerWeatherQuery, weatherQueryCapabilities } from '../query.ts'
 import { weatherSimAdapterId, weatherSimPackId, weatherSimRuntimeId } from './constants.ts'
 
 const updateIntervalMs = 5_000
@@ -251,7 +251,10 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
   version: '1.0.0',
   packId: weatherPackId,
   clock: 'simulation',
-  operations: definePackRuntimeOperations({ commands: [createWeatherAreaCommandKind], queries: weatherQueryKinds }),
+  capabilities: [
+    definePackCommandCapability({ id: createWeatherAreaCommandKind, title: 'Create weather condition', description: 'Creates a weather influence area or point observation with explicit geometry and conditions.', input: createWeatherConditionPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [], payload: createWeatherConditionPayloadSchema.parse(input) }) }),
+    ...weatherQueryCapabilities,
+  ],
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const objects = new Map<string, OperationalObject>()
     const initialObjects = (config.initialObjects ?? config.scenario?.initialObjects ?? [])

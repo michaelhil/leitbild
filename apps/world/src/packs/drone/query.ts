@@ -1,9 +1,12 @@
 import { z } from 'zod'
-import { geoJsonPolygonSchema, nowIso, type GeoJsonPoint, type IsoTimestamp, type OperationalObject } from '../../core/model/index.ts'
-import type { PackMapAreaFeature, PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
+import { geoJsonPointSchema, geoJsonPolygonSchema, isoTimestampSchema, nowIso, objectIdSchema, type GeoJsonPoint, type IsoTimestamp, type OperationalObject } from '../../core/model/index.ts'
+import { packMapAreaFeatureSchema, type PackMapAreaFeature, type PackQueryRequest, type PackQueryResponse } from '../../core/packs/protocol.ts'
+import type { SimulationCapability } from '../../simulation/protocol.ts'
+import { definePackQueryCapability } from '../../simulation/capabilities.ts'
 import {
   defaultDroneVehicleModels,
   dronePackDataSchema,
+  droneVehicleModelSchema,
   type DroneControllerBinding,
   type DroneSceneObject,
   type DroneSensorContact,
@@ -11,12 +14,12 @@ import {
 } from './model.ts'
 import { movePointByMeters } from './spatial.ts'
 
-export const droneSceneQueryKind = 'drone.scene'
-export const droneControllerBindingsQueryKind = 'drone.controllerBindings'
-export const droneVehicleModelsQueryKind = 'drone.vehicleModels'
+export const droneSceneQueryKind = 'world.drone.scene'
+export const droneControllerBindingsQueryKind = 'world.drone.controller-bindings'
+export const droneVehicleModelsQueryKind = 'world.drone.vehicle-models'
 export const droneProfilesQueryKind = droneVehicleModelsQueryKind
-export const droneMapFeaturesQueryKind = 'drone.mapFeatures'
-export const droneSensorContactsQueryKind = 'drone.sensorContacts'
+export const droneMapFeaturesQueryKind = 'world.drone.map-features'
+export const droneSensorContactsQueryKind = 'world.drone.sensor-contacts'
 
 export const droneQueryKinds = [
   droneSceneQueryKind,
@@ -33,6 +36,47 @@ const mapFeaturesPayloadSchema = z.object({
 }).strict().default({
   layers: ['sensor-footprints', 'effect-ranges', 'swarm-envelopes'],
 })
+
+const droneSceneObjectSchema = z.object({
+  id: objectIdSchema,
+  label: z.string(),
+  point: geoJsonPointSchema,
+  altitudeM: z.number().finite(),
+  headingDeg: z.number().finite(),
+  mode: z.string(),
+  health: z.string(),
+  modelId: z.string(),
+  color: z.string(),
+  link: z.string(),
+  armed: z.boolean(),
+  swarmId: z.string().optional(),
+}).strict()
+const controllerBindingSchema = z.object({
+  droneId: objectIdSchema,
+  actorId: z.string().optional(),
+  clientId: z.string().optional(),
+  inputKind: z.string().optional(),
+  label: z.string().optional(),
+  inputExpiresAt: isoTimestampSchema.optional(),
+}).strict()
+const sensorContactSchema = z.object({
+  droneId: objectIdSchema,
+  sensorId: z.string(),
+  targetId: objectIdSchema,
+  targetLabel: z.string(),
+  distanceM: z.number().finite().nonnegative(),
+  bearingDeg: z.number().finite(),
+  confidence: z.number().finite().min(0).max(1),
+  source: z.enum(['runtime', 'payload']),
+}).strict()
+
+export const droneQueryCapabilities: ReadonlyArray<SimulationCapability> = [
+  definePackQueryCapability({ id: droneSceneQueryKind, title: 'Read drone scene', description: 'Returns bounded current render and status data for active drones.', input: z.object({}).strict(), output: z.object({ drones: z.array(droneSceneObjectSchema) }).strict() }),
+  definePackQueryCapability({ id: droneControllerBindingsQueryKind, title: 'Read drone controller bindings', description: 'Returns current operator and client input bindings for active drones.', input: z.object({}).strict(), output: z.object({ bindings: z.array(controllerBindingSchema) }).strict() }),
+  definePackQueryCapability({ id: droneVehicleModelsQueryKind, title: 'List drone vehicle models', description: 'Lists the validated vehicle models available to the Drone runtime.', input: z.object({}).strict(), output: z.object({ models: z.array(droneVehicleModelSchema) }).strict() }),
+  definePackQueryCapability({ id: droneMapFeaturesQueryKind, title: 'Read drone map features', description: 'Projects current sensor, effect, and swarm envelopes into map features.', input: mapFeaturesPayloadSchema, output: z.object({ features: z.array(packMapAreaFeatureSchema) }).strict() }),
+  definePackQueryCapability({ id: droneSensorContactsQueryKind, title: 'Read drone sensor contacts', description: 'Returns current contacts reported by Drone Pack sensors.', input: z.object({}).strict(), output: z.object({ contacts: z.array(sensorContactSchema) }).strict() }),
+]
 
 const ok = (request: PackQueryRequest, result: unknown, at: IsoTimestamp): PackQueryResponse => ({
   ok: true,

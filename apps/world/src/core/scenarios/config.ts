@@ -8,7 +8,6 @@ import {
   objectContextSchema,
   objectIdSchema,
   scenarioDefinitionSchema,
-  scenarioTimelineCommandRequestSchema,
   signalIdSchema,
   scenarioRecordingSelectionSchema,
   type GeoJsonPoint,
@@ -21,7 +20,7 @@ import {
   type ScenarioTimelineCue,
   type SurfaceDefinition,
 } from '../model/index.ts'
-import type { WorldPack, PackScenarioItemSpec, PackScenarioOperationSpec, PackScenarioItemContribution } from '../packs/protocol.ts'
+import type { WorldPack, PackScenarioItemSpec, PackScenarioMutationSpec, PackScenarioItemContribution } from '../packs/protocol.ts'
 import type { RoutingAdapter } from '../../routing/protocol.ts'
 
 const lonLatSchema = z.tuple([
@@ -38,7 +37,7 @@ const scenarioItemSchema = z.object({
 
 const timelineScenarioItemSchema = scenarioItemSchema.extend({ pack: idSchema })
 
-const scenarioOperationConfigSchema = z.object({
+const scenarioMutationConfigSchema = z.object({
   pack: idSchema,
   type: z.string().min(1),
 }).passthrough()
@@ -76,7 +75,7 @@ const scenarioTimelineActionConfigSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('update_object'),
     objectId: objectIdSchema,
-    operation: scenarioOperationConfigSchema,
+    mutation: scenarioMutationConfigSchema,
   }),
   z.object({
     type: z.literal('delete_object'),
@@ -97,8 +96,9 @@ const scenarioTimelineActionConfigSchema = z.discriminatedUnion('type', [
     }).strict(),
   }),
   z.object({
-    type: z.literal('issue_command'),
-    command: scenarioTimelineCommandRequestSchema,
+    type: z.literal('invoke_capability'),
+    capabilityId: z.string().regex(/^world\.[a-z][a-z0-9-]*(?:[._-][a-z0-9-]+)+$/),
+    input: z.custom<unknown>(value => value !== undefined, 'input is required'),
   }),
 ])
 
@@ -172,6 +172,21 @@ export const scenarioSourceSchema = z.object({
     if (recordedPacks.has(selection.packId)) ctx.addIssue({ code: 'custom', path: ['recording', index, 'packId'], message: `duplicate recording selection for Pack: ${selection.packId}` })
     recordedPacks.add(selection.packId)
   })
+  const connectionIds = new Set<string>()
+  const connectedEndpoints = new Set<string>()
+  source.connections.forEach((connection, index) => {
+    if (connectionIds.has(connection.id)) {
+      ctx.addIssue({ code: 'custom', path: ['connections', index, 'id'], message: `duplicate electrical connection id: ${connection.id}` })
+    }
+    connectionIds.add(connection.id)
+    for (const [role, endpoint] of [['system', connection.system], ['network', connection.network]] as const) {
+      const key = `${endpoint.objectId}\u0000${endpoint.portId}`
+      if (connectedEndpoints.has(key)) {
+        ctx.addIssue({ code: 'custom', path: ['connections', index, role], message: `electrical port is connected more than once: ${endpoint.objectId}:${endpoint.portId}` })
+      }
+      connectedEndpoints.add(key)
+    }
+  })
 })
 
 export type ScenarioSource = z.infer<typeof scenarioSourceSchema>
@@ -193,8 +208,10 @@ const compileElectricalConnections = (
   if (!networkObject) throw new Error(`electrical connection ${spec.id} references unknown network object: ${spec.network.objectId}`)
   const systemPort = electricalPortFromObject(systemObject, spec.system.portId)
   if (!systemPort) throw new Error(`electrical connection ${spec.id} references unknown system port: ${spec.system.objectId}:${spec.system.portId}`)
+  if (systemPort.role !== 'system') throw new Error(`electrical connection ${spec.id} system endpoint is not a system port: ${spec.system.objectId}:${spec.system.portId}`)
   const networkPort = electricalPortFromObject(networkObject, spec.network.portId)
   if (!networkPort) throw new Error(`electrical connection ${spec.id} references unknown network port: ${spec.network.objectId}:${spec.network.portId}`)
+  if (networkPort.role !== 'network') throw new Error(`electrical connection ${spec.id} network endpoint is not a network port: ${spec.network.objectId}:${spec.network.portId}`)
   if (Math.abs(systemPort.nominalKv - networkPort.nominalKv) > 0.001) {
     throw new Error(`electrical connection ${spec.id} voltage mismatch: ${systemPort.nominalKv} kV and ${networkPort.nominalKv} kV`)
   }
@@ -231,6 +248,9 @@ const expandItem = async (
   },
 ): Promise<PackScenarioItemContribution> => {
   const pack = packFor(context.packs, spec.pack)
+  const itemSchema = pack.scenario?.itemSchemas[spec.type]
+  if (!itemSchema) throw new Error(`Pack ${pack.descriptor.id} does not declare Scenario item type: ${spec.type}`)
+  const parsedSpec = itemSchema.parse(spec) as PackScenarioItemSpec
   const expansionContext = {
     at: context.at,
     objects: [...context.objectMap.values()],
@@ -238,7 +258,7 @@ const expandItem = async (
     routing: context.routing,
     packConfigs: context.packConfigs,
   }
-  return await pack.scenario!.expandItem(spec, expansionContext)
+  return await pack.scenario!.expandItem(parsedSpec, expansionContext)
 }
 
 const expandTimelineAction = async (
@@ -254,7 +274,7 @@ const expandTimelineAction = async (
   if (action.type === 'show_guidance' || action.type === 'highlight_objects') {
     return action
   }
-  if (action.type === 'emit_signal' || action.type === 'issue_command') {
+  if (action.type === 'emit_signal' || action.type === 'invoke_capability') {
     return action as ScenarioTimelineAction
   }
   if (action.type === 'hide_guidance') {
@@ -280,9 +300,14 @@ const expandTimelineAction = async (
     return { type: 'upsert_object', object }
   }
   const object = context.objectMap.get(action.objectId)
-  if (!object) throw new Error(`scenario timeline operation references unknown object: ${action.objectId}`)
-  const pack = packFor(context.packs, action.operation.pack)
-  const updated = await pack.scenario!.applyOperation(action.operation as PackScenarioOperationSpec, {
+  if (!object) throw new Error(`Scenario Timeline mutation references unknown object: ${action.objectId}`)
+  const pack = packFor(context.packs, action.mutation.pack)
+  const mutationSchema = pack.scenario?.mutationSchemas?.[action.mutation.type]
+  if (!mutationSchema || !pack.scenario?.applyMutation) {
+    throw new Error(`Pack ${pack.descriptor.id} does not declare Scenario mutation type: ${action.mutation.type}`)
+  }
+  const mutation = mutationSchema.parse(action.mutation) as PackScenarioMutationSpec
+  const updated = await pack.scenario.applyMutation(mutation, {
     at: context.at,
     object,
     objects: [...context.objectMap.values()],

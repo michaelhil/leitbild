@@ -1,10 +1,9 @@
 import type { PackId, GeoJsonPoint, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
 import { geoPointFromLonLat, meters, objectIdSchema } from '../../core/model/index.ts'
-import { packField, packStatus } from '../../core/packs/presentation.ts'
-import type { WorldPack, PackObjectPresentation, PackScenarioItemSpec } from '../../core/packs/protocol.ts'
+import type { WorldPack, PackScenarioItemSpec } from '../../core/packs/protocol.ts'
 import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
 import { processPlantControlWriteCommandKind } from './commands.ts'
-import { emptyProcessPlantProjection, processPlantPackId, processPlantUnitPackDataSchema, type ProcessPlantUnitPackData } from './model.ts'
+import { emptyProcessPlantProjection, processPlantPackId, type ProcessPlantUnitPackData } from './model.ts'
 import { processPlantSimAdapterId, processPlantSimRuntimeId } from './sim/constants.ts'
 import {
   processPlantAutomationSelectionSchema,
@@ -20,14 +19,27 @@ import {
 import { processPlantRecordingProfiles } from './recording.ts'
 import { compileProcessPlant } from './plant-compiler.ts'
 import { processPlantElectricalPortDefinitions } from './electrical-ports.ts'
+import { z } from 'zod'
+import { processPlantPresentation } from './presentation.ts'
+
+const processPlantScenarioItemSchema = z.object({
+  pack: z.literal('process-plant'),
+  type: z.literal('plant'),
+  id: objectIdSchema,
+  label: z.string().min(1),
+  location: z.tuple([
+    z.number().finite().min(-180).max(180),
+    z.number().finite().min(-90).max(90),
+  ]),
+  model: processPlantModelSelectionSchema,
+  operatingPoint: processPlantOperatingPointSelectionSchema,
+  automation: processPlantAutomationSelectionSchema,
+  clusterId: z.string().min(1).optional(),
+  coolingWater: z.string().min(1).optional(),
+})
 
 const unsupported = (operation: string): never => {
   throw new Error(`process-plant pack does not support ${operation}`)
-}
-
-const parseUnitData = (object: OperationalObject): ProcessPlantUnitPackData | null => {
-  const parsed = processPlantUnitPackDataSchema.safeParse(object.packData)
-  return parsed.success ? parsed.data : null
 }
 
 const pointFromSpec = (spec: PackScenarioItemSpec): GeoJsonPoint => {
@@ -104,25 +116,6 @@ const expandPlantObject = (spec: PackScenarioItemSpec, at: IsoTimestamp): Operat
   }
 }
 
-const presentationForUnit = (object: OperationalObject, data: ProcessPlantUnitPackData): PackObjectPresentation => {
-  const projection = data.projection ?? emptyProcessPlantProjection(object.timestamps.updatedAt)
-  return {
-    categoryId: 'process-plants',
-    icon: 'plant',
-    color: projection.statusTone === 'error' ? '#c7352b' : projection.statusTone === 'working' ? '#c77d13' : '#22845d',
-    summary: projection.summary,
-    status: packStatus(projection.statusTone, projection.statusLabel),
-    fields: [
-      packField('model', 'Model', data.model.ref),
-      packField('operating-point', 'Operating point', data.operatingPoint.ref),
-      ...(data.clusterId === undefined ? [] : [packField('cluster', 'Cluster', data.clusterId)]),
-      ...(data.coolingWater === undefined ? [] : [packField('cooling-water', 'Cooling water', data.coolingWater)]),
-      ...projection.fields,
-    ],
-    noteworthyUpdates: projection.statusTone !== 'ready',
-  }
-}
-
 export const processPlantPack: WorldPack = {
   descriptor: createWorldPackDescriptor({
     id: 'process-plant', version: '1.0.0', name: 'Process Plant',
@@ -157,28 +150,14 @@ export const processPlantPack: WorldPack = {
   recording: { profiles: processPlantRecordingProfiles },
   knowledge: { wikiRefs: [{ name: 'Leitbild PWR operations wiki', url: 'https://github.com/michaelhil/leitbild/blob/main/docs/wiki/pwr-ops.md' }] },
   scenario: {
+    itemSchemas: { plant: processPlantScenarioItemSchema },
     expandItem: (spec, context) => {
       if (spec.pack !== 'process-plant') unsupported(`scenario pack ${spec.pack}`)
       if (spec.type !== 'plant') unsupported(`scenario object type ${spec.type}`)
       return { objects: [expandPlantObject(spec, context.at)] }
     },
-    applyOperation: () => unsupported('scenario operations'),
   },
-  presentation: {
-    categories: [{
-      id: 'process-plants', label: 'Process plants', emptyLabel: 'No process plants',
-      matches: (object): boolean => parseUnitData(object) !== null,
-    }],
-    presentObject: (object: OperationalObject): PackObjectPresentation => {
-      const data = parseUnitData(object)
-      if (data) return presentationForUnit(object, data)
-      return {
-        categoryId: 'unknown', icon: 'unknown', color: '#667085', summary: object.operational.status,
-        status: packStatus('idle', object.operational.status),
-        fields: [packField('warning', 'Warning', 'Object is outside the process-plant pack vocabulary')],
-      }
-    },
-  },
+  presentation: processPlantPresentation,
 }
 
 export { processPlantControlWriteCommandKind }

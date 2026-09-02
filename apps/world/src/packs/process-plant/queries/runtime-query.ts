@@ -75,8 +75,8 @@ const summaryLifecycle = (lifecycle: ProcessPlantIcLifecycleState): ProcessPlant
 })
 
 export const processPlantRuntimeQueryKinds = [
-  'process-plant.runtime.status',
-  'process-plant.transient.diagnostics',
+  'world.process-plant.runtime.status',
+  'world.process-plant.transient.diagnostics',
 ] as const
 
 export const answerProcessPlantRuntimeQuery = (config: {
@@ -85,7 +85,7 @@ export const answerProcessPlantRuntimeQuery = (config: {
   readonly at: IsoTimestamp
 }): PackQueryResponse | undefined => {
   if (!processPlantRuntimeQueryKinds.some(kind => kind === config.request.kind)) return undefined
-  if (config.request.kind === 'process-plant.runtime.status') {
+  if (config.request.kind === 'world.process-plant.runtime.status') {
     return success(config.request, {
       active: config.plants.size > 0,
       plantCount: config.plants.size,
@@ -101,7 +101,7 @@ export const answerProcessPlantRuntimeQuery = (config: {
       }),
     }, config.at)
   }
-  if (config.request.kind === 'process-plant.transient.diagnostics') {
+  if (config.request.kind === 'world.process-plant.transient.diagnostics') {
     const payload = plantQuerySchema.parse(config.request.payload)
     const plant = requirePlant(config.plants, payload.plantId)
     return success(config.request, {

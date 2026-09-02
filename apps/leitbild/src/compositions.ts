@@ -34,7 +34,7 @@ const readComposition = (fileName: string): CompositionDefinition =>
 // starts. They resolve exact current revisions before invoking Modules.
 // They are not workflows: no output references, branching, schedules, or state.
 export const COMPOSITION_CATALOG: ReadonlyArray<CompositionDefinition> = [
-  readComposition('halden-process-control-room.composition.json'),
+  readComposition('halden-integrated-control-room.composition.json'),
 ]
 
 export const getComposition = (id: string): CompositionDefinition | undefined =>

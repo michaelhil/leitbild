@@ -1,8 +1,7 @@
 import type { SimulationRunId, GeoJsonPolygon, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
-import { packMapAreaFeatureSchema, type PackMapAreaFeature, type PackQueryRequest } from '../../core/packs/protocol.ts'
+import { packMapAreaFeatureSchema, type PackMapAreaFeature, type PackMapAreaFeatureQuery } from '../../core/packs/protocol.ts'
 import type { ActivePackViews } from '../../core/packs/active-views.ts'
-import { querySimulationRunPack, type SimulationRunRequestOptions } from '../simulation-run-client.ts'
-import type { PackQueryApiResponse } from '../types.ts'
+import { querySimulationRunCapability, type SimulationRunRequestOptions } from '../simulation-run-client.ts'
 
 export interface MapAreaFeatureLoaderContext {
   readonly viewport: GeoJsonPolygon
@@ -17,11 +16,11 @@ export interface MapAreaFeatureRuntimeConfig {
   readonly simulationRunId: () => SimulationRunId | null
   readonly currentTime: () => IsoTimestamp | undefined
   readonly queryTimeoutMs?: number
-  readonly queryPack?: (
+  readonly queryCapability?: (
     simulationRunId: SimulationRunId,
-    request: PackQueryRequest,
+    request: PackMapAreaFeatureQuery,
     options?: SimulationRunRequestOptions,
-  ) => Promise<PackQueryApiResponse>
+  ) => Promise<unknown>
 }
 
 const defaultMapAreaFeatureQueryTimeoutMs = 1_500
@@ -79,16 +78,16 @@ export const createMapAreaFeatureLoader = (
     if (!simulationRunId) return syncFeatures
     const requests = pack.presentation.mapAreaFeatureQueries?.(presentationContextWithTime) ?? []
     if (requests.length === 0) return syncFeatures
-    const query = config.queryPack ?? querySimulationRunPack
+    const query = config.queryCapability ?? (async (id, request, options) =>
+      await querySimulationRunCapability(id, request.capabilityId, request.input, options))
     const timeout = createAbortSignalWithTimeout(
       context.signal,
       config.queryTimeoutMs ?? defaultMapAreaFeatureQueryTimeoutMs,
     )
     try {
       const responses = await Promise.all(requests.map(async request => {
-        const body = await query(simulationRunId, request, { signal: timeout.signal })
-        if (!body.response.ok) throw new Error(body.response.reason)
-        return mapFeaturesFromQueryResult(body.response.result)
+        const result = await query(simulationRunId, request, { signal: timeout.signal })
+        return mapFeaturesFromQueryResult(result)
       }))
       return [...syncFeatures, ...responses.flat()]
     } finally {

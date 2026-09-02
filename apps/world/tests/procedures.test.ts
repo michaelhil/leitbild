@@ -127,7 +127,7 @@ describe('procedure system', () => {
       id: 'command:procedure-start' as CommandEnvelope['id'],
       simulationRunId,
       actorId: 'actor:operator' as ActorId,
-      kind: 'procedure.run.start',
+      kind: 'world.procedure.run.start',
       targetObjectIds: [],
       payload: { sourceId: 'pwr-ops', procedureId: 'E-0', scope: unitAScope },
       issuedAt: at,
@@ -159,7 +159,7 @@ describe('procedure system', () => {
       command: {
         ...command,
         id: 'command:procedure-step' as CommandEnvelope['id'],
-        kind: 'procedure.step.update',
+        kind: 'world.procedure.step.update',
         payload: {
           runId,
           stepId: 'verify-reactor-trip',
@@ -195,7 +195,7 @@ describe('procedure system', () => {
     const baseCommand = {
       simulationRunId,
       actorId: 'actor:operator' as ActorId,
-      kind: 'procedure.run.start',
+      kind: 'world.procedure.run.start',
       targetObjectIds: [],
       issuedAt: at,
     } satisfies Omit<CommandEnvelope, 'id' | 'payload'>
@@ -253,7 +253,7 @@ describe('procedure system', () => {
       command: {
         ...baseCommand,
         id: 'command:reset-a' as CommandEnvelope['id'],
-        kind: 'procedure.run.reset',
+        kind: 'world.procedure.run.reset',
         payload: { sourceId: 'pwr-ops', procedureId: 'E-0', scope: unitAScope },
       },
       procedures: store.snapshot().procedures,

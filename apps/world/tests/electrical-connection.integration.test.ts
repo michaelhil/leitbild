@@ -33,6 +33,12 @@ describe('electrical Pack connection', () => {
     await expect(compileScenarioSource(badPort, [processPlantPack, electricGridPack], { routing: createDirectRoutingAdapter() }))
       .rejects.toThrow('unknown network port')
 
+    const reversedRoles = structuredClone(source)
+    const original = reversedRoles.connections[0]!
+    reversedRoles.connections[0] = { ...original, system: original.network, network: original.system }
+    await expect(compileScenarioSource(reversedRoles, [processPlantPack, electricGridPack], { routing: createDirectRoutingAdapter() }))
+      .rejects.toThrow('system endpoint is not a system port')
+
     const duplicated = structuredClone(source)
     duplicated.connections[1]!.system = { ...duplicated.connections[0]!.system }
     await expect(compileScenarioSource(duplicated, [processPlantPack, electricGridPack], { routing: createDirectRoutingAdapter() }))
@@ -96,14 +102,14 @@ describe('electrical Pack connection', () => {
 
       const beforeQuery = await connection.query({
         packId: 'electric-grid',
-        kind: 'electric-grid.connection-points.list',
+        kind: 'world.electric-grid.connection-points.list',
         payload: { gridId: 'grid:halden-four-unit' },
       })
       if (!beforeQuery.ok) throw new Error(beforeQuery.reason)
       const beforePoints = (beforeQuery.result as { connectionPoints: ReadonlyArray<{ connected: boolean; systemActivePowerMw: number }> }).connectionPoints
       expect(beforePoints).toHaveLength(4)
       expect(beforePoints.every(point => point.connected && point.systemActivePowerMw > 800)).toBe(true)
-      const summaryBefore = await connection.query({ packId: 'electric-grid', kind: 'electric-grid.grid.summary', payload: { gridId: 'grid:halden-four-unit' } })
+      const summaryBefore = await connection.query({ packId: 'electric-grid', kind: 'world.electric-grid.grid.summary', payload: { gridId: 'grid:halden-four-unit' } })
       if (!summaryBefore.ok) throw new Error(summaryBefore.reason)
       const projectionBefore = (summaryBefore.result as { projection: { activeAlarmCount: number; frequencyHz: number; highestBranchLoadingPercent: number; totalGenerationMw: number } }).projection
       expect(projectionBefore.activeAlarmCount).toBe(0)
@@ -127,13 +133,13 @@ describe('electrical Pack connection', () => {
       expect(electricalPortFromObject(plantAfter, 'grid-420kv')?.state?.activePowerMw).toBeLessThan(plantPortBefore!.state!.activePowerMw * 0.45)
       const afterQuery = await connection.query({
         packId: 'electric-grid',
-        kind: 'electric-grid.connection-points.list',
+        kind: 'world.electric-grid.connection-points.list',
         payload: { gridId: 'grid:halden-four-unit' },
       })
       if (!afterQuery.ok) throw new Error(afterQuery.reason)
       const afterPoints = (afterQuery.result as { connectionPoints: ReadonlyArray<{ system: { objectId: string }; systemActivePowerMw: number }> }).connectionPoints
       expect(afterPoints.find(point => point.system.objectId === 'plant:halden-1')?.systemActivePowerMw).toBeLessThan(beforePoints[0]!.systemActivePowerMw * 0.45)
-      const summaryAfter = await connection.query({ packId: 'electric-grid', kind: 'electric-grid.grid.summary', payload: { gridId: 'grid:halden-four-unit' } })
+      const summaryAfter = await connection.query({ packId: 'electric-grid', kind: 'world.electric-grid.grid.summary', payload: { gridId: 'grid:halden-four-unit' } })
       if (!summaryAfter.ok) throw new Error(summaryAfter.reason)
       const projectionAfter = (summaryAfter.result as { projection: { frequencyHz: number; totalGenerationMw: number } }).projection
       expect(projectionAfter.frequencyHz).toBeLessThan(projectionBefore.frequencyHz - 0.1)
@@ -165,7 +171,7 @@ describe('electrical Pack connection', () => {
     try {
       const before = await connection.query({
         packId: 'electric-grid',
-        kind: 'electric-grid.connection-points.list',
+        kind: 'world.electric-grid.connection-points.list',
         payload: { gridId: 'grid:halden-four-unit' },
       })
       if (!before.ok) throw new Error(before.reason)
@@ -186,7 +192,7 @@ describe('electrical Pack connection', () => {
 
       const plants = await connection.query({
         packId: 'process-plant',
-        kind: 'process-plant.plants.list',
+        kind: 'world.process-plant.plants.list',
         payload: {},
       })
       if (!plants.ok) throw new Error(plants.reason)
@@ -195,7 +201,7 @@ describe('electrical Pack connection', () => {
 
       const after = await connection.query({
         packId: 'electric-grid',
-        kind: 'electric-grid.connection-points.list',
+        kind: 'world.electric-grid.connection-points.list',
         payload: { gridId: 'grid:halden-four-unit' },
       })
       if (!after.ok) throw new Error(after.reason)
@@ -210,7 +216,7 @@ describe('electrical Pack connection', () => {
 
       const switchyard = await connection.query({
         packId: 'electric-grid',
-        kind: 'electric-grid.asset.get',
+        kind: 'world.electric-grid.asset.get',
         payload: { gridId: 'grid:halden-four-unit', assetId: 'bus:halden-pwr-switchyard-420' },
       })
       if (!switchyard.ok) throw new Error(switchyard.reason)

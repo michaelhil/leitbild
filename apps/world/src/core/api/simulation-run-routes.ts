@@ -1,16 +1,11 @@
 import { z } from 'zod'
-import { actorIdSchema, clientIdSchema, commandEnvelopeSchema, simulationRunIdSchema, interactionEndpointSchema, interactionSignalSchema, nowIso, objectIdSchema, procedureIdSchema, procedureSourceIdSchema, simulationClockUpdateSchema, type CommandEnvelope, type SimulationRunId, type InteractionSignal, type ScenarioDefinition } from '../model/index.ts'
+import { actorIdSchema, clientIdSchema, simulationRunIdSchema, interactionEndpointSchema, interactionSignalSchema, nowIso, objectIdSchema, procedureIdSchema, procedureSourceIdSchema, simulationClockUpdateSchema, type SimulationRunId, type InteractionSignal, type ScenarioDefinition } from '../model/index.ts'
 import type { Actor } from '../simulation-runs/actors.ts'
-import type { PackQueryRequest } from '../packs/protocol.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../simulation-runs/runtime.ts'
 import { apiError, json, readJson } from './responses.ts'
-import {
-  commandIdempotencyConfigFromEnv,
-  commandIdempotencyStoreForRuntime,
-  issueCommandWithIdempotency,
-} from './command-idempotency.ts'
 import type { AccessContext } from '@leitbild/contracts'
+import { CommandIdempotencyConflictError } from '../simulation-runs/command-idempotency.ts'
 
 const defaultOperatorActorId = actorIdSchema.parse('actor:operator')
 
@@ -19,15 +14,11 @@ export interface SimulationRunRouteConfig {
   readonly accessContext: AccessContext
 }
 
-const commandRequestSchema = z.object({
-  actorId: actorIdSchema.optional(),
-  clientId: clientIdSchema.optional(),
+export const capabilityInvocationRequestSchema = z.object({
+  input: z.custom<unknown>(value => value !== undefined, 'input is required'),
   idempotencyKey: z.string().min(1).max(256).optional(),
-  kind: z.string().min(1),
-  targetObjectIds: z.array(objectIdSchema),
-  payload: z.unknown(),
   expectedRevision: z.number().int().nonnegative().optional(),
-})
+}).strict()
 
 const signalRequestSchema = z.object({
   actorId: actorIdSchema.optional(),
@@ -43,12 +34,6 @@ const signalRequestSchema = z.object({
   ttlMs: z.number().finite().positive().optional(),
 })
 
-const packQueryRequestSchema = z.object({
-  packId: z.string().min(1),
-  kind: z.string().min(1),
-  payload: z.unknown(),
-})
-
 export const buildSimulationRunActor = (actorId: Actor['id']): Actor => ({
   id: actorId,
   label: actorId,
@@ -59,27 +44,6 @@ export const actorIdForAccessContext = (accessContext: AccessContext): Actor['id
   accessContext.actor.id === undefined
     ? defaultOperatorActorId
     : actorIdSchema.parse(`actor:${accessContext.actor.kind}:${accessContext.actor.id}`)
-
-export const buildSimulationRunCommand = (
-  simulationRunId: SimulationRunId,
-  raw: unknown,
-  defaultActorId: Actor['id'] = defaultOperatorActorId,
-): CommandEnvelope => {
-  const parsed = commandRequestSchema.parse(raw)
-  const candidate = {
-    id: `command:${crypto.randomUUID()}`,
-    simulationRunId,
-    actorId: parsed.actorId ?? defaultActorId,
-    ...(parsed.clientId === undefined ? {} : { clientId: parsed.clientId }),
-    ...(parsed.idempotencyKey === undefined ? {} : { idempotencyKey: parsed.idempotencyKey }),
-    kind: parsed.kind,
-    targetObjectIds: parsed.targetObjectIds,
-    payload: parsed.payload,
-    issuedAt: nowIso(),
-    ...(parsed.expectedRevision === undefined ? {} : { expectedRevision: parsed.expectedRevision }),
-  }
-  return commandEnvelopeSchema.parse(candidate) as CommandEnvelope
-}
 
 const buildSignal = (simulationRunId: SimulationRunId, raw: unknown, defaultActorId: Actor['id']): {
   readonly signal: InteractionSignal
@@ -104,15 +68,6 @@ const buildSignal = (simulationRunId: SimulationRunId, raw: unknown, defaultActo
     ...(parsed.ttlMs === undefined ? {} : { ttlMs: parsed.ttlMs }),
   }) as InteractionSignal
   return { signal, actor: buildSimulationRunActor(actorId) }
-}
-
-const buildPackQuery = (raw: unknown): PackQueryRequest => {
-  const parsed = packQueryRequestSchema.parse(raw)
-  return {
-    packId: parsed.packId,
-    kind: parsed.kind,
-    payload: parsed.payload,
-  }
 }
 
 const simulationRunResponse = async (
@@ -268,15 +223,29 @@ const handleSimulationRunApiInner = async (
     return json({ status: runtime.recordingStatus(), series: runtime.recordingSeries() })
   }
 
-  const queryMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/queries$/)
-  if (queryMatch && req.method === 'POST') {
-    const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(queryMatch[1] ?? ''))
+  const invocationMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/capabilities\/([^/]+)\/invoke$/)
+  if (invocationMatch && req.method === 'POST') {
+    const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(invocationMatch[1] ?? ''))
+    const capabilityId = decodeURIComponent(invocationMatch[2] ?? '')
     const runtime = config.registry.get(simulationRunId)
     if (!runtime) return apiError(404, 'simulation_run_not_found', 'simulation run not found')
-    const raw = await readJson(req)
-    const query = buildPackQuery(raw)
-    const response = await runtime.queryPack(query)
-    return json({ response }, { status: response.ok ? 200 : 400 })
+    const invocation = capabilityInvocationRequestSchema.parse(await readJson(req))
+    try {
+      const actor = buildSimulationRunActor(actorIdForAccessContext(config.accessContext))
+      const outcome = await runtime.invokeCapability(actor, {
+        capabilityId,
+        input: invocation.input,
+        ...(invocation.expectedRevision === undefined ? {} : { expectedRevision: invocation.expectedRevision }),
+        ...(invocation.idempotencyKey === undefined ? {} : { idempotencyKey: invocation.idempotencyKey }),
+      })
+      return json(outcome)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      if (error instanceof CommandIdempotencyConflictError) {
+        return apiError(error.status, error.code, reason)
+      }
+      return apiError(400, 'capability_invocation_failed', reason)
+    }
   }
 
   const procedureCatalogMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/procedures$/)
@@ -343,26 +312,6 @@ const handleSimulationRunApiInner = async (
     }
     const clock = await runtime.setClock(update)
     return json({ clock })
-  }
-
-  const commandMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/commands$/)
-  if (commandMatch && req.method === 'POST') {
-    const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(commandMatch[1] ?? ''))
-    const runtime = config.registry.get(simulationRunId)
-    if (!runtime) return apiError(404, 'simulation_run_not_found', 'simulation run not found')
-    const raw = await readJson(req)
-    const command = buildSimulationRunCommand(simulationRunId, raw, actorIdForAccessContext(config.accessContext))
-    const actor = buildSimulationRunActor(command.actorId)
-    const issued = await issueCommandWithIdempotency({
-      store: commandIdempotencyStoreForRuntime(config.registry.workspaceId, simulationRunId),
-      idempotency: commandIdempotencyConfigFromEnv(),
-      actor,
-      command,
-      issue: runtime.issueCommand,
-    })
-    if (!issued.ok) return apiError(issued.status, issued.code, issued.message)
-    const result = issued.result
-    return json({ result })
   }
 
   const signalMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/signals$/)

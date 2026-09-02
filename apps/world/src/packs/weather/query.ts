@@ -2,10 +2,14 @@ import { z } from 'zod'
 import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
 import { geoJsonLineStringSchema, geoJsonPointSchema, geoJsonPolygonSchema, nowIso, pointFromPosition, routeDistanceMeters } from '../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
+import { packMapAreaFeatureSchema } from '../../core/packs/protocol.ts'
+import type { SimulationCapability } from '../../simulation/protocol.ts'
+import { definePackQueryCapability } from '../../simulation/capabilities.ts'
 import type { WeatherSparseField } from './cell-field.ts'
 import { weatherSampleAtPointFromSparseField, weatherSparseFieldStats } from './cell-field.ts'
 import { weatherPresentationSeverityForState } from './conditions.ts'
 import { projectWeatherFieldForMap } from './projection.ts'
+import { weatherSampleSchema } from './model.ts'
 
 const weatherPointQuerySchema = z.object({
   point: geoJsonPointSchema,
@@ -29,12 +33,31 @@ const weatherMapFeaturesQuerySchema = z.object({
 })
 
 export const weatherQueryKinds = [
-  'weather.sampleAtPoint',
-  'weather.sampleAlongRoute',
-  'weather.summarizeArea',
-  'weather.mapFeatures',
-  'weather.fieldStats',
+  'world.weather.sample-at-point',
+  'world.weather.sample-along-route',
+  'world.weather.summarize-area',
+  'world.weather.map-features',
+  'world.weather.field-stats',
 ] as const
+
+const weatherSummarySchema = z.object({
+  sampleCount: z.number().int().nonnegative(),
+  severityCounts: z.record(z.string(), z.number().int().nonnegative()),
+  worstSeverity: z.string().min(1),
+}).strict()
+const weatherFieldStatsSchema = z.object({
+  cellCount: z.number().int().nonnegative(),
+  activeCellCount: z.number().int().nonnegative(),
+  truthResolution: z.number().int().nonnegative(),
+}).strict()
+
+export const weatherQueryCapabilities: ReadonlyArray<SimulationCapability> = [
+  definePackQueryCapability({ id: weatherQueryKinds[0], title: 'Sample weather at point', description: 'Returns current atmospheric and surface conditions at a geographic point.', input: weatherPointQuerySchema, output: weatherSampleSchema }),
+  definePackQueryCapability({ id: weatherQueryKinds[1], title: 'Sample weather along route', description: 'Returns bounded weather samples and a severity summary along a route.', input: weatherRouteQuerySchema, output: z.object({ samples: z.array(z.object({ point: geoJsonPointSchema, sample: weatherSampleSchema }).strict()), summary: weatherSummarySchema }).strict() }),
+  definePackQueryCapability({ id: weatherQueryKinds[2], title: 'Summarize weather area', description: 'Summarizes current weather severity across cells inside a polygon.', input: weatherAreaQuerySchema, output: z.object({ cellCount: z.number().int().nonnegative(), summary: weatherSummarySchema }).strict() }),
+  definePackQueryCapability({ id: weatherQueryKinds[3], title: 'Read weather map features', description: 'Projects current weather truth into bounded map features for a viewport.', input: weatherMapFeaturesQuerySchema, output: z.object({ features: z.array(packMapAreaFeatureSchema), metadata: weatherFieldStatsSchema }).strict() }),
+  definePackQueryCapability({ id: weatherQueryKinds[4], title: 'Read weather field statistics', description: 'Returns current sparse weather-field size and truth resolution.', input: z.object({}).strict(), output: weatherFieldStatsSchema }),
+]
 
 const success = (
   request: PackQueryRequest,
@@ -139,7 +162,7 @@ export const answerWeatherQuery = (config: {
   readonly at: IsoTimestamp
 }): PackQueryResponse => {
   try {
-    if (config.request.kind === 'weather.sampleAtPoint') {
+    if (config.request.kind === weatherQueryKinds[0]) {
       const payload = weatherPointQuerySchema.parse(config.request.payload)
       return success(config.request, weatherSampleAtPointFromSparseField({
         field: config.field,
@@ -147,7 +170,7 @@ export const answerWeatherQuery = (config: {
         at: config.at,
       }), config.at)
     }
-    if (config.request.kind === 'weather.sampleAlongRoute') {
+    if (config.request.kind === weatherQueryKinds[1]) {
       const payload = weatherRouteQuerySchema.parse(config.request.payload)
       const points = samplePointsAlongRoute(payload.route, payload.intervalM)
       const samples = points.map(point => ({
@@ -159,7 +182,7 @@ export const answerWeatherQuery = (config: {
         summary: summarizeSamples(samples.map(item => item.sample)),
       }, config.at)
     }
-    if (config.request.kind === 'weather.summarizeArea') {
+    if (config.request.kind === weatherQueryKinds[2]) {
       const payload = weatherAreaQuerySchema.parse(config.request.payload)
       const cells = [...config.field.cells.values()].filter(cell => pointInPolygon(cell.center, payload.area))
       return success(config.request, {
@@ -171,7 +194,7 @@ export const answerWeatherQuery = (config: {
         }))),
       }, config.at)
     }
-    if (config.request.kind === 'weather.mapFeatures') {
+    if (config.request.kind === weatherQueryKinds[3]) {
       const payload = weatherMapFeaturesQuerySchema.parse(config.request.payload)
       const at = (payload.at ?? config.at) as IsoTimestamp
       const features = projectWeatherFieldForMap({
@@ -191,7 +214,7 @@ export const answerWeatherQuery = (config: {
         },
       }, config.at)
     }
-    if (config.request.kind === 'weather.fieldStats') {
+    if (config.request.kind === weatherQueryKinds[4]) {
       return success(config.request, {
         ...weatherSparseFieldStats(config.field),
         truthResolution: config.field.grid.truthResolution,

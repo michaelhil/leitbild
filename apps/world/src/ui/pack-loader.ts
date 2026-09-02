@@ -9,7 +9,7 @@ const packLoaders: Record<KnownUiPackId, PackLoader> = {
   traffic: async () => (await import('../packs/traffic/pack.ts')).trafficPack,
   weather: async () => (await import('../packs/weather/pack.ts')).weatherPack,
   drone: async () => (await import('../packs/drone/ui-pack.ts')).droneUiPack,
-  'process-plant': async () => (await import('../packs/process-plant/pack.ts')).processPlantPack,
+  'process-plant': async () => (await import('../packs/process-plant/ui-pack.ts')).processPlantUiPack,
   aviation: async () => (await import('../packs/aviation/pack.ts')).aviationPack,
   'electric-grid': async () => (await import('../packs/electric-grid/ui-pack.ts')).electricGridUiPack,
 }

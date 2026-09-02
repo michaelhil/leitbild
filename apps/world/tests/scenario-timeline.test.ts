@@ -19,17 +19,17 @@ describe('scenario timeline model', () => {
       cue.actions.some(action => action.type === 'delete_object' && action.objectId === 'traffic:ring2-slowdown'))).toBe(true)
   })
 
-  test('drone scenario can issue startup flight commands through the scenario runner', () => {
+  test('drone scenario invokes discoverable startup capabilities through the scenario runner', () => {
     const droneScenario = scenarios.find(scenario => scenario.id === 'oslo-drone-operations')
     if (!droneScenario) throw new Error('missing drone scenario')
     const parsed = scenarioDefinitionSchema.parse(droneScenario)
     const commandActions = parsed.timeline?.cues.flatMap(cue =>
-      cue.actions.filter(action => action.type === 'issue_command')) ?? []
+      cue.actions.filter(action => action.type === 'invoke_capability')) ?? []
 
-    expect(commandActions.map(action => action.command.kind)).toEqual([
-      'drone.arm',
-      'drone.takeoff',
-      'drone.goto',
+    expect(commandActions.map(action => action.capabilityId)).toEqual([
+      'world.drone.arm',
+      'world.drone.takeoff',
+      'world.drone.navigate',
     ])
   })
 

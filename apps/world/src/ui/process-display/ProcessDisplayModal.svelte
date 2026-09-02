@@ -7,7 +7,7 @@
   import { processPlantActionInvokeCommandKind } from '../../packs/process-plant/command-kinds.ts'
   import type { CompiledProcessDisplay, ProcessDisplayValue } from '../../packs/process-plant/displays/index.ts'
   import { statusToneColor } from '../status-presentation.ts'
-  import { sendSimulationRunCommand } from '../simulation-run-client.ts'
+  import { invokeSimulationRunCapability } from '../simulation-run-client.ts'
   import ProcedureRunBadges from '../procedures/ProcedureRunBadges.svelte'
   import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from '../procedures/procedure-run-selectors.ts'
   import ProcessDisplayRenderer from './ProcessDisplayRenderer.svelte'
@@ -220,15 +220,15 @@
     transientRunningId = transient.id
     error = null
     try {
-      const response = await sendSimulationRunCommand(simulationRunId, {
-        kind: processPlantActionInvokeCommandKind,
-        targetObjectIds: [object.id],
-        payload: {
+      const response = await invokeSimulationRunCapability(simulationRunId, {
+        capabilityId: processPlantActionInvokeCommandKind,
+        input: {
           plantId,
           actionId: transient.id,
           parameters: transientInputs[transient.id] ?? {},
         },
       })
+      if (response.kind !== 'command') throw new Error(`${processPlantActionInvokeCommandKind} is not a command`)
       if (!response.result.ok) {
         throw new Error(response.result.reason ?? `process plant rejected ${transient.id}`)
       }

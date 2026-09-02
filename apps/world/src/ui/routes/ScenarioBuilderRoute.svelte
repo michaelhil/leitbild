@@ -31,6 +31,26 @@
     readonly title: string
   }
 
+  interface ScenarioPreview {
+    readonly scenarioId: string
+    readonly packs: ReadonlyArray<string>
+    readonly assets: ReadonlyArray<{
+      readonly id: string
+      readonly label: string
+      readonly kind: string
+      readonly packId: string
+      readonly electricalPorts: ReadonlyArray<{
+        readonly id: string
+        readonly label: string
+        readonly role: 'system' | 'network'
+        readonly nominalKv: number
+        readonly maximumExportMw: number
+        readonly maximumImportMw: number
+      }>
+    }>
+    readonly connections: ReadonlyArray<unknown>
+  }
+
   type Selection = { readonly kind: 'scenario' } | { readonly kind: 'pack'; readonly id: string } | { readonly kind: 'item'; readonly id: string }
 
   const route = parseControlSurfaceRoute(location.pathname)
@@ -51,6 +71,11 @@
   let error = $state<string | null>(null)
   let saved = $state<CreateResult | null>(null)
   let editing = $state<CreateResult['definition'] | null>(null)
+  let preview = $state<ScenarioPreview | null>(null)
+  let previewError = $state<string | null>(null)
+  let systemEndpointKey = $state('')
+  let networkEndpointKey = $state('')
+  let previewTimer: ReturnType<typeof setTimeout> | null = null
 
   const invoke = async <T,>(capabilityId: string, input: unknown, definition?: CreateResult['definition']): Promise<T> => {
     const response = await fetch(
@@ -104,6 +129,15 @@
   const activePacks = (): ReadonlyArray<AuthoringPack> => catalog?.packs.filter(pack => selectionFor(draft, pack.id) !== undefined) ?? []
   const availablePacks = (): ReadonlyArray<AuthoringPack> => catalog?.packs.filter(pack => selectionFor(draft, pack.id) === undefined) ?? []
   const allItems = () => draft.packs.flatMap(pack => pack.items.map(item => ({ packId: pack.id, item })))
+  const electricalEndpoints = () => preview?.assets.flatMap(asset => asset.electricalPorts.map(port => ({
+    key: `${asset.id}\u0000${port.id}`,
+    objectId: asset.id,
+    objectLabel: asset.label,
+    packId: asset.packId,
+    ...port,
+  }))) ?? []
+  const systemElectricalEndpoints = () => electricalEndpoints().filter(endpoint => endpoint.role === 'system')
+  const networkElectricalEndpoints = () => electricalEndpoints().filter(endpoint => endpoint.role === 'network')
   const selectedEntry = () => selection.kind === 'item' ? allItems().find(entry => entry.item.id === selection.id) : undefined
   const selectedItem = () => selectedEntry()?.item
   const recordingSelectionFor = (packId: string) => draft.recording.find(selection => selection.packId === packId)
@@ -154,6 +188,9 @@
     if (!confirm(`Remove ${pack.title} and all of its items from this scenario?`)) return
     const removedItems = selectionFor(draft, pack.id)?.items ?? []
     draft.packs = draft.packs.filter(selection => selection.id !== pack.id)
+    const removedIds = new Set(removedItems.map(item => item.id))
+    draft.connections = draft.connections.filter(connection =>
+      !removedIds.has(connection.system.objectId) && !removedIds.has(connection.network.objectId))
     draft.recording = draft.recording.filter(selection => selection.packId !== pack.id)
     updateRailSections()
     draft = { ...draft }
@@ -215,6 +252,8 @@
       }
     }
     pack.items = pack.items.filter(candidate => candidate.id !== item.id)
+    draft.connections = draft.connections.filter(connection =>
+      connection.system.objectId !== item.id && connection.network.objectId !== item.id)
     draft = { ...draft }
     selection = { kind: 'pack', id: entry.packId }
     if (placementItemId === item.id) placementItemId = null
@@ -244,6 +283,43 @@
     draft = { ...draft }
   }
 
+  const addElectricalConnection = (): void => {
+    const system = electricalEndpoints().find(endpoint => endpoint.key === systemEndpointKey)
+    const network = electricalEndpoints().find(endpoint => endpoint.key === networkEndpointKey)
+    if (!system || !network) return
+    if (system.objectId === network.objectId) {
+      previewError = 'Connect ports on two different assets.'
+      return
+    }
+    if (system.nominalKv !== network.nominalKv) {
+      previewError = `Voltage mismatch: ${system.nominalKv} kV and ${network.nominalKv} kV.`
+      return
+    }
+    const endpointAlreadyConnected = draft.connections.some(connection =>
+      (connection.system.objectId === system.objectId && connection.system.portId === system.id)
+      || (connection.network.objectId === system.objectId && connection.network.portId === system.id)
+      || (connection.system.objectId === network.objectId && connection.system.portId === network.id)
+      || (connection.network.objectId === network.objectId && connection.network.portId === network.id))
+    if (endpointAlreadyConnected) {
+      previewError = 'Each electrical port can have only one connection.'
+      return
+    }
+    draft.connections.push({
+      id: `electrical-${crypto.randomUUID()}`,
+      type: 'electrical',
+      system: { objectId: system.objectId, portId: system.id },
+      network: { objectId: network.objectId, portId: network.id },
+    })
+    draft = { ...draft }
+    systemEndpointKey = ''
+    networkEndpointKey = ''
+  }
+
+  const removeConnection = (id: string): void => {
+    draft.connections = draft.connections.filter(connection => connection.id !== id)
+    draft = { ...draft }
+  }
+
   const validationError = (): string | null => {
     if (draft.title.trim().length === 0) return 'Give the scenario a title.'
     if (draft.packs.length === 0) return 'Add at least one Pack.'
@@ -252,6 +328,7 @@
       const type = itemTypeFor(catalog, packId, item)
       return type?.placement && valueAtPath(item, type.placement.path) === undefined
     })) return 'Every map item needs a position.'
+    if (previewError) return previewError
     return null
   }
 
@@ -291,6 +368,31 @@
     saved = null
     error = null
   }
+
+  $effect(() => {
+    const source = JSON.stringify(draft)
+    if (loading || catalog === null) return
+    if (draft.packs.length === 0) {
+      preview = null
+      previewError = null
+      return
+    }
+    if (previewTimer !== null) clearTimeout(previewTimer)
+    previewTimer = setTimeout(() => {
+      void invoke<InvocationResponse>('world.scenario.preview', { source: JSON.parse(source) })
+        .then(response => {
+          preview = response.result as ScenarioPreview
+          previewError = null
+        })
+        .catch(cause => {
+          preview = null
+          previewError = cause instanceof Error ? cause.message : String(cause)
+        })
+    }, 250)
+    return () => {
+      if (previewTimer !== null) clearTimeout(previewTimer)
+    }
+  })
 
   void loadEditor()
 </script>
@@ -348,6 +450,42 @@
           <h2>Scenario</h2><p>The map position is the starting frame users will see.</p>
           <label>Description <textarea rows="4" placeholder="Optional" value={draft.description ?? ''} oninput={event => { draft.description = event.currentTarget.value; draft = { ...draft } }}></textarea></label>
           <dl><div><dt>Center</dt><dd>{mapCenter().map(value => value.toFixed(4)).join(', ')}</dd></div><div><dt>Zoom</dt><dd>{mapZoom().toFixed(1)}</dd></div></dl>
+          <h3>Electrical connections</h3>
+          {#if systemElectricalEndpoints().length === 0 || networkElectricalEndpoints().length === 0}
+            <p>Add both a system asset and a network asset with compatible electrical ports.</p>
+          {:else}
+            <label>System port
+              <select bind:value={systemEndpointKey}>
+                <option value="">Choose…</option>
+                {#each systemElectricalEndpoints() as endpoint (endpoint.key)}
+                  <option value={endpoint.key}>{endpoint.objectLabel} · {endpoint.label} · {endpoint.nominalKv} kV</option>
+                {/each}
+              </select>
+            </label>
+            <label>Network port
+              <select bind:value={networkEndpointKey}>
+                <option value="">Choose…</option>
+                {#each networkElectricalEndpoints() as endpoint (endpoint.key)}
+                  <option value={endpoint.key}>{endpoint.objectLabel} · {endpoint.label} · {endpoint.nominalKv} kV</option>
+                {/each}
+              </select>
+            </label>
+            <button disabled={!systemEndpointKey || !networkEndpointKey} onclick={addElectricalConnection}>Connect ports</button>
+          {/if}
+          {#if previewError}<p class="connection-error">{previewError}</p>{/if}
+          {#if draft.connections.length > 0}
+            <div class="connection-list">
+              {#each draft.connections as connection (connection.id)}
+                {@const system = electricalEndpoints().find(endpoint => endpoint.objectId === connection.system.objectId && endpoint.id === connection.system.portId)}
+                {@const network = electricalEndpoints().find(endpoint => endpoint.objectId === connection.network.objectId && endpoint.id === connection.network.portId)}
+                <div>
+                  <span>{system?.objectLabel ?? connection.system.objectId} ↔ {network?.objectLabel ?? connection.network.objectId}</span>
+                  <small>{system?.label ?? connection.system.portId} · {network?.label ?? connection.network.portId}</small>
+                  <button aria-label={`Remove ${connection.id}`} title="Remove connection" onclick={() => removeConnection(connection.id)}>×</button>
+                </div>
+              {/each}
+            </div>
+          {/if}
         {:else if selection.kind === 'pack'}
           {@const pack = catalog.packs.find(candidate => candidate.id === selection.id)}
           {#if pack}

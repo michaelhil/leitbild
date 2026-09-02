@@ -347,16 +347,11 @@
         },
         "actions": [
           {
-            "type": "issue_command",
-            "command": {
-              "kind": "drone.arm",
-              "targetObjectIds": [
-                "drone:oslo-survey-1"
-              ],
-              "payload": {
-                "droneId": "drone:oslo-survey-1",
-                "armed": true
-              }
+            "type": "invoke_capability",
+            "capabilityId": "world.drone.arm",
+            "input": {
+              "droneId": "drone:oslo-survey-1",
+              "armed": true
             }
           }
         ]
@@ -369,16 +364,11 @@
         },
         "actions": [
           {
-            "type": "issue_command",
-            "command": {
-              "kind": "drone.takeoff",
-              "targetObjectIds": [
-                "drone:oslo-survey-1"
-              ],
-              "payload": {
-                "droneId": "drone:oslo-survey-1",
-                "altitudeM": 55
-              }
+            "type": "invoke_capability",
+            "capabilityId": "world.drone.takeoff",
+            "input": {
+              "droneId": "drone:oslo-survey-1",
+              "altitudeM": 55
             }
           }
         ]
@@ -414,25 +404,20 @@
         },
         "actions": [
           {
-            "type": "issue_command",
-            "command": {
-              "kind": "drone.goto",
-              "targetObjectIds": [
-                "drone:oslo-survey-1"
-              ],
-              "payload": {
-                "droneId": "drone:oslo-survey-1",
-                "target": {
-                  "point": {
-                    "type": "Point",
-                    "coordinates": [
-                      10.7442,
-                      59.9068
-                    ]
-                  },
-                  "altitudeM": 55,
-                  "speedMps": 18
-                }
+            "type": "invoke_capability",
+            "capabilityId": "world.drone.navigate",
+            "input": {
+              "droneId": "drone:oslo-survey-1",
+              "target": {
+                "point": {
+                  "type": "Point",
+                  "coordinates": [
+                    10.7442,
+                    59.9068
+                  ]
+                },
+                "altitudeM": 55,
+                "speedMps": 18
               }
             }
           }

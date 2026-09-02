@@ -1,10 +1,10 @@
 import { z } from 'zod'
 import { geoJsonPointSchema, objectIdSchema } from '../../core/model/index.ts'
 
-export const assignToIncidentCommandKind = 'ambulance.assign_to_incident'
-export const createObjectCommandKind = 'ambulance.create_object'
-export const setDestinationCommandKind = 'ambulance.set_destination'
-export const cancelDestinationCommandKind = 'ambulance.cancel_destination'
+export const assignToIncidentCommandKind = 'world.ambulance.assign-to-incident'
+export const createObjectCommandKind = 'world.ambulance.create-object'
+export const setDestinationCommandKind = 'world.ambulance.set-destination'
+export const cancelDestinationCommandKind = 'world.ambulance.cancel-destination'
 
 export const assignToIncidentPayloadSchema = z.object({
   ambulanceId: objectIdSchema,

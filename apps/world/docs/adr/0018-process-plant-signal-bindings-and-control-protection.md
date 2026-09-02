@@ -164,7 +164,7 @@ Pack commands:
 
 ## Consequences
 
-- AI agents can resolve procedure tags directly through the process-plant pack query surface.
+- AI Agents can resolve procedure tags directly through the Process Plant Simulation Capabilities.
 - Procedure bindings live with the graph that defines the plant; they cannot silently diverge into a side table.
 - `tagId` is readable and compact for operators, while `variablePath` remains stable and code-friendly.
 - Multi-Plant scenarios stay simple: every read/write includes `plantId`.

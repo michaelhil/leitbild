@@ -34,6 +34,7 @@ const authoringItemTypeSchema = z.object({
   description: z.string().min(1),
   idPrefix: z.string().regex(/^[a-z][a-z0-9-]*$/),
   defaultItem: z.record(z.string(), z.unknown()),
+  itemSchema: z.record(z.string(), z.unknown()),
   placement: z.object({ target: z.literal('item'), path: pathSchema }).strict().optional(),
   linkedConfig: z.object({
     collectionPath: pathSchema,
@@ -87,6 +88,9 @@ const validateAuthoring = (pack: WorldPack): void => {
   for (const itemType of pack.authoring?.itemTypes ?? []) {
     if (itemTypeIds.has(itemType.id)) throw new Error(`duplicate authoring item type ${itemType.id} in Pack ${pack.descriptor.id}`)
     itemTypeIds.add(itemType.id)
+    if (!pack.scenario?.itemSchemas[itemType.id]) {
+      throw new Error(`authoring item type ${itemType.id} in Pack ${pack.descriptor.id} has no Scenario item schema`)
+    }
     for (const field of itemType.fields) {
       const defaults = field.target === 'item' ? itemType.defaultItem : itemType.linkedConfig?.defaults
       if (!defaults) throw new Error(`authoring field ${itemType.id}.${field.label} targets missing linked config`)
@@ -126,7 +130,10 @@ export const scenarioAuthoringCatalogFor = (packs: ReadonlyArray<WorldPack>): Sc
     ...(pack.runtime?.defaultRuntimeId === undefined ? {} : { defaultRuntimeId: pack.runtime.defaultRuntimeId }),
     recordingProfiles: pack.recording?.profiles ?? [],
     configSchema: z.toJSONSchema(pack.scenarioConfigSchema, { unrepresentable: 'any' }),
-    itemTypes: pack.authoring?.itemTypes ?? [],
+    itemTypes: (pack.authoring?.itemTypes ?? []).map(itemType => ({
+      ...itemType,
+      itemSchema: z.toJSONSchema(pack.scenario!.itemSchemas[itemType.id]!, { unrepresentable: 'any' }),
+    })),
   }))
   const ids = new Set<string>()
   for (const pack of authoringPacks) {

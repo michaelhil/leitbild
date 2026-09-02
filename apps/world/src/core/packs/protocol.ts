@@ -222,6 +222,11 @@ export type PackQueryResponse =
       readonly generatedAt: IsoTimestamp
     }
 
+export interface PackMapAreaFeatureQuery {
+  readonly capabilityId: string
+  readonly input: unknown
+}
+
 export interface PackObjectCreationContext {
   readonly objects: ReadonlyArray<OperationalObject>
 }
@@ -293,7 +298,7 @@ export interface PackScenarioAuthoringContribution {
   readonly itemTypes: ReadonlyArray<PackScenarioAuthoringItemType>
 }
 
-export interface PackScenarioOperationSpec {
+export interface PackScenarioMutationSpec {
   readonly pack: string
   readonly type: string
   readonly [key: string]: unknown
@@ -307,18 +312,20 @@ export interface PackScenarioExpansionContext {
   readonly packConfigs: Record<string, unknown>
 }
 
-export interface PackScenarioOperationContext extends PackScenarioExpansionContext {
+export interface PackScenarioMutationContext extends PackScenarioExpansionContext {
   readonly object: OperationalObject
 }
 
 export interface PackScenarioSupport {
+  readonly itemSchemas: Readonly<Record<string, z.ZodType>>
+  readonly mutationSchemas?: Readonly<Record<string, z.ZodType>>
   readonly expandItem: (
     spec: PackScenarioItemSpec,
     context: PackScenarioExpansionContext,
   ) => PackScenarioItemContribution | Promise<PackScenarioItemContribution>
-  readonly applyOperation: (
-    operation: PackScenarioOperationSpec,
-    context: PackScenarioOperationContext,
+  readonly applyMutation?: (
+    mutation: PackScenarioMutationSpec,
+    context: PackScenarioMutationContext,
   ) => OperationalObject | Promise<OperationalObject>
 }
 
@@ -362,7 +369,7 @@ export interface PackPresentationContribution {
   readonly mapAreaFeatureSourcePackIds?: ReadonlyArray<string>
   readonly mapAreaFeatureQueries?: (
     context: PackObjectPresentationContext,
-  ) => ReadonlyArray<PackQueryRequest>
+  ) => ReadonlyArray<PackMapAreaFeatureQuery>
   readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
 }
 

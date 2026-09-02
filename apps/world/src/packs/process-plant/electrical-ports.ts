@@ -33,6 +33,7 @@ export const processPlantElectricalBoundaries = (
     port: electricalPortDefinitionSchema.parse({
       id: parsed.data.externalPortId,
       label: component.label,
+      role: 'system',
       nominalKv: parsed.data.nominalVoltageKv,
       maximumExportMw: parsed.data.maximumExportMw,
       maximumImportMw: parsed.data.maximumImportMw,

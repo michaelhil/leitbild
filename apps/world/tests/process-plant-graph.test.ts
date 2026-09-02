@@ -98,7 +98,7 @@ describe('process plant discovery', () => {
   test('answers catalog discovery without exposing implementation source files', () => {
     const request: PackQueryRequest = {
       packId: 'process-plant' as PackId,
-      kind: 'process-plant.catalog.list',
+      kind: 'world.process-plant.catalog.list',
       payload: {},
     }
     const response = answerProcessPlantQuery({ request, plants: new Map(), at })
@@ -115,7 +115,7 @@ describe('process plant discovery', () => {
     const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:source-inspection' }))
     const request: PackQueryRequest = {
       packId: 'process-plant' as PackId,
-      kind: 'process-plant.artifact.read',
+      kind: 'world.process-plant.artifact.read',
       payload: { plantId: plant.id, artifact: 'authored-spec' },
     }
     const plants = new Map([[plant.id, { plant } as ProcessPlantRuntimeInstance]])
@@ -153,7 +153,7 @@ describe('process plant discovery', () => {
     const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:procedure-tags' }))
     const request: PackQueryRequest = {
       packId: 'process-plant' as PackId,
-      kind: 'process-plant.procedure-tags.validate',
+      kind: 'world.process-plant.procedure-tags.validate',
       payload: {
         plantId: plant.id,
         tags: [

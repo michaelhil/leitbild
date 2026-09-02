@@ -23,7 +23,7 @@
     fetchScenario,
     joinSimulationRun as joinSimulationRunClient,
     resetSimulationRun,
-    sendSimulationRunCommand,
+    invokeSimulationRunCapability,
     setSimulationRunClock,
     syncSimulationRunSnapshot as syncSimulationRunSnapshotClient,
   } from '../simulation-run-client.ts'
@@ -85,10 +85,10 @@
   import type { MapFocusRequest, MapFocusTarget, MapRuntimeDiagnosticsSnapshot } from '../map-runtime/types.ts'
   import {
     browserDiagnostics,
-    clearPackQueryDiagnostics,
+    clearCapabilityQueryDiagnostics,
     createLongTaskDiagnosticsMonitor,
     installInternalDiagnosticsGlobal,
-    packQueryDiagnostics,
+    capabilityQueryDiagnostics,
     resourceDiagnostics,
     routeDiagnostics,
     scenarioDiagnosticsFor,
@@ -349,7 +349,7 @@
 
   // Rail source picker (Phase B.3). Only meaningful when the scenario binds
   // the aviation pack to aviation.multi — that runtime is the only one
-  // accepting aviation.set_source, so picking a source on a single-source
+  // exposing world.aviation.set-source, so picking a source on a single-source
   // runtime would do nothing.
   //
   // Active source is tracked locally because it's runtime state, not part of
@@ -374,7 +374,7 @@
     if (sourceId === aviationActiveSourceId || pendingSourceSwitch) return
     pendingSourceSwitch = true
     try {
-      await sendCommand('aviation.set_source', { source: sourceId })
+      await sendCommand('world.aviation.set-source', { source: sourceId })
       aviationActiveSourceId = sourceId
     } finally {
       pendingSourceSwitch = false
@@ -527,7 +527,7 @@
           recent: [],
         },
         resources: resourceDiagnostics(),
-        packQueries: packQueryDiagnostics(),
+        capabilityQueries: capabilityQueryDiagnostics(),
       },
     }
   }
@@ -536,7 +536,7 @@
     mapPerformanceDiagnostics.clear()
     presentationComposer.reset()
     longTaskMonitor?.clear()
-    clearPackQueryDiagnostics()
+    clearCapabilityQueryDiagnostics()
     performance.clearResourceTimings()
   }
 
@@ -1145,7 +1145,7 @@
     clock = body.snapshot.clock
   }
 
-  const sendCommand = async (kind: string, payload: unknown, targetObjectIds: readonly string[] = []): Promise<void> => {
+  const sendCommand = async (capabilityId: string, input: unknown): Promise<void> => {
     if (!simulationRunId) return
     if (!realtimeAttached) {
       commandStatus = 'Wait for realtime attachment before sending commands'
@@ -1153,9 +1153,13 @@
     }
     let body
     try {
-      body = await sendSimulationRunCommand(simulationRunId, { kind, targetObjectIds, payload })
+      body = await invokeSimulationRunCapability(simulationRunId, { capabilityId, input })
     } catch (err) {
       commandStatus = err instanceof Error ? err.message : 'command failed'
+      return
+    }
+    if (body.kind !== 'command') {
+      commandStatus = `Capability ${capabilityId} is not a command`
       return
     }
     if (!body.result.ok) {
@@ -1166,9 +1170,9 @@
     await syncSimulationRunSnapshot()
   }
 
-  const sendRealtimeCommand = async (command: Parameters<typeof realtimeConnection.sendCommand>[1]) => {
+  const invokeRealtimeCapability = async (invocation: Parameters<typeof realtimeConnection.invokeCapability>[1]) => {
     if (!simulationRunId) throw new Error('simulation run is not ready')
-    return await realtimeConnection.sendCommand(simulationRunId, command)
+    return await realtimeConnection.invokeCapability(simulationRunId, invocation)
   }
 
   const sendRealtimeInput = (input: Parameters<typeof realtimeConnection.sendRuntimeInput>[1]): void => {
@@ -1192,7 +1196,7 @@
 
   const deleteObject = async (object: OperationalObject): Promise<void> => {
     commandStatus = `Deleting ${object.label}`
-    await sendCommand(deleteObjectCommandKind, { objectId: object.id }, [object.id])
+    await sendCommand(deleteObjectCommandKind, { objectId: object.id })
   }
 
   const createObject = async (draft: CreateDraft): Promise<void> => {
@@ -1206,7 +1210,7 @@
       draft.geometry,
       draft.parameters,
     )
-    await sendCommand(command.kind, command.payload, command.targetObjectIds)
+    await sendCommand(command.kind, command.payload)
   }
 
   const setDestination = async (destination: OperationalObject): Promise<void> => {
@@ -1220,7 +1224,7 @@
     if (!pack.targeting?.isTarget(controller, destination, { objects })) return
     commandStatus = `Sending ${controller.label} to ${destination.label}`
     const command = pack.targeting.buildSetTargetCommand(controller, destination, { objects })
-    await sendCommand(command.kind, command.payload, command.targetObjectIds)
+    await sendCommand(command.kind, command.payload)
   }
 
   const selectObject = (object: OperationalObject): void => {
@@ -1697,7 +1701,7 @@
       {simulationRunId}
       object={windowEntry.object}
       {objects}
-      {sendRealtimeCommand}
+      {invokeRealtimeCapability}
       {sendRealtimeInput}
       subscribeMotionFrames={subscribeDroneMotionFrames}
       windowOffsetIndex={windowEntry.index}

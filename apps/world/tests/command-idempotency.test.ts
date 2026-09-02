@@ -3,7 +3,7 @@ import type { Actor } from '../src/core/simulation-runs/actors.ts'
 import {
   createCommandIdempotencyStore,
   issueCommandWithIdempotency,
-} from '../src/core/api/command-idempotency.ts'
+} from '../src/core/simulation-runs/command-idempotency.ts'
 import type { ActorId, ClientId, CommandEnvelope, CommandId, CommandResult, SimulationRunId, IsoTimestamp, ObjectId } from '../src/core/model/index.ts'
 
 const actor: Actor = {

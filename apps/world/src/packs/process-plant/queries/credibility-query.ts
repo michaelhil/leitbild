@@ -15,11 +15,11 @@ import type { CompiledPlantGraph } from '../graph/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { requirePlant, success } from './common.ts'
 
-const credibilityListPayloadSchema = z.object({
+export const credibilityListPayloadSchema = z.object({
   plantId: idSchema,
 }).strict()
 
-const credibilityReadPayloadSchema = z.object({
+export const credibilityReadPayloadSchema = z.object({
   plantId: idSchema,
   evidenceId: idSchema,
   artifactId: idSchema,
@@ -28,8 +28,8 @@ const credibilityReadPayloadSchema = z.object({
 const sourceRoot = fileURLToPath(new URL('../../../..', import.meta.url))
 
 export const processPlantCredibilityQueryKinds = [
-  'process-plant.credibility.list',
-  'process-plant.credibility.read',
+  'world.process-plant.credibility.list',
+  'world.process-plant.credibility.read',
 ] as const
 
 const safeEvidenceArtifactPath = (path: string): string => {
@@ -100,7 +100,7 @@ export const answerProcessPlantCredibilityQuery = (config: {
   readonly at: IsoTimestamp
 }): PackQueryResponse | undefined => {
   if (!processPlantCredibilityQueryKinds.some(kind => kind === config.request.kind)) return undefined
-  if (config.request.kind === 'process-plant.credibility.list') {
+  if (config.request.kind === 'world.process-plant.credibility.list') {
     const payload = credibilityListPayloadSchema.parse(config.request.payload)
     const system = requirePlant(config.plants, payload.plantId)
     return success(config.request, {

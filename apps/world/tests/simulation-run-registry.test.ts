@@ -5,8 +5,6 @@ import { tmpdir } from 'node:os'
 import { newWorkspaceId, type WorkspaceId } from '@leitbild/contracts'
 import type {
   ActorId,
-  CommandEnvelope,
-  CommandId,
   InteractionSignal,
   SignalId,
   SimulationRunEvent,
@@ -48,20 +46,16 @@ const issueDispatchCommand = async (runtime: SimulationRunRuntime): Promise<void
     object.kind === 'mobile_entity' && object.operational.status === 'available')
   const incident = snapshot.objects.find(object => object.kind === 'incident')
   if (!ambulance || !incident) throw new Error('Scenario missing ambulance or incident')
-  const command: CommandEnvelope = {
-    id: `command:test-${crypto.randomUUID()}` as CommandId,
-    simulationRunId: runtime.id,
-    actorId: 'actor:test-operator' as ActorId,
-    kind: assignToIncidentCommandKind,
-    targetObjectIds: [ambulance.id, incident.id],
-    payload: { ambulanceId: ambulance.id, incidentId: incident.id },
-    issuedAt: nowIso(),
-  }
-  const result = await runtime.issueCommand(
-    { id: command.actorId, label: 'Test Operator', role: 'operator' },
-    command,
+  const outcome = await runtime.invokeCapability(
+    { id: 'actor:test-operator' as ActorId, label: 'Test Operator', role: 'operator' },
+    {
+      capabilityId: assignToIncidentCommandKind,
+      input: { ambulanceId: ambulance.id, incidentId: incident.id },
+    },
   )
-  expect(result.ok).toBe(true)
+  expect(outcome.kind).toBe('command')
+  if (outcome.kind !== 'command') throw new Error('expected command Capability result')
+  expect(outcome.result.ok).toBe(true)
 }
 
 describe('Simulation Run registry', () => {

@@ -1,0 +1,80 @@
+{
+  "id": "halden-integrated-control-room",
+  "title": "Halden Integrated Control Room",
+  "category": "World + Agents",
+  "description": "A World-aware control room whose Agent discovers the integrated Halden Plant and Grid run, reads its live context, and acts only through explicitly granted simulation capabilities.",
+  "room": {
+    "deliveryMode": "manual",
+    "packs": [
+      "pwr-ops"
+    ],
+    "agents": [
+      {
+        "name": "World Operator",
+        "persona": "You are an integrated Plant and Grid operator in a training simulation. Treat the Workspace catalog and current Simulation Context as authoritative. Discover the live World run before acting; do not retain or guess runtime resource IDs. Explain the evidence for consequential actions and use only granted capabilities. Never invent plant state, grid state, procedure text, capability IDs, or object IDs.",
+        "tools": [
+          "procedure_lookup",
+          "procedure_search",
+          "wiki_lookup",
+          "eal_classify"
+        ],
+        "toolGrants": [
+          { "capabilityId": "world.simulation-run.context" },
+          { "capabilityId": "world.simulation-run.read-object" },
+          { "capabilityId": "world.simulation-run.changes" },
+          { "capabilityId": "world.simulation-run.history" },
+          { "capabilityId": "world.procedure.catalog.list" },
+          { "capabilityId": "world.procedure.document.read" },
+          { "capabilityId": "world.procedure.runs.list" },
+          { "capabilityId": "world.procedure.run.start" },
+          { "capabilityId": "world.procedure.step.update" },
+          { "capabilityId": "world.procedure.run.close" },
+          { "capabilityId": "world.procedure.run.reset" },
+          { "capabilityId": "world.process-plant.catalog.list" },
+          { "capabilityId": "world.process-plant.plants.list" },
+          { "capabilityId": "world.process-plant.variables.read" },
+          { "capabilityId": "world.process-plant.variables.search" },
+          { "capabilityId": "world.process-plant.signals.read" },
+          { "capabilityId": "world.process-plant.signals.search" },
+          { "capabilityId": "world.process-plant.runtime.status" },
+          { "capabilityId": "world.process-plant.transient.diagnostics" },
+          { "capabilityId": "world.process-plant.alarms.status" },
+          { "capabilityId": "world.process-plant.control.validate" },
+          { "capabilityId": "world.process-plant.control.write" },
+          { "capabilityId": "world.process-plant.control.ramp" },
+          { "capabilityId": "world.process-plant.ic.lifecycle" },
+          { "capabilityId": "world.process-plant.action.invoke" },
+          { "capabilityId": "world.electric-grid.grid.summary" },
+          { "capabilityId": "world.electric-grid.assets.search" },
+          { "capabilityId": "world.electric-grid.asset.get" },
+          { "capabilityId": "world.electric-grid.power-flow.snapshot" },
+          { "capabilityId": "world.electric-grid.connection-points.list" },
+          { "capabilityId": "world.electric-grid.dispatch-generator" },
+          { "capabilityId": "world.electric-grid.trip-generator" },
+          { "capabilityId": "world.electric-grid.set-generator-availability" },
+          { "capabilityId": "world.electric-grid.return-generator-to-service" },
+          { "capabilityId": "world.electric-grid.open-branch" },
+          { "capabilityId": "world.electric-grid.close-branch" },
+          { "capabilityId": "world.electric-grid.derate-branch" },
+          { "capabilityId": "world.electric-grid.clear-derate" },
+          { "capabilityId": "world.electric-grid.shed-load" },
+          { "capabilityId": "world.electric-grid.restore-load" },
+          { "capabilityId": "world.electric-grid.set-ev-charging-demand" }
+        ]
+      }
+    ]
+  },
+  "deck": {
+    "entries": [
+      {
+        "id": "brief",
+        "label": "Brief the current situation",
+        "description": "Ask the operator to discover the live integrated Halden run and produce an evidence-grounded Plant and Grid brief.",
+        "action": {
+          "kind": "post-message",
+          "content": "Discover the live Halden Simulation Run in this Workspace. Read its Simulation Context, identify the scenario objectives, Plant output, Grid balance, connection state, and current alarms, then give me a concise evidence-grounded operator brief. Do not issue any command."
+        }
+      }
+    ]
+  }
+}

@@ -1,15 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import type { CommandEnvelope, CommandResult, SimulationRunEvent, GeoJsonLineString, GeoJsonPolygon, IsoTimestamp, ObjectId, OperationalObject } from '../../../core/model/index.ts'
-import { confirmedFact, interactionSignalSchema, nowIso, type InteractionSignal, type SignalId } from '../../../core/model/index.ts'
+import { commandResultSchema, confirmedFact, interactionSignalSchema, nowIso, type InteractionSignal, type SignalId } from '../../../core/model/index.ts'
 import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler } from '../../../simulation/protocol.ts'
-import { definePackRuntimeOperations } from '../../../simulation/operations.ts'
+import { definePackCommandCapability } from '../../../simulation/capabilities.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import { createDirectRoutingAdapter } from '../../../routing/direct-adapter.ts'
 import { createTrafficConditionCommandKind } from '../commands.ts'
 import { createTrafficConditionPayloadSchema, trafficPackDataSchema, trafficPackId, type TrafficPackData, type TrafficGeometryMode } from '../model.ts'
 import { trafficConditionChangedSignalType } from '../interactions.ts'
-import { answerTrafficQuery, trafficQueryKinds } from '../query.ts'
+import { answerTrafficQuery, trafficQueryCapabilities } from '../query.ts'
 import { trafficSimAdapterId, trafficSimPackId, trafficSimRuntimeId } from './constants.ts'
 
 const defaultSpeedFactor = 0.55
@@ -149,7 +149,19 @@ export const createLocalTrafficPackRuntimeAdapter = (adapterConfig: {
   version: '1.0.0',
   packId: trafficPackId,
   clock: 'none',
-  operations: definePackRuntimeOperations({ commands: [createTrafficConditionCommandKind], queries: trafficQueryKinds }),
+  capabilities: [
+    definePackCommandCapability({
+      id: createTrafficConditionCommandKind,
+      title: 'Create traffic condition',
+      description: 'Creates a route or area traffic condition with explicit severity and speed impact.',
+      input: createTrafficConditionPayloadSchema,
+      output: commandResultSchema,
+      idempotent: false,
+      schedulable: true,
+      buildCommand: input => ({ targetObjectIds: [], payload: createTrafficConditionPayloadSchema.parse(input) }),
+    }),
+    ...trafficQueryCapabilities,
+  ],
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const routing = adapterConfig.routing ?? createDirectRoutingAdapter()
     const objects = new Map<string, OperationalObject>()

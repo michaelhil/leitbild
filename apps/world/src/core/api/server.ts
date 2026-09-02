@@ -1,7 +1,7 @@
 import { resolve, normalize } from 'node:path'
 import type { ServerWebSocket } from 'bun'
 import { z } from 'zod'
-import { actorIdSchema, clientIdSchema, simulationRunIdSchema, nowIso, type CommandResult, type SimulationRunId } from '../model/index.ts'
+import { actorIdSchema, clientIdSchema, simulationRunIdSchema, nowIso, type SimulationRunId } from '../model/index.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import {
   createMapArtifactConfigFromEnv,
@@ -22,14 +22,9 @@ import {
 } from '../../map/artifacts.ts'
 import {
   buildSimulationRunActor,
-  buildSimulationRunCommand,
+  capabilityInvocationRequestSchema,
   handleSimulationRunApi,
 } from './simulation-run-routes.ts'
-import {
-  commandIdempotencyConfigFromEnv,
-  commandIdempotencyStoreForRuntime,
-  issueCommandWithIdempotency,
-} from './command-idempotency.ts'
 import { createSimulationRunRealtimeManager, emptyRealtimeStatus, type RealtimeStatus, type SimulationRunRealtimeManager } from './realtime.ts'
 import { apiError, json } from './responses.ts'
 import { workspaceIdSchema, type WorkspaceId } from '@leitbild/contracts'
@@ -54,10 +49,11 @@ interface WSData {
   readonly simulationRunId: SimulationRunId
 }
 
-const realtimeClientCommandMessageSchema = z.object({
-  type: z.literal('command'),
+const realtimeClientCapabilityMessageSchema = z.object({
+  type: z.literal('capability.invoke'),
   requestId: z.string().min(1).max(128),
-  command: z.unknown(),
+  capabilityId: z.string().min(1).max(256),
+  invocation: capabilityInvocationRequestSchema,
 }).strict()
 
 const realtimeClientRuntimeInputMessageSchema = z.object({
@@ -71,7 +67,7 @@ const realtimeClientRuntimeInputMessageSchema = z.object({
 }).strict()
 
 const realtimeClientMessageSchema = z.union([
-  realtimeClientCommandMessageSchema,
+  realtimeClientCapabilityMessageSchema,
   realtimeClientRuntimeInputMessageSchema,
 ])
 
@@ -188,13 +184,13 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
     return realtime
   }
 
-  const sendRealtimeCommandError = (
+  const sendRealtimeCapabilityError = (
     socket: ServerWebSocket<WSData>,
     requestId: string | undefined,
     message: string,
   ): void => {
     socket.send(JSON.stringify({
-      type: 'command.error',
+      type: 'capability.error',
       workspaceId: socket.data.workspaceId,
       simulationRunId: socket.data.simulationRunId,
       ...(requestId === undefined ? {} : { requestId }),
@@ -216,38 +212,21 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
     }))
   }
 
-  const issueRealtimeCommand = async (
+  const invokeRealtimeCapability = async (
     workspaceId: WorkspaceId,
     simulationRunId: SimulationRunId,
-    rawCommand: unknown,
-  ): Promise<CommandResult> => {
+    capabilityId: string,
+    rawInvocation: unknown,
+  ) => {
     const runtime = config.workspaces.getLoaded(workspaceId)?.simulationRuns.get(simulationRunId)
-    if (!runtime) {
-      return {
-        ok: false,
-        commandId: `command:${crypto.randomUUID()}` as CommandResult['commandId'],
-        rejectedAt: nowIso(),
-        reason: 'simulation run not found',
-      }
-    }
-    const command = buildSimulationRunCommand(simulationRunId, rawCommand)
-    const actor = buildSimulationRunActor(command.actorId)
-    const issued = await issueCommandWithIdempotency({
-      store: commandIdempotencyStoreForRuntime(workspaceId, simulationRunId),
-      idempotency: commandIdempotencyConfigFromEnv(),
-      actor,
-      command,
-      issue: runtime.issueCommand,
+    if (!runtime) throw new Error('simulation run not found')
+    const invocation = capabilityInvocationRequestSchema.parse(rawInvocation)
+    return await runtime.invokeCapability(buildSimulationRunActor(defaultRealtimeInputActorId), {
+      capabilityId,
+      input: invocation.input,
+      ...(invocation.expectedRevision === undefined ? {} : { expectedRevision: invocation.expectedRevision }),
+      ...(invocation.idempotencyKey === undefined ? {} : { idempotencyKey: invocation.idempotencyKey }),
     })
-    if (!issued.ok) {
-      return {
-        ok: false,
-        commandId: command.id,
-        rejectedAt: nowIso(),
-        reason: issued.message,
-      }
-    }
-    return issued.result
   }
 
   const handleRealtimeClientMessage = async (
@@ -258,7 +237,7 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
     try {
       parsed = realtimeClientMessageSchema.parse(JSON.parse(websocketText(message)) as unknown)
     } catch (err) {
-      sendRealtimeCommandError(socket, undefined, err instanceof Error ? err.message : String(err))
+      sendRealtimeCapabilityError(socket, undefined, err instanceof Error ? err.message : String(err))
       return
     }
     if (parsed.type === 'runtime.input') {
@@ -281,16 +260,21 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
       return
     }
     try {
-      const result = await issueRealtimeCommand(socket.data.workspaceId, socket.data.simulationRunId, parsed.command)
+      const outcome = await invokeRealtimeCapability(
+        socket.data.workspaceId,
+        socket.data.simulationRunId,
+        parsed.capabilityId,
+        parsed.invocation,
+      )
       socket.send(JSON.stringify({
-        type: 'command.result',
+        type: 'capability.result',
         workspaceId: socket.data.workspaceId,
         simulationRunId: socket.data.simulationRunId,
         requestId: parsed.requestId,
-        result,
+        outcome,
       }))
     } catch (err) {
-      sendRealtimeCommandError(socket, parsed.requestId, err instanceof Error ? err.message : String(err))
+      sendRealtimeCapabilityError(socket, parsed.requestId, err instanceof Error ? err.message : String(err))
     }
   }
 

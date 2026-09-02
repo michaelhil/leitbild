@@ -8,9 +8,9 @@ import { processPlantDefinitionCatalog } from '../plant-definitions.ts'
 import { processPlantRecordingProfiles } from '../recording.ts'
 import { success } from './common.ts'
 
-const emptyPayloadSchema = z.object({}).strict()
+export const processPlantCatalogInputSchema = z.object({}).strict()
 
-export const processPlantCatalogQueryKinds = ['process-plant.catalog.list'] as const
+export const processPlantCatalogQueryKinds = ['world.process-plant.catalog.list'] as const
 
 const catalogView = (): Record<string, unknown> => ({
   ...processPlantDefinitionCatalog(),
@@ -39,7 +39,7 @@ export const answerProcessPlantCatalogQuery = (config: {
   readonly request: PackQueryRequest
   readonly at: IsoTimestamp
 }): PackQueryResponse | undefined => {
-  if (config.request.kind !== 'process-plant.catalog.list') return undefined
-  emptyPayloadSchema.parse(config.request.payload ?? {})
+  if (config.request.kind !== 'world.process-plant.catalog.list') return undefined
+  processPlantCatalogInputSchema.parse(config.request.payload ?? {})
   return success(config.request, catalogView(), config.at)
 }

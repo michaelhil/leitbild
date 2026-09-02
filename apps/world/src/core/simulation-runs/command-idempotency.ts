@@ -1,6 +1,5 @@
-import type { CommandEnvelope, CommandResult, SimulationRunId } from '../model/index.ts'
-import type { Actor } from '../simulation-runs/actors.ts'
-import type { WorkspaceId } from '@leitbild/contracts'
+import type { CommandEnvelope, CommandResult } from '../model/index.ts'
+import type { Actor } from './actors.ts'
 
 export const defaultCommandIdempotencyTtlMs = 60 * 60 * 1_000
 export const defaultCommandIdempotencyMaxEntries = 10_000
@@ -33,6 +32,11 @@ export type IdempotentCommandIssueResult =
 export interface CommandIdempotencyConfig {
   readonly ttlMs: number
   readonly maxEntries: number
+}
+
+export class CommandIdempotencyConflictError extends Error {
+  readonly code = 'idempotency_conflict'
+  readonly status = 409
 }
 
 export const createCommandIdempotencyStore = (): CommandIdempotencyStore => ({
@@ -166,18 +170,4 @@ export const issueCommandWithIdempotency = async (config: {
     }
     throw err
   }
-}
-
-const storesByRuntime = new Map<string, CommandIdempotencyStore>()
-
-export const commandIdempotencyStoreForRuntime = (
-  workspaceId: WorkspaceId,
-  simulationRunId: SimulationRunId,
-): CommandIdempotencyStore => {
-  const scopeKey = `${workspaceId}/${simulationRunId}`
-  const existing = storesByRuntime.get(scopeKey)
-  if (existing) return existing
-  const store = createCommandIdempotencyStore()
-  storesByRuntime.set(scopeKey, store)
-  return store
 }

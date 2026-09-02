@@ -133,6 +133,8 @@ export const createWorkspaceHost = (config: {
       capabilityId,
       ...(definition === undefined ? {} : { definition }),
       ...(resource === undefined ? {} : { resource }),
+      ...(rawInput.expectedRevision === undefined ? {} : { expectedRevision: rawInput.expectedRevision }),
+      ...(rawInput.idempotencyKey === undefined ? {} : { idempotencyKey: rawInput.idempotencyKey }),
       input: rawInput.input,
       access,
     })

@@ -1,1 +1,1 @@
-export const createTrafficConditionCommandKind = 'traffic.condition.create'
+export const createTrafficConditionCommandKind = 'world.traffic.condition.create'

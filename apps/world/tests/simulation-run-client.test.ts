@@ -6,7 +6,8 @@ import {
   deleteSimulationRun,
   joinSimulationRun,
   resetSimulationRun,
-  sendSimulationRunCommand,
+  invokeSimulationRunCapability,
+  querySimulationRunCapability,
   setSimulationRunClock,
   syncSimulationRunSnapshot,
 } from '../src/ui/simulation-run-client.ts'
@@ -51,27 +52,42 @@ describe('simulation run client', () => {
     ])
   })
 
-  test('sends command payloads through the Simulation Run command endpoint', async () => {
+  test('sends typed inputs through the Simulation Run Capability endpoint', async () => {
     let recordedBody = ''
     installFetch((input, init) => {
-      expect(String(input)).toBe(`${apiPrefix}/simulation-runs/run-test/commands`)
+      expect(String(input)).toBe(`${apiPrefix}/simulation-runs/run-test/capabilities/world.ambulance.dispatch/invoke`)
       expect(init?.method).toBe('POST')
       recordedBody = String(init?.body ?? '')
-      return new Response(JSON.stringify({ result: { ok: true } }), { status: 200 })
+      return new Response(JSON.stringify({ kind: 'command', result: { ok: true }, replayed: false }), { status: 200 })
     })
 
-    const response = await sendSimulationRunCommand('run-test' as SimulationRunId, {
-      kind: 'pack.command',
-      targetObjectIds: ['object:1'],
-      payload: { value: 1 },
+    const response = await invokeSimulationRunCapability('run-test' as SimulationRunId, {
+      capabilityId: 'world.ambulance.dispatch',
+      input: { value: 1 },
     })
 
-    expect(response.result.ok).toBe(true)
+    expect(response.kind).toBe('command')
     expect(JSON.parse(recordedBody)).toEqual({
-      kind: 'pack.command',
-      targetObjectIds: ['object:1'],
-      payload: { value: 1 },
+      input: { value: 1 },
     })
+  })
+
+  test('returns the direct result of a query Capability without rebuilding a Pack envelope', async () => {
+    let recordedBody = ''
+    installFetch((input, init) => {
+      expect(String(input)).toBe(`${apiPrefix}/simulation-runs/run-test/capabilities/world.weather.map-features/invoke`)
+      recordedBody = String(init?.body ?? '')
+      return new Response(JSON.stringify({ kind: 'query', result: { features: [{ id: 'weather:test' }] } }), { status: 200 })
+    })
+
+    const result = await querySimulationRunCapability<{ readonly features: ReadonlyArray<{ readonly id: string }> }>(
+      'run-test' as SimulationRunId,
+      'world.weather.map-features',
+      { zoom: 10 },
+    )
+
+    expect(result.features[0]?.id).toBe('weather:test')
+    expect(JSON.parse(recordedBody)).toEqual({ input: { zoom: 10 } })
   })
 
   test('sends clock updates through the Simulation Run clock endpoint', async () => {

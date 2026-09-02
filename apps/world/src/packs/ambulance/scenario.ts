@@ -10,7 +10,7 @@ import {
   type ObjectId,
   type OperationalObject,
 } from '../../core/model/index.ts'
-import type { PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
+import type { PackScenarioMutationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
 import type { AmbulancePackData, IncidentPackData } from './model.ts'
 import {
   createScenarioAmbulanceObject,
@@ -33,7 +33,7 @@ const victimCountSchema = z.union([
   }),
 ])
 
-const hospitalSpecSchema = z.object({
+export const hospitalSpecSchema = z.object({
   pack: z.literal('ambulance'),
   type: z.literal('hospital'),
   id: objectIdSchema,
@@ -45,7 +45,7 @@ const hospitalSpecSchema = z.object({
   }),
 })
 
-const ambulanceSpecSchema = z.object({
+export const ambulanceSpecSchema = z.object({
   pack: z.literal('ambulance'),
   type: z.literal('ambulance'),
   id: objectIdSchema,
@@ -58,7 +58,7 @@ const ambulanceSpecSchema = z.object({
   status: z.string().min(1).optional(),
 })
 
-const incidentSpecSchema = z.object({
+export const incidentSpecSchema = z.object({
   pack: z.literal('ambulance'),
   type: z.literal('incident'),
   id: objectIdSchema,
@@ -69,7 +69,7 @@ const incidentSpecSchema = z.object({
   status: z.enum(['open', 'assigned', 'responding', 'resolved']).optional(),
 })
 
-const setIncidentVictimsOperationSchema = z.object({
+const setIncidentVictimsMutationSchema = z.object({
   pack: z.literal('ambulance'),
   type: z.literal('set_incident_victims'),
   victims: victimCountSchema,
@@ -198,6 +198,12 @@ const withVictimCount = (
 }
 
 export const ambulanceScenarioSupport: PackScenarioSupport = {
+  itemSchemas: {
+    ambulance: ambulanceSpecSchema,
+    hospital: hospitalSpecSchema,
+    incident: incidentSpecSchema,
+  },
+  mutationSchemas: { set_incident_victims: setIncidentVictimsMutationSchema },
   expandItem: async (rawSpec, context) => {
     if (rawSpec.type === 'hospital') {
       const spec = hospitalSpecSchema.parse(rawSpec)
@@ -247,14 +253,14 @@ export const ambulanceScenarioSupport: PackScenarioSupport = {
     }
     throw new Error(`unsupported ambulance scenario object type: ${rawSpec.type}`)
   },
-  applyOperation: (rawOperation: PackScenarioOperationSpec, context): OperationalObject => {
-    if (rawOperation.type === 'set_incident_victims') {
-      const operation = setIncidentVictimsOperationSchema.parse(rawOperation)
+  applyMutation: (rawMutation: PackScenarioMutationSpec, context): OperationalObject => {
+    if (rawMutation.type === 'set_incident_victims') {
+      const mutation = setIncidentVictimsMutationSchema.parse(rawMutation)
       if (context.object.kind !== 'incident') {
         throw new Error(`set_incident_victims requires incident object: ${context.object.id}`)
       }
-      return withVictimCount(context.object, operation.victims, context.at)
+      return withVictimCount(context.object, mutation.victims, context.at)
     }
-    throw new Error(`unsupported ambulance scenario operation type: ${rawOperation.type}`)
+    throw new Error(`unsupported ambulance Scenario mutation type: ${rawMutation.type}`)
   },
 }

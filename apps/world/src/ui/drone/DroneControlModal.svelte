@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Maximize2, X } from 'lucide-svelte'
-  import type { SimulationRunId, ObjectId, OperationalObject } from '../../core/model/index.ts'
+  import type { SimulationRunId, OperationalObject } from '../../core/model/index.ts'
   import {
     attackCommandKind,
     holdDroneCommandKind,
@@ -11,9 +11,9 @@
   import { dronePackDataSchema, type DroneManualAxes } from '../../packs/drone/model.ts'
   import { droneManualIntentRealtimeInputType, type DroneMotionFrame } from '../../packs/drone/realtime.ts'
   import { droneSensorContacts } from '../../packs/drone/query.ts'
-  import { sendSimulationRunCommand, type SimulationRunCommandRequest } from '../simulation-run-client.ts'
+  import { invokeSimulationRunCapability, type SimulationRunCapabilityRequest } from '../simulation-run-client.ts'
   import type { RuntimeInputRequest } from '../app/realtime-connection.ts'
-  import type { CommandResponse } from '../types.ts'
+  import type { CapabilityInvocationResponse } from '../types.ts'
   import IconButton from '../components/IconButton.svelte'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import {
@@ -43,7 +43,7 @@
     readonly simulationRunId: SimulationRunId
     readonly object: OperationalObject
     readonly objects: ReadonlyArray<OperationalObject>
-    readonly sendRealtimeCommand?: (command: SimulationRunCommandRequest) => Promise<CommandResponse>
+    readonly invokeRealtimeCapability?: (invocation: SimulationRunCapabilityRequest) => Promise<CapabilityInvocationResponse>
     readonly sendRealtimeInput?: (input: RuntimeInputRequest) => void
     readonly subscribeMotionFrames?: (consumer: DroneMotionFrameConsumer) => () => void
     readonly windowOffsetIndex?: number
@@ -84,7 +84,7 @@
     simulationRunId,
     object,
     objects,
-    sendRealtimeCommand,
+    invokeRealtimeCapability,
     sendRealtimeInput,
     subscribeMotionFrames,
     windowOffsetIndex = 0,
@@ -467,19 +467,20 @@
         commandStatus = err instanceof Error ? `${err.message}; falling back to command path` : 'Realtime input failed; falling back to command path'
       }
     }
-    const command: SimulationRunCommandRequest = {
-      kind: manualControlCommandKind,
-      targetObjectIds: [selectedObject.id],
-      payload: commandPayload,
+    const invocation: SimulationRunCapabilityRequest = {
+      capabilityId: manualControlCommandKind,
+      input: commandPayload,
     }
     try {
-      const response = sendRealtimeCommand
-        ? await sendRealtimeCommand(command)
-        : await sendSimulationRunCommand(simulationRunId, command)
+      const response = invokeRealtimeCapability
+        ? await invokeRealtimeCapability(invocation)
+        : await invokeSimulationRunCapability(simulationRunId, invocation)
+      if (response.kind !== 'command') throw new Error(`${manualControlCommandKind} is not a command`)
       return { transport: 'command', result: response.result }
     } catch (err) {
-      if (!sendRealtimeCommand) throw err
-      const response = await sendSimulationRunCommand(simulationRunId, command)
+      if (!invokeRealtimeCapability) throw err
+      const response = await invokeSimulationRunCapability(simulationRunId, invocation)
+      if (response.kind !== 'command') throw new Error(`${manualControlCommandKind} is not a command`)
       return { transport: 'command', result: response.result }
     }
   }
@@ -526,26 +527,26 @@
       : mode === 'land'
         ? landDroneCommandKind
         : returnToLaunchDroneCommandKind
-    const body = await sendSimulationRunCommand(simulationRunId, {
-      kind,
-      targetObjectIds: [selectedObject.id],
-      payload: {
+    const body = await invokeSimulationRunCapability(simulationRunId, {
+      capabilityId: kind,
+      input: {
         droneId: selectedObject.id,
       },
     })
+    if (body.kind !== 'command') throw new Error(`${kind} is not a command`)
     commandStatus = body.result.ok ? `${mode.replaceAll('_', ' ')} accepted` : `Rejected: ${body.result.reason ?? 'unknown'}`
   }
 
   const attackTarget = async (): Promise<void> => {
     if (!selectedTargetId) return
-    const body = await sendSimulationRunCommand(simulationRunId, {
-      kind: attackCommandKind,
-      targetObjectIds: [selectedObject.id, selectedTargetId as ObjectId],
-      payload: {
+    const body = await invokeSimulationRunCapability(simulationRunId, {
+      capabilityId: attackCommandKind,
+      input: {
         attackerId: selectedObject.id,
         targetId: selectedTargetId,
       },
     })
+    if (body.kind !== 'command') throw new Error(`${attackCommandKind} is not a command`)
     commandStatus = body.result.ok ? 'Attack command accepted' : `Rejected: ${body.result.reason ?? 'unknown'}`
   }
 

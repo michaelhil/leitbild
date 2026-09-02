@@ -23,7 +23,7 @@ import type {
 } from '../../../simulation/protocol.ts'
 import {
   electricGridCommandKinds,
-  electricGridCommandOperations,
+  electricGridCommandCapabilities,
   gridClearDerateCommandKind,
   gridClearDeratePayloadSchema,
   gridCloseBranchCommandKind,
@@ -49,7 +49,7 @@ import {
 } from '../commands.ts'
 import { gridDefinitionSchema } from '../config.ts'
 import { electricGridPackDataSchema, electricGridPackId } from '../model.ts'
-import { answerElectricGridQuery, electricGridQueryOperations } from '../query.ts'
+import { answerElectricGridQuery, electricGridQueryCapabilities } from '../query.ts'
 import { createGridRecordingPlan } from '../recording.ts'
 import { balanceInitialGridDispatch, createGridRuntimeInstance, type GridRuntimeInstance } from '../runtime/instance.ts'
 import { advanceGrid } from '../runtime/solver.ts'
@@ -212,7 +212,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
   version: '1.0.0',
   packId: electricGridPackId,
   clock: 'simulation',
-  operations: [...electricGridCommandOperations, ...electricGridQueryOperations],
+  capabilities: [...electricGridCommandCapabilities, ...electricGridQueryCapabilities],
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const { compileGridDefinition } = await import('../definitions.ts')
     const initialObjects = (config.initialObjects ?? config.scenario?.initialObjects ?? []).filter(object => object.packId === electricGridPackId)

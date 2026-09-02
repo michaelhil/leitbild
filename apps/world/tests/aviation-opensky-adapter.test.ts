@@ -195,7 +195,7 @@ describe('createOpenSkyPackRuntimeAdapter', () => {
     connection.subscribe(() => undefined)
     await Bun.sleep(10)
 
-    const response = await connection.query({ packId: 'aviation', kind: 'aviation.source_status', payload: {} })
+    const response = await connection.query({ packId: 'aviation', kind: 'world.aviation.source-status', payload: {} })
     expect(response.ok).toBe(true)
     if (!response.ok) return
     const result = response.result as { source: string; aircraftInBbox: number; polling: boolean }

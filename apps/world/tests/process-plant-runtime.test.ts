@@ -151,7 +151,7 @@ const displayAlarmIdsFor = (input: {
   const response = answerProcessPlantDisplayQuery({
     request: {
       packId: 'process-plant',
-      kind: 'process-plant.display.snapshot',
+      kind: 'world.process-plant.display.snapshot',
       payload: {
         plantId: input.system.id,
         displayId: 'unit-overview',

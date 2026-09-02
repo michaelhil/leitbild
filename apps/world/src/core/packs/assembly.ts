@@ -1,5 +1,5 @@
 import type { PackRuntimeAdapter } from '../../simulation/protocol.ts'
-import { operationIds } from '../../simulation/operations.ts'
+import { capabilityIds, capabilityJsonSchema } from '../../simulation/capabilities.ts'
 import type { WorldPack } from './protocol.ts'
 
 export interface ValidatedWorldAssembly {
@@ -35,6 +35,18 @@ const assertContributionDescriptor = (pack: WorldPack): void => {
   }
 }
 
+const capabilityContract = (capability: PackRuntimeAdapter['capabilities'][number]): string => JSON.stringify({
+  id: capability.id,
+  kind: capability.kind,
+  title: capability.title,
+  description: capability.description,
+  risk: capability.risk,
+  idempotent: capability.idempotent,
+  schedulable: capability.schedulable ?? false,
+  inputSchema: capabilityJsonSchema(capability.input),
+  outputSchema: capabilityJsonSchema(capability.output),
+})
+
 export const validateWorldAssembly = (config: {
   readonly packs: ReadonlyArray<WorldPack>
   readonly runtimeAdapters: ReadonlyArray<PackRuntimeAdapter>
@@ -50,13 +62,14 @@ export const validateWorldAssembly = (config: {
     if (!pack.runtime?.runtimes.some(runtime => runtime.id === adapter.id)) {
       throw new Error(`Pack Runtime ${adapter.id} is not declared by Pack ${adapter.packId}`)
     }
-    assertUnique(adapter.operations.map(operation => `${operation.type}:${operation.id}`), `operation in Pack Runtime ${adapter.id}`)
-    for (const operation of adapter.operations) {
-      if (operation.id.trim() === '' || operation.title.trim() === '' || operation.description.trim() === '') {
-        throw new Error(`Pack Runtime ${adapter.id} has incomplete ${operation.type} operation metadata`)
+    assertUnique(adapter.capabilities.map(capability => capability.id), `capability in Pack Runtime ${adapter.id}`)
+    for (const capability of adapter.capabilities) {
+      if (capability.id.trim() === '' || capability.title.trim() === '' || capability.description.trim() === '') {
+        throw new Error(`Pack Runtime ${adapter.id} has incomplete ${capability.kind} capability metadata`)
       }
     }
-    const commandIds = new Set(operationIds(adapter.operations, 'command'))
+    assertUnique(adapter.realtimeInputTypes ?? [], `realtime input in Pack Runtime ${adapter.id}`)
+    const commandIds = new Set(capabilityIds(adapter.capabilities, 'command'))
     for (const commandId of Object.keys(adapter.commandEventHistory ?? {})) {
       if (!commandIds.has(commandId)) {
         throw new Error(`Pack Runtime ${adapter.id} configures history for undeclared command ${commandId}`)
@@ -94,6 +107,15 @@ export const validateWorldAssembly = (config: {
   })
 
   for (const pack of packs) assertContributionDescriptor(pack)
+  for (const pack of packs) {
+    const mutationTypeIds = Object.keys(pack.scenario?.mutationSchemas ?? {})
+    if (mutationTypeIds.length > 0 && !pack.scenario?.applyMutation) {
+      throw new Error(`Pack ${pack.descriptor.id} declares Scenario mutations without a mutation handler`)
+    }
+    if (pack.scenario?.applyMutation && mutationTypeIds.length === 0) {
+      throw new Error(`Pack ${pack.descriptor.id} declares a Scenario mutation handler without mutation schemas`)
+    }
+  }
   assertUnique(packs.flatMap(pack => pack.presentation.categories.map(category => category.id)), 'object category id')
   assertUnique(packs.flatMap(pack => pack.creation?.createObjectTypes.map(type => type.id) ?? []), 'create object type id')
   assertUnique(packs.flatMap(pack => pack.interactions?.handlers.map(handler => handler.id) ?? []), 'interaction handler id')
@@ -109,8 +131,8 @@ export const validateWorldAssembly = (config: {
   }
 
   for (const [routeType, routesFor] of [
-    ['command', (adapter: PackRuntimeAdapter) => operationIds(adapter.operations, 'command')],
-    ['realtime input', (adapter: PackRuntimeAdapter) => operationIds(adapter.operations, 'realtime-input')],
+    ['capability', (adapter: PackRuntimeAdapter) => adapter.capabilities.map(capability => capability.id)],
+    ['realtime input', (adapter: PackRuntimeAdapter) => adapter.realtimeInputTypes ?? []],
   ] as const) {
     const owners = new Map<string, string>()
     for (const adapter of config.runtimeAdapters) {
@@ -121,6 +143,18 @@ export const validateWorldAssembly = (config: {
         }
         owners.set(route, adapter.packId)
       }
+    }
+  }
+
+  const capabilityContracts = new Map<string, { readonly runtimeId: string; readonly contract: string }>()
+  for (const adapter of config.runtimeAdapters) {
+    for (const capability of adapter.capabilities) {
+      const contract = capabilityContract(capability)
+      const existing = capabilityContracts.get(capability.id)
+      if (existing && existing.contract !== contract) {
+        throw new Error(`Pack Runtimes ${existing.runtimeId} and ${adapter.id} disagree on Capability ${capability.id}`)
+      }
+      capabilityContracts.set(capability.id, { runtimeId: adapter.id, contract })
     }
   }
 

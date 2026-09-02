@@ -14,7 +14,7 @@
     gridShedLoadCommandKind,
     gridTripGeneratorCommandKind,
   } from '../../packs/electric-grid/commands.ts'
-  import { querySimulationRunPack, sendSimulationRunCommand } from '../simulation-run-client.ts'
+  import { invokeSimulationRunCapability, querySimulationRunCapability } from '../simulation-run-client.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
 
   type AssetKind = 'bus' | 'branch' | 'generator' | 'load' | 'storage'
@@ -75,14 +75,12 @@
   const pageCount = $derived(Math.max(1, Math.ceil(total / pageSize)))
 
   const queryResult = async (requestKind: string, payload: unknown): Promise<unknown> => {
-    const body = await querySimulationRunPack(simulationRunId, { packId: 'electric-grid', kind: requestKind, payload })
-    if (!body.response.ok) throw new Error(body.response.reason)
-    return body.response.result
+    return await querySimulationRunCapability(simulationRunId, requestKind, payload)
   }
 
   const loadDetail = async (assetId: string): Promise<void> => {
     try {
-      const result = await queryResult('electric-grid.asset.get', { gridId, assetId }) as { readonly asset: AssetDetail }
+      const result = await queryResult('world.electric-grid.asset.get', { gridId, assetId }) as { readonly asset: AssetDetail }
       if (selectedAssetId !== assetId) return
       detail = result.asset
       error = null
@@ -95,7 +93,7 @@
     const sequence = ++loadSequence
     loading = true
     try {
-      const result = await queryResult('electric-grid.assets.search', {
+      const result = await queryResult('world.electric-grid.assets.search', {
         gridId,
         text: searchText,
         ...(kind === 'all' ? {} : { kinds: [kind] }),
@@ -184,7 +182,7 @@
   }
 
   const payloadFor = (operationId: string, value: number): Readonly<Record<string, unknown>> => {
-    const base = { assetId: detail!.id }
+    const base = { gridId, assetId: detail!.id }
     if (operationId === gridDispatchGeneratorCommandKind) return { ...base, targetMw: value }
     if (operationId === gridSetGeneratorAvailabilityCommandKind) return { ...base, availableMw: value }
     if (operationId === gridDerateBranchCommandKind) return { ...base, availability: value }
@@ -208,11 +206,11 @@
     }
     commandStatus = 'Sending…'
     try {
-      const response = await sendSimulationRunCommand(simulationRunId, {
-        kind: operationId,
-        targetObjectIds: [gridId],
-        payload: payloadFor(operationId, value),
+      const response = await invokeSimulationRunCapability(simulationRunId, {
+        capabilityId: operationId,
+        input: payloadFor(operationId, value),
       })
+      if (response.kind !== 'command') throw new Error(`Capability ${operationId} is not a command`)
       if (!response.result.ok) throw new Error(response.result.reason ?? 'Command rejected')
       activeOperationId = null
       commandStatus = 'Accepted'

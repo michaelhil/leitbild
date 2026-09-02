@@ -89,14 +89,6 @@ export interface ScenarioTimeRef {
   readonly seconds: number
 }
 
-export interface ScenarioTimelineCommandRequest {
-  readonly kind: string
-  readonly targetObjectIds: ReadonlyArray<ObjectId>
-  readonly payload: unknown
-  readonly idempotencyKey?: string
-  readonly expectedRevision?: number
-}
-
 export type ScenarioTimelineAction =
   | {
       readonly type: 'show_guidance'
@@ -137,8 +129,9 @@ export type ScenarioTimelineAction =
       }
     }
   | {
-      readonly type: 'issue_command'
-      readonly command: ScenarioTimelineCommandRequest
+      readonly type: 'invoke_capability'
+      readonly capabilityId: string
+      readonly input: unknown
     }
 
 export interface ScenarioTimelineCue {
@@ -172,14 +165,6 @@ export interface ScenarioDefinition {
 export const scenarioWorldDefinitionSchema = z.object({
   startsAt: isoTimestampSchema.optional(),
   environment: z.record(z.string(), z.unknown()).default({}),
-})
-
-export const scenarioTimelineCommandRequestSchema = z.object({
-  kind: z.string().min(1),
-  targetObjectIds: z.array(objectIdSchema),
-  payload: z.custom<unknown>(value => value !== undefined, 'payload is required'),
-  idempotencyKey: z.string().min(1).max(256).optional(),
-  expectedRevision: z.number().int().nonnegative().optional(),
 })
 
 export const surfaceMapLayerSchema = z.enum(['objects', 'routes', 'traffic', 'weather', 'grid', 'highlights'])
@@ -321,8 +306,9 @@ export const scenarioTimelineActionSchema = z.discriminatedUnion('type', [
     }).strict(),
   }),
   z.object({
-    type: z.literal('issue_command'),
-    command: scenarioTimelineCommandRequestSchema,
+    type: z.literal('invoke_capability'),
+    capabilityId: z.string().regex(/^world\.[a-z][a-z0-9-]*(?:[._-][a-z0-9-]+)+$/),
+    input: z.custom<unknown>(value => value !== undefined, 'input is required'),
   }),
 ])
 

@@ -1,5 +1,5 @@
-import type { SimulationRunId, OperationalObject, ScenarioDefinition, ScenarioExecutionState, SimulationClockState } from '../core/model/index.ts'
-import type { PackCreateObjectType, PackCreationGeometry, PackObjectCategory, PackQueryResponse } from '../core/packs/protocol.ts'
+import type { CommandResult, SimulationRunId, OperationalObject, ScenarioDefinition, ScenarioExecutionState, SimulationClockState } from '../core/model/index.ts'
+import type { PackCreateObjectType, PackCreationGeometry, PackObjectCategory } from '../core/packs/protocol.ts'
 
 export interface SimulationRunSnapshot {
   readonly objects: ReadonlyArray<OperationalObject>
@@ -18,19 +18,12 @@ export interface ScenarioResponse {
   readonly scenario: ScenarioDefinition
 }
 
-export interface CommandResponse {
-  readonly result: {
-    readonly ok: boolean
-    readonly reason?: string
-  }
-}
+export type CapabilityInvocationResponse =
+  | { readonly kind: 'command'; readonly result: CommandResult; readonly replayed: boolean }
+  | { readonly kind: 'query'; readonly result: unknown }
 
 export interface ClockResponse {
   readonly clock: SimulationClockState
-}
-
-export interface PackQueryApiResponse {
-  readonly response: PackQueryResponse
 }
 
 export type CreateParameterValue = string | number | boolean

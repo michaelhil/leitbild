@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { actorIdSchema, clientIdSchema, commandIdSchema, objectIdSchema, simulationRunIdSchema, type ActorId, type ClientId, type CommandId, type ObjectId, type SimulationRunId } from './ids.ts'
 import { isoTimestampSchema, type IsoTimestamp } from './time.ts'
 
-export const deleteObjectCommandKind = 'object.delete'
+export const deleteObjectCommandKind = 'world.object.delete'
 
 export const deleteObjectPayloadSchema = z.object({
   objectId: objectIdSchema,

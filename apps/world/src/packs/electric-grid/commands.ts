@@ -1,17 +1,19 @@
 import { z } from 'zod'
-import type { PackRuntimeOperationDescriptor } from '../../simulation/protocol.ts'
+import type { SimulationCapability } from '../../simulation/protocol.ts'
+import { commandResultSchema, objectIdSchema } from '../../core/model/index.ts'
+import { definePackCommandCapability } from '../../simulation/capabilities.ts'
 
-export const gridDispatchGeneratorCommandKind = 'electric-grid.dispatch-generator'
-export const gridTripGeneratorCommandKind = 'electric-grid.trip-generator'
-export const gridSetGeneratorAvailabilityCommandKind = 'electric-grid.set-generator-availability'
-export const gridReturnGeneratorToServiceCommandKind = 'electric-grid.return-generator-to-service'
-export const gridOpenBranchCommandKind = 'electric-grid.open-branch'
-export const gridCloseBranchCommandKind = 'electric-grid.close-branch'
-export const gridDerateBranchCommandKind = 'electric-grid.derate-branch'
-export const gridClearDerateCommandKind = 'electric-grid.clear-derate'
-export const gridShedLoadCommandKind = 'electric-grid.shed-load'
-export const gridRestoreLoadCommandKind = 'electric-grid.restore-load'
-export const gridSetEvChargingDemandCommandKind = 'electric-grid.set-ev-charging-demand'
+export const gridDispatchGeneratorCommandKind = 'world.electric-grid.dispatch-generator'
+export const gridTripGeneratorCommandKind = 'world.electric-grid.trip-generator'
+export const gridSetGeneratorAvailabilityCommandKind = 'world.electric-grid.set-generator-availability'
+export const gridReturnGeneratorToServiceCommandKind = 'world.electric-grid.return-generator-to-service'
+export const gridOpenBranchCommandKind = 'world.electric-grid.open-branch'
+export const gridCloseBranchCommandKind = 'world.electric-grid.close-branch'
+export const gridDerateBranchCommandKind = 'world.electric-grid.derate-branch'
+export const gridClearDerateCommandKind = 'world.electric-grid.clear-derate'
+export const gridShedLoadCommandKind = 'world.electric-grid.shed-load'
+export const gridRestoreLoadCommandKind = 'world.electric-grid.restore-load'
+export const gridSetEvChargingDemandCommandKind = 'world.electric-grid.set-ev-charging-demand'
 
 export const electricGridCommandKinds = [
   gridDispatchGeneratorCommandKind,
@@ -28,11 +30,6 @@ export const electricGridCommandKinds = [
 ] as const
 
 const assetPayload = z.object({ assetId: z.string().min(1) }).strict()
-const acceptedCommandResultSchema = z.object({
-  ok: z.literal(true),
-  commandId: z.string().min(1),
-  acceptedAt: z.iso.datetime(),
-}).strict()
 export const gridDispatchGeneratorPayloadSchema = assetPayload.extend({ targetMw: z.number().finite().nonnegative() }).strict()
 export const gridTripGeneratorPayloadSchema = assetPayload
 export const gridSetGeneratorAvailabilityPayloadSchema = assetPayload.extend({ availableMw: z.number().finite().nonnegative() }).strict()
@@ -45,16 +42,31 @@ export const gridShedLoadPayloadSchema = assetPayload.extend({ amountMw: z.numbe
 export const gridRestoreLoadPayloadSchema = assetPayload
 export const gridSetEvChargingDemandPayloadSchema = assetPayload.extend({ demandMw: z.number().finite().nonnegative() }).strict()
 
-const command = (id: string, title: string, description: string, input: z.ZodType): PackRuntimeOperationDescriptor => ({
-  id,
-  type: 'command',
-  title,
-  description,
-  inputSchema: z.toJSONSchema(input),
-  outputSchema: z.toJSONSchema(acceptedCommandResultSchema),
-})
+const command = <Shape extends z.ZodRawShape>(
+  id: string,
+  title: string,
+  description: string,
+  payloadSchema: z.ZodObject<Shape>,
+): SimulationCapability => {
+  const input = payloadSchema.extend({ gridId: objectIdSchema })
+  return definePackCommandCapability({
+    id,
+    title,
+    description,
+    input,
+    output: commandResultSchema,
+    idempotent: true,
+    schedulable: true,
+    buildCommand: raw => {
+      const { gridId, ...payload } = input.parse(raw) as Record<string, unknown> & {
+        readonly gridId: ReturnType<typeof objectIdSchema.parse>
+      }
+      return { targetObjectIds: [gridId], payload }
+    },
+  })
+}
 
-export const electricGridCommandOperations: ReadonlyArray<PackRuntimeOperationDescriptor> = [
+export const electricGridCommandCapabilities: ReadonlyArray<SimulationCapability> = [
   command(gridDispatchGeneratorCommandKind, 'Dispatch generator', 'Sets the dispatch target of an online generator in MW.', gridDispatchGeneratorPayloadSchema),
   command(gridTripGeneratorCommandKind, 'Trip generator', 'Trips a generator and removes its output and reserve.', gridTripGeneratorPayloadSchema),
   command(gridSetGeneratorAvailabilityCommandKind, 'Set generator availability', 'Sets available generator capacity without changing a tripped or offline lifecycle state.', gridSetGeneratorAvailabilityPayloadSchema),

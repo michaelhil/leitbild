@@ -29,7 +29,7 @@ const aeroNorwayDatasetIdValue = asDatasetId('aero-norway')
 //   - Norwegian airspace polygons + Avinor airport points (the aero-norway
 //     reference dataset). Pack-contributed via referenceDatasetBuilders.
 //   - Live aircraft: OpenSky / VATSIM pack runtimes and the
-//     aviation.set_source command.
+//     world.aviation.set-source Capability.
 //   - Rail-side layer-group toggles for reference airspace / airports.
 //
 // See ADR 0022 for the architecture and the wiki page packs/aviation.md.

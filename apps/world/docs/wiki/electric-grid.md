@@ -55,7 +55,7 @@ Topology islands and their linear power-flow factors are cached. They are rebuil
 
 ## Discovery API
 
-The runtime publishes self-describing operation descriptors with input and output schemas derived from the same validation schemas used at execution time.
+The runtime publishes self-describing Simulation Capabilities with input and output schemas derived from the same validation schemas used at execution time.
 
 Queries:
 

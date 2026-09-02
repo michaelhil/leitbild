@@ -3,7 +3,7 @@
   import type { SimulationRunId, OperationalObject } from '../../core/model/index.ts'
   import { configureDroneVehicleModelCommandKind } from '../../packs/drone/commands.ts'
   import { dronePackDataSchema, droneVehicleModelSchema, type DroneCapability, type DronePayload } from '../../packs/drone/model.ts'
-  import { sendSimulationRunCommand } from '../simulation-run-client.ts'
+  import { invokeSimulationRunCapability } from '../simulation-run-client.ts'
   import IconButton from '../components/IconButton.svelte'
 
   interface Props {
@@ -90,14 +90,14 @@
         payloads: payloadsFromJson(),
         visual: { color, accentColor, scale },
       })
-      const body = await sendSimulationRunCommand(simulationRunId, {
-        kind: configureDroneVehicleModelCommandKind,
-        targetObjectIds: [object.id],
-        payload: {
+      const body = await invokeSimulationRunCapability(simulationRunId, {
+        capabilityId: configureDroneVehicleModelCommandKind,
+        input: {
           droneId: object.id,
           model,
         },
       })
+      if (body.kind !== 'command') throw new Error(`${configureDroneVehicleModelCommandKind} is not a command`)
       status = body.result.ok ? 'Vehicle model saved' : `Rejected: ${body.result.reason ?? 'unknown'}`
     } catch (err) {
       status = err instanceof Error ? err.message : String(err)

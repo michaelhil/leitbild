@@ -57,7 +57,7 @@ An Electric Grid Scenario Item that selects one Grid Model, Operating Point, Aut
 _Avoid_: Grid Model, regional runtime container, collection of top-level asset objects
 
 **Grid Asset**:
-A stable bus, branch, generator, load, or storage identity inside a Grid Model and Grid runtime. Grid Assets are discoverable and controllable through bounded Pack queries and commands, but are not independent Operational Objects.
+A stable bus, branch, generator, load, or storage identity inside a Grid Model and Grid runtime. Grid Assets are discoverable and controllable through bounded Simulation Capabilities, but are not independent Operational Objects.
 _Avoid_: Operational Object, map reference feature, anonymous solver variable
 
 **Electrical Connection Point**:
@@ -65,7 +65,7 @@ A Grid-owned Electrical Port in a Grid Model that identifies where another opera
 _Avoid_: hard-coded Plant link, arbitrary signal binding, Grid Asset synonym
 
 **Electrical Port**:
-A Pack-owned, named electrical boundary on an Operational Object. It declares voltage and exchange limits and may publish current active power, voltage, frequency, energization, and connection state.
+A Pack-owned, named electrical boundary on an Operational Object. It declares whether it is a system or network port, voltage and exchange limits, and may publish current active power, voltage, frequency, energization, and connection state.
 _Avoid_: arbitrary variable path, generic integration endpoint, duplicated remote asset
 
 **Electrical Connection**:
@@ -89,11 +89,11 @@ A Pack-owned named choice of operational signals and allowed sampling cadence th
 _Avoid_: Recording Policy, hand-authored signal list, universal logging rule
 
 **Scenario Timeline**:
-An ordered collection of declarative Cues evaluated against Simulation Run time or committed World events.
+An ordered collection of declarative Cues evaluated against Simulation Run time. Cues may change scenario presentation/state or invoke a Capability explicitly marked schedulable.
 _Avoid_: Scenario Script, arbitrary code, simulator-private timer
 
 **Cue**:
-A typed trigger and ordered Capability invocations within a Scenario Timeline.
+A simulation-time trigger with ordered declarative actions and Capability invocations.
 _Avoid_: generic workflow step, arbitrary expression
 
 **Simulation Run**:
@@ -105,8 +105,16 @@ A World entity with independent operational identity, state, visibility, or comm
 _Avoid_: internal solver variable, runtime-private state, Platform Resource as a synonym
 
 **Simulation Context**:
-An agent-safe current view of a Simulation Run: Scenario identity and objectives, current clock and guidance, operational-object summaries, and available operations. It excludes unrevealed Scenario Timeline content.
+An agent-safe current view of a Simulation Run: Scenario identity and objectives, current clock, runtime health, guidance, procedure state, operational-object summaries, and available Capabilities. It excludes unrevealed Scenario Timeline content.
 _Avoid_: full snapshot dump, future-event leak, copied solver state
+
+**Simulation Capability**:
+A self-describing command or query with one stable id, risk and idempotency metadata, strict input/output schemas, and—when appropriate—explicit timeline schedulability. World-core behavior and Pack Runtime behavior use this same invocation model.
+_Avoid_: generic command/query tunnel, untyped operation list, UI-only action
+
+**Pack Runtime Health**:
+A compact readiness/degradation record maintained by the runtime hub for each active Pack Runtime from actual interactions.
+_Avoid_: separate monitoring store, swallowed runtime failure, fabricated heartbeat
 
 **World Pack**:
 A World-owned Pack that contributes scenario material, mechanics, Resources, Capabilities, or presentation.

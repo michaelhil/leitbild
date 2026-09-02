@@ -3,7 +3,7 @@ import { newWorkspaceId } from '@leitbild/contracts'
 import { mkdir, mkdtemp, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { actorIdSchema, commandEnvelopeSchema, nowIso, type CommandEnvelope, type SimulationRunId, type SimulationRunEvent, type ObjectId } from '../src/core/model/index.ts'
+import { actorIdSchema, nowIso, type SimulationRunId, type SimulationRunEvent } from '../src/core/model/index.ts'
 import type { Actor } from '../src/core/simulation-runs/actors.ts'
 import { createHealthDetails, staticContentTypeForPath } from '../src/core/api/server.ts'
 import { createSimulationRunRealtimeManager, type RealtimeEventBatchMessage, type RealtimeOutboundMessage } from '../src/core/api/realtime.ts'
@@ -14,6 +14,7 @@ import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/a
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestScenarioCatalog, testScenarioAuthoring } from './helpers.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
+import { setDestinationCommandKind } from '../src/packs/ambulance/commands.ts'
 
 interface CapturedRealtimeClient {
   readonly events: SimulationRunEvent[]
@@ -72,20 +73,6 @@ const waitForRuntimeClosed = async (
   }
   throw new Error(`timed out waiting for idle runtime close: ${simulationRunId}`)
 }
-
-const dispatchAmbulanceCommand = (simulationRunId: SimulationRunId, ambulanceId: ObjectId, targetId: ObjectId): CommandEnvelope =>
-  commandEnvelopeSchema.parse({
-    id: `command:${crypto.randomUUID()}`,
-    simulationRunId,
-    actorId: operatorActor.id,
-    kind: 'ambulance.set_destination',
-    targetObjectIds: [ambulanceId, targetId],
-    payload: {
-      ambulanceId,
-      destinationId: targetId,
-    },
-    issuedAt: nowIso(),
-  }) as CommandEnvelope
 
 describe('server health', () => {
   test('serves module worker assets with a JavaScript MIME type', () => {
@@ -186,11 +173,13 @@ describe('server health', () => {
 
       const runtime = registry.get(simulationRunId)
       if (!runtime) throw new Error('expected simulation run runtime after reset')
-      const result = await runtime.issueCommand(
-        operatorActor,
-        dispatchAmbulanceCommand(simulationRunId, 'amb:a12' as ObjectId, 'incident:gronland-unattended' as ObjectId),
-      )
-      expect(result.ok).toBe(true)
+      const outcome = await runtime.invokeCapability(operatorActor, {
+        capabilityId: setDestinationCommandKind,
+        input: { ambulanceId: 'amb:a12', destinationId: 'incident:gronland-unattended' },
+      })
+      expect(outcome.kind).toBe('command')
+      if (outcome.kind !== 'command') throw new Error('expected command Capability result')
+      expect(outcome.result.ok).toBe(true)
 
       await waitForMovingObjectEvent(client, 'amb:a12')
       const postResetEventMessages = client.eventMessages.filter(message =>

@@ -5,7 +5,7 @@ import {
   type GeoJsonPoint,
   type OperationalObject,
 } from '../../core/model/index.ts'
-import type { PackScenarioItemSpec, PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
+import type { PackScenarioItemSpec, PackScenarioMutationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
 import {
   defaultDroneVehicleModels,
   droneSwarmMembershipSchema,
@@ -29,7 +29,7 @@ export const dronePackConfigSchema = z.object({
   models: z.array(droneVehicleModelSchema).default([]),
 }).strict()
 
-const droneSpecSchema = z.object({
+export const droneSpecSchema = z.object({
   pack: z.literal('drone'),
   type: z.literal('drone'),
   id: objectIdSchema,
@@ -42,13 +42,13 @@ const droneSpecSchema = z.object({
   swarm: droneSwarmMembershipSchema.optional(),
 }).strict()
 
-const setDroneModelOperationSchema = z.object({
+const setDroneModelMutationSchema = z.object({
   pack: z.literal('drone'),
   type: z.literal('set_vehicle_model'),
   model: droneVehicleModelSchema,
 }).strict()
 
-const setDroneSwarmOperationSchema = z.object({
+const setDroneSwarmMutationSchema = z.object({
   pack: z.literal('drone'),
   type: z.literal('set_swarm'),
   swarm: droneSwarmMembershipSchema.optional(),
@@ -76,6 +76,11 @@ export const droneVehicleModelsFromPackConfigs = (
 export const droneProfilesFromPackConfigs = droneVehicleModelsFromPackConfigs
 
 export const droneScenarioSupport: PackScenarioSupport = {
+  itemSchemas: { drone: droneSpecSchema },
+  mutationSchemas: {
+    set_vehicle_model: setDroneModelMutationSchema,
+    set_swarm: setDroneSwarmMutationSchema,
+  },
   expandItem: (rawSpec: PackScenarioItemSpec, context) => {
     if (rawSpec.type !== 'drone') throw new Error(`unsupported drone scenario object type: ${rawSpec.type}`)
     const spec = droneSpecSchema.parse(rawSpec)
@@ -94,38 +99,38 @@ export const droneScenarioSupport: PackScenarioSupport = {
       ...(spec.swarm === undefined ? {} : { swarm: spec.swarm }),
     })] }
   },
-  applyOperation: (rawOperation: PackScenarioOperationSpec, context): OperationalObject => {
-    if (rawOperation.type === 'set_vehicle_model') {
-      const operation = setDroneModelOperationSchema.parse(rawOperation)
+  applyMutation: (rawMutation: PackScenarioMutationSpec, context): OperationalObject => {
+    if (rawMutation.type === 'set_vehicle_model') {
+      const mutation = setDroneModelMutationSchema.parse(rawMutation)
       const data = parseDroneObject(context.object)
       if (!data) throw new Error(`set_vehicle_model requires drone object: ${context.object.id}`)
       return withDronePackData(context.object, {
         ...data,
         vehicle: {
           ...data.vehicle,
-          modelId: operation.model.id,
-          modelLabel: operation.model.label,
-          airframe: operation.model.airframe,
-          flightEnvelope: operation.model.flightEnvelope,
-          capabilities: operation.model.capabilities,
-          sensors: operation.model.sensors,
-          payloads: operation.model.payloads,
-          visual: operation.model.visual,
+          modelId: mutation.model.id,
+          modelLabel: mutation.model.label,
+          airframe: mutation.model.airframe,
+          flightEnvelope: mutation.model.flightEnvelope,
+          capabilities: mutation.model.capabilities,
+          sensors: mutation.model.sensors,
+          payloads: mutation.model.payloads,
+          visual: mutation.model.visual,
         },
       }, context.at)
     }
-    if (rawOperation.type === 'set_swarm') {
-      const operation = setDroneSwarmOperationSchema.parse(rawOperation)
+    if (rawMutation.type === 'set_swarm') {
+      const mutation = setDroneSwarmMutationSchema.parse(rawMutation)
       const data = parseDroneObject(context.object)
       if (!data) throw new Error(`set_swarm requires drone object: ${context.object.id}`)
-      const nextData = operation.swarm === undefined
+      const nextData = mutation.swarm === undefined
         ? (() => {
             const { swarm: _swarm, ...withoutSwarm } = data
             return withoutSwarm
           })()
-        : { ...data, swarm: operation.swarm }
+        : { ...data, swarm: mutation.swarm }
       return withDronePackData(context.object, nextData, context.at)
     }
-    throw new Error(`unsupported drone scenario operation type: ${rawOperation.type}`)
+    throw new Error(`unsupported drone Scenario mutation type: ${rawMutation.type}`)
   },
 }

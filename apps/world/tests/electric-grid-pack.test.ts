@@ -80,7 +80,7 @@ describe('electric grid Pack', () => {
     expect(electricGridPack.authoring?.itemTypes.map(item => item.id)).toEqual(['grid'])
     expect(electricGridPack.presentation.categories.map(category => category.id)).toEqual(['electric-grids'])
     expect(electricGridPack.presentation.mapLayerGroups?.map(group => group.id)).toContain('electric-grid:reference-lines')
-    expect(createLocalElectricGridPackRuntimeAdapter().operations.every(operation => operation.inputSchema !== undefined && operation.outputSchema !== undefined)).toBe(true)
+    expect(createLocalElectricGridPackRuntimeAdapter().capabilities.every(capability => capability.input !== undefined && capability.output !== undefined)).toBe(true)
     expect(electricGridPackDataSchema.parse(gridObjects[0]?.packData)).toMatchObject({
       model: { ref: 'electric-grid.norway.transmission' },
       operatingPoint: { ref: 'electric-grid.norway.normal' },
@@ -101,7 +101,7 @@ describe('electric grid Pack', () => {
 
       const search = okResult(await connection.query({
         packId: 'electric-grid',
-        kind: 'electric-grid.assets.search',
+        kind: 'world.electric-grid.assets.search',
         payload: { gridId: 'grid:norway', kinds: ['branch'], limit: 10 },
       }))
       expect(search.total).toBeGreaterThan(250)
@@ -114,20 +114,20 @@ describe('electric grid Pack', () => {
       })
       const firstBranch = (search.assets as ReadonlyArray<{ readonly id: string }>)[0]!
       const branchDetail = okResult(await connection.query({
-        packId: 'electric-grid', kind: 'electric-grid.asset.get', payload: { gridId: 'grid:norway', assetId: firstBranch.id },
+        packId: 'electric-grid', kind: 'world.electric-grid.asset.get', payload: { gridId: 'grid:norway', assetId: firstBranch.id },
       }))
       expect(branchDetail.asset).toMatchObject({ definition: { sourceId: expect.any(String), sourceFeatureId: expect.any(String) } })
 
       const summary = okResult(await connection.query({
         packId: 'electric-grid',
-        kind: 'electric-grid.grid.summary',
+        kind: 'world.electric-grid.grid.summary',
         payload: { gridId: 'grid:norway' },
       }))
       expect(summary.assetCounts).toMatchObject({ bus: 255, generator: 70, load: 22, storage: 1 })
       expect((summary.constrainedBranches as unknown[]).length).toBeLessThanOrEqual(8)
       const connections = okResult(await connection.query({
         packId: 'electric-grid',
-        kind: 'electric-grid.connection-points.list',
+        kind: 'world.electric-grid.connection-points.list',
         payload: { gridId: 'grid:norway' },
       })).connectionPoints as ReadonlyArray<unknown>
       expect(connections).toEqual([])
@@ -140,14 +140,14 @@ describe('electric grid Pack', () => {
     const connection = await connect()
     try {
       const generators = okResult(await connection.query({
-        packId: 'electric-grid', kind: 'electric-grid.assets.search', payload: { gridId: 'grid:norway', kinds: ['generator'], limit: 1 },
+        packId: 'electric-grid', kind: 'world.electric-grid.assets.search', payload: { gridId: 'grid:norway', kinds: ['generator'], limit: 1 },
       })).assets as ReadonlyArray<{ readonly id: string }>
       const branches = okResult(await connection.query({
-        packId: 'electric-grid', kind: 'electric-grid.assets.search', payload: { gridId: 'grid:norway', kinds: ['branch'], limit: 1 },
+        packId: 'electric-grid', kind: 'world.electric-grid.assets.search', payload: { gridId: 'grid:norway', kinds: ['branch'], limit: 1 },
       })).assets as ReadonlyArray<{ readonly id: string }>
       const generatorId = generators[0]!.id
       const branchId = branches[0]!.id
-      const before = okResult(await connection.query({ packId: 'electric-grid', kind: 'electric-grid.grid.summary', payload: { gridId: 'grid:norway' } }))
+      const before = okResult(await connection.query({ packId: 'electric-grid', kind: 'world.electric-grid.grid.summary', payload: { gridId: 'grid:norway' } }))
       const beforeReserve = (before.projection as { readonly reserveMarginMw: number }).reserveMarginMw
 
       const dispatch = await connection.sendCommand(command({ kind: gridDispatchGeneratorCommandKind, gridId: 'grid:norway', payload: { assetId: generatorId, targetMw: 0 } }))
@@ -157,9 +157,9 @@ describe('electric grid Pack', () => {
       expect(trip.ok).toBe(true)
       expect(derate.ok).toBe(true)
 
-      const generator = okResult(await connection.query({ packId: 'electric-grid', kind: 'electric-grid.asset.get', payload: { gridId: 'grid:norway', assetId: generatorId } }))
-      const branch = okResult(await connection.query({ packId: 'electric-grid', kind: 'electric-grid.asset.get', payload: { gridId: 'grid:norway', assetId: branchId } }))
-      const after = okResult(await connection.query({ packId: 'electric-grid', kind: 'electric-grid.grid.summary', payload: { gridId: 'grid:norway' } }))
+      const generator = okResult(await connection.query({ packId: 'electric-grid', kind: 'world.electric-grid.asset.get', payload: { gridId: 'grid:norway', assetId: generatorId } }))
+      const branch = okResult(await connection.query({ packId: 'electric-grid', kind: 'world.electric-grid.asset.get', payload: { gridId: 'grid:norway', assetId: branchId } }))
+      const after = okResult(await connection.query({ packId: 'electric-grid', kind: 'world.electric-grid.grid.summary', payload: { gridId: 'grid:norway' } }))
       expect(generator.asset).toMatchObject({ state: { state: 'tripped', dispatchMw: 0, targetMw: 0 } })
       expect(branch.asset).toMatchObject({ state: { state: 'closed', availability: 0.6 }, status: { label: 'Derated 60%' } })
       expect((after.projection as { readonly reserveMarginMw: number }).reserveMarginMw).toBeLessThanOrEqual(beforeReserve)
@@ -172,12 +172,12 @@ describe('electric grid Pack', () => {
     const connection = await connect()
     try {
       const generators = okResult(await connection.query({
-        packId: 'electric-grid', kind: 'electric-grid.assets.search', payload: { gridId: 'grid:norway', kinds: ['generator'], limit: 1 },
+        packId: 'electric-grid', kind: 'world.electric-grid.assets.search', payload: { gridId: 'grid:norway', kinds: ['generator'], limit: 1 },
       })).assets as ReadonlyArray<{ readonly id: string }>
       const generatorId = generators[0]!.id
       expect((await connection.sendCommand(command({ kind: gridTripGeneratorCommandKind, gridId: 'grid:norway', payload: { assetId: generatorId } }))).ok).toBe(true)
       expect((await connection.sendCommand(command({ kind: gridSetGeneratorAvailabilityCommandKind, gridId: 'grid:norway', payload: { assetId: generatorId, availableMw: 50 } }))).ok).toBe(true)
-      const tripped = okResult(await connection.query({ packId: 'electric-grid', kind: 'electric-grid.asset.get', payload: { gridId: 'grid:norway', assetId: generatorId } }))
+      const tripped = okResult(await connection.query({ packId: 'electric-grid', kind: 'world.electric-grid.asset.get', payload: { gridId: 'grid:norway', assetId: generatorId } }))
       expect(tripped.asset).toMatchObject({ state: { state: 'tripped', availableMw: 50 } })
       expect((await connection.sendCommand(command({ kind: gridDispatchGeneratorCommandKind, gridId: 'grid:norway', payload: { assetId: generatorId, targetMw: 20 } }))).ok).toBe(false)
       expect((await connection.sendCommand(command({ kind: gridReturnGeneratorToServiceCommandKind, gridId: 'grid:norway', payload: { assetId: generatorId } }))).ok).toBe(true)
@@ -261,7 +261,7 @@ describe('electric grid Pack', () => {
       const emitted: ReadonlyArray<PackRuntimeEvent>[] = []
       const unsubscribe = connection.subscribe(emission => emitted.push(emission.events))
       const generators = okResult(await connection.query({
-        packId: 'electric-grid', kind: 'electric-grid.assets.search', payload: { gridId: 'grid:norway', kinds: ['generator'], limit: 1 },
+        packId: 'electric-grid', kind: 'world.electric-grid.assets.search', payload: { gridId: 'grid:norway', kinds: ['generator'], limit: 1 },
       })).assets as ReadonlyArray<{ readonly id: string }>
       const result = await connection.sendCommand(command({ kind: gridTripGeneratorCommandKind, gridId: 'grid:norway', payload: { assetId: generators[0]!.id } }))
       unsubscribe()
@@ -282,7 +282,7 @@ describe('electric grid Pack', () => {
     }
     const first = await connect(store)
     const generators = okResult(await first.query({
-      packId: 'electric-grid', kind: 'electric-grid.assets.search', payload: { gridId: 'grid:norway', kinds: ['generator'], limit: 1 },
+      packId: 'electric-grid', kind: 'world.electric-grid.assets.search', payload: { gridId: 'grid:norway', kinds: ['generator'], limit: 1 },
     })).assets as ReadonlyArray<{ readonly id: string }>
     const generatorId = generators[0]!.id
     expect((await first.sendCommand(command({ kind: gridTripGeneratorCommandKind, gridId: 'grid:norway', payload: { assetId: generatorId } }))).ok).toBe(true)
@@ -291,7 +291,7 @@ describe('electric grid Pack', () => {
     const restored = await connect(store)
     try {
       const generator = okResult(await restored.query({
-        packId: 'electric-grid', kind: 'electric-grid.asset.get', payload: { gridId: 'grid:norway', assetId: generatorId },
+        packId: 'electric-grid', kind: 'world.electric-grid.asset.get', payload: { gridId: 'grid:norway', assetId: generatorId },
       }))
       expect(generator.asset).toMatchObject({ state: { state: 'tripped', dispatchMw: 0, targetMw: 0 } })
     } finally {

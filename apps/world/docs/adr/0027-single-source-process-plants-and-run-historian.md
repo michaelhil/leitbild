@@ -20,7 +20,7 @@ The Process Plant calculation kernel remains Pack-owned, deterministic, fixed-st
 
 Action Presets are the one reusable boundary for parameterized failures and transients. They expose validated parameters and resolve through the same command and queued-write path used by operators, Scenario Timelines, and agents. Process Displays expose validated palette and binding metadata, while Pack-owned renderers remain reviewed code. This decision does not create a universal cross-Pack display language.
 
-Procedures form a cohesive optional World feature. They read Pack-owned signals and named assessments through generic operation descriptors rather than Process Plant procedure-specific queries. Procedure sources are configurable; Procedure remains external to Process Plant physics and I&C.
+Procedures form a cohesive optional World feature. They read Pack-owned signals and named assessments through Simulation Capabilities rather than Process Plant procedure-specific endpoints. Procedure sources are configurable; Procedure remains external to Process Plant physics and I&C.
 
 The Historian is an optional Simulation Run service that persists only explicitly selected Pack observations. Packs publish named Recording Profiles and their runtimes emit typed series descriptors with batched samples when a Scenario selects one. There is no intermediate policy language or hand-authored signal list. The existing Durable Journal remains the source of meaningful committed events; the Historian does not duplicate it. Runtime checkpoints never contain historical series. The durable sample store is per-Run SQLite behind a narrow Run-owned interface.
 

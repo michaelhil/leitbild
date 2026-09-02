@@ -1,4 +1,3 @@
-import { z } from 'zod'
 import { nowIso, type CommandEnvelope, type CommandResult, type SimulationRunEvent, type IsoTimestamp, type ObjectId, type SimulationClockState } from '../../../../core/model/index.ts'
 import type {
   PackRuntimeAdapter,
@@ -7,8 +6,8 @@ import type {
   PackRuntimeEvent,
   PackRuntimeEventHandler,
 } from '../../../../simulation/protocol.ts'
-import { definePackRuntimeOperations } from '../../../../simulation/operations.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../../core/packs/protocol.ts'
+import { aviationSetSourceCapability, aviationSetSourcePayloadSchema, aviationSourceStatusCapability, aviationSourceStatusQueryKind } from '../../capabilities.ts'
 import { aviationRuntimePackId } from '../constants.ts'
 import {
   aviationMultiRuntimeId,
@@ -19,7 +18,7 @@ import {
 
 // aviation.multi — a per-Simulation-Run proxy that owns at most one
 // underlying live-aircraft connection (OpenSky or VATSIM) at a time and lets
-// the operator hot-swap between them via the aviation.set_source command.
+// the operator hot-swap between them via the world.aviation.set-source Capability.
 //
 // Why a proxy rather than two independent adapters?
 //   - Hot-swap is intrinsically a Run-scoped state machine: one source active
@@ -28,10 +27,6 @@ import {
 //   - It keeps the rail picker's mental model simple: one command, one Run.
 //   - The cost is small: we just forward events from the active sub-adapter,
 //     re-stamping the runtimeId so downstream routing sees `aviation.multi`.
-
-const setSourcePayloadSchema = z.object({
-  source: z.enum(aviationSources),
-})
 
 export interface AviationMultiAdapterConfig {
   readonly opensky?: PackRuntimeAdapter
@@ -83,7 +78,7 @@ export const createAviationMultiPackRuntimeAdapter = (
     version: '1.0.0',
     packId: aviationRuntimePackId,
     clock: 'live',
-    operations: definePackRuntimeOperations({ commands: [aviationSetSourceCommandKind], queries: ['aviation.source_status'] }),
+    capabilities: [aviationSetSourceCapability, aviationSourceStatusCapability],
     connect: async (connectionConfig: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
       const handlers = new Set<PackRuntimeEventHandler>()
       // Object ids currently forwarded to the rail; cleared on source switch.
@@ -209,7 +204,7 @@ export const createAviationMultiPackRuntimeAdapter = (
         },
         sendCommand: async (command: CommandEnvelope): Promise<CommandResult> => {
           if (command.kind === aviationSetSourceCommandKind) {
-            const parsed = setSourcePayloadSchema.safeParse(command.payload)
+            const parsed = aviationSetSourcePayloadSchema.safeParse(command.payload)
             if (!parsed.success) {
               return {
                 ok: false,
@@ -251,7 +246,7 @@ export const createAviationMultiPackRuntimeAdapter = (
           // aviation.source_status with the multi's view (active source +
           // tracked count).
           const sub = await activeConnection.query(request)
-          if (request.kind === 'aviation.source_status' && sub.ok) {
+          if (request.kind === aviationSourceStatusQueryKind && sub.ok) {
             return {
               ok: true,
               packId: sub.packId,
@@ -283,4 +278,4 @@ export const createAviationMultiPackRuntimeAdapter = (
   }
 }
 
-export const __internals = { setSourcePayloadSchema, readInitialSource }
+export const __internals = { aviationSetSourcePayloadSchema, readInitialSource }

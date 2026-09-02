@@ -6,7 +6,7 @@ Accepted.
 
 ## Context
 
-The process-plant pack already uses scenario-owned component graphs, typed variables, fixed-step runtimes, pack queries, and reference I&C rules. That is the right substrate for PWR operations, but major scenarios need deeper coupling than isolated component boxes:
+The process-plant pack already uses scenario-owned component graphs, typed variables, fixed-step runtimes, Simulation Capabilities, and reference I&C rules. That is the right substrate for PWR operations, but major scenarios need deeper coupling than isolated component boxes:
 
 - Primary inventory, pressure bias, leakage, safety injection, tube leakage, and containment release need to be visible as one transient state.
 - Steam generator level should affect tube coverage and available heat transfer, not only a rendered level bar.
@@ -20,7 +20,7 @@ We still do not want a hidden second simulator, arbitrary equations in scenario 
 
 Add a pack-owned PWR transient kernel in `src/packs/process-plant/runtime/pwr-transient-kernel.ts`.
 
-The kernel is compiled once per `ProcessPlantRuntime` from the compiled process graph. It does not mutate state. It derives a coherent diagnostic view from canonical graph variables and is exposed through the read-only pack query `process-plant.transient.diagnostics`.
+The kernel is compiled once per `ProcessPlantRuntime` from the compiled process graph. It does not mutate state. It derives a coherent diagnostic view from canonical graph variables and is exposed through the read-only `world.process-plant.transient-diagnostics` Capability.
 
 Deepen the existing component implementations rather than replacing the graph runtime:
 

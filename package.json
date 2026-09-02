@@ -16,7 +16,6 @@
     "check:world": "bun run --cwd apps/world check",
     "check:host": "bun run --cwd apps/leitbild check",
     "check:integration": "bun run --cwd packages/integration-tests check",
-    "benchmark:control-plane": "bun run scripts/benchmark-control-plane.ts",
     "check": "bun run check:boundaries && bun run check:contracts && bun run check:module-runtime && bun run check:agents && bun run check:world && bun run check:host && bun run check:integration",
     "test:contracts": "bun run --cwd packages/contracts test",
     "test:module-runtime": "bun run --cwd packages/module-runtime test",

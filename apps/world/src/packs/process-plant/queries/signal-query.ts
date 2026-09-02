@@ -13,12 +13,12 @@ import {
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { requirePlant, success } from './common.ts'
 
-const signalsResolveQuerySchema = z.object({
+export const signalsResolveQuerySchema = z.object({
   plantId: idSchema,
   signals: z.array(processPlantSignalReferenceSchema).min(1),
 })
 
-const signalsSearchQuerySchema = z.object({
+export const signalsSearchQuerySchema = z.object({
   plantId: idSchema.optional(),
   text: z.string().min(1).optional(),
   tagId: processSignalTagIdSchema.optional(),
@@ -40,16 +40,16 @@ const procedureTagSchema = z.object({
   range: z.array(z.number().finite()).length(2).optional(),
 }).strict()
 
-const procedureTagsValidateQuerySchema = z.object({
+export const procedureTagsValidateQuerySchema = z.object({
   plantId: idSchema,
   tags: z.array(procedureTagSchema),
 }).strict()
 
 export const processPlantSignalQueryKinds = [
-  'process-plant.signals.resolve',
-  'process-plant.signals.read',
-  'process-plant.signals.search',
-  'process-plant.procedure-tags.validate',
+  'world.process-plant.signals.resolve',
+  'world.process-plant.signals.read',
+  'world.process-plant.signals.search',
+  'world.process-plant.procedure-tags.validate',
 ] as const
 
 const normalizedSourceKey = (value: string): string =>
@@ -138,7 +138,7 @@ export const answerProcessPlantSignalQuery = (config: {
   readonly at: IsoTimestamp
 }): PackQueryResponse | undefined => {
   if (!processPlantSignalQueryKinds.some(kind => kind === config.request.kind)) return undefined
-  if (config.request.kind === 'process-plant.procedure-tags.validate') {
+  if (config.request.kind === 'world.process-plant.procedure-tags.validate') {
     const payload = procedureTagsValidateQuerySchema.parse(config.request.payload)
     const system = requirePlant(config.plants, payload.plantId)
     return success(config.request, {
@@ -146,7 +146,7 @@ export const answerProcessPlantSignalQuery = (config: {
       tags: validateProcedureTags(system, payload.tags),
     }, config.at)
   }
-  if (config.request.kind === 'process-plant.signals.resolve') {
+  if (config.request.kind === 'world.process-plant.signals.resolve') {
     const payload = signalsResolveQuerySchema.parse(config.request.payload)
     const system = requirePlant(config.plants, payload.plantId)
     return success(config.request, {
@@ -154,7 +154,7 @@ export const answerProcessPlantSignalQuery = (config: {
       signals: payload.signals.map(signal => processPlantSignalView(resolveProcessPlantSignalBinding(system.plant.graph, signal))),
     }, config.at)
   }
-  if (config.request.kind === 'process-plant.signals.read') {
+  if (config.request.kind === 'world.process-plant.signals.read') {
     const payload = signalsResolveQuerySchema.parse(config.request.payload)
     const system = requirePlant(config.plants, payload.plantId)
     return success(config.request, {

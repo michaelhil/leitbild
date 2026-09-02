@@ -6,7 +6,7 @@ import type {
   PackRuntimeEvent,
   PackRuntimeEventHandler,
 } from '../../../../simulation/protocol.ts'
-import { definePackRuntimeOperations } from '../../../../simulation/operations.ts'
+import { aviationSourceStatusCapability, aviationSourceStatusQueryKind } from '../../capabilities.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../../core/packs/protocol.ts'
 import {
   aviationRuntimePackId,
@@ -204,7 +204,7 @@ export const createOpenSkyPackRuntimeAdapter = (config: OpenSkyAdapterConfig): P
     version: '1.0.0',
     packId: aviationRuntimePackId,
     clock: 'live',
-    operations: definePackRuntimeOperations({ queries: ['aviation.source_status'] }),
+    capabilities: [aviationSourceStatusCapability],
     connect: async (connectionConfig: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
       const state = new Map<string, AircraftState>()
       const handlers = new Set<PackRuntimeEventHandler>()
@@ -282,7 +282,7 @@ export const createOpenSkyPackRuntimeAdapter = (config: OpenSkyAdapterConfig): P
           reason: `aviation.opensky does not accept commands (kind=${command.kind})`,
         }),
         query: async (request: PackQueryRequest): Promise<PackQueryResponse> => {
-          if (request.kind === 'aviation.source_status') {
+          if (request.kind === aviationSourceStatusQueryKind) {
             return {
               ok: true,
               packId: request.packId,

@@ -133,14 +133,14 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
   const capabilities: Tool = {
     name: WORKSPACE_CAPABILITY_TOOL_NAMES[1],
     description: 'List Capabilities exposed by Modules in this Workspace, including input schemas, Resource scope, risk, and whether this Agent has a grant.',
-    usage: 'Discover operations dynamically. A Capability can be invoked only when the Agent Profile grants its capabilityId.',
+    usage: 'Discover Capabilities dynamically. A Capability can be invoked only when the Agent Profile grants its capabilityId.',
     returns: '{ workspaceId, modules, capabilities[] } where each Capability includes granted: boolean.',
     parameters: {
       type: 'object',
       properties: {
         moduleId: { type: 'string' },
         risk: { type: 'string', enum: ['read', 'write', 'destructive'] },
-        kind: { type: 'string', enum: ['query', 'command', 'stream'] },
+        kind: { type: 'string', enum: ['query', 'command'] },
       },
       additionalProperties: false,
     },
@@ -152,8 +152,8 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         if (risk !== undefined && !['read', 'write', 'destructive'].includes(String(risk))) {
           return failure('invalid_tool_input', 'risk must be read, write, or destructive')
         }
-        if (kind !== undefined && !['query', 'command', 'stream'].includes(String(kind))) {
-          return failure('invalid_tool_input', 'kind must be query, command, or stream')
+        if (kind !== undefined && !['query', 'command'].includes(String(kind))) {
+          return failure('invalid_tool_input', 'kind must be query or command')
         }
         const response = await getJson(fetchImpl, `${workspacePath}/capabilities`)
         if (!response.ok) return await readHostError(response)
@@ -209,6 +209,8 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
           additionalProperties: false,
         },
         input: {},
+        expectedRevision: { type: 'integer', minimum: 0 },
+        idempotencyKey: { type: 'string', minLength: 1, maxLength: 256 },
       },
       required: ['capabilityId', 'input'],
       additionalProperties: false,
@@ -270,6 +272,8 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
           body: JSON.stringify({
             ...(definition === undefined ? {} : { definition }),
             ...(resource === undefined ? {} : { resource }),
+            ...(params.expectedRevision === undefined ? {} : { expectedRevision: params.expectedRevision }),
+            ...(params.idempotencyKey === undefined ? {} : { idempotencyKey: params.idempotencyKey }),
             input: params.input,
             actor: { kind: 'ai', id: context.callerId, displayName: context.callerName },
           }),

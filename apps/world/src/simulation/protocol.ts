@@ -1,6 +1,7 @@
 import type { ActorId, ClientId, CommandEnvelope, CommandResult, ElectricalConnectionDefinition, SimulationRunEvent, InteractionSignal, OperationalObject, PackRuntimeRecordingBatch, Provenance, ScenarioRecordingSelection, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
 import type { IsoTimestamp, ObjectId, SimulationRunId } from '../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse, PackRuntimeClock } from '../core/packs/protocol.ts'
+import type { z } from 'zod'
 
 export interface PackRuntimeSnapshot {
   readonly simulationRunId: SimulationRunId
@@ -60,6 +61,18 @@ export interface PackRuntimeEmission {
   readonly runtimeId: string
 }
 
+export interface PackRuntimeHealth {
+  readonly runtimeId: string
+  readonly state: 'ready' | 'degraded'
+  readonly failureCount: number
+  readonly lastSuccessfulInteractionAt: IsoTimestamp
+  readonly lastFailure?: {
+    readonly at: IsoTimestamp
+    readonly operation: string
+    readonly message: string
+  }
+}
+
 export type PackRuntimeEventHandler = (emission: PackRuntimeEmission) => void
 
 export interface PackRuntimeConnection {
@@ -72,6 +85,7 @@ export interface PackRuntimeConnection {
   readonly observeCommittedEvents: (events: ReadonlyArray<SimulationRunEvent>) => Promise<void>
   readonly observeInitialSnapshot?: (objects: ReadonlyArray<OperationalObject>) => Promise<void>
   readonly setClock: (clock: SimulationClockState) => Promise<void>
+  readonly health?: () => ReadonlyArray<PackRuntimeHealth>
   readonly close: () => Promise<void>
 }
 
@@ -80,15 +94,25 @@ export interface PackRuntimeStateStore {
   readonly save: (state: unknown) => Promise<void>
 }
 
-export type PackRuntimeOperationType = 'command' | 'query' | 'realtime-input'
+export type SimulationCapabilityKind = 'command' | 'query'
 
-export interface PackRuntimeOperationDescriptor {
+/** Canonical callable surface contributed by a World Pack Runtime. The same
+ * id and schemas are used by the runtime router, Scenario timeline, UI, and
+ * Workspace Capability Broker. */
+export interface SimulationCapability {
   readonly id: string
-  readonly type: PackRuntimeOperationType
+  readonly kind: SimulationCapabilityKind
   readonly title: string
   readonly description: string
-  readonly inputSchema?: Readonly<Record<string, unknown>>
-  readonly outputSchema?: Readonly<Record<string, unknown>>
+  readonly risk: 'read' | 'write' | 'destructive'
+  readonly idempotent: boolean
+  readonly input: z.ZodType
+  readonly output: z.ZodType
+  readonly schedulable?: boolean
+  readonly buildCommand?: (input: unknown) => {
+    readonly targetObjectIds: ReadonlyArray<ObjectId>
+    readonly payload: unknown
+  }
 }
 
 export interface PackRuntimeAdapter {
@@ -96,7 +120,8 @@ export interface PackRuntimeAdapter {
   readonly version: string
   readonly packId: string
   readonly clock: PackRuntimeClock
-  readonly operations: ReadonlyArray<PackRuntimeOperationDescriptor>
+  readonly capabilities: ReadonlyArray<SimulationCapability>
+  readonly realtimeInputTypes?: ReadonlyArray<string>
   readonly commandEventHistory?: Readonly<Record<string, PackRuntimeEventHistory>>
   readonly connect: (config: PackRuntimeConnectionConfig) => Promise<PackRuntimeConnection>
 }

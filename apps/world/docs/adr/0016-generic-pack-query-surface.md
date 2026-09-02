@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Superseded by [World uses one Simulation Capability spine](../../../../docs/adr/0010-one-world-simulation-capability-spine.md). The read-only Pack query discipline remains; the public generic query tunnel does not.
 
 ## Context
 

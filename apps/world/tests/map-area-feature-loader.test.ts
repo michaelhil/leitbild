@@ -6,11 +6,10 @@ import {
   emptyPackScenarioConfigSchema,
   type WorldPack,
   type PackMapAreaFeature,
-  type PackQueryRequest,
+  type PackMapAreaFeatureQuery,
 } from '../src/core/packs/protocol.ts'
 import { createMapAreaFeatureLoader } from '../src/ui/app/map-area-feature-loader.ts'
 import type { SimulationRunRequestOptions } from '../src/ui/simulation-run-client.ts'
-import type { PackQueryApiResponse } from '../src/ui/types.ts'
 import { createActivePackViews } from '../src/core/packs/active-views.ts'
 
 const generatedAt = '2026-05-30T00:00:00.000Z' as IsoTimestamp
@@ -40,7 +39,7 @@ const delay = async (ms: number): Promise<void> => {
   })
 }
 
-const createPack = (requests: ReadonlyArray<PackQueryRequest>): WorldPack => ({
+const createPack = (requests: ReadonlyArray<PackMapAreaFeatureQuery>): WorldPack => ({
   descriptor: createWorldPackDescriptor({
     id: 'weather-test',
     version: '1.0.0',
@@ -65,38 +64,30 @@ const createPack = (requests: ReadonlyArray<PackQueryRequest>): WorldPack => ({
 
 describe('MapAreaFeatureLoader', () => {
   test('runs pack map-area queries concurrently and preserves sync features', async () => {
-    const requests: ReadonlyArray<PackQueryRequest> = [
-      { packId: 'weather-test', kind: 'first', payload: {} },
-      { packId: 'weather-test', kind: 'second', payload: {} },
+    const requests: ReadonlyArray<PackMapAreaFeatureQuery> = [
+      { capabilityId: 'world.weather-test.first', input: {} },
+      { capabilityId: 'world.weather-test.second', input: {} },
     ]
     let activeQueries = 0
     let maxActiveQueries = 0
-    const queryPack = async (
+    const queryCapability = async (
       _simulationRunId: SimulationRunId,
-      request: PackQueryRequest,
+      request: PackMapAreaFeatureQuery,
       options?: SimulationRunRequestOptions,
-    ): Promise<PackQueryApiResponse> => {
+    ): Promise<unknown> => {
       expect(options?.signal).toBeInstanceOf(AbortSignal)
       activeQueries += 1
       maxActiveQueries = Math.max(maxActiveQueries, activeQueries)
       await delay(10)
       activeQueries -= 1
-      return {
-        response: {
-          ok: true,
-          packId: request.packId,
-          kind: request.kind,
-          result: { features: [featureFor(`query-feature:${request.kind}`)] },
-          generatedAt,
-        },
-      }
+      return { features: [featureFor(`query-feature:${request.capabilityId}`)] }
     }
     const loader = createMapAreaFeatureLoader({
       pack: () => createActivePackViews([createPack(requests)]),
       objects: () => [],
       simulationRunId: () => 'run-test' as SimulationRunId,
       currentTime: () => generatedAt,
-      queryPack,
+      queryCapability,
       queryTimeoutMs: 500,
     })
 
@@ -105,8 +96,8 @@ describe('MapAreaFeatureLoader', () => {
     expect(maxActiveQueries).toBe(2)
     expect(features.map(feature => feature.id)).toEqual([
       'sync-feature',
-      'query-feature:first',
-      'query-feature:second',
+      'query-feature:world.weather-test.first',
+      'query-feature:world.weather-test.second',
     ])
   })
 })

@@ -5,7 +5,7 @@ import type {
   PackCreationContribution,
   PackMapAreaFeature,
   PackPresentationContribution,
-  PackQueryRequest,
+  PackMapAreaFeatureQuery,
   PackTargetContext,
   PackTargetingContribution,
   PackSurfacePanelContribution,
@@ -104,13 +104,13 @@ export const createActivePackViews = (packs: ReadonlyArray<WorldPack>): ActivePa
         packs.flatMap(pack => pack.presentation.mapAreaFeatures?.(context) ?? []),
       mapAreaFeatureLayers,
       mapAreaFeatureSourcePackIds,
-      mapAreaFeatureQueries: (context): ReadonlyArray<PackQueryRequest> => {
-        const requests = packs.flatMap(pack => pack.presentation.mapAreaFeatureQueries?.(context) ?? [])
-        for (const request of requests) {
-          if (!packsById.has(request.packId)) throw new Error(`map feature query targets inactive Pack ${request.packId}`)
-        }
-        return requests
-      },
+      mapAreaFeatureQueries: (context): ReadonlyArray<PackMapAreaFeatureQuery> =>
+        packs.flatMap(pack => (pack.presentation.mapAreaFeatureQueries?.(context) ?? []).map(request => {
+          if (!request.capabilityId.startsWith(`world.${pack.descriptor.id}.`)) {
+            throw new Error(`Pack ${pack.descriptor.id} map feature query uses foreign Capability ${request.capabilityId}`)
+          }
+          return request
+        })),
       mapLayerGroups,
     },
     ...(createObjectTypes.length === 0

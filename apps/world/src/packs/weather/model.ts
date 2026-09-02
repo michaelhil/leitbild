@@ -192,3 +192,8 @@ export interface WeatherSample {
   readonly quality: WeatherQuality
   readonly activeInfluenceIds: ReadonlyArray<string>
 }
+export const weatherSampleSchema = z.object({
+  state: weatherStateSchema,
+  quality: weatherQualitySchema,
+  activeInfluenceIds: z.array(z.string().min(1)),
+}).strict()

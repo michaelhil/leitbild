@@ -100,9 +100,9 @@ export interface InternalDiagnosticsResourceSample {
   readonly responseStatus?: number
 }
 
-export interface InternalDiagnosticsPackQuerySample {
-  readonly packId: string
-  readonly kind: string
+export interface InternalDiagnosticsCapabilityQuerySample {
+  readonly ownerId: string
+  readonly capabilityId: string
   readonly startedAtMs: number
   readonly durationMs: number
   readonly requestBytes: number
@@ -112,17 +112,17 @@ export interface InternalDiagnosticsPackQuerySample {
   readonly error?: string
 }
 
-export interface InternalDiagnosticsPackQueryKindSummary {
+export interface InternalDiagnosticsCapabilityQuerySummary {
   readonly count: number
   readonly totalResponseBytes: number
   readonly maxResponseBytes: number
   readonly maxDurationMs: number
 }
 
-export interface InternalDiagnosticsPackQuerySnapshot {
+export interface InternalDiagnosticsCapabilityQuerySnapshot {
   readonly sampleCount: number
-  readonly recent: ReadonlyArray<InternalDiagnosticsPackQuerySample>
-  readonly byKind: Readonly<Record<string, InternalDiagnosticsPackQueryKindSummary>>
+  readonly recent: ReadonlyArray<InternalDiagnosticsCapabilityQuerySample>
+  readonly byCapability: Readonly<Record<string, InternalDiagnosticsCapabilityQuerySummary>>
 }
 
 export interface InternalDiagnosticsPerformanceSnapshot {
@@ -134,7 +134,7 @@ export interface InternalDiagnosticsPerformanceSnapshot {
     readonly recent: ReadonlyArray<InternalDiagnosticsLongTaskSample>
   }
   readonly resources: ReadonlyArray<InternalDiagnosticsResourceSample>
-  readonly packQueries: InternalDiagnosticsPackQuerySnapshot
+  readonly capabilityQueries: InternalDiagnosticsCapabilityQuerySnapshot
 }
 
 export interface InternalDiagnosticsSnapshot {
@@ -170,8 +170,8 @@ declare global {
 
 const maxLongTaskSamples = 120
 const maxResourceSamples = 120
-const maxPackQuerySamples = 160
-const packQuerySamples: InternalDiagnosticsPackQuerySample[] = []
+const maxCapabilityQuerySamples = 160
+const capabilityQuerySamples: InternalDiagnosticsCapabilityQuerySample[] = []
 
 const pushRing = <T>(items: T[], item: T, limit: number): void => {
   items.push(item)
@@ -334,20 +334,20 @@ export const resourceDiagnostics = (): ReadonlyArray<InternalDiagnosticsResource
       ...(entry.responseStatus === 0 ? {} : { responseStatus: entry.responseStatus }),
     }))
 
-export const recordPackQueryDiagnostics = (sample: InternalDiagnosticsPackQuerySample): void => {
-  pushRing(packQuerySamples, sample, maxPackQuerySamples)
+export const recordCapabilityQueryDiagnostics = (sample: InternalDiagnosticsCapabilityQuerySample): void => {
+  pushRing(capabilityQuerySamples, sample, maxCapabilityQuerySamples)
 }
 
-export const packQueryDiagnostics = (): InternalDiagnosticsPackQuerySnapshot => {
-  const byKind: Record<string, InternalDiagnosticsPackQueryKindSummary> = {}
-  for (const sample of packQuerySamples) {
-    const current = byKind[sample.kind] ?? {
+export const capabilityQueryDiagnostics = (): InternalDiagnosticsCapabilityQuerySnapshot => {
+  const byCapability: Record<string, InternalDiagnosticsCapabilityQuerySummary> = {}
+  for (const sample of capabilityQuerySamples) {
+    const current = byCapability[sample.capabilityId] ?? {
       count: 0,
       totalResponseBytes: 0,
       maxResponseBytes: 0,
       maxDurationMs: 0,
     }
-    byKind[sample.kind] = {
+    byCapability[sample.capabilityId] = {
       count: current.count + 1,
       totalResponseBytes: current.totalResponseBytes + sample.responseBytes,
       maxResponseBytes: Math.max(current.maxResponseBytes, sample.responseBytes),
@@ -355,14 +355,14 @@ export const packQueryDiagnostics = (): InternalDiagnosticsPackQuerySnapshot => 
     }
   }
   return {
-    sampleCount: packQuerySamples.length,
-    recent: packQuerySamples.slice(-40),
-    byKind,
+    sampleCount: capabilityQuerySamples.length,
+    recent: capabilityQuerySamples.slice(-40),
+    byCapability,
   }
 }
 
-export const clearPackQueryDiagnostics = (): void => {
-  packQuerySamples.splice(0, packQuerySamples.length)
+export const clearCapabilityQueryDiagnostics = (): void => {
+  capabilityQuerySamples.splice(0, capabilityQuerySamples.length)
 }
 
 export const installInternalDiagnosticsGlobal = (

@@ -5,11 +5,11 @@ import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
 import { failure, plantQuerySchema, requirePlant, success } from './queries/common.ts'
 
 export const processPlantIcQueryKinds = [
-  'process-plant.ic.status',
-  'process-plant.ic.catalog',
-  'process-plant.alarms.status',
-  'process-plant.alarms.summary',
-  'process-plant.alarms.history',
+  'world.process-plant.ic.status',
+  'world.process-plant.ic.catalog',
+  'world.process-plant.alarms.status',
+  'world.process-plant.alarms.summary',
+  'world.process-plant.alarms.history',
 ] as const
 
 const alarmLifecycleStates = (
@@ -76,13 +76,13 @@ export const answerProcessPlantIcQuery = (config: {
     const system = requirePlant(config.plants, payload.plantId)
     if (!system.protection) return failure(config.request, `process plant I&C is not configured for plant: ${payload.plantId}`, config.at)
     const snapshot = system.protection.snapshot()
-    if (config.request.kind === 'process-plant.ic.status') {
+    if (config.request.kind === 'world.process-plant.ic.status') {
       return success(config.request, {
         plantId: payload.plantId,
         ic: snapshot,
       }, config.at)
     }
-    if (config.request.kind === 'process-plant.alarms.status') {
+    if (config.request.kind === 'world.process-plant.alarms.status') {
       return success(config.request, {
         plantId: payload.plantId,
         alarms: snapshot.alarms,
@@ -90,13 +90,13 @@ export const answerProcessPlantIcQuery = (config: {
         summary: alarmSummaryFor(snapshot),
       }, config.at)
     }
-    if (config.request.kind === 'process-plant.alarms.summary') {
+    if (config.request.kind === 'world.process-plant.alarms.summary') {
       return success(config.request, {
         plantId: payload.plantId,
         summary: alarmSummaryFor(snapshot),
       }, config.at)
     }
-    if (config.request.kind === 'process-plant.alarms.history') {
+    if (config.request.kind === 'world.process-plant.alarms.history') {
       return success(config.request, {
         plantId: payload.plantId,
         history: snapshot.history,

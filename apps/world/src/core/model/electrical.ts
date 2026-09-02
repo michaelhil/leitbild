@@ -15,6 +15,7 @@ export interface ElectricalPortState {
 export interface ElectricalPortDefinition {
   readonly id: string
   readonly label: string
+  readonly role: 'system' | 'network'
   readonly nominalKv: number
   readonly maximumExportMw: number
   readonly maximumImportMw: number
@@ -50,6 +51,7 @@ export const electricalPortStateSchema = z.object({
 export const electricalPortDefinitionSchema = z.object({
   id: idSchema,
   label: z.string().min(1),
+  role: z.enum(['system', 'network']),
   nominalKv: z.number().finite().positive(),
   maximumExportMw: z.number().finite().nonnegative(),
   maximumImportMw: z.number().finite().nonnegative(),

@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { nowIso } from '../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
-import type { PackRuntimeOperationDescriptor } from '../../simulation/protocol.ts'
+import type { SimulationCapability } from '../../simulation/protocol.ts'
+import { definePackQueryCapability } from '../../simulation/capabilities.ts'
 import {
   gridClearDerateCommandKind,
   gridCloseBranchCommandKind,
@@ -22,12 +23,12 @@ import { electricGridPackId, gridProjectionSchema } from './model.ts'
 import { gridAssetSnapshotFor, type GridAssetSnapshot, type GridRuntimeInstance } from './runtime/instance.ts'
 
 export const electricGridQueryKinds = [
-  'electric-grid.catalog.list',
-  'electric-grid.grid.summary',
-  'electric-grid.assets.search',
-  'electric-grid.asset.get',
-  'electric-grid.power-flow.snapshot',
-  'electric-grid.connection-points.list',
+  'world.electric-grid.catalog.list',
+  'world.electric-grid.grid.summary',
+  'world.electric-grid.assets.search',
+  'world.electric-grid.asset.get',
+  'world.electric-grid.power-flow.snapshot',
+  'world.electric-grid.connection-points.list',
 ] as const
 
 const assetKindSchema = z.enum(['bus', 'branch', 'generator', 'load', 'storage'])
@@ -111,22 +112,21 @@ const query = (config: {
   readonly description: string
   readonly input: z.ZodType
   readonly output: z.ZodType
-}): PackRuntimeOperationDescriptor => ({
+}): SimulationCapability => definePackQueryCapability({
   id: config.id,
-  type: 'query',
   title: config.title,
   description: config.description,
-  inputSchema: z.toJSONSchema(config.input),
-  outputSchema: z.toJSONSchema(config.output),
+  input: config.input,
+  output: config.output,
 })
 
-export const electricGridQueryOperations: ReadonlyArray<PackRuntimeOperationDescriptor> = [
-  query({ id: 'electric-grid.catalog.list', title: 'List Grid catalog', description: 'Lists compatible Grid definitions, accepted overrides, and running Grids.', input: emptyPayloadSchema, output: catalogResultSchema }),
-  query({ id: 'electric-grid.grid.summary', title: 'Get Grid summary', description: 'Returns bounded operational, asset-count, fidelity, and model diagnostics for one Grid.', input: gridPayloadSchema, output: summaryResultSchema }),
-  query({ id: 'electric-grid.assets.search', title: 'Search Grid Assets', description: 'Searches stable private Grid Assets with bounded pagination, live status, map targets, and applicable operations.', input: searchPayloadSchema, output: assetSearchResultSchema }),
-  query({ id: 'electric-grid.asset.get', title: 'Get Grid Asset', description: 'Returns configuration, provenance, current state, map target, and applicable operations for one Grid Asset.', input: assetPayloadSchema, output: assetDetailResultSchema }),
-  query({ id: 'electric-grid.power-flow.snapshot', title: 'Get power-flow snapshot', description: 'Returns a bounded page of current branch flow state.', input: powerFlowPayloadSchema, output: powerFlowResultSchema }),
-  query({ id: 'electric-grid.connection-points.list', title: 'List connection points', description: 'Lists typed electrical connection points and their current exchange state.', input: gridPayloadSchema, output: connectionPointResultSchema }),
+export const electricGridQueryCapabilities: ReadonlyArray<SimulationCapability> = [
+  query({ id: electricGridQueryKinds[0], title: 'List Grid catalog', description: 'Lists compatible Grid definitions, accepted overrides, and running Grids.', input: emptyPayloadSchema, output: catalogResultSchema }),
+  query({ id: electricGridQueryKinds[1], title: 'Get Grid summary', description: 'Returns bounded operational, asset-count, fidelity, and model diagnostics for one Grid.', input: gridPayloadSchema, output: summaryResultSchema }),
+  query({ id: electricGridQueryKinds[2], title: 'Search Grid Assets', description: 'Searches stable private Grid Assets with bounded pagination, live status, map targets, and applicable operations.', input: searchPayloadSchema, output: assetSearchResultSchema }),
+  query({ id: electricGridQueryKinds[3], title: 'Get Grid Asset', description: 'Returns configuration, provenance, current state, map target, and applicable operations for one Grid Asset.', input: assetPayloadSchema, output: assetDetailResultSchema }),
+  query({ id: electricGridQueryKinds[4], title: 'Get power-flow snapshot', description: 'Returns a bounded page of current branch flow state.', input: powerFlowPayloadSchema, output: powerFlowResultSchema }),
+  query({ id: electricGridQueryKinds[5], title: 'List connection points', description: 'Lists typed electrical connection points and their current exchange state.', input: gridPayloadSchema, output: connectionPointResultSchema }),
 ]
 
 const ok = (request: PackQueryRequest, result: unknown): PackQueryResponse => ({
@@ -311,7 +311,7 @@ export const answerElectricGridQuery = (config: {
     return fail(config.request, `unsupported electric-grid query: ${config.request.kind}`)
   }
   try {
-    if (config.request.kind === 'electric-grid.catalog.list') {
+    if (config.request.kind === electricGridQueryKinds[0]) {
       emptyPayloadSchema.parse(config.request.payload)
       return ok(config.request, {
         ...electricGridDefinitionCatalog,
@@ -328,11 +328,11 @@ export const answerElectricGridQuery = (config: {
         })),
       })
     }
-    if (config.request.kind === 'electric-grid.grid.summary') {
+    if (config.request.kind === electricGridQueryKinds[1]) {
       const payload = gridPayloadSchema.parse(config.request.payload)
       return ok(config.request, summaryFor(gridFor(config.grids, payload.gridId)))
     }
-    if (config.request.kind === 'electric-grid.assets.search') {
+    if (config.request.kind === electricGridQueryKinds[2]) {
       const payload = searchPayloadSchema.parse(config.request.payload)
       const grid = gridFor(config.grids, payload.gridId)
       const needle = payload.text.trim().toLowerCase()
@@ -348,7 +348,7 @@ export const answerElectricGridQuery = (config: {
         assets: page.map(entry => assetPresentationFor(grid, gridAssetSnapshotFor(grid, entry.id)!)),
       })
     }
-    if (config.request.kind === 'electric-grid.asset.get') {
+    if (config.request.kind === electricGridQueryKinds[3]) {
       const payload = assetPayloadSchema.parse(config.request.payload)
       const grid = gridFor(config.grids, payload.gridId)
       const asset = gridAssetSnapshotFor(grid, payload.assetId)
@@ -358,7 +358,7 @@ export const answerElectricGridQuery = (config: {
         asset: { ...assetPresentationFor(grid, asset), definition: asset.definition, ...(asset.state === undefined ? {} : { state: asset.state }) },
       })
     }
-    if (config.request.kind === 'electric-grid.power-flow.snapshot') {
+    if (config.request.kind === electricGridQueryKinds[4]) {
       const payload = powerFlowPayloadSchema.parse(config.request.payload)
       const grid = gridFor(config.grids, payload.gridId)
       const branches = grid.definition.model.branches.map(definition => ({ definition, state: grid.branches.get(definition.id)! }))

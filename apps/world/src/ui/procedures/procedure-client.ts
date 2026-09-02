@@ -1,3 +1,9 @@
+import {
+  procedureRunCloseCommandKind,
+  procedureRunResetCommandKind,
+  procedureRunStartCommandKind,
+  procedureStepUpdateCommandKind,
+} from '../../core/model/index.ts'
 import type {
   SimulationRunId,
   ProcedureAssessment,
@@ -9,7 +15,7 @@ import type {
   ProcedureTag,
   ProcedureTagId,
 } from '../../core/model/index.ts'
-import { querySimulationRunPack, sendSimulationRunCommand } from '../simulation-run-client.ts'
+import { invokeSimulationRunCapability, querySimulationRunCapability } from '../simulation-run-client.ts'
 import { workspaceApiPath } from '../workspace-context.ts'
 
 export interface ProcedureRunsResponse {
@@ -154,11 +160,11 @@ export const startProcedureRun = async (
   simulationRunId: SimulationRunId,
   config: { readonly sourceId: string; readonly procedureId: string; readonly scope: ProcedureRunScope },
 ): Promise<void> => {
-  const response = await sendSimulationRunCommand(simulationRunId, {
-    kind: 'procedure.run.start',
-    targetObjectIds: config.scope.targetObjectId ? [config.scope.targetObjectId] : [],
-    payload: config,
+  const response = await invokeSimulationRunCapability(simulationRunId, {
+    capabilityId: procedureRunStartCommandKind,
+    input: config,
   })
+  if (response.kind !== 'command') throw new Error(`${procedureRunStartCommandKind} is not a command`)
   if (!response.result.ok) throw new Error(response.result.reason ?? 'procedure run start rejected')
 }
 
@@ -173,11 +179,11 @@ export const updateProcedureStep = async (
     readonly currentStepId?: ProcedureStepId
   },
 ): Promise<void> => {
-  const response = await sendSimulationRunCommand(simulationRunId, {
-    kind: 'procedure.step.update',
-    targetObjectIds: [],
-    payload: config,
+  const response = await invokeSimulationRunCapability(simulationRunId, {
+    capabilityId: procedureStepUpdateCommandKind,
+    input: config,
   })
+  if (response.kind !== 'command') throw new Error(`${procedureStepUpdateCommandKind} is not a command`)
   if (!response.result.ok) throw new Error(response.result.reason ?? 'procedure step update rejected')
 }
 
@@ -185,11 +191,11 @@ export const closeProcedureRun = async (
   simulationRunId: SimulationRunId,
   config: { readonly runId: string; readonly status: 'completed' | 'abandoned' },
 ): Promise<void> => {
-  const response = await sendSimulationRunCommand(simulationRunId, {
-    kind: 'procedure.run.close',
-    targetObjectIds: [],
-    payload: config,
+  const response = await invokeSimulationRunCapability(simulationRunId, {
+    capabilityId: procedureRunCloseCommandKind,
+    input: config,
   })
+  if (response.kind !== 'command') throw new Error(`${procedureRunCloseCommandKind} is not a command`)
   if (!response.result.ok) throw new Error(response.result.reason ?? 'procedure run close rejected')
 }
 
@@ -197,18 +203,12 @@ export const resetProcedureRun = async (
   simulationRunId: SimulationRunId,
   config: { readonly sourceId: string; readonly procedureId: string; readonly scope: ProcedureRunScope },
 ): Promise<void> => {
-  const response = await sendSimulationRunCommand(simulationRunId, {
-    kind: 'procedure.run.reset',
-    targetObjectIds: config.scope.targetObjectId ? [config.scope.targetObjectId] : [],
-    payload: config,
+  const response = await invokeSimulationRunCapability(simulationRunId, {
+    capabilityId: procedureRunResetCommandKind,
+    input: config,
   })
+  if (response.kind !== 'command') throw new Error(`${procedureRunResetCommandKind} is not a command`)
   if (!response.result.ok) throw new Error(response.result.reason ?? 'procedure run reset rejected')
-}
-
-const requireOkPackResult = (value: unknown, message: string): Record<string, unknown> => {
-  const response = assertRecord(value, message)
-  if (response.ok !== true) throw new Error(typeof response.reason === 'string' ? response.reason : message)
-  return assertRecord(response.result, `${message}: missing result`)
 }
 
 const normalizedUnit = (value: string): string => value.trim().toLowerCase().replace(/\s/g, '')
@@ -286,14 +286,11 @@ const queryProcedureSignal = async (
   tagId: string,
   read: boolean,
 ): Promise<Record<string, unknown> | null> => {
-  const body = await querySimulationRunPack(simulationRunId, {
-    packId: 'process-plant',
-    kind: read ? 'process-plant.signals.read' : 'process-plant.signals.resolve',
-    payload: { plantId, signals: [{ tagId }] },
-  })
-  const envelope = assertRecord(body.response, 'process signal query returned malformed response')
-  if (envelope.ok !== true) return null
-  const result = assertRecord(envelope.result, 'process signal query returned no result')
+  const result = assertRecord(await querySimulationRunCapability(
+    simulationRunId,
+    read ? 'world.process-plant.signals.read' : 'world.process-plant.signals.resolve',
+    { plantId, signals: [{ tagId }] },
+  ), 'process signal query returned no result')
   const first = assertArray(result.signals, 'process signal query returned no signals')[0]
   return first === undefined ? null : assertRecord(first, 'process signal query returned malformed signal')
 }
@@ -304,12 +301,11 @@ export const validateProcedureTags = async (
   tags: ReadonlyArray<ProcedureTag>,
 ): Promise<ReadonlyMap<string, ProcedureTagValidation>> => {
   if (tags.length === 0) return new Map()
-  const body = await querySimulationRunPack(simulationRunId, {
-    packId: 'process-plant',
-    kind: 'process-plant.procedure-tags.validate',
-    payload: { plantId, tags },
-  })
-  const result = requireOkPackResult(body.response, 'procedure tag validation failed')
+  const result = assertRecord(await querySimulationRunCapability(
+    simulationRunId,
+    'world.process-plant.procedure-tags.validate',
+    { plantId, tags },
+  ), 'procedure tag validation returned a malformed result')
   const rows = assertArray(result.tags, 'procedure tag validation returned no tags').map((value): readonly [string, ProcedureTagValidation] => {
     const row = assertRecord(value, 'procedure tag validation row is malformed')
     const id = assertString(row.id, 'procedure tag validation row requires id')
@@ -387,15 +383,14 @@ export const evaluateProcedureCsfs = async (
   csfs: ReadonlyArray<string>,
 ): Promise<ReadonlyMap<string, ProcedureCsfEvaluation>> => {
   if (csfs.length === 0) return new Map()
-  const body = await querySimulationRunPack(simulationRunId, {
-    packId: 'process-plant',
-    kind: 'process-plant.assessments.evaluate',
-    payload: {
+  const result = assertRecord(await querySimulationRunCapability(
+    simulationRunId,
+    'world.process-plant.assessments.evaluate',
+    {
       plantId,
       assessmentIds: csfs,
     },
-  })
-  const result = requireOkPackResult(body.response, 'procedure CSF evaluation failed')
+  ), 'procedure CSF evaluation returned a malformed result')
   return new Map(assertArray(result.assessments, 'procedure CSF evaluation returned no statuses').map(item => {
     const row = assertRecord(item, 'procedure CSF row is malformed')
     const id = assertString(row.id, 'procedure CSF row requires id')

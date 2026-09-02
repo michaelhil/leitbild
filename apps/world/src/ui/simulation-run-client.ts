@@ -1,19 +1,18 @@
 import type { SimulationRunId } from '../core/model/index.ts'
 import type {
   ClockResponse,
-  CommandResponse,
+  CapabilityInvocationResponse,
   SimulationRunResponse,
-  PackQueryApiResponse,
   ScenarioResponse,
 } from './types.ts'
-import type { PackQueryRequest } from '../core/packs/protocol.ts'
-import { recordPackQueryDiagnostics } from './internal-diagnostics.ts'
+import { recordCapabilityQueryDiagnostics } from './internal-diagnostics.ts'
 import { workspaceApiPath } from './workspace-context.ts'
 
-export interface SimulationRunCommandRequest {
-  readonly kind: string
-  readonly targetObjectIds: readonly string[]
-  readonly payload: unknown
+export interface SimulationRunCapabilityRequest {
+  readonly capabilityId: string
+  readonly input: unknown
+  readonly expectedRevision?: number
+  readonly idempotencyKey?: string
 }
 
 export interface SimulationRunRequestOptions {
@@ -67,16 +66,20 @@ export const deleteSimulationRun = async (
   return await readJsonResponse<{ readonly id: SimulationRunId; readonly deleted: true }>(response, 'simulation run delete failed')
 }
 
-export const sendSimulationRunCommand = async (
+export const invokeSimulationRunCapability = async (
   simulationRunId: SimulationRunId,
-  command: SimulationRunCommandRequest,
-): Promise<CommandResponse> => {
-  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/commands`), {
+  invocation: SimulationRunCapabilityRequest,
+): Promise<CapabilityInvocationResponse> => {
+  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/capabilities/${encodeURIComponent(invocation.capabilityId)}/invoke`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(command),
+    body: JSON.stringify({
+      input: invocation.input,
+      ...(invocation.expectedRevision === undefined ? {} : { expectedRevision: invocation.expectedRevision }),
+      ...(invocation.idempotencyKey === undefined ? {} : { idempotencyKey: invocation.idempotencyKey }),
+    }),
   })
-  return await readJsonResponse<CommandResponse>(response, 'command failed')
+  return await readJsonResponse<CapabilityInvocationResponse>(response, 'capability invocation failed')
 }
 
 export const setSimulationRunClock = async (
@@ -91,30 +94,33 @@ export const setSimulationRunClock = async (
   return await readJsonResponse<ClockResponse>(response, 'clock update failed')
 }
 
-const packQueryFailureMessage = (status: number, text: string): string => {
+const capabilityQueryFailureMessage = (status: number, text: string): string => {
   try {
     const parsed = JSON.parse(text) as unknown
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return `pack query failed: ${status}`
-    const response = (parsed as { readonly response?: unknown }).response
-    if (typeof response !== 'object' || response === null || Array.isArray(response)) return `pack query failed: ${status}`
-    const reason = (response as { readonly reason?: unknown }).reason
-    return typeof reason === 'string' && reason.length > 0 ? reason : `pack query failed: ${status}`
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return `Capability query failed: ${status}`
+    const error = (parsed as { readonly error?: unknown }).error
+    if (typeof error !== 'object' || error === null || Array.isArray(error)) return `Capability query failed: ${status}`
+    const message = (error as { readonly message?: unknown }).message
+    return typeof message === 'string' && message.length > 0 ? message : `Capability query failed: ${status}`
   } catch {
-    return `pack query failed: ${status}`
+    return `Capability query failed: ${status}`
   }
 }
 
-export const querySimulationRunPack = async (
+const diagnosticPackId = (capabilityId: string): string => capabilityId.split('.')[1] ?? 'world'
+
+export const querySimulationRunCapability = async <T = unknown>(
   simulationRunId: SimulationRunId,
-  request: PackQueryRequest,
+  capabilityId: string,
+  input: unknown,
   options: SimulationRunRequestOptions = {},
-): Promise<PackQueryApiResponse> => {
-  const body = JSON.stringify(request)
+): Promise<T> => {
+  const body = JSON.stringify({ input })
   const startedAtMs = performance.now()
   let responseStatus: number | undefined
   let recorded = false
   try {
-    const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/queries`), {
+    const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/capabilities/${encodeURIComponent(capabilityId)}/invoke`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
@@ -122,9 +128,9 @@ export const querySimulationRunPack = async (
     })
     responseStatus = response.status
     const text = await response.text()
-    recordPackQueryDiagnostics({
-      packId: request.packId,
-      kind: request.kind,
+    recordCapabilityQueryDiagnostics({
+      ownerId: diagnosticPackId(capabilityId),
+      capabilityId,
       startedAtMs,
       durationMs: performance.now() - startedAtMs,
       requestBytes: body.length,
@@ -133,13 +139,15 @@ export const querySimulationRunPack = async (
       ok: response.ok,
     })
     recorded = true
-    if (!response.ok) throw new Error(packQueryFailureMessage(response.status, text))
-    return JSON.parse(text) as PackQueryApiResponse
+    if (!response.ok) throw new Error(capabilityQueryFailureMessage(response.status, text))
+    const invocation = JSON.parse(text) as CapabilityInvocationResponse
+    if (invocation.kind !== 'query') throw new Error(`Simulation Capability is not a query: ${capabilityId}`)
+    return invocation.result as T
   } catch (err) {
     if (!recorded) {
-      recordPackQueryDiagnostics({
-        packId: request.packId,
-        kind: request.kind,
+      recordCapabilityQueryDiagnostics({
+        ownerId: diagnosticPackId(capabilityId),
+        capabilityId,
         startedAtMs,
         durationMs: performance.now() - startedAtMs,
         requestBytes: body.length,

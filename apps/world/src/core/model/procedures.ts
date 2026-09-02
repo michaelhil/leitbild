@@ -230,11 +230,16 @@ export const procedureRunResetEventSchema = z.object({
   resetBy: actorIdSchema,
 })
 
+export const procedureRunStartCommandKind = 'world.procedure.run.start'
+export const procedureStepUpdateCommandKind = 'world.procedure.step.update'
+export const procedureRunCloseCommandKind = 'world.procedure.run.close'
+export const procedureRunResetCommandKind = 'world.procedure.run.reset'
+
 export const procedureCommandKindSchema = z.enum([
-  'procedure.run.start',
-  'procedure.step.update',
-  'procedure.run.close',
-  'procedure.run.reset',
+  procedureRunStartCommandKind,
+  procedureStepUpdateCommandKind,
+  procedureRunCloseCommandKind,
+  procedureRunResetCommandKind,
 ])
 export type ProcedureCommandKind = z.infer<typeof procedureCommandKindSchema>
 

@@ -4,8 +4,8 @@ import {
   type SimulationRunEventBatchMessage,
   type RuntimeRealtimeMessageBatch,
 } from '../simulation-run-events.ts'
-import type { SimulationRunCommandRequest } from '../simulation-run-client.ts'
-import type { CommandResponse } from '../types.ts'
+import type { SimulationRunCapabilityRequest } from '../simulation-run-client.ts'
+import type { CapabilityInvocationResponse } from '../types.ts'
 import { workspaceApiPath } from '../workspace-context.ts'
 import { activeWorkspaceId } from '../workspace-context.ts'
 
@@ -30,7 +30,7 @@ export interface RealtimeConnectionController {
   readonly disconnect: () => void
   readonly canCarry: (id: SimulationRunId) => boolean
   readonly statusFor: (id: SimulationRunId) => 'open' | 'connecting' | 'other'
-  readonly sendCommand: (id: SimulationRunId, command: SimulationRunCommandRequest) => Promise<CommandResponse>
+  readonly invokeCapability: (id: SimulationRunId, invocation: SimulationRunCapabilityRequest) => Promise<CapabilityInvocationResponse>
   readonly sendRuntimeInput: (id: SimulationRunId, input: RuntimeInputRequest) => void
 }
 
@@ -44,8 +44,8 @@ export interface RuntimeInputRequest {
 export const createRealtimeConnectionController = (): RealtimeConnectionController => {
   let socket: WebSocket | null = null
   let socketId: SimulationRunId | null = null
-  const pendingCommands = new Map<string, {
-    readonly resolve: (response: CommandResponse) => void
+  const pendingInvocations = new Map<string, {
+    readonly resolve: (response: CapabilityInvocationResponse) => void
     readonly reject: (err: Error) => void
     readonly timeoutId: number
   }>()
@@ -55,31 +55,31 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
     && socketId === id
     && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)
 
-  const rejectPendingCommands = (message: string): void => {
-    for (const [requestId, pending] of pendingCommands) {
+  const rejectPendingInvocations = (message: string): void => {
+    for (const [requestId, pending] of pendingInvocations) {
       clearTimeout(pending.timeoutId)
       pending.reject(new Error(message))
-      pendingCommands.delete(requestId)
+      pendingInvocations.delete(requestId)
     }
   }
 
-  const resolveCommand = (requestId: string, response: CommandResponse): void => {
-    const pending = pendingCommands.get(requestId)
+  const resolveInvocation = (requestId: string, response: CapabilityInvocationResponse): void => {
+    const pending = pendingInvocations.get(requestId)
     if (!pending) return
     clearTimeout(pending.timeoutId)
-    pendingCommands.delete(requestId)
+    pendingInvocations.delete(requestId)
     pending.resolve(response)
   }
 
-  const rejectCommand = (requestId: string | undefined, message: string): void => {
+  const rejectInvocation = (requestId: string | undefined, message: string): void => {
     if (requestId === undefined) {
-      rejectPendingCommands(message)
+      rejectPendingInvocations(message)
       return
     }
-    const pending = pendingCommands.get(requestId)
+    const pending = pendingInvocations.get(requestId)
     if (!pending) return
     clearTimeout(pending.timeoutId)
-    pendingCommands.delete(requestId)
+    pendingInvocations.delete(requestId)
     pending.reject(new Error(message))
   }
 
@@ -100,7 +100,7 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
         if (socket !== nextSocket) return
         socket = null
         socketId = null
-        rejectPendingCommands('Realtime command channel closed')
+        rejectPendingInvocations('Realtime capability channel closed')
         callbacks.onClose()
       }
       nextSocket.onerror = () => {
@@ -124,12 +124,12 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
           callbacks.onReady(parsed)
           return
         }
-        if (parsed.type === 'command.result') {
-          resolveCommand(parsed.requestId, { result: parsed.result })
+        if (parsed.type === 'capability.result') {
+          resolveInvocation(parsed.requestId, parsed.outcome)
           return
         }
-        if (parsed.type === 'command.error') {
-          rejectCommand(parsed.requestId, parsed.message)
+        if (parsed.type === 'capability.error') {
+          rejectInvocation(parsed.requestId, parsed.message)
           return
         }
         if (parsed.type === 'runtime.realtime') {
@@ -147,7 +147,7 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
       socket?.close()
       socket = null
       socketId = null
-      rejectPendingCommands('Realtime command channel disconnected')
+      rejectPendingInvocations('Realtime capability channel disconnected')
     },
     canCarry,
     statusFor: (id): 'open' | 'connecting' | 'other' => {
@@ -156,26 +156,31 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
       if (socket.readyState === WebSocket.CONNECTING) return 'connecting'
       return 'other'
     },
-    sendCommand: async (id, command): Promise<CommandResponse> => {
+    invokeCapability: async (id, invocation): Promise<CapabilityInvocationResponse> => {
       if (socketId !== id || socket === null || socket.readyState !== WebSocket.OPEN) {
-        throw new Error('Realtime command channel is not open')
+        throw new Error('Realtime capability channel is not open')
       }
       const activeSocket = socket
       const requestId = `rtcmd:${crypto.randomUUID()}`
-      return await new Promise<CommandResponse>((resolve, reject): void => {
+      return await new Promise<CapabilityInvocationResponse>((resolve, reject): void => {
         const timeoutId = window.setTimeout(() => {
-          pendingCommands.delete(requestId)
-          reject(new Error('Realtime command timed out'))
+          pendingInvocations.delete(requestId)
+          reject(new Error('Realtime capability invocation timed out'))
         }, 2_500)
-        pendingCommands.set(requestId, {
+        pendingInvocations.set(requestId, {
           resolve,
           reject,
           timeoutId,
         })
         activeSocket.send(JSON.stringify({
-          type: 'command',
+          type: 'capability.invoke',
           requestId,
-          command,
+          capabilityId: invocation.capabilityId,
+          invocation: {
+            input: invocation.input,
+            ...(invocation.expectedRevision === undefined ? {} : { expectedRevision: invocation.expectedRevision }),
+            ...(invocation.idempotencyKey === undefined ? {} : { idempotencyKey: invocation.idempotencyKey }),
+          },
         }))
       })
     },

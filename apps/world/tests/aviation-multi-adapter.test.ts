@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { z } from 'zod'
 import type { ActorId, CommandEnvelope, CommandId, SimulationRunId, IsoTimestamp, ObjectId } from '../src/core/model/index.ts'
 import { aviationPackId } from '../src/packs/aviation/model.ts'
 import { createAviationMultiPackRuntimeAdapter } from '../src/packs/aviation/sim/multi/adapter.ts'
@@ -10,7 +11,7 @@ import type {
   PackRuntimeEvent,
   PackRuntimeEventHandler,
 } from '../src/simulation/protocol.ts'
-import { definePackRuntimeOperations } from '../src/simulation/operations.ts'
+import { definePackQueryCapability } from '../src/simulation/capabilities.ts'
 
 // Tiny stub PackRuntimeAdapter the multi-adapter can wrap. Each instance
 // exposes an `emit(events)` test seam plus tallies for connect/close.
@@ -32,7 +33,13 @@ const createStubAdapter = (id: string): StubAdapter => {
     version: '1.0.0',
     packId: aviationPackId,
     clock: 'live',
-    operations: definePackRuntimeOperations({}),
+    capabilities: [definePackQueryCapability({
+      id: 'world.aviation.stub-status',
+      title: 'Read stub source status',
+      description: 'Reads the status of the test aviation source.',
+      input: z.object({}).strict(),
+      output: z.record(z.string(), z.unknown()),
+    })],
     connect: async (config): Promise<PackRuntimeConnection> => {
       connectCount += 1
       const connHandlers = new Set<PackRuntimeEventHandler>()
@@ -235,7 +242,7 @@ describe('createAviationMultiPackRuntimeAdapter', () => {
     })
 
     expect(vatsim.connectCount()).toBe(1)
-    const status = await connection.query({ packId: 'aviation', kind: 'aviation.source_status', payload: {} })
+    const status = await connection.query({ packId: 'aviation', kind: 'world.aviation.source-status', payload: {} })
     expect(status.ok).toBe(true)
     if (status.ok) expect((status.result as { multi?: { activeSource?: string } }).multi?.activeSource).toBe('vatsim')
 

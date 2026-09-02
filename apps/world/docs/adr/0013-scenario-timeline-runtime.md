@@ -6,9 +6,9 @@ Leitbild implements a Scenario Timeline as a Simulation Run runtime capability.
 
 A Scenario Timeline is an optional declarative sequence of Cues on a Scenario Definition. It is not an Agent Script, browser tutorial, or simulator-private timer system. The Simulation Run runtime schedules Cues, converts actions into ordered Domain Events, applies them to projected state, broadcasts them to clients, persists durable history, and forwards committed events to simulation providers.
 
-V1 supports only `after_scenario_start` timing. The action vocabulary is intentionally small: show/hide guidance, highlight/clear object highlights, upsert an operational object, and delete an operational object.
+V1 supports only `after_scenario_start` timing. The action vocabulary is intentionally small: show/hide guidance, highlight/clear object highlights, upsert or delete an operational object, emit a typed interaction signal, and invoke a Simulation Capability explicitly marked schedulable.
 
-Built-in scenarios may be authored as compact JSON Scenario Config files. Pack-owned scenario codecs expand pack-specific object specs and update operations into full validated `ScenarioDefinition` data before a Simulation Run starts. The runtime still consumes only the expanded definition and never executes arbitrary scenario code.
+Built-in scenarios may be authored as compact JSON Scenario Definitions. Pack-owned scenario codecs validate and expand Pack-specific Items and mutations into full runtime startup state before a Simulation Run starts. The runtime still consumes only the Compiled Scenario and never executes arbitrary scenario code.
 
 ## Rationale
 
@@ -25,6 +25,7 @@ The compact config layer exists because full `OperationalObject` JSON is too ver
 - Restored runtimes use fired Cue ids to avoid refiring completed Cues.
 - Overdue Cues may fire when a restored runtime starts.
 - Domain-specific mechanics still live in packs and interaction handlers.
-- Scenario Timelines can create or update objects across active Packs, but object schemas must remain valid at the Pack boundary.
+- Scenario Timelines can create or mutate objects across active Packs, but Pack-owned schemas validate those authored actions before a Run starts.
+- Scheduled commands use the same Simulation Capability contract, validation, targeting, and event path as UI and Agent invocations.
 - Scenario configs can demonstrate multi-pack scenarios by activating several packs, for example ambulance plus traffic, while keeping scenario URLs explicit and scenario-first, such as `/i/oslo-ambulance/sandbox`.
 - Future trigger kinds should build on the same event-commit discipline rather than bypass it.

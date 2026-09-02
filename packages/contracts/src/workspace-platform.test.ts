@@ -123,12 +123,12 @@ describe('dynamic Resource and Capability discovery', () => {
 
   test('publishes agent-usable semantics without a concrete Resource binding', () => {
     const capability = moduleCapabilityDescriptorSchema.parse({
-      id: 'world.simulation-run.issue-command',
+      id: 'world.ambulance.set-destination',
       moduleId: 'world',
       kind: 'command',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
-      title: 'Issue simulation command',
-      description: 'Issues a validated command to a selected Simulation Run.',
+      title: 'Set ambulance destination',
+      description: 'Sets one ambulance destination in a selected Simulation Run.',
       risk: 'write',
       idempotent: true,
       inputSchema: { type: 'object' },
@@ -186,7 +186,7 @@ describe('dynamic Resource and Capability discovery', () => {
   test('grants Capabilities without pinning concrete Resources', () => {
     const grants = toolGrantSetSchema.parse([
       { capabilityId: 'world.simulation-run.read' },
-      { capabilityId: 'world.simulation-run.issue-command' },
+      { capabilityId: 'world.ambulance.set-destination' },
     ])
     expect(grants).toHaveLength(2)
     expect(grants[0]).not.toHaveProperty('resourceId')

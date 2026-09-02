@@ -24,7 +24,7 @@ Connections are also process links. They may remain pure topology, or they may o
 
 Fluid process links declare a validated solver contract through `nominalFluid`, `designPhase`, and `solverModel`. The graph compiler checks this contract after duplicate variable detection and before runtime creation. A fluid link that omits its solver model, uses an incompatible design phase, or lacks variables required by that solver model fails during graph compilation. Primary-coolant links are additionally required to expose pressure and pressure-drop variables because the current graph treats pressurizer pressure as the canonical RCS pressure and primary-coolant link pressure as a propagated read-out.
 
-Continuous physics stays inside the process plant pack runtime. Leitbild events are used for discrete operational transitions such as commands, trips, alarms, scenario injections, and threshold crossings. Pack queries expose selected read-only process state through the generic pack query surface; process-plant does not add a process-specific HTTP endpoint family.
+Continuous physics stays inside the process plant pack runtime. Leitbild events are used for discrete operational transitions such as commands, trips, alarms, scenario injections, and threshold crossings. Query Capabilities expose selected read-only process state through the shared Simulation Capability spine; process-plant does not add a process-specific HTTP endpoint family.
 
 Process variables use structured quantity/unit metadata instead of free-text units. The runtime is headless and fixed-step: commands are applied at the start of a tick, ordered solver phases update continuous state, and snapshots expose current variable values for tests, provider persistence, and queries.
 
@@ -58,8 +58,8 @@ The first process slice is a lumped-parameter directional model, not analysis-gr
 - Solver behavior now has explicit read/write metadata and an enforced write contract, making richer future components less likely to corrupt unrelated plant state.
 - The runtime phase list reflects actual execution; telemetry publication is a read-out from the variable table, not a hidden state-changing phase.
 - The pack now has a real headless runtime/testbed plus Simulation Run provider integration.
-- The generic query surface can inspect systems, graph topology, variables, published telemetry, and runtime status without new HTTP routes.
-- The generic query surface can also read configured trend buffers through `process-plant.trends.read`.
+- Simulation Capabilities can inspect systems, graph topology, variables, published telemetry, and runtime status without new HTTP routes.
+- A Simulation Capability can also read configured trend buffers through `process-plant.trends.read`.
 - Reusable process-plant assets are catalog contributions. The generic contribution catalog now covers graph refs, graph assemblies, graph fragments, fragment presets, I&C refs, graph-aware I&C refs, and process surfaces. PWR contributes to that catalog; generic runtime/query code should not import PWR graph or surface modules directly.
 - `process-plant.control.write` is a real provider command for writable variables; invalid writes are rejected before they enter the solver queue.
 - Provider-private state restores process runtimes after reload without turning variables into operational objects.

@@ -8,12 +8,12 @@ import type { ProcessPlantVariableSnapshot } from '../runtime/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { requirePlant, success } from './common.ts'
 
-const variablesReadQuerySchema = z.object({
+export const variablesReadQuerySchema = z.object({
   plantId: idSchema,
   paths: z.array(variablePathSchema).min(1),
 })
 
-const variablesSearchQuerySchema = z.object({
+export const variablesSearchQuerySchema = z.object({
   plantId: idSchema.optional(),
   text: z.string().min(1).optional(),
   discipline: variableDisciplineSchema.optional(),
@@ -22,8 +22,8 @@ const variablesSearchQuerySchema = z.object({
 })
 
 export const processPlantVariableQueryKinds = [
-  'process-plant.variables.read',
-  'process-plant.variables.search',
+  'world.process-plant.variables.read',
+  'world.process-plant.variables.search',
 ] as const
 
 const snapshotsFor = (
@@ -57,7 +57,7 @@ export const answerProcessPlantVariableQuery = (config: {
   readonly at: IsoTimestamp
 }): PackQueryResponse | undefined => {
   if (!processPlantVariableQueryKinds.some(kind => kind === config.request.kind)) return undefined
-  if (config.request.kind === 'process-plant.variables.read') {
+  if (config.request.kind === 'world.process-plant.variables.read') {
     const payload = variablesReadQuerySchema.parse(config.request.payload)
     const system = requirePlant(config.plants, payload.plantId)
     return success(config.request, { variables: snapshotsFor(system, payload.paths) }, config.at)

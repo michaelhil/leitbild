@@ -12,6 +12,7 @@ export const gridElectricalPortDefinitions = (
   electricalPortDefinitionSchema.parse({
     id: point.id,
     label: point.label,
+    role: 'network',
     nominalKv: point.nominalKv,
     maximumExportMw: point.maximumExportMw,
     maximumImportMw: point.maximumImportMw,
@@ -27,6 +28,7 @@ export const gridElectricalPortsAt = (config: {
   return electricalPortDefinitionSchema.parse({
     id: point.id,
     label: point.label,
+    role: 'network',
     nominalKv: point.nominalKv,
     maximumExportMw: point.maximumExportMw,
     maximumImportMw: point.maximumImportMw,

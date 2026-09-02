@@ -334,7 +334,7 @@
           {
             "type": "update_object",
             "objectId": "incident:halden-harbor",
-            "operation": {
+            "mutation": {
               "pack": "ambulance",
               "type": "set_incident_victims",
               "victims": {
@@ -455,7 +455,7 @@
           {
             "type": "update_object",
             "objectId": "incident:halden-fortress",
-            "operation": {
+            "mutation": {
               "pack": "ambulance",
               "type": "set_incident_victims",
               "victims": {

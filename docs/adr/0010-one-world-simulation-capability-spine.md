@@ -1,0 +1,7 @@
+# World uses one Simulation Capability spine
+
+World-core actions and Pack Runtime commands and queries are described by one `SimulationCapability` contract. A Capability owns its stable id, human description, risk and idempotency metadata, strict input and output schemas, optional timeline schedulability, and command construction when it mutates state. The runtime validates the same contract whether the caller is the Workspace broker, a Scenario Timeline, or a World UI adapter. Pack realtime inputs remain a separate high-frequency transport because they are ephemeral control samples rather than durable commands.
+
+The World Module publishes these exact Capabilities directly. It does not expose generic public “issue command” or “query Pack” Capabilities, and Simulation Context never advertises an action that the Workspace broker cannot invoke. Scenario item and mutation codecs stay Pack-owned; the compiler validates them before expansion. Alternative runtimes for one Pack may share a Capability id only when their complete public contracts agree.
+
+This removes duplicated operation registries, wrapper Capabilities, placeholder schemas, and the split between Agent-facing, timeline-facing, and browser-facing commands. The specialized World HTTP and WebSocket transports carry the same `{ capabilityId, input, expectedRevision?, idempotencyKey? }` invocation shape and enter the same runtime validation, idempotency, and event path. High-frequency realtime inputs remain deliberately separate.

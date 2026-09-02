@@ -92,7 +92,7 @@ const weatherMapFeatures = async (config: {
   try {
     const response = await connection.query({
       packId: 'weather',
-      kind: 'weather.mapFeatures',
+      kind: 'world.weather.map-features',
       payload: {
         viewport: config.viewport,
         zoom: config.zoom,
@@ -113,10 +113,10 @@ const weatherMapQueryLayersForZoom = (zoom: number): ReadonlyArray<string> => {
     map: { viewport: osloViewport, zoom },
   }) ?? []
   const query = queries[0]
-  if (!query || typeof query.payload !== 'object' || query.payload === null || !('layers' in query.payload)) {
+  if (!query || typeof query.input !== 'object' || query.input === null || !('layers' in query.input)) {
     throw new Error('weather map query did not include layers')
   }
-  const layers = (query.payload as { readonly layers: unknown }).layers
+  const layers = (query.input as { readonly layers: unknown }).layers
   if (!Array.isArray(layers)) throw new Error('weather map query layers were not an array')
   return layers.map(layer => String(layer))
 }
@@ -294,13 +294,13 @@ describe('weather pack', () => {
     await connection.setClock({ currentTime: start, updatedAt: nowIso(), paused: true, speed: 1 })
     const startResponse = await connection.query({
       packId: 'weather',
-      kind: 'weather.mapFeatures',
+      kind: 'world.weather.map-features',
       payload: { viewport: osloViewport, zoom: 12, layers: ['influenceShapes'], at: start, animationDurationMs: 2000 },
     })
     await connection.setClock({ currentTime: later, updatedAt: nowIso(), paused: true, speed: 1 })
     const laterResponse = await connection.query({
       packId: 'weather',
-      kind: 'weather.mapFeatures',
+      kind: 'world.weather.map-features',
       payload: { viewport: osloViewport, zoom: 12, layers: ['influenceShapes'] },
     })
     await connection.close()

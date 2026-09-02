@@ -98,7 +98,7 @@ The drone runtime exposes read-only pack queries:
 - `drone.scene`: scene/read-model state for drones
 - `drone.controllerBindings`: controller binding metadata
 - `drone.vehicleModels`: active vehicle model catalog
-- `drone.mapFeatures`: sensor footprints, effect ranges, and swarm envelopes
+- `world.drone.map-features`: sensor footprints, effect ranges, and swarm envelopes
 - `drone.sensorContacts`: external contact surface, currently empty until a real contact source is added
 
 Queries do not mutate runtime state. UI, AI, and procedure tooling should use queries for rich drone read models rather than copying runtime-private mechanics into core objects.

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { CommandEnvelope, CommandResult, SimulationRunEvent, EventId, SimulationRunId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, ProcedureCatalog, ProcedureDocument, ProcedureId, ProcedureSourceId, Provenance, RecordedSample, RecordingProfileDescriptor, RecordingSeriesDescriptor, RecordingSeriesQuery, ScenarioExecutionState, ScenarioRecordingSelection, ScenarioTimeline, ScenarioTimelineAction, ScenarioTimelineCue, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
 import { actorIdSchema, commandEnvelopeSchema, deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, notificationIdSchema, nowIso, simulationClockUpdateSchema } from '../model/index.ts'
-import type { PackQueryRequest, PackQueryResponse, PackWikiRef } from '../packs/protocol.ts'
-import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent, PackRuntimeOperationDescriptor, PackRuntimeRealtimeInput, PackRuntimeRealtimeMessage } from '../../simulation/protocol.ts'
+import type { PackWikiRef } from '../packs/protocol.ts'
+import type { SimulationCapability, PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent, PackRuntimeHealth, PackRuntimeRealtimeInput, PackRuntimeRealtimeMessage } from '../../simulation/protocol.ts'
 import type { EventLog } from './event-log.ts'
 import { createSimulationRunStateStore, type SimulationRunStateSnapshot } from './state-store.ts'
 import type { SimulationRunSnapshotStore } from './snapshot-store.ts'
@@ -19,6 +19,12 @@ import { procedureCommandEvents } from '../../features/procedures/run-state.ts'
 import type { WorkspaceId } from '@leitbild/contracts'
 import type { ScenarioRevisionId } from '../scenarios/library.ts'
 import type { RunHistorian, RunHistorianStatus } from '../../features/historian/store.ts'
+import {
+  CommandIdempotencyConflictError,
+  commandIdempotencyConfigFromEnv,
+  createCommandIdempotencyStore,
+  issueCommandWithIdempotency,
+} from './command-idempotency.ts'
 
 const projectedSnapshotFlushIntervalMs = defaultSimulationRunRuntimePolicy.projectedSnapshotFlushIntervalMs
 const scenarioRunnerActor: Actor = {
@@ -52,18 +58,37 @@ export interface SimulationRunRuntime {
   readonly events: (config?: { readonly afterSeq?: number }) => ReadonlyArray<SimulationRunEvent>
   readonly subscribe: (handler: SimulationRunEventHandler) => () => void
   readonly publishResetBoundary: (config: { readonly scenarioId?: string }) => Promise<SimulationRunEvent>
-  readonly issueCommand: (actor: Actor, command: CommandEnvelope) => Promise<CommandResult>
+  readonly invokeCapability: (actor: Actor, invocation: SimulationRunCapabilityInvocation) => Promise<SimulationRunCapabilityInvocationResult>
   readonly receiveRealtimeInput: (input: PackRuntimeRealtimeInput) => Promise<void>
-  readonly queryPack: (request: PackQueryRequest) => Promise<PackQueryResponse>
   readonly procedureSourceStatus: (config?: { readonly sourceId?: ProcedureSourceId }) => ProcedureSourceLoadStatus
   readonly procedureCatalog: (config?: { readonly sourceId?: ProcedureSourceId; readonly refresh?: boolean }) => Promise<ProcedureCatalog>
   readonly procedureDocument: (config: { readonly sourceId?: ProcedureSourceId; readonly procedureId: ProcedureId; readonly refresh?: boolean }) => Promise<ProcedureDocument>
   readonly publishInteractionSignal: (signal: InteractionSignal, provenance: Provenance) => Promise<void>
   readonly metrics: () => SimulationRunRuntimeMetricsSnapshot
+  readonly health: () => ReadonlyArray<PackRuntimeHealth>
   readonly recordingStatus: () => RunHistorianStatus | null
   readonly recordingSeries: () => ReadonlyArray<RecordingSeriesDescriptor & { readonly runtimeId: string }>
   readonly recordedSamples: (query: RecordingSeriesQuery) => ReadonlyArray<RecordedSample>
   readonly close: () => Promise<void>
+}
+
+export interface SimulationRunCapabilityInvocation {
+  readonly capabilityId: string
+  readonly input: unknown
+  readonly expectedRevision?: number
+  readonly idempotencyKey?: string
+  readonly scheduled?: boolean
+  readonly issuedAt?: IsoTimestamp
+}
+
+export type SimulationRunCapabilityInvocationResult =
+  | { readonly kind: 'query'; readonly result: unknown }
+  | { readonly kind: 'command'; readonly result: CommandResult; readonly replayed: boolean }
+
+export interface ActiveSimulationCapability {
+  readonly packId: string
+  readonly runtimeId: string
+  readonly capability: SimulationCapability
 }
 
 export interface SimulationRunCapabilities {
@@ -77,7 +102,16 @@ export interface SimulationRunCapabilities {
     readonly packId: string
     readonly clock: 'simulation' | 'live' | 'none'
   }>
-  readonly operations: ReadonlyArray<PackRuntimeOperationDescriptor & {
+  readonly capabilities: ReadonlyArray<{
+    readonly id: string
+    readonly kind: 'command' | 'query'
+    readonly title: string
+    readonly description: string
+    readonly risk: 'read' | 'write' | 'destructive'
+    readonly idempotent: boolean
+    readonly schedulable?: boolean
+    readonly inputSchema: Readonly<Record<string, unknown>>
+    readonly outputSchema: Readonly<Record<string, unknown>>
     readonly packId: string
     readonly runtimeId: string
   }>
@@ -108,6 +142,7 @@ export const createSimulationRunRuntime = async (config: {
     readonly timeline?: ScenarioTimeline
   }
   readonly capabilities?: Omit<SimulationRunCapabilities, 'simulationRunId'>
+  readonly runtimeCapabilities?: ReadonlyArray<ActiveSimulationCapability>
   readonly procedureSourceService?: ProcedureSourceService
   readonly historian?: RunHistorian
 }): Promise<SimulationRunRuntime> => {
@@ -127,6 +162,15 @@ export const createSimulationRunRuntime = async (config: {
   const interactionHandlers = [...(config.interactionHandlers ?? [])]
     .sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id))
   const procedureSourceService = config.procedureSourceService ?? createProcedureSourceService()
+  const commandIdempotencyStore = createCommandIdempotencyStore()
+  const commandIdempotency = commandIdempotencyConfigFromEnv()
+  const runtimeCapabilities = new Map<string, ActiveSimulationCapability>()
+  for (const entry of config.runtimeCapabilities ?? []) {
+    if (runtimeCapabilities.has(entry.capability.id)) {
+      throw new Error(`duplicate active Simulation Capability: ${entry.capability.id}`)
+    }
+    runtimeCapabilities.set(entry.capability.id, entry)
+  }
 
   const keepQueueOpenAfter = async (publish: Promise<void>): Promise<void> => {
     await Promise.allSettled([publish])
@@ -338,7 +382,7 @@ export const createSimulationRunRuntime = async (config: {
     if (action.type === 'upsert_object') {
       return { ...nextScenarioBase(at), type: 'object.upserted', object: action.object }
     }
-    if (action.type === 'emit_signal' || action.type === 'issue_command') return null
+    if (action.type === 'emit_signal' || action.type === 'invoke_capability') return null
     return { ...nextScenarioBase(at), type: 'object.deleted', objectId: action.objectId }
   }
 
@@ -732,21 +776,54 @@ export const createSimulationRunRuntime = async (config: {
     return result
   }
 
-  const commandEnvelopeForScenarioAction = (
-    action: Extract<ScenarioTimelineAction, { readonly type: 'issue_command' }>,
-    at: IsoTimestamp,
-  ): CommandEnvelope =>
-    commandEnvelopeSchema.parse({
+  const invokeCapabilityThroughRuntime = async (
+    actor: Actor,
+    invocation: SimulationRunCapabilityInvocation,
+    commandSource: Provenance['source'],
+  ): Promise<SimulationRunCapabilityInvocationResult> => {
+    const active = runtimeCapabilities.get(invocation.capabilityId)
+    if (!active) throw new Error(`Simulation Capability is not active: ${invocation.capabilityId}`)
+    if (invocation.scheduled === true && active.capability.schedulable !== true) {
+      throw new Error(`Simulation Capability is not schedulable: ${invocation.capabilityId}`)
+    }
+    const input = active.capability.input.parse(invocation.input)
+    if (active.capability.kind === 'query') {
+      const response = await config.runtimeConnection.query({
+        packId: active.packId,
+        kind: active.capability.id,
+        payload: input,
+      })
+      if (!response.ok) throw new Error(response.reason)
+      return { kind: 'query', result: active.capability.output.parse(response.result) }
+    }
+    const built = active.capability.buildCommand?.(input)
+    if (!built) throw new Error(`Simulation command Capability cannot build a command: ${active.capability.id}`)
+    const command = commandEnvelopeSchema.parse({
       id: `command:${randomUUID()}`,
       simulationRunId: config.id,
-      actorId: scenarioRunnerActor.id,
-      kind: action.command.kind,
-      targetObjectIds: action.command.targetObjectIds,
-      payload: action.command.payload,
-      issuedAt: at,
-      ...(action.command.idempotencyKey === undefined ? {} : { idempotencyKey: action.command.idempotencyKey }),
-      ...(action.command.expectedRevision === undefined ? {} : { expectedRevision: action.command.expectedRevision }),
+      actorId: actor.id,
+      kind: active.capability.id,
+      targetObjectIds: built.targetObjectIds,
+      payload: built.payload,
+      issuedAt: invocation.issuedAt ?? nowIso(),
+      ...(invocation.expectedRevision === undefined ? {} : { expectedRevision: invocation.expectedRevision }),
+      ...(invocation.idempotencyKey === undefined ? {} : { idempotencyKey: invocation.idempotencyKey }),
     }) as CommandEnvelope
+    const issued = await issueCommandWithIdempotency({
+      store: commandIdempotencyStore,
+      idempotency: commandIdempotency,
+      actor,
+      command,
+      issue: async (commandActor, commandToIssue) =>
+        await issueCommandThroughRuntime(commandActor, commandToIssue, commandSource),
+    })
+    if (!issued.ok) throw new CommandIdempotencyConflictError(issued.message)
+    return {
+      kind: 'command',
+      result: active.capability.output.parse(issued.result) as CommandResult,
+      replayed: issued.replayed,
+    }
+  }
 
   const publishScenarioCue = async (cue: ScenarioTimelineCue, at: IsoTimestamp): Promise<void> => {
     await publishOneGenerated(() => scenarioCueStartedEvent(cue, at))
@@ -758,13 +835,15 @@ export const createSimulationRunRuntime = async (config: {
         })
         continue
       }
-      if (action.type === 'issue_command') {
-        const result = await issueCommandThroughRuntime(
-          scenarioRunnerActor,
-          commandEnvelopeForScenarioAction(action, at),
-          'system',
-        )
-        if (!result.ok) throw new Error(result.reason)
+      if (action.type === 'invoke_capability') {
+        const outcome = await invokeCapabilityThroughRuntime(scenarioRunnerActor, {
+          capabilityId: action.capabilityId,
+          input: action.input,
+          scheduled: true,
+          issuedAt: at,
+        }, 'system')
+        if (outcome.kind !== 'command') throw new Error(`Scenario cannot invoke query Capability: ${action.capabilityId}`)
+        if (!outcome.result.ok) throw new Error(outcome.result.reason)
         continue
       }
       await publishGenerated(() => simulationRunEventsForScenarioActions([action], at))
@@ -813,10 +892,6 @@ export const createSimulationRunRuntime = async (config: {
     startScenarioRunner()
   }
 
-  const issueCommand = async (actor: Actor, command: CommandEnvelope): Promise<CommandResult> => {
-    return await issueCommandThroughRuntime(actor, command, 'operator')
-  }
-
   const receiveRealtimeInput = async (input: PackRuntimeRealtimeInput): Promise<void> => {
     if (!config.runtimeConnection.receiveRealtimeInput) throw new Error(`runtime cannot receive realtime input type: ${input.type}`)
     await config.runtimeConnection.receiveRealtimeInput(input)
@@ -856,8 +931,11 @@ export const createSimulationRunRuntime = async (config: {
     return nextClock
   }
 
-  const queryPack = async (request: PackQueryRequest): Promise<PackQueryResponse> =>
-    await config.runtimeConnection.query(request)
+  const invokeCapability = async (
+    actor: Actor,
+    invocation: SimulationRunCapabilityInvocation,
+  ): Promise<SimulationRunCapabilityInvocationResult> =>
+    await invokeCapabilityThroughRuntime(actor, invocation, 'operator')
 
   const publishResetBoundary = async (resetConfig: { readonly scenarioId?: string }): Promise<SimulationRunEvent> => {
     const snapshot = state.snapshot()
@@ -884,7 +962,7 @@ export const createSimulationRunRuntime = async (config: {
       scenarioRevisionId: config.capabilities?.scenarioRevisionId ?? null,
       activePackIds: config.capabilities?.activePackIds ?? [],
       runtimes: config.capabilities?.runtimes ?? [],
-      operations: config.capabilities?.operations ?? [],
+      capabilities: config.capabilities?.capabilities ?? [],
       wikiRefs: config.capabilities?.wikiRefs ?? [],
       recording: config.capabilities?.recording ?? { selections: [], profiles: [] },
     }),
@@ -901,9 +979,8 @@ export const createSimulationRunRuntime = async (config: {
       }
     },
     publishResetBoundary,
-    issueCommand,
+    invokeCapability,
     receiveRealtimeInput,
-    queryPack,
     procedureSourceStatus: (statusConfig = {}) => procedureSourceService.readStatus(statusConfig),
     procedureCatalog: async (catalogConfig = {}) => await procedureSourceService.readCatalog(catalogConfig),
     procedureDocument: async (documentConfig) => await procedureSourceService.readDocument(documentConfig),
@@ -913,6 +990,7 @@ export const createSimulationRunRuntime = async (config: {
       })
     },
     metrics: () => metrics.snapshot(),
+    health: () => config.runtimeConnection.health?.() ?? [],
     recordingStatus: () => config.historian?.status() ?? null,
     recordingSeries: () => config.historian?.listSeries() ?? [],
     recordedSamples: (query) => config.historian?.query(query) ?? [],

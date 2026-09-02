@@ -45,7 +45,7 @@ One live client connection observing a Workspace or Resource. It is an ephemeral
 _Avoid_: User, participant, member, authenticated identity
 
 **Capability**:
-A typed command, query, or event stream exposed by a Module for a Resource type or Workspace scope.
+A typed command or query exposed by a Module for a Resource type or Workspace scope.
 _Avoid_: tool name guessed by a caller, Pack, arbitrary RPC
 
 **Definition**:

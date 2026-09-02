@@ -27,20 +27,20 @@ import {
 import { projectCompiledProcessDisplay } from '../displays/projection.ts'
 import type { ProcessPlantIcLifecycleState } from '../runtime/index.ts'
 
-const displayQuerySchema = z.object({
+export const displayQuerySchema = z.object({
   plantId: idSchema,
   displayId: idSchema,
 })
 
-const graphLensQuerySchema = displayQuerySchema.extend({
+export const graphLensQuerySchema = displayQuerySchema.extend({
   lens: processDisplayGraphLensSchema,
 })
 
 export const processPlantDisplayQueryKinds = [
-  'process-plant.displays.list',
-  'process-plant.display.read',
-  'process-plant.display.snapshot',
-  'process-plant.display.project',
+  'world.process-plant.displays.list',
+  'world.process-plant.display.read',
+  'world.process-plant.display.snapshot',
+  'world.process-plant.display.project',
 ] as const
 
 interface CompiledDisplayRuntimePlan {
@@ -206,7 +206,7 @@ export const answerProcessPlantDisplayQuery = (config: {
   readonly at: IsoTimestamp
 }): PackQueryResponse | undefined => {
   if (!processPlantDisplayQueryKinds.some(kind => kind === config.request.kind)) return undefined
-  if (config.request.kind === 'process-plant.displays.list') {
+  if (config.request.kind === 'world.process-plant.displays.list') {
     const payload = z.object({ plantId: idSchema }).parse(config.request.payload)
     const system = requirePlant(config.plants, payload.plantId)
     const displays = listProcessPlantDisplayDefinitionsForGraph(system.plant.graph)
@@ -224,10 +224,10 @@ export const answerProcessPlantDisplayQuery = (config: {
   const system = requirePlant(config.plants, payload.plantId)
   const plan = compiledDisplayFor(system, payload.displayId)
   const display = plan.display
-  if (config.request.kind === 'process-plant.display.read') {
+  if (config.request.kind === 'world.process-plant.display.read') {
     return success(config.request, { plantId: system.plant.id, display }, config.at)
   }
-  if (config.request.kind === 'process-plant.display.project') {
+  if (config.request.kind === 'world.process-plant.display.project') {
     const projectPayload = graphLensQuerySchema.parse(config.request.payload)
     const graphProjection = projectProcessGraph({
       graph: system.plant.graph,

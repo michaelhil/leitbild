@@ -8,7 +8,7 @@ import {
   type IsoTimestamp,
   type OperationalObject,
 } from '../../core/model/index.ts'
-import type { PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
+import type { PackScenarioSupport } from '../../core/packs/protocol.ts'
 import { trafficPackDataSchema, trafficSeveritySchema, type TrafficPackData, type TrafficGeometryMode } from './model.ts'
 import { trafficSimAdapterId, trafficSimPackId } from './sim/constants.ts'
 
@@ -17,7 +17,7 @@ const lonLatSchema = z.tuple([
   z.number().finite().min(-90).max(90),
 ])
 
-const trafficConditionSpecSchema = z.object({
+export const trafficConditionSpecSchema = z.object({
   pack: z.literal('traffic'),
   type: z.literal('traffic_condition'),
   id: objectIdSchema,
@@ -124,14 +124,12 @@ const geometryFor = async (
 }
 
 export const trafficScenarioSupport: PackScenarioSupport = {
+  itemSchemas: { traffic_condition: trafficConditionSpecSchema },
   expandItem: async (rawSpec, context) => {
     const spec = trafficConditionSpecSchema.parse(rawSpec)
     const object = trafficConditionObject({ spec, geometry: await geometryFor(spec, context), at: context.at })
     const parsed = trafficPackDataSchema.safeParse(object.packData)
     if (!parsed.success) throw new Error(`invalid scenario traffic object ${object.id}: ${parsed.error.message}`)
     return { objects: [{ ...object, packData: parsed.data }] }
-  },
-  applyOperation: (rawOperation: PackScenarioOperationSpec): OperationalObject => {
-    throw new Error(`traffic scenario operation is not supported yet: ${rawOperation.type}`)
   },
 }

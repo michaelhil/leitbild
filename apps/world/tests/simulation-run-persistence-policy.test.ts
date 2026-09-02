@@ -2,12 +2,14 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { z } from 'zod'
 import type { ActorId, AdapterId, CommandEnvelope, SimulationRunId, SimulationRunEvent, PackId, ObjectId, OperationalObject } from '../src/core/model/index.ts'
-import { geoPointFromLonLat, meters, nowIso } from '../src/core/model/index.ts'
+import { commandResultSchema, geoPointFromLonLat, meters, nowIso } from '../src/core/model/index.ts'
 import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEventHandler, PackRuntimeEventHistory } from '../src/simulation/protocol.ts'
 import { createJsonlEventLog } from '../src/core/simulation-runs/event-log.ts'
 import { createSimulationRunSnapshotStore, type SimulationRunSnapshotStore } from '../src/core/simulation-runs/snapshot-store.ts'
 import { createSimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
+import { definePackCommandCapability } from '../src/simulation/capabilities.ts'
 
 const simulationRunId = 'run-persistence-policy-test' as SimulationRunId
 const objectId = 'object:test-mobile' as ObjectId
@@ -332,7 +334,7 @@ describe('simulation run persistence policy', () => {
     const eventLogPath = join(dataDir, 'events.jsonl')
     const initialObject = makeObject()
     const runtimeConnection = createControlledRuntimeConnection(initialObject, {
-      commandEventHistory: command => command.kind === 'test.fast-control' ? 'snapshot-only' : 'record',
+      commandEventHistory: command => command.kind === 'world.test.fast-control' ? 'snapshot-only' : 'record',
       sendCommand: async command => ({
         ok: true,
         commandId: command.id,
@@ -347,20 +349,29 @@ describe('simulation run persistence policy', () => {
         simulationRunId,
         path: join(dataDir, 'snapshot.json'),
       }),
+      runtimeCapabilities: [{
+        packId: 'packId:test',
+        runtimeId: 'runtime:test',
+        capability: definePackCommandCapability({
+          id: 'world.test.fast-control',
+          title: 'Test fast control',
+          description: 'Exercises projected command lifecycle persistence.',
+          idempotent: false,
+          input: z.object({}).strict(),
+          output: commandResultSchema,
+          buildCommand: input => ({ targetObjectIds: [objectId], payload: input }),
+        }),
+      }],
     })
 
-    const command: CommandEnvelope = {
-      id: 'command:test-fast-control' as CommandEnvelope['id'],
-      simulationRunId,
-      actorId: operatorActor.id,
-      kind: 'test.fast-control',
-      targetObjectIds: [objectId],
-      payload: {},
-      issuedAt: nowIso(),
-    }
-    const result = await runtime.issueCommand(operatorActor, command)
+    const outcome = await runtime.invokeCapability(operatorActor, {
+      capabilityId: 'world.test.fast-control',
+      input: {},
+    })
 
-    expect(result.ok).toBe(true)
+    expect(outcome.kind).toBe('command')
+    if (outcome.kind !== 'command') throw new Error('expected command Capability result')
+    expect(outcome.result.ok).toBe(true)
     expect(runtime.events()).toHaveLength(0)
     expect(await readEventLog(eventLogPath)).toHaveLength(0)
     expect(runtime.metrics().publishedEvents.projectedEvents).toBe(2)

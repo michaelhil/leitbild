@@ -441,7 +441,7 @@
           {
             "type": "update_object",
             "objectId": "incident:torshov-partial",
-            "operation": {
+            "mutation": {
               "pack": "ambulance",
               "type": "set_incident_victims",
               "victims": {
@@ -589,7 +589,7 @@
           {
             "type": "update_object",
             "objectId": "incident:majorstuen-tram",
-            "operation": {
+            "mutation": {
               "pack": "ambulance",
               "type": "set_incident_victims",
               "victims": {
@@ -694,7 +694,7 @@
           {
             "type": "update_object",
             "objectId": "incident:gronland-unattended",
-            "operation": {
+            "mutation": {
               "pack": "ambulance",
               "type": "set_incident_victims",
               "victims": {

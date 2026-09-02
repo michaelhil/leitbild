@@ -676,18 +676,13 @@
         },
         "actions": [
           {
-            "type": "issue_command",
-            "command": {
-              "kind": "process-plant.control.ramp",
-              "targetObjectIds": [
-                "plant:halden-a2"
-              ],
-              "payload": {
-                "plantId": "plant:halden-a2",
-                "path": "sgA.tubeLeakFraction",
-                "targetValue": 0.018,
-                "durationSeconds": 300
-              }
+            "type": "invoke_capability",
+            "capabilityId": "world.process-plant.control.ramp",
+            "input": {
+              "plantId": "plant:halden-a2",
+              "path": "sgA.tubeLeakFraction",
+              "targetValue": 0.018,
+              "durationSeconds": 300
             }
           }
         ]
@@ -728,17 +723,12 @@
         },
         "actions": [
           {
-            "type": "issue_command",
-            "command": {
-              "kind": "process-plant.control.write",
-              "targetObjectIds": [
-                "plant:halden-b1"
-              ],
-              "payload": {
-                "plantId": "plant:halden-b1",
-                "path": "mainFeedwaterPumpA.running",
-                "value": false
-              }
+            "type": "invoke_capability",
+            "capabilityId": "world.process-plant.control.write",
+            "input": {
+              "plantId": "plant:halden-b1",
+              "path": "mainFeedwaterPumpA.running",
+              "value": false
             }
           }
         ]
@@ -773,17 +763,12 @@
         },
         "actions": [
           {
-            "type": "issue_command",
-            "command": {
-              "kind": "process-plant.control.write",
-              "targetObjectIds": [
-                "plant:halden-b1"
-              ],
-              "payload": {
-                "plantId": "plant:halden-b1",
-                "path": "mainFeedwaterPumpB.running",
-                "value": false
-              }
+            "type": "invoke_capability",
+            "capabilityId": "world.process-plant.control.write",
+            "input": {
+              "plantId": "plant:halden-b1",
+              "path": "mainFeedwaterPumpB.running",
+              "value": false
             }
           }
         ]
@@ -814,17 +799,12 @@
         },
         "actions": [
           {
-            "type": "issue_command",
-            "command": {
-              "kind": "process-plant.control.write",
-              "targetObjectIds": [
-                "plant:halden-b1"
-              ],
-              "payload": {
-                "plantId": "plant:halden-b1",
-                "path": "rcpA.running",
-                "value": false
-              }
+            "type": "invoke_capability",
+            "capabilityId": "world.process-plant.control.write",
+            "input": {
+              "plantId": "plant:halden-b1",
+              "path": "rcpA.running",
+              "value": false
             }
           }
         ]
@@ -837,17 +817,12 @@
         },
         "actions": [
           {
-            "type": "issue_command",
-            "command": {
-              "kind": "process-plant.control.write",
-              "targetObjectIds": [
-                "plant:halden-b1"
-              ],
-              "payload": {
-                "plantId": "plant:halden-b1",
-                "path": "rcpB.running",
-                "value": false
-              }
+            "type": "invoke_capability",
+            "capabilityId": "world.process-plant.control.write",
+            "input": {
+              "plantId": "plant:halden-b1",
+              "path": "rcpB.running",
+              "value": false
             }
           }
         ]
@@ -860,17 +835,12 @@
         },
         "actions": [
           {
-            "type": "issue_command",
-            "command": {
-              "kind": "process-plant.control.write",
-              "targetObjectIds": [
-                "plant:halden-b1"
-              ],
-              "payload": {
-                "plantId": "plant:halden-b1",
-                "path": "rcpC.running",
-                "value": false
-              }
+            "type": "invoke_capability",
+            "capabilityId": "world.process-plant.control.write",
+            "input": {
+              "plantId": "plant:halden-b1",
+              "path": "rcpC.running",
+              "value": false
             }
           }
         ]
@@ -883,17 +853,12 @@
         },
         "actions": [
           {
-            "type": "issue_command",
-            "command": {
-              "kind": "process-plant.control.write",
-              "targetObjectIds": [
-                "plant:halden-b1"
-              ],
-              "payload": {
-                "plantId": "plant:halden-b1",
-                "path": "rcpD.running",
-                "value": false
-              }
+            "type": "invoke_capability",
+            "capabilityId": "world.process-plant.control.write",
+            "input": {
+              "plantId": "plant:halden-b1",
+              "path": "rcpD.running",
+              "value": false
             }
           }
         ]
@@ -906,18 +871,13 @@
         },
         "actions": [
           {
-            "type": "issue_command",
-            "command": {
-              "kind": "process-plant.control.ramp",
-              "targetObjectIds": [
-                "plant:halden-b1"
-              ],
-              "payload": {
-                "plantId": "plant:halden-b1",
-                "path": "turbine.loadFraction",
-                "targetValue": 0.35,
-                "durationSeconds": 120
-              }
+            "type": "invoke_capability",
+            "capabilityId": "world.process-plant.control.ramp",
+            "input": {
+              "plantId": "plant:halden-b1",
+              "path": "turbine.loadFraction",
+              "targetValue": 0.35,
+              "durationSeconds": 120
             }
           }
         ]

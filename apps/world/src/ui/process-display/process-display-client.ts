@@ -9,7 +9,7 @@ import type {
   ProcessDisplayGraphLens,
   ProcessDisplayValue,
 } from '../../packs/process-plant/displays/index.ts'
-import { querySimulationRunPack } from '../simulation-run-client.ts'
+import { querySimulationRunCapability } from '../simulation-run-client.ts'
 
 export interface ProcessDisplayLensOption {
   readonly id: string
@@ -192,12 +192,6 @@ const assertNumber = (value: unknown, message: string): number => {
 const assertBoolean = (value: unknown, message: string): boolean => {
   if (typeof value !== 'boolean') throw new Error(message)
   return value
-}
-
-const requireOkResult = (value: unknown): Record<string, unknown> => {
-  const envelope = assertObject(value, 'process display query returned a malformed response')
-  if (envelope.ok !== true) throw new Error(typeof envelope.reason === 'string' ? envelope.reason : 'process display query failed')
-  return assertObject(envelope.result, 'process display query returned a malformed result')
 }
 
 const parseLensOption = (value: unknown): ProcessDisplayLensOption => {
@@ -395,12 +389,11 @@ const parseProcessPlantAction = (value: unknown): ProcessPlantActionCatalogEntry
 export const readProcessPlantCatalog = async (
   simulationRunId: SimulationRunId,
 ): Promise<ProcessPlantCatalog> => {
-  const body = await querySimulationRunPack(simulationRunId, {
-    packId: 'process-plant',
-    kind: 'process-plant.catalog.list',
-    payload: {},
-  })
-  const result = requireOkResult(body.response)
+  const result = assertObject(await querySimulationRunCapability(
+    simulationRunId,
+    'world.process-plant.catalog.list',
+    {},
+  ), 'process plant catalog result is malformed')
   return {
     models: assertArray(result.models, 'process plant catalog result has no models array').map(parseProcessPlantCatalogEntry),
     operatingPoints: assertArray(result.operatingPoints, 'process plant catalog result has no operatingPoints array').map(parseProcessPlantCatalogEntry),
@@ -446,12 +439,11 @@ export const listProcessPlantCredibilityEvidence = async (
   simulationRunId: SimulationRunId,
   plantId: string,
 ): Promise<ProcessPlantCredibilityList> => {
-  const body = await querySimulationRunPack(simulationRunId, {
-    packId: 'process-plant',
-    kind: 'process-plant.credibility.list',
-    payload: { plantId },
-  })
-  const result = requireOkResult(body.response)
+  const result = assertObject(await querySimulationRunCapability(
+    simulationRunId,
+    'world.process-plant.credibility.list',
+    { plantId },
+  ), 'process plant credibility list result is malformed')
   return {
     plantId: assertString(result.plantId, 'process plant credibility list requires plantId'),
     evidence: assertArray(result.evidence, 'process plant credibility list requires evidence').map(parseProcessPlantCredibilityEvidence),
@@ -464,12 +456,11 @@ export const readProcessPlantCredibilityArtifact = async (
   evidenceId: string,
   artifactId: string,
 ): Promise<ProcessPlantCredibilityArtifact> => {
-  const body = await querySimulationRunPack(simulationRunId, {
-    packId: 'process-plant',
-    kind: 'process-plant.credibility.read',
-    payload: { plantId, evidenceId, artifactId },
-  })
-  const result = requireOkResult(body.response)
+  const result = assertObject(await querySimulationRunCapability(
+    simulationRunId,
+    'world.process-plant.credibility.read',
+    { plantId, evidenceId, artifactId },
+  ), 'process plant credibility artifact result is malformed')
   return {
     plantId: assertString(result.plantId, 'process plant credibility read requires plantId'),
     evidence: parseProcessPlantCredibilityEvidence(result.evidence),
@@ -482,12 +473,11 @@ export const listProcessPlantVariablePaths = async (
   simulationRunId: SimulationRunId,
   plantId: string,
 ): Promise<ReadonlyArray<VariablePath>> => {
-  const body = await querySimulationRunPack(simulationRunId, {
-    packId: 'process-plant',
-    kind: 'process-plant.variables.search',
-    payload: { plantId },
-  })
-  const result = requireOkResult(body.response)
+  const result = assertObject(await querySimulationRunCapability(
+    simulationRunId,
+    'world.process-plant.variables.search',
+    { plantId },
+  ), 'process plant variables search result is malformed')
   const plants = assertArray(result.plants, 'process plant variables search result has no plants array')
   for (const item of plants) {
     const plant = assertObject(item, 'process plant variables search plant is malformed')
@@ -502,12 +492,11 @@ export const listProcessDisplays = async (
   simulationRunId: SimulationRunId,
   plantId: string,
 ): Promise<ReadonlyArray<ProcessDisplayListItem>> => {
-  const body = await querySimulationRunPack(simulationRunId, {
-    packId: 'process-plant',
-    kind: 'process-plant.displays.list',
-    payload: { plantId },
-  })
-  const result = requireOkResult(body.response)
+  const result = assertObject(await querySimulationRunCapability(
+    simulationRunId,
+    'world.process-plant.displays.list',
+    { plantId },
+  ), 'process display list result is malformed')
   return assertArray(result.displays, 'process display list result has no displays array').map(item => {
     const display = assertObject(item, 'process display list item is malformed')
     if (typeof display.id !== 'string' || typeof display.title !== 'string') throw new Error('process display list item requires id and title')
@@ -525,12 +514,11 @@ export const readProcessDisplay = async (
   plantId: string,
   displayId: string,
 ): Promise<CompiledProcessDisplay> => {
-  const body = await querySimulationRunPack(simulationRunId, {
-    packId: 'process-plant',
-    kind: 'process-plant.display.read',
-    payload: { plantId, displayId },
-  })
-  const result = requireOkResult(body.response)
+  const result = assertObject(await querySimulationRunCapability(
+    simulationRunId,
+    'world.process-plant.display.read',
+    { plantId, displayId },
+  ), 'process display read result is malformed')
   return parseCompiledProcessDisplay(result.display)
 }
 
@@ -539,12 +527,11 @@ export const readProcessDisplaySnapshot = async (
   plantId: string,
   displayId: string,
 ): Promise<ProcessDisplaySnapshot> => {
-  const body = await querySimulationRunPack(simulationRunId, {
-    packId: 'process-plant',
-    kind: 'process-plant.display.snapshot',
-    payload: { plantId, displayId },
-  })
-  const result = requireOkResult(body.response)
+  const result = assertObject(await querySimulationRunCapability(
+    simulationRunId,
+    'world.process-plant.display.snapshot',
+    { plantId, displayId },
+  ), 'process display snapshot result is malformed')
   if (typeof result.plantId !== 'string' || typeof result.displayId !== 'string') throw new Error('process display snapshot result requires plantId and displayId')
   return {
     plantId: result.plantId,
@@ -560,12 +547,11 @@ export const readProcessDisplayProjection = async (
   displayId: string,
   lens: ProcessDisplayGraphLens,
 ): Promise<ProcessDisplayProjection> => {
-  const body = await querySimulationRunPack(simulationRunId, {
-    packId: 'process-plant',
-    kind: 'process-plant.display.project',
-    payload: { plantId, displayId, lens },
-  })
-  const result = requireOkResult(body.response)
+  const result = assertObject(await querySimulationRunCapability(
+    simulationRunId,
+    'world.process-plant.display.project',
+    { plantId, displayId, lens },
+  ), 'process display projection result is malformed')
   if (typeof result.plantId !== 'string' || typeof result.displayId !== 'string') throw new Error('process display projection result requires plantId and displayId')
   const graphProjection = assertObject(result.graphProjection, 'process display projection result has no graphProjection')
   const displayProjection = assertObject(result.displayProjection, 'process display projection result has no displayProjection')
@@ -591,12 +577,11 @@ export const readProcessPlantArtifact = async (
   plantId: string,
   artifact: ProcessPlantArtifactKind,
 ): Promise<ProcessPlantArtifact> => {
-  const body = await querySimulationRunPack(simulationRunId, {
-    packId: 'process-plant',
-    kind: 'process-plant.artifact.read',
-    payload: { plantId, artifact },
-  })
-  const result = requireOkResult(body.response)
+  const result = assertObject(await querySimulationRunCapability(
+    simulationRunId,
+    'world.process-plant.artifact.read',
+    { plantId, artifact },
+  ), 'process plant artifact result is malformed')
   const metadata = assertObject(result.metadata, 'process plant artifact result requires metadata')
   const language = assertString(result.language, 'process plant artifact result requires language')
   if (language !== 'json' && language !== 'mermaid') throw new Error(`unsupported process plant artifact language: ${language}`)

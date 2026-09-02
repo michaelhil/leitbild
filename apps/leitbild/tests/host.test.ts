@@ -64,8 +64,8 @@ const createModule = (moduleId: ModuleId) => {
       if (definitions) {
         const workspaceId = decodeURIComponent(definitions[1] ?? '')
         const item = moduleId === 'world'
-          ? { type: 'world.scenario', id: 'halden-process-plant-demo', title: 'Halden Process Plant', capabilityId: 'world.scenario.start' }
-          : { type: 'agents.room-definition', id: 'halden-process-control-room', title: 'Halden Process Control Room', capabilityId: 'agents.room-definition.start' }
+          ? { type: 'world.scenario', id: 'halden-four-unit-grid', title: 'Halden Four-Unit Grid', capabilityId: 'world.scenario.start' }
+          : { type: 'agents.room-definition', id: 'halden-integrated-control-room', title: 'Halden Integrated Control Room', capabilityId: 'agents.room-definition.start' }
         return Response.json({ definitions: [{
           ref: { workspaceId, moduleId, type: item.type, id: item.id },
           title: item.title,
@@ -190,7 +190,7 @@ describe('Leitbild Workspace Host', () => {
     const { host, store } = createFixture()
     const workspace = await host.create({ name: null })
     const access = accessContextSchema.parse({ workspaceId: workspace.id, requestId: newRequestId(), actor: { kind: 'human', id: 'operator' } })
-    const application = await host.startComposition(workspace.id, 'halden-process-control-room', access)
+    const application = await host.startComposition(workspace.id, 'halden-integrated-control-room', access)
     expect(application.status).toBe('applied')
     expect(application.outcomes.map(outcome => String(outcome.capabilityId))).toEqual([
       'world.scenario.start',

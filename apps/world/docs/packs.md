@@ -15,13 +15,13 @@ World core owns:
 - Simulation Run identity, clocks, ordered events, snapshots, and recorded history
 - actor-attributed command envelopes
 - the canonical operational-object projection
-- generic query, realtime-input, interaction, and UI routing
+- Simulation Capability invocation, realtime-input, interaction, and UI routing
 
 Each Pack owns:
 
 - its schemas and private runtime state
 - any scenario expansion and authoring metadata
-- runtime adapters and their declared operations
+- runtime adapters and their declared Simulation Capabilities
 - object presentation, creation, targeting, and contextual enrichment
 - reference data, knowledge links, and interaction handlers
 
@@ -35,7 +35,7 @@ Pack's private runtime state.
 
 - `runtime`: available runtime implementations and a default
 - `recording`: named, bounded observation profiles implemented by the Pack runtime
-- `scenario`: compile Pack-owned source items and operations
+- `scenario`: compile Pack-owned source items and mutations
 - `authoring`: editable item metadata for the generic Scenario editor
 - `presentation`: categories, object views, contextual fields, map areas, and layers
 - `creation`: generic object-creation choices and command builders
@@ -53,7 +53,7 @@ metadata.
 
 1. Application assembly registers Packs and available runtime adapters.
 2. Startup validation checks Pack/runtime ownership, versions, clocks,
-   contributions, operation routes, categories, creation types, and handlers.
+   contributions, Capability routes, categories, creation types, and handlers.
 3. A Scenario Revision selects Packs and at most one runtime per active Pack.
    A Pack with no runtime remains active without inventing a no-op adapter.
 4. Creating a Simulation Run compiles the exact Scenario Revision once and stores
@@ -73,7 +73,8 @@ Every runtime declares:
 
 - a globally unique dotted runtime id, Pack id, and semantic version
 - `clock`: `simulation`, `live`, or `none`
-- discoverable command, query, and realtime-input operation descriptors
+- discoverable command and query Simulation Capabilities, plus any ephemeral
+  realtime-input types
 - an explicit history policy for command lifecycle events when it differs from
   the default `record` policy
 
@@ -86,13 +87,14 @@ Runtime-origin state events always declare `history`:
 Core may still classify core-origin events as recorded or projected internally.
 Pack runtimes must not depend on that internal persistence vocabulary.
 
-Queries are read-only. Commands may mutate runtime state. Realtime inputs are
-ephemeral control input. Each route has one active owner; ambiguous routes are a
+Query Capabilities are read-only. Command Capabilities may mutate runtime state.
+Realtime inputs are ephemeral control samples and deliberately stay outside the
+durable Capability path. Each route has one active owner; ambiguous routes are a
 startup error, never first-match dispatch.
 
-The generic capabilities endpoint exposes the active Packs, runtimes and clock
-modes, operations, and knowledge links. This is the primary discovery surface for
-operators and agents inspecting a running World.
+Simulation Context exposes the active Packs, runtimes and clock modes, exact
+Capabilities with input/output schemas, recording choices, and knowledge links.
+The Workspace Capability catalog publishes the same callable contracts to Agents.
 
 ## UI boundary
 
@@ -111,7 +113,7 @@ Keep one module under `src/packs/<pack-id>/` and add only the facets it needs.
 
 1. Define and validate Pack-owned data.
 2. Export one `WorldPack` with truthful contribution metadata.
-3. If execution is needed, implement an adapter with clock and operation metadata.
+3. If execution is needed, implement an adapter with clock and Capability metadata.
 4. Register the Pack and adapter in application assembly.
 5. Add scenario authoring metadata only for editable source fields.
 6. Test the Pack alone, in an active multi-Pack set, and across restore/close.
@@ -126,7 +128,7 @@ The Pack owns the mapping from that stable profile name to its real runtime sign
 core never reaches into Pack-private state. The runtime emits typed series
 descriptors and batched samples beside its normal events. The Run Historian stores
 those observations in one Run-local SQLite database and exposes bounded discovery
-and query operations.
+and query Capabilities.
 
 The ordered JSONL journal remains the record of meaningful committed events.
 Historian samples are analytical observations, not canonical current state and not

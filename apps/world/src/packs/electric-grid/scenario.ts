@@ -12,6 +12,21 @@ import { electricGridAdapterId } from './sim/constants.ts'
 import { compileGridDefinition } from './definitions.ts'
 import { gridDefinitionSchema } from './config.ts'
 import { gridElectricalPortDefinitions } from './electrical-ports.ts'
+import { z } from 'zod'
+
+export const electricGridScenarioItemSchema = z.object({
+  pack: z.literal('electric-grid'),
+  type: z.literal('grid'),
+  id: objectIdSchema,
+  label: z.string().min(1),
+  location: z.tuple([
+    z.number().finite().min(-180).max(180),
+    z.number().finite().min(-90).max(90),
+  ]),
+  model: gridModelSelectionSchema,
+  operatingPoint: gridOperatingPointSelectionSchema,
+  automation: gridAutomationSelectionSchema,
+})
 
 const unsupported = (operation: string): never => {
   throw new Error(`electric-grid Pack does not support ${operation}`)
@@ -66,10 +81,9 @@ const expandGridObject = (spec: PackScenarioItemSpec, at: IsoTimestamp): Operati
 }
 
 export const electricGridScenarioSupport: PackScenarioSupport = {
+  itemSchemas: { grid: electricGridScenarioItemSchema },
   expandItem: (spec, context) => {
-    if (spec.pack !== electricGridPackId) unsupported(`scenario Pack ${spec.pack}`)
-    if (spec.type !== 'grid') unsupported(`scenario item type ${spec.type}`)
-    return { objects: [expandGridObject(spec, context.at)] }
+    const parsed = electricGridScenarioItemSchema.parse(spec)
+    return { objects: [expandGridObject(parsed, context.at)] }
   },
-  applyOperation: () => unsupported('scenario operations'),
 }

@@ -1,5 +1,6 @@
 import type { CommandResult, SimulationRunId, IsoTimestamp, ObjectId, OperationalNotification, OperationalObject, ScenarioGuidance, ScenarioExecutionState, SimulationClockState } from '../core/model/index.ts'
 import type { PackRuntimeRealtimeMessage } from '../simulation/protocol.ts'
+import type { CapabilityInvocationResponse } from './types.ts'
 import { workspaceIdSchema, type WorkspaceId } from '@leitbild/contracts'
 import { simulationRunIdSchema } from '../core/model/index.ts'
 
@@ -38,16 +39,16 @@ export interface RealtimeReadyMessage {
   readonly clock?: SimulationClockState
 }
 
-export interface RealtimeCommandResultMessage {
-  readonly type: 'command.result'
+export interface RealtimeCapabilityResultMessage {
+  readonly type: 'capability.result'
   readonly workspaceId: WorkspaceId
   readonly simulationRunId: SimulationRunId
   readonly requestId: string
-  readonly result: CommandResult
+  readonly outcome: CapabilityInvocationResponse
 }
 
-export interface RealtimeCommandErrorMessage {
-  readonly type: 'command.error'
+export interface RealtimeCapabilityErrorMessage {
+  readonly type: 'capability.error'
   readonly workspaceId: WorkspaceId
   readonly simulationRunId: SimulationRunId
   readonly requestId?: string
@@ -74,8 +75,8 @@ export interface RuntimeInputErrorMessage {
 export type SimulationRunWebSocketMessage =
   | SimulationRunEventBatchMessage
   | RealtimeReadyMessage
-  | RealtimeCommandResultMessage
-  | RealtimeCommandErrorMessage
+  | RealtimeCapabilityResultMessage
+  | RealtimeCapabilityErrorMessage
   | RuntimeRealtimeMessageBatch
   | RuntimeInputErrorMessage
 
@@ -124,6 +125,14 @@ const isRealtimeCommandResult = (value: unknown): value is CommandResult => {
   if (typeof value.commandId !== 'string') return false
   if (value.ok) return typeof value.acceptedAt === 'string'
   return typeof value.rejectedAt === 'string' && typeof value.reason === 'string'
+}
+
+const isCapabilityInvocationResponse = (value: unknown): value is CapabilityInvocationResponse => {
+  if (!isRecord(value)) return false
+  if (value.kind === 'query') return Object.hasOwn(value, 'result')
+  return value.kind === 'command'
+    && isRealtimeCommandResult(value.result)
+    && typeof value.replayed === 'boolean'
 }
 
 const parseEventPayload = (value: unknown): SimulationRunEventPayload => {
@@ -185,22 +194,22 @@ export const parseSimulationRunWebSocketMessage = (raw: string): SimulationRunWe
       ...(isRecord(parsed.clock) ? { clock: parsed.clock as unknown as SimulationClockState } : {}),
     }
   }
-  if (parsed.type === 'command.result') {
-    const scope = parseMessageScope(parsed, 'command result message')
-    if (typeof parsed.requestId !== 'string') throw new Error('invalid command result message: missing request id')
-    if (!isRealtimeCommandResult(parsed.result)) throw new Error('invalid command result message: invalid command result')
+  if (parsed.type === 'capability.result') {
+    const scope = parseMessageScope(parsed, 'Capability result message')
+    if (typeof parsed.requestId !== 'string') throw new Error('invalid Capability result message: missing request id')
+    if (!isCapabilityInvocationResponse(parsed.outcome)) throw new Error('invalid Capability result message: invalid outcome')
     return {
-      type: 'command.result',
+      type: 'capability.result',
       ...scope,
       requestId: parsed.requestId,
-      result: parsed.result,
+      outcome: parsed.outcome,
     }
   }
-  if (parsed.type === 'command.error') {
-    const scope = parseMessageScope(parsed, 'command error message')
-    if (typeof parsed.message !== 'string') throw new Error('invalid command error message: missing message')
+  if (parsed.type === 'capability.error') {
+    const scope = parseMessageScope(parsed, 'Capability error message')
+    if (typeof parsed.message !== 'string') throw new Error('invalid Capability error message: missing message')
     return {
-      type: 'command.error',
+      type: 'capability.error',
       ...scope,
       ...(typeof parsed.requestId === 'string' ? { requestId: parsed.requestId } : {}),
       message: parsed.message,

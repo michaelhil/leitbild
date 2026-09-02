@@ -82,7 +82,7 @@ export const procedureCommandEvents = async (
   const kind = procedureCommandKindSchema.safeParse(context.command.kind)
   if (!kind.success) return null
 
-  if (kind.data === 'procedure.run.start') {
+  if (kind.data === 'world.procedure.run.start') {
     const payload = procedureRunStartPayloadSchema.parse(context.command.payload)
     if (runHasCurrentState(context.procedures, payload)) {
       throw new Error(`procedure ${payload.procedureId} already has current run state for ${payload.scope.plantId}; reset it before starting another run`)
@@ -107,7 +107,7 @@ export const procedureCommandEvents = async (
     }]
   }
 
-  if (kind.data === 'procedure.step.update') {
+  if (kind.data === 'world.procedure.step.update') {
     const payload = procedureStepUpdatePayloadSchema.parse(context.command.payload)
     const run = activeRunFor(context.procedures, payload.runId)
     const document = await context.readDocument(run.sourceId, run.procedureId)
@@ -133,7 +133,7 @@ export const procedureCommandEvents = async (
     }]
   }
 
-  if (kind.data === 'procedure.run.reset') {
+  if (kind.data === 'world.procedure.run.reset') {
     const payload = procedureRunResetPayloadSchema.parse(context.command.payload)
     return [{
       ...procedureBase(context),

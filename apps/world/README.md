@@ -10,8 +10,9 @@ World is Leitbild's map-based simulation Module. It retains an independent domai
 - A **Scenario** is a reusable Workspace-owned identity.
 - A **Scenario Revision** is an immutable, validated startup definition.
 - A **Simulation Run** is a persistent execution of exactly one Scenario Revision, addressed by an opaque `run-<uuid>` id.
-- A **Pack** contributes optional scenario, runtime, presentation, interaction, reference-data, command, and query surfaces.
+- A **Pack** contributes optional scenario, runtime, presentation, interaction, reference-data, and Simulation Capability surfaces.
 - A **Capability Manifest** is derived from configured or active Packs and is never separately persisted.
+- A **Simulation Capability** is the single typed command or query contract used by the Workspace broker, Scenario Timeline, and World client.
 
 Every Simulation Run has a manifest that pins its Workspace, Scenario Revision and digest, selected Packs, Pack versions, runtime versions, and creation metadata. Restore either reproduces that pinned configuration or fails visibly.
 
@@ -39,8 +40,7 @@ POST /api/workspaces/{workspaceId}/world/simulation-runs
 GET  /api/workspaces/{workspaceId}/world/simulation-runs/{simulationRunId}
 GET  /api/workspaces/{workspaceId}/world/simulation-runs/{simulationRunId}/snapshot
 GET  /api/workspaces/{workspaceId}/world/simulation-runs/{simulationRunId}/events
-POST /api/workspaces/{workspaceId}/world/simulation-runs/{simulationRunId}/commands
-POST /api/workspaces/{workspaceId}/world/simulation-runs/{simulationRunId}/queries
+POST /api/workspaces/{workspaceId}/world/simulation-runs/{simulationRunId}/capabilities/{capabilityId}/invoke
 ```
 
 The browser uses `/workspaces/{workspaceId}/world` and `/workspaces/{workspaceId}/world/runs/{simulationRunId}`. Root navigation returns to the Leitbild Host. There is no local Workspace picker, selection cookie, default Workspace, or Workspace creation endpoint.

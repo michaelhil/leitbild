@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { z } from 'zod'
 import type {
   ActorId,
   CommandEnvelope,
@@ -16,7 +17,7 @@ import type {
   PackRuntimeConnectionConfig,
   PackRuntimeEmission,
 } from '../src/simulation/protocol.ts'
-import { definePackRuntimeOperations } from '../src/simulation/operations.ts'
+import { definePackCommandCapability, definePackQueryCapability } from '../src/simulation/capabilities.ts'
 
 interface StubAdapter extends PackRuntimeAdapter {
   readonly connectCount: () => number
@@ -31,16 +32,39 @@ const rejectedCommand = (command: CommandEnvelope) => ({
   reason: 'stub rejects commands',
 })
 
-const createStubAdapter = (id: string, packId: string, commandKind: string): StubAdapter => {
+const createStubAdapter = (
+  id: string,
+  packId: string,
+  commandKind: string,
+  config: { readonly queryKind?: string; readonly queryFailures?: number } = {},
+): StubAdapter => {
   let connectCount = 0
   let closeCount = 0
+  let queryFailures = config.queryFailures ?? 0
   const handlers = new Set<(emission: PackRuntimeEmission) => void>()
   const adapter: PackRuntimeAdapter = {
     id,
     version: '1.0.0',
     packId,
     clock: 'none',
-    operations: definePackRuntimeOperations({ commands: [commandKind] }),
+    capabilities: [
+      definePackCommandCapability({
+        id: commandKind,
+        title: commandKind,
+        description: `Test command ${commandKind}`,
+        idempotent: false,
+        input: z.object({}).passthrough(),
+        output: z.object({}).passthrough(),
+        buildCommand: input => ({ targetObjectIds: [], payload: input }),
+      }),
+      ...(config.queryKind === undefined ? [] : [definePackQueryCapability({
+        id: config.queryKind,
+        title: config.queryKind,
+        description: `Test query ${config.queryKind}`,
+        input: z.object({}).strict(),
+        output: z.object({ adapterId: z.string() }).strict(),
+      })]),
+    ],
     connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
       connectCount += 1
       return {
@@ -54,13 +78,19 @@ const createStubAdapter = (id: string, packId: string, commandKind: string): Stu
           return () => handlers.delete(handler)
         },
         sendCommand: async command => rejectedCommand(command),
-        query: async request => ({
-          ok: true,
-          packId: request.packId,
-          kind: request.kind,
-          result: { adapterId: id },
-          generatedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
-        }),
+        query: async request => {
+          if (queryFailures > 0) {
+            queryFailures -= 1
+            throw new Error('stub query failure')
+          }
+          return {
+            ok: true,
+            packId: request.packId,
+            kind: request.kind,
+            result: { adapterId: id },
+            generatedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
+          }
+        },
         observeCommittedEvents: async () => undefined,
         setClock: async (_clock: SimulationClockState) => undefined,
         close: async () => {
@@ -91,8 +121,8 @@ const command = (kind: string): CommandEnvelope => ({
 
 describe('createRuntimeHub', () => {
   test('connects only scenario-declared runtimes', async () => {
-    const active = createStubAdapter('active.runtime', 'active-pack', 'active.command')
-    const inactive = createStubAdapter('inactive.runtime', 'inactive-pack', 'inactive.command')
+    const active = createStubAdapter('active.runtime', 'active-pack', 'world.active.command')
+    const inactive = createStubAdapter('inactive.runtime', 'inactive-pack', 'world.inactive.command')
     const hub = createRuntimeHub([active, inactive])
 
     const connection = await hub.connect({
@@ -119,8 +149,8 @@ describe('createRuntimeHub', () => {
   })
 
   test('rejects ambiguous active command routes before connecting runtimes', async () => {
-    const first = createStubAdapter('first.runtime', 'first-pack', 'shared.command')
-    const second = createStubAdapter('second.runtime', 'second-pack', 'shared.command')
+    const first = createStubAdapter('first.runtime', 'first-pack', 'world.shared.command')
+    const second = createStubAdapter('second.runtime', 'second-pack', 'world.shared.command')
     const hub = createRuntimeHub([first, second])
 
     await expect(hub.connect({ simulationRunId: 'run-test' as SimulationRunId })).rejects.toThrow('duplicate command route')
@@ -129,7 +159,7 @@ describe('createRuntimeHub', () => {
   })
 
   test('drops emissions that claim another runtime or Pack identity', async () => {
-    const adapter = createStubAdapter('trusted.runtime', 'trusted-pack', 'trusted.command')
+    const adapter = createStubAdapter('trusted.runtime', 'trusted-pack', 'world.trusted.command')
     const connection = await createRuntimeHub([adapter]).connect({ simulationRunId: 'run-test' as SimulationRunId })
     const received: PackRuntimeEmission[] = []
     connection.subscribe(emission => received.push(emission))
@@ -170,5 +200,30 @@ describe('createRuntimeHub', () => {
     expect(received).toEqual([])
     await connection.close()
     expect(adapter.closeCount()).toBe(1)
+  })
+
+  test('reports runtime failures and recovery without hiding the failure count', async () => {
+    const adapter = createStubAdapter('health.runtime', 'health-pack', 'world.health.command', {
+      queryKind: 'world.health.status',
+      queryFailures: 1,
+    })
+    const connection = await createRuntimeHub([adapter]).connect({ simulationRunId: 'run-test' as SimulationRunId })
+
+    await expect(connection.query({ packId: 'health-pack', kind: 'world.health.status', payload: {} }))
+      .rejects.toThrow('stub query failure')
+    expect(connection.health?.()).toEqual([expect.objectContaining({
+      runtimeId: 'health.runtime',
+      state: 'degraded',
+      failureCount: 1,
+      lastFailure: expect.objectContaining({ operation: 'world.health.status', message: 'stub query failure' }),
+    })])
+
+    expect((await connection.query({ packId: 'health-pack', kind: 'world.health.status', payload: {} })).ok).toBe(true)
+    expect(connection.health?.()).toEqual([expect.objectContaining({
+      runtimeId: 'health.runtime',
+      state: 'ready',
+      failureCount: 1,
+    })])
+    await connection.close()
   })
 })

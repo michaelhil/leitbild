@@ -117,6 +117,8 @@ export const createWorkspaceHostServer = (config: {
           const input = {
             ...(requestInput.definition === undefined ? {} : { definition: requestInput.definition }),
             ...(requestInput.resource === undefined ? {} : { resource: requestInput.resource }),
+            ...(requestInput.expectedRevision === undefined ? {} : { expectedRevision: requestInput.expectedRevision }),
+            ...(requestInput.idempotencyKey === undefined ? {} : { idempotencyKey: requestInput.idempotencyKey }),
             input: requestInput.input,
           }
           const access = accessContextSchema.parse({

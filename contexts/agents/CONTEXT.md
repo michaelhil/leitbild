@@ -45,7 +45,7 @@ Permission for an Agent to invoke a named Capability under an explicit scope.
 _Avoid_: implicit tool availability, Agent-to-Resource connection
 
 **Workspace Capability Broker**:
-The generic `workspace_catalog`, `workspace_capabilities`, and `workspace_invoke` tool surface derived at runtime whenever an Agent has one or more Tool Grants. It discovers current Resources and operations and enforces grants without becoming authored Agent behavior.
+The generic `workspace_catalog`, `workspace_capabilities`, and `workspace_invoke` tool surface derived at runtime whenever an Agent has one or more Tool Grants. It discovers current Resources and Capabilities and enforces grants without becoming authored Agent behavior.
 _Avoid_: repeating broker tool names in Agent Tool Selection, Module-specific client code, persisted Resource ids
 
 **Room Pack Set**:

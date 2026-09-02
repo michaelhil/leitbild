@@ -6,7 +6,7 @@ import type {
   PackRuntimeEvent,
   PackRuntimeEventHandler,
 } from '../../../../simulation/protocol.ts'
-import { definePackRuntimeOperations } from '../../../../simulation/operations.ts'
+import { aviationSourceStatusCapability, aviationSourceStatusQueryKind } from '../../capabilities.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../../core/packs/protocol.ts'
 import { aviationRuntimePackId, aviationVatsimRuntimeId } from '../constants.ts'
 import type { HttpFetch } from '../opensky/auth.ts'
@@ -145,7 +145,7 @@ export const createVatsimPackRuntimeAdapter = (config: VatsimAdapterConfig = {})
     version: '1.0.0',
     packId: aviationRuntimePackId,
     clock: 'live',
-    operations: definePackRuntimeOperations({ queries: ['aviation.source_status'] }),
+    capabilities: [aviationSourceStatusCapability],
     connect: async (connectionConfig: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
       const state = new Map<string, AircraftState>()
       const handlers = new Set<PackRuntimeEventHandler>()
@@ -222,7 +222,7 @@ export const createVatsimPackRuntimeAdapter = (config: VatsimAdapterConfig = {})
           reason: `aviation.vatsim does not accept commands (kind=${command.kind})`,
         }),
         query: async (request: PackQueryRequest): Promise<PackQueryResponse> => {
-          if (request.kind === 'aviation.source_status') {
+          if (request.kind === aviationSourceStatusQueryKind) {
             return {
               ok: true,
               packId: request.packId,

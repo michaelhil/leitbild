@@ -86,6 +86,11 @@ body {
 .builder-properties dl div { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
 .builder-properties dt { color: var(--muted); }
 .builder-properties dd { margin: 0; }
+.connection-error { color: var(--critical) !important; }
+.connection-list { display: grid; gap: 6px; }
+.connection-list > div { position: relative; display: grid; gap: 2px; padding: 8px 34px 8px 9px; border: 1px solid var(--border); border-radius: 7px; font-size: 12px; }
+.connection-list small { color: var(--muted); }
+.connection-list button { position: absolute; top: 50%; right: 5px; min-height: 26px; padding: 1px 8px; color: var(--critical); transform: translateY(-50%); }
 .item-type-list { display: grid; gap: 6px; }
 .item-type-list button { display: grid; justify-items: start; gap: 3px; text-align: left; }
 .item-type-list small { color: var(--muted); font-weight: 400; line-height: 1.35; }

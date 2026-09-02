@@ -1,13 +1,11 @@
 import { lstat, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { ZodError } from 'zod'
+import { z, ZodError } from 'zod'
 import { semanticVersionSchema, type WorkspaceId } from '@leitbild/contracts'
 import type { SimulationRunId } from '../model/index.ts'
 import {
   simulationRunIdSchema,
   newSimulationRunId,
-  deleteObjectCommandKind,
-  procedureCommandKindSchema,
 } from '../model/index.ts'
 import type { PackRuntimeAdapter } from '../../simulation/protocol.ts'
 import { createRuntimeHub } from '../../simulation/runtime-hub.ts'
@@ -17,7 +15,7 @@ import type { ScenarioDefinition } from '../model/index.ts'
 import type { ScenarioAuthoringCatalog } from '../scenarios/authoring.ts'
 import { createJsonlEventLog } from './event-log.ts'
 import { createJsonRuntimeStateStore } from './runtime-state-store.ts'
-import { createSimulationRunRuntime, type SimulationRunRuntime } from './runtime.ts'
+import { createSimulationRunRuntime, type ActiveSimulationCapability, type SimulationRunRuntime } from './runtime.ts'
 import type { SimulationRunCapabilities } from './runtime.ts'
 import type { SimulationRunRuntimeMetricsSnapshot } from './runtime-metrics.ts'
 import { defaultSimulationRunRuntimePolicy } from './runtime-persistence-policy.ts'
@@ -34,6 +32,8 @@ import {
   type SimulationRunManifest,
 } from './manifest.ts'
 import { createRunHistorian } from '../../features/historian/store.ts'
+import { worldCoreCapabilities } from '../../simulation/core-capabilities.ts'
+import { capabilityJsonSchema } from '../../simulation/capabilities.ts'
 
 const maxRestoredEventHistoryBytes = 8 * 1024 * 1024
 
@@ -55,6 +55,7 @@ export interface SimulationRunSummary {
   readonly snapshotSeq: number | null
   readonly objectCount: number | null
   readonly clock: SimulationClockState | null
+  readonly activeCapabilityIds: ReadonlyArray<string>
   readonly loadError?: string
 }
 
@@ -73,6 +74,7 @@ export interface SimulationRunRegistryStatus {
 export interface SimulationRunRegistry {
   readonly workspaceId: WorkspaceId
   readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
+  readonly installedCapabilities: ReadonlyArray<ActiveSimulationCapability>
   readonly create: (config?: { readonly scenarioId?: string; readonly scenarioRevisionId?: ScenarioRevisionId }) => Promise<SimulationRunRuntime>
   readonly load: (id: SimulationRunId) => Promise<SimulationRunRuntime>
   readonly reset: (id: SimulationRunId) => Promise<SimulationRunRuntime>
@@ -86,6 +88,7 @@ export interface SimulationRunRegistry {
   readonly listScenarios: () => Promise<ReadonlyArray<ScenarioRecord>>
   readonly currentScenario: (id: string) => Promise<ScenarioRevision | undefined>
   readonly createScenario: (source: ScenarioSource) => Promise<ScenarioRevision>
+  readonly previewScenario: (source: ScenarioSource) => Promise<ScenarioDefinition>
   readonly updateScenario: (source: ScenarioSource, expectedRevisionId: ScenarioRevisionId) => Promise<ScenarioRevision>
   readonly deleteScenario: (id: string, revisionId: ScenarioRevisionId) => Promise<boolean>
   readonly scenarioRevisionForRun: (id: SimulationRunId) => Promise<ScenarioRevision | undefined>
@@ -122,6 +125,18 @@ export const createSimulationRunRegistry = (config: {
   })
   let scenarioLibraryReady: Promise<void> | null = null
   const compiledScenarios = new Map<ScenarioRevisionId, Promise<ScenarioDefinition>>()
+  const installedCapabilities: ReadonlyArray<ActiveSimulationCapability> = [
+    ...worldCoreCapabilities.map(capability => ({ packId: 'world', runtimeId: 'world.core', capability })),
+    ...config.runtimeAdapters.flatMap(adapter =>
+      adapter.capabilities.map(capability => ({ packId: adapter.packId, runtimeId: adapter.id, capability }))),
+  ]
+
+  const capabilityIdsForRuntimeIds = (runtimeIds: ReadonlyArray<string>): ReadonlyArray<string> => {
+    const activeRuntimeIds = new Set(runtimeIds)
+    return [...new Set(installedCapabilities
+      .filter(entry => entry.runtimeId === 'world.core' || activeRuntimeIds.has(entry.runtimeId))
+      .map(entry => entry.capability.id))].sort()
+  }
 
   const ensureScenarioLibrary = (): Promise<void> => {
     scenarioLibraryReady ??= scenarioLibrary.seed(config.scenarioSources)
@@ -217,25 +232,37 @@ export const createSimulationRunRegistry = (config: {
         scenarioRevisionId,
         activePackIds: [],
         runtimes: [],
-        operations: [],
+        capabilities: [],
         wikiRefs: [],
         recording: { selections: [], profiles: [] },
       }
     }
     const activeRuntimeIds = new Set(scenarioRuntime.runtimes.map(runtime => runtime.runtimeId))
     const activeAdapters = config.runtimeAdapters.filter(adapter => activeRuntimeIds.has(adapter.id))
-    const coreOperationIds = [deleteObjectCommandKind, ...procedureCommandKindSchema.options]
-    const operations = [
-      ...coreOperationIds.map(id => ({
-        id,
-        type: 'command' as const,
-        title: id.split('.').at(-1)?.replaceAll('_', ' ').replaceAll('-', ' ') ?? id,
-        description: `World core command ${id}`,
+    const capabilities = [
+      ...worldCoreCapabilities.map(capability => ({
+        id: capability.id,
+        kind: capability.kind,
+        title: capability.title,
+        description: capability.description,
+        risk: capability.risk,
+        idempotent: capability.idempotent,
+        ...(capability.schedulable === undefined ? {} : { schedulable: capability.schedulable }),
+        inputSchema: capabilityJsonSchema(capability.input),
+        outputSchema: capabilityJsonSchema(capability.output),
         packId: 'world',
         runtimeId: 'world.core',
       })),
-      ...activeAdapters.flatMap(adapter => adapter.operations.map(operation => ({
-        ...operation,
+      ...activeAdapters.flatMap(adapter => adapter.capabilities.map(capability => ({
+        id: capability.id,
+        kind: capability.kind,
+        title: capability.title,
+        description: capability.description,
+        risk: capability.risk,
+        idempotent: capability.idempotent,
+        ...(capability.schedulable === undefined ? {} : { schedulable: capability.schedulable }),
+        inputSchema: z.toJSONSchema(capability.input, { unrepresentable: 'any' }),
+        outputSchema: z.toJSONSchema(capability.output, { unrepresentable: 'any' }),
         packId: adapter.packId,
         runtimeId: adapter.id,
       }))),
@@ -250,7 +277,7 @@ export const createSimulationRunRegistry = (config: {
         packId: adapter.packId,
         clock: adapter.clock,
       })).sort((left, right) => left.id.localeCompare(right.id)),
-      operations,
+      capabilities,
       wikiRefs: scenarioRuntime.packs.flatMap(pack => pack.knowledge?.wikiRefs ?? []),
       recording: {
         selections: scenarioRuntime.scenario.recording,
@@ -484,6 +511,9 @@ export const createSimulationRunRegistry = (config: {
           ...(scenarioRuntime.scenario.timeline === undefined ? {} : { timeline: scenarioRuntime.scenario.timeline }),
         },
         capabilities: capabilitiesFor(scenarioRuntime, scenarioRevisionIdFromManifest(createConfig.manifest)),
+        runtimeCapabilities: installedCapabilities.filter(entry =>
+          entry.runtimeId === 'world.core'
+          || scenarioRuntime.runtimes.some(runtime => runtime.runtimeId === entry.runtimeId)),
         procedureSourceService,
         ...(historian === undefined ? {} : { historian }),
       })
@@ -605,6 +635,7 @@ export const createSimulationRunRegistry = (config: {
         snapshotSeq: null,
         objectCount: null,
         clock: null,
+        activeCapabilityIds: [],
         loadError: 'Simulation Run Manifest is missing',
       }
     }
@@ -624,6 +655,7 @@ export const createSimulationRunRegistry = (config: {
         snapshotSeq: snapshot.seq,
         objectCount: snapshot.objects.length,
         clock: snapshot.clock ?? null,
+        activeCapabilityIds: capabilityIdsForRuntimeIds(manifest.runtimes.map(runtime => runtime.id)),
       }
     }
     const snapshotStore = createSimulationRunSnapshotStore({
@@ -649,6 +681,7 @@ export const createSimulationRunRegistry = (config: {
       snapshotSeq: snapshot?.seq ?? null,
       objectCount: snapshot?.objects.length ?? null,
       clock: snapshot?.clock ?? null,
+      activeCapabilityIds: capabilityIdsForRuntimeIds(manifest.runtimes.map(runtime => runtime.id)),
       ...(loadError === undefined ? {} : { loadError }),
     }
   }
@@ -704,6 +737,7 @@ export const createSimulationRunRegistry = (config: {
   return {
     workspaceId: config.workspaceId,
     scenarioAuthoringCatalog: config.scenarioAuthoringCatalog,
+    installedCapabilities,
     create,
     load,
     reset,
@@ -727,6 +761,7 @@ export const createSimulationRunRegistry = (config: {
       await config.compileScenarioSource(source)
       return await scenarioLibrary.create(source)
     },
+    previewScenario: async source => await config.compileScenarioSource(source),
     updateScenario: async (source, expectedRevisionId) => {
       await ensureScenarioLibrary()
       await config.compileScenarioSource(source)

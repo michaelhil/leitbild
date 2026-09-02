@@ -8,7 +8,6 @@ import type {
   PackRuntimeEvent,
   PackRuntimeEventHandler,
 } from '../../../simulation/protocol.ts'
-import { definePackRuntimeOperations } from '../../../simulation/operations.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import {
   processPlantControlRampCommandKind,
@@ -26,7 +25,7 @@ import { createProcessPlantRecordingPlan } from '../recording.ts'
 import { compileProcessPlants } from '../plant-compiler.ts'
 import { validateProcessPlantControlWrite } from '../control-write-validation.ts'
 import { processPlantIdForObject, processPlantPackId, processPlantUnitPackDataSchema } from '../model.ts'
-import { answerProcessPlantQuery, processPlantQueryKinds } from '../query.ts'
+import { answerProcessPlantQuery } from '../query.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { processPlantSimAdapterId, processPlantSimRuntimeId } from './constants.ts'
 import {
@@ -42,6 +41,7 @@ import { createProcessPlantRuntimePersistence } from './persistence.ts'
 import { createProcessPlantRuntimeInstances } from './runtime-instance-factory.ts'
 import { processPlantElectricalBoundaries } from '../electrical-ports.ts'
 import { componentVariablePath } from '../runtime/index.ts'
+import { processPlantCapabilities } from '../capabilities.ts'
 
 const updateIntervalMs = 1_000
 const connectedPeerStaleAfterMs = 5_000
@@ -122,10 +122,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
   version: '1.0.0',
   packId: processPlantPackId,
   clock: 'simulation',
-  operations: definePackRuntimeOperations({
-    commands: [processPlantControlWriteCommandKind, processPlantControlRampCommandKind, processPlantIcLifecycleCommandKind, processPlantActionInvokeCommandKind],
-    queries: processPlantQueryKinds,
-  }),
+  capabilities: processPlantCapabilities,
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const handlers = new Set<PackRuntimeEventHandler>()
     const rawRuntimeState = await config.runtimeStateStore?.load()

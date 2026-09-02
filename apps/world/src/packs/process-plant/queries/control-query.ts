@@ -9,20 +9,20 @@ import { evaluateProcessPlantIcCondition, processPlantIcConditionSchema } from '
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { requirePlant, success } from './common.ts'
 
-const conditionsEvaluateQuerySchema = z.object({
+export const conditionsEvaluateQuerySchema = z.object({
   plantId: idSchema,
   condition: processPlantIcConditionSchema,
 }).strict()
 
-const assessmentsEvaluateQuerySchema = z.object({
+export const assessmentsEvaluateQuerySchema = z.object({
   plantId: idSchema,
   assessmentIds: z.array(z.string().min(1)).min(1),
 }).strict()
 
 export const processPlantControlQueryKinds = [
-  'process-plant.conditions.evaluate',
-  'process-plant.assessments.evaluate',
-  'process-plant.control.validate',
+  'world.process-plant.conditions.evaluate',
+  'world.process-plant.assessments.evaluate',
+  'world.process-plant.control.validate',
 ] as const
 
 export const answerProcessPlantControlQuery = (config: {
@@ -31,7 +31,7 @@ export const answerProcessPlantControlQuery = (config: {
   readonly at: IsoTimestamp
 }): PackQueryResponse | undefined => {
   if (!processPlantControlQueryKinds.some(kind => kind === config.request.kind)) return undefined
-  if (config.request.kind === 'process-plant.conditions.evaluate') {
+  if (config.request.kind === 'world.process-plant.conditions.evaluate') {
     const payload = conditionsEvaluateQuerySchema.parse(config.request.payload)
     const system = requirePlant(config.plants, payload.plantId)
     const evaluation = evaluateProcessPlantIcCondition({
@@ -45,7 +45,7 @@ export const answerProcessPlantControlQuery = (config: {
       signalsRead: evaluation.signalsRead,
     }, config.at)
   }
-  if (config.request.kind === 'process-plant.assessments.evaluate') {
+  if (config.request.kind === 'world.process-plant.assessments.evaluate') {
     const payload = assessmentsEvaluateQuerySchema.parse(config.request.payload)
     const system = requirePlant(config.plants, payload.plantId)
     return success(config.request, {

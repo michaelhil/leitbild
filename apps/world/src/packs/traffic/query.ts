@@ -1,7 +1,9 @@
 import { z } from 'zod'
 import type { GeoJsonLineString, GeoJsonPoint, IsoTimestamp, ObjectId, OperationalObject } from '../../core/model/index.ts'
-import { geoJsonLineStringSchema, objectIdSchema, pointFromPosition, routeDistanceMeters } from '../../core/model/index.ts'
+import { geoJsonLineStringSchema, objectIdSchema, operationalObjectSchema, pointFromPosition, routeDistanceMeters } from '../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
+import type { SimulationCapability } from '../../simulation/protocol.ts'
+import { definePackQueryCapability } from '../../simulation/capabilities.ts'
 import { trafficPackDataSchema, trafficPackId } from './model.ts'
 
 const objectQuerySchema = z.object({
@@ -14,10 +16,19 @@ const routeQuerySchema = z.object({
 })
 
 export const trafficQueryKinds = [
-  'traffic.conditions',
-  'traffic.condition',
-  'traffic.conditionsForRoute',
+  'world.traffic.conditions',
+  'world.traffic.condition',
+  'world.traffic.conditions-for-route',
 ] as const
+
+const conditionsResultSchema = z.object({ conditions: z.array(operationalObjectSchema) }).strict()
+const conditionResultSchema = z.object({ condition: operationalObjectSchema }).strict()
+
+export const trafficQueryCapabilities: ReadonlyArray<SimulationCapability> = [
+  definePackQueryCapability({ id: trafficQueryKinds[0], title: 'List traffic conditions', description: 'Lists current traffic conditions in the Simulation Run.', input: z.object({}).strict(), output: conditionsResultSchema }),
+  definePackQueryCapability({ id: trafficQueryKinds[1], title: 'Read traffic condition', description: 'Reads one current traffic condition by object id.', input: objectQuerySchema, output: conditionResultSchema }),
+  definePackQueryCapability({ id: trafficQueryKinds[2], title: 'Find traffic conditions for route', description: 'Returns traffic conditions intersecting a route within a bounded tolerance.', input: routeQuerySchema, output: conditionsResultSchema }),
+]
 
 const success = (request: PackQueryRequest, result: unknown, generatedAt: IsoTimestamp): PackQueryResponse => ({
   ok: true,
@@ -82,16 +93,16 @@ export const answerTrafficQuery = (config: {
 }): PackQueryResponse => {
   try {
     const conditions = trafficObjects(config.objects)
-    if (config.request.kind === 'traffic.conditions') {
+    if (config.request.kind === trafficQueryKinds[0]) {
       return success(config.request, { conditions }, config.at)
     }
-    if (config.request.kind === 'traffic.condition') {
+    if (config.request.kind === trafficQueryKinds[1]) {
       const payload = objectQuerySchema.parse(config.request.payload)
       const condition = conditions.find(object => object.id === payload.objectId)
       if (!condition) return failure(config.request, `traffic condition not found: ${payload.objectId}`, config.at)
       return success(config.request, { condition }, config.at)
     }
-    if (config.request.kind === 'traffic.conditionsForRoute') {
+    if (config.request.kind === trafficQueryKinds[2]) {
       const payload = routeQuerySchema.parse(config.request.payload)
       const matchingConditions = conditions.filter(condition => routeIntersectsTraffic(payload.route, condition, payload.toleranceM))
       return success(config.request, { conditions: matchingConditions }, config.at)

@@ -12,7 +12,7 @@ import { resolveProcessPlantDisplayDefinitionForGraph } from '../displays/catalo
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { requirePlant, success, plantQuerySchema } from './common.ts'
 
-const artifactReadQuerySchema = z.object({
+export const artifactReadQuerySchema = z.object({
   plantId: idSchema,
   artifact: z.enum(['authored-spec', 'compiled-graph-mermaid']),
 })
@@ -121,16 +121,16 @@ const componentSourceImportsFor = (sourcePath: string): ReadonlyArray<ComponentS
   return imports
 }
 
-const displayProfileReadQuerySchema = z.object({
+export const displayProfileReadQuerySchema = z.object({
   plantId: idSchema,
   profileId: idSchema,
 })
 
 export const processPlantGraphQueryKinds = [
-  'process-plant.plants.list',
-  'process-plant.graph.read',
-  'process-plant.artifact.read',
-  'process-plant.display-profile.read',
+  'world.process-plant.plants.list',
+  'world.process-plant.graph.read',
+  'world.process-plant.artifact.read',
+  'world.process-plant.display-profile.read',
 ] as const
 
 const graphView = (graph: CompiledPlantGraph): unknown => ({
@@ -297,7 +297,7 @@ export const answerProcessPlantGraphQuery = (config: {
   readonly at: IsoTimestamp
 }): PackQueryResponse | undefined => {
   if (!processPlantGraphQueryKinds.some(kind => kind === config.request.kind)) return undefined
-  if (config.request.kind === 'process-plant.plants.list') {
+  if (config.request.kind === 'world.process-plant.plants.list') {
     return success(config.request, {
       plants: [...config.plants.values()].map(({ plant, runtime }) => ({
         id: plant.id,
@@ -310,12 +310,12 @@ export const answerProcessPlantGraphQuery = (config: {
       })),
     }, config.at)
   }
-  if (config.request.kind === 'process-plant.graph.read') {
+  if (config.request.kind === 'world.process-plant.graph.read') {
     const payload = plantQuerySchema.parse(config.request.payload)
     const system = requirePlant(config.plants, payload.plantId)
     return success(config.request, { graph: graphView(system.plant.graph) }, config.at)
   }
-  if (config.request.kind === 'process-plant.artifact.read') {
+  if (config.request.kind === 'world.process-plant.artifact.read') {
     const payload = artifactReadQuerySchema.parse(config.request.payload)
     const system = requirePlant(config.plants, payload.plantId)
     return success(config.request, artifactView(system, payload.artifact), config.at)

@@ -1,4 +1,4 @@
-export const processPlantControlWriteCommandKind = 'process-plant.control.write'
-export const processPlantControlRampCommandKind = 'process-plant.control.ramp'
-export const processPlantIcLifecycleCommandKind = 'process-plant.ic.lifecycle'
-export const processPlantActionInvokeCommandKind = 'process-plant.action.invoke'
+export const processPlantControlWriteCommandKind = 'world.process-plant.control.write'
+export const processPlantControlRampCommandKind = 'world.process-plant.control.ramp'
+export const processPlantIcLifecycleCommandKind = 'world.process-plant.ic.lifecycle'
+export const processPlantActionInvokeCommandKind = 'world.process-plant.action.invoke'

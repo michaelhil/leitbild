@@ -47,7 +47,7 @@ Procedures remain a separate optional World feature. They consume discoverable s
 
 ## Public boundaries
 
-The generic Pack query surface exposes catalog, Plant, graph, variable, signal, I&C, display, diagnostics, and credibility views. All Plant-scoped calls use an explicit `plantId`. The command surface exposes control writes, ramps, lifecycle operations, and Action invocation. No Pack-specific HTTP family or implicit current Plant exists.
+The Pack's Simulation Capabilities expose catalog, Plant, graph, variable, signal, I&C, display, diagnostics, and credibility views. All Plant-scoped calls use an explicit `plantId`. Command Capabilities expose control writes, ramps, lifecycle actions, and Action invocation. Their validated schemas are shared by the World UI, Scenario Timeline, and Workspace broker; no Pack-specific HTTP family or implicit current Plant exists.
 
 The Durable Journal records meaningful committed events. Runtime projections update canonical current World state without creating high-frequency event noise. When a Scenario selects a Recording Profile, the Run Historian stores typed time-series samples in Run-local SQLite; samples never become canonical state or checkpoint data.
 

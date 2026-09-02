@@ -32,7 +32,7 @@ const jsonSchemaSchema = z.record(z.string(), z.unknown())
 export const moduleCapabilityDescriptorSchema = z.object({
   id: capabilityIdSchema,
   moduleId: moduleIdSchema,
-  kind: z.enum(['command', 'query', 'stream']),
+  kind: z.enum(['command', 'query']),
   scope: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('workspace') }).strict(),
     z.object({ kind: z.literal('definition'), definitionType: definitionTypeSchema }).strict(),
@@ -42,6 +42,7 @@ export const moduleCapabilityDescriptorSchema = z.object({
   description: z.string().trim().min(1).max(2048),
   risk: z.enum(['read', 'write', 'destructive']),
   idempotent: z.boolean(),
+  schedulable: z.boolean().optional(),
   inputSchema: jsonSchemaSchema,
   outputSchema: jsonSchemaSchema,
 }).strict().superRefine((capability, ctx) => {
@@ -194,6 +195,8 @@ export const invokeCapabilityInputSchema = z.object({
   definition: workspaceDefinitionRevisionReferenceSchema.optional(),
   resource: workspaceResourceReferenceSchema.optional(),
   input: z.unknown(),
+  expectedRevision: z.number().int().nonnegative().optional(),
+  idempotencyKey: z.string().trim().min(1).max(256).optional(),
 }).strict().superRefine((invocation, ctx) => {
   if (invocation.definition !== undefined && invocation.resource !== undefined) {
     ctx.addIssue({ code: 'custom', path: ['definition'], message: 'Capability invocation cannot target both a Definition and a Resource' })
@@ -215,6 +218,8 @@ export const moduleCapabilityInvocationSchema = z.object({
   definition: workspaceDefinitionRevisionReferenceSchema.optional(),
   resource: workspaceResourceReferenceSchema.optional(),
   input: z.unknown(),
+  expectedRevision: z.number().int().nonnegative().optional(),
+  idempotencyKey: z.string().trim().min(1).max(256).optional(),
   access: accessContextSchema,
 }).strict().superRefine((invocation, ctx) => {
   if (invocation.access.workspaceId !== invocation.workspaceId) {

@@ -210,9 +210,8 @@ export const weatherPack: WorldPack = {
     },
     mapAreaFeatureQueries: (context) => context.map
     ? [{
-        packId: 'weather',
-        kind: 'weather.mapFeatures',
-        payload: {
+        capabilityId: 'world.weather.map-features',
+        input: {
           viewport: context.map.viewport,
           zoom: context.map.zoom,
           ...(context.currentTime ? { at: context.currentTime } : {}),
