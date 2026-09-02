@@ -12,7 +12,7 @@ import {
   weatherPackConfigSchema,
 } from './model.ts'
 import { weatherScenarioSupport } from './scenario.ts'
-import { weatherQuantities, weatherRecordingProfiles } from './quantities.ts'
+import { formatWeatherQuantity, weatherQuantities, weatherRecordingProfiles } from './quantities.ts'
 import { weatherSimRuntimeId } from './sim/constants.ts'
 
 const dataFor = (object: OperationalObject) => {
@@ -166,7 +166,7 @@ export const weatherPack: WorldPack = {
                 const sample = weatherSampleSchema.parse(result)
                 return [
                   ...weatherQuantities.map((q) =>
-                    packField('weather:' + q.id, 'Weather · ' + q.title, `${q.value(sample.state)} ${q.unit}`.trim()),
+                    packField('weather:' + q.id, 'Weather · ' + q.title, formatWeatherQuantity(q.value(sample.state), q.unit)),
                   ),
                   packField('weather:time', 'Weather sample time', sample.quality.validAt),
                 ]
@@ -199,7 +199,7 @@ export const weatherPack: WorldPack = {
         fields: data
           ? [
               ...weatherQuantities.map((q) =>
-                packField(q.id, q.title, `${q.value(data.sample.state)} ${q.unit}`.trim()),
+                packField(q.id, q.title, formatWeatherQuantity(q.value(data.sample.state), q.unit)),
               ),
               packField('sample-at', 'Simulation time', data.sample.quality.validAt),
               packField('model', 'Model', data.sample.quality.model),

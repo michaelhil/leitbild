@@ -1,5 +1,11 @@
 import type { WeatherState } from './model.ts'
 
+export const formatWeatherQuantity = (value: number | string, unit: string): string => {
+  if (typeof value === 'string') return value.replaceAll('_', ' ')
+  if (unit === 'fraction') return `${Math.round(value * 100)}%`
+  return `${Number(value.toFixed(2))} ${unit}`.trim()
+}
+
 /** One list feeds discovery, object inspection and optional probe recordings. */
 export const weatherQuantities: ReadonlyArray<{
   id: string
@@ -28,7 +34,7 @@ export const weatherQuantities: ReadonlyArray<{
   { id: 'groundTemperatureC', title: 'Ground temperature', unit: '°C', value: (s) => s.surface.groundTemperatureC },
   ...(['wetness', 'standingWater', 'snow', 'ice', 'frost'] as const).map((id) => ({
     id,
-    title: id,
+    title: id === 'standingWater' ? 'Standing water' : id[0]!.toUpperCase() + id.slice(1),
     unit: 'fraction',
     value: (s: WeatherState) => s.surface[id],
   })),

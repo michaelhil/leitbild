@@ -83,6 +83,8 @@ describe('Weather ↔ Ambulance integration', () => {
       await connection.setClock({ currentTime: compiled.world.startsAt, updatedAt: nowIso(), paused: true, speed: 1 })
       const snapshot = await connection.getSnapshot()
       const vehicle = snapshot.objects.find((o) => o.kind === 'mobile_entity')!
+      const initialImpact = vehicle.spatial.route?.impacts?.find(impact => impact.source.kind === 'runtime' && impact.source.id === 'ambulance.road-weather')
+      expect(initialImpact?.speedFactor).toBe(0.5)
       const area = snapshot.objects.find((o) => o.id === 'weather:halden-front')!
       const old = weatherPackDataSchema.parse(area.packData)
       const definition = weatherItemSchema.parse({

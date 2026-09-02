@@ -50,14 +50,10 @@ const formatDurationMmSs = (seconds: number): string => {
   return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`
 }
 
-const formatArrivalClock = (seconds: number, now: Date = new Date()): string =>
-  new Date(now.getTime() + Math.max(0, Math.ceil(seconds)) * 1000)
-    .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-
 const etaText = (object: OperationalObject): string | null =>
   object.spatial.route?.etaSeconds === undefined
     ? null
-    : `ETA: ${formatDurationMmSs(object.spatial.route.etaSeconds)} · Arrives ${formatArrivalClock(object.spatial.route.etaSeconds)}`
+    : `ETA: ${formatDurationMmSs(object.spatial.route.etaSeconds)} simulation time remaining`
 
 const routeImpactText = (object: OperationalObject): string | null => {
   const impacts = object.spatial.route?.impacts ?? []

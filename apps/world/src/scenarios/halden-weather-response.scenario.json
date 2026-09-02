@@ -94,7 +94,7 @@
           "semiMajorAxisM": 6500,
           "semiMinorAxisM": 4200,
           "rotationDeg": 15,
-          "falloff": "linear",
+          "falloff": "uniform",
           "atmosphere": {
             "airTemperatureC": 2,
             "humidity": 0.9,
@@ -188,8 +188,8 @@
           "id": "incident:halden-weather",
           "label": "Weather response destination",
           "position": [
-            11.48,
-            59.08
+            11.4,
+            59.18
           ],
           "triage": "yellow",
           "victims": {
@@ -203,8 +203,8 @@
           "label": "Weather response ambulance",
           "status": "en_route",
           "position": [
-            11.36,
-            59.2
+            11.403,
+            59.128
           ],
           "targetId": "incident:halden-weather"
         }

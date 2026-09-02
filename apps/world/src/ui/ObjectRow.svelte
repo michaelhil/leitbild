@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { ClipboardList, FileText, Gamepad2, GitBranch, Library, MonitorCog, Settings2, ShieldCheck, X } from 'lucide-svelte'
   import type { OperationalObject } from '../core/model/index.ts'
   import type { PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../core/packs/protocol.ts'
@@ -61,6 +62,9 @@
   let newInfoTooltipPosition = $state({ left: 0, top: 0, width: 250 })
   let detailPresentation: PackObjectPresentation | null = $state(null)
   let detailPresentationKey: string | null = $state(null)
+  let detailObjectId: string | null = $state(null)
+  let detailHovered = $state(false)
+  let detailFocused = $state(false)
 
   const newInfoSummary = $derived(
     presentation.fields.length === 0
@@ -69,7 +73,7 @@
   )
   const currentPresentationKey = $derived(`${object.id}:${object.revision}`)
   const activeDetailPresentation = $derived(
-    detailPresentationKey === currentPresentationKey && detailPresentation !== null
+    detailObjectId === object.id && detailPresentation !== null
       ? detailPresentation
       : presentation,
   )
@@ -84,12 +88,20 @@
       if (key !== currentPresentationKey) return
       detailPresentation = next
       detailPresentationKey = key
+      detailObjectId = object.id
     } catch (error) {
       if (key !== currentPresentationKey) return
       detailPresentation = { ...presentation, fields: [...presentation.fields, { key: 'context-error', label: 'Context unavailable', value: error instanceof Error ? error.message : String(error) }] }
       detailPresentationKey = key
+      detailObjectId = object.id
     } finally { if (loadingDetailKey === key) loadingDetailKey = null }
   }
+
+  $effect(() => {
+    if (!detailHovered && !detailFocused) return
+    currentPresentationKey
+    untrack(() => { void loadDetailPresentation() })
+  })
 
   const showNewInfoTooltip = (): void => {
     if (!newInfoBadge) return
@@ -148,8 +160,10 @@
   class="object-row"
   role="button"
   tabindex="0"
-  onmouseenter={loadDetailPresentation}
-  onfocus={loadDetailPresentation}
+  onmouseenter={() => { detailHovered = true }}
+  onmouseleave={() => { detailHovered = false }}
+  onfocus={() => { detailFocused = true }}
+  onblur={() => { detailFocused = false }}
   onclick={() => selectObject(object)}
   onkeydown={(event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return

@@ -36,6 +36,7 @@ import {
 import { answerWeatherQuery, weatherQueryCapabilities } from '../src/packs/weather/query.ts'
 import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
+import { formatWeatherQuantity } from '../src/packs/weather/quantities.ts'
 import { testRuntimeConnectionConfig } from './helpers.ts'
 
 const at = '2026-01-01T00:00:00.000Z' as IsoTimestamp
@@ -97,6 +98,11 @@ const connect = (objects: OperationalObject[] = [], extra: Record<string, unknow
 }
 
 describe('authoritative Weather field', () => {
+  test('display formatting stays compact without rounding query data', () => {
+    expect(formatWeatherQuantity(0.3943925115, 'fraction')).toBe('39%')
+    expect(formatWeatherQuantity(-1.950311201, '°C')).toBe('-1.95 °C')
+    expect(formatWeatherQuantity('freezing_rain', '')).toBe('freezing rain')
+  })
   test('authored areas and probes share the live schema and discoverable catalog', () => {
     const catalog = scenarioAuthoringCatalogFor([weatherPack])
     expect(catalog.packs[0]?.itemTypes.map((t) => t.id)).toEqual(['weather_area', 'weather_probe'])

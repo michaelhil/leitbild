@@ -815,11 +815,13 @@ body.rail-resizing {
 }
 
 .row-tooltip {
-  right: 0;
+  left: 0;
   top: 24px;
   width: min(260px, calc(var(--rail-width, 360px) - 64px));
   max-width: calc(100vw - 24px);
-  pointer-events: none;
+  max-height: 70vh;
+  overflow: auto;
+  pointer-events: auto;
   text-align: left;
 }
 
