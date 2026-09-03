@@ -25,7 +25,6 @@ export interface ProcessPlantVariableTable {
   readonly snapshotHandle: (handle: ProcessPlantVariableHandle) => ProcessPlantVariableSnapshot
   readonly snapshot: () => ReadonlyArray<ProcessPlantVariableSnapshot>
   readonly snapshotValues: () => ReadonlyArray<ProcessPlantValue>
-  readonly publishedSnapshot: () => ReadonlyArray<ProcessPlantVariableSnapshot>
   readonly assertInvariants: () => void
 }
 
@@ -71,9 +70,6 @@ export const createProcessPlantVariableTable = (
 ): ProcessPlantVariableTable => {
   const variables = system.graph.variables
   const variableByPath = new Map(variables.map((variable, slot) => [variable.path, { path: variable.path, variable, slot } satisfies ProcessPlantVariableHandle]))
-  const publishedHandles = variables.flatMap((variable, slot) =>
-    variable.published ? [{ path: variable.path, variable, slot } satisfies ProcessPlantVariableHandle] : []
-  )
   const values: ProcessPlantValue[] = new Array(variables.length)
   const commands: ProcessPlantCommand[] = []
   if (restoredValues !== undefined && restoredValues.length !== variables.length) {
@@ -205,8 +201,6 @@ export const createProcessPlantVariableTable = (
     snapshot: (): ReadonlyArray<ProcessPlantVariableSnapshot> =>
       variables.map((variable, slot) => snapshotVariable(values, variable, slot)),
     snapshotValues: (): ReadonlyArray<ProcessPlantValue> => [...values],
-    publishedSnapshot: (): ReadonlyArray<ProcessPlantVariableSnapshot> =>
-      publishedHandles.map(handle => snapshotVariable(values, handle.variable, handle.slot)),
     assertInvariants: (): void => {
       for (let slot = 0; slot < variables.length; slot += 1) {
         const variable = variables[slot]

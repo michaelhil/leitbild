@@ -45,7 +45,6 @@ export interface ProcessPlantTickResult {
   readonly elapsedMs: number
   readonly simulatedMs: number
   readonly phases: ReadonlyArray<ProcessPlantSolverPhase>
-  readonly publishedVariables: ReadonlyArray<ProcessPlantVariableSnapshot>
 }
 
 export interface ProcessPlantRuntimeSnapshot {

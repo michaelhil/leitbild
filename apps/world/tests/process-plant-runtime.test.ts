@@ -520,7 +520,9 @@ describe('process plant runtime', () => {
       'updateComponentState',
       'updateProcessLinkState',
     ])
-    const publishedPaths = tick.publishedVariables.map(variable => String(variable.path))
+    const publishedPaths = runtime.snapshot().variables
+      .filter(variable => variable.published)
+      .map(variable => String(variable.path))
     expect(publishedPaths).toEqual(expect.arrayContaining([
       'core.powerMw',
       'core.fissionPowerMw',

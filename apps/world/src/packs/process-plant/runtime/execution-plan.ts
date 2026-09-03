@@ -7,6 +7,7 @@ import {
   type ComponentBehaviorDefinition,
   type ComponentInitialReconciliationDefinition,
   type ProcessLinkBehaviorDefinition,
+  type ReusableProcessPlantBehaviorContext,
 } from './behavior-contract.ts'
 import { componentBehaviorDefinitions, componentInitialReconciliationDefinitions } from './component-behaviors.ts'
 import type { ProcessPlantSolverPhase } from './model.ts'
@@ -229,15 +230,15 @@ export const runProcessPlantInitialReconciliation = (config: {
   }
   runProcessPlantExecutionPhase({
     system: config.system,
-    table: config.table,
     plan: config.plan,
+    context,
     phase: 'solveFluidFlowLinks',
     dtSeconds: 0,
   })
   runProcessPlantExecutionPhase({
     system: config.system,
-    table: config.table,
     plan: config.plan,
+    context,
     phase: 'updateProcessLinkState',
     dtSeconds: 0,
   })
@@ -245,14 +246,13 @@ export const runProcessPlantInitialReconciliation = (config: {
 
 export const runProcessPlantExecutionPhase = (config: {
   readonly system: CompiledProcessPlant
-  readonly table: ProcessPlantVariableTable
   readonly plan: ProcessPlantExecutionPlan
+  readonly context: ReusableProcessPlantBehaviorContext
   readonly phase: ProcessPlantSolverPhase
   readonly dtSeconds: number
 }): void => {
-  const context = createReusableBehaviorContext(config.table)
   for (const invocation of config.plan.invocationsByPhase.get(config.phase) ?? []) {
-    context.configure({
+    config.context.configure({
       behaviorId: invocation.behavior.id,
       phase: config.phase,
       dtSeconds: config.dtSeconds,
@@ -264,7 +264,7 @@ export const runProcessPlantExecutionPhase = (config: {
       invocation.behavior.update({
         system: config.system,
         component,
-        context,
+        context: config.context,
       })
       continue
     }
@@ -273,7 +273,7 @@ export const runProcessPlantExecutionPhase = (config: {
     invocation.behavior.update({
       system: config.system,
       link,
-      context,
+      context: config.context,
     })
   }
 }

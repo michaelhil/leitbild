@@ -60,6 +60,10 @@ export interface SimulationRunCopyCheckpoint {
   readonly runtimeStates: Readonly<Record<string, unknown>>
 }
 
-export const fastForwardStepMs = 250
+// Pack-internal solvers retain their own fixed timesteps. A one-second Run
+// boundary avoids repeating projection and cross-Pack reconciliation four times
+// per simulated second while keeping commands, pauses, and coupled state
+// observable at the platform's normal update cadence.
+export const fastForwardStepMs = 1_000
 export const fastForwardProgressWallIntervalMs = 100
 export const executionCheckpointWallIntervalMs = 2_000

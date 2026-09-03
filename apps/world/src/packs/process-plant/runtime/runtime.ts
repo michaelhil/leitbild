@@ -2,6 +2,7 @@ import type { VariablePath } from '../graph/index.ts'
 import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import { initialComponentValueFor } from './component-behaviors.ts'
 import { assertProcessPlantRuntimeInvariants } from './behavior-contract.ts'
+import { createReusableBehaviorContext } from './behavior-contract.ts'
 import { compileProcessPlantExecutionPlan, runProcessPlantExecutionPhase, runProcessPlantInitialReconciliation, type ProcessPlantExecutionPlan } from './execution-plan.ts'
 import { processPlantSolverPhases, type ProcessPlantCommand, type ProcessPlantRuntime, type ProcessPlantRuntimeCheckpoint, type ProcessPlantRuntimeSnapshot, type ProcessPlantTickResult, type ProcessPlantValue } from './model.ts'
 import { createProcessPlantVariableTable, type ProcessPlantVariableTable } from './variable-table.ts'
@@ -27,18 +28,19 @@ const step = (
   table: ProcessPlantVariableTable,
   plan: ProcessPlantExecutionPlan,
   clock: RuntimeClock,
+  context: ReturnType<typeof createReusableBehaviorContext>,
   stepMs: number,
   assertInvariants: boolean,
 ): void => {
   const dtSeconds = stepMs / 1_000
   table.applyQueuedCommands()
-  runProcessPlantExecutionPhase({ system, table, plan, phase: 'updateControlLogic', dtSeconds })
-  runProcessPlantExecutionPhase({ system, table, plan, phase: 'solveFluidFlowComponents', dtSeconds })
-  runProcessPlantExecutionPhase({ system, table, plan, phase: 'solveFluidFlowLinks', dtSeconds })
-  runProcessPlantExecutionPhase({ system, table, plan, phase: 'solveThermalTransfer', dtSeconds })
-  runProcessPlantExecutionPhase({ system, table, plan, phase: 'solveElectrical', dtSeconds })
-  runProcessPlantExecutionPhase({ system, table, plan, phase: 'updateComponentState', dtSeconds })
-  runProcessPlantExecutionPhase({ system, table, plan, phase: 'updateProcessLinkState', dtSeconds })
+  runProcessPlantExecutionPhase({ system, plan, context, phase: 'updateControlLogic', dtSeconds })
+  runProcessPlantExecutionPhase({ system, plan, context, phase: 'solveFluidFlowComponents', dtSeconds })
+  runProcessPlantExecutionPhase({ system, plan, context, phase: 'solveFluidFlowLinks', dtSeconds })
+  runProcessPlantExecutionPhase({ system, plan, context, phase: 'solveThermalTransfer', dtSeconds })
+  runProcessPlantExecutionPhase({ system, plan, context, phase: 'solveElectrical', dtSeconds })
+  runProcessPlantExecutionPhase({ system, plan, context, phase: 'updateComponentState', dtSeconds })
+  runProcessPlantExecutionPhase({ system, plan, context, phase: 'updateProcessLinkState', dtSeconds })
   if (assertInvariants) assertProcessPlantRuntimeInvariants(table)
   clock.elapsedMs += stepMs
 }
@@ -59,6 +61,7 @@ export const createProcessPlantRuntime = (config: {
   )
   const fixedStepMs = system.graph.timestep.fixedStepMs
   const plan = compileProcessPlantExecutionPlan(system)
+  const behaviorContext = createReusableBehaviorContext(table)
   if (!config.restoredCheckpoint) {
     runProcessPlantInitialReconciliation({ system, table, plan })
   }
@@ -103,7 +106,7 @@ export const createProcessPlantRuntime = (config: {
       clock.remainderMs += elapsedMs
       let simulatedMs = 0
       while (clock.remainderMs >= fixedStepMs) {
-        step(system, table, plan, clock, fixedStepMs, assertInvariants)
+        step(system, table, plan, clock, behaviorContext, fixedStepMs, assertInvariants)
         pwrTransientDiagnosticsDirty = true
         clock.remainderMs -= fixedStepMs
         simulatedMs += fixedStepMs
@@ -112,7 +115,6 @@ export const createProcessPlantRuntime = (config: {
         elapsedMs,
         simulatedMs,
         phases: processPlantSolverPhases,
-        publishedVariables: table.publishedSnapshot(),
       }
     },
     elapsedMs: (): number => clock.elapsedMs,

@@ -83,17 +83,17 @@ export const createProcessPlantRecordingPlan = (config: {
     sample: ({ observedAt, simulationTime }) => ({
       descriptors: [],
       samples: series.flatMap(item => {
-        const variable = item.plant.runtime.readVariableSnapshotHandle(item.handle)
+        const value = item.plant.runtime.readVariableHandle(item.handle)
         const at = Date.parse(simulationTime)
         const previous = lastRecorded.get(item.descriptor.id)
-        if (previous && previous.value === variable.value && at >= previous.at && at - previous.at < 60_000) return []
-        lastRecorded.set(item.descriptor.id, { value: variable.value, at })
+        if (previous && previous.value === value && at >= previous.at && at - previous.at < 60_000) return []
+        lastRecorded.set(item.descriptor.id, { value, at })
         return [{
           seriesId: item.descriptor.id,
           observedAt,
           simulationTime,
           elapsedMs: item.plant.runtime.elapsedMs(),
-          value: variable.value,
+          value,
           quality: 'good' as const,
         }]
       }),
