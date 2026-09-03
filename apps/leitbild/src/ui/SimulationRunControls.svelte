@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import type { ModuleCapabilityDescriptor, ModuleResourceDescriptor } from '@leitbild/contracts'
   import { jsonRequest, request } from './api.ts'
 
@@ -63,11 +63,16 @@
   let copyDialog = $state<HTMLDialogElement | null>(null)
   let timerDialog = $state<HTMLDialogElement | null>(null)
   let familyOpen = $state(false)
+  let editingRunId = $state<string | null>(null)
+  let editingName = $state('')
+  let renameInput = $state<HTMLInputElement | null>(null)
   let notice = $state('')
   let noticeTimer: ReturnType<typeof setTimeout> | null = null
   let refreshToken = 0
 
-  const capabilityAvailable = (id: string): boolean => resource.capabilityIds.includes(id) && capabilities.some(capability => capability.id === id)
+  const capabilityAvailableFor = (candidate: ModuleResourceDescriptor, id: string): boolean =>
+    candidate.capabilityIds.includes(id) && capabilities.some(capability => capability.id === id)
+  const capabilityAvailable = (id: string): boolean => capabilityAvailableFor(resource, id)
   const invoke = async <T>(target: ModuleResourceDescriptor['ref'], capabilityId: string, input: unknown): Promise<InvocationResponse<T>> =>
     await request(`/api/workspaces/${encodeURIComponent(workspaceId)}/capabilities/${encodeURIComponent(capabilityId)}/invoke`,
       jsonRequest('POST', { resource: target, input, actor: { kind: 'human' } }))
@@ -149,7 +154,39 @@
   }
   const switchRun = (id: string): void => {
     familyOpen = false
+    editingRunId = null
     if (id !== resource.ref.id) onSwitch(id)
+  }
+  const startRename = async (member: ModuleResourceDescriptor): Promise<void> => {
+    editingRunId = member.ref.id
+    editingName = member.title
+    await tick()
+    renameInput?.focus()
+    renameInput?.select()
+  }
+  const cancelRename = (): void => {
+    editingRunId = null
+    editingName = ''
+  }
+  const toggleFamily = (): void => {
+    familyOpen = !familyOpen
+    if (!familyOpen) cancelRename()
+  }
+  const saveRename = (member: ModuleResourceDescriptor): void => {
+    const name = editingName.trim()
+    void runAction(async () => {
+      await invoke(member.ref, 'world.simulation-run.rename', { name: name === '' ? null : name, expectedTitle: member.title })
+      cancelRename()
+    })
+  }
+  const handleRenameKey = (event: KeyboardEvent, member: ModuleResourceDescriptor): void => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      saveRename(member)
+    } else if (event.key === 'Escape') {
+      event.preventDefault()
+      cancelRename()
+    }
   }
   const deleteRun = (member: ModuleResourceDescriptor): void => {
     if (!confirm(`Delete ${member.title}? This cannot be undone.`)) return
@@ -174,17 +211,21 @@
   $effect(() => {
     resource.ref.id
     familyOpen = false
+    editingRunId = null
     void refresh()
   })
   onMount(() => {
-    const tick = setInterval(() => { wallNow = Date.now() }, 250)
+    const clockTicker = setInterval(() => { wallNow = Date.now() }, 250)
     const poll = setInterval(() => { void refresh() }, 1_000)
     const closeFamily = (event: PointerEvent): void => {
-      if (!(event.target instanceof Element) || !event.target.closest('.family-control')) familyOpen = false
+      if (!(event.target instanceof Element) || !event.target.closest('.family-control')) {
+        familyOpen = false
+        cancelRename()
+      }
     }
     window.addEventListener('pointerdown', closeFamily)
     return () => {
-      clearInterval(tick)
+      clearInterval(clockTicker)
       clearInterval(poll)
       if (noticeTimer !== null) clearTimeout(noticeTimer)
       window.removeEventListener('pointerdown', closeFamily)
@@ -194,14 +235,19 @@
 
 <div class="run-controls" aria-label="Simulation controls">
   {#if family.length > 1}<div class="family-control">
-    <button class="family-trigger" type="button" aria-haspopup="true" aria-expanded={familyOpen} onclick={() => { familyOpen = !familyOpen }} title={resource.title}>
+    <button class="family-trigger" type="button" aria-haspopup="true" aria-expanded={familyOpen} onclick={toggleFamily} title={resource.title}>
       <span class="family-label">{resource.title}</span><span aria-hidden="true">⌄</span>
     </button>
     {#if familyOpen}
       <div class="family-menu" role="group" aria-label="Run copies">
         {#each family as member (member.ref.id)}
           <div class:current={member.ref.id === resource.ref.id}>
-            <button class="family-member" type="button" aria-current={member.ref.id === resource.ref.id ? 'true' : undefined} title={member.title} onclick={() => switchRun(member.ref.id)}>{member.title}</button>
+            {#if editingRunId === member.ref.id}
+              <input class="family-name-input" maxlength="120" aria-label={`Name for ${member.title}`} bind:this={renameInput} bind:value={editingName} onkeydown={(event) => handleRenameKey(event, member)} />
+            {:else}
+              <button class="family-member" type="button" aria-current={member.ref.id === resource.ref.id ? 'true' : undefined} title={member.title} onclick={() => switchRun(member.ref.id)}>{member.title}</button>
+            {/if}
+            <button class="family-rename" type="button" disabled={actionBusy || !capabilityAvailableFor(member, 'world.simulation-run.rename')} aria-label={`Rename ${member.title}`} title={`Rename ${member.title}`} onclick={() => void startRename(member)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button>
             <button class="family-delete" type="button" aria-label={`Delete ${member.title}`} title={`Delete ${member.title}`} onclick={() => deleteRun(member)}>×</button>
           </div>
         {/each}
@@ -246,8 +292,10 @@
   .family-control { position: relative; min-width: 0; } .family-trigger { max-width: min(250px, 24vw); display: flex; align-items: center; gap: .35rem; font-size: .7rem; } .family-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .run-title { max-width: min(250px, 24vw); overflow: hidden; color: #dfe8dc; font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
   .family-menu { position: absolute; z-index: 80; top: calc(100% + .4rem); right: 0; width: min(360px, calc(100vw - 2rem)); padding: .35rem; border: 1px solid #647168; border-radius: 9px; background: #18231c; box-shadow: 0 14px 38px #0008; }
-  .family-menu > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-radius: 6px; } .family-menu > div.current { background: #2a3d30; }
+  .family-menu > div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; border-radius: 6px; } .family-menu > div.current { background: #2a3d30; }
   .family-member { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; background: transparent; text-align: left; } .family-delete { border: 0; color: #d8a7a3; background: transparent; font-size: 1rem; }
+  .family-rename { min-width: 28px; padding: 0 .35rem; border: 0; color: #b9c6bc; background: transparent; } .family-rename svg { width: 14px; height: 14px; }
+  .family-name-input { min-width: 0; margin: .2rem .35rem; padding: .38rem .45rem; border: 1px solid #7f9d87; border-radius: 5px; color: #f4faf5; background: #111a14; font: inherit; outline: none; } .family-name-input:focus { border-color: #a6c5ad; box-shadow: 0 0 0 2px #5d8f6a55; }
   .control-error { position: fixed; z-index: 120; top: 3rem; right: 1rem; max-width: min(440px, calc(100vw - 2rem)); padding: .65rem .8rem; border-radius: 8px; color: #fff; background: #8e302b; box-shadow: 0 8px 24px #0005; font-size: .78rem; }
   .switch-notice { position: fixed; z-index: 140; top: 50%; left: 50%; translate: -50% -50%; max-width: min(520px, calc(100vw - 2rem)); padding: 1.1rem 1.4rem; border: 1px solid #8da596; border-radius: 12px; color: #f5fff6; background: #15241ddb; box-shadow: 0 20px 60px #0007; backdrop-filter: blur(8px); font-size: 1rem; font-weight: 700; text-align: center; pointer-events: none; }
   .control-dialog { width: min(500px, calc(100vw - 2rem)); padding: 0; border: 1px solid #aeb9ad; border-radius: 14px; color: #172019; background: #f6f8f4; box-shadow: 0 24px 70px #0006; } .control-dialog::backdrop { background: #0a100b99; backdrop-filter: blur(2px); }
