@@ -329,7 +329,7 @@ export const createServer = (config: ServerConfig): { readonly stop: () => Promi
       }
       if (url.pathname === '/map/capabilities.json') return secure(await mapCapabilitiesResponse(mapArtifacts))
       if (url.pathname === '/map/style.json') return secure(await mapStyleResponse(url.searchParams.get('theme'), mapArtifacts))
-      if (url.pathname.startsWith('/map/tiles/current/')) {
+      if (url.pathname.startsWith('/map/tiles/')) {
         const tileResponse = await currentVectorTileResponse(url, mapArtifacts)
         if (tileResponse) return secure(tileResponse)
       }

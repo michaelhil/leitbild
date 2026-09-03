@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { newWorkspaceId } from '@leitbild/contracts'
-import { mkdir, mkdtemp, symlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, symlink, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { actorIdSchema, nowIso, type SimulationRunId, type SimulationRunEvent } from '../src/core/model/index.ts'
 import type { Actor } from '../src/core/simulation-runs/actors.ts'
-import { createHealthDetails, staticContentTypeForPath } from '../src/core/api/server.ts'
+import { createHealthDetails, createServer, staticContentTypeForPath } from '../src/core/api/server.ts'
+import { createWorldWorkspaceRuntimeRegistry } from '../src/core/workspaces/runtime-registry.ts'
+import { createWorldModuleState } from '../src/core/workspaces/module-state.ts'
 import { createSimulationRunRealtimeManager, type RealtimeEventBatchMessage, type RealtimeOutboundMessage } from '../src/core/api/realtime.ts'
 import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
@@ -74,6 +76,18 @@ const waitForRuntimeClosed = async (
 }
 
 describe('server health', () => {
+  test('routes both regional and overview tiles through the artifact handler', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-map-routes-'))
+    const workspaces = createWorldWorkspaceRuntimeRegistry({ dataDir, moduleState: createWorldModuleState({ dataDir }), scenarioRuntimeResolver: createTestScenarioRuntimeResolver(), ...testScenarioAuthoring(), runtimeAdapters: [] })
+    const server = createServer({ workspaces, port: 0, bindHost: '127.0.0.1', mapArtifacts: { rootDir: dataDir } })
+    try {
+      for (const source of ['current', 'overview']) {
+        const response = await fetch(`http://127.0.0.1:${server.port}/map/tiles/${source}/0/0/0.mvt`)
+        expect(response.status).toBe(503) // Missing artifact, not an unregistered route.
+        expect(await response.json()).toMatchObject({ error: 'vector map artifact unavailable' })
+      }
+    } finally { await server.stop(); await workspaces.shutdown(); await rm(dataDir, { recursive: true, force: true }) }
+  })
   test('serves module worker assets with a JavaScript MIME type', () => {
     expect(staticContentTypeForPath('/assets/maplibre-gl-worker-hash.mjs')).toBe('application/javascript')
     expect(staticContentTypeForPath('/assets/OperationalMap-hash.js')).toBe('application/javascript')

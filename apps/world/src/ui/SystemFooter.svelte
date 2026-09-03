@@ -57,7 +57,7 @@
   </button>
   <span class="brand">Leitbild</span>
   <span class="version">v{appVersion}</span>
-  <div class="sim-clock" title={clock?.paused ? 'Simulation paused' : 'Simulation running'}>
+  {#if clock}<div class="sim-clock" title={clock.paused ? 'Simulation paused' : 'Simulation running'}>
     <IconButton
       label={clock?.paused ? 'Resume simulation time' : 'Pause simulation time'}
       title={clock?.paused ? 'Resume simulation time' : 'Pause simulation time'}
@@ -66,7 +66,7 @@
       onClick={() => { void toggleClockPaused() }}
     />
     <span>{clockLabel}</span>
-  </div>
+  </div>{/if}
   <IconButton
     label="Open settings"
     title="Open settings"

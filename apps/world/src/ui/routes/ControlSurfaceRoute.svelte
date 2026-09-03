@@ -47,7 +47,7 @@
   } from '../control-surface-selectors.ts'
   import { createPlacementState } from '../placement-state.svelte.ts'
   import { createRailLayoutState } from '../rail-layout-state.svelte.ts'
-  import { simulationTimeAt } from '../simulation-clock.ts'
+  import { scenarioUsesSimulationTime, simulationTimeAt } from '../simulation-clock.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import ControlRail from '../ControlRail.svelte'
   import ScenarioGuidance from '../ScenarioGuidance.svelte'
@@ -1502,7 +1502,7 @@
         {status}
         {systemStatusTone}
         {appVersion}
-        {clock}
+        clock={scenarioUsesSimulationTime(scenarioDefinition, activePack?.packs ?? []) ? clock : undefined}
         {footerVisible}
         collapsed={railLayout.collapsed}
         {categoryRows}
