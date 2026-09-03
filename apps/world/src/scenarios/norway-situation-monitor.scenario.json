@@ -1,0 +1,18 @@
+{
+  "id": "norway-situation-monitor",
+  "title": "Norway · live situation",
+  "description": "Explore Norway's live road cameras, measured road weather, traffic and roadworks, and MET warning areas. Cameras and stations are discovered from current provider catalogues, not a fixed list. Click map symbols and warning polygons to inspect evidence, advice and on-demand images or video.",
+  "objectives": [
+    "Build a sourced picture across Norway; distinguish observations, scheduled roadworks, warnings and camera availability.",
+    "Inspect original evidence, measurement times, warning validity and provider advice. Missing coverage is not proof that nothing happened.",
+    "Ask the companion assistant to discover sources and summarize retained evidence. Media references do not give the assistant video understanding."
+  ],
+  "packs": [{ "id": "situation-monitor", "config": { "areas": [], "sources": [
+    { "id": "cameras", "name": "Road cameras", "adapter": "vegvesen", "dataset": "cameras", "intervalSeconds": 300, "retentionHours": 1, "attribution": "Statens vegvesen" },
+    { "id": "road-weather", "name": "Measured road weather", "adapter": "vegvesen", "dataset": "road-weather", "intervalSeconds": 600, "retentionHours": 2, "attribution": "Statens vegvesen" },
+    { "id": "traffic", "name": "Traffic and roadworks", "adapter": "vegvesen", "dataset": "traffic", "intervalSeconds": 300, "retentionHours": 2, "attribution": "Statens vegvesen" },
+    { "id": "warnings", "name": "Weather warnings", "adapter": "met-alerts", "intervalSeconds": 600, "retentionHours": 2, "attribution": "MET Norway" }
+  ] }, "items": [] }],
+  "world": { "startsAt": "2026-09-03T00:00:00.000Z" },
+  "view": { "map": { "center": [13, 64.5], "zoom": 4 } }
+}

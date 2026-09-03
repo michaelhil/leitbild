@@ -18,6 +18,7 @@
         { "capabilityId": "world.simulation-run.changes" },
         { "capabilityId": "world.simulation-run.history" },
         { "capabilityId": "world.situation-monitor.adapters" },
+        { "capabilityId": "world.map.symbols" },
         { "capabilityId": "world.situation-monitor.status" },
         { "capabilityId": "world.situation-monitor.records.search" },
         { "capabilityId": "world.situation-monitor.record.inspect" }

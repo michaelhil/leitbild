@@ -392,6 +392,7 @@
     objects: () => objects,
     simulationRunId: () => simulationRunId,
     currentTime: currentPackTime,
+    onWarnings: messages => { if (messages.length) status = messages.join(' · ') },
   })
 
   const hasNewInfo = (object: OperationalObject): boolean => {

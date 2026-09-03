@@ -216,7 +216,7 @@ const presentationForIncident = (
   const data = parseIncidentData(object)
   return {
     categoryId: 'incidents',
-    icon: 'crash',
+    icon: 'triangle-alert',
     color: '#c7352b',
     summary: data ? `victims ${factText(data.victims.count, String)} · triage ${factText(data.triage)}` : object.operational.status,
     status: data ? incidentStatus(object, data, objects) : packStatus('error', 'Invalid incident pack data'),
@@ -350,7 +350,7 @@ export const ambulancePack: WorldPack = {
       if (parseIncidentData(object)) return presentationForIncident(object, context.objects)
       return {
         categoryId: 'unknown',
-        icon: 'unknown',
+        icon: 'circle-question-mark',
         color: '#667085',
         summary: object.operational.status,
         status: packStatus('idle', object.operational.status),
@@ -362,7 +362,7 @@ export const ambulancePack: WorldPack = {
     createObjectTypes: [
       { id: 'hospital', label: 'Hospital', categoryId: 'hospitals', icon: 'hospital', color: '#245b9f', placementKind: 'point' },
       { id: 'ambulance', label: 'Ambulance', categoryId: 'ambulances', icon: 'ambulance', color: '#22845d', placementKind: 'point' },
-      { id: 'incident', label: 'Incident', categoryId: 'incidents', icon: 'crash', color: '#c7352b', placementKind: 'point' },
+      { id: 'incident', label: 'Incident', categoryId: 'incidents', icon: 'triangle-alert', color: '#c7352b', placementKind: 'point' },
     ],
     defaultObjectLabel: (typeId, context): string => {
       const type = assertCreatableType(typeId)

@@ -5,15 +5,14 @@ import { join } from 'node:path'
 import { builtinScenarioDefinitions,discoverScenarioDefinitions } from '../src/scenarios/definitions.ts'
 
 describe('bundled scenario discovery', () => {
-  test('ships the editable physical and global observation examples', () => {
+  test('ships editable physical examples and one live Norway observation scenario', () => {
     expect(builtinScenarioDefinitions.map(source => source.id)).toEqual([
       'halden-power-complex',
       'halden-weather-response',
-      'japan-situation-monitor',
-      'world-situation-monitor',
+      'norway-situation-monitor',
     ])
     expect(builtinScenarioDefinitions[0]?.packs.map(pack => pack.id)).toEqual(['process-plant', 'electric-grid', 'weather'])
-    for (const id of ['japan-situation-monitor', 'world-situation-monitor']) {
+    for (const id of ['norway-situation-monitor']) {
       expect(builtinScenarioDefinitions.find(source => source.id === id)?.packs.map(pack => pack.id)).toEqual(['situation-monitor'])
     }
   })

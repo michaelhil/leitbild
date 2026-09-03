@@ -1,4 +1,4 @@
-import type { GeoJsonPoint, GeoJsonPolygon, OperationalObject } from '../../core/model/index.ts'
+import type { GeoJsonPoint, OperationalObject } from '../../core/model/index.ts'
 import { remainingRouteGeometry } from '../../core/model/index.ts'
 import type { PackMapFeature, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import { colorWithAlpha, hexToRgba, toneColor, white } from './colors.ts'
@@ -7,7 +7,6 @@ import {
   lineStringPositions,
   pointPosition,
   type MapFeatureProjectionContext,
-  type OperationalAreaFeature,
   type OperationalPathFeature,
   type OperationalPointFeature,
   type OperationalRenderInput,
@@ -78,11 +77,6 @@ const positionSignature = (position: Position3): string =>
 
 const pathSignature = (path: ReadonlyArray<Position2>): string =>
   `${path.length}:${path.map(point => `${rounded(point[0])},${rounded(point[1])}`).join('|')}`
-
-const polygonSignature = (polygon: GeoJsonPolygon): string =>
-  polygon.coordinates
-    .map(ring => ring.map(point => `${rounded(point[0])},${rounded(point[1])}`).join('|'))
-    .join('::')
 
 const pointPriority = (
   object: OperationalObject,
@@ -194,23 +188,6 @@ const lineObjectPathFor = (
   }
 }
 
-const areaFor = (feature: PackMapFeature & { geometry: GeoJsonPolygon }): OperationalAreaFeature => {
-  const opacity = feature.opacity ?? 0.10
-  const lineColor = feature.lineColor ?? feature.color
-  const layerId = feature.layerId ?? 'objects'
-  return {
-    id: `area:${feature.id}`,
-    layerId,
-    polygon: feature.geometry,
-    color: colorWithAlpha(hexToRgba(feature.color), opacity * 255),
-    lineColor: colorWithAlpha(hexToRgba(lineColor), (feature.lineOpacity ?? 0.16) * 255),
-    opacity,
-    lineWidthPx: feature.lineWidth ?? 0.6,
-    sortKey: feature.sortKey ?? 0,
-    signature: `area:${feature.id}:${layerId}:${feature.color}:${opacity}:${lineColor}:${feature.lineOpacity}:${feature.lineWidth}:${feature.sortKey}:${polygonSignature(feature.geometry)}`,
-  }
-}
-
 const areaSymbolFor = (feature: PackMapFeature): OperationalSymbolFeature | null => {
   if (!feature.anchorPoint || !feature.symbol) return null
   const tone = feature.symbol.tone ?? 'idle'
@@ -271,9 +248,6 @@ const projectObjects = (
   }
 }
 
-const projectPackAreas = (features: ReadonlyArray<PackMapFeature>): ReadonlyArray<OperationalAreaFeature> =>
-  features.flatMap(feature => feature.geometry.type === 'Polygon' ? [areaFor({ ...feature, geometry: feature.geometry })] : [])
-
 const projectPackAreaSymbols = (
   features: ReadonlyArray<PackMapFeature>,
 ): ReadonlyArray<OperationalSymbolFeature> =>
@@ -287,27 +261,19 @@ const sortPaths = (
 ): ReadonlyArray<OperationalPathFeature> =>
   [...paths].sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id))
 
-const sortAreas = (
-  areas: ReadonlyArray<OperationalAreaFeature>,
-): ReadonlyArray<OperationalAreaFeature> =>
-  [...areas].sort((left, right) => left.sortKey - right.sortKey || left.id.localeCompare(right.id))
-
 const projectFeatures = (
   input: OperationalRenderInput,
 ): {
   readonly points: ReadonlyArray<OperationalPointFeature>
   readonly paths: ReadonlyArray<OperationalPathFeature>
-  readonly areas: ReadonlyArray<OperationalAreaFeature>
   readonly areaSymbols: ReadonlyArray<OperationalSymbolFeature>
   readonly placementPoints: ReadonlyArray<Position3>
 } => {
   const objectFeatures = projectObjects(input, projectionContextFor(input))
-  const areaFeatures = projectPackAreas(input.packFeatures)
   const areaSymbols = projectPackAreaSymbols(input.packFeatures)
   return {
     points: objectFeatures.points,
     paths: sortPaths(objectFeatures.objectPaths),
-    areas: sortAreas(areaFeatures),
     areaSymbols,
     placementPoints: input.placementPoints.map(placementPosition),
   }
@@ -316,7 +282,6 @@ const projectFeatures = (
 export const createMapFeatureStore = (): MapFeatureStore => {
   const points = createFamilyState<OperationalPointFeature>()
   const paths = createFamilyState<OperationalPathFeature>()
-  const areas = createFamilyState<OperationalAreaFeature>()
   const areaSymbols = createFamilyState<OperationalSymbolFeature>()
   let placementPoints: ReadonlyArray<Position3> = []
   let placementRevision = 0
@@ -324,13 +289,11 @@ export const createMapFeatureStore = (): MapFeatureStore => {
   const currentSnapshot = (): OperationalRenderSnapshot => ({
     points: points.items,
     paths: paths.items,
-    areas: areas.items,
     areaSymbols: areaSymbols.items,
     placementPoints,
     revisions: {
       points: points.revision,
       paths: paths.revision,
-      areas: areas.revision,
       areaSymbols: areaSymbols.revision,
       placement: placementRevision,
     },
@@ -349,7 +312,6 @@ export const createMapFeatureStore = (): MapFeatureStore => {
     const next = projectFeatures(input)
     syncFamily(points, next.points)
     syncFamily(paths, next.paths)
-    syncFamily(areas, next.areas)
     syncFamily(areaSymbols, next.areaSymbols)
     syncPlacement(next.placementPoints)
     return currentSnapshot()
@@ -362,7 +324,7 @@ export const createMapFeatureStore = (): MapFeatureStore => {
       const shouldUpdatePoints = families.has('operational-points')
       const shouldUpdatePaths = families.has('operational-paths')
       const shouldUpdateAreas = families.has('operational-areas')
-      const shouldUpdateObjects = shouldUpdatePoints || shouldUpdatePaths || shouldUpdateAreas
+      const shouldUpdateObjects = shouldUpdatePoints || shouldUpdatePaths
       const objectFeatures = shouldUpdateObjects ? projectObjects(input, context) : null
 
       if (shouldUpdatePoints && objectFeatures) {
@@ -371,8 +333,7 @@ export const createMapFeatureStore = (): MapFeatureStore => {
       if (shouldUpdatePaths && objectFeatures) {
         syncFamily(paths, sortPaths(objectFeatures.objectPaths))
       }
-      if (shouldUpdateAreas && objectFeatures) {
-        syncFamily(areas, sortAreas(projectPackAreas(input.packFeatures)))
+      if (shouldUpdateAreas) {
         syncFamily(areaSymbols, projectPackAreaSymbols(input.packFeatures))
       }
       if (families.has('placement')) {

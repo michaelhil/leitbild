@@ -60,8 +60,6 @@ describe('PackOverlayController', () => {
       },
       setFeatures: next => {
         features = next
-      },
-      onFeaturesChanged: () => {
         changed += 1
       },
       onError: () => undefined,
@@ -90,8 +88,6 @@ describe('PackOverlayController', () => {
       loadFeatures: async () => [featureFor('unused')],
       setFeatures: next => {
         features = next
-      },
-      onFeaturesChanged: () => {
         changed += 1
       },
       onError: () => undefined,
@@ -118,10 +114,7 @@ describe('PackOverlayController', () => {
       getSourceRevisionKey: () => 'r1',
       enabled: () => false,
       loadFeatures: async () => [featureFor('unused')],
-      setFeatures: () => undefined,
-      onFeaturesChanged: () => {
-        changed += 1
-      },
+      setFeatures: () => { changed += 1 },
       onError: () => undefined,
       performanceDiagnostics: createMapPerformanceDiagnostics(() => 0),
     })
@@ -139,6 +132,7 @@ describe('PackOverlayController', () => {
   test('caches enabled overlay results by viewport, zoom, time bucket, and source revision', async () => {
     const reports: MapRuntimeDiagnosticPhaseReport[] = []
     let loadCalls = 0
+    let changed = 0
     let revision = 'r1'
     let features: ReadonlyArray<PackMapFeature> = []
     const controller = createPackOverlayController({
@@ -153,8 +147,8 @@ describe('PackOverlayController', () => {
       },
       setFeatures: next => {
         features = next
+        changed += 1
       },
-      onFeaturesChanged: () => undefined,
       onError: () => undefined,
       performanceDiagnostics: createMapPerformanceDiagnostics(() => 0),
     })

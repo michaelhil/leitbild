@@ -104,7 +104,6 @@ const renderSignatureFor = (
 ): string => [
   snapshot.revisions.points,
   snapshot.revisions.paths,
-  snapshot.revisions.areas,
   snapshot.revisions.areaSymbols,
   snapshot.revisions.placement,
   visibleFamiliesKey(visibleFamilies),
@@ -216,7 +215,6 @@ export const createOperationalRenderController = (
         {
           points: snapshot.points.length,
           paths: snapshot.paths.length,
-          areas: snapshot.areas.length,
           areaSymbols: snapshot.areaSymbols.length,
           placementPoints: snapshot.placementPoints.length,
         },
@@ -234,7 +232,6 @@ export const createOperationalRenderController = (
           { label: 'Objects', value: String(state.objects.length) },
           { label: 'Points', value: String(snapshot.points.length) },
           { label: 'Paths', value: String(snapshot.paths.length) },
-          { label: 'Areas', value: String(snapshot.areas.length) },
           { label: 'Deck layers', value: String(deckLayers.length) },
         ])
       }
@@ -262,7 +259,6 @@ export const createOperationalRenderController = (
     config.performanceDiagnostics.record('operational-dynamic', 'renderPending total', totalMs, {
       points: snapshot.points.length,
       paths: snapshot.paths.length,
-      areas: snapshot.areas.length,
       deckUpdated,
     })
     emitDiagnostic(runtime)

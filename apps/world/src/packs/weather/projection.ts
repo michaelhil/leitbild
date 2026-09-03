@@ -82,7 +82,7 @@ export const projectWeatherFieldForMap = (
         layerId: 'weather',
         geometry,
         anchorPoint: point,
-        symbol: { icon: 'weather', tone: 'working', opacity: 0.9, size: 0.82 },
+        symbol: { icon: 'cloud-rain', tone: 'working', opacity: 0.9, size: 0.82 },
         color: '#38bdf8',
         opacity: 0.06,
         lineOpacity: 0.4,

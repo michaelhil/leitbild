@@ -19,7 +19,7 @@ Approved 2026-09-03: implement a native, globally configurable World Pack, inspi
 - Collector leases are shared within a Workspace, not across private access scopes. Run deletion releases only its leases.
 - Worldwide overview plus explicit regional detail; no full-detail planet download, external basemap fallback, or implied global routing.
 
-Later scope remains unadvertised: CAP, fire detection, source-catalog discovery, imagery, observed tracks, frozen input import, continuous physical coupling and risk scoring.
+Later scope remains unadvertised: general CAP feeds, fire detection, raster imagery, observed tracks, frozen input import, continuous physical coupling and risk scoring. The follow-up below adds bounded provider-catalogue discovery, still images and MET warnings.
 
 ## Implementation review
 
@@ -47,3 +47,11 @@ Verified in an isolated production Workspace:
 Browser verification exposed and resolved a missing overview tile route, conflated vector label layers, and a pre-existing response wrapper that lost Bun file-slice offsets. A real HTTP regression test now verifies both tile routing and exact range response bytes. Overview URLs include the artifact build timestamp to prevent stale browser tiles after publication.
 
 Deliberate limits remain: coarse global basemap, latest provider window rather than an archive, bounded map/query/chart output, no inferred physical effects, no AI video interpretation, and no promise of unattended collection across a service restart.
+
+## Follow-up implementation — 3 September 2026
+
+The review in `situation-monitor-review-2026-09-03.md` led to a simplified snapshot cache, durable retries, empty-cache support, subject-aware map selection/charts, selected-record freshness, native icons/style/selection and isolated Pack query errors. Removed the old polygon-copying path, unused animation metadata, duplicated icon artwork and icon aliases. The shared icon catalogue is locally generated from pinned Lucide 1.0.1 (1,686 names plus tags); only requested artwork reaches the browser.
+
+Replaced the two World observation examples with one ordinary editable Norway definition: discovered road cameras, measured road weather, traffic and MET warnings. Catalogues are bounded complete snapshots, not per-camera Sources or a web crawler. A real traffic response exceeded 8 MiB with route geometry; explicitly requesting provider display locations reduced it to about 2 MiB while preserving incident narratives and classifications. Flattened DATEX secondary-type rows are combined by provider record identity, with conflicting duplicates rejected.
+
+Live adapter acceptance returned 895 cameras (143 HLS references), 467 stations, approximately 2,391 distinct traffic records and one current warning. These counts are observations, not hardcoded expected values. Production UI/media verification is recorded in the review when complete.

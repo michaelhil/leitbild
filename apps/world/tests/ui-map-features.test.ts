@@ -13,7 +13,7 @@ import { createMapFeatureStore } from '../src/ui/map-runtime/map-feature-store.t
 
 const presentationFor = (object: OperationalObject): PackObjectPresentation => ({
   categoryId: object.packId === 'electric-grid' ? 'electric-grids' : object.packId,
-  icon: object.packId === 'electric-grid' ? 'line' : object.packId,
+  icon: object.packId === 'electric-grid' ? 'network' : object.packId === 'weather' ? 'cloud-rain' : object.packId,
   color: object.operational.status === 'constrained' ? '#b45309' : '#16834f',
   summary: object.label,
   fields: [],
@@ -159,7 +159,7 @@ describe('map feature store', () => {
     expect(snapshot.paths.map(path => path.kind).sort()).toEqual(['object-line'])
   })
 
-  test('projects pack area features and symbols into deck-ready area families', () => {
+  test('projects only anchored pack symbols; native polygons are not copied into Deck', () => {
     const polygon = {
       type: 'Polygon' as const,
       coordinates: [[
@@ -184,7 +184,7 @@ describe('map feature store', () => {
         layerId: 'weather',
         geometry: polygon,
         anchorPoint: geoPointFromLonLat(10.75, 59.91),
-        symbol: { icon: 'weather', tone: 'working' },
+        symbol: { icon: 'cloud-rain', tone: 'working' },
         color: '#2563eb',
         summary: 'influence',
       },
@@ -193,9 +193,9 @@ describe('map feature store', () => {
     const snapshot = updateStore([], { packFeatures: features })
 
     expect(snapshot.paths.map(path => path.kind)).toEqual([])
-    expect(snapshot.areas.map((area) => area.layerId)).toEqual(['weather', 'weather'])
+    expect('areas' in snapshot).toBe(false)
     expect(snapshot.areaSymbols).toHaveLength(1)
-    expect(snapshot.areaSymbols[0]?.symbolId).toBe('weather')
+    expect(snapshot.areaSymbols[0]?.symbolId).toBe('cloud-rain')
   })
 
   test('keeps stable revisions when non-visual object revisions change', () => {

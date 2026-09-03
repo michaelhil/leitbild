@@ -16,6 +16,7 @@ export interface MapFeatureRuntimeConfig {
   readonly simulationRunId: () => SimulationRunId | null
   readonly currentTime: () => IsoTimestamp | undefined
   readonly queryTimeoutMs?: number
+  readonly onWarnings?: (messages: ReadonlyArray<string>) => void
   readonly queryCapability?: (
     simulationRunId: SimulationRunId,
     request: PackMapFeatureQuery,
@@ -50,6 +51,7 @@ const createAbortSignalWithTimeout = (
     controller.abort(parent?.reason)
   }
   parent?.addEventListener('abort', abortFromParent, { once: true })
+  if (parent?.aborted) abortFromParent()
   return {
     signal: controller.signal,
     dispose: () => {
@@ -85,10 +87,20 @@ export const createMapFeatureLoader = (
       config.queryTimeoutMs ?? defaultMapFeatureQueryTimeoutMs,
     )
     try {
+      const warnings: string[] = []
       const responses = await Promise.all(requests.map(async request => {
-        const result = await query(simulationRunId, request, { signal: timeout.signal })
-        return mapFeaturesFromQueryResult(result)
+        try {
+          const result = await query(simulationRunId, request, { signal: timeout.signal })
+          if (typeof result === 'object' && result !== null && 'truncated' in result && result.truncated === true) warnings.push(request.capabilityId + ': map coverage limited; zoom in for more detail.')
+          return mapFeaturesFromQueryResult(result)
+        } catch (error) {
+          if (context.signal?.aborted) throw error
+          if (!config.onWarnings) throw error
+          warnings.push(request.capabilityId + ': ' + String(error)); return []
+        }
       }))
+      if (context.signal?.aborted) throw context.signal.reason
+      config.onWarnings?.(warnings)
       return [...syncFeatures, ...responses.flat()]
     } finally {
       timeout.dispose()

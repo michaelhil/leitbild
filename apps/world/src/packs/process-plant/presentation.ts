@@ -16,7 +16,7 @@ const presentationForUnit = (object: OperationalObject, data: ProcessPlantUnitPa
   const projection = data.projection ?? emptyProcessPlantProjection(object.timestamps.updatedAt)
   return {
     categoryId: 'process-plants',
-    icon: 'plant',
+    icon: 'factory',
     color: projection.statusTone === 'error' ? '#c7352b' : projection.statusTone === 'working' ? '#c77d13' : '#22845d',
     summary: projection.summary,
     status: packStatus(projection.statusTone, projection.statusLabel),
@@ -40,7 +40,7 @@ export const processPlantPresentation: PackPresentationContribution = {
     const data = parseUnitData(object)
     if (data) return presentationForUnit(object, data)
     return {
-      categoryId: 'unknown', icon: 'unknown', color: '#667085', summary: object.operational.status,
+      categoryId: 'unknown', icon: 'circle-question-mark', color: '#667085', summary: object.operational.status,
       status: packStatus('idle', object.operational.status),
       fields: [packField('warning', 'Warning', 'Object is outside the process-plant Pack vocabulary')],
     }

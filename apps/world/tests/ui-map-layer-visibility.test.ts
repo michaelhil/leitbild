@@ -34,13 +34,11 @@ const emptySnapshot = (): OperationalRenderSnapshot => ({
       signature: 'object-line',
     },
   ],
-  areas: [],
   areaSymbols: [],
   placementPoints: [],
   revisions: {
     points: 1,
     paths: 1,
-    areas: 1,
     areaSymbols: 1,
     placement: 1,
   },

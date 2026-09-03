@@ -152,7 +152,6 @@ export interface PackMapFeature {
   readonly geometry: GeoJsonGeometry
   readonly selection?: { readonly panelId: string; readonly itemId: string }
   readonly anchorPoint?: GeoJsonPoint
-  readonly animation?: PackMapFeatureAnimation
   readonly symbol?: PackMapFeatureSymbol
   readonly color: string
   readonly summary: string
@@ -161,15 +160,6 @@ export interface PackMapFeature {
   readonly lineOpacity?: number
   readonly lineWidth?: number
   readonly sortKey?: number
-}
-
-export interface PackMapFeatureAnimation {
-  readonly fromGeometry: GeoJsonPolygon
-  readonly toGeometry: GeoJsonPolygon
-  readonly fromAnchorPoint?: GeoJsonPoint
-  readonly toAnchorPoint?: GeoJsonPoint
-  readonly fromTime: IsoTimestamp
-  readonly toTime: IsoTimestamp
 }
 
 export interface PackMapFeatureSymbol {
@@ -187,14 +177,6 @@ export const packMapFeatureSchema = z
     geometry: geoJsonGeometrySchema,
     selection: z.object({ panelId: z.string().min(1), itemId: z.string().min(1) }).strict().optional(),
     anchorPoint: geoJsonPointSchema.optional(),
-    animation: z.object({
-    fromGeometry: geoJsonPolygonSchema,
-    toGeometry: geoJsonPolygonSchema,
-    fromAnchorPoint: geoJsonPointSchema.optional(),
-    toAnchorPoint: geoJsonPointSchema.optional(),
-    fromTime: isoTimestampSchema,
-    toTime: isoTimestampSchema,
-  }).strict().optional(),
     symbol: z.object({
     icon: z.string().min(1),
     tone: z.enum(['ready', 'working', 'error', 'idle']).optional(),

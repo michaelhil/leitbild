@@ -1,40 +1,10 @@
-export type IconName = 'ambulance' | 'hospital' | 'crash' | 'plus' | 'x' | 'stop' | 'weather' | 'plant' | 'drone' | 'grid'
-
-const paths: Readonly<Record<IconName, string>> = {
-  ambulance: '<path d="M10 10H6"/><path d="M14 18V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12"/><path d="M14 9h4l3 3v6h-7"/><path d="M6 18H3"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/><path d="M8 6v4"/><path d="M6 8h4"/>',
-  hospital: '<path d="M12 6v4"/><path d="M10 8h4"/><path d="M14 14h.01"/><path d="M14 18h.01"/><path d="M10 14h.01"/><path d="M10 18h.01"/><path d="M18 10h.01"/><path d="M18 14h.01"/><path d="M18 18h.01"/><path d="M6 10h.01"/><path d="M6 14h.01"/><path d="M6 18h.01"/><path d="M18 2H6a2 2 0 0 0-2 2v18h16V4a2 2 0 0 0-2-2Z"/>',
-  crash: '<path d="m13 2-2 8 7-4-4 8 8-2-8 4 4 7-7-5-2 8-2-8-7 5 4-7-8-4 8 2-4-8 7 4z"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>',
-  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
-  stop: '<rect width="14" height="14" x="5" y="5" rx="2"/>',
-  weather: '<path d="M17.5 19H9a6 6 0 1 1 5.6-8.2A4.5 4.5 0 1 1 17.5 19Z"/><path d="M8 22v-1"/><path d="M12 22v-1"/><path d="M16 22v-1"/>',
-  plant: '<path d="M3 21h18"/><path d="M5 21V9l5 3V9l5 3V7h4v14"/><path d="M9 17h1"/><path d="M14 17h1"/><path d="M18 17h1"/><path d="M18 7V3h-3v4"/>',
-  // Lucide `plane` (pointing up); rotation by heading lands in B.4.
-  drone: '<path d="M12 12h.01"/><path d="M12 8v8"/><path d="M8 12h8"/><path d="m9 9-3-3"/><path d="m15 9 3-3"/><path d="m9 15-3 3"/><path d="m15 15 3 3"/><circle cx="5" cy="5" r="3"/><circle cx="19" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><circle cx="12" cy="12" r="2"/>',
-  grid: '<path d="M6 3v18"/><path d="M18 3v18"/><path d="M3 8h18"/><path d="M3 16h18"/><circle cx="6" cy="8" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="6" cy="16" r="2"/><circle cx="18" cy="16" r="2"/><path d="M8 8h8"/><path d="M8 16h8"/>',
-}
-
-export const isIconName = (name: string): name is IconName =>
-  Object.hasOwn(paths, name)
-
-export const iconHtml = (name: IconName, options: {
-  readonly size?: number
-  readonly className?: string
-  readonly title?: string
-} = {}): string => {
+import common from '../core/map-symbols/common.json'
+export type IconName = keyof typeof common
+export const isIconName = (name: string): name is IconName => Object.hasOwn(common, name)
+const escape = (text: string) => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;')
+export const iconHtml = (name: IconName, options: { size?: number; className?: string; title?: string } = {}): string => {
   const size = options.size ?? 20
-  const cls = options.className ? ` class="${options.className}"` : ''
-  const title = options.title ? `<title>${options.title}</title>` : ''
-  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"${cls}>${title}${paths[name]}</svg>`
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="${escape(options.className ?? '')}">${options.title ? '<title>' + escape(options.title) + '</title>' : ''}${common[name]}</svg>`
 }
-
-export const iconSvgDataUrl = (name: IconName, options: {
-  readonly stroke: string
-  readonly size?: number
-  readonly strokeWidth?: number
-}): string => {
-  const size = options.size ?? 40
-  const strokeWidth = options.strokeWidth ?? 2.2
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${options.stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${paths[name]}</svg>`
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
-}
+export const iconSvgDataUrl = (name: IconName, options: { stroke: string; size?: number; strokeWidth?: number }): string =>
+  'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${options.size ?? 40}" height="${options.size ?? 40}" viewBox="0 0 24 24" fill="none" stroke="${escape(options.stroke)}" stroke-width="${options.strokeWidth ?? 2.2}" stroke-linecap="round" stroke-linejoin="round">${common[name]}</svg>`)

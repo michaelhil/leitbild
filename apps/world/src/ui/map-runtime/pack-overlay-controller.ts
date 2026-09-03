@@ -18,7 +18,6 @@ export interface PackOverlayControllerConfig {
   readonly enabled: () => boolean
   readonly loadFeatures: (context: PackOverlayControllerRefreshContext) => Promise<ReadonlyArray<PackMapFeature>>
   readonly setFeatures: (features: ReadonlyArray<PackMapFeature>) => void
-  readonly onFeaturesChanged: () => void
   readonly onError: (message: string) => void
   readonly performanceDiagnostics: MapPerformanceDiagnostics
   readonly refreshIntervalMs?: number
@@ -71,6 +70,8 @@ const requestKeyFor = (config: {
   viewportKeyFor(config.viewport, config.zoom),
   String(Math.floor(config.zoom * 4) / 4),
   timeBucketKey(config.currentTime),
+  // Evidence expiry and other wall-clock presentation can change while simulation time is paused.
+  String(Math.floor(Date.now() / 60000)),
   config.sourceRevisionKey,
 ].join('|')
 
@@ -110,7 +111,6 @@ export const createPackOverlayController = (
       details: [],
     })
     disabledReadyReported = Boolean(runtime)
-    config.onFeaturesChanged()
   }
 
   const abort = (reason: string): void => {
@@ -183,8 +183,7 @@ export const createPackOverlayController = (
           { label: 'Zoom', value: zoom.toFixed(2) },
         ],
       })
-      config.onFeaturesChanged()
-    } catch (err) {
+      } catch (err) {
       if (serial !== requestSerial) return
       const message = err instanceof Error ? err.message : String(err)
       runtime.reportDiagnosticPhase({

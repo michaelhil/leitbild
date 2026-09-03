@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ExternalRecord } from '../model.ts'
-  const { media }: { media: NonNullable<ExternalRecord['media']> } = $props()
+  const { media, observedAt, title }: { media: ExternalRecord['media'][number]; observedAt?: string; title: string } = $props()
   let requested = $state(false)
   let video = $state<HTMLVideoElement | null>(null)
   let error = $state('')
@@ -26,7 +26,11 @@
     return () => { active = false; destroy?.(); element.removeAttribute('src'); element.load() }
   })
 </script>
-{#if !requested}<button onclick={() => requested = true}>Load media from provider</button><p>Playback contacts the provider directly. Availability, embedding permission and browser CORS rules apply.</p>
+<h4>{media.label ?? media.format}</h4>
+{#if observedAt}<small>Provider image/record updated {new Date(observedAt).toLocaleString()}. This is not a guarantee of a live video frame.</small>{/if}
+{#if media.available === false}<p role="status">Provider reports this media unavailable.</p>{/if}
+{#if !requested}<button onclick={() => { requested = true; error = '' }}>Load {media.format === 'image' ? 'image' : 'media'} from provider</button><p>Contacts the provider directly. Availability, embedding permission and browser CORS rules apply.</p>
+{:else if media.format === 'image'}{#key observedAt}<img src={media.url} alt={title} referrerpolicy="no-referrer" onerror={() => error = 'Image could not be loaded from the provider'} />{/key}
 {:else if media.format === 'youtube'}
   {@const url = youtubeEmbed(media.url)}
   {#if url}<iframe title="External video" src={url} sandbox="allow-scripts allow-same-origin allow-presentation" allow="fullscreen; encrypted-media" referrerpolicy="strict-origin-when-cross-origin"></iframe>{:else}<p role="alert">Use a YouTube video, live or short URL with a video ID.</p>{/if}
@@ -38,4 +42,4 @@
 {/if}
 {#if requested}<button onclick={() => requested = false}>Unload media</button>{/if}
 {#if error}<p role="alert">{error}</p>{/if}
-<style>video,audio,iframe{width:100%;border:0}video,iframe{aspect-ratio:16/9;background:#000}p{font-size:12px;color:#94a3b8}[role=alert]{color:#f87171}button{padding:7px;color:inherit;background:transparent;border:1px solid #64748b;border-radius:5px}</style>
+<style>video,audio,iframe,img{width:100%;border:0}video,iframe{aspect-ratio:16/9;background:#000}p,small{font-size:12px;color:#94a3b8}[role=alert]{color:#f87171}button{padding:7px;color:inherit;background:transparent;border:1px solid #64748b;border-radius:5px}h4{margin:14px 0 6px}</style>

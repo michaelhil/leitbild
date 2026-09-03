@@ -13,6 +13,8 @@
       "toolGrants": [
         { "capabilityId": "world.simulation-run.context" },
         { "capabilityId": "world.situation-monitor.adapters" },
+        { "capabilityId": "world.map.symbols" },
+        { "capabilityId": "world.situation-monitor.catalogue.discover" },
         { "capabilityId": "world.situation-monitor.source.probe" },
         { "capabilityId": "world.situation-monitor.status" },
         { "capabilityId": "world.situation-monitor.records.search" },

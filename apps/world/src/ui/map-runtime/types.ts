@@ -62,18 +62,6 @@ export interface OperationalPathFeature {
   readonly signature: string
 }
 
-export interface OperationalAreaFeature {
-  readonly id: string
-  readonly layerId: string
-  readonly polygon: GeoJsonPolygon
-  readonly color: ColorRgba
-  readonly lineColor: ColorRgba
-  readonly opacity: number
-  readonly lineWidthPx: number
-  readonly sortKey: number
-  readonly signature: string
-}
-
 export interface OperationalSymbolFeature {
   readonly layerId: string
   readonly id: string
@@ -100,13 +88,11 @@ export interface OperationalRenderInput {
 export interface OperationalRenderSnapshot {
   readonly points: ReadonlyArray<OperationalPointFeature>
   readonly paths: ReadonlyArray<OperationalPathFeature>
-  readonly areas: ReadonlyArray<OperationalAreaFeature>
   readonly areaSymbols: ReadonlyArray<OperationalSymbolFeature>
   readonly placementPoints: ReadonlyArray<Position3>
   readonly revisions: {
     readonly points: number
     readonly paths: number
-    readonly areas: number
     readonly areaSymbols: number
     readonly placement: number
   }

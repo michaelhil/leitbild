@@ -35,7 +35,7 @@ const presentationForGrid = (object: OperationalObject): PackObjectPresentation 
   if (!data) {
     return {
       categoryId: 'electric-grids',
-      icon: 'grid',
+      icon: 'network',
       color: '#64748b',
       summary: 'Invalid Grid data',
       status: packStatus('error', 'Invalid data'),
@@ -45,7 +45,7 @@ const presentationForGrid = (object: OperationalObject): PackObjectPresentation 
   const projection = data.projection
   return {
     categoryId: 'electric-grids',
-    icon: 'grid',
+    icon: 'network',
     color: projection.statusTone === 'error' ? '#dc2626' : projection.statusTone === 'working' ? '#d97706' : '#0f766e',
     summary: projection.summary,
     status: packStatus(projection.statusTone, projection.statusLabel),

@@ -3,19 +3,19 @@
   import { recordsPageSchema } from '../capabilities.ts'
   import type { ExternalRecord } from '../model.ts'
   import { invokeSituation } from './client.ts'
-  const { simulationRunId, sourceId, dataRevision }: { simulationRunId: SimulationRunId; sourceId: string; dataRevision: number } = $props()
+  const { simulationRunId, sourceId, subjectId, dataRevision }: { simulationRunId: SimulationRunId; sourceId: string; subjectId: string; dataRevision: number } = $props()
   let records = $state<ExternalRecord[]>([]), error = $state(''), selected = $state(''), limited = $state(false)
   const quantityKey = (measure: { id: string; unit: string }) => JSON.stringify([measure.id, measure.unit])
   const quantities = $derived([...new Map(records.flatMap(record => record.measurements.map(measure => [quantityKey(measure), measure] as const))).values()])
   const quantity = $derived(quantities.find(item => quantityKey(item) === selected) ?? quantities[0])
-  const points = $derived(records.flatMap(record => { const measure = record.measurements.find(item => item.id === quantity?.id && item.unit === quantity?.unit); return measure ? [{ at: Date.parse(record.validAt ?? record.publishedAt ?? record.retrievedAt), value: measure.value }] : [] }).sort((a,b) => a.at - b.at))
+  const points = $derived(records.flatMap(record => { const measure = record.measurements.find(item => item.id === quantity?.id && item.unit === quantity?.unit); return measure ? [{ at: Date.parse(record.validAt ?? record.observedAt ?? record.publishedAt ?? record.retrievedAt), value: measure.value }] : [] }).sort((a,b) => a.at - b.at))
   const low = $derived(Math.min(...points.map(point => point.value))), high = $derived(Math.max(...points.map(point => point.value)))
   const path = $derived(points.map(point => `${20 + 330 * (point.at - points[0]!.at) / (points.at(-1)!.at - points[0]!.at || 1)},${130 - 110 * (point.value - low) / (high - low || 1)}`).join(' '))
   const forecast = $derived(records.length > 0 && records.every(record => record.kind === 'forecast'))
   $effect(() => {
     dataRevision
     let active = true
-    void invokeSituation('records.search', { sourceId, limit: 200 }, { simulationRunId }).then(recordsPageSchema.parse).then(page => { if (active) { records = page.records; limited = page.hasMore; error = '' } }).catch(cause => { if (active) error = String(cause) })
+    void invokeSituation('records.search', { sourceId, subjectId, limit: 200 }, { simulationRunId }).then(recordsPageSchema.parse).then(page => { if (active) { records = page.records; limited = page.hasMore; error = '' } }).catch(cause => { if (active) error = String(cause) })
     return () => { active = false }
   })
 </script>

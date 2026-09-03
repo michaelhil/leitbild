@@ -119,7 +119,7 @@
   let mapInputDebugEntries = $state<ReadonlyArray<string>>([])
   let mapInputDebugSummary = $state('Waiting for map input')
   let cachedPackMapFeatures = $state<ReadonlyArray<PackMapFeature>>([])
-  const packFeatureLayer = createPackFeatureLayer(selection => { if (!placementMode) onPackFeatureSelected(selection) })
+  const packFeatureLayer = createPackFeatureLayer(selection => { if (!placementMode) onPackFeatureSelected(selection) }, message => onMapError(message))
   const syncPackFeatures = () => { if (runtime) packFeatureLayer.update(runtime.map, cachedPackMapFeatures, visibleFamilies()) }
   let appliedTheme: ThemeMode | null = null
   let appliedCameraKey: string | null = null
@@ -290,10 +290,6 @@
     loadFeatures: context => mapFeaturesFor(context),
     setFeatures: features => {
       cachedPackMapFeatures = features
-    },
-    onFeaturesChanged: () => {
-      operationalRenderController.syncAreaFeatures()
-      syncPackFeatures()
     },
     onError: message => {
       onMapError(message)
