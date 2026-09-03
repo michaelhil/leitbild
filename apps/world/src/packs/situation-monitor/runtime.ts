@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { isMapSymbol } from '../../core/map-symbols/catalog.ts'
 import { nowIso, type CommandResult } from '../../core/model/index.ts'
 import type { PackRuntimeAdapter, PackRuntimeEventHandler, PackWorkspaceCapability } from '../../simulation/protocol.ts'
-import { describeSourceAdapters, roadDatasets } from './adapters/catalog.ts'
+import { describeSourceAdapters, recordForSource, roadDatasets } from './adapters/catalog.ts'
 import { XMLParser, XMLValidator } from 'fast-xml-parser'
 import { decodeSource } from './adapters/decode.ts'
 import { sourceRequestUrl } from './adapters/catalog.ts'
@@ -37,7 +37,7 @@ export const situationWorkspaceCapabilities: ReadonlyArray<PackWorkspaceCapabili
       if (response && response.status !== 200) throw new Error('Source probe returned HTTP ' + response.status)
       if (response?.headers['cache-control']?.includes('no-store')) throw new Error('Provider disallows caching this source')
       const observedAt = new Date().toISOString(), records = decodeSource(source, response?.text ?? '', observedAt)
-      return { records: records.slice(0, 5), count: records.length, observedAt }
+      return { records: records.slice(0, 5).map(record => recordForSource(record, source)), count: records.length, observedAt }
     } finally { activeProbes-- }
   },
 }, {
@@ -116,7 +116,7 @@ export const createSituationMonitorRuntimeAdapter = (): PackRuntimeAdapter => ({
     const statuses = (): SourceStatus[] => state.config.sources.map(source => leases.get(source.id)?.status() ?? { sourceId: source.id, state: 'paused', lastAttemptAt: null, lastSuccessAt: service.store.metadata(collectionKey(source)).lastSuccessAt ?? null, nextAttemptAt: null, recordCount: service.store.count(collectionKey(source)), error: null })
     const decorate = (record: ExternalRecord): ExternalRecord => {
       const source = state.config.sources.find(item => item.id === record.sourceId)!
-      return { ...record, attribution: source.attribution || record.attribution, ...(source.adapter === 'met-forecast' || source.adapter === 'media' ? { title: source.name } : {}) }
+      return recordForSource(record, source)
     }
     const search = (input: z.infer<typeof recordSearchSchema>, mapAt?: number) => {
       const page = service.store.search(state.config.sources.filter(source => mapAt === undefined || source.map.visible).map(source => ({ id: source.id, key: collectionKey(source) })), input, state.config.areas, mapAt)
@@ -153,7 +153,7 @@ export const createSituationMonitorRuntimeAdapter = (): PackRuntimeAdapter => ({
           const input = z.object({ sourceId: z.string(), recordId: z.string() }).parse(query.input)
           const source = state.config.sources.find(source => source.id === input.sourceId)
           const record = source ? service.store.inspect(collectionKey(source), input.recordId) : null
-          if (!record) throw new Error('External record is not retained or its source was removed')
+          if (!record) return null
           return decorate({ ...record, sourceId: input.sourceId })
         }
         throw new Error('Unknown Situation Monitor query: ' + query.capabilityId)

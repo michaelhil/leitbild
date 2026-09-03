@@ -30,7 +30,7 @@
     const request = ++sequence
     loading = true
     const inspecting = selected
-    const inspection = inspecting ? invokeSituation<ExternalRecord>('record.inspect', { sourceId: inspecting.sourceId, recordId: inspecting.id }, { simulationRunId }).catch(cause => ({ unavailable: String(cause) })) : Promise.resolve(null)
+    const inspection = inspecting ? invokeSituation<ExternalRecord | null>('record.inspect', { sourceId: inspecting.sourceId, recordId: inspecting.id }, { simulationRunId }).catch(cause => ({ error: String(cause) })) : Promise.resolve(null)
     try {
       const [nextStatus, nextPage, nextSelected] = await Promise.all([
         invokeSituation('status', {}, { simulationRunId }).then(situationStatusSchema.parse),
@@ -39,8 +39,9 @@
       ])
       if (disposed || request !== sequence) return
       status = nextStatus; page = nextPage; error = ''
-      if (selected?.id === inspecting?.id && selected?.sourceId === inspecting?.sourceId && nextSelected) {
-        if ('unavailable' in nextSelected) { selected = null; notice = 'Selected evidence is no longer available: ' + nextSelected.unavailable }
+      if (inspecting && selected?.id === inspecting.id && selected?.sourceId === inspecting.sourceId) {
+        if (nextSelected === null) { selected = null; notice = 'Selected evidence is no longer retained or its source was removed.' }
+        else if ('error' in nextSelected) error = 'Could not refresh selected evidence; showing the last retrieved record. ' + nextSelected.error
         else selected = nextSelected
       }
     } catch (cause) { if (!disposed && request === sequence) error = String(cause) }
@@ -91,7 +92,7 @@
     if (!selectedItemId) return
     const [sourceId, recordId] = JSON.parse(selectedItemId) as [string, string]
     let active = true
-    void invokeSituation<ExternalRecord>('record.inspect', { sourceId, recordId }, { simulationRunId }).then(record => { if (active) { selected = record; tab = 'records' } }).catch(cause => { if (active) error = String(cause) })
+    void invokeSituation<ExternalRecord | null>('record.inspect', { sourceId, recordId }, { simulationRunId }).then(record => { if (active) { selected = record; tab = 'records'; if (record === null) notice = 'Selected evidence is no longer retained or its source was removed.' } }).catch(cause => { if (active) error = String(cause) })
     return () => { active = false }
   })
 </script>

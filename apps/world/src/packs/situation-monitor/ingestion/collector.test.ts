@@ -45,3 +45,43 @@ test('shared media identity does not depend on the first local source name or ID
   try { await Bun.sleep(20); expect(first.key).toBe(second.key); expect(first.status().recordCount).toBe(1); expect(first.status().state).toBe('ready') }
   finally { await first.release(); await second.release(); await collector.close() }
 })
+
+test('polling follows the fastest current subscriber and recomputes after the final lease reopens', async () => {
+  const store = openRecordStore(':memory:')
+  let calls = 0
+  const collector = createCollector(store, async () => { calls++; return { status: 200, text: body, headers: {} } })
+  const item = { ...source('cadence'), intervalSeconds: 86400 }
+  const slow = collector.acquire(item, () => {})
+  await Bun.sleep(20)
+  const fast = collector.acquire({ ...item, id: 'fast', intervalSeconds: 60 }, () => {})
+  const delay = () => Date.parse(fast.status().nextAttemptAt!) - Date.parse(fast.status().lastAttemptAt!)
+  expect(delay()).toBe(60000)
+  await fast.refresh()
+  expect(calls).toBe(1) // A shorter interval is not permission to bypass its minimum.
+  await fast.release()
+  expect(Date.parse(slow.status().nextAttemptAt!) - Date.parse(slow.status().lastAttemptAt!)).toBe(86400000)
+  await slow.release()
+  const reopened = collector.acquire({ ...item, intervalSeconds: 60 }, () => {})
+  try {
+    expect(Date.parse(reopened.status().nextAttemptAt!) - Date.parse(reopened.status().lastAttemptAt!)).toBe(60000)
+    expect(calls).toBe(1)
+  } finally { await reopened.release(); await collector.close() }
+})
+
+test('faster subscriptions and reopen preserve provider cache and retry deadlines', async () => {
+  for (const status of [200, 429]) {
+    const store = openRecordStore(':memory:')
+    const collector = createCollector(store, async () => ({ status, text: status === 200 ? body : '', headers: status === 200 ? { 'cache-control': 'max-age=7200' } : { 'retry-after': '7200' } }))
+    const item = { ...source('provider-cadence-' + status), intervalSeconds: 86400 }
+    const slow = collector.acquire(item, () => {})
+    await Bun.sleep(20)
+    const fast = collector.acquire({ ...item, id: 'fast', intervalSeconds: 60 }, () => {})
+    const deadline = fast.status().nextAttemptAt
+    expect(Date.parse(deadline!) - Date.now()).toBeGreaterThan(7199000)
+    expect(Date.parse(deadline!) - Date.now()).toBeLessThanOrEqual(7200000)
+    await fast.release(); await slow.release()
+    const reopened = collector.acquire({ ...item, intervalSeconds: 60 }, () => {})
+    try { expect(reopened.status().nextAttemptAt).toBe(deadline) }
+    finally { await reopened.release(); await collector.close() }
+  }
+})

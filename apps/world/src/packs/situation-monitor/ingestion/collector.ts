@@ -31,7 +31,7 @@ export const providerWaitSeconds = (headers: Readonly<Record<string, string>>, n
 }
 interface Entry {
   source: SituationSource; listeners: Map<symbol, () => void>; status: SourceStatus;
-  intervals: Map<symbol, number>; failures: number;
+  intervals: Map<symbol, number>; failures: number; notBefore: number;
   timer?: ReturnType<typeof setTimeout>; pending?: Promise<void>; abort?: AbortController
 }
 // One process-wide origin gate. Shared quotas apply even to different Workspaces.
@@ -40,20 +40,27 @@ let activeRequests = 0
 export const createCollector = (store: RecordStore, http: PublicHttp = publicHttp, withGrowth: (bytes: number, work: () => Promise<void>) => Promise<void> = async (_bytes, work) => await work()) => {
   const entries = new Map<string, Entry>()
   const notify = (entry: Entry) => { for (const listener of entry.listeners.values()) { try { listener() } catch (error) { console.error('Situation Monitor subscriber failed', error) } } }
+  const updateDeadline = (entry: Entry) => {
+    const lastAttempt = entry.status.lastAttemptAt ? Date.parse(entry.status.lastAttemptAt) : 0
+    const pollingDue = lastAttempt ? lastAttempt + Math.max(entry.source.intervalSeconds, minimumIntervalFor(entry.source)) * 1000 : 0
+    const due = Math.max(entry.notBefore, pollingDue)
+    entry.status.nextAttemptAt = due ? new Date(due).toISOString() : null
+  }
   const collect = async (key: string, entry: Entry): Promise<void> => {
     if (entry.pending || !entry.listeners.size) return
+    updateDeadline(entry)
     const now = Date.now(), next = entry.status.nextAttemptAt ? Date.parse(entry.status.nextAttemptAt) : 0
     if (now < next) return
     const origin = new URL(sourceRequestUrl(entry.source)).origin
     for (const [key, until] of originNextRequest) if (until <= now) originNextRequest.delete(key)
     const earliest = Math.max(originNextRequest.get(origin) ?? 0, activeRequests >= 4 ? now + 1000 : now)
-    if (earliest > now) { entry.status.nextAttemptAt = new Date(earliest).toISOString(); return }
+    if (earliest > now) { entry.notBefore = Math.max(entry.notBefore, earliest); updateDeadline(entry); return }
     originNextRequest.set(origin, now + 1000) // At most one start/second/origin, four requests in flight.
     entry.abort = new AbortController()
     activeRequests++
     entry.status = { ...entry.status, state: 'loading', lastAttemptAt: new Date(now).toISOString(), error: null }
     entry.pending = (async () => {
-      let waitSeconds = Math.max(entry.source.intervalSeconds, minimumIntervalFor(entry.source))
+      let providerNotBefore = 0
       let changed = false
       try {
         store.cleanup()
@@ -62,7 +69,8 @@ export const createCollector = (store: RecordStore, http: PublicHttp = publicHtt
         const response = entry.source.adapter === 'media' ? null : await http(sourceRequestUrl(entry.source), { signal: entry.abort!.signal, etag: cached ? metadata.etag : undefined, modifiedSince: cached ? metadata.modifiedSince : undefined, bearer: credentialFor(entry.source) })
         if (!entry.listeners.size) return // Last lease closed while the request was in flight.
         const headers = response?.headers ?? {}, unchanged = response?.status === 304
-        waitSeconds = Math.max(waitSeconds, providerWaitSeconds(headers, Date.now()))
+        const responseAt = Date.now()
+        providerNotBefore = responseAt + providerWaitSeconds(headers, responseAt) * 1000
         if (headers['cache-control']?.includes('no-store')) throw new Error('Provider disallows caching; this source cannot be retained by Situation Monitor')
         if (response && response.status !== 200 && !unchanged) throw new Error('Provider HTTP ' + response.status)
         if (unchanged && !cached) throw new Error('Provider returned unchanged content without an available cached snapshot')
@@ -75,23 +83,27 @@ export const createCollector = (store: RecordStore, http: PublicHttp = publicHtt
         if (!entry.listeners.size) return
         store.touch(key, entry.source.retentionHours)
         const lastSuccessAt = new Date().toISOString()
-        const nextAttemptAt = new Date(Date.now() + waitSeconds * 1000 + Math.random() * 3000).toISOString()
-        store.setMetadata(key, { etag: headers.etag ?? (unchanged ? metadata.etag : undefined), modifiedSince: headers['last-modified'] ?? (unchanged ? metadata.modifiedSince : undefined), bodyHash, lastSuccessAt, nextAttemptAt, lastAttemptAt: entry.status.lastAttemptAt! })
-        entry.status = { ...entry.status, state: 'ready', lastSuccessAt, nextAttemptAt, recordCount: store.count(key), error: null }
+        entry.notBefore = providerNotBefore
+        store.setMetadata(key, { etag: headers.etag ?? (unchanged ? metadata.etag : undefined), modifiedSince: headers['last-modified'] ?? (unchanged ? metadata.modifiedSince : undefined), bodyHash, lastSuccessAt, nextAttemptAt: new Date(entry.notBefore).toISOString(), lastAttemptAt: entry.status.lastAttemptAt! })
+        entry.status = { ...entry.status, state: 'ready', lastSuccessAt, recordCount: store.count(key), error: null }
+        updateDeadline(entry)
         entry.failures = 0
       } catch (error) {
         if (!entry.listeners.size) return
         entry.failures++
-        waitSeconds = Math.max(waitSeconds, Math.min(3600, 30 * 2 ** Math.min(entry.failures, 7)))
-        entry.status = { ...entry.status, state: 'error', nextAttemptAt: new Date(Date.now() + waitSeconds * 1000).toISOString(), error: error instanceof Error ? error.message : String(error) }
-        try { store.setMetadata(key, { ...store.metadata(key), nextAttemptAt: entry.status.nextAttemptAt!, lastAttemptAt: entry.status.lastAttemptAt!, error: entry.status.error!, failures: entry.failures }) }
+        entry.notBefore = Math.max(providerNotBefore, Date.now() + Math.min(3600, 30 * 2 ** Math.min(entry.failures, 7)) * 1000)
+        entry.status = { ...entry.status, state: 'error', error: error instanceof Error ? error.message : String(error) }
+        updateDeadline(entry)
+        try { store.setMetadata(key, { ...store.metadata(key), nextAttemptAt: new Date(entry.notBefore).toISOString(), lastAttemptAt: entry.status.lastAttemptAt!, error: entry.status.error!, failures: entry.failures }) }
         catch (persistenceError) { console.error('Situation Monitor could not persist provider retry deadline', persistenceError) }
       } finally { if (changed) notify(entry) }
     })().finally(() => { activeRequests--; delete entry.pending; delete entry.abort })
     await entry.pending
   }
   const schedule = (key: string, entry: Entry): void => {
+    clearTimeout(entry.timer)
     if (!entry.listeners.size) return
+    updateDeadline(entry)
     const wait = Math.max(1000, (entry.status.nextAttemptAt ? Date.parse(entry.status.nextAttemptAt) : 0) - Date.now())
     entry.timer = setTimeout(async () => { await collect(key, entry); schedule(key, entry) }, Math.min(wait, 86400000))
   }
@@ -101,13 +113,14 @@ export const createCollector = (store: RecordStore, http: PublicHttp = publicHtt
       let entry = entries.get(key)
       if (!entry) {
         const metadata = store.metadata(key)
-        entry = { source, listeners: new Map(), intervals: new Map(), failures: metadata.failures ?? 0, status: { sourceId: source.id, state: metadata.error ? 'error' : store.hasSnapshot(key) ? 'ready' : metadata.lastSuccessAt ? 'stale' : 'idle', lastAttemptAt: metadata.lastAttemptAt ?? null, lastSuccessAt: metadata.lastSuccessAt ?? null, nextAttemptAt: metadata.nextAttemptAt ?? null, recordCount: store.count(key), error: metadata.error ?? null } }
+        entry = { source, listeners: new Map(), intervals: new Map(), failures: metadata.failures ?? 0, notBefore: Date.parse(metadata.nextAttemptAt ?? '') || 0, status: { sourceId: source.id, state: metadata.error ? 'error' : store.hasSnapshot(key) ? 'ready' : metadata.lastSuccessAt ? 'stale' : 'idle', lastAttemptAt: metadata.lastAttemptAt ?? null, lastSuccessAt: metadata.lastSuccessAt ?? null, nextAttemptAt: null, recordCount: store.count(key), error: metadata.error ?? null } }
         entries.set(key, entry)
       }
       entry.listeners.set(token, onChange)
       entry.intervals.set(token, source.intervalSeconds)
       entry.source = { ...entry.source, intervalSeconds: Math.min(...entry.intervals.values()) }
-      if (entry.listeners.size === 1) { void collect(key, entry); schedule(key, entry) }
+      if (entry.listeners.size === 1) void collect(key, entry)
+      schedule(key, entry)
       const acquired = entry
       return {
         key,
@@ -117,7 +130,7 @@ export const createCollector = (store: RecordStore, http: PublicHttp = publicHtt
         release: async () => {
           acquired.listeners.delete(token)
           acquired.intervals.delete(token)
-          if (acquired.listeners.size) { acquired.source = { ...acquired.source, intervalSeconds: Math.min(...acquired.intervals.values()) }; return }
+          if (acquired.listeners.size) { acquired.source = { ...acquired.source, intervalSeconds: Math.min(...acquired.intervals.values()) }; schedule(key, acquired); return }
           clearTimeout(acquired.timer); acquired.abort?.abort()
           await acquired.pending
           if (!acquired.listeners.size && entries.get(key) === acquired) entries.delete(key)

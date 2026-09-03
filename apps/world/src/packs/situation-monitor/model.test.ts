@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { decodeSource } from './adapters/decode.ts'
-import { describeSourceAdapters } from './adapters/catalog.ts'
-import { situationSourceSchema, situationConfigSchema, intersectsBounds, externalRecordSchema, recordSearchSchema, externalGeometrySchema } from './model.ts'
+import { describeSourceAdapters, recordForSource } from './adapters/catalog.ts'
+import { situationSourceSchema, situationConfigSchema, intersectsBounds, externalRecordSchema, recordSearchSchema, externalGeometrySchema, boundsSchema } from './model.ts'
 import { recordMapFeatures, watchedAreaFeatures } from './map.ts'
 import { isPublicAddress, publicHttp } from './ingestion/public-http.ts'
-import { createCollector, providerWaitSeconds } from './ingestion/collector.ts'
+import { createCollector, providerWaitSeconds, collectionKey } from './ingestion/collector.ts'
 import { openRecordStore } from './ingestion/store.ts'
 
 const now = '2026-09-03T12:00:00.000Z'
@@ -21,6 +21,29 @@ describe('Situation Monitor source boundary', () => {
   test('rejects duplicate IDs and credential-bearing URLs', () => {
     expect(() => situationConfigSchema.parse({ sources: [rss, rss] })).toThrow('unique')
     expect(() => situationSourceSchema.parse({ ...rss, url: 'https://example.com/?api_key=secret' })).toThrow('Credentials')
+  })
+  test('bounds validation is shared by sources, watched areas and queries; multipart geometry cannot be empty', () => {
+    for (const bounds of [[0, 20, 1, 10], [0, 10, 1, 10]]) {
+      expect(boundsSchema.safeParse(bounds).success).toBe(false)
+      expect(recordSearchSchema.safeParse({ bounds }).success).toBe(false)
+      expect(situationSourceSchema.safeParse({ ...rss, adapter: 'vegvesen', dataset: 'cameras', bounds }).success).toBe(false)
+      expect(situationConfigSchema.safeParse({ areas: [{ id: 'area', name: 'Area', bounds }] }).success).toBe(false)
+    }
+    expect(boundsSchema.parse([170, -10, -170, 10])).toEqual([170, -10, -170, 10])
+    for (const type of ['MultiPoint', 'MultiLineString', 'MultiPolygon']) expect(externalGeometrySchema.safeParse({ type, coordinates: [] }).success).toBe(false)
+  })
+  test('shared snapshots preserve provider provenance and derive each source label and override on read', () => {
+    const first = situationSourceSchema.parse({ id: 'first', name: 'First station', adapter: 'met-forecast', point: [10, 60], attribution: 'Custom citation' })
+    const second = { ...first, id: 'second', name: 'Second station', attribution: '' }
+    expect(collectionKey(first)).toBe(collectionKey(second))
+    const [record] = decodeSource(first, JSON.stringify({ properties: { meta: { units: {} }, timeseries: [{ time: now, data: { instant: { details: {} } } }] } }), now)
+    expect(record!.attribution).toBe('api.met.no')
+    expect(record!.subject?.label).toBe('10, 60')
+    expect(recordForSource(record!, first)).toMatchObject({ sourceId: 'first', title: 'First station', attribution: 'Custom citation', subject: { id: '10,60', label: 'First station' } })
+    expect(recordForSource(record!, second)).toMatchObject({ sourceId: 'second', title: 'Second station', attribution: 'api.met.no', subject: { id: '10,60', label: 'Second station' } })
+    expect(recordForSource(record!, { ...second, name: 'Renamed' }).subject?.label).toBe('Renamed')
+    expect(recordForSource({ ...record!, attribution: 'Another Run’s override' }, second).attribution).toBe('api.met.no')
+    expect(record!.attribution).toBe('api.met.no')
   })
   test('parses RSS without inventing a location', () => { const [record] = decodeSource(rss, xml, now); expect(record!.title).toBe('Tokyo report'); expect(record!.geometry).toBeUndefined(); expect(record!.publishedAt).toBe(now) })
   test('parses Atom and rejects non-feed, entity and unsafe-link input', () => {

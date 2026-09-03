@@ -6,7 +6,9 @@ import { externalRecordSchema, geometryBounds, longitudeIntervals, recordSearchS
 
 export interface CollectionMetadata {
   etag?: string | undefined; modifiedSince?: string | undefined; bodyHash?: string | undefined
-  lastSuccessAt?: string | undefined; lastAttemptAt?: string | undefined; nextAttemptAt?: string | undefined
+  lastSuccessAt?: string | undefined; lastAttemptAt?: string | undefined
+  /** Durable provider/backoff floor; the collector derives local polling due from its current subscribers. */
+  nextAttemptAt?: string | undefined
   error?: string | undefined; failures?: number | undefined
 }
 

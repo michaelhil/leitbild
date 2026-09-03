@@ -1,14 +1,14 @@
 import { XMLParser, XMLValidator } from 'fast-xml-parser'
 import { externalRecordSchema, type ExternalRecord, type SituationSource } from '../model.ts'
-import { sourceRequestUrl } from './catalog.ts'
+import { providerAttributionFor, sourceRequestUrl } from './catalog.ts'
 
 import { object, array, text, plain, atPath, timestamp, stableId, identity, geometry, linkedUrl } from './values.ts'
 import { decodeNorwegianFeature, foldTrafficRecords } from './norway.ts'
 
 export const decodeSource = (source: SituationSource, body: string, retrievedAt: string): ExternalRecord[] => {
   const requestUrl = sourceRequestUrl(source)
-  const base = { sourceId: source.id, attribution: source.attribution || new URL(requestUrl).hostname, retrievedAt }
-  if (source.adapter === 'media') return [externalRecordSchema.parse({ ...base, id: identity(source.url), kind: 'media', title: source.name, url: source.url, media: [{ format: source.format, url: source.url }], ...(source.point ? { geometry: { type: 'Point', coordinates: source.point } } : {}) })]
+  const base = { sourceId: source.id, attribution: providerAttributionFor(source), retrievedAt }
+  if (source.adapter === 'media') return [externalRecordSchema.parse({ ...base, id: identity(source.url), kind: 'media', title: new URL(source.url).hostname, url: source.url, media: [{ format: source.format, url: source.url }], ...(source.point ? { geometry: { type: 'Point', coordinates: source.point } } : {}) })]
   if (source.adapter === 'rss') {
     if (/<!DOCTYPE|<!ENTITY/i.test(body.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '').replace(/<!--[\s\S]*?-->/g, ''))) throw new Error('XML declarations with document types or entities are not accepted')
     if ((body.match(/</g)?.length ?? 0) > 100000) throw new Error('XML feed contains too many elements')
@@ -45,7 +45,7 @@ export const decodeSource = (source: SituationSource, body: string, retrievedAt:
         if (symbol) intervals[window] = symbol
         for (const [id, value] of Object.entries(object(period.details))) measurements.push({ id: window + '.' + id, value, unit: text(units[id]) || 'unspecified' })
       }
-      return externalRecordSchema.parse({ ...base, id: validAt, kind: 'forecast', title: source.name, summary: 'Provider forecast, not a measurement or simulated condition. next_N_hours quantities describe intervals beginning at the valid time.', url: requestUrl, publishedAt: updatedAt, updatedAt, validAt, subject: { id: source.point.join(','), label: source.name }, geometry: { type: 'Point', coordinates: source.point }, measurements, details: intervals })
+      return externalRecordSchema.parse({ ...base, id: validAt, kind: 'forecast', title: 'Forecast at ' + source.point.join(', '), summary: 'Provider forecast, not a measurement or simulated condition. next_N_hours quantities describe intervals beginning at the valid time.', url: requestUrl, publishedAt: updatedAt, updatedAt, validAt, subject: { id: source.point.join(','), label: source.point.join(', ') }, geometry: { type: 'Point', coordinates: source.point }, measurements, details: intervals })
     })
   }
   if (parsed.type !== 'FeatureCollection' || !Array.isArray(parsed.features)) throw new Error('Expected a GeoJSON FeatureCollection')
@@ -55,8 +55,8 @@ export const decodeSource = (source: SituationSource, body: string, retrievedAt:
   const records = parsed.features.map(raw => {
     const feature = object(raw), props = object(feature.properties)
     if (feature.type !== 'Feature') throw new Error('Invalid GeoJSON feature')
-    const geo = geometry(feature.geometry)
     if (source.adapter === 'met-alerts' || source.adapter === 'vegvesen') return decodeNorwegianFeature(source, feature, base, requestUrl)
+    const geo = geometry(feature.geometry)
     if (source.adapter === 'usgs') {
       if (!text(feature.id)) throw new Error('Earthquake record has no upstream ID')
       const coordinates = object(feature.geometry).coordinates

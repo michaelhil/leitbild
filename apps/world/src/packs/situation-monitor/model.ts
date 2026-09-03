@@ -5,6 +5,7 @@ export const situationRuntimeId = 'situation-monitor-local'
 export const sourceIdSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/)
 export const coordinateSchema = z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)])
 export const boundsSchema = z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90), z.number().min(-180).max(180), z.number().min(-90).max(90)])
+  .refine(bounds => bounds[1] < bounds[3], 'South must be below north; west > east is permitted for dateline-crossing areas')
 export const watchedAreaSchema = z.object({ id: sourceIdSchema, name: z.string().min(1).max(120), bounds: boundsSchema }).strict()
 export const sourceUrlSchema = z.url().max(2048).superRefine((value, ctx) => {
   const url = new URL(value)
@@ -43,7 +44,6 @@ export const situationConfigSchema = z.object({
   sources: z.array(situationSourceSchema).max(40).default([]),
 }).strict().superRefine((config, ctx) => {
   for (const key of ['sources', 'areas'] as const) if (new Set(config[key].map(item => item.id)).size !== config[key].length) ctx.addIssue({ code: 'custom', path: [key], message: 'IDs must be unique' })
-  config.areas.forEach((area, index) => { if (area.bounds[1] >= area.bounds[3]) ctx.addIssue({ code: 'custom', path: ['areas', index, 'bounds'], message: 'South must be below north; west > east is permitted for dateline-crossing areas' }) })
 })
 export type SituationConfig = z.infer<typeof situationConfigSchema>
 
@@ -53,8 +53,8 @@ export const externalGeometrySchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('LineString'), coordinates: z.array(coordinateSchema).min(2).max(10000) }).strict(),
   z.object({ type: z.literal('Polygon'), coordinates: z.array(ring).min(1).max(100) }).strict(),
   z.object({ type: z.literal('MultiPoint'), coordinates: z.array(coordinateSchema).min(1).max(10000) }).strict(),
-  z.object({ type: z.literal('MultiLineString'), coordinates: z.array(z.array(coordinateSchema).min(2).max(10000)).max(100) }).strict(),
-  z.object({ type: z.literal('MultiPolygon'), coordinates: z.array(z.array(ring).min(1).max(100)).max(100) }).strict(),
+  z.object({ type: z.literal('MultiLineString'), coordinates: z.array(z.array(coordinateSchema).min(2).max(10000)).min(1).max(100) }).strict(),
+  z.object({ type: z.literal('MultiPolygon'), coordinates: z.array(z.array(ring).min(1).max(100)).min(1).max(100) }).strict(),
 ]).superRefine((geometry, ctx) => {
   let count = 0
   const visit = (value: unknown): void => { if (!Array.isArray(value)) return; if (typeof value[0] === 'number') count++; else value.forEach(visit) }

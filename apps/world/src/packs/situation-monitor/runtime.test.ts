@@ -11,7 +11,7 @@ import { scenarioDefinitionSchema } from '../../core/scenarios/definition.ts'
 import { createDirectRoutingAdapter } from '../../routing/direct-adapter.ts'
 import { createSituationMonitorRuntimeAdapter } from './runtime.ts'
 import { situationMonitorPack } from './pack.ts'
-import { situationStatusSchema } from './capabilities.ts'
+import { situationStatusSchema, situationCapabilities } from './capabilities.ts'
 import { situationSourceSchema } from './model.ts'
 import type { ActorId } from '../../core/model/index.ts'
 
@@ -38,5 +38,9 @@ test('monitor-only Run uses native compilation, persists edits, isolates sibling
     expect(restored.snapshot().objects).toEqual([])
     await registry.delete(second.id)
     expect((await restored.invokeCapability(actor, { capabilityId: 'world.situation-monitor.records.search', input: {} })).result).toMatchObject({ records: [], total: 0 })
+    const missing = await restored.invokeCapability(actor, { capabilityId: 'world.situation-monitor.record.inspect', input: { sourceId: source.id, recordId: 'not-retained' } })
+    expect(missing.result).toBeNull()
+    expect(situationCapabilities.find(capability => capability.id === 'world.situation-monitor.record.inspect')!.output.parse(missing.result)).toBeNull()
+    expect((await restored.invokeCapability(actor, { capabilityId: 'world.situation-monitor.record.inspect', input: { sourceId: 'removed-source', recordId: 'not-retained' } })).result).toBeNull()
   } finally { await registry.shutdown(); await rm(dataDir, { recursive: true, force: true }) }
 })

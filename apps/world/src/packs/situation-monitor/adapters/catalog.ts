@@ -1,4 +1,4 @@
-import { situationSourceSchema, type SituationSource } from '../model.ts'
+import { situationSourceSchema, type ExternalRecord, type SituationSource } from '../model.ts'
 export const sourceAdapters = [
   { id: 'rss', title: 'RSS / Atom', description: 'Headlines and permitted feed excerpts. Stories without locations remain in the list.', modalities: ['report'], minimumIntervalSeconds: 60, defaultParameters: { url: '' } },
   { id: 'geojson', title: 'GeoJSON', description: 'Points, lines and areas. Configure JSON Pointers (including array indices and literal dots) for title, time, ID and original link.', modalities: ['feature'], minimumIntervalSeconds: 60, defaultParameters: { url: '', mapping: { id: '/id', title: '/properties/title', time: '/properties/time', url: '/properties/url' } } },
@@ -27,3 +27,14 @@ export const sourceRequestUrl = (source: SituationSource): string => {
   if (source.bounds) url.searchParams.set('bbox', source.bounds.join(',') + ',EPSG:4326')
   return url.href
 }
+
+// Current adapters attribute the provider endpoint, not per-record authorship.
+// Keep this policy shared by normalization and presentation: local source overrides never enter shared provenance.
+export const providerAttributionFor = (source: SituationSource): string => new URL(sourceRequestUrl(source)).hostname
+export const recordForSource = (record: ExternalRecord, source: SituationSource): ExternalRecord => ({
+  ...record,
+  sourceId: source.id,
+  attribution: source.attribution || providerAttributionFor(source),
+  ...(source.adapter === 'met-forecast' || source.adapter === 'media' ? { title: source.name } : {}),
+  ...(source.adapter === 'met-forecast' && record.subject ? { subject: { ...record.subject, label: source.name } } : {}),
+})
