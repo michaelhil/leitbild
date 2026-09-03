@@ -2,7 +2,7 @@ import type { WorkspaceId } from '@leitbild/contracts'
 import { createOperationScope, createStorageBudget } from '@leitbild/module-runtime'
 import type { ProcedureSourceService } from '../../features/procedures/source.ts'
 import type { PackRuntimeAdapter } from '../../simulation/protocol.ts'
-import type { CompiledScenario,SimulationRunId } from '../model/index.ts'
+import type { CompiledScenario } from '../model/index.ts'
 import type { ScenarioAuthoringCatalog } from '../scenarios/authoring.ts'
 import type { ScenarioDefinition } from '../scenarios/definition.ts'
 import type { ScenarioRuntimeResolver } from '../scenarios/runtime-resolver.ts'
@@ -49,22 +49,6 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
   if (!Number.isSafeInteger(maxLoadedWorkspaces) || maxLoadedWorkspaces < 1) throw new Error('maxLoadedWorkspaces must be a positive integer')
   const lifecycle = createKeyedOperations<WorkspaceId>()
   let shuttingDown = false
-  let fastForwardingRun: { readonly workspaceId: WorkspaceId; readonly runId: SimulationRunId } | null = null
-  const acquireFastForwardAdmission = (workspaceId: WorkspaceId, runId: SimulationRunId): (() => void) => {
-    if (fastForwardingRun !== null) {
-      const sameWorkspace = fastForwardingRun.workspaceId === workspaceId
-      throw Object.assign(new Error(sameWorkspace
-        ? `Another Simulation Run in this Workspace is already fast-forwarding: ${fastForwardingRun.runId}`
-        : 'Fast-forward capacity is currently in use by another Workspace'), {
-        code: 'fast_forward_capacity_exceeded',
-        ...(sameWorkspace ? { activeRunId: fastForwardingRun.runId } : {}),
-      })
-    }
-    const admission = { workspaceId, runId }
-    fastForwardingRun = admission
-    return () => { if (fastForwardingRun === admission) fastForwardingRun = null }
-  }
-
   const build = (workspaceId: WorkspaceId): WorldWorkspaceRuntime => ({
     workspaceId,
     simulationRuns: createSimulationRunRegistry({
@@ -76,7 +60,6 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
       compileScenarioDefinition: config.compileScenarioDefinition,
       scenarioAuthoringCatalog: config.scenarioAuthoringCatalog,
       runtimeAdapters: config.runtimeAdapters,
-      acquireFastForwardAdmission: runId => acquireFastForwardAdmission(workspaceId, runId),
       ...(config.idleRuntimeCloseDelayMs === undefined ? {} : { idleRuntimeCloseDelayMs: config.idleRuntimeCloseDelayMs }),
       ...(config.procedureSourceService === undefined ? {} : { procedureSourceService: config.procedureSourceService }),
     }),

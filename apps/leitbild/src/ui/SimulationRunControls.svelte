@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import type { ModuleCapabilityDescriptor, ModuleResourceDescriptor } from '@leitbild/contracts'
-  import { jsonRequest, request, type RequestError } from './api.ts'
+  import { jsonRequest, request } from './api.ts'
 
   interface RunClock {
     readonly currentTime: string
@@ -107,12 +107,7 @@
     actionError = ''
     try { await action() }
     catch (cause) {
-      const error = cause as RequestError
       actionError = cause instanceof Error ? cause.message : String(cause)
-      const activeRunId = typeof error.details?.activeRunId === 'string' ? error.details.activeRunId : null
-      if (activeRunId && resources.some(candidate => candidate.ref.id === activeRunId)) {
-        actionError = `${actionError}. Switch to the active Run from the header.`
-      }
       reportError(actionError)
     } finally {
       actionBusy = false
@@ -198,7 +193,7 @@
 </script>
 
 <div class="run-controls" aria-label="Simulation controls">
-  <div class="family-control">
+  {#if family.length > 1}<div class="family-control">
     <button class="family-trigger" type="button" aria-haspopup="true" aria-expanded={familyOpen} onclick={() => { familyOpen = !familyOpen }} title={resource.title}>
       <span class="family-label">{resource.title}</span><span aria-hidden="true">⌄</span>
     </button>
@@ -212,7 +207,7 @@
         {/each}
       </div>
     {/if}
-  </div>
+  </div>{:else}<span class="run-title" title={resource.title}>{resource.title}</span>{/if}
   <button type="button" disabled={actionBusy || !capabilityAvailable('world.simulation-run.copy')} onclick={openCopyDialog} title="Copy this Run" aria-label="Copy this Run"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
   <button type="button" disabled={!execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set')} onclick={togglePlay} title={execution?.mode === 'paused' ? 'Play in realtime' : 'Pause simulation'} aria-label={execution?.mode === 'paused' ? 'Play in realtime' : 'Pause simulation'}>{#if execution?.mode === 'paused'}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8z"/></svg>{:else}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>{/if}</button>
   <button class:active={execution?.mode === 'fast-forward'} type="button" disabled={!execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set')} onclick={toggleFastForward} title={execution?.mode === 'fast-forward' ? 'Stop fast-forward and pause' : 'Fast-forward at maximum speed'} aria-label={execution?.mode === 'fast-forward' ? 'Stop fast-forward and pause' : 'Fast-forward at maximum speed'}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 5 9 7-9 7zM12 5l9 7-9 7z"/></svg></button>
@@ -249,6 +244,7 @@
   button svg { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .clock { min-width: 112px; padding: 0 .25rem; color: #cbd6cc; font: 600 .74rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; white-space: nowrap; } .clock small { margin-left: .28rem; color: #8ec6ff; font-size: .64rem; } .clock.fast { color: #d8ecff; }
   .family-control { position: relative; min-width: 0; } .family-trigger { max-width: min(250px, 24vw); display: flex; align-items: center; gap: .35rem; font-size: .7rem; } .family-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .run-title { max-width: min(250px, 24vw); overflow: hidden; color: #dfe8dc; font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
   .family-menu { position: absolute; z-index: 80; top: calc(100% + .4rem); right: 0; width: min(360px, calc(100vw - 2rem)); padding: .35rem; border: 1px solid #647168; border-radius: 9px; background: #18231c; box-shadow: 0 14px 38px #0008; }
   .family-menu > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-radius: 6px; } .family-menu > div.current { background: #2a3d30; }
   .family-member { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; background: transparent; text-align: left; } .family-delete { border: 0; color: #d8a7a3; background: transparent; font-size: 1rem; }
@@ -262,5 +258,5 @@
   fieldset { margin-top: 1rem !important; padding: .7rem .8rem; display: flex; gap: 1rem; border: 1px solid #cbd5c9; border-radius: 8px; } fieldset legend { padding: 0 .25rem; color: #4c584e; font-size: .78rem; font-weight: 650; } label.choice { display: flex; align-items: center; gap: .35rem; font-size: .8rem; }
   .progress { margin-top: 1rem; padding: .8rem; display: grid; gap: .25rem; border: 1px solid #65a9ea; border-radius: 8px; background: #fff; box-shadow: inset 3px 0 #3988d1; font-size: .8rem; }
   .actions { margin-top: .85rem; display: flex; justify-content: flex-end; gap: .5rem; } .control-dialog .actions button { min-height: 38px; padding: .5rem .8rem; border-color: #aeb9ad; color: #213026; background: #fff; } .control-dialog .actions button.primary { border-color: #263c2b; color: #f5fff2; background: #263c2b; }
-  .hint { font-size: .72rem; line-height: 1.4; } @media (max-width: 760px) { .family-control { display: none; } .clock { min-width: 96px; } }
+  .hint { font-size: .72rem; line-height: 1.4; } @media (max-width: 760px) { .family-control, .run-title { display: none; } .clock { min-width: 96px; } }
 </style>

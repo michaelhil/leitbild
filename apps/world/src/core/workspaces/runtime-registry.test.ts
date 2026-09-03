@@ -53,6 +53,30 @@ describe('World Workspace runtime registry', () => {
     expect(await second.simulationRuns.listKnown()).toHaveLength(1)
   })
 
+  test('runs independent Runs and Workspaces in fast-forward concurrently', async () => {
+    const { registry } = await createRegistry()
+    const first = (await registry.provision(newWorkspaceId())).runtime
+    const second = (await registry.provision(newWorkspaceId())).runtime
+    const firstRun = await first.simulationRuns.create({ scenarioId: 'test-response' })
+    const siblingRun = await first.simulationRuns.create({ scenarioId: 'test-response' })
+    const secondRun = await second.simulationRuns.create({ scenarioId: 'test-response' })
+
+    const [firstState, siblingState, secondState] = await Promise.all([
+      first.simulationRuns.setExecutionMode(firstRun.id, 'fast-forward'),
+      first.simulationRuns.setExecutionMode(siblingRun.id, 'fast-forward'),
+      second.simulationRuns.setExecutionMode(secondRun.id, 'fast-forward'),
+    ])
+
+    expect(firstState.mode).toBe('fast-forward')
+    expect(siblingState.mode).toBe('fast-forward')
+    expect(secondState.mode).toBe('fast-forward')
+    await Promise.all([
+      first.simulationRuns.setExecutionMode(firstRun.id, 'paused'),
+      first.simulationRuns.setExecutionMode(siblingRun.id, 'paused'),
+      second.simulationRuns.setExecutionMode(secondRun.id, 'paused'),
+    ])
+  })
+
   test('distinguishes unloading from destructive Module removal', async () => {
     const { dataDir, registry } = await createRegistry()
     const workspaceId = newWorkspaceId()

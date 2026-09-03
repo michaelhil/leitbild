@@ -129,7 +129,6 @@ export const createSimulationRunRegistry = (config: {
   readonly storageBudget?: StorageBudget
   readonly idleRuntimeCloseDelayMs?: number
   readonly procedureSourceService?: ProcedureSourceService
-  readonly acquireFastForwardAdmission?: (runId: SimulationRunId) => () => void
 }): SimulationRunRegistry => {
   const simulationRuns = new Map<SimulationRunId, SimulationRunRuntime>()
   const lifecycle = createKeyedOperations<SimulationRunId>()
@@ -665,13 +664,7 @@ export const createSimulationRunRegistry = (config: {
     if (!manifest) throw new Error(`Simulation Run not found: ${id}`)
     const liveRuntimes = manifest.runtimes.filter(candidate => candidate.clock === 'live')
     if (liveRuntimes.length > 0) throw Object.assign(new Error(`Fast-forward cannot synthesize future live observations: ${liveRuntimes.map(candidate => candidate.id).join(', ')}`), { code: 'fast_forward_unsupported' })
-    const releaseAdmission = config.acquireFastForwardAdmission?.(id) ?? (() => {})
-    try {
-      if (!currentClock.paused) currentClock = await runtime.setClock({ paused: true, speed: 1 })
-    } catch (error) {
-      releaseAdmission()
-      throw error
-    }
+    if (!currentClock.paused) currentClock = await runtime.setClock({ paused: true, speed: 1 })
     const releaseLease = acquireLease(id, 'fast-forward')
     let finishJob!: () => void
     const controller: { stopRequested: boolean; nextMode: AdvanceCompletionMode; readonly done: Promise<void> } = {
@@ -702,7 +695,6 @@ export const createSimulationRunRegistry = (config: {
       fastForwardJobs.delete(id)
       executionStates.delete(id)
       releaseLease()
-      releaseAdmission()
       finishJob()
       throw error
     }
@@ -740,7 +732,6 @@ export const createSimulationRunRegistry = (config: {
     }).finally(() => {
       fastForwardJobs.delete(id)
       releaseLease()
-      releaseAdmission()
       finishJob()
     })
     void work

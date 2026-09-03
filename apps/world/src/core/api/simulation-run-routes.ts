@@ -347,10 +347,6 @@ export const handleSimulationRunApi = async (
     if (err instanceof Error && 'code' in err && err.code === 'history_unavailable') return apiError(503, 'history_unavailable', err.message)
     if (err instanceof Error && 'code' in err && err.code === 'simulation_run_busy') return apiError(409, 'simulation_run_busy', err.message)
     if (err instanceof Error && 'code' in err && err.code === 'simulation_run_failed') return apiError(409, 'simulation_run_failed', err.message)
-    if (err instanceof Error && 'code' in err && err.code === 'fast_forward_capacity_exceeded') {
-      const activeRunId = 'activeRunId' in err && typeof err.activeRunId === 'string' ? err.activeRunId : undefined
-      return apiError(503, 'fast_forward_capacity_exceeded', err.message, activeRunId === undefined ? undefined : { activeRunId })
-    }
     if (err instanceof Error && 'code' in err && err.code === 'fast_forward_unsupported') return apiError(422, 'fast_forward_unsupported', err.message)
     if (err instanceof SyntaxError) return apiError(400, 'invalid_json', err.message)
     if (err instanceof z.ZodError) return apiError(400, 'invalid_request', err.message)

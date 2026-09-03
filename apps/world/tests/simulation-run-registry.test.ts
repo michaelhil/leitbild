@@ -95,6 +95,25 @@ describe('Simulation Run registry', () => {
       expect(copy.snapshot().clock).toMatchObject({ paused: true, currentTime: paused.currentSimulationTime })
     } finally { await registry.shutdown() }
   })
+  test('copies a continuously fast-forwarding Run at a coherent boundary', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-copy-fast-forward-'))
+    const registry = createRegistry(dataDir)
+    try {
+      const source = await registry.create({ scenarioId: 'test-response' })
+      await registry.setExecutionMode(source.id, 'fast-forward')
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        if ((await registry.executionStatus(source.id)).fastForward?.simulatedMs) break
+        await Bun.sleep(10)
+      }
+
+      const copy = await registry.copy(source.id, { name: 'Live branch' })
+
+      expect(await registry.executionStatus(source.id)).toMatchObject({ mode: 'fast-forward' })
+      expect(await registry.executionStatus(copy.id)).toMatchObject({ mode: 'paused' })
+      expect(copy.snapshot().objects.length).toBeGreaterThan(0)
+      await registry.setExecutionMode(source.id, 'paused')
+    } finally { await registry.shutdown() }
+  })
   test('fast-forwards an existing running Run and admits commands at exact step boundaries', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-in-place-fast-forward-'))
     const registry = createRegistry(dataDir)
