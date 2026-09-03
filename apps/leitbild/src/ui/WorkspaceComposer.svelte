@@ -27,9 +27,15 @@
   let agentsFrame = $state<HTMLIFrameElement | null>(null)
 
   const publishResourceFocus = (): void => {
+    const resource = focusedResource === null ? null : {
+      workspaceId: focusedResource.workspaceId,
+      moduleId: focusedResource.moduleId,
+      type: focusedResource.type,
+      id: focusedResource.id,
+    }
     agentsFrame?.contentWindow?.postMessage({
       type: 'leitbild:resource-focus',
-      resource: focusedResource,
+      resource,
     }, location.origin)
   }
 
