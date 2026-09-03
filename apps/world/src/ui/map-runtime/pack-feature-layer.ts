@@ -13,9 +13,15 @@ export const createPackFeatureLayer = (onSelect: (selection: NonNullable<PackMap
   let selectedId = ''
   let wantedIcons = new Set<string>()
   const registered = new Set<string>()
+  const showRegisteredIcons = () => {
+    if (map?.getLayer(layerIds[3]!)) map.setFilter(layerIds[3]!, ['all', ['==', ['geometry-type'], 'Point'], ['in', ['get', 'icon'], ['literal', [...registered].map(id => 'pack-icon:' + id)]]])
+  }
   const syncIcons = () => {
     if (!map || pending) return
     const target = map, ticket = generation
+    let reused = false
+    for (const id of wantedIcons) if (target.hasImage('pack-icon:' + id) && !registered.has(id)) { registered.add(id); reused = true }
+    if (reused) showRegisteredIcons()
     const missing = [...wantedIcons].filter(id => !target.hasImage('pack-icon:' + id))
     if (!missing.length) return
     pending = (async () => {
@@ -26,7 +32,11 @@ export const createPackFeatureLayer = (onSelect: (selection: NonNullable<PackMap
           if (!svg) throw new Error('No map artwork for icon: ' + id)
           const image = await rasterizeSymbol(svg)
           if (map !== target || generation !== ticket || !target.getSource(sourceId)) return
-          if (wantedIcons.has(id) && !target.hasImage('pack-icon:' + id)) { target.addImage('pack-icon:' + id, image, { pixelRatio: 2 }); registered.add(id) }
+          if (wantedIcons.has(id) && !target.hasImage('pack-icon:' + id)) {
+            target.addImage('pack-icon:' + id, image, { pixelRatio: 2 })
+            registered.add(id)
+            showRegisteredIcons()
+          }
         }
       } catch (error) { if (map === target) onError(String(error)) }
       finally {
@@ -62,16 +72,21 @@ export const createPackFeatureLayer = (onSelect: (selection: NonNullable<PackMap
       const source = next.getSource(sourceId) as GeoJSONSource | undefined
       if (source) {
         if (signature !== nextSignature) { source.setData(data); signature = nextSignature }
-        for (const id of registered) if (!wantedIcons.has(id)) { if (next.hasImage('pack-icon:' + id)) next.removeImage('pack-icon:' + id); registered.delete(id) }
+        const unused = [...registered].filter(id => !wantedIcons.has(id))
+        for (const id of unused) registered.delete(id)
+        if (unused.length) showRegisteredIcons()
+        for (const id of unused) if (next.hasImage('pack-icon:' + id)) next.removeImage('pack-icon:' + id)
         syncIcons(); return
       }
-      generation++; signature = nextSignature
+      generation++; signature = nextSignature; registered.clear()
       next.addSource(sourceId, { type: 'geojson', data })
       const beforeLabels = next.getStyle().layers.find(layer => layer.type === 'symbol')?.id
       next.addLayer({ id: layerIds[0]!, type: 'fill', source: sourceId, filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': ['get','color'], 'fill-opacity': ['get','opacity'] } }, beforeLabels)
       next.addLayer({ id: layerIds[1]!, type: 'line', source: sourceId, filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': ['get','lineColor'], 'line-width': ['get','lineWidth'], 'line-opacity': ['get','lineOpacity'] } }, beforeLabels)
       next.addLayer({ id: layerIds[2]!, type: 'circle', source: sourceId, filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': ['case', ['!=', ['get','icon'], ''], 13, 6], 'circle-color': ['get','color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 1, 'circle-opacity': .9 } })
-      next.addLayer({ id: layerIds[3]!, type: 'symbol', source: sourceId, filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get','icon'], '']], layout: { 'icon-image': ['coalesce', ['image', ['get','icon']], ''], 'icon-size': ['*', .8, ['get','size']], 'icon-allow-overlap': true, 'icon-ignore-placement': true } })
+      // Admit a symbol only once its artwork exists. A missing-image expression can
+      // cache an empty result and never rediscover artwork registered asynchronously.
+      next.addLayer({ id: layerIds[3]!, type: 'symbol', source: sourceId, filter: ['==', ['get', 'icon'], ''], layout: { 'icon-image': ['get','icon'], 'icon-size': ['*', .8, ['get','size']], 'icon-allow-overlap': true, 'icon-ignore-placement': true } })
       syncIcons()
     },
     destroy() { map?.off('click', click); map = null; generation++; byId.clear(); registered.clear(); wantedIcons.clear() },
