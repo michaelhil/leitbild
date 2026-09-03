@@ -100,6 +100,18 @@ _Avoid_: Weather Probe, road-speed policy, reference-map layer
 A named point that samples Weather conditions in a Simulation Run without changing them.
 _Avoid_: Weather Influence, physical sensor feed unless a real source supplies it
 
+**Situation Monitor**:
+An optional World Pack for collecting, inspecting, and discussing externally reported situations across user-selected regions or the world. External reports remain distinct from simulated conditions and actions.
+_Avoid_: World Monitor integration, regional demo, simulation engine, treating an external report as verified physical truth
+
+**Situation Source**:
+A named, configurable external input selected by Situation Monitor, with an explicit provider or format and collection scope.
+_Avoid_: Pack, Operational Object, browser layer, separate Subscription entity
+
+**External Record**:
+A sourced report, event, measurement or media reference collected by Situation Monitor, retaining its provenance and time meaning independently of simulated state.
+_Avoid_: verified fact, simulated asset, historian sample as a universal content container
+
 **Ground Conditions**:
 Accumulated environmental surface state that can remain after a Weather Influence moves or stops, including wetness, standing water, snow, ice and frost.
 _Avoid_: atmospheric target, road friction coefficient, reference-map appearance
