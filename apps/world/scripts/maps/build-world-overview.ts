@@ -2,8 +2,6 @@ import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { $ } from 'bun'
 import { PMTiles, TileType } from 'pmtiles'
-import { VectorTile } from '@mapbox/vector-tile'
-import { PbfReader } from 'pbf'
 
 // Original provider data, public domain. Deliberately coarse global context, not routing or street detail.
 // Pin inputs for reproducible builds; updating this revision is an explicit data-publication decision.
@@ -41,8 +39,8 @@ try {
   if (header.tileType !== TileType.Mvt || !await archive.getZxy(0,0,0)) throw new Error('Invalid overview PMTiles')
   const metadata = await archive.getMetadata() as { vector_layers?: { id: string }[] }
   if (!['countries', 'places'].every(id => metadata.vector_layers?.some(layer => layer.id === id))) throw new Error('Overview must retain separate country geometry and place-label layers')
-  const worldTile = new VectorTile(new PbfReader(new Uint8Array((await archive.getZxy(0,0,0))!.data)))
-  if ((worldTile.layers.places?.length ?? 0) < 50) throw new Error('Overview country labels were unexpectedly thinned')
+  const worldTile = await $`tippecanoe-decode ${output} 0 0 0`.json() as { features: { properties: { layer: string }; features: unknown[] }[] }
+  if ((worldTile.features.find(layer => layer.properties.layer === 'places')?.features.length ?? 0) < 50) throw new Error('Overview country labels were unexpectedly thinned')
   await Bun.write(join(root, 'build.json'), JSON.stringify({ builtAt: new Date().toISOString(), provider: 'Natural Earth', license: 'Public domain', sourceRevision: revision, bytes: file.size, minZoom: header.minZoom, maxZoom: header.maxZoom }, null, 2))
   await rename(output, join(root, 'current.pmtiles'))
   console.log(`Published global overview: ${file.size} bytes at ${root}`)
