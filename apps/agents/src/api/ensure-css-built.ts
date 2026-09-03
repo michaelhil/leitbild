@@ -1,12 +1,10 @@
 // ============================================================================
-// CSS bootstrap — build src/ui/dist.css if missing OR stale before the HTTP
-// server starts serving. Lives here (not in scripts/dev.ts) so every launch
-// path (bun run start, bun --watch, preview tool, prod systemd, fresh
-// checkout) gets a built CSS regardless of how the server was started.
+// CSS bootstrap — build src/ui/dist.css if missing, and in mutable development
+// checkouts also when stale, before the HTTP server starts serving.
 //
-// Staleness: dist.css is stale iff any Tailwind-scannable source file under
-// src/ui is newer. We walk recursively rather than parsing @source patterns
-// in input.css — broader by design so the check survives @source additions.
+// Development staleness: dist.css is stale iff any Tailwind-scannable source
+// under src/ui is newer. Immutable deployment artifacts disable this check:
+// copy order changes mtimes and the deploy pipeline already built the CSS.
 // ============================================================================
 
 import { readdir, stat } from 'node:fs/promises'
@@ -17,6 +15,9 @@ export interface EnsureCssOptions {
   readonly uiPath: string
   // Override the CLI invocation. Tests can stub; production uses the default.
   readonly buildCommand?: ReadonlyArray<string>
+  // Immutable production releases already contain CSS built by the deploy
+  // pipeline. Their copied source mtimes do not describe build freshness.
+  readonly checkStaleness?: boolean
 }
 
 const DEFAULT_BUILD_COMMAND: ReadonlyArray<string> = [
@@ -83,7 +84,7 @@ export const ensureCssBuilt = async (opts: EnsureCssOptions): Promise<boolean> =
     reason = 'dist.css missing'
   }
 
-  if (!needBuild) {
+  if (!needBuild && opts.checkStaleness !== false) {
     const sourceMtime = await maxScannedMtime(opts.uiPath)
     if (sourceMtime > distMtime) {
       needBuild = true

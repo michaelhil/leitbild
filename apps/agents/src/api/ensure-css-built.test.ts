@@ -52,6 +52,19 @@ describe('ensureCssBuilt', () => {
     await expect(stat(markerPath)).rejects.toThrow()
   })
 
+  test('trusts packaged CSS when immutable-release mtimes are unrelated', async () => {
+    await writeFile(`${uiPath}/dist.css`, '/* packaged */')
+    const future = new Date(Date.now() + 60_000)
+    await utimes(`${uiPath}/input.css`, future, future)
+    const built = await ensureCssBuilt({
+      uiPath,
+      checkStaleness: false,
+      buildCommand: stubCommand(uiPath, markerPath),
+    })
+    expect(built).toBe(false)
+    await expect(stat(markerPath)).rejects.toThrow()
+  })
+
   test('rebuilds when dist.css is stale (older than input.css)', async () => {
     await writeFile(`${uiPath}/dist.css`, '/* stale */')
     // Bump input.css mtime so isStale returns true.
