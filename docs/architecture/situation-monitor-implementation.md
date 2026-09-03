@@ -27,11 +27,11 @@ Later scope remains unadvertised: CAP, fire detection, source-catalog discovery,
 - Generalized the existing Pack map-feature contract and removed the redundant Deck polygon rendering path. World map readiness now checks all declared basemap sources, including the global overview.
 - Preserved normal Run idle/background policy; monitoring does not introduce hidden always-on jobs or claim restart persistence.
 - Explicit source-to-Scenario save patches only Situation Monitor settings into the current Scenario, with revision checks. It does not re-save stale Plant/Grid parameters from the Run's pinned definition.
-- Real provider checks returned USGS events, NASA feed entries and Tokyo forecasts. The global overview is 1,301,016 bytes, with separately validated country and place-label layers. Retain this small label set and let the renderer handle collisions, rather than thinning away countries at build time.
+- Real provider checks returned USGS events, NASA feed entries and Tokyo forecasts. The global overview is about 1.3 MB, with separately validated country and place-label layers. Retain this small label set and let the renderer handle collisions, rather than thinning away countries at build time.
 
 ## Release verification — 3 September 2026
 
-Application release: `20260903T084740Z-6324de4c07-e29ff22de5`. Platform checks and builds passed. Tests: 18 contracts, 11 module runtime, 1,433 Agents (two existing skips), 635 World, 23 Host and one end-to-end integration; no failures.
+Application code: `8f3121d3`. Platform checks and builds passed. Tests: 18 contracts, 11 module runtime, 1,433 Agents (two existing skips), 635 World, 23 Host and one end-to-end integration; no failures.
 
 Verified in an isolated production Workspace:
 
