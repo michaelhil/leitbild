@@ -10,7 +10,10 @@ export const createRoutingAdapterFromEnv = (env: NodeJS.ProcessEnv = process.env
     if (!baseUrl) {
       throw new Error('LEITBILD_OSRM_URL is required when LEITBILD_ROUTING_PROVIDER=osrm')
     }
-    return createOsrmRoutingAdapter({ baseUrl })
+    const timeoutMs = env.LEITBILD_ROUTING_TIMEOUT_MS === undefined
+      ? undefined
+      : Number(env.LEITBILD_ROUTING_TIMEOUT_MS)
+    return createOsrmRoutingAdapter({ baseUrl, ...(timeoutMs === undefined ? {} : { timeoutMs }) })
   }
   throw new Error(`unsupported routing provider: ${provider}`)
 }

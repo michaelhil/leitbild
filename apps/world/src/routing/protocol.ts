@@ -3,6 +3,8 @@ import type { GeoJsonLineString, GeoJsonPoint, Meters } from '../core/model/inde
 export interface RouteRequest {
   readonly from: GeoJsonPoint
   readonly to: GeoJsonPoint
+  /** Cancels provider work; a cancelled request must never resolve with a route. */
+  readonly signal?: AbortSignal
 }
 
 export interface RouteResult {

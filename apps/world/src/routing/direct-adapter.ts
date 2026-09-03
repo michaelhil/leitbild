@@ -1,5 +1,5 @@
 import type { RoutingAdapter, RouteRequest, RouteResult } from './protocol.ts'
-import { meters } from '../core/model/index.ts'
+import { geoJsonPointSchema, meters } from '../core/model/index.ts'
 
 const distanceMeters = (request: RouteRequest): number => {
   const [fromLon, fromLat] = request.from.coordinates
@@ -13,11 +13,14 @@ const distanceMeters = (request: RouteRequest): number => {
 export const createDirectRoutingAdapter = (): RoutingAdapter => ({
   id: 'direct',
   route: async (request: RouteRequest): Promise<RouteResult> => {
-    const distanceM = distanceMeters(request)
+    request.signal?.throwIfAborted()
+    const from = geoJsonPointSchema.parse(request.from)
+    const to = geoJsonPointSchema.parse(request.to)
+    const distanceM = distanceMeters({ from, to })
     return {
       geometry: {
         type: 'LineString',
-        coordinates: [request.from.coordinates, request.to.coordinates],
+        coordinates: [from.coordinates, to.coordinates],
       },
       distanceM: meters(distanceM),
       durationSeconds: distanceM / 15,
