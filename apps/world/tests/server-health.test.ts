@@ -86,6 +86,12 @@ describe('server health', () => {
         expect(response.status).toBe(503) // Missing artifact, not an unregistered route.
         expect(await response.json()).toMatchObject({ error: 'vector map artifact unavailable' })
       }
+      await mkdir(join(dataDir, 'overview'))
+      await Bun.write(join(dataDir, 'overview', 'current.pmtiles'), '0123456789')
+      const ranged = await fetch(`http://127.0.0.1:${server.port}/map/tiles/overview.pmtiles`, { headers: { Range: 'bytes=2-5' } })
+      expect(ranged.status).toBe(206)
+      expect(ranged.headers.get('content-length')).toBe('4')
+      expect(await ranged.text()).toBe('2345')
     } finally { await server.stop(); await workspaces.shutdown(); await rm(dataDir, { recursive: true, force: true }) }
   })
   test('serves module worker assets with a JavaScript MIME type', () => {

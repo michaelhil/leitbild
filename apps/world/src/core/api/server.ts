@@ -156,14 +156,11 @@ const serveStatic = async (pathname: string, uiDistPath: string): Promise<Respon
 }
 
 const withSecurityHeaders = (response: Response): Response => {
-  const headers = new Headers(response.headers)
-  headers.set('Content-Security-Policy', frameAncestorsHeader)
-  headers.delete('X-Frame-Options')
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  })
+  // Keep the original body: reconstructing a Bun file response from its stream
+  // discards a sliced file's offsets and serves the whole archive for a range.
+  response.headers.set('Content-Security-Policy', frameAncestorsHeader)
+  response.headers.delete('X-Frame-Options')
+  return response
 }
 
 export const createServer = (config: ServerConfig): { readonly stop: () => Promise<void>; readonly port: number } => {
