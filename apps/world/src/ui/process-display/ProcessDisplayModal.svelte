@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { ClipboardList, Eye, Play, X, Zap } from 'lucide-svelte'
+  import { ClipboardList, Eye, Play, Timer, X, Zap } from 'lucide-svelte'
   import type { SimulationRunId, OperationalObject } from '../../core/model/index.ts'
   import { processPlantActionInvokeCommandKind } from '../../packs/process-plant/command-kinds.ts'
   import type { CompiledProcessDisplay, ProcessDisplayValue } from '../../packs/process-plant/displays/index.ts'
@@ -43,6 +43,8 @@
     readonly procedureSummaries?: ProcedureRunSummaryGroup
     readonly windowOffsetIndex?: number
     readonly openProcedureSystemAt: (summary?: ProcedureRunSummary) => void
+    readonly openAcceleration: () => void
+    readonly accelerationRunning?: boolean
     readonly close: () => void
   }
 
@@ -54,6 +56,8 @@
     procedureSummaries = emptyProcedureRunSummaries,
     windowOffsetIndex = 0,
     openProcedureSystemAt,
+    openAcceleration,
+    accelerationRunning = false,
     close,
   }: Props = $props()
 
@@ -430,6 +434,17 @@
             </div>
           {/if}
         </div>
+        <button
+          type="button"
+          class="process-display-icon-button"
+          class:active={accelerationRunning}
+          aria-label="Open accelerated copy"
+          aria-pressed={accelerationRunning}
+          title={accelerationRunning ? 'Accelerated execution is running' : 'Create or continue an accelerated copy'}
+          onclick={openAcceleration}
+        >
+          <Timer size={17} aria-hidden="true" />
+        </button>
         <button
           type="button"
           class="process-display-icon-button"

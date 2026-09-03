@@ -1312,6 +1312,11 @@ body.rail-resizing {
   font-size: 0;
 }
 
+.process-display-statusbar .process-display-icon-button[aria-pressed="true"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
 .process-display-lens-menu {
   position: absolute;
   z-index: 5;

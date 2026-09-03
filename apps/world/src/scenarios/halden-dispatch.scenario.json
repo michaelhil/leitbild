@@ -51,7 +51,7 @@
             "trauma"
           ],
           "crewReady": true,
-          "mobilizationSeconds": 60,
+          "mobilizationSeconds": 0,
           "sceneSeconds": 480
         },
         {
@@ -68,7 +68,7 @@
             "trauma"
           ],
           "crewReady": true,
-          "mobilizationSeconds": 90,
+          "mobilizationSeconds": 0,
           "sceneSeconds": 480
         },
         {
@@ -188,6 +188,50 @@
   ],
   "timeline": {
     "cues": [
+      {
+        "id": "dispatch-collision-response",
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 0
+        },
+        "title": "Halden 1 responding to the E6 collision",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.ambulance.dispatch",
+            "input": {
+              "ambulanceId": "amb:halden-1",
+              "incidentId": "incident:e6-collision",
+              "patientIds": [
+                "patient:collision-1"
+              ],
+              "destinationId": "care:kalnes"
+            }
+          }
+        ]
+      },
+      {
+        "id": "dispatch-tistedal-response",
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 0
+        },
+        "title": "Halden 2 responding to the Tistedal call",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.ambulance.dispatch",
+            "input": {
+              "ambulanceId": "amb:halden-2",
+              "incidentId": "incident:tistedal-call",
+              "patientIds": [
+                "patient:tistedal"
+              ],
+              "destinationId": "care:halden-triage"
+            }
+          }
+        ]
+      },
       {
         "id": "later-call",
         "at": {

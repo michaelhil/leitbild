@@ -1711,6 +1711,8 @@
       procedureSummaries={procedureSummariesForObject(windowEntry.object)}
       windowOffsetIndex={windowEntry.index}
       openProcedureSystemAt={(summary?: ProcedureRunSummary) => openProcedureSystemAt(windowEntry.object, summary)}
+      {openAcceleration}
+      accelerationRunning={accelerationState?.status === 'running'}
       close={() => closeProcessDisplay(windowEntry.id)}
     />
   {/each}

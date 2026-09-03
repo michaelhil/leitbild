@@ -111,6 +111,31 @@ describe('Simulation Run registry', () => {
       expect(snapshot.objects.some(object => object.id === 'weather:halden-complex')).toBe(true)
     } finally { await registry.shutdown() }
   })
+  test('starts the Halden dispatch exercise with real responses underway and advances their routes', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-accelerated-dispatch-'))
+    const registry = createRegistry(dataDir)
+    try {
+      const source = await registry.create({ scenarioId: 'halden-dispatch' })
+      await source.setClock({ paused: true })
+      const sourceUnits = source.snapshot().objects.filter(object =>
+        object.packId === 'ambulance' && (object.packData as { type?: string }).type === 'ambulance')
+      const responding = sourceUnits.filter(object =>
+        (object.packData as { assignment?: { phase?: string } }).assignment?.phase === 'responding')
+      expect(responding.map(object => String(object.id)).sort()).toEqual(['amb:halden-1', 'amb:halden-2'])
+      expect(sourceUnits.find(object => object.id === 'amb:sarpsborg-1')?.operational.status).toBe('available')
+
+      const startingPoints = new Map(responding.map(object => [object.id, object.spatial.position?.point.coordinates]))
+      const { runtime: copy } = await registry.createAcceleratedCopy(source.id, { minutes: 0.1 })
+      for (let attempt = 0; attempt < 160; attempt += 1) {
+        if ((await registry.accelerationStatus(copy.id))?.status !== 'running') break
+        await Bun.sleep(25)
+      }
+      expect(await registry.accelerationStatus(copy.id)).toMatchObject({ status: 'completed' })
+      const moved = copy.snapshot().objects.filter(object => startingPoints.has(object.id)).some(object =>
+        JSON.stringify(object.spatial.position?.point.coordinates) !== JSON.stringify(startingPoints.get(object.id)))
+      expect(moved).toBe(true)
+    } finally { await registry.shutdown() }
+  })
   test('an unreadable compiled artifact does not hide healthy sibling Runs or rewrite retained state', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-run-unreadable-'))
     const workspaceId = newWorkspaceId()
