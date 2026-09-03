@@ -1,7 +1,7 @@
 import type { GeoJsonPoint, IsoTimestamp, ObjectId, OperationalObject } from '../../../core/model/index.ts'
 import { geoJsonPointSchema, geoPointFromLonLat } from '../../../core/model/index.ts'
 import { ambulanceItemSchema, type AmbulanceItem } from '../item-schemas.ts'
-import { ambulanceDataOf, ambulancePackId, incidentPackDataSchema, type AmbulanceDomainData } from '../model.ts'
+import { activeAssignmentStop, ambulanceDataOf, ambulancePackId, incidentPackDataSchema, type AmbulanceDomainData } from '../model.ts'
 import { ambulanceSimAdapterId } from './constants.ts'
 
 export interface ItemConstructionContext {
@@ -53,15 +53,19 @@ export const validateAmbulanceObject = (object: OperationalObject): OperationalO
   if (data.type !== 'patient' && !object.spatial.position?.point) throw new Error(`${object.id}: positioned asset requires a canonical point`)
   if (data.type === 'ambulance' && data.assignment) {
     const a = data.assignment
+    if (a.activeStopIndex >= a.stops.length) throw new Error(`${object.id}: active stop is outside the response plan`)
     if (new Set(a.patientIds).size !== a.patientIds.length) throw new Error(`${object.id}: duplicate assignment patients`)
     if (a.patientIds.length > data.patientCapacity) throw new Error(`${object.id}: assignment exceeds patient capacity`)
     if (a.phaseStartedAtMs < a.startedAtMs || (a.phaseDueAtMs !== undefined && a.phaseDueAtMs < a.phaseStartedAtMs)) throw new Error(`${object.id}: inconsistent assignment timestamps`)
     if (['mobilizing', 'on-scene', 'handover'].includes(a.phase) && a.phaseDueAtMs === undefined) throw new Error(`${object.id}: timed phase requires deadline`)
     if (['mobilizing', 'responding', 'transporting', 'returning'].includes(a.phase) && !a.leg) throw new Error(`${object.id}: movement phase requires prepared route`)
     if (a.leg && (a.leg.progressMs > a.leg.durationMs || (a.leg.distanceM > 0 && a.leg.durationMs <= 0))) throw new Error(`${object.id}: invalid route progress or duration`)
-    if (a.phase === 'returning' ? a.patientIds.length > 0 || a.incidentId !== undefined || a.destinationId !== undefined : !a.incidentId || a.patientIds.length === 0) throw new Error(`${object.id}: inconsistent assignment purpose`)
-    if (['transporting', 'queued', 'handover'].includes(a.phase) && !a.destinationId) throw new Error(`${object.id}: transport requires a care site`)
-    if (a.onwardRoute && !a.destinationId) throw new Error(`${object.id}: onward route has no destination`)
+    const stop = activeAssignmentStop(a)
+    if (a.phase === 'returning' ? stop.kind !== 'return-base' || a.patientIds.length > 0 : stop.kind === 'return-base' || a.patientIds.length === 0) throw new Error(`${object.id}: inconsistent assignment purpose`)
+    if (['mobilizing', 'responding', 'on-scene'].includes(a.phase) && stop.kind !== 'pickup') throw new Error(`${object.id}: response phase requires a pickup stop`)
+    if (['transporting', 'queued', 'handover'].includes(a.phase) && stop.kind !== 'handover') throw new Error(`${object.id}: transport phase requires a handover stop`)
+    const plannedPickups = new Set(a.stops.flatMap(entry => entry.kind === 'pickup' ? entry.patientIds : []))
+    if (a.patientIds.some(id => !plannedPickups.has(id))) throw new Error(`${object.id}: assigned patient has no pickup stop`)
   }
   if (data.type === 'patient') {
     if (data.disposition === 'delivered' && (data.holder.kind !== 'care-site' || data.completedAtMs === undefined)) throw new Error(`${object.id}: delivered patient requires completed care-site handover`)
@@ -89,16 +93,22 @@ export const validateAmbulanceObjects = (objects: readonly OperationalObject[]):
     }
     if (data.type !== 'ambulance' || !data.assignment) continue
     const a = data.assignment
-    if (a.incidentId && index.get(a.incidentId)?.type !== 'incident') throw new Error(`${object.id}: assignment incident does not exist`)
-    if (a.destinationId && index.get(a.destinationId)?.type !== 'care-site') throw new Error(`${object.id}: assignment care site does not exist`)
+    for (const stop of a.stops) {
+      if (stop.kind === 'pickup' && index.get(stop.targetId)?.type !== 'incident') throw new Error(`${object.id}: pickup incident does not exist`)
+      if (stop.kind === 'handover' && index.get(stop.targetId)?.type !== 'care-site') throw new Error(`${object.id}: handover care site does not exist`)
+    }
+    const activeStop = activeAssignmentStop(a)
     for (const id of a.patientIds) {
       if (reserved.has(id)) throw new Error(`${id}: patient is reserved by more than one unit`)
       reserved.add(id)
       const patient = index.get(id)
       if (patient?.type !== 'patient') throw new Error(`${object.id}: assignment patient does not exist: ${id}`)
-      if (patient.incidentId !== a.incidentId || patient.disposition !== 'active') throw new Error(`${object.id}: assignment contains a completed or unrelated patient`)
+      const pickup = a.stops.find(stop => stop.kind === 'pickup' && stop.patientIds.includes(id))
+      if (!pickup || pickup.kind !== 'pickup' || patient.incidentId !== pickup.targetId || patient.disposition !== 'active') throw new Error(`${object.id}: assignment contains a completed or unrelated patient`)
       const shouldBeOnBoard = ['ready-for-transport', 'transporting', 'queued', 'handover'].includes(a.phase)
-      if (shouldBeOnBoard ? patient.holder.kind !== 'ambulance' || patient.holder.id !== object.id : patient.holder.kind !== 'incident' || patient.holder.id !== a.incidentId) throw new Error(`${id}: patient holder disagrees with response phase`)
+      const pickupIndex = a.stops.indexOf(pickup)
+      const pickupReached = pickupIndex < a.activeStopIndex || pickupIndex === a.activeStopIndex && activeStop.kind === 'pickup' && shouldBeOnBoard
+      if (pickupReached ? patient.holder.kind !== 'ambulance' || patient.holder.id !== object.id : patient.holder.kind !== 'incident' || patient.holder.id !== pickup.targetId) throw new Error(`${id}: patient holder disagrees with response plan`)
     }
   }
   // Capacity follows from unique bounded assignment IDs and the bidirectional
@@ -111,6 +121,6 @@ export const validateAmbulanceDeletion = (objectId: string, objects: readonly Op
     if (object.packId !== ambulancePackId) continue
     const data = ambulanceDataOf(object)
     if (data.type === 'patient' && (data.holder.id === objectId || data.incidentId === objectId)) throw new Error(`Cannot delete ${objectId}: patient ${object.label} still references it; transfer/remove patients first`)
-    if (data.type === 'ambulance' && data.assignment && (object.id === objectId || data.assignment.incidentId === objectId || data.assignment.destinationId === objectId || data.assignment.patientIds.includes(objectId as ObjectId))) throw new Error(`Cannot delete ${objectId}: cancel or complete ${object.label}'s active assignment first`)
+    if (data.type === 'ambulance' && data.assignment && (object.id === objectId || data.assignment.stops.some(stop => stop.kind !== 'return-base' && stop.targetId === objectId) || data.assignment.patientIds.includes(objectId as ObjectId))) throw new Error(`Cannot delete ${objectId}: cancel or complete ${object.label}'s active assignment first`)
   }
 }

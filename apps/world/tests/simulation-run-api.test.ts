@@ -21,7 +21,7 @@ import { handleSimulationRunApi } from '../src/core/api/simulation-run-routes.ts
 import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import type { ProcedureSourceService } from '../src/features/procedures/source.ts'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { dispatchCommandKind } from '../src/packs/ambulance/commands.ts'
+import { assignCommandKind } from '../src/packs/ambulance/commands.ts'
 import { ambulanceSimRuntimeId } from '../src/packs/ambulance/sim/constants.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testPacks, testScenarioAuthoring, waitForCondition } from './helpers.ts'
 import { responseScenario } from './fixtures/scenarios.ts'
@@ -251,7 +251,7 @@ describe('Simulation Run API', () => {
         activePackIds: ['ambulance', 'weather'],
       })
       expect(capabilities.body.runtimes).toContainEqual({ id: ambulanceSimRuntimeId, packId: 'ambulance', clock: 'simulation' })
-      expect(capabilities.body.capabilities.some(capability => capability.kind === 'command' && capability.id === dispatchCommandKind)).toBe(true)
+      expect(capabilities.body.capabilities.some(capability => capability.kind === 'command' && capability.id === assignCommandKind)).toBe(true)
 
       const missing = await callRoute<{ readonly error: { readonly code: string } }>(
         registry,
@@ -433,7 +433,7 @@ describe('Simulation Run API', () => {
 
       const command = await callRoute<{ readonly result: { readonly ok: boolean } }>(
         registry,
-        capabilityPath(created.id, dispatchCommandKind),
+        capabilityPath(created.id, assignCommandKind),
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -447,7 +447,7 @@ describe('Simulation Run API', () => {
 
       const conflict = await callRoute<{ readonly error: { readonly code: string } }>(
         registry,
-        capabilityPath(created.id, dispatchCommandKind),
+        capabilityPath(created.id, assignCommandKind),
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

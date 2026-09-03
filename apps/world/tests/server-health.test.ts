@@ -15,7 +15,7 @@ import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/a
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestScenarioRuntimeResolver, testScenarioAuthoring } from './helpers.ts'
 import { responseScenario } from './fixtures/scenarios.ts'
-import { dispatchCommandKind } from '../src/packs/ambulance/commands.ts'
+import { assignCommandKind } from '../src/packs/ambulance/commands.ts'
 
 interface CapturedRealtimeClient {
   readonly events: SimulationRunEvent[]
@@ -199,7 +199,7 @@ describe('server health', () => {
       const runtime = registry.get(simulationRunId)
       if (!runtime) throw new Error('expected simulation run runtime after reset')
       const outcome = await runtime.invokeCapability(operatorActor, {
-        capabilityId: dispatchCommandKind,
+        capabilityId: assignCommandKind,
         input: { ambulanceId: 'amb:a12', incidentId: 'incident:gronland-unattended', patientIds: runtime.snapshot().objects.filter(object => (object.packData as { type?: string; incidentId?: string }).type === 'patient' && (object.packData as { incidentId?: string }).incidentId === 'incident:gronland-unattended').slice(0, 1).map(object => object.id) },
       })
       expect(outcome.kind).toBe('command')

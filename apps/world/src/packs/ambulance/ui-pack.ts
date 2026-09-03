@@ -1,7 +1,7 @@
 import type { OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
 import { createWorldPackDescriptor, type PackObjectPresentation, type WorldPackView } from '../../core/packs/protocol.ts'
-import { ambulanceDataOf, ambulancePackId, assignmentWarnings, patientObjects, patientPackDataSchema, unitPatients } from './model.ts'
+import { activeAssignmentStop, ambulanceDataOf, ambulancePackId, assignmentWarnings, patientObjects, patientPackDataSchema, unitPatients } from './model.ts'
 import { ambulanceSimRuntimeId } from './sim/constants.ts'
 
 const urgencyColor = { acute: '#dc4444', urgent: '#d49327', ordinary: '#3c8cab' }
@@ -33,7 +33,7 @@ export const presentAmbulanceObject = (object: OperationalObject, objects: Reado
       packField('capabilities', 'Capabilities', join(data.capabilities)),
       packField('mobilization', 'Configured mobilization', data.mobilizationSeconds + ' s'),
       packField('scene', 'Configured scene service', data.sceneSeconds + ' s'),
-      ...(data.assignment?.destinationId ? [packField('destination', 'Care destination', labelFor(data.assignment.destinationId, objects))] : []),
+      ...(data.assignment ? [packField('plan', 'Remaining stops', data.assignment.stops.slice(data.assignment.activeStopIndex).map(stop => stop.kind === 'return-base' ? 'Return to base' : labelFor(stop.targetId, objects)).join(' → '))] : []),
       ...(object.spatial.route?.etaSeconds !== undefined ? [packField('eta', 'Route ETA', Math.ceil(object.spatial.route.etaSeconds) + ' simulated seconds')] : []),
       ...assignmentWarnings(object, objects).map((reason, index) => packField('warning-' + index, 'Review assignment', reason)),
     ],
@@ -60,7 +60,9 @@ export const presentAmbulanceObject = (object: OperationalObject, objects: Reado
   const serving = objects.filter(candidate => {
     if (candidate.packId !== ambulancePackId) return false
     const other = ambulanceDataOf(candidate)
-    return other.type === 'ambulance' && other.assignment?.destinationId === object.id && other.assignment.phase === 'handover'
+    if (other.type !== 'ambulance' || other.assignment?.phase !== 'handover') return false
+    const stop = activeAssignmentStop(other.assignment)
+    return stop.kind === 'handover' && stop.targetId === object.id
   }).length
   return {
     categoryId: 'care-sites', icon: 'plus', color: '#3479ac', summary: data.accepting ? 'Accepting: ' + data.acceptedUrgencies.join(', ') : 'Not accepting arrivals',
@@ -82,5 +84,4 @@ export const ambulancePackView = {
     presentObject: (object, context) => presentAmbulanceObject(object, context.objects),
     contextualFields: (object, context) => subjects(object, context.objects).map(entry => packField('ambulance:' + entry.object.id, entry.data.type === 'incident' ? 'Incident at this asset' : 'Care site at this asset', entry.object.label + ' · ' + entry.object.operational.status)),
   },
-  ui: { surfacePanels: [{ id: 'ambulance.dispatch', label: 'Dispatch', defaultOpen: true, load: async () => await import('./ui/DispatchPanel.svelte') }] },
 } satisfies WorldPackView

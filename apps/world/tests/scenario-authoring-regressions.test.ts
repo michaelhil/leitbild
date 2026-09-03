@@ -115,7 +115,7 @@ test('same-time cues follow authored order, modify patient assessment and do not
   expect(run.snapshot().scenario!.timeline!.firedCueIds).toEqual(['z-create-first', 'a-update-second'])
   const actor = { id: actorIdSchema.parse('test:operator'), label: 'Operator', role: 'system' as const }
   expect(patientPackDataSchema.parse(run.snapshot().objects.find(object => object.id === 'patient:live')!.packData).assessedUrgency).toBe('urgent')
-  const dispatched = await run.invokeCapability(actor, { capabilityId: 'world.ambulance.dispatch', input: { ambulanceId: 'ambulance:one', incidentId: 'incident:live', patientIds: ['patient:live'] } })
+  const dispatched = await run.invokeCapability(actor, { capabilityId: 'world.ambulance.assign', input: { ambulanceId: 'ambulance:one', incidentId: 'incident:live', patientIds: ['patient:live'] } })
   expect(dispatched.kind === 'command' && dispatched.result.ok).toBe(true)
   const before = run.snapshot().objects.find(object => object.id === 'patient:live')!
   const changed = await run.invokeCapability(actor, { capabilityId: 'world.ambulance.set-patient-assessment', input: { patientId: 'patient:live', assessedUrgency: 'acute', needs: ['clinical-care'] } })

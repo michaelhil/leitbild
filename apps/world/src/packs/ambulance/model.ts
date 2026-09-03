@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { geoJsonLineStringSchema, geoJsonPointSchema, objectIdSchema, type OperationalObject } from '../../core/model/index.ts'
+import { geoJsonLineStringSchema, geoJsonPointSchema, objectIdSchema, type ObjectId, type OperationalObject } from '../../core/model/index.ts'
 
 export const ambulancePackId = 'ambulance' as const
 export const urgencySchema = z.enum(['acute', 'urgent', 'ordinary'])
@@ -19,16 +19,22 @@ export const preparedRouteSchema = z.object({
 export type PreparedRoute = z.infer<typeof preparedRouteSchema>
 export const assignmentPhaseSchema = z.enum(['mobilizing', 'responding', 'on-scene', 'ready-for-transport', 'transporting', 'queued', 'handover', 'returning'])
 export type AssignmentPhase = z.infer<typeof assignmentPhaseSchema>
+const uniquePatientIdsSchema = z.array(objectIdSchema).max(64).refine(ids => new Set(ids).size === ids.length, 'Patient IDs must be unique')
+export const ambulanceAssignmentStopSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('pickup'), targetId: objectIdSchema, patientIds: uniquePatientIdsSchema.min(1), route: preparedRouteSchema }).strict(),
+  z.object({ kind: z.literal('handover'), targetId: objectIdSchema, patientIds: uniquePatientIdsSchema.min(1), route: preparedRouteSchema }).strict(),
+  z.object({ kind: z.literal('return-base'), patientIds: z.tuple([]), route: preparedRouteSchema }).strict(),
+])
+export type AmbulanceAssignmentStop = z.infer<typeof ambulanceAssignmentStopSchema>
 export const ambulanceAssignmentSchema = z.object({
   phase: assignmentPhaseSchema,
-  incidentId: objectIdSchema.optional(),
-  patientIds: z.array(objectIdSchema).max(64),
-  destinationId: objectIdSchema.optional(),
+  stops: z.array(ambulanceAssignmentStopSchema).min(1).max(64),
+  activeStopIndex: z.number().int().nonnegative(),
+  patientIds: uniquePatientIdsSchema,
   startedAtMs: simulationTimestampSchema,
   phaseStartedAtMs: simulationTimestampSchema,
   phaseDueAtMs: simulationTimestampSchema.optional(),
   leg: preparedRouteSchema.extend({ progressMs: z.number().finite().nonnegative() }).optional(),
-  onwardRoute: preparedRouteSchema.optional(),
 }).strict()
 export type AmbulanceAssignment = z.infer<typeof ambulanceAssignmentSchema>
 export const ambulancePackDataSchema = z.object({
@@ -91,6 +97,11 @@ export const unitPatients = (unitId: string, objects: readonly OperationalObject
   const patient = patientPackDataSchema.parse(object.packData)
   return patient.holder.kind === 'ambulance' && patient.holder.id === unitId
 })
+export const activeAssignmentStop = (assignment: AmbulanceAssignment): AmbulanceAssignmentStop => {
+  const stop = assignment.stops[assignment.activeStopIndex]
+  if (!stop) throw new Error(`Assignment has no active stop at index ${assignment.activeStopIndex}`)
+  return stop
+}
 /** These explanations govern UI/AI candidates and command acceptance alike. */
 export const destinationEligibility = (site: OperationalObject | undefined, patients: readonly OperationalObject[]): string[] => {
   if (!site || site.packId !== ambulancePackId) return ['Care site does not exist']
@@ -134,13 +145,51 @@ export const dispatchEligibility = (unit: OperationalObject | undefined, inciden
   return reasons
 }
 
-export const transportEligibility = (unit: OperationalObject | undefined, site: OperationalObject | undefined, objects: readonly OperationalObject[]): string[] => {
+export const appendPickupEligibility = (unit: OperationalObject | undefined, incident: OperationalObject | undefined, patients: readonly OperationalObject[], objects: readonly OperationalObject[]): string[] => {
   const parsed = unit?.packId === ambulancePackId ? ambulancePackDataSchema.safeParse(unit.packData) : null
   if (!unit || !parsed?.success) return ['Asset is not an ambulance']
-  const reasons = destinationEligibility(site, unitPatients(unit.id, objects))
+  const reasons: string[] = []
   if (!parsed.data.crewReady) reasons.push('Crew is not ready')
-  if (!parsed.data.assignment || !['ready-for-transport', 'transporting', 'queued'].includes(parsed.data.assignment.phase)) reasons.push('Unit must have completed on-scene work before transport or retargeting')
-  if (!unitPatients(unit.id, objects).length) reasons.push('Unit has no patients on board')
+  if (!parsed.data.assignment || parsed.data.assignment.phase === 'returning') reasons.push('Unit has no active response plan to extend')
+  if (!incident || incident.packId !== ambulancePackId || !incidentPackDataSchema.safeParse(incident.packData).success) reasons.push('Target is not an incident')
+  if (incident?.lifecycle === 'resolved') reasons.push('Incident is already resolved')
+  if (!patients.length) reasons.push('Select at least one patient')
+  const assigned = new Set(parsed.data.assignment?.patientIds ?? [])
+  if (assigned.size + patients.length > parsed.data.patientCapacity) reasons.push(`Planned patients exceed capacity ${parsed.data.patientCapacity}`)
+  const reserved = new Set(objects.flatMap(object => {
+    const other = object.packId === ambulancePackId ? ambulancePackDataSchema.safeParse(object.packData) : null
+    return other?.success && object.id !== unit.id ? other.data.assignment?.patientIds ?? [] : []
+  }))
+  for (const object of patients) {
+    const patient = patientPackDataSchema.parse(object.packData)
+    if (assigned.has(object.id)) reasons.push(`${object.label}: patient is already in this response plan`)
+    if (patient.incidentId !== incident?.id || patient.holder.kind !== 'incident' || patient.holder.id !== incident?.id || patient.disposition !== 'active') reasons.push(`${object.label}: patient is not awaiting response at this incident`)
+    if (reserved.has(object.id)) reasons.push(`${object.label}: patient is already reserved by another unit`)
+    const missing = patient.needs.filter(need => !parsed.data.capabilities.includes(need))
+    if (missing.length) reasons.push(`${object.label}: unit lacks ${missing.join(', ')}`)
+  }
+  return reasons
+}
+
+export const appendHandoverEligibility = (unit: OperationalObject | undefined, site: OperationalObject | undefined, patientIds: readonly ObjectId[], objects: readonly OperationalObject[]): string[] => {
+  const parsed = unit?.packId === ambulancePackId ? ambulancePackDataSchema.safeParse(unit.packData) : null
+  if (!unit || !parsed?.success) return ['Asset is not an ambulance']
+  const reasons: string[] = []
+  if (!parsed.data.assignment || parsed.data.assignment.phase === 'returning') reasons.push('Unit has no active response plan to extend')
+  if (!patientIds.length) reasons.push('Select at least one planned patient')
+  const planned = new Set(parsed.data.assignment?.patientIds ?? [])
+  const alreadyHandedOver = new Set(parsed.data.assignment?.stops.flatMap(stop => stop.kind === 'handover' ? stop.patientIds : []) ?? [])
+  const patients = patientIds.flatMap(id => {
+    const patient = objects.find(object => object.id === id)
+    if (!patient || patient.packId !== ambulancePackId || !patientPackDataSchema.safeParse(patient.packData).success) {
+      reasons.push(`Patient does not exist: ${id}`)
+      return []
+    }
+    if (!planned.has(id)) reasons.push(`${patient.label}: patient is not in this response plan`)
+    if (alreadyHandedOver.has(id)) reasons.push(`${patient.label}: handover is already planned`)
+    return [patient]
+  })
+  reasons.push(...destinationEligibility(site, patients))
   return reasons
 }
 
@@ -184,6 +233,8 @@ export const assignmentWarnings = (unit: OperationalObject, objects: readonly Op
     const missing = patient.needs.filter(need => !parsed.data.capabilities.includes(need))
     return missing.length ? [`${object.label}: assigned unit lacks ${missing.join(', ')}; review the response plan`] : []
   })
-  if (assignment.destinationId && assignment.phase !== 'handover') reasons.push(...destinationEligibility(objects.find(object => object.id === assignment.destinationId), patients))
+  for (const stop of assignment.stops.slice(assignment.activeStopIndex)) {
+    if (stop.kind === 'handover') reasons.push(...destinationEligibility(objects.find(object => object.id === stop.targetId), stop.patientIds.map(id => objects.find(object => object.id === id)).filter((object): object is OperationalObject => object !== undefined)))
+  }
   return reasons
 }

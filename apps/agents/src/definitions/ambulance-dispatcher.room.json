@@ -37,10 +37,10 @@
             "capabilityId": "world.ambulance.metrics"
           },
           {
-            "capabilityId": "world.ambulance.dispatch"
+            "capabilityId": "world.ambulance.assign"
           },
           {
-            "capabilityId": "world.ambulance.transport"
+            "capabilityId": "world.ambulance.append-stop"
           },
           {
             "capabilityId": "world.ambulance.cancel"

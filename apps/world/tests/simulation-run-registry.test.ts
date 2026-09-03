@@ -13,7 +13,7 @@ import type {
 import { deleteObjectCommandKind,nowIso,simulationRunIdSchema } from '../src/core/model/index.ts'
 import { createSimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
-import { dispatchCommandKind } from '../src/packs/ambulance/commands.ts'
+import { assignCommandKind } from '../src/packs/ambulance/commands.ts'
 import { responseScenario } from './fixtures/scenarios.ts'
 import { createTestPackRuntimeAdapters,createTestScenarioRuntimeResolver,testScenarioAuthoring } from './helpers.ts'
 
@@ -41,7 +41,7 @@ const issueDispatchCommand = async (runtime: SimulationRunRuntime): Promise<void
   const outcome = await runtime.invokeCapability(
     { id: 'actor:test-operator' as ActorId, label: 'Test Operator', role: 'operator' },
     {
-      capabilityId: dispatchCommandKind,
+      capabilityId: assignCommandKind,
       input: { ambulanceId: ambulance.id, incidentId: incident.id, patientIds: snapshot.objects.filter(object => (object.packData as { type?: string; incidentId?: string }).type === 'patient' && (object.packData as { incidentId?: string }).incidentId === incident.id).slice(0, 1).map(object => object.id) },
     },
   )

@@ -218,14 +218,25 @@
         "actions": [
           {
             "type": "invoke_capability",
-            "capabilityId": "world.ambulance.dispatch",
+            "capabilityId": "world.ambulance.assign",
             "input": {
               "ambulanceId": "amb:weather-response",
               "incidentId": "incident:halden-weather",
               "patientIds": [
                 "patient:halden-weather"
-              ],
-              "destinationId": "facility:halden"
+              ]
+            }
+          },
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.ambulance.append-stop",
+            "input": {
+              "kind": "handover",
+              "ambulanceId": "amb:weather-response",
+              "careSiteId": "facility:halden",
+              "patientIds": [
+                "patient:halden-weather"
+              ]
             }
           }
         ]

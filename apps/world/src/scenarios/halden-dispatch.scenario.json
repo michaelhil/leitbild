@@ -198,14 +198,25 @@
         "actions": [
           {
             "type": "invoke_capability",
-            "capabilityId": "world.ambulance.dispatch",
+            "capabilityId": "world.ambulance.assign",
             "input": {
               "ambulanceId": "amb:halden-1",
               "incidentId": "incident:e6-collision",
               "patientIds": [
                 "patient:collision-1"
-              ],
-              "destinationId": "care:kalnes"
+              ]
+            }
+          },
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.ambulance.append-stop",
+            "input": {
+              "kind": "handover",
+              "ambulanceId": "amb:halden-1",
+              "careSiteId": "care:kalnes",
+              "patientIds": [
+                "patient:collision-1"
+              ]
             }
           }
         ]
@@ -220,14 +231,25 @@
         "actions": [
           {
             "type": "invoke_capability",
-            "capabilityId": "world.ambulance.dispatch",
+            "capabilityId": "world.ambulance.assign",
             "input": {
               "ambulanceId": "amb:halden-2",
               "incidentId": "incident:tistedal-call",
               "patientIds": [
                 "patient:tistedal"
-              ],
-              "destinationId": "care:halden-triage"
+              ]
+            }
+          },
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.ambulance.append-stop",
+            "input": {
+              "kind": "handover",
+              "ambulanceId": "amb:halden-2",
+              "careSiteId": "care:halden-triage",
+              "patientIds": [
+                "patient:tistedal"
+              ]
             }
           }
         ]

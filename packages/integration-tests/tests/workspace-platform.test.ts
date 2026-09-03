@@ -253,12 +253,14 @@ describe('Workspace Host with real Modules', () => {
     const patientIds = dispatchState.patients.filter(patient => patient.incidentId === incidentId).map(patient => patient.id)
     const cancel = await invoke!.execute({ capabilityId: 'world.ambulance.cancel', resource: currentRun.ref, input: { ambulanceId: unitId } }, context)
     expect(cancel).toMatchObject({ success: true, data: { ok: true } })
-    const options = await invoke!.execute({ capabilityId: 'world.ambulance.dispatch-options', resource: currentRun.ref, input: { action: 'dispatch', incidentId, patientIds } }, context)
-    expect(options).toMatchObject({ success: true, data: { units: expect.arrayContaining([expect.objectContaining({ id: unitId, eligible: true })]) } })
-    const dispatched = await invoke!.execute({ capabilityId: 'world.ambulance.dispatch', resource: currentRun.ref, input: { ambulanceId: unitId, incidentId, patientIds, destinationId: dispatchState.careSites[0]!.id } }, context)
+    const options = await invoke!.execute({ capabilityId: 'world.ambulance.dispatch-options', resource: currentRun.ref, input: { action: 'assign', incidentId, patientIds } }, context)
+    expect(options).toMatchObject({ success: true, data: { candidates: expect.arrayContaining([expect.objectContaining({ id: unitId, eligible: true })]) } })
+    const dispatched = await invoke!.execute({ capabilityId: 'world.ambulance.assign', resource: currentRun.ref, input: { ambulanceId: unitId, incidentId, patientIds } }, context)
     expect(dispatched).toMatchObject({ success: true, data: { ok: true } })
+    const planned = await invoke!.execute({ capabilityId: 'world.ambulance.append-stop', resource: currentRun.ref, input: { kind: 'handover', ambulanceId: unitId, careSiteId: dispatchState.careSites[0]!.id, patientIds } }, context)
+    expect(planned).toMatchObject({ success: true, data: { ok: true } })
     const afterDispatch = await invoke!.execute({ capabilityId: 'world.ambulance.dispatch-state', resource: currentRun.ref, input: {} }, context)
-    expect(afterDispatch).toMatchObject({ success: true, data: { units: expect.arrayContaining([expect.objectContaining({ id: unitId, incidentId, patientIds, phase: 'mobilizing' })]) } })
+    expect(afterDispatch).toMatchObject({ success: true, data: { units: expect.arrayContaining([expect.objectContaining({ id: unitId, patientIds, phase: 'mobilizing', stops: expect.arrayContaining([expect.objectContaining({ kind: 'pickup', targetId: incidentId })]) })]) } })
 
     const weatherPoint = { type: 'Point', coordinates: [11.41, 59.13] }
     const weatherRead = await invoke!.execute(

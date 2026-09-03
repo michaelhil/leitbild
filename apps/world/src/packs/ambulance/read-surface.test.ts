@@ -3,7 +3,7 @@ import { geoJsonPointSchema, geoPointFromLonLat, packIdSchema, type OperationalO
 import { scenarioAuthoringCatalogFor } from '../../core/scenarios/authoring.ts'
 import { ambulanceItemSchema } from './item-schemas.ts'
 import { ambulancePack } from './pack.ts'
-import { ambulanceDataOf, assignmentWarnings, destinationEligibility, dispatchEligibility, patientPackDataSchema } from './model.ts'
+import { ambulanceDataOf, assignmentWarnings, dispatchEligibility, patientPackDataSchema } from './model.ts'
 import { ambulanceMetricsSchema, ambulanceQueryCapabilities, answerAmbulanceQuery, dispatchOptionsSchema, dispatchStateSchema } from './query.ts'
 import { createAmbulanceRecordingPlan, observationsFor } from './recording.ts'
 import { createAmbulanceItem } from './sim/object-state.ts'
@@ -22,7 +22,9 @@ const build = (items: readonly unknown[] = [incidentItem, unitItem, patientItem,
 }
 const query = (kind: string, objects = build(), input: unknown = {}) => answerAmbulanceQuery({ request: { capabilityId: 'world.ambulance.' + kind, input }, objects, at, simulationTimeMs: start + 30_000 })
 const update = (object: OperationalObject, patch: Record<string, unknown>): OperationalObject => ({ ...object, packData: { ...ambulanceDataOf(object), ...patch } })
-const assignment = { phase: 'responding', incidentId: 'incident:a', patientIds: ['patient:a'], startedAtMs: start, phaseStartedAtMs: start + 2_000 }
+const route = { geometry: { type: 'LineString' as const, coordinates: [[11.01, 59], [11, 59]] }, durationMs: 10_000, distanceM: 100, provider: 'test' }
+const pickupStop = { kind: 'pickup' as const, targetId: 'incident:a', patientIds: ['patient:a'], route }
+const assignment = { phase: 'responding', stops: [pickupStop], activeStopIndex: 0, patientIds: ['patient:a'], startedAtMs: start, phaseStartedAtMs: start + 2_000, leg: { ...route, progressMs: 0 } }
 
 describe('Ambulance bounded AI read surface', () => {
   test('separates simulation and observation clocks, resolves patient holder position, and excludes route dumps', () => {
@@ -47,10 +49,9 @@ describe('Ambulance bounded AI read surface', () => {
     const next = dispatchStateSchema.parse(query('dispatch-state', objects, { limit: 100, offset: 100 }))
     expect(next.units).toHaveLength(5)
     expect(next.truncated).toBe(false)
-    const options = dispatchOptionsSchema.parse(query('dispatch-options', objects, { action: 'dispatch', incidentId: 'incident:a', patientIds: ['patient:a'], limit: 100, offset: 100 }))
-    expect(options.units).toHaveLength(5)
-    expect(options.careSites).toHaveLength(0)
-    expect(options.totals).toEqual({ units: 105, careSites: 1 })
+    const options = dispatchOptionsSchema.parse(query('dispatch-options', objects, { action: 'assign', incidentId: 'incident:a', patientIds: ['patient:a'], limit: 100, offset: 100 }))
+    expect(options.candidates).toHaveLength(5)
+    expect(options.total).toBe(105)
     expect(dispatchStateSchema.parse(query('dispatch-state', objects, { incidentId: 'incident:missing' })).patients).toHaveLength(0)
     expect(() => query('dispatch-state', objects, { limit: 101 })).toThrow()
   })
@@ -59,11 +60,10 @@ describe('Ambulance bounded AI read surface', () => {
     const objects = build()
     objects[1] = update(objects[1]!, { crewReady: false })
     objects[3] = update(objects[3]!, { capabilities: [], accepting: false })
-    const input = { action: 'dispatch', incidentId: 'incident:a', patientIds: ['patient:a'] }
+    const input = { action: 'assign', incidentId: 'incident:a', patientIds: ['patient:a'] }
     const options = dispatchOptionsSchema.parse(query('dispatch-options', objects, input))
-    expect(options.units[0]!.reasons).toEqual(dispatchEligibility(objects[1], objects[0], [objects[2]!], objects))
-    expect(options.careSites[0]!.reasons).toEqual(destinationEligibility(objects[3], [objects[2]!]))
-    expect(options.units[0]!.eligible).toBe(false)
+    expect(options.candidates[0]!.reasons).toEqual(dispatchEligibility(objects[1], objects[0], [objects[2]!], objects))
+    expect(options.candidates[0]!.eligible).toBe(false)
     expect(() => query('dispatch-options', objects, { ...input, patientIds: ['patient:a', 'patient:a'] })).toThrow('Patient IDs must be unique')
     expect(() => query('dispatch-options', objects, { ...input, patientIds: ['patient:missing'] })).toThrow('Patient does not exist')
   })
@@ -83,7 +83,8 @@ describe('Ambulance bounded AI read surface', () => {
 
   test('distinguishes reserved from on-board patients and shows actual queue/slot occupants', () => {
     const objects = build()
-    objects[1] = update(objects[1]!, { assignment: { ...assignment, phase: 'queued', destinationId: 'site:a' } })
+    const handover = { kind: 'handover' as const, targetId: 'site:a', patientIds: ['patient:a'], route: { ...route, geometry: { type: 'LineString' as const, coordinates: [[11, 59], [11.02, 59]] } } }
+    objects[1] = update(objects[1]!, { assignment: { ...assignment, phase: 'queued', stops: [pickupStop, handover], activeStopIndex: 1, leg: undefined } })
     let state = dispatchStateSchema.parse(query('dispatch-state', objects))
     expect(state.units[0]!.patientIds.map(String)).toEqual(['patient:a'])
     expect(state.units[0]!.onBoardPatientIds).toEqual([])
@@ -112,7 +113,7 @@ describe('Ambulance bounded AI read surface', () => {
 
   test('returning units are explicitly both assigned and dispatchable; exact object reads distinguish missing', () => {
     const objects = build()
-    objects[1] = update(objects[1]!, { assignment: { phase: 'returning', patientIds: [], startedAtMs: start, phaseStartedAtMs: start } })
+    objects[1] = update(objects[1]!, { assignment: { phase: 'returning', stops: [{ kind: 'return-base', patientIds: [], route }], activeStopIndex: 0, patientIds: [], startedAtMs: start, phaseStartedAtMs: start, leg: { ...route, progressMs: 0 } } })
     expect(ambulanceMetricsSchema.parse(query('metrics', objects)).units).toEqual({ total: 1, dispatchable: 1, assigned: 1, busySeconds: 0 })
     expect(query('object', objects, { objectId: 'patient:a' })).toEqual({ object: objects[2]! })
     expect(query('object', objects, { objectId: 'patient:missing' })).toEqual({ object: null })
@@ -141,7 +142,7 @@ describe('Ambulance presentation, discovery and recording', () => {
     expect(patient.mapIconVisible).toBe(false)
     expect(patient.fields?.find(field => field.key === 'holder')?.value).toBe('Test incident')
     expect(ambulancePackView.presentation.categories.find(category => category.id === 'patients')!.matches(objects[2]!)).toBe(true)
-    expect(ambulancePackView.ui.surfacePanels[0]!.defaultOpen).toBe(true)
+    expect(ambulancePackView).not.toHaveProperty('ui')
   })
 
   test('all four item types are editor-discoverable with required patient reference and no fabricated defaults', () => {

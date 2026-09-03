@@ -38,7 +38,7 @@ const setup = async (options: {
     const connection = await actual.connect(config)
     return { ...connection, sendCommand: async (command: Parameters<typeof connection.sendCommand>[0]) => {
       const result = await connection.sendCommand(command)
-      if (command.kind === 'world.ambulance.dispatch') options.onDispatchResult?.(result)
+      if (command.kind === 'world.ambulance.assign') options.onDispatchResult?.(result)
       return result
     } }
   } }
@@ -66,7 +66,7 @@ const setup = async (options: {
   return { run, stateStore, persisted }
 }
 const dispatch = (run: Awaited<ReturnType<typeof setup>>['run']) => run.invokeCapability(actor, {
-  capabilityId: 'world.ambulance.dispatch', input: { ambulanceId: unitId, incidentId, patientIds: [patientId] },
+  capabilityId: 'world.ambulance.assign', input: { ambulanceId: unitId, incidentId, patientIds: [patientId] },
 })
 
 test('free unit deletion becomes authoritative before journal completion; late route cannot resurrect it', async () => {

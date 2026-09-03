@@ -2,8 +2,8 @@ import { z } from 'zod'
 import { geoJsonPointSchema, objectIdSchema, operationalObjectSchema, type IsoTimestamp, type OperationalObject } from '../../core/model/index.ts'
 import { defineSimulationQueryCapability } from '../../simulation/capabilities.ts'
 import type { PackRuntimeQuery, SimulationCapability } from '../../simulation/protocol.ts'
-import { ambulanceDataOf, ambulancePackId, assignmentWarnings, destinationEligibility, dispatchEligibility, patientPackDataSchema, transportEligibility, urgencySchema, type AmbulanceDomainData } from './model.ts'
-import { dispatchPayloadSchema } from './commands.ts'
+import { activeAssignmentStop, ambulanceDataOf, ambulancePackId, appendHandoverEligibility, appendPickupEligibility, assignmentWarnings, dispatchEligibility, patientPackDataSchema, urgencySchema, type AmbulanceDomainData } from './model.ts'
+import { assignPayloadSchema } from './commands.ts'
 
 const count = z.number().int().nonnegative()
 const timestamp = z.number().finite().nonnegative()
@@ -11,7 +11,8 @@ const pagination = { limit: z.number().int().min(1).max(100).default(50), offset
 const identity = { id: objectIdSchema, label: z.string(), point: geoJsonPointSchema.nullable() }
 export const unitSummarySchema = z.object({
   ...identity, phase: z.string(), crewReady: z.boolean(), patientCapacity: count, capabilities: z.array(z.string()),
-  patientIds: z.array(objectIdSchema), onBoardPatientIds: z.array(objectIdSchema), incidentId: objectIdSchema.nullable(), destinationId: objectIdSchema.nullable(),
+  patientIds: z.array(objectIdSchema), onBoardPatientIds: z.array(objectIdSchema), activeStopIndex: z.number().int().nonnegative().nullable(),
+  stops: z.array(z.object({ kind: z.enum(['pickup', 'handover', 'return-base']), targetId: objectIdSchema.nullable(), patientIds: z.array(objectIdSchema) }).strict()),
   phaseDueAtMs: timestamp.nullable(), remainingTravelSeconds: z.number().nonnegative().nullable(), busyTimeMs: timestamp, assignmentWarnings: z.array(z.string()),
 }).strict()
 export const incidentSummarySchema = z.object({
@@ -37,11 +38,12 @@ export const dispatchStateSchema = z.object({
 export type DispatchState = z.infer<typeof dispatchStateSchema>
 const dispatchStateInput = z.object({ ...pagination, incidentId: objectIdSchema.optional() }).strict()
 const optionsInput = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('dispatch'), incidentId: objectIdSchema, patientIds: dispatchPayloadSchema.shape.patientIds, ...pagination }).strict(),
-  z.object({ action: z.literal('transport'), ambulanceId: objectIdSchema, ...pagination }).strict(),
+  z.object({ action: z.literal('assign'), incidentId: objectIdSchema, patientIds: assignPayloadSchema.shape.patientIds, ...pagination }).strict(),
+  z.object({ action: z.literal('append-pickup'), ambulanceId: objectIdSchema, incidentId: objectIdSchema, patientIds: assignPayloadSchema.shape.patientIds, ...pagination }).strict(),
+  z.object({ action: z.literal('append-handover'), ambulanceId: objectIdSchema, patientIds: assignPayloadSchema.shape.patientIds, ...pagination }).strict(),
 ])
-const candidateSchema = z.object({ id: objectIdSchema, label: z.string(), eligible: z.boolean(), reasons: z.array(z.string()) }).strict()
-export const dispatchOptionsSchema = z.object({ units: z.array(candidateSchema), careSites: z.array(candidateSchema), totals: z.object({ units: count, careSites: count }).strict(), truncated: z.boolean() }).strict()
+const candidateSchema = z.object({ id: objectIdSchema, label: z.string(), kind: z.enum(['ambulance', 'incident', 'care-site']), eligible: z.boolean(), reasons: z.array(z.string()) }).strict()
+export const dispatchOptionsSchema = z.object({ candidates: z.array(candidateSchema), total: count, truncated: z.boolean() }).strict()
 export type DispatchOptions = z.infer<typeof dispatchOptionsSchema>
 const durationSummarySchema = z.object({ samples: count, meanSeconds: z.number().nonnegative().nullable(), maximumSeconds: z.number().nonnegative().nullable() }).strict()
 export const ambulanceMetricsSchema = z.object({
@@ -56,7 +58,7 @@ export const ambulanceQueryKinds = ['world.ambulance.dispatch-state', 'world.amb
 export const ambulanceQueryCapabilities: ReadonlyArray<SimulationCapability> = [
   defineSimulationQueryCapability({ id: ambulanceQueryKinds[0], title: 'Inspect ambulance dispatch', description: 'Bounded summaries of units, incidents, patients, and care-site queues. Limit/offset apply separately to each list; totals and truncation are explicit. Optional incidentId narrows incident/patient/assigned-unit lists. Patient points resolve their current custody holder. All *AtMs times are absolute simulation epoch milliseconds; observedAt is wall time. remainingTravelSeconds uses the current weather-adjusted route estimate, null when absent or blocked. Assignment warnings expose changed patient needs or unsuitable destinations without silently replanning.', input: dispatchStateInput, output: dispatchStateSchema }),
   defineSimulationQueryCapability({ id: ambulanceQueryKinds[1], title: 'Inspect an ambulance domain object', description: 'Read one exact ambulance, incident, patient, or care-site including configured assumptions, patient custody and recorded milestones. Returns null if absent. No fabricated clinical measurements.', input: z.object({ objectId: objectIdSchema }).strict(), output: z.object({ object: operationalObjectSchema.nullable() }).strict() }),
-  defineSimulationQueryCapability({ id: ambulanceQueryKinds[2], title: 'Find dispatch and destination options', description: 'Read bounded candidates and explicit eligibility reasons using the same domain checks as commands. Choose patients explicitly for dispatch; transport uses the unit’s assigned patient group. Does not reserve patients, compute routes, or issue commands. Eligibility is rechecked when a command is accepted.', input: optionsInput, output: dispatchOptionsSchema }),
+  defineSimulationQueryCapability({ id: ambulanceQueryKinds[2], title: 'Find assignment-stop options', description: 'Read bounded units and care sites with the same eligibility reasons used by assignment commands. Supports initial assignment, appending an incident pickup, and appending a patient handover. Does not reserve patients, compute routes, or issue commands.', input: optionsInput, output: dispatchOptionsSchema }),
   defineSimulationQueryCapability({ id: ambulanceQueryKinds[3], title: 'Read dispatch performance measures', description: 'Aggregate completed operational intervals from canonical milestones. Missing intervals are excluded with explicit sample counts, never treated as zero. Transport means pickup to the current/final receiving-site arrival; retargeting may include waits at a prior site. Handover wait describes the current/final site visit; earlier visits remain in the event journal. These are simulated logistics measures, not clinical outcomes.', input: z.object({}).strict(), output: ambulanceMetricsSchema }),
 ]
 
@@ -82,40 +84,41 @@ export const answerAmbulanceQuery = (config: { request: PackRuntimeQuery; object
     const input = dispatchStateInput.parse(config.request.input)
     const selectedIncidents = incidents.filter(entry => !input.incidentId || entry.object.id === input.incidentId).sort((a, b) => Number(a.data.closedAtMs !== undefined) - Number(b.data.closedAtMs !== undefined) || urgencyRank[a.data.dispatchUrgency] - urgencyRank[b.data.dispatchUrgency] || a.data.receivedAtMs - b.data.receivedAtMs || a.object.id.localeCompare(b.object.id))
     const selectedPatients = patients.filter(entry => !input.incidentId || entry.data.incidentId === input.incidentId)
-    const selectedUnits = units.filter(entry => !input.incidentId || entry.data.assignment?.incidentId === input.incidentId)
+    const selectedUnits = units.filter(entry => !input.incidentId || entry.data.assignment?.stops.some(stop => stop.kind === 'pickup' && stop.targetId === input.incidentId))
     const totals = { units: selectedUnits.length, incidents: selectedIncidents.length, patients: selectedPatients.length, careSites: careSites.length }
     return {
       observedAt: config.at, simulationTimeMs: config.simulationTimeMs, totals, truncated: Object.values(totals).some(total => input.offset + input.limit < total),
       units: page(selectedUnits, input).map(({ object, data }) => ({ ...identityFor(object), phase: data.assignment?.phase ?? (data.crewReady ? 'available' : 'out-of-service'), crewReady: data.crewReady, patientCapacity: data.patientCapacity, capabilities: data.capabilities,
         patientIds: data.assignment?.patientIds ?? [], onBoardPatientIds: patients.filter(patient => patient.data.holder.kind === 'ambulance' && patient.data.holder.id === object.id).map(patient => patient.object.id),
-        incidentId: data.assignment?.incidentId ?? null, destinationId: data.assignment?.destinationId ?? null, phaseDueAtMs: data.assignment?.phaseDueAtMs ?? null,
+        activeStopIndex: data.assignment?.activeStopIndex ?? null,
+        stops: data.assignment?.stops.map(stop => ({ kind: stop.kind, targetId: stop.kind === 'return-base' ? null : stop.targetId, patientIds: stop.patientIds })) ?? [], phaseDueAtMs: data.assignment?.phaseDueAtMs ?? null,
         remainingTravelSeconds: object.spatial.route?.etaSeconds ?? null, busyTimeMs: data.busyTimeMs, assignmentWarnings: assignmentWarnings(object, config.objects) })),
       incidents: page(selectedIncidents, input).map(({ object, data }) => ({ ...identityFor(object), summary: data.summary, dispatchUrgency: data.dispatchUrgency, subjectObjectId: data.subjectObjectId ?? null, receivedAtMs: data.receivedAtMs, firstArrivalAtMs: data.firstArrivalAtMs ?? null, closedAtMs: data.closedAtMs ?? null,
         patients: patients.filter(patient => patient.data.incidentId === object.id).length, activePatients: patients.filter(patient => patient.data.incidentId === object.id && patient.data.disposition === 'active').length,
-        assignedUnitIds: units.filter(unit => unit.data.assignment?.incidentId === object.id).map(unit => unit.object.id) })),
+        assignedUnitIds: units.filter(unit => unit.data.assignment?.stops.some(stop => stop.kind === 'pickup' && stop.targetId === object.id)).map(unit => unit.object.id) })),
       patients: page(selectedPatients, input).map(({ object, data }) => ({ ...identityFor(object), point: config.objects.find(holder => holder.id === data.holder.id)?.spatial.position?.point ?? null, incidentId: data.incidentId, summary: data.summary, assessedUrgency: data.assessedUrgency, needs: data.needs, holder: data.holder, disposition: data.disposition, dispositionReason: data.dispositionReason ?? null })),
       careSites: page(careSites, input).map(({ object, data }) => ({ ...identityFor(object), accepting: data.accepting, capabilities: data.capabilities, acceptedUrgencies: data.acceptedUrgencies, handoverSlots: data.handoverSlots, handoverSeconds: data.handoverSeconds, subjectObjectId: data.subjectObjectId ?? null,
-        queuedUnitIds: units.filter(unit => unit.data.assignment?.destinationId === object.id && unit.data.assignment.phase === 'queued').map(unit => unit.object.id),
-        handingOverUnitIds: units.filter(unit => unit.data.assignment?.destinationId === object.id && unit.data.assignment.phase === 'handover').map(unit => unit.object.id) })),
+        queuedUnitIds: units.filter(unit => { const assignment = unit.data.assignment; if (assignment?.phase !== 'queued') return false; const stop = activeAssignmentStop(assignment); return stop.kind === 'handover' && stop.targetId === object.id }).map(unit => unit.object.id),
+        handingOverUnitIds: units.filter(unit => { const assignment = unit.data.assignment; if (assignment?.phase !== 'handover') return false; const stop = activeAssignmentStop(assignment); return stop.kind === 'handover' && stop.targetId === object.id }).map(unit => unit.object.id) })),
     }
   }
   if (config.request.capabilityId === ambulanceQueryKinds[2]) {
     const input = optionsInput.parse(config.request.input)
-    const selectedUnit = input.action === 'transport' ? units.find(unit => unit.object.id === input.ambulanceId) : undefined
-    if (input.action === 'transport' && !selectedUnit) throw new Error('Response unit does not exist')
-    const patientIds = input.action === 'dispatch' ? input.patientIds : selectedUnit?.data.assignment?.patientIds ?? []
+    const selectedUnit = input.action === 'assign' ? undefined : units.find(unit => unit.object.id === input.ambulanceId)
+    if (input.action !== 'assign' && !selectedUnit) throw new Error('Response unit does not exist')
+    const patientIds = input.patientIds
     const group = patientIds.map(id => { const patient = patients.find(patient => patient.object.id === id); if (!patient) throw new Error('Patient does not exist: ' + id); return patient.object })
-    const incident = input.action === 'dispatch' ? incidents.find(incident => incident.object.id === input.incidentId)?.object : undefined
-    const candidateUnits = input.action === 'dispatch' ? units : []
-    const candidates = page(candidateUnits, input).map(({ object }) => {
-      const reasons = dispatchEligibility(object, incident, group, config.objects)
-      return { id: object.id, label: object.label, eligible: reasons.length === 0, reasons }
-    })
-    const destinations = page(careSites, input).map(({ object }) => {
-      const reasons = input.action === 'transport' ? transportEligibility(selectedUnit?.object, object, config.objects) : destinationEligibility(object, group)
-      return { id: object.id, label: object.label, eligible: reasons.length === 0, reasons }
-    })
-    return { units: candidates, careSites: destinations, totals: { units: candidateUnits.length, careSites: careSites.length }, truncated: candidateUnits.length > input.offset + input.limit || careSites.length > input.offset + input.limit }
+    const incident = input.action === 'append-handover' ? undefined : incidents.find(candidate => candidate.object.id === input.incidentId)?.object
+    if (input.action === 'assign') {
+      const candidates = page(units, input).map(({ object }) => { const reasons = dispatchEligibility(object, incident, group, config.objects); return { id: object.id, label: object.label, kind: 'ambulance' as const, eligible: reasons.length === 0, reasons } })
+      return { candidates, total: units.length, truncated: units.length > input.offset + input.limit }
+    }
+    if (input.action === 'append-pickup') {
+      const candidates = page(incidents, input).map(({ object }) => { const reasons = appendPickupEligibility(selectedUnit?.object, object, group, config.objects); return { id: object.id, label: object.label, kind: 'incident' as const, eligible: reasons.length === 0, reasons } })
+      return { candidates, total: incidents.length, truncated: incidents.length > input.offset + input.limit }
+    }
+    const candidates = page(careSites, input).map(({ object }) => { const reasons = appendHandoverEligibility(selectedUnit?.object, object, patientIds, config.objects); return { id: object.id, label: object.label, kind: 'care-site' as const, eligible: reasons.length === 0, reasons } })
+    return { candidates, total: careSites.length, truncated: careSites.length > input.offset + input.limit }
   }
   if (config.request.capabilityId === ambulanceQueryKinds[3]) {
     return {

@@ -4,10 +4,10 @@ import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import type { PackRuntimeEvent, PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
 import * as commands from '../commands.ts'
 import {
-  ambulancePackId, careSitePackDataSchema,
+  activeAssignmentStop, ambulancePackId, appendHandoverEligibility, appendPickupEligibility, careSitePackDataSchema,
   cancelEligibility, destinationEligibility, dispatchEligibility, noTransportEligibility, patientObjects,
-  preparedRouteSchema, returnToBaseEligibility, transportEligibility, unitPatients,
-  type AmbulanceAssignment, type AmbulanceDomainData, type PatientPackData, type PreparedRoute,
+  preparedRouteSchema, returnToBaseEligibility, unitPatients,
+  type AmbulanceAssignment, type AmbulanceAssignmentStop, type AmbulanceDomainData, type PatientPackData, type PreparedRoute,
 } from '../model.ts'
 import { ambulanceSimAdapterId } from './constants.ts'
 import { createAmbulanceItem, validateAmbulanceDeletion, validateAmbulanceObject, validateAmbulanceObjects } from './object-state.ts'
@@ -149,8 +149,8 @@ export const createAmbulanceSimEngine = (config: {
         const factor = speedFactor(object)
         const active = assignment && moving(assignment)
         spatial = { ...rest, position: { point: position, observedAt: at, speedMps: active && leg && leg.durationMs > 0 ? leg.distanceM / (leg.durationMs / 1000) * factor : 0 }, ...(leg ? { route: { planned: leg.geometry, source: 'simulator' as const, ...(factor > 0 ? { etaSeconds: (leg.durationMs - leg.progressMs) / 1000 / factor } : {}), progress: { segmentIndex: routePosition(leg, leg.progressMs).segmentIndex, remainingDistanceM: meters(leg.distanceM * (leg.durationMs === 0 ? 0 : 1 - leg.progressMs / leg.durationMs)), updatedAt: at }, ...(object.spatial.route?.impacts ? { impacts: object.spatial.route.impacts } : {}) } } : {}) }
-        const target = ['transporting', 'queued', 'handover'].includes(assignment?.phase ?? '') ? assignment?.destinationId : assignment?.incidentId
-        if (target) tasking = { currentTaskId: target }
+        const stop = assignment ? activeAssignmentStop(assignment) : undefined
+        if (stop && stop.kind !== 'return-base') tasking = { currentTaskId: stop.targetId }
       } else if (data.type === 'incident') status = data.closedAtMs === undefined ? data.firstArrivalAtMs === undefined ? 'open' : 'responding' : 'resolved'
       else if (data.type === 'care-site') status = data.accepting ? 'accepting' : 'not-accepting'
       else status = data.disposition === 'active' ? data.holder.kind === 'incident' ? 'awaiting-response' : 'in-ambulance' : data.disposition
@@ -186,29 +186,59 @@ export const createAmbulanceSimEngine = (config: {
         const siteData = ownedData(site)
         if (siteData.type !== 'care-site' || !siteData.accepting) continue
         const units = values().filter(object => ownedData(object).type === 'ambulance')
-        const serving = units.filter(unit => { const a = dataOfType(unit, 'ambulance').assignment; return a?.phase === 'handover' && a.destinationId === site.id }).length
-        const queue = units.filter(unit => { const a = dataOfType(unit, 'ambulance').assignment; return a?.phase === 'queued' && a.destinationId === site.id }).sort((a, b) => dataOfType(a, 'ambulance').assignment!.phaseStartedAtMs - dataOfType(b, 'ambulance').assignment!.phaseStartedAtMs || a.id.localeCompare(b.id))
+        const servesSite = (unit: OperationalObject, phase: 'queued' | 'handover'): boolean => {
+          const assignment = dataOfType(unit, 'ambulance').assignment
+          if (assignment?.phase !== phase) return false
+          const stop = activeAssignmentStop(assignment)
+          return stop.kind === 'handover' && stop.targetId === site.id
+        }
+        const serving = units.filter(unit => servesSite(unit, 'handover')).length
+        const queue = units.filter(unit => servesSite(unit, 'queued')).sort((a, b) => dataOfType(a, 'ambulance').assignment!.phaseStartedAtMs - dataOfType(b, 'ambulance').assignment!.phaseStartedAtMs || a.id.localeCompare(b.id))
         let free = Math.max(0, siteData.handoverSlots - serving)
         for (const unit of queue) {
           const a = dataOfType(get(unit.id), 'ambulance').assignment!
-          const patients = a.patientIds.map(get)
+          const stop = activeAssignmentStop(a)
+          if (stop.kind !== 'handover') continue
+          const patients = stop.patientIds.map(get)
           if (destinationEligibility(site, patients).length) continue
           if (free-- <= 0) break
           setUnit(unit.id, { ...a, phase: 'handover', phaseStartedAtMs: time, phaseDueAtMs: time + siteData.handoverSeconds * 1000 })
-          a.patientIds.forEach(id => setPatient(id, { handoverStartedAtMs: time }))
+          stop.patientIds.forEach(id => setPatient(id, { handoverStartedAtMs: time }))
           changed = true
         }
       }
       return changed
     }
-    const finishScene = (unit: OperationalObject, a: AmbulanceAssignment) => {
-      a.patientIds.forEach(id => setPatient(id, { holder: { kind: 'ambulance', id: unit.id }, pickedUpAtMs: time }))
-      const { phaseDueAtMs: _, leg: _leg, onwardRoute, ...rest } = a
-      if (onwardRoute && a.destinationId && destinationEligibility(draft.get(a.destinationId), a.patientIds.map(get)).length === 0) setUnit(unit.id, { ...rest, phase: 'transporting', phaseStartedAtMs: time, leg: { ...onwardRoute, progressMs: 0 } })
-      else {
-        const { destinationId: _, ...withoutDestination } = rest
-        setUnit(unit.id, { ...withoutDestination, phase: 'ready-for-transport', phaseStartedAtMs: time })
+    const beginStop = (unit: OperationalObject, a: AmbulanceAssignment, index: number): void => {
+      const stop = a.stops[index]
+      if (!stop) {
+        const { phaseDueAtMs: _, leg: _leg, ...rest } = a
+        setUnit(unit.id, { ...rest, phase: 'ready-for-transport', phaseStartedAtMs: time })
+        return
       }
+      if (stop.kind === 'handover') {
+        const patients = stop.patientIds.map(get)
+        if (destinationEligibility(draft.get(stop.targetId), patients).length > 0) {
+          const stops = a.stops.slice(0, index)
+          const { phaseDueAtMs: _, leg: _leg, ...rest } = a
+          setUnit(unit.id, { ...rest, stops, activeStopIndex: Math.max(0, index - 1), phase: 'ready-for-transport', phaseStartedAtMs: time })
+          return
+        }
+      }
+      const { phaseDueAtMs: _, ...rest } = a
+      setUnit(unit.id, {
+        ...rest,
+        activeStopIndex: index,
+        phase: stop.kind === 'pickup' ? 'responding' : stop.kind === 'handover' ? 'transporting' : 'returning',
+        phaseStartedAtMs: time,
+        leg: { ...stop.route, progressMs: 0 },
+      })
+    }
+    const finishScene = (unit: OperationalObject, a: AmbulanceAssignment) => {
+      const stop = activeAssignmentStop(a)
+      if (stop.kind !== 'pickup') throw new Error(`${unit.id}: on-scene phase requires a pickup stop`)
+      stop.patientIds.forEach(id => setPatient(id, { holder: { kind: 'ambulance', id: unit.id }, pickedUpAtMs: time }))
+      beginStop(unit, a, a.activeStopIndex + 1)
     }
     const boundaries = (): boolean => {
       let changed = false
@@ -223,20 +253,32 @@ export const createAmbulanceSimEngine = (config: {
           a.patientIds.forEach(id => { if (dataOfType(get(id), 'patient').departedAtMs === undefined) setPatient(id, { departedAtMs: time }) })
         } else if (a.phase === 'on-scene' && a.phaseDueAtMs! <= time) finishScene(unit, a)
         else if (a.phase === 'handover' && a.phaseDueAtMs! <= time) {
-          a.patientIds.forEach(id => setPatient(id, { holder: { kind: 'care-site', id: a.destinationId! }, disposition: 'delivered', completedAtMs: time }))
-          setUnit(unit.id, undefined)
+          const stop = activeAssignmentStop(a)
+          if (stop.kind !== 'handover') throw new Error(`${unit.id}: handover phase requires a handover stop`)
+          stop.patientIds.forEach(id => setPatient(id, { holder: { kind: 'care-site', id: stop.targetId }, disposition: 'delivered', completedAtMs: time }))
+          const remainingPatientIds = a.patientIds.filter(id => !stop.patientIds.includes(id))
+          const next = a.activeStopIndex + 1
+          if (next < a.stops.length) beginStop(unit, { ...a, patientIds: remainingPatientIds }, next)
+          else if (remainingPatientIds.length > 0) {
+            const { phaseDueAtMs: _, leg: _leg, ...rest } = a
+            setUnit(unit.id, { ...rest, patientIds: remainingPatientIds, phase: 'ready-for-transport', phaseStartedAtMs: time })
+          } else setUnit(unit.id, undefined)
         } else if (moving(a) && a.leg && a.leg.progressMs >= a.leg.durationMs - 0.000001) {
           const point = geoPointFromLonLat(...a.leg.geometry.coordinates.at(-1)!)
           const { leg: _, ...rest } = a
           if (a.phase === 'returning') setUnit(unit.id, undefined, true, point)
           else if (a.phase === 'responding') {
             setUnit(unit.id, { ...rest, phase: 'on-scene', phaseStartedAtMs: time, phaseDueAtMs: time + data.sceneSeconds * 1000 }, true, point)
-            const incident = get(a.incidentId!), incidentData = dataOfType(incident, 'incident')
+            const stop = activeAssignmentStop(a)
+            if (stop.kind !== 'pickup') throw new Error(`${unit.id}: response phase requires a pickup stop`)
+            const incident = get(stop.targetId), incidentData = dataOfType(incident, 'incident')
             if (incidentData.firstArrivalAtMs === undefined) put(incident, { ...incidentData, firstArrivalAtMs: time })
-            a.patientIds.forEach(id => { if (dataOfType(get(id), 'patient').contactedAtMs === undefined) setPatient(id, { contactedAtMs: time }) })
+            stop.patientIds.forEach(id => { if (dataOfType(get(id), 'patient').contactedAtMs === undefined) setPatient(id, { contactedAtMs: time }) })
           } else {
+            const stop = activeAssignmentStop(a)
+            if (stop.kind !== 'handover') throw new Error(`${unit.id}: transport phase requires a handover stop`)
             setUnit(unit.id, { ...rest, phase: 'queued', phaseStartedAtMs: time }, true, point)
-            a.patientIds.forEach(id => setPatient(id, { arrivedAtSiteMs: time }))
+            stop.patientIds.forEach(id => setPatient(id, { arrivedAtSiteMs: time }))
           }
         } else continue
         changed = true
@@ -277,7 +319,7 @@ export const createAmbulanceSimEngine = (config: {
       }
       closeIncidents()
     }
-    return { draft, events, get, put, setUnit, setPatient, values, advance, startQueues, closeIncidents, finish: () => { for (const id of motionDirty) emitObject(get(id), false) } }
+    return { draft, events, get, put, setUnit, setPatient, values, advance, startQueues, closeIncidents, beginStop, finish: () => { for (const id of motionDirty) emitObject(get(id), false) } }
   }
 
   const handleCommand = async (command: CommandEnvelope): Promise<AmbulanceCommandOutcome> => {
@@ -297,35 +339,47 @@ export const createAmbulanceSimEngine = (config: {
         const created = createAmbulanceItem(item, { at: nowIso(), simulationTimeMs, objectById: id => objects.get(id) ?? config.objectById?.(id) })
         const object: OperationalObject = { ...created, provenance: { ...created.provenance, source: 'operator', causedByCommandId: command.id } }
         action = tx => { tx.draft.set(object.id, object); tx.events.push({ type: 'object.upserted', object, at: object.timestamps.updatedAt, history: 'record', provenance: object.provenance }); tx.closeIncidents() }
-      } else if (command.kind === commands.dispatchCommandKind) {
-        const input = commands.dispatchPayloadSchema.parse(command.payload)
+      } else if (command.kind === commands.assignCommandKind) {
+        const input = commands.assignPayloadSchema.parse(command.payload)
         const unit = requireObject(input.ambulanceId), incident = requireObject(input.incidentId), patients = input.patientIds.map(requirePatient)
         assertEligible(dispatchEligibility(unit, incident, patients, all()))
-        const site = input.destinationId ? requireObject(input.destinationId) : undefined
-        if (site) assertEligible(destinationEligibility(site, patients))
-        const unchanged = watch([unit.id, incident.id, ...input.patientIds, ...(site ? [site.id] : [])])
-        const [route, onwardRoute] = await Promise.all([prepareRoute(pointOf(unit), pointOf(incident)), site ? prepareRoute(pointOf(incident), pointOf(site)) : Promise.resolve(undefined)])
+        const unchanged = watch([unit.id, incident.id, ...input.patientIds])
+        const route = await prepareRoute(pointOf(unit), pointOf(incident))
         unchanged()
         assertEligible(dispatchEligibility(requireObject(unit.id), requireObject(incident.id), input.patientIds.map(requirePatient), all()))
         const data = dataOfType(unit, 'ambulance')
         action = tx => {
-          tx.setUnit(unit.id, { phase: 'mobilizing', incidentId: incident.id, patientIds: input.patientIds, ...(site ? { destinationId: site.id } : {}), startedAtMs: simulationTimeMs, phaseStartedAtMs: simulationTimeMs, phaseDueAtMs: simulationTimeMs + data.mobilizationSeconds * 1000, leg: { ...route, progressMs: 0 }, ...(onwardRoute ? { onwardRoute } : {}) })
+          const stop: AmbulanceAssignmentStop = { kind: 'pickup', targetId: incident.id, patientIds: input.patientIds, route }
+          tx.setUnit(unit.id, { phase: 'mobilizing', stops: [stop], activeStopIndex: 0, patientIds: input.patientIds, startedAtMs: simulationTimeMs, phaseStartedAtMs: simulationTimeMs, phaseDueAtMs: simulationTimeMs + data.mobilizationSeconds * 1000, leg: { ...route, progressMs: 0 } })
           input.patientIds.forEach(id => { if (dataOfType(tx.get(id), 'patient').assignedAtMs === undefined) tx.setPatient(id, { assignedAtMs: simulationTimeMs }) })
         }
-      } else if (command.kind === commands.transportCommandKind) {
-        const input = commands.transportPayloadSchema.parse(command.payload)
-        const unit = requireObject(input.ambulanceId), site = requireObject(input.destinationId)
-        assertEligible(transportEligibility(unit, site, all()))
-        const unchanged = watch([unit.id, site.id, ...unitPatients(unit.id, all()).map(p => p.id)])
-        const route = await prepareRoute(pointOf(unit), pointOf(site))
+      } else if (command.kind === commands.appendStopCommandKind) {
+        const input = commands.appendStopPayloadSchema.parse(command.payload)
+        const unit = requireObject(input.ambulanceId)
+        const assignment = dataOfType(unit, 'ambulance').assignment
+        if (!assignment) throw new Error('Unit has no active response plan to extend')
+        const target = requireObject(input.kind === 'pickup' ? input.incidentId : input.careSiteId)
+        const patients = input.patientIds.map(requirePatient)
+        if (input.kind === 'pickup') assertEligible(appendPickupEligibility(unit, target, patients, all()))
+        else assertEligible(appendHandoverEligibility(unit, target, input.patientIds, all()))
+        const finalStop = assignment.stops.at(-1)!
+        const from = geoPointFromLonLat(...finalStop.route.geometry.coordinates.at(-1)!)
+        const unchanged = watch([unit.id, target.id, ...input.patientIds])
+        const route = await prepareRoute(from, pointOf(target))
         unchanged()
-        const a = dataOfType(unit, 'ambulance').assignment!
+        const current = requireObject(unit.id)
+        const currentAssignment = dataOfType(current, 'ambulance').assignment
+        if (!currentAssignment || currentAssignment.stops.length !== assignment.stops.length) throw new Error('Response plan changed while preparing route; retry')
+        if (input.kind === 'pickup') assertEligible(appendPickupEligibility(current, requireObject(target.id), input.patientIds.map(requirePatient), all()))
+        else assertEligible(appendHandoverEligibility(current, requireObject(target.id), input.patientIds, all()))
         action = tx => {
-          const { leg: _, onwardRoute: _onward, phaseDueAtMs: _due, ...rest } = a
-          tx.setUnit(unit.id, { ...rest, destinationId: site.id, phase: 'transporting', phaseStartedAtMs: simulationTimeMs, leg: { ...route, progressMs: 0 } })
-          // Arrival measures the current/final receiving-site visit. Earlier
-          // visits remain in accepted history, not as a false current arrival.
-          a.patientIds.forEach(id => tx.setPatient(id, { arrivedAtSiteMs: undefined }))
+          const stop: AmbulanceAssignmentStop = input.kind === 'pickup'
+            ? { kind: 'pickup', targetId: target.id, patientIds: input.patientIds, route }
+            : { kind: 'handover', targetId: target.id, patientIds: input.patientIds, route }
+          const next = { ...currentAssignment, stops: [...currentAssignment.stops, stop], patientIds: input.kind === 'pickup' ? [...currentAssignment.patientIds, ...input.patientIds] : currentAssignment.patientIds }
+          if (input.kind === 'pickup') input.patientIds.forEach(id => { if (dataOfType(tx.get(id), 'patient').assignedAtMs === undefined) tx.setPatient(id, { assignedAtMs: simulationTimeMs }) })
+          if (currentAssignment.phase === 'ready-for-transport') tx.beginStop(current, next, currentAssignment.stops.length)
+          else tx.setUnit(unit.id, next)
         }
       } else if (command.kind === commands.returnToBaseCommandKind) {
         const { ambulanceId } = commands.unitPayloadSchema.parse(command.payload)
@@ -334,7 +388,7 @@ export const createAmbulanceSimEngine = (config: {
         const data = dataOfType(unit, 'ambulance'), unchanged = watch([unit.id])
         const route = await prepareRoute(pointOf(unit), data.basePoint)
         unchanged()
-        action = tx => { tx.setUnit(unit.id, { phase: 'returning', patientIds: [], startedAtMs: simulationTimeMs, phaseStartedAtMs: simulationTimeMs, leg: { ...route, progressMs: 0 } }) }
+        action = tx => { tx.setUnit(unit.id, { phase: 'returning', stops: [{ kind: 'return-base', patientIds: [], route }], activeStopIndex: 0, patientIds: [], startedAtMs: simulationTimeMs, phaseStartedAtMs: simulationTimeMs, leg: { ...route, progressMs: 0 } }) }
       } else if (command.kind === commands.cancelCommandKind) {
         const { ambulanceId } = commands.unitPayloadSchema.parse(command.payload), unit = requireObject(ambulanceId)
         assertEligible(cancelEligibility(unit))
@@ -342,9 +396,11 @@ export const createAmbulanceSimEngine = (config: {
         action = tx => {
           if (!a) return
           if (unitPatients(unit.id, tx.values()).length) {
-            const { destinationId: _, leg: _leg, onwardRoute: _onward, phaseDueAtMs: _due, ...rest } = a
-            tx.setUnit(unit.id, { ...rest, phase: 'ready-for-transport', phaseStartedAtMs: simulationTimeMs })
-            a.patientIds.forEach(id => tx.setPatient(id, { arrivedAtSiteMs: undefined }))
+            const carriedIds = unitPatients(unit.id, tx.values()).map(patient => patient.id)
+            const { leg: _leg, phaseDueAtMs: _due, ...rest } = a
+            const completedStops = a.stops.slice(0, a.activeStopIndex + (activeAssignmentStop(a).kind === 'handover' ? 0 : 1))
+            tx.setUnit(unit.id, { ...rest, stops: completedStops, activeStopIndex: Math.max(0, completedStops.length - 1), patientIds: carriedIds, phase: 'ready-for-transport', phaseStartedAtMs: simulationTimeMs })
+            carriedIds.forEach(id => tx.setPatient(id, { arrivedAtSiteMs: undefined }))
           } else tx.setUnit(unit.id, undefined)
         }
       } else if (command.kind === commands.setUnitReadinessCommandKind) {

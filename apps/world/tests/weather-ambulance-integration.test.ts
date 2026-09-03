@@ -14,7 +14,7 @@ import {
 import { compileScenarioDefinition } from '../src/core/scenarios/compiler.ts'
 import { scenarioDefinitionSchema } from '../src/core/scenarios/definition.ts'
 import { roadWeatherImpact,roadWeatherPolicySchema } from '../src/packs/ambulance/road-weather.ts'
-import { ambulancePackDataSchema } from '../src/packs/ambulance/model.ts'
+import { ambulancePackDataSchema, patientPackDataSchema } from '../src/packs/ambulance/model.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { weatherItemSchema,weatherPackDataSchema } from '../src/packs/weather/model.ts'
@@ -66,7 +66,7 @@ const command = (kind: string, payload: unknown): CommandEnvelope =>
     kind,
     payload,
   }) as CommandEnvelope
-const dispatchCommand = () => command('world.ambulance.dispatch', { ambulanceId: 'amb:response', incidentId: 'incident:response', patientIds: ['patient:response'] })
+const dispatchCommand = () => command('world.ambulance.assign', { ambulanceId: 'amb:response', incidentId: 'incident:response', patientIds: ['patient:response'] })
 const providerSamples = (request: PackRuntimeQuery, visibilityM = 700) => (request.input as { points: unknown[] }).points.map(point => ({
   point, sample: { state: { atmosphere: { visibilityM }, surface: { wetness: 0, ice: 0, snow: 0 } }, quality: { validAt: compiled.world.startsAt } },
 }))
@@ -322,7 +322,7 @@ describe('Ambulance weather preparation boundaries', () => {
     const fleet = snapshot.filter(object => object.id !== unit.id && object.id !== patient.id)
     for (let index = 0; index < 513; index++) {
       const patientId = `patient:batch-${index}` as ObjectId
-      fleet.push({ ...unit, id: `amb:batch-${index}` as ObjectId, packData: { ...data, assignment: { ...data.assignment!, patientIds: [patientId] } } }, { ...patient, id: patientId })
+      fleet.push({ ...unit, id: `amb:batch-${index}` as ObjectId, packData: { ...data, assignment: { ...data.assignment!, patientIds: [patientId], stops: data.assignment!.stops.map(stop => stop.kind === 'pickup' ? { ...stop, patientIds: [patientId] } : stop) } } }, { ...patient, id: patientId, packData: { ...patientPackDataSchema.parse(patient.packData), holder: { kind: 'incident', id: 'incident:response' } } })
     }
     let calls = 0
     const connection = await isolatedConnection(async request => {

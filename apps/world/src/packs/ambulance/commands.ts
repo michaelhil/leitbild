@@ -4,8 +4,8 @@ import { careSitePackDataSchema, careTagsSchema, urgencySchema } from './model.t
 import { ambulanceItemSchema } from './item-schemas.ts'
 
 export const createItemCommandKind = 'world.ambulance.create-item'
-export const dispatchCommandKind = 'world.ambulance.dispatch'
-export const transportCommandKind = 'world.ambulance.transport'
+export const assignCommandKind = 'world.ambulance.assign'
+export const appendStopCommandKind = 'world.ambulance.append-stop'
 export const cancelCommandKind = 'world.ambulance.cancel'
 export const returnToBaseCommandKind = 'world.ambulance.return-to-base'
 export const setUnitReadinessCommandKind = 'world.ambulance.set-unit-readiness'
@@ -13,12 +13,14 @@ export const setCareSiteCommandKind = 'world.ambulance.set-care-site'
 export const setPatientAssessmentCommandKind = 'world.ambulance.set-patient-assessment'
 export const setPatientDispositionCommandKind = 'world.ambulance.set-patient-disposition'
 export const createItemPayloadSchema = z.object({ item: ambulanceItemSchema }).strict()
-export const dispatchPayloadSchema = z.object({
+export const assignPayloadSchema = z.object({
   ambulanceId: objectIdSchema, incidentId: objectIdSchema,
   patientIds: z.array(objectIdSchema).min(1).max(64).refine(ids => new Set(ids).size === ids.length, 'Patient IDs must be unique'),
-  destinationId: objectIdSchema.optional(),
 }).strict()
-export const transportPayloadSchema = z.object({ ambulanceId: objectIdSchema, destinationId: objectIdSchema }).strict()
+export const appendStopPayloadSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('pickup'), ambulanceId: objectIdSchema, incidentId: objectIdSchema, patientIds: z.array(objectIdSchema).min(1).max(64).refine(ids => new Set(ids).size === ids.length, 'Patient IDs must be unique') }).strict(),
+  z.object({ kind: z.literal('handover'), ambulanceId: objectIdSchema, careSiteId: objectIdSchema, patientIds: z.array(objectIdSchema).min(1).max(64).refine(ids => new Set(ids).size === ids.length, 'Patient IDs must be unique') }).strict(),
+])
 export const unitPayloadSchema = z.object({ ambulanceId: objectIdSchema }).strict()
 export const setUnitReadinessPayloadSchema = unitPayloadSchema.extend({ ready: z.boolean() }).strict()
 export const setCareSitePayloadSchema = z.object({
@@ -30,8 +32,8 @@ export const setCareSitePayloadSchema = z.object({
 export const setPatientAssessmentPayloadSchema = z.object({ patientId: objectIdSchema, assessedUrgency: urgencySchema, needs: careTagsSchema }).strict()
 export const setPatientDispositionPayloadSchema = z.object({ patientId: objectIdSchema, disposition: z.literal('no-transport'), reason: z.string().trim().min(1).max(500) }).strict()
 export const ambulanceCommandSchemas = {
-  [createItemCommandKind]: createItemPayloadSchema, [dispatchCommandKind]: dispatchPayloadSchema,
-  [transportCommandKind]: transportPayloadSchema, [cancelCommandKind]: unitPayloadSchema,
+  [createItemCommandKind]: createItemPayloadSchema, [assignCommandKind]: assignPayloadSchema,
+  [appendStopCommandKind]: appendStopPayloadSchema, [cancelCommandKind]: unitPayloadSchema,
   [returnToBaseCommandKind]: unitPayloadSchema, [setUnitReadinessCommandKind]: setUnitReadinessPayloadSchema,
   [setCareSiteCommandKind]: setCareSitePayloadSchema, [setPatientAssessmentCommandKind]: setPatientAssessmentPayloadSchema,
   [setPatientDispositionCommandKind]: setPatientDispositionPayloadSchema,

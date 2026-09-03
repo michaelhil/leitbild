@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { commandEnvelopeSchema, geoPointFromLonLat, meters, nowIso, operationalObjectSchema, simulationRunEventSchema, type CommandEnvelope, type ObjectId, type OperationalObject, type SimulationRunEvent, type SimulationRunId } from '../src/core/model/index.ts'
-import { cancelCommandKind, createItemCommandKind, dispatchCommandKind } from '../src/packs/ambulance/commands.ts'
+import { assignCommandKind, cancelCommandKind, createItemCommandKind } from '../src/packs/ambulance/commands.ts'
 import { ambulancePackDataSchema, careSitePackDataSchema, patientPackDataSchema } from '../src/packs/ambulance/model.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
@@ -18,7 +18,7 @@ const objects = (): OperationalObject[] => structuredClone(responseScenario.init
 const command = (kind: string, payload: unknown): CommandEnvelope => commandEnvelopeSchema.parse({
   id: 'command:' + crypto.randomUUID(), simulationRunId, actorId: 'actor:test', issuedAt: nowIso(), kind, targetObjectIds: [], payload,
 }) as CommandEnvelope
-const dispatch = () => command(dispatchCommandKind, { ambulanceId: unitId, incidentId, patientIds: [patientId] })
+const dispatch = () => command(assignCommandKind, { ambulanceId: unitId, incidentId, patientIds: [patientId] })
 const unit = (engine: ReturnType<typeof createAmbulanceSimEngine>) => engine.snapshot().objects.find(object => object.id === unitId)!
 const engineWith = (routing: RoutingAdapter = createDirectRoutingAdapter(), initial = objects()) => createAmbulanceSimEngine({ simulationRunId, objects: initial, routing, simulationTimeMs: epoch })
 const fastUnitObjects = () => objects().map(object => object.id === unitId ? {
