@@ -74,12 +74,12 @@ export const createMapFeatureLoader = (
       ? presentationContext
       : { ...presentationContext, currentTime }
     const pack = config.pack()
-    if (!pack) return []
+    if (!pack) { config.onWarnings?.([]); return [] }
     const syncFeatures = pack.presentation.mapFeatures?.(presentationContextWithTime) ?? []
     const simulationRunId = config.simulationRunId()
-    if (!simulationRunId) return syncFeatures
+    if (!simulationRunId) { config.onWarnings?.([]); return syncFeatures }
     const requests = pack.presentation.mapFeatureQueries?.(presentationContextWithTime) ?? []
-    if (requests.length === 0) return syncFeatures
+    if (requests.length === 0) { config.onWarnings?.([]); return syncFeatures }
     const query = config.queryCapability ?? (async (id, request, options) =>
       await querySimulationRunCapability(id, request.capabilityId, request.input, options))
     const timeout = createAbortSignalWithTimeout(

@@ -1,6 +1,6 @@
 # Situation Monitor review — 3 September 2026
 
-Status: implementation completed locally; release verification in progress. Findings below describe the audited baseline; the implementation outcome is recorded at the end.
+Status: implemented and production-tested. Findings below describe the audited baseline; the implementation outcome and remaining boundaries are recorded at the end.
 
 ## Conclusion
 
@@ -208,3 +208,14 @@ Browser acceptance also caught two issues outside simple decoder tests:
 - Every previously installed map font range contained an HTML landing page despite a successful download status. The installer now uses a pinned [MapLibre font artifact source](https://github.com/maplibre/demotiles/tree/601ae60796ceceda2cbd2ed3d2ea92d17a84be4b/font), validates protobuf identity/range before replacing anything, downloads with four bounded workers, and versions browser font URLs by installed artifact time. This is an artifact acquisition failure, not a Caddy routing failure.
 
 Deliberate boundaries remain: no arbitrary crawler, freehand annotation tool, heatmap/raster authoring, automatic video analysis, signed-media credential extension, physical coupling, or retained observation history. Generic GeoRSS extraction and richer record-status filters remain follow-up extensions, not implied implemented features. Browser acceptance is not a Safari certification or a guarantee of every provider stream's availability.
+
+### Final acceptance
+
+- Full platform checks/builds and tests passed: World 650; Agents 1,433 (two existing skips); Host 23; contracts 18; Module runtime 11; integration one.
+- Breivika's provider-advertised HLS stream decoded real 800×600 video and remained playing across the panel's 15-second record refresh. Still-image decoding was also verified separately. Media was unloaded after testing.
+- Fresh page load rendered native symbols, including a user-selected icon outside the small bundled subset, with no new browser errors or warnings. All 256 replacement font ranges passed protobuf validation before publication; the production font URL was checked again after publication.
+- Dataset discovery and icon-tag search worked through the production UI. Source presentation edits persisted across reload without restarting collection or modifying the reusable Scenario.
+- A local map query returned 30 features with `truncated: false`; the national view reported its cap. Coverage warnings now have their own UI state so they clear after zooming into complete coverage instead of lingering as connection status.
+- The two superseded demo Definitions were removed from all four existing Workspaces only after checking their revisions still matched the unmodified bundled examples. All three pre-existing World Runs remained listed with unchanged IDs. Only the obsolete 405,504-byte regenerable Situation Monitor cache was deleted; Run checkpoints and history were not deleted.
+
+Low-zoom national views remain visually crowded. Native clustering/decluttering and a more compact control rail are reasonable next presentation improvements; they do not justify a new data model or ingestion framework. The new API and cache limits should not be mistaken for a finished cartographic aggregation design.

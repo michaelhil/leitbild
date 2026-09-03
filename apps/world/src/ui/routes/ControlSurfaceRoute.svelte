@@ -141,6 +141,7 @@
   let scenarioDefinition = $state<CompiledScenario | null>(null)
   let selectedControllerId = $state<string | null>(null)
   let status = $state('Starting')
+  let mapWarnings = $state('')
   let commandStatus = $state('')
   const routeMode = 'simulation-run'
   let seenRevisions = $state(new Map<string, number>())
@@ -392,7 +393,7 @@
     objects: () => objects,
     simulationRunId: () => simulationRunId,
     currentTime: currentPackTime,
-    onWarnings: messages => { if (messages.length) status = messages.join(' · ') },
+    onWarnings: messages => { mapWarnings = messages.join(' · ') },
   })
 
   const hasNewInfo = (object: OperationalObject): boolean => {
@@ -1500,7 +1501,7 @@
   >
     {#if railConfig}
       <ControlRail
-        {status}
+        status={mapWarnings || status}
         {systemStatusTone}
         {appVersion}
         clock={scenarioUsesSimulationTime(scenarioDefinition, activePack?.packs ?? []) ? clock : undefined}

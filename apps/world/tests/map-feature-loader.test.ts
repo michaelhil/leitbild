@@ -66,14 +66,18 @@ const createPack = (requests: ReadonlyArray<PackMapFeatureQuery>): WorldPack => 
 describe('MapFeatureLoader', () => {
   test('one failed pack does not erase healthy layers and truncation stays visible', async () => {
     let warnings: ReadonlyArray<string> = []
+    let recovered = false
     const loader = createMapFeatureLoader({
       pack: () => createActivePackViews([createPack([{ capabilityId: 'world.weather-test.good', input: {} }, { capabilityId: 'world.weather-test.broken', input: {} }])]),
       objects: () => [], simulationRunId: () => 'run-test' as SimulationRunId, currentTime: () => generatedAt,
-      queryCapability: async (_id, request) => { if (request.capabilityId === 'world.weather-test.broken') throw new Error('Test provider failed'); return { features: [featureFor('good')], truncated: true } },
+      queryCapability: async (_id, request) => { if (!recovered && request.capabilityId === 'world.weather-test.broken') throw new Error('Test provider failed'); return { features: [featureFor('good')], truncated: !recovered } },
       onWarnings: messages => { warnings = messages },
     })
     expect((await loader({ viewport, zoom: 8 })).map(feature => feature.id)).toEqual(['sync-feature','good'])
     expect(warnings).toHaveLength(2); expect(warnings.join(' ')).toContain('coverage limited'); expect(warnings.join(' ')).toContain('Test provider failed')
+    recovered = true
+    await loader({ viewport, zoom: 12 })
+    expect(warnings).toEqual([])
   })
   test('runs pack map-area queries concurrently and preserves sync features', async () => {
     const requests: ReadonlyArray<PackMapFeatureQuery> = [
