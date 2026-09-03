@@ -110,7 +110,7 @@ export const createLeitbildMapStyle = (theme: MapTheme = 'light', bases: Readonl
       ...(overview ? [
         { id: 'overview-land', type: 'fill', source: overview.id, 'source-layer': 'countries', paint: { 'fill-color': palette.background } },
         { id: 'overview-boundaries', type: 'line', source: overview.id, 'source-layer': 'countries', paint: { 'line-color': palette.boundary, 'line-width': .7, 'line-opacity': .6 } },
-        { id: 'overview-labels', type: 'symbol', source: overview.id, 'source-layer': 'places', layout: { 'text-field': ['get','name'], 'text-font': ['Noto Sans Regular'], 'text-size': ['case', ['==',['get','kind'],'country'],13,11], 'text-max-width': 9 }, paint: { 'text-color': palette.labelText, 'text-halo-color': palette.textHalo, 'text-halo-width': 1 } },
+        { id: 'overview-labels', type: 'symbol', source: overview.id, 'source-layer': 'places', layout: { 'text-field': ['get','name'], 'text-font': ['Noto Sans Regular'], 'symbol-sort-key': ['case', ['==',['get','kind'],'country'],0,1], 'text-size': ['case', ['==',['get','kind'],'country'],13,11], 'text-max-width': 9 }, paint: { 'text-color': palette.labelText, 'text-halo-color': palette.textHalo, 'text-halo-width': 1 } },
       ] : []),
       {
         id: 'landuse',
