@@ -110,6 +110,12 @@ _Avoid_: Pack, Operational Object, browser layer, separate Subscription entity
 
 **External Record**:
 A sourced report, event, measurement or media reference collected by Situation Monitor, retaining its provenance and time meaning independently of simulated state.
+
+**Source Snapshot**:
+The latest complete, successfully collected provider window, including an empty window. Its cache lifetime is renewed by successful provider validation, not by failed requests; it is not a historical archive.
+
+**Observation Subject**:
+The provider-identified station or location to which observations or forecast samples refer. Series group by subject and quantity, never by source alone.
 _Avoid_: verified fact, simulated asset, historian sample as a universal content container
 
 **Ground Conditions**:

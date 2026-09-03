@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { decodeSource } from './adapters/decode.ts'
 import { describeSourceAdapters } from './adapters/catalog.ts'
 import { situationSourceSchema, situationConfigSchema, intersectsBounds, externalRecordSchema, recordSearchSchema, externalGeometrySchema } from './model.ts'
-import { mapRecords, recordMapFeatures, watchedAreaFeatures } from './map.ts'
+import { recordMapFeatures, watchedAreaFeatures } from './map.ts'
 import { isPublicAddress, publicHttp } from './ingestion/public-http.ts'
 import { createCollector, providerWaitSeconds } from './ingestion/collector.ts'
 import { openRecordStore } from './ingestion/store.ts'
@@ -11,7 +11,7 @@ const now = '2026-09-03T12:00:00.000Z'
 const rss = situationSourceSchema.parse({ id: 'news', name: 'News', adapter: 'rss', url: 'https://example.com/feed' })
 const xml = '<rss><channel><item><guid>one</guid><title>Tokyo report</title><link>https://example.com/one</link><pubDate>Thu, 03 Sep 2026 12:00:00 GMT</pubDate></item></channel></rss>'
 describe('Situation Monitor source boundary', () => {
-  test('supports empty composition and discovers all exact schemas', () => { expect(situationConfigSchema.parse({})).toEqual({ areas: [], sources: [] }); expect(describeSourceAdapters()).toHaveLength(5) })
+  test('supports empty composition and discovers all exact schemas', () => { expect(situationConfigSchema.parse({})).toEqual({ areas: [], sources: [] }); expect(describeSourceAdapters()).toHaveLength(7) })
   test('honours provider deadlines beyond a day and cached response age', () => {
     expect(providerWaitSeconds({ 'retry-after': '172800' }, Date.parse(now))).toBe(172800)
     expect(providerWaitSeconds({ 'cache-control': 'public, max-age=3600', age: '600' }, Date.parse(now))).toBe(3000)
@@ -38,8 +38,8 @@ describe('Situation Monitor source boundary', () => {
     const store = openRecordStore(':memory:')
     try {
       const record = externalRecordSchema.parse({ id: 'located', sourceId: 'original', kind: 'event', title: 'Pacific report', url: 'https://example.com/event', attribution: 'Provider', retrievedAt: now, geometry: { type: 'Point', coordinates: [179,30] } })
-      store.replace('pacific', [record], 1, true)
-      store.replace('news', [{ ...record, id: 'unlocated', geometry: undefined }], 1, true)
+      store.replace('pacific', [record], 1)
+      store.replace('news', [{ ...record, id: 'unlocated', geometry: undefined }], 1)
       const sources = [{ id: 'shared-a', key: 'pacific' }, { id: 'shared-b', key: 'pacific' }, { id: 'news', key: 'news' }]
       const all = store.search(sources, recordSearchSchema.parse({ text: 'pacific', limit: 1 }), [])
       expect(all.total).toBe(3); expect(all.hasMore).toBe(true); expect(all.records).toHaveLength(1)
@@ -51,9 +51,8 @@ describe('Situation Monitor source boundary', () => {
       expect(store.search(sources, recordSearchSchema.parse({}), []).total).toBe(0)
     } finally { store.close() }
   })
-  test('map keeps multi-geometries native and chooses one explicitly valid forecast per source', () => {
+  test('map keeps multipart geometry native', () => {
     const record = externalRecordSchema.parse({ id: 'first', sourceId: 'forecast', kind: 'forecast', title: 'Tokyo', url: 'https://example.com/', attribution: 'Provider', retrievedAt: now, validAt: now, geometry: { type: 'Point', coordinates: [139,35] } })
-    expect(mapRecords([record, { ...record, id: 'later', validAt: '2026-09-04T12:00:00.000Z' }], Date.parse(now))).toEqual([record])
     expect(recordMapFeatures({ ...record, geometry: { type: 'MultiPoint', coordinates: [[139,35],[140,36]] } })).toHaveLength(2)
     expect(watchedAreaFeatures([{ id: 'pacific', name: 'Pacific', bounds: [170,-10,-170,10] }])).toHaveLength(2)
     expect(() => externalGeometrySchema.parse({ type: 'Polygon', coordinates: [[[0,0],[1,0],[1,1],[0,1]]] })).toThrow('closed')
@@ -62,8 +61,8 @@ describe('Situation Monitor source boundary', () => {
     const store = openRecordStore(':memory:', { maxBytes: 1000000, maxRecords: 1, minFreeBytes: 0 })
     try {
       const record = decodeSource(rss, xml, now)[0]!
-      store.replace('test', [record], 1, true)
-      expect(() => store.replace('test', [record, { ...record, id: 'second' }], 1, true)).toThrow('record budget')
+      store.replace('test', [record], 1)
+      expect(() => store.replace('test', [record, { ...record, id: 'second' }], 1)).toThrow('record budget')
       expect(store.count('test')).toBe(1)
     } finally { store.close() }
   })
@@ -85,8 +84,8 @@ describe('Situation Monitor source boundary', () => {
   })
   test('cache bounds, snapshot replacement and same-source collector sharing', async () => {
     const store = openRecordStore(':memory:'), records = decodeSource(rss, xml, now)
-    store.replace('test', records, 24, true); expect(store.count('test')).toBe(1)
-    store.replace('test', [], 24, true); expect(store.count('test')).toBe(0)
+    store.replace('test', records, 24); expect(store.count('test')).toBe(1)
+    store.replace('test', [], 24); expect(store.count('test')).toBe(0)
     let calls = 0
     const collector = createCollector(store, async () => { calls++; return { status: 200, text: xml, headers: {} } })
     const first = collector.acquire(rss, () => {}), second = collector.acquire({ ...rss, id: 'second' }, () => {})

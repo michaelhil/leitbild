@@ -1,32 +1,14 @@
-import { createHash } from 'node:crypto'
 import { XMLParser, XMLValidator } from 'fast-xml-parser'
-import { externalGeometrySchema, externalRecordSchema, type ExternalRecord, type SituationSource } from '../model.ts'
+import { externalRecordSchema, type ExternalRecord, type SituationSource } from '../model.ts'
 import { sourceRequestUrl } from './catalog.ts'
 
-const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
-const array = (value: unknown): unknown[] => value === undefined ? [] : Array.isArray(value) ? value : [value]
-const text = (value: unknown): string => typeof value === 'string' || typeof value === 'number' ? String(value) : typeof object(value)['#text'] === 'string' ? object(value)['#text'] as string : ''
-const plain = (value: unknown, max: number): string => text(value).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
-const atPath = (value: unknown, path: string): unknown => path.split('.').reduce<unknown>((item, part) => Object.hasOwn(object(item), part) ? object(item)[part] : undefined, value)
-const timestamp = (value: unknown): string | undefined => {
-  if (value === undefined || value === null || value === '') return undefined
-  const date = typeof value === 'number' ? new Date(value) : new Date(text(value))
-  if (!Number.isFinite(date.getTime())) throw new Error('Source has an invalid timestamp')
-  return date.toISOString()
-}
-const stableId = (value: string): string => value.length <= 180 ? value : createHash('sha256').update(value).digest('hex')
-const identity = (value: string): string => createHash('sha256').update(value).digest('hex').slice(0, 32)
-const coordinates2D = (value: unknown): unknown => Array.isArray(value) ? typeof value[0] === 'number' ? value.slice(0, 2) : value.map(coordinates2D) : value
-const geometry = (value: unknown) => value === null || value === undefined ? undefined : externalGeometrySchema.parse({ type: object(value).type, coordinates: coordinates2D(object(value).coordinates) })
-const linkedUrl = (value: unknown, base: string): string => {
-  const candidate = text(value)
-  return candidate ? new URL(candidate, base).href : base
-}
+import { object, array, text, plain, atPath, timestamp, stableId, identity, geometry, linkedUrl } from './values.ts'
+import { decodeNorwegianFeature, foldTrafficRecords } from './norway.ts'
 
 export const decodeSource = (source: SituationSource, body: string, retrievedAt: string): ExternalRecord[] => {
   const requestUrl = sourceRequestUrl(source)
   const base = { sourceId: source.id, attribution: source.attribution || new URL(requestUrl).hostname, retrievedAt }
-  if (source.adapter === 'media') return [externalRecordSchema.parse({ ...base, id: source.id + ':media', kind: 'media', title: source.name, url: source.url, media: { format: source.format, url: source.url }, ...(source.point ? { geometry: { type: 'Point', coordinates: source.point } } : {}) })]
+  if (source.adapter === 'media') return [externalRecordSchema.parse({ ...base, id: identity(source.url), kind: 'media', title: source.name, url: source.url, media: [{ format: source.format, url: source.url }], ...(source.point ? { geometry: { type: 'Point', coordinates: source.point } } : {}) })]
   if (source.adapter === 'rss') {
     if (/<!DOCTYPE|<!ENTITY/i.test(body.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '').replace(/<!--[\s\S]*?-->/g, ''))) throw new Error('XML declarations with document types or entities are not accepted')
     if ((body.match(/</g)?.length ?? 0) > 100000) throw new Error('XML feed contains too many elements')
@@ -57,15 +39,24 @@ export const decodeSource = (source: SituationSource, body: string, retrievedAt:
       const row = object(raw), validAt = timestamp(row.time), data = object(row.data), details = object(object(data.instant).details)
       if (!validAt) throw new Error('Forecast sample has no valid time')
       const measurements = Object.entries(details).map(([id, value]) => ({ id, value, unit: text(units[id]) || 'unspecified' }))
-      return externalRecordSchema.parse({ ...base, id: validAt, kind: 'forecast', title: source.name, summary: 'Provider forecast, not a measurement or simulated condition.', url: requestUrl, publishedAt: updatedAt, updatedAt, validAt, geometry: { type: 'Point', coordinates: source.point }, measurements })
+      const intervals: Record<string, string> = {}
+      for (const window of ['next_1_hours', 'next_6_hours', 'next_12_hours']) {
+        const period = object(data[window]), symbol = text(object(period.summary).symbol_code)
+        if (symbol) intervals[window] = symbol
+        for (const [id, value] of Object.entries(object(period.details))) measurements.push({ id: window + '.' + id, value, unit: text(units[id]) || 'unspecified' })
+      }
+      return externalRecordSchema.parse({ ...base, id: validAt, kind: 'forecast', title: source.name, summary: 'Provider forecast, not a measurement or simulated condition. next_N_hours quantities describe intervals beginning at the valid time.', url: requestUrl, publishedAt: updatedAt, updatedAt, validAt, subject: { id: source.point.join(','), label: source.name }, geometry: { type: 'Point', coordinates: source.point }, measurements, details: intervals })
     })
   }
   if (parsed.type !== 'FeatureCollection' || !Array.isArray(parsed.features)) throw new Error('Expected a GeoJSON FeatureCollection')
   if (parsed.features.length > 10000) throw new Error('GeoJSON exceeds 10,000 features; configure a bounded endpoint')
-  return parsed.features.map(raw => {
+  const total = parsed.numberMatched ?? parsed.totalFeatures
+  if (typeof total === 'number' && total > parsed.features.length) throw new Error('Provider catalogue was truncated; narrow the source bounds or choose a smaller endpoint')
+  const records = parsed.features.map(raw => {
     const feature = object(raw), props = object(feature.properties)
     if (feature.type !== 'Feature') throw new Error('Invalid GeoJSON feature')
     const geo = geometry(feature.geometry)
+    if (source.adapter === 'met-alerts' || source.adapter === 'vegvesen') return decodeNorwegianFeature(source, feature, base, requestUrl)
     if (source.adapter === 'usgs') {
       if (!text(feature.id)) throw new Error('Earthquake record has no upstream ID')
       const coordinates = object(feature.geometry).coordinates
@@ -78,4 +69,5 @@ export const decodeSource = (source: SituationSource, body: string, retrievedAt:
     if (!id) throw new Error('GeoJSON record has no ID at configured path: ' + source.mapping.id)
     return externalRecordSchema.parse({ ...base, id: stableId(id), kind: 'feature', title: title || id, url, publishedAt: timestamp(atPath(feature, source.mapping.time)), geometry: geo })
   })
+  return source.adapter === 'vegvesen' && source.dataset === 'traffic' ? foldTrafficRecords(records) : records
 }

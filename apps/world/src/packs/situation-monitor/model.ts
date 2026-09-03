@@ -12,8 +12,13 @@ export const sourceUrlSchema = z.url().max(2048).superRefine((value, ctx) => {
   if ([...url.searchParams.keys()].some(key => /(?:token|secret|password|api[-_]?key|signature|credential)/i.test(key))) ctx.addIssue({ code: 'custom', message: 'Credentials must use a server-side credential reference, not a URL' })
 })
 const mappingSchema = z.object({
-  id: z.string().max(128).default('id'), title: z.string().max(128).default('properties.title'),
-  time: z.string().max(128).default('properties.time'), url: z.string().max(128).default('properties.url'),
+  id: z.string().startsWith('/').max(256).default('/id'), title: z.string().startsWith('/').max(256).default('/properties/title'),
+  time: z.string().startsWith('/').max(256).default('/properties/time'), url: z.string().startsWith('/').max(256).default('/properties/url'),
+}).strict()
+export const sourceMapStyleSchema = z.object({
+  visible: z.boolean().default(true), icon: z.string().regex(/^[a-z][a-z0-9-]*$/).max(100).optional(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(), opacity: z.number().min(0).max(1).default(.18),
+  lineWidth: z.number().min(0).max(12).default(2),
 }).strict()
 const common = {
   id: sourceIdSchema, name: z.string().trim().min(1).max(120), enabled: z.boolean().default(true),
@@ -21,13 +26,16 @@ const common = {
   retentionHours: z.number().int().min(1).max(168).default(24),
   credentialRef: sourceIdSchema.optional(),
   attribution: z.string().max(300).default(''),
+  map: sourceMapStyleSchema.default({ visible: true, opacity: .18, lineWidth: 2 }),
 }
 export const situationSourceSchema = z.discriminatedUnion('adapter', [
   z.object({ ...common, adapter: z.literal('rss'), url: sourceUrlSchema }).strict(),
-  z.object({ ...common, adapter: z.literal('geojson'), url: sourceUrlSchema, mapping: mappingSchema.default({ id: 'id', title: 'properties.title', time: 'properties.time', url: 'properties.url' }) }).strict(),
+  z.object({ ...common, adapter: z.literal('geojson'), url: sourceUrlSchema, mapping: mappingSchema.default({ id: '/id', title: '/properties/title', time: '/properties/time', url: '/properties/url' }) }).strict(),
   z.object({ ...common, adapter: z.literal('usgs'), url: sourceUrlSchema }).strict(),
   z.object({ ...common, adapter: z.literal('met-forecast'), point: coordinateSchema }).strict(),
-  z.object({ ...common, adapter: z.literal('media'), url: sourceUrlSchema, format: z.enum(['youtube', 'video', 'audio', 'hls']), point: coordinateSchema.optional() }).strict(),
+  z.object({ ...common, adapter: z.literal('met-alerts'), url: sourceUrlSchema.default('https://api.met.no/weatherapi/metalerts/2.0/current.json?lang=no') }).strict(),
+  z.object({ ...common, adapter: z.literal('vegvesen'), url: sourceUrlSchema.default('https://ogckart-sn1.atlas.vegvesen.no/datex_3_1/ows'), dataset: z.enum(['cameras', 'road-weather', 'traffic']), bounds: boundsSchema.optional() }).strict(),
+  z.object({ ...common, adapter: z.literal('media'), url: sourceUrlSchema, format: z.enum(['image', 'youtube', 'video', 'audio', 'hls']), point: coordinateSchema.optional() }).strict(),
 ])
 export type SituationSource = z.infer<typeof situationSourceSchema>
 export const situationConfigSchema = z.object({
@@ -57,12 +65,16 @@ export type ExternalGeometry = z.infer<typeof externalGeometrySchema>
 const time = z.iso.datetime({ offset: true })
 export const evidenceUrlSchema = z.url().max(2048).refine(value => ['https:', 'http:'].includes(new URL(value).protocol), 'Evidence links must use HTTP or HTTPS')
 export const externalRecordSchema = z.object({
-  id: z.string().min(1).max(256), sourceId: sourceIdSchema, kind: z.enum(['report', 'event', 'forecast', 'feature', 'media']),
+  id: z.string().min(1).max(256), sourceId: sourceIdSchema, kind: z.enum(['report', 'event', 'forecast', 'observation', 'feature', 'media']),
   title: z.string().max(500), summary: z.string().max(3000).default(''), url: evidenceUrlSchema,
   attribution: z.string().max(300), retrievedAt: time, publishedAt: time.optional(), updatedAt: time.optional(), validAt: time.optional(),
+  observedAt: time.optional(), validFrom: time.optional(), validUntil: time.optional(),
+  subject: z.object({ id: z.string().min(1).max(256), label: z.string().max(500) }).strict().optional(),
+  category: z.string().max(100).optional(), severity: z.enum(['info', 'minor', 'moderate', 'severe', 'extreme']).optional(),
+  details: z.record(z.string().max(100), z.string().max(6000)).refine(value => Object.keys(value).length <= 16, 'At most 16 detail fields').default({}),
   geometry: externalGeometrySchema.optional(),
   measurements: z.array(z.object({ id: z.string().max(100), value: z.number().finite(), unit: z.string().max(60) }).strict()).max(24).default([]),
-  media: z.object({ format: z.enum(['youtube', 'video', 'audio', 'hls']), url: sourceUrlSchema }).strict().optional(),
+  media: z.array(z.object({ format: z.enum(['image', 'youtube', 'video', 'audio', 'hls']), url: sourceUrlSchema, available: z.boolean().optional(), label: z.string().max(200).optional() }).strict()).max(8).default([]),
 }).strict()
 export type ExternalRecord = z.infer<typeof externalRecordSchema>
 export const sourceStatusSchema = z.object({
@@ -73,7 +85,7 @@ export const sourceStatusSchema = z.object({
 export type SourceStatus = z.infer<typeof sourceStatusSchema>
 export const situationStateSchema = z.object({ revision: z.number().int().nonnegative(), config: situationConfigSchema, lastCommandId: z.string().optional() }).strict()
 export const recordSearchSchema = z.object({
-  sourceId: sourceIdSchema.optional(), text: z.string().max(200).default(''), bounds: boundsSchema.optional(),
+  sourceId: sourceIdSchema.optional(), subjectId: z.string().max(256).optional(), text: z.string().max(200).default(''), bounds: boundsSchema.optional(),
   from: time.optional(), to: time.optional(), limit: z.number().int().min(1).max(200).default(50), offset: z.number().int().min(0).max(100000).default(0),
 }).strict()
 

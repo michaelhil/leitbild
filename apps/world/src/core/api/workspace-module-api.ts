@@ -16,6 +16,7 @@ import {
   type ModuleResourceDescriptor
 } from '@leitbild/contracts'
 import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
+import { mapSymbolsInput, mapSymbolsOutput, searchMapSymbols } from '../map-symbols/catalog.ts'
 import { z } from 'zod'
 import { capabilityJsonSchema } from '../../simulation/capabilities.ts'
 import {
@@ -480,6 +481,14 @@ const scenarioSections = (definition: {
 }]
 
 const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, Response>(WORLD_MODULE_ID, [
+  {
+    descriptor: {
+      id: 'world.map.symbols', moduleId: WORLD_MODULE_ID, kind: 'query', scope: { kind: 'workspace' },
+      title: 'Discover map icons', description: 'Search the locally installed Lucide catalogue by name or semantic tags. Return canonical icon IDs for Pack map symbols; optionally request SVG artwork for up to 32 specific IDs. No external network access.',
+      risk: 'read', idempotent: true, inputSchema: z.toJSONSchema(mapSymbolsInput), outputSchema: z.toJSONSchema(mapSymbolsOutput),
+    },
+    invoke: async (_registry, invocation) => json({ result: searchMapSymbols(invocation.input) }),
+  },
   {
     descriptor: {
       id: 'world.scenario-authoring.describe',

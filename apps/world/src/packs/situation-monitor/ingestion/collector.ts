@@ -13,7 +13,7 @@ const credentialFor = (source: SituationSource): string | undefined => {
   return value
 }
 export const collectionKey = (source: SituationSource): string => {
-  const { id: _id, name: _name, enabled: _enabled, intervalSeconds: _interval, attribution: _attribution, ...request } = source
+  const { id: _id, name: _name, enabled: _enabled, intervalSeconds: _interval, attribution: _attribution, map: _map, ...request } = source
   const credential = source.credentialRef ? process.env['LEITBILD_SOURCE_CREDENTIAL_' + source.credentialRef] : undefined
   return digest(JSON.stringify(request) + (credential ? digest(credential) : ''))
 }
@@ -39,7 +39,7 @@ const originNextRequest = new Map<string, number>()
 let activeRequests = 0
 export const createCollector = (store: RecordStore, http: PublicHttp = publicHttp, withGrowth: (bytes: number, work: () => Promise<void>) => Promise<void> = async (_bytes, work) => await work()) => {
   const entries = new Map<string, Entry>()
-  const notify = (entry: Entry) => { for (const listener of entry.listeners.values()) listener() }
+  const notify = (entry: Entry) => { for (const listener of entry.listeners.values()) { try { listener() } catch (error) { console.error('Situation Monitor subscriber failed', error) } } }
   const collect = async (key: string, entry: Entry): Promise<void> => {
     if (entry.pending || !entry.listeners.size) return
     const now = Date.now(), next = entry.status.nextAttemptAt ? Date.parse(entry.status.nextAttemptAt) : 0
@@ -52,29 +52,31 @@ export const createCollector = (store: RecordStore, http: PublicHttp = publicHtt
     entry.abort = new AbortController()
     activeRequests++
     entry.status = { ...entry.status, state: 'loading', lastAttemptAt: new Date(now).toISOString(), error: null }
-    notify(entry)
     entry.pending = (async () => {
-      const metadata = store.metadata(key)
       let waitSeconds = Math.max(entry.source.intervalSeconds, minimumIntervalFor(entry.source))
+      let changed = false
       try {
-        const cached = store.count(key) > 0
-        const response = entry.source.adapter === 'media' ? { status: 200, text: '', headers: {} as Readonly<Record<string, string>> } : await http(sourceRequestUrl(entry.source), { signal: entry.abort!.signal, etag: cached ? metadata.etag : undefined, modifiedSince: cached ? metadata.modifiedSince : undefined, bearer: credentialFor(entry.source) })
+        store.cleanup()
+        const metadata = store.metadata(key), cached = store.hasSnapshot(key)
+        // Configured media is a reference, not a pretend HTTP fetch or a server-side recording.
+        const response = entry.source.adapter === 'media' ? null : await http(sourceRequestUrl(entry.source), { signal: entry.abort!.signal, etag: cached ? metadata.etag : undefined, modifiedSince: cached ? metadata.modifiedSince : undefined, bearer: credentialFor(entry.source) })
         if (!entry.listeners.size) return // Last lease closed while the request was in flight.
-        waitSeconds = Math.max(waitSeconds, providerWaitSeconds(response.headers, Date.now()))
-        if (response.headers['cache-control']?.includes('no-store')) throw new Error('Provider disallows caching; this source cannot be retained by Situation Monitor')
-        if (response.status !== 200 && response.status !== 304) throw new Error('Provider HTTP ' + response.status)
-        if (response.status === 304 && !cached) throw new Error('Provider returned unchanged content without an available cached body')
-        const bodyHash = digest(response.text)
-        if (response.status === 200 && (bodyHash !== metadata.bodyHash || store.count(key) === 0)) {
-          const records = decodeSource(entry.source, response.text, new Date().toISOString())
+        const headers = response?.headers ?? {}, unchanged = response?.status === 304
+        waitSeconds = Math.max(waitSeconds, providerWaitSeconds(headers, Date.now()))
+        if (headers['cache-control']?.includes('no-store')) throw new Error('Provider disallows caching; this source cannot be retained by Situation Monitor')
+        if (response && response.status !== 200 && !unchanged) throw new Error('Provider HTTP ' + response.status)
+        if (unchanged && !cached) throw new Error('Provider returned unchanged content without an available cached snapshot')
+        const bodyHash = unchanged ? metadata.bodyHash : digest(response?.text ?? '')
+        if (!unchanged && (bodyHash !== metadata.bodyHash || !cached)) {
+          const records = decodeSource(entry.source, response?.text ?? '', new Date().toISOString())
           if (new Set(records.map(record => record.id)).size !== records.length) throw new Error('Source contains duplicate record IDs')
-          await withGrowth(Buffer.byteLength(JSON.stringify(records)) * 3 + 65536, async () => { if (entry.listeners.size) store.replace(key, records, entry.source.retentionHours, true) })
+          await withGrowth(Buffer.byteLength(JSON.stringify(records)) * 3 + 65536, async () => { if (entry.listeners.size) { store.replace(key, records, entry.source.retentionHours); changed = true } })
         }
         if (!entry.listeners.size) return
         store.touch(key, entry.source.retentionHours)
         const lastSuccessAt = new Date().toISOString()
         const nextAttemptAt = new Date(Date.now() + waitSeconds * 1000 + Math.random() * 3000).toISOString()
-        store.setMetadata(key, { etag: response.headers.etag ?? (response.status === 304 ? metadata.etag : undefined), modifiedSince: response.headers['last-modified'] ?? (response.status === 304 ? metadata.modifiedSince : undefined), bodyHash: response.status === 200 ? bodyHash : metadata.bodyHash, lastSuccessAt, nextAttemptAt })
+        store.setMetadata(key, { etag: headers.etag ?? (unchanged ? metadata.etag : undefined), modifiedSince: headers['last-modified'] ?? (unchanged ? metadata.modifiedSince : undefined), bodyHash, lastSuccessAt, nextAttemptAt, lastAttemptAt: entry.status.lastAttemptAt! })
         entry.status = { ...entry.status, state: 'ready', lastSuccessAt, nextAttemptAt, recordCount: store.count(key), error: null }
         entry.failures = 0
       } catch (error) {
@@ -82,7 +84,9 @@ export const createCollector = (store: RecordStore, http: PublicHttp = publicHtt
         entry.failures++
         waitSeconds = Math.max(waitSeconds, Math.min(3600, 30 * 2 ** Math.min(entry.failures, 7)))
         entry.status = { ...entry.status, state: 'error', nextAttemptAt: new Date(Date.now() + waitSeconds * 1000).toISOString(), error: error instanceof Error ? error.message : String(error) }
-      } finally { notify(entry) }
+        try { store.setMetadata(key, { ...store.metadata(key), nextAttemptAt: entry.status.nextAttemptAt!, lastAttemptAt: entry.status.lastAttemptAt!, error: entry.status.error!, failures: entry.failures }) }
+        catch (persistenceError) { console.error('Situation Monitor could not persist provider retry deadline', persistenceError) }
+      } finally { if (changed) notify(entry) }
     })().finally(() => { activeRequests--; delete entry.pending; delete entry.abort })
     await entry.pending
   }
@@ -97,7 +101,7 @@ export const createCollector = (store: RecordStore, http: PublicHttp = publicHtt
       let entry = entries.get(key)
       if (!entry) {
         const metadata = store.metadata(key)
-        entry = { source, listeners: new Map(), intervals: new Map(), failures: 0, status: { sourceId: source.id, state: metadata.lastSuccessAt ? 'stale' : 'idle', lastAttemptAt: null, lastSuccessAt: metadata.lastSuccessAt ?? null, nextAttemptAt: metadata.nextAttemptAt ?? null, recordCount: store.count(key), error: null } }
+        entry = { source, listeners: new Map(), intervals: new Map(), failures: metadata.failures ?? 0, status: { sourceId: source.id, state: metadata.error ? 'error' : store.hasSnapshot(key) ? 'ready' : metadata.lastSuccessAt ? 'stale' : 'idle', lastAttemptAt: metadata.lastAttemptAt ?? null, lastSuccessAt: metadata.lastSuccessAt ?? null, nextAttemptAt: metadata.nextAttemptAt ?? null, recordCount: store.count(key), error: metadata.error ?? null } }
         entries.set(key, entry)
       }
       entry.listeners.set(token, onChange)
@@ -108,7 +112,7 @@ export const createCollector = (store: RecordStore, http: PublicHttp = publicHtt
       return {
         key,
         intervalSeconds: source.intervalSeconds,
-        status: (): SourceStatus => ({ ...acquired.status, sourceId: source.id }),
+        status: (): SourceStatus => ({ ...acquired.status, sourceId: source.id, recordCount: store.count(key), ...(acquired.status.state === 'ready' && !store.hasSnapshot(key) ? { state: 'stale' as const } : {}) }),
         refresh: async () => { await collect(key, acquired) },
         release: async () => {
           acquired.listeners.delete(token)
