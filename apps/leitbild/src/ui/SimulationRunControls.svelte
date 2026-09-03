@@ -116,8 +116,6 @@
       reportError(actionError)
     } finally {
       actionBusy = false
-      await refreshResources()
-      if (resources.some(candidate => candidate.ref.id === resource.ref.id)) await refresh()
     }
   }
   const showNotice = (message: string): void => {
@@ -176,6 +174,7 @@
     const name = editingName.trim()
     void runAction(async () => {
       await invoke(member.ref, 'world.simulation-run.rename', { name: name === '' ? null : name, expectedTitle: member.title })
+      await refreshResources()
       cancelRename()
     })
   }
@@ -190,12 +189,13 @@
   }
   const deleteRun = (member: ModuleResourceDescriptor): void => {
     if (!confirm(`Delete ${member.title}? This cannot be undone.`)) return
+    const deletingCurrent = member.ref.id === resource.ref.id
     void runAction(async () => {
       await invoke(member.ref, 'world.simulation-run.delete', {})
       const remaining = family.filter(candidate => candidate.ref.id !== member.ref.id)
       await refreshResources()
       familyOpen = false
-      if (member.ref.id === resource.ref.id) remaining.length > 0 ? onSwitch(remaining[0]!.ref.id) : onClose()
+      if (deletingCurrent) remaining.length > 0 ? onSwitch(remaining[0]!.ref.id) : onClose()
     })
   }
   const displayTime = $derived.by((): string => {
