@@ -18,7 +18,7 @@
   } from '../../core/model/index.ts'
   import { deleteObjectCommandKind } from '../../core/model/index.ts'
   import { createPackPresentationComposer } from '../../core/packs/presentation-composer.ts'
-  import type { PackCreateObjectType, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation, PackPresentationContribution } from '../../core/packs/protocol.ts'
+  import type { PackCreateObjectType, PackMapAssignmentMode, PackMapAssignmentTarget, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation, PackPresentationContribution } from '../../core/packs/protocol.ts'
   import type { ActivePackViews } from '../../core/packs/active-views.ts'
   import {
     fetchScenario,
@@ -133,6 +133,15 @@
     readonly plantId: string
     readonly index: number
   }
+  interface MapAssignmentState {
+    readonly controllerId: string
+    readonly mode: PackMapAssignmentMode
+  }
+  interface MapAssignmentPicker {
+    readonly target: PackMapAssignmentTarget
+    readonly x: number
+    readonly y: number
+  }
   let activePack = $state<ActivePackViews | null>(null)
   let simulationRunId = $state<SimulationRunId | null>(null)
   let objects = $state<OperationalObject[]>([])
@@ -207,6 +216,9 @@
   let latestMapRuntimeDiagnostics = $state<MapRuntimeDiagnosticsSnapshot | null>(null)
   let mapFocusRequest = $state<MapFocusRequest | null>(null)
   let mapFocusRevision = 0
+  let mapAssignment = $state<MapAssignmentState | null>(null)
+  let mapAssignmentPicker = $state<MapAssignmentPicker | null>(null)
+  let mapAssignmentChoiceIds = $state<ReadonlyArray<string>>([])
   let longTaskMonitor: LongTaskDiagnosticsMonitor | null = null
   let latestDroneMotionFrames: ReadonlyArray<DroneMotionFrame> = []
   const droneMotionFrameConsumers = new Set<DroneMotionFrameConsumer>()
@@ -246,6 +258,12 @@
   const surfacePanelLaunchers = $derived(surfacePanels.map(panel => ({ id: panel.id, label: panel.label, open: surfacePanelOpen[panel.id] ?? panel.defaultOpen })))
   const mapStartupFailed = $derived(startupSteps.find(step => step.id === 'map')?.status === 'failed')
   const richOperationalUiReady = $derived(!mapVisible || mapReady || mapStartupFailed)
+  const mapAssignmentController = $derived(mapAssignment ? objects.find(object => object.id === mapAssignment.controllerId) ?? null : null)
+  const mapAssignmentContribution = $derived(mapAssignmentController && activePack ? activePack.packForObject(mapAssignmentController).mapAssignment ?? null : null)
+  const mapAssignmentAnchor = $derived(mapAssignmentController && mapAssignmentContribution && mapAssignment
+    ? mapAssignmentContribution.anchorFor(mapAssignmentController, mapAssignment.mode, { objects })
+    : null)
+  const mapAssignmentHandles = $derived(activePack ? activePack.packs.flatMap(pack => pack.mapAssignment?.handles({ objects }) ?? []) : [])
   const debugMapInput = $derived(new URLSearchParams(location.search).get('debugMapInput') === '1')
   const debugStartup = new URLSearchParams(location.search).get('debugStartup') === '1'
   const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForStartingView(allCategoryRows, railConfig))
@@ -1077,6 +1095,61 @@
     await syncSimulationRunSnapshot()
   }
 
+  const cancelMapAssignment = (): void => {
+    mapAssignment = null
+    mapAssignmentPicker = null
+    mapAssignmentChoiceIds = []
+  }
+
+  const beginMapAssignment = (controller: OperationalObject, mode: PackMapAssignmentMode): void => {
+    if (!activePack) return
+    const contribution = activePack.packForObject(controller).mapAssignment
+    if (!contribution) return
+    if (mode === 'start' && !contribution.canStart(controller, { objects })) {
+      commandStatus = `${controller.label} is not available for a new assignment`
+      return
+    }
+    placement.cancel()
+    mapAssignment = { controllerId: controller.id, mode }
+    mapAssignmentPicker = null
+    mapAssignmentChoiceIds = []
+    commandStatus = mode === 'start' ? `Choose an incident for ${controller.label}` : `Add a stop to ${controller.label}`
+  }
+
+  const submitMapAssignmentTarget = async (target: PackMapAssignmentTarget, choiceIds: ReadonlyArray<string>): Promise<void> => {
+    if (choiceIds.length < target.minimumChoices || choiceIds.length > target.maximumChoices) {
+      commandStatus = `Choose ${target.minimumChoices === target.maximumChoices ? target.minimumChoices : `${target.minimumChoices}–${target.maximumChoices}`} patients`
+      return
+    }
+    const command = target.buildCommand(choiceIds)
+    cancelMapAssignment()
+    commandStatus = `Assigning ${target.label}`
+    await sendCommand(command.kind, command.payload)
+  }
+
+  const chooseMapAssignmentTarget = (candidate: OperationalObject, screen: { readonly x: number; readonly y: number }): void => {
+    if (!mapAssignment || !mapAssignmentController || !mapAssignmentContribution) return
+    const target = mapAssignmentContribution.targetFor(mapAssignmentController, candidate, mapAssignment.mode, { objects })
+    if (!target) {
+      commandStatus = `${candidate.label} is not a valid next destination`
+      cancelMapAssignment()
+      return
+    }
+    const available = target.choices.filter(choice => !choice.disabledReason)
+    if (target.choices.length <= 1) {
+      void submitMapAssignmentTarget(target, available.map(choice => choice.id))
+      return
+    }
+    mapAssignmentPicker = { target, x: screen.x, y: screen.y }
+    mapAssignmentChoiceIds = []
+  }
+
+  const toggleMapAssignmentChoice = (id: string): void => {
+    mapAssignmentChoiceIds = mapAssignmentChoiceIds.includes(id)
+      ? mapAssignmentChoiceIds.filter(value => value !== id)
+      : [...mapAssignmentChoiceIds, id]
+  }
+
   const invokeRealtimeCapability = async (invocation: Parameters<typeof realtimeConnection.invokeCapability>[1]) => {
     if (!simulationRunId) throw new Error('simulation run is not ready')
     return await realtimeConnection.invokeCapability(simulationRunId, invocation)
@@ -1600,11 +1673,45 @@
           packFeatureLayers={activePackFeatureLayers}
           packFeatureSourcePackIds={activePackFeatureSourcePackIds}
           focusRequest={mapFocusRequest}
+          assignmentActive={mapAssignment !== null}
+          assignmentAnchor={mapAssignmentAnchor}
+          assignmentHandles={mapAssignmentHandles}
+          onObjectLongPressed={object => beginMapAssignment(object, 'start')}
+          onAssignmentHandleSelected={controllerId => { const controller = objects.find(object => object.id === controllerId); if (controller) beginMapAssignment(controller, 'append') }}
+          onAssignmentObjectSelected={chooseMapAssignmentTarget}
+          onAssignmentCancelled={cancelMapAssignment}
         />
       {:else if mapVisible}
         <div class="map-loading">Starting map...</div>
       {:else}
         <div class="surface-empty"></div>
+      {/if}
+      {#if mapAssignmentPicker}
+        <section
+          class="map-assignment-picker"
+          style={`--picker-x:${mapAssignmentPicker.x}px;--picker-y:${mapAssignmentPicker.y}px`}
+          aria-label={`Select patients for ${mapAssignmentPicker.target.label}`}
+        >
+          <div class="map-assignment-picker__header">
+            <div>
+              <strong>{mapAssignmentPicker.target.label}</strong>
+              <span>Select casualties</span>
+            </div>
+            <button type="button" aria-label="Cancel assignment" title="Cancel" onclick={cancelMapAssignment}>×</button>
+          </div>
+          <div class="map-assignment-picker__choices">
+            {#each mapAssignmentPicker.target.choices as choice (choice.id)}
+              <label class:disabled={!!choice.disabledReason} title={choice.disabledReason ?? ''}>
+                <input type="checkbox" disabled={!!choice.disabledReason} checked={mapAssignmentChoiceIds.includes(choice.id)} onchange={() => toggleMapAssignmentChoice(choice.id)} />
+                <span><strong>{choice.label}</strong><small>{choice.summary}</small>{#if choice.disabledReason}<small class="reason">{choice.disabledReason}</small>{/if}</span>
+              </label>
+            {/each}
+          </div>
+          <div class="map-assignment-picker__footer">
+            <span>{mapAssignmentChoiceIds.length}/{mapAssignmentPicker.target.maximumChoices} selected</span>
+            <button type="button" disabled={mapAssignmentChoiceIds.length < mapAssignmentPicker.target.minimumChoices || mapAssignmentChoiceIds.length > mapAssignmentPicker.target.maximumChoices} onclick={() => void submitMapAssignmentTarget(mapAssignmentPicker!.target, mapAssignmentChoiceIds)}>Assign</button>
+          </div>
+        </section>
       {/if}
       {#if richOperationalUiReady && simulationRunId}
         {#each surfacePanels as panel (panel.id)}

@@ -74,6 +74,20 @@ export interface OperationalSymbolFeature {
   readonly signature: string
 }
 
+export interface MapAssignmentHandleFeature {
+  readonly id: string
+  readonly controllerId: string
+  readonly position: Position3
+}
+
+export interface MapAssignmentInteraction {
+  readonly revision: number
+  readonly active: boolean
+  readonly anchor: Position3 | null
+  readonly pointer: Position3 | null
+  readonly handles: ReadonlyArray<MapAssignmentHandleFeature>
+}
+
 export interface OperationalRenderInput {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly selectedControllerId: string | null

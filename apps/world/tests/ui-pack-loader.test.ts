@@ -16,7 +16,8 @@ describe('UI scenario pack loading', () => {
     expect(pack.presentation.categories.map(category => category.id)).not.toContain('weather')
     expect(pack.presentation.categories.map(category => category.id)).not.toContain('process-plants')
     expect(pack.creation?.createObjectTypes ?? []).toEqual([])
-    expect(pack.surfacePanels.map(panel => panel.id)).toContain('ambulance.dispatch')
+    expect(pack.surfacePanels).toEqual([])
+    expect(pack.packs[0]?.mapAssignment).toBeDefined()
   })
 
   test('combines scenario packs in declared order', async () => {

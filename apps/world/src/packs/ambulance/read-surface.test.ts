@@ -121,6 +121,21 @@ describe('Ambulance bounded AI read surface', () => {
 })
 
 describe('Ambulance presentation, discovery and recording', () => {
+  test('map assignment discovers casualties, builds authoritative commands and exposes extension handles', () => {
+    const objects = build()
+    const contribution = ambulancePackView.mapAssignment!
+    expect(contribution.canStart(objects[1]!, { objects })).toBe(true)
+    const target = contribution.targetFor(objects[1]!, objects[0]!, 'start', { objects })
+    expect(target?.choices).toEqual([expect.objectContaining({ id: 'patient:a', label: 'Test patient' })])
+    expect(target?.buildCommand(['patient:a'])).toMatchObject({ kind: 'world.ambulance.assign', payload: { ambulanceId: 'ambulance:a', incidentId: 'incident:a', patientIds: ['patient:a'] } })
+
+    const assigned = update(objects[1]!, { assignment })
+    const assignedObjects = objects.map(object => object.id === assigned.id ? assigned : object)
+    expect(contribution.handles({ objects: assignedObjects })).toEqual([expect.objectContaining({ controllerId: 'ambulance:a' })])
+    const handover = contribution.targetFor(assigned, objects[3]!, 'append', { objects: assignedObjects })
+    expect(handover?.buildCommand([])).toMatchObject({ kind: 'world.ambulance.append-stop', payload: { kind: 'handover', careSiteId: 'site:a', patientIds: ['patient:a'] } })
+  })
+
   test('atObject avoids a duplicate marker only while co-located; a removed/moved subject cannot hide an incident', () => {
     const objects = build()
     const subject: OperationalObject = { ...objects[1]!, id: 'plant:a' as OperationalObject['id'], packId: packIdSchema.parse('process-plant'), packData: { type: 'plant' } }

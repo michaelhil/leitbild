@@ -15,6 +15,7 @@
     PackCreateObjectType,
     PackMapFeature,
     PackMapLayerGroup,
+    PackMapAssignmentHandle,
     PackObjectPresentation,
   } from '../core/packs/protocol.ts'
   import { createMapPopupController } from './map/map-popup-controller.ts'
@@ -37,6 +38,7 @@
     MapRuntimeDiagnosticsSnapshot,
     MapFocusRequest,
     MapRuntimeHandle,
+    MapAssignmentInteraction,
   } from './map-runtime/types.ts'
 
   interface Props {
@@ -77,6 +79,13 @@
     readonly focusRequest?: MapFocusRequest | null
     readonly packDataRevisionKey?: string
     readonly onPackFeatureSelected?: (selection: NonNullable<PackMapFeature['selection']>) => void
+    readonly assignmentActive?: boolean
+    readonly assignmentAnchor?: GeoJsonPoint | null
+    readonly assignmentHandles?: ReadonlyArray<PackMapAssignmentHandle>
+    readonly onAssignmentObjectSelected?: (object: OperationalObject, screen: { readonly x: number; readonly y: number }) => void
+    readonly onAssignmentHandleSelected?: (controllerId: string) => void
+    readonly onAssignmentCancelled?: () => void
+    readonly onObjectLongPressed?: (object: OperationalObject) => void
   }
 
   const {
@@ -112,6 +121,13 @@
     focusRequest = null,
     packDataRevisionKey = '',
     onPackFeatureSelected = () => {},
+    assignmentActive = false,
+    assignmentAnchor = null,
+    assignmentHandles = [],
+    onAssignmentObjectSelected = () => {},
+    onAssignmentHandleSelected = () => {},
+    onAssignmentCancelled = () => {},
+    onObjectLongPressed = () => {},
   }: Props = $props()
 
   let mapElement = $state<HTMLDivElement | null>(null)
@@ -125,6 +141,20 @@
   let appliedCameraKey: string | null = null
   let appliedFocusRevision = -1
   let mapReadyNotified = false
+  let hoveredObject: OperationalObject | null = null
+  let assignmentPointer = $state<GeoJsonPoint | null>(null)
+  let interactionRevision = $state(0)
+  let lastPointerScreen = { x: 0, y: 0 }
+  let suppressBackgroundClick = false
+  let longPressConsumedUntil = 0
+
+  const assignmentInteraction = (): MapAssignmentInteraction => ({
+    revision: interactionRevision,
+    active: assignmentActive,
+    anchor: assignmentAnchor ? [assignmentAnchor.coordinates[0], assignmentAnchor.coordinates[1], 0] : null,
+    pointer: assignmentPointer ? [assignmentPointer.coordinates[0], assignmentPointer.coordinates[1], 0] : null,
+    handles: assignmentHandles.map(handle => ({ id: handle.id, controllerId: handle.controllerId, position: [handle.point.coordinates[0], handle.point.coordinates[1], 0] })),
+  })
 
   const createNoopMapInputDebugController = (): MapInputDebugController => ({
     install: () => undefined,
@@ -172,15 +202,24 @@
       packFeatures: cachedPackMapFeatures,
       visibleFamilies: visibleFamilies(),
       placementCursorActive: placementCursor !== null,
+      assignmentInteraction: assignmentInteraction(),
     }),
     hasNewInfo: object => hasNewInfo(object),
     presentationFor: object => presentationFor(object),
-    onObjectSelected: object => onObjectSelected(object),
+    onObjectSelected: object => {
+      if (performance.now() < longPressConsumedUntil) return
+      if (assignmentActive) {
+        suppressBackgroundClick = true
+        onAssignmentObjectSelected(object, lastPointerScreen)
+      } else onObjectSelected(object)
+    },
     onObjectSeen: object => onObjectSeen(object),
     onObjectHover: object => {
+      hoveredObject = object
       if (object) popupController.show(object)
       else popupController.hide()
     },
+    onAssignmentHandleSelected: handle => { suppressBackgroundClick = true; onAssignmentHandleSelected(handle.controllerId) },
     setCursor: cursor => {
       const canvas = runtime?.map.getCanvas()
       if (canvas) canvas.style.cursor = cursor
@@ -333,6 +372,7 @@
     mapPerformanceDiagnostics.clear()
     const cleanupMapPerformanceGlobal = installMapPerformanceDiagnosticsGlobal()
     const stopFrameLagMonitor = startFrameLagMonitor(mapPerformanceDiagnostics)
+    let cleanupMapGestures = () => undefined
 
     const initializeMap = async (): Promise<void> => {
       await installMapInputDebugController()
@@ -344,6 +384,12 @@
         zoom: mapConfig.zoom,
         placementActive: () => placementMode !== null,
         onPlacementPoint,
+        onMapClick: () => {
+          queueMicrotask(() => {
+            if (suppressBackgroundClick) { suppressBackgroundClick = false; return }
+            if (assignmentActive) onAssignmentCancelled()
+          })
+        },
         onMoveStart: () => {
           packOverlayController.setCameraGestureActive(true)
           packOverlayController.abort('map camera moved before pack map-area query completed')
@@ -364,6 +410,54 @@
         return
       }
       runtime = nextRuntime
+      const canvas = nextRuntime.map.getCanvas()
+      let holdTimer: ReturnType<typeof setTimeout> | null = null
+      let holdStart: { x: number; y: number } | null = null
+      const clearHold = () => { if (holdTimer !== null) clearTimeout(holdTimer); holdTimer = null; holdStart = null }
+      const pointerPoint = (event: PointerEvent): GeoJsonPoint => {
+        const rect = canvas.getBoundingClientRect()
+        lastPointerScreen = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+        const value = nextRuntime.map.unproject([lastPointerScreen.x, lastPointerScreen.y])
+        return geoPointFromLonLat(value.lng, value.lat)
+      }
+      const onPointerDown = (event: PointerEvent) => {
+        pointerPoint(event)
+        if (assignmentActive || placementMode || event.button !== 0 || !hoveredObject) return
+        const origin = hoveredObject
+        holdStart = { x: event.clientX, y: event.clientY }
+        holdTimer = setTimeout(() => {
+          holdTimer = null
+          holdStart = null
+          assignmentPointer = pointerPoint(event)
+          interactionRevision += 1
+          longPressConsumedUntil = performance.now() + 500
+          suppressBackgroundClick = true
+          popupController.hide()
+          onObjectLongPressed(origin)
+        }, 420)
+      }
+      const onPointerMove = (event: PointerEvent) => {
+        const point = pointerPoint(event)
+        if (holdStart && Math.hypot(event.clientX - holdStart.x, event.clientY - holdStart.y) > 7) clearHold()
+        if (!assignmentActive) return
+        assignmentPointer = point
+        interactionRevision += 1
+      }
+      const onPointerEnd = () => clearHold()
+      const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape' && assignmentActive) onAssignmentCancelled() }
+      canvas.addEventListener('pointerdown', onPointerDown)
+      canvas.addEventListener('pointermove', onPointerMove)
+      canvas.addEventListener('pointerup', onPointerEnd)
+      canvas.addEventListener('pointercancel', onPointerEnd)
+      window.addEventListener('keydown', onKeyDown)
+      cleanupMapGestures = () => {
+        clearHold()
+        canvas.removeEventListener('pointerdown', onPointerDown)
+        canvas.removeEventListener('pointermove', onPointerMove)
+        canvas.removeEventListener('pointerup', onPointerEnd)
+        canvas.removeEventListener('pointercancel', onPointerEnd)
+        window.removeEventListener('keydown', onKeyDown)
+      }
       onMapView(readMapView(nextRuntime.map))
       appliedTheme = theme
       appliedCameraKey = cameraKeyFor(mapConfig)
@@ -387,6 +481,7 @@
     return () => {
       cancelled = true
       stopFrameLagMonitor()
+      cleanupMapGestures()
       cleanupMapPerformanceGlobal()
       resetMapInputDebugController()
       operationalRenderController.destroy()
@@ -408,6 +503,26 @@
     highlightedObjectIds
     routeRevision
     untrack(() => operationalRenderController.syncObjects())
+  })
+
+  $effect(() => {
+    assignmentActive
+    assignmentAnchor
+    assignmentHandles
+    interactionRevision
+    untrack(() => {
+      const canvas = runtime?.map.getCanvas()
+      if (!assignmentActive && assignmentPointer) {
+        assignmentPointer = null
+        interactionRevision += 1
+      }
+      if (assignmentActive && !assignmentPointer && assignmentAnchor) {
+        assignmentPointer = assignmentAnchor
+        interactionRevision += 1
+      }
+      if (canvas) canvas.style.cursor = assignmentActive ? 'crosshair' : placementCursor ? 'crosshair' : hoveredObject ? 'pointer' : ''
+      operationalRenderController.syncInteraction()
+    })
   })
 
   $effect(() => {

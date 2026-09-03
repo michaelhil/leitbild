@@ -40,6 +40,7 @@ export interface CreateMapRuntimeConfig {
   readonly preserveDrawingBuffer?: boolean
   readonly placementActive: () => boolean
   readonly onPlacementPoint: (point: GeoJsonPoint) => void
+  readonly onMapClick: (point: GeoJsonPoint) => void
   readonly onMoveStart: () => void
   readonly onMoveEnd: () => void
   readonly onError: (error: MapRuntimeError) => void
@@ -314,8 +315,9 @@ export const createMapRuntime = async (
   })
 
   current.on('click', (event) => {
-    if (!config.placementActive()) return
-    config.onPlacementPoint(geoPointFromLonLat(event.lngLat.lng, event.lngLat.lat))
+    const point = geoPointFromLonLat(event.lngLat.lng, event.lngLat.lat)
+    if (config.placementActive()) config.onPlacementPoint(point)
+    else config.onMapClick(point)
   })
   current.on('movestart', config.onMoveStart)
   current.on('moveend', config.onMoveEnd)

@@ -12,6 +12,8 @@ import type { MapPerformanceDiagnostics } from './map-performance-diagnostics.ts
 import { createMapUpdateScheduler } from './map-update-scheduler.ts'
 import { createOperationalDeckLayerFactory, visibleFamiliesKey } from './operational-deck-layers.ts'
 import type {
+  MapAssignmentHandleFeature,
+  MapAssignmentInteraction,
   MapRuntimeHandle,
   OperationalRenderSnapshot,
   RenderFamily,
@@ -26,6 +28,7 @@ export interface OperationalRenderControllerState {
   readonly packFeatures: ReadonlyArray<PackMapFeature>
   readonly visibleFamilies: ReadonlySet<string>
   readonly placementCursorActive: boolean
+  readonly assignmentInteraction: MapAssignmentInteraction
 }
 
 export interface OperationalRenderControllerConfig {
@@ -36,6 +39,7 @@ export interface OperationalRenderControllerConfig {
   readonly onObjectSelected: (object: OperationalObject) => void
   readonly onObjectSeen: (object: OperationalObject) => void
   readonly onObjectHover: (object: OperationalObject | null) => void
+  readonly onAssignmentHandleSelected: (handle: MapAssignmentHandleFeature) => void
   readonly setCursor: (cursor: 'crosshair' | 'pointer' | '') => void
   readonly refreshPopup: (objects: ReadonlyArray<OperationalObject>) => void
   readonly onDiagnostic: (runtime: MapRuntimeHandle) => void
@@ -48,6 +52,7 @@ export interface OperationalRenderController {
   readonly syncAreaFeatures: () => void
   readonly syncVisibility: () => void
   readonly syncObjectVisibility: () => void
+  readonly syncInteraction: () => void
   readonly flushNow: () => void
   readonly destroy: () => void
 }
@@ -101,12 +106,14 @@ const createRenderHasNewInfo = (
 const renderSignatureFor = (
   snapshot: OperationalRenderSnapshot,
   visibleFamilies: ReadonlySet<string>,
+  interactionRevision: number,
 ): string => [
   snapshot.revisions.points,
   snapshot.revisions.paths,
   snapshot.revisions.areaSymbols,
   snapshot.revisions.placement,
   visibleFamiliesKey(visibleFamilies),
+  interactionRevision,
 ].join('|')
 
 export const createOperationalRenderController = (
@@ -185,7 +192,7 @@ export const createOperationalRenderController = (
         },
       )
       : featureStore.snapshot()
-    const renderSignature = renderSignatureFor(snapshot, state.visibleFamilies)
+    const renderSignature = renderSignatureFor(snapshot, state.visibleFamilies, state.assignmentInteraction.revision)
     const deckUpdated = renderSignature !== lastRenderSignature
     if (deckUpdated) {
       lastRenderSignature = renderSignature
@@ -211,6 +218,8 @@ export const createOperationalRenderController = (
             config.onObjectSeen(point.object)
             config.onObjectHover(point.object)
           },
+          assignmentInteraction: state.assignmentInteraction,
+          onAssignmentHandleSelected: config.onAssignmentHandleSelected,
         }),
         {
           points: snapshot.points.length,
@@ -323,6 +332,9 @@ export const createOperationalRenderController = (
     },
     syncObjectVisibility: () => {
       scheduleMany(renderFamiliesForObjects, 70)
+    },
+    syncInteraction: () => {
+      schedule('placement', 95)
     },
     flushNow: () => {
       for (const family of fullRenderFamilies) pendingFamilies.add(family)

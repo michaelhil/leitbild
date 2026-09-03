@@ -7,6 +7,8 @@ import {
 } from './symbol-kit.ts'
 import type {
   ColorRgba,
+  MapAssignmentHandleFeature,
+  MapAssignmentInteraction,
   OperationalPathFeature,
   OperationalPointFeature,
   OperationalRenderSnapshot,
@@ -20,6 +22,8 @@ export interface OperationalDeckLayerConfig {
   readonly onObjectSelected: (object: OperationalPointFeature) => void
   readonly onObjectSeen: (object: OperationalPointFeature) => void
   readonly onObjectHover: (object: OperationalPointFeature | null) => void
+  readonly assignmentInteraction?: MapAssignmentInteraction
+  readonly onAssignmentHandleSelected?: (handle: MapAssignmentHandleFeature) => void
   readonly layerData?: OperationalDeckLayerData
 }
 
@@ -168,9 +172,53 @@ export const createOperationalDeckLayerFactory = (): OperationalDeckLayerFactory
 export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig): ReadonlyArray<Layer> => {
   const snapshot = config.snapshot
   const visibleFamilies = config.visibleFamilies
+  const assignmentInteraction = config.assignmentInteraction ?? { revision: 0, active: false, anchor: null, pointer: null, handles: [] }
   const layerData = config.layerData ?? createOperationalDeckLayerDataCache().dataFor(snapshot, visibleFamilies)
   const visiblePaths = layerData.visiblePaths
   return [
+    new PathLayer<{ readonly path: ReadonlyArray<Position3> }>({
+      id: 'leitbild-assignment-preview-line',
+      data: assignmentInteraction.active && assignmentInteraction.anchor && assignmentInteraction.pointer
+        ? [{ path: [assignmentInteraction.anchor, assignmentInteraction.pointer] }]
+        : [],
+      pickable: false,
+      getPath: entry => entry.path as unknown as number[],
+      getColor: rgba(38, 117, 216, 220),
+      getWidth: 2,
+      widthUnits: 'pixels',
+      capRounded: true,
+      updateTriggers: { getPath: assignmentInteraction.revision },
+    }),
+    new ScatterplotLayer<{ readonly position: Position3 }>({
+      id: 'leitbild-assignment-crosshair',
+      data: assignmentInteraction.active && assignmentInteraction.pointer ? [{ position: assignmentInteraction.pointer }] : [],
+      pickable: false,
+      radiusUnits: 'pixels',
+      lineWidthUnits: 'pixels',
+      stroked: true,
+      filled: false,
+      getPosition: entry => entry.position,
+      getRadius: 11,
+      getLineColor: rgba(38, 117, 216, 245),
+      getLineWidth: 2.5,
+      updateTriggers: { getPosition: assignmentInteraction.revision },
+    }),
+    new IconLayer<MapAssignmentHandleFeature>({
+      id: 'leitbild-assignment-handles',
+      data: assignmentInteraction.handles,
+      pickable: true,
+      visible: !assignmentInteraction.active,
+      iconAtlas: atlasUrl,
+      iconMapping,
+      sizeUnits: 'pixels',
+      getIcon: () => 'git-branch-plus',
+      getPosition: handle => handle.position,
+      getPixelOffset: [15, -15],
+      getColor: white(250),
+      getSize: 30,
+      onClick: info => { if (info.object) config.onAssignmentHandleSelected?.(info.object) },
+      updateTriggers: { getPosition: assignmentInteraction.revision },
+    }),
     new PathLayer<OperationalPathFeature>({
       id: 'leitbild-operational-path-casing',
       data: visiblePaths,

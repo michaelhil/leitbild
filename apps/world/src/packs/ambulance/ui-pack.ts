@@ -1,7 +1,8 @@
-import type { OperationalObject } from '../../core/model/index.ts'
+import { geoPointFromLonLat, type GeoJsonPoint, type OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
-import { createWorldPackDescriptor, type PackObjectPresentation, type WorldPackView } from '../../core/packs/protocol.ts'
-import { activeAssignmentStop, ambulanceDataOf, ambulancePackId, assignmentWarnings, patientObjects, patientPackDataSchema, unitPatients } from './model.ts'
+import { createWorldPackDescriptor, type PackMapAssignmentTarget, type PackMapFeature, type PackObjectPresentation, type PackTargetContext, type WorldPackView } from '../../core/packs/protocol.ts'
+import { appendStopCommandKind, assignCommandKind } from './commands.ts'
+import { activeAssignmentStop, ambulanceDataOf, ambulancePackDataSchema, ambulancePackId, appendHandoverEligibility, appendPickupEligibility, assignmentWarnings, dispatchEligibility, incidentPackDataSchema, patientObjects, patientPackDataSchema, unitPatients } from './model.ts'
 import { ambulanceSimRuntimeId } from './sim/constants.ts'
 
 const urgencyColor = { acute: '#dc4444', urgent: '#d49327', ordinary: '#3c8cab' }
@@ -19,6 +20,97 @@ const subjects = (object: OperationalObject, objects: ReadonlyArray<OperationalO
   const data = ambulanceDataOf(candidate)
   return (data.type === 'incident' || data.type === 'care-site') && data.subjectObjectId === object.id ? [{ object: candidate, data }] : []
 })
+const pointOf = (object: OperationalObject): GeoJsonPoint => {
+  const point = object.spatial.position?.point
+  if (!point) throw new Error(`${object.id} has no map position`)
+  return point
+}
+const routeEnd = (object: OperationalObject): GeoJsonPoint => {
+  const data = ambulancePackDataSchema.parse(object.packData)
+  const stop = data.assignment?.stops.at(-1)
+  if (!stop) return pointOf(object)
+  return geoPointFromLonLat(...stop.route.geometry.coordinates.at(-1)!)
+}
+const targetObjectFor = (candidate: OperationalObject, context: PackTargetContext): OperationalObject | null => {
+  if (candidate.packId === ambulancePackId) {
+    const data = ambulanceDataOf(candidate)
+    if (data.type === 'incident' || data.type === 'care-site') return candidate
+  }
+  const attached = context.objects.filter(object => {
+    if (object.packId !== ambulancePackId) return false
+    const data = ambulanceDataOf(object)
+    return (data.type === 'incident' || data.type === 'care-site') && data.subjectObjectId === candidate.id
+  })
+  return attached.length === 1 ? attached[0]! : null
+}
+const incidentTarget = (controller: OperationalObject, incident: OperationalObject, mode: 'start' | 'append', context: PackTargetContext): PackMapAssignmentTarget | null => {
+  if (!incidentPackDataSchema.safeParse(incident.packData).success) return null
+  const candidates = patientObjects(context.objects).filter(object => {
+    const data = patientPackDataSchema.parse(object.packData)
+    return data.incidentId === incident.id && data.disposition === 'active' && data.holder.kind === 'incident'
+  })
+  const choices = candidates.map(patient => {
+    const data = patientPackDataSchema.parse(patient.packData)
+    const reasons = mode === 'start'
+      ? dispatchEligibility(controller, incident, [patient], context.objects)
+      : appendPickupEligibility(controller, incident, [patient], context.objects)
+    return {
+      id: patient.id,
+      label: patient.label,
+      summary: `${data.assessedUrgency} · ${data.summary}${data.needs.length ? ` · needs ${data.needs.join(', ')}` : ''}`,
+      ...(reasons.length ? { disabledReason: reasons.join('; ') } : {}),
+    }
+  })
+  const available = choices.filter(choice => !choice.disabledReason)
+  if (available.length === 0) return null
+  const unit = ambulancePackDataSchema.parse(controller.packData)
+  const remainingCapacity = unit.patientCapacity - (mode === 'append' ? unit.assignment?.patientIds.length ?? 0 : 0)
+  return {
+    id: incident.id,
+    label: incident.label,
+    choices,
+    minimumChoices: 1,
+    maximumChoices: remainingCapacity,
+    buildCommand: choiceIds => ({
+      kind: mode === 'start' ? assignCommandKind : appendStopCommandKind,
+      targetObjectIds: [controller.id],
+      payload: mode === 'start'
+        ? { ambulanceId: controller.id, incidentId: incident.id, patientIds: choiceIds }
+        : { kind: 'pickup', ambulanceId: controller.id, incidentId: incident.id, patientIds: choiceIds },
+    }),
+  }
+}
+const careSiteTarget = (controller: OperationalObject, site: OperationalObject, context: PackTargetContext): PackMapAssignmentTarget | null => {
+  const unit = ambulancePackDataSchema.parse(controller.packData)
+  const assignment = unit.assignment
+  if (!assignment) return null
+  const handedOver = new Set(assignment.stops.flatMap(stop => stop.kind === 'handover' ? stop.patientIds : []))
+  const patientIds = assignment.patientIds.filter(id => !handedOver.has(id))
+  if (appendHandoverEligibility(controller, site, patientIds, context.objects).length > 0) return null
+  return {
+    id: site.id,
+    label: site.label,
+    choices: [],
+    minimumChoices: 0,
+    maximumChoices: 0,
+    buildCommand: () => ({ kind: appendStopCommandKind, targetObjectIds: [controller.id], payload: { kind: 'handover', ambulanceId: controller.id, careSiteId: site.id, patientIds } }),
+  }
+}
+const assignmentMapFeatures = (objects: ReadonlyArray<OperationalObject>): ReadonlyArray<PackMapFeature> => objects.flatMap(object => {
+  if (object.packId !== ambulancePackId) return []
+  const data = ambulanceDataOf(object)
+  if (data.type !== 'ambulance' || !data.assignment || data.assignment.phase === 'returning') return []
+  const result: PackMapFeature[] = []
+  let from = pointOf(object)
+  for (let index = data.assignment.activeStopIndex; index < data.assignment.stops.length; index += 1) {
+    const stop = data.assignment.stops[index]!
+    const to = geoPointFromLonLat(...stop.route.geometry.coordinates.at(-1)!)
+    result.push({ id: `ambulance-plan-link:${object.id}:${index}`, categoryId: 'ambulances', geometry: { type: 'LineString', coordinates: [from.coordinates, to.coordinates] }, color: '#2675d8', lineColor: '#2675d8', lineOpacity: 0.42, lineWidth: 1.5, summary: `${object.label} assignment link`, sortKey: 22 })
+    if (index > data.assignment.activeStopIndex) result.push({ id: `ambulance-plan-route:${object.id}:${index}`, categoryId: 'ambulances', geometry: stop.route.geometry, color: '#2675d8', lineColor: '#2675d8', lineOpacity: 0.82, lineWidth: 3, summary: `${object.label} planned route`, sortKey: 24 })
+    from = to
+  }
+  return result
+})
 
 export const presentAmbulanceObject = (object: OperationalObject, objects: ReadonlyArray<OperationalObject>): PackObjectPresentation => {
   const data = ambulanceDataOf(object)
@@ -33,6 +125,7 @@ export const presentAmbulanceObject = (object: OperationalObject, objects: Reado
       packField('capabilities', 'Capabilities', join(data.capabilities)),
       packField('mobilization', 'Configured mobilization', data.mobilizationSeconds + ' s'),
       packField('scene', 'Configured scene service', data.sceneSeconds + ' s'),
+      packField('map-action', 'Map action', data.assignment && data.assignment.phase !== 'returning' ? 'Use the connector to add a stop' : 'Hold the marker to assign'),
       ...(data.assignment ? [packField('plan', 'Remaining stops', data.assignment.stops.slice(data.assignment.activeStopIndex).map(stop => stop.kind === 'return-base' ? 'Return to base' : labelFor(stop.targetId, objects)).join(' → '))] : []),
       ...(object.spatial.route?.etaSeconds !== undefined ? [packField('eta', 'Route ETA', Math.ceil(object.spatial.route.etaSeconds) + ' simulated seconds')] : []),
       ...assignmentWarnings(object, objects).map((reason, index) => packField('warning-' + index, 'Review assignment', reason)),
@@ -73,7 +166,7 @@ export const presentAmbulanceObject = (object: OperationalObject, objects: Reado
 }
 
 export const ambulancePackView = {
-  descriptor: createWorldPackDescriptor({ id: ambulancePackId, version: '1.0.0', name: 'Ambulance Dispatch', description: 'Configurable response units, incidents, individual patient custody, flexible care sites and dispatch/handover workflows. Operational research model; not patient physiology.', contributions: ['runtime', 'recording', 'scenario', 'presentation'] }),
+  descriptor: createWorldPackDescriptor({ id: ambulancePackId, version: '1.0.0', name: 'Ambulance Dispatch', description: 'Configurable response units, incidents, individual patient custody, flexible care sites and dispatch/handover workflows. Operational research model; not patient physiology.', contributions: ['runtime', 'recording', 'scenario', 'presentation', 'map-assignment'] }),
   runtime: { runtimes: [{ id: ambulanceSimRuntimeId, version: '1.0.0', label: 'Local ambulance runtime', kind: 'local', clock: 'simulation' }], defaultRuntimeId: ambulanceSimRuntimeId },
   presentation: {
     categories: (['ambulance', 'incident', 'patient', 'care-site'] as const).map(type => ({
@@ -82,6 +175,31 @@ export const ambulancePackView = {
       emptyLabel: 'No ' + ({ ambulance: 'ambulances', incident: 'incidents', patient: 'patients', 'care-site': 'care sites' } as const)[type], matches: object => typeOf(object) === type,
     })),
     presentObject: (object, context) => presentAmbulanceObject(object, context.objects),
+    mapFeatures: context => assignmentMapFeatures(context.objects),
+    mapFeatureLayers: ['routes'],
+    mapFeatureSourcePackIds: [ambulancePackId],
     contextualFields: (object, context) => subjects(object, context.objects).map(entry => packField('ambulance:' + entry.object.id, entry.data.type === 'incident' ? 'Incident at this asset' : 'Care site at this asset', entry.object.label + ' · ' + entry.object.operational.status)),
+  },
+  mapAssignment: {
+    canStart: (controller, context): boolean => {
+      if (controller.packId !== ambulancePackId) return false
+      const parsed = ambulancePackDataSchema.safeParse(controller.packData)
+      return parsed.success && parsed.data.crewReady && (!parsed.data.assignment || parsed.data.assignment.phase === 'returning') && unitPatients(controller.id, context.objects).length === 0
+    },
+    anchorFor: (controller, mode): GeoJsonPoint => mode === 'append' ? routeEnd(controller) : pointOf(controller),
+    handles: context => context.objects.flatMap(object => {
+      if (object.packId !== ambulancePackId) return []
+      const parsed = ambulancePackDataSchema.safeParse(object.packData)
+      return parsed.success && parsed.data.assignment && parsed.data.assignment.phase !== 'returning'
+        ? [{ id: `ambulance-append:${object.id}`, controllerId: object.id, point: pointOf(object) }]
+        : []
+    }),
+    targetFor: (controller, candidate, mode, context) => {
+      const target = targetObjectFor(candidate, context)
+      if (!target) return null
+      const data = ambulanceDataOf(target)
+      if (data.type === 'incident') return incidentTarget(controller, target, mode, context)
+      return mode === 'append' ? careSiteTarget(controller, target, context) : null
+    },
   },
 } satisfies WorldPackView

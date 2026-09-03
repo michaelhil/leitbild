@@ -17,7 +17,7 @@ const catalog = Object.entries(nodes).map(([id, shapes]) => {
   for (const [, attrs] of shapes) if (Object.keys(attrs).some(key => /^on|href|style/i.test(key))) throw new Error('Unexpected SVG attribute')
   return { id, tags: tags[id] ?? [], body: shapes.map(([tag, attrs]) => `<${tag} ${Object.entries(attrs).map(([key, value]) => `${key}="${escape(value)}"`).join(' ')}/>`).join('') }
 })
-const commonNames = new Set(['ambulance','hospital','triangle-alert','cloud-rain','factory','network','zap','utility-pole','plug','battery','map-pin','plus','square','circle-question-mark','x','drone'])
+const commonNames = new Set(['ambulance','hospital','triangle-alert','cloud-rain','factory','network','zap','utility-pole','plug','battery','map-pin','plus','git-branch-plus','square','circle-question-mark','x','drone'])
 const common = Object.fromEntries(catalog.filter(icon => commonNames.has(icon.id)).map(icon => [icon.id, icon.body]))
 if (Object.keys(common).length !== commonNames.size) throw new Error('Common icon is missing from pinned Lucide release')
 const output = new URL('../../src/core/map-symbols/', import.meta.url)

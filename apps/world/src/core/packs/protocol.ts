@@ -386,6 +386,40 @@ export interface PackTargetingContribution {
   ) => PackCommandRequest
 }
 
+export type PackMapAssignmentMode = 'start' | 'append'
+
+export interface PackMapAssignmentChoice {
+  readonly id: string
+  readonly label: string
+  readonly summary: string
+  readonly disabledReason?: string
+}
+
+export interface PackMapAssignmentTarget {
+  readonly id: string
+  readonly label: string
+  readonly choices: ReadonlyArray<PackMapAssignmentChoice>
+  readonly minimumChoices: number
+  readonly maximumChoices: number
+  readonly buildCommand: (choiceIds: ReadonlyArray<string>) => PackCommandRequest
+}
+
+export interface PackMapAssignmentHandle {
+  readonly id: string
+  readonly controllerId: ObjectId
+  readonly point: GeoJsonPoint
+}
+
+/** Pack-owned assignment semantics exposed through generic map gestures. The
+ * host renders pointers, lines, handles and choice UI, but never interprets
+ * targets or builds domain commands. */
+export interface PackMapAssignmentContribution {
+  readonly canStart: (controller: OperationalObject, context: PackTargetContext) => boolean
+  readonly anchorFor: (controller: OperationalObject, mode: PackMapAssignmentMode, context: PackTargetContext) => GeoJsonPoint
+  readonly handles: (context: PackTargetContext) => ReadonlyArray<PackMapAssignmentHandle>
+  readonly targetFor: (controller: OperationalObject, candidate: OperationalObject, mode: PackMapAssignmentMode, context: PackTargetContext) => PackMapAssignmentTarget | null
+}
+
 export interface PackInteractionContribution {
   readonly handlers: ReadonlyArray<InteractionHandler>
 }
@@ -414,6 +448,7 @@ export interface WorldPackView {
   readonly presentation: PackPresentationContribution
   readonly creation?: PackCreationContribution
   readonly targeting?: PackTargetingContribution
+  readonly mapAssignment?: PackMapAssignmentContribution
   readonly ui?: PackUiContribution
 }
 
