@@ -34,6 +34,8 @@ import {
 import type { SimulationRunRuntimeMetricsSnapshot } from './runtime-metrics.ts'
 import { defaultSimulationRunRuntimePolicy } from './runtime-persistence-policy.ts'
 import { createJsonRuntimeStateStore } from './runtime-state-store.ts'
+import { createAccelerationStore } from './acceleration-store.ts'
+import { accelerationCheckpointWallIntervalMs, accelerationDurationInputSchema, accelerationJobStateSchema, type AccelerationJobState,type AcceleratedCopyOrigin } from './acceleration.ts'
 import type { SimulationRunCapabilities } from './runtime.ts'
 import { createSimulationRunRuntime,type ActiveSimulationCapability,type SimulationRunRuntime } from './runtime.ts'
 import { createSimulationRunSnapshotStore } from './snapshot-store.ts'
@@ -42,7 +44,7 @@ import { createKeyedOperations } from '../storage/keyed-operations.ts'
 
 const maxRestoredEventHistoryBytes = 8 * 1024 * 1024
 
-export type SimulationRunLeaseKind = 'realtime' | 'api' | 'background'
+export type SimulationRunLeaseKind = 'realtime' | 'api' | 'background' | 'acceleration'
 
 export interface SimulationRunLeaseSummary {
   readonly simulationRunId: SimulationRunId
@@ -63,6 +65,7 @@ export interface SimulationRunSummary {
   readonly objectCount: number | null
   readonly clock: SimulationClockState | null
   readonly activeCapabilityIds: ReadonlyArray<string>
+  readonly origin: AcceleratedCopyOrigin | null
   readonly loadError?: string
 }
 
@@ -84,6 +87,10 @@ export interface SimulationRunRegistry {
   readonly installedCapabilities: ReadonlyArray<ActiveSimulationCapability>
   readonly workspaceCapabilities: ReadonlyArray<PackWorkspaceCapability>
   readonly create: (config: { readonly scenarioId: string; readonly scenarioRevisionId?: ScenarioRevisionId }) => Promise<SimulationRunRuntime>
+  readonly createAcceleratedCopy: (sourceId: SimulationRunId, input: { readonly minutes: number; readonly name?: string }) => Promise<{ readonly runtime: SimulationRunRuntime; readonly acceleration: AccelerationJobState }>
+  readonly startAcceleration: (id: SimulationRunId, input: { readonly minutes: number }) => Promise<AccelerationJobState>
+  readonly pauseAcceleration: (id: SimulationRunId) => Promise<AccelerationJobState>
+  readonly accelerationStatus: (id: SimulationRunId) => Promise<AccelerationJobState | null>
   readonly load: (id: SimulationRunId) => Promise<SimulationRunRuntime>
   readonly reset: (id: SimulationRunId) => Promise<SimulationRunRuntime>
   readonly delete: (id: SimulationRunId) => Promise<boolean>
@@ -122,6 +129,7 @@ export const createSimulationRunRegistry = (config: {
   readonly storageBudget?: StorageBudget
   readonly idleRuntimeCloseDelayMs?: number
   readonly procedureSourceService?: ProcedureSourceService
+  readonly acquireAccelerationAdmission?: (runId: string) => () => void
 }): SimulationRunRegistry => {
   const simulationRuns = new Map<SimulationRunId, SimulationRunRuntime>()
   const lifecycle = createKeyedOperations<SimulationRunId>()
@@ -131,6 +139,8 @@ export const createSimulationRunRegistry = (config: {
   const creatingSimulationRuns = new Map<SimulationRunId, Promise<SimulationRunRuntime>>()
   const leasesBySimulationRun = new Map<SimulationRunId, Map<string, SimulationRunLeaseKind>>()
   const backgroundReleases = new Map<SimulationRunId, () => void>()
+  const accelerationJobs = new Map<SimulationRunId, { pauseRequested: boolean; done?: Promise<void> }>()
+  const accelerationStates = new Map<SimulationRunId, AccelerationJobState>()
   const idleRuntimeCloseTimers = new Map<SimulationRunId, ReturnType<typeof setTimeout>>()
   const idleRuntimeCloseDelayMs = config.idleRuntimeCloseDelayMs ?? defaultSimulationRunRuntimePolicy.idleRuntimeCloseDelayMs
   let nextLeaseNumber = 0
@@ -222,6 +232,7 @@ export const createSimulationRunRegistry = (config: {
       realtime: 0,
       api: 0,
       background: 0,
+      acceleration: 0,
     }
     const leases = leasesBySimulationRun.get(id)
     if (leases) for (const kind of leases.values()) leasesByKind[kind] += 1
@@ -369,6 +380,9 @@ export const createSimulationRunRegistry = (config: {
   const manifestStoreFor = (id: SimulationRunId) =>
     createSimulationRunManifestStore(join(simulationRunRoot, id, 'manifest.json'))
 
+  const accelerationStoreFor = (id: SimulationRunId) =>
+    createAccelerationStore(join(simulationRunRoot, id, 'acceleration.json'))
+
   const resolveManifest = async (manifest: SimulationRunManifest): Promise<{
     readonly revision: ScenarioRevision
     readonly scenarioRuntime: NonNullable<ReturnType<ScenarioRuntimeResolver['resolve']>>
@@ -479,11 +493,11 @@ export const createSimulationRunRegistry = (config: {
       simulationRunId: id,
       path: join(runDir, 'snapshot.json'),
     })
-    const runtimeStateStores = Object.fromEntries(config.runtimeAdapters.map(adapter => [
-      adapter.id,
+    const runtimeStateStores = Object.fromEntries(scenarioRuntime.runtimes.map(runtime => [
+      runtime.runtimeId,
       createJsonRuntimeStateStore({
-        runtimeId: adapter.id,
-        path: join(runDir, 'runtimes', `${adapter.id}.json`),
+        runtimeId: runtime.runtimeId,
+        path: join(runDir, 'runtimes', `${runtime.runtimeId}.json`),
       }),
     ]))
     let restoredSnapshot
@@ -583,6 +597,7 @@ export const createSimulationRunRegistry = (config: {
           entry.runtimeId === 'world.core'
           || scenarioRuntime.runtimes.some(runtime => runtime.runtimeId === entry.runtimeId)),
         procedureSourceService,
+        runtimeStateLoaders: Object.fromEntries(Object.entries(runtimeStateStores).map(([runtimeId, store]) => [runtimeId, store.load])),
         ...(historian === undefined ? {} : { historian }),
       })
     } catch (error) {
@@ -591,6 +606,9 @@ export const createSimulationRunRegistry = (config: {
       throw error
     }
     simulationRuns.set(id, runtime)
+    const priorAcceleration = await accelerationStoreFor(id).load()
+    if (priorAcceleration) accelerationStates.set(id, priorAcceleration)
+    if (priorAcceleration?.status === 'failed') runtime.failStop(priorAcceleration.error ?? 'accelerated execution failed')
     scheduleIdleRuntimeCloseIfUnleased(id)
     return runtime
   }
@@ -613,6 +631,127 @@ export const createSimulationRunRegistry = (config: {
     })
     creatingSimulationRuns.set(id, creating)
     return await creating
+  }
+
+  const accelerationStatus = async (id: SimulationRunId): Promise<AccelerationJobState | null> => {
+    const cached = accelerationStates.get(id)
+    if (cached) return cached
+    const loaded = await accelerationStoreFor(id).load()
+    if (loaded) accelerationStates.set(id, loaded)
+    return loaded
+  }
+
+  const startAcceleration = async (id: SimulationRunId, rawInput: { readonly minutes: number }, reservedAdmission?: () => void): Promise<AccelerationJobState> => {
+    const input = accelerationDurationInputSchema.omit({ name: true }).parse(rawInput)
+    if (accelerationJobs.has(id)) throw Object.assign(new Error('Accelerated execution is already active for this Run'), { code: 'simulation_run_busy' })
+    const runtime = await load(id)
+    const currentClock = runtime.snapshot().clock
+    if (!currentClock) throw new Error('Simulation Run clock is not initialized')
+    if (!currentClock.paused) throw new Error('Pause the Simulation Run before starting accelerated execution')
+    const manifest = await manifestStoreFor(id).load()
+    if (!manifest) throw new Error(`Simulation Run not found: ${id}`)
+    const liveRuntimes = manifest.runtimes.filter(candidate => candidate.clock === 'live')
+    if (liveRuntimes.length > 0) throw Object.assign(new Error(`Accelerated execution cannot synthesize future live observations: ${liveRuntimes.map(candidate => candidate.id).join(', ')}`), { code: 'acceleration_unsupported' })
+    const releaseAdmission = reservedAdmission ?? config.acquireAccelerationAdmission?.(id) ?? (() => {})
+    const releaseLease = acquireLease(id, 'acceleration')
+    const controller: { pauseRequested: boolean; done?: Promise<void> } = { pauseRequested: false }
+    accelerationJobs.set(id, controller)
+    const startedAt = nowIso()
+    const startedMs = Date.parse(currentClock.currentTime)
+    const target = new Date(startedMs + input.minutes * 60_000).toISOString()
+    let state = accelerationJobStateSchema.parse({
+      status: 'running', startedSimulationTime: currentClock.currentTime,
+      targetSimulationTime: target, currentSimulationTime: currentClock.currentTime,
+      startedAt, updatedAt: startedAt, activeWallMs: 0, simulatedMs: 0, measuredSpeed: 0,
+    })
+    accelerationStates.set(id, state)
+    try { await accelerationStoreFor(id).save(state) }
+    catch (error) {
+      accelerationJobs.delete(id)
+      accelerationStates.delete(id)
+      releaseLease()
+      releaseAdmission()
+      throw error
+    }
+    const wallStart = performance.now()
+    let lastPersistedAt = wallStart
+    const work = runtime.advancePausedTo(state.targetSimulationTime, {
+      shouldPause: () => controller.pauseRequested,
+      onProgress: async currentSimulationTime => {
+        const wallNow = performance.now()
+        const activeWallMs = wallNow - wallStart
+        const simulatedMs = Date.parse(currentSimulationTime) - startedMs
+        state = accelerationJobStateSchema.parse({ ...state, currentSimulationTime, updatedAt: nowIso(), activeWallMs, simulatedMs, measuredSpeed: activeWallMs > 0 ? simulatedMs / activeWallMs : 0 })
+        accelerationStates.set(id, state)
+        if (wallNow - lastPersistedAt >= accelerationCheckpointWallIntervalMs) { lastPersistedAt = wallNow; await accelerationStoreFor(id).save(state) }
+      },
+    }).then(async result => {
+      state = accelerationJobStateSchema.parse({ ...state, status: result.pausedEarly ? 'paused' : 'completed', currentSimulationTime: result.currentSimulationTime, updatedAt: nowIso() })
+      accelerationStates.set(id, state)
+      await accelerationStoreFor(id).save(state)
+    }).catch(async error => {
+      const reason = error instanceof Error ? error.message : String(error)
+      runtime.failStop(reason)
+      state = accelerationJobStateSchema.parse({ ...state, status: 'failed', currentSimulationTime: runtime.snapshot().clock?.currentTime ?? state.currentSimulationTime, updatedAt: nowIso(), error: reason })
+      accelerationStates.set(id, state)
+      await accelerationStoreFor(id).save(state).catch(() => undefined)
+    }).finally(() => {
+      accelerationJobs.delete(id)
+      releaseLease()
+      releaseAdmission()
+    })
+    controller.done = work
+    void work
+    return state
+  }
+
+  const createAcceleratedCopy = async (sourceId: SimulationRunId, rawInput: { readonly minutes: number; readonly name?: string }) => {
+    const input = accelerationDurationInputSchema.parse(rawInput)
+    const releaseAdmission = config.acquireAccelerationAdmission?.(`copy-of-${sourceId}`) ?? (() => {})
+    let admissionTransferred = false
+    try {
+      const sourceManifest = await manifestStoreFor(sourceId).load()
+      if (!sourceManifest) throw new Error(`Simulation Run not found: ${sourceId}`)
+      const liveRuntimes = sourceManifest.runtimes.filter(candidate => candidate.clock === 'live')
+      if (liveRuntimes.length > 0) throw Object.assign(new Error(`Accelerated copies require simulated evidence; active live runtimes: ${liveRuntimes.map(candidate => candidate.id).join(', ')}`), { code: 'acceleration_unsupported' })
+      const source = await load(sourceId)
+      const checkpoint = await source.checkpointForFork()
+      const id = newSimulationRunId()
+      const forkedAt = nowIso()
+      const manifest = simulationRunManifestSchema.parse({ ...sourceManifest, id, createdAt: forkedAt, origin: { kind: 'accelerated-copy', sourceRunId: sourceId, sourceSequence: checkpoint.snapshot.seq, forkedAt } })
+      const compiledScenario = await createCompiledScenarioStore(join(simulationRunRoot, sourceId, 'compiled-scenario.json')).load()
+      await storageBudget.withGrowth(workspaceRoot, 32 * 1024 * 1024, async () => {
+        await manifestStoreFor(id).create(manifest)
+        await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).create(compiledScenario)
+        await createSimulationRunSnapshotStore({ simulationRunId: id, path: join(simulationRunRoot, id, 'snapshot.json') }).save({
+          ...checkpoint.snapshot,
+          seq: 0,
+          ...(checkpoint.snapshot.clock ? { clock: { ...checkpoint.snapshot.clock, paused: true, speed: 1 } } : {}),
+        })
+        for (const [runtimeId, runtimeState] of Object.entries(checkpoint.runtimeStates)) {
+          await createJsonRuntimeStateStore({ runtimeId, path: join(simulationRunRoot, id, 'runtimes', `${runtimeId}.json`) }).save(runtimeState)
+        }
+        const sourceTitle = (await summaryFor(sourceId)).title
+        await writeRunDisplayName(join(simulationRunRoot, id, 'display-name.json'), input.name ?? `${sourceTitle} — accelerated copy`)
+      })
+      const runtime = await createRuntime({ manifest })
+      const acceleration = await startAcceleration(id, { minutes: input.minutes }, releaseAdmission)
+      admissionTransferred = true
+      return { runtime, acceleration }
+    } finally {
+      if (!admissionTransferred) releaseAdmission()
+    }
+  }
+
+  const pauseAcceleration = async (id: SimulationRunId): Promise<AccelerationJobState> => {
+    const controller = accelerationJobs.get(id)
+    if (!controller) {
+      const state = await accelerationStatus(id)
+      if (!state) throw new Error(`Simulation Run has no accelerated execution: ${id}`)
+      return state
+    }
+    controller.pauseRequested = true
+    return accelerationStates.get(id)!
   }
 
   const load = (id: SimulationRunId): Promise<SimulationRunRuntime> => lifecycle.run(id, async () => {
@@ -641,7 +780,9 @@ export const createSimulationRunRegistry = (config: {
     await creatingSimulationRuns.get(id)?.catch(() => undefined)
     const runtime = simulationRuns.get(id)
     if (!runtime) return false
-    if (!shuttingDown && leaseSummary(id).leasesByKind.api > 0) throw Object.assign(new Error('Simulation Run has active requests; retry after they complete'), { code: 'simulation_run_busy' })
+    const leases = leaseSummary(id).leasesByKind
+    if (!shuttingDown && leases.api > 0) throw Object.assign(new Error('Simulation Run has active requests; retry after they complete'), { code: 'simulation_run_busy' })
+    if (!shuttingDown && leases.acceleration > 0) throw Object.assign(new Error('Simulation Run has active accelerated execution; pause it before closing'), { code: 'simulation_run_busy' })
     backgroundReleases.get(id)?.()
     backgroundReleases.delete(id)
     clearIdleRuntimeCloseTimer(id)
@@ -653,7 +794,9 @@ export const createSimulationRunRegistry = (config: {
   const close = (id: SimulationRunId): Promise<boolean> => lifecycle.run(id, () => closeLoaded(id))
 
   const reset = (id: SimulationRunId): Promise<SimulationRunRuntime> => lifecycle.run(id, async () => {
-    if (leaseSummary(id).leasesByKind.api > 0) throw Object.assign(new Error('Simulation Run has active requests; retry after they complete'), { code: 'simulation_run_busy' })
+    const leases = leaseSummary(id).leasesByKind
+    if (leases.api > 0) throw Object.assign(new Error('Simulation Run has active requests; retry after they complete'), { code: 'simulation_run_busy' })
+    if (leases.acceleration > 0) throw Object.assign(new Error('Simulation Run has active accelerated execution; pause it before resetting'), { code: 'simulation_run_busy' })
     const manifest = await manifestStoreFor(id).load()
     if (!manifest) throw new Error(`Simulation Run not found: ${id}`)
     const existing = simulationRuns.get(id)
@@ -669,6 +812,7 @@ export const createSimulationRunRegistry = (config: {
       rm(join(runDir, 'history.sqlite'), { force: true }),
       rm(join(runDir, 'history.sqlite-wal'), { force: true }),
       rm(join(runDir, 'history.sqlite-shm'), { force: true }),
+      rm(join(runDir, 'acceleration.json'), { force: true }),
     ])
     return createRuntime({
       manifest,
@@ -679,6 +823,7 @@ export const createSimulationRunRegistry = (config: {
   const deleteSimulationRun = (id: SimulationRunId): Promise<boolean> => lifecycle.run(id, async () => {
     const wasLoaded = await closeLoaded(id)
     pinnedTitles.delete(id)
+    accelerationStates.delete(id)
     const runDir = join(simulationRunRoot, id)
     let existedOnDisk = true
     try {
@@ -710,7 +855,7 @@ export const createSimulationRunRegistry = (config: {
   const unavailableSummary = (id: SimulationRunId, loadError: string): SimulationRunSummary => ({
     id, name: null, title: id, scenarioId: null, scenarioTitle: null,
     scenarioRevisionId: null, createdAt: null, loaded: false,
-    snapshotSeq: null, objectCount: null, clock: null, activeCapabilityIds: [], loadError,
+    snapshotSeq: null, objectCount: null, clock: null, activeCapabilityIds: [], origin: null, loadError,
   })
 
   const readSummary = async (id: SimulationRunId): Promise<SimulationRunSummary> => {
@@ -742,6 +887,7 @@ export const createSimulationRunRegistry = (config: {
         objectCount: snapshot.objects.length,
         clock: snapshot.clock ?? null,
         activeCapabilityIds: capabilityIdsForRuntimeIds(manifest.runtimes.map(runtime => runtime.id)),
+        origin: manifest.origin ?? null,
       }
     }
     const snapshotStore = createSimulationRunSnapshotStore({
@@ -770,6 +916,7 @@ export const createSimulationRunRegistry = (config: {
       objectCount: snapshot?.objects.length ?? null,
       clock: snapshot?.clock ?? null,
       activeCapabilityIds: capabilityIdsForRuntimeIds(manifest.runtimes.map(runtime => runtime.id)),
+      origin: manifest.origin ?? null,
       ...(loadError === undefined ? {} : { loadError }),
     }
   }
@@ -857,6 +1004,10 @@ export const createSimulationRunRegistry = (config: {
     installedCapabilities,
     workspaceCapabilities: config.runtimeAdapters.flatMap(adapter => adapter.workspaceCapabilities ?? []),
     create,
+    createAcceleratedCopy,
+    startAcceleration,
+    pauseAcceleration,
+    accelerationStatus,
     load,
     reset,
     delete: deleteSimulationRun,
@@ -884,6 +1035,8 @@ export const createSimulationRunRegistry = (config: {
     },
     shutdown: async () => {
       shuttingDown = true
+      for (const job of accelerationJobs.values()) job.pauseRequested = true
+      await Promise.allSettled([...accelerationJobs.values()].flatMap(job => job.done ? [job.done] : []))
       await definitionOperations.close()
       await Promise.allSettled([...creatingSimulationRuns.values()])
       await lifecycle.drain()

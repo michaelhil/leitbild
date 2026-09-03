@@ -211,9 +211,9 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
     }
 
-    const advance = async (): Promise<void> => {
+    const advance = async (targetSimulationMs = Date.parse(runClock.read().currentTime)): Promise<void> => {
       if (runtimeFailureReason !== null) return
-      const simulationMs = Date.parse(runClock.read().currentTime)
+      const simulationMs = targetSimulationMs
       const elapsedMs = Math.max(0, simulationMs - lastSimulationMs)
       lastSimulationMs = simulationMs
       if (elapsedMs <= 0 || plants.size === 0) return
@@ -472,6 +472,12 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         localClock?.set(nextClock)
         lastSimulationMs = Date.parse(runClock.read().currentTime)
       },
+      advanceTo: async (nextClock: SimulationClockState): Promise<void> => {
+        await advance(Date.parse(nextClock.currentTime))
+        clock = nextClock
+        localClock?.set(nextClock)
+      },
+      checkpoint: persistence.saveNow,
       close: async (): Promise<void> => {
         clearInterval(interval)
         await persistence.saveNow()

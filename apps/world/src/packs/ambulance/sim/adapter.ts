@@ -138,9 +138,8 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: { readonly
       return events
     }
     const refreshRoadWeather = async (): Promise<PackRuntimeEvent[]> => applyRoadWeather(await prepareRoadWeather(policy))
-    const advance = async (): Promise<void> => {
+    const advance = async (targetMs = Date.parse(runClock.read().currentTime)): Promise<void> => {
       if (unavailable()) return
-      const targetMs = Date.parse(runClock.read().currentTime)
       if (targetMs <= engine.checkpoint().simulationTimeMs) return
       try {
         const roadEvents = await refreshRoadWeather()
@@ -218,6 +217,11 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: { readonly
         await advance()
         localClock?.set(nextClock)
       }),
+      advanceTo: nextClock => serialize(async () => {
+        await advance(Date.parse(nextClock.currentTime))
+        localClock?.set(nextClock)
+      }),
+      checkpoint: async () => { await config.runtimeStateStore?.save(policy) },
       health: () => [health],
       sendCommand: command => serialize(() => sendCommand(command)),
       close: async () => {

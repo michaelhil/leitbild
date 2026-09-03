@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { semanticVersionSchema, workspaceIdSchema } from '@leitbild/contracts'
 import { simulationRunIdSchema } from '../model/index.ts'
 import type { ScenarioRevisionId } from '../scenarios/library.ts'
+import { acceleratedCopyOriginSchema } from './acceleration.ts'
 
 const resolvedPackSchema = z.object({
   id: z.string().min(1),
@@ -31,6 +32,7 @@ export const simulationRunManifestSchema = z.object({
   packs: z.array(resolvedPackSchema).min(1),
   runtimes: z.array(resolvedRuntimeSchema),
   createdAt: z.string().datetime({ offset: true }),
+  origin: acceleratedCopyOriginSchema.optional(),
 }).strict().superRefine((manifest, ctx) => {
   const packIds = new Set(manifest.packs.map(pack => pack.id))
   if (packIds.size !== manifest.packs.length) {

@@ -355,6 +355,14 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
         health = { ...health, state: 'ready', lastSuccessfulInteractionAt: nowIso() }
         project()
       },
+      advanceTo: async (next) => {
+        field = prepareClock(next)
+        prepared = undefined
+        clock = next
+        localClock?.set(next)
+        project()
+      },
+      checkpoint: save,
       health: () => [health],
       close: async () => {
         clearInterval(interval)

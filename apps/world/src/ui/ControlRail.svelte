@@ -60,6 +60,8 @@
     readonly openStatusModal: () => void
     readonly openSettings: () => void
     readonly toggleClockPaused: () => Promise<void>
+    readonly openAcceleration: () => void
+    readonly accelerationRunning?: boolean
     readonly toggleCategoryMapVisibility?: (categoryId: string) => void
     readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
     readonly mapLayerGroupVisibility?: Readonly<Record<string, boolean>>
@@ -101,6 +103,8 @@
     openStatusModal,
     openSettings,
     toggleClockPaused,
+    openAcceleration,
+    accelerationRunning = false,
     toggleCategoryMapVisibility = () => undefined,
     mapLayerGroups = [],
     mapLayerGroupVisibility = {},
@@ -247,6 +251,8 @@
       {openStatusModal}
       {openSettings}
       {toggleClockPaused}
+      {openAcceleration}
+      {accelerationRunning}
     />
   {/if}
 </aside>

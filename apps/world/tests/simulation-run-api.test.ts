@@ -177,6 +177,27 @@ const closeAll = async (registry: SimulationRunRegistry): Promise<void> => {
 }
 
 describe('Simulation Run API', () => {
+  test('creates and reports ordinary accelerated copies through Run routes', async () => {
+    const registry = await createTestRegistry()
+    try {
+      const source = await createRun(registry)
+      const created = await callRoute<{ readonly id: SimulationRunId; readonly uiPath: string; readonly acceleration: { readonly status: string } }>(
+        registry,
+        runPath(source.id, '/accelerated-copies'),
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutes: 0.01, name: 'API copy' }) },
+      )
+      expect(created.status).toBe(201)
+      expect(created.body.uiPath).toContain(created.body.id)
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        const status = await callRoute<{ readonly acceleration: { readonly status: string } }>(registry, runPath(created.body.id, '/acceleration'))
+        if (status.body.acceleration.status !== 'running') break
+        await Bun.sleep(25)
+      }
+      const status = await callRoute<{ readonly acceleration: { readonly status: string } }>(registry, runPath(created.body.id, '/acceleration'))
+      expect(status.body.acceleration.status).toBe('completed')
+      expect((await registry.summary(created.body.id)).title).toBe('API copy')
+    } finally { await registry.shutdown() }
+  })
   test('fetches the complete Scenario Definition needed by an active Run UI', async () => {
     const registry = await createTestRegistry()
     const fetched = await callRoute<{

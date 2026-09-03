@@ -14,11 +14,8 @@ import { nowIso,simulationRunIdSchema } from '../src/core/model/index.ts'
 import { createSimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
 import { dispatchCommandKind } from '../src/packs/ambulance/commands.ts'
-import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
-import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
-import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { responseScenario } from './fixtures/scenarios.ts'
-import { createTestScenarioRuntimeResolver,testScenarioAuthoring } from './helpers.ts'
+import { createTestPackRuntimeAdapters,createTestScenarioRuntimeResolver,testScenarioAuthoring } from './helpers.ts'
 
 const createRegistry = (dataDir: string, workspaceId: WorkspaceId = newWorkspaceId()) =>
   createSimulationRunRegistry({
@@ -26,10 +23,7 @@ const createRegistry = (dataDir: string, workspaceId: WorkspaceId = newWorkspace
     workspaceId,
     scenarioRuntimeResolver: createTestScenarioRuntimeResolver(),
     ...testScenarioAuthoring(),
-    runtimeAdapters: [
-      createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
-      createLocalWeatherPackRuntimeAdapter(),
-    ],
+    runtimeAdapters: createTestPackRuntimeAdapters(),
   })
 
 const simulationRunDir = (
@@ -57,6 +51,66 @@ const issueDispatchCommand = async (runtime: SimulationRunRuntime): Promise<void
 }
 
 describe('Simulation Run registry', () => {
+  test('forks a coherent independent Run and accelerates it to an exact paused horizon', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-accelerated-copy-'))
+    const workspaceId = newWorkspaceId()
+    const registry = createRegistry(dataDir, workspaceId)
+    try {
+      const source = await registry.create({ scenarioId: 'test-response' })
+      await source.setClock({ paused: true })
+      const sourceBefore = structuredClone(source.snapshot())
+      const { runtime: copy } = await registry.createAcceleratedCopy(source.id, { minutes: 0.01, name: 'What-if' })
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        if ((await registry.accelerationStatus(copy.id))?.status === 'completed') break
+        await Bun.sleep(25)
+      }
+      const completed = await registry.accelerationStatus(copy.id)
+      expect(completed?.currentSimulationTime).toBe(completed?.targetSimulationTime)
+      expect(copy.snapshot().clock).toMatchObject({ paused: true, currentTime: completed?.targetSimulationTime })
+      expect(source.snapshot().clock?.currentTime).toBe(sourceBefore.clock?.currentTime)
+      expect(source.snapshot().objects).toEqual(sourceBefore.objects)
+      expect((await registry.summary(copy.id)).title).toBe('What-if')
+      const manifest = JSON.parse(await readFile(join(simulationRunDir(dataDir, workspaceId, copy.id), 'manifest.json'), 'utf8')) as { origin?: unknown }
+      expect(manifest.origin).toMatchObject({ kind: 'accelerated-copy', sourceRunId: source.id, sourceSequence: sourceBefore.seq })
+      await expect(access(join(simulationRunDir(dataDir, workspaceId, copy.id), 'events.jsonl'))).rejects.toThrow()
+    } finally { await registry.shutdown() }
+  })
+  test('pauses accelerated execution without overshooting its current slice', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-accelerated-pause-'))
+    const registry = createRegistry(dataDir)
+    try {
+      const source = await registry.create({ scenarioId: 'test-response' })
+      await source.setClock({ paused: true })
+      const { runtime: copy } = await registry.createAcceleratedCopy(source.id, { minutes: 10 })
+      await registry.pauseAcceleration(copy.id)
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        if ((await registry.accelerationStatus(copy.id))?.status !== 'running') break
+        await Bun.sleep(25)
+      }
+      const paused = await registry.accelerationStatus(copy.id)
+      expect(paused?.status).toBe('paused')
+      expect(Date.parse(paused!.currentSimulationTime)).toBeLessThan(Date.parse(paused!.targetSimulationTime))
+      expect(copy.snapshot().clock).toMatchObject({ paused: true, currentTime: paused?.currentSimulationTime })
+    } finally { await registry.shutdown() }
+  })
+  test('accelerates the coupled four-unit Plant, Grid, and Weather scenario through one Run boundary', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-accelerated-halden-'))
+    const registry = createRegistry(dataDir)
+    try {
+      const source = await registry.create({ scenarioId: 'halden-power-complex' })
+      await source.setClock({ paused: true })
+      const { runtime: copy } = await registry.createAcceleratedCopy(source.id, { minutes: 0.01 })
+      for (let attempt = 0; attempt < 400; attempt += 1) {
+        if ((await registry.accelerationStatus(copy.id))?.status !== 'running') break
+        await Bun.sleep(25)
+      }
+      expect(await registry.accelerationStatus(copy.id)).toMatchObject({ status: 'completed' })
+      const snapshot = copy.snapshot()
+      expect(snapshot.objects.filter(object => object.packId === 'process-plant' && object.kind === 'facility')).toHaveLength(4)
+      expect(snapshot.objects.some(object => object.id === 'grid:halden-four-unit')).toBe(true)
+      expect(snapshot.objects.some(object => object.id === 'weather:halden-complex')).toBe(true)
+    } finally { await registry.shutdown() }
+  })
   test('an unreadable compiled artifact does not hide healthy sibling Runs or rewrite retained state', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-run-unreadable-'))
     const workspaceId = newWorkspaceId()

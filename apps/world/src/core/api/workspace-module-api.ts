@@ -39,6 +39,7 @@ import { scenarioAuthoringCatalogSchema } from '../scenarios/authoring.ts'
 import { scenarioDefinitionSchema } from '../scenarios/definition.ts'
 import { scenarioRevisionIdSchema } from '../scenarios/library.ts'
 import { CommandIdempotencyConflictError } from '../simulation-runs/command-idempotency.ts'
+import { accelerationDurationInputSchema,additionalAccelerationInputSchema,accelerationJobStateSchema,acceleratedCopyOriginSchema } from '../simulation-runs/acceleration.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { WorldWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
 import { apiError,json,readJson } from './responses.ts'
@@ -147,6 +148,7 @@ const simulationRunSummarySchema = z.object({
   objectCount: z.number().int().nonnegative().nullable(),
   clock: simulationClockStateSchema.nullable(),
   activeCapabilityIds: z.array(z.string().min(1)),
+  origin: acceleratedCopyOriginSchema.nullable(),
   loadError: z.string().min(1).optional(),
 }).strict()
 
@@ -710,10 +712,11 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     invoke: async (registry, invocation) => {
       emptyInputSchema.parse(invocation.input)
       const simulationRunId = requireSimulationRunResource(invocation)
-      const [runtime, definition, summary] = await Promise.all([
+      const [runtime, definition, summary, acceleration] = await Promise.all([
         registry.load(simulationRunId),
         registry.compiledScenarioForRun(simulationRunId),
         registry.summary(simulationRunId),
+        registry.accelerationStatus(simulationRunId),
       ])
       const snapshot = runtime.snapshot()
       const leaseSummary = registry.leaseSummary(simulationRunId)
@@ -751,6 +754,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
             scenario: snapshot.scenario ?? null,
             runtimeHealth: runtime.health(),
             historian: runtime.recordingStatus(),
+            acceleration,
           },
         }, {
           id: 'live-assets',
@@ -795,11 +799,70 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       risk: 'write',
       idempotent: true,
       inputSchema: capabilityJsonSchema(z.object({ background: z.boolean() }).strict()),
-      outputSchema: capabilityJsonSchema(z.object({ simulationRunId: z.string(), leaseCount: z.number(), leasesByKind: z.object({ realtime: z.number(), api: z.number(), background: z.number() }) })),
+      outputSchema: capabilityJsonSchema(z.object({ simulationRunId: z.string(), leaseCount: z.number(), leasesByKind: z.object({ realtime: z.number(), api: z.number(), background: z.number(), acceleration: z.number() }) })),
     },
     invoke: async (registry, invocation) => {
       const input = z.object({ background: z.boolean() }).strict().parse(invocation.input)
       return json({ result: await registry.setBackgroundExecution(requireSimulationRunResource(invocation), input.background) })
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.accelerated-copy.create',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Create accelerated copy',
+      description: 'Forks this Run at a coherent checkpoint, advances the independent copy without wall pacing, and leaves the source unchanged. Rejects live external runtimes.',
+      risk: 'write',
+      idempotent: false,
+      inputSchema: capabilityJsonSchema(accelerationDurationInputSchema),
+      outputSchema: capabilityJsonSchema(z.object({ id: simulationRunIdSchema, uiPath: z.string(), acceleration: accelerationJobStateSchema })),
+    },
+    invoke: async (registry, invocation) => {
+      const parsed = accelerationDurationInputSchema.parse(invocation.input)
+      const created = await registry.createAcceleratedCopy(requireSimulationRunResource(invocation), {
+        minutes: parsed.minutes,
+        ...(parsed.name === undefined ? {} : { name: parsed.name }),
+      })
+      const resource = { workspaceId: registry.workspaceId, moduleId: WORLD_MODULE_ID, type: 'world.simulation-run', id: created.runtime.id }
+      return json({
+        result: { id: created.runtime.id, uiPath: `/workspaces/${encodeURIComponent(registry.workspaceId)}/world/runs/${encodeURIComponent(created.runtime.id)}`, acceleration: created.acceleration },
+        createdResources: [resource],
+      }, { status: 201 })
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.acceleration.read', moduleId: WORLD_MODULE_ID, kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Read acceleration status', description: 'Reads the current or most recent accelerated-execution progress for this Run.',
+      risk: 'read', idempotent: true, inputSchema: capabilityJsonSchema(emptyInputSchema), outputSchema: capabilityJsonSchema(accelerationJobStateSchema.nullable()),
+    },
+    invoke: async (registry, invocation) => {
+      emptyInputSchema.parse(invocation.input)
+      return json({ result: await registry.accelerationStatus(requireSimulationRunResource(invocation)) })
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.acceleration.run', moduleId: WORLD_MODULE_ID, kind: 'command',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Run accelerated time', description: 'Advances this paused Run by an explicit additional simulated duration using all active simulated Packs.',
+      risk: 'write', idempotent: false, inputSchema: capabilityJsonSchema(additionalAccelerationInputSchema), outputSchema: capabilityJsonSchema(accelerationJobStateSchema),
+    },
+    invoke: async (registry, invocation) => json({ result: await registry.startAcceleration(requireSimulationRunResource(invocation), additionalAccelerationInputSchema.parse(invocation.input)) }, { status: 202 }),
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.acceleration.pause', moduleId: WORLD_MODULE_ID, kind: 'command',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Pause accelerated time', description: 'Requests a bounded pause at the next exact simulation boundary.',
+      risk: 'write', idempotent: true, inputSchema: capabilityJsonSchema(emptyInputSchema), outputSchema: capabilityJsonSchema(accelerationJobStateSchema),
+    },
+    invoke: async (registry, invocation) => {
+      emptyInputSchema.parse(invocation.input)
+      return json({ result: await registry.pauseAcceleration(requireSimulationRunResource(invocation)) }, { status: 202 })
     },
   },
   {

@@ -347,9 +347,9 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
       nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
     }
 
-    const advanceAndEmit = (history: PackRuntimeEventHistory): void => {
-      if (closed || clock.paused || failure !== null) return
-      const at = currentSimulationTime()
+    const advanceAndEmit = (history: PackRuntimeEventHistory, targetTime = currentSimulationTime(), forced = false): void => {
+      if (closed || (!forced && clock.paused) || failure !== null) return
+      const at = targetTime
       const simulationMs = Date.parse(at)
       const dtSeconds = Math.max(0, simulationMs - lastSimulationMs) / 1_000
       lastSimulationMs = simulationMs
@@ -538,6 +538,12 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
         localClock?.set(nextClock)
         lastSimulationMs = Date.parse(currentSimulationTime())
       },
+      advanceTo: async (nextClock: SimulationClockState): Promise<void> => {
+        advanceAndEmit('snapshot-only', nextClock.currentTime, true)
+        clock = nextClock
+        localClock?.set(nextClock)
+      },
+      checkpoint: persistence.saveNow,
       close: async (): Promise<void> => {
         closed = true
         clearInterval(interval)

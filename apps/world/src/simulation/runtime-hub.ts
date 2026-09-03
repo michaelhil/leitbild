@@ -333,6 +333,27 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
           const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
           if (failures.length > 0) throw new AggregateError(failures.map(failure => failure.reason), 'one or more Pack Runtimes rejected the simulation clock')
         },
+        advanceTo: async (clock): Promise<void> => {
+          const simulated = connections.filter(({ adapter }) => adapter.clock === 'simulation')
+          const unsupported = simulated.filter(({ connection }) => connection.advanceTo === undefined)
+          if (unsupported.length > 0) throw new Error(`Pack Runtimes do not support exact advancement: ${unsupported.map(({ adapter }) => adapter.id).join(', ')}`)
+          await Promise.all(connections.map(({ connection }) => connection.validateClock?.(clock)))
+          // One boundary is presented to every Pack before consequences are
+          // committed by the Run. This preserves symmetric peer coupling.
+          const results = await Promise.allSettled(simulated.map(({ connection }) => connection.advanceTo!(clock)))
+          results.forEach((result, index) => {
+            if (result.status === 'rejected') markFailure(simulated[index]!.adapter.id, 'advance-to', result.reason)
+            else markHealthy(simulated[index]!.adapter.id, 'advance-to')
+          })
+          const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+          if (failures.length > 0) throw new AggregateError(failures.map(failure => failure.reason), 'one or more Pack Runtimes failed exact advancement')
+        },
+        checkpoint: async (): Promise<void> => {
+          const simulated = connections.filter(({ adapter }) => adapter.clock === 'simulation')
+          const unsupported = simulated.filter(({ connection }) => connection.checkpoint === undefined)
+          if (unsupported.length > 0) throw new Error(`Pack Runtimes do not support checkpoints: ${unsupported.map(({ adapter }) => adapter.id).join(', ')}`)
+          await Promise.all(simulated.map(({ connection }) => connection.checkpoint!()))
+        },
         health: (): ReadonlyArray<PackRuntimeHealth> =>
           [...healthByRuntime.values()]
             .map((health) => {

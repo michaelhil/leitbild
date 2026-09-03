@@ -6,6 +6,7 @@ import { CommandIdempotencyConflictError } from '../simulation-runs/command-idem
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../simulation-runs/runtime.ts'
 import { apiError,json,readJson } from './responses.ts'
+import { accelerationDurationInputSchema, additionalAccelerationInputSchema } from '../simulation-runs/acceleration.ts'
 
 const defaultOperatorActorId = actorIdSchema.parse('actor:operator')
 
@@ -160,6 +161,37 @@ const handleSimulationRunApiInner = async (
     const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(resetMatch[1] ?? ''))
     const runtime = await config.registry.reset(simulationRunId)
     return json(await simulationRunResponse(config.registry, runtime))
+  }
+
+  const acceleratedCopiesMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/accelerated-copies$/)
+  if (acceleratedCopiesMatch && req.method === 'POST') {
+    const sourceId = simulationRunIdSchema.parse(decodeURIComponent(acceleratedCopiesMatch[1] ?? ''))
+    const parsed = accelerationDurationInputSchema.parse(await readJson(req))
+    const result = await config.registry.createAcceleratedCopy(sourceId, {
+      minutes: parsed.minutes,
+      ...(parsed.name === undefined ? {} : { name: parsed.name }),
+    })
+    return json({
+      id: result.runtime.id,
+      acceleration: result.acceleration,
+      uiPath: `/workspaces/${encodeURIComponent(config.registry.workspaceId)}/world/runs/${encodeURIComponent(result.runtime.id)}`,
+    }, { status: 201 })
+  }
+
+  const accelerationPauseMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/acceleration\/pause$/)
+  if (accelerationPauseMatch && req.method === 'POST') {
+    const id = simulationRunIdSchema.parse(decodeURIComponent(accelerationPauseMatch[1] ?? ''))
+    return json({ acceleration: await config.registry.pauseAcceleration(id) }, { status: 202 })
+  }
+
+  const accelerationMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/acceleration$/)
+  if (accelerationMatch && req.method === 'GET') {
+    const id = simulationRunIdSchema.parse(decodeURIComponent(accelerationMatch[1] ?? ''))
+    return json({ acceleration: await config.registry.accelerationStatus(id) })
+  }
+  if (accelerationMatch && req.method === 'POST') {
+    const id = simulationRunIdSchema.parse(decodeURIComponent(accelerationMatch[1] ?? ''))
+    return json({ acceleration: await config.registry.startAcceleration(id, additionalAccelerationInputSchema.parse(await readJson(req))) }, { status: 202 })
   }
 
   const objectsMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/objects$/)
@@ -335,6 +367,9 @@ export const handleSimulationRunApi = async (
     if (err instanceof Error && 'code' in err && err.code === 'storage_budget_exceeded') return apiError(507, 'storage_budget_exceeded', err.message)
     if (err instanceof Error && 'code' in err && err.code === 'history_unavailable') return apiError(503, 'history_unavailable', err.message)
     if (err instanceof Error && 'code' in err && err.code === 'simulation_run_busy') return apiError(409, 'simulation_run_busy', err.message)
+    if (err instanceof Error && 'code' in err && err.code === 'simulation_run_failed') return apiError(409, 'simulation_run_failed', err.message)
+    if (err instanceof Error && 'code' in err && err.code === 'acceleration_capacity_exceeded') return apiError(503, 'acceleration_capacity_exceeded', err.message)
+    if (err instanceof Error && 'code' in err && err.code === 'acceleration_unsupported') return apiError(422, 'acceleration_unsupported', err.message)
     if (err instanceof SyntaxError) return apiError(400, 'invalid_json', err.message)
     if (err instanceof z.ZodError) return apiError(400, 'invalid_request', err.message)
     throw err

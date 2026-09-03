@@ -90,6 +90,11 @@ export interface PackRuntimeConnection {
    * without cross-object deletion constraints deliberately omit this hook. */
   readonly validateObjectDeletion?: (objectId: ObjectId, objects: ReadonlyArray<OperationalObject>) => void
   readonly setClock: (clock: SimulationClockState) => Promise<void>
+  /** Advance simulated mechanics exactly to this paused Run boundary. This is
+   * distinct from changing wall-paced clock controls. */
+  readonly advanceTo?: (clock: SimulationClockState) => Promise<void>
+  /** Flush all private mechanics needed to reconstruct this exact boundary. */
+  readonly checkpoint?: () => Promise<void>
   /** Reject unsupported time changes before any runtime or the shared clock is mutated. */
   readonly validateClock?: (clock: SimulationClockState) => Promise<void>
   readonly health?: () => ReadonlyArray<PackRuntimeHealth>

@@ -49,6 +49,12 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
   if (!Number.isSafeInteger(maxLoadedWorkspaces) || maxLoadedWorkspaces < 1) throw new Error('maxLoadedWorkspaces must be a positive integer')
   const lifecycle = createKeyedOperations<WorkspaceId>()
   let shuttingDown = false
+  let acceleratingRun: string | null = null
+  const acquireAccelerationAdmission = (runId: string): (() => void) => {
+    if (acceleratingRun !== null) throw Object.assign(new Error(`Accelerated execution is already active for ${acceleratingRun}`), { code: 'acceleration_capacity_exceeded' })
+    acceleratingRun = runId
+    return () => { if (acceleratingRun === runId) acceleratingRun = null }
+  }
 
   const build = (workspaceId: WorkspaceId): WorldWorkspaceRuntime => ({
     workspaceId,
@@ -61,6 +67,7 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
       compileScenarioDefinition: config.compileScenarioDefinition,
       scenarioAuthoringCatalog: config.scenarioAuthoringCatalog,
       runtimeAdapters: config.runtimeAdapters,
+      acquireAccelerationAdmission,
       ...(config.idleRuntimeCloseDelayMs === undefined ? {} : { idleRuntimeCloseDelayMs: config.idleRuntimeCloseDelayMs }),
       ...(config.procedureSourceService === undefined ? {} : { procedureSourceService: config.procedureSourceService }),
     }),

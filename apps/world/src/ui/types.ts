@@ -26,6 +26,19 @@ export interface ClockResponse {
   readonly clock: SimulationClockState
 }
 
+export interface AccelerationJobState {
+  readonly status: 'running' | 'paused' | 'completed' | 'failed'
+  readonly startedSimulationTime: string
+  readonly targetSimulationTime: string
+  readonly currentSimulationTime: string
+  readonly startedAt: string
+  readonly updatedAt: string
+  readonly activeWallMs: number
+  readonly simulatedMs: number
+  readonly measuredSpeed: number
+  readonly error?: string
+}
+
 export type CreateParameterValue = string | number | boolean
 
 export interface CreateDraft {

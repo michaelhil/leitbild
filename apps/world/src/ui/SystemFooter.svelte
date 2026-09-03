@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Pause, Play, Settings } from 'lucide-svelte'
+  import { Pause, Play, Settings, Timer } from 'lucide-svelte'
   import type { SimulationClockState } from '../core/model/index.ts'
   import IconButton from './components/IconButton.svelte'
   import StatusDot, { type StatusTone } from './components/StatusDot.svelte'
@@ -13,6 +13,8 @@
     readonly openStatusModal: () => void
     readonly openSettings: () => void
     readonly toggleClockPaused: () => Promise<void>
+    readonly openAcceleration: () => void
+    readonly accelerationRunning?: boolean
   }
 
   let {
@@ -23,6 +25,8 @@
     openStatusModal,
     openSettings,
     toggleClockPaused,
+    openAcceleration,
+    accelerationRunning = false,
   }: Props = $props()
 
   let wallTick = $state(Date.now())
@@ -62,10 +66,19 @@
       label={clock?.paused ? 'Resume simulation time' : 'Pause simulation time'}
       title={clock?.paused ? 'Resume simulation time' : 'Pause simulation time'}
       icon={clock?.paused ? Play : Pause}
+      disabled={accelerationRunning}
       variant="bare"
       onClick={() => { void toggleClockPaused() }}
     />
     <span>{clockLabel}</span>
+    <IconButton
+      label="Open accelerated copy"
+      title={accelerationRunning ? 'Accelerated execution is running' : 'Create or continue an accelerated copy'}
+      icon={Timer}
+      pressed={accelerationRunning}
+      variant="bare"
+      onClick={openAcceleration}
+    />
   </div>{/if}
   <IconButton
     label="Open settings"

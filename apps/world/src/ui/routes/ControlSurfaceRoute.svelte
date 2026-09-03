@@ -26,6 +26,10 @@
     resetSimulationRun,
     invokeSimulationRunCapability,
     setSimulationRunClock,
+    fetchAcceleration,
+    createAcceleratedCopy,
+    continueAcceleration,
+    pauseAcceleration,
     syncSimulationRunSnapshot as syncSimulationRunSnapshotClient,
   } from '../simulation-run-client.ts'
   import {
@@ -50,6 +54,7 @@
   import { scenarioUsesSimulationTime, simulationTimeAt } from '../simulation-clock.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import ControlRail from '../ControlRail.svelte'
+  import AccelerationModal from '../AccelerationModal.svelte'
   import ScenarioGuidance from '../ScenarioGuidance.svelte'
   import StartupModal from '../StartupModal.svelte'
   import { processPlantIdForObject, type ProcessPlantArtifactKind } from '../process-display/process-display-client.ts'
@@ -92,7 +97,7 @@
     type InternalDiagnosticsSnapshot,
     type LongTaskDiagnosticsMonitor,
   } from '../internal-diagnostics.ts'
-  import type { CategoryRow, SimulationRunResponse, CreateDraft } from '../types.ts'
+  import type { CategoryRow, SimulationRunResponse, CreateDraft, AccelerationJobState } from '../types.ts'
 
   const appVersion = __LEITBILD_VERSION__
   const emptyStringArray: ReadonlyArray<string> = []
@@ -158,6 +163,11 @@
   let startupDismissed = $state(false)
   let startupStatusModalOpen = $state(false)
   let settingsModalOpen = $state(false)
+  let accelerationModalOpen = $state(false)
+  let accelerationState = $state<AccelerationJobState | null>(null)
+  let accelerationBusy = $state(false)
+  let accelerationError = $state('')
+  let acceleratedCopyPath = $state('')
   let OperationalMap = $state<Component | null>(null)
   let CreateObjectModal = $state<Component | null>(null)
   let SettingsModal = $state<Component | null>(null)
@@ -787,6 +797,52 @@
     void loadSettingsModal()
   }
 
+  const refreshAcceleration = async (): Promise<void> => {
+    if (!simulationRunId) return
+    try {
+      accelerationState = await fetchAcceleration(simulationRunId)
+      if (accelerationState?.currentSimulationTime) {
+        clock = { currentTime: accelerationState.currentSimulationTime as IsoTimestamp, paused: true, speed: 1, updatedAt: accelerationState.updatedAt as IsoTimestamp }
+      }
+    } catch (err) {
+      accelerationError = err instanceof Error ? err.message : String(err)
+    }
+  }
+
+  const openAcceleration = (): void => {
+    accelerationModalOpen = true
+    accelerationError = ''
+    void refreshAcceleration()
+  }
+
+  const createAccelerationCopy = async (minutes: number, name?: string): Promise<void> => {
+    if (!simulationRunId) return
+    accelerationBusy = true
+    accelerationError = ''
+    try {
+      const result = await createAcceleratedCopy(simulationRunId, { minutes, ...(name === undefined ? {} : { name }) })
+      acceleratedCopyPath = result.uiPath
+    } catch (err) { accelerationError = err instanceof Error ? err.message : String(err) }
+    finally { accelerationBusy = false }
+  }
+
+  const continueCurrentAcceleration = async (minutes: number): Promise<void> => {
+    if (!simulationRunId) return
+    accelerationBusy = true
+    accelerationError = ''
+    try { accelerationState = await continueAcceleration(simulationRunId, minutes) }
+    catch (err) { accelerationError = err instanceof Error ? err.message : String(err) }
+    finally { accelerationBusy = false }
+  }
+
+  const pauseCurrentAcceleration = async (): Promise<void> => {
+    if (!simulationRunId) return
+    accelerationBusy = true
+    try { accelerationState = await pauseAcceleration(simulationRunId) }
+    catch (err) { accelerationError = err instanceof Error ? err.message : String(err) }
+    finally { accelerationBusy = false }
+  }
+
   const goToStartPage = (): void => {
     window.location.assign('/')
   }
@@ -1318,6 +1374,7 @@
           activeStartupStep = id
         },
       })
+      void refreshAcceleration()
     } catch (err) {
       failStep(activeStartupStep, err)
     }
@@ -1409,6 +1466,9 @@
     completeStep('interface')
     preloadOperationalMapModule()
     void joinSimulationRun()
+    const accelerationPoll = window.setInterval(() => {
+      if (accelerationModalOpen || accelerationState?.status === 'running') void refreshAcceleration()
+    }, 500)
     return () => {
       cleanupInternalDiagnosticsGlobal()
       longTaskMonitor?.stop()
@@ -1417,6 +1477,7 @@
       railLayout.stopResize()
       realtimeConnection.disconnect()
       clearStartupAutoDismissTimer()
+      window.clearInterval(accelerationPoll)
     }
   })
 
@@ -1533,6 +1594,8 @@
         {openStatusModal}
         {openSettings}
         {toggleClockPaused}
+        {openAcceleration}
+        accelerationRunning={accelerationState?.status === 'running'}
         {toggleCategoryMapVisibility}
         mapLayerGroups={activeMapLayerGroups}
         {mapLayerGroupVisibility}
@@ -1725,5 +1788,18 @@
     {toggleTheme}
     {toggleWeatherLayer}
     {resetScenario}
+  />
+{/if}
+
+{#if accelerationModalOpen}
+  <AccelerationModal
+    job={accelerationState}
+    busy={accelerationBusy}
+    error={accelerationError}
+    createdPath={acceleratedCopyPath}
+    close={() => accelerationModalOpen = false}
+    createCopy={createAccelerationCopy}
+    continueRun={continueCurrentAcceleration}
+    pause={pauseCurrentAcceleration}
   />
 {/if}

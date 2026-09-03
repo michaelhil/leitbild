@@ -1,5 +1,6 @@
 import type { CommandEnvelope,CommandResult,GeoJsonPoint,GeoJsonPolygon,IsoTimestamp,OperationalObject,SimulationClockState,SimulationRunEvent } from '../../../core/model/index.ts'
-import { commandResultSchema,nowIso,objectIdSchema } from '../../../core/model/index.ts'
+import { commandResultSchema,geoJsonPointSchema,geoJsonPolygonSchema,nowIso,objectIdSchema } from '../../../core/model/index.ts'
+import { z } from 'zod'
 import { createSimulationClock } from '../../../core/model/time.ts'
 import { defineSimulationCommandCapability } from '../../../simulation/capabilities.ts'
 import type { PackRuntimeAdapter,PackRuntimeConnection,PackRuntimeEmission,PackRuntimeEvent,PackRuntimeEventHandler,PackRuntimeQuery,PackRuntimeRealtimeMessage,PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
@@ -31,7 +32,8 @@ import {
   uploadDroneGeofenceCommandKind,
   uploadDroneGeofencePayloadSchema,
   uploadDroneMissionCommandKind,
-  uploadDroneMissionPayloadSchema
+  uploadDroneMissionPayloadSchema,
+  droneMissionItemSchema,
 } from '../commands.ts'
 import { droneManualControlReadiness } from '../control-readiness.ts'
 import { droneAttackSignal } from '../interactions.ts'
@@ -78,6 +80,19 @@ interface DroneRuntimeRecord {
 
 const maxRuntimeCatchUpSteps = 5
 
+const droneRuntimeCheckpointSchema = z.object({
+  schemaVersion: z.literal(1),
+  homePoints: z.record(z.string(), geoJsonPointSchema),
+  missionPlans: z.record(z.string(), z.object({
+    planId: z.string().min(1).max(128).optional(),
+    items: z.array(droneMissionItemSchema),
+    currentIndex: z.number().int().nonnegative(),
+    holdUntilMs: z.number().finite().optional(),
+  }).strict()),
+  geofences: z.record(z.string(), z.array(geoJsonPolygonSchema)),
+  motionFrameSequence: z.number().int().nonnegative(),
+}).strict()
+
 export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
   id: droneNativeRuntimeId,
   version: '1.0.0',
@@ -118,6 +133,11 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
     const missionPlans = new Map<string, NativeMissionPlan>()
     const geofences = new Map<string, ReadonlyArray<GeoJsonPolygon>>()
     const droneRecords = new Map<string, DroneRuntimeRecord>()
+    const rawCheckpoint = await config.runtimeStateStore?.load() ?? null
+    if (config.initialObjects && config.runtimeStateStore && rawCheckpoint === null) {
+      throw new Error('Drone runtime checkpoint is missing; private mission and geofence state cannot be reconstructed')
+    }
+    const restoredCheckpoint = rawCheckpoint === null ? null : droneRuntimeCheckpointSchema.parse(rawCheckpoint)
 
     const setRuntimeDrone = (
       object: OperationalObject,
@@ -160,6 +180,17 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       if (record) homePoints.set(object.id, record.data.pose.point)
     }
 
+    if (restoredCheckpoint) {
+      for (const [id, point] of Object.entries(restoredCheckpoint.homePoints)) homePoints.set(id, point)
+      for (const [id, mission] of Object.entries(restoredCheckpoint.missionPlans)) missionPlans.set(id, {
+        items: mission.items,
+        currentIndex: mission.currentIndex,
+        ...(mission.planId === undefined ? {} : { planId: mission.planId }),
+        ...(mission.holdUntilMs === undefined ? {} : { holdUntilMs: mission.holdUntilMs }),
+      })
+      for (const [id, polygons] of Object.entries(restoredCheckpoint.geofences)) geofences.set(id, polygons)
+    }
+
     const handlers = new Set<PackRuntimeEventHandler>()
     let closed = false
     let clock: SimulationClockState = {
@@ -180,7 +211,20 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
     })
     let lastProjectionMs = 0
     let lastMotionFrameMs = 0
-    let motionFrameSequence = 0
+    let motionFrameSequence = restoredCheckpoint?.motionFrameSequence ?? 0
+
+    const checkpoint = async (requireNoManualControl = true): Promise<void> => {
+      if (requireNoManualControl && [...droneRecords.values()].some(({ data }) => data.control.manualAxes !== undefined)) {
+        throw new Error('Release active drone manual controls before creating an accelerated copy')
+      }
+      await config.runtimeStateStore?.save(droneRuntimeCheckpointSchema.parse({
+        schemaVersion: 1,
+        homePoints: Object.fromEntries(homePoints),
+        missionPlans: Object.fromEntries(missionPlans),
+        geofences: Object.fromEntries(geofences),
+        motionFrameSequence,
+      }))
+    }
 
     const emit = (
       events: ReadonlyArray<PackRuntimeEvent>,
@@ -762,10 +806,22 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
         lastProjectionMs = simulationMs
         lastMotionFrameMs = simulationMs
       },
+      advanceTo: async (nextClock: SimulationClockState): Promise<void> => {
+        const targetMs = Date.parse(nextClock.currentTime)
+        stepAll(targetMs, true)
+        while (backlogMs >= runtimeConfig.stepIntervalMs) {
+          await new Promise(resolve => setTimeout(resolve, 0))
+          stepAll(targetMs, true)
+        }
+        clock = nextClock
+        localClock?.set(nextClock)
+      },
+      checkpoint,
       health: () => [{ runtimeId: droneNativeRuntimeId, state: wasBehind ? 'degraded' : 'ready', failureCount: backlogEpisodes, lastSuccessfulInteractionAt: lastStepAt, ...(wasBehind ? { lastFailure: { at: lastStepAt, operation: 'simulation-backlog', message: `Drone solver is ${Math.round(backlogMs)} simulation milliseconds behind the Run clock; elapsed time is retained, not skipped.` } } : {}) }],
       close: async (): Promise<void> => {
         closed = true
         clearInterval(interval)
+        await checkpoint(false)
         handlers.clear()
       },
     }

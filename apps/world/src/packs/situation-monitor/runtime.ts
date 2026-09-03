@@ -69,7 +69,7 @@ export const situationWorkspaceCapabilities: ReadonlyArray<PackWorkspaceCapabili
 }]
 
 export const createSituationMonitorRuntimeAdapter = (): PackRuntimeAdapter => ({
-  id: situationRuntimeId, version: '1.0.0', packId: 'situation-monitor', clock: 'none', capabilities: situationCapabilities,
+  id: situationRuntimeId, version: '1.0.0', packId: 'situation-monitor', clock: 'live', capabilities: situationCapabilities,
   workspaceCapabilities: situationWorkspaceCapabilities,
   connect: async config => {
     if (!config.workspace || !config.runtimeStateStore) throw new Error('Situation Monitor requires Workspace persistence and a Pack state store')

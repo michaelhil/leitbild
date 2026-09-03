@@ -4,6 +4,7 @@ import type {
   CapabilityInvocationResponse,
   SimulationRunResponse,
   ScenarioResponse,
+  AccelerationJobState,
 } from './types.ts'
 import { recordCapabilityQueryDiagnostics } from './internal-diagnostics.ts'
 import { workspaceApiPath } from './workspace-context.ts'
@@ -23,8 +24,17 @@ const readJsonResponse = async <T>(
   response: Response,
   failureMessage: string,
 ): Promise<T> => {
-  if (!response.ok) throw new Error(`${failureMessage}: ${response.status}`)
-  return await response.json() as T
+  const text = await response.text()
+  if (!response.ok) {
+    let detail: string | undefined
+    try {
+      const parsed = JSON.parse(text) as { readonly error?: { readonly message?: unknown } }
+      if (typeof parsed.error?.message === 'string') detail = parsed.error.message
+    } catch { /* Non-JSON errors retain the stable client message. */ }
+    if (detail) throw new Error(detail)
+    throw new Error(`${failureMessage}: ${response.status}`)
+  }
+  return JSON.parse(text) as T
 }
 
 export const fetchScenario = async (scenarioId: string): Promise<ScenarioResponse> => {
@@ -92,6 +102,33 @@ export const setSimulationRunClock = async (
     body: JSON.stringify(update),
   })
   return await readJsonResponse<ClockResponse>(response, 'clock update failed')
+}
+
+export const fetchAcceleration = async (simulationRunId: SimulationRunId): Promise<AccelerationJobState | null> => {
+  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/acceleration`), { cache: 'no-store' })
+  return (await readJsonResponse<{ readonly acceleration: AccelerationJobState | null }>(response, 'acceleration status failed')).acceleration
+}
+
+export const createAcceleratedCopy = async (
+  simulationRunId: SimulationRunId,
+  input: { readonly minutes: number; readonly name?: string },
+): Promise<{ readonly id: SimulationRunId; readonly acceleration: AccelerationJobState; readonly uiPath: string }> => {
+  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/accelerated-copies`), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  })
+  return await readJsonResponse(response, 'accelerated copy failed')
+}
+
+export const continueAcceleration = async (simulationRunId: SimulationRunId, minutes: number): Promise<AccelerationJobState> => {
+  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/acceleration`), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutes }),
+  })
+  return (await readJsonResponse<{ readonly acceleration: AccelerationJobState }>(response, 'acceleration failed')).acceleration
+}
+
+export const pauseAcceleration = async (simulationRunId: SimulationRunId): Promise<AccelerationJobState> => {
+  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/acceleration/pause`), { method: 'POST' })
+  return (await readJsonResponse<{ readonly acceleration: AccelerationJobState }>(response, 'acceleration pause failed')).acceleration
 }
 
 const capabilityQueryFailureMessage = (status: number, text: string): string => {

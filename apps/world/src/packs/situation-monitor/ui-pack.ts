@@ -3,7 +3,7 @@ import { situationPackId, situationRuntimeId } from './model.ts'
 
 export const situationMonitorPackView: WorldPackView = {
   descriptor: createWorldPackDescriptor({ id: situationPackId, version: '1.0.0', name: 'Situation Monitor', description: 'Live external reports, geographic features, forecasts and on-demand media, with provenance and explicit freshness. Independent of simulation time and physics.', contributions: ['runtime', 'scenario', 'presentation'] }),
-  runtime: { runtimes: [{ id: situationRuntimeId, version: '1.0.0', label: 'External observations', kind: 'local', clock: 'none' }], defaultRuntimeId: situationRuntimeId },
+  runtime: { runtimes: [{ id: situationRuntimeId, version: '1.0.0', label: 'External observations', kind: 'local', clock: 'live' }], defaultRuntimeId: situationRuntimeId },
   presentation: {
     categories: [],
     mapFeatureLayers: ['situation-monitor'],

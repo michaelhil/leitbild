@@ -26,6 +26,7 @@ import {
 } from './runtime-metrics.ts'
 import { defaultSimulationRunRuntimePolicy } from './runtime-persistence-policy.ts'
 import type { SimulationRunSnapshotStore } from './snapshot-store.ts'
+import { accelerationProgressWallIntervalMs,accelerationStepMs,type SimulationRunForkCheckpoint } from './acceleration.ts'
 import { createSimulationRunStateStore,type SimulationRunStateSnapshot,type SimulationRunStateStore } from './state-store.ts'
 import { createScenarioTimelineRunner,dueScenarioTimelineCues,type ScenarioTimelineRunner } from './timeline-runner.ts'
 
@@ -58,6 +59,12 @@ export interface SimulationRunRuntime {
   readonly capabilities: () => SimulationRunCapabilities
   readonly snapshot: () => SimulationRunStateSnapshot
   readonly setClock: (update: SimulationClockUpdate) => Promise<SimulationClockState>
+  readonly checkpointForFork: () => Promise<SimulationRunForkCheckpoint>
+  readonly advancePausedTo: (targetSimulationTime: IsoTimestamp, control: {
+    readonly shouldPause: () => boolean
+    readonly onProgress?: (currentSimulationTime: IsoTimestamp) => void | Promise<void>
+  }) => Promise<{ readonly currentSimulationTime: IsoTimestamp; readonly pausedEarly: boolean }>
+  readonly failStop: (reason: string) => void
   readonly events: (config?: { readonly afterSeq?: number }) => ReadonlyArray<SimulationRunEvent>
   readonly subscribe: (handler: SimulationRunEventHandler) => () => void
   readonly publishResetBoundary: (config: { readonly scenarioId?: string }) => Promise<SimulationRunEvent>
@@ -154,6 +161,7 @@ export const createSimulationRunRuntime = async (config: {
   readonly runtimeCapabilities?: ReadonlyArray<ActiveSimulationCapability>
   readonly procedureSourceService?: ProcedureSourceService
   readonly historian?: RunHistorian
+  readonly runtimeStateLoaders?: Readonly<Record<string, () => Promise<unknown | null>>>
 }): Promise<SimulationRunRuntime> => {
   const state = config.stateStore ?? createSimulationRunStateStore()
   const metrics = createSimulationRunRuntimeMetricsRecorder({
@@ -168,6 +176,14 @@ export const createSimulationRunRuntime = async (config: {
   let snapshotSaveQueue: Promise<void> = Promise.resolve()
   let projectedSnapshotDirty = false
   let projectedSnapshotTimer: ReturnType<typeof setTimeout> | null = null
+  let exclusiveOperation: 'fork' | 'acceleration' | null = null
+  let activeOperations = 0
+  let terminalExecutionFailure: string | null = null
+  let pendingRuntimeEmissions = 0
+  let runtimeEmissionFailure: unknown = null
+  const acceleratedNotificationBuffer = new Map<string, SimulationRunEvent>()
+  const acceleratedRealtimeBuffer = new Map<string, PackRuntimeRealtimeMessage>()
+  let lastAcceleratedNotificationAt = 0
   const interactionHandlers = [...(config.interactionHandlers ?? [])]
     .sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id))
   const procedureSourceService = config.procedureSourceService ?? createProcedureSourceService()
@@ -250,6 +266,26 @@ export const createSimulationRunRuntime = async (config: {
     await queueSnapshotSave()
   }
 
+  const acceleratedEventKey = (event: SimulationRunEvent): string => {
+    if (event.type === 'object.upserted') return `object:${event.object.id}`
+    if (event.type === 'object.deleted') return `object:${event.objectId}`
+    if (event.type === 'telemetry.sampled') return `telemetry:${event.objectId}`
+    return `${event.type}:${event.seq}`
+  }
+
+  const flushAcceleratedNotifications = (): void => {
+    if (acceleratedNotificationBuffer.size === 0 && acceleratedRealtimeBuffer.size === 0) return
+    const notification: SimulationRunEventNotification = {
+      type: 'event.notification',
+      events: [...acceleratedNotificationBuffer.values()],
+      ...(acceleratedRealtimeBuffer.size === 0 ? {} : { realtimeMessages: [...acceleratedRealtimeBuffer.values()] }),
+    }
+    acceleratedNotificationBuffer.clear()
+    acceleratedRealtimeBuffer.clear()
+    lastAcceleratedNotificationAt = performance.now()
+    for (const handler of handlers) handler(notification)
+  }
+
   const scheduleProjectedSnapshotSave = (): void => {
     metrics.recordProjectedSnapshotScheduled()
     projectedSnapshotDirty = true
@@ -315,8 +351,14 @@ export const createSimulationRunRuntime = async (config: {
     } else {
       scheduleProjectedSnapshotSave()
     }
-    const notification: SimulationRunEventNotification = { type: 'event.notification', events: simulationRunEvents }
-    for (const handler of handlers) handler(notification)
+    if (exclusiveOperation === 'acceleration' && eventsToPersist.length === 0) {
+      for (const event of simulationRunEvents) acceleratedNotificationBuffer.set(acceleratedEventKey(event), event)
+      if (performance.now() - lastAcceleratedNotificationAt >= accelerationProgressWallIntervalMs) flushAcceleratedNotifications()
+    } else {
+      flushAcceleratedNotifications()
+      const notification: SimulationRunEventNotification = { type: 'event.notification', events: simulationRunEvents }
+      for (const handler of handlers) handler(notification)
+    }
     await config.runtimeConnection.observeCommittedEvents(simulationRunEvents)
   }
 
@@ -670,6 +712,11 @@ export const createSimulationRunRuntime = async (config: {
       }
       await flushPendingEvents()
       if (emission.realtimeMessages && emission.realtimeMessages.length > 0) {
+        if (exclusiveOperation === 'acceleration') {
+          for (const message of emission.realtimeMessages) acceleratedRealtimeBuffer.set(message.type, message)
+          if (performance.now() - lastAcceleratedNotificationAt >= accelerationProgressWallIntervalMs) flushAcceleratedNotifications()
+          return
+        }
         const notification: SimulationRunEventNotification = {
           type: 'event.notification',
           events: [],
@@ -684,13 +731,28 @@ export const createSimulationRunRuntime = async (config: {
     try {
       await publishPackRuntimeEmission(emission)
     } catch (err) {
+      runtimeEmissionFailure = err
       console.error(err)
     }
   }
 
   const unsubscribeRuntime = config.runtimeConnection.subscribe((emission) => {
-    void publishPackRuntimeEmissionSafely(emission)
+    pendingRuntimeEmissions += 1
+    void publishPackRuntimeEmissionSafely(emission).finally(() => { pendingRuntimeEmissions -= 1 })
   })
+
+  const drainRuntimeEmissions = async (): Promise<void> => {
+    do {
+      await publishQueue
+      if (pendingRuntimeEmissions > 0) await new Promise<void>(resolve => setTimeout(resolve, 0))
+    } while (pendingRuntimeEmissions > 0)
+    await publishQueue
+    if (runtimeEmissionFailure !== null) {
+      const failure = runtimeEmissionFailure
+      runtimeEmissionFailure = null
+      throw failure
+    }
+  }
 
   const initialScenarioState = (): ScenarioExecutionState => ({
     scenarioId: config.scenario.id,
@@ -850,7 +912,7 @@ export const createSimulationRunRuntime = async (config: {
     return pending
   }
 
-  const runDueScenarioCues = async (): Promise<void> => {
+  const runDueScenarioCues = async (at: IsoTimestamp = runClock.read().currentTime): Promise<void> => {
     if (!config.scenario.timeline || !state.snapshot().scenario?.timeline) return
     const dueCues = dueScenarioTimelineCues({
       timeline: config.scenario.timeline,
@@ -858,7 +920,7 @@ export const createSimulationRunRuntime = async (config: {
       nowMs: currentClockMs(),
     })
     for (const cue of dueCues) {
-      await publishScenarioCue(cue, nowIso())
+      await publishScenarioCue(cue, at)
     }
   }
 
@@ -893,8 +955,13 @@ export const createSimulationRunRuntime = async (config: {
   }
 
   const receiveRealtimeInput = async (input: PackRuntimeRealtimeInput): Promise<void> => {
-    if (!config.runtimeConnection.receiveRealtimeInput) throw new Error(`runtime cannot receive realtime input type: ${input.type}`)
-    await config.runtimeConnection.receiveRealtimeInput(input)
+    const release = beginOperation()
+    try {
+      if (!config.runtimeConnection.receiveRealtimeInput) throw new Error(`runtime cannot receive realtime input type: ${input.type}`)
+      await config.runtimeConnection.receiveRealtimeInput(input)
+    } finally {
+      release()
+    }
   }
 
   let clockQueue: Promise<unknown> = Promise.resolve()
@@ -946,7 +1013,10 @@ export const createSimulationRunRuntime = async (config: {
   }
   const setClock = (update: SimulationClockUpdate): Promise<SimulationClockState> => {
     const parsed = simulationClockUpdateSchema.parse(update) as SimulationClockUpdate
-    const pending = clockQueue.then(() => applyClockUpdate(parsed))
+    let release: () => void
+    try { release = beginOperation() }
+    catch (error) { return Promise.reject(error) }
+    const pending = clockQueue.then(() => applyClockUpdate(parsed)).finally(release)
     clockQueue = pending.catch(() => {})
     return pending
   }
@@ -954,23 +1024,138 @@ export const createSimulationRunRuntime = async (config: {
   const invokeCapability = async (
     actor: Actor,
     invocation: SimulationRunCapabilityInvocation,
-  ): Promise<SimulationRunCapabilityInvocationResult> =>
-    await invokeCapabilityThroughRuntime(actor, invocation, 'operator')
+  ): Promise<SimulationRunCapabilityInvocationResult> => {
+    const release = beginOperation()
+    try {
+      return await invokeCapabilityThroughRuntime(actor, invocation, 'operator')
+    } finally {
+      release()
+    }
+  }
+
+  function beginOperation(): () => void {
+    if (terminalExecutionFailure) throw Object.assign(new Error(`Simulation Run is fail-stopped: ${terminalExecutionFailure}`), { code: 'simulation_run_failed' })
+    if (exclusiveOperation) throw Object.assign(new Error(`Simulation Run is busy with ${exclusiveOperation}`), { code: 'simulation_run_busy' })
+    activeOperations += 1
+    return () => { activeOperations -= 1 }
+  }
+
+  const claimExclusive = (operation: 'fork' | 'acceleration'): (() => void) => {
+    if (exclusiveOperation) throw Object.assign(new Error(`Simulation Run is busy with ${exclusiveOperation}`), { code: 'simulation_run_busy' })
+    if (activeOperations > 0) throw Object.assign(new Error('Simulation Run has active operations'), { code: 'simulation_run_busy' })
+    exclusiveOperation = operation
+    return () => { exclusiveOperation = null }
+  }
+
+  const checkpointForFork = async (): Promise<SimulationRunForkCheckpoint> => {
+    if (terminalExecutionFailure) throw new Error(`Simulation Run is fail-stopped: ${terminalExecutionFailure}`)
+    const release = claimExclusive('fork')
+    const currentControl = runClock.read()
+    let stopped = { ...currentControl, paused: true }
+    scenarioRunner?.close()
+    scenarioRunner = null
+    try {
+      await clockQueue
+      await cueQueue
+      await drainRuntimeEmissions()
+      stopped = { ...runClock.read(), paused: true }
+      runClock.set(stopped)
+      await config.runtimeConnection.setClock(stopped)
+      await drainRuntimeEmissions()
+      if (!config.runtimeConnection.checkpoint) throw new Error('active Pack Runtimes do not support a coherent checkpoint')
+      await config.runtimeConnection.checkpoint()
+      await saveSnapshotImmediately()
+      const runtimeStates = Object.fromEntries(await Promise.all(Object.entries(config.runtimeStateLoaders ?? {}).map(async ([id, load]) => {
+        const value = await load()
+        if (value === null) throw new Error(`Pack Runtime checkpoint is missing after flush: ${id}`)
+        return [id, value] as const
+      })))
+      return {
+        snapshot: structuredClone({ ...snapshotWithCurrentClock(), clock: stopped }),
+        runtimeStates,
+      }
+    } finally {
+      const resumed: SimulationClockState = {
+        ...stopped,
+        paused: currentControl.paused,
+        speed: currentControl.speed,
+        updatedAt: nowIso(),
+      }
+      try {
+        runClock.set(resumed)
+        await config.runtimeConnection.setClock(resumed)
+        if (!resumed.paused) startScenarioRunner()
+      } finally { release() }
+    }
+  }
+
+  const advancePausedTo = async (
+    targetSimulationTime: IsoTimestamp,
+    control: { readonly shouldPause: () => boolean; readonly onProgress?: (currentSimulationTime: IsoTimestamp) => void | Promise<void> },
+  ): Promise<{ readonly currentSimulationTime: IsoTimestamp; readonly pausedEarly: boolean }> => {
+    if (terminalExecutionFailure) throw new Error(`Simulation Run is fail-stopped: ${terminalExecutionFailure}`)
+    const release = claimExclusive('acceleration')
+    scenarioRunner?.close()
+    scenarioRunner = null
+    try {
+      await clockQueue
+      await cueQueue
+      await drainRuntimeEmissions()
+      const targetMs = Date.parse(targetSimulationTime)
+      let currentMs = currentClockMs()
+      if (!Number.isFinite(targetMs) || targetMs < currentMs) throw new Error('acceleration target must not precede the current simulation time')
+      if (!config.runtimeConnection.advanceTo || !config.runtimeConnection.checkpoint) {
+        throw new Error('active Pack Runtimes do not support exact accelerated execution')
+      }
+      while (currentMs < targetMs && !control.shouldPause()) {
+        const timelineState = state.snapshot().scenario?.timeline
+        const fired = new Set(timelineState?.firedCueIds ?? [])
+        const startedMs = timelineState ? Date.parse(timelineState.startedAt) : Number.NaN
+        const nextCueMs = config.scenario.timeline?.cues
+          .filter(cue => !fired.has(cue.id))
+          .map(cue => startedMs + cue.at.seconds * 1_000)
+          .filter(dueMs => dueMs > currentMs)
+          .sort((left, right) => left - right)[0]
+        const nextMs = Math.min(targetMs, currentMs + accelerationStepMs, nextCueMs ?? Number.POSITIVE_INFINITY)
+        const nextTime = new Date(nextMs).toISOString() as IsoTimestamp
+        const nextClock: SimulationClockState = { currentTime: nextTime, paused: true, speed: 1, updatedAt: nowIso() }
+        runClock.set(nextClock)
+        await config.runtimeConnection.advanceTo(nextClock)
+        await drainRuntimeEmissions()
+        await runDueScenarioCues(nextTime)
+        await drainRuntimeEmissions()
+        currentMs = nextMs
+        await control.onProgress?.(nextTime)
+        // Keep network and pause handling responsive during long calculations.
+        if (currentMs < targetMs) await new Promise<void>(resolve => setTimeout(resolve, 0))
+      }
+      await config.runtimeConnection.checkpoint()
+      await saveSnapshotImmediately()
+      flushAcceleratedNotifications()
+      return { currentSimulationTime: new Date(currentMs).toISOString() as IsoTimestamp, pausedEarly: currentMs < targetMs }
+    } finally {
+      release()
+    }
+  }
 
   const publishResetBoundary = async (resetConfig: { readonly scenarioId?: string }): Promise<SimulationRunEvent> => {
-    const snapshot = state.snapshot()
-    const event = await publishOneGenerated(() => ({
-      id: eventId(),
-      simulationRunId: config.id,
-      seq: ++seq,
-      at: nowIso(),
-      provenance: { source: 'system' },
-      type: 'simulationRun.reset',
-      previousSeq: snapshot.seq,
-      ...(snapshot.scenario?.scenarioId === undefined ? {} : { previousScenarioId: snapshot.scenario.scenarioId }),
-      ...(resetConfig.scenarioId === undefined ? {} : { scenarioId: resetConfig.scenarioId }),
-    }))
-    return event
+    const release = beginOperation()
+    try {
+      const snapshot = state.snapshot()
+      return await publishOneGenerated(() => ({
+        id: eventId(),
+        simulationRunId: config.id,
+        seq: ++seq,
+        at: nowIso(),
+        provenance: { source: 'system' },
+        type: 'simulationRun.reset',
+        previousSeq: snapshot.seq,
+        ...(snapshot.scenario?.scenarioId === undefined ? {} : { previousScenarioId: snapshot.scenario.scenarioId }),
+        ...(resetConfig.scenarioId === undefined ? {} : { scenarioId: resetConfig.scenarioId }),
+      }))
+    } finally {
+      release()
+    }
   }
 
   return {
@@ -988,6 +1173,9 @@ export const createSimulationRunRuntime = async (config: {
     }),
     snapshot: () => snapshotWithCurrentClock(),
     setClock,
+    checkpointForFork,
+    advancePausedTo,
+    failStop: (reason: string): void => { terminalExecutionFailure = reason },
     events: (eventsConfig?: { readonly afterSeq?: number }): ReadonlyArray<SimulationRunEvent> => {
       const afterSeq = eventsConfig?.afterSeq ?? -1
       return durableEvents.filter(event => event.seq > afterSeq)
@@ -1004,9 +1192,14 @@ export const createSimulationRunRuntime = async (config: {
     procedureCatalog: async (catalogConfig = {}) => await procedureSourceService.readCatalog(catalogConfig),
     procedureDocument: async (documentConfig) => await procedureSourceService.readDocument(documentConfig),
     publishInteractionSignal: async (signal: InteractionSignal, provenance: Provenance): Promise<void> => {
-      await enqueuePublish(async () => {
-        await handleInteractionSignalNow(signal, provenance)
-      })
+      const release = beginOperation()
+      try {
+        await enqueuePublish(async () => {
+          await handleInteractionSignalNow(signal, provenance)
+        })
+      } finally {
+        release()
+      }
     },
     metrics: () => metrics.snapshot(),
     health: () => config.runtimeConnection.health?.() ?? [],
