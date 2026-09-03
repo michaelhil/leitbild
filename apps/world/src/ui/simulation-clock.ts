@@ -3,7 +3,10 @@ import type { WorldPackView } from '../core/packs/protocol.ts'
 import { simulationTimeAt as interpolate } from '../core/model/time.ts'
 
 export const scenarioUsesSimulationTime = (scenario: CompiledScenario | null, packs: ReadonlyArray<WorldPackView>): boolean =>
-  !!scenario && ((scenario.timeline?.cues.length ?? 0) > 0 || packs.some(pack => pack.runtime?.runtimes.some(runtime => runtime.id === scenario.packRuntimes[pack.descriptor.id] && runtime.clock === 'simulation')))
+  !!scenario && ((scenario.timeline?.cues.length ?? 0) > 0 || packs.some(pack => {
+    const runtimeId = scenario.packRuntimes[pack.descriptor.id] ?? pack.runtime?.defaultRuntimeId
+    return pack.runtime?.runtimes.some(runtime => runtime.id === runtimeId && runtime.clock === 'simulation') ?? false
+  }))
 
 export const simulationTimeAt = (
   clock: SimulationClockState | undefined,

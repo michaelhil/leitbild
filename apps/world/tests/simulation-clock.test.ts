@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { createSimulationClock, simulationClockUpdateSchema, type IsoTimestamp } from '../src/core/model/time.ts'
 import { scenarioUsesSimulationTime } from '../src/ui/simulation-clock.ts'
+import { processPlantPackView } from '../src/packs/process-plant/ui-pack.ts'
 import { situationMonitorPackView } from '../src/packs/situation-monitor/ui-pack.ts'
 import { responseScenario } from './fixtures/scenarios.ts'
 
@@ -8,6 +9,11 @@ test('clock-independent monitoring hides physics controls but timed orchestratio
   const monitor = { ...responseScenario, packs: ['situation-monitor'], packRuntimes: { 'situation-monitor': 'situation-monitor-local' }, timeline: { cues: [] } }
   expect(scenarioUsesSimulationTime(monitor, [situationMonitorPackView])).toBe(false)
   expect(scenarioUsesSimulationTime({ ...monitor, timeline: { cues: [{ id: 'later', at: { kind: 'after_scenario_start', seconds: 300 }, actions: [] }] } }, [situationMonitorPackView])).toBe(true)
+})
+
+test('a Pack default simulation runtime exposes physics controls without an explicit runtime override', () => {
+  const plant = { ...responseScenario, packs: ['process-plant'], packRuntimes: {}, timeline: { cues: [] } }
+  expect(scenarioUsesSimulationTime(plant, [processPlantPackView])).toBe(true)
 })
 
 test('Run clock separates simulation epoch, monotonic elapsed duration and wall observation time', () => {
