@@ -49,20 +49,20 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
   if (!Number.isSafeInteger(maxLoadedWorkspaces) || maxLoadedWorkspaces < 1) throw new Error('maxLoadedWorkspaces must be a positive integer')
   const lifecycle = createKeyedOperations<WorkspaceId>()
   let shuttingDown = false
-  let acceleratingRun: { readonly workspaceId: WorkspaceId; readonly runId: SimulationRunId } | null = null
-  const acquireAccelerationAdmission = (workspaceId: WorkspaceId, runId: SimulationRunId): (() => void) => {
-    if (acceleratingRun !== null) {
-      const sameWorkspace = acceleratingRun.workspaceId === workspaceId
+  let fastForwardingRun: { readonly workspaceId: WorkspaceId; readonly runId: SimulationRunId } | null = null
+  const acquireFastForwardAdmission = (workspaceId: WorkspaceId, runId: SimulationRunId): (() => void) => {
+    if (fastForwardingRun !== null) {
+      const sameWorkspace = fastForwardingRun.workspaceId === workspaceId
       throw Object.assign(new Error(sameWorkspace
-        ? `Another Simulation Run in this Workspace is already accelerating: ${acceleratingRun.runId}`
-        : 'Acceleration capacity is currently in use by another Workspace'), {
-        code: 'acceleration_capacity_exceeded',
-        ...(sameWorkspace ? { activeRunId: acceleratingRun.runId } : {}),
+        ? `Another Simulation Run in this Workspace is already fast-forwarding: ${fastForwardingRun.runId}`
+        : 'Fast-forward capacity is currently in use by another Workspace'), {
+        code: 'fast_forward_capacity_exceeded',
+        ...(sameWorkspace ? { activeRunId: fastForwardingRun.runId } : {}),
       })
     }
     const admission = { workspaceId, runId }
-    acceleratingRun = admission
-    return () => { if (acceleratingRun === admission) acceleratingRun = null }
+    fastForwardingRun = admission
+    return () => { if (fastForwardingRun === admission) fastForwardingRun = null }
   }
 
   const build = (workspaceId: WorkspaceId): WorldWorkspaceRuntime => ({
@@ -76,7 +76,7 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
       compileScenarioDefinition: config.compileScenarioDefinition,
       scenarioAuthoringCatalog: config.scenarioAuthoringCatalog,
       runtimeAdapters: config.runtimeAdapters,
-      acquireAccelerationAdmission: runId => acquireAccelerationAdmission(workspaceId, runId),
+      acquireFastForwardAdmission: runId => acquireFastForwardAdmission(workspaceId, runId),
       ...(config.idleRuntimeCloseDelayMs === undefined ? {} : { idleRuntimeCloseDelayMs: config.idleRuntimeCloseDelayMs }),
       ...(config.procedureSourceService === undefined ? {} : { procedureSourceService: config.procedureSourceService }),
     }),

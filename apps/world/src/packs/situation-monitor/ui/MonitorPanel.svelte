@@ -72,7 +72,7 @@
     finally { savingScenario = false }
   }
   async function background(enabled: boolean) {
-    try { await invokeWorld('world.simulation-run.execution', { background: enabled }, { simulationRunId }); notice = enabled ? 'Background execution enabled until disabled, unloaded or the service restarts.' : 'Background execution disabled; normal viewer/API leases still apply.' }
+    try { await invokeWorld('world.simulation-run.background.set', { background: enabled }, { simulationRunId }); notice = enabled ? 'Background execution enabled until disabled, unloaded or the service restarts.' : 'Background execution disabled; normal viewer/API leases still apply.' }
     catch (cause) { error = String(cause) }
   }
   async function showSource(id: string, visible: boolean) {

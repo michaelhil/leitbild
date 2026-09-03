@@ -1,12 +1,12 @@
 import { sourceDocumentPathSchema,sourceRevisionSchema,type AccessContext } from '@leitbild/contracts'
 import { z } from 'zod'
-import { actorIdSchema,clientIdSchema,interactionEndpointSchema,interactionSignalSchema,nowIso,objectIdSchema,procedureIdSchema,procedureSourceIdSchema,simulationClockUpdateSchema,simulationRunIdSchema,type CompiledScenario,type InteractionSignal,type SimulationRunId } from '../model/index.ts'
+import { actorIdSchema,clientIdSchema,interactionEndpointSchema,interactionSignalSchema,nowIso,objectIdSchema,procedureIdSchema,procedureSourceIdSchema,simulationRunIdSchema,type CompiledScenario,type InteractionSignal,type SimulationRunId } from '../model/index.ts'
 import type { Actor } from '../simulation-runs/actors.ts'
 import { CommandIdempotencyConflictError } from '../simulation-runs/command-idempotency.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../simulation-runs/runtime.ts'
 import { apiError,json,readJson } from './responses.ts'
-import { accelerationInputSchema, runForkInputSchema } from '../simulation-runs/acceleration.ts'
+import { executionAdvanceInputSchema,executionSetInputSchema,runCopyInputSchema } from '../simulation-runs/execution.ts'
 
 const defaultOperatorActorId = actorIdSchema.parse('actor:operator')
 
@@ -160,31 +160,32 @@ const handleSimulationRunApiInner = async (
     return json(await simulationRunResponse(config.registry, runtime))
   }
 
-  const forksMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/forks$/)
-  if (forksMatch && req.method === 'POST') {
-    const sourceId = simulationRunIdSchema.parse(decodeURIComponent(forksMatch[1] ?? ''))
-    const input = runForkInputSchema.parse(await readJson(req))
-    const result = await config.registry.fork(sourceId, input.name === undefined ? {} : { name: input.name })
+  const copiesMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/copies$/)
+  if (copiesMatch && req.method === 'POST') {
+    const sourceId = simulationRunIdSchema.parse(decodeURIComponent(copiesMatch[1] ?? ''))
+    const input = runCopyInputSchema.parse(await readJson(req))
+    const result = await config.registry.copy(sourceId, input.name === undefined ? {} : { name: input.name })
     return json({
       id: result.id,
       uiPath: `/workspaces/${encodeURIComponent(config.registry.workspaceId)}/world/runs/${encodeURIComponent(result.id)}`,
     }, { status: 201 })
   }
 
-  const accelerationPauseMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/acceleration\/pause$/)
-  if (accelerationPauseMatch && req.method === 'POST') {
-    const id = simulationRunIdSchema.parse(decodeURIComponent(accelerationPauseMatch[1] ?? ''))
-    return json({ acceleration: await config.registry.pauseAcceleration(id) }, { status: 202 })
+  const executionAdvanceMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/execution\/advance$/)
+  if (executionAdvanceMatch && req.method === 'POST') {
+    const id = simulationRunIdSchema.parse(decodeURIComponent(executionAdvanceMatch[1] ?? ''))
+    return json({ execution: await config.registry.advanceExecution(id, executionAdvanceInputSchema.parse(await readJson(req))) }, { status: 202 })
   }
 
-  const accelerationMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/acceleration$/)
-  if (accelerationMatch && req.method === 'GET') {
-    const id = simulationRunIdSchema.parse(decodeURIComponent(accelerationMatch[1] ?? ''))
-    return json({ acceleration: await config.registry.accelerationStatus(id) })
+  const executionMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/execution$/)
+  if (executionMatch && req.method === 'GET') {
+    const id = simulationRunIdSchema.parse(decodeURIComponent(executionMatch[1] ?? ''))
+    return json({ execution: await config.registry.executionStatus(id) })
   }
-  if (accelerationMatch && req.method === 'POST') {
-    const id = simulationRunIdSchema.parse(decodeURIComponent(accelerationMatch[1] ?? ''))
-    return json({ acceleration: await config.registry.startAcceleration(id, accelerationInputSchema.parse(await readJson(req))) }, { status: 202 })
+  if (executionMatch && req.method === 'POST') {
+    const id = simulationRunIdSchema.parse(decodeURIComponent(executionMatch[1] ?? ''))
+    const input = executionSetInputSchema.parse(await readJson(req))
+    return json({ execution: await config.registry.setExecutionMode(id, input.mode) }, { status: input.mode === 'fast-forward' ? 202 : 200 })
   }
 
   const objectsMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/objects$/)
@@ -317,21 +318,6 @@ const handleSimulationRunApiInner = async (
     return json({ procedures: runtime.snapshot().procedures ?? { runs: [] } })
   }
 
-  const clockMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/clock$/)
-  if (clockMatch && req.method === 'POST') {
-    const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(clockMatch[1] ?? ''))
-    const runtime = config.registry.get(simulationRunId)
-    if (!runtime) return apiError(404, 'simulation_run_not_found', 'simulation run not found')
-    const raw = await readJson(req)
-    const parsed = simulationClockUpdateSchema.parse(raw)
-    const update = {
-      ...(parsed.paused === undefined ? {} : { paused: parsed.paused }),
-      ...(parsed.speed === undefined ? {} : { speed: parsed.speed }),
-    }
-    const clock = await runtime.setClock(update)
-    return json({ clock })
-  }
-
   const signalMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/signals$/)
   if (signalMatch && req.method === 'POST') {
     const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(signalMatch[1] ?? ''))
@@ -361,11 +347,11 @@ export const handleSimulationRunApi = async (
     if (err instanceof Error && 'code' in err && err.code === 'history_unavailable') return apiError(503, 'history_unavailable', err.message)
     if (err instanceof Error && 'code' in err && err.code === 'simulation_run_busy') return apiError(409, 'simulation_run_busy', err.message)
     if (err instanceof Error && 'code' in err && err.code === 'simulation_run_failed') return apiError(409, 'simulation_run_failed', err.message)
-    if (err instanceof Error && 'code' in err && err.code === 'acceleration_capacity_exceeded') {
+    if (err instanceof Error && 'code' in err && err.code === 'fast_forward_capacity_exceeded') {
       const activeRunId = 'activeRunId' in err && typeof err.activeRunId === 'string' ? err.activeRunId : undefined
-      return apiError(503, 'acceleration_capacity_exceeded', err.message, activeRunId === undefined ? undefined : { activeRunId })
+      return apiError(503, 'fast_forward_capacity_exceeded', err.message, activeRunId === undefined ? undefined : { activeRunId })
     }
-    if (err instanceof Error && 'code' in err && err.code === 'acceleration_unsupported') return apiError(422, 'acceleration_unsupported', err.message)
+    if (err instanceof Error && 'code' in err && err.code === 'fast_forward_unsupported') return apiError(422, 'fast_forward_unsupported', err.message)
     if (err instanceof SyntaxError) return apiError(400, 'invalid_json', err.message)
     if (err instanceof z.ZodError) return apiError(400, 'invalid_request', err.message)
     throw err

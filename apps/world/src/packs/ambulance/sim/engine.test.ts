@@ -46,7 +46,7 @@ describe('Ambulance operational lifecycle', () => {
     const large = engine(), small = engine()
     await dispatch(large); await dispatch(small)
     small.advanceTo(start + 7_250)
-    const restored = createAmbulanceSimEngine({ simulationRunId: 'run:fork' as SimulationRunId, objects: small.snapshot().objects, routing: { id: 'forbidden', route: async () => { throw new Error('Restore/advance must not route') } }, ...small.checkpoint() })
+    const restored = createAmbulanceSimEngine({ simulationRunId: 'run:copy' as SimulationRunId, objects: small.snapshot().objects, routing: { id: 'forbidden', route: async () => { throw new Error('Restore/advance must not route') } }, ...small.checkpoint() })
     for (let elapsed = 7_500; elapsed <= 30_000; elapsed += 250) small.advanceTo(start + elapsed)
     restored.advanceTo(start + 30_000); large.advanceTo(start + 30_000)
     expect(normalized(small)).toEqual(normalized(large))

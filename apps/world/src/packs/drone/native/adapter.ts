@@ -215,7 +215,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
     const checkpoint = async (requireNoManualControl = true): Promise<void> => {
       if (requireNoManualControl && [...droneRecords.values()].some(({ data }) => data.control.manualAxes !== undefined)) {
-        throw new Error('Release active drone manual controls before creating an accelerated copy')
+        throw new Error('Release active drone manual controls before copying the Simulation Run')
       }
       await config.runtimeStateStore?.save(droneRuntimeCheckpointSchema.parse({
         schemaVersion: 1,

@@ -55,7 +55,7 @@ describe('H3 hex index wrapper', () => {
   })
 
   test('keeps the h3-js dependency behind the core spatial wrapper', () => {
-    const root = process.cwd()
+    const root = join(import.meta.dir, '..')
     const sourceFiles = (directory: string): string[] =>
       readdirSync(directory).flatMap(entry => {
         const path = join(directory, entry)

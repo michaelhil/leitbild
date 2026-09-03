@@ -170,13 +170,17 @@ _Avoid_: generic workflow step, arbitrary expression
 A persistent execution of exactly one Scenario Revision inside one Workspace, with an optional independent display name. Editing or deleting the reusable Scenario does not rename or delete its Runs.
 _Avoid_: Instance, session, Scenario
 
-**Run Fork**:
-An ordinary independent Simulation Run created from another Run at one coherent simulation-time boundary. Its lineage identifies the source Run and checkpoint but does not prescribe how either Run executes.
-_Avoid_: Accelerated Copy, duplicate Scenario, linked live mirror
+**Run Copy**:
+An ordinary independent Simulation Run created from another Run at one coherent simulation-time boundary. Its stable Run Family and lineage identify related Runs, the immediate source, and the checkpoint without prescribing how any member executes.
+_Avoid_: Run Fork, Accelerated Copy, duplicate Scenario, linked live mirror
 
-**Acceleration Job**:
-The temporary server-owned work that advances any compatible paused Simulation Run toward an explicit simulation-time horizon without wall-time pacing, reporting progress, measured speed, pause, completion, or failure.
-_Avoid_: Clock speed setting, background simulation type, separate Run kind
+**Execution Mode**:
+The current way one Simulation Run advances: Paused, Realtime, or Fast-forward. It is independent of Run copying and viewer presence.
+_Avoid_: separate Run type, browser playback state, arbitrary clock multiplier
+
+**Fast-forward**:
+Unpaced execution of a compatible Simulation Run using the same shared Simulation Time and Pack boundaries as Realtime execution. It may run continuously until stopped or for a fixed duration, reports its measured multiplier, and ends Paused or Realtime as explicitly selected.
+_Avoid_: Acceleration Job, fixed clock speed, background simulation type
 
 **Background Execution**:
 Explicit ownership that keeps a loaded Simulation Run available without viewers. It is distinct from whether its clock is paused, and ends when the Run is unloaded or the service stops.

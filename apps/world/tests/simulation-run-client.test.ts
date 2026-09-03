@@ -8,7 +8,7 @@ import {
   resetSimulationRun,
   invokeSimulationRunCapability,
   querySimulationRunCapability,
-  setSimulationRunClock,
+  fetchRunExecution,
   syncSimulationRunSnapshot,
 } from '../src/ui/simulation-run-client.ts'
 
@@ -90,26 +90,18 @@ describe('simulation run client', () => {
     expect(JSON.parse(recordedBody)).toEqual({ input: { zoom: 10 } })
   })
 
-  test('sends clock updates through the Simulation Run clock endpoint', async () => {
-    let recordedBody = ''
+  test('reads the unified Simulation Run execution endpoint', async () => {
     installFetch((input, init) => {
-      expect(String(input)).toBe(`${apiPrefix}/simulation-runs/run-test/clock`)
-      expect(init?.method).toBe('POST')
-      recordedBody = String(init?.body ?? '')
+      expect(String(input)).toBe(`${apiPrefix}/simulation-runs/run-test/execution`)
+      expect(init?.method).toBeUndefined()
       return new Response(JSON.stringify({
-        clock: {
-          currentTime: '2026-01-01T10:00:00.000Z',
-          updatedAt: '2026-01-01T10:00:00.000Z',
-          paused: true,
-          speed: 1,
-        },
+        execution: { mode: 'paused', currentSimulationTime: '2026-01-01T10:00:00.000Z', updatedAt: '2026-01-01T10:00:00.000Z', fastForward: null },
       }), { status: 200 })
     })
 
-    const response = await setSimulationRunClock('run-test' as SimulationRunId, { paused: true })
+    const response = await fetchRunExecution('run-test' as SimulationRunId)
 
-    expect(response.clock.paused).toBe(true)
-    expect(JSON.parse(recordedBody)).toEqual({ paused: true })
+    expect(response.mode).toBe('paused')
   })
 
   test('does not accept Scenario replacement on join or reset', async () => {

@@ -10,7 +10,7 @@ import { capabilityJsonSchema } from '../../simulation/capabilities.ts'
 import { worldCoreCapabilities } from '../../simulation/core-capabilities.ts'
 import type { PackRuntimeAdapter, PackWorkspaceCapability } from '../../simulation/protocol.ts'
 import { createRuntimeHub } from '../../simulation/runtime-hub.ts'
-import type { CompiledScenario,SimulationClockState,SimulationRunEvent,SimulationRunId } from '../model/index.ts'
+import type { CompiledScenario,IsoTimestamp,SimulationClockState,SimulationRunEvent,SimulationRunId } from '../model/index.ts'
 import {
   newSimulationRunId,
   simulationRunIdSchema,
@@ -34,8 +34,8 @@ import {
 import type { SimulationRunRuntimeMetricsSnapshot } from './runtime-metrics.ts'
 import { defaultSimulationRunRuntimePolicy } from './runtime-persistence-policy.ts'
 import { createJsonRuntimeStateStore } from './runtime-state-store.ts'
-import { createAccelerationStore } from './acceleration-store.ts'
-import { accelerationCheckpointWallIntervalMs, accelerationInputSchema, accelerationJobStateSchema, runForkInputSchema, type AccelerationJobState,type RunForkOrigin } from './acceleration.ts'
+import { createExecutionStore } from './execution-store.ts'
+import { executionAdvanceInputSchema,executionCheckpointWallIntervalMs,executionModeSchema,fastForwardStateSchema,runCopyInputSchema,runExecutionStateSchema,type AdvanceCompletionMode,type ExecutionMode,type RunCopyOrigin,type RunExecutionState } from './execution.ts'
 import type { SimulationRunCapabilities } from './runtime.ts'
 import { createSimulationRunRuntime,type ActiveSimulationCapability,type SimulationRunRuntime } from './runtime.ts'
 import { createSimulationRunSnapshotStore } from './snapshot-store.ts'
@@ -44,7 +44,7 @@ import { createKeyedOperations } from '../storage/keyed-operations.ts'
 
 const maxRestoredEventHistoryBytes = 8 * 1024 * 1024
 
-export type SimulationRunLeaseKind = 'realtime' | 'api' | 'background' | 'acceleration'
+export type SimulationRunLeaseKind = 'realtime' | 'api' | 'background' | 'fast-forward'
 
 export interface SimulationRunLeaseSummary {
   readonly simulationRunId: SimulationRunId
@@ -65,7 +65,7 @@ export interface SimulationRunSummary {
   readonly objectCount: number | null
   readonly clock: SimulationClockState | null
   readonly activeCapabilityIds: ReadonlyArray<string>
-  readonly origin: RunForkOrigin | null
+  readonly origin: RunCopyOrigin | null
   readonly loadError?: string
 }
 
@@ -87,10 +87,10 @@ export interface SimulationRunRegistry {
   readonly installedCapabilities: ReadonlyArray<ActiveSimulationCapability>
   readonly workspaceCapabilities: ReadonlyArray<PackWorkspaceCapability>
   readonly create: (config: { readonly scenarioId: string; readonly scenarioRevisionId?: ScenarioRevisionId }) => Promise<SimulationRunRuntime>
-  readonly fork: (sourceId: SimulationRunId, input: { readonly name?: string }) => Promise<SimulationRunRuntime>
-  readonly startAcceleration: (id: SimulationRunId, input: { readonly minutes: number }) => Promise<AccelerationJobState>
-  readonly pauseAcceleration: (id: SimulationRunId) => Promise<AccelerationJobState>
-  readonly accelerationStatus: (id: SimulationRunId) => Promise<AccelerationJobState | null>
+  readonly copy: (sourceId: SimulationRunId, input: { readonly name?: string }) => Promise<SimulationRunRuntime>
+  readonly executionStatus: (id: SimulationRunId) => Promise<RunExecutionState>
+  readonly setExecutionMode: (id: SimulationRunId, mode: ExecutionMode) => Promise<RunExecutionState>
+  readonly advanceExecution: (id: SimulationRunId, input: { readonly minutes: number; readonly onComplete?: AdvanceCompletionMode }) => Promise<RunExecutionState>
   readonly load: (id: SimulationRunId) => Promise<SimulationRunRuntime>
   readonly reset: (id: SimulationRunId) => Promise<SimulationRunRuntime>
   readonly delete: (id: SimulationRunId) => Promise<boolean>
@@ -129,7 +129,7 @@ export const createSimulationRunRegistry = (config: {
   readonly storageBudget?: StorageBudget
   readonly idleRuntimeCloseDelayMs?: number
   readonly procedureSourceService?: ProcedureSourceService
-  readonly acquireAccelerationAdmission?: (runId: SimulationRunId) => () => void
+  readonly acquireFastForwardAdmission?: (runId: SimulationRunId) => () => void
 }): SimulationRunRegistry => {
   const simulationRuns = new Map<SimulationRunId, SimulationRunRuntime>()
   const lifecycle = createKeyedOperations<SimulationRunId>()
@@ -139,8 +139,13 @@ export const createSimulationRunRegistry = (config: {
   const creatingSimulationRuns = new Map<SimulationRunId, Promise<SimulationRunRuntime>>()
   const leasesBySimulationRun = new Map<SimulationRunId, Map<string, SimulationRunLeaseKind>>()
   const backgroundReleases = new Map<SimulationRunId, () => void>()
-  const accelerationJobs = new Map<SimulationRunId, { pauseRequested: boolean; done?: Promise<void> }>()
-  const accelerationStates = new Map<SimulationRunId, AccelerationJobState>()
+  const fastForwardJobs = new Map<SimulationRunId, {
+    stopRequested: boolean
+    nextMode: AdvanceCompletionMode
+    readonly done: Promise<void>
+  }>()
+  const executionStates = new Map<SimulationRunId, RunExecutionState>()
+  const familyOperations = createKeyedOperations<SimulationRunId>()
   const idleRuntimeCloseTimers = new Map<SimulationRunId, ReturnType<typeof setTimeout>>()
   const idleRuntimeCloseDelayMs = config.idleRuntimeCloseDelayMs ?? defaultSimulationRunRuntimePolicy.idleRuntimeCloseDelayMs
   let nextLeaseNumber = 0
@@ -232,7 +237,7 @@ export const createSimulationRunRegistry = (config: {
       realtime: 0,
       api: 0,
       background: 0,
-      acceleration: 0,
+      'fast-forward': 0,
     }
     const leases = leasesBySimulationRun.get(id)
     if (leases) for (const kind of leases.values()) leasesByKind[kind] += 1
@@ -380,8 +385,8 @@ export const createSimulationRunRegistry = (config: {
   const manifestStoreFor = (id: SimulationRunId) =>
     createSimulationRunManifestStore(join(simulationRunRoot, id, 'manifest.json'))
 
-  const accelerationStoreFor = (id: SimulationRunId) =>
-    createAccelerationStore(join(simulationRunRoot, id, 'acceleration.json'))
+  const executionStoreFor = (id: SimulationRunId) =>
+    createExecutionStore(join(simulationRunRoot, id, 'execution.json'))
 
   const resolveManifest = async (manifest: SimulationRunManifest): Promise<{
     readonly revision: ScenarioRevision
@@ -606,9 +611,9 @@ export const createSimulationRunRegistry = (config: {
       throw error
     }
     simulationRuns.set(id, runtime)
-    const priorAcceleration = await accelerationStoreFor(id).load()
-    if (priorAcceleration) accelerationStates.set(id, priorAcceleration)
-    if (priorAcceleration?.status === 'failed') runtime.failStop(priorAcceleration.error ?? 'accelerated execution failed')
+    const priorExecution = await executionStoreFor(id).load()
+    if (priorExecution) executionStates.set(id, priorExecution)
+    if (priorExecution?.fastForward?.status === 'failed') runtime.failStop(priorExecution.fastForward.error ?? 'fast-forward execution failed')
     scheduleIdleRuntimeCloseIfUnleased(id)
     return runtime
   }
@@ -633,119 +638,186 @@ export const createSimulationRunRegistry = (config: {
     return await creating
   }
 
-  const accelerationStatus = async (id: SimulationRunId): Promise<AccelerationJobState | null> => {
-    const cached = accelerationStates.get(id)
-    if (cached) return cached
-    const loaded = await accelerationStoreFor(id).load()
-    if (loaded) accelerationStates.set(id, loaded)
-    return loaded
+  const executionStatus = async (id: SimulationRunId): Promise<RunExecutionState> => {
+    const clock = (await summaryFor(id)).clock
+    if (!clock) throw new Error('Simulation Run clock is not initialized')
+    const cached = executionStates.get(id) ?? await executionStoreFor(id).load()
+    const mode: ExecutionMode = fastForwardJobs.has(id) ? 'fast-forward' : clock.paused ? 'paused' : 'realtime'
+    const state = runExecutionStateSchema.parse({
+      mode,
+      currentSimulationTime: clock.currentTime,
+      updatedAt: nowIso(),
+      fastForward: cached?.fastForward ?? null,
+    })
+    executionStates.set(id, state)
+    return state
   }
 
-  const startAcceleration = async (id: SimulationRunId, rawInput: { readonly minutes: number }): Promise<AccelerationJobState> => {
-    const input = accelerationInputSchema.parse(rawInput)
-    if (accelerationJobs.has(id)) throw Object.assign(new Error('Accelerated execution is already active for this Run'), { code: 'simulation_run_busy' })
+  const startFastForward = async (
+    id: SimulationRunId,
+    configInput: { readonly targetSimulationTime: IsoTimestamp | null; readonly onComplete: AdvanceCompletionMode },
+  ): Promise<RunExecutionState> => {
+    if (fastForwardJobs.has(id)) return await executionStatus(id)
     const runtime = await load(id)
     let currentClock = runtime.snapshot().clock
     if (!currentClock) throw new Error('Simulation Run clock is not initialized')
     const manifest = await manifestStoreFor(id).load()
     if (!manifest) throw new Error(`Simulation Run not found: ${id}`)
     const liveRuntimes = manifest.runtimes.filter(candidate => candidate.clock === 'live')
-    if (liveRuntimes.length > 0) throw Object.assign(new Error(`Accelerated execution cannot synthesize future live observations: ${liveRuntimes.map(candidate => candidate.id).join(', ')}`), { code: 'acceleration_unsupported' })
-    const releaseAdmission = config.acquireAccelerationAdmission?.(id) ?? (() => {})
+    if (liveRuntimes.length > 0) throw Object.assign(new Error(`Fast-forward cannot synthesize future live observations: ${liveRuntimes.map(candidate => candidate.id).join(', ')}`), { code: 'fast_forward_unsupported' })
+    const releaseAdmission = config.acquireFastForwardAdmission?.(id) ?? (() => {})
     try {
-      if (!currentClock.paused) currentClock = await runtime.setClock({ paused: true })
+      if (!currentClock.paused) currentClock = await runtime.setClock({ paused: true, speed: 1 })
     } catch (error) {
       releaseAdmission()
       throw error
     }
-    const releaseLease = acquireLease(id, 'acceleration')
-    const controller: { pauseRequested: boolean; done?: Promise<void> } = { pauseRequested: false }
-    accelerationJobs.set(id, controller)
+    const releaseLease = acquireLease(id, 'fast-forward')
+    let finishJob!: () => void
+    const controller: { stopRequested: boolean; nextMode: AdvanceCompletionMode; readonly done: Promise<void> } = {
+      stopRequested: false,
+      nextMode: configInput.onComplete,
+      done: new Promise<void>(resolve => { finishJob = resolve }),
+    }
+    fastForwardJobs.set(id, controller)
     const startedAt = nowIso()
     const startedMs = Date.parse(currentClock.currentTime)
-    const target = new Date(startedMs + input.minutes * 60_000).toISOString()
-    let state = accelerationJobStateSchema.parse({
-      status: 'running', startedSimulationTime: currentClock.currentTime,
-      targetSimulationTime: target, currentSimulationTime: currentClock.currentTime,
-      startedAt, updatedAt: startedAt, activeWallMs: 0, simulatedMs: 0, measuredSpeed: 0,
+    let fastForward = fastForwardStateSchema.parse({
+      kind: configInput.targetSimulationTime === null ? 'continuous' : 'timed',
+      status: 'running',
+      startedSimulationTime: currentClock.currentTime,
+      ...(configInput.targetSimulationTime === null ? {} : { targetSimulationTime: configInput.targetSimulationTime }),
+      currentSimulationTime: currentClock.currentTime,
+      onComplete: configInput.onComplete,
+      startedAt,
+      updatedAt: startedAt,
+      activeWallMs: 0,
+      simulatedMs: 0,
+      measuredSpeed: 0,
     })
-    accelerationStates.set(id, state)
-    try { await accelerationStoreFor(id).save(state) }
+    let state = runExecutionStateSchema.parse({ mode: 'fast-forward', currentSimulationTime: currentClock.currentTime, updatedAt: startedAt, fastForward })
+    executionStates.set(id, state)
+    try { await executionStoreFor(id).save(state) }
     catch (error) {
-      accelerationJobs.delete(id)
-      accelerationStates.delete(id)
+      fastForwardJobs.delete(id)
+      executionStates.delete(id)
       releaseLease()
       releaseAdmission()
+      finishJob()
       throw error
     }
     const wallStart = performance.now()
     let lastPersistedAt = wallStart
-    const work = runtime.advancePausedTo(state.targetSimulationTime, {
-      shouldPause: () => controller.pauseRequested,
+    const work = runtime.runFastForward(configInput.targetSimulationTime, {
+      shouldStop: () => controller.stopRequested,
       onProgress: async currentSimulationTime => {
-        const wallNow = performance.now()
-        const activeWallMs = wallNow - wallStart
+        const wallTime = performance.now()
+        const activeWallMs = wallTime - wallStart
         const simulatedMs = Date.parse(currentSimulationTime) - startedMs
-        state = accelerationJobStateSchema.parse({ ...state, currentSimulationTime, updatedAt: nowIso(), activeWallMs, simulatedMs, measuredSpeed: activeWallMs > 0 ? simulatedMs / activeWallMs : 0 })
-        accelerationStates.set(id, state)
-        if (wallNow - lastPersistedAt >= accelerationCheckpointWallIntervalMs) { lastPersistedAt = wallNow; await accelerationStoreFor(id).save(state) }
+        fastForward = fastForwardStateSchema.parse({ ...fastForward, currentSimulationTime, updatedAt: nowIso(), activeWallMs, simulatedMs, measuredSpeed: activeWallMs > 0 ? simulatedMs / activeWallMs : 0 })
+        state = runExecutionStateSchema.parse({ ...state, currentSimulationTime, updatedAt: fastForward.updatedAt, fastForward })
+        executionStates.set(id, state)
+        if (wallTime - lastPersistedAt >= executionCheckpointWallIntervalMs) {
+          lastPersistedAt = wallTime
+          await executionStoreFor(id).save(state)
+        }
       },
     }).then(async result => {
-      state = accelerationJobStateSchema.parse({ ...state, status: result.pausedEarly ? 'paused' : 'completed', currentSimulationTime: result.currentSimulationTime, updatedAt: nowIso() })
-      accelerationStates.set(id, state)
-      await accelerationStoreFor(id).save(state)
+      const finalMode = controller.nextMode
+      if (finalMode === 'realtime') await runtime.setClock({ paused: false, speed: 1 })
+      fastForward = fastForwardStateSchema.parse({ ...fastForward, status: result.stoppedEarly ? 'stopped' : 'completed', currentSimulationTime: result.currentSimulationTime, updatedAt: nowIso() })
+      state = runExecutionStateSchema.parse({ mode: finalMode, currentSimulationTime: result.currentSimulationTime, updatedAt: fastForward.updatedAt, fastForward })
+      executionStates.set(id, state)
+      await executionStoreFor(id).save(state)
     }).catch(async error => {
       const reason = error instanceof Error ? error.message : String(error)
       runtime.failStop(reason)
-      state = accelerationJobStateSchema.parse({ ...state, status: 'failed', currentSimulationTime: runtime.snapshot().clock?.currentTime ?? state.currentSimulationTime, updatedAt: nowIso(), error: reason })
-      accelerationStates.set(id, state)
-      await accelerationStoreFor(id).save(state).catch(() => undefined)
+      const currentSimulationTime = runtime.snapshot().clock?.currentTime ?? fastForward.currentSimulationTime
+      fastForward = fastForwardStateSchema.parse({ ...fastForward, status: 'failed', currentSimulationTime, updatedAt: nowIso(), error: reason })
+      state = runExecutionStateSchema.parse({ mode: 'paused', currentSimulationTime, updatedAt: fastForward.updatedAt, fastForward })
+      executionStates.set(id, state)
+      await executionStoreFor(id).save(state).catch(() => undefined)
     }).finally(() => {
-      accelerationJobs.delete(id)
+      fastForwardJobs.delete(id)
       releaseLease()
       releaseAdmission()
+      finishJob()
     })
-    controller.done = work
     void work
     return state
   }
 
-  const forkRun = async (sourceId: SimulationRunId, rawInput: { readonly name?: string }) => {
-    const input = runForkInputSchema.parse(rawInput)
-    const sourceManifest = await manifestStoreFor(sourceId).load()
-    if (!sourceManifest) throw new Error(`Simulation Run not found: ${sourceId}`)
-    const source = await load(sourceId)
-    const checkpoint = await source.checkpointForFork()
-    const id = newSimulationRunId()
-    const forkedAt = nowIso()
-    const manifest = simulationRunManifestSchema.parse({ ...sourceManifest, id, createdAt: forkedAt, origin: { kind: 'fork', sourceRunId: sourceId, sourceSequence: checkpoint.snapshot.seq, forkedAt } })
-    const compiledScenario = await createCompiledScenarioStore(join(simulationRunRoot, sourceId, 'compiled-scenario.json')).load()
-    await storageBudget.withGrowth(workspaceRoot, 32 * 1024 * 1024, async () => {
-      await manifestStoreFor(id).create(manifest)
-      await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).create(compiledScenario)
-      await createSimulationRunSnapshotStore({ simulationRunId: id, path: join(simulationRunRoot, id, 'snapshot.json') }).save({
-        ...checkpoint.snapshot,
-        seq: 0,
-        ...(checkpoint.snapshot.clock ? { clock: { ...checkpoint.snapshot.clock, paused: true, speed: 1 } } : {}),
-      })
-      for (const [runtimeId, runtimeState] of Object.entries(checkpoint.runtimeStates)) {
-        await createJsonRuntimeStateStore({ runtimeId, path: join(simulationRunRoot, id, 'runtimes', `${runtimeId}.json`) }).save(runtimeState)
-      }
-      const sourceTitle = (await summaryFor(sourceId)).title
-      await writeRunDisplayName(join(simulationRunRoot, id, 'display-name.json'), input.name ?? `${sourceTitle} — what-if copy`)
-    })
-    return await createRuntime({ manifest })
+  const setExecutionMode = async (id: SimulationRunId, rawMode: ExecutionMode): Promise<RunExecutionState> => {
+    const mode = executionModeSchema.parse(rawMode)
+    if (mode === 'fast-forward') return fastForwardJobs.has(id)
+      ? await executionStatus(id)
+      : await startFastForward(id, { targetSimulationTime: null, onComplete: 'paused' })
+    const active = fastForwardJobs.get(id)
+    if (active) {
+      active.nextMode = mode
+      active.stopRequested = true
+      await active.done
+      return await executionStatus(id)
+    }
+    const current = await executionStatus(id)
+    if (current.mode === mode) return current
+    const runtime = await load(id)
+    const clock = await runtime.setClock({ paused: mode === 'paused', speed: 1 })
+    const previous = executionStates.get(id) ?? await executionStoreFor(id).load()
+    const state = runExecutionStateSchema.parse({ mode, currentSimulationTime: clock.currentTime, updatedAt: nowIso(), fastForward: previous?.fastForward ?? null })
+    executionStates.set(id, state)
+    await executionStoreFor(id).save(state)
+    return state
   }
 
-  const pauseAcceleration = async (id: SimulationRunId): Promise<AccelerationJobState> => {
-    const controller = accelerationJobs.get(id)
-    if (!controller) {
-      const state = await accelerationStatus(id)
-      if (!state) throw new Error(`Simulation Run has no accelerated execution: ${id}`)
-      return state
-    }
-    controller.pauseRequested = true
-    return accelerationStates.get(id)!
+  const advanceExecution = async (id: SimulationRunId, rawInput: { readonly minutes: number; readonly onComplete?: AdvanceCompletionMode }): Promise<RunExecutionState> => {
+    const input = executionAdvanceInputSchema.parse(rawInput)
+    if (fastForwardJobs.has(id)) throw Object.assign(new Error('This Simulation Run is already fast-forwarding'), { code: 'simulation_run_busy' })
+    const runtime = await load(id)
+    const clock = runtime.snapshot().clock
+    if (!clock) throw new Error('Simulation Run clock is not initialized')
+    const targetSimulationTime = new Date(Date.parse(clock.currentTime) + input.minutes * 60_000).toISOString() as IsoTimestamp
+    return await startFastForward(id, { targetSimulationTime, onComplete: input.onComplete })
+  }
+
+  const copyRun = async (sourceId: SimulationRunId, rawInput: { readonly name?: string }) => {
+    const input = runCopyInputSchema.parse(rawInput)
+    const sourceManifest = await manifestStoreFor(sourceId).load()
+    if (!sourceManifest) throw new Error(`Simulation Run not found: ${sourceId}`)
+    const familyId = sourceManifest.origin?.familyId ?? sourceId
+    return await familyOperations.run(familyId, async () => {
+      const source = await load(sourceId)
+      const checkpoint = await source.checkpointForCopy()
+      const ids = await listPersistedIds()
+      const manifests = (await Promise.all(ids.map(id => manifestStoreFor(id).load()))).filter((manifest): manifest is SimulationRunManifest => manifest !== null)
+      const copyNumber = Math.max(0, ...manifests
+        .filter(manifest => manifest.origin?.familyId === familyId)
+        .map(manifest => manifest.origin?.copyNumber ?? 0)) + 1
+      const id = newSimulationRunId()
+      const copiedAt = nowIso()
+      const manifest = simulationRunManifestSchema.parse({
+        ...sourceManifest,
+        id,
+        createdAt: copiedAt,
+        origin: { kind: 'copy', familyId, copyNumber, sourceRunId: sourceId, sourceSequence: checkpoint.snapshot.seq, copiedAt },
+      })
+      const compiledScenario = await createCompiledScenarioStore(join(simulationRunRoot, sourceId, 'compiled-scenario.json')).load()
+      await storageBudget.withGrowth(workspaceRoot, 32 * 1024 * 1024, async () => {
+        await manifestStoreFor(id).create(manifest)
+        await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).create(compiledScenario)
+        await createSimulationRunSnapshotStore({ simulationRunId: id, path: join(simulationRunRoot, id, 'snapshot.json') }).save({
+          ...checkpoint.snapshot,
+          seq: 0,
+          ...(checkpoint.snapshot.clock ? { clock: { ...checkpoint.snapshot.clock, paused: true, speed: 1 } } : {}),
+        })
+        for (const [runtimeId, runtimeState] of Object.entries(checkpoint.runtimeStates)) {
+          await createJsonRuntimeStateStore({ runtimeId, path: join(simulationRunRoot, id, 'runtimes', `${runtimeId}.json`) }).save(runtimeState)
+        }
+        const sourceSummary = await summaryFor(sourceId)
+        await writeRunDisplayName(join(simulationRunRoot, id, 'display-name.json'), input.name ?? `${sourceSummary.title} - copy ${copyNumber}`)
+      })
+      return await createRuntime({ manifest })
+    })
   }
 
   const load = (id: SimulationRunId): Promise<SimulationRunRuntime> => lifecycle.run(id, async () => {
@@ -776,7 +848,7 @@ export const createSimulationRunRegistry = (config: {
     if (!runtime) return false
     const leases = leaseSummary(id).leasesByKind
     if (!shuttingDown && leases.api > 0) throw Object.assign(new Error('Simulation Run has active requests; retry after they complete'), { code: 'simulation_run_busy' })
-    if (!shuttingDown && leases.acceleration > 0) throw Object.assign(new Error('Simulation Run has active accelerated execution; pause it before closing'), { code: 'simulation_run_busy' })
+    if (!shuttingDown && leases['fast-forward'] > 0) throw Object.assign(new Error('Simulation Run is fast-forwarding; stop it before closing'), { code: 'simulation_run_busy' })
     backgroundReleases.get(id)?.()
     backgroundReleases.delete(id)
     clearIdleRuntimeCloseTimer(id)
@@ -790,7 +862,7 @@ export const createSimulationRunRegistry = (config: {
   const reset = (id: SimulationRunId): Promise<SimulationRunRuntime> => lifecycle.run(id, async () => {
     const leases = leaseSummary(id).leasesByKind
     if (leases.api > 0) throw Object.assign(new Error('Simulation Run has active requests; retry after they complete'), { code: 'simulation_run_busy' })
-    if (leases.acceleration > 0) throw Object.assign(new Error('Simulation Run has active accelerated execution; pause it before resetting'), { code: 'simulation_run_busy' })
+    if (leases['fast-forward'] > 0) throw Object.assign(new Error('Simulation Run is fast-forwarding; stop it before resetting'), { code: 'simulation_run_busy' })
     const manifest = await manifestStoreFor(id).load()
     if (!manifest) throw new Error(`Simulation Run not found: ${id}`)
     const existing = simulationRuns.get(id)
@@ -806,7 +878,7 @@ export const createSimulationRunRegistry = (config: {
       rm(join(runDir, 'history.sqlite'), { force: true }),
       rm(join(runDir, 'history.sqlite-wal'), { force: true }),
       rm(join(runDir, 'history.sqlite-shm'), { force: true }),
-      rm(join(runDir, 'acceleration.json'), { force: true }),
+      rm(join(runDir, 'execution.json'), { force: true }),
     ])
     return createRuntime({
       manifest,
@@ -815,14 +887,15 @@ export const createSimulationRunRegistry = (config: {
   })
 
   const deleteSimulationRun = (id: SimulationRunId): Promise<boolean> => lifecycle.run(id, async () => {
-    const acceleration = accelerationJobs.get(id)
-    if (acceleration) {
-      acceleration.pauseRequested = true
-      await acceleration.done
+    const fastForward = fastForwardJobs.get(id)
+    if (fastForward) {
+      fastForward.nextMode = 'paused'
+      fastForward.stopRequested = true
+      await fastForward.done
     }
     const wasLoaded = await closeLoaded(id)
     pinnedTitles.delete(id)
-    accelerationStates.delete(id)
+    executionStates.delete(id)
     const runDir = join(simulationRunRoot, id)
     let existedOnDisk = true
     try {
@@ -1003,10 +1076,10 @@ export const createSimulationRunRegistry = (config: {
     installedCapabilities,
     workspaceCapabilities: config.runtimeAdapters.flatMap(adapter => adapter.workspaceCapabilities ?? []),
     create,
-    fork: forkRun,
-    startAcceleration,
-    pauseAcceleration,
-    accelerationStatus,
+    copy: copyRun,
+    executionStatus,
+    setExecutionMode,
+    advanceExecution,
     load,
     reset,
     delete: deleteSimulationRun,
@@ -1034,8 +1107,8 @@ export const createSimulationRunRegistry = (config: {
     },
     shutdown: async () => {
       shuttingDown = true
-      for (const job of accelerationJobs.values()) job.pauseRequested = true
-      await Promise.allSettled([...accelerationJobs.values()].flatMap(job => job.done ? [job.done] : []))
+      for (const job of fastForwardJobs.values()) job.stopRequested = true
+      await Promise.allSettled([...fastForwardJobs.values()].map(job => job.done))
       await definitionOperations.close()
       await Promise.allSettled([...creatingSimulationRuns.values()])
       await lifecycle.drain()

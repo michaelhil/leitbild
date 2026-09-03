@@ -10,7 +10,7 @@ import type {
   SimulationRunEvent,
   SimulationRunId,
 } from '../src/core/model/index.ts'
-import { nowIso,simulationRunIdSchema } from '../src/core/model/index.ts'
+import { deleteObjectCommandKind,nowIso,simulationRunIdSchema } from '../src/core/model/index.ts'
 import { createSimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
 import { dispatchCommandKind } from '../src/packs/ambulance/commands.ts'
@@ -51,93 +51,147 @@ const issueDispatchCommand = async (runtime: SimulationRunRuntime): Promise<void
 }
 
 describe('Simulation Run registry', () => {
-  test('forks a coherent independent Run and accelerates it to an exact paused horizon', async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-run-fork-'))
+  test('copies a coherent independent Run and fast-forwards it to an exact paused horizon', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-run-copy-'))
     const workspaceId = newWorkspaceId()
     const registry = createRegistry(dataDir, workspaceId)
     try {
       const source = await registry.create({ scenarioId: 'test-response' })
       await source.setClock({ paused: true })
       const sourceBefore = structuredClone(source.snapshot())
-      const copy = await registry.fork(source.id, { name: 'What-if' })
-      await registry.startAcceleration(copy.id, { minutes: 0.01 })
+      const copy = await registry.copy(source.id, { name: 'What-if' })
+      await registry.advanceExecution(copy.id, { minutes: 0.01, onComplete: 'paused' })
       for (let attempt = 0; attempt < 120; attempt += 1) {
-        if ((await registry.accelerationStatus(copy.id))?.status === 'completed') break
+        if ((await registry.executionStatus(copy.id)).mode !== 'fast-forward') break
         await Bun.sleep(25)
       }
-      const completed = await registry.accelerationStatus(copy.id)
-      expect(completed?.currentSimulationTime).toBe(completed?.targetSimulationTime)
-      expect(copy.snapshot().clock).toMatchObject({ paused: true, currentTime: completed?.targetSimulationTime })
+      const completed = await registry.executionStatus(copy.id)
+      expect(completed.fastForward?.currentSimulationTime).toBe(completed.fastForward?.targetSimulationTime)
+      expect(copy.snapshot().clock).toMatchObject({ paused: true, currentTime: completed.fastForward?.targetSimulationTime })
       expect(source.snapshot().clock?.currentTime).toBe(sourceBefore.clock?.currentTime)
       expect(source.snapshot().objects).toEqual(sourceBefore.objects)
       expect((await registry.summary(copy.id)).title).toBe('What-if')
       const manifest = JSON.parse(await readFile(join(simulationRunDir(dataDir, workspaceId, copy.id), 'manifest.json'), 'utf8')) as { origin?: unknown }
-      expect(manifest.origin).toMatchObject({ kind: 'fork', sourceRunId: source.id, sourceSequence: sourceBefore.seq })
+      expect(manifest.origin).toMatchObject({ kind: 'copy', familyId: source.id, copyNumber: 1, sourceRunId: source.id, sourceSequence: sourceBefore.seq })
       await expect(access(join(simulationRunDir(dataDir, workspaceId, copy.id), 'events.jsonl'))).rejects.toThrow()
     } finally { await registry.shutdown() }
   })
-  test('pauses accelerated execution without overshooting its current slice', async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-accelerated-pause-'))
+  test('stops fast-forward without overshooting its current slice', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-fast-forward-pause-'))
     const registry = createRegistry(dataDir)
     try {
       const source = await registry.create({ scenarioId: 'test-response' })
       await source.setClock({ paused: true })
-      const copy = await registry.fork(source.id, {})
-      await registry.startAcceleration(copy.id, { minutes: 10 })
-      await registry.pauseAcceleration(copy.id)
+      const copy = await registry.copy(source.id, {})
+      await registry.advanceExecution(copy.id, { minutes: 10, onComplete: 'paused' })
+      await registry.setExecutionMode(copy.id, 'paused')
       for (let attempt = 0; attempt < 120; attempt += 1) {
-        if ((await registry.accelerationStatus(copy.id))?.status !== 'running') break
+        if ((await registry.executionStatus(copy.id)).mode !== 'fast-forward') break
         await Bun.sleep(25)
       }
-      const paused = await registry.accelerationStatus(copy.id)
-      expect(paused?.status).toBe('paused')
-      expect(Date.parse(paused!.currentSimulationTime)).toBeLessThan(Date.parse(paused!.targetSimulationTime))
-      expect(copy.snapshot().clock).toMatchObject({ paused: true, currentTime: paused?.currentSimulationTime })
+      const paused = await registry.executionStatus(copy.id)
+      expect(paused).toMatchObject({ mode: 'paused', fastForward: { status: 'stopped' } })
+      expect(Date.parse(paused.currentSimulationTime)).toBeLessThan(Date.parse(paused.fastForward!.targetSimulationTime!))
+      expect(copy.snapshot().clock).toMatchObject({ paused: true, currentTime: paused.currentSimulationTime })
     } finally { await registry.shutdown() }
   })
-  test('accelerates an existing running Run and admits commands at exact step boundaries', async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-in-place-acceleration-'))
+  test('fast-forwards an existing running Run and admits commands at exact step boundaries', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-in-place-fast-forward-'))
     const registry = createRegistry(dataDir)
     try {
       const runtime = await registry.create({ scenarioId: 'test-response' })
       expect(runtime.snapshot().clock?.paused).toBe(false)
-      await registry.startAcceleration(runtime.id, { minutes: 1 })
-      await expect(runtime.setClock({ paused: false })).rejects.toThrow('Pause accelerated execution')
+      await registry.advanceExecution(runtime.id, { minutes: 1, onComplete: 'paused' })
+      await expect(runtime.setClock({ paused: false })).rejects.toThrow('Stop fast-forward')
       await issueDispatchCommand(runtime)
-      await registry.pauseAcceleration(runtime.id)
+      await registry.setExecutionMode(runtime.id, 'paused')
       for (let attempt = 0; attempt < 120; attempt += 1) {
-        if ((await registry.accelerationStatus(runtime.id))?.status !== 'running') break
+        if ((await registry.executionStatus(runtime.id)).mode !== 'fast-forward') break
         await Bun.sleep(10)
       }
-      expect(await registry.accelerationStatus(runtime.id)).toMatchObject({ status: 'paused' })
+      expect(await registry.executionStatus(runtime.id)).toMatchObject({ mode: 'paused', fastForward: { status: 'stopped' } })
       expect(runtime.snapshot().clock).toMatchObject({ paused: true, speed: 1 })
     } finally { await registry.shutdown() }
   })
-  test('deleting an accelerating Run pauses its job and removes all persisted state', async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-delete-accelerating-run-'))
+  test('continuous fast-forward remains fully operable and deletes a connected Plant at a shared boundary', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-fast-forward-delete-'))
+    const registry = createRegistry(dataDir)
+    try {
+      const runtime = await registry.create({ scenarioId: 'halden-power-complex' })
+      await registry.setExecutionMode(runtime.id, 'fast-forward')
+      for (let attempt = 0; attempt < 80; attempt += 1) {
+        if ((await registry.executionStatus(runtime.id)).fastForward?.simulatedMs) break
+        await Bun.sleep(10)
+      }
+      const before = await runtime.invokeCapability(
+        { id: 'actor:test-operator' as ActorId, label: 'Test Operator', role: 'operator' },
+        { capabilityId: 'world.electric-grid.connection-points.list', input: { gridId: 'grid:halden-four-unit' } },
+      )
+      expect((before.result as { connectionPoints: unknown[] }).connectionPoints).toHaveLength(4)
+
+      const deletion = await runtime.invokeCapability(
+        { id: 'actor:test-operator' as ActorId, label: 'Test Operator', role: 'operator' },
+        { capabilityId: deleteObjectCommandKind, input: { objectId: 'plant:halden-1' } },
+      )
+      expect(deletion.kind === 'command' && deletion.result.ok).toBe(true)
+      expect(runtime.snapshot().objects.some(object => object.id === 'plant:halden-1')).toBe(false)
+      const after = await runtime.invokeCapability(
+        { id: 'actor:test-operator' as ActorId, label: 'Test Operator', role: 'operator' },
+        { capabilityId: 'world.electric-grid.connection-points.list', input: { gridId: 'grid:halden-four-unit' } },
+      )
+      const points = (after.result as { connectionPoints: ReadonlyArray<{ system: { objectId: string }; connected: boolean; systemActivePowerMw: number }> }).connectionPoints
+      expect(points.find(point => point.system.objectId === 'plant:halden-1')).toMatchObject({ connected: false, systemActivePowerMw: 0 })
+      expect(points.filter(point => point.connected)).toHaveLength(3)
+      expect((await registry.executionStatus(runtime.id)).mode).toBe('fast-forward')
+      await registry.setExecutionMode(runtime.id, 'paused')
+    } finally { await registry.shutdown() }
+  })
+  test('copy family identity and numbering survive deletion of the original Run', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-run-family-'))
+    const workspaceId = newWorkspaceId()
+    const registry = createRegistry(dataDir, workspaceId)
+    try {
+      const original = await registry.create({ scenarioId: 'test-response' })
+      const first = await registry.copy(original.id, {})
+      const second = await registry.copy(first.id, {})
+      await registry.delete(original.id)
+      const third = await registry.copy(second.id, {})
+      const origins = await Promise.all([first.id, second.id, third.id].map(async id => {
+        const manifest = JSON.parse(await readFile(join(simulationRunDir(dataDir, workspaceId, id), 'manifest.json'), 'utf8')) as { origin: { familyId: string; copyNumber: number } }
+        return manifest.origin
+      }))
+      expect(origins).toEqual([
+        expect.objectContaining({ familyId: original.id, copyNumber: 1 }),
+        expect.objectContaining({ familyId: original.id, copyNumber: 2 }),
+        expect.objectContaining({ familyId: original.id, copyNumber: 3 }),
+      ])
+    } finally { await registry.shutdown() }
+  })
+  test('deleting a fast-forwarding Run stops its work and removes all persisted state', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-delete-fast-forward-run-'))
     const workspaceId = newWorkspaceId()
     const registry = createRegistry(dataDir, workspaceId)
     try {
       const runtime = await registry.create({ scenarioId: 'test-response' })
-      await registry.startAcceleration(runtime.id, { minutes: 10 })
+      await registry.advanceExecution(runtime.id, { minutes: 10, onComplete: 'paused' })
       expect(await registry.delete(runtime.id)).toBe(true)
       expect(await registry.listKnown()).toEqual([])
       await expect(access(simulationRunDir(dataDir, workspaceId, runtime.id))).rejects.toThrow()
     } finally { await registry.shutdown() }
   })
-  test('accelerates the coupled four-unit Plant, Grid, and Weather scenario through one Run boundary', async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-accelerated-halden-'))
+  test('fast-forwards the coupled four-unit Plant, Grid, and Weather scenario through one Run boundary', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-fast-forward-halden-'))
     const registry = createRegistry(dataDir)
     try {
       const source = await registry.create({ scenarioId: 'halden-power-complex' })
       await source.setClock({ paused: true })
-      const copy = await registry.fork(source.id, {})
-      await registry.startAcceleration(copy.id, { minutes: 0.01 })
+      const copy = await registry.copy(source.id, {})
+      await registry.advanceExecution(copy.id, { minutes: 0.01, onComplete: 'paused' })
       for (let attempt = 0; attempt < 400; attempt += 1) {
-        if ((await registry.accelerationStatus(copy.id))?.status !== 'running') break
+        if ((await registry.executionStatus(copy.id)).mode !== 'fast-forward') break
         await Bun.sleep(25)
       }
-      expect(await registry.accelerationStatus(copy.id)).toMatchObject({ status: 'completed' })
+      expect(await registry.executionStatus(copy.id)).toMatchObject({ mode: 'paused', fastForward: { status: 'completed' } })
       const snapshot = copy.snapshot()
       expect(snapshot.objects.filter(object => object.packId === 'process-plant' && object.kind === 'facility')).toHaveLength(4)
       expect(snapshot.objects.some(object => object.id === 'grid:halden-four-unit')).toBe(true)
@@ -145,7 +199,7 @@ describe('Simulation Run registry', () => {
     } finally { await registry.shutdown() }
   })
   test('starts the Halden dispatch exercise with real responses underway and advances their routes', async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-accelerated-dispatch-'))
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-fast-forward-dispatch-'))
     const registry = createRegistry(dataDir)
     try {
       const source = await registry.create({ scenarioId: 'halden-dispatch' })
@@ -158,13 +212,13 @@ describe('Simulation Run registry', () => {
       expect(sourceUnits.find(object => object.id === 'amb:sarpsborg-1')?.operational.status).toBe('available')
 
       const startingPoints = new Map(responding.map(object => [object.id, object.spatial.position?.point.coordinates]))
-      const copy = await registry.fork(source.id, {})
-      await registry.startAcceleration(copy.id, { minutes: 0.1 })
+      const copy = await registry.copy(source.id, {})
+      await registry.advanceExecution(copy.id, { minutes: 0.1, onComplete: 'paused' })
       for (let attempt = 0; attempt < 160; attempt += 1) {
-        if ((await registry.accelerationStatus(copy.id))?.status !== 'running') break
+        if ((await registry.executionStatus(copy.id)).mode !== 'fast-forward') break
         await Bun.sleep(25)
       }
-      expect(await registry.accelerationStatus(copy.id)).toMatchObject({ status: 'completed' })
+      expect(await registry.executionStatus(copy.id)).toMatchObject({ mode: 'paused', fastForward: { status: 'completed' } })
       const moved = copy.snapshot().objects.filter(object => startingPoints.has(object.id)).some(object =>
         JSON.stringify(object.spatial.position?.point.coordinates) !== JSON.stringify(startingPoints.get(object.id)))
       expect(moved).toBe(true)

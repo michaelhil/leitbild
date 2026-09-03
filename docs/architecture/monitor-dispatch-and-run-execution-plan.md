@@ -1,4 +1,4 @@
-# Situation Monitor, Ambulance and accelerated Runs
+# Situation Monitor, Ambulance, Run copying and fast-forward
 
 Date: 3 September 2026. Audited baseline: `1e9ace11`.
 
@@ -6,7 +6,7 @@ Status: investigation and adversarial review complete. The isolated Situation Mo
 
 ## Recommendation
 
-Keep the current Module and Pack boundaries. Situation Monitor needs targeted hardening, Ambulance needs an operational-model replacement, and reliable acceleration needs one World-owned execution/checkpoint boundary. These are different levels of change, not three independent rewrites.
+Keep the current Module and Pack boundaries. Situation Monitor needs targeted hardening, Ambulance needs an operational-model replacement, and reliable fast-forward needs one World-owned execution/checkpoint boundary. These are different levels of change, not three independent rewrites.
 
 Prioritize a dispatch-oriented demonstration for the doctor's first meeting in a few weeks. Include patient disposition and hospital handover as useful discussion topics. Do not build clinical physiology, staff rostering, a full emergency department, or a fleet optimizer before that conversation.
 
@@ -14,7 +14,7 @@ The most valuable simplifications are:
 
 - Explicit operational state instead of invented medical detail and hidden demo timers.
 - An incident **at** an existing asset, not a new asset hierarchy or conversion of the asset into an incident.
-- One advancement mechanism for normal and accelerated execution, not separate fast-mode implementations in each Pack.
+- One advancement mechanism for realtime and fast-forward execution, not separate fast-mode implementations in each Pack.
 - One coherent current-state checkpoint used for both restart and branching.
 - Existing Scenario, Capability and Agent-broker mechanisms, not a new orchestration framework.
 
@@ -66,7 +66,7 @@ Evidence under `apps/world/src`:
 - Snapshot and private runtime state files are saved independently. A directory copy can contain different simulation epochs.
 - Drone private home, mission/hold and geofence state is not fully persisted. Ambulance route progress is reconstructed approximately. These are restart issues even without branching.
 - Recording can skip scheduled boundaries during large catches. Publication is fire-and-forget in places; unbounded fast execution could accumulate commits or socket output.
-- OSRM routing has a bare fetch without cancellation/deadline. A serialized command waiting for it could prevent a fork or shutdown fence from completing.
+- OSRM routing has a bare fetch without cancellation/deadline. A serialized command waiting for it could prevent a copy or shutdown fence from completing.
 
 The existing Run leases, runtime Hub, command routing, projections, historian and resource URLs remain useful. No external job system is needed.
 
@@ -152,11 +152,11 @@ Apply the isolated cache, polling, validation and inspection fixes first. Then i
 
 Do not add new providers, arbitrary crawling, auto-installed connectors, per-record LLM enrichment, raw media archives or another database during this hardening pass.
 
-## 4. One execution path for ordinary and accelerated Runs
+## 4. One execution path for realtime and fast-forward Runs
 
 ### Owner and stepping contract
 
-World's Run executor owns completed simulation time. Wall time determines pacing, not scientific state. Normal execution waits between advances; accelerated execution performs the same bounded advances as quickly as resources allow and yields regularly.
+World's Run executor owns completed simulation time. Wall time determines pacing, not scientific state. Realtime execution waits between advances; fast-forward performs the same bounded advances as quickly as resources allow and yields regularly.
 
 The minimal runtime addition is a three-phase boundary plus export of complete opaque private checkpoint state:
 
@@ -174,45 +174,45 @@ Cross-Pack round inputs must be coherent. Plant and Grid advance from previous-b
 
 Coalesce Ambulance road-weather sampling to relevant advancement/command boundaries. Currently unrelated foreign object updates can repeatedly trigger it. Reuse unchanged prepared inputs where their location/provider revision/policy has not changed, without querying future private state.
 
-The Hub awaits emissions and interaction processing before publishing completed time. Read queries see a completed boundary, not half-updated coupled state. A partially failed advance is **fail-stop**, not an ordinary resumable pause: block private queries, further advancement and forks until recovery from the last coherent checkpoint. Per-step rollback would require staging/copying all mechanics; do not promise that without implementing it. Preserve inspectable last-committed state and report any loss of uncheckpointed progress explicitly.
+The Hub awaits emissions and interaction processing before publishing completed time. Read queries see a completed boundary, not half-updated coupled state. A partially failed advance is **fail-stop**, not an ordinary resumable pause: block private queries, further advancement and copies until recovery from the last coherent checkpoint. Per-step rollback would require staging/copying all mechanics; do not promise that without implementing it. Preserve inspectable last-committed state and report any loss of uncheckpointed progress explicitly.
 
-### Checkpoint and fork
+### Checkpoint and copy
 
 At a short supported mutation fence, complete the current boundary, drain accepted work, export the canonical state plus each runtime's opaque private state, and create a new ordinary Run. Preserve the original's prior pacing/paused state. Detach the in-memory capture before releasing the fence; disk serialization can then proceed without holding the source Run stopped.
 
-Do not wait indefinitely on external routing. A fork with an unresolved mutating command reports busy promptly; it must not copy a half-applied command or cancel the user's original action. Provider cancellation plus stale-result guards are required; `Promise.race` alone does not stop a late mutation. A scheduled dispatch may hold progress at its exact cue time while a bounded route request completes; show a waiting reason. This is more honest than claiming routing is instantaneous or silently skipping the action, although it reduces achievable throughput.
+Do not wait indefinitely on external routing. A copy with an unresolved mutating command reports busy promptly; it must not copy a half-applied command or cancel the user's original action. Provider cancellation plus stale-result guards are required; `Promise.race` alone does not stop a late mutation. A scheduled dispatch may hold progress at its exact cue time while a bounded route request completes; show a waiting reason. This is more honest than claiming routing is instantaneous or silently skipping the action, although it reduces achievable throughput.
 
-The coherent checkpoint includes compiled Scenario/revision and connections, all current additions/deletions, runtime configuration, clock, fired/pending timeline state, procedure ticks/current steps, pending internal writes, solver remainder, ramps/protection, Grid energy/frequency, Weather remainder, exact route state, Drone home/mission/hold/geofences, recording configuration/cursors and fork provenance. Runtime checkpoint data must not duplicate cached canonical projections. Initialize restored Grid load profiles at the checkpoint clock, not the Scenario's original start. Derive recording cursors from the fixed simulation epoch or persist them exactly. New execution health counters/viewer leases are not cloned physical state.
+The coherent checkpoint includes compiled Scenario/revision and connections, all current additions/deletions, runtime configuration, clock, fired/pending timeline state, procedure ticks/current steps, pending internal writes, solver remainder, ramps/protection, Grid energy/frequency, Weather remainder, exact route state, Drone home/mission/hold/geofences, recording configuration/cursors and copy provenance. Runtime checkpoint data must not duplicate cached canonical projections. Initialize restored Grid load profiles at the checkpoint clock, not the Scenario's original start. Derive recording cursors from the fixed simulation epoch or persist them exactly. New execution health counters/viewer leases are not cloned physical state.
 
 Reuse this format for restart. Do not retain independently authoritative snapshot/private-state formats plus a third branch-only format. An atomic file rename alone does not make the checkpoint and semantic journal transactional: the current journal can advance beyond the separately saved snapshot.
 
 For the coordinated rewrite, prefer **one Run SQLite transaction for current checkpoint plus semantic journal**, using the existing Bun SQLite dependency. One opaque checkpoint envelope and ordered event rows replace split JSON snapshot/runtime writers; no ORM, per-Pack table registry or new service. The alternative is a custom JSON commit-watermark/fsync/recovery-tail protocol, which is more specialized recovery code to maintain. Keep the historian's existing optional-failure policy separate and visibly report capture gaps; do not imply it joins this transaction automatically.
 
-Measure checkpoint size and write cost. Do not serialize every object and private value after every 100 ms physics step. Persist at explicit durable command boundaries, periodic wall-time checkpoints, fork, pause, target completion and shutdown. Include bounded completed command-idempotency results in durable command commits; do not copy parent request IDs into a new fork. Distinguish completed in-memory progress from last durable checkpoint time. A new Run is not listed as ready until its complete state is durable; storage admission and interrupted creation cleanup remain mandatory.
+Measure checkpoint size and write cost. Do not serialize every object and private value after every 100 ms physics step. Persist at explicit durable command boundaries, periodic wall-time checkpoints, copy, pause, target completion and shutdown. Include bounded completed command-idempotency results in durable command commits; do not copy parent request IDs into a new Run. Distinguish completed in-memory progress from last durable checkpoint time. A new Run is not listed as ready until its complete state is durable; storage admission and interrupted creation cleanup remain mandatory.
 
-Keep object IDs, since they are Run-scoped; allocate a new Run identity and independent future event sequence. Record source Run, source sequence and fork simulation time.
+Keep object IDs, since they are Run-scoped; allocate a new Run identity and independent future event sequence. Record source Run, source sequence and copy simulation time.
 
-A complete **current-state** copy does not require duplicating the full historian or chat transcript. Begin a new journal at the fork; retain explicit ancestry. Pre-fork history is not independently preserved if its source is deleted unless a separate retention rule is implemented. Say this in the UI rather than promising an archival clone.
+A complete **current-state** copy does not require duplicating the full historian or chat transcript. Begin a new journal in the copy; retain explicit ancestry. Earlier history is not independently preserved if its source is deleted unless a separate retention rule is implemented. Say this in the UI rather than promising an archival clone.
 
 ### External evidence and controllers
 
-An accelerated experiment captures Situation Monitor's bounded retained normalized evidence window into a Pack-owned immutable artifact referenced by its checkpoint. Capture only its active sources once; do not reserialize megabytes of unchanged evidence in every physics checkpoint. The fork does not subscribe to later shared-cache replacements. Preserve capture, retrieval and validity timestamps; this is evidence available at the fork, not a forecast generated for the future simulation time. Artifact lifecycle belongs to that Run and is removed with it, subject to existing storage safeguards.
+A fast-forward experiment captures Situation Monitor's bounded retained normalized evidence window into a Pack-owned immutable artifact referenced by its checkpoint. Capture only its active sources once; do not reserialize megabytes of unchanged evidence in every physics checkpoint. The copy does not subscribe to later shared-cache replacements. Preserve capture, retrieval and validity timestamps; this is evidence available at copy time, not a forecast generated for the future simulation time. Artifact lifecycle belongs to that Run and is removed with it, subject to existing storage safeguards.
 
 Media URLs remain external links, not cloned recordings. Clearly label any opened live video as outside the experiment's captured state. If the evidence capture exceeds storage limits, fail explicitly rather than silently fall back to live collection.
 
-Human input leases, live hardware and ongoing Agent/LLM jobs are not accelerated physics. Do not clone pilot ownership, retarget the original Room's jobs, multiply provider polling, or silently omit a runtime. Preflight exposes unsupported states. Agents can discover and observe the new Run normally and deliberately act on it; external inputs make subsequent comparisons input-dependent.
+Human input leases, live hardware and ongoing Agent/LLM jobs are not simulated physics. Do not clone pilot ownership, retarget the original Room's jobs, multiply provider polling, or silently omit a runtime. Preflight exposes unsupported states. Agents can discover and observe the new Run normally and deliberately act on it; external inputs make subsequent comparisons input-dependent.
 
 Agent-in-the-loop experiments would need explicit decision points that wait for real inference. That is a later policy, not a claim of the initial maximum-speed mode. No paid inference is needed to benchmark the physical model.
 
 ### Job state, UI and performance
 
-Acceleration is small server-owned state on an ordinary Run: start/target/completed simulation time, active compute wall duration, running/paused/completed/failed status and an error if any. Reuse a Run background lease. Closing the browser need not stop the requested calculation; pause, completion, deletion or failure releases the lease. Restore interrupted work paused after a service restart.
+Fast-forward is small server-owned state on an ordinary Run: start/target/completed simulation time, active compute wall duration, running/stopped/completed/failed status and an error if any. Reuse a Run background lease. Closing the browser need not stop the requested calculation; pause, completion, deletion or failure releases the lease. Restore interrupted work paused after a service restart.
 
-The stopwatch opens a modal with horizon minutes, source time, copy name, external-evidence policy and preflight issues. **Create accelerated copy** opens the new Run through its ordinary URL. Provide an explicit new-tab link rather than relying on a delayed popup. Further acceleration continues the same copy; it does not create another fork each time.
+The stopwatch opens a modal with horizon minutes and the execution mode to enter at completion. Copying is a separate action; the copy becomes an ordinary paused member of the same Run Family. Any family member can independently use realtime or fast-forward execution.
 
 Keep an always-visible progress indicator with completed simulation time, horizon, compute wall duration, measured speed and Pause. At the horizon, pause exactly; offer normal-time continuation and another duration. Validate finite positive horizons and enforce existing resource/storage limits. Duplicate start commands must not spawn duplicate loops.
 
-Yield after bounded wall-time slices and check pause between steps. Start with one accelerating Run admitted at a time; a second request gets a clear busy result, not a hidden queue service. Coalesce latest-value UI updates in wall time, but preserve semantic events and requested historian sample cadence in simulation time. Slow sockets require bounded buffers/resynchronization, not unbounded accumulation.
+Yield after bounded wall-time slices and check pause between steps. Start with one fast-forwarding Run admitted at a time; a second request gets a clear busy result, not a hidden queue service. Coalesce latest-value UI updates in wall time, but preserve semantic events and requested historian sample cadence in simulation time. Slow sockets require bounded buffers/resynchronization, not unbounded accumulation.
 
 Local real PWR benchmark, Apple M2/Bun 1.4.0, 300 simulated seconds, warmed median of three: one unit took 741 ms (~405×); six took 4.29 s (~70×). This excludes Hub, Grid, Weather, persistence, browser, Agent work and optional protection runners. It supports feasibility, **not** a promise that a complete Run executes at 200× or an hour finishes in under a minute.
 
@@ -222,7 +222,7 @@ Keep `workspace_catalog`, `workspace_capabilities` and `workspace_invoke`. Add b
 
 - Ambulance: dispatch overview, incident/patient detail, eligible units/destinations with reasons, operational milestones/metrics; strict assignment/reassignment/transport/disposition commands.
 - Monitor: modality/validity/source-filtered summaries, full inspection, explicit live-versus-captured metadata and collection failures.
-- Run: committed simulation time/sequence, branch ancestry, progress, preflight constraints, pause/resume and future fork operations through the existing registry.
+- Run: committed simulation time/sequence, copy ancestry, progress, preflight constraints, pause/realtime/fast-forward and copy operations through the existing registry.
 - Grant appropriate domain reads to the ordinary companion; management and dispatch writes remain deliberate. No provider credential or secret enters prompts.
 - Use the same constructor/validator and operation for editor, Timeline, UI and AI. Keep future Scenario cues private; do not claim a blind dispatch experiment if a generic raw-object query reveals its hidden state.
 
@@ -238,10 +238,10 @@ External reports are evidence, not commands. No news item silently causes a Plan
 | B — execution seam | Awaited bounded advances, committed clock, routing cancellation, coherent checkpoint; repair missing private state | Restart completeness, stable Plant/Grid and Weather/Ambulance round semantics, no unbounded command fence |
 | C — Ambulance replacement | Four concepts, shared constructors, fixed occurrence references, exact routes, assignment/patient/handover invariants | Patient conservation, wrong-target rejection, simultaneous commands, deletion/reassignment, interrupted stages, route failure |
 | D — usable demo and discovery | Editor controls, domain read models, companion grants, one Norway dispatch Scenario; Monitor compact queries/validity | All editor/Timeline/AI actions use identical validation; coherent ten-minute demo; bounded payloads |
-| E — branching and acceleration | Complete fork, captured evidence, server-owned horizon state, UI, bounded publication | Original unchanged, exact horizon, responsive pause, restart paused, frozen feeds, resource admission, normal/fast equivalence |
+| E — copying and fast-forward | Complete copy, captured evidence, server-owned horizon state, UI, bounded publication | Original unchanged, exact horizon, responsive pause, restart paused, frozen feeds, resource admission, realtime/fast equivalence |
 | F — integrated release | Mixed Plant/Grid/Weather/Ambulance run, Drone checkpoint tests, multi-user inspection, deployment | Whole-Run benchmark, historian cadence, slow-client and failure tests, production smoke |
 
-Monitor changes and Ambulance domain work can proceed independently once their interfaces are agreed. Centralize changes to `simulation/protocol.ts`, Hub, Run runtime/registry, clock, Timeline and checkpoint persistence. Do not let three agents independently invent different stepping/fork interfaces or deploy overlapping partial releases.
+Monitor changes and Ambulance domain work can proceed independently once their interfaces are agreed. Centralize changes to `simulation/protocol.ts`, Hub, Run runtime/registry, clock, Timeline and checkpoint persistence. Do not invent different stepping/copy interfaces in separate Packs or deploy overlapping partial releases.
 
 This is a breaking execution/storage change, not a migration project. Scenario Definitions remain the authoring source; changed Ambulance examples are rebuilt with the new schema. Inventory affected existing Runs before cutover and report which need restarting. Do not silently parse old checkpoints as new state, retain a second legacy runner, or delete unrelated Workspace data. The shared executor is released only after every installed simulation adapter conforms; the stopwatch must not advertise partial Pack support as a complete copy.
 
@@ -249,7 +249,7 @@ Required regression matrix:
 
 - Monitor: shorter/longer subscriber interval; release/reacquire/restart; provider Retry-After; equal cache key with different local labels/attribution; malformed geometry; transient inspection failure versus actual removal.
 - Ambulance: double allocation; wrong target; full/incompatible destination; multiple units/patients; cancellation with passengers; no transport; target deletion; queue order/release; unresolved route; exact mid-route and mid-handover restore; all crossed service boundaries processed.
-- Fork: mid-ramp Plant, Grid storage/frequency, fractional Weather advance, Drone home/mission hold/geofence, procedures/ticks, fired Timeline cues, removed objects and altered configuration. No original mutation or implicit Room-job retargeting.
+- Copy: mid-ramp Plant, Grid storage/frequency, fractional Weather advance, Drone home/mission hold/geofence, procedures/ticks, fired Timeline cues, removed objects and altered configuration. No original mutation or implicit Room-job retargeting.
 - Execution: identical initial state and scripted inputs produce equivalent state/events at normal and maximum-speed pacing under the same step policy. Compare wall-time metadata separately; don't demand identical observation timestamps. Check timestep convergence for physical coupling as a distinct test.
 - Performance: full mixed Run at one and multiple viewers; pause latency, API responsiveness, socket buffer/memory bounds, disk admission and historian sample cadence. Never trade away physical transitions to make a benchmark look faster.
 
@@ -262,9 +262,9 @@ Required regression matrix:
 | Detailed invented vitals/clinical scores | Looks credible but is neither authored nor validated | Explicit reported needs and operational stages |
 | Universal transport-provider framework now | Requires contracts for unimplemented buses/helicopters and conflates Drone support with patient transport | Real Ambulance implementation; discover other Packs' actual operations separately |
 | Fast mode as a high speed multiplier | Changes ramp/protection, queue, Timeline and sampling semantics | One completed-advance path with different pacing |
-| Copy snapshot.json or the live directory | Omits private state or mixes checkpoint epochs | One coherent current-state checkpoint/fork boundary |
+| Copy snapshot.json or the live directory | Omits private state or mixes checkpoint epochs | One coherent current-state checkpoint/copy boundary |
 | Workers/process pool first | Adds RPC and lifecycle complexity before fixing semantics | Bounded cooperative executor; profile before adding isolation |
-| Copy live sources/Agents and call it reproducible | Future external data and inference are not accelerated | Captured evidence; explicit external-controller limits |
+| Copy live sources/Agents and call it reproducible | Future external data and inference are not simulated | Captured evidence; explicit external-controller limits |
 | Rewrite Monitor into an ETL platform | Existing topology already fits the requirement | Fix semantics, query payloads and small admission inconsistencies |
 
 This plan deliberately makes internal execution stricter while making authoring simpler. The cost is coordinated refactoring across simulation adapters and more explicit checkpoint tests. The payoff is a credible dispatch model, trustworthy restart/branch behavior and a common basis for future experiments—not another compatibility layer or a broader framework to maintain.
@@ -280,7 +280,7 @@ Code commit `bfa7046a`, included in production release `20260903T161837Z-c7159bc
 
 Full platform checks, tests and production builds passed: World 654; Agents 1,433 with two existing skips; Host 23; contracts 18; Module runtime 11; integration one. All three services, Caddy, OSRM and public health passed after deployment. An existing Monitor Run reconnected with both sources ready, retained record inspection worked through the UI and Host broker, and a missing record returned `null`. No browser errors/warnings appeared in the smoke test. No new Workspace, Run or Room was created, and no existing Run/history/cache was deleted. Existing procedure-state and large-bundle build warnings remain outside this patch.
 
-Stored deadlines from before the patch remain conservative until they expire or a subsequent eligible response replaces them. An old local polling interval cannot safely be distinguished from a provider restriction, so the fix does not bypass that stored deadline. New collection responses persist the separated restriction correctly. Compact search filters, validity presentation, captured branch evidence and accelerated execution remain planned work; Ambulance replacement is covered below.
+Stored deadlines from before the patch remain conservative until they expire or a subsequent eligible response replaces them. An old local polling interval cannot safely be distinguished from a provider restriction, so the fix does not bypass that stored deadline. New collection responses persist the separated restriction correctly. Compact search filters, validity presentation and captured copy evidence remain follow-up work; Ambulance replacement is covered below.
 
 ## Ambulance implementation and final adversarial review — 2026-09-03
 
@@ -305,4 +305,4 @@ This is an operational demonstration, not calibrated clinical decision support. 
 
 Retargeted visits remain in the event history. The compact measures show pickup-to-final/current-site arrival and that site's queue/handover interval; an independent visit/episode ledger is intentionally not added yet. Fleet optimization, shifts, multi-modal vehicle requisition, clinical protocols and stochastic calibration await concrete research questions. Anchoring a care site to another Pack's building does not transfer ownership of that building.
 
-The engine's exact bounded advance/checkpoint is groundwork only. **The requested whole-Run clone, stopwatch modal, maximum-speed executor, pause-at-horizon and frozen Monitor evidence are not implemented by this change.** Those require the shared execution/checkpoint work in section 4. Existing speed controls are not a substitute, and Plant-only throughput measurements are not advertised as whole-Run acceleration performance.
+The engine's exact bounded advance/checkpoint now supports independent Run copying, continuous fast-forward, fixed-duration fast-forward and exact pause/realtime completion. Frozen Situation Monitor evidence remains follow-up work. Plant-only throughput measurements are not advertised as whole-Run fast-forward performance.

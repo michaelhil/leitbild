@@ -299,6 +299,14 @@
     else history.pushState(null, '', url)
   }
 
+  const closeWorldRun = (): void => {
+    selectedWorldRunId = null
+    const url = new URL(location.href)
+    url.searchParams.delete('world')
+    if (selectedAgentsRoomId) url.searchParams.set('agents', selectedAgentsRoomId)
+    history.pushState(null, '', url)
+  }
+
   const restoreUrlSelection = (): void => {
     const selection = new URLSearchParams(location.search)
     selectedWorldRunId = selection.get('world')
@@ -361,6 +369,7 @@
         {resources}
         {capabilities}
         onSwitch={switchWorldRun}
+        onClose={closeWorldRun}
         refreshResources={() => refreshResources(workspace!.id)}
         reportError={message => { error = message }}
       />

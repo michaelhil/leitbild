@@ -1,10 +1,9 @@
 import type { SimulationRunId } from '../core/model/index.ts'
 import type {
-  ClockResponse,
   CapabilityInvocationResponse,
   SimulationRunResponse,
   ScenarioResponse,
-  AccelerationJobState,
+  RunExecutionState,
 } from './types.ts'
 import { recordCapabilityQueryDiagnostics } from './internal-diagnostics.ts'
 import { workspaceApiPath } from './workspace-context.ts'
@@ -92,21 +91,9 @@ export const invokeSimulationRunCapability = async (
   return await readJsonResponse<CapabilityInvocationResponse>(response, 'capability invocation failed')
 }
 
-export const setSimulationRunClock = async (
-  simulationRunId: SimulationRunId,
-  update: { readonly paused?: boolean; readonly speed?: number; readonly currentTime?: string },
-): Promise<ClockResponse> => {
-  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/clock`), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(update),
-  })
-  return await readJsonResponse<ClockResponse>(response, 'clock update failed')
-}
-
-export const fetchAcceleration = async (simulationRunId: SimulationRunId): Promise<AccelerationJobState | null> => {
-  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/acceleration`), { cache: 'no-store' })
-  return (await readJsonResponse<{ readonly acceleration: AccelerationJobState | null }>(response, 'acceleration status failed')).acceleration
+export const fetchRunExecution = async (simulationRunId: SimulationRunId): Promise<RunExecutionState> => {
+  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/execution`), { cache: 'no-store' })
+  return (await readJsonResponse<{ readonly execution: RunExecutionState }>(response, 'execution status failed')).execution
 }
 
 const capabilityQueryFailureMessage = (status: number, text: string): string => {

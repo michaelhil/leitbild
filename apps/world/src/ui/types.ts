@@ -22,21 +22,26 @@ export type CapabilityInvocationResponse =
   | { readonly kind: 'command'; readonly result: CommandResult; readonly replayed: boolean }
   | { readonly kind: 'query'; readonly result: unknown }
 
-export interface ClockResponse {
-  readonly clock: SimulationClockState
-}
-
-export interface AccelerationJobState {
-  readonly status: 'running' | 'paused' | 'completed' | 'failed'
+export interface FastForwardState {
+  readonly kind: 'continuous' | 'timed'
+  readonly status: 'running' | 'stopped' | 'completed' | 'failed'
   readonly startedSimulationTime: string
-  readonly targetSimulationTime: string
+  readonly targetSimulationTime?: string
   readonly currentSimulationTime: string
+  readonly onComplete: 'paused' | 'realtime'
   readonly startedAt: string
   readonly updatedAt: string
   readonly activeWallMs: number
   readonly simulatedMs: number
   readonly measuredSpeed: number
   readonly error?: string
+}
+
+export interface RunExecutionState {
+  readonly mode: 'paused' | 'realtime' | 'fast-forward'
+  readonly currentSimulationTime: string
+  readonly updatedAt: string
+  readonly fastForward: FastForwardState | null
 }
 
 export type CreateParameterValue = string | number | boolean

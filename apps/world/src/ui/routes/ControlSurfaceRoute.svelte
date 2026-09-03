@@ -25,7 +25,7 @@
     joinSimulationRun as joinSimulationRunClient,
     resetSimulationRun,
     invokeSimulationRunCapability,
-    fetchAcceleration,
+    fetchRunExecution,
     syncSimulationRunSnapshot as syncSimulationRunSnapshotClient,
   } from '../simulation-run-client.ts'
   import {
@@ -92,7 +92,7 @@
     type InternalDiagnosticsSnapshot,
     type LongTaskDiagnosticsMonitor,
   } from '../internal-diagnostics.ts'
-  import type { CategoryRow, SimulationRunResponse, CreateDraft, AccelerationJobState } from '../types.ts'
+  import type { CategoryRow, SimulationRunResponse, CreateDraft, RunExecutionState } from '../types.ts'
 
   const appVersion = __LEITBILD_VERSION__
   const emptyStringArray: ReadonlyArray<string> = []
@@ -158,7 +158,7 @@
   let startupDismissed = $state(false)
   let startupStatusModalOpen = $state(false)
   let settingsModalOpen = $state(false)
-  let accelerationState = $state<AccelerationJobState | null>(null)
+  let executionState = $state<RunExecutionState | null>(null)
   let OperationalMap = $state<Component | null>(null)
   let CreateObjectModal = $state<Component | null>(null)
   let SettingsModal = $state<Component | null>(null)
@@ -788,12 +788,12 @@
     void loadSettingsModal()
   }
 
-  const refreshAcceleration = async (): Promise<void> => {
+  const refreshExecution = async (): Promise<void> => {
     if (!simulationRunId) return
     try {
-      accelerationState = await fetchAcceleration(simulationRunId)
-      if (accelerationState?.currentSimulationTime) {
-        clock = { currentTime: accelerationState.currentSimulationTime as IsoTimestamp, paused: true, speed: 1, updatedAt: accelerationState.updatedAt as IsoTimestamp }
+      executionState = await fetchRunExecution(simulationRunId)
+      if (executionState.mode === 'fast-forward') {
+        clock = { currentTime: executionState.currentSimulationTime as IsoTimestamp, paused: true, speed: 1, updatedAt: executionState.updatedAt as IsoTimestamp }
       }
     } catch (err) {
       status = err instanceof Error ? err.message : String(err)
@@ -1058,10 +1058,6 @@
 
   const sendCommand = async (capabilityId: string, input: unknown): Promise<void> => {
     if (!simulationRunId) return
-    if (!realtimeAttached) {
-      commandStatus = 'Wait for realtime attachment before sending commands'
-      return
-    }
     let body
     try {
       body = await invokeSimulationRunCapability(simulationRunId, { capabilityId, input })
@@ -1331,7 +1327,7 @@
           activeStartupStep = id
         },
       })
-      void refreshAcceleration()
+      void refreshExecution()
     } catch (err) {
       failStep(activeStartupStep, err)
     }
@@ -1428,7 +1424,7 @@
     completeStep('interface')
     preloadOperationalMapModule()
     void joinSimulationRun()
-    const accelerationPoll = window.setInterval(() => { void refreshAcceleration() }, 1_000)
+    const executionPoll = window.setInterval(() => { void refreshExecution() }, 1_000)
     return () => {
       cleanupInternalDiagnosticsGlobal()
       longTaskMonitor?.stop()
@@ -1437,7 +1433,7 @@
       railLayout.stopResize()
       realtimeConnection.disconnect()
       clearStartupAutoDismissTimer()
-      window.clearInterval(accelerationPoll)
+      window.clearInterval(executionPoll)
     }
   })
 
