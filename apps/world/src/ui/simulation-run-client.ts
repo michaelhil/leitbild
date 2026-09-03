@@ -109,28 +109,6 @@ export const fetchAcceleration = async (simulationRunId: SimulationRunId): Promi
   return (await readJsonResponse<{ readonly acceleration: AccelerationJobState | null }>(response, 'acceleration status failed')).acceleration
 }
 
-export const createAcceleratedCopy = async (
-  simulationRunId: SimulationRunId,
-  input: { readonly minutes: number; readonly name?: string },
-): Promise<{ readonly id: SimulationRunId; readonly acceleration: AccelerationJobState; readonly uiPath: string }> => {
-  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/accelerated-copies`), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
-  })
-  return await readJsonResponse(response, 'accelerated copy failed')
-}
-
-export const continueAcceleration = async (simulationRunId: SimulationRunId, minutes: number): Promise<AccelerationJobState> => {
-  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/acceleration`), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutes }),
-  })
-  return (await readJsonResponse<{ readonly acceleration: AccelerationJobState }>(response, 'acceleration failed')).acceleration
-}
-
-export const pauseAcceleration = async (simulationRunId: SimulationRunId): Promise<AccelerationJobState> => {
-  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/acceleration/pause`), { method: 'POST' })
-  return (await readJsonResponse<{ readonly acceleration: AccelerationJobState }>(response, 'acceleration pause failed')).acceleration
-}
-
 const capabilityQueryFailureMessage = (status: number, text: string): string => {
   try {
     const parsed = JSON.parse(text) as unknown

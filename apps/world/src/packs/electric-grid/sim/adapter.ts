@@ -49,6 +49,8 @@ import {
   gridTripGeneratorPayloadSchema,
 } from '../commands.ts'
 import { gridDefinitionSchema } from '../config.ts'
+import { defaultSimulationRunRuntimePolicy } from '../../../core/simulation-runs/runtime-persistence-policy.ts'
+import { createRuntimeStateWriter } from '../../../simulation/runtime-state-writer.ts'
 import { electricGridPackDataSchema,electricGridPackId } from '../model.ts'
 import { answerElectricGridQuery,electricGridQueryCapabilities } from '../query.ts'
 import { createGridRecordingPlan } from '../recording.ts'
@@ -56,8 +58,7 @@ import { balanceInitialGridDispatch,createGridRuntimeInstance,type GridRuntimeIn
 import { advanceGrid } from '../runtime/solver.ts'
 import { electricGridAdapterId,electricGridRuntimeId } from './constants.ts'
 import { gridProjectionEvents,projectGridObject,projectedInitialGridObjects } from './object-projection.ts'
-import { createElectricGridRuntimePersistence } from './persistence.ts'
-import { electricGridRuntimeStateSchema,restoredGridRuntimeStateFor } from './runtime-state.ts'
+import { electricGridRuntimeStateSchema,restoredGridRuntimeStateFor,runtimeStateForElectricGrids } from './runtime-state.ts'
 
 const updateIntervalMs = 2_000
 
@@ -228,9 +229,11 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
     const objectsById = new Map<ObjectId, OperationalObject>(projectedInitialGridObjects({ objects: initialObjects, grids, at: initialAt }).map(object => [object.id, object]))
     const projectionKeys = new Map<string, string>()
     const handlers = new Set<PackRuntimeEventHandler>()
-    const persistence = createElectricGridRuntimePersistence({
-      connection: config,
-      grids,
+    const persistence = createRuntimeStateWriter({
+      ...(config.runtimeStateStore === undefined ? {} : { store: config.runtimeStateStore }),
+      readState: () => runtimeStateForElectricGrids(grids),
+      delayMs: defaultSimulationRunRuntimePolicy.runtimePrivateStateFlushIntervalMs,
+      label: 'electric-grid',
       onError: error => {
         const message = error instanceof Error ? error.message : String(error)
         for (const grid of grids.values()) {
@@ -548,7 +551,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
         closed = true
         clearInterval(interval)
         handlers.clear()
-        await persistence.saveNow()
+        await persistence.close()
       },
     }
   },

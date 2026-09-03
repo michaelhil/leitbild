@@ -31,6 +31,7 @@ import {
   recordingSeriesDescriptorSchema,
   scenarioGuidanceSchema,
   simulationClockStateSchema,
+  simulationClockUpdateSchema,
   simulationRunEventSchema,
   simulationRunIdSchema,
   type OperationalObject
@@ -39,7 +40,7 @@ import { scenarioAuthoringCatalogSchema } from '../scenarios/authoring.ts'
 import { scenarioDefinitionSchema } from '../scenarios/definition.ts'
 import { scenarioRevisionIdSchema } from '../scenarios/library.ts'
 import { CommandIdempotencyConflictError } from '../simulation-runs/command-idempotency.ts'
-import { accelerationDurationInputSchema,additionalAccelerationInputSchema,accelerationJobStateSchema,acceleratedCopyOriginSchema } from '../simulation-runs/acceleration.ts'
+import { accelerationInputSchema,accelerationJobStateSchema,runForkInputSchema,runForkOriginSchema } from '../simulation-runs/acceleration.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { WorldWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
 import { apiError,json,readJson } from './responses.ts'
@@ -148,7 +149,7 @@ const simulationRunSummarySchema = z.object({
   objectCount: z.number().int().nonnegative().nullable(),
   clock: simulationClockStateSchema.nullable(),
   activeCapabilityIds: z.array(z.string().min(1)),
-  origin: acceleratedCopyOriginSchema.nullable(),
+  origin: runForkOriginSchema.nullable(),
   loadError: z.string().min(1).optional(),
 }).strict()
 
@@ -218,6 +219,10 @@ const simulationRunContextSchema = z.object({
     clock: simulationClockStateSchema.optional(),
     guidance: scenarioGuidanceSchema.optional(),
     procedures: procedureControlStateSchema,
+    execution: z.object({
+      origin: runForkOriginSchema.nullable(),
+      acceleration: accelerationJobStateSchema.nullable(),
+    }).strict(),
   }).strict(),
   objects: z.object({
     total: z.number().int().nonnegative(),
@@ -295,18 +300,29 @@ const definitionsFor = async (registry: SimulationRunRegistry) => {
 const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyArray<ModuleResourceDescriptor>> => {
   const observedAt = new Date().toISOString()
   const simulationRuns = await registry.listKnown()
+  const accelerationByRun = new Map(await Promise.all(simulationRuns.map(async simulationRun =>
+    [simulationRun.id, await registry.accelerationStatus(simulationRun.id)] as const)))
+  const runRef = (id: string) => ({
+    workspaceId: registry.workspaceId,
+    moduleId: WORLD_MODULE_ID,
+    type: 'world.simulation-run' as const,
+    id,
+  })
   return moduleResourceCollectionSchema.parse({
     resources: simulationRuns.map(simulationRun => {
       const viewers = registry.leaseSummary(simulationRun.id).leasesByKind.realtime
+      const acceleration = accelerationByRun.get(simulationRun.id) ?? null
       const status = simulationRun.loadError !== undefined
         ? 'Unavailable'
-        : simulationRun.clock?.paused
-          ? 'Paused'
-          : !simulationRun.loaded
-            ? 'Ready'
-            : simulationRun.clock?.speed !== undefined && simulationRun.clock.speed !== 1
-              ? `Running · ${simulationRun.clock.speed}×`
-              : 'Running'
+        : acceleration?.status === 'running'
+          ? `Accelerating · ${acceleration.measuredSpeed.toFixed(1)}×`
+          : simulationRun.clock?.paused
+            ? 'Paused'
+            : !simulationRun.loaded
+              ? 'Ready'
+              : simulationRun.clock?.speed !== undefined && simulationRun.clock.speed !== 1
+                ? `Running · ${simulationRun.clock.speed}×`
+                : 'Running'
       return {
         ref: {
           workspaceId: registry.workspaceId,
@@ -325,7 +341,12 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
             revisionId: simulationRun.scenarioRevisionId,
           },
         }),
-        links: [],
+        links: [
+          ...(simulationRun.origin === null ? [] : [{ rel: 'fork-of', ref: runRef(simulationRun.origin.sourceRunId) }]),
+          ...simulationRuns
+            .filter(candidate => candidate.origin?.sourceRunId === simulationRun.id)
+            .map(candidate => ({ rel: 'fork', ref: runRef(candidate.id), title: candidate.title })),
+        ],
         uiPath: `/workspaces/${encodeURIComponent(registry.workspaceId)}/world/runs/${encodeURIComponent(simulationRun.id)}`,
         capabilityIds: [
           ...worldCapabilities.idsForResourceType('world.simulation-run'),
@@ -342,6 +363,9 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
             value: simulationRun.createdAt,
           }]),
           { key: 'status', label: 'Status', kind: 'status' as const, value: status },
+          ...(simulationRun.origin === null ? [] : [{
+            key: 'lineage', label: 'Lineage', kind: 'status' as const, value: 'What-if copy',
+          }]),
           { key: 'viewer-count', label: 'Viewers', kind: 'count' as const, value: viewers },
           ...(simulationRun.objectCount === null ? [] : [{
             key: 'object-count',
@@ -808,26 +832,23 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
   },
   {
     descriptor: {
-      id: 'world.simulation-run.accelerated-copy.create',
+      id: 'world.simulation-run.fork',
       moduleId: WORLD_MODULE_ID,
       kind: 'command',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
-      title: 'Create accelerated copy',
-      description: 'Forks this Run at a coherent checkpoint, advances the independent copy without wall pacing, and leaves the source unchanged. Rejects live external runtimes.',
+      title: 'Create what-if copy',
+      description: 'Forks this Run at a coherent checkpoint into an independent paused Simulation Run. It does not alter or accelerate either Run.',
       risk: 'write',
       idempotent: false,
-      inputSchema: capabilityJsonSchema(accelerationDurationInputSchema),
-      outputSchema: capabilityJsonSchema(z.object({ id: simulationRunIdSchema, uiPath: z.string(), acceleration: accelerationJobStateSchema })),
+      inputSchema: capabilityJsonSchema(runForkInputSchema),
+      outputSchema: capabilityJsonSchema(z.object({ id: simulationRunIdSchema })),
     },
     invoke: async (registry, invocation) => {
-      const parsed = accelerationDurationInputSchema.parse(invocation.input)
-      const created = await registry.createAcceleratedCopy(requireSimulationRunResource(invocation), {
-        minutes: parsed.minutes,
-        ...(parsed.name === undefined ? {} : { name: parsed.name }),
-      })
-      const resource = { workspaceId: registry.workspaceId, moduleId: WORLD_MODULE_ID, type: 'world.simulation-run', id: created.runtime.id }
+      const input = runForkInputSchema.parse(invocation.input)
+      const created = await registry.fork(requireSimulationRunResource(invocation), input.name === undefined ? {} : { name: input.name })
+      const resource = { workspaceId: registry.workspaceId, moduleId: WORLD_MODULE_ID, type: 'world.simulation-run', id: created.id }
       return json({
-        result: { id: created.runtime.id, uiPath: `/workspaces/${encodeURIComponent(registry.workspaceId)}/world/runs/${encodeURIComponent(created.runtime.id)}`, acceleration: created.acceleration },
+        result: { id: created.id },
         createdResources: [resource],
       }, { status: 201 })
     },
@@ -846,12 +867,12 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
   },
   {
     descriptor: {
-      id: 'world.simulation-run.acceleration.run', moduleId: WORLD_MODULE_ID, kind: 'command',
+      id: 'world.simulation-run.acceleration.start', moduleId: WORLD_MODULE_ID, kind: 'command',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
-      title: 'Run accelerated time', description: 'Advances this paused Run by an explicit additional simulated duration using all active simulated Packs.',
-      risk: 'write', idempotent: false, inputSchema: capabilityJsonSchema(additionalAccelerationInputSchema), outputSchema: capabilityJsonSchema(accelerationJobStateSchema),
+      title: 'Start accelerated execution', description: 'Pauses wall-paced execution and advances this Run by an explicit simulated duration using all active simulated Packs.',
+      risk: 'write', idempotent: false, inputSchema: capabilityJsonSchema(accelerationInputSchema), outputSchema: capabilityJsonSchema(accelerationJobStateSchema),
     },
-    invoke: async (registry, invocation) => json({ result: await registry.startAcceleration(requireSimulationRunResource(invocation), additionalAccelerationInputSchema.parse(invocation.input)) }, { status: 202 }),
+    invoke: async (registry, invocation) => json({ result: await registry.startAcceleration(requireSimulationRunResource(invocation), accelerationInputSchema.parse(invocation.input)) }, { status: 202 }),
   },
   {
     descriptor: {
@@ -863,6 +884,22 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     invoke: async (registry, invocation) => {
       emptyInputSchema.parse(invocation.input)
       return json({ result: await registry.pauseAcceleration(requireSimulationRunResource(invocation)) }, { status: 202 })
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.clock.set', moduleId: WORLD_MODULE_ID, kind: 'command',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Set simulation clock', description: 'Pauses, resumes, or changes the wall-paced speed of this Simulation Run at a coherent execution boundary.',
+      risk: 'write', idempotent: true, inputSchema: capabilityJsonSchema(simulationClockUpdateSchema), outputSchema: capabilityJsonSchema(simulationClockStateSchema),
+    },
+    invoke: async (registry, invocation) => {
+      const runtime = await registry.load(requireSimulationRunResource(invocation))
+      const input = simulationClockUpdateSchema.parse(invocation.input)
+      return json({ result: await runtime.setClock({
+        ...(input.paused === undefined ? {} : { paused: input.paused }),
+        ...(input.speed === undefined ? {} : { speed: input.speed }),
+      }) })
     },
   },
   {
@@ -891,7 +928,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'command',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'Delete Simulation Run',
-      description: 'Permanently deletes a Simulation Run and its persisted state when no viewers are connected.',
+      description: 'Permanently stops and deletes a Simulation Run and its persisted state, including an active Acceleration Job.',
       risk: 'destructive',
       idempotent: false,
       inputSchema: z.toJSONSchema(emptyInputSchema),
@@ -900,9 +937,6 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     invoke: async (registry, invocation) => {
       emptyInputSchema.parse(invocation.input)
       const simulationRunId = requireSimulationRunResource(invocation)
-      if (registry.leaseSummary(simulationRunId).leasesByKind.realtime > 0) {
-        return apiError(409, 'simulation_run_has_viewers', 'Simulation Run has connected viewers')
-      }
       return await registry.delete(simulationRunId)
         ? json({ result: { deleted: true, simulationRunId } })
         : apiError(404, 'simulation_run_not_found', 'Simulation Run not found')
@@ -923,8 +957,8 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     },
     invoke: async (registry, invocation) => {
       const simulationRunId = requireSimulationRunResource(invocation)
-      const summary = (await registry.listKnown()).find(candidate => candidate.id === simulationRunId)
-      return summary
+      const summary = await registry.summary(simulationRunId)
+      return summary.scenarioId !== null
         ? json({ result: summary })
         : apiError(404, 'simulation_run_not_found', 'Simulation Run not found')
     },
@@ -946,7 +980,11 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       emptyInputSchema.parse(invocation.input)
       const simulationRunId = requireSimulationRunResource(invocation)
       const runtime = await registry.load(simulationRunId)
-      const [definition, summary] = await Promise.all([registry.compiledScenarioForRun(simulationRunId), registry.summary(simulationRunId)])
+      const [definition, summary, acceleration] = await Promise.all([
+        registry.compiledScenarioForRun(simulationRunId),
+        registry.summary(simulationRunId),
+        registry.accelerationStatus(simulationRunId),
+      ])
       const snapshot = runtime.snapshot()
       const objectSummaries = snapshot.objects
         .map(summarizeOperationalObject)
@@ -972,6 +1010,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
           ...(snapshot.clock === undefined ? {} : { clock: snapshot.clock }),
           ...(snapshot.scenario?.guidance === undefined ? {} : { guidance: snapshot.scenario.guidance }),
           procedures: snapshot.procedures ?? { runs: [] },
+          execution: { origin: summary.origin, acceleration },
         },
         objects: {
           total: objectSummaries.length,
@@ -1274,6 +1313,12 @@ export const handleWorldModuleApi = async (
     if (error instanceof Error && 'code' in error && error.code === 'history_unavailable') return apiError(503, 'history_unavailable', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'workspace_closing') return apiError(409, 'workspace_closing', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'simulation_run_busy') return apiError(409, 'simulation_run_busy', error.message)
+    if (error instanceof Error && 'code' in error && error.code === 'simulation_run_failed') return apiError(409, 'simulation_run_failed', error.message)
+    if (error instanceof Error && 'code' in error && error.code === 'acceleration_unsupported') return apiError(422, 'acceleration_unsupported', error.message)
+    if (error instanceof Error && 'code' in error && error.code === 'acceleration_capacity_exceeded') {
+      const activeRunId = 'activeRunId' in error && typeof error.activeRunId === 'string' ? error.activeRunId : undefined
+      return apiError(503, 'acceleration_capacity_exceeded', error.message, activeRunId === undefined ? undefined : { activeRunId })
+    }
     if (error instanceof Error && 'code' in error && error.code === 'workspace_capacity_exceeded') return apiError(503, 'workspace_capacity_exceeded', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'simulation_run_name_changed') {
       return apiError(409, 'simulation_run_name_changed', error.message)

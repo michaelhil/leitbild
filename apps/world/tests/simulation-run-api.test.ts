@@ -177,17 +177,23 @@ const closeAll = async (registry: SimulationRunRegistry): Promise<void> => {
 }
 
 describe('Simulation Run API', () => {
-  test('creates and reports ordinary accelerated copies through Run routes', async () => {
+  test('forks an ordinary Run and starts acceleration through separate routes', async () => {
     const registry = await createTestRegistry()
     try {
       const source = await createRun(registry)
-      const created = await callRoute<{ readonly id: SimulationRunId; readonly uiPath: string; readonly acceleration: { readonly status: string } }>(
+      const created = await callRoute<{ readonly id: SimulationRunId; readonly uiPath: string }>(
         registry,
-        runPath(source.id, '/accelerated-copies'),
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutes: 0.01, name: 'API copy' }) },
+        runPath(source.id, '/forks'),
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'API copy' }) },
       )
       expect(created.status).toBe(201)
       expect(created.body.uiPath).toContain(created.body.id)
+      const started = await callRoute<{ readonly acceleration: { readonly status: string } }>(
+        registry,
+        runPath(created.body.id, '/acceleration'),
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutes: 0.01 }) },
+      )
+      expect(started.status).toBe(202)
       for (let attempt = 0; attempt < 120; attempt += 1) {
         const status = await callRoute<{ readonly acceleration: { readonly status: string } }>(registry, runPath(created.body.id, '/acceleration'))
         if (status.body.acceleration.status !== 'running') break
@@ -400,19 +406,10 @@ describe('Simulation Run API', () => {
     }
   })
 
-  test('hard-deletes a run only when it has no connected viewers', async () => {
+  test('hard-deletes a run and terminates connected viewer leases', async () => {
     const registry = await createTestRegistry()
     const created = await createRun(registry)
     const releaseViewer = registry.acquireLease(created.id, 'realtime')
-    const blocked = await callRoute<{ readonly error: { readonly code: string } }>(
-      registry,
-      runPath(created.id),
-      { method: 'DELETE' },
-    )
-    expect(blocked.status).toBe(409)
-    expect(blocked.body.error.code).toBe('simulation_run_has_viewers')
-    releaseViewer()
-
     const deleted = await callRoute<{ readonly deleted: boolean }>(
       registry,
       runPath(created.id),
@@ -420,6 +417,7 @@ describe('Simulation Run API', () => {
     )
     expect(deleted.status).toBe(200)
     expect(deleted.body.deleted).toBe(true)
+    releaseViewer()
     expect(await registry.listKnown()).toEqual([])
   })
 

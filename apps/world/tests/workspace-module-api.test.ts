@@ -493,7 +493,7 @@ describe('World Module API', () => {
     const deleteRunCapabilityId = capabilityIdSchema.parse('world.simulation-run.delete')
     const simulationRunId = registry.getLoaded(workspaceId)!.simulationRuns.list()[0]!.id
     const releaseViewer = registry.getLoaded(workspaceId)!.simulationRuns.acquireLease(simulationRunId, 'realtime')
-    const blockedDelete = await call<{ error: { code: string } }>(
+    const deleted = await call<{ result: { deleted: boolean } }>(
       registry,
       `/internal/workspaces/${workspaceId}/capabilities/${deleteRunCapabilityId}/invoke`,
       {
@@ -508,20 +508,9 @@ describe('World Module API', () => {
         }),
       },
     )
-    expect(blockedDelete.status).toBe(409)
-    expect(blockedDelete.body?.error.code).toBe('simulation_run_has_viewers')
+    expect(deleted.status).toBe(200)
+    expect(deleted.body?.result.deleted).toBe(true)
     releaseViewer()
-    expect((await call(registry, `/internal/workspaces/${workspaceId}/capabilities/${deleteRunCapabilityId}/invoke`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        workspaceId,
-        capabilityId: deleteRunCapabilityId,
-        resource: run!.ref,
-        input: {},
-        access,
-      }),
-    })).status).toBe(200)
     expect(moduleResourceCollectionSchema.parse(
       (await call(registry, `/internal/workspaces/${workspaceId}/resources`)).body,
     ).resources.some(resource => resource.ref.id === run!.ref.id)).toBe(false)

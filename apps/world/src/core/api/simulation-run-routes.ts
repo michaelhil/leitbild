@@ -6,7 +6,7 @@ import { CommandIdempotencyConflictError } from '../simulation-runs/command-idem
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../simulation-runs/runtime.ts'
 import { apiError,json,readJson } from './responses.ts'
-import { accelerationDurationInputSchema, additionalAccelerationInputSchema } from '../simulation-runs/acceleration.ts'
+import { accelerationInputSchema, runForkInputSchema } from '../simulation-runs/acceleration.ts'
 
 const defaultOperatorActorId = actorIdSchema.parse('actor:operator')
 
@@ -132,9 +132,6 @@ const handleSimulationRunApiInner = async (
 
   if (simulationRunMatch && req.method === 'DELETE') {
     const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(simulationRunMatch[1] ?? ''))
-    if (config.registry.leaseSummary(simulationRunId).leasesByKind.realtime > 0) {
-      return apiError(409, 'simulation_run_has_viewers', 'simulation run has connected viewers')
-    }
     const deleted = await config.registry.delete(simulationRunId)
     if (!deleted) return apiError(404, 'simulation_run_not_found', 'simulation run not found')
     return json({ id: simulationRunId, deleted: true })
@@ -163,18 +160,14 @@ const handleSimulationRunApiInner = async (
     return json(await simulationRunResponse(config.registry, runtime))
   }
 
-  const acceleratedCopiesMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/accelerated-copies$/)
-  if (acceleratedCopiesMatch && req.method === 'POST') {
-    const sourceId = simulationRunIdSchema.parse(decodeURIComponent(acceleratedCopiesMatch[1] ?? ''))
-    const parsed = accelerationDurationInputSchema.parse(await readJson(req))
-    const result = await config.registry.createAcceleratedCopy(sourceId, {
-      minutes: parsed.minutes,
-      ...(parsed.name === undefined ? {} : { name: parsed.name }),
-    })
+  const forksMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/forks$/)
+  if (forksMatch && req.method === 'POST') {
+    const sourceId = simulationRunIdSchema.parse(decodeURIComponent(forksMatch[1] ?? ''))
+    const input = runForkInputSchema.parse(await readJson(req))
+    const result = await config.registry.fork(sourceId, input.name === undefined ? {} : { name: input.name })
     return json({
-      id: result.runtime.id,
-      acceleration: result.acceleration,
-      uiPath: `/workspaces/${encodeURIComponent(config.registry.workspaceId)}/world/runs/${encodeURIComponent(result.runtime.id)}`,
+      id: result.id,
+      uiPath: `/workspaces/${encodeURIComponent(config.registry.workspaceId)}/world/runs/${encodeURIComponent(result.id)}`,
     }, { status: 201 })
   }
 
@@ -191,7 +184,7 @@ const handleSimulationRunApiInner = async (
   }
   if (accelerationMatch && req.method === 'POST') {
     const id = simulationRunIdSchema.parse(decodeURIComponent(accelerationMatch[1] ?? ''))
-    return json({ acceleration: await config.registry.startAcceleration(id, additionalAccelerationInputSchema.parse(await readJson(req))) }, { status: 202 })
+    return json({ acceleration: await config.registry.startAcceleration(id, accelerationInputSchema.parse(await readJson(req))) }, { status: 202 })
   }
 
   const objectsMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/objects$/)
@@ -368,7 +361,10 @@ export const handleSimulationRunApi = async (
     if (err instanceof Error && 'code' in err && err.code === 'history_unavailable') return apiError(503, 'history_unavailable', err.message)
     if (err instanceof Error && 'code' in err && err.code === 'simulation_run_busy') return apiError(409, 'simulation_run_busy', err.message)
     if (err instanceof Error && 'code' in err && err.code === 'simulation_run_failed') return apiError(409, 'simulation_run_failed', err.message)
-    if (err instanceof Error && 'code' in err && err.code === 'acceleration_capacity_exceeded') return apiError(503, 'acceleration_capacity_exceeded', err.message)
+    if (err instanceof Error && 'code' in err && err.code === 'acceleration_capacity_exceeded') {
+      const activeRunId = 'activeRunId' in err && typeof err.activeRunId === 'string' ? err.activeRunId : undefined
+      return apiError(503, 'acceleration_capacity_exceeded', err.message, activeRunId === undefined ? undefined : { activeRunId })
+    }
     if (err instanceof Error && 'code' in err && err.code === 'acceleration_unsupported') return apiError(422, 'acceleration_unsupported', err.message)
     if (err instanceof SyntaxError) return apiError(400, 'invalid_json', err.message)
     if (err instanceof z.ZodError) return apiError(400, 'invalid_request', err.message)

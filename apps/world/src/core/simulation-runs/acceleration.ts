@@ -1,12 +1,13 @@
 import { z } from 'zod'
 import { isoTimestampSchema, simulationRunIdSchema } from '../model/index.ts'
 
-export const accelerationDurationInputSchema = z.object({
+export const accelerationInputSchema = z.object({
   minutes: z.number().finite().positive().max(7 * 24 * 60),
-  name: z.string().trim().min(1).max(120).optional(),
 }).strict()
 
-export const additionalAccelerationInputSchema = accelerationDurationInputSchema.omit({ name: true })
+export const runForkInputSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+}).strict()
 
 export const accelerationJobStateSchema = z.object({
   status: z.enum(['running', 'paused', 'completed', 'failed']),
@@ -23,14 +24,14 @@ export const accelerationJobStateSchema = z.object({
 
 export type AccelerationJobState = z.infer<typeof accelerationJobStateSchema>
 
-export const acceleratedCopyOriginSchema = z.object({
-  kind: z.literal('accelerated-copy'),
+export const runForkOriginSchema = z.object({
+  kind: z.literal('fork'),
   sourceRunId: simulationRunIdSchema,
   sourceSequence: z.number().int().nonnegative(),
   forkedAt: isoTimestampSchema,
 }).strict()
 
-export type AcceleratedCopyOrigin = z.infer<typeof acceleratedCopyOriginSchema>
+export type RunForkOrigin = z.infer<typeof runForkOriginSchema>
 
 export interface SimulationRunForkCheckpoint {
   readonly snapshot: import('./state-store.ts').SimulationRunStateSnapshot
@@ -40,4 +41,3 @@ export interface SimulationRunForkCheckpoint {
 export const accelerationStepMs = 250
 export const accelerationProgressWallIntervalMs = 100
 export const accelerationCheckpointWallIntervalMs = 2_000
-

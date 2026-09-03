@@ -1,0 +1,7 @@
+# Run lineage and accelerated execution are independent
+
+A Run Fork is an independent ordinary Simulation Run created at a coherent checkpoint, while an Acceleration Job is a temporary execution mode that may advance any compatible Run without wall-time pacing. The product may compose “fork and accelerate” as one user action, but lineage never implies execution mode and acceleration never creates a separate Run type. Accelerated execution uses the same Pack clock boundaries and capability surface as ordinary execution; live external runtimes must have an explicit evidence policy or reject acceleration rather than inventing future observations.
+
+The Workspace Host owns the shared clock, pause/resume, acceleration, and Run-family controls. Accelerated execution advances in exact bounded simulation steps and yields between them, so ordinary reads and transactional commands remain available at coherent boundaries. One process-wide admission limit prevents concurrent accelerated jobs from exhausting the server; its public error identifies an active Run only within the same Workspace.
+
+Switching between a Run and its Forks replaces only the World pane. The Agents Room remains mounted, and the Host sends the selected Run as transient per-browser focus. That focus is available to Agent discovery tools for the triggering turn but is never persisted into Room links or Message history; the Room's companion link remains its durable fallback.

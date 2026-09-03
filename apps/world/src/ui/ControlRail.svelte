@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { OperationalObject, SimulationClockState } from '../core/model/index.ts'
+  import type { OperationalObject } from '../core/model/index.ts'
   import type { StartingRailView } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackMapLayerGroup, PackObjectPresentation } from '../core/packs/protocol.ts'
   import RailLayerGroupSection from './RailLayerGroupSection.svelte'
@@ -31,7 +31,6 @@
     readonly status: string
     readonly systemStatusTone: StatusTone
     readonly appVersion: string
-    readonly clock?: SimulationClockState
     readonly footerVisible: boolean
     readonly collapsed: boolean
     readonly categoryRows: ReadonlyArray<CategoryRow>
@@ -59,9 +58,6 @@
     readonly cancelPlacement: () => void
     readonly openStatusModal: () => void
     readonly openSettings: () => void
-    readonly toggleClockPaused: () => Promise<void>
-    readonly openAcceleration: () => void
-    readonly accelerationRunning?: boolean
     readonly toggleCategoryMapVisibility?: (categoryId: string) => void
     readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
     readonly mapLayerGroupVisibility?: Readonly<Record<string, boolean>>
@@ -74,7 +70,6 @@
     status,
     systemStatusTone,
     appVersion,
-    clock,
     footerVisible,
     collapsed,
     categoryRows,
@@ -102,9 +97,6 @@
     cancelPlacement,
     openStatusModal,
     openSettings,
-    toggleClockPaused,
-    openAcceleration,
-    accelerationRunning = false,
     toggleCategoryMapVisibility = () => undefined,
     mapLayerGroups = [],
     mapLayerGroupVisibility = {},
@@ -247,12 +239,8 @@
       {status}
       {systemStatusTone}
       {appVersion}
-      {clock}
       {openStatusModal}
       {openSettings}
-      {toggleClockPaused}
-      {openAcceleration}
-      {accelerationRunning}
     />
   {/if}
 </aside>

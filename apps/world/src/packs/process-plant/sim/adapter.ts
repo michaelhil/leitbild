@@ -28,6 +28,8 @@ import { processPlantElectricalBoundaries } from '../electrical-ports.ts'
 import { processPlantIdForObject,processPlantPackId,processPlantUnitPackDataSchema } from '../model.ts'
 import { compileProcessPlants } from '../plant-compiler.ts'
 import { answerProcessPlantQuery } from '../query.ts'
+import { defaultSimulationRunRuntimePolicy } from '../../../core/simulation-runs/runtime-persistence-policy.ts'
+import { createRuntimeStateWriter } from '../../../simulation/runtime-state-writer.ts'
 import { createProcessPlantRecordingPlan } from '../recording.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { componentVariablePath } from '../runtime/index.ts'
@@ -37,10 +39,10 @@ import {
   processPlantProjectionEvents,
   projectedInitialProcessPlantObjects,
 } from './object-projection.ts'
-import { createProcessPlantRuntimePersistence } from './persistence.ts'
 import { createProcessPlantRuntimeInstances } from './runtime-instance-factory.ts'
 import {
   processPlantRuntimeStateSchema,
+  runtimeStateForProcessPlants,
   type ProcessPlantRuntimeState,
 } from './runtime-state.ts'
 
@@ -167,9 +169,11 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           : port.state)
       }
     }
-    const persistence = createProcessPlantRuntimePersistence({
-      connection: config,
-      plants,
+    const persistence = createRuntimeStateWriter({
+      ...(config.runtimeStateStore === undefined ? {} : { store: config.runtimeStateStore }),
+      readState: () => runtimeStateForProcessPlants(plants),
+      delayMs: defaultSimulationRunRuntimePolicy.runtimePrivateStateFlushIntervalMs,
+      label: 'process-plant',
     })
     if (config.recording?.packId !== undefined && config.recording.packId !== processPlantPackId) {
       throw new Error(`process plant runtime received recording selection for Pack ${config.recording.packId}`)
@@ -480,7 +484,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       checkpoint: persistence.saveNow,
       close: async (): Promise<void> => {
         clearInterval(interval)
-        await persistence.saveNow()
+        await persistence.close()
         handlers.clear()
       },
     }

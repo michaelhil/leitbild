@@ -170,12 +170,12 @@ _Avoid_: generic workflow step, arbitrary expression
 A persistent execution of exactly one Scenario Revision inside one Workspace, with an optional independent display name. Editing or deleting the reusable Scenario does not rename or delete its Runs.
 _Avoid_: Instance, session, Scenario
 
-**Accelerated Copy**:
-An ordinary Simulation Run forked from another Run at one coherent simulation-time boundary, then advanced without wall-time pacing. Its source remains independent and its clock is paused when the requested horizon is reached.
-_Avoid_: Fast-forwarding the source Run, time skip, replay
+**Run Fork**:
+An ordinary independent Simulation Run created from another Run at one coherent simulation-time boundary. Its lineage identifies the source Run and checkpoint but does not prescribe how either Run executes.
+_Avoid_: Accelerated Copy, duplicate Scenario, linked live mirror
 
 **Acceleration Job**:
-The temporary server-owned work that advances an Accelerated Copy toward an explicit simulation-time horizon and reports progress, measured speed, pause, completion, or failure.
+The temporary server-owned work that advances any compatible paused Simulation Run toward an explicit simulation-time horizon without wall-time pacing, reporting progress, measured speed, pause, completion, or failure.
 _Avoid_: Clock speed setting, background simulation type, separate Run kind
 
 **Background Execution**:
