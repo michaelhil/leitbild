@@ -1,572 +1,407 @@
-import { randomUUID } from 'node:crypto'
-import type {
-  CommandEnvelope,
-  CommandResult,
-  GeoJsonLineString,
-  GeoJsonPoint,
-  InteractionSignal,
-  IsoTimestamp,
-  MotionProfileSet,
-  ObjectId,
-  OperationalObject,
-  RouteImpact,
-  SimulationRunEvent,
-  SimulationRunId,
-} from '../../../core/model/index.ts'
-import { advanceAlongRoute,defaultMotionProfile,interactionSignalSchema,meters,motionProfileFor,nowIso,pointFromPosition,remainingDistanceAlongRoute,routeDistanceMeters } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, GeoJsonPoint, ObjectId, OperationalObject, RouteImpact, SimulationRunEvent, SimulationRunId } from '../../../core/model/index.ts'
+import { geoPointFromLonLat, meters, nowIso, routeDistanceMeters } from '../../../core/model/index.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
-import type { PackRuntimeEvent,PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
+import type { PackRuntimeEvent, PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
+import * as commands from '../commands.ts'
 import {
-  assignToIncidentCommandKind,
-  assignToIncidentPayloadSchema,
-  cancelDestinationCommandKind,
-  cancelDestinationPayloadSchema,
-  createIncidentCommandKind,createIncidentPayloadSchema,
-  createObjectCommandKind,
-  createObjectPayloadSchema,
-  setDestinationCommandKind,
-  setDestinationPayloadSchema,
-  setIncidentVictimsCommandKind,setIncidentVictimsPayloadSchema,
-} from '../commands.ts'
-import type { IncidentPackData } from '../model.ts'
-import { ambulanceScenarioSupport,withIncidentVictimCount } from '../scenario.ts'
-import { ambulanceSimAdapterId,ambulanceSimRuntimeId } from './constants.ts'
-import { assetArrivedAtTargetSignalType } from './interactions.ts'
-import {
-  createAddedAmbulanceObject,
-  createAddedIncidentObject,
-  createHospitalObject,
-  revealIncidentDetails,
-  updateHospitalCapacity,
-} from './object-state.ts'
+  ambulancePackId, careSitePackDataSchema,
+  cancelEligibility, destinationEligibility, dispatchEligibility, noTransportEligibility, patientObjects,
+  preparedRouteSchema, returnToBaseEligibility, transportEligibility, unitPatients,
+  type AmbulanceAssignment, type AmbulanceDomainData, type PatientPackData, type PreparedRoute,
+} from '../model.ts'
+import { ambulanceSimAdapterId } from './constants.ts'
+import { createAmbulanceItem, validateAmbulanceDeletion, validateAmbulanceObject, validateAmbulanceObjects } from './object-state.ts'
 
-interface AmbulanceMotion {
-  readonly targetObjectId: ObjectId
-  readonly motionProfileId: string
-  readonly metersPerSecond: number
-  readonly route: GeoJsonLineString
-  readonly segmentIndex: number
-}
-
-interface EngineState {
-  readonly simulationRunId: SimulationRunId
-  readonly objectProjection: Map<ObjectId, OperationalObject>
-  readonly motion: Map<ObjectId, AmbulanceMotion>
-  elapsedMs: number
-  nextAmbulanceNumber: number
-  nextHospitalNumber: number
-  nextIncidentNumber: number
-}
-
+export interface AmbulanceEngineCheckpoint { readonly simulationTimeMs: number }
+export interface AmbulanceCommandOutcome { readonly result: CommandResult; readonly events: readonly PackRuntimeEvent[] }
 export interface AmbulanceSimEngine {
   readonly snapshot: () => PackRuntimeSnapshot
+  readonly checkpoint: () => AmbulanceEngineCheckpoint
+  readonly advanceTo: (simulationTimeMs: number) => readonly PackRuntimeEvent[]
+  readonly handleCommand: (command: CommandEnvelope) => Promise<AmbulanceCommandOutcome>
+  readonly observeCommittedEvents: (events: readonly SimulationRunEvent[]) => void
+  readonly validateDeletion: (objectId: string) => void
   readonly setRoadWeatherImpact: (objectId: ObjectId, impact: RouteImpact | undefined) => PackRuntimeEvent | undefined
-  readonly tick: (dtMs: number) => ReadonlyArray<PackRuntimeEvent>
-  readonly handleCommand: (command: CommandEnvelope) => Promise<CommandResult>
-  readonly observeCommittedEvents: (events: ReadonlyArray<SimulationRunEvent>) => void
 }
 
-const defaultAmbulanceMotionProfileId = 'normal'
-
-const ambulanceMotionProfiles: MotionProfileSet = {
-  defaultProfileId: defaultAmbulanceMotionProfileId,
-  profiles: [
-    { id: 'normal', label: 'Normal response', metersPerSecond: 15 },
-    { id: 'emergency', label: 'Emergency response', metersPerSecond: 22 },
-    { id: 'slow', label: 'Congested traffic', metersPerSecond: 8 },
-  ],
+const pointOf = (object: OperationalObject): GeoJsonPoint => {
+  if (!object.spatial.position?.point) throw new Error(`${object.id} has no canonical point`)
+  return object.spatial.position.point
+}
+const routeDistances = new WeakMap<PreparedRoute['geometry'], Float64Array>()
+const cumulativeDistances = (route: PreparedRoute['geometry']): Float64Array => {
+  const cached = routeDistances.get(route)
+  if (cached) return cached
+  const distances = new Float64Array(route.coordinates.length)
+  for (let i = 1; i < distances.length; i++) distances[i] = distances[i - 1]! + routeDistanceMeters(geoPointFromLonLat(...route.coordinates[i - 1]!), geoPointFromLonLat(...route.coordinates[i]!))
+  routeDistances.set(route, distances)
+  return distances
+}
+const geometricLength = (route: PreparedRoute['geometry']): number => cumulativeDistances(route).at(-1) ?? 0
+const routePosition = (route: PreparedRoute, progressMs: number): { point: GeoJsonPoint; segmentIndex: number } => {
+  const coordinates = route.geometry.coordinates
+  const distances = cumulativeDistances(route.geometry)
+  const target = geometricLength(route.geometry) * (route.durationMs === 0 ? 1 : Math.min(1, progressMs / route.durationMs))
+  let lower = 1, upper = coordinates.length - 1
+  while (lower < upper) { const middle = Math.floor((lower + upper) / 2); if (distances[middle]! < target) lower = middle + 1; else upper = middle }
+  const a = coordinates[lower - 1]!, b = coordinates[lower]!
+  const distance = distances[lower]! - distances[lower - 1]!
+  const fraction = distance > 0 ? (target - distances[lower - 1]!) / distance : 1
+  return { point: geoPointFromLonLat(a[0] + (b[0] - a[0]) * fraction, a[1] + (b[1] - a[1]) * fraction), segmentIndex: lower }
+}
+const moving = (assignment: AmbulanceAssignment): boolean => ['responding', 'transporting', 'returning'].includes(assignment.phase)
+const speedFactor = (object: OperationalObject): number => Math.min(1, ...(object.spatial.route?.impacts ?? []).map(impact => impact.speedFactor ?? 1))
+const assertEligible = (reasons: readonly string[]): void => { if (reasons.length) throw new Error(reasons.join('; ')) }
+// Objects enter through validated boundaries and transitions replace data
+// immutably. Numerical reads must not repeatedly parse/clone road geometries.
+const ownedData = (object: OperationalObject): AmbulanceDomainData => object.packData as AmbulanceDomainData
+const dataOfType = <T extends AmbulanceDomainData['type']>(object: OperationalObject, type: T): Extract<AmbulanceDomainData, { type: T }> => {
+  const data = ownedData(object)
+  if (data.type !== type) throw new Error(`${object.id}: expected ${type}`)
+  return data as Extract<AmbulanceDomainData, { type: T }>
 }
 
-const getPoint = (object: OperationalObject): GeoJsonPoint => {
-  const point = object.spatial.position?.point
-  if (!point) {
-    throw new Error(`object ${object.id} has no position`)
-  }
-  return point
-}
-
-const bearingDeg = (from: GeoJsonPoint, to: GeoJsonPoint): number => {
-  const [fromLon, fromLat] = from.coordinates
-  const [toLon, toLat] = to.coordinates
-  const y = Math.sin((toLon - fromLon) * Math.PI / 180) * Math.cos(toLat * Math.PI / 180)
-  const x = Math.cos(fromLat * Math.PI / 180) * Math.sin(toLat * Math.PI / 180)
-    - Math.sin(fromLat * Math.PI / 180) * Math.cos(toLat * Math.PI / 180) * Math.cos((toLon - fromLon) * Math.PI / 180)
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360
-}
-
-const upsertEvent = (object: OperationalObject, at: IsoTimestamp): PackRuntimeEvent => ({
-  type: 'object.upserted',
-  object,
-  at,
-  history: 'snapshot-only',
-  provenance: {
-    source: 'simulator',
-    adapterId: ambulanceSimAdapterId,
-    externalId: object.id,
-  },
-})
-
-const deleteEvent = (objectId: ObjectId, at: IsoTimestamp): PackRuntimeEvent => ({
-  type: 'object.deleted',
-  objectId,
-  at,
-  history: 'record',
-  provenance: {
-    source: 'simulator',
-    adapterId: ambulanceSimAdapterId,
-    externalId: objectId,
-  },
-})
-
-const arrivalSignalEvent = (
-  simulationRunId: SimulationRunId,
-  ambulance: OperationalObject,
-  target: OperationalObject,
-  at: IsoTimestamp,
-  motion: AmbulanceMotion,
-): PackRuntimeEvent => {
-  const signal = interactionSignalSchema.parse({
-    id: `signal:${randomUUID()}`,
-    simulationRunId,
-    at,
-    source: { kind: 'object', id: ambulance.id, runtimeId: ambulanceSimRuntimeId },
-    targets: [{ kind: 'object', id: target.id }],
-    type: assetArrivedAtTargetSignalType,
-    severity: 'notice',
-    payload: {
-      targetObjectId: target.id,
-      motionProfileId: motion.motionProfileId,
-      routeCompleted: true,
-    },
-  }) as InteractionSignal
-  return {
-    type: 'interaction.signal',
-    signal,
-    at,
-    provenance: {
-      source: 'simulator',
-      adapterId: ambulanceSimAdapterId,
-      externalId: ambulance.id,
-    },
-  }
-}
-
-const isHospital = (object: OperationalObject): boolean =>
-  object.kind === 'facility'
-  && typeof object.packData === 'object'
-  && object.packData !== null
-  && (object.packData as { readonly type?: unknown }).type === 'hospital'
-
-const isAmbulance = (object: OperationalObject): boolean =>
-  object.kind === 'mobile_entity'
-  && typeof object.packData === 'object'
-  && object.packData !== null
-  && (object.packData as { readonly type?: unknown }).type === 'ambulance'
-
-const isDestinationTarget = (object: OperationalObject): boolean =>
-  object.kind === 'incident' || isHospital(object)
-
-const nextNumberAfter = (objects: Iterable<OperationalObject>, prefix: string, fallback: number): number => {
-  let highest = fallback - 1
-  const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\d+)$`)
-  for (const object of objects) {
-    const match = object.id.match(pattern)
-    if (!match) continue
-    const value = Number(match[1])
-    if (Number.isInteger(value) && value > highest) highest = value
-  }
-  return highest + 1
-}
-
-const restoredMotionFor = (ambulance: OperationalObject, objects: ReadonlyMap<ObjectId, OperationalObject>): AmbulanceMotion | null => {
-  if (!isAmbulance(ambulance)) return null
-  if (
-    ambulance.operational.status !== 'assigned'
-    && ambulance.operational.status !== 'en_route'
-    && ambulance.operational.status !== 'transporting'
-  ) return null
-  const targetObjectId = ambulance.tasking?.currentTaskId
-  const route = ambulance.spatial.route?.planned
-  if (!targetObjectId || !route || route.coordinates.length === 0) return null
-  if (!objects.has(targetObjectId)) return null
-  const currentPoint = getPoint(ambulance)
-  let closestIndex = 0
-  let closestDistance = Number.POSITIVE_INFINITY
-  for (let index = 0; index < route.coordinates.length; index++) {
-    const distance = routeDistanceMeters(currentPoint, pointFromPosition(route.coordinates[index] ?? currentPoint.coordinates))
-    if (distance < closestDistance) {
-      closestDistance = distance
-      closestIndex = index
-    }
-  }
-  return {
-    targetObjectId,
-    motionProfileId: defaultMotionProfile(ambulanceMotionProfiles).id,
-    metersPerSecond: defaultMotionProfile(ambulanceMotionProfiles).metersPerSecond,
-    route,
-    segmentIndex: Math.min(closestIndex + 1, route.coordinates.length - 1),
-  }
-}
-
-const initialSegmentIndexFor = (currentPoint: GeoJsonPoint, route: GeoJsonLineString): number => {
-  if (route.coordinates.length <= 1) return 0
-  const firstPoint = pointFromPosition(route.coordinates[0] ?? currentPoint.coordinates)
-  return routeDistanceMeters(currentPoint, firstPoint) < 2 ? 1 : 0
-}
-
-const routeSpeedFactor = (object: OperationalObject): number =>
-  Math.min(
-    1,
-    ...(object.spatial.route?.impacts ?? [])
-    .map(impact => impact.speedFactor ?? 1)
-    .filter((factor) => factor >= 0),
-  )
-
-const stopAmbulance = (ambulance: OperationalObject, at: IsoTimestamp, status: string, causedByCommandId?: CommandEnvelope['id']): OperationalObject => {
-  const { route: _route, ...spatialWithoutRoute } = ambulance.spatial
-  const { intent: _intent, ...operationalWithoutIntent } = ambulance.operational
-  const { tasking: _tasking, ...ambulanceWithoutTasking } = ambulance
-
-  return {
-    ...ambulanceWithoutTasking,
-    revision: ambulance.revision + 1,
-    spatial: {
-      ...spatialWithoutRoute,
-      ...(ambulance.spatial.position
-        ? {
-            position: {
-              ...ambulance.spatial.position,
-              speedMps: 0,
-              observedAt: at,
-            },
-          }
-        : {}),
-    },
-    operational: {
-      ...operationalWithoutIntent,
-      status,
-    },
-    provenance: {
-      source: causedByCommandId ? 'operator' : 'simulator',
-      adapterId: ambulanceSimAdapterId,
-      externalId: ambulance.id,
-      ...(causedByCommandId ? { causedByCommandId } : {}),
-    },
-    timestamps: {
-      ...ambulance.timestamps,
-      updatedAt: at,
-    },
-  }
-}
-
+/** Mechanics are committed into canonical owned objects, including exact route
+ * progress and simulation-time deadlines. The only additional checkpoint is the
+ * time through which these objects have been advanced. */
 export const createAmbulanceSimEngine = (config: {
   readonly simulationRunId: SimulationRunId
+  readonly objects: readonly OperationalObject[]
   readonly routing: RoutingAdapter
-  readonly objects: ReadonlyArray<OperationalObject>
+  readonly simulationTimeMs: number
+  readonly objectById?: (id: ObjectId) => OperationalObject | undefined
 }): AmbulanceSimEngine => {
-  const objectProjection = new Map<ObjectId, OperationalObject>()
-  for (const object of config.objects) objectProjection.set(object.id, object)
-  const motion = new Map<ObjectId, AmbulanceMotion>()
-  for (const object of objectProjection.values()) {
-    const restoredMotion = restoredMotionFor(object, objectProjection)
-    if (restoredMotion) motion.set(object.id, restoredMotion)
+  if (!Number.isFinite(config.simulationTimeMs) || config.simulationTimeMs < 0) throw new Error('Invalid engine simulation time')
+  validateAmbulanceObjects(config.objects)
+  let objects = new Map(config.objects.filter(object => object.packId === ambulancePackId).map(object => [object.id, structuredClone(object)]))
+  let simulationTimeMs = config.simulationTimeMs
+  const all = (): OperationalObject[] => [...objects.values()]
+  const requireObject = (id: ObjectId): OperationalObject => {
+    const object = objects.get(id)
+    if (!object) throw new Error(`Ambulance object not found: ${id}`)
+    return object
   }
-  const state: EngineState = {
-    simulationRunId: config.simulationRunId,
-    objectProjection,
-    motion,
-    elapsedMs: 0,
-    nextAmbulanceNumber: nextNumberAfter(objectProjection.values(), 'amb:', 1),
-    nextHospitalNumber: nextNumberAfter(objectProjection.values(), 'facility:hospital-', 1),
-    nextIncidentNumber: nextNumberAfter(objectProjection.values(), 'incident:', 1),
+  const requirePatient = (id: ObjectId): OperationalObject => {
+    const object = requireObject(id)
+    dataOfType(object, 'patient')
+    return object
   }
 
-  const snapshot = (): PackRuntimeSnapshot => ({
-    simulationRunId: state.simulationRunId,
-    objects: [...state.objectProjection.values()],
-    capturedAt: nowIso(),
-  })
+  const prepareRoute = async (from: GeoJsonPoint, to: GeoJsonPoint): Promise<PreparedRoute> => {
+    const route = await config.routing.route({ from, to })
+    const prepared = preparedRouteSchema.parse({ geometry: route.geometry, durationMs: route.durationSeconds * 1000, distanceM: route.distanceM, provider: route.provider })
+    if (prepared.durationMs <= 0 && geometricLength(prepared.geometry) > 0.01) throw new Error('Routing returned nonzero geometry without travel time')
+    // Reject egregious snapping instead of teleporting to an unrelated road.
+    const first = geoPointFromLonLat(...prepared.geometry.coordinates[0]!)
+    const last = geoPointFromLonLat(...prepared.geometry.coordinates.at(-1)!)
+    if (routeDistanceMeters(first, from) > 1_000 || routeDistanceMeters(last, to) > 1_000) throw new Error('Route endpoint is more than 1 km from the requested location')
+    return prepared
+  }
 
-  const tick = (dtMs: number): ReadonlyArray<PackRuntimeEvent> => {
+  const watch = (ids: readonly ObjectId[]): (() => void) => {
+    const watched = ids.map(id => ({ id, object: objects.get(id), canonical: config.objectById?.(id) }))
+    return () => {
+      for (const entry of watched) {
+        if (objects.get(entry.id) !== entry.object) throw new Error(`State changed while preparing route: ${entry.id}; retry`)
+        if (config.objectById && entry.canonical) {
+          const current = config.objectById(entry.id)
+          if (!current || current.revision !== entry.canonical.revision) throw new Error(`Canonical object changed while preparing route: ${entry.id}; retry`)
+        }
+      }
+    }
+  }
+
+  const transaction = (work: (tx: ReturnType<typeof createTransaction>) => void, targetTime = simulationTimeMs, commandId?: CommandEnvelope['id']): readonly PackRuntimeEvent[] => {
+    const tx = createTransaction(targetTime, commandId)
+    work(tx)
+    tx.finish()
+    validateAmbulanceObjects([...tx.draft.values()])
+    objects = tx.draft
+    simulationTimeMs = targetTime
+    return tx.events
+  }
+
+  function createTransaction(targetTime: number, commandId?: CommandEnvelope['id']) {
+    const draft = new Map(objects)
     const events: PackRuntimeEvent[] = []
-    const at2 = nowIso()
-    state.elapsedMs += dtMs
-    if (state.elapsedMs >= 5_000) {
-      for (const object of state.objectProjection.values()) {
-        if (object.kind !== 'incident') continue
-        const updated = revealIncidentDetails(object, at2)
-        if (!updated) continue
-        state.objectProjection.set(updated.id, updated)
-        events.push(upsertEvent(updated, at2))
-      }
-    }
-    if (state.elapsedMs >= 10_000) {
-      for (const object of state.objectProjection.values()) {
-        if (!isHospital(object)) continue
-        const updated = updateHospitalCapacity(object, at2)
-        if (!updated) continue
-        state.objectProjection.set(updated.id, updated)
-        events.push(upsertEvent(updated, at2))
-      }
-    }
-    for (const [ambulanceId, motion] of state.motion.entries()) {
-      const ambulance = state.objectProjection.get(ambulanceId)
-      const target = state.objectProjection.get(motion.targetObjectId)
-      if (!ambulance || !target) {
-        state.motion.delete(ambulanceId)
-        continue
-      }
-      const currentRoute = ambulance.spatial.route
-      if (!currentRoute) {
-        state.motion.delete(ambulanceId)
-        continue
-      }
-      const currentPoint = getPoint(ambulance)
-      const finalPoint = pointFromPosition(motion.route.coordinates[motion.route.coordinates.length - 1] ?? getPoint(target).coordinates)
-      const routeAdvance = advanceAlongRoute({
-        currentPoint,
-        route: motion.route,
-        segmentIndex: motion.segmentIndex,
-        metersToMove: motion.metersPerSecond * routeSpeedFactor(ambulance) * dtMs / 1000,
-      })
-      const nextPoint = routeAdvance.point
-      const arrived = routeDistanceMeters(nextPoint, finalPoint) < 15
-      const segmentIndex = arrived ? motion.segmentIndex : routeAdvance.segmentIndex
-      const remainingDistanceM = remainingDistanceAlongRoute(motion.route, nextPoint, segmentIndex)
-      const effectiveSpeedMps = motion.metersPerSecond * routeSpeedFactor(ambulance)
-      const etaSeconds = arrived
-        ? 0
-        : effectiveSpeedMps > 0
-          ? Math.ceil(remainingDistanceM / effectiveSpeedMps)
-          : undefined
-      const { etaSeconds: _previousEta, ...routeWithoutEta } = currentRoute
-      const moving: OperationalObject = {
-        ...ambulance,
-        revision: ambulance.revision + 1,
-        spatial: {
-          ...ambulance.spatial,
-          route: {
-            ...routeWithoutEta,
-            ...(etaSeconds === undefined ? {} : { etaSeconds }),
-            progress: {
-              segmentIndex,
-              remainingDistanceM,
-              advancedDistanceM: routeAdvance.advancedDistanceM,
-              updatedAt: at2,
-            },
-          },
-          position: {
-            point: nextPoint,
-            headingDeg: bearingDeg(currentPoint, routeAdvance.headingTarget),
-            speedMps: arrived ? 0 : effectiveSpeedMps,
-            accuracyM: meters(8),
-            observedAt: at2,
-            staleAfterMs: 5_000,
-          },
-        },
-        operational: {
-          ...ambulance.operational,
-          status: arrived ? 'on_scene' : 'en_route',
-          intent: arrived ? 'treat_patient' : 'respond_to_incident',
-        },
-        communication: {
-          state: 'connected',
-          lastContactAt: at2,
-        },
-        timestamps: {
-          ...ambulance.timestamps,
-          updatedAt: at2,
-        },
-      }
-      if (arrived) {
-        state.motion.delete(ambulanceId)
-        const stopped = stopAmbulance(moving, at2, target.kind === 'incident' ? 'on_scene' : 'available')
-        state.objectProjection.set(stopped.id, stopped)
-        events.push(upsertEvent(stopped, at2))
-        events.push(arrivalSignalEvent(state.simulationRunId, stopped, target, at2, motion))
-      } else {
-        state.objectProjection.set(ambulanceId, moving)
-        state.motion.set(ambulanceId, { ...motion, segmentIndex })
-        events.push(upsertEvent(moving, at2))
-      }
-    }
-    return events
-  }
-
-  const handleCommand = async (command: CommandEnvelope): Promise<CommandResult> => {
-    const at3 = nowIso()
-    if (command.kind === createIncidentCommandKind || command.kind === setIncidentVictimsCommandKind) {
-      try {
-        if (command.kind === createIncidentCommandKind) {
-          const item = createIncidentPayloadSchema.parse(command.payload)
-          if (state.objectProjection.has(item.id)) throw new Error(`Object already exists: ${item.id}`)
-          const contribution = await ambulanceScenarioSupport.expandItem({ ...item, pack: 'ambulance', type: 'incident' }, { at: at3, routing: config.routing, objects: [...state.objectProjection.values()], objectById: id => state.objectProjection.get(id), packConfigs: {} })
-          for (const object of contribution.objects) state.objectProjection.set(object.id, object)
-        } else {
-          const input = setIncidentVictimsPayloadSchema.parse(command.payload)
-          const object = state.objectProjection.get(input.objectId)
-          if (!object || object.kind !== 'incident') throw new Error(`Incident not found: ${input.objectId}`)
-          state.objectProjection.set(object.id, withIncidentVictimCount(object, input.victims, at3))
-        }
-        return { ok: true, commandId: command.id, acceptedAt: at3 }
-      } catch (error) { return { ok: false, commandId: command.id, rejectedAt: at3, reason: error instanceof Error ? error.message : String(error) } }
-    }
-    if (command.kind === createObjectCommandKind) {
-      const payload = createObjectPayloadSchema.safeParse(command.payload)
-      if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: at3, reason: payload.error.message }
-      const object = payload.data.objectType === 'hospital'
-        ? createHospitalObject(`facility:hospital-${state.nextHospitalNumber++}` as ObjectId, payload.data.label, payload.data.point, at3, command.id)
-        : payload.data.objectType === 'ambulance'
-          ? createAddedAmbulanceObject(`amb:${state.nextAmbulanceNumber++}` as ObjectId, payload.data.label, payload.data.point, at3, command.id)
-          : createAddedIncidentObject(`incident:${state.nextIncidentNumber++}` as ObjectId, payload.data.label, payload.data.point, at3, command.id)
-      state.objectProjection.set(object.id, object)
-      return { ok: true, commandId: command.id, acceptedAt: at3 }
-    }
-
-    if (command.kind === cancelDestinationCommandKind) {
-      const payload = cancelDestinationPayloadSchema.safeParse(command.payload)
-      if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: at3, reason: payload.error.message }
-      const ambulance = state.objectProjection.get(payload.data.ambulanceId)
-      if (!ambulance) return { ok: false, commandId: command.id, rejectedAt: at3, reason: `ambulance not found: ${payload.data.ambulanceId}` }
-      if (ambulance.kind !== 'mobile_entity') return { ok: false, commandId: command.id, rejectedAt: at3, reason: `${payload.data.ambulanceId} is not an ambulance` }
-      state.motion.delete(payload.data.ambulanceId)
-      state.objectProjection.set(ambulance.id, stopAmbulance(ambulance, at3, 'available', command.id))
-      return { ok: true, commandId: command.id, acceptedAt: at3 }
-    }
-
-    if (command.kind !== assignToIncidentCommandKind && command.kind !== setDestinationCommandKind) {
-      return { ok: false, commandId: command.id, rejectedAt: at3, reason: `unsupported command kind: ${command.kind}` }
-    }
-
-    const payload = command.kind === assignToIncidentCommandKind
-      ? assignToIncidentPayloadSchema.safeParse(command.payload)
-      : setDestinationPayloadSchema.safeParse(command.payload)
-    if (!payload.success) {
-      return { ok: false, commandId: command.id, rejectedAt: at3, reason: payload.error.message }
-    }
-    const ambulanceId = payload.data.ambulanceId
-    const destinationId = 'incidentId' in payload.data ? payload.data.incidentId : payload.data.destinationId
-    const ambulance = state.objectProjection.get(ambulanceId)
-    const incident = state.objectProjection.get(destinationId)
-    if (!ambulance) return { ok: false, commandId: command.id, rejectedAt: at3, reason: `ambulance not found: ${payload.data.ambulanceId}` }
-    if (ambulance.kind !== 'mobile_entity') return { ok: false, commandId: command.id, rejectedAt: at3, reason: `${ambulanceId} is not an ambulance` }
-    if (!incident) return { ok: false, commandId: command.id, rejectedAt: at3, reason: `destination not found: ${destinationId}` }
-    if (!isDestinationTarget(incident)) return { ok: false, commandId: command.id, rejectedAt: at3, reason: `destination must be an incident or hospital: ${destinationId}` }
-
-    let routeResult
-    try {
-      routeResult = await config.routing.route({
-        from: getPoint(ambulance),
-        to: getPoint(incident),
-      })
-    } catch (err) {
-      return { ok: false, commandId: command.id, rejectedAt: at3, reason: `routing failed: ${err instanceof Error ? err.message : String(err)}` }
-    }
-
-    const updatedAmbulance: OperationalObject = {
-      ...ambulance,
-      revision: ambulance.revision + 1,
-      operational: {
-        ...ambulance.operational,
-        status: 'assigned',
-        intent: 'respond_to_incident',
-      },
-      spatial: {
-        ...ambulance.spatial,
-        route: {
-          planned: routeResult.geometry,
-          etaSeconds: routeResult.durationSeconds,
-          source: routeResult.provider === 'osrm' ? 'simulator' : 'operator',
-        },
-      },
-      tasking: {
-        currentTaskId: destinationId,
-        assignedBy: command.actorId,
-        assignedAt: at3,
-      },
-      provenance: {
-        source: 'simulator',
-        adapterId: ambulanceSimAdapterId,
-        externalId: ambulance.id,
-        causedByCommandId: command.id,
-      },
-      timestamps: {
-        ...ambulance.timestamps,
-        updatedAt: at3,
-      },
-    }
-    state.objectProjection.set(updatedAmbulance.id, updatedAmbulance)
-
-    const updatedIncident: OperationalObject = incident.kind === 'incident'
-      ? {
-          ...incident,
-          revision: incident.revision + 1,
-          operational: {
-            ...incident.operational,
-            status: 'assigned',
-          },
-          provenance: {
-            source: 'simulator',
-            adapterId: ambulanceSimAdapterId,
-            externalId: incident.id,
-            causedByCommandId: command.id,
-          },
-          timestamps: {
-            ...incident.timestamps,
-            updatedAt: at3,
-          },
-          packData: {
-            ...(incident.packData as IncidentPackData),
-            assignedAmbulanceId: updatedAmbulance.id,
-          } satisfies IncidentPackData,
-        }
-      : incident
-    state.objectProjection.set(updatedIncident.id, updatedIncident)
-    const motionProfile = motionProfileFor(ambulanceMotionProfiles, defaultAmbulanceMotionProfileId)
-    state.motion.set(updatedAmbulance.id, {
-      targetObjectId: updatedIncident.id,
-      motionProfileId: motionProfile.id,
-      metersPerSecond: motionProfile.metersPerSecond,
-      route: routeResult.geometry,
-      segmentIndex: initialSegmentIndexFor(getPoint(updatedAmbulance), routeResult.geometry),
-    })
-    return { ok: true, commandId: command.id, acceptedAt: at3 }
-  }
-
-  const observeCommittedEvents = (events: ReadonlyArray<SimulationRunEvent>): void => {
-    for (const event of events) {
-      if (event.type === 'object.upserted') {
-        const current = state.objectProjection.get(event.object.id)
-        if (current && current.revision >= event.object.revision) continue
-        state.objectProjection.set(event.object.id, event.object)
-      }
-      if (event.type === 'object.deleted') {
-        state.objectProjection.delete(event.objectId)
-        state.motion.delete(event.objectId)
-      }
-    }
-  }
-
-  const setRoadWeatherImpact = (id: ObjectId, impact: RouteImpact | undefined): PackRuntimeEvent | undefined => {
-    const object = state.objectProjection.get(id)
-    if (!object?.spatial.route) return
-    const old = object.spatial.route.impacts ?? []
-    const remaining = old.filter(
-      (entry) => entry.source.kind !== 'runtime' || entry.source.id !== 'ambulance.road-weather',
-    )
-    const impacts = impact ? [...remaining, impact] : remaining
-    // Timestamp changes alone do not create redundant projected object revisions.
-    const stable = (entries: ReadonlyArray<RouteImpact>) => entries.map(({ updatedAt: _, ...entry }) => entry)
-    if (JSON.stringify(stable(old)) === JSON.stringify(stable(impacts))) return
+    const motionDirty = new Set<ObjectId>()
     const at = nowIso()
-    const updated: OperationalObject = {
-      ...object,
-      revision: object.revision + 1,
-      timestamps: { ...object.timestamps, updatedAt: at },
-      spatial: { ...object.spatial, route: { ...object.spatial.route, impacts } },
+    let time = simulationTimeMs
+    const values = () => [...draft.values()]
+    const get = (id: ObjectId): OperationalObject => {
+      const object = draft.get(id)
+      if (!object) throw new Error(`Object not found: ${id}`)
+      return object
     }
-    state.objectProjection.set(id, updated)
-    return { type: 'object.upserted', object: updated, at, provenance: updated.provenance, history: 'snapshot-only' }
+    const emitObject = (object: OperationalObject, record: boolean) => {
+      events.push({ type: 'object.upserted', object, at, history: record ? 'record' : 'snapshot-only', provenance: object.provenance })
+    }
+    const put = (object: OperationalObject, data: AmbulanceDomainData, record = true, point?: GeoJsonPoint): OperationalObject => {
+      let spatial = object.spatial
+      let status: string
+      let tasking: OperationalObject['tasking']
+      if (data.type === 'ambulance') {
+        const assignment = data.assignment
+        status = assignment?.phase ?? (data.crewReady ? 'available' : 'out-of-service')
+        const { route: _, ...rest } = spatial
+        const position = point ?? pointOf(object)
+        const leg = assignment?.leg
+        const factor = speedFactor(object)
+        const active = assignment && moving(assignment)
+        spatial = { ...rest, position: { point: position, observedAt: at, speedMps: active && leg && leg.durationMs > 0 ? leg.distanceM / (leg.durationMs / 1000) * factor : 0 }, ...(leg ? { route: { planned: leg.geometry, source: 'simulator' as const, ...(factor > 0 ? { etaSeconds: (leg.durationMs - leg.progressMs) / 1000 / factor } : {}), progress: { segmentIndex: routePosition(leg, leg.progressMs).segmentIndex, remainingDistanceM: meters(leg.distanceM * (leg.durationMs === 0 ? 0 : 1 - leg.progressMs / leg.durationMs)), updatedAt: at }, ...(object.spatial.route?.impacts ? { impacts: object.spatial.route.impacts } : {}) } } : {}) }
+        const target = ['transporting', 'queued', 'handover'].includes(assignment?.phase ?? '') ? assignment?.destinationId : assignment?.incidentId
+        if (target) tasking = { currentTaskId: target }
+      } else if (data.type === 'incident') status = data.closedAtMs === undefined ? data.firstArrivalAtMs === undefined ? 'open' : 'responding' : 'resolved'
+      else if (data.type === 'care-site') status = data.accepting ? 'accepting' : 'not-accepting'
+      else status = data.disposition === 'active' ? data.holder.kind === 'incident' ? 'awaiting-response' : 'in-ambulance' : data.disposition
+      const { tasking: _, ...base } = object
+      const updated: OperationalObject = { ...base, revision: object.revision + 1, spatial, packData: data, operational: { ...object.operational, status }, lifecycle: data.type === 'incident' && data.closedAtMs !== undefined || data.type === 'patient' && data.disposition !== 'active' ? 'resolved' : 'active', ...(tasking ? { tasking } : {}), provenance: { source: commandId ? 'operator' : 'simulator', adapterId: ambulanceSimAdapterId, externalId: object.id, ...(commandId ? { causedByCommandId: commandId } : {}) }, timestamps: { ...object.timestamps, updatedAt: at } }
+      draft.set(updated.id, updated)
+      if (record) { motionDirty.delete(updated.id); emitObject(updated, true) } else motionDirty.add(updated.id)
+      return updated
+    }
+    const setUnit = (id: ObjectId, assignment: AmbulanceAssignment | undefined, record = true, point?: GeoJsonPoint) => {
+      const unit = get(id)
+      const { assignment: _, ...data } = dataOfType(unit, 'ambulance')
+      return put(unit, { ...data, ...(assignment ? { assignment } : {}) }, record, point)
+    }
+    const setPatient = (id: ObjectId, update: Partial<PatientPackData>) => {
+      const patient = get(id)
+      return put(patient, { ...dataOfType(patient, 'patient'), ...update })
+    }
+    const closeIncidents = () => {
+      const patients = patientObjects(values())
+      for (const object of values()) {
+        const data = ownedData(object)
+        if (data.type !== 'incident') continue
+        const members = patients.filter(patient => dataOfType(patient, 'patient').incidentId === object.id)
+        const closed = members.length > 0 && members.every(patient => dataOfType(patient, 'patient').disposition !== 'active')
+        if (closed && data.closedAtMs === undefined) put(object, { ...data, closedAtMs: time })
+        if (!closed && data.closedAtMs !== undefined) { const { closedAtMs: _, ...open } = data; put(object, open) }
+      }
+    }
+    const startQueues = (): boolean => {
+      let changed = false
+      for (const site of values()) {
+        const siteData = ownedData(site)
+        if (siteData.type !== 'care-site' || !siteData.accepting) continue
+        const units = values().filter(object => ownedData(object).type === 'ambulance')
+        const serving = units.filter(unit => { const a = dataOfType(unit, 'ambulance').assignment; return a?.phase === 'handover' && a.destinationId === site.id }).length
+        const queue = units.filter(unit => { const a = dataOfType(unit, 'ambulance').assignment; return a?.phase === 'queued' && a.destinationId === site.id }).sort((a, b) => dataOfType(a, 'ambulance').assignment!.phaseStartedAtMs - dataOfType(b, 'ambulance').assignment!.phaseStartedAtMs || a.id.localeCompare(b.id))
+        let free = Math.max(0, siteData.handoverSlots - serving)
+        for (const unit of queue) {
+          const a = dataOfType(get(unit.id), 'ambulance').assignment!
+          const patients = a.patientIds.map(get)
+          if (destinationEligibility(site, patients).length) continue
+          if (free-- <= 0) break
+          setUnit(unit.id, { ...a, phase: 'handover', phaseStartedAtMs: time, phaseDueAtMs: time + siteData.handoverSeconds * 1000 })
+          a.patientIds.forEach(id => setPatient(id, { handoverStartedAtMs: time }))
+          changed = true
+        }
+      }
+      return changed
+    }
+    const finishScene = (unit: OperationalObject, a: AmbulanceAssignment) => {
+      a.patientIds.forEach(id => setPatient(id, { holder: { kind: 'ambulance', id: unit.id }, pickedUpAtMs: time }))
+      const { phaseDueAtMs: _, leg: _leg, onwardRoute, ...rest } = a
+      if (onwardRoute && a.destinationId && destinationEligibility(draft.get(a.destinationId), a.patientIds.map(get)).length === 0) setUnit(unit.id, { ...rest, phase: 'transporting', phaseStartedAtMs: time, leg: { ...onwardRoute, progressMs: 0 } })
+      else {
+        const { destinationId: _, ...withoutDestination } = rest
+        setUnit(unit.id, { ...withoutDestination, phase: 'ready-for-transport', phaseStartedAtMs: time })
+      }
+    }
+    const boundaries = (): boolean => {
+      let changed = false
+      for (const initial of values()) {
+        const unit = get(initial.id)
+        const data = ownedData(unit)
+        if (data.type !== 'ambulance' || !data.assignment) continue
+        const a = data.assignment
+        if (a.phase === 'mobilizing' && a.phaseDueAtMs! <= time) {
+          const { phaseDueAtMs: _, ...rest } = a
+          setUnit(unit.id, { ...rest, phase: 'responding', phaseStartedAtMs: time })
+          a.patientIds.forEach(id => { if (dataOfType(get(id), 'patient').departedAtMs === undefined) setPatient(id, { departedAtMs: time }) })
+        } else if (a.phase === 'on-scene' && a.phaseDueAtMs! <= time) finishScene(unit, a)
+        else if (a.phase === 'handover' && a.phaseDueAtMs! <= time) {
+          a.patientIds.forEach(id => setPatient(id, { holder: { kind: 'care-site', id: a.destinationId! }, disposition: 'delivered', completedAtMs: time }))
+          setUnit(unit.id, undefined)
+        } else if (moving(a) && a.leg && a.leg.progressMs >= a.leg.durationMs - 0.000001) {
+          const point = geoPointFromLonLat(...a.leg.geometry.coordinates.at(-1)!)
+          const { leg: _, ...rest } = a
+          if (a.phase === 'returning') setUnit(unit.id, undefined, true, point)
+          else if (a.phase === 'responding') {
+            setUnit(unit.id, { ...rest, phase: 'on-scene', phaseStartedAtMs: time, phaseDueAtMs: time + data.sceneSeconds * 1000 }, true, point)
+            const incident = get(a.incidentId!), incidentData = dataOfType(incident, 'incident')
+            if (incidentData.firstArrivalAtMs === undefined) put(incident, { ...incidentData, firstArrivalAtMs: time })
+            a.patientIds.forEach(id => { if (dataOfType(get(id), 'patient').contactedAtMs === undefined) setPatient(id, { contactedAtMs: time }) })
+          } else {
+            setUnit(unit.id, { ...rest, phase: 'queued', phaseStartedAtMs: time }, true, point)
+            a.patientIds.forEach(id => setPatient(id, { arrivedAtSiteMs: time }))
+          }
+        } else continue
+        changed = true
+      }
+      if (changed) closeIncidents()
+      return startQueues() || changed
+    }
+    const advance = () => {
+      let iterations = 0
+      while (true) {
+        while (boundaries()) {
+          if (++iterations > 100_000) throw new Error('Ambulance transition budget exceeded')
+        }
+        if (time >= targetTime) break
+        if (!values().some(object => { const data = ownedData(object); return data.type === 'ambulance' && data.assignment })) { time = targetTime; break }
+        let next = Math.min(targetTime, time + 1_000)
+        for (const object of values()) {
+          const data = ownedData(object)
+          const a = data.type === 'ambulance' ? data.assignment : undefined
+          if (!a) continue
+          if (a.phaseDueAtMs !== undefined && a.phaseDueAtMs > time) next = Math.min(next, a.phaseDueAtMs)
+          if (moving(a) && a.leg && speedFactor(object) > 0) next = Math.min(next, time + (a.leg.durationMs - a.leg.progressMs) / speedFactor(object))
+        }
+        if (next <= time || !Number.isFinite(next)) throw new Error('Ambulance clock could not advance')
+        const dt = next - time
+        for (const object of values()) {
+          const data = ownedData(object)
+          if (data.type !== 'ambulance' || !data.assignment) continue
+          const a = data.assignment
+          const busy = { ...data, busyTimeMs: data.busyTimeMs + (a.phase === 'returning' ? 0 : dt) }
+          if (moving(a) && a.leg) {
+            const progressMs = Math.min(a.leg.durationMs, a.leg.progressMs + dt * speedFactor(object))
+            put(object, { ...busy, assignment: { ...a, leg: { ...a.leg, progressMs } } }, false, routePosition(a.leg, progressMs).point)
+          } else put(object, busy, false)
+        }
+        time = next
+        if (++iterations > 100_000) throw new Error('Ambulance advance budget exceeded; use bounded simulation steps')
+      }
+      closeIncidents()
+    }
+    return { draft, events, get, put, setUnit, setPatient, values, advance, startQueues, closeIncidents, finish: () => { for (const id of motionDirty) emitObject(get(id), false) } }
   }
-  return { snapshot, tick, handleCommand, observeCommittedEvents, setRoadWeatherImpact }
+
+  const handleCommand = async (command: CommandEnvelope): Promise<AmbulanceCommandOutcome> => {
+    const rejected = (error: unknown): AmbulanceCommandOutcome => ({ result: { ok: false, commandId: command.id, rejectedAt: nowIso(), reason: error instanceof Error ? error.message : String(error) }, events: [] })
+    try {
+      const schema = commands.ambulanceCommandSchemas[command.kind as keyof typeof commands.ambulanceCommandSchemas]
+      if (!schema) throw new Error(`Unsupported Ambulance command: ${command.kind}`)
+      const validated = schema.parse(command.payload)
+      const primaryId = 'ambulanceId' in validated ? validated.ambulanceId : 'careSiteId' in validated ? validated.careSiteId : 'patientId' in validated ? validated.patientId : undefined
+      if (command.expectedRevision !== undefined) {
+        if (!primaryId || command.targetObjectIds.length !== 1 || command.targetObjectIds[0] !== primaryId) throw new Error('expectedRevision requires exactly the command primary target')
+        if (requireObject(primaryId).revision !== command.expectedRevision) throw new Error(`Revision conflict for ${primaryId}; refresh the current object before retrying`)
+      }
+      let action: (tx: ReturnType<typeof createTransaction>) => void
+      if (command.kind === commands.createItemCommandKind) {
+        const { item } = commands.createItemPayloadSchema.parse(command.payload)
+        const created = createAmbulanceItem(item, { at: nowIso(), simulationTimeMs, objectById: id => objects.get(id) ?? config.objectById?.(id) })
+        const object: OperationalObject = { ...created, provenance: { ...created.provenance, source: 'operator', causedByCommandId: command.id } }
+        action = tx => { tx.draft.set(object.id, object); tx.events.push({ type: 'object.upserted', object, at: object.timestamps.updatedAt, history: 'record', provenance: object.provenance }); tx.closeIncidents() }
+      } else if (command.kind === commands.dispatchCommandKind) {
+        const input = commands.dispatchPayloadSchema.parse(command.payload)
+        const unit = requireObject(input.ambulanceId), incident = requireObject(input.incidentId), patients = input.patientIds.map(requirePatient)
+        assertEligible(dispatchEligibility(unit, incident, patients, all()))
+        const site = input.destinationId ? requireObject(input.destinationId) : undefined
+        if (site) assertEligible(destinationEligibility(site, patients))
+        const unchanged = watch([unit.id, incident.id, ...input.patientIds, ...(site ? [site.id] : [])])
+        const [route, onwardRoute] = await Promise.all([prepareRoute(pointOf(unit), pointOf(incident)), site ? prepareRoute(pointOf(incident), pointOf(site)) : Promise.resolve(undefined)])
+        unchanged()
+        assertEligible(dispatchEligibility(requireObject(unit.id), requireObject(incident.id), input.patientIds.map(requirePatient), all()))
+        const data = dataOfType(unit, 'ambulance')
+        action = tx => {
+          tx.setUnit(unit.id, { phase: 'mobilizing', incidentId: incident.id, patientIds: input.patientIds, ...(site ? { destinationId: site.id } : {}), startedAtMs: simulationTimeMs, phaseStartedAtMs: simulationTimeMs, phaseDueAtMs: simulationTimeMs + data.mobilizationSeconds * 1000, leg: { ...route, progressMs: 0 }, ...(onwardRoute ? { onwardRoute } : {}) })
+          input.patientIds.forEach(id => { if (dataOfType(tx.get(id), 'patient').assignedAtMs === undefined) tx.setPatient(id, { assignedAtMs: simulationTimeMs }) })
+        }
+      } else if (command.kind === commands.transportCommandKind) {
+        const input = commands.transportPayloadSchema.parse(command.payload)
+        const unit = requireObject(input.ambulanceId), site = requireObject(input.destinationId)
+        assertEligible(transportEligibility(unit, site, all()))
+        const unchanged = watch([unit.id, site.id, ...unitPatients(unit.id, all()).map(p => p.id)])
+        const route = await prepareRoute(pointOf(unit), pointOf(site))
+        unchanged()
+        const a = dataOfType(unit, 'ambulance').assignment!
+        action = tx => {
+          const { leg: _, onwardRoute: _onward, phaseDueAtMs: _due, ...rest } = a
+          tx.setUnit(unit.id, { ...rest, destinationId: site.id, phase: 'transporting', phaseStartedAtMs: simulationTimeMs, leg: { ...route, progressMs: 0 } })
+          // Arrival measures the current/final receiving-site visit. Earlier
+          // visits remain in accepted history, not as a false current arrival.
+          a.patientIds.forEach(id => tx.setPatient(id, { arrivedAtSiteMs: undefined }))
+        }
+      } else if (command.kind === commands.returnToBaseCommandKind) {
+        const { ambulanceId } = commands.unitPayloadSchema.parse(command.payload)
+        const unit = requireObject(ambulanceId)
+        assertEligible(returnToBaseEligibility(unit, all()))
+        const data = dataOfType(unit, 'ambulance'), unchanged = watch([unit.id])
+        const route = await prepareRoute(pointOf(unit), data.basePoint)
+        unchanged()
+        action = tx => { tx.setUnit(unit.id, { phase: 'returning', patientIds: [], startedAtMs: simulationTimeMs, phaseStartedAtMs: simulationTimeMs, leg: { ...route, progressMs: 0 } }) }
+      } else if (command.kind === commands.cancelCommandKind) {
+        const { ambulanceId } = commands.unitPayloadSchema.parse(command.payload), unit = requireObject(ambulanceId)
+        assertEligible(cancelEligibility(unit))
+        const a = dataOfType(unit, 'ambulance').assignment
+        action = tx => {
+          if (!a) return
+          if (unitPatients(unit.id, tx.values()).length) {
+            const { destinationId: _, leg: _leg, onwardRoute: _onward, phaseDueAtMs: _due, ...rest } = a
+            tx.setUnit(unit.id, { ...rest, phase: 'ready-for-transport', phaseStartedAtMs: simulationTimeMs })
+            a.patientIds.forEach(id => tx.setPatient(id, { arrivedAtSiteMs: undefined }))
+          } else tx.setUnit(unit.id, undefined)
+        }
+      } else if (command.kind === commands.setUnitReadinessCommandKind) {
+        const { ambulanceId, ready } = commands.setUnitReadinessPayloadSchema.parse(command.payload), unit = requireObject(ambulanceId), data = dataOfType(unit, 'ambulance')
+        if (!ready && data.assignment) throw new Error('Complete or cancel the assignment before withdrawing the unit')
+        action = tx => { tx.put(unit, { ...data, crewReady: ready }) }
+      } else if (command.kind === commands.setCareSiteCommandKind) {
+        const { careSiteId, ...settings } = commands.setCareSitePayloadSchema.parse(command.payload), site = requireObject(careSiteId)
+        const next = careSitePackDataSchema.parse({ ...dataOfType(site, 'care-site'), ...settings })
+        action = tx => { tx.put(site, next); tx.startQueues() }
+      } else if (command.kind === commands.setPatientAssessmentCommandKind) {
+        const { patientId, assessedUrgency, needs } = commands.setPatientAssessmentPayloadSchema.parse(command.payload), patient = requirePatient(patientId), data = dataOfType(patient, 'patient')
+        if (data.disposition !== 'active') throw new Error('Cannot reassess a completed patient')
+        // Assessment changes never fabricate a transfer or undo an admitted
+        // handover. New admissions recheck compatibility; queries expose any
+        // now-unsuitable assignment for explicit operator review.
+        action = tx => { tx.setPatient(patientId, { assessedUrgency, needs }) }
+      } else if (command.kind === commands.setPatientDispositionCommandKind) {
+        const { patientId, reason } = commands.setPatientDispositionPayloadSchema.parse(command.payload), patient = requirePatient(patientId)
+        assertEligible(noTransportEligibility(patient, all()))
+        action = tx => { tx.setPatient(patientId, { disposition: 'no-transport', dispositionReason: reason, completedAtMs: simulationTimeMs }); tx.closeIncidents() }
+      } else throw new Error(`Unsupported Ambulance command: ${command.kind}`)
+      const events = transaction(tx => { action(tx); tx.advance() }, simulationTimeMs, command.id)
+      return { result: { ok: true, commandId: command.id, acceptedAt: nowIso() }, events }
+    } catch (error) { return rejected(error) }
+  }
+
+  return {
+    snapshot: () => ({ simulationRunId: config.simulationRunId, objects: all(), capturedAt: nowIso() }),
+    checkpoint: () => ({ simulationTimeMs }),
+    advanceTo: target => {
+      if (!Number.isFinite(target) || target < simulationTimeMs) throw new Error('Ambulance simulation time must be finite and monotonic')
+      if (target - simulationTimeMs > 86_400_000) throw new Error('Advance at most 24 simulated hours in one call')
+      return transaction(tx => tx.advance(), target)
+    },
+    handleCommand,
+    validateDeletion: id => validateAmbulanceDeletion(id, all()),
+    observeCommittedEvents: events => {
+      for (const event of events) {
+        if (event.type === 'object.deleted') objects.delete(event.objectId)
+        if (event.type === 'object.upserted' && event.object.packId === ambulancePackId) {
+          const current = objects.get(event.object.id)
+          if (!current || current.revision < event.object.revision) objects.set(event.object.id, validateAmbulanceObject(event.object))
+        }
+      }
+    },
+    setRoadWeatherImpact: (id, impact) => {
+      const object = objects.get(id)
+      if (!object?.spatial.route || ownedData(object).type !== 'ambulance') return
+      const previous = object.spatial.route.impacts ?? []
+      const remaining = previous.filter(entry => entry.source.kind !== 'runtime' || entry.source.id !== 'ambulance.road-weather')
+      const impacts = impact ? [...remaining, impact] : remaining
+      const stable = (entries: readonly RouteImpact[]) => entries.map(({ updatedAt: _, ...entry }) => entry)
+      if (JSON.stringify(stable(previous)) === JSON.stringify(stable(impacts))) return
+      const at = nowIso(), updated: OperationalObject = { ...object, revision: object.revision + 1, spatial: { ...object.spatial, route: { ...object.spatial.route, impacts } }, provenance: { source: 'simulator', adapterId: ambulanceSimAdapterId, externalId: object.id }, timestamps: { ...object.timestamps, updatedAt: at } }
+      objects.set(id, updated)
+      return { type: 'object.upserted', object: updated, at, history: 'snapshot-only', provenance: updated.provenance }
+    },
+  }
 }

@@ -18,6 +18,7 @@ const ambulanceObjects = () =>
   createAmbulanceSimEngine({
     simulationRunId: 'run-context-model-test' as SimulationRunId,
     objects: responseScenario.initialObjects,
+    simulationTimeMs: Date.parse(responseScenario.world.startsAt),
     routing: createDirectRoutingAdapter(),
   }).snapshot().objects
 

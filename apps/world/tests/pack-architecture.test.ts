@@ -1,17 +1,14 @@
 import { describe,expect,test } from 'bun:test'
-import type { SimulationRunId } from '../src/core/model/index.ts'
-import { confirmedFact,geoPointFromLonLat,nowIso,type AdapterId,type ObjectId,type OperationalObject,type PackId } from '../src/core/model/index.ts'
+import type { CommandEnvelope, SimulationRunId } from '../src/core/model/index.ts'
+import { commandEnvelopeSchema,geoPointFromLonLat,nowIso,type AdapterId,type ObjectId,type OperationalObject,type PackId } from '../src/core/model/index.ts'
 import { createActivePackViews } from '../src/core/packs/active-views.ts'
 import { createPackPresentationComposer } from '../src/core/packs/presentation-composer.ts'
 import { packField,packStatus } from '../src/core/packs/presentation.ts'
 import { createWorldPackDescriptor,emptyPackScenarioConfigSchema,type PackObjectPresentation,type WorldPack } from '../src/core/packs/protocol.ts'
 import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
-import {
-  cancelDestinationCommandKind,
-  createObjectCommandKind,
-  setDestinationCommandKind,
-} from '../src/packs/ambulance/commands.ts'
-import { ambulancePackDataSchema,hospitalPackDataSchema,type HospitalPackData } from '../src/packs/ambulance/model.ts'
+import { cancelCommandKind, createItemCommandKind, dispatchCommandKind } from '../src/packs/ambulance/commands.ts'
+import { ambulancePackDataSchema, careSitePackDataSchema } from '../src/packs/ambulance/model.ts'
+import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { ambulanceSimRuntimeId } from '../src/packs/ambulance/sim/constants.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
@@ -19,120 +16,62 @@ import { weatherPack } from '../src/packs/weather/pack.ts'
 import { weatherSimRuntimeId } from '../src/packs/weather/sim/constants.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { responseScenario } from './fixtures/scenarios.ts'
-import { expectFieldKeys,expectStatusIndicator } from './helpers/pack-presentation.ts'
+import { expectFieldKeys } from './helpers/pack-presentation.ts'
 
 describe('pack architecture', () => {
-  test('ambulance Pack builds commands behind the Simulation Capability interface', () => {
-    const engine = createAmbulanceSimEngine({
-      simulationRunId: 'run-pack-architecture' as SimulationRunId,
-      objects: responseScenario.initialObjects,
-      routing: createDirectRoutingAdapter(),
-    })
-    const objects = engine.snapshot().objects
-    const controller = objects.find(object => ambulancePack.targeting?.isController(object))
-    const target = objects.find(object => controller && object.id !== controller.id && ambulancePack.targeting?.isTarget(controller, object, { objects }))
-    if (!controller || !target) throw new Error('scenario missing pack controller or target')
-
-    const createCommand = ambulancePack.creation!.buildCreateObjectCommand(
-      'hospital',
-      'Hospital 2',
-      { kind: 'point', point: geoPointFromLonLat(10.75, 59.92) },
-    )
-    const setTargetCommand = ambulancePack.targeting!.buildSetTargetCommand(controller, target, { objects })
-    const cancelCommand = ambulancePack.targeting!.buildCancelTargetCommand(controller, { objects })
-
-    expect(createCommand.kind).toBe(createObjectCommandKind)
-    expect(setTargetCommand.kind).toBe(setDestinationCommandKind)
-    expect(cancelCommand.kind).toBe(cancelDestinationCommandKind)
-    expect(setTargetCommand.targetObjectIds).toEqual([controller.id, target.id])
-    expect(cancelCommand.targetObjectIds).toEqual([controller.id])
+  test('Ambulance authoring and commands require explicit patient selection, not generic targeting', () => {
+    const adapter = createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() })
+    expect(ambulancePack.targeting).toBeUndefined()
+    expect(ambulancePack.creation).toBeUndefined()
+    expect(ambulancePack.authoring?.itemTypes.map(item => item.id)).toEqual(['ambulance', 'incident', 'patient', 'care-site'])
+    const command = adapter.capabilities.find(capability => capability.id === dispatchCommandKind)!
+    const input = { ambulanceId: 'amb:a12', incidentId: 'incident:gronland-unattended', patientIds: ['patient:gronland-unattended:1'] }
+    expect(command.input.safeParse({ ambulanceId: 'amb:a12', incidentId: 'incident:gronland-unattended' }).success).toBe(false)
+    const built = command.buildCommand!(input)
+    expect(built.targetObjectIds).toEqual(['amb:a12' as ObjectId])
+    expect(built.payload).toEqual(input)
+    expect(adapter.capabilities.some(capability => capability.id === createItemCommandKind)).toBe(true)
+    expect(adapter.capabilities.some(capability => capability.id === cancelCommandKind)).toBe(true)
   })
 
-  test('ambulance pack exposes structured fields and semantic status indicators', () => {
-    const engine = createAmbulanceSimEngine({
-      simulationRunId: 'run-pack-presentation' as SimulationRunId,
-      objects: responseScenario.initialObjects,
-      routing: createDirectRoutingAdapter(),
-    })
-    const objects = engine.snapshot().objects
-    const ambulance = objects.find(object => ambulancePack.targeting?.isController(object))
-    const incident = objects.find(object => object.kind === 'incident')
-    const hospital = objects.find(object => object.kind === 'facility')
-    if (!ambulance || !incident || !hospital) throw new Error('scenario missing ambulance presentation fixtures')
-
-    const incidentBound: OperationalObject = {
-      ...ambulance,
-      tasking: { currentTaskId: incident.id as ObjectId },
-      operational: { ...ambulance.operational, status: 'en_route' },
-    }
-    const incidentPresentation = ambulancePack.presentation.presentObject(incidentBound, { objects: [incidentBound, incident, hospital] })
-    expectFieldKeys(incidentPresentation, ['destination'])
-    expectStatusIndicator(incidentPresentation, { shape: 'arrow', direction: 'left', pulse: true })
-
-    const data = ambulancePackDataSchema.parse(ambulance.packData)
-    const hospitalBound: OperationalObject = {
-      ...ambulance,
-      tasking: { currentTaskId: hospital.id as ObjectId },
-      operational: { ...ambulance.operational, status: 'en_route' },
-      packData: {
-        ...data,
-        transport: {
-          ...data.transport,
-          patientsOnBoard: confirmedFact(1, nowIso(), 'scenario', 1),
-        },
-      },
-    }
-    const hospitalPresentation = ambulancePack.presentation.presentObject(hospitalBound, { objects: [hospitalBound, incident, hospital] })
-    expectStatusIndicator(hospitalPresentation, { shape: 'arrow', direction: 'right', pulse: true })
-
-    const resolvedIncident: OperationalObject = {
-      ...incident,
-      operational: { ...incident.operational, status: 'resolved' },
-    }
-    const resolvedPresentation = ambulancePack.presentation.presentObject(resolvedIncident, { objects: [ambulance, resolvedIncident, hospital] })
-    expect(resolvedPresentation.status?.tone).toBe('idle')
-    expect(resolvedPresentation.status?.label).toBe('Resolved')
-    expect(resolvedPresentation.muted).toBe(true)
+  test('Ambulance presentations derive readiness, custody and case demand from shared state', () => {
+    const objects = responseScenario.initialObjects
+    const ambulance = objects.find(object => object.id === 'amb:a12')!
+    const patient = objects.find(object => object.id === 'patient:gronland-unattended:1')!
+    const incident = objects.find(object => object.id === 'incident:gronland-unattended')!
+    const unitPresentation = ambulancePack.presentation.presentObject(ambulance, { objects })
+    expectFieldKeys(unitPresentation, ['capacity', 'on-board', 'patients', 'capabilities', 'mobilization', 'scene'])
+    expect(unitPresentation.status?.tone).toBe('ready')
+    expect(unitPresentation.fields.find(field => field.key === 'on-board')?.value).toBe('0')
+    const patientPresentation = ambulancePack.presentation.presentObject(patient, { objects })
+    expect(patientPresentation.mapIconVisible).toBe(false)
+    expectFieldKeys(patientPresentation, ['urgency', 'needs', 'incident', 'holder'])
+    const incidentPresentation = ambulancePack.presentation.presentObject(incident, { objects })
+    expect(incidentPresentation.fields.find(field => field.key === 'patients')?.value).toBe('3 / 3')
+    expect(incidentPresentation.status?.label).toBe('Awaiting first response')
   })
 
-  test('ambulance pack presents hospital trauma beds as available capacity', () => {
-    const engine = createAmbulanceSimEngine({
-      simulationRunId: 'run-hospital-capacity-presentation' as SimulationRunId,
-      objects: responseScenario.initialObjects,
-      routing: createDirectRoutingAdapter(),
-    })
-    const hospital = engine.snapshot().objects.find(object => object.kind === 'facility')
-    if (!hospital) throw new Error('scenario missing hospital')
-
-    const hospitalWithAvailableBeds = (availableBeds: number): OperationalObject => {
-      const data = hospitalPackDataSchema.parse(hospital.packData)
-      return {
-        ...hospital,
-        packData: {
-          ...data,
-          emergencyDepartment: {
-            ...data.emergencyDepartment,
-            traumaBedsTotal: confirmedFact(3, nowIso(), 'scenario', 1),
-            traumaBedsAvailable: confirmedFact(availableBeds, nowIso(), 'scenario', 1),
-          },
-        } satisfies HospitalPackData,
-      }
-    }
-
-    const openPresentation = ambulancePack.presentation.presentObject(hospitalWithAvailableBeds(3), { objects: [] })
-    expect(openPresentation.fields.find(field => field.key === 'trauma-beds')?.value).toBe('3 / 3')
-    expect(openPresentation.status?.tone).toBe('ready')
-    expect(openPresentation.status?.label).toBe('Trauma beds available 3/3')
-
-    const limitedPresentation = ambulancePack.presentation.presentObject(hospitalWithAvailableBeds(1), { objects: [] })
-    expect(limitedPresentation.fields.find(field => field.key === 'trauma-beds')?.value).toBe('1 / 3')
-    expect(limitedPresentation.status?.tone).toBe('working')
-    expect(limitedPresentation.status?.label).toBe('Limited trauma beds available (1/3)')
-
-    const fullPresentation = ambulancePack.presentation.presentObject(hospitalWithAvailableBeds(0), { objects: [] })
-    expect(fullPresentation.fields.find(field => field.key === 'trauma-beds')?.value).toBe('0 / 3')
-    expect(fullPresentation.status?.tone).toBe('error')
-    expect(fullPresentation.status?.label).toBe('No trauma beds available (0/3)')
+  test('care-site presentation shows actual handovers, not clinical bed counters', async () => {
+    const initial = structuredClone(responseScenario.initialObjects.filter(object => object.packId === 'ambulance')).map(object => object.id === 'amb:a12' ? {
+      ...object, packData: { ...ambulancePackDataSchema.parse(object.packData), mobilizationSeconds: 0, sceneSeconds: 0 },
+    } : object)
+    const epoch = Date.parse(responseScenario.world.startsAt)
+    const engine = createAmbulanceSimEngine({ simulationRunId: 'run-presentation' as SimulationRunId, objects: initial, simulationTimeMs: epoch, routing: {
+      id: 'test-fast', route: async request => ({ geometry: { type: 'LineString', coordinates: [request.from.coordinates, request.to.coordinates] }, distanceM: 1 as import('../src/core/model/index.ts').Meters, durationSeconds: 1, provider: 'test-fast' }),
+    } })
+    const command = commandEnvelopeSchema.parse({ id: 'command:present', simulationRunId: 'run-presentation', actorId: 'actor:test', issuedAt: nowIso(), kind: dispatchCommandKind, targetObjectIds: [], payload: {
+      ambulanceId: 'amb:a12', incidentId: 'incident:gronland-unattended', patientIds: ['patient:gronland-unattended:1'], destinationId: 'facility:ous',
+    } }) as CommandEnvelope
+    expect((await engine.handleCommand(command)).result.ok).toBe(true)
+    engine.advanceTo(epoch + 2_000)
+    const snapshot = engine.snapshot().objects
+    const site = snapshot.find(object => object.id === 'facility:ous')!
+    const presentation = ambulancePack.presentation.presentObject(site, { objects: snapshot })
+    expect(presentation.status?.label).toBe('1/2 handover slots occupied')
+    expect(presentation.fields.find(field => field.key === 'slots')?.value).toBe('2')
+    const closedSite = { ...site, packData: { ...careSitePackDataSchema.parse(site.packData), accepting: false } }
+    expect(ambulancePack.presentation.presentObject(closedSite, { objects: snapshot }).status?.label).toBe('Closed to arrivals')
+    expect(presentation.fields.some(field => field.key === 'trauma-beds')).toBe(false)
   })
 
   test('active Pack views reject ambiguous surfaces without inventing a composite Pack', () => {
@@ -141,9 +80,6 @@ describe('pack architecture', () => {
     const activeViews = createActivePackViews([ambulancePack, weatherPack])
 
     expect(activeViews.creation?.createObjectTypes.map(type => type.id).sort()).toEqual([
-      'ambulance',
-      'hospital',
-      'incident',
       'weather_area',
       'weather_probe',
     ].sort())

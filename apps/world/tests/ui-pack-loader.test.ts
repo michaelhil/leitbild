@@ -8,28 +8,23 @@ describe('UI scenario pack loading', () => {
 
     expect(pack.packIds).toEqual(['ambulance'])
     expect(pack.presentation.categories.map(category => category.id)).toEqual([
-      'hospitals',
       'ambulances',
       'incidents',
+      'patients',
+      'care-sites',
     ])
     expect(pack.presentation.categories.map(category => category.id)).not.toContain('weather')
     expect(pack.presentation.categories.map(category => category.id)).not.toContain('process-plants')
-    expect(pack.creation?.createObjectTypes.map(type => type.id).sort()).toEqual([
-      'ambulance',
-      'hospital',
-      'incident',
-    ])
+    expect(pack.creation?.createObjectTypes ?? []).toEqual([])
+    expect(pack.surfacePanels.map(panel => panel.id)).toContain('ambulance.dispatch')
   })
 
   test('combines scenario packs in declared order', async () => {
     const pack = await loadActivePackViews(['ambulance', 'weather'])
 
     expect(pack.packIds).toEqual(['ambulance', 'weather'])
-    expect(pack.presentation.categories.map(category => category.id)).toEqual(['hospitals', 'ambulances', 'incidents', 'weather'])
+    expect(pack.presentation.categories.map(category => category.id)).toEqual(['ambulances', 'incidents', 'patients', 'care-sites', 'weather'])
     expect(pack.creation?.createObjectTypes.map(type => type.id).sort()).toEqual([
-      'ambulance',
-      'hospital',
-      'incident',
       'weather_area',
       'weather_probe',
     ].sort())
@@ -52,7 +47,7 @@ describe('UI scenario pack loading', () => {
   })
 
   test('heavy browser views do not masquerade as complete server Packs', async () => {
-    for (const packId of ['drone', 'process-plant', 'electric-grid']) {
+    for (const packId of ['ambulance', 'drone', 'process-plant', 'electric-grid']) {
       const view = await loadUiPack(packId)
       expect(Object.hasOwn(view, 'scenarioConfigSchema')).toBe(false)
       expect(Object.hasOwn(view, 'scenario')).toBe(false)

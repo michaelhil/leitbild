@@ -21,9 +21,8 @@ import { handleSimulationRunApi } from '../src/core/api/simulation-run-routes.ts
 import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import type { ProcedureSourceService } from '../src/features/procedures/source.ts'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { setDestinationCommandKind } from '../src/packs/ambulance/commands.ts'
+import { dispatchCommandKind } from '../src/packs/ambulance/commands.ts'
 import { ambulanceSimRuntimeId } from '../src/packs/ambulance/sim/constants.ts'
-import { assetArrivedAtTargetSignalType } from '../src/packs/ambulance/sim/interactions.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testPacks, testScenarioAuthoring, waitForCondition } from './helpers.ts'
 import { responseScenario } from './fixtures/scenarios.ts'
 
@@ -225,7 +224,7 @@ describe('Simulation Run API', () => {
         activePackIds: ['ambulance', 'weather'],
       })
       expect(capabilities.body.runtimes).toContainEqual({ id: ambulanceSimRuntimeId, packId: 'ambulance', clock: 'simulation' })
-      expect(capabilities.body.capabilities.some(capability => capability.kind === 'command' && capability.id === setDestinationCommandKind)).toBe(true)
+      expect(capabilities.body.capabilities.some(capability => capability.kind === 'command' && capability.id === dispatchCommandKind)).toBe(true)
 
       const missing = await callRoute<{ readonly error: { readonly code: string } }>(
         registry,
@@ -266,13 +265,13 @@ describe('Simulation Run API', () => {
       expect(weather.body.result.state).toBeTruthy()
 
       const ambulance = await callRoute<{
-        readonly kind: 'query'; readonly result: { readonly ambulances?: readonly unknown[] }
+        readonly kind: 'query'; readonly result: { readonly units?: readonly unknown[] }
       }>(registry, capabilityPath(created.id, 'world.ambulance.dispatch-state'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input: {} }),
       })
-      expect(ambulance.body.result.ambulances?.length).toBeGreaterThan(0)
+      expect(ambulance.body.result.units?.length).toBeGreaterThan(0)
     } finally {
       await closeAll(registry)
     }
@@ -408,19 +407,20 @@ describe('Simulation Run API', () => {
     try {
       const created = await createRun(registry)
       const ambulance = created.snapshot.objects.find(object => object.kind === 'mobile_entity')
-      const incident = created.snapshot.objects.find(object => object.kind === 'incident')
+      const incident = created.snapshot.objects.find(object => object.kind === 'incident' && created.snapshot.objects.some(patient => (patient.packData as { type?: string; incidentId?: string }).type === 'patient' && (patient.packData as { incidentId?: string }).incidentId === object.id))
       if (!ambulance || !incident) throw new Error('expected ambulance and incident')
+      const patientIds = created.snapshot.objects.filter(object => (object.packData as { type?: string; incidentId?: string }).type === 'patient' && (object.packData as { incidentId?: string }).incidentId === incident.id).slice(0, 1).map(object => object.id)
       const idempotencyKey = `api-attribution-${crypto.randomUUID()}`
 
       const command = await callRoute<{ readonly result: { readonly ok: boolean } }>(
         registry,
-        capabilityPath(created.id, setDestinationCommandKind),
+        capabilityPath(created.id, dispatchCommandKind),
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             idempotencyKey,
-            input: { ambulanceId: ambulance.id, destinationId: incident.id },
+            input: { ambulanceId: ambulance.id, incidentId: incident.id, patientIds },
           }),
         },
       )
@@ -428,13 +428,13 @@ describe('Simulation Run API', () => {
 
       const conflict = await callRoute<{ readonly error: { readonly code: string } }>(
         registry,
-        capabilityPath(created.id, setDestinationCommandKind),
+        capabilityPath(created.id, dispatchCommandKind),
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             idempotencyKey,
-            input: { ambulanceId: ambulance.id, destinationId: ambulance.id },
+            input: { ambulanceId: ambulance.id, incidentId: ambulance.id, patientIds },
           }),
         },
       )
@@ -450,7 +450,7 @@ describe('Simulation Run API', () => {
           body: JSON.stringify({
             actorId: 'actor:test-api-operator',
             source: { kind: 'object', id: ambulance.id },
-            type: assetArrivedAtTargetSignalType,
+            type: 'test.operator-note',
             targetObjectIds: [incident.id],
             payload: { targetObjectId: incident.id },
           }),
@@ -469,7 +469,8 @@ describe('Simulation Run API', () => {
       expect(events.body.events.find(event => event.type === 'command.issued')?.command?.actorId)
         .toBe('actor:operator')
       expect(events.body.events.some(event => event.type === 'interaction.signal.received')).toBe(true)
-      expect(events.body.events.some(event => event.type === 'notification.emitted')).toBe(true)
+      // Unhandled external signals are recorded, not allowed to fabricate arrival/transfer effects.
+      expect(events.body.events.some(event => event.type === 'notification.emitted')).toBe(false)
     } finally {
       await closeAll(registry)
     }

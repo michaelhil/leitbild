@@ -37,6 +37,7 @@ import { createJsonRuntimeStateStore } from './runtime-state-store.ts'
 import type { SimulationRunCapabilities } from './runtime.ts'
 import { createSimulationRunRuntime,type ActiveSimulationCapability,type SimulationRunRuntime } from './runtime.ts'
 import { createSimulationRunSnapshotStore } from './snapshot-store.ts'
+import { createSimulationRunStateStore } from './state-store.ts'
 import { createKeyedOperations } from '../storage/keyed-operations.ts'
 
 const maxRestoredEventHistoryBytes = 8 * 1024 * 1024
@@ -531,11 +532,17 @@ export const createSimulationRunRegistry = (config: {
       timestamps: { createdAt: observedAt, updatedAt: observedAt },
       spatial: { ...object.spatial, ...(object.spatial.position ? { position: { ...object.spatial.position, observedAt } } : {}) },
     }))
+    // Runtime readers share the actual Run projection, not the Hub's delayed
+    // observation mirror. A deletion is visible even while its journal flush
+    // is awaiting I/O, so late route preparation cannot resurrect that object.
+    const stateStore = createSimulationRunStateStore()
+    stateStore.hydrate(restoredSnapshot ?? { objects: initialObjects, seq: createConfig.initialSeq ?? 0 })
     try {
       runtimeConnection = await createRuntimeHub(config.runtimeAdapters.filter(adapter => scenarioRuntime.runtimes.some(runtime => runtime.runtimeId === adapter.id))).connect({
         simulationRunId: id,
         workspace: { id: config.workspaceId, dataDir: workspaceRoot, storageBudget },
         runClock,
+        objectById: stateStore.getObject,
         scenario: {
           scenarioId: scenarioRuntime.scenarioId,
           runtimeIds: scenarioRuntime.runtimes.map(runtime => runtime.runtimeId),
@@ -558,6 +565,7 @@ export const createSimulationRunRegistry = (config: {
       runtime = await createSimulationRunRuntime({
         id,
         runtimeConnection,
+        stateStore,
         runClock,
         eventLog,
         snapshotStore,

@@ -1,416 +1,226 @@
-import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import type { CommandEnvelope,CommandResult,GeoJsonPoint,InteractionSignal,IsoTimestamp,OperationalObject,PackRuntimeRecordingBatch,SignalId,SimulationClockState } from '../../../core/model/index.ts'
-import { assetRoutePlannedSignalType,commandResultSchema,interactionSignalSchema,nowIso } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, IsoTimestamp, OperationalObject, PackRuntimeRecordingBatch, RouteImpact } from '../../../core/model/index.ts'
+import { commandResultSchema, nowIso } from '../../../core/model/index.ts'
 import { createSimulationClock } from '../../../core/model/time.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
-import { defineSimulationCommandCapability,defineSimulationQueryCapability } from '../../../simulation/capabilities.ts'
-import type {
-  PackRuntimeAdapter,
-  PackRuntimeConnection,
-  PackRuntimeConnectionConfig,
-  PackRuntimeEvent,
-  PackRuntimeEventHandler,
-  PackRuntimeHealth,
-  PackRuntimeQuery,
-} from '../../../simulation/protocol.ts'
-import {
-  assignToIncidentCommandKind,
-  assignToIncidentPayloadSchema,
-  cancelDestinationCommandKind,
-  cancelDestinationPayloadSchema,
-  createIncidentCommandKind,createIncidentPayloadSchema,
-  createObjectCommandKind,
-  createObjectPayloadSchema,
-  setDestinationCommandKind,
-  setDestinationPayloadSchema,
-  setIncidentVictimsCommandKind,setIncidentVictimsPayloadSchema,
-} from '../commands.ts'
-import { ambulancePackDataSchema,ambulancePackId,hospitalPackDataSchema,incidentPackDataSchema } from '../model.ts'
-import { ambulanceQueryCapabilities,answerAmbulanceQuery } from '../query.ts'
+import { defineSimulationCommandCapability, defineSimulationQueryCapability } from '../../../simulation/capabilities.ts'
+import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeHealth } from '../../../simulation/protocol.ts'
+import { ambulanceCommandSchemas } from '../commands.ts'
+import { ambulancePackId } from '../model.ts'
+import { ambulanceQueryCapabilities, answerAmbulanceQuery } from '../query.ts'
 import { createAmbulanceRecordingPlan } from '../recording.ts'
-import {
-  ambulancePackConfigSchema,
-  roadWeatherCapability,
-  roadWeatherImpact,
-  roadWeatherPolicySchema,
-  roadWeatherSamplesSchema,
-  setRoadWeatherPolicyCapability,
-} from '../road-weather.ts'
-import { ambulanceSimAdapterId,ambulanceSimRuntimeId } from './constants.ts'
+import { ambulancePackConfigSchema, roadWeatherCapability, roadWeatherImpact, roadWeatherPolicySchema, roadWeatherSamplesSchema, setRoadWeatherPolicyCapability, type RoadWeatherPolicy } from '../road-weather.ts'
+import { ambulanceSimRuntimeId } from './constants.ts'
 import { createAmbulanceSimEngine } from './engine.ts'
+import { validateAmbulanceObject, validateAmbulanceDeletion } from './object-state.ts'
 
-const emit = (
-  handlers: ReadonlySet<PackRuntimeEventHandler>,
-  events: ReadonlyArray<PackRuntimeEvent>,
-  recording?: PackRuntimeRecordingBatch,
-): void => {
-  const firstEvent = events[0]
-  if (!firstEvent && recording === undefined) return
-  for (const handler of handlers) {
-    handler({
-      type: 'event.emission',
-      events,
-      ...(recording === undefined ? {} : { recording }),
-      emittedAt: firstEvent?.at ?? nowIso(),
-      runtimeId: ambulanceSimRuntimeId,
-    })
-  }
+const commandDescriptions: Record<keyof typeof ambulanceCommandSchemas, { title: string; description: string; idempotent: boolean }> = {
+  'world.ambulance.create-item': { title: 'Create response item', description: 'Create an ambulance, incident, patient or care site using the same schema and constructor as Scenario authoring. A point may reference an existing asset; the incident/site retains its own fixed location.', idempotent: false },
+  'world.ambulance.dispatch': { title: 'Dispatch response unit', description: 'Reserve explicit patients for an eligible unit and prepare road routes. With a destination, completes response, scene service, transport and handover automatically. Without one, waits at the scene for a transport decision. Use dispatch-options first; eligibility is rechecked on commit.', idempotent: false },
+  'world.ambulance.transport': { title: 'Transport patients', description: 'Prepare transport from the scene to an accepting care site matching patient urgency and needs. Queued arrivals wait for a handover slot; they do not disappear into bed counters.', idempotent: false },
+  'world.ambulance.cancel': { title: 'Cancel response', description: 'Cancel a response or return journey when safe. Does not discard carried patients or falsely release an occupied unit.', idempotent: true },
+  'world.ambulance.return-to-base': { title: 'Return unit to base', description: 'Prepare the road route to the unit’s authored base. An empty returning unit may be redispatched from its current position.', idempotent: false },
+  'world.ambulance.set-unit-readiness': { title: 'Set crew readiness', description: 'Set whether this unit has a ready crew. Does not cancel an existing assignment.', idempotent: true },
+  'world.ambulance.set-care-site': { title: 'Configure receiving site', description: 'Change acceptance, supported care needs, urgency, handover slots or duration. Does not invent clinical bed capacity or discard patients already waiting.', idempotent: true },
+  'world.ambulance.set-patient-assessment': { title: 'Update patient assessment', description: 'Record assessed urgency and required care tags independently of the incident dispatch priority. This operational model does not infer vital signs, diagnoses or treatment efficacy.', idempotent: true },
+  'world.ambulance.set-patient-disposition': { title: 'Record no-transport decision', description: 'Explicitly close an eligible patient’s transport need with a recorded reason. Does not silently remove a patient from an ambulance.', idempotent: true },
 }
-
-const validateAmbulanceRuntimeObject = (object: OperationalObject): OperationalObject => {
-  if (object.kind === 'mobile_entity') {
-    const parsed = ambulancePackDataSchema.safeParse(object.packData)
-    if (!parsed.success) throw new Error(`invalid ambulance object pack data for ${object.id}: ${parsed.error.message}`)
-    return { ...object, packData: parsed.data }
-  }
-  if (object.kind === 'facility') {
-    const parsed = hospitalPackDataSchema.safeParse(object.packData)
-    if (!parsed.success) throw new Error(`invalid hospital object pack data for ${object.id}: ${parsed.error.message}`)
-    return { ...object, packData: parsed.data }
-  }
-  if (object.kind === 'incident') {
-    const parsed = incidentPackDataSchema.safeParse(object.packData)
-    if (!parsed.success) throw new Error(`invalid incident object pack data for ${object.id}: ${parsed.error.message}`)
-    return { ...object, packData: parsed.data }
-  }
-  throw new Error(`unsupported ambulance runtime object kind for ${object.id}: ${object.kind}`)
+const commandCapabilities = Object.entries(ambulanceCommandSchemas).map(([key, input]) => {
+  const id = key as keyof typeof ambulanceCommandSchemas
+  return defineSimulationCommandCapability({
+    id, ...commandDescriptions[id], input, output: commandResultSchema, schedulable: true,
+    buildCommand: raw => {
+      const payload = input.parse(raw)
+      const targetId = 'ambulanceId' in payload ? payload.ambulanceId : 'careSiteId' in payload ? payload.careSiteId : 'patientId' in payload ? payload.patientId : undefined
+      return { targetObjectIds: targetId ? [targetId] : [], payload }
+    },
+  })
+})
+const emit = (handlers: ReadonlySet<PackRuntimeEventHandler>, events: readonly PackRuntimeEvent[], recording?: PackRuntimeRecordingBatch): void => {
+  if (!events.length && recording === undefined) return
+  for (const handler of handlers) handler({
+    type: 'event.emission', events, ...(recording === undefined ? {} : { recording }),
+    emittedAt: events[0]?.at ?? nowIso(), runtimeId: ambulanceSimRuntimeId,
+  })
 }
+const initialObjectsFor = (config: PackRuntimeConnectionConfig): readonly OperationalObject[] =>
+  (config.initialObjects ?? config.scenario.initialObjects).filter(object => object.packId === ambulancePackId).map(validateAmbulanceObject)
+const sameRoadWeatherTarget = (object: OperationalObject, current: OperationalObject | undefined): boolean =>
+  current !== undefined && object.spatial.route?.planned === current.spatial.route?.planned &&
+  object.spatial.position?.point.coordinates[0] === current.spatial.position?.point.coordinates[0] &&
+  object.spatial.position?.point.coordinates[1] === current.spatial.position?.point.coordinates[1]
 
-const initialObjectsFor = (config: PackRuntimeConnectionConfig): ReadonlyArray<OperationalObject> => {
-  const objects = config.initialObjects ?? config.scenario.initialObjects
-  if (!objects) throw new Error(`ambulance runtime requires scenario or restored objects for simulation run ${config.simulationRunId}`)
-  return objects
-    .filter(object => object.packId === ambulancePackId)
-    .map(validateAmbulanceRuntimeObject)
-}
-
-const pointForTarget = (object: OperationalObject): GeoJsonPoint => {
-  const point = object.spatial.position?.point
-  if (point) return point
-  if (object.spatial.geometry?.type === 'Point') return object.spatial.geometry
-  throw new Error(`cannot restore ambulance motion: target ${object.id} has no point geometry`)
-}
-
-const shouldRestoreRoute = (object: OperationalObject): boolean =>
-  object.kind === 'mobile_entity'
-  && (
-    object.operational.status === 'assigned'
-    || object.operational.status === 'en_route'
-    || object.operational.status === 'transporting'
-  )
-  && object.tasking?.currentTaskId !== undefined
-  && object.spatial.position?.point !== undefined
-  && object.spatial.route?.planned === undefined
-
-const restoreMissingRuntimeRoutes = async (
-  objects: ReadonlyArray<OperationalObject>,
-  routing: RoutingAdapter,
-): Promise<ReadonlyArray<OperationalObject>> => {
-  const objectMap = new Map(objects.map(object => [object.id, object]))
-  const restored: OperationalObject[] = []
-  for (const object of objects) {
-    if (!shouldRestoreRoute(object)) {
-      restored.push(object)
-      continue
-    }
-    const targetId = object.tasking?.currentTaskId
-    const from = object.spatial.position?.point
-    if (!targetId || !from) {
-      restored.push(object)
-      continue
-    }
-    const target = objectMap.get(targetId)
-    if (!target) {
-      restored.push(object)
-      continue
-    }
-    const route = await routing.route({
-      from,
-      to: pointForTarget(target),
-    })
-    restored.push({
-      ...object,
-      spatial: {
-        ...object.spatial,
-        route: {
-          planned: route.geometry,
-          etaSeconds: route.durationSeconds,
-          source: 'simulator',
-        },
-      },
-    })
-  }
-  return restored
-}
-
-export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
-  readonly routing: RoutingAdapter
-}): PackRuntimeAdapter => ({
-  id: ambulanceSimRuntimeId,
-  version: '1.0.0',
-  packId: ambulancePackId,
-  clock: 'simulation',
+export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: { readonly routing: RoutingAdapter }): PackRuntimeAdapter => ({
+  id: ambulanceSimRuntimeId, version: '1.0.0', packId: ambulancePackId, clock: 'simulation',
   capabilities: [
-    defineSimulationCommandCapability({ id: createIncidentCommandKind, title: 'Create incident', description: 'Creates an incident using the same definition and constructor as Scenario authoring. Its explicit id can be targeted by later actions.', input: createIncidentPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [], payload: createIncidentPayloadSchema.parse(input) }) }),
-    defineSimulationCommandCapability({ id: setIncidentVictimsCommandKind, title: 'Set incident victim count', description: 'Changes only the victim count on the current incident; preserves live assignments, progress and other state.', input: setIncidentVictimsPayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [setIncidentVictimsPayloadSchema.parse(input).objectId], payload: setIncidentVictimsPayloadSchema.parse(input) }) }),
-    defineSimulationCommandCapability({ id: assignToIncidentCommandKind, title: 'Assign ambulance to incident', description: 'Assigns one ambulance to one incident and plans its response route.', input: assignToIncidentPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [assignToIncidentPayloadSchema.parse(input).ambulanceId], payload: assignToIncidentPayloadSchema.parse(input) }) }),
-    defineSimulationCommandCapability({ id: cancelDestinationCommandKind, title: 'Cancel ambulance destination', description: 'Cancels the active destination and route for one ambulance.', input: cancelDestinationPayloadSchema, output: commandResultSchema, idempotent: true, schedulable: true, buildCommand: input => ({ targetObjectIds: [cancelDestinationPayloadSchema.parse(input).ambulanceId], payload: cancelDestinationPayloadSchema.parse(input) }) }),
-    defineSimulationCommandCapability({ id: createObjectCommandKind, title: 'Create ambulance asset', description: 'Creates an ambulance, hospital, or incident at an explicit map point.', input: createObjectPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [], payload: createObjectPayloadSchema.parse(input) }) }),
-    defineSimulationCommandCapability({ id: setDestinationCommandKind, title: 'Set ambulance destination', description: 'Sets one ambulance destination and plans a route to it.', input: setDestinationPayloadSchema, output: commandResultSchema, idempotent: false, schedulable: true, buildCommand: input => ({ targetObjectIds: [setDestinationPayloadSchema.parse(input).ambulanceId], payload: setDestinationPayloadSchema.parse(input) }) }),
+    ...commandCapabilities,
     defineSimulationCommandCapability({
-      id: setRoadWeatherPolicyCapability,
-      title: 'Set road-weather policy',
-      description:
-        'Enable/disable or configure the mobility response to local ground wetness, ice, snow and visibility. Does not modify Weather or re-route vehicles.',
-      input: roadWeatherPolicySchema,
-      output: commandResultSchema,
-      idempotent: true,
-      schedulable: true,
-      buildCommand: (input) => ({ targetObjectIds: [], payload: roadWeatherPolicySchema.parse(input) }),
+      id: setRoadWeatherPolicyCapability, title: 'Set road-weather policy',
+      description: 'Configure the local mobility response to ground wetness, ice, snow and visibility. Requires an active Weather provider when enabled. Does not re-route vehicles.',
+      input: roadWeatherPolicySchema, output: commandResultSchema, idempotent: true, schedulable: true,
+      buildCommand: input => ({ targetObjectIds: [], payload: roadWeatherPolicySchema.parse(input) }),
     }),
     defineSimulationQueryCapability({
-      id: 'world.ambulance.road-weather-policy',
-      title: 'Inspect road-weather policy',
-      description:
-        'Current simulated speed policy. Local weather samples, not a physical tire/friction model. Factors apply at the current vehicle position, not along the entire planned route.',
-      input: z.object({}).strict(),
-      output: roadWeatherPolicySchema,
+      id: 'world.ambulance.road-weather-policy', title: 'Inspect road-weather policy',
+      description: 'Current heuristic speed factors, applied at each moving vehicle’s position. Not a clinical, tire-friction or whole-route forecast model.',
+      input: z.object({}).strict(), output: roadWeatherPolicySchema,
     }),
     ...ambulanceQueryCapabilities,
   ],
   requiredQueries: runtimeConfig => ambulancePackConfigSchema.parse(runtimeConfig).roadWeather.enabled ? [roadWeatherCapability] : [],
-  connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
+  connect: async (config): Promise<PackRuntimeConnection> => {
     const settings = ambulancePackConfigSchema.parse(config.scenario.runtimeConfig)
-    const savedPolicy = await config.runtimeStateStore?.load()
-    let policy =
-      savedPolicy === null || savedPolicy === undefined
-        ? settings.roadWeather
-        : roadWeatherPolicySchema.parse(savedPolicy)
+    const saved = await config.runtimeStateStore?.load()
+    let policy = saved == null ? settings.roadWeather : roadWeatherPolicySchema.parse(saved)
     const assertProvider = (enabled: boolean): void => {
-      if (enabled && !config.queries?.has(roadWeatherCapability))
-        throw new Error('Ambulance road-weather policy requires an active Weather sample-points provider')
+      if (enabled && !config.queries?.has(roadWeatherCapability)) throw new Error('Ambulance road-weather policy requires an active Weather sample-points provider')
     }
     assertProvider(policy.enabled)
-    const objects = await restoreMissingRuntimeRoutes(initialObjectsFor(config), adapterConfig.routing)
+    const localClock = config.runClock ? null : createSimulationClock({ currentTime: config.scenario.world.startsAt, updatedAt: nowIso(), paused: false, speed: 1 })
+    const runClock = config.runClock ?? localClock!
     const engine = createAmbulanceSimEngine({
-      simulationRunId: config.simulationRunId,
-      routing: adapterConfig.routing,
-      objects,
+      simulationRunId: config.simulationRunId, objects: initialObjectsFor(config), routing: adapterConfig.routing,
+      simulationTimeMs: Date.parse(runClock.read().currentTime),
+      ...(config.objectById ? { objectById: config.objectById } : {}),
     })
     const handlers = new Set<PackRuntimeEventHandler>()
     const recordingPlan = config.recording === undefined ? null : createAmbulanceRecordingPlan(config.recording)
+    const startsAtMs = Date.parse(config.scenario.world.startsAt)
+    let nextRecordingMs = recordingPlan ? engine.checkpoint().simulationTimeMs + recordingPlan.intervalMs : Infinity
     let closed = false
     let queue: Promise<unknown> = Promise.resolve()
     const serialize = <T>(work: () => Promise<T>): Promise<T> => {
-      const next = queue.then(work, work)
-      queue = next.catch(() => {})
+      const next = queue.then(work)
+      // Each caller observes its own rejection; a rejected command must not poison later commands.
+      queue = next.then(() => undefined, () => undefined)
       return next
     }
-    let health: PackRuntimeHealth = {
-      runtimeId: ambulanceSimRuntimeId,
-      state: 'ready',
-      failureCount: 0,
-      lastSuccessfulInteractionAt: nowIso(),
+    let health: PackRuntimeHealth = { runtimeId: ambulanceSimRuntimeId, state: 'ready', failureCount: 0, lastSuccessfulInteractionAt: nowIso() }
+    let weatherReadGeneration = 0
+    const unavailable = (): boolean => closed || health.state === 'failed'
+    const fail = (operation: string, error: unknown): void => {
+      if (closed || health.state === 'failed') return
+      health = { ...health, state: 'failed', failureCount: health.failureCount + 1,
+        lastFailure: { at: nowIso(), operation, message: error instanceof Error ? error.message : String(error) } }
     }
-    const refreshRoadWeather = async (): Promise<ReadonlyArray<PackRuntimeEvent>> => {
-      const vehicles = engine
-        .snapshot()
-        .objects.filter(
-          (object) =>
-            object.kind === 'mobile_entity' && object.spatial.route?.planned && object.spatial.position?.point,
-        )
-      const changes: PackRuntimeEvent[] = []
+    const roadWeatherVehicles = () => engine.snapshot().objects.filter(object => object.kind === 'mobile_entity' && object.spatial.route?.planned && object.spatial.position?.point)
+    const prepareRoadWeather = async (candidate: RoadWeatherPolicy) => {
+      const generation = ++weatherReadGeneration
+      const vehicles = roadWeatherVehicles()
+      const effects: Array<{ object: OperationalObject; impact: RouteImpact | undefined }> = []
       for (let offset = 0; offset < vehicles.length; offset += 512) {
+        if (unavailable()) break
         const batch = vehicles.slice(offset, offset + 512)
-        const samples = policy.enabled
-          ? roadWeatherSamplesSchema.parse(
-              await config.queries!.invoke({
-                capabilityId: roadWeatherCapability,
-                input: { points: batch.map((object) => object.spatial.position!.point) },
-              }),
-            )
-          : []
-        if (policy.enabled && samples.length !== batch.length)
-          throw new Error('Weather sample count does not match requested vehicles')
+        const samples = candidate.enabled ? roadWeatherSamplesSchema.parse(await config.queries!.invoke({
+          capabilityId: roadWeatherCapability, input: { points: batch.map(object => object.spatial.position!.point) },
+        })) : []
+        if (candidate.enabled && samples.length !== batch.length) throw new Error('Weather sample count does not match requested vehicles')
         batch.forEach((object, index) => {
           const sampled = samples[index]
-          if (sampled && JSON.stringify(sampled.point) !== JSON.stringify(object.spatial.position!.point))
-            throw new Error('Weather sample position mismatch')
-          const event = engine.setRoadWeatherImpact(
-            object.id,
-            sampled ? roadWeatherImpact(policy, sampled.sample) : undefined,
-          )
-          if (event) changes.push(event)
+          if (sampled && JSON.stringify(sampled.point) !== JSON.stringify(object.spatial.position!.point)) throw new Error('Weather sample position mismatch')
+          effects.push({ object, impact: sampled ? roadWeatherImpact(candidate, sampled.sample) : undefined })
         })
       }
-      return changes
+      return { policy: candidate, generation, effects }
     }
-    let elapsedMs = 0
-    let nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
-    let clock: SimulationClockState = {
-      currentTime: config.scenario.world.startsAt,
-      updatedAt: nowIso(),
-      paused: false,
-      speed: 1,
+    const applyRoadWeather = (prepared: Awaited<ReturnType<typeof prepareRoadWeather>>): PackRuntimeEvent[] => {
+      if (unavailable() || prepared.policy !== policy || prepared.generation !== weatherReadGeneration) return []
+      const current = new Map(engine.snapshot().objects.map(object => [object.id, object]))
+      const events: PackRuntimeEvent[] = []
+      for (const { object, impact } of prepared.effects) {
+        const latest = current.get(object.id)
+        // Async provider reads must not attach an old sample to a replaced
+        // route or a vehicle that has moved. Unrelated object revisions are OK.
+        if (!sameRoadWeatherTarget(object, latest)) continue
+        const event = engine.setRoadWeatherImpact(object.id, impact)
+        if (event) events.push(event)
+      }
+      return events
     }
-    clock = config.runClock?.read() ?? clock
-    const localClock = config.runClock ? null : createSimulationClock(clock)
-    const runClock = config.runClock ?? localClock!
-    let clockInitialized = false
-    let lastSimulationMs = Date.parse(clock.currentTime)
+    const refreshRoadWeather = async (): Promise<PackRuntimeEvent[]> => applyRoadWeather(await prepareRoadWeather(policy))
     const advance = async (): Promise<void> => {
-        if (clock.paused || closed) return
+      if (unavailable()) return
+      const targetMs = Date.parse(runClock.read().currentTime)
+      if (targetMs <= engine.checkpoint().simulationTimeMs) return
+      try {
         const roadEvents = await refreshRoadWeather()
-        const simulationMs = Date.parse(runClock.read().currentTime)
-        const tickMs = Math.max(0, simulationMs - lastSimulationMs)
-        lastSimulationMs = simulationMs
-        if (tickMs <= 0) return
-        elapsedMs = simulationMs - Date.parse(config.scenario.world.startsAt)
-        const events = engine.tick(tickMs)
-        const recording = recordingPlan !== null && elapsedMs >= nextRecordingElapsedMs
-        ? (() => {
-            nextRecordingElapsedMs = elapsedMs + recordingPlan.intervalMs
-            const observedAt = nowIso()
-            return recordingPlan.sample({
-              objects: engine.snapshot().objects,
-              observedAt,
-              simulationTime: new Date(simulationMs).toISOString() as IsoTimestamp,
-              elapsedMs,
-            })
-          })()
-        : undefined
-        emit(handlers, [...roadEvents, ...events], recording)
-        health = { ...health, state: 'ready', lastSuccessfulInteractionAt: nowIso() }
+        if (unavailable()) return
+        emit(handlers, roadEvents)
+        const events = engine.advanceTo(targetMs)
+        const simulationMs = engine.checkpoint().simulationTimeMs
+        const recording = recordingPlan && simulationMs >= nextRecordingMs ? recordingPlan.sample({
+          objects: engine.snapshot().objects, observedAt: nowIso(),
+          simulationTime: new Date(simulationMs).toISOString() as IsoTimestamp, elapsedMs: simulationMs - startsAtMs,
+        }) : undefined
+        if (recording) nextRecordingMs = simulationMs + recordingPlan!.intervalMs
+        emit(handlers, events, recording)
+        health = { ...health, lastSuccessfulInteractionAt: nowIso() }
+      } catch (error) { fail('advance', error); throw error }
     }
     let tickPending = false
     const interval = setInterval(() => {
-      if (closed || tickPending) return
+      if (closed || tickPending || health.state === 'failed') return
       tickPending = true
-      void serialize(advance)
-        .catch((error) => {
-          health = {
-            ...health,
-            state: 'degraded',
-            failureCount: health.failureCount + 1,
-            lastFailure: {
-              at: nowIso(),
-              operation: 'road-weather/tick',
-              message: error instanceof Error ? error.message : String(error),
-            },
-          }
-        })
-        .finally(() => {
-          tickPending = false
-        })
-    }, 1000)
-
+      void serialize(advance).catch(error => { fail('advance', error) }).finally(() => { tickPending = false })
+    }, 250)
     const sendCommand = async (command: CommandEnvelope): Promise<CommandResult> => {
+      const rejected = (error: unknown): CommandResult => ({ ok: false, commandId: command.id, rejectedAt: nowIso(), reason: error instanceof Error ? error.message : String(error) })
+      if (unavailable()) return rejected('Ambulance runtime is unavailable; inspect runtime health')
+      try { await advance() } catch (error) { return rejected(error) }
+      if (unavailable()) return rejected('Ambulance runtime is unavailable; inspect runtime health')
       if (command.kind === setRoadWeatherPolicyCapability) {
-        const at = nowIso()
+        let prepared: Awaited<ReturnType<typeof prepareRoadWeather>>
         try {
           const candidate = roadWeatherPolicySchema.parse(command.payload)
           assertProvider(candidate.enabled)
+          prepared = await prepareRoadWeather(candidate)
+          if (unavailable()) return rejected('Ambulance runtime is unavailable; inspect runtime health')
           await config.runtimeStateStore?.save(candidate)
           policy = candidate
-          emit(handlers, await refreshRoadWeather())
-          return { ok: true, commandId: command.id, acceptedAt: at }
-        } catch (error) {
-          return {
-            ok: false,
-            commandId: command.id,
-            rejectedAt: at,
-            reason: error instanceof Error ? error.message : String(error),
-          }
-        }
+        } catch (error) { return rejected(error) }
+        try {
+          const current = new Map(roadWeatherVehicles().map(object => [object.id, object]))
+          const invalidated = prepared.generation !== weatherReadGeneration || current.size !== prepared.effects.length ||
+            prepared.effects.some(({ object }) => !sameRoadWeatherTarget(object, current.get(object.id)))
+          // Persistence can overlap a peer commit. Reconcile the accepted policy
+          // once against current state; never retry indefinitely or reject it now.
+          emit(handlers, invalidated ? await refreshRoadWeather() : applyRoadWeather(prepared))
+        } catch (error) { fail('apply-road-weather-policy', error) }
+        return { ok: true, commandId: command.id, acceptedAt: nowIso() }
       }
-      const result = await engine.handleCommand(command)
-      if (result.ok) {
-        await refreshRoadWeather()
-        const snapshot = engine.snapshot()
-        const objectEvents: PackRuntimeEvent[] = snapshot.objects.map(object => ({
-          type: 'object.upserted',
-          object,
-          at: snapshot.capturedAt,
-          history: 'record',
-          provenance: object.provenance,
-        }))
-        const routeSignals: PackRuntimeEvent[] = snapshot.objects
-          .filter(object => object.spatial.route?.planned && command.targetObjectIds.includes(object.id))
-          .map(object => {
-            const signal = interactionSignalSchema.parse({
-              id: `signal:${randomUUID()}` as SignalId,
-              simulationRunId: command.simulationRunId,
-              at: snapshot.capturedAt,
-              source: { kind: 'object', id: object.id, runtimeId: ambulanceSimRuntimeId },
-              targets: [{ kind: 'object', id: object.id }],
-              type: assetRoutePlannedSignalType,
-              severity: 'notice',
-              payload: { objectId: object.id },
-              causationId: command.id,
-            }) as InteractionSignal
-            return {
-              type: 'interaction.signal',
-              signal,
-              at: snapshot.capturedAt,
-              provenance: {
-                source: 'simulator',
-                adapterId: ambulanceSimAdapterId,
-                externalId: object.id,
-                causedByCommandId: command.id,
-              },
-            }
-          })
-        emit(handlers, [...objectEvents, ...routeSignals])
+      const outcome = await engine.handleCommand(command)
+      emit(handlers, outcome.events)
+      if (outcome.result.ok) {
+        try { emit(handlers, await refreshRoadWeather()) }
+        catch (error) { fail('post-command-road-weather', error) }
       }
-      return result
+      return outcome.result
     }
-
     return {
       getSnapshot: async () => engine.snapshot(),
-      subscribe: (handler: PackRuntimeEventHandler): (() => void) => {
-        handlers.add(handler)
-        return () => {
-          handlers.delete(handler)
+      subscribe: handler => { handlers.add(handler); return () => { handlers.delete(handler) } },
+      invokeQuery: async request => request.capabilityId === 'world.ambulance.road-weather-policy'
+        ? structuredClone(policy)
+        : answerAmbulanceQuery({ request, objects: engine.snapshot().objects, at: nowIso(), simulationTimeMs: engine.checkpoint().simulationTimeMs }),
+      validateObjectDeletion: validateAmbulanceDeletion,
+      observeCommittedEvents: async events => { engine.observeCommittedEvents(events) },
+      afterCommittedEvents: async events => {
+        // Road-weather is an explicit optional dependency. Changes must also
+        // appear while paused, without resampling on unrelated Pack telemetry.
+        if (unavailable()) return
+        if (events.some(event => event.type === 'object.deleted' || (event.type === 'object.upserted' && event.object.packId === 'weather'))) {
+          try { emit(handlers, await refreshRoadWeather()) }
+          catch (error) { fail('after-committed-events', error); throw error }
         }
       },
-      invokeQuery: async (request: PackRuntimeQuery): Promise<unknown> =>
-        request.capabilityId === 'world.ambulance.road-weather-policy'
-          ? structuredClone(policy)
-          : answerAmbulanceQuery({
-          request,
-          objects: engine.snapshot().objects,
-          at: nowIso(),
-        }),
-      observeInitialSnapshot: async () => {
-        await refreshRoadWeather()
-      },
-      observeCommittedEvents: (events) =>
-        serialize(async () => {
-          engine.observeCommittedEvents(events.filter(event =>
-          event.type === 'object.deleted'
-          || (event.type === 'object.upserted' && event.object.packId === ambulancePackId)
-        ))
-          if (
-            events.some(
-              (event) =>
-                event.type === 'object.deleted' ||
-                (event.type === 'object.upserted' && event.object.packId !== ambulancePackId),
-            )
-          )
-            emit(handlers, await refreshRoadWeather())
-        }),
-      setClock: (nextClock) =>
-        serialize(async () => {
-        if (clockInitialized) await advance()
-        clockInitialized = true
-        clock = nextClock
+      setClock: nextClock => serialize(async () => {
+        // Drain the old reading before accepting a new speed/pause state.
+        await advance()
         localClock?.set(nextClock)
-        lastSimulationMs = Date.parse(runClock.read().currentTime)
       }),
       health: () => [health],
-      sendCommand: (command) => serialize(() => sendCommand(command)),
-      close: async (): Promise<void> => {
+      sendCommand: command => serialize(() => sendCommand(command)),
+      close: async () => {
         closed = true
         clearInterval(interval)
         await queue

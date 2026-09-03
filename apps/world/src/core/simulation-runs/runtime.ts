@@ -26,7 +26,7 @@ import {
 } from './runtime-metrics.ts'
 import { defaultSimulationRunRuntimePolicy } from './runtime-persistence-policy.ts'
 import type { SimulationRunSnapshotStore } from './snapshot-store.ts'
-import { createSimulationRunStateStore,type SimulationRunStateSnapshot } from './state-store.ts'
+import { createSimulationRunStateStore,type SimulationRunStateSnapshot,type SimulationRunStateStore } from './state-store.ts'
 import { createScenarioTimelineRunner,dueScenarioTimelineCues,type ScenarioTimelineRunner } from './timeline-runner.ts'
 
 const projectedSnapshotFlushIntervalMs = defaultSimulationRunRuntimePolicy.projectedSnapshotFlushIntervalMs
@@ -137,6 +137,7 @@ const eventId = (): EventId => `event:${randomUUID()}` as EventId
 export const createSimulationRunRuntime = async (config: {
   readonly id: SimulationRunId
   readonly runtimeConnection: PackRuntimeConnection
+  readonly stateStore?: SimulationRunStateStore
   readonly runClock?: SimulationClock
   readonly eventLog: EventLog
   readonly snapshotStore: SimulationRunSnapshotStore
@@ -154,7 +155,7 @@ export const createSimulationRunRuntime = async (config: {
   readonly procedureSourceService?: ProcedureSourceService
   readonly historian?: RunHistorian
 }): Promise<SimulationRunRuntime> => {
-  const state = createSimulationRunStateStore()
+  const state = config.stateStore ?? createSimulationRunStateStore()
   const metrics = createSimulationRunRuntimeMetricsRecorder({
     simulationRunId: config.id,
     createdAt: nowIso(),
@@ -276,6 +277,18 @@ export const createSimulationRunRuntime = async (config: {
     options?: PublishManyOptions,
   ): Promise<void> => {
     if (simulationRunEvents.length === 0) return
+    if (simulationRunEvents.some(event => event.type === 'object.deleted')) {
+      // Validate the complete batch before changing canonical state. This covers
+      // UI/API commands, interaction effects and runtime-originated deletions.
+      const candidates = new Map(state.snapshot().objects.map(object => [object.id, object]))
+      for (const event of simulationRunEvents) {
+        if (event.type === 'object.upserted') candidates.set(event.object.id, event.object)
+        if (event.type === 'object.deleted') {
+          config.runtimeConnection.validateObjectDeletion?.(event.objectId, [...candidates.values()])
+          candidates.delete(event.objectId)
+        }
+      }
+    }
     const eventsToPersist: SimulationRunEvent[] = []
     let projectedEventCount = 0
     for (const [index, event] of simulationRunEvents.entries()) {

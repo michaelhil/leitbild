@@ -72,7 +72,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
       if (missingRuntimeIds.length > 0) throw new Error(`missing pack runtimes: ${missingRuntimeIds.join(', ')}`)
       const activeRuntimeIds = new Set(config.scenario.runtimeIds)
       const activeAdapters = adapters.filter(adapter => activeRuntimeIds.has(adapter.id))
-      const objectOwners = new Map((config.initialObjects ?? config.scenario.initialObjects).map(object => [object.id, object.packId]))
+      const committedObjects = new Map((config.initialObjects ?? config.scenario.initialObjects).map(object => [object.id, object]))
       const providerAvailable = new Map<string, () => boolean>()
       assertUniqueRoutes(activeAdapters, adapter => capabilityIds(adapter.capabilities, 'command'), 'command')
       assertUniqueRoutes(activeAdapters, adapter => adapter.realtimeInputTypes ?? [], 'realtime input')
@@ -101,11 +101,12 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
             adapter,
             connection: await adapter.connect({
               isObjectProviderAvailable: objectId => {
-                const owner = objectOwners.get(objectId)
+                const owner = committedObjects.get(objectId)?.packId
                 if (!owner) return false
                 // During connect the peer has not yet installed its health reader.
                 return providerAvailable.get(owner)?.() ?? true
               },
+              objectById: config.objectById ?? (objectId => committedObjects.get(objectId)),
               simulationRunId: config.simulationRunId,
               ...(config.workspace ? { workspace: config.workspace } : {}),
               ...(config.runClock ? { runClock: config.runClock } : {}),
@@ -177,7 +178,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
       }
       const initialSnapshots = await Promise.all(connections.map(({ connection }) => connection.getSnapshot()))
       const initialSnapshotObjects = initialSnapshots.flatMap(snapshot => snapshot.objects)
-      for (const object of initialSnapshotObjects) objectOwners.set(object.id, object.packId)
+      for (const object of initialSnapshotObjects) committedObjects.set(object.id, object)
       const initialDuplicates = duplicateObjectIds(initialSnapshotObjects)
       if (initialDuplicates.length > 0) {
         throw new Error(`duplicate runtime object ids from runtimes: ${initialDuplicates.join(', ')}`)
@@ -294,10 +295,13 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         receiveRealtimeInput,
         commandEventHistory,
         invokeQuery,
+        validateObjectDeletion: (objectId, objects): void => {
+          for (const { connection } of connections) connection.validateObjectDeletion?.(objectId, objects)
+        },
         observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {
           for (const event of events) {
-            if (event.type === 'object.upserted') objectOwners.set(event.object.id, event.object.packId)
-            if (event.type === 'object.deleted') objectOwners.delete(event.objectId)
+            if (event.type === 'object.upserted') committedObjects.set(event.object.id, event.object)
+            if (event.type === 'object.deleted') committedObjects.delete(event.objectId)
           }
           const observations = await Promise.allSettled(connections.map(({ connection }) => connection.observeCommittedEvents(events)))
           observations.forEach((result, index) => {
@@ -307,6 +311,13 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
             } else {
               markHealthy(connections[index]!.adapter.id, 'observe-committed-events')
             }
+          })
+          const reconciliations = await Promise.allSettled(connections.map(({ connection }) => connection.afterCommittedEvents?.(events)))
+          reconciliations.forEach((result, index) => {
+            if (result.status === 'rejected') {
+              markFailure(connections[index]!.adapter.id, 'after-committed-events', result.reason)
+              console.error(`pack runtime ${connections[index]!.adapter.id} failed to reconcile committed events:`, result.reason)
+            } else markHealthy(connections[index]!.adapter.id, 'after-committed-events')
           })
         },
         validateClock: async (clock): Promise<void> => {

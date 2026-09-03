@@ -1,0 +1,237 @@
+{
+  "id": "halden-dispatch",
+  "title": "Halden dispatch exercise",
+  "description": "Coordinate three ambulances through competing calls around Halden. Choose patients, units and receiving sites; observe response times, coverage and handover queues. This synthetic operational exercise is not a validated service plan or a clinical prediction. Locations are illustrative; capabilities and service times are editable assumptions, not claims about actual facilities.",
+  "objectives": [
+    "Prioritize competing demand using urgency, crew readiness, patient needs and unit location.",
+    "Compare a hospital receiving site with a temporary assessment/triage site; observe handover congestion without invented bed counters.",
+    "Reassess a patient, record an explicit no-transport decision, or redirect an empty returning ambulance.",
+    "Use the Ambulance dispatch assistant to inspect eligibility, explain a decision and carry out explicitly requested dispatches."
+  ],
+  "world": {
+    "startsAt": "2026-09-03T08:00:00.000Z",
+    "environment": {
+      "city": "Halden",
+      "model": "Synthetic operational dispatch exercise; no real patient data"
+    }
+  },
+  "view": {
+    "map": {
+      "center": [
+        11.29,
+        59.22
+      ],
+      "zoom": 10
+    }
+  },
+  "packs": [
+    {
+      "id": "ambulance",
+      "config": {
+        "roadWeather": {
+          "enabled": false
+        }
+      },
+      "recording": {
+        "profileId": "operations",
+        "intervalMs": 5000
+      },
+      "items": [
+        {
+          "type": "ambulance",
+          "id": "amb:halden-1",
+          "label": "Halden 1",
+          "position": [
+            11.385,
+            59.127
+          ],
+          "patientCapacity": 1,
+          "capabilities": [
+            "assessment",
+            "trauma"
+          ],
+          "crewReady": true,
+          "mobilizationSeconds": 60,
+          "sceneSeconds": 480
+        },
+        {
+          "type": "ambulance",
+          "id": "amb:halden-2",
+          "label": "Halden 2",
+          "position": [
+            11.414,
+            59.15
+          ],
+          "patientCapacity": 1,
+          "capabilities": [
+            "assessment",
+            "trauma"
+          ],
+          "crewReady": true,
+          "mobilizationSeconds": 90,
+          "sceneSeconds": 480
+        },
+        {
+          "type": "ambulance",
+          "id": "amb:sarpsborg-1",
+          "label": "Sarpsborg 1",
+          "position": [
+            11.11,
+            59.28
+          ],
+          "patientCapacity": 1,
+          "capabilities": [
+            "assessment",
+            "trauma"
+          ],
+          "crewReady": true,
+          "mobilizationSeconds": 60,
+          "sceneSeconds": 600
+        },
+        {
+          "type": "care-site",
+          "id": "care:kalnes",
+          "label": "Kalnes receiving site — exercise",
+          "position": [
+            11.023,
+            59.322
+          ],
+          "capabilities": [
+            "assessment",
+            "trauma"
+          ],
+          "acceptedUrgencies": [
+            "acute",
+            "urgent",
+            "ordinary"
+          ],
+          "handoverSlots": 1,
+          "handoverSeconds": 900,
+          "accepting": true
+        },
+        {
+          "type": "care-site",
+          "id": "care:halden-triage",
+          "label": "Halden temporary triage centre — exercise",
+          "position": [
+            11.384,
+            59.121
+          ],
+          "capabilities": [
+            "assessment"
+          ],
+          "acceptedUrgencies": [
+            "urgent",
+            "ordinary"
+          ],
+          "handoverSlots": 1,
+          "handoverSeconds": 300,
+          "accepting": true
+        },
+        {
+          "type": "incident",
+          "id": "incident:e6-collision",
+          "label": "E6 two-patient collision",
+          "position": [
+            11.325,
+            59.19
+          ],
+          "dispatchUrgency": "acute",
+          "summary": "Two patients after a synthetic road collision. Assess whether to commit both local units or request the more distant unit."
+        },
+        {
+          "type": "patient",
+          "id": "patient:collision-1",
+          "label": "Collision patient A",
+          "incidentId": "incident:e6-collision",
+          "assessedUrgency": "acute",
+          "needs": [
+            "trauma"
+          ],
+          "summary": "Time-critical transport need in this exercise; no physiological deterioration model."
+        },
+        {
+          "type": "patient",
+          "id": "patient:collision-2",
+          "label": "Collision patient B",
+          "incidentId": "incident:e6-collision",
+          "assessedUrgency": "urgent",
+          "needs": [
+            "assessment"
+          ],
+          "summary": "Requires assessment and a destination decision; suitable receiving care depends on current assessment."
+        },
+        {
+          "type": "incident",
+          "id": "incident:tistedal-call",
+          "label": "Tistedal assessment call",
+          "position": [
+            11.45,
+            59.125
+          ],
+          "dispatchUrgency": "urgent",
+          "summary": "Competing call requiring assessment. User may explicitly select no transport with a reason after review."
+        },
+        {
+          "type": "patient",
+          "id": "patient:tistedal",
+          "label": "Tistedal patient",
+          "incidentId": "incident:tistedal-call",
+          "assessedUrgency": "urgent",
+          "needs": [
+            "assessment"
+          ],
+          "summary": "Operational assessment and transport decision; no automated clinical diagnosis."
+        }
+      ]
+    }
+  ],
+  "timeline": {
+    "cues": [
+      {
+        "id": "later-call",
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 240
+        },
+        "title": "New ordinary-priority call in southern Halden",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.ambulance.create-item",
+            "input": {
+              "item": {
+                "type": "incident",
+                "id": "incident:later-call",
+                "label": "Southern Halden call",
+                "position": [
+                  11.389,
+                  59.08
+                ],
+                "dispatchUrgency": "ordinary",
+                "summary": "A further synthetic call arrives while earlier units may be committed."
+              }
+            }
+          },
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.ambulance.create-item",
+            "input": {
+              "item": {
+                "type": "patient",
+                "id": "patient:later-call",
+                "label": "Southern Halden patient",
+                "incidentId": "incident:later-call",
+                "assessedUrgency": "ordinary",
+                "needs": [
+                  "assessment"
+                ],
+                "summary": "Stable assessment/transport need for this exercise."
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

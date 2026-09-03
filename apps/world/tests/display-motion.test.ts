@@ -15,6 +15,7 @@ const scenarioAmbulance = (): OperationalObject => {
   const object = createAmbulanceSimEngine({
     simulationRunId: 'run-display-motion-test' as SimulationRunId,
     objects: responseScenario.initialObjects,
+    simulationTimeMs: Date.parse(responseScenario.world.startsAt),
     routing: createDirectRoutingAdapter(),
   }).snapshot().objects.find(candidate => candidate.kind === 'mobile_entity')
   if (!object) throw new Error('scenario fixture missing ambulance')

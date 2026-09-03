@@ -20,7 +20,7 @@ const controlSchema = z.discriminatedUnion('kind', [
     options: z.array(z.object({ value: z.string(), label: z.string().min(1), compatibleWith: z.object({ path: pathSchema, values: z.array(z.string()) }).strict().optional() }).strict()).min(1),
     extendFromConfig: z.object({ path: pathSchema, valueKey: z.string(), labelKey: z.string() }).strict().optional(),
   }).strict(),
-  z.object({ kind: z.literal('reference'), itemTypes: z.array(z.string()), defaultValue: z.string().optional() }).strict(),
+  z.object({ kind: z.literal('reference'), itemTypes: z.array(z.string()).optional(), defaultValue: z.string().optional() }).strict(),
   z.object({ kind: z.literal('string-list'), defaultValue: z.array(z.string()).optional() }).strict(),
 ])
 
@@ -132,6 +132,14 @@ const validateAuthoring = (pack: WorldPack): void => {
     if (itemType.placement) {
       setValueAt(candidate, itemType.placement.path, [0, 0])
     }
+    // Probe schema shape only, just as the point above does. Required references
+    // cannot have genuine defaults before the user selects an existing item.
+    // These values never enter published defaults, a Scenario, or a Run.
+    const itemSchema = z.toJSONSchema(pack.scenario.itemSchemas[itemType.id]!, { io: 'input' }) as SchemaNode
+    for (const field of itemType.fields) {
+      if (field.control.kind === 'reference' && !schemaAt(itemSchema, field.path).optional && valueAt(candidate, field.path) === undefined)
+        setValueAt(candidate, field.path, 'reference:authoring-check')
+    }
     pack.scenario.itemSchemas[itemType.id]!.parse(candidate)
     for (const collection of itemType.collections ?? []) {
       if (!Array.isArray(valueAt(itemType.defaultItem, collection.path))) throw new Error('Authoring collection must refer to an array')
@@ -184,7 +192,7 @@ export const scenarioAuthoringCatalogFor = (packs: ReadonlyArray<WorldPack>): Sc
     configFields: describeFields(pack.authoring?.configFields ?? [], pack.scenarioConfigSchema.parse({}) as Record<string, unknown>, z.toJSONSchema(pack.scenarioConfigSchema) as SchemaNode),
     itemTypes: (pack.authoring?.itemTypes ?? []).map(itemType => ({
       ...itemType,
-      itemSchema: z.toJSONSchema(pack.scenario!.itemSchemas[itemType.id]!, { unrepresentable: 'any' }),
+      itemSchema: z.toJSONSchema(pack.scenario!.itemSchemas[itemType.id]!, { io: 'input' }),
       fields: describeFields(itemType.fields, itemType.defaultItem, z.toJSONSchema(pack.scenario!.itemSchemas[itemType.id]!, { io: 'input' }) as SchemaNode),
       collections: (itemType.collections ?? []).map(collection => ({
         ...collection,

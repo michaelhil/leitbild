@@ -7,11 +7,12 @@ import { builtinScenarioDefinitions,discoverScenarioDefinitions } from '../src/s
 describe('bundled scenario discovery', () => {
   test('ships editable physical examples and one live Norway observation scenario', () => {
     expect(builtinScenarioDefinitions.map(source => source.id)).toEqual([
+      'halden-dispatch',
       'halden-power-complex',
       'halden-weather-response',
       'norway-situation-monitor',
     ])
-    expect(builtinScenarioDefinitions[0]?.packs.map(pack => pack.id)).toEqual(['process-plant', 'electric-grid', 'weather'])
+    expect(builtinScenarioDefinitions.find(source => source.id === 'halden-power-complex')?.packs.map(pack => pack.id)).toEqual(['process-plant', 'electric-grid', 'weather'])
     for (const id of ['norway-situation-monitor']) {
       expect(builtinScenarioDefinitions.find(source => source.id === id)?.packs.map(pack => pack.id)).toEqual(['situation-monitor'])
     }

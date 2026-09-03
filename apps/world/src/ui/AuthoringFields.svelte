@@ -31,7 +31,7 @@
           {#each optionsFor(field, target) as option (option.value)}<option value={option.value}>{option.label}</option>{/each}
         </select>
       {:else if field.control.kind === 'reference'}
-        <select value={String(current ?? '')} onchange={event => onchange(field, event.currentTarget.value || undefined)}><option value="">Not set</option>{#each items.filter(item => field.control.kind === 'reference' && field.control.itemTypes.includes(item.type)) as item (item.id)}<option value={item.id}>{item.label}</option>{/each}</select>
+        <select value={String(current ?? '')} onchange={event => onchange(field, event.currentTarget.value || undefined)}><option value="">Not set</option>{#each items.filter(item => field.control.kind === 'reference' && (field.control.itemTypes === undefined || field.control.itemTypes.includes(item.type))) as item (item.id)}<option value={item.id}>{item.label}</option>{/each}</select>
       {:else if field.control.kind === 'string-list'}
         <textarea rows="3" value={Array.isArray(shown) ? shown.join('\n') : ''} onchange={event => onchange(field, event.currentTarget.value.split('\n').map(value => value.trim()).filter(Boolean))}></textarea>
       {:else if field.control.kind === 'boolean'}

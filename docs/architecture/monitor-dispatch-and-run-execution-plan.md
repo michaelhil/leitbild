@@ -87,7 +87,7 @@ The 2026 Norwegian mass-casualty guidance is currently a consultation draft with
 | Concept | Authoritative state | Deliberately not included initially |
 | --- | --- | --- |
 | Response unit | Vehicle/care/equipment capability, patient capacity, crew readiness, base, current assignment and phase | Independent crew roster, shifts, labor optimization |
-| Incident | Reported problem, dispatch urgency, occurrence location, linked asset if any, reported/assessed demand, milestones | Fabricated physiology, automatic global revelation |
+| Incident | Reported problem, dispatch urgency, occurrence location, linked asset if any, milestones; demand derived from explicit patient items | Fabricated physiology, automatic global revelation, competing victim counters |
 | Patient | Stable ID, incident, assessed needs/priority, disposition, current holder | Detailed organ models or unsupported survival scores |
 | Care site | Receiving/stabilization role, location, accepted needs, handover slots, queue and service duration | Complete hospital bed-flow simulation |
 
@@ -111,7 +111,7 @@ On the map, an incident linked to a still co-located asset may badge/highlight t
 
 Use an explicit assignment lifecycle:
 
-`allocated → mobilizing → responding → on-scene → transporting → queued/handover → available`
+`mobilizing → responding → on-scene → ready-for-transport/transporting → queued → handover → available`
 
 Not every assignment transports a patient. No-transport, cancellation, reassignment and completion are explicit outcomes. Multiple units can serve one incident. Cancellation cannot make a patient-carrying unit empty or available by fiat.
 
@@ -125,11 +125,11 @@ Emit only changed domain objects and meaningful events. Build small indexed maps
 
 ### Doctor demonstration
 
-Create one editable **Halden–Aremark: competing calls and coverage** Scenario:
+Create one editable **Halden dispatch exercise** Scenario:
 
 1. A small synthetic response roster on real regional geography, with explicit capability and service-time assumptions.
-2. A rural call commits a nearby unit; a subsequent acute call creates a dispatch/coverage decision.
-3. An incident at an existing industrial asset introduces a few individually tracked patients.
+2. An E6 collision and a competing Tistedal call create an initial dispatch/coverage decision; another call is introduced after four simulated minutes through ordinary Timeline commands.
+3. Individually tracked patients can be split between multiple units. The initial demo stays Ambulance-only; existing-asset references are supported and covered by cross-Pack tests without requiring a plant solver in this demo.
 4. Kalnes is a receiving destination; a configured temporary municipal care site illustrates suitable staging without pretending every patient belongs there.
 5. A handover bottleneck delays unit release and affects the next call. Optional authored Weather adds a visible travel constraint.
 
@@ -280,4 +280,29 @@ Code commit `bfa7046a`, included in production release `20260903T161837Z-c7159bc
 
 Full platform checks, tests and production builds passed: World 654; Agents 1,433 with two existing skips; Host 23; contracts 18; Module runtime 11; integration one. All three services, Caddy, OSRM and public health passed after deployment. An existing Monitor Run reconnected with both sources ready, retained record inspection worked through the UI and Host broker, and a missing record returned `null`. No browser errors/warnings appeared in the smoke test. No new Workspace, Run or Room was created, and no existing Run/history/cache was deleted. Existing procedure-state and large-bundle build warnings remain outside this patch.
 
-Stored deadlines from before the patch remain conservative until they expire or a subsequent eligible response replaces them. An old local polling interval cannot safely be distinguished from a provider restriction, so the fix does not bypass that stored deadline. New collection responses persist the separated restriction correctly. Compact search filters, validity presentation, captured branch evidence, Ambulance replacement and accelerated execution remain planned work.
+Stored deadlines from before the patch remain conservative until they expire or a subsequent eligible response replaces them. An old local polling interval cannot safely be distinguished from a provider restriction, so the fix does not bypass that stored deadline. New collection responses persist the separated restriction correctly. Compact search filters, validity presentation, captured branch evidence and accelerated execution remain planned work; Ambulance replacement is covered below.
+
+## Ambulance implementation and final adversarial review — 2026-09-03
+
+Implemented four explicit item types with one shared authoring/live-creation constructor. No legacy victim counters, hospital-bed fiction, arrival-message side effects, implicit initial assignments, hidden timed fact updates or restore-time route reconstruction remain. The Dispatch panel is lazy loaded; browser metadata does not import the server solver. The existing Scenario compiler orders references across Packs; no second graph, universal rescue framework or independent patient-position stream was added.
+
+The complete operational loop includes optional preplanned onward transport, capacity/care-tag/urgency checks, first-arrival and patient milestones, explicit no-transport, cancellation without lost custody, deterministic FIFO handover with stable ID ties, capacity reopening, retargeting and return to base. Assessments record new facts even when a previous plan becomes unsuitable. Shared warnings expose that mismatch. Destination checks prevent new unsuitable admission; a handover already admitted finishes under its accepted service duration. Care-site settings govern future admissions rather than undoing completed work.
+
+AI access uses four bounded read surfaces (dispatch state, exact object, eligible options and measures) plus the same validated commands as human controls and Timeline. The default simulation companion stays read-only. A separate dispatch-assistant Room Definition grants operational commands, discovers the Run dynamically, verifies effects, and distinguishes requested execution from advice. No provider-specific agent implementation or stored Run binding was introduced. Real Module integration tests exercise discovery → eligibility → dispatch → readback without substituting a fake World runtime.
+
+### Hardening discovered during implementation
+
+- Road requests have a cancellable whole-request deadline, bounded response bytes/geometry, input/output validation and no fallback route fabrication. Independent response/onward requests prepare in parallel; no request runs inside numerical advancement.
+- Route cursor and phase deadlines live in canonical objects. Large and small advances agree on actual transition times, including incident closure. Repeated numerical reads no longer deep-clone route geometry.
+- A real Run shares its authoritative state store with read-only Pack lookups. A deletion is visible during pending journal I/O; late route completion cannot resurrect it. Whole deletion batches validate patient/assignment constraints before any event applies. No coarse command lock or tombstone layer was required.
+- Every Pack first observes a committed event batch; optional dependent-provider reconciliation follows that barrier. This fixes Weather-deletion order dependence without an adapter-order convention or delay. Consequences become a new ordinary event batch.
+- Weather samples stage all batches before mutation and reject stale policy/route/point generations. Failed post-commit reconciliation reports an accepted command truthfully and fail-stops the runtime; it never tells the caller that an already-applied dispatch was rejected. Candidate policy sampling precedes persistence. Scope-specific tests cover paused changes, shutdown, overlapping reads and more than 512 units.
+- Patient/site forms preserve drafts and send captured revisions. Conflicts require an explicit reload. Candidate queries reuse engine eligibility rather than reimplementing the rules in UI or agent prose.
+
+### Deliberate limits, not unfinished advertised features
+
+This is an operational demonstration, not calibrated clinical decision support. It uses deterministic authored mobilization, scene and handover times. Patient contact currently coincides with the assigned unit's scene arrival; there is no separate access-to-patient delay or physiology model. Ordinary road-route total duration is distributed over route distance, with explicit local Weather factors; neither emergency-driving privileges nor congestion are inferred. Receiving slots model handover service, not hospital beds. FIFO queues are an explicit baseline, not a triage algorithm.
+
+Retargeted visits remain in the event history. The compact measures show pickup-to-final/current-site arrival and that site's queue/handover interval; an independent visit/episode ledger is intentionally not added yet. Fleet optimization, shifts, multi-modal vehicle requisition, clinical protocols and stochastic calibration await concrete research questions. Anchoring a care site to another Pack's building does not transfer ownership of that building.
+
+The engine's exact bounded advance/checkpoint is groundwork only. **The requested whole-Run clone, stopwatch modal, maximum-speed executor, pause-at-horizon and frozen Monitor evidence are not implemented by this change.** Those require the shared execution/checkpoint work in section 4. Existing speed controls are not a substitute, and Plant-only throughput measurements are not advertised as whole-Run acceleration performance.

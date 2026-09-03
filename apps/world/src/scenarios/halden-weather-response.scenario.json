@@ -144,17 +144,25 @@
       },
       "items": [
         {
-          "type": "hospital",
+          "type": "care-site",
           "id": "facility:halden",
           "label": "Halden receiving station",
-          "traumaBeds": {
-            "total": 4,
-            "available": 4
-          },
           "position": [
             11.39,
             59.19
-          ]
+          ],
+          "capabilities": [
+            "assessment",
+            "trauma"
+          ],
+          "acceptedUrgencies": [
+            "acute",
+            "urgent",
+            "ordinary"
+          ],
+          "handoverSlots": 1,
+          "handoverSeconds": 120,
+          "accepting": true
         },
         {
           "type": "incident",
@@ -164,24 +172,64 @@
             11.4,
             59.18
           ],
-          "triage": "yellow",
-          "victims": {
-            "state": "confirmed",
-            "count": 1
-          }
+          "dispatchUrgency": "urgent",
+          "summary": "Synthetic road-weather response; compare local weather with actual progress."
+        },
+        {
+          "type": "patient",
+          "id": "patient:halden-weather",
+          "label": "Weather response patient",
+          "incidentId": "incident:halden-weather",
+          "assessedUrgency": "urgent",
+          "needs": [
+            "assessment"
+          ],
+          "summary": "One patient awaiting transport."
         },
         {
           "type": "ambulance",
           "id": "amb:weather-response",
           "label": "Weather response ambulance",
-          "status": "en_route",
           "position": [
             11.403,
             59.128
           ],
-          "targetId": "incident:halden-weather"
+          "patientCapacity": 1,
+          "capabilities": [
+            "assessment",
+            "trauma"
+          ],
+          "crewReady": true,
+          "mobilizationSeconds": 10,
+          "sceneSeconds": 60
         }
       ]
     }
-  ]
+  ],
+  "timeline": {
+    "cues": [
+      {
+        "id": "dispatch-weather-response",
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 0
+        },
+        "title": "Begin the weather response",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.ambulance.dispatch",
+            "input": {
+              "ambulanceId": "amb:weather-response",
+              "incidentId": "incident:halden-weather",
+              "patientIds": [
+                "patient:halden-weather"
+              ],
+              "destinationId": "facility:halden"
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

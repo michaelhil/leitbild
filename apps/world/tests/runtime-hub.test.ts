@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { z } from 'zod'
 import type {
   ActorId,
@@ -9,7 +9,10 @@ import type {
   SimulationClockState,
   ObjectId,
   PackId,
+  OperationalObject,
+  SimulationRunEvent,
 } from '../src/core/model/index.ts'
+import { operationalObjectSchema, simulationRunEventSchema } from '../src/core/model/index.ts'
 import { createRuntimeHub } from '../src/simulation/runtime-hub.ts'
 import type {
   PackRuntimeAdapter,
@@ -125,6 +128,21 @@ const connectionConfig = (runtimeIds: ReadonlyArray<string>): PackRuntimeConnect
   },
 })
 
+const withConnection = (adapter: StubAdapter, extend: (connection: PackRuntimeConnection, config: PackRuntimeConnectionConfig) => PackRuntimeConnection): StubAdapter => ({
+  ...adapter,
+  connect: async config => extend(await adapter.connect(config), config),
+})
+const testObject = (packId: string, revision = 1): OperationalObject => operationalObjectSchema.parse({
+  id: `object:${packId}`, packId, kind: 'facility', label: packId, lifecycle: 'active', revision,
+  spatial: { frame: { kind: 'wgs84' } }, operational: { status: 'ready', priority: 'normal', mode: 'simulated' },
+  alerts: [], provenance: { source: 'simulator' }, packData: {},
+  timestamps: { createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+}) as OperationalObject
+const committedUpsert = (object: OperationalObject, seq: number): SimulationRunEvent => simulationRunEventSchema.parse({
+  id: `event:${seq}`, seq, simulationRunId: 'run-test', type: 'object.upserted', object,
+  at: '2026-01-01T00:00:00Z', provenance: object.provenance,
+}) as SimulationRunEvent
+
 describe('createRuntimeHub', () => {
   test('connects only scenario-declared runtimes', async () => {
     const active = createStubAdapter('active.runtime', 'active-pack', 'world.active.command')
@@ -231,5 +249,88 @@ describe('createRuntimeHub', () => {
       failureCount: 1,
     })])
     await connection.close()
+  })
+
+  test('all observers finish before any reconciliation and every Pack sees the committed object lookup', async () => {
+    let release!: () => void
+    let started!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const observing = new Promise<void>(resolve => { started = resolve })
+    let providerReady = false
+    const reconciled: string[] = []
+    const readers: PackRuntimeConnectionConfig['objectById'][] = []
+    const object = testObject('provider', 2)
+    const consumer = withConnection(createStubAdapter('consumer.runtime', 'consumer', 'world.consumer.command'), (base, config) => {
+      readers.push(config.objectById)
+      return { ...base, afterCommittedEvents: async () => {
+        expect(providerReady).toBe(true)
+        expect(config.objectById?.(object.id)).toEqual(object)
+        reconciled.push('consumer')
+      } }
+    })
+    const provider = withConnection(createStubAdapter('provider.runtime', 'provider', 'world.provider.command'), (base, config) => {
+      readers.push(config.objectById)
+      return { ...base, observeCommittedEvents: async () => { started(); await gate; providerReady = true },
+        afterCommittedEvents: async () => { expect(providerReady).toBe(true); reconciled.push('provider') } }
+    })
+    const connection = await createRuntimeHub([consumer, provider]).connect(connectionConfig([consumer.id, provider.id]))
+    try {
+      const pending = connection.observeCommittedEvents([committedUpsert(object, 1)])
+      await observing
+      expect(reconciled).toEqual([])
+      expect(readers.map(read => read?.(object.id))).toEqual([object, object])
+      release()
+      await pending
+      expect(reconciled.sort()).toEqual(['consumer', 'provider'])
+    } finally { release(); await connection.close() }
+  })
+
+  test('observer and reconciliation failures remain visible until their own operation recovers', async () => {
+    let failObserve = true
+    let failReconcile = true
+    const adapter = withConnection(createStubAdapter('failure.runtime', 'failure', 'world.failure.command'), base => ({
+      ...base,
+      observeCommittedEvents: async () => { if (failObserve) throw new Error('observer failed') },
+      afterCommittedEvents: async () => { if (failReconcile) throw new Error('reconciliation failed') },
+    }))
+    const errors = spyOn(console, 'error').mockImplementation(() => undefined)
+    const connection = await createRuntimeHub([adapter]).connect(connectionConfig([adapter.id]))
+    try {
+      await connection.observeCommittedEvents([])
+      expect(connection.health?.()[0]).toMatchObject({ state: 'degraded', failureCount: 2, lastFailure: { operation: 'after-committed-events' } })
+      failReconcile = false
+      await connection.observeCommittedEvents([])
+      expect(connection.health?.()[0]).toMatchObject({ state: 'degraded', failureCount: 3, lastFailure: { operation: 'observe-committed-events' } })
+      failObserve = false
+      await connection.observeCommittedEvents([])
+      expect(connection.health?.()[0]).toMatchObject({ state: 'ready', failureCount: 3 })
+    } finally { errors.mockRestore(); await connection.close() }
+  })
+
+  test('derived emissions can commit back through the hub without a reconciliation self-loop', async () => {
+    const provider = createStubAdapter('source.runtime', 'source', 'world.source.command')
+    const baseConsumer = createStubAdapter('derived.runtime', 'derived', 'world.derived.command')
+    let afterCalls = 0
+    let emissions = 0
+    const consumer = withConnection(baseConsumer, base => ({ ...base, afterCommittedEvents: async events => {
+      afterCalls++
+      if (!events.some(event => event.type === 'object.upserted' && event.object.packId === 'source')) return
+      baseConsumer.emit({ type: 'event.emission', runtimeId: baseConsumer.id, emittedAt: '2026-01-01T00:00:00Z' as IsoTimestamp,
+        events: [{ type: 'object.upserted', object: testObject('derived'), at: '2026-01-01T00:00:00Z' as IsoTimestamp, history: 'snapshot-only', provenance: { source: 'simulator' } }] })
+    } }))
+    const connection = await createRuntimeHub([consumer, provider]).connect(connectionConfig([consumer.id, provider.id]))
+    const feedback: Promise<void>[] = []
+    const unsubscribe = connection.subscribe(emission => {
+      emissions++
+      if (emissions > 1) throw new Error('Derived emission loop')
+      feedback.push(connection.observeCommittedEvents(emission.events.flatMap(event => event.type === 'object.upserted' ? [committedUpsert(event.object, 2)] : [])))
+    })
+    try {
+      await connection.observeCommittedEvents([committedUpsert(testObject('source'), 1)])
+      await Promise.all(feedback)
+      expect(emissions).toBe(1)
+      expect(afterCalls).toBe(2)
+      expect(connection.health?.().every(entry => entry.state === 'ready')).toBe(true)
+    } finally { unsubscribe(); await connection.close() }
   })
 })

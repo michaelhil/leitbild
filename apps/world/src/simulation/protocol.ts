@@ -82,7 +82,13 @@ export interface PackRuntimeConnection {
   readonly commandEventHistory?: (command: CommandEnvelope) => PackRuntimeEventHistory
   readonly invokeQuery: (query: PackRuntimeQuery) => Promise<unknown>
   readonly observeCommittedEvents: (events: ReadonlyArray<SimulationRunEvent>) => Promise<void>
+  /** Read peer providers only after every Pack has applied this committed batch.
+   * Emitted consequences are a new batch, never a recursive partial commit. */
+  readonly afterCommittedEvents?: (events: ReadonlyArray<SimulationRunEvent>) => Promise<void>
   readonly observeInitialSnapshot?: (objects: ReadonlyArray<OperationalObject>) => Promise<void>
+  /** Pure pre-commit constraint check against canonical candidate state. Packs
+   * without cross-object deletion constraints deliberately omit this hook. */
+  readonly validateObjectDeletion?: (objectId: ObjectId, objects: ReadonlyArray<OperationalObject>) => void
   readonly setClock: (clock: SimulationClockState) => Promise<void>
   /** Reject unsupported time changes before any runtime or the shared clock is mutated. */
   readonly validateClock?: (clock: SimulationClockState) => Promise<void>
@@ -169,6 +175,8 @@ export interface PackRuntimeConnectionConfig {
   readonly workspace?: { readonly id: string; readonly dataDir: string; readonly storageBudget?: import('@leitbild/module-runtime').StorageBudget }
   /** Provider execution availability, independent of physical signal age or simulation pause. */
   readonly isObjectProviderAvailable?: (objectId: ObjectId) => boolean
+  /** Current committed object projection, including other Packs. Never mutable peer mechanics. */
+  readonly objectById?: (objectId: ObjectId) => OperationalObject | undefined
   /** The owning Run's clock. Standalone Pack hosts may own a local clock instead. */
   readonly runClock?: import('../core/model/time.ts').SimulationClockReader
   /** Read-only, schema-validated access to active providers within this run. */

@@ -390,12 +390,13 @@ describe('World Module API', () => {
     expect(packCapability?.outputSchema).toMatchObject({
       type: 'object',
       properties: {
-        ambulances: { type: 'array' },
+        units: { type: 'array' },
         incidents: { type: 'array' },
-        hospitals: { type: 'array' },
+        patients: { type: 'array' },
+        careSites: { type: 'array' },
       },
     })
-    const dispatchState = await call<{ result: { ambulances: unknown[]; incidents: unknown[]; hospitals: unknown[] } }>(
+    const dispatchState = await call<{ result: { units: unknown[]; incidents: unknown[]; patients: unknown[]; careSites: unknown[] } }>(
       registry,
       `/internal/workspaces/${workspaceId}/capabilities/${packCapabilityId}/invoke`,
       {
@@ -411,7 +412,7 @@ describe('World Module API', () => {
       },
     )
     expect(dispatchState.status).toBe(200)
-    expect(dispatchState.body?.result.ambulances.length).toBeGreaterThan(0)
+    expect(dispatchState.body?.result.units.length).toBeGreaterThan(0)
 
     const deleteObjectCapabilityId = capabilityIdSchema.parse('world.object.delete')
     const deletedObject = await call<{ result: { ok: boolean } }>(

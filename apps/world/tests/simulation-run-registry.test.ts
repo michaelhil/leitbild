@@ -13,7 +13,7 @@ import type {
 import { nowIso,simulationRunIdSchema } from '../src/core/model/index.ts'
 import { createSimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
-import { assignToIncidentCommandKind } from '../src/packs/ambulance/commands.ts'
+import { dispatchCommandKind } from '../src/packs/ambulance/commands.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
@@ -42,13 +42,13 @@ const issueDispatchCommand = async (runtime: SimulationRunRuntime): Promise<void
   const snapshot = runtime.snapshot()
   const ambulance = snapshot.objects.find(object =>
     object.kind === 'mobile_entity' && object.operational.status === 'available')
-  const incident = snapshot.objects.find(object => object.kind === 'incident')
+  const incident = snapshot.objects.find(object => object.kind === 'incident' && snapshot.objects.some(patient => (patient.packData as { type?: string; incidentId?: string }).type === 'patient' && (patient.packData as { incidentId?: string }).incidentId === object.id))
   if (!ambulance || !incident) throw new Error('Scenario missing ambulance or incident')
   const outcome = await runtime.invokeCapability(
     { id: 'actor:test-operator' as ActorId, label: 'Test Operator', role: 'operator' },
     {
-      capabilityId: assignToIncidentCommandKind,
-      input: { ambulanceId: ambulance.id, incidentId: incident.id },
+      capabilityId: dispatchCommandKind,
+      input: { ambulanceId: ambulance.id, incidentId: incident.id, patientIds: snapshot.objects.filter(object => (object.packData as { type?: string; incidentId?: string }).type === 'patient' && (object.packData as { incidentId?: string }).incidentId === incident.id).slice(0, 1).map(object => object.id) },
     },
   )
   expect(outcome.kind).toBe('command')

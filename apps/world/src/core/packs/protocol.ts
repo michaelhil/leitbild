@@ -238,7 +238,7 @@ export type PackScenarioAuthoringControl =
   | { readonly kind: 'number'; readonly min?: number; readonly max?: number; readonly step?: number }
   | { readonly kind: 'boolean' }
   | { readonly kind: 'select'; readonly options: ReadonlyArray<{ readonly value: string; readonly label: string; readonly compatibleWith?: { readonly path: ReadonlyArray<string | number>; readonly values: ReadonlyArray<string> } }>; readonly extendFromConfig?: { readonly path: ReadonlyArray<string | number>; readonly valueKey: string; readonly labelKey: string } }
-  | { readonly kind: 'reference'; readonly itemTypes: ReadonlyArray<string> }
+  | { readonly kind: 'reference'; readonly itemTypes?: ReadonlyArray<string> }
   | { readonly kind: 'string-list' }
 
 export interface PackScenarioAuthoringField {

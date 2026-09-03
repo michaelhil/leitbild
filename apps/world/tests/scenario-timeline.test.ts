@@ -14,7 +14,7 @@ describe('scenario timeline model', () => {
     expect(parsed.timeline?.cues.some(cue =>
       cue.actions.some(action => action.type === 'show_guidance'))).toBe(true)
     expect(parsed.timeline?.cues.some(cue =>
-      cue.actions.some(action => action.type === 'invoke_capability' && action.capabilityId === 'world.ambulance.create-incident'))).toBe(true)
+      cue.actions.some(action => action.type === 'invoke_capability' && action.capabilityId === 'world.ambulance.create-item'))).toBe(true)
     expect(parsed.timeline?.cues.some(cue =>
       cue.actions.some(action => action.type === 'invoke_capability' && action.capabilityId === 'world.object.delete'))).toBe(true)
   })

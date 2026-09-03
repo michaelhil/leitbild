@@ -1,410 +1,59 @@
-import type { KnowledgeFact,OperationalObject } from '../../core/model/index.ts'
-import { packField,packStatus } from '../../core/packs/presentation.ts'
-import type { PackCommandRequest,PackCreationGeometry,PackObjectField,PackObjectPresentation,PackObjectStatusPresentation,WorldPack } from '../../core/packs/protocol.ts'
-import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
-import {
-  cancelDestinationCommandKind,
-  createObjectCommandKind,
-  setDestinationCommandKind,
-  type CreatableAmbulanceObjectType,
-} from './commands.ts'
-import {
-  ambulancePackDataSchema,
-  hospitalPackDataSchema,
-  incidentPackDataSchema,
-  type AmbulancePackData,
-  type HospitalPackData,
-  type IncidentPackData,
-  type InjurySummary
-} from './model.ts'
+import type { PackScenarioAuthoringField, WorldPack } from '../../core/packs/protocol.ts'
 import { ambulanceRecordingProfiles, observationsFor } from './recording.ts'
-import { ambulancePackConfigSchema,roadWeatherFields } from './road-weather.ts'
+import { ambulancePackConfigSchema, roadWeatherFields } from './road-weather.ts'
 import { ambulanceScenarioSupport } from './scenario.ts'
-import { ambulanceSimRuntimeId } from './sim/constants.ts'
-import { createAmbulanceArrivalInteractionHandler } from './sim/interactions.ts'
+import { ambulancePackView } from './ui-pack.ts'
 
-const factText = <T>(fact: KnowledgeFact<T> | undefined, formatter: (value: T) => string = String): string =>
-  !fact || fact.state === 'unknown' ? 'unknown' : formatter(fact.value)
-
-const knownNumber = (fact: KnowledgeFact<number> | undefined): number | null =>
-  fact && fact.state !== 'unknown' ? fact.value : null
-
-const listText = (values: readonly string[]): string =>
-  values.length === 0 ? 'none' : values.map(value => value.replaceAll('_', ' ')).join(', ')
-
-const injuryText = (injuries: readonly InjurySummary[]): string =>
-  injuries.length === 0
-    ? 'none reported'
-    : injuries.map(injury => `${injury.count} ${injury.severity} ${injury.category}`).join(', ')
-
-const targetLabel = (object: OperationalObject, objects: ReadonlyArray<OperationalObject>): string =>
-  object.tasking?.currentTaskId
-    ? objects.find(candidate => candidate.id === object.tasking?.currentTaskId)?.label ?? object.tasking.currentTaskId
-    : 'idle'
-
-const formatDurationMmSs = (seconds: number): string => {
-  const boundedSeconds = Math.max(0, Math.ceil(seconds))
-  const minutes = Math.floor(boundedSeconds / 60)
-  const remainingSeconds = boundedSeconds % 60
-  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`
-}
-
-const etaText = (object: OperationalObject): string | null =>
-  object.spatial.route?.etaSeconds === undefined
-    ? null
-    : `ETA: ${formatDurationMmSs(object.spatial.route.etaSeconds)} simulation time remaining`
-
-const routeImpactText = (object: OperationalObject): string | null => {
-  const impacts = object.spatial.route?.impacts ?? []
-  if (impacts.length === 0) return null
-  return `Route impact: ${impacts.map(impact => `${impact.label} (${impact.severity})`).join(', ')}`
-}
-
-const parseAmbulanceData = (object: OperationalObject): AmbulancePackData | null => {
-  const parsed = ambulancePackDataSchema.safeParse(object.packData)
-  return parsed.success ? parsed.data : null
-}
-
-const parseIncidentData = (object: OperationalObject): IncidentPackData | null => {
-  const parsed = incidentPackDataSchema.safeParse(object.packData)
-  return parsed.success ? parsed.data : null
-}
-
-const parseHospitalData = (object: OperationalObject): HospitalPackData | null => {
-  const parsed = hospitalPackDataSchema.safeParse(object.packData)
-  return parsed.success ? parsed.data : null
-}
-
-const ambulanceDetails = (
-  object: OperationalObject,
-  data: AmbulancePackData,
-  objects: ReadonlyArray<OperationalObject>,
-): ReadonlyArray<PackObjectField> => [
-  packField('destination', 'Destination', targetLabel(object, objects)),
-  ...(etaText(object) ? [packField('eta', 'ETA', etaText(object)!.replace(/^ETA: /, ''))] : []),
-  ...(routeImpactText(object) ? [packField('route-impact', 'Route impact', routeImpactText(object)!.replace(/^Route impact: /, ''))] : []),
-  packField('capabilities', 'Capabilities', listText(data.capabilities)),
-  packField('crew', 'Crew', factText(data.crew.level)),
-  packField('seats', 'Seats', factText(data.crew.availableSeats)),
-  packField('patients', 'Patients', `${factText(data.transport?.patientsOnBoard, String)} / ${factText(data.transport?.patientCapacity, String)}`),
-]
-
-const ambulanceCapacity = (object: OperationalObject): number => {
-  const data = parseAmbulanceData(object)
-  if (!data) return 0
-  return knownNumber(data.transport?.patientCapacity) ?? knownNumber(data.crew.availableSeats) ?? 0
-}
-
-const ambulancePatientsOnBoard = (data: AmbulancePackData): number =>
-  knownNumber(data.transport?.patientsOnBoard) ?? 0
-
-const assignedAmbulanceCapacityFor = (
-  incident: OperationalObject,
-  objects: ReadonlyArray<OperationalObject>,
-): number =>
-  objects
-    .filter(object => object.tasking?.currentTaskId === incident.id && parseAmbulanceData(object) !== null)
-    .reduce((total, ambulance) => total + ambulanceCapacity(ambulance), 0)
-
-const incidentDemand = (data: IncidentPackData): number =>
-  knownNumber(data.victims.count) ?? 1
-
-const incidentStatus = (
-  object: OperationalObject,
-  data: IncidentPackData,
-  objects: ReadonlyArray<OperationalObject>,
-): PackObjectStatusPresentation => {
-  if (object.operational.status === 'resolved') {
-    return packStatus('idle', 'Resolved')
-  }
-  const demand = incidentDemand(data)
-  const assignedCapacity = assignedAmbulanceCapacityFor(object, objects)
-  if (assignedCapacity === 0) {
-    return packStatus('error', `No assigned ambulance capacity for ${demand} victim${demand === 1 ? '' : 's'}`)
-  }
-  if (assignedCapacity >= demand) return packStatus('ready', `Assigned capacity ${assignedCapacity}/${demand}`, { shape: 'dot', pulse: true })
-  return packStatus('working', `Assigned capacity ${assignedCapacity}/${demand}`, { shape: 'dot', pulse: true })
-}
-
-const ambulanceStatus = (
-  object: OperationalObject,
-  data: AmbulancePackData,
-  objects: ReadonlyArray<OperationalObject>,
-): PackObjectStatusPresentation => {
-  const patientsOnBoard = ambulancePatientsOnBoard(data)
-  if (!object.tasking?.currentTaskId && patientsOnBoard === 0) {
-    return packStatus('ready', 'Idle and empty')
-  }
-  if (object.tasking?.currentTaskId && patientsOnBoard === 0) {
-    const target = objects.find(candidate => candidate.id === object.tasking?.currentTaskId)
-    const incidentBound = target?.kind === 'incident'
-    const hospitalBound = target?.kind === 'facility'
-    return {
-      tone: 'working',
-      label: incidentBound ? 'En route to incident empty' : hospitalBound ? 'En route to hospital empty' : 'En route empty',
-      indicator: incidentBound || hospitalBound
-        ? { shape: 'arrow', direction: incidentBound ? 'left' : 'right', pulse: true }
-        : { shape: 'dot', innerTone: 'ready', pulse: true },
-    }
-  }
-  if (object.tasking?.currentTaskId && patientsOnBoard > 0) {
-    const target = objects.find(candidate => candidate.id === object.tasking?.currentTaskId)
-    const hospitalBound = target?.kind === 'facility'
-    return {
-      tone: 'working',
-      label: hospitalBound ? 'En route to hospital with patient on board' : 'En route with patient on board',
-      indicator: hospitalBound
-        ? { shape: 'arrow', direction: 'right', pulse: true }
-        : { shape: 'dot', pulse: true },
-    }
-  }
-  if (patientsOnBoard > 0) return packStatus('working', 'Patient on board')
-  return packStatus('idle', object.operational.status)
-}
-
-const hospitalStatus = (data: HospitalPackData): PackObjectStatusPresentation => {
-  const total = knownNumber(data.emergencyDepartment.traumaBedsTotal)
-  const available = knownNumber(data.emergencyDepartment.traumaBedsAvailable)
-  if (total === null || available === null || total === 0) return packStatus('idle', 'Trauma bed capacity unknown')
-  const boundedAvailable = Math.max(0, Math.min(available, total))
-  if (boundedAvailable === 0) return packStatus('error', `No trauma beds available (${boundedAvailable}/${total})`)
-  if (boundedAvailable === 1) return packStatus('working', `Limited trauma beds available (${boundedAvailable}/${total})`)
-  return packStatus('ready', `Trauma beds available ${boundedAvailable}/${total}`)
-}
-
-const traumaBedsAvailableText = (data: HospitalPackData): string => {
-  const total = knownNumber(data.emergencyDepartment.traumaBedsTotal)
-  const available = knownNumber(data.emergencyDepartment.traumaBedsAvailable)
-  if (total === null || available === null) return 'unknown'
-  return `${Math.max(0, Math.min(available, total))} / ${total}`
-}
-
-const incidentDetails = (object: OperationalObject, data: IncidentPackData, objects: ReadonlyArray<OperationalObject>): ReadonlyArray<PackObjectField> => [
-  packField('triage', 'Triage', factText(data.triage)),
-  packField('victims', 'Victims', factText(data.victims.count, String)),
-  packField('assigned-capacity', 'Assigned capacity', `${assignedAmbulanceCapacityFor(object, objects)} / ${incidentDemand(data)}`),
-  packField('injuries', 'Injuries', factText(data.victims.injuries, injuryText)),
-  packField('hazards', 'Hazards', factText(data.hazards, listText)),
-]
-
-const hospitalDetails = (data: HospitalPackData): ReadonlyArray<PackObjectField> => [
-  packField('trauma-beds', 'Trauma beds', traumaBedsAvailableText(data)),
-  packField('ambulance-bays', 'Ambulance bays', factText(data.emergencyDepartment.ambulanceBaysAvailable, String)),
-  packField('patients-received', 'Patients received', factText(data.emergencyDepartment.patientsReceived, String)),
-  packField('capabilities', 'Capabilities', listText(data.capabilities)),
-]
-
-const presentationForAmbulance = (
-  object: OperationalObject,
-  objects: ReadonlyArray<OperationalObject>,
-): PackObjectPresentation => {
-  const data = parseAmbulanceData(object)
-  return {
-    categoryId: 'ambulances',
-    icon: 'ambulance',
-    color: '#22845d',
-    summary: `${object.tasking?.currentTaskId ? `Target: ${targetLabel(object, objects)}` : 'Target: none'} · ${object.operational.status}`,
-    status: data ? ambulanceStatus(object, data, objects) : packStatus('error', 'Invalid ambulance pack data'),
-    fields: data ? ambulanceDetails(object, data, objects) : [packField('error', 'Error', 'Invalid ambulance pack data')],
-  }
-}
-
-const presentationForIncident = (
-  object: OperationalObject,
-  objects: ReadonlyArray<OperationalObject>,
-): PackObjectPresentation => {
-  const data = parseIncidentData(object)
-  return {
-    categoryId: 'incidents',
-    icon: 'triangle-alert',
-    color: '#c7352b',
-    summary: data ? `victims ${factText(data.victims.count, String)} · triage ${factText(data.triage)}` : object.operational.status,
-    status: data ? incidentStatus(object, data, objects) : packStatus('error', 'Invalid incident pack data'),
-    fields: data ? incidentDetails(object, data, objects) : [packField('error', 'Error', 'Invalid incident pack data')],
-    muted: object.operational.status === 'resolved',
-    noteworthyUpdates: true,
-  }
-}
-
-const presentationForHospital = (object: OperationalObject): PackObjectPresentation => {
-  const data = parseHospitalData(object)
-  return {
-    categoryId: 'hospitals',
-    icon: 'hospital',
-    color: '#245b9f',
-    summary: data
-      ? `trauma beds ${traumaBedsAvailableText(data)} available · bays ${factText(data.emergencyDepartment.ambulanceBaysAvailable, String)}`
-      : object.operational.status,
-    status: data ? hospitalStatus(data) : packStatus('error', 'Invalid hospital pack data'),
-    fields: data ? hospitalDetails(data) : [packField('error', 'Error', 'Invalid hospital pack data')],
-    noteworthyUpdates: true,
-  }
-}
-
-const countForCategory = (
-  objects: ReadonlyArray<OperationalObject>,
-  categoryId: string,
-): number =>
-  objects.filter(object => ambulancePack.presentation.categories.find(category => category.id === categoryId)?.matches(object)).length
-
-const assertCreatableType = (typeId: string): CreatableAmbulanceObjectType => {
-  if (typeId === 'ambulance' || typeId === 'hospital' || typeId === 'incident') return typeId
-  throw new Error(`unsupported ambulance pack create type: ${typeId}`)
-}
-
-const assertPointGeometry = (geometry: PackCreationGeometry) => {
-  if (geometry.kind !== 'point') throw new Error(`ambulance object creation requires point geometry, got ${geometry.kind}`)
-  return geometry.point
-}
+const urgencyOptions = [{ value: 'acute', label: 'Acute' }, { value: 'urgent', label: 'Urgent' }, { value: 'ordinary', label: 'Ordinary' }]
+const locationField: PackScenarioAuthoringField = { path: ['atObject'], label: 'At existing asset (instead of coordinates)', control: { kind: 'reference' } }
+const placement = { kind: 'point' as const, path: ['position'], orReference: ['atObject'] }
 
 export const ambulancePack: WorldPack = {
-  descriptor: createWorldPackDescriptor({
-    id: 'ambulance',
-    version: '1.0.0',
-    name: 'Ambulance Dispatch',
-    description: 'Emergency medical incidents, hospitals, ambulances, dispatch, routing, and patient transport.',
-    contributions: ['runtime', 'recording', 'scenario', 'presentation', 'creation', 'targeting', 'interactions'],
-  }),
+  ...ambulancePackView,
   scenarioConfigSchema: ambulancePackConfigSchema,
+  recording: { profiles: ambulanceRecordingProfiles, estimateSeries: objects => objects.reduce((sum, object) => sum + observationsFor(object).length, 0) },
+  scenario: ambulanceScenarioSupport,
   authoring: {
     configFields: roadWeatherFields,
     itemTypes: [{
-      id: 'ambulance',
-      label: 'Ambulance',
-      description: 'A dispatchable ambulance placed on the map.',
-      idPrefix: 'ambulance',
-      defaultItem: { equipment: [] },
-      placement: { kind: 'point', path: ['position'], orReference: ['atObject'] },
-      fields: [
-        { path: ['atObject'], label: 'Start at asset (when no map position)', control: { kind: 'reference', itemTypes: ['hospital', 'incident', 'ambulance'] } },
-        { path: ['targetId'], label: 'Initial destination', control: { kind: 'reference', itemTypes: ['hospital', 'incident'] } },
-        { path: ['equipment'], label: 'Equipment (one per line)', control: { kind: 'string-list' } },
-        { path: ['patientsOnBoard'], label: 'Patients on board', control: { kind: 'number', step: 1 } },
+      id: 'ambulance', label: 'Ambulance', idPrefix: 'ambulance',
+      description: 'A response unit with explicit patient capacity, crew readiness and care capabilities. Mobilization and scene durations are editable operational assumptions, not validated clinical timings. Base defaults to the start point.',
+      defaultItem: { patientCapacity: 1, capabilities: [], crewReady: true, mobilizationSeconds: 120, sceneSeconds: 900 }, placement,
+      fields: [locationField,
+        { path: ['patientCapacity'], label: 'Patient capacity', control: { kind: 'number', min: 1, max: 64, step: 1 } },
+        { path: ['capabilities'], label: 'Care capability tags (one per line)', control: { kind: 'string-list' } },
+        { path: ['crewReady'], label: 'Crew ready', control: { kind: 'boolean' } },
+        { path: ['mobilizationSeconds'], label: 'Assumed mobilization (seconds)', control: { kind: 'number', min: 0, step: 1 } },
+        { path: ['sceneSeconds'], label: 'Assumed scene service (seconds)', control: { kind: 'number', min: 0, step: 1 } },
+        { path: ['basePosition', 0], label: 'Base longitude override', control: { kind: 'number', min: -180, max: 180, step: .0001 } },
+        { path: ['basePosition', 1], label: 'Base latitude override', control: { kind: 'number', min: -90, max: 90, step: .0001 } },
       ],
     }, {
-      id: 'hospital',
-      label: 'Hospital',
-      description: 'A receiving hospital with configurable trauma-bed capacity.',
-      idPrefix: 'hospital',
-      defaultItem: { traumaBeds: { total: 5, available: 5 } },
-      placement: { kind: 'point', path: ['position'] },
-      fields: [{
-        path: ['traumaBeds', 'total'], label: 'Trauma beds',
-        control: { kind: 'number', min: 0, step: 1 },
-      }, {
-        path: ['traumaBeds', 'available'], label: 'Available beds',
-        control: { kind: 'number', min: 0, step: 1 },
-      }],
+      id: 'incident', label: 'Incident', idPrefix: 'incident',
+      description: 'A dispatch incident at a point or existing positioned asset. Add individual patient items to describe actual demand; dispatch urgency is separate from patient assessment.',
+      defaultItem: { summary: '', dispatchUrgency: 'urgent' }, placement,
+      fields: [locationField, { path: ['summary'], label: 'Situation summary', control: { kind: 'text' } }, { path: ['dispatchUrgency'], label: 'Dispatch urgency', control: { kind: 'select', options: urgencyOptions } }],
     }, {
-      id: 'incident',
-      label: 'Incident',
-      description: 'An emergency incident with triage severity and victim count.',
-      idPrefix: 'incident',
-      defaultItem: { triage: 'yellow', victims: { state: 'estimated', count: 1 } },
-      placement: { kind: 'point', path: ['position'] },
-      fields: [{
-        path: ['triage'], label: 'Triage',
-        control: { kind: 'select', options: [
-          { value: 'green', label: 'Green' },
-          { value: 'yellow', label: 'Yellow' },
-          { value: 'red', label: 'Red' },
-        ] },
-      }, {
-        path: ['victims', 'count'], label: 'Victims',
-        control: { kind: 'number', min: 0, step: 1 },
-      }],
+      id: 'patient', label: 'Patient', idPrefix: 'patient',
+      description: 'An individual patient belonging to an incident. Capability requirements and assessment are explicitly authored; no generated diagnoses or vital signs. Location follows patient custody.',
+      defaultItem: { summary: '', assessedUrgency: 'urgent', needs: [] },
+      fields: [
+        { path: ['incidentId'], label: 'Incident', control: { kind: 'reference', itemTypes: ['incident'] } },
+        { path: ['summary'], label: 'Patient / operational needs summary', control: { kind: 'text' } },
+        { path: ['assessedUrgency'], label: 'Assessed urgency', control: { kind: 'select', options: urgencyOptions } },
+        { path: ['needs'], label: 'Required care capability tags (one per line)', control: { kind: 'string-list' } },
+      ],
+    }, {
+      id: 'care-site', label: 'Care site', idPrefix: 'care-site',
+      description: 'A hospital or temporary receiving site, standalone or attached to an existing asset. Capabilities, accepted urgency and handover slots are explicit scenario assumptions, not claims about a real facility.',
+      defaultItem: { capabilities: [], acceptedUrgencies: ['ordinary'], handoverSlots: 1, handoverSeconds: 900, accepting: true }, placement,
+      fields: [locationField,
+        { path: ['capabilities'], label: 'Care capability tags (one per line)', control: { kind: 'string-list' } },
+        { path: ['acceptedUrgencies'], label: 'Accepted urgency (acute, urgent, ordinary; one per line)', control: { kind: 'string-list' } },
+        { path: ['handoverSlots'], label: 'Simultaneous handovers', control: { kind: 'number', min: 0, max: 1000, step: 1 } },
+        { path: ['handoverSeconds'], label: 'Assumed handover (seconds)', control: { kind: 'number', min: 0, step: 1 } },
+        { path: ['accepting'], label: 'Accepting arrivals', control: { kind: 'boolean' } },
+      ],
     }],
-  },
-  runtime: {
-    runtimes: [
-      { id: ambulanceSimRuntimeId, version: '1.0.0', label: 'Local ambulance runtime', kind: 'local', clock: 'simulation' },
-    ],
-    defaultRuntimeId: ambulanceSimRuntimeId,
-  },
-  recording: { profiles: ambulanceRecordingProfiles, estimateSeries: objects => objects.reduce((sum, object) => sum + observationsFor(object).length, 0) },
-  scenario: ambulanceScenarioSupport,
-  presentation: {
-    categories: [
-      {
-        id: 'hospitals',
-        label: 'Hospitals',
-        emptyLabel: 'No hospitals',
-        matches: (object: OperationalObject): boolean => parseHospitalData(object) !== null,
-      },
-      {
-        id: 'ambulances',
-        label: 'Ambulances',
-        emptyLabel: 'No ambulances',
-        matches: (object: OperationalObject): boolean => parseAmbulanceData(object) !== null,
-      },
-      {
-        id: 'incidents',
-        label: 'Incidents',
-        emptyLabel: 'No incidents',
-        matches: (object: OperationalObject): boolean => parseIncidentData(object) !== null,
-      },
-    ],
-    presentObject: (object, context): PackObjectPresentation => {
-      if (parseAmbulanceData(object)) return presentationForAmbulance(object, context.objects)
-      if (parseHospitalData(object)) return presentationForHospital(object)
-      if (parseIncidentData(object)) return presentationForIncident(object, context.objects)
-      return {
-        categoryId: 'unknown',
-        icon: 'circle-question-mark',
-        color: '#667085',
-        summary: object.operational.status,
-        status: packStatus('idle', object.operational.status),
-        fields: [packField('warning', 'Warning', 'Object is outside the ambulance pack vocabulary')],
-      }
-    },
-  },
-  creation: {
-    createObjectTypes: [
-      { id: 'hospital', label: 'Hospital', categoryId: 'hospitals', icon: 'hospital', color: '#245b9f', placementKind: 'point' },
-      { id: 'ambulance', label: 'Ambulance', categoryId: 'ambulances', icon: 'ambulance', color: '#22845d', placementKind: 'point' },
-      { id: 'incident', label: 'Incident', categoryId: 'incidents', icon: 'triangle-alert', color: '#c7352b', placementKind: 'point' },
-    ],
-    defaultObjectLabel: (typeId, context): string => {
-      const type = assertCreatableType(typeId)
-      const definition = ambulancePack.creation?.createObjectTypes.find(candidate => candidate.id === type)
-      if (!definition) throw new Error(`missing create type definition: ${type}`)
-      const index = countForCategory(context.objects, definition.categoryId) + 1
-      return `${definition.label} ${index}`
-    },
-    buildCreateObjectCommand: (typeId, label, geometry): PackCommandRequest => {
-      const point = assertPointGeometry(geometry)
-      return {
-        kind: createObjectCommandKind,
-        targetObjectIds: [],
-        payload: {
-          objectType: assertCreatableType(typeId),
-          label,
-          point,
-        },
-      }
-    },
-  },
-  targeting: {
-    isController: (object): boolean => parseAmbulanceData(object) !== null,
-    isTarget: (_controller, candidate): boolean =>
-      parseIncidentData(candidate) !== null || parseHospitalData(candidate) !== null,
-    buildSetTargetCommand: (controller, target): PackCommandRequest => ({
-      kind: setDestinationCommandKind,
-      targetObjectIds: [controller.id, target.id],
-      payload: {
-        ambulanceId: controller.id,
-        destinationId: target.id,
-      },
-    }),
-    buildCancelTargetCommand: (controller): PackCommandRequest => ({
-      kind: cancelDestinationCommandKind,
-      targetObjectIds: [controller.id],
-      payload: {
-        ambulanceId: controller.id,
-      },
-    }),
-  },
-  interactions: {
-    handlers: [createAmbulanceArrivalInteractionHandler()],
   },
 }

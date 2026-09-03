@@ -126,6 +126,26 @@ _Avoid_: atmospheric target, road friction coefficient, reference-map appearance
 An optional mobility-owned rule that translates sampled conditions into an explained movement constraint. It changes the asset's response, not the weather.
 _Avoid_: Weather Influence, hidden rerouting, calibrated tire model
 
+**Response Unit**:
+An ambulance with explicitly described transport capacity, care capabilities, crew readiness and a current operational assignment.
+_Avoid_: assuming every mobile asset can transport patients
+
+**Incident**:
+A reported operational event at a fixed occurrence location, optionally associated with an existing asset. Dispatch urgency describes the response request, not a diagnosis or an individual patient's assessed priority.
+_Avoid_: converting the associated asset into an incident, moving the occurrence when its associated asset moves
+
+**Patient**:
+An individually tracked case with assessed care needs, disposition and exactly one current holder: an incident, ambulance or care site.
+_Avoid_: an interchangeable casualty counter, invented physiology
+
+**Care Site**:
+A receiving or stabilization service at an established location with explicit acceptance criteria and handover capacity. A building or map label alone does not establish that service.
+_Avoid_: hospital bed count as ambulance handover capacity, implicit clinical capability
+
+**Handover**:
+The transfer of a patient's care from a response unit to a care site. Arrival, waiting for a handover slot, transfer completion and unit release are distinct operational moments.
+_Avoid_: instant unloading, treating hospital arrival as unit availability
+
 **Procedure Source**:
 A read-only procedure corpus discovered through one validated Manifest whose revision identifies the immutable document set.
 _Avoid_: hard-coded procedure list, human-readable index scraping, eagerly loaded procedure bundle
