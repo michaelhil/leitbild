@@ -30,12 +30,14 @@ try {
   ]
   await Bun.write(join(scratch, 'places.geojson'), JSON.stringify({ type: 'FeatureCollection', features: places }))
   const output = join(scratch, 'overview.pmtiles')
-  await $`tippecanoe --output=${output} --minimum-zoom=0 --maximum-zoom=6 --simplification=4 --drop-densest-as-needed --maximum-tile-bytes=500000 --layer=countries --named-layer=countries:${join(scratch, 'countries.geojson')} --named-layer=places:${join(scratch, 'places.geojson')}`.quiet()
+  await $`tippecanoe --output=${output} --minimum-zoom=0 --maximum-zoom=6 --simplification=4 --drop-densest-as-needed --maximum-tile-bytes=500000 --named-layer=countries:${join(scratch, 'countries.geojson')} --named-layer=places:${join(scratch, 'places.geojson')}`.quiet()
   const file = Bun.file(output)
   if (file.size > 32 * 1024 ** 2) throw new Error('World overview exceeds 32 MiB artifact budget')
   const archive = new PMTiles({ getKey: () => output, getBytes: async (offset, length) => ({ data: await file.slice(offset, offset + length).arrayBuffer() }) })
   const header = await archive.getHeader()
   if (header.tileType !== TileType.Mvt || !await archive.getZxy(0,0,0)) throw new Error('Invalid overview PMTiles')
+  const metadata = await archive.getMetadata() as { vector_layers?: { id: string }[] }
+  if (!['countries', 'places'].every(id => metadata.vector_layers?.some(layer => layer.id === id))) throw new Error('Overview must retain separate country geometry and place-label layers')
   await Bun.write(join(root, 'build.json'), JSON.stringify({ builtAt: new Date().toISOString(), provider: 'Natural Earth', license: 'Public domain', sourceRevision: revision, bytes: file.size, minZoom: header.minZoom, maxZoom: header.maxZoom }, null, 2))
   await rename(output, join(root, 'current.pmtiles'))
   console.log(`Published global overview: ${file.size} bytes at ${root}`)
