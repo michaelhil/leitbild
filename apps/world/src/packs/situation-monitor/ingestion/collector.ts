@@ -17,6 +17,18 @@ export const collectionKey = (source: SituationSource): string => {
   const credential = source.credentialRef ? process.env['LEITBILD_SOURCE_CREDENTIAL_' + source.credentialRef] : undefined
   return digest(JSON.stringify(request) + (credential ? digest(credential) : ''))
 }
+export const providerWaitSeconds = (headers: Readonly<Record<string, string>>, now: number): number => {
+  const retry = headers['retry-after']
+  const maxAge = headers['cache-control']?.match(/(?:^|,)\s*max-age=(\d+)/i)?.[1]
+  const delays = [
+    retry ? /^\d+$/.test(retry) ? Number(retry) : (Date.parse(retry) - now) / 1000 : 0,
+    maxAge ? Math.max(0, Number(maxAge) - Number(headers.age ?? 0)) : 0,
+    headers.expires ? (Date.parse(headers.expires) - now) / 1000 : 0,
+  ]
+  // Do not shorten provider deadlines to our normal polling interval. Cap only
+  // pathological values to a representable date, with ample arithmetic margin.
+  return Math.max(0, ...delays.filter(Number.isFinite).map(delay => Math.min(delay, (8000000000000000 - now) / 1000)))
+}
 interface Entry {
   source: SituationSource; listeners: Map<symbol, () => void>; status: SourceStatus;
   intervals: Map<symbol, number>; failures: number;
@@ -48,15 +60,7 @@ export const createCollector = (store: RecordStore, http: PublicHttp = publicHtt
         const cached = store.count(key) > 0
         const response = entry.source.adapter === 'media' ? { status: 200, text: '', headers: {} as Readonly<Record<string, string>> } : await http(sourceRequestUrl(entry.source), { signal: entry.abort!.signal, etag: cached ? metadata.etag : undefined, modifiedSince: cached ? metadata.modifiedSince : undefined, bearer: credentialFor(entry.source) })
         if (!entry.listeners.size) return // Last lease closed while the request was in flight.
-        const retry = response.headers['retry-after']
-        if (retry) {
-          const delay = /^\d+$/.test(retry) ? Number(retry) : (Date.parse(retry) - Date.now()) / 1000
-          if (Number.isFinite(delay)) waitSeconds = Math.max(waitSeconds, Math.min(86400, delay))
-        }
-        const maxAge = response.headers['cache-control']?.match(/(?:^|,)\s*max-age=(\d+)/)?.[1]
-        const expires = response.headers.expires ? Date.parse(response.headers.expires) : NaN
-        if (maxAge) waitSeconds = Math.max(waitSeconds, Math.min(86400, Number(maxAge)))
-        if (Number.isFinite(expires)) waitSeconds = Math.max(waitSeconds, Math.min(86400, (expires - Date.now()) / 1000))
+        waitSeconds = Math.max(waitSeconds, providerWaitSeconds(response.headers, Date.now()))
         if (response.headers['cache-control']?.includes('no-store')) throw new Error('Provider disallows caching; this source cannot be retained by Situation Monitor')
         if (response.status !== 200 && response.status !== 304) throw new Error('Provider HTTP ' + response.status)
         if (response.status === 304 && !cached) throw new Error('Provider returned unchanged content without an available cached body')
@@ -70,7 +74,7 @@ export const createCollector = (store: RecordStore, http: PublicHttp = publicHtt
         store.touch(key, entry.source.retentionHours)
         const lastSuccessAt = new Date().toISOString()
         const nextAttemptAt = new Date(Date.now() + waitSeconds * 1000 + Math.random() * 3000).toISOString()
-        store.setMetadata(key, { etag: response.headers.etag ?? metadata.etag, modifiedSince: response.headers['last-modified'] ?? metadata.modifiedSince, bodyHash: response.status === 200 ? bodyHash : metadata.bodyHash, lastSuccessAt, nextAttemptAt })
+        store.setMetadata(key, { etag: response.headers.etag ?? (response.status === 304 ? metadata.etag : undefined), modifiedSince: response.headers['last-modified'] ?? (response.status === 304 ? metadata.modifiedSince : undefined), bodyHash: response.status === 200 ? bodyHash : metadata.bodyHash, lastSuccessAt, nextAttemptAt })
         entry.status = { ...entry.status, state: 'ready', lastSuccessAt, nextAttemptAt, recordCount: store.count(key), error: null }
         entry.failures = 0
       } catch (error) {

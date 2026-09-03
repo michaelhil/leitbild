@@ -1,4 +1,5 @@
 import { lookup } from 'node:dns/promises'
+import type { LookupAddress } from 'node:dns'
 import { BlockList, isIP } from 'node:net'
 import { request } from 'node:https'
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib'
@@ -16,6 +17,12 @@ export const isPublicAddress = (address: string): boolean => {
 export interface PublicHttpResult { readonly status: number; readonly text: string; readonly headers: Readonly<Record<string, string>> }
 export type PublicHttp = (url: string, options?: { readonly signal?: AbortSignal | undefined; readonly etag?: string | undefined; readonly modifiedSince?: string | undefined; readonly bearer?: string | undefined }) => Promise<PublicHttpResult>
 const maxBodyBytes = 8 * 1024 * 1024 // An interactive feed, not a bulk dataset or media download.
+const resolveWithDeadline = (hostname: string, signal: AbortSignal) => new Promise<LookupAddress[]>((resolve, reject) => {
+  signal.throwIfAborted()
+  const aborted = () => reject(signal.reason)
+  signal.addEventListener('abort', aborted, { once: true })
+  void lookup(hostname, { all: true }).then(resolve, reject).finally(() => signal.removeEventListener('abort', aborted))
+})
 
 export const publicHttp: PublicHttp = async (rawUrl, options = {}) => {
   let url = new URL(sourceUrlSchema.parse(rawUrl))
@@ -24,7 +31,7 @@ export const publicHttp: PublicHttp = async (rawUrl, options = {}) => {
   for (let redirect = 0; redirect <= 3; redirect++) {
     signal.throwIfAborted()
     const hostname = url.hostname.replace(/^\[|\]$/g, '')
-    const resolved = isIP(hostname) ? [{ address: hostname, family: isIP(hostname) }] : await lookup(hostname, { all: true })
+    const resolved = isIP(hostname) ? [{ address: hostname, family: isIP(hostname) }] : await resolveWithDeadline(hostname, signal)
     if (!resolved.length || resolved.some(entry => !isPublicAddress(entry.address))) throw new Error('Source destination is not a public internet address')
     const pinned = resolved[0]!
     const response = await new Promise<{ status: number; headers: Record<string, string>; body: Buffer }>((resolve, reject) => {

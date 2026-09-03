@@ -34,7 +34,10 @@
       ])
       if (disposed || request !== sequence) return
       status = nextStatus; page = nextPage; error = ''
-      if (selected) selected = nextPage.records.find(record => record.sourceId === selected!.sourceId && record.id === selected!.id) ?? selected
+      if (selected) {
+        if (!nextStatus.config.sources.some(source => source.id === selected!.sourceId)) selected = null
+        else selected = nextPage.records.find(record => record.sourceId === selected!.sourceId && record.id === selected!.id) ?? selected
+      }
     } catch (cause) { if (!disposed && request === sequence) error = String(cause) }
     finally { if (!disposed && request === sequence) loading = false }
   }

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { runOnMount } from '../../../ui/svelte-lifecycle.svelte.ts'
   import type { ExternalRecord } from '../model.ts'
   const { media }: { media: NonNullable<ExternalRecord['media']> } = $props()
   let requested = $state(false)

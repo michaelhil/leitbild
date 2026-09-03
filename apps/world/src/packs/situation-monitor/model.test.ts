@@ -4,7 +4,7 @@ import { describeSourceAdapters } from './adapters/catalog.ts'
 import { situationSourceSchema, situationConfigSchema, intersectsBounds, externalRecordSchema, recordSearchSchema, externalGeometrySchema } from './model.ts'
 import { mapRecords, recordMapFeatures, watchedAreaFeatures } from './map.ts'
 import { isPublicAddress, publicHttp } from './ingestion/public-http.ts'
-import { createCollector } from './ingestion/collector.ts'
+import { createCollector, providerWaitSeconds } from './ingestion/collector.ts'
 import { openRecordStore } from './ingestion/store.ts'
 
 const now = '2026-09-03T12:00:00.000Z'
@@ -12,6 +12,12 @@ const rss = situationSourceSchema.parse({ id: 'news', name: 'News', adapter: 'rs
 const xml = '<rss><channel><item><guid>one</guid><title>Tokyo report</title><link>https://example.com/one</link><pubDate>Thu, 03 Sep 2026 12:00:00 GMT</pubDate></item></channel></rss>'
 describe('Situation Monitor source boundary', () => {
   test('supports empty composition and discovers all exact schemas', () => { expect(situationConfigSchema.parse({})).toEqual({ areas: [], sources: [] }); expect(describeSourceAdapters()).toHaveLength(5) })
+  test('honours provider deadlines beyond a day and cached response age', () => {
+    expect(providerWaitSeconds({ 'retry-after': '172800' }, Date.parse(now))).toBe(172800)
+    expect(providerWaitSeconds({ 'cache-control': 'public, max-age=3600', age: '600' }, Date.parse(now))).toBe(3000)
+    expect(providerWaitSeconds({ expires: 'Sat, 05 Sep 2026 12:00:00 GMT' }, Date.parse(now))).toBe(172800)
+    expect(providerWaitSeconds({ 'retry-after': 'invalid', expires: 'invalid' }, Date.parse(now))).toBe(0)
+  })
   test('rejects duplicate IDs and credential-bearing URLs', () => {
     expect(() => situationConfigSchema.parse({ sources: [rss, rss] })).toThrow('unique')
     expect(() => situationSourceSchema.parse({ ...rss, url: 'https://example.com/?api_key=secret' })).toThrow('Credentials')

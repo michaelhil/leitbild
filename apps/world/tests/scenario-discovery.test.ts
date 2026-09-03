@@ -5,12 +5,17 @@ import { join } from 'node:path'
 import { builtinScenarioDefinitions,discoverScenarioDefinitions } from '../src/scenarios/definitions.ts'
 
 describe('bundled scenario discovery', () => {
-  test('ships the editable power-complex and weather-response definitions', () => {
+  test('ships the editable physical and global observation examples', () => {
     expect(builtinScenarioDefinitions.map(source => source.id)).toEqual([
       'halden-power-complex',
       'halden-weather-response',
+      'japan-situation-monitor',
+      'world-situation-monitor',
     ])
     expect(builtinScenarioDefinitions[0]?.packs.map(pack => pack.id)).toEqual(['process-plant', 'electric-grid', 'weather'])
+    for (const id of ['japan-situation-monitor', 'world-situation-monitor']) {
+      expect(builtinScenarioDefinitions.find(source => source.id === id)?.packs.map(pack => pack.id)).toEqual(['situation-monitor'])
+    }
   })
   test('accepts an empty catalog and discovers new files without a registry edit', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'leitbild-scenario-discovery-'))
