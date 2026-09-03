@@ -2,6 +2,7 @@ import type { IncludeContext, IncludePrompts } from '../../core/types/agent.ts'
 import type { MessageAttachment, MessageTarget } from '../../core/types/messaging.ts'
 import { validateSummaryConfig } from '../../core/types/summary.ts'
 import type { BiometricSignalWire, WSInbound } from '../../core/types/ws-protocol.ts'
+import { workspaceResourceReferenceSchema, type WorkspaceResourceReference } from '@leitbild/contracts'
 
 type ValidationResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: string }
 type RawObject = Record<string, unknown>
@@ -69,6 +70,19 @@ const validateAttachments = (value: unknown): ValidationResult<ReadonlyArray<Mes
     })
   }
   return { ok: true, value: out }
+}
+
+const validateFocusedResources = (value: unknown): ValidationResult<ReadonlyArray<WorkspaceResourceReference> | undefined> => {
+  if (value === undefined) return { ok: true, value: undefined }
+  if (!Array.isArray(value)) return { ok: false, error: 'focusedResources must be an array' }
+  if (value.length > 4) return { ok: false, error: 'focusedResources may contain at most 4 Resources' }
+  const resources: WorkspaceResourceReference[] = []
+  for (const [index, raw] of value.entries()) {
+    const parsed = workspaceResourceReferenceSchema.safeParse(raw)
+    if (!parsed.success) return { ok: false, error: `focusedResources[${index}] must be a valid Workspace Resource reference` }
+    resources.push(parsed.data)
+  }
+  return { ok: true, value: resources }
 }
 
 const validateBooleanMap = <T extends IncludePrompts | IncludeContext>(value: unknown, key: string): ValidationResult<T | undefined> => {
@@ -154,6 +168,8 @@ export const validateWSInbound = (raw: unknown): ValidationResult<WSInbound> => 
       if (!senderId.ok) return senderId
       const attachments = validateAttachments(raw.attachments)
       if (!attachments.ok) return attachments
+      const focusedResources = validateFocusedResources(raw.focusedResources)
+      if (!focusedResources.ok) return focusedResources
       return {
         ok: true,
         value: {
@@ -162,6 +178,7 @@ export const validateWSInbound = (raw: unknown): ValidationResult<WSInbound> => 
           content: content.value,
           ...(senderId.value ? { senderId: senderId.value } : {}),
           ...(attachments.value.length > 0 ? { attachments: attachments.value } : {}),
+          ...(focusedResources.value === undefined ? {} : { focusedResources: focusedResources.value }),
         },
       }
     }

@@ -2,6 +2,7 @@
 // (server → client) message discriminated unions.
 
 import type { Message, MessageTarget, RoomProfile, AgentProfile, DeliveryMode } from './messaging.ts'
+import type { WorkspaceResourceReference } from '@leitbild/contracts'
 import type { AIAgentConfig, IncludeContext, IncludePrompts, StateValue } from './agent.ts'
 import type { RoomState, SummaryTarget } from './room.ts'
 import type { EvalEvent } from './agent-eval.ts'
@@ -9,7 +10,7 @@ import type { OllamaHealth } from './llm.ts'
 import type { SummaryConfig } from './summary.ts'
 
 export type WSInbound =
-  | { readonly type: 'post_message'; readonly target: MessageTarget; readonly content: string; readonly senderId?: string; readonly attachments?: ReadonlyArray<import('./messaging.ts').MessageAttachment> }
+  | { readonly type: 'post_message'; readonly target: MessageTarget; readonly content: string; readonly senderId?: string; readonly attachments?: ReadonlyArray<import('./messaging.ts').MessageAttachment>; readonly focusedResources?: ReadonlyArray<WorkspaceResourceReference> }
   | { readonly type: 'create_room'; readonly name: string; readonly roomPrompt?: string }
   | { readonly type: 'add_to_room'; readonly roomName: string; readonly agentName: string }
   | { readonly type: 'remove_from_room'; readonly roomName: string; readonly agentName: string }

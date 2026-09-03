@@ -96,6 +96,7 @@ export interface AIAgent extends Agent {
   readonly getTools: () => ReadonlyArray<string> | undefined
   readonly updateTools?: (tools: ReadonlyArray<string>) => void
   readonly getToolGrants: () => ReadonlyArray<ToolGrant>
+  readonly getFocusedResources: (roomId: string) => ReadonlyArray<import('@leitbild/contracts').WorkspaceResourceReference>
   readonly updateToolGrants: (grants: ReadonlyArray<ToolGrant>) => void
   readonly refreshTools?: (support: {
     toolExecutor?: ToolExecutor

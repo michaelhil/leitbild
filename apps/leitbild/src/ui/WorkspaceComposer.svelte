@@ -1,7 +1,10 @@
 <script lang="ts">
+  import type { WorkspaceResourceReference } from '@leitbild/contracts'
+
   interface Props {
     readonly workspaceId: string
     readonly worldRunId: string | null
+    readonly focusedResource: WorkspaceResourceReference | null
     readonly agentsRoomId: string | null
     readonly companionLoading: boolean
     readonly companionError: string | null
@@ -14,13 +17,26 @@
   const collapseThreshold = 12
   const minimumOpenShare = 20
 
-  let { workspaceId, worldRunId, agentsRoomId, companionLoading, companionError, retryCompanion }: Props = $props()
+  let { workspaceId, worldRunId, focusedResource, agentsRoomId, companionLoading, companionError, retryCompanion }: Props = $props()
   let splitPercent = $state(initialSplit)
   let lastOpenSplit = $state(initialSplit)
   let collapsedPane = $state<CollapsedPane>(null)
   let dragging = $state(false)
   let dragLeft = 0
   let dragWidth = 1
+  let agentsFrame = $state<HTMLIFrameElement | null>(null)
+
+  const publishResourceFocus = (): void => {
+    agentsFrame?.contentWindow?.postMessage({
+      type: 'leitbild:resource-focus',
+      resource: focusedResource,
+    }, location.origin)
+  }
+
+  $effect(() => {
+    focusedResource
+    publishResourceFocus()
+  })
 
   const gridColumns = $derived(
     collapsedPane === 'world'
@@ -133,11 +149,13 @@
       </div>
     {:else}
     <iframe
+      bind:this={agentsFrame}
       class="module-frame active"
       src={agentsRoomId === null
         ? `/workspaces/${encodeURIComponent(workspaceId)}/agents`
         : `/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(agentsRoomId)}`}
       title="Agents room"
+      onload={publishResourceFocus}
     ></iframe>
     {/if}
   </section>

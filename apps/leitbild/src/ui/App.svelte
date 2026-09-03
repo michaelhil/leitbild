@@ -14,6 +14,7 @@
   import WorkspaceComposer from './WorkspaceComposer.svelte'
   import WorkspacePicker from './WorkspacePicker.svelte'
   import InlineName from './InlineName.svelte'
+  import SimulationRunControls from './SimulationRunControls.svelte'
   import { request, jsonRequest } from './api.ts'
   import { cardCapability } from './card-actions.ts'
   import { openCompanion } from './companion.ts'
@@ -289,6 +290,22 @@
     else if (resource.uiPath) location.href = resource.uiPath
   }
 
+  const switchWorldRun = (runId: string, replace = false): void => {
+    selectedWorldRunId = runId
+    const url = new URL(location.href)
+    url.searchParams.set('world', runId)
+    if (selectedAgentsRoomId) url.searchParams.set('agents', selectedAgentsRoomId)
+    if (replace) history.replaceState(null, '', url)
+    else history.pushState(null, '', url)
+  }
+
+  const restoreUrlSelection = (): void => {
+    const selection = new URLSearchParams(location.search)
+    selectedWorldRunId = selection.get('world')
+    selectedAgentsRoomId = selection.get('agents')
+    if (selectedWorldRunId && !selectedAgentsRoomId && workspace) void prepareCompanion(false)
+  }
+
   const capabilityFor = (id: string): ModuleCapabilityDescriptor | undefined => capabilities.find(item => item.id === id)
   const renameResource = async (resource: ModuleResourceDescriptor, name: string, expectedTitle: string): Promise<void> => {
     if (!workspace) throw new Error('Workspace is unavailable')
@@ -325,7 +342,11 @@
   }, 20_000)
   onDestroy(() => clearInterval(refreshInterval))
 
-  onMount(() => { void load() })
+  onMount(() => {
+    window.addEventListener('popstate', restoreUrlSelection)
+    void load()
+    return () => window.removeEventListener('popstate', restoreUrlSelection)
+  })
 </script>
 
 <svelte:window onmessage={handleWindowMessage} />
@@ -333,6 +354,17 @@
 {#if currentPage.kind === 'workspace' && workspace}
   <header class="workspace-bar">
     <div class="workspace-identity"><a class="brand" href="/workspaces">Leitbild</a><a class="workspace-name" href={`/workspaces/${workspace.id}`} title={workspaceTitle}>[{workspaceTitle}]</a></div>
+    {#if selectedWorldResource}
+      <SimulationRunControls
+        workspaceId={workspace.id}
+        resource={selectedWorldResource}
+        {resources}
+        {capabilities}
+        onSwitch={switchWorldRun}
+        refreshResources={() => refreshResources(workspace!.id)}
+        reportError={message => { error = message }}
+      />
+    {/if}
   </header>
 {:else}
   <header class="topbar"><a class="brand" href="/workspaces">Leitbild</a><span class="tagline">— A modular microworld simulation and AI agent sandbox system</span></header>
@@ -358,7 +390,7 @@
     {#each catalogFailures as outcome (outcome.moduleId)}{#if outcome.status === 'failed'}<p class="notice error" role="alert">{moduleTitles[outcome.moduleId]}: {outcome.failure.message}</p>{/if}{/each}
     {#if refreshError}<p class="notice error" role="alert">Catalog refresh failed: {refreshError}</p>{/if}
     {#if showingComposer}
-    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} agentsRoomId={selectedAgentsRoomId} {companionLoading} {companionError} retryCompanion={() => prepareCompanion()} />
+    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} focusedResource={selectedWorldResource?.ref ?? null} agentsRoomId={selectedAgentsRoomId} {companionLoading} {companionError} retryCompanion={() => prepareCompanion()} />
     {:else}
       <section class="workspace-home">
         {#if error}<p class="notice error">{error}</p>{/if}

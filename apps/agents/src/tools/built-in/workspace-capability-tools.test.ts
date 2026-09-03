@@ -5,6 +5,7 @@ import {
   newWorkspaceId,
   resourceIdSchema,
   resourceTypeSchema,
+  workspaceResourceReferenceSchema,
 } from '@leitbild/contracts'
 import { createWorkspaceCapabilityTools } from './workspace-capability-tools.ts'
 import { __testSeam } from '../../agents/spawn.ts'
@@ -74,7 +75,7 @@ describe('Workspace Capability tools', () => {
     expect(absent.data).toMatchObject({ capabilities: [] })
   })
   test('current Room association remains discoverable when filtering for World resources', async () => {
-    const ref = { workspaceId, moduleId, type: resourceType, id: resourceId }
+    const ref = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId, type: resourceType, id: resourceId })
     const linked = { ref: { workspaceId, moduleId: 'agents', type: 'agents.room', id: 'room' }, title: 'Conversation', capabilityIds: [], links: [{ rel: 'companion-of', ref }], observedAt: new Date().toISOString() }
     const base = catalogFetch([])
     const tools = createWorkspaceCapabilityTools({ workspaceId, hostBaseUrl: 'https://host.test', getToolGrants: () => [{ capabilityId }], fetchImpl: (async (input, init) => {
@@ -83,9 +84,9 @@ describe('Workspace Capability tools', () => {
       const body = await response.json() as { resources: unknown[] }
       return Response.json({ ...body, resources: [...body.resources, linked] })
     }) as typeof fetch })
-    const result = await tools[0]!.execute({ moduleId: 'world' }, { callerId: 'agent', callerName: 'Analyst', roomId: 'room' })
+    const result = await tools[0]!.execute({ moduleId: 'world' }, { callerId: 'agent', callerName: 'Analyst', roomId: 'room', focusedResources: [ref] })
     expect(result.success).toBe(true)
-    expect(result.data).toMatchObject({ currentRoom: linked, resources: [{ ref }] })
+    expect(result.data).toMatchObject({ focusedResources: [ref], currentRoom: linked, resources: [{ ref }] })
   })
   test('executor cancellation reaches the Workspace broker transport', async () => {
     let observedSignal: AbortSignal | undefined
@@ -104,6 +105,24 @@ describe('Workspace Capability tools', () => {
     controller.abort(new Error('Evaluation cancelled'))
     expect((await result)[0]?.success).toBe(false)
     expect(observedSignal?.aborted).toBe(true)
+  })
+  test('executor adds the current turn Resource focus to ToolContext', async () => {
+    const ref = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId, type: resourceType, id: resourceId })
+    const registry = createToolRegistry()
+    registry.register({
+      name: 'focus_probe',
+      description: 'Returns focused resources.',
+      parameters: { type: 'object', additionalProperties: false },
+      execute: async (_params, context) => ({ success: true, data: context.focusedResources }),
+    })
+    const executor = __testSeam.createToolExecutor(
+      registry,
+      ['focus_probe'],
+      { callerId: 'agent', callerName: 'Analyst' },
+      undefined,
+      () => [ref],
+    )
+    expect((await executor([{ tool: 'focus_probe', arguments: {} }], 'room'))[0]?.data).toEqual([ref])
   })
   test('discovers Resources and shows grant state without persisting a Resource id', async () => {
     const requests: Request[] = []

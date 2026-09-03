@@ -81,9 +81,9 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
 
   const catalog: Tool = {
     name: WORKSPACE_CAPABILITY_TOOL_NAMES[0],
-    description: 'List reusable Definitions and live Resources exposed by Modules in this Workspace. Includes currentRoom and its links, even when filters exclude Rooms; use companion-of to identify the resource this conversation accompanies.',
-    usage: 'Call with {} for initial discovery; then use exact identifiers from the catalog as optional filters. Discover identities immediately before invoking a scoped Capability. Do not remember runtime Resource ids as Agent configuration.',
-    returns: '{ workspaceId, definitions[], resources[] } with stable references, provenance, UI paths, links, and advertised capabilityIds.',
+    description: 'List reusable Definitions and live Resources exposed by Modules in this Workspace. Prefer focusedResources for “this/current”; otherwise use the current Room companion-of link.',
+    usage: 'Call with {} for initial discovery; then use exact identifiers from the catalog as optional filters. focusedResources is transient browser context and currentRoom is durable Room context. Discover identities immediately before invoking a scoped Capability. Do not remember runtime Resource ids as Agent configuration.',
+    returns: '{ workspaceId, focusedResources[], currentRoom, definitions[], resources[] } with stable references, provenance, UI paths, links, and advertised capabilityIds.',
     parameters: {
       type: 'object',
       properties: {
@@ -112,6 +112,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
           success: true,
           data: {
             workspaceId: resources.workspaceId,
+            focusedResources: context.focusedResources ?? [],
             currentRoom: resources.resources.find(resource => resource.ref.type === 'agents.room' && resource.ref.id === context.roomId) ?? null,
             modules: {
               definitions: definitions.modules,

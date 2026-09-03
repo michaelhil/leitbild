@@ -693,7 +693,12 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       const toolNames = ai.getTools() ?? []
       const support = await buildToolSupport(
         toolNames, toolRegistry,
-        { id: ai.id, name: ai.name, currentModel: () => ai.getModel() },
+        {
+          id: ai.id,
+          name: ai.name,
+          currentModel: () => ai.getModel(),
+          focusedResources: roomId => ai.getFocusedResources(roomId),
+        },
         llm,
         undefined,
         // Pack-aware filter must survive a hot reload — without re-passing

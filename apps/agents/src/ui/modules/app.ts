@@ -40,6 +40,7 @@ import {
 } from './ollama-dashboard.ts'
 import { stopProvidersPanel } from './panels/providers/index.ts'
 import { startLoggingStateDot } from './panels/logging-panel.ts'
+import { getFocusedResources, startWorkspaceFocusListener } from './workspace-focus.ts'
 import { initSettingsNav } from './settings-nav.ts'
 import { hydrateIconPlaceholders, icon } from './icon.ts'
 import {
@@ -109,6 +110,7 @@ const $ = (sel: string) => document.querySelector(sel)!
 // The `client` reference is held in ws-send.ts so any UI module can call
 // `send(...)` without being threaded the client through imports.
 let client: WSClient | null = null
+startWorkspaceFocusListener()
 
 // === Action helpers ===
 
@@ -560,6 +562,7 @@ chatForm.onsubmit = (e) => {
     target: { rooms: [roomName] },
     content,
     senderId,
+    focusedResources: getFocusedResources(),
     ...(pendingAtts.length > 0 ? { attachments: pendingAtts } : {}),
   })
   if (pendingAtts.length > 0) clearAttachments(roomId)

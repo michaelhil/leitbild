@@ -23,6 +23,14 @@ import { addAgentToRoom } from './actions.ts'
 import { createToolSurface, inferProviderFromModelRef, FAMILY_DISPATCHER_NAMES } from '../tool-surface/index.ts'
 import { CURATED_MODELS } from '../llm/models/catalog.ts'
 import { WORKSPACE_CAPABILITY_TOOL_NAMES } from '../tools/built-in/workspace-capability-tools.ts'
+import type { WorkspaceResourceReference } from '@leitbild/contracts'
+
+interface AgentToolContextRef {
+  id: string
+  name: string
+  currentModel?: () => string
+  focusedResources?: (roomId: string) => ReadonlyArray<WorkspaceResourceReference>
+}
 
 // --- Tool executor ---
 
@@ -34,12 +42,15 @@ const createToolExecutor = (
   allowedTools: ReadonlyArray<string>,
   context: ToolContext,
   getRoomActivation?: GetRoomActivation,
+  getFocusedResources?: (roomId: string) => ReadonlyArray<WorkspaceResourceReference>,
 ): ToolExecutor => {
   const allowed = new Set(allowedTools)
 
   return async (calls: ReadonlyArray<ToolCall>, roomId?: string, signal?: AbortSignal): Promise<ReadonlyArray<ToolResult>> => {
     const results: ToolResult[] = []
-    const callContext: ToolContext = roomId ? { ...context, roomId } : context
+    const callContext: ToolContext = roomId
+      ? { ...context, roomId, focusedResources: getFocusedResources?.(roomId) ?? [] }
+      : context
 
     // Two access gates: Agent Tool Selection and, where applicable, Room
     // Pack activation. NO skill-level whitelist: skill
@@ -154,7 +165,7 @@ export type GetRoomActivation = (roomId: string) =>
 export const buildToolSupport = async (
   toolNames: ReadonlyArray<string>,
   registry: ToolRegistry,
-  agentRef: { readonly id: string; readonly name: string; readonly currentModel?: () => string },
+  agentRef: AgentToolContextRef,
   llmProvider: LLMProvider,
   seed?: number,
   getRoomActivation?: GetRoomActivation,
@@ -199,7 +210,13 @@ export const buildToolSupport = async (
   // allToolNames, but they're real tools in the registry. Inject them.
   const dispatcherNames = surface.getRegistryDispatchers().map(d => d.name)
   const executorAllowedNames = [...allToolNames, ...dispatcherNames.filter(n => !allToolNames.includes(n))]
-  const executor = createToolExecutor(registry, executorAllowedNames, lazyContext, getRoomActivation)
+  const executor = createToolExecutor(
+    registry,
+    executorAllowedNames,
+    lazyContext,
+    getRoomActivation,
+    roomId => agentRef.focusedResources?.(roomId) ?? [],
+  )
 
   // Initial projection — no room context yet, no provider known. project()
   // is cheap; the per-eval resolveToolDefinitions below overrides this
@@ -238,7 +255,7 @@ const resolveAgentTools = async (
   config: AIAgentConfig,
   llmProvider: LLMProvider,
   toolRegistry: ToolRegistry | undefined,
-  agentRef: { id: string; name: string },
+  agentRef: AgentToolContextRef,
   getRoomActivation?: GetRoomActivation,
 ): Promise<AgentToolSupport> => {
   if (!toolRegistry) return {}
@@ -391,7 +408,7 @@ export const spawnAIAgent = async (
   }
 
   // Resolve tool support — agentRef filled after agent creation (lazy context)
-  const agentRef = { id: '', name: '' }
+  const agentRef: AgentToolContextRef = { id: '', name: '' }
   const toolSupport = await resolveAgentTools(
     config,
     llmProvider,
@@ -426,6 +443,8 @@ export const spawnAIAgent = async (
   // Fill agentRef so the lazy ToolContext in resolveAgentTools resolves correctly
   agentRef.id = agent.id
   agentRef.name = agent.name
+  agentRef.currentModel = agent.getModel
+  agentRef.focusedResources = agent.getFocusedResources
 
   team.addAgent(agent)
 

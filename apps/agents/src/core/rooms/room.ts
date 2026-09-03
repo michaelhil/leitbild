@@ -34,6 +34,7 @@ import { DEFAULT_SUMMARY_CONFIG } from '../types/summary.ts'
 import { SYSTEM_SENDER_ID } from '../types/constants.ts'
 import { parseAddressedAgents } from './addressing.ts'
 import { deliverBroadcast } from './delivery-modes.ts'
+import { attachMessageFocus } from '../message-focus.ts'
 
 export interface RoomCallbacks {
   readonly deliver?: DeliverFn
@@ -98,16 +99,19 @@ export const createRoom = (
 
   // --- Post helpers ---
 
-  const createRoomMessage = (params: PostParams): Message => ({
-    // Caller-supplied fields flow through untouched — every optional field
-    // on Message (tokens, provider, stepPrompt, etc.) is preserved without
-    // enumeration here.
-    ...params,
-    // Server-stamped fields override.
-    id: crypto.randomUUID(),
-    roomId: profile.id,
-    timestamp: Date.now(),
-  })
+  const createRoomMessage = (params: PostParams): Message => {
+    const { focusedResources, ...persisted } = params
+    const message: Message = {
+      // Caller-supplied Message fields flow through untouched. Browser focus
+      // is deliberately excluded because it is not durable conversation data.
+      ...persisted,
+      id: crypto.randomUUID(),
+      roomId: profile.id,
+      timestamp: Date.now(),
+    }
+    attachMessageFocus(message, focusedResources)
+    return message
+  }
 
   const dispatchToAddressed = (message: Message, targets: ReturnType<typeof parseAddressedAgents>): boolean => {
     const ids = new Set<string>()

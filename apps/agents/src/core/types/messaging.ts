@@ -174,7 +174,11 @@ export interface MessageTarget {
 // agentName). This is intentional — callers that need those fields set them; others
 // leave them undefined.
 
-export type PostParams = Omit<Message, 'id' | 'roomId' | 'timestamp'>
+export type PostParams = Omit<Message, 'id' | 'roomId' | 'timestamp'> & {
+  // Transient per-browser Resource focus for the Agent turn triggered by this
+  // post. Room removes it before creating/persisting the Message.
+  readonly focusedResources?: ReadonlyArray<import('@leitbild/contracts').WorkspaceResourceReference>
+}
 
 // === Delivery — callback for Room to deliver messages to agents ===
 // History is no longer passed — agents initialise context via join() before

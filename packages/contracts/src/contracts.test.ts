@@ -5,6 +5,7 @@ import {
   moduleResourceDescriptorSchema,
   newWorkspaceId,
   packDescriptorSchema,
+  workspaceResourceFocusMessageSchema,
 } from './index.ts'
 
 describe('pack contracts', () => {
@@ -53,6 +54,18 @@ describe('Resource Summary contracts', () => {
       ...resource,
       summary: [...resource.summary, { key: 'viewer-count', label: 'Other viewers', kind: 'count', value: 3 }],
     })).toThrow('duplicate Resource Summary key')
+  })
+})
+
+describe('transient Resource focus contract', () => {
+  test('accepts an exact Resource reference or an explicit cleared focus', () => {
+    const workspaceId = newWorkspaceId()
+    const focused = workspaceResourceFocusMessageSchema.parse({
+      type: 'leitbild:resource-focus',
+      resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-1' },
+    })
+    expect(String(focused.resource?.id)).toBe('run-1')
+    expect(workspaceResourceFocusMessageSchema.parse({ type: 'leitbild:resource-focus', resource: null }).resource).toBeNull()
   })
 })
 

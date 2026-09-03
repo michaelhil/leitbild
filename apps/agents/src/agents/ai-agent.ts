@@ -33,6 +33,8 @@ import { callLLM, evaluate, type EvalResult, type OnDecision } from './evaluatio
 import { createConcurrencyManager } from './concurrency.ts'
 import { getContextWindowSync } from '../llm/models/context-window.ts'
 import { parsePrefixedModel, isCloudProvider } from '../llm/models/parse-prefix.ts'
+import { messageFocus } from '../core/message-focus.ts'
+import type { WorkspaceResourceReference } from '@leitbild/contracts'
 
 // Per-eval context budget computation lives in budget.ts. Two modes:
 //   static (default): max(FLOOR, contextMax * 0.7)   ← byte-identical to pre-Tier-2 behavior
@@ -122,6 +124,7 @@ export const createAIAgent = (
     incoming: [],
     agentProfiles: new Map(),
   }
+  const focusedResourcesByRoom = new Map<string, ReadonlyArray<WorkspaceResourceReference>>()
 
   const cm = createConcurrencyManager(agentId)
 
@@ -338,6 +341,25 @@ export const createAIAgent = (
 
     cm.startGeneration(triggerRoomId)
     cm.notifyState('generating', triggerRoomId)
+
+    // Use the newest transient focus carried by this pending turn. It lives
+    // only for tool context; it never enters the prompt history or snapshots.
+    const pendingMessages = agentHistory.incoming
+    const roomMessages = agentHistory.rooms.get(triggerRoomId)?.history ?? []
+    let turnFocus: ReadonlyArray<WorkspaceResourceReference> | undefined
+    for (const messages of [pendingMessages, roomMessages]) {
+      for (let index = messages.length - 1; index >= 0; index--) {
+        const message = messages[index]!
+        if (message.roomId !== triggerRoomId) continue
+        const focus = messageFocus(message)
+        if (focus === undefined) continue
+        turnFocus = focus
+        break
+      }
+      if (turnFocus !== undefined) break
+    }
+    if (turnFocus === undefined) focusedResourcesByRoom.delete(triggerRoomId)
+    else focusedResourcesByRoom.set(triggerRoomId, turnFocus)
 
     // One traceId per evaluate() call — every EvalEvent for this eval
     // carries it so subscribers (the diagnostics ring buffer + UI) can
@@ -612,6 +634,7 @@ export const createAIAgent = (
     getTools: () => currentTools,
     updateTools: (tools: ReadonlyArray<string>) => { currentTools = tools },
     getToolGrants: () => currentToolGrants,
+    getFocusedResources: (roomId: string) => focusedResourcesByRoom.get(roomId) ?? [],
     updateToolGrants: (grants) => { currentToolGrants = [...grants] },
     getIncludePrompts: () => ({ ...includePromptsState }),
     updateIncludePrompts: (partial: IncludePrompts) => {

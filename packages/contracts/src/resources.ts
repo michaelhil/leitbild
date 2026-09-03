@@ -27,6 +27,15 @@ export const workspaceResourceReferenceSchema = z.object({
 })
 export type WorkspaceResourceReference = z.infer<typeof workspaceResourceReferenceSchema>
 
+// Same-origin Host -> Module UI message. This is transient browser context:
+// it identifies the Resource currently in view without changing durable Room
+// links or persisted chat history.
+export const workspaceResourceFocusMessageSchema = z.object({
+  type: z.literal('leitbild:resource-focus'),
+  resource: workspaceResourceReferenceSchema.nullable(),
+}).strict()
+export type WorkspaceResourceFocusMessage = z.infer<typeof workspaceResourceFocusMessageSchema>
+
 const jsonSchemaSchema = z.record(z.string(), z.unknown())
 
 export const moduleCapabilityDescriptorSchema = z.object({

@@ -13,10 +13,11 @@ import type { RouteMessage } from '../core/types/agent.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
 import type { AgentsWorkspaceRuntime } from '../workspace-runtime.ts'
 import type { ClientSession, WSManager } from './ws-types.ts'
-import { newWorkspaceId } from '@leitbild/contracts'
+import { newWorkspaceId, workspaceResourceReferenceSchema } from '@leitbild/contracts'
 import { createWorkspaceSettings } from '../core/workspaces/settings.ts'
 import { createBookmarkStore } from '../core/workspaces/bookmark-store.ts'
 import { createLimitMetrics } from '../core/limit-metrics.ts'
+import { messageFocus } from '../core/message-focus.ts'
 
 // === Helpers ===
 
@@ -198,6 +199,25 @@ describe('WS Handler', () => {
     const msgEvents = messages().filter(m => m.type === 'message')
     expect(msgEvents).toHaveLength(1)
     expect((msgEvents[0]!.message as Record<string, unknown>).content).toBe('Hello')
+  })
+
+  test('post_message carries browser Resource focus transiently without serializing it', async () => {
+    const { ws, messages } = makeWS()
+    const focusedResource = workspaceResourceReferenceSchema.parse({
+      workspaceId: TEST_WORKSPACE_ID,
+      moduleId: 'world',
+      type: 'world.simulation-run',
+      id: 'run-focused',
+    })
+    await dispatch(ws, session, system, wsManager, {
+      type: 'post_message', target: { rooms: ['TestRoom'] }, content: 'Inspect this run', senderId: humanId,
+      focusedResources: [focusedResource],
+    })
+    const stored = system.rooms.getRoom('TestRoom')!.getRecent(1)[0]!
+    expect(messageFocus(stored)).toEqual([focusedResource])
+    expect(stored).not.toHaveProperty('focusedResources')
+    const wire = messages().find(message => message.type === 'message')
+    expect(wire).not.toHaveProperty('message.focusedResources')
   })
 
   // --- set_paused ---
