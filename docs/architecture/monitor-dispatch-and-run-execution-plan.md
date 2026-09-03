@@ -2,7 +2,7 @@
 
 Date: 3 September 2026. Audited baseline: `1e9ace11`.
 
-Status: investigation and adversarial review complete. The isolated Situation Monitor correctness fixes are implemented and undergoing release validation. The Ambulance replacement and shared Run-execution changes below are a coordinated proposal, not already implemented functionality.
+Status: investigation and adversarial review complete. The isolated Situation Monitor correctness fixes are implemented and deployed. The Ambulance replacement and shared Run-execution changes below are a coordinated proposal, not already implemented functionality.
 
 ## Recommendation
 
@@ -268,3 +268,16 @@ Required regression matrix:
 | Rewrite Monitor into an ETL platform | Existing topology already fits the requirement | Fix semantics, query payloads and small admission inconsistencies |
 
 This plan deliberately makes internal execution stricter while making authoring simpler. The cost is coordinated refactoring across simulation adapters and more explicit checkpoint tests. The payoff is a credible dispatch model, trustworthy restart/branch behavior and a common basis for future experiments—not another compatibility layer or a broader framework to maintain.
+
+## Released correctness patch
+
+Code commit `bfa7046a`, included in production release `20260903T161837Z-c7159bc60d-bee8f6e9c3`:
+
+- Subscriber cadence recomputation with durable provider/backoff restrictions preserved.
+- Shared provider provenance separated from consuming source names/attribution, using one attribution policy for current adapters.
+- Consistent latitude-bounds validation, nonempty multipart geometry, and removal of duplicate Norwegian geometry parsing.
+- Nullable not-retained inspection result; transient inspection failures no longer dismiss selected evidence.
+
+Full platform checks, tests and production builds passed: World 654; Agents 1,433 with two existing skips; Host 23; contracts 18; Module runtime 11; integration one. All three services, Caddy, OSRM and public health passed after deployment. An existing Monitor Run reconnected with both sources ready, retained record inspection worked through the UI and Host broker, and a missing record returned `null`. No browser errors/warnings appeared in the smoke test. No new Workspace, Run or Room was created, and no existing Run/history/cache was deleted. Existing procedure-state and large-bundle build warnings remain outside this patch.
+
+Stored deadlines from before the patch remain conservative until they expire or a subsequent eligible response replaces them. An old local polling interval cannot safely be distinguished from a provider restriction, so the fix does not bypass that stored deadline. New collection responses persist the separated restriction correctly. Compact search filters, validity presentation, captured branch evidence, Ambulance replacement and accelerated execution remain planned work.
