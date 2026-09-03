@@ -92,6 +92,14 @@ describe('server health', () => {
       expect(ranged.status).toBe(206)
       expect(ranged.headers.get('content-length')).toBe('4')
       expect(await ranged.text()).toBe('2345')
+      const fontDir = join(dataDir, 'fonts', 'Noto Sans Regular')
+      await mkdir(fontDir, { recursive: true })
+      await Bun.write(join(fontDir, '0-255.pbf'), new Uint8Array([10, 0]))
+      const style = await fetch(`http://127.0.0.1:${server.port}/map/style.json`).then(response => response.json()) as { glyphs: string }
+      expect(style.glyphs).toMatch(/^\/map\/fonts\/\{fontstack\}\/\{range\}\.pbf\?build=\d+$/)
+      const glyph = await fetch(`http://127.0.0.1:${server.port}${style.glyphs.replace('{fontstack}', 'Noto%20Sans%20Regular').replace('{range}', '0-255')}`)
+      expect(glyph.headers.get('content-type')).toBe('application/x-protobuf')
+      expect(new Uint8Array(await glyph.arrayBuffer())).toEqual(new Uint8Array([10, 0]))
     } finally { await server.stop(); await workspaces.shutdown(); await rm(dataDir, { recursive: true, force: true }) }
   })
   test('serves module worker assets with a JavaScript MIME type', () => {

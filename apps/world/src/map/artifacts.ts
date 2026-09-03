@@ -388,7 +388,10 @@ export const mapStyleResponse = async (theme: string | null = null, config: MapA
     return Response.json({ ok: false, error: 'invalid map theme' }, { status: 400 })
   }
   const manifest = await loadMapCapabilityManifest({ mapRoot: config.rootDir, referenceRoot: referenceRootFromEnv() })
-  return Response.json(createLeitbildMapStyle((theme ?? 'light') as MapTheme, manifest.tilesets.filter(tileset => tileset.kind === 'base')))
+  const style = createLeitbildMapStyle((theme ?? 'light') as MapTheme, manifest.tilesets.filter(tileset => tileset.kind === 'base'))
+  const glyphFile = Bun.file(glyphProbePath(config))
+  // Installed fonts are replaceable artifacts; do not retain an old cached range after installation.
+  return Response.json({ ...style, glyphs: style.glyphs + (await glyphFile.exists() ? '?build=' + glyphFile.lastModified : '') })
 }
 
 const fileStatus = async (path: string): Promise<MapArtifactFileStatus> => {

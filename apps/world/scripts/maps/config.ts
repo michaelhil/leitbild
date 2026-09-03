@@ -27,7 +27,7 @@ export const createMapPipelineConfig = (): MapPipelineConfig => {
     sourcePath: process.env.LEITBILD_OSM_SOURCE_PATH ?? join(rootDir, 'sources', 'norway-latest.osm.pbf'),
     planetilerVersion: process.env.LEITBILD_PLANETILER_VERSION ?? 'v0.10.2',
     planetilerJarPath: process.env.LEITBILD_PLANETILER_JAR ?? join(rootDir, 'tools', 'planetiler.jar'),
-    fontBaseUrl: process.env.LEITBILD_MAP_FONT_BASE_URL ?? 'https://fonts.openmaptiles.org',
+    fontBaseUrl: process.env.LEITBILD_MAP_FONT_BASE_URL ?? 'https://raw.githubusercontent.com/maplibre/demotiles/601ae60796ceceda2cbd2ed3d2ea92d17a84be4b/font',
     fontStack: process.env.LEITBILD_MAP_FONT_STACK ?? 'Noto Sans Regular',
     fontsDir: process.env.LEITBILD_MAP_FONTS_DIR ?? join(rootDir, 'fonts'),
     buildId,

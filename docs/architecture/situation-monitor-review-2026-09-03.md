@@ -193,3 +193,18 @@ Do not automatically analyze/transcribe video. Any future image analysis should 
 5. **Editor, AI and tests:** source/dataset/symbol discovery uses the same descriptors as validation; interactive edits save normally to Run/Scenario. Verify browser playback, source removal, multi-user edits, shared leases, restart/backoff, empty and partial catalogues, malformed geometry, dateline coverage, bursts and bounded storage. Then deploy under the standing deployment instruction.
 
 Adversarial limits: no universal ETL graph, auto-installing adapters, generic crawler, plugin marketplace, per-camera Source hierarchy, unbounded raw archives, new spatial database, arbitrary styling expressions, per-record LLM enrichment, automatic physical coupling or wholesale map-engine replacement. Readability matters more than minimizing line count: expand dense multi-operation code and use small tested helpers rather than another abstraction tier.
+
+## Implementation outcome
+
+The approved core changes are implemented: collection-level snapshots and persistent retry deadlines; explicit observation subjects and validity; bounded Norwegian catalogue adapters; standard JSON Pointer field mapping; shared, searchable Lucide symbols; native map fills/lines/symbols; visible coverage limits; editable source presentation; and one Norway scenario. Full icon metadata stays server-side; artwork and HLS load on demand. Source snapshots are not a historian archive.
+
+The national traffic feed's full road geometry exceeded the 8 MiB ingestion ceiling. The adapter requests the provider's published display coordinates and useful metadata instead (about 2 MiB), explicitly labels the location representation, and folds duplicated secondary classifications into one identified report. It does **not** draw a point as if it described the full affected road. Complete catalogues are bounded and checked; no generic pagination framework was needed.
+
+Production acceptance in an isolated temporary Workspace confirmed four ready sources: 895 cameras, 467 measured-weather stations, 2,394 traffic reports and one warning at the time of testing. Counts change with the provider. Live dataset discovery, tag-based icon search, Run configuration saving and an 800×450 provider image worked. The companion Room was provisioned normally; no paid model inference was invoked.
+
+Browser acceptance also caught two issues outside simple decoder tests:
+
+- Native HLS was advertised by the browser but did not decode this stream. The player now checks HLS.js MSE support first, as recommended by the [upstream integration guide](https://github.com/video-dev/hls.js#embedding-hlsjs), then uses native HLS on browsers without MSE. Unchanged refreshed record metadata no longer restarts playback.
+- Every previously installed map font range contained an HTML landing page despite a successful download status. The installer now uses a pinned [MapLibre font artifact source](https://github.com/maplibre/demotiles/tree/601ae60796ceceda2cbd2ed3d2ea92d17a84be4b/font), validates protobuf identity/range before replacing anything, downloads with four bounded workers, and versions browser font URLs by installed artifact time. This is an artifact acquisition failure, not a Caddy routing failure.
+
+Deliberate boundaries remain: no arbitrary crawler, freehand annotation tool, heatmap/raster authoring, automatic video analysis, signed-media credential extension, physical coupling, or retained observation history. Generic GeoRSS extraction and richer record-status filters remain follow-up extensions, not implied implemented features. Browser acceptance is not a Safari certification or a guarantee of every provider stream's availability.

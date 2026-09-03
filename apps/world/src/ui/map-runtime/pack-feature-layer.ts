@@ -29,7 +29,11 @@ export const createPackFeatureLayer = (onSelect: (selection: NonNullable<PackMap
           if (wantedIcons.has(id) && !target.hasImage('pack-icon:' + id)) { target.addImage('pack-icon:' + id, image, { pixelRatio: 2 }); registered.add(id) }
         }
       } catch (error) { if (map === target) onError(String(error)) }
-      finally { pending = null }
+      finally {
+        pending = null
+        // A style or icon selection may have changed while artwork was loading.
+        if (map && (generation !== ticket || [...wantedIcons].some(id => !missing.includes(id) && !map!.hasImage('pack-icon:' + id)))) syncIcons()
+      }
     })()
   }
   const click = (event: MapMouseEvent) => {
@@ -67,7 +71,7 @@ export const createPackFeatureLayer = (onSelect: (selection: NonNullable<PackMap
       next.addLayer({ id: layerIds[0]!, type: 'fill', source: sourceId, filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': ['get','color'], 'fill-opacity': ['get','opacity'] } }, beforeLabels)
       next.addLayer({ id: layerIds[1]!, type: 'line', source: sourceId, filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': ['get','lineColor'], 'line-width': ['get','lineWidth'], 'line-opacity': ['get','lineOpacity'] } }, beforeLabels)
       next.addLayer({ id: layerIds[2]!, type: 'circle', source: sourceId, filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': ['case', ['!=', ['get','icon'], ''], 13, 6], 'circle-color': ['get','color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 1, 'circle-opacity': .9 } })
-      next.addLayer({ id: layerIds[3]!, type: 'symbol', source: sourceId, filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get','icon'], '']], layout: { 'icon-image': ['get','icon'], 'icon-size': ['*', .8, ['get','size']], 'icon-allow-overlap': true, 'icon-ignore-placement': true } })
+      next.addLayer({ id: layerIds[3]!, type: 'symbol', source: sourceId, filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get','icon'], '']], layout: { 'icon-image': ['coalesce', ['image', ['get','icon']], ''], 'icon-size': ['*', .8, ['get','size']], 'icon-allow-overlap': true, 'icon-ignore-placement': true } })
       syncIcons()
     },
     destroy() { map?.off('click', click); map = null; generation++; byId.clear(); registered.clear(); wantedIcons.clear() },

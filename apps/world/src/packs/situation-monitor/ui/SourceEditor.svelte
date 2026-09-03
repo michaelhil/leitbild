@@ -36,7 +36,12 @@
   }
   function publish(value: SituationConfig) { onchange(situationConfigSchema.parse(value)) }
   function save() {
-    try { const source = situationSourceSchema.parse(draft); publish({ ...settings, sources: [...settings.sources.filter(item => item.id !== source.id), source] }); draft = null; error = '' }
+    try {
+      const source = situationSourceSchema.parse(draft)
+      const exists = settings.sources.some(item => item.id === source.id)
+      publish({ ...settings, sources: exists ? settings.sources.map(item => item.id === source.id ? source : item) : [...settings.sources, source] })
+      draft = null; error = ''
+    }
     catch (cause) { error = cause instanceof Error ? cause.message : String(cause) }
   }
   async function probe() {

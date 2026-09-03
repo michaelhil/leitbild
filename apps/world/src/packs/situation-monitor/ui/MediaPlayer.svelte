@@ -4,6 +4,9 @@
   let requested = $state(false)
   let video = $state<HTMLVideoElement | null>(null)
   let error = $state('')
+  // A refreshed record must not restart an unchanged stream.
+  const format = $derived(media.format)
+  const mediaUrl = $derived(media.url)
   function youtubeEmbed(url: string): string | null {
     const parsed = new URL(url)
     const id = parsed.hostname === 'youtu.be' ? parsed.pathname.slice(1) : ['www.youtube.com', 'youtube.com'].includes(parsed.hostname) ? parsed.searchParams.get('v') ?? parsed.pathname.match(/^\/(?:embed|live|shorts)\/([^/]+)/)?.[1] : null
@@ -11,17 +14,23 @@
   }
   $effect(() => {
     const element = video
-    if (!requested || !element || media.format !== 'hls') return
+    if (!requested || !element || format !== 'hls') return
+    const url = mediaUrl
     let active = true, destroy: (() => void) | undefined
     error = ''
-    if (element.canPlayType('application/vnd.apple.mpegurl')) element.src = media.url
-    else void import('hls.js').then(({ default: Hls }) => {
+    // Some Chromium builds advertise native HLS but cannot play these streams.
+    // Prefer the library's capability check; native playback serves non-MSE browsers.
+    void import('hls.js').then(({ default: Hls }) => {
       if (!active) return
-      if (!Hls.isSupported()) { error = 'HLS playback is not supported by this browser'; return }
+      if (!Hls.isSupported()) {
+        if (element.canPlayType('application/vnd.apple.mpegurl')) element.src = url
+        else error = 'HLS playback is not supported by this browser'
+        return
+      }
       const player = new Hls({ maxBufferLength: 20, maxMaxBufferLength: 30, backBufferLength: 0 })
       destroy = () => player.destroy()
       player.on(Hls.Events.ERROR, (_event, data) => { if (data.fatal) { error = 'Stream could not be played: ' + data.details; player.destroy() } })
-      player.loadSource(media.url); player.attachMedia(element)
+      player.loadSource(url); player.attachMedia(element)
     }).catch(cause => { if (active) error = String(cause) })
     return () => { active = false; destroy?.(); element.removeAttribute('src'); element.load() }
   })
