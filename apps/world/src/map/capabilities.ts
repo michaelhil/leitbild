@@ -377,10 +377,10 @@ export const createBaseTileset = (): BaseTileset => baseTilesetSchema.parse({
   layers: baseLayers,
 })
 
-export const createOverviewTileset = (): BaseTileset => baseTilesetSchema.parse({
+export const createOverviewTileset = (artifactMtime?: number): BaseTileset => baseTilesetSchema.parse({
   kind: 'base', id: 'world-overview', schemaVersion: 1,
   region: { id: 'world', source: 'natural-earth', sourceUrl: 'https://www.naturalearthdata.com/' },
-  artifact: { format: 'pmtiles', tileEncoding: 'mvt', currentTileUrl: '/map/tiles/overview.pmtiles', tileTemplate: '/map/tiles/overview/{z}/{x}/{y}.mvt', bounds: [-180,-85.051129,180,85.051129], minZoom: 0, maxZoom: 6, attribution: 'Made with Natural Earth · generalized overview, not street detail', styleUrl: '/map/style.json', glyphsUrl: '/map/fonts/{fontstack}/{range}.pbf' },
+  artifact: { format: 'pmtiles', tileEncoding: 'mvt', currentTileUrl: '/map/tiles/overview.pmtiles', tileTemplate: '/map/tiles/overview/{z}/{x}/{y}.mvt' + (artifactMtime === undefined ? '' : '?build=' + artifactMtime), bounds: [-180,-85.051129,180,85.051129], minZoom: 0, maxZoom: 6, attribution: 'Made with Natural Earth · generalized overview, not street detail', styleUrl: '/map/style.json', glyphsUrl: '/map/fonts/{fontstack}/{range}.pbf' },
   schema: { name: 'natural-earth-overview', generatedBy: 'tippecanoe', evolution: 'breaking changes increment schemaVersion; no backward compatibility is preserved' },
   layers: [
     { id: 'countries', sourceLayer: 'countries', geometry: ['polygon'], category: 'base_context', intendedUse: 'Generalized land and country outlines, not authoritative boundaries or operational truth', fields: [] },
@@ -719,9 +719,10 @@ export const loadMapCapabilityManifest = async (
   const terrainArtifact = await terrainArtifactFor(mapRoot)
   const terrain = createTerrainTileset(terrainArtifact)
   const scenery = createSceneryTileset(await sceneryArtifactFor(mapRoot))
+  const overview = freshStamps.find(stamp => stamp.id === 'overview' && stamp.mtimeMs >= 0)
   const manifest = mapCapabilityManifestSchema.parse({
     schemaVersion: mapManifestSchemaVersion,
-    tilesets: [createBaseTileset(), ...freshStamps.some(stamp => stamp.id === 'overview' && stamp.mtimeMs >= 0) ? [createOverviewTileset()] : [], terrain, scenery, ...referenceTilesets],
+    tilesets: [createBaseTileset(), ...(overview ? [createOverviewTileset(overview.mtimeMs)] : []), terrain, scenery, ...referenceTilesets],
   })
   cache = { manifest, stamps: freshStamps }
   return manifest
