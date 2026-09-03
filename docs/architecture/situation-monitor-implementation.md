@@ -4,9 +4,9 @@ Approved 2026-09-03: implement a native, globally configurable World Pack, inspi
 
 ## Delivery checkpoints
 
-- [ ] Foundations: global vector coverage, typed Pack map features, clock-independent observations, Pack-owned authoring/probe extension.
-- [ ] Collection: source schemas/adapters, restricted HTTP, shared Workspace collectors, bounded indexed records, durable live source edits, editor and inspector.
-- [ ] Measurements/media: original-provider forecasts, charts, supported on-demand video, visible failure and freshness.
+- [x] Foundations: global vector coverage, typed Pack map features, clock-independent observations, Pack-owned authoring/probe extension.
+- [x] Collection: source schemas/adapters, restricted HTTP, shared Workspace collectors, bounded indexed records, durable live source edits, editor and inspector.
+- [x] Measurements/media: original-provider forecasts, charts, supported on-demand video, visible failure and freshness.
 - [ ] Agents/release: discoverable reads and management, editable global/non-Norwegian examples, lifecycle/security/storage/performance tests, production verification.
 
 ## Boundaries
@@ -20,3 +20,12 @@ Approved 2026-09-03: implement a native, globally configurable World Pack, inspi
 - Worldwide overview plus explicit regional detail; no full-detail planet download, external basemap fallback, or implied global routing.
 
 Later scope remains unadvertised: CAP, fire detection, source-catalog discovery, imagery, observed tracks, frozen input import, continuous physical coupling and risk scoring.
+
+## Implementation review
+
+- Reused the SQLite engine already present in the Historian and Host, not a new database service.
+- Generalized the existing Pack map-feature contract and removed the redundant Deck polygon rendering path. World map readiness now checks all declared basemap sources, including the global overview.
+- Preserved normal Run idle/background policy; monitoring does not introduce hidden always-on jobs or claim restart persistence.
+- Explicit source-to-Scenario save patches only Situation Monitor settings into the current Scenario, with revision checks. It does not re-save stale Plant/Grid parameters from the Run's pinned definition.
+- Real provider checks returned USGS events, NASA feed entries and Tokyo forecasts. The global overview build is 1,124,870 bytes. Initial full World suite: 627 passing tests; expanded Pack coverage adds persistence, isolation, indexed search, dateline, geometry, parser and budget cases.
+- Interactive production verification remains the final gate.

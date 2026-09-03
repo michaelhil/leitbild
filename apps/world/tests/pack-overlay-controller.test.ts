@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import { geoPointFromLonLat, type GeoJsonPolygon } from '../src/core/model/index.ts'
-import type { PackMapAreaFeature } from '../src/core/packs/protocol.ts'
+import type { PackMapFeature } from '../src/core/packs/protocol.ts'
 import { createMapPerformanceDiagnostics } from '../src/ui/map-runtime/map-performance-diagnostics.ts'
 import { createPackOverlayController } from '../src/ui/map-runtime/pack-overlay-controller.ts'
 import type { MapRuntimeDiagnosticPhaseReport, MapRuntimeHandle } from '../src/ui/map-runtime/types.ts'
@@ -17,7 +17,7 @@ const viewport: GeoJsonPolygon = {
   ]],
 }
 
-const featureFor = (id: string): PackMapAreaFeature => ({
+const featureFor = (id: string): PackMapFeature => ({
   id,
   categoryId: 'weather',
   geometry: viewport,
@@ -46,7 +46,7 @@ describe('PackOverlayController', () => {
   test('does not query when disabled and clears active features', async () => {
     const reports: MapRuntimeDiagnosticPhaseReport[] = []
     let loadCalls = 0
-    let features: ReadonlyArray<PackMapAreaFeature> = [featureFor('stale')]
+    let features: ReadonlyArray<PackMapFeature> = [featureFor('stale')]
     let changed = 0
     const controller = createPackOverlayController({
       getRuntime: () => createRuntime(reports),
@@ -79,7 +79,7 @@ describe('PackOverlayController', () => {
 
   test('disabled sync is idempotent when no overlay features are active', () => {
     const reports: MapRuntimeDiagnosticPhaseReport[] = []
-    let features: ReadonlyArray<PackMapAreaFeature> = []
+    let features: ReadonlyArray<PackMapFeature> = []
     let changed = 0
     const controller = createPackOverlayController({
       getRuntime: () => createRuntime(reports),
@@ -140,7 +140,7 @@ describe('PackOverlayController', () => {
     const reports: MapRuntimeDiagnosticPhaseReport[] = []
     let loadCalls = 0
     let revision = 'r1'
-    let features: ReadonlyArray<PackMapAreaFeature> = []
+    let features: ReadonlyArray<PackMapFeature> = []
     const controller = createPackOverlayController({
       getRuntime: () => createRuntime(reports),
       getViewport: () => viewport,

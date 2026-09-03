@@ -81,7 +81,7 @@
 ## Map Rendering Rules
 
 - Use MapLibre as Leitbild's base geospatial rendering engine.
-- Use self-hosted PMTiles vector tiles as the only base map source. The base map style must load from `/map/style.json`; the tile source must load from `/map/tiles/current.pmtiles`.
+- Use self-hosted PMTiles vector tiles as the only base map source. The base map style loads from `/map/style.json`; discover overview/regional tile templates and their actual coverage through `/map/capabilities.json`. Do not imply that worldwide overview includes global street detail or routing.
 - Render geospatial truth with native MapLibre sources/layers: entity positions, routes, trails, zones, uncertainty geometry, alert areas, selection halos, and large-fleet views.
 - Do not use MapLibre DOM markers for core object rendering; DOM marker anchoring can drift from the true projected coordinate across zoom levels.
 - Use Lucide-style SVG artwork only as MapLibre-native registered images/symbols, not as free-floating marker DOM.

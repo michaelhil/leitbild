@@ -5,8 +5,10 @@ import type { DatasetConfig,DatasetId } from '../../reference-data/types.ts'
 import type { RoutingAdapter } from '../../routing/protocol.ts'
 import type { GeoJsonPoint,GeoJsonPolygon,InteractionHandler,IsoTimestamp,MapLayerId,ObjectId,OperationalObject,RecordingProfileDescriptor } from '../model/index.ts'
 import { geoJsonPointSchema,geoJsonPolygonSchema,isoTimestampSchema } from '../model/index.ts'
+import { geoJsonGeometrySchema, type GeoJsonGeometry } from '../model/geo.ts'
 
 export type WorldPackDescriptor = PackDescriptor & { readonly description: string }
+export const packDataChangedSchema = z.object({ packId: z.string().min(1), revision: z.number().int().nonnegative() }).strict()
 
 /** Builder a pack declares to contribute a reference dataset. The CLI reads `id`
  * for filtering and listing; `build` runs only when the pipeline actually
@@ -143,14 +145,15 @@ export interface PackMapRenderContext {
   readonly zoom: number
 }
 
-export interface PackMapAreaFeature {
+export interface PackMapFeature {
   readonly layerId?: string
   readonly id: string
   readonly categoryId: string
-  readonly geometry: GeoJsonPolygon
+  readonly geometry: GeoJsonGeometry
+  readonly selection?: { readonly panelId: string; readonly itemId: string }
   readonly anchorPoint?: GeoJsonPoint
-  readonly animation?: PackMapAreaFeatureAnimation
-  readonly symbol?: PackMapAreaFeatureSymbol
+  readonly animation?: PackMapFeatureAnimation
+  readonly symbol?: PackMapFeatureSymbol
   readonly color: string
   readonly summary: string
   readonly opacity?: number
@@ -160,7 +163,7 @@ export interface PackMapAreaFeature {
   readonly sortKey?: number
 }
 
-export interface PackMapAreaFeatureAnimation {
+export interface PackMapFeatureAnimation {
   readonly fromGeometry: GeoJsonPolygon
   readonly toGeometry: GeoJsonPolygon
   readonly fromAnchorPoint?: GeoJsonPoint
@@ -169,19 +172,20 @@ export interface PackMapAreaFeatureAnimation {
   readonly toTime: IsoTimestamp
 }
 
-export interface PackMapAreaFeatureSymbol {
+export interface PackMapFeatureSymbol {
   readonly icon: string
   readonly tone?: PackObjectStatusTone
   readonly opacity?: number
   readonly size?: number
 }
 
-export const packMapAreaFeatureSchema = z
+export const packMapFeatureSchema = z
   .object({
     layerId: z.string().min(1).optional(),
     id: z.string().min(1),
     categoryId: z.string().min(1),
-    geometry: geoJsonPolygonSchema,
+    geometry: geoJsonGeometrySchema,
+    selection: z.object({ panelId: z.string().min(1), itemId: z.string().min(1) }).strict().optional(),
     anchorPoint: geoJsonPointSchema.optional(),
     animation: z.object({
     fromGeometry: geoJsonPolygonSchema,
@@ -207,7 +211,7 @@ export const packMapAreaFeatureSchema = z
   })
   .strict()
 
-export interface PackMapAreaFeatureQuery {
+export interface PackMapFeatureQuery {
   readonly capabilityId: string
   readonly input: unknown
 }
@@ -338,7 +342,7 @@ export interface PackReferenceDataContribution {
   readonly datasetIds: ReadonlyArray<DatasetId>
 }
 
-export interface PackContextualFieldQuery extends PackMapAreaFeatureQuery {
+export interface PackContextualFieldQuery extends PackMapFeatureQuery {
   readonly toFields: (result: unknown) => ReadonlyArray<PackObjectField>
 }
 export interface PackPresentationContribution {
@@ -352,19 +356,19 @@ export interface PackPresentationContribution {
     object: OperationalObject,
     context: PackObjectPresentationContext,
   ) => ReadonlyArray<PackObjectField>
-  readonly mapAreaFeatures?: (
+  readonly mapFeatures?: (
     context: PackObjectPresentationContext,
-  ) => ReadonlyArray<PackMapAreaFeature>
-  readonly mapAreaFeatureLayers?: ReadonlyArray<MapLayerId>
+  ) => ReadonlyArray<PackMapFeature>
+  readonly mapFeatureLayers?: ReadonlyArray<MapLayerId>
   /**
    * Object pack ids whose object revisions can invalidate map-area features.
    * Defaults to the contributing pack id when omitted. Use ['*'] only for
    * genuinely cross-pack area features that depend on every object revision.
    */
-  readonly mapAreaFeatureSourcePackIds?: ReadonlyArray<string>
-  readonly mapAreaFeatureQueries?: (
+  readonly mapFeatureSourcePackIds?: ReadonlyArray<string>
+  readonly mapFeatureQueries?: (
     context: PackObjectPresentationContext,
-  ) => ReadonlyArray<PackMapAreaFeatureQuery>
+  ) => ReadonlyArray<PackMapFeatureQuery>
   readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
 }
 
@@ -415,6 +419,7 @@ export interface PackSurfacePanelContribution {
 
 export interface PackUiContribution {
   readonly surfacePanels: ReadonlyArray<PackSurfacePanelContribution>
+  readonly settingsEditor?: () => Promise<{ readonly default: Component }>
 }
 
 /** The browser-safe projection of a World Pack. It contains only contributions

@@ -242,19 +242,19 @@ describe('pack architecture', () => {
       descriptor: createWorldPackDescriptor({
         id: 'weather-layer-one', version: '1.0.0', name: 'Weather Layer One', description: 'Test Pack.', contributions: ['presentation'],
       }),
-      presentation: { ...ambulancePack.presentation, categories: [], mapAreaFeatureLayers: ['weather'] },
+      presentation: { ...ambulancePack.presentation, categories: [], mapFeatureLayers: ['weather'] },
     }
     const secondPackWithWeatherLayer: WorldPack = {
       ...weatherPack,
       descriptor: createWorldPackDescriptor({
         id: 'weather-layer-two', version: '1.0.0', name: 'Weather Layer Two', description: 'Test Pack.', contributions: ['presentation'],
       }),
-      presentation: { ...weatherPack.presentation, categories: [], mapAreaFeatureLayers: ['weather'] },
+      presentation: { ...weatherPack.presentation, categories: [], mapFeatureLayers: ['weather'] },
     }
 
     const activeViews = createActivePackViews([packWithWeatherLayer, secondPackWithWeatherLayer])
 
-    expect(activeViews.presentation.mapAreaFeatureLayers).toEqual(['weather'])
+    expect(activeViews.presentation.mapFeatureLayers).toEqual(['weather'])
   })
 
   test('presentation composer caches by tier and exposes pack object indexes', () => {

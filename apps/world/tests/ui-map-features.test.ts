@@ -7,7 +7,7 @@ import {
   type OperationalObject,
   type PackId,
 } from '../src/core/model/index.ts'
-import type { PackMapAreaFeature, PackObjectPresentation } from '../src/core/packs/protocol.ts'
+import type { PackMapFeature, PackObjectPresentation } from '../src/core/packs/protocol.ts'
 import { inspectBaseMapReadiness } from '../src/ui/map-runtime/base-map-readiness.ts'
 import { createMapFeatureStore } from '../src/ui/map-runtime/map-feature-store.ts'
 
@@ -51,7 +51,7 @@ const updateStore = (
     readonly highlightedObjectIds?: ReadonlyArray<string>
     readonly hiddenObjectCategoryIds?: ReadonlyArray<string>
     readonly placementPoints?: ReadonlyArray<ReturnType<typeof geoPointFromLonLat>>
-    readonly packAreaFeatures?: ReadonlyArray<PackMapAreaFeature>
+    readonly packFeatures?: ReadonlyArray<PackMapFeature>
     readonly hasNewInfo?: (object: OperationalObject) => boolean
   } = {},
 ) => createMapFeatureStore().update({
@@ -60,7 +60,7 @@ const updateStore = (
   highlightedObjectIds: extras.highlightedObjectIds ?? [],
   hiddenObjectCategoryIds: extras.hiddenObjectCategoryIds ?? [],
   placementPoints: extras.placementPoints ?? [],
-  packAreaFeatures: extras.packAreaFeatures ?? [],
+  packFeatures: extras.packFeatures ?? [],
   hasNewInfo: extras.hasNewInfo ?? (() => false),
   presentationFor,
 })
@@ -169,7 +169,7 @@ describe('map feature store', () => {
         geoPointFromLonLat(10.70, 59.90).coordinates,
       ]],
     }
-    const features: ReadonlyArray<PackMapAreaFeature> = [
+    const features: ReadonlyArray<PackMapFeature> = [
       {
         id: 'weather-grid:8:cell-1',
         categoryId: 'weather',
@@ -190,7 +190,7 @@ describe('map feature store', () => {
       },
     ]
 
-    const snapshot = updateStore([], { packAreaFeatures: features })
+    const snapshot = updateStore([], { packFeatures: features })
 
     expect(snapshot.paths.map(path => path.kind)).toEqual([])
     expect(snapshot.areas.map((area) => area.layerId)).toEqual(['weather', 'weather'])
@@ -220,7 +220,7 @@ describe('map feature store', () => {
       highlightedObjectIds: [],
       hiddenObjectCategoryIds: [],
       placementPoints: [],
-      packAreaFeatures: [],
+      packFeatures: [],
       hasNewInfo: () => false,
       presentationFor,
     })
@@ -230,7 +230,7 @@ describe('map feature store', () => {
       highlightedObjectIds: [],
       hiddenObjectCategoryIds: [],
       placementPoints: [],
-      packAreaFeatures: [],
+      packFeatures: [],
       hasNewInfo: () => false,
       presentationFor,
     })
@@ -259,7 +259,7 @@ describe('map feature store', () => {
       highlightedObjectIds: [],
       hiddenObjectCategoryIds: [],
       placementPoints: [],
-      packAreaFeatures: [],
+      packFeatures: [],
       hasNewInfo: () => false,
       presentationFor,
     }
@@ -320,7 +320,7 @@ describe('map feature store', () => {
       highlightedObjectIds: [],
       hiddenObjectCategoryIds: [],
       placementPoints: [],
-      packAreaFeatures: [],
+      packFeatures: [],
       hasNewInfo: () => false,
       presentationFor: (nextObject: OperationalObject) => {
         presentationCallCount += 1
@@ -344,6 +344,7 @@ describe('base map readiness diagnostics', () => {
   test('does not call MapLibre v6 isSourceLoaded while tile managers are still settling', () => {
     let sideEffectingProbeCalled = false
     const fakeMap = {
+      getStyle: () => ({ metadata: { 'leitbild:baseSources': ['leitbild-osm'] } }),
       style: {
         tileManagers: {
           'leitbild-osm': {

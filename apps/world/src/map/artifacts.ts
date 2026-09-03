@@ -3,6 +3,7 @@ import { basename, isAbsolute, relative, resolve } from 'node:path'
 import { PMTiles, TileType, type Source } from 'pmtiles'
 import {
   createBaseTileset,
+  overviewPmtilesPathForRoot,
   defaultSceneryRecipes,
   findReferenceTilesets,
   loadMapCapabilityManifest,
@@ -382,11 +383,12 @@ export const mapCapabilitiesResponse = async (
   return Response.json(manifest)
 }
 
-export const mapStyleResponse = (theme: string | null = null): Response => {
+export const mapStyleResponse = async (theme: string | null = null, config: MapArtifactConfig = createMapArtifactConfigFromEnv()): Promise<Response> => {
   if (theme !== null && theme !== 'light' && theme !== 'dark') {
     return Response.json({ ok: false, error: 'invalid map theme' }, { status: 400 })
   }
-  return Response.json(createLeitbildMapStyle((theme ?? 'light') as MapTheme))
+  const manifest = await loadMapCapabilityManifest({ mapRoot: config.rootDir, referenceRoot: referenceRootFromEnv() })
+  return Response.json(createLeitbildMapStyle((theme ?? 'light') as MapTheme, manifest.tilesets.filter(tileset => tileset.kind === 'base')))
 }
 
 const fileStatus = async (path: string): Promise<MapArtifactFileStatus> => {
@@ -521,6 +523,9 @@ export const currentPmtilesResponse = async (req: Request, config: MapArtifactCo
     status: 503,
   })
 
+export const overviewPmtilesResponse = async (req: Request, config: MapArtifactConfig): Promise<Response> =>
+  pmtilesFileResponse(req, overviewPmtilesPathForRoot(config.rootDir), { error: 'World overview artifact unavailable', status: 503 })
+
 export const currentTerrainPmtilesResponse = async (req: Request, config: MapArtifactConfig): Promise<Response> =>
   pmtilesFileResponse(req, currentTerrainPmtilesPath(config), {
     error: 'terrain map artifact unavailable',
@@ -531,7 +536,8 @@ export const currentVectorTileResponse = async (
   url: URL,
   config: MapArtifactConfig,
 ): Promise<Response | null> => {
-  const prefix = '/map/tiles/current/'
+  const overview = url.pathname.startsWith('/map/tiles/overview/')
+  const prefix = overview ? '/map/tiles/overview/' : '/map/tiles/current/'
   if (!url.pathname.startsWith(prefix)) return null
   const parts = url.pathname.slice(prefix.length).split('/').map(part => decodeURIComponent(part))
   if (parts.length !== 3) {
@@ -541,7 +547,7 @@ export const currentVectorTileResponse = async (
   if (!coordinates) {
     return Response.json({ ok: false, error: 'invalid map tile coordinates' }, { status: 400 })
   }
-  return vectorTileResponse(currentPmtilesPath(config), coordinates, {
+  return vectorTileResponse(overview ? overviewPmtilesPathForRoot(config.rootDir) : currentPmtilesPath(config), coordinates, {
     error: 'vector map artifact unavailable',
     status: 503,
   })

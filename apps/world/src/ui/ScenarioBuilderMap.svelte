@@ -4,6 +4,7 @@
   import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import type { ScenarioPreview } from '../core/scenarios/authoring-preview.ts'
+  import { readMapView, type MapView } from './map-view.ts'
 
   interface BuilderPoint {
     readonly id: string
@@ -22,9 +23,10 @@
     readonly onviewchange: (center: [number, number], zoom: number) => void
     readonly onplace: (coordinates: [number, number]) => void
     readonly onselect: (id: string) => void
+    readonly onmapview?: (view: MapView) => void
   }
 
-  const { center, zoom, points, assets = [], selectedId, placementActive, editView, onviewchange, onplace, onselect }: Props = $props()
+  const { center, zoom, points, assets = [], selectedId, placementActive, editView, onviewchange, onplace, onselect, onmapview = () => {} }: Props = $props()
   let element = $state<HTMLDivElement | null>(null)
   let map = $state<MapLibreMap | null>(null)
   let ready = $state(false)
@@ -100,12 +102,14 @@
         paint: { 'text-color': '#17202a', 'text-halo-color': '#ffffff', 'text-halo-width': 2 },
       })
       ready = true
+      onmapview(readMapView(instance))
     })
     instance.on('click', handleClick)
     instance.on('moveend', () => {
+      onmapview(readMapView(instance))
       if (!editView) return
       const next = instance.getCenter()
-      onviewchange([next.lng, next.lat], instance.getZoom())
+      onviewchange([...readMapView(instance).center], instance.getZoom())
     })
     const observer = new ResizeObserver(() => instance.resize())
     observer.observe(element)

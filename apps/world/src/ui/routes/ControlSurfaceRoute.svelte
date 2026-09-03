@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { packDataChangedSchema } from '../../core/packs/protocol.ts'
+  import type { MapView } from '../map-view.ts'
   import type { Component } from 'svelte'
   import { tick, untrack } from 'svelte'
   import type {
@@ -33,7 +35,7 @@
     applySimulationRunEventBatchMessage,
   } from '../simulation-run-events.ts'
   import { parseDroneMotionFramesRealtimeMessage, type DroneMotionFrame } from '../../packs/drone/realtime.ts'
-  import { createMapAreaFeatureLoader } from '../app/map-area-feature-loader.ts'
+  import { createMapFeatureLoader } from '../app/map-feature-loader.ts'
   import { installPlacementGlobalEvents } from '../app/placement-global-events.ts'
   import { createRealtimeConnectionController } from '../app/realtime-connection.ts'
   import { completeControlSurfaceStartupFromSnapshot } from '../app/control-surface-session.ts'
@@ -95,7 +97,7 @@
   const appVersion = __LEITBILD_VERSION__
   const emptyStringArray: ReadonlyArray<string> = []
   const emptyMapLayerGroups: NonNullable<PackPresentationContribution['mapLayerGroups']> = []
-  const emptyMapAreaFeatureLayers: NonNullable<PackPresentationContribution['mapAreaFeatureLayers']> = []
+  const emptyMapFeatureLayers: NonNullable<PackPresentationContribution['mapFeatureLayers']> = []
   const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], completed: [] }
 
   interface ProcessDisplayWindowEntry {
@@ -146,6 +148,9 @@
   let realtimeAttached = $state(false)
   let routeRevision = $state(0)
   let procedureRevision = $state(0)
+  let packDataRevisions = $state<Record<string, number>>({})
+  let packPanelSelections = $state<Record<string, string>>({})
+  let panelMapView = $state<MapView | null>(null)
   let startupSteps = $state<ReadonlyArray<StartupStep>>(createStartupSteps())
   let mapReady = $state(false)
   let snapshotReady = $state(false)
@@ -309,8 +314,8 @@
   // (e.g. electric grid: lines, cables, substations); the rail renders
   // toggles and writes here; OperationalMap re-applies on change.
   const activeMapLayerGroups = $derived(activePack?.presentation.mapLayerGroups ?? emptyMapLayerGroups)
-  const activePackAreaFeatureLayers = $derived(activePack?.presentation.mapAreaFeatureLayers ?? emptyMapAreaFeatureLayers)
-  const activePackAreaFeatureSourcePackIds = $derived(activePack?.mapAreaFeatureSourcePackIds ?? emptyStringArray)
+  const activePackFeatureLayers = $derived(activePack?.presentation.mapFeatureLayers ?? emptyMapFeatureLayers)
+  const activePackFeatureSourcePackIds = $derived(activePack?.mapFeatureSourcePackIds ?? emptyStringArray)
   const activeReferenceDatasetIds = $derived(activePack?.referenceDatasetIds?.map(String) ?? emptyStringArray)
   let mapLayerGroupVisibility = $state<Record<string, boolean>>({})
   // Re-seed when the group list changes. `untrack` keeps the write from
@@ -382,7 +387,7 @@
       indicator: { shape: 'dot' },
     }
 
-  const mapAreaFeaturesFor = createMapAreaFeatureLoader({
+  const mapFeaturesFor = createMapFeatureLoader({
     pack: () => activePack,
     objects: () => objects,
     simulationRunId: () => simulationRunId,
@@ -1207,6 +1212,10 @@
         if (parsed.simulationRunId !== id) return
         if (expectedRealtimeScenarioId !== null && parsed.scenarioId !== expectedRealtimeScenarioId) return
         if (!realtimeAttached) return
+        for (const message of parsed.messages) if (message.type === 'pack.data.changed') {
+          const payload = packDataChangedSchema.safeParse(message.payload)
+          if (payload.success) packDataRevisions = { ...packDataRevisions, [payload.data.packId]: payload.data.revision }
+        }
         const frames = parsed.messages.flatMap(message => {
           try {
             return parseDroneMotionFramesRealtimeMessage(message)?.payload.frames ?? []
@@ -1556,20 +1565,23 @@
           {hiddenObjectCategoryIds}
           {hasNewInfo}
           presentationFor={mapPresentationFor}
-          {mapAreaFeaturesFor}
+          {mapFeaturesFor}
           onObjectSelected={selectObject}
           onPlacementPoint={placement.placePoint}
           onObjectSeen={markSeen}
           onMapReady={handleMapReady}
+          onMapView={view => panelMapView = view}
           onMapError={handleMapError}
           onMapDiagnostic={handleMapDiagnostic}
           {simulationRunId}
+          packDataRevisionKey={JSON.stringify(packDataRevisions)}
+          onPackFeatureSelected={selection => { if (surfacePanels.some(panel => panel.id === selection.panelId)) { packPanelSelections = { ...packPanelSelections, [selection.panelId]: selection.itemId }; setSurfacePanelOpen(selection.panelId, true) } }}
           activePackIds={scenarioDefinition?.packs ?? emptyStringArray}
           mapLayerGroups={activeMapLayerGroups}
           {mapLayerGroupVisibility}
           referenceDatasetIds={activeReferenceDatasetIds}
-          packAreaFeatureLayers={activePackAreaFeatureLayers}
-          packAreaFeatureSourcePackIds={activePackAreaFeatureSourcePackIds}
+          packFeatureLayers={activePackFeatureLayers}
+          packFeatureSourcePackIds={activePackFeatureSourcePackIds}
           focusRequest={mapFocusRequest}
         />
       {:else if mapVisible}
@@ -1581,7 +1593,7 @@
         {#each surfacePanels as panel (panel.id)}
           {@const Panel = surfacePanelComponents[panel.id]}
           {#if (surfacePanelOpen[panel.id] ?? panel.defaultOpen) && Panel}
-            <Panel {simulationRunId} {objects} onClose={() => setSurfacePanelOpen(panel.id, false)} onFocusMap={focusMapTarget} />
+            <Panel {simulationRunId} {objects} mapView={panelMapView} dataRevision={packDataRevisions[panel.id.split('.')[0]! ] ?? 0} selectedItemId={packPanelSelections[panel.id] ?? null} onClose={() => setSurfacePanelOpen(panel.id, false)} onFocusMap={focusMapTarget} />
           {/if}
         {/each}
       {/if}

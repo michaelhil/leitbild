@@ -11,6 +11,7 @@ import {
   sourceRevisionSchema,
   workspaceIdSchema,
   workspaceModuleManifestSchema,
+  workspaceDefinitionRevisionReferenceSchema,
   type ModuleCapabilityDescriptor,
   type ModuleResourceDescriptor
 } from '@leitbild/contracts'
@@ -68,6 +69,7 @@ export const worldModuleManifest = workspaceModuleManifestSchema.parse({
 
 const lifecycleInputSchema = z.object({ workspaceId: workspaceIdSchema }).strict()
 const emptyInputSchema = z.object({}).strict()
+const runScenarioSourceSchema = z.object({ source: scenarioDefinitionSchema, definition: workspaceDefinitionRevisionReferenceSchema }).strict()
 const readObjectInputSchema = z.object({
   objectId: z.string().trim().min(1).max(128),
 }).strict()
@@ -416,6 +418,12 @@ const runtimeCapabilityDescriptorsFor = (
   return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id))
 }
 
+const workspacePackCapabilityDescriptorsFor = (registry: SimulationRunRegistry): ReadonlyArray<ModuleCapabilityDescriptor> => moduleCapabilityCollectionSchema.parse({ capabilities: registry.workspaceCapabilities.map(capability => ({
+  id: capability.id, moduleId: WORLD_MODULE_ID, kind: capability.kind, scope: { kind: 'workspace' },
+  title: capability.title, description: capability.description, risk: capability.risk, idempotent: capability.idempotent,
+  inputSchema: capabilityJsonSchema(capability.input), outputSchema: capabilityJsonSchema(capability.output),
+})) }).capabilities
+
 const scenarioSections = (definition: {
   readonly objectives?: ReadonlyArray<string>
   readonly packs: ReadonlyArray<string>
@@ -751,6 +759,20 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
           data: runtime.capabilities(),
         }, ...scenarioSections(definition)],
       }) })
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.scenario-source',
+      moduleId: WORLD_MODULE_ID, kind: 'query', scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Read pinned Scenario source', description: 'Read the exact editable Scenario Definition pinned by this Run, including authoring-only scenario instructions. Does not reconstruct source from physical state or merge runtime edits. Not part of the default assistant grants.',
+      risk: 'read', idempotent: true, inputSchema: capabilityJsonSchema(emptyInputSchema), outputSchema: capabilityJsonSchema(runScenarioSourceSchema),
+    },
+    invoke: async (registry, invocation) => {
+      emptyInputSchema.parse(invocation.input)
+      const revision = await registry.scenarioRevisionForRun(requireSimulationRunResource(invocation))
+      if (!revision) return apiError(404, 'scenario_revision_not_found', 'Pinned Scenario source is unavailable')
+      return json({ result: runScenarioSourceSchema.parse({ source: revision.document, definition: { workspaceId: registry.workspaceId, moduleId: WORLD_MODULE_ID, type: SCENARIO_DEFINITION_TYPE, id: revision.definitionId, revisionId: revision.id } }) })
     },
   },
   {
@@ -1091,6 +1113,14 @@ const invokeCapability = async (
     const response = await worldCapabilities.invoke(capabilityId, registry, invocation)
     if (response) return response
 
+    const workspaceCapability = registry.workspaceCapabilities.find(capability => capability.id === capabilityId)
+    if (workspaceCapability) {
+      if (invocation.idempotencyKey !== undefined) return apiError(400, 'idempotency_not_supported', 'This Workspace Capability does not support keyed retries')
+      if (invocation.resource || invocation.definition) return apiError(400, 'capability_scope_mismatch', 'This Pack operation requires Workspace scope')
+      const result = await workspaceCapability.invoke(workspaceCapability.input.parse(invocation.input))
+      return json({ result: workspaceCapability.output.parse(result) })
+    }
+
     const descriptor = runtimeCapabilityDescriptorsFor(registry).find(candidate => candidate.id === capabilityId)
     if (!descriptor) return apiError(404, 'capability_not_found', 'Capability not found')
     const simulationRunId = requireSimulationRunResource(invocation)
@@ -1155,7 +1185,7 @@ export const handleWorldModuleApi = async (
     if (capabilitiesMatch && request.method === 'GET') {
       const workspaceId = workspaceIdSchema.parse(decodeURIComponent(capabilitiesMatch[1] ?? ''))
       return await workspaces.withRuntime(workspaceId, async runtime => json(moduleCapabilityCollectionSchema.parse({
-        capabilities: [...worldCapabilities.descriptors, ...runtimeCapabilityDescriptorsFor(runtime.simulationRuns)],
+        capabilities: [...worldCapabilities.descriptors, ...workspacePackCapabilityDescriptorsFor(runtime.simulationRuns), ...runtimeCapabilityDescriptorsFor(runtime.simulationRuns)],
       })))
     }
 

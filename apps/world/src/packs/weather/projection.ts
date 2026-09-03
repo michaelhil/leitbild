@@ -8,7 +8,7 @@ import {
   type HexCellId,
 } from '../../core/spatial/index.ts'
 import { geoPointFromLonLat, type GeoJsonPolygon } from '../../core/model/index.ts'
-import type { PackMapAreaFeature } from '../../core/packs/protocol.ts'
+import type { PackMapFeature } from '../../core/packs/protocol.ts'
 import { frameAt, weatherInfluenceEllipsePolygon } from './influence.ts'
 import { sampleWeather, type WeatherField } from './cell-field.ts'
 import { weatherPresentationSeverityForState } from './conditions.ts'
@@ -19,13 +19,13 @@ export const projectWeatherFieldForMap = (
   viewport: GeoJsonPolygon,
   zoom: number,
   layers: ReadonlyArray<string>,
-): ReadonlyArray<PackMapAreaFeature> => {
+): ReadonlyArray<PackMapFeature> => {
   let resolution = Math.min(field.config.gridResolution, zoom < 7 ? 4 : zoom < 10 ? 6 : zoom < 12 ? 7 : 9)
   while (resolution > 0 && hexCoverageEstimate(viewport, hexResolution(resolution)) > 4000) resolution--
   if (hexCoverageEstimate(viewport, hexResolution(resolution)) > 4000)
     throw new Error('Weather viewport exceeds coverage budget')
   const visible = new Set(hexCellsForPolygon(viewport, hexResolution(resolution), 4000))
-  const features: PackMapAreaFeature[] = []
+  const features: PackMapFeature[] = []
   if (layers.includes('baseGrid'))
     for (const id of visible)
       features.push({

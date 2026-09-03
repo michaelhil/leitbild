@@ -1,5 +1,5 @@
 import type { Layer, PickingInfo } from '@deck.gl/core'
-import { IconLayer, PathLayer, PolygonLayer, ScatterplotLayer } from '@deck.gl/layers'
+import { IconLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers'
 import { darkStroke, rgba, white } from './colors.ts'
 import {
   leitbildSymbolAtlasUrl,
@@ -7,7 +7,6 @@ import {
 } from './symbol-kit.ts'
 import type {
   ColorRgba,
-  OperationalAreaFeature,
   OperationalPathFeature,
   OperationalPointFeature,
   OperationalRenderSnapshot,
@@ -26,7 +25,6 @@ export interface OperationalDeckLayerConfig {
 
 export interface OperationalDeckLayerData {
   readonly visiblePaths: ReadonlyArray<OperationalPathFeature>
-  readonly visibleAreas: ReadonlyArray<OperationalAreaFeature>
   readonly visibleAreaSymbols: ReadonlyArray<OperationalSymbolFeature>
   readonly newInfoPoints: ReadonlyArray<OperationalPointFeature>
   readonly placementPoints: ReadonlyArray<{ readonly id: string; readonly position: Position3 }>
@@ -98,12 +96,7 @@ const pathFamilyIsVisible = (path: OperationalPathFeature, visibleFamilies: Read
   return visible(visibleFamilies, 'objects')
 }
 
-const areaFamilyIsVisible = (area: OperationalAreaFeature, visibleFamilies: ReadonlySet<string>): boolean => {
-  return visible(visibleFamilies, area.layerId)
-}
-
 const emptyPaths: ReadonlyArray<OperationalPathFeature> = []
-const emptyAreas: ReadonlyArray<OperationalAreaFeature> = []
 const emptyPoints: ReadonlyArray<OperationalPointFeature> = []
 const emptyPlacementPoints: ReadonlyArray<{ readonly id: string; readonly position: Position3 }> = []
 
@@ -111,9 +104,6 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
   let pathsRevision = -1
   let pathsVisibleKey = ''
   let visiblePaths: ReadonlyArray<OperationalPathFeature> = emptyPaths
-  let areasRevision = -1
-  let areasVisibleKey = ''
-  let visibleAreas: ReadonlyArray<OperationalAreaFeature> = emptyAreas
   let pointsRevision = -1
   let newInfoPoints: ReadonlyArray<OperationalPointFeature> = emptyPoints
   let placementRevision = -1
@@ -126,9 +116,6 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
     pathsRevision = -1
     pathsVisibleKey = ''
     visiblePaths = emptyPaths
-    areasRevision = -1
-    areasVisibleKey = ''
-    visibleAreas = emptyAreas
     pointsRevision = -1
     newInfoPoints = emptyPoints
     placementRevision = -1
@@ -151,11 +138,6 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
         pathsVisibleKey = nextVisibleKey
         visiblePaths = snapshot.paths.filter(path => pathFamilyIsVisible(path, visibleFamilies))
       }
-      if (areasRevision !== snapshot.revisions.areas || areasVisibleKey !== nextVisibleKey) {
-        areasRevision = snapshot.revisions.areas
-        areasVisibleKey = nextVisibleKey
-        visibleAreas = snapshot.areas.filter(area => areaFamilyIsVisible(area, visibleFamilies))
-      }
       if (pointsRevision !== snapshot.revisions.points) {
         pointsRevision = snapshot.revisions.points
         newInfoPoints = snapshot.points.filter(point => point.hasNewInfo)
@@ -166,7 +148,7 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
           ? emptyPlacementPoints
           : placementPointObjects(snapshot.placementPoints)
       }
-      return { visiblePaths, visibleAreas, visibleAreaSymbols, newInfoPoints, placementPoints }
+      return { visiblePaths, visibleAreaSymbols, newInfoPoints, placementPoints }
     },
     reset,
   }
@@ -188,27 +170,7 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
   const visibleFamilies = config.visibleFamilies
   const layerData = config.layerData ?? createOperationalDeckLayerDataCache().dataFor(snapshot, visibleFamilies)
   const visiblePaths = layerData.visiblePaths
-  const visibleAreas = layerData.visibleAreas
   return [
-    new PolygonLayer<OperationalAreaFeature>({
-      id: 'leitbild-operational-areas',
-      data: visibleAreas,
-      pickable: false,
-      visible: visibleAreas.length > 0,
-      getPolygon: area => area.polygon.coordinates[0] ?? [],
-      getFillColor: area => area.color,
-      getLineColor: area => area.lineColor,
-      getLineWidth: area => area.lineWidthPx,
-      lineWidthUnits: 'pixels',
-      filled: true,
-      stroked: true,
-      updateTriggers: {
-        getPolygon: snapshot.revisions.areas,
-        getFillColor: snapshot.revisions.areas,
-        getLineColor: snapshot.revisions.areas,
-        getLineWidth: snapshot.revisions.areas,
-      },
-    }),
     new PathLayer<OperationalPathFeature>({
       id: 'leitbild-operational-path-casing',
       data: visiblePaths,

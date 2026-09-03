@@ -13,7 +13,7 @@
   import { geoPointFromLonLat } from '../core/model/index.ts'
   import type {
     PackCreateObjectType,
-    PackMapAreaFeature,
+    PackMapFeature,
     PackMapLayerGroup,
     PackObjectPresentation,
   } from '../core/packs/protocol.ts'
@@ -21,10 +21,12 @@
   import type { MapInputDebugController } from './map/map-input-debug.ts'
   import { simulationTimeAt } from './simulation-clock.ts'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
+  import { readMapView, type MapView } from './map-view.ts'
   import type { ThemeMode } from './theme.ts'
   import { createMapRuntime } from './map-runtime/map-runtime.ts'
   import { createOperationalRenderController } from './map-runtime/operational-render-controller.ts'
   import { createPackOverlayController } from './map-runtime/pack-overlay-controller.ts'
+  import { createPackFeatureLayer } from './map-runtime/pack-feature-layer.ts'
   import { createReferenceLayerController } from './map-runtime/reference-layer-controller.ts'
   import {
     installMapPerformanceDiagnosticsGlobal,
@@ -52,16 +54,17 @@
     readonly hiddenObjectCategoryIds?: ReadonlyArray<string>
     readonly hasNewInfo: (object: OperationalObject) => boolean
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
-    readonly mapAreaFeaturesFor: (context: {
+    readonly mapFeaturesFor: (context: {
       readonly viewport: GeoJsonPolygon
       readonly zoom: number
       readonly currentTime?: IsoTimestamp
       readonly signal?: AbortSignal
-    }) => Promise<ReadonlyArray<PackMapAreaFeature>>
+    }) => Promise<ReadonlyArray<PackMapFeature>>
     readonly onObjectSelected: (object: OperationalObject) => void
     readonly onPlacementPoint: (point: GeoJsonPoint) => void
     readonly onObjectSeen: (object: OperationalObject) => void
     readonly onMapReady: () => void
+    readonly onMapView?: (view: MapView) => void
     readonly onMapError: (message: string) => void
     readonly onMapDiagnostic?: (snapshot: MapRuntimeDiagnosticsSnapshot) => void
     readonly simulationRunId?: string | null
@@ -69,9 +72,11 @@
     readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
     readonly mapLayerGroupVisibility?: Readonly<Record<string, boolean>>
     readonly referenceDatasetIds?: ReadonlyArray<string>
-    readonly packAreaFeatureLayers?: ReadonlyArray<MapLayerId>
-    readonly packAreaFeatureSourcePackIds?: ReadonlyArray<string>
+    readonly packFeatureLayers?: ReadonlyArray<MapLayerId>
+    readonly packFeatureSourcePackIds?: ReadonlyArray<string>
     readonly focusRequest?: MapFocusRequest | null
+    readonly packDataRevisionKey?: string
+    readonly onPackFeatureSelected?: (selection: NonNullable<PackMapFeature['selection']>) => void
   }
 
   const {
@@ -89,11 +94,12 @@
     hiddenObjectCategoryIds = [],
     hasNewInfo,
     presentationFor,
-    mapAreaFeaturesFor,
+    mapFeaturesFor,
     onObjectSelected,
     onPlacementPoint,
     onObjectSeen,
     onMapReady,
+    onMapView = () => {},
     onMapError,
     onMapDiagnostic = () => undefined,
     simulationRunId = null,
@@ -101,16 +107,20 @@
     mapLayerGroups = [],
     mapLayerGroupVisibility = {},
     referenceDatasetIds = [],
-    packAreaFeatureLayers = [],
-    packAreaFeatureSourcePackIds = [],
+    packFeatureLayers = [],
+    packFeatureSourcePackIds = [],
     focusRequest = null,
+    packDataRevisionKey = '',
+    onPackFeatureSelected = () => {},
   }: Props = $props()
 
   let mapElement = $state<HTMLDivElement | null>(null)
   let runtime = $state<MapRuntimeHandle | null>(null)
   let mapInputDebugEntries = $state<ReadonlyArray<string>>([])
   let mapInputDebugSummary = $state('Waiting for map input')
-  let cachedPackMapAreaFeatures = $state<ReadonlyArray<PackMapAreaFeature>>([])
+  let cachedPackMapFeatures = $state<ReadonlyArray<PackMapFeature>>([])
+  const packFeatureLayer = createPackFeatureLayer(selection => { if (!placementMode) onPackFeatureSelected(selection) })
+  const syncPackFeatures = () => { if (runtime) packFeatureLayer.update(runtime.map, cachedPackMapFeatures, visibleFamilies()) }
   let appliedTheme: ThemeMode | null = null
   let appliedCameraKey: string | null = null
   let appliedFocusRevision = -1
@@ -159,7 +169,7 @@
       highlightedObjectIds,
       hiddenObjectCategoryIds,
       placementPoints,
-      packAreaFeatures: cachedPackMapAreaFeatures,
+      packFeatures: cachedPackMapFeatures,
       visibleFamilies: visibleFamilies(),
       placementCursorActive: placementCursor !== null,
     }),
@@ -229,17 +239,19 @@
   const mapLayerEnabled = (layer: MapLayerId): boolean =>
     visibleFamilies().has(layer)
 
-  const packAreaFeaturesEnabled = (): boolean =>
-    packAreaFeatureLayers.some(layer => mapLayerEnabled(layer))
+  const packFeaturesEnabled = (): boolean =>
+    packFeatureLayers.some(layer => mapLayerEnabled(layer))
 
   const currentViewport = (): GeoJsonPolygon | null => {
     const current = runtime?.map
     if (!current) return null
     const bounds = current.getBounds()
-    const west = bounds.getWest()
-    const east = bounds.getEast()
-    const south = bounds.getSouth()
-    const north = bounds.getNorth()
+    const wholeWorld = bounds.getEast() - bounds.getWest() >= 360
+    const wrap = (longitude: number) => ((longitude + 180) % 360 + 360) % 360 - 180
+    const west = wholeWorld ? -180 : wrap(bounds.getWest())
+    const east = wholeWorld ? 180 : wrap(bounds.getEast())
+    const south = Math.max(-90, bounds.getSouth())
+    const north = Math.min(90, bounds.getNorth())
     return {
       type: 'Polygon',
       coordinates: [[
@@ -252,8 +264,8 @@
     }
   }
 
-  const packAreaFeatureSourceRevisionKey = (): string => {
-    const sourcePackIds = packAreaFeatureSourcePackIds
+  const packFeatureSourceRevisionKey = (): string => {
+    const sourcePackIds = packFeatureSourcePackIds
     const includeAllPacks = sourcePackIds.length === 0 || sourcePackIds.includes('*')
     const relevantPackIds = includeAllPacks ? null : new Set(sourcePackIds)
     let count = 0
@@ -266,21 +278,22 @@
       }
       checksum = (checksum * 33 + object.revision) >>> 0
     }
-    return `${count}:${checksum}`
+    return `${count}:${checksum}:${packDataRevisionKey}`
   }
 
   const packOverlayController = createPackOverlayController({
     getRuntime: () => runtime,
     getViewport: currentViewport,
     getCurrentTime: currentDisplayTime,
-    getSourceRevisionKey: packAreaFeatureSourceRevisionKey,
-    enabled: packAreaFeaturesEnabled,
-    loadFeatures: context => mapAreaFeaturesFor(context),
+    getSourceRevisionKey: packFeatureSourceRevisionKey,
+    enabled: packFeaturesEnabled,
+    loadFeatures: context => mapFeaturesFor(context),
     setFeatures: features => {
-      cachedPackMapAreaFeatures = features
+      cachedPackMapFeatures = features
     },
     onFeaturesChanged: () => {
       operationalRenderController.syncAreaFeatures()
+      syncPackFeatures()
     },
     onError: message => {
       onMapError(message)
@@ -341,6 +354,7 @@
           popupController.hide()
         },
         onMoveEnd: () => {
+          if (runtime) onMapView(readMapView(runtime.map))
           packOverlayController.setCameraGestureActive(false)
           void packOverlayController.refresh()
         },
@@ -354,6 +368,7 @@
         return
       }
       runtime = nextRuntime
+      onMapView(readMapView(nextRuntime.map))
       appliedTheme = theme
       appliedCameraKey = cameraKeyFor(mapConfig)
       mapInputDebugController.install(nextRuntime.map)
@@ -379,6 +394,7 @@
       cleanupMapPerformanceGlobal()
       resetMapInputDebugController()
       operationalRenderController.destroy()
+      packFeatureLayer.destroy()
       packOverlayController.destroy()
       popupController.hide()
       referenceLayerController.reset()
@@ -409,18 +425,21 @@
   })
 
   $effect(() => {
-    cachedPackMapAreaFeatures
-    untrack(() => operationalRenderController.syncAreaFeatures())
+    cachedPackMapFeatures
+    untrack(() => { operationalRenderController.syncAreaFeatures(); syncPackFeatures() })
   })
+
+  $effect(() => { packDataRevisionKey; untrack(() => { void packOverlayController.refresh() }) })
 
   $effect(() => {
     mapConfig.layers.join('|')
     activePackIds.join('|')
-    packAreaFeatureLayers.join('|')
-    packAreaFeatureSourcePackIds.join('|')
+    packFeatureLayers.join('|')
+    packFeatureSourcePackIds.join('|')
     untrack(() => {
       operationalRenderController.syncVisibility()
       packOverlayController.syncEnabled()
+      syncPackFeatures()
     })
   })
 
@@ -436,6 +455,7 @@
         referenceLayerController.reset()
         registerReferenceLayers()
         operationalRenderController.flushNow()
+        syncPackFeatures()
       } catch (err) {
         onMapError(err instanceof Error ? err.message : String(err))
       }

@@ -63,6 +63,12 @@ export const validateWorldAssembly = (config: {
       throw new Error(`Pack Runtime ${adapter.id} is not declared by Pack ${adapter.packId}`)
     }
     assertUnique(adapter.capabilities.map(capability => capability.id), `capability in Pack Runtime ${adapter.id}`)
+    assertUnique([...adapter.capabilities, ...adapter.workspaceCapabilities ?? []].map(capability => capability.id), `Capability across scopes in ${adapter.id}`)
+    for (const capability of adapter.workspaceCapabilities ?? []) {
+      if (!capability.title.trim() || !capability.description.trim()) throw new Error('Workspace Capability has incomplete metadata: ' + capability.id)
+      capabilityJsonSchema(capability.input); capabilityJsonSchema(capability.output)
+      if (!capability.id.startsWith(`world.${adapter.packId}.`)) throw new Error('Workspace Capability is not owned by its Pack: ' + capability.id)
+    }
     for (const capability of adapter.capabilities) {
       if (capability.id.trim() === '' || capability.title.trim() === '' || capability.description.trim() === '') {
         throw new Error(`Pack Runtime ${adapter.id} has incomplete ${capability.kind} capability metadata`)

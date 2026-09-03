@@ -1,5 +1,5 @@
 import type { GeoJsonPoint, OperationalObject } from '../../core/model/index.ts'
-import type { PackMapAreaFeature, PackObjectPresentation } from '../../core/packs/protocol.ts'
+import type { PackMapFeature, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import {
   createDisplayMotionState,
   displayObjectsFor,
@@ -23,7 +23,7 @@ export interface OperationalRenderControllerState {
   readonly highlightedObjectIds: ReadonlyArray<string>
   readonly hiddenObjectCategoryIds: ReadonlyArray<string>
   readonly placementPoints: ReadonlyArray<GeoJsonPoint>
-  readonly packAreaFeatures: ReadonlyArray<PackMapAreaFeature>
+  readonly packFeatures: ReadonlyArray<PackMapFeature>
   readonly visibleFamilies: ReadonlySet<string>
   readonly placementCursorActive: boolean
 }
@@ -175,13 +175,13 @@ export const createOperationalRenderController = (
           highlightedObjectIds: state.highlightedObjectIds,
           hiddenObjectCategoryIds: state.hiddenObjectCategoryIds,
           placementPoints: state.placementPoints,
-          packAreaFeatures: state.packAreaFeatures,
+          packFeatures: state.packFeatures,
           hasNewInfo: renderHasNewInfo,
           presentationFor: renderPresentationFor,
         }, families),
         {
           objects: displayObjects.length,
-          packAreaFeatures: state.packAreaFeatures.length,
+          packFeatures: state.packFeatures.length,
           families: [...families].sort().join(','),
         },
       )

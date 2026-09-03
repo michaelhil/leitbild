@@ -3,9 +3,9 @@ import type {
   PackCommandRequest,
   PackCreationGeometry,
   PackCreationContribution,
-  PackMapAreaFeature,
+  PackMapFeature,
   PackPresentationContribution,
-  PackMapAreaFeatureQuery,
+  PackMapFeatureQuery,
   PackTargetContext,
   PackTargetingContribution,
   PackSurfacePanelContribution,
@@ -19,7 +19,7 @@ export interface ActivePackViews {
   readonly creation?: PackCreationContribution
   readonly targeting?: PackTargetingContribution
   readonly referenceDatasetIds: ReadonlyArray<string>
-  readonly mapAreaFeatureSourcePackIds: ReadonlyArray<string>
+  readonly mapFeatureSourcePackIds: ReadonlyArray<string>
   readonly surfacePanels: ReadonlyArray<PackSurfacePanelContribution>
   readonly packForObject: (object: OperationalObject) => WorldPackView
   readonly defaultRuntimeIdFor: (packId: string) => string | undefined
@@ -60,10 +60,10 @@ export const createActivePackViews = (packs: ReadonlyArray<WorldPackView>): Acti
     return targeting?.isController(object) === true ? targeting : null
   }
 
-  const mapAreaFeatureLayers = [...new Set(packs.flatMap(pack => pack.presentation.mapAreaFeatureLayers ?? []))]
-  const mapAreaFeatureSourcePackIds = [...new Set(packs.flatMap(pack => {
-    if (!pack.presentation.mapAreaFeatures && !pack.presentation.mapAreaFeatureQueries) return []
-    return pack.presentation.mapAreaFeatureSourcePackIds ?? [pack.descriptor.id]
+  const mapFeatureLayers = [...new Set(packs.flatMap(pack => pack.presentation.mapFeatureLayers ?? []))]
+  const mapFeatureSourcePackIds = [...new Set(packs.flatMap(pack => {
+    if (!pack.presentation.mapFeatures && !pack.presentation.mapFeatureQueries) return []
+    return pack.presentation.mapFeatureSourcePackIds ?? [pack.descriptor.id]
   }))]
   const mapLayerGroups = packs.flatMap(pack => pack.presentation.mapLayerGroups ?? [])
   assertUniqueIds(mapLayerGroups, 'map layer group')
@@ -102,12 +102,12 @@ export const createActivePackViews = (packs: ReadonlyArray<WorldPackView>): Acti
           fields: [...presentation.fields, ...contextualFields],
         }
       },
-      mapAreaFeatures: (context): ReadonlyArray<PackMapAreaFeature> =>
-        packs.flatMap(pack => pack.presentation.mapAreaFeatures?.(context) ?? []),
-      mapAreaFeatureLayers,
-      mapAreaFeatureSourcePackIds,
-      mapAreaFeatureQueries: (context): ReadonlyArray<PackMapAreaFeatureQuery> =>
-        packs.flatMap(pack => (pack.presentation.mapAreaFeatureQueries?.(context) ?? []).map(request => {
+      mapFeatures: (context): ReadonlyArray<PackMapFeature> =>
+        packs.flatMap(pack => pack.presentation.mapFeatures?.(context) ?? []),
+      mapFeatureLayers,
+      mapFeatureSourcePackIds,
+      mapFeatureQueries: (context): ReadonlyArray<PackMapFeatureQuery> =>
+        packs.flatMap(pack => (pack.presentation.mapFeatureQueries?.(context) ?? []).map(request => {
           if (!request.capabilityId.startsWith(`world.${pack.descriptor.id}.`)) {
             throw new Error(`Pack ${pack.descriptor.id} map feature query uses foreign Capability ${request.capabilityId}`)
           }
@@ -159,7 +159,7 @@ export const createActivePackViews = (packs: ReadonlyArray<WorldPackView>): Acti
         }
       : {}),
     referenceDatasetIds,
-    mapAreaFeatureSourcePackIds,
+    mapFeatureSourcePackIds,
     surfacePanels,
     packForObject: ownerForObject,
     defaultRuntimeIdFor: packId => packsById.get(packId)?.runtime?.defaultRuntimeId,

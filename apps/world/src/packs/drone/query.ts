@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { geoJsonPointSchema, geoJsonPolygonSchema, isoTimestampSchema, objectIdSchema, type GeoJsonPoint, type IsoTimestamp, type OperationalObject } from '../../core/model/index.ts'
-import { packMapAreaFeatureSchema, type PackMapAreaFeature } from '../../core/packs/protocol.ts'
+import { packMapFeatureSchema, type PackMapFeature } from '../../core/packs/protocol.ts'
 import type { PackRuntimeQuery, SimulationCapability } from '../../simulation/protocol.ts'
 import { defineSimulationQueryCapability } from '../../simulation/capabilities.ts'
 import {
@@ -73,7 +73,7 @@ export const droneQueryCapabilities: ReadonlyArray<SimulationCapability> = [
   defineSimulationQueryCapability({ id: droneSceneQueryKind, title: 'Read drone scene', description: 'Returns bounded current render and status data for active drones.', input: z.object({}).strict(), output: z.object({ drones: z.array(droneSceneObjectSchema) }).strict() }),
   defineSimulationQueryCapability({ id: droneControllerBindingsQueryKind, title: 'Read drone controller bindings', description: 'Returns current operator and client input bindings for active drones.', input: z.object({}).strict(), output: z.object({ bindings: z.array(controllerBindingSchema) }).strict() }),
   defineSimulationQueryCapability({ id: droneVehicleModelsQueryKind, title: 'List drone vehicle models', description: 'Lists the validated vehicle models available to the Drone runtime.', input: z.object({}).strict(), output: z.object({ models: z.array(droneVehicleModelSchema) }).strict() }),
-  defineSimulationQueryCapability({ id: droneMapFeaturesQueryKind, title: 'Read drone map features', description: 'Projects current sensor, effect, and swarm envelopes into map features.', input: mapFeaturesPayloadSchema, output: z.object({ features: z.array(packMapAreaFeatureSchema) }).strict() }),
+  defineSimulationQueryCapability({ id: droneMapFeaturesQueryKind, title: 'Read drone map features', description: 'Projects current sensor, effect, and swarm envelopes into map features.', input: mapFeaturesPayloadSchema, output: z.object({ features: z.array(packMapFeatureSchema) }).strict() }),
   defineSimulationQueryCapability({ id: droneSensorContactsQueryKind, title: 'Read drone sensor contacts', description: 'Returns current contacts reported by Drone Pack sensors.', input: z.object({}).strict(), output: z.object({ contacts: z.array(sensorContactSchema) }).strict() }),
 ]
 
@@ -124,7 +124,7 @@ const circlePolygon = (
   center: GeoJsonPoint,
   radiusM: number,
   vertices = 40,
-): PackMapAreaFeature['geometry'] => {
+): PackMapFeature['geometry'] => {
   const coordinates: GeoJsonPoint['coordinates'][] = []
   for (let index = 0; index < vertices; index += 1) {
     const angle = index / vertices * Math.PI * 2
@@ -143,9 +143,9 @@ const circlePolygon = (
 const mapFeatures = (
   objects: ReadonlyArray<OperationalObject>,
   layers: ReadonlyArray<'sensor-footprints' | 'effect-ranges' | 'swarm-envelopes'>,
-): ReadonlyArray<PackMapAreaFeature> => {
+): ReadonlyArray<PackMapFeature> => {
   const enabled = new Set(layers)
-  const features: PackMapAreaFeature[] = []
+  const features: PackMapFeature[] = []
   for (const object of objects) {
     const data = droneDataFor(object)
     if (!data) continue

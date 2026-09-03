@@ -1,0 +1,12 @@
+{
+  "id": "japan-situation-monitor",
+  "title": "Japan · reported events and forecasts",
+  "description": "A configurable regional monitor: USGS earthquake reports intersecting the watched area, plus a MET Norway forecast for Tokyo. The map provides generalized world context; these sources neither simulate damage nor drive the Weather Pack.",
+  "objectives": ["Inspect reported events around Japan and their original evidence.", "Compare forecast valid time with collection time. Watch source freshness and acknowledge coverage limitations."],
+  "packs": [{ "id": "situation-monitor", "config": { "areas": [{ "id": "japan", "name": "Japan and surrounding waters", "bounds": [122,24,148,47] }], "sources": [
+    { "id": "earthquakes", "name": "USGS · earthquakes, past day", "adapter": "usgs", "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson", "intervalSeconds": 300, "retentionHours": 24, "attribution": "U.S. Geological Survey" },
+    { "id": "tokyo-forecast", "name": "Tokyo forecast", "adapter": "met-forecast", "point": [139.76,35.68], "intervalSeconds": 900, "retentionHours": 24, "attribution": "MET Norway · Locationforecast (CC BY 4.0)" }
+  ] }, "items": [] }],
+  "world": { "startsAt": "2026-09-03T00:00:00.000Z" },
+  "view": { "map": { "center": [137,36], "zoom": 4 } }
+}

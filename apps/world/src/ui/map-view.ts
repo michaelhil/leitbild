@@ -1,0 +1,11 @@
+import type { Map as MapLibreMap } from 'maplibre-gl'
+export interface MapView {
+  readonly center: readonly [number, number]
+  readonly bounds: readonly [number, number, number, number]
+}
+export const readMapView = (map: MapLibreMap): MapView => {
+  const area = map.getBounds(), point = map.getCenter()
+  const wrap = (value: number) => ((value + 180) % 360 + 360) % 360 - 180
+  const global = area.getEast() - area.getWest() >= 360
+  return { center: [wrap(point.lng), point.lat], bounds: [global ? -180 : wrap(area.getWest()), area.getSouth(), global ? 180 : wrap(area.getEast()), area.getNorth()] }
+}

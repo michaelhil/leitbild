@@ -16,7 +16,11 @@
         { "capabilityId": "world.simulation-run.objects.search" },
         { "capabilityId": "world.simulation-run.read-object" },
         { "capabilityId": "world.simulation-run.changes" },
-        { "capabilityId": "world.simulation-run.history" }
+        { "capabilityId": "world.simulation-run.history" },
+        { "capabilityId": "world.situation-monitor.adapters" },
+        { "capabilityId": "world.situation-monitor.status" },
+        { "capabilityId": "world.situation-monitor.records.search" },
+        { "capabilityId": "world.situation-monitor.record.inspect" }
       ]
     }]
   },

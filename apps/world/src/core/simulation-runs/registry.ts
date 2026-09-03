@@ -8,7 +8,7 @@ import { openRunHistorian } from '../../features/historian/store.ts'
 import { createProcedureSourceService,type ProcedureSourceService } from '../../features/procedures/source.ts'
 import { capabilityJsonSchema } from '../../simulation/capabilities.ts'
 import { worldCoreCapabilities } from '../../simulation/core-capabilities.ts'
-import type { PackRuntimeAdapter } from '../../simulation/protocol.ts'
+import type { PackRuntimeAdapter, PackWorkspaceCapability } from '../../simulation/protocol.ts'
 import { createRuntimeHub } from '../../simulation/runtime-hub.ts'
 import type { CompiledScenario,SimulationClockState,SimulationRunEvent,SimulationRunId } from '../model/index.ts'
 import {
@@ -81,6 +81,7 @@ export interface SimulationRunRegistry {
   readonly workspaceId: WorkspaceId
   readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
   readonly installedCapabilities: ReadonlyArray<ActiveSimulationCapability>
+  readonly workspaceCapabilities: ReadonlyArray<PackWorkspaceCapability>
   readonly create: (config: { readonly scenarioId: string; readonly scenarioRevisionId?: ScenarioRevisionId }) => Promise<SimulationRunRuntime>
   readonly load: (id: SimulationRunId) => Promise<SimulationRunRuntime>
   readonly reset: (id: SimulationRunId) => Promise<SimulationRunRuntime>
@@ -531,8 +532,9 @@ export const createSimulationRunRegistry = (config: {
       spatial: { ...object.spatial, ...(object.spatial.position ? { position: { ...object.spatial.position, observedAt } } : {}) },
     }))
     try {
-      runtimeConnection = await createRuntimeHub(config.runtimeAdapters).connect({
+      runtimeConnection = await createRuntimeHub(config.runtimeAdapters.filter(adapter => scenarioRuntime.runtimes.some(runtime => runtime.runtimeId === adapter.id))).connect({
         simulationRunId: id,
+        workspace: { id: config.workspaceId, dataDir: workspaceRoot, storageBudget },
         runClock,
         scenario: {
           scenarioId: scenarioRuntime.scenarioId,
@@ -845,6 +847,7 @@ export const createSimulationRunRegistry = (config: {
       })),
     },
     installedCapabilities,
+    workspaceCapabilities: config.runtimeAdapters.flatMap(adapter => adapter.workspaceCapabilities ?? []),
     create,
     load,
     reset,

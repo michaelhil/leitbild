@@ -70,7 +70,6 @@ describe('operational deck layer visibility', () => {
     const second = cache.dataFor(snapshot, new Set(['routes', 'objects']))
 
     expect(second.visiblePaths).toBe(first.visiblePaths)
-    expect(second.visibleAreas).toBe(first.visibleAreas)
     expect(second.visibleAreaSymbols).toBe(first.visibleAreaSymbols)
     expect(second.newInfoPoints).toBe(first.newInfoPoints)
     expect(second.placementPoints).toBe(first.placementPoints)

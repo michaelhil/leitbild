@@ -107,6 +107,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
                 return providerAvailable.get(owner)?.() ?? true
               },
               simulationRunId: config.simulationRunId,
+              ...(config.workspace ? { workspace: config.workspace } : {}),
               ...(config.runClock ? { runClock: config.runClock } : {}),
               queries,
               scenario,

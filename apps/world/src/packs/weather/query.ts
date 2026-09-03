@@ -9,7 +9,7 @@ import {
   type GeoJsonPoint,
 } from '../../core/model/index.ts'
 import { hexCellsForPolygon, hexCellCenter, hexResolution } from '../../core/spatial/index.ts'
-import { packMapAreaFeatureSchema } from '../../core/packs/protocol.ts'
+import { packMapFeatureSchema } from '../../core/packs/protocol.ts'
 import { defineSimulationQueryCapability } from '../../simulation/capabilities.ts'
 import type { PackRuntimeQuery, SimulationCapability } from '../../simulation/protocol.ts'
 import { weatherSampleSchema, weatherPackConfigSchema } from './model.ts'
@@ -88,7 +88,7 @@ export const weatherQueryCapabilities: ReadonlyArray<SimulationCapability> = [
     description:
       'Bounded presentation of current conditions. Zoom changes display resolution, never physics. No historical or forecast truth is synthesized.',
     input: mapSchema,
-    output: z.object({ features: z.array(packMapAreaFeatureSchema), metadata: statsSchema }).strict(),
+    output: z.object({ features: z.array(packMapFeatureSchema), metadata: statsSchema }).strict(),
   }),
   defineSimulationQueryCapability({
     id: 'world.weather.field-stats',

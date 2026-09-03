@@ -129,11 +129,25 @@ export interface PackRuntimeAdapter {
   readonly packId: string
   readonly clock: PackRuntimeClock
   readonly capabilities: ReadonlyArray<SimulationCapability>
+  /** Pack-owned operations needed before a Run exists, such as validating a source. */
+  readonly workspaceCapabilities?: ReadonlyArray<PackWorkspaceCapability>
   /** Conditional read-only dependencies, validated before saving or loading. */
   readonly requiredQueries?: (runtimeConfig: unknown) => ReadonlyArray<string>
   readonly realtimeInputTypes?: ReadonlyArray<string>
   readonly commandEventHistory?: Readonly<Record<string, PackRuntimeEventHistory>>
   readonly connect: (config: PackRuntimeConnectionConfig) => Promise<PackRuntimeConnection>
+}
+
+export interface PackWorkspaceCapability {
+  readonly id: string
+  readonly title: string
+  readonly description: string
+  readonly kind: 'query' | 'command'
+  readonly risk: 'read' | 'write' | 'destructive'
+  readonly idempotent: boolean
+  readonly input: z.ZodType
+  readonly output: z.ZodType
+  readonly invoke: (input: unknown) => Promise<unknown>
 }
 
 export interface PackScenarioRuntimeConfig {
@@ -151,6 +165,8 @@ export interface PackRuntimeQueries {
   readonly invoke: (query: PackRuntimeQuery) => Promise<unknown>
 }
 export interface PackRuntimeConnectionConfig {
+  /** Workspace-owned persistence scope. Required only by adapters with shared local data. */
+  readonly workspace?: { readonly id: string; readonly dataDir: string; readonly storageBudget?: import('@leitbild/module-runtime').StorageBudget }
   /** Provider execution availability, independent of physical signal age or simulation pause. */
   readonly isObjectProviderAvailable?: (objectId: ObjectId) => boolean
   /** The owning Run's clock. Standalone Pack hosts may own a local clock instead. */

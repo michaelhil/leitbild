@@ -50,7 +50,12 @@ export const isBaseMapReadinessFailure = (err: unknown): err is BaseMapReadiness
   err instanceof Error && 'snapshot' in err
 
 const defaultTimeoutMs = 8_000
-const defaultBaseSourceId = 'leitbild-osm'
+const baseSourceIdsFor = (map: MapLibreMap, options: BaseMapReadinessOptions): string[] => {
+  if (options.baseSourceId) return [options.baseSourceId]
+  const metadata = map.getStyle()?.metadata as Record<string, unknown> | undefined
+  const ids = metadata?.['leitbild:baseSources']
+  return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string' && id.length > 0) : []
+}
 const defaultRequiredLayerIds: ReadonlyArray<string> = [
   'water',
   'landuse',
@@ -221,15 +226,16 @@ export const inspectBaseMapReadiness = (
   const containerRect = map.getContainer().getBoundingClientRect()
   const canvas = map.getCanvas()
   const canvasRect = canvas.getBoundingClientRect()
-  const baseSourceId = options.baseSourceId ?? defaultBaseSourceId
+  const baseSourceIds = baseSourceIdsFor(map, options)
+  const baseSourceId = baseSourceIds[0] ?? ''
   const requiredLayerIds = options.requiredLayerIds ?? defaultRequiredLayerIds
   const missingLayerIds = requiredLayerIds.filter(layerId => !map.getLayer(layerId))
-  const baseSourcePresent = Boolean(map.getSource(baseSourceId))
+  const baseSourcePresent = baseSourceIds.length > 0 && baseSourceIds.every(id => Boolean(map.getSource(id)))
   const baseSource = sourceDiagnostics(map, baseSourceId)
   const tileManager = tileManagerDiagnostics(map, baseSourceId)
   const styleLoaded = safeBoolean(() => map.isStyleLoaded() === true)
   const mapLoaded = safeBoolean(() => map.loaded() === true)
-  const baseSourceLoaded = sourceLoadedWithoutEmittingMapError(map, baseSourceId)
+  const baseSourceLoaded = baseSourceIds.length > 0 && baseSourceIds.every(id => sourceLoadedWithoutEmittingMapError(map, id))
   const tilesLoaded = safeBoolean(() => map.areTilesLoaded() === true)
   const styleGraphReady = baseSourcePresent && missingLayerIds.length === 0
   const presentable = visibleDimension(containerRect.width)
@@ -377,7 +383,7 @@ export const waitForBaseMapReadiness = (
     const candidate = event as { readonly error?: unknown; readonly sourceId?: unknown }
     const message = candidate.error instanceof Error ? candidate.error.message : String(candidate.error ?? 'map source error')
     const sourceId = typeof candidate.sourceId === 'string' ? candidate.sourceId : null
-    if (sourceId && sourceId !== (options.baseSourceId ?? defaultBaseSourceId)) return
+    if (sourceId && !baseSourceIdsFor(map, options).includes(sourceId)) return
     tileErrorCount += 1
     latestTileError = message
   }

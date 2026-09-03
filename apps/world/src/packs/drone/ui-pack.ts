@@ -103,9 +103,9 @@ export const dronePackView = {
       matches: (object: OperationalObject): boolean => parseDroneData(object) !== null,
     },
     ],
-    mapAreaFeatureLayers: ['objects'],
-    mapAreaFeatureSourcePackIds: [dronePackId],
-    mapAreaFeatureQueries: (context) => context.map
+    mapFeatureLayers: ['objects'],
+    mapFeatureSourcePackIds: [dronePackId],
+    mapFeatureQueries: (context) => context.map
       ? [{
           capabilityId: droneMapFeaturesQueryKind,
           input: {

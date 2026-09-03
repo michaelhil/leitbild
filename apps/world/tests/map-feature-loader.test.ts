@@ -5,10 +5,10 @@ import {
   createWorldPackDescriptor,
   emptyPackScenarioConfigSchema,
   type WorldPack,
-  type PackMapAreaFeature,
-  type PackMapAreaFeatureQuery,
+  type PackMapFeature,
+  type PackMapFeatureQuery,
 } from '../src/core/packs/protocol.ts'
-import { createMapAreaFeatureLoader } from '../src/ui/app/map-area-feature-loader.ts'
+import { createMapFeatureLoader } from '../src/ui/app/map-feature-loader.ts'
 import type { SimulationRunRequestOptions } from '../src/ui/simulation-run-client.ts'
 import { createActivePackViews } from '../src/core/packs/active-views.ts'
 
@@ -25,7 +25,7 @@ const viewport = {
   ]],
 } as const
 
-const featureFor = (id: string): PackMapAreaFeature => ({
+const featureFor = (id: string): PackMapFeature => ({
   id,
   categoryId: 'weather',
   geometry: viewport,
@@ -39,7 +39,7 @@ const delay = async (ms: number): Promise<void> => {
   })
 }
 
-const createPack = (requests: ReadonlyArray<PackMapAreaFeatureQuery>): WorldPack => ({
+const createPack = (requests: ReadonlyArray<PackMapFeatureQuery>): WorldPack => ({
   descriptor: createWorldPackDescriptor({
     id: 'weather-test',
     version: '1.0.0',
@@ -50,8 +50,8 @@ const createPack = (requests: ReadonlyArray<PackMapAreaFeatureQuery>): WorldPack
   scenarioConfigSchema: emptyPackScenarioConfigSchema,
   presentation: {
     categories: [],
-    mapAreaFeatures: () => [featureFor('sync-feature')],
-    mapAreaFeatureQueries: () => requests,
+    mapFeatures: () => [featureFor('sync-feature')],
+    mapFeatureQueries: () => requests,
     presentObject: () => ({
       categoryId: 'weather',
       icon: 'weather',
@@ -63,9 +63,9 @@ const createPack = (requests: ReadonlyArray<PackMapAreaFeatureQuery>): WorldPack
   },
 })
 
-describe('MapAreaFeatureLoader', () => {
+describe('MapFeatureLoader', () => {
   test('runs pack map-area queries concurrently and preserves sync features', async () => {
-    const requests: ReadonlyArray<PackMapAreaFeatureQuery> = [
+    const requests: ReadonlyArray<PackMapFeatureQuery> = [
       { capabilityId: 'world.weather-test.first', input: {} },
       { capabilityId: 'world.weather-test.second', input: {} },
     ]
@@ -73,7 +73,7 @@ describe('MapAreaFeatureLoader', () => {
     let maxActiveQueries = 0
     const queryCapability = async (
       _simulationRunId: SimulationRunId,
-      request: PackMapAreaFeatureQuery,
+      request: PackMapFeatureQuery,
       options?: SimulationRunRequestOptions,
     ): Promise<unknown> => {
       expect(options?.signal).toBeInstanceOf(AbortSignal)
@@ -83,7 +83,7 @@ describe('MapAreaFeatureLoader', () => {
       activeQueries -= 1
       return { features: [featureFor(`query-feature:${request.capabilityId}`)] }
     }
-    const loader = createMapAreaFeatureLoader({
+    const loader = createMapFeatureLoader({
       pack: () => createActivePackViews([createPack(requests)]),
       objects: () => [],
       simulationRunId: () => 'run-test' as SimulationRunId,

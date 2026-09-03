@@ -171,8 +171,8 @@ export const weatherPack: WorldPack = {
         matches: (object) => dataFor(object) !== null,
       },
     ],
-    mapAreaFeatureLayers: ['weather'],
-    mapAreaFeatureSourcePackIds: ['weather'],
+    mapFeatureLayers: ['weather'],
+    mapFeatureSourcePackIds: ['weather'],
     presentObject: (object) => {
       const data = dataFor(object)
       const severity = data ? weatherPresentationSeverityForState(data.sample.state) : 'hazard'
@@ -200,7 +200,7 @@ export const weatherPack: WorldPack = {
         noteworthyUpdates: false,
       }
     },
-    mapAreaFeatureQueries: (context) =>
+    mapFeatureQueries: (context) =>
       context.map
         ? [
             {

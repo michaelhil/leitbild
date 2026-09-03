@@ -5,6 +5,8 @@ import { electricGridPack } from './packs/electric-grid/pack.ts'
 import { electricGridReferenceDatasetBuilders } from './packs/electric-grid/reference-datasets.ts'
 import { processPlantPack } from './packs/process-plant/pack.ts'
 import { weatherPack } from './packs/weather/pack.ts'
+import { situationMonitorPack } from './packs/situation-monitor/pack.ts'
+import { createSituationMonitorRuntimeAdapter } from './packs/situation-monitor/runtime.ts'
 import type { RoutingAdapter } from './routing/protocol.ts'
 import type { PackRuntimeAdapter } from './simulation/protocol.ts'
 import { validateWorldAssembly } from './core/packs/assembly.ts'
@@ -28,6 +30,7 @@ const withReferenceDatasetBuilders = (
 export const worldPacks: ReadonlyArray<WorldPack> = [
   ambulancePack,
   weatherPack,
+  situationMonitorPack,
   dronePack,
   processPlantPack,
   withReferenceDatasetBuilders(electricGridPack, electricGridReferenceDatasetBuilders),
@@ -44,6 +47,7 @@ export const createWorldApplicationAssembly = (config: {
   const runtimeAdapters: ReadonlyArray<PackRuntimeAdapter> = [
       createLocalAmbulancePackRuntimeAdapter({ routing: config.routing }),
       createLocalWeatherPackRuntimeAdapter(),
+      createSituationMonitorRuntimeAdapter(),
       createDroneNativePackRuntimeAdapter(),
       createLocalProcessPlantPackRuntimeAdapter(),
       createLocalElectricGridPackRuntimeAdapter(),

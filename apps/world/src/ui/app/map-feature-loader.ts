@@ -1,16 +1,16 @@
 import type { SimulationRunId, GeoJsonPolygon, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
-import { packMapAreaFeatureSchema, type PackMapAreaFeature, type PackMapAreaFeatureQuery } from '../../core/packs/protocol.ts'
+import { packMapFeatureSchema, type PackMapFeature, type PackMapFeatureQuery } from '../../core/packs/protocol.ts'
 import type { ActivePackViews } from '../../core/packs/active-views.ts'
 import { querySimulationRunCapability, type SimulationRunRequestOptions } from '../simulation-run-client.ts'
 
-export interface MapAreaFeatureLoaderContext {
+export interface MapFeatureLoaderContext {
   readonly viewport: GeoJsonPolygon
   readonly zoom: number
   readonly currentTime?: IsoTimestamp
   readonly signal?: AbortSignal
 }
 
-export interface MapAreaFeatureRuntimeConfig {
+export interface MapFeatureRuntimeConfig {
   readonly pack: () => ActivePackViews | null
   readonly objects: () => ReadonlyArray<OperationalObject>
   readonly simulationRunId: () => SimulationRunId | null
@@ -18,23 +18,23 @@ export interface MapAreaFeatureRuntimeConfig {
   readonly queryTimeoutMs?: number
   readonly queryCapability?: (
     simulationRunId: SimulationRunId,
-    request: PackMapAreaFeatureQuery,
+    request: PackMapFeatureQuery,
     options?: SimulationRunRequestOptions,
   ) => Promise<unknown>
 }
 
-const defaultMapAreaFeatureQueryTimeoutMs = 1_500
+const defaultMapFeatureQueryTimeoutMs = 1_500
 
-const mapFeaturesFromQueryResult = (result: unknown): ReadonlyArray<PackMapAreaFeature> => {
+const mapFeaturesFromQueryResult = (result: unknown): ReadonlyArray<PackMapFeature> => {
   if (typeof result !== 'object' || result === null || !('features' in result)) {
     throw new Error('pack map feature query returned no features field')
   }
   const features = (result as { readonly features?: unknown }).features
   if (!Array.isArray(features)) throw new Error('pack map feature query features field is not an array')
   return features.map((feature, index) => {
-    const parsed = packMapAreaFeatureSchema.safeParse(feature)
+    const parsed = packMapFeatureSchema.safeParse(feature)
     if (!parsed.success) throw new Error(`pack map feature query returned invalid feature ${index}: ${parsed.error.message}`)
-    return parsed.data as PackMapAreaFeature
+    return parsed.data as PackMapFeature
   })
 }
 
@@ -59,10 +59,10 @@ const createAbortSignalWithTimeout = (
   }
 }
 
-export const createMapAreaFeatureLoader = (
-  config: MapAreaFeatureRuntimeConfig,
-): ((context: MapAreaFeatureLoaderContext) => Promise<ReadonlyArray<PackMapAreaFeature>>) =>
-  async (context: MapAreaFeatureLoaderContext): Promise<ReadonlyArray<PackMapAreaFeature>> => {
+export const createMapFeatureLoader = (
+  config: MapFeatureRuntimeConfig,
+): ((context: MapFeatureLoaderContext) => Promise<ReadonlyArray<PackMapFeature>>) =>
+  async (context: MapFeatureLoaderContext): Promise<ReadonlyArray<PackMapFeature>> => {
     const currentTime = context.currentTime ?? config.currentTime()
     const presentationContext = {
       objects: config.objects(),
@@ -73,16 +73,16 @@ export const createMapAreaFeatureLoader = (
       : { ...presentationContext, currentTime }
     const pack = config.pack()
     if (!pack) return []
-    const syncFeatures = pack.presentation.mapAreaFeatures?.(presentationContextWithTime) ?? []
+    const syncFeatures = pack.presentation.mapFeatures?.(presentationContextWithTime) ?? []
     const simulationRunId = config.simulationRunId()
     if (!simulationRunId) return syncFeatures
-    const requests = pack.presentation.mapAreaFeatureQueries?.(presentationContextWithTime) ?? []
+    const requests = pack.presentation.mapFeatureQueries?.(presentationContextWithTime) ?? []
     if (requests.length === 0) return syncFeatures
     const query = config.queryCapability ?? (async (id, request, options) =>
       await querySimulationRunCapability(id, request.capabilityId, request.input, options))
     const timeout = createAbortSignalWithTimeout(
       context.signal,
-      config.queryTimeoutMs ?? defaultMapAreaFeatureQueryTimeoutMs,
+      config.queryTimeoutMs ?? defaultMapFeatureQueryTimeoutMs,
     )
     try {
       const responses = await Promise.all(requests.map(async request => {

@@ -7,8 +7,10 @@
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import AuthoringFields from '../AuthoringFields.svelte'
   import AdvancedConfiguration from '../AdvancedConfiguration.svelte'
+  import PackSettingsEditor from '../PackSettingsEditor.svelte'
   import TimelineEditor from '../TimelineEditor.svelte'
   import ScenarioBuilderMap from '../ScenarioBuilderMap.svelte'
+  import type { MapView } from '../map-view.ts'
   import { parseControlSurfaceRoute } from '../simulation-run-route.ts'
   import {
     createEmptyScenarioDefinition,
@@ -57,6 +59,7 @@
   let systemEndpointKey = $state('')
   let networkEndpointKey = $state('')
   let savedDocument = $state('')
+  let editorMapView = $state<MapView | null>(null)
   const dirty = $derived(!loading && savedDocument !== JSON.stringify(draft))
 
   const invoke = async <T,>(capabilityId: string, input: unknown, definition?: CreateResult['definition']): Promise<T> => {
@@ -459,6 +462,7 @@
           selectedId={selection.kind === 'item' ? selection.id : null}
           placementActive={placementItemId !== null} editView={selection.kind === 'scenario'}
           onviewchange={setMapView} onplace={placeItem}
+          onmapview={view => editorMapView = view}
           onselect={id => { selection = { kind: 'item', id }; cancelPlacement() }}
         />
         {#if selection.kind === 'scenario'}<span class="map-hint">Pan and zoom to set the starting view</span>{/if}
@@ -547,10 +551,11 @@
               {/if}
             {/if}
             {#if packSelection}
+              <PackSettingsEditor packId={pack.id} config={packSelection.config} {workspaceId} center={mapCenter()} mapView={editorMapView} onchange={value => { packSelection.config = value; draft = { ...draft } }} />
               <AuthoringFields fields={pack.configFields} targetFor={()=>packSelection.config} onchange={(field,value)=>{setValueAtPath(packSelection.config,field.path,value);draft={...draft}}} />
               <AdvancedConfiguration value={packSelection.config} onapply={value => applyAdvanced(value, 'pack')} />
             {/if}
-            <h3>Add item</h3><div class="item-type-list">{#each pack.itemTypes as type (type.id)}<button onclick={() => addItem(pack, type)}><strong>{type.label}</strong><small>{type.description}</small></button>{/each}</div><button class="danger-text" onclick={() => removePack(pack)}>Remove Pack</button>
+            {#if pack.itemTypes.length}<h3>Add item</h3><div class="item-type-list">{#each pack.itemTypes as type (type.id)}<button onclick={() => addItem(pack, type)}><strong>{type.label}</strong><small>{type.description}</small></button>{/each}</div>{/if}<button class="danger-text" onclick={() => removePack(pack)}>Remove Pack</button>
           {/if}
         {:else}
           {@const item = selectedItem()}

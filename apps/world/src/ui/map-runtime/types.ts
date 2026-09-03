@@ -1,7 +1,7 @@
 import type { Layer } from '@deck.gl/core'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, OperationalObject } from '../../core/model/index.ts'
-import type { PackMapAreaFeature, PackObjectPresentation, PackObjectStatusTone } from '../../core/packs/protocol.ts'
+import type { PackMapFeature, PackObjectPresentation, PackObjectStatusTone } from '../../core/packs/protocol.ts'
 import type { MapPerformanceDiagnosticsSnapshot } from './map-performance-diagnostics.ts'
 
 export type RenderPhase =
@@ -92,7 +92,7 @@ export interface OperationalRenderInput {
   readonly highlightedObjectIds: ReadonlyArray<string>
   readonly hiddenObjectCategoryIds: ReadonlyArray<string>
   readonly placementPoints: ReadonlyArray<GeoJsonPoint>
-  readonly packAreaFeatures: ReadonlyArray<PackMapAreaFeature>
+  readonly packFeatures: ReadonlyArray<PackMapFeature>
   readonly hasNewInfo: (object: OperationalObject) => boolean
   readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
 }

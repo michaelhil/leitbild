@@ -1,5 +1,5 @@
 import type { GeoJsonPolygon, IsoTimestamp } from '../../core/model/index.ts'
-import type { PackMapAreaFeature } from '../../core/packs/protocol.ts'
+import type { PackMapFeature } from '../../core/packs/protocol.ts'
 import type { MapPerformanceDiagnostics } from './map-performance-diagnostics.ts'
 import type { MapRuntimeHandle } from './types.ts'
 
@@ -16,8 +16,8 @@ export interface PackOverlayControllerConfig {
   readonly getCurrentTime: () => IsoTimestamp | undefined
   readonly getSourceRevisionKey: () => string
   readonly enabled: () => boolean
-  readonly loadFeatures: (context: PackOverlayControllerRefreshContext) => Promise<ReadonlyArray<PackMapAreaFeature>>
-  readonly setFeatures: (features: ReadonlyArray<PackMapAreaFeature>) => void
+  readonly loadFeatures: (context: PackOverlayControllerRefreshContext) => Promise<ReadonlyArray<PackMapFeature>>
+  readonly setFeatures: (features: ReadonlyArray<PackMapFeature>) => void
   readonly onFeaturesChanged: () => void
   readonly onError: (message: string) => void
   readonly performanceDiagnostics: MapPerformanceDiagnostics

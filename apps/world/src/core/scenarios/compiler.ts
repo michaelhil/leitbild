@@ -85,7 +85,7 @@ const expandItem = async (
 
 
 const startingView = (view: ScenarioDefinition['view'], packs: ReadonlyArray<WorldPack>): StartingView => {
-  const layers = [...new Set(['objects', 'routes', 'highlights', ...packs.flatMap(pack => pack.presentation.mapAreaFeatureLayers ?? [])])]
+  const layers = [...new Set(['objects', 'routes', 'highlights', ...packs.flatMap(pack => pack.presentation.mapFeatureLayers ?? [])])]
   const overrides = new Map((view.rail?.sections ?? []).map(section => [section.categoryId, section]))
   const categories = packs.flatMap(pack => pack.presentation.categories)
   for (const id of overrides.keys()) {

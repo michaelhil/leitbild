@@ -50,23 +50,28 @@ export type MapCapabilityLayer = z.infer<typeof mapCapabilityLayerSchema>
 
 export const baseTilesetSchema = z.object({
   kind: z.literal('base'),
-  id: z.literal(mapTilesetId),
+  id: z.string().min(1),
   schemaVersion: z.literal(1),
   region: z.object({
-    id: z.literal('norway'),
-    source: z.literal('geofabrik'),
+    id: z.string().min(1),
+    source: z.string().min(1),
     sourceUrl: z.string().url(),
   }),
   artifact: z.object({
     format: z.literal('pmtiles'),
     tileEncoding: z.literal('mvt'),
-    currentTileUrl: z.literal('/map/tiles/current.pmtiles'),
+    currentTileUrl: z.string().min(1),
+    tileTemplate: z.string().min(1),
+    bounds: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+    minZoom: z.number().int().min(0),
+    maxZoom: z.number().int().max(24),
+    attribution: z.string().min(1),
     styleUrl: z.literal('/map/style.json'),
     glyphsUrl: z.literal('/map/fonts/{fontstack}/{range}.pbf'),
   }),
   schema: z.object({
-    name: z.literal('openmaptiles-compatible-leitbild-v1'),
-    generatedBy: z.literal('planetiler-openmaptiles'),
+    name: z.enum(['openmaptiles-compatible-leitbild-v1', 'natural-earth-overview']),
+    generatedBy: z.string().min(1),
     evolution: z.literal('breaking changes increment schemaVersion; no backward compatibility is preserved'),
   }),
   layers: z.array(mapCapabilityLayerSchema).min(1),
@@ -358,6 +363,9 @@ export const createBaseTileset = (): BaseTileset => baseTilesetSchema.parse({
     format: 'pmtiles',
     tileEncoding: 'mvt',
     currentTileUrl: '/map/tiles/current.pmtiles',
+    tileTemplate: '/map/tiles/current/{z}/{x}/{y}.mvt',
+    bounds: [-12, 57, 36, 82], minZoom: 0, maxZoom: 14,
+    attribution: '© OpenStreetMap contributors © OpenMapTiles',
     styleUrl: '/map/style.json',
     glyphsUrl: '/map/fonts/{fontstack}/{range}.pbf',
   },
@@ -368,6 +376,23 @@ export const createBaseTileset = (): BaseTileset => baseTilesetSchema.parse({
   },
   layers: baseLayers,
 })
+
+export const createOverviewTileset = (): BaseTileset => baseTilesetSchema.parse({
+  kind: 'base', id: 'world-overview', schemaVersion: 1,
+  region: { id: 'world', source: 'natural-earth', sourceUrl: 'https://www.naturalearthdata.com/' },
+  artifact: { format: 'pmtiles', tileEncoding: 'mvt', currentTileUrl: '/map/tiles/overview.pmtiles', tileTemplate: '/map/tiles/overview/{z}/{x}/{y}.mvt', bounds: [-180,-85.051129,180,85.051129], minZoom: 0, maxZoom: 6, attribution: 'Made with Natural Earth · generalized overview, not street detail', styleUrl: '/map/style.json', glyphsUrl: '/map/fonts/{fontstack}/{range}.pbf' },
+  schema: { name: 'natural-earth-overview', generatedBy: 'tippecanoe', evolution: 'breaking changes increment schemaVersion; no backward compatibility is preserved' },
+  layers: [
+    { id: 'countries', sourceLayer: 'countries', geometry: ['polygon'], category: 'base_context', intendedUse: 'Generalized land and country outlines, not authoritative boundaries or operational truth', fields: [] },
+    { id: 'places', sourceLayer: 'places', geometry: ['point'], category: 'base_context', intendedUse: 'Generalized country and populated-place labels', fields: [{ name: 'name', type: 'string', availability: 'required', description: 'Display label' }] },
+  ],
+})
+
+export const overviewPmtilesPathForRoot = (mapRoot: string): string => resolve(mapRoot, 'overview', 'current.pmtiles')
+const overviewStamp = async (mapRoot: string): Promise<{ id: string; mtimeMs: number }> => {
+  try { return { id: 'overview', mtimeMs: (await stat(overviewPmtilesPathForRoot(mapRoot))).mtimeMs } }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { id: 'overview', mtimeMs: -1 }; throw error }
+}
 
 export const terrainPmtilesPathForRoot = (mapRoot: string): string =>
   resolve(mapRoot, 'current', 'terrain.pmtiles')
@@ -682,6 +707,7 @@ export const loadMapCapabilityManifest = async (
     await terrainStamp(mapRoot),
     await terrainMetadataStamp(mapRoot),
     await sceneryStamp(mapRoot),
+    await overviewStamp(mapRoot),
   ]
   if (cache && stampsMatch(cache.stamps, freshStamps)) return cache.manifest
 
@@ -695,7 +721,7 @@ export const loadMapCapabilityManifest = async (
   const scenery = createSceneryTileset(await sceneryArtifactFor(mapRoot))
   const manifest = mapCapabilityManifestSchema.parse({
     schemaVersion: mapManifestSchemaVersion,
-    tilesets: [createBaseTileset(), terrain, scenery, ...referenceTilesets],
+    tilesets: [createBaseTileset(), ...freshStamps.some(stamp => stamp.id === 'overview' && stamp.mtimeMs >= 0) ? [createOverviewTileset()] : [], terrain, scenery, ...referenceTilesets],
   })
   cache = { manifest, stamps: freshStamps }
   return manifest

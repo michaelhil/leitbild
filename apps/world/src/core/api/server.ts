@@ -7,6 +7,7 @@ import {
   createMapArtifactConfigFromEnv,
   createMapArtifactStatus,
   currentPmtilesResponse,
+  overviewPmtilesResponse,
   currentTerrainPmtilesResponse,
   currentTerrainRasterTileResponse,
   currentTerrainTileJsonResponse,
@@ -327,12 +328,13 @@ export const createServer = (config: ServerConfig): { readonly stop: () => Promi
           : secure(apiError(404, 'workspace_host_required', 'Open this Module through the Workspace Host'))
       }
       if (url.pathname === '/map/capabilities.json') return secure(await mapCapabilitiesResponse(mapArtifacts))
-      if (url.pathname === '/map/style.json') return secure(mapStyleResponse(url.searchParams.get('theme')))
+      if (url.pathname === '/map/style.json') return secure(await mapStyleResponse(url.searchParams.get('theme'), mapArtifacts))
       if (url.pathname.startsWith('/map/tiles/current/')) {
         const tileResponse = await currentVectorTileResponse(url, mapArtifacts)
         if (tileResponse) return secure(tileResponse)
       }
       if (url.pathname === '/map/tiles/current.pmtiles') return secure(await currentPmtilesResponse(req, mapArtifacts))
+      if (url.pathname === '/map/tiles/overview.pmtiles') return secure(await overviewPmtilesResponse(req, mapArtifacts))
       if (url.pathname === '/map/terrain/current.pmtiles') return secure(await currentTerrainPmtilesResponse(req, mapArtifacts))
       if (url.pathname === '/map/terrain/current/tiles.json') return secure(await currentTerrainTileJsonResponse(mapArtifacts))
       if (url.pathname.startsWith('/map/terrain/current/')) {

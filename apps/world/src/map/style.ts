@@ -1,9 +1,10 @@
-import { createBaseTileset } from './capabilities.ts'
+import { createBaseTileset, type BaseTileset } from './capabilities.ts'
 
 export interface MapLibreStyle {
   readonly version: 8
   readonly name: string
   readonly glyphs: string
+  readonly metadata: Record<string, unknown>
   readonly sources: Record<string, unknown>
   readonly layers: ReadonlyArray<Record<string, unknown>>
 }
@@ -11,10 +12,6 @@ export interface MapLibreStyle {
 export type MapTheme = 'light' | 'dark'
 
 const sourceId = 'leitbild-osm'
-const minBaseZoom = 0
-const maxBaseZoom = 14
-const norwayBounds = [-12, 57, 36, 82] as const
-const baseVectorTileUrlTemplate = '/map/tiles/current/{z}/{x}/{y}.mvt'
 
 const mapThemePalette = (theme: MapTheme) => {
   if (theme === 'dark') {
@@ -83,29 +80,38 @@ const mapThemePalette = (theme: MapTheme) => {
   }
 }
 
-export const createLeitbildMapStyle = (theme: MapTheme = 'light'): MapLibreStyle => {
-  const base = createBaseTileset()
+export const createLeitbildMapStyle = (theme: MapTheme = 'light', bases: ReadonlyArray<BaseTileset> = [createBaseTileset()]): MapLibreStyle => {
+  const base = bases.find(base => base.schema.name === 'openmaptiles-compatible-leitbild-v1')
+  if (!base) throw new Error('Regional base style metadata is missing')
+  const overview = bases.find(base => base.schema.name === 'natural-earth-overview')
   const palette = mapThemePalette(theme)
   return {
     version: 8,
     name: `Leitbild Vector Base ${theme}`,
     glyphs: base.artifact.glyphsUrl,
+    metadata: { 'leitbild:baseSources': [sourceId, ...(overview ? [overview.id] : [])] },
     sources: {
       [sourceId]: {
         type: 'vector',
-        tiles: [baseVectorTileUrlTemplate],
-        minzoom: minBaseZoom,
-        maxzoom: maxBaseZoom,
-        bounds: [...norwayBounds],
-        attribution: '© OpenStreetMap contributors © OpenMapTiles',
+        tiles: [base.artifact.tileTemplate],
+        minzoom: base.artifact.minZoom,
+        maxzoom: base.artifact.maxZoom,
+        bounds: base.artifact.bounds,
+        attribution: base.artifact.attribution,
       },
+      ...(overview ? { [overview.id]: { type: 'vector', tiles: [overview.artifact.tileTemplate], minzoom: overview.artifact.minZoom, maxzoom: overview.artifact.maxZoom, bounds: overview.artifact.bounds, attribution: overview.artifact.attribution } } : {}),
     },
     layers: [
       {
         id: 'background',
         type: 'background',
-        paint: { 'background-color': palette.background },
+        paint: { 'background-color': overview ? palette.water : palette.background },
       },
+      ...(overview ? [
+        { id: 'overview-land', type: 'fill', source: overview.id, 'source-layer': 'countries', paint: { 'fill-color': palette.background } },
+        { id: 'overview-boundaries', type: 'line', source: overview.id, 'source-layer': 'countries', paint: { 'line-color': palette.boundary, 'line-width': .7, 'line-opacity': .6 } },
+        { id: 'overview-labels', type: 'symbol', source: overview.id, 'source-layer': 'places', layout: { 'text-field': ['get','name'], 'text-font': ['Noto Sans Regular'], 'text-size': ['case', ['==',['get','kind'],'country'],13,11], 'text-max-width': 9 }, paint: { 'text-color': palette.labelText, 'text-halo-color': palette.textHalo, 'text-halo-width': 1 } },
+      ] : []),
       {
         id: 'landuse',
         type: 'fill',

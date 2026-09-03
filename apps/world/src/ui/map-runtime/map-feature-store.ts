@@ -1,6 +1,6 @@
 import type { GeoJsonPoint, GeoJsonPolygon, OperationalObject } from '../../core/model/index.ts'
 import { remainingRouteGeometry } from '../../core/model/index.ts'
-import type { PackMapAreaFeature, PackObjectPresentation } from '../../core/packs/protocol.ts'
+import type { PackMapFeature, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import { colorWithAlpha, hexToRgba, toneColor, white } from './colors.ts'
 import { normalizeSymbolId, symbolSizePx } from './symbol-kit.ts'
 import {
@@ -194,7 +194,7 @@ const lineObjectPathFor = (
   }
 }
 
-const areaFor = (feature: PackMapAreaFeature): OperationalAreaFeature => {
+const areaFor = (feature: PackMapFeature & { geometry: GeoJsonPolygon }): OperationalAreaFeature => {
   const opacity = feature.opacity ?? 0.10
   const lineColor = feature.lineColor ?? feature.color
   const layerId = feature.layerId ?? 'objects'
@@ -211,7 +211,7 @@ const areaFor = (feature: PackMapAreaFeature): OperationalAreaFeature => {
   }
 }
 
-const areaSymbolFor = (feature: PackMapAreaFeature): OperationalSymbolFeature | null => {
+const areaSymbolFor = (feature: PackMapFeature): OperationalSymbolFeature | null => {
   if (!feature.anchorPoint || !feature.symbol) return null
   const tone = feature.symbol.tone ?? 'idle'
   const symbolId = normalizeSymbolId(feature.symbol.icon)
@@ -271,11 +271,11 @@ const projectObjects = (
   }
 }
 
-const projectPackAreas = (features: ReadonlyArray<PackMapAreaFeature>): ReadonlyArray<OperationalAreaFeature> =>
-  features.map(areaFor)
+const projectPackAreas = (features: ReadonlyArray<PackMapFeature>): ReadonlyArray<OperationalAreaFeature> =>
+  features.flatMap(feature => feature.geometry.type === 'Polygon' ? [areaFor({ ...feature, geometry: feature.geometry })] : [])
 
 const projectPackAreaSymbols = (
-  features: ReadonlyArray<PackMapAreaFeature>,
+  features: ReadonlyArray<PackMapFeature>,
 ): ReadonlyArray<OperationalSymbolFeature> =>
   features.flatMap(feature => {
     const symbol = areaSymbolFor(feature)
@@ -302,8 +302,8 @@ const projectFeatures = (
   readonly placementPoints: ReadonlyArray<Position3>
 } => {
   const objectFeatures = projectObjects(input, projectionContextFor(input))
-  const areaFeatures = projectPackAreas(input.packAreaFeatures)
-  const areaSymbols = projectPackAreaSymbols(input.packAreaFeatures)
+  const areaFeatures = projectPackAreas(input.packFeatures)
+  const areaSymbols = projectPackAreaSymbols(input.packFeatures)
   return {
     points: objectFeatures.points,
     paths: sortPaths(objectFeatures.objectPaths),
@@ -372,8 +372,8 @@ export const createMapFeatureStore = (): MapFeatureStore => {
         syncFamily(paths, sortPaths(objectFeatures.objectPaths))
       }
       if (shouldUpdateAreas && objectFeatures) {
-        syncFamily(areas, sortAreas(projectPackAreas(input.packAreaFeatures)))
-        syncFamily(areaSymbols, projectPackAreaSymbols(input.packAreaFeatures))
+        syncFamily(areas, sortAreas(projectPackAreas(input.packFeatures)))
+        syncFamily(areaSymbols, projectPackAreaSymbols(input.packFeatures))
       }
       if (families.has('placement')) {
         syncPlacement(input.placementPoints.map(placementPosition))
