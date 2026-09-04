@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { WorkspaceSubjectReference } from '@leitbild/contracts'
+  import { workspaceSubjectFocusMessage } from './workspace-focus.ts'
 
   interface Props {
     readonly workspaceId: string
@@ -27,10 +28,10 @@
   let agentsFrame = $state<HTMLIFrameElement | null>(null)
 
   const publishResourceFocus = (): void => {
-    agentsFrame?.contentWindow?.postMessage({
-      type: 'leitbild:subject-focus',
-      subjects: focusedSubjects,
-    }, location.origin)
+    agentsFrame?.contentWindow?.postMessage(
+      workspaceSubjectFocusMessage(focusedSubjects),
+      location.origin,
+    )
   }
 
   $effect(() => {
