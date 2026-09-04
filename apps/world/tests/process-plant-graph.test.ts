@@ -9,6 +9,8 @@ import {
   compileProcessPlant,
   compileProcessPlants,
   compileResolvedProcessPlant,
+  createProcessPlantRampRunner,
+  createProcessPlantRuntime,
   createPwrReferencePlantDefinition,
   processPlantCatalog,
   processPlantDefinitionCatalog,
@@ -19,7 +21,8 @@ import {
   type PlantGraphSpec,
 } from '../src/packs/process-plant/index.ts'
 import { scenarios } from './fixtures/scenarios.ts'
-import type { ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
+import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
+import { processPlantCapabilities } from '../src/packs/process-plant/capabilities.ts'
 
 
 describe('process plant model composition', () => {
@@ -85,6 +88,14 @@ describe('process plant model composition', () => {
 })
 
 describe('process plant discovery', () => {
+  test('describes configuration and live-data reads in searchable domain language', () => {
+    const descriptions = new Map(processPlantCapabilities.map(capability => [capability.id, capability.description]))
+    expect(descriptions.get('world.process-plant.artifact.read')).toContain('authored configuration')
+    expect(descriptions.get('world.process-plant.variables.search')).toContain('current Plant variables')
+    expect(descriptions.get('world.process-plant.signals.read')).toContain('live values')
+    expect(descriptions.get('world.process-plant.transient.diagnostics')).toContain('diagnostics')
+  })
+
   test('exposes only selectable product concepts', () => {
     const catalog = processPlantDefinitionCatalog()
     expect(catalog.models.map(entry => entry.id)).toEqual([processPlantPwrReferenceModelRef])
@@ -185,6 +196,34 @@ describe('process plant discovery', () => {
         { id: 'SI-SIG', status: 'missing', warnings: [] },
       ],
     })
+  })
+
+  test('paginates variable and signal discovery without losing Plant identity', () => {
+    const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:paged-discovery' }))
+    const runtime = createProcessPlantRuntime({ system: plant })
+    const plants = new Map([[plant.id, {
+      plant,
+      runtime,
+      ramps: createProcessPlantRampRunner({ runtime }),
+      performance: createProcessPlantRuntimePerformance(),
+    }]])
+
+    const variables = answerProcessPlantQuery({
+      request: { capabilityId: 'world.process-plant.variables.search', input: { plantId: plant.id, offset: 1, limit: 2 } },
+      plants,
+    }) as { total: number; offset: number; returned: number; hasMore: boolean; variables: ReadonlyArray<{ plantId: string; variable: unknown }> }
+    expect(variables).toMatchObject({ offset: 1, returned: 2, hasMore: true })
+    expect(variables.total).toBeGreaterThan(3)
+    expect(variables.variables).toHaveLength(2)
+    expect(variables.variables.every(entry => entry.plantId === plant.id)).toBe(true)
+
+    const signals = answerProcessPlantQuery({
+      request: { capabilityId: 'world.process-plant.signals.search', input: { plantId: plant.id, offset: 0, limit: 2 } },
+      plants,
+    }) as { total: number; returned: number; hasMore: boolean; signals: ReadonlyArray<{ plantId: string; signal: unknown }> }
+    expect(signals).toMatchObject({ returned: 2, hasMore: true })
+    expect(signals.total).toBeGreaterThan(2)
+    expect(signals.signals.every(entry => entry.plantId === plant.id)).toBe(true)
   })
 
   test('rejects duplicate display contributions', () => {

@@ -38,8 +38,12 @@ import { variablesReadQuerySchema, variablesSearchQuerySchema } from './queries/
 const recordSchema = z.record(z.string(), z.json())
 const recordArraySchema = z.array(recordSchema)
 const plantIdSchema = z.string().min(1)
-const plantRecordsSchema = (field: string) => z.object({
-  plants: z.array(z.object({ plantId: plantIdSchema, [field]: recordArraySchema }).strict()),
+const pagedPlantRecordsSchema = (collectionField: string, itemField: string) => z.object({
+  total: z.number().int().nonnegative(),
+  offset: z.number().int().nonnegative(),
+  returned: z.number().int().nonnegative(),
+  hasMore: z.boolean(),
+  [collectionField]: z.array(z.object({ plantId: plantIdSchema, [itemField]: recordSchema }).strict()),
 }).strict()
 
 const queryOutputById: Readonly<Record<string, z.ZodType>> = {
@@ -84,10 +88,10 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
   }).strict(),
   'world.process-plant.display-profile.read': z.object({ plantId: plantIdSchema, profile: recordSchema, groups: recordArraySchema }).strict(),
   'world.process-plant.variables.read': z.object({ variables: recordArraySchema }).strict(),
-  'world.process-plant.variables.search': plantRecordsSchema('variables'),
+  'world.process-plant.variables.search': pagedPlantRecordsSchema('variables', 'variable'),
   'world.process-plant.signals.resolve': z.object({ plantId: plantIdSchema, signals: recordArraySchema }).strict(),
   'world.process-plant.signals.read': z.object({ plantId: plantIdSchema, signals: recordArraySchema }).strict(),
-  'world.process-plant.signals.search': plantRecordsSchema('signals'),
+  'world.process-plant.signals.search': pagedPlantRecordsSchema('signals', 'signal'),
   'world.process-plant.procedure-tags.validate': z.object({ plantId: plantIdSchema, tags: recordArraySchema }).strict(),
   'world.process-plant.conditions.evaluate': z.object({ plantId: plantIdSchema, matches: z.boolean(), signalsRead: recordArraySchema }).strict(),
   'world.process-plant.assessments.evaluate': z.object({ plantId: plantIdSchema, assessments: recordArraySchema }).strict(),
@@ -152,6 +156,36 @@ const titleFor = (id: string): string => id
   .map(part => part.replaceAll('-', ' '))
   .join(' · ')
 
+const queryDescriptionById: Readonly<Record<string, string>> = {
+  'world.process-plant.catalog.list': 'Discover selectable Process Plant models, operating points, automations, controls, assessments, recordings, displays, and credibility evidence.',
+  'world.process-plant.credibility.list': 'List engineering credibility evidence available for one Plant.',
+  'world.process-plant.credibility.read': 'Read one engineering evidence artifact and its provenance for one Plant.',
+  'world.process-plant.plants.list': 'List active Plants with their model library, graph size, variable count, and elapsed simulation time.',
+  'world.process-plant.graph.read': 'Read one Plant compiled component, connection, variable, and signal graph.',
+  'world.process-plant.artifact.read': 'Read one Plant authored configuration or compiled graph artifact, including source and calculation links.',
+  'world.process-plant.display-profile.read': 'Read a configured operator display profile with its current grouped field values.',
+  'world.process-plant.variables.read': 'Read current values and metadata for explicitly named Plant variable paths.',
+  'world.process-plant.variables.search': 'Search current Plant variables by text, discipline, quantity, publication state, and Plant; results are paginated.',
+  'world.process-plant.signals.resolve': 'Resolve exact signal references to canonical Plant signal bindings.',
+  'world.process-plant.signals.read': 'Read live values, metadata, and quality for exact Plant signal references.',
+  'world.process-plant.signals.search': 'Search Plant signal bindings by tag, equipment, discipline, quantity, writability, procedure relevance, and text; results are paginated.',
+  'world.process-plant.procedure-tags.validate': 'Validate a set of procedure tags against one Plant and report missing or mismatched bindings.',
+  'world.process-plant.conditions.evaluate': 'Evaluate declared operating conditions against current Plant signals.',
+  'world.process-plant.assessments.evaluate': 'Evaluate selected Pack-declared assessments against current Plant state.',
+  'world.process-plant.control.validate': 'Validate a proposed Process Plant control write without applying it.',
+  'world.process-plant.runtime.status': 'Summarize active Process Plant runtime health, elapsed time, and variable publication counts.',
+  'world.process-plant.transient.diagnostics': 'Read detailed transient, performance, and instrumentation diagnostics for one Plant.',
+  'world.process-plant.ic.status': 'Read the complete current alarm and trip lifecycle state for one Plant.',
+  'world.process-plant.ic.catalog': 'Discover configured alarm and trip definitions for one Plant.',
+  'world.process-plant.alarms.status': 'Read active alarm and trip state plus a current lifecycle summary for one Plant.',
+  'world.process-plant.alarms.summary': 'Read a compact current alarm and trip summary for one Plant.',
+  'world.process-plant.alarms.history': 'Read alarm and trip lifecycle transitions recorded for one Plant.',
+  'world.process-plant.displays.list': 'List operator displays available for one Plant.',
+  'world.process-plant.display.read': 'Read one operator display definition and its available lenses.',
+  'world.process-plant.display.snapshot': 'Read the current values and alarms projected onto one operator display.',
+  'world.process-plant.display.project': 'Project one Plant graph and operator display through a selected display lens.',
+}
+
 const processPlantQueryCapabilities = processPlantQueryKinds.map(id => {
   const input = queryInputById[id]
   const output = queryOutputById[id]
@@ -160,7 +194,7 @@ const processPlantQueryCapabilities = processPlantQueryKinds.map(id => {
   return defineSimulationQueryCapability({
     id,
     title: titleFor(id),
-    description: `Read ${titleFor(id)} from the active Process Plant runtime.`,
+    description: queryDescriptionById[id] ?? `Read ${titleFor(id)} from the active Process Plant runtime.`,
     input,
     output,
   })

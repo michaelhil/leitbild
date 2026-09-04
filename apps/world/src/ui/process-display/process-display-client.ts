@@ -473,19 +473,31 @@ export const listProcessPlantVariablePaths = async (
   simulationRunId: SimulationRunId,
   plantId: string,
 ): Promise<ReadonlyArray<VariablePath>> => {
-  const result = assertObject(await querySimulationRunCapability(
-    simulationRunId,
-    'world.process-plant.variables.search',
-    { plantId },
-  ), 'process plant variables search result is malformed')
-  const plants = assertArray(result.plants, 'process plant variables search result has no plants array')
-  for (const item of plants) {
-    const plant = assertObject(item, 'process plant variables search plant is malformed')
-    if (assertString(plant.plantId, 'process plant variables search plant requires plantId') !== plantId) continue
-    return assertArray(plant.variables, 'process plant variables search plant has no variables array')
-      .map(variable => assertString(assertObject(variable, 'process plant variable is malformed').path, 'process plant variable requires path') as VariablePath)
-  }
-  throw new Error(`process plant variables search did not return plant ${plantId}`)
+  // A bounded page keeps this UI read compatible with very large component
+  // graphs; the loop follows hasMore instead of assuming one response.
+  const pageSize = 200
+  const paths: VariablePath[] = []
+  let offset = 0
+  do {
+    const result = assertObject(await querySimulationRunCapability(
+      simulationRunId,
+      'world.process-plant.variables.search',
+      { plantId, offset, limit: pageSize },
+    ), 'process plant variables search result is malformed')
+    const variables = assertArray(result.variables, 'process plant variables search result has no variables array')
+    for (const item of variables) {
+      const entry = assertObject(item, 'process plant variables search entry is malformed')
+      if (assertString(entry.plantId, 'process plant variables search entry requires plantId') !== plantId) continue
+      const variable = assertObject(entry.variable, 'process plant variables search entry requires variable')
+      paths.push(assertString(variable.path, 'process plant variable requires path') as VariablePath)
+    }
+    const returned = Number(result.returned)
+    if (!Number.isInteger(returned) || returned < 0) throw new Error('process plant variables search result requires returned')
+    offset += returned
+    if (result.hasMore !== true) break
+    if (returned === 0) throw new Error('process plant variables search pagination made no progress')
+  } while (true)
+  return paths
 }
 
 export const listProcessDisplays = async (

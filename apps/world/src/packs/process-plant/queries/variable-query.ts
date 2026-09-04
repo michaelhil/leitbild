@@ -5,7 +5,7 @@ import type { VariablePath } from '../graph/index.ts'
 import { processQuantitySchema, variableDisciplineSchema, variablePathSchema } from '../graph/index.ts'
 import type { ProcessPlantVariableSnapshot } from '../runtime/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
-import { requirePlant } from './common.ts'
+import { paginateProcessPlantSearch, processPlantSearchPaginationShape, requirePlant } from './common.ts'
 
 export const variablesReadQuerySchema = z.object({
   plantId: idSchema,
@@ -18,6 +18,7 @@ export const variablesSearchQuerySchema = z.object({
   discipline: variableDisciplineSchema.optional(),
   quantity: processQuantitySchema.optional(),
   publishedOnly: z.boolean().default(false),
+  ...processPlantSearchPaginationShape,
 }).strict()
 
 export const processPlantVariableQueryKinds = [
@@ -64,10 +65,9 @@ export const answerProcessPlantVariableQuery = (config: {
   const plants = payload.plantId === undefined
     ? [...config.plants.values()]
     : [requirePlant(config.plants, payload.plantId)]
-  return {
-    plants: plants.map(system => ({
-      plantId: system.plant.id,
-      variables: system.runtime.snapshot().variables.filter(variable => matchesSearch(variable, payload)),
-    })),
-  }
+  const matches = plants.flatMap(system => system.runtime.snapshot().variables
+    .filter(variable => matchesSearch(variable, payload))
+    .map(variable => ({ plantId: system.plant.id, variable })))
+  const page = paginateProcessPlantSearch(matches, payload.offset, payload.limit)
+  return { total: page.total, offset: page.offset, returned: page.returned, hasMore: page.hasMore, variables: page.items }
 }

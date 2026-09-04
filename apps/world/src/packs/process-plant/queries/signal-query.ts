@@ -10,7 +10,7 @@ import {
   resolveProcessPlantSignalBinding,
 } from '../signals.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
-import { requirePlant } from './common.ts'
+import { paginateProcessPlantSearch, processPlantSearchPaginationShape, requirePlant } from './common.ts'
 
 export const signalsResolveQuerySchema = z.object({
   plantId: idSchema,
@@ -27,6 +27,7 @@ export const signalsSearchQuerySchema = z.object({
   writable: z.boolean().optional(),
   procedureRelevant: z.boolean().optional(),
   publishedOnly: z.boolean().default(false),
+  ...processPlantSearchPaginationShape,
 }).strict()
 
 const procedureTagSchema = z.object({
@@ -172,12 +173,10 @@ export const answerProcessPlantSignalQuery = (config: {
   const plants = payload.plantId === undefined
     ? [...config.plants.values()]
     : [requirePlant(config.plants, payload.plantId)]
-  return {
-    plants: plants.map(system => ({
-      plantId: system.plant.id,
-      signals: system.plant.graph.signalBindings
-        .map(processPlantSignalView)
-        .filter(binding => matchesSignalSearch(binding, payload)),
-    })),
-  }
+  const matches = plants.flatMap(system => system.plant.graph.signalBindings
+    .map(processPlantSignalView)
+    .filter(binding => matchesSignalSearch(binding, payload))
+    .map(signal => ({ plantId: system.plant.id, signal })))
+  const page = paginateProcessPlantSearch(matches, payload.offset, payload.limit)
+  return { total: page.total, offset: page.offset, returned: page.returned, hasMore: page.hasMore, signals: page.items }
 }
