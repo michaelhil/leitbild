@@ -91,8 +91,8 @@ describe('Workspace Capability tools', () => {
     }, context)
     expect(unscopedWildcard).toMatchObject({ success: true, data: { capabilities: [{ id: capabilityId }] } })
 
-    const partialWildcard = await tools[1]!.execute({ resource: { moduleId: 'world', type: '*', id: '*' } }, context)
-    expect(partialWildcard).toMatchObject({ success: false, error: expect.stringContaining('partial wildcards') })
+    const partialWildcard = await tools[1]!.execute({ resource: { moduleId: 'world', type: 'simulation-run', id: '*' }, queries: ['simulation state'], risk: 'read', kind: 'query' }, context)
+    expect(partialWildcard).toMatchObject({ success: true, data: { capabilities: [{ id: capabilityId }] } })
   })
 
   test('semantic read grant rejects missing Room, wrong target, writes, and stale Capabilities with distinct reasons', async () => {
