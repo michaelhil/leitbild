@@ -49,8 +49,12 @@ The durable behavior and runtime configuration of an Agent, excluding concrete M
 _Avoid_: Composition Definition, persistent cross-Module Resource link
 
 **Tool Grant**:
-Permission for an Agent to invoke a named Capability under an explicit scope.
+Permission for an Agent to invoke either one named Capability or read-only Capabilities advertised by the Resource linked to its current Companion Room. A Companion Room association alone never grants access.
 _Avoid_: implicit tool availability, Agent-to-Resource connection
+
+**Progressive Discovery**:
+Agent-directed acquisition of proportionate Workspace evidence through compact catalogs, searchable Capability descriptions, exact schemas, and bounded reads. The Agent decides what to inspect and when it has enough evidence; it is guidance, not a mandatory retrieval sequence.
+_Avoid_: eager state dump, rigid lookup workflow, universal situation-report service
 
 **Workspace Capability Broker**:
 The generic `workspace_catalog`, `workspace_capabilities`, and `workspace_invoke` tool surface derived at runtime whenever an Agent has one or more Tool Grants. It discovers current Resources and Capabilities and enforces grants without becoming authored Agent behavior.
@@ -73,6 +77,10 @@ A bounded, derived representation of relevant Workspace and Resource state suppl
 World context presents a capped operational-object index; an Agent narrows it with the object-search Capability and reads details only when needed.
 Focused Subjects may identify the Client's few visible live Resources or exact Definition Revisions, but are transient and grant no authority.
 _Avoid_: copied domain state, persisted generated prompt, current mutable Definition inference
+
+**Generation Metadata**:
+Structured facts about one generated response, including provider, model, duration, token use, prompt-cache use, model-call count, and tool-call count. Clients may render it with the response, but it is not conversational content and is not returned to the model as history.
+_Avoid_: model-authored telemetry footer, hidden provider log
 
 **Evaluation**:
 A repeatable assessment of Agent decisions and outcomes under declared conditions.

@@ -60,8 +60,9 @@ describe('bundled Room Definitions', () => {
     const definition = getBundledRoomDefinition('halden-integrated-control-room')!
     const operator = definition.room.agents[0]!
     expect(operator.tools).not.toContain('workspace_invoke')
-    expect(operator.toolGrants?.map(grant => String(grant.capabilityId))).toContain('world.simulation-run.context')
-    expect(operator.toolGrants?.map(grant => String(grant.capabilityId))).toContain('world.process-plant.control.write')
-    expect(operator.toolGrants?.map(grant => String(grant.capabilityId))).toContain('world.electric-grid.grid.summary')
+    const exactGrants = operator.toolGrants?.flatMap(grant => 'capabilityId' in grant ? [String(grant.capabilityId)] : [])
+    expect(exactGrants).toContain('world.simulation-run.context')
+    expect(exactGrants).toContain('world.process-plant.control.write')
+    expect(exactGrants).toContain('world.electric-grid.grid.summary')
   })
 })

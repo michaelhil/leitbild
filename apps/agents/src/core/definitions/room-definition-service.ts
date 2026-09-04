@@ -103,6 +103,7 @@ export const startRoomDefinition = async (
         ...(agentDefinition.toolGrants ? { toolGrants: agentDefinition.toolGrants } : {}),
         ...(agentDefinition.temperature !== undefined ? { temperature: agentDefinition.temperature } : {}),
         ...(agentDefinition.maxToolIterations !== undefined ? { maxToolIterations: agentDefinition.maxToolIterations } : {}),
+        ...(agentDefinition.includeContext ? { includeContext: agentDefinition.includeContext } : {}),
       })
       createdAgents.push({ id: agent.id, name: agent.name })
       await system.addAgentToRoom(agent.id, room.profile.id, 'demo')

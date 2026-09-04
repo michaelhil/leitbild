@@ -168,20 +168,6 @@ const runtimeHealthSchema = z.object({
   }).strict().optional(),
 }).strict()
 
-const availableSimulationCapabilitySchema = z.object({
-  id: z.string().min(1),
-  kind: z.enum(['command', 'query']),
-  title: z.string().min(1),
-  description: z.string().min(1),
-  risk: z.enum(['read', 'write', 'destructive']),
-  idempotent: z.boolean(),
-  schedulable: z.boolean().optional(),
-  inputSchema: z.record(z.string(), z.unknown()),
-  outputSchema: z.record(z.string(), z.unknown()),
-  packId: z.string().min(1),
-  runtimeId: z.string().min(1),
-}).strict()
-
 const operationalObjectSummarySchema = z.object({
   id: z.string().min(1),
   kind: z.string().min(1),
@@ -246,7 +232,6 @@ const simulationRunContextSchema = z.object({
       packId: z.string().min(1),
       clock: z.enum(['simulation', 'live', 'none']),
     }).strict()),
-    capabilities: z.array(availableSimulationCapabilitySchema),
     wikiRefs: z.array(z.object({
       label: z.string().min(1),
       path: z.string().min(1),
@@ -1013,6 +998,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
         registry.executionStatus(simulationRunId),
       ])
       const snapshot = runtime.snapshot()
+      const { capabilities: _capabilityDescriptors, ...affordances } = runtime.capabilities()
       const objectSummaries = snapshot.objects
         .map(summarizeOperationalObject)
         .sort((left, right) => left.id.localeCompare(right.id))
@@ -1047,7 +1033,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
           byKind: countBy(snapshot.objects.map(object => object.kind)),
           items: contextObjects,
         },
-        affordances: runtime.capabilities(),
+        affordances,
       } })
     },
   },

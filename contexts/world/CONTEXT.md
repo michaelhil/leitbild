@@ -199,7 +199,7 @@ A World entity with independent operational identity, state, visibility, or comm
 _Avoid_: internal solver variable, runtime-private state, Platform Resource as a synonym
 
 **Simulation Context**:
-An agent-safe current view of a Simulation Run: Scenario identity and objectives, current clock, runtime health, guidance, procedure state, operational-object summaries, and available Capabilities. It excludes unrevealed Scenario Timeline content.
+An agent-safe current view of a Simulation Run: Scenario identity and objectives, current clock, runtime health, guidance, procedure state, and operational-object summaries. It excludes unrevealed Scenario Timeline content; Capability availability belongs to the Resource catalog.
 _Avoid_: full snapshot dump, future-event leak, copied solver state
 
 **Simulation Capability**:

@@ -3,14 +3,18 @@ import {
   definitionIdSchema,
   definitionRevisionIdSchema,
   definitionTypeSchema,
+  isExactToolGrant,
   moduleIdSchema,
   resourceIdSchema,
   resourceTypeSchema,
   workspaceCapabilityCatalogSchema,
   workspaceDefinitionCatalogSchema,
   workspaceResourceCatalogSchema,
+  type ModuleCapabilityDescriptor,
+  type ModuleResourceDescriptor,
   type ToolGrant,
   type WorkspaceId,
+  type WorkspaceResourceReference,
 } from '@leitbild/contracts'
 import type { Tool, ToolContext, ToolResult } from '../../core/types/tool.ts'
 
@@ -18,28 +22,11 @@ export interface WorkspaceCapabilityToolsDeps {
   readonly workspaceId: WorkspaceId
   readonly hostBaseUrl: string
   readonly getToolGrants: (agentId: string) => ReadonlyArray<ToolGrant> | undefined
+  readonly getRoomCompanionOf: (roomId: string) => WorkspaceResourceReference | undefined
   readonly fetchImpl?: typeof fetch
 }
 
-// Capability grants imply access to this generic broker surface. These names
-// are derived runtime infrastructure, not authored Agent behavior, so Room
-// Definitions never need to repeat them alongside every Tool Grant.
-export const WORKSPACE_CAPABILITY_TOOL_NAMES = [
-  'workspace_catalog',
-  'workspace_capabilities',
-  'workspace_invoke',
-] as const
-
-const hostBaseUrl = (raw: string): string => {
-  const url = new URL(raw)
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error('Workspace Host URL must use http or https')
-  }
-  if (url.pathname !== '/' || url.search || url.hash) {
-    throw new Error('Workspace Host URL must be an origin without a path, query, or fragment')
-  }
-  return url.origin
-}
+export const WORKSPACE_CAPABILITY_TOOL_NAMES = ['workspace_catalog', 'workspace_capabilities', 'workspace_invoke'] as const
 
 const failure = (code: string, message: string, details?: Record<string, unknown>): ToolResult => ({
   success: false,
@@ -47,30 +34,27 @@ const failure = (code: string, message: string, details?: Record<string, unknown
   data: { code, ...(details === undefined ? {} : { details }) },
 })
 
+const origin = (raw: string): string => {
+  const url = new URL(raw)
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Workspace Host URL must use http or https')
+  if (url.pathname !== '/' || url.search || url.hash) throw new Error('Workspace Host URL must be an origin')
+  return url.origin
+}
+
 const readHostError = async (response: Response): Promise<ToolResult> => {
-  const body = await response.json().catch(() => undefined) as {
-    error?: { code?: unknown; message?: unknown; retryable?: unknown; details?: unknown }
-  } | undefined
+  const body = await response.json().catch(() => undefined) as { error?: { code?: unknown; message?: unknown; retryable?: unknown; details?: unknown } } | undefined
   const code = typeof body?.error?.code === 'string' ? body.error.code : 'workspace_host_request_failed'
-  const message = typeof body?.error?.message === 'string'
-    ? body.error.message
-    : `Workspace Host returned HTTP ${response.status}`
+  const message = typeof body?.error?.message === 'string' ? body.error.message : `Workspace Host returned HTTP ${response.status}`
   return failure(code, message, {
     status: response.status,
     retryable: body?.error?.retryable === true,
-    ...(body?.error?.details && typeof body.error.details === 'object'
-      ? { hostDetails: body.error.details as Record<string, unknown> }
-      : {}),
+    ...(body?.error?.details && typeof body.error.details === 'object' ? { hostDetails: body.error.details as Record<string, unknown> } : {}),
   })
 }
 
 const requestSignal = (signal?: AbortSignal): AbortSignal => AbortSignal.any([AbortSignal.timeout(30_000), ...(signal ? [signal] : [])])
-
-// Tool-calling models commonly serialize an unselected optional text field as
-// an empty string. At a discovery boundary that has one unambiguous meaning:
-// no filter. Non-empty malformed identifiers still fail validation loudly.
-const optionalFilter = (value: unknown): unknown =>
-  typeof value === 'string' && value.trim().length === 0 ? undefined : value
+const optionalFilter = (value: unknown): unknown => typeof value === 'string' && value.trim().length === 0 ? undefined : value
+const referenceKey = (ref: { moduleId: string; type: string; id: string }): string => `${ref.moduleId}:${ref.type}:${ref.id}`
 
 const getJson = async (fetchImpl: typeof fetch, url: string, signal?: AbortSignal): Promise<Response> => {
   try {
@@ -80,64 +64,132 @@ const getJson = async (fetchImpl: typeof fetch, url: string, signal?: AbortSigna
   }
 }
 
+type Catalogs = {
+  capabilities: ReturnType<typeof workspaceCapabilityCatalogSchema.parse>
+  resources: ReturnType<typeof workspaceResourceCatalogSchema.parse>
+}
+
+const readCatalogs = async (fetchImpl: typeof fetch, workspacePath: string, signal?: AbortSignal): Promise<Catalogs | ToolResult> => {
+  const [capabilityResponse, resourceResponse] = await Promise.all([
+    getJson(fetchImpl, `${workspacePath}/capabilities`, signal),
+    getJson(fetchImpl, `${workspacePath}/resources`, signal),
+  ])
+  if (!capabilityResponse.ok) return await readHostError(capabilityResponse)
+  if (!resourceResponse.ok) return await readHostError(resourceResponse)
+  return {
+    capabilities: workspaceCapabilityCatalogSchema.parse(await capabilityResponse.json()),
+    resources: workspaceResourceCatalogSchema.parse(await resourceResponse.json()),
+  }
+}
+
+const parseResource = (value: unknown, workspaceId: WorkspaceId): WorkspaceResourceReference | undefined => {
+  if (value === undefined) return undefined
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('resource must be an object')
+  const raw = value as Record<string, unknown>
+  return {
+    workspaceId,
+    moduleId: moduleIdSchema.parse(raw.moduleId),
+    type: resourceTypeSchema.parse(raw.type),
+    id: resourceIdSchema.parse(raw.id),
+  }
+}
+
+const hasLinkedReadGrant = (grants: ReadonlyArray<ToolGrant>): boolean =>
+  grants.some(grant => !isExactToolGrant(grant) && grant.scope === 'room-linked-resource' && grant.risk === 'read')
+
+const authorizationFailure = (
+  capability: ModuleCapabilityDescriptor | undefined,
+  resourceDescriptor: ModuleResourceDescriptor | undefined,
+  resource: WorkspaceResourceReference | undefined,
+  grants: ReadonlyArray<ToolGrant>,
+  context: ToolContext,
+  deps: WorkspaceCapabilityToolsDeps,
+): ToolResult | undefined => {
+  if (!capability) return failure('capability_not_advertised', 'The Workspace does not advertise this Capability')
+  if (grants.some(grant => isExactToolGrant(grant) && grant.capabilityId === capability.id)) return undefined
+  if (!hasLinkedReadGrant(grants)) return failure('capability_not_granted', `Agent ${context.callerName} is not granted ${capability.id}`, { capabilityId: capability.id })
+  if (!context.roomId) return failure('room_context_required', 'The linked-Resource read grant requires a current Room')
+  const linked = deps.getRoomCompanionOf(context.roomId)
+  if (!linked) return failure('target_not_linked', 'The current Room has no linked Resource')
+  if (!resource || referenceKey(resource) !== referenceKey(linked)) {
+    return failure('target_not_linked', 'The requested Resource is not linked to the current Room', { linkedResource: linked })
+  }
+  if (capability.risk !== 'read') return failure('risk_not_allowed', 'A linked-Resource read grant cannot invoke write or destructive Capabilities', { risk: capability.risk })
+  if (!resourceDescriptor || !resourceDescriptor.capabilityIds.includes(capability.id)) {
+    return failure('capability_not_advertised', 'The linked Resource does not advertise this Capability', { capabilityId: capability.id })
+  }
+  if (capability.scope.kind !== 'resource' || capability.scope.resourceType !== resource.type) {
+    return failure('capability_scope_mismatch', 'The Capability is not scoped to the requested Resource type')
+  }
+  return undefined
+}
+
+const textMatches = (capability: ModuleCapabilityDescriptor, query: string): boolean => {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const haystack = `${capability.id} ${capability.title} ${capability.description} ${capability.moduleId} ${capability.kind} ${capability.risk}`.toLowerCase()
+  return terms.every(term => haystack.includes(term))
+}
+
 export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDeps): ReadonlyArray<Tool> => {
-  const baseUrl = hostBaseUrl(deps.hostBaseUrl)
   const fetchImpl = deps.fetchImpl ?? fetch
-  const workspacePath = `${baseUrl}/api/workspaces/${encodeURIComponent(deps.workspaceId)}`
+  const workspacePath = `${origin(deps.hostBaseUrl)}/api/workspaces/${encodeURIComponent(deps.workspaceId)}`
 
   const catalog: Tool = {
-    name: WORKSPACE_CAPABILITY_TOOL_NAMES[0],
-    description: 'List reusable Definitions and live Resources exposed by Modules in this Workspace. Prefer focusedSubjects for “this/current”; otherwise use the current Room companion-of link.',
-    usage: 'Call with {} for initial discovery; then use exact identifiers from the catalog as optional filters. focusedSubjects is transient browser context and currentRoom is durable Room context. Discover identities immediately before invoking a scoped Capability. Do not remember runtime Resource ids as Agent configuration.',
-    returns: '{ workspaceId, focusedSubjects[], currentRoom, definitions[], resources[] } with stable references, provenance, UI paths, links, and advertised capabilityIds.',
+    name: 'workspace_catalog',
+    description: 'Discover current or Workspace-wide Definitions and Resources, including the current Room link and focused subjects.',
+    usage: 'Use scope=current for compact orientation. Use scope=workspace with filters and pagination only when broader discovery is relevant.',
+    returns: 'Compact references, links, capability IDs, totals, and pagination metadata.',
     parameters: {
-      type: 'object',
-      properties: {
-        moduleId: { type: 'string', description: 'Exact Module ID from discovery; omit for initial discovery.' },
-        definitionType: { type: 'string', description: 'Exact namespaced Definition type from discovery, not a display label.' },
-        resourceType: { type: 'string', description: 'Exact namespaced Resource type from discovery, not a display label; omit to discover all types.' },
-        capabilityId: { type: 'string' },
-      },
-      additionalProperties: false,
+      type: 'object', properties: {
+        scope: { type: 'string', enum: ['current', 'workspace'], default: 'current' },
+        moduleId: { type: 'string' }, definitionType: { type: 'string' }, resourceType: { type: 'string' }, capabilityId: { type: 'string' },
+        offset: { type: 'integer', minimum: 0, default: 0 }, limit: { type: 'integer', minimum: 1, maximum: 100, default: 30 },
+      }, additionalProperties: false,
     },
     execute: async (params, context) => {
       try {
-        const rawModuleId = optionalFilter(params.moduleId)
-        const rawDefinitionType = optionalFilter(params.definitionType)
-        const rawResourceType = optionalFilter(params.resourceType)
-        const rawCapabilityId = optionalFilter(params.capabilityId)
-        const moduleId = rawModuleId === undefined ? undefined : moduleIdSchema.parse(rawModuleId)
-        const definitionType = rawDefinitionType === undefined ? undefined : definitionTypeSchema.parse(rawDefinitionType)
-        const resourceType = rawResourceType === undefined ? undefined : resourceTypeSchema.parse(rawResourceType)
-        const capabilityId = rawCapabilityId === undefined ? undefined : capabilityIdSchema.parse(rawCapabilityId)
+        const scope = params.scope === undefined ? 'current' : String(params.scope)
+        if (!['current', 'workspace'].includes(scope)) return failure('invalid_tool_input', 'scope must be current or workspace')
+        const moduleId = optionalFilter(params.moduleId) === undefined ? undefined : moduleIdSchema.parse(params.moduleId)
+        const definitionType = optionalFilter(params.definitionType) === undefined ? undefined : definitionTypeSchema.parse(params.definitionType)
+        const resourceType = optionalFilter(params.resourceType) === undefined ? undefined : resourceTypeSchema.parse(params.resourceType)
+        const capabilityId = optionalFilter(params.capabilityId) === undefined ? undefined : capabilityIdSchema.parse(params.capabilityId)
+        const offset = params.offset === undefined ? 0 : Number(params.offset)
+        const limit = params.limit === undefined ? 30 : Number(params.limit)
+        if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 100) return failure('invalid_tool_input', 'Invalid pagination')
         const [definitionResponse, resourceResponse] = await Promise.all([
           getJson(fetchImpl, `${workspacePath}/definitions`, context.signal),
           getJson(fetchImpl, `${workspacePath}/resources`, context.signal),
         ])
         if (!definitionResponse.ok) return await readHostError(definitionResponse)
         if (!resourceResponse.ok) return await readHostError(resourceResponse)
-        const definitions = workspaceDefinitionCatalogSchema.parse(await definitionResponse.json())
-        const resources = workspaceResourceCatalogSchema.parse(await resourceResponse.json())
-        return {
-          success: true,
-          data: {
-            workspaceId: resources.workspaceId,
-            focusedSubjects: context.focusedSubjects ?? [],
-            currentRoom: resources.resources.find(resource => resource.ref.type === 'agents.room' && resource.ref.id === context.roomId) ?? null,
-            modules: {
-              definitions: definitions.modules,
-              resources: resources.modules,
-            },
-            definitions: definitions.definitions.filter(definition =>
-              (moduleId === undefined || definition.ref.moduleId === moduleId)
-              && (definitionType === undefined || definition.ref.type === definitionType)
-              && (capabilityId === undefined || definition.capabilityIds.includes(capabilityId))),
-            resources: resources.resources.filter(resource =>
-              (moduleId === undefined || resource.ref.moduleId === moduleId)
-              && (resourceType === undefined || resource.ref.type === resourceType)
-              && (capabilityId === undefined || resource.capabilityIds.includes(capabilityId))),
-          },
-        }
+        const definitionCatalog = workspaceDefinitionCatalogSchema.parse(await definitionResponse.json())
+        const resourceCatalog = workspaceResourceCatalogSchema.parse(await resourceResponse.json())
+        const currentRoom = resourceCatalog.resources.find(resource => resource.ref.type === 'agents.room' && resource.ref.id === context.roomId) ?? null
+        const currentKeys = new Set<string>([
+          ...(context.focusedSubjects ?? []).map(referenceKey),
+          ...(currentRoom?.links ?? []).map(link => referenceKey(link.ref)),
+          ...(currentRoom ? [referenceKey(currentRoom.ref)] : []),
+        ])
+        const definitions = definitionCatalog.definitions.filter(definition =>
+          (scope === 'workspace' || currentKeys.has(referenceKey(definition.ref))) &&
+          (moduleId === undefined || definition.ref.moduleId === moduleId) &&
+          (definitionType === undefined || definition.ref.type === definitionType) &&
+          (capabilityId === undefined || definition.capabilityIds.includes(capabilityId)))
+        const resources = resourceCatalog.resources.filter(resource =>
+          (scope === 'workspace' || currentKeys.has(referenceKey(resource.ref))) &&
+          (moduleId === undefined || resource.ref.moduleId === moduleId) &&
+          (resourceType === undefined || resource.ref.type === resourceType) &&
+          (capabilityId === undefined || resource.capabilityIds.includes(capabilityId)))
+        const combined = [...definitions.map(value => ({ kind: 'definition' as const, value })), ...resources.map(value => ({ kind: 'resource' as const, value }))]
+        const page = combined.slice(offset, offset + limit)
+        return { success: true, data: {
+          workspaceId: deps.workspaceId, focusedSubjects: context.focusedSubjects ?? [], currentRoom,
+          modules: { definitions: definitionCatalog.modules, resources: resourceCatalog.modules },
+          total: combined.length, offset, returned: page.length, hasMore: offset + page.length < combined.length,
+          definitions: page.filter(item => item.kind === 'definition').map(item => item.value),
+          resources: page.filter(item => item.kind === 'resource').map(item => item.value),
+        } }
       } catch (error) {
         return failure('workspace_catalog_discovery_failed', error instanceof Error ? error.message : String(error))
       }
@@ -145,55 +197,54 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
   }
 
   const capabilities: Tool = {
-    name: WORKSPACE_CAPABILITY_TOOL_NAMES[1],
-    description: 'List compact Capability descriptors exposed by Modules in this Workspace. An exact capabilityId request also returns its input schema when granted.',
-    usage: 'Use broad discovery to find IDs without loading schemas, then request one exact capabilityId before invoking it. A Capability can be invoked only when the Agent Profile grants its capabilityId.',
-    returns: '{ workspaceId, modules, capabilities[] } with grant state. inputSchema is present only for an exact granted capabilityId request; output schemas are omitted.',
+    name: 'workspace_capabilities',
+    description: 'Search Capability descriptions or retrieve exact callable schemas for a selected Resource.',
+    usage: 'Supply queries for semantic search or capabilityIds for exact lookup. Output schemas are returned only when explicitly requested.',
+    returns: 'Capability descriptors with grant state, matched queries, totals, and pagination metadata.',
     parameters: {
-      type: 'object',
-      properties: {
-        moduleId: { type: 'string' },
-        capabilityId: { type: 'string', description: 'Exact Capability ID from discovery; narrows the result to one operation.' },
-        risk: { type: 'string', enum: ['read', 'write', 'destructive'] },
-        kind: { type: 'string', enum: ['query', 'command'] },
-      },
-      additionalProperties: false,
+      type: 'object', properties: {
+        resource: { type: 'object', properties: { moduleId: { type: 'string' }, type: { type: 'string' }, id: { type: 'string' } }, required: ['moduleId', 'type', 'id'], additionalProperties: false },
+        moduleId: { type: 'string' }, queries: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 256 }, maxItems: 8 },
+        capabilityIds: { type: 'array', items: { type: 'string' }, maxItems: 24 },
+        risk: { type: 'string', enum: ['read', 'write', 'destructive'] }, kind: { type: 'string', enum: ['query', 'command'] },
+        includeOutputSchema: { type: 'boolean', default: false }, offset: { type: 'integer', minimum: 0, default: 0 }, limit: { type: 'integer', minimum: 1, maximum: 100, default: 30 },
+      }, additionalProperties: false,
     },
     execute: async (params, context) => {
       try {
-        const rawModuleId = optionalFilter(params.moduleId)
-        const rawCapabilityId = optionalFilter(params.capabilityId)
-        const moduleId = rawModuleId === undefined ? undefined : moduleIdSchema.parse(rawModuleId)
-        const risk = optionalFilter(params.risk)
-        const capabilityId = rawCapabilityId === undefined ? undefined : capabilityIdSchema.parse(rawCapabilityId)
-        const kind = optionalFilter(params.kind)
-        if (risk !== undefined && !['read', 'write', 'destructive'].includes(String(risk))) {
-          return failure('invalid_tool_input', 'risk must be read, write, or destructive')
-        }
-        if (kind !== undefined && !['query', 'command'].includes(String(kind))) {
-          return failure('invalid_tool_input', 'kind must be query or command')
-        }
-        const response = await getJson(fetchImpl, `${workspacePath}/capabilities`, context.signal)
-        if (!response.ok) return await readHostError(response)
-        const catalog = workspaceCapabilityCatalogSchema.parse(await response.json())
-        const grants = new Set((deps.getToolGrants(context.callerId) ?? []).map(grant => grant.capabilityId))
-        return {
-          success: true,
-          data: {
-            workspaceId: catalog.workspaceId,
-            modules: catalog.modules,
-            capabilities: catalog.capabilities
-              .filter(capability =>
-                (moduleId === undefined || capability.moduleId === moduleId)
-                && (capabilityId === undefined || capability.id === capabilityId)
-                && (risk === undefined || capability.risk === risk)
-                && (kind === undefined || capability.kind === kind))
-              .map(({ inputSchema, outputSchema: _outputSchema, ...capability }) => {
-                const granted = grants.has(capability.id)
-                return { ...capability, granted, ...(granted && capabilityId !== undefined ? { inputSchema } : {}) }
-              }),
-          },
-        }
+        const grants = deps.getToolGrants(context.callerId)
+        if (!grants) return failure('caller_not_ai_agent', 'Workspace Capability discovery requires an AI Agent Profile')
+        const moduleId = optionalFilter(params.moduleId) === undefined ? undefined : moduleIdSchema.parse(params.moduleId)
+        const resource = parseResource(params.resource, deps.workspaceId)
+        const ids = Array.isArray(params.capabilityIds) ? params.capabilityIds.map(value => capabilityIdSchema.parse(value)) : []
+        const queries = Array.isArray(params.queries) ? params.queries.map(value => String(value).trim()).filter(Boolean) : []
+        const risk = optionalFilter(params.risk) as string | undefined
+        const kind = optionalFilter(params.kind) as string | undefined
+        const offset = params.offset === undefined ? 0 : Number(params.offset)
+        const limit = params.limit === undefined ? 30 : Number(params.limit)
+        if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 100) return failure('invalid_tool_input', 'Invalid pagination')
+        const catalogs = await readCatalogs(fetchImpl, workspacePath, context.signal)
+        if ('success' in catalogs) return catalogs
+        const target = resource ? catalogs.resources.resources.find(item => referenceKey(item.ref) === referenceKey(resource)) : undefined
+        const exact = new Set(ids)
+        const filtered = catalogs.capabilities.capabilities.filter(capability =>
+          (moduleId === undefined || capability.moduleId === moduleId) &&
+          (ids.length === 0 || exact.has(capability.id)) &&
+          (queries.length === 0 || queries.some(query => textMatches(capability, query))) &&
+          (risk === undefined || capability.risk === risk) && (kind === undefined || capability.kind === kind) &&
+          (resource === undefined || target?.capabilityIds.includes(capability.id) === true))
+        const page = filtered.slice(offset, offset + limit).map(capability => {
+          const { inputSchema, outputSchema, ...compact } = capability
+          const granted = authorizationFailure(capability, target, resource, grants, context, deps) === undefined
+          const exactMatch = exact.has(capability.id)
+          return {
+            ...compact, granted,
+            ...(queries.length > 0 ? { matchedQueries: queries.filter(query => textMatches(capability, query)) } : {}),
+            ...(granted && exactMatch ? { inputSchema } : {}),
+            ...(granted && exactMatch && params.includeOutputSchema === true ? { outputSchema } : {}),
+          }
+        })
+        return { success: true, data: { workspaceId: deps.workspaceId, modules: catalogs.capabilities.modules, total: filtered.length, offset, returned: page.length, hasMore: offset + page.length < filtered.length, capabilities: page } }
       } catch (error) {
         return failure('workspace_capability_discovery_failed', error instanceof Error ? error.message : String(error))
       }
@@ -201,112 +252,71 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
   }
 
   const invoke: Tool = {
-    name: WORKSPACE_CAPABILITY_TOOL_NAMES[2],
-    description: 'Invoke one granted Workspace Capability against the current Workspace and an optional Definition or Resource selected from workspace_catalog.',
-    usage: 'Copy capabilityId from workspace_capabilities. Pass either definition or resource for a scoped operation; Workspace scope is supplied automatically.',
-    returns: 'The owning Module result, or a structured failure code such as capability_not_granted or workspace_host_request_failed.',
+    name: 'workspace_invoke',
+    description: 'Invoke one Capability or concurrently invoke a bounded batch of independent read-only Capabilities.',
+    usage: 'Use one calls entry normally. Batch independent reads only; writes and destructive operations must be separate calls.',
+    returns: '{ results[] } in request order, with each keyed entry carrying either data or a structured error.',
     parameters: {
-      type: 'object',
-      properties: {
-        capabilityId: { type: 'string' },
-        definition: {
-          type: 'object',
-          properties: {
-            moduleId: { type: 'string' },
-            type: { type: 'string' },
-            id: { type: 'string' },
-            revisionId: { type: 'string' },
-          },
-          required: ['moduleId', 'type', 'id', 'revisionId'],
-          additionalProperties: false,
-        },
-        resource: {
-          type: 'object',
-          properties: {
-            moduleId: { type: 'string' },
-            type: { type: 'string' },
-            id: { type: 'string' },
-          },
-          required: ['moduleId', 'type', 'id'],
-          additionalProperties: false,
-        },
-        input: {},
-        expectedRevision: { type: 'integer', minimum: 0 },
-        idempotencyKey: { type: 'string', minLength: 1, maxLength: 256 },
-      },
-      required: ['capabilityId', 'input'],
-      additionalProperties: false,
+      type: 'object', properties: {
+        calls: { type: 'array', minItems: 1, maxItems: 12, items: { type: 'object', properties: {
+          key: { type: 'string', minLength: 1, maxLength: 64 }, capabilityId: { type: 'string' },
+          definition: { type: 'object', properties: { moduleId: { type: 'string' }, type: { type: 'string' }, id: { type: 'string' }, revisionId: { type: 'string' } }, required: ['moduleId', 'type', 'id', 'revisionId'], additionalProperties: false },
+          resource: { type: 'object', properties: { moduleId: { type: 'string' }, type: { type: 'string' }, id: { type: 'string' } }, required: ['moduleId', 'type', 'id'], additionalProperties: false },
+          input: {}, expectedRevision: { type: 'integer', minimum: 0 }, idempotencyKey: { type: 'string', minLength: 1, maxLength: 256 },
+        }, required: ['key', 'capabilityId', 'input'], additionalProperties: false } },
+      }, required: ['calls'], additionalProperties: false,
     },
-    execute: async (params, context: ToolContext) => {
-      let capabilityId
+    execute: async (params, context) => {
+      const grants = deps.getToolGrants(context.callerId)
+      if (!grants) return failure('caller_not_ai_agent', 'Workspace Capability invocation requires an AI Agent Profile')
+      if (!Array.isArray(params.calls) || params.calls.length < 1 || params.calls.length > 12) return failure('invalid_tool_input', 'calls must contain 1 to 12 entries')
       try {
-        capabilityId = capabilityIdSchema.parse(params.capabilityId)
+        const catalogs = await readCatalogs(fetchImpl, workspacePath, context.signal)
+        if ('success' in catalogs) return catalogs
+        const parsed = params.calls.map((rawValue, index) => {
+          if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) throw new Error(`calls[${index}] must be an object`)
+          const raw = rawValue as Record<string, unknown>
+          const capabilityId = capabilityIdSchema.parse(raw.capabilityId)
+          const capability = catalogs.capabilities.capabilities.find(item => item.id === capabilityId)
+          const resource = parseResource(raw.resource, deps.workspaceId)
+          const resourceDescriptor = resource ? catalogs.resources.resources.find(item => referenceKey(item.ref) === referenceKey(resource)) : undefined
+          let definition
+          if (raw.definition !== undefined) {
+            if (!raw.definition || typeof raw.definition !== 'object' || Array.isArray(raw.definition)) throw new Error(`calls[${index}].definition must be an object`)
+            const value = raw.definition as Record<string, unknown>
+            definition = { workspaceId: deps.workspaceId, moduleId: moduleIdSchema.parse(value.moduleId), type: definitionTypeSchema.parse(value.type), id: definitionIdSchema.parse(value.id), revisionId: definitionRevisionIdSchema.parse(value.revisionId) }
+          }
+          if (definition && resource) throw new Error(`calls[${index}] cannot contain both definition and resource`)
+          return { key: String(raw.key), capabilityId, capability, resource, resourceDescriptor, definition, input: raw.input, expectedRevision: raw.expectedRevision, idempotencyKey: raw.idempotencyKey }
+        })
+        if (parsed.length > 1 && parsed.some(call => call.capability?.risk !== 'read')) return failure('batch_requires_read_capabilities', 'Only read Capabilities may be batched')
+        const outcomes = await Promise.all(parsed.map(async call => {
+          const denied = authorizationFailure(call.capability, call.resourceDescriptor, call.resource, grants, context, deps)
+          if (denied) return { key: call.key, capabilityId: call.capabilityId, success: false, error: denied.error, details: denied.data }
+          try {
+            const response = await fetchImpl(`${workspacePath}/capabilities/${encodeURIComponent(call.capabilityId)}/invoke`, {
+              method: 'POST', signal: requestSignal(context.signal), headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+              body: JSON.stringify({
+                ...(call.definition ? { definition: call.definition } : {}), ...(call.resource ? { resource: call.resource } : {}),
+                ...(call.expectedRevision === undefined ? {} : { expectedRevision: call.expectedRevision }),
+                ...(call.idempotencyKey === undefined ? {} : { idempotencyKey: call.idempotencyKey }),
+                input: call.input, actor: { kind: 'ai', id: context.callerId, displayName: context.callerName },
+              }),
+            })
+            if (!response.ok) {
+              const result = await readHostError(response)
+              return { key: call.key, capabilityId: call.capabilityId, success: false, error: result.error, details: result.data }
+            }
+            const body = await response.json() as { result?: unknown }
+            if (!Object.hasOwn(body, 'result')) return { key: call.key, capabilityId: call.capabilityId, success: false, error: 'workspace_host_contract_invalid: Workspace Host response omitted result' }
+            return { key: call.key, capabilityId: call.capabilityId, success: true, data: body.result }
+          } catch (error) {
+            return { key: call.key, capabilityId: call.capabilityId, success: false, error: `workspace_outcome_unknown: ${error instanceof Error ? error.message : String(error)}` }
+          }
+        }))
+        return { success: true, data: { results: outcomes } }
       } catch (error) {
         return failure('invalid_tool_input', error instanceof Error ? error.message : String(error))
-      }
-      const grants = deps.getToolGrants(context.callerId)
-      if (grants === undefined) {
-        return failure('caller_not_ai_agent', 'Workspace Capability invocation requires an AI Agent Profile')
-      }
-      if (!grants.some(grant => grant.capabilityId === capabilityId)) {
-        return failure('capability_not_granted', `Agent ${context.callerName} is not granted ${capabilityId}`, { capabilityId })
-      }
-
-      let resource: { workspaceId: WorkspaceId; moduleId: ReturnType<typeof moduleIdSchema.parse>; type: ReturnType<typeof resourceTypeSchema.parse>; id: ReturnType<typeof resourceIdSchema.parse> } | undefined
-      let definition: { workspaceId: WorkspaceId; moduleId: ReturnType<typeof moduleIdSchema.parse>; type: ReturnType<typeof definitionTypeSchema.parse>; id: ReturnType<typeof definitionIdSchema.parse>; revisionId: ReturnType<typeof definitionRevisionIdSchema.parse> } | undefined
-      try {
-        if (params.definition !== undefined && params.resource !== undefined) {
-          return failure('invalid_target', 'definition and resource are mutually exclusive')
-        }
-        if (params.definition !== undefined) {
-          if (!params.definition || typeof params.definition !== 'object' || Array.isArray(params.definition)) {
-            return failure('invalid_definition', 'definition must be an object')
-          }
-          const raw = params.definition as Record<string, unknown>
-          definition = {
-            workspaceId: deps.workspaceId,
-            moduleId: moduleIdSchema.parse(raw.moduleId),
-            type: definitionTypeSchema.parse(raw.type),
-            id: definitionIdSchema.parse(raw.id),
-            revisionId: definitionRevisionIdSchema.parse(raw.revisionId),
-          }
-        }
-        if (params.resource !== undefined) {
-          if (!params.resource || typeof params.resource !== 'object' || Array.isArray(params.resource)) {
-            return failure('invalid_resource', 'resource must be an object')
-          }
-          const raw = params.resource as Record<string, unknown>
-          resource = {
-            workspaceId: deps.workspaceId,
-            moduleId: moduleIdSchema.parse(raw.moduleId),
-            type: resourceTypeSchema.parse(raw.type),
-            id: resourceIdSchema.parse(raw.id),
-          }
-        }
-      } catch (error) {
-        return failure('invalid_resource', error instanceof Error ? error.message : String(error))
-      }
-
-      try {
-        const response = await fetchImpl(`${workspacePath}/capabilities/${encodeURIComponent(capabilityId)}/invoke`, {
-          method: 'POST',
-          signal: requestSignal(context.signal),
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({
-            ...(definition === undefined ? {} : { definition }),
-            ...(resource === undefined ? {} : { resource }),
-            ...(params.expectedRevision === undefined ? {} : { expectedRevision: params.expectedRevision }),
-            ...(params.idempotencyKey === undefined ? {} : { idempotencyKey: params.idempotencyKey }),
-            input: params.input,
-            actor: { kind: 'ai', id: context.callerId, displayName: context.callerName },
-          }),
-        })
-        if (!response.ok) return await readHostError(response)
-        const body = await response.json() as { result?: unknown }
-        if (!Object.hasOwn(body, 'result')) return failure('workspace_host_contract_invalid', 'Workspace Host response omitted result')
-        return { success: true, data: body.result }
-      } catch (error) {
-        return failure('workspace_outcome_unknown', error instanceof Error ? error.message : String(error), { retryable: false, advice: 'Inspect the Resource before retrying this invocation.' })
       }
     },
   }

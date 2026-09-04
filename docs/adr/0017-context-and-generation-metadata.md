@@ -1,0 +1,3 @@
+# Preserve useful context and keep generation metadata out of conversation text
+
+Agent requests retain stable instructions and exact recent conversation while large operational evidence is fetched on demand through bounded tools. Native tool calls and tool results remain structured provider messages, structured results use compact JSON, and prompt budgets are derived from the effective model and actual tool surface. Cache and generation measurements are stored as Message metadata and rendered by Clients, never appended to response text; this keeps telemetry inspectable without making it future prompt content. We rejected automatic lossy history compression and result-answer caches because both can silently remove or stale evidence.

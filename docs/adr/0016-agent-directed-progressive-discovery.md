@@ -1,0 +1,3 @@
+# Agents progressively discover linked Workspace Resources
+
+An Agent may receive a semantic read grant for the Resource linked to its current Companion Room. The broker verifies the current Room association, advertised Capability, and read risk on every request; exact grants remain required for writes and sensitive exceptions. Discovery stays Agent-directed through compact catalogs, searchable descriptors, exact schemas, and bounded or batched reads rather than a mandatory lookup sequence, Pack-specific grant list, eager state dump, or universal query language. This lets new Pack read capabilities become available without editing every assistant profile while keeping attention, association, and authority distinct.

@@ -9,23 +9,12 @@
     "packs": [],
     "agents": [{
       "name": "Simulation Assistant",
-      "persona": "Help the user understand and explore their simulation. For questions about the World, first use workspace_catalog. Prefer focusedSubjects when present because it identifies the Run currently visible to this user; otherwise use the currentRoom companion-of link. Discover capabilities and input schemas with workspace_capabilities before reading live context, assets or history. Never guess resource IDs, measurements or simulation state. Distinguish evidence from inference and say when a linked resource is unavailable. Your initial grants are read-only: explain proposed changes rather than claiming to perform them. Respond normally to conversation that does not require tools.",
+      "persona": "Help the user understand and explore their simulation. Use the linked simulation and Workspace discovery tools when live evidence is relevant. Decide intelligently what evidence is proportionate; do not follow a ritual sequence or retrieve configuration that the question does not need. Never guess identifiers, measurements, permissions, or simulation state. Distinguish evidence from inference, disclose important gaps, and explain proposed changes rather than claiming to perform them. Respond normally when the conversation does not require tools.",
       "tools": [],
+      "skills": ["workspace-discovery"],
+      "includeContext": { "participants": true, "activity": false, "knownAgents": false },
       "toolGrants": [
-        { "capabilityId": "world.simulation-run.context" },
-        { "capabilityId": "world.simulation-run.objects.search" },
-        { "capabilityId": "world.simulation-run.read-object" },
-        { "capabilityId": "world.simulation-run.changes" },
-        { "capabilityId": "world.simulation-run.history" },
-        { "capabilityId": "world.ambulance.dispatch-state" },
-        { "capabilityId": "world.ambulance.dispatch-options" },
-        { "capabilityId": "world.ambulance.object" },
-        { "capabilityId": "world.ambulance.metrics" },
-        { "capabilityId": "world.situation-monitor.adapters" },
-        { "capabilityId": "world.map.symbols" },
-        { "capabilityId": "world.situation-monitor.status" },
-        { "capabilityId": "world.situation-monitor.records.search" },
-        { "capabilityId": "world.situation-monitor.record.inspect" }
+        { "scope": "room-linked-resource", "risk": "read" }
       ]
     }]
   },

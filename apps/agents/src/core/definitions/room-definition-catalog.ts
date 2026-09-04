@@ -12,6 +12,11 @@ const agentDefinitionSchema = z.object({
   toolGrants: toolGrantSetSchema.optional(),
   temperature: z.number().finite().optional(),
   maxToolIterations: z.number().int().min(1).max(50).optional(),
+  includeContext: z.object({
+    participants: z.boolean().optional(),
+    activity: z.boolean().optional(),
+    knownAgents: z.boolean().optional(),
+  }).strict().optional(),
 }).strict()
 
 const promptDeckActionSchema = z.discriminatedUnion('kind', [
