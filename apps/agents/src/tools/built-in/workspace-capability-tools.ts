@@ -98,6 +98,11 @@ const parseResource = (value: unknown, workspaceId: WorkspaceId): WorkspaceResou
   if (value === undefined) return undefined
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('resource must be an object')
   const raw = value as Record<string, unknown>
+  const fields = [raw.moduleId, raw.type, raw.id]
+  if (fields.every(field => typeof field === 'string' && (field.trim() === '*' || field.trim().length === 0))) return undefined
+  if (fields.some(field => typeof field === 'string' && (field.trim() === '*' || field.trim().length === 0))) {
+    throw new Error('resource must be one complete exact identity or omitted; partial wildcards are not valid')
+  }
   return {
     workspaceId,
     moduleId: moduleIdSchema.parse(raw.moduleId),
@@ -219,7 +224,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
     returns: 'Capability descriptors with grant state, matched queries, totals, and pagination metadata.',
     parameters: {
       type: 'object', properties: {
-        resource: { type: 'object', properties: { moduleId: { type: 'string' }, type: { type: 'string' }, id: { type: 'string' } }, required: ['moduleId', 'type', 'id'], additionalProperties: false },
+        resource: { type: 'object', description: 'Optional exact Resource selector. Omit it to search all Resources; a complete */*/* selector is also accepted as unscoped.', properties: { moduleId: { type: 'string' }, type: { type: 'string' }, id: { type: 'string' } }, required: ['moduleId', 'type', 'id'], additionalProperties: false },
         moduleId: { type: 'string', description: 'Optional exact Module id filter. Omit or use "*" to search all Modules.' }, queries: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 256 }, maxItems: 8 },
         capabilityIds: { type: 'array', items: { type: 'string' }, maxItems: 24 },
         risk: { type: 'string', enum: ['read', 'write', 'destructive'] }, kind: { type: 'string', enum: ['query', 'command'] },
