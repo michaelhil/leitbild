@@ -80,7 +80,7 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: { readonly
       if (enabled && !config.queries?.has(roadWeatherCapability)) throw new Error('Ambulance road-weather policy requires an active Weather sample-points provider')
     }
     assertProvider(policy.enabled)
-    const localClock = config.runClock ? null : createSimulationClock({ currentTime: config.scenario.world.startsAt, updatedAt: nowIso(), paused: false, speed: 1 })
+    const localClock = config.runClock ? null : createSimulationClock({ currentTime: config.scenario.world.startsAt, updatedAt: nowIso(), paused: false })
     const runClock = config.runClock ?? localClock!
     const engine = createAmbulanceSimEngine({
       simulationRunId: config.simulationRunId, objects: initialObjectsFor(config), routing: adapterConfig.routing,

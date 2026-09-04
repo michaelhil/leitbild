@@ -247,7 +247,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
     let recordingPlan = recordingSelection === undefined || grids.size === 0 ? null : createGridRecordingPlan({ selection: recordingSelection, grids })
     let recordingDescriptorsPending = recordingPlan !== null
     let nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
-    let clock: SimulationClockState = { currentTime: initialAt, updatedAt: nowIso(), paused: false, speed: 1 }
+    let clock: SimulationClockState = { currentTime: initialAt, updatedAt: nowIso(), paused: false }
     clock = config.runClock?.read() ?? clock
     const localClock = config.runClock ? null : createSimulationClock(clock)
     const runClock = config.runClock ?? localClock!

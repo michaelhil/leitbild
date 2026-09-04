@@ -3,25 +3,13 @@
   import type { ModuleCapabilityDescriptor, ModuleResourceDescriptor } from '@leitbild/contracts'
   import { jsonRequest, request } from './api.ts'
 
-  interface RunClock {
-    readonly currentTime: string
-    readonly paused: boolean
-    readonly speed: number
-    readonly updatedAt: string
-  }
-
-  interface RunSummary {
-    readonly id: string
-    readonly title: string
-    readonly clock: RunClock | null
-  }
-  interface FastForwardState {
+  interface AccelerationState {
     readonly kind: 'continuous' | 'timed'
-    readonly status: 'running' | 'stopped' | 'completed' | 'failed'
+    readonly status: 'running' | 'paused' | 'stopped' | 'completed' | 'failed'
     readonly startedSimulationTime: string
     readonly targetSimulationTime?: string
     readonly currentSimulationTime: string
-    readonly onComplete: 'paused' | 'realtime'
+    readonly onComplete: 'pause' | 'play-realtime'
     readonly startedAt: string
     readonly updatedAt: string
     readonly activeWallMs: number
@@ -30,10 +18,12 @@
     readonly error?: string
   }
   interface ExecutionState {
-    readonly mode: 'paused' | 'realtime' | 'fast-forward'
+    readonly playback: 'playing' | 'paused'
+    readonly pace: 'realtime' | 'maximum'
     readonly currentSimulationTime: string
     readonly updatedAt: string
-    readonly fastForward: FastForwardState | null
+    readonly maximumPace: { readonly available: boolean; readonly reason?: string }
+    readonly acceleration: AccelerationState | null
   }
   interface InvocationResponse<T> {
     readonly result: T
@@ -52,12 +42,11 @@
   }
 
   let { workspaceId, resource, resources, capabilities, onSwitch, onClose, refreshResources, reportError }: Props = $props()
-  let summary = $state<RunSummary | null>(null)
   let execution = $state<ExecutionState | null>(null)
   let actionBusy = $state(false)
   let actionError = $state('')
   let minutes = $state(60)
-  let onComplete = $state<'paused' | 'realtime'>('paused')
+  let onComplete = $state<'pause' | 'play-realtime'>('pause')
   let copyName = $state('')
   let wallNow = $state(Date.now())
   let copyDialog = $state<HTMLDialogElement | null>(null)
@@ -97,12 +86,8 @@
   const refresh = async (): Promise<void> => {
     const token = ++refreshToken
     try {
-      const [nextSummary,nextExecution] = await Promise.all([
-        invoke<RunSummary>(resource.ref, 'world.simulation-run.read', {}),
-        invoke<ExecutionState>(resource.ref, 'world.simulation-run.execution.read', {}),
-      ])
+      const nextExecution = await invoke<ExecutionState>(resource.ref, 'world.simulation-run.execution.read', {})
       if (token !== refreshToken) return
-      summary = nextSummary.result
       execution = nextExecution.result
     } catch (cause) { if (token === refreshToken) reportError(cause instanceof Error ? cause.message : String(cause)) }
   }
@@ -136,16 +121,18 @@
       showNotice(`You are now in ${response.result.title}`)
     })
   }
-  const setMode = (mode: ExecutionState['mode']): void => {
+  const setExecution = (input: { readonly playback?: ExecutionState['playback']; readonly pace?: ExecutionState['pace'] }): void => {
     void runAction(async () => {
-      execution = (await invoke<ExecutionState>(resource.ref, 'world.simulation-run.execution.set', { mode })).result
+      refreshToken += 1
+      execution = (await invoke<ExecutionState>(resource.ref, 'world.simulation-run.execution.set', input)).result
     })
   }
-  const togglePlay = (): void => setMode(execution?.mode === 'paused' ? 'realtime' : 'paused')
-  const toggleFastForward = (): void => setMode(execution?.mode === 'fast-forward' ? 'paused' : 'fast-forward')
+  const togglePlayback = (): void => setExecution({ playback: execution?.playback === 'playing' ? 'paused' : 'playing' })
+  const togglePace = (): void => setExecution({ pace: execution?.pace === 'maximum' ? 'realtime' : 'maximum' })
   const advanceByDuration = (): void => {
     if (!Number.isFinite(minutes) || minutes <= 0) return
     void runAction(async () => {
+      refreshToken += 1
       execution = (await invoke<ExecutionState>(resource.ref, 'world.simulation-run.execution.advance', { minutes, onComplete })).result
       timerDialog?.close()
     })
@@ -199,12 +186,12 @@
     })
   }
   const displayTime = $derived.by((): string => {
-    if (execution?.mode === 'fast-forward') return new Date(execution.currentSimulationTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    const clock = summary?.clock
-    if (!clock) return '--:--:--'
-    const base = Date.parse(clock.currentTime)
-    const updated = Date.parse(clock.updatedAt)
-    const value = clock.paused || !Number.isFinite(updated) ? base : base + Math.max(0, wallNow - updated) * clock.speed
+    if (!execution) return '--:--:--'
+    const base = Date.parse(execution.currentSimulationTime)
+    const updated = Date.parse(execution.updatedAt)
+    const value = execution.playback === 'paused' || execution.pace === 'maximum' || !Number.isFinite(updated)
+      ? base
+      : base + Math.max(0, wallNow - updated)
     return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   })
 
@@ -255,10 +242,10 @@
     {/if}
   </div>{:else}<span class="run-title" title={resource.title}>{resource.title}</span>{/if}
   <button type="button" disabled={actionBusy || !capabilityAvailable('world.simulation-run.copy')} onclick={openCopyDialog} title="Copy this Run" aria-label="Copy this Run"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
-  <button type="button" disabled={!execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set')} onclick={togglePlay} title={execution?.mode === 'paused' ? 'Play in realtime' : 'Pause simulation'} aria-label={execution?.mode === 'paused' ? 'Play in realtime' : 'Pause simulation'}>{#if execution?.mode === 'paused'}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8z"/></svg>{:else}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>{/if}</button>
-  <button class:active={execution?.mode === 'fast-forward'} type="button" disabled={!execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set')} onclick={toggleFastForward} title={execution?.mode === 'fast-forward' ? 'Stop fast-forward and pause' : 'Fast-forward at maximum speed'} aria-label={execution?.mode === 'fast-forward' ? 'Stop fast-forward and pause' : 'Fast-forward at maximum speed'}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 5 9 7-9 7zM12 5l9 7-9 7z"/></svg></button>
-  <span class:fast={execution?.mode === 'fast-forward'} class="clock" title={execution?.mode === 'fast-forward' ? `Fast-forwarding at ${execution.fastForward?.measuredSpeed.toFixed(1) ?? '0.0'}× measured` : execution?.mode === 'paused' ? 'Simulation paused' : 'Simulation running in realtime'}>{displayTime}{#if execution?.mode === 'fast-forward'}<small>{execution.fastForward?.measuredSpeed.toFixed(1) ?? '0.0'}×</small>{/if}</span>
-  <button class:active={execution?.fastForward?.kind === 'timed' && execution?.fastForward?.status === 'running'} type="button" disabled={actionBusy || !capabilityAvailable('world.simulation-run.execution.advance')} onclick={() => timerDialog?.showModal()} title="Fast-forward by a fixed duration" aria-label="Fast-forward by a fixed duration"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6M12 14l3-3M12 6a8 8 0 1 0 8 8 8 8 0 0 0-8-8z"/></svg></button>
+  <button class:active={execution?.playback === 'playing'} type="button" aria-pressed={execution?.playback === 'playing'} disabled={!execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set')} onclick={togglePlayback} title={execution?.playback === 'playing' ? 'Playing — click to pause' : 'Paused — click to play'} aria-label={execution?.playback === 'playing' ? 'Playing; pause simulation' : 'Paused; play simulation'}>{#if execution?.playback === 'playing'}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8z"/></svg>{:else}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>{/if}</button>
+  <button class:active={execution?.pace === 'maximum'} type="button" aria-pressed={execution?.pace === 'maximum'} disabled={!execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set') || (!execution.maximumPace.available && execution.pace !== 'maximum')} onclick={togglePace} title={execution?.maximumPace.available ? execution?.pace === 'maximum' ? 'Maximum pace armed — click for realtime' : 'Realtime pace — click for maximum' : execution?.maximumPace.reason ?? 'Maximum pace unavailable'} aria-label={execution?.pace === 'maximum' ? 'Maximum pace armed; switch to realtime' : 'Realtime pace; switch to maximum'}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 5 9 7-9 7zM12 5l9 7-9 7z"/></svg></button>
+  <span class:fast={execution?.pace === 'maximum'} class="clock" title={execution?.playback === 'playing' && execution?.pace === 'maximum' ? `Playing at ${execution.acceleration?.measuredSpeed.toFixed(1) ?? '0.0'}× measured` : execution?.pace === 'maximum' ? 'Paused with maximum pace armed' : execution?.playback === 'paused' ? 'Simulation paused' : 'Simulation playing in realtime'}>{displayTime}{#if execution?.pace === 'maximum'}<small>{execution.playback === 'playing' ? `${execution.acceleration?.measuredSpeed.toFixed(1) ?? '0.0'}×` : 'MAX armed'}</small>{/if}</span>
+  <button class:active={execution?.acceleration?.kind === 'timed' && ['running', 'paused'].includes(execution.acceleration.status)} type="button" disabled={actionBusy || !capabilityAvailable('world.simulation-run.execution.advance') || execution?.maximumPace.available === false} onclick={() => timerDialog?.showModal()} title="Run at maximum pace for a fixed duration" aria-label="Run at maximum pace for a fixed duration"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6M12 14l3-3M12 6a8 8 0 1 0 8 8 8 8 0 0 0-8-8z"/></svg></button>
 </div>
 {#if actionError}<div class="control-error" role="alert">{actionError}</div>{/if}
 {#if notice}<div class="switch-notice" role="status">{notice}</div>{/if}
@@ -272,12 +259,12 @@
 
 <dialog class="control-dialog" bind:this={timerDialog}>
   <header><div><small>Simulation time</small><h2>Fast-forward by duration</h2></div><button class="close" type="button" onclick={() => timerDialog?.close()} aria-label="Close">×</button></header>
-  {#if execution?.fastForward?.kind === 'timed' && execution.fastForward.status === 'running'}
-    <section class="progress"><strong>Fast-forwarding · {execution.fastForward.measuredSpeed.toFixed(1)}×</strong><span>{new Date(execution.fastForward.currentSimulationTime).toLocaleString()} → {execution.fastForward.targetSimulationTime ? new Date(execution.fastForward.targetSimulationTime).toLocaleString() : ''}</span></section>
-    <div class="actions"><button class="primary" type="button" disabled={actionBusy} onclick={() => setMode('paused')}>Stop and pause</button></div>
+  {#if execution?.acceleration?.kind === 'timed' && ['running', 'paused'].includes(execution.acceleration.status)}
+    <section class="progress"><strong>{execution.acceleration.status === 'running' ? `Maximum pace · ${execution.acceleration.measuredSpeed.toFixed(1)}×` : 'Paused · target retained'}</strong><span>{new Date(execution.acceleration.currentSimulationTime).toLocaleString()} → {execution.acceleration.targetSimulationTime ? new Date(execution.acceleration.targetSimulationTime).toLocaleString() : ''}</span></section>
+    <div class="actions"><button class="primary" type="button" disabled={actionBusy} onclick={() => setExecution({ playback: execution?.playback === 'playing' ? 'paused' : 'playing' })}>{execution.acceleration.status === 'running' ? 'Pause' : 'Resume'}</button></div>
   {:else}
     <label>Simulated minutes<input type="number" min="0.01" max="10080" step="1" bind:value={minutes} /></label>
-    <fieldset><legend>When the target is reached</legend><label class="choice"><input type="radio" value="paused" bind:group={onComplete} /> Pause</label><label class="choice"><input type="radio" value="realtime" bind:group={onComplete} /> Play in realtime</label></fieldset>
+    <fieldset><legend>When the target is reached</legend><label class="choice"><input type="radio" value="pause" bind:group={onComplete} /> Pause</label><label class="choice"><input type="radio" value="play-realtime" bind:group={onComplete} /> Play in realtime</label></fieldset>
     <div class="actions"><button class="primary" type="button" disabled={actionBusy} onclick={advanceByDuration}>{actionBusy ? 'Starting…' : 'Start fast-forward'}</button></div>
   {/if}
   <p class="hint">Live external feeds cannot invent future observations and will reject fast-forward.</p>

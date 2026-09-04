@@ -810,8 +810,8 @@
     if (!simulationRunId) return
     try {
       executionState = await fetchRunExecution(simulationRunId)
-      if (executionState.mode === 'fast-forward') {
-        clock = { currentTime: executionState.currentSimulationTime as IsoTimestamp, paused: true, speed: 1, updatedAt: executionState.updatedAt as IsoTimestamp }
+      if (executionState.pace === 'maximum') {
+        clock = { currentTime: executionState.currentSimulationTime as IsoTimestamp, paused: true, updatedAt: executionState.updatedAt as IsoTimestamp }
       }
     } catch (err) {
       status = err instanceof Error ? err.message : String(err)

@@ -64,6 +64,53 @@ const provision = async (registry: WorldWorkspaceRuntimeRegistry, workspaceId: W
   })
 
 describe('World Module API', () => {
+  test('exposes independent playback and pace through one discoverable capability', async () => {
+    const registry = await createRegistry()
+    const workspaceId = newWorkspaceId()
+    await provision(registry, workspaceId)
+    const runs = registry.getLoaded(workspaceId)!.simulationRuns
+    const run = await runs.create({ scenarioId: 'test-response' })
+    const access = accessContextSchema.parse({ workspaceId, requestId: newRequestId(), actor: { kind: 'human', id: 'operator' } })
+    const resource = { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }
+    const invoke = async (capabilityId: string, input: unknown) => await call<{ result: {
+      playback: 'playing' | 'paused'; pace: 'realtime' | 'maximum'; maximumPace: { available: boolean }
+    } }>(registry, `/internal/workspaces/${workspaceId}/capabilities/${capabilityId}/invoke`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspaceId, capabilityId, resource, input, access }),
+    })
+
+    expect((await invoke('world.simulation-run.execution.read', {})).body?.result)
+      .toMatchObject({ playback: 'playing', pace: 'realtime', maximumPace: { available: true } })
+    expect((await invoke('world.simulation-run.execution.set', { playback: 'paused' })).body?.result)
+      .toMatchObject({ playback: 'paused', pace: 'realtime' })
+    expect((await invoke('world.simulation-run.execution.set', { pace: 'maximum' })).body?.result)
+      .toMatchObject({ playback: 'paused', pace: 'maximum' })
+    expect((await invoke('world.simulation-run.execution.set', { playback: 'playing' })).body?.result)
+      .toMatchObject({ playback: 'playing', pace: 'maximum' })
+    expect((await invoke('world.simulation-run.execution.set', { playback: 'paused' })).body?.result)
+      .toMatchObject({ playback: 'paused', pace: 'maximum' })
+    expect((await invoke('world.simulation-run.execution.set', { pace: 'realtime' })).body?.result)
+      .toMatchObject({ playback: 'paused', pace: 'realtime' })
+  })
+
+  test('lists execution summaries without loading idle Simulation Runs', async () => {
+    const registry = await createRegistry()
+    const workspaceId = newWorkspaceId()
+    await provision(registry, workspaceId)
+    const runs = registry.getLoaded(workspaceId)!.simulationRuns
+    const run = await runs.create({ scenarioId: 'test-response' })
+    await runs.close(run.id)
+    expect(runs.get(run.id)).toBeUndefined()
+
+    const resources = moduleResourceCollectionSchema.parse(
+      (await call(registry, `/internal/workspaces/${workspaceId}/resources`)).body,
+    )
+
+    expect(resources.resources.find(resource => String(resource.ref.id) === String(run.id))?.summary)
+      .toContainEqual(expect.objectContaining({ label: 'Status', value: 'Running' }))
+    expect(runs.get(run.id)).toBeUndefined()
+  })
+
   test('Agent history queries preserve simulation time and pagination through the capability boundary', async () => {
     const registry = await createRegistry()
     const workspaceId = newWorkspaceId()

@@ -95,7 +95,7 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
     let field = createWeatherField(settings, config.scenario.world.startsAt, restored)
     setWeatherObjects(field, [...objects.values()])
     const handlers = new Set<PackRuntimeEventHandler>()
-    let clock: SimulationClockState = { currentTime: field.at, updatedAt: nowIso(), paused: false, speed: 1 }
+    let clock: SimulationClockState = { currentTime: field.at, updatedAt: nowIso(), paused: false }
     clock = config.runClock?.read() ?? clock
     const localClock = config.runClock ? null : createSimulationClock(clock)
     const runClock = config.runClock ?? localClock!

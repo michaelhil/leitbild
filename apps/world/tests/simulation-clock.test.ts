@@ -20,26 +20,27 @@ test('Run clock separates simulation epoch, monotonic elapsed duration and wall 
   let wall = Date.parse('2026-09-02T12:00:00Z')
   let mono = 1000
   const epoch = '2000-01-01T00:00:00.000Z' as IsoTimestamp
-  const clock = createSimulationClock({ currentTime: epoch, updatedAt: new Date(wall).toISOString() as IsoTimestamp, speed: 2, paused: false }, { wallMs: () => wall, monotonicMs: () => mono })
+  const clock = createSimulationClock({ currentTime: epoch, updatedAt: new Date(wall).toISOString() as IsoTimestamp, paused: false }, { wallMs: () => wall, monotonicMs: () => mono })
   mono += 2500
   wall -= 100_000 // calendar correction must not reverse simulation physics
-  expect(String(clock.read().currentTime)).toBe('2000-01-01T00:00:05.000Z')
+  expect(String(clock.read().currentTime)).toBe('2000-01-01T00:00:02.500Z')
   expect(String(clock.read().updatedAt)).toBe(new Date(wall).toISOString())
   clock.set({ ...clock.read(), paused: true })
   mono += 10_000
   wall += 10_000
-  expect(String(clock.read().currentTime)).toBe('2000-01-01T00:00:05.000Z')
-  clock.set({ ...clock.read(), speed: 3, paused: false })
+  expect(String(clock.read().currentTime)).toBe('2000-01-01T00:00:02.500Z')
+  clock.set({ ...clock.read(), paused: false })
   mono += 1000
-  expect(String(clock.read().currentTime)).toBe('2000-01-01T00:00:08.000Z')
+  expect(String(clock.read().currentTime)).toBe('2000-01-01T00:00:03.500Z')
   const saved = clock.read()
   wall += 86_400_000
   const restored = createSimulationClock({ ...saved, updatedAt: new Date(wall).toISOString() as IsoTimestamp }, { wallMs: () => wall, monotonicMs: () => mono })
   expect(restored.read().currentTime).toBe(saved.currentTime)
 })
 
-test('clock controls cannot relabel live physics as a different instant', () => {
+test('clock controls only pause or resume realtime progression', () => {
   expect(simulationClockUpdateSchema.safeParse({ currentTime: '2030-01-01T00:00:00Z' }).success).toBe(false)
   expect(simulationClockUpdateSchema.safeParse({ speed: 0 }).success).toBe(false)
-  expect(simulationClockUpdateSchema.safeParse({ speed: 10, paused: false }).success).toBe(true)
+  expect(simulationClockUpdateSchema.safeParse({ speed: 10, paused: false }).success).toBe(false)
+  expect(simulationClockUpdateSchema.safeParse({ paused: false }).success).toBe(true)
 })

@@ -24,7 +24,7 @@ test('monitor-only Run uses native compilation, persists edits, isolates sibling
   try {
     const first = await registry.create({ scenarioId: 'monitor' }), second = await registry.create({ scenarioId: 'monitor' })
     expect(first.snapshot().objects).toEqual([])
-    await expect(registry.advanceExecution(first.id, { minutes: 1, onComplete: 'paused' }))
+    await expect(registry.advanceExecution(first.id, { minutes: 1, onComplete: 'pause' }))
       .rejects.toMatchObject({ code: 'fast_forward_unsupported' })
     const source = situationSourceSchema.parse({ id: 'media', name: 'Configured but paused', adapter: 'media', format: 'video', url: 'https://example.com/video.mp4', enabled: false })
     const result = await first.invokeCapability(actor, { capabilityId: 'world.situation-monitor.configuration.replace', input: { expectedRevision: 0, config: { sources: [source] } } })

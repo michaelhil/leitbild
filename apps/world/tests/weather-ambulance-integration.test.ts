@@ -72,7 +72,7 @@ const providerSamples = (request: PackRuntimeQuery, visibilityM = 700) => (reque
 }))
 const isolatedConnection = (invoke: (query: PackRuntimeQuery) => Promise<unknown>, enabled = true, extra: Partial<PackRuntimeConnectionConfig> = {}) => createLocalAmbulancePackRuntimeAdapter({ routing }).connect({
   ...config, scenario: { ...config.scenario, runtimeConfig: { roadWeather: { enabled } } },
-  runClock: { read: () => ({ currentTime: compiled.world.startsAt, updatedAt: nowIso(), paused: true, speed: 1 }) },
+  runClock: { read: () => ({ currentTime: compiled.world.startsAt, updatedAt: nowIso(), paused: true }) },
   queries: { has: () => true, invoke }, ...extra,
 })
 const weatherCommit = () => simulationRunEventSchema.parse({
@@ -116,7 +116,7 @@ describe('Weather ↔ Ambulance integration', () => {
     const hub = createRuntimeHub(order === 'ambulance-first' ? adapters : [...adapters].reverse())
     const connection = await hub.connect(config)
     try {
-      await connection.setClock({ currentTime: compiled.world.startsAt, updatedAt: nowIso(), paused: true, speed: 1 })
+      await connection.setClock({ currentTime: compiled.world.startsAt, updatedAt: nowIso(), paused: true })
       expect((await connection.sendCommand(dispatchCommand())).ok).toBe(true)
       const snapshot = await connection.getSnapshot()
       const vehicle = snapshot.objects.find((o) => o.kind === 'mobile_entity')!
@@ -343,14 +343,14 @@ describe('Ambulance weather preparation boundaries', () => {
     const connection = await isolatedConnection(async request => {
       if (reject) throw new Error('Advance provider failed')
       return providerSamples(request)
-    }, true, { runClock: { read: () => ({ currentTime, updatedAt: nowIso(), paused: false, speed: 1 }) } })
+    }, true, { runClock: { read: () => ({ currentTime, updatedAt: nowIso(), paused: false }) } })
     try {
       expect((await connection.sendCommand(dispatchCommand())).ok).toBe(true)
       const before = (await connection.getSnapshot()).objects
       currentTime = new Date(Date.parse(currentTime) + 1_000).toISOString() as IsoTimestamp
       reject = true
       if (path === 'command') expect((await connection.sendCommand(command('world.ambulance.cancel', { unitId: 'amb:response' }))).ok).toBe(false)
-      else if (path === 'clock') await expect(connection.setClock({ currentTime, updatedAt: nowIso(), paused: true, speed: 1 })).rejects.toThrow('Advance provider failed')
+      else if (path === 'clock') await expect(connection.setClock({ currentTime, updatedAt: nowIso(), paused: true })).rejects.toThrow('Advance provider failed')
       else {
         const deadline = Date.now() + 2_000
         while (connection.health?.()[0]?.state !== 'failed' && Date.now() < deadline) await Bun.sleep(20)
@@ -369,7 +369,7 @@ test('combined restart preserves Weather ground and the configured vehicle polic
   }]))
   const hub = createRuntimeHub([createLocalAmbulancePackRuntimeAdapter({ routing }), createLocalWeatherPackRuntimeAdapter()])
   const connection = await hub.connect({ ...config, runtimeStateStores: stores })
-  await connection.setClock({ currentTime: compiled.world.startsAt, updatedAt: nowIso(), paused: true, speed: 1 })
+  await connection.setClock({ currentTime: compiled.world.startsAt, updatedAt: nowIso(), paused: true })
   expect((await connection.sendCommand(command('world.ambulance.set-road-weather-policy', { enabled: true, iceFactor: .11 }))).ok).toBe(true)
   const point = { type: 'Point', coordinates: [11.41, 59.13] }
   const sample = await connection.invokeQuery({ capabilityId: 'world.weather.sample-at-point', input: { point } })

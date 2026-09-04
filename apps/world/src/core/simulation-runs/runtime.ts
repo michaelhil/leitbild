@@ -26,7 +26,7 @@ import {
 } from './runtime-metrics.ts'
 import { defaultSimulationRunRuntimePolicy } from './runtime-persistence-policy.ts'
 import type { SimulationRunSnapshotStore } from './snapshot-store.ts'
-import { fastForwardProgressWallIntervalMs,fastForwardStepMs,type SimulationRunCopyCheckpoint } from './execution.ts'
+import { maximumPaceProgressWallIntervalMs,maximumPaceStepMs,type SimulationRunCopyCheckpoint } from './execution.ts'
 import { createSimulationRunStateStore,type SimulationRunStateSnapshot,type SimulationRunStateStore } from './state-store.ts'
 import { createScenarioTimelineRunner,dueScenarioTimelineCues,type ScenarioTimelineRunner } from './timeline-runner.ts'
 
@@ -60,7 +60,7 @@ export interface SimulationRunRuntime {
   readonly snapshot: () => SimulationRunStateSnapshot
   readonly setClock: (update: SimulationClockUpdate) => Promise<SimulationClockState>
   readonly checkpointForCopy: () => Promise<SimulationRunCopyCheckpoint>
-  readonly runFastForward: (targetSimulationTime: IsoTimestamp | null, control: {
+  readonly runMaximumPace: (targetSimulationTime: IsoTimestamp | null, control: {
     readonly shouldStop: () => boolean
     readonly onProgress?: (currentSimulationTime: IsoTimestamp) => void | Promise<void>
   }) => Promise<{ readonly currentSimulationTime: IsoTimestamp; readonly stoppedEarly: boolean }>
@@ -178,12 +178,12 @@ export const createSimulationRunRuntime = async (config: {
   let projectedSnapshotTimer: ReturnType<typeof setTimeout> | null = null
   let operationTail: Promise<void> = Promise.resolve()
   let closing = false
-  let fastForwardActive = false
+  let maximumPaceActive = false
   let terminalExecutionFailure: string | null = null
   let pendingRuntimeEmissions = 0
   let runtimeEmissionFailure: unknown = null
-  const fastForwardNotificationBuffer = new Map<string, SimulationRunEvent>()
-  const fastForwardRealtimeBuffer = new Map<string, PackRuntimeRealtimeMessage>()
+  const maximumPaceNotificationBuffer = new Map<string, SimulationRunEvent>()
+  const maximumPaceRealtimeBuffer = new Map<string, PackRuntimeRealtimeMessage>()
   let lastFastForwardNotificationAt = 0
   const interactionHandlers = [...(config.interactionHandlers ?? [])]
     .sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id))
@@ -205,7 +205,6 @@ export const createSimulationRunRuntime = async (config: {
   const runClock = config.runClock ?? createSimulationClock({
     currentTime: config.restoredSnapshot?.clock?.currentTime ?? config.scenario.startsAt,
     paused: config.restoredSnapshot?.clock?.paused ?? false,
-    speed: config.restoredSnapshot?.clock?.speed ?? 1,
     updatedAt: nowIso(),
   })
 
@@ -267,7 +266,7 @@ export const createSimulationRunRuntime = async (config: {
     await queueSnapshotSave()
   }
 
-  const fastForwardEventKey = (event: SimulationRunEvent): string => {
+  const maximumPaceEventKey = (event: SimulationRunEvent): string => {
     if (event.type === 'object.upserted') return `object:${event.object.id}`
     if (event.type === 'object.deleted') return `object:${event.objectId}`
     if (event.type === 'telemetry.sampled') return `telemetry:${event.objectId}`
@@ -275,14 +274,14 @@ export const createSimulationRunRuntime = async (config: {
   }
 
   const flushFastForwardNotifications = (): void => {
-    if (fastForwardNotificationBuffer.size === 0 && fastForwardRealtimeBuffer.size === 0) return
+    if (maximumPaceNotificationBuffer.size === 0 && maximumPaceRealtimeBuffer.size === 0) return
     const notification: SimulationRunEventNotification = {
       type: 'event.notification',
-      events: [...fastForwardNotificationBuffer.values()],
-      ...(fastForwardRealtimeBuffer.size === 0 ? {} : { realtimeMessages: [...fastForwardRealtimeBuffer.values()] }),
+      events: [...maximumPaceNotificationBuffer.values()],
+      ...(maximumPaceRealtimeBuffer.size === 0 ? {} : { realtimeMessages: [...maximumPaceRealtimeBuffer.values()] }),
     }
-    fastForwardNotificationBuffer.clear()
-    fastForwardRealtimeBuffer.clear()
+    maximumPaceNotificationBuffer.clear()
+    maximumPaceRealtimeBuffer.clear()
     lastFastForwardNotificationAt = performance.now()
     for (const handler of handlers) handler(notification)
   }
@@ -352,9 +351,9 @@ export const createSimulationRunRuntime = async (config: {
     } else {
       scheduleProjectedSnapshotSave()
     }
-    if (fastForwardActive && eventsToPersist.length === 0) {
-      for (const event of simulationRunEvents) fastForwardNotificationBuffer.set(fastForwardEventKey(event), event)
-      if (performance.now() - lastFastForwardNotificationAt >= fastForwardProgressWallIntervalMs) flushFastForwardNotifications()
+    if (maximumPaceActive && eventsToPersist.length === 0) {
+      for (const event of simulationRunEvents) maximumPaceNotificationBuffer.set(maximumPaceEventKey(event), event)
+      if (performance.now() - lastFastForwardNotificationAt >= maximumPaceProgressWallIntervalMs) flushFastForwardNotifications()
     } else {
       flushFastForwardNotifications()
       const notification: SimulationRunEventNotification = { type: 'event.notification', events: simulationRunEvents }
@@ -713,9 +712,9 @@ export const createSimulationRunRuntime = async (config: {
       }
       await flushPendingEvents()
       if (emission.realtimeMessages && emission.realtimeMessages.length > 0) {
-        if (fastForwardActive) {
-          for (const message of emission.realtimeMessages) fastForwardRealtimeBuffer.set(message.type, message)
-          if (performance.now() - lastFastForwardNotificationAt >= fastForwardProgressWallIntervalMs) flushFastForwardNotifications()
+        if (maximumPaceActive) {
+          for (const message of emission.realtimeMessages) maximumPaceRealtimeBuffer.set(message.type, message)
+          if (performance.now() - lastFastForwardNotificationAt >= maximumPaceProgressWallIntervalMs) flushFastForwardNotifications()
           return
         }
         const notification: SimulationRunEventNotification = {
@@ -937,8 +936,7 @@ export const createSimulationRunRuntime = async (config: {
       state: runnerScenarioState,
       nowMs: currentClockMs,
       delayMs: (dueAtMs, nowMs): number => {
-        const speed = state.snapshot().clock?.speed ?? 1
-        return Math.max(0, (dueAtMs - nowMs) / speed)
+        return Math.max(0, dueAtMs - nowMs)
       },
       onCueDue: async (cue): Promise<void> => {
         await publishScenarioCue(cue, nowIso())
@@ -985,7 +983,6 @@ export const createSimulationRunRuntime = async (config: {
       currentTime: current.currentTime,
       updatedAt: at,
       paused: parsedUpdate.paused ?? current.paused,
-      speed: parsedUpdate.speed ?? current.speed,
     }
     scenarioRunner?.close()
     scenarioRunner = null
@@ -1023,7 +1020,7 @@ export const createSimulationRunRuntime = async (config: {
   const setClock = (update: SimulationClockUpdate): Promise<SimulationClockState> => {
     const parsed = simulationClockUpdateSchema.parse(update) as SimulationClockUpdate
     return enqueueOperation(async () => {
-      if (fastForwardActive) throw Object.assign(new Error('Stop fast-forward before changing the realtime clock'), { code: 'simulation_run_busy' })
+      if (maximumPaceActive) throw Object.assign(new Error('Pause maximum-pace execution before changing the realtime clock'), { code: 'simulation_run_busy' })
       const pending = clockQueue.then(() => applyClockUpdate(parsed))
       clockQueue = pending.catch(() => {})
       return await pending
@@ -1035,7 +1032,7 @@ export const createSimulationRunRuntime = async (config: {
     invocation: SimulationRunCapabilityInvocation,
   ): Promise<SimulationRunCapabilityInvocationResult> => {
     // Generic object deletion is a short canonical mutation. Commit it inside
-    // the execution queue so fast-forward cannot advance another slice between
+    // the execution queue so maximum pace cannot advance another slice between
     // validation and deletion. Pack cleanup follows the resulting core event.
     if (invocation.capabilityId === deleteObjectCommandKind) {
       return await enqueueOperation(async () => await invokeCapabilityThroughRuntime(actor, invocation, 'operator'))
@@ -1078,7 +1075,6 @@ export const createSimulationRunRuntime = async (config: {
       const resumed: SimulationClockState = {
         ...stopped,
         paused: currentControl.paused,
-        speed: currentControl.speed,
         updatedAt: nowIso(),
       }
       runClock.set(resumed)
@@ -1087,14 +1083,14 @@ export const createSimulationRunRuntime = async (config: {
     }
   })
 
-  const runFastForward = async (
+  const runMaximumPace = async (
     targetSimulationTime: IsoTimestamp | null,
     control: { readonly shouldStop: () => boolean; readonly onProgress?: (currentSimulationTime: IsoTimestamp) => void | Promise<void> },
   ): Promise<{ readonly currentSimulationTime: IsoTimestamp; readonly stoppedEarly: boolean }> => {
     const advanceTo = config.runtimeConnection.advanceTo
     const checkpoint = config.runtimeConnection.checkpoint
-    if (!advanceTo || !checkpoint) throw new Error('active Pack Runtimes do not support exact fast-forward execution')
-    fastForwardActive = true
+    if (!advanceTo || !checkpoint) throw new Error('active Pack Runtimes do not support exact maximum-pace execution')
+    maximumPaceActive = true
     try {
       const targetMs = targetSimulationTime === null ? Number.POSITIVE_INFINITY : Date.parse(targetSimulationTime)
       let currentMs = 0
@@ -1105,8 +1101,8 @@ export const createSimulationRunRuntime = async (config: {
         await cueQueue
         await drainRuntimeEmissions()
         currentMs = currentClockMs()
-        if (Number.isNaN(targetMs) || targetMs < currentMs) throw new Error('fast-forward target must not precede the current simulation time')
-        if (!runClock.read().paused) throw new Error('Simulation Run must be paused before fast-forward starts')
+        if (Number.isNaN(targetMs) || targetMs < currentMs) throw new Error('maximum-pace target must not precede the current simulation time')
+        if (!runClock.read().paused) throw new Error('Simulation Run must be paused before maximum pace starts')
       })
       while (currentMs < targetMs && !control.shouldStop()) {
         await enqueueOperation(async () => {
@@ -1118,9 +1114,9 @@ export const createSimulationRunRuntime = async (config: {
             .map(cue => startedMs + cue.at.seconds * 1_000)
             .filter(dueMs => dueMs > currentMs)
             .sort((left, right) => left - right)[0]
-          const nextMs = Math.min(targetMs, currentMs + fastForwardStepMs, nextCueMs ?? Number.POSITIVE_INFINITY)
+          const nextMs = Math.min(targetMs, currentMs + maximumPaceStepMs, nextCueMs ?? Number.POSITIVE_INFINITY)
           const nextTime = new Date(nextMs).toISOString() as IsoTimestamp
-          const nextClock: SimulationClockState = { currentTime: nextTime, paused: true, speed: 1, updatedAt: nowIso() }
+          const nextClock: SimulationClockState = { currentTime: nextTime, paused: true, updatedAt: nowIso() }
           await advanceTo(nextClock)
           runClock.set(nextClock)
           await drainRuntimeEmissions()
@@ -1139,7 +1135,7 @@ export const createSimulationRunRuntime = async (config: {
       flushFastForwardNotifications()
       return { currentSimulationTime: new Date(currentMs).toISOString() as IsoTimestamp, stoppedEarly: currentMs < targetMs }
     } finally {
-      fastForwardActive = false
+      maximumPaceActive = false
       flushFastForwardNotifications()
     }
   }
@@ -1175,7 +1171,7 @@ export const createSimulationRunRuntime = async (config: {
     snapshot: () => snapshotWithCurrentClock(),
     setClock,
     checkpointForCopy,
-    runFastForward,
+    runMaximumPace,
     failStop: (reason: string): void => { terminalExecutionFailure = reason },
     events: (eventsConfig?: { readonly afterSeq?: number }): ReadonlyArray<SimulationRunEvent> => {
       const afterSeq = eventsConfig?.afterSeq ?? -1

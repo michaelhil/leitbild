@@ -206,12 +206,13 @@ describe('server health', () => {
       if (outcome.kind !== 'command') throw new Error('expected command Capability result')
       expect(outcome.result.ok).toBe(true)
 
-      await runtime.setClock({ speed: 100 })
+      await registry.setExecution(simulationRunId, { pace: 'maximum' })
       await waitForMovingObjectEvent(client, 'amb:a12')
       const postResetEventMessages = client.eventMessages.filter(message =>
         !message.events.some(event => event.type === 'simulationRun.reset'),
       )
       expect(postResetEventMessages.every(message => message.scenarioId === 'test-response')).toBe(true)
+      await registry.setExecution(simulationRunId, { playback: 'paused', pace: 'realtime' })
       realtime.removeClient(simulationRunId, client)
       expect(realtime.status().subscribedSimulationRunCount).toBe(0)
       expect(registry.get(simulationRunId)).toBe(runtime)

@@ -22,13 +22,13 @@ export type CapabilityInvocationResponse =
   | { readonly kind: 'command'; readonly result: CommandResult; readonly replayed: boolean }
   | { readonly kind: 'query'; readonly result: unknown }
 
-export interface FastForwardState {
+export interface AccelerationState {
   readonly kind: 'continuous' | 'timed'
-  readonly status: 'running' | 'stopped' | 'completed' | 'failed'
+  readonly status: 'running' | 'paused' | 'stopped' | 'completed' | 'failed'
   readonly startedSimulationTime: string
   readonly targetSimulationTime?: string
   readonly currentSimulationTime: string
-  readonly onComplete: 'paused' | 'realtime'
+  readonly onComplete: 'pause' | 'play-realtime'
   readonly startedAt: string
   readonly updatedAt: string
   readonly activeWallMs: number
@@ -38,10 +38,12 @@ export interface FastForwardState {
 }
 
 export interface RunExecutionState {
-  readonly mode: 'paused' | 'realtime' | 'fast-forward'
+  readonly playback: 'playing' | 'paused'
+  readonly pace: 'realtime' | 'maximum'
   readonly currentSimulationTime: string
   readonly updatedAt: string
-  readonly fastForward: FastForwardState | null
+  readonly maximumPace: { readonly available: boolean; readonly reason?: string }
+  readonly acceleration: AccelerationState | null
 }
 
 export type CreateParameterValue = string | number | boolean

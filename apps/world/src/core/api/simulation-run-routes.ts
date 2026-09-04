@@ -6,7 +6,7 @@ import { CommandIdempotencyConflictError } from '../simulation-runs/command-idem
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../simulation-runs/runtime.ts'
 import { apiError,json,readJson } from './responses.ts'
-import { executionAdvanceInputSchema,executionSetInputSchema,runCopyInputSchema } from '../simulation-runs/execution.ts'
+import { runCopyInputSchema } from '../simulation-runs/execution.ts'
 
 const defaultOperatorActorId = actorIdSchema.parse('actor:operator')
 
@@ -169,23 +169,6 @@ const handleSimulationRunApiInner = async (
       id: result.id,
       uiPath: `/workspaces/${encodeURIComponent(config.registry.workspaceId)}/world/runs/${encodeURIComponent(result.id)}`,
     }, { status: 201 })
-  }
-
-  const executionAdvanceMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/execution\/advance$/)
-  if (executionAdvanceMatch && req.method === 'POST') {
-    const id = simulationRunIdSchema.parse(decodeURIComponent(executionAdvanceMatch[1] ?? ''))
-    return json({ execution: await config.registry.advanceExecution(id, executionAdvanceInputSchema.parse(await readJson(req))) }, { status: 202 })
-  }
-
-  const executionMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/execution$/)
-  if (executionMatch && req.method === 'GET') {
-    const id = simulationRunIdSchema.parse(decodeURIComponent(executionMatch[1] ?? ''))
-    return json({ execution: await config.registry.executionStatus(id) })
-  }
-  if (executionMatch && req.method === 'POST') {
-    const id = simulationRunIdSchema.parse(decodeURIComponent(executionMatch[1] ?? ''))
-    const input = executionSetInputSchema.parse(await readJson(req))
-    return json({ execution: await config.registry.setExecutionMode(id, input.mode) }, { status: input.mode === 'fast-forward' ? 202 : 200 })
   }
 
   const objectsMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/objects$/)

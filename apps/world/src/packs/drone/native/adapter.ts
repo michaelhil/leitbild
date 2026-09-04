@@ -206,7 +206,6 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       currentTime: config.scenario.world.startsAt,
       updatedAt: nowIso(),
       paused: false,
-      speed: 1,
     }
     clock = config.runClock?.read() ?? clock
     const localClock = config.runClock ? null : createSimulationClock(clock)

@@ -47,7 +47,6 @@ test('all five real Packs share one paused startup clock and preserve progress t
     const run = await registry.create({ scenarioId: source.id })
     expect(clocks).toHaveLength(5)
     expect(new Set(clocks).size).toBe(1)
-    await run.setClock({ speed: 2 })
     await Bun.sleep(40)
     await run.setClock({ paused: true })
     const frozen = run.snapshot().clock!.currentTime
@@ -118,7 +117,7 @@ test('same-time cues follow authored order, modify patient assessment and do not
   })
   await registry.createScenario(source)
   const run = await registry.create({ scenarioId: source.id })
-  await run.setClock({ paused: true, speed: 3 })
+  await run.setClock({ paused: true })
   expect(run.snapshot().scenario!.timeline!.firedCueIds).toEqual(['z-create-first', 'a-update-second'])
   const actor = { id: actorIdSchema.parse('test:operator'), label: 'Operator', role: 'system' as const }
   expect(patientPackDataSchema.parse(run.snapshot().objects.find(object => object.id === 'patient:live')!.packData).assessedUrgency).toBe('urgent')

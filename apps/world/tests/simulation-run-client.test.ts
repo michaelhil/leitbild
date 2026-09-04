@@ -90,18 +90,22 @@ describe('simulation run client', () => {
     expect(JSON.parse(recordedBody)).toEqual({ input: { zoom: 10 } })
   })
 
-  test('reads the unified Simulation Run execution endpoint', async () => {
+  test('reads execution through the discoverable Workspace capability', async () => {
     installFetch((input, init) => {
-      expect(String(input)).toBe(`${apiPrefix}/simulation-runs/run-test/execution`)
-      expect(init?.method).toBeUndefined()
+      expect(String(input)).toBe(`/api/workspaces/${workspaceId}/capabilities/world.simulation-run.execution.read/invoke`)
+      expect(init?.method).toBe('POST')
+      expect(JSON.parse(String(init?.body))).toEqual({
+        resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-test' },
+        input: {}, actor: { kind: 'human' },
+      })
       return new Response(JSON.stringify({
-        execution: { mode: 'paused', currentSimulationTime: '2026-01-01T10:00:00.000Z', updatedAt: '2026-01-01T10:00:00.000Z', fastForward: null },
+        result: { playback: 'paused', pace: 'realtime', currentSimulationTime: '2026-01-01T10:00:00.000Z', updatedAt: '2026-01-01T10:00:00.000Z', maximumPace: { available: true }, acceleration: null },
       }), { status: 200 })
     })
 
     const response = await fetchRunExecution('run-test' as SimulationRunId)
 
-    expect(response.mode).toBe('paused')
+    expect(response).toMatchObject({ playback: 'paused', pace: 'realtime' })
   })
 
   test('does not accept Scenario replacement on join or reset', async () => {

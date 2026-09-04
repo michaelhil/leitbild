@@ -280,7 +280,7 @@ describe('Weather runtime controls and lifecycle', () => {
     )
     const connection = await connect([probe])
     try {
-      await connection.setClock({ currentTime: at, updatedAt: nowIso(), paused: true, speed: 1 })
+      await connection.setClock({ currentTime: at, updatedAt: nowIso(), paused: true })
       expect(
         (await connection.sendCommand(envelope('world.weather.create', area({ atmosphere: { windSpeedMps: 15 } })))).ok,
       ).toBe(true)
@@ -323,7 +323,7 @@ describe('Weather runtime controls and lifecycle', () => {
       },
     }
     const connection = await connect([object()], { runtimeStateStore: store })
-    await connection.setClock({ currentTime: later(20), updatedAt: nowIso(), paused: true, speed: 1 })
+    await connection.setClock({ currentTime: later(20), updatedAt: nowIso(), paused: true })
     const sample = await connection.invokeQuery({ capabilityId: 'world.weather.sample-at-point', input: { point } })
     const snapshot = await connection.getSnapshot()
     await connection.close()
@@ -357,7 +357,7 @@ describe('Weather runtime controls and lifecycle', () => {
       if (e.recording) batches.push(e.recording)
     })
     try {
-      await connection.setClock({ currentTime: later(1), updatedAt: nowIso(), paused: true, speed: 1 })
+      await connection.setClock({ currentTime: later(1), updatedAt: nowIso(), paused: true })
       expect(batches.length).toBe(1)
       expect(JSON.stringify(batches)).toContain('windSpeedMps')
       expect(JSON.stringify(batches)).toContain(later(1))

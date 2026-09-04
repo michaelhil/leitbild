@@ -293,7 +293,7 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
   const simulationRuns = await registry.listKnown()
   const executionByRun = new Map(await Promise.all(simulationRuns
     .filter(simulationRun => simulationRun.loadError === undefined)
-    .map(async simulationRun => [simulationRun.id, await registry.executionStatus(simulationRun.id)] as const)))
+    .map(async simulationRun => [simulationRun.id, await registry.executionOverview(simulationRun.id)] as const)))
   const runRef = (id: string) => ({
     workspaceId: registry.workspaceId,
     moduleId: WORLD_MODULE_ID,
@@ -306,15 +306,11 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
       const execution = executionByRun.get(simulationRun.id)
       const status = simulationRun.loadError !== undefined
         ? 'Unavailable'
-        : execution?.mode === 'fast-forward'
-          ? `Fast-forward · ${execution.fastForward?.measuredSpeed.toFixed(1) ?? '0.0'}×`
-          : simulationRun.clock?.paused
+        : execution?.playback === 'playing' && execution.pace === 'maximum'
+          ? `Fast-forward · ${execution.acceleration?.measuredSpeed.toFixed(1) ?? '0.0'}×`
+          : execution?.playback === 'paused'
             ? 'Paused'
-            : !simulationRun.loaded
-              ? 'Ready'
-              : simulationRun.clock?.speed !== undefined && simulationRun.clock.speed !== 1
-                ? `Running · ${simulationRun.clock.speed}×`
-                : 'Running'
+            : 'Running'
       return {
         ref: {
           workspaceId: registry.workspaceId,
@@ -847,7 +843,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       risk: 'write',
       idempotent: true,
       inputSchema: capabilityJsonSchema(z.object({ background: z.boolean() }).strict()),
-      outputSchema: capabilityJsonSchema(z.object({ simulationRunId: z.string(), leaseCount: z.number(), leasesByKind: z.object({ realtime: z.number(), api: z.number(), background: z.number(), 'fast-forward': z.number() }) })),
+      outputSchema: capabilityJsonSchema(z.object({ simulationRunId: z.string(), leaseCount: z.number(), leasesByKind: z.object({ realtime: z.number(), api: z.number(), background: z.number(), 'maximum-pace': z.number() }) })),
     },
     invoke: async (registry, invocation) => {
       const input = z.object({ background: z.boolean() }).strict().parse(invocation.input)
@@ -881,7 +877,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     descriptor: {
       id: 'world.simulation-run.execution.read', moduleId: WORLD_MODULE_ID, kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
-      title: 'Read Run execution', description: 'Reads the current execution mode, simulation time, and current or most recent fast-forward progress.',
+      title: 'Read Run execution', description: 'Reads independent playback and pace state, simulation time, maximum-pace availability, and current or most recent acceleration progress.',
       risk: 'read', idempotent: true, inputSchema: capabilityJsonSchema(emptyInputSchema), outputSchema: capabilityJsonSchema(runExecutionStateSchema),
     },
     invoke: async (registry, invocation) => {
@@ -893,19 +889,20 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     descriptor: {
       id: 'world.simulation-run.execution.set', moduleId: WORLD_MODULE_ID, kind: 'command',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
-      title: 'Set Run execution mode', description: 'Sets this Run to paused, realtime, or unpaced fast-forward execution at an exact shared simulation boundary.',
+      title: 'Set Run execution', description: 'Independently sets playback to playing or paused and pace to realtime or maximum. Omitted fields retain their current value; maximum pace uses exact shared Pack boundaries.',
       risk: 'write', idempotent: true, inputSchema: capabilityJsonSchema(executionSetInputSchema), outputSchema: capabilityJsonSchema(runExecutionStateSchema),
     },
     invoke: async (registry, invocation) => {
       const input = executionSetInputSchema.parse(invocation.input)
-      return json({ result: await registry.setExecutionMode(requireSimulationRunResource(invocation), input.mode) }, { status: input.mode === 'fast-forward' ? 202 : 200 })
+      const result = await registry.setExecution(requireSimulationRunResource(invocation), input)
+      return json({ result }, { status: result.playback === 'playing' && result.pace === 'maximum' ? 202 : 200 })
     },
   },
   {
     descriptor: {
       id: 'world.simulation-run.execution.advance', moduleId: WORLD_MODULE_ID, kind: 'command',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
-      title: 'Advance Run by duration', description: 'Fast-forwards this Run by a fixed simulated duration, then pauses or resumes realtime execution.',
+      title: 'Advance Run by duration', description: 'Plays this Run at maximum pace for a fixed simulated duration, then pauses or plays in realtime. Playback can pause and resume the active target.',
       risk: 'write', idempotent: false, inputSchema: capabilityJsonSchema(executionAdvanceInputSchema), outputSchema: capabilityJsonSchema(runExecutionStateSchema),
     },
     invoke: async (registry, invocation) => json({ result: await registry.advanceExecution(requireSimulationRunResource(invocation), executionAdvanceInputSchema.parse(invocation.input)) }, { status: 202 }),
@@ -936,7 +933,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'command',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'Delete Simulation Run',
-      description: 'Permanently stops and deletes a Simulation Run and its persisted state, including active fast-forward work.',
+      description: 'Permanently stops and deletes a Simulation Run and its persisted state, including active maximum-pace work.',
       risk: 'destructive',
       idempotent: false,
       inputSchema: z.toJSONSchema(emptyInputSchema),

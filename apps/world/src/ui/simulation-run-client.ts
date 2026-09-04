@@ -6,7 +6,7 @@ import type {
   RunExecutionState,
 } from './types.ts'
 import { recordCapabilityQueryDiagnostics } from './internal-diagnostics.ts'
-import { workspaceApiPath } from './workspace-context.ts'
+import { activeWorkspaceId, workspaceApiPath } from './workspace-context.ts'
 
 export interface SimulationRunCapabilityRequest {
   readonly capabilityId: string
@@ -92,8 +92,18 @@ export const invokeSimulationRunCapability = async (
 }
 
 export const fetchRunExecution = async (simulationRunId: SimulationRunId): Promise<RunExecutionState> => {
-  const response = await fetch(workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/execution`), { cache: 'no-store' })
-  return (await readJsonResponse<{ readonly execution: RunExecutionState }>(response, 'execution status failed')).execution
+  const workspaceId = activeWorkspaceId()
+  const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/capabilities/world.simulation-run.execution.read/invoke`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify({
+      resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: simulationRunId },
+      input: {},
+      actor: { kind: 'human' },
+    }),
+  })
+  return (await readJsonResponse<{ readonly result: RunExecutionState }>(response, 'execution status failed')).result
 }
 
 const capabilityQueryFailureMessage = (status: number, text: string): string => {

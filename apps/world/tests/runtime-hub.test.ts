@@ -259,7 +259,7 @@ describe('createRuntimeHub', () => {
     }))
     const connection = await createRuntimeHub([adapter]).connect(connectionConfig([adapter.id]))
     try {
-      await expect(connection.advanceTo?.({ currentTime: '2026-01-01T00:00:01.000Z' as IsoTimestamp, paused: true, speed: 1, updatedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp }))
+      await expect(connection.advanceTo?.({ currentTime: '2026-01-01T00:00:01.000Z' as IsoTimestamp, paused: true, updatedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp }))
         .rejects.toThrow('Pack Runtime exact advancement failed — failing.runtime: numerical transition stalled')
       expect(connection.health?.()[0]).toMatchObject({
         runtimeId: 'failing.runtime',

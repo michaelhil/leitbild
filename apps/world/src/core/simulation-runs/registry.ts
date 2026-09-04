@@ -35,7 +35,7 @@ import type { SimulationRunRuntimeMetricsSnapshot } from './runtime-metrics.ts'
 import { defaultSimulationRunRuntimePolicy } from './runtime-persistence-policy.ts'
 import { createJsonRuntimeStateStore } from './runtime-state-store.ts'
 import { createExecutionStore } from './execution-store.ts'
-import { executionAdvanceInputSchema,executionCheckpointWallIntervalMs,executionModeSchema,fastForwardStateSchema,runCopyInputSchema,runExecutionStateSchema,type AdvanceCompletionMode,type ExecutionMode,type RunCopyOrigin,type RunExecutionState } from './execution.ts'
+import { accelerationStateSchema,executionAdvanceInputSchema,executionCheckpointWallIntervalMs,executionSetInputSchema,runCopyInputSchema,runExecutionStateSchema,type AccelerationState,type AdvanceCompletion,type ExecutionSetInput,type RunCopyOrigin,type RunExecutionState,type RunPace,type RunPlayback } from './execution.ts'
 import type { SimulationRunCapabilities } from './runtime.ts'
 import { createSimulationRunRuntime,type ActiveSimulationCapability,type SimulationRunRuntime } from './runtime.ts'
 import { createSimulationRunSnapshotStore } from './snapshot-store.ts'
@@ -44,7 +44,7 @@ import { createKeyedOperations } from '../storage/keyed-operations.ts'
 
 const maxRestoredEventHistoryBytes = 8 * 1024 * 1024
 
-export type SimulationRunLeaseKind = 'realtime' | 'api' | 'background' | 'fast-forward'
+export type SimulationRunLeaseKind = 'realtime' | 'api' | 'background' | 'maximum-pace'
 
 export interface SimulationRunLeaseSummary {
   readonly simulationRunId: SimulationRunId
@@ -81,6 +81,13 @@ export interface SimulationRunRegistryStatus {
   readonly leases: ReadonlyArray<SimulationRunLeaseSummary>
 }
 
+interface MaximumPaceController {
+  stopRequested: boolean
+  destination: { playback: RunPlayback; pace: RunPace }
+  preserveAcceleration: boolean
+  readonly done: Promise<void>
+}
+
 export interface SimulationRunRegistry {
   readonly workspaceId: WorkspaceId
   readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
@@ -89,8 +96,9 @@ export interface SimulationRunRegistry {
   readonly create: (config: { readonly scenarioId: string; readonly scenarioRevisionId?: ScenarioRevisionId }) => Promise<SimulationRunRuntime>
   readonly copy: (sourceId: SimulationRunId, input: { readonly name?: string }) => Promise<SimulationRunRuntime>
   readonly executionStatus: (id: SimulationRunId) => Promise<RunExecutionState>
-  readonly setExecutionMode: (id: SimulationRunId, mode: ExecutionMode) => Promise<RunExecutionState>
-  readonly advanceExecution: (id: SimulationRunId, input: { readonly minutes: number; readonly onComplete?: AdvanceCompletionMode }) => Promise<RunExecutionState>
+  readonly executionOverview: (id: SimulationRunId) => Promise<RunExecutionState>
+  readonly setExecution: (id: SimulationRunId, input: ExecutionSetInput) => Promise<RunExecutionState>
+  readonly advanceExecution: (id: SimulationRunId, input: { readonly minutes: number; readonly onComplete?: AdvanceCompletion }) => Promise<RunExecutionState>
   readonly load: (id: SimulationRunId) => Promise<SimulationRunRuntime>
   readonly reset: (id: SimulationRunId) => Promise<SimulationRunRuntime>
   readonly delete: (id: SimulationRunId) => Promise<boolean>
@@ -138,12 +146,9 @@ export const createSimulationRunRegistry = (config: {
   const creatingSimulationRuns = new Map<SimulationRunId, Promise<SimulationRunRuntime>>()
   const leasesBySimulationRun = new Map<SimulationRunId, Map<string, SimulationRunLeaseKind>>()
   const backgroundReleases = new Map<SimulationRunId, () => void>()
-  const fastForwardJobs = new Map<SimulationRunId, {
-    stopRequested: boolean
-    nextMode: AdvanceCompletionMode
-    readonly done: Promise<void>
-  }>()
+  const maximumPaceJobs = new Map<SimulationRunId, MaximumPaceController>()
   const executionStates = new Map<SimulationRunId, RunExecutionState>()
+  const executionOperations = createKeyedOperations<SimulationRunId>()
   const familyOperations = createKeyedOperations<SimulationRunId>()
   const idleRuntimeCloseTimers = new Map<SimulationRunId, ReturnType<typeof setTimeout>>()
   const idleRuntimeCloseDelayMs = config.idleRuntimeCloseDelayMs ?? defaultSimulationRunRuntimePolicy.idleRuntimeCloseDelayMs
@@ -236,7 +241,7 @@ export const createSimulationRunRegistry = (config: {
       realtime: 0,
       api: 0,
       background: 0,
-      'fast-forward': 0,
+      'maximum-pace': 0,
     }
     const leases = leasesBySimulationRun.get(id)
     if (leases) for (const kind of leases.values()) leasesByKind[kind] += 1
@@ -540,7 +545,7 @@ export const createSimulationRunRegistry = (config: {
     let runtimeConnection
     const runClock = createSimulationClock({
       currentTime: restoredSnapshot?.clock?.currentTime ?? scenarioRuntime.scenario.world.startsAt,
-      updatedAt: nowIso(), paused: true, speed: restoredSnapshot?.clock?.speed ?? 1,
+      updatedAt: nowIso(), paused: true,
     })
     // The compiled artifact is deterministic authored startup, not an actual
     // observation. Stamp fresh shared objects when their Run is instantiated.
@@ -612,7 +617,7 @@ export const createSimulationRunRegistry = (config: {
     simulationRuns.set(id, runtime)
     const priorExecution = await executionStoreFor(id).load()
     if (priorExecution) executionStates.set(id, priorExecution)
-    if (priorExecution?.fastForward?.status === 'failed') runtime.failStop(priorExecution.fastForward.error ?? 'fast-forward execution failed')
+    if (priorExecution?.acceleration?.status === 'failed') runtime.failStop(priorExecution.acceleration.error ?? 'maximum-pace execution failed')
     scheduleIdleRuntimeCloseIfUnleased(id)
     return runtime
   }
@@ -637,66 +642,107 @@ export const createSimulationRunRegistry = (config: {
     return await creating
   }
 
+  const maximumPaceAvailabilityFor = (
+    runtimes: ReadonlyArray<{ readonly id: string; readonly clock: 'simulation' | 'live' | 'none' }>,
+  ): RunExecutionState['maximumPace'] => {
+    const liveRuntimes = runtimes.filter(candidate => candidate.clock === 'live')
+    return liveRuntimes.length === 0
+      ? { available: true }
+      : {
+          available: false,
+          reason: `Maximum pace cannot synthesize future live observations from: ${liveRuntimes.map(candidate => candidate.id).join(', ')}`,
+        }
+  }
+
+  const maximumPaceAvailability = async (id: SimulationRunId): Promise<RunExecutionState['maximumPace']> => {
+    const manifest = await manifestStoreFor(id).load()
+    if (!manifest) throw new Error(`Simulation Run not found: ${id}`)
+    return maximumPaceAvailabilityFor(manifest.runtimes)
+  }
+
   const executionStatus = async (id: SimulationRunId): Promise<RunExecutionState> => {
-    // Execution is a live operation. Reading a persisted summary first leaves
-    // newly-created or idly-unloaded Runs without a clock until some unrelated
-    // route happens to load them.
     const runtime = await load(id)
     const clock = runtime.snapshot().clock
     if (!clock) throw new Error('Simulation Run clock is not initialized')
     const cached = executionStates.get(id) ?? await executionStoreFor(id).load()
-    const mode: ExecutionMode = fastForwardJobs.has(id) ? 'fast-forward' : clock.paused ? 'paused' : 'realtime'
+    const runningMaximum = maximumPaceJobs.has(id)
     const state = runExecutionStateSchema.parse({
-      mode,
+      playback: runningMaximum ? 'playing' : clock.paused ? 'paused' : 'playing',
+      pace: runningMaximum ? 'maximum' : clock.paused ? cached?.pace ?? 'realtime' : 'realtime',
       currentSimulationTime: clock.currentTime,
-      updatedAt: nowIso(),
-      fastForward: cached?.fastForward ?? null,
+      updatedAt: runningMaximum ? cached?.acceleration?.updatedAt ?? clock.updatedAt : clock.updatedAt,
+      maximumPace: maximumPaceAvailabilityFor(runtime.capabilities().runtimes),
+      acceleration: cached?.acceleration ?? null,
     })
     executionStates.set(id, state)
     return state
   }
 
-  const startFastForward = async (
+  const executionOverview = async (id: SimulationRunId): Promise<RunExecutionState> => {
+    if (simulationRuns.has(id)) return await executionStatus(id)
+    const summary = await summaryFor(id)
+    if (!summary.clock) throw new Error(`Simulation Run clock is unavailable: ${id}`)
+    const cached = executionStates.get(id) ?? await executionStoreFor(id).load()
+    const state = runExecutionStateSchema.parse({
+      playback: summary.clock.paused ? 'paused' : 'playing',
+      pace: summary.clock.paused ? cached?.pace ?? 'realtime' : 'realtime',
+      currentSimulationTime: summary.clock.currentTime,
+      updatedAt: summary.clock.updatedAt,
+      maximumPace: await maximumPaceAvailability(id),
+      acceleration: cached?.acceleration ?? null,
+    })
+    executionStates.set(id, state)
+    return state
+  }
+
+  const startMaximumPace = async (
     id: SimulationRunId,
-    configInput: { readonly targetSimulationTime: IsoTimestamp | null; readonly onComplete: AdvanceCompletionMode },
+    configInput: {
+      readonly targetSimulationTime: IsoTimestamp | null
+      readonly onComplete: AdvanceCompletion
+      readonly resume?: AccelerationState
+    },
   ): Promise<RunExecutionState> => {
-    if (fastForwardJobs.has(id)) return await executionStatus(id)
+    if (maximumPaceJobs.has(id)) return await executionStatus(id)
     const runtime = await load(id)
     let currentClock = runtime.snapshot().clock
     if (!currentClock) throw new Error('Simulation Run clock is not initialized')
-    const manifest = await manifestStoreFor(id).load()
-    if (!manifest) throw new Error(`Simulation Run not found: ${id}`)
-    const liveRuntimes = manifest.runtimes.filter(candidate => candidate.clock === 'live')
-    if (liveRuntimes.length > 0) throw Object.assign(new Error(`Fast-forward cannot synthesize future live observations: ${liveRuntimes.map(candidate => candidate.id).join(', ')}`), { code: 'fast_forward_unsupported' })
-    if (!currentClock.paused) currentClock = await runtime.setClock({ paused: true, speed: 1 })
-    const releaseLease = acquireLease(id, 'fast-forward')
+    const maximumPace = maximumPaceAvailabilityFor(runtime.capabilities().runtimes)
+    if (!maximumPace.available) throw Object.assign(new Error(maximumPace.reason), { code: 'fast_forward_unsupported' })
+    if (!currentClock.paused) currentClock = await runtime.setClock({ paused: true })
+    const releaseLease = acquireLease(id, 'maximum-pace')
     let finishJob!: () => void
-    const controller: { stopRequested: boolean; nextMode: AdvanceCompletionMode; readonly done: Promise<void> } = {
+    const controller: MaximumPaceController = {
       stopRequested: false,
-      nextMode: configInput.onComplete,
+      destination: { playback: 'paused', pace: 'maximum' },
+      preserveAcceleration: true,
       done: new Promise<void>(resolve => { finishJob = resolve }),
     }
-    fastForwardJobs.set(id, controller)
-    const startedAt = nowIso()
-    const startedMs = Date.parse(currentClock.currentTime)
-    let fastForward = fastForwardStateSchema.parse({
+    maximumPaceJobs.set(id, controller)
+    const startedAt = configInput.resume?.startedAt ?? nowIso()
+    const startedSimulationTime = configInput.resume?.startedSimulationTime ?? currentClock.currentTime
+    const priorActiveWallMs = configInput.resume?.activeWallMs ?? 0
+    let acceleration = accelerationStateSchema.parse({
       kind: configInput.targetSimulationTime === null ? 'continuous' : 'timed',
       status: 'running',
-      startedSimulationTime: currentClock.currentTime,
+      startedSimulationTime,
       ...(configInput.targetSimulationTime === null ? {} : { targetSimulationTime: configInput.targetSimulationTime }),
       currentSimulationTime: currentClock.currentTime,
       onComplete: configInput.onComplete,
       startedAt,
-      updatedAt: startedAt,
-      activeWallMs: 0,
-      simulatedMs: 0,
+      updatedAt: nowIso(),
+      activeWallMs: priorActiveWallMs,
+      simulatedMs: Date.parse(currentClock.currentTime) - Date.parse(startedSimulationTime),
       measuredSpeed: 0,
     })
-    let state = runExecutionStateSchema.parse({ mode: 'fast-forward', currentSimulationTime: currentClock.currentTime, updatedAt: startedAt, fastForward })
+    let state = runExecutionStateSchema.parse({
+      playback: 'playing', pace: 'maximum', currentSimulationTime: currentClock.currentTime,
+      updatedAt: acceleration.updatedAt, maximumPace, acceleration,
+    })
     executionStates.set(id, state)
     try { await executionStoreFor(id).save(state) }
     catch (error) {
-      fastForwardJobs.delete(id)
+      maximumPaceJobs.delete(id)
       executionStates.delete(id)
       releaseLease()
       finishJob()
@@ -704,14 +750,17 @@ export const createSimulationRunRegistry = (config: {
     }
     const wallStart = performance.now()
     let lastPersistedAt = wallStart
-    const work = runtime.runFastForward(configInput.targetSimulationTime, {
+    const work = runtime.runMaximumPace(configInput.targetSimulationTime, {
       shouldStop: () => controller.stopRequested,
       onProgress: async currentSimulationTime => {
         const wallTime = performance.now()
-        const activeWallMs = wallTime - wallStart
-        const simulatedMs = Date.parse(currentSimulationTime) - startedMs
-        fastForward = fastForwardStateSchema.parse({ ...fastForward, currentSimulationTime, updatedAt: nowIso(), activeWallMs, simulatedMs, measuredSpeed: activeWallMs > 0 ? simulatedMs / activeWallMs : 0 })
-        state = runExecutionStateSchema.parse({ ...state, currentSimulationTime, updatedAt: fastForward.updatedAt, fastForward })
+        const activeWallMs = priorActiveWallMs + wallTime - wallStart
+        const simulatedMs = Date.parse(currentSimulationTime) - Date.parse(startedSimulationTime)
+        acceleration = accelerationStateSchema.parse({
+          ...acceleration, currentSimulationTime, updatedAt: nowIso(), activeWallMs, simulatedMs,
+          measuredSpeed: activeWallMs > 0 ? simulatedMs / activeWallMs : 0,
+        })
+        state = runExecutionStateSchema.parse({ ...state, currentSimulationTime, updatedAt: acceleration.updatedAt, acceleration })
         executionStates.set(id, state)
         if (wallTime - lastPersistedAt >= executionCheckpointWallIntervalMs) {
           lastPersistedAt = wallTime
@@ -719,22 +768,34 @@ export const createSimulationRunRegistry = (config: {
         }
       },
     }).then(async result => {
-      const finalMode = controller.nextMode
-      if (finalMode === 'realtime') await runtime.setClock({ paused: false, speed: 1 })
-      fastForward = fastForwardStateSchema.parse({ ...fastForward, status: result.stoppedEarly ? 'stopped' : 'completed', currentSimulationTime: result.currentSimulationTime, updatedAt: nowIso() })
-      state = runExecutionStateSchema.parse({ mode: finalMode, currentSimulationTime: result.currentSimulationTime, updatedAt: fastForward.updatedAt, fastForward })
+      const completedTarget = !result.stoppedEarly && configInput.targetSimulationTime !== null
+      const destination = completedTarget
+        ? { playback: configInput.onComplete === 'pause' ? 'paused' : 'playing', pace: 'realtime' } as const
+        : controller.destination
+      if (destination.playback === 'playing' && destination.pace === 'realtime') await runtime.setClock({ paused: false })
+      const status = completedTarget ? 'completed' : controller.preserveAcceleration ? 'paused' : 'stopped'
+      acceleration = accelerationStateSchema.parse({
+        ...acceleration, status, currentSimulationTime: result.currentSimulationTime, updatedAt: nowIso(),
+      })
+      state = runExecutionStateSchema.parse({
+        ...state, ...destination, currentSimulationTime: result.currentSimulationTime,
+        updatedAt: acceleration.updatedAt, acceleration,
+      })
       executionStates.set(id, state)
       await executionStoreFor(id).save(state)
     }).catch(async error => {
       const reason = error instanceof Error ? error.message : String(error)
       runtime.failStop(reason)
-      const currentSimulationTime = runtime.snapshot().clock?.currentTime ?? fastForward.currentSimulationTime
-      fastForward = fastForwardStateSchema.parse({ ...fastForward, status: 'failed', currentSimulationTime, updatedAt: nowIso(), error: reason })
-      state = runExecutionStateSchema.parse({ mode: 'paused', currentSimulationTime, updatedAt: fastForward.updatedAt, fastForward })
+      const currentSimulationTime = runtime.snapshot().clock?.currentTime ?? acceleration.currentSimulationTime
+      acceleration = accelerationStateSchema.parse({ ...acceleration, status: 'failed', currentSimulationTime, updatedAt: nowIso(), error: reason })
+      state = runExecutionStateSchema.parse({
+        ...state, playback: 'paused', currentSimulationTime, updatedAt: acceleration.updatedAt, acceleration,
+      })
       executionStates.set(id, state)
-      await executionStoreFor(id).save(state).catch(() => undefined)
+      try { await executionStoreFor(id).save(state) }
+      catch (persistError) { console.error(`failed to persist maximum-pace failure for ${id}`, persistError) }
     }).finally(() => {
-      fastForwardJobs.delete(id)
+      maximumPaceJobs.delete(id)
       releaseLease()
       finishJob()
     })
@@ -742,37 +803,67 @@ export const createSimulationRunRegistry = (config: {
     return state
   }
 
-  const setExecutionMode = async (id: SimulationRunId, rawMode: ExecutionMode): Promise<RunExecutionState> => {
-    const mode = executionModeSchema.parse(rawMode)
-    if (mode === 'fast-forward') return fastForwardJobs.has(id)
-      ? await executionStatus(id)
-      : await startFastForward(id, { targetSimulationTime: null, onComplete: 'paused' })
-    const active = fastForwardJobs.get(id)
+  const applyExecution = async (id: SimulationRunId, input: ExecutionSetInput): Promise<RunExecutionState> => {
+    let current = await executionStatus(id)
+    let active = maximumPaceJobs.get(id)
+    if (current.playback === 'playing' && current.pace === 'maximum' && !active) {
+      current = await executionStatus(id)
+      active = maximumPaceJobs.get(id)
+    }
+    const destination = {
+      playback: input.playback ?? current.playback,
+      pace: input.pace ?? current.pace,
+    }
+    if (destination.playback === current.playback && destination.pace === current.pace) return current
     if (active) {
-      active.nextMode = mode
+      active.destination = destination
+      active.preserveAcceleration = destination.playback === 'paused' && destination.pace === 'maximum'
       active.stopRequested = true
       await active.done
       return await executionStatus(id)
     }
-    const current = await executionStatus(id)
-    if (current.mode === mode) return current
     const runtime = await load(id)
-    const clock = await runtime.setClock({ paused: mode === 'paused', speed: 1 })
-    const previous = executionStates.get(id) ?? await executionStoreFor(id).load()
-    const state = runExecutionStateSchema.parse({ mode, currentSimulationTime: clock.currentTime, updatedAt: nowIso(), fastForward: previous?.fastForward ?? null })
+    if (destination.pace === 'maximum' && destination.playback === 'playing') {
+      const resumable = current.acceleration?.status === 'paused' ? current.acceleration : undefined
+      return await startMaximumPace(id, {
+        targetSimulationTime: resumable?.targetSimulationTime ?? null,
+        onComplete: resumable?.onComplete ?? 'pause',
+        ...(resumable === undefined ? {} : { resume: resumable }),
+      })
+    }
+    const clock = await runtime.setClock({ paused: destination.playback === 'paused' })
+    const stoppedAcceleration = current.acceleration === null || current.pace !== 'maximum' || destination.pace === 'maximum'
+      ? current.acceleration
+      : accelerationStateSchema.parse({ ...current.acceleration, status: 'stopped', currentSimulationTime: clock.currentTime, updatedAt: nowIso() })
+    const state = runExecutionStateSchema.parse({
+      ...current, ...destination, currentSimulationTime: clock.currentTime, updatedAt: nowIso(), acceleration: stoppedAcceleration,
+    })
     executionStates.set(id, state)
     await executionStoreFor(id).save(state)
     return state
   }
 
-  const advanceExecution = async (id: SimulationRunId, rawInput: { readonly minutes: number; readonly onComplete?: AdvanceCompletionMode }): Promise<RunExecutionState> => {
+  const setExecution = async (id: SimulationRunId, rawInput: ExecutionSetInput): Promise<RunExecutionState> => {
+    const input = executionSetInputSchema.parse(rawInput)
+    return await executionOperations.run(id, async () => await applyExecution(id, input))
+  }
+
+  const advanceExecution = async (id: SimulationRunId, rawInput: { readonly minutes: number; readonly onComplete?: AdvanceCompletion }): Promise<RunExecutionState> => {
     const input = executionAdvanceInputSchema.parse(rawInput)
-    if (fastForwardJobs.has(id)) throw Object.assign(new Error('This Simulation Run is already fast-forwarding'), { code: 'simulation_run_busy' })
-    const runtime = await load(id)
-    const clock = runtime.snapshot().clock
-    if (!clock) throw new Error('Simulation Run clock is not initialized')
-    const targetSimulationTime = new Date(Date.parse(clock.currentTime) + input.minutes * 60_000).toISOString() as IsoTimestamp
-    return await startFastForward(id, { targetSimulationTime, onComplete: input.onComplete })
+    return await executionOperations.run(id, async () => {
+      const active = maximumPaceJobs.get(id)
+      if (active) {
+        active.destination = { playback: 'paused', pace: 'maximum' }
+        active.preserveAcceleration = false
+        active.stopRequested = true
+        await active.done
+      }
+      const runtime = await load(id)
+      const clock = runtime.snapshot().clock
+      if (!clock) throw new Error('Simulation Run clock is not initialized')
+      const targetSimulationTime = new Date(Date.parse(clock.currentTime) + input.minutes * 60_000).toISOString() as IsoTimestamp
+      return await startMaximumPace(id, { targetSimulationTime, onComplete: input.onComplete })
+    })
   }
 
   const copyRun = async (sourceId: SimulationRunId, rawInput: { readonly name?: string }) => {
@@ -803,7 +894,7 @@ export const createSimulationRunRegistry = (config: {
         await createSimulationRunSnapshotStore({ simulationRunId: id, path: join(simulationRunRoot, id, 'snapshot.json') }).save({
           ...checkpoint.snapshot,
           seq: 0,
-          ...(checkpoint.snapshot.clock ? { clock: { ...checkpoint.snapshot.clock, paused: true, speed: 1 } } : {}),
+          ...(checkpoint.snapshot.clock ? { clock: { ...checkpoint.snapshot.clock, paused: true } } : {}),
         })
         for (const [runtimeId, runtimeState] of Object.entries(checkpoint.runtimeStates)) {
           await createJsonRuntimeStateStore({ runtimeId, path: join(simulationRunRoot, id, 'runtimes', `${runtimeId}.json`) }).save(runtimeState)
@@ -843,7 +934,7 @@ export const createSimulationRunRegistry = (config: {
     if (!runtime) return false
     const leases = leaseSummary(id).leasesByKind
     if (!shuttingDown && leases.api > 0) throw Object.assign(new Error('Simulation Run has active requests; retry after they complete'), { code: 'simulation_run_busy' })
-    if (!shuttingDown && leases['fast-forward'] > 0) throw Object.assign(new Error('Simulation Run is fast-forwarding; stop it before closing'), { code: 'simulation_run_busy' })
+    if (!shuttingDown && leases['maximum-pace'] > 0) throw Object.assign(new Error('Simulation Run is playing at maximum pace; pause it before closing'), { code: 'simulation_run_busy' })
     backgroundReleases.get(id)?.()
     backgroundReleases.delete(id)
     clearIdleRuntimeCloseTimer(id)
@@ -857,7 +948,7 @@ export const createSimulationRunRegistry = (config: {
   const reset = (id: SimulationRunId): Promise<SimulationRunRuntime> => lifecycle.run(id, async () => {
     const leases = leaseSummary(id).leasesByKind
     if (leases.api > 0) throw Object.assign(new Error('Simulation Run has active requests; retry after they complete'), { code: 'simulation_run_busy' })
-    if (leases['fast-forward'] > 0) throw Object.assign(new Error('Simulation Run is fast-forwarding; stop it before resetting'), { code: 'simulation_run_busy' })
+    if (leases['maximum-pace'] > 0) throw Object.assign(new Error('Simulation Run is playing at maximum pace; pause it before resetting'), { code: 'simulation_run_busy' })
     const manifest = await manifestStoreFor(id).load()
     if (!manifest) throw new Error(`Simulation Run not found: ${id}`)
     const existing = simulationRuns.get(id)
@@ -882,11 +973,12 @@ export const createSimulationRunRegistry = (config: {
   })
 
   const deleteSimulationRun = (id: SimulationRunId): Promise<boolean> => lifecycle.run(id, async () => {
-    const fastForward = fastForwardJobs.get(id)
-    if (fastForward) {
-      fastForward.nextMode = 'paused'
-      fastForward.stopRequested = true
-      await fastForward.done
+    const maximumPaceJob = maximumPaceJobs.get(id)
+    if (maximumPaceJob) {
+      maximumPaceJob.destination = { playback: 'paused', pace: 'realtime' }
+      maximumPaceJob.preserveAcceleration = false
+      maximumPaceJob.stopRequested = true
+      await maximumPaceJob.done
     }
     const wasLoaded = await closeLoaded(id)
     pinnedTitles.delete(id)
@@ -1073,7 +1165,8 @@ export const createSimulationRunRegistry = (config: {
     create,
     copy: copyRun,
     executionStatus,
-    setExecutionMode,
+    executionOverview,
+    setExecution,
     advanceExecution,
     load,
     reset,
@@ -1102,8 +1195,9 @@ export const createSimulationRunRegistry = (config: {
     },
     shutdown: async () => {
       shuttingDown = true
-      for (const job of fastForwardJobs.values()) job.stopRequested = true
-      await Promise.allSettled([...fastForwardJobs.values()].map(job => job.done))
+      for (const job of maximumPaceJobs.values()) job.stopRequested = true
+      await Promise.allSettled([...maximumPaceJobs.values()].map(job => job.done))
+      await executionOperations.drain()
       await definitionOperations.close()
       await Promise.allSettled([...creatingSimulationRuns.values()])
       await lifecycle.drain()

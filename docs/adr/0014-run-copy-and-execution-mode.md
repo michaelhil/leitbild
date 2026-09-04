@@ -1,7 +1,0 @@
-# Run copying and execution mode are independent
-
-A Run Copy is an independent ordinary Simulation Run created at a coherent checkpoint. Execution Mode independently selects Paused, Realtime, or Fast-forward for any compatible Run. Copying never implies an execution mode and Fast-forward never creates a separate Run type. Fast-forward uses the same Pack clock boundaries and Capability surface as Realtime execution; live external runtimes must have an explicit evidence policy or reject Fast-forward rather than inventing future observations.
-
-The Workspace Host owns Play/Pause, Fast-forward, fixed-duration advance, copying, and Run-family controls. Fast-forward advances in exact bounded simulation steps and yields between them, so ordinary reads and transactional commands remain available at coherent boundaries. A fixed-duration advance explicitly ends Paused or Realtime. One process-wide admission limit prevents concurrent Fast-forward work from exhausting the server; its public error identifies an active Run only within the same Workspace.
-
-All copies share a stable Run Family identity that does not depend on editable names or on the continued existence of the original Run. Switching between family members replaces only the World pane. The Agents Room remains mounted, and the Host sends the selected Run as transient per-browser focus. That focus is available to Agent discovery tools for the triggering turn but is never persisted into Room links or Message history; the Room's companion link remains its durable fallback.

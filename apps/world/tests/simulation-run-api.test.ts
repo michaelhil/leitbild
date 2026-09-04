@@ -177,7 +177,7 @@ const closeAll = async (registry: SimulationRunRegistry): Promise<void> => {
 }
 
 describe('Simulation Run API', () => {
-  test('copies an ordinary Run and starts timed fast-forward through separate routes', async () => {
+  test('copies an ordinary Run without a second execution REST surface', async () => {
     const registry = await createTestRegistry()
     try {
       const source = await createRun(registry)
@@ -188,19 +188,6 @@ describe('Simulation Run API', () => {
       )
       expect(created.status).toBe(201)
       expect(created.body.uiPath).toContain(created.body.id)
-      const started = await callRoute<{ readonly execution: { readonly mode: string } }>(
-        registry,
-        runPath(created.body.id, '/execution/advance'),
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutes: 0.01, onComplete: 'paused' }) },
-      )
-      expect(started.status).toBe(202)
-      for (let attempt = 0; attempt < 120; attempt += 1) {
-        const status = await callRoute<{ readonly execution: { readonly mode: string } }>(registry, runPath(created.body.id, '/execution'))
-        if (status.body.execution.mode !== 'fast-forward') break
-        await Bun.sleep(25)
-      }
-      const status = await callRoute<{ readonly execution: { readonly mode: string; readonly fastForward: { readonly status: string } } }>(registry, runPath(created.body.id, '/execution'))
-      expect(status.body.execution).toMatchObject({ mode: 'paused', fastForward: { status: 'completed' } })
       expect((await registry.summary(created.body.id)).title).toBe('API copy')
     } finally { await registry.shutdown() }
   })
@@ -540,25 +527,4 @@ describe('Simulation Run API', () => {
     }
   })
 
-  test('updates execution mode only inside the addressed run', async () => {
-    const registry = await createTestRegistry()
-    try {
-      const first = await createRun(registry)
-      const second = await createRun(registry)
-      const changed = await callRoute<{ readonly execution: { readonly mode: string } }>(
-        registry,
-        runPath(first.id, '/execution'),
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: 'paused' }),
-        },
-      )
-      expect(changed.body.execution).toMatchObject({ mode: 'paused' })
-      expect(registry.get(first.id)?.snapshot().clock?.paused).toBe(true)
-      expect(registry.get(second.id)?.snapshot().clock?.paused).toBe(false)
-    } finally {
-      await closeAll(registry)
-    }
-  })
 })

@@ -62,18 +62,18 @@ describe('World Workspace runtime registry', () => {
     const secondRun = await second.simulationRuns.create({ scenarioId: 'test-response' })
 
     const [firstState, siblingState, secondState] = await Promise.all([
-      first.simulationRuns.setExecutionMode(firstRun.id, 'fast-forward'),
-      first.simulationRuns.setExecutionMode(siblingRun.id, 'fast-forward'),
-      second.simulationRuns.setExecutionMode(secondRun.id, 'fast-forward'),
+      first.simulationRuns.setExecution(firstRun.id, { pace: 'maximum' }),
+      first.simulationRuns.setExecution(siblingRun.id, { pace: 'maximum' }),
+      second.simulationRuns.setExecution(secondRun.id, { pace: 'maximum' }),
     ])
 
-    expect(firstState.mode).toBe('fast-forward')
-    expect(siblingState.mode).toBe('fast-forward')
-    expect(secondState.mode).toBe('fast-forward')
+    expect(firstState).toMatchObject({ playback: 'playing', pace: 'maximum' })
+    expect(siblingState).toMatchObject({ playback: 'playing', pace: 'maximum' })
+    expect(secondState).toMatchObject({ playback: 'playing', pace: 'maximum' })
     await Promise.all([
-      first.simulationRuns.setExecutionMode(firstRun.id, 'paused'),
-      first.simulationRuns.setExecutionMode(siblingRun.id, 'paused'),
-      second.simulationRuns.setExecutionMode(secondRun.id, 'paused'),
+      first.simulationRuns.setExecution(firstRun.id, { playback: 'paused' }),
+      first.simulationRuns.setExecution(siblingRun.id, { playback: 'paused' }),
+      second.simulationRuns.setExecution(secondRun.id, { playback: 'paused' }),
     ])
   })
 

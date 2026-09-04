@@ -208,7 +208,7 @@ Agent-in-the-loop experiments would need explicit decision points that wait for 
 
 Fast-forward is small server-owned state on an ordinary Run: start/target/completed simulation time, active compute wall duration, running/stopped/completed/failed status and an error if any. Reuse a Run background lease. Closing the browser need not stop the requested calculation; pause, completion, deletion or failure releases the lease. Restore interrupted work paused after a service restart.
 
-The stopwatch opens a modal with horizon minutes and the execution mode to enter at completion. Copying is a separate action; the copy becomes an ordinary paused member of the same Run Family. Any family member can independently use realtime or fast-forward execution.
+The stopwatch opens a modal with horizon minutes and the playback state to enter at completion. Copying is a separate action; the copy becomes an ordinary paused member of the same Run Family. Any family member independently selects playback (playing or paused) and pace (realtime or maximum).
 
 Keep an always-visible progress indicator with completed simulation time, horizon, compute wall duration, measured speed and Pause. At the horizon, pause exactly; offer normal-time continuation and another duration. Validate finite positive horizons and enforce existing resource/storage limits. Duplicate start commands must not spawn duplicate loops.
 
@@ -305,4 +305,4 @@ This is an operational demonstration, not calibrated clinical decision support. 
 
 Retargeted visits remain in the event history. The compact measures show pickup-to-final/current-site arrival and that site's queue/handover interval; an independent visit/episode ledger is intentionally not added yet. Fleet optimization, shifts, multi-modal vehicle requisition, clinical protocols and stochastic calibration await concrete research questions. Anchoring a care site to another Pack's building does not transfer ownership of that building.
 
-The engine's exact bounded advance/checkpoint now supports independent Run copying, continuous fast-forward, fixed-duration fast-forward and exact pause/realtime completion. Frozen Situation Monitor evidence remains follow-up work. Plant-only throughput measurements are not advertised as whole-Run fast-forward performance.
+The engine's exact bounded advance/checkpoint now supports independent Run copying, orthogonal playback and pace controls, continuous maximum pace, fixed-duration advance and exact pause/play-realtime completion. Frozen Situation Monitor evidence remains follow-up work. Plant-only throughput measurements are not advertised as whole-Run maximum-pace performance.

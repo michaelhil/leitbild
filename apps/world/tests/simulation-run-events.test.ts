@@ -235,7 +235,6 @@ describe('simulation run event helpers', () => {
       currentTime: '2026-01-01T10:00:00.000Z' as IsoTimestamp,
       updatedAt: '2026-01-01T10:00:00.000Z' as IsoTimestamp,
       paused: true,
-      speed: 1,
     }
 
     const applied = applySimulationRunEventBatchMessage(

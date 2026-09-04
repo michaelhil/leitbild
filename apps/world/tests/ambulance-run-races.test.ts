@@ -30,7 +30,7 @@ const setup = async (options: {
   const sourceScenario = testScenarioRuntimeConfig()
   const scenario = { ...sourceScenario, runtimeIds: ['ambulance.local'], initialObjects: sourceScenario.initialObjects.filter(object => object.packId === 'ambulance'), runtimeConfigByRuntimeId: { 'ambulance.local': {} } }
   const stateStore = createSimulationRunStateStore()
-  const runClock = createSimulationClock({ currentTime: scenario.world.startsAt, updatedAt: nowIso(), paused: true, speed: 1 })
+  const runClock = createSimulationClock({ currentTime: scenario.world.startsAt, updatedAt: nowIso(), paused: true })
   const restoredSnapshot: SimulationRunStateSnapshot = { objects: scenario.initialObjects, seq: 0, clock: runClock.read(), scenario: { scenarioId: scenario.scenarioId, highlightedObjectIds: [] } }
   stateStore.hydrate(restoredSnapshot)
   const actual = createLocalAmbulancePackRuntimeAdapter({ routing: options.routing ?? createDirectRoutingAdapter() })
