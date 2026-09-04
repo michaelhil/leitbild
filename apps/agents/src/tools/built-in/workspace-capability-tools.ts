@@ -136,10 +136,11 @@ const authorizationFailure = (
   return undefined
 }
 
-const textMatches = (capability: ModuleCapabilityDescriptor, query: string): boolean => {
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+const textMatchScore = (capability: ModuleCapabilityDescriptor, query: string): number => {
+  const terms = [...new Set(query.toLowerCase().split(/[^a-z0-9.-]+/).filter(term => term.length >= 2))]
   const haystack = `${capability.id} ${capability.title} ${capability.description} ${capability.moduleId} ${capability.kind} ${capability.risk}`.toLowerCase()
-  return terms.every(term => haystack.includes(term))
+  const haystackTerms = new Set(haystack.split(/[^a-z0-9]+/).filter(Boolean))
+  return terms.reduce((score, term) => score + (haystackTerms.has(term) ? 1 : 0), 0)
 }
 
 export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDeps): ReadonlyArray<Tool> => {
@@ -214,7 +215,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
   const capabilities: Tool = {
     name: 'workspace_capabilities',
     description: 'Search Capability descriptions or retrieve exact callable schemas for a selected Resource.',
-    usage: 'Supply queries for semantic search or capabilityIds for exact lookup. Output schemas are returned only when explicitly requested.',
+    usage: 'Supply natural-language queries for broad discovery or capabilityIds for exact lookup. If both are supplied, results matching either are returned. Output schemas are returned only for exact requested IDs and only when granted.',
     returns: 'Capability descriptors with grant state, matched queries, totals, and pagination metadata.',
     parameters: {
       type: 'object', properties: {
@@ -242,19 +243,25 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         if ('success' in catalogs) return catalogs
         const target = resource ? catalogs.resources.resources.find(item => referenceKey(item.ref) === referenceKey(resource)) : undefined
         const exact = new Set(ids)
+        const relevance = (capability: ModuleCapabilityDescriptor): number =>
+          queries.reduce((score, query) => Math.max(score, textMatchScore(capability, query)), 0)
+        const noSelector = ids.length === 0 && queries.length === 0
         const filtered = catalogs.capabilities.capabilities.filter(capability =>
           (moduleId === undefined || capability.moduleId === moduleId) &&
-          (ids.length === 0 || exact.has(capability.id)) &&
-          (queries.length === 0 || queries.some(query => textMatches(capability, query))) &&
+          (noSelector || exact.has(capability.id) || relevance(capability) > 0) &&
           (risk === undefined || capability.risk === risk) && (kind === undefined || capability.kind === kind) &&
           (resource === undefined || target?.capabilityIds.includes(capability.id) === true))
+          .sort((left, right) =>
+            Number(exact.has(right.id)) - Number(exact.has(left.id)) ||
+            relevance(right) - relevance(left) ||
+            left.id.localeCompare(right.id))
         const page = filtered.slice(offset, offset + limit).map(capability => {
           const { inputSchema, outputSchema, ...compact } = capability
           const granted = authorizationFailure(capability, target, resource, grants, context, deps) === undefined
           const exactMatch = exact.has(capability.id)
           return {
             ...compact, granted,
-            ...(queries.length > 0 ? { matchedQueries: queries.filter(query => textMatches(capability, query)) } : {}),
+            ...(queries.length > 0 ? { matchedQueries: queries.filter(query => textMatchScore(capability, query) > 0) } : {}),
             ...(granted && exactMatch ? { inputSchema } : {}),
             ...(granted && exactMatch && params.includeOutputSchema === true ? { outputSchema } : {}),
           }

@@ -72,10 +72,18 @@ describe('Workspace Capability tools', () => {
     const tools = create({ linked: true })
     const context = { callerId: 'agent', callerName: 'Analyst', roomId: 'room' }
     const broad = await tools[1]!.execute({ resource: target, queries: ['live state'] }, context)
-    expect(broad).toMatchObject({ success: true, data: { capabilities: [{ id: capabilityId, granted: true, matchedQueries: ['live state'] }] } })
-    expect((broad.data as { capabilities: Record<string, unknown>[] }).capabilities[0]!.inputSchema).toBeUndefined()
+    expect(broad.success).toBe(true)
+    const broadMatch = (broad.data as { capabilities: Array<Record<string, unknown> & { id: string }> }).capabilities.find(item => item.id === capabilityId)!
+    expect(broadMatch).toMatchObject({ id: capabilityId, granted: true, matchedQueries: ['live state'] })
+    expect(broadMatch.inputSchema).toBeUndefined()
     const exact = await tools[1]!.execute({ resource: target, capabilityIds: [capabilityId], includeOutputSchema: true }, context)
     expect(exact).toMatchObject({ success: true, data: { capabilities: [{ inputSchema: { type: 'object' }, outputSchema: { type: 'object' } }] } })
+
+    const natural = await tools[1]!.execute({ resource: target, queries: ['current simulation execution state and time'] }, context)
+    expect((natural.data as { capabilities: Array<{ id: string }> }).capabilities.map(item => item.id)).toContain(capabilityId)
+
+    const combined = await tools[1]!.execute({ resource: target, queries: ['unrelated phrase'], capabilityIds: [capabilityId] }, context)
+    expect(combined).toMatchObject({ success: true, data: { capabilities: [{ id: capabilityId, inputSchema: { type: 'object' } }] } })
   })
 
   test('semantic read grant rejects missing Room, wrong target, writes, and stale Capabilities with distinct reasons', async () => {
