@@ -48,6 +48,9 @@ const renderMarkdownContent = (el: HTMLElement, text: string): void => {
     for (const proc of getPostRenderProcessors()) void proc(el)
   } else {
     el.textContent = text
+    // Source inspection remains useful during the brief CDN-loading fallback;
+    // the decorator's bare-text path does not depend on the Markdown runtime.
+    decorateProductSourceReferences(el)
   }
 }
 

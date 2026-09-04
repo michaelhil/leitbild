@@ -193,6 +193,11 @@ describe('HTTP Routes', () => {
     expect(source.content).toContain('Leitbild')
     expect(source.totalLines).toBeGreaterThan(1)
 
+    const runtimePath = '/product-source?path=apps%2Fworld%2Fsrc%2Fpacks%2Fprocess-plant%2Fruntime%2Fphysics.ts'
+    const runtime = await call(system, req('GET', runtimePath), '/product-source')
+    expect(runtime?.status).toBe(200)
+    expect((await runtime!.json() as { authority: string }).authority).toBe('implementation')
+
     const deniedPath = '/product-source?path=..%2Fpackage.json'
     const denied = await call(system, req('GET', deniedPath), '/product-source')
     expect(denied?.status).toBe(404)

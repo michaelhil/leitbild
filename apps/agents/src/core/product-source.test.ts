@@ -8,10 +8,16 @@ describe('product source reader', () => {
     expect(source.kind).toBe('documentation')
     expect(source.totalLines).toBeGreaterThan(1)
     expect(source.content).toContain('Leitbild')
+
+    const runtimeSource = await readProductSource('apps/world/src/packs/process-plant/runtime/physics.ts')
+    expect(runtimeSource.kind).toBe('source')
+    expect(runtimeSource.authority).toBe('implementation')
+    expect(runtimeSource.content.length).toBeGreaterThan(0)
   })
 
   test('rejects traversal and operational files', async () => {
     await expect(readProductSource('../package.json')).rejects.toThrow('not in the Leitbild product source corpus')
     await expect(readProductSource('deploy/Caddyfile')).rejects.toThrow('not in the Leitbild product source corpus')
+    await expect(readProductSource('docs/not-present.md')).rejects.toThrow('unavailable in this deployed revision')
   })
 })

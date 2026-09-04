@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises'
+import { lstat, readFile } from 'node:fs/promises'
 import { extname, relative, resolve, sep } from 'node:path'
 import {
   PRODUCT_SOURCE_EXTENSIONS,
@@ -68,11 +68,15 @@ export const readProductSource = async (
   if (canonicalProductPath(root, absolutePath) !== path) {
     throw new Error('Path is not in the Leitbild product source corpus')
   }
-  const file = await stat(absolutePath)
+  const file = await lstat(absolutePath).catch(() => {
+    throw new Error('Product source is unavailable in this deployed revision')
+  })
   if (!file.isFile() || file.size > MAX_PRODUCT_SOURCE_BYTES) {
     throw new Error('Product source is unavailable for inline inspection')
   }
-  const content = await readFile(absolutePath, 'utf8')
+  const content = await readFile(absolutePath, 'utf8').catch(() => {
+    throw new Error('Product source is unavailable in this deployed revision')
+  })
   return {
     path,
     kind: productDocumentKind(path),
