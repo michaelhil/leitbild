@@ -61,7 +61,11 @@ const readHostError = async (response: Response): Promise<ToolResult> => {
 }
 
 const requestSignal = (signal?: AbortSignal): AbortSignal => AbortSignal.any([AbortSignal.timeout(HOST_REQUEST_TIMEOUT_MS), ...(signal ? [signal] : [])])
-const optionalFilter = (value: unknown): unknown => typeof value === 'string' && value.trim().length === 0 ? undefined : value
+// Models commonly express an unconstrained optional filter as either an
+// omitted field, an empty string, or "*". They all mean the same thing at a
+// discovery boundary; normalize them before strict domain-ID validation.
+const optionalFilter = (value: unknown): unknown =>
+  typeof value === 'string' && (value.trim().length === 0 || value.trim() === '*') ? undefined : value
 const referenceKey = (ref: { moduleId: string; type: string; id: string }): string => `${ref.moduleId}:${ref.type}:${ref.id}`
 
 const getJson = async (fetchImpl: typeof fetch, url: string, signal?: AbortSignal): Promise<Response> => {
@@ -150,7 +154,10 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
     parameters: {
       type: 'object', properties: {
         scope: { type: 'string', enum: ['current', 'workspace'], default: 'current' },
-        moduleId: { type: 'string' }, definitionType: { type: 'string' }, resourceType: { type: 'string' }, capabilityId: { type: 'string' },
+        moduleId: { type: 'string', description: 'Optional exact Module id filter. Omit or use "*" to match any Module.' },
+        definitionType: { type: 'string', description: 'Optional exact Definition type filter. Omit or use "*" to match any type.' },
+        resourceType: { type: 'string', description: 'Optional exact Resource type filter. Omit or use "*" to match any type.' },
+        capabilityId: { type: 'string', description: 'Optional exact advertised Capability id filter. Omit or use "*" to match any Capability.' },
         offset: { type: 'integer', minimum: 0, default: 0 }, limit: { type: 'integer', minimum: 1, maximum: MAX_DISCOVERY_PAGE_SIZE, default: DEFAULT_DISCOVERY_PAGE_SIZE },
       }, additionalProperties: false,
     },
@@ -212,7 +219,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
     parameters: {
       type: 'object', properties: {
         resource: { type: 'object', properties: { moduleId: { type: 'string' }, type: { type: 'string' }, id: { type: 'string' } }, required: ['moduleId', 'type', 'id'], additionalProperties: false },
-        moduleId: { type: 'string' }, queries: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 256 }, maxItems: 8 },
+        moduleId: { type: 'string', description: 'Optional exact Module id filter. Omit or use "*" to search all Modules.' }, queries: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 256 }, maxItems: 8 },
         capabilityIds: { type: 'array', items: { type: 'string' }, maxItems: 24 },
         risk: { type: 'string', enum: ['read', 'write', 'destructive'] }, kind: { type: 'string', enum: ['query', 'command'] },
         includeOutputSchema: { type: 'boolean', default: false }, offset: { type: 'integer', minimum: 0, default: 0 }, limit: { type: 'integer', minimum: 1, maximum: MAX_DISCOVERY_PAGE_SIZE, default: DEFAULT_DISCOVERY_PAGE_SIZE },

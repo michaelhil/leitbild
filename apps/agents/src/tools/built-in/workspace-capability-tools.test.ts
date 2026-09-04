@@ -60,6 +60,12 @@ describe('Workspace Capability tools', () => {
     })
     const result = await tools[0]!.execute({}, { callerId: 'agent', callerName: 'Analyst', roomId: 'room' })
     expect(result).toMatchObject({ success: true, data: { currentRoom: linkedRoom, total: 2, resources: [{ ref: resource }, { ref: { id: 'room' } }] } })
+
+    const wildcardResult = await tools[0]!.execute(
+      { scope: 'current', moduleId: '*', definitionType: '*', resourceType: '*', capabilityId: '*' },
+      { callerId: 'agent', callerName: 'Analyst', roomId: 'room' },
+    )
+    expect(wildcardResult).toMatchObject({ success: true, data: { total: 2 } })
   })
 
   test('searches descriptors and exposes schemas only for exact granted requests', async () => {
