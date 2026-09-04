@@ -98,6 +98,7 @@ export const CURATED_MODELS: Record<string, ReadonlyArray<CuratedModel>> = {
     { id: 'mistral-large-latest',  label: 'Large (premium)', supportsImages: false },
   ],
   openrouter: [
+    { id: DEFAULT_MODEL_ID,                       label: 'OpenAI 5.4 (default)', supportsTools: true, supportsImages: true },
     { id: 'deepseek/deepseek-chat',             label: 'DeepSeek V3 (cheap)', supportsImages: false },
     { id: 'meta-llama/llama-3.3-70b-instruct',  label: 'Llama 3.3 70B',       supportsImages: false },
   ],
@@ -109,13 +110,12 @@ export const CURATED_MODELS: Record<string, ReadonlyArray<CuratedModel>> = {
 // Preferred default picks for a fresh system, in order. Used by /api/models
 // when no last-used model is available, and by the seed flow.
 //
-// OpenAI first because gpt-5.4 is the curated showcase model — operators
-// who deploy Leitbild with an OpenAI key get the demos running
-// on gpt-5.4 out of the box. Gemini stays prioritized above Anthropic
-// because its free tier remains the most generous fallback for developers
-// without an OpenAI key.
+// OpenRouter first because it is the preferred gateway for the same curated
+// gpt-5.4 default; direct provider keys remain available as router fallbacks.
+// Gemini stays prioritized above Anthropic after OpenAI because its free tier
+// remains the most generous fallback for developers without an OpenAI key.
 export const DEFAULT_PREFERENCE_ORDER: ReadonlyArray<CloudProviderName | 'ollama'> = [
-  'openai', 'gemini', 'anthropic', 'groq', 'cerebras',
+  'openrouter', 'openai', 'gemini', 'anthropic', 'groq', 'cerebras',
 ]
 
 export const isCuratedModel = (provider: string, modelId: string): boolean => {

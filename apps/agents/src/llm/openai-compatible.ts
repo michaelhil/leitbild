@@ -19,7 +19,11 @@ import { createCloudProviderError } from './errors.ts'
 import { mapHttpError } from './openai-compatible-errors.ts'
 import { type OAIMessage, buildOAIBody } from './openai-compatible-wire.ts'
 import { fetchWithTimeout } from '../core/fetch-utils.ts'
-import { normalizeModelId, expandAnthropicAliases } from './models/normalize.ts'
+import {
+  normalizeModelId,
+  expandAnthropicAliases,
+  expandOpenRouterOpenAIAliases,
+} from './models/normalize.ts'
 
 const DEFAULT_CHAT_TIMEOUT_MS = 300_000
 const DEFAULT_MODELS_TIMEOUT_MS = 10_000
@@ -194,11 +198,11 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
   // the first models() resolves; chat()/stream() before that point fall
   // through identity (the request was always going to fail or hit a different
   // provider anyway).
-  let anthropicAliasMap: ReadonlyMap<string, string> = new Map()
+  let modelAliasMap: ReadonlyMap<string, string> = new Map()
 
   const resolveWireModel = (model: string): string => {
-    if (config.name !== 'anthropic') return model
-    return anthropicAliasMap.get(model) ?? model
+    if (config.name !== 'anthropic' && config.name !== 'openrouter') return model
+    return modelAliasMap.get(model) ?? model
   }
 
   const headers = (): Record<string, string> => {
@@ -567,7 +571,12 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
     const ids = (data.data ?? []).map(m => normalizeModelId(config.name, m.id))
     if (config.name === 'anthropic') {
       const { expanded, aliasMap } = expandAnthropicAliases(ids)
-      anthropicAliasMap = aliasMap
+      modelAliasMap = aliasMap
+      return [...expanded]
+    }
+    if (config.name === 'openrouter') {
+      const { expanded, aliasMap } = expandOpenRouterOpenAIAliases(ids)
+      modelAliasMap = aliasMap
       return [...expanded]
     }
     return ids

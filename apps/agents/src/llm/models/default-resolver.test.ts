@@ -8,7 +8,16 @@ const p = (
 ): ProviderSnapshot => ({ name, availability: { sub }, models: modelIds.map(id => ({ id })) })
 
 describe('resolveDefaultModel', () => {
-  test('all healthy → first preference (anthropic) wins', () => {
+  test('OpenRouter wins when it and direct providers are healthy', () => {
+    const out = resolveDefaultModel([
+      p('openai', 'ok', ['gpt-5.4']),
+      p('openrouter', 'ok', ['gpt-5.4', 'openai/gpt-5.4']),
+      p('anthropic', 'ok', ['claude-haiku-4-5']),
+    ])
+    expect(out).toBe('gpt-5.4')
+  })
+
+  test('first available preferred provider wins when OpenRouter is absent', () => {
     const out = resolveDefaultModel([
       p('anthropic', 'ok', ['claude-haiku-4-5']),
       p('groq', 'ok', ['llama-3.3-70b-versatile']),
@@ -60,7 +69,7 @@ describe('resolveDefaultModel', () => {
   })
 
   test('only non-curated provider configured → tail fallback picks it', () => {
-    // mistral / openrouter / sambanova / ollama aren't in DEFAULT_PREFERENCE_ORDER.
+    // mistral / sambanova / ollama aren't in DEFAULT_PREFERENCE_ORDER.
     // The second pass should still find them.
     const out = resolveDefaultModel([
       p('mistral', 'ok', ['mistral-small-latest']),

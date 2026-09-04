@@ -391,6 +391,40 @@ describe('createOpenAICompatibleProvider', () => {
     } finally { fx.stop() }
   })
 
+  test('OpenRouter exposes bare OpenAI aliases and restores the canonical slug on chat', async () => {
+    const fx = startFixture((req) => {
+      if (new URL(req.url).pathname.endsWith('/models')) {
+        return {
+          status: 200,
+          body: JSON.stringify({
+            data: [
+              { id: 'openai/gpt-5.4' },
+              { id: 'openai/gpt-5.4:online' },
+              { id: 'anthropic/claude-sonnet-4.5' },
+            ],
+          }),
+        }
+      }
+      return {
+        status: 200,
+        body: JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'ok' } }] }),
+      }
+    })
+    try {
+      const provider = createOpenAICompatibleProvider({ name: 'openrouter', getBaseUrl: () => fx.url, getApiKey: () => 'k' })
+      const list = await provider.models()
+      expect(list).toEqual([
+        'openai/gpt-5.4',
+        'openai/gpt-5.4:online',
+        'anthropic/claude-sonnet-4.5',
+        'gpt-5.4',
+      ])
+
+      await provider.chat({ model: 'gpt-5.4', messages: [{ role: 'user', content: 'x' }] })
+      expect(fx.last.body).toMatchObject({ model: 'openai/gpt-5.4' })
+    } finally { fx.stop() }
+  })
+
   test('non-streaming tool_calls: arguments string parsed to object', async () => {
     const fx = startFixture(() => ({
       status: 200,

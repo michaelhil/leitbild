@@ -68,3 +68,27 @@ export const expandAnthropicAliases = (
   }
   return { expanded: [...ids, ...extras], aliasMap }
 }
+
+// OpenRouter namespaces upstream models (`openai/gpt-5.4`) while existing
+// Leitbild agents intentionally store the provider-agnostic id (`gpt-5.4`).
+// Publish a bare alias for OpenAI models so the router can select OpenRouter
+// first, then restore the canonical OpenRouter slug on the wire.
+//
+// Variant slugs such as `openai/gpt-5.4:online` are excluded: the colon is
+// meaningful to Leitbild's explicit `provider:model` parser and those
+// variants should remain opt-in under their canonical OpenRouter ids.
+export const expandOpenRouterOpenAIAliases = (
+  ids: ReadonlyArray<string>,
+): { expanded: ReadonlyArray<string>; aliasMap: ReadonlyMap<string, string> } => {
+  const aliasMap = new Map<string, string>()
+  const idSet = new Set(ids)
+  const prefix = 'openai/'
+  for (const canonical of ids) {
+    if (!canonical.startsWith(prefix)) continue
+    const alias = canonical.slice(prefix.length)
+    if (!alias || alias.includes(':')) continue
+    aliasMap.set(alias, canonical)
+  }
+  const extras = [...aliasMap.keys()].filter(alias => !idSet.has(alias))
+  return { expanded: [...ids, ...extras], aliasMap }
+}

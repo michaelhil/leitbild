@@ -30,7 +30,7 @@ export { PROVIDER_PROFILES, isLocal, type CloudProviderName } from './provider-c
 // isLocal() below is the predicate to use at every site that asks
 // "does this provider need a key".
 export const DEFAULT_PROVIDER_ORDER: ReadonlyArray<string> =
-  ['anthropic', 'openai', 'kimi', 'gemini', 'cerebras', 'groq', 'openrouter', 'mistral', 'sambanova', 'llamacpp', 'ollama']
+  ['openrouter', 'anthropic', 'openai', 'kimi', 'gemini', 'cerebras', 'groq', 'mistral', 'sambanova', 'llamacpp', 'ollama']
 
 export interface CloudProviderConfig {
   readonly apiKey: string

@@ -37,8 +37,10 @@ const isLikelyThinking = (id: string): boolean =>
 describe('CURATED_MODELS thinking-tag invariant', () => {
   test('the requested GPT-5.4 policy is the single catalog default', () => {
     expect(CURATED_MODELS.openai?.[0]?.id).toBe(DEFAULT_MODEL_ID)
+    expect(CURATED_MODELS.openrouter?.[0]?.id).toBe(DEFAULT_MODEL_ID)
     expect(DEFAULT_MODEL_ID).toBe('gpt-5.4')
     expect(CURATED_MODELS.openai?.[0]?.supportsTools).toBe(true)
+    expect(CURATED_MODELS.openrouter?.[0]?.supportsTools).toBe(true)
     expect(DEFAULT_MODEL_FALLBACK).toEqual([
       'openai:gpt-5.4-mini',
       'kimi:moonshot-v1-8k',
