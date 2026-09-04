@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { moduleRegistrationSchema, workspaceIdSchema, workspaceDefinitionCatalogSchema, workspaceResourceCatalogSchema } from '@leitbild/contracts'
+import { isExactToolGrant, moduleRegistrationSchema, workspaceIdSchema, workspaceDefinitionCatalogSchema, workspaceResourceCatalogSchema } from '@leitbild/contracts'
 import { openCompanion } from '../../../apps/leitbild/src/ui/companion.ts'
 import { request as hostRequest } from '../../../apps/leitbild/src/ui/api.ts'
 import { createServer as createWorldServer } from '../../../apps/world/src/core/api/server.ts'
@@ -116,6 +116,10 @@ describe('Workspace Host with real Modules', () => {
       name: 'leitbild-assistance', description: 'Test Assistant Skill', body: 'Use Workspace discovery.',
       tools: [], allowedToolNames: [], dirPath: leitbildHome,
     })
+    deployment.sharedSkillStore.register({
+      name: 'workspace-discovery', description: 'Test Workspace Discovery Skill', body: 'Discover live Workspace evidence.',
+      tools: [], allowedToolNames: [], dirPath: leitbildHome,
+    })
     deployment.sharedToolRegistry.registerAll(createProductKnowledgeTools())
     deployment.sharedToolRegistry.register(createPlaceResolveTool())
     deployment.sharedToolRegistry.register(createGetTimeTool())
@@ -150,13 +154,14 @@ describe('Workspace Host with real Modules', () => {
     if (!integratedRoom) throw new Error('Missing integrated Room Definition')
     const worldGrants = integratedRoom.room.agents
       .flatMap(agent => agent.toolGrants ?? [])
+      .filter(isExactToolGrant)
       .map(grant => String(grant.capabilityId))
       .filter(capabilityId => capabilityId.startsWith('world.'))
     expect(worldGrants.length).toBeGreaterThan(0)
     expect(worldGrants.filter(capabilityId => !capabilityIds.has(capabilityId))).toEqual([])
     const dispatchDefinition = BUNDLED_ROOM_DEFINITIONS.find(definition => definition.id === 'ambulance-dispatcher')!
     expect(dispatchDefinition).toBeDefined()
-    const dispatchGrants = dispatchDefinition.room.agents.flatMap(agent => agent.toolGrants ?? [])
+    const dispatchGrants = dispatchDefinition.room.agents.flatMap(agent => agent.toolGrants ?? []).filter(isExactToolGrant)
     expect(dispatchGrants.filter(grant => !capabilityIds.has(String(grant.capabilityId)))).toEqual([])
 
     const definitionCatalog = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/definitions`)
@@ -194,10 +199,18 @@ describe('Workspace Host with real Modules', () => {
     const companionContext = { callerId: assistant.id, callerName: assistant.name, roomId: companionRef.id }
     const companionDiscovery = await companionRuntime.toolRegistry.get('workspace_catalog')!.execute({ moduleId: 'world' }, companionContext)
     expect(companionDiscovery).toMatchObject({ success: true, data: { currentRoom: { links: expect.arrayContaining([{ rel: 'companion-of', ref: worldRun.ref }]) } } })
-    expect(await companionRuntime.toolRegistry.get('workspace_invoke')!.execute({ capabilityId: 'world.simulation-run.context', resource: worldRun.ref, input: {} }, companionContext)).toMatchObject({ success: true })
-    expect(await companionRuntime.toolRegistry.get('workspace_invoke')!.execute({ capabilityId: 'world.ambulance.dispatch-state', resource: worldRun.ref, input: {} }, companionContext)).toMatchObject({ success: true })
-    expect(await companionRuntime.toolRegistry.get('workspace_invoke')!.execute({ capabilityId: 'world.ambulance.cancel', resource: worldRun.ref, input: { unitId: 'amb:weather-response' } }, companionContext)).toMatchObject({ success: false, error: expect.stringContaining('capability_not_granted') })
-    expect(await companionRuntime.toolRegistry.get('workspace_invoke')!.execute({ capabilityId: 'world.simulation-run.delete', resource: worldRun.ref, input: {} }, companionContext)).toMatchObject({ success: false, error: expect.stringContaining('capability_not_granted') })
+    expect(await companionRuntime.toolRegistry.get('workspace_invoke')!.execute({
+      calls: [{ key: 'context', capabilityId: 'world.simulation-run.context', resource: worldRun.ref, input: {} }],
+    }, companionContext)).toMatchObject({ success: true, data: { results: [{ key: 'context', success: true }] } })
+    expect(await companionRuntime.toolRegistry.get('workspace_invoke')!.execute({
+      calls: [{ key: 'dispatch', capabilityId: 'world.ambulance.dispatch-state', resource: worldRun.ref, input: {} }],
+    }, companionContext)).toMatchObject({ success: true, data: { results: [{ key: 'dispatch', success: true }] } })
+    expect(await companionRuntime.toolRegistry.get('workspace_invoke')!.execute({
+      calls: [{ key: 'cancel', capabilityId: 'world.ambulance.cancel', resource: worldRun.ref, input: { unitId: 'amb:weather-response' } }],
+    }, companionContext)).toMatchObject({ success: true, data: { results: [{ key: 'cancel', success: false, error: expect.stringContaining('risk_not_allowed') }] } })
+    expect(await companionRuntime.toolRegistry.get('workspace_invoke')!.execute({
+      calls: [{ key: 'delete', capabilityId: 'world.simulation-run.delete', resource: worldRun.ref, input: {} }],
+    }, companionContext)).toMatchObject({ success: true, data: { results: [{ key: 'delete', success: false, error: expect.stringContaining('risk_not_allowed') }] } })
 
     // The Host launcher is only a generic Capability call. Agents owns the
     // reusable Room lifecycle and carries the current World Resource as
@@ -285,10 +298,7 @@ describe('Workspace Host with real Modules', () => {
     const invoke = runtime.toolRegistry.get('workspace_invoke')
     expect(discover).toBeDefined()
     expect(invoke).toBeDefined()
-    const discovered = await discover!.execute(
-      {},
-      context,
-    )
+    const discovered = await discover!.execute({ scope: 'workspace' }, context)
     expect(discovered.success).toBe(true)
     const currentRun = (discovered.data as {
       resources: Array<{
@@ -299,43 +309,51 @@ describe('Workspace Host with real Modules', () => {
     expect(currentRun.ref.id).toBe(runId)
     expect(currentRun.summary.find(item => item.key === 'viewer-count')).toMatchObject({ kind: 'count', value: 0 })
 
-    const read = await invoke!.execute({
+    const invokeOne = async (call: Record<string, unknown>) => {
+      const response = await invoke!.execute({ calls: [{ key: 'result', ...call }] }, context)
+      if (!response.success) return response
+      const result = (response.data as { results: Array<{ success: boolean; data?: unknown; error?: string; details?: unknown }> }).results[0]!
+      return result.success
+        ? { success: true as const, data: result.data }
+        : { success: false as const, error: result.error, data: result.details }
+    }
+
+    const read = await invokeOne({
       capabilityId: 'world.simulation-run.read',
       resource: currentRun.ref,
       input: {},
-    }, context)
+    })
     expect(read.success).toBe(true)
     expect((read.data as { id: string }).id).toBe(runId)
 
     // Real Agent tool → Host broker → World command, without any model call or
     // stored Run ID in the profile. Discover IDs, check eligibility, act, verify.
-    const initialDispatch = await invoke!.execute({ capabilityId: 'world.ambulance.dispatch-state', resource: currentRun.ref, input: {} }, context)
+    const initialDispatch = await invokeOne({ capabilityId: 'world.ambulance.dispatch-state', resource: currentRun.ref, input: {} })
     expect(initialDispatch.success).toBe(true)
     const dispatchState = initialDispatch.data as { units: Array<{ id: string }>; incidents: Array<{ id: string }>; patients: Array<{ id: string; incidentId: string }>; careSites: Array<{ id: string }> }
     const unitId = dispatchState.units[0]!.id
     const incidentId = dispatchState.incidents[0]!.id
     const patientIds = dispatchState.patients.filter(patient => patient.incidentId === incidentId).map(patient => patient.id)
-    const cancel = await invoke!.execute({ capabilityId: 'world.ambulance.cancel', resource: currentRun.ref, input: { unitId } }, context)
+    const cancel = await invokeOne({ capabilityId: 'world.ambulance.cancel', resource: currentRun.ref, input: { unitId } })
     expect(cancel).toMatchObject({ success: true, data: { ok: true } })
-    const options = await invoke!.execute({ capabilityId: 'world.ambulance.dispatch-options', resource: currentRun.ref, input: { action: 'assign', incidentId, patientIds } }, context)
+    const options = await invokeOne({ capabilityId: 'world.ambulance.dispatch-options', resource: currentRun.ref, input: { action: 'assign', incidentId, patientIds } })
     expect(options).toMatchObject({ success: true, data: { candidates: expect.arrayContaining([expect.objectContaining({ id: unitId, eligible: true })]) } })
-    const dispatched = await invoke!.execute({ capabilityId: 'world.ambulance.assign', resource: currentRun.ref, input: { unitId, incidentId, patientIds } }, context)
+    const dispatched = await invokeOne({ capabilityId: 'world.ambulance.assign', resource: currentRun.ref, input: { unitId, incidentId, patientIds } })
     expect(dispatched).toMatchObject({ success: true, data: { ok: true } })
-    const planned = await invoke!.execute({ capabilityId: 'world.ambulance.append-stop', resource: currentRun.ref, input: { kind: 'handover', unitId, careSiteId: dispatchState.careSites[0]!.id, patientIds } }, context)
+    const planned = await invokeOne({ capabilityId: 'world.ambulance.append-stop', resource: currentRun.ref, input: { kind: 'handover', unitId, careSiteId: dispatchState.careSites[0]!.id, patientIds } })
     expect(planned).toMatchObject({ success: true, data: { ok: true } })
-    const afterDispatch = await invoke!.execute({ capabilityId: 'world.ambulance.dispatch-state', resource: currentRun.ref, input: {} }, context)
+    const afterDispatch = await invokeOne({ capabilityId: 'world.ambulance.dispatch-state', resource: currentRun.ref, input: {} })
     expect(afterDispatch).toMatchObject({ success: true, data: { units: expect.arrayContaining([expect.objectContaining({ id: unitId, patientIds, phase: 'mobilizing', stops: expect.arrayContaining([expect.objectContaining({ kind: 'pickup', targetId: incidentId })]) })]) } })
 
     const weatherPoint = { type: 'Point', coordinates: [11.41, 59.13] }
-    const weatherRead = await invoke!.execute(
+    const weatherRead = await invokeOne(
       { capabilityId: 'world.weather.sample-at-point', resource: currentRun.ref, input: { point: weatherPoint } },
-      context,
     )
     expect(weatherRead.success).toBe(true)
     expect((weatherRead.data as { quality: { model: string } }).quality.model).toBe(
       'prescribed-atmosphere/heuristic-ground',
     )
-    const intervention = await invoke!.execute(
+    const intervention = await invokeOne(
       {
         capabilityId: 'world.weather.intervene-ground',
         resource: currentRun.ref,
@@ -355,12 +373,10 @@ describe('Workspace Host with real Modules', () => {
           surface: { ice: 0.8 },
         },
       },
-      context,
     )
     expect(intervention).toMatchObject({ success: true })
-    const afterWeather = await invoke!.execute(
+    const afterWeather = await invokeOne(
       { capabilityId: 'world.weather.sample-at-point', resource: currentRun.ref, input: { point: weatherPoint } },
-      context,
     )
     expect(afterWeather.success).toBe(true)
     expect((afterWeather.data as { state: { surface: { ice: number } } }).state.surface.ice).toBeCloseTo(0.8, 1)
