@@ -304,19 +304,12 @@ export const loadSkills = async (
     loaded.push(skill.name)
   }
 
-  // Anthropic-Skills `allowed-tools` diagnostic pass: warn once per skill
-  // listing every unresolved name. One line per skill, not per missing tool,
-  // so a skill referencing five unknown tools does not produce five lines.
-  // Resolution is against the global registry in this pass; pack-namespaced
-  // resolution is a future concern (see README).
-  for (const skillName of loaded) {
-    const skill = store.get(skillName)
-    if (!skill || skill.allowedToolNames.length === 0) continue
-    const missing = skill.allowedToolNames.filter(n => !toolRegistry.has(n))
-    if (missing.length > 0) {
-      console.warn(`[skills] ${skillName}: allowed-tools references unknown tools: ${missing.join(', ')}`)
-    }
-  }
+  // Do not validate `allowed-tools` against this registry during file loading.
+  // The effective tool surface is assembled later and can include Workspace-
+  // bound tools, Pack-gated tools, and built-ins registered after the scan.
+  // A load-time comparison therefore reports valid tools as missing. AIAgent
+  // performs the authoritative coherence check against the actual per-Room
+  // LLM surface immediately before each model call.
 
   if (loaded.length > 0 || skipped.length > 0 || errors.length > 0) {
     const parts = [

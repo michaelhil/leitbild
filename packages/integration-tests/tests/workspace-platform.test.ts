@@ -11,6 +11,7 @@ import { createWorldWorkspaceRuntimeRegistry } from '../../../apps/world/src/cor
 import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testScenarioAuthoring } from '../../../apps/world/tests/helpers.ts'
 import { handleAgentsModuleApi } from '../../../apps/agents/src/api/workspace-module-api.ts'
 import { asAIAgent } from '../../../apps/agents/src/agents/shared.ts'
+import { effectiveAgentToolSelection } from '../../../apps/agents/src/agents/spawn.ts'
 import { BUNDLED_ROOM_DEFINITIONS } from '../../../apps/agents/src/core/definitions/room-definition-catalog.ts'
 import { createDeploymentRuntime } from '../../../apps/agents/src/core/deployment-runtime.ts'
 import { messageFocus } from '../../../apps/agents/src/core/message-focus.ts'
@@ -216,7 +217,17 @@ describe('Workspace Host with real Modules', () => {
     const generalAssistant = assistantRoom.getParticipantIds()
       .map(id => companionRuntime.team.getAgent(id))
       .find(agent => agent?.kind === 'ai')!
-    expect(asAIAgent(generalAssistant)!.getMaxToolIterations()).toBe(10)
+    const generalAssistantAI = asAIAgent(generalAssistant)!
+    expect(generalAssistantAI.getMaxToolIterations()).toBe(10)
+    expect(effectiveAgentToolSelection(generalAssistantAI.getConfig())).toEqual(expect.arrayContaining([
+      'product_search',
+      'product_read',
+      'geo_lookup',
+      'get_time',
+      'workspace_catalog',
+      'workspace_capabilities',
+      'workspace_invoke',
+    ]))
     const reusedAssistantResponse = await openAssistant('What Packs are active?')
     expect(reusedAssistantResponse.status).toBe(200)
     expect((await reusedAssistantResponse.json() as { result: { resource: { workspaceId: string; moduleId: string; type: string; id: string }; uiPath: string; reused: boolean } }).result).toEqual({

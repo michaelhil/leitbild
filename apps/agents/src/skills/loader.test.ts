@@ -1,5 +1,5 @@
 // ============================================================================
-// Skill loader — frontmatter parsing + `allowed-tools` dedup-warn tests.
+// Skill loader — frontmatter parsing and metadata preservation tests.
 //
 // The parser tests are pure string-in/string-out. The warn test uses a temp
 // directory with a real SKILL.md to exercise loadSkills end-to-end.
@@ -136,7 +136,7 @@ body`)
   })
 })
 
-describe('loadSkills — allowed-tools dedup-warn', () => {
+describe('loadSkills — allowed-tools metadata', () => {
   const makeSkillDir = async (dirRoot: string, name: string, frontmatter: string) => {
     const skillDir = join(dirRoot, name)
     await mkdir(skillDir, { recursive: true })
@@ -166,7 +166,7 @@ body`)
     }
   })
 
-  test('unknown allowed-tools emit exactly one warn line per skill', async () => {
+  test('defers tool-surface validation until the Room runtime is assembled', async () => {
     const base = await mkdtemp(join(tmpdir(), 'leitbild-skills-test-'))
     const warnings: string[] = []
     const originalWarn = console.warn
@@ -176,10 +176,7 @@ body`)
       await makeSkillDir(base, 'bravo', `---
 name: bravo
 description: test
-allowed-tools:
-  - missing_one
-  - missing_two
-  - missing_three
+allowed-tools: [workspace_bound_tool]
 ---
 body`)
 
@@ -187,43 +184,8 @@ body`)
       const store = createSkillStore()
       await loadSkills(base, store, registry)
 
+      expect(store.get('bravo')?.allowedToolNames).toEqual(['workspace_bound_tool'])
       const warnLines = warnings.filter(w => w.includes('bravo') && w.includes('allowed-tools'))
-      expect(warnLines).toHaveLength(1)
-      // Single line must list all three missing names
-      expect(warnLines[0]).toContain('missing_one')
-      expect(warnLines[0]).toContain('missing_two')
-      expect(warnLines[0]).toContain('missing_three')
-    } finally {
-      console.warn = originalWarn
-      await rm(base, { recursive: true })
-    }
-  })
-
-  test('all-known allowed-tools emit no warning', async () => {
-    const base = await mkdtemp(join(tmpdir(), 'leitbild-skills-test-'))
-    const warnings: string[] = []
-    const originalWarn = console.warn
-    console.warn = (msg: unknown) => { warnings.push(String(msg)) }
-
-    try {
-      await makeSkillDir(base, 'charlie', `---
-name: charlie
-description: test
-allowed-tools: [known_tool]
----
-body`)
-
-      const registry = createToolRegistry()
-      registry.register({
-        name: 'known_tool',
-        description: 'stub',
-        parameters: {},
-        execute: async () => ({ success: true }),
-      })
-      const store = createSkillStore()
-      await loadSkills(base, store, registry)
-
-      const warnLines = warnings.filter(w => w.includes('charlie') && w.includes('allowed-tools'))
       expect(warnLines).toHaveLength(0)
     } finally {
       console.warn = originalWarn
@@ -231,11 +193,8 @@ body`)
     }
   })
 
-  test('skill without allowed-tools gets empty array, no warning', async () => {
+  test('skill without allowed-tools gets empty array', async () => {
     const base = await mkdtemp(join(tmpdir(), 'leitbild-skills-test-'))
-    const warnings: string[] = []
-    const originalWarn = console.warn
-    console.warn = (msg: unknown) => { warnings.push(String(msg)) }
 
     try {
       await makeSkillDir(base, 'delta', `---
@@ -250,10 +209,7 @@ body`)
 
       const skill = store.get('delta')
       expect(skill?.allowedToolNames).toEqual([])
-      const warnLines = warnings.filter(w => w.includes('delta') && w.includes('allowed-tools'))
-      expect(warnLines).toHaveLength(0)
     } finally {
-      console.warn = originalWarn
       await rm(base, { recursive: true })
     }
   })
