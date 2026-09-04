@@ -11,9 +11,6 @@ export const dronePack: WorldPack = {
   authoring: {
     configFields: [
       { path: ['maxDrones'], label: 'Maximum drones', control: { kind: 'number', step: 1 } },
-      { path: ['stepIntervalMs'], label: 'Physics step (ms)', control: { kind: 'number', step: 1 } },
-      { path: ['projectionIntervalMs'], label: 'Projection interval (ms)', control: { kind: 'number', step: 1 } },
-      { path: ['motionFrameIntervalMs'], label: 'Motion frame interval (ms)', control: { kind: 'number', step: 1 } },
     ],
     itemTypes: [{
       id: 'drone',

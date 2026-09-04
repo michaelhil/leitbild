@@ -638,7 +638,11 @@ export const createSimulationRunRegistry = (config: {
   }
 
   const executionStatus = async (id: SimulationRunId): Promise<RunExecutionState> => {
-    const clock = (await summaryFor(id)).clock
+    // Execution is a live operation. Reading a persisted summary first leaves
+    // newly-created or idly-unloaded Runs without a clock until some unrelated
+    // route happens to load them.
+    const runtime = await load(id)
+    const clock = runtime.snapshot().clock
     if (!clock) throw new Error('Simulation Run clock is not initialized')
     const cached = executionStates.get(id) ?? await executionStoreFor(id).load()
     const mode: ExecutionMode = fastForwardJobs.has(id) ? 'fast-forward' : clock.paused ? 'paused' : 'realtime'

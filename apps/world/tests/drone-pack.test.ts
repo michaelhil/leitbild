@@ -213,6 +213,11 @@ describe('drone pack native runtime', () => {
   })
 
   test('native runtime parser merges model catalog overrides', () => {
+    const defaults = parseDroneNativeRuntimeConfig({})
+    expect(defaults.stepIntervalMs).toBe(20)
+    expect(defaults.projectionIntervalMs).toBe(1_000)
+    expect(defaults.motionFrameIntervalMs).toBe(100)
+
     const model = effectModel()
     const parsed = parseDroneNativeRuntimeConfig({
       maxDrones: 4,

@@ -4,8 +4,8 @@ import { defaultDroneVehicleModels, droneVehicleModelCatalogSchema, droneVehicle
 export const dronePackConfigSchema = z.object({
   maxDrones: z.number().int().positive().max(500).default(10),
   stepIntervalMs: z.number().int().min(5).max(100).default(20),
-  projectionIntervalMs: z.number().int().min(10).max(250).default(33),
-  motionFrameIntervalMs: z.number().int().min(10).max(250).default(20),
+  projectionIntervalMs: z.number().int().min(10).max(5_000).default(1_000),
+  motionFrameIntervalMs: z.number().int().min(10).max(1_000).default(100),
   models: z.array(droneVehicleModelSchema).default([]),
 }).strict()
 

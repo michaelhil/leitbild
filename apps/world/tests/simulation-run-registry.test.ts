@@ -51,6 +51,22 @@ const issueDispatchCommand = async (runtime: SimulationRunRuntime): Promise<void
 }
 
 describe('Simulation Run registry', () => {
+  test('execution status reopens an unloaded Run before reading its clock', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-execution-reopen-'))
+    const registry = createRegistry(dataDir)
+    try {
+      const source = await registry.create({ scenarioId: 'test-response' })
+      await source.setClock({ paused: false })
+      await registry.close(source.id)
+      expect(registry.get(source.id)).toBeUndefined()
+
+      const execution = await registry.executionStatus(source.id)
+
+      expect(execution.mode).toBe('realtime')
+      expect(registry.get(source.id)?.snapshot().clock).toMatchObject({ paused: false })
+    } finally { await registry.shutdown() }
+  })
+
   test('copies a coherent independent Run and fast-forwards it to an exact paused horizon', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-run-copy-'))
     const workspaceId = newWorkspaceId()

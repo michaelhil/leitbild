@@ -36,7 +36,7 @@
     },
     {
       "id": "drone",
-      "config": { "maxDrones": 8, "stepIntervalMs": 20, "projectionIntervalMs": 40, "motionFrameIntervalMs": 40, "models": [] },
+      "config": { "maxDrones": 8, "models": [] },
       "items": [
         { "type": "drone", "id": "drone:halden-search", "label": "Halden fixed-wing search", "position": [11.34, 59.20], "modelId": "incident-response-fixed-wing", "altitudeM": 180, "headingDeg": 210 },
         { "type": "drone", "id": "drone:halden-inspection", "label": "Halden incident quadcopter", "position": [11.445, 59.13], "modelId": "incident-response-quadcopter", "altitudeM": 80, "headingDeg": 150 }

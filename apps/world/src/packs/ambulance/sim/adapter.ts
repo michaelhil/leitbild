@@ -49,6 +49,10 @@ const sameRoadWeatherTarget = (object: OperationalObject, current: OperationalOb
   current !== undefined && object.spatial.route?.planned === current.spatial.route?.planned &&
   object.spatial.position?.point.coordinates[0] === current.spatial.position?.point.coordinates[0] &&
   object.spatial.position?.point.coordinates[1] === current.spatial.position?.point.coordinates[1]
+// Canonical objects carry complete response plans and road geometry. Publishing
+// them faster than this adds browser and network work without a material visual
+// benefit at the map scale used for response coordination.
+export const ambulanceProjectionIntervalMs = 1_000
 
 export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: { readonly routing: RoutingAdapter }): PackRuntimeAdapter => ({
   id: ambulanceSimRuntimeId, version: '1.0.0', packId: ambulancePackId, clock: 'simulation',
@@ -164,7 +168,7 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: { readonly
       if (closed || tickPending || health.state === 'failed') return
       tickPending = true
       void serialize(advance).catch(error => { fail('advance', error) }).finally(() => { tickPending = false })
-    }, 250)
+    }, ambulanceProjectionIntervalMs)
     const sendCommand = async (command: CommandEnvelope): Promise<CommandResult> => {
       const rejected = (error: unknown): CommandResult => ({ ok: false, commandId: command.id, rejectedAt: nowIso(), reason: error instanceof Error ? error.message : String(error) })
       if (unavailable()) return rejected('Ambulance runtime is unavailable; inspect runtime health')
