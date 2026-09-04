@@ -20,6 +20,11 @@ const extensionOf = (path: string): string => {
   return dot < 0 ? '' : path.slice(dot)
 }
 
+export const isProductSourceBasename = (path: string): boolean =>
+  !path.includes('/')
+  && /^[A-Za-z0-9_@.-]+$/.test(path)
+  && PRODUCT_SOURCE_EXTENSIONS.has(extensionOf(path))
+
 export interface ProductSourceLineRange {
   readonly startLine: number
   readonly endLine: number
@@ -73,9 +78,11 @@ export const parseProductSourceReference = (
   const match = value.trim().match(/^(.+?)(?::(\d+(?:[-–—]\d+)?(?:\s*,\s*\d+(?:[-–—]\d+)?)*))?$/)
   if (!match) return null
   const path = match[1]!.replaceAll('\\', '/')
-  if (!isAllowedProductPath(path) || !PRODUCT_SOURCE_EXTENSIONS.has(extensionOf(path))) return null
   const lineRanges = parseLineRanges(match[2])
-  return lineRanges === null ? null : { path, lineRanges }
+  if (lineRanges === null) return null
+  const qualified = isAllowedProductPath(path) && PRODUCT_SOURCE_EXTENSIONS.has(extensionOf(path))
+  const uniquelyResolvableCandidate = lineRanges.length > 0 && isProductSourceBasename(path)
+  return qualified || uniquelyResolvableCandidate ? { path, lineRanges } : null
 }
 
 const extensionPattern = [...PRODUCT_SOURCE_EXTENSIONS]

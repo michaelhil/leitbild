@@ -30,6 +30,10 @@ describe('product source references', () => {
       path: 'docs/architecture.md',
       lineRanges: [{ startLine: 4, endLine: 8 }, { startLine: 12, endLine: 13 }],
     })
+    expect(parseProductSourceReference('halden-dispatch.scenario.json:20-25')).toEqual({
+      path: 'halden-dispatch.scenario.json',
+      lineRanges: [{ startLine: 20, endLine: 25 }],
+    })
   })
 
   test('finds safe source references in prose without matching URL substrings', () => {
@@ -50,5 +54,9 @@ describe('product source references', () => {
     expect(parseProductSourceReference('docs/../../README.md')).toBeNull()
     expect(parseProductSourceReference('docs//example.md')).toBeNull()
     expect(parseProductSourceReference('apps/world/src/model.ts:18-5')).toBeNull()
+    expect(parseProductSourceReference('package.json')).toBeNull()
+    expect(parseProductSourceReference('package.json:10')).toEqual({
+      path: 'package.json', lineRanges: [{ startLine: 10, endLine: 10 }],
+    })
   })
 })

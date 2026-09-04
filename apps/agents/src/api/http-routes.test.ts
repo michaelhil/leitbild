@@ -198,6 +198,11 @@ describe('HTTP Routes', () => {
     expect(runtime?.status).toBe(200)
     expect((await runtime!.json() as { authority: string }).authority).toBe('implementation')
 
+    const basenamePath = '/product-source?path=halden-dispatch.scenario.json'
+    const basename = await call(system, req('GET', basenamePath), '/product-source')
+    expect(basename?.status).toBe(200)
+    expect((await basename!.json() as { path: string }).path).toBe('apps/world/src/scenarios/halden-dispatch.scenario.json')
+
     const deniedPath = '/product-source?path=..%2Fpackage.json'
     const denied = await call(system, req('GET', deniedPath), '/product-source')
     expect(denied?.status).toBe(404)

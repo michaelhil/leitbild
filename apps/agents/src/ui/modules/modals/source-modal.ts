@@ -73,7 +73,8 @@ export const openProductSourceModal = async (reference: ProductSourceReference):
     showToast(document.body, `Source unavailable: ${reference.path}`, { type: 'error', position: 'fixed' })
     return
   }
-  const modal = createModal({ title: sourceTitle(reference), width: 'max-w-5xl' })
+  const resolvedReference = { ...reference, path: source.path }
+  const modal = createModal({ title: sourceTitle(resolvedReference), width: 'max-w-5xl' })
   const meta = document.createElement('div')
   meta.className = 'text-xs text-text-subtle mb-3'
   meta.textContent = `${source.kind} · ${source.authority} · ${source.totalLines.toLocaleString()} lines · ${source.revision}`

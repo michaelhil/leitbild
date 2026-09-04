@@ -13,11 +13,15 @@ describe('product source reader', () => {
     expect(runtimeSource.kind).toBe('source')
     expect(runtimeSource.authority).toBe('implementation')
     expect(runtimeSource.content.length).toBeGreaterThan(0)
+
+    const uniqueBasename = await readProductSource('halden-dispatch.scenario.json')
+    expect(uniqueBasename.path).toBe('apps/world/src/scenarios/halden-dispatch.scenario.json')
   })
 
   test('rejects traversal and operational files', async () => {
     await expect(readProductSource('../package.json')).rejects.toThrow('not in the Leitbild product source corpus')
     await expect(readProductSource('deploy/Caddyfile')).rejects.toThrow('not in the Leitbild product source corpus')
     await expect(readProductSource('docs/not-present.md')).rejects.toThrow('unavailable in this deployed revision')
+    await expect(readProductSource('index.ts')).rejects.toThrow('filename is ambiguous')
   })
 })

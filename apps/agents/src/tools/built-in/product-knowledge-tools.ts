@@ -1,12 +1,10 @@
-import { readdir, readFile, stat } from 'node:fs/promises'
-import { extname, relative, resolve, sep } from 'node:path'
+import { readFile, stat } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { z } from 'zod'
 import type { Tool } from '../../core/types/tool.ts'
 import {
   MAX_PRODUCT_SOURCE_BYTES,
-  PRODUCT_SOURCE_EXTENSIONS,
-  isAllowedProductPath,
-  isExcludedProductSegment,
+  listProductSourcePaths,
   productDocumentAuthority,
   productDocumentKind,
   productSourceRoot,
@@ -43,27 +41,11 @@ const readInputSchema = z.object({
   lineCount: z.number().int().min(1).max(MAX_READ_LINES).default(80),
 }).strict()
 
-const toProductPath = (root: string, absolutePath: string): string =>
-  relative(root, absolutePath).split(sep).join('/')
-
-const walk = async (directory: string): Promise<ReadonlyArray<string>> => {
-  const entries = await readdir(directory, { withFileTypes: true })
-  const files: string[] = []
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
-    if (isExcludedProductSegment(entry.name)) continue
-    const path = resolve(directory, entry.name)
-    if (entry.isDirectory()) files.push(...await walk(path))
-    else if (entry.isFile()) files.push(path)
-  }
-  return files
-}
-
 const loadCorpus = async (root: string): Promise<ProductCorpus> => {
   const documents: ProductDocument[] = []
   let totalBytes = 0
-  for (const absolutePath of await walk(root)) {
-    const path = toProductPath(root, absolutePath)
-    if (!isAllowedProductPath(path) || !PRODUCT_SOURCE_EXTENSIONS.has(extname(path))) continue
+  for (const path of await listProductSourcePaths(root)) {
+    const absolutePath = resolve(root, path)
     const file = await stat(absolutePath)
     if (file.size > MAX_PRODUCT_SOURCE_BYTES) continue
     totalBytes += file.size
