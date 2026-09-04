@@ -66,7 +66,7 @@ const setup = async (options: {
   return { run, stateStore, persisted }
 }
 const dispatch = (run: Awaited<ReturnType<typeof setup>>['run']) => run.invokeCapability(actor, {
-  capabilityId: 'world.ambulance.assign', input: { ambulanceId: unitId, incidentId, patientIds: [patientId] },
+  capabilityId: 'world.ambulance.assign', input: { unitId, incidentId, patientIds: [patientId] },
 })
 
 test('free unit deletion becomes authoritative before journal completion; late route cannot resurrect it', async () => {

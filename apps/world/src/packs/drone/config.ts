@@ -6,7 +6,6 @@ export const dronePackConfigSchema = z.object({
   stepIntervalMs: z.number().int().min(5).max(100).default(20),
   projectionIntervalMs: z.number().int().min(10).max(250).default(33),
   motionFrameIntervalMs: z.number().int().min(10).max(250).default(20),
-  batteryDrainPercentPerHour: z.number().finite().nonnegative().max(100).default(8),
   models: z.array(droneVehicleModelSchema).default([]),
 }).strict()
 

@@ -12,7 +12,7 @@ import {
   type DroneSensorContact,
   type DroneVehicleModel,
 } from './model.ts'
-import { movePointByMeters } from './spatial.ts'
+import { bearingDeg, horizontalDistanceM, movePointByMeters } from './spatial.ts'
 
 export const droneSceneQueryKind = 'world.drone.scene'
 export const droneControllerBindingsQueryKind = 'world.drone.controller-bindings'
@@ -68,13 +68,14 @@ const sensorContactSchema = z.object({
   confidence: z.number().finite().min(0).max(1),
   source: z.enum(['runtime', 'payload']),
 }).strict()
+const sensorContactsInputSchema = z.object({ droneId: objectIdSchema.optional() }).strict()
 
 export const droneQueryCapabilities: ReadonlyArray<SimulationCapability> = [
   defineSimulationQueryCapability({ id: droneSceneQueryKind, title: 'Read drone scene', description: 'Returns bounded current render and status data for active drones.', input: z.object({}).strict(), output: z.object({ drones: z.array(droneSceneObjectSchema) }).strict() }),
   defineSimulationQueryCapability({ id: droneControllerBindingsQueryKind, title: 'Read drone controller bindings', description: 'Returns current operator and client input bindings for active drones.', input: z.object({}).strict(), output: z.object({ bindings: z.array(controllerBindingSchema) }).strict() }),
   defineSimulationQueryCapability({ id: droneVehicleModelsQueryKind, title: 'List drone vehicle models', description: 'Lists the validated vehicle models available to the Drone runtime.', input: z.object({}).strict(), output: z.object({ models: z.array(droneVehicleModelSchema) }).strict() }),
   defineSimulationQueryCapability({ id: droneMapFeaturesQueryKind, title: 'Read drone map features', description: 'Projects current sensor, effect, and swarm envelopes into map features.', input: mapFeaturesPayloadSchema, output: z.object({ features: z.array(packMapFeatureSchema) }).strict() }),
-  defineSimulationQueryCapability({ id: droneSensorContactsQueryKind, title: 'Read drone sensor contacts', description: 'Returns current contacts reported by Drone Pack sensors.', input: z.object({}).strict(), output: z.object({ contacts: z.array(sensorContactSchema) }).strict() }),
+  defineSimulationQueryCapability({ id: droneSensorContactsQueryKind, title: 'Read drone sensor contacts', description: 'Returns bounded, currently detectable positioned objects for all drones or one selected drone, based on each configured sensor range and target tags.', input: sensorContactsInputSchema, output: z.object({ contacts: z.array(sensorContactSchema) }).strict() }),
 ]
 
 const fail = (reason: string): never => { throw new Error(reason) }
@@ -118,7 +119,35 @@ export const droneControllerBindings = (objects: ReadonlyArray<OperationalObject
     }]
   })
 
-export const droneSensorContacts = (_objects: ReadonlyArray<OperationalObject>): ReadonlyArray<DroneSensorContact> => []
+export const droneSensorContacts = (objects: ReadonlyArray<OperationalObject>, droneId?: string): ReadonlyArray<DroneSensorContact> => {
+  const contacts: DroneSensorContact[] = []
+  for (const drone of objects) {
+    const data = droneDataFor(drone)
+    if (droneId !== undefined && drone.id !== droneId) continue
+    if (!data || data.health.state === 'destroyed' || data.link.state === 'lost') continue
+    for (const target of objects) {
+      if (target.id === drone.id || target.lifecycle !== 'active') continue
+      const point = target.spatial.position?.point ?? (target.spatial.geometry?.type === 'Point' ? target.spatial.geometry : undefined)
+      if (!point) continue
+      const eligibleSensors = data.vehicle.sensors.filter(sensor => !sensor.tags.includes('incident') || target.kind === 'incident')
+      const distanceM = horizontalDistanceM(data.pose.point, point)
+      const sensor = eligibleSensors.filter(candidate => distanceM <= candidate.rangeM).sort((left, right) => right.rangeM - left.rangeM)[0]
+      if (!sensor) continue
+      contacts.push({
+        droneId: drone.id,
+        sensorId: sensor.id,
+        targetId: target.id,
+        targetLabel: target.label,
+        distanceM,
+        bearingDeg: bearingDeg(data.pose.point, point),
+        confidence: Math.max(0.2, Math.min(1, 1 - distanceM / sensor.rangeM * 0.65)),
+        source: sensor.source === 'runtime' ? 'runtime' : 'payload',
+      })
+      if (contacts.length >= 500) return contacts
+    }
+  }
+  return contacts
+}
 
 const circlePolygon = (
   center: GeoJsonPoint,
@@ -222,7 +251,8 @@ export const answerDroneQuery = (config: {
       return { models: config.models ?? defaultDroneVehicleModels }
     }
     if (config.request.capabilityId === droneSensorContactsQueryKind) {
-      return { contacts: droneSensorContacts(config.objects) }
+      const payload = sensorContactsInputSchema.parse(config.request.input)
+      return { contacts: droneSensorContacts(config.objects, payload.droneId) }
     }
     if (config.request.capabilityId === droneMapFeaturesQueryKind) {
       const payload = mapFeaturesPayloadSchema.parse(config.request.input)

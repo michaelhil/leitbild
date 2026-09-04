@@ -25,8 +25,14 @@ export const createAmbulanceItem = (raw: AmbulanceItem, context: ItemConstructio
   const point = item.type === 'patient' ? undefined : capturePoint(item, context)
   const subject = item.type !== 'patient' && item.atObject ? { subjectObjectId: item.atObject } : {}
   let data: AmbulanceDomainData
-  if (item.type === 'ambulance') data = { type: item.type, patientCapacity: item.patientCapacity, capabilities: item.capabilities, crewReady: item.crewReady, basePoint: geoJsonPointSchema.parse(item.basePosition ? geoPointFromLonLat(...item.basePosition) : point!), mobilizationSeconds: item.mobilizationSeconds, sceneSeconds: item.sceneSeconds, busyTimeMs: 0 }
-  else if (item.type === 'incident') data = { type: item.type, summary: item.summary, dispatchUrgency: item.dispatchUrgency, receivedAtMs: context.simulationTimeMs, ...subject }
+  if (item.type === 'ambulance' || item.type === 'helicopter') data = {
+    type: 'response-unit', unitKind: item.type === 'ambulance' ? 'road-ambulance' : 'helicopter',
+    mobility: item.type === 'ambulance' ? { kind: 'road' } : { kind: 'rotary-wing', cruiseSpeedMps: item.cruiseSpeedMps },
+    patientCapacity: item.patientCapacity, capabilities: item.capabilities, crewReady: item.crewReady,
+    basePoint: geoJsonPointSchema.parse(item.basePosition ? geoPointFromLonLat(...item.basePosition) : point!),
+    mobilizationSeconds: item.mobilizationSeconds, sceneSeconds: item.sceneSeconds, busyTimeMs: 0,
+  }
+  else if (item.type === 'incident') data = { type: item.type, summary: item.summary, dispatchUrgency: item.dispatchUrgency, receivedAtMs: context.simulationTimeMs, observations: [], ...subject }
   else if (item.type === 'care-site') data = { type: item.type, capabilities: item.capabilities, acceptedUrgencies: item.acceptedUrgencies, handoverSlots: item.handoverSlots, handoverSeconds: item.handoverSeconds, accepting: item.accepting, ...subject }
   else {
     const incident = context.objectById(item.incidentId)
@@ -35,10 +41,10 @@ export const createAmbulanceItem = (raw: AmbulanceItem, context: ItemConstructio
   }
   const object: OperationalObject = {
     id: item.id,
-    kind: item.type === 'ambulance' ? 'mobile_entity' : item.type === 'care-site' ? 'facility' : item.type,
+    kind: item.type === 'ambulance' || item.type === 'helicopter' ? 'mobile_entity' : item.type === 'care-site' ? 'facility' : item.type,
     packId: ambulancePackId as OperationalObject['packId'], label: item.label, lifecycle: 'active', revision: 0,
-    spatial: { frame: { kind: 'wgs84' }, ...(point ? { position: { point, observedAt: context.at, ...(item.type === 'ambulance' ? { speedMps: 0 } : {}) } } : {}) },
-    operational: { status: item.type === 'ambulance' ? item.crewReady ? 'available' : 'out-of-service' : item.type === 'incident' ? 'open' : item.type === 'patient' ? 'awaiting-response' : item.accepting ? 'accepting' : 'not-accepting', mode: 'simulated' },
+    spatial: { frame: { kind: 'wgs84' }, ...(point ? { position: { point, observedAt: context.at, ...(item.type === 'ambulance' || item.type === 'helicopter' ? { speedMps: 0 } : {}) } } : {}) },
+    operational: { status: item.type === 'ambulance' || item.type === 'helicopter' ? item.crewReady ? 'available' : 'out-of-service' : item.type === 'incident' ? 'open' : item.type === 'patient' ? 'awaiting-response' : item.accepting ? 'accepting' : 'not-accepting', mode: 'simulated' },
     alerts: [], provenance: { source: 'simulator', adapterId: ambulanceSimAdapterId, externalId: item.id },
     timestamps: { createdAt: context.at, updatedAt: context.at }, packData: data,
   }
@@ -48,10 +54,10 @@ export const createAmbulanceItem = (raw: AmbulanceItem, context: ItemConstructio
 export const validateAmbulanceObject = (object: OperationalObject): OperationalObject => {
   if (object.packId !== ambulancePackId) throw new Error(`Object ${object.id} is not owned by Ambulance`)
   const data = ambulanceDataOf(object)
-  const kind = data.type === 'ambulance' ? 'mobile_entity' : data.type === 'care-site' ? 'facility' : data.type
+  const kind = data.type === 'response-unit' ? 'mobile_entity' : data.type === 'care-site' ? 'facility' : data.type
   if (object.kind !== kind) throw new Error(`${object.id}: ${data.type} requires object kind ${kind}`)
   if (data.type !== 'patient' && !object.spatial.position?.point) throw new Error(`${object.id}: positioned asset requires a canonical point`)
-  if (data.type === 'ambulance' && data.assignment) {
+  if (data.type === 'response-unit' && data.assignment) {
     const a = data.assignment
     if (a.activeStopIndex >= a.stops.length) throw new Error(`${object.id}: active stop is outside the response plan`)
     if (new Set(a.patientIds).size !== a.patientIds.length) throw new Error(`${object.id}: duplicate assignment patients`)
@@ -87,11 +93,11 @@ export const validateAmbulanceObjects = (objects: readonly OperationalObject[]):
       if (incident?.type !== 'incident') throw new Error(`${object.id}: incident does not exist`)
       const holder = index.get(data.holder.id)
       if (holder?.type !== data.holder.kind) throw new Error(`${object.id}: invalid patient holder ${data.holder.id}`)
-      if (data.holder.kind === 'ambulance') {
-        if (holder.type !== 'ambulance' || !holder.assignment?.patientIds.includes(object.id)) throw new Error(`${object.id}: patient custody is not represented by holder assignment`)
+      if (data.holder.kind === 'response-unit') {
+        if (holder.type !== 'response-unit' || !holder.assignment?.patientIds.includes(object.id)) throw new Error(`${object.id}: patient custody is not represented by holder assignment`)
       }
     }
-    if (data.type !== 'ambulance' || !data.assignment) continue
+    if (data.type !== 'response-unit' || !data.assignment) continue
     const a = data.assignment
     for (const stop of a.stops) {
       if (stop.kind === 'pickup' && index.get(stop.targetId)?.type !== 'incident') throw new Error(`${object.id}: pickup incident does not exist`)
@@ -108,7 +114,7 @@ export const validateAmbulanceObjects = (objects: readonly OperationalObject[]):
       const shouldBeOnBoard = ['ready-for-transport', 'transporting', 'queued', 'handover'].includes(a.phase)
       const pickupIndex = a.stops.indexOf(pickup)
       const pickupReached = pickupIndex < a.activeStopIndex || pickupIndex === a.activeStopIndex && activeStop.kind === 'pickup' && shouldBeOnBoard
-      if (pickupReached ? patient.holder.kind !== 'ambulance' || patient.holder.id !== object.id : patient.holder.kind !== 'incident' || patient.holder.id !== pickup.targetId) throw new Error(`${id}: patient holder disagrees with response plan`)
+      if (pickupReached ? patient.holder.kind !== 'response-unit' || patient.holder.id !== object.id : patient.holder.kind !== 'incident' || patient.holder.id !== pickup.targetId) throw new Error(`${id}: patient holder disagrees with response plan`)
     }
   }
   // Capacity follows from unique bounded assignment IDs and the bidirectional
@@ -121,6 +127,6 @@ export const validateAmbulanceDeletion = (objectId: string, objects: readonly Op
     if (object.packId !== ambulancePackId) continue
     const data = ambulanceDataOf(object)
     if (data.type === 'patient' && (data.holder.id === objectId || data.incidentId === objectId)) throw new Error(`Cannot delete ${objectId}: patient ${object.label} still references it; transfer/remove patients first`)
-    if (data.type === 'ambulance' && data.assignment && (object.id === objectId || data.assignment.stops.some(stop => stop.kind !== 'return-base' && stop.targetId === objectId) || data.assignment.patientIds.includes(objectId as ObjectId))) throw new Error(`Cannot delete ${objectId}: cancel or complete ${object.label}'s active assignment first`)
+    if (data.type === 'response-unit' && data.assignment && (object.id === objectId || data.assignment.stops.some(stop => stop.kind !== 'return-base' && stop.targetId === objectId) || data.assignment.patientIds.includes(objectId as ObjectId))) throw new Error(`Cannot delete ${objectId}: cancel or complete ${object.label}'s active assignment first`)
   }
 }

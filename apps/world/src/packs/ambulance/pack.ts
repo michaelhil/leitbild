@@ -1,5 +1,6 @@
 import type { PackScenarioAuthoringField, WorldPack } from '../../core/packs/protocol.ts'
 import { ambulanceRecordingProfiles, observationsFor } from './recording.ts'
+import { createIncidentObservationHandler } from './interactions.ts'
 import { ambulancePackConfigSchema, roadWeatherFields } from './road-weather.ts'
 import { ambulanceScenarioSupport } from './scenario.ts'
 import { ambulancePackView } from './ui-pack.ts'
@@ -7,26 +8,36 @@ import { ambulancePackView } from './ui-pack.ts'
 const urgencyOptions = [{ value: 'acute', label: 'Acute' }, { value: 'urgent', label: 'Urgent' }, { value: 'ordinary', label: 'Ordinary' }]
 const locationField: PackScenarioAuthoringField = { path: ['atObject'], label: 'At existing asset (instead of coordinates)', control: { kind: 'reference' } }
 const placement = { kind: 'point' as const, path: ['position'], orReference: ['atObject'] }
+const responseUnitFields: ReadonlyArray<PackScenarioAuthoringField> = [locationField,
+  { path: ['patientCapacity'], label: 'Patient capacity', control: { kind: 'number', min: 1, max: 8, step: 1 } },
+  { path: ['capabilities'], label: 'Care capability tags (one per line)', control: { kind: 'string-list' } },
+  { path: ['crewReady'], label: 'Crew ready', control: { kind: 'boolean' } },
+  { path: ['mobilizationSeconds'], label: 'Assumed mobilization (seconds)', control: { kind: 'number', min: 0, step: 1 } },
+  { path: ['sceneSeconds'], label: 'Assumed scene service (seconds)', control: { kind: 'number', min: 0, step: 1 } },
+  { path: ['basePosition', 0], label: 'Base longitude override', control: { kind: 'number', min: -180, max: 180, step: .0001 } },
+  { path: ['basePosition', 1], label: 'Base latitude override', control: { kind: 'number', min: -90, max: 90, step: .0001 } },
+]
 
 export const ambulancePack: WorldPack = {
   ...ambulancePackView,
   scenarioConfigSchema: ambulancePackConfigSchema,
   recording: { profiles: ambulanceRecordingProfiles, estimateSeries: objects => objects.reduce((sum, object) => sum + observationsFor(object).length, 0) },
   scenario: ambulanceScenarioSupport,
+  interactions: { handlers: [createIncidentObservationHandler()] },
   authoring: {
     configFields: roadWeatherFields,
     itemTypes: [{
       id: 'ambulance', label: 'Ambulance', idPrefix: 'ambulance',
       description: 'A response unit with explicit patient capacity, crew readiness and care capabilities. Mobilization and scene durations are editable operational assumptions, not validated clinical timings. Base defaults to the start point.',
       defaultItem: { patientCapacity: 1, capabilities: [], crewReady: true, mobilizationSeconds: 120, sceneSeconds: 900 }, placement,
-      fields: [locationField,
-        { path: ['patientCapacity'], label: 'Patient capacity', control: { kind: 'number', min: 1, max: 64, step: 1 } },
-        { path: ['capabilities'], label: 'Care capability tags (one per line)', control: { kind: 'string-list' } },
-        { path: ['crewReady'], label: 'Crew ready', control: { kind: 'boolean' } },
-        { path: ['mobilizationSeconds'], label: 'Assumed mobilization (seconds)', control: { kind: 'number', min: 0, step: 1 } },
-        { path: ['sceneSeconds'], label: 'Assumed scene service (seconds)', control: { kind: 'number', min: 0, step: 1 } },
-        { path: ['basePosition', 0], label: 'Base longitude override', control: { kind: 'number', min: -180, max: 180, step: .0001 } },
-        { path: ['basePosition', 1], label: 'Base latitude override', control: { kind: 'number', min: -90, max: 90, step: .0001 } },
+      fields: responseUnitFields,
+    }, {
+      id: 'helicopter', label: 'Medical helicopter', idPrefix: 'helicopter',
+      description: 'A rotary-wing response unit using direct air routing. It shares patient custody and assignment rules with road ambulances and can carry at most two patients.',
+      defaultItem: { patientCapacity: 2, capabilities: ['assessment', 'trauma'], crewReady: true, mobilizationSeconds: 180, sceneSeconds: 720, cruiseSpeedMps: 65 }, placement,
+      fields: [
+        ...responseUnitFields.map(field => field.path[0] === 'patientCapacity' ? { ...field, control: { kind: 'number' as const, min: 1, max: 2, step: 1 } } : field),
+        { path: ['cruiseSpeedMps'], label: 'Cruise speed (m/s)', control: { kind: 'number', min: 20, max: 150, step: 1 } },
       ],
     }, {
       id: 'incident', label: 'Incident', idPrefix: 'incident',

@@ -14,14 +14,14 @@ export const setPatientAssessmentCommandKind = 'world.ambulance.set-patient-asse
 export const setPatientDispositionCommandKind = 'world.ambulance.set-patient-disposition'
 export const createItemPayloadSchema = z.object({ item: ambulanceItemSchema }).strict()
 export const assignPayloadSchema = z.object({
-  ambulanceId: objectIdSchema, incidentId: objectIdSchema,
+  unitId: objectIdSchema, incidentId: objectIdSchema,
   patientIds: z.array(objectIdSchema).min(1).max(64).refine(ids => new Set(ids).size === ids.length, 'Patient IDs must be unique'),
 }).strict()
 export const appendStopPayloadSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('pickup'), ambulanceId: objectIdSchema, incidentId: objectIdSchema, patientIds: z.array(objectIdSchema).min(1).max(64).refine(ids => new Set(ids).size === ids.length, 'Patient IDs must be unique') }).strict(),
-  z.object({ kind: z.literal('handover'), ambulanceId: objectIdSchema, careSiteId: objectIdSchema, patientIds: z.array(objectIdSchema).min(1).max(64).refine(ids => new Set(ids).size === ids.length, 'Patient IDs must be unique') }).strict(),
+  z.object({ kind: z.literal('pickup'), unitId: objectIdSchema, incidentId: objectIdSchema, patientIds: z.array(objectIdSchema).min(1).max(64).refine(ids => new Set(ids).size === ids.length, 'Patient IDs must be unique') }).strict(),
+  z.object({ kind: z.literal('handover'), unitId: objectIdSchema, careSiteId: objectIdSchema, patientIds: z.array(objectIdSchema).min(1).max(64).refine(ids => new Set(ids).size === ids.length, 'Patient IDs must be unique') }).strict(),
 ])
-export const unitPayloadSchema = z.object({ ambulanceId: objectIdSchema }).strict()
+export const unitPayloadSchema = z.object({ unitId: objectIdSchema }).strict()
 export const setUnitReadinessPayloadSchema = unitPayloadSchema.extend({ ready: z.boolean() }).strict()
 export const setCareSitePayloadSchema = z.object({
   careSiteId: objectIdSchema, accepting: z.boolean().optional(),

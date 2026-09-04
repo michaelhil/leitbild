@@ -9,6 +9,11 @@ export const careTagsSchema = z.array(z.string().trim().min(1).max(64)).max(32).
  * not observation/wall time. Core object timestamps retain wall-time meaning. */
 export const simulationTimestampSchema = z.number().finite().nonnegative()
 export const serviceSecondsSchema = z.number().finite().nonnegative().max(86_400)
+export const responseUnitKindSchema = z.enum(['road-ambulance', 'helicopter'])
+export const responseUnitMobilitySchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('road') }).strict(),
+  z.object({ kind: z.literal('rotary-wing'), cruiseSpeedMps: z.number().finite().positive().max(150) }).strict(),
+])
 
 export const preparedRouteSchema = z.object({
   geometry: geoJsonLineStringSchema,
@@ -37,8 +42,10 @@ export const ambulanceAssignmentSchema = z.object({
   leg: preparedRouteSchema.extend({ progressMs: z.number().finite().nonnegative() }).optional(),
 }).strict()
 export type AmbulanceAssignment = z.infer<typeof ambulanceAssignmentSchema>
-export const ambulancePackDataSchema = z.object({
-  type: z.literal('ambulance'),
+export const responseUnitPackDataSchema = z.object({
+  type: z.literal('response-unit'),
+  unitKind: responseUnitKindSchema,
+  mobility: responseUnitMobilitySchema,
   patientCapacity: z.number().int().min(1).max(64),
   capabilities: careTagsSchema,
   crewReady: z.boolean(),
@@ -47,8 +54,28 @@ export const ambulancePackDataSchema = z.object({
   sceneSeconds: serviceSecondsSchema,
   assignment: ambulanceAssignmentSchema.optional(),
   busyTimeMs: z.number().finite().nonnegative(),
+}).strict().superRefine((unit, context) => {
+  const maximumCapacity = unit.unitKind === 'helicopter' ? 2 : 8
+  if (unit.patientCapacity > maximumCapacity) context.addIssue({
+    code: 'custom',
+    message: `${unit.unitKind} patient capacity cannot exceed ${maximumCapacity}`,
+    path: ['patientCapacity'],
+  })
+  if (unit.unitKind === 'road-ambulance' && unit.mobility.kind !== 'road') context.addIssue({
+    code: 'custom', message: 'road ambulances require road mobility', path: ['mobility'],
+  })
+  if (unit.unitKind === 'helicopter' && unit.mobility.kind !== 'rotary-wing') context.addIssue({
+    code: 'custom', message: 'helicopters require rotary-wing mobility', path: ['mobility'],
+  })
+})
+export type ResponseUnitPackData = z.infer<typeof responseUnitPackDataSchema>
+export const incidentObservationSchema = z.object({
+  observerId: objectIdSchema,
+  sensorId: z.string().min(1).max(128),
+  observedAtMs: simulationTimestampSchema,
+  casualtyCount: z.number().int().nonnegative().max(10_000),
+  casualties: z.array(z.object({ patientId: objectIdSchema, assessedUrgency: urgencySchema, needs: careTagsSchema }).strict()).max(10_000),
 }).strict()
-export type AmbulancePackData = z.infer<typeof ambulancePackDataSchema>
 export const incidentPackDataSchema = z.object({
   type: z.literal('incident'),
   summary: z.string().max(2_000),
@@ -57,9 +84,10 @@ export const incidentPackDataSchema = z.object({
   receivedAtMs: simulationTimestampSchema,
   firstArrivalAtMs: simulationTimestampSchema.optional(),
   closedAtMs: simulationTimestampSchema.optional(),
+  observations: z.array(incidentObservationSchema).max(1_000).default([]),
 }).strict()
 export type IncidentPackData = z.infer<typeof incidentPackDataSchema>
-export const patientHolderSchema = z.object({ kind: z.enum(['incident', 'ambulance', 'care-site']), id: objectIdSchema }).strict()
+export const patientHolderSchema = z.object({ kind: z.enum(['incident', 'response-unit', 'care-site']), id: objectIdSchema }).strict()
 export const patientPackDataSchema = z.object({
   type: z.literal('patient'),
   incidentId: objectIdSchema,
@@ -89,13 +117,13 @@ export const careSitePackDataSchema = z.object({
   subjectObjectId: objectIdSchema.optional(),
 }).strict()
 export type CareSitePackData = z.infer<typeof careSitePackDataSchema>
-export const ambulanceDomainDataSchema = z.discriminatedUnion('type', [ambulancePackDataSchema, incidentPackDataSchema, patientPackDataSchema, careSitePackDataSchema])
+export const ambulanceDomainDataSchema = z.discriminatedUnion('type', [responseUnitPackDataSchema, incidentPackDataSchema, patientPackDataSchema, careSitePackDataSchema])
 export type AmbulanceDomainData = z.infer<typeof ambulanceDomainDataSchema>
 export const ambulanceDataOf = (object: OperationalObject): AmbulanceDomainData => ambulanceDomainDataSchema.parse(object.packData)
 export const patientObjects = (objects: readonly OperationalObject[]): readonly OperationalObject[] => objects.filter(object => object.packId === ambulancePackId && (object.packData as { type?: string } | undefined)?.type === 'patient')
 export const unitPatients = (unitId: string, objects: readonly OperationalObject[]): readonly OperationalObject[] => patientObjects(objects).filter(object => {
   const patient = patientPackDataSchema.parse(object.packData)
-  return patient.holder.kind === 'ambulance' && patient.holder.id === unitId
+  return patient.holder.kind === 'response-unit' && patient.holder.id === unitId
 })
 export const activeAssignmentStop = (assignment: AmbulanceAssignment): AmbulanceAssignmentStop => {
   const stop = assignment.stops[assignment.activeStopIndex]
@@ -120,8 +148,8 @@ export const destinationEligibility = (site: OperationalObject | undefined, pati
 }
 export const dispatchEligibility = (unit: OperationalObject | undefined, incident: OperationalObject | undefined, patients: readonly OperationalObject[], objects: readonly OperationalObject[]): string[] => {
   if (!unit || unit.packId !== ambulancePackId) return ['Response unit does not exist']
-  const parsed = ambulancePackDataSchema.safeParse(unit.packData)
-  if (!parsed.success) return ['Asset is not an ambulance']
+  const parsed = responseUnitPackDataSchema.safeParse(unit.packData)
+  if (!parsed.success) return ['Asset is not a response unit']
   const data = parsed.data
   const reasons: string[] = []
   if (!data.crewReady) reasons.push('Crew is not ready')
@@ -132,7 +160,7 @@ export const dispatchEligibility = (unit: OperationalObject | undefined, inciden
   if (!patients.length) reasons.push('Select at least one patient')
   if (patients.length > data.patientCapacity) reasons.push(`Patient selection exceeds capacity ${data.patientCapacity}`)
   const reserved = new Set(objects.flatMap(object => {
-    const other = object.packId === ambulancePackId ? ambulancePackDataSchema.safeParse(object.packData) : null
+    const other = object.packId === ambulancePackId ? responseUnitPackDataSchema.safeParse(object.packData) : null
     return other?.success && object.id !== unit.id ? other.data.assignment?.patientIds ?? [] : []
   }))
   for (const object of patients) {
@@ -146,8 +174,8 @@ export const dispatchEligibility = (unit: OperationalObject | undefined, inciden
 }
 
 export const appendPickupEligibility = (unit: OperationalObject | undefined, incident: OperationalObject | undefined, patients: readonly OperationalObject[], objects: readonly OperationalObject[]): string[] => {
-  const parsed = unit?.packId === ambulancePackId ? ambulancePackDataSchema.safeParse(unit.packData) : null
-  if (!unit || !parsed?.success) return ['Asset is not an ambulance']
+  const parsed = unit?.packId === ambulancePackId ? responseUnitPackDataSchema.safeParse(unit.packData) : null
+  if (!unit || !parsed?.success) return ['Asset is not a response unit']
   const reasons: string[] = []
   if (!parsed.data.crewReady) reasons.push('Crew is not ready')
   if (!parsed.data.assignment || parsed.data.assignment.phase === 'returning') reasons.push('Unit has no active response plan to extend')
@@ -157,7 +185,7 @@ export const appendPickupEligibility = (unit: OperationalObject | undefined, inc
   const assigned = new Set(parsed.data.assignment?.patientIds ?? [])
   if (assigned.size + patients.length > parsed.data.patientCapacity) reasons.push(`Planned patients exceed capacity ${parsed.data.patientCapacity}`)
   const reserved = new Set(objects.flatMap(object => {
-    const other = object.packId === ambulancePackId ? ambulancePackDataSchema.safeParse(object.packData) : null
+    const other = object.packId === ambulancePackId ? responseUnitPackDataSchema.safeParse(object.packData) : null
     return other?.success && object.id !== unit.id ? other.data.assignment?.patientIds ?? [] : []
   }))
   for (const object of patients) {
@@ -172,8 +200,8 @@ export const appendPickupEligibility = (unit: OperationalObject | undefined, inc
 }
 
 export const appendHandoverEligibility = (unit: OperationalObject | undefined, site: OperationalObject | undefined, patientIds: readonly ObjectId[], objects: readonly OperationalObject[]): string[] => {
-  const parsed = unit?.packId === ambulancePackId ? ambulancePackDataSchema.safeParse(unit.packData) : null
-  if (!unit || !parsed?.success) return ['Asset is not an ambulance']
+  const parsed = unit?.packId === ambulancePackId ? responseUnitPackDataSchema.safeParse(unit.packData) : null
+  if (!unit || !parsed?.success) return ['Asset is not a response unit']
   const reasons: string[] = []
   if (!parsed.data.assignment || parsed.data.assignment.phase === 'returning') reasons.push('Unit has no active response plan to extend')
   if (!patientIds.length) reasons.push('Select at least one planned patient')
@@ -194,14 +222,14 @@ export const appendHandoverEligibility = (unit: OperationalObject | undefined, s
 }
 
 export const cancelEligibility = (unit: OperationalObject | undefined): string[] => {
-  const parsed = unit?.packId === ambulancePackId ? ambulancePackDataSchema.safeParse(unit.packData) : null
-  if (!parsed?.success) return ['Asset is not an ambulance']
+  const parsed = unit?.packId === ambulancePackId ? responseUnitPackDataSchema.safeParse(unit.packData) : null
+  if (!parsed?.success) return ['Asset is not a response unit']
   return parsed.data.assignment?.phase === 'handover' ? ['Handover is already in progress; wait for it to complete'] : []
 }
 
 export const returnToBaseEligibility = (unit: OperationalObject | undefined, objects: readonly OperationalObject[]): string[] => {
-  const parsed = unit?.packId === ambulancePackId ? ambulancePackDataSchema.safeParse(unit.packData) : null
-  if (!unit || !parsed?.success) return ['Asset is not an ambulance']
+  const parsed = unit?.packId === ambulancePackId ? responseUnitPackDataSchema.safeParse(unit.packData) : null
+  if (!unit || !parsed?.success) return ['Asset is not a response unit']
   const reasons: string[] = []
   if (!parsed.data.crewReady) reasons.push('Crew is not ready')
   if (parsed.data.assignment && parsed.data.assignment.phase !== 'returning') reasons.push('Unit has an active assignment; complete or cancel it first')
@@ -215,7 +243,7 @@ export const noTransportEligibility = (patient: OperationalObject | undefined, o
   const reasons: string[] = []
   if (parsed.data.disposition !== 'active' || parsed.data.holder.kind !== 'incident') reasons.push('No-transport requires an active patient still at the incident')
   if (objects.some(object => {
-    const data = object.packId === ambulancePackId ? ambulancePackDataSchema.safeParse(object.packData) : null
+    const data = object.packId === ambulancePackId ? responseUnitPackDataSchema.safeParse(object.packData) : null
     return data?.success && data.data.assignment?.patientIds.includes(patient.id)
   })) reasons.push('Cancel the patient response reservation before recording no-transport')
   return reasons
@@ -224,7 +252,7 @@ export const noTransportEligibility = (patient: OperationalObject | undefined, o
 /** New assessments are facts, not actions to reject when a plan is unsuitable.
  * Keep custody intact and expose these mismatches for an operator's decision. */
 export const assignmentWarnings = (unit: OperationalObject, objects: readonly OperationalObject[]): string[] => {
-  const parsed = unit.packId === ambulancePackId ? ambulancePackDataSchema.safeParse(unit.packData) : null
+  const parsed = unit.packId === ambulancePackId ? responseUnitPackDataSchema.safeParse(unit.packData) : null
   if (!parsed?.success || !parsed.data.assignment) return []
   const assignment = parsed.data.assignment
   const patients = assignment.patientIds.map(id => objects.find(object => object.id === id)).filter((object): object is OperationalObject => object !== undefined)

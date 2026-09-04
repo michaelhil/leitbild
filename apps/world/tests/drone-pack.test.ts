@@ -52,6 +52,7 @@ const effectModel = (): DroneVehicleModel => droneVehicleModelSchema.parse({
   id: 'native-effect-test',
   label: 'Native Effect Test',
   description: 'Native test vehicle with declared surveillance and effect payloads.',
+  nominalEnduranceMinutes: 30,
   airframe: { kind: 'quadrotor', rotorCount: 4, massKg: 2.8, diagonalSizeM: 0.5 },
   flightEnvelope: {
     cruiseSpeedMps: 22,
@@ -595,11 +596,12 @@ describe('drone pack native runtime', () => {
       },
       at,
     )
-    const objects = [object]
+    const contactTarget = { ...genericTarget({ id: 'incident:visible' }), kind: 'incident' as const }
+    const objects = [object, contactTarget]
 
     expect(droneSceneObjects(objects)[0]?.modelId).toBe(model.id)
     expect(droneControllerBindings(objects)[0]?.inputKind).toBe('keyboard')
-    expect(droneSensorContacts(objects)).toEqual([])
+    expect(droneSensorContacts(objects)).toEqual([expect.objectContaining({ droneId: object.id, sensorId: 'eo-test-camera', targetId: contactTarget.id })])
 
     const scene = answerDroneQuery({ request: { capabilityId: droneSceneQueryKind, input: {} }, objects }) as { drones: ReadonlyArray<unknown> }
     const models = answerDroneQuery({ request: { capabilityId: droneVehicleModelsQueryKind, input: {} }, objects, models: [model] }) as { models: ReadonlyArray<DroneVehicleModel> }

@@ -14,7 +14,7 @@ import {
 import { compileScenarioDefinition } from '../src/core/scenarios/compiler.ts'
 import { scenarioDefinitionSchema } from '../src/core/scenarios/definition.ts'
 import { roadWeatherImpact,roadWeatherPolicySchema } from '../src/packs/ambulance/road-weather.ts'
-import { ambulancePackDataSchema, patientPackDataSchema } from '../src/packs/ambulance/model.ts'
+import { responseUnitPackDataSchema, patientPackDataSchema } from '../src/packs/ambulance/model.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { weatherItemSchema,weatherPackDataSchema } from '../src/packs/weather/model.ts'
@@ -66,7 +66,7 @@ const command = (kind: string, payload: unknown): CommandEnvelope =>
     kind,
     payload,
   }) as CommandEnvelope
-const dispatchCommand = () => command('world.ambulance.assign', { ambulanceId: 'amb:response', incidentId: 'incident:response', patientIds: ['patient:response'] })
+const dispatchCommand = () => command('world.ambulance.assign', { unitId: 'amb:response', incidentId: 'incident:response', patientIds: ['patient:response'] })
 const providerSamples = (request: PackRuntimeQuery, visibilityM = 700) => (request.input as { points: unknown[] }).points.map(point => ({
   point, sample: { state: { atmosphere: { visibilityM }, surface: { wetness: 0, ice: 0, snow: 0 } }, quality: { validAt: compiled.world.startsAt } },
 }))
@@ -199,7 +199,7 @@ describe('Ambulance weather preparation boundaries', () => {
       const snapshot = await connection.getSnapshot()
       expect(snapshot.objects.find(object => object.id === 'amb:response')!.operational.status).not.toBe('available')
       expect(connection.health?.()[0]).toMatchObject({ state: 'failed', failureCount: 1, lastFailure: { operation: 'post-command-road-weather' } })
-      expect((await connection.sendCommand(command('world.ambulance.cancel', { ambulanceId: 'amb:response' }))).ok).toBe(false)
+      expect((await connection.sendCommand(command('world.ambulance.cancel', { unitId: 'amb:response' }))).ok).toBe(false)
       expect((await connection.getSnapshot()).objects).toEqual(snapshot.objects)
     } finally { await connection.close() }
   })
@@ -271,7 +271,7 @@ describe('Ambulance weather preparation boundaries', () => {
       const pending = connection.afterCommittedEvents!([weatherCommit()])
       await requested
       if (changed === 'route') {
-        expect((await connection.sendCommand(command('world.ambulance.cancel', { ambulanceId: 'amb:response' }))).ok).toBe(true)
+        expect((await connection.sendCommand(command('world.ambulance.cancel', { unitId: 'amb:response' }))).ok).toBe(true)
         expect((await connection.sendCommand(dispatchCommand())).ok).toBe(true)
       } else if (changed === 'policy') {
         expect((await connection.sendCommand(command('world.ambulance.set-road-weather-policy', { enabled: true, lowVisibilityFactor: .2 }))).ok).toBe(true)
@@ -318,7 +318,7 @@ describe('Ambulance weather preparation boundaries', () => {
     await original.close()
     const unit = snapshot.find(object => object.id === 'amb:response')!
     const patient = snapshot.find(object => object.id === 'patient:response')!
-    const data = ambulancePackDataSchema.parse(unit.packData)
+    const data = responseUnitPackDataSchema.parse(unit.packData)
     const fleet = snapshot.filter(object => object.id !== unit.id && object.id !== patient.id)
     for (let index = 0; index < 513; index++) {
       const patientId = `patient:batch-${index}` as ObjectId
@@ -349,7 +349,7 @@ describe('Ambulance weather preparation boundaries', () => {
       const before = (await connection.getSnapshot()).objects
       currentTime = new Date(Date.parse(currentTime) + 1_000).toISOString() as IsoTimestamp
       reject = true
-      if (path === 'command') expect((await connection.sendCommand(command('world.ambulance.cancel', { ambulanceId: 'amb:response' }))).ok).toBe(false)
+      if (path === 'command') expect((await connection.sendCommand(command('world.ambulance.cancel', { unitId: 'amb:response' }))).ok).toBe(false)
       else if (path === 'clock') await expect(connection.setClock({ currentTime, updatedAt: nowIso(), paused: true, speed: 1 })).rejects.toThrow('Advance provider failed')
       else {
         const deadline = Date.now() + 2_000

@@ -14,7 +14,6 @@ export const dronePack: WorldPack = {
       { path: ['stepIntervalMs'], label: 'Physics step (ms)', control: { kind: 'number', step: 1 } },
       { path: ['projectionIntervalMs'], label: 'Projection interval (ms)', control: { kind: 'number', step: 1 } },
       { path: ['motionFrameIntervalMs'], label: 'Motion frame interval (ms)', control: { kind: 'number', step: 1 } },
-      { path: ['batteryDrainPercentPerHour'], label: 'Battery drain (%/hour)', control: { kind: 'number', step: 1 } },
     ],
     itemTypes: [{
       id: 'drone',

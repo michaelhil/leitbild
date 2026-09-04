@@ -87,7 +87,17 @@ export const createAmbulanceSimEngine = (config: {
     return object
   }
 
-  const prepareRoute = async (from: GeoJsonPoint, to: GeoJsonPoint): Promise<PreparedRoute> => {
+  const prepareRoute = async (unit: OperationalObject, from: GeoJsonPoint, to: GeoJsonPoint): Promise<PreparedRoute> => {
+    const unitData = dataOfType(unit, 'response-unit')
+    if (unitData.mobility.kind === 'rotary-wing') {
+      const distanceM = routeDistanceMeters(from, to)
+      return preparedRouteSchema.parse({
+        geometry: { type: 'LineString', coordinates: [from.coordinates, to.coordinates] },
+        durationMs: distanceM / unitData.mobility.cruiseSpeedMps * 1_000,
+        distanceM,
+        provider: 'ambulance.direct-air',
+      })
+    }
     const route = await config.routing.route({ from, to })
     const prepared = preparedRouteSchema.parse({ geometry: route.geometry, durationMs: route.durationSeconds * 1000, distanceM: route.distanceM, provider: route.provider })
     if (prepared.durationMs <= 0 && geometricLength(prepared.geometry) > 0.01) throw new Error('Routing returned nonzero geometry without travel time')
@@ -140,7 +150,7 @@ export const createAmbulanceSimEngine = (config: {
       let spatial = object.spatial
       let status: string
       let tasking: OperationalObject['tasking']
-      if (data.type === 'ambulance') {
+      if (data.type === 'response-unit') {
         const assignment = data.assignment
         status = assignment?.phase ?? (data.crewReady ? 'available' : 'out-of-service')
         const { route: _, ...rest } = spatial
@@ -153,7 +163,7 @@ export const createAmbulanceSimEngine = (config: {
         if (stop && stop.kind !== 'return-base') tasking = { currentTaskId: stop.targetId }
       } else if (data.type === 'incident') status = data.closedAtMs === undefined ? data.firstArrivalAtMs === undefined ? 'open' : 'responding' : 'resolved'
       else if (data.type === 'care-site') status = data.accepting ? 'accepting' : 'not-accepting'
-      else status = data.disposition === 'active' ? data.holder.kind === 'incident' ? 'awaiting-response' : 'in-ambulance' : data.disposition
+      else status = data.disposition === 'active' ? data.holder.kind === 'incident' ? 'awaiting-response' : 'in-response-unit' : data.disposition
       const { tasking: _, ...base } = object
       const updated: OperationalObject = { ...base, revision: object.revision + 1, spatial, packData: data, operational: { ...object.operational, status }, lifecycle: data.type === 'incident' && data.closedAtMs !== undefined || data.type === 'patient' && data.disposition !== 'active' ? 'resolved' : 'active', ...(tasking ? { tasking } : {}), provenance: { source: commandId ? 'operator' : 'simulator', adapterId: ambulanceSimAdapterId, externalId: object.id, ...(commandId ? { causedByCommandId: commandId } : {}) }, timestamps: { ...object.timestamps, updatedAt: at } }
       draft.set(updated.id, updated)
@@ -162,7 +172,7 @@ export const createAmbulanceSimEngine = (config: {
     }
     const setUnit = (id: ObjectId, assignment: AmbulanceAssignment | undefined, record = true, point?: GeoJsonPoint) => {
       const unit = get(id)
-      const { assignment: _, ...data } = dataOfType(unit, 'ambulance')
+      const { assignment: _, ...data } = dataOfType(unit, 'response-unit')
       return put(unit, { ...data, ...(assignment ? { assignment } : {}) }, record, point)
     }
     const setPatient = (id: ObjectId, update: Partial<PatientPackData>) => {
@@ -185,18 +195,18 @@ export const createAmbulanceSimEngine = (config: {
       for (const site of values()) {
         const siteData = ownedData(site)
         if (siteData.type !== 'care-site' || !siteData.accepting) continue
-        const units = values().filter(object => ownedData(object).type === 'ambulance')
+        const units = values().filter(object => ownedData(object).type === 'response-unit')
         const servesSite = (unit: OperationalObject, phase: 'queued' | 'handover'): boolean => {
-          const assignment = dataOfType(unit, 'ambulance').assignment
+          const assignment = dataOfType(unit, 'response-unit').assignment
           if (assignment?.phase !== phase) return false
           const stop = activeAssignmentStop(assignment)
           return stop.kind === 'handover' && stop.targetId === site.id
         }
         const serving = units.filter(unit => servesSite(unit, 'handover')).length
-        const queue = units.filter(unit => servesSite(unit, 'queued')).sort((a, b) => dataOfType(a, 'ambulance').assignment!.phaseStartedAtMs - dataOfType(b, 'ambulance').assignment!.phaseStartedAtMs || a.id.localeCompare(b.id))
+        const queue = units.filter(unit => servesSite(unit, 'queued')).sort((a, b) => dataOfType(a, 'response-unit').assignment!.phaseStartedAtMs - dataOfType(b, 'response-unit').assignment!.phaseStartedAtMs || a.id.localeCompare(b.id))
         let free = Math.max(0, siteData.handoverSlots - serving)
         for (const unit of queue) {
-          const a = dataOfType(get(unit.id), 'ambulance').assignment!
+          const a = dataOfType(get(unit.id), 'response-unit').assignment!
           const stop = activeAssignmentStop(a)
           if (stop.kind !== 'handover') continue
           const patients = stop.patientIds.map(get)
@@ -237,7 +247,7 @@ export const createAmbulanceSimEngine = (config: {
     const finishScene = (unit: OperationalObject, a: AmbulanceAssignment) => {
       const stop = activeAssignmentStop(a)
       if (stop.kind !== 'pickup') throw new Error(`${unit.id}: on-scene phase requires a pickup stop`)
-      stop.patientIds.forEach(id => setPatient(id, { holder: { kind: 'ambulance', id: unit.id }, pickedUpAtMs: time }))
+      stop.patientIds.forEach(id => setPatient(id, { holder: { kind: 'response-unit', id: unit.id }, pickedUpAtMs: time }))
       beginStop(unit, a, a.activeStopIndex + 1)
     }
     const boundaries = (): boolean => {
@@ -245,7 +255,7 @@ export const createAmbulanceSimEngine = (config: {
       for (const initial of values()) {
         const unit = get(initial.id)
         const data = ownedData(unit)
-        if (data.type !== 'ambulance' || !data.assignment) continue
+        if (data.type !== 'response-unit' || !data.assignment) continue
         const a = data.assignment
         if (a.phase === 'mobilizing' && a.phaseDueAtMs! <= time) {
           const { phaseDueAtMs: _, ...rest } = a
@@ -293,11 +303,11 @@ export const createAmbulanceSimEngine = (config: {
           if (++iterations > 100_000) throw new Error('Ambulance transition budget exceeded')
         }
         if (time >= targetTime) break
-        if (!values().some(object => { const data = ownedData(object); return data.type === 'ambulance' && data.assignment })) { time = targetTime; break }
+        if (!values().some(object => { const data = ownedData(object); return data.type === 'response-unit' && data.assignment })) { time = targetTime; break }
         let next = Math.min(targetTime, time + 1_000)
         for (const object of values()) {
           const data = ownedData(object)
-          const a = data.type === 'ambulance' ? data.assignment : undefined
+          const a = data.type === 'response-unit' ? data.assignment : undefined
           if (!a) continue
           if (a.phaseDueAtMs !== undefined && a.phaseDueAtMs > time) next = Math.min(next, a.phaseDueAtMs)
           if (moving(a) && a.leg && speedFactor(object) > 0) next = Math.min(next, time + (a.leg.durationMs - a.leg.progressMs) / speedFactor(object))
@@ -306,7 +316,7 @@ export const createAmbulanceSimEngine = (config: {
         const dt = next - time
         for (const object of values()) {
           const data = ownedData(object)
-          if (data.type !== 'ambulance' || !data.assignment) continue
+          if (data.type !== 'response-unit' || !data.assignment) continue
           const a = data.assignment
           const busy = { ...data, busyTimeMs: data.busyTimeMs + (a.phase === 'returning' ? 0 : dt) }
           if (moving(a) && a.leg) {
@@ -328,7 +338,7 @@ export const createAmbulanceSimEngine = (config: {
       const schema = commands.ambulanceCommandSchemas[command.kind as keyof typeof commands.ambulanceCommandSchemas]
       if (!schema) throw new Error(`Unsupported Ambulance command: ${command.kind}`)
       const validated = schema.parse(command.payload)
-      const primaryId = 'ambulanceId' in validated ? validated.ambulanceId : 'careSiteId' in validated ? validated.careSiteId : 'patientId' in validated ? validated.patientId : undefined
+      const primaryId = 'unitId' in validated ? validated.unitId : 'careSiteId' in validated ? validated.careSiteId : 'patientId' in validated ? validated.patientId : undefined
       if (command.expectedRevision !== undefined) {
         if (!primaryId || command.targetObjectIds.length !== 1 || command.targetObjectIds[0] !== primaryId) throw new Error('expectedRevision requires exactly the command primary target')
         if (requireObject(primaryId).revision !== command.expectedRevision) throw new Error(`Revision conflict for ${primaryId}; refresh the current object before retrying`)
@@ -341,13 +351,13 @@ export const createAmbulanceSimEngine = (config: {
         action = tx => { tx.draft.set(object.id, object); tx.events.push({ type: 'object.upserted', object, at: object.timestamps.updatedAt, history: 'record', provenance: object.provenance }); tx.closeIncidents() }
       } else if (command.kind === commands.assignCommandKind) {
         const input = commands.assignPayloadSchema.parse(command.payload)
-        const unit = requireObject(input.ambulanceId), incident = requireObject(input.incidentId), patients = input.patientIds.map(requirePatient)
+        const unit = requireObject(input.unitId), incident = requireObject(input.incidentId), patients = input.patientIds.map(requirePatient)
         assertEligible(dispatchEligibility(unit, incident, patients, all()))
         const unchanged = watch([unit.id, incident.id, ...input.patientIds])
-        const route = await prepareRoute(pointOf(unit), pointOf(incident))
+        const route = await prepareRoute(unit, pointOf(unit), pointOf(incident))
         unchanged()
         assertEligible(dispatchEligibility(requireObject(unit.id), requireObject(incident.id), input.patientIds.map(requirePatient), all()))
-        const data = dataOfType(unit, 'ambulance')
+        const data = dataOfType(unit, 'response-unit')
         action = tx => {
           const stop: AmbulanceAssignmentStop = { kind: 'pickup', targetId: incident.id, patientIds: input.patientIds, route }
           tx.setUnit(unit.id, { phase: 'mobilizing', stops: [stop], activeStopIndex: 0, patientIds: input.patientIds, startedAtMs: simulationTimeMs, phaseStartedAtMs: simulationTimeMs, phaseDueAtMs: simulationTimeMs + data.mobilizationSeconds * 1000, leg: { ...route, progressMs: 0 } })
@@ -355,8 +365,8 @@ export const createAmbulanceSimEngine = (config: {
         }
       } else if (command.kind === commands.appendStopCommandKind) {
         const input = commands.appendStopPayloadSchema.parse(command.payload)
-        const unit = requireObject(input.ambulanceId)
-        const assignment = dataOfType(unit, 'ambulance').assignment
+        const unit = requireObject(input.unitId)
+        const assignment = dataOfType(unit, 'response-unit').assignment
         if (!assignment) throw new Error('Unit has no active response plan to extend')
         const target = requireObject(input.kind === 'pickup' ? input.incidentId : input.careSiteId)
         const patients = input.patientIds.map(requirePatient)
@@ -365,10 +375,10 @@ export const createAmbulanceSimEngine = (config: {
         const finalStop = assignment.stops.at(-1)!
         const from = geoPointFromLonLat(...finalStop.route.geometry.coordinates.at(-1)!)
         const unchanged = watch([unit.id, target.id, ...input.patientIds])
-        const route = await prepareRoute(from, pointOf(target))
+        const route = await prepareRoute(unit, from, pointOf(target))
         unchanged()
         const current = requireObject(unit.id)
-        const currentAssignment = dataOfType(current, 'ambulance').assignment
+        const currentAssignment = dataOfType(current, 'response-unit').assignment
         if (!currentAssignment || currentAssignment.stops.length !== assignment.stops.length) throw new Error('Response plan changed while preparing route; retry')
         if (input.kind === 'pickup') assertEligible(appendPickupEligibility(current, requireObject(target.id), input.patientIds.map(requirePatient), all()))
         else assertEligible(appendHandoverEligibility(current, requireObject(target.id), input.patientIds, all()))
@@ -382,17 +392,17 @@ export const createAmbulanceSimEngine = (config: {
           else tx.setUnit(unit.id, next)
         }
       } else if (command.kind === commands.returnToBaseCommandKind) {
-        const { ambulanceId } = commands.unitPayloadSchema.parse(command.payload)
-        const unit = requireObject(ambulanceId)
+        const { unitId } = commands.unitPayloadSchema.parse(command.payload)
+        const unit = requireObject(unitId)
         assertEligible(returnToBaseEligibility(unit, all()))
-        const data = dataOfType(unit, 'ambulance'), unchanged = watch([unit.id])
-        const route = await prepareRoute(pointOf(unit), data.basePoint)
+        const data = dataOfType(unit, 'response-unit'), unchanged = watch([unit.id])
+        const route = await prepareRoute(unit, pointOf(unit), data.basePoint)
         unchanged()
         action = tx => { tx.setUnit(unit.id, { phase: 'returning', stops: [{ kind: 'return-base', patientIds: [], route }], activeStopIndex: 0, patientIds: [], startedAtMs: simulationTimeMs, phaseStartedAtMs: simulationTimeMs, leg: { ...route, progressMs: 0 } }) }
       } else if (command.kind === commands.cancelCommandKind) {
-        const { ambulanceId } = commands.unitPayloadSchema.parse(command.payload), unit = requireObject(ambulanceId)
+        const { unitId } = commands.unitPayloadSchema.parse(command.payload), unit = requireObject(unitId)
         assertEligible(cancelEligibility(unit))
-        const a = dataOfType(unit, 'ambulance').assignment
+        const a = dataOfType(unit, 'response-unit').assignment
         action = tx => {
           if (!a) return
           if (unitPatients(unit.id, tx.values()).length) {
@@ -404,7 +414,7 @@ export const createAmbulanceSimEngine = (config: {
           } else tx.setUnit(unit.id, undefined)
         }
       } else if (command.kind === commands.setUnitReadinessCommandKind) {
-        const { ambulanceId, ready } = commands.setUnitReadinessPayloadSchema.parse(command.payload), unit = requireObject(ambulanceId), data = dataOfType(unit, 'ambulance')
+        const { unitId, ready } = commands.setUnitReadinessPayloadSchema.parse(command.payload), unit = requireObject(unitId), data = dataOfType(unit, 'response-unit')
         if (!ready && data.assignment) throw new Error('Complete or cancel the assignment before withdrawing the unit')
         action = tx => { tx.put(unit, { ...data, crewReady: ready }) }
       } else if (command.kind === commands.setCareSiteCommandKind) {
@@ -449,7 +459,9 @@ export const createAmbulanceSimEngine = (config: {
     },
     setRoadWeatherImpact: (id, impact) => {
       const object = objects.get(id)
-      if (!object?.spatial.route || ownedData(object).type !== 'ambulance') return
+      if (!object?.spatial.route) return
+      const data = ownedData(object)
+      if (data.type !== 'response-unit' || data.mobility.kind !== 'road') return
       const previous = object.spatial.route.impacts ?? []
       const remaining = previous.filter(entry => entry.source.kind !== 'runtime' || entry.source.id !== 'ambulance.road-weather')
       const impacts = impact ? [...remaining, impact] : remaining

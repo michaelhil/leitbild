@@ -17,7 +17,7 @@ import {
   type DronePackData,
 } from './model.ts'
 import { droneNativeRuntimeId } from './native/constants.ts'
-import { droneMapFeaturesQueryKind } from './query.ts'
+import { droneMapFeaturesQueryKind, droneSensorContacts } from './query.ts'
 
 const parseDroneData = (object: OperationalObject): DronePackData | null => {
   if (object.packId !== dronePackId) return null
@@ -42,6 +42,7 @@ const payloadText = (data: DronePackData): string =>
 
 const droneFields = (data: DronePackData): ReadonlyArray<PackObjectField> => [
   packField('model', 'Model', data.vehicle.modelLabel),
+  packField('endurance', 'Nominal endurance', `${Math.round(data.vehicle.nominalEnduranceMinutes)} min`),
   packField('link', 'Link', data.link.state),
   packField('arming', 'Arming', data.arming.state),
   packField('mode', 'Mode', data.navigation.mode),
@@ -115,15 +116,16 @@ export const dronePackView = {
           },
         }]
       : [],
-    presentObject: (object): PackObjectPresentation => {
+    presentObject: (object, context): PackObjectPresentation => {
       const data = parseDroneData(object)
+      const contacts = data ? droneSensorContacts(context.objects, object.id) : []
       return {
         categoryId: 'drones',
         icon: 'drone',
         color: data?.vehicle.visual.color ?? '#2563eb',
         summary: data ? droneSummary(data) : object.operational.status,
         status: data ? droneStatus(data) : packStatus('error', 'Invalid drone data'),
-        fields: data ? droneFields(data) : [packField('error', 'Error', 'Invalid drone pack data')],
+        fields: data ? [...droneFields(data), packField('contacts', 'Sensor contacts', contacts.length ? contacts.slice(0, 6).map(contact => `${contact.targetLabel} ${Math.round(contact.distanceM)} m`).join(', ') : 'None in range')] : [packField('error', 'Error', 'Invalid drone pack data')],
         mapIconSizePx: data ? Math.max(22, Math.round(24 * data.vehicle.visual.scale)) : 24,
         noteworthyUpdates: data?.health.state === 'degraded' || data?.health.state === 'critical' || data?.health.state === 'failed' || data?.health.state === 'destroyed',
       }

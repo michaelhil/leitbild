@@ -60,11 +60,12 @@ export const observationsFor = (object: OperationalObject): ReadonlyArray<Observ
   }
 
   const data = ambulanceDataOf(object)
-  if (data.type === 'ambulance') observations.push(
-    { signalId: 'ambulance.phase', title: 'Workflow phase', value: data.assignment?.phase ?? 'unassigned' },
-    { signalId: 'ambulance.crewReady', title: 'Crew ready', value: data.crewReady },
-    { signalId: 'ambulance.assignedPatients', title: 'Assigned patients', value: data.assignment?.patientIds.length ?? 0, quantity: 'count' },
-    { signalId: 'ambulance.busySeconds', title: 'Accumulated busy time', value: data.busyTimeMs / 1000, quantity: 'time', unit: 's' },
+  if (data.type === 'response-unit') observations.push(
+    { signalId: 'response-unit.kind', title: 'Unit kind', value: data.unitKind },
+    { signalId: 'response-unit.phase', title: 'Workflow phase', value: data.assignment?.phase ?? 'unassigned' },
+    { signalId: 'response-unit.crewReady', title: 'Crew ready', value: data.crewReady },
+    { signalId: 'response-unit.assignedPatients', title: 'Assigned patients', value: data.assignment?.patientIds.length ?? 0, quantity: 'count' },
+    { signalId: 'response-unit.busySeconds', title: 'Accumulated busy time', value: data.busyTimeMs / 1000, quantity: 'time', unit: 's' },
   )
   if (data.type === 'incident') {
     observations.push({ signalId: 'incident.dispatchUrgency', title: 'Dispatch urgency', value: data.dispatchUrgency })

@@ -345,8 +345,9 @@ export const stepDroneObject = (input: {
   const breachStatus = polygons === undefined || polygons.length === 0
     ? nextData.geofence.breachStatus
     : targetInsideGeofence(nextPoint, polygons) ? 'clear' : 'breached'
+  const baseDrainPercentPerHour = 100 / (data.vehicle.nominalEnduranceMinutes / 60)
   const drain = (data.arming.armed || manualActive)
-    ? runtimeConfig.batteryDrainPercentPerHour * dtSeconds / 3_600 * (1 + Math.min(2, velocity.groundSpeedMps / Math.max(1, data.vehicle.flightEnvelope.cruiseSpeedMps)))
+    ? baseDrainPercentPerHour * dtSeconds / 3_600 * (0.65 + 0.35 * Math.min(1.5, velocity.groundSpeedMps / Math.max(1, data.vehicle.flightEnvelope.cruiseSpeedMps)))
     : 0
   const battery = data.battery.remainingPercent === undefined
     ? data.battery

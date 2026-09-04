@@ -7,7 +7,7 @@ import { packField,packStatus } from '../src/core/packs/presentation.ts'
 import { createWorldPackDescriptor,emptyPackScenarioConfigSchema,type PackObjectPresentation,type WorldPack } from '../src/core/packs/protocol.ts'
 import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import { appendStopCommandKind, assignCommandKind, cancelCommandKind, createItemCommandKind } from '../src/packs/ambulance/commands.ts'
-import { ambulancePackDataSchema, careSitePackDataSchema } from '../src/packs/ambulance/model.ts'
+import { responseUnitPackDataSchema, careSitePackDataSchema } from '../src/packs/ambulance/model.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { ambulanceSimRuntimeId } from '../src/packs/ambulance/sim/constants.ts'
@@ -23,10 +23,10 @@ describe('pack architecture', () => {
     const adapter = createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() })
     expect(ambulancePack.targeting).toBeUndefined()
     expect(ambulancePack.creation).toBeUndefined()
-    expect(ambulancePack.authoring?.itemTypes.map(item => item.id)).toEqual(['ambulance', 'incident', 'patient', 'care-site'])
+    expect(ambulancePack.authoring?.itemTypes.map(item => item.id)).toEqual(['ambulance', 'helicopter', 'incident', 'patient', 'care-site'])
     const command = adapter.capabilities.find(capability => capability.id === assignCommandKind)!
-    const input = { ambulanceId: 'amb:a12', incidentId: 'incident:gronland-unattended', patientIds: ['patient:gronland-unattended:1'] }
-    expect(command.input.safeParse({ ambulanceId: 'amb:a12', incidentId: 'incident:gronland-unattended' }).success).toBe(false)
+    const input = { unitId: 'amb:a12', incidentId: 'incident:gronland-unattended', patientIds: ['patient:gronland-unattended:1'] }
+    expect(command.input.safeParse({ unitId: 'amb:a12', incidentId: 'incident:gronland-unattended' }).success).toBe(false)
     const built = command.buildCommand!(input)
     expect(built.targetObjectIds).toEqual(['amb:a12' as ObjectId])
     expect(built.payload).toEqual(input)
@@ -53,18 +53,18 @@ describe('pack architecture', () => {
 
   test('care-site presentation shows actual handovers, not clinical bed counters', async () => {
     const initial = structuredClone(responseScenario.initialObjects.filter(object => object.packId === 'ambulance')).map(object => object.id === 'amb:a12' ? {
-      ...object, packData: { ...ambulancePackDataSchema.parse(object.packData), mobilizationSeconds: 0, sceneSeconds: 0 },
+      ...object, packData: { ...responseUnitPackDataSchema.parse(object.packData), mobilizationSeconds: 0, sceneSeconds: 0 },
     } : object)
     const epoch = Date.parse(responseScenario.world.startsAt)
     const engine = createAmbulanceSimEngine({ simulationRunId: 'run-presentation' as SimulationRunId, objects: initial, simulationTimeMs: epoch, routing: {
       id: 'test-fast', route: async request => ({ geometry: { type: 'LineString', coordinates: [request.from.coordinates, request.to.coordinates] }, distanceM: 1 as import('../src/core/model/index.ts').Meters, durationSeconds: 1, provider: 'test-fast' }),
     } })
     const command = commandEnvelopeSchema.parse({ id: 'command:present', simulationRunId: 'run-presentation', actorId: 'actor:test', issuedAt: nowIso(), kind: assignCommandKind, targetObjectIds: [], payload: {
-      ambulanceId: 'amb:a12', incidentId: 'incident:gronland-unattended', patientIds: ['patient:gronland-unattended:1'],
+      unitId: 'amb:a12', incidentId: 'incident:gronland-unattended', patientIds: ['patient:gronland-unattended:1'],
     } }) as CommandEnvelope
     expect((await engine.handleCommand(command)).result.ok).toBe(true)
     const append = commandEnvelopeSchema.parse({ id: 'command:append', simulationRunId: 'run-presentation', actorId: 'actor:test', issuedAt: nowIso(), kind: appendStopCommandKind, targetObjectIds: [], payload: {
-      kind: 'handover', ambulanceId: 'amb:a12', careSiteId: 'facility:ous', patientIds: ['patient:gronland-unattended:1'],
+      kind: 'handover', unitId: 'amb:a12', careSiteId: 'facility:ous', patientIds: ['patient:gronland-unattended:1'],
     } }) as CommandEnvelope
     expect((await engine.handleCommand(append)).result.ok).toBe(true)
     engine.advanceTo(epoch + 2_000)

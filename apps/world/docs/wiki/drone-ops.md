@@ -9,7 +9,7 @@ The browser owns input capture and rendering only. It sends normal Simulation Ru
 ## Capability Surface
 
 - native fixed-step drone control loop
-- per-drone vehicle model metadata for airframe, flight envelope, capabilities, sensors, payloads, and visual profile
+- per-drone vehicle model metadata for airframe, flight envelope, nominal endurance, capabilities, sensors, payloads, and visual profile
 - arm/disarm, manual control, guided goto, takeoff, land, return-to-launch, hold, mission upload/start/pause/clear, geofence upload/clear, gimbal, vehicle model, swarm, and effect commands
 - runtime projection for link state, arming, navigation mode, global pose, velocity, attitude, battery, health, mission, geofence, payload, and controller binding state
 - map-visible drones, sensor footprints, effect ranges, and swarm envelopes from query Capabilities
@@ -32,7 +32,6 @@ Default runtime settings:
 - `maxDrones`: 10
 - `stepIntervalMs`: 20
 - `projectionIntervalMs`: 33
-- `batteryDrainPercentPerHour`: 8
 
 Scenario runtime config can override these values and add vehicle models.
 
@@ -42,6 +41,7 @@ Vehicle models are declarative data. They describe:
 
 - `airframe`
 - `flightEnvelope`
+- `nominalEnduranceMinutes`
 - `capabilities`
 - `sensors`
 - `payloads`
@@ -52,6 +52,8 @@ Built-in model ids:
 - `native-survey-quad`
 - `native-gimbal-quad`
 - `native-interceptor-quad`
+- `incident-response-fixed-wing`
+- `incident-response-quadcopter`
 
 ## Commands
 
@@ -75,6 +77,7 @@ The drone pack accepts these command kinds:
 - `drone.configure_vehicle_model`
 - `drone.swarm_command`
 - `drone.attack`
+- `world.drone.observe-target`
 
 All payloads are validated with Zod before the runtime mutates state or emits interaction signals. Invalid object ids, unavailable capabilities, out-of-geofence targets, depleted payloads, and invalid targets fail explicitly.
 
@@ -99,7 +102,9 @@ The drone runtime exposes read-only Simulation Capabilities:
 - `world.drone.controller-bindings`: controller binding metadata
 - `world.drone.vehicle-models`: active vehicle model catalog
 - `world.drone.map-features`: sensor footprints, effect ranges, and swarm envelopes
-- `world.drone.sensor-contacts`: detected contacts from configured real sensor inputs
+- `world.drone.sensor-contacts`: deterministic in-range contacts from configured sensors and current World objects
+
+`world.drone.observe-target` validates a reconnaissance capability, sensor identity and range, then emits a scoped interaction signal. The target Pack owns the meaning of the observation; for an Ambulance Incident it records the actual authored patient count, urgency and care-need tags without giving Drone access to medical internals.
 
 Queries do not mutate runtime state. UI, AI, and procedure tooling should invoke these Capabilities for rich drone read models rather than copying runtime-private mechanics into core objects.
 

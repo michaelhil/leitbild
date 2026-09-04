@@ -220,7 +220,7 @@
             "type": "invoke_capability",
             "capabilityId": "world.ambulance.assign",
             "input": {
-              "ambulanceId": "amb:weather-response",
+              "unitId": "amb:weather-response",
               "incidentId": "incident:halden-weather",
               "patientIds": [
                 "patient:halden-weather"
@@ -232,7 +232,7 @@
             "capabilityId": "world.ambulance.append-stop",
             "input": {
               "kind": "handover",
-              "ambulanceId": "amb:weather-response",
+              "unitId": "amb:weather-response",
               "careSiteId": "facility:halden",
               "patientIds": [
                 "patient:halden-weather"

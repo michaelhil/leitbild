@@ -42,7 +42,7 @@ const issueDispatchCommand = async (runtime: SimulationRunRuntime): Promise<void
     { id: 'actor:test-operator' as ActorId, label: 'Test Operator', role: 'operator' },
     {
       capabilityId: assignCommandKind,
-      input: { ambulanceId: ambulance.id, incidentId: incident.id, patientIds: snapshot.objects.filter(object => (object.packData as { type?: string; incidentId?: string }).type === 'patient' && (object.packData as { incidentId?: string }).incidentId === incident.id).slice(0, 1).map(object => object.id) },
+      input: { unitId: ambulance.id, incidentId: incident.id, patientIds: snapshot.objects.filter(object => (object.packData as { type?: string; incidentId?: string }).type === 'patient' && (object.packData as { incidentId?: string }).incidentId === incident.id).slice(0, 1).map(object => object.id) },
     },
   )
   expect(outcome.kind).toBe('command')
@@ -224,11 +224,21 @@ describe('Simulation Run registry', () => {
       const source = await registry.create({ scenarioId: 'halden-dispatch' })
       await source.setClock({ paused: true })
       const sourceUnits = source.snapshot().objects.filter(object =>
-        object.packId === 'ambulance' && (object.packData as { type?: string }).type === 'ambulance')
+        object.packId === 'ambulance' && (object.packData as { type?: string }).type === 'response-unit')
       const responding = sourceUnits.filter(object =>
         (object.packData as { assignment?: { phase?: string } }).assignment?.phase === 'responding')
-      expect(responding.map(object => String(object.id)).sort()).toEqual(['amb:halden-1', 'amb:halden-2'])
-      expect(sourceUnits.find(object => object.id === 'amb:sarpsborg-1')?.operational.status).toBe('available')
+      expect(responding.map(object => String(object.id)).sort()).toEqual(['unit:halden-1', 'unit:halden-2'])
+      expect(sourceUnits.find(object => object.id === 'unit:sarpsborg-1')?.operational.status).toBe('available')
+      expect(sourceUnits.find(object => object.id === 'unit:helo-ostfold')?.operational.status).toBe('mobilizing')
+      expect((sourceUnits.find(object => object.id === 'unit:helo-ostfold')?.packData as { patientCapacity?: number }).patientCapacity).toBe(2)
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const incident = source.snapshot().objects.find(object => object.id === 'incident:e6-collision')!
+        if ((incident.packData as { observations?: unknown[] }).observations?.length) break
+        await Bun.sleep(5)
+      }
+      const observedIncident = source.snapshot().objects.find(object => object.id === 'incident:e6-collision')!
+      expect((observedIncident.packData as { observations?: Array<{ casualtyCount: number }> }).observations?.at(-1)?.casualtyCount).toBe(3)
+      expect(source.snapshot().objects.filter(object => object.packId === 'drone')).toHaveLength(2)
 
       const startingPoints = new Map(responding.map(object => [object.id, object.spatial.position?.point.coordinates]))
       const copy = await registry.copy(source.id, {})

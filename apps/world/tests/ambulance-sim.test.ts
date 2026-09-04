@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { commandEnvelopeSchema, geoPointFromLonLat, meters, nowIso, operationalObjectSchema, simulationRunEventSchema, type CommandEnvelope, type ObjectId, type OperationalObject, type SimulationRunEvent, type SimulationRunId } from '../src/core/model/index.ts'
 import { assignCommandKind, cancelCommandKind, createItemCommandKind } from '../src/packs/ambulance/commands.ts'
-import { ambulancePackDataSchema, careSitePackDataSchema, patientPackDataSchema } from '../src/packs/ambulance/model.ts'
+import { responseUnitPackDataSchema, careSitePackDataSchema, patientPackDataSchema } from '../src/packs/ambulance/model.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
@@ -18,11 +18,11 @@ const objects = (): OperationalObject[] => structuredClone(responseScenario.init
 const command = (kind: string, payload: unknown): CommandEnvelope => commandEnvelopeSchema.parse({
   id: 'command:' + crypto.randomUUID(), simulationRunId, actorId: 'actor:test', issuedAt: nowIso(), kind, targetObjectIds: [], payload,
 }) as CommandEnvelope
-const dispatch = () => command(assignCommandKind, { ambulanceId: unitId, incidentId, patientIds: [patientId] })
+const dispatch = () => command(assignCommandKind, { unitId, incidentId, patientIds: [patientId] })
 const unit = (engine: ReturnType<typeof createAmbulanceSimEngine>) => engine.snapshot().objects.find(object => object.id === unitId)!
 const engineWith = (routing: RoutingAdapter = createDirectRoutingAdapter(), initial = objects()) => createAmbulanceSimEngine({ simulationRunId, objects: initial, routing, simulationTimeMs: epoch })
 const fastUnitObjects = () => objects().map(object => object.id === unitId ? {
-  ...object, packData: { ...ambulancePackDataSchema.parse(object.packData), mobilizationSeconds: 0, sceneSeconds: 10 },
+  ...object, packData: { ...responseUnitPackDataSchema.parse(object.packData), mobilizationSeconds: 0, sceneSeconds: 10 },
 } : object)
 
 describe('Ambulance runtime integration and route restoration', () => {
@@ -37,7 +37,7 @@ describe('Ambulance runtime integration and route restoration', () => {
       const ambulance = initial.objects.find(object => object.id === unitId)!
       const careSite = initial.objects.find(object => object.id === 'facility:ous')!
       expect(ambulance.spatial.position?.point).toEqual(careSite.spatial.position?.point)
-      expect(ambulancePackDataSchema.parse(ambulance.packData).capabilities).toContain('advanced_life_support')
+      expect(responseUnitPackDataSchema.parse(ambulance.packData).capabilities).toContain('advanced_life_support')
       expect(careSitePackDataSchema.parse(careSite.packData).handoverSlots).toBe(2)
       for (const object of initial.objects) operationalObjectSchema.parse(object)
     } finally { await connection.close() }
@@ -73,7 +73,7 @@ describe('Ambulance runtime integration and route restoration', () => {
     const response = await engine.handleCommand(dispatch())
     expect(response.result.ok).toBe(true)
     expect(response.events.length).toBeGreaterThan(0)
-    const assignment = ambulancePackDataSchema.parse(unit(engine).packData).assignment!
+    const assignment = responseUnitPackDataSchema.parse(unit(engine).packData).assignment!
     expect(assignment.phase).toBe('mobilizing')
     expect(assignment.patientIds).toEqual([patientId])
     expect(assignment.leg?.provider).toBe('direct')
@@ -103,7 +103,7 @@ describe('Ambulance runtime integration and route restoration', () => {
     original.advanceTo(epoch + 45_000)
     restored.advanceTo(epoch + 45_000)
     expect(unit(restored).spatial.position!.point).toEqual(unit(original).spatial.position!.point)
-    expect(ambulancePackDataSchema.parse(unit(restored).packData).assignment).toEqual(ambulancePackDataSchema.parse(unit(original).packData).assignment)
+    expect(responseUnitPackDataSchema.parse(unit(restored).packData).assignment).toEqual(responseUnitPackDataSchema.parse(unit(original).packData).assignment)
     expect(calls).toBe(1)
   })
 
@@ -122,7 +122,7 @@ describe('Ambulance runtime integration and route restoration', () => {
     expect(unit(engine).spatial.position!.point.coordinates[0]).toBeCloseTo(11.0005, 7)
     engine.advanceTo(epoch + 10_000)
     expect(unit(engine).spatial.position!.point).toEqual(finish)
-    expect(ambulancePackDataSchema.parse(unit(engine).packData).assignment?.phase).toBe('on-scene')
+    expect(responseUnitPackDataSchema.parse(unit(engine).packData).assignment?.phase).toBe('on-scene')
   })
 
   test('routing failure does not commit an assignment or reserve a patient', async () => {
@@ -135,8 +135,8 @@ describe('Ambulance runtime integration and route restoration', () => {
   test('cancels a response without erasing or transferring patients', async () => {
     const engine = engineWith()
     expect((await engine.handleCommand(dispatch())).result.ok).toBe(true)
-    expect((await engine.handleCommand(command(cancelCommandKind, { ambulanceId: unitId }))).result.ok).toBe(true)
-    expect(ambulancePackDataSchema.parse(unit(engine).packData).assignment).toBeUndefined()
+    expect((await engine.handleCommand(command(cancelCommandKind, { unitId }))).result.ok).toBe(true)
+    expect(responseUnitPackDataSchema.parse(unit(engine).packData).assignment).toBeUndefined()
     expect(patientPackDataSchema.parse(engine.snapshot().objects.find(object => object.id === patientId)!.packData).holder).toEqual({ kind: 'incident', id: incidentId })
   })
 

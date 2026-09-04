@@ -71,7 +71,7 @@ describe('Ambulance bounded AI read surface', () => {
   test('current route ETA accounts for weather and becomes unknown when blocked; changing needs expose assignment warnings', () => {
     const objects = build()
     objects[1] = { ...update(objects[1]!, { assignment }), spatial: { ...objects[1]!.spatial, route: { etaSeconds: 20, source: 'simulator' } } }
-    objects[2] = update(objects[2]!, { needs: ['specialist-care'], holder: { kind: 'ambulance', id: 'ambulance:a' } })
+    objects[2] = update(objects[2]!, { needs: ['specialist-care'], holder: { kind: 'response-unit', id: 'ambulance:a' } })
     const state = dispatchStateSchema.parse(query('dispatch-state', objects))
     expect(state.units[0]!.remainingTravelSeconds).toBe(20)
     expect(state.units[0]!.assignmentWarnings).toEqual(assignmentWarnings(objects[1]!, objects))
@@ -89,7 +89,7 @@ describe('Ambulance bounded AI read surface', () => {
     expect(state.units[0]!.patientIds.map(String)).toEqual(['patient:a'])
     expect(state.units[0]!.onBoardPatientIds).toEqual([])
     expect(state.careSites[0]!.queuedUnitIds.map(String)).toEqual(['ambulance:a'])
-    objects[2] = update(objects[2]!, { holder: { kind: 'ambulance', id: 'ambulance:a' } })
+    objects[2] = update(objects[2]!, { holder: { kind: 'response-unit', id: 'ambulance:a' } })
     state = dispatchStateSchema.parse(query('dispatch-state', objects))
     expect(state.units[0]!.onBoardPatientIds.map(String)).toEqual(['patient:a'])
     expect(state.careSites[0]!.handingOverUnitIds).toEqual([])
@@ -127,7 +127,7 @@ describe('Ambulance presentation, discovery and recording', () => {
     expect(contribution.canStart(objects[1]!, { objects })).toBe(true)
     const target = contribution.targetFor(objects[1]!, objects[0]!, 'start', { objects })
     expect(target?.choices).toEqual([expect.objectContaining({ id: 'patient:a', label: 'Test patient' })])
-    expect(target?.buildCommand(['patient:a'])).toMatchObject({ kind: 'world.ambulance.assign', payload: { ambulanceId: 'ambulance:a', incidentId: 'incident:a', patientIds: ['patient:a'] } })
+    expect(target?.buildCommand(['patient:a'])).toMatchObject({ kind: 'world.ambulance.assign', payload: { unitId: 'ambulance:a', incidentId: 'incident:a', patientIds: ['patient:a'] } })
 
     const assigned = update(objects[1]!, { assignment })
     const assignedObjects = objects.map(object => object.id === assigned.id ? assigned : object)
@@ -160,10 +160,10 @@ describe('Ambulance presentation, discovery and recording', () => {
     expect(ambulancePackView).not.toHaveProperty('ui')
   })
 
-  test('all four item types are editor-discoverable with required patient reference and no fabricated defaults', () => {
+  test('all five item types are editor-discoverable with required patient reference and no fabricated defaults', () => {
     const catalog = scenarioAuthoringCatalogFor([ambulancePack])
     const types = catalog.packs[0]!.itemTypes
-    expect(types.map(type => type.id)).toEqual(['ambulance', 'incident', 'patient', 'care-site'])
+    expect(types.map(type => type.id)).toEqual(['ambulance', 'helicopter', 'incident', 'patient', 'care-site'])
     const patient = types.find(type => type.id === 'patient')!
     expect(patient.defaultItem).not.toHaveProperty('incidentId')
     expect(patient.fields.find(field => field.path[0] === 'incidentId')!.optional).toBe(false)
@@ -182,7 +182,7 @@ describe('Ambulance presentation, discovery and recording', () => {
     expect(observationsFor(objects[2]!).find(value => value.signalId === 'patient.contactSeconds')).toMatchObject({ value: 12, quantity: 'time', unit: 's' })
     const plan = createAmbulanceRecordingPlan({ packId: 'ambulance', profileId: 'operations' })
     const result = plan.sample({ objects, observedAt: at, simulationTime: new Date(start + 30_000).toISOString() as typeof at, elapsedMs: 30_000 })
-    expect(result.descriptors.find(series => series.signalId === 'ambulance.crewReady')!.valueType).toBe('boolean')
+    expect(result.descriptors.find(series => series.signalId === 'response-unit.crewReady')!.valueType).toBe('boolean')
     expect(result.descriptors.find(series => series.signalId === 'patient.holderId')!.valueType).toBe('string')
     expect(result.descriptors.some(series => /heart|blood|beds|victims/i.test(series.signalId))).toBe(false)
     expect(result.samples.every(sample => sample.observedAt === at && sample.elapsedMs === 30_000)).toBe(true)

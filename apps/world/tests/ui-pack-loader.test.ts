@@ -9,6 +9,7 @@ describe('UI scenario pack loading', () => {
     expect(pack.packIds).toEqual(['ambulance'])
     expect(pack.presentation.categories.map(category => category.id)).toEqual([
       'ambulances',
+      'helicopters',
       'incidents',
       'patients',
       'care-sites',
@@ -24,7 +25,7 @@ describe('UI scenario pack loading', () => {
     const pack = await loadActivePackViews(['ambulance', 'weather'])
 
     expect(pack.packIds).toEqual(['ambulance', 'weather'])
-    expect(pack.presentation.categories.map(category => category.id)).toEqual(['ambulances', 'incidents', 'patients', 'care-sites', 'weather'])
+    expect(pack.presentation.categories.map(category => category.id)).toEqual(['ambulances', 'helicopters', 'incidents', 'patients', 'care-sites', 'weather'])
     expect(pack.creation?.createObjectTypes.map(type => type.id).sort()).toEqual([
       'weather_area',
       'weather_probe',

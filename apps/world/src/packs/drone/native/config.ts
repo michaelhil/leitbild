@@ -6,7 +6,6 @@ export interface DroneNativeRuntimeConfig {
   readonly stepIntervalMs: number
   readonly projectionIntervalMs: number
   readonly motionFrameIntervalMs: number
-  readonly batteryDrainPercentPerHour: number
   readonly models: ReadonlyArray<DroneVehicleModel>
 }
 
@@ -17,7 +16,6 @@ export const parseDroneNativeRuntimeConfig = (rawConfig: unknown): DroneNativeRu
     stepIntervalMs: parsed.stepIntervalMs,
     projectionIntervalMs: parsed.projectionIntervalMs,
     motionFrameIntervalMs: parsed.motionFrameIntervalMs,
-    batteryDrainPercentPerHour: parsed.batteryDrainPercentPerHour,
     models: droneModelsForConfig(parsed),
   }
 }

@@ -112,6 +112,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
               ...(config.runClock ? { runClock: config.runClock } : {}),
               queries,
               scenario,
+              initialWorldObjects: [...committedObjects.values()],
               ...(initialObjects === undefined ? {} : { initialObjects }),
               ...(config.runtimeStateStores?.[adapter.id] === undefined
               ? {}

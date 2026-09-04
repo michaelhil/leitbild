@@ -135,6 +135,7 @@ export const createDronePackData = (config: {
     vehicle: {
       modelId: model.id,
       modelLabel: model.label,
+      nominalEnduranceMinutes: model.nominalEnduranceMinutes,
       airframe: model.airframe,
       flightEnvelope: model.flightEnvelope,
       capabilities: model.capabilities,

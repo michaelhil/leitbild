@@ -14,6 +14,7 @@ import { dronePackDataSchema, dronePackId, type DroneDamageRecord, type DronePac
 import { offsetMeters } from './spatial.ts'
 
 export const droneAttackRequestedSignalType = 'drone.attack.requested'
+export const reconnaissanceObservationSignalType = 'reconnaissance.observation.requested'
 
 export const droneAttackSignalPayloadSchema = attackPayloadSchema
 
@@ -244,3 +245,23 @@ export const droneAttackSignal = (config: {
     },
     ...(config.causationId === undefined ? {} : { causationId: config.causationId }),
   }) as InteractionSignal
+
+export const droneObservationSignal = (config: {
+  readonly simulationRunId: string
+  readonly at: IsoTimestamp
+  readonly observedAtMs: number
+  readonly observerId: ObjectId
+  readonly targetId: ObjectId
+  readonly sensorId: string
+  readonly causationId?: string
+}): InteractionSignal => interactionSignalSchema.parse({
+  id: `signal:${randomId()}` as SignalId,
+  simulationRunId: config.simulationRunId,
+  at: config.at,
+  source: { kind: 'object', id: config.observerId },
+  targets: [{ kind: 'object', id: config.targetId }],
+  type: reconnaissanceObservationSignalType,
+  severity: 'info',
+  payload: { observerId: config.observerId, targetId: config.targetId, sensorId: config.sensorId, observedAtMs: config.observedAtMs },
+  ...(config.causationId === undefined ? {} : { causationId: config.causationId }),
+}) as InteractionSignal

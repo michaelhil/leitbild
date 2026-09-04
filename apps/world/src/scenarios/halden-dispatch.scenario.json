@@ -1,301 +1,116 @@
 {
   "id": "halden-dispatch",
-  "title": "Halden dispatch exercise",
-  "description": "Coordinate three ambulances through competing calls around Halden. Choose patients, units and receiving sites; observe response times, coverage and handover queues. This synthetic operational exercise is not a validated service plan or a clinical prediction. Locations are illustrative; capabilities and service times are editable assumptions, not claims about actual facilities.",
+  "title": "Halden emergency response exercise",
+  "description": "Coordinate road ambulances, medical helicopters and reconnaissance drones through a two-hour synthetic emergency-response exercise around Halden. Incidents, patient needs, service times and facility capabilities are authored assumptions for research and demonstration; they are not clinical advice or claims about real services.",
   "objectives": [
-    "Prioritize competing demand using urgency, crew readiness, patient needs and unit location.",
-    "Compare a hospital receiving site with a temporary assessment/triage site; observe handover congestion without invented bed counters.",
-    "Reassess a patient, record an explicit no-transport decision, or redirect an empty returning ambulance.",
-    "Use the Ambulance dispatch assistant to inspect eligibility, explain a decision and carry out explicitly requested dispatches."
+    "Coordinate road and rotary-wing units while preserving geographic coverage and explicit patient custody.",
+    "Use fixed-wing search and quadcopter inspection sensors to detect incident contacts and record verified casualty summaries.",
+    "Match assessed urgency and care needs to receiving sites while managing limited handover slots.",
+    "Respond to new and varied demand over two simulated hours, including multi-casualty, pediatric, burn, rural and ordinary calls.",
+    "Use the dispatch assistant to inspect live state, compare eligible options and execute only explicitly requested actions."
   ],
-  "world": {
-    "startsAt": "2026-09-03T08:00:00.000Z",
-    "environment": {
-      "city": "Halden",
-      "model": "Synthetic operational dispatch exercise; no real patient data"
-    }
-  },
-  "view": {
-    "map": {
-      "center": [
-        11.29,
-        59.22
-      ],
-      "zoom": 10
-    }
-  },
+  "world": { "startsAt": "2026-09-03T08:00:00.000Z", "environment": { "city": "Halden", "model": "Synthetic multi-modal emergency-response exercise; no real patient data" } },
+  "view": { "map": { "center": [11.29, 59.22], "zoom": 10 } },
   "packs": [
     {
       "id": "ambulance",
-      "config": {
-        "roadWeather": {
-          "enabled": false
-        }
-      },
-      "recording": {
-        "profileId": "operations",
-        "intervalMs": 5000
-      },
+      "config": { "roadWeather": { "enabled": false } },
+      "recording": { "profileId": "operations", "intervalMs": 5000 },
       "items": [
-        {
-          "type": "ambulance",
-          "id": "amb:halden-1",
-          "label": "Halden 1",
-          "position": [
-            11.385,
-            59.127
-          ],
-          "patientCapacity": 1,
-          "capabilities": [
-            "assessment",
-            "trauma"
-          ],
-          "crewReady": true,
-          "mobilizationSeconds": 0,
-          "sceneSeconds": 480
-        },
-        {
-          "type": "ambulance",
-          "id": "amb:halden-2",
-          "label": "Halden 2",
-          "position": [
-            11.414,
-            59.15
-          ],
-          "patientCapacity": 1,
-          "capabilities": [
-            "assessment",
-            "trauma"
-          ],
-          "crewReady": true,
-          "mobilizationSeconds": 0,
-          "sceneSeconds": 480
-        },
-        {
-          "type": "ambulance",
-          "id": "amb:sarpsborg-1",
-          "label": "Sarpsborg 1",
-          "position": [
-            11.11,
-            59.28
-          ],
-          "patientCapacity": 1,
-          "capabilities": [
-            "assessment",
-            "trauma"
-          ],
-          "crewReady": true,
-          "mobilizationSeconds": 60,
-          "sceneSeconds": 600
-        },
-        {
-          "type": "care-site",
-          "id": "care:kalnes",
-          "label": "Kalnes receiving site — exercise",
-          "position": [
-            11.023,
-            59.322
-          ],
-          "capabilities": [
-            "assessment",
-            "trauma"
-          ],
-          "acceptedUrgencies": [
-            "acute",
-            "urgent",
-            "ordinary"
-          ],
-          "handoverSlots": 1,
-          "handoverSeconds": 900,
-          "accepting": true
-        },
-        {
-          "type": "care-site",
-          "id": "care:halden-triage",
-          "label": "Halden temporary triage centre — exercise",
-          "position": [
-            11.384,
-            59.121
-          ],
-          "capabilities": [
-            "assessment"
-          ],
-          "acceptedUrgencies": [
-            "urgent",
-            "ordinary"
-          ],
-          "handoverSlots": 1,
-          "handoverSeconds": 300,
-          "accepting": true
-        },
-        {
-          "type": "incident",
-          "id": "incident:e6-collision",
-          "label": "E6 two-patient collision",
-          "position": [
-            11.325,
-            59.19
-          ],
-          "dispatchUrgency": "acute",
-          "summary": "Two patients after a synthetic road collision. Assess whether to commit both local units or request the more distant unit."
-        },
-        {
-          "type": "patient",
-          "id": "patient:collision-1",
-          "label": "Collision patient A",
-          "incidentId": "incident:e6-collision",
-          "assessedUrgency": "acute",
-          "needs": [
-            "trauma"
-          ],
-          "summary": "Time-critical transport need in this exercise; no physiological deterioration model."
-        },
-        {
-          "type": "patient",
-          "id": "patient:collision-2",
-          "label": "Collision patient B",
-          "incidentId": "incident:e6-collision",
-          "assessedUrgency": "urgent",
-          "needs": [
-            "assessment"
-          ],
-          "summary": "Requires assessment and a destination decision; suitable receiving care depends on current assessment."
-        },
-        {
-          "type": "incident",
-          "id": "incident:tistedal-call",
-          "label": "Tistedal assessment call",
-          "position": [
-            11.45,
-            59.125
-          ],
-          "dispatchUrgency": "urgent",
-          "summary": "Competing call requiring assessment. User may explicitly select no transport with a reason after review."
-        },
-        {
-          "type": "patient",
-          "id": "patient:tistedal",
-          "label": "Tistedal patient",
-          "incidentId": "incident:tistedal-call",
-          "assessedUrgency": "urgent",
-          "needs": [
-            "assessment"
-          ],
-          "summary": "Operational assessment and transport decision; no automated clinical diagnosis."
-        }
+        { "type": "ambulance", "id": "unit:halden-1", "label": "Halden road unit 1", "position": [11.385, 59.127], "patientCapacity": 1, "capabilities": ["assessment", "trauma"], "crewReady": true, "mobilizationSeconds": 0, "sceneSeconds": 480 },
+        { "type": "ambulance", "id": "unit:halden-2", "label": "Halden road unit 2", "position": [11.414, 59.15], "patientCapacity": 1, "capabilities": ["assessment", "trauma", "pediatric"], "crewReady": true, "mobilizationSeconds": 0, "sceneSeconds": 480 },
+        { "type": "ambulance", "id": "unit:sarpsborg-1", "label": "Sarpsborg road unit 1", "position": [11.11, 59.28], "patientCapacity": 1, "capabilities": ["assessment", "trauma"], "crewReady": true, "mobilizationSeconds": 60, "sceneSeconds": 600 },
+        { "type": "ambulance", "id": "unit:aremark-1", "label": "Aremark road unit 1", "position": [11.67, 59.22], "patientCapacity": 1, "capabilities": ["assessment"], "crewReady": true, "mobilizationSeconds": 120, "sceneSeconds": 720 },
+        { "type": "helicopter", "id": "unit:helo-ostfold", "label": "Østfold medical helicopter", "position": [11.08, 59.30], "patientCapacity": 2, "capabilities": ["assessment", "trauma", "pediatric"], "crewReady": true, "mobilizationSeconds": 120, "sceneSeconds": 720, "cruiseSpeedMps": 68 },
+        { "type": "helicopter", "id": "unit:helo-reserve", "label": "Regional helicopter reserve", "position": [10.88, 59.38], "patientCapacity": 2, "capabilities": ["assessment", "trauma", "burn"], "crewReady": true, "mobilizationSeconds": 240, "sceneSeconds": 780, "cruiseSpeedMps": 72 },
+        { "type": "care-site", "id": "care:kalnes", "label": "Kalnes receiving site — exercise", "position": [11.023, 59.322], "capabilities": ["assessment", "trauma", "pediatric"], "acceptedUrgencies": ["acute", "urgent", "ordinary"], "handoverSlots": 2, "handoverSeconds": 900, "accepting": true },
+        { "type": "care-site", "id": "care:halden-triage", "label": "Halden temporary triage centre — exercise", "position": [11.384, 59.121], "capabilities": ["assessment"], "acceptedUrgencies": ["urgent", "ordinary"], "handoverSlots": 2, "handoverSeconds": 300, "accepting": true },
+        { "type": "care-site", "id": "care:regional-specialist", "label": "Regional specialist receiving site — exercise", "position": [10.77, 59.44], "capabilities": ["assessment", "trauma", "pediatric", "burn"], "acceptedUrgencies": ["acute", "urgent"], "handoverSlots": 1, "handoverSeconds": 1200, "accepting": true },
+        { "type": "incident", "id": "incident:e6-collision", "label": "E6 multi-patient collision", "position": [11.325, 59.19], "dispatchUrgency": "acute", "summary": "Three patients after a synthetic road collision; mixed trauma and pediatric needs create simultaneous unit and destination choices." },
+        { "type": "patient", "id": "patient:e6-a", "label": "E6 patient A", "incidentId": "incident:e6-collision", "assessedUrgency": "acute", "needs": ["trauma"], "summary": "Time-critical trauma transport need; no physiology or deterioration model." },
+        { "type": "patient", "id": "patient:e6-b", "label": "E6 patient B", "incidentId": "incident:e6-collision", "assessedUrgency": "urgent", "needs": ["trauma"], "summary": "Urgent trauma assessment and transport need." },
+        { "type": "patient", "id": "patient:e6-c", "label": "E6 pediatric patient", "incidentId": "incident:e6-collision", "assessedUrgency": "urgent", "needs": ["assessment", "pediatric"], "summary": "Pediatric assessment and transport need." },
+        { "type": "incident", "id": "incident:tistedal-call", "label": "Tistedal assessment call", "position": [11.45, 59.125], "dispatchUrgency": "urgent", "summary": "Competing assessment call with a possible explicit no-transport outcome after operator review." },
+        { "type": "patient", "id": "patient:tistedal", "label": "Tistedal patient", "incidentId": "incident:tistedal-call", "assessedUrgency": "urgent", "needs": ["assessment"], "summary": "Operational assessment and transport decision; no automated diagnosis." }
+      ]
+    },
+    {
+      "id": "drone",
+      "config": { "maxDrones": 8, "stepIntervalMs": 20, "projectionIntervalMs": 40, "motionFrameIntervalMs": 40, "models": [] },
+      "items": [
+        { "type": "drone", "id": "drone:halden-search", "label": "Halden fixed-wing search", "position": [11.34, 59.20], "modelId": "incident-response-fixed-wing", "altitudeM": 180, "headingDeg": 210 },
+        { "type": "drone", "id": "drone:halden-inspection", "label": "Halden incident quadcopter", "position": [11.445, 59.13], "modelId": "incident-response-quadcopter", "altitudeM": 80, "headingDeg": 150 }
       ]
     }
   ],
   "timeline": {
     "cues": [
       {
-        "id": "dispatch-collision-response",
-        "at": {
-          "kind": "after_scenario_start",
-          "seconds": 0
-        },
-        "title": "Halden 1 responding to the E6 collision",
+        "id": "initial-road-response", "at": { "kind": "after_scenario_start", "seconds": 0 }, "title": "Road units are already responding",
         "actions": [
-          {
-            "type": "invoke_capability",
-            "capabilityId": "world.ambulance.assign",
-            "input": {
-              "ambulanceId": "amb:halden-1",
-              "incidentId": "incident:e6-collision",
-              "patientIds": [
-                "patient:collision-1"
-              ]
-            }
-          },
-          {
-            "type": "invoke_capability",
-            "capabilityId": "world.ambulance.append-stop",
-            "input": {
-              "kind": "handover",
-              "ambulanceId": "amb:halden-1",
-              "careSiteId": "care:kalnes",
-              "patientIds": [
-                "patient:collision-1"
-              ]
-            }
-          }
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.assign", "input": { "unitId": "unit:halden-1", "incidentId": "incident:e6-collision", "patientIds": ["patient:e6-a"] } },
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.append-stop", "input": { "kind": "handover", "unitId": "unit:halden-1", "careSiteId": "care:kalnes", "patientIds": ["patient:e6-a"] } },
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.assign", "input": { "unitId": "unit:halden-2", "incidentId": "incident:tistedal-call", "patientIds": ["patient:tistedal"] } },
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.append-stop", "input": { "kind": "handover", "unitId": "unit:halden-2", "careSiteId": "care:halden-triage", "patientIds": ["patient:tistedal"] } }
         ]
       },
       {
-        "id": "dispatch-tistedal-response",
-        "at": {
-          "kind": "after_scenario_start",
-          "seconds": 0
-        },
-        "title": "Halden 2 responding to the Tistedal call",
+        "id": "initial-air-response", "at": { "kind": "after_scenario_start", "seconds": 0 }, "title": "Medical helicopter committed to two patients",
         "actions": [
-          {
-            "type": "invoke_capability",
-            "capabilityId": "world.ambulance.assign",
-            "input": {
-              "ambulanceId": "amb:halden-2",
-              "incidentId": "incident:tistedal-call",
-              "patientIds": [
-                "patient:tistedal"
-              ]
-            }
-          },
-          {
-            "type": "invoke_capability",
-            "capabilityId": "world.ambulance.append-stop",
-            "input": {
-              "kind": "handover",
-              "ambulanceId": "amb:halden-2",
-              "careSiteId": "care:halden-triage",
-              "patientIds": [
-                "patient:tistedal"
-              ]
-            }
-          }
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.assign", "input": { "unitId": "unit:helo-ostfold", "incidentId": "incident:e6-collision", "patientIds": ["patient:e6-b", "patient:e6-c"] } },
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.append-stop", "input": { "kind": "handover", "unitId": "unit:helo-ostfold", "careSiteId": "care:kalnes", "patientIds": ["patient:e6-b", "patient:e6-c"] } }
         ]
       },
       {
-        "id": "later-call",
-        "at": {
-          "kind": "after_scenario_start",
-          "seconds": 240
-        },
-        "title": "New ordinary-priority call in southern Halden",
+        "id": "initial-drone-observations", "at": { "kind": "after_scenario_start", "seconds": 0 }, "title": "Reconnaissance aircraft report initial incident contacts",
         "actions": [
-          {
-            "type": "invoke_capability",
-            "capabilityId": "world.ambulance.create-item",
-            "input": {
-              "item": {
-                "type": "incident",
-                "id": "incident:later-call",
-                "label": "Southern Halden call",
-                "position": [
-                  11.389,
-                  59.08
-                ],
-                "dispatchUrgency": "ordinary",
-                "summary": "A further synthetic call arrives while earlier units may be committed."
-              }
-            }
-          },
-          {
-            "type": "invoke_capability",
-            "capabilityId": "world.ambulance.create-item",
-            "input": {
-              "item": {
-                "type": "patient",
-                "id": "patient:later-call",
-                "label": "Southern Halden patient",
-                "incidentId": "incident:later-call",
-                "assessedUrgency": "ordinary",
-                "needs": [
-                  "assessment"
-                ],
-                "summary": "Stable assessment/transport need for this exercise."
-              }
-            }
-          }
+          { "type": "invoke_capability", "capabilityId": "world.drone.observe-target", "input": { "droneId": "drone:halden-search", "targetId": "incident:e6-collision", "sensorId": "wide-area-eo" } },
+          { "type": "invoke_capability", "capabilityId": "world.drone.observe-target", "input": { "droneId": "drone:halden-inspection", "targetId": "incident:tistedal-call", "sensorId": "incident-eo-ir" } },
+          { "type": "invoke_capability", "capabilityId": "world.drone.arm", "input": { "droneId": "drone:halden-search", "armed": true } },
+          { "type": "invoke_capability", "capabilityId": "world.drone.navigate", "input": { "droneId": "drone:halden-search", "target": { "point": { "type": "Point", "coordinates": [11.48, 59.30] }, "altitudeM": 180, "speedMps": 17 } } },
+          { "type": "invoke_capability", "capabilityId": "world.drone.arm", "input": { "droneId": "drone:halden-inspection", "armed": true } },
+          { "type": "invoke_capability", "capabilityId": "world.drone.navigate", "input": { "droneId": "drone:halden-inspection", "target": { "point": { "type": "Point", "coordinates": [11.38, 59.16] }, "altitudeM": 80, "speedMps": 24 } } }
+        ]
+      },
+      {
+        "id": "industrial-release", "at": { "kind": "after_scenario_start", "seconds": 900 }, "title": "Industrial incident with mixed needs",
+        "actions": [
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.create-item", "input": { "item": { "type": "incident", "id": "incident:industrial-release", "label": "Industrial release — exercise", "position": [11.39, 59.16], "dispatchUrgency": "acute", "summary": "Two casualties after a synthetic industrial release; specialist burn capacity is distant and limited." } } },
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.create-item", "input": { "item": { "type": "patient", "id": "patient:industrial-a", "label": "Industrial patient A", "incidentId": "incident:industrial-release", "assessedUrgency": "acute", "needs": ["burn", "trauma"], "summary": "Acute burn and trauma transport need in the exercise." } } },
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.create-item", "input": { "item": { "type": "patient", "id": "patient:industrial-b", "label": "Industrial patient B", "incidentId": "incident:industrial-release", "assessedUrgency": "urgent", "needs": ["assessment"], "summary": "Urgent exposure assessment; no toxicology model." } } },
+          { "type": "invoke_capability", "capabilityId": "world.drone.observe-target", "input": { "droneId": "drone:halden-inspection", "targetId": "incident:industrial-release", "sensorId": "incident-eo-ir" } },
+          { "type": "invoke_capability", "capabilityId": "world.drone.navigate", "input": { "droneId": "drone:halden-search", "target": { "point": { "type": "Point", "coordinates": [11.70, 59.24] }, "altitudeM": 180, "speedMps": 17 } } }
+        ]
+      },
+      {
+        "id": "rural-fall", "at": { "kind": "after_scenario_start", "seconds": 1800 }, "title": "Remote rural call",
+        "actions": [
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.create-item", "input": { "item": { "type": "incident", "id": "incident:rural-fall", "label": "Aremark rural fall", "position": [11.70, 59.24], "dispatchUrgency": "urgent", "summary": "Remote single-patient call that tests local coverage versus rotary-wing response." } } },
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.create-item", "input": { "item": { "type": "patient", "id": "patient:rural-fall", "label": "Aremark patient", "incidentId": "incident:rural-fall", "assessedUrgency": "urgent", "needs": ["assessment", "trauma"], "summary": "Trauma assessment and transport need from a remote location." } } },
+          { "type": "invoke_capability", "capabilityId": "world.drone.observe-target", "input": { "droneId": "drone:halden-search", "targetId": "incident:rural-fall", "sensorId": "wide-area-eo" } },
+          { "type": "invoke_capability", "capabilityId": "world.drone.navigate", "input": { "droneId": "drone:halden-search", "target": { "point": { "type": "Point", "coordinates": [11.37, 59.11] }, "altitudeM": 180, "speedMps": 17 } } }
+        ]
+      },
+      {
+        "id": "ferry-terminal-event", "at": { "kind": "after_scenario_start", "seconds": 3600 }, "title": "Ferry terminal multi-casualty event",
+        "actions": [
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.create-item", "input": { "item": { "type": "incident", "id": "incident:ferry-terminal", "label": "Ferry terminal crowd incident", "position": [11.37, 59.11], "dispatchUrgency": "acute", "summary": "Four casualties with different transport needs create a renewed coverage and destination problem." } } },
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.create-item", "input": { "item": { "type": "patient", "id": "patient:ferry-a", "label": "Ferry patient A", "incidentId": "incident:ferry-terminal", "assessedUrgency": "acute", "needs": ["trauma"], "summary": "Acute trauma transport need." } } },
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.create-item", "input": { "item": { "type": "patient", "id": "patient:ferry-b", "label": "Ferry patient B", "incidentId": "incident:ferry-terminal", "assessedUrgency": "urgent", "needs": ["pediatric", "assessment"], "summary": "Pediatric assessment need." } } },
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.create-item", "input": { "item": { "type": "patient", "id": "patient:ferry-c", "label": "Ferry patient C", "incidentId": "incident:ferry-terminal", "assessedUrgency": "urgent", "needs": ["assessment"], "summary": "Urgent assessment and possible transport." } } },
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.create-item", "input": { "item": { "type": "patient", "id": "patient:ferry-d", "label": "Ferry patient D", "incidentId": "incident:ferry-terminal", "assessedUrgency": "ordinary", "needs": ["assessment"], "summary": "Ordinary-priority assessment need." } } },
+          { "type": "invoke_capability", "capabilityId": "world.drone.observe-target", "input": { "droneId": "drone:halden-search", "targetId": "incident:ferry-terminal", "sensorId": "wide-area-eo" } }
+        ]
+      },
+      {
+        "id": "specialist-bottleneck", "at": { "kind": "after_scenario_start", "seconds": 5400 }, "title": "Specialist receiving site pauses admissions",
+        "actions": [{ "type": "invoke_capability", "capabilityId": "world.ambulance.set-care-site", "input": { "careSiteId": "care:regional-specialist", "accepting": false } }]
+      },
+      {
+        "id": "late-evening-demand", "at": { "kind": "after_scenario_start", "seconds": 6600 }, "title": "Late ordinary-priority demand",
+        "actions": [
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.create-item", "input": { "item": { "type": "incident", "id": "incident:late-home-call", "label": "Southern Halden home call", "position": [11.39, 59.08], "dispatchUrgency": "ordinary", "summary": "A stable call arrives after sustained demand and tests whether local coverage has recovered." } } },
+          { "type": "invoke_capability", "capabilityId": "world.ambulance.create-item", "input": { "item": { "type": "patient", "id": "patient:late-home", "label": "Southern Halden patient", "incidentId": "incident:late-home-call", "assessedUrgency": "ordinary", "needs": ["assessment"], "summary": "Stable assessment and transport decision for the exercise." } } }
         ]
       }
     ]

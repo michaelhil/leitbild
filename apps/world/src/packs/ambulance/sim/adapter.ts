@@ -6,7 +6,7 @@ import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import { defineSimulationCommandCapability, defineSimulationQueryCapability } from '../../../simulation/capabilities.ts'
 import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeHealth } from '../../../simulation/protocol.ts'
 import { ambulanceCommandSchemas } from '../commands.ts'
-import { ambulancePackId } from '../model.ts'
+import { ambulancePackId, responseUnitPackDataSchema } from '../model.ts'
 import { ambulanceQueryCapabilities, answerAmbulanceQuery } from '../query.ts'
 import { createAmbulanceRecordingPlan } from '../recording.ts'
 import { ambulancePackConfigSchema, roadWeatherCapability, roadWeatherImpact, roadWeatherPolicySchema, roadWeatherSamplesSchema, setRoadWeatherPolicyCapability, type RoadWeatherPolicy } from '../road-weather.ts'
@@ -31,7 +31,7 @@ const commandCapabilities = Object.entries(ambulanceCommandSchemas).map(([key, i
     id, ...commandDescriptions[id], input, output: commandResultSchema, schedulable: true,
     buildCommand: raw => {
       const payload = input.parse(raw)
-      const targetId = 'ambulanceId' in payload ? payload.ambulanceId : 'careSiteId' in payload ? payload.careSiteId : 'patientId' in payload ? payload.patientId : undefined
+      const targetId = 'unitId' in payload ? payload.unitId : 'careSiteId' in payload ? payload.careSiteId : 'patientId' in payload ? payload.patientId : undefined
       return { targetObjectIds: targetId ? [targetId] : [], payload }
     },
   })
@@ -103,7 +103,10 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: { readonly
       health = { ...health, state: 'failed', failureCount: health.failureCount + 1,
         lastFailure: { at: nowIso(), operation, message: error instanceof Error ? error.message : String(error) } }
     }
-    const roadWeatherVehicles = () => engine.snapshot().objects.filter(object => object.kind === 'mobile_entity' && object.spatial.route?.planned && object.spatial.position?.point)
+    const roadWeatherVehicles = () => engine.snapshot().objects.filter(object => {
+      const unit = responseUnitPackDataSchema.safeParse(object.packData)
+      return unit.success && unit.data.mobility.kind === 'road' && object.spatial.route?.planned && object.spatial.position?.point
+    })
     const prepareRoadWeather = async (candidate: RoadWeatherPolicy) => {
       const generation = ++weatherReadGeneration
       const vehicles = roadWeatherVehicles()

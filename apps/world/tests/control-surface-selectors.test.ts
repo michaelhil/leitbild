@@ -31,6 +31,7 @@ describe('control surface selectors', () => {
 
     expect(rows.map(row => [row.category.id, row.objects.length, row.createType?.id])).toEqual([
       ['ambulances', 3, undefined],
+      ['helicopters', 0, undefined],
       ['incidents', 3, undefined],
       ['patients', 4, undefined],
       ['care-sites', 3, undefined],

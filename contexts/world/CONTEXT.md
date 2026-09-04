@@ -127,16 +127,20 @@ An optional mobility-owned rule that translates sampled conditions into an expla
 _Avoid_: Weather Influence, hidden rerouting, calibrated tire model
 
 **Response Unit**:
-An ambulance with explicitly described transport capacity, care capabilities, crew readiness and a current operational assignment.
-_Avoid_: assuming every mobile asset can transport patients
+A medical transport asset—currently a road ambulance or rotary-wing helicopter—with explicit mobility, patient capacity, care capabilities, crew readiness and a current operational assignment.
+_Avoid_: separate custody workflows per vehicle type, assuming every mobile asset can transport patients
 
 **Incident**:
 A reported operational event at a fixed occurrence location, optionally associated with an existing asset. Dispatch urgency describes the response request, not a diagnosis or an individual patient's assessed priority.
 _Avoid_: converting the associated asset into an incident, moving the occurrence when its associated asset moves
 
 **Patient**:
-An individually tracked case with assessed care needs, disposition and exactly one current holder: an incident, ambulance or care site.
+An individually tracked case with assessed care needs, disposition and exactly one current holder: an incident, response unit or care site.
 _Avoid_: an interchangeable casualty counter, invented physiology
+
+**Incident Observation**:
+A timestamped, source-attributed summary recorded when a validated reconnaissance sensor observes an Incident. It reports only facts represented by the simulation, while the observing Pack remains independent of the Incident's domain model.
+_Avoid_: invented sensor findings, Drone-owned patient state, generic cross-Pack mutation
 
 **Care Site**:
 A receiving or stabilization service at an established location with explicit acceptance criteria and handover capacity. A building or map label alone does not establish that service.

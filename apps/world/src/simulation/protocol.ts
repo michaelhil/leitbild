@@ -191,6 +191,9 @@ export interface PackRuntimeConnectionConfig {
   /** Restored Pack objects when resuming a run. Fresh runs use the compiled
    * Scenario objects in `scenario.initialObjects`. */
   readonly initialObjects?: ReadonlyArray<OperationalObject>
+  /** Initial read-only projection of every active Pack's objects. Pack runtimes
+   * may use this for discovery, but may only return mutations for owned objects. */
+  readonly initialWorldObjects?: ReadonlyArray<OperationalObject>
   readonly runtimeStateStore?: PackRuntimeStateStore
   readonly runtimeStateStores?: Readonly<Record<string, PackRuntimeStateStore>>
   readonly recording?: ScenarioRecordingSelection

@@ -772,12 +772,12 @@ const fixtures = [
           "maxDrones": 10,
           "stepIntervalMs": 20,
           "projectionIntervalMs": 33,
-          "batteryDrainPercentPerHour": 7,
           "models": [
             {
               "id": "native-vision-micro",
               "label": "Vision Micro",
               "description": "Compact native Leitbild vision quad for quiet observation tasks.",
+              "nominalEnduranceMinutes": 35,
               "airframe": {
                 "kind": "quadrotor",
                 "rotorCount": 4,
@@ -840,6 +840,7 @@ const fixtures = [
               "id": "native-effect-quad",
               "label": "Effect Quad",
               "description": "Native Leitbild quad with an operator-declared training effect payload.",
+              "nominalEnduranceMinutes": 25,
               "airframe": {
                 "kind": "quadrotor",
                 "rotorCount": 4,

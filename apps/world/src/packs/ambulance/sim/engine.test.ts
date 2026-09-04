@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { geoPointFromLonLat, meters, type CommandEnvelope, type ObjectId, type OperationalObject, type SimulationRunId } from '../../../core/model/index.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import { ambulanceItemSchema } from '../item-schemas.ts'
-import { ambulancePackDataSchema, assignmentWarnings, careSitePackDataSchema, incidentPackDataSchema, patientPackDataSchema } from '../model.ts'
+import { responseUnitPackDataSchema, assignmentWarnings, careSitePackDataSchema, incidentPackDataSchema, patientPackDataSchema } from '../model.ts'
 import { createAmbulanceSimEngine, type AmbulanceSimEngine } from './engine.ts'
 import { createAmbulanceItem, validateAmbulanceDeletion, validateAmbulanceObjects } from './object-state.ts'
 
@@ -22,13 +22,13 @@ const build = (items: readonly unknown[] = [incident, patient(), site, unit()]):
 const engine = (items?: readonly unknown[]) => createAmbulanceSimEngine({ simulationRunId: 'run:ambulance-test' as SimulationRunId, objects: build(items), routing, simulationTimeMs: start })
 let commandNumber = 0
 const command = (kind: string, payload: unknown): CommandEnvelope => ({ id: `command:test-${++commandNumber}` as CommandEnvelope['id'], simulationRunId: 'run:ambulance-test' as SimulationRunId, actorId: 'actor:test' as CommandEnvelope['actorId'], issuedAt: at, targetObjectIds: [], kind: `world.ambulance.${kind}`, payload })
-const dispatch = async (e: AmbulanceSimEngine, ambulanceId = 'ambulance:a', patientId = 'patient:a', destinationId: string | null = 'site:a') => {
-  const assigned = await e.handleCommand(command('assign', { ambulanceId, incidentId: 'incident:a', patientIds: [patientId] }))
+const dispatch = async (e: AmbulanceSimEngine, unitId = 'ambulance:a', patientId = 'patient:a', destinationId: string | null = 'site:a') => {
+  const assigned = await e.handleCommand(command('assign', { unitId, incidentId: 'incident:a', patientIds: [patientId] }))
   if (!assigned.result.ok || !destinationId) return assigned
-  return await e.handleCommand(command('append-stop', { kind: 'handover', ambulanceId, careSiteId: destinationId, patientIds: [patientId] }))
+  return await e.handleCommand(command('append-stop', { kind: 'handover', unitId, careSiteId: destinationId, patientIds: [patientId] }))
 }
 const read = (e: AmbulanceSimEngine, id: string): OperationalObject => e.snapshot().objects.find(object => object.id === id)!
-const ambulance = (e: AmbulanceSimEngine, id = 'ambulance:a') => ambulancePackDataSchema.parse(read(e, id).packData)
+const ambulance = (e: AmbulanceSimEngine, id = 'ambulance:a') => responseUnitPackDataSchema.parse(read(e, id).packData)
 const person = (e: AmbulanceSimEngine, id = 'patient:a') => patientPackDataSchema.parse(read(e, id).packData)
 const normalized = (e: AmbulanceSimEngine) => e.snapshot().objects.map(object => ({ id: object.id, status: object.operational.status, point: object.spatial.position?.point, data: object.packData }))
 
@@ -75,23 +75,23 @@ describe('Ambulance operational lifecycle', () => {
     const e = engine()
     await dispatch(e)
     e.advanceTo(start + 20_000)
-    expect((await e.handleCommand(command('cancel', { ambulanceId: 'ambulance:a' }))).result.ok).toBe(true)
+    expect((await e.handleCommand(command('cancel', { unitId: 'ambulance:a' }))).result.ok).toBe(true)
     expect(ambulance(e).assignment?.phase).toBe('ready-for-transport')
-    expect(person(e).holder).toEqual({ kind: 'ambulance', id: 'ambulance:a' as ObjectId })
-    expect((await e.handleCommand(command('return-to-base', { ambulanceId: 'ambulance:a' }))).result.ok).toBe(false)
-    expect((await e.handleCommand(command('append-stop', { kind: 'handover', ambulanceId: 'ambulance:a', careSiteId: 'site:a', patientIds: ['patient:a'] }))).result.ok).toBe(true)
+    expect(person(e).holder).toEqual({ kind: 'response-unit', id: 'ambulance:a' as ObjectId })
+    expect((await e.handleCommand(command('return-to-base', { unitId: 'ambulance:a' }))).result.ok).toBe(false)
+    expect((await e.handleCommand(command('append-stop', { kind: 'handover', unitId: 'ambulance:a', careSiteId: 'site:a', patientIds: ['patient:a'] }))).result.ok).toBe(true)
     e.advanceTo(start + 31_000)
-    expect((await e.handleCommand(command('cancel', { ambulanceId: 'ambulance:a' }))).result.ok).toBe(false)
+    expect((await e.handleCommand(command('cancel', { unitId: 'ambulance:a' }))).result.ok).toBe(false)
     e.advanceTo(start + 35_000)
     expect(person(e).disposition).toBe('delivered')
   })
 
   test('no destination means explicit ready-for-transport, never an invented hospital choice', async () => {
     const e = engine()
-    await e.handleCommand(command('assign', { ambulanceId: 'ambulance:a', incidentId: 'incident:a', patientIds: ['patient:a'] }))
+    await e.handleCommand(command('assign', { unitId: 'ambulance:a', incidentId: 'incident:a', patientIds: ['patient:a'] }))
     e.advanceTo(start + 20_000)
     expect(ambulance(e).assignment?.phase).toBe('ready-for-transport')
-    expect(person(e).holder.kind).toBe('ambulance')
+    expect(person(e).holder.kind).toBe('response-unit')
   })
 
   test('pre-pickup cancellation releases reservation and explicit no-transport completes patient with reason', async () => {
@@ -99,7 +99,7 @@ describe('Ambulance operational lifecycle', () => {
     await dispatch(e)
     e.advanceTo(start + 1_000)
     expect((await e.handleCommand(command('set-patient-disposition', { patientId: 'patient:a', disposition: 'no-transport', reason: 'Assessed on site' }))).result.ok).toBe(false)
-    await e.handleCommand(command('cancel', { ambulanceId: 'ambulance:a' }))
+    await e.handleCommand(command('cancel', { unitId: 'ambulance:a' }))
     expect((await e.handleCommand(command('set-patient-disposition', { patientId: 'patient:a', disposition: 'no-transport', reason: 'Operator-authored disposition' }))).result.ok).toBe(true)
     expect(person(e).disposition).toBe('no-transport')
     expect(read(e, 'incident:a').lifecycle).toBe('resolved')
@@ -107,20 +107,20 @@ describe('Ambulance operational lifecycle', () => {
 
   test('rejects double reservation, wrong asset kinds, unavailable crews and incompatible destinations atomically', async () => {
     const e = engine([incident, patient(), { ...site, capabilities: [] }, unit(), unit('ambulance:b')])
-    expect((await e.handleCommand(command('assign', { ambulanceId: 'ambulance:a', incidentId: 'site:a', patientIds: ['patient:a'] }))).result.ok).toBe(false)
-    expect((await e.handleCommand(command('assign', { ambulanceId: 'ambulance:a', incidentId: 'incident:a', patientIds: ['patient:a'] }))).result.ok).toBe(true)
-    expect((await e.handleCommand(command('append-stop', { kind: 'handover', ambulanceId: 'ambulance:a', careSiteId: 'site:a', patientIds: ['patient:a'] }))).result.ok).toBe(false)
-    expect((await e.handleCommand(command('assign', { ambulanceId: 'ambulance:b', incidentId: 'incident:a', patientIds: ['patient:a'] }))).result.ok).toBe(false)
-    await e.handleCommand(command('set-unit-readiness', { ambulanceId: 'ambulance:b', ready: false }))
+    expect((await e.handleCommand(command('assign', { unitId: 'ambulance:a', incidentId: 'site:a', patientIds: ['patient:a'] }))).result.ok).toBe(false)
+    expect((await e.handleCommand(command('assign', { unitId: 'ambulance:a', incidentId: 'incident:a', patientIds: ['patient:a'] }))).result.ok).toBe(true)
+    expect((await e.handleCommand(command('append-stop', { kind: 'handover', unitId: 'ambulance:a', careSiteId: 'site:a', patientIds: ['patient:a'] }))).result.ok).toBe(false)
+    expect((await e.handleCommand(command('assign', { unitId: 'ambulance:b', incidentId: 'incident:a', patientIds: ['patient:a'] }))).result.ok).toBe(false)
+    await e.handleCommand(command('set-unit-readiness', { unitId: 'ambulance:b', ready: false }))
     expect(ambulance(e, 'ambulance:b').crewReady).toBe(false)
-    expect((await e.handleCommand(command('return-to-base', { ambulanceId: 'ambulance:b' }))).result.ok).toBe(false)
+    expect((await e.handleCommand(command('return-to-base', { unitId: 'ambulance:b' }))).result.ok).toBe(false)
   })
 
   test('response cancellation and re-dispatch preserve first patient contact chronology', async () => {
     const e = engine()
     await dispatch(e)
     e.advanceTo(start + 13_000)
-    await e.handleCommand(command('cancel', { ambulanceId: 'ambulance:a' }))
+    await e.handleCommand(command('cancel', { unitId: 'ambulance:a' }))
     expect((await dispatch(e)).result.ok).toBe(true)
     e.advanceTo(start + 43_000)
     expect(person(e).contactedAtMs).toBe(start + 12_000)
@@ -141,11 +141,22 @@ describe('Ambulance operational lifecycle', () => {
     expect(ambulance(e).assignment?.phase).toBe('on-scene')
   })
 
+  test('helicopters share the response lifecycle but use direct air travel and enforce two-patient capacity', async () => {
+    const helicopter = { type: 'helicopter', id: 'helicopter:test', label: 'Test helicopter', position: [11, 59], patientCapacity: 2, capabilities: ['monitoring'], crewReady: true, mobilizationSeconds: 0, sceneSeconds: 3, cruiseSpeedMps: 60 }
+    const objects = build([incident, patient(), patient('patient:b'), site, helicopter])
+    const e = createAmbulanceSimEngine({ simulationRunId: 'run:helicopter-test' as SimulationRunId, objects, simulationTimeMs: start, routing: { id: 'road-routing-must-not-run', route: async () => { throw new Error('helicopter must not request a road route') } } })
+    const assigned = await e.handleCommand(command('assign', { unitId: 'helicopter:test', incidentId: 'incident:a', patientIds: ['patient:a', 'patient:b'] }))
+    expect(assigned.result.ok).toBe(true)
+    expect(ambulance(e, 'helicopter:test')).toMatchObject({ unitKind: 'helicopter', mobility: { kind: 'rotary-wing', cruiseSpeedMps: 60 }, patientCapacity: 2 })
+    expect(ambulance(e, 'helicopter:test').assignment?.leg?.provider).toBe('ambulance.direct-air')
+    expect(ambulanceItemSchema.safeParse({ ...helicopter, patientCapacity: 3 }).success).toBe(false)
+  })
+
   test('late route results cannot resurrect changed or deleted canonical targets', async () => {
     const objects = build(), canonical = new Map(objects.map(object => [object.id, object]))
     let release!: () => void
     const e = createAmbulanceSimEngine({ simulationRunId: 'run:test' as SimulationRunId, objects, simulationTimeMs: start, objectById: id => canonical.get(id), routing: { id: 'delayed-test', route: async request => { await new Promise<void>(resolve => { release = resolve }); return routing.route(request) } } })
-    const outcome = e.handleCommand(command('assign', { ambulanceId: 'ambulance:a', incidentId: 'incident:a', patientIds: ['patient:a'] }))
+    const outcome = e.handleCommand(command('assign', { unitId: 'ambulance:a', incidentId: 'incident:a', patientIds: ['patient:a'] }))
     canonical.delete('incident:a' as ObjectId)
     release()
     const result = await outcome
@@ -160,7 +171,7 @@ describe('Ambulance operational lifecycle', () => {
     e.advanceTo(start + 26_000)
     const reassess = () => e.handleCommand(command('set-patient-assessment', { patientId: 'patient:a', assessedUrgency: 'acute', needs: ['monitoring', 'specialist'] }))
     expect((await reassess()).result.ok).toBe(true)
-    expect(person(e).holder.kind).toBe('ambulance')
+    expect(person(e).holder.kind).toBe('response-unit')
     expect(assignmentWarnings(read(e, 'ambulance:a'), e.snapshot().objects)).toHaveLength(2)
     await e.handleCommand(command('set-care-site', { careSiteId: 'site:a', handoverSlots: 1 }))
     e.advanceTo(start + 30_000)
@@ -181,13 +192,13 @@ describe('Ambulance operational lifecycle', () => {
     e.advanceTo(start + 20_000)
     expect(ambulance(e).assignment?.phase).toBe('ready-for-transport')
     expect(ambulance(e).assignment?.stops.some(stop => stop.kind === 'handover')).toBe(false)
-    expect(person(e).holder.kind).toBe('ambulance')
+    expect(person(e).holder.kind).toBe('response-unit')
     expect(assignmentWarnings(read(e, 'ambulance:a'), e.snapshot().objects)).toHaveLength(1)
   })
 
   test('enforces requested revision against exactly the primary target and records command provenance', async () => {
     const e = engine()
-    const base = command('set-unit-readiness', { ambulanceId: 'ambulance:a', ready: false })
+    const base = command('set-unit-readiness', { unitId: 'ambulance:a', ready: false })
     const revision = read(e, 'ambulance:a').revision
     expect((await e.handleCommand({ ...base, expectedRevision: revision })).result.ok).toBe(false)
     expect((await e.handleCommand({ ...base, targetObjectIds: ['ambulance:a' as ObjectId], expectedRevision: revision + 1 })).result.ok).toBe(false)
@@ -215,8 +226,8 @@ describe('Ambulance operational lifecycle', () => {
     const patientB = { ...patient('patient:b'), incidentId: 'incident:b' }
     const e = engine([incident, patient(), incidentB, patientB, site, { ...unit(), patientCapacity: 2 }])
     await dispatch(e, 'ambulance:a', 'patient:a', null)
-    expect((await e.handleCommand(command('append-stop', { kind: 'pickup', ambulanceId: 'ambulance:a', incidentId: 'incident:b', patientIds: ['patient:b'] }))).result.ok).toBe(true)
-    const appendedHandover = await e.handleCommand(command('append-stop', { kind: 'handover', ambulanceId: 'ambulance:a', careSiteId: 'site:a', patientIds: ['patient:a', 'patient:b'] }))
+    expect((await e.handleCommand(command('append-stop', { kind: 'pickup', unitId: 'ambulance:a', incidentId: 'incident:b', patientIds: ['patient:b'] }))).result.ok).toBe(true)
+    const appendedHandover = await e.handleCommand(command('append-stop', { kind: 'handover', unitId: 'ambulance:a', careSiteId: 'site:a', patientIds: ['patient:a', 'patient:b'] }))
     expect(appendedHandover.result.ok).toBe(true)
     expect(ambulance(e).assignment?.stops.map(stop => stop.kind)).toEqual(['pickup', 'pickup', 'handover'])
     e.advanceTo(start + 50_000)
@@ -228,7 +239,7 @@ describe('Ambulance operational lifecycle', () => {
     const e = engine()
     await dispatch(e)
     for (const id of ['ambulance:a', 'incident:a', 'patient:a', 'site:a']) expect(() => e.validateDeletion(id)).toThrow()
-    await e.handleCommand(command('cancel', { ambulanceId: 'ambulance:a' }))
+    await e.handleCommand(command('cancel', { unitId: 'ambulance:a' }))
     expect(() => e.validateDeletion('ambulance:a')).not.toThrow()
     expect(() => e.validateDeletion('site:a')).not.toThrow()
     await dispatch(e)

@@ -28,6 +28,7 @@ export const setDroneSwarmCommandKind = 'world.drone.set-swarm'
 export const setDroneSwarmPayloadSchema = z.object({ droneId: objectIdSchema, swarm: droneSwarmMembershipSchema.nullable() }).strict()
 export const swarmCommandKind = 'world.drone.swarm-command'
 export const attackCommandKind = 'world.drone.attack'
+export const observeTargetCommandKind = 'world.drone.observe-target'
 
 export const creatableDroneObjectTypeSchema = z.enum(['drone'])
 export type CreatableDroneObjectType = z.infer<typeof creatableDroneObjectTypeSchema>
@@ -160,6 +161,12 @@ export const attackPayloadSchema = z.object({
   payloadId: z.string().min(1).max(128).optional(),
 }).strict()
 export type AttackPayload = z.infer<typeof attackPayloadSchema>
+export const observeTargetPayloadSchema = z.object({
+  droneId: objectIdSchema,
+  targetId: objectIdSchema,
+  sensorId: z.string().min(1).max(128).optional(),
+}).strict()
+export type ObserveTargetPayload = z.infer<typeof observeTargetPayloadSchema>
 
 export const droneCommandKinds = [
   setDroneSwarmCommandKind,
@@ -181,4 +188,5 @@ export const droneCommandKinds = [
   configureDroneVehicleModelCommandKind,
   swarmCommandKind,
   attackCommandKind,
+  observeTargetCommandKind,
 ] as const

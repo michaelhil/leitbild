@@ -120,6 +120,7 @@ export const droneVehicleModelSchema = z.object({
   id: idSchema,
   label: z.string().min(1).max(96),
   description: z.string().min(1).max(500).optional(),
+  nominalEnduranceMinutes: z.number().finite().min(5).max(1_440),
   airframe: droneAirframeSchema,
   flightEnvelope: droneFlightEnvelopeSchema.default({
     cruiseSpeedMps: 18,
@@ -275,6 +276,7 @@ export type DronePayloadRuntimeState = z.infer<typeof dronePayloadRuntimeStateSc
 export const droneVehicleIdentitySchema = z.object({
   modelId: idSchema,
   modelLabel: z.string().min(1).max(96),
+  nominalEnduranceMinutes: z.number().finite().min(5).max(1_440),
   airframe: droneAirframeSchema,
   flightEnvelope: droneFlightEnvelopeSchema,
   capabilities: z.array(droneCapabilitySchema).default([]),
@@ -346,6 +348,7 @@ export const defaultDroneVehicleModels: ReadonlyArray<DroneVehicleModel> = [
     id: 'native-survey-quad',
     label: 'Survey Quad',
     description: 'Native Leitbild quadrotor tuned for smooth survey flight.',
+    nominalEnduranceMinutes: 40,
     airframe: { kind: 'quadrotor', rotorCount: 4, massKg: 2.4, diagonalSizeM: 0.46 },
     flightEnvelope: {
       cruiseSpeedMps: 18,
@@ -371,6 +374,7 @@ export const defaultDroneVehicleModels: ReadonlyArray<DroneVehicleModel> = [
     id: 'native-gimbal-quad',
     label: 'Gimbal Quad',
     description: 'Native Leitbild quadrotor with a camera gimbal payload.',
+    nominalEnduranceMinutes: 32,
     airframe: { kind: 'quadrotor', rotorCount: 4, massKg: 2.7, diagonalSizeM: 0.5 },
     flightEnvelope: {
       cruiseSpeedMps: 16,
@@ -398,6 +402,7 @@ export const defaultDroneVehicleModels: ReadonlyArray<DroneVehicleModel> = [
     id: 'native-interceptor-quad',
     label: 'Interceptor Quad',
     description: 'Native Leitbild quadrotor tuned for fast response and training effects.',
+    nominalEnduranceMinutes: 24,
     airframe: { kind: 'quadrotor', rotorCount: 4, massKg: 3.2, diagonalSizeM: 0.55 },
     flightEnvelope: {
       cruiseSpeedMps: 26,
@@ -430,6 +435,37 @@ export const defaultDroneVehicleModels: ReadonlyArray<DroneVehicleModel> = [
       },
     ],
     visual: { color: '#b91c1c', accentColor: '#fee2e2', scale: 1.05 },
+  }),
+  droneVehicleModelSchema.parse({
+    id: 'incident-response-fixed-wing',
+    label: 'Incident Search Fixed Wing',
+    description: 'Long-endurance reconnaissance aircraft for broad-area search and loitering; deliberately slower than the incident-response quadcopter.',
+    nominalEnduranceMinutes: 180,
+    airframe: { kind: 'fixed-wing', rotorCount: 0, massKg: 5.8 },
+    flightEnvelope: { cruiseSpeedMps: 17, maxHorizontalSpeedMps: 23, maxVerticalSpeedMps: 5, maxAccelerationMps2: 5, maxYawRateDegPerSec: 45, arrivalRadiusM: 18 },
+    capabilities: [
+      { id: 'guided-navigation', kind: 'guided_navigation', label: 'Guided navigation', source: 'runtime' },
+      { id: 'mission', kind: 'mission', label: 'Mission execution', source: 'runtime' },
+      { id: 'incident-search', kind: 'reconnaissance', label: 'Broad-area incident search', level: 7, source: 'payload', tags: ['incident', 'search', 'casualty'] },
+    ],
+    sensors: [{ id: 'wide-area-eo', kind: 'electro_optical', label: 'Wide-area EO sensor', rangeM: 3_500, fovDeg: 110, updateIntervalMs: 1_000, source: 'payload', tags: ['incident', 'search'] }],
+    visual: { color: '#315f9b', accentColor: '#e7f0fb', scale: 1.15 },
+  }),
+  droneVehicleModelSchema.parse({
+    id: 'incident-response-quadcopter',
+    label: 'Incident Response Quadcopter',
+    description: 'Fast short-endurance aircraft for close incident inspection and detailed casualty observation.',
+    nominalEnduranceMinutes: 28,
+    airframe: { kind: 'quadrotor', rotorCount: 4, massKg: 3.1, diagonalSizeM: 0.58 },
+    flightEnvelope: { cruiseSpeedMps: 24, maxHorizontalSpeedMps: 42, maxVerticalSpeedMps: 10, maxAccelerationMps2: 15, maxYawRateDegPerSec: 170, arrivalRadiusM: 4 },
+    capabilities: [
+      { id: 'guided-navigation', kind: 'guided_navigation', label: 'Guided navigation', source: 'runtime' },
+      { id: 'mission', kind: 'mission', label: 'Mission execution', source: 'runtime' },
+      { id: 'incident-observation', kind: 'reconnaissance', label: 'Detailed incident observation', level: 9, source: 'payload', tags: ['incident', 'casualty', 'close-inspection'] },
+    ],
+    sensors: [{ id: 'incident-eo-ir', kind: 'electro_optical', label: 'EO/IR incident camera', rangeM: 900, fovDeg: 70, updateIntervalMs: 200, source: 'payload', tags: ['incident', 'casualty', 'detail'] }],
+    payloads: [{ id: 'incident-camera', kind: 'camera_gimbal', label: 'Incident camera', quantity: 1, source: 'payload', tags: ['reconnaissance'] }],
+    visual: { color: '#b05d20', accentColor: '#fff3e8', scale: 1.08 },
   }),
 ]
 

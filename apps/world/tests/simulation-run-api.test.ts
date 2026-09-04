@@ -439,7 +439,7 @@ describe('Simulation Run API', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             idempotencyKey,
-            input: { ambulanceId: ambulance.id, incidentId: incident.id, patientIds },
+            input: { unitId: ambulance.id, incidentId: incident.id, patientIds },
           }),
         },
       )
@@ -453,7 +453,7 @@ describe('Simulation Run API', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             idempotencyKey,
-            input: { ambulanceId: ambulance.id, incidentId: ambulance.id, patientIds },
+            input: { unitId: ambulance.id, incidentId: ambulance.id, patientIds },
           }),
         },
       )
