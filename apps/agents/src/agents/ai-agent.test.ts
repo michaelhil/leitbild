@@ -61,6 +61,16 @@ const makeMessage = (overrides?: Partial<Message>): Message => ({
 
 
 describe('AI Agent — unit tests', () => {
+  test('clearing an initial tool threshold removes it from persisted config', () => {
+    const agent = createAIAgent(makeConfig({ maxToolIterations: 5 }), makeLLMProvider('Done'), () => {})
+    expect(agent.getConfig().maxToolIterations).toBe(5)
+
+    agent.updateMaxToolIterations(undefined)
+
+    expect(agent.getMaxToolIterations()).toBeUndefined()
+    expect(agent.getConfig()).not.toHaveProperty('maxToolIterations')
+  })
+
   test('Focused Subjects apply to one turn and do not leak into the next', async () => {
     const agent = createAIAgent(makeConfig(), makeLLMProvider('Done'), () => {})
     const first = makeMessage()

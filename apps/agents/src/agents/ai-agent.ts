@@ -155,6 +155,9 @@ export const createAIAgent = (
   let promptsEnabled: boolean = config.promptsEnabled ?? true
   let contextEnabled: boolean = config.contextEnabled ?? true
   let maxToolIterationsCfg: number | undefined = config.maxToolIterations
+  // Mutable settings are projected explicitly below. Keep the originally
+  // supplied threshold out of the base spread so clearing it is durable.
+  const { maxToolIterations: _initialToolIterationThreshold, ...baseConfig } = config
 
   const effectiveToolsForRoom = (roomId: string): ReadonlyArray<ToolDefinition> | undefined => {
     if (!includeTools) return undefined
@@ -275,7 +278,7 @@ export const createAIAgent = (
     inReplyTo?: ReadonlyArray<string>,
   ): Promise<EvalResult> => {
     const evalConfig = {
-      ...config,
+      ...baseConfig,
       model: effectiveModel,
       persona: currentPersona,
       temperature: currentTemperature,
@@ -664,7 +667,7 @@ export const createAIAgent = (
       }
     },
     getConfig: () => ({
-      ...config,
+      ...baseConfig,
       model: currentModel,
       persona: currentPersona,
       temperature: currentTemperature,
