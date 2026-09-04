@@ -310,7 +310,15 @@ export const createAmbulanceSimEngine = (config: {
           const a = data.type === 'response-unit' ? data.assignment : undefined
           if (!a) continue
           if (a.phaseDueAtMs !== undefined && a.phaseDueAtMs > time) next = Math.min(next, a.phaseDueAtMs)
-          if (moving(a) && a.leg && speedFactor(object) > 0) next = Math.min(next, time + (a.leg.durationMs - a.leg.progressMs) / speedFactor(object))
+          if (moving(a) && a.leg && speedFactor(object) > 0) {
+            // The Run clock and its ISO representation have millisecond
+            // resolution. Route durations may be fractional, so round an
+            // arrival boundary up to the next millisecond. Adding a tiny
+            // fractional remainder directly to an epoch timestamp can
+            // otherwise produce the same Number and stall exact advancement.
+            const arrivalInMs = Math.max(1, Math.ceil((a.leg.durationMs - a.leg.progressMs) / speedFactor(object)))
+            next = Math.min(next, time + arrivalInMs)
+          }
         }
         if (next <= time || !Number.isFinite(next)) throw new Error('Ambulance clock could not advance')
         const dt = next - time

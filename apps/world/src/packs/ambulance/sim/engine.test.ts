@@ -152,6 +152,23 @@ describe('Ambulance operational lifecycle', () => {
     expect(ambulanceItemSchema.safeParse({ ...helicopter, patientCapacity: 3 }).success).toBe(false)
   })
 
+  test('fractional air-leg arrivals advance on the millisecond Run clock without stalling', async () => {
+    const helicopter = { type: 'helicopter', id: 'helicopter:fractional', label: 'Fractional-flight helicopter', position: [11, 59], patientCapacity: 1, capabilities: ['monitoring'], crewReady: true, mobilizationSeconds: 0, sceneSeconds: 3, cruiseSpeedMps: 60 }
+    const e = createAmbulanceSimEngine({
+      simulationRunId: 'run:helicopter-fractional' as SimulationRunId,
+      objects: build([incident, patient(), site, helicopter]),
+      simulationTimeMs: start,
+      routing: { id: 'road-routing-must-not-run', route: async () => { throw new Error('helicopter must not request a road route') } },
+    })
+    expect((await e.handleCommand(command('assign', { unitId: 'helicopter:fractional', incidentId: 'incident:a', patientIds: ['patient:a'] }))).result.ok).toBe(true)
+    const durationMs = ambulance(e, 'helicopter:fractional').assignment!.leg!.durationMs
+    expect(Number.isInteger(durationMs)).toBe(false)
+
+    expect(() => e.advanceTo(start + Math.ceil(durationMs))).not.toThrow()
+    expect(ambulance(e, 'helicopter:fractional').assignment?.phase).toBe('on-scene')
+    expect(e.checkpoint().simulationTimeMs).toBe(start + Math.ceil(durationMs))
+  })
+
   test('late route results cannot resurrect changed or deleted canonical targets', async () => {
     const objects = build(), canonical = new Map(objects.map(object => [object.id, object]))
     let release!: () => void

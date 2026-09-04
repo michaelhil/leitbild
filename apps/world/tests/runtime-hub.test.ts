@@ -251,6 +251,24 @@ describe('createRuntimeHub', () => {
     await connection.close()
   })
 
+  test('exact-advancement failures identify the Pack Runtime and underlying error', async () => {
+    const base = createStubAdapter('failing.runtime', 'failing-pack', 'world.failing.command')
+    const adapter = withConnection({ ...base, clock: 'simulation' }, connection => ({
+      ...connection,
+      advanceTo: async () => { throw new Error('numerical transition stalled') },
+    }))
+    const connection = await createRuntimeHub([adapter]).connect(connectionConfig([adapter.id]))
+    try {
+      await expect(connection.advanceTo?.({ currentTime: '2026-01-01T00:00:01.000Z' as IsoTimestamp, paused: true, speed: 1, updatedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp }))
+        .rejects.toThrow('Pack Runtime exact advancement failed — failing.runtime: numerical transition stalled')
+      expect(connection.health?.()[0]).toMatchObject({
+        runtimeId: 'failing.runtime',
+        state: 'degraded',
+        lastFailure: { operation: 'advance-to', message: 'numerical transition stalled' },
+      })
+    } finally { await connection.close() }
+  })
+
   test('all observers finish before any reconciliation and every Pack sees the committed object lookup', async () => {
     let release!: () => void
     let started!: () => void

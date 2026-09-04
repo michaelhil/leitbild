@@ -346,8 +346,13 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
             if (result.status === 'rejected') markFailure(simulated[index]!.adapter.id, 'advance-to', result.reason)
             else markHealthy(simulated[index]!.adapter.id, 'advance-to')
           })
-          const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
-          if (failures.length > 0) throw new AggregateError(failures.map(failure => failure.reason), 'one or more Pack Runtimes failed exact advancement')
+          const failures = results.flatMap((result, index) => result.status === 'rejected'
+            ? [{ runtimeId: simulated[index]!.adapter.id, reason: result.reason }]
+            : [])
+          if (failures.length > 0) {
+            const detail = failures.map(({ runtimeId, reason }) => `${runtimeId}: ${reason instanceof Error ? reason.message : String(reason)}`).join('; ')
+            throw new AggregateError(failures.map(failure => failure.reason), `Pack Runtime exact advancement failed — ${detail}`)
+          }
         },
         checkpoint: async (): Promise<void> => {
           const simulated = connections.filter(({ adapter }) => adapter.clock === 'simulation')
