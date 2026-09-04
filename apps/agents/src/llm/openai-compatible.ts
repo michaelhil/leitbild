@@ -96,7 +96,12 @@ interface OAIChatResponse {
     // response, the listed token count was billed at the cached rate.
     prompt_tokens_details?: {
       cached_tokens?: number
+      cache_write_tokens?: number
     }
+    prompt_cache_hit_tokens?: number
+    prompt_cache_miss_tokens?: number
+    cached_tokens?: number
+    total_cached_tokens?: number
   }
 }
 
@@ -131,7 +136,12 @@ interface OAIStreamChunk {
     cache_read_input_tokens?: number
     prompt_tokens_details?: {
       cached_tokens?: number
+      cache_write_tokens?: number
     }
+    prompt_cache_hit_tokens?: number
+    prompt_cache_miss_tokens?: number
+    cached_tokens?: number
+    total_cached_tokens?: number
   }
 }
 
@@ -260,6 +270,7 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
 
     const toolCalls: NativeToolCall[] | undefined = choice.message.tool_calls?.length
       ? choice.message.tool_calls.map(tc => ({
+          id: tc.id,
           function: {
             name: tc.function.name,
             arguments: parseArgs(tc.function.arguments, config.name, tc.function.name),
@@ -269,12 +280,17 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
 
     const generationMs = Math.round(performance.now() - startMs)
     const cacheCreation = data.usage?.cache_creation_input_tokens
+      ?? data.usage?.prompt_tokens_details?.cache_write_tokens
     // cacheRead is filled by Anthropic's `cache_read_input_tokens` OR the
     // OpenAI-standard `prompt_tokens_details.cached_tokens` (Gemini emits
     // this for implicit caching on the 2.5 family). Take whichever is
     // present so a single `cacheRead` field stays the cross-provider truth.
     const cacheRead = data.usage?.cache_read_input_tokens
       ?? data.usage?.prompt_tokens_details?.cached_tokens
+      ?? data.usage?.prompt_cache_hit_tokens
+      ?? data.usage?.cached_tokens
+      ?? data.usage?.total_cached_tokens
+    const cacheMiss = data.usage?.prompt_cache_miss_tokens
     return {
       content,
       generationMs,
@@ -283,6 +299,7 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
         completion: data.usage?.completion_tokens ?? 0,
         ...(cacheCreation !== undefined ? { cacheCreation } : {}),
         ...(cacheRead !== undefined ? { cacheRead } : {}),
+        ...(cacheMiss !== undefined ? { cacheMiss } : {}),
       },
       toolCalls,
     }
@@ -375,11 +392,12 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
     // Accumulators for final-chunk metadata (finish_reason may arrive before
     // [DONE]; usage typically arrives AFTER finish_reason but BEFORE [DONE]).
     let finishSeen = false
-    let usageTokens: { prompt: number; completion: number; cacheCreation?: number; cacheRead?: number } | undefined
+    let usageTokens: { prompt: number; completion: number; cacheCreation?: number; cacheRead?: number; cacheMiss?: number } | undefined
 
     const emitFinal = (): StreamChunk => {
       const toolCalls: NativeToolCall[] | undefined = toolAccum.length
-        ? toolAccum.map(t => ({
+        ? toolAccum.map((t, index) => ({
+            id: t.id ?? `call_${index}`,
             function: { name: t.name, arguments: parseArgs(t.argsBuffer, config.name, t.name) },
           }))
         : undefined
@@ -387,6 +405,7 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
         delta: '', done: true,
         ...(toolCalls ? { toolCalls } : {}),
         ...(usageTokens ? { tokensUsed: usageTokens } : {}),
+        provider: config.name,
       }
       return chunk
     }
@@ -471,11 +490,17 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
             if (parsed.usage && (parsed.usage.prompt_tokens !== undefined || parsed.usage.completion_tokens !== undefined)) {
               const cacheReadCount = parsed.usage.cache_read_input_tokens
                 ?? parsed.usage.prompt_tokens_details?.cached_tokens
+                ?? parsed.usage.prompt_cache_hit_tokens
+                ?? parsed.usage.cached_tokens
+                ?? parsed.usage.total_cached_tokens
+              const cacheCreationCount = parsed.usage.cache_creation_input_tokens
+                ?? parsed.usage.prompt_tokens_details?.cache_write_tokens
               usageTokens = {
                 prompt: parsed.usage.prompt_tokens ?? 0,
                 completion: parsed.usage.completion_tokens ?? 0,
-                ...(parsed.usage.cache_creation_input_tokens !== undefined ? { cacheCreation: parsed.usage.cache_creation_input_tokens } : {}),
+                ...(cacheCreationCount !== undefined ? { cacheCreation: cacheCreationCount } : {}),
                 ...(cacheReadCount !== undefined ? { cacheRead: cacheReadCount } : {}),
+                ...(parsed.usage.prompt_cache_miss_tokens !== undefined ? { cacheMiss: parsed.usage.prompt_cache_miss_tokens } : {}),
               }
             }
 

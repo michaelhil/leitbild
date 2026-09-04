@@ -44,7 +44,7 @@ export type OnDecision = (decision: Decision) => void
 // === Native tool call conversion ===
 
 const nativeCallsToToolCalls = (native: ReadonlyArray<NativeToolCall>): ReadonlyArray<ToolCall> =>
-  native.map(tc => ({ tool: tc.function.name, arguments: tc.function.arguments }))
+  native.map((tc, index) => ({ callId: tc.id ?? `call_${index}`, tool: tc.function.name, arguments: tc.function.arguments }))
 
 // === Tool result injection ===
 //
@@ -64,8 +64,8 @@ const nativeCallsToToolCalls = (native: ReadonlyArray<NativeToolCall>): Readonly
 // and procedure_lookup: the fence reaches the model with real newlines
 // and no escape clutter.
 //
-// Object/array results are pretty-printed with 2-space indent so newlines
-// are real characters the model parses as structure, not `\n` literals.
+// Object/array results stay compact. Pretty-printing is a Client concern;
+// indentation more than doubled large operational payloads in model context.
 //
 // Other primitives (number, boolean, null) JSON-stringify cleanly.
 export const formatToolDataForLLM = (data: unknown): string => {
@@ -73,29 +73,47 @@ export const formatToolDataForLLM = (data: unknown): string => {
   // null / undefined → empty string; agents see a blank result instead of
   // the four-character literal "null".
   if (data === null || data === undefined) return ''
-  try { return JSON.stringify(data, null, 2) } catch {
+  try { return JSON.stringify(data) } catch {
     // Circular or otherwise un-serialisable — fall back to String() so the
     // tool result still reaches the LLM (even if uninformative).
     return String(data)
   }
 }
 
-// formatToolResults composes the user-role message the eval loop pushes
-// back to the LLM after running tool calls. The trailer instruction is
-// the single guardrail keeping fence-shaped output (```map / ```mermaid /
-// ```geojson / ```biometric) intact through to the renderer. Without the
-// "include fenced code blocks intact" reminder, models paraphrase
-// brittle syntax like mermaid node ids and break the post-render path.
-const formatToolResults = (
-  calls: ReadonlyArray<ToolCall>,
-  results: ReadonlyArray<ToolResult>,
-): string => {
-  const lines = results.map((r, i) => {
-    const toolName = calls[i]?.tool ?? '<unknown>'
-    if (!r.success) return `- ${toolName}: Error: ${r.error ?? ''}`
-    return `- ${toolName}: ${formatToolDataForLLM(r.data)}`
-  })
-  return `Tool results:\n${lines.join('\n')}\n\nUse the tool results above as you see fit. If a result contains a fenced code block (triple-backticks), include it in your reply intact — do not paraphrase the contents or rewrite identifiers inside the fence.`
+const formatToolResult = (result: ToolResult): string => result.success
+  ? formatToolDataForLLM(result.data)
+  : JSON.stringify({ success: false, error: result.error ?? 'Tool failed', ...(result.data === undefined ? {} : { details: result.data }) })
+
+const messageTokens = (message: ChatRequest['messages'][number]): number =>
+  Math.ceil((message.content.length + (message.toolCalls ? JSON.stringify(message.toolCalls).length : 0)) / 4)
+
+const fitToolEvidence = (
+  context: Array<ChatRequest['messages'][number]>,
+  assistant: ChatRequest['messages'][number],
+  tools: ReadonlyArray<ChatRequest['messages'][number]>,
+  tokenBudget: number | undefined,
+): { droppedHistory: number; overBudget: boolean } => {
+  if (!tokenBudget || tokenBudget <= 0) {
+    context.push(assistant, ...tools)
+    return { droppedHistory: 0, overBudget: false }
+  }
+  const lastUser = context.findLastIndex(message => message.role === 'user')
+  context.push(assistant, ...tools)
+  let total = context.reduce((sum, message) => sum + messageTokens(message), 0)
+  let droppedHistory = 0
+  const protectedIndex = lastUser >= 0 ? lastUser : context.length - tools.length - 1
+  while (total > tokenBudget && context.length > 1 && 1 < protectedIndex - droppedHistory) {
+    const removed = context.splice(1, 1)[0]
+    if (!removed) break
+    total -= messageTokens(removed)
+    droppedHistory++
+  }
+  // Fresh tool evidence is authoritative and may reflect a mutation that has
+  // already happened. Never rewrite or truncate it after execution: doing so
+  // can make the model repeat a side effect. Retrieval capabilities must bound
+  // or paginate their own output. If protected evidence still does not fit,
+  // keep it intact and surface a loud warning/provider error.
+  return { droppedHistory, overBudget: total > tokenBudget }
 }
 
 // === Evaluate — single LLM call with tool loop ===
@@ -117,10 +135,27 @@ export interface LLMCallMetrics {
   // efficacy is observable in the JSONL log without dashboard inspection.
   readonly cacheCreation?: number
   readonly cacheRead?: number
+  readonly cacheMiss?: number
+  readonly modelCalls?: number
   readonly contextMax?: number
   readonly provider?: string
   readonly model?: string
 }
+
+const sumMetric = (left: number | undefined, right: number | undefined): number | undefined =>
+  left === undefined && right === undefined ? undefined : (left ?? 0) + (right ?? 0)
+
+const mergeMetrics = (current: LLMCallMetrics, next: LLMCallMetrics): LLMCallMetrics => ({
+  ...(sumMetric(current.promptTokens, next.promptTokens) === undefined ? {} : { promptTokens: sumMetric(current.promptTokens, next.promptTokens) }),
+  ...(sumMetric(current.completionTokens, next.completionTokens) === undefined ? {} : { completionTokens: sumMetric(current.completionTokens, next.completionTokens) }),
+  ...(sumMetric(current.cacheCreation, next.cacheCreation) === undefined ? {} : { cacheCreation: sumMetric(current.cacheCreation, next.cacheCreation) }),
+  ...(sumMetric(current.cacheRead, next.cacheRead) === undefined ? {} : { cacheRead: sumMetric(current.cacheRead, next.cacheRead) }),
+  ...(sumMetric(current.cacheMiss, next.cacheMiss) === undefined ? {} : { cacheMiss: sumMetric(current.cacheMiss, next.cacheMiss) }),
+  modelCalls: (current.modelCalls ?? 0) + 1,
+  ...(next.contextMax ?? current.contextMax ? { contextMax: next.contextMax ?? current.contextMax } : {}),
+  ...(next.provider ?? current.provider ? { provider: next.provider ?? current.provider } : {}),
+  ...(next.model ?? current.model ? { model: next.model ?? current.model } : {}),
+})
 
 // One LLM call: either streams chunks to onEvent or falls back to a
 // non-streaming chat(). Caller-visible result is identical either way.
@@ -156,6 +191,7 @@ const callLLMOnce = async (
           completionTokens: chunk.tokensUsed?.completion,
           ...(chunk.tokensUsed?.cacheCreation !== undefined ? { cacheCreation: chunk.tokensUsed.cacheCreation } : {}),
           ...(chunk.tokensUsed?.cacheRead !== undefined ? { cacheRead: chunk.tokensUsed.cacheRead } : {}),
+          ...(chunk.tokensUsed?.cacheMiss !== undefined ? { cacheMiss: chunk.tokensUsed.cacheMiss } : {}),
           contextMax: chunk.contextMax,
           provider: chunk.provider,
           model: request.model,
@@ -176,6 +212,7 @@ const callLLMOnce = async (
       completionTokens: response.tokensUsed.completion,
       ...(response.tokensUsed.cacheCreation !== undefined ? { cacheCreation: response.tokensUsed.cacheCreation } : {}),
       ...(response.tokensUsed.cacheRead !== undefined ? { cacheRead: response.tokensUsed.cacheRead } : {}),
+      ...(response.tokensUsed.cacheMiss !== undefined ? { cacheMiss: response.tokensUsed.cacheMiss } : {}),
       contextMax: response.contextMax,
       provider: response.provider,
       model: request.model,
@@ -214,7 +251,7 @@ const validateAllMapFences = (content: string): { ok: boolean; errors: string } 
 
 const retryInvalidMapFences = async (
   initialContent: string,
-  context: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  context: Array<ChatRequest['messages'][number]>,
   config: AIAgentConfig,
   llmProvider: LLMProvider,
   signal: AbortSignal | undefined,
@@ -222,7 +259,7 @@ const retryInvalidMapFences = async (
   systemBlocks: ContextResult['systemBlocks'],
   toolDefinitions: ReadonlyArray<ToolDefinition> | undefined,
   addGenerationMs: (ms: number) => void,
-  setLastMetrics: (m: LLMCallMetrics) => void,
+  addMetrics: (m: LLMCallMetrics) => void,
 ): Promise<string> => {
   let content = initialContent
   for (let attempt = 0; attempt < MAX_FENCE_RETRIES; attempt++) {
@@ -251,7 +288,7 @@ const retryInvalidMapFences = async (
     }
     const stream = await callLLMOnce(llmProvider, request, onEvent, signal)
     addGenerationMs(stream.durationMs)
-    setLastMetrics(stream.metrics)
+    addMetrics(stream.metrics)
     content = stream.content.trim()
     if (content.length === 0) {
       // Empty correction attempt — give up and return the prior content.
@@ -292,9 +329,9 @@ export const evaluate = async (
   triggerRoomId: string,
   options?: EvalOptions,
 ): Promise<EvalResult> => {
-  const context = [...contextResult.messages]
+  const context: Array<ChatRequest['messages'][number]> = [...contextResult.messages]
   let totalGenerationMs = 0
-  let lastMetrics: LLMCallMetrics = {}
+  let metrics: LLMCallMetrics = { modelCalls: 0 }
   const { toolDefinitions, inReplyTo, onEvent, signal, requestToolCheckin } = options ?? {}
   // Mutable cap so the user-driven checkin can raise it mid-loop.
   let effectiveMaxIterations = maxToolIterations
@@ -340,7 +377,7 @@ export const evaluate = async (
     return {
       decision: {
         ...(inReplyTo && inReplyTo.length > 0 ? { ...decision, inReplyTo } : decision),
-        metrics: lastMetrics,
+        metrics,
         ...(toolTrace.length > 0 ? { toolTrace: [...toolTrace] } : {}),
       },
       flushInfo: contextResult.flushInfo,
@@ -368,7 +405,7 @@ export const evaluate = async (
 
       const streamResult = await callLLMOnce(llmProvider, request, onEvent, signal)
       totalGenerationMs += streamResult.durationMs
-      lastMetrics = streamResult.metrics
+      metrics = mergeMetrics(metrics, streamResult.metrics)
 
       // Native tool calls
       if (streamResult.toolCalls && streamResult.toolCalls.length > 0) {
@@ -395,14 +432,14 @@ export const evaluate = async (
 
         for (let i = 0; i < calls.length; i++) {
           const call = calls[i]!
-          onEvent?.({ kind: 'tool_start', tool: call.tool, callId: String(i) })
+          onEvent?.({ kind: 'tool_start', tool: call.tool, callId: call.callId ?? String(i) })
         }
         const results = await toolExecutor(calls, triggerRoomId, signal)
         for (let i = 0; i < results.length; i++) {
           const call = calls[i]
           const result = results[i]
           if (!call || !result) continue
-          onEvent?.({ kind: 'tool_result', tool: call.tool, callId: String(i), success: result.success, preview: result.success ? undefined : result.error })
+          onEvent?.({ kind: 'tool_result', tool: call.tool, callId: call.callId ?? String(i), success: result.success, preview: result.success ? undefined : result.error })
           toolTrace.push({
             tool: call.tool,
             ...traceArguments(call.tool, call.arguments),
@@ -410,8 +447,18 @@ export const evaluate = async (
             resultPreview: previewFor(result),
           })
         }
-        context.push({ role: 'assistant' as const, content: streamResult.content })
-        context.push({ role: 'user' as const, content: formatToolResults(calls, results) })
+        const normalizedNativeCalls = streamResult.toolCalls.map((call, index) => ({ ...call, id: calls[index]?.callId ?? `call_${index}` }))
+        const assistantToolMessage: ChatRequest['messages'][number] = { role: 'assistant', content: streamResult.content, toolCalls: normalizedNativeCalls }
+        const toolMessages: Array<ChatRequest['messages'][number]> = []
+        for (let i = 0; i < results.length; i++) {
+          const call = calls[i]
+          const result = results[i]
+          if (!call || !result) continue
+          toolMessages.push({ role: 'tool', toolCallId: call.callId ?? `call_${i}`, name: call.tool, content: formatToolResult(result) })
+        }
+        const fit = fitToolEvidence(context, assistantToolMessage, toolMessages, contextResult.tokenBudget)
+        if (fit.overBudget) onEvent?.({ kind: 'warning', message: 'Current request and tool evidence exceed the model context budget. Evidence was preserved intact; use a narrower or paginated read.' })
+        if (fit.droppedHistory > 0) onEvent?.({ kind: 'warning', message: `Dropped ${fit.droppedHistory} oldest context messages to retain current tool evidence.` })
 
         // If this iteration just used the LAST allowed slot, ask the user
         // before proceeding (so the next loop iteration doesn't silently
@@ -465,7 +512,9 @@ export const evaluate = async (
         contextResult.systemBlocks,
         toolDefinitions,
         (ms) => { totalGenerationMs += ms },
-        (m) => { lastMetrics = m },
+        (m) => {
+          metrics = mergeMetrics(metrics, m)
+        },
       )
       return makeResult({ response: { action: 'respond', content: finalContent }, generationMs: totalGenerationMs, triggerRoomId })
     }

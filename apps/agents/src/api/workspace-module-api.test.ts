@@ -36,7 +36,12 @@ beforeEach(async () => {
   process.env.PROVIDER = 'ollama'
   delete process.env.LEITBILD_SEED_WORKSPACE
   state = createAgentsModuleState()
-  registry = createWorkspaceRuntimeRegistry({ deployment: createDeploymentRuntime(), moduleState: state, idleMs: 1_000_000 })
+  const deployment = createDeploymentRuntime()
+  deployment.sharedSkillStore.register({
+    name: 'workspace-discovery', description: 'Test discovery Skill', body: 'Use Workspace evidence.',
+    tools: [], allowedToolNames: ['workspace_catalog', 'workspace_capabilities', 'workspace_invoke'], dirPath: home,
+  })
+  registry = createWorkspaceRuntimeRegistry({ deployment, moduleState: state, idleMs: 1_000_000 })
 })
 
 afterEach(async () => {

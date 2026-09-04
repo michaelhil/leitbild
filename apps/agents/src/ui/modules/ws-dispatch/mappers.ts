@@ -17,6 +17,10 @@ export const toUIMessage = (m: Message): UIMessage => ({
   generationMs: m.generationMs,
   ...(m.promptTokens !== undefined ? { promptTokens: m.promptTokens } : {}),
   ...(m.completionTokens !== undefined ? { completionTokens: m.completionTokens } : {}),
+  ...(m.cacheCreation !== undefined ? { cacheCreation: m.cacheCreation } : {}),
+  ...(m.cacheRead !== undefined ? { cacheRead: m.cacheRead } : {}),
+  ...(m.cacheMiss !== undefined ? { cacheMiss: m.cacheMiss } : {}),
+  ...(m.modelCalls !== undefined ? { modelCalls: m.modelCalls } : {}),
   ...(m.contextMax !== undefined ? { contextMax: m.contextMax } : {}),
   ...(m.provider !== undefined ? { provider: m.provider } : {}),
   ...(m.model !== undefined ? { model: m.model } : {}),
@@ -27,6 +31,8 @@ export const toUIMessage = (m: Message): UIMessage => ({
   // arrives at the UI with cause=undefined regardless of what the server
   // stamped.
   ...(m.cause ? { cause: m.cause } : {}),
+  ...(m.attachments ? { attachments: m.attachments } : {}),
+  ...(m.toolTrace ? { toolTrace: m.toolTrace } : {}),
 })
 
 export const toUIRoomProfile = (r: ServerRoomProfile): RoomProfile => ({
@@ -46,4 +52,3 @@ export const toAgentEntry = (a: AgentProfile): AgentEntry => ({
   ...(a.context ? { context: a.context } : {}),
   ...(a.generationStarted !== undefined ? { generationStarted: a.generationStarted } : {}),
 })
-

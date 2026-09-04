@@ -143,6 +143,8 @@ const messageSchema = z.object({
   completionTokens: z.number().finite().optional(),
   cacheCreation: z.number().finite().optional(),
   cacheRead: z.number().finite().optional(),
+  cacheMiss: z.number().finite().optional(),
+  modelCalls: z.number().int().nonnegative().optional(),
   contextMax: z.number().finite().optional(),
   provider: z.string().optional(),
   model: z.string().optional(),

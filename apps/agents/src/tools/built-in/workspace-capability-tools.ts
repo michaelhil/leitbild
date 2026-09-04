@@ -28,6 +28,14 @@ export interface WorkspaceCapabilityToolsDeps {
 
 export const WORKSPACE_CAPABILITY_TOOL_NAMES = ['workspace_catalog', 'workspace_capabilities', 'workspace_invoke'] as const
 
+// Bound network fan-out and model-context growth at the broker edge. These
+// are transport safety limits, not domain policy; Capabilities remain free to
+// expose their own pagination appropriate to the data they own.
+const HOST_REQUEST_TIMEOUT_MS = 30_000
+const DEFAULT_DISCOVERY_PAGE_SIZE = 30
+const MAX_DISCOVERY_PAGE_SIZE = 100
+const MAX_INVOKE_BATCH_SIZE = 12
+
 const failure = (code: string, message: string, details?: Record<string, unknown>): ToolResult => ({
   success: false,
   error: `${code}: ${message}`,
@@ -52,7 +60,7 @@ const readHostError = async (response: Response): Promise<ToolResult> => {
   })
 }
 
-const requestSignal = (signal?: AbortSignal): AbortSignal => AbortSignal.any([AbortSignal.timeout(30_000), ...(signal ? [signal] : [])])
+const requestSignal = (signal?: AbortSignal): AbortSignal => AbortSignal.any([AbortSignal.timeout(HOST_REQUEST_TIMEOUT_MS), ...(signal ? [signal] : [])])
 const optionalFilter = (value: unknown): unknown => typeof value === 'string' && value.trim().length === 0 ? undefined : value
 const referenceKey = (ref: { moduleId: string; type: string; id: string }): string => `${ref.moduleId}:${ref.type}:${ref.id}`
 
@@ -143,7 +151,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
       type: 'object', properties: {
         scope: { type: 'string', enum: ['current', 'workspace'], default: 'current' },
         moduleId: { type: 'string' }, definitionType: { type: 'string' }, resourceType: { type: 'string' }, capabilityId: { type: 'string' },
-        offset: { type: 'integer', minimum: 0, default: 0 }, limit: { type: 'integer', minimum: 1, maximum: 100, default: 30 },
+        offset: { type: 'integer', minimum: 0, default: 0 }, limit: { type: 'integer', minimum: 1, maximum: MAX_DISCOVERY_PAGE_SIZE, default: DEFAULT_DISCOVERY_PAGE_SIZE },
       }, additionalProperties: false,
     },
     execute: async (params, context) => {
@@ -155,8 +163,8 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         const resourceType = optionalFilter(params.resourceType) === undefined ? undefined : resourceTypeSchema.parse(params.resourceType)
         const capabilityId = optionalFilter(params.capabilityId) === undefined ? undefined : capabilityIdSchema.parse(params.capabilityId)
         const offset = params.offset === undefined ? 0 : Number(params.offset)
-        const limit = params.limit === undefined ? 30 : Number(params.limit)
-        if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 100) return failure('invalid_tool_input', 'Invalid pagination')
+        const limit = params.limit === undefined ? DEFAULT_DISCOVERY_PAGE_SIZE : Number(params.limit)
+        if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > MAX_DISCOVERY_PAGE_SIZE) return failure('invalid_tool_input', 'Invalid pagination')
         const [definitionResponse, resourceResponse] = await Promise.all([
           getJson(fetchImpl, `${workspacePath}/definitions`, context.signal),
           getJson(fetchImpl, `${workspacePath}/resources`, context.signal),
@@ -207,7 +215,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         moduleId: { type: 'string' }, queries: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 256 }, maxItems: 8 },
         capabilityIds: { type: 'array', items: { type: 'string' }, maxItems: 24 },
         risk: { type: 'string', enum: ['read', 'write', 'destructive'] }, kind: { type: 'string', enum: ['query', 'command'] },
-        includeOutputSchema: { type: 'boolean', default: false }, offset: { type: 'integer', minimum: 0, default: 0 }, limit: { type: 'integer', minimum: 1, maximum: 100, default: 30 },
+        includeOutputSchema: { type: 'boolean', default: false }, offset: { type: 'integer', minimum: 0, default: 0 }, limit: { type: 'integer', minimum: 1, maximum: MAX_DISCOVERY_PAGE_SIZE, default: DEFAULT_DISCOVERY_PAGE_SIZE },
       }, additionalProperties: false,
     },
     execute: async (params, context) => {
@@ -221,8 +229,8 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         const risk = optionalFilter(params.risk) as string | undefined
         const kind = optionalFilter(params.kind) as string | undefined
         const offset = params.offset === undefined ? 0 : Number(params.offset)
-        const limit = params.limit === undefined ? 30 : Number(params.limit)
-        if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 100) return failure('invalid_tool_input', 'Invalid pagination')
+        const limit = params.limit === undefined ? DEFAULT_DISCOVERY_PAGE_SIZE : Number(params.limit)
+        if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > MAX_DISCOVERY_PAGE_SIZE) return failure('invalid_tool_input', 'Invalid pagination')
         const catalogs = await readCatalogs(fetchImpl, workspacePath, context.signal)
         if ('success' in catalogs) return catalogs
         const target = resource ? catalogs.resources.resources.find(item => referenceKey(item.ref) === referenceKey(resource)) : undefined
@@ -258,7 +266,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
     returns: '{ results[] } in request order, with each keyed entry carrying either data or a structured error.',
     parameters: {
       type: 'object', properties: {
-        calls: { type: 'array', minItems: 1, maxItems: 12, items: { type: 'object', properties: {
+        calls: { type: 'array', minItems: 1, maxItems: MAX_INVOKE_BATCH_SIZE, items: { type: 'object', properties: {
           key: { type: 'string', minLength: 1, maxLength: 64 }, capabilityId: { type: 'string' },
           definition: { type: 'object', properties: { moduleId: { type: 'string' }, type: { type: 'string' }, id: { type: 'string' }, revisionId: { type: 'string' } }, required: ['moduleId', 'type', 'id', 'revisionId'], additionalProperties: false },
           resource: { type: 'object', properties: { moduleId: { type: 'string' }, type: { type: 'string' }, id: { type: 'string' } }, required: ['moduleId', 'type', 'id'], additionalProperties: false },
@@ -269,7 +277,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
     execute: async (params, context) => {
       const grants = deps.getToolGrants(context.callerId)
       if (!grants) return failure('caller_not_ai_agent', 'Workspace Capability invocation requires an AI Agent Profile')
-      if (!Array.isArray(params.calls) || params.calls.length < 1 || params.calls.length > 12) return failure('invalid_tool_input', 'calls must contain 1 to 12 entries')
+      if (!Array.isArray(params.calls) || params.calls.length < 1 || params.calls.length > MAX_INVOKE_BATCH_SIZE) return failure('invalid_tool_input', `calls must contain 1 to ${MAX_INVOKE_BATCH_SIZE} entries`)
       try {
         const catalogs = await readCatalogs(fetchImpl, workspacePath, context.signal)
         if ('success' in catalogs) return catalogs

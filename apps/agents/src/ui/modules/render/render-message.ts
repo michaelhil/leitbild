@@ -58,6 +58,39 @@ export interface RenderMessageOptions {
   readonly onBookmark?: (content: string) => void
 }
 
+const compactCount = (value: number): string => value.toLocaleString('en-GB')
+
+const appendGenerationInfo = (host: HTMLElement, msg: UIMessage): void => {
+  if (msg.generationMs === undefined) return
+  const parts: string[] = []
+  const providerModel = [msg.provider, msg.model].filter(Boolean).join(' · ')
+  if (providerModel) parts.push(providerModel)
+  parts.push(`${(msg.generationMs / 1000).toFixed(1)}s`)
+  if (msg.modelCalls !== undefined) parts.push(`${msg.modelCalls} model call${msg.modelCalls === 1 ? '' : 's'}`)
+  if (msg.toolTrace?.length) parts.push(`${msg.toolTrace.length} tool call${msg.toolTrace.length === 1 ? '' : 's'}`)
+  if (msg.promptTokens !== undefined || msg.completionTokens !== undefined) {
+    parts.push(`${compactCount(msg.promptTokens ?? 0)} in · ${compactCount(msg.completionTokens ?? 0)} out`)
+  }
+  const cache: string[] = []
+  if (msg.cacheRead !== undefined) {
+    // OpenAI defines cached_tokens as a subset of prompt_tokens. Other
+    // providers expose differently-scoped counters, so show their raw values
+    // without inventing a percentage from an incomparable denominator.
+    const reliableShare = msg.provider?.toLowerCase() === 'openai'
+      && msg.promptTokens !== undefined && msg.promptTokens > 0 && msg.cacheRead <= msg.promptTokens
+      ? ` (${Math.round((msg.cacheRead / msg.promptTokens) * 100)}%)`
+      : ''
+    cache.push(`${compactCount(msg.cacheRead)} read${reliableShare}`)
+  }
+  if (msg.cacheCreation !== undefined) cache.push(`${compactCount(msg.cacheCreation)} written`)
+  if (msg.cacheMiss !== undefined) cache.push(`${compactCount(msg.cacheMiss)} miss`)
+  parts.push(cache.length > 0 ? `cache ${cache.join(', ')}` : 'cache not reported')
+  const info = document.createElement('div')
+  info.className = 'text-[10px] text-text-subtle mt-1'
+  info.textContent = `Generation · ${parts.join(' · ')}`
+  host.appendChild(info)
+}
+
 export const renderMessage = (opts: RenderMessageOptions): void => {
   const { container, msg, agents, onDelete, onViewContext, onBookmark } = opts
   const getAgent = (id: string): AgentInfo | undefined =>
@@ -341,6 +374,8 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
     // when no script is active or no whisper has been classified yet.
     appendWhisperBadge(div, msg.senderName, msg.roomId, msg.id)
   }
+
+  appendGenerationInfo(div, msg)
 
   // Causality caption — surfaces "via script: X step N" / "via trigger: Z"
   // when an automation subsystem produced this message.

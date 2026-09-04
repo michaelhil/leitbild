@@ -42,6 +42,7 @@ export interface ContextResult {
   // Structured system-prompt blocks, stable blocks first. Forwarded as
   // ChatRequest.systemBlocks so Anthropic can attach cache_control markers.
   readonly systemBlocks?: ReadonlyArray<{ readonly text: string; readonly cacheable: boolean }>
+  readonly tokenBudget?: number
 }
 
 // === Format a single message for LLM context ===
@@ -403,10 +404,10 @@ export const buildSystemSections = (
 // generic `<context>` or `<rules>` text in user-supplied persona / room
 // prompts.
 const CTX_STABLE_KEYS: ReadonlyArray<SystemSectionKey> = [
-  'ctx_intro', 'ctx_activity',
+  'ctx_intro',
 ]
 const CTX_VARIABLE_KEYS: ReadonlyArray<SystemSectionKey> = [
-  'ctx_knownAgents', 'ctx_participants', 'ctx_flow',
+  'ctx_knownAgents', 'ctx_participants', 'ctx_activity', 'ctx_flow',
 ]
 
 // Map a SystemSection to the XML tag used to fence it. Tag names are
@@ -697,6 +698,7 @@ export const buildContext = (
     flushInfo: { ids: flushIds, triggerRoomId },
     warnings,
     systemBlocks,
+    tokenBudget: deps.contextTokenBudget,
   }
 }
 

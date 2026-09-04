@@ -12,9 +12,7 @@ allowed-tools: [product_search, product_read, place_resolve, get_time, workspace
 
 ## Workspace and simulation questions
 
-1. Use `focusedSubjects` from `workspace_catalog` for “this” or “current”. Otherwise discover the relevant Resource and ask only if multiple candidates remain genuinely ambiguous.
-2. Discover a Capability and its current input schema before invoking it. Read the narrowest useful context first and expand only when needed.
-3. Do not invent IDs, Pack behavior, live measurements, permissions, or state.
+Use `workspace-discovery` for live Workspace evidence. Treat “this” or “current” as the Room-linked Resource or the user's focused subjects. Search descriptions and request exact schemas for likely calls; batch independent reads when useful. Choose what to inspect and when to stop from the question and returned evidence rather than following a fixed retrieval sequence. Do not invent IDs, Pack behavior, live measurements, permissions, or state.
 
 ## Scenario authoring
 

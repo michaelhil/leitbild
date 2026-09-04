@@ -189,7 +189,14 @@ export const wireWorkspaceRuntimeEvents = (
         console.log(`[llm-bcast] agent=${agentName} kind=chunk count_so_far=${n}`)
       }
     }
-    broadcast({ type: 'agent_activity', agentName, event })
+    // Prompt content is delivered once through message_context after the
+    // generated Message arrives. The activity stream needs only readiness
+    // metadata; broadcasting the full prompt here duplicated large contexts.
+    broadcast({
+      type: 'agent_activity',
+      agentName,
+      event: event.kind === 'context_ready' ? { ...event, messages: [] } : event,
+    })
   })
 
   // === Provider routing events → toasts ===

@@ -256,13 +256,13 @@ export const createLLMService = (deps: LLMServiceDeps): LLMService => {
     source: LLMSource,
     path: 'chat' | 'stream',
     request: ChatRequest,
-    response: { provider?: string; promptTokens?: number; completionTokens?: number; cacheRead?: number; durationMs: number; chunksEmit?: number; toolCalls?: number; contentLen?: number },
+    response: { provider?: string; promptTokens?: number; completionTokens?: number; cacheCreation?: number; cacheRead?: number; cacheMiss?: number; durationMs: number; chunksEmit?: number; toolCalls?: number; contentLen?: number },
   ): void => {
     console.log(
       `[llm] source=${source} path=${path} provider=${response.provider ?? '?'} ` +
       `model=${request.model} content_len=${response.contentLen ?? '?'} tools=${response.toolCalls ?? 0} ` +
       `prompt_tokens=${response.promptTokens ?? '?'} completion_tokens=${response.completionTokens ?? '?'} ` +
-      `cache_read=${response.cacheRead ?? '?'} chunks_emit=${response.chunksEmit ?? '?'} ` +
+      `cache_read=${response.cacheRead ?? '?'} cache_write=${response.cacheCreation ?? '?'} cache_miss=${response.cacheMiss ?? '?'} chunks_emit=${response.chunksEmit ?? '?'} ` +
       `duration_ms=${response.durationMs}`,
     )
   }
@@ -328,7 +328,9 @@ export const createLLMService = (deps: LLMServiceDeps): LLMService => {
             provider: response.provider,
             promptTokens: response.tokensUsed.prompt,
             completionTokens: response.tokensUsed.completion,
+            cacheCreation: response.tokensUsed.cacheCreation,
             cacheRead: response.tokensUsed.cacheRead,
+            cacheMiss: response.tokensUsed.cacheMiss,
             durationMs,
             contentLen: response.content.length,
             toolCalls: response.toolCalls?.length ?? 0,
@@ -379,7 +381,7 @@ export const createLLMService = (deps: LLMServiceDeps): LLMService => {
           ...(opts.agentId !== undefined ? { agentId: opts.agentId } : {}),
         }
         let chunkCount = 0, contentLen = 0, toolCallCount = 0
-        let promptTokens: number | undefined, completionTokens: number | undefined, cacheRead: number | undefined
+        let promptTokens: number | undefined, completionTokens: number | undefined, cacheCreation: number | undefined, cacheRead: number | undefined, cacheMiss: number | undefined
         let providerName: string | undefined
         let firstChunkSeen = false
         let pendingThinkBuf = ''     // only flushed AFTER strip; tiny since blocks are bounded
@@ -416,7 +418,9 @@ export const createLLMService = (deps: LLMServiceDeps): LLMService => {
                 toolCallCount = chunk.toolCalls?.length ?? 0
                 promptTokens = chunk.tokensUsed?.prompt
                 completionTokens = chunk.tokensUsed?.completion
+                cacheCreation = chunk.tokensUsed?.cacheCreation
                 cacheRead = chunk.tokensUsed?.cacheRead
+                cacheMiss = chunk.tokensUsed?.cacheMiss
                 providerName = chunk.provider
               }
               yield chunk
@@ -424,7 +428,7 @@ export const createLLMService = (deps: LLMServiceDeps): LLMService => {
           }
           const durationMs = Math.round(performance.now() - startMs)
           logLine(opts.source, 'stream', attemptRequest, {
-            provider: providerName, promptTokens, completionTokens, cacheRead,
+            provider: providerName, promptTokens, completionTokens, cacheCreation, cacheRead, cacheMiss,
             durationMs, chunksEmit: chunkCount, toolCalls: toolCallCount, contentLen,
           })
           return

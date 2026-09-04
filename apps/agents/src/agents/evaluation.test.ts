@@ -325,10 +325,14 @@ describe('evaluate (tool loop)', () => {
     expect(r.action).toBe('respond')
     if (r.action === 'respond') expect(r.content).toBe('final answer')
     expect(calls).toHaveLength(2)
-    // Second call sees tool result injected as user message.
+    // Second call preserves the provider-native assistant/tool exchange.
     const last = calls[1]!
-    const userMsgs = last.messages.filter(m => m.role === 'user')
-    expect(userMsgs.some(m => m.content.includes('echoed'))).toBe(true)
+    const assistantToolMessage = last.messages.find(m => m.role === 'assistant' && m.toolCalls?.length)
+    const toolMessage = last.messages.find(m => m.role === 'tool')
+    expect(assistantToolMessage?.toolCalls?.[0]?.function.name).toBe('echo')
+    expect(toolMessage?.content).toContain('echoed')
+    expect(toolMessage?.toolCallId).toBe(assistantToolMessage?.toolCalls?.[0]?.id)
+    expect(result.decision.metrics?.modelCalls).toBe(2)
     // toolTrace populated.
     expect(result.decision.toolTrace).toHaveLength(1)
     expect(result.decision.toolTrace![0]!.tool).toBe('echo')
@@ -336,6 +340,39 @@ describe('evaluate (tool loop)', () => {
     expect(result.decision.toolTrace![0]!.argumentKeys).toEqual(['text'])
     expect(result.decision.toolTrace![0]!.argumentBytes).toBeGreaterThan(0)
     expect(result.decision.toolTrace![0]).not.toHaveProperty('arguments')
+  })
+
+  test('preserves fresh tool evidence when it alone exceeds the context budget', async () => {
+    const { provider, calls } = makeScriptedProvider([
+      { toolCalls: [{ id: 'read_1', function: { name: 'read', arguments: {} } }] },
+      { content: 'answered from evidence' },
+    ])
+    const evidence = 'current-evidence-'.repeat(80)
+    const warnings: string[] = []
+    const result = await evaluate(
+      {
+        messages: [
+          { role: 'system', content: 'system' },
+          { role: 'user', content: `old-${'history'.repeat(100)}` },
+          { role: 'assistant', content: `old-${'answer'.repeat(100)}` },
+          { role: 'user', content: 'current question' },
+        ],
+        flushInfo: { ids: new Set<string>(), triggerRoomId: 'room-1' },
+        warnings: [],
+        tokenBudget: 80,
+      },
+      baseConfig,
+      provider,
+      async () => [{ success: true, data: evidence }],
+      5,
+      'room-1',
+      { toolDefinitions: [], onEvent: event => { if (event.kind === 'warning') warnings.push(event.message) } },
+    )
+
+    expect(result.decision.response.action).toBe('respond')
+    expect(calls[1]?.messages.find(message => message.role === 'tool')?.content).toBe(evidence)
+    expect(calls[1]?.messages.some(message => message.content.startsWith('old-'))).toBe(false)
+    expect(warnings.some(message => message.includes('Evidence was preserved intact'))).toBe(true)
   })
 
   test('multi-round tool loop (2 tools then content)', async () => {

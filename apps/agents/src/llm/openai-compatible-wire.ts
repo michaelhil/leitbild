@@ -93,6 +93,20 @@ export const messageContentWithImages = (
 }
 
 export const toOAIMessages = (request: ChatRequest, providerName: string): OAIMessage[] => {
+  const toMessage = (m: ChatRequest['messages'][number]): OAIMessage => {
+    const withImages = messageContentWithImages(m)
+    return {
+      role: m.role,
+      content: withImages ?? safeAssistantContent(m),
+      ...(m.role === 'assistant' && m.toolCalls ? { tool_calls: m.toolCalls.map((call, index) => ({
+        id: call.id ?? `call_${index}`,
+        type: 'function' as const,
+        function: { name: call.function.name, arguments: JSON.stringify(call.function.arguments) },
+      })) } : {}),
+      ...(m.role === 'tool' && m.toolCallId ? { tool_call_id: m.toolCallId } : {}),
+      ...(m.role === 'tool' && m.name ? { name: m.name } : {}),
+    }
+  }
   // Anthropic path: if systemBlocks are provided, emit the system message as
   // an array of content parts with `cache_control: ephemeral` on the last
   // cacheable block. Anthropic's caching is triggered by the marker and caches
@@ -116,17 +130,11 @@ export const toOAIMessages = (request: ChatRequest, providerName: string): OAIMe
     }
     for (const m of request.messages) {
       if (m.role === 'system') continue
-      const withImages = messageContentWithImages(m)
-      if (withImages) out.push({ role: m.role, content: withImages })
-      else out.push({ role: m.role, content: safeAssistantContent(m) })
+      out.push(toMessage(m))
     }
     return out
   }
-  return request.messages.map(m => {
-    const withImages = messageContentWithImages(m)
-    if (withImages) return { role: m.role, content: withImages }
-    return { role: m.role, content: safeAssistantContent(m) }
-  })
+  return request.messages.map(toMessage)
 }
 
 // === Model-family detection ===

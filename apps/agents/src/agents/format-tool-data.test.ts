@@ -13,11 +13,9 @@ describe('formatToolDataForLLM', () => {
     expect(out).not.toContain('\\n')
   })
 
-  test('pretty-prints object data with real newlines and indent', () => {
+  test('serializes object data compactly', () => {
     const out = formatToolDataForLLM({ a: 1, nested: { b: 'two' } })
-    expect(out).toContain('\n')               // real newlines, not escapes
-    expect(out).toContain('  "a": 1')         // indent
-    expect(out).toContain('  "nested": {')
+    expect(out).toBe('{"a":1,"nested":{"b":"two"}}')
   })
 
   test('null/undefined collapse to empty string (not the literal "null")', () => {
@@ -25,10 +23,9 @@ describe('formatToolDataForLLM', () => {
     expect(formatToolDataForLLM(undefined)).toBe('')
   })
 
-  test('arrays pretty-print with indent', () => {
+  test('serializes arrays compactly', () => {
     const out = formatToolDataForLLM([{ id: 1 }, { id: 2 }])
-    expect(out).toContain('\n')
-    expect(out).toContain('"id": 1')
+    expect(out).toBe('[{"id":1},{"id":2}]')
   })
 
   test('primitives that arent strings serialize cleanly', () => {

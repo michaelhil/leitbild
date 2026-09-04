@@ -4,7 +4,7 @@
 // MessageCause is imported from the server-side type module so the kind union
 // (script/trigger/biometric/...) lives in exactly one place.
 
-import type { MessageAttachment, MessageCause } from '../../../core/types/messaging.ts'
+import type { MessageAttachment, MessageCause, ToolTraceEntry } from '../../../core/types/messaging.ts'
 
 export interface UIMessage {
   id: string
@@ -21,6 +21,10 @@ export interface UIMessage {
   // Tokens/context metrics forwarded via server message metadata.
   promptTokens?: number
   completionTokens?: number
+  cacheCreation?: number
+  cacheRead?: number
+  cacheMiss?: number
+  modelCalls?: number
   contextMax?: number
   provider?: string
   model?: string
@@ -33,6 +37,7 @@ export interface UIMessage {
   // Image attachments forwarded from server Message.attachments. Rendered
   // as inline thumbnails below the message body; click → full-size modal.
   attachments?: ReadonlyArray<MessageAttachment>
+  toolTrace?: ReadonlyArray<ToolTraceEntry>
 }
 
 export interface RoomProfile {
@@ -49,4 +54,3 @@ export interface AgentInfo {
   context?: string
   tags?: ReadonlyArray<string>
 }
-

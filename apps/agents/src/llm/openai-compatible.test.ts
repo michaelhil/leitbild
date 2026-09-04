@@ -77,6 +77,45 @@ describe('createOpenAICompatibleProvider', () => {
     }
   })
 
+  test('normalizes OpenAI prompt-cache counters', async () => {
+    const fx = startFixture(() => ({
+      status: 200,
+      body: JSON.stringify({
+        choices: [{ message: { role: 'assistant', content: 'cached' } }],
+        usage: {
+          prompt_tokens: 100,
+          completion_tokens: 3,
+          prompt_tokens_details: { cached_tokens: 70, cache_write_tokens: 20 },
+        },
+      }),
+    }))
+    try {
+      const provider = createOpenAICompatibleProvider({ name: 'openai', getBaseUrl: () => fx.url, getApiKey: () => 'k' })
+      const response = await provider.chat({ model: 'gpt-4o', messages: [{ role: 'user', content: 'hi' }] })
+      expect(response.tokensUsed).toEqual({ prompt: 100, completion: 3, cacheCreation: 20, cacheRead: 70 })
+    } finally { fx.stop() }
+  })
+
+  test('normalizes provider cache hit and miss counters without deriving them', async () => {
+    const fx = startFixture(() => ({
+      status: 200,
+      body: JSON.stringify({
+        choices: [{ message: { role: 'assistant', content: 'cached' } }],
+        usage: {
+          prompt_tokens: 40,
+          completion_tokens: 2,
+          prompt_cache_hit_tokens: 35,
+          prompt_cache_miss_tokens: 5,
+        },
+      }),
+    }))
+    try {
+      const provider = createOpenAICompatibleProvider({ name: 'deepseek', getBaseUrl: () => fx.url, getApiKey: () => 'k' })
+      const response = await provider.chat({ model: 'deepseek-chat', messages: [{ role: 'user', content: 'hi' }] })
+      expect(response.tokensUsed).toEqual({ prompt: 40, completion: 2, cacheRead: 35, cacheMiss: 5 })
+    } finally { fx.stop() }
+  })
+
   test('429 with integer Retry-After → rate_limit error carries retryAfterMs', async () => {
     const fx = startFixture(() => ({
       status: 429,

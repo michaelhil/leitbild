@@ -13,6 +13,7 @@ interface OllamaMessage {
   readonly role: string
   readonly content: string
   readonly tool_calls?: ReadonlyArray<OllamaToolCall>
+  readonly tool_name?: string
 }
 
 interface OllamaChatResponse {
@@ -164,7 +165,8 @@ export const createOllamaProvider = (initialBaseUrl: string): OllamaProviderExte
     const generationMs = Math.round(performance.now() - startMs)
 
     const nativeToolCalls = data.message.tool_calls?.length
-      ? data.message.tool_calls.map(tc => ({
+      ? data.message.tool_calls.map((tc, index) => ({
+          id: `ollama_${index}`,
           function: { name: tc.function.name, arguments: tc.function.arguments },
         }))
       : undefined
@@ -192,7 +194,12 @@ export const createOllamaProvider = (initialBaseUrl: string): OllamaProviderExte
   const stream = async function* (request: ChatRequest, externalSignal?: AbortSignal): AsyncIterable<StreamChunk> {
     const body: Record<string, unknown> = {
       model: request.model,
-      messages: request.messages.map(m => ({ role: m.role, content: m.content })),
+      messages: request.messages.map(m => ({
+        role: m.role,
+        content: m.content,
+        ...(m.role === 'assistant' && m.toolCalls ? { tool_calls: m.toolCalls.map(call => ({ function: call.function })) } : {}),
+        ...(m.role === 'tool' && m.name ? { tool_name: m.name } : {}),
+      })),
       stream: true,
     }
     // Pass tool definitions for native tool calling in streaming mode
@@ -289,7 +296,7 @@ export const createOllamaProvider = (initialBaseUrl: string): OllamaProviderExte
           const delta = parsed.message?.content ?? ''
           const isDone = parsed.done === true
           const toolCalls = isDone && parsed.message?.tool_calls?.length
-            ? parsed.message.tool_calls.map(tc => ({ function: { name: tc.function.name, arguments: tc.function.arguments } }))
+            ? parsed.message.tool_calls.map((tc, index) => ({ id: `ollama_${index}`, function: { name: tc.function.name, arguments: tc.function.arguments } }))
             : undefined
           const tokensUsed = isDone && (parsed.prompt_eval_count !== undefined || parsed.eval_count !== undefined)
             ? { prompt: parsed.prompt_eval_count ?? 0, completion: parsed.eval_count ?? 0 }

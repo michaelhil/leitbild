@@ -62,8 +62,11 @@ export type OllamaHealth = ProviderHealth & OllamaHealthExtra
 export interface ChatRequest {
   readonly model: string
   readonly messages: ReadonlyArray<{
-    readonly role: 'system' | 'user' | 'assistant'
+    readonly role: 'system' | 'user' | 'assistant' | 'tool'
     readonly content: string
+    readonly toolCalls?: ReadonlyArray<NativeToolCall>
+    readonly toolCallId?: string
+    readonly name?: string
     // V1 multimodal: optional inline images attached to this message.
     // Providers that support multimodal (modelSupportsImages true) emit
     // the appropriate wire-format content parts; providers that don't
@@ -112,13 +115,12 @@ export interface ChatResponse {
   readonly tokensUsed: {
     readonly prompt: number
     readonly completion: number
-    // Tokens written to / read from the prompt cache. `cacheCreation` is
-    // Anthropic-specific (explicit `cache_control` markers). `cacheRead` is
-    // cross-provider — Anthropic's `cache_read_input_tokens` AND Gemini's
-    // implicit `prompt_tokens_details.cached_tokens` both land here. Absent
-    // when no cache was used or the provider doesn't expose the metric.
+    // Provider-reported tokens written to/read from/missed by the prompt
+    // cache. Providers define the counters differently, so callers must not
+    // derive cross-provider percentages without a known denominator.
     readonly cacheCreation?: number
     readonly cacheRead?: number
+    readonly cacheMiss?: number
   }
   readonly toolCalls?: ReadonlyArray<NativeToolCall>
   readonly tokensPerSecond?: number
@@ -146,9 +148,10 @@ export interface StreamChunk {
   readonly tokensUsed?: {
     readonly prompt: number
     readonly completion: number
-    // Anthropic-only; absent on every other provider.
+    // Provider-reported cache counters; absent when not exposed.
     readonly cacheCreation?: number
     readonly cacheRead?: number
+    readonly cacheMiss?: number
   }
   // Attached by the router on the final done=true chunk.
   readonly provider?: string

@@ -36,10 +36,6 @@ import { parsePrefixedModel, isCloudProvider } from '../llm/models/parse-prefix.
 import { messageFocus } from '../core/message-focus.ts'
 import type { WorkspaceSubjectReference } from '@leitbild/contracts'
 
-// Per-eval context budget computation lives in budget.ts. Two modes:
-//   static (default): max(FLOOR, contextMax * 0.7)   ← byte-identical to pre-Tier-2 behavior
-//   dynamic (opt-in): contextMax - estTokens(toolDefs) - output - safety
-// Toggle via LEITBILD_AUTO_BUDGET_DYNAMIC=1. See budget.ts for rationale.
 import { computeContextBudget } from './budget.ts'
 
 // Resolve a fully-qualified model string for context-window lookup. Cloud-
@@ -160,16 +156,16 @@ export const createAIAgent = (
   let contextEnabled: boolean = config.contextEnabled ?? true
   let maxToolIterationsCfg: number = config.maxToolIterations ?? 5
 
-  // Resolve the system+history token budget from the current model's context
-  // window. Defers to budget.ts so the static-vs-dynamic policy lives in one
-  // place. Tool definitions are read fresh per call so the dynamic mode
-  // sees the actual per-eval surface (which varies with pack activation).
-  const resolveContextTokenBudget = (): number => {
-    const { provider, model } = resolveModelForContext(currentModel)
+  const effectiveToolsForRoom = (roomId: string): ReadonlyArray<ToolDefinition> | undefined => {
+    if (!includeTools) return undefined
+    const resolved = resolveToolDefinitions?.(roomId) ?? null
+    return resolved ?? toolDefinitions
+  }
+
+  const resolveContextTokenBudget = (effectiveModel: string, definitions: ReadonlyArray<ToolDefinition> | undefined): number => {
+    const { provider, model } = resolveModelForContext(effectiveModel)
     const info = getContextWindowSync(provider, model)
-    // ToolDefinition wraps name/description/parameters under `function`;
-    // budget.ts's BudgetableToolDef expects them at top level. Map once.
-    const toolDefs = (options?.toolDefinitions ?? []).map(td => ({
+    const toolDefs = (definitions ?? []).map(td => ({
       name: td.function.name,
       description: td.function.description,
       parameters: td.function.parameters,
@@ -227,7 +223,7 @@ export const createAIAgent = (
 
   // --- Context deps ---
 
-  const contextDeps = (): BuildContextDeps => ({
+  const contextDeps = (effectiveModel: string, definitions: ReadonlyArray<ToolDefinition> | undefined): BuildContextDeps => ({
     agentId,
     persona: currentPersona,
     workspacePrompt: getWorkspacePrompt?.(),
@@ -241,11 +237,11 @@ export const createAIAgent = (
     includeContext: includeContextState,
     promptsEnabled,
     contextEnabled,
-    contextTokenBudget: resolveContextTokenBudget(),
+    contextTokenBudget: resolveContextTokenBudget(effectiveModel, definitions),
     getCompressedIds: (roomId: string) => getCompressedIds?.(roomId) ?? new Set<string>(),
     getRoomMembers,
-    supportsImages: modelSupportsImages(currentModel),
-    modelForWarn: currentModel,
+    supportsImages: modelSupportsImages(effectiveModel),
+    modelForWarn: effectiveModel,
     metricsSink: options?.metricsSink,
   })
   // buildContext walks five sources to assemble the LLM context. Order in
@@ -275,6 +271,7 @@ export const createAIAgent = (
     triggerRoomId: string,
     signal: AbortSignal,
     traceId: string,
+    evalToolDefs: ReadonlyArray<ToolDefinition> | undefined,
     inReplyTo?: ReadonlyArray<string>,
   ): Promise<EvalResult> => {
     const evalConfig = {
@@ -287,13 +284,6 @@ export const createAIAgent = (
       maxToolIterations: maxToolIterationsCfg,
     }
     const evalToolExec = includeTools ? toolExecutor : undefined
-    // Per-room tool surface: prefer the resolver (pack-aware filter) when
-    // wired; fall back to static toolDefinitions when not (tests, MCP-only,
-    // unknown room — the resolver returns null and we use the maximal set).
-    const resolvedDefs = includeTools && resolveToolDefinitions
-      ? resolveToolDefinitions(triggerRoomId)
-      : null
-    const evalToolDefs = includeTools ? (resolvedDefs ?? toolDefinitions) : undefined
     // Stamp traceId onto every event from the inner evaluate loop before
     // forwarding. Internal sites work with EvalEventCore (no traceId
     // plumbing); subscribers see a full EvalEvent.
@@ -358,7 +348,6 @@ export const createAIAgent = (
       ? (event: EvalEventCore) => onEvalEvent(config.name, { ...event, traceId } as EvalEvent)
       : undefined
 
-    const contextResult = buildContext(contextDeps(), triggerRoomId)
     const epoch = cm.epochAtStart()
 
     // Resolve effective model per call. `currentModel` is the user's intent
@@ -385,6 +374,9 @@ export const createAIAgent = (
       lastFallbackTarget = null
     }
 
+    const effectiveToolDefs = effectiveToolsForRoom(triggerRoomId)
+    const contextResult = buildContext(contextDeps(effectiveModel, effectiveToolDefs), triggerRoomId)
+
     const inReplyTo = contextResult.flushInfo.ids.size > 0 ? [...contextResult.flushInfo.ids] : undefined
     const abortController = new AbortController()
     activeAbortController = abortController
@@ -392,11 +384,6 @@ export const createAIAgent = (
     // Pack-aware tool count for the context_ready event — same resolution
     // path the eval will take, so the UI's tool-count badge matches what
     // the LLM actually sees.
-    const evalResolvedDefs = includeTools && resolveToolDefinitions
-      ? resolveToolDefinitions(triggerRoomId)
-      : null
-    const effectiveToolDefs = includeTools ? (evalResolvedDefs ?? toolDefinitions) : undefined
-
     // Emit context_ready + any context builder warnings before LLM call
     if (emit) {
       emit({
@@ -437,7 +424,7 @@ export const createAIAgent = (
       let wasRespond = false
       try {
         const { decision, flushInfo } = await runEvaluate(
-          contextResult, effectiveModel, triggerRoomId, abortController.signal, traceId, inReplyTo,
+          contextResult, effectiveModel, triggerRoomId, abortController.signal, traceId, effectiveToolDefs, inReplyTo,
         )
         if (!cm.isEpochCurrent(epoch)) return  // cancelled — discard stale result
 
@@ -652,7 +639,8 @@ export const createAIAgent = (
       maxToolIterationsCfg = (typeof n === 'number' && n > 0) ? n : 5
     },
     getContextPreview: (roomId: string) => {
-      const deps = contextDeps()
+      const defs = effectiveToolsForRoom(roomId)
+      const deps = contextDeps(currentModel, defs)
       const sections = buildSystemSections(deps, roomId)
       const roomCtx = agentHistory.rooms.get(roomId)
       const previewSections = sections.map(s => ({
@@ -815,7 +803,8 @@ export const createAIAgent = (
           : { model: currentModel, fallback: false, reason: 'preferred_available' as const }
         const effectiveModel = resolved.model
 
-        const baseCtx = buildContext(contextDeps(), roomId)
+        const effectiveToolDefs = effectiveToolsForRoom(roomId)
+        const baseCtx = buildContext(contextDeps(effectiveModel, effectiveToolDefs), roomId)
         // Append the trigger prompt as a transient trailing user message.
         // Not in incoming, so flushIncoming has nothing to do; the prompt
         // never lands in room history.
@@ -830,7 +819,7 @@ export const createAIAgent = (
         }
 
         const { decision } = await runEvaluate(
-          contextResult, effectiveModel, roomId, abortController.signal, generateTraceId(),
+          contextResult, effectiveModel, roomId, abortController.signal, generateTraceId(), effectiveToolDefs,
         )
         if (!cm.isEpochCurrent(epoch)) return  // cancelled
         onDecision(decision)

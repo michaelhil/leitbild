@@ -2,6 +2,7 @@
 // native tool-calling interoperability with LLM providers. Leaf module.
 
 export interface ToolCall {
+  readonly callId?: string
   readonly tool: string
   readonly arguments: Record<string, unknown>
 }
@@ -101,6 +102,7 @@ export interface ToolDefinition {
 }
 
 export interface NativeToolCall {
+  readonly id?: string
   readonly function: {
     readonly name: string
     readonly arguments: Record<string, unknown>

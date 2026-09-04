@@ -34,11 +34,28 @@ describe('toUIMessage', () => {
       ...base,
       promptTokens: 100,
       completionTokens: 50,
+      cacheCreation: 30,
+      cacheRead: 60,
+      cacheMiss: 40,
+      modelCalls: 2,
       contextMax: 8000,
     })
     expect(ui.promptTokens).toBe(100)
     expect(ui.completionTokens).toBe(50)
+    expect(ui.cacheCreation).toBe(30)
+    expect(ui.cacheRead).toBe(60)
+    expect(ui.cacheMiss).toBe(40)
+    expect(ui.modelCalls).toBe(2)
     expect(ui.contextMax).toBe(8000)
+  })
+
+  test('forwards attachments and tool trace without putting them in content', () => {
+    const attachment = { kind: 'image' as const, dataUrl: 'data:image/png;base64,eA==', mimeType: 'image/png' as const, width: 1, height: 1, capturedAt: 1 }
+    const trace = { tool: 'workspace_catalog', argumentKeys: [], argumentBytes: 2, success: true, resultPreview: 'ok' }
+    const ui = toUIMessage({ ...base, attachments: [attachment], toolTrace: [trace] })
+    expect(ui.attachments).toEqual([attachment])
+    expect(ui.toolTrace).toEqual([trace])
+    expect(ui.content).toBe('hello')
   })
 
   test('forwards provider + model strings when present', () => {
@@ -99,4 +116,3 @@ describe('toAgentEntry', () => {
     expect(ui.state).toBe('idle')
   })
 })
-

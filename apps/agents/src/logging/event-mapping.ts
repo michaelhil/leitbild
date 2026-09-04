@@ -100,7 +100,12 @@ export const mkEvalEvent = (sessionId: string, agentName: string, event: EvalEve
   kind: 'agent.eval_event',
   session: sessionId,
   actor: { kind: 'ai', name: agentName },
-  payload: { event },
+  payload: { event: event.kind === 'context_ready' ? {
+    ...event,
+    messages: undefined,
+    messageCount: event.messages.length,
+    contextBytes: new TextEncoder().encode(JSON.stringify(event.messages)).byteLength,
+  } : event },
 })
 
 export const mkProviderBound = (
