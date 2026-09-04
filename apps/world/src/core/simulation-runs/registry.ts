@@ -665,7 +665,11 @@ export const createSimulationRunRegistry = (config: {
     const clock = runtime.snapshot().clock
     if (!clock) throw new Error('Simulation Run clock is not initialized')
     const cached = executionStates.get(id) ?? await executionStoreFor(id).load()
-    const runningMaximum = maximumPaceJobs.has(id)
+    // The job remains registered while its terminal state is being persisted so
+    // commands cannot start a competing worker. Once the acceleration itself is
+    // terminal, expose that committed destination rather than briefly reporting
+    // maximum/playing solely because final persistence is still in flight.
+    const runningMaximum = maximumPaceJobs.has(id) && cached?.acceleration?.status === 'running'
     const state = runExecutionStateSchema.parse({
       playback: runningMaximum ? 'playing' : clock.paused ? 'paused' : 'playing',
       pace: runningMaximum ? 'maximum' : clock.paused ? cached?.pace ?? 'realtime' : 'realtime',
