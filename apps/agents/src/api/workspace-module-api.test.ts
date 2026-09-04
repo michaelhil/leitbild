@@ -16,6 +16,8 @@ import { createDeploymentRuntime } from '../core/deployment-runtime.ts'
 import { createAgentsModuleState, type AgentsModuleState } from '../core/workspaces/module-state.ts'
 import { createWorkspaceRuntimeRegistry, type WorkspaceRuntimeRegistry } from '../core/workspaces/runtime-registry.ts'
 import { agentsModuleManifest, handleAgentsModuleApi } from './workspace-module-api.ts'
+import { messageFocus } from '../core/message-focus.ts'
+import { asAIAgent } from '../agents/shared.ts'
 
 let home = ''
 let originalHome: string | undefined
@@ -79,6 +81,63 @@ const invokeBody = (workspaceId: WorkspaceId, capabilityId: string, input: unkno
 })
 
 describe('Agents Workspace Module API', () => {
+  test('opens one reusable Leitbild Assistant Room and preserves focused Resource context', async () => {
+    const workspaceId = newWorkspaceId()
+    await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
+    const runtime = await registry.getOrLoad(workspaceId)
+    for (const name of ['product_search', 'product_read', 'geo_lookup', 'get_time']) {
+      runtime.toolRegistry.register({
+        name,
+        description: `Test ${name}`,
+        parameters: { type: 'object' },
+        execute: async () => ({ success: true, data: {} }),
+      })
+    }
+    const focusedResource = workspaceResourceReferenceSchema.parse({
+      workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-one',
+    })
+    const open = (prompt: string, focusedResources = [focusedResource]) => request(
+      'POST',
+      `/internal/workspaces/${workspaceId}/capabilities/agents.assistant.open/invoke`,
+      invokeBody(workspaceId, 'agents.assistant.open', { prompt, focusedResources }),
+    )
+
+    const created = await open('Explain this simulation.')
+    expect(created.status).toBe(201)
+    const createdBody = await created.json() as { result: { resource: { id: string }; reused: boolean; uiPath: string }; createdResources: Array<{ id: string }> }
+    expect(createdBody.result.reused).toBe(false)
+    expect(createdBody.result.uiPath).toContain(`room=${createdBody.result.resource.id}`)
+    expect(createdBody.createdResources).toHaveLength(1)
+    const room = runtime.rooms.getRoom(createdBody.result.resource.id)!
+    const posted = room.getRecent(10).find(message => message.content === 'Explain this simulation.')
+    expect(posted).toBeDefined()
+    expect(messageFocus(posted!)).toEqual([focusedResource])
+    const assistant = asAIAgent(runtime.team.listByKind('ai')[0]!)!
+    expect(assistant.getMaxToolIterations()).toBe(10)
+
+    const reused = await open('Now create a scenario.')
+    expect(reused.status).toBe(200)
+    const reusedBody = await reused.json() as { result: { resource: { id: string }; reused: boolean }; createdResources?: unknown[] }
+    expect(reusedBody.result).toMatchObject({ resource: { id: room.profile.id }, reused: true })
+    expect(reusedBody.createdResources).toBeUndefined()
+    expect(runtime.rooms.listAllRooms()).toHaveLength(1)
+    expect(runtime.team.listByKind('ai')).toHaveLength(1)
+
+    const definition = await registry.definitionsFor(workspaceId).currentRevision('leitbild-assistant')
+    const startedAgain = await request(
+      'POST',
+      `/internal/workspaces/${workspaceId}/capabilities/agents.room-definition.start/invoke`,
+      invokeBody(workspaceId, 'agents.room-definition.start', {}, {
+        definition: { type: 'agents.room-definition', id: 'leitbild-assistant', revisionId: definition!.id },
+      }),
+    )
+    expect(startedAgain.status).toBe(200)
+    expect(runtime.rooms.listAllRooms()).toHaveLength(1)
+
+    const wrongWorkspace = await open('Use this.', [{ ...focusedResource, workspaceId: newWorkspaceId() }])
+    expect(wrongWorkspace.status).toBe(409)
+  })
+
   test('companion creation is discovered, concurrent-safe, durable and independent of template revisions', async () => {
     const workspaceId = newWorkspaceId()
     await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
@@ -205,6 +264,7 @@ describe('Agents Workspace Module API', () => {
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room-definition.update')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room.inspect')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.prompt-deck.run-entry')
+    expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.assistant.open')
 
     const definitions = moduleDefinitionCollectionSchema.parse(
       await (await request('GET', `/internal/workspaces/${workspaceId}/definitions`)).json(),

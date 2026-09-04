@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import {
   INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS,
+  isProductKnowledgePath,
   isProductionSourcePath,
   PRODUCTION_DEPENDENCY_WORKSPACE_PATHS,
   moduleRoutingPreflight,
@@ -74,4 +75,8 @@ test('production artifact excludes development-only files', () => {
   expect(isProductionSourcePath('world', 'tests/api.test.ts')).toBe(false)
   expect(isProductionSourcePath('host', 'deploy/backup/backup-production.sh')).toBe(false)
   expect(isProductionSourcePath('host', 'deploy/Caddyfile')).toBe(true)
+  expect(isProductKnowledgePath('docs/adr/0015-leitbild-assistant-uses-an-ordinary-room.md')).toBe(true)
+  expect(isProductKnowledgePath('contexts/agents/CONTEXT.md')).toBe(true)
+  expect(isProductKnowledgePath('apps/world/README.md')).toBe(true)
+  expect(isProductKnowledgePath('.env')).toBe(false)
 })

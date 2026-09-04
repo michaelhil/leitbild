@@ -1,0 +1,3 @@
+# The Leitbild Assistant uses an ordinary Agent Room
+
+The workspace-wide Leitbild Assistant is one reusable Agents-owned Room with one ordinary capability-limited Agent, opened from the Host and given the user's current Resource focus. It uses bounded product-source tools and the existing Workspace Capability Broker; scenario candidates remain ordinary Scenario Definitions and become immutable revisions only when explicitly saved. We rejected an Assistant Pack, a privileged Host AI service, and separate task or draft resources because each would duplicate lifecycle, permissions, persistence, or orchestration mechanisms without an independent domain need.

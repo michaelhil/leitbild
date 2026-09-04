@@ -16,6 +16,10 @@ _Avoid_: Workspace access policy, Module provisioning state
 A Room accompanying one Resource in the same Workspace. Its association gives participants discoverable context, not permission or automatic control. The conversation can outlive the Resource and the Definition that created it.
 _Avoid_: default Room, Binding, hard-coded simulation controller
 
+**Leitbild Assistant**:
+The single reusable Room and ordinary Agent that handles general product questions, Workspace exploration, and scenario authoring for one Workspace through explicit tools and Tool Grants.
+_Avoid_: Assistant service, scenario generator, privileged code agent, Assistant Pack
+
 **Message**:
 A durable contribution by an Actor to a Room.
 _Avoid_: simulation event, Capability invocation

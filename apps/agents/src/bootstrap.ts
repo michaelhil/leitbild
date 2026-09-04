@@ -58,6 +58,7 @@ import {
   createPassTool, createGetTimeTool, createTestToolTool, createListSkillsTool,
   createWebTools, createWriteSkillTool, createWriteToolTool, createPackTools,
   createGeoLookupTool, createGeoAddTool, createGeoRemoveTool, createGeoListCategoriesTool, createGeoListFeaturesTool,
+  createProductKnowledgeTools,
 } from './tools/built-in/index.ts'
 import { createAgentsModuleState } from './core/workspaces/module-state.ts'
 import { newWorkspaceId, type WorkspaceId } from '@leitbild/contracts'
@@ -194,6 +195,7 @@ export const bootstrap = async (): Promise<void> => {
 
   deployment.sharedToolRegistry.register(createPassTool())
   deployment.sharedToolRegistry.register(createGetTimeTool())
+  deployment.sharedToolRegistry.registerAll(createProductKnowledgeTools())
   deployment.sharedToolRegistry.register(createTestToolTool(deployment.sharedToolRegistry))
   deployment.sharedToolRegistry.register(createListSkillsTool(deployment.sharedSkillStore))
   // Register shared geodata tools against the canonical authoring layout.

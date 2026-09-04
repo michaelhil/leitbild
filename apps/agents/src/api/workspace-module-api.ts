@@ -18,6 +18,7 @@ import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
 import { asAIAgent } from '../agents/shared.ts'
 import { runPromptDeckEntry, startRoomDefinition, validateRoomDefinition } from '../core/definitions/room-definition-service.ts'
 import { ensureCompanionRoom } from '../core/definitions/companion-room.ts'
+import { AssistantRoomError, ensureAssistantRoom, LEITBILD_ASSISTANT_DEFINITION_ID } from '../core/definitions/assistant-room.ts'
 import type { RoomDefinitionLibrary } from '../core/definitions/room-definition-library.ts'
 import { roomDefinitionSchema, type RoomDefinition } from '../core/definitions/room-definition-catalog.ts'
 import type { AgentsModuleState } from '../core/workspaces/module-state.ts'
@@ -63,10 +64,22 @@ const runPromptDeckEntrySchema = z.object({
 const writeRoomDefinitionSchema = z.object({ definition: roomDefinitionSchema }).strict()
 const emptyInputSchema = z.object({}).strict()
 const companionInputSchema = z.object({ resource: workspaceResourceReferenceSchema, title: z.string().trim().min(1).max(256) }).strict()
+const assistantOpenInputSchema = z.object({
+  prompt: z.string().trim().min(1).max(64_000),
+  focusedResources: z.array(workspaceResourceReferenceSchema).max(4).default([]),
+}).strict()
+const assistantOpenResultSchema = z.object({
+  resource: workspaceResourceReferenceSchema,
+  uiPath: z.string().min(1),
+  reused: z.boolean(),
+}).strict()
 const ROOM_DEFINITION_TYPE = 'agents.room-definition'
 
 const json = (body: unknown, status = 200): Response => Response.json(body, { status })
 const apiError = (status: number, code: string, message: string): Response => json({ error: { code, message } }, status)
+const assistantError = (error: unknown): Response | undefined => error instanceof AssistantRoomError
+  ? apiError(error.status, error.code, error.message)
+  : undefined
 
 const readJson = async (request: Request): Promise<unknown> => {
   try {
@@ -258,6 +271,45 @@ const parseRoomDefinitionWrite = (runtime: AgentsWorkspaceRuntime, raw: unknown)
 }
 
 const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorkspaceRuntime; library: RoomDefinitionLibrary; flush: () => Promise<void> }, Response>(AGENTS_MODULE_ID, [
+  {
+    descriptor: {
+      id: 'agents.assistant.open', moduleId: AGENTS_MODULE_ID,
+      kind: 'command', scope: { kind: 'workspace' },
+      title: 'Open Leitbild Assistant',
+      description: 'Reuses the Workspace Leitbild Assistant Room, posts the request with current Resource focus, and returns its Room location.',
+      risk: 'write', idempotent: false,
+      inputSchema: z.toJSONSchema(assistantOpenInputSchema),
+      outputSchema: z.toJSONSchema(assistantOpenResultSchema),
+    },
+    invoke: async ({ runtime, library, flush }, invocation) => {
+      const input = assistantOpenInputSchema.parse(invocation.input)
+      if (input.focusedResources.some(resource => resource.workspaceId !== invocation.workspaceId)) {
+        return apiError(409, 'workspace_scope_mismatch', 'Focused Resource belongs to another Workspace')
+      }
+      try {
+        const opened = await ensureAssistantRoom(runtime, library, flush, {
+          prompt: input.prompt,
+          focusedResources: input.focusedResources,
+        })
+        const resource = workspaceResourceReferenceSchema.parse({
+          workspaceId: invocation.workspaceId,
+          moduleId: AGENTS_MODULE_ID,
+          type: 'agents.room',
+          id: opened.room.id,
+        })
+        return json({
+          result: assistantOpenResultSchema.parse({
+            resource,
+            uiPath: `/workspaces/${encodeURIComponent(invocation.workspaceId)}/agents?room=${encodeURIComponent(opened.room.id)}`,
+            reused: !opened.created,
+          }),
+          ...(opened.created ? { createdResources: [resource] } : {}),
+        }, opened.created ? 201 : 200)
+      } catch (error) {
+        return assistantError(error) ?? apiError(500, 'assistant_open_failed', error instanceof Error ? error.message : String(error))
+      }
+    },
+  },
   {
     descriptor: {
       id: 'agents.room-definition.ensure-companion', moduleId: AGENTS_MODULE_ID,
@@ -581,12 +633,34 @@ const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorks
       inputSchema: z.toJSONSchema(emptyInputSchema),
       outputSchema: { type: 'object' },
     },
-    invoke: async ({ runtime, library }, invocation) => {
+    invoke: async ({ runtime, library, flush }, invocation) => {
       emptyInputSchema.parse(invocation.input)
+      const definitionId = requireRoomDefinitionId(invocation)
+      if (definitionId === LEITBILD_ASSISTANT_DEFINITION_ID) {
+        try {
+          const opened = await ensureAssistantRoom(runtime, library, flush, { revisionId: invocation.definition!.revisionId })
+          const resource = workspaceResourceReferenceSchema.parse({
+            workspaceId: invocation.workspaceId,
+            moduleId: AGENTS_MODULE_ID,
+            type: 'agents.room',
+            id: opened.room.id,
+          })
+          return json({
+            result: {
+              room: opened.room,
+              revisionId: opened.revisionId,
+              uiPath: `/workspaces/${encodeURIComponent(invocation.workspaceId)}/agents?room=${encodeURIComponent(opened.room.id)}`,
+            },
+            ...(opened.created ? { createdResources: [resource] } : {}),
+          }, opened.created ? 201 : 200)
+        } catch (error) {
+          return assistantError(error) ?? apiError(500, 'assistant_open_failed', error instanceof Error ? error.message : String(error))
+        }
+      }
       const started = await startRoomDefinition(
         runtime,
         library,
-        requireRoomDefinitionId(invocation),
+        definitionId,
         invocation.definition!.revisionId,
       )
       const resource = {

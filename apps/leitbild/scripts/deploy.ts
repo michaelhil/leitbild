@@ -131,6 +131,14 @@ export const isProductionSourcePath = (workspace: 'host' | 'world' | 'agents' | 
   return path === 'package.json' || path.startsWith('src/')
 }
 
+export const isProductKnowledgePath = (path: string): boolean =>
+  path === 'README.md'
+  || path === 'CONTEXT-MAP.md'
+  || path.startsWith('docs/')
+  || path.startsWith('contexts/')
+  || /^apps\/[^/]+\/README\.md$/.test(path)
+  || /^packages\/[^/]+\/README\.md$/.test(path)
+
 const directoryFiles = async (root: string, child: string): Promise<string[]> => {
   const files: string[] = []
   const visit = async (directory: string): Promise<void> => {
@@ -206,6 +214,9 @@ const createArtifact = async () => {
   const worldEntries = await entriesFor(WORLD_ROOT, 'apps/world', 'world', await directoryFiles(WORLD_ROOT, 'src/ui/dist'))
   const agentsEntries = await entriesFor(AGENTS_ROOT, 'apps/agents', 'agents', ['src/ui/dist.css'])
   const rootEntries: ArtifactEntry[] = ['package.json', 'bun.lock'].map(path => ({ source: join(WORKSPACE_ROOT, path), target: path }))
+  const productKnowledgeEntries: ArtifactEntry[] = (await trackedFiles(WORKSPACE_ROOT))
+    .filter(path => isProductKnowledgePath(path) && !isDevelopmentOnlyPath(path))
+    .map(path => ({ source: join(WORKSPACE_ROOT, path), target: path }))
   const installManifestEntries: ArtifactEntry[] = INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS.map(path => ({
     source: join(WORKSPACE_ROOT, path, 'package.json'),
     target: join(path, 'package.json'),
@@ -215,6 +226,7 @@ const createArtifact = async () => {
   )).flat()
   const entries = [
     ...rootEntries,
+    ...productKnowledgeEntries,
     ...hostEntries,
     ...worldEntries,
     ...agentsEntries,

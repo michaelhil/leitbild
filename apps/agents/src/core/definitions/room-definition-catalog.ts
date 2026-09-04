@@ -10,6 +10,7 @@ const agentDefinitionSchema = z.object({
   tools: z.array(z.string().min(1)).default([]),
   toolGrants: toolGrantSetSchema.optional(),
   temperature: z.number().finite().optional(),
+  maxToolIterations: z.number().int().min(1).max(50).optional(),
 }).strict()
 
 const promptDeckActionSchema = z.discriminatedUnion('kind', [
