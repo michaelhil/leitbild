@@ -37,6 +37,22 @@ button, input { font: inherit; }
 }
 .workspace-identity { min-width: 0; display: flex; align-items: center; gap: .5rem; font-size: .82rem; }
 .workspace-name { overflow: hidden; color: #aebbb0; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-actions { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: .45rem; }
+.assistant-launch { flex: 0 0 auto; width: 32px; min-height: 32px; padding: 0; border-color: #526056; color: #dce9da; background: #223127; }
+.assistant-launch:hover { border-color: #8ba18d; color: white; background: #304336; }
+.assistant-launch svg { width: 17px; height: 17px; fill: currentColor; }
+.assistant-dialog { width: min(620px, calc(100vw - 2rem)); padding: 0; border: 1px solid #aeb9ad; border-radius: 15px; color: #172019; background: #f7f9f5; box-shadow: 0 24px 80px rgba(0,0,0,.34); }
+.assistant-dialog::backdrop { background: rgba(10,15,11,.58); backdrop-filter: blur(3px); }
+.assistant-dialog form { padding: 1.15rem; display: grid; gap: .9rem; }
+.assistant-dialog header, .assistant-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.assistant-dialog header span { color: #5d725f; font-size: .68rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.assistant-dialog h2 { margin: .12rem 0 0; font-size: 1.3rem; }
+.assistant-dialog > form > p { margin: 0; color: #5e695f; font-size: .84rem; line-height: 1.45; }
+.assistant-dialog textarea { width: 100%; resize: vertical; min-height: 135px; padding: .75rem; border: 1px solid #bfc9bd; border-radius: 9px; color: #172019; background: #fff; font: inherit; line-height: 1.45; }
+.assistant-dialog textarea:focus { outline: 2px solid #728f72; outline-offset: 1px; }
+.assistant-dialog footer span { color: #7a847c; font-size: .7rem; }
+.assistant-close { width: 32px; min-height: 32px; padding: 0; font-size: 1.2rem; }
+.assistant-error { color: #832a24 !important; }
 
 main { width: min(1120px, 92vw); margin: 0 auto; padding: 3.5rem 0 6rem; }
 main.workspace-main { width: 100%; height: calc(100dvh - 42px); margin: 0; padding: 0; overflow: hidden; }

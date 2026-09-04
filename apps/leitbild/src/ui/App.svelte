@@ -15,6 +15,7 @@
   import WorkspacePicker from './WorkspacePicker.svelte'
   import InlineName from './InlineName.svelte'
   import SimulationRunControls from './SimulationRunControls.svelte'
+  import AssistantLauncher from './AssistantLauncher.svelte'
   import { request, jsonRequest } from './api.ts'
   import { cardCapability } from './card-actions.ts'
   import { openCompanion } from './companion.ts'
@@ -315,6 +316,26 @@
   }
 
   const capabilityFor = (id: string): ModuleCapabilityDescriptor | undefined => capabilities.find(item => item.id === id)
+  const assistantCapability = $derived(capabilities.find(item => item.id === 'agents.assistant.open' && item.scope.kind === 'workspace'))
+  const openAssistant = async (prompt: string): Promise<void> => {
+    if (!workspace || !assistantCapability) throw new Error('Leitbild Assistant is unavailable')
+    const response = await request<InvocationResponse & { result: { resource: ModuleResourceDescriptor['ref']; uiPath: string; reused: boolean } }>(
+      `/api/workspaces/${workspace.id}/capabilities/${encodeURIComponent(assistantCapability.id)}/invoke`,
+      jsonRequest('POST', {
+        input: {
+          prompt,
+          focusedResources: selectedWorldResource === undefined ? [] : [selectedWorldResource.ref],
+        },
+        actor: { kind: 'human' },
+      }),
+    )
+    selectedAgentsRoomId = response.result.resource.id
+    const url = new URL(location.href)
+    url.searchParams.set('agents', response.result.resource.id)
+    if (selectedWorldRunId) url.searchParams.set('world', selectedWorldRunId)
+    history.pushState(null, '', url)
+    await refreshResources(workspace.id)
+  }
   const renameResource = async (resource: ModuleResourceDescriptor, name: string, expectedTitle: string): Promise<void> => {
     if (!workspace) throw new Error('Workspace is unavailable')
     const capability = cardCapability(resource, 'rename', capabilities)
@@ -362,18 +383,21 @@
 {#if currentPage.kind === 'workspace' && workspace}
   <header class="workspace-bar">
     <div class="workspace-identity"><a class="brand" href="/workspaces">Leitbild</a><a class="workspace-name" href={`/workspaces/${workspace.id}`} title={workspaceTitle}>[{workspaceTitle}]</a></div>
-    {#if selectedWorldResource}
-      <SimulationRunControls
-        workspaceId={workspace.id}
-        resource={selectedWorldResource}
-        {resources}
-        {capabilities}
-        onSwitch={switchWorldRun}
-        onClose={closeWorldRun}
-        refreshResources={() => refreshResources(workspace!.id)}
-        reportError={message => { error = message }}
-      />
-    {/if}
+    <div class="workspace-actions">
+      {#if selectedWorldResource}
+        <SimulationRunControls
+          workspaceId={workspace.id}
+          resource={selectedWorldResource}
+          {resources}
+          {capabilities}
+          onSwitch={switchWorldRun}
+          onClose={closeWorldRun}
+          refreshResources={() => refreshResources(workspace!.id)}
+          reportError={message => { error = message }}
+        />
+      {/if}
+      <AssistantLauncher disabled={assistantCapability === undefined} submit={openAssistant} />
+    </div>
   </header>
 {:else}
   <header class="topbar"><a class="brand" href="/workspaces">Leitbild</a><span class="tagline">— A modular microworld simulation and AI agent sandbox system</span></header>
