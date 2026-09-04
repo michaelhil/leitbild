@@ -27,6 +27,7 @@ const controlSchema = z.discriminatedUnion('kind', [
 const authoringFieldSchema = z.object({
   path: pathSchema,
   label: z.string().min(1),
+  description: z.string().min(1).optional(),
   control: controlSchema,
   optional: z.boolean().default(false),
 }).strict()

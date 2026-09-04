@@ -137,7 +137,7 @@ describe('World Module API', () => {
       actor: { kind: 'human', id: 'scenario-author' },
     })
     const describeId = capabilityIdSchema.parse('world.scenario-authoring.describe')
-    const described = await call<{ result: { packs: Array<{ id: string; itemTypes: unknown[]; runtimes: unknown[]; configSchema: unknown }> } }>(
+    const described = await call<{ result: { packs: Array<{ id: string; itemTypes: unknown[]; runtimes: unknown[]; configSchema: unknown }>; commands: Array<{ packId: string }> } }>(
       registry,
       `/internal/workspaces/${workspaceId}/capabilities/${describeId}/invoke`,
       {
@@ -151,9 +151,34 @@ describe('World Module API', () => {
     expect(described.body?.result.packs.map(pack => pack.id).sort()).toEqual(['ambulance', 'drone', 'electric-grid', 'process-plant', 'weather'])
     expect(described.body?.result.packs.find(pack => pack.id === 'process-plant')?.configSchema).toBeTruthy()
 
+    const focused = await call<{ result: { packs: Array<{ id: string }>; commands: Array<{ packId: string }> } }>(
+      registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${describeId}/invoke`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, capabilityId: describeId, input: { packIds: ['ambulance', 'weather'] }, access }),
+      },
+    )
+    expect(focused.status).toBe(200)
+    expect(focused.body?.result.packs.map(pack => pack.id)).toEqual(['ambulance', 'weather'])
+    expect(focused.body?.result.commands.every(command => ['ambulance', 'weather'].includes(command.packId))).toBe(true)
+
+    const unknownPack = await call<{ error: { code: string } }>(
+      registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${describeId}/invoke`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, capabilityId: describeId, input: { packIds: ['missing-pack'] }, access }),
+      },
+    )
+    expect(unknownPack.status).toBe(400)
+    expect(unknownPack.body?.error.code).toBe('scenario_authoring_pack_not_found')
+
     const previewSource = testScenarioDefinitions.find(source => source.id === 'halden-power-complex')!
     const previewId = capabilityIdSchema.parse('world.scenario.preview')
-    const previewed = await call<{ result: { assets: Array<{ id: string; electricalPorts: Array<{ role: string }> }>; connections: unknown[] } }>(
+    const previewed = await call<{ result: { objectives: string[]; view: { center: [number, number]; zoom: number; layers: string[] }; assets: Array<{ id: string; electricalPorts: Array<{ role: string }> }>; connections: unknown[]; timeline: { cueCount: number; lastCueAtSeconds: number | null; cues: unknown[] } } }>(
       registry,
       `/internal/workspaces/${workspaceId}/capabilities/${previewId}/invoke`,
       {
@@ -168,11 +193,13 @@ describe('World Module API', () => {
     expect(electricalRoles.filter(role => role === 'system')).toHaveLength(4)
     expect(electricalRoles.filter(role => role === 'network')).toHaveLength(4)
     expect(previewed.body?.result.connections).toHaveLength(4)
+    expect(previewed.body?.result.view.center).toHaveLength(2)
+    expect(previewed.body?.result.timeline).toEqual({ cueCount: 0, lastCueAtSeconds: null, cues: [] })
 
     const source = testScenarioDefinitions.find(source => source.id === 'test-response')!
     const definition = { ...source, id: 'custom-authoring-test', title: 'Custom authoring test' }
     const createId = capabilityIdSchema.parse('world.scenario.create')
-    const created = await call<{ result: { definition: { id: string; revisionId: string } } }>(
+    const created = await call<{ result: { definition: { id: string; revisionId: string }; uiPath: string } }>(
       registry,
       `/internal/workspaces/${workspaceId}/capabilities/${createId}/invoke`,
       {
@@ -183,6 +210,7 @@ describe('World Module API', () => {
     )
     expect(created.status).toBe(201)
     expect(created.body?.result.definition.id).toBe(definition.id)
+    expect(created.body?.result.uiPath).toContain(`definition=${definition.id}`)
     const runs = registry.getLoaded(workspaceId)!.simulationRuns
     const revision = await runs.currentScenario(definition.id)
     expect(revision?.document.title).toBe(definition.title)
@@ -214,6 +242,31 @@ describe('World Module API', () => {
     expect(updated.status).toBe(200)
     expect(updated.body?.result.title).toBe(updatedTitle)
     expect(updated.body?.result.definition.revisionId).not.toBe(revision!.id)
+    const readId = capabilityIdSchema.parse('world.scenario.read')
+    const read = await call<{ result: { source: { title: string }; definition: { revisionId: string } } }>(
+      registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${readId}/invoke`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          capabilityId: readId,
+          definition: {
+            workspaceId,
+            moduleId: 'world',
+            type: 'world.scenario',
+            id: definition.id,
+            revisionId: updated.body!.result.definition.revisionId,
+          },
+          input: {},
+          access,
+        }),
+      },
+    )
+    expect(read.status).toBe(200)
+    expect(read.body?.result.source.title).toBe(updatedTitle)
+    expect(read.body?.result.definition.revisionId).toBe(updated.body?.result.definition.revisionId)
     const updatedDescriptor = moduleDefinitionCollectionSchema.parse(
       (await call(registry, `/internal/workspaces/${workspaceId}/definitions`)).body,
     ).definitions.find(candidate => candidate.ref.id === definition.id)!

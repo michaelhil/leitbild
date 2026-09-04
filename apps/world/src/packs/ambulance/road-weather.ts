@@ -66,8 +66,9 @@ export const roadWeatherImpact = (policy: RoadWeatherPolicy, sample: RoadWeather
 }
 export const roadWeatherFields: ReadonlyArray<PackScenarioAuthoringField> = [
   {
-        path: ['roadWeather', 'enabled'],
+    path: ['roadWeather', 'enabled'],
     label: 'Respond to Weather (requires Weather Pack)',
+    description: 'Samples active Weather assets along each response route and applies the configured speed factors. Enabling this requires the Weather Pack in the same Scenario.',
     control: { kind: 'boolean' },
   },
   ...(['wetnessFactor', 'iceFactor', 'snowFactor', 'lowVisibilityFactor', 'visibilityThresholdM'] as const).map(

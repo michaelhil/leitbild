@@ -71,6 +71,9 @@ export const worldModuleManifest = workspaceModuleManifestSchema.parse({
 
 const lifecycleInputSchema = z.object({ workspaceId: workspaceIdSchema }).strict()
 const emptyInputSchema = z.object({}).strict()
+const scenarioAuthoringDescribeInputSchema = z.object({
+  packIds: z.array(z.string().trim().min(1).max(128)).min(1).optional(),
+}).strict()
 const runScenarioSourceSchema = z.object({ source: scenarioDefinitionSchema, definition: workspaceDefinitionRevisionReferenceSchema }).strict()
 const readObjectInputSchema = z.object({
   objectId: z.string().trim().min(1).max(128),
@@ -274,6 +277,9 @@ const simulationHistorySchema = z.object({
 
 const SCENARIO_DEFINITION_TYPE = 'world.scenario'
 
+const scenarioUiPath = (workspaceId: string, scenarioId: string, revisionId: string): string =>
+  `/workspaces/${encodeURIComponent(workspaceId)}/world/scenarios/new?definition=${encodeURIComponent(scenarioId)}&revision=${encodeURIComponent(revisionId)}`
+
 const definitionsFor = async (registry: SimulationRunRegistry) => {
   const scenarios = await registry.listScenarios()
   return moduleDefinitionCollectionSchema.parse({
@@ -286,7 +292,7 @@ const definitionsFor = async (registry: SimulationRunRegistry) => {
       },
       title: scenario.title,
       ...(scenario.description === undefined ? {} : { description: scenario.description }),
-      uiPath: `/workspaces/${encodeURIComponent(registry.workspaceId)}/world/scenarios/new?definition=${encodeURIComponent(scenario.id)}&revision=${encodeURIComponent(scenario.currentRevisionId)}`,
+      uiPath: scenarioUiPath(registry.workspaceId, scenario.id, scenario.currentRevisionId),
       currentRevisionId: scenario.currentRevisionId,
       capabilityIds: worldCapabilities.idsForDefinitionType(SCENARIO_DEFINITION_TYPE),
       inspectionCapabilityId: 'world.scenario.inspect',
@@ -523,15 +529,22 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'workspace' },
       title: 'Describe Scenario Authoring',
-      description: 'Lists the discoverable World Packs and Scenario items each Pack exposes for authoring.',
+      description: 'Lists the discoverable World Packs, Scenario items, schemas, defaults, and schedulable commands needed for authoring. Filter by Pack to keep AI and UI requests focused.',
       risk: 'read',
       idempotent: true,
-      inputSchema: z.toJSONSchema(emptyInputSchema),
+      inputSchema: z.toJSONSchema(scenarioAuthoringDescribeInputSchema),
       outputSchema: z.toJSONSchema(scenarioAuthoringCatalogSchema),
     },
     invoke: async (registry, invocation) => {
-      emptyInputSchema.parse(invocation.input)
-      return json({ result: registry.scenarioAuthoringCatalog })
+      const input = scenarioAuthoringDescribeInputSchema.parse(invocation.input)
+      if (input.packIds === undefined) return json({ result: registry.scenarioAuthoringCatalog })
+      const requested = new Set(input.packIds)
+      const missing = [...requested].filter(packId => !registry.scenarioAuthoringCatalog.packs.some(pack => pack.id === packId))
+      if (missing.length > 0) return apiError(400, 'scenario_authoring_pack_not_found', `Unknown Scenario authoring Pack${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}`)
+      return json({ result: scenarioAuthoringCatalogSchema.parse({
+        packs: registry.scenarioAuthoringCatalog.packs.filter(pack => requested.has(pack.id)),
+        commands: registry.scenarioAuthoringCatalog.commands.filter(command => requested.has(command.packId)),
+      }) })
     },
   },
   {
@@ -560,6 +573,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
             revisionId: revision.id,
           },
           title: revision.document.title,
+          uiPath: scenarioUiPath(registry.workspaceId, revision.definitionId, revision.id),
         } }, { status: 201 })
       } catch (error) {
         if (error instanceof Error && error.message.startsWith('Definition already exists:')) {
@@ -615,6 +629,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
         return json({ result: {
           definition: { ...invocation.definition, revisionId: revision.id },
           title: revision.document.title,
+          uiPath: scenarioUiPath(registry.workspaceId, revision.definitionId, revision.id),
         } })
       } catch (error) {
         if (error instanceof Error && error.message.startsWith('Definition Revision changed:')) {
@@ -622,6 +637,32 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
         }
         throw error
       }
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.scenario.read',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'definition', definitionType: SCENARIO_DEFINITION_TYPE },
+      title: 'Read Scenario Definition',
+      description: 'Reads the exact editable Scenario Definition for this current immutable revision without compiled assets or live Run state.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: z.toJSONSchema(emptyInputSchema),
+      outputSchema: capabilityJsonSchema(runScenarioSourceSchema),
+    },
+    invoke: async (registry, invocation) => {
+      emptyInputSchema.parse(invocation.input)
+      const scenarioId = requireScenarioDefinitionId(invocation)
+      const revision = await registry.currentScenario(scenarioId)
+      if (!revision || String(revision.id) !== String(invocation.definition!.revisionId)) {
+        return apiError(404, 'scenario_revision_not_found', 'Scenario Revision not found')
+      }
+      return json({ result: runScenarioSourceSchema.parse({
+        source: revision.document,
+        definition: invocation.definition,
+      }) })
     },
   },
   {

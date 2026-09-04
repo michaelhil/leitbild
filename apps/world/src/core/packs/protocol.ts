@@ -244,6 +244,8 @@ export type PackScenarioAuthoringControl =
 export interface PackScenarioAuthoringField {
   readonly path: ReadonlyArray<string | number>
   readonly label: string
+  /** Optional operational meaning when the label and schema are not sufficient. */
+  readonly description?: string
   readonly control: PackScenarioAuthoringControl
 }
 
