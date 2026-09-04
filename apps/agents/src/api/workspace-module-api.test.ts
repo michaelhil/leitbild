@@ -9,6 +9,7 @@ import {
   moduleResourceCollectionSchema,
   newWorkspaceId,
   workspaceModuleManifestSchema,
+  workspaceDefinitionRevisionReferenceSchema,
   workspaceResourceReferenceSchema,
   type WorkspaceId,
 } from '@leitbild/contracts'
@@ -81,11 +82,15 @@ const invokeBody = (workspaceId: WorkspaceId, capabilityId: string, input: unkno
 })
 
 describe('Agents Workspace Module API', () => {
-  test('opens one reusable Leitbild Assistant Room and preserves focused Resource context', async () => {
+  test('opens one concurrent-safe Leitbild Assistant Room and preserves focused subjects', async () => {
     const workspaceId = newWorkspaceId()
     await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
     const runtime = await registry.getOrLoad(workspaceId)
-    for (const name of ['product_search', 'product_read', 'geo_lookup', 'get_time']) {
+    runtime.skillStore.register({
+      name: 'leitbild-assistance', description: 'Test Assistant Skill', body: 'Use Workspace discovery.',
+      tools: [], allowedToolNames: [], dirPath: home,
+    })
+    for (const name of ['product_search', 'product_read', 'place_resolve', 'get_time']) {
       runtime.toolRegistry.register({
         name,
         description: `Test ${name}`,
@@ -96,14 +101,21 @@ describe('Agents Workspace Module API', () => {
     const focusedResource = workspaceResourceReferenceSchema.parse({
       workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-one',
     })
-    const open = (prompt: string, focusedResources = [focusedResource]) => request(
+    const focusedDefinition = workspaceDefinitionRevisionReferenceSchema.parse({
+      workspaceId, moduleId: 'world', type: 'world.scenario', id: 'scenario-one', revisionId: 'revision-one',
+    })
+    const open = (prompt: string, focusedSubjects = [focusedResource, focusedDefinition]) => request(
       'POST',
       `/internal/workspaces/${workspaceId}/capabilities/agents.assistant.open/invoke`,
-      invokeBody(workspaceId, 'agents.assistant.open', { prompt, focusedResources }),
+      invokeBody(workspaceId, 'agents.assistant.open', { prompt, focusedSubjects }),
     )
 
-    const created = await open('Explain this simulation.')
-    expect(created.status).toBe(201)
+    const opened = await Promise.all([
+      open('Explain this simulation.'),
+      open('What can I change?'),
+    ])
+    expect(opened.map(response => response.status).sort()).toEqual([200, 201])
+    const created = opened.find(response => response.status === 201)!
     const createdBody = await created.json() as { result: { resource: { id: string }; reused: boolean; uiPath: string }; createdResources: Array<{ id: string }> }
     expect(createdBody.result.reused).toBe(false)
     expect(createdBody.result.uiPath).toContain(`room=${createdBody.result.resource.id}`)
@@ -111,9 +123,11 @@ describe('Agents Workspace Module API', () => {
     const room = runtime.rooms.getRoom(createdBody.result.resource.id)!
     const posted = room.getRecent(10).find(message => message.content === 'Explain this simulation.')
     expect(posted).toBeDefined()
-    expect(messageFocus(posted!)).toEqual([focusedResource])
+    expect(messageFocus(posted!)).toEqual([focusedResource, focusedDefinition])
+    expect(room.getRecent(10).some(message => message.content === 'What can I change?')).toBe(true)
     const assistant = asAIAgent(runtime.team.listByKind('ai')[0]!)!
     expect(assistant.getMaxToolIterations()).toBe(10)
+    expect(assistant.getSkills()).toEqual(['leitbild-assistance'])
 
     const reused = await open('Now create a scenario.')
     expect(reused.status).toBe(200)

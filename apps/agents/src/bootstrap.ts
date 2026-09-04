@@ -57,7 +57,7 @@ import { createWSManager } from './api/ws-handler.ts'
 import {
   createPassTool, createGetTimeTool, createTestToolTool, createListSkillsTool,
   createWebTools, createWriteSkillTool, createWriteToolTool, createPackTools,
-  createGeoLookupTool, createGeoAddTool, createGeoRemoveTool, createGeoListCategoriesTool, createGeoListFeaturesTool,
+  createPlaceResolveTool, createGeoLookupTool, createGeoAddTool, createGeoRemoveTool, createGeoListCategoriesTool, createGeoListFeaturesTool,
   createProductKnowledgeTools,
 } from './tools/built-in/index.ts'
 import { createAgentsModuleState } from './core/workspaces/module-state.ts'
@@ -213,6 +213,7 @@ export const bootstrap = async (): Promise<void> => {
     }
     return undefined
   }
+  deployment.sharedToolRegistry.register(createPlaceResolveTool())
   deployment.sharedToolRegistry.register(createGeoLookupTool({ getActivePacks: getRoomActivePacksForGeo }))
   deployment.sharedToolRegistry.register(createGeoAddTool())
   deployment.sharedToolRegistry.register(createGeoRemoveTool())

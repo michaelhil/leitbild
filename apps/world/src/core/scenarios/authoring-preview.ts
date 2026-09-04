@@ -23,6 +23,9 @@ export const scenarioPreviewSchema = z.object({
     electricalPorts: z.array(electricalPortDefinitionSchema),
     geometry: geoJsonGeometrySchema.optional(),
   }).strict()),
+  initialInventory: z.array(z.object({
+    packId: z.string(), kind: z.string(), count: z.number().int().nonnegative(),
+  }).strict()),
   connections: z.array(electricalConnectionDefinitionSchema),
   timeline: z.object({
     cueCount: z.number().int().nonnegative(),
@@ -34,6 +37,8 @@ export const scenarioPreviewSchema = z.object({
       actions: z.array(z.object({
         type: z.string().min(1),
         capabilityId: z.string().min(1).optional(),
+        inputKeys: z.array(z.string()).optional(),
+        identifiers: z.record(z.string(), z.union([z.string(), z.array(z.string())])).optional(),
       }).strict()),
     }).strict()),
   }).strict(),
@@ -45,6 +50,24 @@ export const scenarioPreviewSchema = z.object({
 }).strict()
 export type ScenarioPreview = z.infer<typeof scenarioPreviewSchema>
 
+const inputOutline = (input: unknown): { inputKeys: string[]; identifiers: Record<string, string | string[]> } => {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return { inputKeys: [], identifiers: {} }
+  const root = input as Record<string, unknown>
+  const identifiers: Record<string, string | string[]> = {}
+  const visit = (value: unknown, path: string, depth: number): void => {
+    if (Object.keys(identifiers).length >= 16 || depth > 3 || typeof value !== 'object' || value === null) return
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      const childPath = path ? `${path}.${key}` : key
+      if (/id$/i.test(key) && typeof child === 'string') identifiers[childPath] = child
+      else if (/ids$/i.test(key) && Array.isArray(child) && child.every(item => typeof item === 'string')) identifiers[childPath] = child.slice(0, 16)
+      else visit(child, childPath, depth + 1)
+      if (Object.keys(identifiers).length >= 16) return
+    }
+  }
+  visit(root, '', 0)
+  return { inputKeys: Object.keys(root).slice(0, 32), identifiers }
+}
+
 export const scenarioPreviewFor = (scenario: CompiledScenario, packs: ReadonlyArray<WorldPack>): ScenarioPreview => {
   const selections = scenario.recording.map(selection => {
     const pack = packs.find(pack => pack.descriptor.id === selection.packId)!
@@ -54,6 +77,12 @@ export const scenarioPreviewFor = (scenario: CompiledScenario, packs: ReadonlyAr
     return { packId: selection.packId, profileId: selection.profileId, intervalMs, initialSeriesCount, samplesPerSimulationSecond: initialSeriesCount === null ? null : initialSeriesCount * 1000 / intervalMs }
   })
   const rate = selections.reduce((sum, selection) => sum + (selection.samplesPerSimulationSecond ?? 0), 0)
+  const inventory = new Map<string, { packId: string; kind: string; count: number }>()
+  for (const object of scenario.initialObjects) {
+    const key = `${object.packId}\u0000${object.kind}`
+    const current = inventory.get(key)
+    inventory.set(key, { packId: object.packId, kind: object.kind, count: (current?.count ?? 0) + 1 })
+  }
   return scenarioPreviewSchema.parse({
     scenarioId: scenario.id,
     packs: scenario.packs,
@@ -69,6 +98,7 @@ export const scenarioPreviewFor = (scenario: CompiledScenario, packs: ReadonlyAr
       geometry: packs.find(pack => pack.descriptor.id === object.packId)?.scenario?.previewGeometry?.(object)
         ?? object.spatial.geometry ?? object.spatial.position?.point,
     })),
+    initialInventory: [...inventory.values()].sort((left, right) => left.packId.localeCompare(right.packId) || left.kind.localeCompare(right.kind)),
     connections: scenario.connections,
     timeline: {
       cueCount: scenario.timeline?.cues.length ?? 0,
@@ -80,10 +110,9 @@ export const scenarioPreviewFor = (scenario: CompiledScenario, packs: ReadonlyAr
         id: cue.id,
         atSeconds: cue.at.seconds,
         ...(cue.title === undefined ? {} : { title: cue.title }),
-        actions: cue.actions.map(action => ({
-          type: action.type,
-          ...(action.type === 'invoke_capability' ? { capabilityId: action.capabilityId } : {}),
-        })),
+        actions: cue.actions.map(action => action.type === 'invoke_capability'
+          ? { type: action.type, capabilityId: action.capabilityId, ...inputOutline(action.input) }
+          : { type: action.type }),
       })),
     },
     recording: {

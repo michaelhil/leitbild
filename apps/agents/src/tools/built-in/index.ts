@@ -6,7 +6,7 @@ export { createGetTimeTool, createPostToRoomTool, createGetRoomHistoryTool } fro
 export { createWebTools } from './web-tools.ts'
 export { createWriteSkillTool, createWriteToolTool, createTestToolTool, createListSkillsTool } from './codegen-tools.ts'
 export { createPackTools } from './pack-tools.ts'
-export { createGeoLookupTool, createGeoAddTool, createGeoRemoveTool, createGeoListCategoriesTool, createGeoListFeaturesTool } from './geo-tools.ts'
+export { createPlaceResolveTool, createGeoLookupTool, createGeoAddTool, createGeoRemoveTool, createGeoListCategoriesTool, createGeoListFeaturesTool } from './geo-tools.ts'
 export { createRecallTool, type RecallToolDeps } from './recall-tool.ts'
 export { createQueryDocumentsTool, type QueryDocumentsToolDeps } from './query-documents-tool.ts'
 export { createProductKnowledgeTools } from './product-knowledge-tools.ts'

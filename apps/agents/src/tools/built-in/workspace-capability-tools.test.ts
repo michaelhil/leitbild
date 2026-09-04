@@ -67,6 +67,9 @@ describe('Workspace Capability tools', () => {
     expect(deniedDescriptor.inputSchema).toBeUndefined()
     expect(deniedDescriptor.outputSchema).toBeUndefined()
     granted = true
+    const broad = await tools[1]!.execute({}, context)
+    const broadDescriptor = (broad.data as { capabilities: Record<string, unknown>[] }).capabilities[0]!
+    expect(broadDescriptor.inputSchema).toBeUndefined()
     const allowed = await tools[1]!.execute({ capabilityId }, context)
     const allowedDescriptor = (allowed.data as { capabilities: Record<string, unknown>[] }).capabilities[0]!
     expect(allowedDescriptor.inputSchema).toEqual({ type: 'object' })
@@ -84,9 +87,9 @@ describe('Workspace Capability tools', () => {
       const body = await response.json() as { resources: unknown[] }
       return Response.json({ ...body, resources: [...body.resources, linked] })
     }) as typeof fetch })
-    const result = await tools[0]!.execute({ moduleId: 'world' }, { callerId: 'agent', callerName: 'Analyst', roomId: 'room', focusedResources: [ref] })
+    const result = await tools[0]!.execute({ moduleId: 'world' }, { callerId: 'agent', callerName: 'Analyst', roomId: 'room', focusedSubjects: [ref] })
     expect(result.success).toBe(true)
-    expect(result.data).toMatchObject({ focusedResources: [ref], currentRoom: linked, resources: [{ ref }] })
+    expect(result.data).toMatchObject({ focusedSubjects: [ref], currentRoom: linked, resources: [{ ref }] })
   })
   test('executor cancellation reaches the Workspace broker transport', async () => {
     let observedSignal: AbortSignal | undefined
@@ -113,7 +116,7 @@ describe('Workspace Capability tools', () => {
       name: 'focus_probe',
       description: 'Returns focused resources.',
       parameters: { type: 'object', additionalProperties: false },
-      execute: async (_params, context) => ({ success: true, data: context.focusedResources }),
+      execute: async (_params, context) => ({ success: true, data: context.focusedSubjects }),
     })
     const executor = __testSeam.createToolExecutor(
       registry,

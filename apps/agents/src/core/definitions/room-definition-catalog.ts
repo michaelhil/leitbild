@@ -8,6 +8,7 @@ const agentDefinitionSchema = z.object({
   persona: z.string().max(64_000),
   model: z.string().trim().min(1).max(256).optional(),
   tools: z.array(z.string().min(1)).default([]),
+  skills: z.array(z.string().min(1)).default([]),
   toolGrants: toolGrantSetSchema.optional(),
   temperature: z.number().finite().optional(),
   maxToolIterations: z.number().int().min(1).max(50).optional(),

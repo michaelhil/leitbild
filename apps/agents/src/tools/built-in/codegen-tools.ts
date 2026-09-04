@@ -33,11 +33,6 @@ export const createWriteSkillTool = (
       name: { type: 'string', pattern: '^[a-zA-Z0-9_-]+$' },
       description: { type: 'string', description: 'When this skill should be used' },
       body: { type: 'string', description: 'Markdown body' },
-      scope: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Room names. Omit for global.',
-      },
     },
     required: ['name', 'description', 'body'],
   },
@@ -45,7 +40,6 @@ export const createWriteSkillTool = (
     const name = params.name as string
     const description = params.description as string
     const body = params.body as string
-    const scope = params.scope as string[] | undefined
 
     if (!name || !description || !body) {
       return { success: false, error: 'name, description, and body are required' }
@@ -62,10 +56,7 @@ export const createWriteSkillTool = (
     const dirPath = join(skillsDir, name)
     await mkdir(dirPath, { recursive: true })
 
-    const scopeLine = scope && scope.length > 0
-      ? `\nscope: [${scope.join(', ')}]`
-      : ''
-    const content = `---\nname: ${name}\ndescription: ${description}${scopeLine}\n---\n\n${body}\n`
+    const content = `---\nname: ${name}\ndescription: ${description}\n---\n\n${body}\n`
 
     const filePath = join(dirPath, 'SKILL.md')
     try {
@@ -76,7 +67,6 @@ export const createWriteSkillTool = (
 
     store.register({
       name, description, body,
-      scope: scope ?? [],
       tools: [],
       allowedToolNames: [],
       dirPath,
@@ -203,15 +193,14 @@ export const createTestToolTool = (
 
 export const createListSkillsTool = (store: SkillStore): Tool => ({
   name: 'list_skills',
-  description: 'List loaded skills with description, scope, and bundled tools.',
-  returns: 'Array of skill objects with name, description, scope, and tools.',
+  description: 'List loaded skills with their descriptions and bundled tools.',
+  returns: 'Array of skill objects with name, description, and tools.',
   parameters: {},
   execute: async () => ({
     success: true,
     data: store.list().map(s => ({
       name: s.name,
       description: s.description,
-      scope: s.scope.length > 0 ? s.scope : 'global',
       tools: s.tools,
     })),
   }),

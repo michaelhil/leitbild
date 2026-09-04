@@ -1,10 +1,10 @@
 // Skills REST routes — isolated so the skills domain has its
 // own file like every other domain (rooms, agents, wikis, packs, etc.).
 //
-//   GET    /skills          — list (name, description, scope, tools)
+//   GET    /skills          — list (name, description, tools)
 //   GET    /skills/:name    — full detail (body included)
 //   POST   /skills          — create new skill on disk + in-memory
-//   PUT    /skills/:name    — update description/body/scope; preserves
+//   PUT    /skills/:name    — update description/body; preserves
 //                                 allowed-tools across restart
 //   DELETE /skills/:name    — rm -rf the skill dir + drop from store
 
@@ -20,14 +20,12 @@ const renderSkillMd = (
   name: string,
   description: string,
   body: string,
-  scope: ReadonlyArray<string>,
   allowedToolNames: ReadonlyArray<string>,
 ): string => {
-  const scopeLine = scope.length > 0 ? `\nscope: [${scope.join(', ')}]` : ''
   const allowedLine = allowedToolNames.length > 0
     ? `\nallowed-tools: [${allowedToolNames.join(', ')}]`
     : ''
-  return `---\nname: ${name}\ndescription: ${description}${scopeLine}${allowedLine}\n---\n\n${body}\n`
+  return `---\nname: ${name}\ndescription: ${description}${allowedLine}\n---\n\n${body}\n`
 }
 
 export const skillRoutes: RouteEntry[] = [
@@ -37,7 +35,6 @@ export const skillRoutes: RouteEntry[] = [
     handler: (_req, _match, { system }) =>
       json(system.skillStore.list().map(s => ({
         name: s.name, description: s.description,
-        scope: s.scope.length > 0 ? s.scope : 'global',
         tools: s.tools,
       }))),
   },
@@ -52,7 +49,6 @@ export const skillRoutes: RouteEntry[] = [
         name: skill.name,
         description: skill.description,
         body: skill.body,
-        scope: skill.scope,
         tools: skill.tools,
       })
     },
@@ -69,14 +65,13 @@ export const skillRoutes: RouteEntry[] = [
       if (system.skillStore.get(name)) return errorResponse(`Skill "${name}" already exists`)
       const dirPath = join(system.skillsDir, name)
       await mkdir(dirPath, { recursive: true })
-      const scope = Array.isArray(body.scope) ? body.scope as string[] : []
       await writeFile(
         join(dirPath, 'SKILL.md'),
-        renderSkillMd(name, description, skillBody, scope, []),
+        renderSkillMd(name, description, skillBody, []),
         'utf-8',
       )
       system.skillStore.register({
-        name, description, body: skillBody, scope,
+        name, description, body: skillBody,
         tools: [], allowedToolNames: [], dirPath,
       })
       return json({ created: true, name }, 201)
@@ -92,7 +87,6 @@ export const skillRoutes: RouteEntry[] = [
       const body = await parseBody(req)
       const newDesc = (body.description as string) ?? skill.description
       const newBody = (body.body as string) ?? skill.body
-      const newScope = Array.isArray(body.scope) ? body.scope as string[] : [...skill.scope]
       // Preserve allowed-tools across restart. The previous version of this
       // route didn't write the allowed-tools frontmatter line, so an
       // operator who edited a skill via PUT would lose its allowed-tools
@@ -102,14 +96,13 @@ export const skillRoutes: RouteEntry[] = [
       const newAllowed = skill.allowedToolNames
       await writeFile(
         join(skill.dirPath, 'SKILL.md'),
-        renderSkillMd(name, newDesc, newBody, newScope, newAllowed),
+        renderSkillMd(name, newDesc, newBody, newAllowed),
         'utf-8',
       )
       system.skillStore.register({
         ...skill,
         description: newDesc,
         body: newBody,
-        scope: newScope,
       })
       return json({ updated: true, name })
     },

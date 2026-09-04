@@ -9,7 +9,6 @@
 //   ---
 //   name: skill-name
 //   description: When to use this skill
-//   scope: [room-name]
 //   ---
 //   Markdown body with behavioral instructions...
 //
@@ -26,7 +25,6 @@ export interface Skill {
   readonly name: string                 // registry key — `<pack>/<raw>` for pack skills, else raw
   readonly description: string
   readonly body: string
-  readonly scope: ReadonlyArray<string>
   readonly tools: ReadonlyArray<string>
   // Anthropic-Skills `allowed-tools:` frontmatter field, preserved verbatim.
   // Metadata-only in this pass: the field is NOT auto-injected into any
@@ -41,7 +39,6 @@ export interface Skill {
 export interface SkillStore {
   readonly get: (name: string) => Skill | undefined
   readonly list: () => ReadonlyArray<Skill>
-  readonly forScope: (roomName: string) => ReadonlyArray<Skill>
   readonly register: (skill: Skill) => void
   readonly remove: (name: string) => boolean
   // Bulk removal keyed by pack namespace — used on pack uninstall.
@@ -54,9 +51,6 @@ export const createSkillStore = (): SkillStore => {
   return {
     get: (name) => skills.get(name),
     list: () => [...skills.values()],
-    forScope: (roomName) => [...skills.values()].filter(
-      s => s.scope.length === 0 || s.scope.includes(roomName),
-    ),
     register: (skill) => {
       if (skills.has(skill.name)) {
         console.warn(`[skills] Skill "${skill.name}" already registered — overwriting`)
@@ -84,7 +78,6 @@ export const createSkillStore = (): SkillStore => {
 interface Frontmatter {
   name?: string
   description?: string
-  scope?: string[]
   allowedTools?: string[]   // Anthropic-Skills `allowed-tools:` frontmatter
 }
 
@@ -166,10 +159,6 @@ export const parseFrontmatter = (content: string): { frontmatter: Frontmatter; b
     } else if (key === 'description') {
       frontmatter.description = unquote(rawValue)
       i++
-    } else if (key === 'scope') {
-      const { value, nextIdx } = parseYAMLArrayField(lines, i, rawValue, endIdx)
-      frontmatter.scope = value
-      i = nextIdx
     } else if (key === 'allowed-tools') {
       const { value, nextIdx } = parseYAMLArrayField(lines, i, rawValue, endIdx)
       frontmatter.allowedTools = value
@@ -293,7 +282,6 @@ export const loadSkills = async (
       name: registryKey,
       description: frontmatter.description,
       body,
-      scope: frontmatter.scope ?? [],
       tools: bundledTools,
       allowedToolNames: frontmatter.allowedTools ?? [],
       dirPath,

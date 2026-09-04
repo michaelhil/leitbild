@@ -15,6 +15,7 @@ import type { Message, RoomProfile } from '../core/types/messaging.ts'
 import type { Room } from '../core/types/room.ts'
 import { SYSTEM_SENDER_ID } from '../core/types/constants.ts'
 import { createRoom } from '../core/rooms/room.ts'
+import { attachMessageFocus } from '../core/message-focus.ts'
 
 // --- Test helpers ---
 
@@ -60,6 +61,20 @@ const makeMessage = (overrides?: Partial<Message>): Message => ({
 
 
 describe('AI Agent — unit tests', () => {
+  test('Focused Subjects apply to one turn and do not leak into the next', async () => {
+    const agent = createAIAgent(makeConfig(), makeLLMProvider('Done'), () => {})
+    const first = makeMessage()
+    const subject = { workspaceId: 'workspace', moduleId: 'world', type: 'world.simulation-run', id: 'run' } as never
+    attachMessageFocus(first, [subject])
+    agent.receive(first)
+    await agent.whenIdle()
+    expect(agent.getFocusedSubjects('room-1')).toEqual([subject])
+
+    agent.receive(makeMessage({ content: 'Next turn has no browser focus.' }))
+    await agent.whenIdle()
+    expect(agent.getFocusedSubjects('room-1')).toEqual([])
+  })
+
   test('receive skips own messages (no self-reply)', async () => {
     const decisions: Decision[] = []
     const agent = createAIAgent(
@@ -755,4 +770,3 @@ describe('Tool use (ReAct loop)', () => {
     expect(capturedRequest.tools).toEqual(toolDefs)
   })
 })
-

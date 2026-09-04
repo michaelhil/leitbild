@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { WorkspaceResourceReference } from '@leitbild/contracts'
+  import type { WorkspaceSubjectReference } from '@leitbild/contracts'
 
   interface Props {
     readonly workspaceId: string
     readonly worldRunId: string | null
-    readonly focusedResource: WorkspaceResourceReference | null
+    readonly focusedSubjects: ReadonlyArray<WorkspaceSubjectReference>
     readonly agentsRoomId: string | null
     readonly companionLoading: boolean
     readonly companionError: string | null
@@ -17,7 +17,7 @@
   const collapseThreshold = 12
   const minimumOpenShare = 20
 
-  let { workspaceId, worldRunId, focusedResource, agentsRoomId, companionLoading, companionError, retryCompanion }: Props = $props()
+  let { workspaceId, worldRunId, focusedSubjects, agentsRoomId, companionLoading, companionError, retryCompanion }: Props = $props()
   let splitPercent = $state(initialSplit)
   let lastOpenSplit = $state(initialSplit)
   let collapsedPane = $state<CollapsedPane>(null)
@@ -27,20 +27,14 @@
   let agentsFrame = $state<HTMLIFrameElement | null>(null)
 
   const publishResourceFocus = (): void => {
-    const resource = focusedResource === null ? null : {
-      workspaceId: focusedResource.workspaceId,
-      moduleId: focusedResource.moduleId,
-      type: focusedResource.type,
-      id: focusedResource.id,
-    }
     agentsFrame?.contentWindow?.postMessage({
-      type: 'leitbild:resource-focus',
-      resource,
+      type: 'leitbild:subject-focus',
+      subjects: focusedSubjects,
     }, location.origin)
   }
 
   $effect(() => {
-    focusedResource
+    focusedSubjects
     publishResourceFocus()
   })
 

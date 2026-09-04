@@ -9,6 +9,7 @@
     type ResourceSummaryItem,
     type Workspace,
     type ModuleQueryOutcome,
+    type WorkspaceSubjectReference,
   } from '@leitbild/contracts'
   import JsonTree from './JsonTree.svelte'
   import WorkspaceComposer from './WorkspaceComposer.svelte'
@@ -63,6 +64,7 @@
   let scenarioEditorPath = $state<string | null>(null)
   let scenarioEditorFrame = $state<HTMLIFrameElement | null>(null)
   let scenarioEditorDirty = $state(false)
+  let scenarioEditorSubject = $state<WorkspaceSubjectReference | null>(null)
   const workspaceTitle = $derived(workspace?.name ?? workspace?.id ?? 'Workspace')
   const showingComposer = $derived(selectedWorldRunId !== null || selectedAgentsRoomId !== null)
   const continuableResources = $derived(resources.filter(resource => resource.uiPath !== undefined))
@@ -72,6 +74,11 @@
   const selectedAgentsResource = $derived(resources.find(resource =>
     resource.ref.moduleId === 'agents' && resource.ref.id === selectedAgentsRoomId,
   ))
+  const focusedSubjects = $derived([
+    ...(scenarioEditorSubject === null ? [] : [scenarioEditorSubject]),
+    ...(selectedWorldResource === undefined ? [] : [selectedWorldResource.ref]),
+    ...(selectedAgentsResource === undefined ? [] : [selectedAgentsResource.ref]),
+  ].slice(0, 4))
   const pageTitle = $derived(currentPage.kind === 'list'
     ? 'Leitbild'
     : `${selectedWorldResource?.title ?? selectedAgentsResource?.title ?? workspaceTitle} · Leitbild`)
@@ -116,9 +123,12 @@
     if (event.origin !== location.origin || !workspace) return
     if (typeof event.data !== 'object' || event.data === null) return
     if (event.source !== scenarioEditorFrame?.contentWindow) return
-    const data = event.data as { readonly type?: unknown; readonly dirty?: unknown }
+    const data = event.data as { readonly type?: unknown; readonly dirty?: unknown; readonly subject?: unknown }
     if (data.type === 'leitbild:scenario-dirty') scenarioEditorDirty = data.dirty === true
-    if (data.type === 'leitbild:scenario-saved') void run(() => loadWorkspaceCatalog(workspace!.id))
+    if (data.type === 'leitbild:scenario-saved') {
+      if (typeof data.subject === 'object' && data.subject !== null) scenarioEditorSubject = data.subject as WorkspaceSubjectReference
+      void run(() => loadWorkspaceCatalog(workspace!.id))
+    }
   }
 
   const load = async (): Promise<void> => {
@@ -324,7 +334,7 @@
       jsonRequest('POST', {
         input: {
           prompt,
-          focusedResources: selectedWorldResource === undefined ? [] : [selectedWorldResource.ref],
+          focusedSubjects,
         },
         actor: { kind: 'human' },
       }),
@@ -423,16 +433,16 @@
     {#each catalogFailures as outcome (outcome.moduleId)}{#if outcome.status === 'failed'}<p class="notice error" role="alert">{moduleTitles[outcome.moduleId]}: {outcome.failure.message}</p>{/if}{/each}
     {#if refreshError}<p class="notice error" role="alert">Catalog refresh failed: {refreshError}</p>{/if}
     {#if showingComposer}
-    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} focusedResource={selectedWorldResource?.ref ?? null} agentsRoomId={selectedAgentsRoomId} {companionLoading} {companionError} retryCompanion={() => prepareCompanion()} />
+    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {companionLoading} {companionError} retryCompanion={() => prepareCompanion()} />
     {:else}
       <section class="workspace-home">
         {#if error}<p class="notice error">{error}</p>{/if}
         <section class="catalog-section-home scenario-builder-home">
           <header><h2>Create</h2><span>World scenario</span></header>
           {#if scenarioEditorPath}
-            <div class="scenario-builder-frame"><button class="builder-close" type="button" onclick={() => { if (!scenarioEditorDirty || confirm('Discard unsaved scenario changes?')) { scenarioEditorPath = null; scenarioEditorDirty = false } }}>Close editor</button><iframe bind:this={scenarioEditorFrame} title="World Scenario Editor" src={`${scenarioEditorPath}${scenarioEditorPath.includes('?') ? '&' : '?'}embed=1`}></iframe></div>
+            <div class="scenario-builder-frame"><button class="builder-close" type="button" onclick={() => { if (!scenarioEditorDirty || confirm('Discard unsaved scenario changes?')) { scenarioEditorPath = null; scenarioEditorSubject = null; scenarioEditorDirty = false } }}>Close editor</button><iframe bind:this={scenarioEditorFrame} title="World Scenario Editor" src={`${scenarioEditorPath}${scenarioEditorPath.includes('?') ? '&' : '?'}embed=1`}></iframe></div>
           {:else}
-            <article class="scenario-builder-launch"><div><h3>Build a scenario</h3><p>Pick World Packs, place assets on the map, and save the result as a reusable scenario.</p></div><button class="primary" onclick={() => { if (workspace) scenarioEditorPath = `/workspaces/${encodeURIComponent(workspace.id)}/world/scenarios/new` }}>Open editor</button></article>
+            <article class="scenario-builder-launch"><div><h3>Build a scenario</h3><p>Pick World Packs, place assets on the map, and save the result as a reusable scenario.</p></div><button class="primary" onclick={() => { if (workspace) { scenarioEditorSubject = null; scenarioEditorPath = `/workspaces/${encodeURIComponent(workspace.id)}/world/scenarios/new` } }}>Open editor</button></article>
           {/if}
         </section>
         {#each coreModuleIds as moduleId}
@@ -444,7 +454,7 @@
                 {#if primary}<button class="card-hit-target" disabled={busy} aria-label={`Start ${definition.title}`} onclick={() => void invokeDefinition(definition, primary)}></button>{/if}
                 <div>{#if definition.category}<span class="card-category">{definition.category}</span>{/if}<h3>{definition.title}</h3><p>{definition.description ?? definition.ref.id}</p></div>
                 <div class="card-actions card-control">
-                  {#if definition.uiPath}<button onclick={() => { scenarioEditorPath = definition.uiPath ?? null }}>Edit</button>{/if}
+                  {#if definition.uiPath}<button onclick={() => { scenarioEditorSubject = { ...definition.ref, revisionId: definition.currentRevisionId }; scenarioEditorPath = definition.uiPath ?? null }}>Edit</button>{/if}
                   {#if definition.inspectionCapabilityId}<button disabled={inspectionLoading} onclick={() => void inspect({ kind: 'definition', descriptor: definition })}>Inspect</button>{/if}
                 </div>
                 {#if remove}<button class="card-delete card-control" disabled={busy} aria-label={`Delete ${definition.title}`} title="Delete scenario" onclick={() => void invokeDefinition(definition, remove)}>×</button>{/if}

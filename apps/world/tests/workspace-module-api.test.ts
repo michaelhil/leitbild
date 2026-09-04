@@ -137,7 +137,7 @@ describe('World Module API', () => {
       actor: { kind: 'human', id: 'scenario-author' },
     })
     const describeId = capabilityIdSchema.parse('world.scenario-authoring.describe')
-    const described = await call<{ result: { packs: Array<{ id: string; itemTypes: unknown[]; runtimes: unknown[]; configSchema: unknown }>; commands: Array<{ packId: string }> } }>(
+    const described = await call<{ result: { detail: string; packs: Array<{ id: string; itemTypes: unknown[]; runtimes: unknown[]; configSchema?: unknown }>; commands: Array<{ packId: string }> } }>(
       registry,
       `/internal/workspaces/${workspaceId}/capabilities/${describeId}/invoke`,
       {
@@ -149,7 +149,8 @@ describe('World Module API', () => {
     expect(described.body?.result.packs.find(pack => pack.id === 'ambulance')?.itemTypes.length).toBeGreaterThan(0)
     expect(described.body?.result.packs.find(pack => pack.id === 'process-plant')?.itemTypes.length).toBeGreaterThan(0)
     expect(described.body?.result.packs.map(pack => pack.id).sort()).toEqual(['ambulance', 'drone', 'electric-grid', 'process-plant', 'weather'])
-    expect(described.body?.result.packs.find(pack => pack.id === 'process-plant')?.configSchema).toBeTruthy()
+    expect(described.body?.result.detail).toBe('catalog')
+    expect(described.body?.result.packs.find(pack => pack.id === 'process-plant')?.configSchema).toBeUndefined()
 
     const focused = await call<{ result: { packs: Array<{ id: string }>; commands: Array<{ packId: string }> } }>(
       registry,
@@ -157,12 +158,13 @@ describe('World Module API', () => {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspaceId, capabilityId: describeId, input: { packIds: ['ambulance', 'weather'] }, access }),
+        body: JSON.stringify({ workspaceId, capabilityId: describeId, input: { packIds: ['ambulance', 'weather'], detail: 'authoring' }, access }),
       },
     )
     expect(focused.status).toBe(200)
     expect(focused.body?.result.packs.map(pack => pack.id)).toEqual(['ambulance', 'weather'])
     expect(focused.body?.result.commands.every(command => ['ambulance', 'weather'].includes(command.packId))).toBe(true)
+    expect((focused.body?.result.packs[0] as { configSchema?: unknown } | undefined)?.configSchema).toBeTruthy()
 
     const unknownPack = await call<{ error: { code: string } }>(
       registry,

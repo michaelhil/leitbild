@@ -86,6 +86,58 @@ interface NominatimHit {
   readonly address?: Record<string, string>
 }
 
+export interface PlaceMatch {
+  readonly name: string
+  readonly displayName: string
+  readonly lat: number
+  readonly lng: number
+  readonly countryCode?: string
+  readonly kind?: string
+  readonly importance?: number
+  readonly osmId?: number
+}
+
+/**
+ * Resolve an arbitrary named place without requiring a registered geodata
+ * category. This is deliberately separate from lookupNominatim(): category
+ * lookup finds members of an authored geodata collection, while place search
+ * grounds free-form locations such as a Scenario's map centre.
+ */
+export const searchNominatimPlaces = async (
+  query: string,
+  countryCode?: string,
+): Promise<ReadonlyArray<PlaceMatch>> => {
+  const trimmed = query.trim()
+  if (!trimmed) return []
+  await nominatimGate()
+  const url = new URL(NOMINATIM_URL)
+  url.searchParams.set('q', trimmed)
+  url.searchParams.set('format', 'json')
+  url.searchParams.set('limit', '5')
+  url.searchParams.set('addressdetails', '1')
+  if (countryCode) url.searchParams.set('countrycodes', countryCode.toLowerCase())
+  const res = await fetchWithTimeout(url.toString())
+  if (!res.ok) throw new Error(`Nominatim place search failed with HTTP ${res.status}`)
+  const hits = await res.json() as ReadonlyArray<NominatimHit>
+  if (!Array.isArray(hits)) throw new Error('Nominatim place search returned an invalid response')
+  return hits.flatMap(hit => {
+    const lat = Number(hit.lat)
+    const lng = Number(hit.lon)
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return []
+    const name = hit.name ?? hit.display_name.split(',')[0]?.trim() ?? trimmed
+    return [{
+      name,
+      displayName: hit.display_name,
+      lat,
+      lng,
+      ...(hit.address?.country_code ? { countryCode: hit.address.country_code.toUpperCase() } : {}),
+      ...(hit.type ? { kind: hit.type } : {}),
+      ...(typeof hit.importance === 'number' ? { importance: hit.importance } : {}),
+      ...(typeof hit.osm_id === 'number' ? { osmId: hit.osm_id } : {}),
+    }]
+  })
+}
+
 const buildNominatimFeature = (
   hit: NominatimHit,
   query: string,

@@ -314,6 +314,21 @@ export const evaluate = async (
       : (result.error ?? '')
     return raw.length > PREVIEW_MAX ? `${raw.slice(0, PREVIEW_MAX)}…` : raw
   }
+  const traceArguments = (tool: string, value: Record<string, unknown>): Pick<ToolTraceEntry, 'argumentKeys' | 'argumentBytes' | 'capabilityId' | 'target'> => {
+    const serialized = JSON.stringify(value)
+    const targetValue = value.definition ?? value.resource
+    const target = typeof targetValue === 'object' && targetValue !== null
+      ? ['moduleId', 'type', 'id', 'revisionId']
+        .flatMap(key => typeof (targetValue as Record<string, unknown>)[key] === 'string' ? [(targetValue as Record<string, unknown>)[key] as string] : [])
+        .join('/')
+      : undefined
+    return {
+      argumentKeys: Object.keys(value).slice(0, 32),
+      argumentBytes: new TextEncoder().encode(serialized).byteLength,
+      ...(tool === 'workspace_invoke' && typeof value.capabilityId === 'string' ? { capabilityId: value.capabilityId } : {}),
+      ...(target ? { target } : {}),
+    }
+  }
 
   const makeResult = (decision: Decision): EvalResult => {
     // Emit `eval_completed` exactly once per evaluate() call. This is the
@@ -390,7 +405,7 @@ export const evaluate = async (
           onEvent?.({ kind: 'tool_result', tool: call.tool, callId: String(i), success: result.success, preview: result.success ? undefined : result.error })
           toolTrace.push({
             tool: call.tool,
-            arguments: call.arguments,
+            ...traceArguments(call.tool, call.arguments),
             success: result.success,
             resultPreview: previewFor(result),
           })

@@ -28,7 +28,7 @@ export const handleMessageCommand = (msg: WSInbound, ctx: CommandContext): boole
         senderName: sender.name,
         content: msg.content,
         type: 'chat',
-        ...(msg.focusedResources === undefined ? {} : { focusedResources: msg.focusedResources }),
+        ...(msg.focusedSubjects === undefined ? {} : { focusedSubjects: msg.focusedSubjects }),
         ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
       })
       for (const m of delivered) {

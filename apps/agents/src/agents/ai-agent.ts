@@ -34,7 +34,7 @@ import { createConcurrencyManager } from './concurrency.ts'
 import { getContextWindowSync } from '../llm/models/context-window.ts'
 import { parsePrefixedModel, isCloudProvider } from '../llm/models/parse-prefix.ts'
 import { messageFocus } from '../core/message-focus.ts'
-import type { WorkspaceResourceReference } from '@leitbild/contracts'
+import type { WorkspaceSubjectReference } from '@leitbild/contracts'
 
 // Per-eval context budget computation lives in budget.ts. Two modes:
 //   static (default): max(FLOOR, contextMax * 0.7)   ← byte-identical to pre-Tier-2 behavior
@@ -78,12 +78,12 @@ export interface AIAgentOptions {
   // context section so an agent sees every peer in its room — not only those
   // whose messages it has already observed.
   readonly getRoomMembers?: (roomId: string) => ReadonlyArray<import('../core/types/messaging.ts').AgentProfile>
-  readonly getSkills?: (roomName: string) => string
+  readonly getSkills?: (skillNames: ReadonlyArray<string>, roomId: string) => string
   // Structured access to the same skill set getSkills() formats, so the
   // pre-LLM coherence check can compare declared tools against the actual
-  // surface. Returns active skills (after scope + pack-activation filter)
+  // surface. Returns selected skills after the Room Pack availability gate,
   // with their `allowed-tools` frontmatter declarations.
-  readonly getActiveSkillsDeclarations?: (roomId: string) => ReadonlyArray<{
+  readonly getActiveSkillsDeclarations?: (skillNames: ReadonlyArray<string>, roomId: string) => ReadonlyArray<{
     readonly name: string
     readonly declaredTools: ReadonlyArray<string>
   }>
@@ -124,7 +124,7 @@ export const createAIAgent = (
     incoming: [],
     agentProfiles: new Map(),
   }
-  const focusedResourcesByRoom = new Map<string, ReadonlyArray<WorkspaceResourceReference>>()
+  const focusedSubjectsByRoom = new Map<string, ReadonlyArray<WorkspaceSubjectReference>>()
 
   const cm = createConcurrencyManager(agentId)
 
@@ -137,6 +137,7 @@ export const createAIAgent = (
   let toolDefinitions = options?.toolDefinitions
   let resolveToolDefinitions = options?.resolveToolDefinitions
   let currentTools: ReadonlyArray<string> | undefined = config.tools
+  let currentSkills: ReadonlyArray<string> = config.skills ?? []
   let currentTags: ReadonlyArray<string> = config.tags ?? []
   let currentTriggers: ReadonlyArray<import('../core/triggers/types.ts').Trigger> = config.triggers ?? []
   let currentToolGrants = [...(config.toolGrants ?? [])]
@@ -234,7 +235,7 @@ export const createAIAgent = (
     history: agentHistory,
     historyLimit,
     resolveName,
-    getSkills,
+    getSkills: getSkills === undefined ? undefined : roomId => getSkills(currentSkills, roomId),
     getScriptContext,
     includePrompts: includePromptsState,
     includeContext: includeContextState,
@@ -344,22 +345,10 @@ export const createAIAgent = (
 
     // Use the newest transient focus carried by this pending turn. It lives
     // only for tool context; it never enters the prompt history or snapshots.
-    const pendingMessages = agentHistory.incoming
-    const roomMessages = agentHistory.rooms.get(triggerRoomId)?.history ?? []
-    let turnFocus: ReadonlyArray<WorkspaceResourceReference> | undefined
-    for (const messages of [pendingMessages, roomMessages]) {
-      for (let index = messages.length - 1; index >= 0; index--) {
-        const message = messages[index]!
-        if (message.roomId !== triggerRoomId) continue
-        const focus = messageFocus(message)
-        if (focus === undefined) continue
-        turnFocus = focus
-        break
-      }
-      if (turnFocus !== undefined) break
-    }
-    if (turnFocus === undefined) focusedResourcesByRoom.delete(triggerRoomId)
-    else focusedResourcesByRoom.set(triggerRoomId, turnFocus)
+    const triggerMessage = [...agentHistory.incoming].reverse().find(message => message.roomId === triggerRoomId)
+    const turnFocus = triggerMessage === undefined ? undefined : messageFocus(triggerMessage)
+    if (turnFocus === undefined) focusedSubjectsByRoom.delete(triggerRoomId)
+    else focusedSubjectsByRoom.set(triggerRoomId, turnFocus)
 
     // One traceId per evaluate() call — every EvalEvent for this eval
     // carries it so subscribers (the diagnostics ring buffer + UI) can
@@ -430,7 +419,7 @@ export const createAIAgent = (
       // tools. The warning makes the mismatch visible.
       if (getActiveSkillsDeclarations && effectiveToolDefs) {
         const surfaceNames = new Set(effectiveToolDefs.map(d => d.function.name))
-        const skills = getActiveSkillsDeclarations(triggerRoomId)
+        const skills = getActiveSkillsDeclarations(currentSkills, triggerRoomId)
         for (const skill of skills) {
           const missing = skill.declaredTools.filter(t => !surfaceNames.has(t))
           if (missing.length > 0) {
@@ -633,8 +622,10 @@ export const createAIAgent = (
     updateThinking: (enabled: boolean) => { currentThinking = enabled },
     getTools: () => currentTools,
     updateTools: (tools: ReadonlyArray<string>) => { currentTools = tools },
+    getSkills: () => currentSkills,
+    updateSkills: (skills: ReadonlyArray<string>) => { currentSkills = [...skills] },
     getToolGrants: () => currentToolGrants,
-    getFocusedResources: (roomId: string) => focusedResourcesByRoom.get(roomId) ?? [],
+    getFocusedSubjects: (roomId: string) => focusedSubjectsByRoom.get(roomId) ?? [],
     updateToolGrants: (grants) => { currentToolGrants = [...grants] },
     getIncludePrompts: () => ({ ...includePromptsState }),
     updateIncludePrompts: (partial: IncludePrompts) => {
@@ -691,6 +682,7 @@ export const createAIAgent = (
       temperature: currentTemperature,
       historyLimit,
       tools: currentTools,
+      skills: currentSkills,
       tags: currentTags,
       includePrompts: { ...includePromptsState },
       includeContext: { ...includeContextState },

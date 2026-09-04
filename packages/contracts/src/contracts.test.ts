@@ -5,7 +5,7 @@ import {
   moduleResourceDescriptorSchema,
   newWorkspaceId,
   packDescriptorSchema,
-  workspaceResourceFocusMessageSchema,
+  workspaceSubjectFocusMessageSchema,
 } from './index.ts'
 
 describe('pack contracts', () => {
@@ -57,15 +57,18 @@ describe('Resource Summary contracts', () => {
   })
 })
 
-describe('transient Resource focus contract', () => {
-  test('accepts an exact Resource reference or an explicit cleared focus', () => {
+describe('transient Focused Subject contract', () => {
+  test('accepts live Resources and exact Definition Revisions', () => {
     const workspaceId = newWorkspaceId()
-    const focused = workspaceResourceFocusMessageSchema.parse({
-      type: 'leitbild:resource-focus',
-      resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-1' },
+    const focused = workspaceSubjectFocusMessageSchema.parse({
+      type: 'leitbild:subject-focus',
+      subjects: [
+        { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-1' },
+        { workspaceId, moduleId: 'world', type: 'world.scenario', id: 'scenario-1', revisionId: 'revision-1' },
+      ],
     })
-    expect(String(focused.resource?.id)).toBe('run-1')
-    expect(workspaceResourceFocusMessageSchema.parse({ type: 'leitbild:resource-focus', resource: null }).resource).toBeNull()
+    expect(focused.subjects.map(subject => String(subject.id))).toEqual(['run-1', 'scenario-1'])
+    expect(workspaceSubjectFocusMessageSchema.parse({ type: 'leitbild:subject-focus', subjects: [] }).subjects).toEqual([])
   })
 })
 

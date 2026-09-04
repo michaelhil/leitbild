@@ -15,7 +15,7 @@ import { effectiveAgentToolSelection } from '../../../apps/agents/src/agents/spa
 import { BUNDLED_ROOM_DEFINITIONS } from '../../../apps/agents/src/core/definitions/room-definition-catalog.ts'
 import { createDeploymentRuntime } from '../../../apps/agents/src/core/deployment-runtime.ts'
 import { messageFocus } from '../../../apps/agents/src/core/message-focus.ts'
-import { createGeoLookupTool, createGetTimeTool, createProductKnowledgeTools } from '../../../apps/agents/src/tools/built-in/index.ts'
+import { createGetTimeTool, createPlaceResolveTool, createProductKnowledgeTools } from '../../../apps/agents/src/tools/built-in/index.ts'
 import { createAgentsModuleState } from '../../../apps/agents/src/core/workspaces/module-state.ts'
 import {
   createWorkspaceRuntimeRegistry as createAgentsWorkspaceRuntimeRegistry,
@@ -111,8 +111,12 @@ describe('Workspace Host with real Modules', () => {
     const baseUrl = `http://127.0.0.1:${hostServer.port}`
 
     const deployment = createDeploymentRuntime()
+    deployment.sharedSkillStore.register({
+      name: 'leitbild-assistance', description: 'Test Assistant Skill', body: 'Use Workspace discovery.',
+      tools: [], allowedToolNames: [], dirPath: leitbildHome,
+    })
     deployment.sharedToolRegistry.registerAll(createProductKnowledgeTools())
-    deployment.sharedToolRegistry.register(createGeoLookupTool())
+    deployment.sharedToolRegistry.register(createPlaceResolveTool())
     deployment.sharedToolRegistry.register(createGetTimeTool())
     leitbildRegistry = createAgentsWorkspaceRuntimeRegistry({
       deployment,
@@ -203,12 +207,13 @@ describe('Workspace Host with real Modules', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          input: { prompt, focusedResources: [worldRun.ref] },
+          input: { prompt, focusedSubjects: [worldRun.ref] },
           actor: { kind: 'human', id: 'operator', displayName: 'Operator' },
         }),
       },
     )
     const assistantResponse = await openAssistant('Explain this Run.')
+    if (assistantResponse.status !== 200) throw new Error(await assistantResponse.text())
     expect(assistantResponse.status).toBe(200)
     const assistantRoomId = (await assistantResponse.json() as { result: { resource: { id: string }; reused: boolean } }).result.resource.id
     const assistantRoom = companionRuntime.rooms.getRoom(assistantRoomId)!
@@ -222,7 +227,7 @@ describe('Workspace Host with real Modules', () => {
     expect(effectiveAgentToolSelection(generalAssistantAI.getConfig())).toEqual(expect.arrayContaining([
       'product_search',
       'product_read',
-      'geo_lookup',
+      'place_resolve',
       'get_time',
       'workspace_catalog',
       'workspace_capabilities',

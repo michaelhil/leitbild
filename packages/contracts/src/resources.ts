@@ -27,14 +27,21 @@ export const workspaceResourceReferenceSchema = z.object({
 })
 export type WorkspaceResourceReference = z.infer<typeof workspaceResourceReferenceSchema>
 
-// Same-origin Host -> Module UI message. This is transient browser context:
-// it identifies the Resource currently in view without changing durable Room
-// links or persisted chat history.
-export const workspaceResourceFocusMessageSchema = z.object({
-  type: z.literal('leitbild:resource-focus'),
-  resource: workspaceResourceReferenceSchema.nullable(),
+// A transient subject can be a live Resource or an exact immutable Definition
+// Revision. It is browser attention, not a durable relationship or grant.
+export const workspaceSubjectReferenceSchema = z.union([
+  workspaceDefinitionRevisionReferenceSchema,
+  workspaceResourceReferenceSchema,
+])
+export type WorkspaceSubjectReference = z.infer<typeof workspaceSubjectReferenceSchema>
+
+// Same-origin Host -> Module UI message. Multiple subjects let an Agent see
+// the few things currently open without copying them into Room history.
+export const workspaceSubjectFocusMessageSchema = z.object({
+  type: z.literal('leitbild:subject-focus'),
+  subjects: z.array(workspaceSubjectReferenceSchema).max(4),
 }).strict()
-export type WorkspaceResourceFocusMessage = z.infer<typeof workspaceResourceFocusMessageSchema>
+export type WorkspaceSubjectFocusMessage = z.infer<typeof workspaceSubjectFocusMessageSchema>
 
 const jsonSchemaSchema = z.record(z.string(), z.unknown())
 

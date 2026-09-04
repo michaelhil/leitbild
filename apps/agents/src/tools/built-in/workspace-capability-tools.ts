@@ -81,9 +81,9 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
 
   const catalog: Tool = {
     name: WORKSPACE_CAPABILITY_TOOL_NAMES[0],
-    description: 'List reusable Definitions and live Resources exposed by Modules in this Workspace. Prefer focusedResources for “this/current”; otherwise use the current Room companion-of link.',
-    usage: 'Call with {} for initial discovery; then use exact identifiers from the catalog as optional filters. focusedResources is transient browser context and currentRoom is durable Room context. Discover identities immediately before invoking a scoped Capability. Do not remember runtime Resource ids as Agent configuration.',
-    returns: '{ workspaceId, focusedResources[], currentRoom, definitions[], resources[] } with stable references, provenance, UI paths, links, and advertised capabilityIds.',
+    description: 'List reusable Definitions and live Resources exposed by Modules in this Workspace. Prefer focusedSubjects for “this/current”; otherwise use the current Room companion-of link.',
+    usage: 'Call with {} for initial discovery; then use exact identifiers from the catalog as optional filters. focusedSubjects is transient browser context and currentRoom is durable Room context. Discover identities immediately before invoking a scoped Capability. Do not remember runtime Resource ids as Agent configuration.',
+    returns: '{ workspaceId, focusedSubjects[], currentRoom, definitions[], resources[] } with stable references, provenance, UI paths, links, and advertised capabilityIds.',
     parameters: {
       type: 'object',
       properties: {
@@ -112,7 +112,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
           success: true,
           data: {
             workspaceId: resources.workspaceId,
-            focusedResources: context.focusedResources ?? [],
+            focusedSubjects: context.focusedSubjects ?? [],
             currentRoom: resources.resources.find(resource => resource.ref.type === 'agents.room' && resource.ref.id === context.roomId) ?? null,
             modules: {
               definitions: definitions.modules,
@@ -136,9 +136,9 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
 
   const capabilities: Tool = {
     name: WORKSPACE_CAPABILITY_TOOL_NAMES[1],
-    description: 'List Capabilities exposed by Modules in this Workspace, with scope, risk and grant state. Includes input schemas for granted capabilities; omits output schemas and ungranted input schemas to keep discovery compact. Filter by capabilityId for one operation.',
-    usage: 'Discover Capabilities dynamically. A Capability can be invoked only when the Agent Profile grants its capabilityId.',
-    returns: '{ workspaceId, modules, capabilities[] } with granted: boolean and inputSchema when granted. Full output schemas remain available through the Host capability API.',
+    description: 'List compact Capability descriptors exposed by Modules in this Workspace. An exact capabilityId request also returns its input schema when granted.',
+    usage: 'Use broad discovery to find IDs without loading schemas, then request one exact capabilityId before invoking it. A Capability can be invoked only when the Agent Profile grants its capabilityId.',
+    returns: '{ workspaceId, modules, capabilities[] } with grant state. inputSchema is present only for an exact granted capabilityId request; output schemas are omitted.',
     parameters: {
       type: 'object',
       properties: {
@@ -178,7 +178,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
                 && (kind === undefined || capability.kind === kind))
               .map(({ inputSchema, outputSchema: _outputSchema, ...capability }) => {
                 const granted = grants.has(capability.id)
-                return { ...capability, granted, ...(granted ? { inputSchema } : {}) }
+                return { ...capability, granted, ...(granted && capabilityId !== undefined ? { inputSchema } : {}) }
               }),
           },
         }

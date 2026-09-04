@@ -104,6 +104,8 @@ export const agentRoutes: RouteEntry[] = [
         detail.historyLimit = aiAgent.getHistoryLimit()
         detail.thinking = aiAgent.getThinking()
         detail.tools = aiAgent.getTools()
+        detail.skills = aiAgent.getSkills()
+        detail.registeredSkills = system.skillStore.list().map(skill => skill.name)
         detail.includePrompts = aiAgent.getIncludePrompts()
         detail.includeContext = aiAgent.getIncludeContext()
         detail.includeTools = aiAgent.getIncludeTools()
@@ -143,6 +145,14 @@ export const agentRoutes: RouteEntry[] = [
         ? undefined
         : toolGrantSetSchema.safeParse(body.toolGrants)
       if (toolGrants && !toolGrants.success) return errorResponse(toolGrants.error.message, 400)
+      const requestedSkills = body.skills === undefined ? [] : Array.isArray(body.skills)
+        ? (body.skills as unknown[]).filter((skill): skill is string => typeof skill === 'string')
+        : null
+      if (requestedSkills === null || requestedSkills.length !== (body.skills as unknown[]).length) {
+        return errorResponse('skills must be an array of Skill names', 400)
+      }
+      const missingSkills = requestedSkills.filter(skill => system.skillStore.get(skill) === undefined)
+      if (missingSkills.length > 0) return errorResponse(`Unknown Skills: ${missingSkills.join(', ')}`, 400)
       const modelStatus = await resolveModelStatus(system, requestedModel)
       if (modelStatus === 'unavailable') {
         console.warn(`[agents] Model "${requestedModel}" not currently available — agent will use fallback when invoked.`)
@@ -159,6 +169,7 @@ export const agentRoutes: RouteEntry[] = [
           ...(body.tools && Array.isArray(body.tools)
             ? { tools: (body.tools as unknown[]).filter((t): t is string => typeof t === 'string') }
             : {}),
+          ...(body.skills === undefined ? {} : { skills: requestedSkills }),
           ...(toolGrants === undefined ? {} : { toolGrants: toolGrants.data }),
         })
         const aiA = asAIAgent(agent)
@@ -259,6 +270,12 @@ export const agentRoutes: RouteEntry[] = [
           const resolved = requested.filter(n => known.has(n))
           aiAgent.updateTools?.(resolved)
           await system.refreshAllAgentTools()
+        }
+        if (Array.isArray(body.skills)) {
+          const requested = (body.skills as unknown[]).filter((name): name is string => typeof name === 'string')
+          const missing = requested.filter(name => system.skillStore.get(name) === undefined)
+          if (missing.length > 0) return errorResponse(`Skills not found: ${missing.join(', ')}`, 400)
+          aiAgent.updateSkills([...new Set(requested)])
         }
         if (body.toolGrants !== undefined) {
           const grants = toolGrantSetSchema.safeParse(body.toolGrants)

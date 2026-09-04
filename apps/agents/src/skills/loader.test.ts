@@ -81,11 +81,10 @@ name: foo
 description: test
 allowed-tools:
   - a
-scope: [my-room]
+description-extra: ignored
 ---
 body`)
     expect(frontmatter.allowedTools).toEqual(['a'])
-    expect(frontmatter.scope).toEqual(['my-room'])
   })
 
   test('body parses correctly after block-list field', () => {
@@ -100,39 +99,6 @@ allowed-tools:
 
 content`)
     expect(body).toBe('# Body heading\n\ncontent')
-  })
-})
-
-describe('parseFrontmatter — scope arrays', () => {
-  test('rejects an inline scalar', () => {
-    expect(() => parseFrontmatter(`---
-name: foo
-description: test
-scope: my-room
----
-body`)).toThrow('array frontmatter fields')
-  })
-
-  test('scope inline array', () => {
-    const { frontmatter } = parseFrontmatter(`---
-name: foo
-description: test
-scope: [room-a, room-b]
----
-body`)
-    expect(frontmatter.scope).toEqual(['room-a', 'room-b'])
-  })
-
-  test('scope block list', () => {
-    const { frontmatter } = parseFrontmatter(`---
-name: foo
-description: test
-scope:
-  - room-a
-  - room-b
----
-body`)
-    expect(frontmatter.scope).toEqual(['room-a', 'room-b'])
   })
 })
 

@@ -109,6 +109,13 @@ test('same-time cues follow authored order, modify patient assessment and do not
     ] },
     { id: 'a-update-second', at: { kind: 'after_scenario_start', seconds: 0 }, actions: [{ type: 'invoke_capability', capabilityId: 'world.ambulance.set-patient-assessment', input: { patientId: 'patient:live', assessedUrgency: 'urgent', needs: ['clinical-care'] } }] },
   ] }
+  const preview = await registry.previewScenario(source)
+  expect(preview.initialInventory).toContainEqual({ packId: 'ambulance', kind: 'mobile_entity', count: 1 })
+  expect(preview.timeline.cues[0]?.actions[0]).toMatchObject({
+    capabilityId: 'world.ambulance.create-item',
+    inputKeys: ['item'],
+    identifiers: { 'item.id': 'incident:live' },
+  })
   await registry.createScenario(source)
   const run = await registry.create({ scenarioId: source.id })
   await run.setClock({ paused: true, speed: 3 })

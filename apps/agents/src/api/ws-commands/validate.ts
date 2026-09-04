@@ -2,7 +2,7 @@ import type { IncludeContext, IncludePrompts } from '../../core/types/agent.ts'
 import type { MessageAttachment, MessageTarget } from '../../core/types/messaging.ts'
 import { validateSummaryConfig } from '../../core/types/summary.ts'
 import type { BiometricSignalWire, WSInbound } from '../../core/types/ws-protocol.ts'
-import { workspaceResourceReferenceSchema, type WorkspaceResourceReference } from '@leitbild/contracts'
+import { workspaceSubjectReferenceSchema, type WorkspaceSubjectReference } from '@leitbild/contracts'
 
 type ValidationResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: string }
 type RawObject = Record<string, unknown>
@@ -47,6 +47,9 @@ const validateTarget = (value: unknown): ValidationResult<MessageTarget> => {
 const validateAttachments = (value: unknown): ValidationResult<ReadonlyArray<MessageAttachment>> => {
   if (value === undefined || value === null) return { ok: true, value: [] }
   if (!Array.isArray(value)) return { ok: false, error: 'attachments must be an array' }
+  if (value.length > 8) return { ok: false, error: 'a message may contain at most 8 attachments' }
+  const totalChars = value.reduce((sum, raw) => sum + (isObject(raw) && typeof raw.dataUrl === 'string' ? raw.dataUrl.length : 0), 0)
+  if (totalChars > 11_200_000) return { ok: false, error: 'message attachments exceed the 8 MiB payload limit' }
   const out: MessageAttachment[] = []
   for (const [i, raw] of value.entries()) {
     if (!isObject(raw)) return { ok: false, error: `attachments[${i}] must be an object` }
@@ -72,14 +75,14 @@ const validateAttachments = (value: unknown): ValidationResult<ReadonlyArray<Mes
   return { ok: true, value: out }
 }
 
-const validateFocusedResources = (value: unknown): ValidationResult<ReadonlyArray<WorkspaceResourceReference> | undefined> => {
+const validateFocusedSubjects = (value: unknown): ValidationResult<ReadonlyArray<WorkspaceSubjectReference> | undefined> => {
   if (value === undefined) return { ok: true, value: undefined }
-  if (!Array.isArray(value)) return { ok: false, error: 'focusedResources must be an array' }
-  if (value.length > 4) return { ok: false, error: 'focusedResources may contain at most 4 Resources' }
-  const resources: WorkspaceResourceReference[] = []
+  if (!Array.isArray(value)) return { ok: false, error: 'focusedSubjects must be an array' }
+  if (value.length > 4) return { ok: false, error: 'focusedSubjects may contain at most 4 subjects' }
+  const resources: WorkspaceSubjectReference[] = []
   for (const [index, raw] of value.entries()) {
-    const parsed = workspaceResourceReferenceSchema.safeParse(raw)
-    if (!parsed.success) return { ok: false, error: `focusedResources[${index}] must be a valid Workspace Resource reference` }
+    const parsed = workspaceSubjectReferenceSchema.safeParse(raw)
+    if (!parsed.success) return { ok: false, error: `focusedSubjects[${index}] must be a valid Workspace subject reference` }
     resources.push(parsed.data)
   }
   return { ok: true, value: resources }
@@ -104,6 +107,7 @@ const validateCreateAgent = (obj: RawObject): ValidationResult<Extract<WSInbound
   const persona = requiredString(config, 'persona')
   if (!persona.ok) return persona
   if (config.tools !== undefined && !isStringArray(config.tools)) return { ok: false, error: 'config.tools must be an array of strings when present' }
+  if (config.skills !== undefined && !isStringArray(config.skills)) return { ok: false, error: 'config.skills must be an array of strings when present' }
   if (config.tags !== undefined && !isStringArray(config.tags)) return { ok: false, error: 'config.tags must be an array of strings when present' }
   for (const key of ['temperature', 'seed', 'historyLimit', 'maxToolIterations']) {
     const result = optionalNumber(config, key)
@@ -135,6 +139,7 @@ const validateUpdateAgent = (obj: RawObject): ValidationResult<Extract<WSInbound
   const maxToolIterations = optionalNumber(obj, 'maxToolIterations')
   if (!maxToolIterations.ok) return maxToolIterations
   if (obj.tools !== undefined && !isStringArray(obj.tools)) return { ok: false, error: 'tools must be an array of strings when present' }
+  if (obj.skills !== undefined && !isStringArray(obj.skills)) return { ok: false, error: 'skills must be an array of strings when present' }
   return { ok: true, value: obj as Extract<WSInbound, { type: 'update_agent' }> }
 }
 
@@ -168,8 +173,8 @@ export const validateWSInbound = (raw: unknown): ValidationResult<WSInbound> => 
       if (!senderId.ok) return senderId
       const attachments = validateAttachments(raw.attachments)
       if (!attachments.ok) return attachments
-      const focusedResources = validateFocusedResources(raw.focusedResources)
-      if (!focusedResources.ok) return focusedResources
+      const focusedSubjects = validateFocusedSubjects(raw.focusedSubjects)
+      if (!focusedSubjects.ok) return focusedSubjects
       return {
         ok: true,
         value: {
@@ -178,7 +183,7 @@ export const validateWSInbound = (raw: unknown): ValidationResult<WSInbound> => 
           content: content.value,
           ...(senderId.value ? { senderId: senderId.value } : {}),
           ...(attachments.value.length > 0 ? { attachments: attachments.value } : {}),
-          ...(focusedResources.value === undefined ? {} : { focusedResources: focusedResources.value }),
+          ...(focusedSubjects.value === undefined ? {} : { focusedSubjects: focusedSubjects.value }),
         },
       }
     }

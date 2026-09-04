@@ -9,6 +9,8 @@
 export interface AgentData {
   persona?: string
   tools?: string[]
+  skills?: string[]
+  registeredSkills?: string[]
   rooms?: string[]
 }
 

@@ -119,7 +119,7 @@ const messageCauseSchema = z.object({
 
 const messageAttachmentSchema = z.object({
   kind: z.literal('image'),
-  dataUrl: z.string(),
+  dataUrl: z.string().max(11_200_000),
   mimeType: z.literal('image/png'),
   width: z.number().finite(),
   height: z.number().finite(),
@@ -157,11 +157,14 @@ const messageSchema = z.object({
   agentTags: z.array(z.string()).optional(),
   toolTrace: z.array(z.object({
     tool: z.string(),
-    arguments: z.record(z.string(), z.unknown()),
+    argumentKeys: z.array(z.string()).max(32),
+    argumentBytes: z.number().int().nonnegative(),
+    capabilityId: z.string().optional(),
+    target: z.string().optional(),
     success: z.boolean(),
     resultPreview: z.string(),
   }).strict()).optional(),
-  attachments: z.array(messageAttachmentSchema).optional(),
+  attachments: z.array(messageAttachmentSchema).max(8).optional(),
 }).strict()
 
 const summaryScheduleSchema = z.discriminatedUnion('kind', [
@@ -202,6 +205,7 @@ const agentConfigSchema = z.object({
   seed: z.number().finite().optional(),
   historyLimit: z.number().finite().optional(),
   tools: z.array(z.string()).optional(),
+  skills: z.array(z.string()).optional(),
   toolGrants: toolGrantSetSchema.optional(),
   maxToolIterations: z.number().finite().optional(),
   tags: z.array(z.string()).optional(),

@@ -1,27 +1,33 @@
 import { describe, expect, test } from 'bun:test'
-import { parseWorkspaceResourceFocusMessage } from './workspace-focus.ts'
+import { parseWorkspaceSubjectFocusMessage } from './workspace-focus.ts'
 
 describe('Workspace focus browser boundary', () => {
   test('accepts the strict Host message shape', () => {
-    expect(parseWorkspaceResourceFocusMessage({
-      type: 'leitbild:resource-focus',
-      resource: { workspaceId: 'workspace', moduleId: 'world', type: 'world.simulation-run', id: 'run' },
+    expect(parseWorkspaceSubjectFocusMessage({
+      type: 'leitbild:subject-focus',
+      subjects: [
+        { workspaceId: 'workspace', moduleId: 'world', type: 'world.simulation-run', id: 'run' },
+        { workspaceId: 'workspace', moduleId: 'world', type: 'world.scenario', id: 'scenario', revisionId: 'revision' },
+      ],
     })).toEqual({
-      type: 'leitbild:resource-focus',
-      resource: { workspaceId: 'workspace', moduleId: 'world', type: 'world.simulation-run', id: 'run' },
+      type: 'leitbild:subject-focus',
+      subjects: [
+        { workspaceId: 'workspace', moduleId: 'world', type: 'world.simulation-run', id: 'run' },
+        { workspaceId: 'workspace', moduleId: 'world', type: 'world.scenario', id: 'scenario', revisionId: 'revision' },
+      ],
     })
-    expect(parseWorkspaceResourceFocusMessage({ type: 'leitbild:resource-focus', resource: null })).toEqual({
-      type: 'leitbild:resource-focus', resource: null,
+    expect(parseWorkspaceSubjectFocusMessage({ type: 'leitbild:subject-focus', subjects: [] })).toEqual({
+      type: 'leitbild:subject-focus', subjects: [],
     })
   })
 
   test('rejects malformed, foreign and extended wire shapes', () => {
-    expect(parseWorkspaceResourceFocusMessage({ type: 'other', resource: null })).toBeNull()
-    expect(parseWorkspaceResourceFocusMessage({ type: 'leitbild:resource-focus' })).toBeNull()
-    expect(parseWorkspaceResourceFocusMessage({
-      type: 'leitbild:resource-focus',
-      resource: { workspaceId: 'workspace', moduleId: 'world', type: 'agents.room', id: 'room' },
+    expect(parseWorkspaceSubjectFocusMessage({ type: 'other', resource: null })).toBeNull()
+    expect(parseWorkspaceSubjectFocusMessage({ type: 'leitbild:subject-focus' })).toBeNull()
+    expect(parseWorkspaceSubjectFocusMessage({
+      type: 'leitbild:subject-focus',
+      subjects: [{ workspaceId: 'workspace', moduleId: 'world', type: 'agents.room', id: 'room' }],
     })).toBeNull()
-    expect(parseWorkspaceResourceFocusMessage({ type: 'leitbild:resource-focus', resource: null, extra: true })).toBeNull()
+    expect(parseWorkspaceSubjectFocusMessage({ type: 'leitbild:subject-focus', subjects: [], extra: true })).toBeNull()
   })
 })

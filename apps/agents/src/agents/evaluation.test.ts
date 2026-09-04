@@ -333,6 +333,9 @@ describe('evaluate (tool loop)', () => {
     expect(result.decision.toolTrace).toHaveLength(1)
     expect(result.decision.toolTrace![0]!.tool).toBe('echo')
     expect(result.decision.toolTrace![0]!.success).toBe(true)
+    expect(result.decision.toolTrace![0]!.argumentKeys).toEqual(['text'])
+    expect(result.decision.toolTrace![0]!.argumentBytes).toBeGreaterThan(0)
+    expect(result.decision.toolTrace![0]).not.toHaveProperty('arguments')
   })
 
   test('multi-round tool loop (2 tools then content)', async () => {

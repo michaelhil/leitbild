@@ -648,22 +648,25 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
   }
 
   // Skill and script catalogs are deployment-scoped Pack contributions.
-  // Workspace and Room activation determine which contributions are effective.
+  // Agent selection and Room Pack activation determine which Skills are effective.
   const skillsDir = sharedPaths.skills()
   const scriptsDir = sharedPaths.scripts()
   const skillStore = deployment.sharedSkillStore
   const scriptStore = deployment.sharedScriptStore
 
-  // Per-room skills section. Filters by both the skill's declared `scope`
-  // (room-name match) and the room's active packs — a pack-owned skill is
-  // visible only when its owning pack is active in this room. Standalone
-  // skills (no pack field) are treated as 'local' and are always visible.
-  const getSkillsForRoom = (roomId: string): string => {
+  // Agent Skill Selection is exact. Room Pack activation is an independent
+  // availability gate for Pack-owned skills, just as it is for Pack tools.
+  const selectedSkillsForRoom = (skillNames: ReadonlyArray<string>, roomId: string) => {
     const room = rooms.getRoom(roomId)
-    if (!room) return ''
+    if (!room) return []
     const active = effectiveActivePackSet(room)
-    const inScope = skillStore.forScope(room.profile.name)
-    const visible = inScope.filter(skill => skill.pack === undefined || active.has(skill.pack))
+    return skillNames.flatMap(name => {
+      const skill = skillStore.get(name)
+      return skill !== undefined && (skill.pack === undefined || active.has(skill.pack)) ? [skill] : []
+    })
+  }
+  const getSkillsForRoom = (skillNames: ReadonlyArray<string>, roomId: string): string => {
+    const visible = selectedSkillsForRoom(skillNames, roomId)
     if (visible.length === 0) return ''
     return visible.map(s => `[${s.name}] ${s.description}\n${s.body}`).join('\n\n---\n\n')
   }
@@ -673,15 +676,11 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
   // frontmatter declarations are surfaced as `declaredTools` so the
   // agent can compare against the actual tool surface and emit a
   // coherence warning when the prompt promises a tool that isn't there.
-  const getActiveSkillsDeclarationsForRoom = (roomId: string): ReadonlyArray<{
+  const getActiveSkillsDeclarationsForRoom = (skillNames: ReadonlyArray<string>, roomId: string): ReadonlyArray<{
     readonly name: string
     readonly declaredTools: ReadonlyArray<string>
   }> => {
-    const room = rooms.getRoom(roomId)
-    if (!room) return []
-    const active = effectiveActivePackSet(room)
-    return skillStore.forScope(room.profile.name)
-      .filter(skill => skill.pack === undefined || active.has(skill.pack))
+    return selectedSkillsForRoom(skillNames, roomId)
       .filter(s => s.allowedToolNames.length > 0)
       .map(s => ({ name: s.name, declaredTools: s.allowedToolNames }))
   }
@@ -697,7 +696,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
           id: ai.id,
           name: ai.name,
           currentModel: () => ai.getModel(),
-          focusedResources: roomId => ai.getFocusedResources(roomId),
+          focusedSubjects: roomId => ai.getFocusedSubjects(roomId),
         },
         llm,
         undefined,

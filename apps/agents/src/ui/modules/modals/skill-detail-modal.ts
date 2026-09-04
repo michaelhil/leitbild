@@ -42,7 +42,6 @@ export const renderSkillDetailInto = (
 
   const nameInput = createInput({ placeholder: 'skill-name', disabled: !isNew, mono: true })
   const descInput = createInput({ placeholder: 'When to use this skill' })
-  const scopeInput = createInput({ placeholder: 'room1, room2 (blank = global)' })
   const bodyArea = createTextarea('', 14)
 
   if (isNew) {
@@ -51,8 +50,6 @@ export const renderSkillDetailInto = (
   }
   body.appendChild(createSectionLabel('Description'))
   body.appendChild(descInput)
-  body.appendChild(createSectionLabel('Scope'))
-  body.appendChild(scopeInput)
   body.appendChild(createSectionLabel('Prompt'))
   body.appendChild(bodyArea)
 
@@ -91,11 +88,11 @@ export const renderSkillDetailInto = (
 
   const saveBtn = createButton({ variant: 'primary-pending', label: isNew ? 'Create' : 'Update' })
 
-  let savedDesc = '', savedBody = '', savedScope = ''
+  let savedDesc = '', savedBody = ''
 
   const isDirty = (): boolean => {
     if (isNew) return !!(nameInput.value.trim() && descInput.value.trim() && bodyArea.value.trim())
-    return descInput.value !== savedDesc || bodyArea.value !== savedBody || scopeInput.value !== savedScope
+    return descInput.value !== savedDesc || bodyArea.value !== savedBody
   }
 
   const updateStyle = (): void => {
@@ -105,11 +102,9 @@ export const renderSkillDetailInto = (
   nameInput.oninput = updateStyle
   descInput.oninput = updateStyle
   bodyArea.oninput = updateStyle
-  scopeInput.oninput = updateStyle
 
   saveBtn.onclick = async () => {
     if (!isDirty()) return
-    const scope = scopeInput.value.split(',').map(s => s.trim()).filter(Boolean)
     if (isNew) {
       const ok = await safeFetch('/skills', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -117,19 +112,17 @@ export const renderSkillDetailInto = (
           name: nameInput.value.trim(),
           description: descInput.value,
           body: bodyArea.value,
-          scope,
         }),
       })
       if (!ok) return
     } else {
       await safeFetch(`/skills/${encodeURIComponent(skillName)}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: descInput.value, body: bodyArea.value, scope }),
+        body: JSON.stringify({ description: descInput.value, body: bodyArea.value }),
       })
     }
     savedDesc = descInput.value
     savedBody = bodyArea.value
-    savedScope = scopeInput.value
     updateStyle()
     showToast(btnRow, isNew ? 'Skill created' : 'Skill updated')
     setTimeout(() => { if (isNew && closeHost) closeHost(); onDone?.() }, 1500)
@@ -141,14 +134,12 @@ export const renderSkillDetailInto = (
   if (!isNew && toolsContainer) {
     apiFetch(`/skills/${encodeURIComponent(skillName)}`)
       .then(r => r.ok ? r.json() : null)
-      .then((data: { description?: string; body?: string; scope?: string[]; tools?: string[] } | null) => {
+      .then((data: { description?: string; body?: string; tools?: string[] } | null) => {
         if (!data) return
         descInput.value = data.description ?? ''
         bodyArea.value = data.body ?? ''
-        scopeInput.value = (data.scope ?? []).join(', ')
         savedDesc = descInput.value
         savedBody = bodyArea.value
-        savedScope = scopeInput.value
 
         const tools = data.tools ?? []
         if (!toolsContainer) return

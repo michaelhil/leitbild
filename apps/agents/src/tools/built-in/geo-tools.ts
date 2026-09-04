@@ -20,6 +20,7 @@
 // ============================================================================
 
 import { resolveLocation } from '../../geo/resolver.ts'
+import { searchNominatimPlaces } from '../../geo/upstream.ts'
 import { categoryStats, listCategory, lookupInCategory, removeFeature, upsertFeature } from '../../geo/store.ts'
 import { getCategory, listCategories } from '../../geo/categories.ts'
 import type { CategoryMeta, GeoFeature, GeoSource, MapEnvelopeFromGeo, MarkerIcon } from '../../geo/types.ts'
@@ -34,6 +35,38 @@ import type { Tool } from '../../core/types/tool.ts'
 export interface GeoToolsDeps {
   readonly getActivePacks?: (roomId: string) => ReadonlyArray<string> | undefined
 }
+
+export const createPlaceResolveTool = (
+  searchPlaces: typeof searchNominatimPlaces = searchNominatimPlaces,
+): Tool => ({
+  name: 'place_resolve',
+  description: 'Resolve an arbitrary named place to sourced coordinates without requiring an imported geodata category.',
+  usage: 'Use for map centres and named locations. Pass a countryCode when known. Treat multiple matches as ambiguity and refine the query instead of guessing. The first match is provider-ranked, not a confidence score.',
+  returns: '{ query, source: "nominatim", matches: [{ name, displayName, lat, lng, countryCode?, kind?, importance?, osmId? }] }. An empty matches array means the place was not resolved.',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'Place name, optionally with region or country.' },
+      countryCode: { type: 'string', pattern: '^[A-Za-z]{2}$', description: 'Optional ISO-3166-1 alpha-2 country filter.' },
+    },
+    required: ['query'],
+    additionalProperties: false,
+  },
+  execute: async params => {
+    const query = typeof params.query === 'string' ? params.query.trim() : ''
+    if (!query) return { success: false, error: 'query is required' }
+    const countryCode = params.countryCode
+    if (countryCode !== undefined && (typeof countryCode !== 'string' || !/^[A-Za-z]{2}$/.test(countryCode))) {
+      return { success: false, error: 'countryCode must be a two-letter ISO country code' }
+    }
+    try {
+      const matches = await searchPlaces(query, typeof countryCode === 'string' ? countryCode : undefined)
+      return { success: true, data: { query, source: 'nominatim', matches } }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  },
+})
 
 // room.activePacks is the complete Pack allowlist; local geodata is authored
 // content and does not pretend to be a Pack.

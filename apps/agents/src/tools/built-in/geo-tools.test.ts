@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createGeoAddTool, createGeoListCategoriesTool, createGeoListFeaturesTool, createGeoLookupTool, createGeoRemoveTool } from './geo-tools.ts'
+import { createGeoAddTool, createGeoListCategoriesTool, createGeoListFeaturesTool, createGeoLookupTool, createGeoRemoveTool, createPlaceResolveTool } from './geo-tools.ts'
 import { upsertFeature } from '../../geo/store.ts'
 import type { GeoFeature, MarkerIcon } from '../../geo/types.ts'
 
@@ -84,6 +84,21 @@ describe('geo_lookup', () => {
     await seedCategory('city')
     const r = await tool.execute({ query: '   ', category: 'city' }, fakeContext as never)
     expect(r.success).toBe(false)
+  })
+})
+
+describe('place_resolve', () => {
+  test('resolves free-form places without a geodata category', async () => {
+    const tool = createPlaceResolveTool(async (_query, countryCode) => [{
+      name: 'Trondheim', displayName: 'Trondheim, Trøndelag, Norge', lat: 63.4305, lng: 10.3951,
+      countryCode,
+    }])
+    const result = await tool.execute({ query: 'Trondheim', countryCode: 'NO' }, { callerId: 'test', callerName: 'Test' })
+    expect(result).toEqual({ success: true, data: {
+      query: 'Trondheim', source: 'nominatim', matches: [{
+        name: 'Trondheim', displayName: 'Trondheim, Trøndelag, Norge', lat: 63.4305, lng: 10.3951, countryCode: 'NO',
+      }],
+    } })
   })
 })
 

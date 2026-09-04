@@ -28,7 +28,7 @@ export interface ToolContext {
   readonly callerId: string
   readonly callerName: string
   readonly roomId?: string          // current trigger room ID — available when tool is called from a room context
-  readonly focusedResources?: ReadonlyArray<import('@leitbild/contracts').WorkspaceResourceReference> // transient Resources in the caller's current browser view
+  readonly focusedSubjects?: ReadonlyArray<import('@leitbild/contracts').WorkspaceSubjectReference> // transient subjects in the caller's current browser view
   readonly llm?: (request: ToolLLMRequest) => Promise<string>  // model inherited from calling agent at spawn time
   readonly llmStream?: (request: ToolLLMRequest) => AsyncIterable<string>  // streaming variant — yields raw deltas
 }

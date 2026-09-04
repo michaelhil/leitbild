@@ -89,6 +89,59 @@ export const scenarioAuthoringCatalogSchema = z.object({
 
 export type ScenarioAuthoringCatalog = z.infer<typeof scenarioAuthoringCatalogSchema>
 
+export const scenarioAuthoringDetailSchema = z.enum(['catalog', 'authoring', 'editor'])
+export type ScenarioAuthoringDetail = z.infer<typeof scenarioAuthoringDetailSchema>
+export const scenarioAuthoringDescriptionSchema = z.object({
+  detail: scenarioAuthoringDetailSchema,
+  packs: z.array(z.record(z.string(), z.unknown())),
+  commands: z.array(z.record(z.string(), z.unknown())),
+}).strict()
+
+// Broad discovery should not carry every JSON Schema and form control. Callers
+// opt into machine-authoring data for selected Packs, while the interactive
+// editor asks for the complete form description.
+export const describeScenarioAuthoring = (
+  catalog: ScenarioAuthoringCatalog,
+  detail: ScenarioAuthoringDetail,
+): unknown => {
+  if (detail === 'editor') return { detail, ...catalog }
+  return {
+    detail,
+    packs: catalog.packs.map(pack => ({
+      id: pack.id,
+      title: pack.title,
+      description: pack.description,
+      categoryIds: pack.categoryIds,
+      runtimes: pack.runtimes,
+      ...(pack.defaultRuntimeId === undefined ? {} : { defaultRuntimeId: pack.defaultRuntimeId }),
+      recordingProfiles: pack.recordingProfiles,
+      ...(detail === 'authoring' ? {
+        configSchema: pack.configSchema,
+        configDefaults: pack.configDefaults,
+      } : {}),
+      itemTypes: pack.itemTypes.map(itemType => ({
+        id: itemType.id,
+        label: itemType.label,
+        description: itemType.description,
+        idPrefix: itemType.idPrefix,
+        ...(itemType.placement === undefined ? {} : { placement: itemType.placement }),
+        ...(detail === 'authoring' ? {
+          defaultItem: itemType.defaultItem,
+          itemSchema: itemType.itemSchema,
+        } : {}),
+      })),
+    })),
+    commands: catalog.commands.map(command => ({
+      id: command.id,
+      title: command.title,
+      description: command.description,
+      packId: command.packId,
+      runtimeId: command.runtimeId,
+      ...(detail === 'authoring' ? { inputSchema: command.inputSchema } : {}),
+    })),
+  }
+}
+
 const valueAt = (root: Readonly<Record<string, unknown>>, path: ReadonlyArray<string | number>): unknown => {
   let value: unknown = root
   for (const segment of path) {

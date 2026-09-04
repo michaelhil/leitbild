@@ -95,8 +95,10 @@ export interface AIAgent extends Agent {
   readonly updateThinking?: (enabled: boolean) => void
   readonly getTools: () => ReadonlyArray<string> | undefined
   readonly updateTools?: (tools: ReadonlyArray<string>) => void
+  readonly getSkills: () => ReadonlyArray<string>
+  readonly updateSkills: (skills: ReadonlyArray<string>) => void
   readonly getToolGrants: () => ReadonlyArray<ToolGrant>
-  readonly getFocusedResources: (roomId: string) => ReadonlyArray<import('@leitbild/contracts').WorkspaceResourceReference>
+  readonly getFocusedSubjects: (roomId: string) => ReadonlyArray<import('@leitbild/contracts').WorkspaceSubjectReference>
   readonly updateToolGrants: (grants: ReadonlyArray<ToolGrant>) => void
   readonly refreshTools?: (support: {
     toolExecutor?: ToolExecutor
@@ -222,6 +224,7 @@ export interface AIAgentConfig {
   readonly seed?: number
   readonly historyLimit?: number
   readonly tools?: ReadonlyArray<string>        // tool names this agent can use
+  readonly skills?: ReadonlyArray<string>       // exact behavioural Skill selection
   readonly toolGrants?: ReadonlyArray<ToolGrant> // Workspace Capabilities this Agent may invoke
   readonly maxToolIterations?: number           // default 5
   readonly tags?: ReadonlyArray<string>         // capability/role tags for [[tag:X]] addressing

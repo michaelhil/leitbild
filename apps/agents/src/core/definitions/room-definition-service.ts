@@ -48,6 +48,22 @@ const validateAgentTools = (
   }
 }
 
+const validateAgentSkills = (
+  system: AgentsWorkspaceRuntime,
+  definition: RoomDefinition,
+  activePacks: ReadonlySet<string>,
+): void => {
+  for (const agent of definition.room.agents) {
+    for (const skillName of agent.skills) {
+      const skill = system.skillStore.get(skillName)
+      if (skill === undefined) throw new Error(`Agent "${agent.name}" selects unavailable Skill "${skillName}"`)
+      if (skill.pack !== undefined && !activePacks.has(skill.pack)) {
+        throw new Error(`Agent "${agent.name}" selects Skill "${skillName}" from inactive Pack "${skill.pack}"`)
+      }
+    }
+  }
+}
+
 export const startRoomDefinition = async (
   system: AgentsWorkspaceRuntime,
   library: RoomDefinitionLibrary,
@@ -83,6 +99,7 @@ export const startRoomDefinition = async (
         model: agentDefinition.model ?? defaultModel,
         persona: agentDefinition.persona,
         tools: agentDefinition.tools,
+        skills: agentDefinition.skills,
         ...(agentDefinition.toolGrants ? { toolGrants: agentDefinition.toolGrants } : {}),
         ...(agentDefinition.temperature !== undefined ? { temperature: agentDefinition.temperature } : {}),
         ...(agentDefinition.maxToolIterations !== undefined ? { maxToolIterations: agentDefinition.maxToolIterations } : {}),
@@ -110,6 +127,7 @@ export const startRoomDefinition = async (
 export const validateRoomDefinition = (system: AgentsWorkspaceRuntime, definition: RoomDefinition): void => {
   const activePacks = requireKnownPacks(system, definition.room.packs)
   validateAgentTools(system, definition, new Set(activePacks))
+  validateAgentSkills(system, definition, new Set(activePacks))
   for (const entry of definition.deck.entries) {
     if (entry.action.kind === 'start-script' && !system.scriptStore.get(entry.action.scriptName)) {
       throw new Error(`Prompt Deck entry ${entry.id} selects unavailable script ${entry.action.scriptName}`)

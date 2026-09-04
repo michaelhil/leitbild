@@ -16,7 +16,7 @@ export const buildPromptsGroup = (deps: GroupDeps): HTMLElement => {
 
   const totalTokens = PROMPT_KEYS.reduce((s, p) => s + (get(p.section)?.tokens ?? 0), 0)
 
-  const rows = PROMPT_KEYS.map(p => {
+  const rows: HTMLElement[] = PROMPT_KEYS.map(p => {
     const sec = get(p.section)
     return mkToggleRow(
       p.label,
@@ -36,6 +36,45 @@ export const buildPromptsGroup = (deps: GroupDeps): HTMLElement => {
         : () => openModal(`${p.label}${p.code === 'room' ? ` — "${preview.roomName}"` : ''}`, sec?.text ?? '', sec?.tokens ?? 0),
     )
   })
+
+  const registeredSkills = agentData.registeredSkills ?? []
+  const selectedSkills = new Set(agentData.skills ?? [])
+  if (registeredSkills.length > 0) {
+    const fold = document.createElement('details')
+    fold.className = 'mt-1'
+    fold.setAttribute('data-group-child-label', '')
+    const summary = document.createElement('summary')
+    summary.className = 'cursor-pointer text-text-subtle hover:text-text list-none select-none'
+    summary.textContent = `${selectedSkills.size}/${registeredSkills.length} skills ▾`
+    fold.appendChild(summary)
+    const list = document.createElement('div')
+    list.className = 'mt-1 space-y-0.5 max-h-32 overflow-y-auto pl-2'
+    for (const name of registeredSkills) {
+      const row = document.createElement('label')
+      row.className = 'flex items-center gap-1 w-full'
+      row.setAttribute('data-group-child-label', '')
+      const checkbox = document.createElement('input')
+      checkbox.type = 'checkbox'
+      checkbox.className = 'rounded'
+      checkbox.checked = selectedSkills.has(name)
+      checkbox.setAttribute('data-group-child', '')
+      const label = document.createElement('span')
+      label.className = 'font-mono'
+      label.textContent = name
+      checkbox.onchange = async () => {
+        const next = checkbox.checked
+          ? [...selectedSkills, name]
+          : [...selectedSkills].filter(skill => skill !== name)
+        agentData.skills = next
+        await patchAgent({ skills: next })
+        await rerender()
+      }
+      row.append(checkbox, label)
+      list.appendChild(row)
+    }
+    fold.appendChild(list)
+    rows.push(fold)
+  }
 
   return mkGroup({
     label: 'Prompts',

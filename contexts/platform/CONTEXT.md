@@ -32,6 +32,10 @@ _Avoid_: service-specific configuration guessed by the Host
 A Workspace-scoped domain entity that a Module makes discoverable by stable reference and type.
 _Avoid_: copying the entity into the Host or using an untyped URL as identity
 
+**Focused Subject**:
+One of the few live Resources or exact immutable Definition Revisions currently visible in a Client and supplied transiently to an Agent turn. It conveys attention, not permission, durable association, or copied domain state.
+_Avoid_: current mutable Definition, persisted Agent-to-Resource link, authorization scope
+
 **Resource Summary**:
 A small, current set of typed facts published with a Resource for discovery and overview surfaces, without replacing the Module's detailed state or read Capabilities.
 _Avoid_: copied domain state, arbitrary JSON metadata, Host-owned interpretation of Module internals

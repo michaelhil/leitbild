@@ -16,6 +16,10 @@ _Avoid_: Scenario Draft, mutable startup state, current Scenario
 The authored reusable source of a Scenario: metadata, starting conditions, Starting View, Pack Selections, and optional Timeline. An unsaved editor value may be called a draft, but Draft is not a persisted domain type.
 _Avoid_: Scenario Config, Compiled Scenario, mutable Simulation Run
 
+**Scenario Authoring Description**:
+A discoverable projection of Pack-owned Scenario inputs. Catalog detail names what exists, authoring detail adds machine schemas for selected Packs, and editor detail adds form controls.
+_Avoid_: one full schema dump on every discovery call, a second Scenario format
+
 **Compiled Scenario**:
 The internal deterministic startup artifact produced from one Scenario Definition Revision by the selected World Packs.
 _Avoid_: authored Scenario Definition, Scenario Template, live Simulation Run state

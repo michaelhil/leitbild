@@ -11,6 +11,7 @@ import {
   workspaceModuleManifestSchema,
   workspaceDefinitionRevisionReferenceSchema,
   workspaceResourceReferenceSchema,
+  workspaceSubjectReferenceSchema,
   type ModuleResourceDescriptor,
   type WorkspaceId,
 } from '@leitbild/contracts'
@@ -66,7 +67,7 @@ const emptyInputSchema = z.object({}).strict()
 const companionInputSchema = z.object({ resource: workspaceResourceReferenceSchema, title: z.string().trim().min(1).max(256) }).strict()
 const assistantOpenInputSchema = z.object({
   prompt: z.string().trim().min(1).max(64_000),
-  focusedResources: z.array(workspaceResourceReferenceSchema).max(4).default([]),
+  focusedSubjects: z.array(workspaceSubjectReferenceSchema).max(4).default([]),
 }).strict()
 const assistantOpenResultSchema = z.object({
   resource: workspaceResourceReferenceSchema,
@@ -276,20 +277,20 @@ const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorks
       id: 'agents.assistant.open', moduleId: AGENTS_MODULE_ID,
       kind: 'command', scope: { kind: 'workspace' },
       title: 'Open Leitbild Assistant',
-      description: 'Reuses the Workspace Leitbild Assistant Room, posts the request with current Resource focus, and returns its Room location.',
+      description: 'Reuses the Workspace Leitbild Assistant Room, posts the request with current focused live Resources or exact Definition Revisions, and returns its Room location.',
       risk: 'write', idempotent: false,
       inputSchema: z.toJSONSchema(assistantOpenInputSchema),
       outputSchema: z.toJSONSchema(assistantOpenResultSchema),
     },
     invoke: async ({ runtime, library, flush }, invocation) => {
       const input = assistantOpenInputSchema.parse(invocation.input)
-      if (input.focusedResources.some(resource => resource.workspaceId !== invocation.workspaceId)) {
-        return apiError(409, 'workspace_scope_mismatch', 'Focused Resource belongs to another Workspace')
+      if (input.focusedSubjects.some(subject => subject.workspaceId !== invocation.workspaceId)) {
+        return apiError(409, 'workspace_scope_mismatch', 'Focused Subject belongs to another Workspace')
       }
       try {
         const opened = await ensureAssistantRoom(runtime, library, flush, {
           prompt: input.prompt,
-          focusedResources: input.focusedResources,
+          focusedSubjects: input.focusedSubjects,
         })
         const resource = workspaceResourceReferenceSchema.parse({
           workspaceId: invocation.workspaceId,

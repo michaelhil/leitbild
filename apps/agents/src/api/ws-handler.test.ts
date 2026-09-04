@@ -211,13 +211,13 @@ describe('WS Handler', () => {
     })
     await dispatch(ws, session, system, wsManager, {
       type: 'post_message', target: { rooms: ['TestRoom'] }, content: 'Inspect this run', senderId: humanId,
-      focusedResources: [focusedResource],
+      focusedSubjects: [focusedResource],
     })
     const stored = system.rooms.getRoom('TestRoom')!.getRecent(1)[0]!
     expect(messageFocus(stored)).toEqual([focusedResource])
-    expect(stored).not.toHaveProperty('focusedResources')
+    expect(stored).not.toHaveProperty('focusedSubjects')
     const wire = messages().find(message => message.type === 'message')
-    expect(wire).not.toHaveProperty('message.focusedResources')
+    expect(wire).not.toHaveProperty('message.focusedSubjects')
   })
 
   // --- set_paused ---
@@ -334,6 +334,7 @@ describe('WS Handler', () => {
     }
     let refreshes = 0
     ;(system as unknown as Record<string, unknown>).refreshAllAgentTools = async () => { refreshes += 1 }
+    ;(system as unknown as Record<string, unknown>).notifyAgentSettingsChanged = () => {}
     const { ws, errors } = makeWS()
     await dispatch(ws, session, system, wsManager, { type: 'update_agent', name: 'Bot', tools: ['pass', 'missing'] })
     expect(errors()).toHaveLength(0)

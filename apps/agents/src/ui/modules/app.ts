@@ -40,7 +40,7 @@ import {
 } from './ollama-dashboard.ts'
 import { stopProvidersPanel } from './panels/providers/index.ts'
 import { startLoggingStateDot } from './panels/logging-panel.ts'
-import { getFocusedResources, startWorkspaceFocusListener } from './workspace-focus.ts'
+import { getFocusedSubjects, startWorkspaceFocusListener } from './workspace-focus.ts'
 import { initSettingsNav } from './settings-nav.ts'
 import { hydrateIconPlaceholders, icon } from './icon.ts'
 import {
@@ -562,7 +562,7 @@ chatForm.onsubmit = (e) => {
     target: { rooms: [roomName] },
     content,
     senderId,
-    focusedResources: getFocusedResources(),
+    focusedSubjects: getFocusedSubjects(),
     ...(pendingAtts.length > 0 ? { attachments: pendingAtts } : {}),
   })
   if (pendingAtts.length > 0) clearAttachments(roomId)

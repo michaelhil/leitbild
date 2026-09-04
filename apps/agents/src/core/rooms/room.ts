@@ -100,7 +100,7 @@ export const createRoom = (
   // --- Post helpers ---
 
   const createRoomMessage = (params: PostParams): Message => {
-    const { focusedResources, ...persisted } = params
+    const { focusedSubjects, ...persisted } = params
     const message: Message = {
       // Caller-supplied Message fields flow through untouched. Browser focus
       // is deliberately excluded because it is not durable conversation data.
@@ -109,7 +109,7 @@ export const createRoom = (
       roomId: profile.id,
       timestamp: Date.now(),
     }
-    attachMessageFocus(message, focusedResources)
+    attachMessageFocus(message, focusedSubjects)
     return message
   }
 

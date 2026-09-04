@@ -79,7 +79,7 @@
   const loadEditor = async (): Promise<void> => {
     try {
       const [catalogResponse, definitionResponse] = await Promise.all([
-        invoke<InvocationResponse>('world.scenario-authoring.describe', {}),
+        invoke<InvocationResponse>('world.scenario-authoring.describe', { detail: 'editor' }),
         definitionId === null
           ? Promise.resolve(null)
           : fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/world/scenarios/${encodeURIComponent(definitionId)}`).then(async response => {
@@ -88,7 +88,8 @@
               return body as { source: ScenarioDraft; revisionId: string }
             }),
       ])
-      catalog = scenarioAuthoringCatalogSchema.parse(catalogResponse.result)
+      const { detail: _detail, ...editorCatalog } = catalogResponse.result as Record<string, unknown>
+      catalog = scenarioAuthoringCatalogSchema.parse(editorCatalog)
       if (definitionResponse) {
         if (requestedRevisionId !== null && requestedRevisionId !== definitionResponse.revisionId) {
           throw new Error('This Scenario has changed. Reopen the editor from the Workspace homepage.')
@@ -371,7 +372,7 @@
       saved = scenarioWriteResultSchema.parse(response.result)
       savedDocument = document
       editing = saved.definition
-      window.parent.postMessage({ type: 'leitbild:scenario-saved' }, location.origin)
+      window.parent.postMessage({ type: 'leitbild:scenario-saved', subject: saved.definition }, location.origin)
       if (start) await launchSaved()
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause)

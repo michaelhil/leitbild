@@ -64,10 +64,15 @@ _Avoid_: treating every installed Pack as active, or treating Pack activation as
 The exact authored set of Agents tools one Agent may use. Pack activation makes a tool available to the Room but never adds it to an Agent Tool Selection; the Workspace Capability Broker is derived separately from Tool Grants.
 _Avoid_: implicit Pack-wide grants, required-tools preflight lists, or conflating Agents tools with Workspace Capabilities
 
+**Agent Skill Selection**:
+The exact authored set of behavioral Skills included in one Agent Profile. A Room name never selects Skills; Room Pack activation only makes Pack-owned selected Skills available.
+_Avoid_: name-based Skill scope, global Skill injection, permission policy
+
 **Context View**:
 A bounded, derived representation of relevant Workspace and Resource state supplied to an Agent for one decision.
 World context presents a capped operational-object index; an Agent narrows it with the object-search Capability and reads details only when needed.
-_Avoid_: copied domain state, persisted generated prompt
+Focused Subjects may identify the Client's few visible live Resources or exact Definition Revisions, but are transient and grant no authority.
+_Avoid_: copied domain state, persisted generated prompt, current mutable Definition inference
 
 **Evaluation**:
 A repeatable assessment of Agent decisions and outcomes under declared conditions.

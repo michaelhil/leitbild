@@ -23,13 +23,13 @@ import { addAgentToRoom } from './actions.ts'
 import { createToolSurface, inferProviderFromModelRef, FAMILY_DISPATCHER_NAMES } from '../tool-surface/index.ts'
 import { CURATED_MODELS } from '../llm/models/catalog.ts'
 import { WORKSPACE_CAPABILITY_TOOL_NAMES } from '../tools/built-in/workspace-capability-tools.ts'
-import type { WorkspaceResourceReference } from '@leitbild/contracts'
+import type { WorkspaceSubjectReference } from '@leitbild/contracts'
 
 interface AgentToolContextRef {
   id: string
   name: string
   currentModel?: () => string
-  focusedResources?: (roomId: string) => ReadonlyArray<WorkspaceResourceReference>
+  focusedSubjects?: (roomId: string) => ReadonlyArray<WorkspaceSubjectReference>
 }
 
 // --- Tool executor ---
@@ -42,14 +42,14 @@ const createToolExecutor = (
   allowedTools: ReadonlyArray<string>,
   context: ToolContext,
   getRoomActivation?: GetRoomActivation,
-  getFocusedResources?: (roomId: string) => ReadonlyArray<WorkspaceResourceReference>,
+  getFocusedSubjects?: (roomId: string) => ReadonlyArray<WorkspaceSubjectReference>,
 ): ToolExecutor => {
   const allowed = new Set(allowedTools)
 
   return async (calls: ReadonlyArray<ToolCall>, roomId?: string, signal?: AbortSignal): Promise<ReadonlyArray<ToolResult>> => {
     const results: ToolResult[] = []
     const callContext: ToolContext = roomId
-      ? { ...context, roomId, focusedResources: getFocusedResources?.(roomId) ?? [] }
+      ? { ...context, roomId, focusedSubjects: getFocusedSubjects?.(roomId) ?? [] }
       : context
 
     // Two access gates: Agent Tool Selection and, where applicable, Room
@@ -215,7 +215,7 @@ export const buildToolSupport = async (
     executorAllowedNames,
     lazyContext,
     getRoomActivation,
-    roomId => agentRef.focusedResources?.(roomId) ?? [],
+    roomId => agentRef.focusedSubjects?.(roomId) ?? [],
   )
 
   // Initial projection — no room context yet, no provider known. project()
@@ -279,8 +279,8 @@ const resolveAgentTools = async (
 
 export interface SpawnOptions {
   readonly overrideId?: string
-  readonly getSkills?: (roomName: string) => string
-  readonly getActiveSkillsDeclarations?: (roomId: string) => ReadonlyArray<{
+  readonly getSkills?: (skillNames: ReadonlyArray<string>, roomId: string) => string
+  readonly getActiveSkillsDeclarations?: (skillNames: ReadonlyArray<string>, roomId: string) => ReadonlyArray<{
     readonly name: string
     readonly declaredTools: ReadonlyArray<string>
   }>
@@ -444,7 +444,7 @@ export const spawnAIAgent = async (
   agentRef.id = agent.id
   agentRef.name = agent.name
   agentRef.currentModel = agent.getModel
-  agentRef.focusedResources = agent.getFocusedResources
+  agentRef.focusedSubjects = agent.getFocusedSubjects
 
   team.addAgent(agent)
 

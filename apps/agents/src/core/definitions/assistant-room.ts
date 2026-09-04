@@ -1,5 +1,6 @@
-import type { WorkspaceResourceReference } from '@leitbild/contracts'
+import type { WorkspaceSubjectReference } from '@leitbild/contracts'
 import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
+import type { Room } from '../types/room.ts'
 import type { RoomDefinitionLibrary } from './room-definition-library.ts'
 import { startRoomDefinition } from './room-definition-service.ts'
 
@@ -19,6 +20,11 @@ export interface AssistantRoomResult {
   readonly revisionId: string
 }
 
+// Assistant opening can arrive twice (for example, a double click or two Host
+// panes restoring together). Serialize only creation; each caller still posts
+// its own prompt after the shared Room exists.
+const pendingCreation = new WeakMap<AgentsWorkspaceRuntime, Promise<Room>>()
+
 export const ensureAssistantRoom = async (
   runtime: AgentsWorkspaceRuntime,
   library: RoomDefinitionLibrary,
@@ -26,7 +32,7 @@ export const ensureAssistantRoom = async (
   options: {
     readonly revisionId?: string
     readonly prompt?: string
-    readonly focusedResources?: ReadonlyArray<WorkspaceResourceReference>
+    readonly focusedSubjects?: ReadonlyArray<WorkspaceSubjectReference>
   } = {},
 ): Promise<AssistantRoomResult> => {
   const requestedRevision = options.revisionId === undefined
@@ -36,24 +42,27 @@ export const ensureAssistantRoom = async (
     throw new AssistantRoomError(503, 'assistant_definition_unavailable', 'Leitbild Assistant Room Definition is unavailable')
   }
 
-  const matches = runtime.rooms.listAllRooms().filter(
-    room => room.sourceDefinition?.id === LEITBILD_ASSISTANT_DEFINITION_ID,
-  )
-  if (matches.length > 1) throw new AssistantRoomError(409, 'assistant_room_conflict', 'Workspace has more than one Leitbild Assistant Room')
-
-  let created = false
-  let room = matches[0] === undefined ? undefined : runtime.rooms.getRoom(matches[0].id)
-  if (!room) {
-    const started = await startRoomDefinition(
-      runtime,
-      library,
-      LEITBILD_ASSISTANT_DEFINITION_ID,
-      requestedRevision.id,
+  const existingRequest = pendingCreation.get(runtime)
+  let created = existingRequest === undefined
+  const creation = existingRequest ?? (async (): Promise<Room> => {
+    const matches = runtime.rooms.listAllRooms().filter(
+      room => room.sourceDefinition?.id === LEITBILD_ASSISTANT_DEFINITION_ID,
     )
-    room = runtime.rooms.getRoom(started.room.id)
-    if (!room) throw new AssistantRoomError(500, 'assistant_room_disappeared', 'Leitbild Assistant Room disappeared during creation')
-    created = true
-  }
+    if (matches.length > 1) throw new AssistantRoomError(409, 'assistant_room_conflict', 'Workspace has more than one Leitbild Assistant Room')
+    const existing = matches[0] === undefined ? undefined : runtime.rooms.getRoom(matches[0].id)
+    if (existing) {
+      created = false
+      return existing
+    }
+    const started = await startRoomDefinition(runtime, library, LEITBILD_ASSISTANT_DEFINITION_ID, requestedRevision.id)
+    const startedRoom = runtime.rooms.getRoom(started.room.id)
+    if (!startedRoom) throw new AssistantRoomError(500, 'assistant_room_disappeared', 'Leitbild Assistant Room disappeared during creation')
+    return startedRoom
+  })()
+  if (!existingRequest) pendingCreation.set(runtime, creation)
+  let room: Room
+  try { room = await creation }
+  finally { if (pendingCreation.get(runtime) === creation) pendingCreation.delete(runtime) }
 
   const participants = room.getParticipantIds().map(id => runtime.team.getAgent(id)).filter(agent => agent !== undefined)
   const human = participants.find(agent => agent.kind === 'human')
@@ -67,7 +76,7 @@ export const ensureAssistantRoom = async (
       senderName: human.name,
       content: options.prompt,
       type: 'chat',
-      ...(options.focusedResources === undefined ? {} : { focusedResources: options.focusedResources }),
+      ...(options.focusedSubjects === undefined ? {} : { focusedSubjects: options.focusedSubjects }),
     })
   }
   await flush()

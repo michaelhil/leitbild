@@ -35,7 +35,7 @@ import {
   simulationRunIdSchema,
   type OperationalObject
 } from '../model/index.ts'
-import { scenarioAuthoringCatalogSchema } from '../scenarios/authoring.ts'
+import { describeScenarioAuthoring, scenarioAuthoringCatalogSchema, scenarioAuthoringDescriptionSchema, scenarioAuthoringDetailSchema } from '../scenarios/authoring.ts'
 import { scenarioDefinitionSchema } from '../scenarios/definition.ts'
 import { scenarioRevisionIdSchema } from '../scenarios/library.ts'
 import { CommandIdempotencyConflictError } from '../simulation-runs/command-idempotency.ts'
@@ -73,6 +73,7 @@ const lifecycleInputSchema = z.object({ workspaceId: workspaceIdSchema }).strict
 const emptyInputSchema = z.object({}).strict()
 const scenarioAuthoringDescribeInputSchema = z.object({
   packIds: z.array(z.string().trim().min(1).max(128)).min(1).optional(),
+  detail: scenarioAuthoringDetailSchema.default('catalog'),
 }).strict()
 const runScenarioSourceSchema = z.object({ source: scenarioDefinitionSchema, definition: workspaceDefinitionRevisionReferenceSchema }).strict()
 const readObjectInputSchema = z.object({
@@ -529,22 +530,22 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'workspace' },
       title: 'Describe Scenario Authoring',
-      description: 'Lists the discoverable World Packs, Scenario items, schemas, defaults, and schedulable commands needed for authoring. Filter by Pack to keep AI and UI requests focused.',
+      description: 'Discovers World Pack scenario inputs. The default catalog is compact; request authoring for machine schemas of selected Packs or editor for UI form metadata.',
       risk: 'read',
       idempotent: true,
       inputSchema: z.toJSONSchema(scenarioAuthoringDescribeInputSchema),
-      outputSchema: z.toJSONSchema(scenarioAuthoringCatalogSchema),
+      outputSchema: z.toJSONSchema(scenarioAuthoringDescriptionSchema),
     },
     invoke: async (registry, invocation) => {
       const input = scenarioAuthoringDescribeInputSchema.parse(invocation.input)
-      if (input.packIds === undefined) return json({ result: registry.scenarioAuthoringCatalog })
-      const requested = new Set(input.packIds)
+      const requested = new Set(input.packIds ?? registry.scenarioAuthoringCatalog.packs.map(pack => pack.id))
       const missing = [...requested].filter(packId => !registry.scenarioAuthoringCatalog.packs.some(pack => pack.id === packId))
       if (missing.length > 0) return apiError(400, 'scenario_authoring_pack_not_found', `Unknown Scenario authoring Pack${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}`)
-      return json({ result: scenarioAuthoringCatalogSchema.parse({
+      const catalog = scenarioAuthoringCatalogSchema.parse({
         packs: registry.scenarioAuthoringCatalog.packs.filter(pack => requested.has(pack.id)),
         commands: registry.scenarioAuthoringCatalog.commands.filter(command => requested.has(command.packId)),
-      }) })
+      })
+      return json({ result: scenarioAuthoringDescriptionSchema.parse(describeScenarioAuthoring(catalog, input.detail)) })
     },
   },
   {

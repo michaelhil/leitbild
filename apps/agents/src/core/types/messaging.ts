@@ -77,9 +77,8 @@ export interface Message {
   // --- Tool-call trace (stamped by spawn.onDecision for 'respond' actions that
   //     invoked tools during evaluation). One entry per tool call the agent made
   //     while producing this reply. Omitted when the agent didn't call any
-  //     tools. `resultPreview` is truncated; the agent saw a larger preview in
-  //     its own context. Primary consumer: the experiment runner's export_room
-  //     tool — enables analyses like "which variants used web_search? how often?".
+  //     tools. Arguments are represented by bounded structural metadata rather
+  //     than copied payloads; `resultPreview` is also truncated.
   readonly toolTrace?: ReadonlyArray<ToolTraceEntry>
 
   // --- Image attachments. User-posted images and images acquired through
@@ -87,7 +86,7 @@ export interface Message {
   //     external blob storage). For multimodal-capable agents the
   //     attachments are forwarded as native image content; for non-
   //     multimodal models a text placeholder substitutes (see
-  //     context-builder + modelSupportsImages). No max-count cap.
+  //     context-builder + modelSupportsImages). Wire schemas bound count/size.
   readonly attachments?: ReadonlyArray<MessageAttachment>
 }
 
@@ -103,7 +102,10 @@ export interface MessageAttachment {
 
 export interface ToolTraceEntry {
   readonly tool: string
-  readonly arguments: Record<string, unknown>
+  readonly argumentKeys: ReadonlyArray<string>
+  readonly argumentBytes: number
+  readonly capabilityId?: string
+  readonly target?: string
   readonly success: boolean
   readonly resultPreview: string   // <=200 chars (truncated result or error message)
 }
@@ -177,7 +179,7 @@ export interface MessageTarget {
 export type PostParams = Omit<Message, 'id' | 'roomId' | 'timestamp'> & {
   // Transient per-browser Resource focus for the Agent turn triggered by this
   // post. Room removes it before creating/persisting the Message.
-  readonly focusedResources?: ReadonlyArray<import('@leitbild/contracts').WorkspaceResourceReference>
+  readonly focusedSubjects?: ReadonlyArray<import('@leitbild/contracts').WorkspaceSubjectReference>
 }
 
 // === Delivery — callback for Room to deliver messages to agents ===

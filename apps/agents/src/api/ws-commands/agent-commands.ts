@@ -7,6 +7,11 @@ export const handleAgentCommand = async (msg: WSInbound, ctx: CommandContext): P
 
   switch (msg.type) {
     case 'create_agent': {
+      const missingSkills = (msg.config.skills ?? []).filter(name => system.skillStore.get(name) === undefined)
+      if (missingSkills.length > 0) {
+        sendError(wsManager, ws, `Unknown Skills: ${missingSkills.join(', ')}`)
+        return true
+      }
       // subscribeAgentState happens automatically inside the wrapped
       // system.spawnAIAgent — see wireAgentTracking in bootstrap.ts.
       const agent = await system.spawnAIAgent(msg.config)
@@ -40,6 +45,15 @@ export const handleAgentCommand = async (msg: WSInbound, ctx: CommandContext): P
           aiAgent.updateTools?.(resolved)
           await system.refreshAllAgentTools()
         }
+        if (Array.isArray(msg.skills)) {
+          const missing = msg.skills.filter(name => system.skillStore.get(name) === undefined)
+          if (missing.length > 0) {
+            sendError(wsManager, ws, `Unknown Skills: ${missing.join(', ')}`)
+            return true
+          }
+          aiAgent.updateSkills([...new Set(msg.skills)])
+        }
+        system.notifyAgentSettingsChanged()
       }
       return true
     }
