@@ -41,7 +41,7 @@ import { createDeploymentRuntime, type DeploymentRuntime } from './core/deployme
 import type { LimitMetrics } from './core/limit-metrics.ts'
 import type { ProviderGateway } from './llm/provider-gateway.ts'
 import { createOverlayToolRegistry } from './core/tool-registry.ts'
-import { spawnAIAgent, spawnHumanAgent, buildToolSupport, type SpawnOptions } from './agents/spawn.ts'
+import { spawnAIAgent, spawnHumanAgent, buildToolSupport, effectiveAgentToolSelection, type SpawnOptions } from './agents/spawn.ts'
 import { createHumanAgent } from './agents/human-agent.ts'
 import type { HumanAgentConfig, TransportSend } from './agents/human-agent.ts'
 import type { HumanAgent } from './agents/human-agent.ts'
@@ -689,7 +689,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     for (const agent of team.listByKind('ai')) {
       const ai = agent as AIAgent
       if (!ai.refreshTools) continue
-      const toolNames = ai.getTools() ?? []
+      const toolNames = effectiveAgentToolSelection(ai.getConfig())
       const support = await buildToolSupport(
         toolNames, toolRegistry,
         {

@@ -12,6 +12,7 @@ import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testS
 import { handleAgentsModuleApi } from '../../../apps/agents/src/api/workspace-module-api.ts'
 import { asAIAgent } from '../../../apps/agents/src/agents/shared.ts'
 import { effectiveAgentToolSelection } from '../../../apps/agents/src/agents/spawn.ts'
+import { introspectAgentSurface } from '../../../apps/agents/src/diagnostics/surface-introspect.ts'
 import { BUNDLED_ROOM_DEFINITIONS } from '../../../apps/agents/src/core/definitions/room-definition-catalog.ts'
 import { createDeploymentRuntime } from '../../../apps/agents/src/core/deployment-runtime.ts'
 import { messageFocus } from '../../../apps/agents/src/core/message-focus.ts'
@@ -229,6 +230,14 @@ describe('Workspace Host with real Modules', () => {
       'product_read',
       'place_resolve',
       'get_time',
+      'workspace_catalog',
+      'workspace_capabilities',
+      'workspace_invoke',
+    ]))
+    await companionRuntime.refreshAllAgentTools()
+    const refreshedSurface = introspectAgentSurface(companionRuntime, generalAssistant.name, assistantRoomId)
+    expect(refreshedSurface).not.toHaveProperty('error')
+    expect('tools' in refreshedSurface ? refreshedSurface.tools.map(tool => tool.name) : []).toEqual(expect.arrayContaining([
       'workspace_catalog',
       'workspace_capabilities',
       'workspace_invoke',

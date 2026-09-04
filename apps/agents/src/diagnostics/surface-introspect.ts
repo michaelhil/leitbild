@@ -15,6 +15,7 @@ import { contributionSourceFor } from '../core/types/tool-pack.ts'
 import { effectiveActivePackSet } from '../packs/activation.ts'
 import { estimateTokens } from '../agents/context-builder.ts'
 import { CURATED_MODELS } from '../llm/models/catalog.ts'
+import { effectiveAgentToolSelection } from '../agents/spawn.ts'
 
 export interface ToolSurfaceTool {
   readonly name: string
@@ -73,7 +74,7 @@ export const introspectAgentSurface = (
   const activePacks = effectiveActivePackSet(room)
 
   const registry = system.toolRegistry
-  const requestedTools = config.tools ?? []
+  const requestedTools = effectiveAgentToolSelection(config)
 
   // Reuse the production surface — guarantees we report what the eval
   // would actually compute.
