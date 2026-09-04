@@ -300,8 +300,42 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
     type: 'world.simulation-run' as const,
     id,
   })
+  const familyRef = (id: string) => ({
+    workspaceId: registry.workspaceId,
+    moduleId: WORLD_MODULE_ID,
+    type: 'world.run-family' as const,
+    id,
+  })
+  type ListedRun = (typeof simulationRuns)[number]
+  const families = new Map<string, ListedRun[]>()
+  const copiesBySource = new Map<string, ListedRun[]>()
+  for (const run of simulationRuns) {
+    const familyId = run.origin?.familyId ?? run.id
+    const family = families.get(familyId)
+    if (family) family.push(run)
+    else families.set(familyId, [run])
+    if (run.origin !== null) {
+      const siblings = copiesBySource.get(run.origin.sourceRunId)
+      if (siblings) siblings.push(run)
+      else copiesBySource.set(run.origin.sourceRunId, [run])
+    }
+  }
   return moduleResourceCollectionSchema.parse({
-    resources: simulationRuns.map(simulationRun => {
+    resources: [
+      ...[...families].map(([familyId, members]) => {
+        const original = members.find(member => member.id === familyId)
+        const oldest = [...members].sort((left, right) => (left.createdAt ?? '').localeCompare(right.createdAt ?? ''))[0]!
+        return {
+          ref: familyRef(familyId),
+          title: `${original?.title ?? oldest.title} · Run family`,
+          description: 'The original simulation and its independent what-if copies.',
+          links: members.map(member => ({ rel: 'contains', ref: runRef(member.id), title: member.title })),
+          capabilityIds: [],
+          summary: [{ key: 'member-count', label: 'Runs', kind: 'count' as const, value: members.length }],
+          observedAt,
+        }
+      }),
+      ...simulationRuns.map(simulationRun => {
       const viewers = registry.leaseSummary(simulationRun.id).leasesByKind.realtime
       const execution = executionByRun.get(simulationRun.id)
       const status = simulationRun.loadError !== undefined
@@ -330,10 +364,9 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
           },
         }),
         links: [
-          { rel: 'run-family', ref: runRef(simulationRun.origin?.familyId ?? simulationRun.id) },
+          { rel: 'member-of', ref: familyRef(simulationRun.origin?.familyId ?? simulationRun.id) },
           ...(simulationRun.origin === null ? [] : [{ rel: 'copy-of', ref: runRef(simulationRun.origin.sourceRunId) }]),
-          ...simulationRuns
-            .filter(candidate => candidate.origin?.sourceRunId === simulationRun.id)
+          ...(copiesBySource.get(simulationRun.id) ?? [])
             .map(candidate => ({ rel: 'copy', ref: runRef(candidate.id), title: candidate.title })),
         ],
         uiPath: `/workspaces/${encodeURIComponent(registry.workspaceId)}/world/runs/${encodeURIComponent(simulationRun.id)}`,
@@ -366,6 +399,7 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
         observedAt,
       }
     }),
+    ],
   }).resources
 }
 

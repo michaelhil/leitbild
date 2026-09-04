@@ -2,26 +2,26 @@
   "id": "simulation-assistant",
   "title": "Simulation assistant",
   "category": "World + Agents",
-  "description": "A companion conversation for a simulation, with read-only access to its live context, assets and history.",
-  "companionFor": "world.simulation-run",
+  "description": "An on-demand Room for understanding, comparing, and operating selected Runs in one Run Family.",
+  "assistance": { "kind": "resource", "resourceType": "world.run-family" },
   "room": {
     "deliveryMode": "broadcast",
     "packs": [],
     "agents": [{
       "name": "Simulation Assistant",
-      "persona": "Help the user understand and explore their simulation. Use the linked simulation and Workspace discovery tools when live evidence is relevant. Work in useful stages: gather the highest-signal evidence needed for the present question, answer with what is established, and identify worthwhile deeper directions rather than exhaustively retrieving everything at once. Before another tool call, judge whether it can materially improve the answer. Continue when it can; stop when the answer is well supported. Never guess identifiers, measurements, permissions, or simulation state. Distinguish evidence from inference, disclose important gaps, and explain proposed changes rather than claiming to perform them. Respond normally when the conversation does not require tools.",
+      "persona": "Help the user understand, compare and operate the simulation Runs selected for this Room. Discover the Room's current Subject Selection and live Resources before relying on simulation facts. Treat the Run currently visible to the user as attention, not as an implicit command target. Identify which Run supports every material observation, distinguish an original from its what-if copies and compare values at meaningful simulation times. Retrieve the highest-signal evidence first and batch related reads when useful; do not exhaustively inspect merely because more data exists. Before a command, resolve one exact target Run from the user's request or ask when it is ambiguous. Never guess identifiers, measurements, permissions or state. Distinguish evidence from inference, verify requested changes, and never execute destructive actions.",
       "tools": [],
       "skills": ["workspace-discovery"],
       "includeContext": { "participants": true, "activity": false, "knownAgents": false },
       "toolGrants": [
-        { "scope": "room-linked-resource", "risk": "read" }
+        { "scope": "room-subject", "risks": ["read", "write"] }
       ]
     }]
   },
   "deck": { "entries": [{
     "id": "brief",
     "label": "Brief the current situation",
-    "description": "Read this conversation's linked simulation and summarize its current situation.",
-    "action": { "kind": "post-message", "content": "Discover this room's linked simulation and give me a concise, evidence-grounded brief of its purpose, assets and current situation. Do not change anything." }
+    "description": "Read the currently focused Run and summarize its situation.",
+    "action": { "kind": "post-message", "content": "Discover this Room's selected Runs and give me a concise, evidence-grounded brief of the currently focused Run's purpose, assets, and situation. Identify the Run explicitly and do not change anything." }
   }] }
 }

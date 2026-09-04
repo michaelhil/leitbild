@@ -9,17 +9,18 @@ export const exactToolGrantSchema = z.object({
 }).strict()
 export type ExactToolGrant = z.infer<typeof exactToolGrantSchema>
 
-// The Room association selects a Resource; this grant supplies read authority.
-// Neither the association nor this grant is sufficient by itself.
-export const roomLinkedResourceReadToolGrantSchema = z.object({
-  scope: z.literal('room-linked-resource'),
-  risk: z.literal('read'),
+// The Room's Subject Selection identifies candidate Resources; this grant
+// independently supplies authority for the declared non-destructive risks.
+// The broker resolves collection membership on every invocation.
+export const roomSubjectToolGrantSchema = z.object({
+  scope: z.literal('room-subject'),
+  risks: z.array(z.enum(['read', 'write'])).min(1),
 }).strict()
-export type RoomLinkedResourceReadToolGrant = z.infer<typeof roomLinkedResourceReadToolGrantSchema>
+export type RoomSubjectToolGrant = z.infer<typeof roomSubjectToolGrantSchema>
 
 export const toolGrantSchema = z.union([
   exactToolGrantSchema,
-  roomLinkedResourceReadToolGrantSchema,
+  roomSubjectToolGrantSchema,
 ])
 export type ToolGrant = z.infer<typeof toolGrantSchema>
 
@@ -27,7 +28,7 @@ export const isExactToolGrant = (grant: ToolGrant): grant is ExactToolGrant =>
   'capabilityId' in grant
 
 export const toolGrantKey = (grant: ToolGrant): string =>
-  isExactToolGrant(grant) ? `capability:${grant.capabilityId}` : `${grant.scope}:${grant.risk}`
+  isExactToolGrant(grant) ? `capability:${grant.capabilityId}` : `${grant.scope}:${[...grant.risks].sort().join(',')}`
 
 export const toolGrantSetSchema = z.array(toolGrantSchema).superRefine((grants, ctx) => {
   const seen = new Set<string>()

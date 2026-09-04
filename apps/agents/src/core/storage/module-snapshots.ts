@@ -1,7 +1,7 @@
 import { mkdir, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
-import { toolGrantSetSchema, workspaceResourceReferenceSchema } from '@leitbild/contracts'
+import { toolGrantSetSchema, workspaceResourceSubjectSelectionSchema } from '@leitbild/contracts'
 import type { Agent, AIAgentConfig } from '../types/agent.ts'
 import type { DeliveryMode, Message, RoomProfile } from '../types/messaging.ts'
 import type { GenerationQueryRecord, Room } from '../types/room.ts'
@@ -13,8 +13,8 @@ import { asAIAgent } from '../../agents/shared.ts'
 import { DEFAULT_RESPONSE_FORMAT, DEFAULT_WORKSPACE_PROMPT } from '../workspaces/settings.ts'
 import { redactBiometricMessages } from './snapshot-redact.ts'
 
-export const ROOMS_SNAPSHOT_SCHEMA = 1
-export const AGENTS_SNAPSHOT_SCHEMA = 1
+export const ROOMS_SNAPSHOT_SCHEMA = 2
+export const AGENTS_SNAPSHOT_SCHEMA = 2
 
 export interface RoomSnapshot {
   readonly profile: RoomProfile
@@ -42,7 +42,7 @@ export interface PendingScrub {
 }
 
 export interface RoomsSnapshot {
-  readonly schemaVersion: 1
+  readonly schemaVersion: 2
   readonly savedAt: string
   readonly rooms: ReadonlyArray<RoomSnapshot>
   readonly humanActors: ReadonlyArray<HumanActorSnapshot>
@@ -56,7 +56,7 @@ export interface AgentProfileSnapshot {
 }
 
 export interface AgentsSnapshot {
-  readonly schemaVersion: 1
+  readonly schemaVersion: 2
   readonly savedAt: string
   readonly agents: ReadonlyArray<AgentProfileSnapshot>
   readonly workspacePrompt?: string
@@ -100,7 +100,8 @@ const triggerSchema = z.object({
 }).strict()
 
 const roomProfileSchema = z.object({
-  companionOf: workspaceResourceReferenceSchema.optional(),
+  subjectSelection: workspaceResourceSubjectSelectionSchema.optional(),
+  subjectRevision: z.number().int().nonnegative().optional(),
   id: z.string(),
   name: z.string(),
   roomPrompt: z.string().optional(),
@@ -249,6 +250,7 @@ const roomSnapshotSchema = z.object({
 
 const agentConfigSchema = z.object({
   name: z.string(),
+  ownerRoomId: z.string().optional(),
   model: z.string(),
   persona: z.string(),
   temperature: z.number().finite().optional(),

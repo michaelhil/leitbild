@@ -226,10 +226,17 @@ export const createRevisionedDefinitionStore = <TDocument>(config: {
             : [...current.revisionIds, revision.id],
         }))
       }
-      await atomicWrite(indexPath, definitionIndexSchema.parse({
+      // A removed bundled Definition disappears from the current catalog when
+      // the Workspace never edited it. Its immutable revision file remains so
+      // existing Resources pinned to that revision stay inspectable.
+      for (const [id, record] of records) {
+        if (!ids.has(id) && record.seedRevisionId !== undefined && record.currentRevisionId === record.seedRevisionId) records.delete(id)
+      }
+      const nextIndex = definitionIndexSchema.parse({
         workspaceId: config.workspaceId,
         definitions: [...records.values()].sort((left, right) => left.id.localeCompare(right.id)),
-      }))
+      })
+      if (stableJson(nextIndex) !== stableJson(index)) await atomicWrite(indexPath, nextIndex)
     }),
     create: document => enqueue(async () => {
       const revision = revisionFor(document)

@@ -8,6 +8,7 @@ import type {
 } from './messaging.ts'
 import type { SummaryConfig } from './summary.ts'
 import type { GenerationQuery } from './llm.ts'
+import type { WorkspaceResourceSubjectSelection } from '@leitbild/contracts'
 
 // === Room event callbacks ===
 
@@ -61,6 +62,7 @@ export interface Room {
   readonly hasMember: (id: string) => boolean
   readonly getMessageCount: () => number
   readonly setRoomPrompt: (prompt: string) => void
+  readonly setSubjectSelection: (selection: WorkspaceResourceSubjectSelection, expectedRevision: number) => number
   readonly deleteMessage: (messageId: string) => boolean
   readonly clearMessages: () => void
   readonly setGenerationQuery: (messageId: string, traceId: string, query: GenerationQuery) => void
@@ -141,7 +143,7 @@ export interface CreateResult<T> {
 }
 
 export interface RoomConfig {
-  readonly companionOf?: RoomProfile['companionOf']
+  readonly subjectSelection?: RoomProfile['subjectSelection']
   readonly name: string
   readonly roomPrompt?: string
   readonly createdBy: string

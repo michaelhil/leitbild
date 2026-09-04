@@ -16,6 +16,7 @@ const moduleId = moduleIdSchema.parse('world')
 const resourceType = resourceTypeSchema.parse('world.simulation-run')
 const resourceId = resourceIdSchema.parse('run-01')
 const resource = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId, type: resourceType, id: resourceId })
+const family = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId, type: 'world.run-family', id: 'family-01' })
 const target = { moduleId, type: resourceType, id: resourceId }
 
 const catalogFetch = (requests: Request[]): typeof fetch => (async (input, init) => {
@@ -24,6 +25,8 @@ const catalogFetch = (requests: Request[]): typeof fetch => (async (input, init)
   if (request.url.endsWith('/resources')) return Response.json({
     workspaceId, modules: [{ moduleId, status: 'ready' }], resources: [{
       ref: resource, title: 'Run 01', capabilityIds: [capabilityId, writeCapabilityId], links: [], summary: [], observedAt: new Date().toISOString(),
+    }, {
+      ref: family, title: 'Run family', capabilityIds: [], links: [{ rel: 'contains', ref: resource }], summary: [], observedAt: new Date().toISOString(),
     }],
   })
   if (request.url.endsWith('/definitions')) return Response.json({ workspaceId, modules: [{ moduleId, status: 'ready' }], definitions: [] })
@@ -40,32 +43,39 @@ const catalogFetch = (requests: Request[]): typeof fetch => (async (input, init)
 const create = (options: { linked?: boolean; exact?: boolean; requests?: Request[] } = {}) => createWorkspaceCapabilityTools({
   workspaceId,
   hostBaseUrl: 'https://host.test',
-  getToolGrants: () => options.exact ? [{ capabilityId }] : [{ scope: 'room-linked-resource', risk: 'read' }],
-  getRoomCompanionOf: roomId => options.linked && roomId === 'room' ? resource : undefined,
+  getToolGrants: () => options.exact ? [{ capabilityId }] : [{ scope: 'room-subject', risks: ['read'] }],
+  getRoomSubjectSelection: (roomId: string) => options.linked && roomId === 'room'
+    ? { kind: 'collection', collection: family, members: { mode: 'all', except: [] } }
+    : undefined,
   fetchImpl: catalogFetch(options.requests ?? []),
 })
 
 describe('Workspace Capability tools', () => {
   test('current catalog is compact and follows the current Room link', async () => {
     const base = catalogFetch([])
-    const linkedRoom = { ref: { workspaceId, moduleId: 'agents', type: 'agents.room', id: 'room' }, title: 'Conversation', capabilityIds: [], links: [{ rel: 'companion-of', ref: resource }], summary: [], observedAt: new Date().toISOString() }
+    const excluded = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId, type: resourceType, id: 'run-excluded' })
+    const linkedRoom = { ref: { workspaceId, moduleId: 'agents', type: 'agents.room', id: 'room' }, title: 'Conversation', capabilityIds: [], links: [{ rel: 'subject-collection', ref: family }, { rel: 'subject-excluded', ref: excluded }], summary: [], observedAt: new Date().toISOString() }
     const tools = createWorkspaceCapabilityTools({
-      workspaceId, hostBaseUrl: 'https://host.test', getToolGrants: () => [{ scope: 'room-linked-resource', risk: 'read' }], getRoomCompanionOf: () => resource,
+      workspaceId, hostBaseUrl: 'https://host.test', getToolGrants: () => [{ scope: 'room-subject', risks: ['read'] }],
+      getRoomSubjectSelection: () => ({ kind: 'collection', collection: family, members: { mode: 'all', except: [excluded] } }),
       fetchImpl: (async (input, init) => {
         const response = await base(input, init)
         if (!String(input).endsWith('/resources')) return response
         const body = await response.json() as { resources: unknown[] }
-        return Response.json({ ...body, resources: [...body.resources, linkedRoom] })
+        return Response.json({ ...body, resources: [...body.resources, {
+          ref: excluded, title: 'Excluded Run', capabilityIds: [capabilityId], links: [], summary: [], observedAt: new Date().toISOString(),
+        }, linkedRoom] })
       }) as typeof fetch,
     })
     const result = await tools[0]!.execute({}, { callerId: 'agent', callerName: 'Analyst', roomId: 'room' })
-    expect(result).toMatchObject({ success: true, data: { currentRoom: linkedRoom, total: 2, resources: [{ ref: resource }, { ref: { id: 'room' } }] } })
+    expect(result).toMatchObject({ success: true, data: { currentRoom: linkedRoom, total: 3, resources: [{ ref: resource }, { ref: family }, { ref: { id: 'room' } }] } })
+    expect((result.data as { resources: Array<{ ref: { id: string } }> }).resources.map(item => item.ref.id)).not.toContain(excluded.id)
 
     const wildcardResult = await tools[0]!.execute(
       { scope: 'current', moduleId: '*', definitionType: '*', resourceType: '*', capabilityId: '*' },
       { callerId: 'agent', callerName: 'Analyst', roomId: 'room' },
     )
-    expect(wildcardResult).toMatchObject({ success: true, data: { total: 2 } })
+    expect(wildcardResult).toMatchObject({ success: true, data: { total: 3 } })
   })
 
   test('searches descriptors and exposes schemas only for exact granted requests', async () => {
@@ -99,8 +109,8 @@ describe('Workspace Capability tools', () => {
     const tools = create({ linked: true })
     const call = (id: string, selected = target, roomId?: string) => tools[2]!.execute({ calls: [{ key: 'x', capabilityId: id, resource: selected, input: {} }] }, { callerId: 'agent', callerName: 'Analyst', ...(roomId ? { roomId } : {}) })
     expect(await call(capabilityId, target, undefined)).toMatchObject({ success: true, data: { results: [{ error: expect.stringContaining('room_context_required') }] } })
-    expect(await call(capabilityId, { ...target, id: resourceIdSchema.parse('other') }, 'room')).toMatchObject({ success: true, data: { results: [{ error: expect.stringContaining('target_not_linked') }] } })
-    expect(await call(writeCapabilityId, target, 'room')).toMatchObject({ success: true, data: { results: [{ error: expect.stringContaining('risk_not_allowed') }] } })
+    expect(await call(capabilityId, { ...target, id: resourceIdSchema.parse('other') }, 'room')).toMatchObject({ success: true, data: { results: [{ error: expect.stringContaining('target_not_selected') }] } })
+    expect(await call(writeCapabilityId, target, 'room')).toMatchObject({ success: true, data: { results: [{ error: expect.stringContaining('capability_not_granted') }] } })
     expect(await call('world.simulation-run.missing', target, 'room')).toMatchObject({ success: true, data: { results: [{ error: expect.stringContaining('capability_not_advertised') }] } })
   })
 

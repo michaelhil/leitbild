@@ -74,7 +74,7 @@ export const createRoomDirectory = (callbacks: RoomDirectoryCallbacks = {}): Roo
       createdBy: config.createdBy,
       createdAt: Date.now(),
       ...(config.sourceDefinition === undefined ? {} : { sourceDefinition: config.sourceDefinition }),
-      ...(config.companionOf === undefined ? {} : { companionOf: config.companionOf }),
+      ...(config.subjectSelection === undefined ? {} : { subjectSelection: config.subjectSelection, subjectRevision: 0 }),
     }
     const room = createRoom(profile, makeRoomCallbacks())
     rooms.set(profile.id, room)

@@ -15,6 +15,7 @@ import {
   type ToolGrant,
   type WorkspaceId,
   type WorkspaceResourceReference,
+  type WorkspaceResourceSubjectSelection,
 } from '@leitbild/contracts'
 import type { Tool, ToolContext, ToolResult } from '../../core/types/tool.ts'
 
@@ -22,7 +23,7 @@ export interface WorkspaceCapabilityToolsDeps {
   readonly workspaceId: WorkspaceId
   readonly hostBaseUrl: string
   readonly getToolGrants: (agentId: string) => ReadonlyArray<ToolGrant> | undefined
-  readonly getRoomCompanionOf: (roomId: string) => WorkspaceResourceReference | undefined
+  readonly getRoomSubjectSelection: (roomId: string) => WorkspaceResourceSubjectSelection | undefined
   readonly fetchImpl?: typeof fetch
 }
 
@@ -66,7 +67,13 @@ const requestSignal = (signal?: AbortSignal): AbortSignal => AbortSignal.any([Ab
 // discovery boundary; normalize them before strict domain-ID validation.
 const optionalFilter = (value: unknown): unknown =>
   typeof value === 'string' && (value.trim().length === 0 || value.trim() === '*') ? undefined : value
-const referenceKey = (ref: { moduleId: string; type: string; id: string }): string => `${ref.moduleId}:${ref.type}:${ref.id}`
+const referenceKey = (ref: { workspaceId?: string; moduleId: string; type: string; id: string }): string =>
+  `${ref.workspaceId ?? ''}:${ref.moduleId}:${ref.type}:${ref.id}`
+const sameResource = (left: WorkspaceResourceReference, right: WorkspaceResourceReference): boolean =>
+  left.workspaceId === right.workspaceId
+  && left.moduleId === right.moduleId
+  && left.type === right.type
+  && left.id === right.id
 
 const getJson = async (fetchImpl: typeof fetch, url: string, signal?: AbortSignal): Promise<Response> => {
   try {
@@ -112,8 +119,36 @@ const parseResource = (value: unknown, workspaceId: WorkspaceId): WorkspaceResou
   }
 }
 
-const hasLinkedReadGrant = (grants: ReadonlyArray<ToolGrant>): boolean =>
-  grants.some(grant => !isExactToolGrant(grant) && grant.scope === 'room-linked-resource' && grant.risk === 'read')
+const subjectGrantAllows = (grants: ReadonlyArray<ToolGrant>, risk: ModuleCapabilityDescriptor['risk']): boolean =>
+  risk !== 'destructive' && grants.some(grant => !isExactToolGrant(grant) && grant.scope === 'room-subject' && grant.risks.includes(risk))
+
+const selectedSubjectReferences = (
+  selection: WorkspaceResourceSubjectSelection,
+  resources: ReadonlyArray<ModuleResourceDescriptor>,
+): ReadonlyArray<WorkspaceResourceReference> => {
+  if (selection.kind === 'resource') return [selection.resource]
+  const collection = resources.find(item => referenceKey(item.ref) === referenceKey(selection.collection))
+  const membersByKey = new Map<string, WorkspaceResourceReference>()
+  for (const member of collection?.links.filter(link => link.rel === 'contains').map(link => link.ref) ?? []) {
+    membersByKey.set(referenceKey(member), member)
+  }
+  // Accept either catalog direction. Collections normally publish `contains`,
+  // while a member may independently publish `member-of`; resolving both
+  // avoids making Agent authority depend on response ordering or one-sided
+  // relationship materialization.
+  for (const resource of resources) {
+    if (resource.links.some(link => link.rel === 'member-of' && referenceKey(link.ref) === referenceKey(selection.collection))) {
+      membersByKey.set(referenceKey(resource.ref), resource.ref)
+    }
+  }
+  const members = [...membersByKey.values()]
+  if (selection.members.mode === 'selected') {
+    const selected = new Set(selection.members.only.map(referenceKey))
+    return members.filter(member => selected.has(referenceKey(member)))
+  }
+  const excluded = new Set(selection.members.except.map(referenceKey))
+  return members.filter(member => !excluded.has(referenceKey(member)))
+}
 
 const authorizationFailure = (
   capability: ModuleCapabilityDescriptor | undefined,
@@ -122,17 +157,18 @@ const authorizationFailure = (
   grants: ReadonlyArray<ToolGrant>,
   context: ToolContext,
   deps: WorkspaceCapabilityToolsDeps,
+  catalogResources: ReadonlyArray<ModuleResourceDescriptor>,
 ): ToolResult | undefined => {
   if (!capability) return failure('capability_not_advertised', 'The Workspace does not advertise this Capability')
   if (grants.some(grant => isExactToolGrant(grant) && grant.capabilityId === capability.id)) return undefined
-  if (!hasLinkedReadGrant(grants)) return failure('capability_not_granted', `Agent ${context.callerName} is not granted ${capability.id}`, { capabilityId: capability.id })
-  if (!context.roomId) return failure('room_context_required', 'The linked-Resource read grant requires a current Room')
-  const linked = deps.getRoomCompanionOf(context.roomId)
-  if (!linked) return failure('target_not_linked', 'The current Room has no linked Resource')
-  if (!resource || referenceKey(resource) !== referenceKey(linked)) {
-    return failure('target_not_linked', 'The requested Resource is not linked to the current Room', { linkedResource: linked })
+  if (!subjectGrantAllows(grants, capability.risk)) return failure('capability_not_granted', `Agent ${context.callerName} is not granted ${capability.id}`, { capabilityId: capability.id, risk: capability.risk })
+  if (!context.roomId) return failure('room_context_required', 'A Room-subject grant requires a current Room')
+  const selection = deps.getRoomSubjectSelection(context.roomId)
+  if (!selection) return failure('room_subject_required', 'The current Room has no Subject Selection')
+  const selected = selectedSubjectReferences(selection, catalogResources)
+  if (!resource || !selected.some(candidate => sameResource(candidate, resource))) {
+    return failure('target_not_selected', 'The requested Resource is not selected for the current Room', { selection, requestedResource: resource, resolvedSubjects: selected })
   }
-  if (capability.risk !== 'read') return failure('risk_not_allowed', 'A linked-Resource read grant cannot invoke write or destructive Capabilities', { risk: capability.risk })
   if (!resourceDescriptor || !resourceDescriptor.capabilityIds.includes(capability.id)) {
     return failure('capability_not_advertised', 'The linked Resource does not advertise this Capability', { capabilityId: capability.id })
   }
@@ -155,7 +191,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
 
   const catalog: Tool = {
     name: 'workspace_catalog',
-    description: 'Discover current or Workspace-wide Definitions and Resources, including the current Room link and focused subjects.',
+    description: 'Discover current or Workspace-wide Definitions and Resources, including the current Room Subject Selection and focused subjects.',
     usage: 'Use scope=current for compact orientation. Use scope=workspace with filters and pagination only when broader discovery is relevant.',
     returns: 'Compact references, links, capability IDs, totals, and pagination metadata.',
     parameters: {
@@ -190,7 +226,13 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         const currentRoom = resourceCatalog.resources.find(resource => resource.ref.type === 'agents.room' && resource.ref.id === context.roomId) ?? null
         const currentKeys = new Set<string>([
           ...(context.focusedSubjects ?? []).map(referenceKey),
-          ...(currentRoom?.links ?? []).map(link => referenceKey(link.ref)),
+          ...(currentRoom?.links ?? [])
+            .filter(link => ['subject', 'subject-collection', 'source-definition'].includes(link.rel))
+            .map(link => referenceKey(link.ref)),
+          ...(context.roomId === undefined ? [] : (() => {
+            const selection = deps.getRoomSubjectSelection(context.roomId)
+            return selection === undefined ? [] : selectedSubjectReferences(selection, resourceCatalog.resources).map(referenceKey)
+          })()),
           ...(currentRoom ? [referenceKey(currentRoom.ref)] : []),
         ])
         const definitions = definitionCatalog.definitions.filter(definition =>
@@ -263,7 +305,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
             left.id.localeCompare(right.id))
         const page = filtered.slice(offset, offset + limit).map(capability => {
           const { inputSchema, outputSchema, ...compact } = capability
-          const granted = authorizationFailure(capability, target, resource, grants, context, deps) === undefined
+          const granted = authorizationFailure(capability, target, resource, grants, context, deps, catalogs.resources.resources) === undefined
           const exactMatch = exact.has(capability.id)
           return {
             ...compact, granted,
@@ -319,7 +361,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         })
         if (parsed.length > 1 && parsed.some(call => call.capability?.risk !== 'read')) return failure('batch_requires_read_capabilities', 'Only read Capabilities may be batched')
         const outcomes = await Promise.all(parsed.map(async call => {
-          const denied = authorizationFailure(call.capability, call.resourceDescriptor, call.resource, grants, context, deps)
+          const denied = authorizationFailure(call.capability, call.resourceDescriptor, call.resource, grants, context, deps, catalogs.resources.resources)
           if (denied) return { key: call.key, capabilityId: call.capabilityId, success: false, error: denied.error, details: denied.data }
           try {
             const response = await fetchImpl(`${workspacePath}/capabilities/${encodeURIComponent(call.capabilityId)}/invoke`, {

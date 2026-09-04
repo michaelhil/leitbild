@@ -11,6 +11,7 @@ import {
   workspaceModuleManifestSchema,
   workspaceDefinitionRevisionReferenceSchema,
   workspaceResourceReferenceSchema,
+  workspaceResourceSubjectSelectionSchema,
   workspaceSubjectReferenceSchema,
   type ModuleResourceDescriptor,
   type WorkspaceId,
@@ -18,8 +19,7 @@ import {
 import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
 import { asAIAgent } from '../agents/shared.ts'
 import { runPromptDeckEntry, startRoomDefinition, validateRoomDefinition } from '../core/definitions/room-definition-service.ts'
-import { ensureCompanionRoom } from '../core/definitions/companion-room.ts'
-import { AssistantRoomError, ensureAssistantRoom, LEITBILD_ASSISTANT_DEFINITION_ID } from '../core/definitions/assistant-room.ts'
+import { AssistanceRoomError, createAssistanceRoom, ensureAssistanceRoom } from '../core/definitions/assistant-room.ts'
 import type { RoomDefinitionLibrary } from '../core/definitions/room-definition-library.ts'
 import { roomDefinitionSchema, type RoomDefinition } from '../core/definitions/room-definition-catalog.ts'
 import type { AgentsModuleState } from '../core/workspaces/module-state.ts'
@@ -64,10 +64,19 @@ const runPromptDeckEntrySchema = z.object({
 }).strict()
 const writeRoomDefinitionSchema = z.object({ definition: roomDefinitionSchema }).strict()
 const emptyInputSchema = z.object({}).strict()
-const companionInputSchema = z.object({ resource: workspaceResourceReferenceSchema, title: z.string().trim().min(1).max(256) }).strict()
 const assistantOpenInputSchema = z.object({
-  prompt: z.string().trim().min(1).max(64_000),
+  selection: workspaceResourceSubjectSelectionSchema.optional(),
+  title: z.string().trim().min(1).max(256).optional(),
+  prompt: z.string().trim().min(1).max(64_000).optional(),
   focusedSubjects: z.array(workspaceSubjectReferenceSchema).max(4).default([]),
+}).strict()
+const assistanceCreateInputSchema = z.object({
+  selection: workspaceResourceSubjectSelectionSchema,
+  title: z.string().trim().min(1).max(128),
+}).strict()
+const setSubjectSelectionInputSchema = z.object({
+  selection: workspaceResourceSubjectSelectionSchema,
+  expectedRevision: z.number().int().nonnegative(),
 }).strict()
 const assistantOpenResultSchema = z.object({
   resource: workspaceResourceReferenceSchema,
@@ -78,7 +87,7 @@ const ROOM_DEFINITION_TYPE = 'agents.room-definition'
 
 const json = (body: unknown, status = 200): Response => Response.json(body, { status })
 const apiError = (status: number, code: string, message: string): Response => json({ error: { code, message } }, status)
-const assistantError = (error: unknown): Response | undefined => error instanceof AssistantRoomError
+const assistantError = (error: unknown): Response | undefined => error instanceof AssistanceRoomError
   ? apiError(error.status, error.code, error.message)
   : undefined
 
@@ -92,6 +101,17 @@ const readJson = async (request: Request): Promise<unknown> => {
 
 const requireModule = async (state: AgentsModuleState, workspaceId: WorkspaceId): Promise<void> => {
   if (!await state.has(workspaceId)) throw new Error(`Agents Workspace not found: ${workspaceId}`)
+}
+
+const subjectLinks = (selection: import('@leitbild/contracts').WorkspaceResourceSubjectSelection | undefined) => {
+  if (selection === undefined) return []
+  if (selection.kind === 'resource') return [{ rel: 'subject', ref: selection.resource }]
+  return [
+    { rel: 'subject-collection', ref: selection.collection },
+    ...(selection.members.mode === 'all'
+      ? selection.members.except.map(ref => ({ rel: 'subject-excluded', ref }))
+      : selection.members.only.map(ref => ({ rel: 'subject-member', ref }))),
+  ]
 }
 
 const resourcesFor = async (
@@ -127,7 +147,7 @@ const resourcesFor = async (
             revisionId: profile.sourceDefinition.revisionId,
           },
         }),
-        links: [...(profile.companionOf ? [{ rel: 'companion-of', ref: profile.companionOf }] : []), ...memberIds.flatMap(id => agentById.has(id) ? [{
+        links: [...subjectLinks(profile.subjectSelection), ...memberIds.flatMap(id => agentById.has(id) ? [{
           rel: 'member',
           ref: { workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.agent', id },
           title: agentById.get(id)?.name,
@@ -152,6 +172,7 @@ const resourcesFor = async (
           { key: 'member-count', label: 'Members', kind: 'count' as const, value: memberIds.length },
           { key: 'ai-member-count', label: 'AI agents', kind: 'count' as const, value: aiMemberCount },
           { key: 'message-count', label: 'Messages', kind: 'count' as const, value: room.messageCount },
+          { key: 'subject-revision', label: 'Scope revision', kind: 'count' as const, value: profile.subjectRevision ?? 0 },
           ...(latestMessage === undefined ? [] : [{
             key: 'last-activity-at',
             label: 'Last activity',
@@ -187,7 +208,6 @@ const definitionsFor = async (workspaceId: WorkspaceId, library: RoomDefinitionL
     const revision = await library.getRevision(definition.currentRevisionId)
     if (!revision) throw new Error(`Room Definition Revision not found: ${definition.currentRevisionId}`)
     return {
-      ...(revision.document.companionFor ? { companion: { resourceType: revision.document.companionFor, capabilityId: 'agents.room-definition.ensure-companion' } } : {}),
       ref: {
         workspaceId,
         moduleId: AGENTS_MODULE_ID,
@@ -200,7 +220,7 @@ const definitionsFor = async (workspaceId: WorkspaceId, library: RoomDefinitionL
       currentRevisionId: definition.currentRevisionId,
       capabilityIds: agentsCapabilities.idsForDefinitionType(ROOM_DEFINITION_TYPE),
       inspectionCapabilityId: 'agents.room-definition.inspect',
-      primaryCapabilityId: 'agents.room-definition.start',
+      ...(revision.document.assistance === undefined ? { primaryCapabilityId: 'agents.room-definition.start' } : {}),
       deleteCapabilityId: 'agents.room-definition.delete',
     }
   })) }).definitions
@@ -234,7 +254,7 @@ const roomDefinitionSections = (definition: RoomDefinition) => [{
   id: 'room-configuration',
   title: 'Room configuration',
   data: {
-    companionFor: definition.companionFor ?? null,
+    assistance: definition.assistance ?? null,
     prompt: definition.room.prompt ?? null,
     deliveryMode: definition.room.deliveryMode,
     packs: definition.room.packs,
@@ -274,10 +294,10 @@ const parseRoomDefinitionWrite = (runtime: AgentsWorkspaceRuntime, raw: unknown)
 const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorkspaceRuntime; library: RoomDefinitionLibrary; flush: () => Promise<void> }, Response>(AGENTS_MODULE_ID, [
   {
     descriptor: {
-      id: 'agents.assistant.open', moduleId: AGENTS_MODULE_ID,
+      id: 'agents.assistance.open', moduleId: AGENTS_MODULE_ID,
       kind: 'command', scope: { kind: 'workspace' },
-      title: 'Open Leitbild Assistant',
-      description: 'Reuses the Workspace Leitbild Assistant Room, posts the request with current focused live Resources or exact Definition Revisions, and returns its Room location.',
+      title: 'Open assistance',
+      description: 'Reuses or creates an ordinary Assistance Room for the Workspace or a selected Resource collection, optionally posting the first request.',
       risk: 'write', idempotent: false,
       inputSchema: z.toJSONSchema(assistantOpenInputSchema),
       outputSchema: z.toJSONSchema(assistantOpenResultSchema),
@@ -287,8 +307,16 @@ const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorks
       if (input.focusedSubjects.some(subject => subject.workspaceId !== invocation.workspaceId)) {
         return apiError(409, 'workspace_scope_mismatch', 'Focused Subject belongs to another Workspace')
       }
+      const selectionWorkspace = input.selection === undefined
+        ? invocation.workspaceId
+        : input.selection.kind === 'resource'
+          ? input.selection.resource.workspaceId
+          : input.selection.collection.workspaceId
+      if (selectionWorkspace !== invocation.workspaceId) return apiError(409, 'workspace_scope_mismatch', 'Subject Selection belongs to another Workspace')
       try {
-        const opened = await ensureAssistantRoom(runtime, library, flush, {
+        const opened = await ensureAssistanceRoom(runtime, library, flush, {
+          selection: input.selection,
+          title: input.title,
           prompt: input.prompt,
           focusedSubjects: input.focusedSubjects,
         })
@@ -313,19 +341,25 @@ const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorks
   },
   {
     descriptor: {
-      id: 'agents.room-definition.ensure-companion', moduleId: AGENTS_MODULE_ID,
-      kind: 'command', scope: { kind: 'definition', definitionType: ROOM_DEFINITION_TYPE },
-      title: 'Open companion Room',
-      description: 'Reuses the Room associated with a Resource, or creates it from this matching Room Definition. The association does not grant access or automate simulation behavior.',
-      risk: 'write', idempotent: true,
-      inputSchema: z.toJSONSchema(companionInputSchema),
-      outputSchema: z.toJSONSchema(z.object({ resource: workspaceResourceReferenceSchema }).strict()),
+      id: 'agents.assistance.create', moduleId: AGENTS_MODULE_ID,
+      kind: 'command', scope: { kind: 'workspace' },
+      title: 'Create assistance Room',
+      description: 'Creates an additional ordinary Assistance Room with an explicit Resource Subject Selection.',
+      risk: 'write', idempotent: false,
+      inputSchema: z.toJSONSchema(assistanceCreateInputSchema),
+      outputSchema: z.toJSONSchema(assistantOpenResultSchema),
     },
     invoke: async ({ runtime, library, flush }, invocation) => {
-      const input = companionInputSchema.parse(invocation.input)
-      if (input.resource.workspaceId !== invocation.workspaceId) return apiError(409, 'workspace_scope_mismatch', 'Companion Resource belongs to another Workspace')
-      const room = await ensureCompanionRoom(runtime, library, requireRoomDefinitionId(invocation), invocation.definition!.revisionId, input.resource, input.title, flush)
-      return json({ result: { resource: { workspaceId: invocation.workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.room', id: room.id } } })
+      const input = assistanceCreateInputSchema.parse(invocation.input)
+      const selectionWorkspace = input.selection.kind === 'resource' ? input.selection.resource.workspaceId : input.selection.collection.workspaceId
+      if (selectionWorkspace !== invocation.workspaceId) return apiError(409, 'workspace_scope_mismatch', 'Subject Selection belongs to another Workspace')
+      try {
+        const created = await createAssistanceRoom(runtime, library, flush, input.selection, input.title)
+        const resource = workspaceResourceReferenceSchema.parse({ workspaceId: invocation.workspaceId, moduleId: AGENTS_MODULE_ID, type: 'agents.room', id: created.room.id })
+        return json({ result: assistantOpenResultSchema.parse({ resource, uiPath: `/workspaces/${encodeURIComponent(invocation.workspaceId)}/agents?room=${encodeURIComponent(created.room.id)}`, reused: false }), createdResources: [resource] }, 201)
+      } catch (error) {
+        return assistantError(error) ?? apiError(500, 'assistance_create_failed', error instanceof Error ? error.message : String(error))
+      }
     },
   },
   {
@@ -476,12 +510,43 @@ const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorks
   },
   {
     descriptor: {
+      id: 'agents.room.subject-selection.set',
+      moduleId: AGENTS_MODULE_ID,
+      kind: 'command',
+      scope: { kind: 'resource', resourceType: 'agents.room' },
+      title: 'Set Room subjects',
+      description: 'Replaces the Resources available as conversational subjects for this Room using optimistic concurrency.',
+      risk: 'write',
+      idempotent: false,
+      inputSchema: z.toJSONSchema(setSubjectSelectionInputSchema),
+      outputSchema: { type: 'object' },
+    },
+    invoke: async ({ runtime, flush }, invocation) => {
+      const input = setSubjectSelectionInputSchema.parse(invocation.input)
+      const room = runtime.rooms.getRoom(requireResourceId(invocation, 'agents.room'))
+      if (!room) return apiError(404, 'room_not_found', 'Room not found')
+      const selectionWorkspace = input.selection.kind === 'resource' ? input.selection.resource.workspaceId : input.selection.collection.workspaceId
+      if (selectionWorkspace !== invocation.workspaceId) return apiError(409, 'workspace_scope_mismatch', 'Subject Selection belongs to another Workspace')
+      try {
+        const revision = room.setSubjectSelection(input.selection, input.expectedRevision)
+        await flush()
+        return json({ result: { selection: room.profile.subjectSelection, revision } })
+      } catch (error) {
+        if (error instanceof Error && (error as Error & { code?: string }).code === 'subject_revision_conflict') {
+          return apiError(409, 'subject_revision_conflict', error.message)
+        }
+        throw error
+      }
+    },
+  },
+  {
+    descriptor: {
       id: 'agents.room.delete',
       moduleId: AGENTS_MODULE_ID,
       kind: 'command',
       scope: { kind: 'resource', resourceType: 'agents.room' },
       title: 'Delete Room',
-      description: 'Permanently deletes a Room, its messages, memberships, and Room-scoped triggers.',
+      description: 'Permanently deletes a Room, its messages, memberships, Room-owned Agents, and Room-scoped triggers.',
       risk: 'destructive',
       idempotent: false,
       inputSchema: z.toJSONSchema(emptyInputSchema),
@@ -634,29 +699,15 @@ const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorks
       inputSchema: z.toJSONSchema(emptyInputSchema),
       outputSchema: { type: 'object' },
     },
-    invoke: async ({ runtime, library, flush }, invocation) => {
+    invoke: async ({ runtime, library }, invocation) => {
       emptyInputSchema.parse(invocation.input)
       const definitionId = requireRoomDefinitionId(invocation)
-      if (definitionId === LEITBILD_ASSISTANT_DEFINITION_ID) {
-        try {
-          const opened = await ensureAssistantRoom(runtime, library, flush, { revisionId: invocation.definition!.revisionId })
-          const resource = workspaceResourceReferenceSchema.parse({
-            workspaceId: invocation.workspaceId,
-            moduleId: AGENTS_MODULE_ID,
-            type: 'agents.room',
-            id: opened.room.id,
-          })
-          return json({
-            result: {
-              room: opened.room,
-              revisionId: opened.revisionId,
-              uiPath: `/workspaces/${encodeURIComponent(invocation.workspaceId)}/agents?room=${encodeURIComponent(opened.room.id)}`,
-            },
-            ...(opened.created ? { createdResources: [resource] } : {}),
-          }, opened.created ? 201 : 200)
-        } catch (error) {
-          return assistantError(error) ?? apiError(500, 'assistant_open_failed', error instanceof Error ? error.message : String(error))
-        }
+      const revision = await library.getRevision(invocation.definition!.revisionId)
+      if (!revision || revision.definitionId !== definitionId) {
+        return apiError(404, 'room_definition_revision_not_found', 'Room Definition Revision not found')
+      }
+      if (revision.document.assistance !== undefined) {
+        return apiError(409, 'assistance_subject_required', 'Assistance Room Definitions must be opened through an Assistance Capability')
       }
       const started = await startRoomDefinition(
         runtime,

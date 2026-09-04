@@ -61,6 +61,23 @@ describe('revisioned definition store', () => {
     expect((await definitions.get('example'))?.seedRevisionId).toBeUndefined()
   })
 
+  test('removes retired untouched seeds from the catalog but preserves authored revisions', async () => {
+    const definitions = await store()
+    await definitions.seed([
+      { id: 'retired', title: 'Retired seed', value: 1 },
+      { id: 'edited', title: 'Edited seed', value: 1 },
+    ])
+    const retiredRevision = await definitions.currentRevision('retired')
+    const editedSeed = await definitions.currentRevision('edited')
+    const authored = await definitions.update({ id: 'edited', title: 'Authored', value: 2 }, editedSeed!.id)
+
+    await definitions.seed([])
+
+    expect(await definitions.get('retired')).toBeUndefined()
+    expect((await definitions.getRevision(retiredRevision!.id))?.document.value).toBe(1)
+    expect((await definitions.currentRevision('edited'))?.id).toBe(authored.id)
+  })
+
   test('retains immutable revisions and uses optimistic current-revision checks', async () => {
     const definitions = await store()
     const first = await definitions.create({ id: 'custom', title: 'Custom', value: 1 })

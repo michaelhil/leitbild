@@ -212,6 +212,9 @@ export type RouteMessage = (target: MessageTarget, params: PostParams) => Readon
 
 export interface AIAgentConfig {
   readonly name: string
+  // Definition-created assistants are owned by their conversation. Ordinary
+  // workspace Agents omit this field and survive Room deletion.
+  readonly ownerRoomId?: string
   // Stored user preference. Each request resolves an effective provider route
   // without mutating this value.
   readonly model: string

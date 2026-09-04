@@ -1,4 +1,3 @@
-import { createRoomDefinitionLibrary } from '../../core/definitions/room-definition-library.ts'
 import { runPromptDeckEntry } from '../../core/definitions/room-definition-service.ts'
 import { errorResponse, json } from './helpers.ts'
 import type { RouteContext, RouteEntry } from './types.ts'
@@ -8,7 +7,7 @@ const roomDefinitionFor = async (roomId: string, context: RouteContext) => {
   if (!room) throw new Error(`Room "${roomId}" not found`)
   const source = room.profile.sourceDefinition
   if (!source) throw new Error('Room was not created from a Room Definition')
-  const revision = await createRoomDefinitionLibrary(context.workspaceId).getRevision(source.revisionId)
+  const revision = await context.roomDefinitions.getRevision(source.revisionId)
   if (!revision || revision.definitionId !== source.id) throw new Error(`Room Definition Revision "${source.revisionId}" not found`)
   return revision
 }
@@ -42,7 +41,7 @@ export const promptDeckRoutes: ReadonlyArray<RouteEntry> = [
         const roomId = decodeURIComponent(match[1]!)
         const entry = await runPromptDeckEntry(
           context.system,
-          createRoomDefinitionLibrary(context.workspaceId),
+          context.roomDefinitions,
           roomId,
           decodeURIComponent(match[2]!),
         )

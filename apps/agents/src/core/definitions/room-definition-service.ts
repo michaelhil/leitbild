@@ -4,7 +4,7 @@ import { owningPackFor } from '../types/tool-pack.ts'
 import { resolveWorkspaceDefaultModel } from '../workspaces/seed-workspace.ts'
 import type { RoomDefinition, PromptDeckEntry } from './room-definition-catalog.ts'
 import type { RoomDefinitionLibrary } from './room-definition-library.ts'
-import type { WorkspaceResourceReference } from '@leitbild/contracts'
+import type { WorkspaceResourceSubjectSelection } from '@leitbild/contracts'
 
 export interface StartedRoomDefinition {
   readonly definition: RoomDefinition
@@ -69,7 +69,7 @@ export const startRoomDefinition = async (
   library: RoomDefinitionLibrary,
   definitionId: string,
   revisionId: string,
-  companion?: { readonly resource: WorkspaceResourceReference; readonly title: string },
+  subject?: { readonly selection: WorkspaceResourceSubjectSelection; readonly title: string },
 ): Promise<StartedRoomDefinition> => {
   const revision = await library.getRevision(revisionId)
   if (!revision || revision.definitionId !== definitionId) throw new Error(`Unknown Room Definition Revision "${revisionId}"`)
@@ -81,8 +81,8 @@ export const startRoomDefinition = async (
   if (!human) throw new Error('This Workspace has no human agent')
 
   const room = (await system.createRoom({
-    name: companion ? `${companion.title.slice(0, 115)} · Agents` : definition.title,
-    ...(companion ? { companionOf: companion.resource } : {}),
+    name: subject ? `${subject.title.slice(0, 115)} · Agents` : definition.title,
+    ...(subject ? { subjectSelection: subject.selection } : {}),
     roomPrompt: definition.room.prompt,
     createdBy: SYSTEM_SENDER_ID,
     sourceDefinition: { id: definition.id, revisionId: revision.id },
@@ -96,6 +96,7 @@ export const startRoomDefinition = async (
     for (const agentDefinition of definition.room.agents) {
       const agent = await system.spawnAIAgent({
         name: uniqueAgentName(system, agentDefinition.name),
+        ownerRoomId: room.profile.id,
         model: agentDefinition.model ?? defaultModel,
         persona: agentDefinition.persona,
         tools: agentDefinition.tools,

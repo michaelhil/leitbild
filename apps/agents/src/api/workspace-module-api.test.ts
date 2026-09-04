@@ -111,8 +111,8 @@ describe('Agents Workspace Module API', () => {
     })
     const open = (prompt: string, focusedSubjects = [focusedResource, focusedDefinition]) => request(
       'POST',
-      `/internal/workspaces/${workspaceId}/capabilities/agents.assistant.open/invoke`,
-      invokeBody(workspaceId, 'agents.assistant.open', { prompt, focusedSubjects }),
+      `/internal/workspaces/${workspaceId}/capabilities/agents.assistance.open/invoke`,
+      invokeBody(workspaceId, 'agents.assistance.open', { prompt, focusedSubjects }),
     )
 
     const opened = await Promise.all([
@@ -150,26 +150,27 @@ describe('Agents Workspace Module API', () => {
         definition: { type: 'agents.room-definition', id: 'leitbild-assistant', revisionId: definition!.id },
       }),
     )
-    expect(startedAgain.status).toBe(200)
+    expect(startedAgain.status).toBe(409)
     expect(runtime.rooms.listAllRooms()).toHaveLength(1)
 
     const wrongWorkspace = await open('Use this.', [{ ...focusedResource, workspaceId: newWorkspaceId() }])
     expect(wrongWorkspace.status).toBe(409)
   })
 
-  test('companion creation is discovered, concurrent-safe, durable and independent of template revisions', async () => {
+  test('Run assistance is concurrent-safe, durable, and shared by one derived Run Family', async () => {
     const workspaceId = newWorkspaceId()
     await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
-    const catalog = moduleDefinitionCollectionSchema.parse(await (await request('GET', `/internal/workspaces/${workspaceId}/definitions`)).json())
-    const definition = catalog.definitions.find(item => item.companion?.resourceType === 'world.simulation-run')!
-    expect(definition).toBeDefined()
-    const resource = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-one' })
-    const capabilityId = definition.companion!.capabilityId
-    const target = { definition: { type: definition.ref.type, id: definition.ref.id, revisionId: definition.currentRevisionId } }
-    const ensure = (ref = resource) => request('POST', `/internal/workspaces/${workspaceId}/capabilities/${capabilityId}/invoke`, invokeBody(workspaceId, capabilityId, { resource: ref, title: 'Test run' }, target))
-    expect((await ensure({ ...resource, workspaceId: newWorkspaceId() })).status).toBe(409)
+    const family = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.run-family', id: 'family-one' })
+    const run = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-one' })
+    const selection = { kind: 'collection' as const, collection: family, members: { mode: 'all' as const, except: [] } }
+    const ensure = (selected = selection) => request(
+      'POST',
+      `/internal/workspaces/${workspaceId}/capabilities/agents.assistance.open/invoke`,
+      invokeBody(workspaceId, 'agents.assistance.open', { selection: selected, title: 'Test run', focusedSubjects: [run] }),
+    )
+    expect((await ensure({ ...selection, collection: { ...family, workspaceId: newWorkspaceId() } })).status).toBe(409)
     const replies = await Promise.all(Array.from({ length: 4 }, () => ensure()))
-    expect(replies.map(reply => reply.status)).toEqual([200, 200, 200, 200])
+    expect(replies.map(reply => reply.status).sort()).toEqual([200, 200, 200, 201])
     const ids = await Promise.all(replies.map(async reply => (await reply.json() as { result: { resource: { id: string } } }).result.resource.id))
     expect(new Set(ids).size).toBe(1)
     const runtime = await registry.getOrLoad(workspaceId)
@@ -180,44 +181,55 @@ describe('Agents Workspace Module API', () => {
     expect(room.deliveryMode).toBe('broadcast')
     room.setPaused(true) // User edits must survive both reuse and template edits.
     const library = registry.definitionsFor(workspaceId)
-    const revision = await library.getRevision(definition.currentRevisionId)
+    const revision = await library.currentRevision('simulation-assistant')
     await library.update({ ...revision!.document, title: 'Edited template' }, revision!.id)
     await registry.evictOne(workspaceId)
     const saved = moduleResourceCollectionSchema.parse(await (await request('GET', `/internal/workspaces/${workspaceId}/resources`)).json()).resources
-    expect(saved.find(item => item.ref.id === ids[0])?.links).toContainEqual({ rel: 'companion-of', ref: resource })
+    expect(saved.find(item => item.ref.id === ids[0])?.links).toContainEqual({ rel: 'subject-collection', ref: family })
     expect(registry.tryGetLive(workspaceId)).toBeUndefined()
     expect((await (await ensure()).json() as { result: { resource: { id: string } } }).result.resource.id).toBe(ids[0]!)
     const restored = await registry.getOrLoad(workspaceId)
     expect(restored.rooms.getRoom(ids[0]!)!.paused).toBe(true)
     expect(restored.team.listByKind('ai')).toHaveLength(1)
-    expect((await ensure(workspaceResourceReferenceSchema.parse({ ...resource, id: 'run-two' }))).status).toBe(200)
+    const anotherFamily = workspaceResourceReferenceSchema.parse({ ...family, id: 'family-two' })
+    expect((await ensure({ ...selection, collection: anotherFamily })).status).toBe(201)
     expect(restored.rooms.listAllRooms()).toHaveLength(2)
+    expect(restored.team.listByKind('ai')).toHaveLength(2)
     restored.removeRoom(ids[0]!)
+    expect(restored.team.listByKind('ai')).toHaveLength(1)
     const replacement = (await (await ensure()).json() as { result: { resource: { id: string } } }).result.resource.id
     expect(replacement).not.toBe(ids[0]!)
+    expect(restored.team.listByKind('ai')).toHaveLength(2)
   })
 
-  test('failed companion membership rolls back the Room and spawned AI, and retry succeeds', async () => {
+  test('failed Assistance Room membership rolls back the Room and Room-owned AI, and retry succeeds', async () => {
     const workspaceId = newWorkspaceId()
     await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
     const library = registry.definitionsFor(workspaceId)
-    const definition = await library.currentRevision('simulation-assistant')
+    await library.list()
     const runtime = await registry.getOrLoad(workspaceId)
     const original = runtime.addAgentToRoom
     const join = spyOn(runtime, 'addAgentToRoom').mockImplementation(async (agentId, ...args) => {
       if (runtime.team.getAgent(agentId)?.kind === 'ai') throw new Error('Test membership failure')
       return original(agentId, ...args)
     })
-    const body = invokeBody(workspaceId, 'agents.room-definition.ensure-companion', {
-      resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-one' }, title: 'Test',
-    }, { definition: { type: 'agents.room-definition', id: definition!.definitionId, revisionId: definition!.id } })
-    const path = `/internal/workspaces/${workspaceId}/capabilities/agents.room-definition.ensure-companion/invoke`
+    const body = invokeBody(workspaceId, 'agents.assistance.open', {
+      selection: {
+        kind: 'collection',
+        collection: { workspaceId, moduleId: 'world', type: 'world.run-family', id: 'family-one' },
+        members: { mode: 'all', except: [] },
+      },
+      title: 'Test',
+    })
+    const path = `/internal/workspaces/${workspaceId}/capabilities/agents.assistance.open/invoke`
     try {
-      await expect(request('POST', path, body)).rejects.toThrow('Test membership failure')
+      const failed = await request('POST', path, body)
+      expect(failed.status).toBe(500)
+      expect(await failed.text()).toContain('Test membership failure')
       expect(runtime.rooms.listAllRooms()).toHaveLength(0)
       expect(runtime.team.listByKind('ai')).toHaveLength(0)
     } finally { join.mockRestore() }
-    expect((await request('POST', path, body)).status).toBe(200)
+    expect((await request('POST', path, body)).status).toBe(201)
   })
 
   test('resource discovery stays lazy and keyed retries are rejected before loading', async () => {
@@ -283,13 +295,14 @@ describe('Agents Workspace Module API', () => {
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room-definition.update')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room.inspect')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.prompt-deck.run-entry')
-    expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.assistant.open')
+    expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.assistance.open')
 
     const definitions = moduleDefinitionCollectionSchema.parse(
       await (await request('GET', `/internal/workspaces/${workspaceId}/definitions`)).json(),
     )
-    const roomDefinition = definitions.definitions.find(definition => definition.ref.id === 'control-room-chaos')!
+    const roomDefinition = definitions.definitions.find(definition => definition.ref.id === 'simulation-assistant')!
     expect(String(roomDefinition.inspectionCapabilityId)).toBe('agents.room-definition.inspect')
+    expect(roomDefinition.primaryCapabilityId).toBeUndefined()
     const definitionInspectionResponse = await request(
       'POST',
       `/internal/workspaces/${workspaceId}/capabilities/agents.room-definition.inspect/invoke`,
@@ -308,17 +321,18 @@ describe('Agents Workspace Module API', () => {
     expect(definitionInspection.sections.map(section => section.id)).toContain('prompt-deck')
     const started = await request(
       'POST',
-      `/internal/workspaces/${workspaceId}/capabilities/agents.room-definition.start/invoke`,
-      invokeBody(workspaceId, 'agents.room-definition.start', {}, {
-        definition: {
-          type: String(roomDefinition.ref.type),
-          id: roomDefinition.ref.id,
-          revisionId: roomDefinition.currentRevisionId,
+      `/internal/workspaces/${workspaceId}/capabilities/agents.assistance.open/invoke`,
+      invokeBody(workspaceId, 'agents.assistance.open', {
+        selection: {
+          kind: 'collection',
+          collection: { workspaceId, moduleId: 'world', type: 'world.run-family', id: 'family-one' },
+          members: { mode: 'all', except: [] },
         },
+        title: 'Test simulation',
       }),
     )
     expect(started.status).toBe(201)
-    const startedRoomId = (await started.json() as { result: { room: { id: string } } }).result.room.id
+    const startedRoomId = (await started.json() as { result: { resource: { id: string } } }).result.resource.id
 
     expect((await request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.room.create/invoke`,
       invokeBody(workspaceId, 'agents.room.create', { name: 'Operations' }))).status).toBe(201)

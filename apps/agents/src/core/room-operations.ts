@@ -60,6 +60,7 @@ export const createRoomOperations = (deps: RoomOperationsDeps): RoomOperations =
   const systemRemoveRoom = (roomId: string): boolean => {
     const room = rooms.getRoom(roomId)
     if (!room) return false
+    const ownedAgents = team.listByKind('ai').filter(agent => asAIAgent(agent)?.getConfig().ownerRoomId === roomId)
     cancelGenerationsInRoom(roomId)
     for (const agentId of room.getParticipantIds()) {
       team.getAgent(agentId)?.leave(roomId)
@@ -75,6 +76,10 @@ export const createRoomOperations = (deps: RoomOperationsDeps): RoomOperations =
         for (const t of triggers) {
           if (t.roomId === roomId) agent.deleteTrigger?.(t.id)
         }
+      }
+      for (const owned of ownedAgents) {
+        team.removeAgent(owned.id)
+        for (const survivor of team.listByKind('ai')) asAIAgent(survivor)?.forgetAgent?.(owned.id)
       }
       triggerScheduler.invalidate()
     }

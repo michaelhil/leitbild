@@ -36,6 +36,7 @@ import { SYSTEM_SENDER_ID } from '../types/constants.ts'
 import { parseAddressedAgents } from './addressing.ts'
 import { deliverBroadcast } from './delivery-modes.ts'
 import { attachMessageFocus } from '../message-focus.ts'
+import { workspaceResourceSubjectSelectionSchema } from '@leitbild/contracts'
 
 export interface RoomCallbacks {
   readonly deliver?: DeliverFn
@@ -258,6 +259,18 @@ export const createRoom = (
     getMessageCount: (): number => messages.length,
     setRoomPrompt: (prompt: string) => {
       profile = { ...profile, roomPrompt: prompt }
+    },
+    setSubjectSelection: (selection, expectedRevision): number => {
+      const currentRevision = profile.subjectRevision ?? 0
+      if (expectedRevision !== currentRevision) {
+        throw Object.assign(new Error(`Room Subject Selection changed: expected ${expectedRevision}, current ${currentRevision}`), {
+          code: 'subject_revision_conflict', currentRevision,
+        })
+      }
+      const subjectSelection = workspaceResourceSubjectSelectionSchema.parse(selection)
+      const nextRevision = currentRevision + 1
+      profile = { ...profile, subjectSelection, subjectRevision: nextRevision }
+      return nextRevision
     },
     deleteMessage: (messageId: string): boolean => {
       const idx = messages.findIndex(m => m.id === messageId)

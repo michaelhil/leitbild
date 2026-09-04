@@ -236,6 +236,7 @@ export const createServer = (config: ServerConfig) => {
           remoteAddress: bunServer.requestIP(request)?.address,
           broadcastToWorkspace: wsManager.broadcastToWorkspace,
           packManager: config.packManager,
+          roomDefinitions: registry.definitionsFor(workspaceId),
           diagnostics: config.diagnostics,
         },
       )

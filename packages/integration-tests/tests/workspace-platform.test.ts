@@ -2,9 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { isExactToolGrant, moduleRegistrationSchema, workspaceIdSchema, workspaceDefinitionCatalogSchema, workspaceResourceCatalogSchema } from '@leitbild/contracts'
-import { openCompanion } from '../../../apps/leitbild/src/ui/companion.ts'
-import { request as hostRequest } from '../../../apps/leitbild/src/ui/api.ts'
+import { moduleRegistrationSchema, workspaceIdSchema, workspaceResourceCatalogSchema } from '@leitbild/contracts'
 import { createServer as createWorldServer } from '../../../apps/world/src/core/api/server.ts'
 import { createWorldModuleState } from '../../../apps/world/src/core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry } from '../../../apps/world/src/core/workspaces/runtime-registry.ts'
@@ -149,20 +147,13 @@ describe('Workspace Host with real Modules', () => {
     const capabilityIds = new Set((await capabilityCatalogResponse.json() as {
       capabilities: Array<{ id: string }>
     }).capabilities.map(capability => capability.id))
-    const integratedRoom = BUNDLED_ROOM_DEFINITIONS
-      .find(definition => definition.id === 'halden-integrated-control-room')
-    if (!integratedRoom) throw new Error('Missing integrated Room Definition')
-    const worldGrants = integratedRoom.room.agents
-      .flatMap(agent => agent.toolGrants ?? [])
-      .filter(isExactToolGrant)
-      .map(grant => String(grant.capabilityId))
-      .filter(capabilityId => capabilityId.startsWith('world.'))
-    expect(worldGrants.length).toBeGreaterThan(0)
-    expect(worldGrants.filter(capabilityId => !capabilityIds.has(capabilityId))).toEqual([])
-    const dispatchDefinition = BUNDLED_ROOM_DEFINITIONS.find(definition => definition.id === 'ambulance-dispatcher')!
-    expect(dispatchDefinition).toBeDefined()
-    const dispatchGrants = dispatchDefinition.room.agents.flatMap(agent => agent.toolGrants ?? []).filter(isExactToolGrant)
-    expect(dispatchGrants.filter(grant => !capabilityIds.has(String(grant.capabilityId)))).toEqual([])
+    expect(BUNDLED_ROOM_DEFINITIONS.map(definition => definition.id).sort()).toEqual([
+      'leitbild-assistant',
+      'simulation-assistant',
+    ])
+    const simulationAssistant = BUNDLED_ROOM_DEFINITIONS.find(definition => definition.id === 'simulation-assistant')!
+    expect(simulationAssistant.room.agents[0]?.toolGrants).toContainEqual({ scope: 'room-subject', risks: ['read', 'write'] })
+    expect(capabilityIds).toContain('agents.assistance.open')
 
     const definitionCatalog = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/definitions`)
     expect(definitionCatalog.status).toBe(200)
@@ -184,39 +175,84 @@ describe('Workspace Host with real Modules', () => {
     )
     expect(createRunResponse.status).toBe(200)
     const runId = (await createRunResponse.json() as { result: { id: string } }).result.id
+    const agentsRuntime = await leitbildRegistry.getOrLoad(workspaceIdSchema.parse(workspace.id))
+    expect(agentsRuntime.rooms.listAllRooms()).toHaveLength(0)
+    expect(agentsRuntime.team.listByKind('ai')).toHaveLength(0)
 
     // Exercise the same discovery → Host broker → Agents Definition → Room
     // path as opening a World run in the browser, with both real Modules.
-    const definitions = workspaceDefinitionCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/definitions`)).json()).definitions
     const resources = workspaceResourceCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/resources`)).json()).resources
-    const worldRun = resources.find(resource => resource.ref.id === runId)!
-    const companionRef = await openCompanion(worldRun, definitions, resources, (path, init) => hostRequest(`${baseUrl}${path}`, init))
-    const companionRuntime = await leitbildRegistry.getOrLoad(workspaceIdSchema.parse(workspace.id))
-    const companionRoom = companionRuntime.rooms.getRoom(companionRef.id)!
-    const assistant = companionRoom.getParticipantIds().map(id => companionRuntime.team.getAgent(id)).find(agent => agent?.kind === 'ai')!
-    expect(companionRoom.getParticipantIds()).toHaveLength(2)
+    const worldRun = resources.find(resource => resource.ref.type === 'world.simulation-run' && resource.ref.id === runId)!
+    const runFamily = resources.find(resource => resource.ref.type === 'world.run-family' && resource.links.some(link => link.rel === 'contains' && link.ref.id === runId))!
+    const assistanceResponse = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/agents.assistance.open/invoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: {
+          selection: { kind: 'collection', collection: runFamily.ref, members: { mode: 'all', except: [] } },
+          title: worldRun.title,
+          focusedSubjects: [worldRun.ref],
+        },
+        actor: { kind: 'human', id: 'operator', displayName: 'Operator' },
+      }),
+    })
+    expect(assistanceResponse.status).toBe(200)
+    const runAssistantRef = (await assistanceResponse.json() as { result: { resource: { id: string } } }).result.resource
+    const runAssistantRoom = agentsRuntime.rooms.getRoom(runAssistantRef.id)!
+    const assistant = runAssistantRoom.getParticipantIds().map(id => agentsRuntime.team.getAgent(id)).find(agent => agent?.kind === 'ai')!
+    expect(runAssistantRoom.getParticipantIds()).toHaveLength(2)
     expect(JSON.stringify(asAIAgent(assistant)!.getConfig())).not.toContain(runId)
-    const companionContext = { callerId: assistant.id, callerName: assistant.name, roomId: companionRef.id }
-    const companionDiscovery = await companionRuntime.toolRegistry.get('workspace_catalog')!.execute({ moduleId: 'world' }, companionContext)
-    expect(companionDiscovery).toMatchObject({ success: true, data: { currentRoom: { links: expect.arrayContaining([{ rel: 'companion-of', ref: worldRun.ref }]) } } })
-    expect(await companionRuntime.toolRegistry.get('workspace_invoke')!.execute({
+    const runAssistantContext = { callerId: assistant.id, callerName: assistant.name, roomId: runAssistantRef.id }
+    const runAssistantDiscovery = await agentsRuntime.toolRegistry.get('workspace_catalog')!.execute({ moduleId: 'world' }, runAssistantContext)
+    expect(runAssistantDiscovery).toMatchObject({ success: true, data: { currentRoom: { links: expect.arrayContaining([{ rel: 'subject-collection', ref: runFamily.ref }]) } } })
+    expect(await agentsRuntime.toolRegistry.get('workspace_invoke')!.execute({
       calls: [{ key: 'context', capabilityId: 'world.simulation-run.context', resource: worldRun.ref, input: {} }],
-    }, companionContext)).toMatchObject({ success: true, data: { results: [{ key: 'context', success: true }] } })
-    expect(await companionRuntime.toolRegistry.get('workspace_invoke')!.execute({
+    }, runAssistantContext)).toMatchObject({ success: true, data: { results: [{ key: 'context', success: true }] } })
+
+    // A later what-if copy becomes available to the default family selection
+    // without mutating the Room or synchronizing a second family store.
+    const copyResponse = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.simulation-run.copy/invoke`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resource: worldRun.ref, input: { name: 'Weather response · what-if' } }),
+    })
+    expect(copyResponse.status).toBe(200)
+    const copyId = (await copyResponse.json() as { result: { id: string } }).result.id
+    const refreshedResources = workspaceResourceCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/resources`)).json()).resources
+    const copiedRun = refreshedResources.find(resource => resource.ref.type === 'world.simulation-run' && resource.ref.id === copyId)!
+    expect(refreshedResources.find(resource => resource.ref.type === 'world.run-family' && resource.ref.id === runFamily.ref.id)?.links.filter(link => link.rel === 'contains')).toHaveLength(2)
+    expect(agentsRuntime.rooms.listAllRooms()).toHaveLength(1)
+    expect(agentsRuntime.team.listByKind('ai')).toHaveLength(1)
+    expect(await agentsRuntime.toolRegistry.get('workspace_invoke')!.execute({
+      calls: [{ key: 'copy-context', capabilityId: 'world.simulation-run.context', resource: copiedRun.ref, input: {} }],
+    }, runAssistantContext)).toMatchObject({ success: true, data: { results: [{ key: 'copy-context', success: true }] } })
+
+    const roomRef = { workspaceId: workspace.id, moduleId: 'agents', type: 'agents.room', id: runAssistantRef.id }
+    const setScope = (members: unknown, expectedRevision: number) => fetch(
+      `${baseUrl}/api/workspaces/${workspace.id}/capabilities/agents.room.subject-selection.set/invoke`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resource: roomRef, input: { selection: { kind: 'collection', collection: runFamily.ref, members }, expectedRevision } }),
+      },
+    )
+    expect((await setScope({ mode: 'selected', only: [worldRun.ref] }, 0)).status).toBe(200)
+    expect(await agentsRuntime.toolRegistry.get('workspace_invoke')!.execute({
+      calls: [{ key: 'copy-context', capabilityId: 'world.simulation-run.context', resource: copiedRun.ref, input: {} }],
+    }, runAssistantContext)).toMatchObject({ success: true, data: { results: [{ key: 'copy-context', success: false, error: expect.stringContaining('target_not_selected') }] } })
+    expect((await setScope({ mode: 'all', except: [] }, 1)).status).toBe(200)
+    expect(await agentsRuntime.toolRegistry.get('workspace_invoke')!.execute({
       calls: [{ key: 'dispatch', capabilityId: 'world.ambulance.dispatch-state', resource: worldRun.ref, input: {} }],
-    }, companionContext)).toMatchObject({ success: true, data: { results: [{ key: 'dispatch', success: true }] } })
-    expect(await companionRuntime.toolRegistry.get('workspace_invoke')!.execute({
+    }, runAssistantContext)).toMatchObject({ success: true, data: { results: [{ key: 'dispatch', success: true }] } })
+    expect(await agentsRuntime.toolRegistry.get('workspace_invoke')!.execute({
       calls: [{ key: 'cancel', capabilityId: 'world.ambulance.cancel', resource: worldRun.ref, input: { unitId: 'amb:weather-response' } }],
-    }, companionContext)).toMatchObject({ success: true, data: { results: [{ key: 'cancel', success: false, error: expect.stringContaining('risk_not_allowed') }] } })
-    expect(await companionRuntime.toolRegistry.get('workspace_invoke')!.execute({
+    }, runAssistantContext)).toMatchObject({ success: true, data: { results: [{ key: 'cancel', success: true }] } })
+    expect(await agentsRuntime.toolRegistry.get('workspace_invoke')!.execute({
       calls: [{ key: 'delete', capabilityId: 'world.simulation-run.delete', resource: worldRun.ref, input: {} }],
-    }, companionContext)).toMatchObject({ success: true, data: { results: [{ key: 'delete', success: false, error: expect.stringContaining('risk_not_allowed') }] } })
+    }, runAssistantContext)).toMatchObject({ success: true, data: { results: [{ key: 'delete', success: false, error: expect.stringContaining('capability_not_granted') }] } })
 
     // The Host launcher is only a generic Capability call. Agents owns the
     // reusable Room lifecycle and carries the current World Resource as
     // transient focus on the triggering message.
     const openAssistant = (prompt: string) => fetch(
-      `${baseUrl}/api/workspaces/${workspace.id}/capabilities/agents.assistant.open/invoke`,
+      `${baseUrl}/api/workspaces/${workspace.id}/capabilities/agents.assistance.open/invoke`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -230,11 +266,11 @@ describe('Workspace Host with real Modules', () => {
     if (assistantResponse.status !== 200) throw new Error(await assistantResponse.text())
     expect(assistantResponse.status).toBe(200)
     const assistantRoomId = (await assistantResponse.json() as { result: { resource: { id: string }; reused: boolean } }).result.resource.id
-    const assistantRoom = companionRuntime.rooms.getRoom(assistantRoomId)!
+    const assistantRoom = agentsRuntime.rooms.getRoom(assistantRoomId)!
     const assistantPrompt = assistantRoom.getRecent(10).find(message => message.content === 'Explain this Run.')!
     expect(messageFocus(assistantPrompt)).toEqual([worldRun.ref])
     const generalAssistant = assistantRoom.getParticipantIds()
-      .map(id => companionRuntime.team.getAgent(id))
+      .map(id => agentsRuntime.team.getAgent(id))
       .find(agent => agent?.kind === 'ai')!
     const generalAssistantAI = asAIAgent(generalAssistant)!
     expect(generalAssistantAI.getMaxToolIterations()).toBeUndefined()
@@ -247,8 +283,8 @@ describe('Workspace Host with real Modules', () => {
       'workspace_capabilities',
       'workspace_invoke',
     ]))
-    await companionRuntime.refreshAllAgentTools()
-    const refreshedSurface = introspectAgentSurface(companionRuntime, generalAssistant.name, assistantRoomId)
+    await agentsRuntime.refreshAllAgentTools()
+    const refreshedSurface = introspectAgentSurface(agentsRuntime, generalAssistant.name, assistantRoomId)
     expect(refreshedSurface).not.toHaveProperty('error')
     expect('tools' in refreshedSurface ? refreshedSurface.tools.map(tool => tool.name) : []).toEqual(expect.arrayContaining([
       'workspace_catalog',
@@ -262,38 +298,10 @@ describe('Workspace Host with real Modules', () => {
       uiPath: `/workspaces/${workspace.id}/agents?room=${assistantRoomId}`,
       reused: true,
     })
-    expect(companionRuntime.rooms.listAllRooms().filter(room => room.sourceDefinition?.id === 'leitbild-assistant')).toHaveLength(1)
+    expect(agentsRuntime.rooms.listAllRooms().filter(room => room.sourceDefinition?.id === 'leitbild-assistant')).toHaveLength(1)
 
-    const createAgentResponse = await fetch(
-      `${baseUrl}/api/workspaces/${workspace.id}/capabilities/agents.agent.create/invoke`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: {
-            name: 'World Observer',
-            model: 'test-model',
-            persona: 'Inspect available Workspace Resources when asked.',
-            toolGrants: [
-              ...dispatchGrants,
-              { capabilityId: 'world.simulation-run.read' },
-              { capabilityId: 'world.weather.sample-at-point' },
-              { capabilityId: 'world.weather.intervene-ground' },
-            ],
-          },
-          actor: { kind: 'human', id: 'operator', displayName: 'Operator' },
-        }),
-      },
-    )
-    expect(createAgentResponse.status).toBe(200)
-    const agentId = (await createAgentResponse.json() as { result: { id: string } }).result.id
-    const runtime = await leitbildRegistry.getOrLoad(workspaceIdSchema.parse(workspace.id))
-    const agent = runtime.team.getAgent(agentId)
-    const aiAgent = agent ? asAIAgent(agent) : undefined
-    expect(aiAgent).toBeDefined()
-    expect(JSON.stringify(aiAgent?.getConfig() ?? {})).not.toContain(runId)
-
-    const context = { callerId: agentId, callerName: 'World Observer' }
+    const runtime = agentsRuntime
+    const context = runAssistantContext
     const discover = runtime.toolRegistry.get('workspace_catalog')
     const invoke = runtime.toolRegistry.get('workspace_invoke')
     expect(discover).toBeDefined()
@@ -305,7 +313,9 @@ describe('Workspace Host with real Modules', () => {
         ref: { moduleId: string; type: string; id: string }
         summary: Array<{ key: string; kind: string; value: unknown }>
       }>
-    }).resources.find(resource => resource.ref.type === 'world.simulation-run')!
+    }).resources.find(resource =>
+      resource.ref.type === 'world.simulation-run' && resource.ref.id === runId,
+    )!
     expect(currentRun.ref.id).toBe(runId)
     expect(currentRun.summary.find(item => item.key === 'viewer-count')).toMatchObject({ kind: 'count', value: 0 })
 
@@ -390,12 +400,12 @@ describe('Workspace Host with real Modules', () => {
       },
     )
     expect(deleteRun.status).toBe(200)
-    expect(companionRuntime.rooms.getRoom(companionRef.id)).toBeDefined()
+    expect(agentsRuntime.rooms.getRoom(runAssistantRef.id)).toBeDefined()
     const resourcesAfterDelete = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/resources`)
     expect(resourcesAfterDelete.status).toBe(200)
     expect((await resourcesAfterDelete.json() as {
-      resources: Array<{ ref: { id: string } }>
-    }).resources.some(resource => resource.ref.id === runId)).toBe(false)
+      resources: Array<{ ref: { type: string; id: string } }>
+    }).resources.some(resource => resource.ref.type === 'world.simulation-run' && resource.ref.id === runId)).toBe(false)
 
     expect((await fetch(`${baseUrl}/api/workspaces/${workspace.id}`, { method: 'DELETE' })).status).toBe(204)
     expect(await worldRegistry.list()).toEqual([])

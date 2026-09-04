@@ -3,6 +3,7 @@ import type { Agent } from '../../core/types/agent.ts'
 import type { WSOutbound } from '../../core/types/ws-protocol.ts'
 import type { AccessContext, WorkspaceId } from '@leitbild/contracts'
 import type { PackManager } from '../../packs/manager.ts'
+import type { RoomDefinitionLibrary } from '../../core/definitions/room-definition-library.ts'
 
 // Read-only health snapshot used by /system/diagnostics. Walks the
 // registry + wsManager to surface per-Workspace broadcast wiring state.
@@ -32,6 +33,7 @@ export interface RouteContext {
   readonly broadcastAllWorkspaces: (msg: WSOutbound) => void
   readonly broadcastToWorkspace: (workspaceId: WorkspaceId, msg: WSOutbound) => void
   readonly packManager: PackManager
+  readonly roomDefinitions: RoomDefinitionLibrary
   readonly subscribeAgentState: (agent: Agent, workspaceId: WorkspaceId) => void
   readonly unsubscribeAgentState?: (agentId: string) => void
   readonly remoteAddress?: string

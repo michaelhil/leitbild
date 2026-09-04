@@ -14,6 +14,7 @@ import type { DeliverFn } from '../core/types/messaging.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
 import type { AgentsWorkspaceRuntime } from '../workspace-runtime.ts'
 import { accessContextSchema, newRequestId, newWorkspaceId } from '@leitbild/contracts'
+import type { RoomDefinitionLibrary } from '../core/definitions/room-definition-library.ts'
 
 // === Helpers ===
 
@@ -28,6 +29,9 @@ const packManager = {
   list: async () => ({ success: true, data: [] }),
   listAvailable: async () => ({ success: true, data: [] }),
 }
+const roomDefinitions = {
+  getRevision: async () => undefined,
+} as unknown as RoomDefinitionLibrary
 const TEST_WORKSPACE_ID = newWorkspaceId()
 const TEST_ACCESS_CONTEXT = accessContextSchema.parse({
   workspaceId: TEST_WORKSPACE_ID,
@@ -103,6 +107,7 @@ const call = (system: AgentsWorkspaceRuntime, r: Request, path: string, opts: { 
     broadcastAllWorkspaces: noopBroadcast,
     broadcastToWorkspace: noopWorkspaceBroadcast,
     packManager,
+    roomDefinitions,
     subscribeAgentState: noopSubscribe,
     ...(opts.remoteAddress ? { remoteAddress: opts.remoteAddress } : {}),
   })

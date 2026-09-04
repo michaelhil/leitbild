@@ -633,7 +633,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
         const agent = team.getAgent(agentId)
         return agent === undefined ? undefined : asAIAgent(agent)?.getToolGrants()
       },
-      getRoomCompanionOf: roomId => rooms.getRoom(roomId)?.profile.companionOf,
+      getRoomSubjectSelection: roomId => rooms.getRoom(roomId)?.profile.subjectSelection,
     }))
   }
 

@@ -96,6 +96,7 @@ export interface RouteDeps {
   readonly remoteAddress?: string
   readonly broadcastToWorkspace: RouteContext['broadcastToWorkspace']
   readonly packManager: RouteContext['packManager']
+  readonly roomDefinitions: RouteContext['roomDefinitions']
   readonly diagnostics?: RouteContext['diagnostics']
 }
 

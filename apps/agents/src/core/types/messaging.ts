@@ -119,7 +119,8 @@ export interface ToolTraceEntry {
 // === Profiles — what agents know about rooms and other agents ===
 
 export interface RoomProfile {
-  readonly companionOf?: import('@leitbild/contracts').WorkspaceResourceReference
+  readonly subjectSelection?: import('@leitbild/contracts').WorkspaceResourceSubjectSelection
+  readonly subjectRevision?: number
   readonly id: string
   readonly name: string
   readonly roomPrompt?: string

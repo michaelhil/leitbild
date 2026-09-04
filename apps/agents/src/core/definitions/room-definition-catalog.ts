@@ -49,7 +49,10 @@ const roomSetupSchema = z.object({
 const promptDeckSchema = z.object({ entries: z.array(promptDeckEntrySchema) }).strict()
 
 export const roomDefinitionSchema = z.object({
-  companionFor: resourceTypeSchema.optional(),
+  assistance: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('workspace') }).strict(),
+    z.object({ kind: z.literal('resource'), resourceType: resourceTypeSchema }).strict(),
+  ]).optional(),
   id: z.string().min(1).max(128),
   title: z.string().min(1).max(256),
   category: z.string().min(1).max(128).optional(),

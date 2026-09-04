@@ -106,7 +106,7 @@ describe('World Module API', () => {
       (await call(registry, `/internal/workspaces/${workspaceId}/resources`)).body,
     )
 
-    expect(resources.resources.find(resource => String(resource.ref.id) === String(run.id))?.summary)
+    expect(resources.resources.find(resource => resource.ref.type === 'world.simulation-run' && String(resource.ref.id) === String(run.id))?.summary)
       .toContainEqual(expect.objectContaining({ label: 'Status', value: 'Running' }))
     expect(runs.get(run.id)).toBeUndefined()
   })
@@ -398,6 +398,9 @@ describe('World Module API', () => {
     expect(run?.summary.find(item => item.key === 'started-at')?.kind).toBe('timestamp')
     expect(run?.summary.find(item => item.key === 'viewer-count')).toMatchObject({ kind: 'count', value: 0 })
     expect(run?.summary.find(item => item.key === 'status')).toMatchObject({ kind: 'status', value: 'Running' })
+    const family = resources.resources.find(resource => resource.ref.type === 'world.run-family' && resource.ref.id === run?.ref.id)
+    expect(family?.links).toContainEqual(expect.objectContaining({ rel: 'contains', ref: run?.ref }))
+    expect(run?.links).toContainEqual(expect.objectContaining({ rel: 'member-of', ref: family?.ref }))
     expect(String(run?.inspectionCapabilityId)).toBe('world.simulation-run.inspect')
     expect(String(run?.renameCapabilityId)).toBe('world.simulation-run.rename')
     const renameCapabilityId = capabilityIdSchema.parse('world.simulation-run.rename')
@@ -590,7 +593,7 @@ describe('World Module API', () => {
     ).definitions.some(definition => definition.ref.id === scenario.ref.id)).toBe(false)
     expect(moduleResourceCollectionSchema.parse(
       (await call(registry, `/internal/workspaces/${workspaceId}/resources`)).body,
-    ).resources.some(resource => resource.ref.id === run!.ref.id)).toBe(true)
+    ).resources.some(resource => resource.ref.type === 'world.simulation-run' && resource.ref.id === run!.ref.id)).toBe(true)
 
     const deleteRunCapabilityId = capabilityIdSchema.parse('world.simulation-run.delete')
     const simulationRunId = registry.getLoaded(workspaceId)!.simulationRuns.list()[0]!.id
@@ -615,6 +618,6 @@ describe('World Module API', () => {
     releaseViewer()
     expect(moduleResourceCollectionSchema.parse(
       (await call(registry, `/internal/workspaces/${workspaceId}/resources`)).body,
-    ).resources.some(resource => resource.ref.id === run!.ref.id)).toBe(false)
+    ).resources.some(resource => resource.ref.type === 'world.simulation-run' && resource.ref.id === run!.ref.id)).toBe(false)
   })
 })

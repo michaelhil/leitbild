@@ -27,6 +27,51 @@ export const workspaceResourceReferenceSchema = z.object({
 })
 export type WorkspaceResourceReference = z.infer<typeof workspaceResourceReferenceSchema>
 
+const uniqueReferences = (
+  references: ReadonlyArray<WorkspaceResourceReference>,
+  ctx: z.RefinementCtx,
+  path: ReadonlyArray<string | number>,
+): void => {
+  const seen = new Set<string>()
+  references.forEach((reference, index) => {
+    const key = `${reference.workspaceId}:${reference.moduleId}:${reference.type}:${reference.id}`
+    if (seen.has(key)) ctx.addIssue({ code: 'custom', path: [...path, index], message: 'duplicate Resource reference' })
+    seen.add(key)
+  })
+}
+
+const resourceCollectionSelectionSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('all'), except: z.array(workspaceResourceReferenceSchema).default([]) }).strict(),
+  z.object({ mode: z.literal('selected'), only: z.array(workspaceResourceReferenceSchema).min(1) }).strict(),
+])
+
+// A durable conversational subject is not authority. A Room can discuss one
+// Resource or a configurable selection from a Resource that advertises its
+// members with `contains` links. Tool Grants independently decide what an
+// Agent may do with the resolved subjects.
+export const workspaceResourceSubjectSelectionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('resource'), resource: workspaceResourceReferenceSchema }).strict(),
+  z.object({
+    kind: z.literal('collection'),
+    collection: workspaceResourceReferenceSchema,
+    members: resourceCollectionSelectionSchema,
+  }).strict(),
+]).superRefine((selection, ctx) => {
+  if (selection.kind !== 'collection') return
+  const members = selection.members.mode === 'all' ? selection.members.except : selection.members.only
+  uniqueReferences(members, ctx, ['members', selection.members.mode === 'all' ? 'except' : 'only'])
+  members.forEach((reference, index) => {
+    if (reference.workspaceId !== selection.collection.workspaceId) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['members', selection.members.mode === 'all' ? 'except' : 'only', index, 'workspaceId'],
+        message: 'Subject Collection members must belong to the same Workspace',
+      })
+    }
+  })
+})
+export type WorkspaceResourceSubjectSelection = z.infer<typeof workspaceResourceSubjectSelectionSchema>
+
 // A transient subject can be a live Resource or an exact immutable Definition
 // Revision. It is browser attention, not a durable relationship or grant.
 export const workspaceSubjectReferenceSchema = z.union([
