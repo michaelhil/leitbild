@@ -66,6 +66,12 @@ const readHostError = async (response: Response): Promise<ToolResult> => {
 
 const requestSignal = (signal?: AbortSignal): AbortSignal => AbortSignal.any([AbortSignal.timeout(30_000), ...(signal ? [signal] : [])])
 
+// Tool-calling models commonly serialize an unselected optional text field as
+// an empty string. At a discovery boundary that has one unambiguous meaning:
+// no filter. Non-empty malformed identifiers still fail validation loudly.
+const optionalFilter = (value: unknown): unknown =>
+  typeof value === 'string' && value.trim().length === 0 ? undefined : value
+
 const getJson = async (fetchImpl: typeof fetch, url: string, signal?: AbortSignal): Promise<Response> => {
   try {
     return await fetchImpl(url, { signal: requestSignal(signal), headers: { Accept: 'application/json' } })
@@ -96,10 +102,14 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
     },
     execute: async (params, context) => {
       try {
-        const moduleId = params.moduleId === undefined ? undefined : moduleIdSchema.parse(params.moduleId)
-        const definitionType = params.definitionType === undefined ? undefined : definitionTypeSchema.parse(params.definitionType)
-        const resourceType = params.resourceType === undefined ? undefined : resourceTypeSchema.parse(params.resourceType)
-        const capabilityId = params.capabilityId === undefined ? undefined : capabilityIdSchema.parse(params.capabilityId)
+        const rawModuleId = optionalFilter(params.moduleId)
+        const rawDefinitionType = optionalFilter(params.definitionType)
+        const rawResourceType = optionalFilter(params.resourceType)
+        const rawCapabilityId = optionalFilter(params.capabilityId)
+        const moduleId = rawModuleId === undefined ? undefined : moduleIdSchema.parse(rawModuleId)
+        const definitionType = rawDefinitionType === undefined ? undefined : definitionTypeSchema.parse(rawDefinitionType)
+        const resourceType = rawResourceType === undefined ? undefined : resourceTypeSchema.parse(rawResourceType)
+        const capabilityId = rawCapabilityId === undefined ? undefined : capabilityIdSchema.parse(rawCapabilityId)
         const [definitionResponse, resourceResponse] = await Promise.all([
           getJson(fetchImpl, `${workspacePath}/definitions`, context.signal),
           getJson(fetchImpl, `${workspacePath}/resources`, context.signal),
@@ -151,10 +161,12 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
     },
     execute: async (params, context) => {
       try {
-        const moduleId = params.moduleId === undefined ? undefined : moduleIdSchema.parse(params.moduleId)
-        const risk = params.risk === undefined ? undefined : params.risk
-        const capabilityId = params.capabilityId === undefined ? undefined : capabilityIdSchema.parse(params.capabilityId)
-        const kind = params.kind === undefined ? undefined : params.kind
+        const rawModuleId = optionalFilter(params.moduleId)
+        const rawCapabilityId = optionalFilter(params.capabilityId)
+        const moduleId = rawModuleId === undefined ? undefined : moduleIdSchema.parse(rawModuleId)
+        const risk = optionalFilter(params.risk)
+        const capabilityId = rawCapabilityId === undefined ? undefined : capabilityIdSchema.parse(rawCapabilityId)
+        const kind = optionalFilter(params.kind)
         if (risk !== undefined && !['read', 'write', 'destructive'].includes(String(risk))) {
           return failure('invalid_tool_input', 'risk must be read, write, or destructive')
         }

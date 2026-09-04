@@ -77,6 +77,14 @@ describe('Workspace Capability tools', () => {
     const absent = await tools[1]!.execute({ capabilityId: 'world.missing.operation' }, context)
     expect(absent.data).toMatchObject({ capabilities: [] })
   })
+  test('blank optional discovery filters are treated as omitted', async () => {
+    const tools = createWorkspaceCapabilityTools({ workspaceId, hostBaseUrl: 'https://host.test', getToolGrants: () => [{ capabilityId }], fetchImpl: catalogFetch([]) })
+    const context = { callerId: 'agent', callerName: 'Analyst' }
+    const catalog = await tools[0]!.execute({ moduleId: '', definitionType: '', resourceType: '', capabilityId: '' }, context)
+    const capabilities = await tools[1]!.execute({ moduleId: ' ', capabilityId: '', risk: '', kind: '' }, context)
+    expect(catalog).toMatchObject({ success: true, data: { resources: [{ ref: { id: resourceId } }] } })
+    expect(capabilities).toMatchObject({ success: true, data: { capabilities: [{ id: capabilityId, granted: true }] } })
+  })
   test('current Room association remains discoverable when filtering for World resources', async () => {
     const ref = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId, type: resourceType, id: resourceId })
     const linked = { ref: { workspaceId, moduleId: 'agents', type: 'agents.room', id: 'room' }, title: 'Conversation', capabilityIds: [], links: [{ rel: 'companion-of', ref }], observedAt: new Date().toISOString() }
