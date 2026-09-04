@@ -184,6 +184,20 @@ describe('HTTP Routes', () => {
     expect(body.generation.durationMs).toBe(42)
   })
 
+  test('GET /product-source exposes only allowlisted deployed source', async () => {
+    const okPath = '/product-source?path=README.md'
+    const ok = await call(system, req('GET', okPath), '/product-source')
+    expect(ok?.status).toBe(200)
+    const source = await ok!.json() as { path: string; content: string; totalLines: number }
+    expect(source.path).toBe('README.md')
+    expect(source.content).toContain('Leitbild')
+    expect(source.totalLines).toBeGreaterThan(1)
+
+    const deniedPath = '/product-source?path=..%2Fpackage.json'
+    const denied = await call(system, req('GET', deniedPath), '/product-source')
+    expect(denied?.status).toBe(404)
+  })
+
   test('DELETE /rooms/:name removes room', async () => {
     const res = await call(system, req('DELETE', '/rooms/TestRoom'), '/rooms/TestRoom')
     expect(res?.status).toBe(200)

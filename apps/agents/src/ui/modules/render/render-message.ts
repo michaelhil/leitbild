@@ -15,6 +15,7 @@ import { icon } from '../icon.ts'
 import { appendWhisperBadge } from '../whisper-badge.ts'
 import { showToast } from '../toast.ts'
 import { $messageThinking } from '../stores.ts'
+import { decorateProductSourceReferences } from '../modals/source-modal.ts'
 
 // Clipboard writes use the current Async Clipboard API. Returns false when
 // the browser or document context does not permit clipboard access.
@@ -43,6 +44,7 @@ const renderMarkdownContent = (el: HTMLElement, text: string): void => {
   if (w.marked?.parse && w.DOMPurify?.sanitize) {
     el.className += ' msg-prose'
     el.innerHTML = w.DOMPurify.sanitize(w.marked.parse(text))
+    decorateProductSourceReferences(el)
     for (const proc of getPostRenderProcessors()) void proc(el)
   } else {
     el.textContent = text
@@ -278,8 +280,8 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
         const ctxBtn = document.createElement('button')
         ctxBtn.className = 'icon-btn text-text-subtle hover:text-accent text-xs'
         ctxBtn.appendChild(icon('info', { size: 13 }))
-        ctxBtn.title = 'Inspect complete generation query'
-        ctxBtn.setAttribute('aria-label', 'Inspect complete generation query')
+        ctxBtn.title = 'View prompt context and generation details'
+        ctxBtn.setAttribute('aria-label', 'View prompt context and generation details')
         ctxBtn.onclick = (e) => { e.stopPropagation(); onViewContext(msg) }
         header.appendChild(ctxBtn)
       }

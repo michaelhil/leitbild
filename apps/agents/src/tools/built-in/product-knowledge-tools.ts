@@ -2,17 +2,26 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { extname, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
 import type { Tool } from '../../core/types/tool.ts'
+import {
+  MAX_PRODUCT_SOURCE_BYTES,
+  PRODUCT_SOURCE_EXTENSIONS,
+  isAllowedProductPath,
+  isExcludedProductSegment,
+  productDocumentAuthority,
+  productDocumentKind,
+  productSourceRoot,
+  readProductRevision,
+  type ProductDocumentAuthority,
+  type ProductDocumentKind,
+} from '../../core/product-source.ts'
 
-const MAX_FILE_BYTES = 1_000_000
 const MAX_CORPUS_BYTES = 32_000_000
 const MAX_READ_LINES = 200
-const SUPPORTED_EXTENSIONS = new Set(['.md', '.ts', '.svelte', '.json', '.css'])
-const EXCLUDED_SEGMENTS = new Set(['node_modules', 'dist', 'build', 'coverage', 'deploy', 'data', 'runtime', 'storage', 'public', '.git', '.svelte-kit'])
 
 interface ProductDocument {
   readonly path: string
-  readonly kind: 'documentation' | 'source'
-  readonly authority: 'implementation' | 'decision' | 'domain-language' | 'documentation'
+  readonly kind: ProductDocumentKind
+  readonly authority: ProductDocumentAuthority
   readonly content: string
   readonly lines: ReadonlyArray<string>
 }
@@ -37,28 +46,11 @@ const readInputSchema = z.object({
 const toProductPath = (root: string, absolutePath: string): string =>
   relative(root, absolutePath).split(sep).join('/')
 
-const isAllowedProductPath = (path: string): boolean => {
-  if (path === 'README.md' || path === 'CONTEXT-MAP.md') return true
-  const segments = path.split('/')
-  if (segments.some(segment => EXCLUDED_SEGMENTS.has(segment) || segment.startsWith('.env'))) return false
-  if (path.startsWith('docs/') || path.startsWith('contexts/')) return true
-  if (/^apps\/[^/]+\/(?:README\.md|src\/)/.test(path)) return true
-  return /^packages\/[^/]+\/(?:README\.md|src\/)/.test(path)
-}
-
-const documentKind = (path: string): ProductDocument['kind'] =>
-  path.endsWith('.md') ? 'documentation' : 'source'
-const documentAuthority = (path: string): ProductDocument['authority'] =>
-  path.includes('/src/') ? 'implementation'
-    : path.startsWith('docs/adr/') ? 'decision'
-      : path.startsWith('contexts/') || path === 'CONTEXT-MAP.md' ? 'domain-language'
-        : 'documentation'
-
 const walk = async (directory: string): Promise<ReadonlyArray<string>> => {
   const entries = await readdir(directory, { withFileTypes: true })
   const files: string[] = []
   for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
-    if (EXCLUDED_SEGMENTS.has(entry.name) || entry.name.startsWith('.env')) continue
+    if (isExcludedProductSegment(entry.name)) continue
     const path = resolve(directory, entry.name)
     if (entry.isDirectory()) files.push(...await walk(path))
     else if (entry.isFile()) files.push(path)
@@ -66,33 +58,20 @@ const walk = async (directory: string): Promise<ReadonlyArray<string>> => {
   return files
 }
 
-const readRevision = async (root: string): Promise<string> => {
-  try {
-    const deployment = JSON.parse(await readFile(resolve(root, 'DEPLOYMENT.json'), 'utf8')) as Record<string, unknown>
-    for (const key of ['releaseId', 'baseCommit', 'commit', 'revision', 'sha']) {
-      if (typeof deployment[key] === 'string' && deployment[key].length > 0) return deployment[key]
-    }
-  } catch {
-    // A source checkout has no deployment manifest. The result explicitly
-    // reports "development" so callers never mistake it for deployed code.
-  }
-  return 'development'
-}
-
 const loadCorpus = async (root: string): Promise<ProductCorpus> => {
   const documents: ProductDocument[] = []
   let totalBytes = 0
   for (const absolutePath of await walk(root)) {
     const path = toProductPath(root, absolutePath)
-    if (!isAllowedProductPath(path) || !SUPPORTED_EXTENSIONS.has(extname(path))) continue
+    if (!isAllowedProductPath(path) || !PRODUCT_SOURCE_EXTENSIONS.has(extname(path))) continue
     const file = await stat(absolutePath)
-    if (file.size > MAX_FILE_BYTES) continue
+    if (file.size > MAX_PRODUCT_SOURCE_BYTES) continue
     totalBytes += file.size
     if (totalBytes > MAX_CORPUS_BYTES) throw new Error(`Product knowledge corpus exceeds ${MAX_CORPUS_BYTES} bytes`)
     const content = await readFile(absolutePath, 'utf8')
-    documents.push({ path, kind: documentKind(path), authority: documentAuthority(path), content, lines: content.split(/\r?\n/) })
+    documents.push({ path, kind: productDocumentKind(path), authority: productDocumentAuthority(path), content, lines: content.split(/\r?\n/) })
   }
-  return { revision: await readRevision(root), documents }
+  return { revision: await readProductRevision(root), documents }
 }
 
 const STOP_TERMS = new Set(['a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'how', 'i', 'in', 'is', 'it', 'me', 'of', 'on', 'or', 'that', 'the', 'this', 'to', 'was', 'what', 'where', 'with'])
@@ -102,7 +81,7 @@ const normalizeTerms = (query: string): ReadonlyArray<string> => {
 }
 
 export const createProductKnowledgeTools = (options: { readonly repoRoot?: string } = {}): ReadonlyArray<Tool> => {
-  const root = resolve(options.repoRoot ?? resolve(import.meta.dir, '../../../../..'))
+  const root = productSourceRoot(options.repoRoot)
   let corpusPromise: Promise<ProductCorpus> | undefined
   const corpus = (): Promise<ProductCorpus> => corpusPromise ??= loadCorpus(root)
 

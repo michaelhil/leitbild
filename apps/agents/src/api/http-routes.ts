@@ -35,6 +35,7 @@ import { promptDeckRoutes } from './routes/prompt-decks.ts'
 import { geodataRoutes } from './routes/geodata.ts'
 import { documentRoutes } from './routes/documents.ts'
 import { diagnosticRoutes } from './routes/diagnostics.ts'
+import { productSourceRoutes } from './routes/product-sources.ts'
 import type { RouteContext } from './routes/types.ts'
 import type { AccessContext, WorkspaceId } from '@leitbild/contracts'
 
@@ -69,6 +70,8 @@ const allRoutes = [
   ...geodataRoutes,
   // RAG documents — per-Workspace corpus.
   ...documentRoutes,
+  // Read-only, allowlisted deployed product source used by citation modals.
+  ...productSourceRoutes,
   ...roomRoutes,
   // Agent-memory routes BEFORE agentRoutes so /agents/:name/memory
   // matches before /agents/:name (which would shadow it).
