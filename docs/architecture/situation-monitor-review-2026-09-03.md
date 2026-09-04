@@ -176,7 +176,7 @@ The provider's newer `CctvSimple_v2` collection returned the same 143 video avai
 
 ## 5. AI integration
 
-Retain the current capability broker and read-versus-management grants. The ordinary companion can inspect retained evidence; the separately permissioned operator can manage sources. No new Agent framework is needed.
+Retain the current capability broker and risk-specific grants. A Run Assistant can inspect retained evidence through its selected Run; destructive source management remains separately granted. No new Agent framework is needed.
 
 Add typed discovery of dataset options, observed fields/units and available map symbols. Extend record queries with practical kind/status/validity and subject filters rather than making the Agent page through everything. Expose source failures, upstream completeness, last validation and original timestamps alongside results.
 
@@ -200,7 +200,7 @@ The approved core changes are implemented: collection-level snapshots and persis
 
 The national traffic feed's full road geometry exceeded the 8 MiB ingestion ceiling. The adapter requests the provider's published display coordinates and useful metadata instead (about 2 MiB), explicitly labels the location representation, and folds duplicated secondary classifications into one identified report. It does **not** draw a point as if it described the full affected road. Complete catalogues are bounded and checked; no generic pagination framework was needed.
 
-Production acceptance in an isolated temporary Workspace confirmed four ready sources: 895 cameras, 467 measured-weather stations, 2,394 traffic reports and one warning at the time of testing. Counts change with the provider. Live dataset discovery, tag-based icon search, Run configuration saving and an 800×450 provider image worked. The companion Room was provisioned normally; no paid model inference was invoked.
+Production acceptance in an isolated temporary Workspace confirmed four ready sources: 895 cameras, 467 measured-weather stations, 2,394 traffic reports and one warning at the time of testing. Counts change with the provider. Live dataset discovery, tag-based icon search, Run configuration saving and an 800×450 provider image worked. The then-current simulation Room lifecycle was provisioned normally; no paid model inference was invoked.
 
 Browser acceptance also caught two issues outside simple decoder tests:
 

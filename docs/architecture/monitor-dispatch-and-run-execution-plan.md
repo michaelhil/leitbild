@@ -52,7 +52,7 @@ Evidence under `apps/world/src/packs/ambulance`:
 - Initial ETA uses route-service duration, but movement uses a fixed 15 m/s. Restoring movement guesses the nearest route vertex and loses exact motion state.
 - Foreign Pack objects are filtered out of the runtime's initial and committed views. The unused medical-demand handler ignores `sourceObjectId` and creates another point incident.
 - Commands republish whole-fleet snapshots as durable events; several queries repeatedly scan/parse the fleet. Scenario construction and live creation use inconsistent constructors.
-- Agent discovery exposes mainly full objects, not an operational dispatch board or eligible choices with rejection reasons. The ordinary companion's grants omit useful Ambulance-specific reads.
+- Agent discovery exposes mainly full objects, not an operational dispatch board or eligible choices with rejection reasons. The earlier simulation-assistant grants omitted useful Ambulance-specific reads.
 
 Preserve the Pack boundary, routing port, typed road-weather constraint, canonical projections, Scenario integration, recording and Capability registry. Replace the domain engine and its tests, not the surrounding product architecture.
 
@@ -223,7 +223,7 @@ Keep `workspace_catalog`, `workspace_capabilities` and `workspace_invoke`. Add b
 - Ambulance: dispatch overview, incident/patient detail, eligible units/destinations with reasons, operational milestones/metrics; strict assignment/reassignment/transport/disposition commands.
 - Monitor: modality/validity/source-filtered summaries, full inspection, explicit live-versus-captured metadata and collection failures.
 - Run: committed simulation time/sequence, copy ancestry, progress, preflight constraints, pause/realtime/fast-forward and copy operations through the existing registry.
-- Grant appropriate domain reads to the ordinary companion; management and dispatch writes remain deliberate. No provider credential or secret enters prompts.
+- Grant appropriate domain access through the Run Assistant's selected subjects; destructive management remains explicit. No provider credential or secret enters prompts.
 - Use the same constructor/validator and operation for editor, Timeline, UI and AI. Keep future Scenario cues private; do not claim a blind dispatch experiment if a generic raw-object query reveals its hidden state.
 
 Review exact-capability discovery for optionally returning output schemas; currently the Agent broker strips them even for a precise capability lookup. Avoid dumping every input/output schema into every turn. Measure payloads before redesigning catalog pagination.
@@ -237,7 +237,7 @@ External reports are evidence, not commands. No news item silently causes a Plan
 | A — isolated correctness | Monitor cadence/provenance/validation/inspection fixes; focused regressions | Existing and new tests, type/build checks, production source/UI smoke; no cache/history deletion |
 | B — execution seam | Awaited bounded advances, committed clock, routing cancellation, coherent checkpoint; repair missing private state | Restart completeness, stable Plant/Grid and Weather/Ambulance round semantics, no unbounded command fence |
 | C — Ambulance replacement | Four concepts, shared constructors, fixed occurrence references, exact routes, assignment/patient/handover invariants | Patient conservation, wrong-target rejection, simultaneous commands, deletion/reassignment, interrupted stages, route failure |
-| D — usable demo and discovery | Editor controls, domain read models, companion grants, one Norway dispatch Scenario; Monitor compact queries/validity | All editor/Timeline/AI actions use identical validation; coherent ten-minute demo; bounded payloads |
+| D — usable demo and discovery | Editor controls, domain read models, Run Assistant grants, one Norway dispatch Scenario; Monitor compact queries/validity | All editor/Timeline/AI actions use identical validation; coherent ten-minute demo; bounded payloads |
 | E — copying and fast-forward | Complete copy, captured evidence, server-owned horizon state, UI, bounded publication | Original unchanged, exact horizon, responsive pause, restart paused, frozen feeds, resource admission, realtime/fast equivalence |
 | F — integrated release | Mixed Plant/Grid/Weather/Ambulance run, Drone checkpoint tests, multi-user inspection, deployment | Whole-Run benchmark, historian cadence, slow-client and failure tests, production smoke |
 
@@ -288,7 +288,7 @@ Implemented four explicit item types with one shared authoring/live-creation con
 
 The complete operational loop includes optional preplanned onward transport, capacity/care-tag/urgency checks, first-arrival and patient milestones, explicit no-transport, cancellation without lost custody, deterministic FIFO handover with stable ID ties, capacity reopening, retargeting and return to base. Assessments record new facts even when a previous plan becomes unsuitable. Shared warnings expose that mismatch. Destination checks prevent new unsuitable admission; a handover already admitted finishes under its accepted service duration. Care-site settings govern future admissions rather than undoing completed work.
 
-AI access uses four bounded read surfaces (dispatch state, exact object, eligible options and measures) plus the same validated commands as human controls and Timeline. The default simulation companion stays read-only. A separate dispatch-assistant Room Definition grants operational commands, discovers the Run dynamically, verifies effects, and distinguishes requested execution from advice. No provider-specific agent implementation or stored Run binding was introduced. Real Module integration tests exercise discovery → eligibility → dispatch → readback without substituting a fake World runtime.
+AI access uses four bounded read surfaces (dispatch state, exact object, eligible options and measures) plus the same validated commands as human controls and Timeline. The current Run Assistant receives read/write access only through its Room Subject Selection, discovers Run capabilities dynamically, verifies effects, and distinguishes requested execution from advice; destructive operations remain outside the semantic grant. No provider-specific implementation or Agent-stored Run binding is introduced. Real Module integration tests exercise discovery → eligibility → dispatch → readback without substituting a fake World runtime.
 
 ### Hardening discovered during implementation
 

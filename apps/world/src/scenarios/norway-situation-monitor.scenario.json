@@ -5,7 +5,7 @@
   "objectives": [
     "Build a sourced picture across Norway; distinguish observations, scheduled roadworks, warnings and camera availability.",
     "Inspect original evidence, measurement times, warning validity and provider advice. Missing coverage is not proof that nothing happened.",
-    "Ask the companion assistant to discover sources and summarize retained evidence. Media references do not give the assistant video understanding."
+    "Open the Run Assistant to discover sources and summarize retained evidence. Media references do not give the assistant video understanding."
   ],
   "packs": [{ "id": "situation-monitor", "config": { "areas": [], "sources": [
     { "id": "cameras", "name": "Road cameras", "adapter": "vegvesen", "dataset": "cameras", "intervalSeconds": 300, "retentionHours": 1, "attribution": "Statens vegvesen" },

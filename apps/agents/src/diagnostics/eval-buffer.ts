@@ -35,8 +35,8 @@ export interface EvalRecord {
   temperature?: number
   toolCount?: number
   // Toolnames sent to the LLM at eval-start time. Empty array when
-  // includeTools is false. Captured by the surface introspection
-  // companion module (separate from EvalEvent so the wire shape stays
+  // includeTools is false. Captured by the surface-introspection path
+  // (separate from EvalEvent so the wire shape stays
   // small for chunk-heavy events).
   toolNames?: ReadonlyArray<string>
   toolCalls: ToolCallTrace[]

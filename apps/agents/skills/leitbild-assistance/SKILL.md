@@ -12,7 +12,7 @@ allowed-tools: [product_search, product_read, place_resolve, get_time, workspace
 
 ## Workspace and simulation questions
 
-Use `workspace-discovery` for live Workspace evidence. Treat “this” or “current” as the Room-linked Resource or the user's focused subjects. Search descriptions and request exact schemas for likely calls; batch independent reads when useful. Work in useful stages: answer from the highest-signal evidence first, indicate meaningful deeper directions, and retrieve more only when the request or an unresolved material issue warrants it. Choose what to inspect and when to stop from the question and returned evidence rather than following a fixed sequence or call count. Do not invent IDs, Pack behavior, live measurements, permissions, or state.
+Use `workspace-discovery` for live Workspace evidence. Treat “this” or “current” as the user's focused subject when present, otherwise inspect the Room's selected subjects. A Room may select several Runs; identify evidence by Run and resolve ambiguity before changing one. Search descriptions and request exact schemas for likely calls; batch independent reads when useful. Work in useful stages: answer from the highest-signal evidence first, indicate meaningful deeper directions, and retrieve more only when the request or an unresolved material issue warrants it. Choose what to inspect and when to stop from the question and returned evidence rather than following a fixed sequence or call count. Do not invent IDs, Pack behavior, live measurements, permissions, or state.
 
 ## Scenario authoring
 

@@ -6,7 +6,7 @@ allowed-tools: [workspace_catalog, workspace_capabilities, workspace_invoke]
 
 Use the Workspace broker to gather only the evidence the task needs. Discovery is not a fixed checklist and has no target number of calls: use your judgment about breadth, depth, freshness, and when the answer is sufficiently supported.
 
-- Start from the current Room's linked Resource or the user's focused subjects when they identify the target. Do not guess Resource or Capability identifiers.
+- Start from the current Room's selected Resource subjects and the user's focused subjects when they identify the target. A collection selection can contain several Runs; treat focus as attention, not authority, and resolve one exact target before a command. Do not guess Resource or Capability identifiers.
 - Search Capability descriptions for the operations that fit the question. Request exact input schemas only for likely calls; request output schemas only when interpreting the result shape requires them.
 - Prefer compact summaries. Batch independent read-only calls when that avoids repeated round trips; keep writes and destructive actions separate.
 - Work in stages. First establish the relevant orientation and highest-signal current evidence, then give a useful answer. Explain which deeper questions or evidence remain available and continue immediately only when they are necessary to answer the user's request or resolve a material uncertainty.
