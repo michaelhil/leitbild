@@ -15,6 +15,7 @@ export const toUIMessage = (m: Message): UIMessage => ({
   type: m.type,
   roomId: m.roomId,
   generationMs: m.generationMs,
+  ...(m.generationTraceId !== undefined ? { generationTraceId: m.generationTraceId } : {}),
   ...(m.promptTokens !== undefined ? { promptTokens: m.promptTokens } : {}),
   ...(m.completionTokens !== undefined ? { completionTokens: m.completionTokens } : {}),
   ...(m.cacheCreation !== undefined ? { cacheCreation: m.cacheCreation } : {}),

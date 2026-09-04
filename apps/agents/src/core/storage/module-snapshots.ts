@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { toolGrantSetSchema, workspaceResourceReferenceSchema } from '@leitbild/contracts'
 import type { Agent, AIAgentConfig } from '../types/agent.ts'
 import type { DeliveryMode, Message, RoomProfile } from '../types/messaging.ts'
-import type { Room } from '../types/room.ts'
+import type { GenerationQueryRecord, Room } from '../types/room.ts'
 import type { Bookmark } from '../workspaces/bookmark-store.ts'
 import type { SummaryConfig } from '../types/summary.ts'
 import type { Trigger } from '../triggers/types.ts'
@@ -27,6 +27,7 @@ export interface RoomSnapshot {
   readonly summaryConfig?: SummaryConfig
   readonly latestSummary?: string
   readonly activePacks: ReadonlyArray<string>
+  readonly generationQueries?: ReadonlyArray<GenerationQueryRecord>
 }
 
 export interface HumanActorSnapshot {
@@ -139,6 +140,7 @@ const messageSchema = z.object({
   inReplyTo: z.array(z.string()).optional(),
   cause: messageCauseSchema.optional(),
   generationMs: z.number().finite().optional(),
+  generationTraceId: z.string().optional(),
   promptTokens: z.number().finite().optional(),
   completionTokens: z.number().finite().optional(),
   cacheCreation: z.number().finite().optional(),
@@ -169,6 +171,51 @@ const messageSchema = z.object({
   attachments: z.array(messageAttachmentSchema).max(8).optional(),
 }).strict()
 
+const nativeToolCallSchema = z.object({
+  id: z.string().optional(),
+  function: z.object({
+    name: z.string(),
+    arguments: z.record(z.string(), z.json()),
+  }).strict(),
+}).strict()
+
+const toolDefinitionSchema = z.object({
+  type: z.literal('function'),
+  function: z.object({
+    name: z.string(),
+    description: z.string(),
+    parameters: z.record(z.string(), z.json()),
+  }).strict(),
+}).strict()
+
+const generationQuerySchema = z.object({
+  model: z.string(),
+  messages: z.array(z.object({
+    role: z.enum(['system', 'user', 'assistant', 'tool']),
+    content: z.string(),
+    toolCalls: z.array(nativeToolCallSchema).optional(),
+    toolCallId: z.string().optional(),
+    name: z.string().optional(),
+    images: z.array(z.object({ dataUrl: z.string(), mimeType: z.literal('image/png') }).strict()).optional(),
+  }).strict()),
+  temperature: z.number().finite().optional(),
+  seed: z.number().finite().optional(),
+  maxTokens: z.number().finite().optional(),
+  jsonMode: z.boolean().optional(),
+  tools: z.array(toolDefinitionSchema).optional(),
+  toolChoice: z.union([z.enum(['auto', 'required']), z.object({ name: z.string() }).strict()]).optional(),
+  think: z.boolean().optional(),
+  numCtx: z.number().finite().optional(),
+  keepAlive: z.string().optional(),
+  systemBlocks: z.array(z.object({ text: z.string(), cacheable: z.boolean().optional() }).strict()).optional(),
+}).strict()
+
+const generationQueryRecordSchema = z.object({
+  messageId: z.string(),
+  traceId: z.string(),
+  query: generationQuerySchema,
+}).strict()
+
 const summaryScheduleSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('time'), everySeconds: z.number().finite() }).strict(),
   z.object({ kind: z.literal('messages'), everyMessages: z.number().finite() }).strict(),
@@ -197,6 +244,7 @@ const roomSnapshotSchema = z.object({
   summaryConfig: summaryConfigSchema.optional(),
   latestSummary: z.string().optional(),
   activePacks: z.array(z.string()),
+  generationQueries: z.array(generationQueryRecordSchema).optional(),
 }).strict()
 
 const agentConfigSchema = z.object({
@@ -279,6 +327,7 @@ export const serializeModuleSnapshots = (runtime: SerializableRuntime): {
       ...(room.summaryConfig ? { summaryConfig: room.summaryConfig } : {}),
       ...(state.latestSummary ? { latestSummary: state.latestSummary } : {}),
       activePacks: [...room.getActivePacks()],
+      ...(room.getGenerationQueries().length > 0 ? { generationQueries: room.getGenerationQueries() } : {}),
     })
   }
 
@@ -434,6 +483,7 @@ export const restoreWorkspaceModuleSnapshots = async (
     for (const roomSnapshot of rooms.rooms) {
       const room = runtime.rooms.restoreRoom(roomSnapshot.profile)
       room.injectMessages(roomSnapshot.messages)
+      room.injectGenerationQueries(roomSnapshot.generationQueries ?? [])
       room.restoreState({
         members: roomSnapshot.members,
         muted: roomSnapshot.muted,

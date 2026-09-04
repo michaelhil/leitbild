@@ -26,7 +26,7 @@ import {
   credibilityReadPayloadSchema,
 } from './queries/credibility-query.ts'
 import { displayQuerySchema, graphLensQuerySchema } from './queries/display-query.ts'
-import { artifactReadQuerySchema, displayProfileReadQuerySchema } from './queries/graph-query.ts'
+import { artifactReadQuerySchema, componentsSearchQuerySchema, displayProfileReadQuerySchema } from './queries/graph-query.ts'
 import { plantQuerySchema } from './queries/common.ts'
 import {
   procedureTagsValidateQuerySchema,
@@ -76,6 +76,14 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
     }).strict()),
   }).strict(),
   'world.process-plant.graph.read': z.object({ graph: recordSchema }).strict(),
+  'world.process-plant.components.search': z.object({
+    plantId: plantIdSchema,
+    specification: recordSchema,
+    totalComponents: z.number().int().nonnegative(),
+    matchedComponents: z.number().int().nonnegative(),
+    byKind: z.record(z.string(), z.number().int().nonnegative()),
+    components: recordArraySchema,
+  }).strict(),
   'world.process-plant.artifact.read': z.object({
     plantId: plantIdSchema,
     artifact: z.enum(['authored-spec', 'compiled-graph-mermaid']),
@@ -130,6 +138,7 @@ const queryInputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.credibility.read': credibilityReadPayloadSchema,
   'world.process-plant.plants.list': processPlantCatalogInputSchema,
   'world.process-plant.graph.read': plantQuerySchema,
+  'world.process-plant.components.search': componentsSearchQuerySchema,
   'world.process-plant.artifact.read': artifactReadQuerySchema,
   'world.process-plant.display-profile.read': displayProfileReadQuerySchema,
   'world.process-plant.variables.read': variablesReadQuerySchema,
@@ -161,8 +170,9 @@ const queryDescriptionById: Readonly<Record<string, string>> = {
   'world.process-plant.credibility.list': 'List engineering credibility evidence available for one Plant.',
   'world.process-plant.credibility.read': 'Read one engineering evidence artifact and its provenance for one Plant.',
   'world.process-plant.plants.list': 'List active Plants with their model library, graph size, variable count, and elapsed simulation time.',
-  'world.process-plant.graph.read': 'Read one Plant compiled component, connection, variable, and signal graph.',
-  'world.process-plant.artifact.read': 'Read one Plant authored configuration or compiled graph artifact, including source and calculation links.',
+  'world.process-plant.graph.read': 'Read one complete compiled Plant component, connection, variable, and signal graph. This is a large engineering view; prefer component or signal search for focused questions.',
+  'world.process-plant.components.search': 'Discover Plant components by identity, kind, or text. Returns compact summaries by default and parameters only when requested.',
+  'world.process-plant.artifact.read': 'Read one complete authored Plant configuration or compiled graph artifact, including implementation source and calculation links. Use for provenance or full engineering inspection, not routine live-state questions.',
   'world.process-plant.display-profile.read': 'Read a configured operator display profile with its current grouped field values.',
   'world.process-plant.variables.read': 'Read current values and metadata for explicitly named Plant variable paths.',
   'world.process-plant.variables.search': 'Search current Plant variables by text, discipline, quantity, publication state, and Plant; results are paginated.',

@@ -237,7 +237,7 @@ describe('Workspace Host with real Modules', () => {
       .map(id => companionRuntime.team.getAgent(id))
       .find(agent => agent?.kind === 'ai')!
     const generalAssistantAI = asAIAgent(generalAssistant)!
-    expect(generalAssistantAI.getMaxToolIterations()).toBe(10)
+    expect(generalAssistantAI.getMaxToolIterations()).toBeUndefined()
     expect(effectiveAgentToolSelection(generalAssistantAI.getConfig())).toEqual(expect.arrayContaining([
       'product_search',
       'product_read',

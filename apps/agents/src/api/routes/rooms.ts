@@ -54,6 +54,35 @@ export const roomRoutes: RouteEntry[] = [
     },
   },
   {
+    method: 'GET',
+    pattern: /^\/rooms\/([^/]+)\/messages\/([^/]+)\/generation-query$/,
+    handler: (_req, match, { system }) => {
+      const name = decodeURIComponent(match[1]!)
+      const messageId = decodeURIComponent(match[2]!)
+      const room = system.rooms.getRoom(name)
+      if (!room) return errorResponse(`Room "${name}" not found`, 404)
+      const message = room.getRecent(room.getMessageCount()).find(candidate => candidate.id === messageId)
+      if (!message) return errorResponse(`Message "${messageId}" not found`, 404)
+      const record = room.getGenerationQuery(messageId)
+      if (!record) return errorResponse(`Generation query for message "${messageId}" is unavailable`, 404)
+      return json({
+        ...record,
+        generation: {
+          ...(message.provider ? { provider: message.provider } : {}),
+          ...(message.model ? { model: message.model } : {}),
+          ...(message.generationMs !== undefined ? { durationMs: message.generationMs } : {}),
+          ...(message.modelCalls !== undefined ? { modelCalls: message.modelCalls } : {}),
+          ...(message.promptTokens !== undefined ? { promptTokens: message.promptTokens } : {}),
+          ...(message.completionTokens !== undefined ? { completionTokens: message.completionTokens } : {}),
+          ...(message.cacheCreation !== undefined ? { cacheCreation: message.cacheCreation } : {}),
+          ...(message.cacheRead !== undefined ? { cacheRead: message.cacheRead } : {}),
+          ...(message.cacheMiss !== undefined ? { cacheMiss: message.cacheMiss } : {}),
+          ...(message.toolTrace ? { toolTrace: message.toolTrace } : {}),
+        },
+      })
+    },
+  },
+  {
     method: 'DELETE',
     pattern: /^\/rooms\/([^/]+)\/messages\/([^/]+)$/,
     handler: (_req, match, { system }) => {

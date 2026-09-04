@@ -107,7 +107,7 @@ export const initThinkingDisplay = (deps: ThinkingDisplayDeps): void => {
 
   // Tool-iteration checkin: the agent's loop has paused and is awaiting
   // explicit user input. Render the inline notice in the existing thinking
-  // indicator with [Continue +5] [Stop] buttons. Replaces the old silent
+  // indicator with [Continue] [Stop] buttons. Replaces the old silent
   // tool_loop_exceeded cliff — user decides whether to keep going.
   $pendingToolCheckins.listen((checkins, _old, changedId) => {
     if (!changedId) return
@@ -125,7 +125,7 @@ export const initThinkingDisplay = (deps: ThinkingDisplayDeps): void => {
         apiFetch(`/agents/${encodeURIComponent(agentName)}/continue-tools`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ roomId: checkin.roomId, additionalIterations: 5 }),
+          body: JSON.stringify({ roomId: checkin.roomId }),
         }).catch(() => { /* surfaced as failed network in dev console */ })
       },
       // Stop: POST /agents/:name/cancel (existing cancel-generation path).

@@ -109,6 +109,10 @@ export interface ChatRequest {
   readonly systemBlocks?: ReadonlyArray<{ readonly text: string; readonly cacheable?: boolean }>
 }
 
+// Provider-independent record of the complete request supplied to an LLM
+// generation call. Credentials and transport headers never enter this shape.
+export type GenerationQuery = ChatRequest
+
 export interface ChatResponse {
   readonly content: string
   readonly generationMs: number

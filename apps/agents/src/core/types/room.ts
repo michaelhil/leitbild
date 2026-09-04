@@ -7,6 +7,7 @@ import type {
   DeliveryMode,
 } from './messaging.ts'
 import type { SummaryConfig } from './summary.ts'
+import type { GenerationQuery } from './llm.ts'
 
 // === Room event callbacks ===
 
@@ -62,6 +63,10 @@ export interface Room {
   readonly setRoomPrompt: (prompt: string) => void
   readonly deleteMessage: (messageId: string) => boolean
   readonly clearMessages: () => void
+  readonly setGenerationQuery: (messageId: string, traceId: string, query: GenerationQuery) => void
+  readonly getGenerationQuery: (messageId: string) => GenerationQueryRecord | undefined
+  readonly getGenerationQueries: () => ReadonlyArray<GenerationQueryRecord>
+  readonly injectGenerationQueries: (records: ReadonlyArray<GenerationQueryRecord>) => void
 
   // Delivery mode
   readonly deliveryMode: DeliveryMode
@@ -108,6 +113,12 @@ export interface Room {
   // Snapshot restore — bypass delivery, populate state directly
   readonly injectMessages: (msgs: ReadonlyArray<Message>) => void
   readonly restoreState: (state: RoomRestoreParams) => void
+}
+
+export interface GenerationQueryRecord {
+  readonly messageId: string
+  readonly traceId: string
+  readonly query: GenerationQuery
 }
 
 export interface RoomRestoreParams {

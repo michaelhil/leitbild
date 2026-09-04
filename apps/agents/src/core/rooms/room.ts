@@ -28,6 +28,7 @@ import type {
 import type {
   OnDeliveryModeChanged, OnMessagePosted, OnSummaryConfigChanged,
   OnSummaryUpdated, OnTurnChanged, Room, RoomRestoreParams, RoomState,
+  GenerationQueryRecord,
 } from '../types/room.ts'
 import type { SummaryConfig } from '../types/summary.ts'
 import { DEFAULT_SUMMARY_CONFIG } from '../types/summary.ts'
@@ -65,6 +66,7 @@ export const createRoom = (
 ): Room => {
   let profile = initialProfile
   const messages: Message[] = []
+  const generationQueries = new Map<string, GenerationQueryRecord>()
   const compressedIds = new Set<string>()
   const members = new Set<string>()
   const muted = new Set<string>()
@@ -261,6 +263,7 @@ export const createRoom = (
       const idx = messages.findIndex(m => m.id === messageId)
       if (idx === -1) return false
       messages.splice(idx, 1)
+      generationQueries.delete(messageId)
       return true
     },
     clearMessages: (): void => {
@@ -268,8 +271,23 @@ export const createRoom = (
       // a "clear" leaves stale tombstones + summary that misrepresent an
       // empty room.
       messages.length = 0
+      generationQueries.clear()
       compressedIds.clear()
       latestSummary = undefined
+    },
+    setGenerationQuery: (messageId, traceId, query): void => {
+      if (!messages.some(message => message.id === messageId)) {
+        throw new Error(`Cannot attach generation query to unknown message: ${messageId}`)
+      }
+      generationQueries.set(messageId, { messageId, traceId, query })
+    },
+    getGenerationQuery: (messageId): GenerationQueryRecord | undefined => generationQueries.get(messageId),
+    getGenerationQueries: (): ReadonlyArray<GenerationQueryRecord> => [...generationQueries.values()],
+    injectGenerationQueries: (records): void => {
+      const messageIds = new Set(messages.map(message => message.id))
+      for (const record of records) {
+        if (messageIds.has(record.messageId)) generationQueries.set(record.messageId, record)
+      }
     },
 
     get deliveryMode() { return mode },
@@ -322,11 +340,19 @@ export const createRoom = (
     replaceCompression: (oldestIds: ReadonlyArray<string>, newText: string): Message => {
       // Remove previous room_summary (if present anywhere in the stream).
       const prevIdx = messages.findIndex(m => m.type === 'room_summary')
-      if (prevIdx !== -1) messages.splice(prevIdx, 1)
+      if (prevIdx !== -1) {
+        const previousSummary = messages[prevIdx]
+        if (previousSummary) generationQueries.delete(previousSummary.id)
+        messages.splice(prevIdx, 1)
+      }
       // Drop the compressed messages from the delivery stream; flag tombstones.
       const idSet = new Set(oldestIds)
       for (let i = messages.length - 1; i >= 0; i--) {
-        if (idSet.has(messages[i]!.id)) messages.splice(i, 1)
+        const messageId = messages[i]!.id
+        if (idSet.has(messageId)) {
+          generationQueries.delete(messageId)
+          messages.splice(i, 1)
+        }
       }
       for (const id of oldestIds) compressedIds.add(id)
       const summaryMessage: Message = {

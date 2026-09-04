@@ -310,6 +310,29 @@ describe('evaluate (tool loop)', () => {
     if (r.action === 'respond') expect(r.content).toBe('hello world')
   })
 
+  test('records the complete final generation query after tool use', async () => {
+    const tools: ToolDefinition[] = [{
+      type: 'function',
+      function: { name: 'inspect', description: 'Inspect evidence', parameters: { type: 'object' } },
+    }]
+    const { provider } = makeScriptedProvider([
+      { toolCalls: [{ id: 'call-1', function: { name: 'inspect', arguments: { subject: 'plant' } } }] },
+      { content: 'grounded answer' },
+    ])
+    const result = await evaluate(
+      baseContextResult(), baseConfig, provider,
+      async () => [{ success: true, data: { status: 'nominal' } }],
+      5, 'room-1', { toolDefinitions: tools },
+    )
+    expect(result.decision.generationQuery?.messages).toEqual([
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: '', toolCalls: [{ id: 'call-1', function: { name: 'inspect', arguments: { subject: 'plant' } } }] },
+      { role: 'tool', toolCallId: 'call-1', name: 'inspect', content: '{"status":"nominal"}' },
+    ])
+    expect(result.decision.generationQuery?.tools).toEqual(tools)
+  })
+
   test('one tool round → result feeds next call → final content', async () => {
     const { provider, calls } = makeScriptedProvider([
       { toolCalls: [{ function: { name: 'echo', arguments: { text: 'hi' } } }] },
@@ -443,10 +466,10 @@ describe('evaluate (tool loop)', () => {
       checkinCalls++
       expect(info.iterations).toBeGreaterThan(0)
       expect(info.recentTools.length).toBeGreaterThan(0)
-      return 5  // continue +5
+      return true
     }
-    // maxToolIterations = 1 → would normally cap at 2 rounds. With checkin
-    // returning +5, the loop continues until the content round.
+    // maxToolIterations = 1 would normally stop after the threshold. Once a
+    // human continues, the Agent owns the rest of this turn without a quota.
     const result = await evaluate(
       baseContextResult(), baseConfig, provider, exec, 1, 'room-1',
       { toolDefinitions: [], requestToolCheckin },
@@ -458,14 +481,14 @@ describe('evaluate (tool loop)', () => {
     expect(calls).toHaveLength(3)
   })
 
-  test('checkin: user stops (null) → falls through to exceeded path with partial', async () => {
+  test('checkin: user stops → falls through to exceeded path with partial', async () => {
     const { provider } = makeScriptedProvider([
       { content: 'work in progress', toolCalls: [{ function: { name: 'a', arguments: {} } }] },
       { toolCalls: [{ function: { name: 'b', arguments: {} } }] },
     ])
     const exec: ToolExecutor = async (toolCalls) =>
       toolCalls.map(() => ({ success: true, data: 'k' }))
-    const requestToolCheckin = async () => null  // user clicks Stop
+    const requestToolCheckin = async () => false
     const result = await evaluate(
       baseContextResult(), baseConfig, provider, exec, 1, 'room-1',
       { toolDefinitions: [], requestToolCheckin },

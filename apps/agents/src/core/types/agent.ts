@@ -119,11 +119,11 @@ export interface AIAgent extends Agent {
   readonly getMaxToolIterations: () => number | undefined
   readonly updateMaxToolIterations: (n: number | undefined) => void
   // Resume a paused tool-iteration check-in (see EvalEventCore
-  // `tool_iteration_checkin`). Raises the iteration cap for the in-flight
-  // eval by `additionalIterations` and lets the loop continue. Returns
+  // `tool_iteration_checkin`). Removes the explicit check-in threshold for
+  // the rest of the in-flight turn and lets the Agent decide when to finish. Returns
   // true iff a checkin was actually pending; false means there was
   // nothing to resume (rare race — user clicked after timeout/cancel).
-  readonly continueTools?: (roomId: string, additionalIterations: number) => boolean
+  readonly continueTools?: (roomId: string) => boolean
   // Context preview — runs buildSystemSections for a specific room and
   // returns section-by-section text + token estimate plus budget resolution.
   // Used by the UI panel so every magnifier has ground truth.
@@ -226,7 +226,7 @@ export interface AIAgentConfig {
   readonly tools?: ReadonlyArray<string>        // tool names this agent can use
   readonly skills?: ReadonlyArray<string>       // exact behavioural Skill selection
   readonly toolGrants?: ReadonlyArray<ToolGrant> // Workspace Capabilities this Agent may invoke
-  readonly maxToolIterations?: number           // default 5
+  readonly maxToolIterations?: number           // optional operator check-in threshold
   readonly tags?: ReadonlyArray<string>         // capability/role tags for [[tag:X]] addressing
   readonly thinking?: boolean                    // enable model CoT (qwen3 thinking mode)
   // Context & Prompts toggles — all default true; undefined preserves current behavior

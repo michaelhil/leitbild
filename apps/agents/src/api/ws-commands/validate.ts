@@ -136,7 +136,9 @@ const validateUpdateAgent = (obj: RawObject): ValidationResult<Extract<WSInbound
   const includeContext = validateBooleanMap<IncludeContext>(obj.includeContext, 'includeContext')
   if (!includeContext.ok) return includeContext
   if (obj.includeTools !== undefined && typeof obj.includeTools !== 'boolean') return { ok: false, error: 'includeTools must be a boolean when present' }
-  const maxToolIterations = optionalNumber(obj, 'maxToolIterations')
+  const maxToolIterations = obj.maxToolIterations === null
+    ? { ok: true as const, value: null }
+    : optionalNumber(obj, 'maxToolIterations')
   if (!maxToolIterations.ok) return maxToolIterations
   if (obj.tools !== undefined && !isStringArray(obj.tools)) return { ok: false, error: 'tools must be an array of strings when present' }
   if (obj.skills !== undefined && !isStringArray(obj.skills)) return { ok: false, error: 'skills must be an array of strings when present' }

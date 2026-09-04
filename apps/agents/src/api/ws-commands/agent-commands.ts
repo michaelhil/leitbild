@@ -38,7 +38,8 @@ export const handleAgentCommand = async (msg: WSInbound, ctx: CommandContext): P
         if (msg.includePrompts) aiAgent.updateIncludePrompts(msg.includePrompts)
         if (msg.includeContext) aiAgent.updateIncludeContext(msg.includeContext)
         if (typeof msg.includeTools === 'boolean') aiAgent.updateIncludeTools(msg.includeTools)
-        if (typeof msg.maxToolIterations === 'number') aiAgent.updateMaxToolIterations(msg.maxToolIterations)
+        if (msg.maxToolIterations === null) aiAgent.updateMaxToolIterations(undefined)
+        else if (typeof msg.maxToolIterations === 'number') aiAgent.updateMaxToolIterations(msg.maxToolIterations)
         if (Array.isArray(msg.tools)) {
           const known = new Set(system.toolRegistry.list().map(t => t.name))
           const resolved = msg.tools.filter(n => known.has(n))

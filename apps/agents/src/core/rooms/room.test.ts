@@ -140,6 +140,39 @@ describe('Room — self-contained component', () => {
     expect(message.generationMs).toBe(2400)
   })
 
+  test('stores generation queries outside messages and removes them with the message', () => {
+    const room = createRoom(makeProfile())
+    const message = room.post({
+      senderId: 'bot-1', content: 'Answer', type: 'chat', generationMs: 10,
+      generationTraceId: 'trace-1',
+    })
+    room.setGenerationQuery(message.id, 'trace-1', {
+      model: 'test-model',
+      messages: [{ role: 'system', content: 'system instructions' }, { role: 'user', content: 'question' }],
+    })
+    expect(room.getRecent(1)[0]).not.toHaveProperty('generationQuery')
+    expect(room.getGenerationQuery(message.id)?.query.messages).toHaveLength(2)
+    expect(room.deleteMessage(message.id)).toBe(true)
+    expect(room.getGenerationQuery(message.id)).toBeUndefined()
+  })
+
+  test('removes generation queries when their messages are compressed away', () => {
+    const room = createRoom(makeProfile())
+    const message = room.post({
+      senderId: 'bot-1', content: 'Long answer', type: 'chat',
+      generationTraceId: 'trace-compressed',
+    })
+    room.setGenerationQuery(message.id, 'trace-compressed', {
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'question' }],
+    })
+
+    room.replaceCompression([message.id], 'Summary')
+
+    expect(room.getGenerationQuery(message.id)).toBeUndefined()
+    expect(room.getGenerationQueries()).toEqual([])
+  })
+
   test('preserves typed optional fields on post (tokens, provider, model)', () => {
     const room = createRoom(makeProfile())
     const message = room.post({

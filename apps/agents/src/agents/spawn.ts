@@ -365,28 +365,41 @@ export const spawnAIAgent = async (
       ...(m.provider ? { provider: m.provider } : {}),
       ...(m.model ? { model: m.model } : {}),
     }
+    const postAndAttachQuery = (params: Parameters<typeof routeMessage>[1]): void => {
+      const posted = routeMessage(target, params)
+      if (!decision.generationQuery || !decision.generationTraceId) return
+      for (const message of posted) {
+        rooms.getRoom(message.roomId)?.setGenerationQuery(
+          message.id,
+          decision.generationTraceId,
+          decision.generationQuery,
+        )
+      }
+    }
 
     if (decision.response.action === 'respond') {
-      routeMessage(target, {
+      postAndAttachQuery({
         senderId: agent.id,
         senderName: agent.name,
         content: decision.response.content,
         type: 'chat',
         generationMs: decision.generationMs,
         inReplyTo: decision.inReplyTo,
+        ...(decision.generationTraceId ? { generationTraceId: decision.generationTraceId } : {}),
         ...telemetry,
         ...(decision.toolTrace && decision.toolTrace.length > 0 ? { toolTrace: decision.toolTrace } : {}),
       })
     } else if (decision.response.action === 'pass') {
       // Post pass as a visible message so humans can see agent decisions
       const reason = decision.response.reason ?? 'nothing to add'
-      routeMessage(target, {
+      postAndAttachQuery({
         senderId: agent.id,
         senderName: agent.name,
         content: `[pass] ${reason}`,
         type: 'pass',
         generationMs: decision.generationMs,
         inReplyTo: decision.inReplyTo,
+        ...(decision.generationTraceId ? { generationTraceId: decision.generationTraceId } : {}),
         ...telemetry,
       })
     } else {
@@ -395,7 +408,7 @@ export const spawnAIAgent = async (
       // affordance. NEVER conflate with `pass` — pass is an agent decision,
       // error is a system failure the user should see and act on.
       const err = decision.response
-      routeMessage(target, {
+      postAndAttachQuery({
         senderId: agent.id,
         senderName: agent.name,
         content: `[error: ${err.code}] ${err.message}`,
@@ -404,6 +417,7 @@ export const spawnAIAgent = async (
         ...(err.providerHint ? { errorProvider: err.providerHint } : {}),
         generationMs: decision.generationMs,
         inReplyTo: decision.inReplyTo,
+        ...(decision.generationTraceId ? { generationTraceId: decision.generationTraceId } : {}),
         ...telemetry,
       })
     }

@@ -18,6 +18,7 @@ export interface UIMessage {
   roomId?: string
   recipientId?: string
   generationMs?: number
+  generationTraceId?: string
   // Tokens/context metrics forwarded via server message metadata.
   promptTokens?: number
   completionTokens?: number

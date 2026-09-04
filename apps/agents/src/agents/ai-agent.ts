@@ -154,7 +154,7 @@ export const createAIAgent = (
   let includeTools: boolean = config.includeTools ?? true
   let promptsEnabled: boolean = config.promptsEnabled ?? true
   let contextEnabled: boolean = config.contextEnabled ?? true
-  let maxToolIterationsCfg: number = config.maxToolIterations ?? 5
+  let maxToolIterationsCfg: number | undefined = config.maxToolIterations
 
   const effectiveToolsForRoom = (roomId: string): ReadonlyArray<ToolDefinition> | undefined => {
     if (!includeTools) return undefined
@@ -201,12 +201,12 @@ export const createAIAgent = (
 
   // Tool-iteration check-in registry. Keyed by triggerRoomId — at most one
   // in-flight eval per room means at most one pending checkin per room.
-  // The resolver takes `number | null`: number → continue (raise cap by N),
-  // null → stop (user clicked Stop, abandonment fired, or signal aborted).
+  // The resolver takes a boolean: true hands this turn back to the Agent
+  // without another quota; false stops after user cancellation or abandonment.
   //
   // Set LEITBILD_TOOL_CHECKIN_ABANDON_MS=0 to disable the pause entirely
   // (headless / batch / test mode): evaluation stops at maxToolIterations.
-  const pendingCheckins = new Map<string, (v: number | null) => void>()
+  const pendingCheckins = new Map<string, (continueTurn: boolean) => void>()
   const parsedAbandonMs = Number.parseInt(process.env.LEITBILD_TOOL_CHECKIN_ABANDON_MS ?? '', 10)
   const abandonMs = Number.isFinite(parsedAbandonMs) && parsedAbandonMs >= 0
     ? parsedAbandonMs
@@ -281,7 +281,7 @@ export const createAIAgent = (
       temperature: currentTemperature,
       thinking: currentThinking,
       historyLimit,
-      maxToolIterations: maxToolIterationsCfg,
+      ...(maxToolIterationsCfg !== undefined ? { maxToolIterations: maxToolIterationsCfg } : {}),
     }
     const evalToolExec = includeTools ? toolExecutor : undefined
     // Stamp traceId onto every event from the inner evaluate loop before
@@ -295,19 +295,19 @@ export const createAIAgent = (
     // the agent-level continueTools() can resolve it from the HTTP route.
     // Abandonment timeout bounds state-machine leak when the user never
     // clicks anything (default 10min, env-overridable).
-    const requestToolCheckin = (info: { iterations: number; recentTools: ReadonlyArray<{ tool: string; success: boolean }> }): Promise<number | null> => {
+    const requestToolCheckin = (info: { iterations: number; recentTools: ReadonlyArray<{ tool: string; success: boolean }> }): Promise<boolean> => {
       void info  // info already mirrored in the tool_iteration_checkin event onEvent fired
-      return new Promise<number | null>(resolve => {
+      return new Promise<boolean>(resolve => {
         let resolved = false
-        const finish = (v: number | null): void => {
+        const finish = (continueTurn: boolean): void => {
           if (resolved) return
           resolved = true
           pendingCheckins.delete(triggerRoomId)
           if (timer) clearTimeout(timer)
-          if (signal.aborted) resolve(null); else resolve(v)
+          if (signal.aborted) resolve(false); else resolve(continueTurn)
         }
-        const timer = setTimeout(() => finish(null), abandonMs)
-        signal.addEventListener('abort', () => finish(null), { once: true })
+        const timer = setTimeout(() => finish(false), abandonMs)
+        signal.addEventListener('abort', () => finish(false), { once: true })
         pendingCheckins.set(triggerRoomId, finish)
       })
     }
@@ -316,7 +316,7 @@ export const createAIAgent = (
       ...(inReplyTo ? { inReplyTo } : {}),
       ...(evalEventCb ? { onEvent: evalEventCb } : {}),
       signal,
-      ...(checkinEnabled ? { requestToolCheckin } : {}),
+      ...(checkinEnabled && maxToolIterationsCfg !== undefined ? { requestToolCheckin } : {}),
     }
     return evaluate(
       contextResult, evalConfig, llmProvider, evalToolExec,
@@ -433,7 +433,7 @@ export const createAIAgent = (
         // Flush incoming always — on both respond and pass.
         // On pass, the agent has consciously evaluated these messages; they belong in history.
         flushIncoming(flushInfo, agentHistory)
-        onDecision(decision)
+        onDecision({ ...decision, generationTraceId: traceId })
       } catch (err) {
         if (!cm.isEpochCurrent(epoch)) return  // cancelled, ignore error
         // Unexpected throw — evaluate() catches LLM-layer errors and converts
@@ -636,7 +636,7 @@ export const createAIAgent = (
     updateContextEnabled: (enabled: boolean) => { contextEnabled = enabled },
     getMaxToolIterations: () => maxToolIterationsCfg,
     updateMaxToolIterations: (n: number | undefined) => {
-      maxToolIterationsCfg = (typeof n === 'number' && n > 0) ? n : 5
+      maxToolIterationsCfg = (typeof n === 'number' && n > 0) ? n : undefined
     },
     getContextPreview: (roomId: string) => {
       const defs = effectiveToolsForRoom(roomId)
@@ -677,18 +677,15 @@ export const createAIAgent = (
       includeTools,
       promptsEnabled,
       contextEnabled,
-      maxToolIterations: maxToolIterationsCfg,
+      ...(maxToolIterationsCfg !== undefined ? { maxToolIterations: maxToolIterationsCfg } : {}),
       ...(currentTriggers.length > 0 ? { triggers: [...currentTriggers] } : {}),
       ...(currentToolGrants.length > 0 ? { toolGrants: [...currentToolGrants] } : {}),
     }),
     cancelGeneration: () => { activeAbortController?.abort(); activeAbortController = null; cm.cancelAll() },
-    continueTools: (roomId: string, additionalIterations: number): boolean => {
+    continueTools: (roomId: string): boolean => {
       const pending = pendingCheckins.get(roomId)
       if (!pending) return false
-      const n = Number.isFinite(additionalIterations) && additionalIterations > 0
-        ? Math.floor(additionalIterations)
-        : 5
-      pending(n)
+      pending(true)
       return true
     },
     refreshTools: (support) => {
@@ -818,11 +815,12 @@ export const createAIAgent = (
           flushInfo: { ids: new Set<string>(), triggerRoomId: roomId },
         }
 
+        const triggerTraceId = generateTraceId()
         const { decision } = await runEvaluate(
-          contextResult, effectiveModel, roomId, abortController.signal, generateTraceId(), effectiveToolDefs,
+          contextResult, effectiveModel, roomId, abortController.signal, triggerTraceId, effectiveToolDefs,
         )
         if (!cm.isEpochCurrent(epoch)) return  // cancelled
-        onDecision(decision)
+        onDecision({ ...decision, generationTraceId: triggerTraceId })
       } catch (err) {
         if (cm.isEpochCurrent(epoch)) {
           console.error(`[${config.name}] trigger execute failed:`, err)

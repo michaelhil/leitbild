@@ -54,6 +54,10 @@ export interface Message {
   readonly inReplyTo?: ReadonlyArray<string>  // IDs of messages this response is causally derived from
   readonly cause?: MessageCause       // see MessageCause docstring above
   readonly generationMs?: number
+  // Reference to the separately stored complete LLM request for this reply.
+  // Keeping the request outside Message prevents room reads and future model
+  // context from carrying large inspection-only payloads.
+  readonly generationTraceId?: string
 
   // --- Chat / eval telemetry (set by spawn.onDecision on chat/pass messages) ---
   readonly promptTokens?: number

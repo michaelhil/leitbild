@@ -35,8 +35,8 @@ export type EvalEventCore =
   // Tool-iteration check-in: the agent's tool loop has used `iterations`
   // calls without finishing. It emits this event and waits for explicit
   // user input. The UI surfaces
-  // [Continue +N] [Stop] buttons; calling the Workspace-scoped continue-tools endpoint
-  // raises the cap, cancelGeneration stops cleanly, and an abandonment
+  // [Continue] [Stop] buttons; calling the Workspace-scoped continue-tools endpoint
+  // removes the threshold for this turn, cancelGeneration stops cleanly, and an abandonment
   // timeout (default 10min, env LEITBILD_TOOL_CHECKIN_ABANDON_MS) auto-
   // stops if neither happens — bounding state-machine leakage.
   | {

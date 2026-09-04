@@ -109,6 +109,29 @@ describe('Workspace Module snapshots', () => {
     expect(snapshots.agents.agents[0]).not.toHaveProperty('roomIds')
   })
 
+  test('persists complete generation queries separately from visible messages', async () => {
+    const source = runtime()
+    const room = source.rooms.createRoom({ name: 'Inspectable', createdBy: 'human-1' })
+    const message = room.post({
+      senderId: 'agent-1', content: 'answer', type: 'chat',
+      generationTraceId: 'trace-1', generationMs: 10,
+    })
+    room.setGenerationQuery(message.id, 'trace-1', {
+      model: 'test-model',
+      messages: [{ role: 'system', content: 'complete system prompt' }, { role: 'user', content: 'question' }],
+    })
+    const snapshots = serializeModuleSnapshots(source)
+    expect(snapshots.rooms.rooms[0]?.messages[0]).not.toHaveProperty('generationQuery')
+    expect(snapshots.rooms.rooms[0]?.generationQueries?.[0]?.query.messages).toHaveLength(2)
+
+    const target = runtime()
+    await restoreWorkspaceModuleSnapshots({
+      ...target,
+      spawnAIAgent: async () => {},
+    }, snapshots)
+    expect(target.rooms.getRoom('Inspectable')?.getGenerationQuery(message.id)?.traceId).toBe('trace-1')
+  })
+
   test('persists and loads Room and Agent documents independently', async () => {
     temporaryRoot = await mkdtemp(join(tmpdir(), 'module-snapshots-'))
     const priorHome = process.env.LEITBILD_HOME

@@ -7,7 +7,7 @@
 // ============================================================================
 
 import type { AgentResponse, AIAgentConfig } from '../core/types/agent.ts'
-import type { ChatRequest, LLMCallOptions, LLMProvider } from '../core/types/llm.ts'
+import type { ChatRequest, GenerationQuery, LLMCallOptions, LLMProvider } from '../core/types/llm.ts'
 import type { EvalEventCore } from '../core/types/agent-eval.ts'
 import type { NativeToolCall, ToolCall, ToolDefinition, ToolExecutor, ToolResult } from '../core/types/tool.ts'
 import type { ToolTraceEntry } from '../core/types/messaging.ts'
@@ -37,6 +37,11 @@ export interface Decision {
   // Every tool call this agent made during the turn. Attached only when the
   // agent invoked tools. Forwarded by spawn.onDecision onto the posted Message.
   readonly toolTrace?: ReadonlyArray<ToolTraceEntry>
+  // Exact provider-independent request used for the final model call. Kept
+  // outside the visible Message and attached to it in the Room's inspection
+  // store by spawn.ts.
+  readonly generationQuery?: GenerationQuery
+  readonly generationTraceId?: string
 }
 
 export type OnDecision = (decision: Decision) => void
@@ -260,6 +265,7 @@ const retryInvalidMapFences = async (
   toolDefinitions: ReadonlyArray<ToolDefinition> | undefined,
   addGenerationMs: (ms: number) => void,
   addMetrics: (m: LLMCallMetrics) => void,
+  captureRequest: (request: ChatRequest) => void,
 ): Promise<string> => {
   let content = initialContent
   for (let attempt = 0; attempt < MAX_FENCE_RETRIES; attempt++) {
@@ -286,6 +292,7 @@ const retryInvalidMapFences = async (
       think: config.thinking,
       ...(systemBlocks ? { systemBlocks } : {}),
     }
+    captureRequest(request)
     const stream = await callLLMOnce(llmProvider, request, onEvent, signal)
     addGenerationMs(stream.durationMs)
     addMetrics(stream.metrics)
@@ -308,16 +315,15 @@ export interface EvalOptions {
   readonly inReplyTo?: ReadonlyArray<string>
   readonly onEvent?: (event: EvalEventCore) => void
   readonly signal?: AbortSignal
-  // Tool-iteration check-in hook. Called by the loop when maxToolIterations
-  // is about to be exceeded with more tool calls pending. Returns the
-  // number of additional iterations to allow (user clicked Continue) or
-  // null to stop (user clicked Stop, abandonment timeout fired, or cancel
-  // was signalled). Without a handler, evaluation remains strictly bounded
-  // by maxToolIterations.
+  // Optional operator-configured tool-iteration check-in. Returns true to
+  // continue this turn without another quota, or false to stop (user clicked
+  // Stop, abandonment timeout fired, or cancellation was signalled). Agents
+  // without an explicit threshold rely on their
+  // retrieval guidance and normal cancellation rather than a hidden quota.
   readonly requestToolCheckin?: (info: {
     readonly iterations: number
     readonly recentTools: ReadonlyArray<{ readonly tool: string; readonly success: boolean }>
-  }) => Promise<number | null>
+  }) => Promise<boolean>
 }
 
 export const evaluate = async (
@@ -325,7 +331,7 @@ export const evaluate = async (
   config: AIAgentConfig,
   llmProvider: LLMProvider,
   toolExecutor: ToolExecutor | undefined,
-  maxToolIterations: number,
+  maxToolIterations: number | undefined,
   triggerRoomId: string,
   options?: EvalOptions,
 ): Promise<EvalResult> => {
@@ -333,13 +339,20 @@ export const evaluate = async (
   let totalGenerationMs = 0
   let metrics: LLMCallMetrics = { modelCalls: 0 }
   const { toolDefinitions, inReplyTo, onEvent, signal, requestToolCheckin } = options ?? {}
-  // Mutable cap so the user-driven checkin can raise it mid-loop.
+  // Optional mutable operator threshold. Undefined means there is no hidden
+  // engine quota; the Agent decides when it has enough evidence.
   let effectiveMaxIterations = maxToolIterations
 
   // Accumulates one entry per tool call across every loop iteration. Attached
   // to the final Decision — lets downstream consumers (export_room, UI)
   // reconstruct what the agent actually did before answering.
   const toolTrace: Array<ToolTraceEntry> = []
+  let lastGenerationQuery: GenerationQuery | undefined
+  const captureRequest = (request: ChatRequest): void => {
+    // ChatRequest is JSON-shaped. Clone at the call boundary so subsequent
+    // tool-loop context mutation cannot rewrite the audit record.
+    lastGenerationQuery = JSON.parse(JSON.stringify(request)) as GenerationQuery
+  }
 
   // Cap preview at 200 chars — this is a debugging/analysis aid for the
   // UI trace panel, not context fed to the LLM, and arbitrarily long
@@ -379,6 +392,7 @@ export const evaluate = async (
         ...(inReplyTo && inReplyTo.length > 0 ? { ...decision, inReplyTo } : decision),
         metrics,
         ...(toolTrace.length > 0 ? { toolTrace: [...toolTrace] } : {}),
+        ...(lastGenerationQuery ? { generationQuery: lastGenerationQuery } : {}),
       },
       flushInfo: contextResult.flushInfo,
     }
@@ -392,7 +406,7 @@ export const evaluate = async (
   let lastAssistantText = ''
 
   try {
-    for (let toolRound = 0; toolRound <= effectiveMaxIterations; toolRound++) {
+    for (let toolRound = 0; ; toolRound++) {
       const request: ChatRequest = {
         model: config.model,
         messages: context as ReadonlyArray<{ role: 'system' | 'user' | 'assistant'; content: string }>,
@@ -403,6 +417,7 @@ export const evaluate = async (
         ...(contextResult.systemBlocks ? { systemBlocks: contextResult.systemBlocks } : {}),
       }
 
+      captureRequest(request)
       const streamResult = await callLLMOnce(llmProvider, request, onEvent, signal)
       totalGenerationMs += streamResult.durationMs
       metrics = mergeMetrics(metrics, streamResult.metrics)
@@ -460,25 +475,23 @@ export const evaluate = async (
         if (fit.overBudget) onEvent?.({ kind: 'warning', message: 'Current request and tool evidence exceed the model context budget. Evidence was preserved intact; use a narrower or paginated read.' })
         if (fit.droppedHistory > 0) onEvent?.({ kind: 'warning', message: `Dropped ${fit.droppedHistory} oldest context messages to retain current tool evidence.` })
 
-        // If this iteration just used the LAST allowed slot, ask the user
-        // before proceeding (so the next loop iteration doesn't silently
-        // get cut off by the for-condition). Without a handler, the
-        // configured iteration cap remains authoritative.
-        if (requestToolCheckin && toolRound + 1 > effectiveMaxIterations) {
-          const recentTools = toolTrace.slice(-3).map(t => ({ tool: t.tool, success: t.success }))
-          onEvent?.({
-            kind: 'tool_iteration_checkin',
-            iterations: toolRound + 1,
-            roomId: triggerRoomId,
-            recentTools,
-          })
-          const additional = await requestToolCheckin({ iterations: toolRound + 1, recentTools })
-          if (additional === null || additional <= 0) {
-            // User said Stop, or abandonment timeout, or signal aborted.
-            // Fall through to the post-loop exceeded path.
+        if (effectiveMaxIterations !== undefined && toolRound + 1 > effectiveMaxIterations) {
+          if (requestToolCheckin) {
+            const recentTools = toolTrace.slice(-3).map(t => ({ tool: t.tool, success: t.success }))
+            onEvent?.({
+              kind: 'tool_iteration_checkin',
+              iterations: toolRound + 1,
+              roomId: triggerRoomId,
+              recentTools,
+            })
+            const shouldContinue = await requestToolCheckin({ iterations: toolRound + 1, recentTools })
+            if (!shouldContinue) break
+            // A human explicitly chose to continue this turn. Hand control
+            // back to the Agent instead of imposing another arbitrary block.
+            effectiveMaxIterations = undefined
+          } else {
             break
           }
-          effectiveMaxIterations += additional
         }
         continue
       }
@@ -515,6 +528,7 @@ export const evaluate = async (
         (m) => {
           metrics = mergeMetrics(metrics, m)
         },
+        captureRequest,
       )
       return makeResult({ response: { action: 'respond', content: finalContent }, generationMs: totalGenerationMs, triggerRoomId })
     }
@@ -523,7 +537,7 @@ export const evaluate = async (
     // the way, deliver it with a footer instead of replacing it with a bare
     // pass. Without this, the user sees streamed text disappear and a terse
     // [pass] error take its place.
-    const loopReason = `Tool call loop exceeded ${effectiveMaxIterations} iterations`
+    const loopReason = `Tool call loop reached the configured ${effectiveMaxIterations} iteration threshold`
     if (lastAssistantText.length > 0) {
       return makeResult({
         response: {

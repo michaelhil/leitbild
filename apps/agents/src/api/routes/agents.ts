@@ -257,7 +257,8 @@ export const agentRoutes: RouteEntry[] = [
         if (typeof body.includeTools === 'boolean') aiAgent.updateIncludeTools(body.includeTools)
         if (typeof body.promptsEnabled === 'boolean') aiAgent.updatePromptsEnabled(body.promptsEnabled)
         if (typeof body.contextEnabled === 'boolean') aiAgent.updateContextEnabled(body.contextEnabled)
-        if (typeof body.maxToolIterations === 'number') aiAgent.updateMaxToolIterations(body.maxToolIterations)
+        if (body.maxToolIterations === null) aiAgent.updateMaxToolIterations(undefined)
+        else if (typeof body.maxToolIterations === 'number') aiAgent.updateMaxToolIterations(body.maxToolIterations)
         // Tool-list edits rebuild every AI agent's tool support via the
         // system helper. Routing through refreshAllAgentTools is what keeps
         // the per-room pack-activation resolver wired — building a fresh
@@ -340,7 +341,7 @@ export const agentRoutes: RouteEntry[] = [
       return json({ cancelled: true, name: agent.name })
     },
   },
-  // Resume a paused tool-iteration check-in. Body: { roomId, additionalIterations? }.
+  // Resume a paused tool-iteration check-in. Body: { roomId }.
   // Returns { resumed: boolean } — false when there was no pending checkin
   // (rare race: user clicked after timeout/cancel/eval completion).
   {
@@ -352,13 +353,10 @@ export const agentRoutes: RouteEntry[] = [
       if (!agent) return errorResponse(`Agent "${name}" not found`, 404)
       const aiAgent = asAIAgent(agent)
       if (!aiAgent || !aiAgent.continueTools) return errorResponse('Only AI agents can continue tool loops')
-      const body = await req.json().catch(() => ({})) as { roomId?: unknown; additionalIterations?: unknown }
+      const body = await req.json().catch(() => ({})) as { roomId?: unknown }
       if (typeof body.roomId !== 'string' || !body.roomId) return errorResponse('roomId is required')
-      const additional = typeof body.additionalIterations === 'number' && body.additionalIterations > 0
-        ? body.additionalIterations
-        : 5
-      const resumed = aiAgent.continueTools(body.roomId, additional)
-      return json({ resumed, additional, name: agent.name })
+      const resumed = aiAgent.continueTools(body.roomId)
+      return json({ resumed, name: agent.name })
     },
   },
   {

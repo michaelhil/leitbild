@@ -818,10 +818,6 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
             byKind: countBy(assetSummaries.map(object => String(object.kind))),
             objects: assetSummaries,
           },
-        }, {
-          id: 'available-capabilities',
-          title: 'Simulation Capabilities',
-          data: runtime.capabilities(),
         }, ...scenarioSections(definition)],
       }) })
     },

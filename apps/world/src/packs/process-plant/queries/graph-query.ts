@@ -16,6 +16,14 @@ export const artifactReadQuerySchema = z.object({
   artifact: z.enum(['authored-spec', 'compiled-graph-mermaid']),
 }).strict()
 
+export const componentsSearchQuerySchema = z.object({
+  plantId: idSchema,
+  query: z.string().trim().min(1).optional(),
+  componentIds: z.array(idSchema).optional(),
+  kinds: z.array(z.string().trim().min(1)).optional(),
+  includeParameters: z.boolean().default(false),
+}).strict()
+
 interface ArtifactComponentView {
   readonly id: ComponentId
   readonly label: string
@@ -127,10 +135,49 @@ export const displayProfileReadQuerySchema = z.object({
 
 export const processPlantGraphQueryKinds = [
   'world.process-plant.plants.list',
+  'world.process-plant.components.search',
   'world.process-plant.graph.read',
   'world.process-plant.artifact.read',
   'world.process-plant.display-profile.read',
 ] as const
+
+const componentSearchView = (
+  system: ProcessPlantRuntimeInstance,
+  input: z.infer<typeof componentsSearchQuerySchema>,
+): unknown => {
+  const idSet = input.componentIds ? new Set(input.componentIds) : undefined
+  const kindSet = input.kinds ? new Set(input.kinds) : undefined
+  const needle = input.query?.toLocaleLowerCase()
+  const matches = system.plant.graph.components.filter(component => {
+    if (idSet && !idSet.has(component.id)) return false
+    if (kindSet && !kindSet.has(component.kind)) return false
+    if (!needle) return true
+    return [component.id, component.kind, component.label]
+      .some(value => value.toLocaleLowerCase().includes(needle))
+  })
+  const byKind: Record<string, number> = {}
+  for (const component of system.plant.graph.components) {
+    byKind[component.kind] = (byKind[component.kind] ?? 0) + 1
+  }
+  return {
+    plantId: system.plant.id,
+    specification: {
+      id: system.plant.graph.specId,
+      title: system.plant.graph.title,
+      timestep: system.plant.graph.timestep,
+    },
+    totalComponents: system.plant.graph.components.length,
+    matchedComponents: matches.length,
+    byKind,
+    components: matches.map(component => ({
+      id: component.id,
+      kind: component.kind,
+      label: component.label,
+      ...(component.metadata ? { metadata: component.metadata } : {}),
+      ...(input.includeParameters ? { parameters: component.parameters } : {}),
+    })),
+  }
+}
 
 const graphView = (graph: CompiledPlantGraph): unknown => ({
   specId: graph.specId,
@@ -312,6 +359,11 @@ export const answerProcessPlantGraphQuery = (config: {
     const payload = plantQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
     return { graph: graphView(system.plant.graph) }
+  }
+  if (config.request.capabilityId === 'world.process-plant.components.search') {
+    const payload = componentsSearchQuerySchema.parse(config.request.input)
+    const system = requirePlant(config.plants, payload.plantId)
+    return componentSearchView(system, payload)
   }
   if (config.request.capabilityId === 'world.process-plant.artifact.read') {
     const payload = artifactReadQuerySchema.parse(config.request.input)

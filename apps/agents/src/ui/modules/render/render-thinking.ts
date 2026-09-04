@@ -122,7 +122,7 @@ export const addThinkingWarning = (container: HTMLElement, agentName: string, me
 }
 
 // Inline "agent has used N tool calls without finishing" notice with
-// [Continue +5] [Stop] buttons. Replaces the silent maxToolIterations
+// [Continue] [Stop] buttons. Replaces the silent maxToolIterations
 // cliff — the user decides whether to extend or stop. onContinue calls
 // POST to the Workspace-scoped Agent continue-tools endpoint; onStop calls the existing
 // cancel-generation path. Removed automatically by clearThinkingIndicator
@@ -153,7 +153,7 @@ export const addToolCheckinNotice = (
 
   const cont = document.createElement('button')
   cont.className = 'px-2 py-0.5 rounded border border-success/40 text-success-text hover:bg-success/10 ml-auto'
-  cont.textContent = 'Continue +5'
+  cont.textContent = 'Continue'
   cont.onclick = (e) => { e.stopPropagation(); cont.disabled = true; stop.disabled = true; onContinue() }
   box.appendChild(cont)
 

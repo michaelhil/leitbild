@@ -163,6 +163,27 @@ describe('HTTP Routes', () => {
     expect(res?.status).toBe(404)
   })
 
+  test('GET message generation-query returns the complete separately stored request', async () => {
+    const room = system.rooms.getRoom('TestRoom')!
+    const message = room.post({
+      senderId: 'agent-1', content: 'answer', type: 'chat', generationMs: 42,
+      generationTraceId: 'trace-1', provider: 'test', model: 'test-model',
+    })
+    room.setGenerationQuery(message.id, 'trace-1', {
+      model: 'test-model',
+      messages: [{ role: 'system', content: 'instructions' }, { role: 'user', content: 'question' }],
+      tools: [{ type: 'function', function: { name: 'read', description: 'Read evidence', parameters: { type: 'object' } } }],
+    })
+    const path = `/rooms/TestRoom/messages/${message.id}/generation-query`
+    const res = await call(system, req('GET', path), path)
+    expect(res?.status).toBe(200)
+    const body = await res!.json() as { traceId: string; query: { messages: unknown[]; tools: unknown[] }; generation: { durationMs: number } }
+    expect(body.traceId).toBe('trace-1')
+    expect(body.query.messages).toHaveLength(2)
+    expect(body.query.tools).toHaveLength(1)
+    expect(body.generation.durationMs).toBe(42)
+  })
+
   test('DELETE /rooms/:name removes room', async () => {
     const res = await call(system, req('DELETE', '/rooms/TestRoom'), '/rooms/TestRoom')
     expect(res?.status).toBe(200)

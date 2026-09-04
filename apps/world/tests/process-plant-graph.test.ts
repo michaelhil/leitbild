@@ -90,10 +90,30 @@ describe('process plant model composition', () => {
 describe('process plant discovery', () => {
   test('describes configuration and live-data reads in searchable domain language', () => {
     const descriptions = new Map(processPlantCapabilities.map(capability => [capability.id, capability.description]))
-    expect(descriptions.get('world.process-plant.artifact.read')).toContain('authored configuration')
+    expect(descriptions.get('world.process-plant.artifact.read')).toContain('complete authored Plant configuration')
+    expect(descriptions.get('world.process-plant.components.search')).toContain('compact summaries')
     expect(descriptions.get('world.process-plant.variables.search')).toContain('current Plant variables')
     expect(descriptions.get('world.process-plant.signals.read')).toContain('live values')
     expect(descriptions.get('world.process-plant.transient.diagnostics')).toContain('diagnostics')
+  })
+
+  test('discovers compact component configuration and expands parameters only on request', () => {
+    const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:component-discovery' }))
+    const plants = new Map([[plant.id, { plant } as ProcessPlantRuntimeInstance]])
+    const compact = answerProcessPlantQuery({
+      request: { capabilityId: 'world.process-plant.components.search', input: { plantId: plant.id, query: 'core' } },
+      plants,
+    }) as { components: ReadonlyArray<Record<string, unknown>>; totalComponents: number; matchedComponents: number }
+    expect(compact.totalComponents).toBeGreaterThan(0)
+    expect(compact.matchedComponents).toBeGreaterThan(0)
+    expect(compact.components[0]).not.toHaveProperty('parameters')
+
+    const expanded = answerProcessPlantQuery({
+      request: { capabilityId: 'world.process-plant.components.search', input: { plantId: plant.id, componentIds: ['core'], includeParameters: true } },
+      plants,
+    }) as { components: ReadonlyArray<Record<string, unknown>> }
+    expect(expanded.components).toHaveLength(1)
+    expect(expanded.components[0]).toHaveProperty('parameters')
   })
 
   test('exposes only selectable product concepts', () => {

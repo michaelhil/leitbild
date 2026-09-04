@@ -131,7 +131,7 @@ describe('Agents Workspace Module API', () => {
     expect(messageFocus(posted!)).toEqual([focusedResource, focusedDefinition])
     expect(room.getRecent(10).some(message => message.content === 'What can I change?')).toBe(true)
     const assistant = asAIAgent(runtime.team.listByKind('ai')[0]!)!
-    expect(assistant.getMaxToolIterations()).toBe(10)
+    expect(assistant.getConfig().maxToolIterations).toBeUndefined()
     expect(assistant.getSkills()).toEqual(['leitbild-assistance'])
 
     const reused = await open('Now create a scenario.')

@@ -83,18 +83,23 @@ export const buildToolsGroup = (deps: ToolsDeps): HTMLElement => {
   }
   toolFold.appendChild(toolListBody)
 
-  // Tool option input (iter only) — result-chars cap was removed; tool
-  // results now pass through verbatim.
+  // Optional operator check-in threshold. Blank configurations have no
+  // hidden tool-call quota; the Agent decides when its evidence is adequate.
   const toolOpts = document.createElement('div')
   toolOpts.className = 'flex items-center gap-3 mt-2 text-xs text-text-subtle'
 
   const iterWrap = createInlineNumberEditor({
     label: 'iter',
-    value: String(maxToolIterations ?? 5),
-    tooltip: 'Max tool iterations (default 5)',
+    value: maxToolIterations === undefined ? '' : String(maxToolIterations),
+    tooltip: 'Optional tool-loop check-in threshold; blank means Agent-directed',
     step: '1',
     onSave: async (v) => {
-      const n = v === '' ? 5 : Number(v)
+      if (v === '') {
+        await patchAgent({ maxToolIterations: null })
+        delete (agentData as Record<string, unknown>).maxToolIterations
+        return
+      }
+      const n = Number(v)
       if (!Number.isFinite(n) || n < 1) return
       await patchAgent({ maxToolIterations: n })
       ;(agentData as Record<string, unknown>).maxToolIterations = n

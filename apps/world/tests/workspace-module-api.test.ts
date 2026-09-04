@@ -383,7 +383,7 @@ describe('World Module API', () => {
     )
     const parsedRunInspection = inspectionViewSchema.parse(runInspection.body?.result)
     expect(parsedRunInspection.sections.map(section => section.id)).toContain('live-assets')
-    expect(parsedRunInspection.sections.map(section => section.id)).toContain('available-capabilities')
+    expect(parsedRunInspection.sections.map(section => section.id)).not.toContain('available-capabilities')
 
     const contextCapabilityId = capabilityIdSchema.parse('world.simulation-run.context')
     const context = await call<{ result: { briefing: { title: string }; objects: { total: number; returned: number; truncated: boolean; items: Array<{ id: string }> }; affordances: unknown } }>(

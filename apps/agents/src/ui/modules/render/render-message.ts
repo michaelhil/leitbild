@@ -54,7 +54,7 @@ export interface RenderMessageOptions {
   readonly msg: UIMessage
   readonly agents: Record<string, AgentInfo> | Map<string, AgentInfo>
   readonly onDelete?: (msgId: string) => void
-  readonly onViewContext?: (msgId: string) => void
+  readonly onViewContext?: (msg: UIMessage) => void
   readonly onBookmark?: (content: string) => void
 }
 
@@ -274,12 +274,13 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
       }
       header.appendChild(copyBtn)
 
-      if (onViewContext && msg.generationMs) {
+      if (onViewContext && msg.generationTraceId) {
         const ctxBtn = document.createElement('button')
-        ctxBtn.className = 'text-border-strong hover:text-accent text-xs opacity-0 group-hover:opacity-100'
-        ctxBtn.textContent = '\ud83d\udccb'
-        ctxBtn.title = 'View prompt context'
-        ctxBtn.onclick = (e) => { e.stopPropagation(); onViewContext(msg.id) }
+        ctxBtn.className = 'icon-btn text-text-subtle hover:text-accent text-xs'
+        ctxBtn.appendChild(icon('info', { size: 13 }))
+        ctxBtn.title = 'Inspect complete generation query'
+        ctxBtn.setAttribute('aria-label', 'Inspect complete generation query')
+        ctxBtn.onclick = (e) => { e.stopPropagation(); onViewContext(msg) }
         header.appendChild(ctxBtn)
       }
 
