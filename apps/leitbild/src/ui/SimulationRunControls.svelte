@@ -66,7 +66,7 @@
     await request(`/api/workspaces/${encodeURIComponent(workspaceId)}/capabilities/${encodeURIComponent(capabilityId)}/invoke`,
       jsonRequest('POST', { resource: target, input, actor: { kind: 'human' } }))
   const familyId = (candidate: ModuleResourceDescriptor): string =>
-    candidate.links.find(link => link.rel === 'run-family' && link.ref.type === 'world.simulation-run')?.ref.id ?? candidate.ref.id
+    candidate.links.find(link => link.rel === 'member-of' && link.ref.type === 'world.run-family')?.ref.id ?? candidate.ref.id
   const family = $derived(resources
     .filter(candidate => candidate.ref.type === 'world.simulation-run' && familyId(candidate) === familyId(resource))
     .sort((left, right) => {

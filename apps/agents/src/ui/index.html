@@ -175,6 +175,10 @@
     #sidebar-resize.dragging::before { background: var(--accent); }
     body.sidebar-dragging { cursor: col-resize; user-select: none; }
     body.sidebar-dragging * { user-select: none; }
+    body.focused-room-view #btn-create-room,
+    body.focused-room-view #btn-create-agent,
+    body.focused-room-view #room-switcher [data-icon="chevron-down"] { display: none; }
+    body.focused-room-view #room-switcher { cursor: default; pointer-events: none; }
     /* Workspace toolbar badge: tiny numeric chip overlaid on the icon
        button when count > 0. Position: top-right of the 24×24 hit area. */
     .workspace-badge {

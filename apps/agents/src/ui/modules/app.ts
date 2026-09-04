@@ -43,6 +43,7 @@ import { startLoggingStateDot } from './panels/logging-panel.ts'
 import { getFocusedSubjects, startWorkspaceFocusListener } from './workspace-focus.ts'
 import { initSettingsNav } from './settings-nav.ts'
 import { hydrateIconPlaceholders, icon } from './icon.ts'
+import { isFocusedRoomView } from './focused-room.ts'
 import {
   isSummaryGroupExpanded,
   initSummaryPanel,
@@ -247,8 +248,11 @@ $roomListView.subscribe(({ rooms, selectedRoomId, pausedRooms, unreadCounts, gen
 // row, not here. Re-renders on agent list / membership / mute / inspect
 // changes; does NOT depend on $selectedHumanByRoom.
 $agentListView.subscribe(({ agents, selectedAgentId, selectedRoomId, roomMemberIds }) => {
+  const visibleAgents = isFocusedRoomView
+    ? Object.fromEntries(Object.entries(agents).filter(([id]) => roomMemberIds.includes(id)))
+    : agents
   renderAgents(agentList, {
-    agents: agents as unknown as Record<string, AgentInfo>,
+    agents: visibleAgents as unknown as Record<string, AgentInfo>,
     selectedAgentId,
     roomMemberIds,
     hasSelectedRoom: selectedRoomId !== null,

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
   import {
-    coreModuleIds,
     type InspectionView,
     type ModuleCapabilityDescriptor,
     type ModuleDefinitionDescriptor,
@@ -17,9 +16,10 @@
   import InlineName from './InlineName.svelte'
   import SimulationRunControls from './SimulationRunControls.svelte'
   import AssistantLauncher from './AssistantLauncher.svelte'
+  import RunRoomControls from './RunRoomControls.svelte'
   import { request, jsonRequest } from './api.ts'
   import { cardCapability } from './card-actions.ts'
-  import { openCompanion } from './companion.ts'
+  import { roomSelectionIncludingRun, roomSelectsRun, roomUsesFamily, runFamilyFor } from './run-room-scope.ts'
 
   type Page = { readonly kind: 'list' } | { readonly kind: 'workspace'; readonly id: string }
   interface InvocationResponse {
@@ -40,15 +40,15 @@
 
   const currentPage = page()
   const initialSelection = new URLSearchParams(location.search)
+  const initialAgentsVisible = initialSelection.get('agents') !== null
   let selectedWorldRunId = $state(initialSelection.get('world'))
   let selectedAgentsRoomId = $state(initialSelection.get('agents'))
+  let agentsVisible = $state(initialAgentsVisible)
   let workspaces = $state<ReadonlyArray<Workspace>>([])
   let workspace = $state<Workspace | null>(null)
   let loading = $state(true)
   let busy = $state(false)
   let error = $state<string | null>(null)
-  let companionLoading = $state(false)
-  let companionError = $state<string | null>(null)
   let inspectionDialog = $state<HTMLDialogElement | null>(null)
   let inspectionSubject = $state<InspectionSubject | null>(null)
   let inspectionView = $state<InspectionView | null>(null)
@@ -67,21 +67,51 @@
   let scenarioEditorSubject = $state<WorkspaceSubjectReference | null>(null)
   const workspaceTitle = $derived(workspace?.name ?? workspace?.id ?? 'Workspace')
   const showingComposer = $derived(selectedWorldRunId !== null || selectedAgentsRoomId !== null)
-  const continuableResources = $derived(resources.filter(resource => resource.uiPath !== undefined))
+  const continuableResources = $derived(resources.filter(resource => resource.ref.type === 'world.simulation-run' && resource.uiPath !== undefined))
   const selectedWorldResource = $derived(resources.find(resource =>
-    resource.ref.moduleId === 'world' && resource.ref.id === selectedWorldRunId,
+    resource.ref.type === 'world.simulation-run' && resource.ref.id === selectedWorldRunId,
   ))
   const selectedAgentsResource = $derived(resources.find(resource =>
     resource.ref.moduleId === 'agents' && resource.ref.id === selectedAgentsRoomId,
   ))
+  const selectedRunFamily = $derived(selectedWorldResource?.links.find(link =>
+    link.rel === 'member-of' && link.ref.type === 'world.run-family',
+  )?.ref)
+  const familyRunRooms = $derived(selectedRunFamily === undefined ? [] : resources.filter(resource =>
+    resource.ref.type === 'agents.room' && roomUsesFamily(resource, selectedRunFamily),
+  ))
+  const applicableRunRooms = $derived(selectedWorldResource === undefined ? [] : familyRunRooms.filter(resource =>
+    roomSelectsRun(resource, selectedWorldResource),
+  ))
   const focusedSubjects = $derived([
     ...(scenarioEditorSubject === null ? [] : [scenarioEditorSubject]),
     ...(selectedWorldResource === undefined ? [] : [selectedWorldResource.ref]),
-    ...(selectedAgentsResource === undefined ? [] : [selectedAgentsResource.ref]),
   ].slice(0, 4))
   const pageTitle = $derived(currentPage.kind === 'list'
     ? 'Leitbild'
     : `${selectedWorldResource?.title ?? selectedAgentsResource?.title ?? workspaceTitle} · Leitbild`)
+
+  const normalizeOpenSelection = (catalog: ReadonlyArray<ModuleResourceDescriptor>): void => {
+    const run = catalog.find(resource => resource.ref.type === 'world.simulation-run' && resource.ref.id === selectedWorldRunId)
+    const room = catalog.find(resource => resource.ref.type === 'agents.room' && resource.ref.id === selectedAgentsRoomId)
+    if (selectedWorldRunId && !run) selectedWorldRunId = null
+    if (selectedAgentsRoomId && !room) {
+      selectedAgentsRoomId = null
+      agentsVisible = false
+    }
+    if (run && room) {
+      if (!roomSelectsRun(room, run)) {
+        selectedAgentsRoomId = null
+        agentsVisible = false
+      }
+    }
+    const url = new URL(location.href)
+    if (selectedWorldRunId) url.searchParams.set('world', selectedWorldRunId)
+    else url.searchParams.delete('world')
+    if (selectedAgentsRoomId && agentsVisible) url.searchParams.set('agents', selectedAgentsRoomId)
+    else url.searchParams.delete('agents')
+    history.replaceState(null, '', url)
+  }
 
   $effect(() => {
     document.title = pageTitle
@@ -104,6 +134,7 @@
     definitions = definitionResponse.definitions
     if (resourceToken === resourceRequest) {
       resources = resourceResponse.resources
+      normalizeOpenSelection(resources)
       refreshError = null
     }
     capabilities = capabilityResponse.capabilities
@@ -143,33 +174,12 @@
           request<{ workspace: Workspace }>(`/api/workspaces/${workspaceId}`).then(response => { workspace = response.workspace }),
           loadWorkspaceCatalog(currentPage.id),
         ])
-        if (selectedWorldRunId && !selectedAgentsResource) void prepareCompanion(false)
       }
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause)
     } finally {
       loading = false
     }
-  }
-
-  const prepareCompanion = async (refresh = true): Promise<void> => {
-    if (companionLoading || !workspace) return
-    companionLoading = true
-    companionError = null
-    try {
-      // Refresh on retries: a deleted Room or edited Definition may have changed
-      // since the page first opened. Never treat failed discovery as an empty catalog.
-      if (refresh) await loadWorkspaceCatalog(workspace.id)
-      if (catalogFailures.length) throw new Error(catalogFailures.map(outcome => outcome.status === 'failed' ? outcome.failure.message : '').join('; '))
-      if (!selectedWorldResource) throw new Error('This simulation is no longer available.')
-      const room = await openCompanion(selectedWorldResource, definitions, resources)
-      selectedAgentsRoomId = room.id
-      const url = new URL(location.href)
-      url.searchParams.set('agents', room.id)
-      history.replaceState(null, '', url)
-    } catch (cause) {
-      companionError = cause instanceof Error ? cause.message : String(cause)
-    } finally { companionLoading = false }
   }
 
   const run = async (action: () => Promise<void>): Promise<void> => {
@@ -196,7 +206,7 @@
     if (world) params.set('world', world.id)
     else if (selectedWorldRunId) params.set('world', selectedWorldRunId)
     if (agents) params.set('agents', agents.id)
-    else if (selectedAgentsRoomId) params.set('agents', selectedAgentsRoomId)
+    else if (!world && selectedAgentsRoomId) params.set('agents', selectedAgentsRoomId)
     location.href = `${location.pathname}${params.size > 0 ? `?${params}` : ''}`
   }
 
@@ -295,38 +305,38 @@
     const params = new URLSearchParams()
     if (resource.ref.type === 'world.simulation-run') params.set('world', resource.ref.id)
     if (resource.ref.type === 'agents.room') params.set('agents', resource.ref.id)
-    const world = resource.links.find(link => link.rel === 'companion-of' && link.ref.type === 'world.simulation-run')
-    if (world && resources.some(candidate => candidate.ref.type === world.ref.type && candidate.ref.id === world.ref.id)) params.set('world', world.ref.id)
     if (params.size > 0) location.href = `${location.pathname}?${params}`
     else if (resource.uiPath) location.href = resource.uiPath
   }
 
   const switchWorldRun = (runId: string, replace = false): void => {
     selectedWorldRunId = runId
+    const nextRun = resources.find(candidate => candidate.ref.type === 'world.simulation-run' && candidate.ref.id === runId)
+    if (selectedAgentsResource && nextRun && !roomSelectsRun(selectedAgentsResource, nextRun)) {
+      selectedAgentsRoomId = null
+      agentsVisible = false
+    }
     const url = new URL(location.href)
     url.searchParams.set('world', runId)
     if (selectedAgentsRoomId) url.searchParams.set('agents', selectedAgentsRoomId)
+    else url.searchParams.delete('agents')
     if (replace) history.replaceState(null, '', url)
     else history.pushState(null, '', url)
   }
 
   const closeWorldRun = (): void => {
-    selectedWorldRunId = null
-    const url = new URL(location.href)
-    url.searchParams.delete('world')
-    if (selectedAgentsRoomId) url.searchParams.set('agents', selectedAgentsRoomId)
-    history.pushState(null, '', url)
+    location.href = workspace ? `/workspaces/${encodeURIComponent(workspace.id)}` : '/workspaces'
   }
 
   const restoreUrlSelection = (): void => {
     const selection = new URLSearchParams(location.search)
     selectedWorldRunId = selection.get('world')
     selectedAgentsRoomId = selection.get('agents')
-    if (selectedWorldRunId && !selectedAgentsRoomId && workspace) void prepareCompanion(false)
+    agentsVisible = selectedAgentsRoomId !== null
   }
 
   const capabilityFor = (id: string): ModuleCapabilityDescriptor | undefined => capabilities.find(item => item.id === id)
-  const assistantCapability = $derived(capabilities.find(item => item.id === 'agents.assistant.open' && item.scope.kind === 'workspace'))
+  const assistantCapability = $derived(capabilities.find(item => item.id === 'agents.assistance.open' && item.scope.kind === 'workspace'))
   const openAssistant = async (prompt: string): Promise<void> => {
     if (!workspace || !assistantCapability) throw new Error('Leitbild Assistant is unavailable')
     const response = await request<InvocationResponse & { result: { resource: ModuleResourceDescriptor['ref']; uiPath: string; reused: boolean } }>(
@@ -340,11 +350,93 @@
       }),
     )
     selectedAgentsRoomId = response.result.resource.id
+    selectedWorldRunId = null
+    agentsVisible = true
     const url = new URL(location.href)
     url.searchParams.set('agents', response.result.resource.id)
-    if (selectedWorldRunId) url.searchParams.set('world', selectedWorldRunId)
+    url.searchParams.delete('world')
     history.pushState(null, '', url)
     await refreshResources(workspace.id)
+  }
+  const toggleRunAssistant = async (): Promise<void> => {
+    if (!workspace || !selectedWorldResource || !selectedRunFamily || !assistantCapability) return
+    if (agentsVisible) {
+      agentsVisible = false
+      const url = new URL(location.href)
+      url.searchParams.delete('agents')
+      history.replaceState(null, '', url)
+      return
+    }
+    const existing = selectedAgentsResource && roomSelectsRun(selectedAgentsResource, selectedWorldResource)
+      ? selectedAgentsResource
+      : applicableRunRooms[0]
+    if (existing) {
+      selectedAgentsRoomId = existing.ref.id
+    } else if (familyRunRooms[0]) {
+      const room = familyRunRooms[0]
+      const capabilityId = 'agents.room.subject-selection.set'
+      if (!capabilities.some(capability => capability.id === capabilityId)) throw new Error('Room scope controls are unavailable')
+      const expectedRevision = Number(room.summary.find(item => item.key === 'subject-revision')?.value ?? 0)
+      await request(
+        `/api/workspaces/${workspace.id}/capabilities/${encodeURIComponent(capabilityId)}/invoke`,
+        jsonRequest('POST', {
+          resource: room.ref,
+          input: {
+            selection: roomSelectionIncludingRun(room, selectedRunFamily, selectedWorldResource.ref),
+            expectedRevision,
+          },
+          actor: { kind: 'human' },
+        }),
+      )
+      selectedAgentsRoomId = room.ref.id
+      await refreshResources(workspace.id)
+    } else {
+      const response = await request<InvocationResponse & { result: { resource: ModuleResourceDescriptor['ref']; uiPath: string; reused: boolean } }>(
+        `/api/workspaces/${workspace.id}/capabilities/${encodeURIComponent(assistantCapability.id)}/invoke`,
+        jsonRequest('POST', {
+          input: {
+            selection: { kind: 'collection', collection: selectedRunFamily, members: { mode: 'all', except: [] } },
+            title: selectedWorldResource.title,
+            focusedSubjects: [selectedWorldResource.ref],
+          },
+          actor: { kind: 'human' },
+        }),
+      )
+      selectedAgentsRoomId = response.result.resource.id
+      await refreshResources(workspace.id)
+    }
+    agentsVisible = true
+    const url = new URL(location.href)
+    url.searchParams.set('agents', selectedAgentsRoomId!)
+    history.replaceState(null, '', url)
+  }
+  const showRunAssistant = (): void => {
+    if (!selectedAgentsRoomId) return
+    agentsVisible = true
+    const url = new URL(location.href)
+    url.searchParams.set('agents', selectedAgentsRoomId)
+    history.replaceState(null, '', url)
+  }
+  const selectRunRoom = (roomId: string): void => {
+    selectedAgentsRoomId = roomId
+    agentsVisible = true
+    const url = new URL(location.href)
+    url.searchParams.set('agents', roomId)
+    history.replaceState(null, '', url)
+  }
+  const refreshAndSelectRunRoom = async (roomId: string): Promise<void> => {
+    if (!workspace) return
+    await refreshResources(workspace.id)
+    const updatedRoom = resources.find(resource => resource.ref.type === 'agents.room' && resource.ref.id === roomId)
+    if (selectedWorldResource && updatedRoom && !roomSelectsRun(updatedRoom, selectedWorldResource)) {
+      selectedAgentsRoomId = null
+      agentsVisible = false
+      const url = new URL(location.href)
+      url.searchParams.delete('agents')
+      history.replaceState(null, '', url)
+      return
+    }
+    selectRunRoom(roomId)
   }
   const renameResource = async (resource: ModuleResourceDescriptor, name: string, expectedTitle: string): Promise<void> => {
     if (!workspace) throw new Error('Workspace is unavailable')
@@ -405,8 +497,27 @@
           refreshResources={() => refreshResources(workspace!.id)}
           reportError={message => { error = message }}
         />
+        {#if agentsVisible && selectedRunFamily}
+          {@const familyResource = resources.find(resource => resource.ref.type === 'world.run-family' && resource.ref.id === selectedRunFamily.id)}
+          {#if familyResource}
+            <RunRoomControls
+              workspaceId={workspace.id}
+              family={familyResource}
+              currentRun={selectedWorldResource}
+              rooms={applicableRunRooms}
+              activeRoomId={selectedAgentsRoomId}
+              {capabilities}
+              onRoomSelected={selectRunRoom}
+              onChanged={refreshAndSelectRunRoom}
+            />
+          {/if}
+        {/if}
       {/if}
-      <AssistantLauncher disabled={assistantCapability === undefined} submit={openAssistant} />
+      {#if selectedWorldResource}
+        <AssistantLauncher disabled={assistantCapability === undefined} toggle={toggleRunAssistant} active={agentsVisible} onError={message => { error = message }} />
+      {:else}
+        <AssistantLauncher disabled={assistantCapability === undefined} submit={openAssistant} />
+      {/if}
     </div>
   </header>
 {:else}
@@ -433,7 +544,7 @@
     {#each catalogFailures as outcome (outcome.moduleId)}{#if outcome.status === 'failed'}<p class="notice error" role="alert">{moduleTitles[outcome.moduleId]}: {outcome.failure.message}</p>{/if}{/each}
     {#if refreshError}<p class="notice error" role="alert">Catalog refresh failed: {refreshError}</p>{/if}
     {#if showingComposer}
-    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {companionLoading} {companionError} retryCompanion={() => prepareCompanion()} />
+    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant} />
     {:else}
       <section class="workspace-home">
         {#if error}<p class="notice error">{error}</p>{/if}
@@ -445,9 +556,8 @@
             <article class="scenario-builder-launch"><div><h3>Build a scenario</h3><p>Pick World Packs, place assets on the map, and save the result as a reusable scenario.</p></div><button class="primary" onclick={() => { if (workspace) { scenarioEditorSubject = null; scenarioEditorPath = `/workspaces/${encodeURIComponent(workspace.id)}/world/scenarios/new` } }}>Open editor</button></article>
           {/if}
         </section>
-        {#each coreModuleIds as moduleId}
-          <section class="catalog-section-home"><header><h2>{moduleTitles[moduleId]}</h2><span>{definitionsFor(moduleId).length} definitions</span></header><div class="catalog-grid">
-            {#each definitionsFor(moduleId) as definition (`${definition.ref.type}:${definition.ref.id}`)}
+        <section class="catalog-section-home"><header><h2>World</h2><span>{definitionsFor('world').length} scenarios</span></header><div class="catalog-grid">
+            {#each definitionsFor('world') as definition (`${definition.ref.type}:${definition.ref.id}`)}
               {@const primary = cardCapability(definition, 'primary', capabilities)}
               {@const remove = cardCapability(definition, 'delete', capabilities)}
               <article class="catalog-card clickable-card" aria-busy={busy}>
@@ -461,14 +571,12 @@
               </article>
             {/each}
           </div></section>
-        {/each}
         {#if continuableResources.length > 0}
           <section class="catalog-section-home">
             <header><h2>Continue</h2><span>{continuableResources.length} resources</span></header>
             <div class="resource-columns">
-              {#each coreModuleIds as moduleId}
-                <div><h3>{moduleTitles[moduleId]}</h3>
-                  {#each resourcesFor(moduleId) as resource (`${resource.ref.type}:${resource.ref.id}`)}
+                <div><h3>World</h3>
+                  {#each resourcesFor('world') as resource (`${resource.ref.type}:${resource.ref.id}`)}
                     {@const deleteCapability = cardCapability(resource, 'delete', capabilities)}
                     <article class="resource-card clickable-card">
                       <button class="card-hit-target" aria-label={`Continue ${resource.title}`} onclick={() => openResource(resource)}></button>
@@ -492,7 +600,6 @@
                     </article>
                   {/each}
                 </div>
-              {/each}
             </div>
           </section>
         {/if}

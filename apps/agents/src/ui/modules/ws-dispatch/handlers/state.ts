@@ -35,6 +35,7 @@ import type { WSOutbound } from '../../../../core/types/ws-protocol.ts'
 import { showToast } from '../../toast.ts'
 import { toUIMessage, toUIRoomProfile, toAgentEntry } from '../mappers.ts'
 import { fetchRoomMessages } from '../../room-fetchers.ts'
+import { focusedRoomId } from '../../focused-room.ts'
 
 type OutboundByType<K extends WSOutbound['type']> = Extract<WSOutbound, { readonly type: K }>
 
@@ -51,11 +52,15 @@ export const stateHandlers: StateHandlers = {
       persistSessionToken(msg.sessionToken)
     }
     // Populate rooms (UI-shaped via toUIRoomProfile; type inferred)
-    const roomMap = Object.fromEntries(msg.rooms.map(r => [r.id, toUIRoomProfile(r)]))
+    const visibleRooms = focusedRoomId === null ? msg.rooms : msg.rooms.filter(room => room.id === focusedRoomId)
+    const roomMap = Object.fromEntries(visibleRooms.map(r => [r.id, toUIRoomProfile(r)]))
     $rooms.set(roomMap)
 
     // Populate agents (UI-shaped via toAgentEntry; type inferred)
-    const agentMap = Object.fromEntries(msg.agents.map(a => [a.id, toAgentEntry(a)]))
+    const visibleAgentIds = focusedRoomId === null
+      ? null
+      : new Set(msg.roomStates?.[focusedRoomId]?.members ?? [])
+    const agentMap = Object.fromEntries(msg.agents.filter(agent => visibleAgentIds === null || visibleAgentIds.has(agent.id)).map(a => [a.id, toAgentEntry(a)]))
     $agents.set(agentMap)
 
     // Room states: paused, members, muted
@@ -63,6 +68,7 @@ export const stateHandlers: StateHandlers = {
     const membersMap: Record<string, string[]> = {}
     if (msg.roomStates) {
       for (const [roomId, rs] of Object.entries(msg.roomStates)) {
+        if (focusedRoomId !== null && roomId !== focusedRoomId) continue
         if (rs.paused) paused.add(roomId)
         if (rs.members) membersMap[roomId] = [...rs.members]
       }
@@ -86,10 +92,10 @@ export const stateHandlers: StateHandlers = {
     // Select a valid room for this authoritative snapshot. Workspace switches
     // and resets can leave the UI holding a Room id from the previous Workspace state.
     const selectedRoomId = $selectedRoomId.get()
-    if (msg.rooms.length === 0) {
+    if (visibleRooms.length === 0) {
       if (selectedRoomId) $selectedRoomId.set(null)
     } else if (!selectedRoomId || !roomMap[selectedRoomId]) {
-      $selectedRoomId.set(msg.rooms[0]!.id)
+      $selectedRoomId.set(visibleRooms[0]!.id)
     }
 
     // Apply selected room's mode/pause/mute state
@@ -147,6 +153,7 @@ export const stateHandlers: StateHandlers = {
   message(msg) {
     const m = toUIMessage(msg.message)
     const roomId = m.roomId ?? ''
+    if (focusedRoomId !== null && roomId !== focusedRoomId) return
     const current = $roomMessages.get()[roomId] ?? []
 
     if (current.some(existing => existing.id === m.id)) return
@@ -345,6 +352,7 @@ export const stateHandlers: StateHandlers = {
   // --- Rooms ---
 
   room_created(msg) {
+    if (focusedRoomId !== null && msg.profile.id !== focusedRoomId) return
     $rooms.setKey(msg.profile.id, toUIRoomProfile(msg.profile))
     if (!$selectedRoomId.get()) {
       $selectedRoomId.set(msg.profile.id)
@@ -376,6 +384,7 @@ export const stateHandlers: StateHandlers = {
   // --- Agents ---
 
   agent_joined(msg) {
+    if (focusedRoomId !== null) return
     $agents.setKey(msg.agent.id, toAgentEntry(msg.agent))
   },
 
@@ -438,6 +447,7 @@ export const stateHandlers: StateHandlers = {
   // --- Membership ---
 
   membership_changed(msg) {
+    if (focusedRoomId !== null && msg.roomId !== focusedRoomId) return
     const members = $roomMembers.get()[msg.roomId] ?? []
     if (msg.action === 'added') {
       if (!members.includes(msg.agentId)) {

@@ -7,9 +7,8 @@
     readonly worldRunId: string | null
     readonly focusedSubjects: ReadonlyArray<WorkspaceSubjectReference>
     readonly agentsRoomId: string | null
-    readonly companionLoading: boolean
-    readonly companionError: string | null
-    readonly retryCompanion: () => Promise<void>
+    readonly agentsVisible: boolean
+    readonly onShowAgents: () => void
   }
 
   type CollapsedPane = 'world' | 'agents' | null
@@ -18,7 +17,7 @@
   const collapseThreshold = 12
   const minimumOpenShare = 20
 
-  let { workspaceId, worldRunId, focusedSubjects, agentsRoomId, companionLoading, companionError, retryCompanion }: Props = $props()
+  let { workspaceId, worldRunId, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents }: Props = $props()
   let splitPercent = $state(initialSplit)
   let lastOpenSplit = $state(initialSplit)
   let collapsedPane = $state<CollapsedPane>(null)
@@ -40,7 +39,11 @@
   })
 
   const gridColumns = $derived(
-    collapsedPane === 'world'
+    worldRunId === null
+      ? 'minmax(0, 1fr)'
+      : agentsRoomId === null || !agentsVisible
+        ? 'minmax(0, 1fr)'
+    : collapsedPane === 'world'
       ? '0 0 minmax(0, 1fr)'
       : collapsedPane === 'agents'
         ? 'minmax(0, 1fr) 0 0'
@@ -115,17 +118,15 @@
   class:dragging
   style={`grid-template-columns: ${gridColumns}`}
 >
-  <section class="module-pane world-pane" class:collapsed={collapsedPane === 'world'} aria-label="World simulations">
+  {#if worldRunId !== null}<section class="module-pane world-pane" class:collapsed={collapsedPane === 'world'} aria-label="World simulations">
     <iframe
       class="module-frame active"
-      src={worldRunId === null
-        ? `/workspaces/${encodeURIComponent(workspaceId)}/world`
-        : `/workspaces/${encodeURIComponent(workspaceId)}/world/runs/${encodeURIComponent(worldRunId)}`}
+      src={`/workspaces/${encodeURIComponent(workspaceId)}/world/runs/${encodeURIComponent(worldRunId)}`}
       title="World simulations"
     ></iframe>
-  </section>
+  </section>{/if}
 
-  <button
+  {#if worldRunId !== null && agentsRoomId !== null && agentsVisible}<button
     class="split-handle"
     class:hidden={collapsedPane !== null}
     type="button"
@@ -135,39 +136,24 @@
     onpointerup={finishResize}
     onpointercancel={finishResize}
     onkeydown={resizeWithKeyboard}
-  ><span></span></button>
+  ><span></span></button>{/if}
 
-  <section class="module-pane agents-pane" class:collapsed={collapsedPane === 'agents'} aria-label="Agents room">
-    {#if companionLoading || companionError}
-      <div class="companion-status" role="status">
-        {#if companionLoading}
-          <p>Opening your simulation conversation…</p>
-        {:else}
-          <p>{companionError}</p>
-          <button onclick={retryCompanion}>Retry room setup</button>
-          <a href={`/workspaces/${encodeURIComponent(workspaceId)}`}>Back to workspace</a>
-        {/if}
-      </div>
-    {:else}
+  {#if agentsRoomId !== null && agentsVisible}<section class="module-pane agents-pane" class:collapsed={collapsedPane === 'agents'} aria-label="Agents room">
     <iframe
       bind:this={agentsFrame}
       class="module-frame active"
-      src={agentsRoomId === null
-        ? `/workspaces/${encodeURIComponent(workspaceId)}/agents`
-        : `/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(agentsRoomId)}`}
+      src={`/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(agentsRoomId)}&view=focused`}
       title="Agents room"
       onload={publishResourceFocus}
     ></iframe>
-    {/if}
-  </section>
+  </section>{/if}
 
   {#if collapsedPane === 'world'}
     <button class="reopen-handle left" type="button" aria-label="Reopen World" onclick={restoreSplit}>›</button>
   {:else if collapsedPane === 'agents'}
     <button class="reopen-handle right" type="button" aria-label="Reopen Agents" onclick={restoreSplit}>‹</button>
   {/if}
+  {#if worldRunId !== null && agentsRoomId !== null && !agentsVisible}
+    <button class="reopen-handle right" type="button" aria-label="Show Agents" onclick={onShowAgents}>‹</button>
+  {/if}
 </section>
-
-<style>
-  .companion-status { height: 100%; display: flex; flex-direction: column; gap: 1rem; align-items: center; justify-content: center; padding: 2rem; text-align: center; }
-</style>

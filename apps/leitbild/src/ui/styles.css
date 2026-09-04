@@ -40,7 +40,23 @@ button, input { font: inherit; }
 .workspace-actions { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: .45rem; }
 .assistant-launch { flex: 0 0 auto; width: 32px; min-height: 32px; padding: 0; border-color: #526056; color: #dce9da; background: #223127; }
 .assistant-launch:hover { border-color: #8ba18d; color: white; background: #304336; }
+.assistant-launch.active { border-color: #72a8ef; color: white; background: #2f76d2; }
 .assistant-launch svg { width: 17px; height: 17px; fill: currentColor; }
+.run-room-controls { min-width: 0; display: flex; align-items: center; gap: .35rem; }
+.run-room-controls select { width: min(180px, 18vw); min-height: 32px; padding: .35rem .5rem; border: 1px solid #526056; border-radius: 8px; color: #e8f1e6; background: #223127; }
+.run-room-controls button { min-height: 32px; padding: .35rem .55rem; border-color: #526056; color: #dce9da; background: #223127; font-size: .74rem; white-space: nowrap; }
+.run-room-controls .icon-control { width: 32px; padding: 0; font-size: 1rem; }
+.run-room-dialog { width: min(540px, calc(100vw - 2rem)); padding: 0; border: 1px solid #aeb9ad; border-radius: 15px; color: #172019; background: #f7f9f5; box-shadow: 0 24px 80px rgba(0,0,0,.34); }
+.run-room-dialog::backdrop { background: rgba(10,15,11,.58); backdrop-filter: blur(3px); }
+.run-room-dialog form { padding: 1.15rem; display: grid; gap: .9rem; }
+.run-room-dialog header, .run-room-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.run-room-dialog header span { color: #5d725f; font-size: .68rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.run-room-dialog h2 { margin: .12rem 0 0; font-size: 1.25rem; }
+.run-room-dialog fieldset { max-height: 320px; margin: 0; padding: .7rem; overflow-y: auto; border: 1px solid #ccd4c9; border-radius: 9px; }
+.run-room-dialog legend { padding: 0 .35rem; color: #4c584e; font-size: .82rem; font-weight: 650; }
+.run-room-dialog .run-choice, .run-room-dialog .future-choice { display: flex; grid-template-columns: none; align-items: center; gap: .55rem; padding: .35rem; }
+.run-room-dialog input[type='checkbox'] { width: auto; }
+.run-room-dialog .scope-note { margin: 0; color: #687269; font-size: .75rem; line-height: 1.4; }
 .assistant-dialog { width: min(620px, calc(100vw - 2rem)); padding: 0; border: 1px solid #aeb9ad; border-radius: 15px; color: #172019; background: #f7f9f5; box-shadow: 0 24px 80px rgba(0,0,0,.34); }
 .assistant-dialog::backdrop { background: rgba(10,15,11,.58); backdrop-filter: blur(3px); }
 .assistant-dialog form { padding: 1.15rem; display: grid; gap: .9rem; }

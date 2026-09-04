@@ -3,10 +3,13 @@
 
   interface Props {
     readonly disabled?: boolean
-    readonly submit: (prompt: string) => Promise<void>
+    readonly submit?: (prompt: string) => Promise<void>
+    readonly toggle?: () => Promise<void>
+    readonly active?: boolean
+    readonly onError?: (message: string) => void
   }
 
-  let { disabled = false, submit }: Props = $props()
+  let { disabled = false, submit, toggle, active = false, onError }: Props = $props()
   let dialog = $state<HTMLDialogElement | null>(null)
   let input = $state<HTMLTextAreaElement | null>(null)
   let prompt = $state('')
@@ -14,6 +17,18 @@
   let error = $state('')
 
   const open = async (): Promise<void> => {
+    if (toggle) {
+      if (busy) return
+      busy = true
+      error = ''
+      try { await toggle() }
+      catch (cause) {
+        error = cause instanceof Error ? cause.message : String(cause)
+        onError?.(error)
+      }
+      finally { busy = false }
+      return
+    }
     error = ''
     dialog?.showModal()
     await tick()
@@ -23,7 +38,7 @@
   const send = async (event: SubmitEvent): Promise<void> => {
     event.preventDefault()
     const content = prompt.trim()
-    if (busy || content.length === 0) return
+    if (busy || content.length === 0 || !submit) return
     busy = true
     error = ''
     try {
@@ -45,15 +60,18 @@
 
 <button
   class="assistant-launch"
+  class:active
   type="button"
   {disabled}
-  aria-label="Open Leitbild Assistant"
-  title={disabled ? 'Leitbild Assistant is unavailable' : 'Ask Leitbild Assistant'}
+  aria-label={active ? 'Hide Agents' : 'Open Leitbild Assistant'}
+  aria-pressed={toggle ? active : undefined}
+  title={disabled ? 'Leitbild Assistant is unavailable' : active ? 'Hide Agents' : toggle ? 'Open Run Assistant' : 'Ask Leitbild Assistant'}
   onclick={() => void open()}
 >
   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3zm6 11l.8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14z"/></svg>
 </button>
 
+{#if !toggle}
 <dialog class="assistant-dialog" bind:this={dialog} onclose={() => { error = '' }}>
   <form onsubmit={send}>
     <header>
@@ -66,3 +84,4 @@
     <footer><span>Enter to send · Shift+Enter for a new line</span><button class="primary" type="submit" disabled={busy || prompt.trim().length === 0}>{busy ? 'Opening…' : 'Ask Assistant'}</button></footer>
   </form>
 </dialog>
+{/if}

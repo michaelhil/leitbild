@@ -5,6 +5,7 @@
 // Width is persisted to localStorage. Collapsed state is simply "width === 0".
 
 import { $sidebarWidth } from './stores.ts'
+import { isFocusedRoomView } from './focused-room.ts'
 
 const MIN_WIDTH = 120     // anything smaller than this snaps to 0 on release
 const DEFAULT_WIDTH = 160
@@ -24,6 +25,10 @@ export const initSidebarResize = (): void => {
   }
 
   // Hydrate from atom (which read localStorage on boot).
+  if (isFocusedRoomView) {
+    document.body.classList.add('focused-room-view')
+    $sidebarWidth.set(0)
+  }
   applyWidth($sidebarWidth.get())
   $sidebarWidth.subscribe(applyWidth)
 
