@@ -13,6 +13,8 @@ import { handleAgentsModuleApi } from '../../../apps/agents/src/api/workspace-mo
 import { asAIAgent } from '../../../apps/agents/src/agents/shared.ts'
 import { BUNDLED_ROOM_DEFINITIONS } from '../../../apps/agents/src/core/definitions/room-definition-catalog.ts'
 import { createDeploymentRuntime } from '../../../apps/agents/src/core/deployment-runtime.ts'
+import { messageFocus } from '../../../apps/agents/src/core/message-focus.ts'
+import { createGeoLookupTool, createGetTimeTool, createProductKnowledgeTools } from '../../../apps/agents/src/tools/built-in/index.ts'
 import { createAgentsModuleState } from '../../../apps/agents/src/core/workspaces/module-state.ts'
 import {
   createWorkspaceRuntimeRegistry as createAgentsWorkspaceRuntimeRegistry,
@@ -107,8 +109,12 @@ describe('Workspace Host with real Modules', () => {
     cleanup.push(() => hostServer.stop(true))
     const baseUrl = `http://127.0.0.1:${hostServer.port}`
 
+    const deployment = createDeploymentRuntime()
+    deployment.sharedToolRegistry.registerAll(createProductKnowledgeTools())
+    deployment.sharedToolRegistry.register(createGeoLookupTool())
+    deployment.sharedToolRegistry.register(createGetTimeTool())
     leitbildRegistry = createAgentsWorkspaceRuntimeRegistry({
-      deployment: createDeploymentRuntime(),
+      deployment,
       moduleState: leitbildState,
       workspaceHostUrl: baseUrl,
       idleMs: 1_000_000,
@@ -186,6 +192,39 @@ describe('Workspace Host with real Modules', () => {
     expect(await companionRuntime.toolRegistry.get('workspace_invoke')!.execute({ capabilityId: 'world.ambulance.dispatch-state', resource: worldRun.ref, input: {} }, companionContext)).toMatchObject({ success: true })
     expect(await companionRuntime.toolRegistry.get('workspace_invoke')!.execute({ capabilityId: 'world.ambulance.cancel', resource: worldRun.ref, input: { unitId: 'amb:weather-response' } }, companionContext)).toMatchObject({ success: false, error: expect.stringContaining('capability_not_granted') })
     expect(await companionRuntime.toolRegistry.get('workspace_invoke')!.execute({ capabilityId: 'world.simulation-run.delete', resource: worldRun.ref, input: {} }, companionContext)).toMatchObject({ success: false, error: expect.stringContaining('capability_not_granted') })
+
+    // The Host launcher is only a generic Capability call. Agents owns the
+    // reusable Room lifecycle and carries the current World Resource as
+    // transient focus on the triggering message.
+    const openAssistant = (prompt: string) => fetch(
+      `${baseUrl}/api/workspaces/${workspace.id}/capabilities/agents.assistant.open/invoke`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          input: { prompt, focusedResources: [worldRun.ref] },
+          actor: { kind: 'human', id: 'operator', displayName: 'Operator' },
+        }),
+      },
+    )
+    const assistantResponse = await openAssistant('Explain this Run.')
+    expect(assistantResponse.status).toBe(200)
+    const assistantRoomId = (await assistantResponse.json() as { result: { resource: { id: string }; reused: boolean } }).result.resource.id
+    const assistantRoom = companionRuntime.rooms.getRoom(assistantRoomId)!
+    const assistantPrompt = assistantRoom.getRecent(10).find(message => message.content === 'Explain this Run.')!
+    expect(messageFocus(assistantPrompt)).toEqual([worldRun.ref])
+    const generalAssistant = assistantRoom.getParticipantIds()
+      .map(id => companionRuntime.team.getAgent(id))
+      .find(agent => agent?.kind === 'ai')!
+    expect(asAIAgent(generalAssistant)!.getMaxToolIterations()).toBe(10)
+    const reusedAssistantResponse = await openAssistant('What Packs are active?')
+    expect(reusedAssistantResponse.status).toBe(200)
+    expect((await reusedAssistantResponse.json() as { result: { resource: { workspaceId: string; moduleId: string; type: string; id: string }; uiPath: string; reused: boolean } }).result).toEqual({
+      resource: { workspaceId: workspace.id, moduleId: 'agents', type: 'agents.room', id: assistantRoomId },
+      uiPath: `/workspaces/${workspace.id}/agents?room=${assistantRoomId}`,
+      reused: true,
+    })
+    expect(companionRuntime.rooms.listAllRooms().filter(room => room.sourceDefinition?.id === 'leitbild-assistant')).toHaveLength(1)
 
     const createAgentResponse = await fetch(
       `${baseUrl}/api/workspaces/${workspace.id}/capabilities/agents.agent.create/invoke`,
