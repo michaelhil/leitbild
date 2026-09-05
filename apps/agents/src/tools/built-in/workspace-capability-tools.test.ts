@@ -5,6 +5,7 @@ import {
   newWorkspaceId,
   resourceIdSchema,
   resourceTypeSchema,
+  workspaceDefinitionRevisionReferenceSchema,
   workspaceResourceReferenceSchema,
 } from '@leitbild/contracts'
 import { createWorkspaceCapabilityTools } from './workspace-capability-tools.ts'
@@ -17,7 +18,11 @@ const resourceType = resourceTypeSchema.parse('world.simulation-run')
 const resourceId = resourceIdSchema.parse('run-01')
 const resource = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId, type: resourceType, id: resourceId })
 const family = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId, type: 'world.run-family', id: 'family-01' })
-const target = { moduleId, type: resourceType, id: resourceId }
+const target = resource
+const definitionCapabilityId = capabilityIdSchema.parse('world.scenario.inspect')
+const definition = workspaceDefinitionRevisionReferenceSchema.parse({
+  workspaceId, moduleId, type: 'world.scenario', id: 'scenario-01', revisionId: 'revision-01',
+})
 
 const catalogFetch = (requests: Request[]): typeof fetch => (async (input, init) => {
   const request = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
@@ -30,12 +35,17 @@ const catalogFetch = (requests: Request[]): typeof fetch => (async (input, init)
       ref: family, title: 'Run family', capabilityIds: [], links: [{ rel: 'contains', ref: resource }], summary: [], observedAt: new Date().toISOString(),
     }],
   })
-  if (pathname.endsWith('/definitions')) return Response.json({ workspaceId, modules: [{ moduleId, status: 'ready' }], definitions: [] })
+  if (pathname.endsWith('/definitions')) return Response.json({ workspaceId, modules: [{ moduleId, status: 'ready' }], definitions: [{
+    ref: { workspaceId, moduleId, type: definition.type, id: definition.id }, title: 'Scenario 01', currentRevisionId: definition.revisionId,
+    capabilityIds: [definitionCapabilityId], inspectionCapabilityId: definitionCapabilityId,
+  }] })
   if (pathname.endsWith('/capabilities')) return Response.json({
     workspaceId, modules: [{ moduleId, status: 'ready' }], capabilities: [{
       id: capabilityId, moduleId, kind: 'query', scope: { kind: 'resource', resourceType }, title: 'Read Run', description: 'Reads live simulation state.', risk: 'read', idempotent: true, inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
     }, {
       id: writeCapabilityId, moduleId, kind: 'command', scope: { kind: 'resource', resourceType }, title: 'Write Run', description: 'Changes simulation state.', risk: 'write', idempotent: false, inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
+    }, {
+      id: definitionCapabilityId, moduleId, kind: 'query', scope: { kind: 'definition', definitionType: definition.type }, title: 'Inspect Scenario', description: 'Reads one scenario definition.', risk: 'read', idempotent: true, inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
     }],
   })
   return Response.json({ result: { runId: resourceId, state: 'running' } })
@@ -69,8 +79,11 @@ describe('Workspace Capability tools', () => {
       }) as typeof fetch,
     })
     const result = await tools[0]!.execute({}, { callerId: 'agent', callerName: 'Analyst', roomId: 'room' })
-    expect(result).toMatchObject({ success: true, data: { currentRoom: linkedRoom, total: 3, resources: [{ ref: resource }, { ref: family }, { ref: { id: 'room' } }] } })
-    expect((result.data as { resources: Array<{ ref: { id: string } }> }).resources.map(item => item.ref.id)).not.toContain(excluded.id)
+    expect(result).toMatchObject({ success: true, data: { currentRoom: { ref: linkedRoom.ref, capabilityCount: 0 }, total: 3, resources: [{ ref: resource }, { ref: family }, { ref: { id: 'room' } }] } })
+    const discoveredResources = (result.data as { resources: Array<{ ref: { id: string }; capabilityCount: number; capabilityIds?: unknown }> }).resources
+    expect(discoveredResources.map(item => item.ref.id)).not.toContain(excluded.id)
+    expect(discoveredResources.find(item => item.ref.id === resourceId)).toMatchObject({ capabilityCount: 2 })
+    expect(discoveredResources.every(item => item.capabilityIds === undefined)).toBe(true)
 
     const wildcardResult = await tools[0]!.execute(
       { scope: 'current', moduleId: '*', definitionType: '*', resourceType: '*', capabilityId: '*' },
@@ -96,22 +109,63 @@ describe('Workspace Capability tools', () => {
     const combined = await tools[1]!.execute({ resource: target, queries: ['unrelated phrase'], capabilityIds: [capabilityId] }, context)
     expect(combined).toMatchObject({ success: true, data: { capabilities: [{ id: capabilityId, inputSchema: { type: 'object' } }] } })
 
+    const unscoped = await tools[1]!.execute({
+      queries: ['simulation state'], risk: 'read', kind: 'query',
+    }, context)
+    expect(unscoped).toMatchObject({ success: true, data: { mode: 'discovery', capabilities: [{ id: capabilityId, targetRequired: true }] } })
+    expect((unscoped.data as { capabilities: Array<Record<string, unknown>> }).capabilities[0]).not.toHaveProperty('authorized')
+
     const unscopedWildcard = await tools[1]!.execute({
       resource: { moduleId: '*', type: '*', id: '*' },
       queries: ['simulation state'], risk: 'read', kind: 'query',
     }, context)
-    expect(unscopedWildcard).toMatchObject({ success: true, data: { capabilities: [{ id: capabilityId }] } })
+    expect(unscopedWildcard).toMatchObject({ success: false, data: { code: 'invalid_tool_input' } })
 
     const partialWildcard = await tools[1]!.execute({ resource: { moduleId: 'world', type: 'simulation-run', id: '*' }, queries: ['simulation state'], risk: 'read', kind: 'query' }, context)
-    expect(partialWildcard).toMatchObject({ success: true, data: { capabilities: [{ id: capabilityId }] } })
+    expect(partialWildcard).toMatchObject({ success: false, data: { code: 'invalid_tool_input' } })
   })
 
   test('pushes exact Module filters to the Workspace Host', async () => {
     const requests: Request[] = []
     const tools = create({ linked: true, requests })
     await tools[1]!.execute({ moduleId, queries: ['live state'] }, { callerId: 'agent', callerName: 'Analyst', roomId: 'room' })
-    expect(requests).toHaveLength(3)
+    expect(requests).toHaveLength(1)
     expect(requests.every(request => new URL(request.url).searchParams.get('moduleId') === moduleId)).toBe(true)
+  })
+
+  test('evaluates Definition revisions with the same exact catalog reference used for invocation', async () => {
+    const tools = createWorkspaceCapabilityTools({
+      workspaceId,
+      hostBaseUrl: 'https://host.test',
+      getToolGrants: () => [{ capabilityId: definitionCapabilityId }],
+      getRoomSubjectSelection: () => undefined,
+      fetchImpl: catalogFetch([]),
+    })
+    const context = { callerId: 'agent', callerName: 'Author' }
+    const catalog = await tools[0]!.execute({ scope: 'workspace', moduleId }, context)
+    expect(catalog).toMatchObject({ success: true, data: { definitions: [{ ref: definition, capabilityCount: 1 }] } })
+    const discoveredDefinition = (catalog.data as { definitions: Array<{ ref: typeof definition }> }).definitions[0]!.ref
+    const discovered = await tools[1]!.execute({ definition: discoveredDefinition, capabilityIds: [definitionCapabilityId], includeOutputSchema: true }, context)
+    expect(discovered).toMatchObject({ success: true, data: {
+      mode: 'definition', definition,
+      capabilities: [{ id: definitionCapabilityId, authorized: true, applicable: true, callable: true, inputSchema: { type: 'object' }, outputSchema: { type: 'object' } }],
+    } })
+    expect(await tools[2]!.execute({
+      calls: [{ key: 'scenario', capabilityId: definitionCapabilityId, definition: discoveredDefinition, input: {} }],
+    }, context)).toMatchObject({ success: true, data: { results: [{ key: 'scenario', success: true }] } })
+  })
+
+  test('rejects partial and cross-Workspace invocation targets before contacting the Host', async () => {
+    const requests: Request[] = []
+    const tools = create({ linked: true, requests })
+    const context = { callerId: 'agent', callerName: 'Analyst', roomId: 'room' }
+    const partial = await tools[2]!.execute({ calls: [{ key: 'x', capabilityId, resource: { moduleId, type: resourceType, id: resourceId }, input: {} }] }, context)
+    expect(partial).toMatchObject({ success: false, data: { code: 'invalid_tool_input' } })
+    expect(requests).toHaveLength(0)
+
+    const otherWorkspace = await tools[2]!.execute({ calls: [{ key: 'x', capabilityId, resource: { ...resource, workspaceId: newWorkspaceId() }, input: {} }] }, context)
+    expect(otherWorkspace).toMatchObject({ success: false, data: { code: 'invalid_tool_input' } })
+    expect(requests).toHaveLength(0)
   })
 
   test('semantic read grant rejects missing Room, wrong target, writes, and stale Capabilities with distinct reasons', async () => {
@@ -121,6 +175,21 @@ describe('Workspace Capability tools', () => {
     expect(await call(capabilityId, { ...target, id: resourceIdSchema.parse('other') }, 'room')).toMatchObject({ success: true, data: { results: [{ error: expect.stringContaining('target_not_selected') }] } })
     expect(await call(writeCapabilityId, target, 'room')).toMatchObject({ success: true, data: { results: [{ error: expect.stringContaining('capability_not_granted') }] } })
     expect(await call('world.simulation-run.missing', target, 'room')).toMatchObject({ success: true, data: { results: [{ error: expect.stringContaining('capability_not_advertised') }] } })
+  })
+
+  test('reports exact-target authority blockers without conflating them with applicability', async () => {
+    const tools = create({ linked: false })
+    const result = await tools[1]!.execute(
+      { resource: target, capabilityIds: [capabilityId] },
+      { callerId: 'agent', callerName: 'Analyst', roomId: 'room' },
+    )
+    expect(result).toMatchObject({ success: true, data: { mode: 'resource', capabilities: [{
+      id: capabilityId,
+      authorized: false,
+      applicable: true,
+      callable: false,
+      blockers: [{ code: 'room_subject_required' }],
+    }] } })
   })
 
   test('runs independent reads concurrently and preserves keyed request order', async () => {
