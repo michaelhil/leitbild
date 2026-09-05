@@ -101,11 +101,9 @@ export interface ChatRequest {
   // ollama-dashboard config writes this; the Ollama adapter reads it
   // (src/llm/ollama.ts).
   readonly keepAlive?: string
-  // Structured system-prompt blocks — opt-in, used only by providers that can
-  // attach cache markers (currently Anthropic). When present, the adapter
-  // emits the system message as an array of content parts with
-  // `cache_control` on the last cacheable block. Providers that don't
-  // understand the structured form fall back to `messages[0].content`.
+  // Canonical ordered instructions. When present, `messages` contains only
+  // conversation/tool turns; each provider adapter renders these blocks into
+  // its native system-instruction form and may apply cache markers.
   readonly systemBlocks?: ReadonlyArray<{ readonly text: string; readonly cacheable?: boolean }>
 }
 

@@ -517,7 +517,7 @@ describe('createOpenAICompatibleProvider', () => {
       const provider = createOpenAICompatibleProvider({ name: 'anthropic', getBaseUrl: () => fx.url, getApiKey: () => 'k' })
       await provider.chat({
         model: 'm',
-        messages: [{ role: 'system', content: 'sys' }, { role: 'user', content: 'x' }],
+        messages: [{ role: 'user', content: 'x' }],
         systemBlocks: [
           { text: 'stable', cacheable: true },
           { text: 'volatile', cacheable: false },
@@ -542,7 +542,7 @@ describe('createOpenAICompatibleProvider', () => {
       const provider = createOpenAICompatibleProvider({ name: 'anthropic', getBaseUrl: () => fx.url, getApiKey: () => 'k' })
       await provider.chat({
         model: 'm',
-        messages: [{ role: 'system', content: 'sys' }, { role: 'user', content: 'x' }],
+        messages: [{ role: 'user', content: 'x' }],
         systemBlocks: [{ text: 'stable', cacheable: true }],
       })
       const body = fx.last.body as { tools?: unknown; messages: ReadonlyArray<{ role: string; content: ReadonlyArray<{ text: string; cache_control?: { type: string } }> }> }
@@ -569,7 +569,7 @@ describe('createOpenAICompatibleProvider', () => {
         const provider = createOpenAICompatibleProvider({ name, getBaseUrl: () => fx.url, getApiKey: () => 'k' })
         await provider.chat({
           model: 'm',
-          messages: [{ role: 'system', content: 'sys' }, { role: 'user', content: 'x' }],
+          messages: [{ role: 'user', content: 'x' }],
           systemBlocks: [{ text: 'stable', cacheable: true }],
           tools: sampleTools,
         })

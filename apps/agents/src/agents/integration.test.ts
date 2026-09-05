@@ -452,8 +452,8 @@ describe('Integration — Full message lifecycle', () => {
     const provider: LLMProvider = {
       chat: async (req) => {
         evalCount++
-        const systemMsg = req.messages.find(m => m.role === 'system')!
-        capturedContexts.push({ systemContent: systemMsg.content, messages: req.messages })
+        const systemContent = (req.systemBlocks ?? []).map(block => block.text).join('\n\n')
+        capturedContexts.push({ systemContent, messages: req.messages })
         return { content: '', generationMs: 10, tokensUsed: { prompt: 10, completion: 5 }, toolCalls: [{ function: { name: 'pass', arguments: { reason: 'done' } } }] }
       },
       models: async () => ['mock'],

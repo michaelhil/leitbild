@@ -39,8 +39,8 @@ export interface ContextResult {
   readonly messages: ChatRequest['messages']
   readonly flushInfo: FlushInfo
   readonly warnings: ReadonlyArray<string>
-  // Structured system-prompt blocks, stable blocks first. Forwarded as
-  // ChatRequest.systemBlocks so Anthropic can attach cache_control markers.
+  // Canonical ordered instructions, stable blocks first. Conversation
+  // messages never duplicate this text as a synthetic system message.
   readonly systemBlocks?: ReadonlyArray<{ readonly text: string; readonly cacheable: boolean }>
   readonly tokenBudget?: number
 }
@@ -544,8 +544,9 @@ const createNormalStrategy = (
   deps: BuildContextDeps,
   triggerRoomId: string,
 ): ContextStrategy => {
+  let cachedSystemBlocks: ReadonlyArray<{ text: string; cacheable: boolean }> | undefined
   const buildSystemBlocksFn = (): ReadonlyArray<{ text: string; cacheable: boolean }> =>
-    buildSystemBlocks(deps, triggerRoomId)
+    cachedSystemBlocks ??= buildSystemBlocks(deps, triggerRoomId)
 
   const buildHistoryMessagesFn = (): {
     messages: ReadonlyArray<ChatRequest['messages'][number]>
@@ -687,9 +688,7 @@ export const buildContext = (
   const { messages: historyMessages, flushIds, warnings } = strategy.buildHistoryMessages()
   const trailing = strategy.buildTrailingInstruction()
 
-  const systemContent = systemBlocks.map(b => b.text).filter(Boolean).join('\n\n')
   const messages: ChatRequest['messages'][number][] = [
-    { role: 'system', content: systemContent },
     ...historyMessages,
     ...(trailing ? [trailing] : []),
   ]

@@ -466,10 +466,10 @@ describe('[NEW] message tagging', () => {
   })
 
   test('system prompt is fenced with XML sections (house, response_format)', async () => {
-    let capturedMessages: ReadonlyArray<{ role: string; content: string }> = []
+    let capturedSystem = ''
     const provider: LLMProvider = {
       chat: async (req) => {
-        capturedMessages = req.messages
+        capturedSystem = (req.systemBlocks ?? []).map(block => block.text).join('\n\n')
         return {
           content: '', toolCalls: makePassToolCalls('done'),
           generationMs: 10,
@@ -486,12 +486,11 @@ describe('[NEW] message tagging', () => {
     agent.receive(makeMessage({ senderId: 'alice', roomId: 'room-1' }))
     await agent.whenIdle()
 
-    const systemMsg = capturedMessages.find(m => m.role === 'system')
-    expect(systemMsg?.content).toContain('Prioritise')
-    expect(systemMsg?.content).toContain('<leitbild:workspace_rules>')
-    expect(systemMsg?.content).toContain('</leitbild:workspace_rules>')
-    expect(systemMsg?.content).toContain('<leitbild:response_format>')
-    expect(systemMsg?.content).toContain('</leitbild:response_format>')
+    expect(capturedSystem).toContain('Prioritise')
+    expect(capturedSystem).toContain('<leitbild:workspace_rules>')
+    expect(capturedSystem).toContain('</leitbild:workspace_rules>')
+    expect(capturedSystem).toContain('<leitbild:response_format>')
+    expect(capturedSystem).toContain('</leitbild:response_format>')
   })
 
   test('buffered messages during generation are all tagged [NEW]', async () => {

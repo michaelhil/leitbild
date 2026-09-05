@@ -107,31 +107,31 @@ export const toOAIMessages = (request: ChatRequest, providerName: string): OAIMe
       ...(m.role === 'tool' && m.name ? { name: m.name } : {}),
     }
   }
-  // Anthropic path: if systemBlocks are provided, emit the system message as
-  // an array of content parts with `cache_control: ephemeral` on the last
-  // cacheable block. Anthropic's caching is triggered by the marker and caches
-  // every token from message start up to (and including) that marker.
-  if (providerName === 'anthropic' && request.systemBlocks && request.systemBlocks.length > 0) {
+  if (request.systemBlocks && request.systemBlocks.length > 0) {
+    if (request.messages.some(message => message.role === 'system')) {
+      throw new Error('ChatRequest cannot contain both systemBlocks and a system message')
+    }
     const out: OAIMessage[] = []
-    const systemParts: OAIContentPart[] = []
-    let lastCacheableIdx = -1
-    for (let i = 0; i < request.systemBlocks.length; i++) {
-      if (request.systemBlocks[i]!.cacheable) lastCacheableIdx = i
+    if (providerName === 'anthropic') {
+      // Anthropic caches every token through the final marked block.
+      const systemParts: OAIContentPart[] = []
+      let lastCacheableIdx = -1
+      for (let i = 0; i < request.systemBlocks.length; i++) {
+        if (request.systemBlocks[i]!.cacheable) lastCacheableIdx = i
+      }
+      for (let i = 0; i < request.systemBlocks.length; i++) {
+        const block = request.systemBlocks[i]!
+        if (!block.text) continue
+        const part: OAIContentPart = { type: 'text', text: block.text }
+        if (i === lastCacheableIdx) part.cache_control = { type: 'ephemeral' }
+        systemParts.push(part)
+      }
+      if (systemParts.length > 0) out.push({ role: 'system', content: systemParts })
+    } else {
+      const systemText = request.systemBlocks.map(block => block.text).filter(Boolean).join('\n\n')
+      if (systemText) out.push({ role: 'system', content: systemText })
     }
-    for (let i = 0; i < request.systemBlocks.length; i++) {
-      const block = request.systemBlocks[i]!
-      if (!block.text) continue
-      const part: OAIContentPart = { type: 'text', text: block.text }
-      if (i === lastCacheableIdx) part.cache_control = { type: 'ephemeral' }
-      systemParts.push(part)
-    }
-    if (systemParts.length > 0) {
-      out.push({ role: 'system', content: systemParts })
-    }
-    for (const m of request.messages) {
-      if (m.role === 'system') continue
-      out.push(toMessage(m))
-    }
+    for (const message of request.messages) out.push(toMessage(message))
     return out
   }
   return request.messages.map(toMessage)

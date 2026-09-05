@@ -109,12 +109,20 @@ const warnIgnoredToolChoice = (model: string, choice: ChatRequest['toolChoice'])
 
 export const createOllamaProvider = (initialBaseUrl: string): OllamaProviderExtended => {
   let baseUrl = initialBaseUrl
+  const requestMessages = (request: ChatRequest): ChatRequest['messages'] => {
+    if (!request.systemBlocks || request.systemBlocks.length === 0) return request.messages
+    if (request.messages.some(message => message.role === 'system')) {
+      throw new Error('ChatRequest cannot contain both systemBlocks and a system message')
+    }
+    const content = request.systemBlocks.map(block => block.text).filter(Boolean).join('\n\n')
+    return content ? [{ role: 'system' as const, content }, ...request.messages] : request.messages
+  }
   const chat = async (request: ChatRequest): Promise<ChatResponse> => {
     const startMs = performance.now()
 
     const body: Record<string, unknown> = {
       model: request.model,
-      messages: request.messages.map(m => ({
+      messages: requestMessages(request).map(m => ({
         role: m.role,
         content: m.content,
       })),
@@ -194,7 +202,7 @@ export const createOllamaProvider = (initialBaseUrl: string): OllamaProviderExte
   const stream = async function* (request: ChatRequest, externalSignal?: AbortSignal): AsyncIterable<StreamChunk> {
     const body: Record<string, unknown> = {
       model: request.model,
-      messages: request.messages.map(m => ({
+      messages: requestMessages(request).map(m => ({
         role: m.role,
         content: m.content,
         ...(m.role === 'assistant' && m.toolCalls ? { tool_calls: m.toolCalls.map(call => ({ function: call.function })) } : {}),

@@ -182,18 +182,19 @@ const showGenerationQueryModal = (inspection: GenerationQueryInspection): void =
       traceId: inspection.traceId,
       ...inspection.generation,
     }), '18rem'))
-  }, true)
+  })
 
-  const systemMessage = inspection.query.messages.find(message => message.role === 'system')
+  const systemPrompt = inspection.query.systemBlocks?.map(block => block.text).filter(Boolean).join('\n\n')
+    ?? inspection.query.messages.find(message => message.role === 'system')?.content
   appendCategory(modal.scrollBody, 'Prompts & instructions', body => {
-    if (!systemMessage) {
+    if (!systemPrompt) {
       body.textContent = 'No system prompt was present in this request.'
       return
     }
-    for (const section of extractPromptSections(systemMessage.content)) {
+    for (const section of extractPromptSections(systemPrompt)) {
       appendDisclosure(body, section.label, section.content, false, true)
     }
-  }, true)
+  })
 
   const dialogue = inspection.query.messages.filter(message =>
     message.role !== 'system' && message.role !== 'tool' && !message.toolCalls?.length,

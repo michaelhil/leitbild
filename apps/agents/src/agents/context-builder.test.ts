@@ -27,10 +27,13 @@ const mkDeps = (overrides: Partial<BuildContextDeps> = {}): BuildContextDeps => 
   ...overrides,
 })
 
+const systemText = (result: ReturnType<typeof buildContext>): string =>
+  (result.systemBlocks ?? []).map(block => block.text).join('\n\n')
+
 describe('context-builder includePrompts', () => {
   test('all sections included by default (undefined includePrompts)', () => {
     const result = buildContext(mkDeps(), 'room-1')
-    const sys = result.messages[0]!.content
+    const sys = systemText(result)
     expect(sys).toContain('<leitbild:workspace_rules>')
     expect(sys).toContain('<leitbild:room name="General">')
     expect(sys).toContain('<leitbild:identity>')
@@ -39,7 +42,7 @@ describe('context-builder includePrompts', () => {
 
   test('workspace: false suppresses WORKSPACE RULES only', () => {
     const result = buildContext(mkDeps({ includePrompts: { workspace: false } }), 'room-1')
-    const sys = result.messages[0]!.content
+    const sys = systemText(result)
     expect(sys).not.toContain('<leitbild:workspace_rules>')
     expect(sys).toContain('<leitbild:room name="General">')
     expect(sys).toContain('<leitbild:identity>')
@@ -48,7 +51,7 @@ describe('context-builder includePrompts', () => {
 
   test('room: false suppresses ROOM only', () => {
     const result = buildContext(mkDeps({ includePrompts: { room: false } }), 'room-1')
-    const sys = result.messages[0]!.content
+    const sys = systemText(result)
     expect(sys).not.toContain('<leitbild:room name="General">')
     expect(sys).toContain('<leitbild:workspace_rules>')
     expect(sys).toContain('<leitbild:identity>')
@@ -56,14 +59,14 @@ describe('context-builder includePrompts', () => {
 
   test('persona: false suppresses YOUR IDENTITY only', () => {
     const result = buildContext(mkDeps({ includePrompts: { persona: false } }), 'room-1')
-    const sys = result.messages[0]!.content
+    const sys = systemText(result)
     expect(sys).not.toContain('<leitbild:identity>')
     expect(sys).toContain('<leitbild:workspace_rules>')
   })
 
   test('responseFormat: false suppresses RESPONSE FORMAT only', () => {
     const result = buildContext(mkDeps({ includePrompts: { responseFormat: false } }), 'room-1')
-    const sys = result.messages[0]!.content
+    const sys = systemText(result)
     expect(sys).not.toContain('<leitbild:response_format>')
     expect(sys).toContain('<leitbild:identity>')
   })
@@ -72,7 +75,7 @@ describe('context-builder includePrompts', () => {
     const result = buildContext(mkDeps({
       includePrompts: { persona: false, room: false, workspace: false, responseFormat: false },
     }), 'room-1')
-    const sys = result.messages[0]!.content
+    const sys = systemText(result)
     expect(sys).not.toContain('<leitbild:workspace_rules>')
     expect(sys).not.toContain('<leitbild:room name="General">')
     expect(sys).not.toContain('<leitbild:identity>')
@@ -82,7 +85,7 @@ describe('context-builder includePrompts', () => {
 
   test('partial includePrompts defaults missing keys to true', () => {
     const result = buildContext(mkDeps({ includePrompts: { workspace: false } }), 'room-1')
-    const sys = result.messages[0]!.content
+    const sys = systemText(result)
     expect(sys).toContain('<leitbild:identity>')
     expect(sys).toContain('<leitbild:room name="General">')
     expect(sys).toContain('<leitbild:response_format>')
@@ -93,7 +96,7 @@ describe('context-builder includePrompts', () => {
       promptsEnabled: false,
       includePrompts: { persona: true, room: true, workspace: true, responseFormat: true, skills: true },
     }), 'room-1')
-    const sys = result.messages[0]!.content
+    const sys = systemText(result)
     expect(sys).not.toContain('<leitbild:workspace_rules>')
     expect(sys).not.toContain('<leitbild:room name="General">')
     expect(sys).not.toContain('<leitbild:identity>')
@@ -142,8 +145,8 @@ describe('context-builder skills + context-data toggles', () => {
     const result = buildContext(mkDeps({
       getSkills: () => 'skill-text',
     }), 'room-1')
-    expect(result.messages[0]!.content).toContain('<leitbild:skills>')
-    expect(result.messages[0]!.content).toContain('skill-text')
+    expect(systemText(result)).toContain('<leitbild:skills>')
+    expect(systemText(result)).toContain('skill-text')
   })
 
   test('includePrompts.skills false suppresses SKILLS block', () => {
@@ -151,7 +154,7 @@ describe('context-builder skills + context-data toggles', () => {
       getSkills: () => 'skill-text',
       includePrompts: { skills: false },
     }), 'room-1')
-    expect(result.messages[0]!.content).not.toContain('<leitbild:skills>')
+    expect(systemText(result)).not.toContain('<leitbild:skills>')
   })
 
   test('includeContext.participants false suppresses Other participants', () => {
@@ -164,7 +167,7 @@ describe('context-builder skills + context-data toggles', () => {
       history,
       includeContext: { participants: false },
     }), 'room-1')
-    expect(result.messages[0]!.content).not.toContain('Other participants:')
+    expect(systemText(result)).not.toContain('Other participants:')
   })
 
   test('includeContext.knownAgents false suppresses Known agents line', () => {
@@ -174,7 +177,7 @@ describe('context-builder skills + context-data toggles', () => {
       history,
       includeContext: { knownAgents: false },
     }), 'room-1')
-    expect(result.messages[0]!.content).not.toContain('Known agents:')
+    expect(systemText(result)).not.toContain('Known agents:')
   })
 })
 
@@ -299,27 +302,26 @@ describe('buildContext — end-to-end snapshots (wire-format parity guard)', () 
       history,
       resolveName: (id) => id === 'b' ? 'Bob' : id,
     }), 'room-1')
-    expect(result.messages.map(m => m.role)).toEqual(['system', 'user', 'user'])
+    expect(result.messages.map(m => m.role)).toEqual(['user', 'user'])
     // First user message is the OLD one (no [NEW] tag); second is the fresh incoming.
-    expect(result.messages[1]!.content).toContain('[Bob]: evening')
-    expect(result.messages[1]!.content).not.toContain('[NEW]')
-    expect(result.messages[2]!.content).toContain('[NEW]')
-    expect(result.messages[2]!.content).toContain('[Bob]: morning')
+    expect(result.messages[0]!.content).toContain('[Bob]: evening')
+    expect(result.messages[0]!.content).not.toContain('[NEW]')
+    expect(result.messages[1]!.content).toContain('[NEW]')
+    expect(result.messages[1]!.content).toContain('[Bob]: morning')
     expect(result.flushInfo.ids.has('in-1')).toBe(true)
     expect(result.flushInfo.ids.has('old-1')).toBe(false)
   })
 
   test('Script path: full message array shape with trailing instruction', () => {
     const result = buildContext(mkScriptDeps(), 'room-1')
-    // system + dialogue (1 assistant + 1 user) + trailing user instruction.
-    expect(result.messages.map(m => m.role)).toEqual(['system', 'assistant', 'user', 'user'])
-    expect(result.messages[0]!.content).toContain('SCRIPT: Test')
-    expect(result.messages[1]!.content).toBe('I think we should ship.')
-    expect(result.messages[2]!.content).toBe('Sam said: What about the migration risk?')
-    expect(result.messages[3]!.content).toContain('Speak your next line as Alex')
+    // Instructions are separate; messages contain dialogue + trailing turn.
+    expect(result.messages.map(m => m.role)).toEqual(['assistant', 'user', 'user'])
+    expect(systemText(result)).toContain('SCRIPT: Test')
+    expect(result.messages[0]!.content).toBe('I think we should ship.')
+    expect(result.messages[1]!.content).toBe('Sam said: What about the migration risk?')
+    expect(result.messages[2]!.content).toContain('Speak your next line as Alex')
     // Single non-cacheable system block — see ScriptStrategy.buildSystemBlocks.
     expect(result.systemBlocks).toHaveLength(1)
     expect(result.systemBlocks![0]!.cacheable).toBe(false)
   })
 })
-
