@@ -389,7 +389,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
   const call: Tool = {
     name: 'workspace_call',
     description: 'Call one discovered Workspace operation, or call independent read operations together.',
-    usage: 'Use exact operation IDs and targets returned by workspace_explore. Reads and changes use the same call shape. Batch only independent reads; issue changes separately. A target Module enforces current run restrictions and safety checks.',
+    usage: 'Use exact operation IDs and targets returned by workspace_explore. Reads and changes use the same call shape. Batch only independent reads; issue changes separately. Supply idempotencyKey only when the discovered operation advertises acceptsIdempotencyKey. A target Module enforces current run restrictions and safety checks.',
     returns: 'Results in request order. Each result contains either data or a structured error such as out-of-scope, restricted, stale, or invalid input.',
     parameters: {
       type: 'object', properties: {
@@ -399,7 +399,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
           target: targetParameter,
           input: {},
           expectedRevision: { type: 'integer', minimum: 0 },
-          idempotencyKey: { type: 'string', minLength: 1, maxLength: 256 },
+          idempotencyKey: { type: 'string', minLength: 1, maxLength: 256, description: 'Optional uncertain-retry key; valid only when the discovered operation advertises acceptsIdempotencyKey.' },
         }, required: ['key', 'operationId', 'input'], additionalProperties: false } },
       }, required: ['calls'], additionalProperties: false,
     },
@@ -438,6 +438,14 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
           const issue = targetInScope(entry.target, resolved)
             ?? applicabilityFailure(entry.operation, entry.target, catalogs.resources.resources, catalogs.definitions.definitions)
           if (issue) return { key: entry.key, operationId: entry.operationId, success: false, error: issue.error, details: issue.data }
+          if (entry.idempotencyKey !== undefined && entry.operation?.acceptsIdempotencyKey !== true) {
+            return {
+              key: entry.key,
+              operationId: entry.operationId,
+              success: false,
+              error: 'idempotency_not_supported: This operation does not advertise caller-supplied retry keys',
+            }
+          }
           try {
             const response = await fetchImpl(`${workspacePath}/capabilities/${encodeURIComponent(entry.operationId)}/invoke`, {
               method: 'POST',

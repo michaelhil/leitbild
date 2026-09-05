@@ -106,6 +106,9 @@ export const moduleCapabilityDescriptorSchema = z.object({
   searchTerms: z.array(z.string().trim().min(1).max(128)).optional(),
   risk: z.enum(['read', 'write', 'destructive']),
   idempotent: z.boolean(),
+  // Present only when the transport accepts a caller-supplied key for an
+  // uncertain retry. This is distinct from semantic repeat safety.
+  acceptsIdempotencyKey: z.literal(true).optional(),
   schedulable: z.boolean().optional(),
   inputSchema: jsonSchemaSchema,
   outputSchema: jsonSchemaSchema,

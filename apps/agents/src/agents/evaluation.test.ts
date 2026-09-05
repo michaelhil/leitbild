@@ -416,6 +416,29 @@ describe('evaluate (tool loop)', () => {
     expect(result.decision.toolTrace).toHaveLength(2)
   })
 
+  test('records nested Workspace operation failures and tool-evidence size', async () => {
+    const { provider } = makeScriptedProvider([
+      { toolCalls: [{ id: 'workspace_1', function: { name: 'workspace_call', arguments: { calls: [{ key: 'bad', operationId: 'world.test.read', input: {} }] } } }] },
+      { content: 'The requested read was rejected.' },
+    ])
+    const result = await evaluate(
+      baseContextResult(),
+      baseConfig,
+      provider,
+      async () => [{ success: true, data: { results: [{ key: 'bad', operationId: 'world.test.read', success: false, error: 'invalid input' }] } }],
+      undefined,
+      'room-1',
+      { toolDefinitions: [] },
+    )
+    expect(result.decision.toolTrace).toEqual([expect.objectContaining({
+      tool: 'workspace_call',
+      success: false,
+      resultBytes: expect.any(Number),
+      operationOutcomes: [{ key: 'bad', operationId: 'world.test.read', success: false }],
+    })])
+    expect(result.decision.toolTrace![0]!.resultBytes).toBeGreaterThan(0)
+  })
+
   test('tool calls without executor → tools_unavailable', async () => {
     const provider = makeStaticProvider({
       toolCalls: [{ function: { name: 'echo', arguments: {} } }],

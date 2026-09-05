@@ -21,6 +21,7 @@ export interface UIMessage {
   generationTraceId?: string
   // Tokens/context metrics forwarded via server message metadata.
   promptTokens?: number
+  lastPromptTokens?: number
   completionTokens?: number
   cacheCreation?: number
   cacheRead?: number

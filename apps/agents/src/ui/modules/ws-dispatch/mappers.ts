@@ -17,6 +17,7 @@ export const toUIMessage = (m: Message): UIMessage => ({
   generationMs: m.generationMs,
   ...(m.generationTraceId !== undefined ? { generationTraceId: m.generationTraceId } : {}),
   ...(m.promptTokens !== undefined ? { promptTokens: m.promptTokens } : {}),
+  ...(m.lastPromptTokens !== undefined ? { lastPromptTokens: m.lastPromptTokens } : {}),
   ...(m.completionTokens !== undefined ? { completionTokens: m.completionTokens } : {}),
   ...(m.cacheCreation !== undefined ? { cacheCreation: m.cacheCreation } : {}),
   ...(m.cacheRead !== undefined ? { cacheRead: m.cacheRead } : {}),

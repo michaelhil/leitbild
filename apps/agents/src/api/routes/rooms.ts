@@ -73,6 +73,7 @@ export const roomRoutes: RouteEntry[] = [
           ...(message.generationMs !== undefined ? { durationMs: message.generationMs } : {}),
           ...(message.modelCalls !== undefined ? { modelCalls: message.modelCalls } : {}),
           ...(message.promptTokens !== undefined ? { promptTokens: message.promptTokens } : {}),
+          ...(message.lastPromptTokens !== undefined ? { lastPromptTokens: message.lastPromptTokens } : {}),
           ...(message.completionTokens !== undefined ? { completionTokens: message.completionTokens } : {}),
           ...(message.cacheCreation !== undefined ? { cacheCreation: message.cacheCreation } : {}),
           ...(message.cacheRead !== undefined ? { cacheRead: message.cacheRead } : {}),

@@ -49,6 +49,11 @@ export interface RenderMessageOptions {
 }
 
 const compactCount = (value: number): string => value.toLocaleString('en-GB')
+const compactBytes = (value: number): string => value < 1024
+  ? `${value} B`
+  : value < 1024 * 1024
+    ? `${(value / 1024).toFixed(1)} KB`
+    : `${(value / (1024 * 1024)).toFixed(1)} MB`
 
 const appendGenerationInfo = (host: HTMLElement, msg: UIMessage): void => {
   if (msg.generationMs === undefined) return
@@ -58,6 +63,9 @@ const appendGenerationInfo = (host: HTMLElement, msg: UIMessage): void => {
   parts.push(`${(msg.generationMs / 1000).toFixed(1)}s`)
   if (msg.modelCalls !== undefined) parts.push(`${msg.modelCalls} model call${msg.modelCalls === 1 ? '' : 's'}`)
   if (msg.toolTrace?.length) parts.push(`${msg.toolTrace.length} tool call${msg.toolTrace.length === 1 ? '' : 's'}`)
+  if (msg.toolTrace?.some(trace => trace.resultBytes !== undefined)) {
+    parts.push(`${compactBytes(msg.toolTrace.reduce((total, trace) => total + (trace.resultBytes ?? 0), 0))} tool evidence`)
+  }
   if (msg.promptTokens !== undefined || msg.completionTokens !== undefined) {
     parts.push(`${compactCount(msg.promptTokens ?? 0)} in · ${compactCount(msg.completionTokens ?? 0)} out`)
   }
@@ -198,10 +206,11 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
     // Hover tooltip carries the full `prompt / max tok (provider)` detail.
     // Tone reflects pressure: amber at 75%, red at 90%. Unknown context
     // window → grey text + the raw token count in the tooltip.
-    if (msg.promptTokens !== undefined) {
+    const finalPassTokens = msg.lastPromptTokens ?? (msg.modelCalls === undefined || msg.modelCalls <= 1 ? msg.promptTokens : undefined)
+    if (finalPassTokens !== undefined) {
       const ctxEl = document.createElement('span')
       const ctx = msg.contextMax ?? 0
-      const usage = msg.promptTokens
+      const usage = finalPassTokens
       const pct = ctx > 0 ? (usage / ctx) * 100 : 0
       let tone = 'text-text-muted'
       if (ctx > 0) {
@@ -214,10 +223,10 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
       if (ctx > 0) {
         const display = pct < 1 ? pct.toFixed(2) : pct < 10 ? pct.toFixed(1) : pct.toFixed(0)
         ctxEl.textContent = `${display}%`
-        ctxEl.title = `${usage.toLocaleString()} / ${ctx.toLocaleString()} tok (${display}%)${msg.provider ? ` · via ${msg.provider}` : ''}`
+        ctxEl.title = `${usage.toLocaleString()} / ${ctx.toLocaleString()} tok in final model pass (${display}%)${msg.promptTokens !== undefined && msg.promptTokens !== usage ? ` · ${msg.promptTokens.toLocaleString()} cumulative input` : ''}${msg.provider ? ` · via ${msg.provider}` : ''}`
       } else {
         ctxEl.textContent = '?%'
-        ctxEl.title = `${usage.toLocaleString()} tok (context window unknown)${msg.provider ? ` · via ${msg.provider}` : ''}`
+        ctxEl.title = `${usage.toLocaleString()} tok in final model pass (context window unknown)${msg.promptTokens !== undefined && msg.promptTokens !== usage ? ` · ${msg.promptTokens.toLocaleString()} cumulative input` : ''}${msg.provider ? ` · via ${msg.provider}` : ''}`
       }
       header.appendChild(ctxEl)
     }

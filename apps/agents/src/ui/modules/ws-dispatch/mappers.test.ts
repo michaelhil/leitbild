@@ -33,6 +33,7 @@ describe('toUIMessage', () => {
     const ui = toUIMessage({
       ...base,
       promptTokens: 100,
+      lastPromptTokens: 60,
       completionTokens: 50,
       cacheCreation: 30,
       cacheRead: 60,
@@ -41,6 +42,7 @@ describe('toUIMessage', () => {
       contextMax: 8000,
     })
     expect(ui.promptTokens).toBe(100)
+    expect(ui.lastPromptTokens).toBe(60)
     expect(ui.completionTokens).toBe(50)
     expect(ui.cacheCreation).toBe(30)
     expect(ui.cacheRead).toBe(60)

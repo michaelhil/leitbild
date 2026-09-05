@@ -50,7 +50,7 @@ const catalogFetch = (requests: Request[]): typeof fetch => (async (input, init)
     modules: [{ moduleId, status: 'ready' }],
     capabilities: [
       { id: readId, moduleId, kind: 'query', scope: { kind: 'resource', resourceType: run.type }, title: 'Read run', description: 'Read current live simulation state and time.', searchTerms: ['status report sitrep'], risk: 'read', idempotent: true, inputSchema: { type: 'object' }, outputSchema: { type: 'object' } },
-      { id: writeId, moduleId, kind: 'command', scope: { kind: 'resource', resourceType: run.type }, title: 'Change run', description: 'Change the live simulation.', searchTerms: ['trip reactor coolant pumps RCPs'], risk: 'write', idempotent: false, inputSchema: { type: 'object' }, outputSchema: { type: 'object' } },
+      { id: writeId, moduleId, kind: 'command', scope: { kind: 'resource', resourceType: run.type }, title: 'Change run', description: 'Change the live simulation.', searchTerms: ['trip reactor coolant pumps RCPs'], risk: 'write', idempotent: false, acceptsIdempotencyKey: true, inputSchema: { type: 'object' }, outputSchema: { type: 'object' } },
       { id: inspectDefinitionId, moduleId, kind: 'query', scope: { kind: 'definition', definitionType: definition.type }, title: 'Inspect scenario', description: 'Read a scenario definition.', risk: 'read', idempotent: true, inputSchema: { type: 'object' }, outputSchema: { type: 'object' } },
     ],
   })
@@ -131,6 +131,24 @@ describe('Workspace progressive-discovery tools', () => {
       { key: 'write', operationId: writeId, target: runTarget, input: {} },
     ] }, context)).toMatchObject({ success: false, error: expect.stringContaining('batch_requires_read_operations') })
     expect(requests.filter(request => request.url.includes('/invoke'))).toHaveLength(before)
+  })
+
+  test('preflights caller retry keys against discovered operation metadata', async () => {
+    const requests: Request[] = []
+    const [, call] = makeTools({ kind: 'resource', resource: run }, requests)
+    expect(await call!.execute({ calls: [{
+      key: 'read', operationId: readId, target: runTarget, input: {}, idempotencyKey: 'unsupported',
+    }] }, context)).toMatchObject({
+      success: true,
+      data: { results: [{ success: false, error: expect.stringContaining('idempotency_not_supported') }] },
+    })
+    expect(requests.filter(request => request.url.includes('/invoke'))).toHaveLength(0)
+
+    expect(await call!.execute({ calls: [{
+      key: 'write', operationId: writeId, target: runTarget, input: {}, idempotencyKey: 'supported',
+    }] }, context)).toMatchObject({ success: true, data: { results: [{ success: true }] } })
+    const invoked = requests.find(request => request.url.includes('/invoke'))!
+    expect(await invoked.json()).toMatchObject({ idempotencyKey: 'supported' })
   })
 
   test('requires a Room with an explicit Scope', async () => {

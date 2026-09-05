@@ -135,6 +135,9 @@ export interface EvalResult {
 
 export interface LLMCallMetrics {
   readonly promptTokens?: number
+  /** Input tokens for the most recent model pass; unlike promptTokens this can
+   * be compared with one model context window. */
+  readonly lastPromptTokens?: number
   readonly completionTokens?: number
   // Prompt-cache hit metrics surfaced through the posted message so cache
   // efficacy is observable in the JSONL log without dashboard inspection.
@@ -152,6 +155,7 @@ const sumMetric = (left: number | undefined, right: number | undefined): number 
 
 const mergeMetrics = (current: LLMCallMetrics, next: LLMCallMetrics): LLMCallMetrics => ({
   ...(sumMetric(current.promptTokens, next.promptTokens) === undefined ? {} : { promptTokens: sumMetric(current.promptTokens, next.promptTokens) }),
+  ...((next.promptTokens ?? current.lastPromptTokens) === undefined ? {} : { lastPromptTokens: next.promptTokens ?? current.lastPromptTokens }),
   ...(sumMetric(current.completionTokens, next.completionTokens) === undefined ? {} : { completionTokens: sumMetric(current.completionTokens, next.completionTokens) }),
   ...(sumMetric(current.cacheCreation, next.cacheCreation) === undefined ? {} : { cacheCreation: sumMetric(current.cacheCreation, next.cacheCreation) }),
   ...(sumMetric(current.cacheRead, next.cacheRead) === undefined ? {} : { cacheRead: sumMetric(current.cacheRead, next.cacheRead) }),
@@ -364,6 +368,18 @@ export const evaluate = async (
       : (result.error ?? '')
     return raw.length > PREVIEW_MAX ? `${raw.slice(0, PREVIEW_MAX)}…` : raw
   }
+  const operationOutcomesFor = (tool: string, result: ToolResult): ToolTraceEntry['operationOutcomes'] => {
+    if (tool !== 'workspace_call' || !result.success || !result.data || typeof result.data !== 'object') return undefined
+    const results = (result.data as { results?: unknown }).results
+    if (!Array.isArray(results)) return undefined
+    const outcomes = results.flatMap(value => {
+      if (!value || typeof value !== 'object') return []
+      const raw = value as Record<string, unknown>
+      if (typeof raw.key !== 'string' || typeof raw.operationId !== 'string' || typeof raw.success !== 'boolean') return []
+      return [{ key: raw.key, operationId: raw.operationId, success: raw.success }]
+    })
+    return outcomes.length === 0 ? undefined : outcomes
+  }
   const traceArguments = (tool: string, value: Record<string, unknown>): Pick<ToolTraceEntry, 'argumentKeys' | 'argumentBytes' | 'operationIds' | 'target'> => {
     const serialized = JSON.stringify(value)
     const calls = Array.isArray(value.calls) ? value.calls.filter(call => call && typeof call === 'object') as ReadonlyArray<Record<string, unknown>> : []
@@ -460,11 +476,16 @@ export const evaluate = async (
           const call = calls[i]
           const result = results[i]
           if (!call || !result) continue
-          onEvent?.({ kind: 'tool_result', tool: call.tool, callId: call.callId ?? String(i), success: result.success, preview: result.success ? undefined : result.error })
+          const operationOutcomes = operationOutcomesFor(call.tool, result)
+          const traceSuccess = result.success && (operationOutcomes?.every(outcome => outcome.success) ?? true)
+          onEvent?.({ kind: 'tool_result', tool: call.tool, callId: call.callId ?? String(i), success: traceSuccess, preview: traceSuccess ? undefined : result.error ?? 'One or more requested operations failed' })
+          const serializedResult = formatToolResult(result)
           toolTrace.push({
             tool: call.tool,
             ...traceArguments(call.tool, call.arguments),
-            success: result.success,
+            success: traceSuccess,
+            resultBytes: new TextEncoder().encode(serializedResult).byteLength,
+            ...(operationOutcomes === undefined ? {} : { operationOutcomes }),
             resultPreview: previewFor(result),
           })
         }

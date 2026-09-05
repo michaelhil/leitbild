@@ -505,6 +505,7 @@ const runtimeCapabilityDescriptorsFor = (
       ...(capability.searchTerms === undefined ? {} : { searchTerms: capability.searchTerms }),
       risk: capability.risk,
       idempotent: capability.idempotent,
+      ...(capability.kind === 'command' ? { acceptsIdempotencyKey: true as const } : {}),
       ...(capability.schedulable === undefined ? {} : { schedulable: capability.schedulable }),
       inputSchema: capabilityJsonSchema(capability.input),
       outputSchema: capabilityJsonSchema(capability.output),

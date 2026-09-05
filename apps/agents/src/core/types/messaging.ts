@@ -61,6 +61,7 @@ export interface Message {
 
   // --- Chat / eval telemetry (set by spawn.onDecision on chat/pass messages) ---
   readonly promptTokens?: number
+  readonly lastPromptTokens?: number
   readonly completionTokens?: number
   // Normalized prompt-cache telemetry when exposed by the provider.
   readonly cacheCreation?: number
@@ -113,6 +114,12 @@ export interface ToolTraceEntry {
   readonly operationIds?: ReadonlyArray<string>
   readonly target?: string
   readonly success: boolean
+  readonly resultBytes?: number
+  readonly operationOutcomes?: ReadonlyArray<{
+    readonly key: string
+    readonly operationId: string
+    readonly success: boolean
+  }>
   readonly resultPreview: string   // <=200 chars (truncated result or error message)
 }
 
