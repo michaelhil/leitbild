@@ -20,6 +20,7 @@ import type { GridAssetDefinition } from './grid-model.ts'
 import { electricGridPackId, gridProjectionSchema } from './model.ts'
 import { objectIdSchema } from '../../core/model/index.ts'
 import { gridAssetSnapshotFor, type GridAssetSnapshot, type GridRuntimeInstance } from './runtime/instance.ts'
+import { rejectCapabilityTarget } from '../../simulation/capability-rejection.ts'
 
 export const electricGridQueryKinds = [
   'world.electric-grid.catalog.list',
@@ -136,7 +137,9 @@ const fail = (reason: string): never => { throw new Error(reason) }
 
 const gridFor = (grids: ReadonlyMap<string, GridRuntimeInstance>, gridId: string): GridRuntimeInstance => {
   const grid = grids.get(gridId)
-  if (!grid) throw new Error(`Grid not found: ${gridId}`)
+  if (!grid) return rejectCapabilityTarget(
+    `Electric Grid not found: ${gridId}. Discover exact running Grid ids with world.electric-grid.catalog.list.`,
+  )
   return grid
 }
 
@@ -299,8 +302,7 @@ export const answerElectricGridQuery = (config: {
   if (!electricGridQueryKinds.includes(config.request.capabilityId as typeof electricGridQueryKinds[number])) {
     return fail(`unsupported Electric Grid query Capability: ${config.request.capabilityId}`)
   }
-  try {
-    if (config.request.capabilityId === electricGridQueryKinds[0]) {
+  if (config.request.capabilityId === electricGridQueryKinds[0]) {
       emptyPayloadSchema.parse(config.request.input)
       return {
         ...electricGridDefinitionCatalog,
@@ -316,12 +318,12 @@ export const answerElectricGridQuery = (config: {
           },
         })),
       }
-    }
-    if (config.request.capabilityId === electricGridQueryKinds[1]) {
+  }
+  if (config.request.capabilityId === electricGridQueryKinds[1]) {
       const payload = gridPayloadSchema.parse(config.request.input)
       return summaryFor(gridFor(config.grids, payload.gridId))
-    }
-    if (config.request.capabilityId === electricGridQueryKinds[2]) {
+  }
+  if (config.request.capabilityId === electricGridQueryKinds[2]) {
       const payload = searchPayloadSchema.parse(config.request.input)
       const grid = gridFor(config.grids, payload.gridId)
       const needle = payload.text.trim().toLowerCase()
@@ -336,18 +338,20 @@ export const answerElectricGridQuery = (config: {
         limit: payload.limit,
         assets: page.map(entry => assetPresentationFor(grid, gridAssetSnapshotFor(grid, entry.id)!)),
       }
-    }
-    if (config.request.capabilityId === electricGridQueryKinds[3]) {
+  }
+  if (config.request.capabilityId === electricGridQueryKinds[3]) {
       const payload = assetPayloadSchema.parse(config.request.input)
       const grid = gridFor(config.grids, payload.gridId)
       const asset = gridAssetSnapshotFor(grid, payload.assetId)
-      if (!asset) return fail(`Grid Asset not found: ${payload.assetId}`)
+      if (!asset) return rejectCapabilityTarget(
+        `Grid Asset not found: ${payload.assetId}. Discover exact asset ids with world.electric-grid.assets.search.`,
+      )
       return {
         gridId: payload.gridId,
         asset: { ...assetPresentationFor(grid, asset), definition: asset.definition, ...(asset.state === undefined ? {} : { state: asset.state }) },
       }
-    }
-    if (config.request.capabilityId === electricGridQueryKinds[4]) {
+  }
+  if (config.request.capabilityId === electricGridQueryKinds[4]) {
       const payload = powerFlowPayloadSchema.parse(config.request.input)
       const grid = gridFor(config.grids, payload.gridId)
       const branches = grid.definition.model.branches.map(definition => ({ definition, state: grid.branches.get(definition.id)! }))
@@ -358,10 +362,10 @@ export const answerElectricGridQuery = (config: {
         limit: payload.limit,
         branches: branches.slice(payload.offset, payload.offset + payload.limit),
       }
-    }
-    const payload = gridPayloadSchema.parse(config.request.input)
-    const grid = gridFor(config.grids, payload.gridId)
-    return {
+  }
+  const payload = gridPayloadSchema.parse(config.request.input)
+  const grid = gridFor(config.grids, payload.gridId)
+  return {
       gridId: payload.gridId,
       connectionPoints: grid.definition.model.connectionPoints.map(point => {
         const busState = grid.busStates.get(point.busId)
@@ -379,8 +383,5 @@ export const answerElectricGridQuery = (config: {
           frequencyHz: busState?.frequencyHz ?? grid.definition.model.nominalFrequencyHz,
         }
       }),
-    }
-  } catch (error) {
-    return fail(error instanceof Error ? error.message : String(error))
   }
 }

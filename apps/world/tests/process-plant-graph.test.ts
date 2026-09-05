@@ -23,9 +23,19 @@ import {
 import { scenarios } from './fixtures/scenarios.ts'
 import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 import { processPlantCapabilities } from '../src/packs/process-plant/capabilities.ts'
+import { capabilityJsonSchema } from '../src/simulation/capabilities.ts'
 
 
 describe('process plant model composition', () => {
+  test('publishes branded signal references as their truthful JSON wire types', () => {
+    const capability = processPlantCapabilities.find(candidate => candidate.id === 'world.process-plant.signals.read')!
+    const schema = capabilityJsonSchema(capability.input) as {
+      properties: { signals: { items: { properties: Record<string, Record<string, unknown>> } } }
+    }
+    expect(schema.properties.signals.items.properties.path).toMatchObject({ type: 'string', minLength: 3 })
+    expect(schema.properties.signals.items.properties.tagId).toMatchObject({ type: 'string', minLength: 1 })
+  })
+
   test('builds and validates every supported PWR loop count from one model source', () => {
     for (let loopCount = 2; loopCount <= 6; loopCount += 1) {
       const system = compileProcessPlant(createPwrReferencePlantDefinition({

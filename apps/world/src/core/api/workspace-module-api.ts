@@ -19,6 +19,7 @@ import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
 import { mapSymbolsInput, mapSymbolsOutput, searchMapSymbols } from '../map-symbols/catalog.ts'
 import { z } from 'zod'
 import { capabilityJsonSchema } from '../../simulation/capabilities.ts'
+import { isCapabilityRejection } from '../../simulation/capability-rejection.ts'
 import {
   isoTimestampSchema,
   agentRestrictionsSchema,
@@ -1488,12 +1489,12 @@ export const handleWorldModuleApi = async (
 
     return null
   } catch (error) {
+    if (isCapabilityRejection(error)) return apiError(error.status, error.code, error.message)
     if (error instanceof Error && 'code' in error && error.code === 'storage_budget_exceeded') return apiError(507, 'storage_budget_exceeded', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'history_unavailable') return apiError(503, 'history_unavailable', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'workspace_closing') return apiError(409, 'workspace_closing', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'simulation_run_busy') return apiError(409, 'simulation_run_busy', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'simulation_run_failed') return apiError(409, 'simulation_run_failed', error.message)
-    if (error instanceof Error && 'code' in error && error.code === 'capability_target_not_found') return apiError(404, 'capability_target_not_found', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'fast_forward_unsupported') return apiError(422, 'fast_forward_unsupported', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'workspace_capacity_exceeded') return apiError(503, 'workspace_capacity_exceeded', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'simulation_run_name_changed') {

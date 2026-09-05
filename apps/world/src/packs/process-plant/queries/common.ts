@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { idSchema } from '../../../core/model/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
+import { rejectCapabilityTarget } from '../../../simulation/capability-rejection.ts'
 
 export const plantQuerySchema = z.object({
   plantId: idSchema,
@@ -39,7 +40,7 @@ export const failure = (
 ): never => { throw new Error(reason) }
 
 export const capabilityTargetNotFound = (message: string): never => {
-  throw Object.assign(new Error(message), { code: 'capability_target_not_found' as const })
+  return rejectCapabilityTarget(message)
 }
 
 export const requirePlant = (

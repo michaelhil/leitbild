@@ -35,4 +35,7 @@ export const capabilityIds = (
 ): ReadonlyArray<string> => capabilities.filter(capability => capability.kind === kind).map(capability => capability.id)
 
 export const capabilityJsonSchema = (schema: z.ZodType): Readonly<Record<string, unknown>> =>
-  z.toJSONSchema(schema, { unrepresentable: 'any' })
+  // Capability payloads are JSON wire values. Most transforms only apply a
+  // TypeScript brand after validation, so the input view is the truthful wire
+  // schema for both request and response catalogs.
+  z.toJSONSchema(schema, { unrepresentable: 'any', io: 'input' })

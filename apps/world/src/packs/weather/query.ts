@@ -17,6 +17,7 @@ import { sampleWeather, weatherLimits, type WeatherField } from './cell-field.ts
 import { projectWeatherFieldForMap } from './projection.ts'
 import { weatherQuantities } from './quantities.ts'
 import { weatherPresentationSeverityForState } from './conditions.ts'
+import { rejectCapabilityInput, rejectCapabilityWork } from '../../simulation/capability-rejection.ts'
 
 const routeSchema = z
   .object({ route: geoJsonLineStringSchema, intervalM: z.number().finite().min(10).max(5000).default(500) })
@@ -163,8 +164,14 @@ export const answerWeatherQuery = (field: WeatherField, request: PackRuntimeQuer
     return result
   }
   if (request.capabilityId === 'world.weather.summarize-area') {
-    const ids = hexCellsForPolygon(areaSchema.parse(input).area, hexResolution(field.config.gridResolution), 512)
-    if (!ids.length) throw new Error('Area has no resolved ground cell centers; enlarge area or use point sampling')
+    let ids: ReturnType<typeof hexCellsForPolygon>
+    try {
+      ids = hexCellsForPolygon(areaSchema.parse(input).area, hexResolution(field.config.gridResolution), 512)
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('cell work budget')) return rejectCapabilityWork(error.message)
+      throw error
+    }
+    if (!ids.length) return rejectCapabilityInput('Area has no resolved ground cell centers; enlarge area or use point sampling')
     return {
       cellCount: ids.length,
       summary: summarize(ids.map((id) => sampleWeather(field, hexCellCenter(id)))),
@@ -173,7 +180,7 @@ export const answerWeatherQuery = (field: WeatherField, request: PackRuntimeQuer
     }
   }
   const { route, intervalM } = routeSchema.parse(input)
-  if (route.coordinates.length > weatherLimits.maxVertices) throw new Error('Route exceeds vertex budget')
+  if (route.coordinates.length > weatherLimits.maxVertices) return rejectCapabilityWork('Route exceeds vertex budget')
   const lengths = route.coordinates
     .slice(1)
     .map((p, i) => routeDistanceMeters(pointFromPosition(route.coordinates[i]!), pointFromPosition(p)))

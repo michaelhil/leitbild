@@ -11,6 +11,7 @@ import type {
 import type { ProcessQuantity, ProcessUnit, VariableDiscipline, VariableKind } from './graph/index.ts'
 import { processSignalTagIdSchema, variablePathSchema } from './graph/index.ts'
 import type { ProcessPlantVariableSnapshot } from './runtime/index.ts'
+import { rejectCapabilityTarget } from '../../simulation/capability-rejection.ts'
 
 export const processPlantSignalReferenceSchema = z.object({
   path: variablePathSchema.optional(),
@@ -32,13 +33,17 @@ export const resolveProcessPlantSignalBinding = (
 ): ProcessSignalBinding => {
   if (reference.path !== undefined) {
     const binding = graph.signalBindingByPath.get(reference.path)
-    if (!binding) throw new Error(`unknown process plant signal path: ${reference.path}`)
+    if (!binding) return rejectCapabilityTarget(
+      `Process Plant signal path not found: ${reference.path}. Discover exact paths with world.process-plant.signals.search.`,
+    )
     return binding
   }
   if (reference.tagId !== undefined) {
     const binding = graph.signalBindingByTagId.get(reference.tagId)
       ?? graph.signalBindingByExternalRef.get(reference.tagId)
-    if (!binding) throw new Error(`unknown process plant signal tagId: ${reference.tagId}`)
+    if (!binding) return rejectCapabilityTarget(
+      `Process Plant signal tag not found: ${reference.tagId}. Discover exact tags with world.process-plant.signals.search.`,
+    )
     return binding
   }
   throw new Error('process signal reference must define path or tagId')

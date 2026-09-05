@@ -1,6 +1,7 @@
 import type { CommandEnvelope,CommandResult,OperationalObject,SimulationRunEvent } from '../core/model/index.ts'
 import { nowIso } from '../core/model/index.ts'
 import { capabilityIds } from './capabilities.ts'
+import { isExpectedCapabilityRejection } from './capability-rejection.ts'
 import type { PackRuntimeAdapter,PackRuntimeConnection,PackRuntimeConnectionConfig,PackRuntimeEmission,PackRuntimeEventHandler,PackRuntimeHealth,PackRuntimeQuery,PackRuntimeRealtimeInput,PackRuntimeSnapshot,PackScenarioRuntimeConfig } from './protocol.ts'
 
 const duplicateObjectIds = (objects: ReadonlyArray<OperationalObject>): ReadonlyArray<string> => {
@@ -279,7 +280,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
           markHealthy(target.adapter.id, query.capabilityId)
           return result
         } catch (error) {
-          markFailure(target.adapter.id, query.capabilityId, error)
+          if (!isExpectedCapabilityRejection(error)) markFailure(target.adapter.id, query.capabilityId, error)
           throw error
         }
       }

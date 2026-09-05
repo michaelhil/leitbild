@@ -21,6 +21,7 @@ import type {
   PackRuntimeEmission,
 } from '../src/simulation/protocol.ts'
 import { defineSimulationCommandCapability, defineSimulationQueryCapability } from '../src/simulation/capabilities.ts'
+import { capabilityRejection } from '../src/simulation/capability-rejection.ts'
 
 interface StubAdapter extends PackRuntimeAdapter {
   readonly connectCount: () => number
@@ -39,11 +40,11 @@ const createStubAdapter = (
   id: string,
   packId: string,
   commandKind: string,
-  config: { readonly queryKind?: string; readonly queryFailures?: number } = {},
+  options: { readonly queryKind?: string; readonly queryFailures?: number; readonly queryError?: () => Error } = {},
 ): StubAdapter => {
   let connectCount = 0
   let closeCount = 0
-  let queryFailures = config.queryFailures ?? 0
+  let queryFailures = options.queryFailures ?? 0
   const handlers = new Set<(emission: PackRuntimeEmission) => void>()
   const adapter: PackRuntimeAdapter = {
     id,
@@ -60,10 +61,10 @@ const createStubAdapter = (
         output: z.object({}).passthrough(),
         buildCommand: input => ({ targetObjectIds: [], payload: input }),
       }),
-      ...(config.queryKind === undefined ? [] : [defineSimulationQueryCapability({
-        id: config.queryKind,
-        title: config.queryKind,
-        description: `Test query ${config.queryKind}`,
+      ...(options.queryKind === undefined ? [] : [defineSimulationQueryCapability({
+        id: options.queryKind,
+        title: options.queryKind,
+        description: `Test query ${options.queryKind}`,
         input: z.object({}).strict(),
         output: z.object({ adapterId: z.string() }).strict(),
       })]),
@@ -84,7 +85,7 @@ const createStubAdapter = (
         invokeQuery: async () => {
           if (queryFailures > 0) {
             queryFailures -= 1
-            throw new Error('stub query failure')
+            throw options.queryError?.() ?? new Error('stub query failure')
           }
           return { adapterId: id }
         },
@@ -248,6 +249,25 @@ describe('createRuntimeHub', () => {
       state: 'ready',
       failureCount: 1,
     })])
+    await connection.close()
+  })
+
+  test('returns expected query rejections without falsely degrading runtime health', async () => {
+    const adapter = createStubAdapter('healthy.runtime', 'healthy-pack', 'world.healthy.command', {
+      queryKind: 'world.healthy.status',
+      queryFailures: 1,
+      queryError: () => capabilityRejection('capability_target_not_found', 'Target not found'),
+    })
+    const connection = await createRuntimeHub([adapter]).connect(connectionConfig([adapter.id]))
+
+    await expect(connection.invokeQuery({ capabilityId: 'world.healthy.status', input: {} }))
+      .rejects.toMatchObject({ code: 'capability_target_not_found' })
+    expect(connection.health?.()).toEqual([expect.objectContaining({
+      runtimeId: 'healthy.runtime',
+      state: 'ready',
+      failureCount: 0,
+    })])
+    expect(connection.health?.()[0]).not.toHaveProperty('lastFailure')
     await connection.close()
   })
 
