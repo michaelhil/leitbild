@@ -115,6 +115,21 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
     }
   }
 
+  // Room-scoped delivery keeps an embedded focused Room isolated while the
+  // standalone Agents surface continues to receive every Room event in its
+  // Workspace. A focused connection never receives unrelated Room traffic.
+  const broadcastToRoom = (workspaceId: WorkspaceId, roomId: string, msg: WSOutbound): void => {
+    lastBroadcastByWorkspace.set(workspaceId, Date.now())
+    const data = JSON.stringify(msg)
+    for (const [token, session] of sessions) {
+      if (session.workspaceId !== workspaceId) continue
+      if (session.focusedRoomId && session.focusedRoomId !== roomId) continue
+      const ws = wsConnections.get(token)
+      if (!ws) continue
+      safeSend(ws, data)
+    }
+  }
+
   // AgentsWorkspaceRuntime callback wiring (room/membership/agent-activity/provider-events/
   // summary lifecycle/ollama-health) lives in src/api/wire-workspace-runtime-events.ts.
   // Ollama metrics are pulled by the dashboard via GET /api/ollama/metrics
@@ -124,11 +139,15 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
     if (agent.kind !== 'ai') return
     if (stateUnsubs.has(agent.id)) return
     const agentName = agent.name
+    let lastRoomId: string | undefined = agent.state.getContext()
     const unsub = agent.state.subscribe((state: StateValue, _agentId: string, context?: string, startedAt?: number) => {
-      broadcastToWorkspace(workspaceId, {
-        type: 'agent_state', agentName, state, context,
+      if (context) lastRoomId = context
+      const event = {
+        type: 'agent_state', agentId: agent.id, agentName, state, context,
         ...(startedAt !== undefined ? { generationStarted: startedAt } : {}),
-      })
+      } as const
+      if (lastRoomId) broadcastToRoom(workspaceId, lastRoomId, event)
+      else broadcastToWorkspace(workspaceId, event)
     })
     stateUnsubs.set(agent.id, unsub)
   }
@@ -154,13 +173,18 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
       void sessionToken
       return null
     }
+    const focusedRoomId = sessionToken ? sessions.get(sessionToken)?.focusedRoomId : undefined
+    const visibleRooms = sys.rooms.listAllRooms().filter(profile => !focusedRoomId || profile.id === focusedRoomId)
     const roomStates: Record<string, RoomState> = {}
-    for (const profile of sys.rooms.listAllRooms()) {
+    for (const profile of visibleRooms) {
       const room = sys.rooms.getRoom(profile.id)
       if (room) roomStates[profile.id] = room.getRoomState()
     }
+    const visibleAgentIds = focusedRoomId
+      ? new Set(sys.rooms.getRoom(focusedRoomId)?.getParticipantIds() ?? [])
+      : null
     const agents: AgentProfile[] = sys.team.listAgents()
-      .filter(a => !a.inactive)
+      .filter(a => !a.inactive && (!visibleAgentIds || visibleAgentIds.has(a.id)))
       .map(a => {
         const ai = asAIAgent(a)
         const ctx = a.state.getContext()
@@ -174,7 +198,7 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
       })
     return {
       type: 'snapshot',
-      rooms: sys.rooms.listAllRooms(),
+      rooms: visibleRooms,
       agents,
       roomStates,
       ...(sessionToken ? { sessionToken } : {}),
@@ -199,7 +223,7 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
 
   return {
     sessions, wsConnections, releaseSessionForWorkspaceSwitch,
-    safeSend, broadcastAllWorkspaces, broadcastToWorkspace,
+    safeSend, broadcastAllWorkspaces, broadcastToWorkspace, broadcastToRoom,
     subscribeAgentState, unsubscribeAgentState, buildSnapshot, sweepStaleSessions,
     // --- Diagnostics ---
     markWired: (id: WorkspaceId) => { wiredWorkspaces.add(id) },

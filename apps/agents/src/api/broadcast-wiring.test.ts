@@ -9,7 +9,7 @@
 //
 // This test proves end-to-end that a Workspace loaded via the registry
 // path (the registry load path) has live broadcast wiring: posting a
-// message into one of its rooms fans out via wsManager.broadcastToWorkspace
+// message into one of its rooms fans out via wsManager.broadcastToRoom
 // scoped to that Workspace.
 //
 // First assertion is the harness sanity check: the system's snapshot has
@@ -41,7 +41,7 @@ describe('lazy Workspace broadcast wiring (regression for 5d73a8e)', () => {
     delete process.env.LEITBILD_HOME
   })
 
-  test('routeMessage in a loaded Workspace reaches broadcastToWorkspace', async () => {
+  test('routeMessage in a loaded Workspace reaches room-scoped broadcast', async () => {
     homeDir = await mkdtemp(join(tmpdir(), 'leitbild-streaming-'))
     process.env.LEITBILD_HOME = homeDir
 
@@ -76,6 +76,11 @@ describe('lazy Workspace broadcast wiring (regression for 5d73a8e)', () => {
         broadcasts.push({ workspaceId, msg })
         baseWs.broadcastToWorkspace(workspaceId, msg)
       },
+      broadcastToRoom: (workspaceId, roomId, msg) => {
+        void roomId
+        broadcasts.push({ workspaceId, msg })
+        baseWs.broadcastToRoom(workspaceId, roomId, msg)
+      },
     }
 
     // The bug only manifested for Workspaces loaded after process start. Use
@@ -89,7 +94,7 @@ describe('lazy Workspace broadcast wiring (regression for 5d73a8e)', () => {
 
     // Trigger a message that fires onMessagePosted. This is the chain the
     // bug broke: room.post -> onMessagePosted (via lateBinding proxy) ->
-    // wireWorkspaceRuntimeEvents-installed callback -> broadcastToWorkspace.
+    // wireWorkspaceRuntimeEvents-installed callback -> broadcastToRoom.
     sys.routeMessage(
       { rooms: [room.profile.id] },
       { senderId: 'system', senderName: 'system', content: 'test note', type: 'system' },

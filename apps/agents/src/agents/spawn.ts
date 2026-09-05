@@ -287,7 +287,7 @@ export interface SpawnOptions {
   readonly getScriptContext?: (roomId: string, agentName: string) =>
     | { systemDoc: string; dialogue: ReadonlyArray<{ speaker: string; content: string }> }
     | undefined
-  readonly onEvalEvent?: (agentName: string, event: import('../core/types/agent-eval.ts').EvalEvent) => void
+  readonly onEvalEvent?: import('../core/types/agent-eval.ts').OnEvalEvent
   // Per-room pack-activation resolver. When provided, the LLM tool surface
   // is filtered per eval to tools owned by packs active in the trigger
   // room. Built-in and authored tools have no Pack owner. This is the structural
@@ -335,7 +335,10 @@ export const spawnAIAgent = async (
     ? (preferred: string, effective: string, reason: string) => {
         if (lastFallbackTarget === effective) return
         lastFallbackTarget = effective
-        spawnOptions.onEvalEvent!(config.name, { kind: 'model_fallback', preferred, effective, reason })
+        spawnOptions.onEvalEvent!(
+          { agentId, agentName: config.name },
+          { kind: 'model_fallback', preferred, effective, reason },
+        )
       }
     : undefined
   const llmProvider: LLMProvider = llmService.bound({

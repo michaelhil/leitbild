@@ -118,7 +118,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
             agent.state.subscribe((state, _agentId, context) => {
               broadcasts.push({
                 workspaceId: instId,
-                msg: { type: 'agent_state', agentName, state, ...(context !== undefined ? { context } : {}) },
+                msg: { type: 'agent_state', agentId: agent.id, agentName, state, ...(context !== undefined ? { context } : {}) },
               })
             })
           },

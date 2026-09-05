@@ -11,12 +11,14 @@ export interface WSConnection {
 export interface ClientSession {
   readonly workspaceId: WorkspaceId
   readonly sessionToken: string
+  readonly focusedRoomId?: string
   lastActivity: number
 }
 
 export interface WSData {
   sessionToken: string
   workspaceId: WorkspaceId
+  focusedRoomId?: string
   terminalClose?: 'workspace-unavailable'
 }
 
@@ -27,6 +29,7 @@ export interface WSManager {
   readonly safeSend: (ws: WSConnection, data: string) => boolean
   readonly broadcastAllWorkspaces: (msg: WSOutbound) => void
   readonly broadcastToWorkspace: (workspaceId: WorkspaceId, msg: WSOutbound) => void
+  readonly broadcastToRoom: (workspaceId: WorkspaceId, roomId: string, msg: WSOutbound) => void
   readonly subscribeAgentState: (agent: Agent, workspaceId: WorkspaceId) => void
   readonly unsubscribeAgentState: (agentId: string) => void
   readonly buildSnapshot: (workspaceId: WorkspaceId, sessionToken?: string) => Extract<WSOutbound, { type: 'snapshot' }> | null

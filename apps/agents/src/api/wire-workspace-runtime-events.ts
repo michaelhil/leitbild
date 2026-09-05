@@ -26,13 +26,6 @@ import type { WSManager } from './ws-types.ts'
 import { asAIAgent } from '../agents/shared.ts'
 import type { WorkspaceId } from '@leitbild/contracts'
 
-type PromptContextSnapshot = {
-  readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>
-  readonly model: string
-  readonly temperature?: number
-  readonly toolCount: number
-}
-
 export const wireWorkspaceRuntimeEvents = (
   system: AgentsWorkspaceRuntime,
   wsManager: WSManager,
@@ -47,9 +40,9 @@ export const wireWorkspaceRuntimeEvents = (
   const broadcast = (msg: Parameters<WSManager['broadcastToWorkspace']>[1]): void => {
     wsManager.broadcastToWorkspace(workspaceId, msg)
   }
-  // Context is held only until the corresponding message is posted, then
-  // delivered in a separate ephemeral WS event. It never enters snapshots.
-  const pendingPromptContexts = new Map<string, { context: PromptContextSnapshot; warnings: string[] }>()
+  const broadcastRoom = (roomId: string, msg: Parameters<WSManager['broadcastToRoom']>[2]): void => {
+    wsManager.broadcastToRoom(workspaceId, roomId, msg)
+  }
 
   // Helper resolvers for room/agent name lookup (tolerate missing entities).
   const roomNameFor = (roomId: string): string =>
@@ -59,19 +52,14 @@ export const wireWorkspaceRuntimeEvents = (
 
   // === Mutating callbacks → broadcast + schedule save ===
 
-  system.setOnMessagePosted((_roomId, message) => {
-    broadcast({ type: 'message', message })
-    const pending = pendingPromptContexts.get(message.senderId)
-    if (pending) {
-      broadcast({ type: 'message_context', messageId: message.id, context: pending.context, ...(pending.warnings.length > 0 ? { warnings: pending.warnings } : {}) })
-      pendingPromptContexts.delete(message.senderId)
-    }
+  system.setOnMessagePosted((roomId, message) => {
+    broadcastRoom(roomId, { type: 'message', message })
     sched()
   })
 
   system.setOnDeliveryModeChanged((roomId, mode) => {
     const room = system.rooms.getRoom(roomId)
-    broadcast({
+    broadcastRoom(roomId, {
       type: 'delivery_mode_changed',
       roomName: roomNameFor(roomId),
       mode,
@@ -91,19 +79,19 @@ export const wireWorkspaceRuntimeEvents = (
     const roomName = roomNameFor(roomId)
     if (event === 'script_started') {
       const d = detail as { scriptId: string; scriptName: string; title: string; premise?: string; totalSteps: number; stepTitle: string; cast: ReadonlyArray<{ id: string; name: string; model: string; kind: 'ai'; persona: string; starts: boolean }>; steps: ReadonlyArray<{ title: string; goal?: string; roles: Record<string, string> }> }
-      broadcast({ type: 'script_started', roomName, ...d })
+      broadcastRoom(roomId, { type: 'script_started', roomName, ...d })
     } else if (event === 'script_step_advanced') {
       const d = detail as { scriptId: string; stepIndex: number; totalSteps: number; title: string; forced?: boolean }
-      broadcast({ type: 'script_step_advanced', roomName, ...d })
+      broadcastRoom(roomId, { type: 'script_step_advanced', roomName, ...d })
     } else if (event === 'script_readiness_changed') {
       const d = detail as { scriptId: string; readiness: Record<string, boolean>; readyStreak: Record<string, number>; whisperFailures: number; lastWhisper: Record<string, { turn: number; whisper: { ready_to_advance: boolean; notes?: string; addressing?: string; role_update?: string }; usedFallback: boolean; rawResponse?: string; errorReason?: string }> }
-      broadcast({ type: 'script_readiness_changed', roomName, ...d })
+      broadcastRoom(roomId, { type: 'script_readiness_changed', roomName, ...d })
     } else if (event === 'script_dialogue_appended') {
       const d = detail as { scriptId: string; stepIndex: number; entry: { speaker: string; content: string; messageId: string; whispersByCast: Record<string, { turn: number; whisper: { ready_to_advance: boolean; notes?: string; addressing?: string; role_update?: string }; usedFallback: boolean; rawResponse?: string; errorReason?: string }> } }
-      broadcast({ type: 'script_dialogue_appended', roomName, ...d })
+      broadcastRoom(roomId, { type: 'script_dialogue_appended', roomName, ...d })
     } else if (event === 'script_completed') {
       const d = detail as { scriptId: string }
-      broadcast({ type: 'script_completed', roomName, ...d })
+      broadcastRoom(roomId, { type: 'script_completed', roomName, ...d })
     }
     sched()
   })
@@ -122,7 +110,7 @@ export const wireWorkspaceRuntimeEvents = (
   // === Non-mutating callbacks → broadcast only ===
 
   system.setOnTurnChanged((roomId, agentId, waitingForHuman) => {
-    broadcast({
+    broadcastRoom(roomId, {
       type: 'turn_changed',
       roomName: roomNameFor(roomId),
       agentName: agentNameFor(agentId),
@@ -131,7 +119,7 @@ export const wireWorkspaceRuntimeEvents = (
   })
 
   system.setOnModeAutoSwitched((roomId, toMode, reason) => {
-    broadcast({
+    broadcastRoom(roomId, {
       type: 'mode_auto_switched',
       roomName: roomNameFor(roomId),
       toMode,
@@ -140,17 +128,17 @@ export const wireWorkspaceRuntimeEvents = (
   })
 
   system.setOnRoomCreated((profile) => {
-    broadcast({ type: 'room_created', profile })
+    broadcastRoom(profile.id, { type: 'room_created', profile })
     sched()
   })
 
   system.setOnRoomDeleted((_roomId, roomName) => {
-    broadcast({ type: 'room_deleted', roomName })
+    broadcastRoom(_roomId, { type: 'room_deleted', roomName })
     sched()
   })
 
   system.setOnMembershipChanged((roomId, roomName, agentId, agentName, action) => {
-    broadcast({ type: 'membership_changed', roomId, roomName, agentId, agentName, action })
+    broadcastRoom(roomId, { type: 'membership_changed', roomId, roomName, agentId, agentName, action })
     sched()
   })
 
@@ -160,43 +148,28 @@ export const wireWorkspaceRuntimeEvents = (
   // a wiring break in the proxy chain (lateBinding silent-skip class).
   // Sampled to once per 25 chunks to avoid spamming the journal.
   const broadcastChunkCount = new Map<string, number>()
-  system.setOnEvalEvent((agentName, event) => {
-    if (event.kind === 'context_ready') {
-      const agent = system.team.getAgent(agentName)
-      if (agent) {
-        pendingPromptContexts.set(agent.id, {
-          context: {
-            messages: event.messages,
-            model: event.model,
-            temperature: event.temperature,
-            toolCount: event.toolCount,
-          },
-          warnings: [],
-        })
-      }
-    } else if (event.kind === 'warning') {
-      const agent = system.team.getAgent(agentName)
-      if (agent) {
-        const pending = pendingPromptContexts.get(agent.id)
-        if (pending) pending.warnings.push(event.message)
-      }
-    }
+  system.setOnEvalEvent((scope, event) => {
     if (event.kind === 'chunk') {
-      const k = agentName
+      const k = scope.agentId
       const n = (broadcastChunkCount.get(k) ?? 0) + 1
       broadcastChunkCount.set(k, n)
       if (n === 1 || n % 25 === 0) {
-        console.log(`[llm-bcast] agent=${agentName} kind=chunk count_so_far=${n}`)
+        console.log(`[llm-bcast] agent=${scope.agentName} kind=chunk count_so_far=${n}`)
       }
     }
-    // Prompt content is delivered once through message_context after the
-    // generated Message arrives. The activity stream needs only readiness
-    // metadata; broadcasting the full prompt here duplicated large contexts.
-    broadcast({
+    // Prompt content is never sent through realtime activity. Messages carry
+    // a generationTraceId and the inspector fetches the separately stored
+    // canonical request only on demand.
+    const activity = {
       type: 'agent_activity',
-      agentName,
+      agentId: scope.agentId,
+      agentName: scope.agentName,
+      ...(scope.roomId ? { roomId: scope.roomId } : {}),
       event: event.kind === 'context_ready' ? { ...event, messages: [] } : event,
-    })
+    } as const
+    const activeRoomId = scope.roomId ?? system.team.getAgent(scope.agentId)?.state.getContext()
+    if (activeRoomId) broadcastRoom(activeRoomId, activity)
+    else broadcast(activity)
   })
 
   // === Provider routing events → toasts ===
@@ -243,28 +216,28 @@ export const wireWorkspaceRuntimeEvents = (
   system.setOnSummaryConfigChanged((roomId, config) => {
     const roomName = system.rooms.getRoom(roomId)?.profile.name
     if (!roomName) return
-    broadcast({ type: 'summary_config_changed', roomName, config })
+    broadcastRoom(roomId, { type: 'summary_config_changed', roomName, config })
     sched()
   })
   system.setOnSummaryRunStarted((roomId, target) => {
     const roomName = system.rooms.getRoom(roomId)?.profile.name
     if (!roomName) return
-    broadcast({ type: 'summary_run_started', roomName, target })
+    broadcastRoom(roomId, { type: 'summary_run_started', roomName, target })
   })
   system.setOnSummaryRunDelta((roomId, target, delta) => {
     const roomName = system.rooms.getRoom(roomId)?.profile.name
     if (!roomName) return
-    broadcast({ type: 'summary_run_delta', roomName, target, delta })
+    broadcastRoom(roomId, { type: 'summary_run_delta', roomName, target, delta })
   })
   system.setOnSummaryRunCompleted((roomId, target, text) => {
     const roomName = system.rooms.getRoom(roomId)?.profile.name
     if (!roomName) return
-    broadcast({ type: 'summary_run_completed', roomName, target, text })
+    broadcastRoom(roomId, { type: 'summary_run_completed', roomName, target, text })
   })
   system.setOnSummaryRunFailed((roomId, target, reason) => {
     const roomName = system.rooms.getRoom(roomId)?.profile.name
     if (!roomName) return
-    broadcast({ type: 'summary_run_failed', roomName, target, reason })
+    broadcastRoom(roomId, { type: 'summary_run_failed', roomName, target, reason })
   })
 
   // === RAG documents — status transitions broadcast to the bound Workspace ===

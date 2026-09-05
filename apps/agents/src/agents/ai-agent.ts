@@ -20,7 +20,7 @@
 
 import type { AIAgent, AIAgentConfig, IncludeContext, IncludePrompts, PromptSection, ContextSection } from '../core/types/agent.ts'
 import type { AgentHistory, Message } from '../core/types/messaging.ts'
-import type { EvalEvent, EvalEventCore } from '../core/types/agent-eval.ts'
+import type { EvalEvent, EvalEventCore, EvalEventScope } from '../core/types/agent-eval.ts'
 import { generateTraceId } from '../core/types/agent-eval.ts'
 import type { LLMProvider } from '../core/types/llm.ts'
 import { modelSupportsImages } from '../llm/multimodal.ts'
@@ -86,7 +86,7 @@ export interface AIAgentOptions {
   readonly getScriptContext?: (roomId: string, agentName: string) =>
     | { systemDoc: string; dialogue: ReadonlyArray<{ speaker: string; content: string }> }
     | undefined
-  readonly onEvalEvent?: (agentName: string, event: EvalEvent) => void
+  readonly onEvalEvent?: (scope: EvalEventScope, event: EvalEvent) => void
   // Per-call effective-model resolution. When provided, the agent calls this
   // before each LLM request to derive the actual model from the user's
   // preference. Returns the resolved model + whether a fallback was used.
@@ -291,7 +291,10 @@ export const createAIAgent = (
     // forwarding. Internal sites work with EvalEventCore (no traceId
     // plumbing); subscribers see a full EvalEvent.
     const evalEventCb = onEvalEvent
-      ? (event: EvalEventCore) => onEvalEvent(config.name, { ...event, traceId } as EvalEvent)
+      ? (event: EvalEventCore) => onEvalEvent(
+          { agentId, agentName: config.name, roomId: triggerRoomId },
+          { ...event, traceId } as EvalEvent,
+        )
       : undefined
     // Tool-iteration check-in wiring. Returns a Promise the evaluate loop
     // awaits; the room's pending checkin Map below is keyed by roomId so
@@ -348,7 +351,10 @@ export const createAIAgent = (
     // correlate per-eval state without polling.
     const traceId = generateTraceId()
     const emit = onEvalEvent
-      ? (event: EvalEventCore) => onEvalEvent(config.name, { ...event, traceId } as EvalEvent)
+      ? (event: EvalEventCore) => onEvalEvent(
+          { agentId, agentName: config.name, roomId: triggerRoomId },
+          { ...event, traceId } as EvalEvent,
+        )
       : undefined
 
     const epoch = cm.epochAtStart()

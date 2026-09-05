@@ -216,12 +216,6 @@ export interface PendingToolCheckin {
 }
 export const $pendingToolCheckins = map<Record<string, PendingToolCheckin>>({})
 
-/** messageId → context snapshot (transferred from $agentContexts when message arrives) */
-export const $messageContexts = map<Record<string, AgentContext>>({})
-
-/** messageId → warnings (transferred from $agentWarnings when message arrives) */
-export const $messageWarnings = map<Record<string, string[]>>({})
-
 /**
  * Per-agent accumulator for thinking/reasoning deltas during a live eval.
  * Separate from $thinkingPreviews because the latter is overwritten by

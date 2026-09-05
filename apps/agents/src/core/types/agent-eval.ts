@@ -54,7 +54,16 @@ export type EvalEventCore =
 // events that lack one.
 export type EvalEvent = EvalEventCore & { readonly traceId?: string }
 
-export type OnEvalEvent = (agentName: string, event: EvalEvent) => void
+// Stable routing identity for one evaluation activity stream. Names remain
+// presentation data; transport and diagnostics correlate by immutable ids.
+// roomId is absent only for provider events emitted outside an active turn.
+export interface EvalEventScope {
+  readonly agentId: string
+  readonly agentName: string
+  readonly roomId?: string
+}
+
+export type OnEvalEvent = (scope: EvalEventScope, event: EvalEvent) => void
 
 // Cheap, collision-resistant id for a single eval. Not cryptographic;
 // just needs to be unique within a session.

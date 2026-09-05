@@ -76,8 +76,6 @@ import {
   $ollamaHealth,
   $agentContexts,
   $agentWarnings,
-  $messageContexts,
-  $messageWarnings,
   $roomListView,
   $agentListView,
   $selectedHumanByRoom,

@@ -34,6 +34,11 @@ export const workspaceRealtimeUrl = (sessionToken: string): string => {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
   const query = new URLSearchParams()
   if (sessionToken) query.set('session', sessionToken)
+  const page = new URL(location.href)
+  if (page.searchParams.get('view') === 'focused') {
+    const roomId = page.searchParams.get('room')?.trim()
+    if (roomId) query.set('room', roomId)
+  }
   const suffix = query.size > 0 ? `?${query}` : ''
   return `${protocol}//${location.host}/api/workspaces/${currentWorkspaceId()}/agents/ws${suffix}`
 }

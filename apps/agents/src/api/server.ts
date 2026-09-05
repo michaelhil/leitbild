@@ -207,8 +207,9 @@ export const createServer = (config: ServerConfig) => {
         }
         const sessionToken = url.searchParams.get('session') ?? crypto.randomUUID()
         wsManager.releaseSessionForWorkspaceSwitch(sessionToken, applicationPath.workspaceId)
+        const focusedRoomId = url.searchParams.get('room')?.trim() || undefined
         const upgraded = bunServer.upgrade(request, {
-          data: { sessionToken, workspaceId: applicationPath.workspaceId },
+          data: { sessionToken, workspaceId: applicationPath.workspaceId, ...(focusedRoomId ? { focusedRoomId } : {}) },
         })
         return upgraded ? undefined : secure(new Response('WebSocket upgrade failed', { status: 500 }))
       }
@@ -248,13 +249,15 @@ export const createServer = (config: ServerConfig) => {
       async open(ws) {
         await registry.getOrLoad(ws.data.workspaceId)
         const existing = wsManager.sessions.get(ws.data.sessionToken)
-        const session = existing ?? {
+        const sameView = existing?.focusedRoomId === ws.data.focusedRoomId
+        const session = existing && sameView ? existing : {
           workspaceId: ws.data.workspaceId,
           sessionToken: ws.data.sessionToken,
+          ...(ws.data.focusedRoomId ? { focusedRoomId: ws.data.focusedRoomId } : {}),
           lastActivity: Date.now(),
         }
-        if (!existing) wsManager.sessions.set(ws.data.sessionToken, session)
-        else session.lastActivity = Date.now()
+        wsManager.sessions.set(ws.data.sessionToken, session)
+        session.lastActivity = Date.now()
         wsManager.wsConnections.set(ws.data.sessionToken, ws)
         const snapshot = wsManager.buildSnapshot(ws.data.workspaceId, ws.data.sessionToken)
         if (!snapshot) {

@@ -22,8 +22,6 @@ import {
   $thinkingTools,
   $agentContexts,
   $agentWarnings,
-  $messageContexts,
-  $messageWarnings,
   $roomIdByName,
   $agentIdByName,
   $pendingToolCheckins,
@@ -82,8 +80,6 @@ export const stateHandlers: StateHandlers = {
     $thinkingTools.set({})
     $agentContexts.set({})
     $agentWarnings.set({})
-    $messageContexts.set({})
-    $messageWarnings.set({})
     $liveThinking.set({})
     $messageThinking.set({})
     $mutedAgents.set(new Set())
@@ -138,18 +134,6 @@ export const stateHandlers: StateHandlers = {
 
   // --- Messages ---
 
-  message_context(msg) {
-    $messageContexts.setKey(msg.messageId, {
-      messages: msg.context.messages,
-      model: msg.context.model,
-      temperature: msg.context.temperature,
-      toolCount: msg.context.toolCount,
-    })
-    if (msg.warnings && msg.warnings.length > 0) {
-      $messageWarnings.setKey(msg.messageId, [...msg.warnings])
-    }
-  },
-
   message(msg) {
     const m = toUIMessage(msg.message)
     const roomId = m.roomId ?? ''
@@ -188,30 +172,6 @@ export const stateHandlers: StateHandlers = {
       if (sender && sender.state === 'generating') {
         $agents.setKey(m.senderId, { ...sender, state: 'idle', context: undefined })
       }
-      // Normally context_ready precedes the posted message on the same WS.
-      // Keep a sender-name fallback for messages whose sender snapshot was
-      // received after the eval event (or when an older client has a stale
-      // id/name mapping).
-      const contexts = $agentContexts.get()
-      const agentCtx = contexts[m.senderId] ?? (
-        m.senderName
-          ? Object.entries(contexts).find(([agentId]) => $agents.get()[agentId]?.name === m.senderName)?.[1]
-          : undefined
-      )
-      if (agentCtx) {
-        $messageContexts.setKey(m.id, agentCtx)
-        const remaining = { ...$agentContexts.get() }
-        const contextAgentId = Object.entries(contexts).find(([, ctx]) => ctx === agentCtx)?.[0] ?? m.senderId
-        delete remaining[contextAgentId]
-        $agentContexts.set(remaining)
-      }
-      const agentWarn = $agentWarnings.get()[m.senderId]
-      if (agentWarn && agentWarn.length > 0) {
-        $messageWarnings.setKey(m.id, agentWarn)
-        const remainingW = { ...$agentWarnings.get() }
-        delete remainingW[m.senderId]
-        $agentWarnings.set(remainingW)
-      }
     }
   },
 
@@ -248,7 +208,7 @@ export const stateHandlers: StateHandlers = {
   // --- Agent state ---
 
   agent_state(msg) {
-    const id = $agentIdByName.get()[msg.agentName]
+    const id = msg.agentId
     if (!id) return
     const current = $agents.get()[id]
     if (!current) return
@@ -271,7 +231,7 @@ export const stateHandlers: StateHandlers = {
   },
 
   agent_activity(msg) {
-    const id = $agentIdByName.get()[msg.agentName]
+    const id = msg.agentId
     if (!id) return
 
     const event = msg.event
@@ -307,25 +267,6 @@ export const stateHandlers: StateHandlers = {
       }
       $agentContexts.setKey(id, context)
 
-      // Broadcasts are usually ordered, but message and eval callbacks can
-      // race across async paths. If the message landed first, attach this
-      // context to the newest uncaptured message from the same agent now.
-      // This makes the inspector reliable for fresh messages regardless of
-      // event ordering.
-      for (const messages of Object.values($roomMessages.get())) {
-        const candidate = [...messages].reverse().find(m =>
-          m.senderId === id &&
-          (m.type === 'chat' || m.type === 'pass' || m.type === 'error') &&
-          m.generationMs !== undefined &&
-          !$messageContexts.get()[m.id],
-        )
-        if (!candidate) continue
-        $messageContexts.setKey(candidate.id, context)
-        const remaining = { ...$agentContexts.get() }
-        delete remaining[id]
-        $agentContexts.set(remaining)
-        break
-      }
     } else if (event.kind === 'warning') {
       const existing = $agentWarnings.get()[id] ?? []
       $agentWarnings.setKey(id, [...existing, event.message])

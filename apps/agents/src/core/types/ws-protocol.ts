@@ -65,10 +65,7 @@ export interface BiometricSignalWire {
 
 export type WSOutbound =
   | { readonly type: 'message'; readonly message: Message }
-  // Ephemeral prompt inspector payload for a freshly generated message. Kept
-  // separate from Message so full prompt transcripts are never persisted.
-  | { readonly type: 'message_context'; readonly messageId: string; readonly context: { readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>; readonly model: string; readonly temperature?: number; readonly toolCount: number }; readonly warnings?: ReadonlyArray<string> }
-  | { readonly type: 'agent_state'; readonly agentName: string; readonly state: StateValue; readonly context?: string; readonly generationStarted?: number }
+  | { readonly type: 'agent_state'; readonly agentId: string; readonly agentName: string; readonly state: StateValue; readonly context?: string; readonly generationStarted?: number }
   | { readonly type: 'room_created'; readonly profile: RoomProfile }
   | { readonly type: 'agent_joined'; readonly agent: AgentProfile }
   | { readonly type: 'agent_removed'; readonly agentName: string }
@@ -92,7 +89,7 @@ export type WSOutbound =
   | { readonly type: 'script_completed'; readonly roomName: string; readonly scriptId: string }
   | { readonly type: 'script_catalog_changed' }
   | { readonly type: 'ollama_health'; readonly health: OllamaHealth }
-  | { readonly type: 'agent_activity'; readonly agentName: string; readonly event: EvalEvent }
+  | { readonly type: 'agent_activity'; readonly agentId: string; readonly agentName: string; readonly roomId?: string; readonly event: EvalEvent }
   // Provider routing events (from src/llm/router.ts)
   | { readonly type: 'provider_bound'; readonly agentId: string | null; readonly agentName: string | null; readonly model: string; readonly oldProvider: string | null; readonly newProvider: string }
   | { readonly type: 'provider_stream_failed'; readonly agentId: string | null; readonly agentName: string | null; readonly model: string; readonly provider: string; readonly reason: string }

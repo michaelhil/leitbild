@@ -357,6 +357,38 @@ describe('WS Handler', () => {
 })
 
 describe('WSManager.safeSend backpressure', () => {
+  test('focused connections receive only their Room snapshot and Room events', () => {
+    const system = makeSystem()
+    const first = system.rooms.listAllRooms()[0]!
+    const second = system.rooms.createRoom({ name: 'OtherRoom', createdBy: 'system' }).profile
+    const wsManager = createWSManager({ getRuntime: () => system })
+    const focused = makeWS()
+    const full = makeWS()
+    wsManager.sessions.set('focused', {
+      workspaceId: TEST_WORKSPACE_ID,
+      sessionToken: 'focused',
+      focusedRoomId: first.id,
+      lastActivity: Date.now(),
+    })
+    wsManager.sessions.set('full', {
+      workspaceId: TEST_WORKSPACE_ID,
+      sessionToken: 'full',
+      lastActivity: Date.now(),
+    })
+    wsManager.wsConnections.set('focused', focused.ws)
+    wsManager.wsConnections.set('full', full.ws)
+
+    expect(wsManager.buildSnapshot(TEST_WORKSPACE_ID, 'focused')?.rooms.map(room => room.id)).toEqual([first.id])
+
+    wsManager.broadcastToRoom(TEST_WORKSPACE_ID, second.id, { type: 'messages_cleared', roomName: second.name })
+    expect(focused.messages()).toEqual([])
+    expect(full.messages()).toHaveLength(1)
+
+    wsManager.broadcastToRoom(TEST_WORKSPACE_ID, first.id, { type: 'messages_cleared', roomName: first.name })
+    expect(focused.messages()).toHaveLength(1)
+    expect(full.messages()).toHaveLength(2)
+  })
+
   test('drops slow consumer when buffer exceeds 8 MB and increments metric', () => {
     const { createLimitMetrics } = require('../core/limit-metrics.ts') as typeof import('../core/limit-metrics.ts')
     const limitMetrics = createLimitMetrics()

@@ -828,7 +828,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       roomDeleted.add((roomId, roomName) => safe(() => mkRoomDeleted(sid(), roomId, roomName))),
       membershipChanged.add((roomId, roomName, agentId, agentName, action) =>
         safe(() => mkMembershipChanged(sid(), roomId, roomName, agentId, agentName, action))),
-      evalEvent.add((agentName, event) => safe(() => mkEvalEvent(sid(), agentName, event))),
+      evalEvent.add((scope, event) => safe(() => mkEvalEvent(sid(), scope.agentName, event))),
       providerBound.add((agentId, model, oldProvider, newProvider) =>
         safe(() => mkProviderBound(sid(), agentId, model, oldProvider, newProvider))),
       providerAllFailed.add((agentId, model, attempts, summary) =>

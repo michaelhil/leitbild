@@ -7,15 +7,15 @@
 // ring; the oldest evicts on overflow.
 //
 // Why a ring (not unbounded): a busy Workspace produces hundreds of evals
-// per session. The diagnostic value is "what just happened" — 50 evals
-// covers any reasonable post-mortem window without unbounded memory.
+// per session. Diagnostics keep structural lifecycle and tool facts only;
+// the exact request belongs to the message-linked Generation Query store.
 //
 // Why per-Workspace (not process-wide): each URL-scoped runtime has its
 // own agents and rooms; cross-tenant trace bleed would be confusing
 // (and a soft privacy leak). One ring per System matches every other
 // per-Workspace store.
 
-import type { EvalEvent, OnEvalEvent } from '../core/types/agent-eval.ts'
+import type { EvalEvent, EvalEventScope, OnEvalEvent } from '../core/types/agent-eval.ts'
 
 export interface ToolCallTrace {
   readonly tool: string
@@ -26,7 +26,9 @@ export interface ToolCallTrace {
 
 export interface EvalRecord {
   readonly traceId: string
+  readonly agentId: string
   readonly agentName: string
+  readonly roomId?: string
   readonly startedAt: number
   endedAt?: number
   // Model selected for this eval (from context_ready). Carried through
@@ -43,15 +45,9 @@ export interface EvalRecord {
   warnings: string[]
   modelFallback?: { preferred: string; effective: string; reason: string }
   outcome?: 'respond' | 'pass' | 'error'
-  // Conversation snapshot the agent saw — copied from context_ready.
-  // Kept on the record so /api/diagnostics/evals/:traceId is a single
-  // GET and not a join across event-by-event WS frames.
-  messages?: ReadonlyArray<{ readonly role: string; readonly content: string }>
-  contextBytes?: number
-  contextRetained?: boolean
 }
 
-export type EvalRecordSummary = Omit<EvalRecord, 'messages'>
+export type EvalRecordSummary = EvalRecord
 
 export interface EvalBuffer {
   // Subscribe to a system's multi-subscriber eval-event channel. The
@@ -70,44 +66,42 @@ export interface EvalBuffer {
 }
 
 const DEFAULT_CAPACITY = 50
-const DEFAULT_CONTEXT_BYTES = 16 * 1024 * 1024
-
 export interface EvalBufferConfig {
-  // Override the FIFO size. Tests use small values; production sticks
-  // with the default.
+  // Override the FIFO size. Tests use small values; production uses the
+  // operational recent-trace window.
   readonly capacity?: number
-  readonly contextBytes?: number
 }
 
 export const createEvalBuffer = (config: EvalBufferConfig = {}): EvalBuffer => {
   const capacity = config.capacity ?? DEFAULT_CAPACITY
-  const contextByteLimit = config.contextBytes ?? DEFAULT_CONTEXT_BYTES
   // Open records keyed by traceId; closed records evicted into the ring.
   const open = new Map<string, EvalRecord>()
   // FIFO of closed records. Newest at index 0 so listRecent's first
   // slice is O(limit).
   const closed: EvalRecord[] = []
-  let closedContextBytes = 0
 
   const closeRecord = (rec: EvalRecord, outcome: EvalRecord['outcome']): void => {
     rec.endedAt = Date.now()
     rec.outcome = outcome
     open.delete(rec.traceId)
     closed.unshift(rec)
-    closedContextBytes += rec.contextRetained ? (rec.contextBytes ?? 0) : 0
-    while (closed.length > capacity || closedContextBytes > contextByteLimit) {
-      const evicted = closed.pop()
-      if (!evicted) break
-      if (evicted.contextRetained) closedContextBytes -= evicted.contextBytes ?? 0
-    }
+    while (closed.length > capacity) closed.pop()
   }
 
-  const handle = (agentName: string, event: EvalEvent): void => {
+  const handle = (scope: EvalEventScope, event: EvalEvent): void => {
     const tid = event.traceId
     if (!tid) return
     let rec = open.get(tid)
     if (!rec) {
-      rec = { traceId: tid, agentName, startedAt: Date.now(), toolCalls: [], warnings: [] }
+      rec = {
+        traceId: tid,
+        agentId: scope.agentId,
+        agentName: scope.agentName,
+        ...(scope.roomId ? { roomId: scope.roomId } : {}),
+        startedAt: Date.now(),
+        toolCalls: [],
+        warnings: [],
+      }
       open.set(tid, rec)
     }
     switch (event.kind) {
@@ -115,9 +109,6 @@ export const createEvalBuffer = (config: EvalBufferConfig = {}): EvalBuffer => {
         rec.model = event.model
         rec.temperature = event.temperature
         rec.toolCount = event.toolCount
-        rec.contextBytes = new TextEncoder().encode(JSON.stringify(event.messages)).byteLength
-        rec.contextRetained = rec.contextBytes <= contextByteLimit
-        if (rec.contextRetained) rec.messages = event.messages
         return
       case 'tool_start':
         rec.toolCalls.push({ tool: event.tool, callId: event.callId })
@@ -156,7 +147,7 @@ export const createEvalBuffer = (config: EvalBufferConfig = {}): EvalBuffer => {
 
   return {
     attach: (addListener) => {
-      const cb: OnEvalEvent = (agentName, event) => handle(agentName, event)
+      const cb: OnEvalEvent = (scope, event) => handle(scope, event)
       return addListener(cb)
     },
     setToolNames: (traceId, toolNames) => {
@@ -165,9 +156,9 @@ export const createEvalBuffer = (config: EvalBufferConfig = {}): EvalBuffer => {
     },
     listRecent: ({ limit = 20, agent } = {}) => {
       const filtered = agent ? closed.filter(r => r.agentName === agent) : closed
-      return filtered.slice(0, limit).map(({ messages: _messages, ...summary }) => summary)
+      return filtered.slice(0, limit)
     },
     getByTraceId: (traceId) => open.get(traceId) ?? closed.find(r => r.traceId === traceId) ?? null,
-    clear: () => { open.clear(); closed.length = 0; closedContextBytes = 0 },
+    clear: () => { open.clear(); closed.length = 0 },
   }
 }

@@ -20,7 +20,7 @@ const makeAddListener = () => {
     }
   }
   const fire = (agentName: string, event: EvalEvent): void => {
-    for (const l of listeners) l(agentName, event)
+    for (const l of listeners) l({ agentId: `id-${agentName}`, agentName, roomId: 'room-1' }, event)
   }
   return { addListener, fire, listenerCount: () => listeners.length }
 }
@@ -59,7 +59,7 @@ describe('eval-buffer', () => {
     expect(rec?.toolCalls).toEqual([{ tool: 'biometrics_start', callId: '0', success: true }])
     expect(rec?.warnings).toEqual(['slow start'])
     expect(rec?.outcome).toBe('respond')
-    expect(rec?.messages?.length).toBe(1)
+    expect(JSON.stringify(rec)).not.toContain('hi')
     expect(buf.listRecent().length).toBe(1)
   })
 
@@ -121,41 +121,15 @@ describe('eval-buffer', () => {
     expect(records.map(r => r.traceId)).toEqual(['tr_4', 'tr_3', 'tr_2'])
   })
 
-  test('summary listings never include retained prompt content', () => {
+  test('diagnostics never retain prompt content', () => {
     const buf = createEvalBuffer()
     const { addListener, fire } = makeAddListener()
     buf.attach(addListener)
     fire('AI', evt({ traceId: 'tr_summary', kind: 'context_ready', messages: [{ role: 'user', content: 'private prompt' }], model: 'm', toolCount: 0 }))
     fire('AI', evt({ traceId: 'tr_summary', kind: 'eval_completed', outcome: 'respond' }))
 
-    expect(buf.getByTraceId('tr_summary')?.messages?.[0]?.content).toBe('private prompt')
-    expect(buf.listRecent()[0]).not.toHaveProperty('messages')
-  })
-
-  test('does not retain one prompt larger than the byte budget', () => {
-    const buf = createEvalBuffer({ contextBytes: 32 })
-    const { addListener, fire } = makeAddListener()
-    buf.attach(addListener)
-    fire('AI', evt({ traceId: 'tr_large', kind: 'context_ready', messages: [{ role: 'user', content: 'x'.repeat(100) }], model: 'm', toolCount: 0 }))
-
-    const record = buf.getByTraceId('tr_large')
-    expect(record?.contextRetained).toBe(false)
-    expect(record?.contextBytes).toBeGreaterThan(32)
-    expect(record?.messages).toBeUndefined()
-  })
-
-  test('evicts old retained prompts when the aggregate byte budget is reached', () => {
-    const sample = [{ role: 'user', content: 'x'.repeat(30) }]
-    const bytes = new TextEncoder().encode(JSON.stringify(sample)).byteLength
-    const buf = createEvalBuffer({ capacity: 10, contextBytes: bytes + 4 })
-    const { addListener, fire } = makeAddListener()
-    buf.attach(addListener)
-    for (const id of ['tr_old', 'tr_new']) {
-      fire('AI', evt({ traceId: id, kind: 'context_ready', messages: sample, model: 'm', toolCount: 0 }))
-      fire('AI', evt({ traceId: id, kind: 'eval_completed', outcome: 'respond' }))
-    }
-
-    expect(buf.listRecent().map(record => record.traceId)).toEqual(['tr_new'])
+    expect(JSON.stringify(buf.getByTraceId('tr_summary'))).not.toContain('private prompt')
+    expect(JSON.stringify(buf.listRecent()[0])).not.toContain('private prompt')
   })
 
   test('limit caps listRecent output', () => {
