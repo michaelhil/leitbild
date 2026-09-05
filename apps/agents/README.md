@@ -152,6 +152,7 @@ $LEITBILD_HOME/
     agents/
       workspace.json
       snapshot.json
+      generation-inspections.json
       memory/
       vectors.jsonl
       rooms/

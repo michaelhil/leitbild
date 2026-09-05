@@ -122,7 +122,8 @@ describe('Workspace Module snapshots', () => {
     })
     const snapshots = serializeModuleSnapshots(source)
     expect(snapshots.rooms.rooms[0]?.messages[0]).not.toHaveProperty('generationQuery')
-    expect(snapshots.rooms.rooms[0]?.generationQueries?.[0]?.query.messages).toHaveLength(2)
+    expect(snapshots.rooms.rooms[0]).not.toHaveProperty('generationQueries')
+    expect(snapshots.inspections.rooms[0]?.records[0]?.query.messages).toHaveLength(2)
 
     const target = runtime()
     await restoreWorkspaceModuleSnapshots({

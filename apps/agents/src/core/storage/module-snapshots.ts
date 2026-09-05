@@ -15,6 +15,7 @@ import { redactBiometricMessages } from './snapshot-redact.ts'
 
 export const ROOMS_SNAPSHOT_SCHEMA = 2
 export const AGENTS_SNAPSHOT_SCHEMA = 2
+export const INSPECTIONS_SNAPSHOT_SCHEMA = 1
 
 export interface RoomSnapshot {
   readonly profile: RoomProfile
@@ -27,7 +28,6 @@ export interface RoomSnapshot {
   readonly summaryConfig?: SummaryConfig
   readonly latestSummary?: string
   readonly activePacks: ReadonlyArray<string>
-  readonly generationQueries?: ReadonlyArray<GenerationQueryRecord>
 }
 
 export interface HumanActorSnapshot {
@@ -65,9 +65,19 @@ export interface AgentsSnapshot {
   readonly ollamaUrl?: string
 }
 
+export interface GenerationInspectionSnapshot {
+  readonly schemaVersion: 1
+  readonly savedAt: string
+  readonly rooms: ReadonlyArray<{
+    readonly roomId: string
+    readonly records: ReadonlyArray<GenerationQueryRecord>
+  }>
+}
+
 export interface WorkspaceModuleSnapshots {
   readonly rooms: RoomsSnapshot | null
   readonly agents: AgentsSnapshot | null
+  readonly inspections: GenerationInspectionSnapshot | null
 }
 
 interface SerializableRuntime {
@@ -245,7 +255,6 @@ const roomSnapshotSchema = z.object({
   summaryConfig: summaryConfigSchema.optional(),
   latestSummary: z.string().optional(),
   activePacks: z.array(z.string()),
-  generationQueries: z.array(generationQueryRecordSchema).optional(),
 }).strict()
 
 const agentConfigSchema = z.object({
@@ -309,11 +318,22 @@ const agentsSnapshotSchema = z.object({
   ollamaUrl: z.string().optional(),
 }).strict()
 
+const generationInspectionSnapshotSchema = z.object({
+  schemaVersion: z.literal(INSPECTIONS_SNAPSHOT_SCHEMA),
+  savedAt: z.iso.datetime({ offset: true }),
+  rooms: z.array(z.object({
+    roomId: z.string(),
+    records: z.array(generationQueryRecordSchema),
+  }).strict()),
+}).strict()
+
 export const serializeModuleSnapshots = (runtime: SerializableRuntime): {
   readonly rooms: RoomsSnapshot
   readonly agents: AgentsSnapshot
+  readonly inspections: GenerationInspectionSnapshot
 } => {
   const rooms: RoomSnapshot[] = []
+  const inspectionRooms: Array<{ roomId: string; records: ReadonlyArray<GenerationQueryRecord> }> = []
   for (const profile of runtime.rooms.listAllRooms()) {
     const room = runtime.rooms.getRoom(profile.id)
     if (!room) throw new Error(`Room disappeared during snapshot: ${profile.id}`)
@@ -329,8 +349,9 @@ export const serializeModuleSnapshots = (runtime: SerializableRuntime): {
       ...(room.summaryConfig ? { summaryConfig: room.summaryConfig } : {}),
       ...(state.latestSummary ? { latestSummary: state.latestSummary } : {}),
       activePacks: [...room.getActivePacks()],
-      ...(room.getGenerationQueries().length > 0 ? { generationQueries: room.getGenerationQueries() } : {}),
     })
+    const records = room.getGenerationQueries()
+    if (records.length > 0) inspectionRooms.push({ roomId: room.profile.id, records })
   }
 
   const agents: AgentProfileSnapshot[] = []
@@ -372,6 +393,11 @@ export const serializeModuleSnapshots = (runtime: SerializableRuntime): {
         ollamaUrl: runtime.ollamaUrls.getCurrent(),
       } : {}),
     }),
+    inspections: generationInspectionSnapshotSchema.parse({
+      schemaVersion: INSPECTIONS_SNAPSHOT_SCHEMA,
+      savedAt,
+      rooms: inspectionRooms,
+    }),
   }
 }
 
@@ -412,14 +438,20 @@ const agentsIsEmpty = (snapshot: AgentsSnapshot): boolean =>
   && snapshot.responseFormat === undefined
   && (snapshot.ollamaUrls === undefined || snapshot.ollamaUrls.length === 0)
 
-const committedSnapshotSchema = z.object({ rooms: roomsSnapshotSchema.nullable(), agents: agentsSnapshotSchema.nullable() }).strict()
+const inspectionsIsEmpty = (snapshot: GenerationInspectionSnapshot): boolean => snapshot.rooms.length === 0
+
+const committedSnapshotSchema = z.object({
+  rooms: roomsSnapshotSchema.nullable(),
+  agents: agentsSnapshotSchema.nullable(),
+  inspections: generationInspectionSnapshotSchema.nullable(),
+}).strict()
 type SnapshotPaths = {
   readonly rooms: Pick<WorkspaceModulePaths['rooms'], 'snapshot'>
-  readonly agents: Pick<WorkspaceModulePaths['agents'], 'root' | 'snapshot'>
+  readonly agents: Pick<WorkspaceModulePaths['agents'], 'root' | 'snapshot' | 'inspections'>
 }
 const commitPath = (paths: SnapshotPaths): string => join(paths.agents.root, 'snapshot-commit.json')
 
-// One atomic commit record is authoritative until both strict documents have
+// One atomic commit record is authoritative until all strict documents have
 // been materialized. A crash between document writes cannot expose mixed generations.
 const publishSnapshots = async (snapshots: WorkspaceModuleSnapshots, paths: SnapshotPaths): Promise<void> => {
   await writeSnapshot(committedSnapshotSchema.parse(snapshots), commitPath(paths))
@@ -427,15 +459,18 @@ const publishSnapshots = async (snapshots: WorkspaceModuleSnapshots, paths: Snap
   else await writeSnapshot(snapshots.rooms, paths.rooms.snapshot)
   if (snapshots.agents === null) await removeSnapshot(paths.agents.snapshot)
   else await writeSnapshot(snapshots.agents, paths.agents.snapshot)
+  if (snapshots.inspections === null) await removeSnapshot(paths.agents.inspections)
+  else await writeSnapshot(snapshots.inspections, paths.agents.inspections)
   await removeSnapshot(commitPath(paths))
 }
 
 export const saveWorkspaceModuleSnapshots = (
-  snapshots: { readonly rooms: RoomsSnapshot; readonly agents: AgentsSnapshot },
+  snapshots: { readonly rooms: RoomsSnapshot; readonly agents: AgentsSnapshot; readonly inspections: GenerationInspectionSnapshot },
   paths: WorkspaceModulePaths,
 ): Promise<void> => withSnapshotLock(commitPath(paths), () => publishSnapshots({
   rooms: roomsIsEmpty(snapshots.rooms) ? null : roomsSnapshotSchema.parse(snapshots.rooms),
   agents: agentsIsEmpty(snapshots.agents) ? null : agentsSnapshotSchema.parse(snapshots.agents),
+  inspections: inspectionsIsEmpty(snapshots.inspections) ? null : generationInspectionSnapshotSchema.parse(snapshots.inspections),
 }, paths))
 
 const loadStrict = async <T>(path: string, schema: z.ZodType<T>): Promise<T | null> => {
@@ -447,7 +482,11 @@ const loadStrict = async <T>(path: string, schema: z.ZodType<T>): Promise<T | nu
 const readSnapshots = async (paths: SnapshotPaths): Promise<WorkspaceModuleSnapshots> => {
   const committed = await loadStrict(commitPath(paths), committedSnapshotSchema)
   if (committed) return committed
-  return { rooms: await loadStrict(paths.rooms.snapshot, roomsSnapshotSchema), agents: await loadStrict(paths.agents.snapshot, agentsSnapshotSchema) }
+  return {
+    rooms: await loadStrict(paths.rooms.snapshot, roomsSnapshotSchema),
+    agents: await loadStrict(paths.agents.snapshot, agentsSnapshotSchema),
+    inspections: await loadStrict(paths.agents.inspections, generationInspectionSnapshotSchema),
+  }
 }
 
 export const loadWorkspaceModuleSnapshots = (paths: WorkspaceModulePaths): Promise<WorkspaceModuleSnapshots> =>
@@ -485,7 +524,7 @@ export const restoreWorkspaceModuleSnapshots = async (
     for (const roomSnapshot of rooms.rooms) {
       const room = runtime.rooms.restoreRoom(roomSnapshot.profile)
       room.injectMessages(roomSnapshot.messages)
-      room.injectGenerationQueries(roomSnapshot.generationQueries ?? [])
+      room.injectGenerationQueries(snapshots.inspections?.rooms.find(item => item.roomId === room.profile.id)?.records ?? [])
       room.restoreState({
         members: roomSnapshot.members,
         muted: roomSnapshot.muted,
@@ -542,7 +581,7 @@ export const appendRoomsPendingScrub = (
   scrub: PendingScrub,
 ): Promise<{ readonly applied: boolean; readonly reason?: string }> => {
   const root = dirname(dirname(path))
-  const paths = { rooms: { snapshot: path }, agents: { root, snapshot: join(root, 'snapshot.json') } }
+  const paths = { rooms: { snapshot: path }, agents: { root, snapshot: join(root, 'snapshot.json'), inspections: join(root, 'generation-inspections.json') } }
   return withSnapshotLock(commitPath(paths), async () => {
   const current = await readSnapshots(paths)
   const snapshot = current.rooms

@@ -442,7 +442,7 @@ export const createAIAgent = (
 
         // Flush incoming always — on both respond and pass.
         // On pass, the agent has consciously evaluated these messages; they belong in history.
-        flushIncoming(flushInfo, agentHistory)
+        flushIncoming(flushInfo, agentHistory, historyLimit)
         onDecision({ ...decision, generationTraceId: traceId })
       } catch (err) {
         if (!cm.isEpochCurrent(epoch)) return  // cancelled, ignore error
@@ -499,7 +499,7 @@ export const createAIAgent = (
 
     if (message.senderId === agentId) {
       const ctx = agentHistory.rooms.get(message.roomId)
-      if (ctx) ctx.history = [...ctx.history, message]
+      if (ctx) ctx.history = [...ctx.history, message].slice(-historyLimit)
       return
     }
 
@@ -560,7 +560,10 @@ export const createAIAgent = (
     getTemperature: () => currentTemperature,
     updateTemperature: (t: number | undefined) => { currentTemperature = t },
     getHistoryLimit: () => historyLimit,
-    updateHistoryLimit: (n: number) => { historyLimit = n },
+    updateHistoryLimit: (n: number) => {
+      historyLimit = n
+      for (const ctx of agentHistory.rooms.values()) ctx.history = ctx.history.slice(-historyLimit)
+    },
     getThinking: () => currentThinking,
     updateThinking: (enabled: boolean) => { currentThinking = enabled },
     getTools: () => currentTools,
@@ -660,7 +663,7 @@ export const createAIAgent = (
       for (const msg of messages) {
         if (seen.has(msg.id)) continue
         extractProfile(msg, agentId, agentHistory.agentProfiles)
-        ctx.history = [...ctx.history, msg]
+        ctx.history = [...ctx.history, msg].slice(-historyLimit)
         seen.add(msg.id)
       }
     },

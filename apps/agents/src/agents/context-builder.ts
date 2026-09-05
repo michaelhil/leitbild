@@ -102,6 +102,7 @@ export const formatMessage = (
 export const flushIncoming = (
   info: FlushInfo,
   history: AgentHistory,
+  retainedMessages?: number,
 ): void => {
   if (info.ids.size === 0) return
 
@@ -113,7 +114,8 @@ export const flushIncoming = (
   if (flushed.length > 0) {
     const ctx = history.rooms.get(info.triggerRoomId)
     if (ctx) {
-      ctx.history = [...ctx.history, ...flushed]
+      const next = [...ctx.history, ...flushed]
+      ctx.history = retainedMessages === undefined ? next : next.slice(-retainedMessages)
       ctx.lastActiveAt = Date.now()
     }
   }
