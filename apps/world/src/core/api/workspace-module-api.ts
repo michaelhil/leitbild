@@ -1318,7 +1318,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'List Simulation History Series',
-      description: 'Discovers recorded historian series selected by Scenario Recording Profiles. Returns descriptors only; use the sample reader for an exact series.',
+      description: 'Discovers recorded historian series selected by Scenario Recording Profiles. Filter by runtime, subject, signal, or text; then pass the returned opaque runtimeId and series id unchanged to the sample reader. A live signal path is not a historian series id.',
       risk: 'read',
       idempotent: true,
       inputSchema: z.toJSONSchema(listHistorySeriesInputSchema),
@@ -1351,7 +1351,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'Read Simulation History Samples',
-      description: 'Reads a bounded page for one exact historian series. windowSummary covers the complete filtered interval independently of page size, so trend endpoints, extrema, and change detection do not require a large raw sample page. Retained observed/simulation-time bounds and retentionGap report missing older evidence.',
+      description: 'Reads a bounded page for one exact historian series. Obtain runtimeId and the opaque seriesId from world.simulation-run.history-series.list; do not substitute a live signal path. windowSummary covers the complete filtered interval independently of page size, so trend endpoints, extrema, and change detection do not require a large raw sample page. Retained observed/simulation-time bounds and retentionGap report missing older evidence.',
       risk: 'read',
       idempotent: true,
       inputSchema: z.toJSONSchema(readHistorySamplesInputSchema),
@@ -1361,7 +1361,10 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       const runtime = await registry.load(requireSimulationRunResource(invocation))
       const input = readHistorySamplesInputSchema.parse(invocation.input)
       const series = runtime.recordingSeries().find(item => item.runtimeId === input.runtimeId && item.id === input.seriesId)
-      if (!series) return apiError(404, 'historian_series_not_found', 'Historian series not found')
+      if (!series) return apiError(404, 'historian_series_not_found', 'Historian series not found', {
+        nextOperation: 'world.simulation-run.history-series.list',
+        guidance: 'Discover the exact opaque series id by filtering the series catalog; do not use a live signal path as seriesId.',
+      })
       const query = {
         ...(input.timeAxis === undefined ? {} : { timeAxis: input.timeAxis }),
         ...(input.beforeSequence === undefined ? {} : { beforeSequence: input.beforeSequence }),

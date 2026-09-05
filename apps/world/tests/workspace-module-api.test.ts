@@ -138,6 +138,12 @@ describe('World Module API', () => {
         body: JSON.stringify({ workspaceId, capabilityId, resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }, input, access }),
       })
     const series = { runtimeId: selectedSeries.runtimeId, seriesId: selectedSeries.id }
+    const missing = await read({ runtimeId: selectedSeries.runtimeId, seriesId: 'series:not-real', limit: 1 })
+    expect(missing.status).toBe(404)
+    expect(missing.body).toMatchObject({ error: {
+      code: 'historian_series_not_found',
+      details: { nextOperation: seriesCapabilityId },
+    } })
     const first = await read({ ...series, timeAxis: 'simulation', to: '2026-01-02T00:00:00Z', limit: 2 })
     expect(first.body!.result.samples.length).toBeGreaterThan(0)
     expect(first.body!.result.windowSummary.sampleCount).toBeGreaterThan(0)
