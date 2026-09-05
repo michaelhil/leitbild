@@ -39,10 +39,8 @@ export interface AgentSurface {
   readonly configuredProvider: string | null
   // The provider observed on the most recent eval for this agent
   // (from the eval ring buffer), or null if no recent eval recorded.
-  // During failover this diverges from configuredProvider; the surface
-  // projection rules (compressed vs flat) follow configuredProvider,
-  // so a mismatch means recent evals went through a different shape
-  // than the diagnostic shows.
+  // During failover this can differ from configuredProvider. Native tool
+  // schemas remain identical across providers.
   readonly activeProvider: string | null
   readonly roomId: string
   readonly roomName: string
@@ -80,7 +78,7 @@ export const introspectAgentSurface = (
   // would actually compute.
   const getRoomActivation: GetRoomActivation = (id) => system.rooms.getRoom(id)
   const surface = createToolSurface({ registry, requestedTools, getRoomActivation })
-  const defs: ReadonlyArray<ToolDefinition> = surface.project(roomId, configuredProvider ?? undefined)
+  const defs: ReadonlyArray<ToolDefinition> = surface.project(roomId)
 
   const sourceForName = (name: string): string => {
     const entry = registry.getEntry(name)
@@ -103,9 +101,7 @@ export const introspectAgentSurface = (
   const sources: SourceRollup[] = [...packBuckets].map(([source, b]) => ({ source, ...b }))
     .sort((a, b) => b.tokens - a.tokens)
 
-  // afterActivation is the candidate set size BEFORE family compression —
-  // computed by the surface itself (one source of truth, no parallel
-  // re-implementation that can drift).
+  // Activation count comes from the same projection used by evaluation.
   const afterActivation = surface.buildCandidates(roomId).size
 
   // Active provider: pulled from the most recent eval for this agent. If

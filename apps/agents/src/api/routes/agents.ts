@@ -142,7 +142,7 @@ export const agentRoutes: RouteEntry[] = [
       const requestedSkills = body.skills === undefined ? [] : Array.isArray(body.skills)
         ? (body.skills as unknown[]).filter((skill): skill is string => typeof skill === 'string')
         : null
-      if (requestedSkills === null || requestedSkills.length !== (body.skills as unknown[]).length) {
+      if (requestedSkills === null || (Array.isArray(body.skills) && requestedSkills.length !== body.skills.length)) {
         return errorResponse('skills must be an array of Skill names', 400)
       }
       const missingSkills = requestedSkills.filter(skill => system.skillStore.get(skill) === undefined)

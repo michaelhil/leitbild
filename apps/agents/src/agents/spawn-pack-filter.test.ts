@@ -32,6 +32,7 @@ describe('pack-aware tool surface filter', () => {
       'procedure_lookup',
       'workspace_explore',
       'workspace_call',
+      'conversation_read',
     ])
   })
 

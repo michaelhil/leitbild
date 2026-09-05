@@ -56,7 +56,7 @@ import {
   createCreateRoomTool, createDeleteRoomTool, createAddToRoomTool, createRemoveFromRoomTool,
   createListAgentsTool, createGetMyContextTool, createSetDeliveryModeTool,
   createPauseRoomTool, createMuteAgentTool, createSetRoomPromptTool,
-  createPostToRoomTool, createGetRoomHistoryTool,
+  createPostToRoomTool, createGetRoomHistoryTool, createConversationReadTool,
   createRecallTool,
   createQueryDocumentsTool,
   createWorkspaceCapabilityTools,
@@ -614,6 +614,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     createGetMyContextTool(team, rooms),
     // Utility tools — bound to per-Workspace rooms
     createGetRoomHistoryTool(rooms),
+    createConversationReadTool(rooms),
     createPostToRoomTool(rooms),
     // RAG: recall tool — only registered when this Workspace has a vector
     // store (i.e. options.vectorsFile was provided). Focused runtime tests

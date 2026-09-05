@@ -143,7 +143,12 @@ export const createWorkspaceHostServer = (config: {
         if (capabilitiesMatch && request.method === 'GET') {
           const workspaceId = workspaceIdSchema.parse(decodeURIComponent(capabilitiesMatch[1] ?? ''))
           const moduleId = url.searchParams.has('moduleId') ? moduleIdSchema.parse(url.searchParams.get('moduleId')) : undefined
-          return Response.json(await config.host.capabilities(workspaceId, moduleId))
+          const body = JSON.stringify(await config.host.capabilities(workspaceId, moduleId))
+          const etag = '"' + new Bun.CryptoHasher('sha256').update(body).digest('hex') + '"'
+          const headers = { ETag: etag, 'Cache-Control': 'private, no-cache', 'Content-Type': 'application/json' }
+          return request.headers.get('if-none-match') === etag
+            ? new Response(null, { status: 304, headers })
+            : new Response(body, { headers })
         }
 
         const moduleMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/modules\/([^/]+)(\/retry)?$/)

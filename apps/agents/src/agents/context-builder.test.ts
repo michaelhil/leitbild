@@ -30,6 +30,16 @@ const mkDeps = (overrides: Partial<BuildContextDeps> = {}): BuildContextDeps => 
 const systemText = (result: ReturnType<typeof buildContext>): string =>
   (result.systemBlocks ?? []).map(block => block.text).join('\n\n')
 
+test('budget removal of older context is reported', () => {
+  const history=mkHistory('room-1','General',undefined,Array.from({length:4},(_,i)=>({
+    id:'old'+i,senderId:'human',type:'chat',roomId:'room-1',content:'x'.repeat(400),timestamp:i,
+  })))
+  history.incoming.push({id:'new',senderId:'human',type:'chat',roomId:'room-1',content:'hello',timestamp:5})
+  const result=buildContext(mkDeps({history,contextTokenBudget:220,includeContext:{participants:false,activity:false,knownAgents:false},includePrompts:{workspace:false,room:false,persona:false,responseFormat:false,skills:false}}),'room-1')
+  expect(result.messages.length).toBeLessThan(5)
+  expect(result.warnings.some(warning=>warning.includes('dropped')||warning.includes('dropped'.toUpperCase()))).toBe(true)
+})
+
 describe('context-builder includePrompts', () => {
   test('all sections included by default (undefined includePrompts)', () => {
     const result = buildContext(mkDeps(), 'room-1')

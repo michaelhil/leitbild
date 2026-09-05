@@ -134,6 +134,15 @@ Leitbild contains no World- or application-specific integration client. Every AI
 - `workspace_explore` discovers current scoped Resources and Definitions, searches their advertised operations, and returns schemas only when requested;
 - `workspace_call` invokes one discovered read or change operation, or batches independent reads.
 
+Every Agent also receives `conversation_read`, which retrieves exact prior
+messages and tool evidence from its current Room. It does not grant access
+to another Room or to system instructions. Earlier responses with tool
+evidence carry a retrieval reference in model context; exact drafts need
+not be reconstructed from conversational summaries.
+
+Tools keep their native names and full schemas. There are no synthetic
+family dispatchers or provider-specific tool compression paths.
+
 Exact targets are passed unchanged between these tools. Wildcards are valid only in discovery filters, never as target identity. The broker resolves current Room Scope and operation applicability on every call. Focused Subjects identify browser attention and never widen scope.
 
 Room Scope is the sole durable boundary in Agents. Inside it, operations are open by default. A human or system actor may replace scope; an Agent may not expand its own. World Runs can additionally block exact operation ids or targeted inspection/change of exact object ids. Scenario Definitions provide only the Run's initial restriction set, and a human can replace that set while the Run is active.

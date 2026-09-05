@@ -1,4 +1,5 @@
 // Re-exports all built-in tool factory functions.
+export { createConversationReadTool } from './conversation-read.ts'
 
 export { createListRoomsTool, createCreateRoomTool, createDeleteRoomTool, createSetRoomPromptTool, createPauseRoomTool, createSetDeliveryModeTool, createAddToRoomTool, createRemoveFromRoomTool } from './room-tools.ts'
 export { createPassTool, createListAgentsTool, createMuteAgentTool, createGetMyContextTool } from './agent-tools.ts'

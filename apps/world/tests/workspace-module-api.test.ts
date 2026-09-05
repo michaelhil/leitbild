@@ -22,6 +22,7 @@ import {
 } from '../src/core/workspaces/runtime-registry.ts'
 import { testScenarioDefinitions } from './fixtures/scenarios.ts'
 import { createTestPackRuntimeAdapters,createTestScenarioRuntimeResolver,testScenarioAuthoring } from './helpers.ts'
+import { actorIdSchema, objectIdSchema } from '../src/core/model/ids.ts'
 
 const registries: WorldWorkspaceRuntimeRegistry[] = []
 const temporaryDirectories: string[] = []
@@ -124,7 +125,7 @@ describe('World Module API', () => {
     await run.setClock({ paused: true })
     const access = accessContextSchema.parse({ workspaceId, requestId: newRequestId(), actor: { kind: 'ai', id: 'history-reader' } })
     const seriesCapabilityId = 'world.simulation-run.history-series.list'
-    const seriesCatalog = await call<{ result: { series: Array<{ runtimeId: string; id: string }> } }>(registry,
+    const seriesCatalog = await call<{ result: { series: Array<{ runtimeId: string; id: string; subjectId: string }> } }>(registry,
       `/internal/workspaces/${workspaceId}/capabilities/${seriesCapabilityId}/invoke`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspaceId, capabilityId: seriesCapabilityId, resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }, input: {}, access }),
@@ -165,6 +166,11 @@ describe('World Module API', () => {
     }
     const observed = await read({ ...series, timeAxis: 'observed', to: '2026-01-02T00:00:00Z', limit: 2 })
     expect(observed.body!.result.samples).toEqual([])
+    // Exact historian subject reads obey the same live Run restriction.
+    await run.setAgentRestrictions({id:actorIdSchema.parse('actor:operator'),label:'Operator',role:'operator'}, {
+      operationIds:[],objects:[{objectId:objectIdSchema.parse(selectedSeries.subjectId),deny:['inspect']}],
+    },0)
+    expect((await read({...series,limit:1})).status).toBe(403)
     expect(runs.leaseSummary(run.id).leasesByKind.api).toBe(0)
   })
   test('container admission is bounded without evicting active definition owners', async () => {

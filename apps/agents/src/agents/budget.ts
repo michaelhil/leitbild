@@ -2,7 +2,6 @@
 // budget. Tool schemas, expected output, and estimation drift consume the
 // same context window, so they are reserved explicitly for every evaluation.
 
-export const AUTO_BUDGET_FLOOR = 2_000
 export const AUTO_BUDGET_FALLBACK = 64_000
 export const OUTPUT_RESERVE = 4_096
 export const SAFETY_MARGIN = 1_000
@@ -35,7 +34,7 @@ export const computeContextBudget = (inputs: BudgetInputs, estimateTokens: Estim
   const contextMax = inputs.contextMax > 0 ? inputs.contextMax : AUTO_BUDGET_FALLBACK
   const available = contextMax - toolDefinitionTokens - OUTPUT_RESERVE - SAFETY_MARGIN
   return {
-    budget: Math.max(AUTO_BUDGET_FLOOR, available),
+    budget: Math.max(0, available),
     toolDefinitionTokens,
     reason: `${inputs.contextMax > 0 ? contextMax : `unknown-model:${contextMax}`} - tools=${toolDefinitionTokens} - output=${OUTPUT_RESERVE} - safety=${SAFETY_MARGIN}`,
   }

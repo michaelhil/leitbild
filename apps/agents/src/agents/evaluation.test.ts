@@ -18,7 +18,19 @@ import type { Decision } from './ai-agent.ts'
 import type { AIAgentConfig } from '../core/types/agent.ts'
 import type { Message } from '../core/types/messaging.ts'
 import type { ContextResult } from './context-builder.ts'
-import { evaluate, callLLM, streamLLM } from './evaluation.ts'
+import { evaluate, callLLM, streamLLM, fitToolEvidence } from './evaluation.ts'
+
+test('tool evidence budget includes system blocks and removes whole older turns', () => {
+  const context: Array<ChatRequest['messages'][number]>=[
+    {role:'user',content:'old request'.repeat(20)},
+    {role:'assistant',content:'old response'.repeat(20)},
+    {role:'user',content:'current'},
+  ]
+  const fit=fitToolEvidence(context,{role:'assistant',content:''},[{role:'tool',toolCallId:'call',content:'x'.repeat(100)}],100,60)
+  expect(fit.droppedHistory).toBe(2)
+  expect(context[0]!.content).toBe('current')
+  expect(fit.overBudget).toBe(false)
+})
 
 const makeConfig = (over: Partial<AIAgentConfig> = {}): AIAgentConfig => ({
   name: 'Tester',

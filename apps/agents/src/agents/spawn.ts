@@ -20,8 +20,7 @@ import { createAIAgent } from './ai-agent.ts'
 import type { Decision } from './ai-agent.ts'
 import { callLLM, streamLLM } from './evaluation.ts'
 import { addAgentToRoom } from './actions.ts'
-import { createToolSurface, inferProviderFromModelRef, FAMILY_DISPATCHER_NAMES } from '../tool-surface/index.ts'
-import { CURATED_MODELS } from '../llm/models/catalog.ts'
+import { createToolSurface } from '../tool-surface/index.ts'
 import { WORKSPACE_CAPABILITY_TOOL_NAMES } from '../tools/built-in/workspace-capability-tools.ts'
 import type { WorkspaceSubjectReference } from '@leitbild/contracts'
 
@@ -140,7 +139,7 @@ export interface AgentToolSupport {
 }
 
 const warnMissingTools = (agentName: string, requested: ReadonlyArray<string>, registry: ToolRegistry): void => {
-  const missing = requested.filter(n => !registry.has(n) || FAMILY_DISPATCHER_NAMES.has(n))
+  const missing = requested.filter(n => !registry.has(n))
   if (missing.length > 0)
     console.warn(`[spawn] Agent "${agentName}": tools not found in registry: ${missing.join(', ')}`)
 }
@@ -193,51 +192,30 @@ export const buildToolSupport = async (
       ...(seed !== undefined ? { seed } : {}),
     }),
   }
-  // Family dispatcher trampolines registered into the global registry
-  // once. Each trampoline re-resolves its family's members at execute
-  // time, so packs installed AFTER this spawn become routable without
-  // re-registering. Idempotent across spawns via the has-name guard.
   const surface = createToolSurface({
     registry,
     requestedTools: allToolNames,
     getRoomActivation,
   })
-  for (const dispatcher of surface.getRegistryDispatchers()) {
-    if (!registry.has(dispatcher.name)) registry.register(dispatcher)
-  }
-
-  // The executor must accept family-dispatcher names too — they aren't in
-  // allToolNames, but they're real tools in the registry. Inject them.
-  const dispatcherNames = surface.getRegistryDispatchers().map(d => d.name)
-  const executorAllowedNames = [...allToolNames, ...dispatcherNames.filter(n => !allToolNames.includes(n))]
   const executor = createToolExecutor(
     registry,
-    executorAllowedNames,
+    allToolNames,
     lazyContext,
     getRoomActivation,
     roomId => agentRef.focusedSubjects?.(roomId) ?? [],
   )
 
-  // Initial projection — no room context yet, no provider known. project()
-  // is cheap; the per-eval resolveToolDefinitions below overrides this
-  // with the room + provider-aware projection.
+  // Initial projection has no Room context. Each evaluation reads activation.
   const support: { -readonly [K in keyof AgentToolSupport]: AgentToolSupport[K] } = {
     toolExecutor: executor,
-    toolDefinitions: surface.project(undefined, undefined),
+    toolDefinitions: surface.project(undefined),
   }
 
   if (getRoomActivation) {
-    // Per-eval resolver: the surface owns the per-room activation filter
-    // and family compression, gated on provider strictness. Returns null
-    // when the room is unknown so the caller falls back to the static
-    // toolDefinitions (which the surface also computed with no room
-    // filter; a missing Room yields null so the static projection remains usable
-    // in focused runtime tests.
+    // A missing Room yields null for headless/test callers using static tools.
     support.resolveToolDefinitions = (roomId: string): ReadonlyArray<ToolDefinition> | null => {
       if (!getRoomActivation(roomId)) return null
-      const model = agentRef.currentModel?.() ?? ''
-      const provider = inferProviderFromModelRef(model, CURATED_MODELS)
-      return surface.project(roomId, provider)
+      return surface.project(roomId)
     }
   }
 
@@ -246,7 +224,7 @@ export const buildToolSupport = async (
 
 export const effectiveAgentToolSelection = (config: AIAgentConfig): ReadonlyArray<string> => {
   const selectedTools = config.tools ?? []
-  return [...new Set([...selectedTools, ...WORKSPACE_CAPABILITY_TOOL_NAMES])]
+  return [...new Set([...selectedTools, ...WORKSPACE_CAPABILITY_TOOL_NAMES, 'conversation_read'])]
 }
 
 const resolveAgentTools = async (

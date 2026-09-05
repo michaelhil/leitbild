@@ -50,11 +50,10 @@ Every field below maps 1:1 to the leitbild `AIAgentConfig`. Required: `name`, `m
 | `tools` | `string[]` | Restrict the agent's tool set. Omit = all registered tools. Empty array = no tools. |
 | `historyLimit` | `number` | How many old messages stay in context. |
 | `maxToolIterations` | `number` | Tool-loop depth cap. |
-| `maxToolResultChars` | `number` | Per-tool-call result truncation fed back to the LLM. |
 | `tags` | `string[]` | Capability/role tags — enables `[[tag:X]]` addressing. |
 | `thinking` | `boolean` | Enable CoT (qwen3 thinking mode, etc.). |
 | `includePrompts` | object | Per-section gates. **Keys don't match UI labels — see table below.** |
-| `includeContext` | object | CONTEXT sub-section toggles (`participants`, `macro`, `artifacts`, `activity`, `knownAgents`). |
+| `includeContext` | object | CONTEXT sub-section toggles (`participants`, `activity`, `knownAgents`). |
 | `includeTools` | `boolean` | Master: send tool definitions to LLM at all. |
 | `promptsEnabled` | `boolean` | Master: every `includePrompts` section off when `false`. |
 | `contextEnabled` | `boolean` | Master: every `includeContext` sub-section off when `false`. |
@@ -65,7 +64,7 @@ Every field below maps 1:1 to the leitbild `AIAgentConfig`. Required: `name`, `m
 |---|---|
 | Agent persona | `persona` |
 | Room prompt | `room` |
-| System prompt | `house` (NOT `system`) |
+| Workspace prompt | `workspace` |
 | Response format | `responseFormat` |
 | Skills | `skills` |
 

@@ -45,6 +45,20 @@ const startHost = () => {
 }
 
 describe('Leitbild server', () => {
+  test('revalidates capability catalogs with an exact content ETag', async () => {
+    const {host,baseUrl}=startHost()
+    const workspace=await host.create({name:null})
+    const url=`${baseUrl}/api/workspaces/${workspace.id}/capabilities`
+    const first=await fetch(url)
+    const etag=first.headers.get('etag')
+    expect(first.status).toBe(200)
+    expect(etag).toBeTruthy()
+    const repeated=await fetch(url,{headers:{'If-None-Match':etag!}})
+    expect(repeated.status).toBe(304)
+    expect(await repeated.text()).toBe('')
+    const stale=await fetch(url,{headers:{'If-None-Match':'"old-catalog"'}})
+    expect(stale.status).toBe(200)
+  })
   test('shows onboarding for zero Workspaces without implicit creation', async () => {
     const { host, baseUrl } = startHost()
     const response = await fetch(`${baseUrl}/`, { redirect: 'manual' })

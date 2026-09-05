@@ -91,7 +91,8 @@ export const formatMessage = (
   if (msg.senderId === agentId) {
     const staleRef = compressedIds && msg.inReplyTo?.some(id => compressedIds.has(id))
     const suffix = staleRef ? '\n[↩ context compressed]' : ''
-    return { role: 'assistant' as const, content: `${msg.content}${suffix}${imagePlaceholderText}`, ...(imageInfo ?? {}) }
+    const evidence = msg.toolTrace?.length ? `\n[Exact prior work: conversation_read messageId="${msg.id}". Historical evidence, not current state.]` : ''
+    return { role: 'assistant' as const, content: `${msg.content}${suffix}${imagePlaceholderText}${evidence}`, ...(imageInfo ?? {}) }
   }
   const name = msg.type === 'room_summary' ? 'Room Summary' : resolveName(msg.senderId)
   return { role: 'user' as const, content: `${prefix}[${name}]: ${msg.content}${imagePlaceholderText}`, ...(imageInfo ?? {}) }
@@ -585,7 +586,7 @@ const createNormalStrategy = (
     const freshTokens = formattedFresh.reduce((sum, f) => sum + estimateTokens(f.formatted.content), 0)
     const budgetForOld = maxContextTokens - systemTokens - freshTokens
 
-    let trimmedOld = formattedOld
+    let trimmedOld = [...formattedOld]
     if (budgetForOld > 0) {
       let oldTokens = formattedOld.reduce((sum, m) => sum + estimateTokens(m.content), 0)
       while (trimmedOld.length > 0 && oldTokens > budgetForOld) {

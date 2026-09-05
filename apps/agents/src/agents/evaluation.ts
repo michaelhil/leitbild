@@ -92,26 +92,30 @@ const formatToolResult = (result: ToolResult): string => result.success
 const messageTokens = (message: ChatRequest['messages'][number]): number =>
   Math.ceil((message.content.length + (message.toolCalls ? JSON.stringify(message.toolCalls).length : 0)) / 4)
 
-const fitToolEvidence = (
+export const fitToolEvidence = (
   context: Array<ChatRequest['messages'][number]>,
   assistant: ChatRequest['messages'][number],
   tools: ReadonlyArray<ChatRequest['messages'][number]>,
   tokenBudget: number | undefined,
+  systemTokens = 0,
 ): { droppedHistory: number; overBudget: boolean } => {
-  if (!tokenBudget || tokenBudget <= 0) {
+  if (tokenBudget === undefined) {
     context.push(assistant, ...tools)
     return { droppedHistory: 0, overBudget: false }
   }
   const lastUser = context.findLastIndex(message => message.role === 'user')
   context.push(assistant, ...tools)
-  let total = context.reduce((sum, message) => sum + messageTokens(message), 0)
+  let total = systemTokens + context.reduce((sum, message) => sum + messageTokens(message), 0)
   let droppedHistory = 0
   const protectedIndex = lastUser >= 0 ? lastUser : context.length - tools.length - 1
-  while (total > tokenBudget && context.length > 1 && 1 < protectedIndex - droppedHistory) {
-    const removed = context.splice(1, 1)[0]
-    if (!removed) break
-    total -= messageTokens(removed)
-    droppedHistory++
+  while (total > tokenBudget && droppedHistory < protectedIndex) {
+    // Drop a whole older conversational turn, never orphan native tool results.
+    const nextUser = context.findIndex((message,index)=>index>0&&message.role==='user')
+    const count = Math.min(nextUser < 0 ? protectedIndex-droppedHistory : nextUser, protectedIndex-droppedHistory)
+    if (count <= 0) break
+    const removed = context.splice(0,count)
+    total -= removed.reduce((sum,message)=>sum+messageTokens(message),0)
+    droppedHistory += removed.length
   }
   // Fresh tool evidence is authoritative and may reflect a mutation that has
   // already happened. Never rewrite or truncate it after execution: doing so
@@ -498,7 +502,8 @@ export const evaluate = async (
           if (!call || !result) continue
           toolMessages.push({ role: 'tool', toolCallId: call.callId ?? `call_${i}`, name: call.tool, content: formatToolResult(result) })
         }
-        const fit = fitToolEvidence(context, assistantToolMessage, toolMessages, contextResult.tokenBudget)
+        const systemTokens = Math.ceil((contextResult.systemBlocks?.map(block=>block.text).join('\n\n').length ?? 0)/4)
+        const fit = fitToolEvidence(context, assistantToolMessage, toolMessages, contextResult.tokenBudget, systemTokens)
         if (fit.overBudget) onEvent?.({ kind: 'warning', message: 'Current request and tool evidence exceed the model context budget. Evidence was preserved intact; use a narrower or paginated read.' })
         if (fit.droppedHistory > 0) onEvent?.({ kind: 'warning', message: `Dropped ${fit.droppedHistory} oldest context messages to retain current tool evidence.` })
 

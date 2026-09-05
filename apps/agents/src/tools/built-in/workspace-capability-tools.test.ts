@@ -67,6 +67,75 @@ const makeTools = (scope: WorkspaceRoomScope, requests: Request[] = []) => creat
 const context = { callerId: 'agent', callerName: 'Analyst', roomId: 'room' }
 
 describe('Workspace progressive-discovery tools', () => {
+  test('revalidates cached operations and replaces them when catalog content changes', async () => {
+    const base=catalogFetch([])
+    let version=1
+    const statuses:number[]=[]
+    const tools=createWorkspaceCapabilityTools({workspaceId,hostBaseUrl:'https://host.test',getRoomScope:()=>({kind:'workspace'}),
+      fetchImpl:(async(input,init)=>{
+        const request=new Request(String(input),init)
+        if(!request.url.endsWith('/capabilities'))return base(input,init)
+        const etag='"'+version+'"'
+        if(request.headers.get('if-none-match')===etag){statuses.push(304);return new Response(null,{status:304})}
+        const response=await base(input,init)
+        const body=await response.json() as {capabilities:Array<{id:string}>}
+        if(version===2)body.capabilities=body.capabilities.filter(c=>c.id!==readId)
+        statuses.push(200)
+        return Response.json(body,{headers:{etag}})
+      }) as typeof fetch})
+    const query=()=>tools[0]!.execute({view:'operations',operationIds:[readId]},context)
+    expect(await query()).toMatchObject({success:true,data:{operations:[{operationId:readId}]}})
+    await query()
+    version=2
+    expect(await query()).toMatchObject({success:true,data:{operations:[]}})
+    expect(statuses).toEqual([200,304,200])
+  })
+  test('filters all result kinds and operations consistently', async () => {
+    const [explore] = makeTools({kind:'workspace'})
+    expect(await explore!.execute({view:'all',definitionType:definition.type},context)).toMatchObject({
+      success:true,data:{resources:[],operations:[{operationId:inspectDefinitionId}]},
+    })
+    expect(await explore!.execute({view:'operations',resourceType:run.type,operationIds:[inspectDefinitionId]},context))
+      .toMatchObject({success:true,data:{operations:[]}})
+  })
+
+  test('pins source revisions while leaving revision existence to the owning Module', async () => {
+    const requests: Request[]=[]
+    const base=catalogFetch(requests)
+    const tools=createWorkspaceCapabilityTools({
+      workspaceId,hostBaseUrl:'https://host.test',getRoomScope:()=>({kind:'resource',resource:run}),
+      fetchImpl:(async(input,init)=>{
+        const response=await base(input,init)
+        const url=String(input)
+        if(url.endsWith('/resources')){
+          const body=await response.json() as {resources:Array<{sourceDefinition?:typeof definition}>}
+          body.resources[0]!.sourceDefinition=definition
+          return Response.json(body)
+        }
+        if(url.endsWith('/definitions')){
+          const body=await response.json() as {definitions:Array<{currentRevisionId:string}>}
+          body.definitions[0]!.currentRevisionId='revision-new'
+          return Response.json(body)
+        }
+        return response
+      }) as typeof fetch,
+    })
+    expect(await tools[0]!.execute({},context)).toMatchObject({success:true,data:{
+      definitions:[{target:{ref:definition}}],
+    }})
+    const invoke=(revisionId:string)=>tools[1]!.execute({calls:[{key:'source',operationId:inspectDefinitionId,
+      target:{kind:'definition',ref:{...definition,revisionId}},input:{}}]},context)
+    expect(await invoke(definition.revisionId)).toMatchObject({success:true,data:{results:[{success:true}]}})
+    expect(await invoke('revision-new')).toMatchObject({success:true,data:{results:[{success:false,error:expect.stringContaining('target_out_of_scope')}]}})
+  })
+
+  test('rejects duplicate batch keys before executing', async () => {
+    const requests:Request[]=[]
+    const [,call]=makeTools({kind:'workspace'},requests)
+    expect(await call!.execute({calls:[1,2].map(()=>({key:'same',operationId:readId,target:runTarget,input:{}}))},context))
+      .toMatchObject({success:false,error:expect.stringContaining('unique')})
+    expect(requests).toHaveLength(0)
+  })
   test('exposes only the two generic tools', () => {
     expect(makeTools({ kind: 'workspace' }).map(tool => tool.name)).toEqual(['workspace_explore', 'workspace_call'])
   })

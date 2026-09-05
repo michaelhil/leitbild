@@ -503,12 +503,15 @@ const representativeOperationalObjects = (objects: ReadonlyArray<OperationalObje
 const serializableInspection = (value: unknown) =>
   inspectionViewSchema.parse(JSON.parse(JSON.stringify(value)) as unknown)
 
+// Installed Capability definitions are immutable; runtime state is not cached.
+// A replacement/installation has a new definition identity and is compiled anew.
+const runtimeDescriptorCache = new WeakMap<object, ModuleCapabilityDescriptor>()
 const runtimeCapabilityDescriptorsFor = (
   registry: SimulationRunRegistry,
 ): ReadonlyArray<ModuleCapabilityDescriptor> => {
   const byId = new Map<string, ModuleCapabilityDescriptor>()
   for (const { capability } of registry.installedCapabilities) {
-    const descriptor = moduleCapabilityCollectionSchema.parse({ capabilities: [{
+    const descriptor = runtimeDescriptorCache.get(capability) ?? moduleCapabilityCollectionSchema.parse({ capabilities: [{
       id: capability.id,
       moduleId: WORLD_MODULE_ID,
       kind: capability.kind,
@@ -523,6 +526,7 @@ const runtimeCapabilityDescriptorsFor = (
       inputSchema: capabilityJsonSchema(capability.input),
       outputSchema: capabilityJsonSchema(capability.output),
     }] }).capabilities[0]!
+    runtimeDescriptorCache.set(capability, descriptor)
     const existing = byId.get(descriptor.id)
     if (existing && JSON.stringify(existing) !== JSON.stringify(descriptor)) {
       throw new Error(`alternative Pack Runtimes disagree on Capability ${descriptor.id}`)
@@ -599,7 +603,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     descriptor: {
       id: 'world.map.symbols', moduleId: WORLD_MODULE_ID, kind: 'query', scope: { kind: 'workspace' },
       title: 'Discover map icons', description: 'Search the locally installed Lucide catalogue by name or semantic tags. Return canonical icon IDs for Pack map symbols; optionally request SVG artwork for up to 32 specific IDs. No external network access.',
-      risk: 'read', idempotent: true, inputSchema: z.toJSONSchema(mapSymbolsInput), outputSchema: z.toJSONSchema(mapSymbolsOutput),
+      risk: 'read', idempotent: true, inputSchema: z.toJSONSchema(mapSymbolsInput, { io: 'input' }), outputSchema: z.toJSONSchema(mapSymbolsOutput),
     },
     invoke: async (_registry, invocation) => json({ result: searchMapSymbols(invocation.input) }),
   },
@@ -613,7 +617,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       description: 'Discovers World Pack scenario inputs. The default catalog is compact; request authoring for machine schemas of selected Packs or editor for UI form metadata.',
       risk: 'read',
       idempotent: true,
-      inputSchema: z.toJSONSchema(scenarioAuthoringDescribeInputSchema),
+      inputSchema: z.toJSONSchema(scenarioAuthoringDescribeInputSchema, { io: 'input' }),
       outputSchema: z.toJSONSchema(scenarioAuthoringDescriptionSchema),
     },
     invoke: async (registry, invocation) => {
@@ -730,7 +734,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       description: 'Reads the exact editable Scenario Definition for this current immutable revision without compiled assets or live Run state.',
       risk: 'read',
       idempotent: true,
-      inputSchema: z.toJSONSchema(emptyInputSchema),
+      inputSchema: z.toJSONSchema(emptyInputSchema, { io: 'input' }),
       outputSchema: capabilityJsonSchema(runScenarioSourceSchema),
     },
     invoke: async (registry, invocation) => {
@@ -756,7 +760,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       description: 'Shows the exact Scenario Revision configuration, Packs, initial assets, Plants, and timeline.',
       risk: 'read',
       idempotent: true,
-      inputSchema: z.toJSONSchema(emptyInputSchema),
+      inputSchema: z.toJSONSchema(emptyInputSchema, { io: 'input' }),
       outputSchema: z.toJSONSchema(inspectionViewSchema),
     },
     invoke: async (registry, invocation) => {
@@ -800,7 +804,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       description: 'Creates a Simulation Run from the requested immutable Scenario Revision.',
       risk: 'write',
       idempotent: false,
-      inputSchema: z.toJSONSchema(emptyInputSchema),
+      inputSchema: z.toJSONSchema(emptyInputSchema, { io: 'input' }),
       outputSchema: capabilityJsonSchema(scenarioStartResultSchema),
     },
     invoke: async (registry, invocation) => {
@@ -832,7 +836,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       description: 'Removes this Scenario from the Workspace catalog. Existing Simulation Runs retain their pinned revision.',
       risk: 'destructive',
       idempotent: false,
-      inputSchema: z.toJSONSchema(emptyInputSchema),
+      inputSchema: z.toJSONSchema(emptyInputSchema, { io: 'input' }),
       outputSchema: capabilityJsonSchema(definitionDeleteResultSchema),
     },
     invoke: async (registry, invocation) => {
@@ -853,7 +857,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       description: 'Shows pinned Scenario configuration, current runtime state, operational asset summaries, and available Capabilities.',
       risk: 'read',
       idempotent: true,
-      inputSchema: z.toJSONSchema(emptyInputSchema),
+      inputSchema: z.toJSONSchema(emptyInputSchema, { io: 'input' }),
       outputSchema: z.toJSONSchema(inspectionViewSchema),
     },
     invoke: async (registry, invocation) => {
@@ -1071,7 +1075,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       description: 'Permanently stops and deletes a Simulation Run and its persisted state, including active maximum-pace work.',
       risk: 'destructive',
       idempotent: false,
-      inputSchema: z.toJSONSchema(emptyInputSchema),
+      inputSchema: z.toJSONSchema(emptyInputSchema, { io: 'input' }),
       outputSchema: capabilityJsonSchema(simulationRunDeleteResultSchema),
     },
     invoke: async (registry, invocation) => {
@@ -1113,7 +1117,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       description: 'Returns an agent-safe briefing, current situation, operational-object summaries, and available Capabilities without exposing private Scenario Timeline content.',
       risk: 'read',
       idempotent: true,
-      inputSchema: z.toJSONSchema(emptyInputSchema),
+      inputSchema: z.toJSONSchema(emptyInputSchema, { io: 'input' }),
       outputSchema: capabilityJsonSchema(simulationRunContextSchema),
     },
     invoke: async (registry, invocation) => {
@@ -1206,7 +1210,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       description: 'Reads current canonical projected state for one operational object discovered through context or object search.',
       risk: 'read',
       idempotent: true,
-      inputSchema: z.toJSONSchema(readObjectInputSchema),
+      inputSchema: z.toJSONSchema(readObjectInputSchema, { io: 'input' }),
       outputSchema: capabilityJsonSchema(operationalObjectSchema),
     },
     invoke: async (registry, invocation) => {
@@ -1228,7 +1232,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       description: 'Lists the procedure documents available to this Simulation Run from its configured sources.',
       risk: 'read',
       idempotent: true,
-      inputSchema: z.toJSONSchema(procedureCatalogInputSchema),
+      inputSchema: z.toJSONSchema(procedureCatalogInputSchema, { io: 'input' }),
       outputSchema: capabilityJsonSchema(procedureCatalogSchema),
     },
     invoke: async (registry, invocation) => {
@@ -1250,7 +1254,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       description: 'Reads procedure steps, branches and signal tags. For an existing Run, pass its sourceId, sourceRevision and sourcePath from world.procedure.runs.list; the current catalog may describe a newer revision.',
       risk: 'read',
       idempotent: true,
-      inputSchema: z.toJSONSchema(procedureDocumentInputSchema),
+      inputSchema: z.toJSONSchema(procedureDocumentInputSchema, { io: 'input' }),
       outputSchema: capabilityJsonSchema(procedureDocumentSchema),
     },
     invoke: async (registry, invocation) => {
@@ -1274,7 +1278,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       description: 'Lists current procedure execution state in this Simulation Run.',
       risk: 'read',
       idempotent: true,
-      inputSchema: z.toJSONSchema(emptyInputSchema),
+      inputSchema: z.toJSONSchema(emptyInputSchema, { io: 'input' }),
       outputSchema: capabilityJsonSchema(procedureControlStateSchema),
     },
     invoke: async (registry, invocation) => {
@@ -1293,7 +1297,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       description: 'Reads a bounded page of committed changes after a known simulation sequence so an Agent can stay current without re-reading the whole World.',
       risk: 'read',
       idempotent: true,
-      inputSchema: z.toJSONSchema(readChangesInputSchema),
+      inputSchema: z.toJSONSchema(readChangesInputSchema, { io: 'input' }),
       outputSchema: capabilityJsonSchema(simulationChangesSchema),
     },
     invoke: async (registry, invocation) => {
@@ -1321,7 +1325,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       description: 'Discovers recorded historian series selected by Scenario Recording Profiles. Filter by runtime, subject, signal, or literal text; every text term must match somewhere in the metadata, so use one signal concept per query and batch separate focused queries for different series. If user vocabulary does not match, resolve the canonical subject or signal through the active Pack instead of dumping an unfiltered catalog. Treat the returned runtimeId and opaque series id as one reference and pass both unchanged to the sample reader. A live signal path is not a historian series id.',
       risk: 'read',
       idempotent: true,
-      inputSchema: z.toJSONSchema(listHistorySeriesInputSchema),
+      inputSchema: z.toJSONSchema(listHistorySeriesInputSchema, { io: 'input' }),
       outputSchema: capabilityJsonSchema(simulationHistorySeriesSchema),
     },
     invoke: async (registry, invocation) => {
@@ -1354,7 +1358,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       description: 'Reads a bounded page for one exact historian series. Obtain the runtimeId and opaque seriesId pair from world.simulation-run.history-series.list; do not substitute a subject id or live signal path. windowSummary covers the complete filtered interval independently of page size, so trend endpoints, extrema, and change detection do not require a large raw sample page. Retained observed/simulation-time bounds and retentionGap report missing older evidence.',
       risk: 'read',
       idempotent: true,
-      inputSchema: z.toJSONSchema(readHistorySamplesInputSchema),
+      inputSchema: z.toJSONSchema(readHistorySamplesInputSchema, { io: 'input' }),
       outputSchema: capabilityJsonSchema(simulationHistorySamplesSchema),
     },
     invoke: async (registry, invocation) => {
@@ -1426,8 +1430,18 @@ const invokeCapability = async (
         if (restrictions.operationIds.includes(capabilityId)) {
           return apiError(403, 'agent_access_restricted', `AI access to operation ${capabilityId} is restricted for this Run`)
         }
+        // Historian identity already carries subject provenance. Apply the same
+        // exact-subject restriction as live inspection; no Pack-specific parsing.
+        let objectId: string | undefined
         if (capabilityId === 'world.simulation-run.read-object') {
-          const { objectId } = readObjectInputSchema.parse(invocation.input)
+          objectId = readObjectInputSchema.parse(invocation.input).objectId
+        } else if (capabilityId === 'world.simulation-run.history-series.list') {
+          objectId = listHistorySeriesInputSchema.parse(invocation.input).subjectId
+        } else if (capabilityId === 'world.simulation-run.history-samples.read') {
+          const input = readHistorySamplesInputSchema.parse(invocation.input)
+          objectId = runtime.recordingSeries().find(series => series.runtimeId === input.runtimeId && series.id === input.seriesId)?.subjectId
+        }
+        if (objectId !== undefined) {
           if (restrictions.objects.some(entry => entry.objectId === objectId && entry.deny.includes('inspect'))) {
             return apiError(403, 'agent_access_restricted', `AI inspection access is restricted for: ${objectId}`)
           }

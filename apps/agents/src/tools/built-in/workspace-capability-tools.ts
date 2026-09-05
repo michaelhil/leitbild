@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import {
   capabilityIdSchema,
   definitionTypeSchema,
@@ -50,9 +51,9 @@ const origin = (raw: string): string => {
 const requestSignal = (signal?: AbortSignal): AbortSignal =>
   AbortSignal.any([AbortSignal.timeout(HOST_REQUEST_TIMEOUT_MS), ...(signal ? [signal] : [])])
 
-const getJson = async (fetchImpl: typeof fetch, url: string, signal?: AbortSignal): Promise<Response> => {
+const getJson = async (fetchImpl: typeof fetch, url: string, signal?: AbortSignal, etag?: string): Promise<Response> => {
   try {
-    return await fetchImpl(url, { signal: requestSignal(signal), headers: { Accept: 'application/json' } })
+    return await fetchImpl(url, { signal: requestSignal(signal), headers: { Accept: 'application/json', ...(etag ? {'If-None-Match':etag} : {}) } })
   } catch (error) {
     throw new Error(`Workspace Host is unreachable: ${error instanceof Error ? error.message : String(error)}`, { cause: error })
   }
@@ -146,7 +147,14 @@ const resolveScope = (
   return {
     scope,
     resources: scopedResources,
-    definitions: definitions.filter(definition => definitionKeys.has(referenceKey(definition.ref))),
+    // A running Resource pins a revision, not the library's moving head.
+    definitions: scopedResources.flatMap(resource => {
+      const source = resource.sourceDefinition
+      if (!source) return []
+      const descriptor = definitions.find(definition => referenceKey(definition.ref) === referenceKey(source))
+      return descriptor ? [{ ...descriptor, currentRevisionId: source.revisionId }] : []
+    }).filter((definition, index, all) => all.findIndex(other =>
+      referenceKey(other.ref) === referenceKey(definition.ref) && other.currentRevisionId === definition.currentRevisionId) === index),
     resourceKeys,
     definitionKeys,
   }
@@ -165,7 +173,9 @@ const targetInScope = (target: WorkspaceTarget | undefined, resolved: ResolvedSc
     : failure('workspace_operation_out_of_scope', 'This Room is scoped to Resources, not the whole Workspace')
   const allowed = target.kind === 'resource'
     ? resolved.resourceKeys.has(referenceKey(target.ref))
-    : resolved.definitionKeys.has(referenceKey(target.ref))
+    : resolved.definitionKeys.has(referenceKey(target.ref)) && (resolved.scope.kind === 'workspace'
+      || resolved.definitions.some(definition => referenceKey(definition.ref) === referenceKey(target.ref)
+        && definition.currentRevisionId === target.ref.revisionId))
   return allowed ? undefined : failure('target_out_of_scope', 'The requested target is outside the current Room Scope', { target, scope: resolved.scope })
 }
 
@@ -191,7 +201,7 @@ const applicabilityFailure = (
   }
   const descriptor = definitions.find(definition => referenceKey(definition.ref) === referenceKey(target.ref))
   if (!descriptor) return failure('definition_not_found', 'The target Definition is not advertised by the Workspace')
-  if (descriptor.currentRevisionId !== target.ref.revisionId) return failure('definition_revision_not_found', 'The exact Definition revision is not current or discoverable')
+  // Revision existence is owned by the Module, not by the current-head catalog.
   if (operation.scope.kind !== 'definition' || operation.scope.definitionType !== target.ref.type || !descriptor.capabilityIds.includes(operation.id)) {
     return failure('operation_not_available', 'The target Definition does not advertise this operation')
   }
@@ -245,48 +255,64 @@ const matchedTextTerms = (operation: ModuleCapabilityDescriptor, query: string):
 const textMatchScore = (operation: ModuleCapabilityDescriptor, query: string): number =>
   matchedTextTerms(operation, query).length
 
-const resourceReferenceParameter = {
-  type: 'object',
-  properties: { workspaceId: { type: 'string' }, moduleId: { type: 'string' }, type: { type: 'string' }, id: { type: 'string' } },
-  required: ['workspaceId', 'moduleId', 'type', 'id'],
-  additionalProperties: false,
-}
-
-const definitionReferenceParameter = {
-  type: 'object',
-  properties: { workspaceId: { type: 'string' }, moduleId: { type: 'string' }, type: { type: 'string' }, id: { type: 'string' }, revisionId: { type: 'string' } },
-  required: ['workspaceId', 'moduleId', 'type', 'id', 'revisionId'],
-  additionalProperties: false,
-}
-
-const targetParameter = {
-  description: 'One exact Resource or Definition-revision target returned by workspace_explore.',
-  oneOf: [{
-    type: 'object', properties: { kind: { type: 'string', const: 'resource' }, ref: resourceReferenceParameter }, required: ['kind', 'ref'], additionalProperties: false,
-  }, {
-    type: 'object', properties: { kind: { type: 'string', const: 'definition' }, ref: definitionReferenceParameter }, required: ['kind', 'ref'], additionalProperties: false,
-  }],
-}
+const targetInputSchema = z.discriminatedUnion('kind', [
+  z.object({kind:z.literal('resource'),ref:workspaceResourceReferenceSchema}).strict(),
+  z.object({kind:z.literal('definition'),ref:workspaceDefinitionRevisionReferenceSchema}).strict(),
+])
+const exploreInputSchema = z.object({
+  view:z.enum(['scope','operations','all']).default('scope'),
+  target:targetInputSchema.optional(),
+  moduleId:z.string().optional(), resourceType:z.string().optional(), definitionType:z.string().optional(),
+  queries:z.array(z.string().trim().min(1).max(256)).max(8).default([]),
+  operationIds:z.array(capabilityIdSchema).max(24).default([]),
+  includeInputSchema:z.boolean().default(false), includeOutputSchema:z.boolean().default(false),
+  offset:z.number().int().nonnegative().default(0),
+  limit:z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
+}).strict()
+const callInputSchema = z.object({
+  calls:z.array(z.object({
+    key:z.string().trim().min(1).max(64),
+    operationId:capabilityIdSchema, target:targetInputSchema.optional(), input:z.unknown(),
+    expectedRevision:z.number().int().nonnegative().optional(),
+    idempotencyKey:z.string().min(1).max(256).optional(),
+  }).strict()).min(1).max(MAX_READ_BATCH_SIZE),
+}).strict()
 
 const catalogPath = (workspacePath: string, kind: 'capabilities' | 'definitions' | 'resources'): string => `${workspacePath}/${kind}`
 
 export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDeps): ReadonlyArray<Tool> => {
   const fetchImpl = deps.fetchImpl ?? fetch
   const workspacePath = `${origin(deps.hostBaseUrl)}/api/workspaces/${encodeURIComponent(deps.workspaceId)}`
+  // Revalidate on every access. Only reuse a parsed operation catalog when
+  // the Host confirms the exact same content; membership/policy stays live.
+  let operationCache: { etag: string; catalog: ReturnType<typeof workspaceCapabilityCatalogSchema.parse> } | undefined
+  const loadOperations = async (context: ToolContext) => {
+    const cached = operationCache
+    const response = await getJson(fetchImpl, catalogPath(workspacePath, 'capabilities'), context.signal, cached?.etag)
+    if (response.status === 304) {
+      if (!cached) throw new Error('Host returned 304 without a cached operation catalog')
+      return cached.catalog
+    }
+    if (!response.ok) throw await readHostError(response)
+    const catalog = workspaceCapabilityCatalogSchema.parse(await response.json())
+    const etag = response.headers.get('etag')
+    operationCache = etag ? {etag,catalog} : undefined
+    return catalog
+  }
 
   const loadCatalogs = async (context: ToolContext) => {
-    const [definitionResponse, resourceResponse, operationResponse] = await Promise.all([
+    const [definitionResponse, resourceResponse, operations] = await Promise.all([
       getJson(fetchImpl, catalogPath(workspacePath, 'definitions'), context.signal),
       getJson(fetchImpl, catalogPath(workspacePath, 'resources'), context.signal),
-      getJson(fetchImpl, catalogPath(workspacePath, 'capabilities'), context.signal),
+      loadOperations(context),
     ])
-    for (const response of [definitionResponse, resourceResponse, operationResponse]) {
+    for (const response of [definitionResponse, resourceResponse]) {
       if (!response.ok) throw await readHostError(response)
     }
     return {
       definitions: workspaceDefinitionCatalogSchema.parse(await definitionResponse.json()),
       resources: workspaceResourceCatalogSchema.parse(await resourceResponse.json()),
-      operations: workspaceCapabilityCatalogSchema.parse(await operationResponse.json()),
+      operations,
     }
   }
 
@@ -295,59 +321,49 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
     description: 'Explore the current Room Scope: discover exact Resources and Definitions, then find the read or change operations they advertise.',
     usage: 'Start with view="scope" for orientation. Use view="operations" with plain-language queries to find likely operations, then request schemas by exact operationIds. Schemas are omitted from broad text searches to keep discovery compact. Focus indicates attention and never expands Room Scope.',
     returns: 'The current Room Scope, focused subjects, exact targets, compact metadata, and/or matching operations. Returned targets can be passed unchanged to workspace_call.',
-    parameters: {
-      type: 'object', properties: {
-        view: { type: 'string', enum: ['scope', 'operations', 'all'], default: 'scope' },
-        target: targetParameter,
-        moduleId: { type: 'string', description: 'Optional exact Module id filter.' },
-        resourceType: { type: 'string', description: 'Optional exact Resource type filter.' },
-        definitionType: { type: 'string', description: 'Optional exact Definition type filter.' },
-        queries: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 256 }, maxItems: 8 },
-        operationIds: { type: 'array', items: { type: 'string' }, maxItems: 24 },
-        includeInputSchema: { type: 'boolean', default: false },
-        includeOutputSchema: { type: 'boolean', default: false },
-        offset: { type: 'integer', minimum: 0, default: 0 },
-        limit: { type: 'integer', minimum: 1, maximum: MAX_PAGE_SIZE, default: DEFAULT_PAGE_SIZE },
-      }, additionalProperties: false,
-    },
-    execute: async (params, context) => {
+    parameters: z.toJSONSchema(exploreInputSchema, { io: 'input' }),
+    execute: async (rawParams, context) => {
+      const validated = exploreInputSchema.safeParse(rawParams)
+      if (!validated.success) return failure('invalid_tool_input', validated.error.message)
+      const params = validated.data
       const roomScope = requireRoomScope(context, deps)
       if (isToolResult(roomScope)) return roomScope
       try {
-        const view = params.view === undefined ? 'scope' : String(params.view)
-        if (!['scope', 'operations', 'all'].includes(view)) return failure('invalid_tool_input', 'view must be scope, operations, or all')
+        const view = params.view
         const target = parseTarget(params.target, deps.workspaceId)
         const moduleId = optionalFilter(params.moduleId) === undefined ? undefined : moduleIdSchema.parse(params.moduleId)
         const resourceType = optionalFilter(params.resourceType) === undefined ? undefined : resourceTypeSchema.parse(params.resourceType)
         const definitionType = optionalFilter(params.definitionType) === undefined ? undefined : definitionTypeSchema.parse(params.definitionType)
-        const operationIds = Array.isArray(params.operationIds) ? params.operationIds.map(value => capabilityIdSchema.parse(value)) : []
-        const queries = Array.isArray(params.queries) ? params.queries.map(value => String(value).trim()).filter(Boolean) : []
-        const offset = params.offset === undefined ? 0 : Number(params.offset)
-        const limit = params.limit === undefined ? DEFAULT_PAGE_SIZE : Number(params.limit)
-        if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE_SIZE) return failure('invalid_tool_input', 'Invalid pagination')
+        const { operationIds, queries, offset, limit } = params
 
         const catalogs = await loadCatalogs(context)
-        const resolved = resolveScope(roomScope, catalogs.resources.resources, catalogs.definitions.definitions)
+        const currentScope = requireRoomScope(context, deps)
+        if (isToolResult(currentScope)) return currentScope
+        const resolved = resolveScope(currentScope, catalogs.resources.resources, catalogs.definitions.definitions)
         const scopeIssue = targetInScope(target, resolved)
         if (target !== undefined && scopeIssue) return scopeIssue
         const focusedSubjects = (context.focusedSubjects ?? []).filter(subject =>
           'revisionId' in subject
-            ? resolved.definitionKeys.has(referenceKey(subject))
+            ? targetInScope({kind:'definition',ref:subject}, resolved) === undefined
             : resolved.resourceKeys.has(referenceKey(subject)))
 
         const resources = resolved.resources.filter(resource =>
-          (moduleId === undefined || resource.ref.moduleId === moduleId)
+          definitionType === undefined
+          && (target === undefined || (target.kind === 'resource' && referenceKey(resource.ref) === referenceKey(target.ref)))
+          && (moduleId === undefined || resource.ref.moduleId === moduleId)
           && (resourceType === undefined || resource.ref.type === resourceType))
         const definitions = resolved.definitions.filter(definition =>
-          (moduleId === undefined || definition.ref.moduleId === moduleId)
+          resourceType === undefined
+          && (target === undefined || (target.kind === 'definition' && referenceKey(definition.ref) === referenceKey(target.ref)))
+          && (moduleId === undefined || definition.ref.moduleId === moduleId)
           && (definitionType === undefined || definition.ref.type === definitionType))
 
         const exactIds = new Set(operationIds)
         const relevantIds = target === undefined
           ? new Set([
-              ...resolved.resources.flatMap(resource => resource.capabilityIds),
-              ...resolved.definitions.flatMap(definition => definition.capabilityIds),
-              ...(resolved.scope.kind === 'workspace'
+              ...resources.flatMap(resource => resource.capabilityIds),
+              ...definitions.flatMap(definition => definition.capabilityIds),
+              ...(resolved.scope.kind === 'workspace' && resourceType === undefined && definitionType === undefined
                 ? catalogs.operations.capabilities.filter(operation => operation.scope.kind === 'workspace').map(operation => operation.id)
                 : []),
             ])
@@ -414,42 +430,22 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
     description: 'Call discovered operations; batch only independent reads. A missing Resource or Definition target resolves only when exactly one eligible target is in scope; otherwise choose an exact discovered target.',
     usage: 'Use exact operation IDs and targets returned by workspace_explore. Reads and changes use the same call shape. Batch only independent reads; issue changes separately. Supply idempotencyKey only when the discovered operation advertises acceptsIdempotencyKey. A target Module enforces current run restrictions and safety checks.',
     returns: 'Results in request order. Each result contains either data or a structured error such as out-of-scope, restricted, stale, or invalid input.',
-    parameters: {
-      type: 'object', properties: {
-        calls: { type: 'array', minItems: 1, maxItems: MAX_READ_BATCH_SIZE, items: { type: 'object', properties: {
-          key: { type: 'string', minLength: 1, maxLength: 64 },
-          operationId: { type: 'string' },
-          target: targetParameter,
-          input: {},
-          expectedRevision: { type: 'integer', minimum: 0 },
-          idempotencyKey: { type: 'string', minLength: 1, maxLength: 256, description: 'Optional uncertain-retry key; valid only when the discovered operation advertises acceptsIdempotencyKey.' },
-        }, required: ['key', 'operationId', 'input'], additionalProperties: false } },
-      }, required: ['calls'], additionalProperties: false,
-    },
-    execute: async (params, context) => {
+    parameters: z.toJSONSchema(callInputSchema, { io: 'input' }),
+    execute: async (rawParams, context) => {
+      const validated = callInputSchema.safeParse(rawParams)
+      if (!validated.success) return failure('invalid_tool_input', validated.error.message)
+      const params = validated.data
       const roomScope = requireRoomScope(context, deps)
       if (isToolResult(roomScope)) return roomScope
-      if (!Array.isArray(params.calls) || params.calls.length < 1 || params.calls.length > MAX_READ_BATCH_SIZE) {
-        return failure('invalid_tool_input', `calls must contain 1 to ${MAX_READ_BATCH_SIZE} entries`)
-      }
       try {
-        const calls = params.calls.map((value, index) => {
-          if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`calls[${index}] must be an object`)
-          const raw = value as Record<string, unknown>
-          if (typeof raw.key !== 'string' || raw.key.trim().length === 0 || raw.key.length > 64) {
-            throw new Error(`calls[${index}].key must be a non-empty string of at most 64 characters`)
-          }
-          return {
-            key: raw.key,
-            operationId: capabilityIdSchema.parse(raw.operationId),
-            target: parseTarget(raw.target, deps.workspaceId),
-            input: raw.input,
-            expectedRevision: raw.expectedRevision,
-            idempotencyKey: raw.idempotencyKey,
-          }
-        })
+        const calls = params.calls.map(entry => ({
+          ...entry, target: parseTarget(entry.target, deps.workspaceId),
+        }))
+        if (new Set(calls.map(call => call.key)).size !== calls.length) return failure('invalid_tool_input', 'Batch keys must be unique')
         const catalogs = await loadCatalogs(context)
-        const resolved = resolveScope(roomScope, catalogs.resources.resources, catalogs.definitions.definitions)
+        const currentScope = requireRoomScope(context, deps)
+        if (isToolResult(currentScope)) return currentScope
+        const resolved = resolveScope(currentScope, catalogs.resources.resources, catalogs.definitions.definitions)
         const prepared = calls.map(entry => {
           const operation = catalogs.operations.capabilities.find(candidate => candidate.id === entry.operationId)
           return {
