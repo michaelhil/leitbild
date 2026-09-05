@@ -80,3 +80,11 @@ test('production artifact excludes development-only files', () => {
   expect(isProductKnowledgePath('apps/world/README.md')).toBe(true)
   expect(isProductKnowledgePath('.env')).toBe(false)
 })
+
+test('public routing exposes only the bundled Agents UI asset namespace', async () => {
+  const caddyfile = await Bun.file(resolve(workspaceRoot, 'apps/leitbild/deploy/Caddyfile')).text()
+  expect(caddyfile).toContain('/assets/agents/.*')
+  expect(caddyfile).not.toContain('/modules/.*')
+  expect(caddyfile).not.toContain('/biometrics/.*')
+  expect(caddyfile).not.toContain('/dist\\.css')
+})

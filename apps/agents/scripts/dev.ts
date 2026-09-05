@@ -1,11 +1,11 @@
-// Dev orchestrator — spawns the Bun watcher and the Tailwind v4 watcher as
-// children and forwards signals so Ctrl-C cleans up both.
+// Dev orchestrator — watches the server, browser bundle, and Tailwind output,
+// and forwards signals so Ctrl-C cleans up every child.
 //
 // CSS startup is no longer this script's concern: src/bootstrap.ts calls
 // ensureCssBuilt() before the server starts listening, so dist.css always
 // exists at boot regardless of how the server was launched. This script
-// just adds the watch loops on top — Bun-watch reloads the server on .ts
-// edits, tailwind-watch rebuilds dist.css on input.css edits.
+// just adds the watch loops on top. The package dev command creates the first
+// complete build before this script starts.
 //
 // If either child crashes independently (non-zero exit without our sibling
 // cleanup firing), we log loudly so the developer doesn't end up with a
@@ -27,13 +27,17 @@ const spawnChild = (cmd: string[], label: string): Bun.Subprocess => {
       // ensureCssBuilt covers the dist.css build itself; without the
       // watcher you just lose hot rebuild on input.css edits.
       const detail = label === 'tailwind'
-        ? 'dist.css will not auto-rebuild on input.css edits — restart with: bun run dev'
-        : 'restart with: bun run dev'
+        ? 'styles will not auto-rebuild — restart with: bun run dev'
+        : label === 'ui'
+          ? 'the browser bundle will not auto-rebuild — restart with: bun run dev'
+          : 'restart with: bun run dev'
       console.error(`[dev] ${label} exited cleanly (code 0). ${detail}`)
     } else {
       const detail = label === 'tailwind'
-        ? 'dist.css is now stale — the UI will keep serving the last good build until you restart dev.'
-        : 'the server is down.'
+        ? 'styles are now stale — restart dev after fixing the error.'
+        : label === 'ui'
+          ? 'the browser bundle is now stale — restart dev after fixing the error.'
+          : 'the server is down.'
       console.error(`\n[dev] ⚠  ${label} crashed with exit code ${code}. ${detail}\n[dev]   Restart with: bun run dev\n`)
     }
   })
@@ -43,6 +47,18 @@ const spawnChild = (cmd: string[], label: string): Bun.Subprocess => {
 const server = spawnChild(
   [process.execPath, '--watch', 'src/main.ts'],
   'server',
+)
+
+const ui = spawnChild(
+  [
+    process.execPath, 'build', 'src/ui/modules/app.ts',
+    '--outfile', 'src/ui/dist/app.js',
+    '--target', 'browser',
+    '--format', 'esm',
+    '--minify',
+    '--watch',
+  ],
+  'ui',
 )
 
 const css = spawnChild(
@@ -57,7 +73,7 @@ const css = spawnChild(
 
 const cleanup = (): void => {
   shuttingDown = true
-  for (const child of [server, css]) {
+  for (const child of [server, ui, css]) {
     try { child.kill() } catch { /* already exited */ }
   }
 }
@@ -66,4 +82,4 @@ process.on('SIGINT', () => { cleanup(); process.exit(130) })
 process.on('SIGTERM', () => { cleanup(); process.exit(143) })
 
 // Stay alive until both children exit.
-await Promise.all([server.exited, css.exited])
+await Promise.all([server.exited, ui.exited, css.exited])

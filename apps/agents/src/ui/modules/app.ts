@@ -880,4 +880,11 @@ void (async () => {
   window.addEventListener('packs-changed', () => { void refreshExtensions() })
   connect()
   initPromptDeck()
-})()
+})().catch((error: unknown) => {
+  console.error('[startup] Agents interface failed to initialize', error)
+  showToast(document.body, `Agents interface failed to initialize: ${error instanceof Error ? error.message : String(error)}`, {
+    type: 'error',
+    position: 'fixed',
+    durationMs: 15000,
+  })
+})

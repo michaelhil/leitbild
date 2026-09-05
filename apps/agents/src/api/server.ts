@@ -1,4 +1,4 @@
-import { normalize, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { workspaceIdSchema, type WorkspaceId } from '@leitbild/contracts'
 import type { WorkspaceRuntimeRegistry } from '../core/workspaces/runtime-registry.ts'
 import type { AgentsModuleState } from '../core/workspaces/module-state.ts'
@@ -19,6 +19,7 @@ import { createOpenAccessContext } from '../core/workspaces/request-context.ts'
 import { resolveApplicationApiPath } from './api-path.ts'
 import { handleAgentsModuleApi } from './workspace-module-api.ts'
 import type { PackManager } from '../packs/manager.ts'
+import { serveAgentsUiAsset } from './ui-assets.ts'
 
 interface ServerConfig {
   readonly registry: WorkspaceRuntimeRegistry
@@ -31,21 +32,6 @@ interface ServerConfig {
   readonly diagnostics: import('./routes/types.ts').DiagnosticsCapability
   readonly packManager: PackManager
 }
-
-const MISSING_DIST_BANNER = `/* leitbild: dist.css missing — run "bun install && bun run build:css" */
-body::before {
-  content: "⚠ leitbild: CSS build missing. Run: bun install && bun run build:css";
-  position: fixed;
-  inset: 0 0 auto 0;
-  padding: 10px 16px;
-  background: #dc2626;
-  color: #ffffff;
-  font: 600 13px/1.3 system-ui, -apple-system, sans-serif;
-  z-index: 2147483647;
-  text-align: center;
-}
-body { padding-top: 40px; }
-`
 
 const workspaceIdFromPagePath = (pathname: string): WorkspaceId | null => {
   const match = pathname.match(/^\/workspaces\/([^/]+)\/agents$/)
@@ -65,29 +51,7 @@ const serveStatic = async (pathname: string, uiPath: string): Promise<Response |
     return new Response('<h1>Leitbild</h1><p>UI unavailable.</p>', { headers: { 'Content-Type': 'text/html' } })
   }
 
-  if (pathname.startsWith('/dist/') && (pathname.endsWith('.js') || pathname.endsWith('.js.map'))) {
-    const distRoot = normalize(`${uiPath}/dist`)
-    const filePath = normalize(`${uiPath}${pathname}`)
-    if (!filePath.startsWith(`${distRoot}/`)) return new Response('Forbidden', { status: 403 })
-    const file = Bun.file(filePath)
-    if (await file.exists()) {
-      return new Response(file, {
-        headers: {
-          'Content-Type': pathname.endsWith('.map') ? 'application/json' : 'application/javascript',
-          'Cache-Control': 'public, max-age=31536000, immutable',
-        },
-      })
-    }
-  }
-
-  if (pathname === '/dist.css') {
-    const file = Bun.file(`${uiPath}/dist.css`)
-    if (await file.exists()) return new Response(file, { headers: { 'Content-Type': 'text/css', 'Cache-Control': 'no-cache' } })
-    return new Response(MISSING_DIST_BANNER, {
-      headers: { 'Content-Type': 'text/css', 'Cache-Control': 'no-store' },
-    })
-  }
-  return null
+  return await serveAgentsUiAsset(pathname, uiPath)
 }
 
 const applySecurityHeaders = (response: Response): Response => {

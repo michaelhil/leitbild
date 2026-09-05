@@ -1,5 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 
 const uiRoot = join(import.meta.dir, '..', 'src', 'ui')
 const outdir = join(uiRoot, 'dist')
@@ -13,7 +13,7 @@ const result = await Bun.build({
   target: 'browser',
   format: 'esm',
   minify: true,
-  naming: '[name]-[hash].[ext]',
+  naming: 'app.js',
 })
 
 if (!result.success) {
@@ -23,11 +23,7 @@ if (!result.success) {
 
 const entry = result.outputs.find(output => output.kind === 'entry-point' && output.path.endsWith('.js'))
 if (!entry) throw new Error('Agents UI build did not produce a JavaScript entry point')
+if (entry.path !== join(outdir, 'app.js')) throw new Error(`Unexpected Agents UI entry path: ${entry.path}`)
 
 const sourceHtml = await readFile(join(uiRoot, 'index.html'), 'utf8')
-const html = sourceHtml
-  .replace(/^\s*<script src="https:\/\/cdn\.jsdelivr\.net\/npm\/marked\/marked\.min\.js"><\/script>\s*$/m, '')
-  .replace(/^\s*<script src="https:\/\/cdn\.jsdelivr\.net\/npm\/dompurify\/dist\/purify\.min\.js"><\/script>\s*$/m, '')
-  .replace('<script type="module" src="/modules/app.ts"></script>', `<script type="module" src="/dist/${basename(entry.path)}"></script>`)
-
-await writeFile(join(outdir, 'index.html'), html)
+await writeFile(join(outdir, 'index.html'), sourceHtml)

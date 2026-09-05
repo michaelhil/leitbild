@@ -8,8 +8,8 @@
   "scripts": {
     "start": "bun run build:ui && bun run src/main.ts",
     "start:remote": "OLLAMA_URL=http://192.168.0.222:11434 bun run start",
-    "dev": "bun run scripts/dev.ts",
-    "dev:remote": "OLLAMA_URL=http://192.168.0.222:11434 bun run scripts/dev.ts",
+    "dev": "bun run build:ui && bun run scripts/dev.ts",
+    "dev:remote": "OLLAMA_URL=http://192.168.0.222:11434 bun run build:ui && bun run scripts/dev.ts",
     "build:css": "bun run tailwindcss -i src/ui/input.css -o src/ui/dist.css --minify",
     "build:ui": "bun run build:css && bun run scripts/build-ui.ts",
     "dev:server": "bun --watch src/main.ts",

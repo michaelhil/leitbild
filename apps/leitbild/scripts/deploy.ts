@@ -400,7 +400,7 @@ const main = async (): Promise<void> => {
   await run('Platform tests', ['bun', 'run', 'test'])
   await run('Build Leitbild host UI', ['bun', 'run', 'build:ui'], HOST_ROOT)
   await run('Build World UI', ['bun', 'run', 'build:ui'], WORLD_ROOT)
-  await run('Build Agents CSS', ['bun', 'run', 'build:css'], AGENTS_ROOT)
+  await run('Build Agents UI', ['bun', 'run', 'build:ui'], AGENTS_ROOT)
   const artifact = await createArtifact()
   try {
     console.log(`\nRelease: ${artifact.manifest.releaseId}`)

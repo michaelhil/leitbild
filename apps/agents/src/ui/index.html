@@ -4,8 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>leitbild</title>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
   <script>
     // Resolve theme before first paint — avoids flash of wrong theme.
     (function(){
@@ -398,15 +396,15 @@
        class rules above at equal specificity. Token palette is still set
        by the :root blocks above — those are pure CSS vars, not affected
        by load order. -->
-  <link rel="stylesheet" href="/dist.css">
+  <link rel="stylesheet" href="/assets/agents/styles.css">
 </head>
 <body class="h-screen flex flex-col">
 
   <!-- file:// self-correction.
        Recurring source of "the UI is broken" reports: editor preview panels
        (Claude Code's Launch preview, VS Code's HTML preview, double-click
-       in Finder) open this file via file://. With no server, /dist.css
-       404s, /modules/*.ts 404s, /api/* 404s — the page renders unstyled
+       in Finder) open this file via file://. With no server, UI assets and
+       /api/* 404 — the page renders unstyled
        with no rooms / no agents.
        Self-heal: if a dev server is reachable on port 3000, navigate there
        automatically (the editor's preview pane lands on the real app).
@@ -899,6 +897,6 @@
     </div>
   </dialog>
 
-  <script type="module" src="/modules/app.ts"></script>
+  <script type="module" src="/assets/agents/app.js"></script>
 </body>
 </html>
