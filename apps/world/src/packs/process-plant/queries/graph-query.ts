@@ -9,7 +9,7 @@ import { processPlantComponentBehaviorSourcePathByKind } from '../runtime/behavi
 import { compileProcessDisplay } from '../displays/compiler.ts'
 import { resolveProcessPlantDisplayDefinitionForGraph } from '../displays/catalog.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
-import { requirePlant, plantQuerySchema } from './common.ts'
+import { capabilityTargetNotFound, requirePlant, plantQuerySchema } from './common.ts'
 
 export const artifactReadQuerySchema = z.object({
   plantId: idSchema,
@@ -294,7 +294,9 @@ const displayProfilePlanFor = (
   const existingPlan = existingCache?.get(profileId)
   if (existingPlan) return existingPlan
   const profile = system.plant.graph.displayProfiles.find(candidate => candidate.id === profileId)
-  if (!profile) throw new Error(`process plant display profile not found: ${profileId}`)
+  if (!profile) return capabilityTargetNotFound(
+    `Process Plant display profile not found: ${profileId}. Discover exact profile ids with world.process-plant.plants.list.`,
+  )
   const plan = {
     profile,
     groups: profile.groups.map(group => ({
@@ -352,6 +354,7 @@ export const answerProcessPlantGraphQuery = (config: {
         linkCount: plant.graph.links.length,
         variableCount: plant.graph.variables.length,
         elapsedMs: runtime.elapsedMs(),
+        displayProfiles: plant.graph.displayProfiles.map(profile => ({ id: profile.id, label: profile.label })),
       })),
     }
   }

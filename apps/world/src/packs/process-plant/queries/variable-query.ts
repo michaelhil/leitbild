@@ -5,7 +5,7 @@ import type { VariablePath } from '../graph/index.ts'
 import { processQuantitySchema, variableDisciplineSchema, variablePathSchema } from '../graph/index.ts'
 import type { ProcessPlantVariableSnapshot } from '../runtime/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
-import { paginateProcessPlantSearch, processPlantSearchPaginationShape, requirePlant } from './common.ts'
+import { capabilityTargetNotFound, paginateProcessPlantSearch, processPlantSearchPaginationShape, requirePlant } from './common.ts'
 
 export const variablesReadQuerySchema = z.object({
   plantId: idSchema,
@@ -29,7 +29,18 @@ export const processPlantVariableQueryKinds = [
 const snapshotsFor = (
   system: ProcessPlantRuntimeInstance,
   paths: ReadonlyArray<VariablePath>,
-): ReadonlyArray<ProcessPlantVariableSnapshot> => paths.map(path => system.runtime.readVariableSnapshot(path))
+): ReadonlyArray<ProcessPlantVariableSnapshot> => paths.map(path => {
+  try {
+    return system.runtime.readVariableSnapshot(path)
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('unknown process plant variable:')) {
+      return capabilityTargetNotFound(
+        `Process Plant variable not found: ${path}. Discover exact paths with world.process-plant.variables.search.`,
+      )
+    }
+    throw error
+  }
+})
 
 const matchesSearch = (
   variable: ProcessPlantVariableSnapshot,

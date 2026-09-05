@@ -92,6 +92,8 @@ describe('process plant discovery', () => {
     const descriptions = new Map(processPlantCapabilities.map(capability => [capability.id, capability.description]))
     expect(descriptions.get('world.process-plant.catalog.list')).toContain('configuration, not a list of live Plant instances')
     expect(descriptions.get('world.process-plant.plants.list')).toContain('exact plantId values')
+    expect(descriptions.get('world.process-plant.display-profile.read')).toContain('profileId returned by plants.list')
+    expect(descriptions.get('world.process-plant.variables.read')).toContain('do not guess paths')
     expect(descriptions.get('world.process-plant.artifact.read')).toContain('complete authored Plant configuration')
     expect(descriptions.get('world.process-plant.components.search')).toContain('compact summaries')
     expect(descriptions.get('world.process-plant.variables.search')).toContain('current Plant variables')
@@ -109,6 +111,50 @@ describe('process plant discovery', () => {
     } catch (error) {
       expect(error).toMatchObject({ code: 'capability_target_not_found' })
       expect((error as Error).message).toContain('world.process-plant.plants.list')
+    }
+  })
+
+  test('lists the exact display profiles available on every live Plant', () => {
+    const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:profiles' }))
+    const runtime = createProcessPlantRuntime({ system: plant })
+    const response = answerProcessPlantQuery({
+      request: { capabilityId: 'world.process-plant.plants.list', input: {} },
+      plants: new Map([[plant.id, {
+        plant,
+        runtime,
+        ramps: createProcessPlantRampRunner({ runtime }),
+        performance: createProcessPlantRuntimePerformance(),
+      }]]),
+    }) as { plants: Array<{ id: string; displayProfiles: Array<{ id: string; label: string }> }> }
+    expect(response.plants[0]).toMatchObject({ id: plant.id })
+    expect(response.plants[0]!.displayProfiles).toEqual(expect.arrayContaining([
+      { id: 'leitbild-rail', label: 'Leitbild rail summary' },
+    ]))
+    const capability = processPlantCapabilities.find(candidate => candidate.id === 'world.process-plant.plants.list')
+    expect(capability).toBeDefined()
+    expect(capability!.output.parse(response)).toEqual(response)
+  })
+
+  test('makes unknown variable and display-profile identities discoverable caller errors', () => {
+    const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:missing-targets' }))
+    const runtime = createProcessPlantRuntime({ system: plant })
+    const plants = new Map([[plant.id, {
+      plant,
+      runtime,
+      ramps: createProcessPlantRampRunner({ runtime }),
+      performance: createProcessPlantRuntimePerformance(),
+    }]])
+    for (const request of [
+      { capabilityId: 'world.process-plant.variables.read', input: { plantId: plant.id, paths: ['missing.value'] } },
+      { capabilityId: 'world.process-plant.display-profile.read', input: { plantId: plant.id, profileId: 'missing-profile' } },
+    ]) {
+      try {
+        answerProcessPlantQuery({ request, plants })
+        throw new Error('expected the query to reject an unknown identity')
+      } catch (error) {
+        expect(error).toMatchObject({ code: 'capability_target_not_found' })
+        expect((error as Error).message).toContain('Discover exact')
+      }
     }
   })
 

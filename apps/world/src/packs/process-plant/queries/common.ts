@@ -38,14 +38,17 @@ export const failure = (
   reason: string,
 ): never => { throw new Error(reason) }
 
+export const capabilityTargetNotFound = (message: string): never => {
+  throw Object.assign(new Error(message), { code: 'capability_target_not_found' as const })
+}
+
 export const requirePlant = (
   plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>,
   plantId: string,
 ): ProcessPlantRuntimeInstance => {
   const plant = plants.get(plantId)
-  if (!plant) throw Object.assign(
-    new Error(`Process Plant not found: ${plantId}. Discover live Plant identities with world.process-plant.plants.list.`),
-    { code: 'capability_target_not_found' as const },
+  if (!plant) return capabilityTargetNotFound(
+    `Process Plant not found: ${plantId}. Discover live Plant identities with world.process-plant.plants.list.`,
   )
   return plant
 }
