@@ -276,15 +276,23 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         const offset = params.offset === undefined ? 0 : Number(params.offset)
         const limit = params.limit === undefined ? DEFAULT_DISCOVERY_PAGE_SIZE : Number(params.limit)
         if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > MAX_DISCOVERY_PAGE_SIZE) return failure('invalid_tool_input', 'Invalid pagination')
-        const [definitionResponse, resourceResponse] = await Promise.all([
+        const roomResourceRequest = scope === 'current' && context.roomId !== undefined && moduleId !== undefined && moduleId !== 'agents'
+          ? getJson(fetchImpl, catalogPath(workspacePath, 'resources', 'agents'), context.signal)
+          : Promise.resolve<Response | null>(null)
+        const [definitionResponse, resourceResponse, roomResourceResponse] = await Promise.all([
           getJson(fetchImpl, catalogPath(workspacePath, 'definitions', moduleId), context.signal),
           getJson(fetchImpl, catalogPath(workspacePath, 'resources', moduleId), context.signal),
+          roomResourceRequest,
         ])
         if (!definitionResponse.ok) return await readHostError(definitionResponse)
         if (!resourceResponse.ok) return await readHostError(resourceResponse)
+        if (roomResourceResponse !== null && !roomResourceResponse.ok) return await readHostError(roomResourceResponse)
         const definitionCatalog = workspaceDefinitionCatalogSchema.parse(await definitionResponse.json())
         const resourceCatalog = workspaceResourceCatalogSchema.parse(await resourceResponse.json())
-        const currentRoom = resourceCatalog.resources.find(resource => resource.ref.type === 'agents.room' && resource.ref.id === context.roomId) ?? null
+        const roomResources = roomResourceResponse === null
+          ? resourceCatalog.resources
+          : workspaceResourceCatalogSchema.parse(await roomResourceResponse.json()).resources
+        const currentRoom = roomResources.find(resource => resource.ref.type === 'agents.room' && resource.ref.id === context.roomId) ?? null
         const currentKeys = new Set<string>([
           ...(context.focusedSubjects ?? []).map(referenceKey),
           ...(currentRoom?.links ?? [])

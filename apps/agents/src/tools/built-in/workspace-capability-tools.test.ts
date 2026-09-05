@@ -110,8 +110,7 @@ describe('Workspace Capability tools', () => {
     const requests: Request[] = []
     const tools = create({ linked: true, requests })
     await tools[1]!.execute({ moduleId, queries: ['live state'] }, { callerId: 'agent', callerName: 'Analyst', roomId: 'room' })
-    expect(requests.filter(request => ['capabilities', 'definitions', 'resources'].some(kind => new URL(request.url).pathname.endsWith(`/${kind}`))))
-      .toHaveLength(3)
+    expect(requests).toHaveLength(3)
     expect(requests.every(request => new URL(request.url).searchParams.get('moduleId') === moduleId)).toBe(true)
   })
 
