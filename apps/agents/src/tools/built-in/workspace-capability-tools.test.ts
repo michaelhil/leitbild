@@ -22,15 +22,16 @@ const target = { moduleId, type: resourceType, id: resourceId }
 const catalogFetch = (requests: Request[]): typeof fetch => (async (input, init) => {
   const request = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
   requests.push(request)
-  if (request.url.endsWith('/resources')) return Response.json({
+  const pathname = new URL(request.url).pathname
+  if (pathname.endsWith('/resources')) return Response.json({
     workspaceId, modules: [{ moduleId, status: 'ready' }], resources: [{
       ref: resource, title: 'Run 01', capabilityIds: [capabilityId, writeCapabilityId], links: [], summary: [], observedAt: new Date().toISOString(),
     }, {
       ref: family, title: 'Run family', capabilityIds: [], links: [{ rel: 'contains', ref: resource }], summary: [], observedAt: new Date().toISOString(),
     }],
   })
-  if (request.url.endsWith('/definitions')) return Response.json({ workspaceId, modules: [{ moduleId, status: 'ready' }], definitions: [] })
-  if (request.url.endsWith('/capabilities')) return Response.json({
+  if (pathname.endsWith('/definitions')) return Response.json({ workspaceId, modules: [{ moduleId, status: 'ready' }], definitions: [] })
+  if (pathname.endsWith('/capabilities')) return Response.json({
     workspaceId, modules: [{ moduleId, status: 'ready' }], capabilities: [{
       id: capabilityId, moduleId, kind: 'query', scope: { kind: 'resource', resourceType }, title: 'Read Run', description: 'Reads live simulation state.', risk: 'read', idempotent: true, inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
     }, {
@@ -84,7 +85,7 @@ describe('Workspace Capability tools', () => {
     const broad = await tools[1]!.execute({ resource: target, queries: ['live state'] }, context)
     expect(broad.success).toBe(true)
     const broadMatch = (broad.data as { capabilities: Array<Record<string, unknown> & { id: string }> }).capabilities.find(item => item.id === capabilityId)!
-    expect(broadMatch).toMatchObject({ id: capabilityId, granted: true, matchedQueries: ['live state'] })
+    expect(broadMatch).toMatchObject({ id: capabilityId, authorized: true, applicable: true, callable: true, matchedQueries: ['live state'] })
     expect(broadMatch.inputSchema).toBeUndefined()
     const exact = await tools[1]!.execute({ resource: target, capabilityIds: [capabilityId], includeOutputSchema: true }, context)
     expect(exact).toMatchObject({ success: true, data: { capabilities: [{ inputSchema: { type: 'object' }, outputSchema: { type: 'object' } }] } })
@@ -103,6 +104,15 @@ describe('Workspace Capability tools', () => {
 
     const partialWildcard = await tools[1]!.execute({ resource: { moduleId: 'world', type: 'simulation-run', id: '*' }, queries: ['simulation state'], risk: 'read', kind: 'query' }, context)
     expect(partialWildcard).toMatchObject({ success: true, data: { capabilities: [{ id: capabilityId }] } })
+  })
+
+  test('pushes exact Module filters to the Workspace Host', async () => {
+    const requests: Request[] = []
+    const tools = create({ linked: true, requests })
+    await tools[1]!.execute({ moduleId, queries: ['live state'] }, { callerId: 'agent', callerName: 'Analyst', roomId: 'room' })
+    expect(requests.filter(request => ['capabilities', 'definitions', 'resources'].some(kind => new URL(request.url).pathname.endsWith(`/${kind}`))))
+      .toHaveLength(3)
+    expect(requests.every(request => new URL(request.url).searchParams.get('moduleId') === moduleId)).toBe(true)
   })
 
   test('semantic read grant rejects missing Room, wrong target, writes, and stale Capabilities with distinct reasons', async () => {
@@ -138,5 +148,20 @@ describe('Workspace Capability tools', () => {
     const tools = create({ exact: true })
     const result = await tools[2]!.execute({ calls: [{ key: 'read', capabilityId, resource: target, input: {} }] }, { callerId: 'agent', callerName: 'Analyst' })
     expect(result).toMatchObject({ success: true, data: { results: [{ key: 'read', success: true, data: { state: 'running' } }] } })
+  })
+
+  test('exact authority never bypasses Capability target applicability', async () => {
+    const tools = create({ exact: true })
+    const noTarget = await tools[2]!.execute(
+      { calls: [{ key: 'read', capabilityId, input: {} }] },
+      { callerId: 'agent', callerName: 'Analyst' },
+    )
+    expect(noTarget).toMatchObject({ success: true, data: { results: [{ error: expect.stringContaining('resource_required') }] } })
+
+    const missingTarget = await tools[2]!.execute(
+      { calls: [{ key: 'read', capabilityId, resource: { ...target, id: 'missing' }, input: {} }] },
+      { callerId: 'agent', callerName: 'Analyst' },
+    )
+    expect(missingTarget).toMatchObject({ success: true, data: { results: [{ error: expect.stringContaining('resource_not_found') }] } })
   })
 })

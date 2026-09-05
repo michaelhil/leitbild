@@ -3,6 +3,7 @@ import {
   accessContextSchema,
   capabilityIdSchema,
   coreModuleIds,
+  moduleIdSchema,
   moduleRegistrationSchema,
   newRequestId,
   type ModuleId,
@@ -181,6 +182,18 @@ describe('Leitbild Workspace Host', () => {
     )
     expect(result).toEqual({ result: { resourceId: 'run-01', input: { include: 'summary' } } })
     expect(modules.every(item => item.state.manifestRequests === 1)).toBe(true)
+    store.close()
+  })
+
+  test('queries one Module when discovery supplies an exact Module filter', async () => {
+    const { host, store } = createFixture()
+    const workspace = await host.create({ name: null })
+    const agentsId = moduleIdSchema.parse('agents')
+    const catalog = await host.capabilities(workspace.id, agentsId)
+    expect(catalog.modules.map(item => item.moduleId)).toEqual([agentsId])
+    expect(catalog.capabilities.map(item => item.moduleId)).toEqual([agentsId])
+    expect((await host.resources(workspace.id, agentsId)).modules.map(item => item.moduleId)).toEqual([agentsId])
+    expect((await host.definitions(workspace.id, agentsId)).modules.map(item => item.moduleId)).toEqual([agentsId])
     store.close()
   })
 

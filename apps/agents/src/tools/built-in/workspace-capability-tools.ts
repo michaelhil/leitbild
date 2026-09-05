@@ -11,6 +11,7 @@ import {
   workspaceDefinitionCatalogSchema,
   workspaceResourceCatalogSchema,
   type ModuleCapabilityDescriptor,
+  type ModuleDefinitionDescriptor,
   type ModuleResourceDescriptor,
   type ToolGrant,
   type WorkspaceId,
@@ -85,18 +86,25 @@ const getJson = async (fetchImpl: typeof fetch, url: string, signal?: AbortSigna
 
 type Catalogs = {
   capabilities: ReturnType<typeof workspaceCapabilityCatalogSchema.parse>
+  definitions: ReturnType<typeof workspaceDefinitionCatalogSchema.parse>
   resources: ReturnType<typeof workspaceResourceCatalogSchema.parse>
 }
 
-const readCatalogs = async (fetchImpl: typeof fetch, workspacePath: string, signal?: AbortSignal): Promise<Catalogs | ToolResult> => {
-  const [capabilityResponse, resourceResponse] = await Promise.all([
-    getJson(fetchImpl, `${workspacePath}/capabilities`, signal),
-    getJson(fetchImpl, `${workspacePath}/resources`, signal),
+const catalogPath = (workspacePath: string, kind: 'capabilities' | 'definitions' | 'resources', moduleId?: string): string =>
+  `${workspacePath}/${kind}${moduleId === undefined ? '' : `?moduleId=${encodeURIComponent(moduleId)}`}`
+
+const readCatalogs = async (fetchImpl: typeof fetch, workspacePath: string, signal?: AbortSignal, moduleId?: string): Promise<Catalogs | ToolResult> => {
+  const [capabilityResponse, definitionResponse, resourceResponse] = await Promise.all([
+    getJson(fetchImpl, catalogPath(workspacePath, 'capabilities', moduleId), signal),
+    getJson(fetchImpl, catalogPath(workspacePath, 'definitions', moduleId), signal),
+    getJson(fetchImpl, catalogPath(workspacePath, 'resources', moduleId), signal),
   ])
   if (!capabilityResponse.ok) return await readHostError(capabilityResponse)
+  if (!definitionResponse.ok) return await readHostError(definitionResponse)
   if (!resourceResponse.ok) return await readHostError(resourceResponse)
   return {
     capabilities: workspaceCapabilityCatalogSchema.parse(await capabilityResponse.json()),
+    definitions: workspaceDefinitionCatalogSchema.parse(await definitionResponse.json()),
     resources: workspaceResourceCatalogSchema.parse(await resourceResponse.json()),
   }
 }
@@ -116,6 +124,27 @@ const parseResource = (value: unknown, workspaceId: WorkspaceId): WorkspaceResou
     moduleId: moduleIdSchema.parse(raw.moduleId),
     type: resourceTypeSchema.parse(raw.type),
     id: resourceIdSchema.parse(raw.id),
+  }
+}
+
+type DefinitionTarget = {
+  readonly workspaceId: WorkspaceId
+  readonly moduleId: ReturnType<typeof moduleIdSchema.parse>
+  readonly type: ReturnType<typeof definitionTypeSchema.parse>
+  readonly id: ReturnType<typeof definitionIdSchema.parse>
+  readonly revisionId: ReturnType<typeof definitionRevisionIdSchema.parse>
+}
+
+const parseDefinition = (value: unknown, workspaceId: WorkspaceId): DefinitionTarget | undefined => {
+  if (value === undefined) return undefined
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('definition must be an object')
+  const raw = value as Record<string, unknown>
+  return {
+    workspaceId,
+    moduleId: moduleIdSchema.parse(raw.moduleId),
+    type: definitionTypeSchema.parse(raw.type),
+    id: definitionIdSchema.parse(raw.id),
+    revisionId: definitionRevisionIdSchema.parse(raw.revisionId),
   }
 }
 
@@ -150,9 +179,8 @@ const selectedSubjectReferences = (
   return members.filter(member => !excluded.has(referenceKey(member)))
 }
 
-const authorizationFailure = (
+const authorityFailure = (
   capability: ModuleCapabilityDescriptor | undefined,
-  resourceDescriptor: ModuleResourceDescriptor | undefined,
   resource: WorkspaceResourceReference | undefined,
   grants: ReadonlyArray<ToolGrant>,
   context: ToolContext,
@@ -169,11 +197,44 @@ const authorizationFailure = (
   if (!resource || !selected.some(candidate => sameResource(candidate, resource))) {
     return failure('target_not_selected', 'The requested Resource is not selected for the current Room', { selection, requestedResource: resource, resolvedSubjects: selected })
   }
-  if (!resourceDescriptor || !resourceDescriptor.capabilityIds.includes(capability.id)) {
-    return failure('capability_not_advertised', 'The linked Resource does not advertise this Capability', { capabilityId: capability.id })
+  return undefined
+}
+
+const applicabilityFailure = (
+  capability: ModuleCapabilityDescriptor | undefined,
+  resourceDescriptor: ModuleResourceDescriptor | undefined,
+  resource: WorkspaceResourceReference | undefined,
+  definitionDescriptor: ModuleDefinitionDescriptor | undefined,
+  definition: DefinitionTarget | undefined,
+): ToolResult | undefined => {
+  if (!capability) return failure('capability_not_advertised', 'The Workspace does not advertise this Capability')
+  if (capability.scope.kind === 'workspace') {
+    if (resource || definition) return failure('capability_scope_mismatch', 'This Workspace Capability does not accept a Resource or Definition target')
+    return undefined
   }
-  if (capability.scope.kind !== 'resource' || capability.scope.resourceType !== resource.type) {
-    return failure('capability_scope_mismatch', 'The Capability is not scoped to the requested Resource type')
+  if (capability.scope.kind === 'resource') {
+    if (!resource) return failure('resource_required', 'This Capability requires an exact Resource target')
+    if (definition) return failure('capability_scope_mismatch', 'A Resource Capability cannot target a Definition')
+    if (!resourceDescriptor) return failure('resource_not_found', 'The target Resource is not advertised by the Workspace')
+    if (!resourceDescriptor.capabilityIds.includes(capability.id)) {
+      return failure('capability_not_advertised', 'The target Resource does not advertise this Capability', { capabilityId: capability.id })
+    }
+    if (capability.scope.resourceType !== resource.type) {
+      return failure('capability_scope_mismatch', 'The Capability does not apply to this Resource type')
+    }
+    return undefined
+  }
+  if (!definition) return failure('definition_required', 'This Capability requires an exact Definition revision target')
+  if (resource) return failure('capability_scope_mismatch', 'A Definition Capability cannot target a Resource')
+  if (!definitionDescriptor) return failure('definition_not_found', 'The target Definition is not advertised by the Workspace')
+  if (definitionDescriptor.currentRevisionId !== definition.revisionId) {
+    return failure('definition_revision_not_found', 'The requested Definition revision is not current or discoverable')
+  }
+  if (!definitionDescriptor.capabilityIds.includes(capability.id)) {
+    return failure('capability_not_advertised', 'The target Definition does not advertise this Capability', { capabilityId: capability.id })
+  }
+  if (capability.scope.definitionType !== definition.type) {
+    return failure('capability_scope_mismatch', 'The Capability does not apply to this Definition type')
   }
   return undefined
 }
@@ -216,8 +277,8 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         const limit = params.limit === undefined ? DEFAULT_DISCOVERY_PAGE_SIZE : Number(params.limit)
         if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > MAX_DISCOVERY_PAGE_SIZE) return failure('invalid_tool_input', 'Invalid pagination')
         const [definitionResponse, resourceResponse] = await Promise.all([
-          getJson(fetchImpl, `${workspacePath}/definitions`, context.signal),
-          getJson(fetchImpl, `${workspacePath}/resources`, context.signal),
+          getJson(fetchImpl, catalogPath(workspacePath, 'definitions', moduleId), context.signal),
+          getJson(fetchImpl, catalogPath(workspacePath, 'resources', moduleId), context.signal),
         ])
         if (!definitionResponse.ok) return await readHostError(definitionResponse)
         if (!resourceResponse.ok) return await readHostError(resourceResponse)
@@ -262,9 +323,9 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
 
   const capabilities: Tool = {
     name: 'workspace_capabilities',
-    description: 'Search Capability descriptions or retrieve exact callable schemas for a selected Resource.',
-    usage: 'Supply natural-language queries for broad discovery or capabilityIds for exact lookup. If both are supplied, results matching either are returned. Output schemas are returned only for exact requested IDs and only when granted.',
-    returns: 'Capability descriptors with grant state, matched queries, totals, and pagination metadata.',
+    description: 'Search Capability descriptions or retrieve exact callable schemas, with authorization and target applicability reported separately.',
+    usage: 'Supply natural-language queries for broad discovery or capabilityIds for exact lookup. Add an exact Resource when checking whether a Capability applies there. Authorization answers what the Agent may do; applicability answers whether the Capability fits the supplied target.',
+    returns: 'Capability descriptors with authorized, applicable, callable, matched queries, totals, and pagination metadata.',
     parameters: {
       type: 'object', properties: {
         resource: { type: 'object', description: 'Optional exact Resource selector. Omit it to search all Resources. Any wildcard field makes the search unscoped; only a complete exact identity enables Resource-specific grant and schema resolution.', properties: { moduleId: { type: 'string' }, type: { type: 'string' }, id: { type: 'string' } }, required: ['moduleId', 'type', 'id'], additionalProperties: false },
@@ -287,7 +348,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         const offset = params.offset === undefined ? 0 : Number(params.offset)
         const limit = params.limit === undefined ? DEFAULT_DISCOVERY_PAGE_SIZE : Number(params.limit)
         if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > MAX_DISCOVERY_PAGE_SIZE) return failure('invalid_tool_input', 'Invalid pagination')
-        const catalogs = await readCatalogs(fetchImpl, workspacePath, context.signal)
+        const catalogs = await readCatalogs(fetchImpl, workspacePath, context.signal, moduleId)
         if ('success' in catalogs) return catalogs
         const target = resource ? catalogs.resources.resources.find(item => referenceKey(item.ref) === referenceKey(resource)) : undefined
         const exact = new Set(ids)
@@ -305,13 +366,14 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
             left.id.localeCompare(right.id))
         const page = filtered.slice(offset, offset + limit).map(capability => {
           const { inputSchema, outputSchema, ...compact } = capability
-          const granted = authorizationFailure(capability, target, resource, grants, context, deps, catalogs.resources.resources) === undefined
+          const authorized = authorityFailure(capability, resource, grants, context, deps, catalogs.resources.resources) === undefined
+          const applicable = applicabilityFailure(capability, target, resource, undefined, undefined) === undefined
           const exactMatch = exact.has(capability.id)
           return {
-            ...compact, granted,
+            ...compact, authorized, applicable, callable: authorized && applicable,
             ...(queries.length > 0 ? { matchedQueries: queries.filter(query => textMatchScore(capability, query) > 0) } : {}),
-            ...(granted && exactMatch ? { inputSchema } : {}),
-            ...(granted && exactMatch && params.includeOutputSchema === true ? { outputSchema } : {}),
+            ...(authorized && exactMatch ? { inputSchema } : {}),
+            ...(authorized && exactMatch && params.includeOutputSchema === true ? { outputSchema } : {}),
           }
         })
         return { success: true, data: { workspaceId: deps.workspaceId, modules: catalogs.capabilities.modules, total: filtered.length, offset, returned: page.length, hasMore: offset + page.length < filtered.length, capabilities: page } }
@@ -350,18 +412,20 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
           const capability = catalogs.capabilities.capabilities.find(item => item.id === capabilityId)
           const resource = parseResource(raw.resource, deps.workspaceId)
           const resourceDescriptor = resource ? catalogs.resources.resources.find(item => referenceKey(item.ref) === referenceKey(resource)) : undefined
-          let definition
-          if (raw.definition !== undefined) {
-            if (!raw.definition || typeof raw.definition !== 'object' || Array.isArray(raw.definition)) throw new Error(`calls[${index}].definition must be an object`)
-            const value = raw.definition as Record<string, unknown>
-            definition = { workspaceId: deps.workspaceId, moduleId: moduleIdSchema.parse(value.moduleId), type: definitionTypeSchema.parse(value.type), id: definitionIdSchema.parse(value.id), revisionId: definitionRevisionIdSchema.parse(value.revisionId) }
-          }
+          const definition = parseDefinition(raw.definition, deps.workspaceId)
+          const definitionDescriptor = definition
+            ? catalogs.definitions.definitions.find(item =>
+                item.ref.moduleId === definition.moduleId
+                && item.ref.type === definition.type
+                && item.ref.id === definition.id)
+            : undefined
           if (definition && resource) throw new Error(`calls[${index}] cannot contain both definition and resource`)
-          return { key: String(raw.key), capabilityId, capability, resource, resourceDescriptor, definition, input: raw.input, expectedRevision: raw.expectedRevision, idempotencyKey: raw.idempotencyKey }
+          return { key: String(raw.key), capabilityId, capability, resource, resourceDescriptor, definition, definitionDescriptor, input: raw.input, expectedRevision: raw.expectedRevision, idempotencyKey: raw.idempotencyKey }
         })
         if (parsed.length > 1 && parsed.some(call => call.capability?.risk !== 'read')) return failure('batch_requires_read_capabilities', 'Only read Capabilities may be batched')
         const outcomes = await Promise.all(parsed.map(async call => {
-          const denied = authorizationFailure(call.capability, call.resourceDescriptor, call.resource, grants, context, deps, catalogs.resources.resources)
+          const denied = authorityFailure(call.capability, call.resource, grants, context, deps, catalogs.resources.resources)
+            ?? applicabilityFailure(call.capability, call.resourceDescriptor, call.resource, call.definitionDescriptor, call.definition)
           if (denied) return { key: call.key, capabilityId: call.capabilityId, success: false, error: denied.error, details: denied.data }
           try {
             const response = await fetchImpl(`${workspacePath}/capabilities/${encodeURIComponent(call.capabilityId)}/invoke`, {

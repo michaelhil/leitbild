@@ -130,17 +130,20 @@ export const createWorkspaceHostServer = (config: {
         const resourcesMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/resources$/)
         if (resourcesMatch && request.method === 'GET') {
           const workspaceId = workspaceIdSchema.parse(decodeURIComponent(resourcesMatch[1] ?? ''))
-          return Response.json(await config.host.resources(workspaceId))
+          const moduleId = url.searchParams.has('moduleId') ? moduleIdSchema.parse(url.searchParams.get('moduleId')) : undefined
+          return Response.json(await config.host.resources(workspaceId, moduleId))
         }
         const definitionsMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/definitions$/)
         if (definitionsMatch && request.method === 'GET') {
           const workspaceId = workspaceIdSchema.parse(decodeURIComponent(definitionsMatch[1] ?? ''))
-          return Response.json(await config.host.definitions(workspaceId))
+          const moduleId = url.searchParams.has('moduleId') ? moduleIdSchema.parse(url.searchParams.get('moduleId')) : undefined
+          return Response.json(await config.host.definitions(workspaceId, moduleId))
         }
         const capabilitiesMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/capabilities$/)
         if (capabilitiesMatch && request.method === 'GET') {
           const workspaceId = workspaceIdSchema.parse(decodeURIComponent(capabilitiesMatch[1] ?? ''))
-          return Response.json(await config.host.capabilities(workspaceId))
+          const moduleId = url.searchParams.has('moduleId') ? moduleIdSchema.parse(url.searchParams.get('moduleId')) : undefined
+          return Response.json(await config.host.capabilities(workspaceId, moduleId))
         }
 
         const moduleMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/modules\/([^/]+)(\/retry)?$/)
