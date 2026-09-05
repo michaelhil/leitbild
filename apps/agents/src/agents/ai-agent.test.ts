@@ -268,20 +268,16 @@ describe('AI Agent — unit tests', () => {
     expect(room.hasMember(agent.id)).toBe(false) // join() doesn't call addMember itself
   })
 
-  test('join generates summary for rooms with history', async () => {
+  test('join reuses existing room history without an LLM call', async () => {
     const room = makeRoom('room-1', 'Active Room')
     room.post({ senderId: 'alice', content: 'We should build a pipeline', type: 'chat' })
     room.post({ senderId: 'bob', content: 'I agree', type: 'chat' })
 
-    let capturedMessages: ReadonlyArray<{ role: string; content: string }> = []
+    let chatCalled = false
     const provider: LLMProvider = {
-      chat: async (req) => {
-        capturedMessages = req.messages
-        return {
-          content: 'Summary: [alice] proposed building a pipeline. [bob] agreed.',
-          generationMs: 10,
-          tokensUsed: { prompt: 10, completion: 5 },
-        }
+      chat: async () => {
+        chatCalled = true
+        return { content: '', generationMs: 10, tokensUsed: { prompt: 0, completion: 0 } }
       },
       models: async () => [],
     }
@@ -289,14 +285,14 @@ describe('AI Agent — unit tests', () => {
     const agent = createAIAgent(makeConfig(), provider, () => {})
     await agent.join(room)
 
-    // Summary LLM call should have been made
-    expect(capturedMessages.length).toBeGreaterThan(0)
-    const userMsg = capturedMessages.find(m => m.role === 'user')
-    expect(userMsg?.content).toContain('Active Room')
-    expect(userMsg?.content).toContain('pipeline')
+    expect(chatCalled).toBe(false)
+    expect(agent.getHistory?.(room.profile.id).map(message => message.content)).toEqual([
+      'We should build a pipeline',
+      'I agree',
+    ])
   })
 
-  test('join does not generate summary for empty rooms', async () => {
+  test('join does not call the LLM for empty rooms', async () => {
     let chatCalled = false
     const trackingProvider: LLMProvider = {
       chat: async () => {
@@ -426,39 +422,34 @@ describe('[NEW] message tagging', () => {
   })
 
   test('history messages are NOT tagged [NEW]', async () => {
-    // Build a room with prior messages, join the agent (generates summary),
+    // Build a room with prior messages, join the agent locally,
     // then receive a new message. Prior messages appear as history; new is [NEW].
     const room = makeRoom('room-1', 'Test Room')
     room.post({ senderId: 'bob', content: 'Old message 1', type: 'chat' })
     room.post({ senderId: 'charlie', content: 'Old message 2', type: 'chat' })
 
-    let callCount = 0
     let capturedMessages: ReadonlyArray<{ role: string; content: string }> = []
     const provider: LLMProvider = {
       chat: async (req) => {
-        callCount++
         capturedMessages = req.messages
-        if (callCount === 1) {
-          // First call: join summary generation
-          return { content: 'Summary: bob and charlie discussed topics.', generationMs: 10, tokensUsed: { prompt: 10, completion: 5 } }
-        }
-        // Second call: agent evaluation triggered by new message
         return { content: '', generationMs: 10, tokensUsed: { prompt: 10, completion: 5 }, toolCalls: makePassToolCalls('done') }
       },
       models: async () => [],
     }
 
     const agent = createAIAgent(makeConfig(), provider, () => {})
-    await agent.join(room)  // initialises RoomContext, generates summary into incoming
+    await agent.join(room)
 
-    // Now receive a new message — summary is already in incoming, new message added
+    // Now receive a new message. Existing Room messages are history; only the
+    // new message is marked as fresh.
     agent.receive(makeMessage({ senderId: 'alice', roomId: 'room-1', content: 'New message' }))
     await agent.whenIdle()
 
-    // The summary (from join) should be in incoming as [NEW]; new message also [NEW]
-    // Neither should appear without [NEW] prefix since both are fresh after join
     const userMsgs = capturedMessages.filter(m => m.role === 'user')
     expect(userMsgs.length).toBeGreaterThan(0)
+
+    expect(userMsgs.find(m => m.content.includes('Old message 1'))?.content).not.toContain('[NEW]')
+    expect(userMsgs.find(m => m.content.includes('Old message 2'))?.content).not.toContain('[NEW]')
 
     // New message SHOULD have [NEW]
     const newMsgs = userMsgs.filter(m => m.content.includes('New message'))

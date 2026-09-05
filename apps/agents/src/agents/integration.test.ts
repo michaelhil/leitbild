@@ -340,7 +340,7 @@ describe('Integration — Full message lifecycle', () => {
     expect(bTriggeredByA).toBe(true)
   })
 
-  test('join generates summary and includes it as [NEW] in first context', async () => {
+  test('join exposes canonical room history without an onboarding model call', async () => {
     const { rooms, team, routeMessage } = createTestSystem()
 
     const room = rooms.createRoom({ name: 'Active',  createdBy: SYSTEM_SENDER_ID })
@@ -354,11 +354,6 @@ describe('Integration — Full message lifecycle', () => {
     const provider: LLMProvider = {
       chat: async (req) => {
         callCount++
-        if (callCount === 1) {
-          // This is the join summary call
-          return { content: 'Summary: React vs Vue debate.', generationMs: 5, tokensUsed: { prompt: 10, completion: 5 } }
-        }
-        // Subsequent calls — capture context
         if (!firstContextCapture) firstContextCapture = req.messages
         return { content: '', generationMs: 10, tokensUsed: { prompt: 10, completion: 5 }, toolCalls: [{ function: { name: 'pass', arguments: { reason: 'done' } } }] }
       },
@@ -382,14 +377,13 @@ describe('Integration — Full message lifecycle', () => {
 
     await agent.whenIdle()
 
-    expect(callCount).toBeGreaterThanOrEqual(2) // summary + eval
+    expect(callCount).toBe(1)
 
-    // The room_summary should appear in context
     expect(firstContextCapture).toBeDefined()
     const userMsgs = firstContextCapture!.filter(m => m.role === 'user')
-    // Summary should be tagged [NEW] since it hasn't been processed
-    const summaryMsg = userMsgs.find(m => m.content.includes('Summary:') && m.content.includes('[NEW]'))
-    expect(summaryMsg).toBeDefined()
+    expect(userMsgs.find(m => m.content.includes('We should use React'))?.content).not.toContain('[NEW]')
+    expect(userMsgs.find(m => m.content.includes('I prefer Vue'))?.content).not.toContain('[NEW]')
+    expect(userMsgs.find(m => m.content.includes('Welcome!'))?.content).toContain('[NEW]')
   })
 
   test('pass flushes to history — second eval sees prior message as context not [NEW]', async () => {

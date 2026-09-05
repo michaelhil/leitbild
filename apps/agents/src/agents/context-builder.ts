@@ -1,13 +1,12 @@
 // ============================================================================
-// Context Builder — Assembles LLM context from AgentHistory.
+// Context Builder — Assembles LLM context from an Agent's recent Room view.
 //
 // Two-buffer architecture: room-sourced history (old) + incoming buffer (new).
 // Messages in incoming are tagged [NEW] so the LLM can prioritise them.
 // After evaluation, flushIncoming moves processed messages out of incoming
 // and appends them to the relevant RoomContext in AgentHistory.
 //
-// Full history is preserved in AgentHistory; only a historyLimit-sized
-// window is passed to the LLM on each context build.
+// Full history belongs to Room; the Agent view is only an evaluation cache.
 //
 // --- Section assembly order (system prompt) ---
 // 1. RoomDirectory prompt + agent persona

@@ -4,8 +4,9 @@
 // Orchestrates context building (context-builder.ts) and LLM evaluation
 // (evaluation.ts) with message buffering and concurrency control.
 //
-// History architecture: a single AgentHistory struct owns all per-agent state.
-//   - rooms: per-room processed history + room profile + last-active timestamp
+// History architecture: a single AgentHistory struct owns the Agent's bounded
+// context view, while Room remains the canonical transcript owner.
+//   - rooms: recent per-room context + room profile + last-active timestamp
 //   - incoming: shared buffer of unprocessed messages across all rooms
 //   - agentProfiles: knowledge about other agents in the system
 //
@@ -29,7 +30,7 @@ import type { ToolDefinition, ToolExecutor } from '../core/types/tool.ts'
 import { DEFAULTS, SYSTEM_SENDER_ID } from '../core/types/constants.ts'
 import { extractAgentProfile as extractProfile } from './shared.ts'
 import { buildContext, buildSystemSections, estimateTokens, flushIncoming, type BuildContextDeps, type ContextResult } from './context-builder.ts'
-import { callLLM, evaluate, type EvalResult, type OnDecision } from './evaluation.ts'
+import { evaluate, type EvalResult, type OnDecision } from './evaluation.ts'
 import { createConcurrencyManager } from './concurrency.ts'
 import { getContextWindowSync } from '../llm/models/context-window.ts'
 import { parsePrefixedModel, isCloudProvider } from '../llm/models/parse-prefix.ts'
@@ -509,40 +510,10 @@ export const createAIAgent = (
     tryEvaluate(message.roomId)
   }
 
-  // --- LLM summarisation helper ---
-  // Used by join() to produce an onboarding summary for a new room member.
-
-  const summariseMessages = async (
-    msgs: ReadonlyArray<Message>,
-    systemPrompt: string,
-    userPrefix?: string,
-  ): Promise<string> => {
-    const text = msgs
-      .filter(m => m.type === 'chat' || m.type === 'room_summary')
-      .map(m => `[${m.senderName ?? resolveName(m.senderId)}]: ${m.content}`)
-      .join('\n')
-    if (!text) return ''
-    const userContent = userPrefix ? `${userPrefix}\n\n${text}` : text
-    // Resolve effective model — the user's preferred model may be on a dead
-    // provider, in which case the resolver picks an available fallback.
-    // Without this, joins to busy rooms produced no summary and no UI signal
-    // when the preferred provider was down.
-    const resolved = resolveEffective
-      ? resolveEffective(currentModel)
-      : { model: currentModel, fallback: false, reason: 'preferred_available' as const }
-    return callLLM(llmProvider, {
-      model: resolved.model,
-      systemPrompt,
-      messages: [{ role: 'user', content: userContent }],
-      temperature: 0.3,
-    })
-  }
-
   // --- Join ---
-  // Initialises RoomContext (profile + empty history) BEFORE any messages are
-  // delivered. Generates an LLM summary of recent room history for onboarding.
-
-  const JOIN_SUMMARY_PROMPT = `Summarize the following room discussion concisely. When referring to participants, always use the format [participantName]. Include: 1) Main topics discussed 2) Key positions held by each participant 3) Any decisions or open questions. Be brief — this summary helps a new participant catch up.`
+  // Initialises RoomContext BEFORE any messages are delivered. Joining is a
+  // local operation: the Room already owns a compressed canonical transcript,
+  // so opening an assistant must not spend an extra model call summarising it.
 
   const join = async (room: Room): Promise<void> => {
     // Initialise context — profile available here, before messages arrive.
@@ -551,37 +522,13 @@ export const createAIAgent = (
     // Context panel's room-prompt preview).
     agentHistory.rooms.set(room.profile.id, {
       get profile() { return room.profile },
-      history: [],
+      history: room.getRecent(historyLimit),
       lastActiveAt: undefined,
     })
 
     const recent = room.getRecent(historyLimit)
-    if (recent.length === 0) return
-
     for (const msg of recent) {
       extractProfile(msg, agentId, agentHistory.agentProfiles)
-    }
-
-    try {
-      const summary = await summariseMessages(
-        recent,
-        JOIN_SUMMARY_PROMPT,
-        `Room: "${room.profile.name}"\n\nRecent discussion:`,
-      )
-      if (!summary) return
-
-      const summaryMessage: Message = {
-        id: crypto.randomUUID(),
-        roomId: room.profile.id,
-        senderId: SYSTEM_SENDER_ID,
-        senderName: 'System',
-        content: summary,
-        timestamp: Date.now(),
-        type: 'room_summary',
-      }
-      agentHistory.incoming.push(summaryMessage)
-    } catch (err) {
-      console.error(`[${config.name}] Failed to generate join summary for ${room.profile.name}:`, err)
     }
   }
 

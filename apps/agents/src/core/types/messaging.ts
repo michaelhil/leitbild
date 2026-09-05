@@ -149,14 +149,13 @@ export interface AgentProfile {
   readonly generationStarted?: number
 }
 
-// === Agent History — unified per-agent state across all contexts ===
-// Single structure owned by each AI agent. Sub-fields hold per-room history.
-// The agent has full access to its complete history; only a historyLimit-sized
-// window is passed to the LLM in each context build.
+// === Agent context view — transient per-agent state ===
+// Room owns the canonical transcript. An AI Agent keeps only the recent Room
+// window it needs to build context plus currently unprocessed messages.
 
 export interface RoomContext {
   readonly profile: RoomProfile
-  history: ReadonlyArray<Message>   // all processed messages in this room (unbounded)
+  history: ReadonlyArray<Message>   // recent context window; Room is canonical
   lastActiveAt?: number             // timestamp of last flushIncoming into this context
 }
 
