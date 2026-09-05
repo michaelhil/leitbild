@@ -6,11 +6,12 @@
   "type": "module",
   "packageManager": "bun@1.4.0",
   "scripts": {
-    "start": "bun run build:css && bun run src/main.ts",
+    "start": "bun run build:ui && bun run src/main.ts",
     "start:remote": "OLLAMA_URL=http://192.168.0.222:11434 bun run start",
     "dev": "bun run scripts/dev.ts",
     "dev:remote": "OLLAMA_URL=http://192.168.0.222:11434 bun run scripts/dev.ts",
     "build:css": "bun run tailwindcss -i src/ui/input.css -o src/ui/dist.css --minify",
+    "build:ui": "bun run build:css && bun run scripts/build-ui.ts",
     "dev:server": "bun --watch src/main.ts",
     "dev:css": "bun run tailwindcss -i src/ui/input.css -o src/ui/dist.css --watch",
     "check": "tsc --noEmit && tsc --noEmit -p tsconfig.ui.json",
@@ -43,6 +44,8 @@
     "@leitbild/contracts": "workspace:*",
     "@leitbild/module-runtime": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "dompurify": "^3.4.14",
+    "marked": "^18.0.11",
     "unpdf": "^1.6.2",
     "zod": "^3.25 || ^4.0"
   }

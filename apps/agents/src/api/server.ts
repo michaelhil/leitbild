@@ -58,44 +58,24 @@ const workspaceIdFromPagePath = (pathname: string): WorkspaceId | null => {
   }
 }
 
-const serveStatic = async (pathname: string, uiPath: string, transpiler: Bun.Transpiler): Promise<Response | null> => {
+const serveStatic = async (pathname: string, uiPath: string): Promise<Response | null> => {
   if (workspaceIdFromPagePath(pathname) !== null || pathname === '/index.html') {
-    const file = Bun.file(`${uiPath}/index.html`)
-    if (await file.exists()) return new Response(file, { headers: { 'Content-Type': 'text/html' } })
+    const file = Bun.file(`${uiPath}/dist/index.html`)
+    if (await file.exists()) return new Response(file, { headers: { 'Content-Type': 'text/html', 'Cache-Control': 'no-cache' } })
     return new Response('<h1>Leitbild</h1><p>UI unavailable.</p>', { headers: { 'Content-Type': 'text/html' } })
   }
 
-  if ((pathname.startsWith('/modules/') || pathname.startsWith('/lib/')) && pathname.endsWith('.ts')) {
+  if (pathname.startsWith('/dist/') && (pathname.endsWith('.js') || pathname.endsWith('.js.map'))) {
+    const distRoot = normalize(`${uiPath}/dist`)
     const filePath = normalize(`${uiPath}${pathname}`)
-    if (!filePath.startsWith(uiPath)) return new Response('Forbidden', { status: 403 })
+    if (!filePath.startsWith(`${distRoot}/`)) return new Response('Forbidden', { status: 403 })
     const file = Bun.file(filePath)
     if (await file.exists()) {
-      return new Response(transpiler.transformSync(await file.text()), {
-        headers: { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache' },
-      })
-    }
-  }
-
-  if (pathname.startsWith('/core/') && pathname.endsWith('.ts')) {
-    const filePath = normalize(`${uiPath}/..${pathname}`)
-    const root = normalize(`${uiPath}/../core`)
-    if (!filePath.startsWith(root)) return new Response('Forbidden', { status: 403 })
-    const file = Bun.file(filePath)
-    if (await file.exists()) {
-      return new Response(transpiler.transformSync(await file.text()), {
-        headers: { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache' },
-      })
-    }
-  }
-
-  if (pathname.startsWith('/biometrics/') && pathname.endsWith('.ts')) {
-    const filePath = normalize(`${uiPath}/..${pathname}`)
-    const root = normalize(`${uiPath}/../biometrics`)
-    if (!filePath.startsWith(root)) return new Response('Forbidden', { status: 403 })
-    const file = Bun.file(filePath)
-    if (await file.exists()) {
-      return new Response(transpiler.transformSync(await file.text()), {
-        headers: { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache' },
+      return new Response(file, {
+        headers: {
+          'Content-Type': pathname.endsWith('.map') ? 'application/json' : 'application/javascript',
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        },
       })
     }
   }
@@ -122,7 +102,6 @@ export const createServer = (config: ServerConfig) => {
   const port = config.port ?? DEFAULTS.port
   const bindHost = config.bindHost ?? process.env.LEITBILD_BIND_HOST ?? '0.0.0.0'
   const uiPath = resolve(config.uiPath ?? `${import.meta.dir}/../ui`)
-  const transpiler = new Bun.Transpiler({ loader: 'ts' })
 
   const server = Bun.serve<WSData>({
     port,
@@ -190,7 +169,7 @@ export const createServer = (config: ServerConfig) => {
         ? applicationPath.workspaceId
         : pageWorkspaceId
 
-      const staticResponse = await serveStatic(pathname, uiPath, transpiler)
+      const staticResponse = await serveStatic(pathname, uiPath)
       if (staticResponse) {
         if (pageWorkspaceId !== null && !(await registry.exists(pageWorkspaceId))) {
           return secure(Response.json({ error: { code: 'workspace_not_provisioned', message: 'Leitbild is not enabled in this Workspace' } }, { status: 404 }))

@@ -138,7 +138,7 @@
     onkeydown={resizeWithKeyboard}
   ><span></span></button>{/if}
 
-  {#if agentsRoomId !== null && agentsVisible}<section class="module-pane agents-pane" class:collapsed={collapsedPane === 'agents'} aria-label="Agents room">
+  {#if agentsRoomId !== null}<section class="module-pane agents-pane" class:hidden-pane={!agentsVisible} class:collapsed={collapsedPane === 'agents'} aria-label="Agents room">
     <iframe
       bind:this={agentsFrame}
       class="module-frame active"

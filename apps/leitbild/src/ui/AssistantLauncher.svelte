@@ -61,14 +61,20 @@
 <button
   class="assistant-launch"
   class:active
+  class:busy
   type="button"
-  {disabled}
+  disabled={disabled || busy}
+  aria-busy={busy}
   aria-label={active ? 'Hide Agents' : 'Open Leitbild Assistant'}
   aria-pressed={toggle ? active : undefined}
   title={disabled ? 'Leitbild Assistant is unavailable' : active ? 'Hide Agents' : toggle ? 'Open Run Assistant' : 'Ask Leitbild Assistant'}
   onclick={() => void open()}
 >
-  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3zm6 11l.8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14z"/></svg>
+  {#if busy}
+    <svg class="assistant-spinner" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>
+  {:else}
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3zm6 11l.8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14z"/></svg>
+  {/if}
 </button>
 
 {#if !toggle}

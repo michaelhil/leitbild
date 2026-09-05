@@ -26,7 +26,7 @@
     "test": "bun run test:contracts && bun run test:module-runtime && bun run test:agents && bun run test:world && bun run test:host && bun run test:integration",
     "build:host": "bun run --cwd apps/leitbild build:ui",
     "build:world": "bun run --cwd apps/world build:ui",
-    "build:agents": "bun run --cwd apps/agents build:css",
+    "build:agents": "bun run --cwd apps/agents build:ui",
     "build": "bun run build:host && bun run build:world && bun run build:agents"
   },
   "engines": {

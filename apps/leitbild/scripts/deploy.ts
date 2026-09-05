@@ -212,7 +212,10 @@ const createArtifact = async () => {
   await mkdir(stageRoot)
   const hostEntries = await entriesFor(HOST_ROOT, 'apps/leitbild', 'host', await directoryFiles(HOST_ROOT, 'src/ui/dist'))
   const worldEntries = await entriesFor(WORLD_ROOT, 'apps/world', 'world', await directoryFiles(WORLD_ROOT, 'src/ui/dist'))
-  const agentsEntries = await entriesFor(AGENTS_ROOT, 'apps/agents', 'agents', ['src/ui/dist.css'])
+  const agentsEntries = await entriesFor(AGENTS_ROOT, 'apps/agents', 'agents', [
+    'src/ui/dist.css',
+    ...await directoryFiles(AGENTS_ROOT, 'src/ui/dist'),
+  ])
   const rootEntries: ArtifactEntry[] = ['package.json', 'bun.lock'].map(path => ({ source: join(WORKSPACE_ROOT, path), target: path }))
   const productKnowledgeEntries: ArtifactEntry[] = (await trackedFiles(WORKSPACE_ROOT))
     .filter(path => isProductKnowledgePath(path) && !isDevelopmentOnlyPath(path))

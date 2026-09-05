@@ -356,7 +356,7 @@
     url.searchParams.set('agents', response.result.resource.id)
     url.searchParams.delete('world')
     history.pushState(null, '', url)
-    await refreshResources(workspace.id)
+    void refreshResources(workspace.id).catch(cause => { refreshError = String(cause) })
   }
   const toggleRunAssistant = async (): Promise<void> => {
     if (!workspace || !selectedWorldResource || !selectedRunFamily || !assistantCapability) return
@@ -389,7 +389,12 @@
         }),
       )
       selectedAgentsRoomId = room.ref.id
-      await refreshResources(workspace.id)
+      agentsVisible = true
+      const url = new URL(location.href)
+      url.searchParams.set('agents', selectedAgentsRoomId)
+      history.replaceState(null, '', url)
+      void refreshResources(workspace.id).catch(cause => { refreshError = String(cause) })
+      return
     } else {
       const response = await request<InvocationResponse & { result: { resource: ModuleResourceDescriptor['ref']; uiPath: string; reused: boolean } }>(
         `/api/workspaces/${workspace.id}/capabilities/${encodeURIComponent(assistantCapability.id)}/invoke`,
@@ -403,7 +408,12 @@
         }),
       )
       selectedAgentsRoomId = response.result.resource.id
-      await refreshResources(workspace.id)
+      agentsVisible = true
+      const url = new URL(location.href)
+      url.searchParams.set('agents', selectedAgentsRoomId)
+      history.replaceState(null, '', url)
+      void refreshResources(workspace.id).catch(cause => { refreshError = String(cause) })
+      return
     }
     agentsVisible = true
     const url = new URL(location.href)

@@ -42,6 +42,9 @@ button, input { font: inherit; }
 .assistant-launch:hover { border-color: #8ba18d; color: white; background: #304336; }
 .assistant-launch.active { border-color: #72a8ef; color: white; background: #2f76d2; }
 .assistant-launch svg { width: 17px; height: 17px; fill: currentColor; }
+.assistant-launch.busy { cursor: wait; }
+.assistant-spinner { fill: none !important; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 34 16; animation: assistant-spin .85s linear infinite; }
+@keyframes assistant-spin { to { transform: rotate(360deg); } }
 .run-room-controls { min-width: 0; display: flex; align-items: center; gap: .35rem; }
 .run-room-controls select { width: min(180px, 18vw); min-height: 32px; padding: .35rem .5rem; border: 1px solid #526056; border-radius: 8px; color: #e8f1e6; background: #223127; }
 .run-room-controls button { min-height: 32px; padding: .35rem .55rem; border-color: #526056; color: #dce9da; background: #223127; font-size: .74rem; white-space: nowrap; }
@@ -221,6 +224,7 @@ button:disabled { opacity: .55; cursor: wait; }
 }
 .workspace-composer.dragging { cursor: col-resize; user-select: none; }
 .module-pane { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #f4f6f1; }
+.module-pane.hidden-pane { display: none; }
 .module-pane.collapsed { display: none; }
 .world-pane { background: #f4f6f1; }
 .agents-pane { background: #111; }
@@ -358,6 +362,7 @@ button:disabled { opacity: .55; cursor: wait; }
   .workspace-composer { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
   .split-handle, .reopen-handle { display: none; }
   .module-pane.collapsed { display: block; }
+  .module-pane.hidden-pane { display: none; }
 }
 
 /* Card actions are sibling controls, never nested interactive elements. */

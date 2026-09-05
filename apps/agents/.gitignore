@@ -10,4 +10,5 @@ coverage/
 
 data/
 src/ui/dist.css
+src/ui/dist/
 experiments/out/

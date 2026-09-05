@@ -1,7 +1,9 @@
 // Message rendering — a single chat/system/pass/mute/room-summary message card.
-// Handles markdown rendering via marked+DOMPurify (globals) with graceful fallback.
+// Handles markdown rendering via bundled marked + DOMPurify.
 
 import type { UIMessage, AgentInfo } from '../render/render-types.ts'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 // Import order matters: mermaid first, then map. Each module self-registers
 // its post-render processor at module-load (see ../mermaid/index.ts and
 // ../map/index.ts). Adding a new built-in inline-block type = create a new
@@ -29,29 +31,12 @@ const writeClipboard = async (text: string): Promise<boolean> => {
   }
 }
 
-// Render Markdown content safely. Falls back to textContent if libraries not loaded.
-// Post-processes mermaid code blocks into rendered diagrams.
-//
-// marked + DOMPurify are loaded via CDN script tags in index.html. The
-// graceful textContent fallback covers the brief window during page load
-// when one or both are still fetching — must NOT throw, or the page
-// bricks on slow networks.
+// Render Markdown content safely, then post-process diagrams and source links.
 const renderMarkdownContent = (el: HTMLElement, text: string): void => {
-  const w = globalThis as {
-    marked?: { parse: (src: string) => string }
-    DOMPurify?: { sanitize: (html: string) => string }
-  }
-  if (w.marked?.parse && w.DOMPurify?.sanitize) {
-    el.className += ' msg-prose'
-    el.innerHTML = w.DOMPurify.sanitize(w.marked.parse(text))
-    decorateProductSourceReferences(el)
-    for (const proc of getPostRenderProcessors()) void proc(el)
-  } else {
-    el.textContent = text
-    // Source inspection remains useful during the brief CDN-loading fallback;
-    // the decorator's bare-text path does not depend on the Markdown runtime.
-    decorateProductSourceReferences(el)
-  }
+  el.className += ' msg-prose'
+  el.innerHTML = DOMPurify.sanitize(marked.parse(text) as string)
+  decorateProductSourceReferences(el)
+  for (const proc of getPostRenderProcessors()) void proc(el)
 }
 
 export interface RenderMessageOptions {
