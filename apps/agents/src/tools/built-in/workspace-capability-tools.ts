@@ -208,12 +208,24 @@ const compactResource = (resource: ModuleResourceDescriptor) => {
   return { ...descriptor, target: { kind: 'resource', ref }, operationCount: capabilityIds.length }
 }
 
-const textMatchScore = (operation: ModuleCapabilityDescriptor, query: string): number => {
-  const terms = [...new Set(query.toLowerCase().split(/[^a-z0-9.-]+/).filter(term => term.length >= 2))]
-  const haystack = `${operation.id} ${operation.title} ${operation.description} ${operation.moduleId} ${operation.kind} ${operation.risk}`.toLowerCase()
-  const haystackTerms = new Set(haystack.split(/[^a-z0-9]+/).filter(Boolean))
-  return terms.reduce((score, term) => score + (haystackTerms.has(term) ? 1 : 0), 0)
+const textTerms = (value: string): ReadonlyArray<string> =>
+  [...new Set(value.toLowerCase().match(/[\p{L}\p{N}]+/gu)?.filter(term => term.length >= 2) ?? [])]
+
+const matchedTextTerms = (operation: ModuleCapabilityDescriptor, query: string): ReadonlyArray<string> => {
+  const haystackTerms = new Set(textTerms([
+    operation.id,
+    operation.title,
+    operation.description,
+    operation.moduleId,
+    operation.kind,
+    operation.risk,
+    ...(operation.searchTerms ?? []),
+  ].join(' ')))
+  return textTerms(query).filter(term => haystackTerms.has(term))
 }
+
+const textMatchScore = (operation: ModuleCapabilityDescriptor, query: string): number =>
+  matchedTextTerms(operation, query).length
 
 const resourceReferenceParameter = {
   type: 'object',
@@ -355,11 +367,13 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
           resources: page.filter(item => item.kind === 'resource').map(item => compactResource(item.value as ModuleResourceDescriptor)),
           operations: page.filter(item => item.kind === 'operation').map(item => {
             const operation = item.value as ModuleCapabilityDescriptor
-            const { id, inputSchema, outputSchema, ...descriptor } = operation
+            const { id, inputSchema, outputSchema, searchTerms: _searchTerms, ...descriptor } = operation
+            const matchedTerms = [...new Set(queries.flatMap(query => matchedTextTerms(operation, query)))]
             return {
               ...descriptor,
               operationId: id,
               ...(queries.length > 0 ? { matchedQueries: queries.filter(query => textMatchScore(operation, query) > 0) } : {}),
+              ...(matchedTerms.length > 0 ? { matchedTerms } : {}),
               ...(params.includeInputSchema === true ? { inputSchema } : {}),
               ...(params.includeOutputSchema === true ? { outputSchema } : {}),
             }

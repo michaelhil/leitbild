@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { z } from 'zod'
-import { idSchema } from '../../../core/model/index.ts'
+import { idSchema, objectIdSchema, type ObjectId, type OperationalObject } from '../../../core/model/index.ts'
 import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import type { CompiledPlantGraph, ComponentId, ProcessPlantDisplayField } from '../graph/index.ts'
 import { plantGraphToMermaid } from '../graph/index.ts'
@@ -342,20 +342,25 @@ const displayProfileView = (
 export const answerProcessPlantGraphQuery = (config: {
   readonly request: PackRuntimeQuery
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
+  readonly objects: ReadonlyMap<ObjectId, Pick<OperationalObject, 'id' | 'label'>>
 }): unknown | undefined => {
   if (!processPlantGraphQueryKinds.some(kind => kind === config.request.capabilityId)) return undefined
   if (config.request.capabilityId === 'world.process-plant.plants.list') {
     return {
-      plants: [...config.plants.values()].map(({ plant, runtime }) => ({
-        id: plant.id,
-        componentLibrary: plant.componentLibrary,
-        title: plant.graph.title,
-        componentCount: plant.graph.components.length,
-        linkCount: plant.graph.links.length,
-        variableCount: plant.graph.variables.length,
-        elapsedMs: runtime.elapsedMs(),
-        displayProfiles: plant.graph.displayProfiles.map(profile => ({ id: profile.id, label: profile.label })),
-      })),
+      plants: [...config.plants.values()].map(({ plant, runtime }) => {
+        const object = config.objects.get(objectIdSchema.parse(plant.id))
+        if (!object) return capabilityTargetNotFound(`Operational object missing for active Process Plant: ${plant.id}`)
+        return {
+          id: plant.id,
+          label: object.label,
+          model: { id: plant.graph.specId, title: plant.graph.title },
+          componentCount: plant.graph.components.length,
+          linkCount: plant.graph.links.length,
+          variableCount: plant.graph.variables.length,
+          elapsedMs: runtime.elapsedMs(),
+          displayProfiles: plant.graph.displayProfiles.map(profile => ({ id: profile.id, label: profile.label })),
+        }
+      }),
     }
   }
   if (config.request.capabilityId === 'world.process-plant.graph.read') {

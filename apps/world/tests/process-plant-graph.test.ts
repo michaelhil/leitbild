@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { PackId } from '../src/core/model/index.ts'
+import { objectIdSchema, type PackId } from '../src/core/model/index.ts'
 import type { PackRuntimeQuery } from '../src/simulation/protocol.ts'
 import {
   answerProcessPlantQuery,
@@ -91,6 +91,7 @@ describe('process plant discovery', () => {
   test('describes configuration and live-data reads in searchable domain language', () => {
     const descriptions = new Map(processPlantCapabilities.map(capability => [capability.id, capability.description]))
     expect(descriptions.get('world.process-plant.catalog.list')).toContain('configuration, not a list of live Plant instances')
+    expect(descriptions.get('world.process-plant.actions.search')).toContain('exact actionId values')
     expect(descriptions.get('world.process-plant.plants.list')).toContain('exact plantId values')
     expect(descriptions.get('world.process-plant.display-profile.read')).toContain('profileId returned by plants.list')
     expect(descriptions.get('world.process-plant.variables.read')).toContain('do not guess paths')
@@ -99,6 +100,8 @@ describe('process plant discovery', () => {
     expect(descriptions.get('world.process-plant.variables.search')).toContain('current Plant variables')
     expect(descriptions.get('world.process-plant.signals.read')).toContain('live values')
     expect(descriptions.get('world.process-plant.transient.diagnostics')).toContain('diagnostics')
+    const action = processPlantCapabilities.find(capability => capability.id === 'world.process-plant.action.invoke')
+    expect(action?.searchTerms?.join(' ')).toContain('reactor coolant pump')
   })
 
   test('makes an unknown Plant identity a discoverable caller error', () => {
@@ -106,6 +109,7 @@ describe('process plant discovery', () => {
       answerProcessPlantQuery({
         request: { capabilityId: 'world.process-plant.alarms.summary', input: { plantId: 'unit2' } },
         plants: new Map(),
+        objects: new Map(),
       })
       throw new Error('expected the query to reject an unknown Plant')
     } catch (error) {
@@ -116,6 +120,7 @@ describe('process plant discovery', () => {
 
   test('lists the exact display profiles available on every live Plant', () => {
     const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:profiles' }))
+    const plantId = objectIdSchema.parse(plant.id)
     const runtime = createProcessPlantRuntime({ system: plant })
     const response = answerProcessPlantQuery({
       request: { capabilityId: 'world.process-plant.plants.list', input: {} },
@@ -125,8 +130,9 @@ describe('process plant discovery', () => {
         ramps: createProcessPlantRampRunner({ runtime }),
         performance: createProcessPlantRuntimePerformance(),
       }]]),
+      objects: new Map([[plantId, { id: plantId, label: 'Profile Plant' }]]),
     }) as { plants: Array<{ id: string; displayProfiles: Array<{ id: string; label: string }> }> }
-    expect(response.plants[0]).toMatchObject({ id: plant.id })
+    expect(response.plants[0]).toMatchObject({ id: plant.id, label: 'Profile Plant' })
     expect(response.plants[0]!.displayProfiles).toEqual(expect.arrayContaining([
       { id: 'leitbild-rail', label: 'Leitbild rail summary' },
     ]))
@@ -149,7 +155,7 @@ describe('process plant discovery', () => {
       { capabilityId: 'world.process-plant.display-profile.read', input: { plantId: plant.id, profileId: 'missing-profile' } },
     ]) {
       try {
-        answerProcessPlantQuery({ request, plants })
+        answerProcessPlantQuery({ request, plants, objects: new Map() })
         throw new Error('expected the query to reject an unknown identity')
       } catch (error) {
         expect(error).toMatchObject({ code: 'capability_target_not_found' })
@@ -164,6 +170,7 @@ describe('process plant discovery', () => {
     const compact = answerProcessPlantQuery({
       request: { capabilityId: 'world.process-plant.components.search', input: { plantId: plant.id, query: 'core' } },
       plants,
+      objects: new Map(),
     }) as { components: ReadonlyArray<Record<string, unknown>>; totalComponents: number; matchedComponents: number }
     expect(compact.totalComponents).toBeGreaterThan(0)
     expect(compact.matchedComponents).toBeGreaterThan(0)
@@ -172,6 +179,7 @@ describe('process plant discovery', () => {
     const expanded = answerProcessPlantQuery({
       request: { capabilityId: 'world.process-plant.components.search', input: { plantId: plant.id, componentIds: ['core'], includeParameters: true } },
       plants,
+      objects: new Map(),
     }) as { components: ReadonlyArray<Record<string, unknown>> }
     expect(expanded.components).toHaveLength(1)
     expect(expanded.components[0]).toHaveProperty('parameters')
@@ -191,7 +199,7 @@ describe('process plant discovery', () => {
       capabilityId: 'world.process-plant.catalog.list',
       input: {},
     }
-    const response = answerProcessPlantQuery({ request, plants: new Map() })
+    const response = answerProcessPlantQuery({ request, plants: new Map(), objects: new Map() })
     expect(response).toMatchObject({
       models: [{ id: processPlantPwrReferenceModelRef }],
       displays: [{ id: 'unit-overview' }],
@@ -206,7 +214,7 @@ describe('process plant discovery', () => {
       input: { plantId: plant.id, artifact: 'authored-spec' },
     }
     const plants = new Map([[plant.id, { plant } as ProcessPlantRuntimeInstance]])
-    const response = answerProcessPlantQuery({ request, plants })
+    const response = answerProcessPlantQuery({ request, plants, objects: new Map() })
 
     const result = response as {
       readonly components: ReadonlyArray<{
@@ -263,7 +271,7 @@ describe('process plant discovery', () => {
       },
     }
     const plants = new Map([[plant.id, { plant } as ProcessPlantRuntimeInstance]])
-    const response = answerProcessPlantQuery({ request, plants })
+    const response = answerProcessPlantQuery({ request, plants, objects: new Map() })
 
     expect(response).toMatchObject({
       plantId: plant.id,
@@ -292,6 +300,7 @@ describe('process plant discovery', () => {
     const variables = answerProcessPlantQuery({
       request: { capabilityId: 'world.process-plant.variables.search', input: { plantId: plant.id, offset: 1, limit: 2 } },
       plants,
+      objects: new Map(),
     }) as { total: number; offset: number; returned: number; hasMore: boolean; variables: ReadonlyArray<{ plantId: string; variable: unknown }> }
     expect(variables).toMatchObject({ offset: 1, returned: 2, hasMore: true })
     expect(variables.total).toBeGreaterThan(3)
@@ -301,6 +310,7 @@ describe('process plant discovery', () => {
     const signals = answerProcessPlantQuery({
       request: { capabilityId: 'world.process-plant.signals.search', input: { plantId: plant.id, offset: 0, limit: 2 } },
       plants,
+      objects: new Map(),
     }) as { total: number; returned: number; hasMore: boolean; signals: ReadonlyArray<{ plantId: string; signal: unknown }> }
     expect(signals).toMatchObject({ returned: 2, hasMore: true })
     expect(signals.total).toBeGreaterThan(2)

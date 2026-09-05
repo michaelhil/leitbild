@@ -496,6 +496,7 @@ const runtimeCapabilityDescriptorsFor = (
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: capability.title,
       description: capability.description,
+      ...(capability.searchTerms === undefined ? {} : { searchTerms: capability.searchTerms }),
       risk: capability.risk,
       idempotent: capability.idempotent,
       ...(capability.schedulable === undefined ? {} : { schedulable: capability.schedulable }),
@@ -514,6 +515,7 @@ const runtimeCapabilityDescriptorsFor = (
 const workspacePackCapabilityDescriptorsFor = (registry: SimulationRunRegistry): ReadonlyArray<ModuleCapabilityDescriptor> => moduleCapabilityCollectionSchema.parse({ capabilities: registry.workspaceCapabilities.map(capability => ({
   id: capability.id, moduleId: WORLD_MODULE_ID, kind: capability.kind, scope: { kind: 'workspace' },
   title: capability.title, description: capability.description, risk: capability.risk, idempotent: capability.idempotent,
+  ...(capability.searchTerms === undefined ? {} : { searchTerms: capability.searchTerms }),
   inputSchema: capabilityJsonSchema(capability.input), outputSchema: capabilityJsonSchema(capability.output),
 })) }).capabilities
 

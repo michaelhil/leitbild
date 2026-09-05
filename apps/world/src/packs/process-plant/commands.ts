@@ -15,9 +15,9 @@ export {
 }
 
 export const processPlantActionInvokePayloadSchema = z.object({
-  plantId: z.string().min(1),
-  actionId: z.string().min(1),
-  parameters: z.record(z.string(), z.unknown()).default({}),
+  plantId: z.string().min(1).describe('Exact live Plant id returned by world.process-plant.plants.list.'),
+  actionId: z.string().min(1).describe('Exact action id returned by world.process-plant.actions.search.'),
+  parameters: z.record(z.string(), z.unknown()).default({}).describe('Action parameters matching the returned action inputSchema.'),
 }).strict()
 export type ProcessPlantActionInvokePayload = z.infer<typeof processPlantActionInvokePayloadSchema>
 

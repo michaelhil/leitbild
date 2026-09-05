@@ -49,8 +49,8 @@ const catalogFetch = (requests: Request[]): typeof fetch => (async (input, init)
     workspaceId,
     modules: [{ moduleId, status: 'ready' }],
     capabilities: [
-      { id: readId, moduleId, kind: 'query', scope: { kind: 'resource', resourceType: run.type }, title: 'Read run', description: 'Read current live simulation state and time.', risk: 'read', idempotent: true, inputSchema: { type: 'object' }, outputSchema: { type: 'object' } },
-      { id: writeId, moduleId, kind: 'command', scope: { kind: 'resource', resourceType: run.type }, title: 'Change run', description: 'Change the live simulation.', risk: 'write', idempotent: false, inputSchema: { type: 'object' }, outputSchema: { type: 'object' } },
+      { id: readId, moduleId, kind: 'query', scope: { kind: 'resource', resourceType: run.type }, title: 'Read run', description: 'Read current live simulation state and time.', searchTerms: ['status report sitrep'], risk: 'read', idempotent: true, inputSchema: { type: 'object' }, outputSchema: { type: 'object' } },
+      { id: writeId, moduleId, kind: 'command', scope: { kind: 'resource', resourceType: run.type }, title: 'Change run', description: 'Change the live simulation.', searchTerms: ['trip reactor coolant pumps RCPs'], risk: 'write', idempotent: false, inputSchema: { type: 'object' }, outputSchema: { type: 'object' } },
       { id: inspectDefinitionId, moduleId, kind: 'query', scope: { kind: 'definition', definitionType: definition.type }, title: 'Inspect scenario', description: 'Read a scenario definition.', risk: 'read', idempotent: true, inputSchema: { type: 'object' }, outputSchema: { type: 'object' } },
     ],
   })
@@ -85,6 +85,17 @@ describe('Workspace progressive-discovery tools', () => {
     expect(operations).toMatchObject({ success: true, data: {
       operations: [{ operationId: readId, inputSchema: { type: 'object' } }],
     } })
+  })
+
+  test('finds Pack-owned vocabulary without exposing search metadata as authority', async () => {
+    const [explore] = makeTools({ kind: 'resource', resource: run })
+    const result = await explore!.execute({
+      view: 'operations', target: runTarget, queries: ['trip unit 2 RCPs'],
+    }, context)
+    expect(result).toMatchObject({ success: true, data: {
+      operations: [{ operationId: writeId, matchedTerms: ['trip', 'rcps'] }],
+    } })
+    expect((result.data as { operations: Array<Record<string, unknown>> }).operations[0]).not.toHaveProperty('searchTerms')
   })
 
   test('resolves collection membership live and honors exclusions', async () => {

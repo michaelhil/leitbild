@@ -123,6 +123,8 @@ export interface SimulationCapability {
   readonly kind: SimulationCapabilityKind
   readonly title: string
   readonly description: string
+  /** Optional Pack-owned vocabulary used only to find this Capability. */
+  readonly searchTerms?: ReadonlyArray<string>
   readonly risk: 'read' | 'write' | 'destructive'
   readonly idempotent: boolean
   readonly input: z.ZodType
@@ -157,6 +159,7 @@ export interface PackWorkspaceCapability {
   readonly id: string
   readonly title: string
   readonly description: string
+  readonly searchTerms?: ReadonlyArray<string>
   readonly kind: 'query' | 'command'
   readonly risk: 'read' | 'write' | 'destructive'
   readonly idempotent: boolean

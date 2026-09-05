@@ -101,6 +101,9 @@ export const moduleCapabilityDescriptorSchema = z.object({
   ]),
   title: z.string().trim().min(1).max(128),
   description: z.string().trim().min(1).max(2048),
+  // Search-only vocabulary supplied by the owning Module. These terms help a
+  // caller find an operation without turning labels or aliases into authority.
+  searchTerms: z.array(z.string().trim().min(1).max(128)).optional(),
   risk: z.enum(['read', 'write', 'destructive']),
   idempotent: z.boolean(),
   schedulable: z.boolean().optional(),

@@ -16,7 +16,8 @@ import {
 } from './commands.ts'
 import { processPlantIcQueryKinds } from './ic-query.ts'
 import { processPlantQueryKinds } from './query.ts'
-import { processPlantCatalogInputSchema } from './queries/catalog-query.ts'
+import { processPlantActions } from './actions.ts'
+import { processPlantActionsSearchInputSchema, processPlantCatalogInputSchema } from './queries/catalog-query.ts'
 import {
   assessmentsEvaluateQuerySchema,
   conditionsEvaluateQuerySchema,
@@ -57,6 +58,13 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
     displays: recordArraySchema,
     credibilityEvidence: recordArraySchema,
   }).strict(),
+  'world.process-plant.actions.search': z.object({
+    total: z.number().int().nonnegative(),
+    offset: z.number().int().nonnegative(),
+    returned: z.number().int().nonnegative(),
+    hasMore: z.boolean(),
+    actions: recordArraySchema,
+  }).strict(),
   'world.process-plant.credibility.list': z.object({ plantId: plantIdSchema, evidence: recordArraySchema }).strict(),
   'world.process-plant.credibility.read': z.object({
     plantId: plantIdSchema,
@@ -67,8 +75,8 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.plants.list': z.object({
     plants: z.array(z.object({
       id: plantIdSchema,
-      componentLibrary: z.string(),
-      title: z.string(),
+      label: z.string().min(1),
+      model: z.object({ id: z.string().min(1), title: z.string().min(1) }).strict(),
       componentCount: z.number().int().nonnegative(),
       linkCount: z.number().int().nonnegative(),
       variableCount: z.number().int().nonnegative(),
@@ -135,6 +143,7 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
 
 const queryInputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.catalog.list': processPlantCatalogInputSchema,
+  'world.process-plant.actions.search': processPlantActionsSearchInputSchema,
   'world.process-plant.credibility.list': credibilityListPayloadSchema,
   'world.process-plant.credibility.read': credibilityReadPayloadSchema,
   'world.process-plant.plants.list': processPlantCatalogInputSchema,
@@ -168,6 +177,7 @@ const titleFor = (id: string): string => id
 
 const queryDescriptionById: Readonly<Record<string, string>> = {
   'world.process-plant.catalog.list': 'Discover authored Process Plant model, operating-point, automation, control, assessment, recording, display, and credibility options. This is configuration, not a list of live Plant instances.',
+  'world.process-plant.actions.search': 'Search Pack-declared Process Plant actions, including their exact actionId values, descriptions, parameters, and input schemas. The selected Plant validates applicability when an action is invoked.',
   'world.process-plant.credibility.list': 'List engineering credibility evidence available for one Plant.',
   'world.process-plant.credibility.read': 'Read one engineering evidence artifact and its provenance for one Plant.',
   'world.process-plant.plants.list': 'Discover live active Plant units and their exact plantId values, model library, graph size, variable count, and elapsed simulation time. Use these identities for Plant-specific reads.',
@@ -223,6 +233,7 @@ const commandCapability = <T extends { readonly plantId: string }>(config: {
   readonly id: string
   readonly title: string
   readonly description: string
+  readonly searchTerms?: ReadonlyArray<string>
   readonly input: z.ZodType<T>
   readonly risk?: 'write' | 'destructive'
 }) => defineSimulationCommandCapability({
@@ -262,7 +273,8 @@ export const processPlantCapabilities = [
   commandCapability({
     id: processPlantActionInvokeCommandKind,
     title: 'Invoke plant action',
-    description: 'Invoke a Pack-declared Process Plant action with validated parameters.',
+    description: 'Invoke a Pack-declared Process Plant action with an exact plantId and actionId. Discover those values with plants.list and actions.search.',
+    searchTerms: processPlantActions.flatMap(action => [action.id, action.title, action.description]),
     input: processPlantActionInvokePayloadSchema,
     risk: 'write',
   }),

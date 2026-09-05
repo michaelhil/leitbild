@@ -438,6 +438,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         return answerProcessPlantQuery({
           request,
           plants,
+          objects: objectsById,
         })
       },
       observeCommittedEvents: async (events: ReadonlyArray<SimulationRunEvent>): Promise<void> => {

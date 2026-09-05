@@ -1,4 +1,5 @@
 import type { PackRuntimeQuery } from '../../simulation/protocol.ts'
+import type { ObjectId, OperationalObject } from '../../core/model/index.ts'
 import { answerProcessPlantIcQuery, processPlantIcQueryKinds } from './ic-query.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
 import { failure } from './queries/common.ts'
@@ -28,6 +29,7 @@ export const processPlantQueryKinds = [
 export const answerProcessPlantQuery = (config: {
   readonly request: PackRuntimeQuery
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
+  readonly objects: ReadonlyMap<ObjectId, Pick<OperationalObject, 'id' | 'label'>>
 }): unknown => answerProcessPlantCatalogQuery(config)
   ?? answerProcessPlantCredibilityQuery(config)
   ?? answerProcessPlantIcQuery(config)

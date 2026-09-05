@@ -28,6 +28,14 @@ export interface ProcessPlantActionDefinition {
   ) => ReadonlyArray<ProcessPlantActionCommand>
 }
 
+export interface ProcessPlantActionCatalogEntry {
+  readonly id: string
+  readonly title: string
+  readonly description: string
+  readonly parameters: ReadonlyArray<ProcessPlantActionParameter>
+  readonly inputSchema: Readonly<Record<string, unknown>>
+}
+
 const path = (value: string): VariablePath => value as VariablePath
 
 const parameterValue = (
@@ -158,7 +166,7 @@ export const processPlantActions: ReadonlyArray<ProcessPlantActionDefinition> = 
 
 const actionById = new Map(processPlantActions.map(action => [action.id, action]))
 
-export const processPlantActionCatalog = (): ReadonlyArray<Record<string, unknown>> =>
+export const processPlantActionCatalog = (): ReadonlyArray<ProcessPlantActionCatalogEntry> =>
   processPlantActions.map(action => ({
     id: action.id,
     title: action.title,
