@@ -12,9 +12,13 @@ _Avoid_: Workspace, channel, Simulation Run
 The relationship that permits an Actor to participate in one Room.
 _Avoid_: Workspace access policy, Module provisioning state
 
-**Companion Room**:
-A Room accompanying one Resource in the same Workspace. Its association gives participants discoverable context, not permission or automatic control. The conversation can outlive the Resource and the Definition that created it.
-_Avoid_: default Room, Binding, hard-coded simulation controller
+**Assistance Room**:
+An explicitly created Room whose Subject Selection identifies the Workspace Resources or exact Definition Revisions the conversation is about. The selection supplies discoverable context, not permission or automatic control, and the Room may remain useful when a selected Resource is later removed.
+_Avoid_: Companion Room, default Room, Binding, hard-coded simulation controller
+
+**Subject Selection**:
+The durable set or collection rule describing which Resources and exact Definition Revisions an Assistance Room discusses. It defines conversational scope, not current screen focus or authority.
+_Avoid_: Tool Grant, Focused Subject, copied Resource state
 
 **Leitbild Assistant**:
 The single reusable Room and ordinary Agent that handles general product questions, Workspace exploration, and scenario authoring for one Workspace through explicit tools and Tool Grants.
@@ -49,7 +53,7 @@ The durable behavior and runtime configuration of an Agent, excluding concrete M
 _Avoid_: Composition Definition, persistent cross-Module Resource link
 
 **Tool Grant**:
-Permission for an Agent to invoke either one named Capability or read-only Capabilities advertised by the Resource linked to its current Companion Room. A Companion Room association alone never grants access.
+Permission for an Agent to invoke either one named Capability or read-only Capabilities applicable to its current Room Subject Selection. Subject Selection alone never grants access, and a grant never makes an inapplicable Capability valid for a Resource.
 _Avoid_: implicit tool availability, Agent-to-Resource connection
 
 **Progressive Discovery**:
@@ -74,7 +78,7 @@ _Avoid_: name-based Skill scope, global Skill injection, permission policy
 
 **Context View**:
 A bounded, derived representation of relevant Workspace and Resource state supplied to an Agent for one decision.
-World context presents a capped operational-object index; an Agent narrows it with the object-search Capability and reads details only when needed.
+World context presents transparent attention items and a representative operational-object cross-section; an Agent narrows it with searchable Capabilities and reads details only when needed.
 Focused Subjects may identify the Client's few visible live Resources or exact Definition Revisions, but are transient and grant no authority.
 _Avoid_: copied domain state, persisted generated prompt, current mutable Definition inference
 
