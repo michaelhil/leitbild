@@ -87,20 +87,29 @@ const getJson = async (fetchImpl: typeof fetch, url: string, signal?: AbortSigna
 const catalogPath = (workspacePath: string, kind: 'capabilities' | 'definitions' | 'resources', moduleId?: string): string =>
   `${workspacePath}/${kind}${moduleId === undefined ? '' : `?moduleId=${encodeURIComponent(moduleId)}`}`
 
-const parseResource = (value: unknown, workspaceId: WorkspaceId): WorkspaceResourceReference | undefined => {
-  if (value === undefined) return undefined
-  const result = workspaceResourceReferenceSchema.safeParse(value)
-  if (!result.success) throw new Error('resource must be one complete exact reference copied from workspace_catalog; omit resource for untargeted discovery')
-  if (result.data.workspaceId !== workspaceId) throw new Error('resource belongs to another Workspace')
-  return result.data
-}
+type WorkspaceCapabilityTarget =
+  | { readonly kind: 'resource'; readonly ref: WorkspaceResourceReference }
+  | { readonly kind: 'definition'; readonly ref: WorkspaceDefinitionRevisionReference }
 
-const parseDefinition = (value: unknown, workspaceId: WorkspaceId): WorkspaceDefinitionRevisionReference | undefined => {
+const parseTarget = (value: unknown, workspaceId: WorkspaceId): WorkspaceCapabilityTarget | undefined => {
   if (value === undefined) return undefined
-  const result = workspaceDefinitionRevisionReferenceSchema.safeParse(value)
-  if (!result.success) throw new Error('definition must be one complete exact revision reference copied from workspace_catalog; omit definition for untargeted discovery')
-  if (result.data.workspaceId !== workspaceId) throw new Error('definition belongs to another Workspace')
-  return result.data
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('target must be one complete exact target copied from workspace_catalog')
+  }
+  const raw = value as Record<string, unknown>
+  if (raw.kind !== 'resource' && raw.kind !== 'definition') {
+    throw new Error('target.kind must be resource or definition')
+  }
+  const result = raw.kind === 'resource'
+    ? workspaceResourceReferenceSchema.safeParse(raw.ref)
+    : workspaceDefinitionRevisionReferenceSchema.safeParse(raw.ref)
+  if (!result.success || Object.keys(raw).some(key => !['kind', 'ref'].includes(key))) {
+    throw new Error('target must be one complete exact target copied from workspace_catalog')
+  }
+  if (result.data.workspaceId !== workspaceId) throw new Error('target belongs to another Workspace')
+  return raw.kind === 'resource'
+    ? { kind: 'resource', ref: result.data as WorkspaceResourceReference }
+    : { kind: 'definition', ref: result.data as WorkspaceDefinitionRevisionReference }
 }
 
 const subjectGrantAllows = (grants: ReadonlyArray<ToolGrant>, risk: ModuleCapabilityDescriptor['risk']): boolean =>
@@ -176,22 +185,23 @@ const compactDefinition = (definition: ModuleDefinitionDescriptor) => {
     deleteCapabilityId: _deleteCapabilityId,
     ...descriptor
   } = definition
-  return { ...descriptor, ref: { ...ref, revisionId: currentRevisionId }, capabilityCount: capabilityIds.length }
+  return { ...descriptor, target: { kind: 'definition', ref: { ...ref, revisionId: currentRevisionId } }, capabilityCount: capabilityIds.length }
 }
 
 const compactResource = (resource: ModuleResourceDescriptor) => {
   const {
+    ref,
     capabilityIds,
     deleteCapabilityId: _deleteCapabilityId,
     renameCapabilityId: _renameCapabilityId,
     ...descriptor
   } = resource
-  return { ...descriptor, capabilityCount: capabilityIds.length }
+  return { ...descriptor, target: { kind: 'resource', ref }, capabilityCount: capabilityIds.length }
 }
 
 const resourceReferenceParameter = {
   type: 'object',
-  description: 'An exact Resource reference copied verbatim from workspace_catalog. Wildcards and partial references are invalid.',
+  description: 'The exact Resource reference inside a target returned by workspace_catalog.',
   properties: {
     workspaceId: { type: 'string' }, moduleId: { type: 'string' }, type: { type: 'string' }, id: { type: 'string' },
   },
@@ -201,12 +211,27 @@ const resourceReferenceParameter = {
 
 const definitionReferenceParameter = {
   type: 'object',
-  description: 'An exact Definition revision reference copied from workspace_catalog. Wildcards and partial references are invalid.',
+  description: 'The exact Definition revision reference inside a target returned by workspace_catalog.',
   properties: {
     workspaceId: { type: 'string' }, moduleId: { type: 'string' }, type: { type: 'string' }, id: { type: 'string' }, revisionId: { type: 'string' },
   },
   required: ['workspaceId', 'moduleId', 'type', 'id', 'revisionId'],
   additionalProperties: false,
+}
+
+const targetParameter = {
+  description: 'One exact Resource or Definition-revision target copied verbatim from workspace_catalog. Never combine targets or use wildcards.',
+  oneOf: [{
+    type: 'object',
+    properties: { kind: { type: 'string', const: 'resource' }, ref: resourceReferenceParameter },
+    required: ['kind', 'ref'],
+    additionalProperties: false,
+  }, {
+    type: 'object',
+    properties: { kind: { type: 'string', const: 'definition' }, ref: definitionReferenceParameter },
+    required: ['kind', 'ref'],
+    additionalProperties: false,
+  }],
 }
 
 const applicabilityFailure = (
@@ -341,12 +366,11 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
   const capabilities: Tool = {
     name: 'workspace_capabilities',
     description: 'Search Capability descriptions or evaluate Capabilities against one exact Resource or Definition revision.',
-    usage: 'For broad discovery, omit resource and definition; discovery does not decide target-specific access. For target evaluation or schemas, copy one complete exact reference from workspace_catalog. Never use wildcards in a target. Authorization answers what the Agent may do; applicability answers whether the Capability fits the target.',
+    usage: 'For broad discovery, omit target; discovery does not decide target-specific access. For target evaluation or schemas, copy one complete target from workspace_catalog verbatim. Never use wildcards in a target. Authorization answers what the Agent may do; applicability answers whether the Capability fits the target.',
     returns: 'Capability descriptors and pagination metadata. Untargeted Resource/Definition results say targetRequired without claiming denial. Exact-target results report authorized, applicable, callable, and structured blockers.',
     parameters: {
       type: 'object', properties: {
-        resource: resourceReferenceParameter,
-        definition: definitionReferenceParameter,
+        target: targetParameter,
         moduleId: { type: 'string', description: 'Optional exact Module id filter. Omit or use "*" to search all Modules.' }, queries: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 256 }, maxItems: 8 },
         capabilityIds: { type: 'array', items: { type: 'string' }, maxItems: 24 },
         risk: { type: 'string', enum: ['read', 'write', 'destructive'] }, kind: { type: 'string', enum: ['query', 'command'] },
@@ -368,9 +392,9 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
       let limit: number
       try {
         moduleId = optionalFilter(params.moduleId) === undefined ? undefined : moduleIdSchema.parse(params.moduleId)
-        resource = parseResource(params.resource, deps.workspaceId)
-        definition = parseDefinition(params.definition, deps.workspaceId)
-        if (resource && definition) return failure('invalid_tool_input', 'Supply either resource or definition, not both')
+        const target = parseTarget(params.target, deps.workspaceId)
+        resource = target?.kind === 'resource' ? target.ref : undefined
+        definition = target?.kind === 'definition' ? target.ref : undefined
         if (moduleId !== undefined && resource !== undefined && resource.moduleId !== moduleId) return failure('invalid_tool_input', 'moduleId does not match the Resource target')
         if (moduleId !== undefined && definition !== undefined && definition.moduleId !== moduleId) return failure('invalid_tool_input', 'moduleId does not match the Definition target')
         ids = Array.isArray(params.capabilityIds) ? params.capabilityIds.map(value => capabilityIdSchema.parse(value)) : []
@@ -461,8 +485,8 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         return { success: true, data: {
           workspaceId: deps.workspaceId,
           mode: resource !== undefined ? 'resource' : definition !== undefined ? 'definition' : 'discovery',
-          ...(resource !== undefined ? { resource } : {}),
-          ...(definition !== undefined ? { definition } : {}),
+          ...(resource !== undefined ? { target: { kind: 'resource', ref: resource } } : {}),
+          ...(definition !== undefined ? { target: { kind: 'definition', ref: definition } } : {}),
           modules: capabilityCatalog.modules,
           total: filtered.length, offset, returned: page.length, hasMore: offset + page.length < filtered.length,
           ...(unknownCapabilityIds.length > 0 ? { unknownCapabilityIds } : {}),
@@ -477,14 +501,13 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
   const invoke: Tool = {
     name: 'workspace_invoke',
     description: 'Invoke one Capability or concurrently invoke a bounded batch of independent read-only Capabilities.',
-    usage: 'Copy exact Resource or Definition references from workspace_catalog unchanged. Use one calls entry normally. Batch independent reads only; writes and destructive operations must be separate calls.',
+    usage: 'Copy one exact target from workspace_catalog unchanged. Omit target only for a Workspace-scoped Capability. Use one calls entry normally. Batch independent reads only; writes and destructive operations must be separate calls.',
     returns: '{ results[] } in request order, with each keyed entry carrying either data or a structured error.',
     parameters: {
       type: 'object', properties: {
         calls: { type: 'array', minItems: 1, maxItems: MAX_INVOKE_BATCH_SIZE, items: { type: 'object', properties: {
           key: { type: 'string', minLength: 1, maxLength: 64 }, capabilityId: { type: 'string' },
-          definition: definitionReferenceParameter,
-          resource: resourceReferenceParameter,
+          target: targetParameter,
           input: {}, expectedRevision: { type: 'integer', minimum: 0 }, idempotencyKey: { type: 'string', minLength: 1, maxLength: 256 },
         }, required: ['key', 'capabilityId', 'input'], additionalProperties: false } },
       }, required: ['calls'], additionalProperties: false,
@@ -498,9 +521,9 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
           if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) throw new Error(`calls[${index}] must be an object`)
           const raw = rawValue as Record<string, unknown>
           const capabilityId = capabilityIdSchema.parse(raw.capabilityId)
-          const resource = parseResource(raw.resource, deps.workspaceId)
-          const definition = parseDefinition(raw.definition, deps.workspaceId)
-          if (definition && resource) throw new Error(`calls[${index}] cannot contain both definition and resource`)
+          const target = parseTarget(raw.target, deps.workspaceId)
+          const resource = target?.kind === 'resource' ? target.ref : undefined
+          const definition = target?.kind === 'definition' ? target.ref : undefined
           return { key: String(raw.key), capabilityId, resource, definition, input: raw.input, expectedRevision: raw.expectedRevision, idempotencyKey: raw.idempotencyKey }
         })
 

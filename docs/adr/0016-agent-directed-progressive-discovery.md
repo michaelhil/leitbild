@@ -6,4 +6,6 @@ Discovery stays Agent-directed through compact owner-filtered catalogs, searchab
 
 Agent-facing references are exact Workspace references that can be copied unchanged from catalog results into Capability discovery and invocation. Wildcards remain search filters only; they are never accepted or silently reinterpreted as a Resource or Definition identity. Untargeted Capability search is descriptive and therefore does not report target-specific authority or applicability. Exact-target evaluation reports those dimensions separately with structured blockers, so a missing target cannot masquerade as denied access.
 
+The broker represents an operation subject as one discriminated `target`: either a Resource or a Definition revision. Catalog output and both downstream tools share that exact shape. This removes the previously representable but meaningless state in which a model supplied both a live Resource and its source Definition to one operation.
+
 The Agent works in useful stages: establish the highest-signal evidence for the current request, answer, expose worthwhile deeper directions, and continue when further evidence could materially improve or safely enable the answer. This lets new Pack Capabilities participate without editing every assistant profile while keeping browser focus, conversational subjects, applicability, and authority distinct.

@@ -133,10 +133,10 @@ Deployment-authored tools, skills, scripts, and geodata live under `$LEITBILD_HO
 Leitbild contains no World- or application-specific integration client. AI Agents use three generic tools:
 
 - `workspace_catalog` discovers reusable Definitions and live Resource descriptors;
-- `workspace_capabilities` searches Capability descriptions and, when given an exact catalog reference, reports target applicability, Agent authority, structured blockers, and callable schemas;
-- `workspace_invoke` invokes a granted Capability against an exact Definition Revision or Resource selected for that call.
+- `workspace_capabilities` searches Capability descriptions and, when given the catalog's single exact target, reports target applicability, Agent authority, structured blockers, and callable schemas;
+- `workspace_invoke` invokes a granted Capability against that one exact Definition Revision or Resource target. The discriminated target shape makes an accidental mixed Resource/Definition call invalid by construction.
 
-Catalog references are passed unchanged between these tools. Wildcards are valid only in discovery filters, never as target identity. Untargeted Capability search does not claim target-specific access; an exact target is required before a Resource or Definition Capability is classified as callable or blocked.
+Catalog targets are passed unchanged between these tools. Wildcards are valid only in discovery filters, never as target identity. Untargeted Capability search does not claim target-specific access; an exact target is required before a Resource or Definition Capability is classified as callable or blocked.
 
 An Agent Profile with one or more Tool Grants receives this broker surface automatically at runtime. Room Definitions select domain-facing Agents tools only; they do not repeat these infrastructure tool names. Removing all Tool Grants removes the derived broker surface again.
 
