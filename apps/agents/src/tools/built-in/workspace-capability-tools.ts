@@ -198,6 +198,24 @@ const applicabilityFailure = (
   return undefined
 }
 
+const onlyApplicableTarget = (
+  operation: ModuleCapabilityDescriptor | undefined,
+  resolved: ResolvedScope,
+): WorkspaceTarget | undefined => {
+  if (!operation || operation.scope.kind === 'workspace') return undefined
+  const operationScope = operation.scope
+  if (operationScope.kind === 'resource') {
+    const matches = resolved.resources.filter(resource =>
+      resource.ref.type === operationScope.resourceType && resource.capabilityIds.includes(operation.id))
+    return matches.length === 1 ? { kind: 'resource', ref: matches[0]!.ref } : undefined
+  }
+  const matches = resolved.definitions.filter(definition =>
+    definition.ref.type === operationScope.definitionType && definition.capabilityIds.includes(operation.id))
+  return matches.length === 1
+    ? { kind: 'definition', ref: { ...matches[0]!.ref, revisionId: matches[0]!.currentRevisionId } }
+    : undefined
+}
+
 const compactDefinition = (definition: ModuleDefinitionDescriptor) => {
   const { ref, currentRevisionId, capabilityIds, deleteCapabilityId: _deleteCapabilityId, ...descriptor } = definition
   return { ...descriptor, target: { kind: 'definition', ref: { ...ref, revisionId: currentRevisionId } }, operationCount: capabilityIds.length }
@@ -388,7 +406,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
 
   const call: Tool = {
     name: 'workspace_call',
-    description: 'Call one discovered Workspace operation, or call independent read operations together.',
+    description: 'Call discovered operations; batch only independent reads. A missing Resource or Definition target resolves only when exactly one eligible target is in scope; otherwise choose an exact discovered target.',
     usage: 'Use exact operation IDs and targets returned by workspace_explore. Reads and changes use the same call shape. Batch only independent reads; issue changes separately. Supply idempotencyKey only when the discovered operation advertises acceptsIdempotencyKey. A target Module enforces current run restrictions and safety checks.',
     returns: 'Results in request order. Each result contains either data or a structured error such as out-of-scope, restricted, stale, or invalid input.',
     parameters: {
@@ -427,16 +445,20 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         })
         const catalogs = await loadCatalogs(context)
         const resolved = resolveScope(roomScope, catalogs.resources.resources, catalogs.definitions.definitions)
-        const prepared = calls.map(entry => ({
-          ...entry,
-          operation: catalogs.operations.capabilities.find(operation => operation.id === entry.operationId),
-        }))
+        const prepared = calls.map(entry => {
+          const operation = catalogs.operations.capabilities.find(candidate => candidate.id === entry.operationId)
+          return {
+            ...entry,
+            target: entry.target ?? onlyApplicableTarget(operation, resolved),
+            operation,
+          }
+        })
         if (prepared.length > 1 && prepared.some(entry => entry.operation?.risk !== 'read')) {
           return failure('batch_requires_read_operations', 'Only read operations may be batched')
         }
         const results = await Promise.all(prepared.map(async entry => {
-          const issue = targetInScope(entry.target, resolved)
-            ?? applicabilityFailure(entry.operation, entry.target, catalogs.resources.resources, catalogs.definitions.definitions)
+          const issue = applicabilityFailure(entry.operation, entry.target, catalogs.resources.resources, catalogs.definitions.definitions)
+            ?? targetInScope(entry.target, resolved)
           if (issue) return { key: entry.key, operationId: entry.operationId, success: false, error: issue.error, details: issue.data }
           if (entry.idempotencyKey !== undefined && entry.operation?.acceptsIdempotencyKey !== true) {
             return {

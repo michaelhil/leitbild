@@ -110,11 +110,17 @@ describe('Workspace progressive-discovery tools', () => {
 
   test('calls reads and changes through one shape while enforcing Room Scope', async () => {
     const [, call] = makeTools({ kind: 'resource', resource: run })
+    expect(await call!.execute({ calls: [{ key: 'inferred', operationId: readId, input: {} }] }, context))
+      .toMatchObject({ success: true, data: { results: [{ key: 'inferred', success: true, data: { state: 'running' } }] } })
     expect(await call!.execute({ calls: [{ key: 'state', operationId: readId, target: runTarget, input: {} }] }, context))
       .toMatchObject({ success: true, data: { results: [{ key: 'state', operationId: readId, success: true, data: { state: 'running' } }] } })
 
     expect(await call!.execute({ calls: [{ key: 'other', operationId: readId, target: { kind: 'resource', ref: otherRun }, input: {} }] }, context))
       .toMatchObject({ success: true, data: { results: [{ success: false, error: expect.stringContaining('target_out_of_scope') }] } })
+
+    const [, ambiguousCall] = makeTools({ kind: 'collection', collection: family, members: { mode: 'all', except: [] } })
+    expect(await ambiguousCall!.execute({ calls: [{ key: 'ambiguous', operationId: readId, input: {} }] }, context))
+      .toMatchObject({ success: true, data: { results: [{ success: false, error: expect.stringContaining('target_required') }] } })
   })
 
   test('batches independent reads but rejects a batch containing a change', async () => {
