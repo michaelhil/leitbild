@@ -98,6 +98,27 @@ describe('Workspace progressive-discovery tools', () => {
     expect((result.data as { operations: Array<Record<string, unknown>> }).operations[0]).not.toHaveProperty('searchTerms')
   })
 
+  test('keeps broad operation discovery compact while preserving exact schema lookup', async () => {
+    const [explore] = makeTools({ kind: 'resource', resource: run })
+    const broad = await explore!.execute({
+      view: 'operations', queries: ['simulation'], includeInputSchema: true, includeOutputSchema: true,
+    }, context)
+    expect(broad).toMatchObject({ success: true, data: {
+      schemaGuidance: expect.stringContaining('exact operationIds'),
+    } })
+    for (const operation of (broad.data as { operations: Array<Record<string, unknown>> }).operations) {
+      expect(operation).not.toHaveProperty('inputSchema')
+      expect(operation).not.toHaveProperty('outputSchema')
+    }
+
+    const exact = await explore!.execute({
+      view: 'operations', operationIds: [readId], includeInputSchema: true, includeOutputSchema: true,
+    }, context)
+    expect(exact).toMatchObject({ success: true, data: {
+      operations: [{ operationId: readId, inputSchema: { type: 'object' }, outputSchema: { type: 'object' } }],
+    } })
+  })
+
   test('resolves collection membership live and honors exclusions', async () => {
     const [explore] = makeTools({
       kind: 'collection', collection: family, members: { mode: 'all', except: [otherRun] },

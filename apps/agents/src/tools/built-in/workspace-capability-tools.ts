@@ -293,7 +293,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
   const explore: Tool = {
     name: 'workspace_explore',
     description: 'Explore the current Room Scope: discover exact Resources and Definitions, then find the read or change operations they advertise.',
-    usage: 'Start with view="scope" for orientation. Use view="operations" with plain-language queries or exact operationIds, optionally against one returned target. Request schemas only for likely calls. Focus indicates attention and never expands Room Scope.',
+    usage: 'Start with view="scope" for orientation. Use view="operations" with plain-language queries to find likely operations, then request schemas by exact operationIds. Schemas are omitted from broad text searches to keep discovery compact. Focus indicates attention and never expands Room Scope.',
     returns: 'The current Room Scope, focused subjects, exact targets, compact metadata, and/or matching operations. Returned targets can be passed unchanged to workspace_call.',
     parameters: {
       type: 'object', properties: {
@@ -372,6 +372,8 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
                 ...operations.map(value => ({ kind: 'operation' as const, value })),
               ]
         const page = combined.slice(offset, offset + limit)
+        const schemaRequested = params.includeInputSchema === true || params.includeOutputSchema === true
+        const exactSchemaSelection = operationIds.length > 0
         return { success: true, data: {
           workspaceId: deps.workspaceId,
           scope: resolved.scope,
@@ -381,6 +383,9 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
           offset,
           returned: page.length,
           hasMore: offset + page.length < combined.length,
+          ...(schemaRequested && !exactSchemaSelection ? {
+            schemaGuidance: 'Schemas are returned only for exact operationIds. Repeat with the selected operationId values and the requested schema flags.',
+          } : {}),
           definitions: page.filter(item => item.kind === 'definition').map(item => compactDefinition(item.value as ModuleDefinitionDescriptor)),
           resources: page.filter(item => item.kind === 'resource').map(item => compactResource(item.value as ModuleResourceDescriptor)),
           operations: page.filter(item => item.kind === 'operation').map(item => {
@@ -392,8 +397,8 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
               operationId: id,
               ...(queries.length > 0 ? { matchedQueries: queries.filter(query => textMatchScore(operation, query) > 0) } : {}),
               ...(matchedTerms.length > 0 ? { matchedTerms } : {}),
-              ...(params.includeInputSchema === true ? { inputSchema } : {}),
-              ...(params.includeOutputSchema === true ? { outputSchema } : {}),
+              ...(exactSchemaSelection && exactIds.has(id) && params.includeInputSchema === true ? { inputSchema } : {}),
+              ...(exactSchemaSelection && exactIds.has(id) && params.includeOutputSchema === true ? { outputSchema } : {}),
             }
           }),
         } }
