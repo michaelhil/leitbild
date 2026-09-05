@@ -70,6 +70,10 @@ export interface RecordingPage {
   readonly hasMore: boolean
   readonly nextBeforeSequence: number | null
   readonly retainedFromSequence: number | null
+  readonly retainedFromObservedAt: string | null
+  readonly retainedToObservedAt: string | null
+  readonly retainedFromSimulationTime: string | null
+  readonly retainedToSimulationTime: string | null
   readonly retentionGap: boolean
 }
 

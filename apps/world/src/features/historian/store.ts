@@ -36,6 +36,14 @@ interface SampleRow {
   readonly quality: RecordedSample['quality']
 }
 
+interface RetainedBoundsRow {
+  readonly first_sequence: number | null
+  readonly first_observed_at: string | null
+  readonly last_observed_at: string | null
+  readonly first_simulation_time: string | null
+  readonly last_simulation_time: string | null
+}
+
 export interface RunHistorian {
   readonly record: (runtimeId: string, batch: PackRuntimeRecordingBatch) => void
   readonly listSeries: () => ReadonlyArray<RecordingSeriesDescriptor & { readonly runtimeId: string }>
@@ -288,27 +296,29 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
         ORDER BY runtime_id, subject_id, signal_id
       `).all().map(descriptorFromRow),
     query: (query): RecordingPage => {
-      const predicates: string[] = []
-      const values: Array<string | number> = []
+      const selectionPredicates: string[] = []
+      const selectionValues: Array<string | number> = []
       for (const [column, value] of [
         ['runtime_id', query.runtimeId],
         ['series_id', query.seriesId],
       ] as const) {
         if (value === undefined) continue
-        predicates.push(`${column} = ?`)
-        values.push(value)
+        selectionPredicates.push(`${column} = ?`)
+        selectionValues.push(value)
       }
       if (query.subjectId !== undefined || query.signalId !== undefined) {
-        predicates.push(`EXISTS (
+        selectionPredicates.push(`EXISTS (
           SELECT 1 FROM recording_series series
           WHERE series.runtime_id = recording_samples.runtime_id
             AND series.series_id = recording_samples.series_id
             ${query.subjectId === undefined ? '' : 'AND series.subject_id = ?'}
             ${query.signalId === undefined ? '' : 'AND series.signal_id = ?'}
         )`)
-        if (query.subjectId !== undefined) values.push(query.subjectId)
-        if (query.signalId !== undefined) values.push(query.signalId)
+        if (query.subjectId !== undefined) selectionValues.push(query.subjectId)
+        if (query.signalId !== undefined) selectionValues.push(query.signalId)
       }
+      const predicates = [...selectionPredicates]
+      const values = [...selectionValues]
       const timeColumn = query.timeAxis === 'simulation' ? 'simulation_time' : 'observed_at'
       if (query.from !== undefined) { predicates.push(`${timeColumn} >= ?`); values.push(new Date(query.from).toISOString()) }
       if (query.to !== undefined) { predicates.push(`${timeColumn} <= ?`); values.push(new Date(query.to).toISOString()) }
@@ -323,7 +333,27 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
         ORDER BY sequence DESC
         LIMIT ?
       `).all(...values)
-      const retainedFromSequence = database.query<{ sequence: number }, []>('SELECT sequence FROM recording_samples ORDER BY sequence LIMIT 1').get()?.sequence ?? null
+      const selectedWhere = selectionPredicates.length === 0 ? '' : `WHERE ${selectionPredicates.join(' AND ')}`
+      const retained = database.query<RetainedBoundsRow, Array<string | number>>(`
+        SELECT MIN(sequence) AS first_sequence,
+               MIN(observed_at) AS first_observed_at,
+               MAX(observed_at) AS last_observed_at,
+               MIN(simulation_time) AS first_simulation_time,
+               MAX(simulation_time) AS last_simulation_time
+        FROM recording_samples
+        ${selectedWhere}
+      `).get(...selectionValues)
+      const retainedFromSequence = retained?.first_sequence ?? null
+      const retainedFromObservedAt = retained?.first_observed_at ?? null
+      const retainedToObservedAt = retained?.last_observed_at ?? null
+      const retainedFromSimulationTime = retained?.first_simulation_time ?? null
+      const retainedToSimulationTime = retained?.last_simulation_time ?? null
+      const retainedStart = query.timeAxis === 'simulation' ? retainedFromSimulationTime : retainedFromObservedAt
+      const requestedFrom = query.from === undefined ? undefined : new Date(query.from).toISOString()
+      const requestedTo = query.to === undefined ? undefined : new Date(query.to).toISOString()
+      const retentionGap = (query.beforeSequence !== undefined && retainedFromSequence !== null && query.beforeSequence <= retainedFromSequence)
+        || (retainedStart !== null && requestedFrom !== undefined && requestedFrom < retainedStart)
+        || (retainedStart !== null && requestedTo !== undefined && requestedTo < retainedStart)
       const samples = rows.slice(0, limit).map(row => ({
         sequence: row.sequence,
         runtimeId: row.runtime_id,
@@ -334,7 +364,17 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
         value: valueFromRow(row),
         quality: row.quality,
       }))
-      return { samples, hasMore: rows.length > limit, nextBeforeSequence: rows.length > limit ? samples.at(-1)!.sequence : null, retainedFromSequence, retentionGap: query.beforeSequence !== undefined && retainedFromSequence !== null && query.beforeSequence <= retainedFromSequence }
+      return {
+        samples,
+        hasMore: rows.length > limit,
+        nextBeforeSequence: rows.length > limit ? samples.at(-1)!.sequence : null,
+        retainedFromSequence,
+        retainedFromObservedAt,
+        retainedToObservedAt,
+        retainedFromSimulationTime,
+        retainedToSimulationTime,
+        retentionGap,
+      }
     },
     status: (): RunHistorianStatus => {
       const first = frozenBounds ? { observed_at: frozenBounds.first } : database.query<{ observed_at: string }, []>('SELECT observed_at FROM recording_samples ORDER BY observed_at LIMIT 1').get()

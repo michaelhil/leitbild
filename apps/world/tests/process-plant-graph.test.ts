@@ -325,6 +325,17 @@ describe('process plant discovery', () => {
     expect(signals).toMatchObject({ returned: 2, hasMore: true })
     expect(signals.total).toBeGreaterThan(2)
     expect(signals.signals.every(entry => entry.plantId === plant.id)).toBe(true)
+
+    const rcpSignals = answerProcessPlantQuery({
+      request: { capabilityId: 'world.process-plant.signals.search', input: { plantId: plant.id, text: 'RCP running', limit: 10 } },
+      plants,
+      objects: new Map(),
+    }) as { signals: ReadonlyArray<{ signal: { path: string } }> }
+    expect(rcpSignals.signals.map(entry => entry.signal.path)).toEqual(expect.arrayContaining([
+      'rcpA.running',
+      'rcpB.running',
+      'rcpC.running',
+    ]))
   })
 
   test('rejects duplicate display contributions', () => {

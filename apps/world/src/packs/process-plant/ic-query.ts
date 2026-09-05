@@ -82,8 +82,8 @@ export const answerProcessPlantIcQuery = (config: {
   if (config.request.capabilityId === 'world.process-plant.alarms.status') {
     return {
         plantId: payload.plantId,
-        alarms: snapshot.alarms,
-        trips: snapshot.trips,
+        alarms: snapshot.alarms.filter(lifecycle => lifecycle.active),
+        trips: snapshot.trips.filter(lifecycle => lifecycle.active),
         summary: alarmSummaryFor(snapshot),
       }
   }

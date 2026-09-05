@@ -62,6 +62,17 @@ describe('Run Historian', () => {
     expect(page.hasMore).toBe(true)
     expect(historian.query({ beforeSequence: page.nextBeforeSequence! }).samples.map(sample => sample.value)).toEqual([3])
     expect(historian.query({ beforeSequence: 2 }).retentionGap).toBe(true)
+    expect(page).toMatchObject({
+      retainedFromObservedAt: observedAt,
+      retainedToObservedAt: observedAt,
+      retainedFromSimulationTime: simulationTime,
+      retainedToSimulationTime: simulationTime,
+    })
+    expect(historian.query({
+      timeAxis: 'simulation',
+      from: '2026-01-01T09:00:00Z',
+      to: '2026-01-01T09:01:00Z',
+    })).toMatchObject({ samples: [], retentionGap: true, retainedFromSimulationTime: simulationTime })
     now += 30_000
     historian.record('test.local', { descriptors: [], samples: [{ seriesId: 'series:value', observedAt: at(new Date(now).toISOString()), value: 6, quality: 'good' }] })
     expect(historian.status()).toMatchObject({ sampleCount: 1, discardedSinceOpen: 5 })

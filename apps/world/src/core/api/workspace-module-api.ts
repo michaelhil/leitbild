@@ -22,6 +22,7 @@ import { capabilityJsonSchema } from '../../simulation/capabilities.ts'
 import { isCapabilityRejection } from '../../simulation/capability-rejection.ts'
 import {
   isoTimestampSchema,
+  matchesLiteralSearch,
   agentRestrictionsSchema,
   agentRestrictionsStateSchema,
   operationalObjectSchema,
@@ -281,6 +282,10 @@ const simulationHistorySamplesSchema = z.object({
   hasMore: z.boolean(),
   nextBeforeSequence: z.number().int().positive().nullable(),
   retainedFromSequence: z.number().int().positive().nullable(),
+  retainedFromObservedAt: historyTimestampSchema.nullable(),
+  retainedToObservedAt: historyTimestampSchema.nullable(),
+  retainedFromSimulationTime: historyTimestampSchema.nullable(),
+  retainedToSimulationTime: historyTimestampSchema.nullable(),
   retentionGap: z.boolean(),
 }).strict()
 
@@ -1160,15 +1165,13 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     invoke: async (registry, invocation) => {
       const runtime = await registry.load(requireSimulationRunResource(invocation))
       const input = searchObjectsInputSchema.parse(invocation.input)
-      const needle = input.text?.toLocaleLowerCase()
       const objects = runtime.snapshot().objects
         .filter(object => input.packId === undefined || object.packId === input.packId)
         .filter(object => input.kind === undefined || object.kind === input.kind)
         .filter(object => input.status === undefined || object.operational.status === input.status)
         .filter(object => input.lifecycle === undefined || object.lifecycle === input.lifecycle)
         .filter(object => input.priority === undefined || object.operational.priority === input.priority)
-        .filter(object => needle === undefined || [object.id, object.label, object.operational.status]
-          .some(value => value.toLocaleLowerCase().includes(needle)))
+        .filter(object => matchesLiteralSearch(input.text, [object.id, object.label, object.kind, object.packId, object.operational.status]))
         .map(summarizeOperationalObject)
         .sort((left, right) => left.id.localeCompare(right.id))
       return json({ result: {
@@ -1310,13 +1313,11 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     invoke: async (registry, invocation) => {
       const runtime = await registry.load(requireSimulationRunResource(invocation))
       const input = listHistorySeriesInputSchema.parse(invocation.input)
-      const needle = input.text?.toLocaleLowerCase()
       const series = runtime.recordingSeries()
         .filter(item => input.runtimeId === undefined || item.runtimeId === input.runtimeId)
         .filter(item => input.subjectId === undefined || item.subjectId === input.subjectId)
         .filter(item => input.signalId === undefined || item.signalId === input.signalId)
-        .filter(item => needle === undefined || [item.runtimeId, item.id, item.subjectId, item.signalId, item.title, item.quantity, item.unit]
-          .some(value => value?.toLocaleLowerCase().includes(needle)))
+        .filter(item => matchesLiteralSearch(input.text, [item.runtimeId, item.id, item.subjectId, item.signalId, item.title, item.quantity, item.unit]))
         .sort((left, right) => left.runtimeId.localeCompare(right.runtimeId) || left.id.localeCompare(right.id))
       const page = series.slice(input.offset, input.offset + input.limit)
       return json({ result: {
@@ -1336,7 +1337,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'Read Simulation History Samples',
-      description: 'Reads a bounded page of historical samples for one exact historian series discovered through the series catalog.',
+      description: 'Reads a bounded page for one exact historian series and reports its retained observed/simulation-time range. retentionGap is true when the requested cursor or time range predates retained data.',
       risk: 'read',
       idempotent: true,
       inputSchema: z.toJSONSchema(readHistorySamplesInputSchema),

@@ -23,3 +23,15 @@ test('expiry hides inspection and search together without deleting retry metadat
     expect(store.inspect('source', record.id)).toBeNull(); expect(store.count('source')).toBe(0); expect(store.metadata('source').error).toBe('Provider retry')
   } finally { store.close() }
 })
+
+test('search matches literal terms across record text without requiring one exact phrase', () => {
+  const store = openRecordStore(':memory:')
+  try {
+    store.replace('source', [{ ...record, title: 'Norway traffic camera', summary: 'E6 road conditions' }], 1)
+    expect(store.search(
+      [{ id: 'camera', key: 'source' }],
+      recordSearchSchema.parse({ text: 'road camera' }),
+      [],
+    ).records).toHaveLength(1)
+  } finally { store.close() }
+})

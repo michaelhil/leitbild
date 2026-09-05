@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { idSchema } from '../../../core/model/index.ts'
+import { idSchema, matchesLiteralSearch } from '../../../core/model/index.ts'
 import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import { processQuantitySchema, processSignalTagIdSchema, variableDisciplineSchema } from '../graph/index.ts'
 import {
@@ -123,13 +123,18 @@ const matchesSignalSearch = (
   if (config.procedureRelevant !== undefined && binding.capabilities?.procedureRelevant !== config.procedureRelevant) return false
   if (config.tagId !== undefined && binding.tagId !== config.tagId) return false
   if (config.equipmentId !== undefined && binding.equipmentId !== config.equipmentId) return false
-  if (config.text !== undefined) {
-    const text = config.text.toLowerCase()
-    return Object.values(binding).some(value =>
-      typeof value === 'string' && value.toLowerCase().includes(text),
-    )
-  }
-  return true
+  return matchesLiteralSearch(config.text, [
+    binding.path,
+    binding.tagId,
+    binding.equipmentId,
+    binding.label,
+    binding.description,
+    binding.kind,
+    binding.discipline,
+    binding.quantity,
+    binding.unit,
+    ...(binding.externalRefs ?? []),
+  ])
 }
 
 export const answerProcessPlantSignalQuery = (config: {

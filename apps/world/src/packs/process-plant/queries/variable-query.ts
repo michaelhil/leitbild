@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { idSchema } from '../../../core/model/index.ts'
+import { idSchema, matchesLiteralSearch } from '../../../core/model/index.ts'
 import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import type { VariablePath } from '../graph/index.ts'
 import { processQuantitySchema, variableDisciplineSchema, variablePathSchema } from '../graph/index.ts'
@@ -49,17 +49,15 @@ const matchesSearch = (
   if (config.publishedOnly && !variable.published) return false
   if (config.discipline !== undefined && variable.discipline !== config.discipline) return false
   if (config.quantity !== undefined && variable.quantity !== config.quantity) return false
-  if (config.text !== undefined) {
-    const text = config.text.toLowerCase()
-    return String(variable.path).toLowerCase().includes(text)
-      || variable.label.toLowerCase().includes(text)
-      || variable.quantity.toLowerCase().includes(text)
-      || variable.unit.toLowerCase().includes(text)
-      || (variable.tagId?.toLowerCase().includes(text) ?? false)
-      || (variable.equipmentId?.toLowerCase().includes(text) ?? false)
-      || (variable.description?.toLowerCase().includes(text) ?? false)
-  }
-  return true
+  return matchesLiteralSearch(config.text, [
+    variable.path,
+    variable.label,
+    variable.quantity,
+    variable.unit,
+    variable.tagId,
+    variable.equipmentId,
+    variable.description,
+  ])
 }
 
 export const answerProcessPlantVariableQuery = (config: {

@@ -1251,7 +1251,17 @@ export const createSimulationRunRuntime = async (config: {
     health: () => config.runtimeConnection.health?.() ?? [],
     recordingStatus: () => config.historian?.status() ?? null,
     recordingSeries: () => config.historian?.listSeries() ?? [],
-    recordedSamples: (query) => config.historian?.query(query) ?? { samples: [], hasMore: false, nextBeforeSequence: null, retainedFromSequence: null, retentionGap: false },
+    recordedSamples: (query) => config.historian?.query(query) ?? {
+      samples: [],
+      hasMore: false,
+      nextBeforeSequence: null,
+      retainedFromSequence: null,
+      retainedFromObservedAt: null,
+      retainedToObservedAt: null,
+      retainedFromSimulationTime: null,
+      retainedToSimulationTime: null,
+      retentionGap: false,
+    },
     close: async (): Promise<void> => {
       closing = true
       scenarioRunner?.close()

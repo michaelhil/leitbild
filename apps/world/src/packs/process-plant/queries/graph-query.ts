@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { z } from 'zod'
-import { idSchema, objectIdSchema, type ObjectId, type OperationalObject } from '../../../core/model/index.ts'
+import { idSchema, matchesLiteralSearch, objectIdSchema, type ObjectId, type OperationalObject } from '../../../core/model/index.ts'
 import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import type { CompiledPlantGraph, ComponentId, ProcessPlantDisplayField } from '../graph/index.ts'
 import { plantGraphToMermaid } from '../graph/index.ts'
@@ -147,13 +147,10 @@ const componentSearchView = (
 ): unknown => {
   const idSet = input.componentIds ? new Set(input.componentIds) : undefined
   const kindSet = input.kinds ? new Set(input.kinds) : undefined
-  const needle = input.query?.toLocaleLowerCase()
   const matches = system.plant.graph.components.filter(component => {
     if (idSet && !idSet.has(component.id)) return false
     if (kindSet && !kindSet.has(component.kind)) return false
-    if (!needle) return true
-    return [component.id, component.kind, component.label]
-      .some(value => value.toLocaleLowerCase().includes(needle))
+    return matchesLiteralSearch(input.query, [component.id, component.kind, component.label])
   })
   const byKind: Record<string, number> = {}
   for (const component of system.plant.graph.components) {

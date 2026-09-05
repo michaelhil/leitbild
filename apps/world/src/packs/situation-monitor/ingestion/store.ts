@@ -3,6 +3,7 @@ import { mkdirSync, statSync, statfsSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { z } from 'zod'
 import { externalRecordSchema, geometryBounds, longitudeIntervals, recordSearchSchema, type ExternalRecord, type SituationConfig } from '../model.ts'
+import { literalSearchTerms } from '../../../core/model/text-search.ts'
 
 export interface CollectionMetadata {
   etag?: string | undefined; modifiedSince?: string | undefined; bodyHash?: string | undefined
@@ -79,7 +80,10 @@ export const openRecordStore = (path: string, limits = { maxBytes: 128 * 1024 **
       const params: (string | number)[] = selected.flatMap(source => [source.key, source.id])
       const conditions = ['c.expires >= ?']; params.push(Date.now())
       if (input.subjectId) { conditions.push('r.subject=?'); params.push(input.subjectId) }
-      if (input.text) { conditions.push('instr(r.search, ?) > 0'); params.push(input.text.toLocaleLowerCase()) }
+      for (const term of literalSearchTerms(input.text ?? '')) {
+        conditions.push('instr(r.search, ?) > 0')
+        params.push(term)
+      }
       if (input.from) { conditions.push('r.time >= ?'); params.push(Date.parse(input.from)) }
       if (input.to) { conditions.push('r.time <= ?'); params.push(Date.parse(input.to)) }
       const areaSql = (bounds: readonly [number,number,number,number]) => {

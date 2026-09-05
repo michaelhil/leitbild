@@ -18,7 +18,7 @@ import { gridOperatingPointOverridesSchema } from './config.ts'
 import { electricGridDefinitionCatalog } from './definition-refs.ts'
 import type { GridAssetDefinition } from './grid-model.ts'
 import { electricGridPackId, gridProjectionSchema } from './model.ts'
-import { objectIdSchema } from '../../core/model/index.ts'
+import { matchesLiteralSearch, objectIdSchema } from '../../core/model/index.ts'
 import { gridAssetSnapshotFor, type GridAssetSnapshot, type GridRuntimeInstance } from './runtime/instance.ts'
 import { rejectCapabilityTarget } from '../../simulation/capability-rejection.ts'
 
@@ -326,10 +326,9 @@ export const answerElectricGridQuery = (config: {
   if (config.request.capabilityId === electricGridQueryKinds[2]) {
       const payload = searchPayloadSchema.parse(config.request.input)
       const grid = gridFor(config.grids, payload.gridId)
-      const needle = payload.text.trim().toLowerCase()
       const matched = grid.definition.index.assets.filter(asset =>
         (payload.kinds === undefined || payload.kinds.includes(asset.kind))
-        && (needle.length === 0 || asset.id.toLowerCase().includes(needle) || asset.label.toLowerCase().includes(needle)))
+        && matchesLiteralSearch(payload.text, [asset.id, asset.label, asset.kind]))
       const page = matched.slice(payload.offset, payload.offset + payload.limit)
       return {
         gridId: payload.gridId,
