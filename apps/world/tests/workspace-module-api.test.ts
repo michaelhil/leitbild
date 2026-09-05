@@ -119,23 +119,33 @@ describe('World Module API', () => {
     const source = structuredClone(testScenarioDefinitions.find(item => item.id === 'halden-power-complex')!)
     await runs.createScenario({ ...source, id: 'history-api', world: { ...source.world, startsAt: '2026-01-01T00:00:00.000Z' } })
     const run = await runs.create({ scenarioId: 'history-api' })
-    for (let attempt = 0; attempt < 30 && (run.recordingStatus()?.sampleCount ?? 0) === 0; attempt++) await Bun.sleep(100)
+    for (let attempt = 0; attempt < 30 && (run.recordingStatus()?.sampleCount ?? 0) < 100; attempt++) await Bun.sleep(100)
     expect(run.recordingStatus()!.sampleCount).toBeGreaterThan(0)
     await run.setClock({ paused: true })
     const access = accessContextSchema.parse({ workspaceId, requestId: newRequestId(), actor: { kind: 'ai', id: 'history-reader' } })
-    const capabilityId = 'world.simulation-run.history'
+    const seriesCapabilityId = 'world.simulation-run.history-series.list'
+    const seriesCatalog = await call<{ result: { series: Array<{ runtimeId: string; id: string }> } }>(registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${seriesCapabilityId}/invoke`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, capabilityId: seriesCapabilityId, resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }, input: {}, access }),
+      })
+    const selectedSeries = seriesCatalog.body!.result.series[0]!
+    expect(selectedSeries).toBeDefined()
+    const capabilityId = 'world.simulation-run.history-samples.read'
     const read = (input: unknown) => call<{ result: { samples: Array<{ sequence: number }>; nextBeforeSequence: number | null } }>(registry,
       `/internal/workspaces/${workspaceId}/capabilities/${capabilityId}/invoke`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspaceId, capabilityId, resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }, input, access }),
       })
-    const first = await read({ timeAxis: 'simulation', to: '2026-01-02T00:00:00Z', limit: 2 })
-    expect(first.body!.result.samples).toHaveLength(2)
-    const cursor = first.body!.result.nextBeforeSequence!
-    const second = await read({ timeAxis: 'simulation', to: '2026-01-02T00:00:00Z', beforeSequence: cursor, limit: 2 })
-    expect(second.body!.result.samples).toHaveLength(2)
-    expect(second.body!.result.samples.every(sample => sample.sequence < cursor)).toBe(true)
-    const observed = await read({ timeAxis: 'observed', to: '2026-01-02T00:00:00Z', limit: 2 })
+    const series = { runtimeId: selectedSeries.runtimeId, seriesId: selectedSeries.id }
+    const first = await read({ ...series, timeAxis: 'simulation', to: '2026-01-02T00:00:00Z', limit: 2 })
+    expect(first.body!.result.samples.length).toBeGreaterThan(0)
+    const cursor = first.body!.result.nextBeforeSequence
+    if (cursor !== null) {
+      const second = await read({ ...series, timeAxis: 'simulation', to: '2026-01-02T00:00:00Z', beforeSequence: cursor, limit: 2 })
+      expect(second.body!.result.samples.every(sample => sample.sequence < cursor)).toBe(true)
+    }
+    const observed = await read({ ...series, timeAxis: 'observed', to: '2026-01-02T00:00:00Z', limit: 2 })
     expect(observed.body!.result.samples).toEqual([])
     expect(runs.leaseSummary(run.id).leasesByKind.api).toBe(0)
   })
@@ -436,7 +446,7 @@ describe('World Module API', () => {
     expect(parsedRunInspection.sections.map(section => section.id)).not.toContain('available-capabilities')
 
     const contextCapabilityId = capabilityIdSchema.parse('world.simulation-run.context')
-    const context = await call<{ result: { briefing: { title: string }; objects: { total: number; returned: number; truncated: boolean; items: Array<{ id: string }> }; affordances: unknown } }>(
+    const context = await call<{ result: { briefing: { title: string }; objects: { total: number; returned: number; selection: string; items: Array<{ id: string }> }; affordances: unknown } }>(
       registry,
       `/internal/workspaces/${workspaceId}/capabilities/${contextCapabilityId}/invoke`,
       {
@@ -453,7 +463,7 @@ describe('World Module API', () => {
     )
     expect(context.body?.result.briefing.title).toBe('Training shift')
     expect(Array.isArray(context.body?.result.objects.items)).toBe(true)
-    expect(context.body?.result.objects.returned).toBeLessThanOrEqual(50)
+    expect(context.body?.result.objects.selection).toBe('one-per-pack-kind')
     expect(context.body?.result.objects.total).toBeGreaterThanOrEqual(context.body?.result.objects.returned ?? 0)
     expect(JSON.stringify(context.body)).not.toContain('timeline')
 

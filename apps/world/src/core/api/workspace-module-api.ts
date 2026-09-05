@@ -49,7 +49,6 @@ import {
 } from './simulation-run-routes.ts'
 
 const WORLD_MODULE_ID = moduleIdSchema.parse('world')
-const CONTEXT_OBJECT_LIMIT = 50
 
 export const worldModuleManifest = workspaceModuleManifestSchema.parse({
   module: {
@@ -82,6 +81,9 @@ const readObjectInputSchema = z.object({
 const searchObjectsInputSchema = z.object({
   packId: z.string().trim().min(1).max(128).optional(),
   kind: z.string().trim().min(1).max(128).optional(),
+  status: z.string().trim().min(1).max(128).optional(),
+  lifecycle: z.enum(['active', 'inactive', 'resolved', 'removed']).optional(),
+  priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
   text: z.string().trim().max(256).optional(),
   offset: z.number().int().nonnegative().default(0),
   limit: z.number().int().min(1).max(200).default(50),
@@ -108,14 +110,20 @@ const procedureDocumentInputSchema = z.object({
   }
 })
 const historyTimestampSchema = z.string().datetime({ offset: true })
-const readHistoryInputSchema = z.object({
+const listHistorySeriesInputSchema = z.object({
   runtimeId: z.string().trim().min(1).max(128).optional(),
-  seriesId: z.string().trim().min(1).max(128).optional(),
   subjectId: z.string().trim().min(1).max(128).optional(),
   signalId: z.string().trim().min(1).max(512).optional(),
+  text: z.string().trim().min(1).max(256).optional(),
+  offset: z.number().int().nonnegative().default(0),
+  limit: z.number().int().positive().max(500).default(100),
+}).strict()
+const readHistorySamplesInputSchema = z.object({
+  runtimeId: z.string().trim().min(1).max(128),
+  seriesId: z.string().trim().min(1).max(128),
   from: historyTimestampSchema.optional(),
   to: historyTimestampSchema.optional(),
-  limit: z.number().int().positive().max(10_000).optional(),
+  limit: z.number().int().positive().max(10_000).default(500),
   timeAxis: z.enum(['observed', 'simulation']).optional(),
   beforeSequence: z.number().int().positive().optional(),
 }).strict()
@@ -216,9 +224,10 @@ const simulationRunContextSchema = z.object({
   objects: z.object({
     total: z.number().int().nonnegative(),
     returned: z.number().int().nonnegative(),
-    truncated: z.boolean(),
+    selection: z.literal('one-per-pack-kind'),
     byPack: z.record(z.string(), z.number().int().nonnegative()),
     byKind: z.record(z.string(), z.number().int().nonnegative()),
+    byStatus: z.record(z.string(), z.number().int().nonnegative()),
     items: z.array(operationalObjectSummarySchema),
   }).strict(),
   affordances: z.object({
@@ -251,9 +260,17 @@ const simulationChangesSchema = z.object({
   nextSequence: z.number().int().nonnegative(),
 }).strict()
 
-const simulationHistorySchema = z.object({
+const simulationHistorySeriesSchema = z.object({
   status: runHistorianStatusSchema.nullable(),
+  total: z.number().int().nonnegative(),
+  offset: z.number().int().nonnegative(),
+  returned: z.number().int().nonnegative(),
+  hasMore: z.boolean(),
   series: z.array(recordingSeriesDescriptorSchema.extend({ runtimeId: z.string().min(1) }).strict()),
+}).strict()
+
+const simulationHistorySamplesSchema = z.object({
+  series: recordingSeriesDescriptorSchema.extend({ runtimeId: z.string().min(1) }).strict(),
   samples: z.array(recordingSampleSchema.extend({ runtimeId: z.string().min(1), sequence: z.number().int().positive() }).strict()),
   hasMore: z.boolean(),
   nextBeforeSequence: z.number().int().positive().nullable(),
@@ -437,6 +454,27 @@ const summarizeOperationalObject = (object: OperationalObject) => ({
   ...(object.operational.intent === undefined ? {} : { intent: object.operational.intent }),
   updatedAt: object.timestamps.updatedAt,
 })
+
+const representativeOperationalObjects = (objects: ReadonlyArray<OperationalObject>) => {
+  const priorityRank = { low: 0, normal: 1, high: 2, critical: 3 } as const
+  const selected = new Map<string, OperationalObject>()
+  for (const object of objects) {
+    const key = `${object.packId}\u0000${object.kind}`
+    const previous = selected.get(key)
+    if (!previous) {
+      selected.set(key, object)
+      continue
+    }
+    const rank = priorityRank[object.operational.priority ?? 'normal']
+    const previousRank = priorityRank[previous.operational.priority ?? 'normal']
+    if (rank > previousRank || (rank === previousRank && object.timestamps.updatedAt > previous.timestamps.updatedAt)) {
+      selected.set(key, object)
+    }
+  }
+  return [...selected.values()]
+    .map(summarizeOperationalObject)
+    .sort((left, right) => left.packId.localeCompare(right.packId) || left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id))
+}
 
 const serializableInspection = (value: unknown) =>
   inspectionViewSchema.parse(JSON.parse(JSON.stringify(value)) as unknown)
@@ -1026,10 +1064,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       ])
       const snapshot = runtime.snapshot()
       const { capabilities: _capabilityDescriptors, ...affordances } = runtime.capabilities()
-      const objectSummaries = snapshot.objects
-        .map(summarizeOperationalObject)
-        .sort((left, right) => left.id.localeCompare(right.id))
-      const contextObjects = objectSummaries.slice(0, CONTEXT_OBJECT_LIMIT)
+      const contextObjects = representativeOperationalObjects(snapshot.objects)
       return json({ result: {
         subject: {
           workspaceId: registry.workspaceId,
@@ -1053,11 +1088,12 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
           execution: { origin: summary.origin, state: execution },
         },
         objects: {
-          total: objectSummaries.length,
+          total: snapshot.objects.length,
           returned: contextObjects.length,
-          truncated: contextObjects.length < objectSummaries.length,
+          selection: 'one-per-pack-kind',
           byPack: countBy(snapshot.objects.map(object => object.packId)),
           byKind: countBy(snapshot.objects.map(object => object.kind)),
+          byStatus: countBy(snapshot.objects.map(object => object.operational.status)),
           items: contextObjects,
         },
         affordances,
@@ -1084,6 +1120,9 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       const objects = runtime.snapshot().objects
         .filter(object => input.packId === undefined || object.packId === input.packId)
         .filter(object => input.kind === undefined || object.kind === input.kind)
+        .filter(object => input.status === undefined || object.operational.status === input.status)
+        .filter(object => input.lifecycle === undefined || object.lifecycle === input.lifecycle)
+        .filter(object => input.priority === undefined || object.operational.priority === input.priority)
         .filter(object => needle === undefined || [object.id, object.label, object.operational.status]
           .some(value => value.toLocaleLowerCase().includes(needle)))
         .map(summarizeOperationalObject)
@@ -1213,34 +1252,68 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
   },
   {
     descriptor: {
-      id: 'world.simulation-run.history',
+      id: 'world.simulation-run.history-series.list',
       moduleId: WORLD_MODULE_ID,
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
-      title: 'Read Simulation History',
-      description: 'Discovers recorded series and reads bounded historical samples selected by Scenario Recording Profiles.',
+      title: 'List Simulation History Series',
+      description: 'Discovers recorded historian series selected by Scenario Recording Profiles. Returns descriptors only; use the sample reader for an exact series.',
       risk: 'read',
       idempotent: true,
-      inputSchema: z.toJSONSchema(readHistoryInputSchema),
-      outputSchema: capabilityJsonSchema(simulationHistorySchema),
+      inputSchema: z.toJSONSchema(listHistorySeriesInputSchema),
+      outputSchema: capabilityJsonSchema(simulationHistorySeriesSchema),
     },
     invoke: async (registry, invocation) => {
       const runtime = await registry.load(requireSimulationRunResource(invocation))
-      const input = readHistoryInputSchema.parse(invocation.input)
+      const input = listHistorySeriesInputSchema.parse(invocation.input)
+      const needle = input.text?.toLocaleLowerCase()
+      const series = runtime.recordingSeries()
+        .filter(item => input.runtimeId === undefined || item.runtimeId === input.runtimeId)
+        .filter(item => input.subjectId === undefined || item.subjectId === input.subjectId)
+        .filter(item => input.signalId === undefined || item.signalId === input.signalId)
+        .filter(item => needle === undefined || [item.runtimeId, item.id, item.subjectId, item.signalId, item.title, item.quantity, item.unit]
+          .some(value => value?.toLocaleLowerCase().includes(needle)))
+        .sort((left, right) => left.runtimeId.localeCompare(right.runtimeId) || left.id.localeCompare(right.id))
+      const page = series.slice(input.offset, input.offset + input.limit)
+      return json({ result: {
+        status: runtime.recordingStatus(),
+        total: series.length,
+        offset: input.offset,
+        returned: page.length,
+        hasMore: input.offset + page.length < series.length,
+        series: page,
+      } })
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.history-samples.read',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Read Simulation History Samples',
+      description: 'Reads a bounded page of historical samples for one exact historian series discovered through the series catalog.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: z.toJSONSchema(readHistorySamplesInputSchema),
+      outputSchema: capabilityJsonSchema(simulationHistorySamplesSchema),
+    },
+    invoke: async (registry, invocation) => {
+      const runtime = await registry.load(requireSimulationRunResource(invocation))
+      const input = readHistorySamplesInputSchema.parse(invocation.input)
+      const series = runtime.recordingSeries().find(item => item.runtimeId === input.runtimeId && item.id === input.seriesId)
+      if (!series) return apiError(404, 'historian_series_not_found', 'Historian series not found')
       const query = {
         ...(input.timeAxis === undefined ? {} : { timeAxis: input.timeAxis }),
         ...(input.beforeSequence === undefined ? {} : { beforeSequence: input.beforeSequence }),
-        ...(input.runtimeId === undefined ? {} : { runtimeId: input.runtimeId }),
-        ...(input.seriesId === undefined ? {} : { seriesId: input.seriesId }),
-        ...(input.subjectId === undefined ? {} : { subjectId: input.subjectId }),
-        ...(input.signalId === undefined ? {} : { signalId: input.signalId }),
+        runtimeId: input.runtimeId,
+        seriesId: input.seriesId,
         ...(input.from === undefined ? {} : { from: new Date(input.from).toISOString() }),
         ...(input.to === undefined ? {} : { to: new Date(input.to).toISOString() }),
-        ...(input.limit === undefined ? {} : { limit: input.limit }),
+        limit: input.limit,
       }
       return json({ result: {
-        status: runtime.recordingStatus(),
-        series: runtime.recordingSeries(),
+        series,
         ...runtime.recordedSamples(query),
       } })
     },

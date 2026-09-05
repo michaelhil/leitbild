@@ -25,7 +25,8 @@
         { "capabilityId": "world.simulation-run.inspect" },
         { "capabilityId": "world.simulation-run.objects.search" },
         { "capabilityId": "world.simulation-run.read-object" },
-        { "capabilityId": "world.simulation-run.history" },
+        { "capabilityId": "world.simulation-run.history-series.list" },
+        { "capabilityId": "world.simulation-run.history-samples.read" },
         { "capabilityId": "world.simulation-run.execution.read" },
         { "capabilityId": "world.simulation-run.execution.set" },
         { "capabilityId": "world.simulation-run.execution.advance" }
