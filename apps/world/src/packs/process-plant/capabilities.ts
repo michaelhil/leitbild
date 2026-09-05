@@ -166,10 +166,10 @@ const titleFor = (id: string): string => id
   .join(' · ')
 
 const queryDescriptionById: Readonly<Record<string, string>> = {
-  'world.process-plant.catalog.list': 'Discover selectable Process Plant models, operating points, automations, controls, assessments, recordings, displays, and credibility evidence.',
+  'world.process-plant.catalog.list': 'Discover authored Process Plant model, operating-point, automation, control, assessment, recording, display, and credibility options. This is configuration, not a list of live Plant instances.',
   'world.process-plant.credibility.list': 'List engineering credibility evidence available for one Plant.',
   'world.process-plant.credibility.read': 'Read one engineering evidence artifact and its provenance for one Plant.',
-  'world.process-plant.plants.list': 'List active Plants with their model library, graph size, variable count, and elapsed simulation time.',
+  'world.process-plant.plants.list': 'Discover live active Plant units and their exact plantId values, model library, graph size, variable count, and elapsed simulation time. Use these identities for Plant-specific reads.',
   'world.process-plant.graph.read': 'Read one complete compiled Plant component, connection, variable, and signal graph. This is a large engineering view; prefer component or signal search for focused questions.',
   'world.process-plant.components.search': 'Discover Plant components by identity, kind, or text. Returns compact summaries by default and parameters only when requested.',
   'world.process-plant.artifact.read': 'Read one complete authored Plant configuration or compiled graph artifact, including implementation source and calculation links. Use for provenance or full engineering inspection, not routine live-state questions.',

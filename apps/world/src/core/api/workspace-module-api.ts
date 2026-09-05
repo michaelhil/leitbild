@@ -1427,6 +1427,7 @@ export const handleWorldModuleApi = async (
     if (error instanceof Error && 'code' in error && error.code === 'workspace_closing') return apiError(409, 'workspace_closing', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'simulation_run_busy') return apiError(409, 'simulation_run_busy', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'simulation_run_failed') return apiError(409, 'simulation_run_failed', error.message)
+    if (error instanceof Error && 'code' in error && error.code === 'capability_target_not_found') return apiError(404, 'capability_target_not_found', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'fast_forward_unsupported') return apiError(422, 'fast_forward_unsupported', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'workspace_capacity_exceeded') return apiError(503, 'workspace_capacity_exceeded', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'simulation_run_name_changed') {

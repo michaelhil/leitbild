@@ -43,6 +43,9 @@ export const requirePlant = (
   plantId: string,
 ): ProcessPlantRuntimeInstance => {
   const plant = plants.get(plantId)
-  if (!plant) throw new Error(`process plant not found: ${plantId}`)
+  if (!plant) throw Object.assign(
+    new Error(`Process Plant not found: ${plantId}. Discover live Plant identities with world.process-plant.plants.list.`),
+    { code: 'capability_target_not_found' as const },
+  )
   return plant
 }

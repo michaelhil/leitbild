@@ -90,11 +90,26 @@ describe('process plant model composition', () => {
 describe('process plant discovery', () => {
   test('describes configuration and live-data reads in searchable domain language', () => {
     const descriptions = new Map(processPlantCapabilities.map(capability => [capability.id, capability.description]))
+    expect(descriptions.get('world.process-plant.catalog.list')).toContain('configuration, not a list of live Plant instances')
+    expect(descriptions.get('world.process-plant.plants.list')).toContain('exact plantId values')
     expect(descriptions.get('world.process-plant.artifact.read')).toContain('complete authored Plant configuration')
     expect(descriptions.get('world.process-plant.components.search')).toContain('compact summaries')
     expect(descriptions.get('world.process-plant.variables.search')).toContain('current Plant variables')
     expect(descriptions.get('world.process-plant.signals.read')).toContain('live values')
     expect(descriptions.get('world.process-plant.transient.diagnostics')).toContain('diagnostics')
+  })
+
+  test('makes an unknown Plant identity a discoverable caller error', () => {
+    try {
+      answerProcessPlantQuery({
+        request: { capabilityId: 'world.process-plant.alarms.summary', input: { plantId: 'unit2' } },
+        plants: new Map(),
+      })
+      throw new Error('expected the query to reject an unknown Plant')
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'capability_target_not_found' })
+      expect((error as Error).message).toContain('world.process-plant.plants.list')
+    }
   })
 
   test('discovers compact component configuration and expands parameters only on request', () => {
