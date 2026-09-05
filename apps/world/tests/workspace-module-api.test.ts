@@ -144,6 +144,15 @@ describe('World Module API', () => {
       code: 'historian_series_not_found',
       details: { nextOperation: seriesCapabilityId },
     } })
+    const wrongRuntime = await read({ runtimeId: 'plant:not-a-runtime', seriesId: selectedSeries.id, limit: 1 })
+    expect(wrongRuntime.status).toBe(422)
+    expect(wrongRuntime.body).toMatchObject({ error: {
+      code: 'historian_runtime_mismatch',
+      details: {
+        suppliedRuntimeId: 'plant:not-a-runtime',
+        matchingReferences: [{ runtimeId: selectedSeries.runtimeId, id: selectedSeries.id }],
+      },
+    } })
     const first = await read({ ...series, timeAxis: 'simulation', to: '2026-01-02T00:00:00Z', limit: 2 })
     expect(first.body!.result.samples.length).toBeGreaterThan(0)
     expect(first.body!.result.windowSummary.sampleCount).toBeGreaterThan(0)

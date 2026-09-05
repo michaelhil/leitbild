@@ -1318,7 +1318,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'List Simulation History Series',
-      description: 'Discovers recorded historian series selected by Scenario Recording Profiles. Filter by runtime, subject, signal, or literal text; every text term must match somewhere in the metadata, so use one signal concept per query and batch separate focused queries for different series. If user vocabulary does not match, resolve the canonical subject or signal through the active Pack instead of dumping an unfiltered catalog. Pass the returned opaque runtimeId and series id unchanged to the sample reader. A live signal path is not a historian series id.',
+      description: 'Discovers recorded historian series selected by Scenario Recording Profiles. Filter by runtime, subject, signal, or literal text; every text term must match somewhere in the metadata, so use one signal concept per query and batch separate focused queries for different series. If user vocabulary does not match, resolve the canonical subject or signal through the active Pack instead of dumping an unfiltered catalog. Treat the returned runtimeId and opaque series id as one reference and pass both unchanged to the sample reader. A live signal path is not a historian series id.',
       risk: 'read',
       idempotent: true,
       inputSchema: z.toJSONSchema(listHistorySeriesInputSchema),
@@ -1351,7 +1351,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'Read Simulation History Samples',
-      description: 'Reads a bounded page for one exact historian series. Obtain runtimeId and the opaque seriesId from world.simulation-run.history-series.list; do not substitute a live signal path. windowSummary covers the complete filtered interval independently of page size, so trend endpoints, extrema, and change detection do not require a large raw sample page. Retained observed/simulation-time bounds and retentionGap report missing older evidence.',
+      description: 'Reads a bounded page for one exact historian series. Obtain the runtimeId and opaque seriesId pair from world.simulation-run.history-series.list; do not substitute a subject id or live signal path. windowSummary covers the complete filtered interval independently of page size, so trend endpoints, extrema, and change detection do not require a large raw sample page. Retained observed/simulation-time bounds and retentionGap report missing older evidence.',
       risk: 'read',
       idempotent: true,
       inputSchema: z.toJSONSchema(readHistorySamplesInputSchema),
@@ -1360,11 +1360,27 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     invoke: async (registry, invocation) => {
       const runtime = await registry.load(requireSimulationRunResource(invocation))
       const input = readHistorySamplesInputSchema.parse(invocation.input)
-      const series = runtime.recordingSeries().find(item => item.runtimeId === input.runtimeId && item.id === input.seriesId)
-      if (!series) return apiError(404, 'historian_series_not_found', 'Historian series not found', {
-        nextOperation: 'world.simulation-run.history-series.list',
-        guidance: 'Discover the exact opaque series id by filtering the series catalog; do not use a live signal path as seriesId.',
-      })
+      const availableSeries = runtime.recordingSeries()
+      const series = availableSeries.find(item => item.runtimeId === input.runtimeId && item.id === input.seriesId)
+      if (!series) {
+        const matchingId = availableSeries.filter(item => item.id === input.seriesId)
+        if (matchingId.length > 0) return apiError(422, 'historian_runtime_mismatch', 'Historian series exists under a different Pack runtime', {
+          suppliedRuntimeId: input.runtimeId,
+          matchingReferences: matchingId.slice(0, 20).map(item => ({
+            runtimeId: item.runtimeId,
+            id: item.id,
+            subjectId: item.subjectId,
+            signalId: item.signalId,
+            title: item.title,
+          })),
+          matchingReferenceCount: matchingId.length,
+          guidance: 'Use the returned runtimeId and id together as the historian series reference.',
+        })
+        return apiError(404, 'historian_series_not_found', 'Historian series not found', {
+          nextOperation: 'world.simulation-run.history-series.list',
+          guidance: 'Discover the exact runtimeId and opaque series id pair by filtering the series catalog; do not use a subject id or live signal path as either field.',
+        })
+      }
       const query = {
         ...(input.timeAxis === undefined ? {} : { timeAxis: input.timeAxis }),
         ...(input.beforeSequence === undefined ? {} : { beforeSequence: input.beforeSequence }),
