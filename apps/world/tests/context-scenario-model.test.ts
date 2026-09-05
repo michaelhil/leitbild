@@ -135,6 +135,7 @@ describe('object context, scenario, and mission model', () => {
       id: 'scenario:oslo-context-basic',
       schemaVersion: 1,
       title: 'Oslo context basic',
+      agentRestrictions: { operationIds: [], objects: [] },
       packs: ['ambulance'],
       packRuntimes: {},
       packConfigs: { ambulance: { adapter: 'ambulance.local' } },

@@ -1,12 +1,12 @@
 import { z } from 'zod'
 import { commandEnvelopeSchema, commandResultSchema, type CommandEnvelope, type CommandResult } from './commands.ts'
-import { eventIdSchema, objectIdSchema, simulationRunIdSchema, type ActorId, type EventId, type ObjectId, type SimulationRunId } from './ids.ts'
+import { actorIdSchema, eventIdSchema, objectIdSchema, simulationRunIdSchema, type ActorId, type EventId, type ObjectId, type SimulationRunId } from './ids.ts'
 import { operationalObjectSchema, type OperationalObject } from './object.ts'
 import { provenanceSchema, type Provenance } from './provenance.ts'
 import { isoTimestampSchema, simulationClockStateSchema, type IsoTimestamp, type SimulationClockState } from './time.ts'
 import { telemetryStateSchema, type TelemetryState } from './telemetry.ts'
 import { interactionSignalSchema, operationalNotificationSchema, type InteractionSignal, type OperationalNotification } from './interactions.ts'
-import { scenarioGuidanceSchema, type ScenarioGuidance } from './scenario.ts'
+import { agentRestrictionsSchema, scenarioGuidanceSchema, type AgentRestrictions, type ScenarioGuidance } from './scenario.ts'
 import { procedureRunClosedEventSchema, procedureRunResetEventSchema, procedureRunStartedEventSchema, procedureStepUpdatedEventSchema, type ProcedureRunState, type ProcedureRunId, type ProcedureRunScope, type ProcedureRunStatus, type ProcedureStepId, type ProcedureAssessment, type ProcedureId, type ProcedureSourceId } from './procedures.ts'
 
 export interface EventEnvelopeBase {
@@ -70,6 +70,12 @@ export type SimulationRunEvent =
   | (EventEnvelopeBase & {
       readonly type: 'scenario.highlights.cleared'
       readonly objectIds?: ReadonlyArray<ObjectId>
+    })
+  | (EventEnvelopeBase & {
+      readonly type: 'scenario.agent-restrictions.set'
+      readonly restrictions: AgentRestrictions
+      readonly revision: number
+      readonly updatedBy: ActorId
     })
   | (EventEnvelopeBase & {
       readonly type: 'simulationRun.reset'
@@ -171,6 +177,12 @@ export const simulationRunEventSchema = z.discriminatedUnion('type', [
   eventBaseSchema.extend({
     type: z.literal('scenario.highlights.cleared'),
     objectIds: z.array(objectIdSchema).optional(),
+  }),
+  eventBaseSchema.extend({
+    type: z.literal('scenario.agent-restrictions.set'),
+    restrictions: agentRestrictionsSchema,
+    revision: z.number().int().nonnegative(),
+    updatedBy: actorIdSchema,
   }),
   eventBaseSchema.extend({
     type: z.literal('simulationRun.reset'),

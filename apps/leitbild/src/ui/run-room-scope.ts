@@ -1,7 +1,7 @@
 import type {
   ModuleResourceDescriptor,
   WorkspaceResourceReference,
-  WorkspaceResourceSubjectSelection,
+  WorkspaceRoomScope,
 } from '@leitbild/contracts'
 
 export const sameResource = (left: WorkspaceResourceReference, right: WorkspaceResourceReference): boolean =>
@@ -14,22 +14,22 @@ export const runFamilyFor = (run: ModuleResourceDescriptor): WorkspaceResourceRe
   run.links.find(link => link.rel === 'member-of' && link.ref.type === 'world.run-family')?.ref
 
 export const roomUsesFamily = (room: ModuleResourceDescriptor, family: WorkspaceResourceReference): boolean =>
-  room.links.some(link => link.rel === 'subject-collection' && sameResource(link.ref, family))
+  room.links.some(link => link.rel === 'scope-collection' && sameResource(link.ref, family))
 
 export const roomSelectsRun = (room: ModuleResourceDescriptor, run: ModuleResourceDescriptor): boolean => {
   const family = runFamilyFor(run)
   if (!family || !roomUsesFamily(room, family)) return false
-  const selected = room.links.filter(link => link.rel === 'subject-member')
+  const selected = room.links.filter(link => link.rel === 'scope-member')
   if (selected.length > 0) return selected.some(link => sameResource(link.ref, run.ref))
-  return !room.links.some(link => link.rel === 'subject-excluded' && sameResource(link.ref, run.ref))
+  return !room.links.some(link => link.rel === 'scope-excluded' && sameResource(link.ref, run.ref))
 }
 
-export const roomSelectionIncludingRun = (
+export const roomScopeIncludingRun = (
   room: ModuleResourceDescriptor,
   family: WorkspaceResourceReference,
   run: WorkspaceResourceReference,
-): WorkspaceResourceSubjectSelection => {
-  const selected = room.links.filter(link => link.rel === 'subject-member').map(link => link.ref)
+): WorkspaceRoomScope => {
+  const selected = room.links.filter(link => link.rel === 'scope-member').map(link => link.ref)
   if (selected.length > 0) {
     return {
       kind: 'collection',
@@ -42,7 +42,7 @@ export const roomSelectionIncludingRun = (
     collection: family,
     members: {
       mode: 'all',
-      except: room.links.filter(link => link.rel === 'subject-excluded' && !sameResource(link.ref, run)).map(link => link.ref),
+      except: room.links.filter(link => link.rel === 'scope-excluded' && !sameResource(link.ref, run)).map(link => link.ref),
     },
   }
 }

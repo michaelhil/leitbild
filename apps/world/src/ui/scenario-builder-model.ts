@@ -85,6 +85,7 @@ export const createEmptyScenarioDefinition = (): ScenarioDraft => ({
   id: `scenario-${crypto.randomUUID()}`,
   title: 'Untitled scenario',
   objectives: [],
+  agentRestrictions: { operationIds: [], objects: [] },
   connections: [],
   packs: [],
   world: { startsAt: new Date().toISOString(), environment: {} },

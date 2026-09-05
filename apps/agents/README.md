@@ -51,8 +51,7 @@ The Leitbild Host is the sole owner of Workspace identity, names, Module provisi
 - `/workspaces` is the Host-managed Workspace collection UI.
 - Agents discover the current Workspace's Resources and Capabilities through the Host.
 
-Opening or copying a Simulation Run creates no Room or Agent. The Host opens a **Run Assistant Room** only on request, using the ordinary Room Definition that advertises assistance for `world.run-family`. The Room stores a generic Subject Selection and publishes it through catalog links; Tool Grants separately allow read/write access to the live selected Runs. An `all except` selection automatically includes future copies without copying family membership into Agents. Reopening preserves the conversation. Deleting a Run leaves the Room conversation intact; deleting the Room also removes the AI profiles created for that Room.
-- Agent Tool Grants store Capability ids only. The Agent selects a Resource at invocation time.
+Opening or copying a Simulation Run creates no Room or Agent. The Host opens an Assistant Room only on request. One ordinary Room Definition serves Workspace, single-Resource, and collection scopes. A Run-family Room defaults to `all except []`, so future copies enter scope without copying membership into Agents. Everything advertised inside Room Scope is open by default; target Modules enforce their own current exceptions. Reopening preserves the conversation. Deleting a Run leaves the Room conversation intact; deleting the Room also removes the AI profiles created for that Room.
 
 Rooms and Agents never copy Module base URLs, discovery URLs, or external Resource ids.
 
@@ -130,15 +129,14 @@ Deployment-authored tools, skills, scripts, and geodata live under `$LEITBILD_HO
 
 ## Cross-Module tools
 
-Leitbild contains no World- or application-specific integration client. AI Agents use three generic tools:
+Leitbild contains no World- or application-specific integration client. Every AI Agent receives two generic tools:
 
-- `workspace_catalog` discovers reusable Definitions and live Resource descriptors;
-- `workspace_capabilities` searches Capability descriptions and, when given the catalog's single exact target, reports target applicability, Agent authority, structured blockers, and callable schemas;
-- `workspace_invoke` invokes a granted Capability against that one exact Definition Revision or Resource target. The discriminated target shape makes an accidental mixed Resource/Definition call invalid by construction.
+- `workspace_explore` discovers current scoped Resources and Definitions, searches their advertised operations, and returns schemas only when requested;
+- `workspace_call` invokes one discovered read or change operation, or batches independent reads.
 
-Catalog targets are passed unchanged between these tools. Wildcards are valid only in discovery filters, never as target identity. Untargeted Capability search does not claim target-specific access; an exact target is required before a Resource or Definition Capability is classified as callable or blocked.
+Exact targets are passed unchanged between these tools. Wildcards are valid only in discovery filters, never as target identity. The broker resolves current Room Scope and operation applicability on every call. Focused Subjects identify browser attention and never widen scope.
 
-An Agent Profile with one or more Tool Grants receives this broker surface automatically at runtime. Room Definitions select domain-facing Agents tools only; they do not repeat these infrastructure tool names. Removing all Tool Grants removes the derived broker surface again.
+Room Scope is the sole durable boundary in Agents. Inside it, operations are open by default. A human or system actor may replace scope; an Agent may not expand its own. World Runs can additionally block exact operation ids or targeted inspection/change of exact object ids. Scenario Definitions provide only the Run's initial restriction set, and a human can replace that set while the Run is active.
 
 For a World Simulation Run, the Agent can request `world.simulation-run.context` when it needs compact orientation: Scenario, objectives, current situation, procedure state, an object index, and supported Capabilities. It can then search or read specific objects, fetch changes or history, inspect procedures, or invoke an authorized and applicable Capability. The Skill advises this evidence-gathering without imposing a fixed call sequence or count. Future Scenario Timeline events and solver-private state are not exposed. This keeps Agent behavior configurable and makes future Modules available without another integration subsystem. A concrete continuous cross-Module behavior must be implemented and owned explicitly; ordinary discovery and commands create no persistent relationship.
 

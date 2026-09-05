@@ -35,16 +35,26 @@ const signalRequestSchema = z.object({
   ttlMs: z.number().finite().positive().optional(),
 })
 
-export const buildSimulationRunActor = (actorId: Actor['id']): Actor => ({
+export const buildSimulationRunActor = (actorId: Actor['id'], role: Actor['role'] = 'operator'): Actor => ({
   id: actorId,
   label: actorId,
-  role: 'operator',
+  role,
 })
 
 export const actorIdForAccessContext = (accessContext: AccessContext): Actor['id'] =>
   accessContext.actor.id === undefined
     ? defaultOperatorActorId
     : actorIdSchema.parse(`actor:${accessContext.actor.kind}:${accessContext.actor.id}`)
+
+export const buildSimulationRunActorForAccess = (accessContext: AccessContext): Actor =>
+  buildSimulationRunActor(
+    actorIdForAccessContext(accessContext),
+    accessContext.actor.kind === 'ai'
+      ? 'ai_agent'
+      : accessContext.actor.kind === 'system'
+        ? 'system'
+        : 'operator',
+  )
 
 const buildSignal = (simulationRunId: SimulationRunId, raw: unknown, defaultActorId: Actor['id']): {
   readonly signal: InteractionSignal
@@ -241,7 +251,7 @@ const handleSimulationRunApiInner = async (
     if (!runtime) return apiError(404, 'simulation_run_not_found', 'simulation run not found')
     const invocation = capabilityInvocationRequestSchema.parse(await readJson(req))
     try {
-      const actor = buildSimulationRunActor(actorIdForAccessContext(config.accessContext))
+      const actor = buildSimulationRunActorForAccess(config.accessContext)
       const outcome = await runtime.invokeCapability(actor, {
         capabilityId,
         input: invocation.input,

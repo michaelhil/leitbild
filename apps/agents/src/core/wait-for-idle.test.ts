@@ -20,7 +20,7 @@ const makeGeneratingAgent = (idleAfterMs: number): AIAgent => ({
 } as unknown as AIAgent)
 
 const makeRoom = (name: string) =>
-  createRoom({ id: `room-${name}`, name, createdAt: Date.now(), createdBy: 'test' })
+  createRoom({ id: `room-${name}`, name, createdAt: Date.now(), createdBy: 'test', scope: { kind: 'workspace' }, scopeRevision: 0 })
 
 describe('waitForRoomIdle', () => {
   test('empty room with no agents returns idle immediately', async () => {

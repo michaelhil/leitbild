@@ -44,6 +44,16 @@ export const createSimulationRunStateStore = (): SimulationRunStateStore => {
     }
     if (event.type === 'object.deleted') {
       objects.delete(event.objectId)
+      if (scenario?.agentRestrictions.objects.some(entry => entry.objectId === event.objectId)) {
+        scenario = {
+          ...scenario,
+          agentRestrictions: {
+            ...scenario.agentRestrictions,
+            revision: scenario.agentRestrictions.revision + 1,
+            objects: scenario.agentRestrictions.objects.filter(entry => entry.objectId !== event.objectId),
+          },
+        }
+      }
       if (procedures) {
         procedures = {
           runs: procedures.runs.filter(run =>
@@ -106,6 +116,13 @@ export const createSimulationRunStateStore = (): SimulationRunStateStore => {
         highlightedObjectIds: event.objectIds === undefined
           ? []
           : current.highlightedObjectIds.filter(objectId => !event.objectIds?.includes(objectId)),
+      }))
+      return
+    }
+    if (event.type === 'scenario.agent-restrictions.set') {
+      updateScenario(current => ({
+        ...current,
+        agentRestrictions: { ...event.restrictions, revision: event.revision },
       }))
       return
     }

@@ -51,7 +51,7 @@ describe('toUIMessage', () => {
 
   test('forwards attachments and tool trace without putting them in content', () => {
     const attachment = { kind: 'image' as const, dataUrl: 'data:image/png;base64,eA==', mimeType: 'image/png' as const, width: 1, height: 1, capturedAt: 1 }
-    const trace = { tool: 'workspace_catalog', argumentKeys: [], argumentBytes: 2, success: true, resultPreview: 'ok' }
+    const trace = { tool: 'workspace_explore', argumentKeys: [], argumentBytes: 2, success: true, resultPreview: 'ok' }
     const ui = toUIMessage({ ...base, attachments: [attachment], toolTrace: [trace] })
     expect(ui.attachments).toEqual([attachment])
     expect(ui.toolTrace).toEqual([trace])

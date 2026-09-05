@@ -91,6 +91,13 @@ body {
 .connection-list > div { position: relative; display: grid; gap: 2px; padding: 8px 34px 8px 9px; border: 1px solid var(--border); border-radius: 7px; font-size: 12px; }
 .connection-list small { color: var(--muted); }
 .connection-list button { position: absolute; top: 50%; right: 5px; min-height: 26px; padding: 1px 8px; color: var(--critical); transform: translateY(-50%); }
+.agent-restrictions { padding: 8px; border: 1px solid var(--border); border-radius: 7px; }
+.agent-restrictions summary { cursor: pointer; font-size: 12px; font-weight: 700; }
+.agent-restrictions > p { margin: 8px 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.agent-restrictions > div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 7px; padding: 5px 0; border-top: 1px solid var(--border); font-size: 11px; }
+.agent-restrictions > div > span { min-width: 0; display: grid; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-restrictions > div small { color: var(--muted); }
+.agent-restrictions > div label { display: flex; align-items: center; gap: 3px; }
 .item-type-list { display: grid; gap: 6px; }
 .item-type-list button { display: grid; justify-items: start; gap: 3px; text-align: left; }
 .item-type-list small { color: var(--muted); font-weight: 400; line-height: 1.35; }

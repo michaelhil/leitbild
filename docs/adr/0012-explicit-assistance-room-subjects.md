@@ -1,5 +1,7 @@
 # Assistance Rooms are explicit and select Resources
 
+> Superseded by ADR 0018. The explicit-room lifecycle and derived Run Family remain, but Subject Selection and Tool Grants were replaced by one Room Scope plus target-owned Run restrictions.
+
 Opening or copying a World Run creates only that Run. The Host opens an Agents Room only when a person explicitly opens the Run Assistant. The Agents Module discovers exactly one ordinary Room Definition whose `assistance` metadata matches either the Workspace or the selected Resource type; no Definition id, Agent id, Pack id, or model name is embedded in the Host.
 
 A Run Assistant Room stores a generic Subject Selection, not a World-specific binding. It may select one Resource or members of a Resource collection using either `all except` or `selected only`. World publishes each Run Family as a derived `world.run-family` Resource with `contains` links, while member Runs publish `member-of`. The default selection is all family members, so later what-if copies are automatically in scope without events, synchronization, or duplicated membership state. Additional Rooms choose their initial Runs explicitly and may opt into future copies. Subject Selection is conversation scope; Tool Grants remain separate authority and are checked against the live catalog at invocation time.

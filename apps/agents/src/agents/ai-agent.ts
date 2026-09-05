@@ -137,7 +137,6 @@ export const createAIAgent = (
   let currentSkills: ReadonlyArray<string> = config.skills ?? []
   let currentTags: ReadonlyArray<string> = config.tags ?? []
   let currentTriggers: ReadonlyArray<import('../core/triggers/types.ts').Trigger> = config.triggers ?? []
-  let currentToolGrants = [...(config.toolGrants ?? [])]
   // Context & Prompts toggles — resolve defaults to preserve current behavior
   const includePromptsState: Required<IncludePrompts> = {
     persona: config.includePrompts?.persona ?? true,
@@ -570,9 +569,7 @@ export const createAIAgent = (
     updateTools: (tools: ReadonlyArray<string>) => { currentTools = tools },
     getSkills: () => currentSkills,
     updateSkills: (skills: ReadonlyArray<string>) => { currentSkills = [...skills] },
-    getToolGrants: () => currentToolGrants,
     getFocusedSubjects: (roomId: string) => focusedSubjectsByRoom.get(roomId) ?? [],
-    updateToolGrants: (grants) => { currentToolGrants = [...grants] },
     getIncludePrompts: () => ({ ...includePromptsState }),
     updateIncludePrompts: (partial: IncludePrompts) => {
       for (const key of Object.keys(partial) as PromptSection[]) {
@@ -638,7 +635,6 @@ export const createAIAgent = (
       contextEnabled,
       ...(maxToolIterationsCfg !== undefined ? { maxToolIterations: maxToolIterationsCfg } : {}),
       ...(currentTriggers.length > 0 ? { triggers: [...currentTriggers] } : {}),
-      ...(currentToolGrants.length > 0 ? { toolGrants: [...currentToolGrants] } : {}),
     }),
     cancelGeneration: () => { activeAbortController?.abort(); activeAbortController = null; cm.cancelAll() },
     continueTools: (roomId: string): boolean => {

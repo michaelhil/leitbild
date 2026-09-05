@@ -3,7 +3,7 @@ import { buildContext, buildSystemSections, __strategyTestSeam, type BuildContex
 import type { AgentHistory, Message, RoomProfile } from '../core/types/messaging.ts'
 
 const mkProfile = (id: string, name: string, roomPrompt?: string): RoomProfile => ({
-  id, name, roomPrompt, createdAt: Date.now(), createdBy: 'test',
+  id, name, roomPrompt, createdAt: Date.now(), createdBy: 'test', scope: { kind: 'workspace' }, scopeRevision: 0,
 })
 
 const mkHistory = (roomId: string, name: string, prompt?: string, messages: Message[] = []): AgentHistory => ({

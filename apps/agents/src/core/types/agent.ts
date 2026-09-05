@@ -6,7 +6,6 @@ import type { ToolDefinition, ToolExecutor } from './tool.ts'
 import type { Room } from './room.ts'
 import type { RoomDirectory } from '../rooms/directory.ts'
 import type { Trigger } from '../triggers/types.ts'
-import type { ToolGrant } from '@leitbild/contracts'
 
 // === Agent State — subscribe/get pattern for observability ===
 
@@ -97,9 +96,7 @@ export interface AIAgent extends Agent {
   readonly updateTools?: (tools: ReadonlyArray<string>) => void
   readonly getSkills: () => ReadonlyArray<string>
   readonly updateSkills: (skills: ReadonlyArray<string>) => void
-  readonly getToolGrants: () => ReadonlyArray<ToolGrant>
   readonly getFocusedSubjects: (roomId: string) => ReadonlyArray<import('@leitbild/contracts').WorkspaceSubjectReference>
-  readonly updateToolGrants: (grants: ReadonlyArray<ToolGrant>) => void
   readonly refreshTools?: (support: {
     toolExecutor?: ToolExecutor
     toolDefinitions?: ReadonlyArray<ToolDefinition>
@@ -228,7 +225,6 @@ export interface AIAgentConfig {
   readonly historyLimit?: number
   readonly tools?: ReadonlyArray<string>        // tool names this agent can use
   readonly skills?: ReadonlyArray<string>       // exact behavioural Skill selection
-  readonly toolGrants?: ReadonlyArray<ToolGrant> // Workspace Capabilities this Agent may invoke
   readonly maxToolIterations?: number           // optional operator check-in threshold
   readonly tags?: ReadonlyArray<string>         // capability/role tags for [[tag:X]] addressing
   readonly thinking?: boolean                    // enable model CoT (qwen3 thinking mode)

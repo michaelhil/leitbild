@@ -4,7 +4,6 @@ import { toolsToDefinitions } from '../../llm/tool-capability.ts'
 import { modelSupportsTools } from '../../llm/models/catalog.ts'
 import { estimateTokens } from '../../agents/context-builder.ts'
 import type { ContextSection, IncludeContext, IncludePrompts, PromptSection } from '../../core/types/agent.ts'
-import { toolGrantSetSchema } from '@leitbild/contracts'
 import type { ToolRegistry } from '../../core/types/tool.ts'
 import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
 import type { RouteEntry } from './types.ts'
@@ -112,7 +111,6 @@ export const agentRoutes: RouteEntry[] = [
         detail.promptsEnabled = aiAgent.getPromptsEnabled()
         detail.contextEnabled = aiAgent.getContextEnabled()
         detail.maxToolIterations = aiAgent.getMaxToolIterations()
-        detail.toolGrants = aiAgent.getToolGrants()
         // Registered tools + token cost estimates — enables per-tool UI panel
         const registered = system.toolRegistry.list().map(t => t.name)
         detail.registeredTools = registered
@@ -141,10 +139,6 @@ export const agentRoutes: RouteEntry[] = [
       // yellow warning chip; do NOT block creation. Effective-model
       // resolution at call time picks a working fallback.
       const requestedModel = body.model as string
-      const toolGrants = body.toolGrants === undefined
-        ? undefined
-        : toolGrantSetSchema.safeParse(body.toolGrants)
-      if (toolGrants && !toolGrants.success) return errorResponse(toolGrants.error.message, 400)
       const requestedSkills = body.skills === undefined ? [] : Array.isArray(body.skills)
         ? (body.skills as unknown[]).filter((skill): skill is string => typeof skill === 'string')
         : null
@@ -170,7 +164,6 @@ export const agentRoutes: RouteEntry[] = [
             ? { tools: (body.tools as unknown[]).filter((t): t is string => typeof t === 'string') }
             : {}),
           ...(body.skills === undefined ? {} : { skills: requestedSkills }),
-          ...(toolGrants === undefined ? {} : { toolGrants: toolGrants.data }),
         })
         const aiA = asAIAgent(agent)
         const evt = { type: 'agent_joined' as const, agent: { id: agent.id, name: agent.name, kind: agent.kind, ...(aiA ? { model: aiA.getModel() } : {}) } }
@@ -277,12 +270,6 @@ export const agentRoutes: RouteEntry[] = [
           const missing = requested.filter(name => system.skillStore.get(name) === undefined)
           if (missing.length > 0) return errorResponse(`Skills not found: ${missing.join(', ')}`, 400)
           aiAgent.updateSkills([...new Set(requested)])
-        }
-        if (body.toolGrants !== undefined) {
-          const grants = toolGrantSetSchema.safeParse(body.toolGrants)
-          if (!grants.success) return errorResponse(grants.error.message, 400)
-          aiAgent.updateToolGrants(grants.data)
-          await system.refreshAllAgentTools()
         }
       }
       if (typeof body.description === 'string' && agent.updateDescription) {

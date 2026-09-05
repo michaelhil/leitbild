@@ -18,6 +18,7 @@ import { gridOperatingPointOverridesSchema } from './config.ts'
 import { electricGridDefinitionCatalog } from './definition-refs.ts'
 import type { GridAssetDefinition } from './grid-model.ts'
 import { electricGridPackId, gridProjectionSchema } from './model.ts'
+import { objectIdSchema } from '../../core/model/index.ts'
 import { gridAssetSnapshotFor, type GridAssetSnapshot, type GridRuntimeInstance } from './runtime/instance.ts'
 
 export const electricGridQueryKinds = [
@@ -116,6 +117,10 @@ const query = (config: {
   description: config.description,
   input: config.input,
   output: config.output,
+  inspectObjectIds: rawInput => {
+    const gridId = (rawInput as { gridId?: unknown }).gridId
+    return typeof gridId === 'string' ? [objectIdSchema.parse(gridId)] : []
+  },
 })
 
 export const electricGridQueryCapabilities: ReadonlyArray<SimulationCapability> = [

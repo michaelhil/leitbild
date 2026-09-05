@@ -208,6 +208,14 @@ const processPlantQueryCapabilities = processPlantQueryKinds.map(id => {
     description: queryDescriptionById[id] ?? `Read ${titleFor(id)} from the active Process Plant runtime.`,
     input,
     output,
+    ...(['world.process-plant.catalog.list', 'world.process-plant.plants.list', 'world.process-plant.runtime.status'].includes(id)
+      ? {}
+      : {
+          inspectObjectIds: (rawInput: unknown) => {
+            const plantId = (rawInput as { plantId?: unknown }).plantId
+            return typeof plantId === 'string' ? [objectIdSchema.parse(plantId)] : []
+          },
+        }),
   })
 })
 

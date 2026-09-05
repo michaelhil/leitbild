@@ -7,7 +7,7 @@ import { createRoom } from './room.ts'
 import { exportRoomConversation } from './room-export.ts'
 
 const makeRoom = (name: string) =>
-  createRoom({ id: `room-${name}`, name, createdAt: Date.now(), createdBy: 'test' })
+  createRoom({ id: `room-${name}`, name, createdAt: Date.now(), createdBy: 'test', scope: { kind: 'workspace' }, scopeRevision: 0 })
 
 describe('exportRoomConversation', () => {
   test('empty room exports zero messages with correct shape', () => {

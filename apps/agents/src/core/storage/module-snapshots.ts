@@ -1,7 +1,7 @@
 import { mkdir, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
-import { toolGrantSetSchema, workspaceResourceSubjectSelectionSchema } from '@leitbild/contracts'
+import { workspaceRoomScopeSchema } from '@leitbild/contracts'
 import type { Agent, AIAgentConfig } from '../types/agent.ts'
 import type { DeliveryMode, Message, RoomProfile } from '../types/messaging.ts'
 import type { GenerationQueryRecord, Room } from '../types/room.ts'
@@ -13,8 +13,8 @@ import { asAIAgent } from '../../agents/shared.ts'
 import { DEFAULT_RESPONSE_FORMAT, DEFAULT_WORKSPACE_PROMPT } from '../workspaces/settings.ts'
 import { redactBiometricMessages } from './snapshot-redact.ts'
 
-export const ROOMS_SNAPSHOT_SCHEMA = 2
-export const AGENTS_SNAPSHOT_SCHEMA = 2
+export const ROOMS_SNAPSHOT_SCHEMA = 3
+export const AGENTS_SNAPSHOT_SCHEMA = 3
 export const INSPECTIONS_SNAPSHOT_SCHEMA = 1
 
 export interface RoomSnapshot {
@@ -42,7 +42,7 @@ export interface PendingScrub {
 }
 
 export interface RoomsSnapshot {
-  readonly schemaVersion: 2
+  readonly schemaVersion: 3
   readonly savedAt: string
   readonly rooms: ReadonlyArray<RoomSnapshot>
   readonly humanActors: ReadonlyArray<HumanActorSnapshot>
@@ -56,7 +56,7 @@ export interface AgentProfileSnapshot {
 }
 
 export interface AgentsSnapshot {
-  readonly schemaVersion: 2
+  readonly schemaVersion: 3
   readonly savedAt: string
   readonly agents: ReadonlyArray<AgentProfileSnapshot>
   readonly workspacePrompt?: string
@@ -110,8 +110,8 @@ const triggerSchema = z.object({
 }).strict()
 
 const roomProfileSchema = z.object({
-  subjectSelection: workspaceResourceSubjectSelectionSchema.optional(),
-  subjectRevision: z.number().int().nonnegative().optional(),
+  scope: workspaceRoomScopeSchema,
+  scopeRevision: z.number().int().nonnegative(),
   id: z.string(),
   name: z.string(),
   roomPrompt: z.string().optional(),
@@ -174,7 +174,7 @@ const messageSchema = z.object({
     tool: z.string(),
     argumentKeys: z.array(z.string()).max(32),
     argumentBytes: z.number().int().nonnegative(),
-    capabilityId: z.string().optional(),
+    operationIds: z.array(z.string()).optional(),
     target: z.string().optional(),
     success: z.boolean(),
     resultPreview: z.string(),
@@ -267,7 +267,6 @@ const agentConfigSchema = z.object({
   historyLimit: z.number().finite().optional(),
   tools: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(),
-  toolGrants: toolGrantSetSchema.optional(),
   maxToolIterations: z.number().finite().optional(),
   tags: z.array(z.string()).optional(),
   thinking: z.boolean().optional(),

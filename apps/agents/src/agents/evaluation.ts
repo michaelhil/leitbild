@@ -364,9 +364,13 @@ export const evaluate = async (
       : (result.error ?? '')
     return raw.length > PREVIEW_MAX ? `${raw.slice(0, PREVIEW_MAX)}…` : raw
   }
-  const traceArguments = (tool: string, value: Record<string, unknown>): Pick<ToolTraceEntry, 'argumentKeys' | 'argumentBytes' | 'capabilityId' | 'target'> => {
+  const traceArguments = (tool: string, value: Record<string, unknown>): Pick<ToolTraceEntry, 'argumentKeys' | 'argumentBytes' | 'operationIds' | 'target'> => {
     const serialized = JSON.stringify(value)
-    const targetValue = value.definition ?? value.resource
+    const calls = Array.isArray(value.calls) ? value.calls.filter(call => call && typeof call === 'object') as ReadonlyArray<Record<string, unknown>> : []
+    const rawTarget = calls[0]?.target ?? value.target
+    const targetValue = typeof rawTarget === 'object' && rawTarget !== null && 'ref' in rawTarget
+      ? (rawTarget as Record<string, unknown>).ref
+      : rawTarget
     const target = typeof targetValue === 'object' && targetValue !== null
       ? ['moduleId', 'type', 'id', 'revisionId']
         .flatMap(key => typeof (targetValue as Record<string, unknown>)[key] === 'string' ? [(targetValue as Record<string, unknown>)[key] as string] : [])
@@ -375,7 +379,9 @@ export const evaluate = async (
     return {
       argumentKeys: Object.keys(value).slice(0, 32),
       argumentBytes: new TextEncoder().encode(serialized).byteLength,
-      ...(tool === 'workspace_invoke' && typeof value.capabilityId === 'string' ? { capabilityId: value.capabilityId } : {}),
+      ...(tool === 'workspace_call'
+        ? { operationIds: calls.flatMap(call => typeof call.operationId === 'string' ? [call.operationId] : []) }
+        : {}),
       ...(target ? { target } : {}),
     }
   }

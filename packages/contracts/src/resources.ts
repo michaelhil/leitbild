@@ -40,37 +40,37 @@ const uniqueReferences = (
   })
 }
 
-const resourceCollectionSelectionSchema = z.discriminatedUnion('mode', [
+const resourceCollectionScopeSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('all'), except: z.array(workspaceResourceReferenceSchema).default([]) }).strict(),
   z.object({ mode: z.literal('selected'), only: z.array(workspaceResourceReferenceSchema).min(1) }).strict(),
 ])
 
-// A durable conversational subject is not authority. A Room can discuss one
-// Resource or a configurable selection from a Resource that advertises its
-// members with `contains` links. Tool Grants independently decide what an
-// Agent may do with the resolved subjects.
-export const workspaceResourceSubjectSelectionSchema = z.discriminatedUnion('kind', [
+// A Room Scope is the only durable boundary on what an Assistant Room may
+// discover and invoke. Access is open inside it; narrower run-owned
+// restrictions are enforced by the target Module itself.
+export const workspaceRoomScopeSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('workspace') }).strict(),
   z.object({ kind: z.literal('resource'), resource: workspaceResourceReferenceSchema }).strict(),
   z.object({
     kind: z.literal('collection'),
     collection: workspaceResourceReferenceSchema,
-    members: resourceCollectionSelectionSchema,
+    members: resourceCollectionScopeSchema,
   }).strict(),
-]).superRefine((selection, ctx) => {
-  if (selection.kind !== 'collection') return
-  const members = selection.members.mode === 'all' ? selection.members.except : selection.members.only
-  uniqueReferences(members, ctx, ['members', selection.members.mode === 'all' ? 'except' : 'only'])
+]).superRefine((scope, ctx) => {
+  if (scope.kind !== 'collection') return
+  const members = scope.members.mode === 'all' ? scope.members.except : scope.members.only
+  uniqueReferences(members, ctx, ['members', scope.members.mode === 'all' ? 'except' : 'only'])
   members.forEach((reference, index) => {
-    if (reference.workspaceId !== selection.collection.workspaceId) {
+    if (reference.workspaceId !== scope.collection.workspaceId) {
       ctx.addIssue({
         code: 'custom',
-        path: ['members', selection.members.mode === 'all' ? 'except' : 'only', index, 'workspaceId'],
-        message: 'Subject Collection members must belong to the same Workspace',
+        path: ['members', scope.members.mode === 'all' ? 'except' : 'only', index, 'workspaceId'],
+        message: 'Room Scope members must belong to the same Workspace',
       })
     }
   })
 })
-export type WorkspaceResourceSubjectSelection = z.infer<typeof workspaceResourceSubjectSelectionSchema>
+export type WorkspaceRoomScope = z.infer<typeof workspaceRoomScopeSchema>
 
 // A transient subject can be a live Resource or an exact immutable Definition
 // Revision. It is browser attention, not a durable relationship or grant.

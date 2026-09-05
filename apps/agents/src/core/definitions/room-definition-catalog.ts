@@ -1,7 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { resourceTypeSchema, toolGrantSetSchema } from '@leitbild/contracts'
 
 const agentDefinitionSchema = z.object({
   name: z.string().trim().min(1).max(128),
@@ -9,7 +8,6 @@ const agentDefinitionSchema = z.object({
   model: z.string().trim().min(1).max(256).optional(),
   tools: z.array(z.string().min(1)).default([]),
   skills: z.array(z.string().min(1)).default([]),
-  toolGrants: toolGrantSetSchema.optional(),
   temperature: z.number().finite().optional(),
   maxToolIterations: z.number().int().min(1).max(50).optional(),
   includeContext: z.object({
@@ -49,10 +47,7 @@ const roomSetupSchema = z.object({
 const promptDeckSchema = z.object({ entries: z.array(promptDeckEntrySchema) }).strict()
 
 export const roomDefinitionSchema = z.object({
-  assistance: z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('workspace') }).strict(),
-    z.object({ kind: z.literal('resource'), resourceType: resourceTypeSchema }).strict(),
-  ]).optional(),
+  assistance: z.literal(true).optional(),
   id: z.string().min(1).max(128),
   title: z.string().min(1).max(256),
   category: z.string().min(1).max(128).optional(),

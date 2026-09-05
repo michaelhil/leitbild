@@ -6,8 +6,8 @@ import type { RecordingPage } from '../model/recording.ts'
 import { prepareProcedureCommand } from '../../features/procedures/run-state.ts'
 import { createProcedureSourceService,type ProcedureSourceService } from '../../features/procedures/source.ts'
 import type { PackRuntimeConnection,PackRuntimeEmission,PackRuntimeEvent,PackRuntimeHealth,PackRuntimeRealtimeInput,PackRuntimeRealtimeMessage,SimulationCapability } from '../../simulation/protocol.ts'
-import type { CommandEnvelope,CommandResult,EventId,InteractionEffect,InteractionHandler,InteractionSignal,IsoTimestamp,ObjectId,OperationalObject,ProcedureCatalog,ProcedureDocument,ProcedureId,ProcedureSourceId,Provenance,RecordedSample,RecordingProfileDescriptor,RecordingSeriesDescriptor,RecordingSeriesQuery,ScenarioExecutionState,ScenarioRecordingSelection,ScenarioTimeline,ScenarioTimelineAction,ScenarioTimelineCue,SimulationClockState,SimulationClockUpdate,SimulationRunEvent,SimulationRunId } from '../model/index.ts'
-import { actorIdSchema,commandEnvelopeSchema,deleteObjectCommandKind,deleteObjectPayloadSchema,interactionEffectSchema,interactionSignalSchema,notificationIdSchema,nowIso,simulationClockUpdateSchema } from '../model/index.ts'
+import type { AgentRestrictions,CommandEnvelope,CommandResult,EventId,InteractionEffect,InteractionHandler,InteractionSignal,IsoTimestamp,ObjectId,OperationalObject,ProcedureCatalog,ProcedureDocument,ProcedureId,ProcedureSourceId,Provenance,RecordedSample,RecordingProfileDescriptor,RecordingSeriesDescriptor,RecordingSeriesQuery,ScenarioExecutionState,ScenarioRecordingSelection,ScenarioTimeline,ScenarioTimelineAction,ScenarioTimelineCue,SimulationClockState,SimulationClockUpdate,SimulationRunEvent,SimulationRunId } from '../model/index.ts'
+import { actorIdSchema,agentRestrictionsSchema,commandEnvelopeSchema,deleteObjectCommandKind,deleteObjectPayloadSchema,interactionEffectSchema,interactionSignalSchema,notificationIdSchema,nowIso,simulationClockUpdateSchema } from '../model/index.ts'
 import { createSimulationClock,type SimulationClock } from '../model/time.ts'
 import type { PackWikiRef } from '../packs/protocol.ts'
 import type { ScenarioRevisionId } from '../scenarios/library.ts'
@@ -59,6 +59,7 @@ export interface SimulationRunRuntime {
   readonly capabilities: () => SimulationRunCapabilities
   readonly snapshot: () => SimulationRunStateSnapshot
   readonly setClock: (update: SimulationClockUpdate) => Promise<SimulationClockState>
+  readonly setAgentRestrictions: (actor: Actor, restrictions: AgentRestrictions, expectedRevision: number) => Promise<ScenarioExecutionState['agentRestrictions']>
   readonly checkpointForCopy: () => Promise<SimulationRunCopyCheckpoint>
   readonly runMaximumPace: (targetSimulationTime: IsoTimestamp | null, control: {
     readonly shouldStop: () => boolean
@@ -155,6 +156,7 @@ export const createSimulationRunRuntime = async (config: {
   readonly scenario: {
     readonly id: string
     readonly startsAt: IsoTimestamp
+    readonly agentRestrictions: AgentRestrictions
     readonly timeline?: ScenarioTimeline
   }
   readonly capabilities?: Omit<SimulationRunCapabilities, 'simulationRunId'>
@@ -756,6 +758,7 @@ export const createSimulationRunRuntime = async (config: {
 
   const initialScenarioState = (): ScenarioExecutionState => ({
     scenarioId: config.scenario.id,
+    agentRestrictions: { ...config.scenario.agentRestrictions, revision: 0 },
     highlightedObjectIds: [],
     ...(config.scenario.timeline === undefined
       ? {}
@@ -840,7 +843,19 @@ export const createSimulationRunRuntime = async (config: {
       throw new Error(`Simulation Capability is not schedulable: ${invocation.capabilityId}`)
     }
     const input = active.capability.input.parse(invocation.input)
+    const currentRestrictions = state.snapshot().scenario?.agentRestrictions
+    const assertAllowed = (effect: 'inspect' | 'change', objectIds: ReadonlyArray<ObjectId>): void => {
+      if (actor.role !== 'ai_agent' || !currentRestrictions) return
+      if (currentRestrictions.operationIds.includes(active.capability.id)) {
+        throw Object.assign(new Error(`AI access to operation ${active.capability.id} is restricted for this Run`), { code: 'agent_access_restricted' })
+      }
+      const denied = objectIds.filter(objectId => currentRestrictions.objects.some(entry => entry.objectId === objectId && entry.deny.includes(effect)))
+      if (denied.length > 0) {
+        throw Object.assign(new Error(`AI ${effect} access is restricted for: ${denied.join(', ')}`), { code: 'agent_access_restricted', objectIds: denied })
+      }
+    }
     if (active.capability.kind === 'query') {
+      assertAllowed('inspect', active.capability.inspectObjectIds?.(input) ?? [])
       const result = await config.runtimeConnection.invokeQuery({
         capabilityId: active.capability.id,
         input,
@@ -849,6 +864,7 @@ export const createSimulationRunRuntime = async (config: {
     }
     const built = active.capability.buildCommand?.(input)
     if (!built) throw new Error(`Simulation command Capability cannot build a command: ${active.capability.id}`)
+    assertAllowed('change', built.targetObjectIds)
     const command = commandEnvelopeSchema.parse({
       id: `command:${randomUUID()}`,
       simulationRunId: config.id,
@@ -1027,6 +1043,43 @@ export const createSimulationRunRuntime = async (config: {
     })
   }
 
+  const setAgentRestrictions = async (
+    actor: Actor,
+    rawRestrictions: AgentRestrictions,
+    expectedRevision: number,
+  ): Promise<ScenarioExecutionState['agentRestrictions']> => {
+    if (!['operator', 'supervisor', 'controller', 'system'].includes(actor.role)) {
+      throw Object.assign(new Error('Only a human operator or system actor may replace Run AI restrictions'), { code: 'agent_restrictions_human_required' })
+    }
+    const restrictions = agentRestrictionsSchema.parse(rawRestrictions) as AgentRestrictions
+    return await enqueueOperation(async () => {
+      const snapshot = state.snapshot()
+      const current = snapshot.scenario?.agentRestrictions
+      if (!current) throw new Error('Simulation Run scenario state is unavailable')
+      if (current.revision !== expectedRevision) {
+        throw Object.assign(new Error(`Agent Restrictions changed: expected ${expectedRevision}, current ${current.revision}`), { code: 'agent_restrictions_revision_conflict' })
+      }
+      const knownObjectIds = new Set(snapshot.objects.map(object => object.id))
+      const unknownObjectIds = restrictions.objects.map(entry => entry.objectId).filter(objectId => !knownObjectIds.has(objectId))
+      if (unknownObjectIds.length > 0) {
+        throw Object.assign(new Error(`AI restrictions reference unknown current objects: ${unknownObjectIds.join(', ')}`), { code: 'agent_restrictions_object_not_found' })
+      }
+      const revision = current.revision + 1
+      await publishOneGenerated(() => ({
+        id: eventId(),
+        simulationRunId: config.id,
+        seq: ++seq,
+        at: runClock.read().currentTime,
+        provenance: { source: 'operator' },
+        type: 'scenario.agent-restrictions.set',
+        restrictions,
+        revision,
+        updatedBy: actor.id,
+      }))
+      return { ...restrictions, revision }
+    })
+  }
+
   const invokeCapability = async (
     actor: Actor,
     invocation: SimulationRunCapabilityInvocation,
@@ -1170,6 +1223,7 @@ export const createSimulationRunRuntime = async (config: {
     }),
     snapshot: () => snapshotWithCurrentClock(),
     setClock,
+    setAgentRestrictions,
     checkpointForCopy,
     runMaximumPace,
     failStop: (reason: string): void => { terminalExecutionFailure = reason },

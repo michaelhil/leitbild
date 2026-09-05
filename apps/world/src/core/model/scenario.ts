@@ -52,9 +52,22 @@ export interface ScenarioTimelineProgressState {
 
 export interface ScenarioExecutionState {
   readonly scenarioId: string
+  readonly agentRestrictions: AgentRestrictionsState
   readonly guidance?: ScenarioGuidance
   readonly highlightedObjectIds: ReadonlyArray<ObjectId>
   readonly timeline?: ScenarioTimelineProgressState
+}
+
+export interface AgentRestrictions {
+  readonly operationIds: ReadonlyArray<string>
+  readonly objects: ReadonlyArray<{
+    readonly objectId: ObjectId
+    readonly deny: ReadonlyArray<'inspect' | 'change'>
+  }>
+}
+
+export interface AgentRestrictionsState extends AgentRestrictions {
+  readonly revision: number
 }
 
 export interface ScenarioTimeRef {
@@ -116,6 +129,7 @@ export interface CompiledScenario {
   readonly title: string
   readonly description?: string
   readonly objectives?: ReadonlyArray<string>
+  readonly agentRestrictions: AgentRestrictions
   readonly packs: ReadonlyArray<string>
   readonly packRuntimes: Record<string, string>
   readonly packConfigs: Record<string, unknown>
@@ -172,10 +186,41 @@ export const scenarioTimelineProgressStateSchema = z.object({
 
 export const scenarioExecutionStateSchema = z.object({
   scenarioId: idSchema,
+  agentRestrictions: z.lazy(() => agentRestrictionsStateSchema),
   guidance: scenarioGuidanceSchema.optional(),
   highlightedObjectIds: z.array(objectIdSchema).default([]),
   timeline: scenarioTimelineProgressStateSchema.optional(),
 }).strict()
+
+const operationIdSchema = z.string().regex(/^[a-z][a-z0-9-]*(?:[._-][a-z0-9-]+)+$/)
+
+const agentRestrictionsBaseSchema = z.object({
+  operationIds: z.array(operationIdSchema).default([]),
+  objects: z.array(z.object({
+    objectId: objectIdSchema,
+    deny: z.array(z.enum(['inspect', 'change'])).min(1),
+  }).strict()).default([]),
+}).strict()
+
+const validateAgentRestrictions = (restrictions: AgentRestrictions, ctx: z.RefinementCtx): void => {
+  const operations = new Set<string>()
+  restrictions.operationIds.forEach((id, index) => {
+    if (operations.has(id)) ctx.addIssue({ code: 'custom', path: ['operationIds', index], message: `duplicate operation restriction: ${id}` })
+    operations.add(id)
+  })
+  const objects = new Set<string>()
+  restrictions.objects.forEach((entry, index) => {
+    if (objects.has(entry.objectId)) ctx.addIssue({ code: 'custom', path: ['objects', index, 'objectId'], message: `duplicate object restriction: ${entry.objectId}` })
+    objects.add(entry.objectId)
+    if (new Set(entry.deny).size !== entry.deny.length) ctx.addIssue({ code: 'custom', path: ['objects', index, 'deny'], message: 'duplicate restriction effect' })
+  })
+}
+
+export const agentRestrictionsSchema = agentRestrictionsBaseSchema.superRefine(validateAgentRestrictions)
+
+export const agentRestrictionsStateSchema = agentRestrictionsBaseSchema.extend({
+  revision: z.number().int().nonnegative(),
+}).strict().superRefine(validateAgentRestrictions)
 
 export const scenarioTimeRefSchema = z.object({
   kind: z.literal('after_scenario_start'),
@@ -249,6 +294,7 @@ export const compiledScenarioSchema = z.object({
   title: z.string().min(1),
   description: z.string().min(1).optional(),
   objectives: z.array(z.string().trim().min(1).max(2048)).optional(),
+  agentRestrictions: agentRestrictionsSchema,
   packs: z.array(idSchema).default([]),
   packRuntimes: z.record(z.string(), idSchema).default({}),
   packConfigs: z.record(z.string(), z.unknown()).default({}),
@@ -259,6 +305,12 @@ export const compiledScenarioSchema = z.object({
   recording: z.array(scenarioRecordingSelectionSchema).default([]),
   timeline: scenarioTimelineSchema.optional(),
 }).superRefine((scenario, ctx) => {
+  const objectIds = new Set(scenario.initialObjects.map(object => object.id))
+  scenario.agentRestrictions.objects.forEach((entry, index) => {
+    if (!objectIds.has(entry.objectId)) {
+      ctx.addIssue({ code: 'custom', path: ['agentRestrictions', 'objects', index, 'objectId'], message: `AI restriction references unknown initial object: ${entry.objectId}` })
+    }
+  })
   const connectionIds = new Set<string>()
   const connectedPorts = new Set<string>()
   scenario.connections.forEach((connection, index) => {

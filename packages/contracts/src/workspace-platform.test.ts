@@ -8,7 +8,7 @@ import {
   moduleProvisioningStateSchema,
   moduleResourceDescriptorSchema,
   newWorkspaceId,
-  toolGrantSetSchema,
+  workspaceRoomScopeSchema,
   workspaceModuleManifestSchema,
   workspaceSchema,
 } from './index.ts'
@@ -183,19 +183,30 @@ describe('dynamic Resource and Capability discovery', () => {
     })).toThrow('cannot target both')
   })
 
-  test('grants Capabilities without pinning concrete Resources', () => {
-    const grants = toolGrantSetSchema.parse([
-      { capabilityId: 'world.simulation-run.read' },
-      { capabilityId: 'world.ambulance.set-destination' },
-    ])
-    expect(grants).toHaveLength(2)
-    expect(grants[0]).not.toHaveProperty('resourceId')
-    expect(() => toolGrantSetSchema.parse([
-      { capabilityId: 'world.simulation-run.read', resourceId: 'run-01' },
-    ])).toThrow()
-    expect(() => toolGrantSetSchema.parse([
-      { capabilityId: 'world.simulation-run.read' },
-      { capabilityId: 'world.simulation-run.read' },
-    ])).toThrow('duplicate Tool Grant')
+  test('uses one explicit Room Scope instead of per-Capability grants', () => {
+    const workspaceId = newWorkspaceId()
+    expect(workspaceRoomScopeSchema.parse({ kind: 'workspace' })).toEqual({ kind: 'workspace' })
+    const collection = {
+      workspaceId,
+      moduleId: 'world',
+      type: 'world.run-family',
+      id: 'family-01',
+    }
+    const resource = {
+      workspaceId,
+      moduleId: 'world',
+      type: 'world.simulation-run',
+      id: 'run-01',
+    }
+    expect(workspaceRoomScopeSchema.parse({
+      kind: 'collection',
+      collection,
+      members: { mode: 'all', except: [resource] },
+    }).kind).toBe('collection')
+    expect(() => workspaceRoomScopeSchema.parse({
+      kind: 'collection',
+      collection,
+      members: { mode: 'selected', only: [resource, resource] },
+    })).toThrow('duplicate Resource reference')
   })
 })

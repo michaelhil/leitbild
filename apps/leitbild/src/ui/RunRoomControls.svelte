@@ -3,7 +3,7 @@
     ModuleCapabilityDescriptor,
     ModuleResourceDescriptor,
     WorkspaceResourceReference,
-    WorkspaceResourceSubjectSelection,
+    WorkspaceRoomScope,
   } from '@leitbild/contracts'
   import { jsonRequest, request } from './api.ts'
 
@@ -33,18 +33,18 @@
 
   const members = $derived(family.links.filter(link => link.rel === 'contains').map(link => link.ref))
   const activeRoom = $derived(rooms.find(room => room.ref.id === activeRoomId))
-  const revision = $derived(Number(activeRoom?.summary.find(item => item.key === 'subject-revision')?.value ?? 0))
+  const revision = $derived(Number(activeRoom?.summary.find(item => item.key === 'scope-revision')?.value ?? 0))
   const roomSelectedCount = $derived.by(() => {
     if (!activeRoom) return 0
-    const explicit = activeRoom.links.filter(link => link.rel === 'subject-member')
+    const explicit = activeRoom.links.filter(link => link.rel === 'scope-member')
     if (explicit.length > 0) return explicit.length
-    const excluded = new Set(activeRoom.links.filter(link => link.rel === 'subject-excluded').map(link => link.ref.id))
+    const excluded = new Set(activeRoom.links.filter(link => link.rel === 'scope-excluded').map(link => link.ref.id))
     return members.filter(member => !excluded.has(member.id)).length
   })
 
   const initialSelection = (room: ModuleResourceDescriptor | undefined): void => {
-    const explicit = new Set(room?.links.filter(link => link.rel === 'subject-member').map(link => link.ref.id) ?? [])
-    const excluded = new Set(room?.links.filter(link => link.rel === 'subject-excluded').map(link => link.ref.id) ?? [])
+    const explicit = new Set(room?.links.filter(link => link.rel === 'scope-member').map(link => link.ref.id) ?? [])
+    const excluded = new Set(room?.links.filter(link => link.rel === 'scope-excluded').map(link => link.ref.id) ?? [])
     includeFuture = explicit.size === 0
     selectedIds = new Set(includeFuture
       ? members.filter(member => !excluded.has(member.id)).map(member => member.id)
@@ -76,7 +76,7 @@
     selectedIds = next
   }
 
-  const selection = (): WorkspaceResourceSubjectSelection => ({
+  const scope = (): WorkspaceRoomScope => ({
     kind: 'collection',
     collection: family.ref,
     members: includeFuture
@@ -90,13 +90,13 @@
     busy = true
     error = ''
     try {
-      const capabilityId = mode === 'create' ? 'agents.assistance.create' : 'agents.room.subject-selection.set'
+      const capabilityId = mode === 'create' ? 'agents.assistance.create' : 'agents.room.scope.set'
       if (!capabilities.some(capability => capability.id === capabilityId)) throw new Error('Room scope controls are unavailable')
       const response = await request<InvocationResponse>(
         `/api/workspaces/${encodeURIComponent(workspaceId)}/capabilities/${encodeURIComponent(capabilityId)}/invoke`,
         jsonRequest('POST', mode === 'create'
-          ? { input: { selection: selection(), title: name.trim() }, actor: { kind: 'human' } }
-          : { resource: activeRoom!.ref, input: { selection: selection(), expectedRevision: revision }, actor: { kind: 'human' } }),
+          ? { input: { scope: scope(), title: name.trim() }, actor: { kind: 'human' } }
+          : { resource: activeRoom!.ref, input: { scope: scope(), expectedRevision: revision }, actor: { kind: 'human' } }),
       )
       const roomId = mode === 'create' ? response.result.resource.id : activeRoom!.ref.id
       await onChanged(roomId)
@@ -131,7 +131,7 @@
       {/each}
     </fieldset>
     <label class="future-choice"><input type="checkbox" bind:checked={includeFuture} /><span>Include future copies automatically</span></label>
-    <p class="scope-note">This chooses what the Room can discuss. Tool grants independently control what its Agents may read or change.</p>
+    <p class="scope-note">Resources inside this Room Scope are open to its Agents. Individual Runs may apply narrower restrictions.</p>
     {#if error}<p class="assistant-error" role="alert">{error}</p>{/if}
     <footer><button type="button" onclick={() => dialog?.close()}>Cancel</button><button class="primary" type="submit" disabled={busy || selectedIds.size === 0 || (mode === 'create' && name.trim().length === 0)}>{busy ? 'Saving…' : mode === 'create' ? 'Create Room' : 'Save scope'}</button></footer>
   </form>

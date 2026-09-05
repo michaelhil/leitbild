@@ -623,17 +623,13 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     ...(vectorStore ? [createQueryDocumentsTool({ vectorStore, providerKeys })] : []),
   ])
 
-  // Cross-Module interaction is Host-routed. Agent Profiles keep only
-  // Capability grants; current Resource ids are discovered per invocation.
+  // Cross-Module interaction is Host-routed. Room Scope is the durable access
+  // boundary; target Modules enforce their own current run restrictions.
   if (options.workspaceId !== undefined && options.workspaceHostUrl !== undefined) {
     toolRegistry.registerAll(createWorkspaceCapabilityTools({
       workspaceId: options.workspaceId,
       hostBaseUrl: options.workspaceHostUrl,
-      getToolGrants: agentId => {
-        const agent = team.getAgent(agentId)
-        return agent === undefined ? undefined : asAIAgent(agent)?.getToolGrants()
-      },
-      getRoomSubjectSelection: roomId => rooms.getRoom(roomId)?.profile.subjectSelection,
+      getRoomScope: roomId => rooms.getRoom(roomId)?.profile.scope,
     }))
   }
 

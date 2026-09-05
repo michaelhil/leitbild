@@ -345,6 +345,21 @@
     draft = { ...draft }
   }
 
+  const scenarioObjectDenies = (objectId: string): ReadonlyArray<'inspect' | 'change'> =>
+    draft.agentRestrictions.objects.find(entry => entry.objectId === objectId)?.deny ?? []
+  const setScenarioObjectRestriction = (objectId: string, effect: 'inspect' | 'change', denied: boolean): void => {
+    const current = scenarioObjectDenies(objectId)
+    const deny = denied ? [...new Set([...current, effect])] : current.filter(value => value !== effect)
+    draft.agentRestrictions.objects = deny.length === 0
+      ? draft.agentRestrictions.objects.filter(entry => entry.objectId !== objectId)
+      : [...draft.agentRestrictions.objects.filter(entry => entry.objectId !== objectId), { objectId, deny }]
+    draft = { ...draft }
+  }
+  const setScenarioOperationRestrictions = (value: string): void => {
+    draft.agentRestrictions.operationIds = [...new Set(value.split('\n').map(entry => entry.trim()).filter(Boolean))]
+    draft = { ...draft }
+  }
+
   const validationError = (): string | null => {
     if (draft.title.trim().length === 0) return 'Give the scenario a title.'
     if (draft.packs.length === 0) return 'Add at least one Pack.'
@@ -476,6 +491,12 @@
           <TimelineEditor cues={draft.timeline.cues} commands={catalog.commands.filter(command => command.runtimeId === 'world.core' || activePacks().some(pack => command.packId === pack.id && command.runtimeId === (selectionFor(draft, pack.id)?.runtime ?? pack.defaultRuntimeId)))} onchange={cues => { draft.timeline = { cues } }} />
           <label>Objectives <textarea rows="3" placeholder="One objective per line" value={draft.objectives.join('\n')} onchange={event => { draft.objectives = event.currentTarget.value.split('\n').map(line => line.trim()).filter(Boolean) }}></textarea></label>
           <label>Description <textarea rows="4" placeholder="Optional" value={draft.description ?? ''} oninput={event => { draft.description = event.currentTarget.value; draft = { ...draft } }}></textarea></label>
+          <details class="agent-restrictions"><summary>Initial AI restrictions</summary><p>Runs start open to scoped Agents except for these entries. Object limits block targeted details and changes, not existence or aggregate results. A user can replace this policy while a Run is active.</p>
+            <label>Blocked operation IDs <textarea rows="3" placeholder="One operation ID per line" value={draft.agentRestrictions.operationIds.join('\n')} onchange={event => setScenarioOperationRestrictions(event.currentTarget.value)}></textarea></label>
+            {#each preview?.assets ?? [] as asset (asset.id)}
+              <div><span title={asset.id}>{asset.label}<small>{asset.packId}</small></span><label><input type="checkbox" checked={scenarioObjectDenies(asset.id).includes('inspect')} onchange={event => setScenarioObjectRestriction(asset.id, 'inspect', event.currentTarget.checked)} /> Details</label><label><input type="checkbox" checked={scenarioObjectDenies(asset.id).includes('change')} onchange={event => setScenarioObjectRestriction(asset.id, 'change', event.currentTarget.checked)} /> Change</label></div>
+            {/each}
+          </details>
           <dl><div><dt>Center</dt><dd>{mapCenter().map(value => value.toFixed(4)).join(', ')}</dd></div><div><dt>Zoom</dt><dd>{mapZoom().toFixed(1)}</dd></div></dl>
           <h3>Electrical connections</h3>
           {#if systemElectricalEndpoints().length === 0 || networkElectricalEndpoints().length === 0}

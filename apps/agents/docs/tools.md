@@ -32,18 +32,18 @@ reported by the loader.
 Built-in tools live under `src/tools/built-in/`. Pack tools live under the
 Pack's `tools/` directory and register as `<pack-id>_<tool-name>`. Skill-owned
 tools live beside their `SKILL.md`. All four sources enter the same registry;
-Room Pack activation and Agent Tool Grants determine the effective surface.
+Room Pack activation determines Pack-owned tool visibility. The two generic
+Workspace broker tools are included for every AI Agent.
 
 `ToolContext` supplies caller identity, an optional Room id, and optional
 model-bound LLM helpers. Tools return `{ success, data? }` or
 `{ success: false, error }`; throwing is reserved for unexpected failures.
 
-Use `workspace_catalog`, `workspace_capabilities`, and `workspace_invoke` for
-cross-Module discovery and action. Do not add World-specific clients to
-Agents or persist external Resource ids in Agent configuration.
-Copy the single exact Resource or Definition-revision `target` from catalog
-results unchanged into Capability evaluation and invocation. An omitted target
-requests descriptive discovery; wildcard or partial targets are invalid rather
-than being silently treated as an unscoped search. One discriminated target
-also prevents a live Resource and its source Definition being combined in one
-meaningless operation.
+Use `workspace_explore` and `workspace_call` for cross-Module discovery and
+action. Do not add World-specific clients to Agents or persist external
+Resource ids in Agent configuration. Copy an exact Resource or
+Definition-revision `target` from exploration unchanged into a call. An omitted
+target explores Workspace operations only when Room Scope is Workspace-wide;
+wildcard or partial targets are invalid rather than silently broadening scope.
+Reads and changes share one call shape; batching is limited to independent
+reads. The target Module remains responsible for validation and restrictions.

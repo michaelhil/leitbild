@@ -15,23 +15,16 @@ describe('bundled Room Definitions', () => {
     }
   })
 
-  test('ships only explicit Workspace and Run assistance definitions', () => {
-    expect(BUNDLED_ROOM_DEFINITIONS.map(definition => definition.id).sort()).toEqual([
-      'leitbild-assistant',
-      'simulation-assistant',
-    ])
-    expect(getBundledRoomDefinition('leitbild-assistant')?.assistance).toEqual({ kind: 'workspace' })
-    const runAssistance = getBundledRoomDefinition('simulation-assistant')?.assistance
-    expect(runAssistance?.kind).toBe('resource')
-    expect(runAssistance?.kind === 'resource' ? String(runAssistance.resourceType) : undefined)
-      .toBe('world.run-family')
+  test('ships one Assistant definition whose Room Scope is selected at creation', () => {
+    expect(BUNDLED_ROOM_DEFINITIONS.map(definition => definition.id)).toEqual(['leitbild-assistant'])
+    expect(getBundledRoomDefinition('leitbild-assistant')?.assistance).toBe(true)
   })
 
-  test('Run assistance grants live selected-subject reads and writes without pinning Run ids', () => {
-    const definition = getBundledRoomDefinition('simulation-assistant')!
+  test('Assistant configuration carries no duplicated access policy', () => {
+    const definition = getBundledRoomDefinition('leitbild-assistant')!
     const assistant = definition.room.agents[0]!
     expect(assistant.includeContext).toEqual({ participants: true, activity: false, knownAgents: false })
-    expect(assistant.toolGrants).toEqual([{ scope: 'room-subject', risks: ['read', 'write'] }])
-    expect(definition.room).not.toHaveProperty('subjectSelection')
+    expect(assistant).not.toHaveProperty('toolGrants')
+    expect(definition.room).not.toHaveProperty('scope')
   })
 })

@@ -23,6 +23,17 @@ const withRegistry = async (testBody: (registry: ReturnType<typeof createSimulat
   finally { for (const run of registry.list()) await registry.close(run.id); await rm(dataDir, { recursive: true, force: true }) }
 }
 
+test('Scenario AI restrictions compile as the initial Run policy without Pack-specific structure', async () => {
+  const source = definition()
+  source.packs[0]!.items = [{ type: 'ambulance', id: 'ambulance:restricted' as never, label: 'Restricted ambulance', position: [11.4, 59.1], ...unitSettings }]
+  source.agentRestrictions = {
+    operationIds: ['world.simulation-run.inspect'],
+    objects: [{ objectId: 'ambulance:restricted' as never, deny: ['change'] }],
+  }
+  const compiled = await compileScenarioDefinition(source, testPacks, { routing: createDirectRoutingAdapter() })
+  expect(compiled.agentRestrictions).toEqual(source.agentRestrictions)
+})
+
 test('all five real Packs share one paused startup clock and preserve progress through controls and restart', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-shared-clock-'))
   const clocks: SimulationClockReader[] = []

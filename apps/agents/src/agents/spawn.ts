@@ -246,9 +246,7 @@ export const buildToolSupport = async (
 
 export const effectiveAgentToolSelection = (config: AIAgentConfig): ReadonlyArray<string> => {
   const selectedTools = config.tools ?? []
-  return config.toolGrants && config.toolGrants.length > 0
-    ? [...new Set([...selectedTools, ...WORKSPACE_CAPABILITY_TOOL_NAMES])]
-    : selectedTools
+  return [...new Set([...selectedTools, ...WORKSPACE_CAPABILITY_TOOL_NAMES])]
 }
 
 const resolveAgentTools = async (

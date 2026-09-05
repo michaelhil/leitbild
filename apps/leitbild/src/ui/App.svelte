@@ -19,7 +19,7 @@
   import RunRoomControls from './RunRoomControls.svelte'
   import { request, jsonRequest } from './api.ts'
   import { cardCapability } from './card-actions.ts'
-  import { roomSelectionIncludingRun, roomSelectsRun, roomUsesFamily, runFamilyFor } from './run-room-scope.ts'
+  import { roomScopeIncludingRun, roomSelectsRun, roomUsesFamily, runFamilyFor } from './run-room-scope.ts'
 
   type Page = { readonly kind: 'list' } | { readonly kind: 'workspace'; readonly id: string }
   interface InvocationResponse {
@@ -374,15 +374,15 @@
       selectedAgentsRoomId = existing.ref.id
     } else if (familyRunRooms[0]) {
       const room = familyRunRooms[0]
-      const capabilityId = 'agents.room.subject-selection.set'
+      const capabilityId = 'agents.room.scope.set'
       if (!capabilities.some(capability => capability.id === capabilityId)) throw new Error('Room scope controls are unavailable')
-      const expectedRevision = Number(room.summary.find(item => item.key === 'subject-revision')?.value ?? 0)
+      const expectedRevision = Number(room.summary.find(item => item.key === 'scope-revision')?.value ?? 0)
       await request(
         `/api/workspaces/${workspace.id}/capabilities/${encodeURIComponent(capabilityId)}/invoke`,
         jsonRequest('POST', {
           resource: room.ref,
           input: {
-            selection: roomSelectionIncludingRun(room, selectedRunFamily, selectedWorldResource.ref),
+            scope: roomScopeIncludingRun(room, selectedRunFamily, selectedWorldResource.ref),
             expectedRevision,
           },
           actor: { kind: 'human' },
@@ -400,7 +400,7 @@
         `/api/workspaces/${workspace.id}/capabilities/${encodeURIComponent(assistantCapability.id)}/invoke`,
         jsonRequest('POST', {
           input: {
-            selection: { kind: 'collection', collection: selectedRunFamily, members: { mode: 'all', except: [] } },
+            scope: { kind: 'collection', collection: selectedRunFamily, members: { mode: 'all', except: [] } },
             title: selectedWorldResource.title,
             focusedSubjects: [selectedWorldResource.ref],
           },

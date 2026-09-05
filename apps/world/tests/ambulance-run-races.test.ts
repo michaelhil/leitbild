@@ -31,7 +31,7 @@ const setup = async (options: {
   const scenario = { ...sourceScenario, runtimeIds: ['ambulance.local'], initialObjects: sourceScenario.initialObjects.filter(object => object.packId === 'ambulance'), runtimeConfigByRuntimeId: { 'ambulance.local': {} } }
   const stateStore = createSimulationRunStateStore()
   const runClock = createSimulationClock({ currentTime: scenario.world.startsAt, updatedAt: nowIso(), paused: true })
-  const restoredSnapshot: SimulationRunStateSnapshot = { objects: scenario.initialObjects, seq: 0, clock: runClock.read(), scenario: { scenarioId: scenario.scenarioId, highlightedObjectIds: [] } }
+  const restoredSnapshot: SimulationRunStateSnapshot = { objects: scenario.initialObjects, seq: 0, clock: runClock.read(), scenario: { scenarioId: scenario.scenarioId, agentRestrictions: { operationIds: [], objects: [], revision: 0 }, highlightedObjectIds: [] } }
   stateStore.hydrate(restoredSnapshot)
   const actual = createLocalAmbulancePackRuntimeAdapter({ routing: options.routing ?? createDirectRoutingAdapter() })
   const adapter = { ...actual, connect: async (config: Parameters<typeof actual.connect>[0]) => {
@@ -56,7 +56,7 @@ const setup = async (options: {
   const run = await createSimulationRunRuntime({
     id, runtimeConnection: connection, stateStore, runClock, restoredSnapshot, eventLog,
     snapshotStore: { load: async () => saved, save: async snapshot => { saved = snapshot } },
-    scenario: { id: scenario.scenarioId, startsAt: scenario.world.startsAt },
+    scenario: { id: scenario.scenarioId, startsAt: scenario.world.startsAt, agentRestrictions: { operationIds: [], objects: [] } },
     runtimeCapabilities: [
       ...adapter.capabilities.map(capability => ({ packId: adapter.packId, runtimeId: adapter.id, capability })),
       ...worldCoreCapabilities.map(capability => ({ packId: 'world', runtimeId: 'world.core', capability })),

@@ -21,6 +21,8 @@ import { z } from 'zod'
 import { capabilityJsonSchema } from '../../simulation/capabilities.ts'
 import {
   isoTimestampSchema,
+  agentRestrictionsSchema,
+  agentRestrictionsStateSchema,
   operationalObjectSchema,
   procedureCatalogSchema,
   procedureControlStateSchema,
@@ -44,8 +46,7 @@ import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { WorldWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
 import { apiError,json,readJson } from './responses.ts'
 import {
-  actorIdForAccessContext,
-  buildSimulationRunActor,
+  buildSimulationRunActorForAccess,
 } from './simulation-run-routes.ts'
 
 const WORLD_MODULE_ID = moduleIdSchema.parse('world')
@@ -128,6 +129,10 @@ const readHistorySamplesInputSchema = z.object({
   beforeSequence: z.number().int().positive().optional(),
 }).strict()
 const createScenarioInputSchema = z.object({ source: scenarioDefinitionSchema }).strict()
+const setAgentRestrictionsInputSchema = z.object({
+  restrictions: agentRestrictionsSchema,
+  expectedRevision: z.number().int().nonnegative(),
+}).strict()
 const scenarioWriteInputJsonSchema = z.toJSONSchema(createScenarioInputSchema, { unrepresentable: 'any' })
 
 import { scenarioPreviewSchema,scenarioWriteResultSchema } from '../scenarios/authoring-preview.ts'
@@ -972,6 +977,42 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
   },
   {
     descriptor: {
+      id: 'world.simulation-run.agent-restrictions.read', moduleId: WORLD_MODULE_ID, kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Read AI restrictions', description: 'Reads the current AI restrictions for this Run. Scenario restrictions are only the initial value; this current state is authoritative.',
+      risk: 'read', idempotent: true, inputSchema: capabilityJsonSchema(emptyInputSchema), outputSchema: capabilityJsonSchema(agentRestrictionsStateSchema),
+    },
+    invoke: async (registry, invocation) => {
+      emptyInputSchema.parse(invocation.input)
+      const runtime = await registry.load(requireSimulationRunResource(invocation))
+      const restrictions = runtime.snapshot().scenario?.agentRestrictions
+      if (!restrictions) return apiError(409, 'scenario_state_unavailable', 'Simulation Run scenario state is unavailable')
+      return json({ result: restrictions })
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.agent-restrictions.set', moduleId: WORLD_MODULE_ID, kind: 'command',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Set AI restrictions', description: 'Replaces the current AI restrictions for this Run. Human or system callers may grant or remove access without changing the source Scenario.',
+      risk: 'write', idempotent: false, inputSchema: capabilityJsonSchema(setAgentRestrictionsInputSchema), outputSchema: capabilityJsonSchema(agentRestrictionsStateSchema),
+    },
+    invoke: async (registry, invocation) => {
+      const input = setAgentRestrictionsInputSchema.parse(invocation.input)
+      const runtime = await registry.load(requireSimulationRunResource(invocation))
+      try {
+        return json({ result: await runtime.setAgentRestrictions(buildSimulationRunActorForAccess(invocation.access), input.restrictions, input.expectedRevision) })
+      } catch (error) {
+        const code = error instanceof Error ? (error as Error & { code?: string }).code : undefined
+        if (code === 'agent_restrictions_human_required') return apiError(403, code, error instanceof Error ? error.message : String(error))
+        if (code === 'agent_restrictions_revision_conflict') return apiError(409, code, error instanceof Error ? error.message : String(error))
+        if (code === 'agent_restrictions_object_not_found') return apiError(409, code, error instanceof Error ? error.message : String(error))
+        throw error
+      }
+    },
+  },
+  {
+    descriptor: {
       id: 'world.simulation-run.execution.advance', moduleId: WORLD_MODULE_ID, kind: 'command',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'Advance Run by duration', description: 'Plays this Run at maximum pace for a fixed simulated duration, then pauses or plays in realtime. Playback can pause and resume the active target.',
@@ -1333,6 +1374,21 @@ const invokeCapability = async (
   const release = invocation.resource?.type === 'world.simulation-run' && capabilityId !== 'world.simulation-run.delete'
     ? registry.acquireLease(requireSimulationRunResource(invocation), 'api') : undefined
   try {
+    if (invocation.access.actor.kind === 'ai' && invocation.resource?.type === 'world.simulation-run') {
+      const runtime = await registry.load(requireSimulationRunResource(invocation))
+      const restrictions = runtime.snapshot().scenario?.agentRestrictions
+      if (restrictions && capabilityId !== 'world.simulation-run.agent-restrictions.read') {
+        if (restrictions.operationIds.includes(capabilityId)) {
+          return apiError(403, 'agent_access_restricted', `AI access to operation ${capabilityId} is restricted for this Run`)
+        }
+        if (capabilityId === 'world.simulation-run.read-object') {
+          const { objectId } = readObjectInputSchema.parse(invocation.input)
+          if (restrictions.objects.some(entry => entry.objectId === objectId && entry.deny.includes('inspect'))) {
+            return apiError(403, 'agent_access_restricted', `AI inspection access is restricted for: ${objectId}`)
+          }
+        }
+      }
+    }
 
     const response = await worldCapabilities.invoke(capabilityId, registry, invocation)
     if (response) return response
@@ -1352,13 +1408,21 @@ const invokeCapability = async (
     if (!runtime.capabilities().capabilities.some(candidate => candidate.id === capabilityId)) {
       return apiError(409, 'capability_not_active', `Capability is not active in this Simulation Run: ${capabilityId}`)
     }
-    const actor = buildSimulationRunActor(actorIdForAccessContext(invocation.access))
-    const outcome = await runtime.invokeCapability(actor, {
-      capabilityId,
-      input: invocation.input,
-      ...(invocation.expectedRevision === undefined ? {} : { expectedRevision: invocation.expectedRevision }),
-      ...(invocation.idempotencyKey === undefined ? {} : { idempotencyKey: invocation.idempotencyKey }),
-    })
+    const actor = buildSimulationRunActorForAccess(invocation.access)
+    let outcome
+    try {
+      outcome = await runtime.invokeCapability(actor, {
+        capabilityId,
+        input: invocation.input,
+        ...(invocation.expectedRevision === undefined ? {} : { expectedRevision: invocation.expectedRevision }),
+        ...(invocation.idempotencyKey === undefined ? {} : { idempotencyKey: invocation.idempotencyKey }),
+      })
+    } catch (error) {
+      if (error instanceof Error && (error as Error & { code?: string }).code === 'agent_access_restricted') {
+        return apiError(403, 'agent_access_restricted', error.message)
+      }
+      throw error
+    }
     if (outcome.kind === 'command' && !outcome.result.ok) {
       return apiError(409, 'simulation_command_rejected', outcome.result.reason)
     }

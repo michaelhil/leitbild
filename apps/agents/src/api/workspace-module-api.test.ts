@@ -38,9 +38,17 @@ beforeEach(async () => {
   state = createAgentsModuleState()
   const deployment = createDeploymentRuntime()
   deployment.sharedSkillStore.register({
-    name: 'workspace-discovery', description: 'Test discovery Skill', body: 'Use Workspace evidence.',
-    tools: [], allowedToolNames: ['workspace_catalog', 'workspace_capabilities', 'workspace_invoke'], dirPath: home,
+    name: 'leitbild-assistance', description: 'Test assistance Skill', body: 'Use Workspace evidence.',
+    tools: [], allowedToolNames: ['workspace_explore', 'workspace_call'], dirPath: home,
   })
+  for (const name of ['product_search', 'product_read', 'place_resolve', 'get_time']) {
+    deployment.sharedToolRegistry.register({
+      name,
+      description: `Test ${name}`,
+      parameters: { type: 'object' },
+      execute: async () => ({ success: true, data: {} }),
+    })
+  }
   registry = createWorkspaceRuntimeRegistry({ deployment, moduleState: state, idleMs: 1_000_000 })
 })
 
@@ -95,14 +103,6 @@ describe('Agents Workspace Module API', () => {
       name: 'leitbild-assistance', description: 'Test Assistant Skill', body: 'Use Workspace discovery.',
       tools: [], allowedToolNames: [], dirPath: home,
     })
-    for (const name of ['product_search', 'product_read', 'place_resolve', 'get_time']) {
-      runtime.toolRegistry.register({
-        name,
-        description: `Test ${name}`,
-        parameters: { type: 'object' },
-        execute: async () => ({ success: true, data: {} }),
-      })
-    }
     const focusedResource = workspaceResourceReferenceSchema.parse({
       workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-one',
     })
@@ -162,13 +162,13 @@ describe('Agents Workspace Module API', () => {
     await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
     const family = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.run-family', id: 'family-one' })
     const run = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-one' })
-    const selection = { kind: 'collection' as const, collection: family, members: { mode: 'all' as const, except: [] } }
-    const ensure = (selected = selection) => request(
+    const scope = { kind: 'collection' as const, collection: family, members: { mode: 'all' as const, except: [] } }
+    const ensure = (selected = scope) => request(
       'POST',
       `/internal/workspaces/${workspaceId}/capabilities/agents.assistance.open/invoke`,
-      invokeBody(workspaceId, 'agents.assistance.open', { selection: selected, title: 'Test run', focusedSubjects: [run] }),
+      invokeBody(workspaceId, 'agents.assistance.open', { scope: selected, title: 'Test run', focusedSubjects: [run] }),
     )
-    expect((await ensure({ ...selection, collection: { ...family, workspaceId: newWorkspaceId() } })).status).toBe(409)
+    expect((await ensure({ ...scope, collection: { ...family, workspaceId: newWorkspaceId() } })).status).toBe(409)
     const replies = await Promise.all(Array.from({ length: 4 }, () => ensure()))
     expect(replies.map(reply => reply.status).sort()).toEqual([200, 200, 200, 201])
     const ids = await Promise.all(replies.map(async reply => (await reply.json() as { result: { resource: { id: string } } }).result.resource.id))
@@ -181,18 +181,18 @@ describe('Agents Workspace Module API', () => {
     expect(room.deliveryMode).toBe('broadcast')
     room.setPaused(true) // User edits must survive both reuse and template edits.
     const library = registry.definitionsFor(workspaceId)
-    const revision = await library.currentRevision('simulation-assistant')
+    const revision = await library.currentRevision('leitbild-assistant')
     await library.update({ ...revision!.document, title: 'Edited template' }, revision!.id)
     await registry.evictOne(workspaceId)
     const saved = moduleResourceCollectionSchema.parse(await (await request('GET', `/internal/workspaces/${workspaceId}/resources`)).json()).resources
-    expect(saved.find(item => item.ref.id === ids[0])?.links).toContainEqual({ rel: 'subject-collection', ref: family })
+    expect(saved.find(item => item.ref.id === ids[0])?.links).toContainEqual({ rel: 'scope-collection', ref: family })
     expect(registry.tryGetLive(workspaceId)).toBeUndefined()
     expect((await (await ensure()).json() as { result: { resource: { id: string } } }).result.resource.id).toBe(ids[0]!)
     const restored = await registry.getOrLoad(workspaceId)
     expect(restored.rooms.getRoom(ids[0]!)!.paused).toBe(true)
     expect(restored.team.listByKind('ai')).toHaveLength(1)
     const anotherFamily = workspaceResourceReferenceSchema.parse({ ...family, id: 'family-two' })
-    expect((await ensure({ ...selection, collection: anotherFamily })).status).toBe(201)
+    expect((await ensure({ ...scope, collection: anotherFamily })).status).toBe(201)
     expect(restored.rooms.listAllRooms()).toHaveLength(2)
     expect(restored.team.listByKind('ai')).toHaveLength(2)
     restored.removeRoom(ids[0]!)
@@ -214,7 +214,7 @@ describe('Agents Workspace Module API', () => {
       return original(agentId, ...args)
     })
     const body = invokeBody(workspaceId, 'agents.assistance.open', {
-      selection: {
+      scope: {
         kind: 'collection',
         collection: { workspaceId, moduleId: 'world', type: 'world.run-family', id: 'family-one' },
         members: { mode: 'all', except: [] },
@@ -300,7 +300,7 @@ describe('Agents Workspace Module API', () => {
     const definitions = moduleDefinitionCollectionSchema.parse(
       await (await request('GET', `/internal/workspaces/${workspaceId}/definitions`)).json(),
     )
-    const roomDefinition = definitions.definitions.find(definition => definition.ref.id === 'simulation-assistant')!
+    const roomDefinition = definitions.definitions.find(definition => definition.ref.id === 'leitbild-assistant')!
     expect(String(roomDefinition.inspectionCapabilityId)).toBe('agents.room-definition.inspect')
     expect(roomDefinition.primaryCapabilityId).toBeUndefined()
     const definitionInspectionResponse = await request(
@@ -323,7 +323,7 @@ describe('Agents Workspace Module API', () => {
       'POST',
       `/internal/workspaces/${workspaceId}/capabilities/agents.assistance.open/invoke`,
       invokeBody(workspaceId, 'agents.assistance.open', {
-        selection: {
+        scope: {
           kind: 'collection',
           collection: { workspaceId, moduleId: 'world', type: 'world.run-family', id: 'family-one' },
           members: { mode: 'all', except: [] },
@@ -339,7 +339,6 @@ describe('Agents Workspace Module API', () => {
     const createAgent = await request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.agent.create/invoke`,
       invokeBody(workspaceId, 'agents.agent.create', {
         name: 'Analyst', model: 'test-model', persona: 'Analyse.',
-        toolGrants: [{ capabilityId: 'world.simulation-run.read' }],
       }))
     expect(createAgent.status).toBe(201)
     const agentId = (await createAgent.json() as { result: { id: string } }).result.id
@@ -357,9 +356,8 @@ describe('Agents Workspace Module API', () => {
       `/internal/workspaces/${workspaceId}/capabilities/agents.agent.read/invoke`,
       invokeBody(workspaceId, 'agents.agent.read', {}, { resource: { type: 'agents.agent', id: agentId } }),
     )
-    expect((await agentProfile.json() as {
-      result: { config: { toolGrants: Array<{ capabilityId: string }> } }
-    }).result.config.toolGrants).toEqual([{ capabilityId: 'world.simulation-run.read' }])
+    expect((await agentProfile.json() as { result: { config: Record<string, unknown> } }).result.config)
+      .not.toHaveProperty('toolGrants')
 
     const startedRoom = resources.resources.find(resource => resource.ref.id === startedRoomId)
     expect(startedRoom?.sourceDefinition?.revisionId).toBe(roomDefinition.currentRevisionId)

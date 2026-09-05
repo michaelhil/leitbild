@@ -44,7 +44,7 @@ const makeLLMProvider = (
 
 const makeRoom = (id: string = 'room-1', name: string = 'Test Room'): Room => {
   const profile: RoomProfile = {
-    id, name, createdBy: 'system', createdAt: Date.now(),
+    id, name, createdBy: 'system', createdAt: Date.now(), scope: { kind: 'workspace' }, scopeRevision: 0,
   }
   return createRoom(profile)
 }

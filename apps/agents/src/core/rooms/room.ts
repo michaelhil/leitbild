@@ -36,7 +36,7 @@ import { SYSTEM_SENDER_ID } from '../types/constants.ts'
 import { parseAddressedAgents } from './addressing.ts'
 import { deliverBroadcast } from './delivery-modes.ts'
 import { attachMessageFocus } from '../message-focus.ts'
-import { workspaceResourceSubjectSelectionSchema } from '@leitbild/contracts'
+import { workspaceRoomScopeSchema } from '@leitbild/contracts'
 
 export interface RoomCallbacks {
   readonly deliver?: DeliverFn
@@ -260,16 +260,16 @@ export const createRoom = (
     setRoomPrompt: (prompt: string) => {
       profile = { ...profile, roomPrompt: prompt }
     },
-    setSubjectSelection: (selection, expectedRevision): number => {
-      const currentRevision = profile.subjectRevision ?? 0
+    setScope: (scope, expectedRevision): number => {
+      const currentRevision = profile.scopeRevision
       if (expectedRevision !== currentRevision) {
-        throw Object.assign(new Error(`Room Subject Selection changed: expected ${expectedRevision}, current ${currentRevision}`), {
-          code: 'subject_revision_conflict', currentRevision,
+        throw Object.assign(new Error(`Room Scope changed: expected ${expectedRevision}, current ${currentRevision}`), {
+          code: 'scope_revision_conflict', currentRevision,
         })
       }
-      const subjectSelection = workspaceResourceSubjectSelectionSchema.parse(selection)
+      const parsedScope = workspaceRoomScopeSchema.parse(scope)
       const nextRevision = currentRevision + 1
-      profile = { ...profile, subjectSelection, subjectRevision: nextRevision }
+      profile = { ...profile, scope: parsedScope, scopeRevision: nextRevision }
       return nextRevision
     },
     deleteMessage: (messageId: string): boolean => {

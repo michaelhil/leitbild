@@ -32,7 +32,9 @@ names, legacy layouts, or compatibility parsers.
 Optional directories are `tools/`, `skills/`, `scripts/`, and `geodata/`.
 Tools register as `<pack-id>_<tool-name>`; skills register as
 `<pack-id>/<skill-name>`. A Room activates Packs explicitly, and Agents see
-only tools allowed by both the Room's active Pack set and their Tool Grants.
+only tools contributed by its active Pack set, plus built-in and explicitly
+selected authored tools. Cross-Module access is bounded by Room Scope rather
+than per-tool grants.
 
 Packs are executable code and use the Deployment's trust boundary. Installing
 one is equivalent to trusting its source. The implementation lives in

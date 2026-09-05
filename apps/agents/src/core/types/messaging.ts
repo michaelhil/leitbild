@@ -110,7 +110,7 @@ export interface ToolTraceEntry {
   readonly tool: string
   readonly argumentKeys: ReadonlyArray<string>
   readonly argumentBytes: number
-  readonly capabilityId?: string
+  readonly operationIds?: ReadonlyArray<string>
   readonly target?: string
   readonly success: boolean
   readonly resultPreview: string   // <=200 chars (truncated result or error message)
@@ -119,8 +119,8 @@ export interface ToolTraceEntry {
 // === Profiles — what agents know about rooms and other agents ===
 
 export interface RoomProfile {
-  readonly subjectSelection?: import('@leitbild/contracts').WorkspaceResourceSubjectSelection
-  readonly subjectRevision?: number
+  readonly scope: import('@leitbild/contracts').WorkspaceRoomScope
+  readonly scopeRevision: number
   readonly id: string
   readonly name: string
   readonly roomPrompt?: string

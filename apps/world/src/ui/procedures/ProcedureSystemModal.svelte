@@ -174,7 +174,7 @@
   let scrollFrame: number | null = null
   let tagRequest = 0
   let catalogRequest = 0
-  let procedureDocumentBodyElement: HTMLDivElement | null = null
+  let procedureDocumentBodyElement = $state<HTMLDivElement | null>(null)
   const procedureScrollPositions = new Map<string, number>()
 
   const currentUnitContext = $derived(unitContexts.find(unit => unit.plantId === plantId) ?? {

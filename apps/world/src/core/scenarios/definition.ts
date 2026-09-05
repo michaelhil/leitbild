@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { electricalConnectionSpecSchema, idSchema, objectContextSchema, objectIdSchema, scenarioRecordingSelectionSchema } from '../model/index.ts'
+import { agentRestrictionsSchema, electricalConnectionSpecSchema, idSchema, objectContextSchema, objectIdSchema, scenarioRecordingSelectionSchema } from '../model/index.ts'
 import { scenarioTimelineSchema } from '../model/scenario.ts'
 
 const lonLatSchema = z.tuple([
@@ -48,6 +48,7 @@ export const scenarioDefinitionSchema = z.object({
   title: z.string().min(1),
   description: z.string().min(1).optional(),
   objectives: z.array(z.string().min(1)).default([]),
+  agentRestrictions: agentRestrictionsSchema.default({ operationIds: [], objects: [] }),
   packs: z.array(scenarioPackSelectionSchema).min(1),
   world: z.object({
     startsAt: z.string().datetime(),

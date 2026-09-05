@@ -29,6 +29,14 @@
     readonly result: T
     readonly createdResources?: ReadonlyArray<ModuleResourceDescriptor['ref']>
   }
+  interface AgentRestrictionsState {
+    readonly operationIds: ReadonlyArray<string>
+    readonly objects: ReadonlyArray<{ readonly objectId: string; readonly deny: ReadonlyArray<'inspect' | 'change'> }>
+    readonly revision: number
+  }
+  interface ObjectSearchResult {
+    readonly objects: ReadonlyArray<{ readonly id: string; readonly label: string; readonly kind: string; readonly packId: string }>
+  }
 
   interface Props {
     readonly workspaceId: string
@@ -51,6 +59,12 @@
   let wallNow = $state(Date.now())
   let copyDialog = $state<HTMLDialogElement | null>(null)
   let timerDialog = $state<HTMLDialogElement | null>(null)
+  let restrictionsDialog = $state<HTMLDialogElement | null>(null)
+  let restrictions = $state<AgentRestrictionsState | null>(null)
+  let restrictionObjects = $state<ReadonlyArray<ObjectSearchResult['objects'][number]>>([])
+  let restrictedOperationIds = $state('')
+  let restrictionBusy = $state(false)
+  let restrictionError = $state('')
   let familyOpen = $state(false)
   let editingRunId = $state<string | null>(null)
   let editingName = $state('')
@@ -136,6 +150,51 @@
       execution = (await invoke<ExecutionState>(resource.ref, 'world.simulation-run.execution.advance', { minutes, onComplete })).result
       timerDialog?.close()
     })
+  }
+  const openRestrictions = (): void => {
+    if (restrictionBusy) return
+    restrictionBusy = true
+    restrictionError = ''
+    void Promise.all([
+      invoke<AgentRestrictionsState>(resource.ref, 'world.simulation-run.agent-restrictions.read', {}),
+      invoke<ObjectSearchResult>(resource.ref, 'world.simulation-run.objects.search', { offset: 0, limit: 200 }),
+    ]).then(([policy, objects]) => {
+      restrictions = policy.result
+      restrictedOperationIds = policy.result.operationIds.join('\n')
+      restrictionObjects = objects.result.objects
+      restrictionsDialog?.showModal()
+    }).catch(cause => {
+      restrictionError = cause instanceof Error ? cause.message : String(cause)
+      reportError(restrictionError)
+    }).finally(() => { restrictionBusy = false })
+  }
+  const objectDenies = (objectId: string): ReadonlyArray<'inspect' | 'change'> =>
+    restrictions?.objects.find(entry => entry.objectId === objectId)?.deny ?? []
+  const setObjectRestriction = (objectId: string, effect: 'inspect' | 'change', denied: boolean): void => {
+    if (!restrictions) return
+    const current = objectDenies(objectId)
+    const deny = denied ? [...new Set([...current, effect])] : current.filter(value => value !== effect)
+    restrictions = {
+      ...restrictions,
+      objects: deny.length === 0
+        ? restrictions.objects.filter(entry => entry.objectId !== objectId)
+        : [...restrictions.objects.filter(entry => entry.objectId !== objectId), { objectId, deny }],
+    }
+  }
+  const saveRestrictions = (): void => {
+    if (!restrictions || restrictionBusy) return
+    restrictionBusy = true
+    restrictionError = ''
+    const operationIds = [...new Set(restrictedOperationIds.split('\n').map(value => value.trim()).filter(Boolean))]
+    void invoke<AgentRestrictionsState>(resource.ref, 'world.simulation-run.agent-restrictions.set', {
+      restrictions: { operationIds, objects: restrictions.objects },
+      expectedRevision: restrictions.revision,
+    }).then(response => {
+      restrictions = response.result
+      restrictionsDialog?.close()
+    }).catch(cause => {
+      restrictionError = cause instanceof Error ? cause.message : String(cause)
+    }).finally(() => { restrictionBusy = false })
   }
   const switchRun = (id: string): void => {
     familyOpen = false
@@ -246,6 +305,7 @@
   <button class:active={execution?.pace === 'maximum'} type="button" aria-pressed={execution?.pace === 'maximum'} disabled={!execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set') || (!execution.maximumPace.available && execution.pace !== 'maximum')} onclick={togglePace} title={execution?.maximumPace.available ? execution?.pace === 'maximum' ? 'Maximum pace armed — click for realtime' : 'Realtime pace — click for maximum' : execution?.maximumPace.reason ?? 'Maximum pace unavailable'} aria-label={execution?.pace === 'maximum' ? 'Maximum pace armed; switch to realtime' : 'Realtime pace; switch to maximum'}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 5 9 7-9 7zM12 5l9 7-9 7z"/></svg></button>
   <span class:fast={execution?.pace === 'maximum'} class="clock" title={execution?.playback === 'playing' && execution?.pace === 'maximum' ? `Playing at ${execution.acceleration?.measuredSpeed.toFixed(1) ?? '0.0'}× measured` : execution?.pace === 'maximum' ? 'Paused with maximum pace armed' : execution?.playback === 'paused' ? 'Simulation paused' : 'Simulation playing in realtime'}>{displayTime}{#if execution?.pace === 'maximum'}<small>{execution.playback === 'playing' ? `${execution.acceleration?.measuredSpeed.toFixed(1) ?? '0.0'}×` : 'MAX armed'}</small>{/if}</span>
   <button class:active={execution?.acceleration?.kind === 'timed' && ['running', 'paused'].includes(execution.acceleration.status)} type="button" disabled={actionBusy || !capabilityAvailable('world.simulation-run.execution.advance') || execution?.maximumPace.available === false} onclick={() => timerDialog?.showModal()} title="Run at maximum pace for a fixed duration" aria-label="Run at maximum pace for a fixed duration"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6M12 14l3-3M12 6a8 8 0 1 0 8 8 8 8 0 0 0-8-8z"/></svg></button>
+  <button type="button" disabled={restrictionBusy || !capabilityAvailable('world.simulation-run.agent-restrictions.read') || !capabilityAvailable('world.simulation-run.agent-restrictions.set')} onclick={openRestrictions} title="AI restrictions for this Run" aria-label="AI restrictions for this Run"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></button>
 </div>
 {#if actionError}<div class="control-error" role="alert">{actionError}</div>{/if}
 {#if notice}<div class="switch-notice" role="status">{notice}</div>{/if}
@@ -270,6 +330,23 @@
   <p class="hint">Live external feeds cannot invent future observations and will reject fast-forward.</p>
 </dialog>
 
+<dialog class="control-dialog restrictions-dialog" bind:this={restrictionsDialog}>
+  <header><div><small>Current Run</small><h2>AI restrictions</h2></div><button class="close" type="button" onclick={() => restrictionsDialog?.close()} aria-label="Close">×</button></header>
+  <p class="hint">Agents can use every operation in their Room Scope except what is listed here. Object limits block targeted detailed reads and changes; catalogs and aggregate results may still reveal that an object exists. This replaces the current Run policy and does not edit the source scenario.</p>
+  <label>Blocked operation IDs <span>(one per line)</span><textarea rows="4" bind:value={restrictedOperationIds} placeholder="world.simulation-run.scenario-source"></textarea></label>
+  <fieldset class="object-restrictions"><legend>Object restrictions</legend>
+    {#if restrictionObjects.length === 0}<p>No operational objects found.</p>{/if}
+    {#each restrictionObjects as object (object.id)}
+      <div><span title={object.id}><strong>{object.label}</strong><small>{object.packId} · {object.kind}</small></span>
+        <label><input type="checkbox" checked={objectDenies(object.id).includes('inspect')} onchange={event => setObjectRestriction(object.id, 'inspect', event.currentTarget.checked)} /> Details</label>
+        <label><input type="checkbox" checked={objectDenies(object.id).includes('change')} onchange={event => setObjectRestriction(object.id, 'change', event.currentTarget.checked)} /> Change</label>
+      </div>
+    {/each}
+  </fieldset>
+  {#if restrictionError}<p class="restriction-error" role="alert">{restrictionError}</p>{/if}
+  <div class="actions"><button type="button" onclick={() => restrictionsDialog?.close()}>Cancel</button><button class="primary" type="button" disabled={restrictionBusy} onclick={saveRestrictions}>{restrictionBusy ? 'Saving…' : 'Save restrictions'}</button></div>
+</dialog>
+
 <style>
   .run-controls { min-width: 0; margin-left: auto; display: flex; align-items: center; gap: .35rem; color: #dfe8dc; }
   button { min-width: 30px; min-height: 28px; padding: 0 .45rem; border: 1px solid #536157; border-radius: 6px; color: inherit; background: #243128; font: inherit; cursor: pointer; }
@@ -290,8 +367,13 @@
   .control-dialog header small, .hint, .progress span, .control-dialog label span { color: #687269; } .control-dialog > :not(header) { margin-left: 1.1rem; margin-right: 1.1rem; } .control-dialog > :last-child { margin-bottom: 1.1rem; }
   .control-dialog .close { min-width: 32px; min-height: 32px; padding: 0; border-color: #b8c1b6; color: #334139; background: #fff; font-size: 1.2rem; }
   .control-dialog > label { margin-top: 1rem; display: grid; gap: .35rem; color: #4c584e; font-size: .82rem; font-weight: 650; } .control-dialog > label input { width: 100%; min-height: 38px; padding: .55rem .65rem; border: 1px solid #bdc7bb; border-radius: 7px; background: #fff; font: inherit; }
+  .control-dialog textarea { width: 100%; padding: .55rem .65rem; resize: vertical; border: 1px solid #bdc7bb; border-radius: 7px; background: #fff; font: .72rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
   fieldset { margin-top: 1rem !important; padding: .7rem .8rem; display: flex; gap: 1rem; border: 1px solid #cbd5c9; border-radius: 8px; } fieldset legend { padding: 0 .25rem; color: #4c584e; font-size: .78rem; font-weight: 650; } label.choice { display: flex; align-items: center; gap: .35rem; font-size: .8rem; }
   .progress { margin-top: 1rem; padding: .8rem; display: grid; gap: .25rem; border: 1px solid #65a9ea; border-radius: 8px; background: #fff; box-shadow: inset 3px 0 #3988d1; font-size: .8rem; }
   .actions { margin-top: .85rem; display: flex; justify-content: flex-end; gap: .5rem; } .control-dialog .actions button { min-height: 38px; padding: .5rem .8rem; border-color: #aeb9ad; color: #213026; background: #fff; } .control-dialog .actions button.primary { border-color: #263c2b; color: #f5fff2; background: #263c2b; }
   .hint { font-size: .72rem; line-height: 1.4; } @media (max-width: 760px) { .family-control, .run-title { display: none; } .clock { min-width: 96px; } }
+  .restrictions-dialog { width: min(680px, calc(100vw - 2rem)); } .object-restrictions { max-height: min(42vh, 420px); overflow: auto; display: grid; gap: .25rem; }
+  .object-restrictions > div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: .8rem; padding: .4rem 0; border-bottom: 1px solid #e1e7df; }
+  .object-restrictions > div > span { min-width: 0; display: grid; } .object-restrictions strong, .object-restrictions small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .object-restrictions small { color: #6b746c; }
+  .object-restrictions label { display: flex; align-items: center; gap: .3rem; font-size: .75rem; } .restriction-error { color: #9b2f2a; font-size: .78rem; }
 </style>

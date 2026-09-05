@@ -68,13 +68,14 @@ export const createRoomDirectory = (callbacks: RoomDirectoryCallbacks = {}): Roo
   const storeRoom = (config: RoomConfig, name: string): Room => {
     validateName(name, 'Room')
     const profile: RoomProfile = {
+      scope: config.scope ?? { kind: 'workspace' },
+      scopeRevision: 0,
       id: crypto.randomUUID(),
       name,
       roomPrompt: config.roomPrompt,
       createdBy: config.createdBy,
       createdAt: Date.now(),
       ...(config.sourceDefinition === undefined ? {} : { sourceDefinition: config.sourceDefinition }),
-      ...(config.subjectSelection === undefined ? {} : { subjectSelection: config.subjectSelection, subjectRevision: 0 }),
     }
     const room = createRoom(profile, makeRoomCallbacks())
     rooms.set(profile.id, room)

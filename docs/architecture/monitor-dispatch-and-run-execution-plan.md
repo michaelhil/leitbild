@@ -52,7 +52,7 @@ Evidence under `apps/world/src/packs/ambulance`:
 - Initial ETA uses route-service duration, but movement uses a fixed 15 m/s. Restoring movement guesses the nearest route vertex and loses exact motion state.
 - Foreign Pack objects are filtered out of the runtime's initial and committed views. The unused medical-demand handler ignores `sourceObjectId` and creates another point incident.
 - Commands republish whole-fleet snapshots as durable events; several queries repeatedly scan/parse the fleet. Scenario construction and live creation use inconsistent constructors.
-- Agent discovery exposes mainly full objects, not an operational dispatch board or eligible choices with rejection reasons. The earlier simulation-assistant grants omitted useful Ambulance-specific reads.
+- Earlier Agent discovery exposed mainly full objects, not an operational dispatch board or eligible choices with rejection reasons.
 
 Preserve the Pack boundary, routing port, typed road-weather constraint, canonical projections, Scenario integration, recording and Capability registry. Replace the domain engine and its tests, not the surrounding product architecture.
 
@@ -218,7 +218,7 @@ Local real PWR benchmark, Apple M2/Bun 1.4.0, 300 simulated seconds, warmed medi
 
 ## 5. Agent integration
 
-Keep `workspace_catalog`, `workspace_capabilities` and `workspace_invoke`. Add bounded domain read models and precise operation schemas, not hardwired resource IDs or a new Agent framework.
+Use the generic `workspace_explore` and `workspace_call` broker. Add bounded domain read models and precise operation schemas, not hardwired resource IDs or a new Agent framework.
 
 - Ambulance: dispatch overview, incident/patient detail, eligible units/destinations with reasons, operational milestones/metrics; strict assignment/reassignment/transport/disposition commands.
 - Monitor: modality/validity/source-filtered summaries, full inspection, explicit live-versus-captured metadata and collection failures.
@@ -288,7 +288,7 @@ Implemented four explicit item types with one shared authoring/live-creation con
 
 The complete operational loop includes optional preplanned onward transport, capacity/care-tag/urgency checks, first-arrival and patient milestones, explicit no-transport, cancellation without lost custody, deterministic FIFO handover with stable ID ties, capacity reopening, retargeting and return to base. Assessments record new facts even when a previous plan becomes unsuitable. Shared warnings expose that mismatch. Destination checks prevent new unsuitable admission; a handover already admitted finishes under its accepted service duration. Care-site settings govern future admissions rather than undoing completed work.
 
-AI access uses four bounded read surfaces (dispatch state, exact object, eligible options and measures) plus the same validated commands as human controls and Timeline. The current Run Assistant receives read/write access only through its Room Subject Selection, discovers Run capabilities dynamically, verifies effects, and distinguishes requested execution from advice; destructive operations remain outside the semantic grant. No provider-specific implementation or Agent-stored Run binding is introduced. Real Module integration tests exercise discovery → eligibility → dispatch → readback without substituting a fake World runtime.
+AI access uses four bounded read surfaces (dispatch state, exact object, eligible options and measures) plus the same validated commands as human controls and Timeline. The current Assistant discovers operations inside its Room Scope, verifies effects, and distinguishes requested execution from advice; a Run can explicitly restrict sensitive operations or objects. No provider-specific implementation or Agent-stored Run binding is introduced. Real Module integration tests exercise discovery → eligibility → dispatch → readback without substituting a fake World runtime.
 
 ### Hardening discovered during implementation
 

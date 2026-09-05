@@ -7,7 +7,7 @@ import { compressionDue, createSummaryEngine, pickCompressionCandidates } from '
 import { createSummaryScheduler } from './summary-scheduler.ts'
 
 const makeProfile = (): RoomProfile => ({
-  id: 'r1', name: 'Test', createdBy: 'system', createdAt: Date.now(),
+  id: 'r1', name: 'Test', createdBy: 'system', createdAt: Date.now(), scope: { kind: 'workspace' }, scopeRevision: 0,
 })
 
 // A real in-process LLM that deterministically streams a fixed output.

@@ -3,7 +3,6 @@
 // activation; activating a Pack adds only that Pack's tools.
 
 import { describe, expect, test } from 'bun:test'
-import { capabilityIdSchema } from '@leitbild/contracts'
 import { buildToolSupport, effectiveAgentToolSelection } from './spawn.ts'
 import { createToolRegistry } from '../core/tool-registry.ts'
 import type { Tool, ToolResult } from '../core/types/tool.ts'
@@ -23,18 +22,16 @@ const stubProvider = {} as unknown as LLMProvider
 const makeRoom = (activePacks: string[]) => ({ getActivePacks: () => activePacks })
 
 describe('pack-aware tool surface filter', () => {
-  test('Capability grants derive the generic Workspace broker tools without persisting them', () => {
+  test('every AI Agent gets the small generic Workspace broker surface', () => {
     expect(effectiveAgentToolSelection({
       name: 'Operator',
       model: 'test',
       persona: 'Observe the World.',
       tools: ['procedure_lookup'],
-      toolGrants: [{ capabilityId: capabilityIdSchema.parse('world.simulation-run.context') }],
     })).toEqual([
       'procedure_lookup',
-      'workspace_catalog',
-      'workspace_capabilities',
-      'workspace_invoke',
+      'workspace_explore',
+      'workspace_call',
     ])
   })
 

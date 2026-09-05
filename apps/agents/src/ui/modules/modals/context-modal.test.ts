@@ -16,15 +16,15 @@ describe('generation inspection', () => {
 
   test('pairs exact tool arguments with the result sent back to the model', () => {
     const interactions = extractToolInteractions([
-      { role: 'assistant', content: '', toolCalls: [{ id: 'call-1', function: { name: 'workspace_invoke', arguments: { capabilityId: 'read.live' } } }] },
-      { role: 'tool', content: '{"status":"ready"}', toolCallId: 'call-1', name: 'workspace_invoke' },
+      { role: 'assistant', content: '', toolCalls: [{ id: 'call-1', function: { name: 'workspace_call', arguments: { operationId: 'read.live' } } }] },
+      { role: 'tool', content: '{"status":"ready"}', toolCallId: 'call-1', name: 'workspace_call' },
       { role: 'assistant', content: 'Ready.' },
     ])
     expect(interactions).toEqual([{
       id: 'call-1',
-      name: 'workspace_invoke',
-      arguments: { capabilityId: 'read.live' },
-      result: { content: '{"status":"ready"}', name: 'workspace_invoke' },
+      name: 'workspace_call',
+      arguments: { operationId: 'read.live' },
+      result: { content: '{"status":"ready"}', name: 'workspace_call' },
     }])
   })
 })

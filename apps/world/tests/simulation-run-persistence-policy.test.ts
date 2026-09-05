@@ -13,7 +13,7 @@ import { defineSimulationCommandCapability } from '../src/simulation/capabilitie
 
 const simulationRunId = 'run-persistence-policy-test' as SimulationRunId
 const objectId = 'object:test-mobile' as ObjectId
-const testScenario = { id: 'scenario:test-persistence', startsAt: nowIso() }
+const testScenario = { id: 'scenario:test-persistence', startsAt: nowIso(), agentRestrictions: { operationIds: [], objects: [] } }
 
 const makeObject = (config?: {
   readonly point?: ReturnType<typeof geoPointFromLonLat>

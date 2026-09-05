@@ -128,6 +128,10 @@ export interface SimulationCapability {
   readonly input: z.ZodType
   readonly output: z.ZodType
   readonly schedulable?: boolean
+  /** Objects whose detailed state a query inspects. Broad discovery/list
+   * operations deliberately omit this: they may reveal that an object exists,
+   * but not bypass a restriction on detailed inspection. */
+  readonly inspectObjectIds?: (input: unknown) => ReadonlyArray<ObjectId>
   readonly buildCommand?: (input: unknown) => {
     readonly targetObjectIds: ReadonlyArray<ObjectId>
     readonly payload: unknown

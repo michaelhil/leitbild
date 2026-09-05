@@ -51,6 +51,36 @@ const issueDispatchCommand = async (runtime: SimulationRunRuntime): Promise<void
 }
 
 describe('Simulation Run registry', () => {
+  test('starts with Scenario AI restrictions and lets a human replace them during the Run', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-agent-restrictions-'))
+    const registry = createRegistry(dataDir)
+    try {
+      const run = await registry.create({ scenarioId: 'test-response' })
+      const ambulance = run.snapshot().objects.find(object => object.packId === 'ambulance')!
+      const operator = { id: 'actor:test-operator' as ActorId, label: 'Test Operator', role: 'operator' as const }
+      const ai = { id: 'actor:test-ai' as ActorId, label: 'Test AI', role: 'ai_agent' as const }
+
+      const restricted = await run.setAgentRestrictions(operator, {
+        operationIds: [], objects: [{ objectId: ambulance.id, deny: ['inspect', 'change'] }],
+      }, 0)
+      expect(restricted).toMatchObject({ revision: 1, objects: [{ objectId: ambulance.id, deny: ['inspect', 'change'] }] })
+      await expect(run.invokeCapability(ai, {
+        capabilityId: 'world.ambulance.object', input: { objectId: ambulance.id },
+      })).rejects.toThrow(`AI inspect access is restricted for: ${ambulance.id}`)
+      await expect(run.invokeCapability(ai, {
+        capabilityId: deleteObjectCommandKind, input: { objectId: ambulance.id },
+      })).rejects.toThrow(`AI change access is restricted for: ${ambulance.id}`)
+
+      const cleared = await run.setAgentRestrictions(operator, { operationIds: [], objects: [] }, 1)
+      expect(cleared).toEqual({ operationIds: [], objects: [], revision: 2 })
+      expect((await run.invokeCapability(ai, {
+        capabilityId: 'world.ambulance.object', input: { objectId: ambulance.id },
+      })).kind).toBe('query')
+      await expect(run.setAgentRestrictions(ai, { operationIds: [], objects: [] }, 2))
+        .rejects.toThrow('Only a human operator or system actor may replace Run AI restrictions')
+    } finally { await registry.shutdown() }
+  })
+
   test('execution status reopens an unloaded Run before reading its clock', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-execution-reopen-'))
     const registry = createRegistry(dataDir)
@@ -90,6 +120,12 @@ describe('Simulation Run registry', () => {
     try {
       const source = await registry.create({ scenarioId: 'test-response' })
       await source.setClock({ paused: true })
+      const restrictedObject = source.snapshot().objects[0]!
+      await source.setAgentRestrictions(
+        { id: 'actor:test-operator' as ActorId, label: 'Test Operator', role: 'operator' },
+        { operationIds: ['world.simulation-run.scenario-source'], objects: [{ objectId: restrictedObject.id, deny: ['inspect'] }] },
+        0,
+      )
       const sourceBefore = structuredClone(source.snapshot())
       const copy = await registry.copy(source.id, { name: 'What-if' })
       await registry.advanceExecution(copy.id, { minutes: 0.01, onComplete: 'pause' })
@@ -102,6 +138,7 @@ describe('Simulation Run registry', () => {
       expect(copy.snapshot().clock).toMatchObject({ paused: true, currentTime: completed.acceleration?.targetSimulationTime })
       expect(source.snapshot().clock?.currentTime).toBe(sourceBefore.clock?.currentTime)
       expect(source.snapshot().objects).toEqual(sourceBefore.objects)
+      expect(copy.snapshot().scenario?.agentRestrictions).toEqual(sourceBefore.scenario?.agentRestrictions)
       expect((await registry.summary(copy.id)).title).toBe('What-if')
       const manifest = JSON.parse(await readFile(join(simulationRunDir(dataDir, workspaceId, copy.id), 'manifest.json'), 'utf8')) as { origin?: unknown }
       expect(manifest.origin).toMatchObject({ kind: 'copy', familyId: source.id, copyNumber: 1, sourceRunId: source.id, sourceSequence: sourceBefore.seq })

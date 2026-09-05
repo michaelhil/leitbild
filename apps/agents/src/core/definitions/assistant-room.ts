@@ -1,5 +1,5 @@
 import type {
-  WorkspaceResourceSubjectSelection,
+  WorkspaceRoomScope,
   WorkspaceSubjectReference,
 } from '@leitbild/contracts'
 import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
@@ -23,35 +23,25 @@ export interface AssistanceRoomResult {
 
 const pending = new WeakMap<AgentsWorkspaceRuntime, Map<string, Promise<Room>>>()
 
-const targetKey = (selection?: WorkspaceResourceSubjectSelection): string => selection === undefined
+const targetKey = (scope: WorkspaceRoomScope): string => scope.kind === 'workspace'
   ? 'workspace'
-  : selection.kind === 'resource'
-    ? JSON.stringify(['resource', selection.resource.workspaceId, selection.resource.moduleId, selection.resource.type, selection.resource.id])
-    : JSON.stringify(['collection', selection.collection.workspaceId, selection.collection.moduleId, selection.collection.type, selection.collection.id])
+  : scope.kind === 'resource'
+    ? JSON.stringify(['resource', scope.resource.workspaceId, scope.resource.moduleId, scope.resource.type, scope.resource.id])
+    : JSON.stringify(['collection', scope.collection.workspaceId, scope.collection.moduleId, scope.collection.type, scope.collection.id])
 
 const sameTarget = (
-  left: WorkspaceResourceSubjectSelection | undefined,
-  right: WorkspaceResourceSubjectSelection | undefined,
+  left: WorkspaceRoomScope,
+  right: WorkspaceRoomScope,
 ): boolean => targetKey(left) === targetKey(right)
 
 const resolveAssistanceRevision = async (
   library: RoomDefinitionLibrary,
-  selection?: WorkspaceResourceSubjectSelection,
 ) => {
-  const targetType = selection === undefined
-    ? undefined
-    : selection.kind === 'resource'
-      ? selection.resource.type
-      : selection.collection.type
   const records = await library.list()
   const revisions = await Promise.all(records.map(record => library.getRevision(record.currentRevisionId)))
-  const matches = revisions.filter(revision => revision !== undefined && (
-    targetType === undefined
-      ? revision.document.assistance?.kind === 'workspace'
-      : revision.document.assistance?.kind === 'resource' && revision.document.assistance.resourceType === targetType
-  ))
-  if (matches.length === 0) throw new AssistanceRoomError(503, 'assistance_definition_unavailable', 'No Assistance Room Definition matches this target')
-  if (matches.length > 1) throw new AssistanceRoomError(409, 'assistance_definition_conflict', 'More than one Assistance Room Definition matches this target')
+  const matches = revisions.filter(revision => revision?.document.assistance === true)
+  if (matches.length === 0) throw new AssistanceRoomError(503, 'assistance_definition_unavailable', 'The Assistance Room Definition is unavailable')
+  if (matches.length > 1) throw new AssistanceRoomError(409, 'assistance_definition_conflict', 'More than one Assistance Room Definition is active')
   return matches[0]!
 }
 
@@ -59,11 +49,11 @@ export const createAssistanceRoom = async (
   runtime: AgentsWorkspaceRuntime,
   library: RoomDefinitionLibrary,
   flush: () => Promise<void>,
-  selection: WorkspaceResourceSubjectSelection,
+  scope: WorkspaceRoomScope,
   title: string,
 ): Promise<AssistanceRoomResult> => {
-  const revision = await resolveAssistanceRevision(library, selection)
-  const started = await startRoomDefinition(runtime, library, revision.definitionId, revision.id, { selection, title })
+  const revision = await resolveAssistanceRevision(library)
+  const started = await startRoomDefinition(runtime, library, revision.definitionId, revision.id, { scope, title })
   await flush()
   return { created: true, room: started.room, revisionId: revision.id }
 }
@@ -73,22 +63,22 @@ export const ensureAssistanceRoom = async (
   library: RoomDefinitionLibrary,
   flush: () => Promise<void>,
   options: {
-    readonly selection?: WorkspaceResourceSubjectSelection
+    readonly scope: WorkspaceRoomScope
     readonly title?: string
     readonly prompt?: string
     readonly focusedSubjects?: ReadonlyArray<WorkspaceSubjectReference>
-  } = {},
+  } = { scope: { kind: 'workspace' } },
 ): Promise<AssistanceRoomResult> => {
-  const revision = await resolveAssistanceRevision(library, options.selection)
+  const revision = await resolveAssistanceRevision(library)
 
-  const key = targetKey(options.selection)
+  const key = targetKey(options.scope)
   let requests = pending.get(runtime)
   if (!requests) { requests = new Map(); pending.set(runtime, requests) }
   const inflight = requests.get(key)
   let created = inflight === undefined
   const creation = inflight ?? (async (): Promise<Room> => {
     const existing = runtime.rooms.listAllRooms()
-      .filter(room => room.sourceDefinition?.id === revision.definitionId && sameTarget(room.subjectSelection, options.selection))
+      .filter(room => room.sourceDefinition?.id === revision.definitionId && sameTarget(room.scope, options.scope))
       .sort((left, right) => left.createdAt - right.createdAt)[0]
     if (existing) {
       created = false
@@ -101,9 +91,7 @@ export const ensureAssistanceRoom = async (
       library,
       revision.definitionId,
       revision.id,
-      options.selection === undefined
-        ? undefined
-        : { selection: options.selection, title: options.title ?? 'Assistance' },
+      { scope: options.scope, title: options.title ?? 'Assistance' },
     )
     const room = runtime.rooms.getRoom(started.room.id)
     if (!room) throw new AssistanceRoomError(500, 'assistance_room_disappeared', 'Assistance Room disappeared during creation')

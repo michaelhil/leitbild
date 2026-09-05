@@ -53,6 +53,7 @@ describe('scenario timeline model', () => {
       timeline,
       state: {
         scenarioId: responseScenario.id,
+        agentRestrictions: { operationIds: [], objects: [], revision: 0 },
         highlightedObjectIds: [],
         timeline: {
           startedAt,

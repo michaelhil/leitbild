@@ -4,7 +4,7 @@ import { owningPackFor } from '../types/tool-pack.ts'
 import { resolveWorkspaceDefaultModel } from '../workspaces/seed-workspace.ts'
 import type { RoomDefinition, PromptDeckEntry } from './room-definition-catalog.ts'
 import type { RoomDefinitionLibrary } from './room-definition-library.ts'
-import type { WorkspaceResourceSubjectSelection } from '@leitbild/contracts'
+import type { WorkspaceRoomScope } from '@leitbild/contracts'
 
 export interface StartedRoomDefinition {
   readonly definition: RoomDefinition
@@ -69,7 +69,7 @@ export const startRoomDefinition = async (
   library: RoomDefinitionLibrary,
   definitionId: string,
   revisionId: string,
-  subject?: { readonly selection: WorkspaceResourceSubjectSelection; readonly title: string },
+  scoped?: { readonly scope: WorkspaceRoomScope; readonly title: string },
 ): Promise<StartedRoomDefinition> => {
   const revision = await library.getRevision(revisionId)
   if (!revision || revision.definitionId !== definitionId) throw new Error(`Unknown Room Definition Revision "${revisionId}"`)
@@ -81,8 +81,8 @@ export const startRoomDefinition = async (
   if (!human) throw new Error('This Workspace has no human agent')
 
   const room = (await system.createRoom({
-    name: subject ? `${subject.title.slice(0, 115)} · Agents` : definition.title,
-    ...(subject ? { subjectSelection: subject.selection } : {}),
+    name: scoped ? `${scoped.title.slice(0, 115)} · Agents` : definition.title,
+    scope: scoped?.scope ?? { kind: 'workspace' },
     roomPrompt: definition.room.prompt,
     createdBy: SYSTEM_SENDER_ID,
     sourceDefinition: { id: definition.id, revisionId: revision.id },
@@ -101,7 +101,6 @@ export const startRoomDefinition = async (
         persona: agentDefinition.persona,
         tools: agentDefinition.tools,
         skills: agentDefinition.skills,
-        ...(agentDefinition.toolGrants ? { toolGrants: agentDefinition.toolGrants } : {}),
         ...(agentDefinition.temperature !== undefined ? { temperature: agentDefinition.temperature } : {}),
         ...(agentDefinition.maxToolIterations !== undefined ? { maxToolIterations: agentDefinition.maxToolIterations } : {}),
         ...(agentDefinition.includeContext ? { includeContext: agentDefinition.includeContext } : {}),

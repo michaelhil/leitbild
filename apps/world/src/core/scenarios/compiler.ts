@@ -143,6 +143,7 @@ export const compileScenarioDefinition = async (
     title: source.title,
     ...(source.description === undefined ? {} : { description: source.description }),
     objectives: source.objectives,
+    agentRestrictions: source.agentRestrictions,
     packs: source.packs.map(selection => selection.id),
     packRuntimes: Object.fromEntries(source.packs.flatMap(selection =>
       selection.runtime === undefined ? [] : [[selection.id, selection.runtime]])),

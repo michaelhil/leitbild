@@ -599,6 +599,7 @@ export const createSimulationRunRegistry = (config: {
         scenario: {
           id: scenarioRuntime.scenarioId,
           startsAt: scenarioRuntime.scenario.world.startsAt,
+          agentRestrictions: scenarioRuntime.scenario.agentRestrictions,
           ...(scenarioRuntime.scenario.timeline === undefined ? {} : { timeline: scenarioRuntime.scenario.timeline }),
         },
         capabilities: capabilitiesFor(scenarioRuntime, scenarioRevisionIdFromManifest(createConfig.manifest)),

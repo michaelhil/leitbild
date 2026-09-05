@@ -8,6 +8,8 @@ const makeProfile = (overrides?: Partial<RoomProfile>): RoomProfile => ({
   name: 'Test Room',
   createdBy: 'creator-1',
   createdAt: Date.now(),
+  scope: { kind: 'workspace' },
+  scopeRevision: 0,
   ...overrides,
 })
 
@@ -511,7 +513,7 @@ describe('Room — Directed Addressing [[AgentName]]', () => {
   })
 
   test('cause field round-trips through post → getRecent (Phase E observability)', () => {
-    const room = createRoom({ id: 'r-cause', name: 'cr', createdAt: Date.now(), createdBy: 'sys' })
+    const room = createRoom(makeProfile({ id: 'r-cause', name: 'cr', createdBy: 'sys' }))
     room.post({
       senderId: 'sys-stage',
       senderName: 'Stage',
@@ -540,7 +542,7 @@ describe('Room — Directed Addressing [[AgentName]]', () => {
   })
 
   test('messages without an automation cause keep cause undefined', () => {
-    const room = createRoom({ id: 'r-nc', name: 'nc', createdAt: Date.now(), createdBy: 'sys' })
+    const room = createRoom(makeProfile({ id: 'r-nc', name: 'nc', createdBy: 'sys' }))
     room.post({ senderId: 'a', senderName: 'Alice', content: 'just a chat', type: 'chat' })
     expect(room.getRecent(1)[0]!.cause).toBeUndefined()
   })
