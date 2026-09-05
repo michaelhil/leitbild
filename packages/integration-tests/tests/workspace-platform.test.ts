@@ -276,7 +276,6 @@ describe('Workspace Host with real Modules', () => {
       'product_search',
       'product_read',
       'place_resolve',
-      'get_time',
       'workspace_explore',
       'workspace_call',
     ]))

@@ -65,8 +65,19 @@ export interface RecordedSample extends RecordingSample {
   readonly sequence: number
 }
 
+export interface RecordingWindowSummary {
+  readonly sampleCount: number
+  readonly firstSample: RecordedSample | null
+  readonly lastSample: RecordedSample | null
+  readonly distinctValueCount: number
+  readonly numericMinimum: number | null
+  readonly numericMaximum: number | null
+  readonly numericAverage: number | null
+}
+
 export interface RecordingPage {
   readonly samples: ReadonlyArray<RecordedSample>
+  readonly windowSummary: RecordingWindowSummary
   readonly hasMore: boolean
   readonly nextBeforeSequence: number | null
   readonly retainedFromSequence: number | null

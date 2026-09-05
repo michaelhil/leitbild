@@ -59,6 +59,15 @@ describe('Run Historian', () => {
     expect(historian.status()).toMatchObject({ sampleCount: 3, discardedSinceOpen: 2 })
     const page = historian.query({ limit: 2, timeAxis: 'simulation', from: '2026-01-01T12:00:00+02:00' })
     expect(page.samples.map(sample => sample.value)).toEqual([5, 4])
+    expect(page.windowSummary).toMatchObject({
+      sampleCount: 3,
+      distinctValueCount: 3,
+      numericMinimum: 3,
+      numericMaximum: 5,
+      numericAverage: 4,
+      firstSample: { value: 3 },
+      lastSample: { value: 5 },
+    })
     expect(page.hasMore).toBe(true)
     expect(historian.query({ beforeSequence: page.nextBeforeSequence! }).samples.map(sample => sample.value)).toEqual([3])
     expect(historian.query({ beforeSequence: 2 }).retentionGap).toBe(true)

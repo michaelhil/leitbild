@@ -44,6 +44,25 @@ interface RetainedBoundsRow {
   readonly last_simulation_time: string | null
 }
 
+interface WindowSummaryRow {
+  readonly sample_count: number
+  readonly distinct_value_count: number
+  readonly numeric_minimum: number | null
+  readonly numeric_maximum: number | null
+  readonly numeric_average: number | null
+}
+
+const sampleFromRow = (row: SampleRow): RecordedSample => ({
+  sequence: row.sequence,
+  runtimeId: row.runtime_id,
+  seriesId: row.series_id,
+  observedAt: row.observed_at as RecordedSample['observedAt'],
+  ...(row.simulation_time === null ? {} : { simulationTime: row.simulation_time as RecordedSample['simulationTime'] }),
+  ...(row.elapsed_ms === null ? {} : { elapsedMs: row.elapsed_ms }),
+  value: valueFromRow(row),
+  quality: row.quality,
+})
+
 export interface RunHistorian {
   readonly record: (runtimeId: string, batch: PackRuntimeRecordingBatch) => void
   readonly listSeries: () => ReadonlyArray<RecordingSeriesDescriptor & { readonly runtimeId: string }>
@@ -324,15 +343,37 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
       if (query.to !== undefined) { predicates.push(`${timeColumn} <= ?`); values.push(new Date(query.to).toISOString()) }
       if (query.beforeSequence !== undefined) { predicates.push('sequence < ?'); values.push(query.beforeSequence) }
       const limit = Math.min(10_000, Math.max(1, query.limit ?? 2_000))
+      const filteredValues = [...values]
       values.push(limit + 1)
+      const selectedColumns = `sequence, runtime_id, series_id, observed_at, simulation_time, elapsed_ms,
+               value_type, value_number, value_text, value_boolean, quality`
       const rows = database.query<SampleRow, Array<string | number>>(`
-        SELECT sequence, runtime_id, series_id, observed_at, simulation_time, elapsed_ms,
-               value_type, value_number, value_text, value_boolean, quality
+        SELECT ${selectedColumns}
         FROM recording_samples
         ${predicates.length === 0 ? '' : `WHERE ${predicates.join(' AND ')}`}
         ORDER BY sequence DESC
         LIMIT ?
       `).all(...values)
+      const filteredWhere = predicates.length === 0 ? '' : `WHERE ${predicates.join(' AND ')}`
+      const window = database.query<WindowSummaryRow, Array<string | number>>(`
+        SELECT COUNT(*) AS sample_count,
+               COUNT(DISTINCT CASE value_type
+                 WHEN 'number' THEN 'n:' || CAST(value_number AS TEXT)
+                 WHEN 'boolean' THEN 'b:' || CAST(value_boolean AS TEXT)
+                 ELSE 's:' || value_text
+               END) AS distinct_value_count,
+               MIN(value_number) AS numeric_minimum,
+               MAX(value_number) AS numeric_maximum,
+               AVG(value_number) AS numeric_average
+        FROM recording_samples
+        ${filteredWhere}
+      `).get(...filteredValues)!
+      const firstRow = database.query<SampleRow, Array<string | number>>(`
+        SELECT ${selectedColumns} FROM recording_samples ${filteredWhere} ORDER BY ${timeColumn} ASC, sequence ASC LIMIT 1
+      `).get(...filteredValues)
+      const lastRow = database.query<SampleRow, Array<string | number>>(`
+        SELECT ${selectedColumns} FROM recording_samples ${filteredWhere} ORDER BY ${timeColumn} DESC, sequence DESC LIMIT 1
+      `).get(...filteredValues)
       const selectedWhere = selectionPredicates.length === 0 ? '' : `WHERE ${selectionPredicates.join(' AND ')}`
       const retained = database.query<RetainedBoundsRow, Array<string | number>>(`
         SELECT MIN(sequence) AS first_sequence,
@@ -354,18 +395,18 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
       const retentionGap = (query.beforeSequence !== undefined && retainedFromSequence !== null && query.beforeSequence <= retainedFromSequence)
         || (retainedStart !== null && requestedFrom !== undefined && requestedFrom < retainedStart)
         || (retainedStart !== null && requestedTo !== undefined && requestedTo < retainedStart)
-      const samples = rows.slice(0, limit).map(row => ({
-        sequence: row.sequence,
-        runtimeId: row.runtime_id,
-        seriesId: row.series_id,
-        observedAt: row.observed_at as RecordedSample['observedAt'],
-        ...(row.simulation_time === null ? {} : { simulationTime: row.simulation_time as RecordedSample['simulationTime'] }),
-        ...(row.elapsed_ms === null ? {} : { elapsedMs: row.elapsed_ms }),
-        value: valueFromRow(row),
-        quality: row.quality,
-      }))
+      const samples = rows.slice(0, limit).map(sampleFromRow)
       return {
         samples,
+        windowSummary: {
+          sampleCount: window.sample_count,
+          firstSample: firstRow === null ? null : sampleFromRow(firstRow),
+          lastSample: lastRow === null ? null : sampleFromRow(lastRow),
+          distinctValueCount: window.distinct_value_count,
+          numericMinimum: window.numeric_minimum,
+          numericMaximum: window.numeric_maximum,
+          numericAverage: window.numeric_average,
+        },
         hasMore: rows.length > limit,
         nextBeforeSequence: rows.length > limit ? samples.at(-1)!.sequence : null,
         retainedFromSequence,

@@ -1253,6 +1253,15 @@ export const createSimulationRunRuntime = async (config: {
     recordingSeries: () => config.historian?.listSeries() ?? [],
     recordedSamples: (query) => config.historian?.query(query) ?? {
       samples: [],
+      windowSummary: {
+        sampleCount: 0,
+        firstSample: null,
+        lastSample: null,
+        distinctValueCount: 0,
+        numericMinimum: null,
+        numericMaximum: null,
+        numericAverage: null,
+      },
       hasMore: false,
       nextBeforeSequence: null,
       retainedFromSequence: null,

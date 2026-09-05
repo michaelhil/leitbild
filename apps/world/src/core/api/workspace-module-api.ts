@@ -276,9 +276,22 @@ const simulationHistorySeriesSchema = z.object({
   series: z.array(recordingSeriesDescriptorSchema.extend({ runtimeId: z.string().min(1) }).strict()),
 }).strict()
 
+const compactHistorySampleSchema = recordingSampleSchema.omit({ seriesId: true }).extend({
+  sequence: z.number().int().positive(),
+}).strict()
+
 const simulationHistorySamplesSchema = z.object({
   series: recordingSeriesDescriptorSchema.extend({ runtimeId: z.string().min(1) }).strict(),
-  samples: z.array(recordingSampleSchema.extend({ runtimeId: z.string().min(1), sequence: z.number().int().positive() }).strict()),
+  samples: z.array(compactHistorySampleSchema),
+  windowSummary: z.object({
+    sampleCount: z.number().int().nonnegative(),
+    firstSample: compactHistorySampleSchema.nullable(),
+    lastSample: compactHistorySampleSchema.nullable(),
+    distinctValueCount: z.number().int().nonnegative(),
+    numericMinimum: z.number().finite().nullable(),
+    numericMaximum: z.number().finite().nullable(),
+    numericAverage: z.number().finite().nullable(),
+  }).strict(),
   hasMore: z.boolean(),
   nextBeforeSequence: z.number().int().positive().nullable(),
   retainedFromSequence: z.number().int().positive().nullable(),
@@ -1338,7 +1351,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'Read Simulation History Samples',
-      description: 'Reads a bounded page for one exact historian series and reports its retained observed/simulation-time range. retentionGap is true when the requested cursor or time range predates retained data.',
+      description: 'Reads a bounded page for one exact historian series. windowSummary covers the complete filtered interval independently of page size, so trend endpoints, extrema, and change detection do not require a large raw sample page. Retained observed/simulation-time bounds and retentionGap report missing older evidence.',
       risk: 'read',
       idempotent: true,
       inputSchema: z.toJSONSchema(readHistorySamplesInputSchema),
@@ -1358,9 +1371,17 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
         ...(input.to === undefined ? {} : { to: new Date(input.to).toISOString() }),
         limit: input.limit,
       }
+      const page = runtime.recordedSamples(query)
+      const compact = ({ runtimeId: _runtimeId, seriesId: _seriesId, ...sample }: (typeof page.samples)[number]) => sample
       return json({ result: {
         series,
-        ...runtime.recordedSamples(query),
+        ...page,
+        samples: page.samples.map(compact),
+        windowSummary: {
+          ...page.windowSummary,
+          firstSample: page.windowSummary.firstSample === null ? null : compact(page.windowSummary.firstSample),
+          lastSample: page.windowSummary.lastSample === null ? null : compact(page.windowSummary.lastSample),
+        },
       } })
     },
   },

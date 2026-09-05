@@ -132,7 +132,7 @@ describe('World Module API', () => {
     const selectedSeries = seriesCatalog.body!.result.series[0]!
     expect(selectedSeries).toBeDefined()
     const capabilityId = 'world.simulation-run.history-samples.read'
-    const read = (input: unknown) => call<{ result: { samples: Array<{ sequence: number }>; nextBeforeSequence: number | null } }>(registry,
+    const read = (input: unknown) => call<{ result: { samples: Array<{ sequence: number; runtimeId?: string; seriesId?: string }>; windowSummary: { sampleCount: number; firstSample: { sequence: number } | null }; nextBeforeSequence: number | null } }>(registry,
       `/internal/workspaces/${workspaceId}/capabilities/${capabilityId}/invoke`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspaceId, capabilityId, resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }, input, access }),
@@ -140,6 +140,9 @@ describe('World Module API', () => {
     const series = { runtimeId: selectedSeries.runtimeId, seriesId: selectedSeries.id }
     const first = await read({ ...series, timeAxis: 'simulation', to: '2026-01-02T00:00:00Z', limit: 2 })
     expect(first.body!.result.samples.length).toBeGreaterThan(0)
+    expect(first.body!.result.windowSummary.sampleCount).toBeGreaterThan(0)
+    expect(first.body!.result.windowSummary.firstSample).not.toBeNull()
+    expect(first.body!.result.samples.every(sample => sample.runtimeId === undefined && sample.seriesId === undefined)).toBe(true)
     const cursor = first.body!.result.nextBeforeSequence
     if (cursor !== null) {
       const second = await read({ ...series, timeAxis: 'simulation', to: '2026-01-02T00:00:00Z', beforeSequence: cursor, limit: 2 })
