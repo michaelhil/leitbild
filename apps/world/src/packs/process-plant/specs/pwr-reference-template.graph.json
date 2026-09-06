@@ -38,7 +38,7 @@
       "variables": [
         {
           "path": "powerMw",
-          "description": "Core fission power in MW; procedure-facing proxy for power-range nuclear instrumentation average, not a calibrated percent indication",
+          "description": "Core fission power; procedure-facing proxy for power-range nuclear instrumentation average",
           "externalRefs": [
             "NIS-PR-AVG",
             "nis.power_range.avg"
@@ -51,7 +51,7 @@
           "path": "rodInsertionFraction",
           "tagId": "ROD-POS-AVG",
           "equipmentId": "rod-control-system",
-          "description": "Average control rod insertion fraction; no model-owned calibration to withdrawn step count is declared",
+          "description": "Average control rod insertion used to derive steps withdrawn for procedure checks",
           "externalRefs": [
             "rcs.rod.position.avg"
           ],

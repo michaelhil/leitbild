@@ -27,6 +27,21 @@ import { capabilityJsonSchema } from '../src/simulation/capabilities.ts'
 
 
 describe('process plant model composition', () => {
+  test('Agent foundation changes preserve the deployed PWR checkpoint identity', () => {
+    const system = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:checkpoint', loopCount: 4 }))
+    // Frozen at 827c5690: this upgrade changes discovery/presentation, not Plant physics.
+    // Even descriptive graph edits affect the existing full-graph checkpoint digest.
+    expect(system.modelDigest).toBe('e8e0564206ea3b2d2bf16f44951f4f4e1ceb62aaeffcc281426bf5cdeeddee01')
+    const running = createProcessPlantRuntime({ system })
+    running.tick(1_300)
+    const persisted = JSON.parse(JSON.stringify(running.checkpoint()))
+    const restored = createProcessPlantRuntime({ system, restoredCheckpoint: persisted })
+    expect(restored.snapshot()).toEqual(running.snapshot())
+    restored.tick(700)
+    running.tick(700)
+    expect(restored.checkpoint()).toEqual(running.checkpoint())
+  })
+
   test('publishes branded signal references as their truthful JSON wire types', () => {
     const capability = processPlantCapabilities.find(candidate => candidate.id === 'world.process-plant.signals.read')!
     const schema = capabilityJsonSchema(capability.input) as {

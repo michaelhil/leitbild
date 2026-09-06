@@ -104,6 +104,12 @@ Verification: full platform check, tests and all three UI builds pass. The full 
 
 Coding is complete for the accepted foundation phases. The [model-selection gate](agent-model-screen-2026-09.md) is recorded before post-upgrade conversation testing. Live four-arm reference comparison remains a separate evaluation phase, not an implied completed feature.
 
+### Deployment smoke regression: model identity
+
+The first deployed smoke check caught an existing-Run restore regression before any paid model screen: two optional description edits in the PWR graph changed its full-graph SHA, which checkpoint validation treats as model identity. No physics or persisted state shape had changed. Those description edits were withdrawn, preserving the deployed model exactly. Truthful requested-unit views and their explicit unsupported-conversion explanations remain implemented. Checkpoint validation was not bypassed, and no existing checkpoint or Run was migrated/deleted.
+
+A frozen pre-upgrade model-digest regression plus serialized checkpoint restore and further exact advancement now guards this cycle. The broader limitation remains explicit: the current fingerprint conflates descriptive artifact changes with simulation-state compatibility. Replacing it needs a deliberately versioned model/state design and old-state evaluation; it is not silently solved by ignoring hashes or normalizing historical data. Existing rod/proxy source descriptions describe the authored intent, not proof of a supported calibration; the value-view result remains authoritative about unavailable conversion.
+
 ## Conversational evaluation gate
 
 The production replay uses a fresh Room and a paused copy of the same test-owned Run for each candidate. Exact questions remain unchanged: current Unit 2 sitrep, electrical-output meaning, exact earlier observation, then stale-inventory correction after deleting Unit 2. A reused Room or settings that do not read back as requested aborts before sending questions. A probe timeout cancels that test Agent; it is an experimental deadline, not a product tool-call limit.
