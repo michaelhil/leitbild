@@ -346,7 +346,7 @@ export const serializeModuleSnapshots = (runtime: SerializableRuntime): {
     const state = room.getRoomState()
     rooms.push({
       profile: room.profile,
-      messages: redactBiometricMessages(room.getRecent(room.getMessageCount())),
+      messages: redactBiometricMessages(room.getRetainedMessages()),
       members: [...room.getParticipantIds()],
       deliveryMode: state.mode,
       paused: state.paused,

@@ -81,6 +81,8 @@ export const createRecallTool = (deps: RecallToolDeps): Tool => ({
       scopedRoomId = room.profile.id
     }
 
+    // A restored store learns its persisted binding only when loaded.
+    await deps.vectorStore.load()
     // Resolve embedder, honouring the existing vector-store binding.
     const bound = deps.vectorStore.getBinding()
     const resolved = resolveEmbedder({
@@ -114,7 +116,6 @@ export const createRecallTool = (deps: RecallToolDeps): Tool => ({
       return { success: false, error: `embedding failed: ${(err as Error).message}` }
     }
 
-    await deps.vectorStore.load()
     const hits = deps.vectorStore.search(queryVector, 'memory', {
       k,
       filter: scopedRoomId

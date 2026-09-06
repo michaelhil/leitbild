@@ -23,6 +23,10 @@ import { addAgentToRoom } from './actions.ts'
 import { createToolSurface } from '../tool-surface/index.ts'
 import { WORKSPACE_CAPABILITY_TOOL_NAMES } from '../tools/built-in/workspace-capability-tools.ts'
 import type { WorkspaceSubjectReference } from '@leitbild/contracts'
+import type { ExecutionStore } from '../core/executions/store.ts'
+
+export type ExecutionGrowth = <T>(bytes: number, work: () => Promise<T>) => Promise<T>
+export type RunToolOperation = <T>(work: () => Promise<T>) => Promise<T>
 
 interface AgentToolContextRef {
   id: string
@@ -42,10 +46,13 @@ const createToolExecutor = (
   context: ToolContext,
   getRoomActivation?: GetRoomActivation,
   getFocusedSubjects?: (roomId: string) => ReadonlyArray<WorkspaceSubjectReference>,
+  executionStore?: ExecutionStore,
+  executionGrowth?: ExecutionGrowth,
+  runToolOperation?: RunToolOperation,
 ): ToolExecutor => {
   const allowed = new Set(allowedTools)
 
-  return async (calls: ReadonlyArray<ToolCall>, roomId?: string, signal?: AbortSignal): Promise<ReadonlyArray<ToolResult>> => {
+  return async (calls: ReadonlyArray<ToolCall>, roomId?: string, signal?: AbortSignal, executionTurnId?: string): Promise<ReadonlyArray<ToolResult>> => {
     const results: ToolResult[] = []
     const callContext: ToolContext = roomId
       ? { ...context, roomId, focusedSubjects: getFocusedSubjects?.(roomId) ?? [] }
@@ -62,18 +69,39 @@ const createToolExecutor = (
     // Removed 2026-05-12; see the PR that deletes spawn-allowed-tools.test.ts.
     for (const call of calls) {
       signal?.throwIfAborted()
+      // Standalone/test executors intentionally need no persistent Workspace.
+      // Runtime executors must have a turn identity before any dispatch.
+      if (executionStore && (!executionTurnId || !call.callId)) throw new Error('Execution turn and call identity are required before dispatch')
+      if (executionStore) {
+        const attempt = async (): Promise<void> => {
+          signal?.throwIfAborted()
+          executionStore.recordAttempt(executionTurnId!, {
+            id: call.callId!, tool: call.tool, arguments: call.arguments,
+            ...(call.providerCallId ? { providerCallId: call.providerCallId } : {}), startedAt: Date.now(),
+          })
+        }
+        // One SQLite page is conservatively reserved for row/index overhead;
+        // the actual file size remains the budget authority on next admission.
+        if (executionGrowth) await executionGrowth(new TextEncoder().encode(JSON.stringify(call)).byteLength + 4096, attempt)
+        else await attempt() // Isolated in-memory tests have no Workspace budget.
+      }
+      const retainOutcome = (result: ToolResult): ToolResult => {
+        // Never quota-reject known evidence after an action already happened.
+        executionStore?.recordOutcome(executionTurnId!, call.callId!, result)
+        return result
+      }
       // Rejections name the exact dimension that needs changing. The operator's mental
       // model is "I see this tool in the inspector → it should work." When
       // it doesn't, the message must name what to change: the agent's
       // allowlist OR the room's pack activation.
       if (!allowed.has(call.tool)) {
-        results.push({ success: false, error: `Tool "${call.tool}" is not in this Agent's tool selection` })
+        results.push(retainOutcome({ success: false, error: `Tool "${call.tool}" is not in this Agent's tool selection` }))
         continue
       }
 
       const entry = registry.getEntry(call.tool)
       if (!entry) {
-        results.push({ success: false, error: `Tool "${call.tool}" is not registered` })
+        results.push(retainOutcome({ success: false, error: `Tool "${call.tool}" is not registered` }))
         continue
       }
       const owningPack = owningPackFor(entry)
@@ -81,7 +109,7 @@ const createToolExecutor = (
         ? undefined
         : getRoomActivation(roomId)
       if (owningPack !== undefined && room !== undefined && !room.getActivePacks().includes(owningPack)) {
-        results.push({ success: false, error: `Tool "${call.tool}" belongs to Pack "${owningPack}", which is not active in this Room` })
+        results.push(retainOutcome({ success: false, error: `Tool "${call.tool}" belongs to Pack "${owningPack}", which is not active in this Room` }))
         continue
       }
 
@@ -89,19 +117,44 @@ const createToolExecutor = (
       const callSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal
       const timer = setTimeout(() => controller.abort(new Error(`Tool "${call.tool}" timed out after 30s; inspect state before retrying a command`)), 30_000)
       let rejectAbort: () => void = () => {}
+      let dispatched = false
       try {
         const cancelled = new Promise<never>((_, reject) => {
           rejectAbort = () => reject(callSignal.reason)
           callSignal.addEventListener('abort', rejectAbort, { once: true })
+          if (callSignal.aborted) rejectAbort()
         })
-        const result = await Promise.race([entry.tool.execute(call.arguments, { ...callContext, signal: callSignal }), cancelled])
+        const dispatch = async (): Promise<ToolResult> => {
+          // Admission/cancellation before dispatch is not a tool outcome.
+          // In particular, a queued Workspace operation may already be stale.
+          callSignal.throwIfAborted()
+          let result: ToolResult
+          dispatched = true
+          try { result = await entry.tool.execute(call.arguments, { ...callContext, signal: callSignal }) }
+          catch (err) {
+            console.error(`[tool] "${call.tool}" execution failed:`, err)
+            result = { success: false, error: err instanceof Error ? err.message : 'Tool execution failed' }
+          }
+          return retainOutcome(result)
+        }
+        // Existing Workspace lifetime ownership must outlive the abort race:
+        // an uncooperative tool still needs its store when its real result arrives.
+        const execution = Promise.resolve().then(() => runToolOperation ? runToolOperation(dispatch) : dispatch())
+        void execution.catch(error => {
+          // Pre-dispatch cancellation has no result to retain. Errors after
+          // actual dispatch must still be visible after the abort race ends.
+          if (callSignal.aborted && dispatched) console.error(`[tool] "${call.tool}" late outcome could not be retained:`, error)
+        })
+        // If cancellation wins, the real promise still records its eventual
+        // result. A timeout itself is not evidence the action did not happen.
+        const result = await Promise.race([execution, cancelled])
         results.push(result)
       } catch (err) {
-        // Log to operator so a tool throwing a fresh error class doesn't lose
-        // its stack to the LLM-only structured result. The LLM still sees the
-        // sanitized message; the operator sees the full error.
-        console.error(`[tool] "${call.tool}" execution failed:`, err)
-        results.push({ success: false, error: err instanceof Error ? err.message : 'Tool execution failed' })
+        if (!callSignal.aborted) throw err // Persistence failures must stop dispatch, not pretend to be tool outcomes.
+        const reason = `Tool "${call.tool}" interrupted; outcome is unknown. Inspect retained evidence and current state before retrying.`
+        executionStore?.finishTurn(executionTurnId!, 'interrupted', reason)
+        // Do not dispatch another call from this response after interruption.
+        throw new Error(reason)
       } finally {
         clearTimeout(timer)
         callSignal.removeEventListener('abort', rejectAbort)
@@ -168,6 +221,9 @@ export const buildToolSupport = async (
   llmProvider: LLMProvider,
   seed?: number,
   getRoomActivation?: GetRoomActivation,
+  executionStore?: ExecutionStore,
+  executionGrowth?: ExecutionGrowth,
+  runToolOperation?: RunToolOperation,
 ): Promise<AgentToolSupport> => {
   // Always include the pass tool (auto-injected for all agents)
   const allToolNames = toolNames.includes('pass') ? toolNames : [...toolNames, 'pass']
@@ -203,6 +259,9 @@ export const buildToolSupport = async (
     lazyContext,
     getRoomActivation,
     roomId => agentRef.focusedSubjects?.(roomId) ?? [],
+    executionStore,
+    executionGrowth,
+    runToolOperation,
   )
 
   // Initial projection has no Room context. Each evaluation reads activation.
@@ -233,6 +292,9 @@ const resolveAgentTools = async (
   toolRegistry: ToolRegistry | undefined,
   agentRef: AgentToolContextRef,
   getRoomActivation?: GetRoomActivation,
+  executionStore?: ExecutionStore,
+  executionGrowth?: ExecutionGrowth,
+  runToolOperation?: RunToolOperation,
 ): Promise<AgentToolSupport> => {
   if (!toolRegistry) return {}
   const requestedTools = effectiveAgentToolSelection(config)
@@ -248,12 +310,18 @@ const resolveAgentTools = async (
     llmProvider,
     config.seed,
     getRoomActivation,
+    executionStore,
+    executionGrowth,
+    runToolOperation,
   )
 }
 
 // --- Spawn AI Agent ---
 
 export interface SpawnOptions {
+  readonly executionStore?: ExecutionStore
+  readonly executionGrowth?: ExecutionGrowth
+  readonly runToolOperation?: RunToolOperation
   readonly overrideId?: string
   readonly getSkills?: (skillNames: ReadonlyArray<string>, roomId: string) => string
   readonly getActiveSkillsDeclarations?: (skillNames: ReadonlyArray<string>, roomId: string) => ReadonlyArray<{
@@ -347,6 +415,9 @@ export const spawnAIAgent = async (
     }
     const postAndAttachQuery = (params: Parameters<typeof routeMessage>[1]): void => {
       const posted = routeMessage(target, params)
+      if (decision.generationTraceId && spawnOptions?.executionStore) {
+        for (const message of posted) spawnOptions.executionStore.linkMessage(decision.generationTraceId, message.id)
+      }
       if (!decision.generationQuery || !decision.generationTraceId) return
       for (const message of posted) {
         rooms.getRoom(message.roomId)?.setGenerationQuery(
@@ -381,6 +452,7 @@ export const spawnAIAgent = async (
         inReplyTo: decision.inReplyTo,
         ...(decision.generationTraceId ? { generationTraceId: decision.generationTraceId } : {}),
         ...telemetry,
+        ...(decision.toolTrace && decision.toolTrace.length > 0 ? { toolTrace: decision.toolTrace } : {}),
       })
     } else {
       // action: 'error' — LLM/transport failure, distinct from a pass decision.
@@ -399,6 +471,7 @@ export const spawnAIAgent = async (
         inReplyTo: decision.inReplyTo,
         ...(decision.generationTraceId ? { generationTraceId: decision.generationTraceId } : {}),
         ...telemetry,
+        ...(decision.toolTrace && decision.toolTrace.length > 0 ? { toolTrace: decision.toolTrace } : {}),
       })
     }
   }
@@ -411,13 +484,19 @@ export const spawnAIAgent = async (
     toolRegistry,
     agentRef,
     spawnOptions?.getRoomActivation,
+    spawnOptions?.executionStore,
+    spawnOptions?.executionGrowth,
+    spawnOptions?.runToolOperation,
   )
 
   const agent = createAIAgent(config, llmProvider, onDecision, {
     ...toolSupport,
+    ...(spawnOptions?.executionStore ? { executionStore: spawnOptions.executionStore } : {}),
+    ...(spawnOptions?.executionGrowth ? { executionGrowth: spawnOptions.executionGrowth } : {}),
     getWorkspacePrompt: settings.getPrompt,
     getResponseFormat: settings.getResponseFormat,
     getCompressedIds: (roomId: string) => rooms.getRoom(roomId)?.getCompressedIds() ?? new Set(),
+    getCompressionSummary: (roomId: string) => rooms.getRoom(roomId)?.getCurrentCompressionMessage(),
     getRoomMembers: (roomId: string) => {
       const room = rooms.getRoom(roomId)
       if (!room) return []

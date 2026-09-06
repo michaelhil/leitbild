@@ -5,6 +5,9 @@ import { createModal, createCodeBlock, prettyJson } from './detail-modal.ts'
 import { safeFetchJson } from '../fetch-helpers.ts'
 import { showToast } from '../toast.ts'
 import { $rooms, type AgentContext, type UIMessage } from '../stores.ts'
+import { extractToolInteractions } from '../../../core/tool-evidence.ts'
+import type { ExecutionCall, ExecutionCallSummary, ExecutionTurn } from '../../../core/executions/store.ts'
+export { extractToolInteractions } from '../../../core/tool-evidence.ts'
 
 interface QueryMessage extends Record<string, unknown> {
   readonly role: string
@@ -32,17 +35,76 @@ interface GenerationQueryInspection {
   readonly generation: Readonly<Record<string, unknown>>
 }
 
+interface ExecutionInspection {
+  readonly turn: ExecutionTurn
+  readonly calls: ReadonlyArray<ExecutionCallSummary>
+}
+
+const executionPath = (roomId: string, turnId: string): string =>
+  `/rooms/${encodeURIComponent(roomId)}/executions/${encodeURIComponent(turnId)}`
+
+const appendExecution = (host: HTMLElement, inspection: ExecutionInspection): void => {
+  appendDisclosure(host, 'Turn status', inspection.turn)
+  const warning = document.createElement('p')
+  warning.className = 'text-xs text-text-subtle mb-3'
+  warning.textContent = 'Actual durable tool attempts and observed outcomes. An absent outcome is unknown, not a failed or safe-to-repeat action. Records describe historical observations, not current state.'
+  host.appendChild(warning)
+  for (const call of inspection.calls) {
+    const details = appendDisclosure(host, `${call.id} · ${call.tool} · ${call.completedAt === undefined ? 'outcome unknown' : 'outcome recorded'}`, call)
+    const load = document.createElement('button')
+    load.className = 'btn btn-ghost m-2'
+    load.textContent = 'Load exact arguments and outcome'
+    load.onclick = async () => {
+      const record = await safeFetchJson<ExecutionCall>(`${executionPath(inspection.turn.roomId, inspection.turn.id)}/calls/${encodeURIComponent(call.id)}`)
+      if (!record) {
+        showToast(document.body, 'Execution call is unavailable.', { type: 'error', position: 'fixed' })
+        return
+      }
+      appendDisclosure(details, 'Arguments', record.arguments, true, true)
+      appendDisclosure(details, 'Observed outcome', record.result ?? 'Unknown — no durable outcome. Inspect current state before retrying.', true, true)
+      load.remove()
+    }
+    details.appendChild(load)
+  }
+}
+
+export const showRoomExecutions = async (roomId: string): Promise<void> => {
+  const modal = createModal({ title: 'Conversation executions', width: 'max-w-4xl' })
+  document.body.appendChild(modal.overlay)
+  let cursor: { startedAt: number; id: string } | undefined
+  const more = document.createElement('button')
+  more.className = 'btn btn-ghost'
+  more.textContent = 'Load older turns'
+  const load = async (): Promise<void> => {
+    const params = new URLSearchParams({ limit: '30', ...(cursor ? { beforeStartedAt: String(cursor.startedAt), beforeId: cursor.id } : {}) })
+    const page = await safeFetchJson<{ turns: ExecutionTurn[]; next?: { startedAt: number; id: string } }>(`/rooms/${encodeURIComponent(roomId)}/executions?${params}`)
+    if (!page) { showToast(document.body, 'Execution history is unavailable.', { type: 'error', position: 'fixed' }); return }
+    if (page.turns.length === 0 && !cursor) modal.scrollBody.textContent = 'No execution turns recorded in this Room.'
+    for (const turn of page.turns) {
+      const button = document.createElement('button')
+      button.className = 'btn btn-ghost block mb-2 text-left'
+      button.textContent = `${new Date(turn.startedAt).toLocaleString()} · ${turn.status} · ${turn.agentId}${turn.messageId ? '' : ' · no posted message'}`
+      button.onclick = async () => {
+        const inspection = await safeFetchJson<ExecutionInspection>(executionPath(roomId, turn.id))
+        if (!inspection) { showToast(document.body, 'Execution turn is unavailable.', { type: 'error', position: 'fixed' }); return }
+        const detail = createModal({ title: 'Execution Inspector', width: 'max-w-4xl' })
+        appendExecution(detail.scrollBody, inspection)
+        document.body.appendChild(detail.overlay)
+      }
+      modal.scrollBody.appendChild(button)
+    }
+    cursor = page.next
+    more.hidden = !cursor
+  }
+  more.onclick = () => { void load() }
+  modal.footer.appendChild(more)
+  await load()
+}
+
 export interface PromptInspectionSection {
   readonly key: string
   readonly label: string
   readonly content: string
-}
-
-export interface ToolInteractionInspection {
-  readonly id: string
-  readonly name: string
-  readonly arguments: unknown
-  readonly result?: { readonly content: string; readonly name?: string }
 }
 
 const PROMPT_LABELS: Readonly<Record<string, string>> = {
@@ -69,33 +131,6 @@ export const extractPromptSections = (systemPrompt: string): ReadonlyArray<Promp
   return sections.length > 0
     ? sections
     : [{ key: 'system', label: 'System prompt', content: systemPrompt }]
-}
-
-export const extractToolInteractions = (
-  messages: ReadonlyArray<QueryMessage>,
-): ReadonlyArray<ToolInteractionInspection> => {
-  const results = new Map<string, { content: string; name?: string }>()
-  for (const message of messages) {
-    if (message.role !== 'tool' || !message.toolCallId) continue
-    results.set(message.toolCallId, {
-      content: message.content,
-      ...(message.name ? { name: message.name } : {}),
-    })
-  }
-  const interactions: ToolInteractionInspection[] = []
-  for (const message of messages) {
-    if (message.role !== 'assistant' || !message.toolCalls) continue
-    for (const [index, call] of message.toolCalls.entries()) {
-      const id = call.id ?? `call_${index}`
-      interactions.push({
-        id,
-        name: call.function.name,
-        arguments: call.function.arguments,
-        ...(results.has(id) ? { result: results.get(id)! } : {}),
-      })
-    }
-  }
-  return interactions
 }
 
 const appendWarnings = (host: HTMLElement, warnings?: ReadonlyArray<string>): void => {
@@ -169,12 +204,14 @@ export const showContextModal = (context: AgentContext, warnings?: string[]): vo
   document.body.appendChild(modal.overlay)
 }
 
-const showGenerationQueryModal = (inspection: GenerationQueryInspection): void => {
+const showGenerationQueryModal = (inspection: GenerationQueryInspection, execution?: ExecutionInspection): void => {
   const modal = createModal({ title: 'Prompt & Generation Inspector', width: 'max-w-5xl' })
   const note = document.createElement('div')
   note.className = 'text-xs text-text-subtle mb-3'
-  note.textContent = 'Complete provider-independent request supplied by Leitbild for the final model call, plus generation telemetry. In tool-using turns this request contains the accumulated exact tool calls and results. Provider-side hidden instructions, SDK wire transformations, authentication headers, and transport metadata are outside Leitbild and are not available.'
+  note.textContent = 'Exact provider-independent request supplied for the final model call. Request evidence may omit later executed calls or context removed before this request. Actual execution facts, when recorded, appear separately below. Provider wire transformations and private transport state are not included.'
   modal.scrollBody.appendChild(note)
+
+  if (execution) appendCategory(modal.scrollBody, `Actual execution (${execution.calls.length} calls)`, body => appendExecution(body, execution), true)
 
   appendCategory(modal.scrollBody, 'Generation overview', body => {
     body.appendChild(createCodeBlock(prettyJson({
@@ -208,7 +245,7 @@ const showGenerationQueryModal = (inspection: GenerationQueryInspection): void =
   const toolInteractions = extractToolInteractions(inspection.query.messages)
   const trace = Array.isArray(inspection.generation.toolTrace) ? inspection.generation.toolTrace : []
   if (toolInteractions.length > 0 || trace.length > 0) {
-    appendCategory(modal.scrollBody, `Tool activity (${Math.max(toolInteractions.length, trace.length)})`, body => {
+    appendCategory(modal.scrollBody, `Tool evidence in model request (${toolInteractions.length})`, body => {
       toolInteractions.forEach((interaction, index) => {
         appendDisclosure(body, `${index + 1}. ${interaction.name}`, interaction, false, true)
       })
@@ -265,12 +302,19 @@ export const handleViewContext = async (message: UIMessage): Promise<void> => {
   if (!message.roomId || !message.generationTraceId) return
   const room = $rooms.get()[message.roomId]
   if (!room) return
-  const inspection = await safeFetchJson<GenerationQueryInspection>(
-    `/rooms/${encodeURIComponent(room.id)}/messages/${encodeURIComponent(message.id)}/generation-query`,
-  )
+  const [inspection, execution] = await Promise.all([
+    safeFetchJson<GenerationQueryInspection>(`/rooms/${encodeURIComponent(room.id)}/messages/${encodeURIComponent(message.id)}/generation-query`),
+    safeFetchJson<ExecutionInspection>(executionPath(room.id, message.generationTraceId)),
+  ])
   if (!inspection) {
+    if (execution) {
+      const modal = createModal({ title: 'Execution Inspector', width: 'max-w-4xl' })
+      appendExecution(modal.scrollBody, execution)
+      document.body.appendChild(modal.overlay)
+      return
+    }
     showToast(document.body, 'Generation query is unavailable for this response.', { type: 'error', position: 'fixed' })
     return
   }
-  showGenerationQueryModal(inspection)
+  showGenerationQueryModal(inspection, execution ?? undefined)
 }

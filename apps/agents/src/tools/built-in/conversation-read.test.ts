@@ -24,4 +24,8 @@ test('exact prior arguments survive prose summaries and room restore, without cr
     .toMatchObject({success:true,data:{result:'{"valid":true}'}})
   expect(await tool.execute({messageId:message.id},{...context,callerId:'stranger'})).toMatchObject({success:false})
   expect(await tool.execute({messageId:message.id},{...context,roomId:'other'})).toMatchObject({success:false})
+  room.replaceCompression([message.id], 'A draft was validated.')
+  expect(await tool.execute({messageId:message.id,toolCallId:'call'},context)).toMatchObject({
+    success:true,data:{arguments:{calls:[{input:{source}}]}},
+  })
 })

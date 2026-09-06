@@ -78,6 +78,14 @@ _Avoid_: copied domain state, persisted generated prompt, current mutable Defini
 Structured facts about one generated response, including provider, model, duration, token use, prompt-cache use, model-call count, and tool-call count. Clients may render it with the response, but it is not conversational content and is not returned to the model as history.
 _Avoid_: model-authored telemetry footer, hidden provider log
 
+**Model Request**:
+The exact input prepared for one model call. It can include earlier tool exchanges but does not establish what happened after that call.
+_Avoid_: complete execution history, reconstructed prompt
+
+**Execution Evidence**:
+Recorded tool attempts and their actual outcomes during an Agent turn, including turns that never produce an answer. A missing outcome means uncertain, not failed or safe to retry.
+_Avoid_: model request, discovery memory, inferred action success
+
 **Evaluation**:
 A repeatable assessment of Agent decisions and outcomes under declared conditions.
 _Avoid_: production workflow or runtime controller

@@ -91,7 +91,7 @@ export const formatMessage = (
   if (msg.senderId === agentId) {
     const staleRef = compressedIds && msg.inReplyTo?.some(id => compressedIds.has(id))
     const suffix = staleRef ? '\n[↩ context compressed]' : ''
-    const evidence = msg.toolTrace?.length ? `\n[Exact prior work: conversation_read messageId="${msg.id}". Historical evidence, not current state.]` : ''
+    const evidence = msg.toolTrace?.length ? `\n[Prior work: conversation_read messageId="${msg.id}"; use its executionTurnId for actual tool outcomes when available. Model-request evidence is separate. Historical, not current state.]` : ''
     return { role: 'assistant' as const, content: `${msg.content}${suffix}${imagePlaceholderText}${evidence}`, ...(imageInfo ?? {}) }
   }
   const name = msg.type === 'room_summary' ? 'Room Summary' : resolveName(msg.senderId)
@@ -184,6 +184,7 @@ export interface BuildContextDeps {
   readonly historyLimit: number
   readonly resolveName: (senderId: string) => string
   readonly getCompressedIds?: (roomId: string) => ReadonlySet<string>
+  readonly getCompressionSummary?: (roomId: string) => Message | undefined
   // Current room membership resolver. When provided, the Participants
   // context section lists every member of the room — not only those whose
   // messages the agent has observed.
@@ -562,10 +563,17 @@ const createNormalStrategy = (
     const ctx = deps.history.rooms.get(triggerRoomId)
     const allRaw = ctx?.history ?? []
     const freshRaw = deps.history.incoming.filter(m => m.roomId === triggerRoomId)
-    const all = allRaw
-    const old = all.length > deps.historyLimit ? all.slice(-deps.historyLimit) : all
-    const fresh = freshRaw
     const roomCompressedIds = deps.getCompressedIds?.(triggerRoomId)
+    // Compression has consumed these pending inputs. Retaining them in the
+    // incoming queue would keep scheduling evaluations with invisible work.
+    for (const message of freshRaw) if (roomCompressedIds?.has(message.id)) flushIds.add(message.id)
+    const all = allRaw.filter(message => !roomCompressedIds?.has(message.id))
+    const old = all.length > deps.historyLimit ? all.slice(-deps.historyLimit) : [...all]
+    // Existing Agents keep a bounded cache. Read the live compression view so
+    // they stop replaying folded messages without losing the current summary.
+    const summary = deps.getCompressionSummary?.(triggerRoomId)
+    if (summary && !old.some(message => message.id === summary.id)) old.unshift(summary)
+    const fresh = freshRaw.filter(message => !roomCompressedIds?.has(message.id))
 
     const formattedOld: ChatRequest['messages'][number][] = []
     for (const msg of old) {

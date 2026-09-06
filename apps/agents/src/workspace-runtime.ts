@@ -16,6 +16,7 @@ import type {
 import { createRoomDirectory, type RoomDirectory, type RoomDirectoryCallbacks } from './core/rooms/directory.ts'
 import { agentsStorageBudget } from './core/storage/admission.ts'
 import { workspaceModulePaths } from './core/paths.ts'
+import { createExecutionStore, type ExecutionStore } from './core/executions/store.ts'
 import { createWorkspaceSettings, type WorkspaceSettings } from './core/workspaces/settings.ts'
 import { createBookmarkStore, type BookmarkStore, type OnBookmarksChanged } from './core/workspaces/bookmark-store.ts'
 import type { SummaryScheduler, SummaryTarget } from './core/summaries/summary-scheduler.ts'
@@ -94,6 +95,8 @@ import {
 } from './logging/event-mapping.ts'
 
 export interface AgentsWorkspaceRuntime {
+  readonly executionStore: ExecutionStore
+  readonly setOnMessagesRemoved: (cb: NonNullable<RoomDirectoryCallbacks['onMessagesRemoved']>) => void
   readonly createRoom: (config: Parameters<RoomDirectory['createRoomSafe']>[0]) => Promise<ReturnType<RoomDirectory['createRoomSafe']>>
   readonly rooms: RoomDirectory
   readonly settings: WorkspaceSettings
@@ -235,6 +238,8 @@ export interface LoggingHandle {
 }
 
 export interface CreateAgentsWorkspaceRuntimeOptions {
+  /** Workspace registry supplies a durable path. Ephemeral standalone/test runtimes use memory. */
+  readonly executionsFile?: string
   /** Registry-owned admissions (including autonomous tools) must drain on removal. */
   readonly runWorkspaceOperation?: <T>(work: () => Promise<T>) => Promise<T>
   // Pre-built deployment runtime. When passed, createAgentsWorkspaceRuntime skips internal
@@ -268,717 +273,745 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
   })
   const { providerConfig, providerKeys, providerSetup } = deployment
   const { router: llm, ollama, ollamaRaw, gateways, monitors } = providerSetup
+  const executionStore = createExecutionStore(options.executionsFile ?? ':memory:')
+  try {
+    const executionGrowth = <T>(bytes: number, work: () => Promise<T>): Promise<T> => {
+      // Ephemeral standalone factories have no persisted Workspace storage.
+      if (options.executionsFile === undefined) return work()
+      return agentsStorageBudget().withGrowth(dirname(options.executionsFile), bytes, work)
+    }
 
-  // LLMService — single gateway for every LLM call. Owns cooldown skip,
-  // fallback-chain walk (with system default policy), unified [llm] log
-  // line, source tagging. See src/llm/llm-service.ts for the contract.
-  // The default chain comes from deployment.providerPolicy, backed by the
-  // canonical providers.json in production; read at request time so
-  // UI edits propagate without restart.
-  const llmService: LLMService = createLLMService({
-    router: llm,
-    getSystemChain: () => deployment.providerPolicy.getModelFallback(),
-  })
+    // LLMService — single gateway for every LLM call. Owns cooldown skip,
+    // fallback-chain walk (with system default policy), unified [llm] log
+    // line, source tagging. See src/llm/llm-service.ts for the contract.
+    // The default chain comes from deployment.providerPolicy, backed by the
+    // canonical providers.json in production; read at request time so
+    // UI edits propagate without restart.
+    const llmService: LLMService = createLLMService({
+      router: llm,
+      getSystemChain: () => deployment.providerPolicy.getModelFallback(),
+    })
 
-  const team = createTeam()
+    const team = createTeam()
 
-  const deliver: DeliverFn = (agentId, message) => {
-    team.getAgent(agentId)?.receive(message)
-  }
+    const deliver: DeliverFn = (agentId, message) => {
+      team.getAgent(agentId)?.receive(message)
+    }
 
-  // `set` preserves the existing primary-consumer semantics (one typed
-  // subscriber — WS broadcast or MCP notifications). `add` is the multi-
-  // subscriber escape hatch added for observational logging (v1 second
-  // consumer). The proxy dispatches to the primary first, then observers;
-  // each observer is wrapped in try/catch so one failing observer doesn't
-  // stop the others. Observers iterate over a snapshot so unsubscribe
-  // during dispatch is safe.
-  //
-  // Warn-once on missing subscriber: when `proxy(...)` fires before
-  // `set(...)` has been called AND no observers are registered, log one
-  // console.warn the first time per (slot name, workspaceLabel) pair so a
-  // wiring miss is visible immediately. Subsequent dropped events stay
-  // silent. The bug fixed in 5d73a8e was invisible for three days because
-  // there was no signal at all when the wiring was skipped.
-  const workspaceLabel = options.workspaceLabel ?? '?'
-  const lateBinding = <T extends (...args: never[]) => void>(slotName: string): {
-    proxy: T
-    set: (cb: T) => void
-    add: (cb: T) => () => void
-  } => {
-    let real: T | undefined
-    const observers: T[] = []
-    let warnedNoSubscriber = false
-    const proxy = ((...args: Parameters<T>) => {
-      if (real) {
-        try { real(...args) } catch (err) {
-          console.error(`[lateBinding] primary callback threw: ${err instanceof Error ? err.message : String(err)}`)
+    // `set` preserves the existing primary-consumer semantics (one typed
+    // subscriber — WS broadcast or MCP notifications). `add` is the multi-
+    // subscriber escape hatch added for observational logging (v1 second
+    // consumer). The proxy dispatches to the primary first, then observers;
+    // each observer is wrapped in try/catch so one failing observer doesn't
+    // stop the others. Observers iterate over a snapshot so unsubscribe
+    // during dispatch is safe.
+    //
+    // Warn-once on missing subscriber: when `proxy(...)` fires before
+    // `set(...)` has been called AND no observers are registered, log one
+    // console.warn the first time per (slot name, workspaceLabel) pair so a
+    // wiring miss is visible immediately. Subsequent dropped events stay
+    // silent. The bug fixed in 5d73a8e was invisible for three days because
+    // there was no signal at all when the wiring was skipped.
+    const workspaceLabel = options.workspaceLabel ?? '?'
+    const lateBinding = <T extends (...args: never[]) => void>(slotName: string): {
+      proxy: T
+      set: (cb: T) => void
+      add: (cb: T) => () => void
+    } => {
+      let real: T | undefined
+      const observers: T[] = []
+      let warnedNoSubscriber = false
+      const proxy = ((...args: Parameters<T>) => {
+        if (real) {
+          try { real(...args) } catch (err) {
+            console.error(`[lateBinding] primary callback threw: ${err instanceof Error ? err.message : String(err)}`)
+          }
+        } else if (observers.length === 0 && !warnedNoSubscriber) {
+          warnedNoSubscriber = true
+          console.warn(`[lateBinding] ${slotName} has no subscriber for Workspace ${workspaceLabel} — first event dropped, subsequent dropped silently`)
         }
-      } else if (observers.length === 0 && !warnedNoSubscriber) {
-        warnedNoSubscriber = true
-        console.warn(`[lateBinding] ${slotName} has no subscriber for Workspace ${workspaceLabel} — first event dropped, subsequent dropped silently`)
+        const snapshot = [...observers]
+        for (const cb of snapshot) {
+          try { cb(...args) } catch (err) {
+            console.error(`[lateBinding] observer threw: ${err instanceof Error ? err.message : String(err)}`)
+          }
+        }
+      }) as T
+      return {
+        proxy,
+        set: (cb: T) => { real = cb },
+        add: (cb: T) => {
+          observers.push(cb)
+          return () => {
+            const i = observers.indexOf(cb)
+            if (i >= 0) observers.splice(i, 1)
+          }
+        },
       }
-      const snapshot = [...observers]
-      for (const cb of snapshot) {
-        try { cb(...args) } catch (err) {
-          console.error(`[lateBinding] observer threw: ${err instanceof Error ? err.message : String(err)}`)
+    }
+
+    // 21 typed lateBinding slots. See AGENTS.md "Rejected refactors" before
+    // proposing an event-bus replacement or createAgentsWorkspaceRuntime split.
+    const messagePosted = lateBinding<OnMessagePosted>('messagePosted')
+    const messagesRemoved = lateBinding<NonNullable<RoomDirectoryCallbacks['onMessagesRemoved']>>('messagesRemoved')
+    const turnChanged = lateBinding<OnTurnChanged>('turnChanged')
+    const deliveryModeChanged = lateBinding<OnDeliveryModeChanged>('deliveryModeChanged')
+    const roomCreated = lateBinding<OnRoomCreated>('roomCreated')
+    const roomDeleted = lateBinding<OnRoomDeleted>('roomDeleted')
+    const membershipChanged = lateBinding<OnMembershipChanged>('membershipChanged')
+    const bookmarksChanged = lateBinding<OnBookmarksChanged>('bookmarksChanged')
+    const agentSettingsChanged = lateBinding<OnAgentSettingsChanged>('agentSettingsChanged')
+    const modeAutoSwitched = lateBinding<OnModeAutoSwitched>('modeAutoSwitched')
+    const evalEvent = lateBinding<OnEvalEvent>('evalEvent')
+    const providerBound = lateBinding<OnProviderBound>('providerBound')
+    const providerAllFailed = lateBinding<OnProviderAllFailed>('providerAllFailed')
+    const providerStreamFailed = lateBinding<OnProviderStreamFailed>('providerStreamFailed')
+    const summaryConfigChanged = lateBinding<OnSummaryConfigChanged>('summaryConfigChanged')
+    const summaryUpdated = lateBinding<OnSummaryUpdated>('summaryUpdated')
+    const summaryRunStarted = lateBinding<(roomId: string, target: SummaryTarget) => void>('summaryRunStarted')
+    const summaryRunDelta = lateBinding<(roomId: string, target: SummaryTarget, delta: string) => void>('summaryRunDelta')
+    const summaryRunCompleted = lateBinding<(roomId: string, target: SummaryTarget, text: string) => void>('summaryRunCompleted')
+    const summaryRunFailed = lateBinding<(roomId: string, target: SummaryTarget, reason: string) => void>('summaryRunFailed')
+    const scriptEvent = lateBinding<ScriptEventEmitter>('scriptEvent')
+    const captureRegistry = createCaptureRegistry()
+
+    // Diagnostics ring buffer — subscribes to the multi-subscriber eval-event
+    // channel so it coexists with the wire-workspace-runtime-events broadcaster.
+    const evalBuffer = createEvalBuffer()
+    evalBuffer.attach(evalEvent.add)
+
+    // Forward-declared (matches schedulerRef pattern). RoomDirectoryCallbacks.onScriptMessage closes over this.
+    let scriptRunnerRef: ScriptRunner | undefined
+
+    const resolveAgentName: ResolveAgentName = (name) => team.getAgent(name)?.id
+    const resolveTag: ResolveTagFn = (tag) => team.listByTag(tag).map(a => a.id)
+    const resolveKind = (id: string): 'ai' | 'human' | undefined => team.getAgent(id)?.kind
+
+    const ollamaUrls: OllamaUrlRegistry = createOllamaUrlRegistry(ollamaRaw, ollama)
+
+    // Forward-declared: the summary scheduler is built after `rooms`, but the
+    // rooms's onMessagePosted callback needs to feed into it. We bridge with a
+    // mutable slot that's set after construction.
+    let schedulerRef: SummaryScheduler | undefined
+
+    const roomCallbacks: RoomDirectoryCallbacks = {
+      deliver,
+      resolveAgentName,
+      resolveTag,
+      resolveKind,
+      onMessagePosted: (roomId, message) => {
+        messagePosted.proxy(roomId, message)
+        schedulerRef?.onMessagePosted(roomId, message)
+      },
+      beforeMessageRemoval: (roomId, messageId) => {
+        if (messageId === undefined) {
+          cancelGenerationsInRoom(roomId)
+          executionStore.deleteRoom(roomId)
+        } else executionStore.deleteMessage(roomId, messageId)
+      },
+      onMessagesRemoved: messagesRemoved.proxy,
+      onScriptMessage: (roomId, message) => scriptRunnerRef?.onRoomMessage(roomId, message),
+      onTurnChanged: turnChanged.proxy,
+      onDeliveryModeChanged: deliveryModeChanged.proxy,
+      onRoomCreated: roomCreated.proxy,
+      onRoomDeleted: (roomId, roomName) => {
+        captureRegistry.clearForRoom(roomId)
+        roomDeleted.proxy(roomId, roomName)
+        schedulerRef?.onRoomRemoved(roomId)
+      },
+      onManualModeEntered: (roomId: string) => { cancelGenerationsInRoom(roomId) },
+      onModeAutoSwitched: modeAutoSwitched.proxy,
+      onSummaryConfigChanged: (roomId, config) => {
+        summaryConfigChanged.proxy(roomId, config)
+        schedulerRef?.onConfigChanged(roomId)
+      },
+      onSummaryUpdated: summaryUpdated.proxy,
+    }
+    const rooms = createRoomDirectory(roomCallbacks)
+    const createRoom: AgentsWorkspaceRuntime['createRoom'] = async config => {
+      const root = options.workspaceId === undefined ? sharedPaths.root() : workspaceModulePaths(options.workspaceId).agents.root
+      // Reserve initial metadata headroom; ongoing conversations remain authoritative
+      // and are never silently discarded by optional-observation retention.
+      const work = () => agentsStorageBudget().withGrowth(root, 64 * 1024 + Buffer.byteLength(JSON.stringify(config)), async () => rooms.createRoomSafe(config))
+      // Standalone/headless runtimes have no evicting Workspace registry.
+      return options.runWorkspaceOperation ? options.runWorkspaceOperation(work) : work()
+    }
+    const settings = createWorkspaceSettings()
+    const bookmarks = createBookmarkStore(bookmarksChanged.proxy)
+    const routeMessage = createMessageRouter({ rooms, limitMetrics: deployment.limitMetrics })
+    // Per-Workspace overlay over the process-shared tool registry. Pack tools,
+    // skill-bundled tools, external tools, MCP tools and the codegen suite
+    // live in shared (registered once at boot). Only rooms-bound built-ins
+    // (room ops, post_to_room, write_script) register into the overlay below.
+    const toolRegistry = createOverlayToolRegistry(deployment.sharedToolRegistry)
+
+    // Summary engine + scheduler — default model is the first AI agent's model,
+    // or a fallback when none exists yet.
+    const defaultSummaryModel = (): string => {
+      const firstAi = team.listByKind('ai')[0]
+      const model = firstAi ? (firstAi as AIAgent).getModel?.() : undefined
+      return model ?? 'llama3.2'
+    }
+    // RAG: per-Workspace vector store + memory indexer. The store is lazy —
+    // first .add() opens / appends to the JSONL file. Without options.vectorsFile
+    // (e.g. focused tests) the store and tool are not wired.
+    const vectorStore: VectorStore | undefined = options.vectorsFile
+      ? createVectorStore(options.vectorsFile)
+      : undefined
+    const memoryIndexer = vectorStore
+      ? createMemoryIndexer({
+          vectorStore,
+          getProviders: () => buildEmbeddingProvidersFromKeys(providerKeys),
+          getRoomName: (roomId) => rooms.getRoom(roomId)?.profile.name,
+        })
+      : undefined
+
+    // RAG: document corpus manager. Lives at <Workspace>/documents/. The
+    // manager is fire-and-forget on indexing; status transitions are
+    // pushed to subscribers via this late-binding slot (bootstrap wires
+    // it to broadcastToWorkspace for WS push).
+    const documentLateBinding: { onStatusChange: (m: DocumentMetadata) => void } = {
+      onStatusChange: () => { /* no-op until set */ },
+    }
+    const documents: DocumentManager | undefined = (vectorStore && options.vectorsFile)
+      ? createDocumentManager({
+          // documents/ sits as a sibling of vectors.jsonl under the Workspace root
+          rootDir: `${dirname(options.vectorsFile)}/documents`,
+          vectorStore,
+          providerKeys,
+          onStatusChange: (meta) => documentLateBinding.onStatusChange(meta),
+        })
+      : undefined
+    // Lazy initial load — scans on-disk metadata + resumes any pending jobs
+    // left behind by a process restart. Fire-and-forget; the upload route is
+    // gated on documents being present, but reads can race with this load
+    // and just see fewer rows until it finishes.
+    if (documents) void documents.load()
+
+    const summaryEngine = createSummaryEngine({
+      llm: llmService.bound({ source: 'summary' }),
+      defaultModel: defaultSummaryModel,
+      ...(memoryIndexer ? { onCompressionStart: memoryIndexer.handleCompressionStart } : {}),
+    })
+    const summaryScheduler = createSummaryScheduler({
+      engine: summaryEngine,
+      getRoom: (id) => rooms.getRoom(id),
+      onRunStarted: (roomId, target) => summaryRunStarted.proxy(roomId, target),
+      onRunDelta: (roomId, target, delta) => summaryRunDelta.proxy(roomId, target, delta),
+      onRunCompleted: (roomId, target, text) => summaryRunCompleted.proxy(roomId, target, text),
+      onRunFailed: (roomId, target, reason) => summaryRunFailed.proxy(roomId, target, reason),
+    })
+    schedulerRef = summaryScheduler
+
+    // Trigger scheduler — per-agent scheduled prompts. Idle when no triggers
+    // exist (lever 1+2 in createTriggerScheduler); restarts on first add.
+    const triggerScheduler: TriggerScheduler = createTriggerScheduler({
+      team,
+      rooms,
+      startScript: (roomId, name) =>
+        scriptRunnerRef
+          ? scriptRunnerRef.start(roomId, name)
+          : Promise.resolve({ ok: false, reason: 'scriptRunner not yet wired' }),
+      isScriptRunningInRoom: (roomId) => scriptRunnerRef?.getRun(roomId) !== undefined,
+    })
+
+    // AgentsWorkspaceRuntime-level membership operations — extracted to core/room-operations.ts.
+    const roomOps = createRoomOperations({
+      team,
+      rooms,
+      routeMessage,
+      onMembershipChanged: (...args) => membershipChanged.proxy(...args),
+      triggerScheduler,
+    })
+    const systemAddAgentToRoom = roomOps.addAgentToRoom
+    const systemRemoveAgentFromRoom = roomOps.removeAgentFromRoom
+    const systemRemoveRoom = roomOps.removeRoom
+    const cancelGenerationsInRoom = roomOps.cancelGenerationsInRoom
+
+    // Explicit one-turn activation for manual mode. Catches the agent up on
+    // messages it hasn't seen, then forces a single evaluation. If the agent
+    // is busy generating elsewhere, `tryEvaluate` queues internally — callers
+    // surface the `queued: true` result as a UI toast.
+    const activateAgentInRoom = (
+      agentId: string,
+      roomId: string,
+    ): { ok: boolean; queued: boolean; reason?: string } => {
+      const room = rooms.getRoom(roomId)
+      if (!room) return { ok: false, queued: false, reason: 'room not found' }
+      if (room.deliveryMode !== 'manual') {
+        return { ok: false, queued: false, reason: 'room is not in manual mode' }
+      }
+      const agent = team.getAgent(agentId)
+      if (!agent || agent.kind !== 'ai') {
+        return { ok: false, queued: false, reason: 'agent is not an AI agent in this room' }
+      }
+      if (!room.hasMember(agentId)) {
+        return { ok: false, queued: false, reason: 'agent is not a member of this room' }
+      }
+      if (room.isMuted(agentId)) {
+        return { ok: false, queued: false, reason: 'agent is muted' }
+      }
+      const ai = asAIAgent(agent)
+      if (!ai || !ai.ingestHistory || !ai.forceEvaluate) {
+        return { ok: false, queued: false, reason: 'agent does not support manual activation' }
+      }
+      const recent = room.getRecent((ai.getHistoryLimit() ?? DEFAULTS.historyLimit) * 2)
+      ai.ingestHistory(roomId, recent)
+      const queued = agent.state.get() === 'generating' && agent.state.getContext() !== roomId
+      ai.forceEvaluate(roomId)
+      return { ok: true, queued }
+    }
+
+    // Reset all per-conversation state. See interface doc for what's preserved.
+    // For each AI agent: bounded whenIdle(5000) + cancelGeneration so in-flight
+    // tool loops or streams don't later post into a freshly-reset room. Human
+    // agents have no generation loop so they're removed directly.
+    const resetState = async (): Promise<{ rooms: number; agents: number }> => {
+      const agents = team.listAgents()
+      let agentCount = 0
+      for (const agent of agents) {
+        const ai = asAIAgent(agent)
+        if (ai) {
+          try {
+            await ai.whenIdle(5000)
+          } catch {
+            // whenIdle rejects on timeout — proceed with a forced cancel.
+          }
+          try { ai.cancelGeneration() } catch { /* best-effort */ }
+        }
+        if (removeAgent(agent.id)) agentCount++
+      }
+      const roomProfiles = rooms.listAllRooms()
+      let roomCount = 0
+      for (const profile of roomProfiles) {
+        if (systemRemoveRoom(profile.id)) roomCount++
+      }
+      return { rooms: roomCount, agents: agentCount }
+    }
+
+    const removeAgent = (id: string): boolean => {
+      const agent = team.getAgent(id)
+      if (!agent) return false
+      for (const profile of rooms.listAllRooms()) {
+        const room = rooms.getRoom(profile.id)
+        if (room?.hasMember(id)) {
+          systemRemoveAgentFromRoom(id, profile.id)
         }
       }
-    }) as T
-    return {
-      proxy,
-      set: (cb: T) => { real = cb },
-      add: (cb: T) => {
-        observers.push(cb)
-        return () => {
-          const i = observers.indexOf(cb)
-          if (i >= 0) observers.splice(i, 1)
+      const removed = team.removeAgent(id)
+      // Prune this ID from every surviving AI agent's "known agents" cache so
+      // it doesn't linger as a phantom entry after deletion.
+      if (removed) {
+        for (const other of team.listByKind('ai')) {
+          const ai = asAIAgent(other)
+          ai?.forgetAgent?.(id)
         }
+        // Triggers live on the agent — they go with it. The scheduler's
+        // anyTriggers cache might be stale; refresh it.
+        triggerScheduler.invalidate()
+      }
+      return removed
+    }
+
+    // Register Room/Team-bound built-in tools into the per-Workspace overlay.
+    // Process-wide tools (pass, get_time, web *, test_tool, list_skills,
+    // write_skill / write_tool, install_pack et al, MCP tools, external tools,
+    // skill-bundled tools, pack-owned tools) live in deployment.sharedToolRegistry
+    // and are registered once at boot — see bootstrap.ts.
+    toolRegistry.registerAll([
+      // Room management — bound to per-Workspace rooms
+      createListRoomsTool(rooms),
+      createCreateRoomTool(createRoom, systemAddAgentToRoom),
+      createDeleteRoomTool(systemRemoveRoom, rooms),
+      createSetRoomPromptTool(rooms),
+      createPauseRoomTool(rooms),
+      createSetDeliveryModeTool(rooms),
+      createAddToRoomTool(team, rooms, systemAddAgentToRoom),
+      createRemoveFromRoomTool(team, rooms, systemRemoveAgentFromRoom),
+      // Agent tools — bound to per-Workspace team / rooms
+      createListAgentsTool(team),
+      createMuteAgentTool(team, rooms),
+      createGetMyContextTool(team, rooms),
+      // Utility tools — bound to per-Workspace rooms
+      createGetRoomHistoryTool(rooms),
+      createConversationReadTool(rooms, executionStore),
+      createPostToRoomTool(rooms),
+      // RAG: recall tool — only registered when this Workspace has a vector
+      // store (i.e. options.vectorsFile was provided). Focused runtime tests
+      // do not get it; agents see a clean tool list without
+      // a non-functional `recall`.
+      ...(vectorStore ? [createRecallTool({ vectorStore, providerKeys, rooms })] : []),
+      ...(vectorStore ? [createQueryDocumentsTool({ vectorStore, providerKeys })] : []),
+    ])
+
+    // Cross-Module interaction is Host-routed. Room Scope is the durable access
+    // boundary; target Modules enforce their own current run restrictions.
+    if (options.workspaceId !== undefined && options.workspaceHostUrl !== undefined) {
+      toolRegistry.registerAll(createWorkspaceCapabilityTools({
+        workspaceId: options.workspaceId,
+        hostBaseUrl: options.workspaceHostUrl,
+        getRoomScope: roomId => rooms.getRoom(roomId)?.profile.scope,
+      }))
+    }
+
+    // Biometrics tools — implementation lives in core (needs RoomDirectory + capture
+    // registry), but registered with source.pack='biometrics' so the per-room
+    // activePacks filter (effectiveActivePackSet) gates them exactly like a
+    // pack-owned tool. Users discover and activate biometrics via the
+    // leitbild-biometrics pack repo; activating it in a room makes these
+    // tools visible to agents in that room. See docs in
+    // src/tools/built-in/biometric-tools.ts for the rationale.
+    for (const tool of createBiometricsTools({ rooms, registry: captureRegistry })) {
+      toolRegistry.registerWithSource(tool, { kind: 'pack-owned', pack: BIOMETRICS_PACK_NAMESPACE })
+    }
+
+    // Skill and script catalogs are deployment-scoped Pack contributions.
+    // Agent selection and Room Pack activation determine which Skills are effective.
+    const skillsDir = sharedPaths.skills()
+    const scriptsDir = sharedPaths.scripts()
+    const skillStore = deployment.sharedSkillStore
+    const scriptStore = deployment.sharedScriptStore
+
+    // Agent Skill Selection is exact. Room Pack activation is an independent
+    // availability gate for Pack-owned skills, just as it is for Pack tools.
+    const selectedSkillsForRoom = (skillNames: ReadonlyArray<string>, roomId: string) => {
+      const room = rooms.getRoom(roomId)
+      if (!room) return []
+      const active = effectiveActivePackSet(room)
+      return skillNames.flatMap(name => {
+        const skill = skillStore.get(name)
+        return skill !== undefined && (skill.pack === undefined || active.has(skill.pack)) ? [skill] : []
+      })
+    }
+    const getSkillsForRoom = (skillNames: ReadonlyArray<string>, roomId: string): string => {
+      const visible = selectedSkillsForRoom(skillNames, roomId)
+      if (visible.length === 0) return ''
+      return visible.map(s => `[${s.name}] ${s.description}\n${s.body}`).join('\n\n---\n\n')
+    }
+
+    // Structured access to the same filtered skill set — drives the
+    // pre-LLM coherence check in ai-agent.ts. Each skill's `allowed-tools`
+    // frontmatter declarations are surfaced as `declaredTools` so the
+    // agent can compare against the actual tool surface and emit a
+    // coherence warning when the prompt promises a tool that isn't there.
+    const getActiveSkillsDeclarationsForRoom = (skillNames: ReadonlyArray<string>, roomId: string): ReadonlyArray<{
+      readonly name: string
+      readonly declaredTools: ReadonlyArray<string>
+    }> => {
+      return selectedSkillsForRoom(skillNames, roomId)
+        .filter(s => s.allowedToolNames.length > 0)
+        .map(s => ({ name: s.name, declaredTools: s.allowedToolNames }))
+    }
+
+    const refreshAllAgentTools = async (): Promise<void> => {
+      for (const agent of team.listByKind('ai')) {
+        const ai = agent as AIAgent
+        if (!ai.refreshTools) continue
+        const toolNames = effectiveAgentToolSelection(ai.getConfig())
+        const support = await buildToolSupport(
+          toolNames, toolRegistry,
+          {
+            id: ai.id,
+            name: ai.name,
+            currentModel: () => ai.getModel(),
+            focusedSubjects: roomId => ai.getFocusedSubjects(roomId),
+          },
+          llm,
+          undefined,
+          // Pack-aware filter must survive a hot reload — without re-passing
+          // it here, refreshing tools (e.g. after install_pack) would silently
+          // erase the resolver and revert the agent to seeing every tool.
+          (roomId: string) => rooms.getRoom(roomId),
+          executionStore,
+          executionGrowth,
+          options.runWorkspaceOperation,
+        )
+        ai.refreshTools(support)
+      }
+    }
+
+    // write_script updates the deployment-scoped authored script catalog.
+    toolRegistry.register(createWriteScriptTool(scriptStore, () => { /* onChange already broadcasts */ }))
+
+    // Forward-ref so the runner can call AgentsWorkspaceRuntime.* without a build-order cycle.
+    const systemRef: { current: AgentsWorkspaceRuntime | undefined } = { current: undefined }
+    const scriptRunner = createScriptRunner({
+      getRuntime: () => systemRef.current as AgentsWorkspaceRuntime,
+      emit: (roomId, event, detail) => scriptEvent.proxy(roomId, event, detail),
+    })
+    // Wire the runner into the room callback declared up-front.
+    scriptRunnerRef = scriptRunner
+
+    // Cascade-stop active scripts when their room is deleted. Without this,
+    // the run sits in scriptRunner.runs forever holding ScriptRun + dialogue
+    // history (no further messages arrive in a deleted room, so the
+    // findMissingCast defensive abort never fires).
+    roomDeleted.add((roomId) => { void scriptRunner.stop(roomId) })
+
+    // --- Effective-model cache (derive-on-read) ---
+    // Cache of currently-available models from llm.models(), refreshed in the
+    // background. Used by every agent's per-call effective-model resolver so the
+    // hot path stays sync. Misses (cache empty / preferred unavailable) fall
+    // through to the first available model in router order — the resolver
+    // surfaces the failure as a typed error if even that is unreachable.
+    let availableModelsCache: ReadonlyArray<string> = []
+    const refreshAvailableModels = async (): Promise<void> => {
+      try {
+        const fromRouter = await llm.models()
+        const fromOllama = ollama?.getHealth().availableModels ?? []
+        // Router returns prefixed (`name:model`); Ollama health returns unprefixed.
+        // Keep both so an Ollama model's unprefixed id
+        // resolves alongside `groq:llama-3.3-70b-versatile`.
+        availableModelsCache = [...fromRouter, ...fromOllama]
+      } catch (err) {
+        // Preserve the last known-good cache, but keep discovery failures
+        // actionable in the journal instead of silently claiming availability.
+        console.warn(`[models] failed to refresh effective-model cache: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+    // Single resolution path. The agent stores the user's preferred model as a
+    // bare alias (`claude-haiku-4-5`, `gemini-2.5-pro`) or a pinned form
+    // (`groq:llama-3.3-70b-versatile`). We pass that through verbatim — the
+    // router decides eligibility by candidate-walk and the anthropic adapter
+    // translates aliases→dated canonicals on the wire.
+    //
+    // Two outcomes only:
+    //   - blank preferred (cold-boot, fresh user): substitute first-available
+    //     so the very first eval doesn't hard-fail before they pick a model.
+    //   - non-blank: pass through. If the model isn't actually routable, the
+    //     router surfaces `provider_all_failed` with `not_listed` — visible
+    //     error, not a silent swap to a different model.
+    const resolveEffectiveModel: SpawnOptions['resolveEffectiveModel'] = (preferred) => {
+      if (!preferred || preferred.trim() === '') {
+        return {
+          model: availableModelsCache[0] ?? '',
+          fallback: true,
+          reason: 'preferred_blank',
+        }
+      }
+      return { model: preferred, fallback: false, reason: 'preferred_available' }
+    }
+
+    const runToolOperation = options.runWorkspaceOperation
+    const boundSpawnAIAgent = (config: AIAgentConfig, options?: SpawnOptions) =>
+      spawnAIAgent(config, llmService, rooms, settings, team, routeMessage, toolRegistry, {
+        ...options,
+        executionStore,
+        executionGrowth,
+        ...(runToolOperation ? { runToolOperation } : {}),
+        getSkills: getSkillsForRoom,
+        getActiveSkillsDeclarations: getActiveSkillsDeclarationsForRoom,
+        getScriptContext: (roomId, agentName) => scriptRunner.getScriptContextForAgent(roomId, agentName),
+        // Pack-aware tool surface filter — the LLM only sees tools owned by
+        // packs active in the trigger room. Returns the Room directly; the
+        // resolver only needs getActivePacks().
+        getRoomActivation: (roomId: string) => rooms.getRoom(roomId),
+        onEvalEvent: evalEvent.proxy,
+        resolveEffectiveModel,
+        // Process-global counter sink — context-builder bumps
+        // multimodalImagesDropped whenever it swaps image bytes for a text
+        // placeholder. Surfaces in /api/system/health.
+        metricsSink: deployment.limitMetrics,
+      })
+
+    // Provider-routing-event listener lives on the shared router (see
+    // createDeploymentRuntime). The dispatcher is normally set by WorkspaceRuntimeRegistry
+    // (multi-Workspace) — but when this AgentsWorkspaceRuntime is built directly in tests,
+    // we set the dispatcher to forward
+    // events to *this* AgentsWorkspaceRuntime's late-bound subscribers. Multi-Workspace
+    // boot overrides this when registry sets its own dispatcher.
+
+    const boundSpawnHumanAgent = async (
+      config: HumanAgentConfig,
+      send: TransportSend,
+      options?: { overrideId?: string },
+    ): Promise<HumanAgent> => {
+      const agent = createHumanAgent(config, send, options?.overrideId)
+      await spawnHumanAgent(agent, rooms, team, routeMessage)
+      return agent
+    }
+
+    // === Event observer wiring ===
+    // `addEventObserver` subscribes a single callback to every late-bound slot
+    // the logging system cares about. Each native-callback signature is
+    // translated into a unified LogEvent envelope via src/logging/event-mapping.
+    // Returns an aggregate unsubscribe.
+    const addEventObserver = (
+      observer: (event: LogEvent) => void,
+      sessionIdRef: { readonly current: string },
+    ): (() => void) => {
+      const sid = () => sessionIdRef.current
+      const safe = (makeEvent: () => LogEvent) => {
+        try { observer(makeEvent()) } catch { /* observer errors already caught in proxy */ }
+      }
+      const unsubs: Array<() => void> = [
+        messagePosted.add((roomId, message) => safe(() => mkMessagePosted(sid(), roomId, message))),
+        deliveryModeChanged.add((roomId, mode) => safe(() => mkDeliveryModeChanged(sid(), roomId, mode))),
+        modeAutoSwitched.add((roomId, toMode, reason) => safe(() => mkModeAutoSwitched(sid(), roomId, toMode, reason))),
+        roomCreated.add((profile) => safe(() => mkRoomCreated(sid(), profile))),
+        roomDeleted.add((roomId, roomName) => safe(() => mkRoomDeleted(sid(), roomId, roomName))),
+        membershipChanged.add((roomId, roomName, agentId, agentName, action) =>
+          safe(() => mkMembershipChanged(sid(), roomId, roomName, agentId, agentName, action))),
+        evalEvent.add((scope, event) => safe(() => mkEvalEvent(sid(), scope.agentName, event))),
+        providerBound.add((agentId, model, oldProvider, newProvider) =>
+          safe(() => mkProviderBound(sid(), agentId, model, oldProvider, newProvider))),
+        providerAllFailed.add((agentId, model, attempts, summary) =>
+          safe(() => mkProviderAllFailed(sid(), agentId, model, attempts, summary))),
+        providerStreamFailed.add((agentId, model, provider, reason) =>
+          safe(() => mkProviderStreamFailed(sid(), agentId, model, provider, reason))),
+        summaryConfigChanged.add((roomId, config) => safe(() => mkSummaryConfigChanged(sid(), roomId, config))),
+        summaryUpdated.add((roomId, target) => safe(() => mkSummaryUpdated(sid(), roomId, target))),
+        summaryRunStarted.add((roomId, target) => safe(() => mkSummaryRunStarted(sid(), roomId, target))),
+        summaryRunCompleted.add((roomId, target, text) => safe(() => mkSummaryRunCompleted(sid(), roomId, target, text))),
+        summaryRunFailed.add((roomId, target, reason) => safe(() => mkSummaryRunFailed(sid(), roomId, target, reason))),
+      ]
+      return () => { for (const u of unsubs) u() }
+    }
+
+    // === Logging handle — runtime on/off + relocate + resession ===
+    // One active sink + one active kind filter at any time. `configure` is
+    // the single mutator; it drains the old sink, reopens as needed, and
+    // refreshes the filter atomically. Env-var boot seeds initial state.
+    const loggingState: { config: LogConfig; sink: LogSink | null; unsub: (() => void) | null; sessionRef: { current: string } } = {
+      config: { enabled: false, dir: defaultLogDir(), sessionId: defaultSessionId(), kinds: ['*'] },
+      sink: null,
+      unsub: null,
+      sessionRef: { current: '' },
+    }
+
+    const logging: LoggingHandle = {
+      get: (): LogConfigState => ({
+        ...loggingState.config,
+        currentFile: loggingState.sink?.stats().currentFile ?? null,
+        stats: loggingState.sink?.stats() ?? { eventCount: 0, droppedCount: 0, queuedCount: 0, currentFile: null, currentFileBytes: 0 },
+      }),
+      configure: async (partial: Partial<LogConfig>): Promise<void> => {
+        validateLogConfig(partial)
+        const next: LogConfig = {
+          enabled: partial.enabled ?? loggingState.config.enabled,
+          dir: partial.dir ?? loggingState.config.dir,
+          sessionId: partial.sessionId ?? loggingState.config.sessionId,
+          kinds: partial.kinds ?? loggingState.config.kinds,
+        }
+
+        // Tear down current sink (if any). session.end bracket before flush.
+        if (loggingState.sink) {
+          try { loggingState.sink.write(mkSessionEnd(loggingState.config.sessionId, 'reconfigure')) } catch { /* best-effort */ }
+          try { await loggingState.sink.close() } catch { /* sink already errored */ }
+          loggingState.sink = null
+        }
+        if (loggingState.unsub) {
+          loggingState.unsub()
+          loggingState.unsub = null
+        }
+
+        loggingState.config = next
+        loggingState.sessionRef.current = next.sessionId
+
+        if (!next.enabled) return
+
+        // Open new sink. Failure bubbles up; caller (REST/MCP) returns 400.
+        // B1: awaited so the sink's seedBytes() completes before the first
+        // write — without it, the rotation check skipped on a pre-existing
+        // file and the log grew past the configured cap.
+        const sink = await createJsonlFileSink({ dir: next.dir, sessionId: next.sessionId })
+        const filtered = (event: LogEvent) => {
+          if (matchesKindFilter(event.kind, next.kinds)) sink.write(event)
+        }
+        loggingState.unsub = addEventObserver(filtered, loggingState.sessionRef)
+        sink.write(mkSessionStart(next.sessionId, { dir: next.dir, kinds: next.kinds }))
+        loggingState.sink = sink
       },
     }
-  }
 
-  // 21 typed lateBinding slots. See AGENTS.md "Rejected refactors" before
-  // proposing an event-bus replacement or createAgentsWorkspaceRuntime split.
-  const messagePosted = lateBinding<OnMessagePosted>('messagePosted')
-  const turnChanged = lateBinding<OnTurnChanged>('turnChanged')
-  const deliveryModeChanged = lateBinding<OnDeliveryModeChanged>('deliveryModeChanged')
-  const roomCreated = lateBinding<OnRoomCreated>('roomCreated')
-  const roomDeleted = lateBinding<OnRoomDeleted>('roomDeleted')
-  const membershipChanged = lateBinding<OnMembershipChanged>('membershipChanged')
-  const bookmarksChanged = lateBinding<OnBookmarksChanged>('bookmarksChanged')
-  const agentSettingsChanged = lateBinding<OnAgentSettingsChanged>('agentSettingsChanged')
-  const modeAutoSwitched = lateBinding<OnModeAutoSwitched>('modeAutoSwitched')
-  const evalEvent = lateBinding<OnEvalEvent>('evalEvent')
-  const providerBound = lateBinding<OnProviderBound>('providerBound')
-  const providerAllFailed = lateBinding<OnProviderAllFailed>('providerAllFailed')
-  const providerStreamFailed = lateBinding<OnProviderStreamFailed>('providerStreamFailed')
-  const summaryConfigChanged = lateBinding<OnSummaryConfigChanged>('summaryConfigChanged')
-  const summaryUpdated = lateBinding<OnSummaryUpdated>('summaryUpdated')
-  const summaryRunStarted = lateBinding<(roomId: string, target: SummaryTarget) => void>('summaryRunStarted')
-  const summaryRunDelta = lateBinding<(roomId: string, target: SummaryTarget, delta: string) => void>('summaryRunDelta')
-  const summaryRunCompleted = lateBinding<(roomId: string, target: SummaryTarget, text: string) => void>('summaryRunCompleted')
-  const summaryRunFailed = lateBinding<(roomId: string, target: SummaryTarget, reason: string) => void>('summaryRunFailed')
-  const scriptEvent = lateBinding<ScriptEventEmitter>('scriptEvent')
-  const captureRegistry = createCaptureRegistry()
-
-  // Diagnostics ring buffer — subscribes to the multi-subscriber eval-event
-  // channel so it coexists with the wire-workspace-runtime-events broadcaster.
-  const evalBuffer = createEvalBuffer()
-  evalBuffer.attach(evalEvent.add)
-
-  // Forward-declared (matches schedulerRef pattern). RoomDirectoryCallbacks.onScriptMessage closes over this.
-  let scriptRunnerRef: ScriptRunner | undefined
-
-  const resolveAgentName: ResolveAgentName = (name) => team.getAgent(name)?.id
-  const resolveTag: ResolveTagFn = (tag) => team.listByTag(tag).map(a => a.id)
-  const resolveKind = (id: string): 'ai' | 'human' | undefined => team.getAgent(id)?.kind
-
-  const ollamaUrls: OllamaUrlRegistry = createOllamaUrlRegistry(ollamaRaw, ollama)
-
-  // Forward-declared: the summary scheduler is built after `rooms`, but the
-  // rooms's onMessagePosted callback needs to feed into it. We bridge with a
-  // mutable slot that's set after construction.
-  let schedulerRef: SummaryScheduler | undefined
-
-  const roomCallbacks: RoomDirectoryCallbacks = {
-    deliver,
-    resolveAgentName,
-    resolveTag,
-    resolveKind,
-    onMessagePosted: (roomId, message) => {
-      messagePosted.proxy(roomId, message)
-      schedulerRef?.onMessagePosted(roomId, message)
-    },
-    onScriptMessage: (roomId, message) => scriptRunnerRef?.onRoomMessage(roomId, message),
-    onTurnChanged: turnChanged.proxy,
-    onDeliveryModeChanged: deliveryModeChanged.proxy,
-    onRoomCreated: roomCreated.proxy,
-    onRoomDeleted: (roomId, roomName) => {
-      captureRegistry.clearForRoom(roomId)
-      roomDeleted.proxy(roomId, roomName)
-      schedulerRef?.onRoomRemoved(roomId)
-    },
-    onManualModeEntered: (roomId: string) => { cancelGenerationsInRoom(roomId) },
-    onModeAutoSwitched: modeAutoSwitched.proxy,
-    onSummaryConfigChanged: (roomId, config) => {
-      summaryConfigChanged.proxy(roomId, config)
-      schedulerRef?.onConfigChanged(roomId)
-    },
-    onSummaryUpdated: summaryUpdated.proxy,
-  }
-  const rooms = createRoomDirectory(roomCallbacks)
-  const createRoom: AgentsWorkspaceRuntime['createRoom'] = async config => {
-    const root = options.workspaceId === undefined ? sharedPaths.root() : workspaceModulePaths(options.workspaceId).agents.root
-    // Reserve initial metadata headroom; ongoing conversations remain authoritative
-    // and are never silently discarded by optional-observation retention.
-    const work = () => agentsStorageBudget().withGrowth(root, 64 * 1024 + Buffer.byteLength(JSON.stringify(config)), async () => rooms.createRoomSafe(config))
-    // Standalone/headless runtimes have no evicting Workspace registry.
-    return options.runWorkspaceOperation ? options.runWorkspaceOperation(work) : work()
-  }
-  const settings = createWorkspaceSettings()
-  const bookmarks = createBookmarkStore(bookmarksChanged.proxy)
-  const routeMessage = createMessageRouter({ rooms, limitMetrics: deployment.limitMetrics })
-  // Per-Workspace overlay over the process-shared tool registry. Pack tools,
-  // skill-bundled tools, external tools, MCP tools and the codegen suite
-  // live in shared (registered once at boot). Only rooms-bound built-ins
-  // (room ops, post_to_room, write_script) register into the overlay below.
-  const toolRegistry = createOverlayToolRegistry(deployment.sharedToolRegistry)
-
-  // Summary engine + scheduler — default model is the first AI agent's model,
-  // or a fallback when none exists yet.
-  const defaultSummaryModel = (): string => {
-    const firstAi = team.listByKind('ai')[0]
-    const model = firstAi ? (firstAi as AIAgent).getModel?.() : undefined
-    return model ?? 'llama3.2'
-  }
-  // RAG: per-Workspace vector store + memory indexer. The store is lazy —
-  // first .add() opens / appends to the JSONL file. Without options.vectorsFile
-  // (e.g. focused tests) the store and tool are not wired.
-  const vectorStore: VectorStore | undefined = options.vectorsFile
-    ? createVectorStore(options.vectorsFile)
-    : undefined
-  const memoryIndexer = vectorStore
-    ? createMemoryIndexer({
-        vectorStore,
-        getProviders: () => buildEmbeddingProvidersFromKeys(providerKeys),
-        getRoomName: (roomId) => rooms.getRoom(roomId)?.profile.name,
-      })
-    : undefined
-
-  // RAG: document corpus manager. Lives at <Workspace>/documents/. The
-  // manager is fire-and-forget on indexing; status transitions are
-  // pushed to subscribers via this late-binding slot (bootstrap wires
-  // it to broadcastToWorkspace for WS push).
-  const documentLateBinding: { onStatusChange: (m: DocumentMetadata) => void } = {
-    onStatusChange: () => { /* no-op until set */ },
-  }
-  const documents: DocumentManager | undefined = (vectorStore && options.vectorsFile)
-    ? createDocumentManager({
-        // documents/ sits as a sibling of vectors.jsonl under the Workspace root
-        rootDir: `${dirname(options.vectorsFile)}/documents`,
-        vectorStore,
-        providerKeys,
-        onStatusChange: (meta) => documentLateBinding.onStatusChange(meta),
-      })
-    : undefined
-  // Lazy initial load — scans on-disk metadata + resumes any pending jobs
-  // left behind by a process restart. Fire-and-forget; the upload route is
-  // gated on documents being present, but reads can race with this load
-  // and just see fewer rows until it finishes.
-  if (documents) void documents.load()
-
-  const summaryEngine = createSummaryEngine({
-    llm: llmService.bound({ source: 'summary' }),
-    defaultModel: defaultSummaryModel,
-    ...(memoryIndexer ? { onCompressionStart: memoryIndexer.handleCompressionStart } : {}),
-  })
-  const summaryScheduler = createSummaryScheduler({
-    engine: summaryEngine,
-    getRoom: (id) => rooms.getRoom(id),
-    onRunStarted: (roomId, target) => summaryRunStarted.proxy(roomId, target),
-    onRunDelta: (roomId, target, delta) => summaryRunDelta.proxy(roomId, target, delta),
-    onRunCompleted: (roomId, target, text) => summaryRunCompleted.proxy(roomId, target, text),
-    onRunFailed: (roomId, target, reason) => summaryRunFailed.proxy(roomId, target, reason),
-  })
-  schedulerRef = summaryScheduler
-
-  // Trigger scheduler — per-agent scheduled prompts. Idle when no triggers
-  // exist (lever 1+2 in createTriggerScheduler); restarts on first add.
-  const triggerScheduler: TriggerScheduler = createTriggerScheduler({
-    team,
-    rooms,
-    startScript: (roomId, name) =>
-      scriptRunnerRef
-        ? scriptRunnerRef.start(roomId, name)
-        : Promise.resolve({ ok: false, reason: 'scriptRunner not yet wired' }),
-    isScriptRunningInRoom: (roomId) => scriptRunnerRef?.getRun(roomId) !== undefined,
-  })
-
-  // AgentsWorkspaceRuntime-level membership operations — extracted to core/room-operations.ts.
-  const roomOps = createRoomOperations({
-    team,
-    rooms,
-    routeMessage,
-    onMembershipChanged: (...args) => membershipChanged.proxy(...args),
-    triggerScheduler,
-  })
-  const systemAddAgentToRoom = roomOps.addAgentToRoom
-  const systemRemoveAgentFromRoom = roomOps.removeAgentFromRoom
-  const systemRemoveRoom = roomOps.removeRoom
-  const cancelGenerationsInRoom = roomOps.cancelGenerationsInRoom
-
-  // Explicit one-turn activation for manual mode. Catches the agent up on
-  // messages it hasn't seen, then forces a single evaluation. If the agent
-  // is busy generating elsewhere, `tryEvaluate` queues internally — callers
-  // surface the `queued: true` result as a UI toast.
-  const activateAgentInRoom = (
-    agentId: string,
-    roomId: string,
-  ): { ok: boolean; queued: boolean; reason?: string } => {
-    const room = rooms.getRoom(roomId)
-    if (!room) return { ok: false, queued: false, reason: 'room not found' }
-    if (room.deliveryMode !== 'manual') {
-      return { ok: false, queued: false, reason: 'room is not in manual mode' }
-    }
-    const agent = team.getAgent(agentId)
-    if (!agent || agent.kind !== 'ai') {
-      return { ok: false, queued: false, reason: 'agent is not an AI agent in this room' }
-    }
-    if (!room.hasMember(agentId)) {
-      return { ok: false, queued: false, reason: 'agent is not a member of this room' }
-    }
-    if (room.isMuted(agentId)) {
-      return { ok: false, queued: false, reason: 'agent is muted' }
-    }
-    const ai = asAIAgent(agent)
-    if (!ai || !ai.ingestHistory || !ai.forceEvaluate) {
-      return { ok: false, queued: false, reason: 'agent does not support manual activation' }
-    }
-    const recent = room.getRecent((ai.getHistoryLimit() ?? DEFAULTS.historyLimit) * 2)
-    ai.ingestHistory(roomId, recent)
-    const queued = agent.state.get() === 'generating' && agent.state.getContext() !== roomId
-    ai.forceEvaluate(roomId)
-    return { ok: true, queued }
-  }
-
-  // Reset all per-conversation state. See interface doc for what's preserved.
-  // For each AI agent: bounded whenIdle(5000) + cancelGeneration so in-flight
-  // tool loops or streams don't later post into a freshly-reset room. Human
-  // agents have no generation loop so they're removed directly.
-  const resetState = async (): Promise<{ rooms: number; agents: number }> => {
-    const agents = team.listAgents()
-    let agentCount = 0
-    for (const agent of agents) {
-      const ai = asAIAgent(agent)
-      if (ai) {
-        try {
-          await ai.whenIdle(5000)
-        } catch {
-          // whenIdle rejects on timeout — proceed with a forced cancel.
+    // Focused runtime-test path: forward provider routing events to
+    // *this* AgentsWorkspaceRuntime. Workspace boot replaces this dispatcher via
+    // WorkspaceRuntimeRegistry → deployment.setProviderEventDispatcher.
+    if (!deploymentWasGiven) {
+      deployment.setProviderEventDispatcher((event) => {
+        if (event.type === 'provider_bound') {
+          providerBound.proxy(event.agentId, event.model, event.oldProvider, event.newProvider)
+        } else if (event.type === 'provider_all_failed') {
+          providerAllFailed.proxy(event.agentId, event.model, event.attempts, { primaryCode: event.primaryCode, primaryReason: event.primaryReason, remediation: event.remediation })
+        } else {
+          providerStreamFailed.proxy(event.agentId, event.model, event.provider, event.reason)
         }
-        try { ai.cancelGeneration() } catch { /* best-effort */ }
-      }
-      if (removeAgent(agent.id)) agentCount++
+      })
     }
-    const roomProfiles = rooms.listAllRooms()
-    let roomCount = 0
-    for (const profile of roomProfiles) {
-      if (systemRemoveRoom(profile.id)) roomCount++
+
+    const system: AgentsWorkspaceRuntime = {
+      rooms, createRoom, settings, bookmarks, team, routeMessage, executionStore,
+      llm, llmService, ollama, providerConfig, providerKeys, gateways, monitors,
+      providerPolicy: deployment.providerPolicy,
+      refreshAvailableModels,
+      captureRegistry,
+      packCatalog: deployment.packCatalog,
+      evalBuffer,
+      toolRegistry, refreshAllAgentTools, skillStore, skillsDir,
+      scriptStore, scriptsDir,
+      scriptRunner,
+      setOnScriptEvent: scriptEvent.set,
+      addScriptEventListener: scriptEvent.add,
+      knowledgeDir: sharedPaths.knowledge(),
+      providersStorePath: sharedPaths.providers(),
+      triggerScheduler,
+      ollamaUrls,
+      removeAgent,
+      removeRoom: systemRemoveRoom,
+      resetState,
+      addAgentToRoom: systemAddAgentToRoom,
+      removeAgentFromRoom: systemRemoveAgentFromRoom,
+      spawnAIAgent: boundSpawnAIAgent,
+      spawnHumanAgent: boundSpawnHumanAgent,
+      activateAgentInRoom,
+      setOnMessagePosted: messagePosted.set,
+      setOnMessagesRemoved: messagesRemoved.set,
+      setOnTurnChanged: turnChanged.set,
+      setOnDeliveryModeChanged: deliveryModeChanged.set,
+      setOnModeAutoSwitched: modeAutoSwitched.set,
+      setOnRoomCreated: roomCreated.set,
+      setOnRoomDeleted: roomDeleted.set,
+      setOnMembershipChanged: membershipChanged.set,
+      setOnBookmarksChanged: bookmarksChanged.set,
+      setOnAgentSettingsChanged: agentSettingsChanged.set,
+      notifyAgentSettingsChanged: () => agentSettingsChanged.proxy(),
+      setOnEvalEvent: evalEvent.set,
+      addEvalEventListener: evalEvent.add,
+      setOnProviderBound: providerBound.set,
+      setOnProviderAllFailed: providerAllFailed.set,
+      setOnProviderStreamFailed: providerStreamFailed.set,
+      dispatchProviderEvent: (event) => {
+        if (event.type === 'provider_bound') {
+          providerBound.proxy(event.agentId, event.model, event.oldProvider, event.newProvider)
+        } else if (event.type === 'provider_all_failed') {
+          providerAllFailed.proxy(event.agentId, event.model, event.attempts, { primaryCode: event.primaryCode, primaryReason: event.primaryReason, remediation: event.remediation })
+        } else {
+          providerStreamFailed.proxy(event.agentId, event.model, event.provider, event.reason)
+        }
+      },
+      summaryScheduler,
+      setOnSummaryRunStarted: summaryRunStarted.set,
+      setOnSummaryRunDelta: summaryRunDelta.set,
+      setOnSummaryRunCompleted: summaryRunCompleted.set,
+      setOnSummaryRunFailed: summaryRunFailed.set,
+      setOnSummaryConfigChanged: summaryConfigChanged.set,
+      ...(documents ? { documents } : {}),
+      setOnDocumentStatusChange: (cb) => { documentLateBinding.onStatusChange = cb },
+      addEventObserver: (observer) => addEventObserver(observer, loggingState.sessionRef),
+      logging,
+      limitMetrics: deployment.limitMetrics,
     }
-    return { rooms: roomCount, agents: agentCount }
+    systemRef.current = system
+    // Kick off the cache refresh. Race with the very first eval is benign —
+    // an empty cache returns `{ model: preferred, ... }` and the router can
+    // route bare cloud names by trying each provider in order. The cache
+    // accelerates subsequent calls and enables proper fallback when a
+    // provider goes down mid-session.
+    void refreshAvailableModels()
+    return system
+  } catch (error) {
+    // The registry cannot dispose a runtime that never finished construction.
+    executionStore.close()
+    throw error
   }
-
-  const removeAgent = (id: string): boolean => {
-    const agent = team.getAgent(id)
-    if (!agent) return false
-    for (const profile of rooms.listAllRooms()) {
-      const room = rooms.getRoom(profile.id)
-      if (room?.hasMember(id)) {
-        systemRemoveAgentFromRoom(id, profile.id)
-      }
-    }
-    const removed = team.removeAgent(id)
-    // Prune this ID from every surviving AI agent's "known agents" cache so
-    // it doesn't linger as a phantom entry after deletion.
-    if (removed) {
-      for (const other of team.listByKind('ai')) {
-        const ai = asAIAgent(other)
-        ai?.forgetAgent?.(id)
-      }
-      // Triggers live on the agent — they go with it. The scheduler's
-      // anyTriggers cache might be stale; refresh it.
-      triggerScheduler.invalidate()
-    }
-    return removed
-  }
-
-  // Register Room/Team-bound built-in tools into the per-Workspace overlay.
-  // Process-wide tools (pass, get_time, web *, test_tool, list_skills,
-  // write_skill / write_tool, install_pack et al, MCP tools, external tools,
-  // skill-bundled tools, pack-owned tools) live in deployment.sharedToolRegistry
-  // and are registered once at boot — see bootstrap.ts.
-  toolRegistry.registerAll([
-    // Room management — bound to per-Workspace rooms
-    createListRoomsTool(rooms),
-    createCreateRoomTool(createRoom, systemAddAgentToRoom),
-    createDeleteRoomTool(systemRemoveRoom, rooms),
-    createSetRoomPromptTool(rooms),
-    createPauseRoomTool(rooms),
-    createSetDeliveryModeTool(rooms),
-    createAddToRoomTool(team, rooms, systemAddAgentToRoom),
-    createRemoveFromRoomTool(team, rooms, systemRemoveAgentFromRoom),
-    // Agent tools — bound to per-Workspace team / rooms
-    createListAgentsTool(team),
-    createMuteAgentTool(team, rooms),
-    createGetMyContextTool(team, rooms),
-    // Utility tools — bound to per-Workspace rooms
-    createGetRoomHistoryTool(rooms),
-    createConversationReadTool(rooms),
-    createPostToRoomTool(rooms),
-    // RAG: recall tool — only registered when this Workspace has a vector
-    // store (i.e. options.vectorsFile was provided). Focused runtime tests
-    // do not get it; agents see a clean tool list without
-    // a non-functional `recall`.
-    ...(vectorStore ? [createRecallTool({ vectorStore, providerKeys, rooms })] : []),
-    ...(vectorStore ? [createQueryDocumentsTool({ vectorStore, providerKeys })] : []),
-  ])
-
-  // Cross-Module interaction is Host-routed. Room Scope is the durable access
-  // boundary; target Modules enforce their own current run restrictions.
-  if (options.workspaceId !== undefined && options.workspaceHostUrl !== undefined) {
-    toolRegistry.registerAll(createWorkspaceCapabilityTools({
-      workspaceId: options.workspaceId,
-      hostBaseUrl: options.workspaceHostUrl,
-      getRoomScope: roomId => rooms.getRoom(roomId)?.profile.scope,
-    }))
-  }
-
-  // Biometrics tools — implementation lives in core (needs RoomDirectory + capture
-  // registry), but registered with source.pack='biometrics' so the per-room
-  // activePacks filter (effectiveActivePackSet) gates them exactly like a
-  // pack-owned tool. Users discover and activate biometrics via the
-  // leitbild-biometrics pack repo; activating it in a room makes these
-  // tools visible to agents in that room. See docs in
-  // src/tools/built-in/biometric-tools.ts for the rationale.
-  for (const tool of createBiometricsTools({ rooms, registry: captureRegistry })) {
-    toolRegistry.registerWithSource(tool, { kind: 'pack-owned', pack: BIOMETRICS_PACK_NAMESPACE })
-  }
-
-  // Skill and script catalogs are deployment-scoped Pack contributions.
-  // Agent selection and Room Pack activation determine which Skills are effective.
-  const skillsDir = sharedPaths.skills()
-  const scriptsDir = sharedPaths.scripts()
-  const skillStore = deployment.sharedSkillStore
-  const scriptStore = deployment.sharedScriptStore
-
-  // Agent Skill Selection is exact. Room Pack activation is an independent
-  // availability gate for Pack-owned skills, just as it is for Pack tools.
-  const selectedSkillsForRoom = (skillNames: ReadonlyArray<string>, roomId: string) => {
-    const room = rooms.getRoom(roomId)
-    if (!room) return []
-    const active = effectiveActivePackSet(room)
-    return skillNames.flatMap(name => {
-      const skill = skillStore.get(name)
-      return skill !== undefined && (skill.pack === undefined || active.has(skill.pack)) ? [skill] : []
-    })
-  }
-  const getSkillsForRoom = (skillNames: ReadonlyArray<string>, roomId: string): string => {
-    const visible = selectedSkillsForRoom(skillNames, roomId)
-    if (visible.length === 0) return ''
-    return visible.map(s => `[${s.name}] ${s.description}\n${s.body}`).join('\n\n---\n\n')
-  }
-
-  // Structured access to the same filtered skill set — drives the
-  // pre-LLM coherence check in ai-agent.ts. Each skill's `allowed-tools`
-  // frontmatter declarations are surfaced as `declaredTools` so the
-  // agent can compare against the actual tool surface and emit a
-  // coherence warning when the prompt promises a tool that isn't there.
-  const getActiveSkillsDeclarationsForRoom = (skillNames: ReadonlyArray<string>, roomId: string): ReadonlyArray<{
-    readonly name: string
-    readonly declaredTools: ReadonlyArray<string>
-  }> => {
-    return selectedSkillsForRoom(skillNames, roomId)
-      .filter(s => s.allowedToolNames.length > 0)
-      .map(s => ({ name: s.name, declaredTools: s.allowedToolNames }))
-  }
-
-  const refreshAllAgentTools = async (): Promise<void> => {
-    for (const agent of team.listByKind('ai')) {
-      const ai = agent as AIAgent
-      if (!ai.refreshTools) continue
-      const toolNames = effectiveAgentToolSelection(ai.getConfig())
-      const support = await buildToolSupport(
-        toolNames, toolRegistry,
-        {
-          id: ai.id,
-          name: ai.name,
-          currentModel: () => ai.getModel(),
-          focusedSubjects: roomId => ai.getFocusedSubjects(roomId),
-        },
-        llm,
-        undefined,
-        // Pack-aware filter must survive a hot reload — without re-passing
-        // it here, refreshing tools (e.g. after install_pack) would silently
-        // erase the resolver and revert the agent to seeing every tool.
-        (roomId: string) => rooms.getRoom(roomId),
-      )
-      ai.refreshTools(support)
-    }
-  }
-
-  // write_script updates the deployment-scoped authored script catalog.
-  toolRegistry.register(createWriteScriptTool(scriptStore, () => { /* onChange already broadcasts */ }))
-
-  // Forward-ref so the runner can call AgentsWorkspaceRuntime.* without a build-order cycle.
-  const systemRef: { current: AgentsWorkspaceRuntime | undefined } = { current: undefined }
-  const scriptRunner = createScriptRunner({
-    getRuntime: () => systemRef.current as AgentsWorkspaceRuntime,
-    emit: (roomId, event, detail) => scriptEvent.proxy(roomId, event, detail),
-  })
-  // Wire the runner into the room callback declared up-front.
-  scriptRunnerRef = scriptRunner
-
-  // Cascade-stop active scripts when their room is deleted. Without this,
-  // the run sits in scriptRunner.runs forever holding ScriptRun + dialogue
-  // history (no further messages arrive in a deleted room, so the
-  // findMissingCast defensive abort never fires).
-  roomDeleted.add((roomId) => { void scriptRunner.stop(roomId) })
-
-  // --- Effective-model cache (derive-on-read) ---
-  // Cache of currently-available models from llm.models(), refreshed in the
-  // background. Used by every agent's per-call effective-model resolver so the
-  // hot path stays sync. Misses (cache empty / preferred unavailable) fall
-  // through to the first available model in router order — the resolver
-  // surfaces the failure as a typed error if even that is unreachable.
-  let availableModelsCache: ReadonlyArray<string> = []
-  const refreshAvailableModels = async (): Promise<void> => {
-    try {
-      const fromRouter = await llm.models()
-      const fromOllama = ollama?.getHealth().availableModels ?? []
-      // Router returns prefixed (`name:model`); Ollama health returns unprefixed.
-      // Keep both so an Ollama model's unprefixed id
-      // resolves alongside `groq:llama-3.3-70b-versatile`.
-      availableModelsCache = [...fromRouter, ...fromOllama]
-    } catch (err) {
-      // Preserve the last known-good cache, but keep discovery failures
-      // actionable in the journal instead of silently claiming availability.
-      console.warn(`[models] failed to refresh effective-model cache: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
-  // Single resolution path. The agent stores the user's preferred model as a
-  // bare alias (`claude-haiku-4-5`, `gemini-2.5-pro`) or a pinned form
-  // (`groq:llama-3.3-70b-versatile`). We pass that through verbatim — the
-  // router decides eligibility by candidate-walk and the anthropic adapter
-  // translates aliases→dated canonicals on the wire.
-  //
-  // Two outcomes only:
-  //   - blank preferred (cold-boot, fresh user): substitute first-available
-  //     so the very first eval doesn't hard-fail before they pick a model.
-  //   - non-blank: pass through. If the model isn't actually routable, the
-  //     router surfaces `provider_all_failed` with `not_listed` — visible
-  //     error, not a silent swap to a different model.
-  const resolveEffectiveModel: SpawnOptions['resolveEffectiveModel'] = (preferred) => {
-    if (!preferred || preferred.trim() === '') {
-      return {
-        model: availableModelsCache[0] ?? '',
-        fallback: true,
-        reason: 'preferred_blank',
-      }
-    }
-    return { model: preferred, fallback: false, reason: 'preferred_available' }
-  }
-
-  const boundSpawnAIAgent = (config: AIAgentConfig, options?: SpawnOptions) =>
-    spawnAIAgent(config, llmService, rooms, settings, team, routeMessage, toolRegistry, {
-      ...options,
-      getSkills: getSkillsForRoom,
-      getActiveSkillsDeclarations: getActiveSkillsDeclarationsForRoom,
-      getScriptContext: (roomId, agentName) => scriptRunner.getScriptContextForAgent(roomId, agentName),
-      // Pack-aware tool surface filter — the LLM only sees tools owned by
-      // packs active in the trigger room. Returns the Room directly; the
-      // resolver only needs getActivePacks().
-      getRoomActivation: (roomId: string) => rooms.getRoom(roomId),
-      onEvalEvent: evalEvent.proxy,
-      resolveEffectiveModel,
-      // Process-global counter sink — context-builder bumps
-      // multimodalImagesDropped whenever it swaps image bytes for a text
-      // placeholder. Surfaces in /api/system/health.
-      metricsSink: deployment.limitMetrics,
-    })
-
-  // Provider-routing-event listener lives on the shared router (see
-  // createDeploymentRuntime). The dispatcher is normally set by WorkspaceRuntimeRegistry
-  // (multi-Workspace) — but when this AgentsWorkspaceRuntime is built directly in tests,
-  // we set the dispatcher to forward
-  // events to *this* AgentsWorkspaceRuntime's late-bound subscribers. Multi-Workspace
-  // boot overrides this when registry sets its own dispatcher.
-
-  const boundSpawnHumanAgent = async (
-    config: HumanAgentConfig,
-    send: TransportSend,
-    options?: { overrideId?: string },
-  ): Promise<HumanAgent> => {
-    const agent = createHumanAgent(config, send, options?.overrideId)
-    await spawnHumanAgent(agent, rooms, team, routeMessage)
-    return agent
-  }
-
-  // === Event observer wiring ===
-  // `addEventObserver` subscribes a single callback to every late-bound slot
-  // the logging system cares about. Each native-callback signature is
-  // translated into a unified LogEvent envelope via src/logging/event-mapping.
-  // Returns an aggregate unsubscribe.
-  const addEventObserver = (
-    observer: (event: LogEvent) => void,
-    sessionIdRef: { readonly current: string },
-  ): (() => void) => {
-    const sid = () => sessionIdRef.current
-    const safe = (makeEvent: () => LogEvent) => {
-      try { observer(makeEvent()) } catch { /* observer errors already caught in proxy */ }
-    }
-    const unsubs: Array<() => void> = [
-      messagePosted.add((roomId, message) => safe(() => mkMessagePosted(sid(), roomId, message))),
-      deliveryModeChanged.add((roomId, mode) => safe(() => mkDeliveryModeChanged(sid(), roomId, mode))),
-      modeAutoSwitched.add((roomId, toMode, reason) => safe(() => mkModeAutoSwitched(sid(), roomId, toMode, reason))),
-      roomCreated.add((profile) => safe(() => mkRoomCreated(sid(), profile))),
-      roomDeleted.add((roomId, roomName) => safe(() => mkRoomDeleted(sid(), roomId, roomName))),
-      membershipChanged.add((roomId, roomName, agentId, agentName, action) =>
-        safe(() => mkMembershipChanged(sid(), roomId, roomName, agentId, agentName, action))),
-      evalEvent.add((scope, event) => safe(() => mkEvalEvent(sid(), scope.agentName, event))),
-      providerBound.add((agentId, model, oldProvider, newProvider) =>
-        safe(() => mkProviderBound(sid(), agentId, model, oldProvider, newProvider))),
-      providerAllFailed.add((agentId, model, attempts, summary) =>
-        safe(() => mkProviderAllFailed(sid(), agentId, model, attempts, summary))),
-      providerStreamFailed.add((agentId, model, provider, reason) =>
-        safe(() => mkProviderStreamFailed(sid(), agentId, model, provider, reason))),
-      summaryConfigChanged.add((roomId, config) => safe(() => mkSummaryConfigChanged(sid(), roomId, config))),
-      summaryUpdated.add((roomId, target) => safe(() => mkSummaryUpdated(sid(), roomId, target))),
-      summaryRunStarted.add((roomId, target) => safe(() => mkSummaryRunStarted(sid(), roomId, target))),
-      summaryRunCompleted.add((roomId, target, text) => safe(() => mkSummaryRunCompleted(sid(), roomId, target, text))),
-      summaryRunFailed.add((roomId, target, reason) => safe(() => mkSummaryRunFailed(sid(), roomId, target, reason))),
-    ]
-    return () => { for (const u of unsubs) u() }
-  }
-
-  // === Logging handle — runtime on/off + relocate + resession ===
-  // One active sink + one active kind filter at any time. `configure` is
-  // the single mutator; it drains the old sink, reopens as needed, and
-  // refreshes the filter atomically. Env-var boot seeds initial state.
-  const loggingState: { config: LogConfig; sink: LogSink | null; unsub: (() => void) | null; sessionRef: { current: string } } = {
-    config: { enabled: false, dir: defaultLogDir(), sessionId: defaultSessionId(), kinds: ['*'] },
-    sink: null,
-    unsub: null,
-    sessionRef: { current: '' },
-  }
-
-  const logging: LoggingHandle = {
-    get: (): LogConfigState => ({
-      ...loggingState.config,
-      currentFile: loggingState.sink?.stats().currentFile ?? null,
-      stats: loggingState.sink?.stats() ?? { eventCount: 0, droppedCount: 0, queuedCount: 0, currentFile: null, currentFileBytes: 0 },
-    }),
-    configure: async (partial: Partial<LogConfig>): Promise<void> => {
-      validateLogConfig(partial)
-      const next: LogConfig = {
-        enabled: partial.enabled ?? loggingState.config.enabled,
-        dir: partial.dir ?? loggingState.config.dir,
-        sessionId: partial.sessionId ?? loggingState.config.sessionId,
-        kinds: partial.kinds ?? loggingState.config.kinds,
-      }
-
-      // Tear down current sink (if any). session.end bracket before flush.
-      if (loggingState.sink) {
-        try { loggingState.sink.write(mkSessionEnd(loggingState.config.sessionId, 'reconfigure')) } catch { /* best-effort */ }
-        try { await loggingState.sink.close() } catch { /* sink already errored */ }
-        loggingState.sink = null
-      }
-      if (loggingState.unsub) {
-        loggingState.unsub()
-        loggingState.unsub = null
-      }
-
-      loggingState.config = next
-      loggingState.sessionRef.current = next.sessionId
-
-      if (!next.enabled) return
-
-      // Open new sink. Failure bubbles up; caller (REST/MCP) returns 400.
-      // B1: awaited so the sink's seedBytes() completes before the first
-      // write — without it, the rotation check skipped on a pre-existing
-      // file and the log grew past the configured cap.
-      const sink = await createJsonlFileSink({ dir: next.dir, sessionId: next.sessionId })
-      const filtered = (event: LogEvent) => {
-        if (matchesKindFilter(event.kind, next.kinds)) sink.write(event)
-      }
-      loggingState.unsub = addEventObserver(filtered, loggingState.sessionRef)
-      sink.write(mkSessionStart(next.sessionId, { dir: next.dir, kinds: next.kinds }))
-      loggingState.sink = sink
-    },
-  }
-
-  // Focused runtime-test path: forward provider routing events to
-  // *this* AgentsWorkspaceRuntime. Workspace boot replaces this dispatcher via
-  // WorkspaceRuntimeRegistry → deployment.setProviderEventDispatcher.
-  if (!deploymentWasGiven) {
-    deployment.setProviderEventDispatcher((event) => {
-      if (event.type === 'provider_bound') {
-        providerBound.proxy(event.agentId, event.model, event.oldProvider, event.newProvider)
-      } else if (event.type === 'provider_all_failed') {
-        providerAllFailed.proxy(event.agentId, event.model, event.attempts, { primaryCode: event.primaryCode, primaryReason: event.primaryReason, remediation: event.remediation })
-      } else {
-        providerStreamFailed.proxy(event.agentId, event.model, event.provider, event.reason)
-      }
-    })
-  }
-
-  const system: AgentsWorkspaceRuntime = {
-    rooms, createRoom, settings, bookmarks, team, routeMessage,
-    llm, llmService, ollama, providerConfig, providerKeys, gateways, monitors,
-    providerPolicy: deployment.providerPolicy,
-    refreshAvailableModels,
-    captureRegistry,
-    packCatalog: deployment.packCatalog,
-    evalBuffer,
-    toolRegistry, refreshAllAgentTools, skillStore, skillsDir,
-    scriptStore, scriptsDir,
-    scriptRunner,
-    setOnScriptEvent: scriptEvent.set,
-    addScriptEventListener: scriptEvent.add,
-    knowledgeDir: sharedPaths.knowledge(),
-    providersStorePath: sharedPaths.providers(),
-    triggerScheduler,
-    ollamaUrls,
-    removeAgent,
-    removeRoom: systemRemoveRoom,
-    resetState,
-    addAgentToRoom: systemAddAgentToRoom,
-    removeAgentFromRoom: systemRemoveAgentFromRoom,
-    spawnAIAgent: boundSpawnAIAgent,
-    spawnHumanAgent: boundSpawnHumanAgent,
-    activateAgentInRoom,
-    setOnMessagePosted: messagePosted.set,
-    setOnTurnChanged: turnChanged.set,
-    setOnDeliveryModeChanged: deliveryModeChanged.set,
-    setOnModeAutoSwitched: modeAutoSwitched.set,
-    setOnRoomCreated: roomCreated.set,
-    setOnRoomDeleted: roomDeleted.set,
-    setOnMembershipChanged: membershipChanged.set,
-    setOnBookmarksChanged: bookmarksChanged.set,
-    setOnAgentSettingsChanged: agentSettingsChanged.set,
-    notifyAgentSettingsChanged: () => agentSettingsChanged.proxy(),
-    setOnEvalEvent: evalEvent.set,
-    addEvalEventListener: evalEvent.add,
-    setOnProviderBound: providerBound.set,
-    setOnProviderAllFailed: providerAllFailed.set,
-    setOnProviderStreamFailed: providerStreamFailed.set,
-    dispatchProviderEvent: (event) => {
-      if (event.type === 'provider_bound') {
-        providerBound.proxy(event.agentId, event.model, event.oldProvider, event.newProvider)
-      } else if (event.type === 'provider_all_failed') {
-        providerAllFailed.proxy(event.agentId, event.model, event.attempts, { primaryCode: event.primaryCode, primaryReason: event.primaryReason, remediation: event.remediation })
-      } else {
-        providerStreamFailed.proxy(event.agentId, event.model, event.provider, event.reason)
-      }
-    },
-    summaryScheduler,
-    setOnSummaryRunStarted: summaryRunStarted.set,
-    setOnSummaryRunDelta: summaryRunDelta.set,
-    setOnSummaryRunCompleted: summaryRunCompleted.set,
-    setOnSummaryRunFailed: summaryRunFailed.set,
-    setOnSummaryConfigChanged: summaryConfigChanged.set,
-    ...(documents ? { documents } : {}),
-    setOnDocumentStatusChange: (cb) => { documentLateBinding.onStatusChange = cb },
-    addEventObserver: (observer) => addEventObserver(observer, loggingState.sessionRef),
-    logging,
-    limitMetrics: deployment.limitMetrics,
-  }
-  systemRef.current = system
-  // Kick off the cache refresh. Race with the very first eval is benign —
-  // an empty cache returns `{ model: preferred, ... }` and the router can
-  // route bare cloud names by trying each provider in order. The cache
-  // accelerates subsequent calls and enables proper fallback when a
-  // provider goes down mid-session.
-  void refreshAvailableModels()
-  return system
 }

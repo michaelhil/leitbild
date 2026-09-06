@@ -30,6 +30,8 @@ import { makeStubGateway, makeStubSetup, stubProviderConfig as baseConfig } from
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
 import { newWorkspaceId } from '@leitbild/contracts'
 import { createAgentsModuleState } from '../core/workspaces/module-state.ts'
+import { roomRoutes } from './routes/rooms.ts'
+import type { RouteContext } from './routes/types.ts'
 
 const makeSetup = makeStubSetup
 
@@ -105,5 +107,51 @@ describe('lazy Workspace broadcast wiring (regression for 5d73a8e)', () => {
     const our = broadcasts.filter(b => b.workspaceId === cookieId)
     expect(our.length).toBeGreaterThan(0)
     expect(our.some(b => b.msg.type === 'message')).toBe(true)
+    await registry.shutdown()
+  })
+
+  test('REST deletion broadcasts and schedules durable message and execution cleanup', async () => {
+    homeDir = await mkdtemp(join(tmpdir(), 'leitbild-delete-wiring-'))
+    process.env.LEITBILD_HOME = homeDir
+    const moduleState = createAgentsModuleState()
+    const id = newWorkspaceId()
+    await moduleState.provision(id)
+    const broadcasts: WSOutbound[] = []
+    let saves = 0
+    let wsManager!: WSManager
+    const registry = createWorkspaceRuntimeRegistry({
+      deployment: createDeploymentRuntime({ providerConfig: baseConfig, providerSetup: makeSetup(makeStubGateway()) }), moduleState,
+      onWorkspaceRuntimeCreated: (system, workspaceId, saver) => {
+        wireWorkspaceRuntimeEvents(system, wsManager, { ...saver, scheduleSave: () => { saves++; saver.scheduleSave() } }, workspaceId)
+      },
+    })
+    wsManager = { ...createWSManager({ getRuntime: workspaceId => registry.tryGetLive(workspaceId) }),
+      broadcastToRoom: (_workspaceId, _roomId, message) => { broadcasts.push(message) },
+    }
+    try {
+      const system = await registry.getOrLoad(id)
+      const room = system.rooms.createRoom({ name: 'Delete', createdBy: 'test' })
+      const message = room.post({ senderId: 'test', type: 'chat', content: 'exact content' })
+      system.executionStore.beginTurn({ id: 'turn', roomId: room.profile.id, agentId: 'test', startedAt: 1 })
+      system.executionStore.linkMessage('turn', message.id)
+      const count = saves
+      const endpoint = `/rooms/${room.profile.id}/messages/${message.id}`
+      const route = roomRoutes.find(route => route.method === 'DELETE' && route.pattern.test(endpoint))!
+      const response = await route.handler(new Request(`http://localhost${endpoint}`, { method: 'DELETE' }), endpoint.match(route.pattern)!, { system } as RouteContext)
+      expect(response.status).toBe(200)
+      expect(saves).toBe(count + 1)
+      expect(broadcasts.filter(message => message.type === 'message_deleted')).toHaveLength(1)
+      expect(system.executionStore.listTurns(room.profile.id)).toEqual([])
+      room.post({ senderId: 'test', type: 'chat', content: 'clear this' })
+      const beforeClear = saves
+      room.clearMessages()
+      expect(saves).toBe(beforeClear + 1)
+      expect(broadcasts.filter(message => message.type === 'messages_cleared')).toHaveLength(1)
+      await registry.evictOne(id)
+      const reloaded = await registry.getOrLoad(id)
+      // Restoring the human identity can post a fresh join notice; deleted chat must not return.
+      expect(reloaded.rooms.getRoom(room.profile.id)!.getRetainedMessages().filter(message => message.type === 'chat')).toEqual([])
+      expect(reloaded.executionStore.listTurns(room.profile.id)).toEqual([])
+    } finally { await registry.shutdown() }
   })
 })

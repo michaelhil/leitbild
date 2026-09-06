@@ -48,8 +48,10 @@ export type OnDecision = (decision: Decision) => void
 
 // === Native tool call conversion ===
 
-const nativeCallsToToolCalls = (native: ReadonlyArray<NativeToolCall>): ReadonlyArray<ToolCall> =>
-  native.map((tc, index) => ({ callId: tc.id ?? `call_${index}`, tool: tc.function.name, arguments: tc.function.arguments }))
+const nativeCallsToToolCalls = (native: ReadonlyArray<NativeToolCall>, round: number): ReadonlyArray<ToolCall> =>
+  // Provider IDs may repeat across responses. Actual executions and events
+  // use turn-unique IDs; provider IDs remain intact as separate wire metadata.
+  native.map((tc, index) => ({ callId: `call_${round}_${index}`, ...(tc.id ? { providerCallId: tc.id } : {}), tool: tc.function.name, arguments: tc.function.arguments }))
 
 // === Tool result injection ===
 //
@@ -319,6 +321,7 @@ const retryInvalidMapFences = async (
 // === Main evaluation loop ===
 
 export interface EvalOptions {
+  readonly executionTurnId?: string
   readonly toolDefinitions?: ReadonlyArray<ToolDefinition>
   readonly inReplyTo?: ReadonlyArray<string>
   readonly onEvent?: (event: EvalEventCore) => void
@@ -456,7 +459,7 @@ export const evaluate = async (
         if (streamResult.content && streamResult.content.trim().length > 0) {
           lastAssistantText = streamResult.content.trim()
         }
-        const calls = nativeCallsToToolCalls(streamResult.toolCalls)
+        const calls = nativeCallsToToolCalls(streamResult.toolCalls, toolRound)
 
         // pass tool → return pass decision without executing
         if (calls.length === 1 && calls[0]!.tool === 'pass') {
@@ -475,7 +478,7 @@ export const evaluate = async (
           const call = calls[i]!
           onEvent?.({ kind: 'tool_start', tool: call.tool, callId: call.callId ?? String(i) })
         }
-        const results = await toolExecutor(calls, triggerRoomId, signal)
+        const results = await toolExecutor(calls, triggerRoomId, signal, options?.executionTurnId)
         for (let i = 0; i < results.length; i++) {
           const call = calls[i]
           const result = results[i]
@@ -493,14 +496,16 @@ export const evaluate = async (
             resultPreview: previewFor(result),
           })
         }
-        const normalizedNativeCalls = streamResult.toolCalls.map((call, index) => ({ ...call, id: calls[index]?.callId ?? `call_${index}` }))
-        const assistantToolMessage: ChatRequest['messages'][number] = { role: 'assistant', content: streamResult.content, toolCalls: normalizedNativeCalls }
+        // Provider wire IDs have provider-specific constraints (for example,
+        // Mistral's nine alphanumeric characters). Execution IDs are separate.
+        const wireCalls = streamResult.toolCalls.map((call, index) => ({ ...call, id: call.id ?? calls[index]!.callId! }))
+        const assistantToolMessage: ChatRequest['messages'][number] = { role: 'assistant', content: streamResult.content, toolCalls: wireCalls }
         const toolMessages: Array<ChatRequest['messages'][number]> = []
         for (let i = 0; i < results.length; i++) {
           const call = calls[i]
           const result = results[i]
           if (!call || !result) continue
-          toolMessages.push({ role: 'tool', toolCallId: call.callId ?? `call_${i}`, name: call.tool, content: formatToolResult(result) })
+          toolMessages.push({ role: 'tool', toolCallId: wireCalls[i]!.id, name: call.tool, content: formatToolResult(result) })
         }
         const systemTokens = Math.ceil((contextResult.systemBlocks?.map(block=>block.text).join('\n\n').length ?? 0)/4)
         const fit = fitToolEvidence(context, assistantToolMessage, toolMessages, contextResult.tokenBudget, systemTokens)

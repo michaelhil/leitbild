@@ -124,7 +124,8 @@ describe('recall tool', () => {
         }], { provider: 'openai', model: 'text-embedding-3-small', dim: 8 })
 
         const tool = createRecallTool({
-          vectorStore: store,
+          // A process restart constructs a fresh lazy store over persisted data.
+          vectorStore: createVectorStore(path),
           providerKeys: mkProviderKeys('sk-test'),
           rooms: makeRoomDirectoryStub(),
         })

@@ -21,13 +21,8 @@ export interface RoomExport {
   readonly messages: ReadonlyArray<Message>
 }
 
-// Pulling "all messages" from a room uses getRecent with a very large N.
-// Room message arrays are in-memory and bounded by snapshot/compression; this
-// is cheap even for the longest realistic conversation.
-const ALL = Number.MAX_SAFE_INTEGER
-
 export const exportRoomConversation = (room: Room): RoomExport => {
-  const messages = room.getRecent(ALL)
+  const messages = room.getRetainedMessages()
   return {
     roomId: room.profile.id,
     roomName: room.profile.name,

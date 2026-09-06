@@ -20,6 +20,8 @@ import { ensureUniqueName, validateName } from '../names.ts'
 import { createRoom, type RoomCallbacks } from './room.ts'
 
 export interface RoomDirectoryCallbacks {
+  readonly beforeMessageRemoval?: RoomCallbacks['beforeMessageRemoval']
+  readonly onMessagesRemoved?: RoomCallbacks['onMessagesRemoved']
   readonly deliver?: DeliverFn
   readonly resolveAgentName?: ResolveAgentName
   readonly resolveTag?: ResolveTagFn
@@ -51,6 +53,8 @@ export const createRoomDirectory = (callbacks: RoomDirectoryCallbacks = {}): Roo
   const nameIndex = new Map<string, string>()
 
   const makeRoomCallbacks = (): RoomCallbacks => ({
+    beforeMessageRemoval: callbacks.beforeMessageRemoval,
+    onMessagesRemoved: callbacks.onMessagesRemoved,
     deliver: callbacks.deliver,
     resolveAgentName: callbacks.resolveAgentName,
     resolveTag: callbacks.resolveTag,
@@ -106,6 +110,7 @@ export const createRoomDirectory = (callbacks: RoomDirectoryCallbacks = {}): Roo
     removeRoom: (id) => {
       const room = rooms.get(id)
       if (!room) return false
+      room.clearMessages()
       nameIndex.delete(room.profile.name.toLowerCase())
       rooms.delete(id)
       callbacks.onRoomDeleted?.(id, room.profile.name)

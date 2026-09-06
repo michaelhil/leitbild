@@ -56,6 +56,8 @@ export interface Room {
   readonly profile: RoomProfile
   readonly post: (params: PostParams) => Message
   readonly getRecent: (n: number) => ReadonlyArray<Message>
+  // Canonical retained messages, including originals omitted by compression.
+  readonly getRetainedMessages: () => ReadonlyArray<Message>
   readonly getParticipantIds: () => ReadonlyArray<string>
   readonly addMember: (id: string) => void
   readonly removeMember: (id: string) => void
@@ -100,8 +102,8 @@ export interface Room {
   readonly getLatestSummary: () => string | undefined
   readonly setLatestSummary: (text: string) => void
   // Replace the single evolving compression at the top of the stream.
-  // Removes the prior `room_summary` message (if any), flags oldestIds as
-  // compressed (tombstones), and inserts a fresh `room_summary` at position 0.
+  // Marks the prior summary and oldestIds as compressed without deleting
+  // their retained messages/evidence, and inserts a fresh summary at position 0.
   // Returns the inserted message.
   readonly replaceCompression: (oldestIds: ReadonlyArray<string>, newText: string) => Message
   // Current `room_summary` at top of stream, if any.

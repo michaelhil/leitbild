@@ -187,6 +187,10 @@ describe('HTTP Routes', () => {
     expect(body.query.messages).toHaveLength(2)
     expect(body.query.tools).toHaveLength(1)
     expect(body.generation.durationMs).toBe(42)
+    room.replaceCompression([message.id], 'The answer is summarized.')
+    const afterCompression = await call(system, req('GET', path), path)
+    expect(afterCompression?.status).toBe(200)
+    expect(await afterCompression!.json()).toEqual(body)
   })
 
   test('GET /product-source exposes only allowlisted deployed source', async () => {

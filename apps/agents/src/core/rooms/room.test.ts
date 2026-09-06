@@ -158,7 +158,7 @@ describe('Room — self-contained component', () => {
     expect(room.getGenerationQuery(message.id)).toBeUndefined()
   })
 
-  test('removes generation queries when their messages are compressed away', () => {
+  test('compression hides originals from recent context while retaining exact messages and queries', () => {
     const room = createRoom(makeProfile())
     const message = room.post({
       senderId: 'bot-1', content: 'Long answer', type: 'chat',
@@ -169,10 +169,19 @@ describe('Room — self-contained component', () => {
       messages: [{ role: 'user', content: 'question' }],
     })
 
-    room.replaceCompression([message.id], 'Summary')
+    const firstSummary = room.replaceCompression([message.id], 'Summary')
+    const currentSummary = room.replaceCompression([], 'Updated summary')
 
+    expect(room.getGenerationQuery(message.id)?.traceId).toBe('trace-compressed')
+    expect(room.getGenerationQueries()).toHaveLength(1)
+    expect(room.getRetainedMessages()).toContainEqual(message)
+    expect(room.getRetainedMessages()).toContainEqual(firstSummary)
+    expect(room.getRecent(100)).toEqual([currentSummary])
+    expect(room.getMessageCount()).toBe(1)
+    expect(room.getCurrentCompressionMessage()).toEqual(currentSummary)
+    expect(room.deleteMessage(message.id)).toBe(true)
     expect(room.getGenerationQuery(message.id)).toBeUndefined()
-    expect(room.getGenerationQueries()).toEqual([])
+    expect(room.getRetainedMessages()).not.toContainEqual(message)
   })
 
   test('preserves typed optional fields on post (tokens, provider, model)', () => {

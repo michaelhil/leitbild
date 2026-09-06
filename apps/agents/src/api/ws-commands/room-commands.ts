@@ -77,8 +77,7 @@ export const handleRoomCommand = async (msg: WSInbound, ctx: CommandContext): Pr
     case 'delete_message': {
       const room = requireRoom(wsManager, ws, system, msg.roomName)
       if (!room) return true
-      const deleted = room.deleteMessage(msg.messageId)
-      if (deleted) broadcastToSessionInstance({ type: 'message_deleted', roomName: room.profile.name, messageId: msg.messageId })
+      room.deleteMessage(msg.messageId)
       return true
     }
     case 'clear_messages': {
@@ -92,7 +91,6 @@ export const handleRoomCommand = async (msg: WSInbound, ctx: CommandContext): Pr
         const ai = agent ? asAIAgent(agent) : undefined
         ai?.clearHistory?.(room.profile.id)
       }
-      broadcastToSessionInstance({ type: 'messages_cleared', roomName: room.profile.name })
       return true
     }
     case 'activate_agent': {

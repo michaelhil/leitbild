@@ -7,6 +7,8 @@ import { createDeploymentRuntime } from '../deployment-runtime.ts'
 import { workspaceModulePaths } from '../paths.ts'
 import { newWorkspaceId, type WorkspaceId } from '@leitbild/contracts'
 import { createAgentsModuleState, type AgentsModuleState } from './module-state.ts'
+import { makeStubGateway, makeStubSetup, stubProviderConfig } from '../../api/__fixtures__/stub-gateway.ts'
+import { asAIAgent } from '../../agents/shared.ts'
 
 // Phase D registry tests use the LEITBILD_HOME env var to redirect all paths
 // into a per-test tmpdir. The shared runtime is built with no providers
@@ -103,14 +105,106 @@ describe('WorkspaceRuntimeRegistry', () => {
     const id = newWorkspaceId()
     await provision(id)
     const disposed: WorkspaceId[] = []
+    let opened: Awaited<ReturnType<typeof registry.getOrLoad>> | undefined
     const failed = createWorkspaceRuntimeRegistry({ deployment: createDeploymentRuntime(), moduleState,
-      onWorkspaceRuntimeCreated: () => { throw new Error('startup hook failed') },
+      onWorkspaceRuntimeCreated: system => { opened = system; throw new Error('startup hook failed') },
       onWorkspaceRuntimeEvicted: (_system, workspaceId) => { disposed.push(workspaceId) },
     })
     await expect(failed.getOrLoad(id)).rejects.toThrow('startup hook failed')
     expect(disposed).toEqual([id])
     expect(failed.list()).toEqual([])
+    expect(() => opened!.executionStore.listTurns('room')).toThrow()
     await failed.shutdown()
+  })
+
+  it('owns one durable execution store per loaded Workspace and closes it on eviction', async () => {
+    const id = newWorkspaceId()
+    await provision(id)
+    const runtime = await registry.getOrLoad(id)
+    const room = runtime.rooms.createRoom({ name: 'Evidence', createdBy: 'test' })
+    const message = room.post({ senderId: 'test', type: 'chat', content: 'Retain exact work' })
+    const store = runtime.executionStore
+    store.beginTurn({ id: 'done', roomId: room.profile.id, agentId: 'test', startedAt: 1 })
+    store.recordAttempt('done', { id: 'call', tool: 'read', arguments: { ref: 'asset' }, startedAt: 2 })
+    store.recordOutcome('done', 'call', { success: true, data: { value: 42 } })
+    store.finishTurn('done', 'completed')
+    store.linkMessage('done', message.id)
+    store.beginTurn({ id: 'unknown', roomId: room.profile.id, agentId: 'test', startedAt: 3 })
+    store.recordAttempt('unknown', { id: 'call', tool: 'act', arguments: {}, startedAt: 4 })
+    await registry.evictOne(id)
+    expect(() => store.listTurns(room.profile.id)).toThrow()
+    const reloaded = await registry.getOrLoad(id)
+    expect(reloaded.executionStore).not.toBe(store)
+    expect(reloaded.executionStore.getCall(room.profile.id, 'done', 'call')?.result).toEqual({ success: true, data: { value: 42 } })
+    expect(reloaded.executionStore.getTurn(room.profile.id, 'unknown')?.status).toBe('interrupted')
+    const restoredRoom = reloaded.rooms.getRoom(room.profile.id)!
+    expect(restoredRoom.deleteMessage(message.id)).toBe(true)
+    expect(reloaded.executionStore.getTurn(room.profile.id, 'done')).toBeUndefined()
+    expect(reloaded.executionStore.getTurn(room.profile.id, 'unknown')).toBeDefined()
+    restoredRoom.clearMessages()
+    expect(reloaded.executionStore.listTurns(room.profile.id)).toEqual([])
+    reloaded.executionStore.beginTurn({ id: 'removed-room', roomId: room.profile.id, agentId: 'test', startedAt: 5 })
+    reloaded.removeRoom(room.profile.id)
+    expect(reloaded.executionStore.listTurns(room.profile.id)).toEqual([])
+    await registry.evictOne(id)
+    const final = await registry.getOrLoad(id)
+    expect(final.rooms.getRoom(room.profile.id)).toBeUndefined()
+    expect(final.executionStore.listTurns(room.profile.id)).toEqual([])
+  })
+
+  it.each(['reload', 'delete'] as const)('cancelled Agent retains a real tool lifetime through %s', async ending => {
+    const id = newWorkspaceId()
+    await provision(id)
+    let entered!: () => void, release!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    const released = new Promise<void>(resolve => { release = resolve })
+    const provider = { ...makeStubGateway(), stream: async function* () {
+      yield { delta: '', done: true, toolCalls: [{ id: 'Ab123Cd45', function: { name: 'hold_for_test', arguments: {} } }], tokensUsed: { prompt: 1, completion: 1 } }
+    } }
+    const actual = createWorkspaceRuntimeRegistry({ moduleState, idleMs: 1,
+      deployment: createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup(provider) }),
+    })
+    try {
+      const system = await actual.getOrLoad(id)
+      system.toolRegistry.register({ name: 'hold_for_test', description: 'Lifecycle test', parameters: {}, execute: async () => {
+        entered(); await released; return { success: true, data: { completedAfterCancellation: true } }
+      } })
+      const room = system.rooms.createRoom({ name: 'Execution lifetime', createdBy: 'test' })
+      const agent = asAIAgent(await system.spawnAIAgent({ name: 'Agent', model: 'mock-model', persona: '', tools: ['hold_for_test'] }))!
+      room.addMember(agent.id)
+      await agent.join(room)
+      // The hot-refresh path must preserve runtime ownership as well as initial spawn.
+      await system.refreshAllAgentTools()
+      agent.receive(room.post({ senderId: 'human', type: 'chat', content: 'perform operation' }))
+      await started
+      agent.cancelGeneration()
+      await agent.whenIdle()
+      await expect(actual.evictOne(id)).rejects.toThrow('active requests')
+      expect(await actual.evictIdle(Date.now() + 1_000_000)).toBe(0)
+      const turn = system.executionStore.listTurns(room.profile.id)[0]!
+      expect(turn.status).toBe('interrupted')
+      expect(system.executionStore.getCall(room.profile.id, turn.id, 'call_0_0')?.result).toBeUndefined()
+      if (ending === 'delete') {
+        let deleted = false
+        const removing = actual.remove(id).then(() => { deleted = true })
+        await Bun.sleep(5)
+        expect(deleted).toBe(false)
+        release()
+        await removing
+        expect(await moduleState.has(id)).toBe(false)
+        await expect(stat(workspaceModulePaths(id).agents.root)).rejects.toThrow()
+        return
+      }
+      release()
+      // A request scope closes only after actual execution AND its outcome commit.
+      await actual.shutdown()
+      const reload = createWorkspaceRuntimeRegistry({ moduleState, deployment: createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup(provider) }) })
+      try {
+        const reopened = await reload.getOrLoad(id)
+        expect(reopened.executionStore.getCall(room.profile.id, turn.id, 'call_0_0')?.result).toEqual({ success: true, data: { completedAfterCancellation: true } })
+        expect(reopened.executionStore.getTurn(room.profile.id, turn.id)?.status).toBe('interrupted')
+      } finally { await reload.shutdown() }
+    } finally { release(); await actual.shutdown() }
   })
 
   it('does not evict autonomous summary work for idle or capacity', async () => {

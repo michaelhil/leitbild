@@ -10,6 +10,44 @@ import { exportRoomConversation } from '../../core/rooms/room-export.ts'
 export const roomRoutes: RouteEntry[] = [
   {
     method: 'GET',
+    pattern: /^\/rooms\/([^/]+)\/executions$/,
+    handler: (req, match, { system }) => {
+      const room = system.rooms.getRoom(decodeURIComponent(match[1]!))
+      if (!room) return errorResponse('Room not found', 404)
+      const params = new URL(req.url).searchParams
+      const limit = Number(params.get('limit') ?? 30)
+      const beforeId = params.get('beforeId')
+      const beforeAt = params.get('beforeStartedAt')
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || (beforeId === null) !== (beforeAt === null) || (beforeAt !== null && !Number.isSafeInteger(Number(beforeAt)))) return errorResponse('Invalid execution page')
+      const turns = system.executionStore.listTurns(room.profile.id, { limit: limit + 1, ...(beforeId !== null && beforeAt !== null ? { before: { id: beforeId, startedAt: Number(beforeAt) } } : {}) })
+      const page = turns.slice(0, limit)
+      const last = page.at(-1)
+      return json({ turns: page, ...(turns.length > limit && last ? { next: { startedAt: last.startedAt, id: last.id } } : {}) })
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/rooms\/([^/]+)\/executions\/([^/]+)$/,
+    handler: (_req, match, { system }) => {
+      const room = system.rooms.getRoom(decodeURIComponent(match[1]!))
+      if (!room) return errorResponse('Room not found', 404)
+      const turn = system.executionStore.getTurn(room.profile.id, decodeURIComponent(match[2]!))
+      if (!turn) return errorResponse('Execution turn not found', 404)
+      return json({ turn, calls: system.executionStore.listCalls(room.profile.id, turn.id) })
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/rooms\/([^/]+)\/executions\/([^/]+)\/calls\/([^/]+)$/,
+    handler: (_req, match, { system }) => {
+      const room = system.rooms.getRoom(decodeURIComponent(match[1]!))
+      if (!room) return errorResponse('Room not found', 404)
+      const call = system.executionStore.getCall(room.profile.id, decodeURIComponent(match[2]!), decodeURIComponent(match[3]!))
+      return call ? json(call) : errorResponse('Execution call not found', 404)
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/rooms$/,
     handler: (_req, _match, { system }) => json(system.rooms.listAllRooms()),
   },
@@ -61,7 +99,7 @@ export const roomRoutes: RouteEntry[] = [
       const messageId = decodeURIComponent(match[2]!)
       const room = system.rooms.getRoom(name)
       if (!room) return errorResponse(`Room "${name}" not found`, 404)
-      const message = room.getRecent(room.getMessageCount()).find(candidate => candidate.id === messageId)
+      const message = room.getRetainedMessages().find(candidate => candidate.id === messageId)
       if (!message) return errorResponse(`Message "${messageId}" not found`, 404)
       const record = room.getGenerationQuery(messageId)
       if (!record) return errorResponse(`Generation query for message "${messageId}" is unavailable`, 404)

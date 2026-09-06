@@ -428,6 +428,23 @@ describe('evaluate (tool loop)', () => {
     expect(result.decision.toolTrace).toHaveLength(2)
   })
 
+  test('execution IDs are unique while provider wire IDs remain unchanged', async () => {
+    const { provider } = makeScriptedProvider([
+      { toolCalls: [{ id: 'Ab123Cd45', function: { name: 'a', arguments: {} } }] },
+      { toolCalls: [{ id: 'Ab123Cd45', function: { name: 'b', arguments: {} } }] },
+      { content: 'done' },
+    ])
+    const executedIds: string[] = []
+    const result = await evaluate(baseContextResult(), baseConfig, provider, async calls => {
+      executedIds.push(...calls.map(call => call.callId!))
+      return calls.map(call => ({ success: true, data: call.tool }))
+    }, undefined, 'room-1')
+    const messages = result.decision.generationQuery!.messages
+    expect(new Set(executedIds).size).toBe(2)
+    expect(messages.flatMap(message => message.toolCalls?.map(call => call.id) ?? [])).toEqual(['Ab123Cd45', 'Ab123Cd45'])
+    expect(messages.filter(message => message.role === 'tool').map(message => message.toolCallId)).toEqual(['Ab123Cd45', 'Ab123Cd45'])
+  })
+
   test('records nested Workspace operation failures and tool-evidence size', async () => {
     const { provider } = makeScriptedProvider([
       { toolCalls: [{ id: 'workspace_1', function: { name: 'workspace_call', arguments: { calls: [{ key: 'bad', operationId: 'world.test.read', input: {} }] } } }] },

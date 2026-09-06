@@ -257,8 +257,8 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   // gets the saver via autoSaverFor(id). The onWorkspaceRuntimeCreated hook calls
   // wireWorkspaceRuntimeEvents — that's the single source of save scheduling.
   // Build a fresh AgentsWorkspaceRuntime for `id`, restoring from snapshot if present.
-  // Note: we DO NOT mkdir here. The Workspace dir is created lazily by
-  // saveSnapshot's own mkdir(recursive) on the first real autosave write.
+  // Durable execution storage opens only with a live Workspace runtime,
+  // never from static requests or definition catalog browsing.
   //
   // The Host addresses a provisioned Workspace explicitly. Static requests
   // and definition catalog reads do not instantiate its Agents runtime.
@@ -274,6 +274,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
       }),
       ...(opts.workspaceHostUrl === undefined ? {} : { workspaceId: id, workspaceHostUrl: opts.workspaceHostUrl }),
       vectorsFile: paths.agents.vectors,
+      executionsFile: paths.agents.executions,
     })
 
     let autoSaver: ModuleAutoSaver | undefined
@@ -317,15 +318,19 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   // Construction and capacity admission share the same resource ownership rule.
   // An uninstalled runtime must not retain producers, callback wiring or log timers.
   const disposeUninstalled = async (system: AgentsWorkspaceRuntime, id: WorkspaceId, autoSaver?: ModuleAutoSaver): Promise<void> => {
-    system.triggerScheduler.stop()
-    system.summaryScheduler.dispose()
-    await Promise.all(system.scriptRunner.listRuns().map(run => system.scriptRunner.stop(run.roomId)))
-    await drainAgents(system)
-    await autoSaver?.dispose()
-    await system.logging.configure({ enabled: false })
-    system.captureRegistry.clearAll()
-    opts.onWorkspaceRuntimeEvicted?.(system, id)
-    for (const [agentId, workspaceId] of agentWorkspaceMap) if (workspaceId === id) agentWorkspaceMap.delete(agentId)
+    try {
+      system.triggerScheduler.stop()
+      system.summaryScheduler.dispose()
+      await Promise.all(system.scriptRunner.listRuns().map(run => system.scriptRunner.stop(run.roomId)))
+      await drainAgents(system)
+      await autoSaver?.dispose()
+      await system.logging.configure({ enabled: false })
+      system.captureRegistry.clearAll()
+      opts.onWorkspaceRuntimeEvicted?.(system, id)
+      for (const [agentId, workspaceId] of agentWorkspaceMap) if (workspaceId === id) agentWorkspaceMap.delete(agentId)
+    } finally {
+      system.executionStore.close()
+    }
   }
 
   const ownsAutonomousWork = (system: AgentsWorkspaceRuntime): boolean =>
@@ -465,6 +470,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
         opts.onWorkspaceRuntimeEvicted?.(entry.system, id)
         entry.system.captureRegistry.clearAll()
         await entry.autoSaver.dispose()
+        entry.system.executionStore.close()
         map.delete(id)
         for (const [agentId, workspaceId] of agentWorkspaceMap) if (workspaceId === id) agentWorkspaceMap.delete(agentId)
       } catch (error) {

@@ -61,4 +61,12 @@ describe('exportRoomConversation', () => {
     const result = exportRoomConversation(room)
     expect(result.messages.map(m => m.content)).toEqual(['m0', 'm1', 'm2', 'm3', 'm4'])
   })
+
+  test('compression does not remove originals from exports', () => {
+    const room = makeRoom('retained')
+    const original = room.post({ senderId: 'u', content: 'exact original', type: 'chat' })
+    room.replaceCompression([original.id], 'summary')
+    expect(room.getRecent(100).some(message => message.id === original.id)).toBe(false)
+    expect(exportRoomConversation(room).messages).toContainEqual(original)
+  })
 })

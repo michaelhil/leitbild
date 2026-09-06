@@ -30,4 +30,20 @@ Requested input/output schemas now follow the explicit flags, including focused 
 
 Verification: 15 focused tests / 43 assertions; 25 tests including the Module API / 143 assertions; Agents typecheck passed. Ruthless Critic independently ran the 15 tests, inspected callers and accepted this phase with no must-fix findings. This establishes contract correctness, not a measured latency improvement.
 
-Evidence, model, reference, procedure and conversational evaluation phases remain in progress. Production baseline is captured from unchanged `827c5690` in a dedicated evaluation Workspace, on a paused copy; no user's existing Run is mutated.
+Production baseline is captured from unchanged `827c5690` in a dedicated evaluation Workspace, on a paused copy; no user's existing Run is mutated.
+
+### Evidence accepted
+
+Actual tool attempts and outcomes now have a Workspace-owned SQLite store, independent from immutable pre-model requests. The same records are accessible through `conversation_read` and Inspector, including interrupted turns without a posted answer. Provider wire IDs remain unchanged; turn-local execution IDs identify exact calls. Compression selects context without deleting retained originals; exports retain those originals, and cold recall loads before binding.
+
+Attempt commits precede dispatch. Actual outcome commits precede return. Cancellation stops explanation promptly but the existing Workspace operation lifetime remains held until an admitted tool actually settles and commits its result. A process killed between attempt and outcome leaves explicit uncertainty, never an invented failure or automatic retry. Exact old request records retain their original strict format; no conversion, duplication into the new store, or deletion is performed.
+
+Storage uses rollback journaling, synchronous EXTRA and new-database auto-vacuum. The pinned Bun embeds SQLite 3.51.0, so this avoids its documented WAL-reset issue and needs no checkpoint service. Automatic page reclamation makes deletion release physical-byte quota. Admission applies before work; an already-known outcome is not discarded because an estimate was exceeded. This is admission protection, not an OS-level hard quota.
+
+The critic required and verified three early corrections (provider IDs, folded pending messages, complete exports), then found two storage/lifetime defects (quota not recovering after deletion; cancellation allowing premature connection close). Both were resolved through existing mechanisms. A related missing message-deletion save notification was fixed through the existing typed Room callbacks, including REST/WS broadcast consistency.
+
+Verification: final Agents unit suite **1,469 passed, 2 explicitly opt-in soak tests skipped, 0 failed; 3,591 assertions**. Server and UI typechecks passed. Tests include actual subprocess SIGKILL/reopen, original request save/reload equality, exact late outcomes, queued/admission failures, deletion at quota/readmission, real Agent cancellation→idle→eviction rejection→reload, deletion waiting for admitted work, and reader/Inspector equality. Independent critic final gate: 42 tests/142 assertions plus earlier focused audits, **GO, no remaining must-fix**.
+
+Representative local store writes (40 turns, four durable transactions each, alternating 1KB/100KB outcomes) measured roughly 1.6ms median and 3.3ms p95, excluding Workspace inventory and model latency. These are correctness/storage measurements, not a conversational performance claim.
+
+Model, reference, procedure and conversational evaluation phases remain in progress. The user's model-selection gate precedes post-upgrade conversation testing; deterministic regression tests continue during coding.

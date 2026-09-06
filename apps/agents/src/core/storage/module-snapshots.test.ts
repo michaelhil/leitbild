@@ -9,6 +9,8 @@ import { workspaceModulePaths } from '../paths.ts'
 import { createBookmarkStore } from '../workspaces/bookmark-store.ts'
 import { createWorkspaceSettings } from '../workspaces/settings.ts'
 import type { Agent, AIAgentConfig } from '../types/agent.ts'
+import { createConversationReadTool } from '../../tools/built-in/conversation-read.ts'
+import { extractToolInteractions } from '../tool-evidence.ts'
 import {
   appendRoomsPendingScrub,
   loadWorkspaceModuleSnapshots,
@@ -52,6 +54,64 @@ const runtime = () => {
 }
 
 describe('Workspace Module snapshots', () => {
+  test('existing strict request fixture survives compression, disk reload, and reader/Inspector parity without conversion', async () => {
+    temporaryRoot = await mkdtemp(join(tmpdir(), 'module-evidence-fixture-'))
+    const priorHome = process.env.LEITBILD_HOME
+    process.env.LEITBILD_HOME = temporaryRoot
+    try {
+      const paths = workspaceModulePaths(newWorkspaceId())
+      // Shape written before execution records existed. Repeated provider IDs
+      // and absent toolTrace are intentional; do not rewrite the stored query.
+      const query = {
+        model: 'fixture-model',
+        systemBlocks: [{ text: 'Exact existing instructions', cacheable: true }],
+        messages: [
+          { role: 'user', content: 'Prepare the draft.' },
+          { role: 'assistant', content: '', toolCalls: [{ id: 'ollama_0', function: { name: 'preview', arguments: { revision: 1, untouched: { duration: 120 } } } }] },
+          { role: 'tool', toolCallId: 'ollama_0', name: 'preview', content: '{"valid":false}' },
+          { role: 'assistant', content: '', toolCalls: [{ id: 'ollama_0', function: { name: 'preview', arguments: { revision: 2, untouched: { duration: 120 } } } }] },
+          { role: 'tool', toolCallId: 'ollama_0', name: 'preview', content: '{"valid":true}' },
+        ],
+      } as const
+      const fixture = {
+        rooms: { schemaVersion: 3, savedAt: '2026-09-01T00:00:00.000Z', rooms: [{
+          profile: { id: 'fixture-room', name: 'Fixture', createdBy: 'human', createdAt: 1, scope: { kind: 'workspace' }, scopeRevision: 0 },
+          messages: [{ id: 'existing-answer', senderId: 'agent', content: '[pass] Draft prepared', timestamp: 2, type: 'pass', roomId: 'fixture-room', generationTraceId: 'existing-trace' }],
+          members: ['agent'], deliveryMode: 'manual', paused: false, muted: [], activePacks: [],
+        }], humanActors: [], bookmarks: [] },
+        agents: { schemaVersion: 3, savedAt: '2026-09-01T00:00:00.000Z', agents: [] },
+        inspections: { schemaVersion: 1, savedAt: '2026-09-01T00:00:00.000Z', rooms: [{ roomId: 'fixture-room', records: [{ messageId: 'existing-answer', traceId: 'existing-trace', query }] }] },
+      } as const
+      await saveWorkspaceModuleSnapshots(fixture, paths)
+      const restored = runtime()
+      await restoreWorkspaceModuleSnapshots({ ...restored, spawnAIAgent: async () => {} }, await loadWorkspaceModuleSnapshots(paths))
+      const room = restored.rooms.getRoom('Fixture')!
+      expect(room.getGenerationQuery('existing-answer')?.query).toEqual(query)
+      room.replaceCompression(['existing-answer'], 'The draft was prepared.')
+      await saveWorkspaceModuleSnapshots(serializeModuleSnapshots(restored), paths)
+      const reloaded = runtime()
+      await restoreWorkspaceModuleSnapshots({ ...reloaded, spawnAIAgent: async () => {} }, await loadWorkspaceModuleSnapshots(paths))
+      const reloadedRoom = reloaded.rooms.getRoom('Fixture')!
+      expect(reloadedRoom.getRetainedMessages()).toContainEqual(fixture.rooms.rooms[0].messages[0])
+      expect(reloadedRoom.getGenerationQuery('existing-answer')?.query).toEqual(query)
+      const reader = createConversationReadTool(reloaded.rooms)
+      const context = { callerId: 'agent', callerName: 'Agent', roomId: 'fixture-room' }
+      expect(await reader.execute({}, context)).toMatchObject({ success: true, data: { messages: expect.arrayContaining([expect.objectContaining({ messageId: 'existing-answer', hasToolEvidence: true })]) } })
+      expect(await reader.execute({ messageId: 'existing-answer', toolCallId: 'ollama_0' }, context)).toMatchObject({ success: false, error: expect.stringContaining('ambiguous') })
+      const inspectorCalls = extractToolInteractions(reloadedRoom.getGenerationQuery('existing-answer')!.query.messages)
+      for (const call of inspectorCalls) {
+        expect(await reader.execute({ messageId: 'existing-answer', callIndex: call.callIndex, part: 'result' }, context)).toMatchObject({ success: true, data: { result: call.result!.content } })
+        expect(await reader.execute({ messageId: 'existing-answer', callIndex: call.callIndex }, context)).toMatchObject({ success: true, data: { arguments: call.arguments } })
+      }
+      expect(inspectorCalls.map(call => call.result?.content)).toEqual(['{"valid":false}', '{"valid":true}'])
+      reloadedRoom.deleteMessage('existing-answer')
+      await saveWorkspaceModuleSnapshots(serializeModuleSnapshots(reloaded), paths)
+      expect((await loadWorkspaceModuleSnapshots(paths)).inspections).toBeNull()
+    } finally {
+      if (priorHome === undefined) delete process.env.LEITBILD_HOME
+      else process.env.LEITBILD_HOME = priorHome
+    }
+  })
   test('reads one committed generation after a partial document publication', async () => {
     temporaryRoot = await mkdtemp(join(tmpdir(), 'module-commit-'))
     const priorHome = process.env.LEITBILD_HOME

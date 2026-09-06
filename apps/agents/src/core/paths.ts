@@ -66,6 +66,7 @@ export interface AgentsWorkspacePaths {
   readonly marker: string
   readonly snapshot: string
   readonly inspections: string
+  readonly executions: string
   readonly memory: string
   readonly vectors: string
 }
@@ -95,6 +96,7 @@ export const workspaceModulePaths = (id: WorkspaceId): WorkspaceModulePaths => {
       marker: join(agentsRoot, 'workspace.json'),
       snapshot: join(agentsRoot, 'snapshot.json'),
       inspections: join(agentsRoot, 'generation-inspections.json'),
+      executions: join(agentsRoot, 'executions.sqlite'),
       memory: join(agentsRoot, 'memory'),
       vectors: join(agentsRoot, 'vectors.jsonl'),
     },

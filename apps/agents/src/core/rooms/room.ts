@@ -39,6 +39,9 @@ import { attachMessageFocus } from '../message-focus.ts'
 import { workspaceRoomScopeSchema } from '@leitbild/contracts'
 
 export interface RoomCallbacks {
+  /** Required owner cleanup runs before mutation; failure aborts removal. Undefined ID clears all history. */
+  readonly beforeMessageRemoval?: (roomId: string, messageId: string | undefined) => void
+  readonly onMessagesRemoved?: (roomId: string, messageId: string | undefined) => void
   readonly deliver?: DeliverFn
   readonly resolveAgentName?: ResolveAgentName
   readonly resolveTag?: ResolveTagFn
@@ -89,6 +92,8 @@ export const createRoom = (
 
   const computeEligible = (): Set<string> =>
     new Set([...members].filter(id => !muted.has(id)))
+
+  const contextMessages = (): ReadonlyArray<Message> => messages.filter(message => !compressedIds.has(message.id))
 
   // --- Internal helpers ---
 
@@ -249,14 +254,15 @@ export const createRoom = (
     post,
     getRecent: (n: number): ReadonlyArray<Message> => {
       if (n <= 0) return []
-      if (messages.length <= n) return [...messages]
-      return messages.slice(-n)
+      const visible = contextMessages()
+      return visible.length <= n ? visible : visible.slice(-n)
     },
+    getRetainedMessages: () => [...messages],
     getParticipantIds: (): ReadonlyArray<string> => [...members],
     addMember: (id: string): void => { members.add(id) },
     removeMember: (id: string): void => { members.delete(id) },
     hasMember: (id: string): boolean => members.has(id),
-    getMessageCount: (): number => messages.length,
+    getMessageCount: (): number => contextMessages().length,
     setRoomPrompt: (prompt: string) => {
       profile = { ...profile, roomPrompt: prompt }
     },
@@ -275,11 +281,15 @@ export const createRoom = (
     deleteMessage: (messageId: string): boolean => {
       const idx = messages.findIndex(m => m.id === messageId)
       if (idx === -1) return false
+      callbacks?.beforeMessageRemoval?.(profile.id, messageId)
       messages.splice(idx, 1)
       generationQueries.delete(messageId)
+      compressedIds.delete(messageId)
+      callbacks?.onMessagesRemoved?.(profile.id, messageId)
       return true
     },
     clearMessages: (): void => {
+      callbacks?.beforeMessageRemoval?.(profile.id, undefined)
       // Wipe everything that's a function of message history. Without this,
       // a "clear" leaves stale tombstones + summary that misrepresent an
       // empty room.
@@ -287,6 +297,7 @@ export const createRoom = (
       generationQueries.clear()
       compressedIds.clear()
       latestSummary = undefined
+      callbacks?.onMessagesRemoved?.(profile.id, undefined)
     },
     setGenerationQuery: (messageId, traceId, query): void => {
       if (!messages.some(message => message.id === messageId)) {
@@ -351,22 +362,10 @@ export const createRoom = (
       callbacks?.onSummaryUpdated?.(profile.id, 'summary')
     },
     replaceCompression: (oldestIds: ReadonlyArray<string>, newText: string): Message => {
-      // Remove previous room_summary (if present anywhere in the stream).
-      const prevIdx = messages.findIndex(m => m.type === 'room_summary')
-      if (prevIdx !== -1) {
-        const previousSummary = messages[prevIdx]
-        if (previousSummary) generationQueries.delete(previousSummary.id)
-        messages.splice(prevIdx, 1)
-      }
-      // Drop the compressed messages from the delivery stream; flag tombstones.
-      const idSet = new Set(oldestIds)
-      for (let i = messages.length - 1; i >= 0; i--) {
-        const messageId = messages[i]!.id
-        if (idSet.has(messageId)) {
-          generationQueries.delete(messageId)
-          messages.splice(i, 1)
-        }
-      }
+      // Compression changes only the delivery/model view. Exact originals,
+      // their queries, and previous summaries remain available for retrieval.
+      const previousSummary = messages.find(message => message.type === 'room_summary' && !compressedIds.has(message.id))
+      if (previousSummary) compressedIds.add(previousSummary.id)
       for (const id of oldestIds) compressedIds.add(id)
       const summaryMessage: Message = {
         id: crypto.randomUUID(),
@@ -382,7 +381,7 @@ export const createRoom = (
       return summaryMessage
     },
     getCurrentCompressionMessage: (): Message | undefined =>
-      messages.find(m => m.type === 'room_summary'),
+      messages.find(m => m.type === 'room_summary' && !compressedIds.has(m.id)),
 
     restoreState: (state: RoomRestoreParams): void => {
       members.clear()

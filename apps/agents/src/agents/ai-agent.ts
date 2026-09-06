@@ -36,6 +36,7 @@ import { getContextWindowSync } from '../llm/models/context-window.ts'
 import { parsePrefixedModel, isCloudProvider } from '../llm/models/parse-prefix.ts'
 import { messageFocus } from '../core/message-focus.ts'
 import type { WorkspaceSubjectReference } from '@leitbild/contracts'
+import type { ExecutionStore } from '../core/executions/store.ts'
 
 import { computeContextBudget } from './budget.ts'
 
@@ -61,6 +62,8 @@ export type { Decision, OnDecision } from './evaluation.ts'
 // === Factory Options ===
 
 export interface AIAgentOptions {
+  readonly executionStore?: ExecutionStore
+  readonly executionGrowth?: <T>(bytes: number, work: () => Promise<T>) => Promise<T>
   readonly toolExecutor?: ToolExecutor
   readonly toolDefinitions?: ReadonlyArray<ToolDefinition>
   // Per-eval tool-surface resolver — when provided, the agent calls this
@@ -71,6 +74,7 @@ export interface AIAgentOptions {
   readonly getWorkspacePrompt?: () => string
   readonly getResponseFormat?: () => string
   readonly getCompressedIds?: (roomId: string) => ReadonlySet<string>
+  readonly getCompressionSummary?: (roomId: string) => Message | undefined
   // Current room membership, resolved to profiles. Used by the Participants
   // context section so an agent sees every peer in its room — not only those
   // whose messages it has already observed.
@@ -242,6 +246,7 @@ export const createAIAgent = (
     contextEnabled,
     contextTokenBudget: resolveContextTokenBudget(effectiveModel, definitions),
     getCompressedIds: (roomId: string) => getCompressedIds?.(roomId) ?? new Set<string>(),
+    getCompressionSummary: options?.getCompressionSummary,
     getRoomMembers,
     supportsImages: modelSupportsImages(effectiveModel),
     modelForWarn: effectiveModel,
@@ -318,16 +323,44 @@ export const createAIAgent = (
       })
     }
     const evalOpts = {
+      executionTurnId: traceId,
       ...(evalToolDefs ? { toolDefinitions: evalToolDefs } : {}),
       ...(inReplyTo ? { inReplyTo } : {}),
       ...(evalEventCb ? { onEvent: evalEventCb } : {}),
       signal,
       ...(checkinEnabled && maxToolIterationsCfg !== undefined ? { requestToolCheckin } : {}),
     }
-    return evaluate(
+    const store = options?.executionStore
+    if (!store) return evaluate(
       contextResult, evalConfig, llmProvider, evalToolExec,
       maxToolIterationsCfg, triggerRoomId, evalOpts,
-    )
+    ) // Standalone/test agents have no persistent Workspace runtime.
+    const begin = async (): Promise<void> => {
+      signal.throwIfAborted()
+      store.beginTurn({ id: traceId, roomId: triggerRoomId, agentId, startedAt: Date.now() })
+    }
+    if (options?.executionGrowth) await options.executionGrowth(4096, begin)
+    else await begin() // In-memory tests have no Workspace storage policy.
+    const interrupted = (): void => {
+      try { store.finishTurn(traceId, 'interrupted', 'Generation cancelled; calls without a durable result have unknown outcomes') }
+      catch (error) { console.error(`[${config.name}] Could not retain cancellation status:`, error) }
+    }
+    signal.addEventListener('abort', interrupted, { once: true })
+    if (signal.aborted) interrupted()
+    try {
+      const result = await evaluate(
+        contextResult, evalConfig, llmProvider, evalToolExec,
+        maxToolIterationsCfg, triggerRoomId, evalOpts,
+      )
+      store.finishTurn(traceId, signal.aborted ? 'interrupted' : result.decision.response.action === 'error' ? 'failed' : 'completed',
+        result.decision.response.action === 'error' ? result.decision.response.message : undefined)
+      return result
+    } catch (error) {
+      store.finishTurn(traceId, signal.aborted ? 'interrupted' : 'failed', error instanceof Error ? error.message : String(error))
+      throw error
+    } finally {
+      signal.removeEventListener('abort', interrupted)
+    }
   }
 
   const tryEvaluate = (triggerRoomId: string): void => {
@@ -461,6 +494,7 @@ export const createAIAgent = (
             },
             generationMs: 0,
             triggerRoomId,
+            generationTraceId: traceId,
           })
         } catch (decisionErr) {
           console.error(`[${config.name}] onDecision threw while reporting eval error:`, decisionErr)

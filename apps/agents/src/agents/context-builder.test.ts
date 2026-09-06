@@ -1,5 +1,5 @@
 import { test, expect, describe } from 'bun:test'
-import { buildContext, buildSystemSections, __strategyTestSeam, type BuildContextDeps } from './context-builder.ts'
+import { buildContext, buildSystemSections, flushIncoming, __strategyTestSeam, type BuildContextDeps } from './context-builder.ts'
 import type { AgentHistory, Message, RoomProfile } from '../core/types/messaging.ts'
 
 const mkProfile = (id: string, name: string, roomPrompt?: string): RoomProfile => ({
@@ -38,6 +38,25 @@ test('budget removal of older context is reported', () => {
   const result=buildContext(mkDeps({history,contextTokenBudget:220,includeContext:{participants:false,activity:false,knownAgents:false},includePrompts:{workspace:false,room:false,persona:false,responseFormat:false,skills:false}}),'room-1')
   expect(result.messages.length).toBeLessThan(5)
   expect(result.warnings.some(warning=>warning.includes('dropped')||warning.includes('dropped'.toUpperCase()))).toBe(true)
+})
+
+test('a joined Agent uses the current compression summary without replaying cached originals', () => {
+  const original: Message = { id: 'folded', roomId: 'room-1', senderId: 'human', content: 'exact original', timestamp: 1, type: 'chat' }
+  const recent: Message = { ...original, id: 'recent', content: 'recent detail', timestamp: 2 }
+  const summary: Message = { ...original, id: 'summary', senderId: 'system', content: 'current summary', timestamp: 3, type: 'room_summary' }
+  const history = mkHistory('room-1', 'General', undefined, [original, recent])
+  history.incoming.push(original)
+  const result = buildContext(mkDeps({
+    history, historyLimit: 1,
+    getCompressedIds: () => new Set(['folded']),
+    getCompressionSummary: () => summary,
+  }), 'room-1')
+  expect(result.messages.map(message => message.content)).toEqual([
+    '[Room Summary]: current summary', '[human]: recent detail',
+  ])
+  expect(result.flushInfo.ids.has(original.id)).toBe(true)
+  flushIncoming(result.flushInfo, history, 1)
+  expect(history.incoming).toEqual([])
 })
 
 describe('context-builder includePrompts', () => {

@@ -3,6 +3,7 @@
 
 export interface ToolCall {
   readonly callId?: string
+  readonly providerCallId?: string
   readonly tool: string
   readonly arguments: Record<string, unknown>
 }
@@ -88,7 +89,7 @@ export interface ToolRegistry {
   readonly listEntries: () => ReadonlyArray<ToolRegistryEntry>
 }
 
-export type ToolExecutor = (calls: ReadonlyArray<ToolCall>, roomId?: string, signal?: AbortSignal) => Promise<ReadonlyArray<ToolResult>>
+export type ToolExecutor = (calls: ReadonlyArray<ToolCall>, roomId?: string, signal?: AbortSignal, executionTurnId?: string) => Promise<ReadonlyArray<ToolResult>>
 
 // === Native tool calling (OpenAI/Ollama-compatible) ===
 

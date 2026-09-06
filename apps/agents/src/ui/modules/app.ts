@@ -147,7 +147,7 @@ const handleDeleteMessage = (msgId: string): void => {
 }
 
 // Prompt-context modal + per-message view-context handler live in context-modal.ts.
-import { showContextModal, handleViewContext } from './modals/context-modal.ts'
+import { showContextModal, handleViewContext, showRoomExecutions } from './modals/context-modal.ts'
 import { clearAttachments, getAttachments, mountAttachmentChips } from './composer-attachments.ts'
 
 // === Data fetching (triggered by subscriptions) ===
@@ -777,6 +777,11 @@ for (const dlg of Array.from(document.querySelectorAll<HTMLDialogElement>('dialo
 startLoggingStateDot()
 
 const btnClearMessages = $('#btn-clear-messages') as HTMLButtonElement
+const btnExecutions = $('#btn-executions') as HTMLButtonElement
+btnExecutions.onclick = () => {
+  const roomId = $selectedRoomId.get()
+  if (roomId) void showRoomExecutions(roomId)
+}
 btnClearMessages.onclick = async () => {
   const roomId = $selectedRoomId.get()
   if (!roomId) return

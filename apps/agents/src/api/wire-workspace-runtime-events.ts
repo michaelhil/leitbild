@@ -57,6 +57,13 @@ export const wireWorkspaceRuntimeEvents = (
     sched()
   })
 
+  system.setOnMessagesRemoved((roomId, messageId) => {
+    broadcastRoom(roomId, messageId === undefined
+      ? { type: 'messages_cleared', roomName: roomNameFor(roomId) }
+      : { type: 'message_deleted', roomName: roomNameFor(roomId), messageId })
+    sched()
+  })
+
   system.setOnDeliveryModeChanged((roomId, mode) => {
     const room = system.rooms.getRoom(roomId)
     broadcastRoom(roomId, {

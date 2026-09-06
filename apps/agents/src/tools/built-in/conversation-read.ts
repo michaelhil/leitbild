@@ -1,20 +1,25 @@
 import { z } from 'zod'
 import type { RoomDirectory } from '../../core/rooms/directory.ts'
 import type { Tool } from '../../core/types/tool.ts'
+import { extractToolInteractions } from '../../core/tool-evidence.ts'
+import type { ExecutionStore } from '../../core/executions/store.ts'
 
 const inputSchema = z.object({
   messageId: z.string().optional(),
+  turnId: z.string().optional().describe('Actual execution turn, including interrupted turns without a posted message.'),
+  beforeTurn: z.object({ startedAt: z.number().int(), id: z.string() }).strict().optional(),
   toolCallId: z.string().optional(),
+  callIndex: z.number().int().nonnegative().optional().describe('Choose the indexed occurrence when a retained provider call ID is repeated.'),
   part: z.enum(['arguments', 'result']).default('arguments'),
   offset: z.number().int().nonnegative().default(0),
   limit: z.number().int().min(1).max(100).default(10),
 }).strict()
 
-// A read of the existing conversation record, not a second artifact/memory
-// store. Never accepts another Room id or exposes private system instructions.
-export const createConversationReadTool = (rooms: RoomDirectory): Tool => ({
+// Request snapshots and actual executions are distinct facts in the same
+// conversation. Never accepts another Room or exposes private instructions.
+export const createConversationReadTool = (rooms: RoomDirectory, executions?: ExecutionStore): Tool => ({
   name: 'conversation_read',
-  description: 'Retrieve exact earlier work from this conversation. Without messageId, list recent message references; with messageId, read the message and its tool-call index; with toolCallId, retrieve exact arguments or result. Use this to revise a previous draft without reconstructing it from a prose summary. Old observations are historical, not current state.',
+  description: 'Retrieve exact earlier work from this conversation. List messages and execution turns, then use turnId and toolCallId for actual arguments or outcomes, including interrupted turns. messageId reads the message and separately labeled final model-request evidence. Missing execution outcomes are unknown: inspect current state before retrying. Old observations are historical, not current state.',
   parameters: z.toJSONSchema(inputSchema, { io: 'input' }),
   execute: async (params, context) => {
     const parsed = inputSchema.safeParse(params)
@@ -23,36 +28,64 @@ export const createConversationReadTool = (rooms: RoomDirectory): Tool => ({
     if (!room || !room.getParticipantIds().includes(context.callerId)) {
       return { success: false, error: 'conversation_access_denied: caller must belong to the current Room' }
     }
-    const { messageId, toolCallId, part, offset, limit } = parsed.data
-    const messages = room.getRecent(room.getMessageCount())
+    const { messageId, turnId, beforeTurn, toolCallId, callIndex, part, offset, limit } = parsed.data
+    if (toolCallId && callIndex !== undefined) return {success:false,error:'Choose either toolCallId or callIndex, not both'}
+    if (messageId && turnId) return {success:false,error:'Choose messageId for model-request evidence or turnId for actual execution evidence, not both'}
+    if (turnId) {
+      const turn = executions?.getTurn(room.profile.id, turnId)
+      if (!turn) return { success: false, error: 'conversation_execution_unavailable: turn was removed or is not in this Room' }
+      if (callIndex !== undefined) return { success: false, error: 'Actual execution calls have unique toolCallId values; callIndex selects request evidence only' }
+      if (!toolCallId) return { success: true, data: { evidenceKind: 'execution', turn, calls: executions!.listCalls(room.profile.id, turnId).map(call => ({
+        ...call, toolCallId: call.id, outcome: call.completedAt === undefined ? 'unknown' : 'recorded',
+      })) } }
+      const call = executions!.getCall(room.profile.id, turnId, toolCallId)
+      if (!call) return { success: false, error: 'conversation_tool_call_unavailable: choose a toolCallId from this turn' }
+      if (part === 'result' && call.result === undefined) return { success: false, error: 'conversation_outcome_unknown: no durable outcome; inspect current state before retrying', data: { evidenceKind: 'execution', turn, toolCallId } }
+      return { success: true, data: { evidenceKind: 'execution', turnId, toolCallId, tool: call.tool,
+        startedAt: call.startedAt, ...(call.completedAt === undefined ? {} : { completedAt: call.completedAt }),
+        [part]: part === 'arguments' ? call.arguments : call.result,
+      } }
+    }
+    const messages = room.getRetainedMessages()
     if (!messageId) {
-      if (toolCallId) return {success:false,error:'messageId is required with toolCallId'}
+      if (toolCallId || callIndex !== undefined) return {success:false,error:'messageId or turnId is required with a tool-call selector'}
       const ordered = [...messages].reverse()
+      // Tests/headless readers may have no execution store. This represents
+      // absence of execution recording, not inferred execution from requests.
+      const turns = executions?.listTurns(room.profile.id, { limit: limit + 1, ...(beforeTurn ? { before: beforeTurn } : {}) }) ?? []
+      const page = turns.slice(0, limit)
+      const last = page.at(-1)
       return {success:true,data:{
         total:ordered.length, offset, hasMore:offset+limit<ordered.length,
+        executionTurns: page,
+        ...(turns.length > limit && last ? { nextTurn: { startedAt: last.startedAt, id: last.id } } : {}),
         messages:ordered.slice(offset,offset+limit).map(m=>({
           messageId:m.id,sender:m.senderName??m.senderId,timestamp:m.timestamp,
-          preview:m.content.slice(0,240),hasToolEvidence:!!m.toolTrace?.length,
+          preview:m.content.slice(0,240),hasToolEvidence:!!m.toolTrace?.length || !!room.getGenerationQuery(m.id)?.query.messages.some(message => message.toolCalls?.length),
+          ...(m.generationTraceId && executions?.getTurn(room.profile.id, m.generationTraceId) ? { executionTurnId: m.generationTraceId } : {}),
         })),
       }}
     }
     const message = messages.find(m=>m.id===messageId)
     if (!message) return {success:false,error:'conversation_message_unavailable: message was removed or is not in this Room'}
     const record = room.getGenerationQuery(messageId)
-    const calls = record?.query.messages.flatMap(m=>m.toolCalls??[]) ?? []
-    if (!toolCallId) return {success:true,data:{
-      messageId,content:message.content,timestamp:message.timestamp,
-      calls:calls.map(call=>({toolCallId:call.id,tool:call.function.name,
-        operationIds: Array.isArray(call.function.arguments.calls)
-          ? (call.function.arguments.calls as Array<Record<string,unknown>>).map(c=>c.operationId) : undefined,
+    const calls = extractToolInteractions(record?.query.messages ?? [])
+    if (!toolCallId && callIndex === undefined) return {success:true,data:{
+      evidenceKind:'model_request',messageId,content:message.content,timestamp:message.timestamp,
+      ...(message.generationTraceId && executions?.getTurn(room.profile.id, message.generationTraceId) ? { executionTurnId: message.generationTraceId } : {}),
+      calls:calls.map(call=>({toolCallId:call.id,callIndex:call.callIndex,tool:call.name,
+        operationIds: typeof call.arguments === 'object' && call.arguments !== null && 'calls' in call.arguments && Array.isArray(call.arguments.calls)
+          ? (call.arguments.calls as Array<Record<string,unknown>>).map(c=>c.operationId) : undefined,
       })),
     }}
-    const call = calls.find(c=>c.id===toolCallId)
+    const matches = callIndex === undefined ? calls.filter(call => call.id === toolCallId) : calls.filter(call => call.callIndex === callIndex)
+    if (matches.length > 1) return {success:false,error:'conversation_tool_call_ambiguous: choose callIndex from this message instead of the repeated toolCallId'}
+    const call = matches[0]
     if (!call) return {success:false,error:'conversation_tool_call_unavailable: choose a toolCallId from this message'}
-    const result = record?.query.messages.find(m=>m.role==='tool'&&m.toolCallId===toolCallId)
+    const result = call.result
     if(part==='result'&&!result) return {success:false,error:'conversation_result_unavailable: no retained result for this call'}
-    return {success:true,data:{messageId,toolCallId,tool:call.function.name,timestamp:message.timestamp,
-      [part]:part==='arguments'?call.function.arguments:result!.content,
+    return {success:true,data:{evidenceKind:'model_request',messageId,toolCallId:call.id,callIndex:call.callIndex,tool:call.name,timestamp:message.timestamp,
+      [part]:part==='arguments'?call.arguments:result!.content,
     }}
   },
 })

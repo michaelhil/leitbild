@@ -21,6 +21,7 @@ describe('generation inspection', () => {
       { role: 'assistant', content: 'Ready.' },
     ])
     expect(interactions).toEqual([{
+      callIndex: 0,
       id: 'call-1',
       name: 'workspace_call',
       arguments: { operationId: 'read.live' },
