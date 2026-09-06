@@ -260,22 +260,25 @@ const targetInputSchema = z.discriminatedUnion('kind', [
   z.object({kind:z.literal('definition'),ref:workspaceDefinitionRevisionReferenceSchema}).strict(),
 ])
 const exploreInputSchema = z.object({
-  view:z.enum(['scope','operations','all']).default('scope'),
-  target:targetInputSchema.optional(),
+  view:z.enum(['scope','operations']).default('scope').describe('scope lists exact Resources and Definition revisions; operations searches their available reads and changes. Each view has its own pagination.'),
+  target:targetInputSchema.optional().describe('An exact discovered target, unchanged. Omit to search across the current Room Scope; browser focus does not widen scope.'),
   moduleId:z.string().optional(), resourceType:z.string().optional(), definitionType:z.string().optional(),
-  queries:z.array(z.string().trim().min(1).max(256)).max(8).default([]),
-  operationIds:z.array(capabilityIdSchema).max(24).default([]),
-  includeInputSchema:z.boolean().default(false), includeOutputSchema:z.boolean().default(false),
-  offset:z.number().int().nonnegative().default(0),
-  limit:z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
+  queries:z.array(z.string().trim().min(1).max(256)).max(8).default([]).describe('Alternative plain-language operation searches, ranked by word overlap. Searches operation descriptions, not asset names or live state. Use view=operations.'),
+  operationIds:z.array(capabilityIdSchema).max(24).default([]).describe('Exact known operation IDs. May be combined with queries; results matching either are returned, with exact IDs first.'),
+  includeInputSchema:z.boolean().default(false).describe('Include callable input schemas for returned operations. Request with a focused search or known IDs; omitted by default for compact browsing.'),
+  includeOutputSchema:z.boolean().default(false).describe('Include output schemas when needed to interpret results. Usually leave off; these can be large.'),
+  offset:z.number().int().nonnegative().default(0).describe('Continue the same view and filters from this result offset.'),
+  limit:z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE).describe('Maximum entries in this page. Use a small page when requesting detailed schemas; hasMore indicates additional results.'),
 }).strict()
 const callInputSchema = z.object({
   calls:z.array(z.object({
-    key:z.string().trim().min(1).max(64),
-    operationId:capabilityIdSchema, target:targetInputSchema.optional(), input:z.unknown(),
-    expectedRevision:z.number().int().nonnegative().optional(),
-    idempotencyKey:z.string().min(1).max(256).optional(),
-  }).strict()).min(1).max(MAX_READ_BATCH_SIZE),
+    key:z.string().trim().min(1).max(64).describe('Unique label within this request, echoed with its result.'),
+    operationId:capabilityIdSchema,
+    target:targetInputSchema.optional().describe('Exact discovered Resource or Definition-revision target. If omitted, resolves only when one eligible target is in scope; Workspace operations take no target.'),
+    input:z.unknown().describe('Arguments matching the operation input schema. Reuse known schemas; discover unfamiliar ones before guessing parameters.'),
+    expectedRevision:z.number().int().nonnegative().optional().describe('Supply only when the operation supports a current revision precondition.'),
+    idempotencyKey:z.string().min(1).max(256).optional().describe('Retry key only for operations advertising acceptsIdempotencyKey. Verify unknown change outcomes rather than blindly retrying.'),
+  }).strict()).min(1).max(MAX_READ_BATCH_SIZE).describe('One read or change, or a batch of independent reads. Results follow request order; concurrent reads are not an atomic snapshot.'),
 }).strict()
 
 const catalogPath = (workspacePath: string, kind: 'capabilities' | 'definitions' | 'resources'): string => `${workspacePath}/${kind}`
@@ -318,8 +321,8 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
 
   const explore: Tool = {
     name: 'workspace_explore',
-    description: 'Explore the current Room Scope: discover exact Resources and Definitions, then find the read or change operations they advertise.',
-    usage: 'Start with view="scope" for orientation. Use view="operations" with plain-language queries to find likely operations, then request schemas by exact operationIds. Schemas are omitted from broad text searches to keep discovery compact. Focus indicates attention and never expands Room Scope.',
+    description: 'Discover scoped Resources and Definitions, or search their available read/change operations. Request input schemas directly with a focused search; reuse known targets and operations without mandatory rediscovery.',
+    usage: 'Choose scope for exact targets or operations for callable behavior. Focused operation searches can include input schemas in the same call; schemas are omitted unless requested. Focus indicates attention and never expands Room Scope.',
     returns: 'The current Room Scope, focused subjects, exact targets, compact metadata, and/or matching operations. Returned targets can be passed unchanged to workspace_call.',
     parameters: z.toJSONSchema(exploreInputSchema, { io: 'input' }),
     execute: async (rawParams, context) => {
@@ -380,16 +383,8 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
           .sort((left, right) => Number(exactIds.has(right.id)) - Number(exactIds.has(left.id)) || score(right) - score(left) || left.id.localeCompare(right.id))
         const combined = view === 'scope'
           ? [...definitions.map(value => ({ kind: 'definition' as const, value })), ...resources.map(value => ({ kind: 'resource' as const, value }))]
-          : view === 'operations'
-            ? operations.map(value => ({ kind: 'operation' as const, value }))
-            : [
-                ...definitions.map(value => ({ kind: 'definition' as const, value })),
-                ...resources.map(value => ({ kind: 'resource' as const, value })),
-                ...operations.map(value => ({ kind: 'operation' as const, value })),
-              ]
+          : operations.map(value => ({ kind: 'operation' as const, value }))
         const page = combined.slice(offset, offset + limit)
-        const schemaRequested = params.includeInputSchema === true || params.includeOutputSchema === true
-        const exactSchemaSelection = operationIds.length > 0
         return { success: true, data: {
           workspaceId: deps.workspaceId,
           scope: resolved.scope,
@@ -399,9 +394,6 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
           offset,
           returned: page.length,
           hasMore: offset + page.length < combined.length,
-          ...(schemaRequested && !exactSchemaSelection ? {
-            schemaGuidance: 'Schemas are returned only for exact operationIds. Repeat with the selected operationId values and the requested schema flags.',
-          } : {}),
           definitions: page.filter(item => item.kind === 'definition').map(item => compactDefinition(item.value as ModuleDefinitionDescriptor)),
           resources: page.filter(item => item.kind === 'resource').map(item => compactResource(item.value as ModuleResourceDescriptor)),
           operations: page.filter(item => item.kind === 'operation').map(item => {
@@ -413,8 +405,8 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
               operationId: id,
               ...(queries.length > 0 ? { matchedQueries: queries.filter(query => textMatchScore(operation, query) > 0) } : {}),
               ...(matchedTerms.length > 0 ? { matchedTerms } : {}),
-              ...(exactSchemaSelection && exactIds.has(id) && params.includeInputSchema === true ? { inputSchema } : {}),
-              ...(exactSchemaSelection && exactIds.has(id) && params.includeOutputSchema === true ? { outputSchema } : {}),
+              ...(params.includeInputSchema === true ? { inputSchema } : {}),
+              ...(params.includeOutputSchema === true ? { outputSchema } : {}),
             }
           }),
         } }

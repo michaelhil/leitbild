@@ -13,15 +13,15 @@ The relationship that permits an Actor to participate in one Room.
 _Avoid_: Workspace access policy, Module provisioning state
 
 **Assistance Room**:
-An explicitly created Room whose Subject Selection identifies the Workspace Resources or exact Definition Revisions the conversation is about. The selection supplies discoverable context, not permission or automatic control, and the Room may remain useful when a selected Resource is later removed.
+An explicitly created Room whose Scope identifies the Workspace or Resources the conversation is about. The Room may remain useful when a selected Resource is later removed; creating or copying a Simulation Run does not create a Room.
 _Avoid_: Companion Room, default Room, Binding, hard-coded simulation controller
 
-**Subject Selection**:
-The durable set or collection rule describing which Resources and exact Definition Revisions an Assistance Room discusses. It defines conversational scope, not current screen focus or authority.
-_Avoid_: Tool Grant, Focused Subject, copied Resource state
+**Room Scope**:
+The Workspace, exact Resource, or Resource collection available to a Room's Agents. Collection membership may include future copies or select explicit members; current browser attention never expands this boundary.
+_Avoid_: Tool Grant, Subject Selection, copied Resource state
 
 **Leitbild Assistant**:
-The single reusable Room and ordinary Agent that handles general product questions, Workspace exploration, and scenario authoring for one Workspace through explicit tools and Tool Grants.
+An ordinary Agent that handles product questions, exploration and authoring within its Room Scope using configured skills and tools.
 _Avoid_: Assistant service, scenario generator, privileged code agent, Assistant Pack
 
 **Message**:
@@ -33,7 +33,7 @@ A declarative coordination sequence executed through Rooms and their members.
 _Avoid_: Composition Definition, cross-Module workflow engine
 
 **Room Definition**:
-An Agents-owned Definition whose immutable revision creates a Room, its initial Memberships, Agent Profiles, semantic Tool Grants, selected Packs, prompt, delivery mode, and Prompt Deck.
+An Agents-owned Definition whose immutable revision creates a Room, its initial Memberships, Agent Profiles, selected Packs, prompt, delivery mode, and Prompt Deck.
 _Avoid_: live Room state, Composition Definition, browser launch procedure
 
 **Prompt Deck**:
@@ -52,24 +52,16 @@ _Avoid_: hard-coded controller for a particular Resource
 The durable behavior and runtime configuration of an Agent, excluding concrete Module Resource ids.
 _Avoid_: Composition Definition, persistent cross-Module Resource link
 
-**Tool Grant**:
-Permission for an Agent to invoke either one named Capability or read-only Capabilities applicable to its current Room Subject Selection. Subject Selection alone never grants access, and a grant never makes an inapplicable Capability valid for a Resource.
-_Avoid_: implicit tool availability, Agent-to-Resource connection
-
 **Progressive Discovery**:
 Agent-directed acquisition of proportionate Workspace evidence through compact catalogs, searchable Capability descriptions, exact schemas, and bounded reads. The Agent decides what to inspect and when it has enough evidence; it is guidance, not a mandatory retrieval sequence.
 _Avoid_: eager state dump, rigid lookup workflow, universal situation-report service
-
-**Workspace Capability Broker**:
-The generic `workspace_catalog`, `workspace_capabilities`, and `workspace_invoke` tool surface derived at runtime whenever an Agent has one or more Tool Grants. It discovers current Resources and Capabilities and enforces grants without becoming authored Agent behavior.
-_Avoid_: repeating broker tool names in Agent Tool Selection, Module-specific client code, persisted Resource ids
 
 **Room Pack Set**:
 The complete set of installed Agent Packs whose contributions are available in one Room.
 _Avoid_: treating every installed Pack as active, or treating Pack activation as an Agent tool grant
 
 **Agent Tool Selection**:
-The exact authored set of Agents tools one Agent may use. Pack activation makes a tool available to the Room but never adds it to an Agent Tool Selection; the Workspace Capability Broker is derived separately from Tool Grants.
+The exact authored set of Agents tools one Agent may use. Pack activation makes a tool available to the Room but never selects it for an Agent; generic Workspace discovery, invocation and Room evidence retrieval remain available to every Agent.
 _Avoid_: implicit Pack-wide grants, required-tools preflight lists, or conflating Agents tools with Workspace Capabilities
 
 **Agent Skill Selection**:
@@ -79,7 +71,7 @@ _Avoid_: name-based Skill scope, global Skill injection, permission policy
 **Context View**:
 A bounded, derived representation of relevant Workspace and Resource state supplied to an Agent for one decision.
 World context presents transparent attention items and a representative operational-object cross-section; an Agent narrows it with searchable Capabilities and reads details only when needed.
-Focused Subjects may identify the Client's few visible live Resources or exact Definition Revisions, but are transient and grant no authority.
+Focused subjects identify the Client's visible live Resources or exact Definition Revisions, but are transient and grant no authority.
 _Avoid_: copied domain state, persisted generated prompt, current mutable Definition inference
 
 **Generation Metadata**:

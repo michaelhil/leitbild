@@ -8,6 +8,7 @@ import {
   type WorkspaceRoomScope,
 } from '@leitbild/contracts'
 import { createWorkspaceCapabilityTools } from './workspace-capability-tools.ts'
+import { toolsToDefinitions } from '../../llm/tool-capability.ts'
 
 const workspaceId = newWorkspaceId()
 const moduleId = moduleIdSchema.parse('world')
@@ -92,7 +93,7 @@ describe('Workspace progressive-discovery tools', () => {
   })
   test('filters all result kinds and operations consistently', async () => {
     const [explore] = makeTools({kind:'workspace'})
-    expect(await explore!.execute({view:'all',definitionType:definition.type},context)).toMatchObject({
+    expect(await explore!.execute({view:'operations',definitionType:definition.type},context)).toMatchObject({
       success:true,data:{resources:[],operations:[{operationId:inspectDefinitionId}]},
     })
     expect(await explore!.execute({view:'operations',resourceType:run.type,operationIds:[inspectDefinitionId]},context))
@@ -167,18 +168,24 @@ describe('Workspace progressive-discovery tools', () => {
     expect((result.data as { operations: Array<Record<string, unknown>> }).operations[0]).not.toHaveProperty('searchTerms')
   })
 
-  test('keeps broad operation discovery compact while preserving exact schema lookup', async () => {
+  test('keeps browsing compact and returns requested schemas directly with a focused search', async () => {
     const [explore] = makeTools({ kind: 'resource', resource: run })
     const broad = await explore!.execute({
-      view: 'operations', queries: ['simulation'], includeInputSchema: true, includeOutputSchema: true,
+      view: 'operations', queries: ['simulation'],
     }, context)
-    expect(broad).toMatchObject({ success: true, data: {
-      schemaGuidance: expect.stringContaining('exact operationIds'),
-    } })
     for (const operation of (broad.data as { operations: Array<Record<string, unknown>> }).operations) {
       expect(operation).not.toHaveProperty('inputSchema')
       expect(operation).not.toHaveProperty('outputSchema')
     }
+
+    const focused = await explore!.execute({
+      view: 'operations', queries: ['sitrep'], includeInputSchema: true,
+    }, context)
+    expect(focused).toMatchObject({ success: true, data: {
+      total: 1, operations: [{ operationId: readId, inputSchema: { type: 'object' } }],
+    } })
+    expect(focused.data).not.toHaveProperty('schemaGuidance')
+    expect((focused.data as { operations: unknown[] }).operations[0]).not.toHaveProperty('outputSchema')
 
     const exact = await explore!.execute({
       view: 'operations', operationIds: [readId], includeInputSchema: true, includeOutputSchema: true,
@@ -186,6 +193,36 @@ describe('Workspace progressive-discovery tools', () => {
     expect(exact).toMatchObject({ success: true, data: {
       operations: [{ operationId: readId, inputSchema: { type: 'object' }, outputSchema: { type: 'object' } }],
     } })
+  })
+
+  test('operation pagination is independent of large Resource inventories', async () => {
+    const base = catalogFetch([])
+    const [explore] = createWorkspaceCapabilityTools({
+      workspaceId, hostBaseUrl: 'https://host.test', getRoomScope: () => ({ kind: 'workspace' }),
+      fetchImpl: (async (input, init) => {
+        const response = await base(input, init)
+        if (!String(input).endsWith('/resources')) return response
+        const body = await response.json() as { resources: Array<{ ref: typeof run }> }
+        const original = body.resources[0]!
+        body.resources = Array.from({ length: 60 }, (_, index) => ({ ...original, ref: workspaceResourceReferenceSchema.parse({ ...run, id: `run-${index}` }) }))
+        return Response.json(body)
+      }) as typeof fetch,
+    })
+    expect(await explore!.execute({ view: 'scope' }, context)).toMatchObject({ success: true, data: { returned: 30, hasMore: true } })
+    expect(await explore!.execute({ view: 'operations', queries: ['simulation'], limit: 1, includeInputSchema: true }, context))
+      .toMatchObject({ success: true, data: { total: 2, returned: 1, hasMore: true, resources: [], definitions: [], operations: [{ inputSchema: { type: 'object' } }] } })
+    expect(await explore!.execute({ view: 'operations', queries: ['simulation'], offset: 1, limit: 1 }, context))
+      .toMatchObject({ success: true, data: { total: 2, returned: 1, hasMore: false } })
+    expect(await explore!.execute({ view: 'all' }, context)).toMatchObject({ success: false, error: expect.stringContaining('invalid_tool_input') })
+  })
+
+  test('essential discovery and action semantics reach the actual native model schema', () => {
+    const [explore, call] = toolsToDefinitions(makeTools({ kind: 'workspace' }))
+    const properties = explore!.function.parameters.properties as Record<string, { description?: string }>
+    expect(properties.queries!.description).toContain('not asset names or live state')
+    expect(properties.includeInputSchema!.description).toContain('focused search')
+    const calls = (call!.function.parameters.properties as Record<string, { description?: string }>).calls!
+    expect(calls.description).toContain('not an atomic snapshot')
   })
 
   test('resolves collection membership live and honors exclusions', async () => {
