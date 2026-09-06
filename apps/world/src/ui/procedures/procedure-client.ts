@@ -239,7 +239,14 @@ export const validateProcedureTags = async (
   const result = assertRecord(await querySimulationRunCapability(
     simulationRunId,
     'world.process-plant.procedure-tags.validate',
-    { plantId, tags },
+    // Document annotations and provenance are not signal-validation inputs.
+    // Construct the computational request; keep the original document intact.
+    { plantId, tags: tags.map(tag => ({
+      id: tag.id,
+      ...(tag.simPath === undefined ? {} : { simPath: tag.simPath }),
+      ...(tag.units === undefined ? {} : { units: tag.units }),
+      ...(tag.equipment === undefined ? {} : { equipment: tag.equipment }),
+    })) },
   ), 'procedure tag validation returned a malformed result')
   const rows = assertArray(result.tags, 'procedure tag validation returned no tags').map((value): readonly [string, ProcedureTagValidation] => {
     const row = assertRecord(value, 'procedure tag validation row is malformed')

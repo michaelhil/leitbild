@@ -110,6 +110,12 @@ The first deployed smoke check caught an existing-Run restore regression before 
 
 A frozen pre-upgrade model-digest regression plus serialized checkpoint restore and further exact advancement now guards this cycle. The broader limitation remains explicit: the current fingerprint conflates descriptive artifact changes with simulation-state compatibility. Replacing it needs a deliberately versioned model/state design and old-state evaluation; it is not silently solved by ignoring hashes or normalizing historical data. Existing rod/proxy source descriptions describe the authored intent, not proof of a supported calibration; the value-view result remains authoritative about unavailable conversion.
 
+### Deployment smoke regression: procedure tag request boundary
+
+After existing Runs reopened, the E-0 browser smoke exposed a second integration gap: the UI forwarded newly preserved document annotations to a strict Pack signal-validation request that does not accept document metadata. The client now constructs only the four computational request fields (`id`, `simPath`, `units`, `equipment`). Canonical source metadata is preserved and the Pack schema remains strict. The real frozen E-0→HTTP document decoding→client→Pack handler regression reproduces the former 33 failures and verifies both empty and populated annotations, missing SI-SIG and the pressure-unit warning. Independent critic gate: **GO**, 23 tests / 290 assertions; extended developer gate: 63 tests / 453 assertions and World typecheck. This fixes the consumer boundary, not the parser by deleting useful metadata.
+
+Browser inspection also confirmed source-chain icons and durable execution records. The newly added Actual execution category was initially expanded; it now follows the user's closed-by-default Inspector convention. These observed integration gaps are reported rather than described as a regression-free rollout.
+
 ## Conversational evaluation gate
 
 The production replay uses a fresh Room and a paused copy of the same test-owned Run for each candidate. Exact questions remain unchanged: current Unit 2 sitrep, electrical-output meaning, exact earlier observation, then stale-inventory correction after deleting Unit 2. A reused Room or settings that do not read back as requested aborts before sending questions. A probe timeout cancels that test Agent; it is an experimental deadline, not a product tool-call limit.

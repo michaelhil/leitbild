@@ -234,7 +234,7 @@ const showGenerationQueryModal = (inspection: GenerationQueryInspection, executi
   note.textContent = 'Exact provider-independent request supplied for the final model call, including any retained provider continuation. Request evidence may omit later executed calls or context removed before this request. Actual execution facts appear separately below. Wire transformations are not a captured HTTP request; sensitive protocol state requires explicit disclosure.'
   modal.scrollBody.appendChild(note)
 
-  if (execution) appendCategory(modal.scrollBody, `Actual execution (${execution.calls.length} calls)`, body => appendExecution(body, execution), true)
+  if (execution) appendCategory(modal.scrollBody, `Actual execution (${execution.calls.length} calls)`, body => appendExecution(body, execution))
 
   appendCategory(modal.scrollBody, 'Generation overview', body => {
     body.appendChild(createCodeBlock(prettyJson({
