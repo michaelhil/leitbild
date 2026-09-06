@@ -8,7 +8,7 @@ import { describe, test, expect } from 'bun:test'
 process.env.LEITBILD_TOOL_CHECKIN_ABANDON_MS = '0'
 
 import { createAIAgent } from './ai-agent.ts'
-import type { Decision } from './ai-agent.ts'
+import type { AgentTurnStart, Decision } from './ai-agent.ts'
 import type { AIAgentConfig } from '../core/types/agent.ts'
 import type { LLMProvider } from '../core/types/llm.ts'
 import type { Message, RoomProfile } from '../core/types/messaging.ts'
@@ -61,6 +61,69 @@ const makeMessage = (overrides?: Partial<Message>): Message => ({
 
 
 describe('AI Agent — unit tests', () => {
+  test('captures one independent starting input before a multi-pass turn', async () => {
+    const starts: AgentTurnStart[] = []
+    const decisions: Decision[] = []
+    const order: string[] = []
+    let passes = 0
+    const provider: LLMProvider = {
+      models: async () => ['test-model'],
+      chat: async () => {
+        order.push('model')
+        passes += 1
+        return passes === 1
+          ? { content: '', generationMs: 1, tokensUsed: { prompt: 1, completion: 1 }, toolCalls: [{ id: 'read-1', function: { name: 'read_state', arguments: {} } }] }
+          : { content: 'The state is ready.', generationMs: 1, tokensUsed: { prompt: 1, completion: 1 } }
+      },
+    }
+    const definitions = [{ type: 'function' as const, function: { name: 'read_state', description: 'Read current state', parameters: {} } }]
+    const agent = createAIAgent(makeConfig({ seed: 12, reasoningEffort: 'high' }), provider, decision => decisions.push(decision), {
+      toolDefinitions: definitions,
+      toolExecutor: async () => [{ success: true, data: { state: 'ready' } }],
+      onTurnStart: async input => {
+        await Promise.resolve()
+        starts.push(input)
+        order.push('captured')
+      },
+    })
+    const message = makeMessage({ content: 'Inspect the state.' })
+    const subject = { workspaceId: 'workspace', moduleId: 'world', type: 'world.simulation-run', id: 'run' } as never
+    attachMessageFocus(message, [subject])
+    agent.receive(message)
+    await agent.whenIdle()
+
+    expect(passes).toBe(2)
+    expect(order).toEqual(['captured', 'model', 'model'])
+    expect(starts).toHaveLength(1)
+    expect(starts[0]!.agentId).toBe(agent.id)
+    expect(starts[0]!.roomId).toBe('room-1')
+    expect(decisions[0]!.generationTraceId).toBeDefined()
+    expect(starts[0]!.executionTurnId).toBe(decisions[0]!.generationTraceId!)
+    expect(starts[0]!.config).toMatchObject({ model: 'test-model', seed: 12, reasoningEffort: 'high' })
+    expect(starts[0]!.focusedSubjects).toEqual([subject])
+    expect(starts[0]!.toolDefinitions).toEqual(definitions)
+    expect(starts[0]!.context.messages.some(entry => entry.role === 'tool')).toBe(false)
+    expect(starts[0]!.context.messages.some(entry => entry.content.includes('Inspect the state.'))).toBe(true)
+    definitions[0]!.function.description = 'Changed after completion'
+    agent.updateReasoningEffort('low')
+    expect(starts[0]!.toolDefinitions[0]!.function.description).toBe('Read current state')
+    expect(starts[0]!.config.reasoningEffort).toBe('high')
+  })
+
+  test('failed optional comparison capture warns but does not prevent the normal answer', async () => {
+    const warnings: string[] = []
+    const decisions: Decision[] = []
+    const agent = createAIAgent(makeConfig(), makeLLMProvider('Normal answer'), decision => decisions.push(decision), {
+      onTurnStart: async () => { throw new Error('Evidence storage unavailable') },
+      onEvalEvent: (_scope, event) => { if (event.kind === 'warning') warnings.push(event.message) },
+    })
+    agent.receive(makeMessage())
+    await agent.whenIdle()
+    expect(decisions).toHaveLength(1)
+    expect(decisions[0]!.response).toMatchObject({ action: 'respond', content: 'Normal answer' })
+    expect(warnings.some(message => message.includes('Evidence storage unavailable'))).toBe(true)
+  })
+
   test('clearing an initial tool threshold removes it from persisted config', () => {
     const agent = createAIAgent(makeConfig({ maxToolIterations: 5 }), makeLLMProvider('Done'), () => {})
     expect(agent.getConfig().maxToolIterations).toBe(5)

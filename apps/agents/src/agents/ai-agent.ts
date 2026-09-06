@@ -44,7 +44,20 @@ export type { Decision, OnDecision } from './evaluation.ts'
 
 // === Factory Options ===
 
+/** Captured before the first model pass, never reconstructed from the answer. */
+export interface AgentTurnStart {
+  readonly executionTurnId: string
+  readonly roomId: string
+  readonly agentId: string
+  readonly context: ContextResult
+  readonly config: AIAgentConfig
+  readonly toolDefinitions: ReadonlyArray<ToolDefinition>
+  readonly focusedSubjects: ReadonlyArray<WorkspaceSubjectReference>
+  readonly inReplyTo?: ReadonlyArray<string>
+}
+
 export interface AIAgentOptions {
+  readonly onTurnStart?: (input: AgentTurnStart) => Promise<void>
   readonly executionStore?: ExecutionStore
   readonly executionGrowth?: <T>(bytes: number, work: () => Promise<T>) => Promise<T>
   readonly toolExecutor?: ToolExecutor
@@ -312,6 +325,28 @@ export const createAIAgent = (
       ...(evalEventCb ? { onEvent: evalEventCb } : {}),
       signal,
       ...(checkinEnabled && maxToolIterationsCfg !== undefined ? { requestToolCheckin } : {}),
+    }
+    if (options?.onTurnStart) {
+      signal.throwIfAborted()
+      try {
+        await options.onTurnStart(structuredClone({
+          executionTurnId: traceId,
+          roomId: triggerRoomId,
+          agentId,
+          context: contextResult,
+          config: evalConfig,
+          toolDefinitions: evalToolDefs ?? [],
+          focusedSubjects: focusedSubjectsByRoom.get(triggerRoomId) ?? [],
+          ...(inReplyTo ? { inReplyTo } : {}),
+        }))
+      } catch (error) {
+        // Comparison evidence is optional; its failure must not break ordinary
+        // generation. Report it explicitly and leave this turn unavailable for replay.
+        const message = `Could not retain the starting input for model comparison: ${error instanceof Error ? error.message : String(error)}`
+        console.error(`[${config.name}] ${message}`)
+        evalEventCb?.({ kind: 'warning', message })
+      }
+      signal.throwIfAborted()
     }
     const store = options?.executionStore
     if (!store) return evaluate(

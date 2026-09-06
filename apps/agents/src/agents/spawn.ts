@@ -17,7 +17,7 @@ import type { MessageTarget } from '../core/types/messaging.ts'
 import type { Tool, ToolCall, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, ToolResult } from '../core/types/tool.ts'
 import { owningPackFor } from '../core/types/tool-pack.ts'
 import { createAIAgent } from './ai-agent.ts'
-import type { Decision } from './ai-agent.ts'
+import type { AgentTurnStart, Decision } from './ai-agent.ts'
 import { callLLM, streamLLM } from './evaluation.ts'
 import { addAgentToRoom } from './actions.ts'
 import { createToolSurface } from '../tool-surface/index.ts'
@@ -40,7 +40,7 @@ interface AgentToolContextRef {
 // Tool access has two explicit dimensions: the Agent's exact tool selection
 // and, for Pack-owned tools only, the Room's active Pack set.
 
-const createToolExecutor = (
+export const createToolExecutor = (
   registry: ToolRegistry,
   allowedTools: ReadonlyArray<string>,
   context: ToolContext,
@@ -325,6 +325,12 @@ const resolveAgentTools = async (
 // --- Spawn AI Agent ---
 
 export interface SpawnOptions {
+  readonly onTurnStart?: (input: AgentTurnStart) => Promise<void>
+  readonly onTurnMessageLinked?: (input: {
+    readonly executionTurnId: string
+    readonly roomId: string
+    readonly messageId: string
+  }) => void
   readonly executionStore?: ExecutionStore
   readonly executionGrowth?: ExecutionGrowth
   readonly runToolOperation?: RunToolOperation
@@ -424,6 +430,21 @@ export const spawnAIAgent = async (
       if (decision.generationTraceId && spawnOptions?.executionStore) {
         for (const message of posted) spawnOptions.executionStore.linkMessage(decision.generationTraceId, message.id)
       }
+      if (decision.generationTraceId && spawnOptions?.onTurnMessageLinked) {
+        for (const message of posted) {
+          try {
+            spawnOptions.onTurnMessageLinked({
+              executionTurnId: decision.generationTraceId,
+              roomId: message.roomId,
+              messageId: message.id,
+            })
+          } catch (error) {
+            // The ordinary message has already been delivered. Never turn a
+            // failed optional comparison attachment into a duplicate reply.
+            console.error(`[${config.name}] Could not attach model-comparison evidence to message ${message.id}:`, error)
+          }
+        }
+      }
       if (!decision.generationQuery || !decision.generationTraceId) return
       for (const message of posted) {
         rooms.getRoom(message.roomId)?.setGenerationQuery(
@@ -497,6 +518,7 @@ export const spawnAIAgent = async (
 
   const agent = createAIAgent(config, llmProvider, onDecision, {
     ...toolSupport,
+    ...(spawnOptions?.onTurnStart ? { onTurnStart: spawnOptions.onTurnStart } : {}),
     ...(spawnOptions?.executionStore ? { executionStore: spawnOptions.executionStore } : {}),
     ...(spawnOptions?.executionGrowth ? { executionGrowth: spawnOptions.executionGrowth } : {}),
     getWorkspacePrompt: settings.getPrompt,
