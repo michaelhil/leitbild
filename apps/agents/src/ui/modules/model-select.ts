@@ -24,7 +24,7 @@ interface ModelCatalogProvider {
   models: ModelCatalogModel[]
 }
 
-interface ModelCatalogResponse {
+export interface ModelCatalogResponse {
   providers: ModelCatalogProvider[]
   defaultModel: string
 }

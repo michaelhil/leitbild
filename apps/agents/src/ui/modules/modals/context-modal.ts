@@ -43,7 +43,7 @@ export const continuationMetadata = (messages: ReadonlyArray<QueryMessage>) => m
   }] : []
 })
 
-interface GenerationQueryInspection {
+export interface GenerationQueryInspection {
   readonly messageId: string
   readonly traceId: string
   readonly query: {
@@ -56,6 +56,9 @@ interface GenerationQueryInspection {
     readonly [key: string]: unknown
   }
   readonly generation: Readonly<Record<string, unknown>>
+  readonly executionCalls?: ReadonlyArray<unknown>
+  readonly startingInput?: unknown
+  readonly nestedQueries?: ReadonlyArray<GenerationQueryInspection['query']>
 }
 
 interface ExecutionInspection {
@@ -227,7 +230,7 @@ export const showContextModal = (context: AgentContext, warnings?: string[]): vo
   document.body.appendChild(modal.overlay)
 }
 
-const showGenerationQueryModal = (inspection: GenerationQueryInspection, execution?: ExecutionInspection): void => {
+export const showGenerationQueryModal = (inspection: GenerationQueryInspection, execution?: ExecutionInspection): void => {
   const modal = createModal({ title: 'Prompt & Generation Inspector', width: 'max-w-5xl' })
   const note = document.createElement('div')
   note.className = 'text-xs text-text-subtle mb-3'
@@ -235,6 +238,18 @@ const showGenerationQueryModal = (inspection: GenerationQueryInspection, executi
   modal.scrollBody.appendChild(note)
 
   if (execution) appendCategory(modal.scrollBody, `Actual execution (${execution.calls.length} calls)`, body => appendExecution(body, execution))
+  if (inspection.executionCalls) appendCategory(modal.scrollBody, `Actual comparison execution (${inspection.executionCalls.length} calls)`, body => {
+    inspection.executionCalls!.forEach((call, index) => {
+      const tool = call && typeof call === 'object' && 'tool' in call ? String(call.tool) : 'tool call'
+      appendDisclosure(body, `${index + 1}. ${tool}`, call, false, true)
+    })
+  })
+  if (inspection.startingInput) appendDisclosure(modal.scrollBody, 'Captured task starting input (before original tool calls)', inspection.startingInput)
+  if (inspection.nestedQueries?.length) appendCategory(modal.scrollBody, `Nested model requests (${inspection.nestedQueries.length})`, body => {
+    inspection.nestedQueries!.forEach((query, index) => appendDisclosure(body, `${index + 1}. ${query.model}`, {
+      ...query, messages: query.messages.map(readableQueryMessage),
+    }, false, true))
+  })
 
   appendCategory(modal.scrollBody, 'Generation overview', body => {
     body.appendChild(createCodeBlock(prettyJson({
@@ -299,7 +314,10 @@ const showGenerationQueryModal = (inspection: GenerationQueryInspection, executi
     body.appendChild(createCodeBlock(prettyJson(settings), '18rem'))
   })
 
-  const protocol = continuationMetadata(inspection.query.messages)
+  const protocol = continuationMetadata([
+    ...inspection.query.messages,
+    ...(inspection.nestedQueries ?? []).flatMap(query => query.messages),
+  ])
   if (protocol.length) appendDisclosure(modal.scrollBody, 'Provider continuation metadata (not prompt prose)', protocol)
   const row = document.createElement('div')
   row.className = 'flex justify-end'

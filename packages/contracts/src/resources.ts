@@ -105,6 +105,9 @@ export const moduleCapabilityDescriptorSchema = z.object({
   // caller find an operation without turning labels or aliases into authority.
   searchTerms: z.array(z.string().trim().min(1).max(128)).optional(),
   risk: z.enum(['read', 'write', 'destructive']),
+  // Reads exposing conversation evidence must opt out unless they honor a
+  // comparison's historical conversation boundary.
+  comparisonUnavailableReason: z.string().min(1).optional(),
   idempotent: z.boolean(),
   // Present only when the transport accepts a caller-supplied key for an
   // uncertain retry. This is distinct from semantic repeat safety.

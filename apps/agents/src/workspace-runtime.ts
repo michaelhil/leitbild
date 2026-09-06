@@ -70,7 +70,8 @@ import { createVectorStore, type VectorStore } from './embed/vector-store.ts'
 import { createMemoryIndexer, buildEmbeddingProvidersFromKeys } from './embed/memory-indexer.ts'
 import { createDocumentManager, type DocumentManager } from './documents/manager.ts'
 import type { DocumentMetadata } from './documents/types.ts'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
+import { createComparisons } from './agents/comparisons.ts'
 // Native-only tool calling — no capability probing needed
 import { type SkillStore } from './skills/loader.ts'
 import type { ScriptStore } from './core/scripts/script-store.ts'
@@ -96,6 +97,7 @@ import {
 } from './logging/event-mapping.ts'
 
 export interface AgentsWorkspaceRuntime {
+  readonly comparisons: import('./agents/comparisons.ts').Comparisons
   readonly executionStore: ExecutionStore
   readonly setOnMessagesRemoved: (cb: NonNullable<RoomDirectoryCallbacks['onMessagesRemoved']>) => void
   readonly createRoom: (config: Parameters<RoomDirectory['createRoomSafe']>[0]) => Promise<ReturnType<RoomDirectory['createRoomSafe']>>
@@ -404,6 +406,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
         schedulerRef?.onMessagePosted(roomId, message)
       },
       beforeMessageRemoval: (roomId, messageId) => {
+        comparisons.removeMessages(roomId, messageId)
         if (messageId === undefined) {
           cancelGenerationsInRoom(roomId)
           executionStore.deleteRoom(roomId)
@@ -444,6 +447,12 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     // live in shared (registered once at boot). Only rooms-bound built-ins
     // (room ops, post_to_room, write_script) register into the overlay below.
     const toolRegistry = createOverlayToolRegistry(deployment.sharedToolRegistry)
+    const comparisons = createComparisons({rooms,executions:executionStore,registry:toolRegistry,llm:llmService,growth:executionGrowth,
+      ...(options.workspaceId ? {workspaceId:options.workspaceId}:{}),
+      ...(options.workspaceHostUrl ? {hostUrl:options.workspaceHostUrl}:{}),
+      ...(options.executionsFile ? {root:join(dirname(options.executionsFile),'comparisons')}:{}),
+      ...(options.runWorkspaceOperation ? {runOperation:options.runWorkspaceOperation}:{}),
+    })
 
     // Summary engine + scheduler — default model is the first AI agent's model,
     // or a fallback when none exists yet.
@@ -804,6 +813,9 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
         ...options,
         executionStore,
         executionGrowth,
+        onTurnStart: comparisons.capture,
+        onTurnMessageLinked: comparisons.link,
+        onTurnFinished: comparisons.discard,
         ...(runToolOperation ? { runToolOperation } : {}),
         getSkills: getSkillsForRoom,
         getActiveSkillsDeclarations: getActiveSkillsDeclarationsForRoom,
@@ -946,7 +958,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     }
 
     const system: AgentsWorkspaceRuntime = {
-      rooms, createRoom, settings, bookmarks, team, routeMessage, executionStore,
+      rooms, createRoom, settings, bookmarks, team, routeMessage, executionStore, comparisons,
       llm, llmService, ollama, providerConfig, providerKeys, gateways, monitors,
       providerPolicy: deployment.providerPolicy,
       refreshAvailableModels,

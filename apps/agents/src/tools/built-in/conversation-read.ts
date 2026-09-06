@@ -4,7 +4,7 @@ import type { Tool } from '../../core/types/tool.ts'
 import { extractToolInteractions } from '../../core/tool-evidence.ts'
 import type { ExecutionStore } from '../../core/executions/store.ts'
 
-const inputSchema = z.object({
+export const conversationReadInputSchema = z.object({
   messageId: z.string().optional(),
   turnId: z.string().optional().describe('Actual execution turn, including interrupted turns without a posted message.'),
   beforeTurn: z.object({ startedAt: z.number().int(), id: z.string() }).strict().optional(),
@@ -20,15 +20,18 @@ const inputSchema = z.object({
 export const createConversationReadTool = (rooms: RoomDirectory, executions?: ExecutionStore): Tool => ({
   name: 'conversation_read',
   description: 'Retrieve exact earlier work from this conversation. List messages and execution turns, then use turnId and toolCallId for actual arguments or outcomes, including interrupted turns. messageId reads the message and separately labeled final model-request evidence. Missing execution outcomes are unknown: inspect current state before retrying. Old observations are historical, not current state.',
-  parameters: z.toJSONSchema(inputSchema, { io: 'input' }),
+  parameters: z.toJSONSchema(conversationReadInputSchema, { io: 'input' }),
   execute: async (params, context) => {
-    const parsed = inputSchema.safeParse(params)
+    const parsed = conversationReadInputSchema.safeParse(params)
     if (!parsed.success) return { success: false, error: parsed.error.message }
     const room = context.roomId ? rooms.getRoom(context.roomId) : undefined
     if (!room || !room.getParticipantIds().includes(context.callerId)) {
       return { success: false, error: 'conversation_access_denied: caller must belong to the current Room' }
     }
     const { messageId, turnId, beforeTurn, toolCallId, callIndex, part, offset, limit } = parsed.data
+    if (context.comparison && ((messageId && !context.comparison.messageIds.includes(messageId)) || (turnId && !context.comparison.turnIds.includes(turnId)))) {
+      return { success: false, error: 'comparison_evidence_out_of_scope: only evidence available before this task may be retrieved' }
+    }
     if (toolCallId && callIndex !== undefined) return {success:false,error:'Choose either toolCallId or callIndex, not both'}
     if (messageId && turnId) return {success:false,error:'Choose messageId for model-request evidence or turnId for actual execution evidence, not both'}
     if (turnId) {
@@ -46,13 +49,17 @@ export const createConversationReadTool = (rooms: RoomDirectory, executions?: Ex
         [part]: part === 'arguments' ? call.arguments : call.result,
       } }
     }
-    const messages = room.getRetainedMessages()
+    const messages = room.getRetainedMessages().filter(message => !context.comparison || context.comparison.messageIds.includes(message.id))
     if (!messageId) {
       if (toolCallId || callIndex !== undefined) return {success:false,error:'messageId or turnId is required with a tool-call selector'}
       const ordered = [...messages].reverse()
       // Tests/headless readers may have no execution store. This represents
       // absence of execution recording, not inferred execution from requests.
-      const turns = executions?.listTurns(room.profile.id, { limit: limit + 1, ...(beforeTurn ? { before: beforeTurn } : {}) }) ?? []
+      const turns = context.comparison
+        ? context.comparison.turnIds.map(id => executions?.getTurn(room.profile.id, id)).filter((turn): turn is NonNullable<typeof turn> => turn !== undefined)
+          .sort((a,b) => b.startedAt-a.startedAt || b.id.localeCompare(a.id))
+          .filter(turn => !beforeTurn || turn.startedAt < beforeTurn.startedAt || (turn.startedAt === beforeTurn.startedAt && turn.id < beforeTurn.id)).slice(0,limit+1)
+        : executions?.listTurns(room.profile.id, { limit: limit + 1, ...(beforeTurn ? { before: beforeTurn } : {}) }) ?? []
       const page = turns.slice(0, limit)
       const last = page.at(-1)
       return {success:true,data:{
@@ -68,7 +75,8 @@ export const createConversationReadTool = (rooms: RoomDirectory, executions?: Ex
     }
     const message = messages.find(m=>m.id===messageId)
     if (!message) return {success:false,error:'conversation_message_unavailable: message was removed or is not in this Room'}
-    const record = room.getGenerationQuery(messageId)
+    const savedRecord = room.getGenerationQuery(messageId)
+    const record = !context.comparison || (savedRecord && context.comparison.turnIds.includes(savedRecord.traceId)) ? savedRecord : undefined
     const calls = extractToolInteractions(record?.query.messages ?? [])
     if (!toolCallId && callIndex === undefined) return {success:true,data:{
       evidenceKind:'model_request',messageId,content:message.content,timestamp:message.timestamp,

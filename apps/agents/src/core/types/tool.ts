@@ -26,6 +26,12 @@ export interface ToolLLMRequest {
 }
 
 export interface ToolContext {
+  readonly comparison?: {
+    readonly resourceKeys: ReadonlyArray<string>
+    readonly definitionKeys: ReadonlyArray<string>
+    readonly messageIds: ReadonlyArray<string>
+    readonly turnIds: ReadonlyArray<string>
+  }
   readonly signal?: AbortSignal
   readonly callerId: string
   readonly callerName: string

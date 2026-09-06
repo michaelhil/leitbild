@@ -124,7 +124,7 @@ interface ResolvedScope {
   readonly definitionKeys: ReadonlySet<string>
 }
 
-const resolveScope = (
+export const resolveScope = (
   scope: WorkspaceRoomScope,
   resources: ReadonlyArray<ModuleResourceDescriptor>,
   definitions: ReadonlyArray<ModuleDefinitionDescriptor>,
@@ -312,10 +312,50 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
     for (const response of [definitionResponse, resourceResponse]) {
       if (!response.ok) throw await readHostError(response)
     }
-    return {
+    const catalogs = {
       definitions: workspaceDefinitionCatalogSchema.parse(await definitionResponse.json()),
       resources: workspaceResourceCatalogSchema.parse(await resourceResponse.json()),
       operations,
+    }
+    if (!context.comparison) return catalogs
+    const captured = context.comparison
+    const liveScope = requireRoomScope(context, deps)
+    if (isToolResult(liveScope)) throw liveScope
+    const current = resolveScope(liveScope, catalogs.resources.resources, catalogs.definitions.definitions)
+    // A single-resource Room keeps its reference even after that Resource is
+    // deleted, so validate actual catalog membership, not declared scope keys.
+    const availableResources = new Set(current.resources.map(resource => referenceKey(resource.ref)))
+    const availableDefinitions = new Set(current.definitions.map(definition => referenceKey(definition.ref)))
+    if (captured.resourceKeys.some(key => !availableResources.has(key))) throw new Error('comparison_scope_changed: a captured Resource was deleted or is no longer accessible')
+    if (captured.definitionKeys.some(key => !availableDefinitions.has(key))) throw new Error('comparison_scope_changed: a captured Definition was deleted or is no longer accessible')
+    const resourceKeys = new Set(captured.resourceKeys)
+    const definitionKeys = new Set(captured.definitionKeys)
+    const capabilities = operations.capabilities.filter(op => op.risk === 'read' && !op.comparisonUnavailableReason)
+    const operationIds = new Set(capabilities.map(operation => operation.id))
+    return {
+      resources: { ...catalogs.resources, resources: current.resources.filter(resource => resourceKeys.has(referenceKey(resource.ref))).map(resource => {
+        const { inspectionCapabilityId, deleteCapabilityId, renameCapabilityId, sourceDefinition, ...rest } = resource
+        return {
+          ...rest,
+          capabilityIds: resource.capabilityIds.filter(id => operationIds.has(id)),
+          links: resource.links.filter(link => resourceKeys.has(referenceKey(link.ref))),
+          ...(sourceDefinition && definitionKeys.has(referenceKey(sourceDefinition)) ? { sourceDefinition } : {}),
+          ...(inspectionCapabilityId && operationIds.has(inspectionCapabilityId) ? { inspectionCapabilityId } : {}),
+          ...(deleteCapabilityId && operationIds.has(deleteCapabilityId) ? { deleteCapabilityId } : {}),
+          ...(renameCapabilityId && operationIds.has(renameCapabilityId) ? { renameCapabilityId } : {}),
+        }
+      }) },
+      definitions: { ...catalogs.definitions, definitions: current.definitions.filter(definition => definitionKeys.has(referenceKey(definition.ref))).map(definition => {
+        const { inspectionCapabilityId, primaryCapabilityId, deleteCapabilityId, ...rest } = definition
+        return {
+          ...rest,
+          capabilityIds: definition.capabilityIds.filter(id => operationIds.has(id)),
+          ...(inspectionCapabilityId && operationIds.has(inspectionCapabilityId) ? { inspectionCapabilityId } : {}),
+          ...(primaryCapabilityId && operationIds.has(primaryCapabilityId) ? { primaryCapabilityId } : {}),
+          ...(deleteCapabilityId && operationIds.has(deleteCapabilityId) ? { deleteCapabilityId } : {}),
+        }
+      }) },
+      operations: { ...operations, capabilities },
     }
   }
 
@@ -388,6 +428,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         return { success: true, data: {
           workspaceId: deps.workspaceId,
           scope: resolved.scope,
+          ...(context.comparison ? { comparison: { mode: 'live-read-only', scope: 'captured targets only; new family members are not included' } } : {}),
           focusedSubjects,
           ...(target === undefined ? {} : { target }),
           total: combined.length,

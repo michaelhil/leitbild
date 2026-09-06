@@ -329,6 +329,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
       opts.onWorkspaceRuntimeEvicted?.(system, id)
       for (const [agentId, workspaceId] of agentWorkspaceMap) if (workspaceId === id) agentWorkspaceMap.delete(agentId)
     } finally {
+      await system.comparisons.close()
       system.executionStore.close()
     }
   }
@@ -470,6 +471,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
         opts.onWorkspaceRuntimeEvicted?.(entry.system, id)
         entry.system.captureRegistry.clearAll()
         await entry.autoSaver.dispose()
+        await entry.system.comparisons.close()
         entry.system.executionStore.close()
         map.delete(id)
         for (const [agentId, workspaceId] of agentWorkspaceMap) if (workspaceId === id) agentWorkspaceMap.delete(agentId)
@@ -544,6 +546,9 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   // handler in bootstrap.ts (replaces the single-system flush).
   const shutdown = async (): Promise<void> => {
     shuttingDown = true
+    // Comparisons own admitted work too. Cancel before waiting for operation
+    // leases, otherwise shutdown waits for whole model tasks to finish.
+    await Promise.all([...map.values()].map(entry => entry.system.comparisons.close()))
     await Promise.all([...workspaceOperations.values()].map(scope => scope.close()))
     await Promise.all([...definitionLibraries.values()].map(library => library.close()))
     await Promise.allSettled([...pendingLoads.values()])

@@ -66,8 +66,92 @@ const makeTools = (scope: WorkspaceRoomScope, requests: Request[] = []) => creat
 })
 
 const context = { callerId: 'agent', callerName: 'Analyst', roomId: 'room' }
+const comparisonKey = (ref: { workspaceId: string; moduleId: string; type: string; id: string }) => `${ref.workspaceId}:${ref.moduleId}:${ref.type}:${ref.id}`
+const comparisonContext = {
+  ...context,
+  comparison: { resourceKeys: [comparisonKey(run)], definitionKeys: [comparisonKey(definition)], messageIds: [], turnIds: [] },
+}
 
 describe('Workspace progressive-discovery tools', () => {
+  test('comparison discovery and invocation stay inside the captured read-only target set', async () => {
+    const requests: Request[] = []
+    const [explore, call] = makeTools({ kind: 'workspace' }, requests)
+    const discovered = await explore!.execute({ view: 'scope' }, comparisonContext)
+    expect(discovered).toMatchObject({ success: true, data: { resources: [{ target: runTarget, operationCount: 1, links: [] }] } })
+    expect(JSON.stringify(discovered)).not.toContain('Run 02')
+    expect(await explore!.execute({ view: 'operations', operationIds: [readId, writeId] }, comparisonContext))
+      .toMatchObject({ success: true, data: { operations: [{ operationId: readId }] } })
+    expect(await call!.execute({ calls: [{ key: 'r', operationId: readId, target: runTarget, input: {} }] }, comparisonContext))
+      .toMatchObject({ success: true, data: { results: [{ success: true }] } })
+    const writes = await call!.execute({ calls: [{ key: 'w', operationId: writeId, target: runTarget, input: {} }] }, comparisonContext)
+    expect(writes).toMatchObject({ success: true, data: { results: [{ success: false }] } })
+    const outside = await call!.execute({ calls: [{ key: 'outside', operationId: readId, target: { kind: 'resource', ref: otherRun }, input: {} }] }, comparisonContext)
+    expect(outside).toMatchObject({ success: true, data: { results: [{ success: false }] } })
+    const invoked = requests.filter(request => new URL(request.url).pathname.endsWith('/invoke'))
+    expect(invoked).toHaveLength(1)
+    expect(invoked[0]!.url).toContain(readId)
+  })
+
+  test('comparison family membership cannot grow with a later copy', async () => {
+    const [explore, call] = makeTools({ kind: 'collection', collection: family, members: { mode: 'all', except: [] } })
+    const captured = { ...comparisonContext, comparison: { ...comparisonContext.comparison, resourceKeys: [comparisonKey(family), comparisonKey(run)], definitionKeys: [] } }
+    const discovered = await explore!.execute({ view: 'scope', resourceType: run.type }, captured)
+    expect(discovered).toMatchObject({ success: true, data: { resources: [{ target: runTarget }] } })
+    expect(JSON.stringify(discovered)).not.toContain('Run 02')
+    const familyResult = await explore!.execute({ view: 'scope', resourceType: family.type }, captured)
+    expect(JSON.stringify(familyResult)).not.toContain('run-02')
+    expect(await call!.execute({ calls: [{ key: 'late', operationId: readId, target: { kind: 'resource', ref: otherRun }, input: {} }] }, captured))
+      .toMatchObject({ success: true, data: { results: [{ success: false }] } })
+  })
+
+  test('comparison fails explicitly when captured access is revoked', async () => {
+    const [explore, call] = makeTools({ kind: 'resource', resource: otherRun })
+    const found = await explore!.execute({ view: 'scope' }, comparisonContext)
+    expect(found).toMatchObject({ success: false })
+    expect(JSON.stringify(found)).toContain('comparison_scope_changed')
+    expect(await call!.execute({ calls: [{ key: 'r', operationId: readId, target: runTarget, input: {} }] }, comparisonContext))
+      .toMatchObject({ success: false })
+  })
+
+  test('comparison detects deleted targets even when the Room still holds their references', async () => {
+    const base = catalogFetch([])
+    const [explore] = createWorkspaceCapabilityTools({
+      workspaceId, hostBaseUrl: 'https://host.test', getRoomScope: () => ({ kind: 'resource', resource: run }),
+      fetchImpl: (async (input, init) => {
+        const response = await base(input, init)
+        if (!String(input).endsWith('/resources')) return response
+        const body = await response.json() as { resources: Array<{ ref: { id: string } }> }
+        body.resources = body.resources.filter(resource => resource.ref.id !== run.id)
+        return Response.json(body)
+      }) as typeof fetch,
+    })
+    const result = await explore!.execute({}, { ...comparisonContext, comparison: { ...comparisonContext.comparison, definitionKeys: [] } })
+    expect(result).toMatchObject({ success: false })
+    expect(result.error).toContain('comparison_scope_changed')
+  })
+
+  test('comparison-withheld read operations cannot be discovered or invoked', async () => {
+    const requests: Request[] = []
+    const base = catalogFetch(requests)
+    const [explore, call] = createWorkspaceCapabilityTools({
+      workspaceId, hostBaseUrl: 'https://host.test', getRoomScope: () => ({ kind: 'workspace' }),
+      fetchImpl: (async (input, init) => {
+        const response = await base(input, init)
+        if (!String(input).endsWith('/capabilities')) return response
+        const body = await response.json() as { capabilities: Array<{ id: string; comparisonUnavailableReason?: string }> }
+        body.capabilities.find(operation => operation.id === readId)!.comparisonUnavailableReason = 'Contains conversation data outside the captured history.'
+        return Response.json(body)
+      }) as typeof fetch,
+    })
+    expect(await explore!.execute({ view: 'operations', operationIds: [readId] }, comparisonContext))
+      .toMatchObject({ success: true, data: { operations: [] } })
+    expect(await call!.execute({ calls: [{ key: 'r', operationId: readId, target: runTarget, input: {} }] }, comparisonContext))
+      .toMatchObject({ success: true, data: { results: [{ success: false }] } })
+    expect(requests.some(request => new URL(request.url).pathname.endsWith('/invoke'))).toBe(false)
+    expect(await call!.execute({ calls: [{ key: 'r', operationId: readId, target: runTarget, input: {} }] }, context))
+      .toMatchObject({ success: true, data: { results: [{ success: true }] } })
+  })
+
   test('revalidates cached operations and replaces them when catalog content changes', async () => {
     const base=catalogFetch([])
     let version=1

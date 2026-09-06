@@ -433,6 +433,7 @@ const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorks
   {
     descriptor: {
       id: 'agents.room.inspect',
+      comparisonUnavailableReason: 'Use conversation_read for conversation evidence within the captured task boundary.',
       moduleId: AGENTS_MODULE_ID,
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'agents.room' },
@@ -572,6 +573,7 @@ const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorks
   {
     descriptor: {
       id: 'agents.room.read',
+      comparisonUnavailableReason: 'Use conversation_read for conversation evidence within the captured task boundary.',
       moduleId: AGENTS_MODULE_ID,
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'agents.room' },

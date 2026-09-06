@@ -18,6 +18,7 @@ import { appendWhisperBadge } from '../whisper-badge.ts'
 import { showToast } from '../toast.ts'
 import { $messageThinking } from '../stores.ts'
 import { decorateProductSourceReferences } from '../modals/source-modal.ts'
+import { mountMessageComparisons } from '../message-comparisons.ts'
 
 // Clipboard writes use the current Async Clipboard API. Returns false when
 // the browser or document context does not permit clipboard access.
@@ -392,6 +393,10 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
   }
 
   container.appendChild(div)
+
+  if (msg.generationTraceId && msg.roomId && msg.type === 'chat') {
+    mountMessageComparisons(div, msg, renderMarkdownContent)
+  }
 
   if (isJoinLeave) {
     const remaining = Math.max(0, 10_000 - ageMs)

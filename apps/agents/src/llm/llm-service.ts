@@ -53,7 +53,7 @@ import { resolveProviderAvailability } from './provider-availability.ts'
 
 // === Source tagging — every call site declares its identity ===
 
-export type LLMSource = 'agent' | 'summary' | 'whisper' | 'system'
+export type LLMSource = 'agent' | 'comparison' | 'summary' | 'whisper' | 'system'
 
 // === Codes that warrant advancing to the next chain element ===
 // Single source of truth. Includes `model_unavailable` because cross-provider
