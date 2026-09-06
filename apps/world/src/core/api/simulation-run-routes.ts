@@ -273,8 +273,7 @@ const handleSimulationRunApiInner = async (
   const procedureCatalogMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/procedures$/)
   if (procedureCatalogMatch && req.method === 'GET') {
     const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(procedureCatalogMatch[1] ?? ''))
-    const runtime = config.registry.get(simulationRunId)
-    if (!runtime) return apiError(404, 'simulation_run_not_found', 'simulation run not found')
+    const runtime = await config.registry.load(simulationRunId)
     const sourceIdParam = url.searchParams.get('sourceId')
     const refresh = url.searchParams.get('refresh') === 'true'
     const catalog = await runtime.procedureCatalog({
@@ -288,8 +287,7 @@ const handleSimulationRunApiInner = async (
   if (procedureDocumentMatch && req.method === 'GET') {
     const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(procedureDocumentMatch[1] ?? ''))
     const procedureId = procedureIdSchema.parse(decodeURIComponent(procedureDocumentMatch[2] ?? ''))
-    const runtime = config.registry.get(simulationRunId)
-    if (!runtime) return apiError(404, 'simulation_run_not_found', 'simulation run not found')
+    const runtime = await config.registry.load(simulationRunId)
     const sourceIdParam = url.searchParams.get('sourceId')
     const sourceRevisionParam = url.searchParams.get('sourceRevision')
     const sourcePathParam = url.searchParams.get('sourcePath')
@@ -308,8 +306,7 @@ const handleSimulationRunApiInner = async (
   const procedureRunsMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/procedure-runs$/)
   if (procedureRunsMatch && req.method === 'GET') {
     const simulationRunId = simulationRunIdSchema.parse(decodeURIComponent(procedureRunsMatch[1] ?? ''))
-    const runtime = config.registry.get(simulationRunId)
-    if (!runtime) return apiError(404, 'simulation_run_not_found', 'simulation run not found')
+    const runtime = await config.registry.load(simulationRunId)
     return json({ procedures: runtime.snapshot().procedures ?? { runs: [] } })
   }
 
@@ -338,6 +335,7 @@ export const handleSimulationRunApi = async (
     if (match && req.method !== 'DELETE' && !url.pathname.endsWith('/reset')) release = config.registry.acquireLease(simulationRunIdSchema.parse(decodeURIComponent(match[1]!)), 'api')
     return await handleSimulationRunApiInner(req, url, config)
   } catch (err) {
+    if (err instanceof Error && err.message.startsWith('Simulation Run not found:')) return apiError(404, 'simulation_run_not_found', 'simulation run not found')
     if (err instanceof Error && 'code' in err && err.code === 'storage_budget_exceeded') return apiError(507, 'storage_budget_exceeded', err.message)
     if (err instanceof Error && 'code' in err && err.code === 'history_unavailable') return apiError(503, 'history_unavailable', err.message)
     if (err instanceof Error && 'code' in err && err.code === 'simulation_run_busy') return apiError(409, 'simulation_run_busy', err.message)

@@ -4,6 +4,8 @@ One pure parser and one format AST, consumed directly by Agents and by World's
 source-identity/wire-validation wrapper. No fetch, persistence, model calls,
 unit conversion, runtime signal interpretation, or procedure execution.
 
+The maintained [authoring specification](https://leitbild.app/wiki?path=guides%2Fprocedure-markdown.md) lives in the unified wiki. This package is the executable reader, not a second specification copy.
+
 The supported subset requires `type: procedure`, `procedure-md: 0.7`,
 `procedure-id`, `title`, and explicit stable Step IDs. It reads one-line
 frontmatter scalars/inline lists; ordered Step blocks; Decision numbered paths;

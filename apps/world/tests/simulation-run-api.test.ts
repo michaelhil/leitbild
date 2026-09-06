@@ -167,6 +167,25 @@ const createRun = async (
 const runPath = (id: SimulationRunId, suffix = ''): string =>
   `/simulation-runs/${encodeURIComponent(id)}${suffix}`
 
+test('procedure HTTP reads independently restore a cold Run and keep missing Runs missing', async () => {
+  const registry = await createTestRegistry({ procedureSourceService: createProcedureSourceService() })
+  try {
+    const created = await createRun(registry)
+    for (const suffix of ['/procedures', '/procedures/E-0', '/procedure-runs']) {
+      await registry.close(created.id)
+      expect(registry.get(created.id)).toBeUndefined()
+      const result = await callRoute<Record<string, unknown>>(registry, runPath(created.id, suffix))
+      expect(result.status).toBe(200)
+      expect(registry.get(created.id)).toBeDefined()
+    }
+    await registry.delete(created.id)
+    for (const suffix of ['/procedures', '/procedures/E-0', '/procedure-runs']) {
+      expect((await callRoute(registry, runPath(created.id, suffix))).status).toBe(404)
+      expect(registry.get(created.id)).toBeUndefined()
+    }
+  } finally { await registry.shutdown() }
+})
+
 const capabilityPath = (id: SimulationRunId, capabilityId: string): string =>
   runPath(id, `/capabilities/${encodeURIComponent(capabilityId)}/invoke`)
 

@@ -83,9 +83,8 @@
   }
   const reportIssue = (): void => {
     if (!document || !sourceBaseUrl) return
-    const url = new URL(`${sourceBaseUrl.split('/blob/')[0]}/issues/new`)
-    url.searchParams.set('title', `Wiki feedback: ${document.title}`)
-    url.searchParams.set('body', `Document: ${document.path}\nKnowledge revision: ${document.revision}\nSection: ${location.hash || '(page)'}\n\nSelected text:\n${window.getSelection()?.toString() ?? ''}\n\nComment:\n`)
+    const url = new URL('/api/knowledge/feedback', location.origin)
+    url.search = new URLSearchParams({ path: document.path, revision: document.revision, section: location.hash, quote: window.getSelection()?.toString() ?? '' }).toString()
     window.open(url.href, '_blank', 'noopener')
   }
   onMount(() => {

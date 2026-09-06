@@ -924,11 +924,12 @@
       'Describe the procedure text or procedure-system problem here:',
     ].join('\n')
     const params = new URLSearchParams({
-      title: `[${document.procedureId}] ${step.id}`,
-      body,
-      labels: 'procedure,leitbild',
+      path: document.sourcePath,
+      revision: document.source.revision,
+      section: step.id,
+      quote: body,
     })
-    window.open(`https://github.com/${document.source.repository}/issues/new?${params.toString()}`, '_blank', 'noopener,noreferrer')
+    window.open(`/api/knowledge/feedback?${params.toString()}`, '_blank', 'noopener,noreferrer')
   }
 
   runOnMount(() => {
