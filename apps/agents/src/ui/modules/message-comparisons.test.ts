@@ -27,4 +27,16 @@ describe('comparison model selection', () => {
     expect(result).toEqual([{ value: 'provider:model', label: 'model · provider', available: false, reason: 'API key missing' }])
     expect(pinnedComparisonModels({ defaultModel: 'unpinned', providers: [] })).toEqual([])
   })
+
+  test('disables unknown context capacity without hiding pins or imposing reasoning restrictions', () => {
+    const models = pinnedComparisonModels({ defaultModel: '', providers: [{
+      name: 'provider',
+      availability: { sub: 'ok', reason: '', retryAt: null },
+      models: [0, -1, NaN, 100000].map((contextMax, index) => ({ id: `model-${index}`, contextMax, recommended: false, pinned: true })),
+    }] })
+    expect(models).toHaveLength(4)
+    expect(models.map(model => model.available)).toEqual([false, false, false, true])
+    expect(models.slice(0, 3).every(model => model.reason.includes('Context capacity is unknown'))).toBe(true)
+    expect(models[3]!.value).toBe('provider:model-3')
+  })
 })

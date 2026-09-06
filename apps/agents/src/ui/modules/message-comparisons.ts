@@ -37,12 +37,18 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
 }
 
 export const pinnedComparisonModels = (catalog: ModelCatalogResponse) => catalog.providers.flatMap(provider =>
-  provider.models.filter(model => model.pinned).map(model => ({
-    value: `${provider.name}:${model.id}`,
-    label: `${model.label ?? model.id} · ${provider.name}`,
-    available: provider.availability.sub === 'ok' || provider.availability.sub === 'backoff',
-    reason: provider.availability.reason,
-  })),
+  provider.models.filter(model => model.pinned).map(model => {
+    const routable = provider.availability.sub === 'ok' || provider.availability.sub === 'backoff'
+    const knownCapacity = Number.isFinite(model.contextMax) && model.contextMax > 0
+    return {
+      value: `${provider.name}:${model.id}`,
+      label: `${model.label ?? model.id} · ${provider.name}`,
+      available: routable && knownCapacity,
+      reason: !routable ? provider.availability.reason
+        : !knownCapacity ? 'Context capacity is unknown; refresh the provider model catalog or choose another model.'
+        : provider.availability.reason,
+    }
+  }),
 )
 
 const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error)
@@ -296,7 +302,7 @@ export const mountMessageComparisons = (
         for (const model of models) {
           const button = document.createElement('button')
           button.className = 'btn btn-ghost block w-full text-left my-1'
-          button.textContent = model.label
+          button.textContent = model.available ? model.label : `${model.label} — ${model.reason}`
           button.disabled = !model.available
           button.title = model.available ? model.value : model.reason
           button.onclick = async () => {
