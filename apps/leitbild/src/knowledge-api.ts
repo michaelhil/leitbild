@@ -1,4 +1,4 @@
-import { loadKnowledge, type Knowledge } from '@leitbild/knowledge'
+import { loadKnowledge, knowledgeSnapshotPath, type Knowledge } from '@leitbild/knowledge'
 import { z } from 'zod'
 import { resolve } from 'node:path'
 
@@ -14,7 +14,7 @@ const searchSchema = z.object({ query: z.string().default(''), prefix: z.string(
   includeQuality: z.enum(['true', 'false']).default('false'),
 })
 
-export const knowledgeResponse = async (request: Request, load: () => Promise<Knowledge> = loadKnowledge): Promise<Response> => {
+export const knowledgeResponse = async (request: Request, load: () => Promise<Knowledge> = () => loadKnowledge(knowledgeSnapshotPath(resolve(import.meta.dir, '../../..')))): Promise<Response> => {
   const url = new URL(request.url)
   try {
     const knowledge = await load()

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { link, mkdir, open, readFile, rm } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import { createKnowledge, loadKnowledge, type Knowledge, type KnowledgeSnapshot } from '@leitbild/knowledge'
+import { createKnowledge, type Knowledge, type KnowledgeSnapshot } from '@leitbild/knowledge'
 import { sourceRevisionSchema } from '@leitbild/contracts'
 import { nowIso, procedureCatalogSchema, procedureSourceIdSchema, type ProcedureCatalog, type ProcedureDocument } from '../../core/model/index.ts'
 import { parseProcedureMarkdown } from './procmd.ts'
@@ -108,7 +108,8 @@ export const createProcedureSourceService = (config: {
   const sources = config.sources ?? []
   if (sources.length && !config.retentionDirectory) throw new Error('Local procedures require a World source retention directory')
   const directory = config.retentionDirectory ? resolve(config.retentionDirectory) : undefined
-  const load = config.loadKnowledge ?? loadKnowledge
+  if (sources.length && !config.loadKnowledge) throw new Error('Local procedures require an application-owned knowledge loader')
+  const load = config.loadKnowledge ?? (async (): Promise<Knowledge> => { throw new Error('No procedure knowledge source is configured') })
   const sourceFor = (sourceId?: string): ProcedureSourceConfig => {
     const id = sourceId ?? sources[0]?.sourceId
     const source = sources.find(candidate => candidate.sourceId === id)

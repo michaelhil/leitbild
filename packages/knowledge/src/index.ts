@@ -89,13 +89,13 @@ export const createKnowledge = (input: unknown) => {
 }
 export type Knowledge = ReturnType<typeof createKnowledge>
 
-export const knowledgeSnapshotPath = (): string => process.env.LEITBILD_KNOWLEDGE_SNAPSHOT
-  ?? resolve(import.meta.dir, '../../../knowledge/snapshot.json')
+export const knowledgeSnapshotPath = (applicationRoot: string): string => process.env.LEITBILD_KNOWLEDGE_SNAPSHOT
+  ?? resolve(applicationRoot, 'knowledge/snapshot.json')
 
 // Immutable publications share one parsed index per process. A new file identity
 // invalidates it; failed reads are not cached as successful empty knowledge.
 let cache: { readonly path: string; readonly modified: number; readonly size: number; readonly value: Knowledge } | undefined
-export const loadKnowledge = async (path = knowledgeSnapshotPath()): Promise<Knowledge> => {
+export const loadKnowledge = async (path: string): Promise<Knowledge> => {
   const file = Bun.file(path)
   if (!await file.exists()) throw new Error('Leitbild knowledge publication is unavailable')
   const modified = file.lastModified

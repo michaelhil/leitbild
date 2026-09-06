@@ -1,7 +1,20 @@
 import { describe, expect, test } from 'bun:test'
-import { createKnowledge, headingsFor } from './index.ts'
+import { createKnowledge, headingsFor, knowledgeSnapshotPath, loadKnowledge } from './index.ts'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 
 const revision = 'a'.repeat(40)
+test('publication is loaded from the application release, not the shared package installation', async () => {
+  const release = await mkdtemp(join(tmpdir(), 'knowledge-release-'))
+  try {
+    await mkdir(join(release, 'knowledge'))
+    await writeFile(join(release, 'knowledge/snapshot.json'), JSON.stringify({ revision, documents: [{ path: 'index.md', content: '# Release-owned' }] }))
+    const knowledge = await loadKnowledge(knowledgeSnapshotPath(release))
+    expect(knowledge.index()[0]!.title).toBe('Release-owned')
+    expect(knowledge.revision).toBe(revision)
+  } finally { await rm(release, { recursive: true, force: true }) }
+})
 const fixture = () => createKnowledge({ revision, documents: [
   { path: 'index.md', content: '# Leitbild\n\nReference knowledge.\n## Behavior\nLive state is separate.\n### Detail\nActual observations.\n## Behavior\nSecond section.' },
   { path: 'packs/example.md', content: '# Cooling\n\nA recirculation loop moves coolant.' },

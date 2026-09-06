@@ -375,6 +375,12 @@ for module in world agents; do
   fi
 done
 curl -fsS -o /dev/null http://127.0.0.1:3100/api/workspaces
+# A healthy process is insufficient: verify the release-owned knowledge is readable.
+if ! curl -fsS http://127.0.0.1:3100/api/knowledge/index | jq -e --arg revision ${shellQuote(artifact.manifest.knowledgeRevision)} '.revision == $revision and (.documents | length > 0)' > /dev/null; then
+  echo "Knowledge publication does not match the release" >&2
+  if test -n "$previous"; then ln -sfn "$previous" ${shellQuote(CURRENT_LINK)}; systemctl restart ${SERVICES.join(' ')}; fi
+  exit 1
+fi
 caddy_backup="/etc/caddy/Caddyfile.pre-leitbild-$release_id"
 cp /etc/caddy/Caddyfile "$caddy_backup"
 caddy validate --config "$release_dir/apps/leitbild/deploy/Caddyfile"

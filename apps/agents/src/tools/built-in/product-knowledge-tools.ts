@@ -1,7 +1,7 @@
 import { readFile, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { loadKnowledge, type Knowledge } from '@leitbild/knowledge'
+import { loadKnowledge, knowledgeSnapshotPath, type Knowledge } from '@leitbild/knowledge'
 import type { Tool } from '../../core/types/tool.ts'
 import {
   MAX_PRODUCT_SOURCE_BYTES,
@@ -72,7 +72,7 @@ export const createProductKnowledgeTools = (options: { readonly repoRoot?: strin
   const root = productSourceRoot(options.repoRoot)
   let corpusPromise: Promise<ProductCorpus> | undefined
   const corpus = (): Promise<ProductCorpus> => corpusPromise ??= loadCorpus(root)
-  const knowledge = options.knowledge ?? (() => loadKnowledge(options.repoRoot ? resolve(root, 'knowledge/snapshot.json') : undefined))
+  const knowledge = options.knowledge ?? (() => loadKnowledge(knowledgeSnapshotPath(root)))
 
   const search: Tool = {
     name: 'product_search',
