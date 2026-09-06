@@ -11,6 +11,8 @@ export const isAllowedProductPath = (path: string): boolean => {
   const segments = path.split('/')
   if (segments.some(segment => segment.length === 0 || segment === '.' || segment === '..' || isExcludedProductSegment(segment))) return false
   if (path.startsWith('docs/') || path.startsWith('contexts/')) return true
+  if (path.startsWith('knowledge/')) return path.endsWith('.md')
+  if (/^apps\/[^/]+\/skills\/.+\.md$/.test(path)) return true
   if (/^apps\/[^/]+\/(?:README\.md|src\/)/.test(path)) return true
   return /^packages\/[^/]+\/(?:README\.md|src\/)/.test(path)
 }
@@ -90,7 +92,7 @@ const extensionPattern = [...PRODUCT_SOURCE_EXTENSIONS]
   .join('|')
 
 const inlineReferencePattern = new RegExp(
-  `(?:README\\.md|CONTEXT-MAP\\.md|(?:docs|contexts|apps|packages)\\/[A-Za-z0-9_@./-]+\\.(?:${extensionPattern}))(?::\\d+(?:[-–—]\\d+)?(?:\\s*,\\s*\\d+(?:[-–—]\\d+)?)*)?`,
+  `(?:README\\.md|CONTEXT-MAP\\.md|(?:knowledge|docs|contexts|apps|packages)\\/[A-Za-z0-9_@./-]+\\.(?:${extensionPattern}))(?::\\d+(?:[-–—]\\d+)?(?:\\s*,\\s*\\d+(?:[-–—]\\d+)?)*)?`,
   'g',
 )
 

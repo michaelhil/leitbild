@@ -13,6 +13,7 @@ import {
 } from '@leitbild/contracts'
 import { isHostError } from './errors.ts'
 import type { WorkspaceHost } from './host.ts'
+import { knowledgeResponse } from './knowledge-api.ts'
 
 const contentTypeFor = (path: string): string => {
   if (path.endsWith('.html')) return 'text/html; charset=utf-8'
@@ -25,7 +26,7 @@ const contentTypeFor = (path: string): string => {
 }
 
 const serveUi = async (pathname: string, uiDistPath: string): Promise<Response | null> => {
-  const applicationRoute = pathname === '/workspaces' || /^\/workspaces\/[^/]+$/.test(pathname)
+  const applicationRoute = pathname === '/wiki' || pathname === '/workspaces' || /^\/workspaces\/[^/]+$/.test(pathname)
   const relativePath = applicationRoute ? '/index.html' : pathname
   if (!relativePath.startsWith('/assets/') && relativePath !== '/index.html' && relativePath !== '/favicon.ico') return null
   const filePath = normalize(`${uiDistPath}${relativePath}`)
@@ -94,6 +95,8 @@ export const createWorkspaceHostServer = (config: {
 
         const uiResponse = request.method === 'GET' ? await serveUi(url.pathname, uiDistPath) : null
         if (uiResponse) return uiResponse
+
+        if (url.pathname.startsWith('/api/knowledge/') && request.method === 'GET') return knowledgeResponse(request)
 
         if (url.pathname === '/api/modules' && request.method === 'GET') {
           return Response.json({ modules: config.host.installedModuleIds().map(moduleId => ({ id: moduleId })) })

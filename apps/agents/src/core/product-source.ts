@@ -1,5 +1,6 @@
 import { lstat, readFile, readdir } from 'node:fs/promises'
 import { basename, extname, relative, resolve, sep } from 'node:path'
+import { loadKnowledge } from '@leitbild/knowledge'
 import {
   PRODUCT_SOURCE_EXTENSIONS,
   isAllowedProductPath,
@@ -94,6 +95,12 @@ export const readProductSource = async (
   requestedPath: string,
   rootOverride?: string,
 ): Promise<ProductSourceDocument> => {
+  if (requestedPath.startsWith('knowledge/')) {
+    const knowledge = await loadKnowledge(rootOverride ? resolve(rootOverride, 'knowledge/snapshot.json') : undefined)
+    const document = knowledge.read(requestedPath.slice('knowledge/'.length))
+    return { path: requestedPath, kind: 'documentation', authority: 'documentation', revision: document.revision,
+      content: document.content, totalLines: document.totalLines }
+  }
   const root = productSourceRoot(rootOverride)
   const path = await resolveProductSourcePath(requestedPath, root)
   const absolutePath = resolve(root, path)

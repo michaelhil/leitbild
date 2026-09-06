@@ -3,6 +3,7 @@
 import { chmod, copyFile, lstat, mkdir, mkdtemp, readlink, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
+import { publishKnowledge } from '@leitbild/knowledge/publish'
 
 const APP_ID = 'leitbild-platform'
 const SSH_HOST = process.env.LEITBILD_SSH_HOST ?? 'samsinn'
@@ -14,6 +15,7 @@ export const PRODUCTION_DEPENDENCY_WORKSPACE_PATHS = [
   'packages/contracts',
   'packages/module-runtime',
   'packages/procmd',
+  'packages/knowledge',
 ] as const
 export const INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS = [
   'packages/integration-tests',
@@ -50,6 +52,8 @@ interface DeploymentManifest {
   readonly releaseId: string
   readonly createdAt: string
   readonly baseCommit: string
+  readonly codeRepository: string
+  readonly knowledgeRevision: string
   readonly branch: string
   readonly dirty: boolean
   readonly worktreeStatus: ReadonlyArray<string>
@@ -218,6 +222,11 @@ const createArtifact = async () => {
     ...await directoryFiles(AGENTS_ROOT, 'src/ui/dist'),
   ])
   const rootEntries: ArtifactEntry[] = ['package.json', 'bun.lock'].map(path => ({ source: join(WORKSPACE_ROOT, path), target: path }))
+  const knowledgeRepository = process.env.LEITBILD_KNOWLEDGE_REPOSITORY ?? resolve(WORKSPACE_ROOT, '../Leitbild-wiki')
+  const knowledge = await publishKnowledge(knowledgeRepository)
+  const knowledgeFile = join(tempRoot, 'knowledge-snapshot.json')
+  await writeFile(knowledgeFile, JSON.stringify(knowledge))
+  const knowledgeEntries: ArtifactEntry[] = [{ source: knowledgeFile, target: 'knowledge/snapshot.json' }]
   const productKnowledgeEntries: ArtifactEntry[] = (await trackedFiles(WORKSPACE_ROOT))
     .filter(path => isProductKnowledgePath(path) && !isDevelopmentOnlyPath(path))
     .map(path => ({ source: join(WORKSPACE_ROOT, path), target: path }))
@@ -230,6 +239,7 @@ const createArtifact = async () => {
   )).flat()
   const entries = [
     ...rootEntries,
+    ...knowledgeEntries,
     ...productKnowledgeEntries,
     ...hostEntries,
     ...worldEntries,
@@ -249,6 +259,8 @@ const createArtifact = async () => {
     releaseId: `${createdAt.replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}-${baseCommit.slice(0, 10)}-${sourceDigest.slice(0, 10)}`,
     createdAt,
     baseCommit,
+    codeRepository: (await capture(['git', 'remote', 'get-url', 'origin'])).trim().replace(/\.git$/, ''),
+    knowledgeRevision: knowledge.revision,
     branch,
     dirty: worktreeStatus.length > 0,
     worktreeStatus,

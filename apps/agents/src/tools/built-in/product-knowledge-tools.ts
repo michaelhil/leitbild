@@ -1,6 +1,7 @@
 import { readFile, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { z } from 'zod'
+import { loadKnowledge, type Knowledge } from '@leitbild/knowledge'
 import type { Tool } from '../../core/types/tool.ts'
 import {
   MAX_PRODUCT_SOURCE_BYTES,
@@ -17,6 +18,7 @@ const MAX_CORPUS_BYTES = 32_000_000
 const MAX_READ_LINES = 200
 
 interface ProductDocument {
+  readonly revision?: string
   readonly path: string
   readonly kind: ProductDocumentKind
   readonly authority: ProductDocumentAuthority
@@ -33,12 +35,16 @@ const searchInputSchema = z.object({
   query: z.string().trim().min(1).max(256),
   kind: z.enum(['all', 'documentation', 'source']).default('all'),
   limit: z.number().int().min(1).max(20).default(8),
+  offset: z.number().int().nonnegative().default(0),
+  includeQuality: z.boolean().default(false),
 }).strict()
 
 const readInputSchema = z.object({
   path: z.string().trim().min(1).max(1_024),
-  startLine: z.number().int().min(1).default(1),
+  startLine: z.number().int().min(1).optional(),
   lineCount: z.number().int().min(1).max(MAX_READ_LINES).default(80),
+  revision: z.string().optional(),
+  section: z.string().optional(),
 }).strict()
 
 const loadCorpus = async (root: string): Promise<ProductCorpus> => {
@@ -62,14 +68,15 @@ const normalizeTerms = (query: string): ReadonlyArray<string> => {
   return meaningful.length > 0 ? meaningful : [query.toLocaleLowerCase()]
 }
 
-export const createProductKnowledgeTools = (options: { readonly repoRoot?: string } = {}): ReadonlyArray<Tool> => {
+export const createProductKnowledgeTools = (options: { readonly repoRoot?: string; readonly knowledge?: () => Promise<Knowledge> } = {}): ReadonlyArray<Tool> => {
   const root = productSourceRoot(options.repoRoot)
   let corpusPromise: Promise<ProductCorpus> | undefined
   const corpus = (): Promise<ProductCorpus> => corpusPromise ??= loadCorpus(root)
+  const knowledge = options.knowledge ?? (() => loadKnowledge(options.repoRoot ? resolve(root, 'knowledge/snapshot.json') : undefined))
 
   const search: Tool = {
     name: 'product_search',
-    description: 'Search the deployed Leitbild documentation and source corpus for authoritative implementation evidence.',
+    description: 'Search the unified Leitbild wiki, executable skill guidance and deployed source. Knowledge explains models and assumptions; source establishes implemented behavior. Both are revision identified.',
     usage: 'Use before explaining Leitbild internals; then read the most relevant exact paths.',
     returns: 'Revision-tagged matches with path, line, and a bounded source snippet.',
     parameters: {
@@ -77,7 +84,9 @@ export const createProductKnowledgeTools = (options: { readonly repoRoot?: strin
       properties: {
         query: { type: 'string', minLength: 1, maxLength: 256 },
         kind: { type: 'string', enum: ['all', 'documentation', 'source'], default: 'all' },
-        limit: { type: 'integer', minimum: 1, maximum: 20, default: 8 },
+        limit: { type: 'integer', minimum: 1, maximum: 20, default: 8, description: 'Maximum matches per corpus: knowledge and deployed source. Coverage and next offsets are returned separately.' },
+        offset: { type: 'integer', minimum: 0, default: 0 },
+        includeQuality: { type: 'boolean', default: false, description: 'Include quality/evaluation evidence only when that material is relevant to the question.' },
       },
       required: ['query'],
     },
@@ -85,8 +94,19 @@ export const createProductKnowledgeTools = (options: { readonly repoRoot?: strin
       const input = searchInputSchema.safeParse(params)
       if (!input.success) return { success: false, error: input.error.message }
       const loaded = await corpus()
+      const warnings: string[] = []
+      let knowledgeMatches: ReadonlyArray<{ path: string; revision: string; kind: string; authority: string; line: number; snippet: string; section?: string | undefined }> = []
+      let knowledgeCoverage: { total: number; returned: number; nextOffset?: number } | undefined
+      if (input.data.kind !== 'source') try {
+        const wiki = await knowledge()
+        const found = wiki.search(input.data.query, { offset: input.data.offset, limit: input.data.limit, includeQuality: input.data.includeQuality })
+        knowledgeCoverage = { total: found.total, returned: found.matches.length, ...(found.nextOffset !== undefined ? { nextOffset: found.nextOffset } : {}) }
+        knowledgeMatches = found.matches.map(match => ({
+          ...match, path: `knowledge/${match.path}`, revision: wiki.revision, kind: 'documentation', authority: 'documentation',
+        }))
+      } catch (error) { warnings.push(error instanceof Error ? error.message : 'Knowledge publication unavailable') }
       const terms = normalizeTerms(input.data.query)
-      const matches = loaded.documents
+      const rankedMatches = loaded.documents
         .filter(document => input.data.kind === 'all' || document.kind === input.data.kind)
         .flatMap(document => {
           const lowerPath = document.path.toLocaleLowerCase()
@@ -107,6 +127,7 @@ export const createProductKnowledgeTools = (options: { readonly repoRoot?: strin
           return [{
             score: pathScore + bestLineScore + coverage + authorityScore,
             path: document.path,
+            revision: document.revision ?? loaded.revision,
             kind: document.kind,
             authority: document.authority,
             line: bestLine + 1,
@@ -114,33 +135,62 @@ export const createProductKnowledgeTools = (options: { readonly repoRoot?: strin
           }]
         })
         .sort((left, right) => right.score - left.score || left.path.localeCompare(right.path))
-        .slice(0, input.data.limit)
         .map(({ score: _score, ...match }) => match)
-      return { success: true, data: { revision: loaded.revision, query: input.data.query, matches } }
+      const matches = rankedMatches.slice(input.data.offset, input.data.offset + input.data.limit)
+      return { success: true, data: { revision: loaded.revision, query: input.data.query, matches: [...knowledgeMatches, ...matches],
+        coverage: { knowledge: knowledgeCoverage, source: { total: rankedMatches.length, returned: matches.length,
+          ...(input.data.offset + matches.length < rankedMatches.length ? { nextOffset: input.data.offset + matches.length } : {}) } },
+        ...(warnings.length ? { warnings } : {}) } }
     },
   }
 
   const read: Tool = {
     name: 'product_read',
-    description: 'Read a bounded line range from an allowlisted Leitbild path returned by product_search.',
+    description: 'Read selected lines or a wiki section from exact discovered paths. Supply requests to retrieve several independent pieces together; each result reports its own revision and coverage.',
     usage: 'Use exact search-result paths. Runtime data, deployment configuration, secrets, generated output, and arbitrary filesystem paths are inaccessible.',
     returns: 'Revision-tagged numbered lines and explicit range metadata.',
     parameters: {
       type: 'object', additionalProperties: false,
       properties: {
         path: { type: 'string', minLength: 1, maxLength: 1024 },
-        startLine: { type: 'integer', minimum: 1, default: 1 },
+        startLine: { type: 'integer', minimum: 1, description: 'Omit to start at the selected section, or line 1 for a whole-document read. Use nextLine to continue.' },
         lineCount: { type: 'integer', minimum: 1, maximum: MAX_READ_LINES, default: 80 },
+        revision: { type: 'string', description: 'Expected document revision from search; mismatch fails rather than silently reading changed text.' },
+        section: { type: 'string', description: 'Knowledge heading anchor; reads that section instead of guessing line offsets.' },
+        requests: { type: 'array', minItems: 1, description: 'Batch of independent reads, instead of the top-level path.', items: {
+          type: 'object', additionalProperties: false, required: ['path'], properties: {
+            path: { type: 'string' }, revision: { type: 'string' }, section: { type: 'string' },
+            startLine: { type: 'integer', minimum: 1 }, lineCount: { type: 'integer', minimum: 1, maximum: MAX_READ_LINES },
+          },
+        } },
       },
-      required: ['path'],
     },
-    execute: async params => {
+    execute: async (params, context) => {
+      if (Array.isArray(params.requests)) {
+        const batch = z.object({ requests: z.array(readInputSchema).min(1) }).strict().safeParse(params)
+        if (!batch.success) return { success: false, error: batch.error.message }
+        return { success: true, data: { results: await Promise.all(batch.data.requests.map(request => read.execute(request, context))) } }
+      }
       const input = readInputSchema.safeParse(params)
       if (!input.success) return { success: false, error: input.error.message }
+      if (input.data.path.startsWith('knowledge/')) {
+        try {
+          const wiki = await knowledge()
+          const result = wiki.read(input.data.path.slice('knowledge/'.length), {
+            ...(input.data.startLine !== undefined ? { startLine: input.data.startLine } : {}), lineCount: input.data.lineCount,
+            ...(input.data.revision ? { revision: input.data.revision } : {}),
+            ...(input.data.section ? { section: input.data.section } : {}),
+          })
+          return { success: true, data: { ...result, path: input.data.path, kind: 'documentation', authority: 'documentation' } }
+        } catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Knowledge read failed' } }
+      }
       const loaded = await corpus()
+      if (input.data.section !== undefined) return { success: false, error: 'section is supported for knowledge paths only; use source line ranges.' }
+      if (input.data.revision && input.data.revision !== loaded.revision) return { success: false, error: 'Source revision changed; rediscover the deployed source.' }
       const document = loaded.documents.find(candidate => candidate.path === input.data.path)
       if (!document) return { success: false, error: 'Path is not in the Leitbild product knowledge corpus; search for an allowed path first.' }
-      const startIndex = input.data.startLine - 1
+      const startLine = input.data.startLine ?? 1
+      const startIndex = startLine - 1
       if (startIndex >= document.lines.length) return { success: false, error: `startLine exceeds the file's ${document.lines.length} lines` }
       const selected = document.lines.slice(startIndex, startIndex + input.data.lineCount)
       return { success: true, data: {
@@ -148,10 +198,10 @@ export const createProductKnowledgeTools = (options: { readonly repoRoot?: strin
         path: document.path,
         kind: document.kind,
         authority: document.authority,
-        startLine: input.data.startLine,
-        endLine: input.data.startLine + selected.length - 1,
+        startLine,
+        endLine: startLine + selected.length - 1,
         totalLines: document.lines.length,
-        content: selected.map((line, index) => `${input.data.startLine + index}: ${line}`).join('\n'),
+        content: selected.map((line, index) => `${startLine + index}: ${line}`).join('\n'),
       } }
     },
   }

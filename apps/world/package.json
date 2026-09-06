@@ -37,6 +37,7 @@
     "health": "bun run check && bun test && bun run build:ui"
   },
   "dependencies": {
+    "@leitbild/knowledge": "workspace:*",
     "@leitbild/procmd": "workspace:*",
     "3d-tiles-renderer": "^0.4.28",
     "@babylonjs/core": "^9.11.0",

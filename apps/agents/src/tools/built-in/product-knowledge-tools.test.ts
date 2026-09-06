@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createProductKnowledgeTools } from './product-knowledge-tools.ts'
+import { createKnowledge } from '@leitbild/knowledge'
 
 const roots: string[] = []
 afterEach(async () => Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))))
@@ -22,6 +23,24 @@ const fixture = async (): Promise<string> => {
 }
 
 describe('product knowledge tools', () => {
+  test('wiki body search, batch reads and revision mismatch preserve evidence identity', async () => {
+    const root = await fixture()
+    const revision = 'a'.repeat(40)
+    const knowledge = createKnowledge({ revision, documents: [{ path: 'index.md', content: '# Reactor\n\n## Cooling\nRecirculation explanation.' }] })
+    const [search, read] = createProductKnowledgeTools({ repoRoot: root, knowledge: async () => knowledge })
+    const context = { callerId: 'a', callerName: 'A' }
+    const result = await search!.execute({ query: 'recirculation' }, context)
+    expect(result.data).toMatchObject({ matches: [{ path: 'knowledge/index.md', revision }] })
+    const batch = await read!.execute({ requests: [
+      { path: 'knowledge/index.md', section: 'cooling', revision },
+      { path: 'knowledge/index.md', revision: 'b'.repeat(40) },
+    ] }, context)
+    expect(batch.success).toBe(true)
+    expect(batch.data).toMatchObject({ results: [
+      { success: true, data: { revision, content: '## Cooling\nRecirculation explanation.' } },
+      { success: false },
+    ] })
+  })
   test('searches and reads only the bounded product corpus', async () => {
     const root = await fixture()
     const [search, read] = createProductKnowledgeTools({ repoRoot: root })
@@ -38,5 +57,6 @@ describe('product knowledge tools', () => {
     expect(JSON.stringify(excerpt.data)).toContain('accelerationMode')
     expect((await read!.execute({ path: '.env' }, context)).success).toBe(false)
     expect((await read!.execute({ path: '../outside' }, context)).success).toBe(false)
+    expect((await read!.execute({ path: 'apps/world/src/execution.ts', section: 'ignored' }, context)).success).toBe(false)
   })
 })
