@@ -221,7 +221,7 @@ const createArtifact = async () => {
     'src/ui/dist.css',
     ...await directoryFiles(AGENTS_ROOT, 'src/ui/dist'),
   ])
-  const rootEntries: ArtifactEntry[] = ['package.json', 'bun.lock'].map(path => ({ source: join(WORKSPACE_ROOT, path), target: path }))
+  const rootEntries: ArtifactEntry[] = ['package.json', 'bun.lock', 'LICENSE', 'NOTICE.md'].map(path => ({ source: join(WORKSPACE_ROOT, path), target: path }))
   const knowledgeRepository = process.env.LEITBILD_KNOWLEDGE_REPOSITORY ?? resolve(WORKSPACE_ROOT, '../Leitbild-wiki')
   const knowledge = await publishKnowledge(knowledgeRepository)
   const knowledgeFile = join(tempRoot, 'knowledge-snapshot.json')
