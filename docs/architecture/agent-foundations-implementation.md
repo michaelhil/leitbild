@@ -141,3 +141,11 @@ A controlled two-request diagnostic reproduced optional history selectors becomi
 The existing OpenAI-compatible serializer now explicitly defaults to non-strict generation for OpenAI and OpenRouter tool schemas. Tool-owned validation remains strict; parameters, stored requests, Room scope and the history reader are unchanged. Request entries are cloned so no provider-specific field leaks into another route or its cache markers. Explicitly supplied strict settings are preserved. No nullable-schema rewriting, permissive argument coercion, retry rule or new tool is introduced. The Query Inspector continues to identify its payload as a provider-independent request, not captured HTTP wire data.
 
 The original model comparison remains archived as transport-confounded evidence. Fresh GPT-5.4 and Astra checks must demonstrate actual execution retrieval after deployment before this repair is considered verified. No production model default has changed.
+
+### Bounded artifact inspection and selector errors
+
+The existing Process Plant artifact query now defaults to a compact component/file index. Exact component selection returns that component's authored JSON and existing source links; exact indexed-file selection returns a bounded line range. File hashes identify the actual bytes, and emitted continuation inputs pin the hash so a changed deployment cannot silently produce mixed-source pages. Existing source-link coordinates remain zero-based; source-read line numbers are one-based. No parser, document store, or semantic index was introduced.
+
+The implementation bundle is still behavior files and their direct named imports, not the complete Pack, application, or integration implementation. Selective results explicitly state that boundary; missing implementation in this bundle does not establish its absence elsewhere. Explicit full export retains the original complete artifact payload, and the UI requests that mode deliberately.
+
+Unknown display selectors now use the same discoverable domain-target rejection as unknown profile selectors, without degrading Runtime health. Display projection validates its actual lens input instead of first rejecting it through the narrower display-read schema. These changes do not alter model graphs, checkpoint identity, persisted state, provider configuration, or tool-call identities.

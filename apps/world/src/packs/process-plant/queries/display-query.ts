@@ -7,10 +7,11 @@ import {
 } from '../graph/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import type { ProcessPlantVariableHandle } from '../runtime/variable-table.ts'
-import { requirePlant } from './common.ts'
+import { capabilityTargetNotFound, requirePlant } from './common.ts'
 import { compileProcessDisplay } from '../displays/compiler.ts'
 import {
   listProcessPlantDisplayDefinitionsForGraph,
+  listProcessPlantDisplayIds,
   resolveProcessPlantDisplayDefinitionForGraph,
 } from '../displays/catalog.ts'
 import {
@@ -54,6 +55,9 @@ const compiledDisplayFor = (
   system: ProcessPlantRuntimeInstance,
   displayId: string,
 ): CompiledDisplayRuntimePlan => {
+  if (!listProcessPlantDisplayIds().includes(displayId)) return capabilityTargetNotFound(
+    `Process Plant display not found: ${displayId}. Discover exact display ids with world.process-plant.displays.list.`,
+  )
   const existingCache = compiledDisplayCache.get(system)
   const existingPlan = existingCache?.get(displayId)
   if (existingPlan) return existingPlan
@@ -218,18 +222,20 @@ export const answerProcessPlantDisplayQuery = (config: {
       })),
     }
   }
-  const payload = displayQuerySchema.parse(config.request.input)
+  const projection = config.request.capabilityId === 'world.process-plant.display.project'
+    ? graphLensQuerySchema.parse(config.request.input)
+    : undefined
+  const payload = projection ?? displayQuerySchema.parse(config.request.input)
   const system = requirePlant(config.plants, payload.plantId)
   const plan = compiledDisplayFor(system, payload.displayId)
   const display = plan.display
   if (config.request.capabilityId === 'world.process-plant.display.read') {
     return { plantId: system.plant.id, display }
   }
-  if (config.request.capabilityId === 'world.process-plant.display.project') {
-    const projectPayload = graphLensQuerySchema.parse(config.request.input)
+  if (projection) {
     const graphProjection = projectProcessGraph({
       graph: system.plant.graph,
-      ...projectPayload.lens,
+      ...projection.lens,
     })
     const displayProjection = projectCompiledProcessDisplay({
       display,

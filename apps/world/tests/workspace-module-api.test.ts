@@ -68,6 +68,71 @@ const provision = async (registry: WorldWorkspaceRuntimeRegistry, workspaceId: W
   })
 
 describe('World Module API', () => {
+  test('validates every selective artifact mode through the real runtime and HTTP output boundary', async () => {
+    const registry = await createRegistry()
+    const workspaceId = newWorkspaceId()
+    await provision(registry, workspaceId)
+    const run = await registry.getLoaded(workspaceId)!.simulationRuns.create({ scenarioId: 'test-plant' })
+    const capabilityId = 'world.process-plant.artifact.read'
+    const access = accessContextSchema.parse({ workspaceId, requestId: newRequestId(), actor: { kind: 'ai', id: 'artifact-reader' } })
+    const read = (input: unknown) => call<{ result: Record<string, unknown> }>(registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${capabilityId}/invoke`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, capabilityId, resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }, input, access }),
+      })
+    const identity = { plantId: 'plant:halden-a1', artifact: 'authored-spec' }
+    const index = await read(identity)
+    expect(index.status).toBe(200)
+    expect(index.body!.result).toMatchObject({ mode: 'index', hasMore: false })
+    expect(index.body!.result).not.toHaveProperty('content')
+    const files = index.body!.result.sourceFiles as Array<{ path: string; sha256: string }>
+    const source = await read({ ...identity, mode: 'source', sourcePath: files[0]!.path, expectedSha256: files[0]!.sha256, lineCount: 2 })
+    expect(source.status).toBe(200)
+    expect(source.body!.result).toMatchObject({ mode: 'source', returnedLines: 2, sha256: files[0]!.sha256 })
+    const component = await read({ ...identity, mode: 'component', componentId: 'core' })
+    expect(component.status).toBe(200)
+    expect(component.body!.result).toMatchObject({ mode: 'component', authoredComponent: { id: 'core' } })
+    for (const artifact of ['authored-spec', 'compiled-graph-mermaid']) {
+      const full = await read({ ...identity, artifact, mode: 'full' })
+      expect(full.status).toBe(200)
+      expect(full.body!.result).not.toHaveProperty('mode')
+      expect(typeof full.body!.result.content).toBe('string')
+    }
+    expect((await read({ ...identity, mode: 'source', sourcePath: '../../etc/passwd' })).status).toBe(404)
+    expect((await read({ ...identity, mode: 'source', sourcePath: files[0]!.path, expectedSha256: '0'.repeat(64) })).status).toBe(400)
+    expect((await read({ ...identity, mode: 'full', componentId: 'core' })).status).toBe(400)
+  })
+
+  test('rejects unknown display selectors as domain errors and accepts discovered selectors after recovery', async () => {
+    const registry = await createRegistry()
+    const workspaceId = newWorkspaceId()
+    await provision(registry, workspaceId)
+    const run = await registry.getLoaded(workspaceId)!.simulationRuns.create({ scenarioId: 'test-plant' })
+    const access = accessContextSchema.parse({ workspaceId, requestId: newRequestId(), actor: { kind: 'ai', id: 'display-reader' } })
+    const read = (capabilityId: string, input: unknown) => call<{ result?: Record<string, unknown>; error?: { code: string; message: string } }>(registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${capabilityId}/invoke`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, capabilityId, resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }, input, access }),
+      })
+    const plantId = 'plant:halden-a1'
+    const validProjection = await read('world.process-plant.display.project', { plantId, displayId: 'unit-overview', lens: { mode: 'selected-only', selectedComponentIds: ['core'] } })
+    expect(validProjection.status).toBe(200)
+    for (const capabilityId of ['world.process-plant.display.read', 'world.process-plant.display.snapshot', 'world.process-plant.display.project', 'world.process-plant.display-profile.read']) {
+      const projection = capabilityId.endsWith('.project') ? { lens: { mode: 'selected-only', selectedComponentIds: ['core'] } } : {}
+      const profile = capabilityId.includes('display-profile')
+      const response = await read(capabilityId, { plantId, [profile ? 'profileId' : 'displayId']: 'guessed-overview', ...projection })
+      expect(response.status).toBe(404)
+      expect(response.body!.error).toMatchObject({ code: 'capability_target_not_found', message: expect.stringContaining('Discover exact') })
+      expect(run.health().every(health => health.state === 'ready' && health.failureCount === 0 && health.lastFailure === undefined)).toBe(true)
+      const valid = await read(capabilityId, { plantId, [profile ? 'profileId' : 'displayId']: profile ? 'leitbild-rail' : 'unit-overview', ...projection })
+      expect(valid.status).toBe(200)
+      expect(valid.body!.result).toHaveProperty('plantId', plantId)
+      if (projection.lens) expect(valid.body!.result!.graphProjection).toMatchObject({ componentIds: ['core'] })
+    }
+    expect((await read('world.process-plant.display.snapshot', { plantId, displayId: 'unit-overview', unexpected: true })).status).toBe(400)
+    expect((await read('world.process-plant.display.snapshot', { plantId, displayId: 'unit-overview' })).status).toBe(200)
+  })
+
   test('procedure reads select canonical evidence without duplicating Markdown or changing the UI document', async () => {
     const registry = await createRegistry()
     const workspaceId = newWorkspaceId()
