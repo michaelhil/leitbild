@@ -163,7 +163,7 @@ export const createComparisons = (deps: Dependencies) => {
         release(key,record)
       })
   }
-  const publicAlternative = ({query: _query,calls: _calls,toolTrace:_trace,nestedQueries:_nested,...alternative}:Comparison) => alternative
+  const publicAlternative = ({query: _query,calls,toolTrace:_trace,nestedQueries:_nested,...alternative}:Comparison) => ({...alternative,toolCount:calls.length})
   const list = async (roomId:string,messageId:string) => {
     const record = await load(roomId,messageId)
     try { return {available:!!record, ...(!record?{reason:'Original starting input was not retained'}:{}), alternatives:record?.alternatives.map(publicAlternative) ?? []} }

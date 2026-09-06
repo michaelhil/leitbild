@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { pinnedComparisonModels } from './message-comparisons.ts'
+import { comparisonSummary, pinnedComparisonModels } from './message-comparisons.ts'
 import type { ModelCatalogResponse } from './model-select.ts'
 
 describe('comparison model selection', () => {
@@ -38,5 +38,16 @@ describe('comparison model selection', () => {
     expect(models.map(model => model.available)).toEqual([false, false, false, true])
     expect(models.slice(0, 3).every(model => model.reason.includes('Context capacity is unknown'))).toBe(true)
     expect(models[3]!.value).toBe('provider:model-3')
+  })
+})
+
+describe('comparison generation summary', () => {
+  test('shows human labels, elapsed time, tool count and reported cache counters', () => {
+    expect(comparisonSummary({ startedAt: 1000, finishedAt: 6250, toolCount: 3, metrics: {
+      modelCalls: 2, promptTokens: 2500, completionTokens: 50, cacheRead: 0, cacheCreation: 100,
+    } })).toBe('5.3s elapsed · 3 tool calls · 2 model calls · 2,500 input tokens · 50 output tokens · cache 0 read, 100 written')
+  })
+  test('preserves unknown cache status rather than treating it as zero', () => {
+    expect(comparisonSummary({ startedAt: 1000, finishedAt: 3000, toolCount: 0 })).toBe('2.0s elapsed · 0 tool calls · cache not reported')
   })
 })

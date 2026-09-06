@@ -73,6 +73,9 @@ describe('full-turn model comparisons', () => {
       expect(finished.status).toBe('completed')
       expect(finished.content).toBe('Independently assessed.')
       expect(finished.calls.map(evidence => evidence.tool)).toEqual(['product_search', 'product_read'])
+      const summary = (await state.comparisons.list(state.room.profile.id, messageId)).alternatives[0]!
+      expect(summary.toolCount).toBe(2)
+      expect('calls' in summary).toBe(false)
       expect(state.requests).toHaveLength(3)
       expect(state.requests.every(request => request.model === 'provider:alternative' && request.seed === 17)).toBe(true)
       expect(state.requests[0]!.messages).toEqual([{ role: 'user', content: 'Assess the current situation.' }])

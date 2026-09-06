@@ -13,6 +13,7 @@ interface Alternative {
   readonly error?: string
   readonly startedAt: number | string
   readonly finishedAt?: number | string
+  readonly toolCount?: number
   readonly metrics?: Readonly<Record<string, unknown>>
   readonly query?: GenerationQueryInspection['query']
   readonly toolTrace?: ReadonlyArray<unknown>
@@ -52,6 +53,28 @@ export const pinnedComparisonModels = (catalog: ModelCatalogResponse) => catalog
 )
 
 const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error)
+
+export const comparisonSummary = (item: Pick<Alternative, 'startedAt' | 'finishedAt' | 'toolCount' | 'metrics'>): string => {
+  const parts: string[] = []
+  if (item.finishedAt !== undefined) {
+    const elapsed = new Date(item.finishedAt).getTime() - new Date(item.startedAt).getTime()
+    if (Number.isFinite(elapsed) && elapsed >= 0) parts.push(`${(elapsed / 1000).toFixed(1)}s elapsed`)
+  }
+  if (item.toolCount !== undefined) parts.push(`${item.toolCount} tool call${item.toolCount === 1 ? '' : 's'}`)
+  const metrics = item.metrics
+  const labels: Record<string, string> = { modelCalls: 'model calls', promptTokens: 'input tokens', completionTokens: 'output tokens' }
+  for (const [key, label] of Object.entries(labels)) {
+    const value = metrics?.[key]
+    if (typeof value === 'number') parts.push(`${value.toLocaleString('en-GB')} ${label}`)
+  }
+  const cacheLabels: Record<string, string> = { cacheRead: 'read', cacheCreation: 'written', cacheMiss: 'miss' }
+  const cache = Object.entries(cacheLabels).flatMap(([key, label]) => {
+    const value = metrics?.[key]
+    return typeof value === 'number' ? [`${value.toLocaleString('en-GB')} ${label}`] : []
+  })
+  parts.push(cache.length ? `cache ${cache.join(', ')}` : 'cache not reported')
+  return parts.join(' · ')
+}
 // Preserve the viewed tab through ordinary room rerenders; never stores answers
 // or changes which version participates in model context.
 const viewedAlternatives = new Map<string, string>()
@@ -241,13 +264,11 @@ export const mountMessageComparisons = (
       renderMarkdown(content, item.content)
       alternativeBody.appendChild(content)
     }
+    const brief = document.createElement('p')
+    brief.className = 'text-[10px] text-text-subtle mt-2'
+    brief.textContent = comparisonSummary(item)
+    alternativeBody.appendChild(brief)
     if (item.metrics) {
-      const brief = document.createElement('p')
-      brief.className = 'text-[10px] text-text-subtle mt-2'
-      const counters = ['promptTokens', 'completionTokens', 'modelCalls', 'cacheRead', 'cacheCreation', 'cacheMiss']
-        .flatMap(key => typeof item.metrics![key] === 'number' ? [`${key}: ${(item.metrics![key] as number).toLocaleString()}`] : [])
-      brief.textContent = counters.length ? counters.join(' · ') : 'Generation metadata available below.'
-      alternativeBody.appendChild(brief)
       const metrics = document.createElement('details')
       const summary = document.createElement('summary')
       summary.className = 'text-xs text-text-subtle cursor-pointer mt-2'
