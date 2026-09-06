@@ -303,7 +303,7 @@ describe('Simulation Run API', () => {
       })
       const history = await callRoute<{
         readonly status: { readonly seriesCount: number; readonly sampleCount: number }
-        readonly series: ReadonlyArray<{ readonly id: string; readonly subjectId: string; readonly signalId: string }>
+        readonly series: ReadonlyArray<{ readonly id: string; readonly runtimeId: string; readonly subjectId: string; readonly signalId: string }>
       }>(registry, runPath(created.id, '/history'))
       expect(history.status).toBe(200)
       expect(history.body.status.seriesCount).toBeGreaterThan(0)
@@ -314,11 +314,20 @@ describe('Simulation Run API', () => {
 
       const samples = await callRoute<{ readonly samples: ReadonlyArray<{ readonly seriesId: string; readonly value: unknown }> }>(
         registry,
-        runPath(created.id, `/history/samples?seriesId=${encodeURIComponent(powerSeries.id)}&limit=2`),
+        runPath(created.id, `/history/samples?mode=raw&seriesId=${encodeURIComponent(powerSeries.id)}&limit=2`),
       )
       expect(samples.status).toBe(200)
       expect(samples.body.samples.length).toBeGreaterThan(0)
       expect(samples.body.samples.every(sample => sample.seriesId === powerSeries.id)).toBe(true)
+      const summaryPath = runPath(created.id, `/history/samples?runtimeId=${encodeURIComponent(powerSeries.runtimeId)}&seriesId=${encodeURIComponent(powerSeries.id)}`)
+      const summary = await callRoute<{ mode: string; windowSummary: { sampleCount: number; qualityCounts: { good: number } } }>(registry, summaryPath)
+      expect(summary.body.mode).toBe('summary')
+      expect(summary.body.windowSummary.sampleCount).toBeGreaterThan(0)
+      expect(summary.body).not.toHaveProperty('samples')
+      expect(summary.body).not.toHaveProperty('hasMore')
+      expect((await callRoute(registry, `${summaryPath}&beforeSequence=1`)).status).toBe(400)
+      expect((await callRoute(registry, runPath(created.id, '/history/samples'))).status).toBe(400)
+      expect((await callRoute(registry, `${summaryPath}&mode=unknown`)).status).toBe(400)
     } finally {
       await closeAll(registry)
     }
@@ -347,7 +356,7 @@ describe('Simulation Run API', () => {
 
       const samples = await callRoute<{ readonly samples: ReadonlyArray<{ readonly value: unknown }> }>(
         registry,
-        runPath(created.id, `/history/samples?seriesId=${encodeURIComponent(statusSeries.id)}&limit=1`),
+        runPath(created.id, `/history/samples?mode=raw&seriesId=${encodeURIComponent(statusSeries.id)}&limit=1`),
       )
       expect(samples.body.samples).toHaveLength(1)
       expect(typeof samples.body.samples[0]?.value).toBe('string')

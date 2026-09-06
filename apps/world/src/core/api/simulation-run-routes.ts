@@ -7,6 +7,7 @@ import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../simulation-runs/runtime.ts'
 import { apiError,json,readJson } from './responses.ts'
 import { runCopyInputSchema } from '../simulation-runs/execution.ts'
+import { recordingSeriesQuerySchema } from '../model/recording.ts'
 
 const defaultOperatorActorId = actorIdSchema.parse('actor:operator')
 
@@ -228,10 +229,11 @@ const handleSimulationRunApiInner = async (
       ...(optional('to') === undefined ? {} : { to: historyTimestamp.parse(optional('to')) }),
       ...(limitParam === undefined ? {} : { limit: z.coerce.number().int().positive().max(10_000).parse(limitParam) }),
     }
-    return json(runtime.recordedSamples({ ...query,
+    return json(runtime.recordedSamples(recordingSeriesQuerySchema.parse({ ...query,
+      mode: optional('mode'),
       ...(optional('timeAxis') === undefined ? {} : { timeAxis: z.enum(['observed', 'simulation']).parse(optional('timeAxis')) }),
       ...(optional('beforeSequence') === undefined ? {} : { beforeSequence: z.coerce.number().int().positive().parse(optional('beforeSequence')) }),
-    }))
+    })))
   }
 
   const historyMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/history$/)

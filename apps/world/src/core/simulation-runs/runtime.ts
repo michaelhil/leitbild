@@ -2,7 +2,7 @@ import type { WorkspaceId } from '@leitbild/contracts'
 import { randomUUID } from 'node:crypto'
 import type { RunHistorian } from '../../features/historian/store.ts'
 import type { RunHistorianStatus } from '../../features/historian/policy.ts'
-import type { RecordingPage } from '../model/recording.ts'
+import { recordingSeriesQuerySchema, type RecordingPage } from '../model/recording.ts'
 import { prepareProcedureCommand } from '../../features/procedures/run-state.ts'
 import { createProcedureSourceService,type ProcedureSourceService } from '../../features/procedures/source.ts'
 import type { PackRuntimeConnection,PackRuntimeEmission,PackRuntimeEvent,PackRuntimeHealth,PackRuntimeRealtimeInput,PackRuntimeRealtimeMessage,SimulationCapability } from '../../simulation/protocol.ts'
@@ -1251,25 +1251,31 @@ export const createSimulationRunRuntime = async (config: {
     health: () => config.runtimeConnection.health?.() ?? [],
     recordingStatus: () => config.historian?.status() ?? null,
     recordingSeries: () => config.historian?.listSeries() ?? [],
-    recordedSamples: (query) => config.historian?.query(query) ?? {
-      samples: [],
-      windowSummary: {
-        sampleCount: 0,
-        firstSample: null,
-        lastSample: null,
-        distinctValueCount: 0,
-        numericMinimum: null,
-        numericMaximum: null,
-        numericAverage: null,
-      },
-      hasMore: false,
-      nextBeforeSequence: null,
-      retainedFromSequence: null,
-      retainedFromObservedAt: null,
-      retainedToObservedAt: null,
-      retainedFromSimulationTime: null,
-      retainedToSimulationTime: null,
-      retentionGap: false,
+    recordedSamples: (input) => {
+      const query = recordingSeriesQuerySchema.parse(input)
+      if (config.historian) return config.historian.query(query)
+      // No recording selection is legitimate; an unavailable configured
+      // historian has its own throwing query and never uses this empty view.
+      return {
+        ...(query.mode === 'raw' ? { mode: 'raw' as const, samples: [], hasMore: false, nextBeforeSequence: null } : { mode: 'summary' as const }),
+        windowSummary: {
+          sampleCount: 0,
+          seriesCount: 0,
+          qualityCounts: { good: 0, uncertain: 0, bad: 0 },
+          firstSample: null,
+          lastSample: null,
+          distinctValueCount: 0,
+          numericMinimum: null,
+          numericMaximum: null,
+          numericAverage: null,
+        },
+        retainedFromSequence: null,
+        retainedFromObservedAt: null,
+        retainedToObservedAt: null,
+        retainedFromSimulationTime: null,
+        retainedToSimulationTime: null,
+        retentionGap: false,
+      }
     },
     close: async (): Promise<void> => {
       closing = true

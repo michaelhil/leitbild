@@ -33,6 +33,7 @@ import {
   procedureSourceIdSchema,
   recordingSampleSchema,
   recordingSeriesDescriptorSchema,
+  recordingSeriesQuerySchema,
   scenarioGuidanceSchema,
   simulationClockStateSchema,
   simulationRunEventSchema,
@@ -121,15 +122,11 @@ const listHistorySeriesInputSchema = z.object({
   offset: z.number().int().nonnegative().default(0),
   limit: z.number().int().positive().max(500).default(30).describe('Page size. Start small after filtering and request another page only when hasMore and the task needs it.'),
 }).strict()
-const readHistorySamplesInputSchema = z.object({
+const readHistorySamplesInputSchema = recordingSeriesQuerySchema.safeExtend({
   runtimeId: z.string().trim().min(1).max(128),
   seriesId: z.string().trim().min(1).max(128),
-  from: historyTimestampSchema.optional(),
-  to: historyTimestampSchema.optional(),
-  limit: z.number().int().positive().max(10_000).default(500),
-  timeAxis: z.enum(['observed', 'simulation']).optional(),
-  beforeSequence: z.number().int().positive().optional(),
-}).strict()
+  limit: z.number().int().positive().max(10_000).default(500).describe('Raw page size only; not a summary or tool-use limit.'),
+})
 const createScenarioInputSchema = z.object({ source: scenarioDefinitionSchema }).strict()
 const setAgentRestrictionsInputSchema = z.object({
   restrictions: agentRestrictionsSchema,
@@ -280,20 +277,19 @@ const compactHistorySampleSchema = recordingSampleSchema.omit({ seriesId: true }
   sequence: z.number().int().positive(),
 }).strict()
 
-const simulationHistorySamplesSchema = z.object({
+const simulationHistoryWindowSchema = z.object({
   series: recordingSeriesDescriptorSchema.extend({ runtimeId: z.string().min(1) }).strict(),
-  samples: z.array(compactHistorySampleSchema),
   windowSummary: z.object({
     sampleCount: z.number().int().nonnegative(),
+    seriesCount: z.number().int().nonnegative(),
+    qualityCounts: z.object({ good: z.number().int().nonnegative(), uncertain: z.number().int().nonnegative(), bad: z.number().int().nonnegative() }).strict(),
     firstSample: compactHistorySampleSchema.nullable(),
     lastSample: compactHistorySampleSchema.nullable(),
     distinctValueCount: z.number().int().nonnegative(),
     numericMinimum: z.number().finite().nullable(),
     numericMaximum: z.number().finite().nullable(),
-    numericAverage: z.number().finite().nullable(),
+    numericAverage: z.number().finite().nullable().describe('Sample-weighted arithmetic mean, including every retained numeric sample quality; not a time-weighted or continuous-process average.'),
   }).strict(),
-  hasMore: z.boolean(),
-  nextBeforeSequence: z.number().int().positive().nullable(),
   retainedFromSequence: z.number().int().positive().nullable(),
   retainedFromObservedAt: historyTimestampSchema.nullable(),
   retainedToObservedAt: historyTimestampSchema.nullable(),
@@ -301,6 +297,10 @@ const simulationHistorySamplesSchema = z.object({
   retainedToSimulationTime: historyTimestampSchema.nullable(),
   retentionGap: z.boolean(),
 }).strict()
+const simulationHistorySamplesSchema = z.discriminatedUnion('mode', [
+  simulationHistoryWindowSchema.extend({ mode: z.literal('summary') }),
+  simulationHistoryWindowSchema.extend({ mode: z.literal('raw'), samples: z.array(compactHistorySampleSchema), hasMore: z.boolean(), nextBeforeSequence: z.number().int().positive().nullable() }),
+])
 
 const SCENARIO_DEFINITION_TYPE = 'world.scenario'
 
@@ -1354,8 +1354,8 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       moduleId: WORLD_MODULE_ID,
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
-      title: 'Read Simulation History Samples',
-      description: 'Reads a bounded page for one exact historian series. Obtain the runtimeId and opaque seriesId pair from world.simulation-run.history-series.list; do not substitute a subject id or live signal path. windowSummary covers the complete filtered interval independently of page size, so trend endpoints, extrema, and change detection do not require a large raw sample page. Retained observed/simulation-time bounds and retentionGap report missing older evidence.',
+      title: 'Read Simulation History',
+      description: 'Reads one exact historian series. Default summary returns retained-window counts, quality counts, endpoints and extrema without raw rows; choose raw for sequence-paginated samples. Obtain runtimeId and opaque seriesId together from world.simulation-run.history-series.list. Window summaries cover the whole requested time interval, independently of raw page size and cursor. Averages are sample-weighted, not time-weighted; bad/uncertain samples remain included and identified in qualityCounts. Bounds describe retained sampled evidence; retentionGap indicates requests older than those bounds, not complete capture or proof of pruning. Reads are live queries, not a snapshot across calls. Use current-state reads for a current sitrep; history is useful for change, timing, causes or trends.',
       risk: 'read',
       idempotent: true,
       inputSchema: z.toJSONSchema(readHistorySamplesInputSchema, { io: 'input' }),
@@ -1385,21 +1385,12 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
           guidance: 'Discover the exact runtimeId and opaque series id pair by filtering the series catalog; do not use a subject id or live signal path as either field.',
         })
       }
-      const query = {
-        ...(input.timeAxis === undefined ? {} : { timeAxis: input.timeAxis }),
-        ...(input.beforeSequence === undefined ? {} : { beforeSequence: input.beforeSequence }),
-        runtimeId: input.runtimeId,
-        seriesId: input.seriesId,
-        ...(input.from === undefined ? {} : { from: new Date(input.from).toISOString() }),
-        ...(input.to === undefined ? {} : { to: new Date(input.to).toISOString() }),
-        limit: input.limit,
-      }
-      const page = runtime.recordedSamples(query)
-      const compact = ({ runtimeId: _runtimeId, seriesId: _seriesId, ...sample }: (typeof page.samples)[number]) => sample
+      const page = runtime.recordedSamples(input)
+      const compact = ({ runtimeId: _runtimeId, seriesId: _seriesId, ...sample }: import('../model/recording.ts').RecordedSample) => sample
       return json({ result: {
         series,
         ...page,
-        samples: page.samples.map(compact),
+        ...(page.mode === 'raw' ? { samples: page.samples.map(compact) } : {}),
         windowSummary: {
           ...page.windowSummary,
           firstSample: page.windowSummary.firstSample === null ? null : compact(page.windowSummary.firstSample),

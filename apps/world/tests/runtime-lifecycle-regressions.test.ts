@@ -55,7 +55,7 @@ test('damaged optional history does not prevent checkpoint restore or masquerade
     const restored = await registry.load(run.id)
     expect(restored.snapshot().objects.map(object => object.id)).toEqual(objectIds)
     expect(restored.recordingStatus()).toMatchObject({ captureState: 'unavailable', sampleCount: null, lastError: expect.stringContaining('recording_samples') })
-    expect(() => restored.recordedSamples({})).toThrow('Historian unavailable')
+    expect(() => restored.recordedSamples({ mode: 'raw' })).toThrow('Historian unavailable')
     await restored.setClock({ paused: false })
     await registry.close(run.id)
     expect(await readFile(path)).toEqual(original)

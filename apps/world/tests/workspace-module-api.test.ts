@@ -138,7 +138,7 @@ describe('World Module API', () => {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspaceId, capabilityId, resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }, input, access }),
       })
-    const series = { runtimeId: selectedSeries.runtimeId, seriesId: selectedSeries.id }
+    const series = { runtimeId: selectedSeries.runtimeId, seriesId: selectedSeries.id, mode: 'raw' }
     const missing = await read({ runtimeId: selectedSeries.runtimeId, seriesId: 'series:not-real', limit: 1 })
     expect(missing.status).toBe(404)
     expect(missing.body).toMatchObject({ error: {
@@ -159,10 +159,18 @@ describe('World Module API', () => {
     expect(first.body!.result.windowSummary.sampleCount).toBeGreaterThan(0)
     expect(first.body!.result.windowSummary.firstSample).not.toBeNull()
     expect(first.body!.result.samples.every(sample => sample.runtimeId === undefined && sample.seriesId === undefined)).toBe(true)
+    const summary = await read({ runtimeId: selectedSeries.runtimeId, seriesId: selectedSeries.id, timeAxis: 'simulation', to: '2026-01-02T00:00:00Z' })
+    expect(summary.status).toBe(200)
+    expect(summary.body!.result).toMatchObject({ mode: 'summary', windowSummary: first.body!.result.windowSummary })
+    expect(summary.body!.result).not.toHaveProperty('samples')
+    expect(summary.body!.result).not.toHaveProperty('nextBeforeSequence')
+    expect((await read({ ...series, mode: 'summary', beforeSequence: 1 })).status).toBe(400)
+    expect((await read({ runtimeId: selectedSeries.runtimeId })).status).toBe(400)
     const cursor = first.body!.result.nextBeforeSequence
     if (cursor !== null) {
       const second = await read({ ...series, timeAxis: 'simulation', to: '2026-01-02T00:00:00Z', beforeSequence: cursor, limit: 2 })
       expect(second.body!.result.samples.every(sample => sample.sequence < cursor)).toBe(true)
+      expect(second.body!.result.windowSummary).toEqual(first.body!.result.windowSummary)
     }
     const observed = await read({ ...series, timeAxis: 'observed', to: '2026-01-02T00:00:00Z', limit: 2 })
     expect(observed.body!.result.samples).toEqual([])

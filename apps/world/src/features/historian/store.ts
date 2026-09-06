@@ -4,6 +4,7 @@ import { Database } from 'bun:sqlite'
 import { resolveHistorianLimits, type RunHistorianStatus, type HistorianLimits } from './policy.ts'
 import {
   packRuntimeRecordingBatchSchema,
+  recordingSeriesQuerySchema,
   type PackRuntimeRecordingBatch,
   type RecordedSample,
   type RecordingSeriesDescriptor,
@@ -46,6 +47,10 @@ interface RetainedBoundsRow {
 
 interface WindowSummaryRow {
   readonly sample_count: number
+  readonly series_count: number
+  readonly good_count: number
+  readonly uncertain_count: number
+  readonly bad_count: number
   readonly distinct_value_count: number
   readonly numeric_minimum: number | null
   readonly numeric_maximum: number | null
@@ -314,7 +319,8 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
         FROM recording_series
         ORDER BY runtime_id, subject_id, signal_id
       `).all().map(descriptorFromRow),
-    query: (query): RecordingPage => {
+    query: (input): RecordingPage => {
+      const query = recordingSeriesQuerySchema.parse(input)
       const selectionPredicates: string[] = []
       const selectionValues: Array<string | number> = []
       for (const [column, value] of [
@@ -341,22 +347,15 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
       const timeColumn = query.timeAxis === 'simulation' ? 'simulation_time' : 'observed_at'
       if (query.from !== undefined) { predicates.push(`${timeColumn} >= ?`); values.push(new Date(query.from).toISOString()) }
       if (query.to !== undefined) { predicates.push(`${timeColumn} <= ?`); values.push(new Date(query.to).toISOString()) }
-      if (query.beforeSequence !== undefined) { predicates.push('sequence < ?'); values.push(query.beforeSequence) }
-      const limit = Math.min(10_000, Math.max(1, query.limit ?? 2_000))
-      const filteredValues = [...values]
-      values.push(limit + 1)
       const selectedColumns = `sequence, runtime_id, series_id, observed_at, simulation_time, elapsed_ms,
                value_type, value_number, value_text, value_boolean, quality`
-      const rows = database.query<SampleRow, Array<string | number>>(`
-        SELECT ${selectedColumns}
-        FROM recording_samples
-        ${predicates.length === 0 ? '' : `WHERE ${predicates.join(' AND ')}`}
-        ORDER BY sequence DESC
-        LIMIT ?
-      `).all(...values)
       const filteredWhere = predicates.length === 0 ? '' : `WHERE ${predicates.join(' AND ')}`
       const window = database.query<WindowSummaryRow, Array<string | number>>(`
         SELECT COUNT(*) AS sample_count,
+               COUNT(DISTINCT json_array(runtime_id, series_id)) AS series_count,
+               COALESCE(SUM(quality = 'good'), 0) AS good_count,
+               COALESCE(SUM(quality = 'uncertain'), 0) AS uncertain_count,
+               COALESCE(SUM(quality = 'bad'), 0) AS bad_count,
                COUNT(DISTINCT CASE value_type
                  WHEN 'number' THEN 'n:' || CAST(value_number AS TEXT)
                  WHEN 'boolean' THEN 'b:' || CAST(value_boolean AS TEXT)
@@ -367,13 +366,13 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
                AVG(value_number) AS numeric_average
         FROM recording_samples
         ${filteredWhere}
-      `).get(...filteredValues)!
+      `).get(...values)!
       const firstRow = database.query<SampleRow, Array<string | number>>(`
         SELECT ${selectedColumns} FROM recording_samples ${filteredWhere} ORDER BY ${timeColumn} ASC, sequence ASC LIMIT 1
-      `).get(...filteredValues)
+      `).get(...values)
       const lastRow = database.query<SampleRow, Array<string | number>>(`
         SELECT ${selectedColumns} FROM recording_samples ${filteredWhere} ORDER BY ${timeColumn} DESC, sequence DESC LIMIT 1
-      `).get(...filteredValues)
+      `).get(...values)
       const selectedWhere = selectionPredicates.length === 0 ? '' : `WHERE ${selectionPredicates.join(' AND ')}`
       const retained = database.query<RetainedBoundsRow, Array<string | number>>(`
         SELECT MIN(sequence) AS first_sequence,
@@ -395,26 +394,44 @@ export const createRunHistorian = (path: string, options: { readonly limits?: Pa
       const retentionGap = (query.beforeSequence !== undefined && retainedFromSequence !== null && query.beforeSequence <= retainedFromSequence)
         || (retainedStart !== null && requestedFrom !== undefined && requestedFrom < retainedStart)
         || (retainedStart !== null && requestedTo !== undefined && requestedTo < retainedStart)
-      const samples = rows.slice(0, limit).map(sampleFromRow)
-      return {
-        samples,
+      const shared = {
         windowSummary: {
           sampleCount: window.sample_count,
+          seriesCount: window.series_count,
+          qualityCounts: { good: window.good_count, uncertain: window.uncertain_count, bad: window.bad_count },
           firstSample: firstRow === null ? null : sampleFromRow(firstRow),
           lastSample: lastRow === null ? null : sampleFromRow(lastRow),
           distinctValueCount: window.distinct_value_count,
-          numericMinimum: window.numeric_minimum,
-          numericMaximum: window.numeric_maximum,
-          numericAverage: window.numeric_average,
+          // A raw wide export may mix units/subjects/runtimes. Numerical
+          // aggregation only has a defined meaning for one actual series.
+          numericMinimum: window.series_count === 1 ? window.numeric_minimum : null,
+          numericMaximum: window.series_count === 1 ? window.numeric_maximum : null,
+          numericAverage: window.series_count === 1 ? window.numeric_average : null,
         },
-        hasMore: rows.length > limit,
-        nextBeforeSequence: rows.length > limit ? samples.at(-1)!.sequence : null,
         retainedFromSequence,
         retainedFromObservedAt,
         retainedToObservedAt,
         retainedFromSimulationTime,
         retainedToSimulationTime,
         retentionGap,
+      }
+      if (query.mode === 'summary') return { mode: 'summary', ...shared }
+
+      // The raw cursor limits only this page, never the whole-window summary.
+      if (query.beforeSequence !== undefined) { predicates.push('sequence < ?'); values.push(query.beforeSequence) }
+      const limit = query.limit ?? 2_000
+      const rows = database.query<SampleRow, Array<string | number>>(`
+        SELECT ${selectedColumns}
+        FROM recording_samples
+        ${predicates.length === 0 ? '' : `WHERE ${predicates.join(' AND ')}`}
+        ORDER BY sequence DESC
+        LIMIT ?
+      `).all(...values, limit + 1)
+      const samples = rows.slice(0, limit).map(sampleFromRow)
+      return {
+        mode: 'raw', ...shared, samples,
+        hasMore: rows.length > limit,
+        nextBeforeSequence: rows.length > limit ? samples.at(-1)!.sequence : null,
       }
     },
     status: (): RunHistorianStatus => {

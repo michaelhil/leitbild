@@ -64,4 +64,12 @@ Verification includes actual local HTTP fixtures through Agent/API/provider rout
 
 Known boundary: tool-internal LLM calls inherit live model settings, but their full nested prompts and cancellation are not newly captured by the main Generation Inspector. Optional provider-native cache policy controls and native Responses transport remain separate measured decisions, not implied functionality.
 
+### Historian reads accepted (Phase 4B)
+
+The existing history read operation now defaults to a summary for one exact runtime/series pair. Raw mode adds a bounded, sequence-paginated page. Both return the same whole-interval summary regardless of raw page size or cursor. Summary mode never retrieves raw rows. Quality counts expose bad and uncertain evidence; sample-weighted means are explicitly not time-weighted or continuous-process averages. Broad raw exports retain row identities and do not produce a numerical aggregate across different series.
+
+One shared input schema validates direct, HTTP and Module calls. Retention bounds and missing/unavailable-history behavior remain explicit; no capture, storage format, retention, caching or snapshot layer was added. Guidance recommends current-state reads for current situation reports and history when timing, change or causal investigation needs it, without limiting how many tool calls an agent can make.
+
+Independent Ruthless Critic gate: **GO**, 41 tests / 268 assertions passed, including mixed qualities, both time axes, equal timestamps, later raw pages, appended data, malformed queries and unavailable storage. A local 250,000-sample check confirmed zero raw rows in summary mode. SQL aggregation still scales with the selected interval; this is a payload reduction, not a constant-time or production-latency claim.
+
 Reference, procedure and conversational evaluation phases remain in progress. The user's model-selection gate precedes post-upgrade conversation testing; deterministic regression tests continue during coding.
