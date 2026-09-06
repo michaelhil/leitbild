@@ -36,10 +36,11 @@ describe('process plant model composition', () => {
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))
     const restored = createProcessPlantRuntime({ system, restoredCheckpoint: persisted })
-    expect(restored.snapshot()).toEqual(running.snapshot())
+    // JSON persistence normalizes signed zero; compare the persisted representation.
+    expect(JSON.stringify(restored.snapshot())).toBe(JSON.stringify(running.snapshot()))
     restored.tick(700)
     running.tick(700)
-    expect(restored.checkpoint()).toEqual(running.checkpoint())
+    expect(JSON.stringify(restored.checkpoint())).toBe(JSON.stringify(running.checkpoint()))
   })
 
   test('publishes branded signal references as their truthful JSON wire types', () => {
