@@ -26,11 +26,13 @@ import { actorIdSchema, objectIdSchema } from '../src/core/model/ids.ts'
 import { procedureTestDocument } from './procedure-fixtures.ts'
 import type { ProcedureDocument } from '../src/core/model/procedures.ts'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
+import { createProcedureSourceService, type ProcedureSourceService } from '../src/features/procedures/source.ts'
+import { createKnowledge } from '@leitbild/knowledge'
 
 const registries: WorldWorkspaceRuntimeRegistry[] = []
 const temporaryDirectories: string[] = []
 
-const createRegistry = async (): Promise<WorldWorkspaceRuntimeRegistry> => {
+const createRegistry = async (procedureSourceService?: ProcedureSourceService): Promise<WorldWorkspaceRuntimeRegistry> => {
   const dataDir = await mkdtemp(join(tmpdir(), 'world-module-api-'))
   temporaryDirectories.push(dataDir)
   const registry = createWorldWorkspaceRuntimeRegistry({
@@ -39,6 +41,7 @@ const createRegistry = async (): Promise<WorldWorkspaceRuntimeRegistry> => {
     scenarioRuntimeResolver: createTestScenarioRuntimeResolver(),
     ...testScenarioAuthoring(),
     runtimeAdapters: createTestPackRuntimeAdapters(),
+    ...(procedureSourceService ? { procedureSourceService } : {}),
   })
   registries.push(registry)
   return registry
@@ -68,6 +71,46 @@ const provision = async (registry: WorldWorkspaceRuntimeRegistry, workspaceId: W
   })
 
 describe('World Module API', () => {
+  test('native procedure selectors return client-domain errors and recover through the same handler', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'world-procedure-publication-'))
+    temporaryDirectories.push(directory)
+    const revision = 'a'.repeat(40)
+    const sourcePath = 'packs/process-plant/procedures/E-0.md'
+    const knowledge = createKnowledge({ revision, documents: [{ path: sourcePath, content: procedureTestDocument().rawMarkdown }] })
+    const registry = await createRegistry(createProcedureSourceService({
+      sources: [{ sourceId: 'leitbild', label: 'Model-annotated reference', repository: 'Leitbild-wiki', ref: 'publication', procedurePath: 'packs/process-plant/procedures' }],
+      retentionDirectory: directory, loadKnowledge: async () => knowledge,
+    }))
+    const workspaceId = newWorkspaceId()
+    await provision(registry, workspaceId)
+    const run = await registry.getLoaded(workspaceId)!.simulationRuns.create({ scenarioId: 'test-response' })
+    const access = accessContextSchema.parse({ workspaceId, requestId: newRequestId(), actor: { kind: 'ai', id: 'procedure-reader' } })
+    const invoke = (capabilityId: string, input: unknown) => call<{ error?: { code: string }; result?: { procedureId?: string } }>(registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${capabilityId}/invoke`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, capabilityId, resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }, input, access }),
+      })
+    const missingSource = await invoke('world.procedure.catalog.list', { sourceId: 'pwr-ops' })
+    expect(missingSource.status).toBe(404)
+    expect(missingSource.body?.error?.code).toBe('capability_target_not_found')
+    for (const input of [
+      { sourceId: 'pwr-ops', procedureId: 'E-0' },
+      { procedureId: 'MISSING' },
+      { procedureId: 'E-0', sourceRevision: 'b'.repeat(40) },
+    ]) {
+      const result = await invoke('world.procedure.document.read', input)
+      expect(result.status).toBe(404)
+      expect(result.body?.error?.code).toBe('capability_target_not_found')
+    }
+    const wrongPath = await invoke('world.procedure.document.read', { procedureId: 'E-0', sourceRevision: revision, sourcePath: 'other.md' })
+    expect(wrongPath.status).toBe(400)
+    expect(wrongPath.body?.error?.code).toBe('capability_input_rejected')
+    expect((await invoke('world.procedure.catalog.list', {})).status).toBe(200)
+    const recovered = await invoke('world.procedure.document.read', { sourceId: 'leitbild', procedureId: 'E-0', sourceRevision: revision, sourcePath })
+    expect(recovered.status).toBe(200)
+    expect(recovered.body?.result?.procedureId).toBe('E-0')
+  })
+
   test('validates every selective artifact mode through the real runtime and HTTP output boundary', async () => {
     const registry = await createRegistry()
     const workspaceId = newWorkspaceId()

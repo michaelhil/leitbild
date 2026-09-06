@@ -81,8 +81,6 @@ const createProcedureSourceService = (document = createProcedureDocument()): Pro
     label: document.source.label,
     repository: document.source.repository,
     ref: document.source.ref,
-    manifestUrl: 'https://example.test/_manifest.json',
-    manifestPath: 'wiki/_manifest.json',
     procedurePath: document.source.path,
   }],
   readCatalog: async (): Promise<ProcedureCatalog> => ({

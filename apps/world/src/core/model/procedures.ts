@@ -9,6 +9,14 @@ export const procedureStepIdSchema = idSchema
 export const procedureTagIdSchema = z.string().min(1).max(80).regex(/^[A-Z0-9][A-Z0-9._/-]*$/)
 export const procedureRunIdSchema = z.string().min(1).max(128).regex(/^procedure-run:[a-zA-Z0-9._:-]+$/)
 
+// Citations may target the Host's wiki reader without assuming a deployment origin.
+// This is not a redirect or fetch-target schema.
+export const procedureSourceUrlSchema = z.string().refine(value => {
+  if (/[\\\u0000-\u0020\u007f]/.test(value)) return false
+  if (value.startsWith('/')) return !value.startsWith('//')
+  return z.url({ protocol: /^https?$/ }).safeParse(value).success
+}, 'Expected an HTTP(S) URL or a safe root-relative source reference')
+
 export type ProcedureSourceId = z.infer<typeof procedureSourceIdSchema>
 export type ProcedureId = z.infer<typeof procedureIdSchema>
 export type ProcedureStepId = z.infer<typeof procedureStepIdSchema>
@@ -38,7 +46,7 @@ export const procedureSourceSchema = z.object({
   path: z.string().min(1),
   revision: sourceRevisionSchema,
   fetchedAt: isoTimestampSchema,
-  sourceUrl: z.string().url(),
+  sourceUrl: procedureSourceUrlSchema,
 })
 export type ProcedureSource = z.infer<typeof procedureSourceSchema>
 
@@ -101,7 +109,7 @@ export const procedureDocumentSchema = z.object({
   entryTriggers: z.array(idSchema).default([]),
   description: z.string().default(''),
   sourcePath: sourceDocumentPathSchema,
-  sourceUrl: z.string().url(),
+  sourceUrl: procedureSourceUrlSchema,
   rawMarkdown: z.string(),
   steps: z.array(procedureStepSchema).default([]),
   tags: z.array(procedureTagSchema).default([]),
@@ -119,7 +127,7 @@ export const procedureCatalogItemSchema = z.object({
   stepCount: z.number().int().nonnegative(),
   tagCount: z.number().int().nonnegative(),
   sourcePath: sourceDocumentPathSchema,
-  sourceUrl: z.string().url(),
+  sourceUrl: procedureSourceUrlSchema,
 })
 export type ProcedureCatalogItem = z.infer<typeof procedureCatalogItemSchema>
 

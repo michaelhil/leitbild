@@ -3,17 +3,16 @@ import {
   type ProcedureSourceConfig,
   type ProcedureSourceService,
 } from './features/procedures/source.ts'
+import { join } from 'node:path'
 
 /** Product-owned procedure catalogs. The generic World procedure engine does not choose content. */
 export const procedureSources: ReadonlyArray<ProcedureSourceConfig> = [{
-  sourceId: 'pwr-ops',
-  label: 'PWR operations procedures',
-  repository: 'samsinn-wikis/pwr-ops',
-  ref: 'main',
-  manifestUrl: 'https://samsinn-wikis.github.io/pwr-ops/_manifest.json',
-  manifestPath: 'wiki/_manifest.json',
-  procedurePath: 'wiki/procedures',
+  sourceId: 'leitbild',
+  label: 'Leitbild PWR reference procedures — model annotated',
+  repository: 'Leitbild-wiki',
+  ref: 'publication',
+  procedurePath: 'packs/process-plant/procedures',
 }]
 
-export const createConfiguredProcedureSourceService = (): ProcedureSourceService =>
-  createProcedureSourceService({ sources: procedureSources })
+export const createConfiguredProcedureSourceService = (config: { readonly dataDir: string }): ProcedureSourceService =>
+  createProcedureSourceService({ sources: procedureSources, retentionDirectory: join(config.dataDir, 'procedure-publications') })

@@ -1,20 +1,20 @@
 import { describe, expect, test } from 'bun:test'
 import { createProcedureSourceService, type ProcedureSourceConfig } from '../src/features/procedures/source.ts'
+import { createKnowledge } from '@leitbild/knowledge'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { procedureSourceUrlSchema } from '../src/core/model/procedures.ts'
+import { newWorkspaceId } from '@leitbild/contracts'
+import { actorIdSchema } from '../src/core/model/index.ts'
+import { createSimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
+import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
+import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
+import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
+import { createTestScenarioRuntimeResolver, testScenarioAuthoring } from './helpers.ts'
 
 const revisionA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const revisionB = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
-const manifestUrl = 'https://procedures.test/_manifest.json'
-
-const source: ProcedureSourceConfig = {
-  sourceId: 'pwr-ops',
-  label: 'PWR operations procedures',
-  repository: 'samsinn-wikis/pwr-ops',
-  ref: 'main',
-  manifestUrl,
-  manifestPath: 'wiki/_manifest.json',
-  procedurePath: 'wiki/procedures',
-}
-
 const markdownFor = (id: string, title: string): string => `---
 type: procedure
 procedure-md: 0.7
@@ -30,154 +30,170 @@ Check: verify the initial condition
 - Verified → END
 `
 
-const manifestFor = (
-  revision: string,
-  procedures: ReadonlyArray<{ readonly id: string; readonly title: string }>,
-) => ({
-  version: 1,
-  wiki: 'pwr-ops',
-  revision,
-  procmdVersion: '0.7',
-  procedures: procedures.map(procedure => ({
-    id: procedure.id,
-    title: procedure.title,
-    file: `wiki/procedures/${procedure.id}.md`,
-    profile: 'nuclear-erg',
-    coverage: 'developed',
-    stepCount: 1,
-    tagDefinitionCount: 0,
-    csfsMonitored: [],
-    entryTriggers: [],
-  })),
-  pages: [],
-})
+const localSource: ProcedureSourceConfig = {
+  sourceId: 'leitbild', label: 'Leitbild PWR reference procedures — model annotated',
+  repository: 'Leitbild-wiki', ref: 'publication', procedurePath: 'packs/process-plant/procedures',
+}
+const localPath = (id: string) => `${localSource.procedurePath}/${id}.md`
+const publication = (revision: string, title = 'Reactor Trip') => createKnowledge({ revision, documents: [
+  { path: 'index.md', content: '# Wiki\nNot a procedure.' },
+  { path: localPath('E-0'), content: markdownFor('E-0', title).replace('- Verified → END', '- Continue → [[E-1]]').replaceAll('\n', '\r\n') },
+  { path: localPath('E-1'), content: markdownFor('E-1', 'Cooling') },
+] })
 
-describe('procedure source discovery', () => {
-  test('non-procedure manifests and unsupported versions cannot become procedure sources', async () => {
-    for (const manifest of [
-      { version: 1, wiki: 'pwr-ops', revision: revisionA, procedures: [], pages: [] },
-      { ...manifestFor(revisionA, [{ id: 'E-0', title: 'Reactor Trip' }]), procmdVersion: 'unknown' },
-    ]) {
-      const fetchFn = (async () => Response.json(manifest)) as unknown as typeof fetch
-      const service = createProcedureSourceService({ sources: [source], fetchFn })
-      await expect(service.readCatalog()).rejects.toThrow('unsupported procmd version')
-    }
+describe('native local procedure publication', () => {
+  test('derives catalog and exact CRLF documents from the shared parser, with no network calls', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'leitbild-procedure-source-'))
+    try {
+      const knowledge = publication(revisionA)
+      const service = createProcedureSourceService({ sources: [localSource], retentionDirectory: directory,
+        loadKnowledge: async () => knowledge })
+      const catalog = await service.readCatalog()
+      expect(catalog.source.sourceId).toBe('leitbild')
+      expect(catalog.source.label).toContain('reference procedures')
+      expect(catalog.procedures.map(item => [item.procedureId, item.stepCount, item.tagCount])).toEqual([['E-0', 1, 0], ['E-1', 1, 0]])
+      expect(await readdir(directory)).toEqual([]) // Discovery does not select/persist a Run source.
+      const [first, second] = await Promise.all([
+        service.readDocument({ procedureId: 'E-0', sourceRevision: revisionA, sourcePath: localPath('E-0') }),
+        service.readDocument({ procedureId: 'E-0', sourceRevision: revisionA }),
+      ])
+      expect(first.rawMarkdown).toBe(knowledge.read(localPath('E-0')).content)
+      expect(second.rawMarkdown).toBe(first.rawMarkdown)
+      expect(first.steps[0]!.branches[0]!.target).toBe('E-1')
+      expect(first.sourceUrl).toBe(`/wiki?path=packs%2Fprocess-plant%2Fprocedures%2FE-0.md&revision=${revisionA}`)
+      expect(await readdir(directory)).toEqual([`leitbild-${revisionA}.json`])
+      const saved = JSON.parse(await readFile(join(directory, `leitbild-${revisionA}.json`), 'utf8'))
+      expect(saved).toEqual({ revision: revisionA, documents: ['E-0', 'E-1'].map(id => ({ path: localPath(id), content: knowledge.read(localPath(id)).content })) })
+    } finally { await rm(directory, { recursive: true, force: true }) }
   })
 
-  test('literal URL-like source paths and citations stay beneath the pinned SHA', async () => {
-    const calls: string[] = []
-    const fetchFn = (async (input: string | URL | Request) => {
-      calls.push(input.toString())
-      return new Response(markdownFor('E-0', 'Reactor Trip'))
-    }) as typeof fetch
-    const service = createProcedureSourceService({ sources: [source], fetchFn })
-    for (const path of ['%2e%2e/main/wiki/x.md', 'wiki/procedures/name?query#fragment.md', 'wiki/procedures/kjøling Δ.md', 'wiki/procedures/back\\slash.md']) {
-      const document = await service.readDocument({ procedureId: 'E-0', sourceRevision: revisionA, sourcePath: path })
-      const encoded = path.split('/').map(encodeURIComponent).join('/')
-      expect(calls.at(-1)).toBe(`https://raw.githubusercontent.com/${source.repository}/${revisionA}/${encoded}`)
-      expect(document.sourceUrl).toBe(`https://github.com/${source.repository}/blob/${revisionA}/${encoded}`)
-      for (const url of [calls.at(-1)!, document.sourceUrl]) {
-        expect(new URL(url).pathname).toContain(`/${revisionA}/`)
-        expect(new URL(url).search).toBe('')
-        expect(new URL(url).hash).toBe('')
-      }
-    }
-    const before = calls.length
-    await expect(service.readDocument({ procedureId: 'E-0', sourceRevision: revisionA, sourcePath: '../main/wiki/x.md' })).rejects.toThrow('literal relative repository path')
-    expect(calls).toHaveLength(before)
+  test('retains all transition targets across restart, changed publication and unavailable latest knowledge', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'leitbild-procedure-source-'))
+    try {
+      let current = publication(revisionA)
+      const options = { sources: [localSource], retentionDirectory: directory,
+        loadKnowledge: async () => current }
+      const original = await createProcedureSourceService(options).readDocument({ procedureId: 'E-0' })
+      current = publication(revisionB, 'New publication title')
+      const restarted = createProcedureSourceService(options)
+      expect((await restarted.readCatalog()).source.revision).toBe(revisionB)
+      expect((await restarted.readDocument({ procedureId: 'E-0' })).title).toBe('New publication title')
+      const offline = createProcedureSourceService({ ...options, loadKnowledge: async () => { throw new Error('Latest publication offline') } })
+      const pinned = await offline.readDocument({ procedureId: 'E-0', sourceRevision: revisionA, sourcePath: localPath('E-0') })
+      expect(pinned.rawMarkdown).toBe(original.rawMarkdown)
+      expect(pinned.title).toBe('Reactor Trip')
+      const transition = await offline.readDocument({ procedureId: 'E-1', sourceRevision: revisionA })
+      expect(transition.source.revision).toBe(revisionA)
+      expect(transition.rawMarkdown).toBe(markdownFor('E-1', 'Cooling'))
+      expect((await readdir(directory)).sort()).toEqual([`leitbild-${revisionA}.json`, `leitbild-${revisionB}.json`])
+      await expect(offline.readCatalog()).rejects.toThrow('Latest publication offline')
+    } finally { await rm(directory, { recursive: true, force: true }) }
   })
 
-  test('builds the catalog from one manifest request and fetches no documents eagerly', async () => {
-    const calls: string[] = []
-    const fetchFn = (async (input: string | URL | Request): Promise<Response> => {
-      const url = input.toString()
-      calls.push(url)
-      if (url === manifestUrl) {
-        return Response.json(manifestFor(revisionA, [
-          { id: 'E-0', title: 'Reactor Trip' },
-          { id: 'FR-S.1', title: 'Response to Nuclear Power Generation' },
-        ]))
-      }
-      throw new Error(`unexpected fetch ${url}`)
-    }) as typeof fetch
-    const service = createProcedureSourceService({ sources: [source], fetchFn })
-
-    const catalog = await service.readCatalog()
-
-    expect(catalog.source.revision).toBe(revisionA)
-    expect(catalog.procedures.map(procedure => procedure.procedureId)).toEqual(['E-0', 'FR-S.1'])
-    expect(calls).toEqual([manifestUrl])
+  test('fails conflicting same-revision bytes, wrong pins, duplicate ids and failed retention explicitly', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'leitbild-procedure-source-'))
+    try {
+      let current = publication(revisionA)
+      const service = createProcedureSourceService({ sources: [localSource], retentionDirectory: directory, loadKnowledge: async () => current })
+      await service.readDocument({ procedureId: 'E-0' })
+      const retainedPath = join(directory, `leitbild-${revisionA}.json`)
+      const original = await readFile(retainedPath, 'utf8')
+      current = publication(revisionA, 'Conflicting bytes')
+      await expect(service.readDocument({ procedureId: 'E-0' })).rejects.toThrow('conflicts with the same source revision')
+      expect(await readFile(retainedPath, 'utf8')).toBe(original)
+      await expect(service.readDocument({ procedureId: 'E-0', sourceRevision: revisionB })).rejects.toThrow('unavailable')
+      await expect(service.readDocument({ procedureId: 'E-0', sourceRevision: revisionA, sourcePath: 'index.md' })).rejects.toThrow('does not match')
+      await expect(service.readDocument({ procedureId: 'E-1', sourceRevision: revisionA, sourcePath: localPath('E-0') })).rejects.toThrow('does not match')
+      await expect(service.readDocument({ procedureId: 'UNKNOWN', sourceRevision: revisionA })).rejects.toThrow('not found')
+      await expect(service.readDocument({ procedureId: 'E-0', sourcePath: localPath('E-0') })).rejects.toThrow('requires sourceRevision')
+      current = createKnowledge({ revision: revisionB, documents: [
+        { path: localPath('E-0'), content: markdownFor('E-0', 'First') },
+        { path: localPath('E-1'), content: markdownFor('E-0', 'Duplicate') },
+      ] })
+      await expect(service.readCatalog()).rejects.toThrow('Duplicate procedure id')
+      current = createKnowledge({ revision: revisionB, documents: [{ path: localPath('index'), content: '# Not a procedure' }] })
+      await expect(service.readCatalog()).rejects.toThrow('frontmatter')
+      current = publication(revisionB)
+      const blockedDirectory = join(directory, 'not-a-directory')
+      await writeFile(blockedDirectory, 'existing file')
+      const blocked = createProcedureSourceService({ sources: [localSource], retentionDirectory: blockedDirectory, loadKnowledge: async () => current })
+      await expect(blocked.readDocument({ procedureId: 'E-0' })).rejects.toThrow()
+      expect(await readFile(blockedDirectory, 'utf8')).toBe('existing file')
+      await writeFile(retainedPath, original.replace(revisionA, revisionB))
+      await expect(service.readDocument({ procedureId: 'E-0', sourceRevision: revisionA })).rejects.toThrow('does not match its pin')
+    } finally { await rm(directory, { recursive: true, force: true }) }
   })
 
-  test('loads only the requested document and coalesces concurrent reads', async () => {
-    const calls: string[] = []
-    const rawUrl = `https://raw.githubusercontent.com/samsinn-wikis/pwr-ops/${revisionA}/wiki/procedures/E-0.md`
-    const fetchFn = (async (input: string | URL | Request): Promise<Response> => {
-      const url = input.toString()
-      calls.push(url)
-      if (url === manifestUrl) return Response.json(manifestFor(revisionA, [{ id: 'E-0', title: 'Reactor Trip' }]))
-      if (url === rawUrl) {
-        await new Promise(resolve => setTimeout(resolve, 5))
-        return new Response(markdownFor('E-0', 'Reactor Trip'))
-      }
-      throw new Error(`unexpected fetch ${url}`)
-    }) as typeof fetch
-    const service = createProcedureSourceService({ sources: [source], fetchFn })
-
-    const [first, second] = await Promise.all([
-      service.readDocument({ procedureId: 'E-0' }),
-      service.readDocument({ procedureId: 'E-0' }),
-    ])
-
-    expect(first.procedureId).toBe('E-0')
-    expect(second).toBe(first)
-    expect(calls).toEqual([manifestUrl, rawUrl])
+  test('unknown source IDs fail explicitly and never repoint to the native source', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'leitbild-procedure-source-'))
+    try {
+      const service = createProcedureSourceService({ sources: [localSource], retentionDirectory: directory,
+        loadKnowledge: async () => { throw new Error('Unknown source must not read the current publication') } })
+      await expect(service.readDocument({ sourceId: 'pwr-ops', procedureId: 'E-0', sourceRevision: revisionA,
+        sourcePath: 'wiki/procedures/E-0.md' })).rejects.toThrow('Unknown procedure source')
+      await expect(service.readCatalog({ sourceId: 'pwr-ops' })).rejects.toThrow('Unknown procedure source')
+      await expect(createProcedureSourceService().readCatalog()).rejects.toThrow('none configured')
+      expect(await readdir(directory)).toEqual([])
+    } finally { await rm(directory, { recursive: true, force: true }) }
   })
 
-  test('refreshes the manifest once and reads documents from the newly published revision', async () => {
-    let currentRevision = revisionA
-    const calls: string[] = []
-    const fetchFn = (async (input: string | URL | Request): Promise<Response> => {
-      const url = input.toString()
-      calls.push(url)
-      if (url === manifestUrl) return Response.json(manifestFor(currentRevision, [{ id: 'E-0', title: 'Reactor Trip' }]))
-      if (url.includes('/wiki/procedures/E-0.md')) return new Response(markdownFor('E-0', 'Reactor Trip'))
-      throw new Error(`unexpected fetch ${url}`)
-    }) as typeof fetch
-    const service = createProcedureSourceService({ sources: [source], fetchFn })
-
-    await service.readCatalog()
-    currentRevision = revisionB
-    const refreshed = await service.readCatalog({ refresh: true })
-    const document = await service.readDocument({ procedureId: 'E-0' })
-
-    expect(refreshed.source.revision).toBe(revisionB)
-    expect(document.source.revision).toBe(revisionB)
-    expect(calls.filter(url => url === manifestUrl)).toHaveLength(2)
-    expect(calls.at(-1)).toContain(`/${revisionB}/wiki/procedures/E-0.md`)
-  })
-
-  test('reads an active Run document from its pinned revision without consulting the current catalog', async () => {
-    const calls: string[] = []
-    const rawUrl = `https://raw.githubusercontent.com/samsinn-wikis/pwr-ops/${revisionA}/wiki/procedures/E-0.md`
-    const fetchFn = (async (input: string | URL | Request): Promise<Response> => {
-      const url = input.toString()
-      calls.push(url)
-      if (url === rawUrl) return new Response(markdownFor('E-0', 'Reactor Trip'))
-      throw new Error(`unexpected fetch ${url}`)
-    }) as typeof fetch
-    const service = createProcedureSourceService({ sources: [source], fetchFn })
-
-    const document = await service.readDocument({
-      procedureId: 'E-0',
-      sourceRevision: revisionA,
-      sourcePath: 'wiki/procedures/E-0.md',
+  test('real accepted Run pins survive durable restore and cross-procedure transition without the publication', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-procedure-run-source-'))
+    const workspaceId = newWorkspaceId()
+    let current = publication(revisionA)
+    let offline = false
+    const createRegistry = () => createSimulationRunRegistry({
+      dataDir, workspaceId, scenarioRuntimeResolver: createTestScenarioRuntimeResolver(), ...testScenarioAuthoring(),
+      runtimeAdapters: [createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }), createLocalWeatherPackRuntimeAdapter()],
+      procedureSourceService: createProcedureSourceService({ sources: [localSource], retentionDirectory: join(dataDir, 'procedure-publications'),
+        loadKnowledge: async () => { if (offline) throw new Error('Latest publication offline'); return current }, }),
     })
+    let registry = createRegistry()
+    let runtime = await registry.create({ scenarioId: 'test-response' })
+    const actor = { id: actorIdSchema.parse('operator:test'), role: 'operator' as const, label: 'Test operator' }
+    const command = async (capabilityId: string, input: unknown) => {
+      const result = await runtime.invokeCapability(actor, { capabilityId, input })
+      if (result.kind !== 'command') throw new Error('Expected command')
+      expect(result.result.ok).toBe(true)
+      if (!result.result.ok) throw new Error(result.result.reason)
+    }
+    try {
+      await runtime.setClock({ paused: true })
+      await command('world.procedure.run.start', { sourceId: 'leitbild', sourceRevision: revisionA,
+        procedureId: 'E-0', scope: { plantId: runtime.snapshot().objects[0]!.id } })
+      const original = structuredClone(runtime.snapshot().procedures!)
+      expect(original.runs[0]!.sourcePath).toBe(localPath('E-0'))
+      const retained = JSON.parse(await readFile(join(dataDir, 'procedure-publications', `leitbild-${revisionA}.json`), 'utf8'))
+      expect(retained.documents).toHaveLength(2)
+      await registry.close(runtime.id)
+      current = publication(revisionB, 'Changed publication')
+      offline = true
+      registry = createRegistry()
+      runtime = await registry.load(runtime.id)
+      expect(runtime.snapshot().procedures).toEqual(original)
+      await command('world.procedure.step.update', { runId: original.runs[0]!.runId, stepId: 'first-step', comment: 'Checked after restart' })
+      await command('world.procedure.run.transition', { runId: original.runs[0]!.runId, stepId: 'first-step', branchIndex: 0 })
+      const transitioned = structuredClone(runtime.snapshot().procedures!)
+      expect(transitioned.runs.map(run => [run.procedureId, run.sourceId, run.sourceRevision, run.sourcePath, run.status])).toEqual([
+        ['E-0', 'leitbild', revisionA, localPath('E-0'), 'completed'],
+        ['E-1', 'leitbild', revisionA, localPath('E-1'), 'active'],
+      ])
+      await registry.close(runtime.id)
+      registry = createRegistry()
+      runtime = await registry.load(runtime.id)
+      expect(runtime.snapshot().procedures).toEqual(transitioned)
+    } finally {
+      await registry.close(runtime.id)
+      await rm(dataDir, { recursive: true, force: true })
+    }
+  })
 
-    expect(document.source.revision).toBe(revisionA)
-    expect(calls).toEqual([rawUrl])
-    await expect(service.readDocument({ procedureId: 'WRONG', sourceRevision: revisionA,
-      sourcePath: 'wiki/procedures/E-0.md' })).rejects.toThrow('expected WRONG')
-    expect(calls).toEqual([rawUrl])
+  test('citation schema accepts safe local and existing HTTP references only', () => {
+    for (const value of ['/wiki?path=a.md&revision=123', 'https://github.com/a/b/blob/revision/file.md', 'http://localhost/wiki']) {
+      expect(procedureSourceUrlSchema.safeParse(value).success).toBe(true)
+    }
+    for (const value of ['//external.test', '/\\external.test', '/wiki\nmalicious', '/wiki\tmalicious', 'javascript:alert(1)', 'relative.md']) {
+      expect(procedureSourceUrlSchema.safeParse(value).success).toBe(false)
+    }
   })
 })

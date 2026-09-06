@@ -1,331 +1,178 @@
-import {
-  sourceDocumentPathSchema,
-  sourceRevisionSchema,
-  wikiManifestSchema,
-  type ProcedureManifestEntry,
-  type WikiManifest,
-} from '@leitbild/contracts'
-import {
-  nowIso,
-  procedureCatalogSchema,
-  procedureDocumentSchema,
-  procedureIdSchema,
-  type ProcedureCatalog,
-  type ProcedureDocument,
-  type ProcedureId,
-  type ProcedureSource,
-  type ProcedureSourceId,
-} from '../../core/model/index.ts'
+import { randomUUID } from 'node:crypto'
+import { link, mkdir, open, readFile, rm } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
+import { createKnowledge, loadKnowledge, type Knowledge, type KnowledgeSnapshot } from '@leitbild/knowledge'
+import { sourceRevisionSchema } from '@leitbild/contracts'
+import { nowIso, procedureCatalogSchema, procedureSourceIdSchema, type ProcedureCatalog, type ProcedureDocument } from '../../core/model/index.ts'
 import { parseProcedureMarkdown } from './procmd.ts'
+import { rejectCapabilityInput, rejectCapabilityTarget } from '../../simulation/capability-rejection.ts'
 
 export interface ProcedureSourceConfig {
-  readonly sourceId: ProcedureSourceId
+  readonly sourceId: string
   readonly label: string
   readonly repository: string
   readonly ref: string
-  readonly manifestUrl: string
-  readonly manifestPath: string
   readonly procedurePath: string
 }
-
-interface ProcedureCatalogCacheEntry {
-  readonly loadedAtMs: number
-  readonly manifest: WikiManifest
-  readonly catalog: ProcedureCatalog
+export interface ProcedureDocumentRequest {
+  readonly sourceId?: string
+  readonly procedureId: string
+  readonly sourceRevision?: string
+  readonly sourcePath?: string
 }
-
 export interface ProcedureSourceService {
   readonly listSources: () => ReadonlyArray<ProcedureSourceConfig>
-  readonly readCatalog: (config?: {
-    readonly sourceId?: ProcedureSourceId
-    readonly refresh?: boolean
-  }) => Promise<ProcedureCatalog>
-  readonly readDocument: (config: {
-    readonly sourceId?: ProcedureSourceId
-    readonly procedureId: ProcedureId
-    readonly sourceRevision?: string
-    readonly sourcePath?: string
-  }) => Promise<ProcedureDocument>
+  readonly readCatalog: (config?: { readonly sourceId?: string; readonly refresh?: boolean }) => Promise<ProcedureCatalog>
+  readonly readDocument: (config: ProcedureDocumentRequest) => Promise<ProcedureDocument>
 }
 
-const defaultCacheTtlMs = 60 * 60 * 1000
-const defaultFetchTimeoutMs = 8_000
-const supportedProcmdVersion = '0.7'
+const citation = (path: string, revision: string): string =>
+  `/wiki?${new URLSearchParams({ path, revision })}`
 
-const fetchText = async (
-  fetchFn: typeof fetch,
-  url: string,
-  config: { readonly refresh?: boolean; readonly timeoutMs: number },
-): Promise<string> => {
-  const response = await fetchFn(url, {
-    headers: {
-      Accept: 'application/json, text/markdown;q=0.9, text/plain;q=0.8',
-      'Cache-Control': config.refresh ? 'no-cache' : 'max-age=0',
-      'User-Agent': 'leitbild-procedure-source',
-    },
-    cache: 'no-store',
-    signal: AbortSignal.timeout(config.timeoutMs),
-  })
-  if (!response.ok) throw new Error(`procedure source fetch failed for ${url}: ${response.status}`)
-  return await response.text()
+const syncDirectory = async (path: string): Promise<void> => {
+  const directory = await open(path, 'r')
+  try { await directory.sync() } finally { await directory.close() }
 }
 
-const repositoryUrlFor = (source: ProcedureSourceConfig): string =>
-  `https://github.com/${source.repository.split('/').map(encodeURIComponent).join('/')}`
-
-// Source paths are literal repository filenames, never pre-encoded URL paths.
-// Encoding '%' as well as '?'/'#' keeps encoded dot segments inside the pinned SHA.
-const encodedSourcePath = (path: string): string =>
-  sourceDocumentPathSchema.parse(path).split('/').map(encodeURIComponent).join('/')
-
-const rawUrlFor = (
-  source: ProcedureSourceConfig,
-  revision: string,
-  sourcePath: string,
-): string =>
-  `https://raw.githubusercontent.com/${source.repository.split('/').map(encodeURIComponent).join('/')}/${sourceRevisionSchema.parse(revision)}/${encodedSourcePath(sourcePath)}`
-
-const sourceUrlFor = (
-  source: ProcedureSourceConfig,
-  revision: string,
-  sourcePath = source.procedurePath,
-): string =>
-  `${repositoryUrlFor(source)}/tree/${sourceRevisionSchema.parse(revision)}/${encodedSourcePath(sourcePath)}`
-
-const documentUrlFor = (
-  source: ProcedureSourceConfig,
-  revision: string,
-  sourcePath: string,
-): string =>
-  `${repositoryUrlFor(source)}/blob/${sourceRevisionSchema.parse(revision)}/${encodedSourcePath(sourcePath)}`
-
-const procedureSourceFor = (
-  source: ProcedureSourceConfig,
-  revision: string,
-): ProcedureSource => ({
-  sourceId: source.sourceId,
-  label: source.label,
-  repository: source.repository,
-  ref: source.ref,
-  path: source.procedurePath,
-  revision: sourceRevisionSchema.parse(revision),
-  fetchedAt: nowIso(),
-  sourceUrl: sourceUrlFor(source, revision),
-})
-
-const catalogItemFor = (
-  source: ProcedureSourceConfig,
-  revision: string,
-  entry: ProcedureManifestEntry,
-) => ({
-  sourceId: source.sourceId,
-  procedureId: procedureIdSchema.parse(entry.id),
-  title: entry.title,
-  ...(entry.profile === undefined ? {} : { profile: entry.profile }),
-  ...(entry.category === undefined ? {} : { category: entry.category }),
-  csfsMonitored: entry.csfsMonitored,
-  entryTriggers: entry.entryTriggers,
-  stepCount: entry.stepCount,
-  tagCount: entry.tagDefinitionCount,
-  sourcePath: entry.file,
-  sourceUrl: documentUrlFor(source, revision, entry.file),
-})
-
-const assertManifestMatchesSource = (
-  source: ProcedureSourceConfig,
-  manifest: WikiManifest,
-): void => {
-  if (manifest.wiki !== source.sourceId) {
-    throw new Error(`procedure manifest ${manifest.wiki} does not match configured source ${source.sourceId}`)
+// This is selected Run source evidence, not a second editable knowledge catalog.
+// Publish without overwrite, and finish durable file/directory writes before a
+// command can accept a Run pinned to this revision. Concurrent equal writes dedupe.
+const retain = async (directory: string, path: string, contents: string): Promise<void> => {
+  let existing: string | undefined
+  try { existing = await readFile(path, 'utf8') } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
-  if (manifest.procmdVersion !== supportedProcmdVersion) {
-    throw new Error(`unsupported procmd version ${manifest.procmdVersion}; expected ${supportedProcmdVersion}`)
+  if (existing !== undefined) {
+    if (existing !== contents) throw new Error('Retained procedure publication conflicts with the same source revision')
+    await syncDirectory(directory)
+    return
   }
-  const prefix = `${source.procedurePath.replace(/\/$/, '')}/`
-  for (const procedure of manifest.procedures) {
-    if (!procedure.file.startsWith(prefix)) {
-      throw new Error(`procedure ${procedure.id} is outside configured path ${source.procedurePath}`)
-    }
-  }
-}
-
-const loadCatalog = async (config: {
-  readonly source: ProcedureSourceConfig
-  readonly fetchFn: typeof fetch
-  readonly refresh: boolean
-  readonly timeoutMs: number
-}): Promise<ProcedureCatalogCacheEntry> => {
-  const raw = await fetchText(config.fetchFn, config.source.manifestUrl, {
-    refresh: config.refresh,
-    timeoutMs: config.timeoutMs,
-  })
-  let decoded: unknown
+  const temporaryPath = `${path}.${randomUUID()}.tmp`
   try {
-    decoded = JSON.parse(raw) as unknown
-  } catch {
-    throw new Error(`procedure manifest is not valid JSON: ${config.source.manifestUrl}`)
-  }
-  const manifest = wikiManifestSchema.parse(decoded)
-  assertManifestMatchesSource(config.source, manifest)
-  const sourceMetadata = procedureSourceFor(config.source, manifest.revision)
-  return {
-    loadedAtMs: Date.now(),
-    manifest,
-    catalog: procedureCatalogSchema.parse({
-      source: sourceMetadata,
-      procedures: manifest.procedures
-        .map(entry => catalogItemFor(config.source, manifest.revision, entry))
-        .sort((left, right) => left.procedureId.localeCompare(right.procedureId)),
-    }) as ProcedureCatalog,
+    const file = await open(temporaryPath, 'wx', 0o600)
+    try { await file.writeFile(contents, 'utf8'); await file.sync() } finally { await file.close() }
+    try {
+      await link(temporaryPath, path)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      if (await readFile(path, 'utf8') !== contents) throw new Error('Retained procedure publication conflicts with the same source revision')
+    }
+    await syncDirectory(directory)
+  } finally {
+    await rm(temporaryPath, { force: true })
   }
 }
 
-const assertDocumentMatchesManifest = (
-  document: ProcedureDocument,
-  entry: ProcedureManifestEntry | undefined,
-): void => {
-  if (!entry) return
-  if (document.title !== entry.title) {
-    throw new Error(`procedure ${document.procedureId} title does not match its manifest entry`)
+const bundleFor = (source: ProcedureSourceConfig, knowledge: Knowledge) => {
+  const prefix = `${source.procedurePath.replace(/\/$/, '')}/`
+  const snapshot: KnowledgeSnapshot = {
+    revision: knowledge.revision,
+    documents: knowledge.index().filter(entry => entry.path.startsWith(prefix))
+      .sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
+      .map(entry => ({ path: entry.path, content: knowledge.read(entry.path).content })),
   }
-  if (document.steps.length !== entry.stepCount) {
-    throw new Error(`procedure ${document.procedureId} step count does not match its manifest entry`)
+  if (!snapshot.documents.length) throw new Error(`No procedure documents in local publication path ${source.procedurePath}`)
+  const metadata = {
+    sourceId: source.sourceId, label: source.label, repository: source.repository, ref: source.ref,
+    path: source.procedurePath, revision: knowledge.revision, fetchedAt: nowIso(),
+    sourceUrl: `/wiki?${new URLSearchParams({ revision: knowledge.revision })}`,
   }
-  if (document.tags.length !== entry.tagDefinitionCount) {
-    throw new Error(`procedure ${document.procedureId} tag count does not match its manifest entry`)
+  const documents = snapshot.documents.map(document => parseProcedureMarkdown({
+    source: metadata, sourcePath: document.path,
+    sourceUrl: citation(document.path, knowledge.revision), rawMarkdown: document.content,
+  }))
+  const ids = new Set<string>()
+  for (const document of documents) {
+    if (ids.has(document.procedureId)) throw new Error(`Duplicate procedure id ${document.procedureId} in local publication`)
+    ids.add(document.procedureId)
   }
+  const catalog = procedureCatalogSchema.parse({
+    source: metadata,
+    procedures: documents.map(document => ({
+      sourceId: source.sourceId, procedureId: document.procedureId, title: document.title,
+      ...(document.profile === undefined ? {} : { profile: document.profile }),
+      ...(document.category === undefined ? {} : { category: document.category }),
+      csfsMonitored: document.csfsMonitored, entryTriggers: document.entryTriggers,
+      stepCount: document.steps.length, tagCount: document.tags.length,
+      sourcePath: document.sourcePath, sourceUrl: document.sourceUrl,
+    })).sort((left, right) => left.procedureId.localeCompare(right.procedureId)),
+  })
+  return { snapshot, documents, catalog }
 }
 
 export const createProcedureSourceService = (config: {
   readonly sources?: ReadonlyArray<ProcedureSourceConfig>
-  readonly cacheTtlMs?: number
-  readonly fetchFn?: typeof fetch
-  readonly fetchTimeoutMs?: number
+  readonly retentionDirectory?: string
+  readonly loadKnowledge?: () => Promise<Knowledge>
 } = {}): ProcedureSourceService => {
   const sources = config.sources ?? []
-  const cacheTtlMs = config.cacheTtlMs ?? defaultCacheTtlMs
-  const fetchFn = config.fetchFn ?? globalThis.fetch
-  const fetchTimeoutMs = config.fetchTimeoutMs ?? defaultFetchTimeoutMs
-  const catalogCache = new Map<ProcedureSourceId, ProcedureCatalogCacheEntry>()
-  const catalogLoads = new Map<ProcedureSourceId, Promise<ProcedureCatalogCacheEntry>>()
-  const revisionManifestCache = new Map<string, Promise<WikiManifest>>()
-  const documentCache = new Map<string, Promise<ProcedureDocument>>()
-
-  const sourceFor = (sourceId?: ProcedureSourceId): ProcedureSourceConfig => {
+  if (sources.length && !config.retentionDirectory) throw new Error('Local procedures require a World source retention directory')
+  const directory = config.retentionDirectory ? resolve(config.retentionDirectory) : undefined
+  const load = config.loadKnowledge ?? loadKnowledge
+  const sourceFor = (sourceId?: string): ProcedureSourceConfig => {
     const id = sourceId ?? sources[0]?.sourceId
     const source = sources.find(candidate => candidate.sourceId === id)
-    if (!source) throw new Error(`unknown procedure source: ${id ?? 'none configured'}`)
+    if (!source) return rejectCapabilityTarget(`Unknown procedure source: ${id ?? 'none configured'}. Discover the current procedure catalog without sourceId.`)
     return source
   }
+  const publicationPath = (source: ProcedureSourceConfig, revision: string) =>
+    join(directory!, `${procedureSourceIdSchema.parse(source.sourceId)}-${sourceRevisionSchema.parse(revision)}.json`)
 
-  const readCatalogEntry = async (
-    sourceId?: ProcedureSourceId,
-    refresh = false,
-  ): Promise<ProcedureCatalogCacheEntry> => {
-    const source = sourceFor(sourceId)
-    const inFlight = catalogLoads.get(source.sourceId)
-    if (inFlight) return await inFlight
-
-    const cached = catalogCache.get(source.sourceId)
-    if (!refresh && cached && Date.now() - cached.loadedAtMs < cacheTtlMs) return cached
-
-    const loading = loadCatalog({ source, fetchFn, refresh, timeoutMs: fetchTimeoutMs })
-    catalogLoads.set(source.sourceId, loading)
-    try {
-      const loaded = await loading
-      catalogCache.set(source.sourceId, loaded)
-      return loaded
-    } finally {
-      if (catalogLoads.get(source.sourceId) === loading) catalogLoads.delete(source.sourceId)
-    }
-  }
-
-  const readDocument = async (readConfig: {
-    readonly sourceId?: ProcedureSourceId
-    readonly procedureId: ProcedureId
-    readonly sourceRevision?: string
-    readonly sourcePath?: string
-  }): Promise<ProcedureDocument> => {
-    const source = sourceFor(readConfig.sourceId)
-    if (readConfig.sourcePath !== undefined && readConfig.sourceRevision === undefined) {
-      throw new Error('procedure sourcePath requires sourceRevision')
-    }
-    const current = catalogCache.get(source.sourceId)
-    const currentOrLoaded = readConfig.sourceRevision === undefined
-      ? await readCatalogEntry(source.sourceId)
-      : current
-    const revision = sourceRevisionSchema.parse(readConfig.sourceRevision ?? currentOrLoaded?.manifest.revision)
-    let manifest = currentOrLoaded?.manifest.revision === revision
-      ? currentOrLoaded.manifest
-      : undefined
-    if (!manifest && readConfig.sourcePath === undefined) {
-      const manifestKey = `${source.sourceId}:${revision}`
-      let loadingManifest = revisionManifestCache.get(manifestKey)
-      if (!loadingManifest) {
-        loadingManifest = (async () => {
-          const raw = await fetchText(fetchFn, rawUrlFor(source, revision, source.manifestPath), {
-            timeoutMs: fetchTimeoutMs,
-          })
-          const parsed = wikiManifestSchema.parse(JSON.parse(raw) as unknown)
-          assertManifestMatchesSource(source, parsed)
-          return parsed
-        })()
-        revisionManifestCache.set(manifestKey, loadingManifest)
+  // The configured directory is directly beneath the existing World dataDir.
+  // Every first-use writer awaits directory + parent persistence, even if mkdir
+  // was won by another writer or a previous attempt failed during fsync.
+  let directoryReady: Promise<void> | undefined
+  const prepareDirectory = async (): Promise<void> => {
+    const pending = directoryReady ??= (async () => {
+      try { await mkdir(directory!) } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
       }
-      try {
-        manifest = await loadingManifest
-      } catch (error) {
-        if (revisionManifestCache.get(manifestKey) === loadingManifest) revisionManifestCache.delete(manifestKey)
-        throw error
-      }
-    }
-    const manifestEntry = manifest?.procedures.find(entry => entry.id === readConfig.procedureId)
-    if (manifestEntry === undefined && readConfig.sourcePath === undefined) {
-      throw new Error(`procedure ${readConfig.procedureId} not found in source ${source.sourceId}`)
-    }
-    if (manifestEntry && readConfig.sourcePath && manifestEntry.file !== readConfig.sourcePath) {
-      throw new Error(`procedure ${readConfig.procedureId} source path does not match its manifest entry`)
-    }
-    const sourcePath = sourceDocumentPathSchema.parse(readConfig.sourcePath ?? manifestEntry?.file)
-    const cacheKey = `${source.sourceId}:${revision}:${sourcePath}`
-    const cached = documentCache.get(cacheKey)
-    if (cached) {
-      const document = await cached
-      if (document.procedureId !== readConfig.procedureId) {
-        throw new Error(`procedure source ${sourcePath} contains ${document.procedureId}, expected ${readConfig.procedureId}`)
-      }
-      return document
-    }
-
-    const loading = (async (): Promise<ProcedureDocument> => {
-      const rawMarkdown = await fetchText(fetchFn, rawUrlFor(source, revision, sourcePath), {
-        timeoutMs: fetchTimeoutMs,
-      })
-      const parsed = procedureDocumentSchema.parse(parseProcedureMarkdown({
-        source: procedureSourceFor(source, revision),
-        sourcePath,
-        sourceUrl: documentUrlFor(source, revision, sourcePath),
-        rawMarkdown,
-      })) as ProcedureDocument
-      if (parsed.procedureId !== readConfig.procedureId) {
-        throw new Error(`procedure source ${sourcePath} contains ${parsed.procedureId}, expected ${readConfig.procedureId}`)
-      }
-      assertDocumentMatchesManifest(parsed, manifestEntry)
-      return parsed
+      await syncDirectory(directory!)
+      await syncDirectory(dirname(directory!))
     })()
-    documentCache.set(cacheKey, loading)
-    try {
-      return await loading
-    } catch (error) {
-      if (documentCache.get(cacheKey) === loading) documentCache.delete(cacheKey)
+    try { await pending } catch (error) {
+      if (directoryReady === pending) directoryReady = undefined
       throw error
     }
   }
 
   return {
     listSources: () => [...sources],
-    readCatalog: async (readConfig = {}) =>
-      (await readCatalogEntry(readConfig.sourceId, readConfig.refresh)).catalog,
-    readDocument,
+    readCatalog: async (request = {}) => bundleFor(sourceFor(request.sourceId), await load()).catalog,
+    readDocument: async (request): Promise<ProcedureDocument> => {
+      const source = sourceFor(request.sourceId)
+      if (request.sourcePath !== undefined && request.sourceRevision === undefined) return rejectCapabilityInput('Procedure sourcePath requires sourceRevision')
+      let bundle: ReturnType<typeof bundleFor> | undefined
+      if (request.sourceRevision !== undefined) {
+        const path = publicationPath(source, request.sourceRevision)
+        let raw: string | undefined
+        try { raw = await readFile(path, 'utf8') } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        }
+        if (raw !== undefined) {
+          const retained = createKnowledge(JSON.parse(raw) as unknown)
+          if (retained.revision !== request.sourceRevision) throw new Error('Retained procedure publication revision does not match its pin')
+          bundle = bundleFor(source, retained)
+          if (bundle.snapshot.documents.length !== retained.index().length) throw new Error('Retained procedure publication contains documents outside its source path')
+        }
+      }
+      if (!bundle) {
+        const current = await load()
+        if (request.sourceRevision !== undefined && current.revision !== request.sourceRevision) {
+          return rejectCapabilityTarget(`Procedure source ${source.sourceId} revision ${request.sourceRevision} is unavailable; it is not retained or currently published`)
+        }
+        bundle = bundleFor(source, current)
+      }
+      const document = bundle.documents.find(candidate => candidate.procedureId === request.procedureId)
+      if (!document) return rejectCapabilityTarget(`Procedure ${request.procedureId} not found in source ${source.sourceId} at ${bundle.snapshot.revision}`)
+      if (request.sourcePath !== undefined && request.sourcePath !== document.sourcePath) {
+        return rejectCapabilityInput(`Procedure ${request.procedureId} source path does not match its pinned publication`)
+      }
+      // Retain every procedure at the selected revision: a future transition may
+      // need a different document after deployment has replaced the latest wiki.
+      await prepareDirectory()
+      await retain(directory!, publicationPath(source, bundle.snapshot.revision), `${JSON.stringify(bundle.snapshot)}\n`)
+      return document
+    },
   }
 }

@@ -28,7 +28,7 @@ const workspaces = createWorldWorkspaceRuntimeRegistry({
   compileScenarioDefinition: source => compileScenarioDefinition(source, worldPacks, { routing }),
   scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(worldPacks),
   runtimeAdapters: assembly.runtimeAdapters,
-  procedureSourceService: createConfiguredProcedureSourceService(),
+  procedureSourceService: createConfiguredProcedureSourceService({ dataDir }),
 })
 
 const server = createServer({ workspaces, workspaceHostUrl })
