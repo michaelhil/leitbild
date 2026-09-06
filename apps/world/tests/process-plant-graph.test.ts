@@ -237,7 +237,7 @@ describe('process plant discovery', () => {
     const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:source-inspection' }))
     const request: PackRuntimeQuery = {
       capabilityId: 'world.process-plant.artifact.read',
-      input: { plantId: plant.id, artifact: 'authored-spec' },
+      input: { plantId: plant.id, artifact: 'authored-spec', mode: 'full' },
     }
     const plants = new Map([[plant.id, { plant } as ProcessPlantRuntimeInstance]])
     const response = answerProcessPlantQuery({ request, plants, objects: new Map() })

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { idSchema, matchesLiteralSearch, objectIdSchema, type ObjectId, type OperationalObject } from '../../../core/model/index.ts'
 import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
@@ -9,12 +10,27 @@ import { processPlantComponentBehaviorSourcePathByKind } from '../runtime/behavi
 import { compileProcessDisplay } from '../displays/compiler.ts'
 import { resolveProcessPlantDisplayDefinitionForGraph } from '../displays/catalog.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
-import { capabilityTargetNotFound, requirePlant, plantQuerySchema } from './common.ts'
+import { rejectCapabilityInput } from '../../../simulation/capability-rejection.ts'
+import { capabilityTargetNotFound, requirePlant, plantQuerySchema, processPlantSearchPaginationShape, paginateProcessPlantSearch } from './common.ts'
 
-export const artifactReadQuerySchema = z.object({
+const artifactIdentityShape = {
   plantId: idSchema,
   artifact: z.enum(['authored-spec', 'compiled-graph-mermaid']),
-}).strict()
+}
+
+export const artifactReadQuerySchema = z.union([
+  z.object({ ...artifactIdentityShape, mode: z.literal('index').default('index'), ...processPlantSearchPaginationShape }).strict(),
+  z.object({ ...artifactIdentityShape, mode: z.literal('full') }).strict(),
+  z.object({ ...artifactIdentityShape, mode: z.literal('component'), componentId: idSchema }).strict(),
+  z.object({
+    ...artifactIdentityShape,
+    mode: z.literal('source'),
+    sourcePath: z.string().min(1).describe('Exact path from the artifact sourceFiles index.'),
+    startLine: z.number().int().min(1).default(1).describe('One-based line; existing sourceLinks.targetLineIndex is zero-based, so add 1.'),
+    lineCount: z.number().int().min(1).max(200).default(80),
+    expectedSha256: z.string().regex(/^[a-f0-9]{64}$/).optional().describe('Pin from the index or a previous source slice; rejects changed source bytes.'),
+  }).strict(),
+])
 
 export const componentsSearchQuerySchema = z.object({
   plantId: idSchema,
@@ -239,7 +255,7 @@ const artifactSourceFiles = (components: ReadonlyArray<ArtifactComponentView>): 
   return [...paths].sort().map(path => ({ path, content: sourceTextFor(path) }))
 }
 
-const artifactView = (
+const fullArtifactView = (
   system: ProcessPlantRuntimeInstance,
   artifact: 'authored-spec' | 'compiled-graph-mermaid',
 ): unknown => {
@@ -266,6 +282,65 @@ const artifactView = (
     components,
     sourceFiles: artifactSourceFiles(components),
     metadata: artifactMetadata(system.plant.graph, overviewComponentIds),
+  }
+}
+
+const artifactCoverage = 'Implementation coverage is component behavior source files and their direct named imports inside the process-plant Pack, not the complete Pack, application, integration, or controller implementation. Absence from this bundle does not establish absence from the model. Component selection returns one exact authored component, not its surrounding configuration. Source links use zero-based targetLineIndex; source reads use one-based startLine.'
+
+// Keep original line endings so concatenating pinned pages reproduces the file exactly.
+const sourceLines = (content: string): string[] => content.match(/[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+$/g) ?? []
+const sourceSha256 = (content: string): string => createHash('sha256').update(content).digest('hex')
+
+const artifactView = (system: ProcessPlantRuntimeInstance, input: z.infer<typeof artifactReadQuerySchema>): unknown => {
+  if (input.mode === 'full') return fullArtifactView(system, input.artifact)
+  const overviewComponentIds = overviewComponentIdsFor(system)
+  const components = artifactComponents(system.plant.graph, overviewComponentIds)
+  const common = {
+    plantId: system.plant.id,
+    artifact: input.artifact,
+    mode: input.mode,
+    metadata: artifactMetadata(system.plant.graph, overviewComponentIds),
+    coverage: artifactCoverage,
+  }
+  if (input.mode === 'component') {
+    const component = components.find(candidate => candidate.id === input.componentId)
+    if (!component) return capabilityTargetNotFound(`Artifact component not found: ${input.componentId}. Discover exact component ids with world.process-plant.artifact.read mode index.`)
+    const authoredComponent = system.plant.sourceGraph.components.find(candidate => candidate.id === input.componentId)
+    if (!authoredComponent) throw new Error(`Compiled component has no authored artifact component: ${input.componentId}`)
+    // Match the authored JSON export, which omits in-memory undefined properties.
+    return { ...common, component, authoredComponent: JSON.parse(JSON.stringify(authoredComponent)) }
+  }
+  const sourceFiles = artifactSourceFiles(components)
+  if (input.mode === 'index') {
+    const { items, ...page } = paginateProcessPlantSearch(components, input.offset, input.limit)
+    return {
+      ...common,
+      ...page,
+      components: items.map(({ sourceLinks: _links, ...component }) => component),
+      sourceFiles: sourceFiles.map(file => ({ path: file.path, lineCount: sourceLines(file.content).length, byteCount: Buffer.byteLength(file.content), sha256: sourceSha256(file.content) })),
+    }
+  }
+  const file = sourceFiles.find(candidate => candidate.path === input.sourcePath)
+  if (!file) return capabilityTargetNotFound(`Artifact source file not found: ${input.sourcePath}. Select an exact sourceFiles path from world.process-plant.artifact.read mode index; this is not a complete repository reader.`)
+  const sha256 = sourceSha256(file.content)
+  if (input.expectedSha256 !== undefined && input.expectedSha256 !== sha256) return rejectCapabilityInput('Artifact source bytes changed. Read the index again before continuing; do not combine pages with different sha256 values.')
+  const lines = sourceLines(file.content)
+  if (input.startLine > Math.max(1, lines.length)) return rejectCapabilityInput(`Artifact source startLine ${input.startLine} exceeds totalLines ${lines.length}.`)
+  const selected = lines.slice(input.startLine - 1, input.startLine - 1 + input.lineCount)
+  const endLine = input.startLine + selected.length - 1
+  const hasMore = endLine < lines.length
+  return {
+    ...common,
+    sourcePath: file.path,
+    sha256,
+    totalLines: lines.length,
+    byteCount: Buffer.byteLength(file.content),
+    startLine: input.startLine,
+    endLine,
+    returnedLines: selected.length,
+    content: selected.join(''),
+    hasMore,
+    nextRead: hasMore ? { ...input, startLine: endLine + 1, expectedSha256: sha256 } : null,
   }
 }
 
@@ -373,7 +448,7 @@ export const answerProcessPlantGraphQuery = (config: {
   if (config.request.capabilityId === 'world.process-plant.artifact.read') {
     const payload = artifactReadQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
-    return artifactView(system, payload.artifact)
+    return artifactView(system, payload)
   }
   const payload = displayProfileReadQuerySchema.parse(config.request.input)
   const system = requirePlant(config.plants, payload.plantId)

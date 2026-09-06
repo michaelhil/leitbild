@@ -48,6 +48,13 @@ const pagedPlantRecordsSchema = (collectionField: string, itemField: string) => 
   [collectionField]: z.array(z.object({ plantId: plantIdSchema, [itemField]: recordSchema }).strict()),
 }).strict()
 
+const selectiveArtifactShape = {
+  plantId: plantIdSchema,
+  artifact: z.enum(['authored-spec', 'compiled-graph-mermaid']),
+  metadata: recordSchema,
+  coverage: z.string(),
+}
+
 const queryOutputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.catalog.list': z.object({
     models: recordArraySchema,
@@ -94,7 +101,7 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
     byKind: z.record(z.string(), z.number().int().nonnegative()),
     components: recordArraySchema,
   }).strict(),
-  'world.process-plant.artifact.read': z.object({
+  'world.process-plant.artifact.read': z.union([z.object({
     plantId: plantIdSchema,
     artifact: z.enum(['authored-spec', 'compiled-graph-mermaid']),
     title: z.string(),
@@ -104,6 +111,20 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
     sourceFiles: recordArraySchema,
     metadata: recordSchema,
   }).strict(),
+  z.object({
+    ...selectiveArtifactShape, mode: z.literal('index'),
+    total: z.number().int().nonnegative(), offset: z.number().int().nonnegative(),
+    returned: z.number().int().nonnegative(), hasMore: z.boolean(),
+    components: recordArraySchema, sourceFiles: recordArraySchema,
+  }).strict(),
+  z.object({ ...selectiveArtifactShape, mode: z.literal('component'), component: recordSchema, authoredComponent: recordSchema }).strict(),
+  z.object({
+    ...selectiveArtifactShape, mode: z.literal('source'), sourcePath: z.string(), sha256: z.string(),
+    totalLines: z.number().int().nonnegative(), byteCount: z.number().int().nonnegative(),
+    startLine: z.number().int().positive(), endLine: z.number().int().nonnegative(),
+    returnedLines: z.number().int().nonnegative(), content: z.string(), hasMore: z.boolean(),
+    nextRead: recordSchema.nullable(),
+  }).strict()]),
   'world.process-plant.display-profile.read': z.object({ plantId: plantIdSchema, profile: recordSchema, groups: recordArraySchema }).strict(),
   'world.process-plant.variables.read': z.object({ variables: recordArraySchema }).strict(),
   'world.process-plant.variables.search': pagedPlantRecordsSchema('variables', 'variable'),
@@ -184,7 +205,7 @@ const queryDescriptionById: Readonly<Record<string, string>> = {
   'world.process-plant.plants.list': 'Discover live active Plant units and their exact plantId values, model library, graph size, variable count, and elapsed simulation time. Use these identities for Plant-specific reads.',
   'world.process-plant.graph.read': 'Read one complete compiled Plant component, connection, variable, and signal graph. This is a large engineering view; prefer component or signal search for focused questions.',
   'world.process-plant.components.search': 'Discover Plant components by identity, kind, or text. Returns compact summaries by default and parameters only when requested.',
-  'world.process-plant.artifact.read': 'Read one complete authored Plant configuration or compiled graph artifact, including implementation source and calculation links. Use for provenance or full engineering inspection, not routine live-state questions.',
+  'world.process-plant.artifact.read': 'Inspect Plant configuration and implementation evidence. Default mode index returns paged component identities and source-file paths, sizes and hashes, without source content. mode component selects one exact componentId and its authored configuration/source links. mode source reads bounded lines from an indexed sourcePath; copy nextRead to continue with the same content hash. mode full explicitly exports the complete authored Plant configuration or compiled graph and existing source bundle (large). The implementation bundle covers behavior files and direct named imports, not the complete Pack or application; absence is not proof of no implementation. Not a live-state read.',
   'world.process-plant.display-profile.read': 'Read a configured operator display profile with its current grouped field values. Use an exact profileId returned by plants.list.',
   'world.process-plant.variables.read': 'Read current values and metadata for exact Plant variable paths returned by variables.search or another discovery view; do not guess paths.',
   'world.process-plant.variables.search': 'Search current Plant variables by text, discipline, quantity, publication state, and Plant; results are paginated.',

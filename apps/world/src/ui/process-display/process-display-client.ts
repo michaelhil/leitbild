@@ -592,7 +592,7 @@ export const readProcessPlantArtifact = async (
   const result = assertObject(await querySimulationRunCapability(
     simulationRunId,
     'world.process-plant.artifact.read',
-    { plantId, artifact },
+    { plantId, artifact, mode: 'full' },
   ), 'process plant artifact result is malformed')
   const metadata = assertObject(result.metadata, 'process plant artifact result requires metadata')
   const language = assertString(result.language, 'process plant artifact result requires language')
