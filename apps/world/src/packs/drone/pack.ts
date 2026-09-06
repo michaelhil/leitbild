@@ -39,7 +39,7 @@ export const dronePack: WorldPack = {
       }],
     }],
   },
-  knowledge: { wikiRefs: [{ name: 'Drone operations', url: '/docs/wiki/drone-ops.md' }] },
+  knowledge: { wikiRefs: [{ name: 'Drone knowledge', url: '/wiki?path=packs%2Fdrone%2Findex.md' }] },
   interactions: { handlers: [createDroneAttackInteractionHandler()] },
   scenario: droneScenarioSupport,
 }

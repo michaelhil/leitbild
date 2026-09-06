@@ -1,14 +1,7 @@
 # Leitbild Host
 
-The Host is the sole Workspace authority and public entry shell. It provisions World and Agents for every new Workspace and aggregates their Resources and Capabilities without owning their domain state.
+Owns Workspace identity, provisioning, navigation and public routing. Domain state remains in World and Agents.
 
-Required environment:
+The Host also presents the [knowledge wiki](https://leitbild.app/wiki) from the same immutable publication used by agent reads. It does not run a second documentation database or hosted editor.
 
-```bash
-WORKSPACE_HOST_URL=http://127.0.0.1:3100
-WORKSPACE_MODULES=[{"moduleId":"world","internalBaseUrl":"http://127.0.0.1:4177","manifestPath":"/.well-known/workspace-module"},{"moduleId":"agents","internalBaseUrl":"http://127.0.0.1:3000","manifestPath":"/.well-known/workspace-module"}]
-```
-
-Root behavior is deterministic: zero Workspaces opens onboarding, one resumes that Workspace, and multiple open the manager. Workspace selection is always encoded in the URL.
-
-Run locally with `bun run --cwd apps/leitbild start`. Production deploys are issued only from the repository root with `bun run deploy`.
+Deployment is implemented in `scripts/deploy.ts`; use its current help and root scripts.

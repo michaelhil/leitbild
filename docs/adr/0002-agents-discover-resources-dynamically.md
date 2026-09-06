@@ -1,3 +1,0 @@
-# Agents discover Resources and Capabilities dynamically
-
-Agent Profiles contain behavior, authored Agents tools, and semantic Capability grants but never Module-specific Resource ids or persistent Agent-to-Resource links. A Profile with grants derives the generic Workspace Capability Broker tools at runtime, then discovers compatible Workspace Resources when it acts. This avoids duplicated infrastructure tool selection, hard-coded cross-Module integration, and stale Resource bindings while allowing new Resource types to participate without changing the Agent model. Leitbild has no generic persistent relationship abstraction; any future continuous cross-Module behavior must have a concrete owner and typed contract.

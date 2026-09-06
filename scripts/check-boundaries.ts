@@ -12,6 +12,7 @@ const appImport = (names: string): RegExp => new RegExp(`(?:from\\s*|import\\s*)
 const packageImport = (names: string): RegExp => new RegExp(`(?:from\\s*|import\\s*)[('"\\x60]@leitbild/(?:${names})(?:/|['"\\x60])`)
 
 const boundaries: ReadonlyArray<Boundary> = [
+  { owner: 'Knowledge', root: resolve(repositoryRoot, 'packages/knowledge'), forbidden: [appImport('world|agents|leitbild'), packageImport('world|agents|host|contracts|module-runtime')] },
   { owner: 'World', root: resolve(repositoryRoot, 'apps/world'), forbidden: [appImport('agents|leitbild'), packageImport('agents|host')] },
   { owner: 'Agents', root: resolve(repositoryRoot, 'apps/agents'), forbidden: [appImport('world|leitbild'), packageImport('world|host')] },
   { owner: 'Leitbild Host', root: resolve(repositoryRoot, 'apps/leitbild'), forbidden: [appImport('world|agents'), packageImport('world|agents')] },

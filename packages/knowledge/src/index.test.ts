@@ -57,6 +57,15 @@ describe('published knowledge', () => {
     expect(() => fixture().read('index.md', { section: 'missing' })).toThrow('Unknown section')
     expect(() => fixture().read('index.md', { startLine: 999 })).toThrow('outside')
   })
+  test('long-line search previews stay small and exact evidence remains readable', () => {
+    const content = '# Plant\n' + 'x'.repeat(5000) + ' subcooling ' + 'y'.repeat(5000)
+    const knowledge = createKnowledge({ revision, documents: [{ path: 'index.md', content }] })
+    const match = knowledge.search('subcooling').matches[0]!
+    expect(match.snippet.length).toBeLessThanOrEqual(1200)
+    expect(match.snippet).toContain('subcooling')
+    expect(match.snippetTruncated).toBe(true)
+    expect(knowledge.read(match.path).content).toBe(content)
+  })
   test('unsafe and duplicate paths cannot enter a publication', () => {
     for (const path of ['../secret.md', '/secret.md', 'a/../b.md', '.git/a.md']) {
       expect(() => createKnowledge({ revision, documents: [{ path, content: '' }] })).toThrow()

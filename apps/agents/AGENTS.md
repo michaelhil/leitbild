@@ -65,9 +65,6 @@ When running `Codex-toolbox:stress-test` (or any plan review) on a plan touching
 - **New access-control gate**: must have a structured failure reason distinguishing it from existing gates.
 - **New magic number**: justified by current constraint or stale copy?
 
-## Docs worth reading before non-trivial work
+## Knowledge
 
-- [README.md](README.md) — user-facing feature surface, tool reference, REST + WS + MCP protocols
-- [docs/tools.md](docs/tools.md) — tool authoring, parameter schemas, external tool loading
-- [docs/scripts.md](docs/scripts.md) — multi-agent improv script engine (replaces macros)
-- [docs/causality-tracking.md](docs/causality-tracking.md) — how message causality is recorded
+Use the unified Leitbild wiki for current explanations and the source for exact contracts. Do not recreate a parallel `docs/` collection here. Executable skills remain in `skills/`; their text is inspectable, not copied into the wiki.

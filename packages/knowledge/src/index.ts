@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { headingsFor, type KnowledgeHeading } from './markdown.ts'
+import { headingsFor } from './markdown.ts'
 export { headingsFor, type KnowledgeHeading } from './markdown.ts'
 
 const documentSchema = z.object({ path: z.string(), content: z.string() }).strict()
@@ -71,8 +71,14 @@ export const createKnowledge = (input: unknown) => {
         if (lineScore > bestScore) { best = index; bestScore = lineScore }
       })
       const heading = document.headings.filter(candidate => candidate.line <= best + 1).at(-1)
+      const excerpt = document.lines[best] ?? ''
+      const positions = terms.map(term => excerpt.toLowerCase().indexOf(term)).filter(position => position >= 0)
+      const excerptStart = Math.max(0, (positions.length ? Math.min(...positions) : 0) - 120)
+      // Search previews are bounded, not the document. Exact lines and sections
+      // remain readable through the returned reference.
+      const snippet = excerpt.slice(excerptStart, excerptStart + 1200)
       return [{ path: document.path, title: document.title, line: best + 1, section: heading?.anchor,
-        snippet: document.lines.slice(Math.max(0, best - 1), best + 2).join('\n'), score }]
+        snippet, snippetTruncated: excerptStart > 0 || excerpt.length > excerptStart + snippet.length, score }]
     }).sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
     const offset = options.offset ?? 0
     const selected = matches.slice(offset, offset + (options.limit ?? 10)).map(({ score: _score, ...match }) => match)

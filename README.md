@@ -1,27 +1,13 @@
 # Leitbild
 
-Leitbild is one Workspace-based toolbox with two fixed core Modules:
+A modular simulation and AI-agent sandbox. World owns simulations; Agents owns scoped conversations; the Host presents one Workspace-based product.
 
-- **World** — scenarios, Simulation Runs, maps, and capability packs
-- **Agents** — Rooms, messages, coordination, Agent profiles, models, tools, memory, and evaluations
+Read the [knowledge wiki](https://leitbild.app/wiki) for concepts, architecture, guides and Pack documentation. Authored knowledge lives in the separate `Leitbild-wiki` Git repository; this checkout contains executable code, skills and tests, not a second documentation collection.
 
-Every Workspace has one UUID and provisions both Modules. Modules own their state and runtime mechanics, while the Leitbild Host owns Workspace lifecycle, routing, the shared shell, and cross-Module Resource/Capability discovery. There are no optional product modes, default Workspaces, selection cookies, compatibility APIs, or user-controlled Module installation.
+## Development
 
-## Repository
+Use Bun 1.4.0. Run `bun install`, `bun run check`, and `bun run test`. Module scripts are declared in their `package.json` files. Build a local wiki publication with `bun run knowledge:publish /path/to/Leitbild-wiki`.
 
-- `apps/leitbild` — host, Workspace manager, shared shell, and deployment
-- `apps/world` — World runtime and UI
-- `apps/agents` — Agents runtime and UI, including Rooms and messaging
-- `packages/contracts` — neutral Workspace, Module, Resource, Capability, and Pack contracts
-- `packages/integration-tests` — real cross-Module lifecycle and discovery tests
+Deployment runs `bun run deploy -- --dry-run` or `bun run deploy -- --yes`. It requires a clean knowledge repository at `../Leitbild-wiki` or `LEITBILD_KNOWLEDGE_REPOSITORY`, and records the exact code and knowledge revisions. No Forgejo service is required.
 
-## Commands
-
-```bash
-bun install
-bun run check
-bun run test
-bun run deploy -- --dry-run
-```
-
-Production is one release on `https://leitbild.app`, with module paths under `/workspaces/{workspaceId}/{world|agents}`.
+Source owners are `apps/leitbild`, `apps/world`, and `apps/agents`. Shared contracts are in `packages/contracts`; `packages/procmd` parses procedure documents; `packages/knowledge` provides immutable reference reads without owning simulation or conversation state.

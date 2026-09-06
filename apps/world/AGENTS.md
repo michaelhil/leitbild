@@ -50,7 +50,7 @@
 - Process-plant variable capabilities and limits belong on variable descriptors and compiled signal bindings. Derive defaults from `writable`, `publish`, and `tagId`; add explicit overrides only when they carry operational value. Do not add arbitrary hard ranges to generic variables.
 - Process-plant control/protection rules must be typed declarative data evaluated by the pack runtime. Treat this as a simplified plant I&C substrate above continuous physics: instrumentation signals, normal controllers, protection functions, alarms, structured annunciator metadata, mode-qualified rules, permissives, interlocks, and validated actions. Do not add arbitrary expression languages, generated procedure code, global mode stores, or mid-solver mutation.
 - Process-plant I&C lifecycle actions are alarm/trip lifecycle state operations only. They must not mutate process variables, execute emergency procedures, or become a hidden control path.
-- Process-plant procedures remain external for now. Procedure runners, operators, and AI agents may query signal values and condition truth through Simulation Capabilities and may issue validated commands, but process-plant must not become an embedded emergency procedure engine.
+- Procedure documents belong to the unified knowledge publication; the generic World procedure system owns their execution and exact source retention. Operators and AI agents may query signal values and issue validated commands, but process-plant must not become an embedded emergency procedure engine.
 - Process-plant alarms are persistent current state plus transition events. Do not model alarms only as transient interaction events or clear them merely because they were acknowledged.
 - Process-plant automatic actions from normal control or protection must flow through the same validated queued write path as operator, scenario, and AI commands. Do not create a privileged mutation path that bypasses writability, limits, type checks, or solver phase boundaries.
 - A Plant selects a process-plant-owned Plant Model inside its Scenario Pack Selection. Keep reusable component definitions and solver behavior in code, but do not make hardcoded TypeScript graphs the canonical runtime source of truth or expose Plant Model schemas from World core.
@@ -76,7 +76,7 @@
 - Keep MapLibre as an imperative boundary. Use Svelte effects to synchronize inputs to the map, not to make the map lifecycle itself a reactive data model.
 - MapLibre resize is owned by observed map container geometry. Do not use rail state, modal state, startup state, arbitrary revision counters, or delayed activation frames to wake or resize the map.
 - Pure TypeScript UI presenters/selectors are allowed when they concentrate real derivation logic and are tested. Delete them if they become pass-through wrappers.
-- See `docs/adr/0012-svelte-5-ui-architecture.md` before changing UI state architecture.
+- Current architectural explanations live in the unified wiki; preserve these executable UI constraints rather than recreating historical ADR files.
 
 ## Map Rendering Rules
 

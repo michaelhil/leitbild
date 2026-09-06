@@ -150,7 +150,7 @@ export const processPlantPack: WorldPack = {
       return sum + recordedPlantVariables(plant, profileId).length
     }, 0),
   },
-  knowledge: { wikiRefs: [{ name: 'Leitbild PWR operations wiki', url: 'https://github.com/michaelhil/leitbild/blob/main/docs/wiki/pwr-ops.md' }] },
+  knowledge: { wikiRefs: [{ name: 'Process plant knowledge', url: '/wiki?path=packs%2Fprocess-plant%2Findex.md' }] },
   scenario: {
     itemSchemas: { plant: processPlantScenarioItemSchema },
     expandItem: (spec, context) => {

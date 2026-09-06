@@ -10,11 +10,15 @@
   let matches = $state<{ path: string; title: string; snippet: string }[] | null>(null)
   let document = $state<Document | null>(null)
   let query = $state('')
+  let searchedQuery = $state('')
+  let nextOffset = $state<number | undefined>(undefined)
+  let matchTotal = $state(0)
   let error = $state('')
   let loading = $state(false)
   let html = $state('')
   let sourceBaseUrl = $state<string | undefined>(undefined)
-  const groups = $derived([...new Set(entries.map(entry => entry.path.includes('/') ? entry.path.split('/')[0]! : 'Start'))])
+  const groupFor = (path: string): string => path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : 'Start'
+  const groups = $derived([...new Set(entries.map(entry => groupFor(entry.path)))])
   let requestId = 0
   const revisionSelector = new URLSearchParams(location.search).get('revision')
   const pageUrl = (path: string): string => `/wiki?path=${encodeURIComponent(path)}${revisionSelector ? `&revision=${encodeURIComponent(revisionSelector)}` : ''}`
@@ -65,9 +69,16 @@
     } catch (cause) { if (id === requestId) error = cause instanceof Error ? cause.message : String(cause) }
     finally { if (id === requestId) loading = false }
   }
-  const search = async (): Promise<void> => {
+  const search = async (more = false): Promise<void> => {
     error = ''
-    try { matches = query.trim() ? (await get<{ matches: NonNullable<typeof matches> }>(`/api/knowledge/search?query=${encodeURIComponent(query)}`)).matches : null }
+    try {
+      if (!more) searchedQuery = query.trim()
+      if (!searchedQuery) { matches = null; nextOffset = undefined; return }
+      const result = await get<{ matches: NonNullable<typeof matches>; total: number; nextOffset?: number }>(`/api/knowledge/search?query=${encodeURIComponent(searchedQuery)}&offset=${more ? nextOffset ?? 0 : 0}`)
+      matches = more ? [...(matches ?? []), ...result.matches] : result.matches
+      matchTotal = result.total
+      nextOffset = result.nextOffset
+    }
     catch (cause) { error = cause instanceof Error ? cause.message : String(cause) }
   }
   const reportIssue = (): void => {
@@ -94,12 +105,14 @@
     </form>
     <nav aria-label="Wiki pages">
       {#if matches !== null}
-        {#each matches as entry}<a href={pageUrl(entry.path)}><strong>{entry.title}</strong><small>{entry.snippet}</small></a>{/each}
+        <small>{matches.length} of {matchTotal} matching documents</small>
+        {#each matches as entry}<a href={pageUrl(entry.path)}><strong>{entry.title}</strong><small class="snippet">{entry.snippet}</small></a>{/each}
+        {#if nextOffset !== undefined}<button onclick={() => search(true)}>More results</button>{/if}
         {#if matches.length === 0}<p>No matching documents.</p>{/if}
       {:else}
         {#each groups as group}
-          <details open={group === 'Start' || document?.path.startsWith(`${group}/`)}><summary>{group}</summary>
-            {#each entries.filter(entry => (entry.path.includes('/') ? entry.path.split('/')[0] : 'Start') === group) as entry}
+          <details open={group === 'Start' || (document && groupFor(document.path) === group)}><summary>{group}</summary>
+            {#each entries.filter(entry => groupFor(entry.path) === group) as entry}
               <a class:selected={document?.path === entry.path} href={pageUrl(entry.path)}><strong>{entry.title}</strong><small>{entry.path}</small></a>
             {/each}
           </details>
@@ -122,6 +135,7 @@
 
 <style>
   .wiki-header{display:flex;gap:1.2rem;padding:1rem 2rem;background:#17291e;color:#fff}.wiki-header a{color:inherit;font-weight:700;text-decoration:none}
+  .snippet{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
   .wiki-layout{display:grid;grid-template-columns:minmax(220px,290px) minmax(0,1fr);max-width:1440px;margin:auto;min-height:90vh}
   aside{padding:1.2rem;border-right:1px solid #cdd6cd}form{display:flex;gap:.3rem}input{min-width:0;width:100%;padding:.6rem}button{padding:.5rem}
   nav{display:grid;gap:.3rem;margin-top:1rem}nav a{display:block;padding:.55rem;text-decoration:none;color:inherit;border-radius:.3rem}nav a:hover,.selected{background:#dce9df}small{display:block;color:#536759;font-size:.7rem;overflow-wrap:anywhere}
