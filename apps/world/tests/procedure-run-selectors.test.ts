@@ -48,6 +48,7 @@ const procedure = {
       branches: [],
       tagIds: [],
       sourceLine: 10,
+      sourceEndLine: 59,
     },
     {
       id: 'verify-phase-a-isolation',
@@ -58,6 +59,7 @@ const procedure = {
       branches: [],
       tagIds: [],
       sourceLine: 60,
+      sourceEndLine: 70,
     },
   ],
 } satisfies ProcedureDocument
@@ -95,6 +97,7 @@ describe('procedure run selectors', () => {
         target: 'verify-phase-a-isolation',
         targetKind: 'step',
         tagIds: [],
+        sourceLine: 11,
       },
     })).toBe('Go to E-0, step 6: verify-phase-a-isolation')
   })
@@ -113,6 +116,7 @@ describe('procedure run selectors', () => {
         branches: [],
         tagIds: [],
         sourceLine: 12,
+        sourceEndLine: 15,
       }],
     } satisfies ProcedureDocument
 
@@ -124,6 +128,7 @@ describe('procedure run selectors', () => {
         target: 'FR-C.1',
         targetKind: 'procedure',
         tagIds: [],
+        sourceLine: 13,
       },
     })).toBe('Go to FR-C.1, step 1: verify-icc')
   })

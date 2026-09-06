@@ -13,6 +13,7 @@ const AGENTS_ROOT = resolve(WORKSPACE_ROOT, 'apps/agents')
 export const PRODUCTION_DEPENDENCY_WORKSPACE_PATHS = [
   'packages/contracts',
   'packages/module-runtime',
+  'packages/procmd',
 ] as const
 export const INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS = [
   'packages/integration-tests',

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createProcedureLookupTool, type ProcedureLookupTelemetry } from './procedure-lookup.ts'
 import type { WikiSourceBinding } from '../../types.ts'
+import type { ParsedProcedure, ProcedureStep } from '@leitbild/procmd'
 
 const REVISION = 'b'.repeat(40)
 const BINDING: WikiSourceBinding = {
@@ -105,12 +106,12 @@ describe('procedure_lookup — format / step / mode parameters', () => {
     const tool = createProcedureLookupTool(BINDING, 'PWR EOPs', 'https://leitbild-wikis.github.io/pwr-ops/')
     const r = await tool.execute({ id: 'E-0', format: 'json' }, ctx)
     expect(r.success).toBe(true)
-    const data = r.data as { kind: string; procedureId: string; parsed: { frontmatter: { procedureId: string }; steps: unknown[]; csfChannels: string[] } }
+    const data = r.data as { kind: string; procedureId: string; parsed: ParsedProcedure }
     expect(data.kind).toBe('procedure')
     expect(data.procedureId).toBe('E-0')
-    expect(data.parsed.frontmatter.procedureId).toBe('E-0')
+    expect(data.parsed.procedureId).toBe('E-0')
     expect(data.parsed.steps.length).toBeGreaterThan(5)
-    expect(data.parsed.csfChannels).toContain('subcriticality')
+    expect(data.parsed.csfsMonitored).toContain('subcriticality')
   })
 
   test('format: "json" with no id returns an index object', async () => {
@@ -136,10 +137,10 @@ describe('procedure_lookup — format / step / mode parameters', () => {
     const tool = createProcedureLookupTool(BINDING, 'PWR EOPs', 'https://leitbild-wikis.github.io/pwr-ops/')
     const r = await tool.execute({ id: 'E-0', step: 'verify-reactor-trip', format: 'json' }, ctx)
     expect(r.success).toBe(true)
-    const data = r.data as { kind: string; step: { id: string; checks: string[] } }
+    const data = r.data as { kind: string; step: ProcedureStep }
     expect(data.kind).toBe('step')
     expect(data.step.id).toBe('verify-reactor-trip')
-    expect(data.step.checks.length).toBeGreaterThan(0)
+    expect(data.step.blocks.some(block => block.kind === 'check')).toBe(true)
   })
 
   test('unknown step → structured error with fuzzy suggestions', async () => {
@@ -220,11 +221,46 @@ describe('procedure_lookup — strict manifest discovery', () => {
   let restore: () => void
   afterEach(() => restore?.())
 
+  test('focused/full readers preserve Decision, source order and each external citation URL', async () => {
+    const raw = readFileSync(`${import.meta.dir}/../../../../../../packages/procmd/fixtures/conformance.md`, 'utf8')
+    restore = installFetchMock(url => url.endsWith('/_manifest.json')
+      ? new Response(JSON.stringify(manifest([manifestEntry('TEST-1', 'Decision')])) )
+      : new Response(raw))
+    const tool = createProcedureLookupTool(BINDING, 'PWR EOPs', 'https://example.test/', () => {})
+    const focused = await tool.execute({ id: 'TEST-1', step: 'choose' }, ctx)
+    const full = await tool.execute({ id: 'TEST-1' }, ctx)
+    for (const result of [focused, full]) {
+      expect(result.success).toBe(true)
+      expect(result.data as string).toContain('**Decision:** Identify cause')
+      expect(result.data as string).toContain('1. First path «PATH»')
+      expect(result.data as string).toContain('_against:_ counter-evidence')
+      expect(result.data as string).toContain('[FR-S.1](https://leitbild-wikis.github.io/pwr-ops/procedures/FR-S.1/)')
+      expect((result.data as string).indexOf('- Internal choice')).toBeLessThan((result.data as string).indexOf('**Action:**'))
+    }
+    const json = await tool.execute({ id: 'TEST-1', step: 'choose', format: 'json' }, ctx)
+    const data = json.data as { tags: { id: string }[]; diagnostics: string[] }
+    expect(data.tags.map(tag => tag.id)).toEqual(['CAUTION', 'DECISION', 'PATH', 'BECAUSE', 'AGAINST', 'REAL', 'DETACHED'])
+    expect(data.diagnostics.length).toBeGreaterThan(0)
+  })
+
+  test('invalid procmd is an explicit failure, never a successful raw-source fallback', async () => {
+    restore = installFetchMock(url => url.endsWith('/_manifest.json')
+      ? new Response(JSON.stringify(manifest())) : new Response('# unsupported source'))
+    const events: ProcedureLookupTelemetry[] = []
+    const tool = createProcedureLookupTool(BINDING, 'PWR EOPs', 'https://example.test/', event => events.push(event))
+    const result = await tool.execute({ id: 'E-0' }, ctx)
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('Could not parse')
+    expect(events[0]!.errorClass).toBe('parse-failed')
+  })
+
   test('discovers a procedure solely from its manifest entry', async () => {
     const aop = manifestEntry('AOP-1', 'Generic AOP')
     restore = installFetchMock((url) => {
       if (url.endsWith('/_manifest.json')) return new Response(JSON.stringify(manifest([aop])), { status: 200 })
       if (url.endsWith('/wiki/procedures/AOP-1.md')) return new Response(`---
+type: procedure
+procedure-md: 0.7
 procedure-id: AOP-1
 title: Generic AOP
 profile: nuclear-erg

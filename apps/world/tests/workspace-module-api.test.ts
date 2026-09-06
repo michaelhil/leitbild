@@ -10,7 +10,7 @@ import {
   workspaceModuleManifestSchema,
   type WorkspaceId,
 } from '@leitbild/contracts'
-import { afterEach,describe,expect,test } from 'bun:test'
+import { afterEach,describe,expect,spyOn,test } from 'bun:test'
 import { mkdtemp,rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -23,6 +23,9 @@ import {
 import { testScenarioDefinitions } from './fixtures/scenarios.ts'
 import { createTestPackRuntimeAdapters,createTestScenarioRuntimeResolver,testScenarioAuthoring } from './helpers.ts'
 import { actorIdSchema, objectIdSchema } from '../src/core/model/ids.ts'
+import { procedureTestDocument } from './procedure-fixtures.ts'
+import type { ProcedureDocument } from '../src/core/model/procedures.ts'
+import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
 
 const registries: WorldWorkspaceRuntimeRegistry[] = []
 const temporaryDirectories: string[] = []
@@ -65,6 +68,86 @@ const provision = async (registry: WorldWorkspaceRuntimeRegistry, workspaceId: W
   })
 
 describe('World Module API', () => {
+  test('procedure reads select canonical evidence without duplicating Markdown or changing the UI document', async () => {
+    const registry = await createRegistry()
+    const workspaceId = newWorkspaceId()
+    await provision(registry, workspaceId)
+    const run = await registry.getLoaded(workspaceId)!.simulationRuns.create({ scenarioId: 'test-response' })
+    const base = procedureTestDocument()
+    const document = parseProcedureMarkdown({ ...base,
+      rawMarkdown: `---
+type: procedure
+procedure-md: 0.7
+procedure-id: E-0
+title: Evidence-preserving selection
+applies-to: fixture-only
+reference-plant: Test reference
+---
+Document-level caution and applicability remain relevant to a selected step.
+## Step 1 [id: first]
+Check: Verify «CHECK».
+Caution: Observe «CAUTION» before acting.
+Decision: Choose the applicable path.
+1. Review «DECISION».
+2. Do not infer a measured value from this authored instruction.
+- Not verified → [[TARGET]]
+  Because: Evidence from «RATIONALE» supports this path.
+  Against: Conflicting «AGAINST» is not to be discarded.
+## Step 2 [id: second]
+Action: Inspect «OTHER-STEP».
+- Verified → END
+## Tags
+- id: CHECK
+- id: CAUTION
+- id: DECISION
+- id: RATIONALE
+- id: AGAINST
+- id: OTHER-STEP
+`,
+    })
+    const original = structuredClone(document)
+    const reader = spyOn(run, 'procedureDocument').mockResolvedValue(document)
+    const access = accessContextSchema.parse({ workspaceId, requestId: newRequestId(), actor: { kind: 'ai', id: 'procedure-reader' } })
+    const capabilityId = 'world.procedure.document.read'
+    const read = (input: unknown) => call<{ result: Omit<ProcedureDocument, 'rawMarkdown'> & { rawMarkdown?: string; totalSteps: number; totalTags: number; selectedStepId?: string } }>(registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${capabilityId}/invoke`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, capabilityId, resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }, input, access }),
+      })
+    try {
+      const full = await read({ procedureId: 'E-0' })
+      expect(full.status).toBe(200)
+      expect(full.body!.result).toMatchObject({ totalSteps: 2, totalTags: 6, steps: document.steps, tags: document.tags })
+      expect(full.body!.result).not.toHaveProperty('rawMarkdown')
+      expect(full.body!.result).not.toHaveProperty('selectedStepId')
+      const pinned = { procedureId: 'E-0', sourceId: document.source.sourceId, sourceRevision: document.source.revision, sourcePath: document.sourcePath }
+      const selected = await read({ ...pinned, stepId: 'first' })
+      expect(reader).toHaveBeenLastCalledWith(pinned)
+      expect(selected.body!.result).toMatchObject({
+        selectedStepId: 'first', totalSteps: 2, totalTags: 6,
+        source: document.source, appliesTo: document.appliesTo, description: document.description,
+        referencePlant: 'Test reference',
+        sourceUrl: document.sourceUrl, sourcePath: document.sourcePath, steps: [document.steps[0]],
+        tags: document.tags.slice(0, 5),
+      })
+      expect(selected.body!.result.steps[0]!.tagIds).toEqual(['CHECK', 'CAUTION', 'DECISION', 'RATIONALE', 'AGAINST'])
+      expect(selected.body!.result.steps[0]!.blocks.find(block => block.kind === 'decision')?.paths).toEqual([
+        'Review «DECISION».', 'Do not infer a measured value from this authored instruction.',
+      ])
+      expect(selected.body!.result.steps[0]!.branches).toEqual(document.steps[0]!.branches)
+      const withSource = await read({ ...pinned, stepId: 'second', includeSource: true })
+      expect(withSource.body!.result.rawMarkdown).toBe(original.rawMarkdown)
+      expect(withSource.body!.result.tags).toEqual([document.tags[5]!])
+      expect((await read({ procedureId: 'E-0', stepId: 'missing' })).status).toBe(404)
+      expect((await read({ procedureId: 'E-0', sourcePath: document.sourcePath })).status).toBe(400)
+      expect((await read({ procedureId: 'E-0', includeSource: 'true' })).status).toBe(400)
+      expect(document).toEqual(original)
+      expect(await run.procedureDocument(pinned)).toEqual(original)
+      reader.mockResolvedValue({ ...document, steps: [document.steps[0]!, document.steps[0]!] })
+      expect((await read({ ...pinned, stepId: 'first' })).status).toBe(409)
+    } finally { reader.mockRestore() }
+  })
+
   test('exposes independent playback and pace through one discoverable capability', async () => {
     const registry = await createRegistry()
     const workspaceId = newWorkspaceId()

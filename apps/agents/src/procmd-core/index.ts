@@ -1,13 +1,4 @@
-// procmd-core public API.
-//
-// Spec: docs/procedure-md.md (v0.7 normative).
-//
-// This is the single source of truth for procmd parsing. It is vendored
-// into the pwr-ops wiki repo under `procmd-core/` with a SHA pin in
-// `procmd-core.sha`. Both leitbild and the wiki repo (validate.ts +
-// scripts/render-procmd.ts) import from here.
-
-export { parseProcedure, PARSER_PROCMD_VERSION, ACCEPTED_PROCMD_VERSIONS } from './parser.ts'
+// Agents-owned scenario and EAL helpers. Procedure parsing lives in @leitbild/procmd.
 export { parseScenario } from './scenario-parser.ts'
 export {
   parsePredicate,
@@ -17,18 +8,10 @@ export {
   tagsInPredicate,
 } from './eal-predicate.ts'
 export type {
-  Branch,
-  BranchTarget,
   EalClass,
-  ParsedDecision,
-  ParsedFrontmatter,
-  ParsedProcedure,
   ParsedScenario,
-  ParsedStep,
-  ParseResult,
   ScenarioInjection,
   ScenarioParseResult,
-  TagDefinition,
 } from './types.ts'
 export type {
   EalClassificationResult,

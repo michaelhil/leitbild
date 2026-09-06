@@ -2,7 +2,7 @@
   import { BookOpen, Bug, Check, ChevronLeft, ChevronRight, ExternalLink, HelpCircle, MessageSquare, Play, RefreshCw, Star, X } from 'lucide-svelte'
   import { tick, untrack } from 'svelte'
   import type { ProcedureSession } from './procedure-session.ts'
-  import { procedureViewKey, procedureCategories } from './procedure-view.ts'
+  import { procedureViewKey, procedureCategories, procedureStepItems, procedureTextSegments } from './procedure-view.ts'
   import type {
     SimulationRunId,
     ObjectId,
@@ -75,11 +75,6 @@
     readonly targetObjectId?: ObjectId
     readonly label: string
     readonly status?: PackObjectStatusPresentation
-  }
-
-  interface TextSegment {
-    readonly kind: 'text' | 'tag'
-    readonly text: string
   }
 
   type LoadStageId = 'source' | 'runs' | 'document' | 'tags' | 'csfs'
@@ -209,7 +204,6 @@
   } satisfies PackObjectStatusPresentation)
   const currentUnitProcedureSummaries = $derived(procedureRunSummariesForScope(runs, currentScope, runDocuments))
   const csfIds = $derived([...new Set(catalog?.procedures.flatMap(item => item.csfsMonitored) ?? [])])
-  const primaryBlockKinds = new Set(['check', 'action', 'when', 'until', 'within', 'concurrent'])
 
   const procedureRunVisualStateFor = (procedureId: string): ProcedureRunVisualState => {
     return selectedProcedureRunVisualStateFor(runs, {
@@ -937,19 +931,6 @@
     window.open(`https://github.com/${document.source.repository}/issues/new?${params.toString()}`, '_blank', 'noopener,noreferrer')
   }
 
-  const textSegments = (text: string): ReadonlyArray<TextSegment> => {
-    const segments: TextSegment[] = []
-    let cursor = 0
-    for (const match of text.matchAll(/«([^»]+)»/g)) {
-      const start = match.index ?? 0
-      if (start > cursor) segments.push({ kind: 'text', text: text.slice(cursor, start) })
-      segments.push({ kind: 'tag', text: match[1] ?? '' })
-      cursor = start + match[0].length
-    }
-    if (cursor < text.length) segments.push({ kind: 'text', text: text.slice(cursor) })
-    return segments
-  }
-
   runOnMount(() => {
     if (!boundsInitialized) {
       windowBounds = clampWindowBounds(defaultWindowBounds())
@@ -989,6 +970,14 @@
   })
 
 </script>
+
+{#snippet procedureText(text: string, tagIds: readonly string[])}
+  {#each procedureTextSegments(text, tagIds) as segment}
+    {#if segment.kind === 'tag'}
+      <button type="button" class="procedure-tag" onmouseenter={() => void showTag(segment.text as ProcedureTagId)} onmouseleave={hideTag}>«{segment.text}»</button>
+    {:else}{segment.text}{/if}
+  {/each}
+{/snippet}
 
 <div class="procedure-window-layer">
   <div
@@ -1203,6 +1192,15 @@
             bind:this={procedureDocumentBodyElement}
             onscroll={rememberCurrentProcedureScroll}
           >
+            {#if document.appliesTo || document.referencePlant || document.diagnostics?.length || Object.keys(document.annotations ?? {}).length}
+              <details class="procedure-format-notes">
+                <summary>Applicability and format notes{document.diagnostics?.length ? ` (${document.diagnostics.length})` : ''}</summary>
+                {#if document.appliesTo}<p><b>Applies to:</b> {document.appliesTo}</p>{/if}
+                {#if document.referencePlant}<p><b>Reference plant:</b> {document.referencePlant}</p>{/if}
+                {#each Object.entries(document.annotations ?? {}) as [key, value]}<p><b>{key}:</b> {value}</p>{/each}
+                {#if document.diagnostics?.length}<ul>{#each document.diagnostics as diagnostic}<li>{diagnostic}</li>{/each}</ul>{/if}
+              </details>
+            {/if}
             <div class="procedure-steps">
               {#each document.steps as step (step.id)}
                 {@const state = stepStates.get(step.id)}
@@ -1227,29 +1225,27 @@
                     <div class="procedure-step-content">
                       <h3>Step {step.label}<span>{procedureStepDisplayName(step)}</span></h3>
                       <div class="procedure-two-column">
-                        <div class="procedure-column">
-                          {#each step.blocks.filter(block => primaryBlockKinds.has(block.kind)) as block}
-                            <p class="block-{block.kind}"><b>{block.kind}</b> {#each textSegments(block.text) as segment}{#if segment.kind === 'tag'}<button type="button" class="procedure-tag" onmouseenter={() => void showTag(segment.text as ProcedureTagId)} onmouseleave={hideTag}>«{segment.text}»</button>{:else}{segment.text}{/if}{/each}</p>
-                          {/each}
-                        </div>
-                        <div class="procedure-column response">
-                          {#each step.blocks.filter(block => !primaryBlockKinds.has(block.kind)) as block}
-                            <p class="block-{block.kind}"><b>{block.kind}</b> {#each textSegments(block.text) as segment}{#if segment.kind === 'tag'}<button type="button" class="procedure-tag" onmouseenter={() => void showTag(segment.text as ProcedureTagId)} onmouseleave={hideTag}>«{segment.text}»</button>{:else}{segment.text}{/if}{/each}</p>
-                          {/each}
-                          {#each step.branches as branch}
-                            <button
-                              type="button"
-                              class="procedure-branch"
-                              disabled={!selectedRun || (branch.targetKind !== 'step' && branch.targetKind !== 'procedure')}
-                              title={selectedRun ? branchActionTextFor(branch) : 'Start the procedure to use branch actions'}
-                              onclick={() => void activateBranch(step, branch)}
-                            >
-                              <strong>{branch.label}</strong>
-                              <span>{branchActionTextFor(branch)}</span>
-                              {#if branch.because}<em>{branch.because}</em>{/if}
-                            </button>
-                          {/each}
-                        </div>
+                        {#each procedureStepItems(step) as item}
+                          <div class="procedure-column" class:response={!item.primary}>
+                            {#if item.kind === 'block'}
+                              <p class="block-{item.block.kind}">{#if item.block.kind !== 'text'}<b>{item.block.kind}</b>{/if} {@render procedureText(item.block.text, item.block.tagIds)}</p>
+                              {#if item.block.paths?.length}<ol>{#each item.block.paths as path}<li>{@render procedureText(path, item.block.tagIds)}</li>{/each}</ol>{/if}
+                            {:else}
+                              <button
+                                type="button"
+                                class="procedure-branch"
+                                disabled={!selectedRun || (item.branch.targetKind !== 'step' && item.branch.targetKind !== 'procedure')}
+                                title={selectedRun ? branchActionTextFor(item.branch) : 'Start the procedure to use branch actions'}
+                                onclick={() => void activateBranch(step, item.branch)}
+                              >
+                                <strong>{item.branch.label}</strong>
+                                <span>{branchActionTextFor(item.branch)}</span>
+                              </button>
+                              {#if item.branch.because}<p class="procedure-branch-rationale"><b>Because</b> {@render procedureText(item.branch.because, item.branch.tagIds)}</p>{/if}
+                              {#if item.branch.against}<p class="procedure-branch-rationale"><b>Against</b> {@render procedureText(item.branch.against, item.branch.tagIds)}</p>{/if}
+                            {/if}
+                          </div>
+                        {/each}
                       </div>
                       {#if commentOpen[draftKey(step.id)]}
                         <div class="procedure-comment-editor">

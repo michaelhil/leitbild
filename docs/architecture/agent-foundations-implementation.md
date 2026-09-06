@@ -92,7 +92,17 @@ Supported temperature conversion distinguishes absolute temperature from tempera
 
 Verification: 29 focused tests / 230 assertions, World typecheck and UI build pass. Independent Ruthless Critic gate: **GO**, 38 tests / 363 assertions including Workspace calls. The visible loss of guessed enum/rod/gauge/volume-flow displays is an intentional truthfulness correction; physical mappings require explicit model-owned information before restoration. No procedure engine or unit service was introduced.
 
-Procedure-format and conversational evaluation phases remain in progress. The user's model-selection gate precedes post-upgrade conversation testing; deterministic regression tests continue during coding.
+### Shared procedure semantics accepted (Phase 5B)
+
+One pure `@leitbild/procmd` parser replaces the separate World and Agents procedure parsers. World adds its existing source identity and wire validation; Agents consumes the same format AST. No fetch, execution, signal interpretation, persistence or model access belongs in the parser. Strict document identity and stable Step IDs are retained. Unsupported format semantics remain visible as diagnostics and original source, not invented behavior.
+
+Parsed blocks and branches carry source positions. UI reading order now follows the authored document, including decisions, cautions and Because/Against rationale. Branch object identity and source branch order remain unchanged for existing transition commands. Fenced and inline examples do not become live signal links. Applicability, reference-plant information and format limitations are inspectable in a collapsed disclosure.
+
+The existing procedure document operation returns parsed content without duplicating full Markdown by default. Optional exact Step selection retains document context, source identity, total counts, cross-step targets and all referenced tag definitions. Original source remains explicitly requestable. Both full and focused Agents views share one renderer. The critic caught and required a correction to focused cross-procedure citation URLs; the final code uses the target document's URL.
+
+Verification: full platform check, tests and all three UI builds pass. The full test run contains **2,345 passed, 2 opt-in soak tests skipped, 0 failed**, including 47 shared-format tests; removed duplicate parser tests explain changes in per-package counts. Independent critic gate: **GO**, 136 tests / 821 assertions. The frozen 39-document corpus preserves Step IDs, ordered branch labels/kinds/targets and tag bindings. A serialized pre-change pinned Procedure Run still follows its original branch index to the same target at the same source revision. Real parse→focused API tests preserve Decision/Caution/Because/Against-only tags. No existing records or external wiki sources were migrated or deleted.
+
+Coding is complete for the accepted foundation phases. The [model-selection gate](agent-model-screen-2026-09.md) is recorded before post-upgrade conversation testing. Live four-arm reference comparison remains a separate evaluation phase, not an implied completed feature.
 
 ## Conversational evaluation gate
 

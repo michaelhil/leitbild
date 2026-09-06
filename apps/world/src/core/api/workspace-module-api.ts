@@ -31,6 +31,7 @@ import {
   procedureDocumentSchema,
   procedureIdSchema,
   procedureSourceIdSchema,
+  procedureStepIdSchema,
   recordingSampleSchema,
   recordingSeriesDescriptorSchema,
   recordingSeriesQuerySchema,
@@ -105,6 +106,8 @@ const procedureDocumentInputSchema = z.object({
   procedureId: procedureIdSchema,
   sourceRevision: sourceRevisionSchema.optional(),
   sourcePath: sourceDocumentPathSchema.optional(),
+  stepId: procedureStepIdSchema.optional().describe('An exact step id from this document; returns that step and its referenced tag definitions, retaining document context and cross-step targets.'),
+  includeSource: z.boolean().default(false).describe('Include the complete original Markdown as well as parsed content only when source inspection needs it.'),
 }).strict().superRefine((input, ctx) => {
   if (input.sourcePath !== undefined && input.sourceRevision === undefined) {
     ctx.addIssue({
@@ -112,6 +115,12 @@ const procedureDocumentInputSchema = z.object({
       message: 'sourcePath requires sourceRevision',
     })
   }
+})
+const procedureDocumentReadSchema = procedureDocumentSchema.omit({ rawMarkdown: true }).extend({
+  rawMarkdown: z.string().optional(),
+  totalSteps: z.number().int().nonnegative(),
+  totalTags: z.number().int().nonnegative(),
+  selectedStepId: procedureStepIdSchema.optional(),
 })
 const historyTimestampSchema = z.string().datetime({ offset: true })
 const listHistorySeriesInputSchema = z.object({
@@ -1251,21 +1260,38 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'Read procedure document',
-      description: 'Reads procedure steps, branches and signal tags. For an existing Run, pass its sourceId, sourceRevision and sourcePath from world.procedure.runs.list; the current catalog may describe a newer revision.',
+      description: 'Reads parsed procedure guidance, branches and tags without duplicating the original Markdown. Optional stepId selects one exact step and its referenced tags; document context, source identity and total counts remain. Request includeSource only for original-source inspection. This is authored guidance, not proof of physical conditions or executed actions. For an existing procedure Run, pass its sourceId, sourceRevision and sourcePath from world.procedure.runs.list; the current catalog may describe a newer revision.',
       risk: 'read',
       idempotent: true,
       inputSchema: z.toJSONSchema(procedureDocumentInputSchema, { io: 'input' }),
-      outputSchema: capabilityJsonSchema(procedureDocumentSchema),
+      outputSchema: capabilityJsonSchema(procedureDocumentReadSchema),
     },
     invoke: async (registry, invocation) => {
       const runtime = await registry.load(requireSimulationRunResource(invocation))
       const input = procedureDocumentInputSchema.parse(invocation.input)
-      return json({ result: await runtime.procedureDocument({
+      const document = await runtime.procedureDocument({
         procedureId: input.procedureId,
         ...(input.sourceId === undefined ? {} : { sourceId: input.sourceId }),
         ...(input.sourceRevision === undefined ? {} : { sourceRevision: input.sourceRevision }),
         ...(input.sourcePath === undefined ? {} : { sourcePath: input.sourcePath }),
-      }) })
+      })
+      const steps = input.stepId === undefined ? document.steps : document.steps.filter(step => step.id === input.stepId)
+      if (input.stepId !== undefined && steps.length !== 1) return apiError(
+        steps.length === 0 ? 404 : 409,
+        steps.length === 0 ? 'procedure_step_not_found' : 'procedure_step_ambiguous',
+        `Procedure ${document.procedureId} has ${steps.length} steps with id ${input.stepId}. Read the document without stepId to inspect its actual steps.`,
+      )
+      const referencedTags = new Set(steps.flatMap(step => step.tagIds))
+      const { rawMarkdown, ...parsed } = document
+      return json({ result: {
+        ...parsed,
+        steps,
+        tags: input.stepId === undefined ? document.tags : document.tags.filter(tag => referencedTags.has(tag.id)),
+        totalSteps: document.steps.length,
+        totalTags: document.tags.length,
+        ...(input.stepId === undefined ? {} : { selectedStepId: input.stepId }),
+        ...(input.includeSource ? { rawMarkdown } : {}),
+      } })
     },
   },
   {

@@ -106,6 +106,7 @@ describe('procedure system', () => {
         targetKind: 'step',
         because: 'rapid neutron flux decrease confirms core shutdown',
         tagIds: [],
+        sourceLine: 19,
       },
       {
         label: 'Not verified',
@@ -113,6 +114,7 @@ describe('procedure system', () => {
         targetKind: 'procedure',
         because: 'ATWS response required',
         tagIds: [],
+        sourceLine: 21,
       },
     ])
     expect(procedure.tags).toEqual([{
@@ -121,6 +123,7 @@ describe('procedure system', () => {
       simPath: 'rps.trip_breaker.a.position',
       units: 'enum[OPEN,CLOSED]',
       equipment: 'reactor-protection-system',
+      annotations: {},
     }])
   })
 

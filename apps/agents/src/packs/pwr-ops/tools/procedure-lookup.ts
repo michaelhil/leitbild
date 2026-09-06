@@ -8,9 +8,8 @@
 import type { Tool, ToolResult } from '../../../core/types/tool.ts'
 import type { WikiSourceBinding } from '../../types.ts'
 import { createWikiSource, type WikiSource, type WikiManifest } from '../../../wikis/wiki-fetcher.ts'
-import { parseProcedure } from '../../../procmd-core/index.ts'
-import type { ParsedProcedure, ParsedStep } from '../../../procmd-core/index.ts'
-import { renderProcedure, renderIndex } from '../procmd/renderer.ts'
+import { parseProcedure, type ParsedProcedure, type ProcedureStep } from '@leitbild/procmd'
+import { renderProcedure, renderIndex, renderStep } from '../procmd/renderer.ts'
 
 interface PwrEopsToolDeps {
   readonly source: WikiSource
@@ -70,46 +69,28 @@ const fuzzyMatch = (query: string, candidates: ReadonlyArray<string>): ReadonlyA
   return out.sort((a, b) => b.score - a.score).slice(0, 5).map(x => x.id)
 }
 
-const renderStepFragment = (parsed: ParsedProcedure, step: ParsedStep, citationUrl: string): string => {
-  const parts: string[] = []
-  parts.push(`### ${parsed.frontmatter.procedureId} step ${step.label}. ${step.title || step.id} \`[${step.id}]\``)
-  if (step.checks.length > 0) parts.push('**Check:**', step.checks.map(c => `  - ${c}`).join('\n'))
-  if (step.actions.length > 0) parts.push('**Action:**', step.actions.map(a => `  - ${a}`).join('\n'))
-  for (const w of step.withins) parts.push(`> ⏱️ **Within:** ${w}`)
-  for (const c of step.cautions) parts.push(`> ⚠️ **Caution:** ${c}`)
-  for (const n of step.notes) parts.push(`> ℹ️ **Note:** ${n}`)
-  if (step.branches.length > 0) {
-    parts.push('**Branches:**')
-    const lines: string[] = []
-    for (const b of step.branches) {
-      const t = b.target.kind === 'intra' ? `→ \`#${b.target.stepId}\``
-        : b.target.kind === 'inter' ? `→ [${b.target.procedureId}]`
-        : `→ ${b.target.text}`
-      lines.push(`  - ${b.condition} ${t}`)
-      if (b.because) lines.push(`    _because:_ ${b.because}`)
-      if (b.against) lines.push(`    _against:_ ${b.against}`)
-    }
-    parts.push(lines.join('\n'))
-  }
-  parts.push(`\n---\nFrom: [${parsed.frontmatter.procedureId} — ${parsed.frontmatter.title}](${citationUrl})`)
-  return parts.join('\n\n')
-}
+const renderStepFragment = (parsed: ParsedProcedure, step: ProcedureStep, citationUrlFor: (id: string) => string): string =>
+  [[parsed.appliesTo && `Applies to: ${parsed.appliesTo}`, parsed.referencePlant && `Reference plant: ${parsed.referencePlant}`].filter(Boolean).join(' · '),
+    renderStep(step, parsed.steps, citationUrlFor),
+    ...(parsed.diagnostics.length ? ['**Format limitations:**\n' + parsed.diagnostics.join('\n')] : []),
+    `---\nFrom: [${parsed.procedureId} — ${parsed.title}](${citationUrlFor(parsed.procedureId)})`].join('\n\n')
 
 const renderSummaryFragment = (parsed: ParsedProcedure, citationUrl: string): string => {
-  const fm = parsed.frontmatter
+  const fm = parsed
   const lines: string[] = []
   lines.push(`## ${fm.procedureId} — ${fm.title} (summary)`)
   const meta: string[] = []
   if (fm.profile) meta.push(`Profile: ${fm.profile}`)
   if (fm.appliesTo) meta.push(`Applies to: ${fm.appliesTo}`)
+  if (fm.referencePlant) meta.push(`Reference plant: ${fm.referencePlant}`)
   if (fm.category) meta.push(`Category: ${fm.category}`)
   if (meta.length > 0) lines.push(`*${meta.join(' · ')}*`)
   if (fm.entryTriggers.length > 0) lines.push(`**Entry triggers:** ${fm.entryTriggers.map(t => `\`${t}\``).join(', ')}`)
   if (fm.csfsMonitored.length > 0) lines.push(`**CSFs monitored:** ${fm.csfsMonitored.join(', ')}`)
-  if (parsed.csfChannels.length > 0) lines.push(`**Concurrent CSF channels:** ${parsed.csfChannels.join(', ')}`)
-  if (parsed.preamble) lines.push(parsed.preamble)
+  if (parsed.description) lines.push(parsed.description)
   lines.push(`**Steps (${parsed.steps.length}):** ${parsed.steps.map(s => `\`${s.id}\``).join(' → ')}`)
-  if (parsed.tagDefinitions.length > 0) lines.push(`**Tag definitions:** ${parsed.tagDefinitions.length} (request full mode for details).`)
+  if (parsed.tags.length > 0) lines.push(`**Tag definitions:** ${parsed.tags.length} (request full mode for details).`)
+  if (parsed.diagnostics.length) lines.push('**Format limitations:**\n' + parsed.diagnostics.join('\n'))
   lines.push(`\nSource: [${fm.procedureId}](${citationUrl})`)
   return lines.join('\n\n')
 }
@@ -233,19 +214,13 @@ export const buildProcedureLookupTool = (deps: PwrEopsToolDeps): Tool => {
         return { success: false, error: `Could not fetch procedure "${rawId}" from GitHub: ${msg}. Try again in a minute.` }
       }
 
-      const parsed = parseProcedure(raw)
-      if ('error' in parsed) {
-        if (format === 'json') {
-          fire(false, 'parse-failed')
-          return { success: false, error: `Could not parse "${rawId}" as procmd: ${parsed.error}` }
-        }
-        fire(true, 'parse-failed')  // raw fallback IS a success from the user's POV
-        return {
-          success: true,
-          data: `> ⚠️ Could not parse procedure as procmd: ${parsed.error}. Showing raw source.\n\n${raw}\n\nSource: [${rawId}](${deps.source.citationUrl(rawId)})`,
-        }
+      let parsed: ParsedProcedure
+      try { parsed = parseProcedure(raw) }
+      catch (error) {
+        fire(false, 'parse-failed')
+        return { success: false, error: `Could not parse "${rawId}" as procmd: ${error instanceof Error ? error.message : String(error)}` }
       }
-      parseWarnings = parsed.warnings.length
+      parseWarnings = parsed.diagnostics.length
 
       if (stepId) {
         const step = parsed.steps.find(s => s.id === stepId)
@@ -258,9 +233,11 @@ export const buildProcedureLookupTool = (deps: PwrEopsToolDeps): Tool => {
         }
         fire(true)
         if (format === 'json') {
-          return { success: true, data: { kind: 'step', procedureId: rawId, step, citationUrl: deps.source.citationUrl(rawId) } }
+          return { success: true, data: { kind: 'step', procedureId: rawId, appliesTo: parsed.appliesTo, referencePlant: parsed.referencePlant, step,
+            tags: parsed.tags.filter(tag => step.tagIds.includes(tag.id)), diagnostics: parsed.diagnostics,
+            citationUrl: deps.source.citationUrl(rawId) } }
         }
-        return { success: true, data: renderStepFragment(parsed, step, deps.source.citationUrl(rawId)) }
+        return { success: true, data: renderStepFragment(parsed, step, id => deps.source.citationUrl(id)) }
       }
 
       if (mode === 'summary') {
@@ -268,16 +245,17 @@ export const buildProcedureLookupTool = (deps: PwrEopsToolDeps): Tool => {
         if (format === 'json') {
           return { success: true, data: {
             kind: 'summary',
-            procedureId: parsed.frontmatter.procedureId,
-            title: parsed.frontmatter.title,
-            profile: parsed.frontmatter.profile,
-            appliesTo: parsed.frontmatter.appliesTo,
-            category: parsed.frontmatter.category,
-            csfsMonitored: parsed.frontmatter.csfsMonitored,
-            entryTriggers: parsed.frontmatter.entryTriggers,
-            csfChannels: parsed.csfChannels,
+            procedureId: parsed.procedureId,
+            title: parsed.title,
+            profile: parsed.profile,
+            appliesTo: parsed.appliesTo,
+            referencePlant: parsed.referencePlant,
+            category: parsed.category,
+            csfsMonitored: parsed.csfsMonitored,
+            entryTriggers: parsed.entryTriggers,
+            diagnostics: parsed.diagnostics,
             stepIds: parsed.steps.map(s => s.id),
-            tagDefinitionCount: parsed.tagDefinitions.length,
+            tagDefinitionCount: parsed.tags.length,
             citationUrl: deps.source.citationUrl(rawId),
           } }
         }

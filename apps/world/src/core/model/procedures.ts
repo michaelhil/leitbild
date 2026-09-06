@@ -50,12 +50,15 @@ export const procedureTagSchema = z.object({
   equipment: z.string().min(1).optional(),
   source: z.string().min(1).optional(),
   range: z.array(z.number().finite()).length(2).optional(),
+  annotations: z.record(z.string(), z.string()).optional(),
 })
 export type ProcedureTag = z.infer<typeof procedureTagSchema>
 
 export const procedureTextBlockSchema = z.object({
-  kind: z.enum(['check', 'action', 'when', 'until', 'abort-if', 'abort-to', 'within', 'concurrent', 'caution', 'note', 'because', 'text']),
+  kind: z.enum(['check', 'action', 'decision', 'when', 'until', 'abort-if', 'abort-to', 'within', 'concurrent', 'caution', 'note', 'because', 'against', 'text']),
   text: z.string().min(1),
+  paths: z.array(z.string()).optional(),
+  sourceLine: z.number().int().positive(),
   tagIds: z.array(procedureTagIdSchema).default([]),
 })
 export type ProcedureTextBlock = z.infer<typeof procedureTextBlockSchema>
@@ -65,6 +68,8 @@ export const procedureBranchSchema = z.object({
   target: z.string().min(1),
   targetKind: z.enum(['step', 'procedure', 'end', 'retry', 'abort', 'unknown']),
   because: z.string().min(1).optional(),
+  against: z.string().min(1).optional(),
+  sourceLine: z.number().int().positive(),
   tagIds: z.array(procedureTagIdSchema).default([]),
 })
 export type ProcedureBranch = z.infer<typeof procedureBranchSchema>
@@ -78,6 +83,7 @@ export const procedureStepSchema = z.object({
   branches: z.array(procedureBranchSchema).default([]),
   tagIds: z.array(procedureTagIdSchema).default([]),
   sourceLine: z.number().int().positive(),
+  sourceEndLine: z.number().int().positive(),
 })
 export type ProcedureStep = z.infer<typeof procedureStepSchema>
 
@@ -88,6 +94,9 @@ export const procedureDocumentSchema = z.object({
   profile: z.string().min(1).optional(),
   category: z.string().min(1).optional(),
   appliesTo: z.string().min(1).optional(),
+  referencePlant: z.string().min(1).optional(),
+  annotations: z.record(z.string(), z.string()).optional(),
+  diagnostics: z.array(z.string()).optional(),
   csfsMonitored: z.array(idSchema).default([]),
   entryTriggers: z.array(idSchema).default([]),
   description: z.string().default(''),

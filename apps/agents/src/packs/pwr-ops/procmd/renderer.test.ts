@@ -1,154 +1,66 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { parseProcedure } from '../../../procmd-core/index.ts'
-import { renderProcedure, renderIndex } from './renderer.ts'
+import { parseProcedure } from '@leitbild/procmd'
+import { renderProcedure, renderIndex, renderStep } from './renderer.ts'
+import baseline from '../../../../../../packages/procmd/fixtures/pwr-ops-baseline.json'
 
-const fixture = (name: string): string =>
-  readFileSync(join(import.meta.dir, '..', 'fixtures', name), 'utf-8')
+const fixture = (name: string): string => readFileSync(`${import.meta.dir}/../../../../../../packages/procmd/fixtures/${name}`, 'utf8')
+const citationUrl = (id: string): string => `https://example.test/procedures/${id}/`
 
-const citationUrl = (id: string): string => `https://leitbild-wikis.github.io/pwr-ops/procedures/${id}/`
-
-describe('renderProcedure — E-0', () => {
-  const parsed = parseProcedure(fixture('E-0.md'))
-  if ('error' in parsed) throw new Error(parsed.error)
-  const rendered = renderProcedure(parsed, citationUrl)
-
-  test('mermaid validates clean', () => {
-    expect(rendered.mermaidValid).toBe(true)
-    expect(rendered.warnings.filter(w => w.startsWith('mermaid_invalid'))).toEqual([])
+describe('canonical procedure renderer', () => {
+  test('all 39 full documents contain every exact focused step rendering', () => {
+    for (const item of baseline) {
+      const parsed = parseProcedure(fixture(`pwr-ops/${item.file}`))
+      const full = renderProcedure(parsed, citationUrl).markdown
+      for (const step of parsed.steps) expect(full).toContain(renderStep(step, parsed.steps, citationUrl))
+    }
+  })
+  test('full and focused outputs share every source-ordered block, path and branch', () => {
+    const parsed = parseProcedure(fixture('conformance.md'))
+    const focused = renderStep(parsed.steps[0]!, parsed.steps, citationUrl)
+    const full = renderProcedure(parsed, citationUrl).markdown
+    expect(full).toContain(focused)
+    const markers = ['**Caution:**', '**Decision:**', '1. First path', '- Internal choice', '_against:_', '**Action:**',
+      'Unclassified prose', '- External choice', '**Note:**', '**Within:**', '```md\n', '**Check:**', 'Future:', '- Manual choice']
+    for (let index = 1; index < markers.length; index++) expect(focused.indexOf(markers[index]!)).toBeGreaterThan(focused.indexOf(markers[index - 1]!))
+    expect(focused).toContain('[FR-S.1](https://example.test/procedures/FR-S.1/)')
+    expect(focused).toContain('```md\n## Step 9 [id: fake]\nAction: fenced «FAKE»\n- Do not execute → #fake\n```')
+    expect(full).toContain('Reference plant: reference-only')
+    expect(full).toContain('**Format limitations (not execution guarantees):**')
+    expect(full).toContain('**Source annotations:**')
+    expect(full).toContain('Preserve this explanation after Tags.')
+    expect(full).toContain('| Tag | Description | Sim-path | Units | Equipment |')
   })
 
-  test('markdown contains the procedure id + title heading', () => {
-    expect(rendered.markdown).toMatch(/^## E-0 — Reactor Trip/)
+  test('real source includes CSF prose, tag binding table, rationales and citations', () => {
+    const parsed = parseProcedure(fixture('pwr-ops/E-0.md'))
+    const markdown = renderProcedure(parsed, citationUrl).markdown
+    expect(markdown).toMatch(/^## E-0 — Reactor Trip/)
+    expect(markdown).toContain('CSF: subcriticality')
+    expect(markdown).toContain('rps.trip_breaker')
+    expect(markdown).toContain('_because:_')
+    expect(markdown).toContain('Source: [E-0 — Reactor Trip')
+    expect(markdown).toContain('https://example.test/procedures/E-0/')
   })
 
-  test('markdown opens with a mermaid fence', () => {
-    expect(rendered.markdown).toContain('```mermaid\nflowchart TD')
-    expect(rendered.markdown).toContain('\n```')
+  test('diagram uses safe generated IDs and escaped labels; no invented fall-through edges', () => {
+    const parsed = parseProcedure(fixture('conformance.md'))
+    const diagram = renderProcedure(parsed, citationUrl).markdown.match(/```mermaid\n([\s\S]*?)\n```/)![1]!
+    expect(diagram).toContain('S_0{"')
+    expect(diagram).not.toContain('S_choose')
+    expect(diagram.match(/ -->/g)).toHaveLength(parsed.steps.reduce((count, step) => count + step.branches.length, 0))
+    const titleStress = { ...parsed, steps: parsed.steps.map(step => ({ ...step, title: '<title> | "quote" \\ backslash' })) }
+    const escaped = renderProcedure(titleStress, citationUrl).markdown.match(/```mermaid\n([\s\S]*?)\n```/)![1]!
+    expect(escaped).toContain('&lt;title&gt; &#124;')
+    expect(escaped).toContain('&#92; backslash')
+    expect(escaped).not.toContain('<title>')
+    expect(diagram).toContain('call supervisor')
   })
 
-  test('mermaid edge labels HTML-escape angle brackets', () => {
-    // E-0 has labels like "Tavg < 547 °F" — must be escaped
-    const fenceMatch = rendered.markdown.match(/```mermaid\n([\s\S]*?)\n```/)
-    expect(fenceMatch).not.toBeNull()
-    const inner = fenceMatch![1]!
-    // No raw `<` inside the fence (all escaped to &lt;)
-    expect(inner).not.toMatch(/[^"][<][^"]/)  // very lax; full check is mermaidValid
-  })
-
-  test('inter-procedure branches render with citation URLs + clickable nodes', () => {
-    // Find at least one EXT_ node + corresponding click line
-    expect(rendered.markdown).toMatch(/EXT_\w+\[/)
-    expect(rendered.markdown).toMatch(/click EXT_\w+ "https:\/\/leitbild-wikis\.github\.io/)
-  })
-
-  test('source citation line uses canonical citation URL (not paraphrased)', () => {
-    expect(rendered.markdown).toContain('Source: [E-0 — Reactor Trip')
-    expect(rendered.markdown).toContain('https://leitbild-wikis.github.io/pwr-ops/procedures/E-0/')
-  })
-
-  test('tags section appears when references exist', () => {
-    expect(rendered.markdown).toContain('### Tags referenced')
-  })
-
-  test('CSF channels are surfaced in the head', () => {
-    expect(rendered.markdown).toContain('Concurrent CSF channels in service:')
-    expect(rendered.markdown).toMatch(/`subcriticality`/)
-  })
-
-  test('Because: rationales render under their branch', () => {
-    expect(rendered.markdown).toMatch(/_because:_\s+/)
-  })
-
-  test('structured Tags appendix renders as a table with sim-path column', () => {
-    expect(rendered.markdown).toContain('| Tag | Description | Sim-path | Units | Equipment |')
-    expect(rendered.markdown).toMatch(/\| `TRIP-BKR-A` \|/)
-    expect(rendered.markdown).toMatch(/rps\.trip_breaker/)
-  })
-})
-
-describe('renderProcedure — mermaid fallback on validation failure', () => {
-  // Synthesize a procedure that would generate bad mermaid by feeding the
-  // renderer steps with empty ids (causes unbalanced refs). This is a
-  // synthetic stress test for the validator, not a real corpus shape.
-  test('omits diagram with visible footer when validator rejects', () => {
-    const parsed = parseProcedure(`---
-procedure-md: 0.7
-procedure-id: STRESS-1
-title: Stress Test
----
-
-## Step 1 [id: a]
-Check: ok
-`)
-    if ('error' in parsed) throw new Error(parsed.error)
-    // E-0 normally parses fine — confirm the happy path doesn't fall back.
-    const rendered = renderProcedure(parsed, citationUrl)
-    expect(rendered.mermaidValid).toBe(true)
-    expect(rendered.markdown).not.toContain('Diagram omitted')
-  })
-})
-
-describe('renderIndex', () => {
-  test('lists ids + homepage link', () => {
-    const md = renderIndex(['E-0', 'E-1', 'ECA-0.0'], 'PWR EOPs', 'https://example.com/wiki')
-    expect(md).toContain('## PWR EOPs')
-    expect(md).toContain('- `E-0`')
-    expect(md).toContain('- `ECA-0.0`')
-    expect(md).toContain('https://example.com/wiki')
-  })
-
-  test('empty list renders gracefully', () => {
-    expect(renderIndex([], 'X', 'https://x.example')).toContain('No procedures listed yet')
-  })
-})
-
-describe('renderProcedure — v0.7 Decision: rendering', () => {
-  const src = `---
-type: procedure
-procedure-md: 0.7
-procedure-id: D-RENDER
-title: Decision Render Test
-profile: nuclear-erg
-applies-to: anywhere
----
-
-## Step 1 [id: choose]
-Decision: identify the faulted SG using the following paths in order
-1. SG pressure dropping uncontrollably
-2. Steam-line N-16 monitor «N16» elevated
-3. Containment radiation rising with steam flow correlation
-- Faulted SG identified → #isolate
-- No SG identified → [[ECA-2.1]]
-
-## Step 2 [id: isolate]
-Action: close MSIV on identified faulted SG
-`
-  const parsed = parseProcedure(src)
-  if ('error' in parsed) throw new Error(parsed.error)
-  const rendered = renderProcedure(parsed, citationUrl)
-
-  test('renders the **Decision:** prologue', () => {
-    expect(rendered.markdown).toContain('**Decision:** identify the faulted SG using the following paths in order')
-  })
-
-  test('renders numbered paths inline', () => {
-    expect(rendered.markdown).toMatch(/  1\. SG pressure dropping uncontrollably/)
-    expect(rendered.markdown).toMatch(/  2\. Steam-line N-16/)
-    expect(rendered.markdown).toMatch(/  3\. Containment radiation/)
-  })
-
-  test('Decision step renders branches separately', () => {
-    expect(rendered.markdown).toContain('**Branches:**')
-    expect(rendered.markdown).toMatch(/Faulted SG identified/)
-  })
-
-  test('Decision step is a diamond in mermaid', () => {
-    expect(rendered.markdown).toMatch(/S_choose\{"/)
-  })
-
-  test('mermaid still validates', () => {
-    expect(rendered.mermaidValid).toBe(true)
+  test('index lists supplied IDs and homepage; empty index is explicit', () => {
+    const markdown = renderIndex(['E-0', 'FR-S.1'], 'PWR EOPs', 'https://example.test/wiki')
+    expect(markdown).toContain('- `E-0`')
+    expect(markdown).toContain('https://example.test/wiki')
+    expect(renderIndex([], 'X', 'https://example.test')).toContain('No procedures listed yet')
   })
 })

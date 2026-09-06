@@ -14,6 +14,7 @@
       "dependencies": {
         "@leitbild/contracts": "workspace:*",
         "@leitbild/module-runtime": "workspace:*",
+        "@leitbild/procmd": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.27.1",
         "dompurify": "^3.4.14",
         "marked": "^18.0.11",
@@ -57,6 +58,7 @@
         "@deck.gl/mapbox": "^9.3.2",
         "@leitbild/contracts": "workspace:*",
         "@leitbild/module-runtime": "workspace:*",
+        "@leitbild/procmd": "workspace:*",
         "@mapbox/vector-tile": "^2.0.4",
         "@maplibre/maplibre-gl-style-spec": "^24.8.5",
         "@sveltejs/vite-plugin-svelte": "^7.1.2",
@@ -113,6 +115,14 @@
         "typescript": "^6.0.3",
       },
     },
+    "packages/procmd": {
+      "name": "@leitbild/procmd",
+      "version": "1.0.0",
+      "devDependencies": {
+        "@types/bun": "1.4.0",
+        "typescript": "^6.0.3",
+      },
+    },
   },
   "packages": {
     "3d-tiles-renderer": ["3d-tiles-renderer@0.4.28", "", { "dependencies": { "@mapbox/vector-tile": "^2.0.3", "pbf": "^4.0.1", "pmtiles": "^4.3.2" }, "peerDependencies": { "@babylonjs/core": ">=8.0.0", "@babylonjs/loaders": ">=8.0.0", "@react-three/fiber": "^8.17.9 || ^9.0.0", "react": "^18.3.1 || ^19.0.0", "react-dom": "^18.3.1 || ^19.0.0", "three": ">=0.167.0" }, "optionalPeers": ["@babylonjs/core", "@babylonjs/loaders", "@react-three/fiber", "react", "react-dom", "three"] }, "sha512-eDFg3fTgnFeoa6kU9oyAQIci/N/CJq6JUi/ZUrmDyqLzEDH9mWd9FBs+NqS+0eO8b7y4HjIWfUVnf8o03AFtSA=="],
@@ -158,6 +168,8 @@
     "@leitbild/integration-tests": ["@leitbild/integration-tests@workspace:packages/integration-tests"],
 
     "@leitbild/module-runtime": ["@leitbild/module-runtime@workspace:packages/module-runtime"],
+
+    "@leitbild/procmd": ["@leitbild/procmd@workspace:packages/procmd"],
 
     "@leitbild/world": ["@leitbild/world@workspace:apps/world"],
 

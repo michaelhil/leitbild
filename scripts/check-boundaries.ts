@@ -16,6 +16,7 @@ const boundaries: ReadonlyArray<Boundary> = [
   { owner: 'Agents', root: resolve(repositoryRoot, 'apps/agents'), forbidden: [appImport('world|leitbild'), packageImport('world|host')] },
   { owner: 'Leitbild Host', root: resolve(repositoryRoot, 'apps/leitbild'), forbidden: [appImport('world|agents'), packageImport('world|agents')] },
   { owner: 'Contracts', root: resolve(repositoryRoot, 'packages/contracts'), forbidden: [appImport('world|agents|leitbild'), packageImport('world|agents|host')] },
+  { owner: 'Procmd', root: resolve(repositoryRoot, 'packages/procmd'), forbidden: [appImport('world|agents|leitbild'), packageImport('world|agents|host|contracts|module-runtime')] },
 ]
 
 const sourceGlob = new Bun.Glob('**/*.{ts,tsx,svelte}')

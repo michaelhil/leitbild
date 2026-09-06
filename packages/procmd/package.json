@@ -1,0 +1,10 @@
+{
+  "name": "@leitbild/procmd",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "check": "tsc --noEmit", "test": "bun test" },
+  "devDependencies": { "@types/bun": "1.4.0", "typescript": "^6.0.3" },
+  "engines": { "bun": "1.4.0" }
+}
