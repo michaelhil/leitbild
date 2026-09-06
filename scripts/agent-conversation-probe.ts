@@ -1,6 +1,8 @@
 /** Manual, real-service comparison probe. Creates only its own Workspace/Runs.
  * bun scripts/agent-conversation-probe.ts <stage> <absolute-output-dir>
  * Uses the configured production Assistant/provider; never reads credentials.
+ * Optional LEITBILD_PROBE_MODEL and LEITBILD_PROBE_REASONING select explicit
+ * candidate settings on the test-owned Agent only (reasoning=default clears it).
  * Results are generated evidence, not fixtures or a statistical benchmark.
  */
 import { mkdir } from 'node:fs/promises'
@@ -11,10 +13,12 @@ if (!stage || !/^[a-z0-9-]+$/.test(stage) || !directory || !isAbsolute(directory
   throw new Error('Usage: bun scripts/agent-conversation-probe.ts <stage> <absolute-output-dir>')
 }
 const origin = process.env.LEITBILD_PROBE_ORIGIN ?? 'https://leitbild.app'
+const requestedModel = process.env.LEITBILD_PROBE_MODEL
+const requestedReasoning = process.env.LEITBILD_PROBE_REASONING
 await mkdir(directory, { recursive: true })
-const json = async (path: string, body?: unknown) => {
+const json = async (path: string, body?: unknown, method: 'POST' | 'PATCH' = 'POST') => {
   const response = await fetch(origin + path, {
-    ...(body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) }),
+    ...(body === undefined ? {} : { method, body: JSON.stringify(body) }),
     headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(60_000),
   })
   const text = await response.text()
@@ -61,15 +65,25 @@ await invoke(seed.workspaceId, 'world.simulation-run.execution.set', { playback:
 const opened = await invoke(seed.workspaceId, 'agents.assistance.open', {
   scope: { kind: 'resource', resource }, title: `Foundation probe · ${stage}`, focusedSubjects: [resource],
 })
+if (opened.result.reused) throw new Error('Probe requires a fresh Room; no comparison messages sent')
 const roomId = opened.result.resource.id as string
 const roomPath = `/api/workspaces/${seed.workspaceId}/agents/rooms/${roomId}`
 const members = await json(roomPath + '/members')
 const human = members.find((member: { kind: string }) => member.kind === 'human')
 const agent = members.find((member: { kind: string }) => member.kind === 'ai')
 if (!human || !agent) throw new Error('Assistant Room is missing participants')
-const profile = await json(`/api/workspaces/${seed.workspaceId}/agents/agents/${agent.id}`)
-await save(stage + '-run', { seed, resource, roomId, profile, opened, recordedAt: new Date().toISOString() })
-console.log(JSON.stringify({ stage, workspaceId: seed.workspaceId, runId: resource.id, roomId, model: profile.model }))
+const agentPath = `/api/workspaces/${seed.workspaceId}/agents/agents/${agent.id}`
+if (requestedModel !== undefined || requestedReasoning !== undefined) {
+  await json(agentPath, {
+    ...(requestedModel === undefined ? {} : { model: requestedModel }),
+    ...(requestedReasoning === undefined ? {} : { reasoningEffort: requestedReasoning === 'default' ? null : requestedReasoning }),
+  }, 'PATCH')
+}
+const profile = await json(agentPath)
+if (requestedModel !== undefined && profile.model !== requestedModel) throw new Error('Requested model was not applied; no comparison messages sent')
+if (requestedReasoning !== undefined && profile.reasoningEffort !== (requestedReasoning === 'default' ? undefined : requestedReasoning)) throw new Error('Requested reasoning setting was not applied; no comparison messages sent')
+await save(stage + '-run', { seed, resource, roomId, profile, opened, requestedModel, requestedReasoning, recordedAt: new Date().toISOString() })
+console.log(JSON.stringify({ stage, workspaceId: seed.workspaceId, runId: resource.id, roomId, model: profile.model, reasoningEffort: profile.reasoningEffort ?? 'provider-default' }))
 
 const prompts = [
   'Give me a concise current sitrep of Unit 2. Include its electrical output and any material operational concerns, using live evidence. Do not change anything.',
@@ -94,7 +108,10 @@ for (let index = 0; index < prompts.length; index++) {
     if (answer) break
     await Bun.sleep(2000)
   }
-  if (!answer) throw new Error(`No answer within probe deadline for question ${index + 1}`)
+  if (!answer) {
+    await save(`${stage}-${index + 1}-timeout-cancellation`, await json(agentPath + '/cancel', {}))
+    throw new Error(`No answer within probe deadline for question ${index + 1}; test-owned Agent cancelled`)
+  }
   await save(`${stage}-${index + 1}-answer`, { prompt: prompts[index], wallMs: Date.now() - startedAt, answer })
   const inspection = await json(`${roomPath}/messages/${answer.id}/generation-query`)
   await save(`${stage}-${index + 1}-inspection`, inspection)
