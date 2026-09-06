@@ -77,6 +77,11 @@ export const agentPackManifestSchema = z.object({
   }
 
   const declaredKinds = new Set<string>()
+  const wikiUrls = new Set<string>()
+  manifest.wikis.forEach((wiki, index) => {
+    if (wikiUrls.has(wiki.url)) ctx.addIssue({ code: 'custom', path: ['wikis', index, 'url'], message: `duplicate wiki URL ${wiki.url}` })
+    wikiUrls.add(wiki.url)
+  })
   const declaredExtensionIds = new Set<string>()
   descriptor.contributions.forEach((contribution, index) => {
     if (!contributionKinds.has(contribution.kind)) {

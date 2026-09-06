@@ -8,7 +8,6 @@
 import type { Tool } from '../../core/types/tool.ts'
 import { createWikiSource } from '../../wikis/wiki-fetcher.ts'
 import { buildProcedureLookupTool } from './tools/procedure-lookup.ts'
-import { buildWikiLookupTool } from './tools/wiki-lookup.ts'
 import { buildEalClassifyTool } from './tools/eal-classify.ts'
 import { buildProcedureSearchTool } from './tools/procedure-search.ts'
 import { PWR_OPS_MANIFEST } from './manifest.ts'
@@ -21,7 +20,6 @@ const source = createWikiSource(wiki.source)
 
 export const PWR_OPS_TOOLS: ReadonlyArray<Tool> = [
   buildProcedureLookupTool({ source, wikiName: wiki.name, wikiHomepage: wiki.url }),
-  buildWikiLookupTool({ source, wikiName: wiki.name, wikiHomepage: wiki.url }),
   buildEalClassifyTool({ source, wikiName: wiki.name }),
   buildProcedureSearchTool({ source, wikiName: wiki.name, wikiHomepage: wiki.url }),
 ]

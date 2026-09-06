@@ -107,7 +107,7 @@ describe('createWikiSource', () => {
       procedures: [{ id: 'E-0' }],
       pages: [],
     }), { status: 200 }))
-    await expect(createWikiSource(BINDING).fetchManifest()).rejects.toThrow(/invalid procedure manifest/)
+    await expect(createWikiSource(BINDING).fetchManifest()).rejects.toThrow(/invalid wiki manifest/)
   })
 
   test('never falls back to current Pages content for a pinned read', async () => {
@@ -120,5 +120,32 @@ describe('createWikiSource', () => {
       createWikiSource(BINDING).fetchDocument('wiki/procedures/E-0.md', REVISION),
     ).rejects.toThrow(/HTTP 503/)
     expect(calls).toHaveLength(1)
+  })
+
+  test('an HTTP manifest failure does not permanently cache a rejected in-flight request', async () => {
+    let calls = 0
+    restore = installFetchMock(() => ++calls === 1 ? new Response('unavailable', { status: 503 }) : Response.json(MANIFEST))
+    const source = createWikiSource(BINDING)
+    await expect(source.fetchManifest()).rejects.toThrow('HTTP 503')
+    expect((await source.fetchManifest()).revision).toBe(REVISION)
+    expect(calls).toBe(2)
+  })
+
+  test('literal URL-like filenames cannot escape the pinned revision', async () => {
+    const calls: string[] = []
+    restore = installFetchMock(url => { calls.push(url); return new Response('literal file') })
+    const source = createWikiSource(BINDING)
+    for (const path of ['%2e%2e/main/wiki/x.md', 'wiki/name?query#fragment.md', 'wiki/kjøling Δ.md', 'wiki/back\\slash.md']) {
+      await source.fetchDocument(path, REVISION)
+      const expected = `https://raw.githubusercontent.com/${BINDING.org}/${BINDING.repo}/${REVISION}/${path.split('/').map(encodeURIComponent).join('/')}`
+      expect(calls.at(-1)).toBe(expected)
+      const parsed = new URL(calls.at(-1)!)
+      expect(parsed.pathname.startsWith(`/${BINDING.org}/${BINDING.repo}/${REVISION}/`)).toBe(true)
+      expect(parsed.search).toBe('')
+      expect(parsed.hash).toBe('')
+    }
+    const before = calls.length
+    await expect(source.fetchDocument('../main/wiki/x.md', REVISION)).rejects.toThrow('literal relative repository path')
+    expect(calls).toHaveLength(before)
   })
 })

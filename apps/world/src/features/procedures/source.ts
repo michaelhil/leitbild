@@ -71,28 +71,33 @@ const fetchText = async (
 }
 
 const repositoryUrlFor = (source: ProcedureSourceConfig): string =>
-  `https://github.com/${source.repository}`
+  `https://github.com/${source.repository.split('/').map(encodeURIComponent).join('/')}`
+
+// Source paths are literal repository filenames, never pre-encoded URL paths.
+// Encoding '%' as well as '?'/'#' keeps encoded dot segments inside the pinned SHA.
+const encodedSourcePath = (path: string): string =>
+  sourceDocumentPathSchema.parse(path).split('/').map(encodeURIComponent).join('/')
 
 const rawUrlFor = (
   source: ProcedureSourceConfig,
   revision: string,
   sourcePath: string,
 ): string =>
-  `https://raw.githubusercontent.com/${source.repository}/${revision}/${sourcePath}`
+  `https://raw.githubusercontent.com/${source.repository.split('/').map(encodeURIComponent).join('/')}/${sourceRevisionSchema.parse(revision)}/${encodedSourcePath(sourcePath)}`
 
 const sourceUrlFor = (
   source: ProcedureSourceConfig,
   revision: string,
   sourcePath = source.procedurePath,
 ): string =>
-  `${repositoryUrlFor(source)}/tree/${revision}/${sourcePath}`
+  `${repositoryUrlFor(source)}/tree/${sourceRevisionSchema.parse(revision)}/${encodedSourcePath(sourcePath)}`
 
 const documentUrlFor = (
   source: ProcedureSourceConfig,
   revision: string,
   sourcePath: string,
 ): string =>
-  `${repositoryUrlFor(source)}/blob/${revision}/${sourcePath}`
+  `${repositoryUrlFor(source)}/blob/${sourceRevisionSchema.parse(revision)}/${encodedSourcePath(sourcePath)}`
 
 const procedureSourceFor = (
   source: ProcedureSourceConfig,

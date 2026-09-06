@@ -79,6 +79,9 @@ describe('Agent Pack manifest', () => {
       uiExtensions: [],
     })
     expect(manifest.wikis[0]?.name).toBe('Procedures')
+    expect(() => parsePackManifest({ descriptor, uiExtensions: [], wikis: [
+      { name: 'First', url: 'https://example.com/wiki' }, { name: 'Second', url: 'https://example.com/wiki' },
+    ] })).toThrow('duplicate wiki URL')
     expect(() => parsePackManifest({ descriptor, wikis: [], uiExtensions: [] })).toThrow('both be present')
     expect(() => parsePackManifest({
       descriptor,

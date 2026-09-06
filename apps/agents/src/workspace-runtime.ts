@@ -63,6 +63,7 @@ import {
   createWorkspaceCapabilityTools,
 } from './tools/built-in/index.ts'
 import { createBiometricsTools, BIOMETRICS_PACK_NAMESPACE } from './tools/built-in/biometric-tools.ts'
+import { createWikiLookupTool } from './wikis/wiki-lookup.ts'
 import { createEvalBuffer } from './diagnostics/eval-buffer.ts'
 import { createCaptureRegistry, type CaptureRegistry } from './core/biometrics/registry.ts'
 import { createVectorStore, type VectorStore } from './embed/vector-store.ts'
@@ -131,8 +132,7 @@ export interface AgentsWorkspaceRuntime {
   readonly monitors: Record<string, import('./llm/provider-monitor.ts').ProviderMonitor>
   // Refresh the cached available-models snapshot used by per-call effective-
   // model resolution. Called at boot and after any provider config change so
-  // agents picking up a fallback get the latest list. Mirrors the wiki
-  // resolveActiveWikis "derive on read" pattern (no boot-time freeze).
+  // agents picking up a fallback get the latest list (no boot-time freeze).
   readonly refreshAvailableModels: () => Promise<void>
   // Per-Workspace ring buffer of recent agent evals — fuel for
   // /api/diagnostics/evals/*. Subscribes via addEvalEventListener so
@@ -635,6 +635,13 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       // Utility tools — bound to per-Workspace rooms
       createGetRoomHistoryTool(rooms),
       createConversationReadTool(rooms, executionStore),
+      createWikiLookupTool({ getSources: roomId => {
+        const room = rooms.getRoom(roomId)
+        if (!room) return undefined
+        const active = effectiveActivePackSet(room)
+        return deployment.packCatalog.list().filter(pack => active.has(pack.id))
+          .flatMap(pack => pack.wikis.map(wiki => ({ packId: pack.id, wiki })))
+      } }),
       createPostToRoomTool(rooms),
       // RAG: recall tool — only registered when this Workspace has a vector
       // store (i.e. options.vectorsFile was provided). Focused runtime tests

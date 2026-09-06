@@ -3,6 +3,8 @@
 
 import {
   wikiManifestSchema,
+  sourceDocumentPathSchema,
+  sourceRevisionSchema,
   type WikiManifest,
   type WikiManifestPageEntry,
   type ProcedureManifestEntry,
@@ -38,8 +40,8 @@ export const createWikiSource = (
   const buffer = new Map<string, BufferEntry>()
   const pending = new Map<string, Promise<string>>()
 
-  const rawUrl = (path: string, revision = binding.branch): string =>
-    `https://raw.githubusercontent.com/${binding.org}/${binding.repo}/${revision}/${path}`
+  const rawUrl = (path: string, revision?: string): string =>
+    `https://raw.githubusercontent.com/${[binding.org, binding.repo, revision === undefined ? binding.branch : sourceRevisionSchema.parse(revision), ...sourceDocumentPathSchema.parse(path).split('/')].map(encodeURIComponent).join('/')}`
 
   // GitHub Pages mirrors current published artifacts. It is a safe fallback
   // only for unpinned reads; a revision-pinned read must never silently return
@@ -118,12 +120,8 @@ export const createWikiSource = (
       if (!response.ok) throw new Error(`HTTP ${response.status} fetching manifest from ${binding.manifestUrl}`)
       const value = await response.text()
       buffer.set(key, { value, fetchedAt: Date.now() })
-      pending.delete(key)
       return value
-    }, error => {
-      pending.delete(key)
-      throw error
-    })
+    }).finally(() => { pending.delete(key) })
     pending.set(key, request)
     return request
   }
@@ -140,7 +138,7 @@ export const createWikiSource = (
       }
       const result = wikiManifestSchema.safeParse(parsed)
       if (!result.success) {
-        throw new Error(`${binding.org}/${binding.repo} published an invalid procedure manifest: ${result.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ')}`)
+        throw new Error(`${binding.org}/${binding.repo} published an invalid wiki manifest: ${result.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ')}`)
       }
       return result.data
     },

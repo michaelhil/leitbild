@@ -72,4 +72,16 @@ One shared input schema validates direct, HTTP and Module calls. Retention bound
 
 Independent Ruthless Critic gate: **GO**, 41 tests / 268 assertions passed, including mixed qualities, both time axes, equal timestamps, later raw pages, appended data, malformed queries and unavailable storage. A local 250,000-sample check confirmed zero raw rows in summary mode. SQL aggregation still scales with the selected interval; this is a payload reduction, not a constant-time or production-latency claim.
 
-Reference, procedure and conversational evaluation phases remain in progress. The user's model-selection gate precedes post-upgrade conversation testing; deterministic regression tests continue during coding.
+### Optional references accepted (Phase 4A)
+
+The existing `wiki_lookup` name now selects a generic Workspace-bound reader instead of the PWR-owned tool. Sources derive from the current Room's active Pack declarations on every invocation; installing a Pack or selecting the tool does not activate a Pack. The ordinary Assistant definition selects the reader but still starts with no active Packs. Existing saved Agent profiles are not silently upgraded.
+
+Discovery lists local sources without fetching, then searches a selected manifest's title/type/id metadata. Reads return selected Markdown, original frontmatter and immutable source links. Line/character continuation preserves both SHA and literal source path, rejecting changed revisions or remapped pages rather than mixing chunks. Literal path encoding prevents encoded traversal from escaping the selected revision. Link-only, missing, invalid and unavailable sources remain explicit. A failed manifest request no longer stays permanently cached as a rejected promise.
+
+The critic reproduced an output-bloat hole through passthrough manifest metadata. Results now project compact known fields, report omission/truncation and preserve exact selectors; oversized metadata fails explicitly. No repository crawl, full-text search, new reference registry, persistence or automatic content injection was added.
+
+Verification: 60 focused Agents tests / 234 assertions, 5 Contracts tests / 21 assertions and 6 World source tests / 50 assertions pass; Agents and World checks pass. Independent final gate: **GO**, 36 tests / 188 assertions, including real Workspace selection and live Pack eligibility. The full platform check and tests passed before the final metadata guard (Agents 1,527; World 750; Host 27; integration 1), with final validation still required before deployment.
+
+Known boundaries: only published manifest entries are discoverable; the external PWR manifest's omitted pages are not silently crawled or repaired. Existing specialized PWR classification/search readers still have their separate unpinned artifact behavior; the new generic reader always uses pinned documents. Existing fetch-cache expiry does not evict all historical revision keys. Those are explicit follow-ups, not claimed fixes in this phase.
+
+Procedure and conversational evaluation phases remain in progress. The user's model-selection gate precedes post-upgrade conversation testing; deterministic regression tests continue during coding.

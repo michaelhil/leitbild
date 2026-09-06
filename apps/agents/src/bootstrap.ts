@@ -219,10 +219,8 @@ export const bootstrap = async (): Promise<void> => {
   deployment.sharedToolRegistry.register(createGeoRemoveTool())
   deployment.sharedToolRegistry.register(createGeoListCategoriesTool())
   deployment.sharedToolRegistry.register(createGeoListFeaturesTool())
-  // Wikis used to be a fetched-content subsystem. As of commit N, packs
-  // declare wiki URLs as metadata only (pack.json `wikis: [{ name, url }]`)
-  // and leitbild never fetches them — they're external links surfaced in
-  // the pack panel. Operators view + edit on GitHub Pages directly.
+  // Optional wiki_lookup is Workspace-bound. It derives manifest sources
+  // from the current Room's active Packs; link-only references remain links.
 
   // Geodata: pack-owned categories load via refreshPackGeodata above.
   // The historical leitbild-geodata GitHub discovery + warm cache were

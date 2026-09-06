@@ -53,6 +53,40 @@ const manifestFor = (
 })
 
 describe('procedure source discovery', () => {
+  test('non-procedure manifests and unsupported versions cannot become procedure sources', async () => {
+    for (const manifest of [
+      { version: 1, wiki: 'pwr-ops', revision: revisionA, procedures: [], pages: [] },
+      { ...manifestFor(revisionA, [{ id: 'E-0', title: 'Reactor Trip' }]), procmdVersion: 'unknown' },
+    ]) {
+      const fetchFn = (async () => Response.json(manifest)) as unknown as typeof fetch
+      const service = createProcedureSourceService({ sources: [source], fetchFn })
+      await expect(service.readCatalog()).rejects.toThrow('unsupported procmd version')
+    }
+  })
+
+  test('literal URL-like source paths and citations stay beneath the pinned SHA', async () => {
+    const calls: string[] = []
+    const fetchFn = (async (input: string | URL | Request) => {
+      calls.push(input.toString())
+      return new Response(markdownFor('E-0', 'Reactor Trip'))
+    }) as typeof fetch
+    const service = createProcedureSourceService({ sources: [source], fetchFn })
+    for (const path of ['%2e%2e/main/wiki/x.md', 'wiki/procedures/name?query#fragment.md', 'wiki/procedures/kjøling Δ.md', 'wiki/procedures/back\\slash.md']) {
+      const document = await service.readDocument({ procedureId: 'E-0', sourceRevision: revisionA, sourcePath: path })
+      const encoded = path.split('/').map(encodeURIComponent).join('/')
+      expect(calls.at(-1)).toBe(`https://raw.githubusercontent.com/${source.repository}/${revisionA}/${encoded}`)
+      expect(document.sourceUrl).toBe(`https://github.com/${source.repository}/blob/${revisionA}/${encoded}`)
+      for (const url of [calls.at(-1)!, document.sourceUrl]) {
+        expect(new URL(url).pathname).toContain(`/${revisionA}/`)
+        expect(new URL(url).search).toBe('')
+        expect(new URL(url).hash).toBe('')
+      }
+    }
+    const before = calls.length
+    await expect(service.readDocument({ procedureId: 'E-0', sourceRevision: revisionA, sourcePath: '../main/wiki/x.md' })).rejects.toThrow('literal relative repository path')
+    expect(calls).toHaveLength(before)
+  })
+
   test('builds the catalog from one manifest request and fetches no documents eagerly', async () => {
     const calls: string[] = []
     const fetchFn = (async (input: string | URL | Request): Promise<Response> => {

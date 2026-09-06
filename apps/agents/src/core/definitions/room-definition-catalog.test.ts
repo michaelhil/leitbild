@@ -24,7 +24,7 @@ describe('bundled Room Definitions', () => {
     const definition = getBundledRoomDefinition('leitbild-assistant')!
     const assistant = definition.room.agents[0]!
     expect(assistant.includeContext).toEqual({ participants: true, activity: false, knownAgents: false })
-    expect(assistant.tools).toEqual(['product_search', 'product_read', 'place_resolve'])
+    expect(assistant.tools).toEqual(['product_search', 'product_read', 'place_resolve', 'wiki_lookup'])
     expect(assistant).not.toHaveProperty('toolGrants')
     expect(definition.room).not.toHaveProperty('scope')
   })
