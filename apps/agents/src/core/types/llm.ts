@@ -1,6 +1,7 @@
 // LLM provider interface and call options.
 
 import type { ToolDefinition, NativeToolCall } from './tool.ts'
+import type { ModelInfo } from './model-info.ts'
 
 // === Circuit breaker + gateway observability ===
 
@@ -59,6 +60,18 @@ export interface OllamaHealthExtra {
 // Combined shape the Ollama gateway returns.
 export type OllamaHealth = ProviderHealth & OllamaHealthExtra
 
+export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+export type ReasoningEffort = typeof REASONING_EFFORTS[number]
+
+/** Exact provider-required protocol state. Not prompt prose or tool evidence. */
+export interface ProviderContinuation {
+  readonly provider: 'openrouter'
+  readonly model: string
+  readonly endpointHash: string
+  readonly reasoningDetails?: ReadonlyArray<Readonly<Record<string, unknown>>>
+  readonly reasoning?: string
+}
+
 export interface ChatRequest {
   readonly model: string
   readonly messages: ReadonlyArray<{
@@ -67,6 +80,7 @@ export interface ChatRequest {
     readonly toolCalls?: ReadonlyArray<NativeToolCall>
     readonly toolCallId?: string
     readonly name?: string
+    readonly continuation?: ProviderContinuation
     // V1 multimodal: optional inline images attached to this message.
     // Providers that support multimodal (modelSupportsImages true) emit
     // the appropriate wire-format content parts; providers that don't
@@ -94,6 +108,7 @@ export interface ChatRequest {
   // Used by the script runner's whisper-classify pass (forced JSON-mode).
   readonly toolChoice?: 'auto' | 'required' | { readonly name: string }
   readonly think?: boolean
+  readonly reasoningEffort?: ReasoningEffort
   readonly numCtx?: number
   // Ollama-specific: model keep_alive duration (string like '30m' or '0' to
   // unload immediately). Other providers silently ignore. Surfaced as a
@@ -112,6 +127,9 @@ export interface ChatRequest {
 export type GenerationQuery = ChatRequest
 
 export interface ChatResponse {
+  readonly model?: string
+  readonly continuation?: ProviderContinuation
+  readonly finishReason?: string
   readonly content: string
   readonly generationMs: number
   readonly tokensUsed: {
@@ -136,6 +154,9 @@ export interface ChatResponse {
 
 // A single streamed token/delta from the LLM
 export interface StreamChunk {
+  readonly model?: string
+  readonly continuation?: ProviderContinuation
+  readonly finishReason?: string
   readonly delta: string   // raw text fragment — may be empty for final done chunk
   readonly done: boolean
   readonly thinking?: string  // qwen3 CoT thinking tokens (before visible response)
@@ -162,6 +183,7 @@ export interface StreamChunk {
 }
 
 export interface LLMProvider {
+  readonly modelInfo?: (model: string) => Promise<ModelInfo>
   readonly chat: (request: ChatRequest) => Promise<ChatResponse>
   readonly stream?: (request: ChatRequest, signal?: AbortSignal) => AsyncIterable<StreamChunk>
   readonly models: () => Promise<string[]>
@@ -214,6 +236,8 @@ export type OnProviderStreamFailed = (
 // Used by callLLM(), ToolContext.llm, and RoomDirectoryCallbacks.callSystemLLM.
 // No agent lifecycle, no history, no routing, no protocol parsing.
 export interface LLMCallOptions {
+  readonly reasoningEffort?: ReasoningEffort
+  readonly think?: boolean
   readonly model: string
   readonly systemPrompt?: string
   readonly messages: ReadonlyArray<{

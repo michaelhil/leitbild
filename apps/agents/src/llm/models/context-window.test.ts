@@ -1,10 +1,8 @@
-// Synchronous context-window lookup tests. The async path that hits
-// /api/show or /models is not exercised here — getContextWindowSync is
-// the hot path (called by ai-agent factory on every spawn) and the one
-// that drives the UI's per-message %-of-context indicator.
+// Curated fallback and local-model inventory tests. OpenRouter's capacity
+// comes from its adapter, together with canonical model identity.
 
 import { describe, test, expect } from 'bun:test'
-import { getContextWindowSync } from './context-window.ts'
+import { getContextWindow, getContextWindowSync } from './context-window.ts'
 
 describe('getContextWindowSync', () => {
   test('exact-match curated entry: gpt-4o', () => {
@@ -72,6 +70,10 @@ describe('getContextWindowSync', () => {
     expect(info.contextMax).toBe(0)
   })
 
+  test('a familiar prefix is not evidence of an arbitrary variant capacity', () => {
+    expect(getContextWindowSync('openai', 'gpt-5-future-variant')).toEqual({ contextMax: 0, source: 'unknown' })
+  })
+
   test('prefix fallback is OpenAI-only — other providers keep exact match', () => {
     // Anthropic / Gemini / Groq don't ship dated snapshots the same way,
     // and their models have stable names. Restricting the prefix matcher
@@ -80,4 +82,19 @@ describe('getContextWindowSync', () => {
     const info = getContextWindowSync('anthropic', 'claude-haiku-4-5-something')
     expect(info.source).toBe('unknown')
   })
+})
+
+test('local model metadata is scoped to its endpoint, not just its name', async () => {
+  const first = Bun.serve({ port: 0, fetch: () => Response.json({ model_info: { 'model.context_length': 32_768 } }) })
+  const second = Bun.serve({ port: 0, fetch: () => Response.json({ model_info: { 'model.context_length': 131_072 } }) })
+  try {
+    const model = `test-${crypto.randomUUID()}`
+    const firstOptions = { ollamaBaseUrl: first.url.origin }
+    const secondOptions = { ollamaBaseUrl: second.url.origin }
+    expect((await getContextWindow('ollama', model, firstOptions)).contextMax).toBe(32_768)
+    expect((await getContextWindow('ollama', model, secondOptions)).contextMax).toBe(131_072)
+    expect(getContextWindowSync('ollama', model, firstOptions).contextMax).toBe(32_768)
+    expect(getContextWindowSync('ollama', model, secondOptions).contextMax).toBe(131_072)
+    expect(getContextWindowSync('ollama', model).source).toBe('unknown')
+  } finally { first.stop(true); second.stop(true) }
 })

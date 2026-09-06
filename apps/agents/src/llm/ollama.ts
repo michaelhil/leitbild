@@ -1,5 +1,5 @@
 import type { LLMProvider, ChatRequest, ChatResponse, StreamChunk } from '../core/types/llm.ts'
-import { createOllamaError } from './errors.ts'
+import { createLLMRequestError, createOllamaError } from './errors.ts'
 import { fetchWithTimeout } from '../core/fetch-utils.ts'
 
 interface OllamaToolCall {
@@ -54,7 +54,7 @@ const TAGS_TIMEOUT_MS = 10_000
 // hardMs so a truly dead stream eventually fails over.
 const STREAM_SLOW_WARN_MS = 15_000
 const STREAM_HARD_ABORT_MS = 90_000
-const DEFAULT_NUM_CTX = 16384  // modern models support 32K+; 16K gives room for rich context + history
+export const DEFAULT_NUM_CTX = 16384 // Local allocation default, not the model's architectural maximum.
 
 const validateChatResponse = (data: unknown): OllamaChatResponse => {
   if (
@@ -107,6 +107,13 @@ const warnIgnoredToolChoice = (model: string, choice: ChatRequest['toolChoice'])
   console.warn(`[ollama] toolChoice ${JSON.stringify(choice)} ignored for model "${model}" (Ollama does not support tool_choice; behaves as 'auto')`)
 }
 
+// `think` is Ollama's separate existing setting. An explicit cross-provider
+// reasoning effort cannot silently become a different policy during fallback.
+const assertSupportedReasoning = (request: ChatRequest): void => {
+  if (request.reasoningEffort === undefined) return
+  throw createLLMRequestError('reasoning_effort_unsupported', `reasoning_effort_unsupported: Ollama has no implemented mapping for explicit effort ${request.reasoningEffort}; clear reasoning effort to use its separate thinking setting`)
+}
+
 export const createOllamaProvider = (initialBaseUrl: string): OllamaProviderExtended => {
   let baseUrl = initialBaseUrl
   const requestMessages = (request: ChatRequest): ChatRequest['messages'] => {
@@ -118,6 +125,7 @@ export const createOllamaProvider = (initialBaseUrl: string): OllamaProviderExte
     return content ? [{ role: 'system' as const, content }, ...request.messages] : request.messages
   }
   const chat = async (request: ChatRequest): Promise<ChatResponse> => {
+    assertSupportedReasoning(request)
     const startMs = performance.now()
 
     const body: Record<string, unknown> = {
@@ -200,6 +208,7 @@ export const createOllamaProvider = (initialBaseUrl: string): OllamaProviderExte
   }
 
   const stream = async function* (request: ChatRequest, externalSignal?: AbortSignal): AsyncIterable<StreamChunk> {
+    assertSupportedReasoning(request)
     const body: Record<string, unknown> = {
       model: request.model,
       messages: requestMessages(request).map(m => ({

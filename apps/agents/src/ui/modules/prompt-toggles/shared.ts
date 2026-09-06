@@ -5,8 +5,11 @@
 // ============================================================================
 
 // --- Shared types ---
+import type { ModelInfo } from '../../../core/types/model-info.ts'
 
 export interface AgentData {
+  modelInfo?: ModelInfo
+  modelInfoError?: string
   persona?: string
   tools?: string[]
   skills?: string[]

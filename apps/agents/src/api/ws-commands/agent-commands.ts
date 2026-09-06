@@ -35,6 +35,8 @@ export const handleAgentCommand = async (msg: WSInbound, ctx: CommandContext): P
       if (aiAgent) {
         if (msg.persona) aiAgent.updatePersona(msg.persona)
         if (msg.model) aiAgent.updateModel(msg.model)
+        if (msg.reasoningEffort !== undefined) aiAgent.updateReasoningEffort(msg.reasoningEffort ?? undefined)
+        if (msg.historyTokenBudget !== undefined) aiAgent.updateHistoryTokenBudget(msg.historyTokenBudget ?? undefined)
         if (msg.includePrompts) aiAgent.updateIncludePrompts(msg.includePrompts)
         if (msg.includeContext) aiAgent.updateIncludeContext(msg.includeContext)
         if (typeof msg.includeTools === 'boolean') aiAgent.updateIncludeTools(msg.includeTools)

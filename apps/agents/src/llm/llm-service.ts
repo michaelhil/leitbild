@@ -48,7 +48,7 @@ import { parsePrefixedModel } from './models/parse-prefix.ts'
 import { resolveDefaultModelChain, type ProviderSnapshot } from './models/default-resolver.ts'
 import { CURATED_MODELS } from './models/catalog.ts'
 import { isAgentFallbackable as classifyIsAgentFallbackable } from '../agents/error-classify.ts'
-import { isAbortError } from './errors.ts'
+import { createLLMRequestError, isAbortError, isLLMRequestError } from './errors.ts'
 import { resolveProviderAvailability } from './provider-availability.ts'
 
 // === Source tagging — every call site declares its identity ===
@@ -111,6 +111,25 @@ const NETWORK_RETRY_BACKOFF_MS = 250
 const IMPLICIT_CHAIN_CACHE_MS = 10_000
 
 const THINK_BLOCK_RE = /<think>[\s\S]*?<\/think>/g
+
+// Provider continuation is not interchangeable context. Keep the canonical
+// logical route and never send signed/opaque state down a fallback chain.
+const continuationRoute = (request: ChatRequest): string | undefined => {
+  let route: string | undefined
+  let endpointHash: string | undefined
+  for (const message of request.messages) {
+    if (!message.continuation) continue
+    const value = message.continuation
+    const next = `${value.provider}:${value.model}`
+    if (message.role !== 'assistant' || (route !== undefined && (route !== next || endpointHash !== value.endpointHash))) {
+      throw createLLMRequestError('provider_continuation_route_mismatch', 'provider_continuation_route_mismatch: request mixes incompatible continuation routes')
+    }
+    route = next
+    endpointHash = value.endpointHash
+  }
+  if (route !== undefined && request.model !== route) throw createLLMRequestError('provider_continuation_route_mismatch', 'provider_continuation_route_mismatch: continuation must use its original canonical route')
+  return route
+}
 
 type ChainSource = 'explicit' | 'implicit'
 
@@ -287,6 +306,7 @@ export const createLLMService = (deps: LLMServiceDeps): LLMService => {
     modelRef: string,
     lastError: unknown,
   ): never => {
+    if (isLLMRequestError(lastError)) throw lastError
     const failure: LLMServiceFailure = {
       attempts,
       primaryCode: firstFallbackable?.code ?? 'unknown',
@@ -303,9 +323,10 @@ export const createLLMService = (deps: LLMServiceDeps): LLMService => {
   }
 
   const callChat = async (request: ChatRequest, opts: LLMServiceBindOptions): Promise<ChatResponse> => {
-    const resolvedChain = await resolveChain(opts.fallbackChain)
+    const pinned = continuationRoute(request)
+    const resolvedChain = await resolveChain(pinned ? [] : opts.fallbackChain)
     const chain = dedupChain(request.model, resolvedChain.refs)
-    const order = buildAttemptOrder(request, chain)
+    const order = pinned ? [pinned] : buildAttemptOrder(request, chain)
     const allAttempts: ProviderAttemptRecord[] = []
     let lastError: unknown
     let firstFallbackable: { code: string; reason: string } | null = null
@@ -363,9 +384,10 @@ export const createLLMService = (deps: LLMServiceDeps): LLMService => {
     signal: AbortSignal | undefined,
     opts: LLMServiceBindOptions,
   ): AsyncIterable<StreamChunk> {
-    const resolvedChain = await resolveChain(opts.fallbackChain)
+    const pinned = continuationRoute(request)
+    const resolvedChain = await resolveChain(pinned ? [] : opts.fallbackChain)
     const chain = dedupChain(request.model, resolvedChain.refs)
-    const order = buildAttemptOrder(request, chain)
+    const order = pinned ? [pinned] : buildAttemptOrder(request, chain)
     const allAttempts: ProviderAttemptRecord[] = []
     let lastError: unknown
     let firstFallbackable: { code: string; reason: string } | null = null
@@ -461,6 +483,8 @@ export const createLLMService = (deps: LLMServiceDeps): LLMService => {
       chat: (req) => callChat(req, opts),
       stream: (req, signal) => callStream(req, signal, opts),
       models: () => router.models(),
+      // Real routers provide metadata; isolated test providers may not.
+      ...(router.modelInfo ? { modelInfo: router.modelInfo } : {}),
     }),
   }
 }

@@ -13,7 +13,7 @@ import type {
   CircuitState, RequestStatus, RequestRecord, GatewayMetrics, ProviderHealth,
 } from '../core/types/llm.ts'
 import { createCircuitBreaker } from './circuit-breaker.ts'
-import { createGatewayError, isAbortError, isGatewayError } from './errors.ts'
+import { createGatewayError, isAbortError, isGatewayError, isLLMRequestError } from './errors.ts'
 import { createRingBuffer, createSemaphore } from './concurrency.ts'
 
 export type { CircuitState, RequestStatus, RequestRecord, GatewayMetrics, ProviderHealth }
@@ -99,7 +99,7 @@ export const createProviderGateway = (
     }
   }
   let config: ProviderGatewayConfig = { ...PROVIDER_GATEWAY_DEFAULTS, ...definedOverrides }
-  const isPermanent = deps.isPermanentError ?? (() => false)
+  const isPermanent = (error: unknown): boolean => isLLMRequestError(error) || (deps.isPermanentError?.(error) ?? false)
   const enrich = deps.enrichRequest ?? ((r: ChatRequest) => r)
 
   const semaphore = createSemaphore(config.maxConcurrent)
@@ -291,6 +291,7 @@ export const createProviderGateway = (
 
   return {
     chat, stream, models, runningModels,
+    ...(provider.modelInfo ? { modelInfo: provider.modelInfo } : {}),
     getMetrics,
     getHealth: () => health,
     getConfig: () => ({ ...config }),

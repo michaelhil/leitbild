@@ -273,7 +273,7 @@ const makeStaticProvider = (opts: StaticProviderOptions = {}): LLMProvider => {
 }
 
 const makeScriptedProvider = (
-  scripts: ReadonlyArray<{ content?: string; toolCalls?: ChatResponse['toolCalls'] }>,
+  scripts: ReadonlyArray<Partial<ChatResponse>>,
 ): { provider: LLMProvider; calls: ChatRequest[] } => {
   const calls: ChatRequest[] = []
   let i = 0
@@ -282,6 +282,7 @@ const makeScriptedProvider = (
       calls.push(request)
       const s = scripts[Math.min(i++, scripts.length - 1)]!
       return {
+        ...s,
         content: s.content ?? '',
         generationMs: 1,
         tokensUsed: { prompt: 1, completion: 1 },
@@ -312,6 +313,32 @@ const baseConfig: AIAgentConfig = {
 // ---------------------------------------------------------------------------
 
 describe('evaluate (tool loop)', () => {
+  test('continuation and explicit effort survive multiple tool rounds with actual model metrics and complete query', async () => {
+    const continuation = { provider: 'openrouter' as const, model: 'qwen/resolved', endpointHash: 'a'.repeat(64), reasoningDetails: [{ type: 'reasoning.encrypted', data: 'exact' }] }
+    const toolCalls = [1, 2].map(index => ({ id: `native00${index}`, function: { name: 'inspect', arguments: { index } } }))
+    const { provider, calls } = makeScriptedProvider([
+      { toolCalls, continuation, model: 'qwen/resolved' },
+      { toolCalls: toolCalls.slice(0, 1), continuation, model: 'qwen/resolved' },
+      { content: 'done', model: 'qwen/resolved' },
+    ])
+    const result = await evaluate(baseContextResult(), { ...baseConfig, model: 'openrouter:openrouter/auto', reasoningEffort: 'high' }, provider, async tools => tools.map(() => ({ success: true, data: 'seen' })), 5, 'room-1', { toolDefinitions: [] })
+    expect(calls.map(call => call.model)).toEqual(['openrouter:openrouter/auto', 'openrouter:qwen/resolved', 'openrouter:qwen/resolved'])
+    expect(calls.every(call => call.reasoningEffort === 'high')).toBe(true)
+    const final = result.decision.generationQuery!
+    expect(final).toEqual(calls[2]!)
+    expect(final.messages.filter(message => message.continuation).map(message => message.continuation)).toEqual([continuation, continuation])
+    expect(final.messages.filter(message => message.role === 'tool').map(message => message.toolCallId)).toEqual(['native001', 'native002', 'native001'])
+    expect(result.decision.metrics?.model).toBe('qwen/resolved')
+  })
+
+  test('length output is an error and never executes even apparently complete tool arguments', async () => {
+    const { provider } = makeScriptedProvider([{ content: 'partial answer', finishReason: 'length', toolCalls: [{ id: 'native001', function: { name: 'mutate', arguments: {} } }] }])
+    let executed = 0
+    const result = await evaluate(baseContextResult(), baseConfig, provider, async () => { executed++; return [] }, 5, 'room-1', { toolDefinitions: [] })
+    expect(executed).toBe(0)
+    expect(result.decision.response.action).toBe('error')
+    expect(JSON.stringify(result.decision.response)).toContain('incomplete_output')
+  })
   test('plain content → respond decision', async () => {
     const provider = makeStaticProvider({ content: 'hello world' })
     const result = await evaluate(
@@ -599,6 +626,10 @@ describe('evaluate (tool loop)', () => {
 // ---------------------------------------------------------------------------
 
 describe('streamLLM', () => {
+  test('an incomplete stream rejects after provisional deltas instead of reporting completion', async () => {
+    const provider = makeStaticProvider({ streamChunks: [{ delta: 'provisional', done: false }, { delta: '', done: true, finishReason: 'length' }] })
+    await expect(Array.fromAsync(streamLLM(provider, { model: 'm', messages: [] }))).rejects.toThrow('incomplete_output')
+  })
   test('yields deltas from provider stream', async () => {
     const provider = makeStaticProvider({
       streamChunks: [
@@ -630,6 +661,13 @@ describe('streamLLM', () => {
 })
 
 describe('callLLM', () => {
+  test('standalone chat and chat-backed stream propagate settings and reject incomplete answers', async () => {
+    const { provider, calls } = makeScriptedProvider([{ content: 'partial', finishReason: 'length' }])
+    const options = { model: 'm', messages: [], reasoningEffort: 'high' as const, think: true, seed: 7 }
+    await expect(callLLM(provider, options)).rejects.toThrow('incomplete_output')
+    await expect(Array.fromAsync(streamLLM(provider, options))).rejects.toThrow('incomplete_output')
+    expect(calls.every(call => call.reasoningEffort === 'high' && call.think === true && call.seed === 7)).toBe(true)
+  })
   test('returns raw chat content', async () => {
     const provider = makeStaticProvider({ content: 'sync result' })
     const out = await callLLM(provider, {

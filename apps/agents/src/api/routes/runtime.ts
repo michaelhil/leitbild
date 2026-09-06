@@ -2,6 +2,7 @@ import { json, errorResponse, parseBody } from './helpers.ts'
 import type { RouteEntry } from './types.ts'
 import type { MonitorState } from '../../llm/provider-monitor.ts'
 import { resolveProviderAvailability } from '../../llm/provider-availability.ts'
+import type { ModelInfo } from '../../core/types/model-info.ts'
 
 export const runtimeRoutes: RouteEntry[] = [
   {
@@ -44,7 +45,7 @@ export const runtimeRoutes: RouteEntry[] = [
         const providers: Array<{
           name: string
           availability: MonitorState
-          models: Array<{ id: string; contextMax: number; recommended: boolean; pinned?: boolean; running?: boolean; label?: string }>
+          models: Array<{ id: string; contextMax: number; recommended: boolean; pinned?: boolean; running?: boolean; label?: string; reasoning?: ModelInfo['reasoning'] }>
         }> = []
 
         // Cloud providers, in router order (so UI shows them in priority order)
@@ -106,7 +107,15 @@ export const runtimeRoutes: RouteEntry[] = [
               modelCount: models.length,
               requireModels: true,
             }),
-            models,
+            // The adapter reuses the same catalog that supplies these IDs;
+            // concurrent metadata reads do not fetch each model separately.
+            models: await Promise.all(models.map(async model => {
+              const info = await gw?.modelInfo?.(model.id)
+              return { ...model,
+                contextMax: info && info.contextMax > 0 ? info.contextMax : model.contextMax,
+                ...(info?.reasoning === undefined ? {} : { reasoning: info.reasoning }),
+              }
+            })),
           })
           void PROVIDER_PROFILES
         }
@@ -123,7 +132,7 @@ export const runtimeRoutes: RouteEntry[] = [
           // there's no reason to hide them behind "show all". Running models
           // just get an extra star.
           const models = all.map(id => {
-            const ctx = getContextWindowSync('ollama', id)
+            const ctx = getContextWindowSync('ollama', id, { ollamaBaseUrl: system.providerConfig.ollamaUrl })
             return {
               id, contextMax: ctx.contextMax,
               recommended: true,

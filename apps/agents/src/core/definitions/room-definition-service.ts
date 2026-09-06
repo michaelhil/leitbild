@@ -102,6 +102,8 @@ export const startRoomDefinition = async (
         tools: agentDefinition.tools,
         skills: agentDefinition.skills,
         ...(agentDefinition.temperature !== undefined ? { temperature: agentDefinition.temperature } : {}),
+        ...(agentDefinition.reasoningEffort !== undefined ? { reasoningEffort: agentDefinition.reasoningEffort } : {}),
+        ...(agentDefinition.historyTokenBudget !== undefined ? { historyTokenBudget: agentDefinition.historyTokenBudget } : {}),
         ...(agentDefinition.maxToolIterations !== undefined ? { maxToolIterations: agentDefinition.maxToolIterations } : {}),
         ...(agentDefinition.includeContext ? { includeContext: agentDefinition.includeContext } : {}),
       })

@@ -12,10 +12,12 @@
 // here rather than requiring per-provider subclasses.
 // ============================================================================
 
-import type { LLMProvider, ChatRequest, ChatResponse, StreamChunk } from '../core/types/llm.ts'
+import type { LLMProvider, ChatRequest, ChatResponse, StreamChunk, ProviderContinuation } from '../core/types/llm.ts'
+import type { ModelInfo } from '../core/types/model-info.ts'
+import { createHash } from 'node:crypto'
 import type { NativeToolCall } from '../core/types/tool.ts'
 import type { LimitMetrics } from '../core/limit-metrics.ts'
-import { createCloudProviderError } from './errors.ts'
+import { createCloudProviderError, createLLMRequestError } from './errors.ts'
 import { mapHttpError } from './openai-compatible-errors.ts'
 import { type OAIMessage, buildOAIBody } from './openai-compatible-wire.ts'
 import { fetchWithTimeout } from '../core/fetch-utils.ts'
@@ -106,6 +108,7 @@ interface OAIChatResponse {
 }
 
 interface OAIStreamChunk {
+  model?: string
   choices?: ReadonlyArray<{
     delta?: {
       content?: string
@@ -117,6 +120,7 @@ interface OAIStreamChunk {
       // Same channel under an alternate field name (OpenAI's o-series
       // exposes it as `reasoning` in some shapes). Treat identically.
       reasoning?: string
+      reasoning_details?: ReadonlyArray<Readonly<Record<string, unknown>>>
       tool_calls?: ReadonlyArray<{
         index?: number
         id?: string
@@ -146,7 +150,13 @@ interface OAIStreamChunk {
 }
 
 interface OAIModelsResponse {
-  data?: ReadonlyArray<{ id: string }>
+  data?: ReadonlyArray<{
+    id: string
+    context_length?: number | null
+    top_provider?: { max_completion_tokens?: number | null } | null
+    supported_parameters?: ReadonlyArray<string>
+    reasoning?: { supported_efforts?: ReadonlyArray<string> | null; mandatory?: boolean; default_effort?: string }
+  }>
 }
 
 // === Error mapping ===
@@ -209,6 +219,43 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
   // through identity (the request was always going to fail or hit a different
   // provider anyway).
   let modelAliasMap: ReadonlyMap<string, string> = new Map()
+  let modelInfoMap: ReadonlyMap<string, ModelInfo> = new Map()
+  let catalogLoaded = false
+  let catalogRefreshedAt = 0
+  let catalogRetryAt = 0
+  let catalogInFlight: Promise<string[]> | undefined
+  let catalogEndpoint = config.getBaseUrl()
+  const endpoint = (): { url: string; hash: string } => {
+    const url = config.getBaseUrl()
+    if (url !== catalogEndpoint) {
+      modelAliasMap = new Map()
+      modelInfoMap = new Map()
+      catalogLoaded = false
+      catalogRefreshedAt = 0
+      catalogRetryAt = 0
+      catalogInFlight = undefined
+      catalogEndpoint = url
+    }
+    return { url, hash: createHash('sha256').update(url).digest('hex') }
+  }
+
+  const continuationFor = (request: ChatRequest, endpointHash: string, details: OAIMessage['reasoning_details'], reasoning: string | undefined): ProviderContinuation | undefined => {
+    if (config.name !== 'openrouter') return undefined
+    if (details != null && (!Array.isArray(details) || details.some(detail => !detail || typeof detail !== 'object' || Array.isArray(detail)))) throw createLLMRequestError('invalid_provider_continuation', 'Invalid OpenRouter reasoning_details response')
+    if (reasoning !== undefined && typeof reasoning !== 'string') throw createLLMRequestError('invalid_provider_continuation', 'Invalid OpenRouter reasoning response')
+    if (!details?.length && reasoning === undefined) return undefined
+    return {
+      provider: 'openrouter', model: request.model, endpointHash,
+      ...(details?.length ? { reasoningDetails: details } : {}),
+      ...(reasoning !== undefined ? { reasoning } : {}),
+    }
+  }
+
+  const checkContinuationEndpoint = (request: ChatRequest, hash: string): void => {
+    for (const message of request.messages) {
+      if (message.continuation && message.continuation.endpointHash !== hash) throw createLLMRequestError('provider_continuation_endpoint_changed', 'provider_continuation_endpoint_changed: cannot replay provider state after changing its endpoint')
+    }
+  }
 
   const resolveWireModel = (model: string): string => {
     if (config.name !== 'anthropic' && config.name !== 'openrouter') return model
@@ -229,11 +276,15 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
 
   const chat = async (request: ChatRequest): Promise<ChatResponse> => {
     const startMs = performance.now()
+    const target = endpoint()
     const wireRequest = { ...request, model: resolveWireModel(request.model) }
-    const body = buildOAIBody(wireRequest, false, config.name)
+    checkContinuationEndpoint(wireRequest, target.hash)
+    const info = modelInfoMap.get(wireRequest.model)
+    if (request.reasoningEffort !== undefined && info?.reasoning?.supportedEfforts === undefined) console.warn(`[${config.name}] reasoning effort ${request.reasoningEffort} requested for ${wireRequest.model}; supported efforts are not advertised, provider will validate`)
+    const body = buildOAIBody(wireRequest, false, config.name, info)
 
     const response = await fetchWithTimeout(
-      `${config.getBaseUrl()}/chat/completions`,
+      `${target.url}/chat/completions`,
       { method: 'POST', headers: headers(), body: JSON.stringify(body) },
       chatTimeoutMs,
     )
@@ -263,12 +314,12 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
         : ''
     const { thinking, content } = splitThinkAndContent(rawContent)
     void thinking // thinking in non-streaming is discarded — leitbild only surfaces it during streaming
-    // Same disposition for the native reasoning channel — read so an
-    // optional future caller can wire it through, discarded here.
-    void choice.message.reasoning_content
-    void choice.message.reasoning
+    // OpenRouter protocol continuation is separate from readable content.
+    // Preserve its original sequence; never synthesize a reasoning transcript.
+    const continuation = choice.finish_reason === 'length' ? undefined : continuationFor({ ...wireRequest, model: data.model || wireRequest.model }, target.hash,
+      choice.message.reasoning_details, choice.message.reasoning ?? choice.message.reasoning_content ?? undefined)
 
-    const toolCalls: NativeToolCall[] | undefined = choice.message.tool_calls?.length
+    const toolCalls: NativeToolCall[] | undefined = choice.finish_reason !== 'length' && choice.message.tool_calls?.length
       ? choice.message.tool_calls.map(tc => ({
           id: tc.id,
           function: {
@@ -293,6 +344,7 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
     const cacheMiss = data.usage?.prompt_cache_miss_tokens
     return {
       content,
+      model: data.model || wireRequest.model,
       generationMs,
       tokensUsed: {
         prompt: data.usage?.prompt_tokens ?? 0,
@@ -302,12 +354,18 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
         ...(cacheMiss !== undefined ? { cacheMiss } : {}),
       },
       toolCalls,
+      ...(continuation ? { continuation } : {}),
+      ...(choice.finish_reason ? { finishReason: choice.finish_reason } : {}),
     }
   }
 
   const stream = async function* (request: ChatRequest, externalSignal?: AbortSignal): AsyncIterable<StreamChunk> {
+    const target = endpoint()
     const wireRequest = { ...request, model: resolveWireModel(request.model) }
-    const body = buildOAIBody(wireRequest, true, config.name)
+    checkContinuationEndpoint(wireRequest, target.hash)
+    const info = modelInfoMap.get(wireRequest.model)
+    if (request.reasoningEffort !== undefined && info?.reasoning?.supportedEfforts === undefined) console.warn(`[${config.name}] reasoning effort ${request.reasoningEffort} requested for ${wireRequest.model}; supported efforts are not advertised, provider will validate`)
+    const body = buildOAIBody(wireRequest, true, config.name, info)
 
     const controller = new AbortController()
     // Hard-abort timer — fires only if the stream is genuinely dead for
@@ -318,7 +376,7 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
       externalSignal.addEventListener('abort', () => controller.abort(), { once: true })
     }
 
-    const response = await fetch(`${config.getBaseUrl()}/chat/completions`, {
+    const response = await fetch(`${target.url}/chat/completions`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify(body),
@@ -391,21 +449,28 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
 
     // Accumulators for final-chunk metadata (finish_reason may arrive before
     // [DONE]; usage typically arrives AFTER finish_reason but BEFORE [DONE]).
-    let finishSeen = false
+    let finishReason: string | undefined
+    let actualModel = wireRequest.model
+    const reasoningDetails: Array<Readonly<Record<string, unknown>>> = []
+    let reasoning: string | undefined
     let usageTokens: { prompt: number; completion: number; cacheCreation?: number; cacheRead?: number; cacheMiss?: number } | undefined
 
     const emitFinal = (): StreamChunk => {
-      const toolCalls: NativeToolCall[] | undefined = toolAccum.length
+      const toolCalls: NativeToolCall[] | undefined = finishReason !== 'length' && toolAccum.length
         ? toolAccum.map((t, index) => ({
             id: t.id ?? `call_${index}`,
             function: { name: t.name, arguments: parseArgs(t.argsBuffer, config.name, t.name) },
           }))
         : undefined
+      const continuation = finishReason === 'length' ? undefined : continuationFor({ ...wireRequest, model: actualModel }, target.hash, reasoningDetails, reasoning)
       const chunk: StreamChunk = {
         delta: '', done: true,
         ...(toolCalls ? { toolCalls } : {}),
         ...(usageTokens ? { tokensUsed: usageTokens } : {}),
         provider: config.name,
+        model: actualModel,
+        ...(continuation ? { continuation } : {}),
+        ...(finishReason ? { finishReason } : {}),
       }
       return chunk
     }
@@ -483,6 +548,7 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
             }
             let parsed: OAIStreamChunk
             try { parsed = JSON.parse(payload) } catch { continue }
+            if (typeof parsed.model === 'string' && parsed.model.length > 0) actualModel = parsed.model
 
             // Final usage frame (OpenAI with include_usage: true; Groq,
             // Cerebras follow the same convention). The frame carries an
@@ -513,6 +579,20 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
             // is disjoint from this field, so both can coexist (e.g. DeepSeek
             // historically emitted both). Both routes feed the same channel.
             const deltaReasoning = choice.delta?.reasoning_content ?? choice.delta?.reasoning ?? ''
+            if (config.name === 'openrouter') {
+              const details = choice.delta?.reasoning_details
+              if (details != null) {
+                if (!Array.isArray(details) || details.some(detail => !detail || typeof detail !== 'object' || Array.isArray(detail))) throw createLLMRequestError('invalid_provider_continuation', 'Invalid OpenRouter reasoning_details stream')
+                // OpenRouter specifies concatenation in original arrival order,
+                // not grouping or overwriting blocks by index/signature/type.
+                reasoningDetails.push(...details)
+              }
+              const originalReasoning = choice.delta?.reasoning ?? choice.delta?.reasoning_content
+              if (originalReasoning != null) {
+                if (typeof originalReasoning !== 'string') throw createLLMRequestError('invalid_provider_continuation', 'Invalid OpenRouter reasoning stream')
+                reasoning = (reasoning ?? '') + originalReasoning
+              }
+            }
             if (deltaReasoning) {
               yield { delta: '', thinking: deltaReasoning, done: false }
             }
@@ -564,7 +644,7 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
             if (choice.finish_reason) {
               // Mark finish but don't emit yet — wait one more frame in case
               // usage arrives (it typically does on a subsequent SSE event).
-              finishSeen = true
+              finishReason = choice.finish_reason
             }
           }
         }
@@ -572,16 +652,16 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
       // Reader closed. Emit final chunk with whatever we've accumulated.
       if (thinkCarry) yield { delta: thinkCarry, done: false }
       yield emitFinal()
-      void finishSeen  // value consumed by the loop logic above
     } finally {
       clearTimeout(hardAbortTimer)
       reader.releaseLock()
     }
   }
 
-  const models = async (): Promise<string[]> => {
+  const fetchModels = async (): Promise<string[]> => {
+    const target = endpoint()
     const response = await fetchWithTimeout(
-      `${config.getBaseUrl()}/models`,
+      `${target.url}/models`,
       { headers: headers() },
       modelsTimeoutMs,
     )
@@ -590,40 +670,96 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
       throw mapHttpError(config.name, response.status, text, response.headers.get('retry-after'))
     }
     const data = (await response.json()) as OAIModelsResponse
+    if (endpoint().url !== target.url) throw new Error('Provider endpoint changed while loading model metadata')
+    const info = new Map<string, ModelInfo>()
+    for (const row of data.data ?? []) {
+      const id = normalizeModelId(config.name, row.id)
+      const capacity = Number.isSafeInteger(row.context_length) && row.context_length! > 0 ? row.context_length! : undefined
+      const output = Number.isSafeInteger(row.top_provider?.max_completion_tokens) && row.top_provider!.max_completion_tokens! > 0 ? row.top_provider!.max_completion_tokens! : undefined
+      const parameters = Array.isArray(row.supported_parameters) && row.supported_parameters.every(value => typeof value === 'string') ? row.supported_parameters : undefined
+      const rawEfforts = row.reasoning?.supported_efforts
+      const efforts = rawEfforts === null || (Array.isArray(rawEfforts) && rawEfforts.every(value => typeof value === 'string')) ? rawEfforts : undefined
+      if ((row.context_length != null && capacity === undefined) || (row.top_provider?.max_completion_tokens != null && output === undefined) || (row.supported_parameters !== undefined && parameters === undefined) || (rawEfforts !== undefined && efforts === undefined)) {
+        console.warn(`[${config.name}] Invalid capability metadata for ${id}; unrecognized fields remain unknown, model availability is unchanged`)
+      }
+      info.set(id, {
+        id, provider: config.name, contextMax: capacity ?? 0, source: `${config.name}_api`,
+        ...(output != null ? { maxOutputTokens: output } : {}),
+        ...(parameters ? { supportedParameters: parameters } : {}),
+        ...(row.reasoning ? { reasoning: {
+          ...(efforts !== undefined ? { supportedEfforts: efforts } : {}),
+          ...(typeof row.reasoning.mandatory === 'boolean' ? { mandatory: row.reasoning.mandatory } : {}),
+          ...(typeof row.reasoning.default_effort === 'string' ? { defaultEffort: row.reasoning.default_effort } : {}),
+        } } : {}),
+      })
+    }
     // Provider-specific id normalization (e.g. strip Gemini's "models/" prefix
     // so the catalog matches user-facing names). Single place for these quirks:
     // src/llm/models/normalize.ts. See that file for the full bug story.
     const ids = (data.data ?? []).map(m => normalizeModelId(config.name, m.id))
+    catalogRefreshedAt = Date.now()
+    catalogRetryAt = 0
     if (config.name === 'anthropic') {
       const { expanded, aliasMap } = expandAnthropicAliases(ids)
       modelAliasMap = aliasMap
+      modelInfoMap = info
+      catalogLoaded = true
       return [...expanded]
     }
     if (config.name === 'openrouter') {
       const { expanded, aliasMap } = expandOpenRouterOpenAIAliases(ids)
       modelAliasMap = aliasMap
+      modelInfoMap = info
+      catalogLoaded = true
       return [...expanded]
     }
+    modelInfoMap = info
+    catalogLoaded = true
     return ids
   }
 
-  return { chat, stream, models }
+  // One inventory, not a per-model negative cache. Explicit models() callers
+  // refresh it; simultaneous catalog/metadata consumers share the same request.
+  const models = (): Promise<string[]> => {
+    const url = endpoint().url
+    if (catalogInFlight) return catalogInFlight
+    const pending = fetchModels().catch(error => {
+      if (endpoint().url === url) catalogRetryAt = Date.now() + 30_000
+      throw error
+    }).finally(() => {
+      if (catalogInFlight === pending) catalogInFlight = undefined
+    })
+    catalogInFlight = pending
+    return pending
+  }
+
+  const modelInfo = async (model: string): Promise<ModelInfo> => {
+    endpoint()
+    if (Date.now() < catalogRetryAt) return { id: model, provider: config.name, contextMax: 0, source: `${config.name}_api_unavailable` }
+    // A shared five-minute inventory lifetime also bounds unknown IDs. A UI
+    // catalog with many curated absent IDs must not trigger one fetch per ID.
+    if (!catalogLoaded || Date.now() - catalogRefreshedAt >= 300_000) {
+      try { await models() }
+      catch {
+        console.warn(`[${config.name}] Model metadata unavailable; capacity and reasoning support remain unknown until a later catalog refresh`)
+        return { id: model, provider: config.name, contextMax: 0, source: `${config.name}_api_unavailable` }
+      }
+    }
+    const id = resolveWireModel(model)
+    return modelInfoMap.get(id) ?? { id, provider: config.name, contextMax: 0, source: `${config.name}_api_unknown_model` }
+  }
+
+  return { chat, stream, models, modelInfo }
 }
 
 // OpenAI tool_call.function.arguments is a JSON string. Ollama passes an object.
-// leitbild's NativeToolCall expects an object. Malformed args are surfaced as
-// a warning (provider + tool + raw snippet) so silent-zero-arg tool calls
-// don't vanish into the void; the caller still gets `{}` to keep the tool
-// loop going.
+// A malformed proposal must never become a valid default-argument action.
+// Fail before dispatch; do not route the proposal through another model.
 const parseArgs = (raw: string, provider?: string, toolName?: string): Record<string, unknown> => {
-  if (!raw) return {}
+  let parsed: unknown
   try {
-    const parsed = JSON.parse(raw)
-    if (typeof parsed === 'object' && parsed !== null) return parsed as Record<string, unknown>
-    console.warn(`[${provider ?? 'cloud'}] tool-call args for ${toolName ?? '<unknown>'} parsed to non-object; using {}. raw=${raw.slice(0, 200)}`)
-    return {}
-  } catch (err) {
-    console.warn(`[${provider ?? 'cloud'}] tool-call args for ${toolName ?? '<unknown>'} malformed JSON; using {}. raw=${raw.slice(0, 200)} err=${err instanceof Error ? err.message : String(err)}`)
-    return {}
-  }
+    parsed = JSON.parse(raw)
+  } catch { throw createLLMRequestError('invalid_tool_arguments', `${provider ?? 'cloud'} returned malformed JSON arguments for ${toolName ?? '<unknown>'}; no call was dispatched`) }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw createLLMRequestError('invalid_tool_arguments', `${provider ?? 'cloud'} returned non-object arguments for ${toolName ?? '<unknown>'}; no call was dispatched`)
+  return parsed as Record<string, unknown>
 }

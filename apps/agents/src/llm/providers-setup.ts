@@ -153,7 +153,6 @@ export const buildProvidersFromConfig = (
     contextLookup: async (provider, model) => {
       const info = await getContextWindow(provider, model, {
         ollamaBaseUrl: config.ollamaUrl,
-        openrouterApiKey: options.providerKeys?.get('openrouter') || config.cloud.openrouter?.apiKey,
       })
       return { contextMax: info.contextMax, source: info.source }
     },

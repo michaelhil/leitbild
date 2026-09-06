@@ -23,8 +23,12 @@
 
 import type { LLMProvider, ChatRequest, ChatResponse, StreamChunk, GatewayMetrics } from '../core/types/llm.ts'
 import type { ProviderGateway, ChatCallOptions } from './provider-gateway.ts'
-import { createCloudProviderError, isAbortError, isCloudProviderError, isFallbackable, isGatewayError } from './errors.ts'
+import { createCloudProviderError, isAbortError, isCloudProviderError, isFallbackable, isGatewayError, isLLMRequestError } from './errors.ts'
 import type { ProviderMonitor, MonitorState } from './provider-monitor.ts'
+import type { ModelInfo } from '../core/types/model-info.ts'
+import { estimateRequestSize } from './request-size.ts'
+import { DEFAULT_NUM_CTX } from './ollama.ts'
+import { createLLMRequestError } from './errors.ts'
 
 // === Events ===
 
@@ -306,6 +310,36 @@ export const createProviderRouter = (
     return { candidates: eligible, modelId, pinned: false, structuralAttempts }
   }
 
+  const providerModelInfo = async (provider: string, model: string, request?: ChatRequest): Promise<ModelInfo> => {
+    const reported = await providers[provider]?.modelInfo?.(model)
+    // Providers without a capacity-bearing catalog can expose a local model
+    // query or a documented table through the existing lookup port.
+    const context = reported && reported.contextMax > 0 ? reported
+      : config.contextLookup ? await config.contextLookup(provider, model) : { contextMax: 0, source: 'unknown' }
+    const info = { ...(reported ?? { id: model, provider }), contextMax: context.contextMax, source: context.source }
+    if (provider !== 'ollama') return info
+    // Ollama /show describes architecture, while num_ctx controls this actual
+    // allocation. Never promise that larger architectural window or increase
+    // VRAM automatically. The default is shared with the wire adapter.
+    const configured = request?.numCtx ?? DEFAULT_NUM_CTX
+    if (!Number.isSafeInteger(configured) || configured < 1) throw createLLMRequestError('invalid_context_window', 'Ollama numCtx must be a positive integer')
+    return { ...info, contextMax: context.contextMax > 0 ? Math.min(context.contextMax, configured) : configured,
+      source: `${context.source}; ollama num_ctx=${configured}` }
+  }
+
+  const modelInfo = async (model: string): Promise<ModelInfo> => {
+    const { candidates, modelId } = resolveCandidates(model)
+    const provider = candidates.find(mayCall)
+    return provider ? providerModelInfo(provider, modelId) : { id: model, provider: 'unknown', contextMax: 0, source: 'no_eligible_route' }
+  }
+
+  const checkCapacity = (request: ChatRequest, info: ModelInfo): void => {
+    const size = estimateRequestSize(request)
+    const required = size.estimatedInputTokens + (size.requestedOutputTokens ?? 0)
+    if (info.contextMax > 0 && required > info.contextMax) throw createLLMRequestError('context_capacity',
+      `Request estimate ${required} tokens exceeds ${info.provider}:${info.id} capacity ${info.contextMax}. Current tool evidence was not truncated. Choose a larger model or a narrower new request. Output ${size.requestedOutputTokens === undefined ? 'uses provider default (not counted in this estimate)' : `allowance ${size.requestedOutputTokens} included`}; ${size.images} images and ${size.continuationBytes} continuation bytes are not text-token estimates.`)
+  }
+
   // Classify a provider error into a routing decision. Records the outcome
   // with the monitor (which owns cooldown/streak state) and pushes an attempt
   // record. Returns:
@@ -355,6 +389,7 @@ export const createProviderRouter = (
     request: ChatRequest,
     agentId: string | null,
   ): 'fallthrough' | 'rethrow' => {
+    if (isLLMRequestError(err)) return 'rethrow'
     if (isCloudProviderError(err)) {
       if (!isFallbackable(err)) {
         // Permanent error (auth, bad_request) — first occurrence per
@@ -535,12 +570,11 @@ export const createProviderRouter = (
         continue
       }
       try {
+        const ctx = await providerModelInfo(name, modelId, request)
+        checkCapacity(request, ctx)
         const rawResponse = await callOnProvider(name, request, options, modelId)
         // Success — update soft preference + emit bound event if transition.
         monitors[name]?.recordChatOutcome({ ok: true })
-        const ctx = config.contextLookup
-          ? await config.contextLookup(name, modelId).catch(() => ({ contextMax: 0, source: 'unknown' }))
-          : { contextMax: 0, source: 'unknown' }
         const response: ChatResponse = {
           ...rawResponse,
           provider: name,
@@ -618,7 +652,10 @@ export const createProviderRouter = (
       // rethrow; fallbackable errors fall through to next candidate (unless
       // pinned, in which case we emit all_failed and rethrow).
       let iter: AsyncIterator<StreamChunk>
+      let ctx: ModelInfo
       try {
+        ctx = await providerModelInfo(name, modelId, adjusted)
+        checkCapacity(request, ctx)
         iter = gateway.stream!(adjusted, signal, options)[Symbol.asyncIterator]()
       } catch (err) {
         if (isAbortError(err, signal)) throw err
@@ -659,13 +696,9 @@ export const createProviderRouter = (
         })
       }
 
-      // Look up context window once per (provider, modelId); attach to final done chunk.
-      const ctxPromise = config.contextLookup
-        ? config.contextLookup(name, modelId).catch(() => ({ contextMax: 0, source: 'unknown' }))
-        : Promise.resolve({ contextMax: 0, source: 'unknown' })
-      const augmentDone = async (chunk: StreamChunk): Promise<StreamChunk> => {
+      // The same actual-route metadata used before dispatch accompanies usage.
+      const augmentDone = (chunk: StreamChunk): StreamChunk => {
         if (!chunk.done) return chunk
-        const ctx = await ctxPromise
         return {
           ...chunk,
           // Augment is additive — preserve provider/context if already set by
@@ -676,15 +709,16 @@ export const createProviderRouter = (
       }
 
       try {
-        if (firstChunk && !firstChunk.done) yield firstChunk.value
-        else if (firstChunk && firstChunk.done) { yield await augmentDone(firstChunk.value); return }
+        if (firstChunk.done) return
+        yield augmentDone(firstChunk.value)
         while (true) {
           const r = await iter.next()
           if (r.done) return
-          yield await augmentDone(r.value)
+          yield augmentDone(r.value)
         }
       } catch (err) {
         if (isAbortError(err, signal)) throw err
+        if (isLLMRequestError(err)) throw err
         // Mid-stream failure — surface as event, no retry. Record with
         // monitor so it counts toward health (could be a flaky upstream).
         const reason = err instanceof Error ? err.message : String(err)
@@ -785,6 +819,7 @@ export const createProviderRouter = (
     chat,
     stream,
     models,
+    modelInfo,
     onRoutingEvent,
     getProviderNames: () => [...order],
     getOrder: () => [...order],

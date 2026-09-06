@@ -54,6 +54,20 @@ const mkConfig = (): AIAgentConfig => ({
 // === Tests ===
 
 describe('evaluation map-fence retry loop', () => {
+  test('fence retries retain provider continuation and explicit reasoning settings in the captured request', async () => {
+    const broken = '```map\n{"features":[{"type":"marker","lat":999,"lng":5}]}\n```'
+    const continuation = { provider: 'openrouter' as const, model: 'qwen/resolved', endpointHash: 'a'.repeat(64), reasoningDetails: [{ type: 'reasoning.encrypted', data: 'exact' }] }
+    const calls: ChatRequest[] = []
+    const provider: LLMProvider = { models: async () => [], chat: async request => {
+      calls.push(structuredClone(request))
+      return { ...mkResponse(calls.length === 1 ? broken : 'corrected'), continuation, model: 'qwen/resolved' }
+    } }
+    const result = await evaluate(mkContext(), { ...mkConfig(), reasoningEffort: 'high', thinking: true }, provider, undefined, 5, 'room-1')
+    expect(calls).toHaveLength(2)
+    expect(calls[1]).toMatchObject({ model: 'openrouter:qwen/resolved', reasoningEffort: 'high', think: true })
+    expect(calls[1]!.messages.find(message => message.role === 'assistant')?.continuation).toEqual(continuation)
+    expect(result.decision.generationQuery).toEqual(calls[1]!)
+  })
   test('valid fence on first try → no retry, posts as-is', async () => {
     const valid = '```map\n{"features":[{"type":"marker","lat":60,"lng":5}]}\n```'
     const reply = `Here you go:\n\n${valid}`

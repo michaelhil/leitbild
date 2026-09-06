@@ -713,11 +713,10 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
           {
             id: ai.id,
             name: ai.name,
-            currentModel: () => ai.getModel(),
+            currentLLMSettings: () => ai.getConfig(),
             focusedSubjects: roomId => ai.getFocusedSubjects(roomId),
           },
           llm,
-          undefined,
           // Pack-aware filter must survive a hot reload — without re-passing
           // it here, refreshing tools (e.g. after install_pack) would silently
           // erase the resolver and revert the agent to seeing every tool.

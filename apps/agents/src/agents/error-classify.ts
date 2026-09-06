@@ -6,7 +6,7 @@
 // the chain-walk logic uses the same mapping the agent's catch block uses.
 
 import type { AgentResponseErrorCode } from '../core/types/agent.ts'
-import { isCloudProviderError, isGatewayError, isOllamaError, isPermanent } from '../llm/errors.ts'
+import { isCloudProviderError, isGatewayError, isLLMRequestError, isOllamaError, isPermanent } from '../llm/errors.ts'
 
 export interface ClassifiedLLMError {
   readonly code: AgentResponseErrorCode
@@ -15,6 +15,7 @@ export interface ClassifiedLLMError {
 }
 
 export const classifyLLMError = (err: unknown): ClassifiedLLMError => {
+  if (isLLMRequestError(err)) return { code: 'unknown', message: err.message }
   if (isCloudProviderError(err)) {
     if (err.code === 'auth') return { code: 'no_api_key', message: err.message, providerHint: err.provider }
     if (err.code === 'bad_request') return { code: 'model_unavailable', message: err.message, providerHint: err.provider }
@@ -41,6 +42,7 @@ const FALLBACKABLE_AGENT_CODES: ReadonlySet<AgentResponseErrorCode> = new Set([
 ])
 
 export const isAgentFallbackable = (err: unknown): boolean => {
+  if (isLLMRequestError(err)) return false
   // No throw → no failure → trivially "yes" (irrelevant; never reached).
   if (err === undefined || err === null) return true
   // A bad key belongs to one provider/account. Preserve the no_api_key

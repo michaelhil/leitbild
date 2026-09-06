@@ -49,7 +49,6 @@ describe('pack activation — end-to-end with RoomDirectory + Room', () => {
       reg,
       { id: 'a', name: 'A' },
       stubProvider,
-      undefined,
       (id: string) => house.getRoom(id),
     )
 
@@ -75,7 +74,6 @@ describe('pack activation — end-to-end with RoomDirectory + Room', () => {
       reg,
       { id: 'a', name: 'A' },
       stubProvider,
-      undefined,
       (id: string) => house.getRoom(id),
     )
 
@@ -119,7 +117,6 @@ describe('pack activation — end-to-end with RoomDirectory + Room', () => {
       reg,
       { id: 'a', name: 'A' },
       stubProvider,
-      undefined,
       (id: string) => house.getRoom(id),
     )
 

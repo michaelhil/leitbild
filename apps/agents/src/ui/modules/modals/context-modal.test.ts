@@ -1,7 +1,19 @@
 import { describe, expect, test } from 'bun:test'
-import { extractPromptSections, extractToolInteractions } from './context-modal.ts'
+import { continuationMetadata, readableQueryMessage, extractPromptSections, extractToolInteractions } from './context-modal.ts'
 
 describe('generation inspection', () => {
+  test('ordinary inspection omits sensitive protocol while the complete original remains exact', () => {
+    const message = { role: 'assistant', content: 'Public answer', continuation: {
+      provider: 'openrouter' as const, model: 'qwen/reasoner', endpointHash: 'a'.repeat(64),
+      reasoningDetails: [{ type: 'reasoning.encrypted', data: 'SECRET', signature: 'SIGNED' }], reasoning: 'PRIVATE',
+    } }
+    const before = JSON.stringify(message)
+    expect(readableQueryMessage(message)).toEqual({ role: 'assistant', content: 'Public answer' })
+    const metadata = JSON.stringify(continuationMetadata([message]))
+    expect(metadata).toContain('reasoning.encrypted')
+    for (const secret of ['SECRET', 'SIGNED', 'PRIVATE']) expect(metadata).not.toContain(secret)
+    expect(JSON.stringify(message)).toBe(before)
+  })
   test('splits the exact system prompt into navigable prompt categories', () => {
     const sections = extractPromptSections([
       '<leitbild:workspace_rules>Keep it scoped.</leitbild:workspace_rules>',

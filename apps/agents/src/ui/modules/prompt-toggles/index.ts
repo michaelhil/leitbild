@@ -71,10 +71,11 @@ export const renderPromptToggles = (container: HTMLElement, deps: PromptTogglesD
   }
 
   const patchAgent = async (patch: Record<string, unknown>): Promise<void> => {
-    await safeFetchJson(`/agents/${agentEnc}`, {
+    const result = await safeFetchJson(`/agents/${agentEnc}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
     })
+    if (result === null) throw new Error('Agent setting was not saved')
   }
 
   const updateSummary = (preview: ContextPreview): void => {
@@ -122,6 +123,7 @@ export const renderPromptToggles = (container: HTMLElement, deps: PromptTogglesD
       body.innerHTML = ''
       summaryBar.textContent = 'Context — (no room)'
       body.textContent = 'Add this agent to a room to see its context.'
+      body.appendChild(buildModelGroup({ agentData, patchAgent }))
       return
     }
     const preview = await fetchPreview()
@@ -129,6 +131,7 @@ export const renderPromptToggles = (container: HTMLElement, deps: PromptTogglesD
     if (!preview) {
       summaryBar.textContent = 'Context — (failed to load)'
       body.textContent = 'Failed to load context preview.'
+      body.appendChild(buildModelGroup({ agentData, patchAgent }))
       return
     }
 

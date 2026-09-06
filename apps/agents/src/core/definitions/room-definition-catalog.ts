@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
+import { REASONING_EFFORTS } from '../types/llm.ts'
 
 const agentDefinitionSchema = z.object({
   name: z.string().trim().min(1).max(128),
@@ -9,6 +10,8 @@ const agentDefinitionSchema = z.object({
   tools: z.array(z.string().min(1)).default([]),
   skills: z.array(z.string().min(1)).default([]),
   temperature: z.number().finite().optional(),
+  reasoningEffort: z.enum(REASONING_EFFORTS).optional(),
+  historyTokenBudget: z.number().int().positive().optional(),
   maxToolIterations: z.number().int().min(1).max(50).optional(),
   includeContext: z.object({
     participants: z.boolean().optional(),

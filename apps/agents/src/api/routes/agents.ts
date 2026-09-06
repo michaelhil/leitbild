@@ -8,6 +8,18 @@ import type { ToolRegistry } from '../../core/types/tool.ts'
 import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
 import type { RouteEntry } from './types.ts'
 import { parsePrefixedModel } from '../../llm/models/parse-prefix.ts'
+import { z } from 'zod'
+import { REASONING_EFFORTS } from '../../core/types/llm.ts'
+
+const modelSettingsSchema = z.object({
+  reasoningEffort: z.enum(REASONING_EFFORTS).optional(),
+  historyTokenBudget: z.number().int().positive().optional(),
+  thinking: z.boolean().optional(),
+})
+const modelSettingsPatchSchema = modelSettingsSchema.extend({
+  reasoningEffort: modelSettingsSchema.shape.reasoningEffort.nullable(),
+  historyTokenBudget: modelSettingsSchema.shape.historyTokenBudget.nullable(),
+})
 
 // Soft model-availability check used by both POST and PATCH agent handlers.
 // 'unverified' means we have no provider info yet (key not configured /
@@ -87,7 +99,7 @@ export const agentRoutes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/agents\/([^/]+)$/,
-    handler: (_req, match, { system }) => {
+    handler: async (_req, match, { system }) => {
       const name = decodeURIComponent(match[1]!)
       const agent = system.team.getAgent(name)
       if (!agent) return errorResponse(`Agent "${name}" not found`, 404)
@@ -102,6 +114,12 @@ export const agentRoutes: RouteEntry[] = [
         detail.temperature = aiAgent.getTemperature()
         detail.historyLimit = aiAgent.getHistoryLimit()
         detail.thinking = aiAgent.getThinking()
+        detail.reasoningEffort = aiAgent.getReasoningEffort()
+        detail.historyTokenBudget = aiAgent.getHistoryTokenBudget()
+        if (system.llm.modelInfo) {
+          try { detail.modelInfo = await system.llm.modelInfo(aiAgent.getModel()) }
+          catch (error) { detail.modelInfoError = `Model metadata unavailable: ${error instanceof Error ? error.message : String(error)}` }
+        } // Test/standalone providers may not advertise metadata; the UI shows unknown.
         detail.tools = aiAgent.getTools()
         detail.skills = aiAgent.getSkills()
         detail.registeredSkills = system.skillStore.list().map(skill => skill.name)
@@ -133,6 +151,8 @@ export const agentRoutes: RouteEntry[] = [
       if (!body.name || !body.model || !body.persona) {
         return errorResponse('name, model, and persona are required')
       }
+      const modelSettings = modelSettingsSchema.safeParse(body)
+      if (!modelSettings.success) return errorResponse(modelSettings.error.message, 400)
       // Soft validation — let the user set a preferred model even if the
       // provider is currently unconfigured (e.g. setting up agents before
       // adding the API key). Surface a `modelStatus` so the UI can show a
@@ -160,6 +180,7 @@ export const agentRoutes: RouteEntry[] = [
           persona: body.persona as string,
           temperature: body.temperature as number | undefined,
           historyLimit: body.historyLimit as number | undefined,
+          ...modelSettings.data,
           ...(body.tools && Array.isArray(body.tools)
             ? { tools: (body.tools as unknown[]).filter((t): t is string => typeof t === 'string') }
             : {}),
@@ -215,6 +236,8 @@ export const agentRoutes: RouteEntry[] = [
       const agent = system.team.getAgent(name)
       if (!agent) return errorResponse(`Agent "${name}" not found`, 404)
       const body = await parseBody(req)
+      const modelSettings = modelSettingsPatchSchema.safeParse(body)
+      if (!modelSettings.success) return errorResponse(modelSettings.error.message, 400)
       // --- Rename ---
       // Process before any other field so subsequent UI events reference the
       // new name. Humans are renameable today; AI rename support depends on
@@ -242,7 +265,9 @@ export const agentRoutes: RouteEntry[] = [
         }
         if (body.temperature !== undefined) aiAgent.updateTemperature?.(body.temperature as number | undefined)
         if (body.historyLimit !== undefined) aiAgent.updateHistoryLimit?.(body.historyLimit as number)
-        if (body.thinking !== undefined) aiAgent.updateThinking?.(body.thinking as boolean)
+        if (modelSettings.data.thinking !== undefined) aiAgent.updateThinking?.(modelSettings.data.thinking)
+        if (modelSettings.data.reasoningEffort !== undefined) aiAgent.updateReasoningEffort(modelSettings.data.reasoningEffort ?? undefined)
+        if (modelSettings.data.historyTokenBudget !== undefined) aiAgent.updateHistoryTokenBudget(modelSettings.data.historyTokenBudget ?? undefined)
         const inc = sanitizeIncludePrompts(body.includePrompts)
         if (inc) aiAgent.updateIncludePrompts(inc)
         const incCtx = sanitizeIncludeContext(body.includeContext)

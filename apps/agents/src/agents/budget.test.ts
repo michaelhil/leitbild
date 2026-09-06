@@ -5,10 +5,16 @@ const estimate = (text: string): number => Math.ceil(text.length / 4)
 const tool = { name: 'read', description: 'Read a Resource.', parameters: { type: 'object', properties: { id: { type: 'string' } } } }
 
 describe('computeContextBudget', () => {
-  test('always reserves the actual tool surface, output, and safety margin', () => {
+  test('correcting large-model capacity does not automatically enlarge prior replay', () => {
     const result = computeContextBudget({ contextMax: 128_000, toolDefinitions: [tool] }, estimate)
-    expect(result.budget).toBe(128_000 - result.toolDefinitionTokens - OUTPUT_RESERVE - SAFETY_MARGIN)
+    expect(result.budget).toBe(AUTO_BUDGET_FALLBACK - result.toolDefinitionTokens - OUTPUT_RESERVE - SAFETY_MARGIN)
     expect(result.toolDefinitionTokens).toBeGreaterThan(0)
+  })
+
+  test('an explicit replay target is honored within actual model capacity', () => {
+    const result = computeContextBudget({ contextMax: 200_000, historyTokenBudget: 120_000, toolDefinitions: [] }, estimate)
+    expect(result.budget).toBe(120_000 - OUTPUT_RESERVE - SAFETY_MARGIN)
+    expect(computeContextBudget({ contextMax: 32_000, historyTokenBudget: 120_000, toolDefinitions: [] }, estimate).budget).toBe(32_000 - OUTPUT_RESERVE - SAFETY_MARGIN)
   })
 
   test('uses an explicit fallback for an unknown model', () => {

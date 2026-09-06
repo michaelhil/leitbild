@@ -264,10 +264,18 @@ export const renderAgentInspector = (container: HTMLElement, agentName: string):
       modelSelect.onchange = async () => {
         if (!modelSelect.value) return
         const newModel = modelSelect.value
-        await safeFetchJson(`/agents/${enc}`, {
+        const updated = await safeFetchJson(`/agents/${enc}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: newModel }),
         })
+        if (updated === null) {
+          modelSelect.value = currentModel
+          showToast(document.body, 'Model change was not saved.', { type: 'error', position: 'fixed' })
+          return
+        }
+        // Refresh route-specific metadata and preserve any explicitly saved
+        // effort. A new model must not silently reset the user's settings.
+        renderAgentInspector(container, agentName)
 
         // Deferred-verification UX: show pending indicator, clear on matching
         // provider_bound/all_failed event, or after 30s neutral timeout.

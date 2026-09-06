@@ -3,14 +3,14 @@
 // table otherwise. Cached in-process (per provider+model).
 //
 // Ollama:     POST /api/show  → model_info['<arch>.context_length']
-// OpenRouter: GET  /models/:id → data.context_length
+// OpenRouter metadata belongs to its adapter's existing /models inventory.
 // Cerebras / Groq / Mistral / SambaNova: /models endpoint returns ID only,
 //   so we fall back to a curated table derived from public docs.
 // ============================================================================
 
 export interface ContextInfo {
   readonly contextMax: number                // 0 if unknown
-  readonly source: 'ollama_api' | 'openrouter_api' | 'known_table' | 'unknown'
+  readonly source: 'ollama_api' | 'known_table' | 'unknown'
 }
 
 // Curated context windows for cloud providers that don't expose it in /models.
@@ -102,11 +102,10 @@ const CLOUD_TABLE: Record<string, Record<string, number>> = {
   },
 }
 
-const cache = new Map<string, ContextInfo>()
+const cache = new Map<string, { info: ContextInfo; expiresAt: number }>()
 
 export interface ContextLookupOptions {
   readonly ollamaBaseUrl?: string
-  readonly openrouterApiKey?: string
   readonly timeoutMs?: number
 }
 
@@ -122,9 +121,9 @@ export const getContextWindow = async (
   modelId: string,
   opts: ContextLookupOptions = {},
 ): Promise<ContextInfo> => {
-  const key = `${providerName}::${modelId}`
+  const key = `${providerName}::${providerName === 'ollama' ? opts.ollamaBaseUrl ?? '' : ''}::${modelId}`
   const cached = cache.get(key)
-  if (cached) return cached
+  if (cached && cached.expiresAt > Date.now()) return cached.info
 
   const timeoutMs = opts.timeoutMs ?? 3000
   let info: ContextInfo = { contextMax: 0, source: 'unknown' }
@@ -146,20 +145,7 @@ export const getContextWindow = async (
           }
         }
       }
-    } catch { /* fall through */ }
-  } else if (providerName === 'openrouter' && opts.openrouterApiKey) {
-    try {
-      const r = await fetchWithTimeout(
-        `https://openrouter.ai/api/v1/models/${encodeURIComponent(modelId)}`,
-        { headers: { Authorization: `Bearer ${opts.openrouterApiKey}` } },
-        timeoutMs,
-      )
-      if (r.ok) {
-        const d = await r.json() as { data?: { context_length?: number } }
-        const ctx = Number(d.data?.context_length ?? 0)
-        if (ctx > 0) info = { contextMax: ctx, source: 'openrouter_api' }
-      }
-    } catch { /* fall through */ }
+    } catch (error) { console.warn(`[model-info] ${providerName}:${modelId} capacity unavailable: ${String(error)}`) }
   }
 
   if (info.source === 'unknown') {
@@ -171,7 +157,9 @@ export const getContextWindow = async (
     }
   }
 
-  cache.set(key, info)
+  // A failed metadata request must recover without a process restart. These
+  // are inventory refresh intervals, not Agent behavior or tool-call limits.
+  cache.set(key, { info, expiresAt: Date.now() + (info.source === 'unknown' ? 30_000 : 5 * 60_000) })
   return info
 }
 
@@ -184,19 +172,19 @@ const findOpenAIPrefixMatch = (modelId: string): number | undefined => {
   if (!openai) return undefined
   const candidates = Object.keys(openai).sort((a, b) => b.length - a.length)
   for (const key of candidates) {
-    if (modelId === key || modelId.startsWith(`${key}-`)) return openai[key]
+    if (modelId === key || (modelId.startsWith(`${key}-`) && /^\d{4}-\d{2}-\d{2}$/.test(modelId.slice(key.length + 1)))) return openai[key]
   }
   return undefined
 }
 
 // Synchronous best-effort lookup — hits the in-process cache and the curated
 // CLOUD_TABLE only. Returns `unknown` when neither source has an entry, so
-// callers can fall back to a safe default. Used by the ai-agent factory to
-// auto-derive the per-request context budget without awaiting HTTP.
-export const getContextWindowSync = (providerName: string, modelId: string): ContextInfo => {
-  const key = `${providerName}::${modelId}`
+// callers can show capacity as unknown. Used by catalog/UI reads; Agent
+// context selection obtains metadata through the actual routed provider.
+export const getContextWindowSync = (providerName: string, modelId: string, opts: ContextLookupOptions = {}): ContextInfo => {
+  const key = `${providerName}::${providerName === 'ollama' ? opts.ollamaBaseUrl ?? '' : ''}::${modelId}`
   const cached = cache.get(key)
-  if (cached) return cached
+  if (cached && cached.expiresAt > Date.now()) return cached.info
   const hard = CLOUD_TABLE[providerName]?.[modelId]
   if (hard) return { contextMax: hard, source: 'known_table' }
   // OpenAI-only longest-prefix fallback for dated variants. Other providers

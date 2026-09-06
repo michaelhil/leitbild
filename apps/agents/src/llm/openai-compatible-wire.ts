@@ -11,6 +11,8 @@
 // ============================================================================
 
 import type { ChatRequest } from '../core/types/llm.ts'
+import type { ModelInfo } from '../core/types/model-info.ts'
+import { createLLMRequestError } from './errors.ts'
 
 // === OpenAI wire types ===
 
@@ -28,13 +30,10 @@ export interface OAIContentPart {
 export interface OAIMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string | ReadonlyArray<OAIContentPart> | null
-  // Reasoning channel on non-streamed responses (Kimi/Moonshot, DeepSeek-R1
-  // and others). Read on inbound; NEVER written on outbound — keeping
-  // reasoning out of round-tripped history is structurally enforced by
-  // ChatRequest.messages[].content being `string`, so toOAIMessages can't
-  // surface it.
+  // Provider protocol state, carried separately from readable prompt prose.
   reasoning_content?: string
   reasoning?: string
+  reasoning_details?: ReadonlyArray<Readonly<Record<string, unknown>>>
   tool_calls?: ReadonlyArray<{
     id: string
     type: 'function'
@@ -94,10 +93,15 @@ export const messageContentWithImages = (
 
 export const toOAIMessages = (request: ChatRequest, providerName: string): OAIMessage[] => {
   const toMessage = (m: ChatRequest['messages'][number]): OAIMessage => {
+    if (m.continuation && (m.role !== 'assistant' || providerName !== m.continuation.provider || request.model !== m.continuation.model)) {
+      throw createLLMRequestError('provider_continuation_route_mismatch', 'provider_continuation_route_mismatch: cannot send continuation to a different provider or model')
+    }
     const withImages = messageContentWithImages(m)
     return {
       role: m.role,
       content: withImages ?? safeAssistantContent(m),
+      ...(m.continuation?.reasoningDetails ? { reasoning_details: m.continuation.reasoningDetails } : {}),
+      ...(m.continuation?.reasoning !== undefined ? { reasoning: m.continuation.reasoning } : {}),
       ...(m.role === 'assistant' && m.toolCalls ? { tool_calls: m.toolCalls.map((call, index) => ({
         id: call.id ?? `call_${index}`,
         type: 'function' as const,
@@ -149,7 +153,7 @@ export const stripProviderPrefix = (model: string): string => {
 // quirks ship together for the same model family.
 export const isNewOpenAIFamily = (model: string): boolean => {
   const id = stripProviderPrefix(model).toLowerCase()
-  return id.startsWith('gpt-5') || /^o[1-9]/.test(id)
+  return /^gpt-[56](?:[.-]|$)/.test(id) || /^o[1-9]/.test(id)
 }
 
 export const usesMaxCompletionTokens = isNewOpenAIFamily
@@ -157,7 +161,24 @@ export const rejectsTemperature = isNewOpenAIFamily
 
 // === Body builder ===
 
-export const buildOAIBody = (request: ChatRequest, stream: boolean, providerName: string): Record<string, unknown> => {
+export const buildOAIBody = (request: ChatRequest, stream: boolean, providerName: string, modelInfo?: ModelInfo): Record<string, unknown> => {
+  // Documented direct OpenAI Chat Completions limits, not a model allowlist
+  // or an OpenRouter restriction. Do not silently drop tools/change effort.
+  // https://developers.openai.com/api/docs/guides/reasoning
+  // https://developers.openai.com/api/docs/guides/migrate-to-responses
+  if (providerName === 'openai') {
+    const id = stripProviderPrefix(request.model).toLowerCase()
+    const astra = /^gpt-6-astra(?:-|$)/.test(id)
+    if (astra && request.reasoningEffort === 'none') {
+      throw createLLMRequestError('reasoning_effort_unsupported', 'reasoning_effort_unsupported: GPT-6 Astra does not support none reasoning effort')
+    }
+    const requiresNone = /^gpt-5\.[456](?:-|$)/.test(id)
+    if (request.tools?.length && (astra || (requiresNone && (request.reasoningEffort ?? modelInfo?.reasoning?.defaultEffort) !== 'none'))) {
+      throw createLLMRequestError('unsupported_provider_transport', astra
+        ? 'unsupported_provider_transport: direct OpenAI Chat Completions does not support GPT-6 Astra function calling; use a supported route such as OpenRouter'
+        : 'unsupported_provider_transport: direct OpenAI Chat Completions requires explicit none reasoning effort for this model with tools; choose none or a supported route such as OpenRouter')
+    }
+  }
   const body: Record<string, unknown> = {
     model: request.model,
     messages: toOAIMessages(request, providerName),
@@ -166,6 +187,18 @@ export const buildOAIBody = (request: ChatRequest, stream: boolean, providerName
   // Ask providers to include a final usage frame (supported by OpenAI, Groq,
   // Cerebras, OpenRouter). Providers that don't support it ignore the flag.
   if (stream) body.stream_options = { include_usage: true }
+  if (request.reasoningEffort !== undefined) {
+    const effort = request.reasoningEffort
+    const supported = modelInfo?.reasoning?.supportedEfforts
+    const parameters = modelInfo?.supportedParameters
+    const knownUnsupported = parameters !== undefined && !parameters.includes('reasoning') && !parameters.includes('reasoning_effort') && modelInfo?.reasoning === undefined
+    if (knownUnsupported || (supported !== undefined && supported !== null && !supported.includes(effort)) || (effort === 'none' && modelInfo?.reasoning?.mandatory)) {
+      throw createLLMRequestError('reasoning_effort_unsupported', `reasoning_effort_unsupported: ${providerName}/${request.model} does not accept ${effort}`)
+    }
+    if (providerName === 'openrouter') body.reasoning = { effort }
+    else if (providerName === 'openai') body.reasoning_effort = effort
+    else throw createLLMRequestError('reasoning_effort_unsupported', `reasoning_effort_unsupported: explicit reasoning effort has no supported wire mapping for ${providerName}`)
+  }
   if (request.temperature !== undefined && !rejectsTemperature(request.model)) {
     body.temperature = request.temperature
   }

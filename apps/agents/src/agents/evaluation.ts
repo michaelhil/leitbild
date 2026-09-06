@@ -7,7 +7,7 @@
 // ============================================================================
 
 import type { AgentResponse, AIAgentConfig } from '../core/types/agent.ts'
-import type { ChatRequest, GenerationQuery, LLMCallOptions, LLMProvider } from '../core/types/llm.ts'
+import type { ChatRequest, GenerationQuery, LLMCallOptions, LLMProvider, ProviderContinuation } from '../core/types/llm.ts'
 import type { EvalEventCore } from '../core/types/agent-eval.ts'
 import type { NativeToolCall, ToolCall, ToolDefinition, ToolExecutor, ToolResult } from '../core/types/tool.ts'
 import type { ToolTraceEntry } from '../core/types/messaging.ts'
@@ -94,6 +94,15 @@ const formatToolResult = (result: ToolResult): string => result.success
 const messageTokens = (message: ChatRequest['messages'][number]): number =>
   Math.ceil((message.content.length + (message.toolCalls ? JSON.stringify(message.toolCalls).length : 0)) / 4)
 
+const continuationModel = (messages: ChatRequest['messages'], preferred: string): string => {
+  const continuation = messages.findLast(message => message.continuation)?.continuation
+  return continuation ? `${continuation.provider}:${continuation.model}` : preferred
+}
+
+const assertCompleteOutput = (finishReason?: string): void => {
+  if (finishReason === 'length') throw new Error('incomplete_output: model reached its output limit; this is not a complete answer and no tool calls from this incomplete response were executed')
+}
+
 export const fitToolEvidence = (
   context: Array<ChatRequest['messages'][number]>,
   assistant: ChatRequest['messages'][number],
@@ -179,12 +188,14 @@ const callLLMOnce = async (
   request: ChatRequest,
   onEvent?: (e: EvalEventCore) => void,
   signal?: AbortSignal,
-): Promise<{ content: string; toolCalls?: ReadonlyArray<NativeToolCall>; durationMs: number; metrics: LLMCallMetrics }> => {
+): Promise<{ content: string; toolCalls?: ReadonlyArray<NativeToolCall>; continuation?: ProviderContinuation; finishReason?: string; durationMs: number; metrics: LLMCallMetrics }> => {
   const startMs = performance.now()
 
   if (provider.stream) {
     let content = ''
     let toolCalls: ReadonlyArray<NativeToolCall> | undefined
+    let continuation: ProviderContinuation | undefined
+    let finishReason: string | undefined
     let metrics: LLMCallMetrics = {}
     for await (const chunk of provider.stream(request, signal)) {
       if (chunk.thinking) onEvent?.({ kind: 'thinking', delta: chunk.thinking })
@@ -201,6 +212,8 @@ const callLLMOnce = async (
       }
       if (chunk.done) {
         if (chunk.toolCalls?.length) toolCalls = chunk.toolCalls
+        continuation = chunk.continuation
+        finishReason = chunk.finishReason
         metrics = {
           promptTokens: chunk.tokensUsed?.prompt,
           completionTokens: chunk.tokensUsed?.completion,
@@ -209,11 +222,11 @@ const callLLMOnce = async (
           ...(chunk.tokensUsed?.cacheMiss !== undefined ? { cacheMiss: chunk.tokensUsed.cacheMiss } : {}),
           contextMax: chunk.contextMax,
           provider: chunk.provider,
-          model: request.model,
+          model: chunk.model ?? request.model,
         }
       }
     }
-    return { content: content.trim(), toolCalls, durationMs: Math.round(performance.now() - startMs), metrics }
+    return { content: content.trim(), toolCalls, ...(continuation ? { continuation } : {}), ...(finishReason ? { finishReason } : {}), durationMs: Math.round(performance.now() - startMs), metrics }
   }
 
   const response = await provider.chat(request)
@@ -221,6 +234,8 @@ const callLLMOnce = async (
   return {
     content: response.content,
     toolCalls: response.toolCalls,
+    ...(response.continuation ? { continuation: response.continuation } : {}),
+    ...(response.finishReason ? { finishReason: response.finishReason } : {}),
     durationMs: response.generationMs,
     metrics: {
       promptTokens: response.tokensUsed.prompt,
@@ -230,7 +245,7 @@ const callLLMOnce = async (
       ...(response.tokensUsed.cacheMiss !== undefined ? { cacheMiss: response.tokensUsed.cacheMiss } : {}),
       contextMax: response.contextMax,
       provider: response.provider,
-      model: request.model,
+      model: response.model ?? request.model,
     },
   }
 }
@@ -276,15 +291,17 @@ const retryInvalidMapFences = async (
   addGenerationMs: (ms: number) => void,
   addMetrics: (m: LLMCallMetrics) => void,
   captureRequest: (request: ChatRequest) => void,
+  initialContinuation?: ProviderContinuation,
 ): Promise<string> => {
   let content = initialContent
+  let continuation = initialContinuation
   for (let attempt = 0; attempt < MAX_FENCE_RETRIES; attempt++) {
     const validation = validateAllMapFences(content)
     if (validation.ok) return content
     // Append the invalid response + a precise correction prompt. The next
     // LLM call will see (a) what it just emitted, (b) why it failed,
     // (c) instruction to re-emit a corrected version.
-    context.push({ role: 'assistant' as const, content })
+    context.push({ role: 'assistant' as const, content, ...(continuation ? { continuation } : {}) })
     context.push({
       role: 'user' as const,
       content:
@@ -294,18 +311,21 @@ const retryInvalidMapFences = async (
     })
     if (signal?.aborted) return content
     const request: ChatRequest = {
-      model: config.model,
+      model: continuationModel(context, config.model),
       messages: context as ReadonlyArray<{ role: 'system' | 'user' | 'assistant'; content: string }>,
       temperature: config.temperature,
       ...(config.seed !== undefined ? { seed: config.seed } : {}),
       tools: toolDefinitions,
       think: config.thinking,
+      ...(config.reasoningEffort !== undefined ? { reasoningEffort: config.reasoningEffort } : {}),
       ...(systemBlocks ? { systemBlocks } : {}),
     }
     captureRequest(request)
     const stream = await callLLMOnce(llmProvider, request, onEvent, signal)
     addGenerationMs(stream.durationMs)
     addMetrics(stream.metrics)
+    assertCompleteOutput(stream.finishReason)
+    continuation = stream.continuation
     content = stream.content.trim()
     if (content.length === 0) {
       // Empty correction attempt — give up and return the prior content.
@@ -437,12 +457,13 @@ export const evaluate = async (
   try {
     for (let toolRound = 0; ; toolRound++) {
       const request: ChatRequest = {
-        model: config.model,
+        model: continuationModel(context, config.model),
         messages: context as ReadonlyArray<{ role: 'system' | 'user' | 'assistant'; content: string }>,
         temperature: config.temperature,
         ...(config.seed !== undefined ? { seed: config.seed } : {}),
         tools: toolDefinitions,
         think: config.thinking,
+        ...(config.reasoningEffort !== undefined ? { reasoningEffort: config.reasoningEffort } : {}),
         ...(contextResult.systemBlocks ? { systemBlocks: contextResult.systemBlocks } : {}),
       }
 
@@ -450,6 +471,7 @@ export const evaluate = async (
       const streamResult = await callLLMOnce(llmProvider, request, onEvent, signal)
       totalGenerationMs += streamResult.durationMs
       metrics = mergeMetrics(metrics, streamResult.metrics)
+      assertCompleteOutput(streamResult.finishReason)
 
       // Native tool calls
       if (streamResult.toolCalls && streamResult.toolCalls.length > 0) {
@@ -499,7 +521,7 @@ export const evaluate = async (
         // Provider wire IDs have provider-specific constraints (for example,
         // Mistral's nine alphanumeric characters). Execution IDs are separate.
         const wireCalls = streamResult.toolCalls.map((call, index) => ({ ...call, id: call.id ?? calls[index]!.callId! }))
-        const assistantToolMessage: ChatRequest['messages'][number] = { role: 'assistant', content: streamResult.content, toolCalls: wireCalls }
+        const assistantToolMessage: ChatRequest['messages'][number] = { role: 'assistant', content: streamResult.content, toolCalls: wireCalls, ...(streamResult.continuation ? { continuation: streamResult.continuation } : {}) }
         const toolMessages: Array<ChatRequest['messages'][number]> = []
         for (let i = 0; i < results.length; i++) {
           const call = calls[i]
@@ -566,6 +588,7 @@ export const evaluate = async (
           metrics = mergeMetrics(metrics, m)
         },
         captureRequest,
+        streamResult.continuation,
       )
       return makeResult({ response: { action: 'respond', content: finalContent }, generationMs: totalGenerationMs, triggerRoomId })
     }
@@ -635,7 +658,10 @@ export const callLLM = async (
     temperature: options.temperature,
     ...(options.seed !== undefined ? { seed: options.seed } : {}),
     jsonMode: options.jsonMode,
+    ...(options.reasoningEffort !== undefined ? { reasoningEffort: options.reasoningEffort } : {}),
+    ...(options.think !== undefined ? { think: options.think } : {}),
   })
+  assertCompleteOutput(response.finishReason)
   return response.content
 }
 
@@ -655,15 +681,19 @@ export const streamLLM = async function* (
     temperature: options.temperature,
     ...(options.seed !== undefined ? { seed: options.seed } : {}),
     jsonMode: options.jsonMode,
+    ...(options.reasoningEffort !== undefined ? { reasoningEffort: options.reasoningEffort } : {}),
+    ...(options.think !== undefined ? { think: options.think } : {}),
   }
 
   if (provider.stream) {
     for await (const chunk of provider.stream(request)) {
+      if (chunk.done) assertCompleteOutput(chunk.finishReason)
       if (chunk.delta) yield chunk.delta
     }
   } else {
     // Provider doesn't support streaming — emit full response as a single delta
     const response = await provider.chat(request)
+    assertCompleteOutput(response.finishReason)
     yield response.content
   }
 }

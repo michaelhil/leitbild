@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'bun:test'
-import { parseRetryAfterMs } from './errors.ts'
+import { createLLMRequestError, isLLMRequestError, parseRetryAfterMs } from './errors.ts'
+import { classifyLLMError, isAgentFallbackable } from '../agents/error-classify.ts'
+
+describe('deterministic request/protocol errors', () => {
+  it('retains its message and stays terminal even when prose contains a network-looking word', () => {
+    const error = createLLMRequestError('invalid_tool_arguments', 'Invalid network target arguments; no call dispatched')
+    expect(error).toBeInstanceOf(Error)
+    expect(isLLMRequestError(error)).toBe(true)
+    expect(error.code).toBe('invalid_tool_arguments')
+    expect(classifyLLMError(error)).toEqual({ code: 'unknown', message: error.message })
+    expect(isAgentFallbackable(error)).toBe(false)
+    expect(isLLMRequestError(new Error(error.message))).toBe(false)
+  })
+})
 
 describe('parseRetryAfterMs', () => {
   const fixedNow = (): number => 1_700_000_000_000  // 2023-11-14

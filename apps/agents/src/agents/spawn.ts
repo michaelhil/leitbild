@@ -31,7 +31,7 @@ export type RunToolOperation = <T>(work: () => Promise<T>) => Promise<T>
 interface AgentToolContextRef {
   id: string
   name: string
-  currentModel?: () => string
+  currentLLMSettings?: () => Pick<AIAgentConfig, 'model' | 'seed' | 'thinking' | 'reasoningEffort'>
   focusedSubjects?: (roomId: string) => ReadonlyArray<WorkspaceSubjectReference>
 }
 
@@ -207,8 +207,8 @@ export type GetRoomActivation = (roomId: string) =>
 
 // Build tool support — always uses native tool calling.
 // The pass tool is auto-injected so all agents can decline to respond.
-// `seed`, when provided, is threaded into every tool-initiated LLM sub-call
-// so reproducibility extends past the agent's main turn.
+// Live Agent settings also apply to tool-initiated model calls, including
+// after edits and tool refresh. Tool-authored prompts remain independent.
 //
 // `getRoomActivation`, when provided, enables the per-room tool-surface
 // filter (the bloat fix): the resolver reads the room's active packs and
@@ -219,7 +219,6 @@ export const buildToolSupport = async (
   registry: ToolRegistry,
   agentRef: AgentToolContextRef,
   llmProvider: LLMProvider,
-  seed?: number,
   getRoomActivation?: GetRoomActivation,
   executionStore?: ExecutionStore,
   executionGrowth?: ExecutionGrowth,
@@ -234,18 +233,26 @@ export const buildToolSupport = async (
 
   if (availableTools.length === 0) return {}
 
+  const currentLLMSettings = () => {
+    if (!agentRef.currentLLMSettings) throw new Error('Calling Agent model settings are unavailable')
+    const settings = agentRef.currentLLMSettings()
+    return {
+      model: settings.model,
+      ...(settings.seed !== undefined ? { seed: settings.seed } : {}),
+      ...(settings.thinking !== undefined ? { think: settings.thinking } : {}),
+      ...(settings.reasoningEffort !== undefined ? { reasoningEffort: settings.reasoningEffort } : {}),
+    }
+  }
   const lazyContext: ToolContext = {
     get callerId() { return agentRef.id },
     get callerName() { return agentRef.name },
     llm: (request) => callLLM(llmProvider, {
       ...request,
-      model: agentRef.currentModel?.() ?? '',
-      ...(seed !== undefined ? { seed } : {}),
+      ...currentLLMSettings(),
     }),
     llmStream: (request) => streamLLM(llmProvider, {
       ...request,
-      model: agentRef.currentModel?.() ?? '',
-      ...(seed !== undefined ? { seed } : {}),
+      ...currentLLMSettings(),
     }),
   }
   const surface = createToolSurface({
@@ -308,7 +315,6 @@ const resolveAgentTools = async (
     toolRegistry,
     agentRef,
     llmProvider,
-    config.seed,
     getRoomActivation,
     executionStore,
     executionGrowth,
@@ -518,7 +524,7 @@ export const spawnAIAgent = async (
   // Fill agentRef so the lazy ToolContext in resolveAgentTools resolves correctly
   agentRef.id = agent.id
   agentRef.name = agent.name
-  agentRef.currentModel = agent.getModel
+  agentRef.currentLLMSettings = agent.getConfig
   agentRef.focusedSubjects = agent.getFocusedSubjects
 
   team.addAgent(agent)

@@ -7,6 +7,7 @@ import { showToast } from '../toast.ts'
 import { $rooms, type AgentContext, type UIMessage } from '../stores.ts'
 import { extractToolInteractions } from '../../../core/tool-evidence.ts'
 import type { ExecutionCall, ExecutionCallSummary, ExecutionTurn } from '../../../core/executions/store.ts'
+import type { ProviderContinuation } from '../../../core/types/llm.ts'
 export { extractToolInteractions } from '../../../core/tool-evidence.ts'
 
 interface QueryMessage extends Record<string, unknown> {
@@ -18,7 +19,29 @@ interface QueryMessage extends Record<string, unknown> {
   }>
   readonly toolCallId?: string
   readonly name?: string
+  readonly continuation?: ProviderContinuation
 }
+
+// Ordinary prompt/tool inspection must not disclose provider protocol payloads.
+// The original inspection remains intact for explicit sensitive inspection/copy.
+export const readableQueryMessage = (message: QueryMessage): Omit<QueryMessage, 'continuation'> => {
+  const { continuation: _continuation, ...readable } = message
+  return readable
+}
+
+export const continuationMetadata = (messages: ReadonlyArray<QueryMessage>) => messages.flatMap((message, index) => {
+  const state = message.continuation
+  return state ? [{
+    messageIndex: index,
+    provider: state.provider,
+    model: state.model,
+    endpointHash: state.endpointHash,
+    detailCount: state.reasoningDetails?.length ?? 0,
+    detailTypes: [...new Set(state.reasoningDetails?.map(detail => detail.type).filter(type => typeof type === 'string'))],
+    hasReasoning: state.reasoning !== undefined,
+    bytes: new TextEncoder().encode(JSON.stringify(state)).byteLength,
+  }] : []
+})
 
 interface GenerationQueryInspection {
   readonly messageId: string
@@ -208,7 +231,7 @@ const showGenerationQueryModal = (inspection: GenerationQueryInspection, executi
   const modal = createModal({ title: 'Prompt & Generation Inspector', width: 'max-w-5xl' })
   const note = document.createElement('div')
   note.className = 'text-xs text-text-subtle mb-3'
-  note.textContent = 'Exact provider-independent request supplied for the final model call. Request evidence may omit later executed calls or context removed before this request. Actual execution facts, when recorded, appear separately below. Provider wire transformations and private transport state are not included.'
+  note.textContent = 'Exact provider-independent request supplied for the final model call, including any retained provider continuation. Request evidence may omit later executed calls or context removed before this request. Actual execution facts appear separately below. Wire transformations are not a captured HTTP request; sensitive protocol state requires explicit disclosure.'
   modal.scrollBody.appendChild(note)
 
   if (execution) appendCategory(modal.scrollBody, `Actual execution (${execution.calls.length} calls)`, body => appendExecution(body, execution), true)
@@ -238,7 +261,7 @@ const showGenerationQueryModal = (inspection: GenerationQueryInspection, executi
   )
   appendCategory(modal.scrollBody, `Conversation context (${dialogue.length})`, body => {
     dialogue.forEach((message, index) => {
-      appendDisclosure(body, `${index + 1}. ${message.role}`, message, false, true)
+      appendDisclosure(body, `${index + 1}. ${message.role}`, readableQueryMessage(message), false, true)
     })
   })
 
@@ -276,15 +299,27 @@ const showGenerationQueryModal = (inspection: GenerationQueryInspection, executi
     body.appendChild(createCodeBlock(prettyJson(settings), '18rem'))
   })
 
-  appendCategory(modal.scrollBody, 'Complete raw inspection record', body => {
-    body.appendChild(createCodeBlock(prettyJson(inspection), '65vh'))
-  })
-
+  const protocol = continuationMetadata(inspection.query.messages)
+  if (protocol.length) appendDisclosure(modal.scrollBody, 'Provider continuation metadata (not prompt prose)', protocol)
   const row = document.createElement('div')
   row.className = 'flex justify-end'
   const copy = document.createElement('button')
   copy.className = 'btn btn-ghost'
-  copy.textContent = 'Copy complete record'
+  copy.textContent = protocol.length ? 'Copy complete record (sensitive protocol included)' : 'Copy complete record'
+  copy.disabled = protocol.length > 0
+  const showRaw = (): void => {
+    appendCategory(modal.scrollBody, 'Complete raw inspection record', body => {
+      body.appendChild(createCodeBlock(prettyJson(inspection), '65vh'))
+    })
+    copy.disabled = false
+  }
+  if (protocol.length) {
+    const reveal = document.createElement('button')
+    reveal.className = 'btn btn-ghost mb-3'
+    reveal.textContent = 'Enable sensitive protocol inspection and complete-record copy'
+    reveal.onclick = () => { showRaw(); reveal.remove() }
+    modal.scrollBody.appendChild(reveal)
+  } else showRaw()
   copy.onclick = async () => {
     try {
       await navigator.clipboard.writeText(prettyJson(inspection))

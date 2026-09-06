@@ -107,6 +107,47 @@ const chatReq = (model: string, content = 'hi'): ChatRequest => ({
   model, messages: [{ role: 'user', content }],
 })
 
+describe('actual routed model capacity', () => {
+  test.each(['chat', 'stream'] as const)('checks a smaller fallback before %s dispatch', async mode => {
+    const unavailable = createCloudProviderError({ code: 'provider_down', provider: 'large', message: 'unavailable' })
+    const large = createFakeGateway({ availableModels: ['model'], responses: [unavailable], streamResponses: [unavailable] })
+    const small = createFakeGateway({ availableModels: ['model'] })
+    const router = createProviderRouter({ large, small }, { order: ['large', 'small'], contextLookup: async provider => ({ contextMax: provider === 'large' ? 100_000 : 1_000, source: 'test' }) })
+    const request = chatReq('model', 'x'.repeat(20_000))
+    const invoke = async () => { if (mode === 'chat') return router.chat(request); for await (const _ of router.stream(request)) { /* drain */ } }
+    await expect(invoke()).rejects.toThrow('exceeds small:model capacity 1000')
+    expect(small.callCount()).toBe(0)
+    expect(small.streamOptions()).toHaveLength(0)
+    router.dispose()
+  })
+
+  test('metadata follows the selected provider and canonical wire ID, not a guessed name prefix', async () => {
+    const gateway = { ...createFakeGateway({ availableModels: ['gpt-5.4'] }), modelInfo: async () => ({ id: 'openai/gpt-5.4', provider: 'openrouter', contextMax: 1_050_000, source: 'openrouter_api' }) }
+    const router = createProviderRouter({ openrouter: gateway }, { order: ['openrouter'] })
+    expect(await router.modelInfo?.('gpt-5.4')).toEqual({ id: 'openai/gpt-5.4', provider: 'openrouter', contextMax: 1_050_000, source: 'openrouter_api' })
+    expect(await router.chat(chatReq('gpt-5.4'))).toMatchObject({ provider: 'openrouter', contextMax: 1_050_000 })
+    router.dispose()
+  })
+
+  test('unknown metadata does not reject an explicitly selected unlisted model', async () => {
+    const gateway = createFakeGateway({ availableModels: [] })
+    const router = createProviderRouter({ test: gateway }, { order: ['test'] })
+    expect(await router.chat(chatReq('test:not-listed'))).toMatchObject({ contextMax: 0 })
+    expect(gateway.callCount()).toBe(1)
+    router.dispose()
+  })
+
+  test('explicit output allowance, system instructions and tool schemas count before dispatch', async () => {
+    const gateway = createFakeGateway({ availableModels: ['model'] })
+    const router = createProviderRouter({ test: gateway }, { order: ['test'], contextLookup: async () => ({ contextMax: 1000, source: 'test' }) })
+    await expect(router.chat({ ...chatReq('model'), maxTokens: 1000 })).rejects.toThrow('allowance 1000 included')
+    await expect(router.chat({ ...chatReq('model'), systemBlocks: [{ text: 'x'.repeat(5000), cacheable: true }] })).rejects.toThrow('uses provider default')
+    await expect(router.chat({ ...chatReq('model'), tools: [{ type: 'function', function: { name: 'read', description: 'x'.repeat(5000), parameters: { type: 'object', properties: {} } } }] })).rejects.toThrow('exceeds')
+    expect(gateway.callCount()).toBe(0)
+    router.dispose()
+  })
+})
+
 describe('parseProviderPrefix', () => {
   test('bare model name → no prefix', () => {
     expect(parseProviderPrefix('llama-3.3-70b')).toEqual({ provider: null, modelId: 'llama-3.3-70b' })

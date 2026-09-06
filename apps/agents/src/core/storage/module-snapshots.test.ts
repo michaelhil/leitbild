@@ -54,6 +54,59 @@ const runtime = () => {
 }
 
 describe('Workspace Module snapshots', () => {
+  test('optional provider continuation round-trips exactly in the existing query document, not visible messages', async () => {
+    temporaryRoot = await mkdtemp(join(tmpdir(), 'module-continuation-fixture-'))
+    const priorHome = process.env.LEITBILD_HOME
+    process.env.LEITBILD_HOME = temporaryRoot
+    try {
+      const paths = workspaceModulePaths(newWorkspaceId())
+      const source = runtime()
+      const room = source.rooms.createRoom({ name: 'Continuation', createdBy: 'human' })
+      const message = room.post({ senderId: 'agent', content: 'answer', type: 'chat', generationTraceId: 'trace' })
+      const query = { model: 'openrouter:qwen/reasoner', reasoningEffort: 'high', messages: [{ role: 'assistant', content: '', continuation: {
+        provider: 'openrouter', model: 'qwen/reasoner', endpointHash: 'a'.repeat(64), reasoning: '', reasoningDetails: [
+          { type: 'reasoning.encrypted', data: 'opaque', index: 0, signature: 'original', nested: { unknown: [null, true, 4] } },
+          { type: 'reasoning.text', text: 'private', index: 0 },
+        ],
+      } }] } as const
+      room.setGenerationQuery(message.id, 'trace', query)
+      const originalDetails = JSON.stringify(query.messages[0].continuation.reasoningDetails)
+      await saveWorkspaceModuleSnapshots(serializeModuleSnapshots(source), paths)
+      const restored = runtime()
+      await restoreWorkspaceModuleSnapshots({ ...restored, spawnAIAgent: async () => {} }, await loadWorkspaceModuleSnapshots(paths))
+      const loadedRoom = restored.rooms.getRoom('Continuation')!
+      expect(loadedRoom.getGenerationQuery(message.id)?.query).toEqual(query)
+      // JSON object key order is not the transport contract; opaque strings,
+      // original detail objects, and their ordered sequence are preserved.
+      expect(JSON.stringify(loadedRoom.getGenerationQuery(message.id)?.query.messages[0]?.continuation?.reasoningDetails)).toBe(originalDetails)
+      expect(JSON.stringify(loadedRoom.getRetainedMessages())).not.toContain('reasoningDetails')
+      await saveWorkspaceModuleSnapshots(serializeModuleSnapshots(restored), paths)
+      expect((await loadWorkspaceModuleSnapshots(paths)).inspections?.rooms[0]?.records[0]?.query).toEqual(query)
+    } finally {
+      if (priorHome === undefined) delete process.env.LEITBILD_HOME
+      else process.env.LEITBILD_HOME = priorHome
+    }
+  })
+  test('model settings round-trip without adding defaults to older Agent profiles', async () => {
+    temporaryRoot = await mkdtemp(join(tmpdir(), 'module-model-settings-'))
+    const priorHome = process.env.LEITBILD_HOME
+    process.env.LEITBILD_HOME = temporaryRoot
+    try {
+      const paths = workspaceModulePaths(newWorkspaceId())
+      const state = runtime()
+      const oldConfig: AIAgentConfig = { name: 'Existing', model: 'fixture', persona: 'Unchanged' }
+      const configured: AIAgentConfig = { name: 'Configured', model: 'fixture', persona: 'Explicit', reasoningEffort: 'high', thinking: true, historyTokenBudget: 12_000 }
+      state.team.addAgent(fakeAi('existing', oldConfig))
+      state.team.addAgent(fakeAi('configured', configured))
+      await saveWorkspaceModuleSnapshots(serializeModuleSnapshots(state), paths)
+      const loaded = await loadWorkspaceModuleSnapshots(paths)
+      expect(loaded.agents?.agents.map(agent => agent.config)).toEqual([oldConfig, configured])
+    } finally {
+      if (priorHome === undefined) delete process.env.LEITBILD_HOME
+      else process.env.LEITBILD_HOME = priorHome
+    }
+  })
+
   test('existing strict request fixture survives compression, disk reload, and reader/Inspector parity without conversion', async () => {
     temporaryRoot = await mkdtemp(join(tmpdir(), 'module-evidence-fixture-'))
     const priorHome = process.env.LEITBILD_HOME

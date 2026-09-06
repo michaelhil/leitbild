@@ -32,29 +32,12 @@ import { extractAgentProfile as extractProfile } from './shared.ts'
 import { buildContext, buildSystemSections, estimateTokens, flushIncoming, type BuildContextDeps, type ContextResult } from './context-builder.ts'
 import { evaluate, type EvalResult, type OnDecision } from './evaluation.ts'
 import { createConcurrencyManager } from './concurrency.ts'
-import { getContextWindowSync } from '../llm/models/context-window.ts'
-import { parsePrefixedModel, isCloudProvider } from '../llm/models/parse-prefix.ts'
+import type { ModelInfo } from '../core/types/model-info.ts'
 import { messageFocus } from '../core/message-focus.ts'
 import type { WorkspaceSubjectReference } from '@leitbild/contracts'
 import type { ExecutionStore } from '../core/executions/store.ts'
 
-import { computeContextBudget } from './budget.ts'
-
-// Resolve a fully-qualified model string for context-window lookup. Cloud-
-// prefixed models (e.g. "groq:llama-3.3") look up via the curated table;
-// unknown / unprefixed models fall through as Ollama (which queries the
-// running Ollama instance for context length).
-//
-// Uses the shared parser in src/llm/models/parse-prefix.ts so adding a new
-// cloud provider in providers-config.ts automatically updates this resolver.
-const resolveModelForContext = (fullModel: string): { provider: string; model: string } => {
-  const { provider, modelId } = parsePrefixedModel(fullModel)
-  // Cloud-prefixed and known → table lookup with the bare modelId.
-  if (provider && isCloudProvider(provider)) return { provider, model: modelId }
-  // Anything else (no prefix, or prefix not a known cloud provider like
-  // "qwen:14b") → Ollama, which queries the running daemon for context length.
-  return { provider: 'ollama', model: fullModel }
-}
+import { computeContextBudget, OUTPUT_RESERVE, SAFETY_MARGIN } from './budget.ts'
 
 // Re-export Decision/OnDecision for consumers
 export type { Decision, OnDecision } from './evaluation.ts'
@@ -133,6 +116,8 @@ export const createAIAgent = (
   let currentModel: string = config.model
   let currentTemperature: number | undefined = config.temperature
   let currentThinking: boolean = config.thinking ?? false
+  let currentReasoningEffort = config.reasoningEffort
+  let currentHistoryTokenBudget = config.historyTokenBudget
   let historyLimit = config.historyLimit ?? DEFAULTS.historyLimit
   let toolExecutor = options?.toolExecutor
   let toolDefinitions = options?.toolDefinitions
@@ -170,24 +155,21 @@ export const createAIAgent = (
   }
 
   const resolveContextTokenBudget = (effectiveModel: string, definitions: ReadonlyArray<ToolDefinition> | undefined): number => {
-    const { provider, model } = resolveModelForContext(effectiveModel)
-    const info = getContextWindowSync(provider, model)
+    const contextMax = describedModel?.requested === effectiveModel ? describedModel.info.contextMax : 0
     const toolDefs = (definitions ?? []).map(td => ({
       name: td.function.name,
       description: td.function.description,
       parameters: td.function.parameters,
     }))
     const result = computeContextBudget(
-      { contextMax: info.contextMax, toolDefinitions: toolDefs },
+      { contextMax, toolDefinitions: toolDefs, ...(currentHistoryTokenBudget === undefined ? {} : { historyTokenBudget: currentHistoryTokenBudget }) },
       estimateTokens,
     )
     return result.budget
   }
 
-  const resolveModelMax = (): number => {
-    const { provider, model } = resolveModelForContext(currentModel)
-    return getContextWindowSync(provider, model).contextMax
-  }
+  let describedModel: { requested: string; info: ModelInfo } | undefined
+  const resolveModelMax = (): number => describedModel?.requested === currentModel ? describedModel.info.contextMax : 0
   const getWorkspacePrompt = options?.getWorkspacePrompt
   const getResponseFormat = options?.getResponseFormat
   const getCompressedIds = options?.getCompressedIds
@@ -288,6 +270,7 @@ export const createAIAgent = (
       persona: currentPersona,
       temperature: currentTemperature,
       thinking: currentThinking,
+      reasoningEffort: currentReasoningEffort,
       historyLimit,
       ...(maxToolIterationsCfg !== undefined ? { maxToolIterations: maxToolIterationsCfg } : {}),
     }
@@ -416,55 +399,62 @@ export const createAIAgent = (
       lastFallbackTarget = null
     }
 
-    const effectiveToolDefs = effectiveToolsForRoom(triggerRoomId)
-    const contextResult = buildContext(contextDeps(effectiveModel, effectiveToolDefs), triggerRoomId)
-
-    const inReplyTo = contextResult.flushInfo.ids.size > 0 ? [...contextResult.flushInfo.ids] : undefined
     const abortController = new AbortController()
     activeAbortController = abortController
-
-    // Pack-aware tool count for the context_ready event — same resolution
-    // path the eval will take, so the UI's tool-count badge matches what
-    // the LLM actually sees.
-    // Emit context_ready + any context builder warnings before LLM call
-    if (emit) {
-      emit({
-        kind: 'context_ready',
-        messages: contextResult.messages,
-        model: effectiveModel,
-        temperature: currentTemperature,
-        toolCount: effectiveToolDefs?.length ?? 0,
-      })
-      for (const w of contextResult.warnings) {
-        emit({ kind: 'warning', message: w })
-      }
-      // Skill / tool surface coherence check: if an active skill declares
-      // `allowed-tools: [...]` in its frontmatter, every tool it lists
-      // should be in the LLM-facing surface — otherwise the prompt and
-      // tool list contradict each other and models rationalise refusal
-      // (the prod biometrics symptom). Coherence warnings show up in the
-      // diagnostic API immediately. Not a hard gate — the skill text
-      // wins as a recommendation, but the agent may still call other
-      // tools. The warning makes the mismatch visible.
-      if (getActiveSkillsDeclarations && effectiveToolDefs) {
-        const surfaceNames = new Set(effectiveToolDefs.map(d => d.function.name))
-        const skills = getActiveSkillsDeclarations(currentSkills, triggerRoomId)
-        for (const skill of skills) {
-          const missing = skill.declaredTools.filter(t => !surfaceNames.has(t))
-          if (missing.length > 0) {
-            emit({
-              kind: 'warning',
-              message: `Skill "${skill.name}" declares tools not in the LLM surface: ${missing.join(', ')}. Check pack activation in this room.`,
-            })
-          }
-        }
-      }
-    }
     // epoch guards: each cancelGeneration() increments generationEpoch so stale
     // in-flight results from a prior generation cycle are silently discarded.
     const run = async (): Promise<void> => {
       let wasRespond = false
       try {
+        const info = await llmProvider.modelInfo?.(effectiveModel)
+        if (!cm.isEpochCurrent(epoch) || abortController.signal.aborted) return
+        describedModel = { requested: effectiveModel, info: info ?? { id: effectiveModel, provider: 'unknown', contextMax: 0, source: 'unavailable' } }
+        const effectiveToolDefs = effectiveToolsForRoom(triggerRoomId)
+        const initialContext = buildContext(contextDeps(effectiveModel, effectiveToolDefs), triggerRoomId)
+        // Only prior replay uses the working target. During a tool turn, keep
+        // complete new evidence and fit older history to actual known capacity.
+        const toolTokens = estimateTokens(JSON.stringify(effectiveToolDefs ?? []))
+        const contextResult: ContextResult = { ...initialContext,
+          tokenBudget: info && info.contextMax > 0 ? Math.max(0, info.contextMax - toolTokens - OUTPUT_RESERVE - SAFETY_MARGIN) : undefined,
+        }
+        const inReplyTo = contextResult.flushInfo.ids.size > 0 ? [...contextResult.flushInfo.ids] : undefined
+        // Pack-aware tool count for the context_ready event — same resolution
+        // path the eval will take, so the UI's tool-count badge matches what
+        // the LLM actually sees.
+        // Emit context_ready + any context builder warnings before LLM call
+        if (emit) {
+          emit({
+            kind: 'context_ready',
+            messages: contextResult.messages,
+            model: effectiveModel,
+            temperature: currentTemperature,
+            toolCount: effectiveToolDefs?.length ?? 0,
+          })
+          for (const w of contextResult.warnings) {
+            emit({ kind: 'warning', message: w })
+          }
+          // Skill / tool surface coherence check: if an active skill declares
+          // `allowed-tools: [...]` in its frontmatter, every tool it lists
+          // should be in the LLM-facing surface — otherwise the prompt and
+          // tool list contradict each other and models rationalise refusal
+          // (the prod biometrics symptom). Coherence warnings show up in the
+          // diagnostic API immediately. Not a hard gate — the skill text
+          // wins as a recommendation, but the agent may still call other
+          // tools. The warning makes the mismatch visible.
+          if (getActiveSkillsDeclarations && effectiveToolDefs) {
+            const surfaceNames = new Set(effectiveToolDefs.map(d => d.function.name))
+            const skills = getActiveSkillsDeclarations(currentSkills, triggerRoomId)
+            for (const skill of skills) {
+              const missing = skill.declaredTools.filter(t => !surfaceNames.has(t))
+              if (missing.length > 0) {
+                emit({
+                  kind: 'warning',
+                  message: `Skill "${skill.name}" declares tools not in the LLM surface: ${missing.join(', ')}. Check pack activation in this room.`,
+                })
+              }
+            }
+          }
+        }
         const { decision, flushInfo } = await runEvaluate(
           contextResult, effectiveModel, triggerRoomId, abortController.signal, traceId, effectiveToolDefs, inReplyTo,
         )
@@ -599,6 +589,10 @@ export const createAIAgent = (
     },
     getThinking: () => currentThinking,
     updateThinking: (enabled: boolean) => { currentThinking = enabled },
+    getReasoningEffort: () => currentReasoningEffort,
+    updateReasoningEffort: (effort) => { currentReasoningEffort = effort },
+    getHistoryTokenBudget: () => currentHistoryTokenBudget,
+    updateHistoryTokenBudget: (tokens) => { currentHistoryTokenBudget = tokens },
     getTools: () => currentTools,
     updateTools: (tools: ReadonlyArray<string>) => { currentTools = tools },
     getSkills: () => currentSkills,
@@ -659,6 +653,9 @@ export const createAIAgent = (
       persona: currentPersona,
       temperature: currentTemperature,
       historyLimit,
+      historyTokenBudget: currentHistoryTokenBudget,
+      thinking: currentThinking,
+      reasoningEffort: currentReasoningEffort,
       tools: currentTools,
       skills: currentSkills,
       tags: currentTags,

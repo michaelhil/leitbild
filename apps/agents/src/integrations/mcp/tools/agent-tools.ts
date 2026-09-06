@@ -6,6 +6,7 @@ import type { ToolContext } from '../../../core/types/tool.ts'
 import { asAIAgent } from '../../../agents/shared.ts'
 import { createListAgentsTool, createMuteAgentTool } from '../../../tools/built-in/agent-tools.ts'
 import { textResult, errorResult, resolveAgent } from './helpers.ts'
+import { REASONING_EFFORTS } from '../../../core/types/llm.ts'
 
 const dummyContext: ToolContext = {
   callerId: 'mcp-client',
@@ -81,9 +82,11 @@ export const registerAgentTools = (mcpServer: McpServer, system: AgentsWorkspace
       seed: z.number().int().optional().describe('Deterministic seed forwarded to every LLM call this agent issues (best-effort per provider — Ollama and OpenAI-family honor it; Anthropic/Gemini silently discard).'),
       tools: z.array(z.string()).optional().describe('Tool names available to this agent. When omitted, agent has access to every registered tool. Pass an empty array for no tools.'),
       historyLimit: z.number().int().optional().describe('Max number of old messages retained per room in the agent\'s context window.'),
+      historyTokenBudget: z.number().int().positive().optional().describe('Prior-history replay target in tokens, not a hard model or current-tool-evidence cap. Omitted uses the default replay target.'),
       maxToolIterations: z.number().int().optional().describe('Max tool-loop iterations before the agent is forced to answer or pass.'),
       tags: z.array(z.string()).optional().describe('Capability/role tags enabling [[tag:X]] addressing.'),
-      thinking: z.boolean().optional().describe('Enable model chain-of-thought (qwen3 thinking mode, etc.).'),
+      thinking: z.boolean().optional().describe('Ollama thinking toggle; independent of cloud reasoning effort.'),
+      reasoningEffort: z.enum(REASONING_EFFORTS).optional().describe('Explicit reasoning effort. Omit for provider default; support depends on the actual provider route.'),
       includePrompts: includePromptsShape.describe('Per-section prompt inclusion gates. All default to true. See tool description for UI-label mapping.'),
       includeContext: includeContextShape.describe('CONTEXT sub-section toggles (participants/activity/knownAgents). All default to true.'),
       includeTools: z.boolean().optional().describe('Master switch — send tool definitions to LLM at all (default: true).'),
@@ -101,9 +104,11 @@ export const registerAgentTools = (mcpServer: McpServer, system: AgentsWorkspace
           ...(args.seed !== undefined ? { seed: args.seed } : {}),
           ...(args.tools !== undefined ? { tools: args.tools } : {}),
           ...(args.historyLimit !== undefined ? { historyLimit: args.historyLimit } : {}),
+          ...(args.historyTokenBudget !== undefined ? { historyTokenBudget: args.historyTokenBudget } : {}),
           ...(args.maxToolIterations !== undefined ? { maxToolIterations: args.maxToolIterations } : {}),
           ...(args.tags !== undefined ? { tags: args.tags } : {}),
           ...(args.thinking !== undefined ? { thinking: args.thinking } : {}),
+          ...(args.reasoningEffort !== undefined ? { reasoningEffort: args.reasoningEffort } : {}),
           ...(args.includePrompts !== undefined ? { includePrompts: args.includePrompts } : {}),
           ...(args.includeContext !== undefined ? { includeContext: args.includeContext } : {}),
           ...(args.includeTools !== undefined ? { includeTools: args.includeTools } : {}),
@@ -133,6 +138,9 @@ export const registerAgentTools = (mcpServer: McpServer, system: AgentsWorkspace
         if (aiAgent) {
           detail.persona = aiAgent.getPersona()
           detail.model = aiAgent.getModel()
+          detail.thinking = aiAgent.getThinking()
+          detail.reasoningEffort = aiAgent.getReasoningEffort()
+          detail.historyTokenBudget = aiAgent.getHistoryTokenBudget()
         }
         return textResult(detail)
       } catch (err) {

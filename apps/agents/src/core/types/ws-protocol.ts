@@ -6,7 +6,7 @@ import type { WorkspaceSubjectReference } from '@leitbild/contracts'
 import type { AIAgentConfig, IncludeContext, IncludePrompts, StateValue } from './agent.ts'
 import type { RoomState, SummaryTarget } from './room.ts'
 import type { EvalEvent } from './agent-eval.ts'
-import type { OllamaHealth } from './llm.ts'
+import type { OllamaHealth, ReasoningEffort } from './llm.ts'
 import type { SummaryConfig } from './summary.ts'
 
 export type WSInbound =
@@ -21,6 +21,8 @@ export type WSInbound =
       readonly name: string
       readonly persona?: string
       readonly model?: string
+      readonly reasoningEffort?: ReasoningEffort | null
+      readonly historyTokenBudget?: number | null
       readonly includePrompts?: IncludePrompts
       readonly includeContext?: IncludeContext
       readonly includeTools?: boolean

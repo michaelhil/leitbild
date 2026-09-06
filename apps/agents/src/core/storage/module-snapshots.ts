@@ -12,6 +12,7 @@ import type { WorkspaceModulePaths } from '../paths.ts'
 import { asAIAgent } from '../../agents/shared.ts'
 import { DEFAULT_RESPONSE_FORMAT, DEFAULT_WORKSPACE_PROMPT } from '../workspaces/settings.ts'
 import { redactBiometricMessages } from './snapshot-redact.ts'
+import { REASONING_EFFORTS } from '../types/llm.ts'
 
 export const ROOMS_SNAPSHOT_SCHEMA = 3
 export const AGENTS_SNAPSHOT_SCHEMA = 3
@@ -214,6 +215,13 @@ const generationQuerySchema = z.object({
     toolCalls: z.array(nativeToolCallSchema).optional(),
     toolCallId: z.string().optional(),
     name: z.string().optional(),
+    continuation: z.object({
+      provider: z.literal('openrouter'),
+      model: z.string().min(1),
+      endpointHash: z.string().regex(/^[a-f0-9]{64}$/),
+      reasoningDetails: z.array(z.record(z.string(), z.json())).optional(),
+      reasoning: z.string().optional(),
+    }).strict().optional(),
     images: z.array(z.object({ dataUrl: z.string(), mimeType: z.literal('image/png') }).strict()).optional(),
   }).strict()),
   temperature: z.number().finite().optional(),
@@ -223,6 +231,7 @@ const generationQuerySchema = z.object({
   tools: z.array(toolDefinitionSchema).optional(),
   toolChoice: z.union([z.enum(['auto', 'required']), z.object({ name: z.string() }).strict()]).optional(),
   think: z.boolean().optional(),
+  reasoningEffort: z.enum(REASONING_EFFORTS).optional(),
   numCtx: z.number().finite().optional(),
   keepAlive: z.string().optional(),
   systemBlocks: z.array(z.object({ text: z.string(), cacheable: z.boolean().optional() }).strict()).optional(),
@@ -272,11 +281,13 @@ const agentConfigSchema = z.object({
   temperature: z.number().finite().optional(),
   seed: z.number().finite().optional(),
   historyLimit: z.number().finite().optional(),
+  historyTokenBudget: z.number().int().positive().optional(),
   tools: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(),
   maxToolIterations: z.number().finite().optional(),
   tags: z.array(z.string()).optional(),
   thinking: z.boolean().optional(),
+  reasoningEffort: z.enum(REASONING_EFFORTS).optional(),
   includePrompts: z.object({
     persona: z.boolean().optional(),
     room: z.boolean().optional(),

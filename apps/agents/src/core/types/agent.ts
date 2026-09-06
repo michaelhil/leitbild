@@ -6,6 +6,7 @@ import type { ToolDefinition, ToolExecutor } from './tool.ts'
 import type { Room } from './room.ts'
 import type { RoomDirectory } from '../rooms/directory.ts'
 import type { Trigger } from '../triggers/types.ts'
+import type { ReasoningEffort } from './llm.ts'
 
 // === Agent State — subscribe/get pattern for observability ===
 
@@ -90,8 +91,12 @@ export interface AIAgent extends Agent {
   readonly updateTemperature?: (t: number | undefined) => void
   readonly getHistoryLimit: () => number | undefined
   readonly updateHistoryLimit?: (n: number) => void
+  readonly getHistoryTokenBudget: () => number | undefined
+  readonly updateHistoryTokenBudget: (tokens: number | undefined) => void
   readonly getThinking: () => boolean
   readonly updateThinking?: (enabled: boolean) => void
+  readonly getReasoningEffort: () => ReasoningEffort | undefined
+  readonly updateReasoningEffort: (effort: ReasoningEffort | undefined) => void
   readonly getTools: () => ReadonlyArray<string> | undefined
   readonly updateTools?: (tools: ReadonlyArray<string>) => void
   readonly getSkills: () => ReadonlyArray<string>
@@ -223,11 +228,14 @@ export interface AIAgentConfig {
   // it; Anthropic + Gemini silently discard). See README "Scripted runs".
   readonly seed?: number
   readonly historyLimit?: number
+  // Prior-history replay target, not a model capacity or current-tool-evidence cap.
+  readonly historyTokenBudget?: number
   readonly tools?: ReadonlyArray<string>        // tool names this agent can use
   readonly skills?: ReadonlyArray<string>       // exact behavioural Skill selection
   readonly maxToolIterations?: number           // optional operator check-in threshold
   readonly tags?: ReadonlyArray<string>         // capability/role tags for [[tag:X]] addressing
   readonly thinking?: boolean                    // enable model CoT (qwen3 thinking mode)
+  readonly reasoningEffort?: ReasoningEffort      // omitted = provider default; separate from Ollama thinking
   // Context & Prompts toggles — all default true; undefined preserves current behavior
   readonly includePrompts?: IncludePrompts      // persona/room/workspace/responseFormat/skills/wikis
   readonly includeContext?: IncludeContext      // CONTEXT sub-sections (participants/activity/knownAgents)

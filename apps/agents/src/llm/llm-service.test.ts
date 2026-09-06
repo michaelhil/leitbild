@@ -55,6 +55,31 @@ const routerError = (message: string, attempts: ReadonlyArray<ProviderAttemptRec
   return err
 }
 
+describe('LLMService — continuation route isolation', () => {
+  const continuation = { provider: 'openrouter' as const, model: 'qwen/reasoner', endpointHash: 'a'.repeat(64), reasoningDetails: [{ type: 'reasoning.encrypted', data: 'opaque' }] }
+  const request: ChatRequest = { model: 'openrouter:qwen/reasoner', messages: [{ role: 'assistant', content: '', continuation }] }
+  for (const streaming of [false, true]) test(`${streaming ? 'stream' : 'chat'} never switches a continuation to a fallback even during cooldown`, async () => {
+    const calls: string[] = []
+    const fail = (req: ChatRequest): never => {
+      calls.push(req.model)
+      throw createCloudProviderError({ code: 'rate_limit', provider: 'openrouter', status: 429, message: 'fixture rate limit' })
+    }
+    const router = fakeRouter({ chat: async req => fail(req), stream: async function*(req) { fail(req) }, monitorSnapshot: {
+      openrouter: { sub: 'backoff', retryAt: Date.now() + 30_000, reason: 'rate_limit', since: Date.now(), modelCount: 0, lastError: null, lastErrorAt: null, consecutiveFailures: 1 },
+    } })
+    const provider = createLLMService({ router, getSystemChain: () => ['openai:gpt-6-astra'] }).bound({ source: 'agent', fallbackChain: ['other:model'] })
+    await expect(streaming ? Array.fromAsync(provider.stream!(request)) : provider.chat(request)).rejects.toThrow('fixture rate limit')
+    expect(calls).toEqual(['openrouter:qwen/reasoner'])
+  })
+  test('mixed state or requested model changes fail before invoking the router', async () => {
+    let calls = 0
+    const provider = createLLMService({ router: fakeRouter({ chat: async req => { calls++; return okChat(req.model) } }) }).bound({ source: 'agent' })
+    await expect(provider.chat({ ...request, model: 'openai:gpt-6-astra' })).rejects.toThrow('provider_continuation_route_mismatch')
+    await expect(provider.chat({ ...request, messages: [...request.messages, { role: 'assistant', content: '', continuation: { ...continuation, endpointHash: 'b'.repeat(64) } }] })).rejects.toThrow('provider_continuation_route_mismatch')
+    expect(calls).toBe(0)
+  })
+})
+
 describe('LLMService — cooldown skip', () => {
   test('primary in backoff with retryAt > now+1s → routed to chain[0]', async () => {
     const calls: string[] = []

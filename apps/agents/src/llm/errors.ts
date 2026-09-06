@@ -11,6 +11,21 @@ export interface OllamaError extends Error {
   readonly status: number
 }
 
+// Invalid request/protocol state is not a provider outage. Never retry it on
+// another route or count it against provider health.
+export interface LLMRequestError extends Error {
+  readonly kind: 'request_error'
+  readonly code: string
+}
+
+export const createLLMRequestError = (code: string, message: string): LLMRequestError => {
+  const err = new Error(message) as LLMRequestError
+  return Object.assign(err, { name: 'LLMRequestError', kind: 'request_error' as const, code })
+}
+
+export const isLLMRequestError = (err: unknown): err is LLMRequestError =>
+  err instanceof Error && (err as { kind?: string }).kind === 'request_error'
+
 export interface GatewayError extends Error {
   readonly kind: 'gateway_error'
   readonly code: GatewayErrorCode

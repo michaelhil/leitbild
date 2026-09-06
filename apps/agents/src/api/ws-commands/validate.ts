@@ -3,6 +3,7 @@ import type { MessageAttachment, MessageTarget } from '../../core/types/messagin
 import { validateSummaryConfig } from '../../core/types/summary.ts'
 import type { BiometricSignalWire, WSInbound } from '../../core/types/ws-protocol.ts'
 import { workspaceSubjectReferenceSchema, type WorkspaceSubjectReference } from '@leitbild/contracts'
+import { REASONING_EFFORTS } from '../../core/types/llm.ts'
 
 type ValidationResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: string }
 type RawObject = Record<string, unknown>
@@ -117,6 +118,12 @@ const validateCreateAgent = (obj: RawObject): ValidationResult<Extract<WSInbound
     const value = config[key]
     if (value !== undefined && typeof value !== 'boolean') return { ok: false, error: `config.${key} must be a boolean when present` }
   }
+  if (config.reasoningEffort !== undefined && !REASONING_EFFORTS.some(effort => effort === config.reasoningEffort)) {
+    return { ok: false, error: 'config.reasoningEffort must be a supported effort value' }
+  }
+  if (config.historyTokenBudget !== undefined && (!Number.isSafeInteger(config.historyTokenBudget) || (config.historyTokenBudget as number) <= 0)) {
+    return { ok: false, error: 'config.historyTokenBudget must be a positive integer' }
+  }
   const includePrompts = validateBooleanMap<IncludePrompts>(config.includePrompts, 'config.includePrompts')
   if (!includePrompts.ok) return includePrompts
   const includeContext = validateBooleanMap<IncludeContext>(config.includeContext, 'config.includeContext')
@@ -127,6 +134,12 @@ const validateCreateAgent = (obj: RawObject): ValidationResult<Extract<WSInbound
 const validateUpdateAgent = (obj: RawObject): ValidationResult<Extract<WSInbound, { type: 'update_agent' }>> => {
   const name = requiredString(obj, 'name')
   if (!name.ok) return name
+  if (obj.reasoningEffort !== undefined && obj.reasoningEffort !== null && !REASONING_EFFORTS.some(effort => effort === obj.reasoningEffort)) {
+    return { ok: false, error: 'reasoningEffort must be a supported effort value or null' }
+  }
+  if (obj.historyTokenBudget !== undefined && obj.historyTokenBudget !== null && (!Number.isSafeInteger(obj.historyTokenBudget) || (obj.historyTokenBudget as number) <= 0)) {
+    return { ok: false, error: 'historyTokenBudget must be a positive integer or null' }
+  }
   for (const key of ['persona', 'model']) {
     const result = optionalString(obj, key)
     if (!result.ok) return result
