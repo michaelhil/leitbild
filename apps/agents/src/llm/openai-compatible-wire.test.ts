@@ -2,6 +2,22 @@ import { describe, expect, test } from 'bun:test'
 import { buildOAIBody } from './openai-compatible-wire.ts'
 
 describe('OpenAI-compatible native tool history', () => {
+  test('OpenAI routes preserve optional tool fields without changing shared schemas or other providers', () => {
+    const parameters = { type: 'object', properties: { id: { type: 'string' } }, additionalProperties: false }
+    const tools = [{ type: 'function' as const, function: { name: 'read', description: 'Read', parameters } }]
+    const request = { model: 'gpt-4o', messages: [], tools }
+    for (const provider of ['openai', 'openrouter']) {
+      const body = buildOAIBody(request, true, provider)
+      expect(body.tools).toEqual([{ type: 'function', function: { ...tools[0]!.function, strict: false } }])
+      expect(body.tools).not.toBe(tools)
+    }
+    expect(tools[0]!.function).not.toHaveProperty('strict')
+    expect(parameters).not.toHaveProperty('required')
+    expect(buildOAIBody(request, false, 'groq').tools).toBe(tools)
+    expect(buildOAIBody(request, false, 'anthropic').tools).toEqual([{ ...tools[0], cache_control: { type: 'ephemeral' } }])
+    const explicit = { ...request, tools: [{ ...tools[0]!, function: { ...tools[0]!.function, strict: true } }] }
+    expect(buildOAIBody(explicit, false, 'openrouter').tools).toEqual(explicit.tools)
+  })
   test('direct newer OpenAI tools fail explicitly when Chat Completions cannot support them; OpenRouter remains independent', () => {
     const tools = [{ type: 'function' as const, function: { name: 'inspect', description: 'Inspect', parameters: {} } }]
     const request = { model: 'gpt-6-astra', messages: [], tools, reasoningEffort: 'high' as const }

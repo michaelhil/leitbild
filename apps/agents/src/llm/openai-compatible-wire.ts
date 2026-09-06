@@ -215,13 +215,20 @@ export const buildOAIBody = (request: ChatRequest, stream: boolean, providerName
   }
   if (request.jsonMode) body.response_format = { type: 'json_object' }
   if (request.tools && request.tools.length > 0) {
+    // These routes may use Responses upstream, where omitted strict can make
+    // optional selectors mandatory. Preserve our schema's optional semantics;
+    // the owning tool still validates every call. Do not rewrite parameters or
+    // leak this provider setting into another route's cached/shared request.
+    const tools = providerName === 'openai' || providerName === 'openrouter'
+      ? request.tools.map(tool => ({ ...tool, function: { strict: false, ...tool.function } }))
+      : request.tools
     // Anthropic-only: attach `cache_control: ephemeral` (top-level on the
     // last tool entry, NOT nested inside `function`). Anthropic caches
     // tools and system on separate axes, so this marker is independent of
     // the system-block marker — both are needed to cache both prefixes.
     body.tools = providerName === 'anthropic'
-      ? markLastCacheable(request.tools)
-      : request.tools
+      ? markLastCacheable(tools)
+      : tools
   }
   if (request.toolChoice !== undefined && request.tools && request.tools.length > 0) {
     if (request.toolChoice === 'auto' || request.toolChoice === 'required') {

@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test'
 import { createOpenAICompatibleProvider } from './openai-compatible.ts'
 import type { ChatRequest } from '../core/types/llm.ts'
+import { createRoom } from '../core/rooms/room.ts'
+import type { RoomDirectory } from '../core/rooms/directory.ts'
+import { createConversationReadTool } from '../tools/built-in/conversation-read.ts'
+import { toolsToDefinitions } from './tool-capability.ts'
 
 const fixture = (script: (request: Request, body: Record<string, unknown>) => Response) => {
   const bodies: Record<string, unknown>[] = []
@@ -17,6 +21,30 @@ const details = [
   { type: 'reasoning.encrypted', id: 'same', index: 0, data: 'opaque', extra: { exact: true } },
 ]
 const chunk = (delta: unknown, finish_reason?: string) => JSON.stringify({ model: 'qwen/reasoner', choices: [{ delta, ...(finish_reason ? { finish_reason } : {}) }] })
+
+for (const streaming of [false, true]) test(`${streaming ? 'stream' : 'chat'} keeps history listing optional through real tool schema and HTTP serialization`, async () => {
+  const room = createRoom({ id: 'room', name: 'Room', createdBy: 'human', createdAt: 1, scope: { kind: 'workspace' }, scopeRevision: 0 })
+  room.addMember('agent')
+  const message = room.post({ senderId: 'human', type: 'chat', content: 'An earlier question' })
+  const tool = createConversationReadTool({ getRoom: (id: string) => id === room.profile.id ? room : undefined } as RoomDirectory)
+  const definitions = toolsToDefinitions([tool])
+  const fx = fixture((_request, body) => {
+    expect(body.tools).toEqual([{ ...definitions[0], function: { ...definitions[0]!.function, strict: false } }])
+    const calls = [{ index: 0, id: 'history01', type: 'function', function: { name: tool.name, arguments: '{}' } }]
+    return streaming
+      ? new Response([chunk({ tool_calls: calls }, 'tool_calls'), '[DONE]'].map(line => `data: ${line}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } })
+      : Response.json({ choices: [{ message: { content: '', tool_calls: calls }, finish_reason: 'tool_calls' }] })
+  })
+  try {
+    const provider = createOpenAICompatibleProvider({ name: 'openrouter', getBaseUrl: () => fx.url, getApiKey: () => 'fixture' })
+    const input = { ...request, tools: definitions }
+    const response = streaming ? (await Array.fromAsync(provider.stream!(input))).at(-1)! : await provider.chat(input)
+    const args = response.toolCalls![0]!.function.arguments
+    expect(args).toEqual({})
+    expect(await tool.execute(args, { callerId: 'agent', callerName: 'Agent', roomId: room.profile.id })).toMatchObject({ success: true, data: { messages: [{ messageId: message.id }] } })
+    expect(definitions[0]!.function).not.toHaveProperty('strict')
+  } finally { fx.stop() }
+})
 
 for (const streaming of [false, true]) test(`${streaming ? 'stream' : 'chat'} never manufactures a default-argument action from malformed arguments`, async () => {
   let argumentsJSON = '{broken'
