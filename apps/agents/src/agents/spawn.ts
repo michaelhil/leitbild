@@ -326,6 +326,7 @@ const resolveAgentTools = async (
 
 export interface SpawnOptions {
   readonly onTurnStart?: (input: AgentTurnStart) => Promise<void>
+  readonly onTurnFinished?: (executionTurnId: string) => void
   readonly onTurnMessageLinked?: (input: {
     readonly executionTurnId: string
     readonly roomId: string
@@ -519,6 +520,7 @@ export const spawnAIAgent = async (
   const agent = createAIAgent(config, llmProvider, onDecision, {
     ...toolSupport,
     ...(spawnOptions?.onTurnStart ? { onTurnStart: spawnOptions.onTurnStart } : {}),
+    ...(spawnOptions?.onTurnFinished ? { onTurnFinished: spawnOptions.onTurnFinished } : {}),
     ...(spawnOptions?.executionStore ? { executionStore: spawnOptions.executionStore } : {}),
     ...(spawnOptions?.executionGrowth ? { executionGrowth: spawnOptions.executionGrowth } : {}),
     getWorkspacePrompt: settings.getPrompt,

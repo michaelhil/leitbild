@@ -77,13 +77,17 @@ describe('AI Agent — unit tests', () => {
       },
     }
     const definitions = [{ type: 'function' as const, function: { name: 'read_state', description: 'Read current state', parameters: {} } }]
-    const agent = createAIAgent(makeConfig({ seed: 12, reasoningEffort: 'high' }), provider, decision => decisions.push(decision), {
+    const agent = createAIAgent(makeConfig({ seed: 12, reasoningEffort: 'high' }), provider, decision => { decisions.push(decision); order.push('posted') }, {
       toolDefinitions: definitions,
       toolExecutor: async () => [{ success: true, data: { state: 'ready' } }],
       onTurnStart: async input => {
         await Promise.resolve()
         starts.push(input)
         order.push('captured')
+      },
+      onTurnFinished: executionTurnId => {
+        expect(executionTurnId).toBe(starts[0]!.executionTurnId)
+        order.push('released')
       },
     })
     const message = makeMessage({ content: 'Inspect the state.' })
@@ -93,7 +97,7 @@ describe('AI Agent — unit tests', () => {
     await agent.whenIdle()
 
     expect(passes).toBe(2)
-    expect(order).toEqual(['captured', 'model', 'model'])
+    expect(order).toEqual(['captured', 'model', 'model', 'posted', 'released'])
     expect(starts).toHaveLength(1)
     expect(starts[0]!.agentId).toBe(agent.id)
     expect(starts[0]!.roomId).toBe('room-1')
@@ -122,6 +126,42 @@ describe('AI Agent — unit tests', () => {
     expect(decisions).toHaveLength(1)
     expect(decisions[0]!.response).toMatchObject({ action: 'respond', content: 'Normal answer' })
     expect(warnings.some(message => message.includes('Evidence storage unavailable'))).toBe(true)
+  })
+
+  test('cancellation during comparison capture releases it without calling the model', async () => {
+    const captured = Promise.withResolvers<void>()
+    const releaseCapture = Promise.withResolvers<void>()
+    const released = Promise.withResolvers<string>()
+    let modelCalls = 0
+    let traceId = ''
+    const provider: LLMProvider = {
+      models: async () => ['test-model'],
+      chat: async () => { modelCalls += 1; return { content: 'Unexpected', generationMs: 0, tokensUsed: { prompt: 0, completion: 0 } } },
+    }
+    const agent = createAIAgent(makeConfig(), provider, () => {}, {
+      onTurnStart: async input => {
+        traceId = input.executionTurnId
+        captured.resolve()
+        await releaseCapture.promise
+      },
+      onTurnFinished: id => released.resolve(id),
+    })
+    agent.receive(makeMessage())
+    await captured.promise
+    agent.cancelGeneration()
+    releaseCapture.resolve()
+    expect(await released.promise).toBe(traceId)
+    expect(modelCalls).toBe(0)
+  })
+
+  test('trigger turns release comparison capture after delivery', async () => {
+    const order: string[] = []
+    const agent = createAIAgent(makeConfig(), makeLLMProvider('Trigger answer'), () => order.push('posted'), {
+      onTurnStart: async () => { order.push('captured') },
+      onTurnFinished: () => { order.push('released') },
+    })
+    await agent.fireTriggerExecute!('Report the situation.', 'room-1')
+    expect(order).toEqual(['captured', 'posted', 'released'])
   })
 
   test('clearing an initial tool threshold removes it from persisted config', () => {

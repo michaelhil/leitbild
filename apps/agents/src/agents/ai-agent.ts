@@ -58,6 +58,7 @@ export interface AgentTurnStart {
 
 export interface AIAgentOptions {
   readonly onTurnStart?: (input: AgentTurnStart) => Promise<void>
+  readonly onTurnFinished?: (executionTurnId: string) => void
   readonly executionStore?: ExecutionStore
   readonly executionGrowth?: <T>(bytes: number, work: () => Promise<T>) => Promise<T>
   readonly toolExecutor?: ToolExecutor
@@ -257,6 +258,15 @@ export const createAIAgent = (
   //   • compression → getCompressedIds (folded into single room_summary)
 
   // --- Evaluation loop: per-room generation with pending queue ---
+
+  const notifyTurnFinished = (executionTurnId: string): void => {
+    if (!options?.onTurnFinished) return
+    try {
+      options.onTurnFinished(executionTurnId)
+    } catch (error) {
+      console.error(`[${config.name}] Could not release model-comparison capture for turn ${executionTurnId}:`, error)
+    }
+  }
 
   // After an agent responds (not pass), delay pending re-evaluation by this amount.
   // This lets other agents' responses coalesce into a single re-evaluation rather than
@@ -525,6 +535,7 @@ export const createAIAgent = (
           console.error(`[${config.name}] onDecision threw while reporting eval error:`, decisionErr)
         }
       } finally {
+        notifyTurnFinished(traceId)
         if (cm.isEpochCurrent(epoch)) {
           cm.endGeneration(triggerRoomId)
           // Check for pending work: same room first, then any other room
@@ -813,6 +824,7 @@ export const createAIAgent = (
       const epoch = cm.epochAtStart()
       const abortController = new AbortController()
       activeAbortController = abortController
+      const triggerTraceId = generateTraceId()
 
       try {
         // Resolve effective model (mirrors tryEvaluate).
@@ -836,7 +848,6 @@ export const createAIAgent = (
           flushInfo: { ids: new Set<string>(), triggerRoomId: roomId },
         }
 
-        const triggerTraceId = generateTraceId()
         const { decision } = await runEvaluate(
           contextResult, effectiveModel, roomId, abortController.signal, triggerTraceId, effectiveToolDefs,
         )
@@ -847,6 +858,7 @@ export const createAIAgent = (
           console.error(`[${config.name}] trigger execute failed:`, err)
         }
       } finally {
+        notifyTurnFinished(triggerTraceId)
         // Restore held incoming at the front; new arrivals during eval are
         // already at the back. Order preserved: held first, then new.
         if (heldIncoming.length > 0) {
