@@ -1301,6 +1301,9 @@
         {#if hoveredTagValue}
           <b>{hoveredTagValue.formatted}</b>
           {#if hoveredTagValue.path}<small>{hoveredTagValue.path}</small>{/if}
+          {#if hoveredTagValue.warning && !validationFor(hoveredTagId)?.warnings.includes(hoveredTagValue.warning)}
+            <em>{hoveredTagValue.warning}</em>
+          {/if}
         {:else if validationFor(hoveredTagId)?.status === 'missing'}
           <em>Not resolved to a Leitbild signal.</em>
         {:else if hoveredTagError}

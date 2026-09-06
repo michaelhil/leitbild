@@ -11,10 +11,18 @@ import {
 } from '../signals.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { paginateProcessPlantSearch, processPlantSearchPaginationShape, requirePlant } from './common.ts'
+import { requestedSignalValueView, resolveRequestedSignalUnit } from './signal-units.ts'
 
 export const signalsResolveQuerySchema = z.object({
   plantId: idSchema,
   signals: z.array(processPlantSignalReferenceSchema).min(1),
+}).strict()
+
+export const signalsReadQuerySchema = z.object({
+  plantId: idSchema,
+  signals: z.array(processPlantSignalReferenceSchema.safeExtend({
+    requestedUnit: z.string().trim().min(1).max(128).optional().describe('Optional presentation unit. Raw variable and quality remain unchanged; unsupported conversion returns the actual value/unit with an explicit unavailable reason.'),
+  })).min(1),
 }).strict()
 
 export const signalsSearchQuerySchema = z.object({
@@ -55,24 +63,6 @@ export const processPlantSignalQueryKinds = [
 const normalizedSourceKey = (value: string): string =>
   value.trim().toLowerCase().replace(/[-_.\s]/g, '')
 
-const normalizedUnit = (value: string): string =>
-  value.trim().toLowerCase().replace(/\s/g, '')
-
-const procedureUnitsCompatible = (requested: string | undefined, actual: string): boolean => {
-  if (requested === undefined) return true
-  const left = normalizedUnit(requested)
-  const right = normalizedUnit(actual)
-  if (left === right) return true
-  if ((left === 'bool' || left === 'boolean') && right === 'boolean') return true
-  if (left.startsWith('enum[') && (right === 'boolean' || right === 'fraction' || right === 'percent')) return true
-  return (left === 'degf' && right === 'degc')
-    || (left === 'gpm' && right === 'kg/s')
-    || (left === 'psig' && (right === 'mpa' || right === 'pa'))
-    || (left === 'inhga' && right === 'pa')
-    || (left === 'percent_collapsed_liquid' && right === 'percent')
-    || (left === 'steps_withdrawn' && right === 'fraction')
-}
-
 interface ProcessPlantProcedureTagValidation {
   readonly id: string
   readonly status: 'resolved' | 'resolved-with-warnings' | 'missing'
@@ -91,12 +81,13 @@ const validateProcedureTags = (
   const externalRefs = signal.externalRefs ?? []
   const resolvedByExternalReference = externalRefs.includes(tag.id)
     || (tag.simPath !== undefined && externalRefs.includes(tag.simPath))
+  const unitResolution = tag.units === undefined ? undefined : resolveRequestedSignalUnit(signal, tag.units)
   const warnings = [
     ...(tag.simPath !== undefined && tag.simPath !== signal.path && !externalRefs.includes(tag.simPath)
       ? [`sim-path ${tag.simPath} does not match process path ${signal.path}`]
       : []),
-    ...(!resolvedByExternalReference && !procedureUnitsCompatible(tag.units, signal.unit)
-      ? [`units ${tag.units} do not match process unit ${signal.unit}`]
+    ...(unitResolution?.status === 'unavailable'
+      ? [unitResolution.reason]
       : []),
     ...(tag.equipment !== undefined && signal.equipmentId !== undefined
       && normalizedSourceKey(tag.equipment) !== normalizedSourceKey(signal.equipmentId)
@@ -159,7 +150,7 @@ export const answerProcessPlantSignalQuery = (config: {
     }
   }
   if (config.request.capabilityId === 'world.process-plant.signals.read') {
-    const payload = signalsResolveQuerySchema.parse(config.request.input)
+    const payload = signalsReadQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
     return {
       plantId: payload.plantId,
@@ -170,6 +161,9 @@ export const answerProcessPlantSignalQuery = (config: {
           signal: processPlantSignalView(binding),
           variable,
           quality: processPlantSignalQuality(variable),
+          ...(signal.requestedUnit === undefined ? {} : {
+            valueView: requestedSignalValueView({ unit: binding.unit, quantity: binding.quantity, value: variable.value }, signal.requestedUnit),
+          }),
         }
       }),
     }

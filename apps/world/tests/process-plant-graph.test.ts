@@ -289,9 +289,12 @@ describe('process plant discovery', () => {
         {
           id: 'PT-455',
           status: 'resolved-with-warnings',
-          warnings: ['sim-path rcs.pressurizer.pressure_wr does not match process path pressurizer.pressureMPa'],
+          warnings: [
+            'sim-path rcs.pressurizer.pressure_wr does not match process path pressurizer.pressureMPa',
+            expect.stringContaining('Conversion from MPa to psig is unavailable'),
+          ],
         },
-        { id: 'NIS-PR-AVG', status: 'resolved', warnings: [] },
+        { id: 'NIS-PR-AVG', status: 'resolved-with-warnings', warnings: [expect.stringContaining('Conversion from MW to percent is unavailable')] },
         { id: 'SI-SIG', status: 'missing', warnings: [] },
       ],
     })

@@ -41,6 +41,8 @@ export interface ProcedureTagValue {
   readonly unit?: string
   readonly quality?: string
   readonly path?: string
+  readonly conversionStatus?: 'native' | 'converted' | 'unavailable'
+  readonly warning?: string
 }
 
 export interface ProcedureCsfSignalRead {
@@ -207,85 +209,22 @@ export const resetProcedureRun = async (
   if (!response.result.ok) throw new Error(response.result.reason ?? 'procedure run reset rejected')
 }
 
-const normalizedUnit = (value: string): string => value.trim().toLowerCase().replace(/\s/g, '')
-
 const formattedNumber = (value: number, digits: number): string => {
   if (Number.isInteger(value)) return value.toFixed(0)
   if (Math.abs(value) > 0 && Math.abs(value) < 0.001) return value.toExponential(3)
   return value.toFixed(digits)
 }
 
-const enumValue = (unit: string, value: number | boolean): string => {
-  const options = unit.slice(5, -1).split(',').map(option => option.trim()).filter(Boolean)
-  if (typeof value === 'boolean') {
-    if (options.includes('RUNNING') || options.includes('STOPPED')) return value ? 'RUNNING' : 'STOPPED'
-    if (options.includes('OPEN') || options.includes('CLOSED')) return value ? 'OPEN' : 'CLOSED'
-    if (options.includes('ALIGNED') || options.includes('ISOLATED')) return value ? 'ALIGNED' : 'ISOLATED'
-    return value ? 'TRUE' : 'FALSE'
-  }
-  if (options.includes('OPEN') && options.includes('CLOSED')) {
-    if (value >= 0.95) return 'OPEN'
-    if (value <= 0.05) return 'CLOSED'
-    if (options.includes('INTERMEDIATE')) return 'INTERMEDIATE'
-  }
-  return `${formattedNumber(value * 100, 1)} percent`
-}
-
-const procedureSignalValue = (config: {
-  readonly requestedUnit?: string
-  readonly actualUnit: string
-  readonly quantity: string
-  readonly value: unknown
-}): { readonly value: unknown; readonly formatted: string; readonly unit: string } => {
-  const requested = config.requestedUnit
-  const unit = requested ?? config.actualUnit
-  if (typeof config.value !== 'number' && typeof config.value !== 'boolean') {
-    return { value: config.value, formatted: `${String(config.value)} ${unit}`, unit }
-  }
-  const normalized = requested === undefined ? '' : normalizedUnit(requested)
-  if (normalized.startsWith('enum[')) {
-    const value = enumValue(requested ?? '', config.value)
-    return { value, formatted: value, unit }
-  }
-  if (typeof config.value === 'boolean') return { value: config.value, formatted: `${String(config.value)} ${unit}`, unit }
-  if (normalized === 'degf' && config.actualUnit === 'degC') {
-    const value = config.quantity === 'temperatureDelta' ? config.value * 9 / 5 : config.value * 9 / 5 + 32
-    return { value, formatted: `${formattedNumber(value, 1)} degF`, unit }
-  }
-  if (normalized === 'gpm' && config.actualUnit === 'kg/s') {
-    const value = config.value * 15.850323
-    return { value, formatted: `${formattedNumber(value, 1)} gpm`, unit }
-  }
-  if (normalized === 'psig' && config.actualUnit === 'MPa') {
-    const value = config.value * 145.037738 - 14.6959
-    return { value, formatted: `${formattedNumber(value, 1)} psig`, unit }
-  }
-  if (normalized === 'psig' && config.actualUnit === 'Pa') {
-    const value = config.value * 0.000145037738 - 14.6959
-    return { value, formatted: `${formattedNumber(value, 1)} psig`, unit }
-  }
-  if (normalized === 'inhga' && config.actualUnit === 'Pa') {
-    const value = config.value * 0.000295299875
-    return { value, formatted: `${formattedNumber(value, 2)} inHgA`, unit }
-  }
-  if (normalized === 'steps_withdrawn' && config.actualUnit === 'fraction') {
-    const value = Math.max(0, Math.min(1, 1 - config.value)) * 228
-    return { value, formatted: `${formattedNumber(value, 0)} steps withdrawn`, unit }
-  }
-  const suffix = normalized === 'percent_collapsed_liquid' ? 'percent collapsed liquid' : unit
-  return { value: config.value, formatted: `${formattedNumber(config.value, 3)} ${suffix}`, unit }
-}
-
 const queryProcedureSignal = async (
   simulationRunId: SimulationRunId,
   plantId: string,
   tagId: string,
-  read: boolean,
+  requestedUnit?: string,
 ): Promise<Record<string, unknown> | null> => {
   const result = assertRecord(await querySimulationRunCapability(
     simulationRunId,
-    read ? 'world.process-plant.signals.read' : 'world.process-plant.signals.resolve',
-    { plantId, signals: [{ tagId }] },
+    'world.process-plant.signals.read',
+    { plantId, signals: [{ tagId, ...(requestedUnit === undefined ? {} : { requestedUnit }) }] },
   ), 'process signal query returned no result')
   const first = assertArray(result.signals, 'process signal query returned no signals')[0]
   return first === undefined ? null : assertRecord(first, 'process signal query returned malformed signal')
@@ -328,24 +267,39 @@ export const readProcedureTagValue = async (
   plantId: string,
   tag: ProcedureTag,
 ): Promise<ProcedureTagValue> => {
-  const first = await queryProcedureSignal(simulationRunId, plantId, tag.id, true)
+  const first = await queryProcedureSignal(simulationRunId, plantId, tag.id, tag.units)
   if (first === null) throw new Error('not resolved to a Leitbild signal')
   const signal = assertRecord(first.signal, 'procedure tag read row requires signal')
   const variable = assertRecord(first.variable, 'procedure tag read row requires variable')
-  const actualUnit = assertString(signal.unit, 'process signal requires unit')
-  const procedureValue = procedureSignalValue({
-    ...(tag.units === undefined ? {} : { requestedUnit: tag.units }),
-    actualUnit,
-    quantity: assertString(signal.quantity, 'process signal requires quantity'),
-    value: variable.value,
-  })
+  let unit = assertString(signal.unit, 'process signal requires unit')
+  let value = variable.value
+  let conversionStatus: ProcedureTagValue['conversionStatus']
+  let warning: string | undefined
+  if (tag.units !== undefined) {
+    // Unit semantics belong to the runtime. A missing projection is a malformed
+    // response, not permission for the browser to infer or relabel a value.
+    const view = assertRecord(first.valueView, 'requested-unit signal read requires valueView')
+    const status = view.status
+    if (status !== 'native' && status !== 'converted' && status !== 'unavailable') throw new Error('signal valueView has unsupported status')
+    if (view.requestedUnit !== tag.units.trim()) throw new Error('signal valueView does not match requested unit')
+    const viewUnit = assertString(view.unit, 'signal valueView requires unit')
+    if (status !== 'converted' && (viewUnit !== unit || view.value !== value)) throw new Error('native or unavailable signal valueView must preserve raw value and unit')
+    if (status === 'converted' && viewUnit !== view.requestedUnit) throw new Error('converted signal valueView has unexpected unit')
+    if (status === 'unavailable') warning = assertString(view.reason, 'unavailable signal valueView requires reason')
+    unit = viewUnit
+    value = view.value
+    conversionStatus = status
+  }
+  if (typeof value !== 'boolean' && (typeof value !== 'number' || !Number.isFinite(value))) throw new Error('process signal requires a finite number or boolean value')
   const quality = optionalRecord(first.quality)
   return {
     tagId: tag.id,
     label: typeof signal.label === 'string' ? signal.label : tag.id,
-    value: procedureValue.value,
-    formatted: procedureValue.formatted,
-    unit: procedureValue.unit,
+    value,
+    formatted: formatSignalValue(typeof value === 'number' ? formattedNumber(value, 3) : value, unit),
+    unit,
+    ...(conversionStatus === undefined ? {} : { conversionStatus }),
+    ...(warning === undefined ? {} : { warning }),
     ...(typeof quality?.status === 'string' ? { quality: quality.status } : {}),
     ...(typeof signal.path === 'string' ? { path: signal.path } : {}),
   }

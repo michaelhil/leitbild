@@ -31,6 +31,7 @@ import { artifactReadQuerySchema, componentsSearchQuerySchema, displayProfileRea
 import { plantQuerySchema } from './queries/common.ts'
 import {
   procedureTagsValidateQuerySchema,
+  signalsReadQuerySchema,
   signalsResolveQuerySchema,
   signalsSearchQuerySchema,
 } from './queries/signal-query.ts'
@@ -154,7 +155,7 @@ const queryInputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.variables.read': variablesReadQuerySchema,
   'world.process-plant.variables.search': variablesSearchQuerySchema,
   'world.process-plant.signals.resolve': signalsResolveQuerySchema,
-  'world.process-plant.signals.read': signalsResolveQuerySchema,
+  'world.process-plant.signals.read': signalsReadQuerySchema,
   'world.process-plant.signals.search': signalsSearchQuerySchema,
   'world.process-plant.procedure-tags.validate': procedureTagsValidateQuerySchema,
   'world.process-plant.conditions.evaluate': conditionsEvaluateQuerySchema,
@@ -188,10 +189,10 @@ const queryDescriptionById: Readonly<Record<string, string>> = {
   'world.process-plant.variables.read': 'Read current values and metadata for exact Plant variable paths returned by variables.search or another discovery view; do not guess paths.',
   'world.process-plant.variables.search': 'Search current Plant variables by text, discipline, quantity, publication state, and Plant; results are paginated.',
   'world.process-plant.signals.resolve': 'Resolve exact signal references to canonical Plant signal bindings.',
-  'world.process-plant.signals.read': 'Read live values, metadata, and quality for exact Plant signal references.',
+  'world.process-plant.signals.read': 'Read live values, metadata, and quality for exact Plant signal references. Optional requestedUnit adds a valueView; native values are unchanged, and unavailable conversions retain actual units with a reason. valueView status describes conversion, not sensor quality. Quality good means only not outside a declared hard range; it does not establish calibrated instrumentation or model validity.',
   'world.process-plant.signals.search': 'Search Plant signal bindings by tag, equipment, discipline, quantity, writability, procedure relevance, and text; results are paginated.',
   'world.process-plant.procedure-tags.validate': 'Validate a set of procedure tags against one Plant and report missing or mismatched bindings.',
-  'world.process-plant.conditions.evaluate': 'Evaluate declared operating conditions against current Plant signals.',
+  'world.process-plant.conditions.evaluate': 'Evaluate declared operating conditions against current Plant signals. Comparison values must use the resolved signal\'s native unit and value type. Requested-unit views do not change condition thresholds; no procedure-unit conversion is performed.',
   'world.process-plant.assessments.evaluate': 'Evaluate selected Pack-declared assessments against current Plant state.',
   'world.process-plant.control.validate': 'Validate a proposed Process Plant control write without applying it.',
   'world.process-plant.runtime.status': 'Summarize active Process Plant runtime health, elapsed time, and variable publication counts.',

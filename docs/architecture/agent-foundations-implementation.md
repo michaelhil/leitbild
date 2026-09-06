@@ -84,4 +84,12 @@ Verification: 60 focused Agents tests / 234 assertions, 5 Contracts tests / 21 a
 
 Known boundaries: only published manifest entries are discoverable; the external PWR manifest's omitted pages are not silently crawled or repaired. Existing specialized PWR classification/search readers still have their separate unpinned artifact behavior; the new generic reader always uses pinned documents. Existing fetch-cache expiry does not evict all historical revision keys. Those are explicit follow-ups, not claimed fixes in this phase.
 
-Procedure and conversational evaluation phases remain in progress. The user's model-selection gate precedes post-upgrade conversation testing; deterministic regression tests continue during coding.
+### Procedure value truthfulness accepted (Phase 5A)
+
+Requested-unit presentation now belongs to the existing Process Plant signal reader. The original signal, native value and quality remain unchanged; an optional value view reports native, converted or unavailable presentation. UI and Agent calls use this same result. Validation uses the same small resolver and no longer treats an external-reference match as permission to ignore unit differences. Symbols remain case-sensitive.
+
+Supported temperature conversion distinguishes absolute temperature from temperature differences. Undeclared density, pressure-reference, rod-travel, enum-polarity and percent-calibration assumptions are removed rather than hidden behind a new generic conversion framework. Unsupported requests return the actual value/unit and a visible explanation. This intentionally removes misleading presentation: MW is not relabelled percent, a fraction is not silently made 228 rod steps, and pump state is not substituted for missing SI actuation. Signal quality describes declared hard-range checks, not calibrated instrument or model validity. Native-unit commands and I&C comparisons are unchanged.
+
+Verification: 29 focused tests / 230 assertions, World typecheck and UI build pass. Independent Ruthless Critic gate: **GO**, 38 tests / 363 assertions including Workspace calls. The visible loss of guessed enum/rod/gauge/volume-flow displays is an intentional truthfulness correction; physical mappings require explicit model-owned information before restoration. No procedure engine or unit service was introduced.
+
+Procedure-format and conversational evaluation phases remain in progress. The user's model-selection gate precedes post-upgrade conversation testing; deterministic regression tests continue during coding.
