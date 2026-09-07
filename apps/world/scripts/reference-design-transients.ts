@@ -145,6 +145,15 @@ for water,prev in [(cm,ci),(co,cm)]:
                      film_HTC_W_m2_K=h,Re=Re,Pr=Pr,cell_duty_MW=q/1e6,
                      fuel_surface_conductance_MW_K=q/(873.15-Ts)/1e6))
 out['core_convection']=rows
+heatedLength=b['coreSurface_m2']/(4*b['coreFlowArea_m2']/b['coreDh_m'])
+heatedVolume=b['coreFlowArea_m2']*heatedLength
+check('selected heated coolant geometry',heatedVolume,18.)
+geometry=[('LOWER',28.5,ci),('CORE.1',heatedVolume/2,cm),('CORE.2',heatedVolume/2,co),('UPPER',33.5,co)]
+out['heated_channel_inventory']=dict(heated_length_m=heatedLength,heated_volume_m3=heatedVolume,
+    components=[dict(name=name,volume_m3=volume,mass_kg=volume*water.rho,
+        internal_energy_MJ=volume*water.rho*water.u/1000,residence_s=volume*water.rho/mc) for name,volume,water in geometry],
+    heated_residence_s=heatedVolume/2*(cm.rho+co.rho)/mc,
+    nominal_inventory_change_from_reallocated_17m3_kg=8.5*(ci.rho-cm.rho))
 li=math.log(2)/(6.57*3600); lx=math.log(2)/(9.10*3600); sigma=2.6e6*1e-28; phi=3e17
 F=P*1e6/(200e6*1.602176634e-19*35)
 NI=.06*F/li; NX=.063*F/(lx+sigma*phi)
