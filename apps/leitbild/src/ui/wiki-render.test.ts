@@ -26,3 +26,10 @@ test('authored HTML and unsafe protocols never become executable DOM', () => {
   expect(html).not.toContain('<img')
   expect(html).toContain('class="mermaid"')
 })
+test('authoring comments stay hidden while literal code and other HTML remain escaped', () => {
+  const html = render('# Drawing\n\n<!-- generated-schematic:start -->\n\nVisible\n\n```text\n<!-- literal example -->\n```\n\n<div>Not executable</div>')
+  expect(html).not.toContain('generated-schematic:start')
+  expect(html).toContain('Visible')
+  expect(html).toContain('&lt;!-- literal example --&gt;')
+  expect(html).toContain('&lt;div&gt;')
+})

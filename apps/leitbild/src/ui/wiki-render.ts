@@ -27,7 +27,7 @@ export const renderWiki = (
   for (const block of blocks)
     if (block.type === 'heading')
       anchors.set(block, document.headings[index++]!.anchor)
-  renderer.html = ({ text }) => escapeHtml(text)
+  renderer.html = ({ text }) => /^\s*<!--(?:(?!-->)[\s\S])*-->\s*$/.test(text) ? '' : escapeHtml(text)
   renderer.heading = (token) =>
     `<h${token.depth}${anchors.has(token) ? ` id="${escapeHtml(anchors.get(token)!)}"` : ''}>${renderer.parser.parseInline(token.tokens)}</h${token.depth}>`
   renderer.link = ({ href, tokens }) => {

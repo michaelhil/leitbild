@@ -2,6 +2,7 @@ import { createKnowledge, safeDocumentPath, type KnowledgeSnapshot } from './ind
 import { posix } from 'node:path'
 import { readProductSource } from './source.ts'
 import { parseProductSourceReference } from './source-reference.ts'
+import { updateSchematicDocument } from './schematic.ts'
 
 const git = async (root: string, args: string[]): Promise<string> => {
   const child = Bun.spawn(['git', '-C', root, ...args], { stdout: 'pipe', stderr: 'pipe' })
@@ -36,6 +37,9 @@ export const publishKnowledge = async (root: string, sourceRoot?: string): Promi
   const knowledge = createKnowledge(snapshot)
   await validateKnowledgeSources(snapshot, sourceRoot)
   for (const document of documents) {
+    if (/^```plant-schematic\s*$/m.test(document.content)
+      && updateSchematicDocument(document.content) !== document.content)
+      throw new Error(`Stale generated schematic in ${document.path}; regenerate before publishing`)
     // Relative authored document links must resolve in this exact publication.
     // External/code references are independently checkable, not mirrored here.
     for (const match of document.content.matchAll(/(?<!!)\[[^\]]*\]\(([^\s)]+)(?:\s+"[^"]*")?\)/g)) {

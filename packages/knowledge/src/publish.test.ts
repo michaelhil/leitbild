@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { publishKnowledge, validateKnowledgeSources } from './publish.ts'
+import { updateSchematicDocument } from './schematic.ts'
 
 const roots: string[] = []
 test('publication validates source against actually supplied artifact, including line ranges', async () => {
@@ -34,4 +35,20 @@ test('publishes a named clean commit with valid links, refuses dirty or broken c
   await expect(publishKnowledge(root)).rejects.toThrow('Commit')
   await run(root, ['add', '.']); await run(root, ['commit', '-m', 'Broken'])
   await expect(publishKnowledge(root)).rejects.toThrow('not found')
+})
+
+test('publication refuses stale diagram projections and accepts regenerated declarations', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'leitbild-schematic-'))
+  roots.push(root)
+  await run(root, ['init'])
+  await run(root, ['config', 'user.name', 'Knowledge test'])
+  await run(root, ['config', 'user.email', 'test@example.invalid'])
+  const declaration = { id: 'EX', equipment: [{ id: 'A', label: 'Boundary', kind: 'boundary', ports: {} }], connections: [], views: [{ title: 'Overview', equipment: ['A'] }] }
+  const doc = '# Drawing\n\n```plant-schematic\n' + JSON.stringify(declaration) + '\n```\n<!-- generated-schematic:start -->\n<!-- generated-schematic:end -->'
+  await Bun.write(join(root, 'index.md'), doc)
+  await run(root, ['add', '.']); await run(root, ['commit', '-m', 'Stale drawing'])
+  await expect(publishKnowledge(root)).rejects.toThrow('Stale generated schematic')
+  await Bun.write(join(root, 'index.md'), updateSchematicDocument(doc))
+  await run(root, ['add', '.']); await run(root, ['commit', '-m', 'Generate drawing'])
+  expect((await publishKnowledge(root)).documents).toHaveLength(1)
 })
