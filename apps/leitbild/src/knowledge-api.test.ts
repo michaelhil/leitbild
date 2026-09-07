@@ -3,6 +3,14 @@ import { createKnowledge } from '@leitbild/knowledge'
 import { knowledgeResponse } from './knowledge-api.ts'
 
 const knowledge = createKnowledge({ revision: 'a'.repeat(40), documents: [{ path: 'index.md', content: '# Test\n\nCold reactor explanation.' }] })
+test('wiki source endpoint shares bounded product source access without requiring a room', async () => {
+  const request=(path:string)=>new Request(`http://local/api/knowledge/source?path=${encodeURIComponent(path)}`)
+  const response=await knowledgeResponse(request('packages/knowledge/src/index.ts'))
+  expect(response.status).toBe(200)
+  expect((await response.json()).content).toContain('createKnowledge')
+  expect((await knowledgeResponse(request('../package.json'))).status).toBe(404)
+  expect((await knowledgeResponse(request('index.ts'))).status).toBe(404)
+})
 test('human discovery and read share the same revision and content with agent library', async () => {
   const load = async () => knowledge
   const index = await knowledgeResponse(new Request('http://local/api/knowledge/index'), load)

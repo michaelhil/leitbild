@@ -3,7 +3,7 @@
 import { chmod, copyFile, lstat, mkdir, mkdtemp, readlink, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
-import { publishKnowledge } from '@leitbild/knowledge/publish'
+import { publishKnowledge, validateKnowledgeSources } from '@leitbild/knowledge/publish'
 
 const APP_ID = 'leitbild-platform'
 const SSH_HOST = process.env.LEITBILD_SSH_HOST ?? 'samsinn'
@@ -120,6 +120,7 @@ export const isProductionSourcePath = (workspace: 'host' | 'world' | 'agents' | 
   if (workspace === 'host') {
     return path === 'package.json'
       || path.startsWith('src/')
+      || path.startsWith('scripts/')
       || path === 'deploy/Caddyfile'
       || /^deploy\/leitbild-(?:host|world|agents)\.service$/.test(path)
       || path.startsWith('deploy/retired/')
@@ -223,7 +224,7 @@ const createArtifact = async () => {
   ])
   const rootEntries: ArtifactEntry[] = ['package.json', 'bun.lock', 'LICENSE', 'NOTICE.md'].map(path => ({ source: join(WORKSPACE_ROOT, path), target: path }))
   const knowledgeRepository = process.env.LEITBILD_KNOWLEDGE_REPOSITORY ?? resolve(WORKSPACE_ROOT, '../Leitbild-wiki')
-  const knowledge = await publishKnowledge(knowledgeRepository)
+  const knowledge = await publishKnowledge(knowledgeRepository, WORKSPACE_ROOT)
   const knowledgeFile = join(tempRoot, 'knowledge-snapshot.json')
   await writeFile(knowledgeFile, JSON.stringify(knowledge))
   const knowledgeEntries: ArtifactEntry[] = [{ source: knowledgeFile, target: 'knowledge/snapshot.json' }]
@@ -270,6 +271,7 @@ const createArtifact = async () => {
     persistentRootsExcluded: [STATE_ROOT],
   }
   await copyEntries(entries, stageRoot)
+  await validateKnowledgeSources(knowledge, stageRoot)
   await writeFile(join(stageRoot, 'DEPLOYMENT.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 })
   await run('Create immutable Leitbild artifact', ['tar', '--no-mac-metadata', '--no-xattrs', '-czf', archivePath, '-C', stageRoot, '.'])
   return {

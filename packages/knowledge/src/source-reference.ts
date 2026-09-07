@@ -14,7 +14,7 @@ export const isAllowedProductPath = (path: string): boolean => {
   if (path.startsWith('docs/') || path.startsWith('contexts/')) return true
   if (path.startsWith('knowledge/')) return path.endsWith('.md')
   if (/^apps\/[^/]+\/skills\/.+\.md$/.test(path)) return true
-  if (/^apps\/[^/]+\/(?:README\.md|src\/)/.test(path)) return true
+  if (/^apps\/[^/]+\/(?:README\.md|src\/|scripts\/)/.test(path)) return true
   return /^packages\/[^/]+\/(?:README\.md|src\/)/.test(path)
 }
 

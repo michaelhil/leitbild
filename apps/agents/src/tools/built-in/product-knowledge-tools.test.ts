@@ -23,6 +23,20 @@ const fixture = async (): Promise<string> => {
 }
 
 describe('product knowledge tools', () => {
+  test('hub children are directly readable agent paths without dumping descendants', async () => {
+    const root = await fixture()
+    const knowledge = createKnowledge({revision:'a'.repeat(40),documents:[
+      {path:'index.md',content:'# Leitbild\n\nProduct.'},
+      {path:'world/index.md',content:'# World\n\nSimulation.'},
+      {path:'world/runs.md',content:'# Runs\n\nTime and state.'},
+    ]})
+    const [,read] = createProductKnowledgeTools({repoRoot:root,knowledge:async()=>knowledge})
+    const context={callerId:'a',callerName:'A'}
+    const result=await read!.execute({path:'knowledge/index.md'},context)
+    expect(result.data).toMatchObject({children:[{path:'knowledge/world/index.md',title:'World'}]})
+    const next=await read!.execute({path:'knowledge/world/index.md'},context)
+    expect(next.data).toMatchObject({parent:'knowledge/index.md',children:[{path:'knowledge/world/runs.md'}]})
+  })
   test('wiki body search, batch reads and revision mismatch preserve evidence identity', async () => {
     const root = await fixture()
     const revision = 'a'.repeat(40)

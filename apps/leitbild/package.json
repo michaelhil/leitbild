@@ -14,9 +14,10 @@
     "deploy": "bun run scripts/deploy.ts"
   },
   "dependencies": {
+    "@leitbild/contracts": "workspace:*",
     "@leitbild/knowledge": "workspace:*",
     "marked": "^18.0.11",
-    "@leitbild/contracts": "workspace:*",
+    "mermaid": "^11.15.0",
     "svelte": "^5.56.0",
     "zod": "^4.4.3"
   },

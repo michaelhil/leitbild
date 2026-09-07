@@ -1,5 +1,7 @@
 import { createKnowledge, safeDocumentPath, type KnowledgeSnapshot } from './index.ts'
 import { posix } from 'node:path'
+import { readProductSource } from './source.ts'
+import { parseProductSourceReference } from './source-reference.ts'
 
 const git = async (root: string, args: string[]): Promise<string> => {
   const child = Bun.spawn(['git', '-C', root, ...args], { stdout: 'pipe', stderr: 'pipe' })
@@ -8,7 +10,21 @@ const git = async (root: string, args: string[]): Promise<string> => {
   return out
 }
 
-export const publishKnowledge = async (root: string): Promise<KnowledgeSnapshot> => {
+/** Check actual served source, including when called against a staged release. */
+export const validateKnowledgeSources = async (snapshot: KnowledgeSnapshot, sourceRoot?: string): Promise<void> => {
+  for (const document of snapshot.documents) {
+    for (const match of document.content.matchAll(/(?<!!)\[[^\]]*\]\((source:[^\s)]+)(?:\s+"[^"]*")?\)/g)) {
+      const href = match[1]!
+      if (!sourceRoot) throw new Error('A product source root is required to validate implementation links')
+      const ref = parseProductSourceReference(href.slice(7).replace(/#L(\d+)(?:-L?(\d+))?$/, (_match, start, end) => `:${start}${end ? `-${end}` : ''}`))
+      if (!ref) throw new Error(`Invalid source reference in ${document.path}: ${href}`)
+      const source = await readProductSource(ref.path, sourceRoot)
+      if (ref.lineRanges.some(range => range.endLine > source.totalLines)) throw new Error(`Source line range exceeds file in ${document.path}: ${href}`)
+    }
+  }
+}
+
+export const publishKnowledge = async (root: string, sourceRoot?: string): Promise<KnowledgeSnapshot> => {
   if ((await git(root, ['status', '--porcelain'])).trim()) throw new Error('Commit the knowledge repository before publishing')
   const revision = (await git(root, ['rev-parse', 'HEAD'])).trim()
   const names = (await git(root, ['ls-tree', '-r', '--name-only', '-z', revision])).split('\0').filter(path =>
@@ -18,6 +34,7 @@ export const publishKnowledge = async (root: string): Promise<KnowledgeSnapshot>
   if (!documents.some(document => document.path === 'index.md')) throw new Error('Knowledge repository requires index.md')
   const snapshot = { revision, documents }
   const knowledge = createKnowledge(snapshot)
+  await validateKnowledgeSources(snapshot, sourceRoot)
   for (const document of documents) {
     // Relative authored document links must resolve in this exact publication.
     // External/code references are independently checkable, not mirrored here.

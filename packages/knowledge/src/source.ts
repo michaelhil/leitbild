@@ -1,4 +1,4 @@
-import { lstat, readFile, readdir } from 'node:fs/promises'
+import { lstat, readFile, readdir, realpath } from 'node:fs/promises'
 import { basename, extname, relative, resolve, sep } from 'node:path'
 import { loadKnowledge, knowledgeSnapshotPath } from './index.ts'
 import {
@@ -106,6 +106,10 @@ export const readProductSource = async (
   })
   if (!file.isFile() || file.size > MAX_PRODUCT_SOURCE_BYTES) {
     throw new Error('Product source is unavailable for inline inspection')
+  }
+  const canonical = canonicalProductPath(await realpath(root), await realpath(absolutePath))
+  if (!isAllowedProductPath(canonical) || !PRODUCT_SOURCE_EXTENSIONS.has(extname(canonical))) {
+    throw new Error('Product source resolves outside the exposed corpus')
   }
   const content = await readFile(absolutePath, 'utf8').catch(() => {
     throw new Error('Product source is unavailable in this deployed revision')

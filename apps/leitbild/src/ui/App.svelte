@@ -11,6 +11,7 @@
     type WorkspaceSubjectReference,
   } from '@leitbild/contracts'
   import JsonTree from './JsonTree.svelte'
+  import WikiLink from './WikiLink.svelte'
   import WorkspaceComposer from './WorkspaceComposer.svelte'
   import WorkspacePicker from './WorkspacePicker.svelte'
   import InlineName from './InlineName.svelte'
@@ -494,7 +495,7 @@
 
 {#if currentPage.kind === 'workspace' && workspace}
   <header class="workspace-bar">
-    <div class="workspace-identity"><a class="brand" href="/workspaces">Leitbild</a><a class="workspace-name" href={`/workspaces/${workspace.id}`} title={workspaceTitle}>[{workspaceTitle}]</a><a href="/wiki" target="_blank" rel="noopener">Wiki</a></div>
+    <div class="workspace-identity"><a class="brand" href="/workspaces">Leitbild</a><a class="workspace-name" href={`/workspaces/${workspace.id}`} title={workspaceTitle}>[{workspaceTitle}]</a></div>
     <div class="workspace-actions">
       {#if selectedWorldResource}
         <SimulationRunControls
@@ -528,10 +529,11 @@
       {:else}
         <AssistantLauncher disabled={assistantCapability === undefined} submit={openAssistant} />
       {/if}
+      <WikiLink />
     </div>
   </header>
 {:else}
-  <header class="topbar"><a class="brand" href="/workspaces">Leitbild</a><span class="tagline">— A modular microworld simulation and AI agent sandbox system</span><a href="/wiki">Wiki</a></header>
+  <header class="topbar"><a class="brand" href="/workspaces">Leitbild</a><span class="tagline">— A modular microworld simulation and AI agent sandbox system</span><WikiLink /></header>
 {/if}
 
 <main class:workspace-main={currentPage.kind === 'workspace' && showingComposer}>

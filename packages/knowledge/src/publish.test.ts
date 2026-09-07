@@ -2,9 +2,17 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { publishKnowledge } from './publish.ts'
+import { publishKnowledge, validateKnowledgeSources } from './publish.ts'
 
 const roots: string[] = []
+test('publication validates source against actually supplied artifact, including line ranges', async () => {
+  const root=await mkdtemp(join(tmpdir(),'knowledge-artifact-')); roots.push(root)
+  const snapshot={revision:'a'.repeat(40),documents:[{path:'index.md',content:'[Code](source:README.md:1-2)'}]}
+  await expect(validateKnowledgeSources(snapshot,root)).rejects.toThrow('unavailable')
+  await Bun.write(join(root,'README.md'),'# Shipped\nExplanation')
+  await validateKnowledgeSources(snapshot,root)
+  await expect(validateKnowledgeSources({...snapshot,documents:[{path:'index.md',content:'[Code](source:README.md:999)'}]},root)).rejects.toThrow('line range')
+})
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
 const run = async (root: string, args: string[]) => {
   const p = Bun.spawn(['git', '-C', root, ...args], { stdout: 'pipe', stderr: 'pipe' })
