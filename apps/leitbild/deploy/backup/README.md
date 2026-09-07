@@ -18,7 +18,7 @@ snapshots retain 14 daily, 8 weekly, and 12 monthly copies; static snapshots
 retain 8 weekly and 12 monthly copies.
 
 Critical backups include the shared `/etc/caddy/Caddyfile` and every site under
-`/etc/caddy/sites-enabled`, taking the shared `caddy-config.lock` while capturing
+`/etc/caddy/managed-sites`, taking the shared `caddy-config.lock` while capturing
 them. Restoring a single product must restore only its own snippet; restoring the
 entire shared Caddy configuration is a host recovery action affecting all sites.
 The restore drill requires the Leitbild snippet, so take a new critical backup

@@ -1,2 +1,2 @@
 # Shared host entry point. Product deployments update only their own snippet.
-import /etc/caddy/sites-enabled/*.caddy
+import /etc/caddy/managed-sites/*.caddy

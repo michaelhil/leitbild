@@ -76,7 +76,7 @@ if [[ "$backup_scope" == critical ]]; then
   tar --acls --xattrs --numeric-owner -cf "$backup_archive" -C / \
     var/lib/leitbild \
     etc/caddy/Caddyfile \
-    etc/caddy/sites-enabled \
+    etc/caddy/managed-sites \
     etc/systemd/system/leitbild-world.service \
     etc/systemd/system/leitbild-agents.service \
     etc/systemd/system/leitbild-host.service \

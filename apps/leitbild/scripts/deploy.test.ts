@@ -95,7 +95,7 @@ test('public routing exposes only the bundled Agents UI asset namespace', async 
 
 test('Caddy root delegates site ownership and refuses unprovisioned shared layout', async () => {
   const root = await Bun.file(resolve(workspaceRoot, 'apps/leitbild/deploy/Caddyfile')).text()
-  expect(root).toContain('import /etc/caddy/sites-enabled/*.caddy')
+  expect(root).toContain('import /etc/caddy/managed-sites/*.caddy')
   expect(root).not.toContain('leitbild.app {')
   const directory = await mkdtemp(resolve(tmpdir(), 'leitbild-caddy-preflight-'))
   try {
@@ -111,7 +111,7 @@ for (const outcome of ['success', 'invalid', 'reload-failed', 'public-failed'] a
   test(`Caddy snippet deployment preserves foreign sites and root: ${outcome}`, async () => {
     const directory = await mkdtemp(resolve(tmpdir(), 'leitbild-caddy-deploy-'))
     try {
-      const sites = resolve(directory, 'sites-enabled')
+      const sites = resolve(directory, 'managed-sites')
       const release = resolve(directory, 'release')
       await mkdir(sites)
       await mkdir(resolve(release, 'apps/leitbild/deploy/sites'), { recursive: true })
@@ -130,12 +130,12 @@ flock() { return 0; }
 install() { cp "\${@: -2:1}" "\${@: -1}"; }
 caddy() {
   test "$1" = validate && test "$2" = --config && test "$3" = "$TEST_CADDY/Caddyfile" || return 2
-  test -s "$TEST_CADDY/sites-enabled/optifuel.caddy" || return 2
+  test -s "$TEST_CADDY/managed-sites/optifuel.caddy" || return 2
   test "$TEST_OUTCOME" != invalid
 }
 systemctl() {
   test "$1" = reload && test "$2" = caddy.service || return 2
-  test "$TEST_OUTCOME" != reload-failed || ! grep -q 'next Leitbild' "$TEST_CADDY/sites-enabled/leitbild.caddy"
+  test "$TEST_OUTCOME" != reload-failed || ! grep -q 'next Leitbild' "$TEST_CADDY/managed-sites/leitbild.caddy"
 }
 ${caddySnippetDeployment().replaceAll('/etc/caddy', directory).replace('/run/lock/caddy-config.lock', resolve(directory, 'caddy-config.lock'))}
 if test "$TEST_OUTCOME" = public-failed; then restore_leitbild_caddy; systemctl reload caddy.service; exit 1; fi

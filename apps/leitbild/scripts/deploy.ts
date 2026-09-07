@@ -292,7 +292,7 @@ export const moduleRoutingPreflight = (): string => `for module in world agents;
   fi
 done`
 
-export const caddySnippetPreflight = (): string => `if ! grep -Fxq 'import /etc/caddy/sites-enabled/*.caddy' /etc/caddy/Caddyfile || ! test -f /etc/caddy/sites-enabled/leitbild.caddy; then
+export const caddySnippetPreflight = (): string => `if ! grep -Fxq 'import /etc/caddy/managed-sites/*.caddy' /etc/caddy/Caddyfile || ! test -f /etc/caddy/managed-sites/leitbild.caddy; then
   echo "Provision the shared Caddy entry point and Leitbild site snippet before deploying. Existing host configuration will not be overwritten." >&2
   exit 1
 fi`
@@ -301,7 +301,7 @@ fi`
 export const caddySnippetDeployment = (): string => `exec 8>/run/lock/caddy-config.lock
 flock -w 60 8 || { echo "Another Caddy configuration update is active" >&2; exit 1; }
 ${caddySnippetPreflight()}
-caddy_site=/etc/caddy/sites-enabled/leitbild.caddy
+caddy_site=/etc/caddy/managed-sites/leitbild.caddy
 caddy_backup="/etc/caddy/leitbild.pre-$release_id"
 cp "$caddy_site" "$caddy_backup"
 restore_leitbild_caddy() {

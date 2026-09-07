@@ -1,8 +1,8 @@
 # Shared Caddy host
 
 `Caddyfile` is the stable host entry point, installed at `/etc/caddy/Caddyfile`.
-It imports `/etc/caddy/sites-enabled/*.caddy`. Leitbild owns only
-`sites/leitbild.caddy`, installed at `/etc/caddy/sites-enabled/leitbild.caddy`.
+It imports `/etc/caddy/managed-sites/*.caddy`. Leitbild owns only
+`sites/leitbild.caddy`, installed at `/etc/caddy/managed-sites/leitbild.caddy`.
 Other products own their own site files.
 
 Provision this layout explicitly before the first deployment, preserving the
