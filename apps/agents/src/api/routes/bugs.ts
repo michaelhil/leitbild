@@ -223,6 +223,15 @@ export const createFeedbackSubmitter =
     }
     if (res.status === 403) {
       const retryAfter = res.headers.get('retry-after')
+      if (!retryAfter && res.headers.get('x-ratelimit-remaining') !== '0') {
+        console.error(
+          '[bugs] GitHub rejected issue creation (check token Issues write permission and repository access)',
+        )
+        return errorResponse(
+          'Feedback service cannot write to the issue tracker — contact admin',
+          503,
+        )
+      }
       const r = retryAfter
         ? new Response(
             JSON.stringify({ error: 'GitHub rate-limited — try again later' }),

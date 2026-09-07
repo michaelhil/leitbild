@@ -85,3 +85,20 @@ test('configuration, upstream failures and oversized input fail without false re
   expect((await handler(request(), crypto.randomUUID())).status).toBe(502)
   expect(calls).toBe(1)
 })
+
+test('permission denial is not reported as a rate limit', async () => {
+  const handler = createFeedbackSubmitter({
+    token: 'test-only',
+    repo: 'example/product',
+    fetchImpl: async () =>
+      Response.json(
+        { message: 'Resource not accessible by personal access token' },
+        { status: 403, headers: { 'x-ratelimit-remaining': '4998' } },
+      ),
+  })
+  const response = await handler(request(), crypto.randomUUID())
+  expect(response.status).toBe(503)
+  const body = (await response.json()) as { error: string }
+  expect(body.error).toContain('cannot write')
+  expect(body.error).not.toContain('rate-limit')
+})

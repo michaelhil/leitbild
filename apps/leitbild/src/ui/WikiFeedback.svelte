@@ -39,9 +39,11 @@
         )
       if (!response.ok)
         throw new Error(
-          response.status === 400 || response.status === 413
-            ? 'Please shorten your feedback or quoted text and try again.'
-            : 'We could not confirm submission. Your draft is still here. It may have arrived; please avoid immediately resubmitting.',
+          response.status === 503
+            ? 'The feedback service is currently unavailable. Your draft is still here; please try later.'
+            : response.status === 400 || response.status === 413
+              ? 'Please shorten your feedback or quoted text and try again.'
+              : 'We could not confirm submission. Your draft is still here. It may have arrived; please avoid immediately resubmitting.',
         )
       if (
         response.status !== 201 ||
