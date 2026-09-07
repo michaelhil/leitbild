@@ -17,5 +17,5 @@ These rules apply across the repository. Module-local `AGENTS.md` files may add 
 - Workspace identity is carried in canonical URL paths. Cookies must not select or override a Workspace.
 - Expensive Module runtimes remain lazy even though all core Modules are provisioned for every Workspace.
 - Use Bun 1.4.0 and TypeScript. Prefer functional modules, factory functions, explicit ports, and validated boundaries.
-- Do not add silent fallbacks, mocks in production, compatibility behavior, API versions, migrations, aliases, archives, or legacy parsing.
+- Do not add silent fallbacks, mocks in production, compatibility behavior, API versions, migrations, aliases, or legacy parsing. The explicitly requested wiki Archive is retained documentation, not a runtime compatibility layer.
 - Commit each logical phase separately. Deploy only after standalone and combined validation passes.

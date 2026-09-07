@@ -12,6 +12,7 @@ import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/s
 import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestScenarioRuntimeResolver, testScenarioAuthoring } from './helpers.ts'
+import { procedureSources } from '../src/procedure-sources.ts'
 
 const revisionA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const revisionB = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
@@ -47,7 +48,7 @@ describe('native local procedure publication', () => {
     try {
       const before = publication(revisionA)
       const original = await createProcedureSourceService({ sources: [localSource], retentionDirectory: directory, loadKnowledge: async () => before }).readDocument({ procedureId: 'E-0' })
-      const moved = { ...localSource, procedurePath: 'world/packs/process-plant/pwr/procedures' }
+      const moved = procedureSources[0]!
       const after = createKnowledge({ revision: revisionB, documents: [
         { path: `${moved.procedurePath}/index.md`, content: '# Procedures\n\nReference guidance.' },
         { path: `${moved.procedurePath}/E-0.md`, content: markdownFor('E-0', 'Current') },

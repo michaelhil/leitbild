@@ -109,14 +109,14 @@
           rows="7"
           disabled={busy}
           placeholder="What should we improve or correct?"
-        /></label
+        ></textarea></label
       >
       {#if quote}<label
           >Selected text<textarea
             bind:value={quote}
             rows="3"
             disabled={busy}
-          /></label
+          ></textarea></label
         >{/if}
       {#if error}<p role="alert" class="error">{error}</p>{/if}
       <div class="actions">

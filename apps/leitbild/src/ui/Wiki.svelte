@@ -3,6 +3,7 @@
   import { parseProductSourceReference } from '@leitbild/knowledge/source-reference'
   import { renderWiki, wikiPageUrl } from './wiki-render.ts'
   import WikiFeedback from './WikiFeedback.svelte'
+  import { defaultNavigationWidth, minimumNavigationWidth, maximumNavigationWidth, navigationWidth } from './wiki-layout.ts'
   interface Heading {
     title: string
     level: number
@@ -56,6 +57,48 @@
   let requestId = 0,
     searchId = 0,
     sourceId = 0
+  let preferredWidth = $state(defaultNavigationWidth)
+  let viewportWidth = $state(1200)
+  let dragging = $state(false)
+  let dragPointer: number | null = null
+  let dragStartX = 0, dragStartWidth = 0
+  const sidebarWidth = $derived(navigationWidth(preferredWidth, viewportWidth))
+  const widthKey = 'leitbild.wiki.navigationWidth'
+  const rememberWidth = () => {
+    try { localStorage.setItem(widthKey, String(preferredWidth)) }
+    catch (cause) { console.warn('Wiki navigation width could not be saved', cause) }
+  }
+  const beginResize = (event: PointerEvent) => {
+    if (event.button !== 0 || dragPointer !== null) return
+    dragPointer = event.pointerId
+    dragStartX = event.clientX
+    dragStartWidth = sidebarWidth
+    dragging = true
+    ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+    event.preventDefault()
+  }
+  const resize = (event: PointerEvent) => {
+    if (event.pointerId !== dragPointer) return
+    preferredWidth = navigationWidth(dragStartWidth + event.clientX - dragStartX, viewportWidth)
+  }
+  const finishResize = (event: PointerEvent) => {
+    if (event.pointerId !== dragPointer) return
+    dragPointer = null
+    dragging = false
+    const target = event.currentTarget as HTMLElement
+    if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId)
+    rememberWidth()
+  }
+  const resizeWithKeyboard = (event: KeyboardEvent) => {
+    const widths: Record<string, number> = {
+      ArrowLeft: sidebarWidth - 20, ArrowRight: sidebarWidth + 20,
+      Home: minimumNavigationWidth, End: maximumNavigationWidth(viewportWidth),
+    }
+    if (!(event.key in widths)) return
+    event.preventDefault()
+    preferredWidth = navigationWidth(widths[event.key]!, viewportWidth)
+    rememberWidth()
+  }
   const pageUrl = (path: string) =>
     wikiPageUrl(
       path,
@@ -216,6 +259,10 @@
     }
   }
   onMount(() => {
+    try {
+      const saved = localStorage.getItem(widthKey)
+      if (saved !== null) preferredWidth = navigationWidth(Number(saved), Number.MAX_SAFE_INTEGER)
+    } catch (cause) { console.warn('Wiki navigation width could not be restored', cause) }
     const pop = () => {
       const params = new URLSearchParams(location.search)
       // Native hash navigation also emits popstate. It changes position, not
@@ -255,6 +302,8 @@
   })
 </script>
 
+<svelte:window bind:innerWidth={viewportWidth} />
+
 {#snippet tree(nodes: Entry[])}
   <ul>
     {#each nodes as entry (entry.path)}<li>
@@ -266,7 +315,7 @@
               ><a
                 class:selected={document?.path === entry.path}
                 href={pageUrl(entry.path)}>{entry.title}</a
-              ></summary
+              ><span class="disclosure" aria-hidden="true">▸</span></summary
             >{@render tree(children(entry.path))}
           </details>
         {:else}<a
@@ -301,8 +350,8 @@
     aria-expanded={menuOpen}>Contents</button
   >
 </header>
-<div class="wiki-layout">
-  <aside class="navigation" class:mobile-open={menuOpen}>
+<div class="wiki-layout" class:dragging style={`--navigation-width: ${sidebarWidth}px`}>
+  <aside id="wiki-navigation" class="navigation" class:mobile-open={menuOpen}>
     <nav aria-label="Knowledge sections">
       {#if root}<section class="nav-section">
           <a
@@ -320,6 +369,27 @@
         </section>{/each}
     </nav>
   </aside>
+  <!-- A focusable ARIA separator is an adjustable splitter, not a static rule. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+  <div
+    class="navigation-divider"
+    role="separator"
+    tabindex="0"
+    aria-label="Resize wiki navigation"
+    aria-orientation="vertical"
+    aria-controls="wiki-navigation"
+    aria-valuemin={minimumNavigationWidth}
+    aria-valuemax={maximumNavigationWidth(viewportWidth)}
+    aria-valuenow={Math.round(sidebarWidth)}
+    title="Drag to resize navigation. Arrow keys adjust; double-click resets."
+    onpointerdown={beginResize}
+    onpointermove={resize}
+    onpointerup={finishResize}
+    onpointercancel={finishResize}
+    onlostpointercapture={finishResize}
+    onkeydown={resizeWithKeyboard}
+    ondblclick={() => { preferredWidth = defaultNavigationWidth; rememberWidth() }}
+  ></div>
   <main aria-busy={loading}>
     {#if error}<div class="error" role="alert">{error}</div>{/if}
     {#if matches !== null}<section class="search-results">
@@ -480,23 +550,34 @@
   }
   .wiki-layout {
     display: grid;
-    grid-template-columns: 260px minmax(0, 900px);
-    max-width: 1250px;
-    margin: auto;
-    gap: 2.4rem;
-    padding: 0 1.5rem;
+    grid-template-columns: var(--navigation-width) 6px minmax(0, 1fr);
+    margin: 0;
+  }
+  .wiki-layout.dragging {
+    cursor: col-resize;
+    user-select: none;
+  }
+  .navigation-divider {
+    position: sticky;
+    top: 75px;
+    height: calc(100vh - 95px);
+    cursor: col-resize;
+    touch-action: none;
+    background: linear-gradient(to right, transparent 2px, #d9e3dc 2px, #d9e3dc 3px, transparent 3px);
+  }
+  .navigation-divider:hover,
+  .navigation-divider:focus-visible,
+  .dragging .navigation-divider {
+    background: #8aaf96;
   }
   .navigation {
     position: sticky;
     top: 75px;
     height: calc(100vh - 95px);
     overflow: auto;
-    padding: 1.5rem 0;
+    padding: 1.5rem 1.25rem 1.5rem 0.25rem;
+    min-width: 0;
     font-size: 0.85rem;
-  }
-  .navigation {
-    border-right: 1px solid #e1e7e2;
-    padding-right: 1rem;
   }
   .nav-section {
     margin-bottom: 1.8rem;
@@ -515,7 +596,7 @@
     margin: 0.15rem 0;
   }
   .navigation ul ul {
-    padding-left: 0.8rem;
+    padding-left: 0.4rem;
     border-left: 1px solid #d9e3dc;
     margin-left: 0.45rem;
   }
@@ -531,15 +612,24 @@
     border-radius: 5px;
   }
   .navigation summary {
-    display: list-item;
+    display: flex;
+    align-items: center;
     cursor: pointer;
-    margin-left: 0.75rem;
+    list-style: none;
   }
+  .navigation summary::-webkit-details-marker { display: none; }
+  .navigation summary::marker { content: ''; }
   .navigation summary a {
-    display: inline-block;
-    max-width: calc(100% - 1rem);
-    vertical-align: middle;
+    flex: 1;
+    min-width: 0;
   }
+  .navigation a { overflow-wrap: anywhere; }
+  .disclosure {
+    flex: none;
+    padding: 0.35rem 0.5rem;
+    color: #6c7e72;
+  }
+  details[open] > summary > .disclosure { transform: rotate(90deg); }
   .navigation a:hover,
   .navigation a.selected {
     color: #12603c;
@@ -550,9 +640,11 @@
   }
   main {
     width: 100%;
-    margin: 0;
+    box-sizing: border-box;
+    max-width: 1100px;
+    margin: 0 auto;
     min-width: 0;
-    padding: 2rem 0 4rem;
+    padding: 2rem 2rem 4rem;
   }
   .page-tools {
     display: flex;
@@ -823,12 +915,6 @@
   .source-code .highlight {
     background: #dcebc2;
   }
-  @media (max-width: 1150px) {
-    .wiki-layout {
-      grid-template-columns: 230px minmax(0, 1fr);
-      gap: 1.8rem;
-    }
-  }
   @media (max-width: 750px) {
     .wiki-header {
       padding: 0.7rem 1rem;
@@ -851,6 +937,7 @@
       display: block;
       padding: 0 1rem;
     }
+    .navigation-divider { display: none; }
     .navigation {
       display: none;
       position: static;

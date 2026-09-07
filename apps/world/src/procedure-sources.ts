@@ -12,7 +12,7 @@ export const procedureSources: ReadonlyArray<ProcedureSourceConfig> = [{
   label: 'Leitbild PWR reference procedures — model annotated',
   repository: 'Leitbild-wiki',
   ref: 'publication',
-  procedurePath: 'world/packs/process-plant/pwr/procedures',
+  procedurePath: 'archive/pwr-reference-model/procedures',
 }]
 
 export const createConfiguredProcedureSourceService = (config: { readonly dataDir: string }): ProcedureSourceService =>
