@@ -26,8 +26,8 @@ import { providersTestRoutes } from './routes/providers-test.ts'
 import { triggerRoutes } from './routes/triggers.ts'
 import { packsRoutes } from './routes/packs.ts'
 import { authResponse, systemInfoResponse, systemRoutes } from './routes/system.ts'
-import { json } from './routes/helpers.ts'
-import { bugRoutes } from './routes/bugs.ts'
+import { json, errorResponse } from './routes/helpers.ts'
+import { bugRoutes, submitFeedback } from './routes/bugs.ts'
 import { bookmarkRoutes } from './routes/bookmarks.ts'
 import { toolRoutes } from './routes/tools.ts'
 import { loggingRoutes } from './routes/logging.ts'
@@ -120,6 +120,11 @@ export const handleUnscopedAPI = async (
   }
   if (pathname === '/api/system/info' && req.method === 'GET') {
     return systemInfoResponse()
+  }
+  if (pathname === '/api/system/feedback' && req.method === 'POST') {
+    // Anonymous product feedback needs neither a Workspace nor an Agent.
+    if (req.headers.get('sec-fetch-site') === 'cross-site') return errorResponse('Cross-site feedback is not accepted', 403)
+    return submitFeedback(req, deps.remoteAddress)
   }
   if (pathname === '/api/auth' && (req.method === 'GET' || req.method === 'POST')) {
     return authResponse(req, deps.remoteAddress)

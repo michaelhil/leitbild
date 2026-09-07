@@ -4,6 +4,13 @@
 
 import { describe, test, expect, beforeEach } from 'bun:test'
 import { handleAPI, handleUnscopedAPI } from './http-routes.ts'
+
+test('anonymous product feedback rejects cross-site submissions without loading a Workspace', async () => {
+  const response = await handleUnscopedAPI(new Request('http://local/api/system/feedback', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Sec-Fetch-Site': 'cross-site' }, body: '{}',
+  }), '/api/system/feedback', { remoteAddress: 'feedback-test' })
+  expect(response?.status).toBe(403)
+})
 import { createRoomDirectory } from '../core/rooms/directory.ts'
 import { createTeam } from '../agents/team.ts'
 import { createToolRegistry } from '../core/tool-registry.ts'

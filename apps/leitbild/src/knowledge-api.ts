@@ -23,15 +23,6 @@ export const knowledgeResponse = async (request: Request, load: () => Promise<Kn
       if (!path) return Response.json({ error: 'path is required' }, { status: 400 })
       return Response.json(await readProductSource(path, resolve(import.meta.dir, '../../..')))
     }
-    if (url.pathname === '/api/knowledge/feedback') {
-      const input = z.object({ path: z.string().regex(/^(?!\/)(?!.*(?:^|\/)\.\.?\/)[A-Za-z0-9_./-]+\.md$/), revision: z.string().regex(/^[a-f0-9]{40}$/), section: z.string().default(''), quote: z.string().default('') }).parse(Object.fromEntries(url.searchParams))
-      const source = await codeSource()
-      if (!source) return Response.json({ error: 'Feedback destination is unavailable in this deployment' }, { status: 503 })
-      const issue = new URL(`${source.split('/blob/')[0]}/issues/new`)
-      issue.searchParams.set('title', `Wiki feedback: ${input.path}${input.section ? ` · ${input.section}` : ''}`)
-      issue.searchParams.set('body', `Document: ${input.path}\nKnowledge revision: ${input.revision}\nSection: ${input.section || '(page)'}\n\nSelected text / context:\n${input.quote}\n\nComment:\n`)
-      return Response.redirect(issue.href, 302)
-    }
     const knowledge = await load()
     if (url.pathname === '/api/knowledge/index') return Response.json({ revision: knowledge.revision, documents: knowledge.index(), sourceBaseUrl: await codeSource() })
     if (url.pathname === '/api/knowledge/search') {

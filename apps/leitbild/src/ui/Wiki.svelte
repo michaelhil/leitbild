@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte'
   import { parseProductSourceReference } from '@leitbild/knowledge/source-reference'
   import { renderWiki, wikiPageUrl } from './wiki-render.ts'
+  import WikiFeedback from './WikiFeedback.svelte'
   interface Heading {
     title: string
     level: number
@@ -214,21 +215,15 @@
       if (id === searchId) error = String(cause)
     }
   }
-  const reportIssue = (): void => {
-    if (document)
-      window.open(
-        `/api/knowledge/feedback?${new URLSearchParams({ path: document.path, revision: document.revision, section: location.hash, quote: window.getSelection()?.toString() ?? '' })}`,
-        '_blank',
-        'noopener',
-      )
-  }
   onMount(() => {
     const pop = () => {
       const params = new URLSearchParams(location.search)
       // Native hash navigation also emits popstate. It changes position, not
       // the document/publication, so it must not refetch or rerender diagrams.
-      if ((params.get('path') ?? 'index.md') === document?.path &&
-        (params.get('revision') ?? publication) === document?.revision) {
+      if (
+        (params.get('path') ?? 'index.md') === document?.path &&
+        (params.get('revision') ?? publication) === document?.revision
+      ) {
         ++requestId
         loading = false
         error = ''
@@ -350,11 +345,20 @@
           >{/if}
       </section>{/if}
     {#if document}
-      <nav class="breadcrumbs" aria-label="Breadcrumb">
-        {#each breadcrumbs as crumb}<a href={pageUrl(crumb.path)}
-            >{crumb.title}</a
-          ><span aria-hidden="true">/</span>{/each}<span>{document.title}</span>
-      </nav>
+      <div class="page-tools">
+        <nav class="breadcrumbs" aria-label="Breadcrumb">
+          {#each breadcrumbs as crumb}<a href={pageUrl(crumb.path)}
+              >{crumb.title}</a
+            ><span aria-hidden="true">/</span>{/each}<span
+            >{document.title}</span
+          >
+        </nav>
+        <WikiFeedback
+          path={document.path}
+          title={document.title}
+          revision={document.revision}
+        />
+      </div>
       {#if loading}<span class="loading" role="status">Loading…</span>{/if}
       <article bind:this={article}>{@html html}</article>
       {#if document.children.length}<section class="explore">
@@ -369,22 +373,10 @@
           </div>
         </section>{/if}
       <footer>
-        <span>Reference knowledge · {document.revision.slice(0, 12)}</span
-        >{#if sourceBaseUrl}<button onclick={reportIssue}
-            >Feedback on this page</button
-          >{/if}
+        <span>Reference knowledge · {document.revision.slice(0, 12)}</span>
       </footer>
     {:else if loading}<p role="status">Loading knowledge…</p>{/if}
   </main>
-  <aside class="outline">
-    <nav aria-label="On this page">
-      <strong>On this page</strong
-      >{#each document?.headings.filter((heading) => heading.level > 1 && heading.level < 4) ?? [] as heading}<a
-          class:subheading={heading.level === 3}
-          href={`#${heading.anchor}`}>{heading.title}</a
-        >{/each}
-    </nav>
-  </aside>
 </div>
 <dialog
   bind:this={dialog}
@@ -488,14 +480,13 @@
   }
   .wiki-layout {
     display: grid;
-    grid-template-columns: 260px minmax(0, 860px) 210px;
-    max-width: 1440px;
+    grid-template-columns: 260px minmax(0, 900px);
+    max-width: 1250px;
     margin: auto;
     gap: 2.4rem;
     padding: 0 1.5rem;
   }
-  .navigation,
-  .outline {
+  .navigation {
     position: sticky;
     top: 75px;
     height: calc(100vh - 95px);
@@ -563,13 +554,19 @@
     min-width: 0;
     padding: 2rem 0 4rem;
   }
+  .page-tools {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    margin-bottom: 1.3rem;
+  }
   .breadcrumbs {
     display: flex;
     flex-wrap: wrap;
     gap: 0.45rem;
     font-size: 0.75rem;
     color: #6c7e72;
-    margin-bottom: 1.3rem;
+    margin-bottom: 0;
   }
   .breadcrumbs a {
     color: #3e7555;
@@ -578,28 +575,6 @@
   .loading {
     font-size: 0.8rem;
     color: #567a63;
-  }
-  .outline strong {
-    display: block;
-    margin-bottom: 0.75rem;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #647c6c;
-  }
-  .outline a {
-    display: block;
-    padding: 0.35rem 0;
-    color: #65776b;
-    text-decoration: none;
-    font-size: 0.78rem;
-    line-height: 1.5;
-  }
-  .outline a:hover {
-    color: #17633e;
-  }
-  .outline .subheading {
-    padding-left: 0.75rem;
   }
   article {
     line-height: 1.8;
@@ -741,10 +716,6 @@
     font-size: 0.72rem;
     color: #728177;
   }
-  footer button {
-    font-size: 0.72rem;
-    background: transparent;
-  }
   .error {
     padding: 1rem;
     background: #fff0eb;
@@ -856,9 +827,6 @@
     .wiki-layout {
       grid-template-columns: 230px minmax(0, 1fr);
       gap: 1.8rem;
-    }
-    .outline {
-      display: none;
     }
   }
   @media (max-width: 750px) {
