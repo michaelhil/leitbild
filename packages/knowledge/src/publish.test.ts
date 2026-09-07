@@ -15,6 +15,16 @@ test('publication validates source against actually supplied artifact, including
   await expect(validateKnowledgeSources({...snapshot,documents:[{path:'index.md',content:'[Code](source:README.md:999)'}]},root)).rejects.toThrow('line range')
 })
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
+test('source inspection returns only exact validated canonical files, deduplicating aliases and ranges', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'knowledge-referenced-source-')); roots.push(root)
+  await Bun.write(join(root, 'apps/world/scripts/balance.ts'), 'export const value = 1\n')
+  await Bun.write(join(root, 'apps/world/scripts/unrelated.ts'), 'export const unrelated = true\n')
+  const snapshot = { revision: 'a'.repeat(40), documents: [{ path: 'index.md', content:
+    '[Full](source:apps/world/scripts/balance.ts) [Alias](source:balance.ts:1) [Range](source:apps/world/scripts/balance.ts#L1)' }] }
+  expect(await validateKnowledgeSources(snapshot, root)).toEqual(['apps/world/scripts/balance.ts'])
+  await expect(validateKnowledgeSources({ ...snapshot, documents: [{ path: 'index.md', content: '[Bad](source:.env)' }] }, root)).rejects.toThrow()
+  await expect(validateKnowledgeSources({ ...snapshot, documents: [{ path: 'index.md', content: '[Missing](source:apps/world/scripts/missing.ts)' }] }, root)).rejects.toThrow('index.md: source:apps/world/scripts/missing.ts')
+})
 const run = async (root: string, args: string[]) => {
   const p = Bun.spawn(['git', '-C', root, ...args], { stdout: 'pipe', stderr: 'pipe' })
   expect(await p.exited).toBe(0)

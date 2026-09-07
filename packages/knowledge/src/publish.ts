@@ -11,18 +11,26 @@ const git = async (root: string, args: string[]): Promise<string> => {
   return out
 }
 
-/** Check actual served source, including when called against a staged release. */
-export const validateKnowledgeSources = async (snapshot: KnowledgeSnapshot, sourceRoot?: string): Promise<void> => {
+/** Check actual served source and return the exact code files needed for inspection.
+ * Packaging includes these validated references, not entire development directories.
+ * Knowledge references already live in the publication rather than separate files.
+ */
+export const validateKnowledgeSources = async (snapshot: KnowledgeSnapshot, sourceRoot?: string): Promise<ReadonlyArray<string>> => {
+  const paths = new Set<string>()
   for (const document of snapshot.documents) {
     for (const match of document.content.matchAll(/(?<!!)\[[^\]]*\]\((source:[^\s)]+)(?:\s+"[^"]*")?\)/g)) {
       const href = match[1]!
       if (!sourceRoot) throw new Error('A product source root is required to validate implementation links')
       const ref = parseProductSourceReference(href.slice(7).replace(/#L(\d+)(?:-L?(\d+))?$/, (_match, start, end) => `:${start}${end ? `-${end}` : ''}`))
       if (!ref) throw new Error(`Invalid source reference in ${document.path}: ${href}`)
-      const source = await readProductSource(ref.path, sourceRoot)
+      const source = await readProductSource(ref.path, sourceRoot).catch(error => {
+        throw new Error(`Invalid source link in ${document.path}: ${href}: ${error instanceof Error ? error.message : String(error)}`)
+      })
       if (ref.lineRanges.some(range => range.endLine > source.totalLines)) throw new Error(`Source line range exceeds file in ${document.path}: ${href}`)
+      if (!source.path.startsWith('knowledge/')) paths.add(source.path)
     }
   }
+  return [...paths].sort()
 }
 
 export const publishKnowledge = async (root: string, sourceRoot?: string): Promise<KnowledgeSnapshot> => {

@@ -10,10 +10,32 @@ import {
   moduleRoutingPreflight,
   caddySnippetPreflight,
   caddySnippetDeployment,
+  referencedInspectionEntries,
 } from './deploy.ts'
 
 const workspaceRoot = resolve(import.meta.dir, '../../..')
 const productionAppPaths = ['apps/leitbild', 'apps/world', 'apps/agents'] as const
+
+test('wiki inspection supplements only tracked referenced files and never overwrites another artifact source', async () => {
+  const root = await mkdtemp(resolve(tmpdir(), 'leitbild-inspection-artifact-'))
+  try {
+    const git = async (...args: string[]) => {
+      const p = Bun.spawn(['git', '-C', root, ...args], { stdout: 'pipe', stderr: 'pipe' })
+      expect(await p.exited).toBe(0)
+    }
+    await git('init')
+    const path = 'apps/world/scripts/calculation.ts'
+    await Bun.write(resolve(root, path), 'export const result = 1\n')
+    await Bun.write(resolve(root, 'apps/world/scripts/unrelated.ts'), 'export const unrelated = true\n')
+    const knowledge = { revision: 'a'.repeat(40), documents: [{ path: 'index.md', content: `[Calculation](source:${path})` }] }
+    await expect(referencedInspectionEntries(root, knowledge, [])).rejects.toThrow('tracked in Git')
+    await git('add', path)
+    const expected = { source: resolve(root, path), target: path }
+    expect(await referencedInspectionEntries(root, knowledge, [])).toEqual([expected])
+    expect(await referencedInspectionEntries(root, knowledge, [expected])).toEqual([])
+    await expect(referencedInspectionEntries(root, knowledge, [{ target: path, source: resolve(root, 'other.ts') }])).rejects.toThrow('Conflicting')
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
 
 interface PackageJson {
   readonly name: string

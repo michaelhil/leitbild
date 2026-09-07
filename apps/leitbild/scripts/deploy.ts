@@ -4,6 +4,7 @@ import { chmod, copyFile, lstat, mkdir, mkdtemp, readlink, readdir, rm, symlink,
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { publishKnowledge, validateKnowledgeSources } from '@leitbild/knowledge/publish'
+import type { KnowledgeSnapshot } from '@leitbild/knowledge'
 
 const APP_ID = 'leitbild-platform'
 const SSH_HOST = process.env.LEITBILD_SSH_HOST ?? 'samsinn'
@@ -212,6 +213,22 @@ const copyEntries = async (entries: ReadonlyArray<ArtifactEntry>, stageRoot: str
   }
 }
 
+export const referencedInspectionEntries = async (
+  root: string, knowledge: KnowledgeSnapshot, existing: ReadonlyArray<ArtifactEntry>,
+): Promise<ReadonlyArray<ArtifactEntry>> => {
+  const paths = await validateKnowledgeSources(knowledge, root)
+  const tracked = new Set((await capture(['git', 'ls-files', '-z', '--cached'], root)).split('\0'))
+  const byTarget = new Map(existing.map(entry => [entry.target, entry]))
+  const additions: ArtifactEntry[] = []
+  for (const path of paths) {
+    if (!tracked.has(path)) throw new Error(`Wiki inspection source must be tracked in Git: ${path}`)
+    const source = join(root, path), prior = byTarget.get(path)
+    if (prior && resolve(prior.source) !== resolve(source)) throw new Error(`Conflicting inspection artifact target: ${path}`)
+    if (!prior) additions.push({ source, target: path })
+  }
+  return additions
+}
+
 const createArtifact = async () => {
   const tempRoot = await mkdtemp(join(tmpdir(), 'leitbild-release-'))
   const stageRoot = join(tempRoot, 'stage')
@@ -249,6 +266,9 @@ const createArtifact = async () => {
     ...dependencyPackageEntries,
     ...installManifestEntries,
   ]
+  // A wiki may inspect a research/build script without making its directory a
+  // production dependency. Ship exactly its allowed, validated code references.
+  entries.push(...await referencedInspectionEntries(WORKSPACE_ROOT, knowledge, entries))
   const sourceDigest = await digestEntries(entries)
   const dependencyPackagesDigest = await digestEntries(dependencyPackageEntries)
   const createdAt = new Date().toISOString()
