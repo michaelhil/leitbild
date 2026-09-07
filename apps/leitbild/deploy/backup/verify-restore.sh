@@ -30,6 +30,7 @@ backup_restore_scope() {
     [[ -d "$backup_scope_root/var/lib/leitbild/world" ]]
     [[ -d "$backup_scope_root/var/lib/leitbild/agents" ]]
     [[ -s "$backup_scope_root/etc/caddy/Caddyfile" ]]
+    [[ -s "$backup_scope_root/etc/caddy/sites-enabled/leitbild.caddy" ]]
     [[ -s "$backup_scope_root/etc/systemd/system/leitbild-world.service" ]]
     [[ -s "$backup_scope_root/etc/systemd/system/leitbild-agents.service" ]]
     [[ -s "$backup_scope_root/etc/systemd/system/leitbild-host.service" ]]

@@ -55,6 +55,8 @@ backup_cleanup() {
 trap backup_cleanup EXIT HUP INT TERM
 
 if [[ "$backup_scope" == critical ]]; then
+  exec 7>/run/lock/caddy-config.lock
+  flock -w 60 7 || { echo 'A Caddy configuration update is active' >&2; exit 1; }
   for backup_service in "${backup_services[@]}"; do
     systemctl is-active --quiet "$backup_service" || {
       echo "Refusing critical backup because ${backup_service} is not active" >&2
@@ -74,6 +76,7 @@ if [[ "$backup_scope" == critical ]]; then
   tar --acls --xattrs --numeric-owner -cf "$backup_archive" -C / \
     var/lib/leitbild \
     etc/caddy/Caddyfile \
+    etc/caddy/sites-enabled \
     etc/systemd/system/leitbild-world.service \
     etc/systemd/system/leitbild-agents.service \
     etc/systemd/system/leitbild-host.service \

@@ -122,6 +122,7 @@ export const isProductionSourcePath = (workspace: 'host' | 'world' | 'agents' | 
       || path.startsWith('src/')
       || path.startsWith('scripts/')
       || path === 'deploy/Caddyfile'
+      || path === 'deploy/sites/leitbild.caddy'
       || /^deploy\/leitbild-(?:host|world|agents)\.service$/.test(path)
       || path.startsWith('deploy/retired/')
   }
@@ -291,8 +292,39 @@ export const moduleRoutingPreflight = (): string => `for module in world agents;
   fi
 done`
 
+export const caddySnippetPreflight = (): string => `if ! grep -Fxq 'import /etc/caddy/sites-enabled/*.caddy' /etc/caddy/Caddyfile || ! test -f /etc/caddy/sites-enabled/leitbild.caddy; then
+  echo "Provision the shared Caddy entry point and Leitbild site snippet before deploying. Existing host configuration will not be overwritten." >&2
+  exit 1
+fi`
+
+/** The shared lock coordinates product deployers; rollback owns only this site's file. */
+export const caddySnippetDeployment = (): string => `exec 8>/run/lock/caddy-config.lock
+flock -w 60 8 || { echo "Another Caddy configuration update is active" >&2; exit 1; }
+${caddySnippetPreflight()}
+caddy_site=/etc/caddy/sites-enabled/leitbild.caddy
+caddy_backup="/etc/caddy/leitbild.pre-$release_id"
+cp "$caddy_site" "$caddy_backup"
+restore_leitbild_caddy() {
+  cp "$caddy_backup" "$caddy_site"
+}
+if ! install -o root -g root -m 0644 "$release_dir/apps/leitbild/deploy/sites/leitbild.caddy" "/etc/caddy/leitbild.next-$release_id"; then
+  rm -f -- "/etc/caddy/leitbild.next-$release_id"
+  exit 1
+fi
+mv -f "/etc/caddy/leitbild.next-$release_id" "$caddy_site"
+if ! caddy validate --config /etc/caddy/Caddyfile; then
+  restore_leitbild_caddy
+  exit 1
+fi
+if ! systemctl reload caddy.service; then
+  restore_leitbild_caddy
+  systemctl reload caddy.service || true
+  exit 1
+fi`
+
 const remotePreflight = (install: boolean): string => `set -euo pipefail
 ${moduleRoutingPreflight()}
+${caddySnippetPreflight()}
 test "$(/opt/leitbild/runtime/bun --version)" = ${shellQuote(REQUIRED_BUN_VERSION)}
 test "$(systemctl is-active caddy.service)" = active
 test "$(systemctl is-active docker.service)" = active
@@ -383,22 +415,14 @@ if ! curl -fsS http://127.0.0.1:3100/api/knowledge/index | jq -e --arg revision 
   if test -n "$previous"; then ln -sfn "$previous" ${shellQuote(CURRENT_LINK)}; systemctl restart ${SERVICES.join(' ')}; fi
   exit 1
 fi
-caddy_backup="/etc/caddy/Caddyfile.pre-leitbild-$release_id"
-cp /etc/caddy/Caddyfile "$caddy_backup"
-caddy validate --config "$release_dir/apps/leitbild/deploy/Caddyfile"
-install -o root -g root -m 0644 "$release_dir/apps/leitbild/deploy/Caddyfile" /etc/caddy/Caddyfile
-if ! systemctl reload caddy.service; then
-  cp "$caddy_backup" /etc/caddy/Caddyfile
-  systemctl reload caddy.service || true
-  exit 1
-fi
+${caddySnippetDeployment()}
 public_ready=0
 for attempt in $(seq 1 60); do
   if curl -fsS -o /dev/null ${shellQuote(PUBLIC_HEALTH_URL)}; then public_ready=1; break; fi
   sleep 1
 done
 if test "$public_ready" -ne 1; then
-  cp "$caddy_backup" /etc/caddy/Caddyfile
+  restore_leitbild_caddy
   systemctl reload caddy.service || true
   exit 1
 fi
