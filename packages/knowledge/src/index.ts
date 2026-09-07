@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { headingsFor } from './markdown.ts'
+import { headingsFor, summaryFor } from './markdown.ts'
 export { headingsFor, type KnowledgeHeading } from './markdown.ts'
 
 const documentSchema = z.object({ path: z.string(), content: z.string() }).strict()
@@ -22,11 +22,21 @@ export const createKnowledge = (input: unknown) => {
     paths.add(document.path)
     const lines = document.content.split(/\r?\n/)
     const headings = headingsFor(document.content)
-    const bodyStart = lines[0] === '---' ? lines.indexOf('---', 1) + 1 : 0
-    const summary = lines.slice(bodyStart).find(line => line.trim() && !line.startsWith('#') && !line.startsWith('---')) ?? ''
+    const summary = summaryFor(document.content)
     return { ...document, lines, headings, title: headings[0]?.title ?? document.path, summary }
   })
-  const index = () => documents.map(({ path, title, summary, headings, lines }) => ({ path, title, summary, headings, totalLines: lines.length }))
+  const parentFor = (path: string): string | null => {
+    const parts = path.split('/'); parts.pop()
+    if (path.endsWith('/index.md')) parts.pop()
+    while (parts.length) {
+      const parent = `${parts.join('/')}/index.md`
+      if (paths.has(parent)) return parent
+      parts.pop()
+    }
+    return path !== 'index.md' && paths.has('index.md') ? 'index.md' : null
+  }
+  const navigation = documents.map(({ path, title, summary }) => ({ path, title, summary, parent: parentFor(path), hub: path === 'index.md' || path.endsWith('/index.md') }))
+  const index = () => documents.map(({ path, title, summary, headings, lines }) => ({ path, title, summary, headings, totalLines: lines.length, parent: parentFor(path), hub: path === 'index.md' || path.endsWith('/index.md') }))
   const read = (path: string, options: { readonly revision?: string; readonly startLine?: number; readonly lineCount?: number; readonly section?: string } = {}) => {
     if (options.revision !== undefined && options.revision !== snapshot.revision) throw new Error('Knowledge revision is not available in this publication; rediscover the current revision')
     const document = documents.find(candidate => candidate.path === path)
@@ -50,6 +60,9 @@ export const createKnowledge = (input: unknown) => {
       end = Math.min(end, start + options.lineCount - 1)
     }
     return { revision: snapshot.revision, path, title: document.title, headings: document.headings,
+      // Direct children only. Exact Markdown bytes and line positions remain intact.
+      children: navigation.filter(entry => entry.parent === path),
+      parent: parentFor(path),
       startLine: start, endLine: end, totalLines: document.lines.length,
       content: start === 1 && end === document.lines.length ? document.content : document.lines.slice(start - 1, end).join('\n'),
       ...(end < selectionEnd ? { nextLine: end + 1 } : {}),

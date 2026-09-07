@@ -42,6 +42,25 @@ const publication = (revision: string, title = 'Reactor Trip') => createKnowledg
 ] })
 
 describe('native local procedure publication', () => {
+  test('navigation hubs are not procedures and retained pins survive source directory changes', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'leitbild-procedure-move-'))
+    try {
+      const before = publication(revisionA)
+      const original = await createProcedureSourceService({ sources: [localSource], retentionDirectory: directory, loadKnowledge: async () => before }).readDocument({ procedureId: 'E-0' })
+      const moved = { ...localSource, procedurePath: 'world/packs/process-plant/pwr/procedures' }
+      const after = createKnowledge({ revision: revisionB, documents: [
+        { path: `${moved.procedurePath}/index.md`, content: '# Procedures\n\nReference guidance.' },
+        { path: `${moved.procedurePath}/E-0.md`, content: markdownFor('E-0', 'Current') },
+      ] })
+      const service = createProcedureSourceService({ sources: [moved], retentionDirectory: directory, loadKnowledge: async () => after })
+      expect((await service.readCatalog()).procedures).toHaveLength(1)
+      expect((await service.readDocument({ procedureId: 'E-0' })).title).toBe('Current')
+      const pinned = await service.readDocument({ procedureId: 'E-0', sourceRevision: revisionA, sourcePath: localPath('E-0') })
+      expect(pinned.rawMarkdown).toBe(original.rawMarkdown)
+      expect(pinned.source.path).toBe(localSource.procedurePath)
+      expect((await service.readDocument({ procedureId: 'E-1', sourceRevision: revisionA })).title).toBe('Cooling')
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
   test('derives catalog and exact CRLF documents from the shared parser, with no network calls', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'leitbild-procedure-source-'))
     try {
@@ -112,7 +131,7 @@ describe('native local procedure publication', () => {
       ] })
       await expect(service.readCatalog()).rejects.toThrow('Duplicate procedure id')
       current = createKnowledge({ revision: revisionB, documents: [{ path: localPath('index'), content: '# Not a procedure' }] })
-      await expect(service.readCatalog()).rejects.toThrow('frontmatter')
+      await expect(service.readCatalog()).rejects.toThrow('No procedure documents')
       current = publication(revisionB)
       const blockedDirectory = join(directory, 'not-a-directory')
       await writeFile(blockedDirectory, 'existing file')

@@ -1,6 +1,7 @@
 import { loadKnowledge, knowledgeSnapshotPath, type Knowledge } from '@leitbild/knowledge'
 import { z } from 'zod'
 import { resolve } from 'node:path'
+import { readProductSource } from '@leitbild/knowledge/source'
 
 const deployedCodeSource = async (): Promise<string | undefined> => {
   const file = Bun.file(resolve(import.meta.dir, '../../../DEPLOYMENT.json'))
@@ -17,6 +18,11 @@ const searchSchema = z.object({ query: z.string().default(''), prefix: z.string(
 export const knowledgeResponse = async (request: Request, load: () => Promise<Knowledge> = () => loadKnowledge(knowledgeSnapshotPath(resolve(import.meta.dir, '../../..'))), codeSource: () => Promise<string | undefined> = deployedCodeSource): Promise<Response> => {
   const url = new URL(request.url)
   try {
+    if (url.pathname === '/api/knowledge/source') {
+      const path = url.searchParams.get('path')
+      if (!path) return Response.json({ error: 'path is required' }, { status: 400 })
+      return Response.json(await readProductSource(path, resolve(import.meta.dir, '../../..')))
+    }
     if (url.pathname === '/api/knowledge/feedback') {
       const input = z.object({ path: z.string().regex(/^(?!\/)(?!.*(?:^|\/)\.\.?\/)[A-Za-z0-9_./-]+\.md$/), revision: z.string().regex(/^[a-f0-9]{40}$/), section: z.string().default(''), quote: z.string().default('') }).parse(Object.fromEntries(url.searchParams))
       const source = await codeSource()
@@ -27,7 +33,7 @@ export const knowledgeResponse = async (request: Request, load: () => Promise<Kn
       return Response.redirect(issue.href, 302)
     }
     const knowledge = await load()
-    if (url.pathname === '/api/knowledge/index') return Response.json({ revision: knowledge.revision, documents: knowledge.index(), sourceBaseUrl: await deployedCodeSource() })
+    if (url.pathname === '/api/knowledge/index') return Response.json({ revision: knowledge.revision, documents: knowledge.index(), sourceBaseUrl: await codeSource() })
     if (url.pathname === '/api/knowledge/search') {
       const input = searchSchema.parse(Object.fromEntries(url.searchParams))
       return Response.json(knowledge.search(input.query, { offset: input.offset, limit: input.limit,

@@ -3,7 +3,7 @@ import {
   parseProductSourceReference,
   type ProductSourceLineRange,
   type ProductSourceReference,
-} from '../../../core/product-source-reference.ts'
+} from '@leitbild/knowledge/source-reference'
 import { icon } from '../icon.ts'
 import { safeFetchJson } from '../fetch-helpers.ts'
 import { showToast } from '../toast.ts'

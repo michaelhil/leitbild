@@ -1,12 +1,12 @@
 import { lstat, readFile, readdir } from 'node:fs/promises'
 import { basename, extname, relative, resolve, sep } from 'node:path'
-import { loadKnowledge, knowledgeSnapshotPath } from '@leitbild/knowledge'
+import { loadKnowledge, knowledgeSnapshotPath } from './index.ts'
 import {
   PRODUCT_SOURCE_EXTENSIONS,
   isAllowedProductPath,
   isExcludedProductSegment,
   isProductSourceBasename,
-} from './product-source-reference.ts'
+} from './source-reference.ts'
 
 export {
   PRODUCT_SOURCE_EXTENSIONS,
@@ -14,7 +14,7 @@ export {
   isAllowedProductPath,
   isExcludedProductSegment,
   parseProductSourceReference,
-} from './product-source-reference.ts'
+} from './source-reference.ts'
 
 export const MAX_PRODUCT_SOURCE_BYTES = 1_000_000
 
@@ -29,9 +29,6 @@ export interface ProductSourceDocument {
   readonly content: string
   readonly totalLines: number
 }
-
-export const productSourceRoot = (root?: string): string =>
-  resolve(root ?? resolve(import.meta.dir, '../../../..'))
 
 const walkProductSourceTree = async (directory: string): Promise<ReadonlyArray<string>> => {
   const entries = await readdir(directory, { withFileTypes: true })
@@ -70,15 +67,15 @@ export const readProductRevision = async (root: string): Promise<string> => {
 const canonicalProductPath = (root: string, absolutePath: string): string =>
   relative(root, absolutePath).split(sep).join('/')
 
-export const listProductSourcePaths = async (rootOverride?: string): Promise<ReadonlyArray<string>> => {
-  const root = productSourceRoot(rootOverride)
+export const listProductSourcePaths = async (rootOverride: string): Promise<ReadonlyArray<string>> => {
+  const root = resolve(rootOverride)
   return (await walkProductSourceTree(root))
     .map(absolutePath => canonicalProductPath(root, absolutePath))
     .filter(path => isAllowedProductPath(path) && PRODUCT_SOURCE_EXTENSIONS.has(extname(path)))
 }
 
-export const resolveProductSourcePath = async (requestedPath: string, rootOverride?: string): Promise<string> => {
-  const root = productSourceRoot(rootOverride)
+export const resolveProductSourcePath = async (requestedPath: string, rootOverride: string): Promise<string> => {
+  const root = resolve(rootOverride)
   const path = requestedPath.trim().replaceAll('\\', '/')
   if (path && !path.startsWith('/') && isAllowedProductPath(path) && PRODUCT_SOURCE_EXTENSIONS.has(extname(path))) {
     const absolutePath = resolve(root, path)
@@ -93,15 +90,15 @@ export const resolveProductSourcePath = async (requestedPath: string, rootOverri
 
 export const readProductSource = async (
   requestedPath: string,
-  rootOverride?: string,
+  rootOverride: string,
 ): Promise<ProductSourceDocument> => {
   if (requestedPath.startsWith('knowledge/')) {
-    const knowledge = await loadKnowledge(knowledgeSnapshotPath(productSourceRoot(rootOverride)))
+    const knowledge = await loadKnowledge(knowledgeSnapshotPath(resolve(rootOverride)))
     const document = knowledge.read(requestedPath.slice('knowledge/'.length))
     return { path: requestedPath, kind: 'documentation', authority: 'documentation', revision: document.revision,
       content: document.content, totalLines: document.totalLines }
   }
-  const root = productSourceRoot(rootOverride)
+  const root = resolve(rootOverride)
   const path = await resolveProductSourcePath(requestedPath, root)
   const absolutePath = resolve(root, path)
   const file = await lstat(absolutePath).catch(() => {

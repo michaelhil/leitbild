@@ -63,18 +63,20 @@ const retain = async (directory: string, path: string, contents: string): Promis
   }
 }
 
-const bundleFor = (source: ProcedureSourceConfig, knowledge: Knowledge) => {
+const bundleFor = (source: ProcedureSourceConfig, knowledge: Knowledge, retained = false) => {
   const prefix = `${source.procedurePath.replace(/\/$/, '')}/`
   const snapshot: KnowledgeSnapshot = {
     revision: knowledge.revision,
-    documents: knowledge.index().filter(entry => entry.path.startsWith(prefix))
+    // A retained bundle is already the exact selected source, independent of
+    // where the current publication organizes its documents.
+    documents: knowledge.index().filter(entry => retained || (entry.path.startsWith(prefix) && !entry.hub))
       .sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
       .map(entry => ({ path: entry.path, content: knowledge.read(entry.path).content })),
   }
   if (!snapshot.documents.length) throw new Error(`No procedure documents in local publication path ${source.procedurePath}`)
   const metadata = {
     sourceId: source.sourceId, label: source.label, repository: source.repository, ref: source.ref,
-    path: source.procedurePath, revision: knowledge.revision, fetchedAt: nowIso(),
+    path: retained ? dirname(snapshot.documents[0]!.path) : source.procedurePath, revision: knowledge.revision, fetchedAt: nowIso(),
     sourceUrl: `/wiki?${new URLSearchParams({ revision: knowledge.revision })}`,
   }
   const documents = snapshot.documents.map(document => parseProcedureMarkdown({
@@ -153,8 +155,7 @@ export const createProcedureSourceService = (config: {
         if (raw !== undefined) {
           const retained = createKnowledge(JSON.parse(raw) as unknown)
           if (retained.revision !== request.sourceRevision) throw new Error('Retained procedure publication revision does not match its pin')
-          bundle = bundleFor(source, retained)
-          if (bundle.snapshot.documents.length !== retained.index().length) throw new Error('Retained procedure publication contains documents outside its source path')
+          bundle = bundleFor(source, retained, true)
         }
       }
       if (!bundle) {

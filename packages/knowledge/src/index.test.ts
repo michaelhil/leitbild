@@ -22,6 +22,20 @@ const fixture = () => createKnowledge({ revision, documents: [
 ] })
 
 describe('published knowledge', () => {
+  test('hubs expose only immediate real children, with paragraph summaries and intact source', () => {
+    const knowledge = createKnowledge({ revision, documents: [
+      { path: 'index.md', content: '# Leitbild\n\nHome.' },
+      { path: 'world/index.md', content: '# World\n\nExplore [runs](runs.md)\nand **assets**.' },
+      { path: 'world/runs.md', content: '# Runs\n\nRunning a simulation.' },
+      { path: 'world/packs/index.md', content: '# Packs\n\nExtensions.' },
+      { path: 'world/packs/plant/index.md', content: '# Plant\n\nPlant models.' },
+    ] })
+    expect(knowledge.read('index.md').children.map(child => child.path)).toEqual(['world/index.md'])
+    expect(knowledge.read('world/index.md').children.map(child => child.title)).toEqual(['Runs', 'Packs'])
+    expect(knowledge.index().find(entry => entry.path === 'world/index.md')?.summary).toBe('Explore runs and assets.')
+    expect(knowledge.read('world/packs/plant/index.md').parent).toBe('world/packs/index.md')
+    expect(knowledge.read('world/index.md').content).toContain('**assets**')
+  })
   test('headings ignore fenced code and have stable duplicate anchors', () => {
     expect(headingsFor('# A\n```md\n# Not a heading\n```\n# A').map(h => h.anchor)).toEqual(['a', 'a-1'])
   })

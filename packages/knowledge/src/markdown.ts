@@ -10,6 +10,11 @@ export const markdownBody = (content: string): string => {
 }
 
 export interface KnowledgeHeading { readonly title: string; readonly line: number; readonly level: number; readonly anchor: string }
+/** A paragraph, not a raw metadata/list/code line, describes a page in discovery. */
+export const summaryFor = (content: string): string => {
+  const paragraph = marked.lexer(markdownBody(content)).find(token => token.type === 'paragraph')
+  return paragraph?.type === 'paragraph' ? paragraph.text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/[*`_]/g, '').replace(/\s+/g, ' ').trim() : ''
+}
 export const headingsFor = (content: string): ReadonlyArray<KnowledgeHeading> => {
   const body = markdownBody(content).replaceAll('\r\n', '\n')
   const result: KnowledgeHeading[] = []

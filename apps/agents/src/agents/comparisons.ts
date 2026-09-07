@@ -16,7 +16,8 @@ import type { ToolTraceEntry } from '../core/types/messaging.ts'
 import type { LLMService } from '../llm/llm-service.ts'
 import { modelSupportsImages } from '../llm/multimodal.ts'
 import { resolveScope } from '../tools/built-in/workspace-capability-tools.ts'
-import { readProductRevision, productSourceRoot } from '../core/product-source.ts'
+import { readProductRevision } from '@leitbild/knowledge/source'
+import { resolve } from 'node:path'
 import { conversationReadInputSchema } from '../tools/built-in/conversation-read.ts'
 
 // These built-ins were reviewed for conversation isolation, not merely reads.
@@ -143,7 +144,7 @@ export const createComparisons = (deps: Dependencies) => {
       resourceKeys = [...scope.resourceKeys]; definitionKeys = [...scope.definitionKeys]
     }
     const { flushInfo: _deliveryOnly, ...context } = input.context
-    const sourceRevision=await readProductRevision(productSourceRoot())
+    const sourceRevision=await readProductRevision(resolve(import.meta.dir, '../../../..'))
     if(closed)throw new Error('Workspace comparisons are closed')
     pending.set(input.executionTurnId, structuredClone({...input, context, capturedAt,sourceRevision, boundary:{resourceKeys,definitionKeys,messageIds,turnIds}}))
   }

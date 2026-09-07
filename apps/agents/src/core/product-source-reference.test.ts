@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { findProductSourceReferences, parseProductSourceReference } from './product-source-reference.ts'
+import { findProductSourceReferences, parseProductSourceReference } from '@leitbild/knowledge/source-reference'
 
 describe('product source references', () => {
   test('recognises allowlisted source paths and line ranges', () => {

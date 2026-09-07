@@ -8,11 +8,10 @@ import {
   listProductSourcePaths,
   productDocumentAuthority,
   productDocumentKind,
-  productSourceRoot,
   readProductRevision,
   type ProductDocumentAuthority,
   type ProductDocumentKind,
-} from '../../core/product-source.ts'
+} from '@leitbild/knowledge/source'
 
 const MAX_CORPUS_BYTES = 32_000_000
 const MAX_READ_LINES = 200
@@ -69,7 +68,7 @@ const normalizeTerms = (query: string): ReadonlyArray<string> => {
 }
 
 export const createProductKnowledgeTools = (options: { readonly repoRoot?: string; readonly knowledge?: () => Promise<Knowledge> } = {}): ReadonlyArray<Tool> => {
-  const root = productSourceRoot(options.repoRoot)
+  const root = resolve(options.repoRoot ?? resolve(import.meta.dir, '../../../../..'))
   let corpusPromise: Promise<ProductCorpus> | undefined
   const corpus = (): Promise<ProductCorpus> => corpusPromise ??= loadCorpus(root)
   const knowledge = options.knowledge ?? (() => loadKnowledge(knowledgeSnapshotPath(root)))
@@ -181,7 +180,10 @@ export const createProductKnowledgeTools = (options: { readonly repoRoot?: strin
             ...(input.data.revision ? { revision: input.data.revision } : {}),
             ...(input.data.section ? { section: input.data.section } : {}),
           })
-          return { success: true, data: { ...result, path: input.data.path, kind: 'documentation', authority: 'documentation' } }
+          return { success: true, data: { ...result, path: input.data.path,
+            parent: result.parent === null ? null : `knowledge/${result.parent}`,
+            children: result.children.map(child => ({ ...child, path: `knowledge/${child.path}`, parent: child.parent === null ? null : `knowledge/${child.parent}` })),
+            kind: 'documentation', authority: 'documentation' } }
         } catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Knowledge read failed' } }
       }
       const loaded = await corpus()
