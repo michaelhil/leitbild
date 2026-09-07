@@ -224,6 +224,16 @@
   }
   onMount(() => {
     const pop = () => {
+      const params = new URLSearchParams(location.search)
+      // Native hash navigation also emits popstate. It changes position, not
+      // the document/publication, so it must not refetch or rerender diagrams.
+      if ((params.get('path') ?? 'index.md') === document?.path &&
+        (params.get('revision') ?? publication) === document?.revision) {
+        ++requestId
+        loading = false
+        error = ''
+        return
+      }
       void open()
     }
     window.addEventListener('popstate', pop)
