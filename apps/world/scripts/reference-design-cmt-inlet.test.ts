@@ -1,9 +1,18 @@
 import { expect,test } from 'bun:test'
-import { allocateLoss,inletScales,oldTraceProjection,parseInletBasis } from './reference-design-cmt-inlet.ts'
+import { allocateLoss,inletScales,oldTraceProjection,parseInletBasis,parseApertureBasis } from './reference-design-cmt-inlet.ts'
 
 const basis={pipeDiameter_m:.2,slotRadius_m:.5,slotGap_m:.05,slotElevation_m:11.9,tankTop_m:12,
   tankArea_m2:10,topProbeElevation_m:11.25,referenceFlow_kg_s:25,totalReferenceLoss_Pa:2000,exitLossCoefficient:1}
 const doc=(b:unknown)=>'```reference-cmt-inlet\n'+JSON.stringify(b)+'\n```'
+test('aperture fixture selects finite body geometry and an independent halved step',()=>{
+  const b={holeDiameter_m:.06153846153846154,ringElevations_m:[11.925,11.85,11.775],holesPerRing:10,
+    coefficient:.62,pressure_MPa:15.2,duration_s:1,steps_s:[.01,.005],massResidual_kg:1e-6,energyResidual_J:.1,entropyTolerance_J_K:.01,
+    temperatureDifference_K:.1,pressureDifference_Pa:1000,relativeGrossFlowDifference:.01}
+  const text=(x:unknown)=>'```reference-cmt-apertures\n'+JSON.stringify(x)+'\n```'
+  expect(parseApertureBasis(text(b)).coefficient).toBe(.62)
+  for(const x of [{...b,holeDiameter_m:.2},{...b,ringElevations_m:[12,11.85,11.775]},
+    {...b,steps_s:[.01,.004]},{...b,duration_s:.999},{...b,coefficient:1.1},{...b,entrainmentRate:.05}])expect(()=>parseApertureBasis(text(x))).toThrow()
+})
 test('inlet geometry is strict, finite and fits below roof above existing probe',()=>{
   expect(parseInletBasis(doc(basis))).toEqual(basis)
   for(const b of [{...basis,slotElevation_m:12},{...basis,slotGap_m:0},{...basis,mixingRate:.1},
