@@ -10,7 +10,7 @@ export function parseStratificationBasis(document: string) {
   return { ...parseCmtBasis(document), ...schema.parse(JSON.parse(blocks[0]![1]!)) }
 }
 // Explicit owned fragments; no source-text discovery or caller-supplied code.
-export const stratificationCalculation = cmtLiquidDefinitions + String.raw`
+export const cmtStratificationDefinitions = cmtLiquidDefinitions + String.raw`
 import time
 from scipy.optimize import brentq
 
@@ -168,10 +168,19 @@ def study(name,nt,dtmax,limited,face_gravity=True,actual_inlet=True):
         if em>1e-4 or ee>100:raise ValueError('Stratification conservation failure')
         incoming+=dt*q[0];outgoing+=dt*q[1];t+=dt
         if t>=nextout-1e-9:record(q);nextout+=b['output_s']
+    # Accepted-state output only: no change to transport, solve or acquisition.
+    snapshot=dict(t_s=t,topPressure_Pa=old[1]['ptop'],area_m2=10.,topElevation_m=12.,
+        heights_m=heights.tolist(),temperatures_K=[r['T'] for r in old[1]['rows'][1:]],
+        midpointMass_kg=float(sum(old[1]['M'][1:])),midpointEnergy_J=float(sum(old[1]['E'][1:])),
+        midpointEntropy_J_K=float(sum(r['M']*_Region1(r['T'],r['p']/1e6)['s']*1000 for r in old[1]['rows'][1:])),
+        unchangedExternalStores=[dict(name=label,pressure_Pa=old[k]['rows'][j]['p'],temperature_K=old[k]['rows'][j]['T'],
+            mass_kg=float(old[k]['M'][j]),energy_J=float(old[k]['E'][j]),multiplicity=count)
+            for label,k,j,count in [('finite_primary',0,0,1),('BAL_each_train',1,0,2),('DVI_each_train',2,0,2)]])
     return dict(name=name,topCells=nt,totalCells=N,limited=limited,commonFaceGravity=face_gravity,actualInletReconstruction=actual_inlet,
-        wall_s=time.perf_counter()-started,nfev=nfev,maxScaledResidual=maxdef,maxMassResidual_kg=em,maxEnergyResidual_J=ee,trace=trace)
+        wall_s=time.perf_counter()-started,nfev=nfev,maxScaledResidual=maxdef,maxMassResidual_kg=em,maxEnergyResidual_J=ee,trace=trace,finalSnapshot=snapshot)
 
-` + '\n' + cmtObservationCalculation + String.raw`checks=tracer_checks()
+`
+export const stratificationCalculation = cmtStratificationDefinitions + '\n' + cmtObservationCalculation + String.raw`checks=tracer_checks()
 nt=b['topCells'];dt=b['maximumStep_s']
 cases=[study('donor_center_first_order',nt,dt,False,False),study('common_face_first_order',nt,dt,False),
        study('limited_zero_boundary_slope',nt,dt,True,True,False),study('limited',nt,dt,True),
