@@ -30,12 +30,12 @@
 </script>
 
 <AssistantLauncher onOpen={prepare} submit={loaded && workspaceId ? ask : undefined}>
-  {#snippet details()}
+  {#snippet details(busy)}
     {#if loaded && workspaces.length === 0}
       <p>Create a <a href="/workspaces">workspace</a> to keep your Assistant conversation.</p>
     {:else if loaded}
       <label>Conversation workspace
-        <select bind:value={workspaceId} aria-label="Conversation workspace">
+        <select bind:value={workspaceId} disabled={busy} aria-label="Conversation workspace">
           <option value="" disabled>Choose a workspace…</option>
           {#each workspaces as item (item.id)}<option value={item.id}>{item.name ?? item.id}</option>{/each}
         </select>

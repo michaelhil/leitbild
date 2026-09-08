@@ -9,7 +9,7 @@
     readonly active?: boolean
     readonly onError?: (message: string) => void
     readonly onOpen?: () => Promise<void>
-    readonly details?: Snippet
+    readonly details?: Snippet<[busy: boolean]>
   }
 
   let { disabled = false, submit, toggle, active = false, onError, onOpen, details }: Props = $props()
@@ -95,8 +95,8 @@
       <button class="assistant-close" type="button" aria-label="Close Assistant" disabled={busy} onclick={() => dialog?.close()}>×</button>
     </header>
     <p>Ask about Leitbild, explore the current simulation, or describe a scenario you want to create.</p>
-    {@render details?.()}
-    <textarea aria-label="Question for Leitbild Assistant" bind:this={input} bind:value={prompt} onkeydown={keydown} maxlength="64000" rows="6" placeholder="Ask a question, explore the system, or describe something you want to create…"></textarea>
+    {@render details?.(busy)}
+    <textarea aria-label="Question for Leitbild Assistant" disabled={busy} bind:this={input} bind:value={prompt} onkeydown={keydown} maxlength="64000" rows="6" placeholder="Ask a question, explore the system, or describe something you want to create…"></textarea>
     {#if error}<p class="assistant-error" role="alert">{error}</p>{/if}
     <footer><span>Enter to send · Shift+Enter for a new line</span><button class="primary" type="submit" disabled={busy || !submit || prompt.trim().length === 0}>{busy ? 'Opening…' : 'Ask Assistant'}</button></footer>
   </form>
