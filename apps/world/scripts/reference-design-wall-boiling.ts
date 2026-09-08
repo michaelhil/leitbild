@@ -108,9 +108,30 @@ for p in b['pressures_MPa']:
 check('Saha-Zuber branch junction',.0065*70000,455.)
 variants=[dict(p_MPa=p,CTFfactor=pressure_factor(p),INLfactor=pressure_factor(p,False),
     poolFluxDifference_percent=100*(pool(p,10,False)/pool(p,10)-1)) for p in b['pressures_MPa']]
+# Original Gorenflo (1993), Ha6 Fig9 versus Ha7 Eq8b, conflict internally.
+# Table1's rounded normalization tests transcription, not empirical validity.
+original=[]
+for squared,label in [(True,'Ha6 Figure9 / CTF'),(False,'Ha7 equation8b / INL')]:
+    alpha=5600*pressure_factor(.1*22.064,squared)
+    check('1993 Table1 rounded water HTC reference '+label,alpha,5600.,rtol=.005)
+    original.append(dict(sourceForm=label,referenceHTC_W_m2K=alpha,
+        referenceResidual_percent=100*(alpha/5600-1),
+        atReducedPressure08_HTC_W_m2K=5600*pressure_factor(.8*22.064,squared)))
+for r,nRounded in [(.1,.69),(.8,.61)]:
+    check('1993 Ha7 rounded water exponent',.9-.3*r**.15,nRounded,atol=.005)
+sourceAudit=dict(originalChapter='Gorenflo 1993 Ha6-9, urn:nbn:de:hbz:466:2-4030',
+    reference=dict(reducedPressure=.1,heatFlux_W_m2=20000.,roughness_um=.4,
+        waterEmpiricalHTC_W_m2K=5600.,waterCalculatedHTC_W_m2K=6400.,
+        surface='predominantly single horizontal copper tubes'),
+    normalizationTolerance_percent=.5,roundedExponentTolerance=.005,
+    comparisons=original,referenceDiscriminatesPressureDenominator=False,
+    sourcePressureRange_MPa=[.01,.9*22.064],
+    sourcePressureRangeQualifiesForcedFlow=False,
+    genericMaterialCorrectionAdmitted=False,
+    pressureDenominatorAdjudicated=False)
 print(json.dumps(dict(scope='local wall-law algebra and fixed-pressure phase-source checks; no CHF or coupled-void qualification',
     packages=dict(python=platform.python_version(),iapws=iapws.__version__),
-    rows=rows,onset=onset,pressureVariants=variants,checks=checks,
+    rows=rows,onset=onset,pressureVariants=variants,originalSourceAudit=sourceAudit,checks=checks,
     empiricalLDQualification=False,bulkPhaseClosureImplemented=False,postCHFImplemented=False),allow_nan=False,indent=2))
 `
 if(import.meta.main) {
