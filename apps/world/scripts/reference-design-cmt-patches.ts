@@ -224,11 +224,25 @@ def compare(a,bb):
         dp=max(dp,*[abs(v-w) for v,w in zip(x['topPressures_Pa'],y['topPressures_Pa'])])
     dG=max(abs(v-w)/max(abs(w),1e-12) for v,w in zip(a['trace'][-1]['grossIntegrated_kg'],bb['trace'][-1]['grossIntegrated_kg']))
     return dict(evaluated=True,temperature_K=dT,pressure_Pa=dp,grossFraction=dG,
-      passed=dT<s['temporalTemperature_K'] and dp<s['temporalPressure_Pa'] and dG<s['temporalGrossFraction'])
+      passed=bool(dT<s['temporalTemperature_K'] and dp<s['temporalPressure_Pa'] and dG<s['temporalGrossFraction']))
 `
 
 export const patchCalculation = patchDefinitions + String.raw`
 def worker(args):return run(*args)
+def json_scalar(value):
+    if isinstance(value,np.generic):return value.item()
+    raise TypeError('Unsupported output object: '+type(value).__name__)
+def output_json(value):return json.dumps(value,default=json_scalar,allow_nan=False)
+# Output-boundary regression, not physical fixtures or extra trajectories.
+def serialization_fixture(T):
+    return dict(status='COMPLETED',trace=[dict(t_s=0.,temperatures_C=[np.float64(T)],calorimeter_C=0.,topPressures_Pa=[0.],grossIntegrated_kg=[1.])])
+serialized=compare(serialization_fixture(0.),serialization_fixture(s['temporalTemperature_K']+1.))
+require(serialized['passed'] is False,'Failed comparison has a native JSON boolean')
+for value in [serialized,compare(serialization_fixture(0.),serialization_fixture(0.)),compare(dict(status='REJECTED'),dict(status='REJECTED')),dict(flag=np.bool_(False),count=np.int64(2))]:output_json(value)
+for value in [dict(bad=float('nan')),dict(bad=object())]:
+    try:output_json(value)
+    except (ValueError,TypeError):pass
+    else:raise ValueError('Output boundary accepted nonfinite or unsupported value')
 batch=b['batch'];cases=[]
 if batch=='first':
     cases=[run('held',s['steps_s'][0],.01,matched=True),run('receipt',s['steps_s'][0],s['firstDuration_s']),run('receipt_fine',s['steps_s'][1],s['firstDuration_s'])]
@@ -238,7 +252,7 @@ else:
     # Isolated processes receive the same immutable numeric input; map retains case order.
     with multiprocessing.get_context('fork').Pool(2) as pool:cases=pool.map(worker,args)
 comparison=compare(cases[-2],cases[-1]) if batch=='first' else compare(cases[0],cases[1])
-print(json.dumps(dict(dependencies=dict(python=platform.python_version(),iapws=iapws.__version__,numpy=np.__version__,scipy=scipy.__version__),
+print(output_json(dict(dependencies=dict(python=platform.python_version(),iapws=iapws.__version__,numpy=np.__version__,scipy=scipy.__version__),
   scope='Quasisteady ring-local thermal receiving/return network; no finite momentum storage or tank plume',concurrentWorkers=1 if batch=='first' else 2,cases=cases,temporalComparison=comparison)))
 `
 
