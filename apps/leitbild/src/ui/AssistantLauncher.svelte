@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte'
+  import type { Snippet } from 'svelte'
 
   interface Props {
     readonly disabled?: boolean
@@ -7,9 +8,11 @@
     readonly toggle?: () => Promise<void>
     readonly active?: boolean
     readonly onError?: (message: string) => void
+    readonly onOpen?: () => Promise<void>
+    readonly details?: Snippet
   }
 
-  let { disabled = false, submit, toggle, active = false, onError }: Props = $props()
+  let { disabled = false, submit, toggle, active = false, onError, onOpen, details }: Props = $props()
   let dialog = $state<HTMLDialogElement | null>(null)
   let input = $state<HTMLTextAreaElement | null>(null)
   let prompt = $state('')
@@ -17,6 +20,7 @@
   let error = $state('')
 
   const open = async (): Promise<void> => {
+    if (busy) return
     if (toggle) {
       if (busy) return
       busy = true
@@ -31,6 +35,12 @@
     }
     error = ''
     dialog?.showModal()
+    if (onOpen) {
+      busy = true
+      try { await onOpen() }
+      catch (cause) { error = cause instanceof Error ? cause.message : String(cause) }
+      finally { busy = false }
+    }
     await tick()
     input?.focus()
   }
@@ -78,16 +88,17 @@
 </button>
 
 {#if !toggle}
-<dialog class="assistant-dialog" bind:this={dialog} onclose={() => { error = '' }}>
+<dialog class="assistant-dialog" bind:this={dialog} onclose={() => { error = '' }} oncancel={event => { if (busy) event.preventDefault() }}>
   <form onsubmit={send}>
     <header>
       <div><span>Leitbild Assistant</span><h2>How can I help?</h2></div>
       <button class="assistant-close" type="button" aria-label="Close Assistant" disabled={busy} onclick={() => dialog?.close()}>×</button>
     </header>
     <p>Ask about Leitbild, explore the current simulation, or describe a scenario you want to create.</p>
-    <textarea bind:this={input} bind:value={prompt} onkeydown={keydown} maxlength="64000" rows="6" placeholder="Make an ambulance and weather scenario centred on Trondheim that escalates after two minutes…"></textarea>
+    {@render details?.()}
+    <textarea bind:this={input} bind:value={prompt} onkeydown={keydown} maxlength="64000" rows="6" placeholder="Ask a question, explore the system, or describe something you want to create…"></textarea>
     {#if error}<p class="assistant-error" role="alert">{error}</p>{/if}
-    <footer><span>Enter to send · Shift+Enter for a new line</span><button class="primary" type="submit" disabled={busy || prompt.trim().length === 0}>{busy ? 'Opening…' : 'Ask Assistant'}</button></footer>
+    <footer><span>Enter to send · Shift+Enter for a new line</span><button class="primary" type="submit" disabled={busy || !submit || prompt.trim().length === 0}>{busy ? 'Opening…' : 'Ask Assistant'}</button></footer>
   </form>
 </dialog>
 {/if}

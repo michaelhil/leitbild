@@ -3,6 +3,7 @@
   import { parseProductSourceReference } from '@leitbild/knowledge/source-reference'
   import { renderWiki, wikiPageUrl } from './wiki-render.ts'
   import WikiFeedback from './WikiFeedback.svelte'
+  import WikiAssistant from './WikiAssistant.svelte'
   import { defaultNavigationWidth, minimumNavigationWidth, maximumNavigationWidth, navigationWidth } from './wiki-layout.ts'
   interface Heading {
     title: string
@@ -344,6 +345,7 @@
       placeholder="Search the wiki…"
     /><button type="submit">Search</button>
   </form>
+  <WikiAssistant page={document} />
   <button
     class="menu-button"
     onclick={() => (menuOpen = !menuOpen)}
