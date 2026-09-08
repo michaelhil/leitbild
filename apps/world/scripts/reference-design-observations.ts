@@ -58,6 +58,42 @@ export function flowEvidence(rawDP_Pa: number, referenceFlow_kg_s: number, refer
   return {rawDP_Pa,lowerLiquidCalibration_kg_s:lower,upperLiquidCalibration_kg_s:upper,direction,condition}
 }
 
+/** Existing HOT.A PT1/TT1 channel replay on actual 0.1 s connected-liquid samples. */
+export function replayHotAInstruments(samples:Array<{t_s:number;p_MPa:number[];T_C:number[]}>,outage?:[number,number]) {
+  if(samples.length<2)throw new Error('Instrument replay needs an advanced physical trace')
+  if(outage&&(!outage.every(Number.isFinite)||outage[0]<.1||outage[1]<=outage[0]||outage.some(t=>Math.abs(t*10-Math.round(t*10))>1e-8)))throw new Error('I1 boundary changes must lie on the 0.1 s acquisition grid')
+  const first=samples[0]!
+  const powered=(t:number)=>!outage||t<outage[0]-1e-8||t>=outage[1]-1e-8
+  const lag=(value:number,old:number,current:number,dt:number,tau:number)=>{
+    const e=Math.exp(-dt/tau)
+    return value*e+old*(1-e)+(current-old)*(1-tau/dt*(1-e))
+  }
+  const report=(value:number,quantum:number,maximum:number)=>({value:Math.min(maximum,Math.max(0,Math.round(value/quantum)*quantum)),range:value<0?'BELOW_RANGE':value>maximum?'ABOVE_RANGE':'IN_RANGE'})
+  let p=first.p_MPa[5]!,T=first.T_C[5]!,previous=first,lastAcquiredAt_s=0
+  let lastKnown={pressure:report(p,.001,20),temperature:report(T,.1,400)}
+  const rows=[]
+  for(let i=0;i<samples.length;i++){
+    const current=samples[i]!,dt=current.t_s-previous.t_s
+    if(current.p_MPa.length!==11||current.T_C.length!==11||![current.t_s,...current.p_MPa,...current.T_C].every(Number.isFinite)
+      ||(i===0?current.t_s!==0:Math.abs(dt-.1)>1e-8))throw new Error('Replay requires finite eleven-cell samples at exact 0.1 s intervals')
+    const priorPower=powered(previous.t_s),power=powered(current.t_s)
+    if(i>0&&priorPower){
+      p=lag(p,previous.p_MPa[5]!,current.p_MPa[5]!,dt,.2)
+      T=lag(T,previous.T_C[5]!,current.T_C[5]!,dt,1)
+    }
+    // Restoration must complete one newly powered acquisition interval. Do not
+    // publish retained pre-failure state with a fabricated fresh timestamp.
+    const available=power&&(i===0||priorPower)
+    if(available){lastAcquiredAt_s=current.t_s;lastKnown={pressure:report(p,.001,20),temperature:report(T,.1,400)}}
+    rows.push({t_s:current.t_s,I1Powered:power,quality:available?'AVAILABLE':'UNAVAILABLE',reason:available?null:power?'REACQUIRING':'I1_UNPOWERED',
+      pressure:available?lastKnown.pressure:null,temperature:available?lastKnown.temperature:null,lastAcquiredAt_s,lastKnown})
+    previous=current
+  }
+  return {channels:['LD01.HOT.A.PT1','LD01.HOT.A.TT1'],evidenceClass:'instrument',
+    supplyBoundary:'Explicit I1 powered/off acquisition fixture; not a finite electrical network',initialization:'Sensor lags equilibrated to the held state before t=0',
+    interpolation:'Linear physical input between retained 0.1 s samples; exact first-order response to that interpolation',outage_s:outage??null,rows}
+}
+
 export const observationCalculation = String.raw`
 import json,sys,math,platform
 import iapws
