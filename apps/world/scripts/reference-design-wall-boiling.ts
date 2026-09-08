@@ -8,6 +8,8 @@ const schema=z.object({design:z.literal('LD-01-wall-boiling-comparison'),
   pressures_MPa:z.array(positive.min(1).max(16)).min(1),
   liquidMassFlux_kg_m2s:positive,subcooling_K:z.array(z.number().finite().min(0).max(50)).min(1),
   superheats_K:z.array(z.number().finite().min(0).max(30)).min(1),
+  dutyHeatFluxes_W_m2:z.array(z.number().finite().nonnegative()).min(1),
+  dutySuperheatCeiling_K:positive.max(30),
 }).strict()
 export function parseWallBoilingStudy(document:string) {
   const blocks=[...document.matchAll(/^```reference-wall-boiling\s*\n([\s\S]*?)^```\s*$/gm)]
@@ -16,7 +18,7 @@ export function parseWallBoilingStudy(document:string) {
 }
 const calculation=String.raw`
 import sys,json,math,platform
-import iapws
+import iapws,scipy
 from iapws import IAPWS97 as W
 from scipy.optimize import brentq
 b=json.load(sys.stdin); checks=[]
@@ -32,7 +34,7 @@ def pool(p,superheat,ctf=True):
     if superheat<=0:return 0.
     n=.9-.3*(p/22.064)**.15
     return (5600*pressure_factor(p,ctf)*b['surfaceFactor']*superheat/20000**n)**(1/(1-n))
-def wall(p,sub,superheat):
+def wall(p,sub,superheat,ctf=True):
     f=W(P=p,x=0); v=W(P=p,x=1); ts=f.T
     l=W(P=p,T=ts-sub) if sub>0 else f
     dh=b['hydraulicDiameter_m']; G=b['liquidMassFlux_kg_m2s']
@@ -46,7 +48,7 @@ def wall(p,sub,superheat):
     tw=ts+superheat; qfc=hfc*(tw-l.T)
     qtotal=qfc; qb=0.
     if tw>tonb:
-        d=pool(p,superheat)-pool(p,donb)
+        d=pool(p,superheat,ctf)-pool(p,donb,ctf)
         qtotal=math.cbrt(qfc**3+d**3)
         # Algebraically qtotal-qfc without cancellation near ONB.
         qb=d**3/(qtotal*qtotal+qtotal*qfc+qfc*qfc)
@@ -92,6 +94,54 @@ def wall(p,sub,superheat):
         generationFraction=gamma,wallVapor_kg_s=rate,
         liquidEnergy_W=sourceLiquid,vaporEnergy_W=sourceVapor,solidEnergy_W=sourceSolid)
 rows=[wall(p,s,t) for p in b['pressures_MPa'] for s in b['subcooling_K'] for t in b['superheats_K']]
+# Imposed-duty contract for the SAME effective wet-wall package. Bounds are a
+# declared numerical investigation branch, never a CHF/surface-admission test.
+def invert_duty(p,sub,duty,ctf=True):
+    if not math.isfinite(duty) or duty<0:raise ValueError('Duty must be finite and nonnegative')
+    lo=-sub; hi=b['dutySuperheatCeiling_K']
+    low=wall(p,sub,lo,ctf); high=wall(p,sub,hi,ctf)
+    if duty>high['total_W_m2']:raise ValueError('No duty root inside the declared wet-wall branch')
+    root=lo if duty==0 else brentq(lambda t:wall(p,sub,t,ctf)['total_W_m2']-duty,lo,hi,xtol=1e-11)
+    value=wall(p,sub,root,ctf)
+    check('duty inverse forward flux',value['total_W_m2'],duty,atol=1e-4,rtol=1e-9)
+    if value['boilingIncrement_W_m2']==0:
+        check('nonboiling duty inverse analytical temperature',root,duty/value['hFC_W_m2K']-sub,atol=1e-10)
+    return value
+dutyRows=[]
+for p in b['pressures_MPa']:
+    for sub in b['subcooling_K']:
+        for duty in b['dutyHeatFluxes_W_m2']:
+            ceilings=[wall(p,sub,b['dutySuperheatCeiling_K'],version)['total_W_m2'] for version in [True,False]]
+            if duty>min(ceilings):
+                dutyRows.append(dict(p_MPa=p,subcooling_K=sub,imposedFlux_W_m2=duty,
+                    comparisonRejected='At least one source form has no root inside the declared branch',
+                    selectedCeilingFlux_W_m2=ceilings[0],alternateCeilingFlux_W_m2=ceilings[1]))
+                continue
+            ctf=invert_duty(p,sub,duty); alternate=invert_duty(p,sub,duty,False)
+            dutyRows.append(dict(p_MPa=p,subcooling_K=sub,imposedFlux_W_m2=duty,
+                selected=ctf,originalEquation8bSensitivity=alternate,
+                alternateMinusSelectedWall_K=alternate['wallSuperheat_K']-ctf['wallSuperheat_K']))
+        # New contract must traverse ONB without hiding it behind a bracket or
+        # changing heat flux. Test both versions, including one-sided approaches.
+        for version in [True,False]:
+            onsetState=wall(p,sub,0,version)
+            delta=onsetState['Tonb_C']-onsetState['Tsat_C']
+            if delta<=b['dutySuperheatCeiling_K']:
+                qOnb=wall(p,sub,delta,version)['total_W_m2']
+                at=invert_duty(p,sub,qOnb,version)
+                check('duty inverse reaches ONB',at['wallSuperheat_K'],delta,atol=1e-8)
+                left=invert_duty(p,sub,qOnb*(1-1e-6),version)
+                right=invert_duty(p,sub,qOnb*(1+1e-6),version)
+                if not left['wallSuperheat_K']<delta<right['wallSuperheat_K']:
+                    raise ValueError('Duty inverse does not cross onset monotonically')
+                check('duty inverse below onset no boiling',left['boilingIncrement_W_m2'],0.)
+                if right['boilingIncrement_W_m2']<=0:raise ValueError('No boiling increment above onset')
+rejections=[]
+for name,duty in [('negative',-1),('nonfinite',float('inf')),
+                  ('outside-branch',1.01*wall(15,20,b['dutySuperheatCeiling_K'])['total_W_m2'])]:
+    try:invert_duty(15,20,duty)
+    except ValueError as e:rejections.append(dict(case=name,reason=str(e)))
+    else:raise ValueError('Invalid duty request accepted: '+name)
 onset=[]
 for p in b['pressures_MPa']:
     r=wall(p,20,0); d=r['Tonb_C']-r['Tsat_C']
@@ -130,8 +180,11 @@ sourceAudit=dict(originalChapter='Gorenflo 1993 Ha6-9, urn:nbn:de:hbz:466:2-4030
     genericMaterialCorrectionAdmitted=False,
     pressureDenominatorAdjudicated=False)
 print(json.dumps(dict(scope='local wall-law algebra and fixed-pressure phase-source checks; no CHF or coupled-void qualification',
-    packages=dict(python=platform.python_version(),iapws=iapws.__version__),
-    rows=rows,onset=onset,pressureVariants=variants,originalSourceAudit=sourceAudit,checks=checks,
+    packages=dict(python=platform.python_version(),iapws=iapws.__version__,scipy=scipy.__version__),
+    rows=rows,onset=onset,pressureVariants=variants,originalSourceAudit=sourceAudit,
+    imposedDuty=dict(rows=dutyRows,rejections=rejections,ceiling_K=b['dutySuperheatCeiling_K'],
+        selected='CTF 4.4 effective wet-wall, not resolved Gorenflo author intent or LD cladding',
+        alternateRole='1993 equation8b original-source sensitivity only',CHFAdmission=False),checks=checks,
     empiricalLDQualification=False,bulkPhaseClosureImplemented=False,postCHFImplemented=False),allow_nan=False,indent=2))
 `
 if(import.meta.main) {
