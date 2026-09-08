@@ -55,21 +55,21 @@ initial=dict(**fine,initialLiquidTemperature_K=T,initialVaporTemperature_K=v.T,
     vaporInternalEnergy_J=v.u*1000*v.rho*A*(H-L),
     neglectedVaporHydrostaticHeadEstimate_Pa=v.rho*g*(H-L))
 
-# IAEA TECDOC-949 p132, eq4.4.1-5/-7. Fixed geometry and density7900kg/m3.
-# Integrate cp rather than mix it with the separately rounded enthalpy polynomial.
+# NISTIR7401 p7: temperature-dependent304 reference; fixed geometry/density7920kg/m3.
+# 300–650K is the project's selected comparison envelope, not a certified source range.
 def cp(T):
-    if np.any(np.asarray(T)<300) or np.any(np.asarray(T)>=1558):raise ValueError('Steel outside selected solid-property interval')
-    return 326+.298*T-9.56e-5*T*T
-def k(T):cp(T);return 7.58+.0189*T
+    if np.any(np.asarray(T)<300) or np.any(np.asarray(T)>650):raise ValueError('Steel outside selected solid-property interval')
+    return 6.683+.04906*T+80.74*np.log(T)
+def k(T):cp(T);return 9.705+.0176*T-1.60e-6*T*T
 def e(T):
     cp(T)
-    return 326*(T-300)+.149*(T*T-300**2)-9.56e-5/3*(T**3-300**3)
-def K(T):return 7.58*T+.0189*T*T/2
+    return 6.683*(T-300)+.04906/2*(T*T-300**2)+80.74*(T*np.log(T)-T-300*np.log(300)+300)
+def K(T):return 9.705*T+.0176*T*T/2-1.60e-6*T**3/3
 wall=[]
 for n,tol in [(4,1e-8),(8,1e-8),(16,1e-8),(16,1e-10),(32,1e-10)]:
     edges=np.linspace(r['innerRadius_m'],r['outerRadius_m'],n+1)
     centers=np.sqrt((edges[:-1]**2+edges[1:]**2)/2)
-    masses=7900*math.pi*(edges[1:]**2-edges[:-1]**2)*H
+    masses=7920*math.pi*(edges[1:]**2-edges[:-1]**2)*H
     def outside(outerCell):
         def residual(surface):
             conduction=2*math.pi*H*(K(outerCell)-K(surface))/math.log(edges[-1]/centers[-1])
@@ -177,7 +177,7 @@ for dm in [-100,100]:
     else:raise ValueError('Phase exhaustion silently continued')
 print(json.dumps(dict(scope='Native spatial initialization, isolated material wall and mechanical surface-event verification only',
     python=platform.python_version(),iapws=iapws.__version__,initial=initial,wall=wall,wallRefinement=refined,
-    steel=dict(cp547_J_kgK=float(cp(547)),conductivity547_W_mK=float(k(547)),density_kg_m3=7900),
+    steel=dict(source='NISTIR7401 section3.1.1',cp547_J_kgK=float(cp(547)),conductivity547_W_mK=float(k(547)),density_kg_m3=7920),
     reversibleSurfaceCrossings=mechanical,phaseBoundaryCasesRejected=rejected,coupledWaterTrajectoryQualified=False),allow_nan=False))
 `
 
