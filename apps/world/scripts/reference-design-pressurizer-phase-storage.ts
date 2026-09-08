@@ -11,7 +11,7 @@ export function parsePhaseStorageBasis(text: string) {
   return basis.parse(JSON.parse(blocks[0]![1]!))
 }
 
-export const phaseStorageCalculation = String.raw`
+export const phaseStorageThermodynamics = String.raw`
 import json,sys,math,platform,scipy,CoolProp
 import CoolProp.CoolProp as CP
 from types import SimpleNamespace
@@ -49,7 +49,8 @@ def W(P,**pair):
         else:raise ValueError(dict(reason='Outside the selected liquid/vapor reference domain',phase=phase,quality=quality,P=P,pair=pair))
     return SimpleNamespace(P=water.p()/1e6,T=water.T(),rho=water.rhomass(),v=1/water.rhomass(),
         u=water.umass()/1000,s=water.smass()/1000,x=quality)
-b=json.load(sys.stdin);r=b['source'];cfg=b['phase'];p0=b['spatial']['surfacePressure_MPa'];g=9.80665
+`
+const phaseStorageReference = String.raw`b=json.load(sys.stdin);r=b['source'];cfg=b['phase'];p0=b['spatial']['surfacePressure_MPa'];g=9.80665
 A=math.pi*r['innerRadius_m']**2;H=r['height_m'];L=r['statedLevel_m'];T0=r['fluidTemperature_K'];Tw0=r['wallTemperature_K']
 def solid_e(T):
     if not 300<=T<=650:raise ValueError('Wall outside selected NIST comparison interval')
@@ -169,6 +170,8 @@ print(json.dumps(dict(scope='Finite sealed regional-equilibrium storage in heat 
         CoolPropRevision=CP.get_global_param_string('gitrevision'),formulation='HEOS Water (IAPWS-95)',scipy=scipy.__version__,numpy=np.__version__),
     cases=cases,liveModelInstalled=False,heatRateSelected=False,phaseKineticsQualified=False),allow_nan=False))
 `
+
+export const phaseStorageCalculation = phaseStorageThermodynamics + phaseStorageReference
 
 if (import.meta.main) {
   const [source, owner, python, ...extra] = process.argv.slice(2)
