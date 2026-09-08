@@ -9,8 +9,8 @@ const doc = (value: unknown) => '```reference-cmt-fixture\n' + JSON.stringify(ba
   '```reference-cmt-stratification\n' + JSON.stringify(value) + '\n```\n'
 
 describe('CMT reconstruction study boundary', () => {
-  test('records the accepted-state snapshot extension calculation identity', () => {
-    expect(createHash('sha256').update(stratificationCalculation).digest('hex')).toBe('f881142bbd3399210ac600a68d6758d28de179c23d97a3024e68f9db423cb3fd')
+  test('records the accepted-state snapshot and actual tank-inlet output extension identity', () => {
+    expect(createHash('sha256').update(stratificationCalculation).digest('hex')).toBe('eb33adb7799592c3eff06bcaac790b1a31f1bd97d1bc4db317d78bef6ad56004')
   })
   test('retains the frozen physical input and accepts only numeric study settings', () => {
     expect(parseStratificationBasis(doc({ topCells: 12, maximumStep_s: .125 }))).toEqual({ ...base, topCells: 12, maximumStep_s: .125 })

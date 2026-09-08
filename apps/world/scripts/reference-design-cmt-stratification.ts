@@ -81,6 +81,7 @@ def study(name,nt,dtmax,limited,face_gravity=True,actual_inlet=True):
     M0=totals(initial,'M');E0=totals(initial,'E');old=initial
     x=np.concatenate([y0/scale,np.zeros(3+N)])
     t=0.;nextout=b['output_s'];incoming=0.;outgoing=0.;trace=[];nfev=0;maxdef=0.;em=0.;ee=0.
+    tank_incoming=0.;inlet_volume=0.
     def profile(tank,inflow):
         hs=np.array([r['h'] for r in tank['rows'][1:]])
         left,right=faces(hs,depth,edges,limited,tank['rows'][0]['h'] if actual_inlet and inflow>0 else None)
@@ -112,6 +113,8 @@ def study(name,nt,dtmax,limited,face_gravity=True,actual_inlet=True):
             crossings.append(dict(fraction=f,depths_m=found))
         trace.append(dict(t_s=t,primaryPressure_MPa=ss[0]['ptop']/1e6,primary_C=ss[0]['rows'][0]['T']-273.15,
             balanceLine_C=tank['rows'][0]['T']-273.15,sourceFlow_kg_s=float(q[1]),inletFlow_kg_s=float(q[0]),
+            balanceToTankFlow_kg_s=float(q[3]),balanceDensity_kg_m3=tank['rows'][0]['rho'],
+            topCellDensity_kg_m3=tank['rows'][1]['rho'],tankInletMass_kg=tank_incoming,inletStateVolume_m3=inlet_volume,
             grossInlet_kg=incoming,grossOutlet_kg=outgoing,probes=probes,frontCrossings=crossings,
             minimumCell_C=min(r['T']-273.15 for r in tank['rows'][1:]),maximumCell_C=max(r['T']-273.15 for r in tank['rows'][1:]),
             rawLevelDP_Pa=g*(sum(r['rho']*H for r,H in zip(tank['rows'][1:],heights))-water(tank['ptop'],cold)[0]*6),
@@ -167,6 +170,11 @@ def study(name,nt,dtmax,limited,face_gravity=True,actual_inlet=True):
         em=max(em,abs(totals(old,'M')-M0));ee=max(ee,abs(totals(old,'E')-E0))
         if em>1e-4 or ee>100:raise ValueError('Stratification conservation failure')
         incoming+=dt*q[0];outgoing+=dt*q[1];t+=dt
+        # Output-only quadrature on every accepted step, not display samples.
+        # Positive-flow reference volume uses actual finite BAL density. Reverse
+        # transport needs its own reconstructed donor state and is not screened.
+        tank_incoming+=dt*q[3]
+        inlet_volume=inlet_volume+dt*q[3]/old[1]['rows'][0]['rho'] if q[3]>=0 and inlet_volume is not None else None
         if t>=nextout-1e-9:record(q);nextout+=b['output_s']
     # Accepted-state output only: no change to transport, solve or acquisition.
     snapshot=dict(t_s=t,topPressure_Pa=old[1]['ptop'],area_m2=10.,topElevation_m=12.,
