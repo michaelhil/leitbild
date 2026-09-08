@@ -2,7 +2,7 @@
   import type { Workspace } from '@leitbild/contracts'
   import AssistantLauncher from './AssistantLauncher.svelte'
   import { request, jsonRequest } from './api.ts'
-  import { wikiAssistantPrompt, type WikiAssistantPage } from './wiki-assistant.ts'
+  import { wikiAssistantPrompt, wikiAssistantDestination, type WikiAssistantPage } from './wiki-assistant.ts'
 
   let { page }: { page: WikiAssistantPage | null } = $props()
   let workspaces = $state<Workspace[]>([])
@@ -21,11 +21,11 @@
 
   const ask = async (prompt: string): Promise<void> => {
     if (!loaded || !workspaces.some(item => item.id === workspaceId)) throw new Error('Choose a workspace for this conversation.')
-    const response = await request<{ result: { uiPath: string } }>(
+    const response = await request<{ result: { resource: { workspaceId: string; id: string } } }>(
       `/api/workspaces/${encodeURIComponent(workspaceId)}/capabilities/agents.assistance.open/invoke`,
       jsonRequest('POST', { input: { prompt: wikiAssistantPrompt(prompt, page) }, actor: { kind: 'human' } }),
     )
-    location.assign(response.result.uiPath)
+    location.assign(wikiAssistantDestination(response.result.resource.workspaceId, response.result.resource.id))
   }
 </script>
 

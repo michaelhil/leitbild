@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { wikiAssistantPrompt } from './wiki-assistant.ts'
+import { wikiAssistantPrompt, wikiAssistantDestination } from './wiki-assistant.ts'
 
 describe('Wiki Assistant context', () => {
   test('includes only the visible source reference and exact publication, not document contents', () => {
@@ -10,5 +10,11 @@ describe('Wiki Assistant context', () => {
   })
   test('does not invent a source when the page has not loaded', () => {
     expect(wikiAssistantPrompt('Help me find the wiki', null)).toBe('Help me find the wiki')
+  })
+  test('retains the workspace header and opens only Agents, not an empty World', () => {
+    expect(wikiAssistantDestination('workspace-id', 'room-id')).toBe('/workspaces/workspace-id?agents=room-id')
+    const url = new URL(wikiAssistantDestination('workspace-id', 'room/id & test'), 'https://leitbild.app')
+    expect(url.searchParams.get('agents')).toBe('room/id & test')
+    expect(url.searchParams.has('world')).toBe(false)
   })
 })
