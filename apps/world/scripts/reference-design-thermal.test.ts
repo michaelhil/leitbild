@@ -18,5 +18,6 @@ test('thermal study rejects impossible geometry and misleading refinement inputs
     {steamCp_J_kgK:400},{axialCells:[80,40,160]},{steps_s:[.01,.02,.04]},
     {wallEmissivity:1.1},{radialCells:1},{radialCells:8},{pressure_MPaAbs:.05},
     {pressure_MPaAbs:1},{outsideDiameter_m:0},{equation:'custom'},
-    {solidDensity_kg_m3:undefined}])expect(()=>parseThermalStudy(doc({...basis,...change}))).toThrow()
+    {solidDensity_kg_m3:undefined},{steps_s:[.04,.02,Number.NaN]},
+    {duration_s:Infinity},{axialCells:[40,80,160.5]}])expect(()=>parseThermalStudy(doc({...basis,...change}))).toThrow()
 })
