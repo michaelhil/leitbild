@@ -150,7 +150,7 @@ def run(name,dt,duration,cooling=False,factor=1.,matched=False):
                 columns.append((residual(a)-residual(bb))/(2*h))
             return np.array(columns).T
         if step==0:
-            defaultStep=np.sqrt(np.finfo(float).eps)*abs(x[3]);perturbed=x.copy();perturbed[3]+=defaultStep
+            defaultStep=np.sqrt(np.finfo(float).eps)*(abs(x[3]) if x[3]!=0 else 1.);perturbed=x.copy();perturbed[3]+=defaultStep
             oldProfiles,_=decode(x);newProfiles,_=decode(perturbed)
             j=jacobian(x);jh=jacobian(x,.5)
             jacobianAudit=dict(defaultMiddleHeadCoordinateStep=defaultStep,
