@@ -1,10 +1,14 @@
 import { describe,expect,test } from 'bun:test'
-import { cmtTracerDiagnostic,parseCmtBasis } from './reference-design-cmt.ts'
+import { createHash } from 'node:crypto'
+import { cmtCalculation,cmtTracerDiagnostic,parseCmtBasis } from './reference-design-cmt.ts'
 
 const basis:ReturnType<typeof parseCmtBasis>={design:'LD-01',duration_s:60,output_s:.25,initialPressure_MPa:15.2,primaryVolume_m3:220,
   hot_C:290,cold_C:40,layers:4,interlayerConductance_W_K:1000,relativeTolerance:1e-9,maximumStep_s:.25}
 const document=(value:unknown)=>'```reference-cmt-fixture\n'+JSON.stringify(value)+'\n```'
 describe('CMT apparatus numeric input',()=>{
+  test('explicit shared fragments retain the exact reviewed physical execution payload',()=>{
+    expect(createHash('sha256').update(cmtCalculation).digest('hex')).toBe('b8d6a46e9c9696aa38cd8d4c52e3970018e34dc2efb8644913fd92276be15f21')
+  })
   test('accepts the declared bounded numeric fixture',()=>expect(parseCmtBasis(document(basis))).toEqual(basis))
   test('requires one unique source block',()=>{
     expect(()=>parseCmtBasis('')).toThrow()

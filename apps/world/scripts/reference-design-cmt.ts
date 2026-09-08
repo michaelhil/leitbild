@@ -22,7 +22,7 @@ export function parseCmtBasis(document:string) {
   return schema.parse(JSON.parse(blocks[0]![1]!))
 }
 
-export const cmtCalculation = String.raw`
+export const cmtLiquidDefinitions = String.raw`
 import json,sys,math,platform
 import numpy as np
 import scipy,iapws
@@ -70,7 +70,9 @@ def state(v,y):
         pf=pf+g*H*r
     return dict(rows=rows,M=np.array(mass),E=np.array(energy),
                 ptop=y[0],pbottom=pf,ztop=v['top'],zbottom=v['top']-sum(v['H']))
+`
 
+const cmtRunCalculation = String.raw`
 def run(name,N,tol,maxstep,blocked=False,stuck=False):
     vs=make(N);sizes=[len(v['V'])+1 for v in vs];cuts=np.cumsum([0]+sizes)
     p0=b['initialPressure_MPa']*1e6;hot=b['hot_C']+273.15;cold=b['cold_C']+273.15
@@ -172,7 +174,8 @@ cases=[run('healthy',b['layers'],b['relativeTolerance'],b['maximumStep_s']),
        run('half_step',b['layers'],b['relativeTolerance']/10,b['maximumStep_s']/2),
        run('double_layers',b['layers']*2,b['relativeTolerance'],b['maximumStep_s']),
        run('quadruple_layers',b['layers']*4,b['relativeTolerance'],b['maximumStep_s'])]
-def observation(case,loss=False):
+`
+export const cmtObservationCalculation = String.raw`def observation(case,loss=False):
     trace=case['trace'];rc=water(b['initialPressure_MPa']*1e6,b['cold_C']+273.15)[0]
     level=trace[0]['tanks'][0]['rawLevelDP_Pa'];dp=0.;previous=trace[0];rows=[]
     uncertain=0.
@@ -211,7 +214,8 @@ def observation(case,loss=False):
                 liquidCalibrationInterval_kg_s=None,assessment='cannot_assess_delivery'))
         previous=row
     return dict(case=case['name'],instrumentPowerInterruption=loss,trace=rows)
-def compare(a,bb):
+`
+const cmtReviewCalculation = String.raw`def compare(a,bb):
     return dict(maxPressureDifference_MPa=max(abs(x['primaryPressure_MPa']-y['primaryPressure_MPa']) for x,y in zip(a['trace'],bb['trace'])),
        maxMatchedLayerBandDifference_C=max(float(max(abs(np.array(x['tanks'][0]['layers_C'])-np.array(y['tanks'][0]['layers_C']).reshape(len(x['tanks'][0]['layers_C']),-1).mean(axis=1)))) for x,y in zip(a['trace'],bb['trace'])),
        finalDeliveryDifference_kg=abs(a['trace'][-1]['tanks'][0]['delivered_kg']-bb['trace'][-1]['tanks'][0]['delivered_kg']))
@@ -240,6 +244,7 @@ print(json.dumps(dict(versions=dict(python=platform.python_version(),iapws=iapws
     temporalDiagnosticScreenPassed=time_screen,highAccuracyPressureFrontQualified=False,
     observationRefinement=projection_comparisons,observationReplays=replays)))
 `
+export const cmtCalculation = cmtLiquidDefinitions + cmtRunCalculation + cmtObservationCalculation + cmtReviewCalculation
 
 /** Exact semidiscrete upwind comparison, not a tank thermocline/temperature model. */
 export function cmtTracerDiagnostic(input:{height_m:number;area_m2:number;velocity_m_s:number;duration_s:number;cells:number;probeDepth_m:number}) {
