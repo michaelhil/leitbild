@@ -15,7 +15,7 @@ export function parseFilmBasis(text: string) {
   return value
 }
 
-export const filmCalculation = String.raw`
+export const filmDefinitions = String.raw`
 import json,sys,math,platform,scipy,CoolProp
 import CoolProp.CoolProp as CP
 import numpy as np
@@ -162,7 +162,8 @@ def wall_checks():
     return dict(stripHeight_m=dx,stableIncrementChecks=increment_checks,heldMaximumChange_K=float(max(abs(held-flat))),steadyMaximumChange_K=float(max(abs(steady-profile))),
         analyticSteadyHeat_W=expected,maxHeatDifference_W=float(max(abs(q-expected))))
 
-wallChecks=wall_checks()
+`
+const filmVerification = String.raw`wallChecks=wall_checks()
 nr=cfg['radialCells'];n=cfg['axialCells'];dt=cfg['timeStep_s']
 radialCases=[radial_run(n,nr,dt),radial_run(n,2*nr,dt),radial_run(2*n,nr,dt),radial_run(n,nr,dt/2),radial_run(2*n,2*nr,dt/2)]
 radialComparisons=[]
@@ -206,6 +207,8 @@ print(json.dumps(dict(scope='Small-Jakob constant-pressure startup film with fin
         numericalScreenPassed=all(v['passes'] for v in radialComparisons),axiallyInsulatedStrips=True,outerAdiabatic=True),
     empiricalRateQualified=False,fullEnergyQualified=False,liveModelInstalled=False),allow_nan=False))
 `
+
+export const filmCalculation = filmDefinitions + filmVerification
 
 if (import.meta.main) {
   const [source, owner, python, ...extra] = process.argv.slice(2)
