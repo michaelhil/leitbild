@@ -13,6 +13,19 @@ const zeros=(n:number)=>Array<number>(n).fill(0)
 const finite=(a:number[])=>a.every(Number.isFinite)
 export class KernelTrialError extends Error {}
 
+/** One exact value per physical cell, never a table/interpolator or causal state. */
+export function createKernelPropertyReader<T>(count:number,read:(p:number,T:number)=>T,reuse=true) {
+  const cells:Array<{p:number,T:number,value:T}|undefined>=Array(count)
+  return (cell:number,p:number,T:number):T=>{
+    if(!Number.isInteger(cell)||cell<0||cell>=count||!Number.isFinite(p)||!Number.isFinite(T))throw Error('Invalid property request')
+    const previous=cells[cell]
+    if(reuse&&previous?.p===p&&previous.T===T)return previous.value
+    const value=read(p,T)
+    if(reuse)cells[cell]={p,T,value}
+    return value
+  }
+}
+
 /** Pivoting dense elimination for this 42-variable experiment, not a sparse plant API. */
 export function solveKernelLinear(matrix:number[][],rhs:number[]) {
   const n=rhs.length
@@ -59,7 +72,7 @@ export function solveKernelNewton(f:(x:number[])=>number[],guess:number[]) {
   throw Error('Kernel Newton iteration exhausted; state not accepted')
 }
 
-export async function runNativeKernel(initializationDocument:string,hydraulicDocument:string,cycleDocument:string,directory:string,python:string){
+export async function runNativeKernel(initializationDocument:string,hydraulicDocument:string,cycleDocument:string,directory:string,python:string,reuseProperties=true){
   const basis=parseInitializationBasis(initializationDocument)
   const sourceHash=hash(await Bun.file(import.meta.path).bytes())
   // These fixed existing calculations provide physical coefficients, not state targets.
@@ -68,18 +81,20 @@ export async function runNativeKernel(initializationDocument:string,hydraulicDoc
   const loader=await Bun.file(join(directory,'coolprop.js')).bytes()
   const cool=await(await import(pathToFileURL(join(directory,'coolprop.js')).href)).default()
   const state=cool.factory('HEOS','Water')
+  const ownedStates=[state]
   try {
   let propertyCalls=0,residualCalls=0
-  const pt=(p:number,T:number)=>{
+  const propertyReader=(handle:typeof state,reuse=reuseProperties)=>createKernelPropertyReader(11,(p:number,T:number)=>{
     if(!Number.isFinite(p)||!Number.isFinite(T)||p<14e6||p>16.5e6||T<548.15||T>601.15)throw new KernelTrialError('Outside sealed-primary liquid investigation band')
-    try{state.update(cool.input_pairs.PT_INPUTS,p,T)}catch(error){throw new KernelTrialError('HEOS rejected PT trial: '+String(error))}
+    try{handle.update(cool.input_pairs.PT_INPUTS,p,T)}catch(error){throw new KernelTrialError('HEOS rejected PT trial: '+String(error))}
     propertyCalls++
-    const phase=state.keyed_output(cool.parameters.iPhase)
+    const phase=handle.keyed_output(cool.parameters.iPhase)
     if(phase!==cool.phases.iphase_liquid.value&&phase!==cool.phases.iphase_supercritical_liquid.value)throw new KernelTrialError('Kernel requires actual single liquid phase')
-    const result={rho:state.rhomass(),h:state.hmass(),u:state.umass()}
+    const result={rho:handle.rhomass(),h:handle.hmass(),u:handle.umass()}
     if(!finite(Object.values(result))||result.rho<=0)throw Error('Invalid EOS result')
-    return result
-  }
+    return Object.freeze(result)
+  },reuse)
+  const pt=propertyReader(state)
   const c=cycle,s=c.points,hb=hydraulic.basis,cb=c.basis,g=hb.gravity_m_s2
   const names=['DOWNCOMER','LOWER','CORE.1','CORE.2','UPPER','HOT.A','HOT.B','SG.A.PRIMARY','SG.B.PRIMARY','COLD.A','COLD.B']
   const pressureZ=[3,-2,0,2,2,2.5,2.5,3,3,3,3]
@@ -110,10 +125,10 @@ export async function runNativeKernel(initializationDocument:string,hydraulicDoc
   if(calibrationRho.length!==11||!finite(calibrationRho)||calibrationRho.some(v=>v<=0))throw Error('Invalid frozen density normalization')
   const rhoref=ends.map(([i])=>calibrationRho[i]!)
   const seed=[...pseed.map(p=>p/15),...Tseed.map(T=>T/300),...Array(14).fill(1),Tmetal0/300,Tmetal0/300,...Array(4).fill(1)]
-  function evaluate(x:number[],factor=1,request=1){
+  function evaluate(x:number[],factor=1,request=1,properties=pt){
     if(x.length!==42||!finite(x))throw Error('Malformed kernel state')
     const p=x.slice(0,11).map(v=>v*15),T=x.slice(11,22).map(v=>v*300),m=x.slice(22,36).map((v,i)=>v*refs[i]!)
-    const Tw=x.slice(36,38).map(v=>v*300),omega=x.slice(38).map(v=>v*omega0),props=p.map((v,i)=>pt(v*1e6,T[i]!+273.15))
+    const Tw=x.slice(36,38).map(v=>v*300),omega=x.slice(38).map(v=>v*omega0),props=p.map((v,i)=>properties(i,v*1e6,T[i]!+273.15))
     const mass=props.map((q,i)=>q.rho*basis.volumes_m3[i]!),energy=props.map((q,i)=>mass[i]!*(q.u+g*energyZ[i]!))
     const dM=zeros(11),dU=zeros(11),hyd:number[]=[],electrical:number[]=[],ambient:number[]=[],domega:number[]=[]
     for(let edge=0;edge<14;edge++){
@@ -147,24 +162,38 @@ export async function runNativeKernel(initializationDocument:string,hydraulicDoc
   if(maxabs(initial.dM)>1e-4||maxabs(initial.dU)>10||maxabs(initial.hyd)>1)throw Error('Dimensional steady residual failed')
   const initializationCost_s=(performance.now()-begin)/1000
   const compact=(t:number,e:Evaluated)=>({t_s:t,p_MPa:e.p,T_C:e.T,flow_kg_s:e.m,wall_C:e.Tw,rpm:e.omega.map(w=>w*60/(2*Math.PI))})
+  type Checkpoint={time_s:number,x:number[],ledger_J:number,rotorNumerical_J:number,maxMass_kg:number,maxEnergy_J:number,maxResidual:number}
+  const firstCheckpoint=():Checkpoint=>({time_s:0,x:[...solution.x],ledger_J:0,rotorNumerical_J:0,maxMass_kg:0,maxEnergy_J:0,maxResidual:0})
+  type Mode='hold'|'heat'|'shaft'
+  // A one-step offline transaction. No scheduler, World Run state or display snapshot.
+  function advance(saved:Checkpoint,requestedDt:number,mode:Mode,read=evaluate):Checkpoint{
+    if(!Number.isFinite(requestedDt)||requestedDt<=0||!finite([saved.time_s,saved.ledger_J,saved.rotorNumerical_J,saved.maxMass_kg,saved.maxEnergy_J,saved.maxResidual])||saved.time_s<0)throw Error('Invalid experiment step')
+    const remainingPulse=basis.sourcePulse_s-saved.time_s
+    const dt=remainingPulse>1e-10?Math.min(requestedDt,remainingPulse):requestedDt
+    const active=saved.time_s<basis.sourcePulse_s-1e-10
+    const factor=mode==='heat'&&active?1+basis.sourcePulseFraction:1,request=mode==='shaft'&&active?.999:1
+    const old=read(saved.x)
+    const residual=(trial:number[])=>{residualCalls++;const e=read(trial,factor,request);return[
+      ...e.mass.map((v,i)=>((v-old.mass[i]!)/dt-e.dM[i]!)/M0),...e.energy.map((v,i)=>((v-old.energy[i]!)/dt-e.dU[i]!)/Pcore),
+      ...e.hyd.map(v=>v/600000),...e.Tw.map((v,i)=>((v-old.Tw[i]!)/dt-e.dw[i]!)*Cwall/Pcore),...e.omega.map((v,i)=>((v-old.omega[i]!)/dt-e.domega[i]!)*J/torque0)]}
+    const solved=solveKernelNewton(residual,saved.x),current=read(solved.x,factor,request)
+    const ledger=saved.ledger_J+current.power*dt
+    const rotorNumerical=saved.rotorNumerical_J+.5*J*sum(current.omega.map((w,i)=>(w-old.omega[i]!)**2))
+    const maxMass=Math.max(saved.maxMass_kg,Math.abs(sum(current.mass)-sum(initial.mass)))
+    const maxEnergy=Math.max(saved.maxEnergy_J,Math.abs(current.stored-initial.stored-ledger+rotorNumerical))
+    if(maxMass>.001||maxEnergy>10000)throw Error('Kernel conservation gate failed; state not accepted')
+    return{time_s:saved.time_s+dt,x:solved.x,ledger_J:ledger,rotorNumerical_J:rotorNumerical,maxMass_kg:maxMass,maxEnergy_J:maxEnergy,maxResidual:Math.max(saved.maxResidual,solved.residual)}
+  }
   function integrate(name:string,dt:number,end:number,mode:'hold'|'heat'|'shaft'){
-    const start=performance.now(),before={propertyCalls,residualCalls};let x=[...solution.x],current=initial,ledger=0,rotorNumerical=0,maxMass=0,maxEnergy=0,maxResidual=0
+    const start=performance.now(),before={propertyCalls,residualCalls};let saved=firstCheckpoint(),current=initial
     const samples=[compact(0,current)]
-    for(let n=0;n<Math.round(end/dt);n++){
-      const t=(n+1)*dt,active=n*dt<basis.sourcePulse_s-1e-9,factor=mode==='heat'&&active?1+basis.sourcePulseFraction:1,request=mode==='shaft'&&active?.999:1,old=current
-      const residual=(trial:number[])=>{residualCalls++;const e=evaluate(trial,factor,request);return[
-        ...e.mass.map((v,i)=>((v-old.mass[i]!)/dt-e.dM[i]!)/M0),...e.energy.map((v,i)=>((v-old.energy[i]!)/dt-e.dU[i]!)/Pcore),
-        ...e.hyd.map(v=>v/600000),...e.Tw.map((v,i)=>((v-old.Tw[i]!)/dt-e.dw[i]!)*Cwall/Pcore),...e.omega.map((v,i)=>((v-old.omega[i]!)/dt-e.domega[i]!)*J/torque0)]}
-      const solved=solveKernelNewton(residual,x);x=solved.x;current=evaluate(x,factor,request)
-      ledger+=current.power*dt;rotorNumerical+=.5*J*sum(current.omega.map((w,i)=>(w-old.omega[i]!)**2))
-      maxMass=Math.max(maxMass,Math.abs(sum(current.mass)-sum(initial.mass)))
-      maxEnergy=Math.max(maxEnergy,Math.abs(current.stored-initial.stored-ledger+rotorNumerical));maxResidual=Math.max(maxResidual,solved.residual)
-      if(Math.abs(t*10-Math.round(t*10))<1e-8||n===Math.round(end/dt)-1)samples.push(compact(t,current))
+    while(saved.time_s<end-1e-10){
+      saved=advance(saved,Math.min(dt,end-saved.time_s),mode);current=evaluate(saved.x)
+      if(Math.abs(saved.time_s*10-Math.round(saved.time_s*10))<1e-8||saved.time_s>=end-1e-10)samples.push(compact(saved.time_s,current))
     }
-    if(maxMass>.001||maxEnergy>10000)throw Error('Kernel conservation gate failed')
     const pressureDrift=maxabs(current.p.map((v,i)=>v-initial.p[i]!)),temperatureDrift=maxabs(current.T.map((v,i)=>v-initial.T[i]!))
     if(mode==='hold'&&(pressureDrift>1e-5||temperatureDrift>1e-4))throw Error('Held state drift failed')
-    return{name,dt,samples,maxMass_kg:maxMass,maxEnergy_J:maxEnergy,maxResidual,rotorNumerical_J:rotorNumerical,pressureDrift_MPa:pressureDrift,temperatureDrift_K:temperatureDrift,
+    return{name,dt,samples,maxMass_kg:saved.maxMass_kg,maxEnergy_J:saved.maxEnergy_J,maxResidual:saved.maxResidual,rotorNumerical_J:saved.rotorNumerical_J,pressureDrift_MPa:pressureDrift,temperatureDrift_K:temperatureDrift,
       cost:{wall_s:(performance.now()-start)/1000,propertyCalls:propertyCalls-before.propertyCalls,residualCalls:residualCalls-before.residualCalls}}
   }
   const hold=integrate('hold',basis.holdStep_s,basis.hold_s,'hold')
@@ -176,14 +205,57 @@ export async function runNativeKernel(initializationDocument:string,hydraulicDoc
     if(index===1&&!accepted)throw Error('Finest kernel refinement failed')
     return{case:coarse.name,coarseStep:coarse.dt,fineStep:fine.dt,differences,accepted}
   }))
-  return{scope:'Native HEOS sealed-primary experiment, not installed runtime',basis,energyConvention:'M(u+gz) storage; m(h+gz) shared donor flux; no fluid kinetic energy; BE rotor defect reported',pressureZ,energyZ,names,
+  const trajectoryCost={wall_s:(performance.now()-begin)/1000,propertyCalls,residualCalls}
+  // Resume against new HEOS handles with empty exact-value slots. Accepted causal state
+  // must suffice: neither the mutable property handle nor any cache is serialized.
+  const freshEvaluator=(reuse=reuseProperties)=>{
+    const handle=cool.factory('HEOS','Water');ownedStates.push(handle)
+    const properties=propertyReader(handle,reuse)
+    return(x:number[],factor=1,request=1)=>evaluate(x,factor,request,properties)
+  }
+  const continueTo=(saved:Checkpoint,end:number,read=evaluate)=>{
+    const trace:Checkpoint[]=[]
+    while(saved.time_s<end-1e-10){saved=advance(saved,Math.min(.025,end-saved.time_s),'heat',read);trace.push(saved)}
+    return{saved,trace}
+  }
+  const lifecycleStart=performance.now(),paused=continueTo(firstCheckpoint(),.375).saved,serialized=JSON.stringify(paused)
+  const cachedRead=freshEvaluator(true),uncachedRead=freshEvaluator(false)
+  let comparedEvaluations=0
+  for(const checkpoint of [firstCheckpoint(),paused]){
+    const probes=[checkpoint.x,...checkpoint.x.flatMap((_,i)=>[-1,1].map(sign=>{const trial=[...checkpoint.x];trial[i]=trial[i]!+sign*2e-6;return trial}))]
+    for(const trial of probes){
+      if(JSON.stringify(cachedRead(trial,1.001,.999))!==JSON.stringify(uncachedRead(trial,1.001,.999)))throw Error('Property reuse changed residual ingredients')
+      comparedEvaluations++
+    }
+  }
+  const direct=continueTo(paused,1.1),restored=continueTo(JSON.parse(serialized),1.1,freshEvaluator())
+  const clone=continueTo(JSON.parse(serialized),1.1,freshEvaluator())
+  if(JSON.stringify(direct)!==JSON.stringify(restored)||JSON.stringify(direct)!==JSON.stringify(clone))throw Error('Cold copy/resume changed accepted trajectory or ledger')
+  const changed=advance(JSON.parse(serialized),.025,'shaft',freshEvaluator())
+  if(JSON.stringify(paused)!==serialized||maxabs(changed.x.map((v,i)=>v-direct.trace[0]!.x[i]!))===0)throw Error('Independent branch did not remain independent')
+  let evaluations=0,failed=false
+  const failingRead=freshEvaluator()
+  try{advance(paused,.025,'heat',(x,factor=1,request=1)=>{const value=failingRead(x,factor,request);if(++evaluations===8)throw new KernelTrialError('Deliberately rejected thermodynamic trial');return value})}
+  catch(error){if(!(error instanceof KernelTrialError))throw error;failed=true}
+  if(!failed||JSON.stringify(paused)!==serialized)throw Error('Failed trial changed causal checkpoint')
+  const retried=continueTo(paused,1.1,failingRead)
+  if(JSON.stringify(retried)!==JSON.stringify(direct))throw Error('Rejected trial polluted resumed history')
+  let ledgerRejected=false
+  try{advance({...paused,ledger_J:paused.ledger_J+20000},.025,'heat')}
+  catch(error){if(!(error instanceof Error)||!error.message.includes('conservation gate failed'))throw error;ledgerRejected=true}
+  if(!ledgerRejected)throw Error('Bad ledger accepted')
+  const boundaryStart=continueTo(firstCheckpoint(),.99).saved,boundary=advance(boundaryStart,.025,'heat')
+  if(boundary.time_s!==basis.sourcePulse_s)throw Error('Step crossed pulse boundary')
+  const lifecycle={checkpoint:paused,restoredFinal:restored.saved,continuationHash:hash(JSON.stringify(direct.trace)),comparedEvaluations,pausedAt_s:paused.time_s,resumedTo_s:direct.saved.time_s,comparedAcceptedSteps:direct.trace.length,identicalColdRestoreAndClone:true,branchIsolated:true,rejectedAfterEvaluations:evaluations,retryIdentical:true,conservationRejectedBeforeAcceptance:true,pulseBoundary_s:boundary.time_s,wall_s:(performance.now()-lifecycleStart)/1000}
+  return{scope:'Native HEOS sealed-primary experiment, not installed runtime',reuseProperties,basis,energyConvention:'M(u+gz) storage; m(h+gz) shared donor flux; no fluid kinetic energy; BE rotor defect reported',pressureZ,energyZ,names,
     provenance:{sourceHash,inputHash:hash(JSON.stringify(basis)),wasmHash:hash(wasm),loaderHash:hash(loader),densityCalibrationHash:hash(densityCalculation),cycleInput:cycle.inputSha256,cycleCalculation:cycle.calculationSha256,hydraulicInput:hydraulic.inputSha256,hydraulicCalculation:hydraulic.calculationSha256},
-    nominal:compact(0,initial),primaryMass_kg:sum(initial.mass),calibration:{refs,K,rhoref,a,blade,R,J,G,Tsink},hold,heat,shaft,refinement,initializationCost_s,totalCost_s:(performance.now()-begin)/1000,propertyCalls,residualCalls}
-  } finally { state.delete() }
+    nominal:compact(0,initial),primaryMass_kg:sum(initial.mass),calibration:{refs,K,rhoref,a,blade,R,J,G,Tsink},hold,heat,shaft,refinement,initializationCost_s,trajectoryCost,lifecycle,totalCost_s:(performance.now()-begin)/1000,propertyCalls,residualCalls}
+  } finally { for(const handle of ownedStates)handle.delete() }
 }
 
 if(import.meta.main){
-  const [init,hyd,cycle,dir,python]=Bun.argv.slice(2)
+  const [init,hyd,cycle,dir,python,comparison]=Bun.argv.slice(2)
   if(!init||!hyd||!cycle||!dir||!python)throw Error('Usage: kernel.ts <initialization.md> <hydraulic.md> <cycle.md> <isolated-coolprop-dir> <isolated-python>')
-  console.log(JSON.stringify(await runNativeKernel(await Bun.file(init).text(),await Bun.file(hyd).text(),await Bun.file(cycle).text(),dir,python),null,2))
+  if(comparison!==undefined&&comparison!=='--uncached')throw Error('Only optional flag: --uncached')
+  console.log(JSON.stringify(await runNativeKernel(await Bun.file(init).text(),await Bun.file(hyd).text(),await Bun.file(cycle).text(),dir,python,comparison!=='--uncached'),null,2))
 }
