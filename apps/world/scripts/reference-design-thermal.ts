@@ -28,12 +28,11 @@ export function parseThermalStudy(document:string) {
 }
 
 const calculation=String.raw`
-import sys,json,math,platform
+import sys,json,math,platform,time
 import numpy as np
 import scipy,iapws
 from scipy.optimize import brentq
-from scipy.sparse import diags,kron,eye,csc_matrix,bmat,coo_matrix
-from scipy.sparse.linalg import spsolve
+from scipy.linalg import solve_banded
 from iapws import IAPWS97 as W
 b=json.load(sys.stdin); checks=[]
 def check(name,actual,expected,atol=1e-8,rtol=1e-8):
@@ -174,18 +173,29 @@ for testFlow in [0.,.0001]:
 check('cross-cell swept immersion',mean_immersion(0.,2.,np.array([0.]),1.)[0],.75)
 check('reverse swept immersion',mean_immersion(2.,0.,np.array([0.]),1.)[0],.75)
 
-def run(N,dt,rate,radial=None,duration=None,initialDepth=None):
+def run(N,dt,rate,radial=None,duration=None,initialDepth=None,adaptiveTolerance=None):
+    wallStart=time.perf_counter()
     nr=radial or b['radialCells']; dz=L/N; end=duration or b['duration_s']
     edges=np.linspace(ri,ro,nr+1); rc=np.sqrt((edges[:-1]**2+edges[1:]**2)/2)
     ar=math.pi*(edges[1:]**2-edges[:-1]**2); C=np.tile(rhoS*cpS*ar*dz,N)
     innerG=2*math.pi*ks*dz/np.log(rc[1:]/rc[:-1])
     radialD=np.zeros(nr)
     radialD[:-1]+=innerG; radialD[1:]+=innerG
-    radialK=diags([-innerG,radialD,-innerG],[-1,0,1],shape=(nr,nr))
     axdiag=np.full(N,2.); axdiag[0]=axdiag[-1]=1.
-    axialK=diags([-np.ones(N-1),axdiag,-np.ones(N-1)],[-1,0,1],shape=(N,N))
-    K=kron(eye(N),radialK)+kron(axialK,diags(ks*ar/dz,0))
     surfaceIndices=np.arange(N)*nr+(nr-1)
+    # Interleave each cell's radial solid temperatures and gas temperature.
+    # The same coupled matrix then has lower/upper bandwidth nr+1.
+    width=nr+1; size=N*width
+    bandSolid=(np.arange(N)[:,None]*width+np.arange(nr)).reshape(-1)
+    bandGas=np.arange(N)*width+nr; bandSurface=bandGas-1
+    Kband=np.zeros((2*width+1,size))
+    Kband[width,bandSolid]=(radialD[None,:]+axdiag[:,None]*ks*ar[None,:]/dz).reshape(-1)
+    for j,conductance in enumerate(innerG):
+        left=np.arange(N)*width+j
+        Kband[width-1,left+1]=-conductance; Kband[width+1,left]=-conductance
+    left=(np.arange(N-1)[:,None]*width+np.arange(nr)).reshape(-1)
+    Kband[0,left+width]=-np.tile(ks*ar/dz,N-1)
+    Kband[2*width,left]=-np.tile(ks*ar/dz,N-1)
     outerHalfG=2*math.pi*ks*dz/math.log(ro/rc[-1])
     innerHalfG=2*math.pi*ks*dz/math.log(rc[0]/ri)
     check(f'exact cylindrical series resistance radial{nr}',
@@ -197,11 +207,83 @@ def run(N,dt,rate,radial=None,duration=None,initialDepth=None):
     surface=np.full(N,b['initialSolid_C']+273.15)
     ml=rho*Af*(b['initialPoolDepth_m'] if initialDepth is None else initialDepth); depth=ml/(rho*Af)
     gasV=Af*dz*(1-np.clip((depth-bottoms)/dz,0,1)); mg=pa*gasV/(R*Tg)
+    trialCalls=trialIterations=maxIterations=0
+    def advance(old,step):
+        # Only work counters mutate here. Inventories, histories, event brackets
+        # and integrated boundary fluxes belong to accepted commits below.
+        nonlocal trialCalls,trialIterations,maxIterations
+        trialCalls+=1
+        T,surface,Tg,mg,ml,depth=old
+        wet=np.clip((depth-bottoms)/dz,0,1)
+        base=Kband.copy(); base[width,bandSolid]+=C/step
+        trialSurface=surface.copy(); trialGas=Tg.copy(); trialDepth=depth
+        initialHw,_=wall_coefficients(surface,Tg,np.zeros(N),depth)
+        trialInlet=np.full(N,max(0,float(np.dot(initialHw*(surface-Ts),wet))*perimeter*dz/hfg))
+        converged=False
+        for iteration in range(60):
+            avgWet=mean_immersion(depth,trialDepth,bottoms,dz)
+            hw,hv=wall_coefficients(trialSurface,trialGas,trialInlet,(depth+trialDepth)/2)
+            epsilon=1e-3
+            plus,_=wall_coefficients(trialSurface+epsilon,trialGas,trialInlet,(depth+trialDepth)/2)
+            minus,_=wall_coefficients(trialSurface-epsilon,trialGas,trialInlet,(depth+trialDepth)/2)
+            derivative=(plus*(trialSurface+epsilon-Ts)-minus*(trialSurface-epsilon-Ts))/(2*epsilon)
+            Aw=perimeter*dz*avgWet
+            Hw=derivative*Aw; waterOffset=Aw*(hw*(trialSurface-Ts)-derivative*trialSurface)
+            Hg=hv*perimeter*dz*(1-avgWet); S=outerHalfG+Hw+Hg
+            matrix=base.copy(); rhs=np.zeros(size); rhs[bandSolid]=C/step*T
+            matrix[width,bandSurface]+=outerHalfG*(Hw+Hg)/S
+            rhs[bandSurface]-=outerHalfG*waterOffset/S
+            cross=-outerHalfG*Hg/S
+            matrix[width-1,bandGas]=cross; matrix[width+1,bandSurface]=cross
+            gasDiag=cp*(mg/step+trialInlet)+Hg*(outerHalfG+Hw)/S
+            gasRhs=cp*mg/step*Tg-Hg*waterOffset/S
+            gasRhs[0]+=cp*trialInlet[0]*Ts
+            inactive=(mg==0)&(trialInlet==0)&(Hg==0)
+            gasDiag[inactive]=1.; gasRhs[inactive]=Ts
+            matrix[width,bandGas]=gasDiag
+            matrix[2*width,bandGas[:-1]]=-cp*trialInlet[1:]
+            rhs[bandGas]=gasRhs
+            solved=solve_banded((width,width),matrix,rhs,overwrite_ab=True,overwrite_b=True,check_finite=True)
+            Tnew=solved[bandSolid]; solvedGas=solved[bandGas]
+            surfaceNew=(outerHalfG*Tnew[surfaceIndices]-waterOffset+Hg*solvedGas)/S
+            Qpool=Hw*surfaceNew+waterOffset; Qgas=Hg*(surfaceNew-solvedGas)
+            evap=float(np.sum(Qpool))*step/hfg
+            if evap < -1e-12:raise ValueError('Saturated-pool condensation needs separate liquid closure')
+            addition=rate*step; mlProposed=ml+addition-evap
+            mlNew=max(0,mlProposed); over=max(0,mlNew-rho*Af*L); mlNew-=over
+            newDepth=mlNew/(rho*Af); newGasV=Af*dz*(1-np.clip((newDepth-bottoms)/dz,0,1))
+            incoming=evap; incomingT=Ts
+            newMg=np.empty(N); newTg=np.empty(N); newInlet=np.empty(N)
+            for j in range(N):
+                newInlet[j]=incoming/step; denom=mg[j]+incoming
+                if denom<=0:
+                    if newGasV[j]>1e-15:raise ValueError('Gas volume has no admitted mass')
+                    newMg[j]=0.; newTg[j]=Ts; continue
+                temperature=(mg[j]*Tg[j]+incoming*incomingT+Qgas[j]*step/cp)/denom
+                mass=pa*newGasV[j]/(R*temperature); leaving=denom-mass
+                if leaving < -1e-12:raise ValueError('Reverse atmospheric makeup requires explicit inlet branch')
+                newMg[j]=mass; newTg[j]=temperature; incoming=leaving; incomingT=temperature
+            error=max(float(np.max(abs(newTg-solvedGas))),float(np.max(abs(surfaceNew-trialSurface))))
+            if error<1e-8 and abs(newDepth-trialDepth)<1e-11:
+                finalWet=mean_immersion(depth,newDepth,bottoms,dz)
+                finalHw,finalHg=wall_coefficients(surfaceNew,newTg,newInlet,(depth+newDepth)/2)
+                lawResidual=max(float(np.max(abs(Qpool-finalHw*perimeter*dz*finalWet*(surfaceNew-Ts)))),
+                    float(np.max(abs(Qgas-finalHg*perimeter*dz*(1-finalWet)*(surfaceNew-newTg)))))
+                if lawResidual<1e-7:converged=True; break
+            trialSurface=surfaceNew; trialGas=newTg; trialDepth=newDepth; trialInlet=newInlet
+        trialIterations+=iteration+1; maxIterations=max(maxIterations,iteration+1)
+        if not converged:return dict(status='nonlinear')
+        if mlProposed<0:return dict(status='depletion')
+        return dict(status='ok',state=(Tnew,surfaceNew,newTg,newMg,mlNew,newDepth),
+            addition=addition,vented=incoming,overflow=over,inletH=addition*hf,
+            outletH=incoming*(a+cp*incomingT)+over*hf,lawResidual=lawResidual,step=step)
     initialLiquid=ml
     initialH=float(np.dot(C,T-Ts)+ml*hf+np.sum(mg*(a+cp*Tg)))
     initialM=ml+float(np.sum(mg)); injected=vented=overflow=0.; inletH=outletH=0.
     qbrackets=[None,None,None]; rows=[]; minimumM=ml; maxResidual=0.; maxMassResidual=0.
-    minOutlet=1e99; maxIterations=0; rejectedSteps=0; acceptedSteps=0; t=0.; nextOutput=0.; maxLawResidual=0.
+    minOutlet=1e99; rejectedSteps=0; acceptedSteps=0; t=0.; nextOutput=0.; maxLawResidual=0.
+    estimatorRejects=phaseRejects=0; maxAcceptedEstimate=0.; smallestStep=1e99; largestStep=0.; proposedStep=dt
+    rollbackVerified=False; sampledTrialRejected=False; rollbackHistoryChecks=0
     termination='duration reached'; depletionBracket=None
     while True:
         wet=np.clip((depth-bottoms)/dz,0,1)
@@ -222,89 +304,69 @@ def run(N,dt,rate,radial=None,duration=None,initialDepth=None):
                 energyResidual_J=residual,massResidual_kg=mres))
             nextOutput=round(nextOutput+.1,10)
         if t>=end-1e-9:break
-        step=min(dt,end-t,nextOutput-t)
+        step=min(proposedStep if adaptiveTolerance is not None else dt,end-t,nextOutput-t)
         while True:
-            base=diags(C/step,0)+K
-            trialSurface=surface.copy(); trialGas=Tg.copy(); trialDepth=depth
-            trialInlet=np.full(N,max(0,sum(wet_flux(float(x),depth)[0]*perimeter*dz*w for x,w in zip(surface,wet))/hfg))
-            converged=False
-            for iteration in range(60):
-                avgWet=mean_immersion(depth,trialDepth,bottoms,dz)
-                hw,hv=wall_coefficients(trialSurface,trialGas,trialInlet,(depth+trialDepth)/2)
-                # Newton tangent of the unchanged water boiling curve. Negative
-                # transition slope is a Jacobian, not a negative physical HTC.
-                epsilon=1e-3
-                plus,_=wall_coefficients(trialSurface+epsilon,trialGas,trialInlet,(depth+trialDepth)/2)
-                minus,_=wall_coefficients(trialSurface-epsilon,trialGas,trialInlet,(depth+trialDepth)/2)
-                derivative=(plus*(trialSurface+epsilon-Ts)-minus*(trialSurface-epsilon-Ts))/(2*epsilon)
-                Aw=perimeter*dz*avgWet
-                Hw=derivative*Aw; waterOffset=Aw*(hw*(trialSurface-Ts)-derivative*trialSurface)
-                Hg=hv*perimeter*dz*(1-avgWet)
-                S=outerHalfG+Hw+Hg
-                diag=np.zeros(N*nr); rhs=C/step*T
-                diag[surfaceIndices]=outerHalfG*(Hw+Hg)/S
-                rhs[surfaceIndices]-=outerHalfG*waterOffset/S
-                cross=coo_matrix((-outerHalfG*Hg/S,(surfaceIndices,np.arange(N))),shape=(N*nr,N)).tocsc()
-                gasDiag=cp*(mg/step+trialInlet)+Hg*(outerHalfG+Hw)/S
-                gasRhs=cp*mg/step*Tg-Hg*waterOffset/S
-                gasRhs[0]+=cp*trialInlet[0]*Ts
-                inactive=gasDiag<=0
-                gasDiag[inactive]=1.; gasRhs[inactive]=Ts
-                gasK=diags([-cp*trialInlet[1:],gasDiag],[-1,0],shape=(N,N))
-                system=bmat([[base+diags(diag,0),cross],[cross.T,gasK]],format='csc')
-                solved=spsolve(system,np.concatenate([rhs,gasRhs]))
-                Tnew=solved[:N*nr]; solvedGas=solved[N*nr:]
-                surfaceNew=(outerHalfG*Tnew[surfaceIndices]-waterOffset+Hg*solvedGas)/S
-                Qpool=Hw*surfaceNew+waterOffset; Qgas=Hg*(surfaceNew-solvedGas)
-                evap=float(np.sum(Qpool))*step/hfg
-                if evap < -1e-12:raise ValueError('Saturated-pool condensation needs separate liquid closure')
-                addition=rate*step; mlProposed=ml+addition-evap
-                # A boundary iterate at zero is only used to bracket depletion;
-                # a negative proposed mass is never committed as a physical state.
-                mlNew=max(0,mlProposed); over=max(0,mlNew-rho*Af*L); mlNew-=over
-                newDepth=mlNew/(rho*Af); newGasV=Af*dz*(1-np.clip((newDepth-bottoms)/dz,0,1))
-                incoming=evap; incomingT=Ts
-                newMg=np.empty(N); newTg=np.empty(N); newInlet=np.empty(N)
-                for j in range(N):
-                    newInlet[j]=incoming/step; denom=mg[j]+incoming
-                    if denom<=0:
-                        if newGasV[j]>1e-15:raise ValueError('Gas volume has no admitted mass')
-                        newMg[j]=0.; newTg[j]=Ts; continue
-                    temperature=(mg[j]*Tg[j]+incoming*incomingT+Qgas[j]*step/cp)/denom
-                    mass=pa*newGasV[j]/(R*temperature); leaving=denom-mass
-                    if leaving < -1e-12:raise ValueError('Reverse atmospheric makeup requires explicit inlet branch')
-                    newMg[j]=mass; newTg[j]=temperature; incoming=leaving; incomingT=temperature
-                error=max(float(np.max(abs(newTg-solvedGas))),float(np.max(abs(surfaceNew-trialSurface))))
-                if error<1e-8 and abs(newDepth-trialDepth)<1e-11:
-                    finalWet=mean_immersion(depth,newDepth,bottoms,dz)
-                    finalHw,finalHg=wall_coefficients(surfaceNew,newTg,newInlet,(depth+newDepth)/2)
-                    lawResidual=max(float(np.max(abs(Qpool-finalHw*perimeter*dz*finalWet*(surfaceNew-Ts)))),
-                        float(np.max(abs(Qgas-finalHg*perimeter*dz*(1-finalWet)*(surfaceNew-newTg)))))
-                    if lawResidual<1e-7:
-                        converged=True; break
-                trialSurface=surfaceNew; trialGas=newTg; trialDepth=newDepth; trialInlet=newInlet
-            maxIterations=max(maxIterations,iteration+1)
-            if converged and mlProposed>=0:break
+            old=(T,surface,Tg,mg,ml,depth)
+            saved=tuple(v.copy() if isinstance(v,np.ndarray) else v for v in old) if not rollbackVerified else None
+            historyBefore=(t,injected,vented,overflow,inletH,outletH,len(rows),tuple(None if v is None else tuple(v) for v in qbrackets))
+            full=advance(old,step); selected=[full]; estimate=0.; mismatch=False
+            if adaptiveTolerance is not None and full['status']=='ok':
+                first=advance(old,step/2)
+                second=advance(first['state'],step/2) if first['status']=='ok' else first
+                if second['status']=='ok':
+                    x,y=full['state'],second['state']; gx=x[3]>0; gy=y[3]>0
+                    mismatch=bool(np.any(gx!=gy) or np.any((sampleZ<x[5])!=(sampleZ<y[5])))
+                    estimate=max(float(np.max(abs(x[0]-y[0])))/adaptiveTolerance,
+                        float(np.max(abs(x[1]-y[1])))/adaptiveTolerance,
+                        float(np.max(abs(x[2][gx&gy]-y[2][gx&gy])))/adaptiveTolerance if np.any(gx&gy) else 0.,
+                        abs(x[5]-y[5])/(adaptiveTolerance*1e-6))
+                    selected=[first,second]
+                else:selected=[second]; estimate=math.inf
+            if saved is not None:
+                if any(not np.array_equal(v,w) for v,w in zip(old,saved)):raise ValueError('Trial mutated retained state')
+                rollbackVerified=True
+            acceptable=all(v['status']=='ok' for v in selected) and estimate<=1 and not mismatch
+            if saved is not None:sampledTrialRejected=not acceptable
+            if acceptable:
+                if adaptiveTolerance is not None:
+                    maxAcceptedEstimate=max(maxAcceptedEstimate,estimate)
+                    factor=2. if estimate==0 else min(2.,max(.2,.9/math.sqrt(estimate)))
+                    proposedStep=min(.1,step*factor)
+                break
             rejectedSteps+=1
-            if converged and mlProposed<0 and step<=1e-5:
+            historyAfter=(t,injected,vented,overflow,inletH,outletH,len(rows),tuple(None if v is None else tuple(v) for v in qbrackets))
+            if historyBefore!=historyAfter:raise ValueError('Rejected trial changed retained flux/event history')
+            rollbackHistoryChecks+=1
+            if mismatch:phaseRejects+=1
+            if estimate>1 and all(v['status']=='ok' for v in selected):estimatorRejects+=1
+            if any(v['status']=='depletion' for v in selected) and step<=1e-5:
                 termination='liquid pool exhaustion bracketed'; depletionBracket=[t,t+step]; break
             step/=2
-            if step<1e-9:raise ValueError('Coupled thermal iteration cannot converge above minimum numerical step')
+            if step<1e-9:raise ValueError('Thermal error/iteration control cannot accept above minimum numerical step')
         if depletionBracket is not None:break
-        maxLawResidual=max(maxLawResidual,lawResidual)
-        for j,(oldValue,newValue) in enumerate(zip(sampledSurface,np.interp(sampleZ,z,surfaceNew))):
-            if qbrackets[j] is None and oldValue>TCHF and newValue<=TCHF and sampleZ[j]<newDepth:qbrackets[j]=[t,t+step]
-        injected+=addition; vented+=incoming; overflow+=over
-        inletH+=addition*hf; outletH+=incoming*(a+cp*incomingT)+over*hf
-        minOutlet=min(minOutlet,incoming/step)
-        T=Tnew; surface=surfaceNew; Tg=newTg; mg=newMg; ml=mlNew; depth=newDepth
-        minimumM=min(minimumM,ml)
-        t+=step; acceptedSteps+=1
+        for accepted in selected:
+            h=accepted['step']; newState=accepted['state']
+            for j,(oldValue,newValue) in enumerate(zip(np.interp(sampleZ,z,surface),np.interp(sampleZ,z,newState[1]))):
+                if qbrackets[j] is None and oldValue>TCHF and newValue<=TCHF and sampleZ[j]<newState[5]:qbrackets[j]=[t,t+h]
+            injected+=accepted['addition']; vented+=accepted['vented']; overflow+=accepted['overflow']
+            inletH+=accepted['inletH']; outletH+=accepted['outletH']
+            minOutlet=min(minOutlet,accepted['vented']/h)
+            maxLawResidual=max(maxLawResidual,accepted['lawResidual'])
+            T,surface,Tg,mg,ml,depth=newState; minimumM=min(minimumM,ml)
+            t+=h; acceptedSteps+=1; smallestStep=min(smallestStep,h); largestStep=max(largestStep,h)
+            residual=float(np.dot(C,T-Ts)+ml*hf+np.sum(mg*(a+cp*Tg))-initialH-inletH+outletH)
+            mres=ml+float(np.sum(mg))-initialM-injected+vented+overflow
+            maxResidual=max(maxResidual,abs(residual)); maxMassResidual=max(maxMassResidual,abs(mres))
     check(f'column energy ledger N{N} dt{dt} rate{rate}',maxResidual,0,atol=1e-5)
     check(f'column mass ledger N{N} dt{dt} rate{rate}',maxMassResidual,0,atol=1e-10)
     return dict(N=N,radialCells=nr,dt_s=dt,injection_kg_s=rate,termination=termination,
         applicabilityCrossingBracket_s=depletionBracket,lastAcceptedTime_s=t,lastAcceptedLiquid_kg=ml,
         acceptedSteps=acceptedSteps,rejectedSteps=rejectedSteps,maxCouplingIterations=maxIterations,
+        adaptiveTolerance_K=adaptiveTolerance,trialStepCalls=trialCalls,trialNonlinearIterations=trialIterations,
+        estimatorRejections=estimatorRejects,phasePresenceRejections=phaseRejects,
+        maximumAcceptedErrorEstimate=maxAcceptedEstimate,sampledTrialInputUnchanged=rollbackVerified,
+        sampledTrialWasRejected=sampledTrialRejected,rejectedHistoryChecks=rollbackHistoryChecks,
+        smallestAcceptedStep_s=smallestStep,largestAcceptedStep_s=largestStep,elapsedWallTime_s=time.perf_counter()-wallStart,
         maxOriginalLawResidual_W=maxLawResidual,
         maxEnergyResidual_J=maxResidual,maxMassResidual_kg=maxMassResidual,initialSolidEnergy_J=float(np.sum(C)*(b['initialSolid_C']+273.15-Ts)),
         initialLiquid_kg=initialLiquid,injected_kg=injected,vented_kg=vented,overflow_kg=overflow,
@@ -321,6 +383,11 @@ caseDefinitions['lowSupply']=dict(N=b['axialCells'][1],dt=b['steps_s'][1],rate=b
 caseDefinitions['zeroSupply']=dict(N=b['axialCells'][1],dt=b['steps_s'][1],rate=0)
 caseDefinitions['fineTime']=dict(N=b['axialCells'][2]*8,dt=b['steps_s'][2]/2,rate=b['injection_kg_s'])
 caseDefinitions['fineRadial']=dict(N=b['axialCells'][2]*8,dt=b['steps_s'][2],rate=b['injection_kg_s'],radial=8)
+for tolerance in [1.,.5,.25]:
+    caseDefinitions[f'adaptive{tolerance:g}']=dict(N=b['axialCells'][2]*8,dt=b['steps_s'][2],rate=b['injection_kg_s'],adaptiveTolerance=tolerance)
+caseDefinitions['startupFixed']=dict(N=b['axialCells'][2]*8,dt=.0005,rate=b['injection_kg_s'],duration=1)
+caseDefinitions['startupFine']=dict(N=b['axialCells'][2]*8,dt=.00025,rate=b['injection_kg_s'],duration=1)
+caseDefinitions['rollbackCheck']=dict(N=80,dt=.1,rate=b['injection_kg_s'],duration=.1,adaptiveTolerance=1.)
 # Numerical rollback stress only: this microscopic pool is outside physical
 # film-correlation applicability and does not predict an actual dryout time.
 caseDefinitions['depletionGuard']=dict(N=b['axialCells'][1],dt=b['steps_s'][1],rate=0,initialDepth=1e-5)
@@ -343,7 +410,7 @@ if selectedCase is not None:
     out.update(scope='single named case; no global refinement decision',caseName=selectedCase,
         caseInputs=caseDefinitions[selectedCase],run=execute(selectedCase),checks=checks)
     print(json.dumps(out,indent=2,allow_nan=False)); sys.exit(0)
-out.update(scope='complete fixed evidence suite',
+out.update(scope='fixed-resolution evidence suite; adaptive/startup cases separately named',
     axialRuns=[execute(f'axial{n}') for n in b['axialCells']],
     timeRuns=[execute(f'time{dt:g}') for dt in b['steps_s'][:2]],
     radialRuns=[execute(f'radial{r}') for r in [2,8]],
