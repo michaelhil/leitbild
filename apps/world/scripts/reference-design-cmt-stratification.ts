@@ -60,7 +60,7 @@ def tracer_checks():
     if max(abs(np.array(results[1]['means'])-np.array(results[2]['means'])[::-1]))>1e-9:raise ValueError('Reverse-flow reconstruction is asymmetric')
     return results
 
-def study(name,nt,dtmax,limited,face_gravity=True,actual_inlet=True):
+def study(name,nt,dtmax,limited,face_gravity=True,actual_inlet=True,physical_bottom_port=False):
     started=time.perf_counter()
     # Resolve the initially traversed top 1.5 m, keeping three physical lower
     # bands. Doubling nt changes neither a probe location nor tank geometry.
@@ -141,9 +141,14 @@ def study(name,nt,dtmax,limited,face_gravity=True,actual_inlet=True):
             main,tank,d=ss;qi,qo,qd=q[:3]
             # External zero-storage pipes transport donor total enthalpy;
             # do not relocate the donor's h to another elevation unchanged.
-            connect(0,0,1,0,qi,None);connect(1,-1,2,0,qo,None);connect(2,0,0,0,qd,None)
+            connect(0,0,1,0,qi,None)
+            outlet_water=water(tank['pbottom'],tank['rows'][-1]['T']) if physical_bottom_port else None
+            if physical_bottom_port:
+                connect(1,-1,2,0,qo,6. if qo>=0 else 3.,outlet_water[2] if qo>=0 else d['rows'][0]['h'])
+            else:connect(1,-1,2,0,qo,None)
+            connect(2,0,0,0,qd,None)
             hydraulic=[loss(qi,main['ptop'],3.,main['rows'][0]['rho'],tank['ptop'],12.,tank['rows'][0]['rho'],2000/25**2*rh/rc),
-                loss(qo,tank['pbottom'],6.,tank['rows'][-1]['rho'],d['ptop'],3.,d['rows'][0]['rho'],20000/25**2/opening**2,True),
+                loss(qo,tank['pbottom'],6.,outlet_water[0] if physical_bottom_port else tank['rows'][-1]['rho'],d['ptop'],3.,d['rows'][0]['rho'],20000/25**2/opening**2,True),
                 loss(qd,d['ptop'],3.,d['rows'][0]['rho'],main['ptop'],3.,main['rows'][0]['rho'],10000/100**2)]
             hs,left,right=profile(tank,q[3])
             for j in range(N):
@@ -185,6 +190,7 @@ def study(name,nt,dtmax,limited,face_gravity=True,actual_inlet=True):
             mass_kg=float(old[k]['M'][j]),energy_J=float(old[k]['E'][j]),multiplicity=count)
             for label,k,j,count in [('finite_primary',0,0,1),('BAL_each_train',1,0,2),('DVI_each_train',2,0,2)]])
     return dict(name=name,topCells=nt,totalCells=N,limited=limited,commonFaceGravity=face_gravity,actualInletReconstruction=actual_inlet,
+        physicalBottomPort=physical_bottom_port,initialTotalMass_kg=M0,initialTotalEnergy_J=E0,
         wall_s=time.perf_counter()-started,nfev=nfev,maxScaledResidual=maxdef,maxMassResidual_kg=em,maxEnergyResidual_J=ee,trace=trace,finalSnapshot=snapshot)
 
 `
