@@ -4,6 +4,9 @@ import { z } from 'zod'
 import { runCycle } from './reference-design-cycle.ts'
 import { runHydraulics } from './reference-design-hydraulics.ts'
 import { replayHotAInstruments } from './reference-design-observations.ts'
+import type { fuelGeometry } from './reference-design-fuel-construction.ts'
+export type PhysicalCoreReference={geometry:ReturnType<typeof fuelGeometry>;activeLength_m:number;
+  gridsPerHalf:number;blockageFraction:number;gridLossFactor:number;inletLoss:number;outletLoss:number}
 
 const positive=z.number().finite().positive()
 const schema=z.object({design:z.literal('LD-01'),
@@ -44,7 +47,8 @@ import numpy as np
 from scipy.optimize import root
 from iapws import IAPWS97 as W
 from iapws.iapws97 import _Region1
-d=json.load(sys.stdin); b=d['basis']; c=d['cycle']; hy=d['hydraulics']; cb=c['basis']; hb=hy['basis']
+from iapws._iapws import _Viscosity
+d=json.load(sys.stdin); b=d['basis']; c=d['cycle']; hy=d['hydraulics']; core=d['physicalCore']; cb=c['basis']; hb=hy['basis']
 g=hb['gravity_m_s2']; names=['DOWNCOMER','LOWER','CORE.1','CORE.2','UPPER','HOT.A','HOT.B','SG.A.PRIMARY','SG.B.PRIMARY','COLD.A','COLD.B']
 V=np.array(b['volumes_m3']); z=np.array([3,-2,0,2,2,2.5,2.5,3,3,3,3.]); Cwall=b['metalCapacity_MJ_K']*1e6
 s=c['points']; M0=c['flows']['primary_kg_s']; m0=M0/4; ml0=M0/2; Pcore=c['powers_MW']['core']*1e6
@@ -61,6 +65,19 @@ ends=[(0,1),(1,2),(2,3),(3,4),(4,5),(4,6),(5,7),(6,8),(7,9),(7,9),(8,10),(8,10),
 refs=np.array([M0,M0,M0,M0,ml0,ml0,ml0,ml0,m0,m0,m0,m0,ml0,ml0])
 oldK=hy['resistance_Pa_per_kg_s_squared']
 K=np.array([oldK['cold_to_core'],oldK['core_lower'],oldK['core_upper'],0,oldK['hot'],oldK['hot'],oldK['SG'],oldK['SG'],oldK['pump_outlet'],oldK['pump_outlet'],oldK['pump_outlet'],oldK['pump_outlet'],0,0])
+if core:K[1:4]=0. # Replaced, not added to the former pressure-calibrated core budget.
+def coreLoss(k,m,rho,T):
+ if not core or k not in (1,2,3):return None
+ area=core['geometry']['flowArea_m2']; dh=core['geometry']['hydraulicDiameter_m']
+ G=m/area; mu=_Viscosity(rho,T+273.15); re=abs(G)*dh/mu
+ if re==0:return dict(Re=0.,Darcy=0.,distributed_Pa=0.,grid_Pa=0.,local_Pa=0.,total_Pa=0.)
+ f=max(64/re,1.691*re**(-.43),.117*re**(-.14))
+ dynamic=G*abs(G)/(2*rho)
+ kg=min(20.,196*re**(-.333))*core['gridLossFactor']*core['blockageFraction']**2
+ distributed=f*core['activeLength_m']/2/dh*dynamic if k in (1,2) else 0.
+ grid=core['gridsPerHalf']*kg*dynamic if k in (1,2) else 0.
+ local=(core['inletLoss'] if k==1 else core['outletLoss'] if k==3 else 0.)*dynamic
+ return dict(Re=re,Darcy=f,distributed_Pa=distributed,grid_Pa=grid,local_Pa=local,total_Pa=distributed+grid+local)
 # Reference density belongs to the actual upstream nominal state, not a global cold density.
 pseed=np.array([15.2,15.2,15.1,15.,15.,14.95,14.95,14.7,14.7,15.2,15.2])
 hseed=np.array([s['core_inlet']['h_kJ_kg']]*2+[s['core_mid']['h_kJ_kg']]+[s['core_outlet']['h_kJ_kg']]*4+[s['RCP_suction']['h_kJ_kg']]*2+[s['core_inlet']['h_kJ_kg']]*2)
@@ -104,7 +121,9 @@ def evaluate(x,sourceFactor=1,A1request=1):
    if w<0:raise ValueError('Reverse rotor operation outside powered-motor admission')
    pe=tm*w/cb['RCPMotorEfficiency']; loss=pe-tm*w+td*w
    fluid.append(power); torques.append(tf); electrical.append(pe); ambient.append(loss); domega.append((tm-tf-td)/J)
-  hyd.append((p[i]-p[j])*1e6+pumphead-head-K[k]*m[k]*abs(m[k])*rhoref[k]/ru)
+  selectedCore=coreLoss(k,m[k],ru,T[upstream])
+  loss=selectedCore['total_Pa'] if selectedCore is not None else K[k]*m[k]*abs(m[k])*rhoref[k]/ru
+  hyd.append((p[i]-p[j])*1e6+pumphead-head-loss)
   dM[i]-=m[k]; dM[j]+=m[k]; flux=m[k]*h[upstream]
   dU[i]-=flux; dU[j]+=flux
   # The massless pump deposits actual shaft work in the actual receiving cell.
@@ -197,7 +216,24 @@ require('unclamped pressure responds to source pulse',max(max(abs(np.array(v['p_
 depths=np.array([6,2,2,2,2,0,0,9,9,0,0]); portEOSVariation=e0s['rho']*g*depths/1e6
 rhoSensitivity=[max(abs(1/_Region1(e0s['T'][i]+273.15,e0s['p'][i]+sign*portEOSVariation[i])['v']/e0s['rho'][i]-1) for sign in [-1,1]) for i in range(11)]
 cells=[dict(cell=names[i],volume_m3=float(V[i]),pressureDatum_m=float(z[i]),p_MPa=float(e0s['p'][i]),T_C=float(e0s['T'][i]),M_kg=float(e0s['mass'][i]),U_J=float(e0s['energy'][i]),ignoredHomogeneousHydrostaticRange_MPa=float(portEOSVariation[i]),isothermalDensitySensitivityFraction=float(rhoSensitivity[i])) for i in range(11)]
+coreSensitivity=[]
+if core:
+ originalFactor=core['gridLossFactor']
+ for factor in (0.,.5,2.):
+  core['gridLossFactor']=originalFactor*factor
+  trial,trialResidual=solve(steady,x0,'grid-loss sensitivity '+str(factor)); e=evaluate(trial)
+  coreSensitivity.append(dict(gridFactorRelativeToSelected=factor,coreFlow_kg_s=float(e['m'][1]),
+   coreOutletPressure_MPa=float(e['p'][3]),coreOutletTemperature_C=float(e['T'][3]),maxScaledResidual=trialResidual))
+ core['gridLossFactor']=originalFactor
+ require('grid loss changes achieved flow without pump retuning',coreSensitivity[0]['coreFlow_kg_s']>e0s['m'][1]>coreSensitivity[-1]['coreFlow_kg_s'])
+ for k in (1,2,3):
+  i,j=ends[k]; m=e0s['m'][k]; rho=e0s['rho'][i]; T=e0s['T'][i]
+  plus=coreLoss(k,m,rho,T); minus=coreLoss(k,-m,rho,T); zero=coreLoss(k,0.,rho,T)
+  require('physical core signed passive loss '+str(k),plus['total_Pa']>0 and abs(plus['total_Pa']+minus['total_Pa'])<1e-8 and zero['total_Pa']==0)
 print(json.dumps(dict(boundary='sealed liquid primary; prescribed core heat, SG secondary temperatures and supported motor electrical boundary',
+ physicalCore=core,nominalCoreHydraulics=[coreLoss(k,e0s['m'][k],e0s['rho'][ends[k][0]],e0s['T'][ends[k][0]]) for k in (1,2,3)] if core else None,
+ coreSensitivity=coreSensitivity,
+ coreHeat_W=Qcore.tolist(),
  cells=cells,edges=[dict(upstream=names[i],downstream=names[j],K=float(K[k]),flow_kg_s=float(e0s['m'][k])) for k,(i,j) in enumerate(ends)],
  nominal=compact(0,e0s),primaryMass_kg=float(sum(e0s['mass'])),SGConductance_W_K=float(G),rotorInertia_kg_m2=float(J),
  nominalElectrical_MW=(e0s['electrical']/1e6).tolist(),nominalAmbient_MW=(e0s['ambient']/1e6).tolist(),nominalFluid_MW=(e0s['fluid']/1e6).tolist(),
@@ -208,10 +244,14 @@ print(json.dumps(dict(boundary='sealed liquid primary; prescribed core heat, SG 
  cost=dict(initializationIncludingRankAndScaling=steadyCost,total=endMeter(allStart),solverStatuses=statuses,propertyCountScope='11 narrow Region1 states per evaluator call; calibration/full-wrapper comparisons excluded')),allow_nan=False))
 `
 
-export async function runInitialization(document:string,hydraulicDocument:string,cycleDocument:string,python:string){
+export async function runInitialization(document:string,hydraulicDocument:string,cycleDocument:string,python:string,physicalCore:PhysicalCoreReference|null=null){
   const basis=parseInitializationBasis(document)
+  if(physicalCore){
+    basis.volumes_m3[2]=physicalCore.geometry.coreFlowVolume_m3/2
+    basis.volumes_m3[3]=physicalCore.geometry.coreFlowVolume_m3/2
+  }
   const [cycle,hydraulics]=await Promise.all([runCycle(cycleDocument,python),runHydraulics(hydraulicDocument,cycleDocument,python)])
-  const child=Bun.spawn([python,'-c',calculation],{stdin:Buffer.from(JSON.stringify({basis,cycle,hydraulics})),stdout:'pipe',stderr:'pipe'})
+  const child=Bun.spawn([python,'-c',calculation],{stdin:Buffer.from(JSON.stringify({basis,cycle,hydraulics,physicalCore})),stdout:'pipe',stderr:'pipe'})
   const [out,err,code]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited])
   if(code!==0)throw new Error(`Connected initialization failed: ${err}`)
   const result=JSON.parse(out),traceDrift=unforcedTraceDrift(result.hold.samples)
@@ -226,6 +266,7 @@ export async function runInitialization(document:string,hydraulicDocument:string
     restorationRequiresAcquisition:interruptedHotAReplay.rows.find(r=>Math.abs(r.t_s-2)<1e-8)?.reason==='REACQUIRING'}
   if(!Object.values(observationChecks).every(Boolean))throw new Error('Actual-trace instrument replay criterion failed')
   return {inputSha256:createHash('sha256').update(JSON.stringify(basis)).digest('hex'),calculationSha256:createHash('sha256').update(calculation).digest('hex'),
+    physicalCoreInputSha256:createHash('sha256').update(JSON.stringify(physicalCore)).digest('hex'),
     traceAcceptanceSha256:createHash('sha256').update(unforcedTraceDrift.toString()).digest('hex'),
     observationReplaySha256:createHash('sha256').update(replayHotAInstruments.toString()).digest('hex'),
     cycleInputSha256:cycle.inputSha256,cycleCalculationSha256:cycle.calculationSha256,hydraulicInputSha256:hydraulics.inputSha256,hydraulicCalculationSha256:hydraulics.calculationSha256,dependencies:cycle.dependencies,basis,...result,traceDrift,hotAReplay,interruptedHotAReplay,observationChecks}
