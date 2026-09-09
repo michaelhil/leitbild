@@ -61,7 +61,7 @@ export function acousticMesh(b: GeometryBasis, fine = false) {
     freeWater_m3: volume }
 }
 
-export const acousticCalculation = String.raw`
+export const acousticSetup = String.raw`
 import json,sys,math
 import numpy as np
 import scipy
@@ -173,6 +173,9 @@ def run(o,dt,reverse=False):
       tracerInventory_kg=(oldM*tag).tolist(),history=history,midpointRelativeEnergyNormError=error,
       midpointMaximumSampledHistoryError=historyError,midpointScreenPassed=historyError<=b['maximumMidpointRelativeError'])
 
+`
+
+export const acousticCalculation = acousticSetup + String.raw`
 meshResults=[]
 for mesh in data['meshes']:
     o=operators(mesh);cases=[run(o,dt) for dt in b['steps_s']];cases.append(run(o,b['steps_s'][1],True))
