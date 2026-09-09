@@ -52,3 +52,16 @@ test('station input is strict data and rejects contradictory selections',()=>{
     expect(()=>parseStationBasis(doc({...basis,...edit}))).toThrow()
   expect(()=>parseStationBasis(doc(basis)+doc(basis))).toThrow()
 })
+test('resolved unequal CCW branches update only actual owned duty and close station energy',()=>{
+  const b=parseStationBasis(doc(basis)),original=calculateStation(b,cycle)
+  const A={flow_kg_s:40,head_MPa:.35},B={flow_kg_s:170,head_MPa:.37}
+  const result=calculateStation(b,cycle,{A,B})
+  expect(Math.abs(result.powers_MW.residual)).toBeLessThan(1e-9)
+  const a=pumpDuty(40,.35,1000,.8,.94,0),bb=pumpDuty(170,.37,1000,.8,.94,0)
+  expect(result.pumps.CCW_A).toEqual(a)
+  expect(result.pumps.CCW_B).toEqual(bb)
+  expect(result.powers_MW.busA-original.powers_MW.busA).toBeCloseTo(a.electric_MW-original.pumps.CCW_A.electric_MW,12)
+  expect(result.powers_MW.busB-original.powers_MW.busB).toBeCloseTo(bb.electric_MW-original.pumps.CCW_B.electric_MW,12)
+  expect(result.temperatures_C.roomA).toBe(original.temperatures_C.roomA)
+  expect(()=>calculateStation(b,cycle,{A:{flow_kg_s:0,head_MPa:.3},B})).toThrow()
+})

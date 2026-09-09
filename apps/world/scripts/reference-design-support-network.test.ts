@@ -31,6 +31,8 @@ test('each actual path pays local and common pressure loss once', () => {
   expect(p.hxFlow_kg_s).toBe(p.flow_kg_s)
   expect(p.bypassFlow_kg_s).toBe(0)
   expect(p.temperatures_C.coolerOutlet).toBeCloseTo(p.temperatures_C.supply!, 10)
+  expect(Math.abs(p.branchMixResidual_MW!)).toBeLessThan(1e-10)
+  expect(Math.abs(p.supplyMixResidual_MW!)).toBeLessThan(1e-10)
 })
 test('full bypass and blocked hot jacket have no positive-load thermal steady state', () => {
   const bypass = supportPoint(b, station, branches, 1, 20, 0, false)
@@ -47,4 +49,9 @@ test('both sides of the wall and service-water warming limit capacity', () => {
   expect(p.temperatures_C.supply).toBeCloseTo(expected, 12)
   expect(selectSupportPoint(b, station, branches, 35, 0).targetAchievable).toBe(false)
   expect(selectSupportPoint(b, station, branches, 20, 0).targetAchievable).toBe(true)
+})
+test('invalid branch data and absent blocking targets are rejected', () => {
+  expect(() => supportPoint(b, station, [{ ...branches[0]!, heat_MW: NaN }], .5, 20, 0, false)).toThrow()
+  expect(() => supportPoint(b, station, branches, .5, 20, 0, false, 'missing')).toThrow()
+  expect(() => supportPoint(b, station, [branches[0]!, branches[0]!], .5, 20, 0, false)).toThrow()
 })

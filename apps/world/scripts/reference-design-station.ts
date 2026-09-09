@@ -52,19 +52,22 @@ export const isolatedRHRFlow = (rated:number,auxiliary:number) => {
 }
 
 type Cycle = { powers_MW:Record<string,number> }
-export const calculateStation = (b:ReturnType<typeof parseStationBasis>,cycle:Cycle) => {
+export const calculateStation = (b:ReturnType<typeof parseStationBasis>,cycle:Cycle,
+  ccwAlignment?: { A: { flow_kg_s: number; head_MPa: number }; B: { flow_kg_s: number; head_MPa: number } }) => {
   const P=cycle.powers_MW
   for(const k of ['core','gross_electric','condenser','turbine_thermodynamic_work','RCP_electric','RCP_fluid','feed_pump_electric','feed_pump_fluid','condensate_pump_electric','condensate_pump_fluid'])
     if(!Number.isFinite(P[k])||P[k]!<=0)throw new Error(`Missing positive cycle power ${k}`)
   const cwFlow=P.condenser!*1e6/(b.waterCp_J_kgK*b.condenserOnlyRise_K)
   const duty=(flow:number,p:typeof b.CW,head=p.head_MPa)=>pumpDuty(flow,head,b.waterDensity_kg_m3,p.hydraulicEfficiency,p.motorEfficiency,p.dragFraction)
   const CW=duty(cwFlow,b.CW), branch=isolatedRHRFlow(b.CCW.ratedFlow_kg_s,b.CCW.auxiliaryBranchReference_kg_s)
-  const CCW=duty(branch.flow_kg_s,b.CCW,b.CCW.head_MPa*branch.headRatio)
+  const alignment=ccwAlignment??{A:{flow_kg_s:branch.flow_kg_s,head_MPa:b.CCW.head_MPa*branch.headRatio},B:{flow_kg_s:branch.flow_kg_s,head_MPa:b.CCW.head_MPa*branch.headRatio}}
+  if([alignment.A,alignment.B].some(v=>!Number.isFinite(v.flow_kg_s)||v.flow_kg_s<=0||!Number.isFinite(v.head_MPa)||v.head_MPa<0))throw new Error('Station steady CCW alignment needs positive flow and nonnegative head')
+  const CCWA=duty(alignment.A.flow_kg_s,b.CCW,alignment.A.head_MPa),CCWB=duty(alignment.B.flow_kg_s,b.CCW,alignment.B.head_MPa)
   const SWA=duty(b.SW.flowA_kg_s,b.SW),SWB=duty(b.SW.flowB_kg_s,b.SW)
   const dcA=b.dcLoadA_kW/1000/b.converterEfficiency,dcB=b.dcLoadB_kW/1000/b.converterEfficiency
   const halfMain=(P.RCP_electric!+P.feed_pump_electric!)/2
-  const busA=halfMain+P.condensate_pump_electric!+CW.electric_MW/2+CCW.electric_MW+SWA.electric_MW+dcA+b.fanEach_kW/1000
-  const busB=halfMain+CW.electric_MW/2+CCW.electric_MW+SWB.electric_MW+dcB+b.fanEach_kW/1000
+  const busA=halfMain+P.condensate_pump_electric!+CW.electric_MW/2+CCWA.electric_MW+SWA.electric_MW+dcA+b.fanEach_kW/1000
+  const busB=halfMain+CW.electric_MW/2+CCWB.electric_MW+SWB.electric_MW+dcB+b.fanEach_kW/1000
   const unitLoss=b.transformerFixed_kW/1000+b.transformerLoadFraction*(busA+busB)
   const reserveLoss=b.transformerFixed_kW/1000
   const net=P.gross_electric!-busA-busB-unitLoss-reserveLoss
@@ -72,11 +75,11 @@ export const calculateStation = (b:ReturnType<typeof parseStationBasis>,cycle:Cy
   const generator=P.turbine_thermodynamic_work!*b.shaftMechanicalEfficiency-P.gross_electric!
   if(generator<0)throw new Error('Station shaft efficiency contradicts cycle generator power')
   const halfMotors=(P.RCP_electric!-P.RCP_fluid!+P.feed_pump_electric!-P.feed_pump_fluid!)/2
-  const ccwHeatA=halfMotors+P.condensate_pump_electric!-P.condensate_pump_fluid!+CCW.fluid_MW
-  const ccwHeatB=halfMotors+oil+CCW.fluid_MW
+  const ccwHeatA=halfMotors+P.condensate_pump_electric!-P.condensate_pump_fluid!+CCWA.fluid_MW
+  const ccwHeatB=halfMotors+oil+CCWB.fluid_MW
   const cwHeat=P.condenser!+CW.fluid_MW
   const swHeatA=ccwHeatA+SWA.fluid_MW,swHeatB=ccwHeatB+generator+SWB.fluid_MW
-  const outdoorMotors=CW.motorAndDrag_MW+2*CCW.motorAndDrag_MW+SWA.motorAndDrag_MW+SWB.motorAndDrag_MW
+  const outdoorMotors=CW.motorAndDrag_MW+CCWA.motorAndDrag_MW+CCWB.motorAndDrag_MW+SWA.motorAndDrag_MW+SWB.motorAndDrag_MW
   // Whole continuous DC duty becomes local heat here. No actuator pulse or
   // battery recharge is active in this explicitly selected steady alignment.
   const roomHeatA=dcA+b.fanEach_kW/1000,roomHeatB=dcB+b.fanEach_kW/1000
@@ -88,18 +91,19 @@ export const calculateStation = (b:ReturnType<typeof parseStationBasis>,cycle:Cy
   const cwCell1=b.siteWater_C+cwPumpRise+b.condenserOnlyRise_K/2
   const cwCell2=b.siteWater_C+cwPumpRise+b.condenserOnlyRise_K
   const roomG=b.roomWallEach_MW_K+b.roomAirEach_kg_s*b.airCp_J_kgK/1e6
-  return { pumps:{CW,CCW_each:CCW,SWA,SWB},
-    flows_kg_s:{CW:cwFlow,CCW_each:branch.flow_kg_s,SW_A:b.SW.flowA_kg_s,SW_B:b.SW.flowB_kg_s},
+  return { pumps:{CW,CCW_A:CCWA,CCW_B:CCWB,SWA,SWB},
+    ccwAlignment:alignment,ccwBoundary:ccwAlignment?'Explicit resolved A/B branch flow and head':'Retained aggregate RHR-isolated sizing alignment',
+    flows_kg_s:{CW:cwFlow,CCW_A:alignment.A.flow_kg_s,CCW_B:alignment.B.flow_kg_s,SW_A:b.SW.flowA_kg_s,SW_B:b.SW.flowB_kg_s},
     powers_MW:{busA,busB,unitConversionLoss:unitLoss,reserveNoLoadLoss:reserveLoss,netExport:net,
       condenserSiteRejection:cwHeat,SW_A_rejection:swHeatA,SW_B_rejection:swHeatB,ambientRejection:ambient,
       CCW_A_heat:ccwHeatA,CCW_B_heat:ccwHeatB,oilLoss:oil,generatorLoss:generator,roomA:roomHeatA,roomB:roomHeatB,residual},
     margins_MW:{busA:b.busEach_MW-busA,busB:b.busEach_MW-busB,unitSource:b.source_MW-busA-busB-unitLoss},
     temperatures_C:{CW_after_pumps:b.siteWater_C+cwPumpRise,CW_cell1:cwCell1,CW_discharge:cwCell2,
-      CCW_A_return:b.CCW.supply_C+waterRise(ccwHeatA,branch.flow_kg_s),CCW_B_return:b.CCW.supply_C+waterRise(ccwHeatB,branch.flow_kg_s),
+      CCW_A_return:b.CCW.supply_C+waterRise(ccwHeatA,alignment.A.flow_kg_s),CCW_B_return:b.CCW.supply_C+waterRise(ccwHeatB,alignment.B.flow_kg_s),
       SW_A_discharge:b.siteWater_C+waterRise(swHeatA,b.SW.flowA_kg_s),SW_B_mixed_discharge:b.siteWater_C+waterRise(swHeatB,b.SW.flowB_kg_s),
       roomA:b.ambient_C+roomHeatA/roomG,roomB:b.ambient_C+roomHeatB/roomG,
       CWmotor_each:b.ambient_C+CW.motorAndDrag_MW/2/b.CWmotorEach_MW_K,
-      CCWmotor_each:b.ambient_C+CCW.motorAndDrag_MW/b.serviceMotorEach_MW_K,
+      CCWmotor_A:b.ambient_C+CCWA.motorAndDrag_MW/b.serviceMotorEach_MW_K,CCWmotor_B:b.ambient_C+CCWB.motorAndDrag_MW/b.serviceMotorEach_MW_K,
       SWmotor_A:b.ambient_C+SWA.motorAndDrag_MW/b.serviceMotorEach_MW_K,
       SWmotor_B:b.ambient_C+SWB.motorAndDrag_MW/b.serviceMotorEach_MW_K,
       unitTransformer:b.ambient_C+unitLoss/b.transformerEach_MW_K,
