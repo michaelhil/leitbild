@@ -38,7 +38,7 @@ export function parseTransportBasis(document: string) {
 
 // This is a numerical reference, executed with the research environment's pinned
 // property library. It is not shipped as a Python production service.
-export const transportCalculation = String.raw`
+export const transportProperties = String.raw`
 import sys,json,math,platform,copy,time
 import CoolProp,CoolProp.CoolProp as CP
 from scipy.optimize import brentq
@@ -75,7 +75,9 @@ def totals(xs):return [math.fsum(x[i] for x in xs) for i in range(3)]
 def entropy(xs):return math.fsum(x[0]*state(x[1]/x[0])[2] for x in xs if x[0]>0)
 def add(a,c):return [a[i]+c[i] for i in range(3)]
 def scaled(a,m):return [m,a[1]*m/a[0],a[2]*m/a[0]]
+`
 
+export const transportCalculation = `${transportProperties}${String.raw`
 def reconstruct(xs,q):
     # Monotone linear reconstruction of cell averages in NONUNIFORM mass
     # coordinates; quadrature pieces are temporary integration data only.
@@ -434,7 +436,7 @@ print(json.dumps(dict(scope='Isobaric zero-gravity1D piston/advection liquid-his
     boundedContact=contactRows,contactChecks=contactChecks,contactCoalescing=contactCoalescing,
     uniformTemperatureError_K=uniformError,rejectedBoundaries=rejected,propertyChecks=propertyChecks,
     numericalTransportGatePassed=passed,coupledPZRQualified=False),allow_nan=False))
-`
+`}`
 
 if (import.meta.main) {
   const [page, python, output, study = 'all'] = process.argv.slice(2)
