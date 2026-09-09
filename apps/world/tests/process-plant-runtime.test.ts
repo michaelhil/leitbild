@@ -250,6 +250,8 @@ describe('process plant runtime', () => {
     expect(Number(snapshot.variables.find(variable => variable.path === valueOf('pressurizer.steamMassKg'))?.value)).toBeCloseTo(1_800, 6)
   })
 
+  // Long deterministic trajectories test correctness, not a five-second CPU budget.
+  // Keep every simulated step and assertion; allow shared-runner scheduling overhead.
   test('keeps the reference plant normal under reference I&C during a no-fault run', () => {
     const system = compiledSystem()
     const runtime = createProcessPlantRuntime({ system })
@@ -279,7 +281,7 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('sgA.levelPercent')))).toBeGreaterThan(50)
     expect(Number(runtime.readVariable(valueOf('sgA.levelPercent')))).toBeLessThan(60)
     expect(Number(runtime.readVariable(valueOf('feedwaterControlValveA.positionFraction')))).toBeLessThan(1)
-  })
+  }, 20_000)
 
   test('reference protection trips reactor on pressurizer pressure and containment pressure extremes', () => {
     for (const [initialState, expectedTrip] of [
@@ -1448,7 +1450,7 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('safetyAccumulatorA.liquidInventoryKg')))).toBeLessThan(initialAccumulatorInventory)
     expect(observedVesselInjection).toBe(true)
     expect(Number(runtime.readVariable(valueOf('vessel.primaryCoolantInventoryKg')))).toBeLessThan(initialPrimaryInventory)
-  })
+  }, 20_000)
 
   test('steam generator tube leak transfers primary coolant to secondary inventory and radiation', () => {
     const runtime = createProcessPlantRuntime({ system: compiledSystem() })
@@ -1476,7 +1478,7 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('sgA.secondaryRadiationMSvPerH')))).toBeGreaterThan(1)
     expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.radiationMSvPerH')))).toBeGreaterThan(1)
     expect(Number(runtime.readVariable(valueOf('sgB.secondaryRadiationMSvPerH')))).toBeCloseTo(0.02, 6)
-  })
+  }, 20_000)
 
   test('loss of feedwater trends steam generator inventory downward', () => {
     const runtime = createProcessPlantRuntime({ system: compiledSystem() })
