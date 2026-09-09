@@ -36,7 +36,7 @@ export function parseCoolingRigBasis(document: string) {
   return basisSchema.parse(JSON.parse(blocks[0]![1]!))
 }
 
-const calculation = String.raw`
+export const coolingDefinitions = String.raw`
 import json,sys,math,platform,time
 import numpy as np
 import scipy,iapws
@@ -89,7 +89,7 @@ def tables(n):
     gn=PchipInterpolator(np.r_[pa,npg],np.r_[0.,[nozzle(float(p)) for p in npg]])
     return props,gn
 
-def solve_case(label,dt,props,gn,failed_ads=False,failed_act=False,wst_fraction=1.,sump_volume=0.,heater=None,act_energy=None,duration=None):
+def solve_case(label,dt,props,gn,failed_ads=False,failed_act=False,wst_fraction=1.,sump_volume=0.,heater=None,act_energy=None,duration=None,observer=None):
     init_l=W(P=b['initialPressure_MPa'],x=0); init_v=W(P=b['initialPressure_MPa'],x=1)
     vl=V*b['initialLiquidFraction']; M=vl/init_l.v+(V-vl)/init_v.v
     U=vl/init_l.v*init_l.u*1000+(V-vl)/init_v.v*init_v.u*1000
@@ -173,6 +173,10 @@ def solve_case(label,dt,props,gn,failed_ads=False,failed_act=False,wst_fraction=
             h=brentq(lambda hh:proposed(hh)[1]/A-b['steamPort_m'],0.,h,xtol=1e-10)
         if onset is None and sum(fw)+sum(fs)>0.01:
             onset=t;events.append({'time_s':round(t,6),'event':'gravity delivery begins'})
+        if observer is not None:
+            # Immutable copies only. This is the exact held forcing for the accepted transfer interval.
+            observer((t,h,tuple(fw),tuple(fs),tuple(tuple(float(v) for v in row) for row in pos),
+                p,receiver,MW,MS))
         if not trace or t-trace[-1]['time_s']>=30.-1e-6:
             trace.append(dict(time_s=round(t,6),pressure_MPa=p,liquidSurface_m=level,temperature_C=T-273.15,
                 WST_flow_kg_s=sum(fw),sump_flow_kg_s=sum(fs),steam_out_kg_s=out,WST_kg=MW,sump_kg=MS,
@@ -221,7 +225,9 @@ def solve_case(label,dt,props,gn,failed_ads=False,failed_act=False,wst_fraction=
         water_mass_residual_kg=max_mass_res,energy_residual_J=max_energy_res,flash_residual_J=max_flash_error,
         ACT_consumed_kJ=[x/1000 for x in consumed],ACT_remaining_kJ=[x/1000 for x in remaining],
         released=released.tolist(),positions=pos.tolist(),distribution_open=distribution_open,events=events,trace=trace)
+`
 
+export const coolingSuite = String.raw`
 props,gn=tables(300)
 # Independent direct-property samples, not self-comparison with the interpolator.
 errors=[]
@@ -271,14 +277,16 @@ print(json.dumps(dict(evidenceClass='apparatus truth; not powered operator instr
         refined_healthy={k:v for k,v in property_fine.items() if k not in ['events','trace']})),allow_nan=False))
 `
 
+export const coolingCalculation = coolingDefinitions + coolingSuite
+
 export async function runCoolingRig(document: string, python: string) {
   const basis = parseCoolingRigBasis(document)
   const input = JSON.stringify(basis)
-  const child = Bun.spawn([python,'-c',calculation],{stdin:Buffer.from(input),stdout:'pipe',stderr:'pipe'})
+  const child = Bun.spawn([python,'-c',coolingCalculation],{stdin:Buffer.from(input),stdout:'pipe',stderr:'pipe'})
   const [stdout,stderr,code] = await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited])
   if (code !== 0) throw new Error(`Cooling-source rig failed (${code}): ${stderr}`)
   return {...JSON.parse(stdout),basisSha256:createHash('sha256').update(input).digest('hex'),
-    calculationSha256:createHash('sha256').update(calculation).digest('hex')}
+    calculationSha256:createHash('sha256').update(coolingCalculation).digest('hex')}
 }
 
 if (import.meta.main) {
