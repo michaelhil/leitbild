@@ -31,6 +31,7 @@ import numpy as np
 import scipy,iapws
 from functools import lru_cache
 from types import MappingProxyType
+from types import SimpleNamespace
 from scipy.integrate import solve_ivp
 from scipy.optimize import minimize_scalar,root
 from iapws.iapws97 import _Region1,_Region2,_PSat_T,_TSat_P
@@ -43,10 +44,15 @@ def water(p,T):
  return MappingProxyType(dict(p=p,T=T,rho=rho,h=h,u=h-p*1e6/rho,s=r['s']*1000,cp=r['cp']*1000,alpha=r['alfav'],kappa=r['kt']/1e6))
 @lru_cache(maxsize=65536)
 def ps(p,s,guess):
- ts=_TSat_P(float(p));l=_Region1(ts,p)
- if s>=l['s']*1000:
-  v=_Region2(ts,p);x=(s/1000-l['s'])/(v['s']-l['s'])
-  if not 0<=x<=1:raise ValueError('Nozzle isentrope outside liquid/wet scope')
+ if not .000611657<p<=_PSat_T(623.15):raise ValueError('Nozzle saturation reference outside IF97 Region1/2 boundary')
+ ts=_TSat_P(float(p));l=_Region1(ts,p);sl=l['s']*1000
+ if s>=sl:
+  # Keep the branch comparison and subtraction in the same units: a J→kJ
+  # roundtrip can otherwise turn an admitted saturation equality negative.
+  v=_Region2(ts,p);sv=v['s']*1000
+  if s>sv:raise ValueError('Nozzle isentrope outside liquid/wet scope: entropy above saturated vapor')
+  x=(s-sl)/(sv-sl)
+  if not 0<=x<=1:raise ValueError('Nozzle isentrope outside liquid/wet scope: '+str(dict(p_MPa=p,s_J_kgK=s,guess_K=guess,quality=x)))
   return MappingProxyType(dict(h=1000*(l['h']+x*(v['h']-l['h'])),rho=1/(l['v']+x*(v['v']-l['v'])),T=ts,x=x))
  T=min(guess,ts)
  for _ in range(8):
@@ -142,8 +148,38 @@ def physical_jac(t,y,kind,opened,factor=1.):
   a=y.copy();c=y.copy();a[i]+=h;c[i]-=h
   J[:,i]=(rates(t,a,kind,opened)[0]-rates(t,c,kind,opened)[0])/(2*h)
  return J
-def normal_implicit(step,duration=None,jac_factor=1.,restart=None):
+def damped_newton(residual,jacobian,guess):
+ # Bounded nine-variable reference solve, not an adaptive integration framework.
+ # Residuals already use kg, MJ and the three owning constitutive scales.
+ x=guess.copy();calls=0;rejected_trials=0
+ def evaluate(v):
+  nonlocal calls
+  calls+=1
+  return residual(v)
+ message='Iteration limit'
+ for iteration in range(30):
+  try:
+   rr=evaluate(x)
+   if max(abs(rr))<=1e-9:return SimpleNamespace(x=x,nfev=calls,message='Residual converged',rejected_trials=rejected_trials)
+   correction=np.linalg.solve(jacobian(x),-rr)
+  except (ValueError,np.linalg.LinAlgError) as error:
+   message='Base/Jacobian rejected: '+str(error);break
+  merit=float(np.linalg.norm(rr));accepted=False
+  for backtrack in range(24):
+   fraction=2.**(-backtrack);trial=x+fraction*correction
+   try:
+    rtrial=evaluate(trial)
+    accepted=bool(np.all(np.isfinite(rtrial)) and np.linalg.norm(rtrial)<(1-1e-4*fraction)*merit)
+   except ValueError:
+    accepted=False
+   if accepted:x=trial;break
+   rejected_trials+=1
+  if not accepted:message='No admissible residual-decreasing Newton step';break
+ return SimpleNamespace(x=x,nfev=calls,message=message,rejected_trials=rejected_trials)
+def normal_implicit(step,duration=None,jac_factor=1.,restart=None,method='be'):
  start=time.monotonic();end=b['normalDuration_s'] if duration is None else duration
+ if method not in ['be','bdf2']:raise ValueError('Unknown normal integration method')
+ method_name='conservative '+('backward Euler' if method=='be' else 'BDF2 with backward-Euler startup/ramp restart')+' mixed head/flow'
  count=round(end/step)
  if abs(count*step-end)>1e-12:raise ValueError('Nonintegral normal step count')
  w0=water(b['normalPressure_MPa'],b['normalTemperature_C']+273.15)
@@ -152,6 +188,9 @@ def normal_implicit(step,duration=None,jac_factor=1.,restart=None):
   b['receiverTemperature_C']+273.15,0.,b['receiverTemperature_C']+273.15,0.,0.,0.])
  time_origin=0.
  if restart is not None:time_origin,values=restart;xx=np.array(values,dtype=float)
+ if method=='bdf2' and time_origin<b['valveStroke_s']<time_origin+end:
+  if abs((b['valveStroke_s']-time_origin)/step-round((b['valveStroke_s']-time_origin)/step))>1e-10:
+   raise ValueError('BDF2 reference must land exactly at the valve-ramp boundary')
  scale=np.array([.001,.1,1000.,.1,1.,.1,1.,1.,1.])
  probe=np.array([1e-6,1e-4,.001,1e-4,.001,1e-4,1e-5,1e-5,1e-5])*jac_factor
  def unpack(x):
@@ -179,6 +218,8 @@ def normal_implicit(step,duration=None,jac_factor=1.,restart=None):
   return np.array([lf,lh,lr])
  ws,_=unpack(xx);m0,e0,s0=stored(ws);initialM=m0.copy();initialE=e0.copy();initialS=sum(s0)
  totals=np.zeros(9);rows=[];maxm=maxe=0.;mins=minht=0.;nfev=0;max_laws=np.zeros(3)
+ previous_m=m0.copy();previous_e=e0.copy();previous_totals=totals.copy();startup_times=[]
+ minimum_mass=float(min(m0));minimum_entropy_increment=0.;minimum_fill_increment=0.;rejected_trials=0
  reconstruction_error=0.;max_return_head=-math.inf;max_header_pressure=0.
  def record(t,x,ws):
   nonlocal reconstruction_error,max_return_head,max_header_pressure
@@ -188,13 +229,21 @@ def normal_implicit(step,duration=None,jac_factor=1.,restart=None):
   rows.append(dict(t_s=t,p_MPa=[w['p'] for w in ws],T_C=[w['T']-273.15 for w in ws],
    fill_kg_s=x[6],headerTrain_kg_s=x[7],dviReturn_kg_s=x[8],relief_kg_s=0.,
    fillMass_kg=totals[0],dviReturnMass_kg=totals[4],reliefMass_kg=0.,reliefEnergy_J=0.,
-   explicitFillHead_Pa=x[2],explicitHeaderTrainHead_Pa=x[4]))
+   explicitFillHead_Pa=x[2],explicitHeaderTrainHead_Pa=x[4],
+   mass_kg=stored(ws)[0].tolist(),energy_J=stored(ws)[1].tolist(),
+   entropy_J_K=float(sum(stored(ws)[2])),faceTransfers=totals[:6].tolist()))
  record(time_origin,xx,ws)
  for k in range(1,count+1):
   t=time_origin+k*step;old=xx.copy()
+  startup=k==1 or abs(t-step-b['valveStroke_s'])<1e-10
+  alpha=1. if method=='be' or startup else 1.5
+  if method=='bdf2' and startup:startup_times.append(t-step)
+  # Difference form avoids subtracting large absolute energy inventories twice.
+  history_m=(.5*(m0-previous_m)) if alpha==1.5 else np.zeros(3)
+  history_e=(.5*(e0-previous_e)) if alpha==1.5 else np.zeros(3)
   def residual(dx):
    x=old+scale*dx;ww,ph=unpack(x);m,e,_=stored(ww);dm,de,_=transport(x,ww)
-   return np.r_[(m-m0-step*dm),(e-e0-step*de)/1e6,laws(x,ww,ph,t)]
+   return np.r_[alpha*(m-m0)-history_m-step*dm,(alpha*(e-e0)-history_e-step*de)/1e6,laws(x,ww,ph,t)]
   def jacobian(dx):
    cols=[]
    for j in range(9):
@@ -205,27 +254,37 @@ def normal_implicit(step,duration=None,jac_factor=1.,restart=None):
   ww,ph=unpack(old);target_squared=old[6]*abs(old[6])-laws(old,ww,ph,t)[0]
   guess=np.zeros(9)
   if old[6]==0.:guess[6]=math.copysign(math.sqrt(abs(target_squared)),target_squared)/scale[6]
-  sol=root(residual,guess,jac=jacobian,method='hybr',options={'xtol':1e-10,'maxfev':150})
+  sol=damped_newton(residual,jacobian,guess) if method=='bdf2' else root(residual,guess,jac=jacobian,method='hybr',options={'xtol':1e-10,'maxfev':150})
+  rejected_trials+=getattr(sol,'rejected_trials',0)
   rr=residual(sol.x);candidate=old+scale*sol.x;nfev+=sol.nfev
   if not (np.all(np.isfinite(rr)) and np.all(np.isfinite(candidate))) or max(abs(rr[:3]))>1e-5 or max(abs(rr[3:6]))>1e-6 or max(abs(rr[6:]))>1e-6:
-   return dict(case='normal',method='conservative backward Euler mixed head/flow',status='REJECTED_LOCAL_STEP',
+   return dict(case='normal',method=method_name,status='REJECTED_LOCAL_STEP',
     maxStep_s=step,checks=dict(localStep=False),failedTime_s=t,lastAcceptedTime_s=time_origin+(k-1)*step,
     lastAcceptedMixedState=old.tolist(),trialMixedState=candidate.tolist(),residual=rr.tolist(),solverMessage=sol.message,
     nfev=nfev,trace=rows,wall_s=time.monotonic()-start)
   xx=candidate;ws,_=unpack(xx);m,e,s=stored(ws);dm,de,ff=transport(xx,ws)
   if not all(np.all(np.isfinite(v)) for v in [m,e,s,dm,de,ff]):raise ValueError('Nonfinite native accepted-state output')
   if ws[1]['p']>=b['reliefOpen_MPa']:raise ValueError('Normal branch crossed excluded relief regime')
-  totals[:6]+=step*ff
+  old_totals=totals.copy()
+  totals[:6]+=(step*ff+(.5*(totals[:6]-previous_totals[:6]) if alpha==1.5 else 0.))/alpha
+  previous_totals=old_totals
+  minimum_mass=min(minimum_mass,float(min(m)))
+  minimum_entropy_increment=min(minimum_entropy_increment,float(sum(s)-sum(stored(unpack(old)[0])[2])))
+  minimum_fill_increment=min(minimum_fill_increment,float(totals[0]-old_totals[0]))
   max_laws=np.maximum(max_laws,abs(rr[6:]));minht=min(minht,xx[7]);mins=min(mins,sum(s)-initialS)
   expectedM=np.array([-totals[0]+totals[4],totals[0]-totals[2],totals[2]-totals[4]])
   expectedE=np.array([-totals[1]+totals[5],totals[1]-totals[3],totals[3]-totals[5]])
   maxm=max(maxm,max(abs(m-initialM-expectedM)));maxe=max(maxe,max(abs(e-initialE-expectedE)))
-  m0=m;e0=e;record(t,xx,ws)
+  previous_m=m0;previous_e=e0;m0=m;e0=e;record(t,xx,ws)
   if k%100==0:print(json.dumps(dict(progress='accepted',case='normal-implicit',maxStep_s=step,t_s=t,
    fill_kg_s=xx[6],headerTrain_kg_s=xx[7],fillHead_Pa=xx[2],headerTrainHead_Pa=xx[4])),file=sys.stderr,flush=True)
  final=np.r_[[v for w in ws for v in [w['p'],w['T']]],totals]
- return dict(case='normal',method='conservative backward Euler mixed head/flow',maxStep_s=step,status='duration',events=[],
-  checks=dict(localMass=bool(maxm<=1e-5),localEnergy=bool(maxe<=1.),entropy=bool(mins>=-.01),forwardPumpPassage=bool(minht>=-1e-5)),
+ return dict(case='normal',method=method_name,maxStep_s=step,status='duration',events=[],
+  checks=dict(localMass=bool(maxm<=1e-5),localEnergy=bool(maxe<=1.),entropy=bool(mins>=-.01),forwardPumpPassage=bool(minht>=-1e-5),
+   positiveInventory=bool(minimum_mass>0),stepEntropy=bool(minimum_entropy_increment>=-.01),forwardAdmissionLedger=bool(minimum_fill_increment>=-1e-8)),
+  backwardEulerStartupTimes_s=startup_times,minimumInventory_kg=minimum_mass,
+  minimumStepEntropyChange_J_K=minimum_entropy_increment,minimumFillTransferIncrement_kg=minimum_fill_increment,
+  rejectedNewtonTrials=rejected_trials,
   maxLocalMass_kg=maxm,maxLocalEnergy_J=maxe,minEntropyChange_J_K=mins,minimumHeaderTrainFlow_kg_s=minht,
   maxConstitutiveResidual=max_laws.tolist(),maximumHeadReconstructionDifference_Pa=reconstruction_error,
   maximumReturnDrivingHead_Pa=max_return_head,maximumHeaderPressure_MPa=max_header_pressure,
@@ -301,6 +360,22 @@ def compare(a,c):
    and dt<=max(1e-5,.01*c['trace'][-1]['t_s']) and event_same
    and all(a['checks'].values()) and all(c['checks'].values())))
 def primitives():
+ saturation_checks=0
+ for p in np.geomspace(.001,b['faultPressure_MPa'],200):
+  ts=_TSat_P(float(p));sl=_Region1(ts,p)['s']*1000;sv=_Region2(ts,p)['s']*1000
+  for s,expected in [(sl,0.),(sv,1.)]:
+   if ps(float(p),float(s),ts)['x']!=expected:raise ValueError('Exact saturation endpoint rejected')
+   saturation_checks+=1
+  for s in [np.nextafter(sl,sv),np.nextafter(sv,sl)]:
+   if not 0<=ps(float(p),float(s),ts)['x']<=1:raise ValueError('Interior saturation neighbor rejected')
+   saturation_checks+=1
+  if ps(float(p),float(np.nextafter(sl,-math.inf)),ts)['x']!=0:raise ValueError('Liquid-side saturation neighbor rejected')
+  saturation_checks+=1
+  try:ps(float(p),float(np.nextafter(sv,math.inf)),ts)
+  except ValueError as error:
+   if 'Nozzle isentrope outside liquid/wet scope' not in str(error):raise
+  else:raise ValueError('Outside saturation neighbor admitted')
+  saturation_checks+=1
  derivatives=[]
  for p,T in [(1.,423.15),(15.2,563.15),(.3,313.15),(1.3,313.15)]:
   w=water(p,T);J=storage_jac(w,1);fd=[]
@@ -327,11 +402,11 @@ def primitives():
  aa=run('full',1e-5,duration=1e-5);cc=run('full',1e-5,jac_factor=.5,duration=1e-5)
  check=compare(aa,cc)
  if not check['passGate']:raise ValueError('First-step half-probe root/ledger mismatch')
- return dict(storageDerivativeRelative=derivatives,heldMaximumFlow_kg_s=held,weakHeadFlux_kg_m2_s=weak,
+ return dict(saturationEndpointAndNeighborChecks=saturation_checks,saturationMaximumPressure_MPa=b['faultPressure_MPa'],storageDerivativeRelative=derivatives,heldMaximumFlow_kg_s=held,weakHeadFlux_kg_m2_s=weak,
   activeJacobianHalfProbeRelative=per_column,chokedDownstreamDerivative_kg_s_MPa=[jj[6,2],jh[6,2]],
   firstStepHalfProbe=check,firstStep=aa)
 mode=sys.argv[1] if len(sys.argv)>1 else 'all'
-if mode not in ['normal','normal-step','limited','full','all','primitive']:raise ValueError('Unknown case')
+if mode not in ['normal','normal-bdf2','normal-step','limited','full','all','primitive']:raise ValueError('Unknown case')
 out=dict(scope='Finite uniform-liquid apparatus; no gas, actual plant dynamics, relief lift law or protection qualification',
  python=platform.python_version(),iapws=iapws.__version__,numpy=np.__version__,scipy=scipy.__version__,basis=b,
  propertyCache='water(p,T) and ps(p,s,Tguess), exact keys, maximum65536 each, immutable mapping records; no interpolation',
@@ -341,11 +416,12 @@ if mode=='normal-step':
  aa=normal_implicit(.02,duration=.02);cc=normal_implicit(.02,duration=.02,jac_factor=.5)
  out['normalFirstStep']=dict(full=aa,half=cc,comparison=compare(aa,cc))
 elif mode!='primitive':
- cases=['normal','limited','full'] if mode=='all' else [mode];result=[]
+ cases=['normal','limited','full'] if mode=='all' else ['normal'] if mode=='normal-bdf2' else [mode];result=[]
  for kind in cases:
   step=.02 if kind=='normal' else (.005 if kind=='limited' else .00001)
-  a=normal_implicit(step) if kind=='normal' else run(kind,step)
-  c=normal_implicit(step/2) if kind=='normal' else run(kind,step/2)
+  method='bdf2' if mode=='normal-bdf2' else 'be'
+  a=normal_implicit(step,method=method) if kind=='normal' else run(kind,step)
+  c=normal_implicit(step/2,method=method) if kind=='normal' else run(kind,step/2)
   comparison=compare(a,c)
   if kind=='normal' and 'finalState' in a and 'finalState' in c:
    pc=tc=mc=0.
@@ -383,7 +459,7 @@ export async function runRhrAdmission(document: string, python: string, mode = '
 
 if (import.meta.main) {
   const [owner, python, mode = 'all', ...extra] = Bun.argv.slice(2)
-  if (!owner || !python || extra.length || !['normal', 'normal-step', 'limited', 'full', 'all', 'primitive'].includes(mode))
-    throw new Error('Usage: bun reference-design-rhr-admission.ts <owner.md> <python> [normal|normal-step|limited|full|all|primitive]')
+  if (!owner || !python || extra.length || !['normal', 'normal-bdf2', 'normal-step', 'limited', 'full', 'all', 'primitive'].includes(mode))
+    throw new Error('Usage: bun reference-design-rhr-admission.ts <owner.md> <python> [normal|normal-bdf2|normal-step|limited|full|all|primitive]')
   console.log(JSON.stringify(await runRhrAdmission(await Bun.file(owner).text(), python, mode), null, 2))
 }
