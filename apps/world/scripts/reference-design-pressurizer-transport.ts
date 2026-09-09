@@ -149,17 +149,108 @@ def withdraw(xs,m):
 def outlet_error(actual,exact):
     # Compare the piecewise outlet history against the independent material
     # ordering on cumulative discharged mass, not matching arbitrary timesteps.
-    a=copy.deepcopy(actual);e=copy.deepcopy(exact);i=j=0;err=peak=mass=0.
+    a=copy.deepcopy(actual);e=copy.deepcopy(exact);i=j=0;err=peak=mass=boronError=0.
     while i<len(a) and j<len(e):
         dm=min(a[i][0],e[j][0]);dt=abs(state(a[i][1]/a[i][0])[1]-state(e[j][1]/e[j][0])[1])
         err+=dm*dt;peak=max(peak,dt);mass+=dm
+        boronError+=dm*abs(a[i][2]/a[i][0]-e[j][2]/e[j][0])
         am=a[i][0]-dm;em=e[j][0]-dm
         if am<=1e-8:i+=1
         else:a[i]=scaled(a[i],am)
         if em<=1e-8:j+=1
         else:e[j]=scaled(e[j],em)
     if abs(mass-sum(x[0] for x in actual))>1e-5:raise ValueError('Outlet comparison lost mass')
-    return dict(meanAbsoluteTemperatureError_K=err/mass,peakTemperatureError_K=peak)
+    return dict(meanAbsoluteTemperatureError_K=err/mass,peakTemperatureError_K=peak,meanAbsoluteBoronFractionError=boronError/mass)
+
+contactCoalescing={'maximumEnthalpyDistinction_J_kg':0.,'maximumBoronFractionDistinction':0.,'absoluteEntropyChange_J_K':0.}
+def contact_remap(xs,n,limit=3):
+    # A geometric band owns at most two sharp contacts (three unmixed subcells).
+    # Unlike uniform-band mixing, separate physical volumes ARE additive here.
+    # Never use source identity, merge unlike material, or retain input packets.
+    capacity=b['vesselVolume_m3']/n;bands=[];cell=[];occupied=0.
+    for original in xs:
+        donor=original.copy()
+        while donor[0]>0:
+            v=state(donor[1]/donor[0])[0]
+            take=min(donor[0],(capacity-occupied)/v)
+            if take<=0:raise ValueError('Contact remap made no progress')
+            used=scaled(donor,take)
+            same=bool(cell) and all(abs(cell[-1][j]/cell[-1][0]-used[j]/used[0])<=
+                32*math.ulp(max(abs(cell[-1][j]/cell[-1][0]),abs(used[j]/used[0]))) for j in (1,2))
+            if same:
+                contactCoalescing['maximumEnthalpyDistinction_J_kg']=max(contactCoalescing['maximumEnthalpyDistinction_J_kg'],abs(cell[-1][1]/cell[-1][0]-used[1]/used[0]))
+                contactCoalescing['maximumBoronFractionDistinction']=max(contactCoalescing['maximumBoronFractionDistinction'],abs(cell[-1][2]/cell[-1][0]-used[2]/used[0]))
+                merged=add(cell[-1],used)
+                contactCoalescing['absoluteEntropyChange_J_K']+=abs(entropy([merged])-entropy([cell[-1],used]))
+                cell[-1]=merged
+            elif len(cell)<limit:cell.append(used)
+            else:raise ValueError('Contact capacity exceeded: '+str(limit)+' subcells in a spatial band '+str(
+                [(x[0],x[1]/x[0],x[2]/x[0]) for x in [*cell,used]]))
+            occupied+=take*v
+            if take==donor[0]:donor=[0.,0.,0.]
+            # Preserve the donor's intensive state on a small remainder rather
+            # than obtain H/M by subtracting two nearly equal extensive H values.
+            # Conservation remains checked independently; no tolerance is widened.
+            else:donor=scaled(donor,donor[0]-take)
+            if capacity-occupied<=32*math.ulp(capacity):
+                bands.append(cell);cell=[];occupied=0.
+                if len(bands)>=n:raise ValueError('Full liquid boundary')
+    if cell:bands.append(cell)
+    if not bands:raise ValueError('Empty liquid boundary')
+    flat=[x for band in bands for x in band]
+    errors=[abs(x-y) for x,y in zip(totals(xs),totals(flat))]
+    if errors[0]>1e-7 or errors[1]>.1 or errors[2]>1e-8:
+        raise ValueError('Contact remap changed conserved inventory')
+    return bands
+
+def contact_run(n,steps,uniform=False,roundtrip=False,limit=3):
+    hi=enthalpy(b['initial']['temperature_K']);ci=b['initial']['boron_ppm']*1e-6
+    bands=contact_remap([parcel(b['initialVolume_m3']/state(hi)[0],hi,ci)],n,limit)
+    sources={k:parcel(b['sourceMass_kg'],hi if uniform else enthalpy(b[k]['temperature_K']),
+        ci if uniform else b[k]['boron_ppm']*1e-6) for k in ['cold','warm']}
+    receiver=parcel(b['receiverMass_kg'],hi,ci);outlet=[];snapshots=[]
+    def cells():return [x for band in bands for x in band]
+    def allstates():return cells()+list(sources.values())+[receiver]
+    def energy():return math.fsum(x[0]*state(x[1]/x[0])[3]+p*vol(x) for x in allstates())
+    initial=totals(allstates());initialE=energy();initialS=entropy(allstates())
+    maxErr=[0.,0.,0.];maxE=0.;maxBands=len(bands);maxSubcells=len(cells());maxLocal=1;elapsed=0.
+    hmin=min(enthalpy(b[k]['temperature_K']) for k in ['initial','cold','warm'])
+    hmax=max(enthalpy(b[k]['temperature_K']) for k in ['initial','cold','warm'])
+    for index,s in enumerate(b['strokes']):
+        if s['kind']=='hold':
+            before=copy.deepcopy(bands);elapsed+=s['duration_s']
+            if bands!=before:raise ValueError('Hold modified contact history')
+        else:
+            for step in range(steps):
+                dm=s['mass_kg']/steps;flat=cells()
+                if s['kind']=='admit':
+                    source=sources[s['source']]
+                    if dm>=source[0]:raise ValueError('Finite source exhausted')
+                    moved=scaled(source,dm);sources[s['source']]=scaled(source,source[0]-dm)
+                    flat=[moved]+flat
+                else:
+                    flat,delivered=withdraw(flat,dm);outlet.extend(delivered);receiver=add(receiver,totals(delivered))
+                bands=contact_remap(flat,n,limit);elapsed+=dm/b['strokeRate_kg_s']
+                if roundtrip:
+                    # Persist physical contact state AND finite external owners;
+                    # no reconstruction from averages or hidden source labels.
+                    bands,sources,receiver=json.loads(json.dumps([bands,sources,receiver]))
+                for x in cells():
+                    h=x[1]/x[0]
+                    if not hmin-1e-6<=h<=hmax+1e-6:raise ValueError('Contact scalar overshoot')
+                current=totals(allstates())
+                maxErr=[max(maxErr[j],abs(current[j]-initial[j])) for j in range(3)]
+                maxE=max(maxE,abs(energy()-initialE));maxBands=max(maxBands,len(bands))
+                maxSubcells=max(maxSubcells,len(cells()));maxLocal=max(maxLocal,max(map(len,bands)))
+        snapshots.append(dict(stroke=index,elapsed_s=elapsed,level_m=sum(vol(x) for x in cells())/b['area_m2']))
+    if maxErr[0]>1e-6 or maxErr[1]>.5 or maxErr[2]>1e-7 or maxE>.5:
+        raise ValueError('Contact finite-owner ledger failed')
+    if maxBands>n or maxSubcells>limit*n or maxLocal>limit:raise ValueError('Unbounded persistent contact state')
+    return dict(bands=n,subdivisions=steps,subcellCapacityPerBand=limit,maximumOccupiedBands=maxBands,maximumPersistentSubcells=maxSubcells,
+        maximumSubcellsPerBand=maxLocal,maximumMassResidual_kg=maxErr[0],maximumEnthalpyResidual_J=maxErr[1],
+        maximumBoronResidual_kg=maxErr[2],maximumInternalEnergyPlusPistonWorkResidual_J=maxE,
+        closedSetEntropyChange_J_K=entropy(allstates())-initialS,
+        withdrawnEnthalpy_J=sum(x[1] for x in outlet),snapshots=snapshots,outlet=outlet,finalBands=bands)
 
 def run(n,steps,uniform=False,ordered=False,quadrature=1):
     hi=enthalpy(b['initial']['temperature_K']);ci=b['initial']['boron_ppm']*1e-6
@@ -228,6 +319,80 @@ if len(exact['outlet'])!=len(expected):raise ValueError('Analytic outlet sequenc
 for actual,(mass,f) in zip(exact['outlet'],expected):
     if abs(actual[0]-mass)>1e-6 or abs(actual[1]/mass-enthalpy(f['temperature_K']))>1e-5 or abs(actual[2]-mass*f['boron_ppm']*1e-6)>1e-9:
         raise ValueError('Independent analytical bottom-donor sequence failed')
+try:contact_run(b['bands'][0],b['subdivisions'][0],limit=2)
+except ValueError as error:
+    if 'Contact capacity exceeded' not in str(error):raise
+    rejectedTwoSubcellReason=str(error)
+else:raise ValueError('Two-subcell benchmark unexpectedly fits: review geometry/comparator')
+contactRows=[]
+for subdivisions in [*b['subdivisions'],b['costSubdivisions']]:
+    started=time.perf_counter();r=contact_run(b['bands'][0],subdivisions);r['wallSeconds']=time.perf_counter()-started
+    r.update(outlet_error(r['outlet'],exact['outlet']))
+    r['relativeWithdrawnEnthalpyError']=abs(r['withdrawnEnthalpy_J']/exact['withdrawnEnthalpy_J']-1)
+    r['withinUnchangedAccuracyScreens']=(r['meanAbsoluteTemperatureError_K']<=b['maximumOutletMeanAbsoluteError_K'] and
+        r['relativeWithdrawnEnthalpyError']<=b['maximumRelativeWithdrawnEnthalpyError'])
+    if r['meanAbsoluteBoronFractionError']>1e-12 or abs(sum(x[2] for x in r['outlet'])-sum(x[2] for x in exact['outlet']))>1e-9:
+        raise ValueError('Contact withdrawal boron donor history differs from analytical reference')
+    r.pop('outlet');r.pop('finalBands');contactRows.append(r)
+checkpoint=contact_run(b['bands'][0],b['subdivisions'][1])
+restored=contact_run(b['bands'][0],b['subdivisions'][1],roundtrip=True)
+if checkpoint!=restored:raise ValueError('Contact-state serialization changed accepted trajectory')
+if restored['maximumSubcellsPerBand']<2:raise ValueError('Restore test never exercised an actual contact')
+uniformContact=contact_run(b['bands'][0],b['subdivisions'][0],uniform=True)
+if any(abs(state(x[1]/x[0])[1]-b['initial']['temperature_K'])>1e-7 for band in uniformContact['finalBands'] for x in band):
+    raise ValueError('Contact uniform-state invariance failed')
+# Deliberate four-state occupancy tests representability, not a physical limit.
+overload=[parcel(1,enthalpy(b[k]['temperature_K']),b[k]['boron_ppm']*1e-6) for k in ['cold','warm','initial']]+[parcel(1,enthalpy(500),.0003)]
+before=copy.deepcopy(overload)
+try:contact_remap(overload,b['bands'][0])
+except ValueError as error:
+    if 'Contact capacity exceeded' not in str(error):raise
+else:raise ValueError('Contact overflow silently accepted')
+if overload!=before:raise ValueError('Rejected contact remap mutated accepted input')
+def must_reject_contact(label,materials):
+    try:contact_remap(materials,b['bands'][0])
+    except ValueError as error:
+        if 'Contact capacity exceeded' not in str(error):raise
+    else:raise ValueError('Unrepresentable contact state accepted: '+label)
+# Repeated short alternating admissions cannot grow a persistent material list.
+must_reject_contact('alternating admissions',[overload[i%2].copy() for i in range(20)])
+# A resolved smooth profile cannot be projected to two states without an explicit
+# approximation. Refuse it instead of claiming general wall-heating support.
+gradient=[parcel(1,enthalpy(500+i*.1),.0006) for i in range(8)]
+must_reject_contact('smooth within-band profile',gradient)
+splitChecks={'maximumRelativeLedgerResidual':0.,'maximumEnthalpyRatioResidual_J_kg':0.,'maximumBoronRatioResidual':0.}
+donor=parcel(5000,enthalpy(520),.0006)
+for exponent in [1,10,20,30,40]:
+    remainder=scaled(donor,donor[0]*2.**(-exponent));removed=scaled(donor,donor[0]-remainder[0])
+    combined=add(remainder,removed)
+    for j in range(3):
+        error=abs(combined[j]-donor[j])/abs(donor[j])
+        splitChecks['maximumRelativeLedgerResidual']=max(splitChecks['maximumRelativeLedgerResidual'],error)
+        if error>8*math.ulp(1.):raise ValueError('Conditioned split lost conserved inventory')
+    for j,key in [(1,'maximumEnthalpyRatioResidual_J_kg'),(2,'maximumBoronRatioResidual')]:
+        error=abs(remainder[j]/remainder[0]-donor[j]/donor[0]);splitChecks[key]=max(splitChecks[key],error)
+        if error>4*math.ulp(donor[j]/donor[0]):raise ValueError('Conditioned split fabricated a different state')
+if scaled(donor,0.)!=[0.,0.,0.]:raise ValueError('Zero split retained ghost inventory')
+try:contact_remap([scaled(donor,0.)],b['bands'][0])
+except ValueError as error:
+    if 'Empty liquid boundary' not in str(error):raise
+else:raise ValueError('Zero contact state silently retained')
+contactRejected=[]
+for label,case in [('phase',lambda:state(hs)),('temperature',lambda:enthalpy(ts+1)),
+    ('full',lambda:contact_remap([scaled(donor,2*b['vesselVolume_m3']/state(donor[1]/donor[0])[0])],b['bands'][0])),
+    ('emptyWithdrawal',lambda:withdraw([donor],donor[0]))]:
+    try:case()
+    except ValueError:contactRejected.append(label)
+    else:raise ValueError('Unsupported contact boundary silently accepted: '+label)
+contactChecks=dict(checkpointRoundtrip=True,uniform=True,capacityOverflowRejected=True,rejectedInputUnchanged=True,
+    alternatingAdmissionOverflowRejected=True,smoothWithinBandProfileRejected=True,rejectedTwoSubcellReason=rejectedTwoSubcellReason,
+    conditionedSplit=splitChecks,zeroSplitRejected=True,unsupportedBoundariesRejected=contactRejected)
+if len(sys.argv)>1 and sys.argv[1]=='contact':
+    print(json.dumps(dict(scope='Bounded two-contact-per-spatial-band isobaric piston reference only',
+        python=platform.python_version(),CoolProp=CoolProp.__version__,propertyBackend='HEOS::Water',
+        exactOrderedMaterial=exact,boundedContact=contactRows,contactChecks=contactChecks,contactCoalescing=contactCoalescing,
+        coupledPZRQualified=False),allow_nan=False))
+    sys.exit(0)
 rows=[]
 # Independent spatial and stroke refinement, with the common corner run only once.
 levels=[(n,b['subdivisions'][-1]) for n in b['bands']]+[(b['bands'][-1],s) for s in b['subdivisions'][:-1]]
@@ -266,17 +431,19 @@ exact.pop('finalCells')
 print(json.dumps(dict(scope='Isobaric zero-gravity1D piston/advection liquid-history reference, not installed PZR dynamics',
     python=platform.python_version(),CoolProp=CoolProp.__version__,propertyBackend='HEOS::Water',
     saturationTemperature_K=ts,exactOrderedMaterial=exact,refinement=rows,quadratureCheck=quad,resolutionCost=cost,
+    boundedContact=contactRows,contactChecks=contactChecks,contactCoalescing=contactCoalescing,
     uniformTemperatureError_K=uniformError,rejectedBoundaries=rejected,propertyChecks=propertyChecks,
     numericalTransportGatePassed=passed,coupledPZRQualified=False),allow_nan=False))
 `
 
 if (import.meta.main) {
-  const [page, python, output] = process.argv.slice(2)
-  if (!page || !python || process.argv.length > 5) throw Error('Usage: reference-design-pressurizer-transport.ts owner.md python [evidence.json]')
+  const [page, python, output, study = 'all'] = process.argv.slice(2)
+  if (!page || !python || process.argv.length > 6 || !['all', 'contact'].includes(study))
+    throw Error('Usage: reference-design-pressurizer-transport.ts owner.md python [evidence.json] [all|contact]')
   const input = parseTransportBasis(await Bun.file(page).text())
   const hash = (s: string) => createHash('sha256').update(s).digest('hex')
   const sourceHash = hash(await Bun.file(import.meta.path).text())
-  const child = Bun.spawn([python, '-c', transportCalculation], { stdin: new Blob([JSON.stringify(input)]), stdout: 'pipe', stderr: 'pipe' })
+  const child = Bun.spawn([python, '-c', transportCalculation, study], { stdin: new Blob([JSON.stringify(input)]), stdout: 'pipe', stderr: 'pipe' })
   const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
   if (code !== 0) throw Error(err)
   const result = { input, inputHash: hash(JSON.stringify(input)), sourceHash, calculationHash: hash(transportCalculation), ...JSON.parse(out) }
