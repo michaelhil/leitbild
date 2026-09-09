@@ -19,7 +19,14 @@ def hf(t):return 296.7*535.285/math.expm1(535.285/t)+.0243*t*t/2+8.745e7*math.ex
 cpTs=[300,400,640,1090]; cpVals=[281,302,331,375]
 def cpc(t):return float(np.interp(t,cpTs,cpVals))
 def hc(t):
-    return sum(quad(cpc,a,min(t,z),epsabs=1e-7)[0] for a,z in zip(cpTs,cpTs[1:]) if t>a)
+    # Exact primitive of the SAME piecewise-linear Cp; no quadrature inside
+    # every implicit energy residual. The owning laws admit 300..1000 K.
+    total=0.
+    for i,(a,z) in enumerate(zip(cpTs,cpTs[1:])):
+        if t>a:
+            dt=min(t,z)-a;slope=(cpVals[i+1]-cpVals[i])/(z-a)
+            total+=dt*(cpVals[i]+.5*slope*dt)
+    return total
 def fuelstrain(t):return 1e-5*t-.003+.04*math.exp(-6.9e-20/(1.38e-23*t))
 def gap(ts,pg,geo,radiation):
     tw,ti,tf,tc=ts; rf,ri,ro,length,dr,stress,solidRf=geo
@@ -33,10 +40,10 @@ def gap(ts,pg,geo,radiation):
 `
 /** Same mean-strain/elastic geometry owner used by steady and transient references. */
 export const fuelGeometryPython=String.raw`
-def geometry(ts,pg,j,expanded=True):
+def geometry(ts,pg,j,expanded=True,externalPressure_MPa=None):
     tw,ti,tf,tc=ts; tm=(tw+ti)/2; rbar=(ri0+ro0)/2
     E=1.088e11-5.475e7*tm; G=4.04e10-2.168e7*tm; nu=E/(2*G)-1
-    po=b['coolantPressures_MPa'][j+1]*1e6
+    po=(b['coolantPressures_MPa'][j+1] if externalPressure_MPa is None else externalPressure_MPa)*1e6
     hoop=(ri0*pg-ro0*po)/(ro0-ri0)
     axial=(ri0**2*pg-ro0**2*po)/(ro0**2-ri0**2)
     er=(hoop-nu*axial)/E; ez=(axial-nu*hoop)/E

@@ -41,14 +41,16 @@ export const unforcedTraceDrift=(samples:Array<{p_MPa:number[];T_C:number[]}>)=>
   return {pressure_MPa,temperature_K,accepted:pressure_MPa<1e-5&&temperature_K<1e-4}
 }
 
-const calculation=String.raw`
+/** Shared equations for the original apparatus and the radial heat handoff.
+ * The caller supplies validated numeric d; no source is read from the wiki. */
+export const primaryReferencePython=String.raw`
 import sys,json,math,time
 import numpy as np
 from scipy.optimize import root
 from iapws import IAPWS97 as W
 from iapws.iapws97 import _Region1
 from iapws._iapws import _Viscosity
-d=json.load(sys.stdin); b=d['basis']; c=d['cycle']; hy=d['hydraulics']; core=d['physicalCore']; cb=c['basis']; hb=hy['basis']
+b=d['basis']; c=d['cycle']; hy=d['hydraulics']; core=d['physicalCore']; cb=c['basis']; hb=hy['basis']
 g=hb['gravity_m_s2']; names=['DOWNCOMER','LOWER','CORE.1','CORE.2','UPPER','HOT.A','HOT.B','SG.A.PRIMARY','SG.B.PRIMARY','COLD.A','COLD.B']
 V=np.array(b['volumes_m3']); z=np.array([3,-2,0,2,2,2.5,2.5,3,3,3,3.]); Cwall=b['metalCapacity_MJ_K']*1e6
 s=c['points']; M0=c['flows']['primary_kg_s']; m0=M0/4; ml0=M0/2; Pcore=c['powers_MW']['core']*1e6
@@ -100,7 +102,7 @@ def properties(p,T):
  for pp,tt in zip(p,T):
   v=_Region1(tt+273.15,pp); rho.append(1/v['v']); h.append(v['h']*1000); u.append(v['h']*1000-pp*1e6*v['v'])
  return np.array(rho),np.array(h),np.array(u)
-def evaluate(x,sourceFactor=1,A1request=1):
+def evaluate(x,sourceFactor=1,A1request=1,wallHeat=None):
  if not np.all(np.isfinite(x)):raise ValueError('Nonfinite solver iterate')
  p=x[:11]*15; T=x[11:22]*300; m=x[22:36]*refs; Tw=x[36:38]*300; omega=x[38:42]*omega0
  rho,h,u=properties(p,T); mass=V*rho; energy=mass*u; dM=np.zeros(11); dU=np.zeros(11); hyd=[]
@@ -128,12 +130,14 @@ def evaluate(x,sourceFactor=1,A1request=1):
   dU[i]-=flux; dU[j]+=flux
   # The massless pump deposits actual shaft work in the actual receiving cell.
   if power!=0:dU[j if m[k]>=0 else i]+=power
- dU[2:4]+=Qcore*sourceFactor
+ heat=Qcore*sourceFactor if wallHeat is None else np.asarray(wallHeat)
+ if heat.shape!=(2,) or not np.all(np.isfinite(heat)):raise ValueError('Expected two finite physical core wall heats')
+ dU[2:4]+=heat
  Qp=G*(T[7:9]-Tw); Qs=G*(Tw-Tsink); dU[7:9]-=Qp
  dw=(Qp-Qs)/Cwall
  return dict(p=p,T=T,m=m,Tw=Tw,omega=omega,mass=mass,energy=energy,dM=dM,dU=dU,hyd=np.array(hyd),dw=dw,domega=np.array(domega),Qp=Qp,Qs=Qs,
   electrical=np.array(electrical),ambient=np.array(ambient),fluid=np.array(fluid),rho=rho,
-  totalStored=float(sum(energy)+Cwall*sum(Tw)+.5*J*sum(omega**2)),externalPower=float(Pcore*sourceFactor+sum(electrical)-sum(ambient)-sum(Qs)))
+  totalStored=float(sum(energy)+Cwall*sum(Tw)+.5*J*sum(omega**2)),externalPower=float(sum(heat)+sum(electrical)-sum(ambient)-sum(Qs)))
 def steady(x,anchor=True):
  counters['residualCalls']+=1
  e=evaluate(x); mr=e['dM']/M0
@@ -147,6 +151,11 @@ def solve(fun,guess,label):
  # finite dimensional/scaled residual tests, not its status flag alone.
  status=str(r.status)+': '+str(r.message); statuses[status]=statuses.get(status,0)+1
  return r.x,residual
+`
+const calculation=String.raw`
+import json,sys
+d=json.load(sys.stdin)
+${primaryReferencePython}
 steadyStart=startMeter()
 x0,res=solve(steady,xseed,'steady'); e0s=evaluate(x0)
 alter=xseed.copy(); alter[:11]+=.001; alter[11:22]+=.002; alter[22:36]*=np.linspace(.9,1.1,14); alter[36:38]+=.002
@@ -244,14 +253,19 @@ print(json.dumps(dict(boundary='sealed liquid primary; prescribed core heat, SG 
  cost=dict(initializationIncludingRankAndScaling=steadyCost,total=endMeter(allStart),solverStatuses=statuses,propertyCountScope='11 narrow Region1 states per evaluator call; calibration/full-wrapper comparisons excluded')),allow_nan=False))
 `
 
-export async function runInitialization(document:string,hydraulicDocument:string,cycleDocument:string,python:string,physicalCore:PhysicalCoreReference|null=null){
+export async function resolveInitializationInput(document:string,hydraulicDocument:string,cycleDocument:string,python:string,physicalCore:PhysicalCoreReference|null=null){
   const basis=parseInitializationBasis(document)
   if(physicalCore){
     basis.volumes_m3[2]=physicalCore.geometry.coreFlowVolume_m3/2
     basis.volumes_m3[3]=physicalCore.geometry.coreFlowVolume_m3/2
   }
   const [cycle,hydraulics]=await Promise.all([runCycle(cycleDocument,python),runHydraulics(hydraulicDocument,cycleDocument,python)])
-  const child=Bun.spawn([python,'-c',calculation],{stdin:Buffer.from(JSON.stringify({basis,cycle,hydraulics,physicalCore})),stdout:'pipe',stderr:'pipe'})
+  return {basis,cycle,hydraulics,physicalCore}
+}
+export async function runInitialization(document:string,hydraulicDocument:string,cycleDocument:string,python:string,physicalCore:PhysicalCoreReference|null=null){
+  const data=await resolveInitializationInput(document,hydraulicDocument,cycleDocument,python,physicalCore)
+  const {basis,cycle,hydraulics}=data
+  const child=Bun.spawn([python,'-c',calculation],{stdin:Buffer.from(JSON.stringify(data)),stdout:'pipe',stderr:'pipe'})
   const [out,err,code]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited])
   if(code!==0)throw new Error(`Connected initialization failed: ${err}`)
   const result=JSON.parse(out),traceDrift=unforcedTraceDrift(result.hold.samples)

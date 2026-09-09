@@ -11,7 +11,8 @@ export function parseFuelTransient(doc:string){
   if(blocks.length!==1)throw Error('Expected one reference-fuel-transient block')
   return inputSchema.parse(JSON.parse(blocks[0]![1]!))
 }
-const calculation=String.raw`
+/** Existing finite radial material equations, reusable by the circuit experiment. */
+export const radialReferencePython=String.raw`
 import sys,json,math,platform
 import numpy as np,scipy,iapws
 from scipy.integrate import quad,solve_ivp
@@ -19,7 +20,7 @@ from scipy.optimize import root,brentq,newton
 from functools import lru_cache
 from iapws import IAPWS97 as W
 from iapws.iapws97 import _Region1
-d=json.load(sys.stdin); b=d['basis']; case=d['case']; geom=d['geometry']; old=d['reference']; rows=old['base']['rows']; boundary=old['actualBoundary']; pi=math.pi; N=geom['rods']; checks=[]
+b=d['basis']; case=d['case']; geom=d['geometry']; old=d['reference']; rows=old['base']['rows']; boundary=old['actualBoundary']; pi=math.pi; N=geom['rods']; checks=[]
 finite=d['experiment']=='finite-coolant';moving=d['experiment']!='fixed';b={**b,'coolantPressures_MPa':boundary['coolantPressures_MPa']}
 ${fuelMaterialPython}
 def check(name,a,e,atol):
@@ -32,11 +33,13 @@ nR=b['fillPressure_Pa']*(vp+pi*(ri0**2-rf0**2)*b['activeLength_m'])/300
 G=boundary['massflow_kg_s']/geom['flowArea_m2']; dh=geom['hydraulicDiameter_m']
 saturation=[W(P=p,x=0).T for p in boundary['coolantPressures_MPa'][1:]]
 @lru_cache(maxsize=256)
-def film(j,tw,tb=None,flow=None):
-    tb=boundary['coolantTemperatures_K'][j+1] if tb is None else tb;p=boundary['coolantPressures_MPa'][j+1]
+def film(j,tw,tb=None,flow=None,externalPressure_MPa=None):
+    tb=boundary['coolantTemperatures_K'][j+1] if tb is None else tb
+    p=boundary['coolantPressures_MPa'][j+1] if externalPressure_MPa is None else externalPressure_MPa
     flux=G if flow is None else flow/geom['flowArea_m2']
     w=W(P=p,T=(tb+tw)/2);re=flux*dh/w.mu;pr=w.cp*1000*w.mu/w.k
-    if re<10000 or not .6<pr<160 or tw>=saturation[j]:raise ValueError('Outside liquid turbulent boundary')
+    limit=saturation[j] if externalPressure_MPa is None else W(P=p,x=0).T
+    if re<10000 or not .6<pr<160 or tw>=limit:raise ValueError('Outside liquid turbulent boundary')
     return .023*re**.8*pr**.4*w.k/dh
 volume=geom['coreFlowVolume_m3']/2
 @lru_cache(maxsize=256)
@@ -88,8 +91,7 @@ def continuum(factor):
         if finite:record['coolant_K']=coolant[j]
         projection.append(record)
     return projection
-targets=dict(nominal=continuum(1.),reduced=continuum(case['reducedPowerFraction']))
-def make(n):
+def make(n,circuit=False):
     nc=n//4; segments=[]; initial=[]
     for j,r in enumerate(rows):
         rf=r['fuelRadius_m'];ri=r['cladInnerRadius_m'];ro=r['cladOuterRadius_m'];L=r['activeLength_m']
@@ -110,31 +112,33 @@ def make(n):
     solidSize=len(initial)
     if finite:initial.extend(boundary['coolantTemperatures_K'][1:])
     initial=np.array(initial); size=len(initial)
-    def geometricState(t,pg):
+    def geometricState(t,pg,current=None):
         values=[]
         for s in segments:
             f=t[s['fi']];c=t[s['ci']]
-            geo=geometry((c[-1],c[0],f[-1],f[0]),pg,s['j']) if moving else s['geo']
+            po=None if current is None else current['p_MPa'][s['j']]
+            geo=geometry((c[-1],c[0],f[-1],f[0]),pg,s['j'],externalPressure_MPa=po) if moving else s['geo']
             rf,ri,ro,L,_,_,solidRf=geo
             if ri-rf<=0 or ri-solidRf-.5*relocation<=0:raise ValueError('Outside retained BOL noncontact geometry')
             values.append((geo,pi*(ri*ri-rf*rf)*L,pi*(rf*rf-solidRf*solidRf)*L))
         return values
-    def inventory(t,pg):
+    def inventory(t,pg,current=None):
         inv=vp/tp
-        for s,(_,vg,vc) in zip(segments,geometricState(t,pg)):
+        for s,(_,vg,vc) in zip(segments,geometricState(t,pg,current)):
             f=t[s['fi']];c=t[s['ci']];inv+=vg/((f[-1]+c[0])/2)+vc/float(s['fw']@f)
         return inv
-    def pressure(t):
+    def pressure(t,current=None):
         if not moving:return nR/inventory(t,old['base']['heliumPressure_Pa'])
-        pg=float(newton(lambda p:p*inventory(t,p)-nR,old['base']['heliumPressure_Pa'],tol=1e-5))
+        pg=float(newton(lambda p:p*inventory(t,p,current)-nR,old['base']['heliumPressure_Pa'],tol=1e-5))
         if not math.isfinite(pg) or pg<=0:raise ValueError('Sealed gas pressure is not finite and positive')
-        residual=pg*inventory(t,pg)-nR
+        residual=pg*inventory(t,pg,current)-nR
         if not math.isfinite(residual) or abs(residual)>1e-9:raise ValueError('Sealed gas closure did not converge')
         return pg
-    def balances(t,factor):
-        pg=pressure(t); rates=np.zeros(size); caps=np.zeros(size); out=[]; gaps=[];fluid=[]
+    def balances(t,factor,current=None):
+        if current is not None and finite:raise ValueError('Circuit owns water; finite receiver must be absent')
+        pg=pressure(t,current); rates=np.zeros(size); caps=np.zeros(size); out=[]; gaps=[];fluid=[]
         massIn=boundary['massflow_kg_s'];hIn=inletH
-        for s,(geo,_,_) in zip(segments,geometricState(t,pg)):
+        for s,(geo,_,_) in zip(segments,geometricState(t,pg,current)):
             f=t[s['fi']];c=t[s['ci']];r=s['r']
             if min(f)<500 or max(f)>2000 or min(c)<300 or max(c)>1000:raise ValueError('Material temperature outside selected reference')
             rf,ri,ro,L,*_=geo
@@ -146,7 +150,10 @@ def make(n):
             qf=gf*np.diff(-np.array([fk(x) for x in f]));qc=gc*np.diff(-np.array([ck(x) for x in c]))
             qg=gap((c[-1],c[0],f[-1],f[0]),pg,geo,0.)[0]*2*pi*rf*L
             tb=t[solidSize+s['j']] if finite else s['tb']
-            hfC=film(s['j'],c[-1],tb,massIn if finite else None)
+            po=None;flow=massIn if finite else None
+            if current is not None:
+                tb=current['T_K'][s['j']];po=current['p_MPa'][s['j']];flow=current['flow_kg_s'][s['j']]
+            hfC=film(s['j'],c[-1],tb,flow,po)
             qo=hfC*(c[-1]-tb)*2*pi*ro*L
             rates[s['fi']]=s['power']*factor*s['fw']+np.r_[0,qf]-np.r_[qf,qg]
             rates[s['ci']]=np.r_[qg,qc]-np.r_[qc,qo]
@@ -165,18 +172,29 @@ def make(n):
     def fluidStored(t):
         states=[water(j,t[solidSize+j]) for j in range(2)] if finite else []
         return sum(w['U'] for w in states),sum(w['M'] for w in states)
+    def nodeEnergy(t):
+        values=np.zeros(solidSize)
+        for s in segments:
+            values[s['fi']]=s['mf']*np.array([hf(x)-hf(300) for x in t[s['fi']]])
+            values[s['ci']]=s['mc']*np.array([hc(x) for x in t[s['ci']]])
+        return values
     def energy(t):
         return sum(float(s['mf']@np.array([hf(x)-hf(300) for x in t[s['fi']]]))+float(s['mc']@np.array([hc(x) for x in t[s['ci']]])) for s in segments)
-    def mechanical(t):
-        pg=pressure(t);volumes=[];vg=vp;elastic=0.
-        for s,(geo,gapVolume,crackVolume) in zip(segments,geometricState(t,pg)):
+    def mechanical(t,current=None):
+        pg=pressure(t,current);volumes=[];vg=vp;elastic=0.
+        for s,(geo,gapVolume,crackVolume) in zip(segments,geometricState(t,pg,current)):
             rf,ri,ro,L,_,hoop,_=geo;vg+=gapVolume+crackVolume;volumes.append(pi*ro*ro*L)
             c=t[s['ci']];tm=(c[0]+c[-1])/2;E=1.088e11-5.475e7*tm;Gz=4.04e10-2.168e7*tm;nu=E/(2*Gz)-1
             if E<=0 or Gz<=0:raise ValueError('Elastic property domain exceeded')
-            axial=(ri0**2*pg-ro0**2*s['p']*1e6)/(ro0**2-ri0**2)
+            po=s['p'] if current is None else current['p_MPa'][s['j']]
+            axial=(ri0**2*pg-ro0**2*po*1e6)/(ro0**2-ri0**2)
             # Consistent with the already selected leading-order cold-radius plane stress model.
             elastic+=(hoop*hoop+axial*axial-2*nu*hoop*axial)/(2*E)*sum(s['mc'])/b['cladDensity_kg_m3']
         return dict(pg=pg,outer=np.array(volumes),gasVolume=vg,gasEnergy=1.5*pg*vg,elastic=elastic)
+    if circuit:
+        if finite or not moving:raise ValueError('Circuit experiment requires quasistatic solids without a coolant owner')
+        return dict(initial=initial,balances=balances,nodeEnergy=nodeEnergy,energy=energy,
+            mechanical=mechanical,segments=segments,solidSize=solidSize)
     def equilibrium(factor,guess):
         solution=root(lambda t:balances(t,factor)[0]/1000,guess,tol=1e-10)
         if not solution.success:raise ValueError(solution.message)
@@ -273,6 +291,12 @@ def make(n):
         continuumInitialProjection=projection(initial),initialEnergyDifference_J=energy(nominal)*N-continuumEnergy,
         initialReceiver=dict(volumePerCell_m3=volume,cells=balances(nominal,1)[-1]) if finite else None,
         nominalHeliumPressure_Pa=pressure(nominal),hold=run(.1,False),transients=[run(step) for step in (case['maxSteps_s'] if n==16 else [.05])])
+`
+const calculation=String.raw`
+import json,sys
+d=json.load(sys.stdin)
+${radialReferencePython}
+targets=dict(nominal=continuum(1.),reduced=continuum(case['reducedPowerFraction']))
 results=[make(n) for n in case['fuelIntervals']]
 def projdiff(a,b):return max(abs(x[k]-y[k]) for x,y in zip(a,b) for k in x)
 space=[]
@@ -295,7 +319,7 @@ print(json.dumps(dict(scope='quasistatic BOL radial solids coupled to finite pre
     results=results,continuumTargets=targets,spatialRefinement=space,temporalRefinement=temporal,checks=checks,
     finitePressureSupportedReceiver=finite,quasistaticGeometry=moving,fullThermomechanicsQualified=False,gasEnergyRetained=False,empiricalFuelValidation=False,liveRuntime=False),allow_nan=False,indent=2))
 `
-export async function runFuelTransient(fuelDoc:string,caseDoc:string,bolJson:string,python:string,experiment:'fixed'|'quasistatic'|'finite-coolant'='fixed'){
+export function resolveFuelTransientInput(fuelDoc:string,caseDoc:string,bolJson:string,experiment:'fixed'|'quasistatic'|'finite-coolant'='fixed'){
   z.enum(['fixed','quasistatic','finite-coolant']).parse(experiment)
   const basis=parseFuelConstruction(fuelDoc),input=parseFuelTransient(caseDoc),geometry=fuelGeometry(basis)
   const artifact=JSON.parse(bolJson),reference=artifact.relocated
@@ -304,7 +328,10 @@ export async function runFuelTransient(fuelDoc:string,caseDoc:string,bolJson:str
   if(reference.geometrySha256!==createHash('sha256').update(fuelGeometry.toString()).digest('hex'))throw Error('BOL geometry owner changed')
   const resolved={...basis,coolantPressures_MPa:reference.actualBoundary.coolantPressures_MPa,coolantTemperatures_K:reference.actualBoundary.coolantTemperatures_K}
   if(reference.inputSha256!==createHash('sha256').update(JSON.stringify(resolved)).digest('hex'))throw Error('BOL construction basis changed; rerun its owner')
-  const data={basis,case:input,geometry,reference,experiment}
+  return {basis,case:input,geometry,reference,experiment}
+}
+export async function runFuelTransient(fuelDoc:string,caseDoc:string,bolJson:string,python:string,experiment:'fixed'|'quasistatic'|'finite-coolant'='fixed'){
+  const data=resolveFuelTransientInput(fuelDoc,caseDoc,bolJson,experiment)
   const child=Bun.spawn([python,'-c',calculation],{stdin:new Blob([JSON.stringify(data)]),stdout:'pipe',stderr:'pipe'})
   const [out,err,exit]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited])
   if(exit!==0)throw Error(err||`Radial transient failed:${exit}`)
