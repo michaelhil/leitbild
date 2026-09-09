@@ -83,21 +83,23 @@ def make_wall(nr,dx):
     centers=np.sqrt((edges[:-1]**2+edges[1:]**2)/2)
     areas=math.pi*np.diff(edges**2);masses=7920*areas*dx
     conduct=2*math.pi*dx/np.log(np.r_[centers,edges[-1]]/np.r_[edges[0],centers])
-    def solve(old,inner,dt,outer=None):
+    def solve(old,inner,dt,outer=None,inner_fraction=1.):
+        if not math.isfinite(inner_fraction) or not 0<=inner_fraction<=1:raise ValueError('Invalid exposed inner contact fraction')
+        faces=conduct.copy();faces[0]*=inner_fraction
         T=old.copy()
         for iteration in range(12):
             sides=np.r_[inner,T,T[-1] if outer is None else outer]
-            q=conduct*steel_dK(sides[:-1],sides[1:])
+            q=faces*steel_dK(sides[:-1],sides[1:])
             if outer is None:q[-1]=0.
             energy=masses*steel_de(T,old)
             residual=energy-dt*(q[:-1]-q[1:])
             if max(abs(residual))<1e-8:return T,q,float(max(abs(residual)))
             kval=steel_k(T);ab=np.zeros((3,nr))
-            right=conduct[1:].copy()
+            right=faces[1:].copy()
             if outer is None:right[-1]=0.
-            ab[1]=masses*steel_cp(T)+dt*(conduct[:-1]+right)*kval
-            ab[0,1:]=-dt*conduct[1:-1]*kval[1:]
-            ab[2,:-1]=-dt*conduct[1:-1]*kval[:-1]
+            ab[1]=masses*steel_cp(T)+dt*(faces[:-1]+right)*kval
+            ab[0,1:]=-dt*faces[1:-1]*kval[1:]
+            ab[2,:-1]=-dt*faces[1:-1]*kval[:-1]
             update=solve_banded((1,1),ab,-residual)
             T+=update
             if np.any(T<300) or np.any(T>650):raise ValueError('Radial steel outside selected material range')
