@@ -1,4 +1,4 @@
-/** Offline fixed-achieved-geometry radial energy reference, not a live Plant Model. */
+/** Offline radial energy experiments with explicit mechanical/receiving boundaries, not a live Plant Model. */
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { fuelMaterialPython, fuelGeometryPython } from './reference-design-fuel-materials.ts'
@@ -18,8 +18,9 @@ from scipy.integrate import quad,solve_ivp
 from scipy.optimize import root,brentq,newton
 from functools import lru_cache
 from iapws import IAPWS97 as W
+from iapws.iapws97 import _Region1
 d=json.load(sys.stdin); b=d['basis']; case=d['case']; geom=d['geometry']; old=d['reference']; rows=old['base']['rows']; boundary=old['actualBoundary']; pi=math.pi; N=geom['rods']; checks=[]
-moving=d['geometryMode']=='quasistatic';b={**b,'coolantPressures_MPa':boundary['coolantPressures_MPa']}
+finite=d['experiment']=='finite-coolant';moving=d['experiment']!='fixed';b={**b,'coolantPressures_MPa':boundary['coolantPressures_MPa']}
 ${fuelMaterialPython}
 def check(name,a,e,atol):
     if not math.isfinite(a) or abs(a-e)>atol:raise ValueError(f'{name}: {a} != {e}, allowance {atol}')
@@ -31,21 +32,38 @@ nR=b['fillPressure_Pa']*(vp+pi*(ri0**2-rf0**2)*b['activeLength_m'])/300
 G=boundary['massflow_kg_s']/geom['flowArea_m2']; dh=geom['hydraulicDiameter_m']
 saturation=[W(P=p,x=0).T for p in boundary['coolantPressures_MPa'][1:]]
 @lru_cache(maxsize=256)
-def film(j,tw):
-    tb=boundary['coolantTemperatures_K'][j+1];p=boundary['coolantPressures_MPa'][j+1]
-    w=W(P=p,T=(tb+tw)/2);re=G*dh/w.mu;pr=w.cp*1000*w.mu/w.k
+def film(j,tw,tb=None,flow=None):
+    tb=boundary['coolantTemperatures_K'][j+1] if tb is None else tb;p=boundary['coolantPressures_MPa'][j+1]
+    flux=G if flow is None else flow/geom['flowArea_m2']
+    w=W(P=p,T=(tb+tw)/2);re=flux*dh/w.mu;pr=w.cp*1000*w.mu/w.k
     if re<10000 or not .6<pr<160 or tw>=saturation[j]:raise ValueError('Outside liquid turbulent boundary')
     return .023*re**.8*pr**.4*w.k/dh
+volume=geom['coreFlowVolume_m3']/2
+@lru_cache(maxsize=256)
+def water(j,temp):
+    if not math.isfinite(temp) or temp<548.15 or temp>=min(601.15,saturation[j]):raise ValueError('Receiver outside selected compressed-liquid range')
+    p=boundary['coolantPressures_MPa'][j+1];w=_Region1(temp,p);rho=1/w['v'];mass=rho*volume
+    return dict(M=mass,U=mass*(w['h']*1000-p*1e6*w['v']),h=w['h']*1000,
+        cp=w['cp']*1000,dMdT=-mass*w['alfav'],flowWork=p*1e6*w['v'])
+inlet=W(P=boundary['coolantPressures_MPa'][0],T=boundary['coolantTemperatures_K'][0])
+inletH=inlet.h*1000;inletFlowWork=boundary['coolantPressures_MPa'][0]*1e6/inlet.rho
+def steadyCoolant(factor):
+    enthalpy=inletH;temps=[]
+    for j,r in enumerate(rows):
+        enthalpy+=r['power_W']*factor/boundary['massflow_kg_s']
+        temps.append(W(P=boundary['coolantPressures_MPa'][j+1],h=enthalpy/1000).T)
+    return temps
 def continuum(factor):
     # Independent conductivity-integral steady challenge, not the FV residual.
+    coolant=steadyCoolant(factor) if finite else boundary['coolantTemperatures_K'][1:]
     def residual(v):
         pg=v[-1]*1e6; out=[]; inv=vp/tp
         for j,r in enumerate(rows):
             tw,ti,tf,tc=v[4*j:4*j+4]
             geo=geometry((tw,ti,tf,tc),pg,j) if moving else (r['fuelRadius_m'],r['cladInnerRadius_m'],r['cladOuterRadius_m'],r['activeLength_m'],0,0,r['thermallyExpandedSolidRadius_m'])
             rf,ri,ro,L,_,_,solidRf=geo
-            qp=r['power_W']*factor/N/L;p=boundary['coolantPressures_MPa'][j+1];tb=boundary['coolantTemperatures_K'][j+1]
-            h=film(j,tw)
+            qp=r['power_W']*factor/N/L;p=boundary['coolantPressures_MPa'][j+1];tb=coolant[j]
+            h=film(j,tw,tb)
             qg=gap((tw,ti,tf,tc),pg,geo,0.)[0]
             out.extend([(2*pi*ro*h*(tw-tb)-qp)/qp,(ck(ti)-ck(tw)-qp*math.log(ro/ri)/(2*pi))/qp,
                 (qg*2*pi*rf-qp)/qp,(fk(tc)-fk(tf)-qp/(4*pi))/qp])
@@ -66,7 +84,9 @@ def continuum(factor):
             return brentq(lambda t:ck(t)-ck(tw)-qp/(2*pi)*math.log(ro/radius),tw-1e-7,ti+1e-7)
         ef=r['fuelMass_kg']*quad(lambda x:2*x*(hf(ft(x))-hf(300)),0,1,epsabs=1e-5)[0]
         ec=r['cladMass_kg']*quad(lambda x:hc(ct(x)),0,1,epsabs=1e-5)[0]
-        projection.append(dict(center_K=float(tc),surface_K=float(tf),wall_K=float(tw),mean_K=fuelAreaMean(tf,tc),solidEnergy_J=ef+ec))
+        record=dict(center_K=float(tc),surface_K=float(tf),wall_K=float(tw),mean_K=fuelAreaMean(tf,tc),solidEnergy_J=ef+ec)
+        if finite:record['coolant_K']=coolant[j]
+        projection.append(record)
     return projection
 targets=dict(nominal=continuum(1.),reduced=continuum(case['reducedPowerFraction']))
 def make(n):
@@ -87,6 +107,8 @@ def make(n):
             vg=pi*(ri*ri-rf*rf)*L,vc=r['effectiveCrackGasVolumePerRod_m3'],
             geo=(rf,ri,ro,L,r['cladElasticDisplacement_um']*1e-6,r['hoopStress_MPa']*1e6,r['thermallyExpandedSolidRadius_m']),
             power=r['power_W']/N,p=boundary['coolantPressures_MPa'][j+1],tb=boundary['coolantTemperatures_K'][j+1]))
+    solidSize=len(initial)
+    if finite:initial.extend(boundary['coolantTemperatures_K'][1:])
     initial=np.array(initial); size=len(initial)
     def geometricState(t,pg):
         values=[]
@@ -110,7 +132,8 @@ def make(n):
         if not math.isfinite(residual) or abs(residual)>1e-9:raise ValueError('Sealed gas closure did not converge')
         return pg
     def balances(t,factor):
-        pg=pressure(t); rates=np.zeros(size); caps=np.zeros(size); out=[]; gaps=[]
+        pg=pressure(t); rates=np.zeros(size); caps=np.zeros(size); out=[]; gaps=[];fluid=[]
+        massIn=boundary['massflow_kg_s'];hIn=inletH
         for s,(geo,_,_) in zip(segments,geometricState(t,pg)):
             f=t[s['fi']];c=t[s['ci']];r=s['r']
             if min(f)<500 or max(f)>2000 or min(c)<300 or max(c)>1000:raise ValueError('Material temperature outside selected reference')
@@ -122,13 +145,26 @@ def make(n):
             else:gf=s['gf'];gc=s['gc']
             qf=gf*np.diff(-np.array([fk(x) for x in f]));qc=gc*np.diff(-np.array([ck(x) for x in c]))
             qg=gap((c[-1],c[0],f[-1],f[0]),pg,geo,0.)[0]*2*pi*rf*L
-            hfC=film(s['j'],c[-1])
-            qo=hfC*(c[-1]-s['tb'])*2*pi*ro*L
+            tb=t[solidSize+s['j']] if finite else s['tb']
+            hfC=film(s['j'],c[-1],tb,massIn if finite else None)
+            qo=hfC*(c[-1]-tb)*2*pi*ro*L
             rates[s['fi']]=s['power']*factor*s['fw']+np.r_[0,qf]-np.r_[qf,qg]
             rates[s['ci']]=np.r_[qg,qc]-np.r_[qc,qo]
             caps[s['fi']]=s['mf']*np.array([cpf(x) for x in f]);caps[s['ci']]=s['mc']*np.array([cpc(x) for x in c])
             out.append(qo);gaps.append(qg)
-        return rates,caps,sum(out),out,gaps
+            if finite:
+                w=water(s['j'],tb);net=massIn*(hIn-w['h'])+qo*N;capacity=w['M']*w['cp']
+                td=net/capacity;massOut=massIn-w['dMdT']*td
+                if not math.isfinite(massOut) or massOut<=0:raise ValueError('Receiver outside declared positive serial-flow branch')
+                rates[solidSize+s['j']]=net/N;caps[solidSize+s['j']]=capacity/N
+                fluid.append(dict(**w,T_K=float(tb),inflow_kg_s=massIn,outflow_kg_s=massOut,
+                    netU_W=massIn*hIn-massOut*w['h']+qo*N,dM_kg_s=massIn-massOut,
+                    incomingEnthalpy_W=massIn*hIn,outgoingEnthalpy_W=massOut*w['h']))
+                massIn=massOut;hIn=w['h']
+        return rates,caps,sum(out),out,gaps,fluid
+    def fluidStored(t):
+        states=[water(j,t[solidSize+j]) for j in range(2)] if finite else []
+        return sum(w['U'] for w in states),sum(w['M'] for w in states)
     def energy(t):
         return sum(float(s['mf']@np.array([hf(x)-hf(300) for x in t[s['fi']]]))+float(s['mc']@np.array([hc(x) for x in t[s['ci']]])) for s in segments)
     def mechanical(t):
@@ -148,10 +184,12 @@ def make(n):
         return solution.x
     nominal=equilibrium(1,initial);reduced=equilibrium(case['reducedPowerFraction'],nominal)
     check('finite shell masses '+str(n),sum(sum(s['mf'])+sum(s['mc']) for s in segments)*N,geom['fuelMass_kg']+geom['cladMass_kg'],1e-7)
-    def projection(t):return [dict(center_K=float(t[s['fi']][0]),surface_K=float(t[s['fi']][-1]),wall_K=float(t[s['ci']][-1]),mean_K=float(s['fw']@t[s['fi']])) for s in segments]
+    def projection(t):return [dict(center_K=float(t[s['fi']][0]),surface_K=float(t[s['fi']][-1]),wall_K=float(t[s['ci']][-1]),mean_K=float(s['fw']@t[s['fi']]),
+        **({'coolant_K':float(t[solidSize+s['j']])} if finite else {})) for s in segments]
     continuumEnergy=sum(r['fuelSensibleEnergy_J']+r['cladSensibleEnergy_J'] for r in rows)
     def run(step,pulse=True):
-        t=nominal.copy();e0=energy(t);pg0=pressure(t); clock=0.; ledger=0.; output=[];maxError=0.;gasRatios=[];events=[];prior=1.;acceptedSteps=0;actualMaxStep=0.
+        t=nominal.copy();e0=energy(t);pg0=pressure(t); clock=0.; ledger=0.; fluidLedger=0.;massLedger=0.;output=[];maxError=0.;maxFluidError=0.;maxMassError=0.;gasRatios=[];events=[];prior=1.;acceptedSteps=0;actualMaxStep=0.
+        fluidU0,fluidM0=fluidStored(t)
         initialMechanical=mechanical(t);lastMechanical=initialMechanical;externalWork=0.;absoluteExternal=0.;internalGasWork=0.;absoluteGasChange=0.;absoluteElasticChange=0.;mechanicalRatios=[]
         phases=[(case['hold_s'],1.)]+([(case['reducedDuration_s'],case['reducedPowerFraction']),(case['recovery_s'],1.)] if pulse else [])
         for duration,factor in phases:
@@ -160,10 +198,12 @@ def make(n):
                 check('event changes source not boundary heat '+str(n)+' '+str(clock),before[2],after[2],1e-9)
                 events.append(dict(time_s=clock,fromFraction=prior,toFraction=factor,temperatureReset=False,projection=projection(t)))
             prior=factor
-            y0=np.r_[t,ledger]
+            y0=np.r_[t,ledger,fluidLedger,massLedger] if finite else np.r_[t,ledger]
             def rhs(tm,y):
-                rates,caps,qo,*_=balances(y[:size],factor)
-                return np.r_[rates/caps,sum(s['power'] for s in segments)*factor-qo]
+                rates,caps,qo,_,_,fluid=balances(y[:size],factor)
+                tail=[sum(s['power'] for s in segments)*factor-qo]
+                if finite:tail.extend([sum(w['netU_W'] for w in fluid)/N,sum(w['dM_kg_s'] for w in fluid)/N])
+                return np.r_[rates/caps,tail]
             result=solve_ivp(rhs,(0,duration),y0,method='BDF',rtol=1e-9,atol=1e-9,max_step=step,dense_output=True)
             if not result.success:raise ValueError(result.message)
             acceptedSteps+=len(result.t)-1;actualMaxStep=max(actualMaxStep,float(max(np.diff(result.t))))
@@ -181,22 +221,40 @@ def make(n):
                         elasticEnergyChange_J=(current['elastic']-initialMechanical['elastic'])*N,
                         accumulatedAbsoluteOmitted_J=(absoluteExternal+absoluteGasChange+absoluteElasticChange)*N)
             for elapsed in sampleTimes:
-                y=result.sol(elapsed);tt=y[:size];en=energy(tt);error=(en-e0-y[-1])*N;maxError=max(maxError,abs(error))
+                y=result.sol(elapsed);tt=y[:size];en=energy(tt);error=(en-e0-y[size])*N;maxError=max(maxError,abs(error))
                 gasDelta=(mechanical(tt)['gasEnergy']-initialMechanical['gasEnergy'])*N
                 solidDelta=(en-e0)*N
-                rates,_,qo,out,gaps=balances(tt,factor)
-                check('paired interface cancellation '+str(n)+' '+str(clock+elapsed),float(sum(rates)),sum(s['power'] for s in segments)*factor-qo,1e-7)
+                rates,_,qo,out,gaps,fluid=balances(tt,factor)
+                check('paired interface cancellation '+str(n)+' '+str(clock+elapsed),float(sum(rates[:solidSize])),sum(s['power'] for s in segments)*factor-qo,1e-7)
+                receiver=None
+                if finite:
+                    uf,mf=fluidStored(tt);fluidError=uf-fluidU0-y[size+1]*N;massError=mf-fluidM0-y[size+2]*N
+                    maxFluidError=max(maxFluidError,abs(fluidError));maxMassError=max(maxMassError,abs(massError))
+                    check('serial donor enthalpy cancellation '+str(n)+' '+str(clock+elapsed),fluid[0]['outgoingEnthalpy_W'],fluid[1]['incomingEnthalpy_W'],1e-7)
+                    check('serial donor mass cancellation '+str(n)+' '+str(clock+elapsed),fluid[0]['outflow_kg_s'],fluid[1]['inflow_kg_s'],1e-9)
+                    pressureWork=boundary['massflow_kg_s']*inletFlowWork-fluid[-1]['outflow_kg_s']*fluid[-1]['flowWork']
+                    netEnthalpy=boundary['massflow_kg_s']*inletH-fluid[-1]['outgoingEnthalpy_W']
+                    internalAdvection=boundary['massflow_kg_s']*(inletH-inletFlowWork)-fluid[-1]['outflow_kg_s']*(fluid[-1]['h']-fluid[-1]['flowWork'])
+                    check('donor enthalpy includes pressure flow work '+str(n)+' '+str(clock+elapsed),netEnthalpy,internalAdvection+pressureWork,1e-4)
+                    receiver=dict(cells=fluid,internalEnergyChange_J=uf-fluidU0,massChange_kg=mf-fluidM0,
+                        energyResidual_J=fluidError,massResidual_kg=massError,totalSolidFluidResidual_J=error+fluidError,
+                        netPortFlowWork_W=pressureWork,netInternalEnergyAdvection_W=internalAdvection,netEnthalpyFlow_W=netEnthalpy)
                 if clock+elapsed>case['hold_s'] and abs(solidDelta)>1.:gasRatios.append(abs(gasDelta/solidDelta))
                 if moving and clock+elapsed>case['hold_s'] and abs(solidDelta)>1.:
                     mm=mechanicalSamples[elapsed]
                     mechanicalRatios.append((abs(mm['externalWork_J'])+abs(mm['gasEnergyChange_J'])+abs(mm['elasticEnergyChange_J']))/abs(solidDelta))
                 output.append(dict(time_s=clock+elapsed,sourceFraction=factor,projection=projection(tt),solidEnergyChange_J=solidDelta,
-                    netBoundaryEnergy_J=float(y[-1])*N,energyResidual_J=error,omittedGasEnergyChange_J=gasDelta,heliumPressure_Pa=pressure(tt),
+                    netBoundaryEnergy_J=float(y[size])*N,energyResidual_J=error,omittedGasEnergyChange_J=gasDelta,heliumPressure_Pa=pressure(tt),receiver=receiver,
                     heatToCoolant_W=[x*N for x in out],gapHeat_W=[x*N for x in gaps],mechanicalOmission=mechanicalSamples.get(elapsed),
                     thermalGaps_um=[(g[0][1]-g[0][0])*1e6 for g in geometricState(tt,pressure(tt))]))
-            t=result.y[:size,-1];ledger=result.y[-1,-1];clock+=duration
+            t=result.y[:size,-1];ledger=result.y[size,-1]
+            if finite:fluidLedger=result.y[size+1,-1];massLedger=result.y[size+2,-1]
+            clock+=duration
         pulseEnergy=sum(s['power'] for s in segments)*N*(1-case['reducedPowerFraction'])*case['reducedDuration_s']
         check('solid caloric ledger '+str(n)+' '+str(step),maxError,0,1e-6*pulseEnergy)
+        if finite:
+            check('native coolant internal energy ledger '+str(n)+' '+str(step),maxFluidError,0,1e-6*pulseEnergy)
+            check('native coolant mass ledger '+str(n)+' '+str(step),maxMassError,0,1e-5)
         maxGasRatio=max(gasRatios) if gasRatios else 0.
         if maxGasRatio>=.001:raise ValueError('Gas omission exceeds 0.1 percent of sampled actual solid energy change')
         gasPulseRatio=max(abs(x['omittedGasEnergyChange_J']) for x in output)/pulseEnergy
@@ -209,9 +267,11 @@ def make(n):
         return dict(maxStep_s=step,acceptedSteps=acceptedSteps,actualMaximumStep_s=actualMaxStep,pulse=pulse,samples=output,events=events,maximumEnergyResidual_J=maxError,maximumGasToSolidChangeRatio=maxGasRatio,
             maximumGasToPulseEnergyRatio=gasPulseRatio,maximumMechanicalToActualSolidChangeRatio=mechanicalRatio,
             accumulatedAbsoluteOmitted_J=accumulated,omissionToPulseRatio=accumulated/pulseEnergy,
-            omissionToPeakSolidRatio=accumulated/peakSolid if pulse else None)
+            omissionToPeakSolidRatio=accumulated/peakSolid if pulse else None,
+            maximumCoolantEnergyResidual_J=maxFluidError,maximumCoolantMassResidual_kg=maxMassError)
     return dict(intervals=n,cladIntervals=nc,nominal=projection(nominal),reducedSteady=projection(reduced),
         continuumInitialProjection=projection(initial),initialEnergyDifference_J=energy(nominal)*N-continuumEnergy,
+        initialReceiver=dict(volumePerCell_m3=volume,cells=balances(nominal,1)[-1]) if finite else None,
         nominalHeliumPressure_Pa=pressure(nominal),hold=run(.1,False),transients=[run(step) for step in (case['maxSteps_s'] if n==16 else [.05])])
 results=[make(n) for n in case['fuelIntervals']]
 def projdiff(a,b):return max(abs(x[k]-y[k]) for x,y in zip(a,b) for k in x)
@@ -230,13 +290,13 @@ for mode,target in targets.items():
     if not errors[2]<errors[1]<errors[0]:raise ValueError('Continuum target not approached under radial refinement')
     check('finest independent continuum '+mode,errors[-1],0,.1)
 for r in results:check('nominal hold '+str(r['intervals']),projdiff(r['nominal'],r['hold']['samples'][-1]['projection']),0,1e-6)
-print(json.dumps(dict(scope='quasistatic BOL geometry with fixed material masses; gas/mechanical energy omissions screened' if moving else 'fixed achieved BOL geometry; conservative solid radial energy; gas capacity screened, not retained; prescribed liquid coolant',
+print(json.dumps(dict(scope='quasistatic BOL radial solids coupled to finite pressure-supported serial liquid receivers; not a closed primary circuit' if finite else 'quasistatic BOL geometry with fixed material masses; gas/mechanical energy omissions screened' if moving else 'fixed achieved BOL geometry; conservative solid radial energy; gas capacity screened, not retained; prescribed liquid coolant',
     packages=dict(python=platform.python_version(),scipy=scipy.__version__,numpy=np.__version__,iapws=iapws.__version__),
     results=results,continuumTargets=targets,spatialRefinement=space,temporalRefinement=temporal,checks=checks,
-    quasistaticGeometry=moving,fullThermomechanicsQualified=False,gasEnergyRetained=False,empiricalFuelValidation=False,liveRuntime=False),allow_nan=False,indent=2))
+    finitePressureSupportedReceiver=finite,quasistaticGeometry=moving,fullThermomechanicsQualified=False,gasEnergyRetained=False,empiricalFuelValidation=False,liveRuntime=False),allow_nan=False,indent=2))
 `
-export async function runFuelTransient(fuelDoc:string,caseDoc:string,bolJson:string,python:string,geometryMode:'fixed'|'quasistatic'='fixed'){
-  z.enum(['fixed','quasistatic']).parse(geometryMode)
+export async function runFuelTransient(fuelDoc:string,caseDoc:string,bolJson:string,python:string,experiment:'fixed'|'quasistatic'|'finite-coolant'='fixed'){
+  z.enum(['fixed','quasistatic','finite-coolant']).parse(experiment)
   const basis=parseFuelConstruction(fuelDoc),input=parseFuelTransient(caseDoc),geometry=fuelGeometry(basis)
   const artifact=JSON.parse(bolJson),reference=artifact.relocated
   if(reference?.materialState!=='beginning-of-life'||!reference.actualBoundary)throw Error('Expected accepted connected BOL radial artifact')
@@ -244,7 +304,7 @@ export async function runFuelTransient(fuelDoc:string,caseDoc:string,bolJson:str
   if(reference.geometrySha256!==createHash('sha256').update(fuelGeometry.toString()).digest('hex'))throw Error('BOL geometry owner changed')
   const resolved={...basis,coolantPressures_MPa:reference.actualBoundary.coolantPressures_MPa,coolantTemperatures_K:reference.actualBoundary.coolantTemperatures_K}
   if(reference.inputSha256!==createHash('sha256').update(JSON.stringify(resolved)).digest('hex'))throw Error('BOL construction basis changed; rerun its owner')
-  const data={basis,case:input,geometry,reference,geometryMode}
+  const data={basis,case:input,geometry,reference,experiment}
   const child=Bun.spawn([python,'-c',calculation],{stdin:new Blob([JSON.stringify(data)]),stdout:'pipe',stderr:'pipe'})
   const [out,err,exit]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited])
   if(exit!==0)throw Error(err||`Radial transient failed:${exit}`)
@@ -254,7 +314,7 @@ export async function runFuelTransient(fuelDoc:string,caseDoc:string,bolJson:str
 }
 if(import.meta.main){
   const [fuel,doc,bol,python,mode,...extra]=Bun.argv.slice(2)
-  if(!fuel||!doc||!bol||!python||extra.length)throw Error('Usage: bun reference-design-fuel-transient.ts <fuel.md> <transient.md> <BOL.json> <python> [fixed|quasistatic]')
-  const geometryMode=z.enum(['fixed','quasistatic']).parse(mode??'fixed')
-  console.log(JSON.stringify(await runFuelTransient(await Bun.file(fuel).text(),await Bun.file(doc).text(),await Bun.file(bol).text(),python,geometryMode),null,2))
+  if(!fuel||!doc||!bol||!python||extra.length)throw Error('Usage: bun reference-design-fuel-transient.ts <fuel.md> <transient.md> <BOL.json> <python> [fixed|quasistatic|finite-coolant]')
+  const experiment=z.enum(['fixed','quasistatic','finite-coolant']).parse(mode??'fixed')
+  console.log(JSON.stringify(await runFuelTransient(await Bun.file(fuel).text(),await Bun.file(doc).text(),await Bun.file(bol).text(),python,experiment),null,2))
 }
