@@ -1,6 +1,7 @@
 /** Offline fresh-fuel radial specification check. No runtime or licensing claim. */
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
+import { fuelMaterialPython, fuelGeometryPython } from './reference-design-fuel-materials.ts'
 const positive=z.number().finite().positive()
 const schema=z.object({design:z.literal('LD-01-fresh-fuel-reference'),assemblies:z.number().int().positive(),
   latticeSide:z.number().int().positive(),rodsPerAssembly:z.number().int().positive(),guidesPerAssembly:z.number().int().positive(),
@@ -41,66 +42,26 @@ import numpy as np,scipy,iapws
 from scipy.optimize import root,brentq
 from scipy.integrate import quad,solve_ivp
 from iapws import IAPWS97 as W
-d=json.load(sys.stdin); b=d['basis']; geom=d['geometry']; boundary=d['boundary']; materialState=d['materialState']; checks=[]; pi=math.pi
+d=json.load(sys.stdin); b=d['basis']; geom=d['geometry']; boundary=d['boundary']; materialState=d['materialState']; depositedFraction=d['depositedFraction']; checks=[]; pi=math.pi
 def check(name,a,e,atol=1e-7,rtol=1e-9):
     if not math.isfinite(a) or abs(a-e)>max(atol,rtol*abs(e)):raise ValueError(f'{name}: {a} != {e}')
     checks.append(dict(name=name,actual=a,expected=e))
-BTU=1055.05585262/3600/.3048*1.8
+${fuelMaterialPython}
 rf0=b['pelletDiameter_m']/2; ro0=b['rodOuterDiameter_m']/2; ri0=ro0-b['cladThickness_m']
 N=geom['rods']; L0=b['activeLength_m']/2
 g0=ri0-rf0; area=geom['heatedArea_m2']; cellArea=geom['assemblyArea_m2']
 relocation=.30*g0 if materialState=='beginning-of-life' else 0.
 flow=geom['flowArea_m2']; perimeter=geom['wettedPerimeter_m']; dh=geom['hydraulicDiameter_m']
 mf=geom['fuelMass_kg']/2; mc=geom['cladMass_kg']/2
-def kf(t):
-    tc=t-273.15
-    return BTU*(max(2335/(464+tc),1.1038)+.007027*math.exp(.001867*tc))
-def fk(t):
-    switch=2335/1.1038-464+273.15
-    phonon=2335*math.log(464+min(t,switch)-273.15)+1.1038*max(0,t-switch)
-    return BTU*(phonon+.007027/.001867*math.exp(.001867*(t-273.15)))
-def fuelAreaMean(tf,tc):
-    # Uniform heating makes conductivity potential linear in cross-sectional area.
-    return quad(lambda t:t*kf(t),tf,tc,epsabs=1e-7)[0]/(fk(tc)-fk(tf))
-def kc(t):return 7.51+.0209*t-1.45e-5*t*t+7.67e-9*t**3
-def ck(t):return 7.51*t+.0209*t*t/2-1.45e-5*t**3/3+7.67e-9*t**4/4
-def cpf(t):
-    z=535.285/t
-    return 296.7*z*z*math.exp(z)/math.expm1(z)**2+.0243*t+8.745e7*1.577e5/(8.3143*t*t)*math.exp(-1.577e5/(8.3143*t))
-def hf(t):return 296.7*535.285/math.expm1(535.285/t)+.0243*t*t/2+8.745e7*math.exp(-1.577e5/(8.3143*t))
-cpTs=[300,400,640,1090]; cpVals=[281,302,331,375]
-def cpc(t):return float(np.interp(t,cpTs,cpVals))
-def hc(t):
-    return sum(quad(cpc,a,min(t,z),epsabs=1e-7)[0] for a,z in zip(cpTs,cpTs[1:]) if t>a)
-def fuelstrain(t):return 1e-5*t-.003+.04*math.exp(-6.9e-20/(1.38e-23*t))
-def geometry(ts,pg,j,expanded=True):
-    tw,ti,tf,tc=ts; tm=(tw+ti)/2; rbar=(ri0+ro0)/2
-    E=1.088e11-5.475e7*tm; G=4.04e10-2.168e7*tm; nu=E/(2*G)-1
-    po=b['coolantPressures_MPa'][j+1]*1e6
-    hoop=(ri0*pg-ro0*po)/(ro0-ri0)
-    axial=(ri0**2*pg-ro0**2*po)/(ro0**2-ri0**2)
-    er=(hoop-nu*axial)/E; ez=(axial-nu*hoop)/E
-    if not expanded:return rf0+relocation,ri0,ro0,L0,0.,0.,rf0
-    dr=er*rbar
-    ri=ri0*(1+6.72e-6*(tm-300))+dr; ro=ro0*(1+6.72e-6*(tm-300))+dr
-    solidRf=rf0*(1+fuelstrain((tf+tc)/2)-fuelstrain(300)); rf=solidRf+relocation
-    length=L0*(1+4.44e-6*(tm-300)+ez)
-    return rf,ri,ro,length,dr,hoop,solidRf
+${fuelGeometryPython}
 water=[W(P=p,T=t) for p,t in zip(b['coolantPressures_MPa'],b['coolantTemperatures_K'])]
 massflow=boundary['massflow_kg_s'] if boundary else b['power_W']/((water[2].h-water[0].h)*1000)
 duties=boundary['cellHeat_W'] if boundary else [massflow*(water[j+1].h-water[j].h)*1000 for j in range(2)]
 for j in range(2):check('actual coolant heat reciprocity '+str(j),massflow*(water[j+1].h-water[j].h)*1000,duties[j],atol=.05)
+# A changed deposition is a prescribed-coolant material comparison, not a new connected heat balance.
+duties=[q*depositedFraction for q in duties]
 vp=pi*ri0**2*b['plenumLength_m']; gasConstant=b['fillPressure_Pa']*(vp+pi*(ri0**2-rf0**2)*2*L0)/300
 tp=b['coolantTemperatures_K'][-1]+10
-def gap(ts,pg,geo,radiation):
-    tw,ti,tf,tc=ts; rf,ri,ro,length,dr,stress,solidRf=geo
-    tg=(tf+ti)/2; khe=1.314e-3*(1.8*tg)**.668*BTU
-    accommodation=.425-2.3e-4*tg
-    if accommodation<=0 or ri<=rf:raise ValueError('Outside open-gap/accommodation branch')
-    jump=.3048*2.0358e-5*(khe/BTU)*math.sqrt(tg)/((pg/6894.757293168)*accommodation/math.sqrt(4.003))
-    h=khe/(ri-rf+1.845*jump)
-    qr=radiation*5.670374419e-8*(tf**4-ti**4)
-    return h*(tf-ti)+qr,qr,jump,khe,h
 def convection(tw,j):
     t=water[j+1].T; p=b['coolantPressures_MPa'][j+1]
     w=W(P=p,T=(t+tw)/2)
@@ -194,23 +155,25 @@ if not all(r['omissionGatePassed'] for r in radiation):raise ValueError('Zero-ra
 hotArea=sum(N*2*pi*r['cladOuterRadius_m']*r['activeLength_m'] for r in base['rows'])
 hotFlow=[b['assemblies']*(cellArea-b['rodsPerAssembly']*pi*r['cladOuterRadius_m']**2-b['guidesPerAssembly']*pi*(b['guideOuterDiameter_m']/2)**2) for r in base['rows']]
 print(json.dumps(dict(scope='fresh open-gap radial material/geometry reference; not irradiated fuel, CHF or live runtime',
-    materialState=materialState,relocationScope='FRAPCON3.4 Eq2-141 BOL low-linear-rating branch only; hybrid with CTF material/mean-strain/gas models',
+    materialState=materialState,depositedPowerFraction=depositedFraction,relocationScope='FRAPCON3.4 Eq2-141 BOL low-linear-rating branch only; hybrid with CTF material/mean-strain/gas models',
     packages=dict(python=platform.python_version(),scipy=scipy.__version__,iapws=iapws.__version__,numpy=np.__version__),
     coldGeometry=dict(rods=N,heatedArea_m2=area,flowArea_m2=flow,wettedPerimeter_m=perimeter,hydraulicDiameter_m=dh,
         coreFlowVolume_m3=flow*2*L0,radialGap_um=g0*1e6,assemblyPitch_m=b['latticeSide']*b['pitch_m'],
         grossBundleArea_m2=cellArea*b['assemblies'],fuelMass_kg=2*mf,cladMass_kg=2*mc),
-    nominal=dict(massflow_kg_s=massflow,meanWallFlux_W_m2=b['power_W']/area,meanLinearDuty_W_m=b['power_W']/N/(2*L0)),
+    nominal=dict(massflow_kg_s=massflow,meanWallFlux_W_m2=b['power_W']*depositedFraction/area,meanLinearDuty_W_m=b['power_W']*depositedFraction/N/(2*L0)),
     hotGeometryComparison=dict(heatedArea_m2=hotArea,flowAreaWithFixedGuideAndPitch_m2=hotFlow,
         convectionUsesColdLattice=True,fullHydraulicExpansionQualified=False),
     base=base,blackbodyUpperBound=black,frozenColdGeometryComparison=cold,radiationOmission=radiation,checks=checks,
     empiricalFuelQualification=False,contactOrRelocationQualified=False,CHFQualification=False),allow_nan=False,indent=2))
 `
-export async function runFuelConstruction(document:string,python:string,actualBoundary?:FuelBoundary,materialState:FuelMaterialState='unrelocated'){
+export async function runFuelConstruction(document:string,python:string,actualBoundary?:FuelBoundary,materialState:FuelMaterialState='unrelocated',depositedFraction=1){
   materialStateSchema.parse(materialState)
+  positive.parse(depositedFraction)
+  if(depositedFraction!==1&&!actualBoundary)throw Error('Changed deposition requires an explicitly prescribed coolant boundary')
   const authored=parseFuelConstruction(document),boundary=actualBoundary?boundarySchema.parse(actualBoundary):null
   const input=boundary?{...authored,coolantPressures_MPa:boundary.coolantPressures_MPa,coolantTemperatures_K:boundary.coolantTemperatures_K}:authored
   const geometry=fuelGeometry(input)
-  const child=Bun.spawn([python,'-c',calculation],{stdin:new Blob([JSON.stringify({basis:input,geometry,boundary,materialState})]),stdout:'pipe',stderr:'pipe'})
+  const child=Bun.spawn([python,'-c',calculation],{stdin:new Blob([JSON.stringify({basis:input,geometry,boundary,materialState,depositedFraction})]),stdout:'pipe',stderr:'pipe'})
   const [out,err,exit]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited])
   if(exit!==0)throw Error(err||`Fuel reference failed: ${exit}`)
   return {inputSha256:createHash('sha256').update(JSON.stringify(input)).digest('hex'),
