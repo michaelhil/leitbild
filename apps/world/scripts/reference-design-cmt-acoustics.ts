@@ -18,7 +18,7 @@ export function parseAcousticBasis(document: string) {
   return b
 }
 
-export function acousticMesh(b: GeometryBasis, fine = false) {
+export function acousticCoordinates(b: GeometryBasis, fine = false) {
   const g = tankGeometry(b), unique = (x: number[]) => [...new Set(x)].sort((a, b) => a - b)
   const refine = (x: number[]) => unique([...x, ...x.slice(1).map((v, i) => (v + x[i]!) / 2)])
   let rr = [0, b.bodyOuterDiameter_m / 2, g.R / 2, g.R]
@@ -27,6 +27,11 @@ export function acousticMesh(b: GeometryBasis, fine = false) {
     ...b.ringElevations_m.flatMap(z => [z - b.holeDiameter_m / 2, z, z + b.holeDiameter_m / 2]),
     g.roof(b.feedOuterDiameter_m / 2)])
   if (fine) { rr = refine(rr); zz = refine(zz) }
+  return { rr, zz }
+}
+
+export function acousticMesh(b: GeometryBasis, fine = false) {
+  const g = tankGeometry(b), { rr, zz } = acousticCoordinates(b, fine)
   const cells: { volume_m3: number; rIndex: number; zIndex: number }[] = []
   const ids = new Map<string, number>()
   for (let j = 1; j < zz.length; j++) for (let i = 1; i < rr.length; i++) {
