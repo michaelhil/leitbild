@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { parseConnectedFuel } from './reference-design-connected-fuel.ts'
 import { primaryReferencePython, resolveInitializationInput } from './reference-design-initialization.ts'
 import { radialReferencePython, resolveFuelTransientInput } from './reference-design-fuel-transient.ts'
+import { parseSourceFeedback, sourceFeedbackPython } from './reference-design-source-feedback.ts'
 
 const hash=(value:string|Uint8Array)=>createHash('sha256').update(value).digest('hex')
 export const fuelCircuitCalculation=String.raw`
@@ -33,65 +34,85 @@ require('same physical operating point as retained BOL',
 require('cold lattice water volume has one circuit owner',
     max(abs(primary['V'][2:4]-d['fuel']['geometry']['coreFlowVolume_m3']/2))<1e-10)
 start=time.perf_counter()
+${sourceFeedbackPython}
+source=source_owner(d['source']) if 'source' in d else None
 def experiment(n,steps,hold=True,frozen=False):
     radial=fuel['make'](n,True); balance=radial['balances'];nodeEnergy=radial['nodeEnergy'];mechanical=radial['mechanical']
     r0,_=solve(lambda r:balance(r,1.,nominalBoundary)[0]/1000,radial['initial'],'discrete radial initialization')
     size=len(r0)
+    baseline=feedback_observation(radial['segments'],r0,e0,primary['V'][2:4])
     require('no second coolant states '+str(n),size==2*(n+n//4+2),solidStates=size)
-    def read(y,factor):
-        x=y[:42];r=y[42:]*1000
+    def read(y,factor,priorSource=None,dt=0.):
+        x=y[:42];r=y[42:42+size]*1000
         # The zero-source evaluator supplies CURRENT pressure, temperature and
         # flow. Exactly one subsequent wall heat is added to each water cell.
-        hydraulic=ev(x,wallHeat=[0.,0.]);current=nominalBoundary if frozen else boundary(hydraulic)
-        rates,caps,_,heats,_,_=balance(r,factor,current)
+        hydraulic=ev(x,wallHeat=[0.,0.]);current=nominalBoundary if frozen and not source else boundary(hydraulic)
+        observation=feedback_observation(radial['segments'],r,hydraulic,primary['V'][2:4])
+        if source and priorSource is None:raise ValueError('Source read requires explicit retained history')
+        states=source['eliminate'](priorSource,y[42+size],dt) if source else np.array([])
+        nuclear=source['read'](states,baseline if frozen else observation,baseline,factor) if source else None
+        deposition=nuclear['deposition'] if source else factor
+        rates,caps,_,heats,_,_=balance(r,deposition,current)
         e=ev(x,wallHeat=np.array(heats)*N)
-        return e,rates,nodeEnergy(r),r,current,np.array(heats)*N
-    y0=np.r_[x0,r0/1000];initial=read(y0,1.);water0=initial[0];solid0=sum(initial[2])*N
+        return e,rates,nodeEnergy(r),r,current,np.array(heats)*N,nuclear,observation,states
+    y0=np.r_[x0,r0/1000,np.ones(1) if source else []];initial=read(y0,0. if source else 1.,np.ones(13) if source else None);water0=initial[0];solid0=sum(initial[2])*N
     require('radial steady paired wall heat '+str(n),max(abs(initial[5]-primary['Qcore']))<10,
         maximumWallHeatError_W=float(max(abs(initial[5]-primary['Qcore']))))
     require('radial caloric primitive totals '+str(n),abs(sum(nodeEnergy(r0))-radial['energy'](r0))<1e-8)
     def projection(t,record):
-        e,_,en,r,cur,heat=record
+        e,_,en,r,cur,heat,nuclear,observation,states=record
         nodes=[dict(center_K=float(r[s['fi']][0]),surface_K=float(r[s['fi']][-1]),wall_K=float(r[s['ci']][-1]),
             mean_K=float(s['fw']@r[s['fi']])) for s in radial['segments']]
         return dict(t_s=t,p_MPa=e['p'].tolist(),T_C=e['T'].tolist(),flow_kg_s=e['m'].tolist(),
             wall_C=e['Tw'].tolist(),rpm=(e['omega']*60/(2*math.pi)).tolist(),radial=nodes,
-            wallHeat_W=heat.tolist(),solidEnergyChange_J=float(sum(en)*N-solid0))
-    def run(dt,pulse):
+            wallHeat_W=heat.tolist(),solidEnergyChange_J=float(sum(en)*N-solid0),
+            **(dict(source={k:v for k,v in nuclear.items() if k!='rate'},feedback=observation,
+                sourceStates=states.tolist(),delayedEnergyChange_J=float(P*source['energyWeights']@(states[7:]-1))) if source else {}))
+    def run(dt,pulse,sign=1):
         print('fuel/circuit reference '+str((n,dt,pulse,frozen)),file=sys.stderr,flush=True)
         y=y0.copy();record=initial;ledger=rotorLoss=0.;maxMass=maxEnergy=maxRaw=maxSolid=0.;solidLedger=0.
         maxPE=0.;maxOmission=0.;absWork=absGas=absElastic=netWork=0.;maxSampleOmission=0.
         priorMechanical=mechanical(r0,initial[4]);initialMechanical=priorMechanical
         samples=[projection(0.,record)];end=b['perturbation_s'] if pulse else b['hold_s'];endSteps=round(end/dt)
-        peakSolid=0.;maxSourceContinuity=0.
+        peakSolid=0.;maxSourceContinuity=0.;fissionLedger=0.;sourceLedger=0.;maxSourceEnergy=0.;absoluteSourceChange=0.;maxCompleteEnergy=0.
         displacement=dict(maximumTotalRodVolumeChange_m3=0.,maximumLocalFluidVolumeFraction=0.,
             maximumMassDisplacement_kg=0.,maximumUniformPressureSensitivity_Pa=0.,maximumRecoveredMassResidual_kg=0.)
         for step in range(endSteps):
-            t0=step*dt;t=(step+1)*dt;factor=1+b['sourcePulseFraction'] if pulse and t0<b['sourcePulse_s']-1e-10 else 1.
+            t0=step*dt;t=(step+1)*dt;active=pulse and t0<b['sourcePulse_s']-1e-10
+            factor=sign*d['source']['source']['reactivityPulse_pcm'] if source and active else (0. if source else (1+b['sourcePulseFraction'] if active else 1.))
             old=record
             if step==0 or abs(t0-b['sourcePulse_s'])<1e-9:
-                changed=read(y,factor)
+                changed=read(y,factor,old[8])
                 jump=float(max(abs(changed[5]-old[5])));maxSourceContinuity=max(maxSourceContinuity,jump)
                 require('source event leaves state and wall heat continuous '+str((n,dt,pulse,t0)),jump<1e-6,
                     wallHeatJump_W=jump)
             def residual(trial):
-                e,rates,en,_,_,_=read(trial,factor);prev=old[0]
+                e,rates,en,_,_,_,nuclear,_,states=read(trial,factor,old[8],dt);prev=old[0]
+                nuclearResidual=[states[0]-old[8][0]-dt*nuclear['rate'][0]] if source else []
                 return np.r_[((e['mass']-prev['mass'])/dt-e['dM'])/M0,
                     ((e['energy']-prev['energy'])/dt-e['dU'])/P,e['hyd']/600000,
                     ((e['Tw']-prev['Tw'])/dt-e['dw'])*Cwall/P,
                     ((e['omega']-prev['omega'])/dt-e['domega'])*J/torque,
-                    ((en-old[2])/dt-rates)/1000]
+                    ((en-old[2])/dt-rates)/1000,nuclearResidual]
             y,res=solve(residual,y,'coupled handoff '+str((n,dt,pulse,t)))
-            record=read(y,factor);e,rates,en,r,cur,heats=record
+            record=read(y,factor,old[8],dt);e,rates,en,r,cur,heats,nuclear,_,states=record
             # Shared wall heat cancels; source goes only into retained fuel.
-            external=P*factor+sum(e['electrical'])-sum(e['ambient'])-sum(e['Qs'])
-            ledger+=external*dt;solidLedger+=(P*factor-sum(heats))*dt
+            deposition=P*(nuclear['deposition'] if source else factor)
+            external=deposition+sum(e['electrical'])-sum(e['ambient'])-sum(e['Qs'])
+            ledger+=external*dt;solidLedger+=(deposition-sum(heats))*dt
+            if source:
+                deltaDelayed=P*source['energyWeights']@(states[7:]-1)
+                sourceLedger+=P*(nuclear['fission']-nuclear['deposition'])*dt
+                maxSourceEnergy=max(maxSourceEnergy,abs(deltaDelayed-sourceLedger))
+                fissionLedger+=P*(nuclear['fission']-1)*dt
+            absoluteSourceChange+=abs(deposition-P)*dt
             rotorLoss+=.5*J*sum((e['omega']-old[0]['omega'])**2)
             stored=e['totalStored']+sum(en)*N-water0['totalStored']-solid0
             solidChange=sum(en)*N-solid0;peakSolid=max(peakSolid,abs(solidChange))
             maxMass=max(maxMass,abs(sum(e['mass'])-sum(water0['mass'])))
             maxEnergy=max(maxEnergy,abs(stored-ledger+rotorLoss));maxRaw=max(maxRaw,abs(stored-ledger))
             maxSolid=max(maxSolid,abs(solidChange-solidLedger))
+            if source:maxCompleteEnergy=max(maxCompleteEnergy,abs(stored-ledger+rotorLoss+deltaDelayed-sourceLedger))
             maxPE=max(maxPE,primary['g']*12*sum(abs(e['mass']-water0['mass'])))
             mech=mechanical(r,cur);po=(cur['p_MPa']+old[4]['p_MPa'])*.5*1e6
             work=po*(mech['outer']-priorMechanical['outer'])*N
@@ -129,48 +150,65 @@ def experiment(n,steps,hold=True,frozen=False):
             require('joined hold '+str(n),max(max(abs(np.array(s['p_MPa'])-water0['p'])) for s in samples)<1e-5 and
                 max(max(abs(np.array(s['T_C'])-water0['T'])) for s in samples)<1e-4 and
                 max(abs(record[3]-r0))<1e-6)
-        pulseEnergy=P*b['sourcePulseFraction']*b['sourcePulse_s']
+        pulseEnergy=absoluteSourceChange if source else P*b['sourcePulseFraction']*b['sourcePulse_s']
+        if source:require('delayed and complete fission energy ledgers '+str((n,dt,pulse,sign,frozen)),maxSourceEnergy<10000 and maxCompleteEnergy<10000,
+            delayedResidual_J=float(maxSourceEnergy),completeResidual_J=float(maxCompleteEnergy))
         if pulse:
             require('rescreen gas elastic and external work '+str((n,dt,frozen)),
                 maxOmission/pulseEnergy<.001 and maxOmission/peakSolid<.001 and maxSampleOmission<.001,
                 omission_J=float(maxOmission),toPulse=float(maxOmission/pulseEnergy),toPeakSolid=float(maxOmission/peakSolid),toSample=float(maxSampleOmission))
-        return dict(step_s=dt,pulse=pulse,samples=samples,maximumMassError_kg=float(maxMass),maximumEnergyResidual_J=float(maxEnergy),
+        return dict(step_s=dt,pulse=pulse,**(dict(reactivitySign=sign,maximumSourceEnergyResidual_J=float(maxSourceEnergy),
+            maximumCompleteEnergyResidual_J=float(maxCompleteEnergy),integratedExcessFission_J=float(fissionLedger),absoluteDepositionChange_J=float(absoluteSourceChange)) if source else {}),samples=samples,maximumMassError_kg=float(maxMass),maximumEnergyResidual_J=float(maxEnergy),
             maximumUncorrectedEnergyResidual_J=float(maxRaw),maximumSolidEnergyResidual_J=float(maxSolid),
             rotorNumericalDissipation_J=float(rotorLoss),omittedStoredPEChangeBound_J=float(maxPE),
             accumulatedAbsoluteGasElasticWorkOmission_J=float(maxOmission),maximumOmissionToSampleSolidRatio=float(maxSampleOmission),
             sourceEventWallHeatJump_W=float(maxSourceContinuity),coldLatticeVolumeSensitivity=displacement)
     runs=[run(dt,True) for dt in steps]
     originalEnergy=sum(row['fuelSensibleEnergy_J']+row['cladSensibleEnergy_J'] for row in d['fuel']['reference']['base']['rows'])
-    return dict(intervals=n,frozenRadialBoundary=frozen,initialSolidProjectionDifference_J=float(solid0-originalEnergy),
-        hold=run(b['holdStep_s'],False) if hold else None,runs=runs)
-results=[experiment(n,b['steps_s'] if n==16 else [b['steps_s'][-1]]) for n in [8,16,32]]
+    return dict(intervals=n,contrast='frozen-source-feedback' if frozen and source else ('frozen-radial-boundary' if frozen else 'reciprocal'),initialSolidProjectionDifference_J=float(solid0-originalEnergy),
+        hold=run(b['holdStep_s'],False) if hold else None,runs=runs,
+        **(dict(baseline=baseline,negative=run(b['steps_s'][-1],True,-1)) if source and n==16 and not frozen else {}))
+sourceSteps=d['source']['source']['steps_s'] if source else b['steps_s']
+if source:require('source and spatial comparison share declared step',b['steps_s'][-1] in sourceSteps)
+results=[experiment(n,sourceSteps if n==16 else [b['steps_s'][-1]]) for n in [8,16,32]]
 frozen=experiment(16,[b['steps_s'][-1]],False,True)
 def compare(a,c):
     lookup={round(s['t_s'],8):s for s in c['samples']};diff={k:0. for k in ['p_MPa','T_C','flow_kg_s','wall_C','rpm','radial_K','wallHeat_W']}
+    if source:diff.update(sourceState=0.,sourceStateIndex=0,sourceStateTime_s=0.,fission=0.,deposition=0.,reactivity_pcm=0.)
     for s in a['samples']:
         other=lookup[round(s['t_s'],8)]
         for key in ['p_MPa','T_C','flow_kg_s','wall_C','rpm','wallHeat_W']:diff[key]=max(diff[key],float(max(abs(np.array(s[key])-other[key]))))
         diff['radial_K']=max(diff['radial_K'],max(abs(x[k]-z[k]) for x,z in zip(s['radial'],other['radial']) for k in x))
+        if source:
+            errors=abs(np.array(s['sourceStates'])-other['sourceStates']);index=int(np.argmax(errors))
+            if errors[index]>diff['sourceState']:diff.update(sourceState=float(errors[index]),sourceStateIndex=index,sourceStateTime_s=s['t_s'])
+            for key in ['fission','deposition']:diff[key]=max(diff[key],abs(s['source'][key]-other['source'][key]))
+            diff['reactivity_pcm']=max(diff['reactivity_pcm'],abs(s['source']['netReactivity_pcm']-other['source']['netReactivity_pcm']))
     return diff
 timeDifferences=[compare(a,c) for a,c in zip(results[1]['runs'][:-1],results[1]['runs'][1:])]
-spaceDifferences=[compare(a['runs'][-1],c['runs'][-1]) for a,c in zip(results[:-1],results[1:])]
+def spatialRun(result):return next(run for run in result['runs'] if run['step_s']==b['steps_s'][-1])
+spaceDifferences=[compare(spatialRun(a),spatialRun(c)) for a,c in zip(results[:-1],results[1:])]
 fine=timeDifferences[-1]
 require('coupled temporal refinement',fine['p_MPa']<.001 and fine['T_C']<.01 and fine['flow_kg_s']<5 and fine['wall_C']<.01 and fine['rpm']<.1 and fine['radial_K']<.05,**fine)
 require('coupled radial refinement',spaceDifferences[-1]['radial_K']<1.,**spaceDifferences[-1])
-feedback=compare(results[1]['runs'][-1],frozen['runs'][0])
+if source:
+    require('source temporal refinement',fine['sourceState']<1e-5 and fine['fission']<1e-5 and fine['deposition']<1e-5 and fine['reactivity_pcm']<.01,**fine)
+    require('source radial refinement',spaceDifferences[-1]['sourceState']<1e-5 and spaceDifferences[-1]['reactivity_pcm']<.01,**spaceDifferences[-1])
+feedback=compare(spatialRun(results[1]),frozen['runs'][0])
 excursion={key:max(float(max(abs(np.array(s[key])-results[1]['runs'][-1]['samples'][0][key]))) for s in results[1]['runs'][-1]['samples']) for key in ['p_MPa','T_C','flow_kg_s','wallHeat_W']}
 require('unclamped pressure response',excursion['p_MPa']>1e-5,excursion_MPa=excursion['p_MPa'])
 print(json.dumps(dict(scope='offline quasistatic BOL radial heat coupled to sealed single-phase eleven-cell physical-core primary; h-only circuit mechanical approximation retained',
+    sourceMode='fictional linear feedback with actual radial/coolant observations; fixed reference poison/boron; no bank dynamics' if source else 'prescribed deposition',
     packages=dict(python=platform.python_version(),numpy=np.__version__,scipy=scipy.__version__,iapws=iapws.__version__),
-    results=results,frozenBoundaryComparison=frozen,temporalDifferences=timeDifferences,spatialDifferences=spaceDifferences,
+    results=results,frozenComparison=frozen,temporalDifferences=timeDifferences,spatialDifferences=spaceDifferences,
     feedbackDifference=feedback,observedExcursion=excursion,checks=checks,cost_s=time.perf_counter()-start,
     liveRuntime=False,physicalFuelValidation=False,fullMechanicalEnergy=False),allow_nan=False))
 `
-export async function runFuelCircuit(initDoc:string,hydroDoc:string,cycleDoc:string,fuelDoc:string,transientDoc:string,bolJson:string,python:string){
+export async function runFuelCircuit(initDoc:string,hydroDoc:string,cycleDoc:string,fuelDoc:string,transientDoc:string,bolJson:string,python:string,sourceDocs?:{kinetics:string;history:string}){
   const physicalCore=parseConnectedFuel(initDoc,fuelDoc)
   const primary=await resolveInitializationInput(initDoc,hydroDoc,cycleDoc,python,physicalCore)
   const fuel=resolveFuelTransientInput(fuelDoc,transientDoc,bolJson,'quasistatic')
-  const data={primary,fuel}
+  const data={primary,fuel,...(sourceDocs?{source:parseSourceFeedback(sourceDocs.kinetics,sourceDocs.history)}:{})}
   const sourceSha256=hash(await Bun.file(import.meta.path).bytes())
   const child=Bun.spawn([python,'-c',fuelCircuitCalculation],{stdin:new Blob([JSON.stringify(data)]),stdout:'pipe',stderr:'pipe'})
   const [out,err,status]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited])
@@ -180,7 +218,8 @@ export async function runFuelCircuit(initDoc:string,hydroDoc:string,cycleDoc:str
 }
 if(import.meta.main){
   const files=Bun.argv.slice(2)
-  if(files.length!==7)throw Error('Usage: bun reference-design-fuel-circuit.ts <initialization.md> <hydraulic.md> <cycle.md> <fuel.md> <transient.md> <BOL.json> <python>')
+  if(files.length!==7&&files.length!==9)throw Error('Usage: bun reference-design-fuel-circuit.ts <initialization.md> <hydraulic.md> <cycle.md> <fuel.md> <transient.md> <BOL.json> <python> [<kinetics.md> <heat-history.md>]')
   const docs=await Promise.all(files.slice(0,6).map(path=>Bun.file(path).text()))
-  console.log(JSON.stringify(await runFuelCircuit(docs[0]!,docs[1]!,docs[2]!,docs[3]!,docs[4]!,docs[5]!,files[6]!),null,2))
+  const sourceDocs=files.length===9?{kinetics:await Bun.file(files[7]!).text(),history:await Bun.file(files[8]!).text()}:undefined
+  console.log(JSON.stringify(await runFuelCircuit(docs[0]!,docs[1]!,docs[2]!,docs[3]!,docs[4]!,docs[5]!,files[6]!,sourceDocs),null,2))
 }
