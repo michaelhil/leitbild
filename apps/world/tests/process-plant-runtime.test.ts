@@ -307,7 +307,7 @@ describe('process plant runtime', () => {
     expect(activeLifecycleIds(snapshot).alarms).toContain('alarm:offsite-grid-degraded-voltage:offsite-grid-degraded-voltage')
   })
 
-  test('demo action catalog produces reference I&C lifecycle indications', () => {
+  describe('demo action catalog produces reference I&C lifecycle indications', () => {
     const expectedLifecycleIds = new Map<string, ReadonlyArray<string>>([
       ['steam-generator-tube-leak-a', [
         'alarm:sg-a-tube-leak-indication:tube-leak',
@@ -339,26 +339,28 @@ describe('process plant runtime', () => {
     ])
 
     for (const action of processPlantActions) {
-      const expected = expectedLifecycleIds.get(action.id)
-      if (expected === undefined) throw new Error(`missing lifecycle expectation for demo action ${action.id}`)
-      const system = compiledSystem()
-      const runtime = createProcessPlantRuntime({ system })
-      const commands = commandsForProcessPlantAction({ actionId: action.id, parameters: {}, graph: system.graph })
-      for (const command of commands) {
-        runtime.writeCommand({
-          type: 'setVariable',
-          path: command.path,
-          value: command.value,
-        })
-      }
-      const snapshot = runWithReferenceProtection({ system, runtime, durationMs: 90_000 })
-      const active = activeLifecycleIds(snapshot)
-      const activeIds = [...active.alarms, ...active.trips]
-      expect(activeIds, action.id).toEqual(expect.arrayContaining(expected))
+      test(action.id, () => {
+        const expected = expectedLifecycleIds.get(action.id)
+        if (expected === undefined) throw new Error(`missing lifecycle expectation for demo action ${action.id}`)
+        const system = compiledSystem()
+        const runtime = createProcessPlantRuntime({ system })
+        const commands = commandsForProcessPlantAction({ actionId: action.id, parameters: {}, graph: system.graph })
+        for (const command of commands) {
+          runtime.writeCommand({
+            type: 'setVariable',
+            path: command.path,
+            value: command.value,
+          })
+        }
+        const snapshot = runWithReferenceProtection({ system, runtime, durationMs: 90_000 })
+        const active = activeLifecycleIds(snapshot)
+        const activeIds = [...active.alarms, ...active.trips]
+        expect(activeIds, action.id).toEqual(expect.arrayContaining(expected))
+      })
     }
   })
 
-  test('demo action catalog reaches the overview alarm panel snapshot', () => {
+  describe('demo action catalog reaches the overview alarm panel snapshot', () => {
     const expectedLifecycleIds = new Map<string, ReadonlyArray<string>>([
       ['steam-generator-tube-leak-a', [
         'alarm:sg-a-tube-leak-indication:tube-leak',
@@ -390,34 +392,36 @@ describe('process plant runtime', () => {
     ])
 
     for (const action of processPlantActions) {
-      const expected = expectedLifecycleIds.get(action.id)
-      if (expected === undefined) throw new Error(`missing display alarm expectation for demo action ${action.id}`)
-      const system = compiledSystem()
-      const runtime = createProcessPlantRuntime({ system })
-      const protection = createProcessPlantProtectionRunner({
-        system,
-        protection: pressurizedWaterReactorReferenceIc,
-      })
-      const commands = commandsForProcessPlantAction({ actionId: action.id, parameters: {}, graph: system.graph })
-      for (const command of commands) {
-        runtime.writeCommand({
-          type: 'setVariable',
-          path: command.path,
-          value: command.value,
+      test(action.id, () => {
+        const expected = expectedLifecycleIds.get(action.id)
+        if (expected === undefined) throw new Error(`missing display alarm expectation for demo action ${action.id}`)
+        const system = compiledSystem()
+        const runtime = createProcessPlantRuntime({ system })
+        const protection = createProcessPlantProtectionRunner({
+          system,
+          protection: pressurizedWaterReactorReferenceIc,
         })
-      }
-      for (let elapsedMs = 0; elapsedMs < 90_000; elapsedMs += 1_000) {
-        runtime.tick(1_000)
-        protection.evaluate({
-          runtime,
-          elapsedMs: runtime.elapsedMs(),
-          simulationRunId: 'run-runtime-display-alarm-test' as SimulationRunId,
-          sourceRuntimeId: 'process-plant.local',
-        })
-      }
+        const commands = commandsForProcessPlantAction({ actionId: action.id, parameters: {}, graph: system.graph })
+        for (const command of commands) {
+          runtime.writeCommand({
+            type: 'setVariable',
+            path: command.path,
+            value: command.value,
+          })
+        }
+        for (let elapsedMs = 0; elapsedMs < 90_000; elapsedMs += 1_000) {
+          runtime.tick(1_000)
+          protection.evaluate({
+            runtime,
+            elapsedMs: runtime.elapsedMs(),
+            simulationRunId: 'run-runtime-display-alarm-test' as SimulationRunId,
+            sourceRuntimeId: 'process-plant.local',
+          })
+        }
 
-      expect(displayAlarmIdsFor({ system, runtime, protection }), action.id)
-        .toEqual(expect.arrayContaining(expected))
+        expect(displayAlarmIdsFor({ system, runtime, protection }), action.id)
+          .toEqual(expect.arrayContaining(expected))
+      })
     }
   })
 
