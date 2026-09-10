@@ -19,7 +19,7 @@ export function hydrostaticMesh(b: GeometryBasis, fine = false) {
   return { ...mesh, cells }
 }
 
-export const hydrostaticCalculation = String.raw`
+export const hydrostaticSetup = String.raw`
 import json,sys,math
 import numpy as np
 import scipy
@@ -47,6 +47,8 @@ def integral(cell,fn,order):
         mid=(piece['hi']+piece['lo'])/2;h=(piece['hi']-piece['lo'])/2
         result+=h*sum(ww*fn(mid+h*xx,*shape(piece,mid+h*xx)) for xx,ww in zip(x,w))
     return result
+`
+export const hydrostaticCalculation = hydrostaticSetup + String.raw`
 profiles=[]
 for label,Tbottom,Ttop in [('cold',cold,cold),('hot-top',cold,hot),('hot-bottom',hot,cold)]:
     T=lambda z:Tbottom+(Ttop-Tbottom)*(z-zlo)/(ztop-zlo)
