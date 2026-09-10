@@ -9,7 +9,9 @@ export function parseGradientBasis(document: string) {
   return { ...parseTransportBasis(document), gradient: z.object({ specificHeatingRate_W_kg: z.number().finite().positive() }).strict().parse(JSON.parse(blocks[0]![1]!)) }
 }
 
-export const gradientCalculation = `${transportProperties}${String.raw`
+// Named numerical owner: boundary experiments reuse the same profile/remap
+// functions without executing or slicing the original comparison matrix.
+export const gradientProfileFunctions = String.raw`
 import numpy as np
 from numpy.polynomial.legendre import leggauss
 
@@ -164,7 +166,9 @@ def compare(actual,exact,q=16):
     return dict(meanAbsoluteTemperatureError_K=err/total,maximumSampledTemperatureError_K=peak,
         meanAbsoluteBoronFractionError=boron/total,relativeWithdrawnEnthalpyError=abs(conserved(actual)[1]/conserved(exact)[1]-1))
 def brief(r):return {k:v for k,v in r.items() if k not in ('outlet','finalState')}
+`
 
+export const gradientCalculation = `${transportProperties}${gradientProfileFunctions}${String.raw`
 rows=[];oracles={kind:run_profiles(0,1,kind) for kind in ('none','affine','curved')}
 # Literal bottom-donor oracle independent of profile splitting/projection.
 expected=[(1500,'cold'),(2000,'warm'),(1000,'cold'),(500,'initial')]
