@@ -19,7 +19,7 @@ export function reconstructionMesh(b: GeometryBasis, fine = false) {
   return { ...mesh, faces }
 }
 
-export const reconstructionCalculation = hydrostaticSetup + String.raw`
+export const reconstructionSetup = hydrostaticSetup + String.raw`
 from scipy.optimize import root
 
 def prepared(mesh,quadratic=False):
@@ -156,6 +156,8 @@ def evaluate(mesh,native,p,T,quadratic=False):
         maximumUnaveragedFacePressureJump_Pa=jump,maximumNativeMassResidual_kg=massError,maximumNativeEnergyResidual_J=energyError,
         independentMassResidual_kg=mass16,independentEnergyResidual_J=energy16,maximumFullBoundaryForceResidual_N=forceError),cells,fields
 
+`
+export const reconstructionCalculation = reconstructionSetup + String.raw`
 iterationDiagnostics=[]
 for mesh in data['meshes']:
     cells,S,C=prepared(mesh,True)
