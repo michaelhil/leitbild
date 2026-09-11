@@ -1,6 +1,6 @@
 /** Offline achieved-motion/source comparison. No live runtime, feedback calibration or cooling claim. */
 import { createHash } from 'node:crypto'
-import { advanceBank, parseBankBasis, type BankState, type BankSupport } from './reference-design-bank-motion'
+import { advanceBank, parseBankBasis, type BankBasis, type BankState, type BankSupport } from './reference-design-bank-motion'
 import { parseSourceFeedback, sourceFeedbackPython } from './reference-design-source-feedback'
 
 export const bankSourcePython = String.raw`
@@ -71,12 +71,8 @@ print(json.dumps(dict(scope='offline bank/source only; temperature differences a
     checks=checks,cases=cases,packages=dict(python=platform.python_version(),scipy=scipy.__version__,numpy=np.__version__)),allow_nan=False))
 `
 
-if (import.meta.main) {
-  const [controlDoc, sourceDoc, historyDoc, python, ...extra] = Bun.argv.slice(2)
-  if (!controlDoc || !sourceDoc || !historyDoc || !python || extra.length)
-    throw Error('Usage: bun reference-design-bank-source.ts <control.md> <kinetics.md> <heat-history.md> <python>')
-  const bank = parseBankBasis(await Bun.file(controlDoc).text())
-  const config = parseSourceFeedback(await Bun.file(sourceDoc).text(), await Bun.file(historyDoc).text())
+/** Declared offline support histories; not a protection/measurement implementation. */
+export function bankReferenceCases(bank: BankBasis) {
   const initial: BankState = { position: bank.referencePosition, mode: 'HOLD', requestedPosition: bank.referencePosition, released: false }
   const held: BankSupport = { holdingVoltage: true, ordinaryDrive: true, releaseAvailable: true, insertionStop: 0 }
   const lost = { ...held, holdingVoltage: false }
@@ -91,12 +87,21 @@ if (import.meta.main) {
       state: { ...initial, mode: 'MANUAL' as const, requestedPosition: bank.referencePosition + (name === 'ordinary-insertion' ? -1 : 1) * bank.ordinaryRate_s },
       periods: [{ dt: 5, support: { ...held, ordinaryDrive: name !== 'ordinary-drive-loss' } }] })),
   ]
-  const cases = specifications.map(c => {
+  return specifications.map(c => {
     let state = c.state
     const segments = []
     for (const p of c.periods) { const advanced = advanceBank(bank, state, p.support, p.dt); state = advanced.state; segments.push(...advanced.segments) }
     return { name: c.name, segments, finalBank: state }
   })
+}
+
+if (import.meta.main) {
+  const [controlDoc, sourceDoc, historyDoc, python, ...extra] = Bun.argv.slice(2)
+  if (!controlDoc || !sourceDoc || !historyDoc || !python || extra.length)
+    throw Error('Usage: bun reference-design-bank-source.ts <control.md> <kinetics.md> <heat-history.md> <python>')
+  const bank = parseBankBasis(await Bun.file(controlDoc).text())
+  const config = parseSourceFeedback(await Bun.file(sourceDoc).text(), await Bun.file(historyDoc).text())
+  const cases = bankReferenceCases(bank)
   const input = JSON.stringify({ bank, config, cases })
   const mechanics = await Bun.file(new URL('./reference-design-bank-motion.ts', import.meta.url)).text()
   const child = Bun.spawn([python, '-c', bankSourcePython], { stdin: new Blob([input]), stdout: 'pipe', stderr: 'pipe' })

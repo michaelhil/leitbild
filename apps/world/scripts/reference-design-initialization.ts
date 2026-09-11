@@ -93,10 +93,11 @@ allStart=startMeter()
 def require(name,condition,**values):
  if not condition:raise ValueError(name+': '+str(values))
  checks.append(dict(check=name,**values))
+propertyBand=dict(p_MPa=(14.,16.5),T_C=(275.,328.))
 def properties(p,T):
  # Explicit narrow liquid investigation band; never allow Region1 extrapolation into boiling.
  if not np.all(np.isfinite(p)) or not np.all(np.isfinite(T)):raise ValueError('Nonfinite property input')
- if min(p)<14 or max(p)>16.5 or min(T)<275 or max(T)>328:raise ValueError('Outside sealed-primary liquid investigation band')
+ if min(p)<propertyBand['p_MPa'][0] or max(p)>propertyBand['p_MPa'][1] or min(T)<propertyBand['T_C'][0] or max(T)>propertyBand['T_C'][1]:raise ValueError('Outside sealed-primary liquid investigation band')
  counters['propertyStates']+=len(p)
  rho=[]; h=[]; u=[]
  for pp,tt in zip(p,T):

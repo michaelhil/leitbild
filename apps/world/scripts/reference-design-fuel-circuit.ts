@@ -6,7 +6,7 @@ import { radialReferencePython, resolveFuelTransientInput } from './reference-de
 import { parseSourceFeedback, sourceFeedbackPython } from './reference-design-source-feedback.ts'
 
 const hash=(value:string|Uint8Array)=>createHash('sha256').update(value).digest('hex')
-export const fuelCircuitCalculation=String.raw`
+export const fuelCircuitCorePython=String.raw`
 import sys,json,math,time,platform
 import numpy as np,scipy,iapws
 from scipy.optimize import brentq
@@ -36,7 +36,12 @@ require('cold lattice water volume has one circuit owner',
 start=time.perf_counter()
 ${sourceFeedbackPython}
 source=source_owner(d['source']) if 'source' in d else None
-def experiment(n,steps,hold=True,frozen=False):
+def experiment(n,steps,hold=True,frozen=False,bankCase=None,progress=None):
+    def screen(name,condition,**values):
+        if bankCase is None:return require(name,condition,**values)
+        # Report rejected numerical/applicability screens without discarding the
+        # computed evidence. Property/domain failures still stop the trajectory.
+        checks.append(dict(name=name,passed=bool(condition),**values))
     radial=fuel['make'](n,True); balance=radial['balances'];nodeEnergy=radial['nodeEnergy'];mechanical=radial['mechanical']
     r0,_=solve(lambda r:balance(r,1.,nominalBoundary)[0]/1000,radial['initial'],'discrete radial initialization')
     size=len(r0)
@@ -70,16 +75,29 @@ def experiment(n,steps,hold=True,frozen=False):
                 sourceStates=states.tolist(),delayedEnergyChange_J=float(P*source['energyWeights']@(states[7:]-1))) if source else {}))
     def run(dt,pulse,sign=1):
         print('fuel/circuit reference '+str((n,dt,pulse,frozen)),file=sys.stderr,flush=True)
+        if progress is not None:progress.update(step_s=dt,attemptedTime_s=0.,lastAcceptedTime_s=0.,lastAcceptedPressure_MPa=water0['p'].tolist())
         y=y0.copy();record=initial;ledger=rotorLoss=0.;maxMass=maxEnergy=maxRaw=maxSolid=0.;solidLedger=0.
         maxPE=0.;maxOmission=0.;absWork=absGas=absElastic=netWork=0.;maxSampleOmission=0.
         priorMechanical=mechanical(r0,initial[4]);initialMechanical=priorMechanical
         samples=[projection(0.,record)];end=b['perturbation_s'] if pulse else b['hold_s'];endSteps=round(end/dt)
+        path=bankCase['segments'] if bankCase is not None else None
+        if path:
+            ends=np.cumsum([s['duration_s'] for s in path]);end=float(ends[-1])
+            # Explicit support/travel endpoints are integration boundaries, not interpolated commands.
+            times=sorted(set([0.,end]+[round(i*dt,12) for i in range(1,math.ceil(end/dt)) if i*dt<end]+[round(float(v),12) for v in ends]))
+        else:times=[i*dt for i in range(endSteps+1)]
         peakSolid=0.;maxSourceContinuity=0.;fissionLedger=0.;sourceLedger=0.;maxSourceEnergy=0.;absoluteSourceChange=0.;maxCompleteEnergy=0.
         displacement=dict(maximumTotalRodVolumeChange_m3=0.,maximumLocalFluidVolumeFraction=0.,
             maximumMassDisplacement_kg=0.,maximumUniformPressureSensitivity_Pa=0.,maximumRecoveredMassResidual_kg=0.)
-        for step in range(endSteps):
-            t0=step*dt;t=(step+1)*dt;active=pulse and t0<b['sourcePulse_s']-1e-10
+        for step in range(len(times)-1):
+            t0=times[step];t=times[step+1];stepDt=t-t0 if path else dt;active=pulse and t0<b['sourcePulse_s']-1e-10
+            if progress is not None:progress['attemptedTime_s']=t
             factor=sign*d['source']['source']['reactivityPulse_pcm'] if source and active else (0. if source else (1+b['sourcePulseFraction'] if active else 1.))
+            if path:
+                segmentIndex=min(int(np.searchsorted(ends,t-1e-12)),len(path)-1)
+                segment=path[segmentIndex];startTime=0. if segmentIndex==0 else ends[segmentIndex-1]
+                position=segment['from']+(segment['to']-segment['from'])*(t-startTime)/segment['duration_s']
+                factor=1e5*d['bank']['worthPerStroke']*(position-d['bank']['referencePosition'])
             old=record
             if step==0 or abs(t0-b['sourcePulse_s'])<1e-9:
                 changed=read(y,factor,old[8])
@@ -87,25 +105,27 @@ def experiment(n,steps,hold=True,frozen=False):
                 require('source event leaves state and wall heat continuous '+str((n,dt,pulse,t0)),jump<1e-6,
                     wallHeatJump_W=jump)
             def residual(trial):
-                e,rates,en,_,_,_,nuclear,_,states=read(trial,factor,old[8],dt);prev=old[0]
-                nuclearResidual=[states[0]-old[8][0]-dt*nuclear['rate'][0]] if source else []
-                return np.r_[((e['mass']-prev['mass'])/dt-e['dM'])/M0,
-                    ((e['energy']-prev['energy'])/dt-e['dU'])/P,e['hyd']/600000,
-                    ((e['Tw']-prev['Tw'])/dt-e['dw'])*Cwall/P,
-                    ((e['omega']-prev['omega'])/dt-e['domega'])*J/torque,
-                    ((en-old[2])/dt-rates)/1000,nuclearResidual]
+                if progress is not None:progress.update(operation='coupled-solve',trialPressureRange_MPa=[float(min(trial[:11])*15),float(max(trial[:11])*15)],trialTemperatureRange_C=[float(min(trial[11:22])*300),float(max(trial[11:22])*300)])
+                e,rates,en,_,_,_,nuclear,_,states=read(trial,factor,old[8],stepDt);prev=old[0]
+                nuclearResidual=[states[0]-old[8][0]-stepDt*nuclear['rate'][0]] if source else []
+                return np.r_[((e['mass']-prev['mass'])/stepDt-e['dM'])/M0,
+                    ((e['energy']-prev['energy'])/stepDt-e['dU'])/P,e['hyd']/600000,
+                    ((e['Tw']-prev['Tw'])/stepDt-e['dw'])*Cwall/P,
+                    ((e['omega']-prev['omega'])/stepDt-e['domega'])*J/torque,
+                    ((en-old[2])/stepDt-rates)/1000,nuclearResidual]
             y,res=solve(residual,y,'coupled handoff '+str((n,dt,pulse,t)))
-            record=read(y,factor,old[8],dt);e,rates,en,r,cur,heats,nuclear,_,states=record
+            if progress is not None:progress['operation']='accepted-readout'
+            record=read(y,factor,old[8],stepDt);e,rates,en,r,cur,heats,nuclear,_,states=record
             # Shared wall heat cancels; source goes only into retained fuel.
             deposition=P*(nuclear['deposition'] if source else factor)
             external=deposition+sum(e['electrical'])-sum(e['ambient'])-sum(e['Qs'])
-            ledger+=external*dt;solidLedger+=(deposition-sum(heats))*dt
+            ledger+=external*stepDt;solidLedger+=(deposition-sum(heats))*stepDt
             if source:
                 deltaDelayed=P*source['energyWeights']@(states[7:]-1)
-                sourceLedger+=P*(nuclear['fission']-nuclear['deposition'])*dt
+                sourceLedger+=P*(nuclear['fission']-nuclear['deposition'])*stepDt
                 maxSourceEnergy=max(maxSourceEnergy,abs(deltaDelayed-sourceLedger))
-                fissionLedger+=P*(nuclear['fission']-1)*dt
-            absoluteSourceChange+=abs(deposition-P)*dt
+                fissionLedger+=P*(nuclear['fission']-1)*stepDt
+            absoluteSourceChange+=abs(deposition-P)*stepDt
             rotorLoss+=.5*J*sum((e['omega']-old[0]['omega'])**2)
             stored=e['totalStored']+sum(en)*N-water0['totalStored']-solid0
             solidChange=sum(en)*N-solid0;peakSolid=max(peakSolid,abs(solidChange))
@@ -124,7 +144,7 @@ def experiment(n,steps,hold=True,frozen=False):
                 netTerms=abs(netWork)+abs(mech['gasEnergy']-initialMechanical['gasEnergy'])*N+abs(mech['elastic']-initialMechanical['elastic'])*N
                 maxSampleOmission=max(maxSampleOmission,netTerms/abs(solidChange))
             priorMechanical=mech
-            if abs(t*10-round(t*10))<1e-8 or step==endSteps-1:
+            if abs(t*10-round(t*10))<1e-8 or step==len(times)-2:
                 # Independent static sensitivity, NEVER added to the trajectory:
                 # hold current fluid T and instantaneous rod geometry, reduce
                 # water volume by actual rod displacement, restore total M by
@@ -134,15 +154,23 @@ def experiment(n,steps,hold=True,frozen=False):
                 if min(volumes)<=0:raise ValueError('Rod displacement exhausted a coolant volume')
                 massTarget=sum(e['mass'])
                 def displacedMass(dp):return sum(primary['properties'](e['p']+dp,e['T'])[0]*volumes)-massTarget
-                pressureOffset=brentq(displacedMass,-.1,.1,xtol=1e-12)
+                if progress is not None:progress['operation']='static-displacement-sensitivity'
+                # A diagnostic probe must respect the same property's admitted
+                # domain. This bounds the search, never the physical state.
+                allowed=primary['propertyBand']['p_MPa']
+                lower=max(-.1,float(np.nextafter(allowed[0]-min(e['p']),math.inf)))
+                upper=min(.1,float(np.nextafter(allowed[1]-max(e['p']),-math.inf)))
+                pressureOffset=brentq(displacedMass,lower,upper,xtol=1e-12)
                 displacement['maximumTotalRodVolumeChange_m3']=max(displacement['maximumTotalRodVolumeChange_m3'],abs(float(sum(deltaV))))
                 displacement['maximumLocalFluidVolumeFraction']=max(displacement['maximumLocalFluidVolumeFraction'],float(max(abs(deltaV/primary['V'][2:4]))))
                 displacement['maximumMassDisplacement_kg']=max(displacement['maximumMassDisplacement_kg'],abs(float(sum(e['rho'][2:4]*deltaV))))
                 displacement['maximumUniformPressureSensitivity_Pa']=max(displacement['maximumUniformPressureSensitivity_Pa'],abs(pressureOffset)*1e6)
                 displacement['maximumRecoveredMassResidual_kg']=max(displacement['maximumRecoveredMassResidual_kg'],abs(float(displacedMass(pressureOffset))))
                 sample=projection(t,record);sample['rodDisplacementPressureSensitivity_Pa']=pressureOffset*1e6
+                if path:sample.update(bankPosition=float(position),bankReactivity_pcm=float(factor))
                 samples.append(sample)
-        require('native mass and retained energy '+str((n,dt,pulse,frozen)),maxMass<.001 and maxEnergy<10000 and maxRaw<10000 and maxSolid<10000,
+            if progress is not None:progress.update(lastAcceptedTime_s=t,lastAcceptedPressure_MPa=e['p'].tolist(),lastAcceptedTemperature_C=e['T'].tolist())
+        screen('native mass and retained energy '+str((n,dt,pulse,frozen)),maxMass<.001 and maxEnergy<10000 and maxRaw<10000 and maxSolid<10000,
             mass_kg=float(maxMass),energy_J=float(maxEnergy),rawEnergy_J=float(maxRaw),solid_J=float(maxSolid))
         require('displaced-water static mass inversion '+str((n,dt,pulse,frozen)),
             displacement['maximumRecoveredMassResidual_kg']<1e-5,**displacement)
@@ -151,10 +179,10 @@ def experiment(n,steps,hold=True,frozen=False):
                 max(max(abs(np.array(s['T_C'])-water0['T'])) for s in samples)<1e-4 and
                 max(abs(record[3]-r0))<1e-6)
         pulseEnergy=absoluteSourceChange if source else P*b['sourcePulseFraction']*b['sourcePulse_s']
-        if source:require('delayed and complete fission energy ledgers '+str((n,dt,pulse,sign,frozen)),maxSourceEnergy<10000 and maxCompleteEnergy<10000,
+        if source:screen('delayed and complete fission energy ledgers '+str((n,dt,pulse,sign,frozen)),maxSourceEnergy<10000 and maxCompleteEnergy<10000,
             delayedResidual_J=float(maxSourceEnergy),completeResidual_J=float(maxCompleteEnergy))
         if pulse:
-            require('rescreen gas elastic and external work '+str((n,dt,frozen)),
+            screen('rescreen gas elastic and external work '+str((n,dt,frozen)),
                 maxOmission/pulseEnergy<.001 and maxOmission/peakSolid<.001 and maxSampleOmission<.001,
                 omission_J=float(maxOmission),toPulse=float(maxOmission/pulseEnergy),toPeakSolid=float(maxOmission/peakSolid),toSample=float(maxSampleOmission))
         return dict(step_s=dt,pulse=pulse,**(dict(reactivitySign=sign,maximumSourceEnergyResidual_J=float(maxSourceEnergy),
@@ -163,11 +191,14 @@ def experiment(n,steps,hold=True,frozen=False):
             rotorNumericalDissipation_J=float(rotorLoss),omittedStoredPEChangeBound_J=float(maxPE),
             accumulatedAbsoluteGasElasticWorkOmission_J=float(maxOmission),maximumOmissionToSampleSolidRatio=float(maxSampleOmission),
             sourceEventWallHeatJump_W=float(maxSourceContinuity),coldLatticeVolumeSensitivity=displacement)
-    runs=[run(dt,True) for dt in steps]
+    moving=bankCase is None or any(s['from']!=s['to'] for s in bankCase['segments'])
+    runs=[run(dt,moving) for dt in steps]
     originalEnergy=sum(row['fuelSensibleEnergy_J']+row['cladSensibleEnergy_J'] for row in d['fuel']['reference']['base']['rows'])
     return dict(intervals=n,contrast='frozen-source-feedback' if frozen and source else ('frozen-radial-boundary' if frozen else 'reciprocal'),initialSolidProjectionDifference_J=float(solid0-originalEnergy),
         hold=run(b['holdStep_s'],False) if hold else None,runs=runs,
-        **(dict(baseline=baseline,negative=run(b['steps_s'][-1],True,-1)) if source and n==16 and not frozen else {}))
+        **(dict(baseline=baseline,negative=run(b['steps_s'][-1],True,-1)) if source and n==16 and not frozen and bankCase is None else {}))
+`
+export const fuelCircuitCalculation=fuelCircuitCorePython+String.raw`
 sourceSteps=d['source']['source']['steps_s'] if source else b['steps_s']
 if source:require('source and spatial comparison share declared step',b['steps_s'][-1] in sourceSteps)
 results=[experiment(n,sourceSteps if n==16 else [b['steps_s'][-1]]) for n in [8,16,32]]
@@ -204,11 +235,14 @@ print(json.dumps(dict(scope='offline quasistatic BOL radial heat coupled to seal
     feedbackDifference=feedback,observedExcursion=excursion,checks=checks,cost_s=time.perf_counter()-start,
     liveRuntime=False,physicalFuelValidation=False,fullMechanicalEnergy=False),allow_nan=False))
 `
-export async function runFuelCircuit(initDoc:string,hydroDoc:string,cycleDoc:string,fuelDoc:string,transientDoc:string,bolJson:string,python:string,sourceDocs?:{kinetics:string;history:string}){
+export async function resolveFuelCircuitInput(initDoc:string,hydroDoc:string,cycleDoc:string,fuelDoc:string,transientDoc:string,bolJson:string,python:string,sourceDocs?:{kinetics:string;history:string}){
   const physicalCore=parseConnectedFuel(initDoc,fuelDoc)
   const primary=await resolveInitializationInput(initDoc,hydroDoc,cycleDoc,python,physicalCore)
   const fuel=resolveFuelTransientInput(fuelDoc,transientDoc,bolJson,'quasistatic')
-  const data={primary,fuel,...(sourceDocs?{source:parseSourceFeedback(sourceDocs.kinetics,sourceDocs.history)}:{})}
+  return {primary,fuel,...(sourceDocs?{source:parseSourceFeedback(sourceDocs.kinetics,sourceDocs.history)}:{})}
+}
+export async function runFuelCircuit(initDoc:string,hydroDoc:string,cycleDoc:string,fuelDoc:string,transientDoc:string,bolJson:string,python:string,sourceDocs?:{kinetics:string;history:string}){
+  const data=await resolveFuelCircuitInput(initDoc,hydroDoc,cycleDoc,fuelDoc,transientDoc,bolJson,python,sourceDocs)
   const sourceSha256=hash(await Bun.file(import.meta.path).bytes())
   const child=Bun.spawn([python,'-c',fuelCircuitCalculation],{stdin:new Blob([JSON.stringify(data)]),stdout:'pipe',stderr:'pipe'})
   const [out,err,status]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited])
