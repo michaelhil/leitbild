@@ -4,7 +4,7 @@ import { parseAcousticBasis } from './reference-design-cmt-acoustics.ts'
 import { parseGeometryBasis, tankGeometry } from './reference-design-cmt-geometry.ts'
 import { columnMesh, wellBalancedSetup } from './reference-design-cmt-well-balanced.ts'
 
-export const pressureCoordinatesCalculation = wellBalancedSetup + String.raw`
+export const pressureCoordinatesSetup = wellBalancedSetup + String.raw`
 def forward(o,M,P,pc):
     # Independent forward implementation: only current native M/P, trial pressure, and geometry.
     n=o['n']
@@ -26,7 +26,8 @@ def forward(o,M,P,pc):
     U=np.array(U);PE=np.array(PE);E=U+P*P/(2*M)+PE
     return np.r_[M,P,E],(pc.copy(),np.array(traces),U,PE),np.array(derivative)
 
-rows=[]
+`
+export const pressureCoordinatesCalculation = pressureCoordinatesSetup + String.raw`rows=[]
 for mesh in data['meshes']:
     o=compile_column(mesh);n=o['n'];initial=o['initialize']('nonpolynomial');p0cells,tr,U,PE=o['recover'](initial)
     heat=initial.copy();heat[2*n:]+=10000*(band_weights(o,7,8)-band_weights(o,9,10))
