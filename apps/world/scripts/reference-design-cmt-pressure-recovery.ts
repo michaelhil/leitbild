@@ -4,7 +4,7 @@ import { parseAcousticBasis } from './reference-design-cmt-acoustics.ts'
 import { parseGeometryBasis, tankGeometry } from './reference-design-cmt-geometry.ts'
 import { reconstructionMesh, reconstructionSetup } from './reference-design-cmt-reconstruction.ts'
 
-export const pressureRecoveryCalculation = reconstructionSetup + String.raw`
+export const pressureRecoverySetup = reconstructionSetup + String.raw`
 from scipy.optimize import brentq
 from CoolProp import DmassP_INPUTS,iUmass,iP,iDmass
 PLO,PHI=data['centerPressureInterval_Pa']
@@ -53,6 +53,8 @@ def state(f,z):
     x=z-f['z'];rho=f['rhoc']+f['slope']*x;p=f['pc']-g*(f['rhoc']*x+.5*f['slope']*x*x)
     return rho,p,*density_props(rho,p)
 
+`
+export const pressureRecoveryCalculation = pressureRecoverySetup + String.raw`
 def audit(mesh,native,p,T):
     cells,fields=recover(mesh,native);pError=tError=massError=energyError=forceError=faceJump=0.
     for c,f,(M,U) in zip(cells,fields,native):
