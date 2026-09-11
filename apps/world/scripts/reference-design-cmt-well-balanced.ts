@@ -21,7 +21,7 @@ export function columnMesh(b: GeometryBasis, fine = false) {
   return { cells, faces, elevations_m: zz, faceAreas_m2 }
 }
 
-export const wellBalancedCalculation = pressureRecoverySetup + String.raw`
+export const wellBalancedSetup = pressureRecoverySetup + String.raw`
 import time
 diagnostics=dict(maximumStarEosPressureDiscrepancy_Pa=0.,maximumStarPressureJump_Pa=0.)
 
@@ -170,7 +170,18 @@ def evolve(o,y0,duration,dt):
         maximumLocalMassLedgerResidual_kg=float(max(abs(ledger[0]))),maximumLocalEnergyLedgerResidual_J=float(max(abs(ledger[2]))),
         grossInternalFaceMass_kg=float(gross),history=history),y
 
-def implicit(o,y0,duration,tight=False):
+def central_jacobian(rhs,t,delta,h,groups=None):
+    # Grouped columns have structurally disjoint row support. None retains the dense independent comparator.
+    size=len(delta);matrix=np.zeros((size,size))
+    if groups is None:groups=[[(j,np.arange(size))] for j in range(size)]
+    for group in groups:
+        v=np.zeros(size)
+        for j,rows in group:v[j]=h[j]
+        difference=rhs(t,delta+v)-rhs(t,delta-v)
+        for j,rows in group:matrix[rows,j]=difference[rows]/(2*h[j])
+    return matrix
+
+def implicit(o,y0,duration,tight=False,groups=None):
     n=o['n'];scales=np.r_[y0[:n],y0[:n],abs(y0[2*n:])];h=1e-8*scales
     tol=1e-9 if tight else 1e-7;atol=np.r_[np.full(n,1e-9),np.full(n,1e-9),np.full(n,1e-5)]*(.1 if tight else 1)
     rhsCalls=jacobianRhsCalls=0;rhsWall=jacobianWall=0.
@@ -181,9 +192,7 @@ def implicit(o,y0,duration,tight=False):
     def jac(t,delta):
         nonlocal jacobianRhsCalls,jacobianWall
         before=rhsCalls;start=time.perf_counter()
-        matrix=np.zeros((3*n,3*n))
-        for j,step in enumerate(h):
-            v=np.zeros(3*n);v[j]=step;matrix[:,j]=(rhs(t,delta+v)-rhs(t,delta-v))/(2*step)
+        matrix=central_jacobian(rhs,t,delta,h,groups)
         jacobianRhsCalls+=rhsCalls-before;jacobianWall+=time.perf_counter()-start
         return matrix
     # Independent directional and half-step comparison uses resolvable native perturbations, not tiny zero-increment steps.
@@ -209,6 +218,7 @@ def implicit(o,y0,duration,tight=False):
         maxM=max(maxM,abs(sum(d[:n])));maxE=max(maxE,abs(sum(d[2*n:])))
     check('implicit column total native mass kg',maxM,1e-6);check('implicit column total U+K+PE J',maxE,.1)
     return dict(relativeTolerance=tol,absoluteTolerance=atol.tolist(),jacobianNativeRelativeStep=1e-8,
+        jacobianGroups=3*n if groups is None else len(groups),
         jacobianDirectionalDifference=derivativeDifference,jacobianHalfStepDifference=halfDifference,
         acceptedSteps=len(sol.t)-1,functionCalls=sol.nfev,jacobianCalls=sol.njev,linearFactorizations=sol.nlu,wall_s=time.perf_counter()-started,
         actualRhsCallsIncludingJacobian=rhsCalls,jacobianRhsCalls=jacobianRhsCalls,rhsWall_s=rhsWall,jacobianWall_s=jacobianWall,
@@ -216,7 +226,8 @@ def implicit(o,y0,duration,tight=False):
         duration_s=duration,maximumMassResidual_kg=maxM,maximumTotalEnergyResidual_J=maxE,
         maximumVelocity_m_s=float(maxV),maximumPressureChange_Pa=float(maxP),minimumSampledExplicitCfl_s=minCfl,
         history=history,overlapNativeState=(y0+sol.sol(data['duration_s'])).tolist(),finalNativeState=(y0+sol.y[:,-1]).tolist())
-
+`
+export const wellBalancedCalculation = wellBalancedSetup + String.raw`
 riemann_checks();riemannDiagnostics=diagnostics.copy();diagnostics={k:0. for k in diagnostics};results=[];shortInitial=[];shortFinal=[];columns=[]
 for mesh in data['meshes']:
     o=compile_column(mesh);n=o['n'];initial=o['initialize']('nonpolynomial');p,tr,U,PE=o['recover'](initial)
