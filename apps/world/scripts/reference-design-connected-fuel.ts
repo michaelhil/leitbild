@@ -6,10 +6,13 @@ import { runInitialization,type PhysicalCoreReference } from './reference-design
 const positive=z.number().finite().positive()
 const schema=z.object({gridPositions_m:z.array(positive).min(2),blockageFraction:positive.lt(1),
   gridLossFactor:positive,inletLoss:z.number().finite().nonnegative(),outletLoss:z.number().finite().nonnegative()}).strict()
-export function parseConnectedFuel(document:string,fuelDocument:string):PhysicalCoreReference{
+export function parseConnectedFuelSelection(document:string){
   const blocks=[...document.matchAll(/^```reference-connected-fuel\s*\n([\s\S]*?)^```\s*$/gm)]
   if(blocks.length!==1)throw Error('Expected exactly one reference-connected-fuel block')
-  const b=schema.parse(JSON.parse(blocks[0]![1]!)),fuel=parseFuelConstruction(fuelDocument),half=fuel.activeLength_m/2
+  return schema.parse(JSON.parse(blocks[0]![1]!))
+}
+export function parseConnectedFuel(document:string,fuelDocument:string):PhysicalCoreReference{
+  const b=parseConnectedFuelSelection(document),fuel=parseFuelConstruction(fuelDocument),half=fuel.activeLength_m/2
   if(b.gridPositions_m.some((p,i)=>p>=fuel.activeLength_m||p===half||(i>0&&p<=b.gridPositions_m[i-1]!)))throw Error('Grid planes must be ordered inside the active core, away from the cell face')
   const lower=b.gridPositions_m.filter(p=>p<half).length,upper=b.gridPositions_m.length-lower
   if(lower!==upper)throw Error('This two-slice reference requires equal grid counts per half')
