@@ -118,6 +118,7 @@ def path(x,record=False):
     calls['shooting']+=1;m=x[0]*Mref;h0=x[1]*1e6;Tw=x[2]*300
     if m<=0 or not Tsink<Tw:raise ValueError('Candidate requires positive flow and SG approach')
     y=np.array([pAnchor,h0]);origin=ph(*y);owners=[];faces=[];mixing=[];coreEnds=[];hotTap=None
+    coreThermalQuadrature={str(n):[] for n in [2,4,8]}
     def keep(name,sol,massflow,area,zfun,mult=1):
         if record:
             end=sol.y[:2,-1];native=sol.y[2:,-1]
@@ -135,6 +136,16 @@ def path(x,record=False):
             return f/core['geometry']['hydraulicDiameter_m']
         sol=integrate(y,m,Ac,length,lambda s:s+left-2,lambda s:1,
             heat=lambda s,q:Q[half]/(core['activeLength_m']/2),K=krod,label='CORE.'+str(half+1))
+        if record:
+            # Read-only integration points on each smooth piece; never interpolate
+            # across the zero-volume grid loss or use an outlet as a volume mean.
+            for order,points in coreThermalQuadrature.items():
+                nodes,weights=np.polynomial.legendre.leggauss(int(order))
+                for node,weight in zip(nodes,weights):
+                    s=(node+1)*length/2;dx=weight*length/2
+                    points.append(dict(half=half,referenceLength_m=dx,
+                        heat_W=float(Q[half]*dx/(core['activeLength_m']/2)),
+                        **snapshot(sol.sol(s)[:2],m,Ac,left+s-2)))
         y=sol.y[:2,-1];coreAccum+=sol.y[2:,-1]
         if right in d['gridPositions_m']:
             y=jump(y,m,Ac,right-2,lambda q:min(20.,196*(abs(m/Ac)*core['geometry']['hydraulicDiameter_m']/q['mu'])**(-.333))*core['gridLossFactor']*core['blockageFraction']**2)
@@ -194,7 +205,7 @@ def path(x,record=False):
     independentPowerError=Qtotal+m*e-2*QsgIndependent
     if abs(independentPowerError)>10:raise ValueError('Independent full-loop heat/shaft quadrature balance failed')
     inertia=(eRef*Mref/4+drag/4)*b['basis']['inertiaDecay_s']/omega**2
-    return dict(residual=residual.tolist(),coreFlow_kg_s=m,coreFaces=coreEnds,hotTap=hotTap,faces=faces,owners=owners,totals=totals,
+    return dict(residual=residual.tolist(),coreFlow_kg_s=m,coreFaces=coreEnds,coreThermalQuadrature=coreThermalQuadrature,hotTap=hotTap,faces=faces,owners=owners,totals=totals,
         sourceHeat_W=Qtotal,sourceHalfHeat_W=Q.tolist(),perSGHeat_W=Qsg,wallTemperature_K=Tw,secondaryTemperature_K=Tsink,
         minimumSGFluidWallApproach_K=min(sgApproach),wallSecondaryApproach_K=Tw-Tsink,
         shaftToFluid_W=m*e,pumpSpecificWork_J_kg=e,pumpInternalDissipation_W=m*pumpR*q*q,
@@ -243,7 +254,7 @@ export async function runPrimaryOperatingPoint(wiki: string, python: string, cas
   const process = Bun.spawn([python,'-c',primaryOperatingPointPython],{stdin:new Blob([JSON.stringify(input)]),stdout:'pipe',stderr:'pipe'})
   const [out,err,code] = await Promise.all([new Response(process.stdout).text(),new Response(process.stderr).text(),process.exited])
   if(code!==0) return {...identity,case:input.case,accepted:false,failure:err}
-  return {...identity,...JSON.parse(out)}
+  return {...identity,coreGeometry:primary.physicalCore!.geometry,coreActiveLength_m:primary.physicalCore!.activeLength_m,...JSON.parse(out)}
 }
 if(import.meta.main){
   const [wiki,python,caseName,...extra]=Bun.argv.slice(2)
