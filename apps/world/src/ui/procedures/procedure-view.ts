@@ -7,7 +7,9 @@ type StepItem =
 
 /** Source order is also reading order. Keep original branch objects for command identity. */
 export const procedureStepItems = (step: ProcedureStep): ReadonlyArray<StepItem> => [
-  ...step.blocks.map(block => ({ kind: 'block' as const, block, primary: primaryKinds.has(block.kind), sourceLine: block.sourceLine })),
+  ...step.blocks
+    .filter(block => !(block.kind === 'note' && block.text.startsWith('Simulator applicability')))
+    .map(block => ({ kind: 'block' as const, block, primary: primaryKinds.has(block.kind), sourceLine: block.sourceLine })),
   ...step.branches.map(branch => ({ kind: 'branch' as const, branch, primary: false as const, sourceLine: branch.sourceLine })),
 ].sort((left, right) => left.sourceLine - right.sourceLine)
 
