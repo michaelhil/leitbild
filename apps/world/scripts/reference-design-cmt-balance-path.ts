@@ -2,6 +2,8 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { parseGeometryBasis, tankGeometry, ringArea, type GeometryBasis } from './reference-design-cmt-geometry.ts'
+import { deliveryBasis } from './reference-design-cmt-delivery.ts'
+import { parseObservationFixtureBasis, flowEvidence } from './reference-design-observations.ts'
 
 const positive = z.number().finite().positive()
 const schema = z.object({ headerElevation_m: z.number().finite(), bore_m: positive, roughness_m: positive,
@@ -26,7 +28,7 @@ export function darcyGradient(m: number, rho: number, mu: number, diameter: numb
   const A = area(diameter), Re = Math.abs(m) * diameter / (A * mu)
   const laminar = 64 / Re
   let turbulent = laminar
-  if (Re > 2000) {
+  if (Re > 2300) {
     let lo = .001, hi = .2
     const residual = (f: number) => 1 / Math.sqrt(f) + 2 * Math.log10(roughness / (3.7 * diameter) + 2.51 / (Re * Math.sqrt(f)))
     if (!(residual(lo) > 0 && residual(hi) < 0)) throw new Error('Colebrook root outside declared bracket')
@@ -37,7 +39,7 @@ export function darcyGradient(m: number, rho: number, mu: number, diameter: numb
     }
     turbulent = (lo + hi) / 2
   }
-  const f = Re <= 2000 ? laminar : Re >= 4000 ? turbulent : laminar + (turbulent - laminar) * (Re - 2000) / 2000
+  const f = Re <= 2300 ? laminar : Re >= 4000 ? turbulent : laminar + (turbulent - laminar) * (Re - 2300) / 1700
   return f * m * Math.abs(m) / (2 * rho * A * A * diameter)
 }
 
@@ -130,12 +132,59 @@ export function checkBalancePath(gb: GeometryBasis, b: BalancePathBasis) {
     physicalDefinitionChecksPassed: true, nonlinearReceivingQualified: false }
 }
 
+/** Fixed instrument resistance replaces part of the existing effective loss, not new head. */
+export function allocateMeterLoss(total_Pa: number, wall_Pa: number, exit_Pa: number, meter_Pa: number) {
+  if (![total_Pa, wall_Pa, exit_Pa, meter_Pa].every(Number.isFinite)
+    || total_Pa <= 0 || wall_Pa < 0 || exit_Pa < 0 || meter_Pa <= 0)
+    throw new Error('Invalid physical meter allocation')
+  const remainder_Pa = total_Pa - wall_Pa - exit_Pa - meter_Pa
+  if (remainder_Pa <= 0) throw new Error('Meter exceeds remaining physical loss allocation')
+  return { total_Pa, wall_Pa, exit_Pa, meter_Pa, remainder_Pa }
+}
+
+export function checkConnectedMeters(g: GeometryBasis, b: BalancePathBasis,
+  d: Pick<ReturnType<typeof deliveryBasis>, 'totalLoss_Pa' | 'referenceFlow_kg_s' | 'bore_m' | 'roughness_m' | 'length_m' | 'checkCrack_Pa'>,
+  o: Pick<ReturnType<typeof parseObservationFixtureBasis>, 'meters' | 'rawDPZeroBound_Pa' | 'rawDPQuantum_Pa'>) {
+  const meter = (name: string, total: number, flow: number) => {
+    const m = o.meters.find(m => m.name === name)
+    if (!m || m.totalReferenceDrop_Pa !== total || m.referenceFlow_kg_s !== flow)
+      throw new Error('Meter and physical path reference bases differ')
+    return m
+  }
+  const cmt = meter('CMT', d.totalLoss_Pa, d.referenceFlow_kg_s)
+  const dvi = meter('DVI', b.dviReferenceLoss_Pa, b.dviReferenceFlow_kg_s)
+  const cmtArea = area(d.bore_m)
+  const cmtWall = darcyGradient(d.referenceFlow_kg_s, b.coldDensity_kg_m3,
+    b.coldViscosity_Pa_s, d.bore_m, d.roughness_m) * d.length_m
+  const cmtExit = d.referenceFlow_kg_s ** 2 / (2 * b.coldDensity_kg_m3 * cmtArea ** 2)
+  const neck = checkBalancePath(g, b).dviNeck
+  const allocations = {
+    CMT: allocateMeterLoss(d.totalLoss_Pa, cmtWall, cmtExit, cmt.meterDrop_Pa),
+    DVI: allocateMeterLoss(b.dviReferenceLoss_Pa, neck.pipe_Pa, neck.discharge_Pa, dvi.meterDrop_Pa),
+  }
+  const error = o.rawDPZeroBound_Pa + o.rawDPQuantum_Pa / 2
+  const readings = [cmt, dvi].flatMap(m => [-1, 0, 1].flatMap(sign => [1, .75].map(densityRatio => {
+    const flow = sign * m.referenceFlow_kg_s, rho = b.coldDensity_kg_m3 * densityRatio
+    const rawDP_Pa = m.meterDrop_Pa * flow * Math.abs(flow) / m.referenceFlow_kg_s ** 2 / densityRatio
+    return { meter: m.name, actualFlow_kg_s: flow, actualDensity_kg_m3: rho,
+      irreversiblePower_W: rawDP_Pa * flow / rho,
+      ...flowEvidence(rawDP_Pa, m.referenceFlow_kg_s, m.meterDrop_Pa, error) }
+  })))
+  return { scope: 'Steady local liquid-element allocation and prescribed density contrasts; no connected trajectory or gas calibration',
+    allocations, readings, checkCrackingSeparate_Pa: d.checkCrack_Pa, connectedInstrumentQualified: false }
+}
+
 if (import.meta.main) {
-  const [owner] = process.argv.slice(2)
-  if (!owner || process.argv.length !== 3) throw new Error('Usage: reference-design-cmt-balance-path.ts cmt-receiving-geometry.md')
-  const document = await Bun.file(owner).text(), input = { geometry: parseGeometryBasis(document), path: parseBalancePathBasis(document) }
+  const [owner, deliveryOwner, observationOwner] = process.argv.slice(2)
+  if (!owner || !deliveryOwner || !observationOwner || process.argv.length !== 5) throw new Error('Usage: reference-design-cmt-balance-path.ts cmt-receiving-geometry.md injection-and-depressurization.md phase-dependent-measurements.md')
+  const document = await Bun.file(owner).text(), observations = await Bun.file(observationOwner).text()
+  const input = { geometry: parseGeometryBasis(document), path: parseBalancePathBasis(document),
+    delivery: deliveryBasis(await Bun.file(deliveryOwner).text()), observations: parseObservationFixtureBasis(observations) }
   const hash = (s: string) => createHash('sha256').update(s).digest('hex')
   const sourceHash = hash(await Bun.file(import.meta.path).text()), geometrySourceHash = hash(await Bun.file(new URL('./reference-design-cmt-geometry.ts', import.meta.url)).text())
   console.log(JSON.stringify({ input, inputHash: hash(JSON.stringify(input)), sourceHash, geometrySourceHash, bunVersion: Bun.version,
-    ...checkBalancePath(input.geometry, input.path) }, null, 2))
+    deliverySourceHash: hash(await Bun.file(new URL('./reference-design-cmt-delivery.ts', import.meta.url)).text()),
+    observationSourceHash: hash(await Bun.file(new URL('./reference-design-observations.ts', import.meta.url)).text()),
+    ...checkBalancePath(input.geometry, input.path),
+    meters: checkConnectedMeters(input.geometry, input.path, input.delivery, input.observations) }, null, 2))
 }
