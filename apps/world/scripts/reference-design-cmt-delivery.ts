@@ -18,7 +18,7 @@ export function deliveryBasis(document: string) {
   if (b.valveZoneLength_m >= b.length_m || !(b.dviBottom_m < b.dviPort_m && b.dviPort_m < b.dviTop_m)) throw Error('Invalid finite outlet geometry')
   return b
 }
-export const deliveryCalculation = pressureCoordinatesSetup + hydrostaticLiquidPython + String.raw`
+export const deliverySetup = pressureCoordinatesSetup + hydrostaticLiquidPython + String.raw`
 from scipy.optimize import root
 b=data['delivery'];A=math.pi*b['bore_m']**2/4
 cm=compile_column(data['meshes'][0]);pm=compile_column(data['pipeMesh']);nc=cm['n'];np_=pm['n'];N=nc+np_
@@ -144,7 +144,8 @@ def run(name,dt,duration,receiverPressure,closed=False,failedOpen=False,heat=0):
       backwardEulerKineticDefect_J=numericalK,backwardEulerOverPhysicalDrag=None if physicalLoss==0 else numericalK/physicalLoss,
       wall_s=time.perf_counter()-start,initialNativeState=oldY.tolist(),finalNativeState=decode(x)[0].tolist())
 
-runs=[]
+`
+export const deliveryCalculation = deliverySetup + String.raw`runs=[]
 for args in [('opening',.05,.5,15.19e6),('opening-refined',.025,.5,15.19e6),
   ('closed-rest',.05,.05,15.2e6,True),('closed-receiver-heat',.05,.05,15.2e6,True,False,1000),
   ('reverse-failed-open',.05,.05,15.21e6,False,True),('reverse-healthy-check',.05,.05,15.21e6)]:
