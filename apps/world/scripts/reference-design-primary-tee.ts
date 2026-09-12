@@ -7,6 +7,7 @@ import { parseSurgeRoute, resolveSurgeRoute, surgeRoutePython } from './referenc
 import { parsePressurizerBasis } from './reference-design-pressurizer'
 import { phaseStorageThermodynamics } from './reference-design-pressurizer-phase-storage'
 import { regionalHydrostaticsPython } from './reference-design-regional-hydrostatics'
+import { primaryTeeLiquidPython } from './reference-design-primary-tee-liquid'
 
 export function parsePrimaryTee(text: string) {
   const blocks=[...text.matchAll(/^```reference-primary-tee\s*\n([\s\S]*?)^```\s*$/gm)]
@@ -38,23 +39,7 @@ mainFluid=CP.AbstractState('HEOS','Water');Ah=math.pi*geo['hotInsideDiameter_m']
 m1=nom['coreFlow_kg_s']/2;L=15/Ah;location=nom['hotTap']['axialFraction']*L
 poly=d['coefficients'];totalK=d['nominal']['budgets']['hot'];teeK=poly['through'][0];remainingK=totalK-teeK
 if remainingK<0:raise ValueError('Physical opening exceeds the existing HOT loss budget')
-def ph(p,h):
-    mainFluid.update(CP.HmassP_INPUTS,h,p)
-    if mainFluid.phase()!=CP.iphase_liquid:raise ValueError('Tee candidate outside single-phase liquid')
-    T=mainFluid.T()
-    for _ in range(8):
-        mainFluid.update(CP.PT_INPUTS,p,T)
-        if mainFluid.phase()!=CP.iphase_liquid:raise ValueError('Forward recovery left liquid')
-        error=mainFluid.hmass()-h
-        if abs(error)<=1e-7:break
-        T-=error/mainFluid.cpmass()
-    if abs(error)>1e-7:raise ValueError('Forward enthalpy residual')
-    return dict(p=p,h=mainFluid.hmass(),rho=mainFluid.rhomass(),T=mainFluid.T(),s=mainFluid.smass(),mu=mainFluid.viscosity(),
-        rp=mainFluid.first_partial_deriv(CP.iDmass,CP.iP,CP.iHmass),rh=mainFluid.first_partial_deriv(CP.iDmass,CP.iHmass,CP.iP))
-def face(p,h,m,area):
-    q=ph(p,h);q['v']=m/(q['rho']*area);q['H']=q['h']+q['v']**2/2+g*zH
-    q['dynamic']=q['rho']*q['v']**2/2;return q
-upper=next(q for q in nom['mixing'] if q['owner']=='UPPER');ub=ph(upper['p'],upper['h']);H0=ub['h']+g*upper['reference_m']
+` + primaryTeeLiquidPython + String.raw`upper=next(q for q in nom['mixing'] if q['owner']=='UPPER');ub=ph(upper['p'],upper['h']);H0=ub['h']+g*upper['reference_m']
 def inlet_residual(x):
     q=face(x[0]*1e7,x[1]*1e6,m1,Ah)
     return [(q['s']-ub['s'])/1000,(q['H']-H0)/1e6]
