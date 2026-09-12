@@ -6,7 +6,8 @@ const basis: GeometryBasis = { freeWater_m3: 60, bottomDatum_m: 6, top_m: 12, bo
   feedOuterDiameter_m: .22, feedInnerDiameter_m: .2, mouthDiameter_m: .2,
   balanceWater_m3: 1, distributorGroupWater_m3: .05, hardwareSolid_m3: .02,
   holeDiameter_m: .06153846153846154, holesPerRing: 10, ringElevations_m: [11.925, 11.85, 11.775],
-  upperTap_m: 11.95, topProbe_m: 11.25, bottomProbe_m: 6.75 }
+  upperTap_m: 11.95, topProbe_m: 11.25, bottomProbe_m: 6.75,
+  probeRadialInset_m: .15, probeAzimuth_deg: 18 }
 const document = (b: unknown) => '```reference-cmt-geometry\n' + JSON.stringify(b) + '\n```'
 
 test('selected geometry is explicit; overlapping apertures, incompatible inventories and hidden fields reject', () => {
@@ -19,6 +20,24 @@ test('selected geometry is explicit; overlapping apertures, incompatible invento
   expect(() => tankGeometry({ ...basis, distributorGroupWater_m3: .01 })).toThrow()
   expect(() => tankGeometry({ ...basis, hardwareSolid_m3: .001 })).toThrow()
   expect(() => tankGeometry({ ...basis, upperTap_m: 12 })).toThrow()
+  expect(() => tankGeometry({ ...basis, probeRadialInset_m: 2 })).toThrow()
+  expect(() => parseGeometryBasis(document({ ...basis, probeAzimuth_deg: 360 }))).toThrow()
+})
+
+test('CMT sensing tips use fixed physical coordinates, not mesh centers or section means', () => {
+  const g = tankGeometry(basis)
+  expect(g.probes.map(p => p.elevation_m)).toEqual([11.25, 6.75])
+  for (const p of g.probes) {
+    expect(p.wallRadius_m - p.radius_m).toBeCloseTo(.15, 12)
+    expect(Math.hypot(p.x_m, p.y_m)).toBeCloseTo(p.radius_m, 12)
+    expect(p.radius_m ** 2).toBeLessThan(g.shellR2(p.elevation_m))
+    expect(p.azimuth_deg).toBe(18)
+    // A manufactured radial field demonstrates why its area mean is not the tip value.
+    const point = 30 + 100 * (p.radius_m / p.wallRadius_m) ** 2
+    const sectionMean = 30 + 100 / 2
+    expect(point - sectionMean).toBeGreaterThan(30)
+  }
+  expect(checkGeometry(basis).probes).toEqual(g.probes)
 })
 
 test('real tank volume, lower mouth and internal/external inventory reproduce independent analytic values', () => {

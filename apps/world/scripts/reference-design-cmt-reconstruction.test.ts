@@ -10,7 +10,8 @@ const b: GeometryBasis = { freeWater_m3: 60, bottomDatum_m: 6, top_m: 12, bodyBo
   feedOuterDiameter_m: .22, feedInnerDiameter_m: .2, mouthDiameter_m: .2,
   balanceWater_m3: 1, distributorGroupWater_m3: .05, hardwareSolid_m3: .02,
   holeDiameter_m: .06153846153846154, holesPerRing: 10, ringElevations_m: [11.925, 11.85, 11.775],
-  upperTap_m: 11.95, topProbe_m: 11.25, bottomProbe_m: 6.75 }
+  upperTap_m: 11.95, topProbe_m: 11.25, bottomProbe_m: 6.75,
+  probeRadialInset_m: .15, probeAzimuth_deg: 18 }
 
 test('reconstruction pressure traces use actual open faces without changing material or acoustic geometry', () => {
   const g = tankGeometry(b)

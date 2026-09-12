@@ -8,7 +8,8 @@ const schema = z.object({ freeWater_m3: positive, bottomDatum_m: z.number().fini
   feedOuterDiameter_m: positive, feedInnerDiameter_m: positive, mouthDiameter_m: positive,
   balanceWater_m3: positive, distributorGroupWater_m3: positive, hardwareSolid_m3: positive,
   holeDiameter_m: positive, holesPerRing: z.literal(10), ringElevations_m: z.tuple([positive, positive, positive]),
-  upperTap_m: positive, topProbe_m: positive, bottomProbe_m: positive }).strict()
+  upperTap_m: positive, topProbe_m: positive, bottomProbe_m: positive,
+  probeRadialInset_m: positive, probeAzimuth_deg: z.number().finite().min(0).lt(360) }).strict()
 export type GeometryBasis = z.infer<typeof schema>
 export function parseGeometryBasis(document: string): GeometryBasis {
   const blocks = [...document.matchAll(/^```reference-cmt-geometry\s*\n([\s\S]*?)^```\s*$/gm)]
@@ -89,7 +90,16 @@ export function tankGeometry(b: GeometryBasis) {
   const internalBAL = bodyWater + feedWater, internalSolid = bodyVolume + feedOuter - internalBAL
   if (internalBAL >= b.distributorGroupWater_m3 || internalSolid <= 0 || internalSolid >= b.hardwareSolid_m3)
     throw new Error('Internal effective BAL/metal allocation exceeds existing budgets')
-  return { R, a, mouth, roof, area, volume, radialFace, shellR2, breaks, b,
+  const probes = [b.topProbe_m, b.bottomProbe_m].map((z, i) => {
+    const wallRadius = Math.sqrt(shellR2(z)), radius = wallRadius - b.probeRadialInset_m
+    if (radius <= 0 || radius * radius <= obstructionR2(z) || z <= mouth || z >= b.top_m)
+      throw new Error('Selected CMT sensing tip is outside free tank water')
+    const theta = b.probeAzimuth_deg * pi / 180
+    return { name: i === 0 ? 'TT.TOP' : 'TT.BOTTOM', elevation_m: z, radius_m: radius,
+      wallRadius_m: wallRadius, azimuth_deg: b.probeAzimuth_deg,
+      x_m: radius * Math.cos(theta), y_m: radius * Math.sin(theta) }
+  })
+  return { R, a, mouth, roof, area, volume, radialFace, shellR2, breaks, b, probes,
     inventories: { virtualTipEnvelope_m3: pi * R * R * (H - R / 3), removedLowerCap_m3: cap(R, capHeight(R, rm)),
       truncatedGrossDomain_m3: pi * R * R * (H - R / 3) - cap(R, capHeight(R, rm)),
       bodyExclusion_m3: bodyVolume, feedExclusion_m3: feedOuter, internalBAL_m3: internalBAL,
@@ -197,7 +207,7 @@ export function checkGeometry(b: GeometryBasis) {
       upperClearanceInHoleDiameters: (g.roof(b.bodyOuterDiameter_m / 2) - z - b.holeDiameter_m / 2) / b.holeDiameter_m,
       sourceArea_m2: ringArea(b, z, z - b.holeDiameter_m / 2, z + b.holeDiameter_m / 2),
       oldOneDiameterPatchVolume_m3: pi * ((b.bodyOuterDiameter_m / 2 + b.holeDiameter_m) ** 2 - (b.bodyOuterDiameter_m / 2) ** 2) * .075 })),
-    partitions, checks, numericalGeometryPassed: true, transportImplemented: false }
+    probes: g.probes, partitions, checks, numericalGeometryPassed: true, transportImplemented: false }
 }
 
 if (import.meta.main) {
