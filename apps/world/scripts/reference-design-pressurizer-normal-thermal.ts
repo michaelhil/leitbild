@@ -22,7 +22,7 @@ export function parseNormalThermal(text:string) {
     ambient_K:positive,heaterCapacity_W:positive,heaterProportionalBand_Pa:positive}).strict().parse(JSON.parse(blocks[0]![1]!))
 }
 
-export const normalThermalPython=phaseStorageThermodynamics+String.raw`
+export const normalThermalDefinitions=phaseStorageThermodynamics+String.raw`
 import time
 from scipy.optimize import root
 d=json.load(sys.stdin);r=d['route'];cfg=d['pzr'];normal=d['normal'];started=time.perf_counter();g=9.80665
@@ -128,7 +128,8 @@ def solve_case(stress):
         totalAmbient_W=ambient,primaryThermalReturn_W=primaryGain,wholePathEnergyResidual_W=heater-ambient-primaryGain,
         thermalScope='Required regional steady transfers, not achieved droplet, boiling, slip or wall-film rates; no global saturation reset')
     return x
-cases=[]
+`
+export const normalThermalPython=normalThermalDefinitions+String.raw`cases=[]
 for stress in [1.,2.]:
     try:cases.append(dict(effectiveThermalConductanceMultiplier=stress,**solve_case(stress)))
     except (ValueError,RuntimeError) as error:cases.append(dict(effectiveThermalConductanceMultiplier=stress,hydraulicAdmission=False,failure=str(error)))
@@ -153,9 +154,9 @@ print(json.dumps(dict(scope='Frozen-primary boundary sizing: coupled spray/retur
     dependencies=dict(python=platform.python_version(),CoolProp=CoolProp.__version__,scipy=scipy.__version__,numpy=np.__version__),wallSeconds=time.perf_counter()-started),allow_nan=False))
 `
 
-export async function runNormalThermal(wiki:string,python:string,teePath:string,nominalPath:string) {
+export async function loadNormalThermalInput(wiki:string,teePath:string,nominalPath:string) {
   const hash=(s:string)=>createHash('sha256').update(s).digest('hex')
-  const source=await Bun.file(import.meta.path).text(),tee=await Bun.file(teePath).json(),nominal=await Bun.file(nominalPath).json()
+  const tee=await Bun.file(teePath).json(),nominal=await Bun.file(nominalPath).json()
   const page=await Bun.file(join(wiki,'systems/primary-coolant/pressure-and-inventory.md')).text()
   const thermal=await Bun.file(join(wiki,'systems/primary-coolant/pressurizer-thermal-state.md')).text()
   const route=resolveSurgeRoute(parseSurgeRoute(await Bun.file(join(wiki,'systems/primary-coolant/surge-route.md')).text()))
@@ -167,6 +168,12 @@ export async function runNormalThermal(wiki:string,python:string,teePath:string,
   const m=tee.cases[0].imposedMainMassFlow_kg_s,before=tee.zeroFlow.before,Ah=m/(before.rho*before.v)
   const input={tee,nominal,cold,route,pzr:parsePressurizerBasis(page),teeSelection:parseBidirectionalTee(page),normal:parseNormalThermal(thermal),routeDefinitions:surgeRoutePython,polynomials:sharpCombiningPolynomials(Ah/route.area_m2)}
   if(input.normal.sprayLength_m<=route.receiverElevation_m+input.pzr.volume_m3/input.pzr.area_m2-cold.reference_m)throw Error('Spray developed length cannot be shorter than its rise')
+  return input
+}
+
+export async function runNormalThermal(wiki:string,python:string,teePath:string,nominalPath:string) {
+  const hash=(s:string)=>createHash('sha256').update(s).digest('hex')
+  const source=await Bun.file(import.meta.path).text(),input=await loadNormalThermalInput(wiki,teePath,nominalPath)
   const identity={sourceSha256:hash(source),calculationSha256:hash(normalThermalPython),inputSha256:hash(JSON.stringify(input)),
     operatingStateScope:'Frozen primary and tee input identities, with current emitted calculation parity; not a re-solved full-primary normal state',
     controllerEvidenceScope:'automaticDutyFeasibility is continuous, unquantized physical-pressure sizing only, not acquired-control steady qualification; selected 1 kPa resolution implies 30 kW demand increments before lag/sample interaction'}
