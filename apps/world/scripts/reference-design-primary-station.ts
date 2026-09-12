@@ -6,6 +6,7 @@ import { runCycle } from './reference-design-cycle'
 import { runPrimaryOperatingPoint } from './reference-design-primary-operating-point'
 import { calculateStation, parseStationBasis } from './reference-design-station'
 import { parseSupportBasis, selectSupportPoint, sizeSupportJackets, type Branch } from './reference-design-support-network'
+import { parseHydraulicBasis } from './reference-design-hydraulics'
 
 const positive = z.number().finite().positive()
 const boundarySchema = z.object({ sourceHeat_W: positive, shaftToFluid_W: positive, electricalInput_W: positive,
@@ -49,6 +50,98 @@ export function applyJacketLoads(sized: Branch[], loaded: Branch[]): Branch[] {
     if (heat_MW === undefined || !Number.isFinite(heat_MW) || heat_MW < 0) throw Error('Missing valid jacket duty')
     return { ...v, heat_MW }
   })
+}
+
+/** A connection ledger, NOT a solved new primary/station operating point. The
+ * secondary states and support-pump work are held only for this allocation. */
+export function auditPzrInterface(input: {
+  coreFlow_kg_s: number; hotAFlow_kg_s: number; bypassFlow_kg_s: number;
+  coldTotalEnthalpy_J_kg: number; returnTotalEnthalpy_J_kg: number;
+  heater_W: number; ambient_W: number; reportedPrimaryReturn_W: number;
+  secondary: Record<string, number>; shaftEfficiency: number; transformerLossFraction: number;
+}) {
+  const v = z.object({ coreFlow_kg_s: positive, hotAFlow_kg_s: positive, bypassFlow_kg_s: positive,
+    coldTotalEnthalpy_J_kg: z.number().finite(), returnTotalEnthalpy_J_kg: z.number().finite(),
+    heater_W: positive, ambient_W: positive, reportedPrimaryReturn_W: z.number().finite(),
+    secondary: z.record(z.string(), z.number().finite()), shaftEfficiency: positive.max(1),
+    transformerLossFraction: z.number().finite().nonnegative() }).strict().parse(input)
+  if (v.hotAFlow_kg_s >= v.coreFlow_kg_s) throw Error('Both main-loop paths require positive flow')
+  for (const k of ['SG_total', ...secondaryKeys]) positive.parse(v.secondary[k])
+  if (v.secondary.feed_pump_electric! < v.secondary.feed_pump_fluid!
+    || v.secondary.condensate_pump_electric! < v.secondary.condensate_pump_fluid!
+    || v.secondary.gross_electric! > v.secondary.turbine_thermodynamic_work! * v.shaftEfficiency)
+    throw Error('Base secondary equipment has negative conversion losses')
+  const q = v.bypassFlow_kg_s, a = v.hotAFlow_kg_s, b = v.coreFlow_kg_s - a
+  const primaryReturn_W = q * (v.returnTotalEnthalpy_J_kg - v.coldTotalEnthalpy_J_kg)
+  const sideEnergyResidual_W = v.heater_W - v.ambient_W - primaryReturn_W
+  if (Math.abs(sideEnergyResidual_W) >= 10 || Math.abs(primaryReturn_W - v.reportedPrimaryReturn_W) >= 10)
+    throw Error('PZR physical port energy disagrees with the retained 10 W boundary gate')
+  const ratio = primaryReturn_W / (v.secondary.SG_total! * 1e6)
+  if (ratio <= -1) throw Error('Conditional allocation requires positive resulting steam throughput')
+  const delta = Object.fromEntries(secondaryKeys.map(k => [k, v.secondary[k]! * 1e6 * ratio]))
+  // Reuse the station owner's actual heat destinations; do not subtract the
+  // heater as exported energy or send all of its electrical input to ambient.
+  const feedLoss = delta.feed_pump_electric! - delta.feed_pump_fluid!
+  const condensateLoss = delta.condensate_pump_electric! - delta.condensate_pump_fluid!
+  const oil = delta.turbine_thermodynamic_work! * (1 - v.shaftEfficiency)
+  const generator = delta.turbine_thermodynamic_work! * v.shaftEfficiency - delta.gross_electric!
+  const busA = v.heater_W + delta.feed_pump_electric! / 2 + delta.condensate_pump_electric!
+  const busB = delta.feed_pump_electric! / 2, transformer = (busA + busB) * v.transformerLossFraction
+  const net = delta.gross_electric! - busA - busB - transformer
+  const cw = delta.condenser!, swA = feedLoss / 2 + condensateLoss, swB = feedLoss / 2 + oil + generator
+  const ambient = v.ambient_W + transformer
+  const allocationResidual_W = net + cw + swA + swB + ambient
+  // The allocation inherits the measured side-path residual, rather than
+  // forcing that residual to zero with a manufactured heat source.
+  if (Math.abs(allocationResidual_W + sideEnergyResidual_W) > 1e-6)
+    throw Error('Conditional station allocation does not conserve the same energy')
+  return { scope: 'Stationary port-incidence and conditional power allocation only; no joined operating point, controller or phase-rate qualification',
+    flows_kg_s: { core: a + b, hotABeforeTee: a, hotAAfterTee: a + q, SGA: a + q,
+      eachRcpA: (a + q) / 2, coldAToDowncomer: a, bypass: q, surgeReturn: q, hotBAndSGB: b },
+    massResiduals_kg_s: { hotATee: a + q - (a + q), coldA: (a + q) - a - q, downcomer: a + b - v.coreFlow_kg_s },
+    primaryReturn_W, sideEnergyResidual_W, conditionalSecondaryThroughputFraction: ratio,
+    conditionalIncrements_W: { gross: delta.gross_electric!, busA, busB, transformer, netExport: net,
+      condenserSiteRejection: cw, SW_A_rejection: swA, SW_B_rejection: swB, ambientRejection: ambient, allocationResidual: allocationResidual_W },
+    heaterOnlySubtractionError_W: net + v.heater_W,
+    coupledHydraulicsSolved: false, radialBaselineRefreshed: false }
+}
+
+export function assertPzrEvidenceLineage(station: unknown, primary: unknown, thermal: unknown) {
+  const digest = z.string().regex(/^[a-f0-9]{64}$/)
+  const identity = z.object({ sourceSha256: digest, calculationSha256: digest, inputSha256: digest })
+  const { accepted: _, ...expected } = identity.extend({ accepted: z.literal(true) }).parse(primary)
+  const parent = z.object({ parentIdentities: z.object({ primary: identity }) }).parse(thermal).parentIdentities.primary
+  const s = z.object({ primaryIdentity: z.object({ source: digest, calculation: digest, input: digest }),
+    checks: z.record(z.string(), z.literal(true)).refine(v => Object.keys(v).length > 0) }).parse(station)
+  if (Object.entries(expected).some(([k, v]) => parent[k as keyof typeof parent] !== v)
+    || s.primaryIdentity.source !== expected.sourceSha256 || s.primaryIdentity.calculation !== expected.calculationSha256
+    || s.primaryIdentity.input !== expected.inputSha256) throw Error('Mismatched primary/station/PZR evidence')
+  return expected
+}
+
+/** Retained receipts carry their own source identity. Do not require old
+ * evidence to pretend it was generated by today's source file. */
+export async function runPzrInterfaceAudit(stationPath: string, primaryPath: string, thermalPath: string, wiki: string) {
+  const raw = await Promise.all([stationPath, primaryPath, thermalPath].map(p => Bun.file(p).text()))
+  const [station, primary, thermal] = raw.map(s => JSON.parse(s))
+  const expected = assertPzrEvidenceLineage(station, primary, thermal)
+  const cold = primary.result.mixing.filter((v: { owner: string }) => v.owner === 'COLD.A/B')
+  if (cold.length !== 1) throw Error('Expected one source-owned cold-header reference')
+  const [hydraulicDoc, stationDoc] = await Promise.all(['model/primary-hydraulic-basis.md', 'model/station-balance.md']
+    .map(p => Bun.file(join(wiki, p)).text()))
+  const gravity = parseHydraulicBasis(hydraulicDoc!).gravity_m_s2, basis = parseStationBasis(stationDoc!)
+  const normal = thermal.cases[0]
+  if (!normal?.hydraulicAdmission || !normal.energyAccountingAdmission || normal.effectiveThermalConductanceMultiplier !== 1)
+    throw Error('Expected admitted normal required-duty comparison')
+  const input = { coreFlow_kg_s: primary.result.coreFlow_kg_s, hotAFlow_kg_s: primary.result.coreFlow_kg_s / 2,
+    bypassFlow_kg_s: normal.q, coldTotalEnthalpy_J_kg: cold[0].h + gravity * cold[0].reference_m,
+    returnTotalEnthalpy_J_kg: normal.surge.outlet.H, heater_W: normal.requiredHeater_W,
+    ambient_W: normal.totalAmbient_W, reportedPrimaryReturn_W: normal.primaryThermalReturn_W,
+    secondary: station.cycle.powers_MW, shaftEfficiency: basis.shaftMechanicalEfficiency,
+    transformerLossFraction: basis.transformerLoadFraction }
+  const hash = (s: string) => createHash('sha256').update(s).digest('hex')
+  return { sourceSha256: hash(await Bun.file(import.meta.path).text()), receiptHashes: raw.map(hash),
+    parentPrimary: expected, inputSha256: hash(JSON.stringify(input)), input, ...auditPzrInterface(input) }
 }
 
 export async function runPrimaryStation(wiki: string, python: string) {
@@ -110,7 +203,13 @@ export async function runPrimaryStation(wiki: string, python: string) {
     cycle, support: { A, B }, station, checks, liveModelInstalled: false }
 }
 if (import.meta.main) {
-  const [wiki, python, ...extra] = Bun.argv.slice(2)
-  if (!wiki || !python || extra.length) throw Error('Usage: primary-station.ts <LD-01-directory> <research-python>')
-  console.log(JSON.stringify(await runPrimaryStation(wiki, python), null, 2))
+  if (Bun.argv[2] === 'pzr-interface') {
+    const [, station, primary, thermal, wiki, ...extra] = Bun.argv.slice(2)
+    if (!station || !primary || !thermal || !wiki || extra.length) throw Error('Usage: primary-station.ts pzr-interface <station.json> <primary.json> <thermal.json> <LD-01-directory>')
+    console.log(JSON.stringify(await runPzrInterfaceAudit(station, primary, thermal, wiki), null, 2))
+  } else {
+    const [wiki, python, ...extra] = Bun.argv.slice(2)
+    if (!wiki || !python || extra.length) throw Error('Usage: primary-station.ts <LD-01-directory> <research-python>')
+    console.log(JSON.stringify(await runPrimaryStation(wiki, python), null, 2))
+  }
 }
