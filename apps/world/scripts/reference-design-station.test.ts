@@ -65,3 +65,14 @@ test('resolved unequal CCW branches update only actual owned duty and close stat
   expect(result.temperatures_C.roomA).toBe(original.temperatures_C.roomA)
   expect(()=>calculateStation(b,cycle,{A:{flow_kg_s:0,head_MPa:.3},B})).toThrow()
 })
+test('fixed CW operating flow changes discharge temperature, not pump duty, when heat changes',()=>{
+  const b=parseStationBasis(doc(basis)),sized=calculateStation(b,cycle)
+  const changed={powers_MW:{...cycle.powers_MW,core:3001,condenser:2031.2}}
+  const result=calculateStation(b,changed,undefined,sized.flows_kg_s.CW)
+  expect(result.pumps.CW).toEqual(sized.pumps.CW)
+  expect(result.flows_kg_s.CW).toBe(sized.flows_kg_s.CW)
+  expect(result.temperatures_C.CW_discharge-sized.temperatures_C.CW_discharge)
+    .toBeCloseTo(1e6/(sized.flows_kg_s.CW*b.waterCp_J_kgK),12)
+  expect(Math.abs(result.powers_MW.residual)).toBeLessThan(1e-9)
+  for(const flow of [0,-1,Infinity,NaN])expect(()=>calculateStation(b,cycle,undefined,flow)).toThrow()
+})

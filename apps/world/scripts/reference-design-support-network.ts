@@ -110,9 +110,9 @@ export function selectSupportPoint(b: Basis, s: Station, branches: Branch[], sit
   return { targetAchievable: true, controller: 'zero-error integral equals achieved bypass position', point: point(position) }
 }
 
-export async function runSupport(owner: string, stationOwner: string, cycleOwner: string, python: string) {
-  const b = parseSupportBasis(await Bun.file(owner).text()), s = parseStationBasis(await Bun.file(stationOwner).text())
-  const cycle = await runCycle(await Bun.file(cycleOwner).text(), python), old = calculateStation(s, cycle), P = cycle.powers_MW
+/** Design-time sizing, not an instruction to resize installed jackets when duty changes. */
+export function sizeSupportJackets(b: Basis, s: Station, cycle: { powers_MW: Record<string, number> }) {
+  const old = calculateStation(s, cycle), P = cycle.powers_MW
   const reference = (id: string, heat_MW: number, conductance_MW_K: number): Branch => ({ id, heat_MW, conductance_MW_K,
     reference_kg_s: Math.max(b.minimumBranch_kg_s, heat_MW * 1e6 / s.waterCp_J_kgK / b.jacketDesignRise_K) })
   const rc = (P.RCP_electric! - P.RCP_fluid!) / 4, fw = (P.feed_pump_electric! - P.feed_pump_fluid!) / 2
@@ -120,6 +120,13 @@ export async function runSupport(owner: string, stationOwner: string, cycleOwner
   const A = [reference('RCP.A1', rc, G.rcp), reference('RCP.B1', rc, G.rcp), reference('FW.P1', fw, G.feed),
     reference('COND.P', P.condensate_pump_electric! - P.condensate_pump_fluid!, G.small), reference('CHARGE.P', 0, G.small)]
   const B = [reference('RCP.A2', rc, G.rcp), reference('RCP.B2', rc, G.rcp), reference('FW.P2', fw, G.feed), reference('TG.OIL', old.powers_MW.oilLoss, G.oil)]
+  return { A, B }
+}
+
+export async function runSupport(owner: string, stationOwner: string, cycleOwner: string, python: string) {
+  const b = parseSupportBasis(await Bun.file(owner).text()), s = parseStationBasis(await Bun.file(stationOwner).text())
+  const cycle = await runCycle(await Bun.file(cycleOwner).text(), python), old = calculateStation(s, cycle)
+  const { A, B } = sizeSupportJackets(b, s, cycle)
   const swRise = (train: 'A' | 'B') => old.pumps[train === 'A' ? 'SWA' : 'SWB'].fluid_MW * 1e6 / (s.waterCp_J_kgK * s.SW[train === 'A' ? 'flowA_kg_s' : 'flowB_kg_s'])
   const normalA = selectSupportPoint(b, s, A, s.siteWater_C, swRise('A')), normalB = selectSupportPoint(b, s, B, s.siteWater_C, swRise('B'))
   const stationWithResolvedBranches = calculateStation(s, cycle, {

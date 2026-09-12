@@ -53,11 +53,13 @@ export const isolatedRHRFlow = (rated:number,auxiliary:number) => {
 
 type Cycle = { powers_MW:Record<string,number> }
 export const calculateStation = (b:ReturnType<typeof parseStationBasis>,cycle:Cycle,
-  ccwAlignment?: { A: { flow_kg_s: number; head_MPa: number }; B: { flow_kg_s: number; head_MPa: number } }) => {
+  ccwAlignment?: { A: { flow_kg_s: number; head_MPa: number }; B: { flow_kg_s: number; head_MPa: number } },
+  cwFlow_kg_s?: number) => {
   const P=cycle.powers_MW
   for(const k of ['core','gross_electric','condenser','turbine_thermodynamic_work','RCP_electric','RCP_fluid','feed_pump_electric','feed_pump_fluid','condensate_pump_electric','condensate_pump_fluid'])
     if(!Number.isFinite(P[k])||P[k]!<=0)throw new Error(`Missing positive cycle power ${k}`)
-  const cwFlow=P.condenser!*1e6/(b.waterCp_J_kgK*b.condenserOnlyRise_K)
+  const cwFlow=cwFlow_kg_s??P.condenser!*1e6/(b.waterCp_J_kgK*b.condenserOnlyRise_K)
+  if(!Number.isFinite(cwFlow)||cwFlow<=0)throw new Error('CW alignment requires positive finite flow')
   const duty=(flow:number,p:typeof b.CW,head=p.head_MPa)=>pumpDuty(flow,head,b.waterDensity_kg_m3,p.hydraulicEfficiency,p.motorEfficiency,p.dragFraction)
   const CW=duty(cwFlow,b.CW), branch=isolatedRHRFlow(b.CCW.ratedFlow_kg_s,b.CCW.auxiliaryBranchReference_kg_s)
   const alignment=ccwAlignment??{A:{flow_kg_s:branch.flow_kg_s,head_MPa:b.CCW.head_MPa*branch.headRatio},B:{flow_kg_s:branch.flow_kg_s,head_MPa:b.CCW.head_MPa*branch.headRatio}}
@@ -88,10 +90,12 @@ export const calculateStation = (b:ReturnType<typeof parseStationBasis>,cycle:Cy
   if(Math.abs(residual)>1e-8)throw new Error(`Station first-law residual ${residual} MW`)
   const waterRise=(heat:number,flow:number)=>heat*1e6/(flow*b.waterCp_J_kgK)
   const cwPumpRise=waterRise(CW.fluid_MW,cwFlow)
-  const cwCell1=b.siteWater_C+cwPumpRise+b.condenserOnlyRise_K/2
-  const cwCell2=b.siteWater_C+cwPumpRise+b.condenserOnlyRise_K
+  const cwCondenserRise=waterRise(P.condenser!,cwFlow)
+  const cwCell1=b.siteWater_C+cwPumpRise+cwCondenserRise/2
+  const cwCell2=b.siteWater_C+cwPumpRise+cwCondenserRise
   const roomG=b.roomWallEach_MW_K+b.roomAirEach_kg_s*b.airCp_J_kgK/1e6
   return { pumps:{CW,CCW_A:CCWA,CCW_B:CCWB,SWA,SWB},
+    cwBoundary:cwFlow_kg_s===undefined?'Design flow sized from condenser duty and selected rise':'Explicit operating flow at selected pump head',
     ccwAlignment:alignment,ccwBoundary:ccwAlignment?'Explicit resolved A/B branch flow and head':'Retained aggregate RHR-isolated sizing alignment',
     flows_kg_s:{CW:cwFlow,CCW_A:alignment.A.flow_kg_s,CCW_B:alignment.B.flow_kg_s,SW_A:b.SW.flowA_kg_s,SW_B:b.SW.flowB_kg_s},
     powers_MW:{busA,busB,unitConversionLoss:unitLoss,reserveNoLoadLoss:reserveLoss,netExport:net,
