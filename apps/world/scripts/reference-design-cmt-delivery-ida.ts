@@ -7,19 +7,33 @@ export const deliveryIdaSetup = deliverySetup + stationaryValvePython + String.r
 from sksundae.ida import IDA
 import sksundae
 
+# Downstream T is a nonowning algebraic coordinate. PT evaluates actual h directly;
+# no requested-h inverse sits inside the conservation residual.
+def boundary_pt(p,T):
+    _valve_water.update(CP.PT_INPUTS,p,T)
+    if _valve_water.phase()!=CP.iphase_liquid:raise ValueError('Boundary PT trial left liquid branch')
+    return dict(p=p,T=_valve_water.T(),h=_valve_water.hmass(),u=_valve_water.umass(),rho=_valve_water.rhomass(),
+      s=_valve_water.smass(),c=_valve_water.speed_sound(),cp=_valve_water.cpmass())
+
+def port_temperature(q):
+    _valve_water.update(CP.DmassP_INPUTS,q['rho'],q['p'])
+    if _valve_water.phase()!=CP.iphase_liquid:raise ValueError('Boundary temperature port is not liquid')
+    return _valve_water.T(),_valve_water.cpmass()
+
 # Same four stationary-interface equations, evaluated directly in the DAE, never solved inside it.
 # Positive numerical flow points upward: DVI -> pipe -> CMT. A healthy check admits negative flow.
 def boundary(left,right,alpha,a,kind,closed=False):
     ZL=left['rho']*left['c'];ZR=right['rho']*right['c']
     wL=left['p']+ZL*left['v'];wR=right['p']-ZR*right['v'];drive=wL-wR
-    j,pL,pR,hd=a
+    j,pL,pR,Td=a
     if closed:
-        residual=np.array([j,pL-wL,pR-wR,hd-right['h']])
+        Tref,cp=port_temperature(right)
+        residual=np.array([j,pL-wL,pR-wR,cp*(Td-Tref)])
         return residual,dict(m=0.,energy=0.,momL=A*wL,momR=A*wR,drive=drive,entropy=0.,donor=None)
     direction=-1 if kind=='check' else (1 if drive>0 else -1)
     donor=left if direction>0 else right
     up=liquid_ps_si(pL if direction>0 else pR,donor['s'])
-    down=valve_hp(pR if direction>0 else pL,hd)
+    down=boundary_pt(pR if direction>0 else pL,Td)
     qL,qR=(up,down) if direction>0 else (down,up)
     m=alpha*j;vL=m/(A*qL['rho']);vR=m/(A*qR['rho'])
     z=data['mouth_m'] if kind=='valve' else b['dviPort_m']
@@ -36,22 +50,27 @@ def port_views(x):
     receiver=valve_port(np.array([q['rho'],0.,q['p'],q['u'],0.]))
     return Y,cv,pv,r,receiver,valve_port(pv[1][0,0]),valve_port(pv[1][-1,1]),valve_port(cv[1][0,0])
 
-def boundary_initial(left,right,alpha,kind,closed):
+def boundary_initial(left,right,alpha,kind,closed,diagnostic=None):
     wL=left['p']+left['rho']*left['c']*left['v'];wR=right['p']-right['rho']*right['c']*right['v']
-    if closed:return np.array([0.,wL,wR,right['h']])
+    if closed:return np.array([0.,wL,wR,port_temperature(right)[0]])
     drive=wL-wR;direction=-1 if kind=='check' else (1 if drive>0 else -1)
     donor=left if direction>0 else right
     if kind=='valve':
         R=Kvalve*ref['rho']/donor['rho'];B=(left['c']+right['c'])/A
         j=0. if drive==0 else 2*drive/(alpha*B+math.sqrt((alpha*B)**2+4*R*abs(drive)))
     else:j=A*(drive+(b['checkCrack_Pa'] if kind=='check' else 0.))/(left['c']+right['c'])
-    start=np.array([j,wL-left['c']*alpha*j/A,wR+right['c']*alpha*j/A,donor['h']])
-    scale=np.array([25.,1e4,1e4,100.]);row=np.array([1e4,1e4,1e4,1.])
+    pL0=wL-left['c']*alpha*j/A;pR0=wR+right['c']*alpha*j/A
+    seed=liquid_ps_si(pR0 if direction>0 else pL0,donor['s'])
+    cp=boundary_pt(seed['p'],seed['T'])['cp']
+    start=np.array([j,pL0,pR0,seed['T']])
+    scale=np.array([25.,1e4,1e4,100./cp]);row=np.array([1e4,1e4,1e4,1.])
     fun=lambda d:boundary(left,right,alpha,start+scale*d,kind)[0]/row
     h=np.array([1e-6,.001,.001,1e-5])
     jac=lambda d:np.column_stack([(fun(d+np.eye(4)[i]*v)-fun(d-np.eye(4)[i]*v))/(2*v) for i,v in enumerate(h)])
     sol=root(fun,np.zeros(4),jac=jac,options=dict(xtol=1e-8,maxfev=200))
     result=start+scale*sol.x;rr=boundary(left,right,alpha,result,kind)[0]
+    if diagnostic is not None:
+        diagnostic.update(candidate=result.tolist(),residual=rr.tolist(),solverStatus=int(sol.status),scaledRoot=sol.x.tolist())
     if max(abs(rr[:3]))>.01 or abs(rr[3])>1e-5:
         raise ValueError(dict(reason='Initial stationary boundary equations rejected',kind=kind,drive_Pa=float(drive),
           residualPressure_Pa=rr[:3].tolist(),residualEnthalpy_J_kg=float(rr[3]),solverStatus=int(sol.status)))
@@ -114,6 +133,42 @@ def make_trial(native,pressure):
     x=native.copy();x[pressureIndex]=pressure
     return x
 
+def ida_evaluate(all_,alpha,seated,failedOpen,closed):
+    native=all_[:nativeSize];p=all_[nativeSize:nativeSize+pressureCount]
+    return joined(make_trial(native,p),all_[-10:-6],all_[-6:-2],alpha,seated,failedOpen,closed)
+
+def ida_residual(all_,yp,alpha,seated,failedOpen,closed):
+    Y,d,br,view=ida_evaluate(all_,alpha,seated,failedOpen,closed);native=all_[:nativeSize];out=np.empty(totalSize)
+    out[:nativeSize]=(yp[:nativeSize]-d)/nativeScales
+    out[nativeSize:nativeSize+N]=(native[energyIndex]-Y[energyIndex])/1e4
+    out[nativeSize+N:nativeSize+pressureCount]=(native[-2:]-Y[-2:])/np.array([1.,1e4])
+    br=br.copy()
+    if closed:br[0]*=1e4
+    if seated:br[4]*=1e4
+    out[-10:-2]=br/np.tile([1e4,1e4,1e4,1.],2)
+    out[-2]=yp[-2]-view['kineticChainRate_W'];out[-1]=yp[-1]-view['wallDissipation_W']
+    return out
+
+def ida_physical_probes():
+    return np.r_[np.full(nc,1e-7),np.full(nc,1e-6),np.full(nc,.001),np.full(np_,1e-7),np.full(np_,1e-6),np.full(np_,.001),1e-7,.001,
+      np.full(N+1,100.),.001,np.tile([1e-6,10.,10.,1e-6],2),1e-6,1e-6]
+
+def ida_jacobian(all_,cj,residual_at_increment):
+    # Only exact ownership identities bypass probes. All other couplings are still evaluated.
+    J=np.zeros((totalSize,totalSize));knownEnergy=np.r_[energyIndex,nativeSize-1]
+    for j,h in enumerate(ida_physical_probes()):
+        if j in knownEnergy or j>=totalSize-2:continue
+        step=np.zeros(totalSize);step[j]=h
+        J[:,j]=(residual_at_increment(step)-residual_at_increment(-step))/(2*h)
+    J[nativeSize+np.arange(N),energyIndex]=1e-4
+    J[nativeSize+N+1,nativeSize-1]=1e-4
+    trial=make_trial(all_[:nativeSize],all_[nativeSize:nativeSize+pressureCount])
+    ep=np.r_[forward(cm,*trial[:3*nc].reshape(3,nc))[2],forward(pm,*trial[3*nc:3*N].reshape(3,np_))[2]]
+    J[nativeSize+np.arange(N),nativeSize+np.arange(N)]=-ep/1e4
+    J[np.arange(nativeSize),np.arange(nativeSize)]+=cj/nativeScales
+    J[-2,-2]+=cj;J[-1,-1]+=cj
+    return J
+
 def adaptive_run(name,receiverPressure,closed=False,failedOpen=False,heat=0,tight=False,duration=.5):
     started=time.perf_counter();calls=jacCalls=0;history=[];events=[];failure=None;lastTrialTime=0.;target=0.
     x0=initial(receiverPressure,heat);Y0,cv,pv,r,receiver,pb,pt,tb=port_views(x0)
@@ -123,35 +178,22 @@ def adaptive_run(name,receiverPressure,closed=False,failedOpen=False,heat=0,tigh
     base=np.r_[Y0,x0[pressureIndex],va,ca,0.,0.];y=np.zeros(totalSize);lastNative=Y0.copy()
     initialK=sum(float(sum(Y0[off+n:off+2*n]**2/(2*Y0[off:off+n]))) for off,n in [(0,nc),(3*nc,np_)])
     nativeAtol=np.r_[np.full(nc,1e-9),np.full(nc,1e-8),np.full(nc,1e-3),np.full(np_,1e-9),np.full(np_,1e-8),np.full(np_,1e-3),1e-9,1e-3]
-    atol=np.r_[nativeAtol,np.full(N+1,.1),1e-8,np.tile([1e-8,.1,.1,1e-5],2),1e-8,1e-8]/(10 if tight else 1)
-    probes=np.r_[np.full(nc,1e-7),np.full(nc,1e-6),np.full(nc,.001),np.full(np_,1e-7),np.full(np_,1e-6),np.full(np_,.001),1e-7,.001,
-      np.full(N+1,100.),.001,np.tile([1e-6,10.,10.,.001],2),1e-6,1e-6]
+    atol=np.r_[nativeAtol,np.full(N+1,.1),1e-8,np.tile([1e-8,.1,.1,1e-9],2),1e-8,1e-8]/(10 if tight else 1)
     def evaluate(t,delta):
-        all_=base+delta;native=all_[:nativeSize];p=all_[nativeSize:nativeSize+pressureCount]
-        x=make_trial(native,p);a=0. if closed else min(t/b['opening_s'],1.)
-        return joined(x,all_[-10:-6],all_[-6:-2],a,seated,failedOpen,closed)
+        a=0. if closed else min(t/b['opening_s'],1.)
+        return ida_evaluate(base+delta,a,seated,failedOpen,closed)
     def resfn(t,delta,yp,out):
         nonlocal calls,lastTrialTime
         calls+=1;lastTrialTime=float(t)
         if time.perf_counter()-started>300:raise RuntimeError('Predeclared 300 s case execution budget exhausted')
-        Y,d,br,view=evaluate(t,delta);native=base[:nativeSize]+delta[:nativeSize]
-        out[:nativeSize]=(yp[:nativeSize]-d)/nativeScales
-        # Exact native energy/storage constraints, no equilibrium reset or added compliance.
-        out[nativeSize:nativeSize+N]=(native[energyIndex]-Y[energyIndex])/1e4
-        out[nativeSize+N:nativeSize+pressureCount]=(native[-2:]-Y[-2:])/np.array([1.,1e4])
-        br=br.copy()
-        if closed:br[0]*=1e4 # closed first row has flow units, unlike open characteristic pressure.
-        if seated:br[4]*=1e4
-        out[-10:-2]=br/np.tile([1e4,1e4,1e4,1.],2)
-        out[-2]=yp[-2]-view['kineticChainRate_W'];out[-1]=yp[-1]-view['wallDissipation_W']
+        a=0. if closed else min(t/b['opening_s'],1.)
+        out[:]=ida_residual(base+delta,yp,a,seated,failedOpen,closed)
     def jacfn(t,delta,yp,residual,cj,J):
         nonlocal jacCalls
-        jacCalls+=1;plus=np.empty(totalSize);minus=np.empty(totalSize)
-        for j,h in enumerate(probes):
-            step=np.zeros(totalSize);step[j]=h
-            resfn(t,delta+step,yp,plus);resfn(t,delta-step,yp,minus);J[:,j]=(plus-minus)/(2*h)
-        J[np.arange(nativeSize),np.arange(nativeSize)]+=cj/nativeScales
-        J[-2,-2]+=cj;J[-1,-1]+=cj
+        jacCalls+=1
+        def probe(step):
+            out=np.empty(totalSize);resfn(t,delta+step,yp,out);return out
+        J[:]=ida_jacobian(base+delta,cj,probe)
     def eventfn(t,delta,yp,out):
         _,_,_,v=evaluate(t,delta)
         out[0]=v['checkDrive_Pa']+b['checkCrack_Pa'] if seated else v['receiverFlow_kg_s']
@@ -205,7 +247,7 @@ def adaptive_run(name,receiverPressure,closed=False,failedOpen=False,heat=0,tigh
 
 export const deliveryIdaCalculation = deliveryIdaSetup + String.raw`
 print(json.dumps(dict(phase='boundary',threshold=threshold_checks(),versions=dict(sksundae=sksundae.__version__,CoolProp=CoolProp.__version__)),allow_nan=False),flush=True)
-for args in [('closed-rest',15.2e6,True),('opening',15.19e6)]:
+for args in [('closed-rest',15.2e6,True)]:
     row=adaptive_run(*args);print(json.dumps(dict(phase='case',result=row),allow_nan=False),flush=True)
     if not row['completed']:break
 `
