@@ -19,7 +19,7 @@ export function allocateOpenCheck(remainder_Pa: number, check_Pa: number) {
   return { openCheck_Pa: check_Pa, isolation_Pa: remainder_Pa - check_Pa, combined_Pa: remainder_Pa }
 }
 
-export const phasePathCalculation = String.raw`
+export const phasePathSetup = String.raw`
 import json,sys,math,platform
 import CoolProp,CoolProp.CoolProp as C
 import numpy as np
@@ -122,7 +122,8 @@ def signed_device(left,right,a,alpha,healthy=False,pressureIntegral=False):
         energyFlow_W=m*r['H'],boronFlow_kg_s=m*(1-up['x'])*b['boronLiquidFraction'],
         leftMomentum_N=r['inletMomentum_N'] if sign>0 else r['outletMomentum_N'],
         rightMomentum_N=r['outletMomentum_N'] if sign>0 else r['inletMomentum_N'],result=r)
-calibrations=[]
+`
+export const phasePathCalculation = phasePathSetup + String.raw`calibrations=[]
 for dev in d['devices']:
     up=pt(15.2e6,dev['referenceT_K']);m=dev['referenceFlow_kg_s'];pd=up['p']-dev['loss_Pa']
     H=up['h']+.5*(m/(A*up['rho']))**2;G,t,choked=throat(up,H,pd)
