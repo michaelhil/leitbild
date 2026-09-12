@@ -1,7 +1,7 @@
 import {expect,test} from 'bun:test'
 import {occupiedGeometry,parseMovingPhase,phaseThermalSources,rodContact} from './reference-design-pressurizer-moving-phase'
 
-const selection={contact_W_m2K:2000,contactAngle_deg:38,detachmentFraction:1,bubbleDiameter_m:.0005,vaporInterface_W_m2K:1000,freeSurfaceLayer_m:.01,maximumVoidFraction:.05,comparisonRequests_W:[35000,65000],occupiedHeight_m:6,rodBottom_m:6.5}
+const selection:ReturnType<typeof parseMovingPhase>={contact_W_m2K:2000,contactAngle_deg:38,detachmentFraction:1,bubbleDiameter_m:.0005,vaporInterface_W_m2K:1000,freeSurfaceLayer_m:.01,maximumVoidFraction:.05,comparisonRequests_W:[35000,65000],occupiedHeight_m:6,rodBottom_m:6.5}
 const block=(data:unknown)=>'```reference-pressurizer-moving-phase\n'+JSON.stringify(data)+'\n```\n'
 test('one finite physical selection, no duplicate or unbounded heat fraction',()=>{
   expect(parseMovingPhase(block(selection))).toEqual(selection)
