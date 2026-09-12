@@ -6,6 +6,7 @@ import { parseConnectedFuel, parseConnectedFuelSelection } from './reference-des
 import { resolveInitializationInput } from './reference-design-initialization'
 import { foldedGeometry, parsePrimaryMechanics } from './reference-design-primary-mechanics'
 import { hydrostaticLiquidPython } from './reference-design-hydrostatic-liquid'
+import { sgSizingPython } from './reference-design-sg-sizing'
 
 export function allocateMixingBudget(totalK: number, mixingK: number) {
   if (![totalK, mixingK].every(v => Number.isFinite(v) && v >= 0) || totalK < mixingK)
@@ -19,7 +20,7 @@ export function parseOperatingPointSelection(text: string) {
     lowerReferencePressure_MPaAbs:z.number().finite().positive()}).strict().parse(JSON.parse(blocks[0]![1]!))
 }
 
-export const primaryOperatingPointPython = hydrostaticLiquidPython + String.raw`
+export const primaryOperatingPointPython = hydrostaticLiquidPython + sgSizingPython + String.raw`
 import json,sys,time,platform,scipy,CoolProp
 from scipy.integrate import solve_ivp
 from scipy.optimize import root
@@ -38,8 +39,8 @@ pumpA=eRef/((1-sigma)*omega**2);pumpB=sigma*pumpA*omega/qRef
 pumpR=(rhoRef*eRef-hy['nominal_pump_head_Pa'])/(rhoRef*qRef*qRef)
 if pumpR<0:raise ValueError('Negative pump internal dissipation')
 Tsink=c['points']['main_steam']['T_C']+273.15
-TsgRef=c['points']['RCP_suction']['T_C']+273.15;TwRef=(Tsink+TsgRef)/2
-G=c['powers_MW']['SG_total']*1e6/2/(TsgRef-TwRef)
+sgSizing=size_sg_transfer(c)
+Gp=sgSizing['primaryConductance_W_K'];Gs=sgSizing['secondaryConductance_W_K']
 Ac=core['geometry']['flowArea_m2'];Ad=20/6;Ah=math.pi*geo['hotInsideDiameter_m']**2/4
 As=25/geo['sgDevelopedLength_m'];Ap=math.pi*geo['pumpPassageInsideDiameter_m']**2/4
 budgets=d['lossBudgets'];losses=d['residualLosses']
@@ -157,7 +158,7 @@ def path(x,record=False):
     sgStart=snapshot(y,m/2,As,2.5);sgNative=np.zeros(4);sgApproach=[]
     for left,right in [(0,ru),(ru,ru+arc),(ru+arc,Ls)]:
         sol=integrate(y,m/2,As,right-left,lambda s:zsg(s+left),lambda s:dzsg(s+left),
-            heat=lambda s,q:-G/Ls*(q['T']-Tw),K=lambda s,q:losses['sg']/Ls,label='SG.A/B.PRIMARY')
+            heat=lambda s,q:-Gp/Ls*(q['T']-Tw),K=lambda s,q:losses['sg']/Ls,label='SG.A/B.PRIMARY')
         for j in range(sol.y.shape[1]):sgApproach.append(ph(sol.y[0,j],sol.y[1,j])['T']-Tw)
         y=sol.y[:2,-1];sgNative+=sol.y[2:,-1]
     sgEnd=snapshot(y,m/2,As,3);Qsg=m/2*(sgStart['totalEnthalpy_J_kg']-sgEnd['totalEnthalpy_J_kg'])
@@ -178,7 +179,7 @@ def path(x,record=False):
     y,info=mixed(y,m,Ad,-3,dict(area=14.25,bottom=-4,top=-2));mixing.append(dict(owner='LOWER',**info,p=y[0],h=y[1],multiplicity=1))
     # Native lower hydrostatic owner supplies the real upper core-inlet reference plane.
     lower=make_liquid_reservoir(14.25,-4,-2,-3,g)['forward'](y[0],ph(*y)['s']);returned=lower['at'](-2)
-    residual=np.array([(returned['p']-pAnchor)/1e6,(returned['h']-h0)*m/Qtotal,(Qsg-G*(Tw-Tsink))/Qtotal])
+    residual=np.array([(returned['p']-pAnchor)/1e6,(returned['h']-h0)*m/Qtotal,(Qsg-Gs*(Tw-Tsink))/Qtotal])
     if not record:return residual
     for item in mixing:
         shape=item['shape'];bulk=ph(item['p'],item['h'])
@@ -202,14 +203,14 @@ def path(x,record=False):
         rotorEnergy_J=4*.5*inertia*omega**2,perSGWallEnergyAboveZeroC_J=b['basis']['metalCapacity_MJ_K']*1e6*(Tw-273.15),
         independentSGHeat_W=QsgIndependent,independentExternalEnergyResidual_W=independentPowerError,channelBalances=balanceChecks,
         pressureResidual_Pa=returned['p']-pAnchor,loopEnergyResidual_W=(returned['h']-h0)*m,
-        SGWallResidual_W=Qsg-G*(Tw-Tsink),externalEnergyResidual_W=Qtotal+m*e-2*Qsg,
+        SGWallResidual_W=Qsg-Gs*(Tw-Tsink),externalEnergyResidual_W=Qtotal+m*e-2*Qsg,
         mixing=mixing,nominalOnly=True)
 
 guess=np.array(case['guess']);solution=root(path,guess,options=dict(xtol=1e-9))
 result=path(solution.x,True)
 passed=bool(abs(result['pressureResidual_Pa'])<1 and abs(result['loopEnergyResidual_W'])<10 and abs(result['SGWallResidual_W'])<10 and abs(result['externalEnergyResidual_W'])<10)
 print(json.dumps(dict(case=case,solution=solution.x.tolist(),solverSuccess=bool(solution.success),solverStatus=str(solution.message),accepted=passed,
-    budgets=budgets,residualLosses=losses,SGConductance_W_K=G,result=result,calls=calls,
+    budgets=budgets,residualLosses=losses,sgSizing=sgSizing,result=result,calls=calls,
     rawEnthalpyInverseMaxError_J_kg=maxRawEnthalpyError,correctedEnthalpyMaxError_J_kg=maxCorrectedEnthalpyError,
     nozzleResidualMaxima=nozzleErrors,nozzleSolverStatuses=nozzleStatuses,
     scope='Symmetric steady full primary with imposed physical thermal duty, external secondary/electrical boundaries; no source dynamics or PZR response',
