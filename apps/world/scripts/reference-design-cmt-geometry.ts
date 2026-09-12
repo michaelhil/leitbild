@@ -109,7 +109,7 @@ export function tankGeometry(b: GeometryBasis) {
       freeWater_m3: volume() } }
 }
 
-export function ringArea(b: GeometryBasis, center: number, z0: number, z1: number) {
+export function ringArea(b: { holeDiameter_m: number; holesPerRing: number }, center: number, z0: number, z1: number) {
   const r = b.holeDiameter_m / 2
   const primitive = (z: number) => {
     const y = Math.max(-r, Math.min(r, z - center))
