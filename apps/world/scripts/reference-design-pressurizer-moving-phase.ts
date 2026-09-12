@@ -33,7 +33,7 @@ export function occupiedGeometry(area:number,upflowArea:number,height:number,ves
     dispersedVapor:bubbleVolume,submergedSolid:submergedSolidVolume,exposedSolid:exposedSolidVolume,aboveLiquid:aboveLiquidVolume,upperVapor:area*(vesselHeight-height)-aboveLiquidVolume-exposedSolidVolume}
 }
 
-export const movingPhasePython=String.raw`
+export const movingPhaseDefinitions=String.raw`
 import json,sys,math,time,platform
 import CoolProp,CoolProp.CoolProp as CP,scipy
 from scipy.optimize import brentq
@@ -114,7 +114,8 @@ def case(name,power,T=T0,hfactor=1.,chi=None,dfactor=1.):
       rateAccountingAdmitted=bool(abs(res)<=10 and abs(w['total']-power)<=10 and remaining>=0),
       normalSteadySteelSizingOnly=True,clouds=clouds)
 P=base['requiredHeater_W'];low,high=sel['comparisonRequests_W']
-cases=[case('normal',P),case('lower acquired request',low),case('higher acquired request',high),case('colder liquid',P,T0-5),
+`
+export const movingPhasePython=movingPhaseDefinitions+String.raw`cases=[case('normal',P),case('lower acquired request',low),case('higher acquired request',high),case('colder liquid',P,T0-5),
   case('saturated liquid',P,Ts),case('half contact',P,hfactor=.5),case('double contact',P,hfactor=2),
   case('half detachment',P,chi=.5),case('half diameter',P,dfactor=.5),case('double diameter',P,dfactor=2)]
 normal=cases[0];l=liquid(T0);hot=wall(normal['wallTemperature_K'],l,sel['contact_W_m2K'],sel['detachmentFraction'])

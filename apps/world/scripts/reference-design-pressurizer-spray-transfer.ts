@@ -19,7 +19,7 @@ export function assertSprayParents(thermal:{calculationSha256?:string},delivery:
   if(thermal.calculationSha256!==hash(normalThermalPython)||delivery.calculationSha256!==hash(normalDeliveryPython)||delivery.normalReceiptSha256!==hash(thermalBytes))throw Error('Exact hydraulic/thermal parent identities required')
 }
 
-export const sprayTransferPython=wallCirculationDefinitions+String.raw`
+export const sprayTransferDefinitions=wallCirculationDefinitions+String.raw`
 from scipy.integrate import Radau
 mainFluid=CP.AbstractState('HEOS','Water')
 selection=data['selection'];delivery=data['delivery'];theta=math.radians(selection['coneHalfAngle_deg']);ring=selection['tipRingRadius_m']
@@ -122,7 +122,8 @@ def flight(source,sizeFactor=1.,heatFactor=1.,dragFactor=1.,stepFactor=1.):
       pressureVolumeBoundaryIncrement_W=q*(pV-pV0),dragPowerToGas_W=q*y[7],vaporSensibleHeatToInterface_W=q*y[17],mixingHeatToLiquid_W=q*y[18],
       surfaceEnergyChangeScale_W=q*abs(surfaceFinal-surface0),nozzleConeTurningReaction_N=q*v0*(1-math.cos(theta)),sourceCalls=calls,steps=len(solved.t),snapshots=snapshots,acceptedHistory=accepted,eventBracketingStep=eventBracketingStep,
       suppliedVaporAdvanced=False,normalCirculationSolved=False,scope='Finite effective spray field at supplied hydrostatic vapor, not rigid droplets or resolved sheet breakup; all retained water lands or reaches a named wall event')
-rows=[]
+`
+export const sprayTransferPython=sprayTransferDefinitions+String.raw`rows=[]
 for name,size,heat,drag,step in [('normal eight tips',1.,1.,1.,1.),('normal eight tips',2.,.5,.5,1.),('half tips blocked',1.,1.,1.,1.),('source pressure reduced',1.,1.,1.,1.),('normal eight tips',1.,1.,1.,.5)]:
     try:rows.append(flight(next(c for c in delivery['cases'] if c['name']==name),size,heat,drag,step))
     except (ValueError,RuntimeError,OverflowError) as error:

@@ -24,7 +24,7 @@ export function assertDeliveryParentIds(parents:Record<string,Record<string,unkn
       if(typeof receipt[key]!=='string'||parents?.[name]?.[key]!==receipt[key])throw Error('Normal boundary parent identity mismatch')
 }
 
-export const normalDeliveryPython=normalThermalDefinitions+String.raw`
+export const normalDeliveryDefinitions=normalThermalDefinitions+String.raw`
 selection=d['delivery'];boundary=d['normalBoundary']['cases'][0];pV=boundary['physicalPressureTap_Pa']
 if abs(selection['upflowArea_m2']+selection['returnArea_m2']-A)>1e-12:raise ValueError('Normal upflow and return must partition existing net liquid area')
 tipCdA=selection['tipWaterFlow_m3_s']*math.sqrt(1000/(2*selection['referenceDifferential_Pa']))
@@ -77,7 +77,8 @@ def distributor(name,tips,sourceShift=0.):
         sensitivity=sensitivity,fullPrimaryOrPZRNominalResolved=False,highPressureAtomizationQualified=False,
         surfaceTensionScope='Saturation surface tension at exit bulk temperature is a proxy, not a validated high-pressure interface law',
         phaseFlowScope='Achieved boundary-fed hardware flow. Pressure endpoints held from earlier normal state; no new full thermal equilibrium or acquired flow measurement')
-cases=[]
+`
+export const normalDeliveryPython=normalDeliveryDefinitions+String.raw`cases=[]
 for name,tips,shift in [('normal eight tips',selection['tips'],0.),('half tips blocked',selection['tips']//2,0.),('source pressure reduced',selection['tips'],-200000.)]:
     try:cases.append(distributor(name,tips,shift))
     except (ValueError,RuntimeError) as error:cases.append(dict(name=name,hydraulicAdmission=False,failure=str(error)))

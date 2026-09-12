@@ -15,7 +15,7 @@ export function parseHeadCollection(text:string) {
   return z.object({capillaryRadiusFactor:positive,inertialDragCoefficient:positive}).strict().parse(JSON.parse(blocks[0]![1]!))
 }
 
-export const headCollectionPython=wallCirculationDefinitions+String.raw`
+export const headCollectionDefinitions=wallCirculationDefinitions+String.raw`
 mainFluid=CP.AbstractState('HEOS','Water')
 `+primaryTeeLiquidPython+String.raw`
 headGas=gas(0);pHead=headGas['p'];headSat=saturation(pHead);TsHead=headSat['T'];latent=CP.PropsSI('H','P',pHead,'Q',1,'Water')-CP.PropsSI('H','P',pHead,'Q',0,'Water')
@@ -95,7 +95,8 @@ def head_case(geometryScale=1.,dragCoefficient=1.):
         capillaryPressureScale_Pa=2*sigma/detachRadius,surfaceEnergyScale_J_kg=3*sigma/(released['rho']*detachRadius),
         headLumpedElevationEnergyBound_J=headM*g*detachRadius,sourceInertialCriterion=sourceCriterion,
         scope='Source-informed but fictional finite collector geometry and effective rain drag; uniform staggered steady population, not source-validated high-pressure droplet shapes')
-cases=[]
+`
+export const headCollectionPython=headCollectionDefinitions+String.raw`cases=[]
 for settings in [{},{'dragCoefficient':.5},{'dragCoefficient':2},{'geometryScale':.5},{'geometryScale':2}]:
     try:cases.append(head_case(**settings))
     except (ValueError,RuntimeError) as error:cases.append(dict(settings=settings,accepted=False,failure=str(error)))
