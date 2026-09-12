@@ -1,6 +1,7 @@
 /** Offline wall-flux/phase-source comparison. No runtime imports or plant admission. */
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
+import { poolBoilingPython } from './reference-design-pool-boiling'
 const positive=z.number().finite().positive()
 const schema=z.object({design:z.literal('LD-01-wall-boiling-comparison'),
   hydraulicDiameter_m:positive,area_m2:positive,contactAngle_deg:positive.max(180),
@@ -16,7 +17,7 @@ export function parseWallBoilingStudy(document:string) {
   if(blocks.length!==1)throw Error('Expected exactly one reference-wall-boiling JSON block')
   return schema.parse(JSON.parse(blocks[0]![1]!))
 }
-const calculation=String.raw`
+export const calculation=String.raw`
 import sys,json,math,platform
 import iapws,scipy
 from iapws import IAPWS97 as W
@@ -27,14 +28,7 @@ def check(name,actual,expected,atol=1e-8,rtol=1e-10):
         raise ValueError(f'{name}: {actual} != {expected}')
     checks.append(dict(name=name,actual=actual,expected=expected))
 check('abundant-liquid dryout ramp is inactive',min(416.7*(1-b['vaporVolumeFraction']-.0001),1.),1.)
-def pressure_factor(p,ctf=True):
-    r=p/22.064
-    return 1.73*r**.27+6.1*r*r+.68*r*r/(1-r*r if ctf else 1-r)
-def pool(p,superheat,ctf=True):
-    if superheat<=0:return 0.
-    n=.9-.3*(p/22.064)**.15
-    return (5600*pressure_factor(p,ctf)*b['surfaceFactor']*superheat/20000**n)**(1/(1-n))
-def wall(p,sub,superheat,ctf=True):
+`+poolBoilingPython+String.raw`def wall(p,sub,superheat,ctf=True):
     f=W(P=p,x=0); v=W(P=p,x=1); ts=f.T
     l=W(P=p,T=ts-sub) if sub>0 else f
     dh=b['hydraulicDiameter_m']; G=b['liquidMassFlux_kg_m2s']
