@@ -1,10 +1,22 @@
 import { expect, test } from 'bun:test'
-import { parseGeometryBasis } from './reference-design-cmt-geometry.ts'
-import { checkBalancePath, darcyGradient, parseBalancePathBasis } from './reference-design-cmt-balance-path.ts'
+import { parseGeometryBasis, type GeometryBasis } from './reference-design-cmt-geometry.ts'
+import { checkBalancePath, darcyGradient, parseBalancePathBasis, type BalancePathBasis } from './reference-design-cmt-balance-path.ts'
 
-const owner = await Bun.file(new URL('../../../../Leitbild-wiki/world/packs/process-plant/reference-designs/ld-01/systems/passive-cooling/cmt-receiving-geometry.md', import.meta.url)).text()
-const g = parseGeometryBasis(owner), b = parseBalancePathBasis(owner)
+// Test-only selected inputs: a clean app checkout does not contain the separate wiki repository.
+const geometry: GeometryBasis = { freeWater_m3: 60, bottomDatum_m: 6, top_m: 12,
+  bodyBottom_m: 11.725, bodyTop_m: 11.975, bodyOuterDiameter_m: .41, bodyEffectiveInnerDiameter_m: .35,
+  feedOuterDiameter_m: .22, feedInnerDiameter_m: .20, mouthDiameter_m: .20,
+  balanceWater_m3: 1, distributorGroupWater_m3: .05, hardwareSolid_m3: .02,
+  holeDiameter_m: .06153846153846154, holesPerRing: 10, ringElevations_m: [11.925, 11.850, 11.775],
+  upperTap_m: 11.95, topProbe_m: 11.25, bottomProbe_m: 6.75, probeRadialInset_m: .15, probeAzimuth_deg: 18 }
+const path: BalancePathBasis = { headerElevation_m: 3, bore_m: .20, roughness_m: .000045,
+  balanceReferenceFlow_kg_s: 25, balanceReferenceLoss_Pa: 2000, Cd: .62, Cv: .98,
+  hotDensity_kg_m3: 745.7158573797482, hotViscosity_Pa_s: .00009238956797398296,
+  coldDensity_kg_m3: 998.7373535000849, coldViscosity_Pa_s: .0006547658656041072,
+  dviNeckLength_m: 1, dviNeckBore_m: .20, dviReferenceFlow_kg_s: 100, dviReferenceLoss_Pa: 10000 }
 const record = (v: unknown) => '```reference-cmt-balance-path\n' + JSON.stringify(v) + '\n```'
+const owner = '```reference-cmt-geometry\n' + JSON.stringify(geometry) + '\n```\n\n' + record(path)
+const g = parseGeometryBasis(owner), b = parseBalancePathBasis(owner)
 
 test('selected route preserves BAL allocation and adds common neck once', () => {
   const r = checkBalancePath(g, b)
