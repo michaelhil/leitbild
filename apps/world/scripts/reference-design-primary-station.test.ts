@@ -64,6 +64,9 @@ test('conditional allocation pays heater once and returns physical heat with inv
   const residual = auditPzrInterface({ ...interfaceInput, heater_W: 50001 })
   expect(residual.sideEnergyResidual_W).toBe(1)
   expect(residual.conditionalIncrements_W.allocationResidual).toBeCloseTo(-1, 8)
+  const zeroReturn = { ...interfaceInput, returnTotalEnthalpy_J_kg: 1e6, heater_W: 20000, reportedPrimaryReturn_W: 0 }
+  expect(auditPzrInterface(zeroReturn).conditionalSecondaryThroughputFraction).toBe(0)
+  expect(() => auditPzrInterface({ ...zeroReturn, secondary: { ...reference.powers_MW, condenser: 66 } })).toThrow('Base secondary')
 })
 test('counter-direction heat transfer is signed, while disconnected or inconsistent steady evidence is rejected', () => {
   const r = auditPzrInterface({ ...interfaceInput, returnTotalEnthalpy_J_kg: .9e6,

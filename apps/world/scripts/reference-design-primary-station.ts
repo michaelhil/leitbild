@@ -71,6 +71,9 @@ export function auditPzrInterface(input: {
     || v.secondary.condensate_pump_electric! < v.secondary.condensate_pump_fluid!
     || v.secondary.gross_electric! > v.secondary.turbine_thermodynamic_work! * v.shaftEfficiency)
     throw Error('Base secondary equipment has negative conversion losses')
+  const secondaryResidual_MW = v.secondary.SG_total! + v.secondary.feed_pump_fluid!
+    + v.secondary.condensate_pump_fluid! - v.secondary.turbine_thermodynamic_work! - v.secondary.condenser!
+  if (Math.abs(secondaryResidual_MW) > 1e-8) throw Error('Base secondary first law does not conserve energy')
   const q = v.bypassFlow_kg_s, a = v.hotAFlow_kg_s, b = v.coreFlow_kg_s - a
   const primaryReturn_W = q * (v.returnTotalEnthalpy_J_kg - v.coldTotalEnthalpy_J_kg)
   const sideEnergyResidual_W = v.heater_W - v.ambient_W - primaryReturn_W
