@@ -479,7 +479,7 @@ describe('process plant runtime', () => {
 
     expect(active.alarms.length).toBeGreaterThan(0)
     expect(active.trips).toContain('trip:reactor-low-rcp-flow-trip:low-rcp-flow-trip')
-  })
+  }, 20_000) // 450 s correctness trajectory, same watchdog as the normal-hold case.
 
   test('scheduled typed PWR fault actions compile to validated runtime writes', () => {
     const system = compiledSystem()
