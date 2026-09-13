@@ -41,6 +41,12 @@ def local(x):
 def flight(source,sizeFactor=1.,heatFactor=1.,dragFactor=1.,stepFactor=1.):
     if not source.get('mapPressureDomainAdmitted',False):return dict(name=source['name'],admitted=False,stage='source pressure/map',reason='Actual hydraulic flow exists, but this normal atomization boundary is not selected below its pressure domain')
     if not source['hydraulicAdmission'] or not source['energyAccountingAdmission']:raise ValueError('Hydraulic nozzle source was not admitted')
+    return evaluate_flight(source,sizeFactor,heatFactor,dragFactor,stepFactor)
+def evaluate_flight(source,sizeFactor=1.,heatFactor=1.,dragFactor=1.,stepFactor=1.):
+    # Constitutive trial only: an outer joined equation may still own the
+    # nozzle pressure residual. Never turn that trial into admitted hardware.
+    if not source.get('mapPressureDomainAdmitted',False):return dict(name=source['name'],admitted=False,transferAdmission=False,stage='source pressure/map',reason='No normal atomization map at this trial')
+    if not source['energyAccountingAdmission']:raise ValueError('Nozzle source energy/entropy was not admitted')
     diameter=next(s['diameter_m'] for s in source['sensitivity'] if s['diameterFactor']==selection['diameterFactor'])*sizeFactor
     initialGas,sf,hg=local(0.);p0=initialGas['p'];h0=source['exitEnthalpy_J_kg'];v0=source['exitVelocity_m_s'];q=source['flow_kg_s']
     T0=source['exitTemperature_K']
@@ -112,7 +118,8 @@ def flight(source,sizeFactor=1.,heatFactor=1.,dragFactor=1.,stepFactor=1.):
     dilute=q*y[10]/case['upper']['V']<=.01
     accounting=bool(abs(q*nativeResidual)<=10 and abs(q*massResidual)<=1e-8)
     admitted=bool(solved.success and landed and not hit and near and dilute and accounting and q*abs(surfaceFinal-surface0)<=10)
-    return dict(name=source['name'],sizeFactor=sizeFactor,heatFactor=heatFactor,dragFactor=dragFactor,stepFactor=stepFactor,admitted=admitted,
+    return dict(name=source['name'],sizeFactor=sizeFactor,heatFactor=heatFactor,dragFactor=dragFactor,stepFactor=stepFactor,admitted=bool(admitted and source['hydraulicAdmission']),
+      transferAdmission=admitted,sourceHydraulicAdmission=source['hydraulicAdmission'],sourcePressureResidual_Pa=source['pressureResidual_Pa'],
       solverSuccess=solved.success,solverMessage=str(solved.message),reachedPool=landed,wallIntercepted=hit,nearSaturatedLanding=near,diluteMeanOccupancy=dilute,energyMassAccountingAdmitted=accounting,
       diameter_m=diameter,flow_kg_s=q,initialRe=maxRe if not snapshots else v0*initialGas['rho']*diameter/CP.PropsSI('V','P',p0,'Q',1,'Water'),maxRe=maxRe,maxWe=maxWe,
       flightTime_s=duration,maxRadius_m=max(float(solved.y[1].max()),ring),wallRadius_m=ri,landingMassFlow_kg_s=q*M,condensation_kg_s=q*(M-1),

@@ -20,7 +20,7 @@ export function parseOperatingPointSelection(text: string) {
     lowerReferencePressure_MPaAbs:z.number().finite().positive()}).strict().parse(JSON.parse(blocks[0]![1]!))
 }
 
-export const primaryOperatingPointPython = hydrostaticLiquidPython + sgSizingPython + String.raw`
+export const primaryOperatingPointDefinitions = hydrostaticLiquidPython + sgSizingPython + String.raw`
 import json,sys,time,platform,scipy,CoolProp
 from scipy.integrate import solve_ivp
 from scipy.optimize import root
@@ -112,18 +112,13 @@ def mixed(y,m,A,z,shape):
     if bulk['s']<incoming['s']-1e-7:raise ValueError('Abrupt mixing reduced entropy')
     return np.array([bulk['p'],bulk['h']]),dict(entropyRise_J_kgK=bulk['s']-incoming['s'],
         incomingKinetic_J_kg=v*v/2,shape=shape,reference_m=z)
-def path(x,record=False):
-    global auditActive,balanceChecks
-    auditActive=record;balanceChecks=[]
-    calls['shooting']+=1;m=x[0]*Mref;h0=x[1]*1e6;Tw=x[2]*300
-    if m<=0 or not Tsink<Tw:raise ValueError('Candidate requires positive flow and SG approach')
-    y=np.array([pAnchor,h0]);origin=ph(*y);owners=[];faces=[];mixing=[];coreEnds=[];hotTap=None
-    coreThermalQuadrature={str(n):[] for n in [2,4,8]}
-    def keep(name,sol,massflow,area,zfun,mult=1):
-        if record:
-            end=sol.y[:2,-1];native=sol.y[2:,-1]
-            owners.append(dict(owner=name,multiplicity=mult,V_m3=area*sol.t[-1],M_kg=float(native[0]),U_J=float(native[1]),K_J=float(native[2]),PE_J=float(native[3])))
-            faces.append(dict(owner=name,**snapshot(end,massflow,area,zfun(sol.t[-1]))))
+def retain_segment(owners,faces,record,name,sol,massflow,area,zfun,mult=1):
+    if record:
+        end=sol.y[:2,-1];native=sol.y[2:,-1]
+        owners.append(dict(owner=name,multiplicity=mult,V_m3=area*sol.t[-1],M_kg=float(native[0]),U_J=float(native[1]),K_J=float(native[2]),PE_J=float(native[3])))
+        faces.append(dict(owner=name,**snapshot(end,massflow,area,zfun(sol.t[-1]))))
+def core_path(y,m,record,owners,mixing):
+    coreEnds=[];coreThermalQuadrature={str(n):[] for n in [2,4,8]}
     y=nozzle(y,m,None,-2,Ac,-2);y=jump(y,m,Ac,-2,lambda q:core['inletLoss'])
     coreEnds.append(snapshot(y,m,Ac,-2))
     positions=[0.]+d['gridPositions_m']+[core['activeLength_m']/2,core['activeLength_m']]
@@ -154,69 +149,137 @@ def path(x,record=False):
             if record:owners.append(dict(owner='CORE.'+str(half+1),multiplicity=1,V_m3=Ac*core['activeLength_m']/2,M_kg=float(coreAccum[0]),U_J=float(coreAccum[1]),K_J=float(coreAccum[2]),PE_J=float(coreAccum[3])))
             coreAccum[:]=0
     y,info=mixed(y,m,Ac,2,dict(area=16.75,bottom=2,top=4));mixing.append(dict(owner='UPPER',**info,p=y[0],h=y[1],multiplicity=1))
-    y=nozzle(y,m/2,None,2,Ah,2.5);L=15/Ah
-    sol=integrate(y,m/2,Ah,L,lambda s:2.5,lambda s:0,K=lambda s,q:losses['hot']/L,label='HOT.A/B')
-    takeoff=L*d['selection']['surgeTakeoffFraction']
-    hotTap=dict(axialDistance_m=takeoff,axialFraction=d['selection']['surgeTakeoffFraction'],**snapshot(sol.sol(takeoff)[:2],m/2,Ah,2.5))
-    keep('HOT.A/B',sol,m/2,Ah,lambda s:2.5,2);y=sol.y[:2,-1]
-    y=nozzle(y,m/2,Ah,2.5,As,2.5)
+    return y,coreEnds,coreThermalQuadrature
+def branch_path(y,mainFlow,Tw,name,record,owners,faces,mixing,side=None):
+    symmetric=name=='A/B';flow=mainFlow
+    hotLabel='HOT.'+name;sgLabel='SG.'+name+'.PRIMARY';coldLabel='COLD.'+name
+    pumpLabel='P.A1/A2/B1/B2.PASSAGE' if symmetric else 'P.'+name+'1/'+name+'2.PASSAGE'
+    y=nozzle(y,flow,None,2,Ah,2.5);L=15/Ah
+    takeoff=L*d['selection']['surgeTakeoffFraction'];tee=None
+    if side is None:
+        sol=integrate(y,flow,Ah,L,lambda s:2.5,lambda s:0,K=lambda s,q:losses['hot']/L,label=hotLabel)
+        hotTap=dict(axialDistance_m=takeoff,axialFraction=d['selection']['surgeTakeoffFraction'],**snapshot(sol.sol(takeoff)[:2],flow,Ah,2.5))
+        retain_segment(owners,faces,record,hotLabel,sol,flow,Ah,lambda s:2.5,2 if symmetric else 1);y=sol.y[:2,-1]
+    else:
+        remaining=losses['hot']-side['zeroTeeK']
+        if remaining<0:raise ValueError('Zero-flow tee consumes more than existing HOT loss budget')
+        if not 0<takeoff<L:raise ValueError('Connected tee must have actual pipe on both sides')
+        sol=integrate(y,flow,Ah,takeoff,lambda s:2.5,lambda s:0,K=lambda s,q:remaining/L,label=hotLabel+'.before')
+        y=sol.y[:2,-1];hotTap=dict(axialDistance_m=takeoff,axialFraction=d['selection']['surgeTakeoffFraction'],**snapshot(y,flow,Ah,2.5))
+        retain_segment(owners,faces,record,hotLabel+'.before',sol,flow,Ah,lambda s:2.5)
+        tee=side['join'](hotTap,flow);y=np.array([tee['downstream']['p'],tee['downstream']['h']]);flow+=side['q']
+        if flow<=0 or not tee['accepted']:raise ValueError('Connected forward HOT tee not admitted')
+        sol=integrate(y,flow,Ah,L-takeoff,lambda s:2.5,lambda s:0,K=lambda s,q:remaining/L,label=hotLabel+'.after')
+        retain_segment(owners,faces,record,hotLabel+'.after',sol,flow,Ah,lambda s:2.5);y=sol.y[:2,-1]
+    y=nozzle(y,flow,Ah,2.5,As,2.5)
     ru=fold['riseLength_m'];ra=fold['radius_m'];arc=fold['crownLength_m'];Ls=geo['sgDevelopedLength_m']
     def zsg(s):
         if s<=ru:return 2.5+s
         if s<=ru+arc:return 12-ra+ra*math.sin((s-ru)/ra)
         return 12-ra-(s-ru-arc)
     def dzsg(s):return 1. if s<ru else math.cos((s-ru)/ra) if s<ru+arc else -1.
-    sgStart=snapshot(y,m/2,As,2.5);sgNative=np.zeros(4);sgApproach=[]
+    sgStart=snapshot(y,flow,As,2.5);sgNative=np.zeros(4);sgApproach=[]
     for left,right in [(0,ru),(ru,ru+arc),(ru+arc,Ls)]:
-        sol=integrate(y,m/2,As,right-left,lambda s:zsg(s+left),lambda s:dzsg(s+left),
-            heat=lambda s,q:-Gp/Ls*(q['T']-Tw),K=lambda s,q:losses['sg']/Ls,label='SG.A/B.PRIMARY')
+        sol=integrate(y,flow,As,right-left,lambda s:zsg(s+left),lambda s:dzsg(s+left),
+            heat=lambda s,q:-Gp/Ls*(q['T']-Tw),K=lambda s,q:losses['sg']/Ls,label=sgLabel)
         for j in range(sol.y.shape[1]):sgApproach.append(ph(sol.y[0,j],sol.y[1,j])['T']-Tw)
         y=sol.y[:2,-1];sgNative+=sol.y[2:,-1]
-    sgEnd=snapshot(y,m/2,As,3);Qsg=m/2*(sgStart['totalEnthalpy_J_kg']-sgEnd['totalEnthalpy_J_kg'])
+    sgEnd=snapshot(y,flow,As,3);Qsg=flow*(sgStart['totalEnthalpy_J_kg']-sgEnd['totalEnthalpy_J_kg'])
     if min(sgApproach)<=0:raise ValueError('SG fluid/wall approach reversed')
     if record:
-        owners.append(dict(owner='SG.A/B.PRIMARY',multiplicity=2,V_m3=As*Ls,M_kg=float(sgNative[0]),U_J=float(sgNative[1]),K_J=float(sgNative[2]),PE_J=float(sgNative[3])))
-        faces.append(dict(owner='SG.A/B.PRIMARY',**sgEnd))
-    y=nozzle(y,m/4,As/2,3,Ap,3);suction=ph(*y);q=m/4/suction['rho'];e=pumpA*omega**2-pumpB*omega*q;mech=e-pumpR*q*q
+        owners.append(dict(owner=sgLabel,multiplicity=2 if symmetric else 1,V_m3=As*Ls,M_kg=float(sgNative[0]),U_J=float(sgNative[1]),K_J=float(sgNative[2]),PE_J=float(sgNative[3])))
+        faces.append(dict(owner=sgLabel,**sgEnd))
+    y=nozzle(y,flow/2,As/2,3,Ap,3);suction=ph(*y);q=flow/2/suction['rho'];e=pumpA*omega**2-pumpB*omega*q;mech=e-pumpR*q*q
     if e<=0 or mech<=0 or abs(q/qRef)>1.5:raise ValueError('Outside admitted positive motoring/flow comparison')
     Lp=geo['pumpPassageVolume_m3']/Ap
-    sol=integrate(y,m/4,Ap,Lp,lambda s:3,lambda s:0,K=lambda s,q:losses['pump']/Lp,shaft=e,mechanical=mech,label='P.A1/A2/B1/B2.PASSAGE')
-    keep('P.A1/A2/B1/B2.PASSAGE',sol,m/4,Ap,lambda s:3,4);y=sol.y[:2,-1]
-    y,info=mixed(y,m/4,Ap,3,dict(area=geo['coldHeaderVolume_m3']/geo['coldHeaderHeight_m'],bottom=3-geo['coldHeaderHeight_m']/2,top=3+geo['coldHeaderHeight_m']/2))
-    mixing.append(dict(owner='COLD.A/B',**info,p=y[0],h=y[1],multiplicity=2))
+    sol=integrate(y,flow/2,Ap,Lp,lambda s:3,lambda s:0,K=lambda s,q:losses['pump']/Lp,shaft=e,mechanical=mech,label=pumpLabel)
+    retain_segment(owners,faces,record,pumpLabel,sol,flow/2,Ap,lambda s:3,4 if symmetric else 2);y=sol.y[:2,-1]
+    y,info=mixed(y,flow/2,Ap,3,dict(area=geo['coldHeaderVolume_m3']/geo['coldHeaderHeight_m'],bottom=3-geo['coldHeaderHeight_m']/2,top=3+geo['coldHeaderHeight_m']/2))
+    mixing.append(dict(owner=coldLabel,**info,p=y[0],h=y[1],multiplicity=2 if symmetric else 1))
+    return dict(cold=y.tolist(),mainFlow_kg_s=mainFlow,throughFlow_kg_s=flow,hotTap=hotTap,tee=tee,
+      Qsg_W=Qsg,Twall_K=Tw,minimumSGApproach_K=min(sgApproach),pumpSpecificWork_J_kg=e,
+      shaftToFluid_W=flow*e,pumpInternalDissipation_W=flow*pumpR*q*q,
+      pumpVolumetricFlow_m3_s=q,SGstart=sgStart,SGend=sgEnd)
+def downcomer_path(y,m,record,owners,faces,mixing):
     y=nozzle(y,m,None,3,Ad,3)
     sol=integrate(y,m,Ad,6,lambda s:3-s,lambda s:-1,K=lambda s,q:losses['dc']/6,label='DOWNCOMER')
-    keep('DOWNCOMER',sol,m,Ad,lambda s:3-s);y=sol.y[:2,-1]
+    retain_segment(owners,faces,record,'DOWNCOMER',sol,m,Ad,lambda s:3-s);y=sol.y[:2,-1]
     y,info=mixed(y,m,Ad,-3,dict(area=14.25,bottom=-4,top=-2));mixing.append(dict(owner='LOWER',**info,p=y[0],h=y[1],multiplicity=1))
     # Native lower hydrostatic owner supplies the real upper core-inlet reference plane.
     lower=make_liquid_reservoir(14.25,-4,-2,-3,g)['forward'](y[0],ph(*y)['s']);returned=lower['at'](-2)
-    residual=np.array([(returned['p']-pAnchor)/1e6,(returned['h']-h0)*m/Qtotal,(Qsg-Gs*(Tw-Tsink))/Qtotal])
-    if not record:return residual
+    return returned
+def native_primary(owners,mixing):
     for item in mixing:
         shape=item['shape'];bulk=ph(item['p'],item['h'])
         rr=make_liquid_reservoir(shape['area'],shape['bottom'],shape['top'],item['reference_m'],g)['forward'](item['p'],bulk['s'])
         owners.append(dict(owner=item['owner'],multiplicity=item['multiplicity'],M_kg=rr['M'],U_J=rr['U'],K_J=0.,PE_J=rr['PE'],V_m3=rr['V'],initialHeadResidual_Pa=rr['initialHeadResidual_Pa']))
     totals={key:sum(o[key]*o['multiplicity'] for o in owners) for key in ['V_m3','M_kg','U_J','K_J','PE_J']}
     if abs(totals['V_m3']-sum(b['basis']['volumes_m3']))>1e-9:raise ValueError('Main water geometry duplicated or lost')
-    drag=c['basis']['RCPDragFraction']*eRef*Mref
-    motorShaft=m*e+drag;motorLimit=1.5*(eRef*Mref+drag)
-    if motorShaft>motorLimit:raise ValueError('Selected supported motor torque capacity exceeded')
-    QsgIndependent=-sum(v['heat_W'] for v in balanceChecks if v['owner']=='SG.A/B.PRIMARY')
-    independentPowerError=Qtotal+m*e-2*QsgIndependent
-    if abs(independentPowerError)>10:raise ValueError('Independent full-loop heat/shaft quadrature balance failed')
+    return totals
+def primary_state(a,bflow,h0,TwA,TwB,record=False,side=None,symmetric=False):
+    global auditActive,balanceChecks
+    auditActive=record;balanceChecks=[];calls['shooting']+=1;m=a+bflow
+    if min(a,bflow)<=0 or not Tsink<min(TwA,TwB):raise ValueError('Candidate requires positive flows and SG approaches')
+    y=np.array([pAnchor,h0]);owners=[];faces=[];mixing=[]
+    upper,coreEnds,coreThermalQuadrature=core_path(y,m,record,owners,mixing)
+    first=branch_path(upper,a,TwA,'A/B' if symmetric else 'A',record,owners,faces,mixing,side)
+    second=first if symmetric else branch_path(upper,bflow,TwB,'B',record,owners,faces,mixing)
+    coldA=ph(*first['cold']);coldB=ph(*second['cold']);coldPressureDefect=coldA['p']-coldB['p']
+    # Existing COLD-to-common-downcomer zero-drop mixed-reservoir constraint.
+    # q is already withdrawn from A; no second bulk kinetic-energy state is mixed here.
+    mergedH=(a*coldA['h']+bflow*coldB['h'])/m
+    merged=ph(coldA['p'],mergedH)
+    mixingEntropy=m*merged['s']-a*coldA['s']-bflow*coldB['s']
+    # At an off-root pressure mismatch this is diagnostic, not irreversible-mixing admission.
+    returned=downcomer_path(np.array([coldA['p'],mergedH]),m,record,owners,faces,mixing)
+    qside=0. if side is None else side['q'];Hcold=coldA['h']+g*3
+    primaryReturn=0. if side is None else qside*(side['Hreturn']-Hcold)
+    wallResiduals=[first['Qsg_W']-Gs*(TwA-Tsink),second['Qsg_W']-Gs*(TwB-Tsink)]
+    residual=np.array([(returned['p']-pAnchor)/1e6,(returned['h']-h0)*m/Qtotal,wallResiduals[0]/Qtotal]) if symmetric else np.array([
+      coldPressureDefect/1e6,(returned['p']-pAnchor)/1e6,(returned['h']-h0)*m/Qtotal,wallResiduals[0]/Qtotal,wallResiduals[1]/Qtotal])
+    shaft=first['shaftToFluid_W']+second['shaftToFluid_W'];drag=c['basis']['RCPDragFraction']*eRef*Mref
+    motorLimit=1.5*(eRef*Mref+drag)
+    motors={name:dict(fluidPower_W=br['shaftToFluid_W'],mechanicalDrag_W=drag/2,
+       shaftPower_W=br['shaftToFluid_W']+drag/2,limit_W=motorLimit/2) for name,br in [('A',first),('B',second)]}
+    if any(v['shaftPower_W']>v['limit_W'] for v in motors.values()):raise ValueError('Individual supported motor-pair capacity exceeded')
+    external=Qtotal+shaft+primaryReturn-first['Qsg_W']-second['Qsg_W']
+    detail=dict(residual=residual.tolist(),coreFlow_kg_s=m,coreFaces=coreEnds,coreThermalQuadrature=coreThermalQuadrature,
+      hotTap=first['hotTap'],faces=faces,owners=owners,sourceHeat_W=Qtotal,sourceHalfHeat_W=Q.tolist(),
+      branchFlows_kg_s=dict(A=a,B=bflow,side=qside,SGA=a+qside,SGB=bflow),
+      branches=dict(A=first,B=second),coldA=dict(coldA,H=Hcold,z=3.),coldB=dict(coldB,H=coldB['h']+g*3,z=3.),
+      coldMerge=dict(pressureResidual_Pa=coldPressureDefect,entropyRate_W_K=mixingEntropy,enthalpy_J_kg=mergedH,mass_kg_s=m),
+      SGHeat_W=dict(A=first['Qsg_W'],B=second['Qsg_W']),SGWallResiduals_W=wallResiduals,
+      shaftToFluid_W=shaft,pumpInternalDissipation_W=first['pumpInternalDissipation_W']+second['pumpInternalDissipation_W'],
+      supportedMotorShaft_W=shaft+drag,supportedMotorLimit_W=motorLimit,motorLimitFraction=(shaft+drag)/motorLimit,
+      electricalInput_W=(shaft+drag)/c['basis']['RCPMotorEfficiency'],mechanicalDrag_W=drag,individualMotorPairs=motors,
+      minimumSGFluidWallApproach_K=min(first['minimumSGApproach_K'],second['minimumSGApproach_K']),
+      primarySideHeat_W=primaryReturn,sourceColdTotalH_J_kg=Hcold,sideReturnTotalH_J_kg=None if side is None else side['Hreturn'],
+      pressureResidual_Pa=returned['p']-pAnchor,loopEnergyResidual_W=(returned['h']-h0)*m,
+      externalEnergyResidual_W=external,secondaryTemperature_K=Tsink,nominalOnly=True)
+    if not record:return detail
+    detail['totals']=native_primary(owners,mixing)
+    heatA=-sum(v['heat_W'] for v in balanceChecks if v['owner']=='SG.'+('A/B' if symmetric else 'A')+'.PRIMARY')
+    heatB=heatA if symmetric else -sum(v['heat_W'] for v in balanceChecks if v['owner']=='SG.B.PRIMARY')
+    independent=Qtotal+shaft+primaryReturn-heatA-heatB
+    if abs(independent)>10:raise ValueError('Independent full-primary heat/shaft/side quadrature balance failed')
+    if abs(coldPressureDefect)>1 or mixingEntropy < -1e-6:raise ValueError('Actual common COLD pressure/mixing entropy failed')
     inertia=(eRef*Mref/4+drag/4)*b['basis']['inertiaDecay_s']/omega**2
-    return dict(residual=residual.tolist(),coreFlow_kg_s=m,coreFaces=coreEnds,coreThermalQuadrature=coreThermalQuadrature,hotTap=hotTap,faces=faces,owners=owners,totals=totals,
-        sourceHeat_W=Qtotal,sourceHalfHeat_W=Q.tolist(),perSGHeat_W=Qsg,wallTemperature_K=Tw,secondaryTemperature_K=Tsink,
-        minimumSGFluidWallApproach_K=min(sgApproach),wallSecondaryApproach_K=Tw-Tsink,
-        shaftToFluid_W=m*e,pumpSpecificWork_J_kg=e,pumpInternalDissipation_W=m*pumpR*q*q,
-        supportedMotorShaft_W=motorShaft,supportedMotorLimit_W=motorLimit,motorLimitFraction=motorShaft/motorLimit,
-        electricalInput_W=motorShaft/c['basis']['RCPMotorEfficiency'],mechanicalDrag_W=drag,
-        rotorEnergy_J=4*.5*inertia*omega**2,perSGWallEnergyAboveZeroC_J=b['basis']['metalCapacity_MJ_K']*1e6*(Tw-273.15),
-        independentSGHeat_W=QsgIndependent,independentExternalEnergyResidual_W=independentPowerError,channelBalances=balanceChecks,
-        pressureResidual_Pa=returned['p']-pAnchor,loopEnergyResidual_W=(returned['h']-h0)*m,
-        SGWallResidual_W=Qsg-Gs*(Tw-Tsink),externalEnergyResidual_W=Qtotal+m*e-2*Qsg,
-        mixing=mixing,nominalOnly=True)
-
+    detail.update(independentSGHeat_W=heatA if symmetric else dict(A=heatA,B=heatB),independentExternalEnergyResidual_W=independent,
+      channelBalances=balanceChecks,mixing=mixing,rotorEnergy_J=4*.5*inertia*omega**2,
+      SGWallEnergyAboveZeroC_J=dict(A=b['basis']['metalCapacity_MJ_K']*1e6*(TwA-273.15),B=b['basis']['metalCapacity_MJ_K']*1e6*(TwB-273.15)))
+    if symmetric:
+        detail.update(perSGHeat_W=first['Qsg_W'],wallTemperature_K=TwA,wallSecondaryApproach_K=TwA-Tsink,
+          pumpSpecificWork_J_kg=first['pumpSpecificWork_J_kg'],SGWallResidual_W=wallResiduals[0],
+          perSGWallEnergyAboveZeroC_J=b['basis']['metalCapacity_MJ_K']*1e6*(TwA-273.15))
+    return detail
+def path(x,record=False):
+    m=x[0]*Mref
+    result=primary_state(m/2,m/2,x[1]*1e6,x[2]*300,x[2]*300,record,symmetric=True)
+    return result if record else np.array(result['residual'])
+def asymmetric_path(x,side,record=False):
+    return primary_state(x[0]*Mref/2,x[1]*Mref/2,x[2]*1e6,x[3]*300,x[4]*300,record,side)
+`
+export const primaryOperatingPointPython=primaryOperatingPointDefinitions+String.raw`
 guess=np.array(case['guess']);solution=root(path,guess,options=dict(xtol=1e-9))
 result=path(solution.x,True)
 passed=bool(abs(result['pressureResidual_Pa'])<1 and abs(result['loopEnergyResidual_W'])<10 and abs(result['SGWallResidual_W'])<10 and abs(result['externalEnergyResidual_W'])<10)
@@ -229,7 +292,7 @@ print(json.dumps(dict(case=case,solution=solution.x.tolist(),solverSuccess=bool(
     wallSeconds=time.perf_counter()-start),allow_nan=False))
 `
 
-export async function runPrimaryOperatingPoint(wiki: string, python: string, caseName: string) {
+export async function loadPrimaryOperatingPointInput(wiki: string, python: string, caseName: string) {
   const names = ['nominal','alternate','refined','higher-duty']
   if (!names.includes(caseName)) throw Error('Unknown frozen operating-point case')
   const paths = ['model/connected-primary-initialization.md','model/primary-hydraulic-basis.md',
@@ -249,6 +312,11 @@ export async function runPrimaryOperatingPoint(wiki: string, python: string, cas
     fold:foldedGeometry(geometry.sgDevelopedLength_m,primary.hydraulics.basis.hotPort_m,primary.hydraulics.basis.SGturn_m,primary.hydraulics.basis.coldPort_m),
     case:{name:caseName,heatFactor:caseName==='higher-duty'?1.01:1,rtol:caseName==='refined'?2e-11:2e-10,
       guess:caseName==='alternate'?[.9,1.27,1.86]:[1.05,1.30,1.86]}}
+  return input
+}
+
+export async function runPrimaryOperatingPoint(wiki: string, python: string, caseName: string) {
+  const input=await loadPrimaryOperatingPointInput(wiki,python,caseName),primary=input.primary
   const hash = (s:string) => createHash('sha256').update(s).digest('hex')
   const identity = {sourceSha256:hash(await Bun.file(import.meta.path).text()),calculationSha256:hash(primaryOperatingPointPython),inputSha256:hash(JSON.stringify(input))}
   const process = Bun.spawn([python,'-c',primaryOperatingPointPython],{stdin:new Blob([JSON.stringify(input)]),stdout:'pipe',stderr:'pipe'})

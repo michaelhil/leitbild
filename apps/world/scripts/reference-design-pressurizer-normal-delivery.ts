@@ -24,22 +24,28 @@ export function assertDeliveryParentIds(parents:Record<string,Record<string,unkn
       if(typeof receipt[key]!=='string'||parents?.[name]?.[key]!==receipt[key])throw Error('Normal boundary parent identity mismatch')
 }
 
-export const normalDeliveryDefinitions=normalThermalDefinitions+String.raw`
+const normalDeliverySetup=String.raw`
 selection=d['delivery'];boundary=d['normalBoundary']['cases'][0];pV=boundary['physicalPressureTap_Pa']
 if abs(selection['upflowArea_m2']+selection['returnArea_m2']-A)>1e-12:raise ValueError('Normal upflow and return must partition existing net liquid area')
 tipCdA=selection['tipWaterFlow_m3_s']*math.sqrt(1000/(2*selection['referenceDifferential_Pa']))
 valveCdA=normal['sprayReferenceFlow_kg_s']/math.sqrt(2*source['rho']*normal['sprayReferenceDifferential_Pa'])*selection['manualConductanceFraction']
 diameterExponent=math.log(240/180)/math.log(5/2)
-def distributor(name,tips,sourceShift=0.):
+`
+export const normalDeliveryFlowDefinitions=String.raw`
+def distributor_pressure(q,tips,sourceShift=0.):
+    if q<=0 or tips<=0:raise ValueError('Positive normal source flow and available tips required')
     upstream=ph(source['p']+sourceShift,source['h']);Hin=upstream['h']+g*zCold
-    def trial(q):
-        valveDrop=q*q/(2*upstream['rho']*valveCdA*valveCdA)
-        line=tube(upstream['p']-valveDrop,Hin,q,normal['sprayInsideDiameter_m'],normal['sprayLength_m'],normal['sprayWallThickness_m'],
-            lambda s:zCold+(zSpray-zCold)*s/normal['sprayLength_m'],lambda s:(zSpray-zCold)/normal['sprayLength_m'],0.,1.)
-        tipDrop=q*q/(2*line['outlet']['rho']*(tips*tipCdA)**2)
-        return line['outlet']['p']-pV-tipDrop,line,valveDrop,tipDrop
-    q=brentq(lambda q:trial(q)[0],.02,.15,xtol=1e-11)
-    pressureResidual,line,valveDrop,tipDrop=trial(q);H0=line['outlet']['H']-g*zSpray
+    valveDrop=q*q/(2*upstream['rho']*valveCdA*valveCdA)
+    line=tube(upstream['p']-valveDrop,Hin,q,normal['sprayInsideDiameter_m'],normal['sprayLength_m'],normal['sprayWallThickness_m'],
+        lambda s:zCold+(zSpray-zCold)*s/normal['sprayLength_m'],lambda s:(zSpray-zCold)/normal['sprayLength_m'],0.,1.)
+    tipDrop=q*q/(2*line['outlet']['rho']*(tips*tipCdA)**2)
+    return line['outlet']['p']-pV-tipDrop,line,valveDrop,tipDrop,upstream,Hin
+def distributor_at_flow(name,tips,q,sourceShift=0.):
+    pressureResidual,line,valveDrop,tipDrop,upstream,Hin=distributor_pressure(q,tips,sourceShift);H0=line['outlet']['H']-g*zSpray
+    inletP=upstream['p']-valveDrop
+    inlet=ph(inletP,CP.PropsSI('H','P',inletP,'T',line['inletTemperature_K'],'Water'))
+    inletV=q/(inlet['rho']*math.pi*normal['sprayInsideDiameter_m']**2/4)
+    sourceEnergy=q*(inlet['h']+.5*inletV**2+g*zCold-Hin);sourceEntropy=inlet['s']-upstream['s']
     boreArea=tips*math.pi*selection['tipBore_m']**2/4
     def exit_state(hh):
         state=ph(pV,hh);velocity=q/(state['rho']*boreArea)
@@ -64,10 +70,11 @@ def distributor(name,tips,sourceShift=0.):
             newSurfacePowerScale_W=q*6*sigma/(exitFluid['rho']*diameter),
             scope='Initial conduction and fastest flight scales only; not integrated growing-drop heat or landing prediction'))
     kineticPower=q*velocity*velocity/2;pressurePower=q*tipDrop/line['outlet']['rho']
-    energyPass=bool(abs(line['energyResidual_W'])<=10 and abs(q*nozzleEnergy)<=10 and entropyGain>=0)
+    energyPass=bool(abs(line['energyResidual_W'])<=10 and abs(q*nozzleEnergy)<=10 and entropyGain>=0 and abs(sourceEnergy)<=10 and sourceEntropy>=-1e-8)
     return dict(name=name,activeTips=tips,sourceShift_Pa=sourceShift,flow_kg_s=q,
         hydraulicAdmission=bool(abs(pressureResidual)<=1),energyAccountingAdmission=energyPass,mapPressureDomainAdmitted=mapAdmitted,
         pressureResidual_Pa=pressureResidual,valveDrop_Pa=valveDrop,nozzleDrop_Pa=tipDrop,
+        coldSourceTotalH_J_kg=Hin,sourceAccelerationEnergyResidual_W=sourceEnergy,sourceEntropyIncrease_J_kgK=sourceEntropy,
         nozzleInletPressure_Pa=line['outlet']['p'],nozzleExitPressure_Pa=pV,
         exitTemperature_K=exitFluid['T'],exitEnthalpy_J_kg=exitH,exitVelocity_m_s=velocity,exitTotalH_J_kg=exitH+velocity*velocity/2+g*zSpray,
         nozzleEnergyResidual_W=q*nozzleEnergy,entropyIncrease_J_kgK=entropyGain,
@@ -77,7 +84,11 @@ def distributor(name,tips,sourceShift=0.):
         sensitivity=sensitivity,fullPrimaryOrPZRNominalResolved=False,highPressureAtomizationQualified=False,
         surfaceTensionScope='Saturation surface tension at exit bulk temperature is a proxy, not a validated high-pressure interface law',
         phaseFlowScope='Achieved boundary-fed hardware flow. Pressure endpoints held from earlier normal state; no new full thermal equilibrium or acquired flow measurement')
+def distributor(name,tips,sourceShift=0.):
+    q=brentq(lambda q:distributor_pressure(q,tips,sourceShift)[0],.02,.15,xtol=1e-11)
+    return distributor_at_flow(name,tips,q,sourceShift)
 `
+export const normalDeliveryDefinitions=normalThermalDefinitions+normalDeliverySetup+normalDeliveryFlowDefinitions
 export const normalDeliveryPython=normalDeliveryDefinitions+String.raw`cases=[]
 for name,tips,shift in [('normal eight tips',selection['tips'],0.),('half tips blocked',selection['tips']//2,0.),('source pressure reduced',selection['tips'],-200000.)]:
     try:cases.append(distributor(name,tips,shift))
