@@ -17,7 +17,7 @@ export function capacityScreens(surfaces:SurfaceScreen[]){
   const outsideForcedFilmScreen=surfaces.some(s=>s.insideFilm.turbulentNu>=Math.max(s.insideFilm.naturalNu,s.insideFilm.laminarNu)&&(s.insideFilm.Re<2300||s.insideFilm.Re>5e6||s.insideFilm.Pr<.5||s.insideFilm.Pr>2000))
   return {outsideBoilingScreen,outsideForcedFilmScreen,scope:outsideBoilingScreen||outsideForcedFilmScreen?'diagnostic-only: selected source screen exceeded':'within selected source screens; not empirical bank or complete cooling qualification'}
 }
-export const prhrCapacityPython=String.raw`
+export const prhrCapacitySetupPython=String.raw`
 import json,sys,math,time,platform
 import iapws,scipy
 from types import SimpleNamespace
@@ -27,7 +27,9 @@ from iapws._iapws import _Viscosity,_ThCond
 from scipy.optimize import brentq
 d=json.load(sys.stdin);geo=d['geometry'];t=geo['tubes'];audit=d['audit'];basis=d['basis'];g=9.80665
 p=basis['primaryPressure_MPa'];Th=basis['hot_C']+273.15;ks=geo['steelConductivity_W_mK'];N=t['count'];L=audit['tubeLength_m'];cal=geo['calibration'];b={'surfaceFactor':1.}
-`+poolBoilingPython+String.raw`
+`+poolBoilingPython
+/** Shared exact film/property/geometry definitions; callers supply the named setup. */
+export const prhrCapacityConstitutivePython=String.raw`
 def water(T,P=p):
     if not 273.15<=T<=_TSat_P(P):raise ValueError('Single-phase Region1 sizing domain exceeded')
     w=_Region1(T,P);rho=1/w['v'];mu=_Viscosity(rho,T)
@@ -103,7 +105,8 @@ def z_at(s):
     if s<=a+2*arc+drop-2*r:
         theta=(s-a-arc-drop+2*r)/r;return t['bottom_m']+r-r*math.sin(theta),-math.cos(theta)
     return t['bottom_m'],0.
-def solve_case(case,cells):
+`
+export const prhrCapacityPython=prhrCapacitySetupPython+prhrCapacityConstitutivePython+String.raw`def solve_case(case,cells):
     poolT=case['pool_C']+273.15;effect=case['bankEffect'];dpTerm=case['terminalHead_Pa'];headerFactor=case.get('headerFilmFactor',1.)
     # Geometry breakpoints are integration boundaries, not interpolated elevation jumps.
     a=t['straightLeg_m'];r=t['bendRadius_m'];drop=t['top_m']-t['bottom_m'];arc=math.pi*r/2
