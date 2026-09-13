@@ -24,7 +24,7 @@ test('frozen hydraulic and thermal parents must match actual emitted calculation
   expect(()=>assertSprayParents({...thermal,calculationSha256:'old'},delivery,bytes)).toThrow()
   expect(()=>assertSprayParents(thermal,{...delivery,calculationSha256:'old'},bytes)).toThrow()
   expect(()=>assertSprayParents(thermal,delivery,bytes+'\n')).toThrow()
-  expect(hash(normalThermalPython)).toBe('95d9fa5262887f80296463f854195f23377d81a18052e7d1dd0706bb49b52d5b')
+  expect(hash(normalThermalPython)).toBe('b9292492c2a592b365bbb02ec126b68d92e56c9e5617ec7a35c07b491d6eea20')
 })
 
 test('cone orientation retains exit kinetic energy and exposes ballistic wall interception',()=>{

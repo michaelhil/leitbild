@@ -10,6 +10,7 @@ import { sharpCombiningPolynomials, primaryTeePython } from './reference-design-
 import { primaryOperatingPointPython } from './reference-design-primary-operating-point'
 import { parsePressurizerBasis } from './reference-design-pressurizer'
 import { parseSurgeRoute, resolveSurgeRoute, surgeRoutePython } from './reference-design-surge-route'
+import { normalTubeDefinitions } from './reference-design-normal-tube'
 
 const positive=z.number().finite().positive()
 export function parseNormalThermal(text:string) {
@@ -67,24 +68,7 @@ def native_pool(ps):
     ref=VU*w(ps,x=1).rho
     MU=brentq(lambda M:upper(M)[0]['V']-VU,ref*.8,ref*1.2,xtol=1e-8);up,sU=upper(MU)
     return lo,up,liquid(lo['pBottom'],s=sL)
-def tube(p,H,q,D,L,wall,z_at,slope,minor,stress):
-    if q<=0:raise ValueError('No positive throughflow: this advective normal-state reduction cannot hold a disconnected line warm')
-    area=math.pi*D*D/4
-    hh=H-g*z_at(0)
-    for _ in range(4):state=ph(p,hh);hh=H-g*z_at(0)-.5*(q/(state['rho']*area))**2
-    def rhs(x,y):
-        state=ph(y[0],y[1]);v=q/(state['rho']*area);Re=q*D/(area*state['mu'])
-        friction=math.exp(log_darcy_factor(Re,r['roughness_m']/D))/D+minor/L
-        heat=heat_path(state['T'],D/2,wall,1,normal['liquidContact_W_m2K'],stress)['heat_W']
-        matrix=[[1-v*v*state['rp'],-v*v*state['rh']],[-v*v/state['rho']*state['rp'],1-v*v/state['rho']*state['rh']]]
-        gradients=np.linalg.solve(matrix,[-state['rho']*g*slope(x)-friction*state['rho']*v*v/2,-g*slope(x)-heat/q])
-        return [*gradients,heat,area*state['rho'],area*state['rho']*(state['h']-state['p']/state['rho']),area*state['rho']*g*z_at(x),.5*area*state['rho']*v*v]
-    solved=solve_ivp(rhs,[0,L],[p,hh,0,0,0,0,0],method='DOP853',rtol=2e-9,atol=[1e-3,1e-6,1e-5,1e-7,1e-2,1e-5,1e-9])
-    if not solved.success:raise ValueError(solved.message)
-    y=solved.y[:,-1];out=ph(y[0],y[1]);v=q/(out['rho']*area);out['H']=out['h']+v*v/2+g*z_at(L)
-    return dict(outlet=out,heatLoss_W=y[2],mass_kg=y[3],internalEnergy_J=y[4],potentialEnergy_J=y[5],kineticEnergy_J=y[6],
-        energyResidual_W=q*(H-out['H'])-y[2],volume_m3=area*L,steelMass_kg=7920*math.pi*((D/2+wall)**2-(D/2)**2)*L,
-        inletTemperature_K=ph(p,hh)['T'],calls=len(solved.t),endVelocity_m_s=v)
+`+normalTubeDefinitions+String.raw`
 def route_slope(x):
     if x<=r['risingStart_m']:return 0.
     if x<=r['verticalStart_m']:return math.sin((x-r['risingStart_m'])/r['bendRadius_m'])
@@ -96,7 +80,7 @@ def evaluate(x,stress):
     # Finite-velocity inlet acceleration plus the actual PZR entrance. Tee replaces the old HOT discharge K.
     pLine=pb-(1+r['entryLoss'])*bottom['Mrho']*vb*vb/2
     L=r['developedLength_m']
-    surge=tube(pLine,Hb,q,r['internalDiameter_m'],L,r['wallThickness_m'],lambda s:route_elevation(r,L-s),lambda s:-route_slope(L-s),2*r['elbowLoss'],stress)
+    surge=tube(pLine,Hb,q,r['internalDiameter_m'],L,r['wallThickness_m'],lambda s:route_elevation(r,L-s),lambda s:-route_slope(L-s),2*r['elbowLoss'],stress,knots=[L-r['verticalStart_m'],L-r['risingStart_m']])
     tee=matched_tee(q,surge['outlet']['H'])
     if not tee['accepted']:raise ValueError('Normal return tee not admitted')
     valveDrop=q*q/(2*source['rho']*CdA*CdA)

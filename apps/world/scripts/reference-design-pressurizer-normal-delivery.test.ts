@@ -15,11 +15,11 @@ test('normal hardware inputs and finite carrier partition reject unsupported dec
   expect(()=>assertDeliveryArea({...selected,returnArea_m2:5},5)).toThrow()
   expect(()=>assertDeliveryArea(selected,NaN)).toThrow()
 })
-test('parent identities are mandatory and historical thermal calculation bytes remain identical',()=>{
+test('parent identities are mandatory and the selected geometry-aligned thermal calculation is identified',()=>{
   const receipt={sourceSha256:'s',calculationSha256:'c',inputSha256:'i'}
   const parents={tee:receipt,primary:receipt}
   expect(()=>assertDeliveryParentIds(parents,receipt,receipt)).not.toThrow()
   for(const key of Object.keys(receipt))expect(()=>assertDeliveryParentIds(parents,{...receipt,[key]:'wrong'},receipt)).toThrow()
   expect(()=>assertDeliveryParentIds({},receipt,receipt)).toThrow()
-  expect(createHash('sha256').update(normalThermalPython).digest('hex')).toBe('95d9fa5262887f80296463f854195f23377d81a18052e7d1dd0706bb49b52d5b')
+  expect(createHash('sha256').update(normalThermalPython).digest('hex')).toBe('b9292492c2a592b365bbb02ec126b68d92e56c9e5617ec7a35c07b491d6eea20')
 })
