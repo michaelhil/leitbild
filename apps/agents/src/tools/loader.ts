@@ -60,18 +60,19 @@ export const loadToolDirectory = async (
   registry: ToolRegistry,
   source: LoadSource = { kind: 'external' },
 ): Promise<LoadResult> => {
+  const directory = resolve(dir)
   const loaded: string[] = []
   const skipped: string[] = []
   const errors: string[] = []
 
   try {
-    const s = await stat(dir)
+    const s = await stat(directory)
     if (!s.isDirectory()) return { loaded, skipped, errors }
   } catch {
     return { loaded, skipped, errors }
   }
 
-  const entries = await readdir(dir)
+  const entries = await readdir(directory)
 
   const tsFiles = entries.filter(f =>
     extname(f) === '.ts'
@@ -81,11 +82,14 @@ export const loadToolDirectory = async (
 
   // Import all files in parallel
   await Promise.all(tsFiles.map(async (file) => {
-    const filePath = join(dir, file)
+    const filePath = join(directory, file)
     let mod: { default?: unknown }
 
     try {
-      mod = await import(filePath)
+      // Resolve against the actual directory before importing. Bun's direct
+      // dynamic import can retain a stale directory listing after a Pack adds
+      // a tool; explicit resolution refreshes that listing on a missing entry.
+      mod = await import(Bun.resolveSync(filePath, directory))
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       errors.push(`${file}: ${msg}`)
@@ -220,7 +224,7 @@ export const rescanExternalTools = async (registry: ToolRegistry): Promise<Resca
       let mod: { default?: unknown }
       try {
         // Cachebust — matches the pattern write_tool uses so Bun re-evaluates.
-        mod = await import(`${filePath}?t=${Date.now()}`)
+        mod = await import(`${Bun.resolveSync(filePath, dir)}?t=${Date.now()}`)
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         errors.push(`${file}: ${msg}`)

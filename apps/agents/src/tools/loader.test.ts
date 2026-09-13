@@ -1,14 +1,34 @@
 import { describe, test, expect } from 'bun:test'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { loadToolDirectory, loadExternalTools } from './loader.ts'
+import { loadToolDirectory, loadExternalTools, rescanExternalTools } from './loader.ts'
 import { createToolRegistry } from '../core/tool-registry.ts'
 
 // Registry is recreated per test to avoid cross-test pollution
 const makeRegistry = () => createToolRegistry()
 
 describe('loadToolDirectory', () => {
+  test('discovers a tool added after the directory was already imported', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'leitbild-new-tool-'))
+    const toolSource = (name: string) => `export default {
+      name: '${name}', description: 'New tool discovery', parameters: {},
+      execute: async () => ({ success: true }),
+    }`
+    try {
+      await writeFile(join(dir, 'first.ts'), toolSource('first'))
+      expect((await loadToolDirectory(relative(process.cwd(), dir), makeRegistry())).errors).toEqual([])
+      await writeFile(join(dir, 'second.ts'), toolSource('second'))
+      const registry = makeRegistry()
+      const result = await loadToolDirectory(dir, registry)
+      expect(result.errors).toEqual([])
+      expect(registry.has('first')).toBe(true)
+      expect(registry.has('second')).toBe(true)
+    } finally {
+      await rm(dir, { recursive: true })
+    }
+  })
+
   test('non-existent directory returns empty result without error', async () => {
     const registry = makeRegistry()
     const result = await loadToolDirectory('/does/not/exist/at/all', registry)
@@ -153,6 +173,33 @@ describe('loadToolDirectory', () => {
 })
 
 describe('loadExternalTools', () => {
+  test('rescan discovers a newly added file in an already loaded directory', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'leitbild-rescan-new-tool-'))
+    const original = process.env.LEITBILD_TOOLS_DIR
+    try {
+      process.env.LEITBILD_TOOLS_DIR = dir
+      await writeFile(join(dir, 'first.ts'), `export default {
+        name: 'rescan_first', description: 'First', parameters: {},
+        execute: async () => ({ success: true }),
+      }`)
+      const registry = makeRegistry()
+      await loadToolDirectory(dir, registry)
+      await writeFile(join(dir, 'second.ts'), `export default {
+        name: 'rescan_second', description: 'Second', parameters: {},
+        execute: async () => ({ success: true }),
+      }`)
+      const result = await rescanExternalTools(registry)
+      expect(result.errors).toEqual([])
+      expect(result.added).toContain('rescan_second')
+      expect(registry.has('rescan_first')).toBe(true)
+      expect(registry.has('rescan_second')).toBe(true)
+    } finally {
+      if (original === undefined) delete process.env.LEITBILD_TOOLS_DIR
+      else process.env.LEITBILD_TOOLS_DIR = original
+      await rm(dir, { recursive: true })
+    }
+  })
+
   test('runs without error when no tool directories exist', async () => {
     const registry = makeRegistry()
     // All default dirs likely don't exist in CI — should complete silently
