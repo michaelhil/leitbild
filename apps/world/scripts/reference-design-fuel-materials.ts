@@ -16,11 +16,13 @@ def cpf(t):
     z=535.285/t
     return 296.7*z*z*math.exp(z)/math.expm1(z)**2+.0243*t+8.745e7*1.577e5/(8.3143*t*t)*math.exp(-1.577e5/(8.3143*t))
 def hf(t):return 296.7*535.285/math.expm1(535.285/t)+.0243*t*t/2+8.745e7*math.exp(-1.577e5/(8.3143*t))
-cpTs=[300,400,640,1090]; cpVals=[281,302,331,375]
+cpTs=[300,400,640,1090,1093,1113,1133,1153,1173,1193,1213,1233,1248,2098,2099]
+cpVals=[281,302,331,375,502,590,615,719,816,770,619,469,356,356,356]
 def cpc(t):return float(np.interp(t,cpTs,cpVals))
 def hc(t):
     # Exact primitive of the SAME piecewise-linear Cp; no quadrature inside
-    # every implicit energy residual. The owning laws admit 300..1000 K.
+    # every implicit energy residual. Full CTF4.4 Table18 includes the alpha/beta
+    # sensible-energy transition; individual studies own their admitted range.
     total=0.
     for i,(a,z) in enumerate(zip(cpTs,cpTs[1:])):
         if t>a:
