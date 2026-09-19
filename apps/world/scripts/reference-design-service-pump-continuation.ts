@@ -87,7 +87,7 @@ if(import.meta.main){
     })
     return {basis,...p,referenceFluidPower_W,pressureVolumeRelativeError:p.pressureVolumeWork_J_kg/p.isentropicWork_J_kg-1,casingVolume_m3,remainingTrainHoldup_m3:basis.existingTrainHoldup_m3?basis.existingTrainHoldup_m3-casingVolume_m3:null,normal,deadhead,dry,passive,curve,contact,frozenReceiverScreen,referenceShutoffPressure_MPa:basis.inletPressure_MPa+1.25*(basis.outletPressure_MPa-basis.inletPressure_MPa)}
   })
-  check('charging shutoff exceeds selected16MPa path',cases.find(c=>c.basis.id==='CHARGE')!.referenceShutoffPressure_MPa>16)
+  check('charging shutoff exceeds core comparison band, not water EOS limit',cases.find(c=>c.basis.id==='CHARGE')!.referenceShutoffPressure_MPa>16)
   if(sources.some(source=>hash(source.path)!==source.sha256))throw new Error('Reference source changed during calculation')
   const output={scope:'Native pure-water reference endpoints and frozen constitutive states only; no pressure/phase/venting trajectory or high-pressure noncondensable qualification',sources,propertyLibrary:properties.propertyLibrary,quadratureLibrary:properties.quadratureLibrary,checks,cases}
   if(receipt)await Bun.write(receipt,JSON.stringify(output,null,2)+'\n')
