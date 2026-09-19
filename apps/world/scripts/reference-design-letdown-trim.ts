@@ -150,7 +150,7 @@ if(import.meta.main){
  if(hashText(recordText(readFileSync(owner,'utf8')))!==recordSha256)throw new Error('Consumed trim record changed during comparison')
  const result=JSON.parse(run.stdout)
  const travel=[0,.5,1,2,7].map(seconds=>({seconds,regulating:closingOpening(basis.nominalOpening,basis.regulatingSpeed_s,seconds),isolation:closingOpening(1,1/basis.isolationStroke_s,seconds)}))
- result.checks.push({name:'Actual finite regulating and isolation stroke endpoints',passed:travel[3].isolation===0&&travel[3].regulating>0&&travel[4].regulating===0})
+ result.checks.push({name:'Actual finite regulating and isolation stroke endpoints',passed:travel[3]!.isolation===0&&travel[3]!.regulating>0&&travel[4]!.regulating===0})
  const output={owner:{path:owner,recordSha256,meaning:'Exact consumed trim record, not verification of arbitrary owner prose'},sources,
   calculationSha256:hashText(trimCalculation),...result,travel,comparisonPassed:result.checks.every((c:{passed:boolean})=>c.passed)}
  if(receipt)await Bun.write(receipt,JSON.stringify(output,null,2)+'\n')

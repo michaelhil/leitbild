@@ -1,6 +1,6 @@
 import {test,expect} from 'bun:test'
 import {closingOpening,parseLetdownTrim} from './reference-design-letdown-trim'
-const b={stages:4,inletPressure_MPa:15,outletPressure_MPa:.101325,nominalTemperature_C:40,nominalFlow_kg_s:5,nominalOpening:.7,
+const b={stages:4 as const,inletPressure_MPa:15,outletPressure_MPa:.101325,nominalTemperature_C:40,nominalFlow_kg_s:5,nominalOpening:.7,
  hotTemperatures_C:[60,150,290],raisedBackpressure_MPa:.5,reverseDonorPressure_MPa:.3,reverseReceiverPressure_MPa:.1,
  reverseTemperature_C:40,regulatingSpeed_s:.1,isolationStroke_s:2,upstreamPressure_MPa:15.2,upstreamTemperature_C:290}
 const doc=(value:unknown)=>'```reference-letdown-trim\n'+JSON.stringify(value)+'\n```'
