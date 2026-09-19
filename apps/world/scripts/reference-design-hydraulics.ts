@@ -16,6 +16,18 @@ export const parseHydraulicBasis=(document:string)=>{
   if(blocks.length!==1)throw new Error('Expected exactly one reference-hydraulics block')
   return schema.parse(JSON.parse(blocks[0]![1]!))
 }
+/** Authored incidence-loss closure, not a measured four-quadrant characteristic. */
+export function backflowBrakingTorque(exchangeTorque:number,flow:number,omega:number){
+  if(![exchangeTorque,flow,omega].every(Number.isFinite))throw new Error('Nonfinite pump braking state')
+  return flow<0&&omega>0?Math.max(0,-2*exchangeTorque):0
+}
+export function signedLiquidPump(rho:number,q:number,omega:number,a:number,b:number,resistance:number){
+  if(![rho,q,omega,a,b,resistance].every(Number.isFinite)||rho<=0||a<=0||b<0||resistance<0)throw new Error('Invalid liquid pump state')
+  const exchangeTorque=rho*q*(a*omega-b*Math.abs(q))
+  const brakeTorque=backflowBrakingTorque(exchangeTorque,q,omega),torque=exchangeTorque+brakeTorque
+  const euler=rho*omega*(a*omega-b*Math.abs(q)),loss=resistance*rho*q*Math.abs(q)
+  return {exchangeTorque,brakeTorque,torque,euler,loss,rise:euler-loss,power:omega*torque,brakePower:omega*brakeTorque}
+}
 const calculation=String.raw`
 import sys,json,math
 import numpy as np
@@ -47,7 +59,7 @@ if R<=0:raise ValueError('RCP selected point cannot provide dissipative passage'
 common=sum(K[k] for k in ('cold_to_core','core_lower','core_upper')); loop=K['hot']+K['SG']; hydro=sum(H.values())
 def pump(m,n):
  q=m/rho; w=n*omega0
- return rho*w*(a*w-beta*q)-R*rho*q*abs(q)
+ return rho*w*(a*w-beta*abs(q))-R*rho*q*abs(q)
 def loss(k,m):return K[k]*m*abs(m)
 def solve(name,speeds,guess):
  def residual(x):

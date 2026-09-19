@@ -11,8 +11,9 @@ describe('signed RHR single-incidence machine',()=>{
       const stopped=signedMachine(k,rho,m,0,1,C)
       expect(stopped.shaftPower===0).toBe(true)
       expect(Number.isFinite(stopped.torque)).toBe(true)
-      expect(stopped.torque).toBeLessThan(0)
+      expect(Math.sign(-stopped.torque)).toBe(Math.sign(m))
       expect(stopped.dissipationProxy).toBeGreaterThan(0)
+      for(const omega of [-1e-8,1e-8])expect(signedMachine(k,rho,m,omega,1,C).torque).toBeCloseTo(stopped.torque,5)
     }
     const zero=signedMachine(k,rho,0,300,1,C)
     expect(zero.torque).toBe(0)
@@ -21,7 +22,9 @@ describe('signed RHR single-incidence machine',()=>{
   it('uses the same stage for pressure and signed shaft work',()=>{
     for(const m of [-100,100])for(const omega of [-300,300])for(const factor of [0,.5,1]){
       const s=signedMachine(k,rho,m,omega,factor,C)
-      expect(s.shaftPower).toBeCloseTo(m*s.euler*C,8)
+      expect(s.shaftPower).toBeCloseTo(m*s.euler*C+s.brakePower,8)
+      expect(s.brakePower).toBeGreaterThanOrEqual(0)
+      if(m<0&&omega>0)expect(s.torque).toBeGreaterThanOrEqual(0)
       expect(s.dissipationProxy).toBeGreaterThanOrEqual(0)
       if(factor===0){expect(s.torque===0).toBe(true);expect(s.shaftPower===0).toBe(true);expect(s.rise).toBe(-s.loss)}
     }

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseInitializationBasis } from './reference-design-initialization.ts'
 import { runCycle } from './reference-design-cycle.ts'
-import { runHydraulics } from './reference-design-hydraulics.ts'
+import { runHydraulics, signedLiquidPump } from './reference-design-hydraulics.ts'
 
 const hash=(s:string|Uint8Array)=>createHash('sha256').update(s).digest('hex')
 const sum=(a:number[])=>a.reduce((x,y)=>x+y,0)
@@ -137,9 +137,9 @@ export async function runNativeKernel(initializationDocument:string,hydraulicDoc
       if(edge<=2)head=(props[i]!.rho+props[j]!.rho)/2*g*(pressureZ[j]!-pressureZ[i]!)
       if(edge===6||edge===7)head=g*(props[i]!.rho*(hb.SGturn_m-pressureZ[i]!)+props[j]!.rho*(pressureZ[j]!-hb.SGturn_m))
       if(edge>=8&&edge<=11){
-        const n=edge-8,q=flow/ru,w=omega[n]!,tf=ru*q*(a*w-blade*q),td=drag0/omega0**2*w
+        const n=edge-8,q=flow/ru,w=omega[n]!,machine=signedLiquidPump(ru,q,w,a,blade,R),tf=machine.torque,td=drag0/omega0**2*w
         if(w<0)throw new KernelTrialError('Reverse rotor outside admission')
-        power=w*tf;pumpHead=ru*w*(a*w-blade*q)-R*ru*q*Math.abs(q)
+        power=machine.power;pumpHead=machine.rise
         const tm=Math.max(0,Math.min(1.5*torque0,tf+td+J*(omega0*(n===0?request:1)-w)/basis.motorTracking_s))
         const pe=tm*w/cb.RCPMotorEfficiency;electrical.push(pe);ambient.push(pe-tm*w+td*w);domega.push((tm-tf-td)/J)
       }

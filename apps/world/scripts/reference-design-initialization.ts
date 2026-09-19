@@ -117,7 +117,8 @@ def evaluate(x,sourceFactor=1,A1request=1,wallHeat=None):
   pumphead=0; power=0
   if 8<=k<=11:
    n=k-8; q=m[k]/ru; w=omega[n]
-   tf=ru*q*(a*w-blade*q); power=w*tf; pumphead=ru*w*(a*w-blade*q)-R*ru*q*abs(q)
+   tex=ru*q*(a*w-blade*abs(q));tbrake=max(0.,-2*tex) if q<0 and w>0 else 0.
+   tf=tex+tbrake;power=w*tf;pumphead=ru*w*(a*w-blade*abs(q))-R*ru*q*abs(q)
    td=drag0/omega0**2*w
    requested=omega0*(A1request if n==0 else 1)
    tm=np.clip(tf+td+J*(requested-w)/b['motorTracking_s'],0,1.5*torque0)

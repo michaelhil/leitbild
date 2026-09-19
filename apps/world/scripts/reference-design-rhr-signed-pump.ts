@@ -4,13 +4,15 @@ import {createHash} from 'node:crypto'
 import {spawnSync} from 'node:child_process'
 import {resolve} from 'node:path'
 import {readServicePump} from './reference-design-service-pump-continuation'
+import {backflowBrakingTorque} from './reference-design-hydraulics'
 
 export type Machine={a:number;b:number;resistance:number}
 export function signedMachine(k:Machine,rho:number,m:number,omega:number,factor:number,workSlope:number){
   if(![...Object.values(k),rho,m,omega,factor,workSlope].every(Number.isFinite)||k.a<=0||k.b<0||k.resistance<0||rho<=0||factor<0||factor>1||workSlope<=0)throw new Error('Invalid signed machine state')
-  const q=m/rho,euler=factor*rho*omega*(k.a*omega-k.b*q),loss=k.resistance*rho*q*Math.abs(q)
-  const torque=factor*rho*m*(k.a*omega-k.b*q)*workSlope
-  return {q,euler,loss,rise:euler-loss,torque,shaftPower:omega*torque,dissipationProxy:Math.abs(q*loss)}
+  const q=m/rho,euler=factor*rho*omega*(k.a*omega-k.b*Math.abs(q)),loss=k.resistance*rho*q*Math.abs(q)
+  const exchangeTorque=factor*rho*m*(k.a*omega-k.b*Math.abs(q))*workSlope
+  const brakeTorque=backflowBrakingTorque(exchangeTorque,m,omega),torque=exchangeTorque+brakeTorque
+  return {q,euler,loss,rise:euler-loss,exchangeTorque,brakeTorque,brakePower:omega*brakeTorque,torque,shaftPower:omega*torque,dissipationProxy:Math.abs(q*loss)+omega*brakeTorque}
 }
 export function motorBudget(torque:number,omega:number,efficiency:number){
   if(![torque,omega,efficiency].every(Number.isFinite)||torque<0||efficiency<=0||efficiency>1)throw new Error('Invalid non-regenerative motor state')
@@ -47,22 +49,23 @@ def check(name,ok):
  if not ok:raise ValueError(name)
  checks.append(name)
 def hydraulic(m,w,rc=rho,F=1):
- q=m/rc;de=F*rc*w*(a*w-bb*q);loss=R*rc*q*abs(q)
+ q=m/rc;de=F*rc*w*(a*w-bb*abs(q));loss=R*rc*q*abs(q)
  return de,loss
 rows=[]
 for name,m,w,pd,td,rc,F in [('nominal',m0,w0,p0,t0,rho,1),('cold-reverse',-1.,w0,1.8e6,313.15,rho,1),('hot-reverse',-80.,w0,1.8e6,423.15,rho,1),('negative-speed-forward',80.,-w0,1e6,313.15,rho,1),('negative-both',-80.,-w0,1.8e6,313.15,rho,1),('stopped-forward',80.,0.,1e6,313.15,rho,1),('stopped-reverse',-80.,0.,1e6,313.15,rho,1)]:
  de,loss=hydraulic(m,w,rc,F);direction=math.copysign(1,m);ps=pd+direction*de;pr=ps-abs(loss)
  check(name+' positive stage and receiver pressure',ps>0 and pr>0)
- hd=P('H','P',pd,'T',td,'Water');sd=P('S','P',pd,'T',td,'Water');hs=P('H','P',ps,'S',sd,'Water') if ps!=pd else hd;sr=P('S','P',pr,'H',hs,'Water')
+ hd=P('H','P',pd,'T',td,'Water');sd=P('S','P',pd,'T',td,'Water');hs=P('H','P',ps,'S',sd,'Water') if ps!=pd else hd
  integral=(ps-pd)*quad(lambda x:1/P('D','P',pd+x*(ps-pd),'S',sd,'Water'),0,1,epsabs=1e-13,epsrel=1e-10)[0]
- dh=hs-hd if ps!=pd else 0.;C=dh/(ps-pd) if ps!=pd else 1/P('D','P',pd,'T',td,'Water');power=abs(m)*dh;torque=F*rc*m*(a*w-bb*m/rc)*C
+ dh=hs-hd if ps!=pd else 0.;C=dh/(ps-pd) if ps!=pd else 1/P('D','P',pd,'T',td,'Water');exchangeTorque=F*rc*m*(a*w-bb*abs(m/rc))*C
+ brakeTorque=max(0.,-2*exchangeTorque) if m<0 and w>0 else 0.;brakePower=w*brakeTorque;torque=exchangeTorque+brakeTorque;power=abs(m)*dh+brakePower;hr=hs+brakePower/abs(m);sr=P('S','P',pr,'H',hr,'Water')
  check(name+' native work versus integral',abs(dh-integral)<1e-4)
  check(name+' exact torque work incidence',abs(w*torque-power)<1e-7)
  check(name+' actual receiver entropy',sr>=sd-1e-7)
- check(name+' single receiver energy',abs(abs(m)*hs-abs(m)*hd-power)<1e-5)
+ check(name+' single receiver energy',abs(abs(m)*hr-abs(m)*hd-power)<1e-5)
  naive=hd+direction*de/rc
  naiveEntropy=P('S','P',pr,'H',naive,'Water')-sd
- rows.append(dict(name=name,m=m,omega=w,donorPressure=pd,donorTemperature=td,caseDensity=rc,euler=de,loss=loss,stagePressure=ps,receiverPressure=pr,workSlope=C,work=dh,integratedWork=integral,torque=torque,power=power,entropyRise=sr-sd,naiveEntropyRise=naiveEntropy,receiverTemperature=P('T','P',pr,'H',hs,'Water'),receiverQuality=P('Q','P',pr,'H',hs,'Water')))
+ rows.append(dict(name=name,m=m,omega=w,donorPressure=pd,donorTemperature=td,caseDensity=rc,euler=de,loss=loss,stagePressure=ps,receiverPressure=pr,workSlope=C,work=dh,integratedWork=integral,exchangeTorque=exchangeTorque,brakeTorque=brakeTorque,brakePower=brakePower,torque=torque,power=power,entropyRise=sr-sd,naiveEntropyRise=naiveEntropy,receiverTemperature=P('T','P',pr,'H',hr,'Water'),receiverQuality=P('Q','P',pr,'H',hr,'Water')))
 check('Naive casing-volume reverse work rejected',next(r for r in rows if r['name']=='cold-reverse')['naiveEntropyRise']<-.01)
 check('A2 exact unchanged nominal fluid duty',abs(rows[0]['power']-m0*e0)<1e-6)
 # Independent explicit evaluation of the selected common-T liquid-bearing mixture.
@@ -85,15 +88,16 @@ for name,m,w,pd in [('mixed-forward',40.,.5*w0,1e6),('mixed-reverse',-40.,.5*w0,
  donor=mix(pd,t0);caseRho=1/donor['v'] if m>0 else rho;caseAlpha=donor['gasFraction'] if m>0 else 0.;gasFactor=1 if caseAlpha<=.02 else max(0,(.15-caseAlpha)/.13)
  required=b['npshSpeed_m']*(w/w0)**2+b['npshFlow_m']*(m/caseRho/q0)**2;available=(p0-P('P','T',t0,'Q',1,'Water'))/(caseRho*9.80665);factor=min(gasFactor,min(1,max(0,available/required))**2)
  de,loss=hydraulic(m,w,caseRho,factor);ps=pd+math.copysign(1,m)*de;pr=ps-abs(loss);stage=sameS(ps,donor);dh=stage['h']-donor['h']
- received=mix(pr,brentq(lambda T:mix(pr,T)['h']-stage['h'],t0-3,t0+3,xtol=2e-11));C=dh/(ps-pd)
+ C=dh/(ps-pd);exchangeTorque=factor*caseRho*m*(a*w-bb*abs(m/caseRho))*C;brakeTorque=max(0.,-2*exchangeTorque) if m<0 and w>0 else 0.;brakePower=w*brakeTorque
+ received=mix(pr,brentq(lambda T:mix(pr,T)['h']-stage['h']-brakePower/abs(m),t0-3,t0+3,xtol=2e-11))
  hp=(mix(pd+20,t0)['h']-mix(pd-20,t0)['h'])/40;sp=(mix(pd+20,t0)['s']-mix(pd-20,t0)['s'])/40
  ht=(mix(pd,t0+.0001)['h']-mix(pd,t0-.0001)['h'])/.0002;st=(mix(pd,t0+.0001)['s']-mix(pd,t0-.0001)['s'])/.0002
  zeroC=hp-ht*sp/st;fdC=(sameS(pd+100,donor)['h']-sameS(pd-100,donor)['h'])/200
  check(name+' effective zero-step derivative',zeroC>0 and abs(zeroC/fdC-1)<1e-5)
  check(name+' actual receiver entropy',received['s']>=donor['s']-1e-7)
- check(name+' exact face energy',abs(received['h']-stage['h'])<1e-5)
+ check(name+' exact face energy',abs(abs(m)*(received['h']-donor['h'])-abs(m)*dh-brakePower)<1e-4)
  check(name+' material ratios preserved',abs(received['ml']+received['mv']-1)<1e-12 and all(x>0 for x in masses.values()))
- mixed.append(dict(name=name,m=m,omega=w,caseDensity=caseRho,caseGasFraction=caseAlpha,factor=factor,availableNPSH=available,requiredNPSH=required,donorPressure=pd,stagePressure=ps,receiverPressure=pr,donor=donor,stage=stage,received=received,work=dh,workSlope=C,zeroStepWorkSlope=zeroC,finiteDifferenceSlope=fdC,zeroStepSpecificVolume=donor['v'],NCmassPerWater=masses))
+ mixed.append(dict(name=name,m=m,omega=w,caseDensity=caseRho,caseGasFraction=caseAlpha,factor=factor,availableNPSH=available,requiredNPSH=required,donorPressure=pd,stagePressure=ps,receiverPressure=pr,donor=donor,stage=stage,received=received,work=dh,workSlope=C,exchangeTorque=exchangeTorque,brakeTorque=brakeTorque,brakePower=brakePower,zeroStepWorkSlope=zeroC,finiteDifferenceSlope=fdC,zeroStepSpecificVolume=donor['v'],NCmassPerWater=masses))
 # F=0 passive gas: no rotor exchange, isenthalpic ideal gas loss, both identities retained.
 gas=[]
 for name in Rgas:
@@ -106,11 +110,11 @@ def rates(t,y):
  w=y[0];de,loss=hydraulic(mc,w);ps=pd-de;pr=ps-abs(loss)
  if min(ps,pr)<=0:raise ValueError('Coupon pressure path inadmissible')
  dh=P('H','P',ps,'S',sd,'Water')-hd;C=dh/(-de) if de!=0 else 1/P('D','P',pd,'T',td,'Water')
- torque=rho*mc*(a*w-bb*mc/rho)*C;power=abs(mc)*dh
- drag=.01*m0*e0*w/w0**2;extra=max(.01*m0*e0*abs(w/w0)**3-abs(mc/rho*loss),0);tex=extra/w if w!=0 else 0
+ exchangeTorque=rho*mc*(a*w-bb*abs(mc/rho))*C;brakeTorque=max(0.,-2*exchangeTorque) if mc<0 and w>0 else 0.;brakePower=w*brakeTorque;torque=exchangeTorque+brakeTorque;power=abs(mc)*dh+brakePower
+ drag=.01*m0*e0*w/w0**2;extra=max(.01*m0*e0*abs(w/w0)**3-abs(mc/rho*loss)-brakePower,0);tex=extra/w if w!=0 else 0
  return [(-torque-drag-tex)/J,power,drag*w,extra]
 acceleration,fluid,drag,extra=rates(0,[w0]);rotor=J*w0*acceleration;defect=rotor+fluid+drag+extra
-check('Unpowered reverse instantaneous shaft ledger',abs(defect)<1e-7 and acceleration>0 and fluid<0 and drag>0 and extra>0)
+check('Unpowered running rotor brakes under reverse flow with exact shaft ledger',abs(defect)<1e-7 and acceleration<0 and fluid>0 and drag>0 and extra>=0)
 coupon=dict(forcedMassFlow=mc,omega=w0,acceleration=acceleration,rotorPower=rotor,fluidPower=fluid,dragPower=drag,extraCasePower=extra,powerDefect=defect)
 mf=brentq(lambda m:sum([hydraulic(m,w0)[0],-hydraulic(m,w0)[1]])-.5e6*(m/15)**2,0,m0)
 dem,lm=hydraulic(mf,w0);hm=P('H','P',p0+dem,'S',s0,'Water');pm=mf*(hm-h0)
@@ -128,7 +132,7 @@ if(import.meta.main){
   const [owner,python,receipt,...extra]=process.argv.slice(2)
   if(!owner||!python||extra.length)throw new Error('Usage: <rhr-owner.md> <python-with-CoolProp-and-SciPy> [receipt.json]')
   const hash=(path:string)=>createHash('sha256').update(readFileSync(path)).digest('hex')
-  const sources=[owner,resolve(owner,'../two-phase-and-breaks.md'),import.meta.path,resolve(import.meta.dir,'reference-design-service-pump-continuation.ts')].map(path=>({path,sha256:hash(path)}))
+  const sources=[owner,resolve(owner,'../two-phase-and-breaks.md'),import.meta.path,resolve(import.meta.dir,'reference-design-service-pump-continuation.ts'),resolve(import.meta.dir,'reference-design-hydraulics.ts')].map(path=>({path,sha256:hash(path)}))
   const basis=readServicePump(owner)
   const selection=readSignedSelection(readFileSync(owner,'utf8'))
   if(basis.id!=='RHR')throw new Error('Requires RHR reference')
@@ -142,7 +146,8 @@ if(import.meta.main){
   const motor=[-result.calibration.omega0,0,result.calibration.omega0].map(omega=>({omega,...motorBudget(100,omega,selection.motorEfficiency)}))
   const axes=[-100,0,100].map(m=>({m,...signedMachine(result.calibration,result.calibration.rho,m,0,1,1/result.calibration.rho)}))
   if(motor.some(b=>b.electric<0||b.heat<0||Math.abs(b.electric-b.shaft-b.heat)>1e-8)||axes.some(a=>!Number.isFinite(a.torque)||a.shaftPower!==0))throw new Error('Axis or motor energy budget failed')
-  result.checks.push('Signed zero-speed torque and zero power','Non-regenerative motor positive zero negative speed')
+  if(axes.some(a=>a.m!==0&&Math.sign(-a.torque)!==Math.sign(a.m)))throw new Error('Throughflow starts a stopped rotor in the wrong direction')
+  result.checks.push('Signed zero-speed torque and zero power','Unpowered forward and reverse start directions','Non-regenerative motor positive zero negative speed')
   if(sources.some(s=>hash(s.path)!==s.sha256))throw new Error('Source changed during comparison')
   const output={scope:'Fixed native water/effective mixed faces, axes and instantaneous reverse shaft coupon, nominal recalibration and static pressure screens; no installed transient or pressure-protection qualification',sources,selection,motor,axes,...result}
   if(receipt)await Bun.write(receipt,JSON.stringify(output,null,2)+'\n')
