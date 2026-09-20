@@ -67,10 +67,23 @@ for name,sourceP,sourceT in [('nominal',b['nominalPressure_MPa']*1e6,b['nominalT
  else:
   T=brentq(lambda T:pool(M,T)['energy_J']-target,273.16,Ts,xtol=1e-10)
   final=pool(M,T)
- check(name+' recovered native pool energy',abs(final['energy_J']+gas-initial['energy_J']-incoming)<1e-3)
- check(name+' native open work identity',abs(final['internalEnergy_J']+p*final['volume_m3']+final['potentialEnergy_J']-final['energy_J'])<1e-6)
+ residual=final['energy_J']+gas-initial['energy_J']-incoming
+ Tf=final['temperature_C']+273.15
+ cp=PropsSI('C','P',p,'T',Tf,'Water');alpha=PropsSI('ISOBARIC_EXPANSION_COEFFICIENT','P',p,'T',Tf,'Water')
+ # Native E=M*h+PE sensitivity at fixed mass and pressure; original2m3 fixture retains .001 J floor.
+ derivative=final['mass_kg']*(cp+g*final['depth_m']*alpha/2)
+ arithmetic=8*sys.float_info.epsilon*(abs(final['energy_J'])+abs(initial['energy_J'])+abs(incoming)+abs(gas))
+ allowance=max(1e-3,abs(derivative)*1e-10+arithmetic)
+ check(name+' recovered native pool energy',abs(residual)<allowance)
+ workResidual=final['internalEnergy_J']+p*final['volume_m3']+final['potentialEnergy_J']-final['energy_J']
+ workAllowance=max(1e-6,8*sys.float_info.epsilon*(abs(final['internalEnergy_J'])+abs(p*final['volume_m3'])+abs(final['potentialEnergy_J'])+abs(final['energy_J'])))
+ check(name+' native open work identity',abs(workResidual)<workAllowance)
  rows.append(dict(name=name,incomingMass_kg=m,incomingEnthalpy_J_kg=h,liquidReceipt_kg=ml,
-  steamExport_kg=mv,gasEnergyExport_J=gas,liquidEnergyReceipt_J=received,final=final))
+  steamExport_kg=mv,gasEnergyExport_J=gas,liquidEnergyReceipt_J=received,final=final,
+  nativeEnergyResidual_J=residual,nativeEnergyResidual_J_kg=residual/final['mass_kg'],
+  originalAbsoluteScreenPassed=abs(residual)<1e-3,propertyRecoveryAllowance_J=allowance,
+  energyTemperatureDerivative_J_K=derivative,arithmeticAllowance_J=arithmetic,
+  openWorkIdentityResidual_J=workResidual,openWorkIdentityAllowance_J=workAllowance))
 check('nominal remains liquid',rows[0]['steamExport_kg']==0)
 check('hot receipt flashes rather than heating pool with exported steam',0<rows[1]['steamExport_kg']<b['parcelMass_kg'])
 check('pure steam donor bypass does not heat liquid pool',rows[2]['final']==initial)
