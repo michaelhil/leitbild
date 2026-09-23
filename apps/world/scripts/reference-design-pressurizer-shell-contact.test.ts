@@ -1,0 +1,23 @@
+import {describe,expect,test} from 'bun:test'
+import {shellContactGeometry} from './reference-design-pressurizer-shell-contact'
+
+describe('actual finite shell and two independent head boundaries',()=>{
+ test('fixed shell bands cover12m once and retain actual cylindrical steel',()=>{
+  const g=shellContactGeometry(),r=Math.sqrt(5/Math.PI)
+  expect(g.shell).toHaveLength(5)
+  expect(g.shell.reduce((s,x)=>s+x.area_m2,0)).toBeCloseTo(2*Math.PI*r*12,10)
+  expect(g.shell.reduce((s,x)=>s+x.steelMass_kg,0)).toBeCloseTo(7920*Math.PI*((r+.15)**2-r*r)*12,8)
+ })
+ test('both orientations have actual inner/outer recipients without duplicate fluid',()=>{
+  const g=shellContactGeometry()
+  for(const name of ['bottom','top']){
+   const patches=g.heads.filter(x=>x.name===name)
+   expect(patches).toHaveLength(2)
+   expect(patches.map(x=>x.lane)).toEqual(['inner','outer'])
+   expect(patches.reduce((s,x)=>s+x.grossSolidArea_m2,0)).toBe(5)
+   expect(patches.reduce((s,x)=>s+x.area_m2,0)).toBeCloseTo(name==='bottom'?5-288*Math.PI*.01**2:5,10)
+   expect(patches.reduce((s,x)=>s+x.steelMass_kg,0)).toBe(5940)
+   expect(patches[0]!.orientation).toBe(name==='bottom'?'upward':'downward')
+  }
+ })
+})

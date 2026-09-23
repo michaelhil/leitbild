@@ -13,7 +13,8 @@ export function heaterContactAreas(height:number,liquidContactFraction:number){
  }))
 }
 
-export const heaterContactPython=String.raw`
+/** Named shared source definitions; the original heater calculation remains unchanged. */
+export const heaterContactDefinitionsPython=String.raw`
 import json,sys,math,functools
 import CoolProp,scipy
 from CoolProp.CoolProp import PropsSI as P
@@ -102,7 +103,8 @@ def gas_contact(Tw,Tg,pv,ptotal,z,eta,area=1.,h=5.,speed=.01,present=True):
  return dict(condensation_kg_s=mass,metal_W=metal,gas_W=gas,receiver_W=receiver,
   landingHeight_m=landing,fallDissipation_W=mass*g*(z-landing),sensible_W=sensible)
 
-rows=[];ends=[]
+`
+export const heaterContactPython=heaterContactDefinitionsPython+String.raw`rows=[];ends=[]
 for p in [1e5,1e6,15e6]:
  s=sat(p)
  for sub in [0.,20.]:
