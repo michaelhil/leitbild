@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { heaterBankBasis } from './reference-design-pressurizer-heater-banks'
 
 export const heaterElectricalBasis = { nominalVoltage_V: 10000, contactDelay_s: 0.05 } as const
-export type Modulator = { kind: 'healthy' | 'failed-on' | 'failed-off' } | { kind: 'stuck'; duty: number }
+export type Modulator = { kind: 'healthy' } | { kind: 'failed-on' } | { kind: 'failed-off' } | { kind: 'stuck'; duty: number }
 export type ContactState = { closed: boolean; targetClosed: boolean; elapsed_s: number }
 
 function nonnegative(value: number, name: string) {
