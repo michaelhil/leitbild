@@ -18,7 +18,8 @@ export function sprayJetThrust(massFlow: number, speed: number, exitPressure: nu
   return { momentum: massFlow * speed, pressure: (exitPressure - receivingPressure) * openExitArea }
 }
 
-const calculation = String.raw`
+/** Shared named source definitions; extraction preserves the original assembled calculation. */
+export const sprayContactDefinitionsPython = String.raw`
 import json,sys,math,functools,CoolProp,scipy
 from CoolProp.CoolProp import PropsSI as P
 from scipy.optimize import brentq,minimize_scalar
@@ -81,7 +82,8 @@ def gas_heat(T,Tw,p,pv,rv,hv):
   j=.01*max(0.,rv-P('D','T',Tw,'Q',1,'Water'))
   q-=j*(hv-P('H','P',p,'T|liquid',Tw,'Water'))
  return q,j
-thermal=[]
+`
+const thermalCalculation = String.raw`thermal=[]
 for p in [1e5,1e6,15e6]:
  s=sat(p)
  for sub,speed in [(0.,0.),(20.,2.)]:
@@ -110,7 +112,8 @@ check('finite line plus steel energy',M*(u1-u)+ms*(steel(Tw1)['e']-steel(Tw)['e'
 admitted('finite local pressure changes without reset',p1>p and Tw1<Tw and x1>quality)
 finiteThermal=dict(volume=V,mass=M,dt=dt,initialPressure=p,finalPressure=p1,initialQuality=quality,finalQuality=x1,initialWall=Tw,finalWall=Tw1,heat_W=Q,finalFluidT=T1)
 
-def native(p,h):return dict(p=p,h=h,rho=P('D','P',p,'H',h,'Water'),s=P('S','P',p,'H',h,'Water'),T=P('T','P',p,'H',h,'Water'),x=P('Q','P',p,'H',h,'Water'))
+`
+export const sprayNozzleDefinitionsPython = String.raw`def native(p,h):return dict(p=p,h=h,rho=P('D','P',p,'H',h,'Water'),s=P('S','P',p,'H',h,'Water'),T=P('T','P',p,'H',h,'Water'),x=P('Q','P',p,'H',h,'Water'))
 def nozzle(H,s,pback,area):
  guess=P('P','H',H,'S',s,'Water')
  # Refine the inverse in the same forward p,s coordinate used for capacity.
@@ -125,7 +128,8 @@ def nozzle(H,s,pback,area):
  if not opt.success:raise ValueError('Native nozzle maximum failed')
  flux,pe=max([(G(pback),pback),(G(opt.x),opt.x),(0.,p0)])
  return dict(mass=area*flux,p0=p0,exitP=pe)
-Aline=math.pi*B['diameter_m']**2/4;Aexit=B['tips']*math.pi*B['tipDiameter_m']**2/4;CdA=.001
+`
+const faceCalculation = String.raw`Aline=math.pi*B['diameter_m']**2/4;Aexit=B['tips']*math.pi*B['tipDiameter_m']**2/4;CdA=.001
 p0=15.2e6;T0=563.15;h0=P('H','P',p0,'T',T0,'Water');s0=P('S','P',p0,'T',T0,'Water')
 def acoustic(p):
  x=P('Q','P',p,'S',s0,'Water')
@@ -204,6 +208,8 @@ reverse=nozzle(sat(15e6)['hv'],P('S','P',15e6,'Q',1,'Water'),14.9e6,CdA)
 admitted('actual reverse steam capacity',reverse['mass']>0)
 print(json.dumps(dict(scope='Selected local phase-line/contact and purewater open-nozzle feasibility; no coupled line/vessel trajectory or complete NC vessel admission',dependencies=dict(CoolProp=CoolProp.__version__,scipy=scipy.__version__),thermal=thermal,gas=gas,finiteThermal=finiteThermal,faces=faces,phasePayload=phasePayload,receiving=receiving,reverse=reverse,sensitivity=[dict(factor=f,q950=tube_wet(1e6,sat(1e6)['T'],950.,0.,f)[0]) for f in [.5,1.,2.]],checks=checks),allow_nan=False))
 `
+
+const calculation = sprayContactDefinitionsPython+thermalCalculation+sprayNozzleDefinitionsPython+faceCalculation
 
 if (import.meta.main) {
   const [python, output, ...extra] = process.argv.slice(2)

@@ -2,15 +2,25 @@
 import {createHash} from 'node:crypto'
 import {heaterContactDefinitionsPython} from './reference-design-pressurizer-heater-contact'
 
+/** Effective disjoint thermal openings, not fabricated nozzle penetrations. */
+export function pzrHeadOpenings(){
+ const circle=(name:string,count:number,diameter:number,radius:number,start:number,head:'top'|'bottom')=>
+  Array.from({length:count},(_,i)=>{const azimuth=start+2*Math.PI*i/count;return {name:`${name}.${i+1}`,head,diameter_m:diameter,
+   area_m2:Math.PI*diameter**2/4,x_m:radius*Math.cos(azimuth),y_m:radius*Math.sin(azimuth)}})
+ return [...circle('controlled spray',16,.012,.6,0,'top'),...circle('manual spray',8,.002,.4,0,'top'),
+  ...circle('ADS',6,.08,.8,0,'top'),...circle('relief',1,.15,.8,Math.PI/6,'top'),...circle('surge',1,.30,.8,0,'bottom')]
+}
 export function shellContactGeometry(){
  const radius=Math.sqrt(5/Math.PI),heights=[0,1,3,6,9,12],rho=7920,thickness=.15
+ const openings=pzrHeadOpenings()
  return {
+  openings,
   shell:heights.slice(1).map((top,i)=>({bottom_m:heights[i]!,top_m:top,
    area_m2:2*Math.PI*radius*(top-heights[i]!),
    steelMass_kg:rho*Math.PI*((radius+thickness)**2-radius**2)*(top-heights[i]!)})),
   heads:(['bottom','top'] as const).flatMap(name=>[.5,4.5].map((area,i)=>({name,lane:i===0?'inner':'outer',
    z_m:name==='bottom'?6.5:18.5,orientation:name==='bottom'?'upward':'downward',grossSolidArea_m2:area,
-   area_m2:area-(name==='bottom'&&i===0?288*Math.PI*.01**2:0),steelMass_kg:rho*area*thickness}))),
+   area_m2:area-(name==='bottom'&&i===0?288*Math.PI*.01**2:0)-(i===1?openings.filter(x=>x.head===name).reduce((s,x)=>s+x.area_m2,0):0),steelMass_kg:rho*area*thickness}))),
  }
 }
 
@@ -79,7 +89,9 @@ for band,(zi,zj) in enumerate(zip([0,1,3,6,9],[1,3,6,9,12])):
   dz=zj-zi;nr=32 if zi<1 else 0;nb=256 if zi<3 else 0
   areas=[nr*math.pi*.02*dz*fi,nb*math.pi*.02*dz*fi,2*math.sqrt(math.pi*5)*dz*fo]
   temps=[950.,900.,550.]
-  if band in [0,4]:areas += [(.5-(288*math.pi*.01**2 if band==0 else 0))*fi,4.5*fo];temps += [700.,600.]
+  if band in [0,4]:
+   head='bottom' if band==0 else 'top';patches=[x for x in d['geometry']['heads'] if x['name']==head]
+   areas += [patches[0]['area_m2']*fi,patches[1]['area_m2']*fo];temps += [700.,600.]
   q=radiation(areas,temps)
   check('band radiation reciprocal energy',sum(q),tol=2e-9)
   admitted('band radiation nonnegative entropy',-sum(v/t for v,t in zip(q,temps))>=-1e-9)
