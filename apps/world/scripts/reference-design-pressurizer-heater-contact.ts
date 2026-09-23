@@ -25,9 +25,11 @@ def check(name,value,expected=0.,tol=1e-7):
  checks.append(dict(name=name,actual=value,expected=expected,tolerance=tol))
 def admitted(name,condition):check(name,1. if condition else 0.,1.,0.)
 def steel(T):
- if not 300<=T<=973.15:raise ValueError('Steel thermal applicability300–973.15K; not a protection action')
- return dict(cp=6.683+.04906*T+80.74*math.log(T),k=9.705+.0176*T-1.60e-6*T*T,
-  e=6.683*T+.04906*T*T/2+80.74*(T*math.log(T)-T))
+ if not math.isfinite(T) or not 300<=T<=1600:raise ValueError('Solid steel thermal applicability300–1600K; not an integrity rating or protection action')
+ # ANL-75-55 Eq5/Eq28, 304/304L solid fit. Thermochemical cal=4.184J;
+ # exact integral of selected cp with300K datum, not rounded report enthalpy offset.
+ return dict(cp=4184*(.1122+3.222e-5*T),k=8.116+.01618*T,
+  e=4184*(.1122*(T-300)+1.611e-5*(T*T-300**2)))
 `+poolBoilingPython+String.raw`
 @functools.cache
 def sat(p):
@@ -112,7 +114,7 @@ for p in [1e5,1e6,15e6]:
    admitted('sampled endpoint residual strictly increasing',all(a<c for a,c in zip(residual,residual[1:])))
    check('self-consistent minimum-film endpoint',tm-minimum_film(s,TL,tm),tol=1e-8)
    ends.append(dict(p_Pa=p,subcooling_K=sub,L_m=L,onset_K=peak['onset'],turnover_K=tc,minimumFilm_K=tm,peak_W_m2=peak['q'],minimum_W_m2=qm,boilingTurnover_W_m2=qz))
-   for Tw in [TL-5,TL,s['T']+2,tc,(tc+tm)/2,tm,950.]:
+   for Tw in [TL-5,TL,s['T']+2,tc,(tc+tm)/2,tm,950.,1200.,1600.]:
     q=wet(p,TL,Tw,L);check('wet total-energy source',q['liquidEnergy']+q['vaporEnergy']-q['q'])
     admitted('wet phase transfer nonnegative',q['gamma']>=0)
     rows.append(dict(p_Pa=p,subcooling_K=sub,L_m=L,wall_K=Tw,**q))
@@ -159,15 +161,29 @@ emptyReturn=dict(scope='Zero-speed condensate insertion derivative with held mec
 for kwargs in [dict(present=False),dict(area=0.)]:
  absent=gas_contact(900.,0.,-1.,-1.,8.,6.5,**kwargs)
  check('absent contact avoids unavailable gas properties',sum(abs(absent[k]) for k in ['condensation_kg_s','metal_W','gas_W','receiver_W']))
-for T in [300.,650.,900.,973.15]:admitted('steel positive capacity/conductivity',steel(T)['cp']>0 and steel(T)['k']>0)
+material=[]
+for T in [300.,650.,900.,973.15,1200.,1600.]:
+ m=steel(T);admitted('steel positive capacity/conductivity',m['cp']>0 and m['k']>0)
+ material.append(dict(T_K=T,**m))
+for T in [400.,650.,973.15,1500.]:
+ check('caloric derivative equals capacity',(steel(T+.001)['e']-steel(T-.001)['e'])/.002,steel(T)['cp'],1e-4)
+check('selected caloric datum',steel(300)['e'])
+# Published fit coefficients and Table10 are separately rounded: compare within
+# one displayed table increment0.01W/(m K), not a specimen accuracy claim.
+for T,k in [(300.,12.97),(600.,17.82),(1000.,24.29),(1600.,34.)]:check('ANL Table10 conductivity',steel(T)['k'],k,.01)
+overlap=[]
+for T in [300.,650.,900.,973.15]:
+ oldcp=6.683+.04906*T+80.74*math.log(T);oldk=9.705+.0176*T-1.60e-6*T*T
+ overlap.append(dict(T_K=T,capacityRelativeChange=steel(T)['cp']/oldcp-1,conductivityRelativeChange=steel(T)['k']/oldk-1))
+adiabaticSeconds={str(T):(steel(1600)['e']-steel(T)['e'])*sum(x['steelMass_kg'] for x in d['contactAtHalfMetre'].values())/3e6 for T in [650.,973.15]}
 rejected=[]
-for T in [299.99,973.16]:
+for T in [299.99,1600.01,float('nan')]:
  try:steel(T)
- except ValueError as e:rejected.append(dict(wall_K=T,reason=str(e)))
-admitted('outside steel domain explicitly rejected',len(rejected)==2)
+ except ValueError as e:rejected.append(dict(wall_K=T if math.isfinite(T) else 'nonfinite',reason=str(e)))
+admitted('outside steel domain explicitly rejected',len(rejected)==3)
 sensitivity=[dict(L_m=L,factor=f,q950_W_m2=film(s,950.,L,f)) for L in [1.,3.] for f in [.5,1.,2.]]
 print(json.dumps(dict(scope='Local wall-source family only; no dense carrier, pressure response, prolonged dry survival or installed qualification',
- materialRange_K=[300,973.15],rows=rows,endpoints=ends,finiteIncrement=coupon,radiation=rad,gasContact=gas,emptyReturnInsertion=emptyReturn,filmSensitivity=sensitivity,
+ materialRange_K=[300,1600],material=material,materialOverlap=overlap,adiabaticHeatingTo1600_s=adiabaticSeconds,rows=rows,endpoints=ends,finiteIncrement=coupon,radiation=rad,gasContact=gas,emptyReturnInsertion=emptyReturn,filmSensitivity=sensitivity,
  gasSensibleSensitivity_W_m2=[f*5*(900-s['T']) for f in [.5,1.,2.]],rejectedMaterial=rejected,checks=checks,
  dependencies=dict(CoolProp=CoolProp.__version__,scipy=scipy.__version__)),allow_nan=False))
 `
