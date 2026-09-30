@@ -1,7 +1,8 @@
 /** Offline caloric-EOS material-path selection; not an installed valve or plant solver. */
 import { createHash } from 'node:crypto'
 
-const calculation = String.raw`
+/** Reviewed native material functions, shared only by bounded offline engineering coupons. */
+export const nativeMaterialFunctions = String.raw`
 import json,sys,math,CoolProp,scipy
 from CoolProp.CoolProp import PropsSI as P
 from scipy.optimize import brentq
@@ -60,6 +61,9 @@ def sound(p,h,ratios,step=1e-5,side=0):
 def prepared(p,T,alpha):
     pv=P('P','T',T,'Q',1,'Water');mw=(1-alpha)*P('D','P',p,'T',T,'Water')+alpha*P('D','T',T,'Q',1,'Water')
     return {n:alpha*.5*(p-pv)/(R*T)/mw for n,(R,cv) in species.items()}
+`
+
+const calculation = nativeMaterialFunctions + String.raw`
 ordinary=prepared(15.2e6,563.15,.01)
 rhoSteam=P('D','P',7.6e6,'T',623.15,'Water')
 dry={n:3.8e6/(R*623.15)/rhoSteam for n,(R,cv) in species.items()}
