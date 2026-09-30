@@ -40,6 +40,23 @@ def gap(ts,pg,geo,radiation):
     qr=radiation*5.670374419e-8*(tf**4-ti**4)
     return h*(tf-ti)+qr,qr,jump,khe,h
 `
+/** Explicit cold thermal extension; include after fuelMaterialPython when admitted.
+ * The hot laws and all caloric zeros remain unchanged. This is not nuclear feedback.
+ */
+export const coldFuelMaterialPython=String.raw`
+hot_kf=kf
+hot_fk=fk
+def cold_reference_kf(t):
+    z=t/1000.
+    return 100/(7.5408+17.692*z+3.6142*z*z)+6400*z**(-2.5)*math.exp(-16.35/z)
+cold_match=hot_kf(500.)/cold_reference_kf(500.)
+def kf(t):
+    if t<300:raise ValueError('Cold fuel thermal domain starts at 300 K')
+    return cold_match*cold_reference_kf(t) if t<500 else hot_kf(t)
+def fk(t):
+    if t<300:raise ValueError('Cold fuel thermal domain starts at 300 K')
+    return hot_fk(t) if t>=500 else hot_fk(500.)-quad(lambda z:cold_match*cold_reference_kf(z),t,500.,epsabs=1e-9,epsrel=1e-12)[0]
+`
 /** Same mean-strain/elastic geometry owner used by steady and transient references. */
 export const fuelGeometryPython=String.raw`
 def geometry(ts,pg,j,expanded=True,externalPressure_MPa=None):
