@@ -63,7 +63,7 @@ def anl_cp(t):
     return (78.215*z*z*math.exp(z)/math.expm1(z)**2+2*.0038609*t+3.4250e8*k*math.exp(-ea/(k*t))*(1+ea/(k*t)))/.2703
 anl_errors=[abs(cpf(t)/anl_cp(t)-1) for t in np.linspace(300,500,201)]
 require('independent original caloric challenge',max(anl_errors)<.03,maxRelativeDifference=max(anl_errors))
-for invalid in [299.99,0.,-1.]:
+for invalid in [289.99,0.,-1.]:
     try:kf(invalid)
     except ValueError:pass
     else:raise ValueError('Unadmitted cold material accepted')

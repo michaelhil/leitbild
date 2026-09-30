@@ -51,11 +51,19 @@ def cold_reference_kf(t):
     return 100/(7.5408+17.692*z+3.6142*z*z)+6400*z**(-2.5)*math.exp(-16.35/z)
 cold_match=hot_kf(500.)/cold_reference_kf(500.)
 def kf(t):
-    if t<300:raise ValueError('Cold fuel thermal domain starts at 300 K')
+    if t<290:raise ValueError('Fuel thermal domain starts at 290 K; no freezing continuation')
     return cold_match*cold_reference_kf(t) if t<500 else hot_kf(t)
 def fk(t):
-    if t<300:raise ValueError('Cold fuel thermal domain starts at 300 K')
+    if t<290:raise ValueError('Fuel thermal domain starts at 290 K; no freezing continuation')
     return hot_fk(t) if t>=500 else hot_fk(500.)-quad(lambda z:cold_match*cold_reference_kf(z),t,500.,epsabs=1e-9,epsrel=1e-12)[0]
+table_cpc=cpc
+table_hc=hc
+def cpc(t):
+    if t<290:raise ValueError('Cladding thermal domain starts at 290 K')
+    return 281+.21*(t-300) if t<300 else table_cpc(t)
+def hc(t):
+    if t<290:raise ValueError('Cladding thermal domain starts at 290 K')
+    return 281*(t-300)+.105*(t-300)**2 if t<300 else table_hc(t)
 `
 /** Same mean-strain/elastic geometry owner used by steady and transient references. */
 export const fuelGeometryPython=String.raw`

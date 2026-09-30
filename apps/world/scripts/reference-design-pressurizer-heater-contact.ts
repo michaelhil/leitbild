@@ -13,7 +13,16 @@ export function heaterContactAreas(height:number,liquidContactFraction:number){
  }))
 }
 
-/** Named shared source definitions; the original heater calculation remains unchanged. */
+/** Current solid 304 source law; historical receipts retain their own admission. */
+export const solid304Python=String.raw`
+def steel(T):
+ if not math.isfinite(T) or not 290<=T<=1600:raise ValueError('Solid steel thermal applicability290–1600K; not an integrity rating or protection action')
+ # ANL-75-55 Eq5/Eq28; 290–300K is an explicit short project extrapolation.
+ # Thermochemical cal=4.184J; exact integral with unchanged300K datum.
+ return dict(cp=4184*(.1122+3.222e-5*T),k=8.116+.01618*T,
+  e=4184*(.1122*(T-300)+1.611e-5*(T*T-300**2)))
+`
+/** Named shared source definitions; no duplicated material or contact law. */
 export const heaterContactDefinitionsPython=String.raw`
 import json,sys,math,functools
 import CoolProp,scipy
@@ -25,13 +34,7 @@ def check(name,value,expected=0.,tol=1e-7):
  if not math.isfinite(value) or abs(value-expected)>tol:raise ValueError((name,value,expected,tol))
  checks.append(dict(name=name,actual=value,expected=expected,tolerance=tol))
 def admitted(name,condition):check(name,1. if condition else 0.,1.,0.)
-def steel(T):
- if not math.isfinite(T) or not 300<=T<=1600:raise ValueError('Solid steel thermal applicability300–1600K; not an integrity rating or protection action')
- # ANL-75-55 Eq5/Eq28, 304/304L solid fit. Thermochemical cal=4.184J;
- # exact integral of selected cp with300K datum, not rounded report enthalpy offset.
- return dict(cp=4184*(.1122+3.222e-5*T),k=8.116+.01618*T,
-  e=4184*(.1122*(T-300)+1.611e-5*(T*T-300**2)))
-`+poolBoilingPython+String.raw`
+`+solid304Python+poolBoilingPython+String.raw`
 @functools.cache
 def sat(p):
  if not .01e6<=p<=.9*22.064e6:raise ValueError('Selected pool pressure applicability')
@@ -179,7 +182,7 @@ for T in [300.,650.,900.,973.15]:
  overlap.append(dict(T_K=T,capacityRelativeChange=steel(T)['cp']/oldcp-1,conductivityRelativeChange=steel(T)['k']/oldk-1))
 adiabaticSeconds={str(T):(steel(1600)['e']-steel(T)['e'])*sum(x['steelMass_kg'] for x in d['contactAtHalfMetre'].values())/3e6 for T in [650.,973.15]}
 rejected=[]
-for T in [299.99,1600.01,float('nan')]:
+for T in [289.99,1600.01,float('nan')]:
  try:steel(T)
  except ValueError as e:rejected.append(dict(wall_K=T if math.isfinite(T) else 'nonfinite',reason=str(e)))
 admitted('outside steel domain explicitly rejected',len(rejected)==3)

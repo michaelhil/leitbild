@@ -33,16 +33,8 @@ export function coldReliefAssemblyArea(reliefArea: number, reliefLift: number, i
   return 1 / Math.hypot(1 / (reliefArea * reliefLift), 1 / (isolationArea * isolationPosition))
 }
 
-export const coldPressureCalculation = String.raw`
-import json,sys,platform,math
-import numpy as np
-import scipy,CoolProp
-from CoolProp import AbstractState
-from CoolProp.CoolProp import PT_INPUTS,PSmass_INPUTS,iDmass,iUmass,iP,iT,PropsSI as P
-from scipy.integrate import solve_ivp
-from scipy.optimize import minimize_scalar
-b=json.load(sys.stdin);fluid=AbstractState('HEOS','Water');noz=AbstractState('HEOS','Water');inlet=AbstractState('HEOS','Water')
-# Original cold centroid projection onto the existing ten PZR regions. Not static equilibrium.
+/** Explicit projection boundary. Caller supplies b, P, solve_ivp and math; emits preparation. */
+export const coldPzrPreparationPython = String.raw`# Original cold centroid projection onto the existing ten PZR regions. Not static equilibrium.
 c=b['coldPzr'];T=c['temperature_K'];g=9.80665;bottom=6.5;top=18.5;interface=bottom+c['liquidPreparationHeight_m']
 pv=P('P','T',T,'Q',1,'Water');rv=P('D','T',T,'Q',1,'Water');uv=P('U','T',T,'Q',1,'Water')
 liquidSeed=solve_ivp(lambda z,p:[-g*P('D','P',float(p[0]),'T',T,'Water')],(2.5,interface),[c['hotPressure_Pa']],rtol=1e-11,atol=1e-5,dense_output=True)
@@ -66,7 +58,18 @@ if not 3.5<=indication<=9.5:raise ValueError('Cold projected actual outer-trace 
 preparation=dict(regions=regions,actualOuterBottomTrace_Pa=pb,actualOuterTopTrace_Pa=pt,
  differentialIndication_m=indication,quantizedIndication_m=math.floor(indication/.01+.5)*.01,
  volume_m3=sum(r['volume_m3'] for r in regions),meaning='Existing fixed-region centroid projection; native retained water/air/steam, not exact discrete rest or an imposed running level')
-def water(p,T):
+`
+
+export const coldPressureCalculation = String.raw`
+import json,sys,platform,math
+import numpy as np
+import scipy,CoolProp
+from CoolProp import AbstractState
+from CoolProp.CoolProp import PT_INPUTS,PSmass_INPUTS,iDmass,iUmass,iP,iT,PropsSI as P
+from scipy.integrate import solve_ivp
+from scipy.optimize import minimize_scalar
+b=json.load(sys.stdin);fluid=AbstractState('HEOS','Water');noz=AbstractState('HEOS','Water');inlet=AbstractState('HEOS','Water')
+${coldPzrPreparationPython}def water(p,T):
  fluid.update(PT_INPUTS,float(p),float(T))
  if fluid.phase() not in (0,3):raise ValueError('Coupon outside admitted liquid domain')
  r=fluid.rhomass();u=fluid.umass()
