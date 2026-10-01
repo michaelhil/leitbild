@@ -43,21 +43,42 @@ describe('web_search', () => {
 })
 
 describe('fetch_url', () => {
-  test('fetches https://example.com and returns text content', async () => {
+  // Exercise the real HTTP reader without depending on a public site's latency.
+  let server: ReturnType<typeof Bun.serve>
+  let url: string
+
+  beforeAll(() => {
+    server = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      fetch(request) {
+        if (new URL(request.url).pathname === '/unavailable') {
+          return new Response('Unavailable', { status: 503, statusText: 'Service Unavailable' })
+        }
+        return new Response('<html><head><title>Reader example</title><style>hidden-style</style></head><body><h1>Example</h1><p>Readable content.</p><script>hidden-script</script></body></html>', {
+          headers: { 'Content-Type': 'text/html' },
+        })
+      },
+    })
+    url = new URL('/page', server.url).href
+  })
+
+  afterAll(() => { server.stop(true) })
+
+  test('fetches a page and returns its title and text content', async () => {
     const fetchUrl = toolMap['fetch_url']
     expect(fetchUrl).toBeDefined()
 
-    const result = await fetchUrl!.execute({ url: 'https://example.com' }, ctx)
+    const result = await fetchUrl!.execute({ url }, ctx)
     expect(result.success).toBe(true)
 
     const data = result.data as { title: string; text: string; url: string; chars: number }
-    expect(typeof data.title).toBe('string')
-    expect(typeof data.text).toBe('string')
-    expect(data.url).toBe('https://example.com')
+    expect(data.title).toBe('Reader example')
+    expect(data.text).toBe('Reader example Example Readable content.')
+    expect(data.url).toBe(url)
     expect(typeof data.chars).toBe('number')
     expect(data.chars).toBeGreaterThan(0)
-    // example.com is a well-known IANA page
-    expect(data.text.toLowerCase()).toContain('example')
+    expect(data.chars).toBe(data.text.length)
   })
 
   test('returns error for missing url parameter', async () => {
@@ -69,10 +90,18 @@ describe('fetch_url', () => {
 
   test('strips HTML tags from fetched content', async () => {
     const fetchUrl = toolMap['fetch_url']
-    const result = await fetchUrl!.execute({ url: 'https://example.com' }, ctx)
+    const result = await fetchUrl!.execute({ url }, ctx)
     expect(result.success).toBe(true)
     const data = result.data as { text: string }
     // Should not contain any HTML tags
     expect(data.text).not.toMatch(/<[^>]+>/)
+    expect(data.text).not.toContain('hidden-style')
+    expect(data.text).not.toContain('hidden-script')
+  })
+
+  test('reports unsuccessful HTTP responses rather than treating them as content', async () => {
+    const result = await toolMap['fetch_url']!.execute({ url: new URL('/unavailable', server.url).href }, ctx)
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('HTTP 503: Service Unavailable')
   })
 })
