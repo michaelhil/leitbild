@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { parseColdNuclear } from './reference-design-cold-nuclear'
 
-const input: ReturnType<typeof parseColdNuclear> = { fuelRange_K: [300, 2000], dopplerWorth_pcm_sqrtK: -115,
+const input: ReturnType<typeof parseColdNuclear> = { fuelRange_K: [290, 2000], dopplerWorth_pcm_sqrtK: -115,
   dopplerSensitivity_pcm_sqrtK: [-90, -115, -140], waterWorth: .15,
   waterWorthChallenges: [.12, .15, .20], absorberWorth_pcm_ppmEq: -8,
   absorberReference_ppmEq: 1000, bankWorth: .10, bankReference: .70, xenonWorth: -.002,

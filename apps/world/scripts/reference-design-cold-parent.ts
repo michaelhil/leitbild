@@ -89,19 +89,9 @@ function thermalInventory(selection: z.infer<typeof schema>, documents: Record<s
   return {liquid,wet,metal,meaning:'Finite native thermal coordinates and owned capacity integrals, not a thermal trajectory, local geometric PE ledger or instantly available combined sink'}
 }
 
-export const coldParentCalculation = String.raw`
-import json,sys,math,platform
-import numpy as np,scipy,CoolProp
-from scipy.integrate import solve_ivp,quad
-from scipy.optimize import brentq
-from CoolProp.CoolProp import PropsSI as P
-d=json.load(sys.stdin);b=d['pressure'];sel=d['selection'];g=9.80665;checks=[]
-def require(name,condition,**v):
- if not condition:raise ValueError(name+': '+str(v))
- checks.append(dict(name=name,**v))
-${coldPzrPreparationPython}
-pzr=preparation;anchor=b['coldPzr'];T0=anchor['temperature_K'];p0=anchor['hotPressure_Pa'];z0=2.5
-s0=P('S','P',p0,'T',T0,'Water')
+/** Unchanged native fresh hydrostatic/region equations, shared only by bounded
+ * inventory checks. This named source boundary is not a plant initializer. */
+export const coldHydrostaticInventoryPython = String.raw`s0=P('S','P',p0,'T',T0,'Water')
 def water(p,T):return np.array([P('D','P',p,'T',T,'Water'),P('U','P',p,'T',T,'Water')])
 def hydro(pref,zref,T=None,zmin=-4,zmax=18.5):
  entropy=s0 if T is None else None
@@ -122,7 +112,21 @@ def region(name,V,zfun,field,ratio):
  row=dict(owner=name,volume_m3=V,water_kg=V*values[0],U_J=V*values[1],PE_J=V*values[2],
   meanTemperature_K=values[3],meanPressure_Pa=values[4],tracer_kg_eq=V*values[0]*ratio,initialMomentum=0)
  require('native finite store '+name,V>0 and row['water_kg']>0 and row['meanPressure_Pa']>P('P','T',row['meanTemperature_K'],'Q',0,'Water'))
- rows.append(row);return row
+ rows.append(row);return row`
+
+export const coldParentCalculation = String.raw`
+import json,sys,math,platform
+import numpy as np,scipy,CoolProp
+from scipy.integrate import solve_ivp,quad
+from scipy.optimize import brentq
+from CoolProp.CoolProp import PropsSI as P
+d=json.load(sys.stdin);b=d['pressure'];sel=d['selection'];g=9.80665;checks=[]
+def require(name,condition,**v):
+ if not condition:raise ValueError(name+': '+str(v))
+ checks.append(dict(name=name,**v))
+${coldPzrPreparationPython}
+pzr=preparation;anchor=b['coldPzr'];T0=anchor['temperature_K'];p0=anchor['hotPressure_Pa'];z0=2.5
+${coldHydrostaticInventoryPython}
 V=d['base']['volumes_m3'];m=d['mechanics'];core=d['core'];A=core['geometry']['flowArea_m2'];L=core['activeLength_m'];ratio=sel['primaryAbsorberRatio']
 region('MAIN.DOWNCOMER',V[0],lambda f:m['downcomerBottom_m']+f*(m['downcomerTop_m']-m['downcomerBottom_m']),mainField,ratio)
 # Current LOWER is a mixed mean-density head owner, not the retired exact-profile reservoir.

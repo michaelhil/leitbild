@@ -10,7 +10,7 @@ import { fuelMaterialPython } from './reference-design-fuel-materials'
 const positive = z.number().finite().positive()
 const negative = z.number().finite().negative()
 const fraction = z.number().finite().min(0).max(1)
-const coldSchema = z.object({ fuelRange_K: z.tuple([z.literal(300), z.literal(2000)]),
+const coldSchema = z.object({ fuelRange_K: z.tuple([z.literal(290), z.literal(2000)]),
   dopplerWorth_pcm_sqrtK: negative, dopplerSensitivity_pcm_sqrtK: z.array(negative).min(2),
   waterWorth: positive, waterWorthChallenges: z.array(positive).min(2),
   absorberWorth_pcm_ppmEq: negative, absorberReference_ppmEq: positive,
@@ -41,6 +41,14 @@ export function parseColdNuclear(document: string) {
   if (!basis.waterWorthChallenges.includes(basis.waterWorth)
     || !basis.dopplerSensitivity_pcm_sqrtK.includes(basis.dopplerWorth_pcm_sqrtK)) throw Error('Nominal must be included in challenges')
   return basis
+}
+/** Named owner records reused by the actual seated-guide source comparison. */
+export function coldNuclearOwnerRecords(owners:Record<string,string>){
+ return {basis:parseColdNuclear(owners['cold-source-and-startup.md']!),
+  bank:parseBankBasis(owners['control-and-verification.md']!),
+  kinetics:parseSourceFeedback(owners['kinetics.md']!,owners['heat-and-history.md']!),
+  ix:ixSchema.parse(block(owners['shutdown-and-fuel-response.md']!,'reference-iodine-xenon')),
+  pm:pmSchema.parse(block(owners['shutdown-and-fuel-response.md']!,'reference-promethium-samarium'))}
 }
 
 const calculation = String.raw`
@@ -97,14 +105,24 @@ require('nominal cold inserted and dry screens',nominal<0 and dry<0,coldInserted
 require('water-filled zero-absorber contrary remains',wet>0,reactivity_pcm=wet*1e5,promptCritical=bool(wet>sum(beta)))
 require('rejected dry .12 family retained',any(q['waterWorth']==.12 and not q['admitted'] and q['dryWorst_pcm']>0 for q in screens))
 require('nominal reference intercept retained',abs(feedback(T=Dref**2,u=1,C=1000,x=b['bankReference'],X=1,Sm=1))<1e-15)
-temperatureCases=[dict(fuel_K=t,fuelWorth_pcm=b['dopplerWorth_pcm_sqrtK']*(math.sqrt(t)-Dref),nominalFilledInserted_pcm=feedback(T=t)*1e5) for t in [300,500,832.6426125612112,1200,2000]]
+ambientRatio=PropsSI('D','P',cold['pressure_Pa'],'T',293.15,'Water')*g['coreFlowVolume_m3']/Mref
+ambientScreens=[]
+for q in screens:
+    dry=feedback(T=b['fuelRange_K'][0],u=0,C=0,x=1,k=q['waterWorth'],A=q['dopplerWorth_pcm_sqrtK'],W=q['samariumWorth'])
+    inserted=feedback(T=b['fuelRange_K'][0],u=ambientRatio,k=q['waterWorth'],A=q['dopplerWorth_pcm_sqrtK'],W=q['samariumWorth'])
+    ambientScreens.append(dict(waterWorth=q['waterWorth'],dopplerWorth_pcm_sqrtK=q['dopplerWorth_pcm_sqrtK'],samariumWorth=q['samariumWorth'],fuel_K=b['fuelRange_K'][0],water_K=293.15,waterRatio=ambientRatio,dryWorst_pcm=dry*1e5,coldNominalInserted_pcm=inserted*1e5,admitted=dry<0 and inserted<0))
+    q['admittedAt300K']=q['admitted'];q['admitted']=q['admitted'] and dry<0 and inserted<0
+require('290K nominal family dry and actual20C water screens',all(q['admitted'] for q in ambientScreens if q['waterWorth']==b['waterWorth']),minimumInsertedMargin_pcm=-max(q['coldNominalInserted_pcm'] for q in ambientScreens if q['waterWorth']==b['waterWorth']))
+require('cold continuation retains positive dilution contrary',feedback(T=b['fuelRange_K'][0],u=ambientRatio,C=0)>0,reactivity_pcm=feedback(T=b['fuelRange_K'][0],u=ambientRatio,C=0)*1e5)
+require('colder fuel really raises reactivity without clamp',feedback(T=b['fuelRange_K'][0],u=ambientRatio)>feedback(T=300,u=ambientRatio),fuelDifference_pcm=(feedback(T=b['fuelRange_K'][0],u=ambientRatio)-feedback(T=300,u=ambientRatio))*1e5)
+temperatureCases=[dict(fuel_K=t,fuelWorth_pcm=b['dopplerWorth_pcm_sqrtK']*(math.sqrt(t)-Dref),nominalFilledInserted_pcm=feedback(T=t)*1e5) for t in [b['fuelRange_K'][0],300,500,832.6426125612112,1200,2000]]
 require('signed strictly decreasing full temperature response',all(temperatureCases[i]['fuelWorth_pcm']>temperatureCases[i+1]['fuelWorth_pcm'] for i in range(len(temperatureCases)-1)))
-require('full domain derivative finite negative',all(b['dopplerWorth_pcm_sqrtK']/(2*math.sqrt(t))<0 for t in [300,500,2000]))
+require('full domain derivative finite negative',all(b['dopplerWorth_pcm_sqrtK']/(2*math.sqrt(t))<0 for t in [b['fuelRange_K'][0],300,500,2000]))
 # Conditional P/T and complete-core isotope states, not an imposed achieved heatup.
 reachability=[]
 pt=b['experiment']['poisonHorizon_h']*3600;pm72=math.exp(-lp*pt);sm72=1+bs/lp*(1-pm72)
 x72=math.exp(-lx*pt)+(lx+bx)*yi*(math.exp(-li*pt)-math.exp(-lx*pt))/(lx-li)
-for tf,tw,pressure in [(300.,300.,.3e6),(450.,400.,2e6),(650.,500.,8e6),(Dref**2,578.0459020744466,15e6)]:
+for tf,tw,pressure in [(b['fuelRange_K'][0],293.15,.3e6),(300.,300.,.3e6),(450.,400.,2e6),(650.,500.,8e6),(Dref**2,578.0459020744466,15e6)]:
     ratio=PropsSI('D','P',pressure,'T',tw,'Water')*g['coreFlowVolume_m3']/Mref
     for label,X,Sm in [('fresh',0.,0.),('experienced-reference',1.,1.),('72h-zero-flux-poison',x72,sm72)]:
         rho0=feedback(T=tf,u=ratio,x=0.,X=X,Sm=Sm);critical=-rho0/b['bankWorth']
@@ -152,22 +170,33 @@ for q in screens:
         for X,Sm in [(0.,0.),(1.,1.),(x72,sm72)]:
             rho=feedback(k=q['waterWorth'],A=q['dopplerWorth_pcm_sqrtK'],W=q['samariumWorth'],X=X,Sm=Sm)
             corners.append((rho,q,X,Sm))
-worst=min(corners,key=lambda z:(z[0],z[1]['samariumWorth']));rho0=worst[0];s=sourceRate*.25
-groupInitial=-L*s/rho0;state=np.r_[np.full(13,groupInitial),1.,worst[2],1.,worst[3],math.log10(groupInitial)];time=0.;group=[]
-for i in range(20):
-    begin=.001*i
-    def group_rhs(t,y):
-        x=begin+min(d['bank']['ordinaryRate_s']*t,.001);q=worst[1]
-        return np.r_[rhs(time+t,y[:17],x,s=s,k=q['waterWorth'],A=q['dopplerWorth_pcm_sqrtK'],W=q['samariumWorth']),(math.log10(y[0])-y[17])/.5]
-    dt=.001/d['bank']['ordinaryRate_s']+60.
-    out=solve_ivp(group_rhs,(0,dt),state,method='Radau',rtol=1e-10,atol=np.r_[np.full(17,1e-19),1e-10])
-    require('bounded cumulative step '+str(i+1),out.success)
-    state=out.y[:,-1];time+=dt
-    group.append(dict(steps=i+1,target=.001*(i+1),acquiredLogIntensity=round(state[17]/.01)*.01,truthIntensity=float(state[0])))
-first=round(math.log10(groupInitial)/.01)*.01;rise=group[-1]['acquiredLogIntensity']-first
-trueRise=float(state[17]-math.log10(groupInitial))
-require('worst declared cold cumulative approach resolves before finite cap',groupInitial>=1e-10 and rise>=.01 and trueRise>.02,initialIntensity=groupInitial,acquiredDelta_decade=rise,trueLaggedDelta_decade=trueRise)
-groupEvidence=dict(initialCorner=dict(reactivity_pcm=rho0*1e5,parameters=worst[1],X=worst[2],Sm=worst[3]),sourceCouplingFactor=.25,initialIntensity=groupInitial,firstStepDelta_decade=group[0]['acquiredLogIntensity']-first,capStroke=.02,finalDelta_decade=rise,duration_s=time,samples=[group[i] for i in [0,4,9,19]],freshStuckObservation=dict(acquiredDelta_decade=0.,nextWithdrawalQualified=False))
+def approachEvidence(label,worst,T,u):
+    rho0=worst[0];s=sourceRate*.25
+    groupInitial=-L*s/rho0;state=np.r_[np.full(13,groupInitial),1.,worst[2],1.,worst[3],math.log10(groupInitial)];time=0.;group=[]
+    for i in range(20):
+        begin=.001*i
+        def group_rhs(t,y):
+            x=begin+min(d['bank']['ordinaryRate_s']*t,.001);q=worst[1]
+            return np.r_[rhs(time+t,y[:17],x,T=T,u=u,s=s,k=q['waterWorth'],A=q['dopplerWorth_pcm_sqrtK'],W=q['samariumWorth']),(math.log10(y[0])-y[17])/.5]
+        dt=.001/d['bank']['ordinaryRate_s']+60.
+        out=solve_ivp(group_rhs,(0,dt),state,method='Radau',rtol=1e-10,atol=np.r_[np.full(17,1e-19),1e-10])
+        require(label+' bounded cumulative step '+str(i+1),out.success)
+        state=out.y[:,-1];time+=dt
+        group.append(dict(steps=i+1,target=.001*(i+1),acquiredLogIntensity=round(state[17]/.01)*.01,truthIntensity=float(state[0])))
+    first=round(math.log10(groupInitial)/.01)*.01;rise=group[-1]['acquiredLogIntensity']-first
+    trueRise=float(state[17]-math.log10(groupInitial))
+    require(label+' worst declared cumulative approach resolves before finite cap',groupInitial>=1e-10 and rise>=.01 and trueRise>.02,initialIntensity=groupInitial,acquiredDelta_decade=rise,trueLaggedDelta_decade=trueRise)
+    return dict(initialCorner=dict(reactivity_pcm=rho0*1e5,parameters=worst[1],X=worst[2],Sm=worst[3]),fuel_K=T,waterRatio=u,sourceCouplingFactor=.25,initialIntensity=groupInitial,firstStepDelta_decade=group[0]['acquiredLogIntensity']-first,capStroke=.02,finalDelta_decade=rise,duration_s=time,samples=[group[i] for i in [0,4,9,19]],freshStuckObservation=dict(acquiredDelta_decade=0.,nextWithdrawalQualified=False))
+worst=min(corners,key=lambda z:(z[0],z[1]['samariumWorth']))
+groupEvidence=approachEvidence('original300K',worst,300.,uCold)
+ambientCorners=[]
+for q in screens:
+    if q['admitted']:
+        for T in [b['fuelRange_K'][0],293.15,300.]:
+            for X,Sm in [(0.,0.),(1.,1.),(x72,sm72)]:
+                ambientCorners.append((feedback(T=T,u=ambientRatio,k=q['waterWorth'],A=q['dopplerWorth_pcm_sqrtK'],W=q['samariumWorth'],X=X,Sm=Sm),q,X,Sm,T))
+ambientWorst=min(ambientCorners,key=lambda z:(z[0],z[1]['samariumWorth']))
+ambientApproach=approachEvidence('actual20C moderator',ambientWorst,ambientWorst[4],ambientRatio)
 
 require('all seventeen reference populations balance absent capsule',max(abs(rhs(0,np.ones(17),b['bankReference'],T=Dref**2,u=1,s=0)))<1e-13)
 # Segment travel comes from the shared actual-mechanics owner; no target interpolation shortcut.
@@ -238,7 +267,7 @@ for label,n,t in [('zero-flux-72h',0.,duration),('restart-prescribed-0.2',.2,360
     initial=exact
 stable=poison_rhs(np.array([0.,0.,0.,2.]),0.)
 require('zero-flux stable samarium has exact zero derivative',stable[3]==0)
-print(json.dumps(dict(scope='Conditional full-core operational feedback/source and retained poison prerequisite; prescribed cold liquid/material and finite actual bank boundaries, not whole-plant startup, empirical nuclear validation, partial-core/pool criticality or 72h cooling endurance',reference=dict(**R,waterMass_kg=Mref,coldDensity_kg_m3=coldrho,coldWaterRatio=uCold,poisonNumberDensity_m3=poisonref,sourceIntensity_s=sourceRate),screens=screens,temperatureCases=temperatureCases,conditionalReachability=reachability,sourceComparisons=sourceComparisons,sourceAgeCases=sourceAgeCases,cumulativeApproach=groupEvidence,paths=paths,longContinuingSource=longHistory,poisonHistories=histories,checks=checks,packages=dict(python=platform.python_version(),numpy=np.__version__,scipy=scipy.__version__,CoolProp=CoolProp.__version__)),allow_nan=False))
+print(json.dumps(dict(scope='Conditional original complete-core operational feedback/source and retained poison prerequisite including290K fuel and actual20C moderator continuation; existing external moderator reference only, not newly wet guide-bore loading, whole-plant startup, empirical nuclear validation, partial-core/pool criticality or72h cooling endurance',reference=dict(**R,waterMass_kg=Mref,coldDensity_kg_m3=coldrho,coldWaterRatio=uCold,poisonNumberDensity_m3=poisonref,sourceIntensity_s=sourceRate),screens=screens,ambientScreens=ambientScreens,temperatureCases=temperatureCases,conditionalReachability=reachability,sourceComparisons=sourceComparisons,sourceAgeCases=sourceAgeCases,cumulativeApproach=groupEvidence,ambientCumulativeApproach=ambientApproach,paths=paths,longContinuingSource=longHistory,poisonHistories=histories,checks=checks,packages=dict(python=platform.python_version(),numpy=np.__version__,scipy=scipy.__version__,CoolProp=CoolProp.__version__)),allow_nan=False))
 `
 
 export async function runColdNuclear(owners: Record<string, string>, joined: unknown, python: string) {
