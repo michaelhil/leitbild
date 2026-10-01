@@ -6,16 +6,19 @@ import {parseControlAbsorber,controlAbsorberGeometry} from './reference-design-c
 import {parseTransferAttachment,parseTransferGates,transferAttachmentChecks} from './reference-design-fuel-transfer'
 import {parseFuelHandling,fuelHandlingChecks,b4cCaloric} from './reference-design-fuel-handling'
 import {parseFuelConstruction} from './reference-design-fuel-construction'
-import {parseColdParent,coldParentCalculation,coldHydrostaticInventoryPython} from './reference-design-cold-parent'
+import {coldParentCalculation,coldHydrostaticInventoryPython} from './reference-design-cold-parent'
 import {guideParentCalculation} from './reference-design-guide-parent'
 import {parseColdPressure} from './reference-design-cold-pressure'
 import {parseHeadPool} from './reference-design-head-pool'
 import {solid304Python} from './reference-design-pressurizer-heater-contact'
+import {parseChemistryLifecycle} from './reference-design-chemistry-lifecycle'
+import {parseChargingPressure} from './reference-design-charging-pressure'
+import {readServicePump} from './reference-design-service-pump-continuation'
 
 const sha=(s:string)=>createHash('sha256').update(s).digest('hex')
 const positive=z.number().finite().positive(),point=z.tuple([z.number().finite(),z.number().finite(),z.number().finite()])
 const temperature=positive.min(290).max(1600)
-const schema=z.object({primaryMetalTemperature_K:temperature,parkedToolTemperature_K:temperature,torqueToolPark_m:point,grapplePark_m:point}).strict()
+const schema=z.object({primaryAbsorberRatio:z.literal(.002),primaryMetalTemperature_K:temperature,parkedToolTemperature_K:temperature,torqueToolPark_m:point,grapplePark_m:point}).strict()
 export function parseCurrentColdParent(document:string){
  const a=[...document.matchAll(/^```reference-current-cold-parent\s*\n([\s\S]*?)^```\s*$/gm)]
  if(a.length!==1)throw Error('Expected one reference-current-cold-parent')
@@ -172,33 +175,54 @@ for q in G['b4c']:metals.append({**q,'U_J':q['mass_kg']*q['e_J_kg'],'capacity_J_
 require('all added material has finite positive caloric capacity',all(q['capacity_J_K']>0 and math.isfinite(q['U_J']) for q in metals))
 require('52 spring stocks once, not body insertion source',G['spring_J']==52)
 require('current rest material has no copied source dynamics',d['sourceAuthority']=='UNSELECTED')
-print(json.dumps(dict(scope='Current original static hardware/native/caloric preparation only; no source/NI law, attained history, heat/storage duty, motion or lifecycle permission',packages=dict(python=platform.python_version(),CoolProp=CoolProp.__version__,scipy=scipy.__version__),checks=checks,mainPrimary=whole,cores=cores,lower=summed([lowerExternal,*lowerBore]),upper=summed(upper),housing=summed(housing),nativeRows=rows,bays=bays,poolLegs=legTotals,cnv=cnv,separator=separator,finiteMetal=metals,spring_J=G['spring_J'],sourceAuthority=d['sourceAuthority']),allow_nan=False))
+# ONE new original material preparation, not restoration or an isotope reseed.
+# Geometry and caloric stocks above are unchanged by this independent marker.
+stock=d['originalStock'];i=stock['isotope'];molar=i['fraction']*i['mass10']+(1-i['fraction'])*i['mass11'];atoms=i['avogadro']*i['fraction']/molar
+primaryStocks=[dict(q) for q in rows if not q['owner'].startswith('POOL.LEG')]+[dict(lowerExternal),*unchanged,*stock['appendages']]
+for q in stock['pzr']:
+ primaryStocks.append(dict(owner='PZR.'+q['lane']+'.'+str(q['lo_m']),water_kg=q['liquid_kg'],U_J=q['U_J'],PE_J=q['E_J']-q['U_J'],tracer_kg_eq=q['liquid_kg']*N))
+ch=stock['charging'];crho,cu=water(ch['pressure_Pa'],ch['temperature_K']);cv=ch['residence_s']*ch['flow_kg_s']/crho
+for name in ['CHARGE.SUCTION','CHARGE.DISCHARGE']:
+ primaryStocks.append(dict(owner=name,water_kg=cv*crho,volume_m3=cv,U_J=cv*crho*cu,PE_J=cv*crho*g*3,tracer_kg_eq=cv*crho*N))
+require('all current primary-facing original stocks own 2000 independently of old receipts',all(abs(q['tracer_kg_eq']-N*q['water_kg'])<1e-10 for q in primaryStocks))
+require('source stocks have unique physical rows',len(set(q['owner'] for q in primaryStocks))==len(primaryStocks))
+for q in primaryStocks:
+ q.update(mobileMarker_kg_eq=q.pop('tracer_kg_eq'),retainedMarker_kg_eq=0)
+ q.update(mobileN10=q['mobileMarker_kg_eq']*atoms,retainedN10=0)
+originalStocks=dict(meaning='ORIGINAL fresh primary-facing stock only; existing passive/bay and independent chemistry/support stocks retain their own owners; never apply after capture, copy or reached transport',atomsPer_kg_eq=atoms,rows=primaryStocks,
+ carrier_kg=sum(q['water_kg'] for q in primaryStocks),mobileMarker_kg_eq=sum(q['mobileMarker_kg_eq'] for q in primaryStocks),mobileN10=sum(q['mobileN10'] for q in primaryStocks),retainedMarker_kg_eq=0,retainedN10=0)
+require('original seed extensive sums without source authority',abs(originalStocks['mobileMarker_kg_eq']-originalStocks['carrier_kg']*N)<1e-9 and originalStocks['mobileN10']>0)
+print(json.dumps(dict(scope='Current ORIGINAL cold2000 hardware/native/caloric/material preparation only; no source/NI law, attained history, heat/storage duty, motion or lifecycle permission',packages=dict(python=platform.python_version(),CoolProp=CoolProp.__version__,scipy=scipy.__version__),checks=checks,mainPrimary=whole,cores=cores,lower=summed([lowerExternal,*lowerBore]),upper=summed(upper),housing=summed(housing),nativeRows=rows,bays=bays,poolLegs=legTotals,cnv=cnv,separator=separator,finiteMetal=metals,spring_J=G['spring_J'],originalStocks=originalStocks,sourceAuthority=d['sourceAuthority']),allow_nan=False))
 `
 
 export async function runCurrentColdParent(directory:string,coldReceipt:string,guideReceipt:string,python:string){
  const paths={parent:'model/connected-primary-initialization.md',control:'systems/reactor/control-absorber-and-guide-water.md',attachment:'systems/reactor/fuel-transfer-grapple.md',
-  fuel:'systems/reactor/fuel-construction.md',handling:'systems/reactor/fuel-handling-and-pool.md',head:'systems/reactor/head-and-pool-cooling.md',pressure:'safety/cold-pressure-and-startup-protection.md',cnv:'systems/passive-cooling/reservoir-and-containment.md'}
+  fuel:'systems/reactor/fuel-construction.md',handling:'systems/reactor/fuel-handling-and-pool.md',head:'systems/reactor/head-and-pool-cooling.md',pressure:'safety/cold-pressure-and-startup-protection.md',cnv:'systems/passive-cooling/reservoir-and-containment.md',chemistry:'systems/primary-coolant/inventory-and-chemistry.md'}
  const docs=Object.fromEntries(await Promise.all(Object.entries(paths).map(async([key,path])=>[key,await Bun.file(resolve(directory,path)).text()]))) as Record<keyof typeof paths,string>
  const coldText=await Bun.file(coldReceipt).text(),guideText=await Bun.file(guideReceipt).text(),cold=JSON.parse(coldText),guide=JSON.parse(guideText)
  if(cold.calculationSHA256!==sha(coldParentCalculation)||guide.calculationSHA256!==sha(guideParentCalculation)||guide.priorParentReceiptSHA256!==sha(coldText))throw Error('Require exact original native cold/guide receipt lineage')
- const c=parseControlAbsorber(docs.control),a=parseTransferAttachment(docs.attachment),f=parseFuelConstruction(docs.fuel),h=parseFuelHandling(docs.handling),head=parseHeadPool(docs.head),s=parseCurrentColdParent(docs.parent),selection=parseColdParent(docs.parent),pressure=parseColdPressure(docs.pressure),
+ const c=parseControlAbsorber(docs.control),a=parseTransferAttachment(docs.attachment),f=parseFuelConstruction(docs.fuel),h=parseFuelHandling(docs.handling),head=parseHeadPool(docs.head),s=parseCurrentColdParent(docs.parent),pressure=parseColdPressure(docs.pressure),chemistry=parseChemistryLifecycle(docs.chemistry),charge=parseChargingPressure(docs.chemistry),chargePump=readServicePump(resolve(directory,paths.chemistry)),
   allGeometry=currentColdGeometry(c,a,f,h,parseTransferGates(docs.attachment),head,s),allFresh=fuelHandlingChecks(h,f).freshGeometry
+ if(chemistry.initialPrimary_ppm*1e-6!==s.primaryAbsorberRatio||chemistry.BLEND.initial_ppm*1e-6!==s.primaryAbsorberRatio||chargePump.id!=='CHARGE')throw Error('Original cold stock/charging-owner disagreement')
  const pick=<T extends Record<string,unknown>>(q:T,keys:(keyof T)[])=>Object.fromEntries(keys.map(k=>[k,q[k]]))
  const geometry={...pick(allGeometry,['intruders','envelope','metal','b4c','expectedAddedPrimarySolid_m3','housing','rackDisplacement_m3','grossBayVolumes','spring_J']),
   gateRows:allGeometry.gateRows.map(q=>pick(q,['lo','hi','area'])),tools:pick(allGeometry.tools,['shaftVolume_m3','toolVolume_m3'])}
  const fresh={...pick(allFresh,['guideOuterArea_m2','sourceArea_m2']),active:pick(allFresh.active,['externalFreeVolume_m3','boreVolume_m3']),
   lower:pick(allFresh.lower,['boreBottom_m','boreTop_m']),upper:pick(allFresh.upper,['boreTop_m','sealedRodPlenumDisplacement_m3','fittingDisplacement_m3'])}
- const unchanged=cold.primaryRows.filter((q:{owner:string})=>q.owner.startsWith('MAIN.')&&!['MAIN.CORE.1','MAIN.CORE.2','MAIN.LOWER','MAIN.UPPER'].includes(q.owner)),guideChanged=[guide.active,guide.lowerExternal,...guide.guideRows.filter((q:{owner:string})=>q.owner==='LOWER.GUIDE'),guide.upperExternal,...guide.guideRows.filter((q:{owner:string})=>q.owner==='UPPER.GUIDE')]
+ const original=(q:{water_kg:number,tracer_kg_eq:number})=>({...q,tracer_kg_eq:q.water_kg*s.primaryAbsorberRatio}),unchanged=cold.primaryRows.filter((q:{owner:string})=>q.owner.startsWith('MAIN.')&&!['MAIN.CORE.1','MAIN.CORE.2','MAIN.LOWER','MAIN.UPPER'].includes(q.owner)).map(original),guideChanged=[guide.active,guide.lowerExternal,...guide.guideRows.filter((q:{owner:string})=>q.owner==='LOWER.GUIDE'),guide.upperExternal,...guide.guideRows.filter((q:{owner:string})=>q.owner==='UPPER.GUIDE')]
  const sum=(key:string)=>guideChanged.reduce((v,q)=>v+q[key],0)
  const enclosureMatch=docs.cnv.match(/modeled enclosure is \*\*([\d.]+) m³\*\*/)
  if(!enclosureMatch)throw Error('Reconcile existing available CNV enclosure')
  const consumed={geometry,fresh,anchor:{pressure_Pa:pressure.coldPzr.hotPressure_Pa,temperature_K:pressure.coldPzr.temperature_K,elevation_m:2.5},
-  gravity:c.gravity_m_s2,ratio:selection.primaryAbsorberRatio,guideLowerExternal:guide.lowerExternal,guideChanged:{volume_m3:sum('volume_m3')},
+  gravity:c.gravity_m_s2,ratio:s.primaryAbsorberRatio,guideLowerExternal:original(guide.lowerExternal),guideChanged:{volume_m3:sum('volume_m3')},
   unchangedPrimary:unchanged,oldUpperVolume_m3:guide.consumedInput.oldUpperVolume_m3,plenumLength_m:f.plenumLength_m,sourceThimbleTop_m:h.sourceThimbleTop_m,
   head:Object.fromEntries(['cnvTemperature_K','cnvPressure_Pa','cnvGasVolume_m3','poolTracerRatio','poolMouth_m','poolTrain_m','poolLegDiameter_m','poolLegHorizontal_m','gantryMetal_kg','accessPlateMass_kg','separatorVolume_m3','separatorMetal_kg','separatorTemperature_K','separatorFloor_m','separatorArea_m2'].map(k=>[k,head[k as keyof typeof head]])),
   surface:h.surface_m,wellFloor:h.wellFloor_m,canalFloor:h.canalFloor_m,poolFloor:h.poolFloor_m,rackBottomClearance:h.bottomFittingLength_m,activeLength:f.activeLength_m,
-  steelDensity:c.steelDensity_kg_m3,existingEnclosure:Number(enclosureMatch[1]),sourceAuthority:'UNSELECTED'}
- const sources=['reference-design-current-cold-parent.ts','reference-design-cold-parent.ts','reference-design-guide-parent.ts','reference-design-control-absorber.ts','reference-design-fuel-transfer.ts','reference-design-fuel-handling.ts','reference-design-fuel-construction.ts','reference-design-cold-pressure.ts','reference-design-head-pool.ts','reference-design-pressurizer-heater-contact.ts']
+  steelDensity:c.steelDensity_kg_m3,existingEnclosure:Number(enclosureMatch[1]),sourceAuthority:'UNSELECTED',
+  originalStock:{appendages:[...cold.primaryRows.filter((q:{owner:string})=>!q.owner.startsWith('MAIN.')),...cold.otherNativeRows.filter((q:{owner:string})=>q.owner.startsWith('RHR.'))].map(original),pzr:cold.coldPzr.regions.map((q:Record<string,unknown>)=>pick(q,['lane','lo_m','liquid_kg','U_J','E_J'])),
+   isotope:{fraction:chemistry.isotopeFraction,mass10:chemistry.isotope10MolarMass_kg_mol,mass11:chemistry.isotope11MolarMass_kg_mol,avogadro:chemistry.avogadro_mol},
+   charging:{pressure_Pa:chemistry.pressure_Pa,temperature_K:chemistry.temperature_K,residence_s:charge.bodyResidence_s,flow_kg_s:chargePump.flow_kg_s}}}
+ const sources=['reference-design-current-cold-parent.ts','reference-design-cold-parent.ts','reference-design-guide-parent.ts','reference-design-control-absorber.ts','reference-design-fuel-transfer.ts','reference-design-fuel-handling.ts','reference-design-fuel-construction.ts','reference-design-cold-pressure.ts','reference-design-head-pool.ts','reference-design-pressurizer-heater-contact.ts','reference-design-chemistry-lifecycle.ts','reference-design-charging-pressure.ts','reference-design-service-pump-continuation.ts']
  const hashes=async()=>Object.fromEntries(await Promise.all(sources.map(async q=>[q,sha(await Bun.file(resolve(import.meta.dir,q)).text())])))
  const before=await hashes(),serial=JSON.stringify(consumed),proc=Bun.spawn([python,'-c',currentColdParentCalculation],{stdin:new Blob([serial]),stdout:'pipe',stderr:'pipe'}),[out,err,code]=await Promise.all([new Response(proc.stdout).text(),new Response(proc.stderr).text(),proc.exited])
  if(code)throw Error(err)

@@ -9,13 +9,14 @@ import {parseFuelConstruction} from './reference-design-fuel-construction'
 import {parseFuelHandling} from './reference-design-fuel-handling'
 import {parseHeadPool} from './reference-design-head-pool'
 
-const fixture:ReturnType<typeof parseCurrentColdParent>={primaryMetalTemperature_K:300,parkedToolTemperature_K:298.15,torqueToolPark_m:[-7,3,16.1],grapplePark_m:[-7,3.5,16.1]},
+const fixture:ReturnType<typeof parseCurrentColdParent>={primaryAbsorberRatio:.002,primaryMetalTemperature_K:300,parkedToolTemperature_K:298.15,torqueToolPark_m:[-7,3,16.1],grapplePark_m:[-7,3.5,16.1]},
  document=(q:unknown)=>'```reference-current-cold-parent\n'+JSON.stringify(q)+'\n```\n'
 test('current original selection is exact, finite and distinct from restored history',()=>{
  expect(parseCurrentColdParent(document(fixture))).toEqual(fixture)
  expect(()=>parseCurrentColdParent('')).toThrow('one')
  expect(()=>parseCurrentColdParent(document(fixture)+document(fixture))).toThrow('one')
  expect(()=>parseCurrentColdParent(document({...fixture,sourceReactivity:0}))).toThrow()
+ expect(()=>parseCurrentColdParent(document({...fixture,primaryAbsorberRatio:.001}))).toThrow()
  expect(()=>parseCurrentColdParent(document({...fixture,primaryMetalTemperature_K:280}))).toThrow()
  expect(()=>parseCurrentColdParent(document({...fixture,torqueToolPark_m:[-7,3]}))).toThrow()
 })
@@ -36,7 +37,12 @@ test.skipIf(!wiki)('current actual inserted inventories, material stocks and one
  expect(r.cores['Core.1'].water_kg+r.cores['Core.2'].water_kg).toBeCloseTo(20130.783037301347,5)
  expect(r.cores['Core.2'].volume_m3).toBeCloseTo(r.cores['Core.1'].volume_m3-2e-6,12)
  expect(r.housing.volume_m3).toBeCloseTo(10.751547842356258,11)
- expect(r.housing.tracer_kg_eq).toBeCloseTo(r.housing.water_kg*.001,12)
+ expect(r.housing.tracer_kg_eq).toBeCloseTo(r.housing.water_kg*.002,12)
+ expect(r.mainPrimary.tracer_kg_eq).toBeCloseTo(r.mainPrimary.water_kg*.002,9)
+ expect(r.originalStocks.rows.every((q:{water_kg:number,mobileMarker_kg_eq:number,mobileN10:number,retainedN10:number})=>Math.abs(q.mobileMarker_kg_eq-q.water_kg*.002)<1e-10&&q.mobileN10===q.mobileMarker_kg_eq*r.originalStocks.atomsPer_kg_eq&&q.retainedN10===0)).toBe(true)
+ expect(r.originalStocks.rows.filter((q:{owner:string})=>q.owner.startsWith('CHARGE.')).length).toBe(2)
+ expect(r.originalStocks.rows.filter((q:{owner:string})=>q.owner.startsWith('PZR.')).length).toBe(10)
+ expect(r.originalStocks.rows.some((q:{owner:string})=>q.owner.startsWith('CMT.')||q.owner.startsWith('ACC.')||q.owner==='WST'||q.owner==='INV.WATER')).toBe(false)
  expect(r.cnv.volume_m3).toBe(60000)
  expect(r.cnv.totalPressure_Pa).toBe(101325)
  expect(r.cnv.nitrogen_kg).toBe(0)
