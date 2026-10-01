@@ -40,19 +40,17 @@ describe('waitForRoomIdle', () => {
     const room = makeRoom('bravo')
     room.post({ senderId: 'u', senderName: 'U', content: 'hi', type: 'chat' })
 
-    const start = Date.now()
     const result = await waitForRoomIdle(room, {
       quietMs: 100,
       timeoutMs: 2000,
       pollMs: 10,
       inRoomAIAgents: () => [makeIdleAgent()],
     })
-    const elapsed = Date.now() - start
-
     expect(result.idle).toBe(true)
     expect(result.messageCount).toBe(1)
     expect(result.lastMessageAt).not.toBeNull()
-    expect(elapsed).toBeGreaterThanOrEqual(100)
+    // Quiet time starts at the message, not at the later wait invocation.
+    expect(Date.now() - result.lastMessageAt!).toBeGreaterThanOrEqual(100)
   })
 
   test('generating agent (whenIdle slow) blocks idle until it resolves', async () => {
