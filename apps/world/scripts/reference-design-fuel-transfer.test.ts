@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'bun:test'
-import {parseTransferGates,transferGateMotor,gateColumnTraction,heldGateTravel,transferGateChecks,transferGateFixture,parseTransferAttachment,transferToolTorsion,transferToolHand,transferJointTrial,transferAxialTrial,transferJawMotion,transferBodyRotation} from './reference-design-fuel-transfer'
+import {parseTransferGates,transferGateMotor,gateColumnTraction,heldGateTravel,transferGateChecks,transferGateFixture,parseTransferAttachment,transferToolTorsion,transferToolHand,transferJointTrial,transferAxialTrial,transferJawMotion,transferBodyRotation,transferReconnectionCoordinates,parseManualBankServo,manualBankMeanRate} from './reference-design-fuel-transfer'
 const record={width_m:.6,thickness_m:.02,steelDensity_kg_m3:7920,top_m:14,sills_m:[4,3.5],stroke_m:.6,
  speedScale_m_s:.05,motorForce_N:20000,motiveDuty_W:2000,driveEfficiency:.8,electronicsDuty_W:20,
  guideFriction_N:1000,pressureFrictionFactor:.1,brakeForce_N:20000,dragCoefficient:1.2,
@@ -61,6 +61,48 @@ const attachment={stubLength_m:.055,lugBottom_m:2.45,lugHeight_m:.01,lugInnerRad
  padRadialInner_m:1.89,padRadialOuter_m:1.9,padArcWidth_m:.01,padHeight_m:.01,tipRadius_m:1.875},
  a=parseTransferAttachment('```reference-transfer-attachment\n'+JSON.stringify(attachment)+'\n```')
 describe('actual separated stem, shaft and unilateral body joint',()=>{
+ it('reconnection preserves reference offset and distinguishes slipped travel from joint closure',()=>{
+  const c={collarBottoms_m:[8.05,8.35],collarHeight_m:.1},q={referenceAtRequest_m:0,reference_m:0,stemDisplacement_m:-.04,
+   bodyDisplacement_m:0,headDisplacement_m:0,requestedAdvance_m:.04},initial=transferReconnectionCoordinates(a,c,q)
+  expect(initial.lugTop_m).toBeCloseTo(2.42,12)
+  expect(initial.remainingStemRise_m).toBeCloseTo(.04,12)
+  expect(initial.referenceTarget_m).toBe(.04)
+  const completed=transferReconnectionCoordinates(a,c,{...q,reference_m:.04,stemDisplacement_m:0})
+  expect(completed.remainingReferenceTravel_m).toBe(0)
+  expect(completed.remainingStemRise_m).toBeCloseTo(0,12)
+  expect(completed.diagnosedReferenceOffset_m).toBe(.04)
+  expect('normalMappedReferenceTarget_m' in completed).toBe(false)
+  const slipped=transferReconnectionCoordinates(a,c,{...q,reference_m:.04,stemDisplacement_m:-.01})
+  expect(slipped.remainingReferenceTravel_m).toBe(0)
+  expect(slipped.remainingStemRise_m).toBeCloseTo(.01,12)
+  expect(slipped.diagnosedReferenceOffset_m).toBe(.05)
+  const interrupted=transferReconnectionCoordinates(a,c,{...q,reference_m:.02,stemDisplacement_m:-.02})
+  expect(interrupted.remainingReferenceTravel_m).toBe(.02)
+  expect(interrupted.remainingStemRise_m).toBeCloseTo(.02,12)
+  expect(transferReconnectionCoordinates(a,c,{...q,referenceAtRequest_m:.04,reference_m:.04}).referenceTarget_m).toBe(.08)
+  expect(()=>transferReconnectionCoordinates(a,c,{...q,requestedAdvance_m:.041})).toThrow()
+  expect(()=>transferReconnectionCoordinates(a,c,{...q,reference_m:Infinity})).toThrow()
+  expect(()=>transferReconnectionCoordinates(a,c,{...q,referenceAtRequest_m:1e100,reference_m:1e100})).toThrow()
+  expect(()=>transferReconnectionCoordinates(a,c,{...q,referenceAtRequest_m:Number.MAX_VALUE,requestedAdvance_m:Number.MAX_VALUE})).toThrow()
+ })
+ it('ordinary MANUAL uses only acquired mean error, not service reference or body truth',()=>{
+  const b=parseManualBankServo('```reference-bank-manual-servo\n{"sample_s":0.1,"gain_s":0.1,"deadband_stroke":0.0001,"maximumRate_stroke_s":0.002}\n```')
+  expect(manualBankMeanRate(b,.0001,0).requestedRate_stroke_s).toBe(0)
+  expect(manualBankMeanRate(b,.00010001,0).requestedRate_stroke_s).toBeGreaterThan(0)
+  expect(manualBankMeanRate(b,0,.0001).requestedRate_stroke_s).toBe(0)
+  expect(manualBankMeanRate(b,.001,0).requestedRate_stroke_s).toBe(.0001)
+  expect(manualBankMeanRate(b,.001,0).referenceIncrement_m).toBe(.00004)
+  expect(manualBankMeanRate(b,1,0).requestedRate_stroke_s).toBe(.002)
+  expect(manualBankMeanRate(b,0,1).requestedRate_stroke_s).toBe(-.002)
+  expect(manualBankMeanRate(b,0,0).requestedRate_stroke_s).toBe(0)
+  const requested=manualBankMeanRate(b,.001,0).referenceIncrement_m
+  expect(.04+requested).toBeCloseTo(.04004,12)
+  expect(.05+requested).toBeCloseTo(.05004,12)
+  expect(manualBankMeanRate(b,.5,.6).requestedRate_stroke_s).toBe(-.002)
+  expect(()=>manualBankMeanRate(b,.5,NaN)).toThrow()
+  expect(()=>manualBankMeanRate(b,.5,-.01)).toThrow()
+  expect(()=>parseManualBankServo('')).toThrow()
+ })
  it('retains body angular free play and real stationary guide reaction',()=>{
   const q={inertia_kg_m2:.18,clearanceAngle_rad:.007015,angle_rad:0,omega_rad_s:.01,keyTorque_N_m:.5,guideTorque_N_m:0,guideOverlap:true,failedGuide:false}
   expect(transferBodyRotation(a,q).kinetic_J).toBeGreaterThan(0)

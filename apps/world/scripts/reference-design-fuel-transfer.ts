@@ -24,10 +24,37 @@ const attachmentSchema=z.object({stubLength_m:positive,lugBottom_m:finite,lugHei
  hoistEfficiency:positive.max(1),hoistBrake_N:positive,padRadialInner_m:positive,padRadialOuter_m:positive,
  padArcWidth_m:positive,padHeight_m:positive,tipRadius_m:positive}).strict()
 export type TransferAttachment=z.infer<typeof attachmentSchema>
+const manualServoSchema=z.object({sample_s:positive,gain_s:positive,deadband_stroke:positive,maximumRate_stroke_s:positive}).strict()
+export type ManualBankServo=z.infer<typeof manualServoSchema>
+export function parseManualBankServo(document:string):ManualBankServo{
+ const blocks=[...document.matchAll(/^```reference-bank-manual-servo\s*\n([\s\S]*?)^```\s*$/gm)]
+ if(blocks.length!==1)throw Error('Expected exactly one reference-bank-manual-servo block')
+ return manualServoSchema.parse(JSON.parse(blocks[0]![1]!))
+}
+/** Acquired-mean arithmetic only: context, acquisition and output invalidation are not simulated here. */
+export function manualBankMeanRate(b:ManualBankServo,target:number,acquiredMean:number){
+ if(![target,acquiredMean].every(Number.isFinite)||target<0||target>1||acquiredMean<0||acquiredMean>1)throw Error('Invalid usable manual bank input')
+ const error=target-acquiredMean,rate=Math.abs(error)<=b.deadband_stroke?0:Math.max(-b.maximumRate_stroke_s,Math.min(b.maximumRate_stroke_s,b.gain_s*error))
+ return {error_stroke:error,requestedRate_stroke_s:rate,referenceIncrement_m:4*rate*b.sample_s}
+}
 export function parseTransferAttachment(document:string):TransferAttachment{
  const blocks=[...document.matchAll(/^```reference-transfer-attachment\s*\n([\s\S]*?)^```\s*$/gm)]
  if(blocks.length!==1)throw Error('Expected exactly one reference-transfer-attachment block')
  return attachmentSchema.parse(JSON.parse(blocks[0]![1]!))
+}
+/** Reconnection coordinate accounting only, not a movement or permission solver. */
+export function transferReconnectionCoordinates(b:TransferAttachment,c:Pick<ControlAbsorber,'collarBottoms_m'|'collarHeight_m'>,
+ q:{referenceAtRequest_m:number,reference_m:number,stemDisplacement_m:number,bodyDisplacement_m:number,
+ headDisplacement_m:number,requestedAdvance_m:number}){
+ if(!Object.values(q).every(Number.isFinite)||!c.collarBottoms_m.every(Number.isFinite)||!Number.isFinite(c.collarHeight_m))throw Error('Nonfinite reconnection coordinate')
+ const collarTop=Math.max(...c.collarBottoms_m)+c.collarHeight_m,fall=b.shoulderBottom_m-collarTop,
+  roundoff=32*Number.EPSILON*Math.max(1,Math.abs(b.shoulderBottom_m),Math.abs(collarTop))
+ if(!(fall>0&&q.requestedAdvance_m>0)||q.requestedAdvance_m-fall>roundoff)throw Error('Reference request exceeds actual retained shoulder fall')
+ const target=q.referenceAtRequest_m+q.requestedAdvance_m,lug=b.lugBottom_m+b.lugHeight_m+q.headDisplacement_m+q.stemDisplacement_m,
+  land=b.hubLandBottom_m+q.bodyDisplacement_m,offset=q.reference_m-q.stemDisplacement_m
+ if(![target,lug,land,offset].every(Number.isFinite)||target<=q.referenceAtRequest_m)throw Error('Unresolvable derived reconnection coordinate')
+ return {shoulderFall_m:fall,referenceTarget_m:target,remainingReferenceTravel_m:target-q.reference_m,
+  lugTop_m:lug,landBottom_m:land,remainingStemRise_m:land-lug,diagnosedReferenceOffset_m:offset}
 }
 /** Quasistatic shaft constitutive/work identity, not a handle-to-key pose command. */
 export function transferToolTorsion(b:TransferAttachment,thetaHand:number,thetaOutput:number,omegaHand:number,omegaOutput:number){
@@ -181,13 +208,25 @@ export function transferAttachmentChecks(b:TransferAttachment,c:ControlAbsorber,
   {name:'actual obstruction',reaction_N:10000,power_W:100,blocked:true},{name:'lost support',reaction_N:10000,power_W:0,blocked:false}],
   jaws=jaw.map(q=>({...q,result:transferJawMotion(b,q.reaction_N,q.power_W,1,q.blocked)}))
  for(const row of jaws)require(row.name+': paid finite jaw motion/loss',row.result.mechanical_W<=b.hoistEfficiency*row.result.delivered_W+1e-12&&Math.abs(row.result.toolHeat_W-row.result.delivered_W)<1e-12)
+ const rq={referenceAtRequest_m:0,reference_m:0,stemDisplacement_m:-fall,bodyDisplacement_m:0,headDisplacement_m:0,requestedAdvance_m:fall},
+  reconnection=[{name:'collar retained with unchanged reference',result:transferReconnectionCoordinates(b,c,rq)},
+   {name:'no-slip reference advance closes geometric gap',result:transferReconnectionCoordinates(b,c,{...rq,reference_m:fall,stemDisplacement_m:0})},
+   {name:'reference completed but one-centimetre slip remains',result:transferReconnectionCoordinates(b,c,{...rq,reference_m:fall,stemDisplacement_m:-.01})},
+   {name:'interrupted half advance retains both positions',result:transferReconnectionCoordinates(b,c,{...rq,reference_m:fall/2,stemDisplacement_m:-fall/2})}]
+ require('retained original reference does not lift fallen stem',Math.abs(reconnection[0]!.result.remainingStemRise_m-fall)<1e-12)
+ require('below-land lug rotation does not require exact contact height',reconnection[0]!.result.lugTop_m<reconnection[0]!.result.landBottom_m)
+ require('completed reference preserves diagnosed offset at actual gap closure',reconnection[1]!.result.remainingReferenceTravel_m===0&&Math.abs(reconnection[1]!.result.remainingStemRise_m)<1e-12&&reconnection[1]!.result.diagnosedReferenceOffset_m===fall)
+ require('slip exhaustion cannot prove connected body',reconnection[2]!.result.remainingReferenceTravel_m===0&&reconnection[2]!.result.remainingStemRise_m>0)
+ require('diagnosed offset is retained physical accounting, not a controller target',reconnection[2]!.result.diagnosedReferenceOffset_m>fall)
+ require('interruption is not completed reference or stem motion',reconnection[3]!.result.remainingReferenceTravel_m>0&&reconnection[3]!.result.remainingStemRise_m>0)
  return {scope:'Actual original geometry, separate extensive masses, uplift-only contact and signed shaft/grip work trials; no achieved rotation, drop, assembled head lift or nuclear/handling permission',checks,
   geometry:{addedStemPerCluster_m3:addedStemV,addedStemMetal_kg:addedStemMass,headCapturedStem_kg:attachedStemMass,
    shortCluster_kg:shortCluster,hoistedMass_kg:capturedMass,dryLiftWeight_N:liftWeight,
    toolVolume_m3:toolV,toolMass_kg:toolMass,toolRotaryInertia_kg_m2:toolInertia,
    shoulderFall_m:fall,retainedStemFoot_m:foot,toolHeadTopAtTransfer_m:fuel.assembly.transferTop_m+b.toolHeadBottomAboveFA_m+b.toolHeadHeight_m,
    padEach_m3:padV,padEach_kg:padV*rho,bodyRotaryInertia_kg_m2:bodyRotaryInertia,bodyClearanceAngle_rad:bodyClearanceAngle},torsion,joint:trial,openJoint:opened,rotations,
-   axialScope:'Actual dry mass/gravity and declared instantaneous forces/velocities, not a native water or attained travel comparison',axial,jaws}
+   axialScope:'Actual dry mass/gravity and declared instantaneous forces/velocities, not a native water or attained travel comparison',axial,jaws,
+   reconnectionScope:'Static retained coordinate comparisons only; not a command executor, achieved service trajectory, sensor or source/startup permission',reconnection}
 }
 export function parseTransferGates(document:string):TransferGates{
  const blocks=[...document.matchAll(/^```reference-transfer-gates\s*\n([\s\S]*?)^```\s*$/gm)]
@@ -322,12 +361,14 @@ if(import.meta.main){
  if(controlPath&&fuelPath&&handlingPath){
   const documents=await Promise.all([controlPath,fuelPath,handlingPath].map(path=>Bun.file(path).text())),
    control=documents[0]!,fuel=documents[1]!,handling=documents[2]!,attachment=parseTransferAttachment(owner),
-   physical={attachment,control:parseControlAbsorber(control),fuel:parseFuelConstruction(fuel),handling:parseFuelHandling(handling)},
+   physical={attachment,control:parseControlAbsorber(control),manualServo:parseManualBankServo(control),fuel:parseFuelConstruction(fuel),handling:parseFuelHandling(handling)},
    result=transferAttachmentChecks(attachment,physical.control,physical.fuel,physical.handling),
    sourceHashes=Object.fromEntries(await Promise.all([import.meta.path,import.meta.dir+'/reference-design-control-absorber.ts',import.meta.dir+'/reference-design-fuel-handling.ts',import.meta.dir+'/reference-design-fuel-construction.ts'].map(async path=>[path,sha(await Bun.file(path).text())]))),
-   attachmentReceipt={sourceSHA256:sha(source),calculationSHA256:sha([transferToolTorsion,transferToolHand,transferAxialTrial,transferJawMotion,transferBodyRotation,transferJointTrial,transferAttachmentChecks,controlAbsorberGeometry,fuelHandlingChecks].map(x=>x.toString()).join('\n')),
+   manualServoTrials=[0,.00005,.001,.5,-.001,-.5].map(error=>manualBankMeanRate(physical.manualServo,.5+error,.5)),
+   attachmentReceipt={sourceSHA256:sha(source),calculationSHA256:sha([manualBankMeanRate,transferReconnectionCoordinates,transferToolTorsion,transferToolHand,transferAxialTrial,transferJawMotion,transferBodyRotation,transferJointTrial,transferAttachmentChecks,controlAbsorberGeometry,fuelHandlingChecks].map(x=>x.toString()).join('\n')),
     consumedInputSHA256:sha(JSON.stringify(physical)),consumedInput:physical,helperSourceSHA256:sourceHashes,
-    ownerContextSHA256:Object.fromEntries([[ownerPath,sha(owner)],[controlPath,sha(control)],[fuelPath,sha(fuel)],[handlingPath,sha(handling)]]),...result},
+    ownerContextSHA256:Object.fromEntries([[ownerPath,sha(owner)],[controlPath,sha(control)],[fuelPath,sha(fuel)],[handlingPath,sha(handling)]]),...result,
+    manualServoScope:'Static acquired-input arithmetic only; no actual acquisition, sampled servo trajectory, support/protection execution or source qualification',manualServoTrials},
    attachmentOutput=outputPath.replace(/\.json$/, '-attachment.json')
   if(attachmentOutput===outputPath)throw Error('Receipt output must end in .json')
   await Bun.write(attachmentOutput,JSON.stringify(attachmentReceipt,null,2)+'\n')
