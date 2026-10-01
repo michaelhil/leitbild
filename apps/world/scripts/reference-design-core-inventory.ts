@@ -35,7 +35,8 @@ function equilibrium(b:CetBasis,e:CetEnvironment,power:number){
 }
 export function heatedComparison(b:CetBasis,power:number,testPowers:readonly number[]=[power]){
  if(!testPowers.length||testPowers.some(p=>!Number.isFinite(p)||p<=0))throw Error('Positive actual test powers required')
- const rows=[]
+ const rows:Array<{filmFactor:number;radiationFactor:number;bath_C:number;clad_C:number;
+  liquidExposure:number;reference_C:number;heated_C:number;difference_K:number}>=[]
  for(const filmFactor of [.5,1,2])for(const radiationFactor of [0,.03,.09])for(const bath_C of [40,300])for(const clad_C of [bath_C,700])for(const liquidExposure of [0,.5,1]){
   const actual={...b,liquidFilm_W_m2K:b.liquidFilm_W_m2K*filmFactor,gasFilm_W_m2K:b.gasFilm_W_m2K*filmFactor,effectiveRadiationFactor:radiationFactor}
   const e={liquidExposure,liquid_C:bath_C,gas_C:bath_C,clad:[{areaWeight:1,temperature_C:clad_C}]}
