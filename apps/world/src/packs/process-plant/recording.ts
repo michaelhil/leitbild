@@ -9,6 +9,7 @@ import type {
 import type { ProcessPlantVariableHandle } from './runtime/variable-table.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
 import type { CompiledProcessPlant } from './plant-compiler.ts'
+import { processPlantSignalQuality } from './signals.ts'
 
 export const recordedPlantVariables = (plant: CompiledProcessPlant, profileId: string) => plant.graph.variables.filter(variable =>
   profileId === 'engineering' || ['state', 'control', 'discrete'].includes(variable.descriptor.kind) || variable.descriptor.tagId !== undefined || variable.descriptor.quantity === 'power')
@@ -16,13 +17,13 @@ export const recordedPlantVariables = (plant: CompiledProcessPlant, profileId: s
 export const processPlantRecordingProfiles: ReadonlyArray<RecordingProfileDescriptor> = [{
   id: 'operations',
   title: 'Operations',
-  description: 'State, operator controls, discrete states, tagged instruments and power balances. Other derived engineering diagnostics are excluded. Unchanged values are recorded at most once per minute.',
+  description: 'State, operator controls, discrete states, tagged instruments and power balances. Other derived engineering diagnostics are excluded. Unchanged values are recorded at most once per minute. Quality describes declared hard-range consistency, not qualified instrumentation.',
   defaultIntervalMs: 1_000,
   minimumIntervalMs: 250,
 }, {
   id: 'engineering',
   title: 'Engineering detail',
-  description: 'Every declared Plant variable for detailed analysis; intentionally slower and opt-in.',
+  description: 'Every declared Plant variable for detailed analysis; intentionally slower and opt-in. Quality describes declared hard-range consistency, not qualified instrumentation.',
   defaultIntervalMs: 5_000,
   minimumIntervalMs: 1_000,
 }]
@@ -83,7 +84,8 @@ export const createProcessPlantRecordingPlan = (config: {
     sample: ({ observedAt, simulationTime }) => ({
       descriptors: [],
       samples: series.flatMap(item => {
-        const value = item.plant.runtime.readVariableHandle(item.handle)
+        const variable = item.plant.runtime.readVariableSnapshotHandle(item.handle)
+        const value = variable.value
         const at = Date.parse(simulationTime)
         const previous = lastRecorded.get(item.descriptor.id)
         if (previous && previous.value === value && at >= previous.at && at - previous.at < 60_000) return []
@@ -94,7 +96,7 @@ export const createProcessPlantRecordingPlan = (config: {
           simulationTime,
           elapsedMs: item.plant.runtime.elapsedMs(),
           value,
-          quality: 'good' as const,
+          quality: processPlantSignalQuality(variable).status === 'outside-hard-range' ? 'bad' as const : 'good' as const,
         }]
       }),
     }),

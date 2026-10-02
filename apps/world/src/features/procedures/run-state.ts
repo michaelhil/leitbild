@@ -1,6 +1,7 @@
 import type {
   CommandEnvelope, SimulationRunEvent, SimulationRunId, EventId, IsoTimestamp,
   ProcedureControlState, ProcedureDocument, ProcedureRunScope, ProcedureRunState,
+  Provenance,
 } from '../../core/model/index.ts'
 import {
   sameProcedureScope, createProcedureRunId, procedureCommandKindSchema, procedureRunClosePayloadSchema,
@@ -11,6 +12,8 @@ import {
 export interface ProcedureCommitContext {
   readonly simulationRunId: SimulationRunId
   readonly at: IsoTimestamp
+  readonly simulationTime?: IsoTimestamp
+  readonly commandSource?: Provenance['source']
   readonly procedures: ProcedureControlState | undefined
   readonly objectIds: ReadonlySet<string>
   readonly factory: { readonly eventId: () => EventId; readonly nextSeq: () => number }
@@ -50,7 +53,7 @@ export const prepareProcedureCommand = async (config: {
   const base = (context: ProcedureCommitContext) => ({
     id: context.factory.eventId(), simulationRunId: context.simulationRunId,
     seq: context.factory.nextSeq(), at: context.at,
-    provenance: { source: 'operator' as const, causedByCommandId: command.id },
+    provenance: { source: context.commandSource ?? 'operator', causedByCommandId: command.id },
   })
   const started = (context: ProcedureCommitContext, document: ProcedureDocument, scope: ProcedureRunScope): SimulationRunEvent => ({
     ...base(context), type: 'procedure.run.started',
@@ -68,7 +71,12 @@ export const prepareProcedureCommand = async (config: {
     const document = await config.readDocument(payload)
     return context => {
       assertLiveScope(context, payload.scope)
-      if (currentRunFor(context.procedures, payload.sourceId, payload.procedureId, payload.scope)) {
+      const existing = currentRunFor(context.procedures, payload.sourceId, payload.procedureId, payload.scope)
+      if (existing?.status === 'transferred' && existing.sourceRevision === document.source.revision && existing.sourcePath === document.sourcePath) {
+        return [{ ...base(context), type: 'procedure.run.resumed', runId: existing.runId,
+          resumedAt: context.at, resumedBy: command.actorId }]
+      }
+      if (existing) {
         throw new Error(`procedure ${payload.procedureId} already has current run state for ${payload.scope.plantId}; reset it before starting another run`)
       }
       return [started(context, document, payload.scope)]
@@ -99,26 +107,46 @@ export const prepareProcedureCommand = async (config: {
 
   if ('branchIndex' in payload) {
     const branch = step.branches[payload.branchIndex]
-    if (!branch || branch.targetKind !== 'procedure') throw new Error('transition requires a declared procedure branch')
-    if (branch.target === document.procedureId) throw new Error('procedure transition must target a different procedure')
-    const targetDocument = await config.readDocument({
+    if (!branch || branch.targetKind === 'unknown') throw new Error('transition requires an actionable declared branch')
+    if (branch.targetKind === 'procedure' && branch.target === document.procedureId) throw new Error('use a local step target for same-procedure navigation')
+    if (branch.targetKind === 'step' && !document.steps.some(candidate => candidate.id === branch.target)) throw new Error('branch step target does not exist')
+    const targetDocument = branch.targetKind === 'procedure' ? await config.readDocument({
       sourceId: preparedRun.sourceId, sourceRevision: preparedRun.sourceRevision, procedureId: branch.target,
-    })
-    if (!targetDocument.steps.length) throw new Error(`procedure ${targetDocument.procedureId} has no entry step`)
+    }) : undefined
+    if (targetDocument && !targetDocument.steps.length) throw new Error(`procedure ${targetDocument.procedureId} has no entry step`)
     return context => {
       const run = activeRunFor(context.procedures, payload.runId)
       assertLiveScope(context, run.scope)
-      const target = currentRunFor(context.procedures, run.sourceId, targetDocument.procedureId, run.scope)
-      if (target && (target.status !== 'active' || target.sourceRevision !== run.sourceRevision || target.sourcePath !== targetDocument.sourcePath)) {
-        throw new Error('destination procedure must be unstarted or active at the same source revision; reset it before transitioning')
+      // Deliberate off-path decisions remain possible, but asynchronously prepared
+      // requests must not race another operator's newly accepted navigation.
+      if (run.currentStepId !== preparedRun.currentStepId) throw new Error('procedure current step changed; refresh before selecting this branch')
+      const target = targetDocument ? currentRunFor(context.procedures, run.sourceId, targetDocument.procedureId, run.scope) : undefined
+      if (target && (target.status === 'completed' || target.sourceRevision !== run.sourceRevision || target.sourcePath !== targetDocument?.sourcePath)) {
+        throw new Error('destination procedure must be unstarted, active or transferred at the same source revision; reset a completed destination explicitly')
       }
-      return [
-        ...(target ? [] : [started(context, targetDocument, run.scope)]),
+      const result: SimulationRunEvent[] = []
+      if (targetDocument && !target) result.push(started(context, targetDocument, run.scope))
+      if (target?.status === 'transferred') result.push({ ...base(context), type: 'procedure.run.resumed',
+        runId: target.runId, resumedAt: context.at, resumedBy: command.actorId })
+      result.push({ ...base(context), type: 'procedure.branch.selected', runId: run.runId, stepId: step.id,
+        branchIndex: payload.branchIndex, target: branch.target, targetKind: branch.targetKind,
+        ...(branch.outcome === undefined ? {} : { outcome: branch.outcome }),
+        ...(branch.execution === undefined ? {} : { execution: branch.execution }),
+        simulationTime: context.simulationTime ?? context.at, selectedBy: command.actorId,
+        ...(run.observations?.find(item => item.stepId === step.id) === undefined ? {} : {
+          observation: run.observations!.find(item => item.stepId === step.id)!,
+        }) })
+      const assessment = branch.outcome === 'normal' ? 'complete' as const : branch.outcome === 'rno' ? 'failed' as const : branch.outcome === 'unknown' ? 'unknown' as const : undefined
+      const currentStepId = branch.targetKind === 'step' ? branch.target : step.id
+      result.push(
         { ...base(context), type: 'procedure.step.updated', runId: run.runId, stepId: step.id,
-          update: { assessment: 'failed' }, currentStepId: step.id, updatedAt: context.at, updatedBy: command.actorId },
-        { ...base(context), type: 'procedure.run.closed', runId: run.runId, status: 'completed',
-          closedAt: context.at, closedBy: command.actorId },
-      ]
+          update: assessment === undefined ? {} : { assessment }, currentStepId, updatedAt: context.at, updatedBy: command.actorId })
+      if (branch.targetKind === 'end' || branch.targetKind === 'abort' || (branch.targetKind === 'procedure' && branch.execution !== 'parallel')) {
+        result.push({ ...base(context), type: 'procedure.run.closed', runId: run.runId,
+          status: branch.targetKind === 'end' ? 'completed' : branch.targetKind === 'abort' ? 'abandoned' : 'transferred',
+          closedAt: context.at, closedBy: command.actorId })
+      }
+      return result
     }
   }
   if (payload.currentStepId !== undefined && !document.steps.some(step => step.id === payload.currentStepId)) {

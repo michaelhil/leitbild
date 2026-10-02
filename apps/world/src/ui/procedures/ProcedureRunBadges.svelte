@@ -22,7 +22,7 @@
     onOpen = () => undefined,
   }: Props = $props()
 
-  const hasSummaries = $derived(summaries.active.length > 0 || summaries.completed.length > 0)
+  const hasSummaries = $derived(summaries.active.length > 0 || summaries.inactive.length > 0)
 
   const handleOpen = (event: MouseEvent, summary: ProcedureRunSummary): void => {
     event.stopPropagation()
@@ -45,13 +45,13 @@
       </button>
       {#if index < summaries.active.length - 1}<span class="procedure-run-comma">,</span>{/if}
     {/each}
-    {#if summaries.completed.length > 0}
-      <span class="procedure-run-completed-group">
+    {#if summaries.inactive.length > 0}
+      <span class="procedure-run-inactive-group">
         {#if summaries.active.length > 0}<span>&nbsp;</span>{/if}
-        {#each summaries.completed as summary, index (summary.run.runId)}
+        {#each summaries.inactive as summary, index (summary.run.runId)}
           <button
             type="button"
-            class="procedure-run-badge completed"
+            class="procedure-run-badge {summary.status}"
             class:open={summary.procedureId === openProcedureId}
             title={procedureRunSummaryTitle(summary)}
             onpointerdown={(event) => event.stopPropagation()}
@@ -59,7 +59,7 @@
           >
             {procedureRunSummaryText(summary)}
           </button>
-          {#if index < summaries.completed.length - 1}<span class="procedure-run-comma">,</span>{/if}
+          {#if index < summaries.inactive.length - 1}<span class="procedure-run-comma">,</span>{/if}
         {/each}
       </span>
     {/if}

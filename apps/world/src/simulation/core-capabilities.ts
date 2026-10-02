@@ -56,7 +56,7 @@ export const worldCoreCapabilities: ReadonlyArray<SimulationCapability> = [
   command({
     id: procedureRunStartCommandKind,
     title: 'Start procedure run',
-    description: 'Starts a procedure for an explicit operational scope.',
+    description: 'Starts a pinned procedure for an explicit operational scope, or resumes a transferred procedure at its preserved step. Completed or abandoned procedures require an explicit reset.',
     input: procedureRunStartPayloadSchema,
     targets: input => [objectIdSchema.parse(input.scope.plantId)],
   }),
@@ -69,8 +69,8 @@ export const worldCoreCapabilities: ReadonlyArray<SimulationCapability> = [
   }),
   command({
     id: procedureRunTransitionCommandKind,
-    title: 'Transition to a procedure',
-    description: 'Atomically follows a declared procedure branch from the source Run\u2019s pinned document. Records the source step, closes the source, and starts or reuses the destination in the same unit. Read the pinned document to select stepId and branchIndex.',
+    title: 'Follow procedure branch',
+    description: 'Atomically follows a declared local-step, procedure, retry, END, or ABORT branch from the pinned document. Records the chosen branch and available condition evidence. A procedure transfer preserves source placekeeping; an explicitly parallel branch keeps it active. Only authored outcome labels change step assessment. Read the pinned document to select stepId and branchIndex.',
     input: procedureRunTransitionPayloadSchema,
     targets: () => [],
   }),

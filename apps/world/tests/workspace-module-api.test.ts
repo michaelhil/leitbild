@@ -71,6 +71,135 @@ const provision = async (registry: WorldWorkspaceRuntimeRegistry, workspaceId: W
   })
 
 describe('World Module API', () => {
+  test('procedure evidence and historical decisions obey exact-subject AI restrictions without hiding human evidence', async () => {
+    const retention = await mkdtemp(join(tmpdir(), 'world-procedure-access-'))
+    temporaryDirectories.push(retention)
+    const revision = 'a'.repeat(40)
+    const sourcePath = 'procedures/ACCESS.md'
+    let knowledge = createKnowledge({ revision, documents: [] })
+    const sources = createProcedureSourceService({
+      sources: [{ sourceId: 'access-test', label: 'Access integration fixture', repository: 'test', ref: 'publication', procedurePath: 'procedures' }],
+      retentionDirectory: retention, loadKnowledge: async () => knowledge,
+    })
+    let nextPreparation: { readonly entered: () => void; readonly released: Promise<void> } | undefined
+    const registry = await createRegistry({ ...sources, readDocument: async request => {
+      const preparation = nextPreparation
+      if (preparation) {
+        nextPreparation = undefined
+        preparation.entered()
+        await preparation.released
+      }
+      return await sources.readDocument(request)
+    } })
+    const workspaceId = newWorkspaceId()
+    await provision(registry, workspaceId)
+    const run = await registry.getLoaded(workspaceId)!.simulationRuns.create({ scenarioId: 'test-plant' })
+    await run.setClock({ paused: true })
+    const operator = { id: actorIdSchema.parse('operator:access'), label: 'Access operator', role: 'operator' as const }
+    const plants = await run.invokeCapability(operator, { capabilityId: 'world.process-plant.plants.list', input: {} })
+    if (plants.kind !== 'query') throw new Error('Expected real plant identity query')
+    const plant = (plants.result as { plants: Array<{ id: string; modelRef: string; modelDigest: string }> }).plants[0]!
+    const conditionInput = {
+      condition: { type: 'comparison', signal: { path: 'rcpA.running' }, operator: '==', value: true, unit: 'boolean' },
+      basis: { modelRef: plant.modelRef, modelDigest: plant.modelDigest, source: 'test:api-access', description: 'restricted-physical-evidence-canary' },
+    }
+    knowledge = createKnowledge({ revision, documents: [{ path: sourcePath, content: `---
+type: procedure
+procedure-md: 0.7
+procedure-id: ACCESS
+title: Access boundary test
+---
+# Access boundary test
+## Step 1 [id: pump]
+Check: Test-only represented pump read, not a functional sufficiency criterion.
+\`\`\`procedure-observation
+${JSON.stringify({ capabilityId: 'world.process-plant.procedure-condition.evaluate', continuous: true, input: conditionInput })}
+\`\`\`
+- Record handover [outcome: normal] → #handover
+## Step 2 [id: handover]
+Action: Test-only handover.
+- End review [outcome: normal] → END
+` }] })
+    const human = accessContextSchema.parse({ workspaceId, requestId: newRequestId(), actor: { kind: 'human', id: 'access-operator' } })
+    const ai = accessContextSchema.parse({ workspaceId, requestId: newRequestId(), actor: { kind: 'ai', id: 'access-agent' } })
+    const invoke = (capabilityId: string, input: unknown, access = ai) => call<{ result: any; error?: { code: string } }>(registry,
+      `/internal/workspaces/${workspaceId}/capabilities/${capabilityId}/invoke`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, capabilityId, resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }, input, access }),
+      })
+    const start = { sourceId: 'access-test', sourceRevision: revision, procedureId: 'ACCESS', scope: { plantId: plant.id } }
+    expect((await invoke('world.process-plant.procedure-condition.evaluate', { ...conditionInput, targetObjectId: plant.id })).status).toBe(200)
+    expect((await invoke('world.procedure.run.start', start, human)).status).toBe(200)
+    const procedureRun = run.snapshot().procedures!.runs[0]!
+    expect(procedureRun.observations?.[0]?.result.status).toBe('satisfied')
+    expect((await invoke('world.procedure.step.update', { runId: procedureRun.runId, stepId: 'pump', comment: 'restricted-comment-canary' }, human)).status).toBe(200)
+    expect((await invoke('world.procedure.run.transition', { runId: procedureRun.runId, stepId: 'pump', branchIndex: 0 }, human)).status).toBe(200)
+    const open = await invoke('world.procedure.runs.list', {})
+    expect(open.body!.result.runs).toHaveLength(1)
+    expect(JSON.stringify(open.body)).toContain('restricted-physical-evidence-canary')
+    const journalBeforeRestriction = run.snapshot().seq
+    await run.setAgentRestrictions(operator, { operationIds: [], objects: [{ objectId: objectIdSchema.parse(plant.id), deny: ['inspect', 'change'] }] }, 0)
+    expect((await invoke('world.process-plant.procedure-condition.evaluate', { ...conditionInput, targetObjectId: plant.id })).status).toBe(403)
+    const context = await invoke('world.simulation-run.context', {})
+    expect(context.status).toBe(200)
+    expect(context.body!.result.situation.procedures.runs).toEqual([])
+    expect(context.body!.result.objects.items.some((object: { id: string }) => object.id === plant.id)).toBe(false)
+    expect((await invoke('world.procedure.runs.list', {})).body!.result.runs).toEqual([])
+    expect(JSON.stringify((await invoke('world.procedure.runs.list', {}, human)).body)).toContain('restricted-physical-evidence-canary')
+    const historical = await invoke('world.simulation-run.changes', { afterSequence: 0, limit: 200 })
+    expect(historical.status).toBe(200)
+    expect(JSON.stringify(historical.body)).not.toContain('restricted-physical-evidence-canary')
+    expect(JSON.stringify(historical.body)).not.toContain('restricted-comment-canary')
+    expect(historical.body!.result.events.some((event: { type: string }) => event.type.startsWith('procedure.'))).toBe(false)
+    expect(historical.body!.result.nextSequence).toBe(run.snapshot().seq)
+    // A page containing only denied evidence still advances its journal cursor.
+    const firstProcedureSequence = run.events().find(event => event.type === 'procedure.run.started')!.seq
+    const hiddenPage = await invoke('world.simulation-run.changes', { afterSequence: firstProcedureSequence - 1, limit: 1 })
+    expect(hiddenPage.body!.result.events).toEqual([])
+    expect(hiddenPage.body!.result.nextSequence).toBe(firstProcedureSequence)
+    expect(hiddenPage.body!.result.hasMore).toBe(true)
+    for (const [capabilityId, input] of [
+      ['world.procedure.run.transition', { runId: procedureRun.runId, stepId: 'handover', branchIndex: 0 }],
+      ['world.procedure.step.update', { runId: procedureRun.runId, stepId: 'handover', comment: 'denied change' }],
+      ['world.procedure.run.close', { runId: procedureRun.runId, status: 'abandoned' }],
+      ['world.procedure.run.start', start],
+      ['world.procedure.run.reset', start],
+    ] as const) {
+      const denied = await invoke(capabilityId, input)
+      expect(denied.status).toBe(403)
+      expect(denied.body?.error?.code).toBe('agent_access_restricted')
+    }
+    expect(run.snapshot().procedures!.runs[0]!.status).toBe('active')
+    // Admission is not a permit to commit after the human changes the live
+    // policy while the exact pinned source is still being prepared.
+    await run.setAgentRestrictions(operator, { operationIds: [], objects: [] }, 1)
+    let preparationEntered!: () => void
+    let releasePreparation!: () => void
+    const entered = new Promise<void>(resolve => { preparationEntered = resolve })
+    const released = new Promise<void>(resolve => { releasePreparation = resolve })
+    nextPreparation = { entered: preparationEntered, released }
+    const inFlight = invoke('world.procedure.step.update', { runId: procedureRun.runId, stepId: 'handover', comment: 'revoked-in-flight-canary' })
+    await entered
+    try {
+      await run.setAgentRestrictions(operator, { operationIds: [], objects: [{ objectId: objectIdSchema.parse(plant.id), deny: ['inspect', 'change'] }] }, 2)
+    } finally { releasePreparation() }
+    const revoked = await inFlight
+    expect([403, 409]).toContain(revoked.status)
+    expect(revoked.body!.error).toBeDefined()
+    expect(JSON.stringify(revoked.body)).toContain('restricted')
+    expect(JSON.stringify(run.snapshot().procedures)).not.toContain('revoked-in-flight-canary')
+    expect((await invoke('world.procedure.run.reset', start, human)).status).toBe(200)
+    expect(run.snapshot().procedures!.runs).toEqual([])
+    // Removing the live projection must not re-expose retained decision evidence.
+    const afterReset = await invoke('world.simulation-run.changes', { afterSequence: 0, limit: 200 })
+    expect(JSON.stringify(afterReset.body)).not.toContain('restricted-physical-evidence-canary')
+    expect(JSON.stringify(afterReset.body)).not.toContain('restricted-comment-canary')
+    expect(afterReset.body!.result.events.some((event: { type: string }) => event.type.startsWith('procedure.'))).toBe(false)
+    const humanHistory = await invoke('world.simulation-run.changes', { afterSequence: 0, limit: 200 }, human)
+    expect(JSON.stringify(humanHistory.body)).toContain('restricted-physical-evidence-canary')
+    expect(humanHistory.body!.result.nextSequence).toBeGreaterThan(journalBeforeRestriction)
+  })
+
   test('native procedure selectors return client-domain errors and recover through the same handler', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'world-procedure-publication-'))
     temporaryDirectories.push(directory)

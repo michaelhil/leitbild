@@ -27,7 +27,7 @@ describe('procedure commands through the real publish queue and realtime project
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
         createLocalWeatherPackRuntimeAdapter(),
       ],
-      procedureSourceService: { listSources: () => [], readCatalog: async () => procedureTestCatalog(), readDocument: async input => await readDocument(input) },
+      procedureSourceService: { listSources: () => [], readCatalog: async () => procedureTestCatalog(), readDocument: async input => await readDocument(input), readEvidence: async () => { throw new Error('No retained evidence in this concurrency fixture') } },
     })
     const runtime = await registry.create({ scenarioId: 'test-response' })
     const clients = [createSimulationRunStateStore(), createSimulationRunStateStore()]
@@ -89,17 +89,17 @@ describe('procedure commands through the real publish queue and realtime project
       expect((await command('world.procedure.run.transition', { runId: current().runId, stepId: 'first', branchIndex: 0 })).ok).toBe(false)
       expect(runtime.snapshot().procedures).toEqual(before)
       readDocument = async input => procedureTestDocument(input.procedureId, input.sourceRevision)
-      expect((await command('world.procedure.run.transition', { runId: current().runId, stepId: 'second', branchIndex: 0 })).ok).toBe(false)
+      expect((await command('world.procedure.run.transition', { runId: current().runId, stepId: 'second', branchIndex: 999 })).ok).toBe(false)
 
       const batchStart = batches.length
       await mustCommand('world.procedure.run.transition', { runId: current().runId, stepId: 'first', branchIndex: 0 })
-      expect(current().status).toBe('completed')
+      expect(current().status).toBe('transferred')
       expect(current().currentStepId).toBe('first')
-      expect(current().stepStates.find(step => step.stepId === 'first')?.assessment).toBe('failed')
+      expect(current().stepStates.find(step => step.stepId === 'first')?.assessment).toBe('blank')
       expect(runtime.snapshot().procedures?.runs.find(run => run.procedureId === 'TARGET')?.status).toBe('active')
       const transitionBatches = batches.slice(batchStart).filter(batch => batch.some(event => event.type === 'procedure.run.closed'))
       expect(transitionBatches).toHaveLength(2) // one batch per subscriber
-      expect(transitionBatches[0]?.map(event => event.type)).toEqual(['procedure.run.started', 'procedure.step.updated', 'procedure.run.closed'])
+      expect(transitionBatches[0]?.map(event => event.type)).toEqual(['procedure.run.started', 'procedure.branch.selected', 'procedure.step.updated', 'procedure.run.closed'])
 
       // Reusing an already active target does not create a duplicate.
       await reset(); await mustCommand('world.procedure.run.start', startInput)

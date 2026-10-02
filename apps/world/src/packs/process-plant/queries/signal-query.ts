@@ -45,7 +45,7 @@ const procedureTagSchema = z.object({
   units: z.string().min(1).optional(),
   equipment: z.string().min(1).optional(),
   source: z.string().min(1).optional(),
-  range: z.array(z.number().finite()).length(2).optional(),
+  range: z.array(z.number().finite()).length(2).refine(range => range[0]! <= range[1]!, 'range minimum cannot exceed maximum').optional(),
 }).strict()
 
 export const procedureTagsValidateQuerySchema = z.object({
@@ -79,8 +79,6 @@ const validateProcedureTags = (
 
   const signal = processPlantSignalView(binding)
   const externalRefs = signal.externalRefs ?? []
-  const resolvedByExternalReference = externalRefs.includes(tag.id)
-    || (tag.simPath !== undefined && externalRefs.includes(tag.simPath))
   const unitResolution = tag.units === undefined ? undefined : resolveRequestedSignalUnit(signal, tag.units)
   const warnings = [
     ...(tag.simPath !== undefined && tag.simPath !== signal.path && !externalRefs.includes(tag.simPath)
@@ -91,8 +89,19 @@ const validateProcedureTags = (
       : []),
     ...(tag.equipment !== undefined && signal.equipmentId !== undefined
       && normalizedSourceKey(tag.equipment) !== normalizedSourceKey(signal.equipmentId)
-      && !resolvedByExternalReference
       ? [`equipment ${tag.equipment} does not match process equipment ${signal.equipmentId}`]
+      : []),
+    ...(tag.equipment !== undefined && signal.equipmentId === undefined
+      ? [`equipment ${tag.equipment} cannot be verified because the signal declares no equipment identity`]
+      : []),
+    ...(tag.range !== undefined
+      ? signal.limits?.hardRange === undefined
+        ? ['Declared procedure range cannot be verified: the signal has no explicit hard range; this does not establish a calibrated instrument span.']
+        : tag.units !== undefined && tag.units !== signal.unit
+          ? [`Declared procedure range in ${tag.units} cannot be compared to native hard range in ${signal.unit} without an explicit range conversion.`]
+          : tag.range[0] !== signal.limits.hardRange.min || tag.range[1] !== signal.limits.hardRange.max
+            ? [`Declared procedure range ${tag.range.join('..')} does not match signal hard range ${signal.limits.hardRange.min}..${signal.limits.hardRange.max} ${signal.unit}; hard range is not a calibrated instrument span.`]
+            : []
       : []),
   ]
   return {

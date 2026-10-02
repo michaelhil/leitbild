@@ -1,119 +1,97 @@
 import { variablePathSchema } from './graph/index.ts'
-import {
-  evaluateProcessPlantIcCondition,
-  type ProcessPlantIcCondition,
-} from './runtime/index.ts'
+import { findProcessPlantSignalBinding, processPlantSignalQuality, processPlantSignalView } from './signals.ts'
+import { processPlantPwrReferenceModelRef } from './plant-definitions.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
-
-const pathCondition = (
-  path: string,
-  operator: '<' | '<=' | '>' | '>=' | '==' | '!=',
-  value: number | boolean,
-): ProcessPlantIcCondition => ({
-  type: 'comparison',
-  signal: { path: variablePathSchema.parse(path) },
-  operator,
-  value,
-})
-
-const all = (conditions: ReadonlyArray<ProcessPlantIcCondition>): ProcessPlantIcCondition => ({ type: 'all', conditions })
-const any = (conditions: ReadonlyArray<ProcessPlantIcCondition>): ProcessPlantIcCondition => ({ type: 'any', conditions })
 
 interface ProcessPlantAssessmentDefinition {
   readonly id: string
   readonly title: string
   readonly description: string
-  readonly condition: (plant: ProcessPlantRuntimeInstance) => ProcessPlantIcCondition
+  readonly source: string
+  readonly paths: (plant: ProcessPlantRuntimeInstance) => ReadonlyArray<string>
 }
 
 const assessmentDefinitions: ReadonlyArray<ProcessPlantAssessmentDefinition> = [
   {
     id: 'subcriticality',
     title: 'Subcriticality',
-    description: 'The reactor is shutdown with negative effective reactivity and substantially inserted rods.',
-    condition: () => all([
-      pathCondition('core.effectiveReactivityPcm', '<', 0),
-      pathCondition('core.rodInsertionFraction', '>=', 0.95),
-    ]),
+    description: 'Reactivity and rod position are model diagnostics; qualified shutdown evidence and a procedure-specific criterion are required.',
+    source: 'source:apps/world/src/packs/process-plant/runtime/behaviors/reactor-behaviors.ts',
+    paths: () => ['core.effectiveReactivityPcm', 'core.rodInsertionFraction'],
   },
   {
     id: 'core-cooling',
     title: 'Core cooling',
-    description: 'Core cooling availability is adequate and fuel heat-up is controlled.',
-    condition: () => all([
-      pathCondition('core.coreCoolingAvailabilityFraction', '>=', 0.25),
-      pathCondition('core.fuelHeatupRateCPerS', '<=', 0.5),
-    ]),
+    description: 'Availability and heat-up diagnostics do not establish sustained delivered core cooling or its required receiver.',
+    source: 'source:apps/world/src/packs/process-plant/runtime/pwr-transient-kernel.ts',
+    paths: () => ['core.coreCoolingAvailabilityFraction', 'core.fuelHeatupRateCPerS'],
   },
   {
     id: 'heat-sink',
     title: 'Heat sink',
-    description: 'At least one model-discovered steam generator retains adequate level.',
-    condition: plant => {
-      const steamGenerators = plant.plant.graph.components.filter(component => component.metadata?.equipmentClass === 'steam-generator')
-      if (steamGenerators.length === 0) throw new Error('heat-sink assessment requires at least one steam generator')
-      return any(steamGenerators.map(component => pathCondition(`${component.id}.levelPercent`, '>', 25)))
-    },
+    description: 'SG level and heat transfer are model diagnostics; level alone cannot establish heat-removal adequacy or continued ultimate heat rejection.',
+    source: 'source:apps/world/src/packs/process-plant/runtime/behaviors/steam-generator-behaviors.ts',
+    paths: plant => plant.plant.graph.components.filter(component => component.kind === 'steamGenerator')
+      .flatMap(component => [`${component.id}.levelPercent`, `${component.id}.heatTransferMw`]),
   },
   {
     id: 'rcs-integrity',
     title: 'RCS integrity',
-    description: 'Primary leakage and pressurizer relief flow remain controlled.',
-    condition: () => all([
-      pathCondition('vessel.primaryLeakFlowKgPerS', '<', 20),
-      pathCondition('pressurizer.reliefValvePositionFraction', '<', 0.1),
-    ]),
+    description: 'Leakage and relief position are model diagnostics; neither supplies a qualified pressure-temperature boundary integrity assessment.',
+    source: 'source:apps/world/src/packs/process-plant/runtime/pwr-transient-kernel.ts',
+    paths: () => ['vessel.primaryLeakFlowKgPerS', 'pressurizer.reliefValvePositionFraction'],
   },
   {
     id: 'containment',
     title: 'Containment',
-    description: 'Containment pressure and radiological source term remain controlled.',
-    condition: () => all([
-      pathCondition('containment.pressureMPa', '<', 0.24),
-      pathCondition('containment.radiationSourceTermMSvPerH', '<', 0.5),
-    ]),
+    description: 'Pressure and radiation proxies do not establish containment structural, radiological, hydrogen or continuing resource adequacy.',
+    source: 'source:apps/world/src/packs/process-plant/runtime/behaviors/containment-behaviors.ts',
+    paths: () => ['containment.pressureMPa', 'containment.radiationSourceTermMSvPerH'],
   },
   {
     id: 'rcs-inventory',
     title: 'RCS inventory',
-    description: 'Primary coolant inventory and pressurizer level remain adequate.',
-    condition: () => all([
-      pathCondition('vessel.primaryCoolantInventoryKg', '>', 240_000),
-      pathCondition('pressurizer.levelPercent', '>', 15),
-    ]),
+    description: 'Total primary inventory and PZR level do not establish core cover, coolant distribution or delivered emergency injection.',
+    source: 'source:apps/world/src/packs/process-plant/runtime/pwr-transient-kernel.ts',
+    paths: () => ['vessel.primaryCoolantInventoryKg', 'pressurizer.levelPercent'],
   },
 ]
 
 const assessmentById = new Map(assessmentDefinitions.map(definition => [definition.id, definition]))
 
 export const processPlantAssessmentCatalog = (): ReadonlyArray<Record<string, unknown>> =>
-  assessmentDefinitions.map(({ id, title, description }) => ({ id, title, description }))
+  assessmentDefinitions.map(({ id, title, description, source }) => ({
+    id, title, description, source, compatibleModelRef: processPlantPwrReferenceModelRef,
+    qualification: 'observation-only',
+  }))
 
 export const evaluateProcessPlantAssessments = (
   plant: ProcessPlantRuntimeInstance,
   assessmentIds: ReadonlyArray<string>,
 ): ReadonlyArray<Record<string, unknown>> => assessmentIds.map(id => {
   const definition = assessmentById.get(id)
-  if (definition === undefined) return { id, title: id, status: 'unknown', reason: 'Unknown assessment.', signalsRead: [] }
-  try {
-    const result = evaluateProcessPlantIcCondition({
-      system: plant.plant,
-      runtime: plant.runtime,
-      condition: definition.condition(plant),
-    })
-    return {
-      id,
-      title: definition.title,
-      status: result.matches ? 'satisfied' : 'challenged',
-      signalsRead: result.signalsRead,
+  const identity = { modelRef: plant.plant.modelRef, modelDigest: plant.plant.modelDigest, simTimeMs: plant.runtime.elapsedMs() }
+  if (definition === undefined) return { ...identity, id, title: id, status: 'unknown', reason: 'Unknown assessment.', signalsRead: [] }
+  const basis = { source: definition.source, qualification: 'observation-only', description: definition.description }
+  if (plant.plant.modelRef !== processPlantPwrReferenceModelRef) {
+    return { ...identity, id, title: definition.title, status: 'unknown', reason: 'This observation group is not applicable to the selected Plant model.', basis, signalsRead: [] }
+  }
+  const missingSignals: string[] = []
+  const unavailableSignals: Array<{ path: string; reason: string }> = []
+  const signalsRead = definition.paths(plant).flatMap(path => {
+    const binding = findProcessPlantSignalBinding(plant.plant.graph, { path: variablePathSchema.parse(path) })
+    if (binding === undefined) { missingSignals.push(path); return [] }
+    try {
+      const variable = plant.runtime.readVariableSnapshot(binding.path)
+      return [{ signal: processPlantSignalView(binding), variable, quality: processPlantSignalQuality(variable), provenance: 'runtime-model', instrumentationValidity: 'not-established' }]
+    } catch (error) {
+      unavailableSignals.push({ path, reason: error instanceof Error ? error.message : String(error) })
+      return []
     }
-  } catch (err) {
-    return {
-      id,
-      title: definition.title,
-      status: 'unknown',
-      reason: err instanceof Error ? err.message : String(err),
-      signalsRead: [],
-    }
+  })
+  return {
+    ...identity, id, title: definition.title, status: 'unknown', basis, missingSignals, unavailableSignals,
+    reason: `No qualified automatic CSF criterion is installed. ${definition.description}`,
+    signalsRead,
   }
 })

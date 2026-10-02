@@ -1,6 +1,6 @@
 import type { WorldPackView } from '../../core/packs/protocol.ts'
 import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
-import { processPlantPackId } from './model.ts'
+import { processPlantPackId, processPlantUnitPackDataSchema } from './model.ts'
 import { processPlantPresentation } from './presentation.ts'
 import { processPlantSimRuntimeId } from './sim/constants.ts'
 
@@ -19,4 +19,29 @@ export const processPlantPackView = {
     defaultRuntimeId: processPlantSimRuntimeId,
   },
   presentation: processPlantPresentation,
+  procedures: {
+    scopeIdForObject: object => {
+      const parsed = processPlantUnitPackDataSchema.safeParse(object.packData)
+      return parsed.success ? String(object.id) : null
+    },
+    signalReadQuery: (plantId, tag) => ({
+      capabilityId: 'world.process-plant.signals.read',
+      input: { plantId, signals: [{ tagId: tag.id, ...(tag.units === undefined ? {} : { requestedUnit: tag.units }) }] },
+    }),
+    tagValidationQuery: (plantId, tags) => ({
+      capabilityId: 'world.process-plant.procedure-tags.validate',
+      input: { plantId, tags: tags.map(tag => ({
+        id: tag.id,
+        ...(tag.description === undefined ? {} : { description: tag.description }),
+        ...(tag.simPath === undefined ? {} : { simPath: tag.simPath }),
+        ...(tag.units === undefined ? {} : { units: tag.units }),
+        ...(tag.equipment === undefined ? {} : { equipment: tag.equipment }),
+        ...(tag.source === undefined ? {} : { source: tag.source }),
+        ...(tag.range === undefined ? {} : { range: tag.range }),
+      })) },
+    }),
+    assessmentsQuery: (plantId, assessmentIds) => ({
+      capabilityId: 'world.process-plant.assessments.evaluate', input: { plantId, assessmentIds },
+    }),
+  },
 } satisfies WorldPackView

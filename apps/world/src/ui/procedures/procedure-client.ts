@@ -20,10 +20,31 @@ import type {
   ProcedureTagId,
 } from '../../core/model/index.ts'
 import { invokeSimulationRunCapability, querySimulationRunCapability } from '../simulation-run-client.ts'
-import { workspaceApiPath } from '../workspace-context.ts'
+import { activeWorkspaceId, workspaceApiPath } from '../workspace-context.ts'
+import type { PackProcedureContribution } from '../../core/packs/protocol.ts'
 
 export interface ProcedureRunsResponse {
   readonly runs: ReadonlyArray<ProcedureRunState>
+}
+
+export interface ProcedureSourceEvidenceRequest {
+  readonly sourceId: string
+  readonly sourceRevision: string
+  readonly sourcePath: string
+  readonly section?: string
+  readonly startLine?: number
+  readonly lineCount?: number
+}
+
+export interface ProcedureSourceEvidence {
+  readonly revision: string
+  readonly path: string
+  readonly title: string
+  readonly content: string
+  readonly startLine: number
+  readonly endLine: number
+  readonly totalLines: number
+  readonly nextLine?: number
 }
 
 export interface ProcedureTagValidation {
@@ -62,6 +83,10 @@ export interface ProcedureCsfEvaluation {
   readonly reason?: string
   readonly signalCount: number
   readonly signals: ReadonlyArray<ProcedureCsfSignalRead>
+  readonly qualification: string
+  readonly simTimeMs?: number
+  readonly modelRef?: string
+  readonly modelDigest?: string
 }
 
 const assertRecord = (value: unknown, message: string): Record<string, unknown> => {
@@ -77,6 +102,37 @@ const assertArray = (value: unknown, message: string): ReadonlyArray<unknown> =>
 const assertString = (value: unknown, message: string): string => {
   if (typeof value !== 'string' || value.length === 0) throw new Error(message)
   return value
+}
+
+const assertLineNumber = (value: unknown, message: string): number => {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) throw new Error(message)
+  return value
+}
+
+export const readProcedureSourceEvidence = async (
+  simulationRunId: SimulationRunId,
+  request: ProcedureSourceEvidenceRequest,
+): Promise<ProcedureSourceEvidence> => {
+  const workspaceId = activeWorkspaceId()
+  const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/capabilities/world.procedure.source.read/invoke`, {
+    method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: simulationRunId }, input: request, actor: { kind: 'human' } }),
+  })
+  const body = await readJson<{ readonly result: unknown }>(response, 'retained procedure source read failed')
+  const row = assertRecord(body.result, 'procedure source evidence is malformed')
+  if (row.revision !== request.sourceRevision || row.path !== request.sourcePath) throw new Error('procedure source evidence identity does not match requested revision and path')
+  if (typeof row.content !== 'string') throw new Error('procedure source evidence requires content')
+  const startLine = assertLineNumber(row.startLine, 'procedure source evidence requires startLine')
+  const endLine = assertLineNumber(row.endLine, 'procedure source evidence requires endLine')
+  const totalLines = assertLineNumber(row.totalLines, 'procedure source evidence requires totalLines')
+  if (endLine < startLine || endLine > totalLines) throw new Error('procedure source evidence line range is invalid')
+  const nextLine = row.nextLine === undefined ? undefined : assertLineNumber(row.nextLine, 'procedure source evidence requires a valid nextLine')
+  if (nextLine !== undefined && (nextLine <= endLine || nextLine > totalLines)) throw new Error('procedure source evidence nextLine is invalid')
+  return {
+    revision: request.sourceRevision, path: request.sourcePath,
+    title: assertString(row.title, 'procedure source evidence requires title'), content: row.content,
+    startLine, endLine, totalLines, ...(nextLine === undefined ? {} : { nextLine }),
+  }
 }
 
 const optionalRecord = (value: unknown): Record<string, unknown> | null =>
@@ -217,36 +273,32 @@ const formattedNumber = (value: number, digits: number): string => {
 
 const queryProcedureSignal = async (
   simulationRunId: SimulationRunId,
-  plantId: string,
-  tagId: string,
-  requestedUnit?: string,
+  scopeId: string,
+  tag: ProcedureTag,
+  provider: PackProcedureContribution,
 ): Promise<Record<string, unknown> | null> => {
+  const query = provider.signalReadQuery(scopeId, tag)
   const result = assertRecord(await querySimulationRunCapability(
     simulationRunId,
-    'world.process-plant.signals.read',
-    { plantId, signals: [{ tagId, ...(requestedUnit === undefined ? {} : { requestedUnit }) }] },
-  ), 'process signal query returned no result')
-  const first = assertArray(result.signals, 'process signal query returned no signals')[0]
-  return first === undefined ? null : assertRecord(first, 'process signal query returned malformed signal')
+    query.capabilityId,
+    query.input,
+  ), 'procedure signal query returned no result')
+  const first = assertArray(result.signals, 'procedure signal query returned no signals')[0]
+  return first === undefined ? null : assertRecord(first, 'procedure signal query returned malformed signal')
 }
 
 export const validateProcedureTags = async (
   simulationRunId: SimulationRunId,
-  plantId: string,
+  scopeId: string,
   tags: ReadonlyArray<ProcedureTag>,
+  provider: PackProcedureContribution,
 ): Promise<ReadonlyMap<string, ProcedureTagValidation>> => {
   if (tags.length === 0) return new Map()
+  const query = provider.tagValidationQuery(scopeId, tags)
   const result = assertRecord(await querySimulationRunCapability(
     simulationRunId,
-    'world.process-plant.procedure-tags.validate',
-    // Document annotations and provenance are not signal-validation inputs.
-    // Construct the computational request; keep the original document intact.
-    { plantId, tags: tags.map(tag => ({
-      id: tag.id,
-      ...(tag.simPath === undefined ? {} : { simPath: tag.simPath }),
-      ...(tag.units === undefined ? {} : { units: tag.units }),
-      ...(tag.equipment === undefined ? {} : { equipment: tag.equipment }),
-    })) },
+    query.capabilityId,
+    query.input,
   ), 'procedure tag validation returned a malformed result')
   const rows = assertArray(result.tags, 'procedure tag validation returned no tags').map((value): readonly [string, ProcedureTagValidation] => {
     const row = assertRecord(value, 'procedure tag validation row is malformed')
@@ -271,14 +323,15 @@ export const validateProcedureTags = async (
 
 export const readProcedureTagValue = async (
   simulationRunId: SimulationRunId,
-  plantId: string,
+  scopeId: string,
   tag: ProcedureTag,
+  provider: PackProcedureContribution,
 ): Promise<ProcedureTagValue> => {
-  const first = await queryProcedureSignal(simulationRunId, plantId, tag.id, tag.units)
+  const first = await queryProcedureSignal(simulationRunId, scopeId, tag, provider)
   if (first === null) throw new Error('not resolved to a Leitbild signal')
   const signal = assertRecord(first.signal, 'procedure tag read row requires signal')
   const variable = assertRecord(first.variable, 'procedure tag read row requires variable')
-  let unit = assertString(signal.unit, 'process signal requires unit')
+  let unit = assertString(signal.unit, 'procedure signal requires unit')
   let value = variable.value
   let conversionStatus: ProcedureTagValue['conversionStatus']
   let warning: string | undefined
@@ -297,7 +350,7 @@ export const readProcedureTagValue = async (
     value = view.value
     conversionStatus = status
   }
-  if (typeof value !== 'boolean' && (typeof value !== 'number' || !Number.isFinite(value))) throw new Error('process signal requires a finite number or boolean value')
+  if (typeof value !== 'boolean' && (typeof value !== 'number' || !Number.isFinite(value))) throw new Error('procedure signal requires a finite number or boolean value')
   const quality = optionalRecord(first.quality)
   return {
     tagId: tag.id,
@@ -318,7 +371,7 @@ const parseProcedureCsfSignalRead = (value: unknown): ProcedureCsfSignalRead => 
   const variable = assertRecord(row.variable, 'procedure CSF signal read row requires variable')
   const comparison = optionalRecord(row.comparison)
   const tagId = stringOrUndefined(signal.tagId)
-  const label = stringOrUndefined(signal.label) ?? tagId ?? stringOrUndefined(variable.path) ?? 'plant signal'
+  const label = stringOrUndefined(signal.label) ?? tagId ?? stringOrUndefined(variable.path) ?? 'signal'
   const path = stringOrUndefined(signal.path) ?? stringOrUndefined(variable.path)
   const unit = stringOrUndefined(signal.unit) ?? stringOrUndefined(variable.unit)
   const formatted = formatSignalValue(variable.value, unit)
@@ -336,32 +389,38 @@ const parseProcedureCsfSignalRead = (value: unknown): ProcedureCsfSignalRead => 
 
 export const evaluateProcedureCsfs = async (
   simulationRunId: SimulationRunId,
-  plantId: string,
+  scopeId: string,
   csfs: ReadonlyArray<string>,
+  provider: PackProcedureContribution,
 ): Promise<ReadonlyMap<string, ProcedureCsfEvaluation>> => {
   if (csfs.length === 0) return new Map()
+  const query = provider.assessmentsQuery(scopeId, csfs)
   const result = assertRecord(await querySimulationRunCapability(
     simulationRunId,
-    'world.process-plant.assessments.evaluate',
-    {
-      plantId,
-      assessmentIds: csfs,
-    },
+    query.capabilityId,
+    query.input,
   ), 'procedure CSF evaluation returned a malformed result')
   return new Map(assertArray(result.assessments, 'procedure CSF evaluation returned no statuses').map(item => {
     const row = assertRecord(item, 'procedure CSF row is malformed')
     const id = assertString(row.id, 'procedure CSF row requires id')
     const label = assertString(row.title, 'procedure CSF row requires title')
     const status = assertString(row.status, 'procedure CSF row requires status')
+    if (status !== 'satisfied' && status !== 'challenged' && status !== 'unknown') throw new Error(`procedure CSF row has unsupported status: ${status}`)
     const signalsRead = assertArray(row.signalsRead, 'procedure CSF row requires signalsRead')
     const signals = signalsRead.map(parseProcedureCsfSignalRead)
+    const qualification = stringOrUndefined(optionalRecord(row.basis)?.qualification) ?? 'not-established'
+    const qualified = qualification === 'qualified-criterion'
     return [id, {
       id,
       label,
-      status: status === 'satisfied' || status === 'challenged' ? status : 'unknown',
-      ...(typeof row.reason === 'string' ? { reason: row.reason } : {}),
+      status: qualified && (status === 'satisfied' || status === 'challenged') ? status : 'unknown',
+      ...(!qualified && status !== 'unknown' ? { reason: 'Assessment criterion qualification is not established.' } : typeof row.reason === 'string' ? { reason: row.reason } : {}),
       signalCount: signals.length,
       signals,
+      qualification,
+      ...(typeof row.simTimeMs === 'number' && Number.isFinite(row.simTimeMs) ? { simTimeMs: row.simTimeMs } : {}),
+      ...(typeof row.modelRef === 'string' ? { modelRef: row.modelRef } : {}),
+      ...(typeof row.modelDigest === 'string' ? { modelDigest: row.modelDigest } : {}),
     }]
   }))
 }

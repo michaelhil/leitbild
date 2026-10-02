@@ -3,6 +3,7 @@ import { posix } from 'node:path'
 import { readProductSource } from './source.ts'
 import { parseProductSourceReference } from './source-reference.ts'
 import { updateSchematicDocument } from './schematic.ts'
+import { validateProcedurePublication } from '@leitbild/procmd'
 
 const git = async (root: string, args: string[]): Promise<string> => {
   const child = Bun.spawn(['git', '-C', root, ...args], { stdout: 'pipe', stderr: 'pipe' })
@@ -42,6 +43,7 @@ export const publishKnowledge = async (root: string, sourceRoot?: string): Promi
   const documents = await Promise.all(names.map(async path => ({ path, content: await git(root, ['show', `${revision}:${path}`]) })))
   if (!documents.some(document => document.path === 'index.md')) throw new Error('Knowledge repository requires index.md')
   const snapshot = { revision, documents }
+  validateProcedurePublication(documents)
   const knowledge = createKnowledge(snapshot)
   await validateKnowledgeSources(snapshot, sourceRoot)
   for (const document of documents) {

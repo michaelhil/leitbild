@@ -76,6 +76,7 @@ const createProcedureDocument = (): ProcedureDocument =>
   })
 
 const createProcedureSourceService = (document = createProcedureDocument()): ProcedureSourceService => ({
+  readEvidence: async () => { throw new Error('No retained evidence in this route fixture') },
   listSources: () => [{
     sourceId: document.source.sourceId,
     label: document.source.label,

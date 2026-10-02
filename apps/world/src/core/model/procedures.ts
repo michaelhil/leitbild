@@ -63,7 +63,7 @@ export const procedureTagSchema = z.object({
 export type ProcedureTag = z.infer<typeof procedureTagSchema>
 
 export const procedureTextBlockSchema = z.object({
-  kind: z.enum(['check', 'action', 'decision', 'when', 'until', 'abort-if', 'abort-to', 'within', 'concurrent', 'caution', 'note', 'because', 'against', 'text']),
+  kind: z.enum(['check', 'action', 'expected', 'rno', 'unknown', 'basis', 'decision', 'when', 'until', 'abort-if', 'abort-to', 'within', 'concurrent', 'caution', 'note', 'because', 'against', 'text']),
   text: z.string().min(1),
   paths: z.array(z.string()).optional(),
   sourceLine: z.number().int().positive(),
@@ -75,6 +75,8 @@ export const procedureBranchSchema = z.object({
   label: z.string().min(1),
   target: z.string().min(1),
   targetKind: z.enum(['step', 'procedure', 'end', 'retry', 'abort', 'unknown']),
+  outcome: z.enum(['normal', 'rno', 'unknown']).optional(),
+  execution: z.enum(['transfer', 'parallel']).optional(),
   because: z.string().min(1).optional(),
   against: z.string().min(1).optional(),
   sourceLine: z.number().int().positive(),
@@ -92,6 +94,11 @@ export const procedureStepSchema = z.object({
   tagIds: z.array(procedureTagIdSchema).default([]),
   sourceLine: z.number().int().positive(),
   sourceEndLine: z.number().int().positive(),
+  observation: z.object({
+    capabilityId: z.string().min(1),
+    input: z.record(z.string(), z.unknown()),
+    continuous: z.boolean(),
+  }).strict().optional(),
 })
 export type ProcedureStep = z.infer<typeof procedureStepSchema>
 
@@ -147,7 +154,7 @@ export const procedureStepRunStateSchema = z.object({
 })
 export type ProcedureStepRunState = z.infer<typeof procedureStepRunStateSchema>
 
-export const procedureRunStatusSchema = z.enum(['active', 'completed', 'abandoned'])
+export const procedureRunStatusSchema = z.enum(['active', 'transferred', 'completed', 'abandoned'])
 export type ProcedureRunStatus = z.infer<typeof procedureRunStatusSchema>
 
 export const procedureRunStateSchema = z.object({
@@ -165,6 +172,11 @@ export const procedureRunStateSchema = z.object({
   closedBy: actorIdSchema.optional(),
   currentStepId: procedureStepIdSchema.optional(),
   stepStates: z.array(procedureStepRunStateSchema).default([]),
+  observations: z.array(z.object({
+    stepId: procedureStepIdSchema,
+    simulationTime: isoTimestampSchema,
+    result: z.object({ status: z.enum(['satisfied', 'challenged', 'unknown']), reason: z.string().optional() }).passthrough(),
+  })).optional(),
 })
 export type ProcedureRunState = z.infer<typeof procedureRunStateSchema>
 
@@ -244,9 +256,37 @@ export const procedureStepUpdatedEventSchema = z.object({
 export const procedureRunClosedEventSchema = z.object({
   type: z.literal('procedure.run.closed'),
   runId: procedureRunIdSchema,
-  status: z.enum(['completed', 'abandoned']),
+  status: z.enum(['transferred', 'completed', 'abandoned']),
   closedAt: isoTimestampSchema,
   closedBy: actorIdSchema,
+})
+
+export const procedureRunResumedEventSchema = z.object({
+  type: z.literal('procedure.run.resumed'),
+  runId: procedureRunIdSchema,
+  resumedAt: isoTimestampSchema,
+  resumedBy: actorIdSchema,
+})
+
+/** Selecting a path records a decision, not proof that equipment responded. */
+export const procedureBranchSelectedEventSchema = z.object({
+  type: z.literal('procedure.branch.selected'),
+  runId: procedureRunIdSchema,
+  stepId: procedureStepIdSchema,
+  branchIndex: z.number().int().nonnegative(),
+  outcome: z.enum(['normal', 'rno', 'unknown']).optional(),
+  target: z.string().min(1),
+  targetKind: procedureBranchSchema.shape.targetKind,
+  execution: procedureBranchSchema.shape.execution,
+  simulationTime: isoTimestampSchema,
+  selectedBy: actorIdSchema,
+  observation: procedureRunStateSchema.shape.observations.unwrap().element.optional(),
+})
+
+export const procedureObservationUpdatedEventSchema = z.object({
+  type: z.literal('procedure.observation.updated'),
+  runId: procedureRunIdSchema,
+  observation: procedureRunStateSchema.shape.observations.unwrap().element,
 })
 
 export const procedureRunResetEventSchema = z.object({

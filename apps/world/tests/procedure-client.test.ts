@@ -2,7 +2,9 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { workspaceIdSchema } from '@leitbild/contracts'
 import { readFileSync } from 'node:fs'
 import type { SimulationRunId } from '../src/core/model/index.ts'
-import { readProcedureCatalog, readProcedureDocument, readProcedureRuns, readProcedureTagValue, validateProcedureTags } from '../src/ui/procedures/procedure-client.ts'
+import { evaluateProcedureCsfs, readProcedureCatalog, readProcedureDocument, readProcedureRuns, readProcedureTagValue, readProcedureSourceEvidence, validateProcedureTags } from '../src/ui/procedures/procedure-client.ts'
+import { processPlantPackView } from '../src/packs/process-plant/ui-pack.ts'
+import type { PackProcedureContribution } from '../src/core/packs/protocol.ts'
 import { configureActiveWorkspace } from '../src/ui/workspace-context.ts'
 import { answerProcessPlantQuery, compileProcessPlant, createProcessPlantRampRunner, createProcessPlantRuntime, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import { createProcessPlantRuntimePerformance } from '../src/packs/process-plant/runtime-instance.ts'
@@ -14,12 +16,68 @@ const originalFetch = globalThis.fetch
 const workspaceId = workspaceIdSchema.parse('11111111-1111-4111-8111-111111111111')
 
 configureActiveWorkspace(workspaceId)
+const provider = processPlantPackView.procedures
 
 afterEach(() => {
   globalThis.fetch = originalFetch
 })
 
 describe('procedure client', () => {
+  test('retained source uses published resource capability and rejects substituted revision or invalid line frames', async () => {
+    const revision = 'a'.repeat(40)
+    const request = { sourceId: 'publication', sourceRevision: revision, sourcePath: 'world/basis/levels.md', section: 'levels', lineCount: 100 }
+    const valid = { revision, path: request.sourcePath, title: 'Levels', content: '## Levels\nEvidence', startLine: 4, endLine: 5, totalLines: 5 }
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      expect(String(input)).toBe(`/api/workspaces/${workspaceId}/capabilities/world.procedure.source.read/invoke`)
+      expect(JSON.parse(String(init?.body))).toEqual({
+        resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-test' }, input: request, actor: { kind: 'human' },
+      })
+      return Response.json({ result: valid })
+    }) as typeof fetch
+    expect(await readProcedureSourceEvidence('run-test' as SimulationRunId, request)).toEqual(valid)
+    for (const result of [
+      { ...valid, revision: 'b'.repeat(40) }, { ...valid, path: 'other.md' },
+      { ...valid, startLine: 6 }, { ...valid, endLine: 6 }, { ...valid, nextLine: 4 },
+    ]) {
+      globalThis.fetch = (async (_input: string | URL | Request): Promise<Response> => Response.json({ result })) as typeof fetch
+      await expect(readProcedureSourceEvidence('run-test' as SimulationRunId, request)).rejects.toThrow()
+    }
+    let calls = 0
+    globalThis.fetch = (async (_input: string | URL | Request): Promise<Response> => { calls++; return Response.json({ error: 'retained source unavailable' }, { status: 404 }) }) as typeof fetch
+    await expect(readProcedureSourceEvidence('run-test' as SimulationRunId, request)).rejects.toThrow('retained procedure source read failed')
+    expect(calls).toBe(1)
+  })
+
+  test('uses a non-process provider and cannot display unqualified CSF labels as green', async () => {
+    const queries: string[] = []
+    const independent: PackProcedureContribution = {
+      scopeIdForObject: object => String(object.id),
+      signalReadQuery: (resource, tag) => ({ capabilityId: 'world.example.observations.read', input: { resource, measurements: [tag.id] } }),
+      tagValidationQuery: (resource, tags) => ({ capabilityId: 'world.example.references.validate', input: { resource, references: tags.map(tag => tag.id) } }),
+      assessmentsQuery: (resource, assessmentIds) => ({ capabilityId: 'world.example.assessments.read', input: { resource, assessmentIds } }),
+    }
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = String(input)
+      queries.push(url)
+      expect(JSON.parse(String(init?.body)).input.resource).toBe('example:one')
+      if (url.includes('references.validate')) return Response.json({ kind: 'query', result: { tags: [{ id: 'T', status: 'resolved', warnings: [] }] } })
+      if (url.includes('observations.read')) return Response.json({ kind: 'query', result: { signals: [{ signal: { unit: 'degC', label: 'Temperature' }, variable: { value: 21 } }] } })
+      return Response.json({ kind: 'query', result: { assessments: [
+        { id: 'unqualified', title: 'Unqualified', status: 'satisfied', signalsRead: [], simTimeMs: 10 },
+        { id: 'observation', title: 'Observation', status: 'challenged', basis: { qualification: 'observation-only' }, signalsRead: [] },
+        { id: 'qualified', title: 'Qualified', status: 'satisfied', basis: { qualification: 'qualified-criterion' }, signalsRead: [] },
+      ] } })
+    }) as typeof fetch
+    const id = 'run-test' as SimulationRunId
+    expect((await validateProcedureTags(id, 'example:one', [{ id: 'T' }], independent)).get('T')?.status).toBe('resolved')
+    expect((await readProcedureTagValue(id, 'example:one', { id: 'T' }, independent)).formatted).toBe('21 degC')
+    const results = await evaluateProcedureCsfs(id, 'example:one', ['unqualified', 'observation', 'qualified'], independent)
+    expect(results.get('unqualified')).toMatchObject({ status: 'unknown', qualification: 'not-established', simTimeMs: 10 })
+    expect(results.get('observation')?.status).toBe('unknown')
+    expect(results.get('qualified')?.status).toBe('satisfied')
+    expect(queries.every(url => !url.includes('process-plant'))).toBe(true)
+  })
+
   test('rejects malformed catalog, document and Run HTTP responses', async () => {
     const id = 'run-test' as SimulationRunId
     globalThis.fetch = (async (_input: string | URL | Request): Promise<Response> => Response.json({ catalog: { source: 'invalid' }, procedure: { procedureId: 42 }, procedures: { runs: [{ status: 'imaginary' }] } })) as typeof fetch
@@ -52,6 +110,7 @@ describe('procedure client', () => {
         { id: 'PT-455', units: 'psig' },
         { id: 'SI-SIG', units: 'bool' },
       ],
+      provider,
     )
 
     expect(requests).toEqual([{
@@ -92,15 +151,17 @@ describe('procedure client', () => {
       }) as typeof fetch
       const document = await readProcedureDocument('run-test' as SimulationRunId, 'E-0')
       expect(document.tags[0]!.annotations).toEqual(rawMarkdown === frozenSource ? {} : { 'operator-note': 'reference only' })
-      const validation = await validateProcedureTags('run-test' as SimulationRunId, plant.id, document.tags)
+      const validation = await validateProcedureTags('run-test' as SimulationRunId, plant.id, document.tags, provider)
       expect(requests).toHaveLength(1)
       expect(requests[0]!.tags).toEqual(document.tags.map(tag => Object.fromEntries(Object.entries({
-        id: tag.id, simPath: tag.simPath, units: tag.units, equipment: tag.equipment,
+        id: tag.id, description: tag.description, simPath: tag.simPath, units: tag.units, equipment: tag.equipment, source: tag.source, range: tag.range,
       }).filter(([, value]) => value !== undefined))))
       expect(validation.size).toBe(document.tags.length)
       expect(validation.get('SI-SIG')).toEqual({ id: 'SI-SIG', status: 'missing', warnings: [] })
       expect(validation.get('PT-455')?.status).toBe('resolved-with-warnings')
       expect(validation.get('PT-455')?.warnings.join(' ')).toContain('Conversion from MPa to psig is unavailable')
+      expect(document.tags.some(tag => tag.range !== undefined)).toBe(true)
+      expect([...validation.values()].some(row => row.warnings.some(warning => warning.startsWith('Declared procedure range')))).toBe(true)
       expect(JSON.stringify(document)).toBe(original)
       expect(JSON.stringify(parsed)).toBe(original)
       // Directly forwarding an AST still fails: do not weaken the Pack schema.
@@ -138,7 +199,7 @@ describe('procedure client', () => {
       [absolute.tagId!, 'degF'],
       [delta.tagId!, 'degF'],
     ] as const) {
-      const result = await readProcedureTagValue('run-test' as SimulationRunId, plant.id, { id, units })
+      const result = await readProcedureTagValue('run-test' as SimulationRunId, plant.id, { id, units }, provider)
       const row = responses.at(-1)!
       expect(requests.at(-1)).toEqual({ plantId: plant.id, signals: [{ tagId: id, requestedUnit: units }] })
       expect(result).toMatchObject({ value: row.valueView!.value, unit: row.valueView!.unit, conversionStatus: row.valueView!.status, quality: row.quality.status, path: row.signal.path })
@@ -151,7 +212,7 @@ describe('procedure client', () => {
         expect(result).not.toHaveProperty('warning')
       }
     }
-    const native = await readProcedureTagValue('run-test' as SimulationRunId, plant.id, { id: 'NIS-PR-AVG' })
+    const native = await readProcedureTagValue('run-test' as SimulationRunId, plant.id, { id: 'NIS-PR-AVG' }, provider)
     expect(requests.at(-1)).toEqual({ plantId: plant.id, signals: [{ tagId: 'NIS-PR-AVG' }] })
     expect(responses.at(-1)).not.toHaveProperty('valueView')
     expect(native).toMatchObject({ value: responses.at(-1)!.variable.value, unit: 'MW' })
@@ -173,7 +234,7 @@ describe('procedure client', () => {
       globalThis.fetch = (async (_input: string | URL | Request): Promise<Response> => Response.json({
         kind: 'query', result: { signals: [{ ...native, ...(view === undefined ? {} : { valueView: view }) }] },
       })) as typeof fetch
-      await expect(readProcedureTagValue('run-test' as SimulationRunId, 'plant:test', { id: 'NIS-PR-AVG', units: 'percent' })).rejects.toThrow()
+      await expect(readProcedureTagValue('run-test' as SimulationRunId, 'plant:test', { id: 'NIS-PR-AVG', units: 'percent' }, provider)).rejects.toThrow()
     }
   })
 })

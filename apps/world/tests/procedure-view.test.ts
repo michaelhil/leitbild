@@ -1,7 +1,42 @@
 import { expect, test } from 'bun:test'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { procedureStepItems, procedureTextSegments } from '../src/ui/procedures/procedure-view.ts'
+import { procedureBlockLabel, procedureObservationBasis, procedureObservationEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureTextSegments } from '../src/ui/procedures/procedure-view.ts'
 import { procedureTestSource } from './procedure-fixtures.ts'
+
+test('technical basis links keep the selected knowledge revision and executable URLs stay inert', () => {
+  const source = '/wiki?path=world%2Fprocedures%2FE-0.md&revision=abc123'
+  const segments = procedureTextSegments('[Basis](../engineering/levels.md#sg) [Unsafe](javascript:alert) ` [Example](https://example.test)`', [], source)
+  expect(segments.filter(item => item.kind === 'link')).toEqual([{ kind: 'link', text: 'Basis', href: '/wiki?path=world%2Fengineering%2Flevels.md&revision=abc123#sg' }])
+  expect(procedureBlockLabel('rno')).toBe('Response not obtained')
+  expect(procedureBlockLabel('unknown')).toBe('Unknown or unreliable indication')
+  expect(procedureBlockLabel('basis')).toBe('Technical basis')
+  expect(procedureTextSegments('[Code](source:apps/world/src/packs/process-plant/model.ts#L12)', [], source)).toEqual([
+    { kind: 'link', text: 'Code', href: '/api/knowledge/source?path=apps%2Fworld%2Fsrc%2Fpacks%2Fprocess-plant%2Fmodel.ts%23L12' },
+  ])
+})
+
+test('retained Basis request uses exact procedure publication identity and does not reinterpret external links', () => {
+  const document = parseProcedureMarkdown({ source: procedureTestSource, sourcePath: 'world/procedures/E-0.md', sourceUrl: `/wiki?path=world%2Fprocedures%2FE-0.md&revision=${procedureTestSource.revision}`,
+    rawMarkdown: '---\ntype: procedure\nprocedure-md: 0.7\nprocedure-id: E-0\ntitle: Test\n---\n## Step 1 [id: first]\nAction: Read basis.' })
+  expect(procedureSourceEvidenceRequest(`/wiki?path=world%2Fbasis%2Flevels.md&revision=${document.source.revision}#steam-generator`, document)).toEqual({
+    sourceId: document.source.sourceId, sourceRevision: document.source.revision, sourcePath: 'world/basis/levels.md', section: 'steam-generator', lineCount: 100,
+  })
+  expect(procedureSourceEvidenceRequest('/wiki?path=world/basis/levels.md&revision=different', document)).toBeUndefined()
+  expect(procedureSourceEvidenceRequest('https://example.test/basis.md', document)).toBeUndefined()
+  expect(procedureSourceEvidenceRequest(`/wiki?path=world%2Fbasis%2Flevels.md&revision=${document.source.revision}#bad%ZZ`, document)).toBeUndefined()
+})
+
+test('authored observation presentation retains measured value, criterion and unknown evidence', () => {
+  const result = { basis: { description: 'Model criterion', source: '[Source](../basis.md)' }, evidence: [
+    { signal: { label: 'SG level' }, variable: { value: 42, unit: '%' }, comparison: { operator: '>=', value: 35, unit: '%' }, status: 'satisfied' },
+    { comparison: { operator: '==', value: true, unit: 'bool' }, status: 'unknown', reason: 'Signal absent' },
+  ] }
+  expect(procedureObservationBasis(result)).toContain('[Source](../basis.md)')
+  expect(procedureObservationEvidence(result)).toEqual([
+    { label: 'SG level', value: '42 %', criterion: '>= 35 %', status: 'satisfied' },
+    { label: 'Unavailable signal', value: 'unavailable', criterion: '== true bool', status: 'unknown', reason: 'Signal absent' },
+  ])
+})
 
 test('World procedure presentation preserves source reading order, decisions and original branch identity', () => {
   const document = parseProcedureMarkdown({ source: procedureTestSource, sourcePath: 'E-0.md', sourceUrl: 'https://example.test/E-0.md', rawMarkdown: `---

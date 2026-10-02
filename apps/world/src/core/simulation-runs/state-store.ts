@@ -165,6 +165,24 @@ export const createSimulationRunStateStore = (): SimulationRunStateStore => {
       }
       return
     }
+    if (event.type === 'procedure.run.resumed') {
+      const current = procedures ?? { runs: [] }
+      procedures = { runs: current.runs.map(run => {
+        if (run.runId !== event.runId) return run
+        const { closedAt: _at, closedBy: _by, ...resumed } = run
+        return { ...resumed, status: 'active' as const }
+      }) }
+      return
+    }
+    // The decision event is journal evidence, not a second placekeeping state.
+    if (event.type === 'procedure.branch.selected') return
+    if (event.type === 'procedure.observation.updated') {
+      const current = procedures ?? { runs: [] }
+      procedures = { runs: current.runs.map(run => run.runId !== event.runId ? run : {
+        ...run, observations: [...(run.observations ?? []).filter(item => item.stepId !== event.observation.stepId), event.observation],
+      }) }
+      return
+    }
     if (event.type === 'procedure.run.reset') {
       const current = procedures ?? { runs: [] }
       procedures = {

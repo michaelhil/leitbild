@@ -21,6 +21,7 @@ import { processPlantActionsSearchInputSchema, processPlantCatalogInputSchema } 
 import {
   assessmentsEvaluateQuerySchema,
   conditionsEvaluateQuerySchema,
+  procedureConditionEvaluateQuerySchema,
 } from './queries/control-query.ts'
 import {
   credibilityListPayloadSchema,
@@ -85,6 +86,8 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
       id: plantIdSchema,
       label: z.string().min(1),
       model: z.object({ id: z.string().min(1), title: z.string().min(1) }).strict(),
+      modelRef: z.string().min(1),
+      modelDigest: z.string().regex(/^[a-f0-9]{64}$/),
       componentCount: z.number().int().nonnegative(),
       linkCount: z.number().int().nonnegative(),
       variableCount: z.number().int().nonnegative(),
@@ -133,6 +136,17 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.signals.search': pagedPlantRecordsSchema('signals', 'signal'),
   'world.process-plant.procedure-tags.validate': z.object({ plantId: plantIdSchema, tags: recordArraySchema }).strict(),
   'world.process-plant.conditions.evaluate': z.object({ plantId: plantIdSchema, matches: z.boolean(), signalsRead: recordArraySchema }).strict(),
+  'world.process-plant.procedure-condition.evaluate': z.object({
+    targetObjectId: objectIdSchema,
+    status: z.enum(['satisfied', 'challenged', 'unknown']),
+    reason: z.string().optional(),
+    modelRef: z.string().min(1),
+    modelDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    simTimeMs: z.number().nonnegative(),
+    basis: recordSchema,
+    automaticCsfQualified: z.literal(false),
+    evidence: recordArraySchema,
+  }).strict(),
   'world.process-plant.assessments.evaluate': z.object({ plantId: plantIdSchema, assessments: recordArraySchema }).strict(),
   'world.process-plant.control.validate': z.object({
     accepted: z.boolean(),
@@ -180,6 +194,7 @@ const queryInputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.signals.search': signalsSearchQuerySchema,
   'world.process-plant.procedure-tags.validate': procedureTagsValidateQuerySchema,
   'world.process-plant.conditions.evaluate': conditionsEvaluateQuerySchema,
+  'world.process-plant.procedure-condition.evaluate': procedureConditionEvaluateQuerySchema,
   'world.process-plant.assessments.evaluate': assessmentsEvaluateQuerySchema,
   'world.process-plant.control.validate': processPlantControlWritePayloadSchema,
   'world.process-plant.runtime.status': processPlantCatalogInputSchema,
@@ -214,7 +229,8 @@ const queryDescriptionById: Readonly<Record<string, string>> = {
   'world.process-plant.signals.search': 'Search Plant signal bindings by tag, equipment, discipline, quantity, writability, procedure relevance, and text; results are paginated.',
   'world.process-plant.procedure-tags.validate': 'Validate a set of procedure tags against one Plant and report missing or mismatched bindings.',
   'world.process-plant.conditions.evaluate': 'Evaluate declared operating conditions against current Plant signals. Comparison values must use the resolved signal\'s native unit and value type. Requested-unit views do not change condition thresholds; no procedure-unit conversion is performed.',
-  'world.process-plant.assessments.evaluate': 'Evaluate selected Pack-declared assessments against current Plant state.',
+  'world.process-plant.assessments.evaluate': 'Read selected reference-model CSF observation groups with source, model identity and simulation time. Automatic CSF status remains unknown because qualified restoration criteria are not installed; these engineering diagnostics do not establish instrument validity or safety-function adequacy.',
+  'world.process-plant.procedure-condition.evaluate': 'Read-only evaluation of an authored, model-digest-pinned condition with explicit native units. Returns satisfied, challenged or unknown and every comparison observation at one simulation time. Values are runtime model evidence, not qualified instrumentation or automatic CSF restoration; authored source citations are retained, not independently verified. No equipment command, protection change or procedure transition is performed.',
   'world.process-plant.control.validate': 'Validate a proposed Process Plant control write without applying it.',
   'world.process-plant.runtime.status': 'Summarize active Process Plant runtime health, elapsed time, and variable publication counts.',
   'world.process-plant.transient.diagnostics': 'Read detailed transient, performance, and instrumentation diagnostics for one Plant.',
@@ -244,7 +260,9 @@ const processPlantQueryCapabilities = processPlantQueryKinds.map(id => {
       ? {}
       : {
           inspectObjectIds: (rawInput: unknown) => {
-            const plantId = (rawInput as { plantId?: unknown }).plantId
+            const plantId = id === 'world.process-plant.procedure-condition.evaluate'
+              ? (rawInput as { targetObjectId?: unknown }).targetObjectId
+              : (rawInput as { plantId?: unknown }).plantId
             return typeof plantId === 'string' ? [objectIdSchema.parse(plantId)] : []
           },
         }),

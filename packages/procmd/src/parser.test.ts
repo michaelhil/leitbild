@@ -22,6 +22,35 @@ describe('frozen pwr-ops corpus: immutable IDs and persisted branch-index meanin
 })
 
 describe('one supported procmd format', () => {
+  test('explicit normal/RNO/unknown outcomes and parallel execution are authored, not inferred from a destination', () => {
+    const result = parseProcedure(`---\ntype: procedure\nprocedure-md: 0.7\nprocedure-id: TEST\ntitle: Outcomes\n---\n## Step 1 [id: first]\nBasis: [Owner](basis.md#criteria)\nExpected: physical response established\nRNO: response not obtained\nUnknown: missing indication\n- Achieved [outcome: normal] → END\n- Not obtained [outcome: rno] [execution: parallel] → [[OTHER]]\n- Missing [outcome: unknown] → ↻\n- Unlabelled → ↯`)
+    expect(result.steps[0]!.blocks.map(block => block.kind)).toEqual(['basis', 'expected', 'rno', 'unknown'])
+    expect(result.steps[0]!.branches.map(({ label, outcome, execution, targetKind }) => ({ label, outcome, execution, targetKind }))).toEqual([
+      { label: 'Achieved', outcome: 'normal', execution: undefined, targetKind: 'end' },
+      { label: 'Not obtained', outcome: 'rno', execution: 'parallel', targetKind: 'procedure' },
+      { label: 'Missing', outcome: 'unknown', execution: undefined, targetKind: 'retry' },
+      { label: 'Unlabelled', outcome: undefined, execution: undefined, targetKind: 'abort' },
+    ])
+    for (const annotation of ['[outcome: successful]', '[outcome: normal] [outcome: rno]', '[Outcome: normal]', '[outcome normal]', '[execution: parallel]']) {
+      expect(() => parseProcedure(result.rawMarkdown.replace('[outcome: normal]', annotation))).toThrow()
+    }
+  })
+  test('read-only observation bindings are explicit, scoped by the engine, and never executable prose', () => {
+    const base = `---\ntype: procedure\nprocedure-md: 0.7\nprocedure-id: TEST\ntitle: Observation\n---\n## Step 1 [id: first]\nCheck: examine evidence\n`
+    const binding = { capabilityId: 'world.example.condition.read', input: { condition: { threshold: 1 } }, continuous: true }
+    const authored = `${base}\`\`\`procedure-observation\n${JSON.stringify(binding)}\n\`\`\`\n- Done → END`
+    const result = parseProcedure(authored)
+    expect(result.steps[0]!.observation).toEqual(binding)
+    expect(result.steps[0]!.blocks.map(block => block.text).join('\n')).not.toContain('capabilityId')
+    expect(result.description).not.toContain('capabilityId')
+    for (const invalid of [{ ...binding, targetObjectId: 'another' }, { ...binding, input: { targetObjectId: 'another' } },
+      { ...binding, continuous: 'yes' }, { ...binding, capabilityId: '' }, { ...binding, input: [] }]) {
+      expect(() => parseProcedure(authored.replace(JSON.stringify(binding), JSON.stringify(invalid)))).toThrow()
+    }
+    expect(() => parseProcedure(authored.replace(JSON.stringify(binding), '{bad json}'))).toThrow()
+    expect(() => parseProcedure(`${authored}\n\`\`\`procedure-observation\n${JSON.stringify(binding)}\n\`\`\``)).toThrow()
+    expect(() => parseProcedure(`${base}\`\`\`procedure-observation\n${JSON.stringify(binding)}`)).toThrow()
+  })
   test('requires explicit format identity, stable unique IDs, and steps', () => {
     expect(PARSER_PROCMD_VERSION).toBe('0.7')
     for (const invalid of [source.replace('type: procedure', 'type: scenario'), source.replace('procedure-md: 0.7', 'procedure-md: 0.5'),

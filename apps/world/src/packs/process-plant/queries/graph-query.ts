@@ -426,6 +426,8 @@ export const answerProcessPlantGraphQuery = (config: {
           id: plant.id,
           label: object.label,
           model: { id: plant.graph.specId, title: plant.graph.title },
+          modelRef: plant.modelRef,
+          modelDigest: plant.modelDigest,
           componentCount: plant.graph.components.length,
           linkCount: plant.graph.links.length,
           variableCount: plant.graph.variables.length,

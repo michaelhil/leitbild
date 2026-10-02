@@ -9,7 +9,7 @@ import type {
   ProcedureStep,
 } from '../../core/model/index.ts'
 
-export type ProcedureRunVisualState = 'idle' | 'active' | 'completed'
+export type ProcedureRunVisualState = 'idle' | 'active' | 'transferred' | 'completed'
 
 export interface ProcedureRunStepProgress {
   readonly stepId: string
@@ -26,13 +26,13 @@ export interface ProcedureRunSummary {
   readonly run: ProcedureRunState
   readonly procedureId: ProcedureId
   readonly title: string
-  readonly status: Extract<ProcedureRunState['status'], 'active' | 'completed'>
+  readonly status: Extract<ProcedureRunState['status'], 'active' | 'transferred' | 'completed'>
   readonly step: ProcedureRunStepProgress | null
 }
 
 export interface ProcedureRunSummaryGroup {
   readonly active: ReadonlyArray<ProcedureRunSummary>
-  readonly completed: ReadonlyArray<ProcedureRunSummary>
+  readonly inactive: ReadonlyArray<ProcedureRunSummary>
 }
 
 export const procedureRunDocumentKey = (run: Pick<ProcedureRunState, 'sourceId' | 'sourceRevision' | 'sourcePath' | 'procedureId'>): string =>
@@ -105,6 +105,7 @@ export const procedureRunFor = (
       && sameProcedureScope(run.scope, config.scope),
   )
   return candidates.find(run => run.status === 'active')
+    ?? candidates.find(run => run.status === 'transferred')
     ?? candidates.find(run => run.status === 'completed')
     ?? null
 }
@@ -119,6 +120,7 @@ export const procedureRunVisualStateFor = (
 ): ProcedureRunVisualState => {
   const run = procedureRunFor(runs, config)
   if (run?.status === 'active') return 'active'
+  if (run?.status === 'transferred') return 'transferred'
   if (run?.status === 'completed') return 'completed'
   return 'idle'
 }
@@ -163,7 +165,7 @@ export const procedureRunSummaryFor = (
   run: ProcedureRunState,
   document: ProcedureDocument | undefined,
 ): ProcedureRunSummary | null => {
-  if (run.status !== 'active' && run.status !== 'completed') return null
+  if (run.status !== 'active' && run.status !== 'transferred' && run.status !== 'completed') return null
   return {
     run,
     procedureId: run.procedureId,
@@ -184,7 +186,7 @@ export const procedureRunSummariesForScope = (
     .filter((summary): summary is ProcedureRunSummary => summary !== null)
   return {
     active: summaries.filter(summary => summary.status === 'active'),
-    completed: summaries.filter(summary => summary.status === 'completed'),
+    inactive: summaries.filter(summary => summary.status === 'completed' || summary.status === 'transferred'),
   }
 }
 
@@ -192,7 +194,7 @@ export const procedureRunSummaryText = (summary: ProcedureRunSummary): string =>
   `${summary.procedureId}:${summary.step?.label ?? '-'}`
 
 export const procedureRunSummaryTitle = (summary: ProcedureRunSummary): string =>
-  `${summary.procedureId} - ${summary.title}\nStep ${summary.step?.label ?? '-'}: ${summary.step?.name ?? 'not started'}`
+  `${summary.procedureId} - ${summary.title}\n${summary.status}\nStep ${summary.step?.label ?? '-'}: ${summary.step?.name ?? 'not started'}`
 
 const findLast = <T>(
   values: ReadonlyArray<T>,

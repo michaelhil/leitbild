@@ -2612,7 +2612,7 @@ body.rail-resizing {
 }
 
 .procedure-run-badges,
-.procedure-run-completed-group {
+.procedure-run-inactive-group {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3493,6 +3493,20 @@ body.rail-resizing {
 }
 
 .procedure-column .block-text { white-space: pre-wrap; }
+
+.procedure-observation {
+  margin: 8px 0;
+  padding: 8px;
+  border: 1px solid #d8e0ea;
+  color: #475569;
+  font-size: calc(13px * var(--procedure-font-scale));
+}
+.procedure-observation summary { cursor: pointer; font-weight: 600; }
+.procedure-observation p { margin: 6px 0; overflow-wrap: anywhere; }
+
+.procedure-basis-link { display: inline; border: 0; padding: 0; color: #1d4ed8; background: transparent; font: inherit; text-decoration: underline; cursor: pointer; }
+.procedure-confirm.procedure-basis-dialog { width: min(960px, 86vw); max-width: 86vw; max-height: 84vh; overflow: auto; }
+.procedure-basis-content { white-space: pre-wrap; overflow-wrap: anywhere; background: #f8fafc; padding: 12px; font-size: 13px; }
 
 .procedure-format-notes {
   margin: 0 0 12px;

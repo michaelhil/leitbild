@@ -158,7 +158,7 @@ describe('process plant discovery', () => {
       }]]),
       objects: new Map([[plantId, { id: plantId, label: 'Profile Plant' }]]),
     }) as { plants: Array<{ id: string; displayProfiles: Array<{ id: string; label: string }> }> }
-    expect(response.plants[0]).toMatchObject({ id: plant.id, label: 'Profile Plant' })
+    expect(response.plants[0]).toMatchObject({ id: plant.id, label: 'Profile Plant', modelRef: plant.modelRef, modelDigest: plant.modelDigest })
     expect(response.plants[0]!.displayProfiles).toEqual(expect.arrayContaining([
       { id: 'leitbild-rail', label: 'Leitbild rail summary' },
     ]))
@@ -310,7 +310,7 @@ describe('process plant discovery', () => {
             expect.stringContaining('Conversion from MPa to psig is unavailable'),
           ],
         },
-        { id: 'NIS-PR-AVG', status: 'resolved-with-warnings', warnings: [expect.stringContaining('Conversion from MW to percent is unavailable')] },
+        { id: 'NIS-PR-AVG', status: 'resolved-with-warnings', warnings: [expect.stringContaining('Conversion from MW to percent is unavailable'), expect.stringContaining('no equipment identity')] },
         { id: 'SI-SIG', status: 'missing', warnings: [] },
       ],
     })

@@ -7,7 +7,7 @@ import { isoTimestampSchema, simulationClockStateSchema, type IsoTimestamp, type
 import { telemetryStateSchema, type TelemetryState } from './telemetry.ts'
 import { interactionSignalSchema, operationalNotificationSchema, type InteractionSignal, type OperationalNotification } from './interactions.ts'
 import { agentRestrictionsSchema, scenarioGuidanceSchema, type AgentRestrictions, type ScenarioGuidance } from './scenario.ts'
-import { procedureRunClosedEventSchema, procedureRunResetEventSchema, procedureRunStartedEventSchema, procedureStepUpdatedEventSchema, type ProcedureRunState, type ProcedureRunId, type ProcedureRunScope, type ProcedureRunStatus, type ProcedureStepId, type ProcedureAssessment, type ProcedureId, type ProcedureSourceId } from './procedures.ts'
+import { procedureObservationUpdatedEventSchema, procedureBranchSelectedEventSchema, procedureRunResumedEventSchema, procedureRunClosedEventSchema, procedureRunResetEventSchema, procedureRunStartedEventSchema, procedureStepUpdatedEventSchema, type ProcedureRunState, type ProcedureRunId, type ProcedureRunScope, type ProcedureRunStatus, type ProcedureStepId, type ProcedureAssessment, type ProcedureId, type ProcedureSourceId } from './procedures.ts'
 
 export interface EventEnvelopeBase {
   readonly id: EventId
@@ -18,6 +18,9 @@ export interface EventEnvelopeBase {
 }
 
 export type SimulationRunEvent =
+  | (EventEnvelopeBase & z.infer<typeof procedureObservationUpdatedEventSchema>)
+  | (EventEnvelopeBase & z.infer<typeof procedureRunResumedEventSchema>)
+  | (EventEnvelopeBase & z.infer<typeof procedureBranchSelectedEventSchema>)
   | (EventEnvelopeBase & {
       readonly type: 'object.upserted'
       readonly object: OperationalObject
@@ -193,5 +196,8 @@ export const simulationRunEventSchema = z.discriminatedUnion('type', [
   eventBaseSchema.merge(procedureRunStartedEventSchema),
   eventBaseSchema.merge(procedureStepUpdatedEventSchema),
   eventBaseSchema.merge(procedureRunClosedEventSchema),
+  eventBaseSchema.merge(procedureRunResumedEventSchema),
+  eventBaseSchema.merge(procedureBranchSelectedEventSchema),
+  eventBaseSchema.merge(procedureObservationUpdatedEventSchema),
   eventBaseSchema.merge(procedureRunResetEventSchema),
 ])

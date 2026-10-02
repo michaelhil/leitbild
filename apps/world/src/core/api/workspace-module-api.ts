@@ -101,6 +101,21 @@ const procedureCatalogInputSchema = z.object({
   sourceId: procedureSourceIdSchema.optional(),
   refresh: z.boolean().default(false),
 }).strict()
+const procedureEvidenceInputSchema = z.object({
+  sourceId: procedureSourceIdSchema.optional(),
+  sourceRevision: sourceRevisionSchema,
+  sourcePath: sourceDocumentPathSchema,
+  section: z.string().min(1).optional(),
+  startLine: z.number().int().positive().optional(),
+  lineCount: z.number().int().positive().optional(),
+}).strict()
+const procedureEvidenceOutputSchema = z.object({
+  revision: sourceRevisionSchema, path: sourceDocumentPathSchema, title: z.string(),
+  headings: z.array(z.object({ title: z.string(), anchor: z.string(), line: z.number().int(), level: z.number().int() })),
+  parent: z.string().nullable(), children: z.array(z.object({ path: z.string(), title: z.string(), summary: z.string(), parent: z.string().nullable(), hub: z.boolean() })),
+  startLine: z.number().int().positive(), endLine: z.number().int().positive(), totalLines: z.number().int().positive(),
+  content: z.string(), nextLine: z.number().int().positive().optional(), section: z.string().optional(), sectionComplete: z.boolean().optional(),
+})
 const procedureDocumentInputSchema = z.object({
   sourceId: procedureSourceIdSchema.optional(),
   procedureId: procedureIdSchema,
@@ -606,6 +621,63 @@ const scenarioSections = (definition: {
   description: 'Configured future cues are shown here for design inspection; agent-safe Simulation Context remains separate.',
   data: definition.timeline ?? { cues: [] },
 }]
+
+type ApiRunRuntime = Awaited<ReturnType<SimulationRunRegistry['load']>>
+type ApiInvocation = z.infer<typeof moduleCapabilityInvocationSchema>
+
+// Projections must respect the same exact-subject inspection boundary as live
+// queries. A procedure's comments and branch evidence can contain plant readings.
+const deniedInspectionSubjects = (runtime: ApiRunRuntime, invocation: ApiInvocation): ReadonlySet<string> =>
+  new Set(invocation.access.actor.kind === 'ai'
+    ? runtime.snapshot().scenario?.agentRestrictions.objects.filter(entry => entry.deny.includes('inspect')).map(entry => entry.objectId) ?? []
+    : [])
+
+const visibleProcedureState = (runtime: ApiRunRuntime, invocation: ApiInvocation) => {
+  const procedures = runtime.snapshot().procedures ?? { runs: [] }
+  const denied = deniedInspectionSubjects(runtime, invocation)
+  return denied.size === 0 ? procedures : { runs: procedures.runs.filter(run => !denied.has(run.scope.plantId)) }
+}
+
+const visibleChangeEvents = (
+  runtime: ApiRunRuntime, invocation: ApiInvocation,
+  page: ReturnType<ApiRunRuntime['events']>,
+): ReturnType<ApiRunRuntime['events']> => {
+  const denied = deniedInspectionSubjects(runtime, invocation)
+  if (denied.size === 0) return page
+  // Resolve historical run ids from the committed journal, not only the live
+  // projection: reset and object deletion remove runs, but not their evidence.
+  const scopes = new Map(runtime.snapshot().procedures?.runs.map(run => [run.runId, run.scope.plantId]) ?? [])
+  const journal = runtime.events()
+  for (const event of journal) {
+    if (event.type === 'procedure.run.started') scopes.set(event.run.runId, event.run.scope.plantId)
+  }
+  const deniedCommands = new Set(journal.filter(event => {
+    if (event.type !== 'command.issued') return false
+    if (event.command.targetObjectIds.some(id => denied.has(id))) return true
+    // Older procedure command envelopes did not declare their plant target.
+    if (!event.command.kind.startsWith('world.procedure.') || typeof event.command.payload !== 'object' || event.command.payload === null) return false
+    const payload = event.command.payload as { runId?: string; scope?: { plantId?: string } }
+    const scope = payload.scope?.plantId ?? (payload.runId === undefined ? undefined : scopes.get(payload.runId))
+    return scope !== undefined && denied.has(scope)
+  }).flatMap(event => event.type === 'command.issued' ? [event.command.id] : []))
+  return page.filter(event => {
+    if (event.type === 'procedure.run.started') return !denied.has(event.run.scope.plantId)
+    if (event.type === 'procedure.run.reset') return !denied.has(event.scope.plantId)
+    if (event.type.startsWith('procedure.') && 'runId' in event) {
+      const scope = scopes.get(event.runId)
+      return scope !== undefined && !denied.has(scope)
+    }
+    if (event.type === 'object.upserted') return !denied.has(event.object.id)
+    if (event.type === 'object.deleted' || event.type === 'telemetry.sampled') return !denied.has(event.objectId)
+    if (event.type === 'command.issued') return !deniedCommands.has(event.command.id)
+    if (event.type === 'command.result') return !deniedCommands.has(event.result.commandId)
+    if (event.type === 'interaction.signal.received' || event.type === 'notification.emitted') {
+      const interaction = event.type === 'interaction.signal.received' ? event.signal : event.notification
+      return ![interaction.source, ...interaction.targets].some(endpoint => endpoint.kind === 'object' && denied.has(endpoint.id))
+    }
+    return true
+  })
+}
 
 const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, Response>(WORLD_MODULE_ID, [
   {
@@ -1140,7 +1212,9 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       ])
       const snapshot = runtime.snapshot()
       const { capabilities: _capabilityDescriptors, ...affordances } = runtime.capabilities()
-      const contextObjects = representativeOperationalObjects(snapshot.objects)
+      const denied = deniedInspectionSubjects(runtime, invocation)
+      const visibleObjects = snapshot.objects.filter(object => !denied.has(object.id))
+      const contextObjects = representativeOperationalObjects(visibleObjects)
       return json({ result: {
         subject: {
           workspaceId: registry.workspaceId,
@@ -1160,16 +1234,16 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
           historian: runtime.recordingStatus(),
           ...(snapshot.clock === undefined ? {} : { clock: snapshot.clock }),
           ...(snapshot.scenario?.guidance === undefined ? {} : { guidance: snapshot.scenario.guidance }),
-          procedures: snapshot.procedures ?? { runs: [] },
+          procedures: visibleProcedureState(runtime, invocation),
           execution: { origin: summary.origin, state: execution },
         },
         objects: {
-          total: snapshot.objects.length,
+          total: visibleObjects.length,
           returned: contextObjects.length,
           selection: 'one-per-pack-kind',
-          byPack: countBy(snapshot.objects.map(object => object.packId)),
-          byKind: countBy(snapshot.objects.map(object => object.kind)),
-          byStatus: countBy(snapshot.objects.map(object => object.operational.status)),
+          byPack: countBy(visibleObjects.map(object => object.packId)),
+          byKind: countBy(visibleObjects.map(object => object.kind)),
+          byStatus: countBy(visibleObjects.map(object => object.operational.status)),
           items: contextObjects,
         },
         affordances,
@@ -1192,7 +1266,9 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     invoke: async (registry, invocation) => {
       const runtime = await registry.load(requireSimulationRunResource(invocation))
       const input = searchObjectsInputSchema.parse(invocation.input)
+      const denied = deniedInspectionSubjects(runtime, invocation)
       const objects = runtime.snapshot().objects
+        .filter(object => !denied.has(object.id))
         .filter(object => input.packId === undefined || object.packId === input.packId)
         .filter(object => input.kind === undefined || object.kind === input.kind)
         .filter(object => input.status === undefined || object.operational.status === input.status)
@@ -1296,6 +1372,30 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
   },
   {
     descriptor: {
+      id: 'world.procedure.source.read',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Read retained procedure basis',
+      description: 'Reads exact source Markdown or a directly cited technical Basis owner retained with a selected procedure publication. Pass sourceId, sourceRevision and sourcePath from the procedure document or its Basis link. Optional section or line selection supports progressive reading. This never substitutes the latest wiki or current code for an unavailable historical source.',
+      risk: 'read', idempotent: true,
+      inputSchema: z.toJSONSchema(procedureEvidenceInputSchema, { io: 'input' }),
+      outputSchema: capabilityJsonSchema(procedureEvidenceOutputSchema),
+    },
+    invoke: async (registry, invocation) => {
+      const runtime = await registry.load(requireSimulationRunResource(invocation))
+      const input = procedureEvidenceInputSchema.parse(invocation.input)
+      return json({ result: await runtime.procedureEvidence({
+        sourceRevision: input.sourceRevision, sourcePath: input.sourcePath,
+        ...(input.sourceId === undefined ? {} : { sourceId: input.sourceId }),
+        ...(input.section === undefined ? {} : { section: input.section }),
+        ...(input.startLine === undefined ? {} : { startLine: input.startLine }),
+        ...(input.lineCount === undefined ? {} : { lineCount: input.lineCount }),
+      }) })
+    },
+  },
+  {
+    descriptor: {
       id: 'world.procedure.runs.list',
       moduleId: WORLD_MODULE_ID,
       kind: 'query',
@@ -1310,7 +1410,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     invoke: async (registry, invocation) => {
       emptyInputSchema.parse(invocation.input)
       const runtime = await registry.load(requireSimulationRunResource(invocation))
-      return json({ result: runtime.snapshot().procedures ?? { runs: [] } })
+      return json({ result: visibleProcedureState(runtime, invocation) })
     },
   },
   {
@@ -1330,14 +1430,15 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       const runtime = await registry.load(requireSimulationRunResource(invocation))
       const input = readChangesInputSchema.parse(invocation.input)
       const available = runtime.events({ afterSeq: input.afterSequence })
-      const events = available.slice(0, input.limit)
+      const page = available.slice(0, input.limit)
+      const events = visibleChangeEvents(runtime, invocation, page)
       const currentSequence = runtime.snapshot().seq
       return json({ result: {
         afterSequence: input.afterSequence,
         currentSequence,
         events,
-        hasMore: available.length > events.length,
-        nextSequence: events.at(-1)?.seq ?? input.afterSequence,
+        hasMore: available.length > page.length,
+        nextSequence: page.at(-1)?.seq ?? input.afterSequence,
       } })
     },
   },
@@ -1357,7 +1458,9 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     invoke: async (registry, invocation) => {
       const runtime = await registry.load(requireSimulationRunResource(invocation))
       const input = listHistorySeriesInputSchema.parse(invocation.input)
+      const denied = deniedInspectionSubjects(runtime, invocation)
       const series = runtime.recordingSeries()
+        .filter(item => !denied.has(item.subjectId))
         .filter(item => input.runtimeId === undefined || item.runtimeId === input.runtimeId)
         .filter(item => input.subjectId === undefined || item.subjectId === input.subjectId)
         .filter(item => input.signalId === undefined || item.signalId === input.signalId)

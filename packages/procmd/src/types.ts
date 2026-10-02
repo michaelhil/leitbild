@@ -1,6 +1,6 @@
 /** Format data only. Reading these declarations never evaluates or executes them. */
 export interface ProcedureTextBlock {
-  readonly kind: 'check' | 'action' | 'decision' | 'when' | 'until' | 'abort-if' | 'abort-to' | 'within' | 'concurrent' | 'caution' | 'note' | 'because' | 'against' | 'text'
+  readonly kind: 'check' | 'action' | 'expected' | 'rno' | 'unknown' | 'basis' | 'decision' | 'when' | 'until' | 'abort-if' | 'abort-to' | 'within' | 'concurrent' | 'caution' | 'note' | 'because' | 'against' | 'text'
   readonly text: string
   readonly paths?: ReadonlyArray<string>
   readonly tagIds: ReadonlyArray<string>
@@ -11,6 +11,9 @@ export interface ProcedureBranch {
   readonly label: string
   readonly target: string
   readonly targetKind: 'step' | 'procedure' | 'end' | 'retry' | 'abort' | 'unknown'
+  /** Authored meaning, never inferred from a label or destination. */
+  readonly outcome?: 'normal' | 'rno' | 'unknown'
+  readonly execution?: 'transfer' | 'parallel'
   readonly because?: string
   readonly against?: string
   readonly tagIds: ReadonlyArray<string>
@@ -28,6 +31,12 @@ export interface ProcedureStep {
   readonly tagIds: ReadonlyArray<string>
   readonly sourceLine: number
   readonly sourceEndLine: number
+  /** A read-only owning-Pack query; this document never executes equipment commands. */
+  readonly observation?: {
+    readonly capabilityId: string
+    readonly input: Readonly<Record<string, unknown>>
+    readonly continuous: boolean
+  }
 }
 
 export interface ProcedureTag {

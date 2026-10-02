@@ -3,7 +3,7 @@ import type { Component } from 'svelte'
 import { z } from 'zod'
 import type { DatasetConfig,DatasetId } from '../../reference-data/types.ts'
 import type { RoutingAdapter } from '../../routing/protocol.ts'
-import type { GeoJsonPoint,GeoJsonPolygon,InteractionHandler,IsoTimestamp,MapLayerId,ObjectId,OperationalObject,RecordingProfileDescriptor } from '../model/index.ts'
+import type { GeoJsonPoint,GeoJsonPolygon,InteractionHandler,IsoTimestamp,MapLayerId,ObjectId,OperationalObject,ProcedureTag,RecordingProfileDescriptor } from '../model/index.ts'
 import { geoJsonPointSchema,geoJsonPolygonSchema,isoTimestampSchema } from '../model/index.ts'
 import { geoJsonGeometrySchema, type GeoJsonGeometry } from '../model/geo.ts'
 
@@ -440,6 +440,66 @@ export interface PackUiContribution {
   readonly settingsEditor?: () => Promise<{ readonly default: Component }>
 }
 
+/** Pack-owned inputs to shared procedure observation queries. The generic UI
+ * discovers these operations through the target object's owning Pack. */
+export interface PackProcedureContribution {
+  readonly scopeIdForObject: (object: OperationalObject) => string | null
+  /** The declared Capability must return PackProcedureSignalReadResult. */
+  readonly signalReadQuery: (scopeId: string, tag: ProcedureTag) => PackProcedureQuery
+  /** The declared Capability must return PackProcedureTagValidationResult. */
+  readonly tagValidationQuery: (scopeId: string, tags: ReadonlyArray<ProcedureTag>) => PackProcedureQuery
+  /** The declared Capability must return PackProcedureAssessmentResult. */
+  readonly assessmentsQuery: (scopeId: string, assessmentIds: ReadonlyArray<string>) => PackProcedureQuery
+}
+
+export interface PackProcedureQuery {
+  readonly capabilityId: string
+  readonly input: unknown
+}
+
+/** Shared wire observations, validated by the generic procedure client. Pack
+ * Capabilities may add engineering evidence, but must retain these semantics. */
+export interface PackProcedureSignalObservation {
+  readonly signal: { readonly unit: string; readonly tagId?: string; readonly label?: string; readonly path?: string }
+  readonly variable: { readonly value: number | boolean; readonly unit?: string; readonly path?: string }
+  readonly quality?: { readonly status: string }
+  readonly valueView?: {
+    readonly status: 'native' | 'converted' | 'unavailable'
+    readonly value: number | boolean
+    readonly unit: string
+    readonly requestedUnit: string
+    readonly reason?: string
+  }
+  readonly comparison?: { readonly operator: string; readonly value: number | boolean; readonly matches?: boolean }
+}
+
+export interface PackProcedureSignalReadResult {
+  readonly signals: ReadonlyArray<PackProcedureSignalObservation>
+}
+
+export interface PackProcedureTagValidationResult {
+  readonly tags: ReadonlyArray<{
+    readonly id: string
+    readonly status: 'resolved' | 'resolved-with-warnings' | 'missing'
+    readonly signal?: Record<string, unknown>
+    readonly warnings: ReadonlyArray<string>
+  }>
+}
+
+export interface PackProcedureAssessmentResult {
+  readonly assessments: ReadonlyArray<{
+    readonly id: string
+    readonly title: string
+    readonly status: 'satisfied' | 'challenged' | 'unknown'
+    readonly reason?: string
+    readonly basis?: { readonly qualification: string }
+    readonly signalsRead: ReadonlyArray<PackProcedureSignalObservation>
+    readonly simTimeMs?: number
+    readonly modelRef?: string
+    readonly modelDigest?: string
+  }>
+}
+
 /** The browser-safe projection of a World Pack. It contains only contributions
  * used by the generic World UI and may be loaded without runtime, compilation,
  * persistence, or build-time dependencies. */
@@ -452,6 +512,7 @@ export interface WorldPackView {
   readonly targeting?: PackTargetingContribution
   readonly mapAssignment?: PackMapAssignmentContribution
   readonly ui?: PackUiContribution
+  readonly procedures?: PackProcedureContribution
 }
 
 /** Complete server-side Pack definition. World Pack views are projections of

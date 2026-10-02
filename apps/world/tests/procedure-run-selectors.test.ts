@@ -181,6 +181,6 @@ describe('procedure run selectors', () => {
       new Map([[procedureRunDocumentKey(activeRun), procedure]]),
     )
     expect(summaries.active.map(procedureRunSummaryText)).toEqual(['E-0:6'])
-    expect(summaries.completed).toEqual([])
+    expect(summaries.inactive).toEqual([])
   })
 })

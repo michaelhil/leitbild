@@ -54,6 +54,6 @@ describe('World consumes the canonical format without semantic projection', () =
     expect(requests[1]).toEqual({ sourceId: 'pwr-ops', sourceRevision: revision, procedureId: 'FR-S.1' })
     expect(store.snapshot().procedures!.runs.find(item => item.procedureId === 'FR-S.1')).toMatchObject({
       status: 'active', sourceRevision: revision, sourcePath: 'wiki/procedures/FR-S.1.md', currentStepId: document('FR-S.1').steps[0]!.id })
-    expect(store.snapshot().procedures!.runs.find(item => item.runId === run.runId)!.status).toBe('completed')
+    expect(store.snapshot().procedures!.runs.find(item => item.runId === run.runId)!.status).toBe('transferred')
   })
 })

@@ -43,6 +43,32 @@ const publication = (revision: string, title = 'Reactor Trip') => createKnowledg
 ] })
 
 describe('native local procedure publication', () => {
+  test('retains direct step Basis owners, supports exact sections offline, and never substitutes updated evidence', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'leitbild-procedure-basis-'))
+    try {
+      const basisPath = 'packs/process-plant/engineering/criteria.md'
+      let current = createKnowledge({ revision: revisionA, documents: [
+        { path: localPath('E-0'), content: markdownFor('E-0', 'Evidence').replace('Check:', 'Basis: [Criteria](../engineering/criteria.md#level)\nCheck:') },
+        { path: basisPath, content: '# Criteria\n\n## Level\nAn authored engineering bound.\n\n## Other\nNot selected.\n[Further](not-retained.md)' },
+        { path: 'packs/process-plant/engineering/not-retained.md', content: '# Unselected\nNot direct procedure evidence.' },
+      ] })
+      const options = { sources: [localSource], retentionDirectory: directory, loadKnowledge: async () => current }
+      const service = createProcedureSourceService(options)
+      await service.readDocument({ procedureId: 'E-0' })
+      const retained = JSON.parse(await readFile(join(directory, `leitbild-${revisionA}.json`), 'utf8'))
+      expect(retained.documents.map((doc: { path: string }) => doc.path)).toEqual([basisPath, localPath('E-0')])
+      expect((await service.readDocument({ procedureId: 'E-0', sourceRevision: revisionA })).procedureId).toBe('E-0')
+      current = createKnowledge({ revision: revisionB, documents: [{ path: basisPath, content: '# Criteria\n\n## Level\nChanged.' }] })
+      const offline = createProcedureSourceService({ ...options, loadKnowledge: async () => { throw new Error('Offline') } })
+      const exact = await offline.readEvidence({ sourceRevision: revisionA, sourcePath: basisPath, section: 'level' })
+      expect(exact.content).toContain('An authored engineering bound.')
+      expect(exact.content).not.toContain('Other')
+      expect(exact.revision).toBe(revisionA)
+      await expect(offline.readEvidence({ sourceRevision: revisionA, sourcePath: 'packs/process-plant/engineering/not-retained.md' })).rejects.toThrow('not found')
+      await expect(offline.readEvidence({ sourceRevision: revisionB, sourcePath: basisPath })).rejects.toThrow()
+      await expect(offline.readEvidence({ sourceRevision: revisionA, sourcePath: basisPath, section: 'missing' })).rejects.toThrow('Unknown section')
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
   test('navigation hubs are not procedures and retained pins survive source directory changes', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'leitbild-procedure-move-'))
     try {
@@ -195,7 +221,7 @@ describe('native local procedure publication', () => {
       await command('world.procedure.run.transition', { runId: original.runs[0]!.runId, stepId: 'first-step', branchIndex: 0 })
       const transitioned = structuredClone(runtime.snapshot().procedures!)
       expect(transitioned.runs.map(run => [run.procedureId, run.sourceId, run.sourceRevision, run.sourcePath, run.status])).toEqual([
-        ['E-0', 'leitbild', revisionA, localPath('E-0'), 'completed'],
+        ['E-0', 'leitbild', revisionA, localPath('E-0'), 'transferred'],
         ['E-1', 'leitbild', revisionA, localPath('E-1'), 'active'],
       ])
       await registry.close(runtime.id)

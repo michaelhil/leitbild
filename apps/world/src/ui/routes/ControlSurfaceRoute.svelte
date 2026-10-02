@@ -18,7 +18,7 @@
   } from '../../core/model/index.ts'
   import { deleteObjectCommandKind } from '../../core/model/index.ts'
   import { createPackPresentationComposer } from '../../core/packs/presentation-composer.ts'
-  import type { PackCreateObjectType, PackMapAssignmentMode, PackMapAssignmentTarget, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation, PackPresentationContribution } from '../../core/packs/protocol.ts'
+  import type { PackCreateObjectType, PackMapAssignmentMode, PackMapAssignmentTarget, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation, PackPresentationContribution, PackProcedureContribution } from '../../core/packs/protocol.ts'
   import type { ActivePackViews } from '../../core/packs/active-views.ts'
   import {
     fetchScenario,
@@ -131,6 +131,7 @@
   interface ProcedureSystemWindowModel extends ProcedureSystemWindowEntry {
     readonly object: OperationalObject
     readonly plantId: string
+    readonly provider: PackProcedureContribution
     readonly index: number
   }
   interface MapAssignmentState {
@@ -909,11 +910,13 @@
   }
 
   const procedureUnitContexts = $derived(objects.flatMap(object => {
-    const plantId = processPlantIdForObject(object)
+    const provider = activePack?.packForObject(object).procedures
+    const plantId = provider?.scopeIdForObject(object) ?? null
     return plantId === null
       ? []
       : [{
           plantId,
+          provider,
           targetObjectId: object.id,
           label: object.label,
           status: statusPresentationFor(object),
@@ -945,8 +948,9 @@
     procedureSystemWindows.flatMap((entry, index) => {
       const object = objectById.get(entry.objectId)
       if (object === undefined) return []
-      const plantId = processPlantIdForObject(object)
-      return plantId === null ? [] : [{ ...entry, object, plantId, index }]
+      const provider = activePack?.packForObject(object).procedures
+      const plantId = provider?.scopeIdForObject(object) ?? null
+      return plantId === null || provider === undefined ? [] : [{ ...entry, object, plantId, provider, index }]
     }),
   )
 
@@ -979,7 +983,7 @@
   })
 
   const procedureScopeForObject = (object: OperationalObject): ProcedureRunScope | null => {
-    const plantId = processPlantIdForObject(object)
+    const plantId = activePack?.packForObject(object).procedures?.scopeIdForObject(object) ?? null
     return plantId === null
       ? null
       : { plantId, targetObjectId: object.id, label: object.label }
@@ -993,7 +997,7 @@
   }
 
   const openProcedureSystemAt = (object: OperationalObject, summary?: ProcedureRunSummary): void => {
-    if (processPlantIdForObject(object) === null) return
+    if (procedureScopeForObject(object) === null) return
     procedureSystemWindows = [
       ...procedureSystemWindows,
       {
@@ -1780,6 +1784,7 @@
     <ProcedureSystemModal
       {simulationRunId}
       plantId={windowEntry.plantId}
+      provider={windowEntry.provider}
       unitName={windowEntry.object.label}
       unitStatus={statusPresentationFor(windowEntry.object)}
       unitContexts={procedureUnitContexts}

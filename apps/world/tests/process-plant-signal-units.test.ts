@@ -127,4 +127,19 @@ describe('requested-unit signal read boundary', () => {
     }
     expect(input('control.ramp').safeParse({ plantId: plant.id, tagId: 'PT-455', targetValue: 10, durationSeconds: 10, requestedUnit: 'psig' }).success).toBe(false)
   })
+
+  test('procedure range and equipment claims are checked even for external-reference matches', () => {
+    expect(query('world.process-plant.procedure-tags.validate', {
+      plantId: plant.id, tags: [{ id: 'NIS-PR-AVG', equipment: 'unverified-detector', units: 'MW', range: [0, 4000] }],
+    })).toMatchObject({ tags: [{ status: 'resolved-with-warnings', warnings: [expect.stringContaining('no equipment identity'), expect.stringContaining('no explicit hard range')] }] })
+    expect(query('world.process-plant.procedure-tags.validate', {
+      plantId: plant.id, tags: [{ id: 'ROD-POS-AVG', equipment: 'wrong-equipment', units: 'fraction', range: [0, 2] }],
+    })).toMatchObject({ tags: [{ status: 'resolved-with-warnings', warnings: [expect.stringContaining('does not match process equipment'), expect.stringContaining('does not match signal hard range')] }] })
+    expect(query('world.process-plant.procedure-tags.validate', {
+      plantId: plant.id, tags: [{ id: 'ROD-POS-AVG', equipment: 'rod-control-system', units: 'fraction', range: [0, 1] }],
+    })).toMatchObject({ tags: [{ status: 'resolved', warnings: [] }] })
+    expect(() => query('world.process-plant.procedure-tags.validate', {
+      plantId: plant.id, tags: [{ id: 'ROD-POS-AVG', range: [1, 0] }],
+    })).toThrow('range minimum cannot exceed maximum')
+  })
 })

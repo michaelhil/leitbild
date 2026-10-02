@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { idSchema } from '../../../core/model/index.ts'
+import { idSchema, objectIdSchema } from '../../../core/model/index.ts'
 import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import { evaluateProcessPlantAssessments } from '../assessments.ts'
 import { processPlantControlWritePayloadSchema } from '../commands.ts'
@@ -7,6 +7,13 @@ import { validateProcessPlantControlWrite } from '../control-write-validation.ts
 import { evaluateProcessPlantIcCondition, processPlantIcConditionSchema } from '../runtime/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { requirePlant } from './common.ts'
+import { evaluateProcessPlantProcedureCondition, processPlantProcedureBasisSchema, processPlantProcedureConditionSchema } from '../condition-evidence.ts'
+
+export const procedureConditionEvaluateQuerySchema = z.object({
+  targetObjectId: objectIdSchema,
+  condition: processPlantProcedureConditionSchema,
+  basis: processPlantProcedureBasisSchema,
+}).strict()
 
 export const conditionsEvaluateQuerySchema = z.object({
   plantId: idSchema,
@@ -19,6 +26,7 @@ export const assessmentsEvaluateQuerySchema = z.object({
 }).strict()
 
 export const processPlantControlQueryKinds = [
+  'world.process-plant.procedure-condition.evaluate',
   'world.process-plant.conditions.evaluate',
   'world.process-plant.assessments.evaluate',
   'world.process-plant.control.validate',
@@ -29,6 +37,11 @@ export const answerProcessPlantControlQuery = (config: {
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
 }): unknown | undefined => {
   if (!processPlantControlQueryKinds.some(kind => kind === config.request.capabilityId)) return undefined
+  if (config.request.capabilityId === 'world.process-plant.procedure-condition.evaluate') {
+    const payload = procedureConditionEvaluateQuerySchema.parse(config.request.input)
+    const plant = requirePlant(config.plants, payload.targetObjectId)
+    return { targetObjectId: payload.targetObjectId, ...evaluateProcessPlantProcedureCondition({ plant, condition: payload.condition, basis: payload.basis }) }
+  }
   if (config.request.capabilityId === 'world.process-plant.conditions.evaluate') {
     const payload = conditionsEvaluateQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)

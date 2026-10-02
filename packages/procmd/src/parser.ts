@@ -3,7 +3,7 @@ import type { ParsedProcedure, ProcedureBranch, ProcedureStep, ProcedureTag, Pro
 export const PARSER_PROCMD_VERSION = '0.7'
 type Mutable<T> = { -readonly [K in keyof T]: T[K] }
 type Step = Omit<Mutable<ProcedureStep>, 'blocks' | 'branches'> & { blocks: Mutable<ProcedureTextBlock>[]; branches: Mutable<ProcedureBranch>[] }
-const keywords = new Set(['check', 'action', 'decision', 'when', 'until', 'abort-if', 'abort-to', 'within', 'concurrent', 'caution', 'note', 'because', 'against'])
+const keywords = new Set(['check', 'action', 'expected', 'rno', 'unknown', 'basis', 'decision', 'when', 'until', 'abort-if', 'abort-to', 'within', 'concurrent', 'caution', 'note', 'because', 'against'])
 const advisory = new Set(['when', 'until', 'abort-if', 'abort-to', 'within', 'concurrent'])
 const tagsIn = (text: string): string[] => [...new Set([...text
   .replace(/`+[^`]*`+/g, '').replace(/\[\[[\s\S]*?\]\]/g, '')
@@ -58,7 +58,7 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
   let tag: Record<string, string> | undefined
   let activeBranch: Mutable<ProcedureBranch> | undefined
   let decision: Mutable<ProcedureTextBlock> | undefined
-  let fence: { marker: string; length: number; block?: Mutable<ProcedureTextBlock> } | undefined
+  let fence: { marker: string; length: number; block?: Mutable<ProcedureTextBlock>; observation?: { step: Step; lines: string[] } } | undefined
 
   const flushTag = () => {
     if (!tag) return
@@ -89,13 +89,31 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
     const sourceLine = index + 1
     if (fence) {
       if (fence.block) fence.block.text += '\n' + raw
-      else preamble.push(raw)
-      if (new RegExp(`^\\s*${fence.marker}{${fence.length},}\\s*$`).test(raw)) fence = undefined
+      else if (!fence.observation) preamble.push(raw)
+      if (new RegExp(`^\\s*${fence.marker}{${fence.length},}\\s*$`).test(raw)) {
+        if (fence.observation) {
+          const value: unknown = JSON.parse(fence.observation.lines.join('\n'))
+          if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('procedure-observation requires a JSON object')
+          const spec = value as Record<string, unknown>
+          if (Object.keys(spec).some(key => !['capabilityId', 'input', 'continuous'].includes(key))) throw new Error('unsupported procedure-observation field')
+          if (typeof spec.capabilityId !== 'string' || !spec.capabilityId.trim()) throw new Error('procedure-observation requires capabilityId')
+          if (typeof spec.input !== 'object' || spec.input === null || Array.isArray(spec.input)) throw new Error('procedure-observation requires object input')
+          if ('targetObjectId' in spec.input) throw new Error('observation targetObjectId is owned by the procedure Run scope')
+          if (spec.continuous !== undefined && typeof spec.continuous !== 'boolean') throw new Error('observation continuous must be boolean')
+          fence.observation.step.observation = { capabilityId: spec.capabilityId, input: spec.input as Record<string, unknown>, continuous: spec.continuous === true }
+        }
+        fence = undefined
+      } else fence.observation?.lines.push(raw)
       continue
     }
     const openingFence = raw.match(/^\s*(`{3,}|~{3,})/)
     if (openingFence) {
       activeBranch = undefined; decision = undefined
+      if (/^\s*(`{3,}|~{3,})procedure-observation\s*$/.test(raw)) {
+        if (!current || current.observation) throw new Error(`Line ${sourceLine}: observation requires a step and may occur once per step`)
+        fence = { marker: openingFence[1]![0]!, length: openingFence[1]!.length, observation: { step: current, lines: [] } }
+        continue
+      }
       const block = textBlock(raw, sourceLine, true)
       fence = { marker: openingFence[1]![0]!, length: openingFence[1]!.length, ...(current ? { block } : {}) }
       continue
@@ -161,7 +179,24 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
       else if (target === '↻') targetKind = 'retry'
       else if (target === '↯') targetKind = 'abort'
       if (targetKind === 'unknown') warn(sourceLine, 'unsupported branch target retained as non-actionable text')
-      activeBranch = { label: branch[1]!.trim(), target: clean, targetKind, sourceLine, tagIds: tagsIn(branch[1]!) }
+      let label = branch[1]!.trim()
+      const meaning: { outcome?: NonNullable<ProcedureBranch['outcome']>; execution?: NonNullable<ProcedureBranch['execution']> } = {}
+      label = label.replace(/\s*\[(outcome|execution):\s*([^\]]+)\]/g, (_match, key: 'outcome' | 'execution', rawValue: string) => {
+        if (meaning[key] !== undefined) throw new Error(`Line ${sourceLine}: duplicate branch ${key}`)
+        const value = rawValue.trim()
+        if (key === 'outcome') {
+          if (value !== 'normal' && value !== 'rno' && value !== 'unknown') throw new Error(`Line ${sourceLine}: invalid branch outcome ${value}`)
+          meaning.outcome = value
+        } else {
+          if (value !== 'transfer' && value !== 'parallel') throw new Error(`Line ${sourceLine}: invalid branch execution ${value}`)
+          if (targetKind !== 'procedure') throw new Error(`Line ${sourceLine}: execution requires a procedure target`)
+          meaning.execution = value
+        }
+        return ''
+      }).trim()
+      if (/\[(?:outcome|execution)\b/i.test(label)) throw new Error(`Line ${sourceLine}: malformed reserved branch annotation`)
+      if (!label) throw new Error(`Line ${sourceLine}: branch requires a readable label`)
+      activeBranch = { label, target: clean, targetKind, ...meaning, sourceLine, tagIds: tagsIn(label) }
       current.branches.push(activeBranch)
       continue
     }
@@ -179,6 +214,7 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
     textBlock(raw, sourceLine)
   }
   flushTag()
+  if (fence?.observation) throw new Error('unterminated procedure-observation')
   if (fence) warn(lines.length, 'unterminated fenced example retained as literal text')
   if (!steps.length) throw new Error(`no Step headings found in ${procedureId}`)
   for (const step of steps) {

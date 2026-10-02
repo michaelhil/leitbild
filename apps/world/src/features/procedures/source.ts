@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { link, mkdir, open, readFile, rm } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve, posix } from 'node:path'
 import { createKnowledge, type Knowledge, type KnowledgeSnapshot } from '@leitbild/knowledge'
 import { sourceRevisionSchema } from '@leitbild/contracts'
+import { isProcedureMarkdown } from '@leitbild/procmd'
 import { nowIso, procedureCatalogSchema, procedureSourceIdSchema, type ProcedureCatalog, type ProcedureDocument } from '../../core/model/index.ts'
 import { parseProcedureMarkdown } from './procmd.ts'
 import { rejectCapabilityInput, rejectCapabilityTarget } from '../../simulation/capability-rejection.ts'
@@ -24,7 +25,17 @@ export interface ProcedureSourceService {
   readonly listSources: () => ReadonlyArray<ProcedureSourceConfig>
   readonly readCatalog: (config?: { readonly sourceId?: string; readonly refresh?: boolean }) => Promise<ProcedureCatalog>
   readonly readDocument: (config: ProcedureDocumentRequest) => Promise<ProcedureDocument>
+  readonly readEvidence: (config: ProcedureEvidenceRequest) => Promise<ProcedureEvidence>
 }
+export interface ProcedureEvidenceRequest {
+  readonly sourceId?: string
+  readonly sourceRevision: string
+  readonly sourcePath: string
+  readonly section?: string
+  readonly startLine?: number
+  readonly lineCount?: number
+}
+export type ProcedureEvidence = ReturnType<Knowledge['read']>
 
 const citation = (path: string, revision: string): string =>
   `/wiki?${new URLSearchParams({ path, revision })}`
@@ -65,13 +76,15 @@ const retain = async (directory: string, path: string, contents: string): Promis
 
 const bundleFor = (source: ProcedureSourceConfig, knowledge: Knowledge, retained = false) => {
   const prefix = `${source.procedurePath.replace(/\/$/, '')}/`
+  const selected = knowledge.index().filter(entry => (retained || (entry.path.startsWith(prefix) && !entry.hub))
+    && isProcedureMarkdown(knowledge.read(entry.path).content))
+    .sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
+    .map(entry => ({ path: entry.path, content: knowledge.read(entry.path).content }))
   const snapshot: KnowledgeSnapshot = {
     revision: knowledge.revision,
     // A retained bundle is already the exact selected source, independent of
     // where the current publication organizes its documents.
-    documents: knowledge.index().filter(entry => retained || (entry.path.startsWith(prefix) && !entry.hub))
-      .sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
-      .map(entry => ({ path: entry.path, content: knowledge.read(entry.path).content })),
+    documents: selected,
   }
   if (!snapshot.documents.length) throw new Error(`No procedure documents in local publication path ${source.procedurePath}`)
   const metadata = {
@@ -83,6 +96,21 @@ const bundleFor = (source: ProcedureSourceConfig, knowledge: Knowledge, retained
     source: metadata, sourcePath: document.path,
     sourceUrl: citation(document.path, knowledge.revision), rawMarkdown: document.content,
   }))
+  // Retain direct technical Basis owners, not the transitive wiki. Explicit
+  // step links keep this closure small, auditable and tied to authored evidence.
+  const evidence = new Map(selected.map(document => [document.path, document]))
+  for (const document of documents) for (const step of document.steps) for (const block of step.blocks) {
+    if (block.kind !== 'basis') continue
+    for (const match of block.text.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
+      const href = match[1]!
+      if (/^[a-z][a-z0-9+.-]*:|^\//i.test(href)) continue
+      const [relative, section] = href.split('#')
+      const path = relative ? posix.normalize(posix.join(posix.dirname(document.sourcePath), decodeURIComponent(relative))) : document.sourcePath
+      const reference = knowledge.read(path, section ? { section: decodeURIComponent(section) } : {})
+      if (!evidence.has(path)) evidence.set(path, { path, content: knowledge.read(reference.path).content })
+    }
+  }
+  snapshot.documents = [...evidence.values()].sort((a, b) => a.path.localeCompare(b.path))
   const ids = new Set<string>()
   for (const document of documents) {
     if (ids.has(document.procedureId)) throw new Error(`Duplicate procedure id ${document.procedureId} in local publication`)
@@ -142,6 +170,18 @@ export const createProcedureSourceService = (config: {
   return {
     listSources: () => [...sources],
     readCatalog: async (request = {}) => bundleFor(sourceFor(request.sourceId), await load()).catalog,
+    readEvidence: async request => {
+      const source = sourceFor(request.sourceId)
+      const raw = await readFile(publicationPath(source, request.sourceRevision), 'utf8')
+      const retained = createKnowledge(JSON.parse(raw) as unknown)
+      if (retained.revision !== request.sourceRevision) throw new Error('Retained procedure publication revision does not match its pin')
+      return retained.read(request.sourcePath, {
+        revision: request.sourceRevision,
+        ...(request.section === undefined ? {} : { section: request.section }),
+        ...(request.startLine === undefined ? {} : { startLine: request.startLine }),
+        ...(request.lineCount === undefined ? {} : { lineCount: request.lineCount }),
+      })
+    },
     readDocument: async (request): Promise<ProcedureDocument> => {
       const source = sourceFor(request.sourceId)
       if (request.sourcePath !== undefined && request.sourceRevision === undefined) return rejectCapabilityInput('Procedure sourcePath requires sourceRevision')
