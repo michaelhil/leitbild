@@ -106,7 +106,64 @@ if not sol.success: raise ValueError(('Dual N2 boundary solver failed',sol.messa
 check('dual N2 native balances',max(abs(v) for v in dual(sol.x)),1e-9)
 check('dual N2 opposed heat zero net conversion',sol.x[2]-mv,1e-10)
 dualResult=dict(p=sol.x[0]*1e6,pv=sol.x[0]*sol.x[1]*1e6,liquidTemperature=ll['T'],gasTemperature=vv['T'],waterMass=MW,nitrogenMass=MN,netConversion=sol.x[2]-mv,meaning='Known constrained endpoint recovered after equal/opposite heat; not an equilibrium chemistry or finite trajectory proof')
-print(json.dumps(dict(scope='Offline constitutive/native-boundary comparisons; not a coupled CORE trajectory or empirical validation',dependencies=dict(CoolProp=CoolProp.__version__,scipy=scipy.__version__),phaseBirth=dict(liquidFreeExpansion=birth,steamCooling=steam),saturatedOpposedHeat=balanced,oneActive=active,nitrogenInterfaces=n2,nitrogenDualBoundary=dualResult,checks=checks),sort_keys=True,allow_nan=False))
+
+# Bounded shared-NC extension. Keep all preceding N2 fixtures unchanged.
+# Fixed NC mass composition at the interface; no air/N2 separation or chemistry.
+RA=287.;cvA=718.;cvN=742.
+def nc_interface(p,f,qa):
+    if f==0:
+        Ts=sat(p,0)['T'];hli=sat(p,0)['h'];hvi=sat(p,1)['h'];Ql=-10000.;Qg=2000.;gamma=(Ql+Qg)/(hvi-hli)
+        check('zero all NC pure-water paired source',(-gamma*hli-Ql)+(gamma*hvi-Qg),1e-8)
+        return dict(p=p,NCpressureFraction=0,airNCmassFraction=None,Rnc=None,Ti=Ts,Gamma=gamma)
+    Rnc=qa*RA+(1-qa)*RN
+    Ts=sat(p,0)['T'];Tl=Ts-10;Tg=Ts+20;pv=p*(1-f)
+    rv=0 if pv==0 else C.PropsSI('D','P',pv,'T',Tg,'Water')
+    rnc=(p-pv)/(Rnc*Tg);rho=rv+rnc;Y=rv/rho
+    def flux(Ti):
+        pi=C.PropsSI('P','T',Ti,'Q',1,'Water');ri=C.PropsSI('D','T',Ti,'Q',1,'Water')
+        ni=(p-pi)/(Rnc*Ti);Yi=ri/(ri+ni)
+        D=2.5e-5*((Tg+Ti)/2/298.15)**1.75*101325/p
+        gamma=rho*D/.006*math.log1p((Yi-Y)/(1-Yi))
+        ls=C.AbstractState('HEOS','Water');ls.specify_phase(C.iphase_liquid);ls.update(C.PT_INPUTS,p,Ti)
+        Ql=1000*(Tl-Ti);Qg=100*(Tg-Ti)
+        hli=ls.hmass();hvi=C.PropsSI('H','T',Ti,'Q',1,'Water')
+        return Ql+Qg-gamma*(hvi-hli),gamma,Ql,Qg,hli,hvi,ni
+    Ti=brentq(lambda T:flux(T)[0],max(273.16,Tl-100),Ts-1e-7,xtol=1e-10)
+    r,gamma,Ql,Qg,hli,hvi,ni=flux(Ti)
+    check('shared NC interface energy',r,1e-3)
+    check('shared NC paired source',(-gamma*hli-Ql)+(gamma*hvi-Qg),1e-3)
+    check('shared NC interface species pressure',ni*Ti*(qa*RA+(1-qa)*RN)+C.PropsSI('P','T',Ti,'Q',1,'Water')-p,1e-8)
+    if f==1 and gamma<=0:raise ValueError('Steam-free NC evaporation missing')
+    return dict(p=p,NCpressureFraction=f,airNCmassFraction=qa,Rnc=Rnc,Ti=Ti,Gamma=gamma)
+sharedInterfaces=[nc_interface(1e6,f,qa) for qa in [0.,.5,1.] for f in [1.,.1]]+[nc_interface(1e6,0,0)]
+for row in sharedInterfaces:
+    if row['airNCmassFraction']==0:
+        old=next(r for r in n2 if r['p']==row['p'] and r['nitrogenPressureFraction']==row['NCpressureFraction'])
+        check('unchanged pure N2 interface temperature',row['Ti']-old['Ti'],1e-10)
+        check('unchanged pure N2 interface water rate',row['Gamma']-old['Gamma'],1e-10)
+
+# Known both-active native M/U/V endpoint recovery, not a circulation history.
+# NCs keep distinct mass and caloric energy; zero NC is already checked above.
+sharedDual=[]
+for qa in [0.,.5,1.]:
+    p0=1e6;pv0=.8e6;V0=.01;Vg0=.008;li=sat(p0,0);va=sat(pv0,1)
+    Rnc=qa*RA+(1-qa)*RN;ncMass=(p0-pv0)*Vg0/(Rnc*va['T'])
+    ma=qa*ncMass;mn=(1-qa)*ncMass;mv0=Vg0*va['rho'];mw=(V0-Vg0)*li['rho']+mv0
+    u0=(mw-mv0)*li['u']+mv0*va['u']+(ma*cvA+mn*cvN)*(va['T']-298.15)
+    def shared_dual(x):
+        pp=x[0]*1e6;pvv=pp*x[1];mvv=x[2];ll=sat(pp,0);vv=sat(pvv,1);vg=mvv/vv['rho']
+        return [((mw-mvv)/ll['rho']+vg-V0)/V0,(pvv+(ma*RA+mn*RN)*vv['T']/vg-pp)/1e6,((mw-mvv)*ll['u']+mvv*vv['u']+(ma*cvA+mn*cvN)*(vv['T']-298.15)-u0)/1e5]
+    result=least_squares(shared_dual,[1.01,.79,mv0*1.01],bounds=([.1,.01,1e-10],[16,.999999,mw-1e-10]),xtol=1e-12,ftol=1e-12,gtol=1e-12)
+    if not result.success:raise ValueError(('Shared NC boundary solver failed',result.message))
+    check('shared NC native M/U/V recovery',max(abs(v) for v in shared_dual(result.x)),1e-9)
+    check('shared NC zero net water conversion',result.x[2]-mv0,1e-10)
+    mt=mw+ma+mn;zc=-3.;g0=9.80665;E=u0+mt*g0*zc
+    check('all species PE and caloric recovery',E-mt*g0*zc-u0,1e-9)
+    # Separate species advective incidence, not a pressure-driven delivery.
+    parcel=.001;fa=ma/mt;fn=mn/mt;fw=mw/mt
+    check('shared NC parcel species sum',parcel*(fa+fn+fw)-parcel,1e-15)
+    sharedDual.append(dict(airMass=ma,nitrogenMass=mn,waterMass=mw,p=result.x[0]*1e6,pv=result.x[0]*result.x[1]*1e6,totalThermalEnergy=u0,totalEnergy=E,netConversion=result.x[2]-mv0,meaning='Known native two-temperature endpoint and all-species PE/parcel accounting; not a finite-rate or LOWER trajectory'))
+print(json.dumps(dict(scope='Offline constitutive/native-boundary comparisons; not a coupled CORE trajectory or empirical validation',dependencies=dict(CoolProp=CoolProp.__version__,scipy=scipy.__version__),phaseBirth=dict(liquidFreeExpansion=birth,steamCooling=steam),saturatedOpposedHeat=balanced,oneActive=active,nitrogenInterfaces=n2,nitrogenDualBoundary=dualResult,sharedNCInterfaces=sharedInterfaces,sharedNCDualBoundary=sharedDual,checks=checks),sort_keys=True,allow_nan=False))
 `
 if(import.meta.main){
   const python=process.argv[2];if(!python)throw new Error('Provide isolated research Python')
