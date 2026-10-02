@@ -116,3 +116,9 @@ test('procedure rendering retains interstitial guidance and exposes observations
   expect(html).toContain('&quot;continuous&quot;: true')
   expect(html.indexOf('Keep the receiver available.')).toBeLessThan(html.indexOf('Step 2 — Record response'))
 })
+
+test('procedure source anchors survive CRLF-authored documents', () => {
+  const content = procedureSource.replaceAll('\n', '\r\n')
+  const html = render(content)
+  for (const heading of headingsFor(content)) expect(html).toContain(`id="${heading.anchor}"`)
+})
