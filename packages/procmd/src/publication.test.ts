@@ -22,3 +22,16 @@ test('explicit design guidance requires complete decision blocks without treatin
   expect(() => validateProcedurePublication([{ ...doc, content: doc.content.slice(0, doc.content.indexOf('## Step')) }])).toThrow()
   expect(() => validateProcedurePublication([{ path: 'reference/P.md', content: procedure().replace('RNO: Supported contrary path\n', '') }])).not.toThrow()
 })
+
+test('publication rejects undeclared canonical tag references in instructions and branches', () => {
+  const content = `${procedure().replace('Expected: Achieved response', 'Expected: «LD01.SG.A.NR1» >= 1 m')}\n## Tags\n- id: LD01.SG.A.NR1\n  units: m`
+  expect(() => validateProcedurePublication([{ path: 'P.md', content }])).not.toThrow()
+  expect(() => validateProcedurePublication([{ path: 'P.md', content: content.replace('- id: LD01.SG.A.NR1', '- id: LD01.SG.B.NR1') }])).toThrow('Undeclared tag LD01.SG.A.NR1')
+  expect(() => validateProcedurePublication([{ path: 'P.md', content: content.replace('- Achieved ', '- «MISSING.STATE» achieved ') }])).toThrow('Undeclared tag MISSING.STATE')
+})
+
+test('cross-procedure step destinations resolve exact document and stable step identity', () => {
+  const docs = [{ path: 'source/P.md', content: procedure('P', '[[Q#first]]') }, { path: 'source/Q.md', content: procedure('Q') }]
+  expect(() => validateProcedurePublication(docs)).not.toThrow()
+  expect(() => validateProcedurePublication([{ ...docs[0]!, content: procedure('P', '[[Q#missing]]') }, docs[1]!])).toThrow('Missing procedure step target Q#missing')
+})

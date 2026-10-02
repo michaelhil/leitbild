@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { procedureBlockLabel, procedureObservationBasis, procedureObservationEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureTextSegments } from '../src/ui/procedures/procedure-view.ts'
+import { procedureBlockLabel, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureSourceEvidenceRequest, procedureStepItems, procedureTextSegments } from '../src/ui/procedures/procedure-view.ts'
 import { procedureTestSource } from './procedure-fixtures.ts'
 
 test('technical basis links keep the selected knowledge revision and executable URLs stay inert', () => {
@@ -36,6 +36,12 @@ test('authored observation presentation retains measured value, criterion and un
     { label: 'SG level', value: '42 %', criterion: '>= 35 %', status: 'satisfied' },
     { label: 'Unavailable signal', value: 'unavailable', criterion: '== true bool', status: 'unknown', reason: 'Signal absent' },
   ])
+})
+
+test('observation labels use declared evidence qualification, not Pack names or an automatic safety claim', () => {
+  expect(procedureObservationLabel({ basis: { qualification: 'authored-comparison' }, status: 'satisfied' })).toBe('Model comparison')
+  expect(procedureObservationLabel({ status: 'satisfied' })).toBe('Read-only observation')
+  expect(procedureObservationLabel({ basis: null, status: 'unknown' })).toBe('Read-only observation')
 })
 
 test('World procedure presentation preserves source reading order, decisions and original branch identity', () => {

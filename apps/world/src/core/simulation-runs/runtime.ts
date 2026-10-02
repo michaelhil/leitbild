@@ -719,6 +719,7 @@ export const createSimulationRunRuntime = async (config: {
           procedures: state.snapshot().procedures,
           readDocument: async documentConfig =>
             await procedureSourceService.readDocument(documentConfig),
+          ...(procedureSourceService.assertTargetApplicable === undefined ? {} : { assertTargetApplicable: procedureSourceService.assertTargetApplicable }),
         })
         if (commit === null) return null
         await publishGenerated(async () => {
@@ -741,6 +742,7 @@ export const createSimulationRunRuntime = async (config: {
             simulationTime: runClock.read().currentTime,
             commandSource,
             objectIds: new Set(snapshot.objects.map(object => object.id)),
+            objects: new Map(snapshot.objects.map(object => [object.id, object])),
             factory: { eventId, nextSeq: () => ++seq },
           })
         })

@@ -62,3 +62,20 @@ test('publication refuses stale diagram projections and accepts regenerated decl
   await run(root, ['add', '.']); await run(root, ['commit', '-m', 'Generate drawing'])
   expect((await publishKnowledge(root)).documents).toHaveLength(1)
 })
+
+test('authored procedure assessment and tag owners resolve real publication sections before release', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'leitbild-assessment-publication-')); roots.push(root)
+  await run(root, ['init']); await run(root, ['config', 'user.name', 'Knowledge test']); await run(root, ['config', 'user.email', 'test@example.invalid'])
+  const criterion = { condition: { type: 'comparison', tagId: 'LD01.PCCTank.LT', operator: '>=', value: 1, unit: 'm', bound: 'lower', evidence: 'instrument', source: 'basis.md#level', maxAgeSeconds: 2 } }
+  const procedure = `---\ntype: procedure\nprocedure-md: 0.7\nprocedure-id: TEST\ntitle: Test\n---\n## Step 1 [id: check]\n\`\`\`procedure-assessment\n${JSON.stringify(criterion)}\n\`\`\`\n## Tags\n- id: LD01.PCCTank.LT\n  units: m\n  source: basis.md`
+  await Bun.write(join(root, 'index.md'), procedure)
+  await Bun.write(join(root, 'basis.md'), '# Owner\n\n## Level\nAcquired lower-bound criterion.')
+  await run(root, ['add', '.']); await run(root, ['commit', '-m', 'Valid evidence'])
+  expect((await publishKnowledge(root)).documents).toHaveLength(2)
+  await Bun.write(join(root, 'index.md'), procedure.replace('basis.md#level', 'basis.md#missing'))
+  await run(root, ['add', '.']); await run(root, ['commit', '-m', 'Invalid criterion owner'])
+  await expect(publishKnowledge(root)).rejects.toThrow('Unknown section')
+  await Bun.write(join(root, 'index.md'), procedure.replace('source: basis.md', 'source: missing.md'))
+  await run(root, ['add', '.']); await run(root, ['commit', '-m', 'Invalid tag owner'])
+  await expect(publishKnowledge(root)).rejects.toThrow('not found')
+})

@@ -122,3 +122,56 @@ test('procedure source anchors survive CRLF-authored documents', () => {
   const html = render(content)
   for (const heading of headingsFor(content)) expect(html).toContain(`id="${heading.anchor}"`)
 })
+
+test('procedure routes resolve from discovered identities and keep sibling scope and revision', () => {
+  const document = { path: 'world/ld/procedure.md', content: procedureSource, headings: headingsFor(procedureSource) }
+  const html = renderWiki(document, 'revision-123', [
+    { path: 'archive/other.md', procedureId: 'OTHER' },
+    { path: 'world/ld/response.md', procedureId: 'OTHER' },
+  ])
+  expect(html).toContain('Continue in parallel with <a href="/wiki?path=world%2Fld%2Fresponse.md&amp;revision=revision-123">OTHER</a>')
+  const ambiguous = renderWiki(document, undefined, [
+    { path: 'archive/one.md', procedureId: 'OTHER' },
+    { path: 'archive/two.md', procedureId: 'OTHER' },
+  ])
+  expect(ambiguous).toContain('Continue in parallel with OTHER')
+  expect(ambiguous).not.toContain('path=archive')
+})
+
+test('canonical procedure tags link to their declared engineering source at the point of use', () => {
+  const content = procedureSource.replace('Verify CLOSED feedback.', 'Verify «LD01.VALVE.POS» CLOSED.').replace('- id: VALVE', '- id: LD01.VALVE.POS\n  source: ../instrumentation.md#position')
+  const html = renderWiki({ path: 'world/ld/procedure.md', content, headings: headingsFor(content) }, 'revision-123')
+  expect(html).toContain('href="/wiki?path=world%2Finstrumentation.md&amp;revision=revision-123#position">«LD01.VALVE.POS»</a>')
+  const unsafe = render(content.replace('../instrumentation.md#position', 'javascript:alert'))
+  expect(unsafe).not.toContain('href="javascript:')
+})
+
+test('tag linking respects Markdown code spans, existing links and case-sensitive identities', () => {
+  const content = procedureSource.replace('Verify CLOSED feedback.', 'Verify **«LD01.PCCTank.LT»**; literal `«LD01.PCCTank.LT»`; explicit [«LD01.PCCTank.LT»](../chosen.md).')
+    .replace('- id: VALVE', '- id: LD01.PCCTank.LT\n  source: ../instrumentation.md#level')
+  const html = render(content)
+  expect(html).toContain('<strong><a href="/wiki?path=world%2Finstrumentation.md#level">«LD01.PCCTank.LT»</a></strong>')
+  expect(html).toContain('<code>«LD01.PCCTank.LT»</code>')
+  expect(html).toContain('href="/wiki?path=world%2Fchosen.md">«LD01.PCCTank.LT»</a>')
+  expect(html).not.toMatch(/<a[^>]*>\s*<a/)
+})
+
+test('procedure cross-step links open the authored abnormal step, not normal startup', () => {
+  const content = procedureSource.replace('[[OTHER]]', '[[OTHER#coast]]')
+  const target = { path: 'world/ld/turbine.md', procedureId: 'OTHER', headings: headingsFor('# Turbine\n\n## Step 1 [id: start] Start\n\n## Step 2 [id: coast] Coast') }
+  const document = { path: 'world/ld/entry.md', content, headings: headingsFor(content) }
+  const html = renderWiki(document, 'revision-123', [target])
+  expect(html).toContain('path=world%2Fld%2Fturbine.md&amp;revision=revision-123#step-2-id-coast-coast')
+  expect(html).toContain('OTHER — coast</a>')
+  const missing = renderWiki(document, undefined, [{ ...target, headings: [] }])
+  expect(missing).not.toContain('path=world%2Fld%2Fturbine.md')
+})
+
+test('authored assessments remain inspectable data and do not suggest live evaluation', () => {
+  const content = procedureSource.replace('Expected: Valve is CLOSED.', 'Expected: Valve is CLOSED.\n```procedure-assessment\n{"condition":{"type":"manual","description":"Verify actual position independently","tagIds":["VALVE"],"source":"../engineering.md#position"}}\n```')
+  const html = render(content)
+  expect(html).toContain('Evaluation criteria — authored specification')
+  expect(html).toContain('not a live assessment or automatic command')
+  expect(html).toContain('&quot;tagIds&quot;')
+  expect(html).not.toContain('procedure-reference" open')
+})

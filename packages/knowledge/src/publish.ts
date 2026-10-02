@@ -43,8 +43,14 @@ export const publishKnowledge = async (root: string, sourceRoot?: string): Promi
   const documents = await Promise.all(names.map(async path => ({ path, content: await git(root, ['show', `${revision}:${path}`]) })))
   if (!documents.some(document => document.path === 'index.md')) throw new Error('Knowledge repository requires index.md')
   const snapshot = { revision, documents }
-  validateProcedurePublication(documents)
   const knowledge = createKnowledge(snapshot)
+  validateProcedurePublication(documents, (fromPath, href, requireSection) => {
+    if (/^[a-z][a-z\d+.-]*:/i.test(href) || href.startsWith('/')) throw new Error(`Assessment source must name a local engineering owner in ${fromPath}: ${href}`)
+    const [target, section] = href.split('#')
+    const path = target ? posix.normalize(posix.join(posix.dirname(fromPath), decodeURIComponent(target))) : fromPath
+    if (!path.endsWith('.md') || (requireSection && !section)) throw new Error(`Assessment source requires an explicit Markdown document${requireSection ? ' and section' : ''} in ${fromPath}: ${href}`)
+    knowledge.read(path, section ? { section: decodeURIComponent(section) } : {})
+  })
   await validateKnowledgeSources(snapshot, sourceRoot)
   for (const document of documents) {
     if (/^```plant-schematic\s*$/m.test(document.content)

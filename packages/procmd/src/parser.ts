@@ -1,4 +1,5 @@
 import type { ParsedProcedure, ProcedureBranch, ProcedureStep, ProcedureTag, ProcedureTextBlock } from './types.ts'
+import { assessmentLeaves, parseProcedureAssessment } from './assessment.ts'
 
 export const PARSER_PROCMD_VERSION = '0.7'
 type Mutable<T> = { -readonly [K in keyof T]: T[K] }
@@ -7,7 +8,7 @@ const keywords = new Set(['check', 'action', 'expected', 'rno', 'unknown', 'basi
 const advisory = new Set(['when', 'until', 'abort-if', 'abort-to', 'within', 'concurrent'])
 const tagsIn = (text: string): string[] => [...new Set([...text
   .replace(/`+[^`]*`+/g, '').replace(/\[\[[\s\S]*?\]\]/g, '')
-  .matchAll(/«([A-Z][A-Z0-9-]*)»/g)].map(match => match[1]!))]
+  .matchAll(/«([A-Za-z0-9][A-Za-z0-9._/-]*)»/g)].map(match => match[1]!))]
 
 // Deliberately small frontmatter subset: one-line scalars and inline lists.
 // Unsupported multiline YAML is diagnosed; original source is never discarded.
@@ -58,10 +59,11 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
   let tag: Record<string, string> | undefined
   let activeBranch: Mutable<ProcedureBranch> | undefined
   let decision: Mutable<ProcedureTextBlock> | undefined
-  let fence: { marker: string; length: number; block?: Mutable<ProcedureTextBlock>; observation?: { step: Step; lines: string[] } } | undefined
+  let fence: { marker: string; length: number; block?: Mutable<ProcedureTextBlock>; observation?: { step: Step; lines: string[] }; assessment?: { step: Step; lines: string[] } } | undefined
 
   const flushTag = () => {
     if (!tag) return
+    if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(tag.id!)) throw new Error(`invalid tag id ${tag.id}`)
     if (tags.some(item => item.id === tag!.id)) throw new Error(`duplicate tag id ${tag.id}`)
     const known = new Set(['id', 'description', 'sim-path', 'units', 'equipment', 'source', 'range'])
     const range = tag.range === undefined ? undefined : list(tag.range).map(Number)
@@ -89,7 +91,7 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
     const sourceLine = index + 1
     if (fence) {
       if (fence.block) fence.block.text += '\n' + raw
-      else if (!fence.observation) preamble.push(raw)
+      else if (!fence.observation && !fence.assessment) preamble.push(raw)
       if (new RegExp(`^\\s*${fence.marker}{${fence.length},}\\s*$`).test(raw)) {
         if (fence.observation) {
           const value: unknown = JSON.parse(fence.observation.lines.join('\n'))
@@ -102,13 +104,19 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
           if (spec.continuous !== undefined && typeof spec.continuous !== 'boolean') throw new Error('observation continuous must be boolean')
           fence.observation.step.observation = { capabilityId: spec.capabilityId, input: spec.input as Record<string, unknown>, continuous: spec.continuous === true }
         }
+        if (fence.assessment) fence.assessment.step.assessment = parseProcedureAssessment(JSON.parse(fence.assessment.lines.join('\n')))
         fence = undefined
-      } else fence.observation?.lines.push(raw)
+      } else { fence.observation?.lines.push(raw); fence.assessment?.lines.push(raw) }
       continue
     }
     const openingFence = raw.match(/^\s*(`{3,}|~{3,})/)
     if (openingFence) {
       activeBranch = undefined; decision = undefined
+      if (/^\s*(`{3,}|~{3,})procedure-assessment\s*$/.test(raw)) {
+        if (!current || current.assessment) throw new Error(`Line ${sourceLine}: assessment requires a step and may occur once per step`)
+        fence = { marker: openingFence[1]![0]!, length: openingFence[1]!.length, assessment: { step: current, lines: [] } }
+        continue
+      }
       if (/^\s*(`{3,}|~{3,})procedure-observation\s*$/.test(raw)) {
         if (!current || current.observation) throw new Error(`Line ${sourceLine}: observation requires a step and may occur once per step`)
         fence = { marker: openingFence[1]![0]!, length: openingFence[1]!.length, observation: { step: current, lines: [] } }
@@ -173,8 +181,9 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
       const target = branch[2]!.trim()
       let targetKind: ProcedureBranch['targetKind'] = 'unknown'
       let clean = target
+      let targetStepId: string | undefined
       if (/^#[A-Za-z0-9._:-]+$/.test(target)) { targetKind = 'step'; clean = target.slice(1) }
-      else if (/^\[\[[^\]#|]+\]\]$/.test(target)) { targetKind = 'procedure'; clean = target.slice(2, -2) }
+      else if (/^\[\[[^\]#|]+(?:#[A-Za-z0-9._:-]+)?\]\]$/.test(target)) { targetKind = 'procedure'; [clean, targetStepId] = target.slice(2, -2).split('#') as [string, string | undefined] }
       else if (target === 'END') targetKind = 'end'
       else if (target === '↻') targetKind = 'retry'
       else if (target === '↯') targetKind = 'abort'
@@ -196,7 +205,7 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
       }).trim()
       if (/\[(?:outcome|execution)\b/i.test(label)) throw new Error(`Line ${sourceLine}: malformed reserved branch annotation`)
       if (!label) throw new Error(`Line ${sourceLine}: branch requires a readable label`)
-      activeBranch = { label, target: clean, targetKind, ...meaning, sourceLine, tagIds: tagsIn(label) }
+      activeBranch = { label, target: clean, targetKind, ...(targetStepId === undefined ? {} : { targetStepId }), ...meaning, sourceLine, tagIds: tagsIn(label) }
       current.branches.push(activeBranch)
       continue
     }
@@ -215,10 +224,12 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
   }
   flushTag()
   if (fence?.observation) throw new Error('unterminated procedure-observation')
+  if (fence?.assessment) throw new Error('unterminated procedure-assessment')
   if (fence) warn(lines.length, 'unterminated fenced example retained as literal text')
   if (!steps.length) throw new Error(`no Step headings found in ${procedureId}`)
   for (const step of steps) {
-    step.tagIds = [...new Set([...step.blocks.flatMap(block => block.tagIds), ...step.branches.flatMap(branch => branch.tagIds)])]
+    step.tagIds = [...new Set([...step.blocks.flatMap(block => block.tagIds), ...step.branches.flatMap(branch => branch.tagIds),
+      ...(step.assessment ? assessmentLeaves(step.assessment.condition).flatMap(leaf => leaf.type === 'comparison' ? [leaf.tagId] : leaf.tagIds) : [])])]
     for (const branch of step.branches) if (branch.targetKind === 'step' && !steps.some(candidate => candidate.id === branch.target)) warn(branch.sourceLine, `unresolved step target #${branch.target}; no transition inferred`)
   }
   return { procedureId, title, rawMarkdown,

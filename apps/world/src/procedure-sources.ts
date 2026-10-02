@@ -5,6 +5,7 @@ import {
 } from './features/procedures/source.ts'
 import { join, resolve } from 'node:path'
 import { loadKnowledge, knowledgeSnapshotPath } from '@leitbild/knowledge'
+import { assertPwrReferenceProcedureTarget } from './packs/process-plant/procedure-applicability.ts'
 
 /** Product-owned procedure catalogs. The generic World procedure engine does not choose content. */
 export const procedureSources: ReadonlyArray<ProcedureSourceConfig> = [{
@@ -13,6 +14,7 @@ export const procedureSources: ReadonlyArray<ProcedureSourceConfig> = [{
   repository: 'Leitbild-wiki',
   ref: 'publication',
   procedurePath: 'archive/pwr-reference-model/procedures',
+  assertTargetApplicable: (_document, object) => assertPwrReferenceProcedureTarget(object),
 }]
 
 export const createConfiguredProcedureSourceService = (config: { readonly dataDir: string }): ProcedureSourceService =>

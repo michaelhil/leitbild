@@ -1,4 +1,5 @@
 /** Format data only. Reading these declarations never evaluates or executes them. */
+import type { ProcedureAssessment } from './assessment.ts'
 export interface ProcedureTextBlock {
   readonly kind: 'check' | 'action' | 'expected' | 'rno' | 'unknown' | 'basis' | 'decision' | 'when' | 'until' | 'abort-if' | 'abort-to' | 'within' | 'concurrent' | 'caution' | 'note' | 'because' | 'against' | 'text'
   readonly text: string
@@ -11,6 +12,7 @@ export interface ProcedureBranch {
   readonly label: string
   readonly target: string
   readonly targetKind: 'step' | 'procedure' | 'end' | 'retry' | 'abort' | 'unknown'
+  readonly targetStepId?: string
   /** Authored meaning, never inferred from a label or destination. */
   readonly outcome?: 'normal' | 'rno' | 'unknown'
   readonly execution?: 'transfer' | 'parallel'
@@ -31,6 +33,8 @@ export interface ProcedureStep {
   readonly tagIds: ReadonlyArray<string>
   readonly sourceLine: number
   readonly sourceEndLine: number
+  /** Engineering criteria; no live binding or automatic execution is implied. */
+  readonly assessment?: ProcedureAssessment
   /** A read-only owning-Pack query; this document never executes equipment commands. */
   readonly observation?: {
     readonly capabilityId: string

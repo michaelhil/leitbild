@@ -17,6 +17,8 @@
     summary: string
     parent: string | null
     hub: boolean
+    procedureId?: string
+    headings?: Heading[]
   }
   interface Document {
     path: string
@@ -145,7 +147,7 @@
       )
       if (id !== requestId) return
       document = value
-      html = renderWiki(value, params.get('revision') ?? undefined)
+      html = renderWiki(value, params.get('revision') ?? undefined, entries)
       await tick()
       if (article?.querySelector('.mermaid')) {
         try {

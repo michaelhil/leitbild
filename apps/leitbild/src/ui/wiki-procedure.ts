@@ -8,10 +8,12 @@ export const renderProcedurePage = (
   renderMarkdown: (text: string, lineOffset?: number) => string,
   renderInline: (text: string) => string,
   escape: (text: string) => string,
+  procedureUrl: (id: string, stepId?: string) => string | undefined = () => undefined,
 ): string => {
   const procedure = parseProcedure(content)
   const lines = content.split(/\r?\n/)
   const headingFor = (line: number) => headings.find(heading => heading.line === line)
+  const inline = renderInline
   const labels: Partial<Record<ProcedureTextBlock['kind'], string>> = {
     action: 'Action', check: 'Check', expected: 'Expected result',
     rno: 'Response not obtained', unknown: 'Evidence unknown', basis: 'Technical basis',
@@ -21,8 +23,8 @@ export const renderProcedurePage = (
   }
   const blockHtml = (block: ProcedureTextBlock) => {
     const label = labels[block.kind]
-    const text = block.kind === 'text' ? renderMarkdown(block.text) : renderInline(block.text)
-    return `<div class="procedure-instruction procedure-${block.kind}">${label ? `<strong>${label}</strong>` : ''}${block.kind === 'text' ? text : `<p>${text}</p>`}${block.paths?.length ? `<ol>${block.paths.map(path => `<li>${renderInline(path)}</li>`).join('')}</ol>` : ''}</div>`
+    const text = block.kind === 'text' ? renderMarkdown(block.text) : inline(block.text)
+    return `<div class="procedure-instruction procedure-${block.kind}">${label ? `<strong>${label}</strong>` : ''}${block.kind === 'text' ? text : `<p>${text}</p>`}${block.paths?.length ? `<ol>${block.paths.map(path => `<li>${inline(path)}</li>`).join('')}</ol>` : ''}</div>`
   }
   const steps = procedure.steps.map((step, stepIndex) => {
     const previousEnd = stepIndex === 0 ? step.sourceLine - 1 : procedure.steps[stepIndex - 1]!.sourceEndLine
@@ -40,14 +42,18 @@ export const renderProcedurePage = (
           ? `<a href="#${escape(anchor)}">Go to step ${escape(target!.label)}</a>`
           : `Step ${escape(branch.target)}`
       } else if (branch.targetKind === 'procedure') {
-        destination = `${branch.execution === 'parallel' ? 'Continue in parallel with' : 'Transfer to'} ${escape(branch.target)}`
+        const url = procedureUrl(branch.target, branch.targetStepId)
+        const label = `${branch.target}${branch.targetStepId ? ` — ${branch.targetStepId}` : ''}`
+        const target = url ? `<a href="${escape(url)}">${escape(label)}</a>` : escape(label)
+        destination = `${branch.execution === 'parallel' ? 'Continue in parallel with' : 'Transfer to'} ${target}`
       } else destination = branch.targetKind === 'end' ? 'End this procedure' : branch.targetKind === 'retry' ? 'Repeat this step' : branch.targetKind === 'abort' ? 'Stop this procedure' : escape(branch.target)
       const meaning = branch.outcome === 'rno' ? 'RNO' : branch.outcome === 'unknown' ? 'Unknown' : branch.outcome === 'normal' ? 'Normal' : undefined
-      return `<li data-branch-index="${index}">${meaning ? `<span class="procedure-outcome">${meaning}</span> ` : ''}${renderInline(branch.label)} — ${destination}${branch.because ? `<p class="procedure-rationale">Because: ${renderInline(branch.because)}</p>` : ''}${branch.against ? `<p class="procedure-rationale">Against: ${renderInline(branch.against)}</p>` : ''}</li>`
+      return `<li data-branch-index="${index}">${meaning ? `<span class="procedure-outcome">${meaning}</span> ` : ''}${inline(branch.label)} — ${destination}${branch.because ? `<p class="procedure-rationale">Because: ${inline(branch.because)}</p>` : ''}${branch.against ? `<p class="procedure-rationale">Against: ${inline(branch.against)}</p>` : ''}</li>`
     }).join('')
     const title = `Step ${step.label}${step.title === `Step ${step.label}` ? '' : ` — ${step.title}`}`
     const observation = step.observation ? `<details class="procedure-reference"><summary>Read-only observation specification</summary><pre><code>${escape(JSON.stringify(step.observation, null, 2))}</code></pre></details>` : ''
-    return `${interstitial}<section class="procedure-step"><h2${heading ? ` id="${escape(heading.anchor)}"` : ''}>${escape(title)}</h2><div class="procedure-columns"><div class="procedure-actions" aria-label="Instructions and expected results">${main.map(blockHtml).join('')}</div>${responses.length ? `<div class="procedure-responses" aria-label="RNO and unknown evidence">${responses.map(blockHtml).join('')}</div>` : ''}</div>${branches ? `<div class="procedure-routes"><h3>Next step</h3><ul>${branches}</ul></div>` : ''}${basis.length ? `<details class="procedure-basis"><summary>Technical basis</summary>${basis.map(blockHtml).join('')}</details>` : ''}${observation}</section>`
+    const assessment = step.assessment ? `<details class="procedure-reference"><summary>Evaluation criteria — authored specification</summary><p>Declared evidence and decision rules, not a live assessment or automatic command.</p><pre><code>${escape(JSON.stringify(step.assessment, null, 2))}</code></pre></details>` : ''
+    return `${interstitial}<section class="procedure-step"><h2${heading ? ` id="${escape(heading.anchor)}"` : ''}>${escape(title)}</h2><div class="procedure-columns"><div class="procedure-actions" aria-label="Instructions and expected results">${main.map(blockHtml).join('')}</div>${responses.length ? `<div class="procedure-responses" aria-label="RNO and unknown evidence">${responses.map(blockHtml).join('')}</div>` : ''}</div>${branches ? `<div class="procedure-routes"><h3>Next step</h3><ul>${branches}</ul></div>` : ''}${basis.length ? `<details class="procedure-basis"><summary>Technical basis</summary>${basis.map(blockHtml).join('')}</details>` : ''}${observation}${assessment}</section>`
   }).join('')
   const status = [procedure.procedureId, procedure.appliesTo, procedure.annotations['procedure-status'], procedure.annotations['runtime-bindings'] ? `Bindings: ${procedure.annotations['runtime-bindings']}` : undefined].filter(Boolean).map(value => escape(value!)).join(' · ')
   const preamble = renderMarkdown(lines.slice(0, procedure.steps[0]!.sourceLine - 1).join('\n'))

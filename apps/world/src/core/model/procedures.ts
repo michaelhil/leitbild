@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { parseProcedureAssessment, type ProcedureAssessment as AuthoredProcedureAssessment } from '@leitbild/procmd'
 import { sourceDocumentPathSchema, sourceRevisionSchema } from '@leitbild/contracts'
 import { actorIdSchema, commandIdSchema, idSchema, objectIdSchema } from './ids.ts'
 import { isoTimestampSchema } from './time.ts'
@@ -6,7 +7,7 @@ import { isoTimestampSchema } from './time.ts'
 export const procedureSourceIdSchema = idSchema
 export const procedureIdSchema = z.string().min(1).max(80).regex(/^[A-Z0-9][A-Z0-9._-]*$/)
 export const procedureStepIdSchema = idSchema
-export const procedureTagIdSchema = z.string().min(1).max(80).regex(/^[A-Z0-9][A-Z0-9._/-]*$/)
+export const procedureTagIdSchema = z.string().min(1).max(80).regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/)
 export const procedureRunIdSchema = z.string().min(1).max(128).regex(/^procedure-run:[a-zA-Z0-9._:-]+$/)
 
 // Citations may target the Host's wiki reader without assuming a deployment origin.
@@ -75,6 +76,7 @@ export const procedureBranchSchema = z.object({
   label: z.string().min(1),
   target: z.string().min(1),
   targetKind: z.enum(['step', 'procedure', 'end', 'retry', 'abort', 'unknown']),
+  targetStepId: procedureStepIdSchema.optional(),
   outcome: z.enum(['normal', 'rno', 'unknown']).optional(),
   execution: z.enum(['transfer', 'parallel']).optional(),
   because: z.string().min(1).optional(),
@@ -94,6 +96,10 @@ export const procedureStepSchema = z.object({
   tagIds: z.array(procedureTagIdSchema).default([]),
   sourceLine: z.number().int().positive(),
   sourceEndLine: z.number().int().positive(),
+  assessment: z.unknown().transform((value, context): AuthoredProcedureAssessment | typeof z.NEVER => {
+    try { return parseProcedureAssessment(value) }
+    catch (error) { context.addIssue({ code: 'custom', message: error instanceof Error ? error.message : String(error) }); return z.NEVER }
+  }).optional().describe('Authored engineering criterion tree, not a live observation or execution. Comparison operands identify exact declared tag, native unit, interval bound, evidence class, source and maximum age; all/any/not/vote combine them, held requires continuous simulation-time duration, manual names physical judgment. Uninstalled criteria cannot imply automatic success.'),
   observation: z.object({
     capabilityId: z.string().min(1),
     input: z.record(z.string(), z.unknown()),
@@ -129,6 +135,9 @@ export const procedureCatalogItemSchema = z.object({
   title: z.string().min(1),
   profile: z.string().min(1).optional(),
   category: z.string().min(1).optional(),
+  appliesTo: z.string().min(1).optional(),
+  referencePlant: z.string().min(1).optional(),
+  annotations: z.record(z.string(), z.string()).optional(),
   csfsMonitored: z.array(idSchema).default([]),
   entryTriggers: z.array(idSchema).default([]),
   stepCount: z.number().int().nonnegative(),
@@ -277,6 +286,7 @@ export const procedureBranchSelectedEventSchema = z.object({
   outcome: z.enum(['normal', 'rno', 'unknown']).optional(),
   target: z.string().min(1),
   targetKind: procedureBranchSchema.shape.targetKind,
+  targetStepId: procedureBranchSchema.shape.targetStepId,
   execution: procedureBranchSchema.shape.execution,
   simulationTime: isoTimestampSchema,
   selectedBy: actorIdSchema,

@@ -4,7 +4,8 @@ import { dirname, join, resolve, posix } from 'node:path'
 import { createKnowledge, type Knowledge, type KnowledgeSnapshot } from '@leitbild/knowledge'
 import { sourceRevisionSchema } from '@leitbild/contracts'
 import { isProcedureMarkdown } from '@leitbild/procmd'
-import { nowIso, procedureCatalogSchema, procedureSourceIdSchema, type ProcedureCatalog, type ProcedureDocument } from '../../core/model/index.ts'
+import { nowIso, procedureCatalogSchema, procedureSourceIdSchema, type ProcedureCatalog, type ProcedureDocument, type OperationalObject } from '../../core/model/index.ts'
+import { assessmentLeaves } from '@leitbild/procmd'
 import { parseProcedureMarkdown } from './procmd.ts'
 import { rejectCapabilityInput, rejectCapabilityTarget } from '../../simulation/capability-rejection.ts'
 
@@ -14,6 +15,8 @@ export interface ProcedureSourceConfig {
   readonly repository: string
   readonly ref: string
   readonly procedurePath: string
+  /** Synchronous owner validation against the canonical target at command commit. */
+  readonly assertTargetApplicable?: (document: ProcedureDocument, object: OperationalObject) => void
 }
 export interface ProcedureDocumentRequest {
   readonly sourceId?: string
@@ -22,6 +25,7 @@ export interface ProcedureDocumentRequest {
   readonly sourcePath?: string
 }
 export interface ProcedureSourceService {
+  readonly assertTargetApplicable?: (document: ProcedureDocument, object: OperationalObject) => void
   readonly listSources: () => ReadonlyArray<ProcedureSourceConfig>
   readonly readCatalog: (config?: { readonly sourceId?: string; readonly refresh?: boolean }) => Promise<ProcedureCatalog>
   readonly readDocument: (config: ProcedureDocumentRequest) => Promise<ProcedureDocument>
@@ -99,10 +103,13 @@ const bundleFor = (source: ProcedureSourceConfig, knowledge: Knowledge, retained
   // Retain direct technical Basis owners, not the transitive wiki. Explicit
   // step links keep this closure small, auditable and tied to authored evidence.
   const evidence = new Map(selected.map(document => [document.path, document]))
-  for (const document of documents) for (const step of document.steps) for (const block of step.blocks) {
-    if (block.kind !== 'basis') continue
-    for (const match of block.text.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
-      const href = match[1]!
+  for (const document of documents) for (const step of document.steps) {
+    const hrefs = [
+      ...step.blocks.filter(block => block.kind === 'basis').flatMap(block => [...block.text.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)].map(match => match[1]!)),
+      ...(step.assessment ? assessmentLeaves(step.assessment.condition).map(leaf => leaf.source) : []),
+      ...document.tags.flatMap(tag => tag.source && /\.md(?:#[^\s]+)?$/.test(tag.source) ? [tag.source] : []),
+    ]
+    for (const href of hrefs) {
       if (/^[a-z][a-z0-9+.-]*:|^\//i.test(href)) continue
       const [relative, section] = href.split('#')
       const path = relative ? posix.normalize(posix.join(posix.dirname(document.sourcePath), decodeURIComponent(relative))) : document.sourcePath
@@ -122,6 +129,9 @@ const bundleFor = (source: ProcedureSourceConfig, knowledge: Knowledge, retained
       sourceId: source.sourceId, procedureId: document.procedureId, title: document.title,
       ...(document.profile === undefined ? {} : { profile: document.profile }),
       ...(document.category === undefined ? {} : { category: document.category }),
+      ...(document.appliesTo === undefined ? {} : { appliesTo: document.appliesTo }),
+      ...(document.referencePlant === undefined ? {} : { referencePlant: document.referencePlant }),
+      ...(document.annotations === undefined ? {} : { annotations: document.annotations }),
       csfsMonitored: document.csfsMonitored, entryTriggers: document.entryTriggers,
       stepCount: document.steps.length, tagCount: document.tags.length,
       sourcePath: document.sourcePath, sourceUrl: document.sourceUrl,
@@ -168,6 +178,7 @@ export const createProcedureSourceService = (config: {
   }
 
   return {
+    assertTargetApplicable: (document, object) => sourceFor(document.source.sourceId).assertTargetApplicable?.(document, object),
     listSources: () => [...sources],
     readCatalog: async (request = {}) => bundleFor(sourceFor(request.sourceId), await load()).catalog,
     readEvidence: async request => {

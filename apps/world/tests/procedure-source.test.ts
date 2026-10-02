@@ -43,6 +43,33 @@ const publication = (revision: string, title = 'Reactor Trip') => createKnowledg
 ] })
 
 describe('native local procedure publication', () => {
+  test('catalog exposes authored applicability and uninstalled status without inventing runtime compatibility', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'leitbild-procedure-applicability-'))
+    try {
+      const content = markdownFor('E-0', 'Design guidance').replace('profile: nuclear-erg', 'profile: nuclear-erg\napplies-to: LD-01 reference design\nreference-plant: LD-01\nruntime-bindings: uninstalled\nprocedure-status: design-guidance')
+      const service = createProcedureSourceService({ sources: [localSource], retentionDirectory: directory,
+        loadKnowledge: async () => createKnowledge({ revision: revisionA, documents: [{ path: localPath('E-0'), content }] }) })
+      const item = (await service.readCatalog()).procedures[0]!
+      expect(item.appliesTo).toBe('LD-01 reference design')
+      expect(item.referencePlant).toBe('LD-01')
+      expect(item.annotations).toMatchObject({ 'runtime-bindings': 'uninstalled', 'procedure-status': 'design-guidance' })
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
+  test('authored assessment survives World parsing and source retention with its exact engineering owner', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'leitbild-assessment-source-'))
+    try {
+      const assessment = { condition: { type: 'comparison', tagId: 'LD01.SG.A.NR1', operator: '>=', value: 1.1, unit: 'm', bound: 'lower', evidence: 'instrument', source: '../engineering/criteria.md#level', maxAgeSeconds: 2 } } as const
+      const content = `${markdownFor('E-0', 'Evidence').replace('- Verified → END', `\`\`\`procedure-assessment\n${JSON.stringify(assessment)}\n\`\`\`\n- Verified → END`)}\n## Tags\n- id: LD01.SG.A.NR1\n  units: m`
+      const owner = { path: 'packs/process-plant/engineering/criteria.md', content: '# Criteria\n\n## Level\nAn owned acquired lower-bound criterion.' }
+      const service = createProcedureSourceService({ sources: [localSource], retentionDirectory: directory,
+        loadKnowledge: async () => createKnowledge({ revision: revisionA, documents: [{ path: localPath('E-0'), content }, owner] }) })
+      const document = await service.readDocument({ procedureId: 'E-0' })
+      expect(document.steps[0]!.assessment).toEqual(assessment)
+      expect(document.steps[0]!.tagIds).toEqual(['LD01.SG.A.NR1'])
+      const pinned = await service.readEvidence({ sourceRevision: revisionA, sourcePath: owner.path, section: 'level' })
+      expect(pinned.content).toContain('owned acquired lower-bound')
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
   test('retains direct step Basis owners, supports exact sections offline, and never substitutes updated evidence', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'leitbild-procedure-basis-'))
     try {

@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import { z } from 'zod'
 import { headingsFor, summaryFor } from './markdown.ts'
+import { isProcedureMarkdown, parseProcedure } from '@leitbild/procmd'
 export { headingsFor, type KnowledgeHeading } from './markdown.ts'
 
 const documentSchema = z.object({ path: z.string(), content: z.string() }).strict()
@@ -23,7 +24,8 @@ export const createKnowledge = (input: unknown) => {
     const lines = document.content.split(/\r?\n/)
     const headings = headingsFor(document.content)
     const summary = summaryFor(document.content)
-    return { ...document, lines, headings, title: headings[0]?.title ?? document.path, summary }
+    const procedureId = isProcedureMarkdown(document.content) ? parseProcedure(document.content).procedureId : undefined
+    return { ...document, lines, headings, title: headings[0]?.title ?? document.path, summary, procedureId }
   })
   const parentFor = (path: string): string | null => {
     const parts = path.split('/'); parts.pop()
@@ -36,7 +38,7 @@ export const createKnowledge = (input: unknown) => {
     return path !== 'index.md' && paths.has('index.md') ? 'index.md' : null
   }
   const navigation = documents.map(({ path, title, summary }) => ({ path, title, summary, parent: parentFor(path), hub: path === 'index.md' || path.endsWith('/index.md') }))
-  const index = () => documents.map(({ path, title, summary, headings, lines }) => ({ path, title, summary, headings, totalLines: lines.length, parent: parentFor(path), hub: path === 'index.md' || path.endsWith('/index.md') }))
+  const index = () => documents.map(({ path, title, summary, headings, lines, procedureId }) => ({ path, title, summary, headings, totalLines: lines.length, parent: parentFor(path), hub: path === 'index.md' || path.endsWith('/index.md'), ...(procedureId ? { procedureId } : {}) }))
   const read = (path: string, options: { readonly revision?: string; readonly startLine?: number; readonly lineCount?: number; readonly section?: string } = {}) => {
     if (options.revision !== undefined && options.revision !== snapshot.revision) throw new Error('Knowledge revision is not available in this publication; rediscover the current revision')
     const document = documents.find(candidate => candidate.path === path)

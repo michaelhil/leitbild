@@ -22,6 +22,15 @@ describe('frozen pwr-ops corpus: immutable IDs and persisted branch-index meanin
 })
 
 describe('one supported procmd format', () => {
+  test('canonical dotted, underscored and hierarchical tag identities are preserved exactly', () => {
+    const ids = ['LD01.SG.A.NR1', 'LD01/SUPPORT_1.READY', '1-CHANNEL', 'LD01.PCCTank.LT']
+    const source = `---\ntype: procedure\nprocedure-md: 0.7\nprocedure-id: IDENTITY\ntitle: Identity\n---\n## Step 1 [id: read]\nCheck: ${ids.map(id => `«${id}»`).join(' and ')}\n- «LD01.SG.A.NR1» established → END\n## Tags\n${ids.map(id => `- id: ${id}`).join('\n')}`
+    const parsed = parseProcedure(source)
+    expect(parsed.steps[0]!.tagIds).toEqual(ids)
+    expect(parsed.steps[0]!.branches[0]!.tagIds).toEqual([ids[0]!])
+    expect(parsed.tags.map(tag => tag.id)).toEqual(ids)
+    expect(() => parseProcedure(source.replace('- id: 1-CHANNEL', '- id: invalid tag'))).toThrow('invalid tag id')
+  })
   test('explicit normal/RNO/unknown outcomes and parallel execution are authored, not inferred from a destination', () => {
     const result = parseProcedure(`---\ntype: procedure\nprocedure-md: 0.7\nprocedure-id: TEST\ntitle: Outcomes\n---\n## Step 1 [id: first]\nBasis: [Owner](basis.md#criteria)\nExpected: physical response established\nRNO: response not obtained\nUnknown: missing indication\n- Achieved [outcome: normal] → END\n- Not obtained [outcome: rno] [execution: parallel] → [[OTHER]]\n- Missing [outcome: unknown] → ↻\n- Unlabelled → ↯`)
     expect(result.steps[0]!.blocks.map(block => block.kind)).toEqual(['basis', 'expected', 'rno', 'unknown'])
@@ -72,7 +81,8 @@ describe('one supported procmd format', () => {
   })
   test('keeps Decision paths, branch order, adjacent rationale and complete tag union', () => {
     expect(step.blocks.find(block => block.kind === 'decision')?.paths).toEqual(['First path «PATH»', 'Second path'])
-    expect(step.branches.map(branch => branch.targetKind)).toEqual(['step', 'procedure', 'unknown', 'unknown'])
+    expect(step.branches.map(branch => branch.targetKind)).toEqual(['step', 'procedure', 'unknown', 'procedure'])
+    expect(step.branches[3]).toMatchObject({ target: 'OTHER', targetStepId: 'step' })
     expect(step.branches[0]!.because).toBe('evidence «BECAUSE»')
     expect(step.branches[0]!.against).toBe('counter-evidence «AGAINST»')
     expect(step.branches[3]!.because).toBeUndefined()

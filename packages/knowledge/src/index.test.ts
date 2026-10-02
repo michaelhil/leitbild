@@ -5,6 +5,10 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 const revision = 'a'.repeat(40)
+test('procedure identities are discovered from authored metadata, not filename conventions', () => {
+  const knowledge = createKnowledge({ revision, documents: [{ path: 'world/arbitrary-name.md', content: '---\ntype: procedure\nprocedure-md: 0.7\nprocedure-id: E-0\ntitle: Entry\n---\n# Entry\n\n## Step 1 [id: trip]\nAction: Request the identified trip.\n- Continue → END' }] })
+  expect(knowledge.index()[0]?.procedureId).toBe('E-0')
+})
 test('publication is loaded from the application release, not the shared package installation', async () => {
   const release = await mkdtemp(join(tmpdir(), 'knowledge-release-'))
   try {

@@ -1,7 +1,7 @@
 import type {
   CommandEnvelope, SimulationRunEvent, SimulationRunId, EventId, IsoTimestamp,
   ProcedureControlState, ProcedureDocument, ProcedureRunScope, ProcedureRunState,
-  Provenance,
+  Provenance, OperationalObject,
 } from '../../core/model/index.ts'
 import {
   sameProcedureScope, createProcedureRunId, procedureCommandKindSchema, procedureRunClosePayloadSchema,
@@ -16,6 +16,7 @@ export interface ProcedureCommitContext {
   readonly commandSource?: Provenance['source']
   readonly procedures: ProcedureControlState | undefined
   readonly objectIds: ReadonlySet<string>
+  readonly objects?: ReadonlyMap<string, OperationalObject>
   readonly factory: { readonly eventId: () => EventId; readonly nextSeq: () => number }
 }
 
@@ -37,17 +38,32 @@ const assertLiveScope = (context: ProcedureCommitContext, scope: ProcedureRunSco
   if (!context.objectIds.has(scope.plantId)) throw new Error(`procedure target no longer exists: ${scope.plantId}`)
 }
 
+const assertInstalledProcedure = (document: ProcedureDocument): void => {
+  if (document.annotations?.['runtime-bindings'] === 'uninstalled') {
+    throw new Error(`Procedure ${document.procedureId} is design guidance with uninstalled runtime bindings; read its specification instead of starting or transferring a live procedure.`)
+  }
+}
+
 // Network work happens outside the Simulation Run commit queue. The returned
 // function is synchronous and rechecks mutable state inside that queue.
 export const prepareProcedureCommand = async (config: {
   readonly command: CommandEnvelope
   readonly procedures: ProcedureControlState | undefined
+  readonly assertTargetApplicable?: (document: ProcedureDocument, object: OperationalObject) => void
   readonly readDocument: (config: {
     readonly sourceId: string; readonly procedureId: string
     readonly sourceRevision: string; readonly sourcePath?: string
   }) => Promise<ProcedureDocument>
 }): Promise<((context: ProcedureCommitContext) => ReadonlyArray<SimulationRunEvent>) | null> => {
   const { command } = config
+  const assertDocumentScope = (context: ProcedureCommitContext, document: ProcedureDocument, scope: ProcedureRunScope): void => {
+    assertLiveScope(context, scope)
+    if (config.assertTargetApplicable) {
+      const object = context.objects?.get(scope.plantId)
+      if (!object) throw new Error(`Canonical procedure target unavailable at commit: ${scope.plantId}`)
+      config.assertTargetApplicable(document, object)
+    }
+  }
   const kind = procedureCommandKindSchema.safeParse(command.kind)
   if (!kind.success) return null
   const base = (context: ProcedureCommitContext) => ({
@@ -55,22 +71,23 @@ export const prepareProcedureCommand = async (config: {
     seq: context.factory.nextSeq(), at: context.at,
     provenance: { source: context.commandSource ?? 'operator', causedByCommandId: command.id },
   })
-  const started = (context: ProcedureCommitContext, document: ProcedureDocument, scope: ProcedureRunScope): SimulationRunEvent => ({
+  const started = (context: ProcedureCommitContext, document: ProcedureDocument, scope: ProcedureRunScope, entryStepId?: string): SimulationRunEvent => ({
     ...base(context), type: 'procedure.run.started',
     run: {
       runId: createProcedureRunId(), sourceId: document.source.sourceId,
       sourceRevision: document.source.revision, sourcePath: document.sourcePath,
       procedureId: document.procedureId, scope, title: document.title, status: 'active',
       startedAt: context.at, startedBy: command.actorId,
-      ...(document.steps[0] ? { currentStepId: document.steps[0].id } : {}), stepStates: [],
+      ...(entryStepId ?? document.steps[0]?.id ? { currentStepId: entryStepId ?? document.steps[0]!.id } : {}), stepStates: [],
     },
   })
 
   if (kind.data === 'world.procedure.run.start') {
     const payload = procedureRunStartPayloadSchema.parse(command.payload)
     const document = await config.readDocument(payload)
+    assertInstalledProcedure(document)
     return context => {
-      assertLiveScope(context, payload.scope)
+      assertDocumentScope(context, document, payload.scope)
       const existing = currentRunFor(context.procedures, payload.sourceId, payload.procedureId, payload.scope)
       if (existing?.status === 'transferred' && existing.sourceRevision === document.source.revision && existing.sourcePath === document.sourcePath) {
         return [{ ...base(context), type: 'procedure.run.resumed', runId: existing.runId,
@@ -102,6 +119,7 @@ export const prepareProcedureCommand = async (config: {
     : procedureStepUpdatePayloadSchema.parse(command.payload)
   const preparedRun = activeRunFor(config.procedures, payload.runId)
   const document = await config.readDocument(preparedRun)
+  assertInstalledProcedure(document)
   const step = document.steps.find(step => step.id === payload.stepId)
   if (!step) throw new Error(`procedure step ${payload.stepId} is not part of ${document.procedureId}`)
 
@@ -113,23 +131,35 @@ export const prepareProcedureCommand = async (config: {
     const targetDocument = branch.targetKind === 'procedure' ? await config.readDocument({
       sourceId: preparedRun.sourceId, sourceRevision: preparedRun.sourceRevision, procedureId: branch.target,
     }) : undefined
+    if (targetDocument) assertInstalledProcedure(targetDocument)
     if (targetDocument && !targetDocument.steps.length) throw new Error(`procedure ${targetDocument.procedureId} has no entry step`)
+    if (targetDocument && branch.targetStepId !== undefined && !targetDocument.steps.some(step => step.id === branch.targetStepId)) {
+      throw new Error(`procedure ${targetDocument.procedureId} does not contain destination step ${branch.targetStepId}`)
+    }
+    const preparedTarget = targetDocument ? currentRunFor(config.procedures, preparedRun.sourceId, targetDocument.procedureId, preparedRun.scope) : undefined
     return context => {
       const run = activeRunFor(context.procedures, payload.runId)
-      assertLiveScope(context, run.scope)
+      assertDocumentScope(context, document, run.scope)
+      if (targetDocument) assertDocumentScope(context, targetDocument, run.scope)
       // Deliberate off-path decisions remain possible, but asynchronously prepared
       // requests must not race another operator's newly accepted navigation.
       if (run.currentStepId !== preparedRun.currentStepId) throw new Error('procedure current step changed; refresh before selecting this branch')
       const target = targetDocument ? currentRunFor(context.procedures, run.sourceId, targetDocument.procedureId, run.scope) : undefined
+      if (branch.targetStepId !== undefined && (target?.runId !== preparedTarget?.runId || target?.currentStepId !== preparedTarget?.currentStepId || target?.status !== preparedTarget?.status)) {
+        throw new Error('destination procedure state changed; refresh before selecting this branch')
+      }
       if (target && (target.status === 'completed' || target.sourceRevision !== run.sourceRevision || target.sourcePath !== targetDocument?.sourcePath)) {
         throw new Error('destination procedure must be unstarted, active or transferred at the same source revision; reset a completed destination explicitly')
       }
       const result: SimulationRunEvent[] = []
-      if (targetDocument && !target) result.push(started(context, targetDocument, run.scope))
+      if (targetDocument && !target) result.push(started(context, targetDocument, run.scope, branch.targetStepId))
       if (target?.status === 'transferred') result.push({ ...base(context), type: 'procedure.run.resumed',
         runId: target.runId, resumedAt: context.at, resumedBy: command.actorId })
+      if (target && branch.targetStepId !== undefined) result.push({ ...base(context), type: 'procedure.step.updated', runId: target.runId,
+        stepId: branch.targetStepId, currentStepId: branch.targetStepId, update: {}, updatedAt: context.at, updatedBy: command.actorId })
       result.push({ ...base(context), type: 'procedure.branch.selected', runId: run.runId, stepId: step.id,
         branchIndex: payload.branchIndex, target: branch.target, targetKind: branch.targetKind,
+        ...(branch.targetStepId === undefined ? {} : { targetStepId: branch.targetStepId }),
         ...(branch.outcome === undefined ? {} : { outcome: branch.outcome }),
         ...(branch.execution === undefined ? {} : { execution: branch.execution }),
         simulationTime: context.simulationTime ?? context.at, selectedBy: command.actorId,
@@ -153,7 +183,7 @@ export const prepareProcedureCommand = async (config: {
     throw new Error(`procedure current step ${payload.currentStepId} is not part of ${document.procedureId}`)
   }
   return context => {
-    assertLiveScope(context, activeRunFor(context.procedures, payload.runId).scope)
+    assertDocumentScope(context, document, activeRunFor(context.procedures, payload.runId).scope)
     return [{
       ...base(context), type: 'procedure.step.updated', runId: payload.runId, stepId: payload.stepId,
       update: {

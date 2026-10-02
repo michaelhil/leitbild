@@ -82,10 +82,12 @@ export const procedureBranchActionText = (config: {
   }
 
   if (config.branch.targetKind === 'procedure') {
-    const targetStep = config.targetDocument ? procedureFirstStep(config.targetDocument) : null
+    const targetStep = config.targetDocument ? config.branch.targetStepId
+      ? procedureStepById(config.targetDocument, config.branch.targetStepId)
+      : procedureFirstStep(config.targetDocument) : null
     return targetStep && config.targetDocument
       ? `Go to ${procedureStepReferenceText(config.targetDocument, targetStep)}`
-      : `Go to ${config.branch.target}, step 1`
+      : `Go to ${config.branch.target}, step ${config.branch.targetStepId ?? '1'}`
   }
 
   return config.branch.target

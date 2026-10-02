@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, SimulationRunEvent, SimulationRunId, EventId, IsoTimestamp, ObjectId, ProcedureDocument } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, SimulationRunEvent, SimulationRunId, EventId, IsoTimestamp, ObjectId, ProcedureDocument, OperationalObject } from '../src/core/model/index.ts'
 import { nowIso } from '../src/core/model/index.ts'
 import { createSimulationRunStateStore } from '../src/core/simulation-runs/state-store.ts'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
@@ -76,6 +76,97 @@ const unitBScope = {
 } as const
 
 describe('procedure system', () => {
+  test('owner applicability is checked against current target at serialized commit, not stale preparation', async () => {
+    const command: CommandEnvelope = { id: 'command:applicability' as CommandEnvelope['id'], simulationRunId: 'test' as SimulationRunId,
+      actorId: 'operator:test' as ActorId, kind: 'world.procedure.run.start', targetObjectIds: [], issuedAt: nowIso(),
+      payload: { sourceId: source.sourceId, sourceRevision: source.revision, procedureId: 'E-0', scope: unitAScope } }
+    // Test-only minimal target isolates the owner boundary from physical mechanics.
+    const target = { id: 'halden-unit-a', packId: 'process-plant', packData: { model: 'expected' } } as unknown as OperationalObject
+    const commit = await prepareProcedureCommand({ command, procedures: undefined, readDocument: async () => parseFixture(),
+      assertTargetApplicable: (_document, object) => {
+        if ((object.packData as { model: string }).model !== 'expected') throw new Error('owner rejected changed model')
+      } })
+    let seq = 0
+    const context = { simulationRunId: command.simulationRunId, at: command.issuedAt, procedures: undefined,
+      objectIds: new Set([target.id]), factory: { eventId: () => `event:${++seq}` as EventId, nextSeq: () => seq } }
+    expect(() => commit!({ ...context, objects: new Map([[target.id, { ...target, packData: { model: 'changed' } }]]) })).toThrow('changed model')
+    expect(seq).toBe(0)
+    expect(() => commit!({ ...context, objects: new Map() })).toThrow('target unavailable')
+    expect(commit!({ ...context, objects: new Map([[target.id, target]]) })).toHaveLength(1)
+  })
+  test('cross-procedure step entry selects exact pinned destination, preserves resumed history, rejects races and missing destinations atomically', async () => {
+    let seq = 0
+    const simulationRunId = 'step-destination-test' as SimulationRunId
+    const at = nowIso()
+    const store = createSimulationRunStateStore()
+    store.hydrate({ objects: [], seq: 0 })
+    const origin = parseProcedureMarkdown({ source, sourcePath: 'P.md', sourceUrl: '/wiki?path=P.md', rawMarkdown:
+      e0Fixture.replace('[[FR-S.1]]', '[[N4#abnormal-coast]]') })
+    const target = parseProcedureMarkdown({ source, sourcePath: 'N4.md', sourceUrl: '/wiki?path=N4.md', rawMarkdown:
+      e0Fixture.replace('procedure-id: E-0', 'procedure-id: N4').replace('[id: verify-turbine-trip]', '[id: abnormal-coast]').replace('- Verified → END', '- Return → [[E-0]]') })
+    const readDocument = async (input: { procedureId: string; sourceRevision: string }) => {
+      expect(input.sourceRevision).toBe(source.revision)
+      return input.procedureId === 'E-0' ? origin : target
+    }
+    const base = { id: 'command:test' as CommandEnvelope['id'], simulationRunId, actorId: 'actor:test' as ActorId,
+      targetObjectIds: [], issuedAt: at }
+    const factory = { eventId: () => `event:${++seq}` as EventId, nextSeq: () => seq }
+    const run = (id: string) => store.snapshot().procedures!.runs.find(run => run.procedureId === id)!
+    const execute = async (command: CommandEnvelope) => {
+      const events = await procedureCommandEvents({ simulationRunId, at, command, factory, procedures: store.snapshot().procedures, readDocument })
+      for (const event of events!) store.apply(event)
+      return events!
+    }
+    await execute({ ...base, kind: 'world.procedure.run.start', payload: { sourceId: source.sourceId, sourceRevision: source.revision, procedureId: 'E-0', scope: unitAScope } })
+    const transition = (): CommandEnvelope => ({ ...base, kind: 'world.procedure.run.transition', payload: { runId: run('E-0').runId, stepId: 'verify-reactor-trip', branchIndex: 1 } })
+    const transferred = await execute(transition())
+    expect(run('N4').currentStepId).toBe('abnormal-coast')
+    expect(transferred.find(event => event.type === 'procedure.branch.selected')).toMatchObject({ target: 'N4', targetStepId: 'abnormal-coast' })
+    await execute({ ...base, kind: 'world.procedure.step.update', payload: { runId: run('N4').runId, stepId: 'verify-reactor-trip', assessment: 'complete', currentStepId: 'verify-reactor-trip' } })
+    await execute({ ...base, kind: 'world.procedure.run.transition', payload: { runId: run('N4').runId, stepId: 'abnormal-coast', branchIndex: 0 } })
+    const prepare = await prepareProcedureCommand({ command: transition(), procedures: store.snapshot().procedures, readDocument })
+    const oldHistory = run('N4').stepStates
+    await execute(transition())
+    expect(run('N4').status).toBe('active')
+    expect(run('N4').currentStepId).toBe('abnormal-coast')
+    expect(run('N4').stepStates.find(step => step.stepId === 'verify-reactor-trip')?.assessment).toBe('complete')
+    expect(oldHistory.find(step => step.stepId === 'verify-reactor-trip')?.assessment).toBe('complete')
+    // Independent copy/restore retains the selected branch and destination.
+    const copied = createSimulationRunStateStore(); copied.hydrate(store.snapshot())
+    expect(copied.snapshot().procedures).toEqual(store.snapshot().procedures)
+    const context = { simulationRunId, at, factory, procedures: store.snapshot().procedures, objectIds: new Set(['halden-unit-a']) }
+    expect(() => prepare!(context)).toThrow() // Source/destination changed after asynchronous preparation.
+    const fresh = { ...store.snapshot().procedures!, runs: store.snapshot().procedures!.runs.map(run => run.procedureId === 'E-0' ? { ...run, status: 'active' as const } : run) }
+    const before = store.snapshot().procedures
+    await expect(prepareProcedureCommand({ command: transition(), procedures: fresh,
+      readDocument: async input => input.procedureId === 'E-0' ? origin : { ...target, steps: target.steps.filter(step => step.id !== 'abnormal-coast') } })).rejects.toThrow('does not contain destination step')
+    expect(store.snapshot().procedures).toEqual(before)
+  })
+  test('uninstalled engineering procedures cannot start, resume, or be entered by a live transition', async () => {
+    let seq = 0
+    const simulationRunId = 'uninstalled-procedure-test' as SimulationRunId
+    const at = nowIso()
+    const command: CommandEnvelope = { id: 'command:start' as CommandEnvelope['id'], simulationRunId,
+      actorId: 'actor:operator' as ActorId, kind: 'world.procedure.run.start', targetObjectIds: [], issuedAt: at,
+      payload: { sourceId: source.sourceId, sourceRevision: source.revision, procedureId: 'E-0', scope: unitAScope } }
+    const common = { simulationRunId, at, command, procedures: undefined,
+      factory: { eventId: () => `event:${++seq}` as EventId, nextSeq: () => seq } }
+    const uninstalled = { ...parseFixture(), annotations: { 'runtime-bindings': 'uninstalled' } }
+    await expect(procedureCommandEvents({ ...common, readDocument: async () => uninstalled })).rejects.toThrow('uninstalled runtime bindings')
+    const events = await procedureCommandEvents({ ...common, readDocument: async () => parseFixture() })
+    const store = createSimulationRunStateStore()
+    store.hydrate({ objects: [], seq: 0 })
+    for (const event of events!) store.apply(event)
+    const run = store.snapshot().procedures!.runs[0]!
+    const transition = { ...command, kind: 'world.procedure.run.transition' as const,
+      payload: { runId: run.runId, stepId: 'verify-reactor-trip', branchIndex: 1 } }
+    const before = store.snapshot().procedures
+    await expect(procedureCommandEvents({ ...common, command: transition, procedures: before,
+      readDocument: async input => input.procedureId === 'E-0' ? parseFixture() : { ...uninstalled, procedureId: input.procedureId } })).rejects.toThrow('uninstalled runtime bindings')
+    expect(store.snapshot().procedures).toEqual(before)
+    await expect(procedureCommandEvents({ ...common, command: transition, procedures: before,
+      readDocument: async () => uninstalled })).rejects.toThrow('uninstalled runtime bindings')
+  })
   test('rejects missing and unsupported procedure formats', () => {
     expect(() => parseProcedureMarkdown({
       source,

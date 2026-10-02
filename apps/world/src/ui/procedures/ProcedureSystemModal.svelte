@@ -2,7 +2,7 @@
   import { BookOpen, Bug, Check, ChevronLeft, ChevronRight, ExternalLink, HelpCircle, MessageSquare, Play, RefreshCw, Star, X } from 'lucide-svelte'
   import { tick, untrack } from 'svelte'
   import type { ProcedureSession } from './procedure-session.ts'
-  import { procedureViewKey, procedureCategories, procedureStepItems, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureObservationBasis, procedureSourceEvidenceRequest } from './procedure-view.ts'
+  import { procedureViewKey, procedureCategories, procedureStepItems, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest } from './procedure-view.ts'
   import type {
     SimulationRunId,
     ObjectId,
@@ -698,7 +698,8 @@
       })
       if (disposed || request !== latestProcedureLoadRequest) return
       const targetRun = procedureRunFor(runs, { sourceId: targetProcedure.source.sourceId, procedureId: targetProcedure.procedureId, scope: currentScope })
-      const targetStep = targetRun && (targetRun.status === 'active' || targetRun.status === 'transferred')
+      const targetStep = branch.targetStepId !== undefined ? procedureStepById(targetProcedure, branch.targetStepId)
+        : targetRun && (targetRun.status === 'active' || targetRun.status === 'transferred')
         && targetRun.sourceRevision === targetProcedure.source.revision && targetRun.sourcePath === targetProcedure.sourcePath
         ? procedureCurrentStep(targetRun, targetProcedure)?.step
         : procedureFirstStep(targetProcedure)
@@ -1350,13 +1351,13 @@
                       </div>
                       {#if observation}
                         <details class="procedure-observation">
-                          <summary>Automatic authored check: {observation.result.status} · simulation time {observation.simulationTime}</summary>
+                          <summary>{procedureObservationLabel(observation.result)}: {observation.result.status} · acquired at simulation time {observation.simulationTime}</summary>
                           {#if observation.result.reason}<p>{observation.result.reason}</p>{/if}
                           <p>{@render procedureText(procedureObservationBasis(observation.result), [])}</p>
                           {#each procedureObservationEvidence(observation.result) as evidence}
                             <p><b>{evidence.label}</b>: {evidence.value} · criterion {evidence.criterion} · {evidence.status}{evidence.reason ? ` · ${evidence.reason}` : ''}</p>
                           {/each}
-                          <small>Authored comparison of runtime model values; instrumentation validity is not established. Last acquisition shown in simulation time. Human placekeeping remains separately recorded.</small>
+                          <small>{procedureObservationLabel(observation.result) === 'Model comparison' ? 'Comparison of runtime model values; instrumentation validity is not established. ' : ''}Last acquisition shown in simulation time, not proof that evidence remains current. Human placekeeping remains separately recorded.</small>
                         </details>
                       {/if}
                       {#if commentOpen[draftKey(step.id)]}

@@ -78,6 +78,11 @@ export const procedureObservationBasis = (result: Record<string, unknown>): stri
   return [basis.description, source].filter(value => typeof value === 'string').join(' — ')
 }
 
+export const procedureObservationLabel = (result: Record<string, unknown>): 'Model comparison' | 'Read-only observation' => {
+  const basis = typeof result.basis === 'object' && result.basis !== null ? result.basis as Record<string, unknown> : {}
+  return basis.qualification === 'authored-comparison' ? 'Model comparison' : 'Read-only observation'
+}
+
 export const procedureTextSegments = (text: string, tagIds: readonly string[], sourceUrl?: string): ReadonlyArray<ProcedureTextSegment> => {
   const allowed = new Set(tagIds)
   const segments: ProcedureTextSegment[] = []
