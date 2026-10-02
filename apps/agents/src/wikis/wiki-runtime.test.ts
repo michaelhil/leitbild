@@ -5,7 +5,6 @@ import { createAgentPackDescriptor, parsePackManifest } from '../packs/manifest.
 import { buildToolSupport } from '../agents/spawn.ts'
 import { SYSTEM_SENDER_ID } from '../core/types/constants.ts'
 import { getBundledRoomDefinition } from '../core/definitions/room-definition-catalog.ts'
-import { PWR_OPS_TOOLS } from '../packs/pwr-ops/index.ts'
 
 const originalFetch = globalThis.fetch
 afterEach(() => { globalThis.fetch = originalFetch })
@@ -35,7 +34,6 @@ test('real Workspace registration reads only current active reference Packs thro
   const definition = getBundledRoomDefinition('leitbild-assistant')!
   expect(definition.room.packs).toEqual([])
   expect(definition.room.agents[0]!.tools).toContain('wiki_lookup')
-  expect(PWR_OPS_TOOLS.some(tool => tool.name === 'wiki_lookup')).toBe(false)
   const support = await buildToolSupport(['wiki_lookup'], system.toolRegistry,
     { id: 'reader', name: 'Reader' }, system.llm, id => system.rooms.getRoom(id))
   const invoke = async (arguments_: Record<string, unknown>, roomId = room.profile.id) =>

@@ -5,7 +5,7 @@ import { BUNDLED_PACKS, getBundledPack } from './bundled.ts'
 
 describe('BUNDLED_PACKS', () => {
   test('contains only real compiled Agent Packs', () => {
-    expect(BUNDLED_PACKS.map(pack => pack.manifest.descriptor.id)).toEqual(['demos', 'pwr-ops'])
+    expect(BUNDLED_PACKS.map(pack => pack.manifest.descriptor.id)).toEqual(['demos'])
   })
 
   test('every entry has the expected shape', () => {
@@ -18,8 +18,8 @@ describe('BUNDLED_PACKS', () => {
   })
 
   test('getBundledPack lookup', () => {
-    expect(getBundledPack('pwr-ops')?.manifest.descriptor.id).toBe('pwr-ops')
-    expect(getBundledPack('pwr-ops')?.manifest.wikis[0]?.source?.org).toBe('samsinn-wikis')
+    expect(getBundledPack('demos')?.manifest.descriptor.id).toBe('demos')
+    expect(getBundledPack('pwr-ops')).toBeUndefined()
     expect(getBundledPack('nope')).toBeUndefined()
   })
 })

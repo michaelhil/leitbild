@@ -56,7 +56,7 @@ const nativeCallsToToolCalls = (native: ReadonlyArray<NativeToolCall>, round: nu
 // === Tool result injection ===
 //
 // No artificial cap on tool result size. Fence-emitting tools
-// (procedure_lookup, norway_platforms, the map/mermaid/
+// (norway_platforms, the map/mermaid/
 // geojson tools) routinely produce 5-50 KB payloads that MUST reach the
 // model intact — truncating mid-fence breaks the renderer downstream.
 // If a tool genuinely returns runaway output, fix the tool; do not paper
@@ -68,7 +68,7 @@ const nativeCallsToToolCalls = (native: ReadonlyArray<NativeToolCall>, round: nu
 // would add `"..."` quote-wrapping and escape every newline as `\n`,
 // forcing the model to mentally unescape before pasting). This is the
 // single most-impactful fix for fence-emitting tools like norway_platforms
-// and procedure_lookup: the fence reaches the model with real newlines
+// and diagram tools: the fence reaches the model with real newlines
 // and no escape clutter.
 //
 // Object/array results stay compact. Pretty-printing is a Client concern;

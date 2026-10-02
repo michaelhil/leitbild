@@ -447,8 +447,8 @@ describe('list_packs', () => {
       skills: string[]
     }>
 
-    expect(data.map(pack => pack.id)).toEqual(['demos', 'pwr-ops', 'atc'])
-    expect(data.map(pack => pack.deployment)).toEqual(['bundled', 'bundled', 'installed'])
+    expect(data.map(pack => pack.id)).toEqual(['demos', 'atc'])
+    expect(data.map(pack => pack.deployment)).toEqual(['bundled', 'installed'])
 
     // The installed pack reports its own tools/skills correctly.
     const atc = data.find(pack => pack.id === 'atc')!

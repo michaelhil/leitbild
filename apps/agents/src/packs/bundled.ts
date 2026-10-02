@@ -1,6 +1,5 @@
 import type { Tool } from '../core/types/tool.ts'
 import { createAgentPackDescriptor } from './manifest.ts'
-import { PWR_OPS_MANIFEST } from './pwr-ops/manifest.ts'
 import type { PackManifest } from './types.ts'
 
 export interface BundledPack {
@@ -29,10 +28,6 @@ export const BUNDLED_PACKS: ReadonlyArray<BundledPack> = [
       uiExtensions: [],
     },
     loadTools: async () => (await import('./synthetic-demos/tools/index.ts')).BUNDLED_DEMO_TOOLS,
-  },
-  {
-    manifest: PWR_OPS_MANIFEST,
-    loadTools: async () => (await import('./pwr-ops/index.ts')).PWR_OPS_TOOLS,
   },
 ]
 

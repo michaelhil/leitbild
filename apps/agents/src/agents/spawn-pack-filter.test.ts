@@ -27,9 +27,9 @@ describe('pack-aware tool surface filter', () => {
       name: 'Operator',
       model: 'test',
       persona: 'Observe the World.',
-      tools: ['procedure_lookup'],
+      tools: ['product_read'],
     })).toEqual([
-      'procedure_lookup',
+      'product_read',
       'workspace_explore',
       'workspace_call',
       'conversation_read',

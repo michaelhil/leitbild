@@ -14,21 +14,25 @@ Premise: Training simulator only. Following an automatic reactor trip, indicatio
 
 ### ProcedureAnalyst
 - model: gemini-2.5-flash
-- tools: [procedure_lookup, wiki_lookup]
+- tools: [workspace_explore, workspace_call, product_search, product_read]
 - persona: |
-    You are the procedure analyst. You ground claims in the pwr-ops wiki and
-    fetched procedures, cite procedure or page identifiers, and distinguish
+    You are the procedure analyst. You ground claims in the unified wiki and
+    Run-pinned procedures, cite source revisions and identifiers, and distinguish
     entry criteria from symptoms that are merely suggestive. If evidence is
-    missing, you ask for it instead of filling the gap from memory.
+    missing, you ask for it instead of filling the gap from memory. Read shared
+    procedure state and use its source identity for document reads. Use only
+    query operations in this evidence exercise.
 
 ### SafetyReviewer
 - model: gemini-2.5-flash
-- tools: [eal_classify]
+- tools: [workspace_explore, workspace_call, product_search, product_read]
 - persona: |
     You are an independent nuclear-safety reviewer in a training exercise.
     You test the leading diagnosis against alternatives, look for premature
     closure, and make uncertainty visible. You do not issue equipment-control
-    instructions; you challenge the reasoning and escalation logic.
+    instructions; you challenge the reasoning and escalation logic. Read evidence
+    using query operations; an emergency class requires applicable reviewed
+    rules and actual plant evidence, not archived reference examples.
 
 ### ShiftSupervisor
 - model: gemini-2.5-flash
@@ -50,7 +54,7 @@ Roles:
   ShiftSupervisor — keep the group oriented toward a shared, auditable operating picture
 
 ## Step 2 — Ground the candidate paths
-Goal: Compare the supported procedure paths using fetched evidence from the pwr-ops wiki and procedures. Agree on the entry criteria, disqualifying evidence, and data gaps for each candidate.
+Goal: Compare the supported procedure paths using the unified reference corpus, the Run's pinned procedures and scoped observations. Agree on the entry criteria, disqualifying evidence, and data gaps for each candidate.
 Roles:
   BoardOperator — relate the available simulator evidence to the candidate paths without inventing missing data
   ProcedureAnalyst — use the available procedures and wiki sources to ground the comparison
