@@ -1,4 +1,6 @@
 import { marked, Renderer } from 'marked'
+import { isProcedureMarkdown } from '@leitbild/procmd'
+import { renderProcedurePage } from './wiki-procedure.ts'
 import {
   markdownBody,
   type KnowledgeHeading,
@@ -48,5 +50,24 @@ export const renderWiki = (
     lang === 'mermaid'
       ? `<div class="wiki-diagram"><pre class="mermaid">${escapeHtml(text)}</pre></div>`
       : `<pre><code>${escapeHtml(text)}</code></pre>`
+  if (isProcedureMarkdown(document.content)) return renderProcedurePage(
+    document.content, document.headings,
+    (text, lineOffset = 0) => {
+      const body = markdownBody(text), fragment = marked.lexer(body)
+      let cursor = 0
+      for (const token of fragment) {
+        const start = body.indexOf(token.raw, cursor)
+        cursor = start + token.raw.length
+        if (token.type === 'heading') {
+          const line = lineOffset + body.slice(0, start).split('\n').length
+          const heading = document.headings.find(candidate => candidate.line === line)
+          if (heading) anchors.set(token, heading.anchor)
+        }
+      }
+      return marked.parser(fragment, { renderer })
+    },
+    text => marked.parseInline(text, { renderer, async: false }),
+    escapeHtml,
+  )
   return marked.parser(blocks, { renderer })
 }

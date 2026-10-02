@@ -673,6 +673,7 @@
   article {
     line-height: 1.8;
     font-size: 0.97rem;
+    container-type: inline-size;
   }
   article :global(h1) {
     font-size: 2.25rem;
@@ -754,6 +755,90 @@
   article :global(.wiki-diagram) {
     overflow: auto;
     margin: 1.6rem 0;
+  }
+  article :global(.procedure-step) {
+    border-top: 1px solid #dce5df;
+    padding-top: 1rem;
+    margin-top: 1.8rem;
+    line-height: 1.5;
+  }
+  article :global(.procedure-step h2) {
+    margin: 0 0 1rem;
+    font-size: 1.15rem;
+  }
+  article :global(.procedure-columns) {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: 1.5rem;
+  }
+  article :global(.procedure-responses) {
+    border-left: 1px solid #dce5df;
+    padding-left: 1.2rem;
+  }
+  article :global(.procedure-instruction) {
+    margin-bottom: 0.8rem;
+  }
+  article :global(.procedure-instruction > strong) {
+    display: block;
+    font-size: 0.76rem;
+    color: #526358;
+  }
+  article :global(.procedure-instruction > p) {
+    margin: 0.2rem 0 0;
+  }
+  article :global(.procedure-caution) {
+    border-left: 3px solid #ac762c;
+    background: #faf4e8;
+    padding: 0.6rem 0.8rem;
+  }
+  article :global(.procedure-routes h3) {
+    font-size: 0.8rem;
+    margin: 1rem 0 0.4rem;
+    color: #526358;
+  }
+  article :global(.procedure-routes ul) {
+    margin: 0;
+    padding-left: 1.2rem;
+  }
+  article :global(.procedure-routes li) {
+    margin: 0.4rem 0;
+  }
+  article :global(.procedure-outcome) {
+    color: #526358;
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+  article :global(.procedure-rationale) {
+    margin: 0.1rem 0;
+    font-size: 0.86rem;
+    color: #526358;
+  }
+  article :global(.procedure-basis),
+  article :global(.procedure-reference) {
+    margin: 1rem 0;
+    font-size: 0.86rem;
+  }
+  article :global(.procedure-basis summary),
+  article :global(.procedure-reference summary) {
+    cursor: pointer;
+    color: #146747;
+  }
+  article :global(.procedure-applicability),
+  article :global(.procedure-reader-notice) {
+    font-size: 0.82rem;
+    color: #526358;
+    line-height: 1.5;
+  }
+  @container (max-width: 640px) {
+    article :global(.procedure-columns) {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.5rem;
+    }
+    article :global(.procedure-responses) {
+      border-left: 0;
+      border-top: 1px solid #dce5df;
+      padding: 0.8rem 0 0;
+    }
   }
   .explore {
     border-top: 1px solid #dde7df;
