@@ -1,4 +1,5 @@
 import {describe,it,expect} from 'bun:test'
+import {occupiedRackClearance} from './reference-design-fuel-transfer'
 import {parseTransferGates,transferGateMotor,gateColumnTraction,heldGateTravel,transferGateChecks,transferGateFixture,parseTransferAttachment,transferToolTorsion,transferToolHand,transferJointTrial,transferAxialTrial,transferJawMotion,transferBodyRotation,transferReconnectionCoordinates,parseManualBankServo,manualBankMeanRate} from './reference-design-fuel-transfer'
 const record={width_m:.6,thickness_m:.02,steelDensity_kg_m3:7920,top_m:14,sills_m:[4,3.5],stroke_m:.6,
  speedScale_m_s:.05,motorForce_N:20000,motiveDuty_W:2000,driveEfficiency:.8,electronicsDuty_W:20,
@@ -61,6 +62,13 @@ const attachment={stubLength_m:.055,lugBottom_m:2.45,lugHeight_m:.01,lugInnerRad
  padRadialInner_m:1.89,padRadialOuter_m:1.9,padArcWidth_m:.01,padHeight_m:.01,tipRadius_m:1.875},
  a=parseTransferAttachment('```reference-transfer-attachment\n'+JSON.stringify(attachment)+'\n```')
 describe('actual separated stem, shaft and unilateral body joint',()=>{
+ it('counts the retained spider above the seated assembly during overflight',()=>{
+  const c={spiderBottom_m:2.4,spiderHeight_m:.1},h={poolFloor_m:-.75,seatedBottom_m:-2.25,transferBottom_m:4.25}
+  expect(occupiedRackClearance(c,h,4.65)).toEqual({occupiedParcelTop_m:4,clearance_m:.25})
+  expect(()=>occupiedRackClearance(c,{...h,poolFloor_m:-.74},4.65)).toThrow('clearance')
+  expect(()=>occupiedRackClearance({...c,spiderHeight_m:.11},h,4.65)).toThrow('clearance')
+  expect(()=>occupiedRackClearance(c,h,4.8)).toThrow('clearance')
+ })
  it('reconnection preserves reference offset and distinguishes slipped travel from joint closure',()=>{
   const c={collarBottoms_m:[8.05,8.35],collarHeight_m:.1},q={referenceAtRequest_m:0,reference_m:0,stemDisplacement_m:-.04,
    bodyDisplacement_m:0,headDisplacement_m:0,requestedAdvance_m:.04},initial=transferReconnectionCoordinates(a,c,q)

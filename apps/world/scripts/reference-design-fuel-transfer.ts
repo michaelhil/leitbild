@@ -126,6 +126,13 @@ export function transferJointTrial(b:TransferAttachment,q:{gap_m:number,force_N:
  return {aligned,axialForce_N:force,magneticDemand_N:magneticDemand,slipHeat_W:slipHeat,keyResistance_N_m:keyResistance,keyHeat_W:keyHeat,
   ordinaryRotationNotBlocked:Math.abs(q.torque_N_m)>=keyResistance}
 }
+export function occupiedRackClearance(c:Pick<ControlAbsorber,'spiderBottom_m'|'spiderHeight_m'>,
+ h:Pick<ReturnType<typeof parseFuelHandling>,'poolFloor_m'|'seatedBottom_m'|'transferBottom_m'>,fullLength_m:number){
+ const top=h.poolFloor_m+Math.max(fullLength_m,c.spiderBottom_m+c.spiderHeight_m-h.seatedBottom_m)
+ const clearance=h.transferBottom_m-top
+ if(!Number.isFinite(clearance)||clearance<.25)throw Error('complete occupied rack parcel clearance below selected 0.25 m')
+ return {occupiedParcelTop_m:top,clearance_m:clearance}
+}
 export function transferAttachmentChecks(b:TransferAttachment,c:ControlAbsorber,f:ReturnType<typeof parseFuelConstruction>,h:ReturnType<typeof parseFuelHandling>){
  const geometry=controlAbsorberGeometry(c,f,h),fuel=fuelHandlingChecks(h,f),checks:{name:string,value?:number}[]=[],
   require=(name:string,ok:boolean,value?:number)=>{if(!ok)throw Error(name);checks.push({name,...(value===undefined?{}:{value})})},
@@ -162,6 +169,8 @@ export function transferAttachmentChecks(b:TransferAttachment,c:ControlAbsorber,
  require('finite shaft rotary and elastic stocks',toolInertia>0&&torsion.strain_J>0,torsion.strain_J)
  require('manual force-speed work paid',b.handTorque_N_m*b.handRate_rad_s<=b.handPower_W)
  require('short FA cluster fits actual gate top',fuel.assembly.transferTop_m+c.spiderHeight_m<14)
+ const rackClearance=occupiedRackClearance(c,h,fuel.assembly.fullLength_m)
+ require('complete occupied rack parcel overflight',rackClearance.clearance_m>=.25,rackClearance.clearance_m)
  require('actual tool fits gate and rack interior',b.toolHeadWidth_m<.6&&b.toolHeadWidth_m<h.rackSleeveSide_m-2*(2*h.rackSkin_m+fuel.rack.matrixThickness_m))
  require('actual central source remains outside all tool contacts',b.toolCentralClearance_m>h.sourceThimbleDiameter_m&&b.toolCentralClearance_m<b.toolHeadWidth_m)
  require('actual lifted tool head fits gate top',fuel.assembly.transferTop_m+b.toolHeadBottomAboveFA_m+b.toolHeadHeight_m<14)

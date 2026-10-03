@@ -101,6 +101,10 @@ export function fuelHandlingChecks(b:ReturnType<typeof parseFuelHandling>,f:Retu
  require('transfer clears actual well and receiving floors',b.transferBottom_m>Math.max(b.wellFloor_m,b.canalFloor_m,b.poolFloor_m),b.transferBottom_m-Math.max(b.wellFloor_m,b.canalFloor_m,b.poolFloor_m))
  require('actual active-fuel transfer cover',b.surface_m-transferActiveTop>=b.minimumActiveCover_m,b.surface_m-transferActiveTop)
  require('whole assembly remains immersed in original preparation',b.surface_m>transferTop,b.surface_m-transferTop)
+ const seatedRackTop=b.poolFloor_m+fullLength,rackPanelTop=b.poolFloor_m+b.bottomFittingLength_m+active
+ require('horizontal transfer clears complete occupied rack FA by at least 0.25m',b.transferBottom_m-seatedRackTop>=.25,b.transferBottom_m-seatedRackTop)
+ require('horizontal transfer clears fixed rack panels',b.transferBottom_m>rackPanelTop,b.transferBottom_m-rackPanelTop)
+ require('rack descent stays within already required core hoist reach',b.poolFloor_m>=b.seatedBottom_m,b.poolFloor_m-b.seatedBottom_m)
  require('dry loaded hoist force is finite and sufficient',mass_kg*b.gravity_m_s2<b.hoistForce_N,mass_kg*b.gravity_m_s2)
  require('paid nominal lift work fits selected supply',mass_kg*b.gravity_m_s2*b.motionSpeed_m_s<b.hoistPower_W)
  const sourceActiveVolume=Math.PI*st*st*active,

@@ -11,7 +11,7 @@ const fixture={slotRadiusSquared:61,supportRadius_m:1.85,bottomFittingLength_m:.
  topFittingLength_m:.15,topFitting_kg:10,guideInnerDiameter_m:.011,seatedBottom_m:-2.25,
  transferBottom_m:4.25,surface_m:14,minimumActiveCover_m:5,sourceThimbleDiameter_m:.006,
  sourceThimbleBottom_m:-3.5,sourceThimbleTop_m:2.5,sourceCapsule_m:-1,wellArea_m2:25,
- wellFloor_m:4,canalWidth_m:1,canalLength_m:6,canalFloor_m:3.5,poolSide_m:10,poolFloor_m:3.5,
+ wellFloor_m:4,canalWidth_m:1,canalLength_m:6,canalFloor_m:3.5,poolSide_m:10,poolFloor_m:-.75,
  rackSide:14,rackPitch_m:.5,rackSleeveSide_m:.3,rackSkin_m:.0005,panelB10_kg_m2:.2,
  b4cDensity_kg_m3:2500,b10AtomFraction:.199,b10MolarMass_kg_mol:.010012937,b4cMolarMass_kg_mol:.055255,
  hoistForce_N:10000,hoistPower_W:5000,motionSpeed_m_s:.05,gravity_m_s2:9.80665}
@@ -31,6 +31,8 @@ describe('finite fuel geometry and allocation',()=>{
   expect(()=>fuelHandlingChecks({...basis,sourceThimbleDiameter_m:.012},fuel)).toThrow('thimble')
   expect(()=>fuelHandlingChecks({...basis,surface_m:12},fuel)).toThrow('cover')
   expect(()=>fuelHandlingChecks({...basis,transferBottom_m:3.5},fuel)).toThrow('well')
+  expect(()=>fuelHandlingChecks({...basis,poolFloor_m:3.5},fuel)).toThrow('occupied rack')
+  expect(()=>fuelHandlingChecks({...basis,poolFloor_m:-.5},fuel)).toThrow('occupied rack')
  })
  test('strict consumed record rejects ambiguity',()=>{
   expect(()=>parseFuelHandling(doc+'\n'+doc)).toThrow()

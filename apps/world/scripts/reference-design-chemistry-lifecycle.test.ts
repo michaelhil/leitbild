@@ -48,6 +48,23 @@ test('current native-density comparison includes retained-BLEND restart, not inf
  expect(()=>finiteStockBudget({...s,conditioningVolume_m3:0},992.216352873)).toThrow('crossing')
  expect(()=>finiteStockBudget(s,NaN)).toThrow('density')
 })
+test('supplemental boration is delayed by retained BLEND and is not a scram substitute',()=>{
+ const M=500000, Mb=12*992.216352873, source=4000
+ // Held, equal achieved 5 kg/s exchange: a capacity comparison, not plant transport.
+ const minute=serialMix(M,Mb,1000,1000,source,5*60)
+ const tenMinutes=serialMix(M,Mb,1000,1000,source,5*600)
+ expect(minute.primary-1000).toBeLessThan(.03)
+ expect(tenMinutes.primary-1000).toBeLessThan(2.1)
+ expect(tenMinutes.primary).toBeGreaterThan(minute.primary)
+ // A low-absorber retained donor makes the first response WORSE despite a rich source.
+ expect(serialMix(M,Mb,1000,0,source,300).primary).toBeLessThan(1000)
+ // Preconditioning changes the finite donor; it does not reset it to source composition.
+ const added=5*992.216352873, conditioned=source*added/(Mb+added)
+ expect(conditioned).toBeCloseTo(1176.4705882352941,10)
+ expect(serialMix(M,Mb+added,1000,conditioned,source,300).primary).toBeGreaterThan(1000)
+ // No delivery means no intervention, regardless of a START or source selection.
+ expect(serialMix(M,Mb,1000,1000,source,0)).toEqual({primary:1000,blend:1000})
+})
 const wiki=process.env.LEITBILD_REFERENCE_WIKI,python=process.env.LEITBILD_REFERENCE_PYTHON,current=process.env.LEITBILD_REFERENCE_CURRENT_PARENT_RECEIPT,cold=process.env.LEITBILD_REFERENCE_COLD_PARENT_RECEIPT
 test('source torque and electrical caps retain finite negative-speed brake heat and lost supply',()=>{
  const s=parseChemistryLifecycle(document(fixture)),m={referenceFluidPower_W:420,omega0:300,inertia_kg_m2:.005}
