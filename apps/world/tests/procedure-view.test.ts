@@ -70,7 +70,7 @@ Action: End.
   expect(items.map(item => item.kind === 'branch' ? item.branch.label : item.block.kind)).toEqual([
     'check', 'Not verified', 'action', 'decision', 'caution', 'Verified',
   ])
-  expect(items.map(item => item.primary)).toEqual([true, false, true, true, false, false])
+  expect(items.map(item => item.primary)).toEqual([true, false, true, true, true, false])
   const branches = items.filter(item => item.kind === 'branch')
   expect(branches[0]!.branch).toBe(step.branches[0]!)
   expect(branches[1]!.branch).toBe(step.branches[1]!)
@@ -100,4 +100,28 @@ Action: «RCP» is an example, not an instrument request.
   const example = document.steps[0]!.blocks.find(block => block.kind === 'text')!
   expect(example.tagIds).toEqual([])
   expect(procedureTextSegments(example.text, example.tagIds).every(segment => segment.kind === 'text')).toBe(true)
+})
+
+test('hazards and repeated checks remain in instruction order, separate from failed and unknown responses', () => {
+  const document = parseProcedureMarkdown({ source: procedureTestSource, sourcePath: 'fixture.md', sourceUrl: 'https://example.test/fixture.md', rawMarkdown: `---
+type: procedure
+procedure-md: 0.7
+procedure-id: FIXTURE
+title: Instruction grouping
+---
+## Step 1 [id: first]
+Caution: The receiver has finite capacity.
+Check: Confirm the first prerequisite.
+Check: Confirm the second prerequisite.
+Action: Operate the identified control.
+Note: This indication reports position only.
+Expected: The required response is observed.
+RNO: Retain the failed response.
+Unknown: Retain uncertain evidence.
+` })
+  const items = procedureStepItems(document.steps[0]!)
+  expect(items.filter(item => item.primary).map(item => item.kind === 'block' && item.block.kind))
+    .toEqual(['caution', 'check', 'check', 'action', 'note', 'expected'])
+  expect(items.filter(item => !item.primary).map(item => item.kind === 'block' && item.block.kind))
+    .toEqual(['rno', 'unknown'])
 })

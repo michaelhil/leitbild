@@ -1349,6 +1349,20 @@
                           </div>
                         {/each}
                       </div>
+                      {#if step.assessment}
+                        <details class="procedure-observation">
+                          <summary>Evaluation criteria — authored specification</summary>
+                          <p>Declared evidence and decision rules, not a live assessment or automatic command.</p>
+                          <pre>{JSON.stringify(step.assessment, null, 2)}</pre>
+                        </details>
+                      {/if}
+                      {#if step.observation}
+                        <details class="procedure-observation">
+                          <summary>Read-only observation specification</summary>
+                          <p>The configured query is separate from its latest result and human placekeeping.</p>
+                          <pre>{JSON.stringify(step.observation, null, 2)}</pre>
+                        </details>
+                      {/if}
                       {#if observation}
                         <details class="procedure-observation">
                           <summary>{procedureObservationLabel(observation.result)}: {observation.result.status} · acquired at simulation time {observation.simulationTime}</summary>

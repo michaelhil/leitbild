@@ -3503,6 +3503,7 @@ body.rail-resizing {
 }
 .procedure-observation summary { cursor: pointer; font-weight: 600; }
 .procedure-observation p { margin: 6px 0; overflow-wrap: anywhere; }
+.procedure-observation pre { max-width: 100%; overflow-x: auto; font-size: 12px; }
 
 .procedure-basis-link { display: inline; border: 0; padding: 0; color: #1d4ed8; background: transparent; font: inherit; text-decoration: underline; cursor: pointer; }
 .procedure-confirm.procedure-basis-dialog { width: min(960px, 86vw); max-width: 86vw; max-height: 84vh; overflow: auto; }
