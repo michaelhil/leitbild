@@ -22,8 +22,10 @@ describe('actual FA material surface handoff',()=>{
  test('partial cover and racked below-flange material keep actual recipient',()=>{
   const p=transferRodPatches(handling,fuel,thermal,{x_m:13.5,y_m:0,bottom_m:4.25},[14,14,7.5])
   expect(p[0]!.areas_m2['POOL.LIQUID']).toBeCloseTo(area,10);expect(p[1]!.areas_m2['POOL.LIQUID']).toBeCloseTo(area/2,10);expect(p[1]!.areas_m2['CNV.GAS']).toBeCloseTo(area/2,10)
-  const r=transferRodPatches(handling,fuel,thermal,{x_m:13.5,y_m:0,bottom_m:3.5},[14,14,14])
+  const r=transferRodPatches({...handling,poolFloor_m:-.75},fuel,thermal,{x_m:13.5,y_m:0,bottom_m:-.75},[14,14,14])
   expect(r[0]!.areas_m2['POOL.LIQUID']).toBeCloseTo(area,10);expect(r[0]!.areas_m2['PRIMARY.UPPER']).toBeUndefined()
+  expect(r[1]!.areas_m2['POOL.LIQUID']).toBeCloseTo(area,10)
+  expect(r.every(segment=>Object.keys(segment.areas_m2).every(key=>key==='POOL.LIQUID'))).toBe(true)
  })
  test('unsupported and absent view are not fabricated heat recipients',()=>{
   const p=transferRodPatches(handling,fuel,thermal,{x_m:25,y_m:0,bottom_m:4.25},[14,14,14]);expect(p[0]!.areas_m2.UNADMITTED).toBeCloseTo(area,10)

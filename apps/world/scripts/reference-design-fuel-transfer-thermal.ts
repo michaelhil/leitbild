@@ -119,7 +119,7 @@ for p in b['coldPressures_Pa']:
     nu=max(7.86,.023*re**.8*pr**n);h=nu*k/dh;q=area*h*(tw-tl)
     check('finite signed sensible/contact source',math.isfinite(q) and (q==0 if dt==0 else q*dt>0))
     for factor in b['contactFactors']:
-     qs=factor*q;check('same-area reciprocal source',(-qs)+qs==0)
+     qs=factor*q;check('finite scaled sensible source with unchanged direction',math.isfinite(qs) and (qs==0 if dt==0 else qs*dt>0))
      rows.append(dict(p_Pa=p,liquid_K=tl,wall_K=tw,materialVelocity_m_s=vm,relativeVelocity_m_s=relative,Re=re,Nu=nu,h_W_m2_K=h,contactFactor=factor,segmentHeat_W=qs,wallVapor_kg_s=0))
 # The named source gap helper supplies only its existing actual-T helium conductivity;
 # equal temperatures make this a property check, not an extra fuel/gas transfer.
@@ -132,8 +132,8 @@ for tg in b['coldLiquidTemperatures_K']:
    q=factor*c['plenumInnerArea_m2']*hhe*dt
    qfit=factor*b['fittingContactArea_m2']*b['nonfuelLiquid_h_W_m2_K']*dt
    qfitgas=factor*b['fittingContactArea_m2']*b['nonfuelGas_h_W_m2_K']*dt
-   check('one He/plenum reciprocal contact',math.isfinite(q) and -q+q==0)
-   check('distinct fitting wet/gas signed reciprocal contacts',math.isfinite(qfit+qfitgas) and -qfit+qfit==0 and -qfitgas+qfitgas==0)
+   check('finite positive helium conductance and signed contact',math.isfinite(hhe) and hhe>0 and math.isfinite(q) and (q==0 if dt==0 else q*dt>0))
+   check('finite distinct fitting wet/gas signed contacts',all(math.isfinite(v) and (v==0 if dt==0 else v*dt>0) for v in [qfit,qfitgas]))
    contactRows.append(dict(helium_K=tg,delta_K=dt,factor=factor,kHe_W_m_K=khe,plenum_h_W_m2_K=hhe,HeToPlenum_W=q,fittingWet_W=qfit,fittingGas_W=qfitgas))
 print(json.dumps(dict(kind='held-fuel-transfer-cold-sensible',rows=rows,contactRows=contactRows,checks=checks,CoolProp=CoolProp.__version__),allow_nan=False))
 `
@@ -168,5 +168,6 @@ export async function runTransferThermal(directory:string,python:string){
 }
 if(import.meta.main){
  const [directory,python,output,...rest]=Bun.argv.slice(2);if(!directory||!python||!output||rest.length)throw Error('Usage: fuel-transfer-thermal <ld-01> <research-python> <receipt.json>')
+ if(await Bun.file(output).exists())throw Error('Refusing to overwrite an existing thermal receipt')
  const receipt=await runTransferThermal(directory,python);await Bun.write(output,JSON.stringify(receipt,null,2)+'\n');console.log(JSON.stringify({output,checks:receipt.checks.length,rows:receipt.rows.length,patchCases:receipt.patches.length}))
 }
