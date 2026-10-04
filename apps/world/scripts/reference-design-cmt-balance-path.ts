@@ -20,6 +20,26 @@ export function parseBalancePathBasis(document: string) {
   return b
 }
 const area = (d: number) => Math.PI * d * d / 4
+/** Selected effective liquid screen, not a resolved bore or an all-Re correlation.
+ * The patch uses its whole physical hole diameter, never a diameter inferred from patch area.
+ */
+export function thinScreenFromMass(input: {
+  mass_kg_s: number, donorDensity_kg_m3: number, leftViscosity_Pa_s: number, rightViscosity_Pa_s: number,
+  patchArea_m2: number, wholeHoleDiameter_m: number, Cd: number, Cv: number,
+}) {
+  const { mass_kg_s: m, donorDensity_kg_m3: rho, leftViscosity_Pa_s: muLeft,
+    rightViscosity_Pa_s: muRight, patchArea_m2: A, wholeHoleDiameter_m: D, Cd, Cv } = input
+  if (![m, rho, muLeft, muRight, A, D, Cd, Cv].every(Number.isFinite)
+    || rho <= 0 || muLeft <= 0 || muRight <= 0 || A <= 0 || D <= 0 || Cd <= 0 || Cd > Cv || Cv > 1)
+    throw new Error('Invalid liquid thin-screen arguments')
+  const resistance_Pa_s_m = 6 * Math.PI * ((muLeft + muRight) / 2) / D
+  const superficialVelocity_m_s = m / (rho * A)
+  const viscousHead_Pa = resistance_Pa_s_m * superficialVelocity_m_s
+  const inertialHead_Pa = rho * superficialVelocity_m_s * Math.abs(superficialVelocity_m_s) / (2 * Cd ** 2)
+  return { resistance_Pa_s_m, superficialVelocity_m_s, viscousHead_Pa, inertialHead_Pa,
+    head_Pa: viscousHead_Pa + inertialHead_Pa,
+    emergingVelocity_m_s: (Cv / Cd) * superficialVelocity_m_s }
+}
 /** Same laminar/Colebrook/linear-transition friction selection as the finite outlet reference. */
 export function darcyGradient(m: number, rho: number, mu: number, diameter: number, roughness: number) {
   if (![m, rho, mu, diameter, roughness].every(Number.isFinite) || rho <= 0 || mu <= 0 || diameter <= 0 || roughness < 0 || roughness >= diameter)
@@ -66,7 +86,11 @@ export function checkBalancePath(gb: GeometryBasis, b: BalancePathBasis) {
   }
   const axialBody = bodyDrop(4096), bodyDifference = Math.abs(axialBody - bodyDrop(2048))
   const pipe = darcyGradient(flow, b.hotDensity_kg_m3, b.hotViscosity_Pa_s, b.bore_m, b.roughness_m) * (mainLength + roofLength + feedLength)
-  const holes = (flow / (b.Cd * totalHoles)) ** 2 / (2 * b.hotDensity_kg_m3)
+  // The existing sizing construction is uniformly hot on both sides, not a hot/cold operating prediction.
+  const holeScreen = thinScreenFromMass({ mass_kg_s: flow, donorDensity_kg_m3: b.hotDensity_kg_m3,
+    leftViscosity_Pa_s: b.hotViscosity_Pa_s, rightViscosity_Pa_s: b.hotViscosity_Pa_s,
+    patchArea_m2: totalHoles, wholeHoleDiameter_m: gb.holeDiameter_m, Cd: b.Cd, Cv: b.Cv })
+  const holes = holeScreen.head_Pa
   const balanceRemainder = b.balanceReferenceLoss_Pa - pipe - axialBody - holes
   const Ad = area(b.dviNeckBore_m), fd = b.dviReferenceFlow_kg_s
   const dviPipe = darcyGradient(fd, b.coldDensity_kg_m3, b.coldViscosity_Pa_s, b.dviNeckBore_m, b.roughness_m) * b.dviNeckLength_m
@@ -85,10 +109,13 @@ export function checkBalancePath(gb: GeometryBasis, b: BalancePathBasis) {
   const signedFaces = gb.ringElevations_m.map((z, i) => {
     const m = i === 0 ? gross : i === 2 ? -gross : 0, donorRho = m >= 0 ? b.hotDensity_kg_m3 : b.coldDensity_kg_m3
     const ar = ringArea(gb, z, gb.bodyBottom_m, gb.bodyTop_m)
-    const dp = Math.sign(m) * (m / (b.Cd * ar)) ** 2 / (2 * donorRho)
-    const v = Math.sign(m) * b.Cv * Math.sqrt(2 * Math.abs(dp) / donorRho)
+    const screen = thinScreenFromMass({ mass_kg_s: m, donorDensity_kg_m3: donorRho,
+      leftViscosity_Pa_s: b.hotViscosity_Pa_s, rightViscosity_Pa_s: b.coldViscosity_Pa_s,
+      patchArea_m2: ar, wholeHoleDiameter_m: gb.holeDiameter_m, Cd: b.Cd, Cv: b.Cv })
+    const dp = screen.head_Pa, v = screen.emergingVelocity_m_s
     const Ht = m >= 0 ? hotHt : coldHt, concentration = m >= 0 ? hotB : coldB
-    return { z_m: z, area_m2: ar, mass_kg_s: m, head_Pa: dp, emergingRadialVelocity_m_s: v,
+    return { z_m: z, area_m2: ar, mass_kg_s: m, head_Pa: dp,
+      viscousHead_Pa: screen.viscousHead_Pa, inertialHead_Pa: screen.inertialHead_Pa, emergingRadialVelocity_m_s: v,
       tankEnergy_W: m * Ht, tankBoron_kg_s: m * concentration, advectiveRadialMomentum_N: m * v,
       staticH_J_kg: Ht - 9.80665 * z - v * v / 2,
       kinetic_W: m * v * v / 2 }
@@ -119,6 +146,7 @@ export function checkBalancePath(gb: GeometryBasis, b: BalancePathBasis) {
       massFlowInertance_1_m: (mainLength + roofLength + feedLength) / A,
       hotRiseHead_Pa: b.hotDensity_kg_m3 * 9.80665 * rise },
     balanceSizing: { pipe_Pa: pipe, body_Pa: axialBody, bodyQuadratureDifference_Pa: bodyDifference, holes_Pa: holes,
+      holesViscous_Pa: holeScreen.viscousHead_Pa, holesInertial_Pa: holeScreen.inertialHead_Pa,
       fictionalRemainder_Pa: balanceRemainder, total_Pa: b.balanceReferenceLoss_Pa },
     dviNeck: { length_m: b.dviNeckLength_m, area_m2: Ad, additionalWater_m3: Ad * b.dviNeckLength_m,
       massFlowInertance_1_m: b.dviNeckLength_m / Ad, residenceAtReference_s: Ad * b.dviNeckLength_m * b.coldDensity_kg_m3 / fd,

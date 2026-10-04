@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { parseGeometryBasis, type GeometryBasis } from './reference-design-cmt-geometry.ts'
-import { allocateMeterLoss, checkConnectedMeters, checkBalancePath, darcyGradient, parseBalancePathBasis, type BalancePathBasis } from './reference-design-cmt-balance-path.ts'
+import { allocateMeterLoss, checkConnectedMeters, checkBalancePath, darcyGradient, parseBalancePathBasis, thinScreenFromMass, type BalancePathBasis } from './reference-design-cmt-balance-path.ts'
 
 // Test-only selected inputs: a clean app checkout does not contain the separate wiki repository.
 const geometry: GeometryBasis = { freeWater_m3: 60, bottomDatum_m: 6, top_m: 12,
@@ -18,12 +18,46 @@ const record = (v: unknown) => '```reference-cmt-balance-path\n' + JSON.stringif
 const owner = '```reference-cmt-geometry\n' + JSON.stringify(geometry) + '\n```\n\n' + record(path)
 const g = parseGeometryBasis(owner), b = parseBalancePathBasis(owner)
 
+test('thin screen keeps whole-hole viscous scale, exact zero and signed reversal', () => {
+  const input = { mass_kg_s: .001, donorDensity_kg_m3: 1000, leftViscosity_Pa_s: .001,
+    rightViscosity_Pa_s: .002, patchArea_m2: .01, wholeHoleDiameter_m: .06, Cd: .62, Cv: .98 }
+  const f = thinScreenFromMass(input), reverse = thinScreenFromMass({ ...input, mass_kg_s: -input.mass_kg_s,
+    leftViscosity_Pa_s: input.rightViscosity_Pa_s, rightViscosity_Pa_s: input.leftViscosity_Pa_s })
+  expect(f.resistance_Pa_s_m).toBeCloseTo(6 * Math.PI * .0015 / .06, 14)
+  expect(reverse.head_Pa).toBe(-f.head_Pa)
+  expect(reverse.emergingVelocity_m_s).toBe(-f.emergingVelocity_m_s)
+  expect(f.head_Pa * f.superficialVelocity_m_s).toBeGreaterThan(0)
+  const zero = thinScreenFromMass({ ...input, mass_kg_s: 0 })
+  expect(zero.head_Pa).toBe(0)
+  expect(zero.emergingVelocity_m_s).toBe(0)
+  const halfPatch = thinScreenFromMass({ ...input, mass_kg_s: input.mass_kg_s / 2, patchArea_m2: input.patchArea_m2 / 2 })
+  expect(halfPatch.head_Pa).toBe(f.head_Pa)
+  expect(halfPatch.emergingVelocity_m_s).toBe(f.emergingVelocity_m_s)
+  for (const invalid of [{ wholeHoleDiameter_m: 0 }, { leftViscosity_Pa_s: 0 }, { rightViscosity_Pa_s: NaN },
+    { patchArea_m2: 0 }, { donorDensity_kg_m3: -1 }, { Cd: 1.1 }, { Cv: 1.1 }])
+    expect(() => thinScreenFromMass({ ...input, ...invalid })).toThrow()
+})
+
+test('screen linear limit and inertial jet do not turn viscous loss into extra kinetic energy', () => {
+  const input = { mass_kg_s: 1e-8, donorDensity_kg_m3: 1000, leftViscosity_Pa_s: .001,
+    rightViscosity_Pa_s: .001, patchArea_m2: .01, wholeHoleDiameter_m: .06, Cd: .62, Cv: .98 }
+  const low = thinScreenFromMass(input), high = thinScreenFromMass({ ...input, mass_kg_s: 100 })
+  expect(low.inertialHead_Pa / low.viscousHead_Pa).toBeLessThan(1e-5)
+  expect(high.viscousHead_Pa / high.inertialHead_Pa).toBeLessThan(1e-4)
+  for (const f of [low, high]) {
+    expect(f.emergingVelocity_m_s).toBeCloseTo(input.Cv * Math.sqrt(2 * f.inertialHead_Pa / input.donorDensity_kg_m3), 14)
+    expect(f.emergingVelocity_m_s).toBeLessThan(input.Cv * Math.sqrt(2 * f.head_Pa / input.donorDensity_kg_m3))
+  }
+})
+
 test('selected route preserves BAL allocation and adds common neck once', () => {
   const r = checkBalancePath(g, b)
   expect(r.route.mainLength_m).toBeCloseTo(.95 / (Math.PI * .1 ** 2), 12)
   expect(r.route.mainVolume_m3 + r.route.roofVolume_m3 + r.route.feedVolume_m3 + r.route.bodySegments.reduce((s, x) => s + x.volume_m3, 0)).toBeCloseTo(1, 14)
   expect(r.dviNeck.additionalWater_m3).toBeCloseTo(Math.PI * .1 ** 2, 14)
   expect(r.balanceSizing.fictionalRemainder_Pa).toBeGreaterThan(0)
+  expect(r.balanceSizing.holesViscous_Pa).toBeGreaterThan(0)
+  expect(r.balanceSizing.holes_Pa).toBe(r.balanceSizing.holesViscous_Pa + r.balanceSizing.holesInertial_Pa)
   expect(r.dviNeck.fictionalRemainder_Pa).toBeGreaterThan(0)
   expect(r.nonlinearReceivingQualified).toBe(false)
 })
