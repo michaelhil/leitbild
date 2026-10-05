@@ -22,6 +22,19 @@ const libraries = [
   'libsundials_sunlinsoldense.5.5.0.dylib',
 ];
 
+const axialFields = ['M', 'P', 'E', 'B', 'Q', 'PP', 'TT'] as const;
+/** This candidate allocates only actual cell-owned stocks and thermodynamic coordinates. */
+export function ownedAxialLayout(receiving: readonly boolean[]) {
+  let coordinateCount = 0;
+  const coordinates: { cell: number; field: typeof axialFields[number] }[] = [];
+  const indices = receiving.map((ownsMixing, cell) => axialFields.map(field => {
+    if (field === 'Q' && !ownsMixing) return null;
+    const index = coordinateCount++;
+    coordinates.push({ cell, field });return index;
+  }));
+  return { indices, coordinates, coordinateCount };
+}
+
 function fixtureGeometry(document: string) {
   const b = parseGeometryBasis(document), path = parseBalancePathBasis(document), g = tankGeometry(b);
   const area = Math.PI * path.bore_m ** 2 / 4;
@@ -94,6 +107,7 @@ function fixtureGeometry(document: string) {
 function nativeSource(input: ReturnType<typeof fixtureGeometry>) {
   const rows = input.cells.map(c => `{${[c.V, c.z, c.low, c.high, c.A0, c.A1, c.length,
     c.slope, c.Dh, c.areaSlope, c.tank ? 1 : 0].join(',')}}`).join(',\n');
+  const layout = ownedAxialLayout(input.cells.map(c => c.tank));
   return String.raw`
 ${nativeIf97Primitives}
 #include <ida/ida.h>
@@ -112,6 +126,17 @@ static const auto started=Clock::now();
 static double guard_seconds=100;
 static long checks=0, tuple_calls=0;
 static double last_admitted_time=0,active_weight_factor=0;
+static bool first_step_only=false;
+static std::array<double,8> initial_norm_squares{};
+static double initial_wrms=0,initial_step_from_norm=0;
+void initial_norm_json() {
+    const std::array<const char*,8> names{{"mass","momentum","nativeEnergy","tracer","ownedCmtQ",
+        "algebraicPressure","algebraicTemperature","passiveReceipts"}};
+    std::cout<<"{\"wrmsDerivativePerSecond\":"<<initial_wrms
+        <<",\"defaultFirstStepSeconds\":"<<initial_step_from_norm<<",\"sumSquaredWeightedDerivatives\":{";
+    for(size_t i=0;i<names.size();++i){if(i)std::cout<<",";std::cout<<"\""<<names[i]<<"\":"<<initial_norm_squares[i];}
+    std::cout<<"}}";
+}
 double max_forward_p=0,max_dense_endpoint_p_error=0;
 void require(bool ok,const std::string& message) {
     ++checks;
@@ -119,7 +144,7 @@ void require(bool ok,const std::string& message) {
         throw std::runtime_error("Aggregate native guard exhausted");
     if(!ok)throw std::runtime_error(message);
 }
-constexpr int N=21,S=7,RM=8,D=N*S+3*RM;
+constexpr int N=${input.cells.length},S=7,RM=8,PHYSICAL=${layout.coordinateCount},D=PHYSICAL+3*RM;
 constexpr double gravity=9.80665,holeD=${input.b.holeDiameter_m},Cd=${input.path.Cd},Cv=${input.path.Cv};
 struct Cell {double V,z,lo,hi,A0,A1,length,slope,Dh,dA;bool tank;};
 const std::array<Cell,N> cells{{${rows}}};
@@ -129,6 +154,21 @@ const std::array<std::vector<GeometricNode>,N> geometryNodes{{${input.cells.map(
 const std::array<double,3> rings{{${input.b.ringElevations_m.join(',')}}};
 // Native stocks M/P/E/B/Q are differential; p/T are thermodynamic algebraic coordinates.
 enum {M,P,E,B,Q,PP,TT};
+const std::array<std::array<int,S>,N> coordinateIndex{{${layout.indices.map(indices =>
+    `{${indices.map(index => index ?? -1).join(',')}}`).join(',')}}};
+struct CoordinateOwner {int cell,field;};
+const std::array<CoordinateOwner,PHYSICAL> coordinateOwner{{${layout.coordinates.map(c =>
+    `{${c.cell},${axialFields.indexOf(c.field)}}`).join(',')}}};
+int ix(int cell,int field) {
+    const int index=coordinateIndex.at(cell).at(field);
+    if(index<0)throw std::logic_error("Attempt to address an unowned native coordinate");
+    return index;
+}
+struct CellView {
+    const double* values;int cell;
+    double operator[](int field) const {return values[ix(cell,field)];}
+};
+CellView view(const double* values,int cell){return {values,cell};}
 struct Trace {State s;double velocity,k,concentration,z;};
 struct Flux {double mass,momentum,energy,tracer,mixing;};
 struct Run {long callbacks=0,recoverable=0;std::string failure;double worstM=0,worstE=0,worstB=0;};
@@ -153,7 +193,7 @@ State recover_star(const State& start,double rho,double internal) {
     throw std::runtime_error("Conservative HLLC star has no admitted local liquid recovery");
 }
 Trace trace(const double* y,int i,double z) {
-    const auto& c=cells[i];const double* x=y+i*S;
+    const auto& c=cells[i];const auto x=view(y,i);
     require(x[M]>0&&(!c.tank||x[Q]>=0)&&x[B]>=0,"Negative native liquid or mixing/tracer stock");
     const double p=x[PP]-x[M]/c.V*gravity*(z-c.z);
     return {water(x[TT],p),x[P]/x[M],c.tank?x[Q]/x[M]:0,x[B]/x[M],z};
@@ -246,13 +286,13 @@ const std::array<double,8> gw{{.1012285362903763,.2223810344533745,.313706645877
 std::array<double,D> rates(const double* y) {
     std::array<double,D> out{};
     std::array<State,N> state;std::array<double,N> velocity{},k{},nu{},diff{},tau{},tauPerp{};
-    for(int i=0;i<N;++i){const auto&c=cells[i];const double*x=y+i*S;
+    for(int i=0;i<N;++i){const auto&c=cells[i];const auto x=view(y,i);
         require(x[M]>0&&x[B]>=0&&(!c.tank||x[Q]>=0),"Negative trial native stock");
         state[i]=water(x[TT],x[PP]);velocity[i]=x[P]/x[M];k[i]=c.tank?x[Q]/x[M]:0;
         require(std::abs(velocity[i])<state[i].w,"Native liquid velocity outside subsonic scope");
         // Reconstructed pressure-sidewall/gravity: the actual hydrostatic part cancels M*g exactly.
-        out[i*S+P]=x[PP]*(c.A1-c.A0)-x[M]/c.V*gravity*((c.hi-c.z)*c.A1-(c.lo-c.z)*c.A0);
-        out[i*S+P]+=wall_force(c,state[i],velocity[i]);
+        out[ix(i,P)]=x[PP]*(c.A1-c.A0)-x[M]/c.V*gravity*((c.hi-c.z)*c.A1-(c.lo-c.z)*c.A0);
+        out[ix(i,P)]+=wall_force(c,state[i],velocity[i]);
     }
     for(int i=0;i<N;++i){const auto&c=cells[i];
         int a=std::max(i<13?0:13,i-1),b=std::min(i<13?12:20,i+1);
@@ -280,8 +320,8 @@ std::array<double,D> rates(const double* y) {
             tau[i]+=node.weight*(4./3*(state[i].mu+state[i].rho*nut)*deviator-2./3*state[i].rho*k[i]);
             tauPerp[i]+=node.weight*(-2./3*(state[i].mu+state[i].rho*nut)*deviator-2./3*state[i].rho*k[i]);
         }
-        out[i*S+Q]+=sourceQ*c.V;
-        out[i*S+P]-=tauPerp[i]*(c.A1-c.A0);
+        if(c.tank)out[ix(i,Q)]+=sourceQ*c.V;
+        out[ix(i,P)]-=tauPerp[i]*(c.A1-c.A0);
     }
     auto link=[&](int left,int right){const auto&L=cells[left];const auto&R=cells[right];
         const double z=(L.hi+R.lo)/2;auto l=trace(y,left,z),r=trace(y,right,z);
@@ -290,11 +330,11 @@ std::array<double,D> rates(const double* y) {
         if(step)port=area_port(l,r,L.A1,R.A0);
         else{const auto f=hllc(l,r);port={f.mass*L.A1,f.momentum*L.A1,f.momentum*L.A1,
             f.energy*L.A1,f.tracer*L.A1,f.mixing*L.A1};}
-        out[left*S+M]-=port.mass;out[right*S+M]+=port.mass;
-        out[left*S+P]-=port.leftMomentum;out[right*S+P]+=port.rightMomentum;
-        out[left*S+E]-=port.energy;out[right*S+E]+=port.energy;
-        out[left*S+B]-=port.tracer;out[right*S+B]+=port.tracer;
-        out[left*S+Q]-=port.mixing;out[right*S+Q]+=port.mixing;
+        out[ix(left,M)]-=port.mass;out[ix(right,M)]+=port.mass;
+        out[ix(left,P)]-=port.leftMomentum;out[ix(right,P)]+=port.rightMomentum;
+        out[ix(left,E)]-=port.energy;out[ix(right,E)]+=port.energy;
+        out[ix(left,B)]-=port.tracer;out[ix(right,B)]+=port.tracer;
+        if(L.tank)out[ix(left,Q)]-=port.mixing;if(R.tank)out[ix(right,Q)]+=port.mixing;
         const double distance=(L.length+R.length)/2,A=std::min(L.A1,R.A0);
         // Molecular conduction and actual tracer diffusion are present even for Q=0.
         const double rho=(l.s.rho+r.s.rho)/2,T=(l.s.T+r.s.T)/2,mu=(l.s.mu+r.s.mu)/2;
@@ -304,25 +344,25 @@ std::array<double,D> rates(const double* y) {
         const double Jq=-2*rho*nut*(r.k-l.k)/distance*A;
         const double Db=1.07e-9*(T/298.15)*.0008900224890776955/mu;
         const double Jb=-rho*(Db+kappa)*(r.concentration-l.concentration)/distance*A;
-        out[left*S+E]-=heat+Jq;out[right*S+E]+=heat+Jq;
-        out[left*S+Q]-=Jq;out[right*S+Q]+=Jq;
-        out[left*S+B]-=Jb;out[right*S+B]+=Jb;
+        out[ix(left,E)]-=heat+Jq;out[ix(right,E)]+=heat+Jq;
+        if(L.tank)out[ix(left,Q)]-=Jq;if(R.tank)out[ix(right,Q)]+=Jq;
+        out[ix(left,B)]-=Jb;out[ix(right,B)]+=Jb;
         const double stress=(tau[left]+tau[right])/2*A;
-        out[left*S+P]+=step?tau[left]*L.A1:stress;
-        out[right*S+P]-=step?tau[right]*R.A0:stress;
+        out[ix(left,P)]+=step?tau[left]*L.A1:stress;
+        out[ix(right,P)]-=step?tau[right]*R.A0:stress;
         const double work=step?port.mass/2*(tau[left]/l.s.rho+tau[right]/r.s.rho):
             stress*(l.velocity+r.velocity)/2;
-        out[left*S+E]+=work;out[right*S+E]-=work;
+        out[ix(left,E)]+=work;out[ix(right,E)]-=work;
     };
     for(int i=0;i<12;++i)link(i,i+1);
     for(int i=13;i<20;++i)link(i,i+1);
     // Actual closed mouth/roof/header/body caps: pressure traction, zero material/heat.
     for(int endpoint:{0,13}){const auto t=trace(y,endpoint,cells[endpoint].lo);auto ghost=t;ghost.velocity=-t.velocity;
         const auto f=hllc(ghost,t);require(std::abs(f.mass)<=1e-10&&std::abs(f.energy)<=1e-3,"Reflecting lower cap moved mass/energy");
-        out[endpoint*S+P]+=(f.momentum-tau[endpoint])*cells[endpoint].A0;}
+        out[ix(endpoint,P)]+=(f.momentum-tau[endpoint])*cells[endpoint].A0;}
     for(int endpoint:{12,20}){if(cells[endpoint].A1==0)continue;const auto t=trace(y,endpoint,cells[endpoint].hi);auto ghost=t;ghost.velocity=-t.velocity;
         const auto f=hllc(t,ghost);require(std::abs(f.mass)<=1e-10&&std::abs(f.energy)<=1e-3,"Reflecting upper cap moved mass/energy");
-        out[endpoint*S+P]-=(f.momentum-tau[endpoint])*cells[endpoint].A1;}
+        out[ix(endpoint,P)]-=(f.momentum-tau[endpoint])*cells[endpoint].A1;}
     const double hdatum=water(313.15,15.2e6).h;
     for(int ring=0;ring<3;++ring){const double center=rings[ring],radius=holeD/2;int body=-1;
         for(int i=18;i<21;++i)if(center<cells[i].lo&&center>cells[i].hi)body=i;
@@ -355,14 +395,14 @@ std::array<double,D> rates(const double* y) {
                 require(ex.s>=d.s.s-1e-7&&exit<ex.w,"Aperture entropy/domain failed");
                 const double contracted=std::abs(m)/(ex.rho*exit);
                 require(contracted>0&&contracted<=A*(1+1e-9),"Aperture contraction inadmissible");
-                out[body*S+M]-=m;out[tank*S+M]+=m;
-                out[body*S+E]-=m*H;out[tank*S+E]+=m*H;
-                out[body*S+B]-=m*d.concentration;out[tank*S+B]+=m*d.concentration;
+                out[ix(body,M)]-=m;out[ix(tank,M)]+=m;
+                out[ix(body,E)]-=m*H;out[ix(tank,E)]+=m*H;
+                out[ix(body,B)]-=m*d.concentration;out[ix(tank,B)]+=m*d.concentration;
                 const double incomingQ=forward?m*(exit*exit/2+Tank.velocity*Tank.velocity/2):0;
                 const double outgoingQ=forward?0:-m*Tank.k;
-                if(forward){out[body*S+P]-=m*Bdy.velocity;out[tank*S+Q]+=incomingQ;}
-                else{out[tank*S+P]+=m*Tank.velocity;out[tank*S+Q]-=outgoingQ;}
-                const int r=N*S+ring*RM;
+                if(forward){out[ix(body,P)]-=m*Bdy.velocity;out[ix(tank,Q)]+=incomingQ;}
+                else{out[ix(tank,P)]+=m*Tank.velocity;out[ix(tank,Q)]-=outgoingQ;}
+                const int r=PHYSICAL+ring*RM;
                 out[r]+=m;out[r+1]+=std::abs(m);out[r+2]+=m*H;out[r+3]+=std::abs(m*H);
                 out[r+4]+=m*d.concentration;out[r+5]+=incomingQ;out[r+6]+=outgoingQ;
                 // This is an exact disclosed caloric-datum subtraction of the native ring receipt,
@@ -378,8 +418,8 @@ int residual(double,const N_Vector yy,const N_Vector yp,N_Vector rr,void* data) 
     auto&run=*static_cast<Run*>(data);++run.callbacks;
     const double*y=N_VGetArrayPointer(yy),*dy=N_VGetArrayPointer(yp);double*r=N_VGetArrayPointer(rr);
     try{const auto f=rates(y);
-        for(int i=0;i<N;++i){const auto&c=cells[i];const double*x=y+i*S;const auto s=water(x[TT],x[PP]);
-            for(int j=0;j<5;++j)r[i*S+j]=j==Q&&!c.tank?x[Q]:dy[i*S+j]-f[i*S+j];
+        for(int i=0;i<N;++i){const auto&c=cells[i];const auto x=view(y,i);const auto s=water(x[TT],x[PP]);
+            for(int j=0;j<5;++j)if(j!=Q||c.tank)r[ix(i,j)]=dy[ix(i,j)]-f[ix(i,j)];
             const double velocity=x[P]/x[M],common=s.u+gravity*c.z-velocity*velocity/2;
             const double Mp=c.V*s.rho*s.kappa,Mt=-c.V*s.rho*s.alpha;
             const double Ep=common*Mp+c.V*s.rho*up(s),Et=common*Mt+c.V*s.rho*ut(s),det=Mp*Et-Mt*Ep;
@@ -387,9 +427,9 @@ int residual(double,const N_Vector yy,const N_Vector yp,N_Vector rr,void* data) 
             const double predictedE=Mc*(s.u+gravity*c.z)+x[P]*x[P]/(2*Mc)+(c.tank?x[Q]:0);
             const double rm=x[M]-Mc,re=x[E]-predictedE;
             require(det>0,"Single-liquid thermodynamic coordinate lost rank");
-            r[i*S+PP]=(rm*Et-Mt*re)/det;r[i*S+TT]=(Mp*re-rm*Ep)/det;
+            r[ix(i,PP)]=(rm*Et-Mt*re)/det;r[ix(i,TT)]=(Mp*re-rm*Ep)/det;
         }
-        for(int j=N*S;j<D;++j)r[j]=dy[j]-f[j];return 0;
+        for(int j=PHYSICAL;j<D;++j)r[j]=dy[j]-f[j];return 0;
     }catch(const std::exception&e){run.failure=e.what();++run.recoverable;
         return std::chrono::duration<double>(Clock::now()-started).count()>guard_seconds?-1:1;}
 }
@@ -438,17 +478,17 @@ std::array<double,D> original() {
     std::array<double,D> y{};
     const double mouth=${input.cells[0]!.low},midring=rings[1];
     const double coldRho=water(313.15,15.2e6).rho;
-    for(int i=0;i<13;++i){const auto&c=cells[i];y[i*S+PP]=15.2e6-coldRho*gravity*(c.z-mouth);y[i*S+TT]=313.15;}
+    for(int i=0;i<13;++i){const auto&c=cells[i];y[ix(i,PP)]=15.2e6-coldRho*gravity*(c.z-mouth);y[ix(i,TT)]=313.15;}
     int midCell=-1;for(int i=0;i<13;++i)if(midring>cells[i].lo&&midring<cells[i].hi)midCell=i;
     require(midCell>=0,"No middle-ring datum owner");
     require(midring>cells[midCell].lo&&midring<cells[midCell].hi,"Middle-ring datum owner differs from frozen layout");
-    const auto coldMid=water(y[midCell*S+TT],y[midCell*S+PP]);
-    const double warmDatum=y[midCell*S+PP]-coldMid.rho*gravity*(midring-cells[midCell].z);
+    const auto coldMid=water(y[ix(midCell,TT)],y[ix(midCell,PP)]);
+    const double warmDatum=y[ix(midCell,PP)]-coldMid.rho*gravity*(midring-cells[midCell].z);
     const double warmRho=water(450,warmDatum).rho;
-    for(int i=13;i<N;++i){const auto&c=cells[i];y[i*S+PP]=warmDatum-warmRho*gravity*(c.z-midring);y[i*S+TT]=450;}
-    for(int i=0;i<N;++i){const auto&c=cells[i];const auto s=water(y[i*S+TT],y[i*S+PP]);
-        y[i*S+M]=c.V*s.rho;y[i*S+P]=0;y[i*S+Q]=0;y[i*S+B]=.002*y[i*S+M];
-        y[i*S+E]=y[i*S+M]*(s.u+gravity*c.z);}
+    for(int i=13;i<N;++i){const auto&c=cells[i];y[ix(i,PP)]=warmDatum-warmRho*gravity*(c.z-midring);y[ix(i,TT)]=450;}
+    for(int i=0;i<N;++i){const auto&c=cells[i];const auto s=water(y[ix(i,TT)],y[ix(i,PP)]);
+        y[ix(i,M)]=c.V*s.rho;y[ix(i,P)]=0;if(c.tank)y[ix(i,Q)]=0;y[ix(i,B)]=.002*y[ix(i,M)];
+        y[ix(i,E)]=y[ix(i,M)]*(s.u+gravity*c.z);}
     return y;
 }
 struct Result {
@@ -467,13 +507,13 @@ void statistics(void* mem,Run&data,Result&result) {
     result.callbacks=data.callbacks;result.recoverable=data.recoverable;
 }
 std::array<double,3> totals(const double* y) {
-    std::array<double,3>s{};for(int i=0;i<N;++i){s[0]+=y[i*S+M];s[1]+=y[i*S+E];s[2]+=y[i*S+B];}return s;
+    std::array<double,3>s{};for(int i=0;i<N;++i){s[0]+=y[ix(i,M)];s[1]+=y[ix(i,E)];s[2]+=y[ix(i,B)];}return s;
 }
 void ida_ok(int flag,const char* operation){require(flag>=0,std::string("Native IDA failed ")+operation+": "+std::to_string(flag));}
-std::string stock_failure(int i,const double* x,bool unowned) {
-    const int field=unowned?Q:!(x[M]>0)?M:!(x[B]>=0)?B:Q;
+std::string stock_failure(int i,CellView x) {
+    const int field=!(x[M]>0)?M:!(x[B]>=0)?B:Q;
     const char* name=field==M?"M [kg]":field==B?"B [kg_eq]":
-        cells[i].tank?"Q [J]":"unowned BAL Q auxiliary [J]";
+        "Q [J]";
     std::ostringstream message;
     message<<std::setprecision(17)<<std::scientific<<"Accepted stock admission failed: cell="<<i
         <<" owner="<<(cells[i].tank?"CMT":"BAL")<<" field="<<name<<" value="<<x[field];
@@ -488,28 +528,34 @@ Result advance(double factor) {
     auto*x=N_VGetArrayPointer(y),*dx=N_VGetArrayPointer(yp),*ids=N_VGetArrayPointer(id),*tol=N_VGetArrayPointer(atol),*co=N_VGetArrayPointer(constraints);
     const auto f=rates(init.data());
     for(int j=0;j<D;++j){x[j]=init[j];dx[j]=f[j];ids[j]=1;tol[j]=factor*1e-7;co[j]=0;}
-    for(int i=0;i<N;++i){const auto&c=cells[i];const auto s=water(init[i*S+TT],init[i*S+PP]);
-        const double Mc=init[i*S+M],Mp=Mc*s.kappa,Mt=-Mc*s.alpha;
+    for(int i=0;i<N;++i){const auto&c=cells[i];const auto s=water(init[ix(i,TT)],init[ix(i,PP)]);
+        const double Mc=init[ix(i,M)],Mp=Mc*s.kappa,Mt=-Mc*s.alpha;
         const double Ep=(s.u+gravity*c.z)*Mp+Mc*up(s),Et=(s.u+gravity*c.z)*Mt+Mc*ut(s),det=Mp*Et-Mt*Ep;
         // Inverse full native storage sensitivity sets the prospective physical error screens.
         const double dp=50*factor,dT=.01*factor;
-        tol[i*S+M]=std::min(dp*det/(2*std::abs(Et)),dT*det/(2*std::abs(Ep)));
-        tol[i*S+E]=std::min(dp*det/(2*std::abs(Mt)),dT*det/(2*std::abs(Mp)));
-        tol[i*S+P]=Mc*.001*factor;tol[i*S+B]=Mc*1e-8*factor;tol[i*S+Q]=Mc*.001*factor;
-        tol[i*S+PP]=dp;tol[i*S+TT]=dT;ids[i*S+PP]=ids[i*S+TT]=0;
-        co[i*S+M]=co[i*S+PP]=co[i*S+TT]=2;co[i*S+B]=co[i*S+Q]=1;
-        dx[i*S+PP]=dx[i*S+TT]=0;
-        const double Rm=f[i*S+M],Ru=f[i*S+E]-(c.tank?f[i*S+Q]:0);
-        dx[i*S+PP]=(Rm*Et-Mt*Ru)/det;dx[i*S+TT]=(Mp*Ru-Rm*Ep)/det;
-        require(std::abs(Mp*dx[i*S+PP]+Mt*dx[i*S+TT]-Rm)<=1e-8+1e-10*std::abs(Rm),
+        tol[ix(i,M)]=std::min(dp*det/(2*std::abs(Et)),dT*det/(2*std::abs(Ep)));
+        tol[ix(i,E)]=std::min(dp*det/(2*std::abs(Mt)),dT*det/(2*std::abs(Mp)));
+        tol[ix(i,P)]=Mc*.001*factor;tol[ix(i,B)]=Mc*1e-8*factor;if(c.tank)tol[ix(i,Q)]=Mc*.001*factor;
+        tol[ix(i,PP)]=dp;tol[ix(i,TT)]=dT;ids[ix(i,PP)]=ids[ix(i,TT)]=0;
+        co[ix(i,M)]=co[ix(i,PP)]=co[ix(i,TT)]=2;co[ix(i,B)]=1;if(c.tank)co[ix(i,Q)]=1;
+        dx[ix(i,PP)]=dx[ix(i,TT)]=0;
+        const double Rm=f[ix(i,M)],Ru=f[ix(i,E)]-(c.tank?f[ix(i,Q)]:0);
+        dx[ix(i,PP)]=(Rm*Et-Mt*Ru)/det;dx[ix(i,TT)]=(Mp*Ru-Rm*Ep)/det;
+        require(std::abs(Mp*dx[ix(i,PP)]+Mt*dx[ix(i,TT)]-Rm)<=1e-8+1e-10*std::abs(Rm),
             "Differentiated original mass constraint failed");
-        require(std::abs(Ep*dx[i*S+PP]+Et*dx[i*S+TT]-Ru)<=1e-4+1e-10*std::abs(Ru),
+        require(std::abs(Ep*dx[ix(i,PP)]+Et*dx[ix(i,TT)]-Ru)<=1e-4+1e-10*std::abs(Ru),
             "Differentiated original total-energy constraint failed");
-        if(!c.tank){ids[i*S+Q]=0;dx[i*S+Q]=0;co[i*S+Q]=0;}
     }
-    for(int ring=0;ring<3;++ring){const int j=N*S+ring*RM;
+    for(int ring=0;ring<3;++ring){const int j=PHYSICAL+ring*RM;
         tol[j]=tol[j+1]=factor*1e-6;tol[j+2]=tol[j+3]=factor*.01;
         tol[j+4]=factor*1e-8;tol[j+5]=tol[j+6]=factor*1e-5;tol[j+7]=factor*.01;}
+    initial_norm_squares.fill(0);
+    for(int j=0;j<D;++j){int group=7;
+        if(j<PHYSICAL){const int field=coordinateOwner[j].field,cell=coordinateOwner[j].cell;
+            group=field==M?0:field==P?1:field==E?2:field==B?3:field==Q?4:field==PP?5:6;}
+        const double weighted=dx[j]/tol[j];initial_norm_squares[group]+=weighted*weighted;}
+    double normSum=0;for(double value:initial_norm_squares)normSum+=value;
+    initial_wrms=std::sqrt(normSum/D);initial_step_from_norm=std::min(.001,initial_wrms>0?.5/initial_wrms:.001);
     void*mem=IDACreate(context);require(mem,"Native IDA allocation failed");
     N_Vector initialResidual=N_VClone(y);
     require(residual(0,y,yp,initialResidual,&data)==0,"Original native residual rejected");
@@ -518,7 +564,8 @@ Result advance(double factor) {
         // The thermodynamic rows already have p/T units; use the SAME declared chart screens.
         // Differential rows are exact dx=f plus a1e-6 SI-rate arithmetic screen (kg/s,
         // kg m/s2, J/s, kg_eq/s and their actual integral-ledger rates), not a pressure tolerance.
-        const double limit=j<N*S&&j%S==PP?5*factor:j<N*S&&j%S==TT?.001*factor:1e-6;
+        const int field=j<PHYSICAL?coordinateOwner[j].field:-1;
+        const double limit=field==PP?5*factor:field==TT?.001*factor:1e-6;
         require(std::abs(rr[j])<=limit,"Original native/algebraic residual is not consistent");
     }
     N_VDestroy(initialResidual);
@@ -539,33 +586,33 @@ Result advance(double factor) {
             result.energyError=std::max(result.energyError,std::abs(total[1]-initialTotals[1]));
             result.tracerError=std::max(result.tracerError,std::abs(total[2]-initialTotals[2]));
             require(result.massError<=1e-6&&result.energyError<=.1&&result.tracerError<=1e-8,"Closed native conservation gate failed");
-            for(int i=0;i<N;++i){const auto*native=x+i*S;
-                const bool valid=native[M]>0&&native[B]>=0&&native[Q]>=0;
-                require(valid,valid?"":stock_failure(i,native,false));
-                const bool owned=cells[i].tank||native[Q]==0;
-                require(owned,owned?"":stock_failure(i,native,true));
-                const auto s=water(x[i*S+TT],x[i*S+PP]);
-                const double Mc=cells[i].V*s.rho,velocity=x[i*S+P]/Mc;
+            for(int i=0;i<N;++i){const auto native=view(x,i);
+                const bool valid=native[M]>0&&native[B]>=0&&(!cells[i].tank||native[Q]>=0);
+                require(valid,valid?"":stock_failure(i,native));
+                const auto s=water(x[ix(i,TT)],x[ix(i,PP)]);
+                const double Mc=cells[i].V*s.rho,velocity=x[ix(i,P)]/Mc;
                 const double Mp=Mc*s.kappa,Mt=-Mc*s.alpha;
                 const double Ep=(s.u+gravity*cells[i].z-velocity*velocity/2)*Mp+Mc*up(s);
                 const double Et=(s.u+gravity*cells[i].z-velocity*velocity/2)*Mt+Mc*ut(s),det=Mp*Et-Mt*Ep;
-                const double predictedE=Mc*(s.u+gravity*cells[i].z)+x[i*S+P]*x[i*S+P]/(2*Mc)+(cells[i].tank?x[i*S+Q]:0);
-                const double rm=x[i*S+M]-Mc,re=x[i*S+E]-predictedE;
+                const double predictedE=Mc*(s.u+gravity*cells[i].z)+x[ix(i,P)]*x[ix(i,P)]/(2*Mc)+(cells[i].tank?x[ix(i,Q)]:0);
+                const double rm=x[ix(i,M)]-Mc,re=x[ix(i,E)]-predictedE;
                 const double pp=std::abs((rm*Et-Mt*re)/det),tt=std::abs((Mp*re-rm*Ep)/det);
                 result.chartPressureError=std::max(result.chartPressureError,pp);
                 result.chartTemperatureError=std::max(result.chartTemperatureError,tt);
                 require(pp<=5*factor&&tt<=.001*factor,"Accepted native M/E chart coherence failed");
             }
             result.last=t;last_admitted_time=t;
-            for(int ring=0;ring<3;++ring)for(int j=0;j<RM;++j)result.ring[ring][j]=x[N*S+ring*RM+j];
+            for(int ring=0;ring<3;++ring)for(int j=0;j<RM;++j)result.ring[ring][j]=x[PHYSICAL+ring*RM+j];
             partial=result;
+            if(first_step_only)goto finish_advance;
         }
         require(std::abs(t-target)<=1e-10,"Output is not an accepted IDA stop-time state");
         std::array<double,D> row;std::copy(x,x+D,row.begin());result.common.push_back(row);
         std::cerr<<"accepted weight="<<factor<<" t="<<t<<" steps="<<result.steps<<" callbacks="<<data.callbacks<<"\n";
     }
-    for(int ring=0;ring<3;++ring){result.gross+=x[N*S+ring*RM+1];result.grossE+=x[N*S+ring*RM+3];result.thermal+=x[N*S+ring*RM+7];}
-    for(int i=0;i<13;++i){result.maxT=std::max(result.maxT,std::abs(x[i*S+TT]-313.15));result.totalQ+=x[i*S+Q];}
+finish_advance:
+    for(int ring=0;ring<3;++ring){result.gross+=x[PHYSICAL+ring*RM+1];result.grossE+=x[PHYSICAL+ring*RM+3];result.thermal+=x[PHYSICAL+ring*RM+7];}
+    for(int i=0;i<13;++i){result.maxT=std::max(result.maxT,std::abs(x[ix(i,TT)]-313.15));result.totalQ+=x[ix(i,Q)];}
     statistics(mem,data,result);
     result.elapsed=std::chrono::duration<double>(Clock::now()-begin).count();
     IDAFree(&mem);SUNLinSolFree(solver);SUNMatDestroy(matrix);N_VDestroy(y);N_VDestroy(yp);N_VDestroy(id);N_VDestroy(atol);N_VDestroy(constraints);SUNContext_Free(&context);
@@ -585,15 +632,20 @@ void result_json(const Result&r) {
 }
 int main(int argc,char**argv) {
     std::cout<<std::setprecision(17);
-    try{if(argc==2)guard_seconds=std::stod(argv[1]);local_gates();
+    try{if(argc>=2)guard_seconds=std::stod(argv[1]);
+        if(argc==3){require(std::string(argv[2])=="first-step","Unknown offline diagnostic mode");first_step_only=true;}
+        local_gates();
+        if(first_step_only){const auto diagnostic=advance(1);
+            std::cout<<"{\"passed\":true,\"scope\":\"one instrumented first step only, not useful-duration qualification\",\"initialDerivativeNorm\":";
+            initial_norm_json();std::cout<<",\"firstStep\":";result_json(diagnostic);std::cout<<"}\n";return 0;}
         const auto a=advance(1);completed.push_back(a);const auto b=advance(.5);completed.push_back(b);
         double dt=0,dp=0,dv=0,dm=0,denergy=0,dthermal=0,dq=0;
         for(size_t j=0;j<a.common.size();++j){const auto&l=a.common[j];const auto&r=b.common[j];
-            for(int i=0;i<N;++i){dt=std::max(dt,std::abs(l[i*S+TT]-r[i*S+TT]));dp=std::max(dp,std::abs(l[i*S+PP]-r[i*S+PP]));
-                dv=std::max(dv,std::abs(l[i*S+P]/l[i*S+M]-r[i*S+P]/r[i*S+M]));}
+            for(int i=0;i<N;++i){dt=std::max(dt,std::abs(l[ix(i,TT)]-r[ix(i,TT)]));dp=std::max(dp,std::abs(l[ix(i,PP)]-r[ix(i,PP)]));
+                dv=std::max(dv,std::abs(l[ix(i,P)]/l[ix(i,M)]-r[ix(i,P)]/r[ix(i,M)]));}
             double ml=0,mr=0,el=0,er=0,hl=0,hr=0,ql=0,qr=0;
-            for(int ring=0;ring<3;++ring){const int k=N*S+ring*RM;ml+=l[k+1];mr+=r[k+1];el+=l[k+3];er+=r[k+3];hl+=l[k+7];hr+=r[k+7];}
-            for(int i=0;i<13;++i){ql+=l[i*S+Q];qr+=r[i*S+Q];}
+            for(int ring=0;ring<3;++ring){const int k=PHYSICAL+ring*RM;ml+=l[k+1];mr+=r[k+1];el+=l[k+3];er+=r[k+3];hl+=l[k+7];hr+=r[k+7];}
+            for(int i=0;i<13;++i){ql+=l[ix(i,Q)];qr+=r[ix(i,Q)];}
             dm=std::max(dm,std::abs(ml-mr));denergy=std::max(denergy,std::abs(el-er));
             dthermal=std::max(dthermal,std::abs(hl-hr));dq=std::max(dq,std::abs(ql-qr));}
         require(dt<=.05&&dp<=100&&dv<=.005,"Paired operational temperature/head/velocity gate failed");
@@ -609,7 +661,8 @@ int main(int argc,char**argv) {
     }catch(const std::exception&e){std::cerr<<e.what()<<"\n";
         std::cout<<"{\"passed\":false,\"lastAdmittedSeconds\":"<<last_admitted_time
             <<",\"weightFactor\":"<<active_weight_factor<<",\"checks\":"<<checks<<",\"propertyTuples\":"<<tuple_calls
-            <<",\"partialArm\":";result_json(partial);std::cout<<",\"completedArms\":[";
+            <<",\"initialDerivativeNorm\":";initial_norm_json();
+        std::cout<<",\"partialArm\":";result_json(partial);std::cout<<",\"completedArms\":[";
         for(size_t i=0;i<completed.size();++i){if(i)std::cout<<",";result_json(completed[i]);}std::cout<<"]}\n";return 1;}
 }
 `;
