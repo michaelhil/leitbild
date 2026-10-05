@@ -8,14 +8,14 @@ export const nativeIf97Revision = '0be7b51f35c47e59e6f91f4f0f47108bf997e50c';
 export const nativeIf97HeaderSha256 = '83693f044b271a6a28b97c06601287d023f94a75fac9723412661ebf3d3791a6';
 export const nativeIf97LicenseSha256 = 'e22c3d30ef8d88ab468d9ea20392ca1df22fa3fd0a92dc3e996d89cf3cfdbd03';
 
-export const nativeIf97Primitives = String.raw`
+export function nativeIf97Source(threadLocalDiagnostics: boolean): string { return String.raw`
 #define REGION3_ITERATE
 #include "IF97.h"
 #include <array>
 #include <string>
 
 void require(bool ok, const std::string& message);
-extern double max_forward_p, max_dense_endpoint_p_error;
+extern ${threadLocalDiagnostics ? 'thread_local ' : ''}double max_forward_p, max_dense_endpoint_p_error;
 template<class R> struct Gibbs : R {
     double alpha(double T, double p) const {
         const double gp = this->dgamma0_dPI(T,p) + this->dgammar_dPI(T,p);
@@ -108,3 +108,6 @@ State endpoint(double p,bool is_liquid) {
     return q;
 }
 `;
+}
+
+export const nativeIf97Primitives = nativeIf97Source(false);

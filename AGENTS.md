@@ -17,5 +17,6 @@ These rules apply across the repository. Module-local `AGENTS.md` files may add 
 - Workspace identity is carried in canonical URL paths. Cookies must not select or override a Workspace.
 - Expensive Module runtimes remain lazy even though all core Modules are provisioned for every Workspace.
 - Use Bun 1.4.0 and TypeScript. Prefer functional modules, factory functions, explicit ports, and validated boundaries.
+- The owner-authorized offline Process Plant numerical kernel in `apps/world/native/process-plant` is a narrow Rust/native exception. Bun owns its admission/provenance tooling. It is not registered or installed as the live LD-01 runtime; construction remains separately gated.
 - Do not add silent fallbacks, mocks in production, compatibility behavior, API versions, migrations, aliases, or legacy parsing. The explicitly requested wiki Archive is retained documentation, not a runtime compatibility layer.
 - Commit each logical phase separately. Deploy only after standalone and combined validation passes.

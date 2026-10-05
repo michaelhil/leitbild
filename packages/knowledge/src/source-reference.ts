@@ -1,7 +1,7 @@
 /** Shared read-only source corpus used by wiki and conversational inspectors. */
-export const PRODUCT_SOURCE_EXTENSIONS = new Set(['.md', '.ts', '.svelte', '.json', '.css'])
+export const PRODUCT_SOURCE_EXTENSIONS = new Set(['.md', '.ts', '.svelte', '.json', '.css', '.rs', '.cpp', '.h', '.hpp'])
 export const PRODUCT_SOURCE_EXCLUDED_SEGMENTS = new Set([
-  'node_modules', 'dist', 'build', 'coverage', '.git', '.svelte-kit',
+  'node_modules', 'dist', 'build', 'target', 'coverage', '.git', '.svelte-kit',
 ])
 
 export const isExcludedProductSegment = (segment: string): boolean =>
@@ -14,7 +14,7 @@ export const isAllowedProductPath = (path: string): boolean => {
   if (path.startsWith('docs/') || path.startsWith('contexts/')) return true
   if (path.startsWith('knowledge/')) return path.endsWith('.md')
   if (/^apps\/[^/]+\/skills\/.+\.md$/.test(path)) return true
-  if (/^apps\/[^/]+\/(?:README\.md|src\/|scripts\/)/.test(path)) return true
+  if (/^apps\/[^/]+\/(?:README\.md|src\/|scripts\/|native\/)/.test(path)) return true
   return /^packages\/[^/]+\/(?:README\.md|src\/)/.test(path)
 }
 

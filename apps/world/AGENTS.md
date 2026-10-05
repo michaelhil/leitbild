@@ -3,6 +3,7 @@
 ## Project Guardrails
 
 - Use TypeScript for all source code.
+- Exception: the explicitly authorized offline numerical kernel in `native/process-plant` uses Rust and a narrow inspected C++ property bridge. Keep application/runtime orchestration and admission scripts in TypeScript; do not expand this exception into other Packs or install LD-01 without construction approval.
 - Do not create JavaScript files unless the user explicitly approves.
 - Use Bun 1.4.0 for package management, scripts, tests, and local/production runtime.
 - Maintain exactly one main HTTP server at `src/core/api/server.ts`.

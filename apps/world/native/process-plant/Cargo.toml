@@ -1,0 +1,12 @@
+[package]
+name = "leitbild-plant-numerics"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
