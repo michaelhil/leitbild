@@ -1,5 +1,5 @@
 /** Shared read-only source corpus used by wiki and conversational inspectors. */
-export const PRODUCT_SOURCE_EXTENSIONS = new Set(['.md', '.ts', '.svelte', '.json', '.css', '.rs', '.cpp', '.h', '.hpp'])
+export const PRODUCT_SOURCE_EXTENSIONS = new Set(['.md', '.ts', '.svelte', '.json', '.css', '.rs', '.cpp', '.h', '.hpp', '.patch'])
 export const PRODUCT_SOURCE_EXCLUDED_SEGMENTS = new Set([
   'node_modules', 'dist', 'build', 'target', 'coverage', '.git', '.svelte-kit',
 ])
