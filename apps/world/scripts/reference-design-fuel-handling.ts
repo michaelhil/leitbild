@@ -34,13 +34,19 @@ export function parseFuelHandling(document:string){
  if(blocks.length!==1)throw Error('Expected one reference-fuel-handling block')
  return schema.parse(JSON.parse(blocks[0]![1]!))
 }
+/** One immutable position/identity generator for audits and source geometry. */
+export function fuelAssemblyPositions(b:Pick<ReturnType<typeof parseFuelHandling>,'slotRadiusSquared'>,f:Pick<ReturnType<typeof parseFuelConstruction>,'latticeSide'|'pitch_m'|'assemblies'>){
+ const pitch=f.latticeSide*f.pitch_m,extent=Math.floor(Math.sqrt(b.slotRadiusSquared)),slots:{id:string,x_m:number,y_m:number}[]=[]
+ for(let y=-extent;y<=extent;y++)for(let x=-extent;x<=extent;x++)if(x*x+y*y<=b.slotRadiusSquared)
+  slots.push({id:`LD01.FUEL.FA${String(slots.length+1).padStart(3,'0')}`,x_m:x*pitch,y_m:y*pitch})
+ if(slots.length!==f.assemblies)throw Error('Declared assembly count differs from immutable position generation')
+ return slots
+}
 export function fuelHandlingChecks(b:ReturnType<typeof parseFuelHandling>,f:ReturnType<typeof parseFuelConstruction>){
  const checks:{name:string,value?:number}[]=[]
  const require=(name:string,ok:boolean,value?:number)=>{if(!ok)throw Error(name);checks.push({name,...(value===undefined?{}:{value})})}
  const sum=(v:number[])=>v.reduce((a,q)=>a+q,0)
- const pitch=f.latticeSide*f.pitch_m,slots:{id:string,x_m:number,y_m:number}[]=[]
- for(let y=-8;y<=8;y++)for(let x=-8;x<=8;x++)if(x*x+y*y<=b.slotRadiusSquared)
-  slots.push({id:`LD01.FUEL.FA${String(slots.length+1).padStart(3,'0')}`,x_m:x*pitch,y_m:y*pitch})
+ const pitch=f.latticeSide*f.pitch_m,slots=fuelAssemblyPositions(b,f)
  require('exact unique original assembly identity',slots.length===f.assemblies&&new Set(slots.map(s=>s.id)).size===slots.length)
  const corner=Math.max(...slots.map(s=>Math.hypot(Math.abs(s.x_m)+pitch/2,Math.abs(s.y_m)+pitch/2)))
  require('actual square-cell corners fit support',corner<b.supportRadius_m,corner)

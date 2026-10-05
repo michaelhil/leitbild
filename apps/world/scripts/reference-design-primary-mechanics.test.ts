@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { checkColdPartition, foldedGeometry, parsePrimaryMechanics, sectionMechanics } from './reference-design-primary-mechanics'
+import { checkColdPartition, coldReturnGeometry, foldedGeometry, parsePrimaryBarrelGeometry, parsePrimaryMechanics, sectionMechanics } from './reference-design-primary-mechanics'
 
 test('cold channels and real header partition one inventory, never add a second old header', () => {
   checkColdPartition(20, 8, 4)
@@ -40,9 +40,38 @@ test('signed channel motion preserves nonnegative native kinetic energy and fixe
 test('declared choices parse strictly and carry actual header height', () => {
   const doc = '```reference-primary-mechanics\n' + JSON.stringify({ design: 'LD-01', hotInsideDiameter_m: 1,
     pumpPassageInsideDiameter_m: .7, pumpPassageVolume_m3: 8, coldHeaderVolume_m3: 4,
-    coldHeaderHeight_m: 1, sgDevelopedLength_m: 20, downcomerBottom_m: -3, downcomerTop_m: 3 }) + '\n```'
+    coldHeaderHeight_m: 1, coldReturnLength_m: .5, sgDevelopedLength_m: 20, downcomerBottom_m: -3, downcomerTop_m: 3 }) + '\n```'
   const parsed = parsePrimaryMechanics(doc)
   expect(parsed.coldHeaderHeight_m).toBe(1)
   expect(() => parsePrimaryMechanics(doc + '\n' + doc)).toThrow()
   expect(() => parsePrimaryMechanics(doc.replace('"coldHeaderHeight_m":1', '"coldHeaderHeight_m":0'))).toThrow()
+})
+
+test('barrel radii have one strict owner and finite return mouths fit the real annulus', () => {
+  const barrelDocument = '```reference-primary-barrel-geometry\n{"innerRadius_m":1.9,"outerRadius_m":2}\n```'
+  const barrel = parsePrimaryBarrelGeometry(barrelDocument)
+  expect(() => parsePrimaryBarrelGeometry(barrelDocument + '\n' + barrelDocument)).toThrow()
+  expect(() => parsePrimaryBarrelGeometry(barrelDocument.replace('1.9', '2.1'))).toThrow()
+  expect(() => parsePrimaryBarrelGeometry(barrelDocument.replace('"outerRadius_m":2', '"outerRadius_m":2,"extra":0'))).toThrow()
+  const selection = parsePrimaryMechanics('```reference-primary-mechanics\n' + JSON.stringify({ design: 'LD-01',
+    hotInsideDiameter_m: 1, pumpPassageInsideDiameter_m: .7, pumpPassageVolume_m3: 8,
+    coldHeaderVolume_m3: 4, coldHeaderHeight_m: 1, coldReturnLength_m: .5,
+    sgDevelopedLength_m: 20, downcomerBottom_m: -3, downcomerTop_m: 3 }) + '\n```')
+  const g = coldReturnGeometry(selection, barrel, 20)
+  expect(g.area_m2).toBeCloseTo(2 * Math.PI * .7 ** 2 / 4, 14)
+  expect(g.insideDiameter_m).toBeCloseTo(Math.SQRT2 * .7, 14)
+  expect(g.wettedPerimeter_m).toBeCloseTo(Math.PI * g.insideDiameter_m, 14)
+  expect(g.wettedPerimeter_m).not.toBeCloseTo(2 * Math.PI * .7, 6)
+  expect(.5 * (g.annularOuterRadius_m ** 2 - g.annularInnerRadius_m ** 2) * g.mouthSectorAngle_rad)
+    .toBeCloseTo(g.area_m2, 14)
+  expect(g.mouthSectorAngle_rad).toBeLessThan(Math.PI)
+  expect(g.mouthCentres_rad).toEqual([0, Math.PI])
+  expect(g.meanElevation_m).toBe(3)
+  expect(g.volumePerTrain_m3).toBeCloseTo(.3848451000647496, 14)
+  expect(g.addedMainVolume_m3).toBe(2 * g.volumePerTrain_m3)
+  expect(coldReturnGeometry({ ...selection, coldReturnLength_m: 1 }, barrel, 20).addedMainVolume_m3)
+    .toBe(2 * g.addedMainVolume_m3)
+  expect(() => coldReturnGeometry(selection, barrel, 0)).toThrow()
+  expect(() => coldReturnGeometry(selection, barrel, 1)).toThrow()
+  expect(() => coldReturnGeometry({ ...selection, coldHeaderHeight_m: .9 }, barrel, 20)).toThrow()
 })

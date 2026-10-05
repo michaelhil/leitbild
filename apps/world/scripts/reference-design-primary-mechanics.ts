@@ -10,6 +10,7 @@ const positive = z.number().finite().positive()
 const schema = z.object({ design: z.literal('LD-01'), hotInsideDiameter_m: positive,
   pumpPassageInsideDiameter_m: positive, pumpPassageVolume_m3: positive,
   coldHeaderVolume_m3: positive, coldHeaderHeight_m: positive, sgDevelopedLength_m: positive,
+  coldReturnLength_m: positive,
   downcomerBottom_m: z.number().finite(), downcomerTop_m: z.number().finite(),
 }).strict().refine(v => v.downcomerTop_m > v.downcomerBottom_m, 'Invalid downcomer extent')
 
@@ -17,6 +18,37 @@ export function parsePrimaryMechanics(document: string) {
   const blocks = [...document.matchAll(/^```reference-primary-mechanics\s*\n([\s\S]*?)^```\s*$/gm)]
   if (blocks.length !== 1) throw Error('Expected one reference-primary-mechanics block')
   return schema.parse(JSON.parse(blocks[0]![1]!))
+}
+
+const barrelSchema = z.object({ innerRadius_m: positive, outerRadius_m: positive }).strict()
+  .refine(v => v.outerRadius_m > v.innerRadius_m, 'Barrel outer radius must exceed inner radius')
+
+export function parsePrimaryBarrelGeometry(document: string) {
+  const blocks = [...document.matchAll(/^```reference-primary-barrel-geometry\s*\n([\s\S]*?)^```\s*$/gm)]
+  if (blocks.length !== 1) throw Error('Expected one reference-primary-barrel-geometry block')
+  return barrelSchema.parse(JSON.parse(blocks[0]![1]!))
+}
+
+/** Original finite return geometry only; neither a loss calibration nor a flow solution. */
+export function coldReturnGeometry(selection: ReturnType<typeof parsePrimaryMechanics>,
+  barrel: ReturnType<typeof parsePrimaryBarrelGeometry>, downcomerVolume_m3: number) {
+  if (!Number.isFinite(downcomerVolume_m3) || downcomerVolume_m3 <= 0)
+    throw Error('Invalid downcomer volume')
+  const annularArea = downcomerVolume_m3 / (selection.downcomerTop_m - selection.downcomerBottom_m)
+  const innerRadius = barrel.outerRadius_m
+  const outerRadius = Math.sqrt(innerRadius ** 2 + annularArea / Math.PI)
+  const area = 2 * Math.PI * selection.pumpPassageInsideDiameter_m ** 2 / 4
+  const diameter = Math.sqrt(4 * area / Math.PI)
+  const angle = 2 * area / (outerRadius ** 2 - innerRadius ** 2)
+  if (!(angle > 0 && angle < Math.PI) || diameter > selection.coldHeaderHeight_m)
+    throw Error('Return mouths cannot fit the selected annulus/header envelope')
+  return { area_m2: area, insideDiameter_m: diameter, wettedPerimeter_m: Math.PI * diameter,
+    developedLength_m: selection.coldReturnLength_m, volumePerTrain_m3: area * selection.coldReturnLength_m,
+    addedMainVolume_m3: 2 * area * selection.coldReturnLength_m, meanElevation_m: selection.downcomerTop_m,
+    annularArea_m2: annularArea, annularInnerRadius_m: innerRadius, annularOuterRadius_m: outerRadius,
+    mouthSectorAngle_rad: angle, mouthCentres_rad: [0, Math.PI] as const,
+    smoothWallRoughness_m: 0, turningFormLoss: 0,
+    scope: 'One equivalent round duct per train, disjoint annular-sector top mouths, ideal stationary turn; no flow, phase-pickup or quantitative bend-loss admission' }
 }
 
 export function foldedGeometry(length: number, inlet: number, crest: number, outlet: number) {
@@ -57,14 +89,15 @@ export async function auditPrimaryMechanics(wiki: string, python: string) {
   const files = ['systems/primary-coolant/mechanical-energy-and-geometry.md',
     'model/connected-primary-initialization.md', 'model/primary-hydraulic-basis.md',
     'systems/steam-power/cycle-basis.md', 'systems/reactor/fuel-construction.md',
-    'systems/primary-coolant/surge-route.md']
+    'systems/primary-coolant/surge-route.md', 'systems/reactor/core-coolant-delivery.md']
   const docs = await Promise.all(files.map(p => Bun.file(join(wiki, p)).text()))
   const selection = parsePrimaryMechanics(docs[0]!)
   const input = await resolveInitializationInput(docs[1]!, docs[2]!, docs[3]!, python, parseConnectedFuel(docs[1]!, docs[4]!))
   const route = resolveSurgeRoute(parseSurgeRoute(docs[5]!))
+  const barrel = parsePrimaryBarrelGeometry(docs[6]!)
   const hash = (s: string) => createHash('sha256').update(s).digest('hex')
   const identity = { sourceSha256: hash(await Bun.file(import.meta.path).text()),
-    calculationSha256: hash(nominalCalculation), inputSha256: hash(JSON.stringify({ selection, input, route })) }
+    calculationSha256: hash(nominalCalculation), inputSha256: hash(JSON.stringify({ selection, input, route, barrel })) }
   const child = Bun.spawn([python, '-c', 'import json,sys\nd=json.load(sys.stdin)\n' + nominalCalculation],
     { stdin: new Blob([JSON.stringify(input)]), stdout: 'pipe', stderr: 'pipe' })
   const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
@@ -101,8 +134,15 @@ export async function auditPrimaryMechanics(wiki: string, python: string) {
   const mixed = ['LOWER', 'UPPER'].map(name => ({ owner: name, volume_m3: cell(name).volume }))
   for (const loop of ['A', 'B']) mixed.push({ owner: 'COLD.' + loop, volume_m3: selection.coldHeaderVolume_m3 })
   const originalVolume = nominal.volume_m3.reduce((a, b) => a + b, 0)
+  const previousPartitionVolume = [...channels, ...mixed].reduce((a, b) => a + b.volume_m3, 0)
+  if (Math.abs(originalVolume - previousPartitionVolume) > 1e-10) throw Error('Historical primary partition duplicated or lost')
+  const returnGeometry = coldReturnGeometry(selection, barrel, dc.volume)
+  for (const [loop, edge] of [['A', 12], ['B', 13]] as const)
+    add('RETURN.' + loop, returnGeometry.volumePerTrain_m3, returnGeometry.area_m2,
+      cell('COLD.' + loop).rho, nominal.flows_kg_s[edge]!, returnGeometry.meanElevation_m)
   const partitionVolume = [...channels, ...mixed].reduce((a, b) => a + b.volume_m3, 0)
-  if (Math.abs(originalVolume - partitionVolume) > 1e-10) throw Error('Whole-primary water volume duplicated or lost')
+  if (Math.abs(partitionVolume - originalVolume - returnGeometry.addedMainVolume_m3) > 1e-10)
+    throw Error('New return volume duplicated or lost')
   const orientationArithmetic = []
   const donor = cell('HOT.A'), g = nominal.gravity_m_s2
   for (const m of [-100, 0, 100]) for (const datum of [0, 100]) {
@@ -117,10 +157,10 @@ export async function auditPrimaryMechanics(wiki: string, python: string) {
       reciprocalPairSum_W: -flux + flux })
   }
   return { ...identity, scope: 'Geometry and mechanical ownership; retained nominal diagnostic, not new plant initialization',
-    selection, sgFold: sg, coldHeaderEnvelope: { bottom_m: hb.coldPort_m - selection.coldHeaderHeight_m / 2,
+    selection, barrel, returnGeometry, sgFold: sg, coldHeaderEnvelope: { bottom_m: hb.coldPort_m - selection.coldHeaderHeight_m / 2,
       top_m: hb.coldPort_m + selection.coldHeaderHeight_m / 2,
       area_m2: selection.coldHeaderVolume_m3 / selection.coldHeaderHeight_m },
-    originalVolume_m3: originalVolume, partitionVolume_m3: partitionVolume,
+    originalVolume_m3: originalVolume, previousPartitionVolume_m3: previousPartitionVolume, partitionVolume_m3: partitionVolume,
     channels, mixed, totalResolvedChannelKineticEnergy_J: channels.reduce((a, b) => a + b.fluidKineticEnergy_J, 0),
     separateRotorEnergy_J: nominal.rotorEnergy_J, orientationArithmetic,
     arithmeticScope: 'Same HOT diagnostic donor under sign/datum reversal; no actual reverse-donor or EOS port recovery validation',

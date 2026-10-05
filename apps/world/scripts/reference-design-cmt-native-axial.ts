@@ -1,6 +1,6 @@
 /**
  * One bounded offline liquid CMT/BAL advancement check. Not an installed plant.
- * Uses actual geometry owners, the shared inspected IF97 adapter and native IDA.
+ * Uses actual geometry owners, the shared inspected IF97 adapter and native IDAS.
  * No maintained fluid boundary, phase seed, alternate backend or automatic retry.
  * Usage: bun .../reference-design-cmt-native-axial.ts IF97_DIR SUNDIALS_ROOT DYLIB_DIR GEOMETRY_OWNER NEW_RECEIPT.json
  */
@@ -10,17 +10,21 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseGeometryBasis, tankGeometry } from './reference-design-cmt-geometry';
 import { parseBalancePathBasis } from './reference-design-cmt-balance-path';
-import { runNativePropertyAdmission } from './reference-design-if97-native';
 import {
   nativeIf97Revision, nativeIf97HeaderSha256, nativeIf97LicenseSha256, nativeIf97Primitives,
 } from './reference-design-if97-primitives';
 
 const sha256 = (x: string | Uint8Array) => createHash('sha256').update(x).digest('hex');
 const libraries = [
-  'libsundials_ida.7.5.0.dylib', 'libsundials_core.7.5.0.dylib',
+  'libsundials_core.7.5.0.dylib',
   'libsundials_nvecserial.7.5.0.dylib', 'libsundials_sunmatrixdense.5.5.0.dylib',
-  'libsundials_sunlinsoldense.5.5.0.dylib',
+  'libsundials_sunmatrixband.5.5.0.dylib', 'libsundials_sunmatrixsparse.5.5.0.dylib',
+  'libsundials_sunlinsoldense.5.5.0.dylib', 'libsundials_sunlinsolband.5.5.0.dylib',
 ];
+// Exact upstream IDAS target source set plus its maintained Newton solver. The
+// existing hashed core supplies generic operations; no local integrator fork.
+const idasSources = ['idas.c', 'idaa.c', 'idas_cli.c', 'idas_io.c', 'idas_ic.c', 'idaa_io.c',
+  'idas_ls.c', 'idas_bbdpre.c', 'idas_nls.c', 'idas_nls_sim.c', 'idas_nls_stg.c'];
 
 const axialFields = ['M', 'P', 'E', 'B', 'Q', 'PP', 'TT'] as const;
 /** This candidate allocates only actual cell-owned stocks and thermodynamic coordinates. */
@@ -110,7 +114,7 @@ function nativeSource(input: ReturnType<typeof fixtureGeometry>) {
   const layout = ownedAxialLayout(input.cells.map(c => c.tank));
   return String.raw`
 ${nativeIf97Primitives}
-#include <ida/ida.h>
+#include <idas/idas.h>
 #include <nvector/nvector_serial.h>
 #include <sunmatrix/sunmatrix_dense.h>
 #include <sunlinsol/sunlinsol_dense.h>
@@ -144,7 +148,7 @@ void require(bool ok,const std::string& message) {
         throw std::runtime_error("Aggregate native guard exhausted");
     if(!ok)throw std::runtime_error(message);
 }
-constexpr int N=${input.cells.length},S=7,RM=8,PHYSICAL=${layout.coordinateCount},D=PHYSICAL+3*RM;
+constexpr int N=${input.cells.length},S=7,RM=8,PHYSICAL=${layout.coordinateCount},D=PHYSICAL,OBSERVERS=3*RM,SAMPLE=D+OBSERVERS;
 constexpr double gravity=9.80665,holeD=${input.b.holeDiameter_m},Cd=${input.path.Cd},Cv=${input.path.Cv};
 struct Cell {double V,z,lo,hi,A0,A1,length,slope,Dh,dA;bool tank;};
 const std::array<Cell,N> cells{{${rows}}};
@@ -171,7 +175,7 @@ struct CellView {
 CellView view(const double* values,int cell){return {values,cell};}
 struct Trace {State s;double velocity,k,concentration,z;};
 struct Flux {double mass,momentum,energy,tracer,mixing;};
-struct Run {long callbacks=0,recoverable=0;std::string failure;double worstM=0,worstE=0,worstB=0;};
+struct Run {long callbacks=0,quadratureCallbacks=0,recoverable=0;std::string failure;double worstM=0,worstE=0,worstB=0;};
 
 State water(double T,double p) {
     ++tuple_calls;const auto s=liquid(T,p);
@@ -194,7 +198,10 @@ State recover_star(const State& start,double rho,double internal) {
 }
 Trace trace(const double* y,int i,double z) {
     const auto& c=cells[i];const auto x=view(y,i);
-    require(x[M]>0&&(!c.tank||x[Q]>=0)&&x[B]>=0,"Negative native liquid or mixing/tracer stock");
+    // Signed finite Q is a NUMERICAL TRIAL continuation only. Its signed energy,
+    // transport and isotropic-stress terms remain; root-dependent closure coefficients
+    // have their analytic zero branch at k<=0. Accepted Q is separately strict >=0.
+    require(x[M]>0&&(!c.tank||std::isfinite(x[Q]))&&x[B]>=0,"Invalid trial liquid or mixing/tracer stock");
     const double p=x[PP]-x[M]/c.V*gravity*(z-c.z);
     return {water(x[TT],p),x[P]/x[M],c.tank?x[Q]/x[M]:0,x[B]/x[M],z};
 }
@@ -283,11 +290,12 @@ const std::array<double,8> gx{{-.9602898564975363,-.7966664774136267,-.525532409
 const std::array<double,8> gw{{.1012285362903763,.2223810344533745,.3137066458778873,.3626837833783620,
     .3626837833783620,.3137066458778873,.2223810344533745,.1012285362903763}};
 
-std::array<double,D> rates(const double* y) {
-    std::array<double,D> out{};
+std::array<double,SAMPLE> rates(const double* y) {
+    // The appended rates are read-only observations, NEVER solver coordinates.
+    std::array<double,SAMPLE> out{};
     std::array<State,N> state;std::array<double,N> velocity{},k{},nu{},diff{},tau{},tauPerp{};
     for(int i=0;i<N;++i){const auto&c=cells[i];const auto x=view(y,i);
-        require(x[M]>0&&x[B]>=0&&(!c.tank||x[Q]>=0),"Negative trial native stock");
+        require(x[M]>0&&x[B]>=0&&(!c.tank||std::isfinite(x[Q])),"Invalid numerical trial native stock");
         state[i]=water(x[TT],x[PP]);velocity[i]=x[P]/x[M];k[i]=c.tank?x[Q]/x[M]:0;
         require(std::abs(velocity[i])<state[i].w,"Native liquid velocity outside subsonic scope");
         // Reconstructed pressure-sidewall/gravity: the actual hydrostatic part cancels M*g exactly.
@@ -429,8 +437,17 @@ int residual(double,const N_Vector yy,const N_Vector yp,N_Vector rr,void* data) 
             require(det>0,"Single-liquid thermodynamic coordinate lost rank");
             r[ix(i,PP)]=(rm*Et-Mt*re)/det;r[ix(i,TT)]=(Mp*re-rm*Ep)/det;
         }
-        for(int j=PHYSICAL;j<D;++j)r[j]=dy[j]-f[j];return 0;
+        return 0;
     }catch(const std::exception&e){run.failure=e.what();++run.recoverable;
+        return std::chrono::duration<double>(Clock::now()-started).count()>guard_seconds?-1:1;}
+}
+
+int quadrature_rhs(double,const N_Vector yy,const N_Vector,N_Vector qdot,void* data) {
+    auto&run=*static_cast<Run*>(data);++run.quadratureCallbacks;
+    // IDAS supplies a nonlinear stage candidate here, NOT an admitted endpoint.
+    try {const auto f=rates(N_VGetArrayPointer(yy));auto*q=N_VGetArrayPointer(qdot);
+        std::copy(f.begin()+D,f.end(),q);return 0;
+    } catch(const std::exception&e){run.failure=e.what();++run.recoverable;
         return std::chrono::duration<double>(Clock::now()-started).count()>guard_seconds?-1:1;}
 }
 
@@ -473,6 +490,16 @@ void local_gates() {
     for(const auto&c:cells){const double isotropic=.125;
         const double force=-isotropic*(c.A1-c.A0)-isotropic*c.A0+isotropic*c.A1;
         require(std::abs(force)<1e-14,"One-sided isotropic area/cap stress failed stationary cancellation");}
+    // Exercise the signed stage continuation without admitting negative stock.
+    // Positive/zero Q retain the same full total-enthalpy and scalar transport law.
+    for(double mixing:{-.01,0.,.01}){std::array<double,D> y{};const auto&c=cells[0];
+        y[ix(0,M)]=c.V*cold.rho;y[ix(0,P)]=.25*y[ix(0,M)];y[ix(0,B)]=.002*y[ix(0,M)];
+        y[ix(0,Q)]=mixing;y[ix(0,PP)]=cold.p;y[ix(0,TT)]=cold.T;
+        const auto t=trace(y.data(),0,c.z);const auto f=euler(t);
+        require(t.k==mixing/y[ix(0,M)],"Signed trial mixing energy was floored or reset");
+        require(std::abs(f.energy-f.mass*(cold.h+.25*.25/2+mixing/y[ix(0,M)]+gravity*c.z))<=1e-7,
+            "Trial scalar/full native energy transport changed its selected law");
+        require((y[ix(0,Q)]>=0)==(mixing>=0),"Strict stock sign predicate was weakened");}
 }
 std::array<double,D> original() {
     std::array<double,D> y{};
@@ -493,18 +520,20 @@ std::array<double,D> original() {
 }
 struct Result {
     double last=0,attained=0,elapsed=0,gross=0,grossE=0,thermal=0,maxT=0,totalQ=0;
-    long steps=0,residuals=0,callbacks=0,jacobians=0,errorFails=0,convergenceFails=0,recoverable=0;
+    long steps=0,residuals=0,callbacks=0,quadratureCallbacks=0,jacobians=0,errorFails=0,convergenceFails=0,recoverable=0;
     double massError=0,energyError=0,tracerError=0;
     double chartPressureError=0,chartTemperatureError=0;
+    double rawMinimumQ=0,canonicalMinimumQ=0,maximumEndpointDifference=0;
+    double firstRawQ=0,firstCanonicalQ=0;
     std::array<std::array<double,RM>,3> ring{};
-    std::vector<std::array<double,D>> common;
+    std::vector<std::array<double,SAMPLE>> common;
 };
 static Result partial;
 static std::vector<Result> completed;
 void statistics(void* mem,Run&data,Result&result) {
     IDAGetNumSteps(mem,&result.steps);IDAGetNumResEvals(mem,&result.residuals);IDAGetNumErrTestFails(mem,&result.errorFails);
     IDAGetNumNonlinSolvConvFails(mem,&result.convergenceFails);IDAGetNumJacEvals(mem,&result.jacobians);
-    result.callbacks=data.callbacks;result.recoverable=data.recoverable;
+    result.callbacks=data.callbacks;result.quadratureCallbacks=data.quadratureCallbacks;result.recoverable=data.recoverable;
 }
 std::array<double,3> totals(const double* y) {
     std::array<double,3>s{};for(int i=0;i<N;++i){s[0]+=y[ix(i,M)];s[1]+=y[ix(i,E)];s[2]+=y[ix(i,B)];}return s;
@@ -524,7 +553,8 @@ Result advance(double factor) {
     const auto begin=Clock::now();const auto init=original();Run data;Result result;partial=Result{};
     SUNContext context=nullptr;ida_ok(SUNContext_Create(SUN_COMM_NULL,&context),"context");
     N_Vector y=N_VNew_Serial(D,context),yp=N_VClone(y),id=N_VClone(y),atol=N_VClone(y),constraints=N_VClone(y);
-    require(y&&yp&&id&&atol&&constraints,"Native serial allocation failed");
+    N_Vector canonical=N_VClone(y),canonicalDerivative=N_VClone(y),quadrature=N_VNew_Serial(OBSERVERS,context);
+    require(y&&yp&&id&&atol&&constraints&&canonical&&canonicalDerivative&&quadrature,"Native serial allocation failed");
     auto*x=N_VGetArrayPointer(y),*dx=N_VGetArrayPointer(yp),*ids=N_VGetArrayPointer(id),*tol=N_VGetArrayPointer(atol),*co=N_VGetArrayPointer(constraints);
     const auto f=rates(init.data());
     for(int j=0;j<D;++j){x[j]=init[j];dx[j]=f[j];ids[j]=1;tol[j]=factor*1e-7;co[j]=0;}
@@ -546,9 +576,7 @@ Result advance(double factor) {
         require(std::abs(Ep*dx[ix(i,PP)]+Et*dx[ix(i,TT)]-Ru)<=1e-4+1e-10*std::abs(Ru),
             "Differentiated original total-energy constraint failed");
     }
-    for(int ring=0;ring<3;++ring){const int j=PHYSICAL+ring*RM;
-        tol[j]=tol[j+1]=factor*1e-6;tol[j+2]=tol[j+3]=factor*.01;
-        tol[j+4]=factor*1e-8;tol[j+5]=tol[j+6]=factor*1e-5;tol[j+7]=factor*.01;}
+    N_VConst(0,quadrature);
     initial_norm_squares.fill(0);
     for(int j=0;j<D;++j){int group=7;
         if(j<PHYSICAL){const int field=coordinateOwner[j].field,cell=coordinateOwner[j].cell;
@@ -572,15 +600,38 @@ Result advance(double factor) {
     ida_ok(IDAInit(mem,residual,0,y,yp),"initialization");ida_ok(IDASetUserData(mem,&data),"user data");
     ida_ok(IDASetId(mem,id),"native/algebraic ids");ida_ok(IDASetConstraints(mem,constraints),"physical constraints");
     ida_ok(IDASVtolerances(mem,0,atol),"inverse-storage native weights");
+    ida_ok(IDAQuadInit(mem,quadrature_rhs,quadrature),"passive ring quadrature initialization");
+    // Observer accuracy is checked by the paired physical arm, not a claimed independent
+    // quadrature LTE bound. These read-only ledgers cannot choose physical startup steps.
+    ida_ok(IDASetQuadErrCon(mem,SUNFALSE),"passive quadrature outside physical error control");
     SUNMatrix matrix=SUNDenseMatrix(D,D,context);SUNLinearSolver solver=SUNLinSol_Dense(y,matrix,context);
     require(matrix&&solver,"Native dense solver allocation failed");ida_ok(IDASetLinearSolver(mem,solver,matrix),"linear solver");
     ida_ok(IDASetMaxNumSteps(mem,20000),"work guard");ida_ok(IDASetMaxStep(mem,1),"operational boundary spacing");
     const auto initialTotals=totals(init.data());double t=0;
     for(int target=1;target<=30;++target){ida_ok(IDASetStopTime(mem,target),"causal stop boundary");
         while(t<target){const int flag=IDASolve(mem,target,&t,y,yp,IDA_ONE_STEP);
-            result.attained=t;statistics(mem,data,result);partial=result;
+            result.attained=t;result.elapsed=std::chrono::duration<double>(Clock::now()-begin).count();
+            statistics(mem,data,result);partial=result;
             if(flag<0)throw std::runtime_error("Accepted time "+std::to_string(t)+" s; "+data.failure+"; IDA status "+std::to_string(flag));
             require(flag==IDA_SUCCESS||flag==IDA_TSTOP_RETURN,"Unexpected IDA event/return");
+            double current=0;ida_ok(IDAGetCurrentTime(mem,&current),"current endpoint time");
+            require(current==t,"Returned output is not the current solver endpoint");
+            // Fresh ONE_STEP can return a stale nonlinear candidate after IDAS corrects
+            // its inequality-constrained correction. Always admit the FULL public history
+            // pair at this SAME endpoint; never patch a component or mutate solver history.
+            ida_ok(IDAGetDky(mem,current,0,canonical),"canonical full endpoint state");
+            ida_ok(IDAGetDky(mem,current,1,canonicalDerivative),"canonical full endpoint derivative");
+            const auto*raw=N_VGetArrayPointer(y);x=N_VGetArrayPointer(canonical);
+            const auto*canonicalDot=N_VGetArrayPointer(canonicalDerivative);
+            for(int j=0;j<D;++j){require(std::isfinite(x[j])&&std::isfinite(canonicalDot[j]),"Nonfinite canonical full endpoint pair");
+                result.maximumEndpointDifference=std::max(result.maximumEndpointDifference,std::abs(raw[j]-x[j])/tol[j]);}
+            for(int i=0;i<13;++i){result.rawMinimumQ=std::min(result.rawMinimumQ,raw[ix(i,Q)]);
+                result.canonicalMinimumQ=std::min(result.canonicalMinimumQ,x[ix(i,Q)]);}
+            if(result.steps==1){result.firstRawQ=raw[ix(0,Q)];result.firstCanonicalQ=x[ix(0,Q)];}
+            ida_ok(IDAGetQuadDky(mem,current,0,quadrature),"same-endpoint passive ring receipts");
+            const auto*q=N_VGetArrayPointer(quadrature);
+            for(int j=0;j<OBSERVERS;++j)require(std::isfinite(q[j]),"Nonfinite passive ring receipt");
+            partial=result;
             const auto total=totals(x);
             result.massError=std::max(result.massError,std::abs(total[0]-initialTotals[0]));
             result.energyError=std::max(result.energyError,std::abs(total[1]-initialTotals[1]));
@@ -602,26 +653,37 @@ Result advance(double factor) {
                 require(pp<=5*factor&&tt<=.001*factor,"Accepted native M/E chart coherence failed");
             }
             result.last=t;last_admitted_time=t;
-            for(int ring=0;ring<3;++ring)for(int j=0;j<RM;++j)result.ring[ring][j]=x[PHYSICAL+ring*RM+j];
+            for(int ring=0;ring<3;++ring)for(int j=0;j<RM;++j)result.ring[ring][j]=q[ring*RM+j];
+            // Failure receipts must describe the LAST ADMITTED endpoint, not synthetic
+            // unfinished-arm zeros or any subsequently rejected trial's observations.
+            result.gross=result.grossE=result.thermal=result.maxT=result.totalQ=0;
+            for(int ring=0;ring<3;++ring){result.gross+=result.ring[ring][1];
+                result.grossE+=result.ring[ring][3];result.thermal+=result.ring[ring][7];}
+            for(int i=0;i<13;++i){result.maxT=std::max(result.maxT,std::abs(x[ix(i,TT)]-313.15));result.totalQ+=x[ix(i,Q)];}
             partial=result;
             if(first_step_only)goto finish_advance;
         }
         require(std::abs(t-target)<=1e-10,"Output is not an accepted IDA stop-time state");
-        std::array<double,D> row;std::copy(x,x+D,row.begin());result.common.push_back(row);
+        std::array<double,SAMPLE> row;std::copy(x,x+D,row.begin());
+        std::copy(N_VGetArrayPointer(quadrature),N_VGetArrayPointer(quadrature)+OBSERVERS,row.begin()+D);
+        result.common.push_back(row);
         std::cerr<<"accepted weight="<<factor<<" t="<<t<<" steps="<<result.steps<<" callbacks="<<data.callbacks<<"\n";
     }
 finish_advance:
-    for(int ring=0;ring<3;++ring){result.gross+=x[PHYSICAL+ring*RM+1];result.grossE+=x[PHYSICAL+ring*RM+3];result.thermal+=x[PHYSICAL+ring*RM+7];}
-    for(int i=0;i<13;++i){result.maxT=std::max(result.maxT,std::abs(x[ix(i,TT)]-313.15));result.totalQ+=x[ix(i,Q)];}
     statistics(mem,data,result);
     result.elapsed=std::chrono::duration<double>(Clock::now()-begin).count();
-    IDAFree(&mem);SUNLinSolFree(solver);SUNMatDestroy(matrix);N_VDestroy(y);N_VDestroy(yp);N_VDestroy(id);N_VDestroy(atol);N_VDestroy(constraints);SUNContext_Free(&context);
+    IDAFree(&mem);SUNLinSolFree(solver);SUNMatDestroy(matrix);N_VDestroy(y);N_VDestroy(yp);N_VDestroy(id);N_VDestroy(atol);N_VDestroy(constraints);
+    N_VDestroy(canonical);N_VDestroy(canonicalDerivative);N_VDestroy(quadrature);SUNContext_Free(&context);
     return result;
 }
 void result_json(const Result&r) {
     std::cout<<"{\"acceptedSeconds\":"<<r.last<<",\"wallSeconds\":"<<r.elapsed
         <<",\"solverAttainedSeconds\":"<<r.attained
         <<",\"steps\":"<<r.steps<<",\"residualEvaluations\":"<<r.residuals<<",\"actualCallbacksIncludingNumericalJacobian\":"<<r.callbacks
+        <<",\"passiveQuadratureCallbacks\":"<<r.quadratureCallbacks
+        <<",\"minimumRawReturnedQJ\":"<<r.rawMinimumQ<<",\"minimumCanonicalEndpointQJ\":"<<r.canonicalMinimumQ
+        <<",\"firstRawCell0QJ\":"<<r.firstRawQ<<",\"firstCanonicalCell0QJ\":"<<r.firstCanonicalQ
+        <<",\"maximumRawCanonicalDifferenceInAtolUnits\":"<<r.maximumEndpointDifference
         <<",\"jacobians\":"<<r.jacobians<<",\"errorTestFailures\":"<<r.errorFails<<",\"nonlinearFailures\":"<<r.convergenceFails
         <<",\"recoverableResiduals\":"<<r.recoverable<<",\"maximumMassDefectKg\":"<<r.massError<<",\"maximumEnergyDefectJ\":"<<r.energyError
         <<",\"maximumTracerDefectKgEq\":"<<r.tracerError<<",\"grossRingMassKg\":"<<r.gross<<",\"grossNativeRingEnergyJ\":"<<r.grossE
@@ -640,11 +702,13 @@ int main(int argc,char**argv) {
             initial_norm_json();std::cout<<",\"firstStep\":";result_json(diagnostic);std::cout<<"}\n";return 0;}
         const auto a=advance(1);completed.push_back(a);const auto b=advance(.5);completed.push_back(b);
         double dt=0,dp=0,dv=0,dm=0,denergy=0,dthermal=0,dq=0;
+        std::array<std::array<double,RM>,3> ringDifference{};
         for(size_t j=0;j<a.common.size();++j){const auto&l=a.common[j];const auto&r=b.common[j];
             for(int i=0;i<N;++i){dt=std::max(dt,std::abs(l[ix(i,TT)]-r[ix(i,TT)]));dp=std::max(dp,std::abs(l[ix(i,PP)]-r[ix(i,PP)]));
                 dv=std::max(dv,std::abs(l[ix(i,P)]/l[ix(i,M)]-r[ix(i,P)]/r[ix(i,M)]));}
             double ml=0,mr=0,el=0,er=0,hl=0,hr=0,ql=0,qr=0;
-            for(int ring=0;ring<3;++ring){const int k=PHYSICAL+ring*RM;ml+=l[k+1];mr+=r[k+1];el+=l[k+3];er+=r[k+3];hl+=l[k+7];hr+=r[k+7];}
+            for(int ring=0;ring<3;++ring){const int k=PHYSICAL+ring*RM;ml+=l[k+1];mr+=r[k+1];el+=l[k+3];er+=r[k+3];hl+=l[k+7];hr+=r[k+7];
+                for(int c=0;c<RM;++c)ringDifference[ring][c]=std::max(ringDifference[ring][c],std::abs(l[k+c]-r[k+c]));}
             for(int i=0;i<13;++i){ql+=l[ix(i,Q)];qr+=r[ix(i,Q)];}
             dm=std::max(dm,std::abs(ml-mr));denergy=std::max(denergy,std::abs(el-er));
             dthermal=std::max(dthermal,std::abs(hl-hr));dq=std::max(dq,std::abs(ql-qr));}
@@ -657,7 +721,9 @@ int main(int argc,char**argv) {
         std::cout<<",\"commonAcceptedSamples\":"<<a.common.size()<<",\"maximumPairedTemperatureK\":"<<dt<<",\"maximumPairedPressurePa\":"<<dp
             <<",\"maximumPairedVelocityMS\":"<<dv<<",\"maximumGrossMassDifferenceKg\":"<<dm<<",\"maximumGrossNativeEnergyDifferenceJ\":"<<denergy
             <<",\"maximumDatumSubtractedEnergyDifferenceJ\":"<<dthermal<<",\"maximumQDifferenceJ\":"<<dq
-            <<",\"checks\":"<<checks<<",\"propertyTuples\":"<<tuple_calls<<",\"forwardPressureDefectPa\":"<<max_forward_p<<"}\n";return 0;
+            <<",\"maximumPerRingPairedReceiptDifferences\":[";
+        for(int ring=0;ring<3;++ring){if(ring)std::cout<<",";std::cout<<"[";for(int c=0;c<RM;++c){if(c)std::cout<<",";std::cout<<ringDifference[ring][c];}std::cout<<"]";}
+        std::cout<<"],\"quadratureErrorControlled\":false,\"checks\":"<<checks<<",\"propertyTuples\":"<<tuple_calls<<",\"forwardPressureDefectPa\":"<<max_forward_p<<"}\n";return 0;
     }catch(const std::exception&e){std::cerr<<e.what()<<"\n";
         std::cout<<"{\"passed\":false,\"lastAdmittedSeconds\":"<<last_admitted_time
             <<",\"weightFactor\":"<<active_weight_factor<<",\"checks\":"<<checks<<",\"propertyTuples\":"<<tuple_calls
@@ -692,13 +758,18 @@ export async function runNativeAxialAdmission(if97Directory: string, sundialsRoo
   const scratch = await mkdtemp(join(tmpdir(), 'ld01-native-axial-'));
   const source = join(scratch, 'admission.cpp'), executable = join(scratch, 'admission');
   await writeFile(source, cpp, { flag: 'wx' });
+  const upstreamRoot = join(solverRoot, 'sundials-7.5.0');
+  const idasInputPaths = [...idasSources.map(name => join(upstreamRoot, 'src', 'idas', name)),
+    join(upstreamRoot, 'src', 'sunnonlinsol', 'newton', 'sunnonlinsol_newton.c')];
+  const idasInputs = await Promise.all(idasInputPaths.map(async path => ({ path, sha256: sha256(await readFile(path)) })));
+  const idasHeaderPaths = ['idas.h', 'idas_ls.h', 'idas_bbdpre.h'].map(name => join(upstreamRoot, 'include', 'idas', name));
+  const privateHeaderPaths = ['idas_impl.h', 'idas_ls_impl.h', 'idas_bbdpre_impl.h'].map(name => join(upstreamRoot, 'src', 'idas', name));
+  const headerInputs = await Promise.all([...idasHeaderPaths, ...privateHeaderPaths].map(async path => ({ path, sha256: sha256(await readFile(path)) })));
+  const idasLibrary = join(scratch, 'libsundials_idas.7.5.0.dylib');
   const began = performance.now();
-  // This regression is debited from the SAME outer aggregate allowance, not a second120s campaign.
-  const primitiveRegression = await runNativePropertyAdmission(input, join(scratch, 'primitive-regression.json'),
-    (120_000 - (performance.now() - began)) / 1000);
   async function execute(command: string[]) {
-    const remaining = 120_000 - (performance.now() - began);
-    if (remaining <= 0) throw Error('Aggregate compile/native allowance exhausted');
+    const remaining = 119_000 - (performance.now() - began);
+    if (remaining <= 0) return { command, exitCode: -1, timedOut: true, stdout: '', stderr: 'Aggregate compile/native allowance exhausted before launch' };
     // The inspected macOS wheel dylibs retain upstream /DLC install names.
     // Resolve only against the explicitly supplied, hashed native artifact directory.
     const child = Bun.spawn(command, { stdout: 'pipe', stderr: 'pipe',
@@ -709,11 +780,17 @@ export async function runNativeAxialAdmission(if97Directory: string, sundialsRoo
     ]);return { command, exitCode, timedOut, stdout, stderr }; }
     finally { clearTimeout(timer); }
   }
-  const compiler = primitiveRegression.passed ? await execute(['clang++', '--version']) : null;
+  const compiler = await execute(['clang++', '--version']);
   const flags = ['-std=c++17', '-O2', '-I', input, '-I', join(solverRoot, 'headers', 'include'),
     '-I', join(solverRoot, 'sundials-7.5.0', 'include')];
-  const build = compiler?.exitCode === 0 && !compiler.timedOut
-    ? await execute(['clang++', ...flags, source, ...solverArtifacts.map(x => x.path), '-o', executable]) : null;
+  const idasFlags = ['-std=gnu99', '-O2', '-fPIC', '-dynamiclib', '-I', join(solverRoot, 'headers', 'include'),
+    '-I', join(upstreamRoot, 'include'), '-I', join(upstreamRoot, 'src', 'sundials'),
+    '-I', join(solverRoot, 'headers', 'src', 'sundials')];
+  const idasBuild = compiler.exitCode === 0 && !compiler.timedOut
+    ? await execute(['clang', ...idasFlags, ...idasInputPaths, ...solverArtifacts.map(x => x.path),
+      '-Wl,-install_name,' + idasLibrary, '-o', idasLibrary]) : null;
+  const build = idasBuild?.exitCode === 0 && !idasBuild.timedOut
+    ? await execute(['clang++', ...flags, source, idasLibrary, ...solverArtifacts.map(x => x.path), '-o', executable]) : null;
   const remaining = Math.max(0, (120_000 - (performance.now() - began)) / 1000 - 1);
   const run = build?.exitCode === 0 && !build.timedOut ? await execute([executable, String(remaining)]) : null;
   let nativeResult: unknown = null, parseFailure: string | null = null;
@@ -724,20 +801,23 @@ export async function runNativeAxialAdmission(if97Directory: string, sundialsRoo
     schema: 'ld01-offline-native-liquid-axial-admission', recordedAt: new Date().toISOString(), passed,
     upstream: { project: 'CoolProp/IF97', version: '2.2.1', revision: nativeIf97Revision,
       headerSha256: nativeIf97HeaderSha256, licenseSha256: nativeIf97LicenseSha256, license: 'MIT' },
-    solver: { project: 'SUNDIALS IDA', version: '7.5.0', license: 'BSD-3-Clause',
+    solver: { project: 'SUNDIALS IDAS', version: '7.5.0', license: 'BSD-3-Clause',
       solverLicensePath, solverLicenseSha256: sha256(solverLicense), artifacts: solverArtifacts,
+      idasInputs, headerInputs, idasLibrary,
+      idasLibrarySha256: idasBuild?.exitCode === 0 ? sha256(await readFile(idasLibrary)) : null,
       generatedConfigSha256: sha256(await readFile(join(solverRoot, 'headers', 'include', 'sundials', 'sundials_config.h'))),
       loaderEnvironment: { DYLD_LIBRARY_PATH: dylibs },
-      realization: 'Native serial vectors/dense direct linear solver; 64-bit double, 32-bit indices' },
+      realization: 'Maintained IDAS source/native serial vectors/dense direct solver; 139 owned coordinates, 24 passive quadratures outside physical error control; 64-bit double, 32-bit indices' },
     artifact: { wrapperPath: import.meta.path, wrapperSha256: sha256(await readFile(import.meta.path)),
       primitiveModulePath: primitivePath.pathname, primitiveModuleSha256: primitiveSha256,
+      primitivePayloadSha256: sha256(nativeIf97Primitives),
       geometryHelperSha256: sha256(await readFile(new URL('./reference-design-cmt-geometry.ts', import.meta.url))),
       pathHelperSha256: sha256(await readFile(new URL('./reference-design-cmt-balance-path.ts', import.meta.url))),
       cppSha256: sha256(cpp), scratch, source, executable,
       binarySha256: build?.exitCode === 0 ? sha256(await readFile(executable)) : null },
     owner: { path: owner, sha256: sha256(ownerBytes) }, geometry,
     allowanceSeconds: 120, aggregateElapsedSeconds: (performance.now() - began) / 1000,
-    primitiveRegression, compiler, flags, build, run, nativeResult, parseFailure,
+    primitiveRegression: null, compiler, flags, idasFlags, idasBuild, build, run, nativeResult, parseFailure,
     scope: 'One finite all-liquid isolated CMT60/BAL1 assembly, real closed header/outlets,30s and paired temporal weights. No maintained fluid boundaries, injection, primary return, phase/NC advancement, actuator qualification, spatial convergence, empirical fidelity, whole plant or multiunit performance claim.',
   };
   await writeFile(output, JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });return receipt;
