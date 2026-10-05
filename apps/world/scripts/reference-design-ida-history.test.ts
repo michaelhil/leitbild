@@ -1,5 +1,15 @@
 import { expect, test } from 'bun:test';
 
+test('variable-step order2 FLC stage and history-interpolant derivatives have different correction coefficients', () => {
+  const h = 0.2, previousH = 0.1, correction = 0.3;
+  const stageCoefficient = 3 / (2 * h);
+  const historyCoefficient = 1 / h + 1 / (h + previousH);
+  const difference = (historyCoefficient - stageCoefficient) * correction;
+  expect(difference).toBeCloseTo(0.25, 14);
+  expect(difference).not.toBe(0);
+  expect((1 / h + 1 / (h + h) - stageCoefficient) * correction).toBeCloseTo(0, 14);
+});
+
 // Static IEEE-754 arithmetic only: this is the scalar order-one association in
 // IDA/IDAS7.5's small-constraint-correction and CompleteStep history paths.
 // It neither runs a solver nor recovers the UNRECORDED operands of the CMT case.

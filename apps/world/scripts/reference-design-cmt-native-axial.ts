@@ -623,9 +623,9 @@ Result advance(double factor) {
             require(flag==IDA_SUCCESS||flag==IDA_TSTOP_RETURN,"Unexpected IDA event/return");
             double current=0;ida_ok(IDAGetCurrentTime(mem,&current),"current endpoint time");
             require(current==t,"Returned output is not the current solver endpoint");
-            // Fresh ONE_STEP can return a stale nonlinear candidate after IDAS corrects
-            // its inequality-constrained correction. Always admit the FULL public history
-            // pair at this SAME endpoint; never patch a component or mutate solver history.
+            // Admit the complete history STATE at this endpoint. Dky1 is its polynomial
+            // derivative, not necessarily the FLC-BDF stage derivative at variable step/order.
+            // Never substitute a component or alter solver history in this checker.
             ida_ok(IDAGetDky(mem,current,0,canonical),"canonical full endpoint state");
             ida_ok(IDAGetDky(mem,current,1,canonicalDerivative),"canonical full endpoint derivative");
             const auto*raw=N_VGetArrayPointer(y);x=N_VGetArrayPointer(canonical);
@@ -639,7 +639,7 @@ Result advance(double factor) {
                 require(raw[j]==x[j],"Corrected full endpoint and public history differ");
                 const double derivativeDifference=std::abs(rawDot[j]-canonicalDot[j])*lastStep/tol[j];
                 result.maximumDerivativePairDifference=std::max(result.maximumDerivativePairDifference,derivativeDifference);
-                require(std::isfinite(derivativeDifference)&&derivativeDifference<=1e-6,"Corrected full derivative and public history are incoherent");}
+                require(std::isfinite(derivativeDifference),"Nonfinite stage/history derivative diagnostic");}
             for(int i=0;i<13;++i){result.rawMinimumQ=std::min(result.rawMinimumQ,raw[ix(i,Q)]);
                 result.canonicalMinimumQ=std::min(result.canonicalMinimumQ,x[ix(i,Q)]);}
             if(result.steps==1){result.firstRawQ=raw[ix(0,Q)];result.firstCanonicalQ=x[ix(0,Q)];}
@@ -699,7 +699,7 @@ void result_json(const Result&r) {
         <<",\"minimumRawReturnedQJ\":"<<r.rawMinimumQ<<",\"minimumCanonicalEndpointQJ\":"<<r.canonicalMinimumQ
         <<",\"firstRawCell0QJ\":"<<r.firstRawQ<<",\"firstCanonicalCell0QJ\":"<<r.firstCanonicalQ
         <<",\"maximumRawCanonicalDifferenceInAtolUnits\":"<<r.maximumEndpointDifference
-        <<",\"maximumFullDerivativePairDifferenceInStepAtolUnits\":"<<r.maximumDerivativePairDifference
+        <<",\"maximumStageHistoryDerivativeDifferenceInStepAtolUnits\":"<<r.maximumDerivativePairDifference
         <<",\"observedOrderStepCounts\":[";
     for(size_t k=1;k<r.observedOrders.size();++k){if(k>1)std::cout<<",";std::cout<<r.observedOrders[k];}
     std::cout<<"]"
@@ -790,6 +790,7 @@ export async function runNativeAxialAdmission(if97Directory: string, sundialsRoo
   const source = join(scratch, 'admission.cpp'), executable = join(scratch, 'admission');
   await writeFile(source, cpp, { flag: 'wx' });
   const nativeFixtureSource = join(scratch, 'solver-invariants.cpp'), nativeFixtureBinary = join(scratch, 'solver-invariants');
+  const controlFixtureBinary = join(scratch, 'solver-invariants-control');
   await writeFile(nativeFixtureSource, nativeIdasConsistencyFixture, { flag: 'wx' });
   const nativeFixtureModulePath = new URL('./reference-design-idas-consistency.ts', import.meta.url).pathname;
   const nativeFixtureModuleSha256 = sha256(await readFile(nativeFixtureModulePath));
@@ -802,6 +803,7 @@ export async function runNativeAxialAdmission(if97Directory: string, sundialsRoo
   const privateHeaderPaths = ['idas_impl.h', 'idas_ls_impl.h', 'idas_bbdpre_impl.h'].map(name => join(upstreamRoot, 'src', 'idas', name));
   const headerInputs = await Promise.all([...idasHeaderPaths, ...privateHeaderPaths].map(async path => ({ path, sha256: sha256(await readFile(path)) })));
   const idasLibrary = join(scratch, 'libsundials_idas.7.5.0.dylib');
+  const controlLibrary = join(scratch, 'libsundials_idas.control.7.5.0.dylib');
   const patchPath = new URL('./reference-design-idas-consistency.patch', import.meta.url).pathname;
   const patchBytes = await readFile(patchPath);
   const regressionPaths = ['reference-design-ida-history.test.ts', 'reference-design-cmt-native-axial.test.ts']
@@ -837,10 +839,25 @@ export async function runNativeAxialAdmission(if97Directory: string, sundialsRoo
   const idasBuild = compiler?.exitCode === 0 && !compiler.timedOut
     ? await execute(['clang', ...idasFlags, privateSource, ...idasInputPaths.slice(1), ...solverArtifacts.map(x => x.path),
       '-Wl,-install_name,' + idasLibrary, '-o', idasLibrary]) : null;
-  const nativeFixtureBuild = idasBuild?.exitCode === 0 && !idasBuild.timedOut
+  // Identical official source/build inputs except the explicitly captured candidate diff.
+  const controlBuild = idasBuild?.exitCode === 0 && !idasBuild.timedOut
+    ? await execute(['clang', ...idasFlags, ...idasInputPaths, ...solverArtifacts.map(x => x.path),
+      '-Wl,-install_name,' + controlLibrary, '-o', controlLibrary]) : null;
+  const controlFixtureBuild = controlBuild?.exitCode === 0 && !controlBuild.timedOut
+    ? await execute(['clang++', ...flags, nativeFixtureSource, controlLibrary, ...solverArtifacts.map(x => x.path), '-o', controlFixtureBinary]) : null;
+  const controlFixtureRun = controlFixtureBuild?.exitCode === 0 && !controlFixtureBuild.timedOut
+    ? await execute([controlFixtureBinary, String(Math.max(0, allowanceSeconds - 2 - (performance.now() - began) / 1000)), 'control']) : null;
+  let controlFixtureResult: unknown = null;
+  if (controlFixtureRun && !controlFixtureRun.timedOut) {
+    try { controlFixtureResult = JSON.parse(controlFixtureRun.stdout); } catch { /* Failed control output is retained; no candidate/field launch. */ }
+  }
+  const controlPassed = controlFixtureRun?.exitCode === 0 && !controlFixtureRun.timedOut
+    && !!controlFixtureResult && typeof controlFixtureResult === 'object'
+    && 'passed' in controlFixtureResult && controlFixtureResult.passed === true;
+  const nativeFixtureBuild = controlPassed
     ? await execute(['clang++', ...flags, nativeFixtureSource, idasLibrary, ...solverArtifacts.map(x => x.path), '-o', nativeFixtureBinary]) : null;
   const nativeFixtureRun = nativeFixtureBuild?.exitCode === 0 && !nativeFixtureBuild.timedOut
-    ? await execute([nativeFixtureBinary, String(Math.max(0, allowanceSeconds - 2 - (performance.now() - began) / 1000))]) : null;
+    ? await execute([nativeFixtureBinary, String(Math.max(0, allowanceSeconds - 2 - (performance.now() - began) / 1000)), 'candidate']) : null;
   let nativeFixtureResult: unknown = null;
   if (nativeFixtureRun && !nativeFixtureRun.timedOut) {
     try { nativeFixtureResult = JSON.parse(nativeFixtureRun.stdout); } catch { /* Retain failed fixture output; no field launch. */ }
@@ -869,6 +886,9 @@ export async function runNativeAxialAdmission(if97Directory: string, sundialsRoo
         patchPath, patchSha256: sha256(patchBytes), baseSourceSha256: idasBaseSourceSha256,
         scope: 'Whole-state constraint correction/endpoint/history consistency only; no physical laws, tolerance or higher-column update changes. Sensitivities and adjoints unqualified.' },
       idasLibrarySha256: idasBuild?.exitCode === 0 ? sha256(await readFile(idasLibrary)) : null,
+      unchangedControl: { library: controlLibrary,
+        librarySha256: controlBuild?.exitCode === 0 ? sha256(await readFile(controlLibrary)) : null,
+        sourceInputs: idasInputs, build: controlBuild },
       generatedConfigSha256: sha256(await readFile(join(solverRoot, 'headers', 'include', 'sundials', 'sundials_config.h'))),
       loaderEnvironment: { DYLD_LIBRARY_PATH: dylibs },
       realization: 'Isolated upstreamable IDAS whole-state consistency candidate/native serial vectors/dense direct solver; 139 owned coordinates, 24 passive quadratures outside physical error control; 64-bit double, 32-bit indices' },
@@ -890,6 +910,13 @@ export async function runNativeAxialAdmission(if97Directory: string, sundialsRoo
       source: nativeFixtureSource, sourceSha256: sha256(nativeIdasConsistencyFixture), executable: nativeFixtureBinary,
       binarySha256: nativeFixtureBuild?.exitCode === 0 ? sha256(await readFile(nativeFixtureBinary)) : null,
       build: nativeFixtureBuild, run: nativeFixtureRun, result: nativeFixtureResult },
+    unchangedControlFixture: { source: nativeFixtureSource, sourceSha256: sha256(nativeIdasConsistencyFixture),
+      executable: controlFixtureBinary,
+      binarySha256: controlFixtureBuild?.exitCode === 0 ? sha256(await readFile(controlFixtureBinary)) : null,
+      build: controlFixtureBuild, run: controlFixtureRun, result: controlFixtureResult },
+    derivativeContract: { genuineStage: 'Fresh IDA_SUCCESS with actual step count increment; toy known-rate residual <=1e-5.',
+      interpolant: 'Dky1/TSTOP outputs are polynomial derivative approximations; finite diagnostics only, no stage-equality assertion.',
+      candidateState: 'Complete corrected endpoint equals history; unchanged-control discrepancy descriptive only.' },
     compiler, flags, idasFlags, idasBuild, build, run, nativeResult, parseFailure,
     scope: 'One finite all-liquid isolated CMT60/BAL1 assembly, real closed header/outlets,30s and paired temporal weights. No maintained fluid boundaries, injection, primary return, phase/NC advancement, actuator qualification, spatial convergence, empirical fidelity, whole plant or multiunit performance claim.',
   };
@@ -904,6 +931,9 @@ if (import.meta.main) {
     patchError: receipt.patchApplication?.exitCode !== 0 ? receipt.patchApplication?.stderr : null,
     fixtureBuildError: receipt.nativeFixture.build?.exitCode !== 0 ? receipt.nativeFixture.build?.stderr : null,
     fixtureError: receipt.nativeFixture.run?.exitCode !== 0 ? receipt.nativeFixture.run?.stderr : null,
+    controlBuildError: receipt.solver.unchangedControl.build?.exitCode !== 0 ? receipt.solver.unchangedControl.build?.stderr : null,
+    controlFixtureBuildError: receipt.unchangedControlFixture.build?.exitCode !== 0 ? receipt.unchangedControlFixture.build?.stderr : null,
+    controlFixtureError: receipt.unchangedControlFixture.run?.exitCode !== 0 ? receipt.unchangedControlFixture.run?.stderr : null,
     solverBuildError: receipt.idasBuild?.exitCode !== 0 ? receipt.idasBuild?.stderr : null,
     buildError: receipt.build?.exitCode !== 0 ? receipt.build?.stderr : null,
     runError: receipt.run?.exitCode !== 0 ? receipt.run?.stderr : null }, null, 2));
