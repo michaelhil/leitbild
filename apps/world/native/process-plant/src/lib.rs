@@ -2,6 +2,8 @@
 //! Equations: LD-01 operating-fluid-model, native single-liquid storage/chart.
 use std::ffi::{CStr, c_char};
 
+pub mod fuel_source;
+
 pub const GRAVITY: f64 = 9.80665;
 
 #[repr(C)]
