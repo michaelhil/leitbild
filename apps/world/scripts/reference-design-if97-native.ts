@@ -1,5 +1,5 @@
 /**
- * Bounded offline pure-water property admission, not an LD-01 runtime.
+ * Bounded offline native property/phase admission, not an LD-01 runtime.
  * Input: one independently acquired official IF97.h + LICENSE at the pinned revision.
  * No network acquisition, dependency installation, trajectories or backend fallback.
  * Usage: bun apps/world/scripts/reference-design-if97-native.ts INPUT_DIRECTORY NEW_RECEIPT.json
@@ -34,6 +34,12 @@ static double max_phase_condition=0, max_phase_residual=0, max_phase_p_error=0;
 static double max_phase_temperature_error=0, max_dense_endpoint_p_error=0;
 static double max_phase_total_pressure_error=0;
 static double max_centroid_identity=0, min_contact_latent_heat=1e300;
+static int conversion_cases=0, birth_cases=0;
+static double max_conversion_mass_error=0,max_conversion_energy_error=0,max_inactive_energy_error=0;
+static double max_conversion_momentum_error=0,max_component_identity_error=0;
+static double max_quadrature_pressure_difference=0,max_quadrature_temperature_difference=0,max_quadrature_mass_difference=0;
+static double min_retained_opposite_margin=1e300,min_real_conversion=1e300;
+static double born_steam_mass=0,born_liquid_mass=0,nc_born_steam_mass=0;
 
 void require(bool ok, const std::string& message) {
     ++checks;
@@ -282,10 +288,10 @@ struct Geometry { double V,z,H;bool cut;
     double dz()const{return cut?-H/(2*V):0;}
 };
 struct Phase { Geometry geometry;NC nc;double Pl,Pg,Q; };
-Map<4> phasic(std::array<double,4> x,const Phase& c) {
+Map<4> phasic_states(std::array<double,4> x,const Phase& c,const State& l,const State& v) {
     const double pv=x[0],Tl=x[1],Tg=x[2],Vg=x[3],V=c.geometry.V;
     require(Vg>0&&Vg<V,"Positive disjoint phase volumes required");
-    const double p=pv+c.nc.S()*Tg/Vg;const auto l=liquid(Tl,p),v=vapor(Tg,pv);
+    const double p=pv+c.nc.S()*Tg/Vg;
     const double Ml=l.rho*(V-Vg),Mv=v.rho*Vg,Mg=Mv+c.nc.mass();
     const double zl=c.geometry.zl(Vg),zg=c.geometry.zg(Vg),g=9.80665;
     const double Kl=c.Pl*c.Pl/(2*Ml),Kg=c.Pg*c.Pg/(2*Mg);
@@ -302,6 +308,10 @@ Map<4> phasic(std::array<double,4> x,const Phase& c) {
         out.J[3][j]=(v.u-Kg/Mg+g*zg)*dMv+Mv*((j==0?vup:0)+(j==2?vut:0))
             +(j==2?c.nc.C():0)+(j==3?Mg*g*c.geometry.dz():0);
     }return out;
+}
+Map<4> phasic(std::array<double,4> x,const Phase& c) {
+    const double p=x[0]+c.nc.S()*x[2]/x[3];
+    return phasic_states(x,c,liquid(x[1],p),vapor(x[2],x[0]));
 }
 Map<2> hem(std::array<double,2> x,Geometry geometry,NC nc,double P) {
     const double T=x[0],Vg=x[1],V=geometry.V;require(Vg>0&&Vg<V,"Wet HEM volumes required");
@@ -446,6 +456,204 @@ void phase_checks() {
     require(max_centroid_identity<=1e-14,"Complementary cut phase first moments failed");
 }
 
+struct AcceptedPhase {std::array<double,4>x;Phase c;Map<4> native;};
+struct ActiveEvaluation {Map<3> residual;AcceptedPhase state;double dm,ud,kd,h,pbar;};
+ActiveEvaluation active_evaluate(std::array<double,3> y,const AcceptedPhase& old,bool liquid_active,double heat) {
+    const auto& nc=old.c.nc;const double pv=y[0],otherT=y[1],Vg=y[2];
+    const double Tg=liquid_active?otherT:r4.T_p(pv);
+    const double p=pv+nc.S()*Tg/Vg,Tl=liquid_active?r4.T_p(p):otherT;
+    const std::array<double,4>x{{pv,Tl,Tg,Vg}};
+    const auto l=liquid_active?endpoint(p,true):liquid(Tl,p);
+    const auto v=liquid_active?vapor(Tg,pv):endpoint(pv,false);
+    const double Mv=v.rho*Vg,dm=Mv-old.native.value[1];
+    // The declared evaporation/condensation branch fixes the one-sided origin Jacobian.
+    // Final signed complementarity is checked; an unaccepted Newton trial is not a donor switch.
+    const bool evaporation=liquid_active;const double Ml0=old.native.value[0],Mg0=old.native.value[1]+nc.mass();
+    const double ud=evaporation?old.c.Pl/Ml0:old.c.Pg/Mg0,kd=evaporation?old.c.Q/Ml0:0;
+    auto c=old.c;c.Pl-=dm*ud;c.Pg+=dm*ud;c.Q-=dm*kd;
+    require(c.Q>=0,"Liquid donor Q exhausted before one-active endpoint");
+    auto native=phasic_states(x,c,l,v);
+    const double pbar=(old.native.pressure+p)/2,pvbar=(old.x[0]+pv)/2;
+    const auto interface_state=liquid_active?endpoint(pbar,false):
+        nc.mass()==0?endpoint(pbar,true):liquid(r4.T_p(pvbar),pbar);
+    const double h=interface_state.h,gz=9.80665*(c.geometry.z+c.geometry.H/2);
+    const double carried_h=dm*h,carried_K=dm*ud*ud/2,carried_Q=dm*kd,carried_PE=dm*gz;
+    const double payload=carried_h+carried_K+carried_Q+carried_PE;
+    const double changeV=Vg-old.x[3],work=pbar*changeV;
+    Map<3> residual;residual.pressure=p;
+    residual.value={native.value[0]+native.value[1]-Ml0-old.native.value[1],
+        native.value[2]+native.value[3]-old.native.value[2]-old.native.value[3]-heat,
+        liquid_active?native.value[3]-old.native.value[3]-payload+work:
+            native.value[2]-old.native.value[2]+payload-work};
+    // Chain native analytic storage through the actual active temperature constraint.
+    std::array<std::array<double,3>,4>C{};C[0]={1,0,0};C[3]={0,0,1};
+    std::array<double,3> dp{};
+    if(liquid_active){C[2]={0,1,0};dp={1,nc.S()/Vg,-nc.S()*Tg/(Vg*Vg)};
+        for(size_t j=0;j<3;++j)C[1][j]=saturation_slope(p)*dp[j];}
+    else{C[1]={0,1,0};C[2]={saturation_slope(pv),0,0};dp={1+nc.S()*C[2][0]/Vg,0,-nc.S()*Tg/(Vg*Vg)};}
+    for(size_t j=0;j<3;++j){std::array<double,4> D{};
+        for(size_t i=0;i<4;++i)for(size_t k=0;k<4;++k)D[i]+=native.J[i][k]*C[k][j];
+        const double dMv=D[1],ul=c.Pl/native.value[0],ug=c.Pg/(native.value[1]+nc.mass());
+        D[2]+=(-ud*ul-kd)*dMv;D[3]+=ud*ug*dMv;
+        const double hp=(1-interface_state.T*interface_state.alpha)/interface_state.rho;
+        const double dh=liquid_active?.5*(hp+interface_state.cp*saturation_slope(pbar))*dp[j]:
+            .5*hp*dp[j]+.5*interface_state.cp*saturation_slope(pvbar)*(j==0?1:0);
+        const double dPayload=dMv*(h+ud*ud/2+kd+gz)+dm*dh;
+        const double dWork=.5*dp[j]*changeV+(j==2?pbar:0);
+        residual.J[0][j]=D[0]+D[1];residual.J[1][j]=D[2]+D[3];
+        residual.J[2][j]=liquid_active?D[3]-dPayload+dWork:D[2]+dPayload-dWork;
+    }return {residual,{x,c,native},dm,ud,kd,h,pbar};
+}
+void component(double actual,double expected,const char* name) {
+    const double error=std::abs(actual-expected);max_component_identity_error=std::max(max_component_identity_error,error);
+    require(error<=1e-10+1e-10*std::abs(expected),std::string("Conversion component identity: ")+name);
+}
+void verify_conversion(const AcceptedPhase& old,const ActiveEvaluation& end,bool liquid_active,double heat) {
+    const auto& s=end.state;const double dm=end.dm,Ml=s.native.value[0],Mg=s.native.value[1]+s.c.nc.mass();
+    const double Ml0=old.native.value[0],Mg0=old.native.value[1]+old.c.nc.mass();
+    const double mass=std::abs(end.residual.value[0]),energy=std::abs(end.residual.value[1]),inactive=std::abs(end.residual.value[2]);
+    max_conversion_mass_error=std::max(max_conversion_mass_error,mass);max_conversion_energy_error=std::max(max_conversion_energy_error,energy);
+    max_inactive_energy_error=std::max(max_inactive_energy_error,inactive);
+    const double momentum=std::abs(s.c.Pl+s.c.Pg-old.c.Pl-old.c.Pg);
+    max_conversion_momentum_error=std::max(max_conversion_momentum_error,momentum);
+    require(mass<=1e-10&&energy<=1e-5&&inactive<=1e-5&&momentum<=1e-10,"Native conversion conservation/work screen");
+    require(liquid_active?dm>0:dm<0,"External fixture source did not produce the declared signed conversion");
+    min_real_conversion=std::min(min_real_conversion,std::abs(dm));
+    if(liquid_active&&s.x[0]<IF97::Pmin) {
+        // Actual dilute steam is stable here; the saturation inverse is not defined.
+        require(s.x[2]>IF97::Tmin,"Dilute opposing steam left its admitted temperature domain");
+        if(s.x[2]<=IF97::Tcrit)require(s.x[0]<r4.p_T(s.x[2]),"Dilute opposing steam lost its stable branch");
+    } else {
+        const double margin=liquid_active?s.x[2]-r4.T_p(s.x[0]):r4.T_p(s.native.pressure)-s.x[1];
+        require(margin>0,"Opposite phase reached its own boundary; one-active comparison stops");
+        min_retained_opposite_margin=std::min(min_retained_opposite_margin,margin);
+    }
+    component(s.c.Pl-old.c.Pl,-dm*end.ud,"liquid momentum");component(s.c.Pg-old.c.Pg,dm*end.ud,"gas momentum");
+    component(s.c.Q-old.c.Q,-dm*end.kd,"carried liquid Q");
+    const double receiverM=dm>0?Mg0:Ml0,receiverU=dm>0?old.c.Pg/Mg0:old.c.Pl/Ml0,amount=std::abs(dm);
+    const double mixloss=.5*receiverM*amount/(receiverM+amount)*(end.ud-receiverU)*(end.ud-receiverU);
+    const double K0=old.c.Pl*old.c.Pl/(2*Ml0)+old.c.Pg*old.c.Pg/(2*Mg0);
+    const double K1=s.c.Pl*s.c.Pl/(2*Ml)+s.c.Pg*s.c.Pg/(2*Mg);
+    component(K0-K1,mixloss,"native momentum-mixing kinetic loss");
+    const double z=old.c.geometry.z+old.c.geometry.H/2,gz=9.80665*z;
+    component((s.native.value[1]-old.native.value[1])*gz,dm*gz,"converted gas PE");
+    component((Ml-Ml0)*gz,-dm*gz,"converted liquid PE");
+    // Independent component receipts make wrong-zero/double-count visible below native E's offset.
+    require(std::abs(dm*end.ud*end.ud/2)>1e-10&&std::abs(dm*gz)>1e-10,"Kinetic/PE receipt too small to discriminate wrong zero");
+    if(dm>0)require(std::abs(dm*end.kd)>1e-10,"Q receipt too small to discriminate wrong zero");
+    const double Wg=end.pbar*(s.x[3]-old.x[3]),Wl=end.pbar*((s.c.geometry.V-s.x[3])-(old.c.geometry.V-old.x[3]));
+    component(Wg+Wl,0,"reciprocal phase volume work");(void)heat;
+}
+ActiveEvaluation advance_active(const AcceptedPhase& old,bool liquid_active,double heat) {
+    std::array<double,3> y{{old.x[0]>0?old.x[0]:10,liquid_active?old.x[2]:old.x[1],old.x[3]}};
+    const std::array<double,3> xs{{std::max(y[0],10.),y[1],y[2]}};
+    const std::array<double,3> rs{{old.native.value[0]+old.native.value[1],
+        std::max(std::abs(old.native.value[2])+std::abs(old.native.value[3]),1.),
+        std::max(std::abs(liquid_active?old.native.value[3]:old.native.value[2]),1.)}};
+    for(int k=0;k<16;++k){auto q=active_evaluate(y,old,liquid_active,heat);
+        double norm=0;for(size_t i=0;i<3;++i)norm=std::max(norm,std::abs(q.residual.value[i])/rs[i]);
+        if(norm<=1e-12&&std::abs(q.residual.value[0])<=1e-10&&std::abs(q.residual.value[1])<=1e-5&&std::abs(q.residual.value[2])<=1e-5) {
+            for(size_t j=0;j<3;++j)for(double half:{1.,.5}) {
+                const double h=(j==0?y[0]*1e-6:j==1?2e-4:y[2]*1e-6)*half;
+                auto plus=y,minus=y;plus[j]+=h;minus[j]-=h;
+                const auto a=active_evaluate(plus,old,liquid_active,heat),b=active_evaluate(minus,old,liquid_active,heat);
+                for(size_t i=0;i<3;++i)increment(q.residual.J[i][j],a.residual.value[i],b.residual.value[i],h,i==0?1e-9:1e-3,"Active native/work residual Jacobian");
+            }
+            verify_conversion(old,q,liquid_active,heat);return q;
+        }
+        std::array<std::array<double,3>,3>A{};std::array<double,3>b{};
+        for(size_t i=0;i<3;++i){b[i]=q.residual.value[i]/rs[i];for(size_t j=0;j<3;++j)A[i][j]=q.residual.J[i][j]*xs[j]/rs[i];}
+        const auto change=linear(A,b);double fraction=1;std::array<double,3> next{};
+        for(int j=0;j<20;++j){for(size_t i=0;i<3;++i)next[i]=y[i]-fraction*xs[i]*change[i];
+            if(next[0]>0&&next[1]>IF97::Tmin&&next[2]>0&&next[2]<old.c.geometry.V)break;fraction*=.5;}
+        require(next[0]>0&&next[1]>IF97::Tmin&&next[2]>0&&next[2]<old.c.geometry.V,"No admissible local conversion trial");y=next;
+    }throw std::runtime_error("One-active native conversion did not converge within finite local allowance");
+}
+AcceptedPhase active_fixture(bool liquid_active,double p,int nc_kind,bool steam_absent=false) {
+    const Geometry g{.01,4,1,false};const double Vg=.004,pv=steam_absent?0:nc_kind<0?p:p*.8;
+    const double Tg=steam_absent?500:liquid_active?r4.T_p(pv)+80:r4.T_p(pv);
+    const double Tl=liquid_active?r4.T_p(p):r4.T_p(p)-40;
+    const NC nc=nc_kind<0?NC{0,0}:gas_stock((p-pv)*Vg/Tg,nc_kind==0?1:nc_kind==1?0:.5);
+    const auto l=liquid_active?endpoint(p,true):liquid(Tl,p);
+    const double Ml=l.rho*(g.V-Vg),Mv=steam_absent?0:(liquid_active?vapor(Tg,pv):endpoint(pv,false)).rho*Vg;
+    const Phase c{g,nc,4*Ml,-2*(Mv+nc.mass()),10*Ml};
+    if(steam_absent){const auto q=steam_free({Tl,Tg,Vg},c);Map<4> native;native.pressure=p;native.value={q.value[0],0,q.value[1],q.value[2]};return {{0,Tl,Tg,Vg},c,native};}
+    const auto v=liquid_active?vapor(Tg,pv):endpoint(pv,false);
+    const std::array<double,4>x{{pv,Tl,Tg,Vg}};return {x,c,phasic_states(x,c,l,v)};
+}
+Map<2> pure_birth_endpoint(std::array<double,2>x,Geometry g,double u,double kl) {
+    const double p=x[0],Vg=x[1];require(Vg>0&&Vg<g.V,"Birth endpoint needs positive born/remaining phases");
+    const auto l=endpoint(p,true),v=endpoint(p,false);const double Ml=l.rho*(g.V-Vg),Mv=v.rho*Vg;
+    const double gz=9.80665*(g.z+g.H/2);Map<2> q;q.pressure=p;
+    q.value={Ml+Mv,Ml*l.u+Mv*v.u+.5*(Ml+Mv)*u*u+kl*Ml+(Ml+Mv)*gz};
+    const double s=saturation_slope(p),dl=l.rho*(l.kappa-l.alpha*s),dv=v.rho*(v.kappa-v.alpha*s);
+    const double ulp=(p*l.kappa-l.T*l.alpha)/l.rho+(l.cp-p*l.alpha/l.rho)*s;
+    const double uvp=(p*v.kappa-v.T*v.alpha)/v.rho+(v.cp-p*v.alpha/v.rho)*s;
+    for(size_t j=0;j<2;++j){const double dMl=j==0?(g.V-Vg)*dl:-l.rho,dMv=j==0?Vg*dv:v.rho;
+        q.J[0][j]=dMl+dMv;q.J[1][j]=(l.u+.5*u*u+kl+gz)*dMl+(v.u+.5*u*u+gz)*dMv+(j==0?Ml*ulp+Mv*uvp:0);
+    }return q;
+}
+std::array<double,2> recover_pure_birth(Geometry g,double M,double E,double u,double kl,std::array<double,2>x) {
+    const std::array<double,2> xs{{x[0],x[1]}},rs{{M,std::abs(E)}};
+    for(int k=0;k<16;++k){const auto q=pure_birth_endpoint(x,g,u,kl);
+        const std::array<double,2> r{{q.value[0]-M,q.value[1]-E}};
+        if(std::abs(r[0])<=1e-10&&std::abs(r[1])<=1e-5&&std::max(std::abs(r[0])/rs[0],std::abs(r[1])/rs[1])<=1e-12) return x;
+        std::array<std::array<double,2>,2>A{};std::array<double,2>b{};
+        for(size_t i=0;i<2;++i){b[i]=r[i]/rs[i];for(size_t j=0;j<2;++j)A[i][j]=q.J[i][j]*xs[j]/rs[i];}
+        const auto step=linear(A,b);double fraction=1;std::array<double,2> next{};
+        for(int j=0;j<20;++j){for(size_t i=0;i<2;++i)next[i]=x[i]-fraction*xs[i]*step[i];
+            if(next[0]>IF97::Pmin&&next[0]<IF97::Pcrit&&next[1]>0&&next[1]<g.V)break;fraction*=.5;}
+        require(next[0]>IF97::Pmin&&next[0]<IF97::Pcrit&&next[1]>0&&next[1]<g.V,"Pure birth trial outside declared subcritical endpoint");x=next;
+    }throw std::runtime_error("Pure phase birth native endpoint did not converge");
+}
+void pure_birth_checks() {
+    // Opens actual previously evacuated available volume: free expansion, no external work.
+    // No absent gas T/P/E was constructed at the original single-liquid state.
+    const auto original=liquid(r4.T_p(1e6)-20,1e6);const double M=1,u=1.2,kl=10;
+    const double originalV=M/original.rho;const Geometry expanded{.002,4,1,false};
+    require(expanded.V>originalV,"Free-expansion intervention did not expose additional volume");
+    const double E=M*original.u+.5*M*u*u+M*kl+M*9.80665*4.5;
+    const auto x=recover_pure_birth(expanded,M,E,u,kl,{.7e6,expanded.V-originalV});
+    const auto l=endpoint(x[0],true),v=endpoint(x[0],false);const double Ml=l.rho*(expanded.V-x[1]),Mv=v.rho*x[1];
+    born_steam_mass=Mv;require(Mv>0&&Ml>0,"Expanded liquid did not produce genuine positive vapor");
+    component(Ml*u+Mv*u,M*u,"vapor birth momentum");component(Ml*kl+Mv*kl,M*kl,"liquid Q carried/thermalized partition");
+    const auto q=pure_birth_endpoint(x,expanded,u,kl);
+    require(std::abs(q.value[0]-M)<=1e-10&&std::abs(q.value[1]-E)<=1e-5,"Vapor birth native conservation");++birth_cases;
+    // Removes specified actual gas energy from initially liquid-free saturated steam.
+    const Geometry g{.01,4,1,false};const auto steam=endpoint(1e6,false);
+    const double water=steam.rho*g.V,ug=-2,E0=water*steam.u+.5*water*ug*ug+water*9.80665*4.5;
+    const auto y=recover_pure_birth(g,water,E0-1000,ug,0,{.99e6,.00999});
+    const double born=endpoint(y[0],true).rho*(g.V-y[1]),remaining=endpoint(y[0],false).rho*y[1];
+    born_liquid_mass=born;require(born>0&&remaining>0,"Gas cooling did not produce genuine positive liquid");
+    component(born*ug+remaining*ug,water*ug,"liquid birth momentum");
+    const auto cooled=pure_birth_endpoint(y,g,ug,0);
+    require(std::abs(cooled.value[0]-water)<=1e-10&&std::abs(cooled.value[1]-(E0-1000))<=1e-5,"Liquid birth native conservation");++birth_cases;
+    // Both cases use the selected both-active endpoint, not invented newborn superheat.
+    // They do not locate a time event or prove any specified phase can fully exhaust.
+}
+void one_active_checks() {
+    for(int fixture=0;fixture<10;++fixture){const bool la=fixture%2==0;
+        const double p=fixture<4?(fixture<2?1e6:5e6):1e6;
+        const int nc_kind=fixture<4?-1:(fixture-4)/2;const auto original=active_fixture(la,p,nc_kind);
+        std::array<AcceptedPhase,3> finals{{original,original,original}};
+        for(int refinement=0;refinement<3;++refinement){const int parts=1<<refinement;
+            auto old=original;for(int part=0;part<parts;++part)old=advance_active(old,la,(la?100:-100)/parts).state;
+            finals[refinement]=old;
+        }
+        const auto& a=finals[1];const auto& b=finals[2];
+        const double pe=std::abs(a.native.pressure-b.native.pressure),te=std::max(std::abs(a.x[1]-b.x[1]),std::abs(a.x[2]-b.x[2]));
+        const double me=std::abs(a.native.value[1]-b.native.value[1]);
+        max_quadrature_pressure_difference=std::max(max_quadrature_pressure_difference,pe);
+        max_quadrature_temperature_difference=std::max(max_quadrature_temperature_difference,te);
+        max_quadrature_mass_difference=std::max(max_quadrature_mass_difference,me);
+        require(pe<=1&&te<=1e-4&&me<=1e-7,"One-active half/quarter source quadrature discrepancy");++conversion_cases;
+    }
+    // Existing NC gas carries its own genuine T/P/E before the first steam is born.
+    const auto old=active_fixture(true,1e6,2,true);const auto born=advance_active(old,true,100);
+    nc_born_steam_mass=born.state.native.value[1];require(old.native.value[1]==0&&nc_born_steam_mass>0,"Steam-free NC native birth did not occur");++birth_cases;
+    pure_birth_checks();
+}
+
 int main() {
     std::cout<<std::setprecision(17); std::string failure;
     try {
@@ -497,6 +705,7 @@ int main() {
             require(rejected,"Invalid property domain input accepted");
         }
         phase_checks();
+        one_active_checks();
         const auto t0=Clock::now();volatile double sum=0;
         for(int i=0;i<20000;++i) {
             const int k=i%4;const double dt=(i%97)*.001,dp=(i%89)*11;
@@ -524,6 +733,20 @@ int main() {
         <<",\"max_R3_endpoint_forward_pressure_defect_Pa\":"<<max_dense_endpoint_p_error
         <<",\"min_tested_R3_saturation_latent_heat_J_kg\":"<<min_contact_latent_heat
         <<",\"cut_volume_first_moment_identity_m4\":"<<max_centroid_identity
+        <<",\"one_active_conversion_cases\":"<<conversion_cases<<",\"native_birth_cases\":"<<birth_cases
+        <<",\"max_conversion_mass_error_kg\":"<<max_conversion_mass_error
+        <<",\"max_conversion_energy_error_J\":"<<max_conversion_energy_error
+        <<",\"max_inactive_phase_energy_work_error_J\":"<<max_inactive_energy_error
+        <<",\"max_conversion_total_momentum_error_kg_m_s\":"<<max_conversion_momentum_error
+        <<",\"max_direct_component_identity_error\":"<<max_component_identity_error
+        <<",\"max_half_quarter_pressure_difference_Pa\":"<<max_quadrature_pressure_difference
+        <<",\"max_half_quarter_temperature_difference_K\":"<<max_quadrature_temperature_difference
+        <<",\"max_half_quarter_converted_water_difference_kg\":"<<max_quadrature_mass_difference
+        <<",\"min_retained_opposite_phase_stability_margin_K\":"<<min_retained_opposite_margin
+        <<",\"min_tested_stability_conversion_kg\":"<<min_real_conversion
+        <<",\"born_steam_into_NC_kg\":"<<nc_born_steam_mass
+        <<",\"pure_free_expansion_born_steam_kg\":"<<born_steam_mass
+        <<",\"pure_gas_cooling_born_liquid_kg\":"<<born_liquid_mass
         <<",\"changed_state_tuples\":"<<bench_count<<",\"changed_state_tuple_ns\":"<<bench_ns<<"}\n";
     return failure.empty()?0:1;
 }
@@ -586,7 +809,7 @@ export async function runNativePropertyAdmission(inputDirectory: string, outputP
     allowanceSeconds: 120,
     aggregateElapsedSeconds: (performance.now() - started) / 1000,
     compiler, flags, build, run, nativeResult, parseFailure,
-    scope: 'Selected IF97 primitives plus finite known-branch HEM/phasic/NC native storage maps, analytic Jacobians, exact absence and dilute-vapor limits and explicit dense saturated endpoints. Static cut-centroid arithmetic is not actual coherent-cap pressure, recoil, ALE or conversion-momentum/work qualification. No trajectory, global flash, active-conversion or plant throughput admission.',
+    scope: 'Selected IF97 primitives, finite known-branch phase/NC storage and analytic Jacobians, finite one-active source/work increments with actual donor momentum/Q, and native phase-birth endpoint witnesses. No spatial/time trajectory, global flash, complete exhaustion event, coherent-cap pressure/recoil/ALE or plant throughput qualification.',
   };
   await writeFile(output, JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
   return receipt;
