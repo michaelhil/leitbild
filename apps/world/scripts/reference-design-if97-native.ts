@@ -8,16 +8,15 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import {
+  nativeIf97Revision as revision, nativeIf97HeaderSha256 as headerSha256,
+  nativeIf97LicenseSha256 as licenseSha256, nativeIf97Primitives,
+} from './reference-design-if97-primitives';
 
-const revision = '0be7b51f35c47e59e6f91f4f0f47108bf997e50c';
-const headerSha256 = '83693f044b271a6a28b97c06601287d023f94a75fac9723412661ebf3d3791a6';
-const licenseSha256 = 'e22c3d30ef8d88ab468d9ea20392ca1df22fa3fd0a92dc3e996d89cf3cfdbd03';
 const sha256 = (input: string | Uint8Array) => createHash('sha256').update(input).digest('hex');
 const cpp = String.raw`// Offline property admission only. No trajectories, model installation or IF97 coefficients.
 // Build against the independently acquired, pinned CoolProp/IF97 header and MIT notice.
-#define REGION3_ITERATE
-#include "IF97.h"
-#include <array>
+${nativeIf97Primitives}
 #include <chrono>
 #include <limits>
 #include <string>
@@ -25,13 +24,14 @@ const cpp = String.raw`// Offline property admission only. No trajectories, mode
 using Clock = std::chrono::steady_clock;
 static const auto started = Clock::now();
 static int checks = 0;
-static double max_fd_ratio = 0, max_identity = 0, max_det = 0, max_forward_p = 0;
+static double max_fd_ratio = 0, max_identity = 0, max_det = 0;
+double max_forward_p = 0, max_dense_endpoint_p_error = 0;
 static double max_sat_ratio = 0, max_clapeyron_difference = 0;
 static double bench_ns = 0; static int bench_count = 0;
 static double max_recovery_p = 0, cold_recovery_p = 0, low_head_recovery_p = 0;
 static int phase_cases=0, dilute_cases=0, absent_cases=0;
 static double max_phase_condition=0, max_phase_residual=0, max_phase_p_error=0;
-static double max_phase_temperature_error=0, max_dense_endpoint_p_error=0;
+static double max_phase_temperature_error=0;
 static double max_phase_total_pressure_error=0;
 static double max_centroid_identity=0, min_contact_latent_heat=1e300;
 static int conversion_cases=0, birth_cases=0;
@@ -46,72 +46,6 @@ void require(bool ok, const std::string& message) {
     if (std::chrono::duration<double>(Clock::now()-started).count() > 100)
         throw std::runtime_error("Native property execution exhausted its 100 s local guard");
     if (!ok) throw std::runtime_error(message);
-}
-
-template<class R> struct Gibbs : R {
-    double alpha(double T, double p) const {
-        const double gp = this->dgamma0_dPI(T,p) + this->dgammar_dPI(T,p);
-        return (gp - this->T_star/T*this->d2gammar_dPIdTAU(T,p))/(T*gp);
-    }
-};
-static const Gibbs<IF97::Region1> r1;
-static const Gibbs<IF97::Region2> r2;
-static const Gibbs<IF97::Region5> r5;
-static const IF97::Region3 r3;
-static const IF97::Region4 r4;
-
-struct State { int region; double p,T,rho,u,h,s,cp,cv,w,alpha,kappa,mu,conductivity; };
-State finite_tuple(State q) {
-    const std::array<double,13> fields{{q.p,q.T,q.rho,q.u,q.h,q.s,q.cp,q.cv,q.w,q.alpha,q.kappa,q.mu,q.conductivity}};
-    require(std::all_of(fields.begin(),fields.end(),[](double value){return std::isfinite(value);}),
-        "Nonfinite field in returned native tuple");
-    return q;
-}
-template<class R> State gibbs(const R& r, int region, double T,double p) {
-    const double rho=r.rhomass(T,p);
-    return finite_tuple({region,p,T,rho,r.umass(T,p),r.hmass(T,p),r.smass(T,p),r.cpmass(T,p),
-        r.cvmass(T,p),r.speed_sound(T,p),r.alpha(T,p),r.drhodp(T,p)/rho,
-        r.visc(T,rho),r.tcond(T,p,rho)});
-}
-State dense(double T,double rho) {
-    const double p=r3.p(T,rho);
-    const double a=r3.delta_dphi_ddelta(T,rho), b=r3.delta2_d2phi_ddelta2(T,rho);
-    const double c=r3.deltatau_d2phi_ddelta_dtau(T,rho);
-    return finite_tuple({3,p,T,rho,r3.umass(T,rho),r3.hmass(T,rho),r3.smass(T,rho),
-        r3.cpmass(T,rho),r3.cvmass(T,rho),r3.speed_sound(T,rho),
-        (a-c)/(T*(2*a+b)),r3.drhodp(T,rho)/rho,r3.visc(T,rho),r3.tcond(T,p,rho)});
-}
-State point(double T,double p) {
-    if (!std::isfinite(T)||!std::isfinite(p)||p<=0||T<=0)
-        throw std::domain_error("Invalid finite positive PT input");
-    switch(IF97::RegionDetermination_TP(T,p)) {
-        case IF97::REGION_1: return gibbs(r1,1,T,p);
-        case IF97::REGION_2: return gibbs(r2,2,T,p);
-        case IF97::REGION_3: {
-            auto q=dense(T,IF97::rhomass_Tp(T,p));
-            max_forward_p=std::max(max_forward_p,std::abs(q.p-p));
-            require(std::abs(q.p-p)<=1,"Region3 PT forward pressure defect exceeds 1 Pa");
-            return q;
-        }
-        case IF97::REGION_5: return gibbs(r5,5,T,p);
-        default: throw std::domain_error("Ambiguous PT saturation pair needs explicit endpoint/inventory");
-    }
-}
-
-// Chain rule of upstream Region4::T_p, using its own public coefficients/scales.
-double saturation_slope(double p) {
-    (void)r4.T_p(p); // Upstream range validation.
-    const auto& n=r4.n; const double beta=std::pow(p/r4.p_star,.25), db=beta/(4*p);
-    const double E=beta*beta+n[3]*beta+n[6], F=n[1]*beta*beta+n[4]*beta+n[7];
-    const double G=n[2]*beta*beta+n[5]*beta+n[8];
-    const double dE=(2*beta+n[3])*db, dF=(2*n[1]*beta+n[4])*db;
-    const double dG=(2*n[2]*beta+n[5])*db;
-    const double root=std::sqrt(F*F-4*E*G);
-    const double droot=(2*F*dF-4*(dE*G+E*dG))/(2*root);
-    const double den=-F-root, D=2*G/den;
-    const double dD=2*(dG*den-G*(-dF-droot))/(den*den);
-    const double tail=std::sqrt((n[10]+D)*(n[10]+D)-4*(n[9]+n[10]*D));
-    return r4.T_star*.5*dD*(1-(D-n[10])/tail);
 }
 
 double relative(double a,double b) { return std::abs(a-b)/std::max(std::abs(b),1e-300); }
@@ -207,34 +141,6 @@ struct NC { double air,nitrogen;
 NC gas_stock(double S,double air_fraction) {
     const double mass=S/(air_fraction*287+(1-air_fraction)*296.8);
     return {mass*air_fraction,mass*(1-air_fraction)};
-}
-State vapor(double T,double pv) {
-    require(std::isfinite(pv)&&pv>0&&T>=IF97::Tmin&&T<=IF97::Text,"Invalid actual vapor PT");
-    if(T<=IF97::Tcrit) require(pv<=r4.p_T(T),"Supersaturated vapor is not this active branch");
-    if(pv<IF97::Pmin) {
-        // Normative IF97 Eq15/16 and Eq32 domains include positive dilute pressures.
-        // The upstream blanket PT dispatch lower bound is not a vapor lower bound.
-        if(T<=IF97::Tmax) return gibbs(r2,2,T,pv);
-        require(pv<=IF97::Pext,"Dilute R5 pressure beyond normative range");
-        return gibbs(r5,5,T,pv);
-    }
-    const auto q=point(T,pv);
-    require(q.region==2||q.region==3||q.region==5,"Actual gas queried a liquid branch");
-    return q;
-}
-State liquid(double T,double p) {
-    require(p>0&&p<IF97::Pcrit&&T<=r4.T_p(p),"Liquid left its stable subcritical branch");
-    const auto q=point(T,p);
-    require(q.region==1||q.region==3,"Actual liquid queried a gas branch"); return q;
-}
-State endpoint(double p,bool is_liquid) {
-    require(p>=IF97::Pmin&&p<IF97::Pcrit,"Unsupported saturation endpoint domain");
-    const double T=r4.T_p(p);
-    if(T<=IF97::T23min) return is_liquid?gibbs(r1,1,T,p):gibbs(r2,2,T,p);
-    auto q=dense(T,r3.output(IF97_DMASS,T,p,is_liquid?LIQUID:VAPOR));
-    max_dense_endpoint_p_error=std::max(max_dense_endpoint_p_error,std::abs(q.p-p));
-    require(std::abs(q.p-p)<=1,"Dense endpoint pressure defect exceeds local ceiling");
-    return q;
 }
 template<size_t N> struct Map { std::array<double,N> value{}; std::array<std::array<double,N>,N> J{};double pressure=0; };
 template<size_t N> std::array<double,N> linear(std::array<std::array<double,N>,N> A,std::array<double,N> b) {
@@ -752,7 +658,9 @@ int main() {
 }
 `;
 
-export async function runNativePropertyAdmission(inputDirectory: string, outputPath: string) {
+export async function runNativePropertyAdmission(inputDirectory: string, outputPath: string, allowanceSeconds = 120) {
+  if (!Number.isFinite(allowanceSeconds) || allowanceSeconds <= 0 || allowanceSeconds > 120)
+    throw Error('Expected positive bounded compile/native allowance no greater than120 s');
   const started = performance.now();
   const input = resolve(inputDirectory), output = resolve(outputPath);
   // Refuse to overwrite any earlier evidence, including failure receipts.
@@ -770,7 +678,7 @@ export async function runNativePropertyAdmission(inputDirectory: string, outputP
   const source = join(scratch, 'admission.cpp'), executable = join(scratch, 'admission');
   await writeFile(source, cpp, { flag: 'wx' });
   async function execute(command: string[]) {
-    const remaining = 120_000 - (performance.now() - started);
+    const remaining = allowanceSeconds * 1000 - (performance.now() - started);
     if (remaining <= 0) throw new Error('Aggregate compile/execution allowance exhausted');
     const child = Bun.spawn(command, { stdout: 'pipe', stderr: 'pipe' });
     let timedOut = false;
@@ -803,10 +711,12 @@ export async function runNativePropertyAdmission(inputDirectory: string, outputP
     },
     artifact: {
       wrapperPath: import.meta.path, wrapperSha256: sha256(await readFile(import.meta.path)),
+      primitiveModulePath: new URL('./reference-design-if97-primitives.ts', import.meta.url).pathname,
+      primitiveModuleSha256: sha256(await readFile(new URL('./reference-design-if97-primitives.ts', import.meta.url))),
       cppSha256: sha256(cpp), scratch, source, executable,
       binarySha256: build?.exitCode === 0 ? sha256(await readFile(executable)) : null,
     },
-    allowanceSeconds: 120,
+    allowanceSeconds,
     aggregateElapsedSeconds: (performance.now() - started) / 1000,
     compiler, flags, build, run, nativeResult, parseFailure,
     scope: 'Selected IF97 primitives, finite known-branch phase/NC storage and analytic Jacobians, finite one-active source/work increments with actual donor momentum/Q, and native phase-birth endpoint witnesses. No spatial/time trajectory, global flash, complete exhaustion event, coherent-cap pressure/recoil/ALE or plant throughput qualification.',
