@@ -56,32 +56,61 @@ describe('createWikiSource', () => {
 
   test('coalesces concurrent reads and buffers repeat reads within the TTL', async () => {
     let hits = 0
-    restore = installFetchMock(async () => {
+    let elapsed = 0
+    let finishFetch!: (response: Response) => void
+    const response = new Promise<Response>(resolve => { finishFetch = resolve })
+    restore = installFetchMock(() => {
       hits += 1
-      await new Promise(resolve => setTimeout(resolve, 5))
-      return new Response('cached', { status: 200 })
+      return hits === 1 ? response : new Response('cached', { status: 200 })
     })
-    const source = createWikiSource(BINDING, 60_000)
-    const [first, second] = await Promise.all([
-      source.fetchDocument('wiki/procedures/E-0.md', REVISION),
-      source.fetchDocument('wiki/procedures/E-0.md', REVISION),
-    ])
+    const source = createWikiSource(BINDING, 10, () => elapsed)
+    const firstRead = source.fetchDocument('wiki/procedures/E-0.md', REVISION)
+    const secondRead = source.fetchDocument('wiki/procedures/E-0.md', REVISION)
+    expect(hits).toBe(1)
+    // Slow acquisition must not consume the completed value's cache lifetime.
+    elapsed = 100
+    finishFetch(new Response('cached', { status: 200 }))
+    const [first, second] = await Promise.all([firstRead, secondRead])
     expect(first).toBe('cached')
     expect(second).toBe('cached')
+    elapsed = 109
     expect(await source.fetchDocument('wiki/procedures/E-0.md', REVISION)).toBe('cached')
     expect(hits).toBe(1)
+    elapsed = 110
+    expect(await source.fetchDocument('wiki/procedures/E-0.md', REVISION)).toBe('cached')
+    expect(hits).toBe(2)
   })
 
   test('re-fetches after the TTL', async () => {
     let hits = 0
+    let elapsed = 0
     restore = installFetchMock(() => {
       hits += 1
       return new Response('fresh', { status: 200 })
     })
-    const source = createWikiSource(BINDING, 1)
+    const source = createWikiSource(BINDING, 10, () => elapsed)
     await source.fetchDocument('wiki/procedures/E-0.md')
-    await new Promise(resolve => setTimeout(resolve, 5))
+    elapsed = 9
     await source.fetchDocument('wiki/procedures/E-0.md')
+    expect(hits).toBe(1)
+    elapsed = 10
+    await source.fetchDocument('wiki/procedures/E-0.md')
+    expect(hits).toBe(2)
+  })
+
+  test('manifest reads share the same completion-based elapsed TTL', async () => {
+    let hits = 0
+    let elapsed = 0
+    restore = installFetchMock(() => { hits += 1; return Response.json(MANIFEST) })
+    const source = createWikiSource(BINDING, 10, () => elapsed)
+    const results = await Promise.all([source.fetchManifest(), source.fetchManifest()])
+    expect(results.every(value => value.revision === REVISION)).toBe(true)
+    expect(hits).toBe(1)
+    elapsed = 9
+    await source.fetchManifest()
+    expect(hits).toBe(1)
+    elapsed = 10
+    await source.fetchManifest()
     expect(hits).toBe(2)
   })
 

@@ -36,6 +36,8 @@ export interface WikiSource {
 export const createWikiSource = (
   binding: WikiSourceBinding,
   ttlMs: number = DEFAULT_TTL_MS,
+  // Cache age is elapsed time, independent of wall-clock adjustments.
+  elapsedNow: () => number = () => performance.now(),
 ): WikiSource => {
   const buffer = new Map<string, BufferEntry>()
   const pending = new Map<string, Promise<string>>()
@@ -91,11 +93,11 @@ export const createWikiSource = (
   const getBuffered = async (path: string, revision?: string): Promise<string> => {
     const key = `${revision ?? 'current'}:${path}`
     const cached = buffer.get(key)
-    if (cached && Date.now() - cached.fetchedAt < ttlMs) return cached.value
+    if (cached && elapsedNow() - cached.fetchedAt < ttlMs) return cached.value
     const active = pending.get(key)
     if (active) return active
     const request = fetchFresh(path, revision).then(value => {
-      buffer.set(key, { value, fetchedAt: Date.now() })
+      buffer.set(key, { value, fetchedAt: elapsedNow() })
       pending.delete(key)
       return value
     }, error => {
@@ -109,7 +111,7 @@ export const createWikiSource = (
   const getManifest = async (): Promise<string> => {
     const key = 'manifest'
     const cached = buffer.get(key)
-    if (cached && Date.now() - cached.fetchedAt < ttlMs) return cached.value
+    if (cached && elapsedNow() - cached.fetchedAt < ttlMs) return cached.value
     const active = pending.get(key)
     if (active) return active
     const request = fetchWithTimeout(
@@ -119,7 +121,7 @@ export const createWikiSource = (
     ).then(async response => {
       if (!response.ok) throw new Error(`HTTP ${response.status} fetching manifest from ${binding.manifestUrl}`)
       const value = await response.text()
-      buffer.set(key, { value, fetchedAt: Date.now() })
+      buffer.set(key, { value, fetchedAt: elapsedNow() })
       return value
     }).finally(() => { pending.delete(key) })
     pending.set(key, request)
