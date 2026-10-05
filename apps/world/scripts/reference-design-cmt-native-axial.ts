@@ -1,11 +1,13 @@
 /**
  * One bounded offline liquid CMT/BAL advancement check. Not an installed plant.
  * Uses actual geometry owners, the shared inspected IF97 adapter and native IDAS.
+ * Current experiment qualifies one upstreamable whole-state solver-consistency
+ * candidate on an isolated source copy. Not adopted as a production dependency.
  * No maintained fluid boundary, phase seed, alternate backend or automatic retry.
  * Usage: bun .../reference-design-cmt-native-axial.ts IF97_DIR SUNDIALS_ROOT DYLIB_DIR GEOMETRY_OWNER NEW_RECEIPT.json
  */
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseGeometryBasis, tankGeometry } from './reference-design-cmt-geometry';
@@ -13,6 +15,7 @@ import { parseBalancePathBasis } from './reference-design-cmt-balance-path';
 import {
   nativeIf97Revision, nativeIf97HeaderSha256, nativeIf97LicenseSha256, nativeIf97Primitives,
 } from './reference-design-if97-primitives';
+import { nativeIdasConsistencyFixture } from './reference-design-idas-consistency';
 
 const sha256 = (x: string | Uint8Array) => createHash('sha256').update(x).digest('hex');
 const libraries = [
@@ -22,9 +25,11 @@ const libraries = [
   'libsundials_sunlinsoldense.5.5.0.dylib', 'libsundials_sunlinsolband.5.5.0.dylib',
 ];
 // Exact upstream IDAS target source set plus its maintained Newton solver. The
-// existing hashed core supplies generic operations; no local integrator fork.
+// existing hashed core supplies generic operations. The isolated, explicitly
+// identified consistency qualification below is not an adopted solver library.
 const idasSources = ['idas.c', 'idaa.c', 'idas_cli.c', 'idas_io.c', 'idas_ic.c', 'idaa_io.c',
   'idas_ls.c', 'idas_bbdpre.c', 'idas_nls.c', 'idas_nls_sim.c', 'idas_nls_stg.c'];
+const idasBaseSourceSha256 = '5cb27e969a189779adf5750b3a81e1828fd942754a6ce142097e6dfb9f3f83a9';
 
 const axialFields = ['M', 'P', 'E', 'B', 'Q', 'PP', 'TT'] as const;
 /** This candidate allocates only actual cell-owned stocks and thermodynamic coordinates. */
@@ -524,7 +529,9 @@ struct Result {
     double massError=0,energyError=0,tracerError=0;
     double chartPressureError=0,chartTemperatureError=0;
     double rawMinimumQ=0,canonicalMinimumQ=0,maximumEndpointDifference=0;
+    double maximumDerivativePairDifference=0;
     double firstRawQ=0,firstCanonicalQ=0;
+    std::array<long,6> observedOrders{};
     std::array<std::array<double,RM>,3> ring{};
     std::vector<std::array<double,SAMPLE>> common;
 };
@@ -622,9 +629,17 @@ Result advance(double factor) {
             ida_ok(IDAGetDky(mem,current,0,canonical),"canonical full endpoint state");
             ida_ok(IDAGetDky(mem,current,1,canonicalDerivative),"canonical full endpoint derivative");
             const auto*raw=N_VGetArrayPointer(y);x=N_VGetArrayPointer(canonical);
+            const auto*rawDot=N_VGetArrayPointer(yp);double lastStep=0;int lastOrder=0;
+            ida_ok(IDAGetLastStep(mem,&lastStep),"last accepted step");ida_ok(IDAGetLastOrder(mem,&lastOrder),"last accepted order");
+            require(lastStep>0&&lastOrder>=1&&lastOrder<=5,"Invalid step/order in accepted history");
+            ++result.observedOrders[lastOrder];
             const auto*canonicalDot=N_VGetArrayPointer(canonicalDerivative);
             for(int j=0;j<D;++j){require(std::isfinite(x[j])&&std::isfinite(canonicalDot[j]),"Nonfinite canonical full endpoint pair");
-                result.maximumEndpointDifference=std::max(result.maximumEndpointDifference,std::abs(raw[j]-x[j])/tol[j]);}
+                result.maximumEndpointDifference=std::max(result.maximumEndpointDifference,std::abs(raw[j]-x[j])/tol[j]);
+                require(raw[j]==x[j],"Corrected full endpoint and public history differ");
+                const double derivativeDifference=std::abs(rawDot[j]-canonicalDot[j])*lastStep/tol[j];
+                result.maximumDerivativePairDifference=std::max(result.maximumDerivativePairDifference,derivativeDifference);
+                require(std::isfinite(derivativeDifference)&&derivativeDifference<=1e-6,"Corrected full derivative and public history are incoherent");}
             for(int i=0;i<13;++i){result.rawMinimumQ=std::min(result.rawMinimumQ,raw[ix(i,Q)]);
                 result.canonicalMinimumQ=std::min(result.canonicalMinimumQ,x[ix(i,Q)]);}
             if(result.steps==1){result.firstRawQ=raw[ix(0,Q)];result.firstCanonicalQ=x[ix(0,Q)];}
@@ -684,6 +699,10 @@ void result_json(const Result&r) {
         <<",\"minimumRawReturnedQJ\":"<<r.rawMinimumQ<<",\"minimumCanonicalEndpointQJ\":"<<r.canonicalMinimumQ
         <<",\"firstRawCell0QJ\":"<<r.firstRawQ<<",\"firstCanonicalCell0QJ\":"<<r.firstCanonicalQ
         <<",\"maximumRawCanonicalDifferenceInAtolUnits\":"<<r.maximumEndpointDifference
+        <<",\"maximumFullDerivativePairDifferenceInStepAtolUnits\":"<<r.maximumDerivativePairDifference
+        <<",\"observedOrderStepCounts\":[";
+    for(size_t k=1;k<r.observedOrders.size();++k){if(k>1)std::cout<<",";std::cout<<r.observedOrders[k];}
+    std::cout<<"]"
         <<",\"jacobians\":"<<r.jacobians<<",\"errorTestFailures\":"<<r.errorFails<<",\"nonlinearFailures\":"<<r.convergenceFails
         <<",\"recoverableResiduals\":"<<r.recoverable<<",\"maximumMassDefectKg\":"<<r.massError<<",\"maximumEnergyDefectJ\":"<<r.energyError
         <<",\"maximumTracerDefectKgEq\":"<<r.tracerError<<",\"grossRingMassKg\":"<<r.gross<<",\"grossNativeRingEnergyJ\":"<<r.grossE
@@ -741,7 +760,19 @@ export function nativeAxialCandidate(document: string) {
 }
 
 export async function runNativeAxialAdmission(if97Directory: string, sundialsRoot: string,
-  dylibDirectory: string, ownerPath: string, outputPath: string) {
+  dylibDirectory: string, ownerPath: string, outputPath: string,
+  budget: { allowanceSeconds: number; previousSetupReceipt?: string } = { allowanceSeconds: 120 }) {
+  // One explicitly authorized setup correction, not an automatic retry mechanism.
+  const allowanceSeconds = budget.allowanceSeconds;
+  if (!(allowanceSeconds > 2 && allowanceSeconds <= 120)) throw Error('Invalid explicit remaining allowance');
+  const priorToolingFailurePath = budget.previousSetupReceipt;
+  const priorBytes = priorToolingFailurePath ? await readFile(resolve(priorToolingFailurePath)) : null;
+  const prior = priorBytes ? JSON.parse(priorBytes.toString()) : null;
+  const priorChargeSeconds = 120 - allowanceSeconds;
+  if (prior && (prior.passed !== false || prior.nativeFixture?.build?.exitCode !== 1
+    || prior.nativeFixture?.run !== null || prior.run !== null
+    || prior.aggregateElapsedSeconds > priorChargeSeconds)) throw Error('Prior receipt is not the authorized compile-only failure');
+  if (!prior && priorChargeSeconds !== 0) throw Error('Reduced allowance requires explicit prior receipt');
   const input = resolve(if97Directory), solverRoot = resolve(sundialsRoot), dylibs = resolve(dylibDirectory);
   const owner = resolve(ownerPath), output = resolve(outputPath);
   try { await readFile(output); throw Error('Receipt exists; refusing overwrite'); }
@@ -758,21 +789,34 @@ export async function runNativeAxialAdmission(if97Directory: string, sundialsRoo
   const scratch = await mkdtemp(join(tmpdir(), 'ld01-native-axial-'));
   const source = join(scratch, 'admission.cpp'), executable = join(scratch, 'admission');
   await writeFile(source, cpp, { flag: 'wx' });
+  const nativeFixtureSource = join(scratch, 'solver-invariants.cpp'), nativeFixtureBinary = join(scratch, 'solver-invariants');
+  await writeFile(nativeFixtureSource, nativeIdasConsistencyFixture, { flag: 'wx' });
+  const nativeFixtureModulePath = new URL('./reference-design-idas-consistency.ts', import.meta.url).pathname;
+  const nativeFixtureModuleSha256 = sha256(await readFile(nativeFixtureModulePath));
   const upstreamRoot = join(solverRoot, 'sundials-7.5.0');
   const idasInputPaths = [...idasSources.map(name => join(upstreamRoot, 'src', 'idas', name)),
     join(upstreamRoot, 'src', 'sunnonlinsol', 'newton', 'sunnonlinsol_newton.c')];
   const idasInputs = await Promise.all(idasInputPaths.map(async path => ({ path, sha256: sha256(await readFile(path)) })));
+  if (idasInputs[0]!.sha256 !== idasBaseSourceSha256) throw Error('Pinned IDAS7.5 implementation identity mismatch');
   const idasHeaderPaths = ['idas.h', 'idas_ls.h', 'idas_bbdpre.h'].map(name => join(upstreamRoot, 'include', 'idas', name));
   const privateHeaderPaths = ['idas_impl.h', 'idas_ls_impl.h', 'idas_bbdpre_impl.h'].map(name => join(upstreamRoot, 'src', 'idas', name));
   const headerInputs = await Promise.all([...idasHeaderPaths, ...privateHeaderPaths].map(async path => ({ path, sha256: sha256(await readFile(path)) })));
   const idasLibrary = join(scratch, 'libsundials_idas.7.5.0.dylib');
+  const patchPath = new URL('./reference-design-idas-consistency.patch', import.meta.url).pathname;
+  const patchBytes = await readFile(patchPath);
+  const regressionPaths = ['reference-design-ida-history.test.ts', 'reference-design-cmt-native-axial.test.ts']
+    .map(name => new URL(name, import.meta.url).pathname);
+  const regressionInputs = await Promise.all(regressionPaths.map(async path => ({ path, sha256: sha256(await readFile(path)) })));
+  const privateRoot = join(scratch, 'private-idas-candidate'), privateSource = join(privateRoot, 'src', 'idas', 'idas.c');
   const began = performance.now();
-  async function execute(command: string[]) {
-    const remaining = 119_000 - (performance.now() - began);
+  await mkdir(join(privateRoot, 'src', 'idas'), { recursive: true });
+  await writeFile(privateSource, await readFile(idasInputPaths[0]!), { flag: 'wx' });
+  async function execute(command: string[], cwd?: string) {
+    const remaining = (allowanceSeconds - 1) * 1000 - (performance.now() - began);
     if (remaining <= 0) return { command, exitCode: -1, timedOut: true, stdout: '', stderr: 'Aggregate compile/native allowance exhausted before launch' };
     // The inspected macOS wheel dylibs retain upstream /DLC install names.
     // Resolve only against the explicitly supplied, hashed native artifact directory.
-    const child = Bun.spawn(command, { stdout: 'pipe', stderr: 'pipe',
+    const child = Bun.spawn(command, { stdout: 'pipe', stderr: 'pipe', cwd: cwd ?? process.cwd(),
       env: { ...process.env, DYLD_LIBRARY_PATH: dylibs } });let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; child.kill(); }, remaining);
     try { const [stdout, stderr, exitCode] = await Promise.all([
@@ -780,18 +824,35 @@ export async function runNativeAxialAdmission(if97Directory: string, sundialsRoo
     ]);return { command, exitCode, timedOut, stdout, stderr }; }
     finally { clearTimeout(timer); }
   }
-  const compiler = await execute(['clang++', '--version']);
+  const staticRegressions = await execute(['bun', 'test', ...regressionPaths]);
+  const patchApplication = staticRegressions.exitCode === 0 && !staticRegressions.timedOut
+    ? await execute(['patch', '-f', '-F', '0', '-p', '1', '-i', patchPath], privateRoot) : null;
+  const patchedSourceSha256 = patchApplication?.exitCode === 0 ? sha256(await readFile(privateSource)) : null;
+  const compiler = patchedSourceSha256 ? await execute(['clang++', '--version']) : null;
   const flags = ['-std=c++17', '-O2', '-I', input, '-I', join(solverRoot, 'headers', 'include'),
     '-I', join(solverRoot, 'sundials-7.5.0', 'include')];
   const idasFlags = ['-std=gnu99', '-O2', '-fPIC', '-dynamiclib', '-I', join(solverRoot, 'headers', 'include'),
     '-I', join(upstreamRoot, 'include'), '-I', join(upstreamRoot, 'src', 'sundials'),
-    '-I', join(solverRoot, 'headers', 'src', 'sundials')];
-  const idasBuild = compiler.exitCode === 0 && !compiler.timedOut
-    ? await execute(['clang', ...idasFlags, ...idasInputPaths, ...solverArtifacts.map(x => x.path),
+    '-I', join(solverRoot, 'headers', 'src', 'sundials'), '-I', join(upstreamRoot, 'src', 'idas')];
+  const idasBuild = compiler?.exitCode === 0 && !compiler.timedOut
+    ? await execute(['clang', ...idasFlags, privateSource, ...idasInputPaths.slice(1), ...solverArtifacts.map(x => x.path),
       '-Wl,-install_name,' + idasLibrary, '-o', idasLibrary]) : null;
-  const build = idasBuild?.exitCode === 0 && !idasBuild.timedOut
+  const nativeFixtureBuild = idasBuild?.exitCode === 0 && !idasBuild.timedOut
+    ? await execute(['clang++', ...flags, nativeFixtureSource, idasLibrary, ...solverArtifacts.map(x => x.path), '-o', nativeFixtureBinary]) : null;
+  const nativeFixtureRun = nativeFixtureBuild?.exitCode === 0 && !nativeFixtureBuild.timedOut
+    ? await execute([nativeFixtureBinary, String(Math.max(0, allowanceSeconds - 2 - (performance.now() - began) / 1000))]) : null;
+  let nativeFixtureResult: unknown = null;
+  if (nativeFixtureRun && !nativeFixtureRun.timedOut) {
+    try { nativeFixtureResult = JSON.parse(nativeFixtureRun.stdout); } catch { /* Retain failed fixture output; no field launch. */ }
+  }
+  const nativeFixturePassed = nativeFixtureRun?.exitCode === 0 && !nativeFixtureRun.timedOut
+    && !!nativeFixtureResult && typeof nativeFixtureResult === 'object'
+    && 'passed' in nativeFixtureResult && nativeFixtureResult.passed === true;
+  const build = nativeFixturePassed
     ? await execute(['clang++', ...flags, source, idasLibrary, ...solverArtifacts.map(x => x.path), '-o', executable]) : null;
-  const remaining = Math.max(0, (120_000 - (performance.now() - began)) / 1000 - 1);
+  // Let the native guard emit its admitted-state/cost receipt before the outer
+  // Child deadline retains a final1s receipt reserve within the cumulative120s limit.
+  const remaining = Math.max(0, allowanceSeconds - 2 - (performance.now() - began) / 1000);
   const run = build?.exitCode === 0 && !build.timedOut ? await execute([executable, String(remaining)]) : null;
   let nativeResult: unknown = null, parseFailure: string | null = null;
   if (run) { try { nativeResult = JSON.parse(run.stdout); } catch (error) { parseFailure = String(error); } }
@@ -804,10 +865,13 @@ export async function runNativeAxialAdmission(if97Directory: string, sundialsRoo
     solver: { project: 'SUNDIALS IDAS', version: '7.5.0', license: 'BSD-3-Clause',
       solverLicensePath, solverLicenseSha256: sha256(solverLicense), artifacts: solverArtifacts,
       idasInputs, headerInputs, idasLibrary,
+      offlineConsistencyCandidate: { productionAdopted: false, privateSource, patchedSourceSha256,
+        patchPath, patchSha256: sha256(patchBytes), baseSourceSha256: idasBaseSourceSha256,
+        scope: 'Whole-state constraint correction/endpoint/history consistency only; no physical laws, tolerance or higher-column update changes. Sensitivities and adjoints unqualified.' },
       idasLibrarySha256: idasBuild?.exitCode === 0 ? sha256(await readFile(idasLibrary)) : null,
       generatedConfigSha256: sha256(await readFile(join(solverRoot, 'headers', 'include', 'sundials', 'sundials_config.h'))),
       loaderEnvironment: { DYLD_LIBRARY_PATH: dylibs },
-      realization: 'Maintained IDAS source/native serial vectors/dense direct solver; 139 owned coordinates, 24 passive quadratures outside physical error control; 64-bit double, 32-bit indices' },
+      realization: 'Isolated upstreamable IDAS whole-state consistency candidate/native serial vectors/dense direct solver; 139 owned coordinates, 24 passive quadratures outside physical error control; 64-bit double, 32-bit indices' },
     artifact: { wrapperPath: import.meta.path, wrapperSha256: sha256(await readFile(import.meta.path)),
       primitiveModulePath: primitivePath.pathname, primitiveModuleSha256: primitiveSha256,
       primitivePayloadSha256: sha256(nativeIf97Primitives),
@@ -816,17 +880,31 @@ export async function runNativeAxialAdmission(if97Directory: string, sundialsRoo
       cppSha256: sha256(cpp), scratch, source, executable,
       binarySha256: build?.exitCode === 0 ? sha256(await readFile(executable)) : null },
     owner: { path: owner, sha256: sha256(ownerBytes) }, geometry,
-    allowanceSeconds: 120, aggregateElapsedSeconds: (performance.now() - began) / 1000,
-    primitiveRegression: null, compiler, flags, idasFlags, idasBuild, build, run, nativeResult, parseFailure,
+    allowanceSeconds, aggregateElapsedSeconds: (performance.now() - began) / 1000,
+    aggregateBudget: { maximumSeconds: 120, priorChargeSeconds,
+      priorReceipt: priorBytes ? { path: resolve(priorToolingFailurePath!), sha256: sha256(priorBytes),
+        actualElapsedSeconds: prior.aggregateElapsedSeconds } : null,
+      cumulativeChargedSeconds: priorChargeSeconds + (performance.now() - began) / 1000 },
+    regressionInputs, staticRegressions, patchApplication,
+    nativeFixture: { modulePath: nativeFixtureModulePath, moduleSha256: nativeFixtureModuleSha256,
+      source: nativeFixtureSource, sourceSha256: sha256(nativeIdasConsistencyFixture), executable: nativeFixtureBinary,
+      binarySha256: nativeFixtureBuild?.exitCode === 0 ? sha256(await readFile(nativeFixtureBinary)) : null,
+      build: nativeFixtureBuild, run: nativeFixtureRun, result: nativeFixtureResult },
+    compiler, flags, idasFlags, idasBuild, build, run, nativeResult, parseFailure,
     scope: 'One finite all-liquid isolated CMT60/BAL1 assembly, real closed header/outlets,30s and paired temporal weights. No maintained fluid boundaries, injection, primary return, phase/NC advancement, actuator qualification, spatial convergence, empirical fidelity, whole plant or multiunit performance claim.',
   };
   await writeFile(output, JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });return receipt;
 }
 if (import.meta.main) {
-  if (Bun.argv.length !== 7) throw Error('Expected IF97_DIR SUNDIALS_ROOT DYLIB_DIR GEOMETRY_OWNER NEW_RECEIPT.json');
-  const receipt = await runNativeAxialAdmission(Bun.argv[2]!, Bun.argv[3]!, Bun.argv[4]!, Bun.argv[5]!, Bun.argv[6]!);
+  if (Bun.argv.length !== 7 && Bun.argv.length !== 9) throw Error('Expected IF97_DIR SUNDIALS_ROOT DYLIB_DIR GEOMETRY_OWNER NEW_RECEIPT.json [REMAINING_SECONDS AUTHORIZED_PRIOR_COMPILE_FAILURE.json]');
+  const receipt = await runNativeAxialAdmission(Bun.argv[2]!, Bun.argv[3]!, Bun.argv[4]!, Bun.argv[5]!, Bun.argv[6]!,
+    Bun.argv.length === 9 ? { allowanceSeconds: Number(Bun.argv[7]), previousSetupReceipt: Bun.argv[8]! } : undefined);
   console.log(JSON.stringify({ passed: receipt.passed, receipt: resolve(Bun.argv[6]!),
     elapsed: receipt.aggregateElapsedSeconds, nativeResult: receipt.nativeResult,
+    patchError: receipt.patchApplication?.exitCode !== 0 ? receipt.patchApplication?.stderr : null,
+    fixtureBuildError: receipt.nativeFixture.build?.exitCode !== 0 ? receipt.nativeFixture.build?.stderr : null,
+    fixtureError: receipt.nativeFixture.run?.exitCode !== 0 ? receipt.nativeFixture.run?.stderr : null,
+    solverBuildError: receipt.idasBuild?.exitCode !== 0 ? receipt.idasBuild?.stderr : null,
     buildError: receipt.build?.exitCode !== 0 ? receipt.build?.stderr : null,
     runError: receipt.run?.exitCode !== 0 ? receipt.run?.stderr : null }, null, 2));
   if (!receipt.passed) process.exitCode = 1;

@@ -1,0 +1,41 @@
+# Offline qualification candidate only, not an adopted production dependency.
+# Based on SUNDIALS7.5.0 and its official7.9 constraint-correction arithmetic.
+# Upstream source is BSD-3-Clause; this diff contains no plant-specific operation.
+--- a/src/idas/idas.c
++++ b/src/idas/idas.c
+@@ -6448,2 +6448,3 @@
+     N_VDiv(tmp, IDA_mem->ida_ewt, tmp);          /* a * c * wt              */
++    N_VScale(PT1, tmp, IDA_mem->ida_tempv3);
+     N_VLinearSum(ONE, IDA_mem->ida_yy, -PT1, tmp, tmp); /* y - 0.1 * a * c * wt    */
+@@ -6456,6 +6457,19 @@
+     if (vnorm <= IDA_mem->ida_epsNewt)
+     {
+-      N_VLinearSum(ONE, IDA_mem->ida_ee, -ONE, tmp,
+-                   IDA_mem->ida_ee); /* ee <- ee - v */
+-      return (IDA_SUCCESS);
++      /* Preserve the same constraint target using explicit failed-mask
++         predictor cancellation, rather than subtracting a rounded raw sum. */
++      N_VProd(mm, IDA_mem->ida_ee, tmp);
++      N_VLinearSum(ONE, IDA_mem->ida_ee, -ONE, tmp, IDA_mem->ida_ee);
++      N_VProd(mm, IDA_mem->ida_yypredict, tmp);
++      N_VLinearSum(ONE, IDA_mem->ida_ee, -ONE, tmp, IDA_mem->ida_ee);
++      N_VProd(mm, IDA_mem->ida_tempv3, tmp);
++      N_VLinearSum(ONE, IDA_mem->ida_ee, ONE, tmp, IDA_mem->ida_ee);
++      /* Reconstruct the COMPLETE corrected state and derivative. */
++      N_VLinearSum(ONE, IDA_mem->ida_yypredict, ONE, IDA_mem->ida_ee, IDA_mem->ida_yy);
++      N_VLinearSum(ONE, IDA_mem->ida_yppredict, IDA_mem->ida_cj,
++                   IDA_mem->ida_ee, IDA_mem->ida_yp);
++      if (N_VConstrMask(IDA_mem->ida_constraints, IDA_mem->ida_yy, mm))
++      {
++        return (IDA_SUCCESS);
++      }
+     }
+@@ -7611,4 +7625,8 @@
+   (void)N_VLinearSumVectorArray(IDA_mem->ida_kused + 1, ONE, IDA_mem->ida_Xvecs,
+                                 ONE, IDA_mem->ida_Zvecs, IDA_mem->ida_Xvecs);
+ 
++  /* Preserve the full accepted endpoint association, including unconstrained
++     coordinates. Higher divided differences and quadratures remain unchanged. */
++  N_VScale(ONE, IDA_mem->ida_yy, IDA_mem->ida_phi[0]);
++
+   if (IDA_mem->ida_quadr)
