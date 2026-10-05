@@ -42,6 +42,18 @@ export function fuelAssemblyPositions(b:Pick<ReturnType<typeof parseFuelHandling
  if(slots.length!==f.assemblies)throw Error('Declared assembly count differs from immutable position generation')
  return slots
 }
+/** One selected17x17 rod/guide pattern, shared by physical and source audits. */
+export function fuelLatticeSites(f:Pick<ReturnType<typeof parseFuelConstruction>,'latticeSide'|'pitch_m'|'rodOuterDiameter_m'|'guideOuterDiameter_m'|'rodsPerAssembly'|'guidesPerAssembly'>){
+ if(f.latticeSide!==17)throw Error('The selected rod/guide pattern is 17x17')
+ const guideIndices=[2,5,8,11,14],sites:{x:number,y:number,r:number,guide:boolean}[]=[]
+ for(let y=0;y<f.latticeSide;y++)for(let x=0;x<f.latticeSide;x++){
+  const guide=guideIndices.includes(x)&&guideIndices.includes(y)
+  sites.push({x:(x-8)*f.pitch_m,y:(y-8)*f.pitch_m,r:(guide?f.guideOuterDiameter_m:f.rodOuterDiameter_m)/2,guide})
+ }
+ if(sites.filter(p=>p.guide).length!==f.guidesPerAssembly||sites.filter(p=>!p.guide).length!==f.rodsPerAssembly)
+  throw Error('Selected rod/guide pattern differs from owned counts')
+ return sites
+}
 export function fuelHandlingChecks(b:ReturnType<typeof parseFuelHandling>,f:ReturnType<typeof parseFuelConstruction>){
  const checks:{name:string,value?:number}[]=[]
  const require=(name:string,ok:boolean,value?:number)=>{if(!ok)throw Error(name);checks.push({name,...(value===undefined?{}:{value})})}
@@ -89,11 +101,7 @@ export function fuelHandlingChecks(b:ReturnType<typeof parseFuelHandling>,f:Retu
  require('distinct positive guide annulus and stationary thimble clearance',st<gi&&gi<go,gi-st)
  require('source capsule inside unique fixed thimble',b.sourceThimbleBottom_m<b.sourceCapsule_m&&b.sourceCapsule_m<b.sourceThimbleTop_m)
  require('no overlapping rod gap',rf<ri&&ri<ro)
- const guideIndices=[2,5,8,11,14],pinSites=[] as {x:number,y:number,r:number,guide:boolean}[]
- for(let y=0;y<f.latticeSide;y++)for(let x=0;x<f.latticeSide;x++){
-  const guide=guideIndices.includes(x)&&guideIndices.includes(y)
-  pinSites.push({x:(x-8)*f.pitch_m,y:(y-8)*f.pitch_m,r:guide?go:ro,guide})
- }
+ const pinSites=fuelLatticeSites(f)
  require('source-independent guide pattern has declared rod and guide counts',pinSites.filter(p=>p.guide).length===f.guidesPerAssembly&&pinSites.filter(p=>!p.guide).length===f.rodsPerAssembly)
  require('central guide actually exists at stationary source axis',pinSites.some(p=>p.guide&&p.x===0&&p.y===0))
  require('all guide and rod circles fit assembly cell',pinSites.every(p=>Math.abs(p.x)+p.r<pitch/2&&Math.abs(p.y)+p.r<pitch/2))
