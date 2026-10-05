@@ -19,11 +19,11 @@ export function parseSourcePartition(document:string){
 export type Rectangle={x0:number,x1:number,y0:number,y1:number}
 /** Analytic disk/rectangle intersection; cuts where the circular arcs cross a
  * rectangle edge. No raster sampling or nearest-cell allocation. */
-export function diskRectangleArea(radius:number,box:Rectangle){
+export function diskRectangleMeasure(radius:number,box:Rectangle){
  if(![radius,...Object.values(box)].every(Number.isFinite)||radius<=0||box.x1<=box.x0||box.y1<=box.y0)
   throw Error('Invalid disk/rectangle geometry')
  const lo=Math.max(-radius,box.x0),hi=Math.min(radius,box.x1)
- if(hi<=lo||box.y1<=-radius||box.y0>=radius)return 0
+ if(hi<=lo||box.y1<=-radius||box.y0>=radius)return {area_m2:0,momentX_m3:0,momentY_m3:0}
  const cuts=[lo,hi]
  for(const y of [box.y0,box.y1])if(Math.abs(y)<radius){
   const x=Math.sqrt((radius-y)*(radius+y))
@@ -31,20 +31,30 @@ export function diskRectangleArea(radius:number,box:Rectangle){
  }
  cuts.sort((a,b)=>a-b)
  const primitive=(x:number)=>.5*(x*Math.sqrt(Math.max(0,(radius-x)*(radius+x)))+radius**2*Math.asin(x/radius))
- let area=0
+ let area=0,momentX=0,momentY=0
  for(let i=1;i<cuts.length;i++){
   const a=cuts[i-1]!,b=cuts[i]!,mid=(a+b)/2,s=Math.sqrt((radius-mid)*(radius+mid))
   if(Math.min(box.y1,s)<=Math.max(box.y0,-s))continue
   const arc=primitive(b)-primitive(a)
   const top=box.y1<s?box.y1*(b-a):arc,bottom=box.y0>-s?box.y0*(b-a):-arc
   area+=top-bottom
+  const arcX=((radius*radius-a*a)**1.5-(radius*radius-b*b)**1.5)/3,
+   xIntegral=(b*b-a*a)/2,squareIntegral=radius**2*(b-a)-(b**3-a**3)/3
+  momentX+=(box.y1<s?box.y1*xIntegral:arcX)-(box.y0>-s?box.y0*xIntegral:-arcX)
+  momentY+=.5*((box.y1<s?box.y1**2*(b-a):squareIntegral)-(box.y0>-s?box.y0**2*(b-a):squareIntegral))
  }
  // Negative area is an implementation error, not an occupancy to clip/normalize.
  if(area<0||!Number.isFinite(area))throw Error('Disk intersection lost positivity')
- return area
+ return {area_m2:area,momentX_m3:momentX,momentY_m3:momentY}
 }
-type Region={id:string,compartment:'ACTIVE'|'LOWER'|'UPPER'|'WELL'|'CANAL'|'POOL',volume_m3:number,
- envelopeLength_m:number,box?:Rectangle,z0_m?:number,z1_m?:number,diskRadius_m?:number,rackId?:string,part?:string}
+export const diskRectangleArea=(radius:number,box:Rectangle)=>diskRectangleMeasure(radius,box).area_m2
+const finite=z.number().finite(),positive=finite.positive()
+export const sourceRectangleSchema=z.object({x0:finite,x1:finite,y0:finite,y1:finite}).strict()
+ .refine(r=>r.x1>r.x0&&r.y1>r.y0,'Nonpositive rectangle')
+export const sourceRegionSchema=z.object({id:z.string().min(1),compartment:z.enum(['ACTIVE','LOWER','UPPER','WELL','CANAL','POOL']),
+ volume_m3:positive,envelopeLength_m:positive,box:sourceRectangleSchema.optional(),z0_m:finite.optional(),z1_m:finite.optional(),
+ diskRadius_m:positive.optional(),rackId:z.string().optional(),part:z.string().optional()}).strict()
+export type SourceRegion=z.infer<typeof sourceRegionSchema>
 type Inputs={fuel:ReturnType<typeof parseFuelConstruction>,handling:ReturnType<typeof parseFuelHandling>,
  control:ReturnType<typeof parseControlAbsorber>,primary:ReturnType<typeof parsePrimaryMechanics>,
  barrel:ReturnType<typeof parsePrimaryBarrelGeometry>,initialization:ReturnType<typeof parseInitializationBasis>,
@@ -64,9 +74,9 @@ export function compileSourcePartition(d:Inputs){
  if(!(c.headBottom_m===h.wellFloor_m&&c.headGrossArea_m2<=h.wellArea_m2))throw Error('Head mouth does not fit well support')
  for(const width of [wellSide,h.canalLength_m,h.canalWidth_m,h.poolSide_m])
   if(Math.abs(width/h.rackPitch_m-Math.round(width/h.rackPitch_m))>1e-10)throw Error('Receiving pitch does not exactly tile owned bay')
- const regions:Region[]=[],counts:Record<string,number>={},racks:{id:string,x_m:number,y_m:number}[]=[]
+ const regions:SourceRegion[]=[],counts:Record<string,number>={},racks:{id:string,x_m:number,y_m:number}[]=[]
  const cylinderEll=4*(Math.PI*radius**2*f.activeLength_m)/(2*Math.PI*radius*(radius+f.activeLength_m))
- const add=(r:Region)=>{
+ const add=(r:SourceRegion)=>{
   if(!(r.volume_m3>0&&r.envelopeLength_m>0&&Number.isFinite(r.volume_m3+r.envelopeLength_m)))throw Error('Nonpositive source region')
   regions.push(r);counts[r.compartment]=(counts[r.compartment]??0)+1
  }
