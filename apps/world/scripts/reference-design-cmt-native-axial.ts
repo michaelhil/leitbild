@@ -103,6 +103,7 @@ ${nativeIf97Primitives}
 #include <chrono>
 #include <iostream>
 #include <iomanip>
+#include <sstream>
 #include <vector>
 #include <limits>
 
@@ -469,6 +470,15 @@ std::array<double,3> totals(const double* y) {
     std::array<double,3>s{};for(int i=0;i<N;++i){s[0]+=y[i*S+M];s[1]+=y[i*S+E];s[2]+=y[i*S+B];}return s;
 }
 void ida_ok(int flag,const char* operation){require(flag>=0,std::string("Native IDA failed ")+operation+": "+std::to_string(flag));}
+std::string stock_failure(int i,const double* x,bool unowned) {
+    const int field=unowned?Q:!(x[M]>0)?M:!(x[B]>=0)?B:Q;
+    const char* name=field==M?"M [kg]":field==B?"B [kg_eq]":
+        cells[i].tank?"Q [J]":"unowned BAL Q auxiliary [J]";
+    std::ostringstream message;
+    message<<std::setprecision(17)<<std::scientific<<"Accepted stock admission failed: cell="<<i
+        <<" owner="<<(cells[i].tank?"CMT":"BAL")<<" field="<<name<<" value="<<x[field];
+    return message.str();
+}
 Result advance(double factor) {
     active_weight_factor=factor;last_admitted_time=0;
     const auto begin=Clock::now();const auto init=original();Run data;Result result;partial=Result{};
@@ -529,8 +539,11 @@ Result advance(double factor) {
             result.energyError=std::max(result.energyError,std::abs(total[1]-initialTotals[1]));
             result.tracerError=std::max(result.tracerError,std::abs(total[2]-initialTotals[2]));
             require(result.massError<=1e-6&&result.energyError<=.1&&result.tracerError<=1e-8,"Closed native conservation gate failed");
-            for(int i=0;i<N;++i){require(x[i*S+M]>0&&x[i*S+B]>=0&&x[i*S+Q]>=0,"Accepted native stock invalid");
-                require(cells[i].tank||x[i*S+Q]==0,"BAL acquired an unowned Q stock");
+            for(int i=0;i<N;++i){const auto*native=x+i*S;
+                const bool valid=native[M]>0&&native[B]>=0&&native[Q]>=0;
+                require(valid,valid?"":stock_failure(i,native,false));
+                const bool owned=cells[i].tank||native[Q]==0;
+                require(owned,owned?"":stock_failure(i,native,true));
                 const auto s=water(x[i*S+TT],x[i*S+PP]);
                 const double Mc=cells[i].V*s.rho,velocity=x[i*S+P]/Mc;
                 const double Mp=Mc*s.kappa,Mt=-Mc*s.alpha;
