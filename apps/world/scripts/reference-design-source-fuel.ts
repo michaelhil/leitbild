@@ -7,30 +7,20 @@ import {basename,join,resolve} from 'node:path'
 import {z} from 'zod'
 import {sourceRegionSchema} from './reference-design-source-partition'
 import {compileDecayHistory,parseDecayHistory} from './reference-design-decay-history'
+import {configurationBlock,parseConfigurationMaterial} from './reference-design-source-laws'
 
-const positive=z.number().finite().positive(),nonnegative=z.number().finite().nonnegative(),
- seven=z.array(nonnegative).length(7),matrix=z.array(seven).length(7),six=z.array(nonnegative).length(6)
-const fuelSchema=z.object({absorption:seven,fission:seven,nu:z.array(positive).length(7),chi:seven,scatter:matrix}).strict()
- .refine(v=>v.chi.some(x=>x>0)&&v.absorption.every((a,g)=>a>=v.fission[g]!), 'Invalid fission/capture/spectrum table')
-const materialSchema=z.object({units:z.literal('cm^-1'),fuel:fuelSchema,
- water:z.object({absorption:seven,scatter:matrix}).strict()}).strict()
-const kineticsSchema=z.object({energies_eV:z.array(positive).length(7),neutronMass_kg:positive,
- delayedFractions:six,halfLives_s:z.array(positive).length(6),fD:z.number().finite().min(0).max(1)}).strict()
- .refine(v=>v.delayedFractions.reduce((a,b)=>a+b,0)<1,'Invalid delayed fraction')
+const positive=z.number().finite().positive()
 const freshSchema=z.object({u235HeavyMassFraction:z.number().finite().positive().lt(1),u235MolarMass_kg_mol:positive,
  u238MolarMass_kg_mol:positive,oxygenMolarMass_kg_mol:positive}).strict()
-function block(doc:string,name:string){const rows=[...doc.matchAll(new RegExp('^```'+name+'\\s*\\n([\\s\\S]*?)^```\\s*$','gm'))]
- if(rows.length!==1)throw Error('Expected one '+name+' block');return JSON.parse(rows[0]![1]!)}
 export function parseConfigurationFuel(document:string){
- const material=materialSchema.parse(block(document,'reference-configuration-material')),
-  kinetics=kineticsSchema.parse(block(document,'reference-configuration-kinetics')),
+ const material=parseConfigurationMaterial(document),kinetics=material.kinetics,
   //This component consumes ONLY the freshFuel field; it does not validate or
   //silently reinterpret the other constituent owners as current coefficients.
-  freshFuel=freshSchema.parse(block(document,'reference-configuration-added-material').freshFuel),
-  chiSum=material.fuel.chi.reduce((a,b)=>a+b,0),SI=(xs:number[])=>xs.map(x=>x*100)
- return {law:{absorption:SI(material.fuel.absorption),fission:SI(material.fuel.fission),
-  scatter:material.fuel.scatter.map(SI),nu:material.fuel.nu,chi:material.fuel.chi.map(x=>x/chiSum),
-  speed:kinetics.energies_eV.map(E=>Math.sqrt(2*E*1.602176634e-19/kinetics.neutronMass_kg)),
+  freshFuel=freshSchema.parse(configurationBlock(document,'reference-configuration-added-material').freshFuel),
+  chiSum=material.fuel.chi.reduce((a,b)=>a+b,0)
+ return {law:{absorption:material.fuel.absorption,fission:material.fuel.fission,
+  scatter:material.fuel.scatter,nu:material.fuel.nu,chi:material.fuel.chi.map(x=>x/chiSum),
+  speed:material.speed,
   beta:kinetics.delayedFractions,decay:kinetics.halfLives_s.map(t=>Math.LN2/t),f_d:kinetics.fD},
   originalChiSum:chiSum,freshFuel,kinetics}
 }
@@ -122,7 +112,7 @@ export async function qualifyFuelInputs(partitionPath:string,materialPath:string
  const paths=[partitionPath,materialPath,ownerPath,heatOwnerPath].map(p=>resolve(p)),texts=await Promise.all(paths.map(p=>Bun.file(p).text())),
   record=parseConfigurationFuel(texts[2]!),prompt=compileDecayHistory(parseDecayHistory(texts[3]!)).promptFissionEnergy_J,
   input=compileFuelInputs(JSON.parse(texts[0]!),JSON.parse(texts[1]!),record,prompt),
-  root=resolve(import.meta.dir,'../native/process-plant'),sourceFiles=[import.meta.path,resolve(import.meta.dir,'reference-design-decay-history.ts'),
+  root=resolve(import.meta.dir,'../native/process-plant'),sourceFiles=[import.meta.path,resolve(import.meta.dir,'reference-design-source-laws.ts'),resolve(import.meta.dir,'reference-design-decay-history.ts'),
    join(root,'src/fuel_source.rs'),join(root,'qualification/fuel-source.rs'),join(root,'src/lib.rs'),resolve(import.meta.dir,'reference-design-source-partition.ts')],
   sources=await Promise.all(sourceFiles.map(p=>Bun.file(p).text())),scratch=await mkdtemp(join(tmpdir(),'ld01-rust-fuel-')),
   fixture=nativeFuelFixture(input),fixturePath=join(scratch,'input.txt'),binary=join(scratch,'fuel-source')
@@ -163,7 +153,7 @@ export async function qualifyFuelInputs(partitionPath:string,materialPath:string
 if(import.meta.main){
  const [partition,material,owner,heat,output]=Bun.argv.slice(2)
  if(!partition||!material||!owner||!heat||!output)throw Error('Expected partition receipt, cold material receipt, configuration owner, heat owner and NEW result')
- const result=await qualifyFuelInputs(partition,material,owner,heat,output)
+  const result=await qualifyFuelInputs(partition,material,owner,heat,output)
  console.log(JSON.stringify({passed:result.passed,counts:result.input.counts,elapsedSeconds:result.elapsedSeconds,result:result.run?.stdout,output}))
  if(!result.passed)process.exitCode=1
 }

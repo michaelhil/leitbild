@@ -3,6 +3,7 @@
 use std::ffi::{CStr, c_char};
 
 pub mod fuel_source;
+pub mod moderator_source;
 pub mod original_water;
 pub mod mixing;
 
