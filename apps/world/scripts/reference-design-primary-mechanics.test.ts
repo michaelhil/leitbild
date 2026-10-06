@@ -3,6 +3,10 @@ import { checkColdPartition, coldReturnGeometry, compileCurrentPrimaryGraph, fol
   parsePrimaryMechanics, sectionMechanics, serializePrimaryConstraintSnapshot } from './reference-design-primary-mechanics'
 import { currentPrimaryGraphFixture } from './reference-design-primary-mechanics.fixture'
 
+// External engineering owners are not part of the application-only checkout.
+// Qualification is explicit opt-in; no fabricated source snapshot substitutes.
+const wiki = process.env.LEITBILD_REFERENCE_WIKI
+
 test('cold channels and real header partition one inventory, never add a second old header', () => {
   checkColdPartition(20, 8, 4)
   expect(() => checkColdPartition(20, 8, 20)).toThrow()
@@ -78,8 +82,8 @@ test('barrel radii have one strict owner and finite return mouths fit the real a
   expect(() => coldReturnGeometry({ ...selection, coldHeaderHeight_m: .9 }, barrel, 20)).toThrow()
 })
 
-test('current physical graph has serial external core, four finite pumps and every open guide cohort', async () => {
-  const fixture = await currentPrimaryGraphFixture(), graph = compileCurrentPrimaryGraph(fixture.input),
+test.skipIf(!wiki)('current physical graph has serial external core, four finite pumps and every open guide cohort', async () => {
+  const fixture = await currentPrimaryGraphFixture(wiki!), graph = compileCurrentPrimaryGraph(fixture.input),
     byId = new Map(graph.nodes.map((n, i) => [n.id, i])),
     contacts = new Set(graph.edges.map(e => graph.nodes[e.from]!.id + '->' + graph.nodes[e.to]!.id))
   expect(graph.nodes).toHaveLength(76)
@@ -113,8 +117,8 @@ test('current physical graph has serial external core, four finite pumps and eve
   expect(fixture.identity.every(s => s.sha256.length === 64)).toBe(true)
 })
 
-test('current hardware displacement, guide end water and midpoint tee are counted once with their moments', async () => {
-  const fixture = await currentPrimaryGraphFixture(), g = compileCurrentPrimaryGraph(fixture.input),
+test.skipIf(!wiki)('current hardware displacement, guide end water and midpoint tee are counted once with their moments', async () => {
+  const fixture = await currentPrimaryGraphFixture(wiki!), g = compileCurrentPrimaryGraph(fixture.input),
     sum = (ids: (id: string) => boolean) => g.nodes.filter(n => ids(n.id)).reduce((a, n) => a + n.volume_m3, 0)
   expect(sum(id => id.startsWith('GUIDE.'))).toBeCloseTo(fixture.expectedGuideVolume_m3, 11)
   expect(sum(id => ['LOWER', 'UPPER', 'CORE.1', 'CORE.2'].includes(id))).toBeCloseTo(fixture.expectedExteriorVolume_m3, 11)
@@ -131,8 +135,8 @@ test('current hardware displacement, guide end water and midpoint tee are counte
   expect(g.carriers.length + g.unassignedMomentumSupports.length).toBe(g.nodes.length)
 })
 
-test('all physical contact heads share one datum and native stream keeps unassigned supports visible', async () => {
-  const fixture = await currentPrimaryGraphFixture(), g = compileCurrentPrimaryGraph(fixture.input), d = structuredClone(fixture.input)
+test.skipIf(!wiki)('all physical contact heads share one datum and native stream keeps unassigned supports visible', async () => {
+  const fixture = await currentPrimaryGraphFixture(wiki!), g = compileCurrentPrimaryGraph(fixture.input), d = structuredClone(fixture.input)
   for (const q of Object.values(d.geometry)) {
     q.meanElevation_m += 100
     if (q.inletElevation_m !== undefined) q.inletElevation_m += 100
@@ -166,8 +170,8 @@ test('all physical contact heads share one datum and native stream keeps unassig
   expect(() => serializePrimaryConstraintSnapshot(g, { ...snapshot, faceDonorDensity_kg_m3: g.edges.map(() => 0) })).toThrow()
 })
 
-test('current compiler rejects invented/missing inventories and unsupported cohort scope', async () => {
-  const { input } = await currentPrimaryGraphFixture()
+test.skipIf(!wiki)('current compiler rejects invented/missing inventories and unsupported cohort scope', async () => {
+  const { input } = await currentPrimaryGraphFixture(wiki!)
   for (const change of [
     (d: typeof input) => { d.snapshotIdentity = '' },
     (d: typeof input) => { delete d.masses['GUIDE.EMPTY'] },

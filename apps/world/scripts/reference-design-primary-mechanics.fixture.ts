@@ -1,7 +1,7 @@
 /** TEST ONLY current-owner geometry fixture. No EOS preparation, nominal solve,
  * reached-state conversion or physical pressure-manifold qualification. */
 import { createHash } from 'node:crypto'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { primaryWaterOwnerFiles, parsePrimaryWaterInputs } from './reference-design-source-water'
 import { fuelHandlingChecks } from './reference-design-fuel-handling'
 import { controlAbsorberGeometry } from './reference-design-control-absorber'
@@ -16,8 +16,8 @@ import { coldReturnGeometry, foldedGeometry, type CurrentPrimaryGraphInput,
 /** Current selected original, stationary fully-inserted cold occupancy only.
  * A declared uniform density is a STRUCTURAL algebra fixture, not a generated
  * native thermodynamic state. Geometry/moments below consume physical owners. */
-export async function currentPrimaryGraphFixture(wiki = resolve(import.meta.dir,
-  '../../../../Leitbild-wiki/world/packs/process-plant/reference-designs/ld-01')) {
+export async function currentPrimaryGraphFixture(wiki: string) {
+  if (typeof wiki !== 'string' || !wiki.trim()) throw Error('Explicit current reference wiki directory required')
   const extra = ['model/primary-hydraulic-basis.md', 'systems/primary-coolant/surge-route.md',
     'systems/primary-coolant/pressure-and-inventory.md']
   const names = [...primaryWaterOwnerFiles, ...extra]
