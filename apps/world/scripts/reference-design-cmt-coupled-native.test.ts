@@ -10,7 +10,13 @@ test('bounded qualification refuses an invalid allowance before reading native i
 // These are packaging/contract checks, not native trajectory evidence.
 test('coupled harness preserves actual stage/history roles and exposes refused candidates separately', () => {
   expect(nativeCoupledDriver).toContain('const auto initial=original()')
-  expect(nativeCoupledDriver).toContain('const auto chart=conservative_residual(x,N_VGetArrayPointer(dy))')
+  expect(nativeCoupledDriver).toContain('const auto stocks=pack_stocks(initial.data())')
+  expect(nativeCoupledDriver).toContain('N_VNew_Serial(STOCKS,context)')
+  expect(nativeCoupledDriver).toContain('const auto evaluated=recover_stocks(z,factor)')
+  expect(nativeCoupledDriver).toContain('packed[j]==z[j]')
+  expect(nativeCoupledDriver).toContain('const auto chart=native_chart_defects(x,&evaluated.centers)')
+  expect(nativeCoupledDriver).toContain('stock_operator_gates(operatorMetrics)')
+  expect(nativeCoupledDriver).not.toContain('IDASetId')
   expect(nativeCoupledDriver).toContain('stageDiagnostic.genuine=flag==IDA_SUCCESS')
   expect(nativeCoupledDriver).not.toContain('candidate_ok(defect<=1')
   expect(nativeCoupledDriver).toContain('stageDiagnostic.wrms=std::sqrt(squares/differentialCount)')

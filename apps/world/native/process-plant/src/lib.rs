@@ -3,9 +3,9 @@
 use std::ffi::{CStr, c_char};
 
 pub mod fuel_source;
+pub mod mixing;
 pub mod moderator_source;
 pub mod original_water;
-pub mod mixing;
 
 pub const GRAVITY: f64 = 9.80665;
 
@@ -86,12 +86,14 @@ pub fn liquid_batch(queries: &[LiquidQuery], output: &mut [Liquid]) -> Result<()
     Ok(())
 }
 
+#[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct CellGeometry {
     pub volume: f64,
     pub elevation: f64,
 }
 
+#[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct Storage {
     pub mass: f64,
@@ -100,6 +102,7 @@ pub struct Storage {
     pub mixing_energy: f64,
 }
 
+#[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct StorageJacobian {
     pub mass_pressure: f64,
@@ -114,6 +117,7 @@ fn valid(
     water: Liquid,
     momentum: f64,
     mixing: f64,
+    signed_trial: bool,
 ) -> Result<(), &'static str> {
     let values = [
         geometry.volume,
@@ -145,7 +149,7 @@ fn valid(
         || water.sound_speed <= 0.
         || water.viscosity <= 0.
         || water.conductivity <= 0.
-        || mixing < 0.
+        || (!signed_trial && mixing < 0.)
     {
         return Err("Invalid conservative single-liquid storage input");
     }
@@ -163,7 +167,17 @@ pub fn storage(
     momentum: f64,
     mixing_energy: f64,
 ) -> Result<Storage, &'static str> {
-    valid(geometry, water, momentum, mixing_energy)?;
+    native_storage(geometry, water, momentum, mixing_energy, false)
+}
+
+fn native_storage(
+    geometry: CellGeometry,
+    water: Liquid,
+    momentum: f64,
+    mixing_energy: f64,
+    signed_trial: bool,
+) -> Result<Storage, &'static str> {
+    valid(geometry, water, momentum, mixing_energy, signed_trial)?;
     let mass = geometry.volume * water.density;
     let energy = mass * (water.internal_energy + GRAVITY * geometry.elevation)
         + momentum * momentum / (2. * mass)
@@ -187,7 +201,17 @@ pub fn storage_jacobian(
     momentum: f64,
     mixing: f64,
 ) -> Result<StorageJacobian, &'static str> {
-    let s = storage(geometry, water, momentum, mixing)?;
+    native_storage_jacobian(geometry, water, momentum, mixing, false)
+}
+
+fn native_storage_jacobian(
+    geometry: CellGeometry,
+    water: Liquid,
+    momentum: f64,
+    mixing: f64,
+    signed_trial: bool,
+) -> Result<StorageJacobian, &'static str> {
+    let s = native_storage(geometry, water, momentum, mixing, signed_trial)?;
     let velocity = momentum / s.mass;
     let mp = s.mass * water.compressibility;
     let mt = -s.mass * water.expansion;
@@ -279,21 +303,168 @@ pub fn recover_liquid(
     {
         return Err("Invalid local recovery target or accuracy".into());
     }
+    Ok(recover_local(
+        geometry,
+        target,
+        guess,
+        false,
+        accuracy.iterations,
+        |mass, energy, _| mass.abs() <= accuracy.mass_kg && energy.abs() <= accuracy.energy_j,
+    )?
+    .liquid)
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ChartRecoveryAccuracy {
+    pub pressure_pa: f64,
+    pub temperature_k: f64,
+    pub iterations: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct RecoveredLiquid {
+    pub liquid: Liquid,
+    pub chart: StorageJacobian,
+    pub pressure_defect_pa: f64,
+    pub temperature_defect_k: f64,
+    pub iterations: usize,
+}
+
+/// Same known-liquid EOS/native storage, with signed Q retained ONLY for a
+/// numerical trial. This never admits an accepted negative mixing stock. The
+/// caller supplies its one nearby same-branch guess; no phase or seed fallback.
+/// Joint inverse-chart Newton corrections control the local stopping test,
+/// not a global inverse-error guarantee. The caller independently checks the
+/// returned chart, rather than inferring pressure accuracy from M/E boxes.
+pub fn recover_trial_liquid(
+    geometry: CellGeometry,
+    target: Storage,
+    guess: LiquidQuery,
+    accuracy: ChartRecoveryAccuracy,
+) -> Result<RecoveredLiquid, String> {
+    if !accuracy.pressure_pa.is_finite()
+        || accuracy.pressure_pa <= 0.
+        || !accuracy.temperature_k.is_finite()
+        || accuracy.temperature_k <= 0.
+        || accuracy.iterations == 0
+    {
+        return Err("Invalid joint known-liquid recovery accuracy".into());
+    }
+    recover_local(
+        geometry,
+        target,
+        guess,
+        true,
+        accuracy.iterations,
+        |_, _, correction| {
+            correction[0].abs() <= accuracy.pressure_pa
+                && correction[1].abs() <= accuracy.temperature_k
+        },
+    )
+}
+
+fn recover_local(
+    geometry: CellGeometry,
+    target: Storage,
+    guess: LiquidQuery,
+    signed_trial: bool,
+    iterations: usize,
+    admitted: impl Fn(f64, f64, [f64; 2]) -> bool,
+) -> Result<RecoveredLiquid, String> {
+    if ![
+        target.mass,
+        target.momentum,
+        target.energy,
+        target.mixing_energy,
+        guess.pressure,
+        guess.temperature,
+    ]
+    .iter()
+    .all(|value| value.is_finite())
+        || target.mass <= 0.
+        || (!signed_trial && target.mixing_energy < 0.)
+    {
+        return Err("Invalid local known-liquid recovery target/guess".into());
+    }
     let mut query = [guess];
     let mut output = [Liquid::default()];
-    for _ in 0..accuracy.iterations {
+    for iteration in 0..iterations {
         liquid_batch(&query, &mut output).map_err(|e| e.message)?;
         let water = output[0];
-        let actual = storage(geometry, water, target.momentum, target.mixing_energy)?;
+        let actual = native_storage(
+            geometry,
+            water,
+            target.momentum,
+            target.mixing_energy,
+            signed_trial,
+        )?;
         let mass_residual = target.mass - actual.mass;
         let energy_residual = target.energy - actual.energy;
-        if mass_residual.abs() <= accuracy.mass_kg && energy_residual.abs() <= accuracy.energy_j {
-            return Ok(water);
-        }
-        let j = storage_jacobian(geometry, water, target.momentum, target.mixing_energy)?;
+        let j = native_storage_jacobian(
+            geometry,
+            water,
+            target.momentum,
+            target.mixing_energy,
+            signed_trial,
+        )?;
         let [dp, dt] = j.pressure_temperature_increment(mass_residual, energy_residual)?;
+        if admitted(mass_residual, energy_residual, [dp, dt]) {
+            return Ok(RecoveredLiquid {
+                liquid: water,
+                chart: j,
+                pressure_defect_pa: dp,
+                temperature_defect_k: dt,
+                iterations: iteration + 1,
+            });
+        }
         query[0].pressure += dp;
         query[0].temperature += dt;
     }
     Err("Local known-liquid recovery did not converge under the supplied accuracy".into())
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct TrialLiquidInput {
+    pub geometry: CellGeometry,
+    pub target: Storage,
+    pub guess: LiquidQuery,
+    pub accuracy: ChartRecoveryAccuracy,
+}
+
+/// Synchronous owned-buffer batch ABI used by the actual offline stock consumer.
+/// Failed output is only a partial candidate and cannot be accepted plant state.
+/// # Safety
+/// Pointers must address count valid, nonoverlapping inputs/outputs; failed and
+/// error must be valid writable buffers. No pointers are retained.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn leitbild_recover_trial_liquid_batch(
+    inputs: *const TrialLiquidInput,
+    outputs: *mut RecoveredLiquid,
+    count: usize,
+    failed: *mut usize,
+    error: *mut c_char,
+    error_capacity: usize,
+) -> i32 {
+    for index in 0..count {
+        // SAFETY: synchronous caller-owned POD input/output contract above.
+        let input = unsafe { *inputs.add(index) };
+        match recover_trial_liquid(input.geometry, input.target, input.guess, input.accuracy) {
+            Ok(output) => unsafe { outputs.add(index).write(output) },
+            Err(message) => {
+                unsafe { *failed = index };
+                if error_capacity > 0 {
+                    let length = message.len().min(error_capacity - 1);
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(message.as_ptr(), error.cast::<u8>(), length);
+                        *error.add(length) = 0;
+                    }
+                }
+                return 1;
+            }
+        }
+    }
+    0
 }

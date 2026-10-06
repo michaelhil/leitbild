@@ -14,23 +14,23 @@ export const nativeCoupledDriver = String.raw`
 #include <sunmatrix/sunmatrix_dense.h>
 #include <sunlinsol/sunlinsol_dense.h>
 
-struct TrialRun {long residuals=0,jacobians=0,quadratures=0,recoverable=0;std::string failure;};
+struct TrialRun {double factor=1;long residuals=0,jacobians=0,quadratures=0,recoverable=0;std::string failure;};
 int residual_callback(double,N_Vector y,N_Vector dy,N_Vector out,void* opaque){
     auto&run=*static_cast<TrialRun*>(opaque);++run.residuals;
-    try{const auto r=conservative_residual(N_VGetArrayPointer(y),N_VGetArrayPointer(dy));
+    try{const auto r=stock_residual(N_VGetArrayPointer(y),N_VGetArrayPointer(dy),run.factor);
         std::copy(r.begin(),r.end(),N_VGetArrayPointer(out));return 0;
     }catch(const std::exception&e){run.failure=e.what();++run.recoverable;
         return std::chrono::duration<double>(Clock::now()-started).count()>guard_seconds?-1:1;}}
 int jacobian_callback(double,double cj,N_Vector y,N_Vector,N_Vector,SUNMatrix matrix,
     void* opaque,N_Vector,N_Vector,N_Vector){
     auto&run=*static_cast<TrialRun*>(opaque);++run.jacobians;
-    try{const auto j=coupled_jacobian(N_VGetArrayPointer(y),cj);SUNMatZero(matrix);
-        for(int r=0;r<D;++r)for(int c=0;c<D;++c)SM_ELEMENT_D(matrix,r,c)=j.dense[r*D+c];return 0;
+    try{const auto j=stock_jacobian(N_VGetArrayPointer(y),cj,run.factor);SUNMatZero(matrix);
+        for(int r=0;r<STOCKS;++r)for(int c=0;c<STOCKS;++c)SM_ELEMENT_D(matrix,r,c)=j.dense[r*STOCKS+c];return 0;
     }catch(const std::exception&e){run.failure=e.what();++run.recoverable;
         return std::chrono::duration<double>(Clock::now()-started).count()>guard_seconds?-1:1;}}
 int quadrature_callback(double,N_Vector y,N_Vector,N_Vector out,void* opaque){
     auto&run=*static_cast<TrialRun*>(opaque);++run.quadratures;
-    try{const auto f=rates(N_VGetArrayPointer(y));std::copy(f.begin()+D,f.end(),N_VGetArrayPointer(out));return 0;
+    try{const auto f=stock_rates(N_VGetArrayPointer(y),run.factor);std::copy(f.begin()+STOCKS,f.end(),N_VGetArrayPointer(out));return 0;
     }catch(const std::exception&e){run.failure=e.what();++run.recoverable;
         return std::chrono::duration<double>(Clock::now()-started).count()>guard_seconds?-1:1;}}
 void solver_ok(int flag,const char* operation){require(flag>=0,std::string(operation)+": IDAS status "+std::to_string(flag));}
@@ -41,6 +41,7 @@ struct Arm {
     double chartPressure=0,chartTemperature=0,maxTemperatureChange=0,totalQ=0,grossMass=0,grossEnergy=0;
     std::array<double,5> stageDefectWeights{},historyDerivativeDifferenceWeights{};
     long steps=0,errorFailures=0,nonlinearFailures=0,residuals=0,jacobians=0,quadratures=0,recoverable=0;
+    long propertyTuples=0;uint64_t recoveryBatches=0,requestedRecoveryPoints=0,successfulRecoveryIterations=0;
     std::array<long,6> orders{};std::array<double,OBSERVERS> receipts{};
     std::vector<std::array<double,SAMPLE>> common;
 };
@@ -66,6 +67,9 @@ void arm_json(const Arm&a){std::cout<<"{\"lastAdmittedSeconds\":"<<a.admitted<<"
     <<",\"nonlinearFailures\":"<<a.nonlinearFailures<<",\"residualCallbacks\":"<<a.residuals
     <<",\"suppliedJacobianCallbacks\":"<<a.jacobians<<",\"quadratureCallbacks\":"<<a.quadratures
     <<",\"recoverableCallbackRefusals\":"<<a.recoverable<<",\"maximumMassDefectKg\":"<<a.massDefect
+    <<",\"propertyTuples\":"<<a.propertyTuples<<",\"consumerRecoveryBatches\":"<<a.recoveryBatches
+    <<",\"consumerRequestedRecoveryPoints\":"<<a.requestedRecoveryPoints
+    <<",\"successfulConsumerRecoveryIterations\":"<<a.successfulRecoveryIterations
     <<",\"maximumEnergyDefectJ\":"<<a.energyDefect<<",\"maximumTracerDefectKgEq\":"<<a.tracerDefect
     <<",\"maximumChartPressureDefectPa\":"<<a.chartPressure<<",\"maximumChartTemperatureDefectK\":"<<a.chartTemperature
     <<",\"maximumReceivingTemperatureChangeK\":"<<a.maxTemperatureChange<<",\"totalReceivingQJ\":"<<a.totalQ
@@ -75,44 +79,46 @@ void arm_json(const Arm&a){std::cout<<"{\"lastAdmittedSeconds\":"<<a.admitted<<"
     std::cout<<"],\"stageDefectWeightsMPEBQ\":[";for(int j=0;j<5;++j){if(j)std::cout<<",";std::cout<<a.stageDefectWeights[j];}
     std::cout<<"],\"historyDerivativeDifferenceWeightsMPEBQ\":[";for(int j=0;j<5;++j){if(j)std::cout<<",";std::cout<<a.historyDerivativeDifferenceWeights[j];}std::cout<<"]}";}
 Arm advance_arm(double factor){
-    activeFactor=factor;partial=Arm{};Arm result;TrialRun run;const auto began=Clock::now();
-    const auto initial=original();const auto initialTotals=native_totals(initial.data());const auto initialRates=rates(initial.data());
+    activeFactor=factor;partial=Arm{};Arm result;TrialRun run;run.factor=factor;const auto began=Clock::now();
+    const auto beganTuples=tuple_calls;
+    const auto beganRecoveryBatches=recovery_batches,beganRecoveryPoints=recovery_points,beganRecoveryIterations=recovery_iterations;
+    const auto initial=original();const auto stocks=pack_stocks(initial.data());
+    const auto initialTotals=native_totals(initial.data());const auto initialRates=stock_rates(stocks.data(),factor);
+    std::array<double,D> snapshot=initial;
     SUNContext context=nullptr;solver_ok(SUNContext_Create(SUN_COMM_NULL,&context),"context");
-    N_Vector y=N_VNew_Serial(D,context),dy=N_VClone(y),ids=N_VClone(y),atol=N_VClone(y),bounds=N_VClone(y);
+    N_Vector y=N_VNew_Serial(STOCKS,context),dy=N_VClone(y),atol=N_VClone(y),bounds=N_VClone(y);
     N_Vector history=N_VClone(y),historyDerivative=N_VClone(y),quad=N_VNew_Serial(OBSERVERS,context);
-    require(y&&dy&&ids&&atol&&bounds&&history&&historyDerivative&&quad,"Native vectors unavailable");
-    auto*x=N_VGetArrayPointer(y),*dx=N_VGetArrayPointer(dy),*id=N_VGetArrayPointer(ids);
+    require(y&&dy&&atol&&bounds&&history&&historyDerivative&&quad,"Native vectors unavailable");
+    auto*z=N_VGetArrayPointer(y),*dx=N_VGetArrayPointer(dy);
     auto*tol=N_VGetArrayPointer(atol),*co=N_VGetArrayPointer(bounds);
-    for(int j=0;j<D;++j){x[j]=initial[j];dx[j]=initialRates[j];id[j]=1;tol[j]=factor*1e-7;co[j]=0;}
-    for(int i=0;i<N;++i){const auto&c=cells[i];const auto s=water(x[ix(i,TT)],x[ix(i,PP)]);
-        const double Mc=c.V*s.rho,v=x[ix(i,P)]/Mc,common=s.u+gravity*c.z-v*v/2;
+    for(int j=0;j<STOCKS;++j){z[j]=stocks[j];dx[j]=initialRates[j];tol[j]=factor*1e-7;co[j]=0;}
+    for(int i=0;i<N;++i){const auto&c=cells[i];const auto s=water(initial[ix(i,TT)],initial[ix(i,PP)]);
+        const double Mc=c.V*s.rho,v=initial[ix(i,P)]/Mc,common=s.u+gravity*c.z-v*v/2;
         const double Mp=Mc*s.kappa,Mt=-Mc*s.alpha,Ep=common*Mp+Mc*up(s),Et=common*Mt+Mc*ut(s),det=Mp*Et-Mt*Ep;
         require(det>0,"Initial chart rank failed");const double dp=50*factor,dT=.01*factor;
-        tol[ix(i,M)]=std::min(dp*det/(2*std::abs(Et)),dT*det/(2*std::abs(Ep)));
-        tol[ix(i,E)]=std::min(dp*det/(2*std::abs(Mt)),dT*det/(2*std::abs(Mp)));
-        tol[ix(i,P)]=Mc*.001*factor;tol[ix(i,B)]=Mc*1e-8*factor;if(c.tank)tol[ix(i,Q)]=Mc*.001*factor;
-        tol[ix(i,PP)]=dp;tol[ix(i,TT)]=dT;id[ix(i,PP)]=id[ix(i,TT)]=0;
-        co[ix(i,M)]=co[ix(i,PP)]=co[ix(i,TT)]=2;co[ix(i,B)]=1;if(c.tank)co[ix(i,Q)]=1;
-        const double massRate=initialRates[ix(i,M)];
-        const double thermalRate=initialRates[ix(i,E)]-v*initialRates[ix(i,P)]-(c.tank?initialRates[ix(i,Q)]:0);
-        dx[ix(i,PP)]=(massRate*Et-Mt*thermalRate)/det;dx[ix(i,TT)]=(Mp*thermalRate-massRate*Ep)/det;
+        tol[sx(i,M)]=std::min(dp*det/(2*std::abs(Et)),dT*det/(2*std::abs(Ep)));
+        tol[sx(i,E)]=std::min(dp*det/(2*std::abs(Mt)),dT*det/(2*std::abs(Mp)));
+        tol[sx(i,P)]=Mc*.001*factor;tol[sx(i,B)]=Mc*1e-8*factor;if(c.tank)tol[sx(i,Q)]=Mc*.001*factor;
+        co[sx(i,M)]=2;co[sx(i,B)]=1;if(c.tank)co[sx(i,Q)]=1;
     }
-    const auto initialResidual=conservative_residual(x,dx);
-    for(int j=0;j<D;++j){const int field=coordinateOwner[j].field;
-        const double limit=field==PP?5*factor:field==TT?.001*factor:1e-6;
-        require(std::isfinite(tol[j])&&tol[j]>0&&std::abs(initialResidual[j])<=limit,"Inconsistent original residual/error weight");}
+    const auto initialResidual=stock_residual(z,dx,factor);
+    for(int j=0;j<STOCKS;++j)
+        require(std::isfinite(tol[j])&&tol[j]>0&&std::abs(initialResidual[j])<=1e-6,"Inconsistent original residual/error weight");
     void*mem=IDACreate(context);require(mem,"IDAS unavailable");
     solver_ok(IDAInit(mem,residual_callback,0,y,dy),"initialization");solver_ok(IDASetUserData(mem,&run),"user data");
-    solver_ok(IDASetId(mem,ids),"differential ids");solver_ok(IDASetConstraints(mem,bounds),"stock constraints");
+    // All solver coordinates are owned differential stocks; p/T have no solver history.
+    solver_ok(IDASetConstraints(mem,bounds),"stock constraints");
     solver_ok(IDASVtolerances(mem,0,atol),"reference-independent weights");N_VConst(0,quad);
     solver_ok(IDAQuadInit(mem,quadrature_callback,quad),"passive receipts");solver_ok(IDASetQuadErrCon(mem,SUNFALSE),"passive receipt ownership");
-    SUNMatrix matrix=SUNDenseMatrix(D,D,context);SUNLinearSolver linear=SUNLinSol_Dense(y,matrix,context);
+    SUNMatrix matrix=SUNDenseMatrix(STOCKS,STOCKS,context);SUNLinearSolver linear=SUNLinSol_Dense(y,matrix,context);
     require(matrix&&linear,"Linear boundary unavailable");solver_ok(IDASetLinearSolver(mem,linear,matrix),"linear boundary");
     solver_ok(IDASetJacFn(mem,jacobian_callback),"supplied complete approximate Newton matrix");
     solver_ok(IDASetMaxNumSteps(mem,20000),"bounded solver work");solver_ok(IDASetMaxStep(mem,1),"operating stop spacing");
     auto statistics=[&]{statistic_ok(IDAGetNumSteps(mem,&result.steps),"steps");statistic_ok(IDAGetNumErrTestFails(mem,&result.errorFailures),"error failures");
         statistic_ok(IDAGetNumNonlinSolvConvFails(mem,&result.nonlinearFailures),"nonlinear failures");
         result.residuals=run.residuals;result.jacobians=run.jacobians;result.quadratures=run.quadratures;result.recoverable=run.recoverable;
+        result.propertyTuples=tuple_calls-beganTuples;result.recoveryBatches=recovery_batches-beganRecoveryBatches;
+        result.requestedRecoveryPoints=recovery_points-beganRecoveryPoints;result.successfulRecoveryIterations=recovery_iterations-beganRecoveryIterations;
         result.wall=std::chrono::duration<double>(Clock::now()-began).count();partial=result;};
     double t=0;
     for(int target=1;target<=30;++target){solver_ok(IDASetStopTime(mem,target),"stop time");
@@ -125,8 +131,11 @@ Arm advance_arm(double factor){
             solver_ok(IDAGetLastStep(mem,&h),"last step");solver_ok(IDAGetLastOrder(mem,&order),"last order");
             require(h>0&&order>=1&&order<=5,"Invalid step/order");++result.orders[order];
             result.minStep=result.minStep==0?h:std::min(result.minStep,h);result.maxStep=std::max(result.maxStep,h);
-            x=N_VGetArrayPointer(history);const auto*raw=N_VGetArrayPointer(y),*hd=N_VGetArrayPointer(historyDerivative);
-            for(int j=0;j<D;++j)require(std::isfinite(x[j])&&std::isfinite(hd[j])&&raw[j]==x[j],"Nonfinite or unmatched complete endpoint/history");
+            z=N_VGetArrayPointer(history);const auto*raw=N_VGetArrayPointer(y),*hd=N_VGetArrayPointer(historyDerivative);
+            for(int j=0;j<STOCKS;++j)require(std::isfinite(z[j])&&std::isfinite(hd[j])&&raw[j]==z[j],"Nonfinite or unmatched complete endpoint/history");
+            const auto evaluated=recover_stocks(z,factor);snapshot=evaluated.expanded;const auto*x=snapshot.data();
+            // Recovery supplies views, never replacement stocks or rewritten history.
+            const auto packed=pack_stocks(x);for(int j=0;j<STOCKS;++j)require(packed[j]==z[j],"Recovery changed native stocks");
             for(int i=0;i<N;++i){const auto native=view(x,i);
                 for(int field:{M,B,Q}){if(field==Q&&!cells[i].tank)continue;
                     if(!(field==M?native[field]>0:native[field]>=0)){
@@ -137,19 +146,22 @@ Arm advance_arm(double factor){
             const double massDefect=std::abs(totals[0]-initialTotals[0]),energyDefect=std::abs(totals[1]-initialTotals[1]),tracerDefect=std::abs(totals[2]-initialTotals[2]);
             require(massDefect<=1e-6&&energyDefect<=.1&&tracerDefect<=1e-8,"Closed native conservation failed");
             // Algebraic rows do not involve dy; this recomputes the exact nonlinear chart.
-            const auto chart=conservative_residual(x,N_VGetArrayPointer(dy));
+            const auto chart=native_chart_defects(x,&evaluated.centers);
+            std::array<double,STOCKS> stockDefect{};
+            for(int j=0;j<STOCKS;++j){const auto owner=stockOwner[j];
+                stockDefect[j]=N_VGetArrayPointer(dy)[j]-evaluated.rates[ix(owner.cell,owner.field)];}
             std::array<double,5> stageDefects{},historyDifferences{};
             stageDiagnostic=StageDiagnostic{};stageDiagnostic.time=t;stageDiagnostic.h=h;stageDiagnostic.order=order;
             stageDiagnostic.genuine=flag==IDA_SUCCESS;double squares=0;int differentialCount=0;
-            for(int j=0;j<D;++j){const int field=coordinateOwner[j].field;if(field>=PP)continue;
-                const double defect=h*std::abs(chart[j])/tol[j];
+            for(int j=0;j<STOCKS;++j){const int field=stockOwner[j].field;
+                const double defect=h*std::abs(stockDefect[j])/tol[j];
                 const double historyDifference=h*std::abs(hd[j]-N_VGetArrayPointer(dy)[j])/tol[j];
                 stageDefects[field]=std::max(stageDefects[field],defect);historyDifferences[field]=std::max(historyDifferences[field],historyDifference);
                 require(std::isfinite(defect)&&std::isfinite(historyDifference),"Nonfinite stage/history derivative diagnostic");
                 squares+=defect*defect;++differentialCount;
-                if(defect>stageDiagnostic.maximum){stageDiagnostic.maximum=defect;stageDiagnostic.cell=coordinateOwner[j].cell;stageDiagnostic.field=field;
-                    stageDiagnostic.derivative=N_VGetArrayPointer(dy)[j];stageDiagnostic.rate=stageDiagnostic.derivative-chart[j];
-                    stageDiagnostic.residual=chart[j];stageDiagnostic.atol=tol[j];}}
+                if(defect>stageDiagnostic.maximum){stageDiagnostic.maximum=defect;stageDiagnostic.cell=stockOwner[j].cell;stageDiagnostic.field=field;
+                    stageDiagnostic.derivative=N_VGetArrayPointer(dy)[j];stageDiagnostic.rate=stageDiagnostic.derivative-stockDefect[j];
+                    stageDiagnostic.residual=stockDefect[j];stageDiagnostic.atol=tol[j];}}
             stageDiagnostic.wrms=std::sqrt(squares/differentialCount);
             // h*F is neither an LTE nor J^-1*F state correction for a stiff DAE.
             // It is descriptive, not a second invented nonlinear convergence test.
@@ -173,21 +185,27 @@ Arm advance_arm(double factor){
             statistics();
         }
         require(std::abs(t-target)<=1e-10,"Common sample not accepted stop-time state");
-        std::array<double,SAMPLE> row;std::copy(x,x+D,row.begin());std::copy(result.receipts.begin(),result.receipts.end(),row.begin()+D);result.common.push_back(row);
+        std::array<double,SAMPLE> row;std::copy(snapshot.begin(),snapshot.end(),row.begin());std::copy(result.receipts.begin(),result.receipts.end(),row.begin()+D);result.common.push_back(row);
         std::cerr<<"admitted arm="<<factor<<" time="<<t<<" steps="<<result.steps<<"\n";
     }
     statistics();IDAFree(&mem);SUNLinSolFree(linear);SUNMatDestroy(matrix);
-    for(auto v:{y,dy,ids,atol,bounds,history,historyDerivative,quad})N_VDestroy(v);SUNContext_Free(&context);return result;
+    for(auto v:{y,dy,atol,bounds,history,historyDerivative,quad})N_VDestroy(v);SUNContext_Free(&context);return result;
 }
-void operator_json(const CoupledOperatorMetrics&m){std::cout<<"{\"snapshots\":"<<m.snapshots<<",\"colors\":"<<m.colors
-    <<",\"rateEvaluations\":"<<m.rateEvaluations<<",\"structuralEntries\":"<<m.nonzeroEntries
-    <<",\"maximumQEnergyConservationDefect\":"<<m.maximumQEnergyConservationDefect
-    <<",\"maximumQTracerConservationDefect\":"<<m.maximumQTracerConservationDefect
-    <<",\"maximumFullHalfRelativeDifference\":"<<m.maximumFullHalfRelativeDifference
-    <<",\"maximumDirectionalBudgetFraction\":"<<m.maximumDirectionalBudgetFraction<<"}";}
-int main(int argc,char**argv){std::cout<<std::setprecision(17);bool operatorPassed=false;CoupledOperatorMetrics operatorMetrics;
+void operator_json(const StockOperatorMetrics&m){std::cout<<"{\"snapshots\":"<<m.snapshots<<",\"colors\":"<<m.colors
+    <<",\"rateEvaluations\":"<<m.rateEvaluations
+    <<",\"maximumPressureDefectPa\":"<<m.maximumPressureDefectPa
+    <<",\"maximumTemperatureDefectK\":"<<m.maximumTemperatureDefectK
+    <<",\"maximumKnownPressureErrorPa\":"<<m.maximumKnownPressureErrorPa
+    <<",\"maximumKnownTemperatureErrorK\":"<<m.maximumKnownTemperatureErrorK
+    <<",\"maximumGuessPressureDifferencePa\":"<<m.maximumGuessPressureDifferencePa
+    <<",\"maximumGuessTemperatureDifferenceK\":"<<m.maximumGuessTemperatureDifferenceK
+    <<",\"maximumRateRelativeDifference\":"<<m.maximumRateRelativeDifference
+    <<",\"maximumQDirectionalBudgetFraction\":"<<m.maximumQDirectionalBudgetFraction
+    <<",\"maximumComposedDirectionalBudgetFraction\":"<<m.maximumComposedDirectionalBudgetFraction<<"}";}
+int main(int argc,char**argv){std::cout<<std::setprecision(17);bool operatorPassed=false;StockOperatorMetrics operatorMetrics;double preflightSeconds=0;
     try{require(argc==2,"Expected remaining aggregate seconds");guard_seconds=std::stod(argv[1]);
-        local_gates();operatorMetrics=coupled_operator_gates();operatorPassed=true;
+        local_gates();stock_operator_gates(operatorMetrics);operatorPassed=true;
+        preflightSeconds=std::chrono::duration<double>(Clock::now()-started).count();
         const auto a=advance_arm(1);completed.push_back(a);const auto b=advance_arm(.5);completed.push_back(b);
         require(a.common.size()==30&&b.common.size()==30,"Missing useful-duration arm");
         double dt=0,dp=0,dv=0,dm=0,de=0,dq=0,signedMass=0,signedEnergy=0;
@@ -206,19 +224,23 @@ int main(int argc,char**argv){std::cout<<std::setprecision(17);bool operatorPass
         require(std::min(a.grossEnergy,b.grossEnergy)>10*std::max(de,.01),"Gross native energy transfer unresolved");
         require(std::min(a.maxTemperatureChange,b.maxTemperatureChange)>10*std::max(dt,1e-5)||std::min(a.totalQ,b.totalQ)>10*std::max(dq,1e-5),"Thermal/Q consequence unresolved");
         std::cout<<"{\"passed\":true,\"operatorGatesPassed\":true,\"operatorMetrics\":";operator_json(operatorMetrics);
-        std::cout<<",\"coarse\":";arm_json(a);std::cout<<",\"tighter\":";arm_json(b);
+        std::cout<<",\"preflightSeconds\":"<<preflightSeconds<<",\"coarse\":";arm_json(a);std::cout<<",\"tighter\":";arm_json(b);
         std::cout<<",\"lastStageDiagnostic\":";stage_json();
         std::cout<<",\"pairedTemperatureK\":"<<dt<<",\"pairedPressurePa\":"<<dp<<",\"pairedVelocityMS\":"<<dv
             <<",\"pairedGrossMassKg\":"<<dm<<",\"pairedGrossEnergyJ\":"<<de<<",\"pairedQJ\":"<<dq
             <<",\"pairedPerRingSignedMassKg\":"<<signedMass<<",\"pairedPerRingSignedEnergyJ\":"<<signedEnergy
-            <<",\"propertyTuples\":"<<tuple_calls<<",\"checks\":"<<checks<<"}\n";return 0;
+            <<",\"propertyTuples\":"<<tuple_calls<<",\"consumerRecoveryBatches\":"<<recovery_batches
+            <<",\"consumerRequestedRecoveryPoints\":"<<recovery_points<<",\"successfulConsumerRecoveryIterations\":"<<recovery_iterations
+            <<",\"checks\":"<<checks<<"}\n";return 0;
     }catch(const std::exception&e){std::cerr<<e.what()<<"\n";
         std::cout<<"{\"passed\":false,\"operatorGatesPassed\":"<<(operatorPassed?"true":"false")<<",\"operatorMetrics\":";operator_json(operatorMetrics);
-        std::cout<<",\"activeWeightFactor\":"<<activeFactor
+        std::cout<<",\"preflightSeconds\":"<<preflightSeconds<<",\"activeWeightFactor\":"<<activeFactor
             <<",\"refusedCandidate\":";refusal_json();std::cout<<",\"lastStageDiagnostic\":";stage_json();
         std::cout<<",\"partialArm\":";arm_json(partial);std::cout<<",\"completedArms\":[";
         for(size_t i=0;i<completed.size();++i){if(i)std::cout<<",";arm_json(completed[i]);}
-        std::cout<<"],\"propertyTuples\":"<<tuple_calls<<",\"checks\":"<<checks<<"}\n";return 1;}}
+        std::cout<<"],\"propertyTuples\":"<<tuple_calls<<",\"consumerRecoveryBatches\":"<<recovery_batches
+            <<",\"consumerRequestedRecoveryPoints\":"<<recovery_points<<",\"successfulConsumerRecoveryIterations\":"<<recovery_iterations
+            <<",\"checks\":"<<checks<<"}\n";return 1;}}
 `
 
 const sha = (bytes: string | Uint8Array) => createHash('sha256').update(bytes).digest('hex')
@@ -256,11 +278,13 @@ export async function qualifyCoupledCmt(if97Directory: string, solverReceiptPath
   const sourceFiles = [import.meta.path, resolve(import.meta.dir, 'reference-design-cmt-native-axial.ts'),
     resolve(import.meta.dir, 'reference-design-cmt-mixing-fixture.ts'), resolve(import.meta.dir, 'reference-design-if97-primitives.ts'),
     resolve(import.meta.dir, 'reference-design-cmt-geometry.ts'), resolve(import.meta.dir, 'reference-design-cmt-balance-path.ts'),
-    resolve(import.meta.dir, '../native/process-plant/src/mixing.rs')]
+    resolve(import.meta.dir, '../native/process-plant/src/lib.rs'),
+    ...['mixing.rs', 'fuel_source.rs', 'moderator_source.rs', 'original_water.rs']
+      .map(file => resolve(import.meta.dir, '../native/process-plant/src', file))]
   const sources = await Promise.all(sourceFiles.map(path => readFile(path))), scratch = await mkdtemp(join(tmpdir(), 'ld01-coupled-cmt-'))
   const artifacts = output + '.artifacts';await mkdir(artifacts)
-  const cpp = join(scratch, 'admission.cpp'), library = join(scratch, 'libmixing.a'), binary = join(scratch, 'admission')
-  const payload = candidate.kernelCpp + nativeCoupledDriver
+  const cpp = join(scratch, 'admission.cpp'), library = join(scratch, 'libplant.a'), binary = join(scratch, 'admission')
+  const payload = candidate.stockKernelCpp + nativeCoupledDriver
   await writeFile(cpp, payload, { flag: 'wx' });await writeFile(join(artifacts, 'admission.cpp'), payload, { flag: 'wx' })
   await Promise.all(sourceFiles.map((path, i) => writeFile(join(artifacts, basename(path)), sources[i]!, { flag: 'wx' })))
   async function execute(command: string[]) {
@@ -299,13 +323,13 @@ export async function qualifyCoupledCmt(if97Directory: string, solverReceiptPath
     const bytes = await readFile(path), retained = join(artifacts, basename(path));await writeFile(retained, bytes, { flag: 'wx' });binaries.push({ path: retained, sha256: sha(bytes) })
   }
   const elapsedSeconds = (performance.now() - began) / 1000
-  const receipt = { schema: 'ld01-cmt-coupled-operator-and-advancement', recordedAt: new Date().toISOString(),
+  const receipt = { schema: 'ld01-cmt-stock-condensed-advancement', recordedAt: new Date().toISOString(),
     passed: successful(run) && nativePassed && unchanged && elapsedSeconds <= allowanceMs / 1000,
     allowanceSeconds: allowanceMs / 1000, elapsedSeconds, result, parseError, unchanged,
     owner: { path: owner, sha256: sha(ownerBytes) }, solverReceipt: { path: resolve(solverReceiptPath), sha256: sha(solverBytes) },
     identity, sources: sourceFiles.map((path, i) => ({ path, sha256: sha(sources[i]!) })), payloadSHA256: sha(payload),
     geometry: candidate.geometry, scratch, artifacts, binaries, rustVersion, cppVersion, rustBuild, compile, run,
-    scope: 'One actual 139-coordinate isolated CMT/BAL consumer; complete approximate Newton matrix, unchanged strict stock/chart/conservation and original 30-second plus tighter-arm mission. No live installation, phase/exhaustion, complete plant, production solver adoption or target-host/four-unit throughput claim.' }
+    scope: 'One actual 97-conservative-stock isolated CMT/BAL consumer; known-liquid recovery on every trial, composed approximate Newton matrix and derived 139-field observations, unchanged strict stock/chart/conservation and original 30-second plus tighter-arm mission. No live installation, phase/exhaustion, complete plant, production solver adoption or target-host/four-unit throughput claim.' }
   await writeFile(output, JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });return receipt
 }
 if (import.meta.main) {

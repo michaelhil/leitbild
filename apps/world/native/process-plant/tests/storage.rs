@@ -183,3 +183,79 @@ fn explicit_failure_and_owned_energy() {
     .unwrap();
     assert!((raised.energy - base.energy - base.mass * GRAVITY * 10. - 3.).abs() < 1e-6);
 }
+
+#[test]
+fn numerical_trial_recovery_preserves_signed_q_and_joint_inverse_accuracy() {
+    assert_eq!(std::mem::size_of::<TrialLiquidInput>(), 88);
+    assert_eq!(std::mem::size_of::<RecoveredLiquid>(), 168);
+    for (t, p) in [(313.15, 15.2e6), (450., 15.2e6)] {
+        let water = liquid(t, p);
+        let geometry = CellGeometry {
+            volume: 4.,
+            elevation: 11.8,
+        };
+        let mass = geometry.volume * water.density;
+        let momentum = mass * 0.03;
+        for q in [0., mass * 1e-5, -mass * 1e-5] {
+            let target = Storage {
+                mass,
+                momentum,
+                mixing_energy: q,
+                energy: mass * (water.internal_energy + GRAVITY * geometry.elevation)
+                    + momentum * momentum / (2. * mass)
+                    + q,
+            };
+            let accuracy = ChartRecoveryAccuracy {
+                pressure_pa: 0.5,
+                temperature_k: 1e-4,
+                iterations: 12,
+            };
+            for guess in [
+                LiquidQuery {
+                    temperature: t + 0.005,
+                    pressure: p + 100.,
+                },
+                LiquidQuery {
+                    temperature: t - 0.005,
+                    pressure: p - 100.,
+                },
+            ] {
+                let recovered = recover_trial_liquid(geometry, target, guess, accuracy).unwrap();
+                assert!(recovered.pressure_defect_pa.abs() <= accuracy.pressure_pa);
+                assert!(recovered.temperature_defect_k.abs() <= accuracy.temperature_k);
+                assert!((recovered.liquid.pressure - p).abs() <= 0.5);
+                assert!((recovered.liquid.temperature - t).abs() <= 1e-4);
+                let e = recovered
+                    .chart
+                    .pressure_temperature_increment(0., 1.)
+                    .unwrap();
+                let q = recovered
+                    .chart
+                    .pressure_temperature_increment(0., -1.)
+                    .unwrap();
+                assert_eq!(e[0], -q[0]);
+                assert_eq!(e[1], -q[1]);
+            }
+            if q < 0. {
+                assert!(storage(geometry, water, momentum, q).is_err());
+                assert!(storage_jacobian(geometry, water, momentum, q).is_err());
+                assert!(
+                    recover_liquid(
+                        geometry,
+                        target,
+                        LiquidQuery {
+                            temperature: t,
+                            pressure: p
+                        },
+                        RecoveryAccuracy {
+                            mass_kg: 1e-6,
+                            energy_j: 1e-4,
+                            iterations: 12
+                        }
+                    )
+                    .is_err()
+                );
+            }
+        }
+    }
+}

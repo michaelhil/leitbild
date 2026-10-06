@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { nativeAxialCandidate, ownedAxialLayout } from './reference-design-cmt-native-axial';
+import { nativeAxialCandidate, ownedAxialLayout, ownedStockLayout } from './reference-design-cmt-native-axial';
 
 const receiving = [...Array<boolean>(13).fill(true), ...Array<boolean>(8).fill(false)];
 const fields = ['M', 'P', 'E', 'B', 'Q', 'PP', 'TT'] as const;
@@ -72,6 +72,25 @@ const path = { headerElevation_m: 3, bore_m: .2, roughness_m: .000045,
 const document = '```reference-cmt-geometry\n' + JSON.stringify(geometry) + '\n```\n'
   + '```reference-cmt-balance-path\n' + JSON.stringify(path) + '\n```';
 
+test('condensed consumer owns 97 stocks and derives p/T without phantom BAL Q', () => {
+  const layout = ownedStockLayout(receiving);
+  expect(layout.coordinateCount).toBe(97);
+  expect(layout.coordinates.filter(c => c.field === 'Q')).toHaveLength(13);
+  expect(layout.coordinates.some(c => c.field === 'PP' || c.field === 'TT')).toBe(false);
+  for (let i = 0; i < 21; ++i) {
+    expect(layout.indices[i]![5]).toBeNull();expect(layout.indices[i]![6]).toBeNull();
+    expect(layout.indices[i]![4] === null).toBe(i >= 13);
+  }
+  const { stockKernelCpp, kernelCpp } = nativeAxialCandidate(document);
+  expect(stockKernelCpp.startsWith(kernelCpp)).toBe(true);
+  expect(stockKernelCpp).toContain('constexpr int STOCKS=97,STOCK_SAMPLE=STOCKS+OBSERVERS');
+  expect(kernelCpp).not.toContain('leitbild_recover_trial_liquid_batch');
+  expect(stockKernelCpp).toContain('out.rates=::rates(out.expanded.data(),nullptr,&out.centers)');
+  expect(stockKernelCpp).toContain('o.field==E?1:o.field==Q?-1:o.field==P?-a.v:0');
+  expect(stockKernelCpp).toContain('Known-liquid stock trial recovery failed cell=');
+  expect(stockKernelCpp).not.toContain('std::max(z[sx(i,Q)]');
+});
+
 test('generated conservative residual addresses owned fields and leaves observation rates outside its equations', () => {
   const { geometry: fixture, cpp } = nativeAxialCandidate(document);
   expect(fixture.cells.length).toBe(21);
@@ -141,7 +160,7 @@ test('coupled consumers receive one authoritative core, not a source-extracted o
 
 test('coupled matrix separates analytic Q/storage from explicit inexact rate probes', () => {
   const { kernelCpp } = nativeAxialCandidate(document);
-  expect(kernelCpp).toContain('rates(const double* y,RateQJacobian* qJacobian=nullptr)');
+  expect(kernelCpp).toContain('rates(const double* y,RateQJacobian* qJacobian=nullptr,const std::array<State,N>* recovered=nullptr)');
   expect(kernelCpp).toContain('coefficient.derivatives[7][2]*c.V');
   expect(kernelCpp).toContain('Q is analytic, never caloric-datum differenced');
   expect(kernelCpp).toContain('entry(E,0,1);if(c.tank)entry(Q,0,-1)');

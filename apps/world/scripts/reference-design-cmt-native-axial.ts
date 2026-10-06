@@ -20,6 +20,15 @@ export function ownedAxialLayout(receiving: readonly boolean[]) {
   }));
   return { indices, coordinates, coordinateCount };
 }
+export function ownedStockLayout(receiving: readonly boolean[]) {
+  const expanded = ownedAxialLayout(receiving);
+  const coordinates = expanded.coordinates.filter(c => c.field !== 'PP' && c.field !== 'TT');
+  const indices = receiving.map((_, cell) => axialFields.map(field => {
+    const index = coordinates.findIndex(c => c.cell === cell && c.field === field);
+    return index < 0 ? null : index;
+  }));
+  return { indices, coordinates, coordinateCount: coordinates.length };
+}
 
 function fixtureGeometry(document: string) {
   const b = parseGeometryBasis(document), path = parseBalancePathBasis(document), g = tankGeometry(b);
@@ -90,6 +99,7 @@ function nativeSource(input: ReturnType<typeof fixtureGeometry>) {
   const rows = input.cells.map(c => `{${[c.V, c.z, c.low, c.high, c.A0, c.A1, c.length,
     c.slope, c.Dh, c.tank ? 1 : 0].join(',')}}`).join(',\n');
   const layout = ownedAxialLayout(input.cells.map(c => c.tank));
+  const stocks = ownedStockLayout(input.cells.map(c => c.tank));
   const links = input.cells.flatMap((c, i) => i + 1 < input.cells.length
     && c.tank === input.cells[i + 1]!.tank ? [{ left: i, right: i + 1 }] : []);
   const ringOwners = input.b.ringElevations_m.map(z => ({
@@ -302,7 +312,7 @@ SmoothGradients smooth_gradients(const double*y,const std::array<State,N>&state,
         (state[b].rho-state[a].rho)/distance*vertical,(velocity[b]-velocity[a])/distance,a,b,false};
 }
 
-std::array<double,SAMPLE> rates(const double* y,RateQJacobian* qJacobian=nullptr) {
+std::array<double,SAMPLE> rates(const double* y,RateQJacobian* qJacobian=nullptr,const std::array<State,N>* recovered=nullptr) {
     // The appended rates are read-only observations, NEVER solver coordinates.
     std::array<double,SAMPLE> out{};
     std::array<State,N> state;std::array<double,N> velocity{},k{},nu{},diff{},tau{},tauPerp{};
@@ -311,7 +321,7 @@ std::array<double,SAMPLE> rates(const double* y,RateQJacobian* qJacobian=nullptr
     auto addQ=[&](int row,int cell,double value){if(qJacobian&&cells[cell].tank)(*qJacobian)[row][qColumn[cell]]+=value;};
     for(int i=0;i<N;++i){const auto&c=cells[i];const auto x=view(y,i);
         require(x[M]>0&&x[B]>=0&&(!c.tank||std::isfinite(x[Q])),"Invalid numerical trial native stock");
-        state[i]=water(x[TT],x[PP]);velocity[i]=x[P]/x[M];k[i]=c.tank?x[Q]/x[M]:0;
+        state[i]=recovered?(*recovered)[i]:water(x[TT],x[PP]);velocity[i]=x[P]/x[M];k[i]=c.tank?x[Q]/x[M]:0;
         require(std::abs(velocity[i])<state[i].w,"Native liquid velocity outside subsonic scope");
         // Reconstructed pressure-sidewall/gravity: the actual hydrostatic part cancels M*g exactly.
         out[ix(i,P)]=x[PP]*(c.A1-c.A0)-x[M]/c.V*gravity*((c.hi-c.z)*c.A1-(c.lo-c.z)*c.A0);
@@ -463,10 +473,9 @@ std::array<double,SAMPLE> rates(const double* y,RateQJacobian* qJacobian=nullptr
     return out;
 }
 
-std::array<double,D> conservative_residual(const double*y,const double*dy) {
-    std::array<double,D> r{};const auto f=rates(y);
-    for(int i=0;i<N;++i){const auto&c=cells[i];const auto x=view(y,i);const auto s=water(x[TT],x[PP]);
-        for(int j=0;j<5;++j)if(j!=Q||c.tank)r[ix(i,j)]=dy[ix(i,j)]-f[ix(i,j)];
+std::array<double,D> native_chart_defects(const double*y,const std::array<State,N>* recovered=nullptr) {
+    std::array<double,D> r{};
+    for(int i=0;i<N;++i){const auto&c=cells[i];const auto x=view(y,i);const auto s=recovered?(*recovered)[i]:water(x[TT],x[PP]);
         const double velocity=x[P]/x[M],common=s.u+gravity*c.z-velocity*velocity/2;
         const double Mp=c.V*s.rho*s.kappa,Mt=-c.V*s.rho*s.alpha;
         const double Ep=common*Mp+c.V*s.rho*up(s),Et=common*Mt+c.V*s.rho*ut(s),det=Mp*Et-Mt*Ep;
@@ -476,6 +485,12 @@ std::array<double,D> conservative_residual(const double*y,const double*dy) {
         require(det>0,"Single-liquid thermodynamic coordinate lost rank");
         r[ix(i,PP)]=(rm*Et-Mt*re)/det;r[ix(i,TT)]=(Mp*re-rm*Ep)/det;
     }
+    return r;
+}
+std::array<double,D> conservative_residual(const double*y,const double*dy) {
+    auto r=native_chart_defects(y);const auto f=rates(y);
+    for(int i=0;i<N;++i){const auto&c=cells[i];
+        for(int j=0;j<5;++j)if(j!=Q||c.tank)r[ix(i,j)]=dy[ix(i,j)]-f[ix(i,j)];}
     return r;
 }
 
@@ -763,7 +778,218 @@ CoupledOperatorMetrics coupled_operator_gates(){
     return result;
 }
 `;
-  return { kernelCpp, cpp: kernelCpp + String.raw`
+  const stockKernelCpp = kernelCpp + String.raw`
+#include <cstring>
+// Solver stocks and derived observation/partial coordinates are different records.
+constexpr int STOCKS=${stocks.coordinateCount},STOCK_SAMPLE=STOCKS+OBSERVERS;
+const std::array<std::array<int,S>,N> stockIndex{{${stocks.indices.map(indices =>
+    `{${indices.map(index => index ?? -1).join(',')}}`).join(',')}}};
+const std::array<CoordinateOwner,STOCKS> stockOwner{{${stocks.coordinates.map(c =>
+    `{${c.cell},${axialFields.indexOf(c.field)}}`).join(',')}}};
+int sx(int cell,int field){const int index=stockIndex.at(cell).at(field);
+    if(index<0)throw std::logic_error("Attempt to address a derived or unowned stock");return index;}
+struct RustLiquidQuery {double temperature,pressure;};
+struct RustLiquid {double pressure,temperature,density,internalEnergy,enthalpy,entropy,cp,cv,
+    soundSpeed,expansion,compressibility,viscosity,conductivity;};
+struct RustCellGeometry {double volume,elevation;};
+struct RustStorage {double mass,momentum,energy,mixingEnergy;};
+struct RustStorageJacobian {double Mp,Mt,Ep,Et,v;};
+struct RustChartAccuracy {double pressure,temperature;size_t iterations;};
+struct RustTrialLiquidInput {RustCellGeometry geometry;RustStorage target;RustLiquidQuery guess;RustChartAccuracy accuracy;};
+struct RustRecoveredLiquid {RustLiquid liquid;RustStorageJacobian chart;double pressureDefect,temperatureDefect;size_t iterations;};
+static_assert(sizeof(RustLiquid)==13*sizeof(double)&&sizeof(RustTrialLiquidInput)==88&&sizeof(RustRecoveredLiquid)==168,
+    "Rust recovery POD layout differs from the compiled 64-bit ABI");
+extern "C" int leitbild_recover_trial_liquid_batch(const RustTrialLiquidInput*,RustRecoveredLiquid*,size_t,size_t*,char*,size_t);
+// Rust storage/recovery uses THIS consumer's actual counted property authority.
+extern "C" int leitbild_liquid_batch(const RustLiquidQuery*queries,RustLiquid*output,size_t count,
+    size_t*failed,char*error,size_t capacity){
+    for(size_t i=0;i<count;++i)try{const auto s=water(queries[i].temperature,queries[i].pressure);
+        output[i]={s.p,s.T,s.rho,s.u,s.h,s.s,s.cp,s.cv,s.w,s.alpha,s.kappa,s.mu,s.conductivity};
+    }catch(const std::exception&e){*failed=i;if(capacity){const size_t n=std::min(capacity-1,std::strlen(e.what()));
+        std::memcpy(error,e.what(),n);error[n]=0;}return 1;}return 0;
+}
+State recovered_state(const RustLiquid&s){const auto region=IF97::RegionDetermination_TP(s.temperature,s.pressure);
+    require(region==IF97::REGION_1||region==IF97::REGION_3,"Recovered tuple left the known-liquid branch");
+    return {region==IF97::REGION_1?1:3,s.pressure,s.temperature,s.density,s.internalEnergy,s.enthalpy,
+        s.entropy,s.cp,s.cv,s.soundSpeed,s.expansion,s.compressibility,s.viscosity,s.conductivity};}
+std::array<double,STOCKS> pack_stocks(const double*expanded){std::array<double,STOCKS> z{};
+    for(int j=0;j<STOCKS;++j){const auto o=stockOwner[j];z[j]=expanded[ix(o.cell,o.field)];}return z;}
+struct StockEvaluation {std::array<double,D> expanded{};std::array<RustRecoveredLiquid,N> recovered{};
+    std::array<State,N> centers{};std::array<double,SAMPLE> rates{};};
+uint64_t recovery_batches=0,recovery_points=0,recovery_iterations=0;
+StockEvaluation recover_stocks(const double*z,double factor=1){
+    require(std::isfinite(factor)&&factor>0,"Invalid inner recovery allocation");StockEvaluation out;
+    // Fixed authored preparation is a caller-owned nearby seed, not runtime fallback
+    // or remembered material state. The bounded fixture does not claim global recovery.
+    static const auto seed=original();std::array<RustTrialLiquidInput,N> inputs;
+    for(int j=0;j<STOCKS;++j){const auto o=stockOwner[j];out.expanded[ix(o.cell,o.field)]=z[j];}
+    for(int i=0;i<N;++i){const auto&c=cells[i];const auto x=view(out.expanded.data(),i);
+        inputs[i]={{c.V,c.z},{x[M],x[P],x[E],c.tank?x[Q]:0},
+            {seed[ix(i,TT)],seed[ix(i,PP)]},{.5*factor,1e-4*factor,12}};}
+    size_t failed=0;char error[256]{};++recovery_batches;recovery_points+=N;
+    const int status=leitbild_recover_trial_liquid_batch(inputs.data(),out.recovered.data(),N,&failed,error,sizeof(error));
+    // A failed batch is a partial numerical candidate and is never used as state.
+    require(status==0,"Known-liquid stock trial recovery failed cell="+std::to_string(failed)+": "+error);
+    for(int i=0;i<N;++i){const auto&r=out.recovered[i];recovery_iterations+=r.iterations;
+        out.expanded[ix(i,PP)]=r.liquid.pressure;out.expanded[ix(i,TT)]=r.liquid.temperature;
+        out.centers[i]=recovered_state(r.liquid);}
+    out.rates=::rates(out.expanded.data(),nullptr,&out.centers);return out;
+}
+std::array<double,STOCK_SAMPLE> project_stock_rates(const StockEvaluation&x){
+    std::array<double,STOCK_SAMPLE> f{};for(int j=0;j<STOCKS;++j){const auto o=stockOwner[j];f[j]=x.rates[ix(o.cell,o.field)];}
+    std::copy(x.rates.begin()+D,x.rates.end(),f.begin()+STOCKS);return f;}
+std::array<double,STOCK_SAMPLE> stock_rates(const double*z,double factor=1){return project_stock_rates(recover_stocks(z,factor));}
+std::array<double,STOCKS> stock_residual(const double*z,const double*dz,double factor=1){const auto f=stock_rates(z,factor);
+    std::array<double,STOCKS> out{};for(int j=0;j<STOCKS;++j)out[j]=dz[j]-f[j];return out;}
+struct StockJacobian {std::array<double,STOCKS*STOCKS> dense{};size_t colors=0,rateEvaluations=0;};
+StockJacobian stock_jacobian(const double*z,double cj,double factor=1){const auto x=recover_stocks(z,factor);
+    // Partial derivatives of the SAME actual rates in their explicit chart; no
+    // native E/Q finite difference against a large absolute caloric datum.
+    const auto partial=coupled_jacobian(x.expanded.data(),0);StockJacobian J;
+    J.colors=partial.colors;J.rateEvaluations=partial.rateEvaluations+1;
+    for(int column=0;column<STOCKS;++column){const auto o=stockOwner[column];const auto&a=x.recovered[o.cell].chart;
+        const double det=a.Mp*a.Et-a.Mt*a.Ep;require(det>0,"Condensed inverse chart lost rank");
+        const double dm=o.field==M?1:0,de=o.field==E?1:o.field==Q?-1:o.field==P?-a.v:0;
+        const double dp=(dm*a.Et-a.Mt*de)/det,dT=(a.Mp*de-dm*a.Ep)/det;
+        for(int row=0;row<STOCKS;++row){const auto r=stockOwner[row];const int expandedRow=ix(r.cell,r.field);
+            J.dense[row*STOCKS+column]=partial.dense[expandedRow*D+ix(o.cell,o.field)]
+                +partial.dense[expandedRow*D+ix(o.cell,PP)]*dp+partial.dense[expandedRow*D+ix(o.cell,TT)]*dT;
+            require(std::isfinite(J.dense[row*STOCKS+column]),"Nonfinite condensed Newton entry");}
+        J.dense[column*STOCKS+column]+=cj;
+    }return J;
+}
+struct StockOperatorMetrics {size_t snapshots=0,colors=0,rateEvaluations=0;
+    double maximumPressureDefectPa=0,maximumTemperatureDefectK=0,maximumKnownPressureErrorPa=0,
+        maximumKnownTemperatureErrorK=0,maximumGuessPressureDifferencePa=0,maximumGuessTemperatureDifferenceK=0,
+                maximumRateRelativeDifference=0,maximumComposedDirectionalBudgetFraction=0,maximumQDirectionalBudgetFraction=0;};
+void stock_operator_gates(StockOperatorMetrics&m){m={};const auto initial=original();
+    for(int sample=0;sample<3;++sample){auto expanded=initial;
+        if(sample)for(int i=0;i<N;++i){const auto&c=cells[i];expanded[ix(i,PP)]+=(sample==1?1:-1)*500*(i%3-1);
+            expanded[ix(i,TT)]+=.01*(i%2);const auto s=water(expanded[ix(i,TT)],expanded[ix(i,PP)]);
+            const double mass=c.V*s.rho;expanded[ix(i,M)]=mass;expanded[ix(i,P)]=(sample==1?1:-1)*.03*mass;
+            // Disclosed constitutive fixture, never the real mission preparation:
+            // positive k=1 J/kg lets a fixed-E Q probe resolve its thermal feedback.
+            if(c.tank)expanded[ix(i,Q)]=(sample==1?1:-1e-5)*mass;
+            expanded[ix(i,E)]=mass*(s.u+gravity*c.z)+expanded[ix(i,P)]*expanded[ix(i,P)]/(2*mass)+(c.tank?expanded[ix(i,Q)]:0);}
+        const auto z=pack_stocks(expanded.data());const auto recovered=recover_stocks(z.data());++m.snapshots;
+        const auto direct=rates(expanded.data());++m.rateEvaluations;
+        const auto repeated=rates(recovered.expanded.data());++m.rateEvaluations;
+        for(int row=0;row<SAMPLE;++row){const double difference=std::abs(repeated[row]-recovered.rates[row]);
+            require(difference<=100*std::numeric_limits<double>::epsilon()*
+                std::max({1e-30,std::abs(repeated[row]),std::abs(recovered.rates[row])}),
+                "Returned property tuple reuse changed actual rates or ring receipts");}
+        for(int i=0;i<N;++i){const auto&r=recovered.recovered[i];
+            m.maximumPressureDefectPa=std::max(m.maximumPressureDefectPa,std::abs(r.pressureDefect));
+            m.maximumTemperatureDefectK=std::max(m.maximumTemperatureDefectK,std::abs(r.temperatureDefect));
+            const double pe=std::abs(recovered.expanded[ix(i,PP)]-expanded[ix(i,PP)]),te=std::abs(recovered.expanded[ix(i,TT)]-expanded[ix(i,TT)]);
+            m.maximumKnownPressureErrorPa=std::max(m.maximumKnownPressureErrorPa,pe);m.maximumKnownTemperatureErrorK=std::max(m.maximumKnownTemperatureErrorK,te);
+            require(pe<=.5&&te<=1e-4,"Condensed known-state recovery failed independent p/T agreement");
+            RustTrialLiquidInput input{{cells[i].V,cells[i].z},{z[sx(i,M)],z[sx(i,P)],z[sx(i,E)],cells[i].tank?z[sx(i,Q)]:0},
+                {expanded[ix(i,TT)]+.005,expanded[ix(i,PP)]+100},{.5,1e-4,12}};RustRecoveredLiquid other;size_t failed=0;char error[256]{};
+            require(leitbild_recover_trial_liquid_batch(&input,&other,1,&failed,error,sizeof(error))==0,"Second supplied nearby guess failed");
+            const double pg=std::abs(other.liquid.pressure-r.liquid.pressure),tg=std::abs(other.liquid.temperature-r.liquid.temperature);
+            m.maximumGuessPressureDifferencePa=std::max(m.maximumGuessPressureDifferencePa,pg);m.maximumGuessTemperatureDifferenceK=std::max(m.maximumGuessTemperatureDifferenceK,tg);
+            require(pg<=1&&tg<=2e-4,"Recovery depends materially on supplied nearby guess");
+            const auto&a=r.chart;const double det=a.Mp*a.Et-a.Mt*a.Ep,Mc=cells[i].V*r.liquid.density;
+            const double positive=Mc*Mc*r.liquid.cp*(r.liquid.compressibility-r.liquid.temperature*r.liquid.expansion*r.liquid.expansion/(r.liquid.density*r.liquid.cp));
+            require(std::abs(det-positive)<=1e-10*positive,"Condensed inverse determinant identity failed");}
+        for(int row=0;row<SAMPLE;++row)if(row>=D||coordinateOwner[row].field<PP){const double difference=std::abs(direct[row]-recovered.rates[row]);
+            const double scale=std::max({1.,std::abs(direct[row]),std::abs(recovered.rates[row])});
+            m.maximumRateRelativeDifference=std::max(m.maximumRateRelativeDifference,difference/scale);
+            require(difference<=.02*scale,"Recovered actual rates diverged from known explicit chart");}
+        const auto J=stock_jacobian(z.data(),0);m.colors=J.colors;m.rateEvaluations+=J.rateEvaluations;
+        RateQJacobian directQ{};(void)rates(recovered.expanded.data(),&directQ,&recovered.centers);++m.rateEvaluations;
+        for(int i=0;i<N;++i)if(cells[i].tank){const auto&a=recovered.recovered[i].chart;
+            const auto&matrix=J.dense;
+            // Inverse-chart E and Q responses are exactly opposite, even when
+            // Q is too small to change an absolute caloric datum representably.
+            const double det=a.Mp*a.Et-a.Mt*a.Ep;
+            const double ep=-a.Mt/det,et=a.Mp/det,qp=a.Mt/det,qt=-a.Mp/det;
+            require(ep+qp==0&&et+qt==0,"Native E/Q inverse-chain antisymmetry failed");
+            for(int row=0;row<STOCKS;++row){const auto owner=stockOwner[row];
+                const double actual=matrix[row*STOCKS+sx(i,E)]+matrix[row*STOCKS+sx(i,Q)];
+                const double expected=-directQ[ix(owner.cell,owner.field)][qColumn[i]];
+                const double cancellation=100*std::numeric_limits<double>::epsilon()*
+                    std::max(std::abs(matrix[row*STOCKS+sx(i,E)]),std::abs(matrix[row*STOCKS+sx(i,Q)]));
+                require(std::abs(actual-expected)<=cancellation+1e-10*std::max({1.,std::abs(actual),std::abs(expected)}),
+                    "Composed E+Q canceled an explicit Q rate contribution");}
+        }
+        auto paired=z;for(int i=0;i<N;++i)if(cells[i].tank){const double increment=paired[sx(i,M)]*.001;
+            paired[sx(i,E)]+=increment;paired[sx(i,Q)]+=increment;}
+        const auto sameChart=recover_stocks(paired.data());++m.rateEvaluations;
+        for(int i=0;i<N;++i)require(std::abs(sameChart.expanded[ix(i,PP)]-recovered.expanded[ix(i,PP)])<=1
+            &&std::abs(sameChart.expanded[ix(i,TT)]-recovered.expanded[ix(i,TT)])<=2e-4,
+            "Equal E/Q increments changed the recovered thermal chart");
+        if(sample==0)continue; // Zero-right is directional, not a central smooth-Q claim.
+        // Resolved native energy and Q perturbations exercise opposite thermo
+        // chains and explicit Q stress/transport; never assume E+Q leaves rates fixed.
+        auto plus=z,minus=z;std::array<double,STOCKS> direction{};
+        // Nonuniform physical-chart direction resolves actual intercell forces.
+        // The previous common-mode fixture remains an under-resolved failed
+        // receipt: its tiny net force was smaller than achieved inversion jitter.
+        // This is a prospective fixture change, NOT a looser error budget, a
+        // caloric-datum-dependent L1 norm or a solver/recovery tolerance change.
+        for(int i=0;i<N;++i){const auto&a=recovered.recovered[i].chart;const double sign=i%2?1:-1;
+            direction[sx(i,M)]=sign*(a.Mp*.5+a.Mt*1e-4);direction[sx(i,P)]=sign*z[sx(i,M)]*1e-5;
+            direction[sx(i,B)]=sign*z[sx(i,M)]*1e-8;
+            if(cells[i].tank)direction[sx(i,Q)]=sign*z[sx(i,M)]*1e-6;
+            direction[sx(i,E)]=sign*(a.Ep*.5+a.Et*1e-4)+a.v*direction[sx(i,P)]
+                +(cells[i].tank?direction[sx(i,Q)]:0)+sign*z[sx(i,M)]*.01;}
+        for(int j=0;j<STOCKS;++j){plus[j]+=direction[j];minus[j]-=direction[j];}
+        const auto plusTrial=recover_stocks(plus.data(),.01),minusTrial=recover_stocks(minus.data(),.01);
+        const auto fp=project_stock_rates(plusTrial),fm=project_stock_rates(minusTrial);m.rateEvaluations+=2;
+        for(int row=0;row<STOCKS;++row){double predicted=0;for(int column=0;column<STOCKS;++column)predicted-=J.dense[row*STOCKS+column]*direction[column];
+            const auto owner=stockOwner[row];const double roundoff=owner.field==P
+                ?100*std::numeric_limits<double>::epsilon()*std::abs(expanded[ix(owner.cell,PP)])*std::max(cells[owner.cell].A0,cells[owner.cell].A1)
+                :1000*std::numeric_limits<double>::epsilon()*std::max(std::abs(fp[row]),std::abs(fm[row]));
+            const double observed=(fp[row]-fm[row])/2,budget=roundoff+.1*std::max({1e-8,std::abs(observed),std::abs(predicted)});
+            m.maximumComposedDirectionalBudgetFraction=std::max(m.maximumComposedDirectionalBudgetFraction,std::abs(observed-predicted)/budget);
+            if(std::abs(observed-predicted)>budget){std::ostringstream detail;detail<<std::setprecision(17)
+                <<"Condensed composed energy/Q directional screen failed snapshot="<<sample<<" row="<<row
+                <<" cell="<<owner.cell<<" field="<<owner.field<<" observed="<<observed<<" predicted="<<predicted
+                <<" budget="<<budget<<" roundoff="<<roundoff<<" plus="<<fp[row]<<" minus="<<fm[row];
+                std::array<double,5> contributions{};double absoluteSum=0;
+                for(int column=0;column<STOCKS;++column){const double contribution=-J.dense[row*STOCKS+column]*direction[column];
+                    contributions[stockOwner[column].field]+=contribution;absoluteSum+=std::abs(contribution);}
+                detail<<" contributionMPEBQ=";for(double value:contributions)detail<<value<<",";
+                detail<<" absoluteContributionSum="<<absoluteSum<<" probeFactor=.01";
+                for(int i=0;i<N;++i){const auto&a=recovered.recovered[i].chart;const double det=a.Mp*a.Et-a.Mt*a.Ep;
+                    const double dm=direction[sx(i,M)],de=direction[sx(i,E)]-a.v*direction[sx(i,P)]-(cells[i].tank?direction[sx(i,Q)]:0);
+                    const auto&rp=plusTrial.recovered[i];const auto&rm=minusTrial.recovered[i];
+                    detail<<" cell"<<i<<"=dp:"<<(plusTrial.expanded[ix(i,PP)]-minusTrial.expanded[ix(i,PP)])/2
+                        <<"/"<<(dm*a.Et-a.Mt*de)/det<<",dT:"<<(plusTrial.expanded[ix(i,TT)]-minusTrial.expanded[ix(i,TT)])/2
+                        <<"/"<<(a.Mp*de-dm*a.Ep)/det<<",corrections:"<<rp.pressureDefect<<","<<rm.pressureDefect
+                        <<","<<rp.temperatureDefect<<","<<rm.temperatureDefect;}
+                require(false,detail.str());}}
+        if(sample==1){plus=z;minus=z;direction.fill(0);
+            for(int i=0;i<N;++i)if(cells[i].tank){direction[sx(i,Q)]=.01*z[sx(i,M)];
+                plus[sx(i,Q)]+=direction[sx(i,Q)];minus[sx(i,Q)]-=direction[sx(i,Q)];}
+            const auto qPlus=stock_rates(plus.data(),.01),qMinus=stock_rates(minus.data(),.01);m.rateEvaluations+=2;
+            for(int row=0;row<STOCKS;++row){double predicted=0;for(int column=0;column<STOCKS;++column)
+                    predicted-=J.dense[row*STOCKS+column]*direction[column];
+                const auto owner=stockOwner[row];const double roundoff=owner.field==P
+                    ?100*std::numeric_limits<double>::epsilon()*std::abs(expanded[ix(owner.cell,PP)])*std::max(cells[owner.cell].A0,cells[owner.cell].A1)
+                    :1000*std::numeric_limits<double>::epsilon()*std::max(std::abs(qPlus[row]),std::abs(qMinus[row]));
+                const double observed=(qPlus[row]-qMinus[row])/2;
+                const double budget=roundoff+.1*std::max({1e-8,std::abs(observed),std::abs(predicted)});
+                m.maximumQDirectionalBudgetFraction=std::max(m.maximumQDirectionalBudgetFraction,std::abs(observed-predicted)/budget);
+                if(std::abs(observed-predicted)>budget){std::ostringstream detail;detail<<std::setprecision(17)
+                    <<"Condensed isolated fixed-E Q directional screen failed snapshot="<<sample<<" row="<<row
+                    <<" cell="<<owner.cell<<" field="<<owner.field<<" observed="<<observed<<" predicted="<<predicted
+                    <<" budget="<<budget<<" roundoff="<<roundoff<<" plus="<<qPlus[row]<<" minus="<<qMinus[row];
+                    require(false,detail.str());}}
+        }
+    }
+    auto invalid=pack_stocks(initial.data());invalid[sx(0,M)]=-1;bool refused=false;
+    try{(void)recover_stocks(invalid.data());}catch(const std::exception&){refused=true;}
+    require(refused,"Invalid trial target was silently recovered");
+    RustTrialLiquidInput branch{{cells[0].V,cells[0].z},{initial[ix(0,M)],0,initial[ix(0,E)],0},
+        {450,101325},{.5,1e-4,12}};RustRecoveredLiquid unused;size_t failed=0;char error[256]{};
+    require(leitbild_recover_trial_liquid_batch(&branch,&unused,1,&failed,error,sizeof(error))!=0,
+        "Known-liquid recovery silently switched a gas guess to liquid");
+}
+`;
+  return { kernelCpp, stockKernelCpp, cpp: kernelCpp + String.raw`
 ${nativeMixingQualification}
 int main(int argc,char**argv) {
     std::cout<<std::setprecision(17);
