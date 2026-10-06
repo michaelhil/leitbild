@@ -71,6 +71,13 @@ pub struct Workspace {
     valid: bool,
 }
 impl Workspace {
+    /// Known Vec element payload only, not allocator/solver/model memory.
+    pub fn buffer_bytes(&self) -> usize {
+        self.coefficients.len() * std::mem::size_of::<f64>()
+            + self.events.len() * std::mem::size_of::<EventCoefficients>()
+            + self.thermal_derivatives.len() * std::mem::size_of::<ThermalDerivative>()
+            + self.root_temperature.len() * std::mem::size_of::<f64>()
+    }
     pub fn coefficients(&self) -> &[f64] {
         &self.coefficients
     }
@@ -246,6 +253,42 @@ impl FuelModel {
     }
     pub fn law(&self) -> &FuelLaw {
         &self.law
+    }
+    pub fn volumes(&self) -> &[f64] {
+        &self.region_volumes
+    }
+    /// Accepted/event-history boundary, distinct from signed Newton trials.
+    pub fn validate_accepted_state(&self, state: &[f64]) -> Result<(), &'static str> {
+        if state.len() != self.coordinate_count() || state.iter().any(|v| !nonnegative(*v)) {
+            return Err("Invalid accepted fuel neutron/precursor amounts");
+        }
+        Ok(())
+    }
+    /// This contributor's macroscopic collision sum, including self-scatter.
+    /// Fission termination is already part of absorption; count it only once.
+    pub fn collision_into(
+        &self,
+        work: &Workspace,
+        collision: &mut [[f64; GROUPS]],
+    ) -> Result<(), &'static str> {
+        if !Arc::ptr_eq(&self.owner, &work.owner)
+            || !work.valid
+            || collision.len() != self.region_volumes.len()
+        {
+            return Err("Invalid fuel collision workspace/output");
+        }
+        collision.fill([0.; GROUPS]);
+        for (e, c) in self.intersections.iter().zip(&work.events) {
+            for g in 0..GROUPS {
+                collision[e.region][g] += (c.fission[g] + c.capture[g]) / self.law.speed[g]
+                    + e.volume / self.region_volumes[e.region]
+                        * self.law.scatter[g].iter().sum::<f64>();
+            }
+        }
+        if collision.iter().flatten().any(|v| !nonnegative(*v)) {
+            return Err("Nonfinite fuel collision candidate");
+        }
+        Ok(())
     }
     pub fn coordinates(&self) -> &[Coordinate] {
         &self.coordinates
@@ -432,6 +475,7 @@ impl FuelModel {
         Ok(())
     }
     /// Return this component's additive contribution, NEVER complete plant Ndot.
+    /// Finite signed N/C are numerical trials, not accepted physical amounts.
     /// Errors invalidate caller candidates; partial arrays are not accepted state.
     pub fn apply(
         &self,
@@ -445,7 +489,7 @@ impl FuelModel {
             || state.len() != self.coordinate_count()
             || rate.len() != state.len()
             || event_rates.len() != self.intersections.len()
-            || state.iter().any(|v| !nonnegative(*v))
+            || state.iter().any(|v| !v.is_finite())
         {
             return Err("Invalid fuel contribution state/workspace");
         }
@@ -473,6 +517,7 @@ impl FuelModel {
     /// Originating-fuel prompt energy and actual E25 segment RELEASE only.
     /// Caller supplies the owned prompt J/event and current retained release.
     /// Capture binding/photon/other thermal owners are deliberately NOT here.
+    /// Signed trial event/release rates are retained, never clipped into history.
     pub fn fuel_heat(
         &self,
         event_rates: &[[f64; 2]],
@@ -488,7 +533,7 @@ impl FuelModel {
                 .iter()
                 .flatten()
                 .chain(segment_release.iter())
-                .any(|v| !nonnegative(*v))
+                .any(|v| !v.is_finite())
         {
             return Err("Invalid paid fuel heat input");
         }

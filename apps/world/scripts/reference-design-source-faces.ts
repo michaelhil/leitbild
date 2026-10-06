@@ -14,7 +14,7 @@ const facePartitionSchema=z.object({regions:z.array(sourceRegionSchema),
 type Axis='x'|'y'|'z'
 type Facet={id:string,region:SourceRegion,axis:Axis,side:-1|1,plane:number,rect:Rectangle,radius?:number,area:number,distance:number}
 export type SourceFace={left:string,right?:string,area_m2:number,leftDistance_m:number,rightDistance_m?:number,
- axis:Axis|'arc'|'equipment',plane_m?:number,meanOutwardNormal:readonly[number,number,number],support?:{id:string,kind:'rack-panel'|'transfer-gate'}}
+ axis:Axis|'arc'|'equipment',plane_m?:number,meanOutwardNormal:readonly[number,number,number],support?:{id:string,kind:'rack-panel'|'transfer-gate'|'head-mouth'}}
 
 /** Exact circle-boundary support intervals, split at every rectangle crossing. */
 export function circleRectangleArcs(radius:number,box:Rectangle){
@@ -109,7 +109,12 @@ export function compileSourceFaces(p:FacePartition,g:Pick<TransferGates,'width_m
    const base={left:l.region.id,right:r.region.id,leftDistance_m:l.distance,rightDistance_m:r.distance,axis:l.axis,plane_m:l.plane,
     meanOutwardNormal:(l.axis==='x'?[1,0,0]:l.axis==='y'?[0,1,0]:[0,0,1]) as [number,number,number]}
    consume(l,A);consume(r,A)
-   if(gate!==undefined){
+   if(l.region.id==='UPPER'&&r.region.compartment==='WELL'){
+    // This is a material-projection requirement, not a claim that the entire
+    // mouth is solid steel. Actual closed head/hole/open-pose patches must be
+    // supplied by the material owner before a transport consumer admits it.
+    addFace({...base,area_m2:A,support:{id:'HEAD.MOUTH',kind:'head-mouth'}})
+   }else if(gate!==undefined){
     const covered=overlap(rect,{x0:-g.width_m/2+travel_m[gate]!,x1:g.width_m/2+travel_m[gate]!,y0:g.sills_m[gate]!,y1:g.top_m}),Ac=covered?area(covered,radius):0
     gateArea+=A;gateCoveredArea+=Ac
     if(Ac>0)addFace({...base,area_m2:Ac,support:{id:gate===0?'GATE.WELL':'GATE.POOL',kind:'transfer-gate'}})

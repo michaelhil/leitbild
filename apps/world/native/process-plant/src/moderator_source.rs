@@ -60,6 +60,11 @@ pub struct Workspace {
     valid: bool,
 }
 impl Workspace {
+    /// Known Vec element payload only, not allocator/solver/model memory.
+    pub fn buffer_bytes(&self) -> usize {
+        self.coefficients.len() * std::mem::size_of::<f64>()
+            + self.rows.len() * std::mem::size_of::<RowCoefficients>()
+    }
     pub fn coefficients(&self) -> Result<&[f64], &'static str> {
         if self.valid {
             Ok(&self.coefficients)
@@ -137,6 +142,30 @@ impl ModeratorModel {
     }
     pub fn intersections(&self) -> &[Intersection] {
         &self.intersections
+    }
+    /// Contributor collision sum includes full scatter rows, including self.
+    pub fn collision_into(
+        &self,
+        work: &Workspace,
+        collision: &mut [[f64; GROUPS]],
+    ) -> Result<(), &'static str> {
+        if !Arc::ptr_eq(&self.owner, &work.owner)
+            || !work.valid
+            || collision.len() != self.volumes.len()
+        {
+            return Err("Invalid moderator collision workspace/output");
+        }
+        collision.fill([0.; GROUPS]);
+        for (e, r) in self.intersections.iter().zip(&work.rows) {
+            for g in 0..GROUPS {
+                collision[e.region][g] += (r.hydrogen[g] + r.boron[g]) / self.law.speed[g]
+                    + r.scatter_scale * self.law.scatter[g].iter().sum::<f64>();
+            }
+        }
+        if collision.iter().flatten().any(|v| !nonnegative(*v)) {
+            return Err("Nonfinite moderator collision candidate");
+        }
+        Ok(())
     }
     pub fn workspace(&self) -> Workspace {
         Workspace {

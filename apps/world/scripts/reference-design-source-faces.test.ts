@@ -25,6 +25,7 @@ test('shared/escape geometry closes all regions without default gate reflection'
  const lower=closed.faces.filter(f=>f.left==='LOWER'&&f.right),upperHead=closed.faces.filter(f=>f.left==='UPPER'&&f.right?.startsWith('WELL/'))
  expect(lower.reduce((sum,f)=>sum+f.area_m2,0)).toBeCloseTo(Math.PI*1.9**2,10)
  expect(upperHead.reduce((sum,f)=>sum+f.area_m2,0)).toBeCloseTo(16.75,10)
+ expect(upperHead.every(f=>f.support?.id==='HEAD.MOUTH'&&f.support.kind==='head-mouth')).toBe(true)
  expect(new Set(lower.map(f=>f.leftDistance_m)).size).toBe(1)
  expect(new Set(upperHead.map(f=>f.leftDistance_m)).size).toBe(1)
  const wellEscape=closed.faces.filter(f=>f.left.startsWith('WELL/')&&!f.right&&f.axis==='z'&&f.plane_m===4)
