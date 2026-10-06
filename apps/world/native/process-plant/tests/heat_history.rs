@@ -94,8 +94,8 @@ fn general_stage_closes_original_rhs_and_source_tangents() {
 fn validation_and_signed_trial_contract() {
     let k = kernel();
     let mut e = [0.; 2];
-    assert!(
-        k.stage_into(
+    assert!(k
+        .stage_into(
             0.,
             &[1., 1.],
             Rates {
@@ -104,10 +104,9 @@ fn validation_and_signed_trial_contract() {
             },
             &mut e
         )
-        .is_err()
-    );
-    assert!(
-        k.stage_into(
+        .is_err());
+    assert!(k
+        .stage_into(
             1.,
             &[f64::NAN, 1.],
             Rates {
@@ -116,10 +115,9 @@ fn validation_and_signed_trial_contract() {
             },
             &mut e
         )
-        .is_err()
-    );
-    assert!(
-        k.rhs_into(
+        .is_err());
+    assert!(k
+        .rhs_into(
             &[1.],
             Rates {
                 fission: 1.,
@@ -127,10 +125,9 @@ fn validation_and_signed_trial_contract() {
             },
             &mut e
         )
-        .is_err()
-    );
-    assert!(
-        k.stage_into(
+        .is_err());
+    assert!(k
+        .stage_into(
             1.,
             &[-1., -1.],
             Rates {
@@ -139,9 +136,19 @@ fn validation_and_signed_trial_contract() {
             },
             &mut e
         )
-        .is_ok()
-    );
+        .is_ok());
     assert!(e.iter().all(|x| *x < 0.)); // Never clip a Newton trial.
+    let mut rhs = [0.; 2];
+    let signed = Rates {
+        fission: -7.,
+        fertile_capture: -11.,
+    };
+    let h = k.rhs_into(&[-4., -5.], signed, &mut rhs).unwrap();
+    assert!(h.prompt < 0. && h.delayed < 0. && rhs.iter().all(|x| *x < 0.));
+    close_signed_budget(
+        h.prompt + h.delayed + rhs.iter().sum::<f64>(),
+        -10. * 7. - 3. * 11.,
+    );
     let overflow = Kernel::new(
         vec![Group {
             feed: Feed::Fission,
@@ -151,28 +158,27 @@ fn validation_and_signed_trial_contract() {
         10.,
     )
     .unwrap();
-    assert!(
-        overflow
-            .stage_into(
-                f64::MAX,
-                &[1.],
-                Rates {
-                    fission: 0.,
-                    fertile_capture: 0.
-                },
-                &mut [0.]
-            )
-            .is_err()
-    );
-    assert!(
-        Kernel::new(
-            vec![Group {
-                feed: Feed::Fission,
-                energy_per_event: 10.,
-                decay_rate: 1.
-            }],
-            10.
+    assert!(overflow
+        .stage_into(
+            f64::MAX,
+            &[1.],
+            Rates {
+                fission: 0.,
+                fertile_capture: 0.
+            },
+            &mut [0.]
         )
-        .is_err()
-    );
+        .is_err());
+    assert!(Kernel::new(
+        vec![Group {
+            feed: Feed::Fission,
+            energy_per_event: 10.,
+            decay_rate: 1.
+        }],
+        10.
+    )
+    .is_err());
+}
+fn close_signed_budget(a: f64, b: f64) {
+    assert!((a - b).abs() < 1e-13);
 }

@@ -5,6 +5,7 @@ use std::ffi::{CStr, c_char};
 pub mod fixed_volume_liquid;
 pub mod finite_header_return;
 pub mod fuel_source;
+pub mod fuel_history;
 pub mod horizontal_passage;
 pub mod mixing;
 pub mod moderator_source;

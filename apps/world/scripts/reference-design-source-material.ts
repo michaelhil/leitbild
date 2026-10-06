@@ -192,16 +192,21 @@ function cohortFactory(faId:string,segments:{id:string,z0_m:number,z1_m:number,r
  return result
 }
 const sha=(s:string)=>createHash('sha256').update(s).digest('hex')
+export const coldSourceMaterialOwnerFiles=['systems/reactor/fuel-construction.md','systems/reactor/fuel-handling-and-pool.md','systems/reactor/control-absorber-and-guide-water.md',
+ 'systems/primary-coolant/mechanical-energy-and-geometry.md','systems/reactor/core-coolant-delivery.md','model/connected-primary-initialization.md',
+ 'model/operating-source-model.md','systems/reactor/radial-energy-transient.md','systems/instrumentation/nuclear-observation-apparatus.md','systems/reactor/cold-source-and-startup.md']
+export function compileColdSourceMaterialOwners(docs:readonly string[]){
+ if(docs.length!==coldSourceMaterialOwnerFiles.length)throw Error('Missing ORIGINAL material owners')
+ const base={fuel:parseFuelConstruction(docs[0]!),handling:parseFuelHandling(docs[1]!),control:parseControlAbsorber(docs[2]!),
+  primary:parsePrimaryMechanics(docs[3]!),barrel:parsePrimaryBarrelGeometry(docs[4]!),initialization:parseInitializationBasis(docs[5]!),partition:parseSourcePartition(docs[6]!)},
+  input={fuel:base.fuel,handling:base.handling,grid:parseOperatingFuelCohorts(docs[7]!),apparatus:parseNuclearObservation(docs[8]!),source:{birthEmission_neutrons_s:parseColdNuclear(docs[9]!).source.birthEmission_neutrons_s}},
+  partition=compileSourcePartition(base),result=compileColdSourceMaterial(partition,input)
+ return {input,partition,result}
+}
 if(import.meta.main){
  const [wiki,output]=Bun.argv.slice(2);if(!wiki||!output)throw Error('Usage: bun reference-design-source-material.ts <LD-01 directory> <NEW receipt.json>')
- const files=['systems/reactor/fuel-construction.md','systems/reactor/fuel-handling-and-pool.md','systems/reactor/control-absorber-and-guide-water.md',
-  'systems/primary-coolant/mechanical-energy-and-geometry.md','systems/reactor/core-coolant-delivery.md','model/connected-primary-initialization.md',
-  'model/operating-source-model.md','systems/reactor/radial-energy-transient.md','systems/instrumentation/nuclear-observation-apparatus.md','systems/reactor/cold-source-and-startup.md'],
-  docs=await Promise.all(files.map(name=>Bun.file(join(wiki,name)).text())),
-  base={fuel:parseFuelConstruction(docs[0]!),handling:parseFuelHandling(docs[1]!),control:parseControlAbsorber(docs[2]!),
-   primary:parsePrimaryMechanics(docs[3]!),barrel:parsePrimaryBarrelGeometry(docs[4]!),initialization:parseInitializationBasis(docs[5]!),partition:parseSourcePartition(docs[6]!)},
-  input={fuel:base.fuel,handling:base.handling,grid:parseOperatingFuelCohorts(docs[7]!),apparatus:parseNuclearObservation(docs[8]!),source:{birthEmission_neutrons_s:parseColdNuclear(docs[9]!).source.birthEmission_neutrons_s}},
-  partition=compileSourcePartition(base),began=performance.now(),result=compileColdSourceMaterial(partition,input),elapsedSeconds=(performance.now()-began)/1000,
+ const files=coldSourceMaterialOwnerFiles,docs=await Promise.all(files.map(name=>Bun.file(join(wiki,name)).text())),
+  began=performance.now(),{input,partition,result}=compileColdSourceMaterialOwners(docs),elapsedSeconds=(performance.now()-began)/1000,
   helpers=['reference-design-source-partition.ts','reference-design-source-faces.ts','reference-design-fuel-construction.ts','reference-design-fuel-handling.ts',
    'reference-design-control-absorber.ts','reference-design-primary-mechanics.ts','reference-design-initialization.ts','reference-design-nuclear-observation.ts','reference-design-cold-nuclear.ts'],
   helperIdentities=await Promise.all(helpers.map(async name=>({name,sha256:sha(await Bun.file(new URL(name,import.meta.url)).text())})))

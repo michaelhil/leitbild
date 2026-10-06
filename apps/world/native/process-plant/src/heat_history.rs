@@ -67,9 +67,7 @@ impl Kernel {
         if values.len() != self.groups.len()
             || values.iter().any(|x| !x.is_finite())
             || !rates.fission.is_finite()
-            || rates.fission < 0.
             || !rates.fertile_capture.is_finite()
-            || rates.fertile_capture < 0.
         {
             return Err("Invalid history shape, stage data or event rates".into());
         }

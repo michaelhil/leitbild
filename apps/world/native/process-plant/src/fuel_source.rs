@@ -331,6 +331,10 @@ impl FuelModel {
         stocks: &[Stocks],
         work: &mut Workspace,
     ) -> Result<(), &'static str> {
+        // Remaining amounts may temporarily exceed their immutable references
+        // when a signed consumed-progress Newton trial is negative. A material
+        // owner's accepted-state boundary, not this coefficient evaluation,
+        // enforces reference bounds. Negative remaining donors are unsupported.
         work.valid = false;
         if !Arc::ptr_eq(&self.owner, &work.owner)
             || temperatures.len() != self.cohorts.len()
@@ -343,8 +347,6 @@ impl FuelModel {
                     || !positive(s.reference_fertile)
                     || !nonnegative(s.reserve)
                     || !nonnegative(s.fertile)
-                    || s.reserve > s.reference_reserve
-                    || s.fertile > s.reference_fertile
             })
             || work.coefficients.len() != self.coordinates.len()
             || work.events.len() != self.intersections.len()
