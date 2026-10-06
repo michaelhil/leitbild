@@ -78,10 +78,14 @@ export async function qualifyOperatingNetwork(wiki: string, binary: string, rece
       stockLedgerMarker_kg: 1e-8, chartCorrectionPressure_Pa: 5, chartCorrectionTemperature_K: 1e-4,
       omittedKEquivalent_K: .001, omittedDynamicHead_Pa: 100,
       pressureSplitDensityFraction: 1e-4, pressureSplitWorkEquivalent_K: .01,
-      pairedHeatMeaning: 'Sum of absolute finite-metal recipient discrepancies; opposing changes cannot cancel',
+      pairedSecondaryPhaseMass_kg: .01,
+      secondaryResponseVersusNumericalDifference: 100,
+      secondaryResponseMinimum_J: 1,
+      secondaryApplicability: 'Closed liquid-bearing water/steam/air/N2, positive gas volume, full folded-wall coverage; bulk and wall below total-pressure saturation; no phase-exhaustion or dryout continuation',
+      pairedHeatMeaning: 'Sum of absolute finite-metal and secondary-recipient discrepancies; opposing changes cannot cancel',
       momentumHeldHeadProxy: 'diagnostic only; not a coupled correction bound or admission gate',
-      meaning: 'Frozen sound-filtered quasi-steady cold finite-energy redistribution screen; no inertia/quantitative-flow/entropy/full-plant qualification' },
-    result, stdout, stderr, scope: 'One normal/tighter cold connected primary/finite-SG-metal partial. The approved shutdown pilot remains unfinished.' }
+      meaning: 'Frozen sound-filtered quasi-steady cold primary-metal-wet-secondary redistribution screen; no inertia/quantitative-flow/entropy/full-plant qualification' },
+    result, stdout, stderr, scope: 'One normal/tighter cold connected primary/finite SG metal and wet-secondary partial. The approved shutdown pilot remains unfinished.' }
   await writeFile(output, JSON.stringify(evidence, null, 2) + '\n', { flag: 'wx' })
   return evidence
 }

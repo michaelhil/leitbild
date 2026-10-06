@@ -6,9 +6,11 @@
 //! EOS excludes that mechanical correction: this is an explicit cold pressure
 //! approximation, not exact compressible entropy, phase or coastdown physics.
 //! No pump, rotor, maintained boundary, nested chart inverse or acoustic mode.
-use crate::{liquid_batch, CellGeometry, Liquid, LiquidQuery, GRAVITY};
+use crate::{CellGeometry, GRAVITY, Liquid, LiquidQuery, liquid_batch};
 use std::collections::BTreeSet;
 mod hydraulic;
+use crate::sg_secondary::{Inventory as SecondaryInventory, State as SecondaryState};
+pub use crate::sg_secondary::{Secondary, SecondaryHeat};
 pub use hydraulic::{Hydraulic, LossLaw};
 pub const SOLID_DATUM_K: f64 = 300.;
 
@@ -50,12 +52,15 @@ pub struct Config {
     pub solids: Vec<Solid>,
     pub hydraulic: Vec<Hydraulic>,
     pub heat: Vec<Heat>,
+    pub secondaries: Vec<Secondary>,
+    pub secondary_heat: Vec<SecondaryHeat>,
 }
 
 pub struct Network {
     config: Config,
     /// Fixed ORIGINAL hydrostatic offsets, not a reached-state projection.
     pressure_offsets: Vec<f64>,
+    secondary_inventories: Vec<SecondaryInventory>,
     pub column_pointers: Vec<i64>,
     pub row_indices: Vec<i64>,
 }
@@ -68,6 +73,13 @@ impl Network {
                 .and_then(|x| x.checked_add(config.solids.len()))
                 .and_then(|x| x.checked_add(config.hydraulic.len()))
                 .and_then(|x| x.checked_add(1))
+                .and_then(|x| {
+                    config
+                        .secondaries
+                        .len()
+                        .checked_mul(3)
+                        .and_then(|s| x.checked_add(s))
+                })
                 .is_none()
         {
             return Err("Invalid pressure-territory size".into());
@@ -187,6 +199,22 @@ impl Network {
             }
         }
         let anchor = config.water[0].initial_pressure;
+        let secondary_inventories: Vec<_> = config
+            .secondaries
+            .iter()
+            .map(|s| s.prepare().map(|x| x.0))
+            .collect::<Result<_, _>>()?;
+        for h in &config.secondary_heat {
+            if h.solid >= config.solids.len()
+                || h.secondary >= config.secondaries.len()
+                || !h.area.is_finite()
+                || h.area <= 0.
+                || !h.diameter.is_finite()
+                || h.diameter <= 0.
+            {
+                return Err("Invalid secondary thermal incidence/geometry".into());
+            }
+        }
         let pressure_offsets: Vec<_> = config
             .water
             .iter()
@@ -195,6 +223,7 @@ impl Network {
         let mut network = Self {
             config,
             pressure_offsets,
+            secondary_inventories,
             column_pointers: vec![],
             row_indices: vec![],
         };
@@ -275,6 +304,26 @@ impl Network {
                 }
             }
         }
+        for k in 0..network.config.secondaries.len() {
+            let u = network.secondary_energy_row(k);
+            let t = u + 1;
+            let sp = u + 2;
+            pattern[u].insert(u);
+            pattern[u].insert(t);
+            for col in [t, sp] {
+                pattern[col].insert(t);
+                pattern[col].insert(sp);
+            }
+        }
+        for h in &network.config.secondary_heat {
+            let u = network.secondary_energy_row(h.secondary);
+            let metal = network.energy_row(nw + h.solid);
+            for col in [metal, u + 1, u + 2] {
+                for row in [metal, u] {
+                    pattern[col].insert(row);
+                }
+            }
+        }
         network.column_pointers.push(0);
         for column in pattern {
             network
@@ -308,7 +357,22 @@ impl Network {
         (node > 0).then(|| self.flow_row(self.config.hydraulic.len()) + node - 1)
     }
     pub fn dimension(&self) -> usize {
+        self.base_dimension() + 3 * self.config.secondaries.len()
+    }
+    pub fn base_dimension(&self) -> usize {
         self.flow_row(self.config.hydraulic.len()) + self.config.water.len() - 1
+    }
+    pub fn secondary_energy_row(&self, k: usize) -> usize {
+        self.base_dimension() + 3 * k
+    }
+    pub fn secondary_temperature_row(&self, k: usize) -> usize {
+        self.secondary_energy_row(k) + 1
+    }
+    pub fn secondary_pressure_row(&self, k: usize) -> usize {
+        self.secondary_energy_row(k) + 2
+    }
+    pub fn secondary_inventory(&self, k: usize) -> SecondaryInventory {
+        self.secondary_inventories[k]
     }
     pub fn total_mass_row(&self) -> usize {
         2 * self.config.water.len()
@@ -327,6 +391,7 @@ impl Network {
     pub fn is_differential(&self, row: usize) -> bool {
         assert!(row < self.dimension());
         row < self.stock_dimension()
+            || (row >= self.base_dimension() && (row - self.base_dimension()) % 3 == 0)
     }
     pub fn pressure_offset(&self, node: usize) -> f64 {
         self.pressure_offsets[node]
@@ -375,6 +440,16 @@ impl Network {
             y[self.energy_row(self.config.water.len() + i)] =
                 s.heat_capacity * (s.initial_temperature - SOLID_DATUM_K);
         }
+        for (k, s) in self.config.secondaries.iter().enumerate() {
+            let st = s.evaluate(
+                self.secondary_inventory(k),
+                s.initial_temperature,
+                s.initial_pressure,
+            )?;
+            y[self.secondary_energy_row(k)] = st.energy;
+            y[self.secondary_temperature_row(k)] = s.initial_temperature;
+            y[self.secondary_pressure_row(k)] = s.initial_pressure;
+        }
         if y.iter().any(|x| !x.is_finite()) {
             return Err("Nonfinite original stock".into());
         }
@@ -403,6 +478,8 @@ pub struct Workspace {
     pub property_requests: usize,
     pub film_nusselt: Vec<f64>,
     pub film_raw_prandtl_ratio: Vec<f64>,
+    pub secondary_states: Vec<SecondaryState>,
+    pub secondary_heat_flows: Vec<f64>,
     queries: Vec<LiquidQuery>,
     probe_queries: Vec<LiquidQuery>,
     probes: Vec<Liquid>,
@@ -447,6 +524,8 @@ impl Workspace {
             property_requests: 0,
             film_nusselt: vec![0.; nh],
             film_raw_prandtl_ratio: vec![0.; nh],
+            secondary_states: vec![SecondaryState::default(); n.config.secondaries.len()],
+            secondary_heat_flows: vec![0.; n.config.secondary_heat.len()],
             queries: vec![
                 LiquidQuery {
                     pressure: 0.,
@@ -502,6 +581,8 @@ impl Workspace {
             || self.heat_flows.len() != n.config.heat.len()
             || self.film_nusselt.len() != n.config.heat.len()
             || self.film_raw_prandtl_ratio.len() != n.config.heat.len()
+            || self.secondary_states.len() != n.config.secondaries.len()
+            || self.secondary_heat_flows.len() != n.config.secondary_heat.len()
             || y.iter().chain(yp).any(|x| !x.is_finite())
             || cj.is_some_and(|x| !x.is_finite() || x < 0.)
             || y[n.total_mass_row()] <= 0.
@@ -824,6 +905,66 @@ impl Workspace {
             self.residual[row] = yp[row] - self.rates[row];
             if let Some(cj) = cj {
                 self.add(n, row, row, cj);
+            }
+        }
+        for (k, s) in n.config.secondaries.iter().enumerate() {
+            let u = n.secondary_energy_row(k);
+            let t = u + 1;
+            let sp = u + 2;
+            let st = s.evaluate(n.secondary_inventory(k), y[t], y[sp])?;
+            self.property_requests += 2;
+            self.secondary_states[k] = st;
+            self.residual[t] = y[u] - st.energy;
+            self.residual[sp] = st.pressure_residual;
+            if cj.is_some() {
+                self.add(n, t, u, 1.);
+                let d = s.derivatives(n.secondary_inventory(k), y[t], y[sp])?;
+                self.property_requests += 8;
+                self.add(n, t, t, -d[0]);
+                self.add(n, t, sp, -d[1]);
+                self.add(n, sp, t, d[2]);
+                self.add(n, sp, sp, d[3]);
+            }
+        }
+        for (k, h) in n.config.secondary_heat.iter().enumerate() {
+            let u = n.secondary_energy_row(h.secondary);
+            let t = u + 1;
+            let sp = u + 2;
+            let metal = n.energy_row(nw + h.solid);
+            let wall = n.temperature(nw + h.solid, y);
+            let (q, partials) = crate::sg_secondary::heat_with_partials(
+                y[t],
+                y[sp],
+                wall,
+                h.area,
+                h.diameter,
+                cj.is_some(),
+                &mut self.property_requests,
+            )?;
+            self.secondary_heat_flows[k] = q;
+            self.rates[metal] -= q;
+            self.rates[u] += q;
+            self.residual[metal] += q;
+            self.heat_entropy_production += q * (1. / y[t] - 1. / wall);
+            if cj.is_some() {
+                for j in 0..3 {
+                    let d = partials[j];
+                    let col = [t, sp, metal][j];
+                    let d = if j == 2 {
+                        d / n.config.solids[h.solid].heat_capacity
+                    } else {
+                        d
+                    };
+                    self.add(n, metal, col, d);
+                    self.add(n, u, col, -d);
+                }
+            }
+        }
+        for k in 0..n.config.secondaries.len() {
+            let u = n.secondary_energy_row(k);
+            self.residual[u] = yp[u] - self.rates[u];
+            if let Some(c) = cj {
+                self.add(n, u, u, c);
             }
         }
         self.residual[pcol] = y[n.total_mass_row()] - self.chart_mass.iter().sum::<f64>();

@@ -9,6 +9,9 @@ fn flow_range(n: &Network) -> std::ops::Range<usize> {
     start..start + n.config().hydraulic.len()
 }
 fn row_kind(n: &Network, row: usize) -> usize {
+    if row >= n.base_dimension() {
+        return if n.is_differential(row) { 0 } else { 2 };
+    }
     if row < n.stock_dimension() || row >= flow_range(n).end {
         0
     } else if flow_range(n).contains(&row) {
@@ -18,6 +21,13 @@ fn row_kind(n: &Network, row: usize) -> usize {
     }
 }
 fn state_probe(n: &Network, y: &[f64], weights: &[f64], col: usize) -> f64 {
+    if col >= n.base_dimension() {
+        return match (col - n.base_dimension()) % 3 {
+            0 => 100.,
+            1 => 1e-5,
+            _ => 0.1,
+        };
+    }
     let nw = n.config().water.len();
     if col < nw {
         100. // finite water energy, J
@@ -336,6 +346,8 @@ mod layout_tests {
             initial_tracer_fraction: 0.,
         };
         let n = Network::new(Config {
+            secondaries: vec![],
+            secondary_heat: vec![],
             water: vec![water, water],
             solids: vec![Solid {
                 heat_capacity: 1000.,
@@ -375,6 +387,41 @@ mod layout_tests {
         assert_eq!(
             state_probe(&n, &y, &weights, n.mechanical_row(1).unwrap()),
             0.1
+        );
+        let mut c = n.config().clone();
+        c.secondaries.push(Secondary {
+            volume: 120.,
+            initial_temperature: 313.15,
+            initial_pressure: 101325.,
+            initial_liquid_volume: 72.,
+            initial_nitrogen_mass: 0.,
+            minimum_wetted_liquid_volume: 71.25,
+        });
+        let n = Network::new(c).unwrap();
+        let y = n.initial_state().unwrap();
+        let weights = vec![1.; n.dimension()];
+        let u = n.secondary_energy_row(0);
+        let t = n.secondary_temperature_row(0);
+        let p = n.secondary_pressure_row(0);
+        assert_eq!(
+            [row_kind(&n, u), row_kind(&n, t), row_kind(&n, p)],
+            [0, 2, 2]
+        );
+        assert_eq!(
+            [
+                n.is_differential(u),
+                n.is_differential(t),
+                n.is_differential(p)
+            ],
+            [true, false, false]
+        );
+        assert_eq!(
+            [
+                state_probe(&n, &y, &weights, u),
+                state_probe(&n, &y, &weights, t),
+                state_probe(&n, &y, &weights, p)
+            ],
+            [100., 1e-5, 0.1]
         );
     }
 }

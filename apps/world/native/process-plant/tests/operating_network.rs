@@ -3,6 +3,8 @@ use leitbild_plant_numerics::{CellGeometry, GRAVITY};
 
 fn fixture() -> Network {
     Network::new(Config {
+        secondaries: vec![],
+        secondary_heat: vec![],
         water: (0..3)
             .map(|i| Water {
                 geometry: CellGeometry {
@@ -75,6 +77,104 @@ fn entry(n: &Network, w: &Workspace, row: usize, col: usize) -> f64 {
         .binary_search(&(row as i64))
         .map(|i| w.jacobian_values[a + i])
         .unwrap_or(0.)
+}
+#[test]
+fn joined_finite_secondaries_have_reciprocal_energy_and_local_chart_matrix() {
+    let mut c = fixture().config().clone();
+    c.secondaries = vec![
+        Secondary {
+            volume: 120.,
+            initial_temperature: 313.15,
+            initial_pressure: 101325.,
+            initial_liquid_volume: 72.,
+            initial_nitrogen_mass: 0.,
+            minimum_wetted_liquid_volume: 71.25
+        };
+        2
+    ];
+    c.secondary_heat = vec![
+        SecondaryHeat {
+            solid: 0,
+            secondary: 0,
+            area: 625.,
+            diameter: 0.02,
+        },
+        SecondaryHeat {
+            solid: 1,
+            secondary: 1,
+            area: 625.,
+            diameter: 0.02,
+        },
+    ];
+    let n = Network::new(c).unwrap();
+    let mut y = n.initial_state().unwrap();
+    assert_eq!(n.dimension(), 23);
+    assert_eq!(
+        (0..n.dimension()).filter(|&r| n.is_differential(r)).count(),
+        11
+    );
+    y[n.energy_row(3)] += 75e6 * 2.; // deliberate finite warm metal, not forcing
+    y[n.secondary_energy_row(0)] += 17.; // explicit off-manifold candidate
+    let yp = vec![0.5; n.dimension()];
+    let cj = 17.;
+    let w = at(&n, &y, &yp, Some(cj));
+    let total = (0..n.dimension())
+        .filter(|&r| n.is_differential(r) && r != n.total_mass_row() && !(3..6).contains(&r))
+        .map(|r| w.rates[r])
+        .sum::<f64>();
+    assert!(total.abs() < 1e-5);
+    assert!(w.secondary_heat_flows[0] > 0. && w.secondary_heat_flows[1] < 0.);
+    for k in 0..2 {
+        let st = w.secondary_states[k];
+        assert!((st.liquid_mass + st.vapor_mass - n.secondary_inventory(k).water).abs() < 1e-8);
+    }
+    for col in [
+        n.energy_row(3),
+        n.energy_row(4),
+        n.secondary_energy_row(0),
+        n.secondary_temperature_row(0),
+        n.secondary_pressure_row(0),
+        n.secondary_temperature_row(1),
+        n.secondary_pressure_row(1),
+    ] {
+        let h = if col == n.secondary_temperature_row(0) || col == n.secondary_temperature_row(1) {
+            0.002
+        } else if col == n.secondary_pressure_row(0) || col == n.secondary_pressure_row(1) {
+            2.
+        } else {
+            100.
+        };
+        for scale in [1., 0.5] {
+            let h = h * scale;
+            let mut a = y.clone();
+            let mut b = y.clone();
+            let mut ap = yp.clone();
+            let mut bp = yp.clone();
+            a[col] += h;
+            b[col] -= h;
+            ap[col] += cj * h;
+            bp[col] -= cj * h;
+            let wa = at(&n, &a, &ap, None);
+            let wb = at(&n, &b, &bp, None);
+            for row in [
+                n.energy_row(3),
+                n.energy_row(4),
+                n.secondary_energy_row(0),
+                n.secondary_temperature_row(0),
+                n.secondary_pressure_row(0),
+                n.secondary_energy_row(1),
+                n.secondary_temperature_row(1),
+                n.secondary_pressure_row(1),
+            ] {
+                let fd = (wa.residual[row] - wb.residual[row]) / (2. * h);
+                let exact = entry(&n, &w, row, col);
+                assert!(
+                    (fd - exact).abs() <= 2e-3 * fd.abs().max(exact.abs()).max(1e-3),
+                    "row {row} col {col}: FD {fd}, matrix {exact}"
+                );
+            }
+        }
+    }
 }
 #[test]
 fn fresh_energy_mass_and_material_identity_is_preserved_not_initial_flow_admission() {

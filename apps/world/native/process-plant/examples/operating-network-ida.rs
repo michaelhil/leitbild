@@ -1,5 +1,6 @@
 //! Strict numeric fresh-original offline operating-network qualification.
-//! No live plant, source/PZR/secondary/rotor/control/event implementation.
+//! No live plant, source/PZR/rotor/control/event implementation. Closed SG
+//! secondaries are cold, fully wetted equilibrium steam/air inventories only.
 mod ida_support;
 mod operating_network_audit;
 mod operating_network_input;
@@ -35,6 +36,8 @@ struct Work {
     max_reynolds: f64,
     max_reynolds_edge: usize,
     max_pressure_split: [f64; 3], // Pa, fractional density proxy, K work proxy
+    max_secondary_chart: [f64; 2],
+    max_secondary_material_volume: [f64; 2],
     audit_enabled: bool,
     last_jacobian_state: Option<(Vec<f64>, Vec<f64>, f64)>,
 }
@@ -185,8 +188,8 @@ mod predictor_tests {
     }
     #[test]
     fn held_head_proxy_is_not_a_coupled_correction_bound() {
-        // J=[[1,100],[0,1]], actual correction=[.1,.01], unit weights.
-        // J*correction=[1.1,.01]: holding the second coordinate fixed would
+        // J=[[1,100],[0,1]], actual correction=[0.1,0.01], unit weights.
+        // J*correction=[1.1,0.01]: holding the second coordinate fixed would
         // falsely reject the first, despite both coupled corrections < 1.
         let correction = [0.1, 0.01];
         let residual = correction[0] + 100. * correction[1];
@@ -209,7 +212,10 @@ fn totals(n: &Network, y: &[f64]) -> [f64; 3] {
         y[n.total_mass_row()],
         (0..nw + n.config().solids.len())
             .map(|i| y[n.energy_row(i)])
-            .sum(),
+            .sum::<f64>()
+            + (0..n.config().secondaries.len())
+                .map(|k| y[n.secondary_energy_row(k)])
+                .sum::<f64>(),
         (0..nw).map(|i| y[n.marker_row(i)]).sum(),
     ]
 }
@@ -221,6 +227,7 @@ struct Sample {
     flows: Vec<f64>,
     heat: Vec<f64>,
     pressures: Vec<f64>,
+    secondary_phase: Vec<[f64; 3]>,
 }
 struct Receipt {
     samples: Vec<Sample>,
@@ -251,6 +258,10 @@ struct Receipt {
     max_pressure_split: [f64; 3],
     nnz: usize,
     n: usize,
+    secondary_energy_change: Vec<f64>,
+    secondary_inventories: Vec<[f64; 3]>,
+    max_secondary_chart: [f64; 2],
+    max_secondary_material_volume: [f64; 2],
 }
 fn screen(
     work: &mut Work,
@@ -290,6 +301,36 @@ fn screen(
         let [mp, mt, ep, et] = work.workspace.chart_derivatives[i];
         compliance += mp - mt * ep / et;
         dm -= mt / et * work.workspace.residual[work.network.temperature_row(i)];
+    }
+    // Independent local 2x2 chart correction, not per-row residual norms.
+    // All species amounts are immutable finite closed inventories.
+    for (k, s) in work.network.config().secondaries.iter().enumerate() {
+        let tr = work.network.secondary_temperature_row(k);
+        let pr = work.network.secondary_pressure_row(k);
+        let d = s.derivatives(work.network.secondary_inventory(k), y[tr], y[pr])?;
+        work.property_requests += 8;
+        let ru = work.workspace.residual[tr];
+        let rg = work.workspace.residual[pr];
+        let dt = (ru + d[1] * rg / d[3]) / (d[0] - d[1] * d[2] / d[3]);
+        let dp = (-rg - d[2] * dt) / d[3];
+        max_chart[0] = max_chart[0].max(dp.abs());
+        max_chart[1] = max_chart[1].max(dt.abs());
+        work.max_secondary_chart[0] = work.max_secondary_chart[0].max(dp.abs());
+        work.max_secondary_chart[1] = work.max_secondary_chart[1].max(dt.abs());
+        if dp.abs() > 5. || dt.abs() > 1e-4 {
+            return Err(format!(
+                "Returned wet secondary chart {k}: dp={dp}, dT={dt}"
+            ));
+        }
+        let st = work.workspace.secondary_states[k];
+        let inv = work.network.secondary_inventory(k);
+        let dm = ((st.liquid_mass + st.vapor_mass) - inv.water).abs();
+        let dv = (st.liquid_volume + st.gas_volume - s.volume).abs();
+        work.max_secondary_material_volume[0] = work.max_secondary_material_volume[0].max(dm);
+        work.max_secondary_material_volume[1] = work.max_secondary_material_volume[1].max(dv);
+        if dm > 1e-6 || dv > 1e-10 {
+            return Err("Closed secondary water ledger refused".into());
+        }
     }
     if !compliance.is_finite() || compliance <= 0. {
         return Err("Returned shared inventory chart rank".into());
@@ -400,6 +441,7 @@ fn run(
     let mut initial = network.initial_state()?;
     let nw = network.config().water.len();
     let ns = network.config().solids.len();
+    let nk = network.config().secondaries.len();
     let mut work = Box::new(Work {
         workspace: Workspace::new(&network),
         network,
@@ -407,7 +449,7 @@ fn run(
         budget,
         residuals: 0,
         jacobians: 0,
-        property_requests: nw as u64,
+        property_requests: (nw + 6 * nk) as u64,
         failures: 0,
         last_error: None,
         budget_exhausted: false,
@@ -415,6 +457,8 @@ fn run(
         max_reynolds: 0.,
         max_reynolds_edge: 0,
         max_pressure_split: [0.; 3],
+        max_secondary_chart: [0.; 2],
+        max_secondary_material_volume: [0.; 2],
         audit_enabled: std::env::args().any(|a| a == "--audit"),
         last_jacobian_state: None,
     });
@@ -446,6 +490,15 @@ fn run(
     for i in 0..ns {
         atol[work.network.energy_row(nw + i)] =
             work.network.config().solids[i].heat_capacity * 1e-3 * factor;
+    }
+    for (k, s) in work.network.config().secondaries.iter().enumerate() {
+        let t = work.network.secondary_temperature_row(k);
+        let p = work.network.secondary_pressure_row(k);
+        let d = s.derivatives(work.network.secondary_inventory(k), initial[t], initial[p])?;
+        work.property_requests += 8;
+        atol[work.network.secondary_energy_row(k)] = (d[0] - d[1] * d[2] / d[3]) * 1e-3 * factor;
+        atol[t] = 1e-3 * factor;
+        atol[p] = 100. * factor;
     }
     // Fixed prospective q weights, allocated across actual incident edges from
     // the existing 1 mK internal thermal weight over the requested horizon.
@@ -565,8 +618,8 @@ fn run(
         "Original consistent state",
     )?;
     let initialized = vector(y, n)?.to_vec();
-    for row in 0..work.network.stock_dimension() {
-        if initialized[row] != initial[row] {
+    for row in 0..n {
+        if work.network.is_differential(row) && initialized[row] != initial[row] {
             return Err("Initialization changed an original finite stock".into());
         }
     }
@@ -618,11 +671,31 @@ fn run(
                 time,
                 temperatures: (0..nw + ns)
                     .map(|i| work.network.temperature(i, state))
+                    .chain(
+                        (0..work.network.config().secondaries.len())
+                            .map(|k| state[work.network.secondary_temperature_row(k)]),
+                    )
                     .collect(),
                 flows: work.workspace.mass_flows.clone(),
-                heat: work.workspace.heat_flows.clone(),
+                heat: work
+                    .workspace
+                    .heat_flows
+                    .iter()
+                    .chain(&work.workspace.secondary_heat_flows)
+                    .copied()
+                    .collect(),
                 pressures: (0..nw)
                     .map(|i| work.network.mechanical_pressure(i, state))
+                    .chain(
+                        (0..work.network.config().secondaries.len())
+                            .map(|k| state[work.network.secondary_pressure_row(k)]),
+                    )
+                    .collect(),
+                secondary_phase: work
+                    .workspace
+                    .secondary_states
+                    .iter()
+                    .map(|s| [s.liquid_mass, s.vapor_mass, s.liquid_volume])
                     .collect(),
                 y: state.to_vec(),
             });
@@ -854,6 +927,18 @@ fn run(
         })
         .collect();
     let solid_energy_change = solid_energy_change_by_recipient.iter().sum();
+    let secondary_energy_change = (0..work.network.config().secondaries.len())
+        .map(|k| {
+            let r = work.network.secondary_energy_row(k);
+            final_y[r] - initial[r]
+        })
+        .collect();
+    let secondary_inventories = (0..work.network.config().secondaries.len())
+        .map(|k| {
+            let i = work.network.secondary_inventory(k);
+            [i.water, i.air, i.nitrogen]
+        })
+        .collect();
     Ok(Receipt {
         samples,
         elapsed: run_started.elapsed().as_secs_f64(),
@@ -883,6 +968,10 @@ fn run(
         max_pressure_split: work.max_pressure_split,
         nnz: work.network.row_indices.len(),
         n,
+        secondary_energy_change,
+        secondary_inventories,
+        max_secondary_chart: work.max_secondary_chart,
+        max_secondary_material_volume: work.max_secondary_material_volume,
     })
 }
 
@@ -909,11 +998,15 @@ fn main() -> Result<(), String> {
     let ns = config.solids.len();
     let ne = config.hydraulic.len();
     let nh = config.heat.len();
+    let nk = config.secondaries.len();
+    let nkh = config.secondary_heat.len();
+    let phase_coordinates = 3 * nk;
     let began = Instant::now();
     let normal = run(config.clone(), horizon, began, budget, 1.)?;
     let tighter = run(config, horizon, began, budget, 0.1)?;
     let mut delta_temperature = 0_f64;
     let mut delta_pressure = 0_f64;
+    let mut delta_phase_mass = 0_f64;
     let mut delta_flow = vec![0_f64; ne];
     let mut signed_transfer_difference = vec![0_f64; ne];
     let mut gross_transfer_difference = vec![0_f64; ne];
@@ -924,8 +1017,13 @@ fn main() -> Result<(), String> {
         for (x, z) in a.temperatures.iter().zip(&b.temperatures) {
             delta_temperature = delta_temperature.max((x - z).abs());
         }
-        for i in 0..nw {
+        for i in 0..nw + nk {
             delta_pressure = delta_pressure.max((a.pressures[i] - b.pressures[i]).abs());
+        }
+        for (x, z) in a.secondary_phase.iter().zip(&b.secondary_phase) {
+            for i in 0..2 {
+                delta_phase_mass = delta_phase_mass.max((x[i] - z[i]).abs());
+            }
         }
         for edge in 0..ne {
             delta_flow[edge] = delta_flow[edge].max((a.flows[edge] - b.flows[edge]).abs());
@@ -946,13 +1044,39 @@ fn main() -> Result<(), String> {
                     - b[1].flows[edge].abs());
         }
     }
-    let (heat_difference, delivered_heat) = recipient_heat(
-        &normal.solid_energy_change_by_recipient,
-        &tighter.solid_energy_change_by_recipient,
-    );
+    let normal_all_recipients: Vec<_> = normal
+        .solid_energy_change_by_recipient
+        .iter()
+        .chain(&normal.secondary_energy_change)
+        .copied()
+        .collect();
+    let tighter_all_recipients: Vec<_> = tighter
+        .solid_energy_change_by_recipient
+        .iter()
+        .chain(&tighter.secondary_energy_change)
+        .copied()
+        .collect();
+    let (heat_difference, delivered_heat) =
+        recipient_heat(&normal_all_recipients, &tighter_all_recipients);
     let heat_relative = heat_difference / delivered_heat.max(1.);
+    let mut secondary_heat_difference = vec![];
+    for (k, (x, z)) in normal
+        .secondary_energy_change
+        .iter()
+        .zip(&tighter.secondary_energy_change)
+        .enumerate()
+    {
+        let diff = (x - z).abs();
+        secondary_heat_difference.push(diff);
+        if x.abs() <= 1. || x.abs() <= 100. * diff {
+            return Err(format!(
+                "Finite secondary recipient {k} energy response not distinguished: response={x}, difference={diff}"
+            ));
+        }
+    }
     if delta_temperature > 0.01
         || delta_pressure > 5000.
+        || delta_phase_mass > 0.01
         || heat_relative > 0.005
         || delivered_heat <= 100. * heat_difference.max(1.)
     {
@@ -964,11 +1088,11 @@ fn main() -> Result<(), String> {
     let mut trace = vec![];
     for second in [0, 1, 5, 10, 30, 60, 120, 180, 240, 300] {
         if let Some(s) = normal.samples.get(second) {
-            trace.push(format!("{{\"time_s\":{},\"waterSolidTemperatures_K\":{:?},\"waterPressure_Pa\":{:?},\"massFlows_kg_s\":{:?},\"heatFlows_W\":{:?}}}",s.time,s.temperatures,s.pressures,s.flows,s.heat));
+            trace.push(format!("{{\"time_s\":{},\"primarySolidSecondaryTemperatures_K\":{:?},\"primarySecondaryPressure_Pa\":{:?},\"massFlows_kg_s\":{:?},\"heatFlows_W\":{:?},\"secondaryLiquidVaporMassAndLiquidVolume_kg_kg_m3\":{:?}}}",s.time,s.temperatures,s.pressures,s.flows,s.heat,s.secondary_phase));
         }
     }
     let receipt = format!(
-        "{{\"scope\":\"cold-finite-primary-and-SG-metal-pressure-thermal-network\",\"admittedDuration_s\":{horizon},\"normalWall_s\":{},\"tighterWall_s\":{},\"aggregateWall_s\":{},\"waterNodes\":{nw},\"solidNodes\":{ns},\"hydraulicContacts\":{ne},\"heatContacts\":{nh},\"unknowns\":{},\"jacobianNonzeros\":{},\"normalInternalSteps\":{},\"tighterInternalSteps\":{},\"diagnosticStopInterval_s\":1,\"normalResiduals\":{},\"normalJacobians\":{},\"normalPropertyTuples\":{},\"tighterResiduals\":{},\"tighterJacobians\":{},\"tighterPropertyTuples\":{},\"normalCallbackFailures\":{},\"tighterCallbackFailures\":{},\"normalErrorTestsFailed\":{},\"tighterErrorTestsFailed\":{},\"normalNonlinearFailures\":{},\"tighterNonlinearFailures\":{},\"normalMaxStockLedger_M_E_B\":{:?},\"tighterMaxStockLedger_M_E_B\":{:?},\"normalMaxChartCorrection_P_T\":{:?},\"tighterMaxChartCorrection_P_T\":{:?},\"normalMaxSpeed_m_s\":{},\"normalMaxNeglectedKEquivalent_K\":{},\"finiteSolidEnergyChange_J\":{},\"pairedMaxTemperature_K\":{delta_temperature},\"pairedMaxPressure_Pa\":{delta_pressure},\"pairedHeatRelative\":{heat_relative},\"sourceNeutronCoordinates\":0,\"nuclearHistoryCoordinates\":0,\"phaseCoordinates\":0,\"rotorCoordinates\":0,\"notImplemented\":[\"PZR-surge-compliance\",\"SG-secondary\",\"source-fuel-decay\",\"rotor-coastdown\",\"phase-and-boiling\",\"acquired-I&C\",\"grid-and-finite-ultimate-sink\"],\"trace\":[{}]}}",
+        "{{\"scope\":\"cold-finite-primary-SG-metal-and-closed-wet-secondary-network\",\"admittedDuration_s\":{horizon},\"normalWall_s\":{},\"tighterWall_s\":{},\"aggregateWall_s\":{},\"waterNodes\":{nw},\"solidNodes\":{ns},\"hydraulicContacts\":{ne},\"heatContacts\":{nh},\"unknowns\":{},\"jacobianNonzeros\":{},\"normalInternalSteps\":{},\"tighterInternalSteps\":{},\"diagnosticStopInterval_s\":1,\"normalResiduals\":{},\"normalJacobians\":{},\"normalPropertyTuples\":{},\"tighterResiduals\":{},\"tighterJacobians\":{},\"tighterPropertyTuples\":{},\"normalCallbackFailures\":{},\"tighterCallbackFailures\":{},\"normalErrorTestsFailed\":{},\"tighterErrorTestsFailed\":{},\"normalNonlinearFailures\":{},\"tighterNonlinearFailures\":{},\"normalMaxStockLedger_M_E_B\":{:?},\"tighterMaxStockLedger_M_E_B\":{:?},\"normalMaxChartCorrection_P_T\":{:?},\"tighterMaxChartCorrection_P_T\":{:?},\"normalMaxSpeed_m_s\":{},\"normalMaxNeglectedKEquivalent_K\":{},\"finiteSolidEnergyChange_J\":{},\"pairedMaxTemperature_K\":{delta_temperature},\"pairedMaxPressure_Pa\":{delta_pressure},\"pairedHeatRelative\":{heat_relative},\"sourceNeutronCoordinates\":0,\"nuclearHistoryCoordinates\":0,\"phaseCoordinates\":{phase_coordinates},\"rotorCoordinates\":0,\"notImplemented\":[\"PZR-surge-compliance\",\"source-fuel-decay\",\"rotor-coastdown\",\"boiling-dryout-exhaustion-and-secondary-ports\",\"acquired-I&C\",\"grid-and-finite-ultimate-sink\"],\"trace\":[{}]}}",
         normal.elapsed,
         tighter.elapsed,
         began.elapsed().as_secs_f64(),
@@ -1004,8 +1128,8 @@ fn main() -> Result<(), String> {
         "{receipt},\"initialization\":\"original finite stocks; joint algebraic flow and differential-rate initialization; no advancing startup\",\"normalInitialSeedAndConsistentWRMSRate_per_s\":{:?},\"tighterInitialSeedAndConsistentWRMSRate_per_s\":{:?},\"differentialCoordinates\":{},\"algebraicCoordinates\":{},\"normalMaxDynamicHead_Pa\":{},\"tighterMaxDynamicHead_Pa\":{},\"normalMaxOmittedKEstimate_J\":{},\"tighterMaxOmittedKEstimate_J\":{},\"admissionSampling\":\"initial and every accepted IDA internal step; paired observations one second apart\",\"momentumScreenMeaning\":\"local held-head static q correction; diagnostic only, not a temporal or coupled error bound\",\"kineticEstimateMeaning\":\"sum L*q^2/(2*A*rhoBar); not a retained exact native kinetic-energy ledger\"",
         normal.initial_rate_norms,
         tighter.initial_rate_norms,
-        2 * nw + 1 + ns,
-        2 * nw + ne,
+        2 * nw + 1 + ns + nk,
+        2 * nw + ne + 2 * nk,
         normal.max_dynamic_head,
         tighter.max_dynamic_head,
         normal.max_omitted_kinetic_energy,
@@ -1014,6 +1138,16 @@ fn main() -> Result<(), String> {
     let receipt = format!(
         "{receipt},\"normalMaxHeldHeadDiagnosticRatio\":{},\"tighterMaxHeldHeadDiagnosticRatio\":{},\"momentumDiagnosticIsAdmissionGate\":false",
         normal.max_held_head_ratio, tighter.max_held_head_ratio
+    );
+    let receipt = format!(
+        "{receipt},\"secondaryNodes\":{nk},\"secondaryHeatContacts\":{nkh},\"normalMaxSecondaryChartCorrection_P_T\":{:?},\"tighterMaxSecondaryChartCorrection_P_T\":{:?},\"normalMaxSecondaryWaterVolumeDefect_kg_m3\":{:?},\"tighterMaxSecondaryWaterVolumeDefect_kg_m3\":{:?},\"closedSecondaryInventoriesWaterAirNitrogen_kg\":{:?},\"normalSecondaryEnergyChangeByRecipient_J\":{:?},\"tighterSecondaryEnergyChangeByRecipient_J\":{:?},\"pairedSecondaryEnergyDifferenceByRecipient_J\":{secondary_heat_difference:?},\"pairedMaxSecondaryPhaseMassDifference_kg\":{delta_phase_mass},\"propertyTupleCountScope\":\"run construction and original preparation plus callbacks and accepted-state probes; excludes strict-input validation preparation; aggregate wall includes preparation\",\"secondaryPropertyDomain\":\"273.15..623.15K, IF97Pmin..20MPa, positive-air wet subboiling branch\",\"secondaryScope\":\"closed cold fully-wetted equilibrium steam-air/nitrogen storage with subboiling external Churchill-Chu contacts; no ports or ultimate sink\"",
+        normal.max_secondary_chart,
+        tighter.max_secondary_chart,
+        normal.max_secondary_material_volume,
+        tighter.max_secondary_material_volume,
+        normal.secondary_inventories,
+        normal.secondary_energy_change,
+        tighter.secondary_energy_change
     );
     let receipt = format!(
         "{receipt},\"pairedMaxFlowByEdge_kg_s\":{delta_flow:?},\"sampledSignedTransferDifferenceByEdge_kg\":{signed_transfer_difference:?},\"sampledGrossTransferDifferenceByEdge_kg\":{gross_transfer_difference:?},\"transferDiagnosticMeaning\":\"one-second trapezoidal samples; not solver-integrated; startup aliasing possible\""

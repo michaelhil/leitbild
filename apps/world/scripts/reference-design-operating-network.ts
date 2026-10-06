@@ -1,5 +1,5 @@
-/** Offline cold connected primary/finite SG-metal input. Not LD-01 installation,
- * a hot shutdown preparation, phase storage, powered equipment or whole plant. */
+/** Offline cold connected primary/finite SG metal and wet secondary input.
+ * Not LD-01 installation, hot shutdown, powered equipment or whole plant. */
 import { createHash } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -22,6 +22,9 @@ type Hydraulic = { id: string; kind: 0 | 2 | 3 | 4 | 5; from: number; to: number
   gridMultiplierOrAnnularDarcyCoefficient: number; basis: string }
 type Heat = { kind: 2; from: number; to: number; area_m2: number; thermalDiameter_m: number;
   flowArea_m2: number; hydraulicEdge: number; basis: string }
+type Secondary = { id: string; volume_m3: number; temperature_K: number; pressure_Pa: number;
+  liquidVolume_m3: number; gasVolume_m3: number; nitrogenMass_kg: number; minimumWettedVolume_m3: number }
+type SecondaryHeat = { solid: number; secondary: number; area_m2: number; diameter_m: number }
 
 /** Read the CURRENT selected noncore table; old pressure calibration is not run. */
 export function parseOperatingNoncoreLosses(document: string) {
@@ -48,6 +51,26 @@ export function parseOperatingSgColdContact(document: string) {
   const result = { area_m2: Number(geometry[1]!.replaceAll(',', '')), diameter_m: Number(geometry[2]),
     temperature_K: Number(initial[1]) + 273.15, capacity_J_K: Number(initial[2]) * 1e6 }
   if (!Object.values(result).every(v => Number.isFinite(v) && v > 0)) throw Error('Invalid current SG thermal geometry')
+  return result
+}
+
+/** Consume the physical preparation, not historical property-formulation inventories. */
+export function parseOperatingSgSecondary(document: string) {
+  const cold = document.split('### Cold secondary and startup heat-receiving path')[1]?.split('###')[0]
+  const initial = cold?.match(/Each SG starts at ([\d.]+)°C, ([\d.]+) Pa total absolute pressure, with its existing ([\d.]+) m³ envelope divided into ([\d.]+) m³ liquid and ([\d.]+) m³ shared gas/)
+  const geometry = document.split('## Secondary exposure and local metal storage')[1]?.split('###')[0]
+  const surface = geometry?.match(/horizontal area \*\*([\d.]+) m²\*\*, bottom \*\*\+([\d.]+) m\*\*/)
+  const crest = geometry?.match(/crown at \+([\d.]+) m/)
+  if (!initial || !surface || !crest || !cold?.includes('nitrogen is zero'))
+    throw Error('Missing current SG cold material preparation/contact geometry')
+  const result = { temperature_K: Number(initial[1]) + 273.15, pressure_Pa: Number(initial[2]),
+    volume_m3: Number(initial[3]), liquidVolume_m3: Number(initial[4]), gasVolume_m3: Number(initial[5]),
+    nitrogenMass_kg: 0, minimumWettedVolume_m3: (Number(crest[1]) - Number(surface[2])) * Number(surface[1]) }
+  if (![result.temperature_K, result.pressure_Pa, result.volume_m3, result.liquidVolume_m3,
+    result.gasVolume_m3, result.minimumWettedVolume_m3].every(v => Number.isFinite(v) && v > 0)
+    || Math.abs(result.liquidVolume_m3 + result.gasVolume_m3 - result.volume_m3) > 1e-10 * result.volume_m3
+    || result.liquidVolume_m3 < result.minimumWettedVolume_m3)
+    throw Error('Invalid current SG cold volume/fully-wetted preparation')
   return result
 }
 
@@ -113,13 +136,16 @@ export async function compileOperatingNetwork(wikiDirectory: string, controls: z
   const extras = ['model/primary-hydraulic-basis.md', 'systems/steam-generation/thermodynamics.md',
     'systems/reactor/radial-energy-transient.md', 'model/connected-primary-initialization.md',
     'systems/reactor/control-absorber-and-guide-water.md', 'systems/reactor/core-coolant-delivery.md',
-    'systems/primary-coolant/mechanical-energy-and-geometry.md']
+    'systems/primary-coolant/mechanical-energy-and-geometry.md',
+    'systems/passive-cooling/residual-heat-exchanger.md']
   const docs = await Promise.all(extras.map(p => Bun.file(join(wiki, p)).text()))
   const losses = parseOperatingNoncoreLosses(docs[0]!), sg = parseOperatingSgColdContact(docs[1]!),
+    secondaryPreparation = parseOperatingSgSecondary(docs[1]!),
     fuel = fuelGeometry(d.fuel), core = parseConnectedFuelSelection(docs[3]!), cohorts = parseOperatingFuelCohorts(docs[2]!),
     guideDrag = parseOperatingGuideDrag(docs[4]!), source = compileSourcePartition(d),
     originalPreparation = compilePrimaryWaterGeometry(source, d),
-    water: Water[] = [], solids: Solid[] = [], hydraulic: Hydraulic[] = [], heat: Heat[] = []
+    water: Water[] = [], solids: Solid[] = [], hydraulic: Hydraulic[] = [], heat: Heat[] = [],
+    secondaries: Secondary[] = [], secondaryHeat: SecondaryHeat[] = []
   const indexes = new Map<string, number>(), add = (id: string, V: number, z: number, owners: string[]) => {
     if (indexes.has(id) || !(V > 0 && Number.isFinite(V + z))) throw Error('Invalid/duplicate operating water owner: ' + id)
     indexes.set(id, water.length); water.push({ id, volume_m3: V, elevation_m: z, markerRatio: d.cold.primaryAbsorberRatio, owners })
@@ -132,6 +158,8 @@ export async function compileOperatingNetwork(wikiDirectory: string, controls: z
     + physical.input.housings.reduce((s, h) => s + h.volume_m3 * h.meanElevation_m, 0)
   add('UPPER', upperV, upperMoment / upperV, ['UPPER', ...physical.input.housings.map(h => h.id)])
   for (const loop of ['A', 'B'] as const) {
+    const secondary = secondaries.length
+    secondaries.push({ id: `SG.${loop}.SECONDARY`, ...secondaryPreparation })
     add(`HOT.${loop}`, g[`HOT.${loop}`].volume_m3, g[`HOT.${loop}`].meanElevation_m,
       loop === 'A' ? ['HOT.A.BEFORE', 'HOT.A.J', 'HOT.A.AFTER'] : ['HOT.B'])
     for (let piece = 0; piece < 4; piece++) {
@@ -141,6 +169,7 @@ export async function compileOperatingNetwork(wikiDirectory: string, controls: z
           g[`SG.${loop}.PRIMARY`].outletElevation_m!, piece * L / 4, (piece + 1) * L / 4), [`SG.${loop}.PRIMARY`])
       solids.push({ id: `SG.${loop}.METAL.${piece + 1}`, capacity_J_K: sg.capacity_J_K / 4,
         temperature_K: sg.temperature_K, owners: [`SG.${loop}.METAL`] })
+      secondaryHeat.push({ solid: solids.length - 1, secondary, area_m2: sg.area_m2 / 4, diameter_m: sg.diameter_m })
     }
     for (const ordinal of [1, 2]) add(`P.${loop}${ordinal}.PASSAGE`, d.primary.pumpPassageVolume_m3,
       g[`SG.${loop}.PRIMARY`].outletElevation_m!, [`P.${loop}${ordinal}.PASSAGE`])
@@ -222,7 +251,11 @@ export async function compileOperatingNetwork(wikiDirectory: string, controls: z
     ...solids.map(s => [s.capacity_J_K, s.temperature_K].join(' ')),
     ...hydraulic.map(e => [e.kind, e.from, e.to, e.length_m, e.area_m2, e.diameter_m, e.roughness_m, e.fixedLoss,
       e.gridMultiplierOrAnnularDarcyCoefficient].join(' ')),
-    ...heat.map(h => [h.kind, h.from, h.to, h.area_m2, h.thermalDiameter_m, h.flowArea_m2, h.hydraulicEdge].join(' ')) ].join('\n') + '\n'
+    ...heat.map(h => [h.kind, h.from, h.to, h.area_m2, h.thermalDiameter_m, h.flowArea_m2, h.hydraulicEdge].join(' ')),
+    [secondaries.length, secondaryHeat.length].join(' '),
+    ...secondaries.map(s => [s.volume_m3, s.temperature_K, s.pressure_Pa, s.liquidVolume_m3,
+      s.nitrogenMass_kg, s.minimumWettedVolume_m3].join(' ')),
+    ...secondaryHeat.map(h => [h.solid, h.secondary, h.area_m2, h.diameter_m].join(' ')) ].join('\n') + '\n'
   const identities = [...physical.identity, ...extras.map((name, i) => ({ name, sha256: sha(docs[i]!) }))]
   const observed = new Map<string, string>()
   for (const identity of identities) {
@@ -231,18 +264,20 @@ export async function compileOperatingNetwork(wikiDirectory: string, controls: z
     observed.set(identity.name, identity.sha256)
   }
   const uniqueIdentities = [...new Map(identities.map(i => [i.name, i])).values()]
-  return { design: 'LD-01', preparation: 'Fresh cold point-lumped primary/finite SG metal, stationary fully inserted physical geometry',
+  return { design: 'LD-01', preparation: 'Fresh cold point-lumped primary/finite SG metal and closed wet water-steam-air secondaries, stationary fully inserted physical geometry',
     anchor: d.anchor, controls: run, originalPreparation: { minimumSpan_m: originalPreparation.minimumHSSpan_m,
       relativeMassScreen: originalWaterMassRelativeScreen, scope: 'Original point initializer precision allocation only, not inherited quadrature inventory acceptance' },
-    water, solids, hydraulic, heat, includedWaterVolume_m3: V,
+    water, solids, hydraulic, heat, secondaries, secondaryHeat, includedWaterVolume_m3: V,
     omittedWaterSupports: [{ id: 'PZR', volume_m3: g.PZR.volume_m3 }, { id: 'SURGE', volume_m3: physical.input.surge.liquidVolume_m3 }],
     sourceResolution: { compiledGeometryRegions: source.regionCount, comparatorNeutronCoordinates: source.neutronCoordinates,
       assemblies: d.fuel.assemblies, materialHistorySegments: 2 * d.fuel.assemblies,
       comparatorFuelCladCoordinates: d.fuel.assemblies * cohorts.axialBands * (cohorts.fuelIntervals + cohorts.cladIntervals + 2),
       sharedHeliumOwners: d.fuel.assemblies, sourceOrHistoryAdvanced: false,
       scope: 'Actual consumed owner counts; nuclear populations, precursor/poison/decay histories and coupled source cost remain outside this advancing partial model' },
-    limitations: ['No PZR/surge or gas/phase closure: their computational boundary is cut, not an achieved physical isolation',
-      'No source/fuel/clad/decay heating, secondary fluid, PRHR/WST, electrical/I&C, sensing or actuator behavior',
+    limitations: ['No PZR/surge: their computational boundary is cut, not an achieved physical isolation',
+      'No source/fuel/clad/decay heating, PRHR/WST, electrical/I&C, sensing or actuator behavior',
+      'SG secondary is closed, liquid-bearing, fully wetted and sub-boiling; no steam/feed/header/relief/tube-leak ports, gas-exposed contacts, dryout or phase-exhaustion continuation',
+      'Cold secondary inventories are recomputed from the physical preparation using pinned IF97, not imported from historical HEOS receipts; engineering diagnostics are not acquired instrument readings',
       'Sound-filtered cold inventory pressure and quasi-steady hydraulic flows; no retained contact inertia, pump shaft/head/coastdown or acoustic/water-hammer fidelity claim',
       'Hold original finite energy/tracer/aggregate-mass/metal stocks and jointly initialize algebraic pressures/flows and differential rates; zero-flow guess is not an admitted rest state or advancing startup',
       'Reduced internal-plus-gravitational energy neglects fluid kinetic storage and convective velocity-change recovery; cold qualification screens their local scales, not full mechanical accuracy',
@@ -250,9 +285,9 @@ export async function compileOperatingNetwork(wikiDirectory: string, controls: z
       'Point-lumped fresh EOS preparation does not inherit quadrature/native original inventory admission',
       'HOT/SG/pump use a prospective molecular-floor/TOTAL-budget reduced loss law, not measured turbulent local correlations; SG aggregate hydraulic Dh is not its .020m thermal diameter',
       'Four SG water/metal regions use incoming local mass current for the sensible-film speed; point sampling and common outlet-tail resistance lumping are spatial reductions, not local temperature/velocity validation',
-      'Finite SG metal cools while primary warms; no continuing SG cooling duty or natural-circulation calibration is qualified'],
+      'Finite cold SG metal and secondary can release stored heat while primary warms; no continuing SG cooling duty, ultimate sink or natural-circulation calibration is qualified'],
     ownerIdentities: uniqueIdentities, helperIdentities: await helperIdentities(import.meta.path), nativeInput,
-    nativeInputSha256: sha(nativeInput), scope: 'Reusable cold connected operating blocks; no hot shutdown or whole-plant feasibility qualification' }
+    nativeInputSha256: sha(nativeInput), scope: 'Reusable cold connected primary-metal-secondary blocks; no hot shutdown or whole-plant feasibility qualification' }
 }
 
 if (import.meta.main) {
@@ -262,5 +297,6 @@ if (import.meta.main) {
   const result = await compileOperatingNetwork(wiki, { horizon_s: Number(horizon), remainingBudget_s: Number(budget) })
   await writeFile(resolve(output), JSON.stringify(result, null, 2) + '\n', { flag: 'wx' })
   console.log(JSON.stringify({ output: resolve(output), water: result.water.length, solids: result.solids.length,
-    hydraulic: result.hydraulic.length, heat: result.heat.length, inputSha256: result.nativeInputSha256, scope: result.scope }))
+    hydraulic: result.hydraulic.length, heat: result.heat.length, secondaries: result.secondaries.length,
+    secondaryHeat: result.secondaryHeat.length, inputSha256: result.nativeInputSha256, scope: result.scope }))
 }

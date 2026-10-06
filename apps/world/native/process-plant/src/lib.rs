@@ -12,6 +12,7 @@ pub mod original_water;
 pub mod primary_constraints;
 pub mod operating_network;
 pub mod heat_history;
+pub mod sg_secondary;
 
 pub const GRAVITY: f64 = 9.80665;
 

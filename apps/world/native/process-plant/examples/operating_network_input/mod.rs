@@ -121,11 +121,35 @@ pub fn parse(tokens: &mut std::str::SplitWhitespace<'_>) -> Result<Input, String
         };
         heat.push(Heat { from, to, law });
     }
+    let nk: usize = value(tokens)?;
+    let ncontact: usize = value(tokens)?;
+    let mut secondaries = vec![];
+    let mut secondary_heat = vec![];
+    for _ in 0..nk {
+        secondaries.push(Secondary {
+            volume: value(tokens)?,
+            initial_temperature: value(tokens)?,
+            initial_pressure: value(tokens)?,
+            initial_liquid_volume: value(tokens)?,
+            initial_nitrogen_mass: value(tokens)?,
+            minimum_wetted_liquid_volume: value(tokens)?,
+        });
+    }
+    for _ in 0..ncontact {
+        secondary_heat.push(SecondaryHeat {
+            solid: value(tokens)?,
+            secondary: value(tokens)?,
+            area: value(tokens)?,
+            diameter: value(tokens)?,
+        });
+    }
     let config = Config {
         water,
         solids,
         hydraulic,
         heat,
+        secondaries,
+        secondary_heat,
     };
     Network::new(config.clone())?;
     Ok(Input {
@@ -141,7 +165,7 @@ mod tests {
     const INPUT: &str = "2 1 1 1 300 120 300000 300 2.5 0.5 2e-8
         1 2.5 0.002 2 2.5 0.002 1000 313
         0 0 1 1 0.1 0.356 0 1 0
-        0 0 2 10";
+        0 0 2 10 0 0";
     #[test]
     fn unchanged_network_format_stops_exactly_before_diagnostic_suffix() {
         let with_suffix = format!("{INPUT} 7");

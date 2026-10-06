@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { annularLaminarGeometry, compileOperatingNetwork, foldedPieceCentroid,
-  parseOperatingGuideDrag, parseOperatingNoncoreLosses, parseOperatingSgColdContact } from './reference-design-operating-network'
+  parseOperatingGuideDrag, parseOperatingNoncoreLosses, parseOperatingSgColdContact,
+  parseOperatingSgSecondary } from './reference-design-operating-network'
 import { foldedGeometry } from './reference-design-primary-mechanics'
 
 const wiki = process.env.LEITBILD_REFERENCE_WIKI
@@ -30,16 +31,26 @@ test('selected prose/table inputs fail closed, rather than supplying plausible c
   expect(() => parseOperatingNoncoreLosses(table.replace('7.511812', 'unknown'))).toThrow()
   expect(() => parseOperatingNoncoreLosses(table.replace('| HOT path |', '| Historical HOT |'))).toThrow()
   expect(() => parseOperatingSgColdContact('')).toThrow()
+  expect(() => parseOperatingSgSecondary('')).toThrow()
   expect(() => parseOperatingGuideDrag('')).toThrow()
 })
 
 const ownerTest = wiki ? test : test.skip
-ownerTest('actual owners compile one finite connected cold primary/SG-metal partial', async () => {
+ownerTest('actual owners compile both finite SG secondaries and reciprocal metal contacts', async () => {
   const p = await compileOperatingNetwork(wiki!, { horizon_s: 300, remainingBudget_s: 120 })
   expect(p.water.length).toBe(26)
   expect(p.solids.length).toBe(8)
   expect(p.hydraulic.length).toBe(32)
   expect(p.heat.length).toBe(8)
+  expect(p.secondaries.length).toBe(2)
+  expect(p.secondaryHeat.length).toBe(8)
+  expect(p.secondaries.map(s => s.id)).toEqual(['SG.A.SECONDARY', 'SG.B.SECONDARY'])
+  for (const s of p.secondaries) expect(s).toMatchObject({ volume_m3: 120, liquidVolume_m3: 72,
+    gasVolume_m3: 48, temperature_K: 313.15, pressure_Pa: 101325, nitrogenMass_kg: 0,
+    minimumWettedVolume_m3: 71.25 })
+  for (const [i, h] of p.secondaryHeat.entries()) expect(h).toEqual({ solid: i,
+    secondary: i < 4 ? 0 : 1, area_m2: 1250, diameter_m: .020 })
+  expect(p.nativeInput.trim().split('\n').slice(-11)[0]).toBe('2 8')
   expect(p.anchor).toEqual({ pressure_Pa: 300000, temperature_K: 300, elevation_m: 2.5 })
   expect(p.solids.reduce((s, n) => s + n.capacity_J_K, 0)).toBe(300e6)
   expect(p.solids.every(n => n.temperature_K === 313.15)).toBe(true)
@@ -63,6 +74,19 @@ ownerTest('actual owners compile one finite connected cold primary/SG-metal part
   expect(p.limitations.some(n => n.includes('zero-flow guess is not an admitted rest state'))).toBe(true)
   expect(p.limitations.some(n => n.includes('flow inertia') || n.includes('drives qdot'))).toBe(false)
 }, 60_000)
+
+test('secondary preparation changes follow the authored physical state and reject incomplete scope', () => {
+  const fixture = '## Secondary exposure and local metal storage\n'
+    + 'horizontal area **7.5 m²**, bottom **+2.5 m**; crown at +12 m.\n'
+    + '### Cold secondary and startup heat-receiving path\n'
+    + 'Each SG starts at 40°C, 101325 Pa total absolute pressure, with its existing 120 m³ envelope divided into 72 m³ liquid and 48 m³ shared gas; nitrogen is zero.\n'
+  expect(parseOperatingSgSecondary(fixture).minimumWettedVolume_m3).toBe(71.25)
+  expect(parseOperatingSgSecondary(fixture.replace('40°C', '35°C')).temperature_K).toBe(308.15)
+  for (const changed of [fixture.replace('nitrogen is zero', 'nitrogen unknown'),
+    fixture.replace('48 m³ shared gas', '47 m³ shared gas'),
+    fixture.replace('72 m³ liquid and 48', '70 m³ liquid and 50'),
+    fixture.replace('crown at +12 m', 'crown at +? m')]) expect(() => parseOperatingSgSecondary(changed)).toThrow()
+})
 
 test('execution controls require a useful interval and one finite allowance', async () => {
   await expect(compileOperatingNetwork('', { horizon_s: 300, remainingBudget_s: 120 })).rejects.toThrow()
