@@ -30,7 +30,8 @@ export async function qualifyOperatingNetwork(wiki: string, binary: string, rece
   const binaryTime = (await stat(executable)).mtimeMs
   const compiledInputs = sources.filter(s => !s.name.startsWith('examples/')
     || s.name === 'examples/operating-network-ida.rs'
-    || s.name.startsWith('examples/ida_support/') || s.name.startsWith('examples/operating_network_audit/'))
+    || s.name.startsWith('examples/ida_support/') || s.name.startsWith('examples/operating_network_audit/')
+    || s.name.startsWith('examples/operating_network_input/'))
   for (const source of compiledInputs) {
     if ((await stat(join(nativeDirectory, source.name))).mtimeMs > binaryTime)
       throw Error('Native build predates a compiled source; rebuild before execution: ' + source.name)
@@ -75,6 +76,8 @@ export async function qualifyOperatingNetwork(wiki: string, binary: string, rece
     criteria: { pairedTemperature_K: .01, pairedPressure_Pa: 5000, pairedFiniteHeatRelative: .005,
       finiteHeatVersusNumericalDifference: 100, stockLedgerMass_kg: 1e-6, stockLedgerEnergy_J: 1,
       stockLedgerMarker_kg: 1e-8, chartCorrectionPressure_Pa: 5, chartCorrectionTemperature_K: 1e-4,
+      omittedKEquivalent_K: .001, omittedDynamicHead_Pa: 100,
+      momentumHeldHeadProxy: 'diagnostic only; not a coupled correction bound or admission gate',
       meaning: 'Frozen useful cold finite-energy redistribution screen; no full-plant/source/phase/rotor throughput qualification' },
     result, stdout, stderr, scope: 'One normal/tighter cold connected primary/finite-SG-metal partial. The approved shutdown pilot remains unfinished.' }
   await writeFile(output, JSON.stringify(evidence, null, 2) + '\n', { flag: 'wx' })

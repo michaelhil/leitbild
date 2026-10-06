@@ -1,10 +1,12 @@
 //! Offline finite stable-liquid pressure/thermal network.
-//! Selected reduced energy is M*(u+g*z), with no fluid kinetic energy, inertial
-//! passage, pump/rotor, phase, nuclear source or maintained external boundary.
-//! Short links are algebraic viscous/form-loss paths. Their pressure relaxation
-//! is not a claim to remove every fast lumped mode or qualify natural circulation.
+//! Selected reduced thermal energy is M*(u+g*z), neglecting fluid kinetic
+//! energy. Real passages retain geometry-owned I=L/A and I*qdot=head-loss.
+//! Fixed-I momentum neglects convective/density-dilation terms; omitted kinetic
+//! energy needs an independent applicability bound, not an invented heat source.
+//! No pump/rotor, phase, nuclear source or maintained external boundary is here.
+//! Implicit integration is not sound filtering or pressure-wave qualification.
 //! Shared donor enthalpy/elevation/tracer and thermal receipts are reciprocal.
-//! Signed link flows are algebraic coordinates, not differential momentum.
+//! Signed link flows are differential momentum coordinates, not extra stocks.
 use crate::{CellGeometry, GRAVITY, Liquid, LiquidQuery, liquid_batch};
 use std::collections::BTreeSet;
 mod hydraulic;
@@ -122,8 +124,11 @@ impl Network {
                 || matches!(e.law,LossLaw::GuideAnnulus{laminar_darcy} if !laminar_darcy.is_finite() || laminar_darcy<=0.)
                 || !e.flow_area.is_finite()
                 || e.flow_area <= 0.
+                || !e.inertance().is_finite()
+                || e.inertance() <= 0.
+                || !e.inertance().recip().is_finite()
             {
-                return Err("Invalid viscous hydraulic contact".into());
+                return Err("Invalid finite-inertance hydraulic contact".into());
             }
         }
         for e in &config.heat {
@@ -240,13 +245,19 @@ impl Network {
     pub fn dimension(&self) -> usize {
         self.stock_dimension() + self.config.hydraulic.len()
     }
-    /// End of water and solid coordinates, before algebraic signed flows.
+    /// End of water and solid coordinates, before differential signed flows.
     pub fn stock_dimension(&self) -> usize {
         5 * self.config.water.len() + self.config.solids.len()
     }
-    /// Signed kg/s coordinate and pressure-loss residual row for a contact.
+    /// Signed kg/s coordinate and derivative-normalized momentum row.
     pub fn flow_row(&self, edge: usize) -> usize {
         self.stock_dimension() + edge
+    }
+    /// Differential-coordinate classification for solver IDs and matrix audits.
+    /// The caller supplies a compiled coordinate, not an equipment identifier.
+    pub fn is_differential(&self, row: usize) -> bool {
+        assert!(row < self.dimension(), "Invalid compiled coordinate");
+        row >= 5 * self.config.water.len() || row % 5 < 3
     }
     pub fn config(&self) -> &Config {
         &self.config
@@ -294,25 +305,16 @@ impl Network {
             y[5 * self.config.water.len() + i] =
                 s.heat_capacity * (s.initial_temperature - SOLID_DATUM_K);
         }
-        // The scalar inverse is initialization only. Runtime residuals consume
-        // trial q directly and expose the forward pressure-loss equation.
-        for (edge, e) in self.config.hydraulic.iter().enumerate() {
-            let rho = (water[e.from].density + water[e.to].density) * 0.5;
-            let mu = (water[e.from].viscosity + water[e.to].viscosity) * 0.5;
-            let dz = self.config.water[e.to].geometry.elevation
-                - self.config.water[e.from].geometry.elevation;
-            let drive = y[5 * e.from + 3] - y[5 * e.to + 3] - rho * GRAVITY * dz;
-            y[self.flow_row(edge)] = hydraulic::flow(e, drive, rho, mu)
-                .map_err(|s| format!("Original hydraulic edge {edge}: {s}"))?
-                .0;
-        }
+        // Fresh cold preparation is at rest, not a massless steady-flow solve.
+        // evaluate() retains any actual discrete head imbalance as qdot=head/I;
+        // it does not force the prepared pressure field into exact equilibrium.
         Ok(y)
     }
 }
 
 pub struct Workspace {
     pub residual: Vec<f64>,
-    /// Differential balance rates; algebraic slots are zero, not owned stocks.
+    /// Differential stock and signed-flow rates; algebraic p/T slots are zero.
     pub rates: Vec<f64>,
     pub jacobian_values: Vec<f64>,
     pub liquids: Vec<Liquid>,
@@ -490,7 +492,9 @@ impl Workspace {
             if !loss.iter().all(|x| x.is_finite()) || loss[1] <= 0. {
                 return Err(format!("Invalid forward hydraulic loss at edge {edge}"));
             }
-            self.residual[flow_row] = drive - loss[0];
+            let inverse_inertance = e.inertance().recip();
+            self.rates[flow_row] = (drive - loss[0]) * inverse_inertance;
+            self.residual[flow_row] = yp[flow_row] - self.rates[flow_row];
             self.mass_flows[edge] = q;
             let donor = if q >= 0. { e.from } else { e.to };
             let l = self.liquids[donor];
@@ -503,8 +507,13 @@ impl Workspace {
                 self.rates[5 * recipient + 1] += sign * q * h;
                 self.rates[5 * recipient + 2] += sign * q * concentration;
             }
-            if cj.is_some() {
-                self.add(network, flow_row, flow_row, -loss[1]);
+            if let Some(cj) = cj {
+                self.add(
+                    network,
+                    flow_row,
+                    flow_row,
+                    cj + loss[1] * inverse_inertance,
+                );
                 for (recipient, sign) in [(e.from, 1.), (e.to, -1.)] {
                     self.add(network, 5 * recipient, flow_row, sign);
                     self.add(network, 5 * recipient + 1, flow_row, sign * h);
@@ -530,7 +539,7 @@ impl Workspace {
                             network,
                             flow_row,
                             5 * node + j,
-                            dd - loss[2] * dmu - loss[3] * drho,
+                            (-dd + loss[2] * dmu + loss[3] * drho) * inverse_inertance,
                         );
                         let dh = if node == donor {
                             if j == 3 {

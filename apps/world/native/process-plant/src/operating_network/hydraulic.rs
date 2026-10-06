@@ -1,5 +1,5 @@
-//! Current selected single-liquid friction families; no EOS or nested stock
-//! recovery in the algebraic scalar flow solve. Physical turbulent/form losses
+//! Current selected single-liquid friction families and physical passage
+//! inertance; no inverse flow solve or nested stock recovery. Turbulent/form losses
 //! replace a laminar-only domain gate, not supplement already owned friction.
 #[derive(Clone, Copy, Debug)]
 pub enum LossLaw {
@@ -27,6 +27,11 @@ pub struct Hydraulic {
     pub grid_multiplier: f64,
 }
 impl Hydraulic {
+    /// Mass-flow inertance, m^-1: I*qdot has pressure units. The compiled
+    /// contact length partitions its actual passage, with no extra fluid stock.
+    pub fn inertance(&self) -> f64 {
+        self.length / self.flow_area
+    }
     /// Constitutive pressure loss and local q/mu/rho tangents, useful for
     /// diagnosed domain and stiffness receipts without a second flow law.
     pub fn pressure_loss(&self, q: f64, rho: f64, mu: f64) -> [f64; 4] {
@@ -134,71 +139,11 @@ pub fn loss(e: &Hydraulic, q: f64, rho: f64, mu: f64) -> [f64; 4] {
     ]
 }
 
-/// Initialization-only inverse in the operating network. Advancing residuals
-/// consume a signed algebraic q and evaluate `pressure_loss` forward instead.
-pub fn flow(e: &Hydraulic, drive: f64, rho: f64, mu: f64) -> Result<(f64, [f64; 4]), String> {
-    if drive == 0. {
-        let d = loss(e, 0., rho, mu);
-        return Ok((0., d));
-    }
-    let sign = drive.signum();
-    let target = drive.abs();
-    let r = laminar_coefficient(e) * mu * e.length / (2. * rho * e.flow_area * e.diameter.powi(2));
-    let form = e.fixed_loss / (2. * rho * e.flow_area.powi(2));
-    if matches!(e.law, LossLaw::EffectiveTotal) {
-        let q = sign
-            * if form > 0. {
-                (target / r).min((target / form).sqrt())
-            } else {
-                target / r
-            };
-        let d = loss(e, q, rho, mu);
-        if !q.is_finite() || !d.iter().all(|x| x.is_finite()) || d[1] <= 0. {
-            return Err("Invalid effective total hydraulic loss".into());
-        }
-        return Ok((q, d));
-    }
-    let mut hi = 2. * target / (r + (r * r + 4. * form * target).sqrt());
-    if !hi.is_finite() || hi <= 0. {
-        return Err("Nonfinite viscous algebraic flow bracket".into());
-    }
-    // Selected added turbulence/grids make this viscous/form bound an upper
-    // bracket; numerical rounding alone may require a tiny enlargement.
-    if loss(e, hi, rho, mu)[0] < target {
-        hi *= 1. + 1e-12;
-    }
-    let mut lo = 0.;
-    let mut q = hi * 0.5;
-    for _ in 0..64 {
-        let d = loss(e, q, rho, mu);
-        let defect = d[0] - target;
-        if !d.iter().all(|x| x.is_finite()) || d[1] <= 0. {
-            return Err("Nonmonotone/nonfinite selected hydraulic loss".into());
-        }
-        if defect.abs() <= target * 2e-13 {
-            let q = sign * q;
-            return Ok((q, loss(e, q, rho, mu)));
-        }
-        if defect > 0. {
-            hi = q;
-        } else {
-            lo = q;
-        }
-        let next = q - defect / d[1];
-        q = if next > lo && next <= hi {
-            next
-        } else {
-            0.5 * (lo + hi)
-        };
-    }
-    Err("Algebraic hydraulic flow did not close its pressure-loss residual".into())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn selected_families_are_signed_monotone_and_close_actual_loss() {
+    fn selected_families_have_signed_monotone_forward_loss_and_actual_tangents() {
         for law in [
             LossLaw::EffectiveTotal,
             LossLaw::ChurchillPipe,
@@ -221,15 +166,18 @@ mod tests {
                 grid_multiplier: 0.49,
             };
             let mut previous = 0.;
-            for drive in [1e-12, 1e-8, 1e-4, 1., 100., 10000., 1e6] {
-                let (q, d) = flow(&e, drive, 997., 0.001).unwrap();
-                assert!(q > previous && d[1] > 0.);
-                previous = q;
-                assert!((d[0] - drive).abs() <= drive * 3e-13);
-                let (reverse, rd) = flow(&e, -drive, 997., 0.001).unwrap();
-                assert_eq!(reverse, -q);
+            for q in [1e-12, 1e-8, 1e-4, 1., 100., 10000., 1e6] {
+                let d = loss(&e, q, 997., 0.001);
+                assert!(d.iter().all(|v| v.is_finite()));
+                assert!(d[0] > previous && d[1] > 0.);
+                previous = d[0];
+                let rd = loss(&e, -q, 997., 0.001);
                 assert_eq!(rd[0], -d[0]);
+                assert_eq!(rd[1], d[1]);
+                assert_eq!(rd[2], -d[2]);
+                assert_eq!(rd[3], -d[3]);
             }
+            assert_eq!(e.inertance(), 8.);
             let derivative = loss(&e, 0., 997., 0.001)[1];
             let expected =
                 laminar_coefficient(&e) * 0.001 * 4. / (2. * 997. * 0.5 * 0.05_f64.powi(2));

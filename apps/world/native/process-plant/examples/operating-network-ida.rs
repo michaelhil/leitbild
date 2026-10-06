@@ -2,9 +2,9 @@
 //! No live plant, source/PZR/secondary/rotor/control/event implementation.
 mod ida_support;
 mod operating_network_audit;
+mod operating_network_input;
 use ida_support::*;
 use leitbild_plant_numerics::operating_network::*;
-use leitbild_plant_numerics::original_water::OriginalField;
 use std::{
     ffi::c_int,
     io::{self, Read},
@@ -151,29 +151,9 @@ fn original_slopes(work: &mut Work, y: &[f64]) -> Result<Vec<f64>, String> {
         yp[5 * i + 3] = (yp[5 * i] * et - mt * yp[5 * i + 1]) / determinant;
         yp[5 * i + 4] = (mp * yp[5 * i + 1] - yp[5 * i] * ep) / determinant;
     }
-    // Differentiate each algebraic hydraulic law using the SAME nonsteady
-    // chart slopes. This is the physical tangent, not the IDA predictor seed.
-    for edge in 0..work.network.config().hydraulic.len() {
-        let row = work.network.flow_row(edge);
-        let diagonal = get(&work.workspace, &work.network, row, row);
-        if !diagonal.is_finite() || diagonal >= 0. {
-            return Err(format!("Original hydraulic chart rank edge {edge}"));
-        }
-        let other_rate: f64 = (0..work.network.stock_dimension())
-            .map(|col| get(&work.workspace, &work.network, row, col) * yp[col])
-            .sum();
-        yp[row] = -other_rate / diagonal;
-        let terms: Vec<f64> = (0..work.network.dimension())
-            .map(|col| get(&work.workspace, &work.network, row, col) * yp[col])
-            .collect();
-        let sum: f64 = terms.iter().sum();
-        let roundoff = 16. * f64::EPSILON * terms.iter().map(|v| v.abs()).sum::<f64>();
-        if !sum.is_finite() || sum.abs() > roundoff {
-            return Err(format!(
-                "Original differentiated hydraulic law edge {edge}: {sum}"
-            ));
-        }
-    }
+    // Passage qdot is now an actual differential rate from finite L/A inertia,
+    // already copied from workspace.rates. Never differentiate an instantaneous
+    // inverse loss law, or zero a physical momentum rate in the predictor.
     work.evaluate(y, &yp, None)?;
     if work
         .workspace
@@ -205,20 +185,42 @@ fn weighted_rate_norm(rates: &[f64], atol: &[f64]) -> f64 {
         / rates.len() as f64)
         .sqrt()
 }
+// A diagonal, fixed-head proxy is useful telemetry, not a bound on a
+// correction in the coupled pressure/flow system. Never use its magnitude as
+// an independent admission criterion or alter physical weights to satisfy it.
+fn held_head_ratio(defect: f64, diagonal: f64, atol: f64) -> Result<f64, String> {
+    let band = diagonal * atol;
+    if !defect.is_finite() || !band.is_finite() || band <= 0. {
+        return Err("Unresolvable hydraulic diagnostic band".into());
+    }
+    Ok(defect.abs() / band)
+}
 #[cfg(test)]
 mod predictor_tests {
     use super::*;
     #[test]
-    fn algebraic_seed_preserves_stock_rates_and_does_not_mutate_physical_tangent() {
-        let physical = vec![2., 3., 4., 1e12, -1e10, 5., 1e14];
-        let id = vec![1., 1., 1., 0., 0., 1., 0.];
+    fn algebraic_seed_preserves_stock_and_flow_rates_without_mutating_physical_tangent() {
+        let physical = vec![2., 3., 4., 1e12, -1e10, 5., 7.];
+        let id = vec![1., 1., 1., 0., 0., 1., 1.];
         let seed = predictor_slopes(&physical, &id);
-        assert_eq!(seed, vec![2., 3., 4., 0., 0., 5., 0.]);
-        assert_eq!(physical[6], 1e14);
+        assert_eq!(seed, vec![2., 3., 4., 0., 0., 5., 7.]);
+        assert_eq!(physical[3], 1e12);
         assert_eq!(
             weighted_rate_norm(&seed, &vec![1.; 7]),
-            (54_f64 / 7.).sqrt()
+            (103_f64 / 7.).sqrt()
         );
+    }
+    #[test]
+    fn held_head_proxy_is_not_a_coupled_correction_bound() {
+        // J=[[1,100],[0,1]], actual correction=[.1,.01], unit weights.
+        // J*correction=[1.1,.01]: holding the second coordinate fixed would
+        // falsely reject the first, despite both coupled corrections < 1.
+        let correction = [0.1, 0.01];
+        let residual = correction[0] + 100. * correction[1];
+        assert!(held_head_ratio(residual, 1., 1.).unwrap() > 1.);
+        assert!(correction.into_iter().all(|v| v < 1.));
+        assert!(held_head_ratio(f64::NAN, 1., 1.).is_err());
+        assert!(held_head_ratio(1., 0., 1.).is_err());
     }
 }
 fn totals(n: &Network, y: &[f64]) -> [f64; 3] {
@@ -252,12 +254,15 @@ struct Receipt {
     max_ledgers: [f64; 3],
     max_chart: [f64; 2],
     max_flow_law_residual: f64,
+    max_held_head_ratio: f64,
     max_head_roundoff_to_flow_band: f64,
     flow_atol: Vec<f64>,
     flow_contrast: f64,
     initial_rate_norms: [f64; 2],
     max_speed: f64,
     max_kinetic_temperature: f64,
+    max_dynamic_head: f64,
+    max_omitted_kinetic_energy: f64,
     max_reynolds: f64,
     max_reynolds_edge: usize,
     solid_energy_change: f64,
@@ -267,16 +272,24 @@ struct Receipt {
 fn screen(
     work: &mut Work,
     y: &[f64],
+    yp: &[f64],
+    cj: f64,
     initial: &[f64],
     max_ledgers: &mut [f64; 3],
     max_chart: &mut [f64; 2],
     flow_atol: &[f64],
     max_flow_law_residual: &mut f64,
+    max_held_head_ratio: &mut f64,
     max_head_roundoff_to_flow_band: &mut f64,
     speed: &mut f64,
     kinetic_temperature: &mut f64,
+    dynamic_head: &mut f64,
+    omitted_kinetic_energy: &mut f64,
 ) -> Result<(), String> {
-    work.evaluate(y, &vec![0.; y.len()], Some(0.))?;
+    // Admission needs the chart tangent, not a complete transport Jacobian.
+    // Reuse its analytic thermodynamic primitive and avoid extra film/property
+    // derivative probes at every accepted internal step.
+    work.evaluate(y, yp, None)?;
     let total = totals(&work.network, y);
     let total0 = totals(&work.network, initial);
     for i in 0..3 {
@@ -286,10 +299,21 @@ fn screen(
         return Err(format!("Closed stock ledger refused: {max_ledgers:?}"));
     }
     for i in 0..work.network.config().water.len() {
-        let mp = -get(&work.workspace, &work.network, 5 * i + 3, 5 * i + 3);
-        let mt = -get(&work.workspace, &work.network, 5 * i + 3, 5 * i + 4);
-        let ep = -get(&work.workspace, &work.network, 5 * i + 4, 5 * i + 3);
-        let et = -get(&work.workspace, &work.network, 5 * i + 4, 5 * i + 4);
+        let mut water = work.workspace.liquids[i];
+        water.pressure = y[5 * i + 3];
+        water.temperature = y[5 * i + 4];
+        let chart = leitbild_plant_numerics::storage_jacobian(
+            work.network.config().water[i].geometry,
+            water,
+            0.,
+            0.,
+        )?;
+        let (mp, mt, ep, et) = (
+            chart.mass_pressure,
+            chart.mass_temperature,
+            chart.energy_pressure,
+            chart.energy_temperature,
+        );
         let dm = work.workspace.residual[5 * i + 3];
         let de = work.workspace.residual[5 * i + 4];
         let det = mp * et - mt * ep;
@@ -306,6 +330,7 @@ fn screen(
             ));
         }
     }
+    let mut kinetic_estimate = 0.;
     for (edge, (e, q)) in work
         .network
         .config()
@@ -321,9 +346,6 @@ fn screen(
             + work.workspace.liquids[e.to].viscosity)
             * 0.5;
         let re = q.abs() * e.diameter / (e.flow_area * mu);
-        let delta = flow_atol[edge];
-        let lower = e.pressure_loss(*q - delta, rho, mu)[0];
-        let upper = e.pressure_loss(*q + delta, rho, mu)[0];
         let head = rho
             * 9.80665
             * (work.network.config().water[e.to].geometry.elevation
@@ -333,18 +355,20 @@ fn screen(
         // error or a floor in Pa. The receipt exposes arithmetic-limited bands.
         let noise =
             8. * f64::EPSILON * (y[5 * e.from + 3].abs() + y[5 * e.to + 3].abs() + head.abs());
-        let center = e.pressure_loss(*q, rho, mu)[0];
-        let band = (center - lower).min(upper - center);
-        if !band.is_finite() || band <= 0. {
-            return Err(format!("Unresolvable hydraulic accuracy band edge {edge}"));
-        }
+        let loss = e.pressure_loss(*q, rho, mu);
+        let inertance = e.length / e.flow_area;
+        let defect = inertance * yp[work.network.flow_row(edge)] - drive + loss[0];
+        // Diagnostic local, held-endpoint-head Newton-equivalent q correction
+        // at the accepted stage cj. NOT a coupled or temporal error bound.
+        // The old static loss(q +/- atol) bracket is invalid during acceleration.
+        let band = (inertance * cj + loss[1]) * flow_atol[edge];
+        *max_held_head_ratio = max_held_head_ratio.max(held_head_ratio(
+            defect,
+            inertance * cj + loss[1],
+            flow_atol[edge],
+        )?);
         *max_head_roundoff_to_flow_band = max_head_roundoff_to_flow_band.max(noise / band);
-        *max_flow_law_residual = max_flow_law_residual.max((drive - center).abs());
-        if drive < lower - noise || drive > upper + noise {
-            return Err(format!(
-                "Returned hydraulic law edge {edge}: drive={drive}, loss={center}, flow={q}, band=[{lower},{upper}], arithmetic={noise}"
-            ));
-        }
+        *max_flow_law_residual = max_flow_law_residual.max(defect.abs());
         if re > work.max_reynolds {
             work.max_reynolds = re;
             work.max_reynolds_edge = edge;
@@ -354,6 +378,16 @@ fn screen(
             .cp
             .min(work.workspace.liquids[e.to].cp);
         *kinetic_temperature = kinetic_temperature.max(v * v / (2. * cp));
+        *dynamic_head = dynamic_head.max(rho * v * v / 2.);
+        kinetic_estimate += inertance * q * q / (2. * rho);
+    }
+    *omitted_kinetic_energy = omitted_kinetic_energy.max(kinetic_estimate);
+    // Prospective cold-reduction premises, using existing internal thermal
+    // and pressure scales. These are not full-fluid mechanical fidelity claims.
+    if *kinetic_temperature > 1e-3 || *dynamic_head > 100. {
+        return Err(format!(
+            "Cold momentum/energy approximation exceeded: K/cp={kinetic_temperature}, dynamic head={dynamic_head}"
+        ));
     }
     Ok(())
 }
@@ -388,11 +422,17 @@ fn run(
         last_jacobian_state: None,
     });
     let slopes = original_slopes(&mut work, &initial)?;
-    let mut id = vec![1.; n];
+    let id: Vec<f64> = (0..n)
+        .map(|row| {
+            if work.network.is_differential(row) {
+                1.
+            } else {
+                0.
+            }
+        })
+        .collect();
     let mut atol = vec![0.; n];
     for i in 0..nw {
-        id[5 * i + 3] = 0.;
-        id[5 * i + 4] = 0.;
         atol[5 * i] = 1e-5 * factor;
         atol[5 * i + 1] = initial[5 * i] * work.workspace.liquids[i].cp * 1e-3 * factor;
         atol[5 * i + 2] = 1e-8 * factor;
@@ -458,7 +498,6 @@ fn run(
             return Err("Invalid hydraulic error weight".into());
         }
         let row = work.network.flow_row(edge);
-        id[row] = 0.;
         atol[row] = weight;
     }
     let seed_slopes = predictor_slopes(&slopes, &id);
@@ -521,157 +560,214 @@ fn run(
     let mut max_ledgers = [0.; 3];
     let mut max_chart = [0.; 2];
     let mut max_flow_law_residual = 0.;
+    let mut max_held_head_ratio = 0.;
     let mut max_head_roundoff_to_flow_band = 0.;
     let mut max_speed = 0.;
     let mut max_kinetic_temperature = 0.;
-    let mut sample = |time: f64, state: Vec<f64>, work: &mut Work| -> Result<(), String> {
+    let mut max_dynamic_head = 0.;
+    let mut max_omitted_kinetic_energy = 0.;
+    let mut sample = |time: f64,
+                      state: &[f64],
+                      rates: &[f64],
+                      cj: f64,
+                      observation: bool,
+                      work: &mut Work|
+     -> Result<(), String> {
         screen(
             work,
-            &state,
+            state,
+            rates,
+            cj,
             &initial,
             &mut max_ledgers,
             &mut max_chart,
             &flow_atol,
             &mut max_flow_law_residual,
+            &mut max_held_head_ratio,
             &mut max_head_roundoff_to_flow_band,
             &mut max_speed,
             &mut max_kinetic_temperature,
+            &mut max_dynamic_head,
+            &mut max_omitted_kinetic_energy,
         )?;
-        samples.push(Sample {
-            time,
-            temperatures: (0..nw + ns)
-                .map(|i| work.network.temperature(i, &state))
-                .collect(),
-            flows: work.workspace.mass_flows.clone(),
-            heat: work.workspace.heat_flows.clone(),
-            y: state,
-        });
+        if observation {
+            samples.push(Sample {
+                time,
+                temperatures: (0..nw + ns)
+                    .map(|i| work.network.temperature(i, state))
+                    .collect(),
+                flows: work.workspace.mass_flows.clone(),
+                heat: work.workspace.heat_flows.clone(),
+                y: state.to_vec(),
+            });
+        }
         Ok(())
     };
-    sample(0., initial.clone(), &mut work)?;
-    // Exact one-second diagnostic stops, preserving IDA history. No source,
-    // controller or peer is polled here; returned states cannot overshoot stops.
+    sample(0., &initial, &slopes, 0., true, &mut work)?;
+    // Preserve IDA history and screen EACH accepted internal step, not just
+    // one-second observations that could alias inertial peaks. The existing
+    // default 500-step allowance per observation remains an explicit guard
+    // because ONE_STEP calls otherwise bypass NORMAL's per-call limit.
     for second in 1..=horizon as usize {
         let target = second as f64;
         checked(
             unsafe { IDASetStopTime(resources.ida, target) },
             "Network diagnostic stop",
         )?;
-        let mut returned = 0.;
-        let status = unsafe { IDASolve(resources.ida, target, &mut returned, y, yp, 1) };
-        if status < 0 {
-            let mut steps = 0;
-            let mut error_fails = 0;
-            let mut nonlinear_fails = 0;
-            let mut nonlinear_iterations = 0;
-            let mut hlast = 0.;
-            let mut hcurrent = 0.;
-            let mut hinitial = 0.;
-            let mut order = 0;
-            let mut cj = 0.;
-            checked(
-                unsafe { IDAGetNumSteps(resources.ida, &mut steps) },
-                "Failure steps",
-            )?;
-            checked(
-                unsafe { IDAGetNumErrTestFails(resources.ida, &mut error_fails) },
-                "Failure error tests",
-            )?;
-            checked(
-                unsafe { IDAGetNumNonlinSolvConvFails(resources.ida, &mut nonlinear_fails) },
-                "Failure nonlinear failures",
-            )?;
-            checked(
-                unsafe { IDAGetNumNonlinSolvIters(resources.ida, &mut nonlinear_iterations) },
-                "Failure nonlinear iterations",
-            )?;
-            checked(
-                unsafe { IDAGetLastStep(resources.ida, &mut hlast) },
-                "Failure last step",
-            )?;
-            checked(
-                unsafe { IDAGetCurrentStep(resources.ida, &mut hcurrent) },
-                "Failure current step",
-            )?;
-            checked(
-                unsafe { IDAGetActualInitStep(resources.ida, &mut hinitial) },
-                "Failure actual initial step",
-            )?;
-            checked(
-                unsafe { IDAGetCurrentOrder(resources.ida, &mut order) },
-                "Failure current order",
-            )?;
-            checked(
-                unsafe { IDAGetCurrentCj(resources.ida, &mut cj) },
-                "Failure current cj",
-            )?;
-            let state = vector(y, n)?.to_vec();
-            let rates = vector(yp, n)?.to_vec();
-            if work.audit_enabled {
-                operating_network_audit::audit(
-                    &work.network,
-                    &initial,
-                    &slopes,
-                    cj,
-                    &atol,
-                    "original",
+        let mut observation_steps = 0;
+        loop {
+            if observation_steps >= 500 {
+                return Err(format!(
+                    "Existing 500-step observation allowance exhausted at last admitted {} s",
+                    work.admitted_time
+                ));
+            }
+            let mut returned = 0.;
+            let status = unsafe { IDASolve(resources.ida, target, &mut returned, y, yp, 2) };
+            if status < 0 {
+                let mut steps = 0;
+                let mut error_fails = 0;
+                let mut nonlinear_fails = 0;
+                let mut nonlinear_iterations = 0;
+                let mut hlast = 0.;
+                let mut hcurrent = 0.;
+                let mut hinitial = 0.;
+                let mut order = 0;
+                let mut cj = 0.;
+                checked(
+                    unsafe { IDAGetNumSteps(resources.ida, &mut steps) },
+                    "Failure steps",
                 )?;
-                operating_network_audit::audit(
-                    &work.network,
-                    &state,
-                    &rates,
-                    cj,
-                    &atol,
-                    "failure-returned",
+                checked(
+                    unsafe { IDAGetNumErrTestFails(resources.ida, &mut error_fails) },
+                    "Failure error tests",
                 )?;
-                if let Some((jy, jyp, jcj)) = &work.last_jacobian_state {
+                checked(
+                    unsafe { IDAGetNumNonlinSolvConvFails(resources.ida, &mut nonlinear_fails) },
+                    "Failure nonlinear failures",
+                )?;
+                checked(
+                    unsafe { IDAGetNumNonlinSolvIters(resources.ida, &mut nonlinear_iterations) },
+                    "Failure nonlinear iterations",
+                )?;
+                checked(
+                    unsafe { IDAGetLastStep(resources.ida, &mut hlast) },
+                    "Failure last step",
+                )?;
+                checked(
+                    unsafe { IDAGetCurrentStep(resources.ida, &mut hcurrent) },
+                    "Failure current step",
+                )?;
+                checked(
+                    unsafe { IDAGetActualInitStep(resources.ida, &mut hinitial) },
+                    "Failure actual initial step",
+                )?;
+                checked(
+                    unsafe { IDAGetCurrentOrder(resources.ida, &mut order) },
+                    "Failure current order",
+                )?;
+                checked(
+                    unsafe { IDAGetCurrentCj(resources.ida, &mut cj) },
+                    "Failure current cj",
+                )?;
+                let state = vector(y, n)?.to_vec();
+                let rates = vector(yp, n)?.to_vec();
+                if work.audit_enabled {
                     operating_network_audit::audit(
                         &work.network,
-                        jy,
-                        jyp,
-                        *jcj,
+                        &initial,
+                        &slopes,
+                        cj,
                         &atol,
-                        "last-jacobian-stage",
+                        "original",
                     )?;
+                    operating_network_audit::audit(
+                        &work.network,
+                        &state,
+                        &rates,
+                        cj,
+                        &atol,
+                        "failure-returned",
+                    )?;
+                    if let Some((jy, jyp, jcj)) = &work.last_jacobian_state {
+                        operating_network_audit::audit(
+                            &work.network,
+                            jy,
+                            jyp,
+                            *jcj,
+                            &atol,
+                            "last-jacobian-stage",
+                        )?;
+                    }
                 }
-            }
-            if state.iter().chain(&rates).all(|x| x.is_finite()) {
-                println!(
-                    "{{\"scope\":\"failed-operating-network-advancement\",\"representation\":\"explicit-algebraic-contact-flows\",\"solverReturnedTime_s\":{returned},\"independentlyAdmittedTime_s\":{},\"status\":{status},\"steps\":{steps},\"errorTestsFailed\":{error_fails},\"nonlinearFailures\":{nonlinear_fails},\"nonlinearIterations\":{nonlinear_iterations},\"lastStep_s\":{hlast},\"currentStep_s\":{hcurrent},\"initialStep_s\":{hinitial},\"currentOrder\":{order},\"currentCj\":{cj},\"callbackResiduals\":{},\"callbackJacobians\":{},\"propertyTuples\":{},\"flowAtol_kg_s\":{:?},\"preparedRelativeEnthalpyContrast_J_kg\":{flow_contrast},\"maxFlowLawResidual_Pa\":{max_flow_law_residual},\"maxArithmeticNoiseToFlowBand\":{max_head_roundoff_to_flow_band},\"returnedState\":{:?},\"returnedDerivative\":{:?}}}",
+                if state.iter().chain(&rates).all(|x| x.is_finite()) {
+                    println!(
+                        "{{\"scope\":\"failed-operating-network-advancement\",\"representation\":\"geometry-owned-inertial-contact-flows\",\"solverReturnedTime_s\":{returned},\"independentlyAdmittedTime_s\":{},\"status\":{status},\"steps\":{steps},\"errorTestsFailed\":{error_fails},\"nonlinearFailures\":{nonlinear_fails},\"nonlinearIterations\":{nonlinear_iterations},\"lastStep_s\":{hlast},\"currentStep_s\":{hcurrent},\"initialStep_s\":{hinitial},\"currentOrder\":{order},\"currentCj\":{cj},\"callbackResiduals\":{},\"callbackJacobians\":{},\"propertyTuples\":{},\"flowAtol_kg_s\":{:?},\"preparedRelativeEnthalpyContrast_J_kg\":{flow_contrast},\"maxMomentumResidual_Pa\":{max_flow_law_residual},\"maxArithmeticNoiseToFlowBand\":{max_head_roundoff_to_flow_band},\"returnedState\":{:?},\"returnedDerivative\":{:?}}}",
+                        work.admitted_time,
+                        work.residuals,
+                        work.jacobians,
+                        work.property_requests,
+                        flow_atol,
+                        state,
+                        rates
+                    );
+                }
+                return Err(format!(
+                    "Network advancement refused at last admitted {} s, solver returned {} s, status {status}, residuals {}, Jacobians {}, property tuples {}, budget exhausted {}, error {:?}",
                     work.admitted_time,
+                    returned,
                     work.residuals,
                     work.jacobians,
                     work.property_requests,
-                    flow_atol,
-                    state,
-                    rates
+                    work.budget_exhausted,
+                    work.last_error
+                ));
+            }
+            if returned <= work.admitted_time || returned > target + 1e-10 {
+                return Err(
+                    "Network accepted-step time is nonprogressing or overshoots declared stop"
+                        .into(),
                 );
             }
-            return Err(format!(
-                "Network advancement refused at last admitted {} s, solver returned {} s, status {status}, residuals {}, Jacobians {}, property tuples {}, budget exhausted {}, error {:?}",
-                work.admitted_time,
+            let observation = (returned - target).abs() <= 1e-10;
+            let mut accepted_cj = 0.;
+            checked(
+                unsafe { IDAGetCurrentCj(resources.ida, &mut accepted_cj) },
+                "Accepted stage cj",
+            )?;
+            if let Err(error) = sample(
                 returned,
-                work.residuals,
-                work.jacobians,
-                work.property_requests,
-                work.budget_exhausted,
-                work.last_error
-            ));
+                vector(y, n)?,
+                vector(yp, n)?,
+                accepted_cj,
+                observation,
+                &mut work,
+            ) {
+                // Preserve the actual accepted endpoint, not an interpolated
+                // sample, for the existing nonadvancing coupled matrix audit.
+                let state = vector(y, n)?;
+                let rates = vector(yp, n)?;
+                if state.iter().chain(rates).all(|v| v.is_finite()) {
+                    println!(
+                        "{{\"scope\":\"independent-operating-admission-failure\",\"solverReturnedTime_s\":{returned},\"independentlyAdmittedTime_s\":{},\"currentCj\":{accepted_cj},\"absoluteWeights\":{atol:?},\"relativeTolerance\":0,\"returnedState\":{state:?},\"returnedDerivative\":{rates:?}}}",
+                        work.admitted_time
+                    );
+                }
+                return Err(format!(
+                    "Independent returned-state admission refused: last admitted {} s, returned {returned} s, elapsed {} s, residuals {}, Jacobians {}, property tuples {}, cause {error}",
+                    work.admitted_time,
+                    run_started.elapsed().as_secs_f64(),
+                    work.residuals,
+                    work.jacobians,
+                    work.property_requests
+                ));
+            }
+            work.admitted_time = returned;
+            observation_steps += 1;
+            if observation {
+                break;
+            }
         }
-        if (returned - target).abs() > 1e-10 {
-            return Err("Network returned time differs from declared stop".into());
-        }
-        if let Err(error) = sample(returned, vector(y, n)?.to_vec(), &mut work) {
-            return Err(format!(
-                "Independent returned-state admission refused: last admitted {} s, returned {returned} s, elapsed {} s, residuals {}, Jacobians {}, property tuples {}, cause {error}",
-                work.admitted_time,
-                run_started.elapsed().as_secs_f64(),
-                work.residuals,
-                work.jacobians,
-                work.property_requests
-            ));
-        }
-        work.admitted_time = returned;
     }
     let mut steps = 0;
     let mut error_fails = 0;
@@ -705,12 +801,15 @@ fn run(
         max_ledgers,
         max_chart,
         max_flow_law_residual,
+        max_held_head_ratio,
         max_head_roundoff_to_flow_band,
         flow_atol,
         flow_contrast,
         initial_rate_norms,
         max_speed,
         max_kinetic_temperature,
+        max_dynamic_head,
+        max_omitted_kinetic_energy,
         max_reynolds: work.max_reynolds,
         max_reynolds_edge: work.max_reynolds_edge,
         solid_energy_change,
@@ -719,13 +818,6 @@ fn run(
     })
 }
 
-fn value<T: std::str::FromStr>(tokens: &mut std::str::SplitWhitespace<'_>) -> Result<T, String> {
-    tokens
-        .next()
-        .ok_or("Missing operating network numeric input")?
-        .parse()
-        .map_err(|_| "Invalid operating network numeric input".into())
-}
 fn main() -> Result<(), String> {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     if !arguments.is_empty() && arguments.as_slice() != ["--audit"] {
@@ -736,120 +828,19 @@ fn main() -> Result<(), String> {
         .read_to_string(&mut input)
         .map_err(|e| e.to_string())?;
     let mut tokens = input.split_whitespace();
-    let nw: usize = value(&mut tokens)?;
-    let ns: usize = value(&mut tokens)?;
-    let ne: usize = value(&mut tokens)?;
-    let nh: usize = value(&mut tokens)?;
-    let horizon: f64 = value(&mut tokens)?;
-    let budget: f64 = value(&mut tokens)?;
-    if !horizon.is_finite()
-        || horizon < 60.
-        || horizon > 300.
-        || horizon.fract() != 0.
-        || !budget.is_finite()
-        || budget <= 0.
-        || budget > 120.
-    {
-        return Err(
-            "Expected useful integer horizon 60..300 s and aggregate allowance <=120 s".into(),
-        );
-    }
-    let anchor_p: f64 = value(&mut tokens)?;
-    let anchor_t: f64 = value(&mut tokens)?;
-    let anchor_z: f64 = value(&mut tokens)?;
-    let minimum_span: f64 = value(&mut tokens)?;
-    let original_mass_screen: f64 = value(&mut tokens)?;
-    let original = OriginalField::new(
-        anchor_p,
-        anchor_t,
-        anchor_z,
-        minimum_span,
-        original_mass_screen,
-    )?;
-    let mut water = vec![];
-    for _ in 0..nw {
-        let volume = value(&mut tokens)?;
-        let elevation = value(&mut tokens)?;
-        let initial_tracer_fraction = value(&mut tokens)?;
-        let liquid = original.at(elevation)?;
-        water.push(Water {
-            geometry: leitbild_plant_numerics::CellGeometry { volume, elevation },
-            initial_pressure: liquid.pressure,
-            initial_temperature: liquid.temperature,
-            initial_tracer_fraction,
-        });
-    }
-    let mut solids = vec![];
-    for _ in 0..ns {
-        solids.push(Solid {
-            heat_capacity: value(&mut tokens)?,
-            initial_temperature: value(&mut tokens)?,
-        });
-    }
-    let mut hydraulic = vec![];
-    for _ in 0..ne {
-        let kind: u32 = value(&mut tokens)?;
-        let from = value(&mut tokens)?;
-        let to = value(&mut tokens)?;
-        let length = value(&mut tokens)?;
-        let flow_area = value(&mut tokens)?;
-        let diameter = value(&mut tokens)?;
-        let roughness = value(&mut tokens)?;
-        let fixed_loss = value(&mut tokens)?;
-        let grid_value: f64 = value(&mut tokens)?;
-        let law = match kind {
-            0 => LossLaw::EffectiveTotal,
-            1 => LossLaw::ChurchillPipe,
-            2 => LossLaw::ChurchillAnnulus,
-            3 => LossLaw::CoreBundle,
-            4 => LossLaw::GuideAnnulus {
-                laminar_darcy: grid_value,
-            },
-            5 => LossLaw::SmoothColebrook,
-            _ => return Err("Unknown explicitly supported hydraulic law".into()),
-        };
-        hydraulic.push(Hydraulic {
-            from,
-            to,
-            law,
-            length,
-            flow_area,
-            diameter,
-            roughness,
-            fixed_loss,
-            grid_multiplier: if kind == 4 { 0. } else { grid_value },
-        });
-    }
-    let mut heat = vec![];
-    for _ in 0..nh {
-        let kind: u32 = value(&mut tokens)?;
-        let from = value(&mut tokens)?;
-        let to = value(&mut tokens)?;
-        let law = match kind {
-            0 => HeatLaw::Conductance(value(&mut tokens)?),
-            1 => HeatLaw::LiquidFilm {
-                geometry: value(&mut tokens)?,
-            },
-            2 => HeatLaw::SgSensible {
-                area: value(&mut tokens)?,
-                diameter: value(&mut tokens)?,
-                flow_area: value(&mut tokens)?,
-                hydraulic_edge: value(&mut tokens)?,
-            },
-            _ => return Err("Unknown explicitly supported thermal law".into()),
-        };
-        heat.push(Heat { from, to, law });
-    }
+    let input = operating_network_input::parse(&mut tokens)?;
     if tokens.next().is_some() {
         return Err("Trailing operating network input".into());
     }
-    let config = Config {
-        water,
-        solids,
-        hydraulic,
-        heat,
-    };
-    Network::new(config.clone())?;
+    let operating_network_input::Input {
+        config,
+        horizon,
+        budget,
+    } = input;
+    let nw = config.water.len();
+    let ns = config.solids.len();
+    let ne = config.hydraulic.len();
+    let nh = config.heat.len();
     let began = Instant::now();
     let normal = run(config.clone(), horizon, began, budget, 1.)?;
     let tighter = run(config, horizon, began, budget, 0.1)?;
@@ -939,14 +930,25 @@ fn main() -> Result<(), String> {
         .strip_suffix('}')
         .expect("Receipt closing delimiter");
     let receipt = format!(
-        "{receipt},\"initialization\":\"physical-differentiated-tangent-retained; algebraic-first-predictor-slopes-zero\",\"normalInitialPhysicalAndPredictorWRMSRate_per_s\":{:?},\"tighterInitialPhysicalAndPredictorWRMSRate_per_s\":{:?}",
-        normal.initial_rate_norms, tighter.initial_rate_norms
+        "{receipt},\"initialization\":\"fresh-rest; physical stock-and-flow-rates retained; only algebraic pT first predictor slopes zero\",\"normalInitialPhysicalAndPredictorWRMSRate_per_s\":{:?},\"tighterInitialPhysicalAndPredictorWRMSRate_per_s\":{:?},\"differentialCoordinates\":{},\"algebraicCoordinates\":{},\"normalMaxDynamicHead_Pa\":{},\"tighterMaxDynamicHead_Pa\":{},\"normalMaxOmittedKEstimate_J\":{},\"tighterMaxOmittedKEstimate_J\":{},\"admissionSampling\":\"initial and every accepted IDA internal step; paired observations one second apart\",\"momentumScreenMeaning\":\"local held-head Newton-equivalent q correction at actual endpoint cj; not a temporal or coupled error bound\",\"kineticEstimateMeaning\":\"sum L*q^2/(2*A*rhoBar); not a retained exact native kinetic-energy ledger\"",
+        normal.initial_rate_norms,
+        tighter.initial_rate_norms,
+        3 * nw + ns + ne,
+        2 * nw,
+        normal.max_dynamic_head,
+        tighter.max_dynamic_head,
+        normal.max_omitted_kinetic_energy,
+        tighter.max_omitted_kinetic_energy
+    );
+    let receipt = format!(
+        "{receipt},\"normalMaxHeldHeadDiagnosticRatio\":{},\"tighterMaxHeldHeadDiagnosticRatio\":{},\"momentumDiagnosticIsAdmissionGate\":false",
+        normal.max_held_head_ratio, tighter.max_held_head_ratio
     );
     let receipt = format!(
         "{receipt},\"pairedMaxFlowByEdge_kg_s\":{delta_flow:?},\"sampledSignedTransferDifferenceByEdge_kg\":{signed_transfer_difference:?},\"sampledGrossTransferDifferenceByEdge_kg\":{gross_transfer_difference:?},\"transferDiagnosticMeaning\":\"one-second trapezoidal samples; not solver-integrated; startup aliasing possible\""
     );
     println!(
-        "{receipt},\"representation\":\"explicit-algebraic-contact-flows\",\"flowWeightMeaning\":\"fixed 1mK thermal consequence allocation over declared horizon and incident edges; heuristic, not propagated-error proof\",\"normalFlowAtol_kg_s\":{:?},\"tighterFlowAtol_kg_s\":{:?},\"preparedRelativeEnthalpyContrast_J_kg\":{},\"normalMaxFlowLawResidual_Pa\":{},\"tighterMaxFlowLawResidual_Pa\":{},\"normalMaxArithmeticNoiseToFlowBand\":{},\"tighterMaxArithmeticNoiseToFlowBand\":{},\"normalMaxReynolds\":{},\"normalMaxReynoldsEdge\":{},\"tighterMaxReynolds\":{},\"tighterMaxReynoldsEdge\":{}}}",
+        "{receipt},\"representation\":\"geometry-owned-inertial-contact-flows\",\"flowWeightMeaning\":\"fixed 1mK thermal consequence allocation over declared horizon and incident edges; heuristic, not propagated-error proof\",\"normalFlowAtol_kg_s\":{:?},\"tighterFlowAtol_kg_s\":{:?},\"preparedRelativeEnthalpyContrast_J_kg\":{},\"normalMaxMomentumResidual_Pa\":{},\"tighterMaxMomentumResidual_Pa\":{},\"normalMaxArithmeticNoiseToFlowBand\":{},\"tighterMaxArithmeticNoiseToFlowBand\":{},\"normalMaxReynolds\":{},\"normalMaxReynoldsEdge\":{},\"tighterMaxReynolds\":{},\"tighterMaxReynoldsEdge\":{}}}",
         normal.flow_atol,
         tighter.flow_atol,
         normal.flow_contrast,
