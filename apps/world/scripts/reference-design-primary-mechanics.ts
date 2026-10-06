@@ -77,6 +77,278 @@ export function checkColdPartition(oldVolume: number, passage: number, header: n
     throw Error('Cold passage/header partition must own existing loop volume exactly once')
 }
 
+export const currentPrimaryBaseIds = ['DOWNCOMER', 'LOWER', 'CORE.1', 'CORE.2', 'UPPER',
+  'HOT.A', 'HOT.B', 'SG.A.PRIMARY', 'SG.B.PRIMARY', 'COLD.A', 'COLD.B', 'PZR'] as const
+export type CurrentPrimaryBaseId = typeof currentPrimaryBaseIds[number]
+/** Supplied from CURRENT water/displacement owners, never the old steady solve.
+ * CORE.1/.2 and LOWER/UPPER are EXTERNAL free water ONLY: all internal guide
+ * bore/end water is supplied separately in the open guide cohorts below.
+ * Inlet/outlet elevations are physical mouths, not volume-centre datums. */
+export type CurrentPrimarySupportGeometry = {
+  volume_m3: number; meanElevation_m: number; sourceIdentity: string;
+  area_m2?: number; inletElevation_m?: number; outletElevation_m?: number
+}
+export type CurrentPrimaryMass = {
+  mass_kg: number; massRate_kg_s: number; density_kg_m3: number; densityRate_kg_m3_s: number
+}
+export type CurrentPrimaryGraphInput = {
+  selection: ReturnType<typeof parsePrimaryMechanics>;
+  barrel: ReturnType<typeof parsePrimaryBarrelGeometry>;
+  surge: ReturnType<typeof resolveSurgeRoute>;
+  snapshotIdentity: string;
+  geometry: Record<CurrentPrimaryBaseId, CurrentPrimarySupportGeometry>;
+  hotATee: { length_m: number; meanElevation_m: number; sourceIdentity: string };
+  guideCohorts: {
+    mode: 'stationary-fully-inserted-homogeneous-cold'; sourceIdentity: string;
+    population: { total: number; body: number; thimble: number };
+    cohorts: Array<{ id: 'EMPTY' | 'BODY' | 'THIMBLE'; count: number; singleArea_m2: number;
+      singleVolume_m3: number; bottom_m: number; top_m: number; meanElevation_m: number }>
+  };
+  housingPopulation: number;
+  housings: Array<{ id: string; volume_m3: number; meanElevation_m: number;
+    openingElevation_m: number; sourceIdentity: string }>;
+  masses: Record<string, CurrentPrimaryMass>
+}
+export type CurrentPrimaryGraph = {
+  snapshotIdentity: string;
+  nodes: Array<CurrentPrimarySupportGeometry & CurrentPrimaryMass & { id: string }>;
+  edges: Array<{ id: string; from: number; to: number; fromElevation_m: number;
+    toElevation_m: number; forceOwner: string }>;
+  carriers: Array<{ supportIndex: number; edgeIndex: number; mass: number; massRate: number;
+    area_m2: number; velocityPerMassFlow: number; velocityPerMassFlowRate: number }>;
+  unassignedMomentumSupports: number[];
+  physicalManifoldAdmitted: false; metricCoverageComplete: false;
+  totalVolume_m3: number; totalMass_kg: number;
+  omittedPhysicalPorts: string[]; requiredClosures: string[]; scope: string
+}
+
+/** Physical-record compiler only. Rust owns incidence/rank/tree/cycle algebra.
+ * Every finite water support gets a local mass-incidence row, including open
+ * dead-end housings and the finite PZR boundary. A carrier's one-edge velocity
+ * map is an expressly partial mean-throughflow snapshot reduction: it is NOT
+ * an expansion/unequal-donor kinetic law or a heated low-Mach manifold. */
+export function compileCurrentPrimaryGraph(d: CurrentPrimaryGraphInput): CurrentPrimaryGraph {
+  const finite = (x: number, what: string) => {
+    if (!Number.isFinite(x)) throw Error('Invalid ' + what)
+    return x
+  }
+  const pos = (x: number, what: string) => {
+    if (!(finite(x, what) > 0)) throw Error('Nonpositive ' + what)
+    return x
+  }
+  const identity = (x: string, what: string) => {
+    if (typeof x !== 'string' || !x.trim()) throw Error('Missing ' + what)
+  }
+  const close = (a: number, b: number, what: string) => {
+    if (!Number.isFinite(a + b) || Math.abs(a - b) > 1e-10 * Math.max(Math.abs(a), Math.abs(b), 1e-12))
+      throw Error('Current geometry mismatch: ' + what)
+  }
+  identity(d.snapshotIdentity, 'snapshot identity')
+  if (Object.keys(d.geometry).length !== currentPrimaryBaseIds.length
+    || currentPrimaryBaseIds.some(id => !Object.hasOwn(d.geometry, id))) throw Error('Current base support coverage mismatch')
+  for (const id of currentPrimaryBaseIds) {
+    const q = d.geometry[id]
+    pos(q.volume_m3, id + ' volume'); finite(q.meanElevation_m, id + ' datum'); identity(q.sourceIdentity, id + ' source')
+    if (q.area_m2 !== undefined) pos(q.area_m2, id + ' area')
+    if (q.inletElevation_m !== undefined) finite(q.inletElevation_m, id + ' inlet')
+    if (q.outletElevation_m !== undefined) finite(q.outletElevation_m, id + ' outlet')
+  }
+  const s = schema.parse(d.selection), barrel = barrelSchema.parse(d.barrel), r = d.surge
+  const area = (id: CurrentPrimaryBaseId) => pos(d.geometry[id].area_m2!, id + ' area')
+  const mouth = (id: CurrentPrimaryBaseId, which: 'inletElevation_m' | 'outletElevation_m') =>
+    finite(d.geometry[id][which]!, id + ' ' + which)
+  const hotArea = Math.PI * s.hotInsideDiameter_m ** 2 / 4
+  for (const id of ['HOT.A', 'HOT.B'] as const) close(area(id), hotArea, id + ' bore')
+  close(area('DOWNCOMER'), d.geometry.DOWNCOMER.volume_m3 / (s.downcomerTop_m - s.downcomerBottom_m), 'DOWN area')
+  close(mouth('DOWNCOMER', 'inletElevation_m'), s.downcomerTop_m, 'DOWN inlet')
+  close(mouth('DOWNCOMER', 'outletElevation_m'), s.downcomerBottom_m, 'DOWN outlet')
+  close(mouth('CORE.1', 'outletElevation_m'), mouth('CORE.2', 'inletElevation_m'), 'serial core interface')
+  for (const loop of ['A', 'B'] as const) {
+    close(d.geometry['COLD.' + loop as CurrentPrimaryBaseId].volume_m3, s.coldHeaderVolume_m3, 'current COLD header ' + loop)
+    const id = 'SG.' + loop + '.PRIMARY' as CurrentPrimaryBaseId
+    close(area(id), d.geometry[id].volume_m3 / s.sgDevelopedLength_m, id + ' developed section')
+  }
+  const ret = coldReturnGeometry(s, barrel, d.geometry.DOWNCOMER.volume_m3)
+  identity(d.hotATee.sourceIdentity, 'HOT.A tee source')
+  pos(d.hotATee.length_m, 'HOT.A tee length'); finite(d.hotATee.meanElevation_m, 'HOT.A tee datum')
+  close(d.hotATee.meanElevation_m, d.geometry['HOT.A'].meanElevation_m, 'horizontal HOT.A tee datum')
+  const teeVolume = hotArea * d.hotATee.length_m, remainingHot = d.geometry['HOT.A'].volume_m3 - teeVolume
+  pos(remainingHot, 'HOT.A remaining inventory')
+  // Midpoint attachment, with the SAME finite one-metre water carved out.
+  close(r.sourceElevation_m, d.hotATee.meanElevation_m, 'surge source at HOT.A midpoint')
+  pos(r.area_m2, 'surge area'); pos(r.liquidVolume_m3, 'surge volume')
+  close(r.liquidVolume_m3, r.area_m2 * r.developedLength_m, 'surge finite length')
+  finite(r.volumeMeanElevation_m, 'surge datum'); finite(r.receiverElevation_m, 'surge PZR mouth')
+  const nodes: CurrentPrimaryGraph['nodes'] = [], edges: CurrentPrimaryGraph['edges'] = [],
+    carriers: CurrentPrimaryGraph['carriers'] = [], indexes = new Map<string, number>(),
+    mapped = new Set<number>()
+  const add = (id: string, q: CurrentPrimarySupportGeometry) => {
+    if (!/^[A-Za-z0-9_.-]+$/.test(id) || indexes.has(id)) throw Error('Duplicate/invalid water support ' + id)
+    pos(q.volume_m3, id + ' volume'); finite(q.meanElevation_m, id + ' datum'); identity(q.sourceIdentity, id + ' source')
+    if (!Object.hasOwn(d.masses, id)) throw Error('Missing finite water snapshot ' + id)
+    const m = d.masses[id]!
+    pos(m.mass_kg, id + ' mass'); pos(m.density_kg_m3, id + ' density')
+    finite(m.massRate_kg_s, id + ' mass rate'); finite(m.densityRate_kg_m3_s, id + ' density rate')
+    close(m.mass_kg, m.density_kg_m3 * q.volume_m3, id + ' mass/volume snapshot')
+    indexes.set(id, nodes.length); nodes.push({ ...q, ...m, id })
+  }
+  const copy = (id: CurrentPrimaryBaseId) => add(id, d.geometry[id])
+  for (const id of ['DOWNCOMER', 'LOWER', 'CORE.1', 'CORE.2', 'UPPER'] as const) copy(id)
+  for (const id of ['HOT.A.BEFORE', 'HOT.A.J', 'HOT.A.AFTER']) add(id, { ...d.geometry['HOT.A'],
+    volume_m3: id === 'HOT.A.J' ? teeVolume : remainingHot / 2,
+    sourceIdentity: id === 'HOT.A.J' ? d.hotATee.sourceIdentity : d.geometry['HOT.A'].sourceIdentity })
+  copy('HOT.B'); copy('SG.A.PRIMARY'); copy('SG.B.PRIMARY')
+  for (const loop of ['A', 'B'] as const) for (const ordinal of [1, 2]) add(`P.${loop}${ordinal}.PASSAGE`, {
+    volume_m3: s.pumpPassageVolume_m3, area_m2: Math.PI * s.pumpPassageInsideDiameter_m ** 2 / 4,
+    meanElevation_m: mouth(`SG.${loop}.PRIMARY`, 'outletElevation_m'),
+    sourceIdentity: 'reference-primary-mechanics pump passage; ' + d.geometry[`SG.${loop}.PRIMARY`].sourceIdentity })
+  copy('COLD.A'); copy('COLD.B')
+  for (const loop of ['A', 'B']) add('RETURN.' + loop, { volume_m3: ret.volumePerTrain_m3,
+    area_m2: ret.area_m2, meanElevation_m: ret.meanElevation_m,
+    sourceIdentity: 'reference-primary-mechanics + reference-primary-barrel-geometry' })
+  const node = (id: string) => {
+    const n = indexes.get(id)
+    if (n === undefined) throw Error('Unknown connection endpoint ' + id)
+    return n
+  }
+  const connect = (from: string, to: string, elevation: number, forceOwner: string) => {
+    finite(elevation, 'connection elevation')
+    const id = from + '->' + to, i = edges.length
+    edges.push({ id, from: node(from), to: node(to), fromElevation_m: elevation, toElevation_m: elevation, forceOwner })
+    return i
+  }
+  const map = (id: string, edgeIndex: number) => {
+    const supportIndex = node(id), q = nodes[supportIndex]!, A = pos(q.area_m2!, id + ' moving area')
+    if (mapped.has(supportIndex)) throw Error('Duplicated kinetic inventory ' + id)
+    mapped.add(supportIndex)
+    const inverse = 1 / (q.density_kg_m3 * A)
+    carriers.push({ supportIndex, edgeIndex, mass: q.mass_kg, massRate: q.massRate_kg_s, area_m2: A,
+      velocityPerMassFlow: inverse, velocityPerMassFlowRate: -inverse * q.densityRate_kg_m3_s / q.density_kg_m3 })
+  }
+  map('DOWNCOMER', connect('DOWNCOMER', 'LOWER', s.downcomerBottom_m, 'DOWN smooth wall; LOWER discharge'))
+  map('CORE.1', connect('LOWER', 'CORE.1', mouth('CORE.1', 'inletElevation_m'), 'CORE external bundle'))
+  map('CORE.2', connect('CORE.1', 'CORE.2', mouth('CORE.1', 'outletElevation_m'), 'CORE external bundle'))
+  connect('CORE.2', 'UPPER', mouth('CORE.2', 'outletElevation_m'), 'UPPER discharge mixing')
+  map('HOT.A.BEFORE', connect('UPPER', 'HOT.A.BEFORE', mouth('HOT.A', 'inletElevation_m'), 'HOT.A wall'))
+  connect('HOT.A.BEFORE', 'HOT.A.J', r.sourceElevation_m, 'HOT.A directional intersection')
+  connect('HOT.A.J', 'HOT.A.AFTER', r.sourceElevation_m, 'HOT.A directional intersection')
+  map('HOT.A.AFTER', connect('HOT.A.AFTER', 'SG.A.PRIMARY', mouth('HOT.A', 'outletElevation_m'), 'HOT.A wall'))
+  map('HOT.B', connect('UPPER', 'HOT.B', mouth('HOT.B', 'inletElevation_m'), 'HOT.B wall'))
+  connect('HOT.B', 'SG.B.PRIMARY', mouth('HOT.B', 'outletElevation_m'), 'SG.B entrance')
+  for (const loop of ['A', 'B'] as const) {
+    const sg = `SG.${loop}.PRIMARY` as const, z = mouth(sg, 'outletElevation_m')
+    for (const ordinal of [1, 2]) {
+      const pump = `P.${loop}${ordinal}.PASSAGE`
+      const inlet = connect(sg, pump, z, `LD01.RCP.${loop}${ordinal} shaft + passage loss`)
+      map(pump, inlet)
+      connect(pump, 'COLD.' + loop, z, 'COLD header reciprocal discharge')
+    }
+    const incoming = connect('COLD.' + loop, 'RETURN.' + loop, z, 'RETURN round entrance')
+    map('RETURN.' + loop, incoming)
+    connect('RETURN.' + loop, 'DOWNCOMER', s.downcomerTop_m, 'RETURN sector stationary turn + moving DOWN join')
+  }
+  // SG has two outlet branches. Use its SINGLE entrance flow, not one pump.
+  for (const loop of ['A', 'B'] as const) {
+    const id = `SG.${loop}.PRIMARY`, supportIndex = node(id)
+    map(id, edges.findIndex(e => e.to === supportIndex))
+  }
+  const guides = d.guideCohorts
+  identity(guides.sourceIdentity, 'guide population source')
+  if (guides.mode !== 'stationary-fully-inserted-homogeneous-cold' || guides.cohorts.length !== 3)
+    throw Error('Guide cohort reduction requires explicit stationary homogeneous cold scope')
+  const integer = (x: number, what: string) => {
+    if (!Number.isSafeInteger(x) || x <= 0) throw Error('Invalid ' + what)
+  }
+  for (const [name, n] of Object.entries(guides.population)) integer(n, 'guide population ' + name)
+  const expected = { EMPTY: guides.population.total - guides.population.body - guides.population.thimble,
+    BODY: guides.population.body, THIMBLE: guides.population.thimble }
+  const guideIds = new Set<string>()
+  for (const g of guides.cohorts) {
+    if (!Object.hasOwn(expected, g.id) || guideIds.has(g.id)) throw Error('Duplicate/unknown guide cohort')
+    guideIds.add(g.id); integer(g.count, 'guide count'); close(g.count, expected[g.id], 'guide population ' + g.id)
+    pos(g.singleArea_m2, 'guide area'); pos(g.singleVolume_m3, 'guide volume')
+    finite(g.bottom_m, 'guide bottom'); finite(g.top_m, 'guide top'); finite(g.meanElevation_m, 'guide datum')
+    if (!(g.top_m > g.bottom_m)) throw Error('Invalid open guide extent')
+    close(g.singleVolume_m3, g.singleArea_m2 * (g.top_m - g.bottom_m), 'constant-section guide cohort')
+    close(g.meanElevation_m, (g.bottom_m + g.top_m) / 2, 'constant-section guide datum')
+    const id = 'GUIDE.' + g.id
+    add(id, { volume_m3: g.count * g.singleVolume_m3, area_m2: g.count * g.singleArea_m2,
+      meanElevation_m: g.meanElevation_m, sourceIdentity: guides.sourceIdentity })
+    map(id, connect('LOWER', id, g.bottom_m, 'open guide lower mouth + stationary wall law'))
+    connect(id, 'UPPER', g.top_m, 'open guide upper mouth + stationary wall law')
+  }
+  add('SURGE', { volume_m3: r.liquidVolume_m3, area_m2: r.area_m2, meanElevation_m: r.volumeMeanElevation_m,
+    sourceIdentity: 'reference-surge-route' }); copy('PZR')
+  map('SURGE', connect('HOT.A.J', 'SURGE', r.sourceElevation_m, 'HOT.A surge intersection; surge wall'))
+  connect('SURGE', 'PZR', r.receiverElevation_m, 'PZR bottom outer surge receiver')
+  integer(d.housingPopulation, 'housing population')
+  if (d.housings.length !== d.housingPopulation) throw Error('Current finite housing coverage mismatch')
+  for (const h of d.housings) {
+    if (!h.id.startsWith('HOUSING.')) throw Error('Housing support id must identify its finite water owner')
+    add(h.id, h)
+    connect('UPPER', h.id, h.openingElevation_m, 'open-bottom sealed-cap housing expansion')
+  }
+  if (Object.keys(d.masses).length !== nodes.length || Object.keys(d.masses).some(id => !indexes.has(id)))
+    throw Error('Unused/duplicate finite water snapshot')
+  return { snapshotIdentity: d.snapshotIdentity, nodes, edges, carriers,
+    unassignedMomentumSupports: nodes.flatMap((_, n) => mapped.has(n) ? [] : [n]),
+    totalVolume_m3: nodes.reduce((a, n) => a + n.volume_m3, 0),
+    totalMass_kg: nodes.reduce((a, n) => a + n.mass_kg, 0),
+    metricCoverageComplete: false, physicalManifoldAdmitted: false,
+    omittedPhysicalPorts: ['COLD BAL/CMT/spray/charging/letdown/instrument/break connections',
+      'DOWN DVI/neck/break connections', 'HOT.A downstream RHR/PRHR takeoffs',
+      'UPPER head/WELL/refueling connections', 'SG primary-secondary leakage/break paths',
+      'PZR internal ten-region phase and heater/relief/spray connections'],
+    requiredClosures: ['current support mean-motion/expansion maps (including mixed junctions and all housings)',
+      'HOT.A directional midpoint vector momentum and reciprocal work',
+      'moving RETURN/DOWN turning and gravity/pressure work',
+      'actual pump rotor/shaft, passive loss and guide wall force-work projections',
+      'heated dynamic thermodynamic-pressure/PZR phase manifold and reciprocal entropy work',
+      'energy-row flow elimination, pressure gauge and differential/algebraic index proof'],
+    scope: 'Current-owner finite-water connection graph and partial mean-throughflow snapshot map only; no thermal law, EOS preparation, physical manifold, full kinetic coverage, trajectory or live runtime admission' }
+}
+
+export type PrimaryConstraintSnapshot = {
+  gaugeNode: number; massRates: number[]; cycleFlows: number[];
+  edgeMassFlowRates: number[]; nodePressure_Pa: number[]; faceDonorDensity_kg_m3: number[]
+}
+/** Existing native numeric-stdin convention; NOT a graph or matrix solver.
+ * k=e-n+1 is only the connected-graph candidate count. Native Network::new
+ * must independently reject disconnected/rank-defective physical incidence. */
+export function serializePrimaryConstraintSnapshot(g: CurrentPrimaryGraph, d: PrimaryConstraintSnapshot): string {
+  const n = g.nodes.length, e = g.edges.length, k = e - n + 1
+  if (!Number.isSafeInteger(d.gaugeNode) || d.gaugeNode < 0 || d.gaugeNode >= n || k < 0)
+    throw Error('Invalid native gauge or candidate circulation count')
+  const vector = (x: number[], count: number, name: string, positiveOnly = false) => {
+    if (x.length !== count || x.some(v => !Number.isFinite(v) || (positiveOnly && v <= 0)))
+      throw Error('Invalid native ' + name)
+    return x.map(String)
+  }
+  const tokens = [n, e, g.carriers.length, g.unassignedMomentumSupports.length, d.gaugeNode].map(String)
+  for (const edge of g.edges) {
+    if (![edge.from, edge.to].every(x => Number.isSafeInteger(x) && x >= 0 && x < n) || edge.from === edge.to)
+      throw Error('Invalid native physical contact')
+    tokens.push(String(edge.from), String(edge.to))
+  }
+  const owned = new Set<number>()
+  for (const c of g.carriers) {
+    if (!Number.isSafeInteger(c.supportIndex) || !g.nodes[c.supportIndex] || owned.has(c.supportIndex)
+      || !Number.isSafeInteger(c.edgeIndex) || c.edgeIndex < 0 || c.edgeIndex >= e
+      || ![c.mass, c.massRate, c.velocityPerMassFlow, c.velocityPerMassFlowRate].every(Number.isFinite)
+      || c.mass <= 0 || c.velocityPerMassFlow <= 0) throw Error('Invalid native once-owned velocity carrier')
+    owned.add(c.supportIndex)
+    const id = g.nodes[c.supportIndex]!.id
+    if (!/^[A-Za-z0-9_.-]+$/.test(id)) throw Error('Invalid native carrier token')
+    const weights = Array<number>(e).fill(0), rates = Array<number>(e).fill(0)
+    weights[c.edgeIndex] = c.velocityPerMassFlow; rates[c.edgeIndex] = c.velocityPerMassFlowRate
+    tokens.push(id, String(c.mass), String(c.massRate), ...weights.map(String), ...rates.map(String))
+  }
+  tokens.push(...vector(d.massRates, n, 'mass-rate vector'), ...vector(d.cycleFlows, k, 'cycle vector'),
+    ...vector(d.edgeMassFlowRates, e, 'flow-rate vector'), ...vector(d.nodePressure_Pa, n, 'pressure vector', true),
+    ...vector(d.faceDonorDensity_kg_m3, e, 'donor-density vector', true))
+  return tokens.join('\n') + '\n'
+}
+
 const nominalCalculation = primaryReferencePython + String.raw`
 x,_=solve(steady,xseed,'retained nominal diagnostic');e=evaluate(x)
 rho,h,u=properties(e['p'],e['T'])

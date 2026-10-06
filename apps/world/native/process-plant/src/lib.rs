@@ -9,6 +9,7 @@ pub mod horizontal_passage;
 pub mod mixing;
 pub mod moderator_source;
 pub mod original_water;
+pub mod primary_constraints;
 
 pub const GRAVITY: f64 = 9.80665;
 
