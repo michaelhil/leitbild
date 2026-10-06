@@ -128,3 +128,27 @@ test('buoyancy pressure and density gradients share actual smooth neighbors or t
   expect(cpp).toContain('s.rho*s.kappa*vertical');
   expect(cpp).not.toContain('const double dp=-state[i].rho*gravity');
 });
+
+test('coupled consumers receive one authoritative core, not a source-extracted or mirrored residual', () => {
+  const { kernelCpp, cpp } = nativeAxialCandidate(document);
+  expect(cpp.startsWith(kernelCpp)).toBe(true);
+  expect(kernelCpp).not.toContain('int main(');
+  expect(kernelCpp).toContain('CoupledJacobian coupled_jacobian(');
+  expect(kernelCpp).toContain('CoupledOperatorMetrics coupled_operator_gates()');
+  expect(kernelCpp).toContain('for(const auto&pair:chainLinks)link(pair.left,pair.right)');
+  expect(kernelCpp).toContain('body=ringOwners[ring].left;const int tank=ringOwners[ring].right');
+});
+
+test('coupled matrix separates analytic Q/storage from explicit inexact rate probes', () => {
+  const { kernelCpp } = nativeAxialCandidate(document);
+  expect(kernelCpp).toContain('rates(const double* y,RateQJacobian* qJacobian=nullptr)');
+  expect(kernelCpp).toContain('coefficient.derivatives[7][2]*c.V');
+  expect(kernelCpp).toContain('Q is analytic, never caloric-datum differenced');
+  expect(kernelCpp).toContain('entry(E,0,1);if(c.tank)entry(Q,0,-1)');
+  expect(kernelCpp).toContain('predictedEp=chartCommon*Mp+Mc*up(s)');
+  expect(kernelCpp).toContain('derivative of that inverse multiplying a nonzero off-manifold storage defect');
+  expect(kernelCpp).toContain('Q-to-storage column disappeared under absolute caloric datum roundoff');
+  expect(kernelCpp).toContain('Native finite rate probe not representable');
+  expect(kernelCpp).toContain('Retain a fixed structural superset');
+  expect(kernelCpp).toContain('if(structural){J.columnIndices.push_back(column);J.values.push_back(value);}');
+});

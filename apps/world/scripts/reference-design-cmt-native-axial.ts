@@ -90,7 +90,15 @@ function nativeSource(input: ReturnType<typeof fixtureGeometry>) {
   const rows = input.cells.map(c => `{${[c.V, c.z, c.low, c.high, c.A0, c.A1, c.length,
     c.slope, c.Dh, c.tank ? 1 : 0].join(',')}}`).join(',\n');
   const layout = ownedAxialLayout(input.cells.map(c => c.tank));
-  return String.raw`
+  const links = input.cells.flatMap((c, i) => i + 1 < input.cells.length
+    && c.tank === input.cells[i + 1]!.tank ? [{ left: i, right: i + 1 }] : []);
+  const ringOwners = input.b.ringElevations_m.map(z => ({
+    tank: input.cells.findIndex(c => c.tank && z > c.low && z < c.high),
+    body: input.cells.findIndex(c => !c.tank && z < c.low && z > c.high),
+  }));
+  if (ringOwners.some(pair => pair.tank < 0 || pair.body < 0))
+    throw Error('Actual aperture lacks receiving and distributor owner');
+  const kernelCpp = String.raw`
 ${nativeIf97Primitives}
 #include <chrono>
 #include <iostream>
@@ -141,6 +149,13 @@ int ix(int cell,int field) {
     if(index<0)throw std::logic_error("Attempt to address an unowned native coordinate");
     return index;
 }
+struct CellLink {int left,right;};
+const std::array<CellLink,${links.length}> chainLinks{{${links.map(l => `{${l.left},${l.right}}`).join(',')}}};
+const std::array<CellLink,3> ringOwners{{${ringOwners.map(l => `{${l.body},${l.tank}}`).join(',')}}};
+constexpr int Q_COLUMNS=${layout.coordinates.filter(c => c.field === 'Q').length};
+const std::array<int,N> qColumn{{${input.cells.map((c, i) => c.tank
+    ? input.cells.slice(0, i).filter(c => c.tank).length : -1).join(',')}}};
+using RateQJacobian=std::array<std::array<double,Q_COLUMNS>,D>;
 struct CellView {
     const double* values;int cell;
     double operator[](int field) const {return values[ix(cell,field)];}
@@ -262,6 +277,12 @@ const std::array<double,8> gw{{.1012285362903763,.2223810344533745,.313706645877
     .3626837833783620,.3137066458778873,.2223810344533745,.1012285362903763}};
 
 struct SmoothGradients {double pressure,density,velocity;int left,right;bool localReconstruction;};
+CellLink gradient_neighbors(int i){
+    int a=i,b=i;
+    for(const auto&link:chainLinks){if(link.right==i&&std::abs(cells[link.left].A1-cells[i].A0)<=1e-12)a=link.left;
+        if(link.left==i&&std::abs(cells[i].A1-cells[link.right].A0)<=1e-12)b=link.right;}
+    return {a,b};
+}
 SmoothGradients local_reconstructed_gradients(const double*y,const State&s,int i){
     const auto&c=cells[i];
     // Existing fixed-T static trace, not an invented adiabatic compression column.
@@ -269,9 +290,7 @@ SmoothGradients local_reconstructed_gradients(const double*y,const State&s,int i
     return {vertical,s.rho*s.kappa*vertical,0,i,i,true};
 }
 SmoothGradients smooth_gradients(const double*y,const std::array<State,N>&state,const std::array<double,N>&velocity,int i){
-    const auto&c=cells[i];int a=std::max(i<13?0:13,i-1),b=std::min(i<13?12:20,i+1);
-    if(a<i&&std::abs(cells[a].A1-c.A0)>1e-12)a=i;
-    if(b>i&&std::abs(c.A1-cells[b].A0)>1e-12)b=i;
+    const auto&c=cells[i];const auto neighbors=gradient_neighbors(i);const int a=neighbors.left,b=neighbors.right;
     if(a==b)return local_reconstructed_gradients(y,state[i],i);
     const double distance=c.tank?cells[b].z-cells[a].z:
         (cells[a].length+cells[b].length)/2+(a+1<b?cells[a+1].length:0);
@@ -283,10 +302,13 @@ SmoothGradients smooth_gradients(const double*y,const std::array<State,N>&state,
         (state[b].rho-state[a].rho)/distance*vertical,(velocity[b]-velocity[a])/distance,a,b,false};
 }
 
-std::array<double,SAMPLE> rates(const double* y) {
+std::array<double,SAMPLE> rates(const double* y,RateQJacobian* qJacobian=nullptr) {
     // The appended rates are read-only observations, NEVER solver coordinates.
     std::array<double,SAMPLE> out{};
     std::array<State,N> state;std::array<double,N> velocity{},k{},nu{},diff{},tau{},tauPerp{};
+    std::array<double,N> nuQ{},diffQ{},tauQ{},tauPerpQ{};
+    if(qJacobian)*qJacobian={};
+    auto addQ=[&](int row,int cell,double value){if(qJacobian&&cells[cell].tank)(*qJacobian)[row][qColumn[cell]]+=value;};
     for(int i=0;i<N;++i){const auto&c=cells[i];const auto x=view(y,i);
         require(x[M]>0&&x[B]>=0&&(!c.tank||std::isfinite(x[Q])),"Invalid numerical trial native stock");
         state[i]=water(x[TT],x[PP]);velocity[i]=x[P]/x[M];k[i]=c.tank?x[Q]/x[M]:0;
@@ -314,10 +336,16 @@ std::array<double,SAMPLE> rates(const double* y) {
             nu[i]+=node.weight*r[0];diff[i]+=node.weight*r[1];sourceQ+=node.weight*r[7];
             available=available&&coefficient.derivativesAvailable==1;
             if(coefficient.derivativesAvailable)rightSlope+=node.weight*coefficient.derivatives[7][2]*c.V/y[ix(i,M)];
+            if(qJacobian&&c.tank){require(coefficient.derivativesAvailable==1,"Coupled Q tangent unavailable at selected mixing length/domain tie");
+                const double scale=node.weight/y[ix(i,M)];
+                nuQ[i]+=scale*coefficient.derivatives[0][2];diffQ[i]+=scale*coefficient.derivatives[1][2];
+                tauQ[i]+=scale*coefficient.derivatives[5][2];tauPerpQ[i]+=scale*coefficient.derivatives[6][2];
+                addQ(ix(i,Q),i,scale*coefficient.derivatives[7][2]*c.V);}
             tau[i]+=node.weight*r[5];tauPerp[i]+=node.weight*r[6];}
         if(c.tank&&k[i]==0&&available)localRightQSourceSlope[i]=rightSlope;
         if(c.tank)out[ix(i,Q)]+=sourceQ*c.V;
         out[ix(i,P)]-=tauPerp[i]*(c.A1-c.A0);
+        addQ(ix(i,P),i,-tauPerpQ[i]*(c.A1-c.A0));
     }
     auto link=[&](int left,int right){const auto&L=cells[left];const auto&R=cells[right];
         const double z=(L.hi+R.lo)/2;auto l=trace(y,left,z),r=trace(y,right,z);
@@ -331,6 +359,12 @@ std::array<double,SAMPLE> rates(const double* y) {
         out[ix(left,E)]-=port.energy;out[ix(right,E)]+=port.energy;
         out[ix(left,B)]-=port.tracer;out[ix(right,B)]+=port.tracer;
         if(L.tank)out[ix(left,Q)]-=port.mixing;if(R.tank)out[ix(right,Q)]+=port.mixing;
+        // At fixed native p/T/M/P, HLLC/area mass and traction do not depend on Q.
+        // Their donor energy and mixing transport are the same exact linear receipt.
+        const int donor=port.mass>=0?left:right;
+        if(cells[donor].tank){const double derivative=port.mass/y[ix(donor,M)];
+            addQ(ix(left,E),donor,-derivative);addQ(ix(right,E),donor,derivative);
+            if(L.tank)addQ(ix(left,Q),donor,-derivative);if(R.tank)addQ(ix(right,Q),donor,derivative);}
         const double distance=(L.length+R.length)/2,A=std::min(L.A1,R.A0);
         // Molecular conduction and actual tracer diffusion are present even for Q=0.
         const double rho=(l.s.rho+r.s.rho)/2,T=(l.s.T+r.s.T)/2,mu=(l.s.mu+r.s.mu)/2;
@@ -349,20 +383,36 @@ std::array<double,SAMPLE> rates(const double* y) {
         const double work=step?port.mass/2*(tau[left]/l.s.rho+tau[right]/r.s.rho):
             stress*(l.velocity+r.velocity)/2;
         out[ix(left,E)]+=work;out[ix(right,E)]-=work;
+        for(int owner:{left,right})if(cells[owner].tank){
+            const double dnut=nuQ[owner]/2,dkappa=diffQ[owner]/2;
+            const double dJump=(owner==right?1:-1)/y[ix(owner,M)];
+            const double dHeat=-rho*dkappa*T*ds*A;
+            const double dJq=-2*rho*(dnut*(r.k-l.k)+nut*dJump)/distance*A;
+            const double dJb=-rho*dkappa*(r.concentration-l.concentration)/distance*A;
+            addQ(ix(left,E),owner,-dHeat-dJq);addQ(ix(right,E),owner,dHeat+dJq);
+            if(L.tank)addQ(ix(left,Q),owner,-dJq);if(R.tank)addQ(ix(right,Q),owner,dJq);
+            addQ(ix(left,B),owner,-dJb);addQ(ix(right,B),owner,dJb);
+            if(step){if(owner==left)addQ(ix(left,P),owner,tauQ[left]*L.A1);
+                if(owner==right)addQ(ix(right,P),owner,-tauQ[right]*R.A0);}
+            else{const double dStress=tauQ[owner]/2*A;addQ(ix(left,P),owner,dStress);addQ(ix(right,P),owner,-dStress);}
+            const double dWork=step?port.mass/2*tauQ[owner]/(owner==left?l.s.rho:r.s.rho):
+                tauQ[owner]/2*A*(l.velocity+r.velocity)/2;
+            addQ(ix(left,E),owner,dWork);addQ(ix(right,E),owner,-dWork);
+        }
     };
-    for(int i=0;i<12;++i)link(i,i+1);
-    for(int i=13;i<20;++i)link(i,i+1);
+    for(const auto&pair:chainLinks)link(pair.left,pair.right);
     // Actual closed mouth/roof/header/body caps: pressure traction, zero material/heat.
     for(int endpoint:{0,13}){const auto t=trace(y,endpoint,cells[endpoint].lo);auto ghost=t;ghost.velocity=-t.velocity;
         const auto f=hllc(ghost,t);require(std::abs(f.mass)<=1e-10&&std::abs(f.energy)<=1e-3,"Reflecting lower cap moved mass/energy");
-        out[ix(endpoint,P)]+=(f.momentum-tau[endpoint])*cells[endpoint].A0;}
+        out[ix(endpoint,P)]+=(f.momentum-tau[endpoint])*cells[endpoint].A0;
+        addQ(ix(endpoint,P),endpoint,-tauQ[endpoint]*cells[endpoint].A0);}
     for(int endpoint:{12,20}){if(cells[endpoint].A1==0)continue;const auto t=trace(y,endpoint,cells[endpoint].hi);auto ghost=t;ghost.velocity=-t.velocity;
         const auto f=hllc(t,ghost);require(std::abs(f.mass)<=1e-10&&std::abs(f.energy)<=1e-3,"Reflecting upper cap moved mass/energy");
-        out[ix(endpoint,P)]-=(f.momentum-tau[endpoint])*cells[endpoint].A1;}
+        out[ix(endpoint,P)]-=(f.momentum-tau[endpoint])*cells[endpoint].A1;
+        addQ(ix(endpoint,P),endpoint,tauQ[endpoint]*cells[endpoint].A1);}
     const double hdatum=water(313.15,15.2e6).h;
     for(int ring=0;ring<3;++ring){const double center=rings[ring],radius=holeD/2;int body=-1;
-        for(int i=18;i<21;++i)if(center<cells[i].lo&&center>cells[i].hi)body=i;
-        int tank=-1;for(int i=0;i<13;++i)if(center>cells[i].lo&&center<cells[i].hi)tank=i;
+        body=ringOwners[ring].left;const int tank=ringOwners[ring].right;
         require(tank>=0&&body>=0,"Actual circular aperture has no material owner");
         require(center-radius>=cells[tank].lo&&center+radius<=cells[tank].hi
             &&center-radius>=cells[body].hi&&center+radius<=cells[body].lo,
@@ -393,11 +443,14 @@ std::array<double,SAMPLE> rates(const double* y) {
                 require(contracted>0&&contracted<=A*(1+1e-9),"Aperture contraction inadmissible");
                 out[ix(body,M)]-=m;out[ix(tank,M)]+=m;
                 out[ix(body,E)]-=m*H;out[ix(tank,E)]+=m*H;
+                const int donor=forward?body:tank;
+                if(cells[donor].tank){addQ(ix(body,E),donor,-m/y[ix(donor,M)]);addQ(ix(tank,E),donor,m/y[ix(donor,M)]);}
                 out[ix(body,B)]-=m*d.concentration;out[ix(tank,B)]+=m*d.concentration;
                 const double incomingQ=forward?m*(exit*exit/2+Tank.velocity*Tank.velocity/2):0;
                 const double outgoingQ=forward?0:-m*Tank.k;
                 if(forward){out[ix(body,P)]-=m*Bdy.velocity;out[ix(tank,Q)]+=incomingQ;}
-                else{out[ix(tank,P)]+=m*Tank.velocity;out[ix(tank,Q)]-=outgoingQ;}
+                else{out[ix(tank,P)]+=m*Tank.velocity;out[ix(tank,Q)]-=outgoingQ;
+                    addQ(ix(tank,Q),tank,m/y[ix(tank,M)]);}
                 const int r=PHYSICAL+ring*RM;
                 out[r]+=m;out[r+1]+=std::abs(m);out[r+2]+=m*H;out[r+3]+=std::abs(m*H);
                 out[r+4]+=m*d.concentration;out[r+5]+=incomingQ;out[r+6]+=outgoingQ;
@@ -424,6 +477,111 @@ std::array<double,D> conservative_residual(const double*y,const double*dy) {
         r[ix(i,PP)]=(rm*Et-Mt*re)/det;r[ix(i,TT)]=(Mp*re-rm*Ep)/det;
     }
     return r;
+}
+
+// One declared approximate Newton matrix of the ACTUAL residual. Differential
+// non-Q columns use structural coloring and finite SI probes; Q columns use the
+// local Rust partials and same-consumer linear receipts above. Storage rows use
+// the actual current inverse chart frozen during linearization. This omits the
+// derivative of that inverse multiplying a nonzero off-manifold storage defect;
+// it is exact at the coherent root, not an exact Jacobian claim away from it.
+struct CoupledJacobian {
+    std::array<double,D*D> dense{};
+    std::vector<int> rowOffsets,columnIndices;
+    std::vector<double> values;
+    size_t colors=0,rateEvaluations=0;
+};
+struct RateIncidence {
+    std::array<std::array<bool,D>,D> entry{};
+    std::vector<std::vector<int>> colors;
+};
+const RateIncidence& rate_incidence(){
+    static const RateIncidence pattern=[](){RateIncidence p;
+        auto contribution=[&](const std::vector<int>&recipients,const std::vector<int>&inputs){
+            for(int receiver:recipients)for(int field=0;field<5;++field)if(field!=Q||cells[receiver].tank){
+                const int row=ix(receiver,field);
+                for(int owner:inputs)for(int inputField:{M,P,B,PP,TT})
+                    if(inputField!=B||field==B)p.entry[row][ix(owner,inputField)]=true;
+            }
+        };
+        auto mixing_inputs=[](int i){const auto neighbor=gradient_neighbors(i);return std::vector<int>{i,neighbor.left,neighbor.right};};
+        for(int i=0;i<N;++i)contribution({i},mixing_inputs(i));
+        for(const auto&link:chainLinks){auto inputs=mixing_inputs(link.left);const auto right=mixing_inputs(link.right);
+            inputs.insert(inputs.end(),right.begin(),right.end());contribution({link.left,link.right},inputs);}
+        for(const auto&pair:ringOwners)contribution({pair.left,pair.right},{pair.left,pair.right});
+        for(int column=0;column<D;++column){bool present=false;
+            for(int row=0;row<D;++row)present=present||p.entry[row][column];if(!present)continue;
+            size_t color=0;
+            for(;color<p.colors.size();++color){bool conflict=false;
+                for(int other:p.colors[color])for(int row=0;row<D;++row)
+                    conflict=conflict||(p.entry[row][column]&&p.entry[row][other]);
+                if(!conflict)break;
+            }
+            if(color==p.colors.size())p.colors.emplace_back();p.colors[color].push_back(column);
+        }
+        return p;
+    }();return pattern;
+}
+std::array<double,D> rate_probe_steps(const double*y,double scale){
+    require(std::isfinite(scale)&&scale>0,"Invalid declared rate probe scale");std::array<double,D> step{};
+    for(int column=0;column<D;++column){const auto owner=coordinateOwner[column];const double mass=y[ix(owner.cell,M)];
+        switch(owner.field){
+            case M:step[column]=mass*1e-6*scale;break;
+            case P:step[column]=mass*1e-6*scale;break; // physical 1 micrometre/s increment
+            case B:step[column]=std::max(std::abs(y[column]),mass*.002)*1e-6*scale;break;
+            case PP:step[column]=1.*scale;break; // 1 Pa, not relative to absolute-pressure datum
+            case TT:step[column]=1e-4*scale;break;
+            default:break; // E is absent from rates; Q is analytic, never caloric-datum differenced.
+        }
+    }return step;
+}
+CoupledJacobian coupled_jacobian(const double*y,double cj,double probeScale=1){
+    require(std::isfinite(cj),"Invalid current DAE derivative coefficient");CoupledJacobian J;
+    const auto&pattern=rate_incidence();const auto step=rate_probe_steps(y,probeScale);
+    RateQJacobian QJ{};(void)rates(y,&QJ);++J.rateEvaluations;
+    J.colors=pattern.colors.size();
+    for(const auto&group:pattern.colors){std::array<double,D> plus{},minus{};
+        std::copy(y,y+D,plus.begin());std::copy(y,y+D,minus.begin());
+        for(int column:group){plus[column]+=step[column];
+            // Actual zero tracer has a right domain; do not manufacture negative B.
+            const bool right=coordinateOwner[column].field==B&&y[column]<step[column];
+            if(!right)minus[column]-=step[column];
+            require(plus[column]!=y[column]&&(right||minus[column]!=y[column]),"Native finite rate probe not representable");}
+        const auto fp=rates(plus.data()),fm=rates(minus.data());J.rateEvaluations+=2;
+        for(int column:group)for(int row=0;row<D;++row)if(pattern.entry[row][column])
+            J.dense[row*D+column]=-(fp[row]-fm[row])/(plus[column]-minus[column]);
+    }
+    for(int row=0;row<D;++row)for(int i=0;i<N;++i)if(cells[i].tank)
+        J.dense[row*D+ix(i,Q)]=-QJ[row][qColumn[i]];
+    for(int i=0;i<N;++i){const auto&c=cells[i];const auto x=view(y,i);const auto s=water(x[TT],x[PP]);
+        for(int field=0;field<5;++field)if(field!=Q||c.tank)J.dense[ix(i,field)*D+ix(i,field)]+=cj;
+        const double velocity=x[P]/x[M],common=s.u+gravity*c.z-velocity*velocity/2;
+        const double Mp=c.V*s.rho*s.kappa,Mt=-c.V*s.rho*s.alpha;
+        const double Ep=common*Mp+c.V*s.rho*up(s),Et=common*Mt+c.V*s.rho*ut(s),det=Mp*Et-Mt*Ep;
+        require(det>0,"Approximate Newton storage chart lost rank");
+        const double Mc=c.V*s.rho,chartCommon=s.u+gravity*c.z-x[P]*x[P]/(2*Mc*Mc);
+        const double predictedEp=chartCommon*Mp+Mc*up(s),predictedEt=chartCommon*Mt+Mc*ut(s);
+        auto entry=[&](int field,double dMass,double dEnergy){
+            J.dense[ix(i,PP)*D+ix(i,field)]=(dMass*Et-Mt*dEnergy)/det;
+            J.dense[ix(i,TT)*D+ix(i,field)]=(Mp*dEnergy-dMass*Ep)/det;
+        };
+        entry(M,1,0);entry(P,0,-x[P]/Mc);entry(E,0,1);if(c.tank)entry(Q,0,-1);
+        entry(PP,-Mp,-predictedEp);entry(TT,-Mt,-predictedEt);
+    }
+    J.rowOffsets.push_back(0);
+    for(int row=0;row<D;++row){for(int column=0;column<D;++column){const double value=J.dense[row*D+column];
+        require(std::isfinite(value),"Nonfinite coupled approximate Newton entry");
+        const auto receiver=coordinateOwner[row],input=coordinateOwner[column];
+        const bool differential=receiver.field<PP;
+        // Retain a fixed structural superset, including currently zero coefficients.
+        // A sparse consumer may reuse symbolic factorization as flow/Q turn on.
+        const bool structural=pattern.entry[row][column]||(differential&&row==column)
+            ||(differential&&input.field==Q&&pattern.entry[row][ix(input.cell,M)])
+            ||(!differential&&receiver.cell==input.cell&&input.field!=B);
+        require(value==0||structural,"Coupled matrix entry escaped its structural incidence");
+        if(structural){J.columnIndices.push_back(column);J.values.push_back(value);}}
+        J.rowOffsets.push_back(static_cast<int>(J.values.size()));}
+    return J;
 }
 
 void local_gates() {
@@ -493,6 +651,119 @@ std::array<double,D> original() {
         y[ix(i,E)]=y[ix(i,M)]*(s.u+gravity*c.z);}
     return y;
 }
+
+struct CoupledOperatorMetrics {
+    size_t snapshots=0,colors=0,rateEvaluations=0,nonzeroEntries=0;
+    double maximumQEnergyConservationDefect=0,maximumQTracerConservationDefect=0;
+    double maximumFullHalfRelativeDifference=0,maximumDirectionalBudgetFraction=0;
+};
+CoupledOperatorMetrics coupled_operator_gates(){
+    CoupledOperatorMetrics result;
+    std::vector<int> frozenRows,frozenColumns;
+    const auto&pattern=rate_incidence();
+    for(const auto&group:pattern.colors)for(size_t a=0;a<group.size();++a)for(size_t b=a+1;b<group.size();++b)
+        for(int row=0;row<D;++row)require(!(pattern.entry[row][group[a]]&&pattern.entry[row][group[b]]),
+            "Graph color aliases two actual differential dependencies");
+    const auto prepared=original();
+    for(int sample=0;sample<3;++sample){auto y=prepared;
+        if(sample){const double direction=sample==1?1:-1;
+            for(int i=0;i<N;++i){const auto&c=cells[i];
+                y[ix(i,PP)]+=direction*500*(i%3-1);y[ix(i,TT)]+=.01*(i%2);
+                const auto s=water(y[ix(i,TT)],y[ix(i,PP)]);y[ix(i,M)]=c.V*s.rho;
+                y[ix(i,P)]=direction*.03*y[ix(i,M)];y[ix(i,B)]=.002*y[ix(i,M)];
+                if(c.tank)y[ix(i,Q)]=1e-5*y[ix(i,M)];
+                y[ix(i,E)]=y[ix(i,M)]*(s.u+gravity*c.z)+y[ix(i,P)]*y[ix(i,P)]/(2*y[ix(i,M)])+(c.tank?y[ix(i,Q)]:0);
+            }
+        }
+        const auto J=coupled_jacobian(y.data(),2),half=coupled_jacobian(y.data(),2,.5);
+        ++result.snapshots;result.colors=J.colors;result.rateEvaluations+=J.rateEvaluations+half.rateEvaluations;
+        result.nonzeroEntries=std::max(result.nonzeroEntries,J.values.size());
+        require(J.rateEvaluations<2*(D-Q_COLUMNS-N)+1,
+            "Structural coloring did not reduce the actual non-Q/non-E per-column probe count");
+        require(J.rowOffsets.size()==D+1&&J.values.size()==J.columnIndices.size(),"Incomplete sparse approximate Newton matrix");
+        if(!sample){frozenRows=J.rowOffsets;frozenColumns=J.columnIndices;}
+        else require(J.rowOffsets==frozenRows&&J.columnIndices==frozenColumns,
+            "Flow/Q activation changed the declared fixed sparse symbolic structure");
+        for(int row=0;row<D;++row)for(int index=J.rowOffsets[row];index<J.rowOffsets[row+1];++index)
+            require(J.dense[row*D+J.columnIndices[index]]==J.values[index],"Sparse/dense matrix bridge disagrees");
+        auto changedE=y;for(int i=0;i<N;++i)changedE[ix(i,E)]+=1e5;
+        require(rates(y.data())==rates(changedE.data()),"Actual rates acquired an E dependency outside the declared explicit p/T chart");
+        result.rateEvaluations+=2;
+        for(int i=0;i<N;++i){const int pr=ix(i,PP),tr=ix(i,TT),ec=ix(i,E);
+            require(std::abs(J.dense[pr*D+pr]+1)<1e-10&&std::abs(J.dense[tr*D+tr]+1)<1e-10,
+                "Coherent frozen native chart did not recover its pressure/temperature identity");
+            if(cells[i].tank){const int qc=ix(i,Q);
+                require(J.dense[pr*D+qc]!=0&&J.dense[tr*D+qc]!=0,
+                    "Q-to-storage column disappeared under absolute caloric datum roundoff");
+                require(J.dense[pr*D+qc]==-J.dense[pr*D+ec]&&J.dense[tr*D+qc]==-J.dense[tr*D+ec],
+                    "Exact native storage E/Q sign and recipient identity failed");
+                double sumE=0,sumB=0,scaleE=0,scaleB=0;
+                for(int owner=0;owner<N;++owner){sumE+=J.dense[ix(owner,E)*D+qc];sumB+=J.dense[ix(owner,B)*D+qc];
+                    scaleE+=std::abs(J.dense[ix(owner,E)*D+qc]);scaleB+=std::abs(J.dense[ix(owner,B)*D+qc]);}
+                result.maximumQEnergyConservationDefect=std::max(result.maximumQEnergyConservationDefect,std::abs(sumE));
+                result.maximumQTracerConservationDefect=std::max(result.maximumQTracerConservationDefect,std::abs(sumB));
+                require(std::abs(sumE)<=1e-12*std::max(scaleE,1e-20)&&std::abs(sumB)<=1e-12*std::max(scaleB,1e-20),
+                    "Same-consumer analytic Q-column failed paired total energy/tracer transport");
+            }
+        }
+        for(int row=0;row<D;++row)for(int column=0;column<D;++column){const auto owner=coordinateOwner[row];
+            if(owner.field>=PP)continue;const double a=J.dense[row*D+column],b=half.dense[row*D+column];
+            const double scale=std::max(std::abs(a),std::abs(b));
+            if(scale>1e-8)result.maximumFullHalfRelativeDifference=std::max(result.maximumFullHalfRelativeDifference,std::abs(a-b)/scale);
+        }
+        if(sample){
+            const auto steps=rate_probe_steps(y.data(),.1);std::array<double,D> direction{},plus=y,minus=y;
+            for(int column=0;column<D;++column){const auto owner=coordinateOwner[column];
+                direction[column]=steps[column]*(column%2?1:-1);
+                if(owner.field==Q)direction[column]=y[ix(owner.cell,M)]*1e-8*(column%2?1:-1);
+                plus[column]+=direction[column];minus[column]-=direction[column];}
+            const auto fp=rates(plus.data()),fm=rates(minus.data());result.rateEvaluations+=2;
+            for(int row=0;row<D;++row){const auto owner=coordinateOwner[row];if(owner.field>=PP)continue;
+                double predicted=0;for(int column=0;column<D;++column)
+                    predicted+=-2*(J.dense[row*D+column]-(row==column?2:0))*direction[column];
+                const double actual=fp[row]-fm[row];
+                // Qualification of a declared approximate matrix, NOT relaxation of
+                // nonlinear/physical or temporal admission. The original zero/contact
+                // branch is tested separately above, not called globally smooth here.
+                const double roundoff=2e-9*std::max({std::abs(fp[row]),std::abs(fm[row]),1e-12});
+                const double budget=.1*std::max(std::abs(predicted),std::abs(actual))+roundoff;
+                const double fraction=std::abs(predicted-actual)/budget;
+                result.maximumDirectionalBudgetFraction=std::max(result.maximumDirectionalBudgetFraction,fraction);
+                require(fraction<=1,"Complete approximate rate matrix failed resolved changed-state directional increment");
+            }
+            // Isolate the Q column; large acoustic/advective increments must not
+            // conceal a missing Q-to-momentum, diffusion, or local source term.
+            plus=y;minus=y;direction.fill(0);
+            for(int i=0;i<N;++i)if(cells[i].tank){const int column=ix(i,Q);
+                direction[column]=y[ix(i,Q)]*.01*(i%2?1:-1);
+                plus[column]+=direction[column];minus[column]-=direction[column];}
+            const auto qPlus=rates(plus.data()),qMinus=rates(minus.data());result.rateEvaluations+=2;
+            for(int row=0;row<D;++row){const auto owner=coordinateOwner[row];if(owner.field>=PP)continue;
+                double predicted=0;for(int i=0;i<N;++i)if(cells[i].tank){const int column=ix(i,Q);
+                    predicted+=-2*(J.dense[row*D+column]-(row==column?2:0))*direction[column];}
+                const double actual=qPlus[row]-qMinus[row];
+                const double pressureRoundoff=owner.field==P?100*std::numeric_limits<double>::epsilon()
+                    *y[ix(owner.cell,PP)]*std::max(cells[owner.cell].A0,cells[owner.cell].A1):0;
+                const double roundoff=pressureRoundoff+1000*std::numeric_limits<double>::epsilon()
+                    *std::max({std::abs(qPlus[row]),std::abs(qMinus[row]),1e-12});
+                const double budget=.01*std::max(std::abs(predicted),std::abs(actual))+roundoff;
+                const double fraction=std::abs(predicted-actual)/budget;
+                result.maximumDirectionalBudgetFraction=std::max(result.maximumDirectionalBudgetFraction,fraction);
+                require(fraction<=1,"Isolated same-consumer Q column failed resolved directional increment");
+            }
+        }
+        // Off-manifold chart is deliberately frozen, not differentiated as though
+        // its inverse prefactor were constant in the nonlinear residual itself.
+        auto off=y;off[ix(0,M)]*=1+1e-6;off[ix(0,E)]+=100;
+        const auto offJ=coupled_jacobian(off.data(),2);result.rateEvaluations+=offJ.rateEvaluations;
+        const auto offRates=rates(off.data());const auto offResidual=conservative_residual(off.data(),offRates.data());
+        result.rateEvaluations+=2;
+        require(offResidual[ix(0,PP)]!=0||offResidual[ix(0,TT)]!=0,"Off-manifold qualification was silently made coherent");
+    }
+    return result;
+}
+`;
+  return { kernelCpp, cpp: kernelCpp + String.raw`
 ${nativeMixingQualification}
 int main(int argc,char**argv) {
     std::cout<<std::setprecision(17);
@@ -507,11 +778,11 @@ int main(int argc,char**argv) {
         return 1;
     }
 }
-`;
+` };
 }
 
 /** Actual rates/residual payload used by the finite native qualification consumer. */
 export function nativeAxialCandidate(document: string) {
   const geometry = fixtureGeometry(document);
-  return { geometry, cpp: nativeSource(geometry) };
+  return { geometry, ...nativeSource(geometry) };
 }
