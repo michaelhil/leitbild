@@ -4,6 +4,13 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[features]
+offline-ida = []
+
+[[example]]
+name = "fixed-volume-ida"
+required-features = ["offline-ida"]
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
