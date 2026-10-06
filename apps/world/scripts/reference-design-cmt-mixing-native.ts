@@ -8,8 +8,10 @@ import { nativeAxialCandidate } from './reference-design-cmt-native-axial'
 import { nativeIf97HeaderSha256, nativeIf97LicenseSha256 } from './reference-design-if97-primitives'
 
 const sha = (bytes: string | Uint8Array) => createHash('sha256').update(bytes).digest('hex')
-export async function qualifyNativeMixing(if97Directory: string, ownerPath: string, outputPath: string) {
-  const began = performance.now(), allowanceMs = 60_000
+export async function qualifyNativeMixing(if97Directory: string, ownerPath: string, outputPath: string, allowanceMs = 60_000) {
+  if (!Number.isFinite(allowanceMs) || allowanceMs <= 0 || allowanceMs > 60_000)
+    throw Error('Invalid remaining mixing qualification allowance')
+  const began = performance.now()
   const input = resolve(if97Directory), owner = resolve(ownerPath), output = resolve(outputPath)
   try { await readFile(output); throw Error('Receipt exists; refusing overwrite') }
   catch (error) {
@@ -85,7 +87,7 @@ export async function qualifyNativeMixing(if97Directory: string, ownerPath: stri
     sources: sourceFiles.map((path, i) => ({ path, sha256: sha(sources[i]!) })),
     cppSHA256: sha(candidate.cpp), scratch, artifacts, builtArtifacts, unchanged,
     rustVersion, cppVersion, rustBuild, compile, run, nativeResult, parseError,
-    scope: 'Selected local mixing/stress/buoyancy law, branch-local partials and the actual conservative axial residual at finite snapshots only. No time integration, coupled stage-origin selection, complete Jacobian, source calibration, plant installation or throughput qualification.',
+    scope: 'Selected low-Re mixing/stress/buoyancy and molecular variance decay, branch-local/physical-right partials and the actual conservative axial residual at finite snapshots only. No time integration, coupled implicit history admission, complete Jacobian, source calibration, plant installation or throughput qualification.',
   }
   await writeFile(output, JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' })
   return receipt

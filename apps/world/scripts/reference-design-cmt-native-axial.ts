@@ -118,6 +118,8 @@ struct GeometricNode {double weight,radius;};
 constexpr int MIXING_NODES=${input.cells.reduce((sum,c)=>sum+c.quadrature.length,0)};
 ${nativeMixingAbi}
 uint64_t mixing_batches=0,mixing_points=0;
+// Finite qualification observations only, not coordinates or advancement rules.
+std::array<double,N> localRightQSourceSlope{};
 void mixing_batch(const RustMixingInput*inputs,RustMixingOutput*outputs,size_t count,uint32_t trial=1){
     size_t failed=0;unsigned char message[256]{};
     const int status=leitbild_mixing_batch(inputs,outputs,count,trial,&failed,message,sizeof(message));
@@ -300,15 +302,20 @@ std::array<double,SAMPLE> rates(const double* y) {
         for(const auto&node:geometryNodes[i]){
             require(mixingIndex<MIXING_NODES,"Mixing quadrature input overflow");
             mixingInput[mixingIndex++]={state[i].rho,state[i].mu,k[i],state[i].w*state[i].w,gradient.pressure,gradient.density,gradient.velocity,
-                velocity[i]*(c.A1-c.A0)/(2*c.V),node.radius,holeD};
+                velocity[i]*(c.A1-c.A0)/(2*c.V),node.radius,holeD,std::min(holeD,.7*c.Dh/4)};
         }
     }
     require(mixingIndex==MIXING_NODES,"Incomplete mixing quadrature input");
     mixing_batch(mixingInput.data(),mixingOutput.data(),mixingIndex);mixingIndex=0;
+    localRightQSourceSlope.fill(std::numeric_limits<double>::quiet_NaN());
     for(int i=0;i<N;++i){const auto&c=cells[i];double sourceQ=0;
-        for(const auto&node:geometryNodes[i]){const auto&r=mixingOutput[mixingIndex++].rates;
+        double rightSlope=0;bool available=true;
+        for(const auto&node:geometryNodes[i]){const auto&coefficient=mixingOutput[mixingIndex++];const auto&r=coefficient.rates;
             nu[i]+=node.weight*r[0];diff[i]+=node.weight*r[1];sourceQ+=node.weight*r[7];
+            available=available&&coefficient.derivativesAvailable==1;
+            if(coefficient.derivativesAvailable)rightSlope+=node.weight*coefficient.derivatives[7][2]*c.V/y[ix(i,M)];
             tau[i]+=node.weight*r[5];tauPerp[i]+=node.weight*r[6];}
+        if(c.tank&&k[i]==0&&available)localRightQSourceSlope[i]=rightSlope;
         if(c.tank)out[ix(i,Q)]+=sourceQ*c.V;
         out[ix(i,P)]-=tauPerp[i]*(c.A1-c.A0);
     }

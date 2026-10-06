@@ -115,6 +115,9 @@ test('finite mixing mode consumes the actual residual without advancing a field'
   expect(mode).toBeLessThan(cpp.indexOf('local_gates();', mode));
   expect(cpp).toContain('const auto actual=rates(originalState.data())');
   expect(cpp).toContain('Actual zero-origin radial receipts were suppressed');
+  expect(cpp).toContain('node.radius,holeD,std::min(holeD,.7*c.Dh/4)');
+  expect(cpp).toContain('sizeof(RustMixingInput)==88&&sizeof(RustMixingOutput)==776');
+  expect(cpp).not.toContain('std::min(holeD,.7*node.radius)');
 });
 
 test('buoyancy pressure and density gradients share actual smooth neighbors or the declared isothermal local trace', () => {

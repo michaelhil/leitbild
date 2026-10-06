@@ -2,7 +2,7 @@
 //! Rates partition one native E; Q production is not additional total-energy heat.
 use std::mem::{align_of, size_of};
 
-pub const INPUTS: usize = 10;
+pub const INPUTS: usize = 11;
 pub const OUTPUTS: usize = 8;
 pub const GRAVITY: f64 = 9.80665;
 pub const DENSITY: usize = 0;
@@ -15,6 +15,7 @@ pub const AXIAL_STRAIN: usize = 6;
 pub const TRANSVERSE_STRAIN: usize = 7;
 pub const WALL_DISTANCE: usize = 8;
 pub const OUTER_LENGTH: usize = 9;
+pub const VISCOUS_LENGTH: usize = 10;
 
 /// All values SI. Strains are du/dz and the selected mean transverse strain.
 #[repr(C)]
@@ -30,12 +31,14 @@ pub struct Input {
     pub transverse_strain: f64,
     pub wall_distance: f64,
     pub outer_length: f64,
+    /// Positive region-bulk correlation scale, not a quadrature wall distance.
+    pub viscous_length: f64,
 }
 
 /// Derivative meaning, not a persistent turbulence/physical mode flag.
 pub const INTERIOR: u32 = 0;
 pub const STABLE_ZERO_RIGHT: u32 = 1;
-pub const ZERO_SINGULAR: u32 = 2;
+pub const ZERO_RIGHT: u32 = 2;
 pub const LENGTH_TIE: u32 = 3;
 pub const SIGNED_TRIAL: u32 = 4;
 pub const SOLID_ZERO: u32 = 5;
@@ -65,6 +68,7 @@ pub fn evaluate(x: Input, numerical_trial: bool) -> Result<Output, &'static str>
         x.transverse_strain,
         x.wall_distance,
         x.outer_length,
+        x.viscous_length,
     ];
     if !values.iter().all(|v| v.is_finite())
         || x.density <= 0.
@@ -72,6 +76,7 @@ pub fn evaluate(x: Input, numerical_trial: bool) -> Result<Output, &'static str>
         || x.sound_squared <= 0.
         || x.wall_distance < 0.
         || x.outer_length <= 0.
+        || x.viscous_length <= 0.
         || (!numerical_trial && x.k < 0.)
     {
         return Err("Invalid local mixing input/accepted state");
@@ -94,10 +99,24 @@ pub fn evaluate(x: Input, numerical_trial: bool) -> Result<Output, &'static str>
     dn2[DENSITY_GRADIENT] = -GRAVITY / rho;
     let mut nu = 0.;
     let mut kappa = 0.;
-    let mut epsilon = 0.;
+    let molecular_nu = x.viscosity / rho;
+    let mut dmolecular = [0.; INPUTS];
+    dmolecular[DENSITY] = -molecular_nu / rho;
+    dmolecular[VISCOSITY] = 1. / rho;
+    // Signed linear numerical extension is essential: no hidden k floor and no
+    // stress/work mismatch. Negative accepted states are still rejected above.
+    let molecular_decay = 2. * molecular_nu / x.viscous_length.powi(2);
+    let mut epsilon = molecular_decay * x.k;
     let mut dnu = [0.; INPUTS];
     let mut dkappa = [0.; INPUTS];
     let mut depsilon = [0.; INPUTS];
+    for j in 0..INPUTS {
+        let dk = if j == K { 1. } else { 0. };
+        let dell = if j == VISCOUS_LENGTH { 1. } else { 0. };
+        depsilon[j] = molecular_decay * dk
+            + 2. * x.k * dmolecular[j] / x.viscous_length.powi(2)
+            - 2. * molecular_decay * x.k / x.viscous_length * dell;
+    }
     let status;
     let available;
     if x.k > 0. {
@@ -125,6 +144,8 @@ pub fn evaluate(x: Input, numerical_trial: bool) -> Result<Output, &'static str>
             return Err("Missing finite positive mixing length");
         }
         let root = x.k.sqrt();
+        let reynolds;
+        let mut dreynolds = [0.; INPUTS];
         if stable_selected {
             // Same law after cancelling l~sqrt(k). The O(k) terms must not be
             // lost by underflowing k^(3/2) before division by l.
@@ -133,7 +154,8 @@ pub fn evaluate(x: Input, numerical_trial: bool) -> Result<Output, &'static str>
             let extra = 2. * 0.76 * ab * x.k * root / (x.outer_length * n2);
             nu = ab * x.k / n;
             kappa = nu + extra;
-            epsilon = 0.19 / 0.76 * n * x.k + 0.51 * x.k * root / x.outer_length;
+            epsilon += 0.19 / 0.76 * n * x.k + 0.51 * x.k * root / x.outer_length;
+            reynolds = 0.76 * x.k / (n * molecular_nu);
             for j in 0..INPUTS {
                 let dk = if j == K { 1. } else { 0. };
                 let outer = if j == OUTER_LENGTH { 1. } else { 0. };
@@ -142,15 +164,19 @@ pub fn evaluate(x: Input, numerical_trial: bool) -> Result<Output, &'static str>
                     + 2. * 0.76 * ab / x.outer_length
                         * (1.5 * root / n2 * dk - x.k * root / n2.powi(2) * dn2[j])
                     - extra / x.outer_length * outer;
-                depsilon[j] = 0.19 / 0.76 * (n * dk + x.k / (2. * n) * dn2[j])
+                depsilon[j] += 0.19 / 0.76 * (n * dk + x.k / (2. * n) * dn2[j])
                     + 0.51
                         * (1.5 * root / x.outer_length * dk
                             - x.k * root / x.outer_length.powi(2) * outer);
+                dreynolds[j] = 0.76 / (n * molecular_nu) * dk
+                    - reynolds / (2. * n2) * dn2[j]
+                    - reynolds / molecular_nu * dmolecular[j];
             }
         } else {
             nu = 0.10 * l * root;
             kappa = (1. + 2. * l / x.outer_length) * nu;
-            epsilon = (0.19 / l + 0.51 / x.outer_length) * x.k * root;
+            epsilon += (0.19 / l + 0.51 / x.outer_length) * x.k * root;
+            reynolds = l * root / molecular_nu;
             for j in 0..INPUTS {
                 let dk = if j == K { 1. } else { 0. };
                 let outer = if j == OUTER_LENGTH { 1. } else { 0. };
@@ -158,11 +184,30 @@ pub fn evaluate(x: Input, numerical_trial: bool) -> Result<Output, &'static str>
                 dkappa[j] = (1. + 2. * l / x.outer_length) * dnu[j]
                     + 2. * nu / x.outer_length * dl[j]
                     - 2. * nu * l / x.outer_length.powi(2) * outer;
-                depsilon[j] = 1.5 * root * (0.19 / l + 0.51 / x.outer_length) * dk
+                depsilon[j] += 1.5 * root * (0.19 / l + 0.51 / x.outer_length) * dk
                     - 0.19 * x.k * root / l.powi(2) * dl[j]
                     - 0.51 * x.k * root / x.outer_length.powi(2) * outer;
+                dreynolds[j] = root / molecular_nu * dl[j]
+                    + l / (2. * root * molecular_nu) * dk
+                    - reynolds / molecular_nu * dmolecular[j];
             }
         }
+        // Harmonic competition of turnover and molecular diffusion times.
+        // Cancel the stable l~sqrt(k) law BEFORE this damping; do not form l²*k
+        // and divide tiny powers. High-Re recovers the original eddy rates.
+        if !reynolds.is_finite() || reynolds < 0. {
+            return Err("Nonfinite local mixing Reynolds number");
+        }
+        let damping = reynolds / (1. + reynolds);
+        let undamped_nu = nu;
+        let undamped_kappa = kappa;
+        for j in 0..INPUTS {
+            let ddamping = dreynolds[j] / (1. + reynolds).powi(2);
+            dnu[j] = dnu[j] * damping + undamped_nu * ddamping;
+            dkappa[j] = dkappa[j] * damping + undamped_kappa * ddamping;
+        }
+        nu *= damping;
+        kappa *= damping;
         status = if tie { LENGTH_TIE } else { INTERIOR };
         available = !tie;
     } else if x.k < 0. {
@@ -175,14 +220,18 @@ pub fn evaluate(x: Input, numerical_trial: bool) -> Result<Output, &'static str>
         available = false;
     } else if n2 > 0. {
         // l~sqrt(k) cancels the apparent sqrt singularity for this right limit.
-        dnu[K] = (0.76 * 0.10) / n2.sqrt();
-        dkappa[K] = dnu[K];
-        depsilon[K] = 0.19 / 0.76 * n2.sqrt();
+        // Damping adds another O(k); stable nu/kappa now have zero right slope.
+        depsilon[K] += 0.19 / 0.76 * n2.sqrt();
         status = STABLE_ZERO_RIGHT;
         available = true;
     } else {
-        status = ZERO_SINGULAR;
-        available = false;
+        let l = x.outer_length.min(0.7 * x.wall_distance);
+        dnu[K] = 0.10 * l * l / molecular_nu;
+        dkappa[K] = (1. + 2. * l / x.outer_length) * dnu[K];
+        status = ZERO_RIGHT;
+        // Physical right limit only; signed-trial left slope differs. At N²=0
+        // no global jointly differentiable constitutive chart is claimed.
+        available = true;
     }
     let buoyancy = -kappa / rho * contrast * x.pressure_gradient;
     let production = 4. / 3. * rho * nu * d * d - 2. / 3. * rho * x.k * theta;
@@ -346,6 +395,7 @@ mod tests {
             transverse_strain: -0.3,
             wall_distance: 0.5,
             outer_length: 0.06153846153846154,
+            viscous_length: 0.04,
         }
     }
     fn close(a: f64, b: f64) {
@@ -363,6 +413,7 @@ mod tests {
             close(y.rates[3], -x.density * y.rates[1] * n2);
             let mut twice = x;
             twice.density *= 2.;
+            twice.viscosity *= 2.; // Preserve kinematic viscosity in this identity.
             twice.pressure_gradient *= 2.;
             twice.density_gradient *= 2.;
             close(evaluate(twice, false).unwrap().rates[3], 2. * y.rates[3]);
@@ -375,14 +426,13 @@ mod tests {
         assert!(evaluate(x, false).is_err());
         let y = evaluate(x, true).unwrap();
         assert_eq!(y.derivative_status, SIGNED_TRIAL);
-        for j in 0..4 {
-            assert_eq!(y.rates[j], 0.);
-        }
+        for j in [0, 1, 3] { assert_eq!(y.rates[j], 0.); }
+        close(y.rates[2], 2. * x.viscosity / x.density * x.k / x.viscous_length.powi(2));
         let molecular = 4. / 3. * x.viscosity * (x.axial_strain - x.transverse_strain);
         let work = (y.rates[5] - molecular) * x.axial_strain
             + 2. * (y.rates[6] + molecular / 2.) * x.transverse_strain;
         close(y.rates[4], work);
-        close(y.rates[7], work);
+        close(y.rates[7], work - x.density * y.rates[2]);
         close(
             y.derivatives[4][K],
             -2. / 3. * x.density * (x.axial_strain + 2. * x.transverse_strain),
@@ -398,42 +448,24 @@ mod tests {
         for i in [0, 1, 2, 3, 4, 7] {
             assert_eq!(zero.rates[i], 0.);
         }
-        // Test-only correction after the finite native freeze: a right-limit
-        // derivative does not remove the selected O(k sqrt(k)) finite remainder.
-        // Use a resolved finite value and its quarter, not a tiny-value pass ladder.
+        // Independently reconstruct the finite stable law, including molecular
+        // competition. The zero derivative does not mean a finite ν is zero.
         let mut finite = x;
         finite.k = 1e-8;
         let positive = evaluate(finite, false).unwrap();
-        let mut quarter = finite;
-        quarter.k /= 4.;
-        let quarter_value = evaluate(quarter, false).unwrap();
         let n2 =
             -GRAVITY / x.density * (x.density_gradient - x.pressure_gradient / x.sound_squared);
-        let higher_kappa =
-            2. * 0.76 * 0.76 * 0.10 * finite.k * finite.k.sqrt() / (x.outer_length * n2);
+        let l = 0.76 * (finite.k / n2).sqrt();
+        let num = finite.viscosity / finite.density;
+        let nu = 0.10 * l * l * finite.k / (num + l * finite.k.sqrt());
+        let kappa = (1. + 2. * l / x.outer_length) * nu;
         let higher_epsilon = 0.51 * finite.k * finite.k.sqrt() / x.outer_length;
-        let higher_g = -x.density * n2 * higher_kappa;
-        let mut remainder = [0.; OUTPUTS];
-        remainder[1] = higher_kappa;
-        remainder[2] = higher_epsilon;
-        remainder[3] = higher_g;
-        remainder[7] = higher_g - x.density * higher_epsilon;
-        for i in [0, 1, 2, 3, 4, 7] {
-            let linear = zero.derivatives[i][K] * finite.k;
-            let expected = linear + remainder[i];
-            assert!(
-                (positive.rates[i] - expected).abs() <= 1e-7 * expected.abs() + 1e-18,
-                "row={i} actual={} linear={linear} remainder={}",
-                positive.rates[i],
-                remainder[i]
-            );
-            let quarter_remainder = quarter_value.rates[i] - linear / 4.;
-            assert!(
-                (quarter_remainder - remainder[i] / 8.).abs() <= 1e-7 * remainder[i].abs() + 1e-18,
-                "row={i} quarter remainder={quarter_remainder} full remainder={}",
-                remainder[i]
-            );
-        }
+        close(positive.rates[0] / nu, 1.);
+        close(positive.rates[1] / kappa, 1.);
+        close(positive.rates[2], zero.derivatives[2][K] * finite.k + higher_epsilon);
+        close(positive.rates[3], -x.density * n2 * kappa);
+        assert_eq!(zero.derivatives[0][K], 0.);
+        assert_eq!(zero.derivatives[1][K], 0.);
     }
 
     #[test]
@@ -442,19 +474,28 @@ mod tests {
         let y = evaluate(x, false).unwrap();
         let n2 =
             -GRAVITY / x.density * (x.density_gradient - x.pressure_gradient / x.sound_squared);
-        assert!(y.rates[0] > 0. && y.rates[2] > 0.);
-        close(y.rates[0] / ((0.76 * 0.10) * x.k / n2.sqrt()), 1.);
-        close(y.rates[2] / ((0.19 / 0.76) * n2.sqrt() * x.k), 1.);
+        // O(k²) ν may underflow honestly; the actual linear decay must survive.
+        assert_eq!(y.rates[0], 0.);
+        assert!(y.rates[2] > 0.);
+        close(y.rates[2] / (((0.19 / 0.76) * n2.sqrt()
+            + 2. * x.viscosity / x.density / x.viscous_length.powi(2)) * x.k), 1.);
         assert!(y.derivatives.iter().flatten().all(|v| v.is_finite()));
     }
 
     #[test]
-    fn neutral_unstable_zero_and_length_ties_do_not_invent_tangents() {
+    fn neutral_unstable_zero_have_finite_right_limits_and_ties_stay_honest() {
         for n2 in [0., -0.2] {
-            let y = evaluate(input(n2, 0.), false).unwrap();
-            assert_eq!(y.derivative_status, ZERO_SINGULAR);
-            assert_eq!(y.derivatives_available, 0);
-            assert!(y.derivatives.iter().flatten().all(|v| v.is_nan()));
+            let x = input(n2, 0.);
+            let y = evaluate(x, false).unwrap();
+            assert_eq!(y.derivative_status, ZERO_RIGHT);
+            assert_eq!(y.derivatives_available, 1);
+            close(y.derivatives[0][K], 0.10 * x.outer_length.powi(2) * x.density / x.viscosity);
+            close(y.derivatives[2][K], 2. * x.viscosity / x.density / x.viscous_length.powi(2));
+            let mut finite = x;
+            finite.k = (1e-5 * (x.viscosity / x.density) / x.outer_length).powi(2);
+            let right = evaluate(finite, false).unwrap();
+            // Ratio, not a large absolute allowance that admits a wrong zero.
+            close(right.rates[0] / (y.derivatives[0][K] * finite.k), 1. / (1. + 1e-5));
         }
         let mut x = input(0., 1e-4);
         x.wall_distance = 0.1;
@@ -462,6 +503,21 @@ mod tests {
         let y = evaluate(x, false).unwrap();
         assert_eq!(y.derivative_status, LENGTH_TIE);
         assert_eq!(y.derivatives_available, 0);
+    }
+
+    #[test]
+    fn low_and_high_re_limits_and_molecular_decay_are_independent() {
+        for re in [1e-5_f64, 1e5] {
+            let mut x = input(-0.2, 0.);
+            let num = x.viscosity / x.density;
+            x.k = (re * num / x.outer_length).powi(2);
+            let y = evaluate(x, false).unwrap();
+            let old = 0.10 * x.outer_length * x.k.sqrt();
+            close(y.rates[0] / old, re / (1. + re));
+            close(y.rates[0] / (0.10 * x.outer_length.powi(2) * x.k / num), 1. / (1. + re));
+            let eps_eddy = 0.70 / x.outer_length * x.k * x.k.sqrt();
+            close(y.rates[2], eps_eddy + 2. * num * x.k / x.viscous_length.powi(2));
+        }
     }
 
     #[test]
@@ -494,10 +550,14 @@ mod tests {
     #[test]
     fn pointwise_zero_does_not_select_an_unforced_implicit_root() {
         let l: f64 = 0.06153846153846154;
-        let a = 0.30 * l;
         let c = (0.19 + 0.51) / l;
         let h = 0.01;
-        let root = 2. * h * a / (1. + (1. + 4. * h * h * a * c).sqrt());
+        let x = input(0., 0.);
+        let num = x.viscosity / x.density;
+        let decay = 2. * num / x.viscous_length.powi(2);
+        let b = (1. / h + decay) * l + c * num;
+        let constant = (1. / h + decay) * num - 0.30 * l * l;
+        let root = -2. * constant / (b + (b * b - 4. * c * l * constant).sqrt());
         let k = root * root;
         assert!(k > 0.);
         let mut actual = input(0., k);
@@ -507,7 +567,8 @@ mod tests {
             k - h * evaluate(actual, false).unwrap().rates[7] / actual.density,
             0.,
         );
-        // This is an ambiguity witness, NOT a runtime root permission function.
+        // Locally Lipschitz IVP has a unique zero solution; a sufficiently large
+        // implicit step can STILL have another root. This is not a permission policy.
         actual.k = 0.;
         assert_eq!(evaluate(actual, false).unwrap().rates[7], 0.);
     }
