@@ -36,6 +36,11 @@ export function currentColdGeometry(c:ReturnType<typeof parseControlAbsorber>,a:
   extraSlots=a.keyEnvelopeDiameter_m*a.keyWidth_m-strip,
   hubA=N*(Math.PI*(.02**2-rb**2)-extraSlots),hubV=hubA*(c.spiderBottom_m+c.spiderHeight_m-a.hubLandBottom_m),
   frameV=cg.moving.spider_kg/c.steelDensity_kg_m3-hubV
+ // This is ONE declared seated FA-top/spider-seat plane. Reconcile only its
+ // differently evaluated floating expression; do not merge real small gaps.
+ if(Math.abs(fg.freshGeometry.upper.boreTop_m-c.spiderBottom_m)>4*Number.EPSILON*Math.max(1,Math.abs(c.spiderBottom_m)))
+  throw Error('Declared seated FA top and spider-seat plane disagree')
+ const faTop_m=c.spiderBottom_m
  if(!(half<rb&&extraSlots>0&&hubA>0&&frameV>0))throw Error('Actual hub/key/frame partition invalid')
  const intruders:Area[]=[
   {name:'1248 actual bodies',lo:c.insertedBodyBottom_m,hi:c.insertedBodyBottom_m+c.bodyLength_m,area:bodyA},
@@ -44,7 +49,9 @@ export function currentColdGeometry(c:ReturnType<typeof parseControlAbsorber>,a:
   {name:'52 stem plus lower stubs',lo:stubBottom,hi:c.spiderBottom_m+c.spiderHeight_m+c.stemLength_m,area:stemA},
   {name:'two opposed lugs per stem',lo:a.lugBottom_m,hi:a.lugBottom_m+a.lugHeight_m,area:N*2*a.lugWidth_m*(a.lugOuterRadius_m-c.stemDiameter_m/2)},
   {name:'annular shoulders',lo:a.shoulderBottom_m,hi:a.shoulderBottom_m+a.shoulderHeight_m,area:N*Math.PI*((a.shoulderDiameter_m/2)**2-(c.stemDiameter_m/2)**2)},
-  {name:'two HJT pads',lo:1.985-a.padHeight_m/2,hi:1.985+a.padHeight_m/2,area:2*ag.padEach_m3/a.padHeight_m},
+  // HJT pads lie outside the actual FA external-water support. Their literal
+  // material/contact remains owned, but no unowned peripheral water is added
+  // and no Core.2 water is removed to emulate that omitted space.
   {name:'two CET pads',lo:2.015-a.padHeight_m/2,hi:2.015+a.padHeight_m/2,area:2*ag.padEach_m3/a.padHeight_m}]
  const gateRows=gates.sills_m.map((lo,i)=>({name:i===0?'WELL':'POOL',lo,hi:gates.top_m,area:gates.width_m*gates.thickness_m,
   mass_kg:gates.width_m*gates.thickness_m*(gates.top_m-lo)*gates.steelDensity_kg_m3}))
@@ -76,8 +83,8 @@ export function currentColdGeometry(c:ReturnType<typeof parseControlAbsorber>,a:
   {name:'pool rack skins',mass_kg:h.rackSide**2*fg.rack.oneSleeveSkin_kg,T:head.cnvTemperature_K}]
  const b4c=[{name:'actual bodies',mass_kg:cg.moving.b4c_kg,T:s.primaryMetalTemperature_K},
   {name:'pool rack panels',mass_kg:h.rackSide**2*fg.rack.oneSleeveMatrix_kg,T:head.cnvTemperature_K}].map(q=>({...q,...b4cCaloric(q.T,h.b4cMolarMass_kg_mol)}))
- return {intruders,envelope,gateRows,metal,b4c,bodyArea_m2:bodyA,hubVolume_m3:hubV,frameVolume_m3:frameV,
-  expectedAddedPrimarySolid_m3:cg.poses[0]!.totalMovingDisplacement_m3+ag.addedStemPerCluster_m3*N+4*ag.padEach_m3,
+ return {intruders,envelope,gateRows,metal,b4c,faTop_m,bodyArea_m2:bodyA,hubVolume_m3:hubV,frameVolume_m3:frameV,
+  expectedAddedPrimarySolid_m3:cg.poses[0]!.totalMovingDisplacement_m3+ag.addedStemPerCluster_m3*N+2*ag.padEach_m3,
   housing:{mainArea:N*Math.PI*c.housingID_m**2/4,neckArea:N*Math.PI*c.neckID_m**2/4,
    collarArea:N*Math.PI*(c.collarOD_m**2-c.collarID_m**2)/4,collarBottoms:c.collarBottoms_m,collarHeight:c.collarHeight_m,
    mainLo:c.headBottom_m,mainHi:c.housingTop_m,neckHi:c.neckTop_m},
@@ -208,7 +215,7 @@ export async function runCurrentColdParent(directory:string,coldReceipt:string,g
  const geometry={...pick(allGeometry,['intruders','envelope','metal','b4c','expectedAddedPrimarySolid_m3','housing','rackDisplacement_m3','grossBayVolumes','spring_J']),
   gateRows:allGeometry.gateRows.map(q=>pick(q,['lo','hi','area'])),tools:pick(allGeometry.tools,['shaftVolume_m3','toolVolume_m3'])}
  const fresh={...pick(allFresh,['guideOuterArea_m2','sourceArea_m2']),active:pick(allFresh.active,['externalFreeVolume_m3','boreVolume_m3']),
-  lower:pick(allFresh.lower,['boreBottom_m','boreTop_m']),upper:pick(allFresh.upper,['boreTop_m','sealedRodPlenumDisplacement_m3','fittingDisplacement_m3'])}
+  lower:pick(allFresh.lower,['boreBottom_m','boreTop_m']),upper:{...pick(allFresh.upper,['boreTop_m','sealedRodPlenumDisplacement_m3','fittingDisplacement_m3']),boreTop_m:allGeometry.faTop_m}}
  const original=(q:{water_kg:number,tracer_kg_eq:number})=>({...q,tracer_kg_eq:q.water_kg*s.primaryAbsorberRatio}),unchanged=cold.primaryRows.filter((q:{owner:string})=>q.owner.startsWith('MAIN.')&&!['MAIN.CORE.1','MAIN.CORE.2','MAIN.LOWER','MAIN.UPPER'].includes(q.owner)).map(original),guideChanged=[guide.active,guide.lowerExternal,...guide.guideRows.filter((q:{owner:string})=>q.owner==='LOWER.GUIDE'),guide.upperExternal,...guide.guideRows.filter((q:{owner:string})=>q.owner==='UPPER.GUIDE')]
  const sum=(key:string)=>guideChanged.reduce((v,q)=>v+q[key],0)
  const enclosureMatch=docs.cnv.match(/modeled enclosure is \*\*([\d.]+) m³\*\*/)

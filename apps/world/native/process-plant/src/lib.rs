@@ -3,6 +3,8 @@
 use std::ffi::{CStr, c_char};
 
 pub mod fuel_source;
+pub mod original_water;
+pub mod mixing;
 
 pub const GRAVITY: f64 = 9.80665;
 

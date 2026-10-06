@@ -72,35 +72,27 @@ const path = { headerElevation_m: 3, bore_m: .2, roughness_m: .000045,
 const document = '```reference-cmt-geometry\n' + JSON.stringify(geometry) + '\n```\n'
   + '```reference-cmt-balance-path\n' + JSON.stringify(path) + '\n```';
 
-test('generated residual addresses owned fields and keeps passive quadratures outside physical error control', () => {
+test('generated conservative residual addresses owned fields and leaves observation rates outside its equations', () => {
   const { geometry: fixture, cpp } = nativeAxialCandidate(document);
   expect(fixture.cells.length).toBe(21);
   expect(cpp).toContain('PHYSICAL=139,D=PHYSICAL,OBSERVERS=3*RM,SAMPLE=D+OBSERVERS');
   expect(cpp).toContain('if(j!=Q||c.tank)r[ix(i,j)]=dy[ix(i,j)]-f[ix(i,j)];');
   expect(cpp).toContain('r[ix(i,PP)]=(rm*Et-Mt*re)/det;r[ix(i,TT)]=(Mp*re-rm*Ep)/det;');
   expect(cpp).not.toContain('for(int j=PHYSICAL;j<D;++j)r[j]=dy[j]-f[j];');
-  expect(cpp).toContain('IDAQuadInit(mem,quadrature_rhs,quadrature)');
-  expect(cpp).toContain('IDASetQuadErrCon(mem,SUNFALSE)');
-  expect(cpp).toContain('std::copy(f.begin()+D,f.end(),q);');
-  expect(cpp).toContain('native[M]>0&&native[B]>=0&&(!cells[i].tank||native[Q]>=0)');
-  expect(cpp).toContain('if(c.tank)co[ix(i,Q)]=1');
+  expect(cpp).toContain('std::array<double,D> conservative_residual(const double*y,const double*dy)');
+  expect(cpp).not.toContain('N_Vector');
+  expect(cpp).not.toContain('IDASolve');
   expect(cpp).toContain('Attempt to address an unowned native coordinate');
   expect(cpp).not.toContain('i*S');
   expect(cpp).not.toContain('unownedBalQ');
   expect(cpp).not.toContain('r[ix(i,Q)]=x[Q]');
 });
 
-test('complete public history endpoint and derivative precede unchanged strict physical admission', () => {
+test('stopped whole-vector integrator is absent rather than hidden behind a compatibility mode', () => {
   const { cpp } = nativeAxialCandidate(document);
-  const state = cpp.indexOf('IDAGetDky(mem,current,0,canonical)');
-  const derivative = cpp.indexOf('IDAGetDky(mem,current,1,canonicalDerivative)');
-  const admission = cpp.indexOf('native[M]>0&&native[B]>=0&&(!cells[i].tank||native[Q]>=0)');
-  expect(state).toBeGreaterThan(0);
-  expect(derivative).toBeGreaterThan(state);
-  expect(admission).toBeGreaterThan(derivative);
-  expect(cpp).toContain('require(current==t');
-  expect(cpp).toContain('x=N_VGetArrayPointer(canonical);');
-  expect(cpp).toContain('result.firstRawQ=raw[ix(0,Q)];result.firstCanonicalQ=x[ix(0,Q)];');
+  expect(cpp).not.toContain('IDAGetDky');
+  expect(cpp).not.toContain('advance(1)');
+  expect(cpp).not.toContain('first-step');
   expect(cpp).not.toContain('std::max(x[Q],0');
   expect(cpp).not.toContain('std::abs(x[Q])');
 });
@@ -109,21 +101,27 @@ test('signed Q is an explicit numerical trial continuation, not an accepted stoc
   const { cpp } = nativeAxialCandidate(document);
   expect(cpp).toContain('(!c.tank||std::isfinite(x[Q]))');
   expect(cpp).toContain('k[i]=c.tank?x[Q]/x[M]:0');
-  expect(cpp).toContain('if(c.tank&&k[i]>0)');
-  expect(cpp).toContain('std::pow(k[i],1.5)');
-  expect(cpp).toContain('native[Q]>=0');
-  expect(cpp).toContain('co[ix(i,Q)]=1');
+  expect(cpp).toContain('mixing_batch(mixingInput.data(),mixingOutput.data(),mixingIndex)');
+  expect(cpp).toContain('sourceQ+=node.weight*r[7]');
+  expect(cpp).not.toContain('if(c.tank&&k[i]>0)');
+  expect(cpp).not.toContain('const double G=-kt*(dr-dp/(state[i].w*state[i].w))*dp');
+  expect(cpp).toContain('Invalid mixing input/role was accepted');
 });
 
-test('partial-arm observation summaries are populated only from the last admitted endpoint', () => {
+test('finite mixing mode consumes the actual residual without advancing a field', () => {
   const { cpp } = nativeAxialCandidate(document);
-  const admission = cpp.indexOf('result.last=t;last_admitted_time=t;');
-  const summary = cpp.indexOf('result.gross=result.grossE=result.thermal=result.maxT=result.totalQ=0;');
-  const progress = cpp.indexOf('partial=result;', summary);
-  const finish = cpp.indexOf('finish_advance:');
-  expect(summary).toBeGreaterThan(admission);
-  expect(progress).toBeGreaterThan(summary);
-  expect(finish).toBeGreaterThan(progress);
-  expect(cpp.slice(finish)).not.toContain('result.gross+=');
-  expect(cpp.slice(finish)).not.toContain('result.totalQ+=');
+  const mode = cpp.indexOf('argc==3&&std::string(argv[2])=="--mixing-qualification"');
+  expect(mode).toBeGreaterThan(0);
+  expect(mode).toBeLessThan(cpp.indexOf('local_gates();', mode));
+  expect(cpp).toContain('const auto actual=rates(originalState.data())');
+  expect(cpp).toContain('Actual zero-origin radial receipts were suppressed');
+});
+
+test('buoyancy pressure and density gradients share actual smooth neighbors or the declared isothermal local trace', () => {
+  const { cpp } = nativeAxialCandidate(document);
+  expect(cpp).toContain('(y[ix(b,PP)]-y[ix(a,PP)])/distance*vertical');
+  expect(cpp).toContain('(state[b].rho-state[a].rho)/distance*vertical');
+  expect(cpp).toContain('if(a==b)return local_reconstructed_gradients');
+  expect(cpp).toContain('s.rho*s.kappa*vertical');
+  expect(cpp).not.toContain('const double dp=-state[i].rho*gravity');
 });
