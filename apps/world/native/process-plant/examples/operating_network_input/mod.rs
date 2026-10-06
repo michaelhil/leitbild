@@ -153,7 +153,7 @@ mod tests {
         assert_eq!(input.config.solids.len(), 1);
         assert_eq!(input.config.hydraulic.len(), 1);
         assert_eq!(input.config.heat.len(), 1);
-        assert_eq!(Network::new(input.config).unwrap().dimension(), 12);
+        assert_eq!(Network::new(input.config).unwrap().dimension(), 11);
         assert_eq!(tokens.next(), Some("7"));
         assert_eq!(tokens.next(), None);
     }

@@ -1,17 +1,15 @@
-//! Offline finite stable-liquid pressure/thermal network.
-//! Selected reduced thermal energy is M*(u+g*z), neglecting fluid kinetic
-//! energy. Real passages retain geometry-owned I=L/A and I*qdot=head-loss.
-//! Fixed-I momentum neglects convective/density-dilation terms; omitted kinetic
-//! energy needs an independent applicability bound, not an invented heat source.
-//! No pump/rotor, phase, nuclear source or maintained external boundary is here.
-//! Implicit integration is not sound filtering or pressure-wave qualification.
-//! Shared donor enthalpy/elevation/tracer and thermal receipts are reciprocal.
-//! Signed link flows are differential momentum coordinates, not extra stocks.
-use crate::{CellGeometry, GRAVITY, Liquid, LiquidQuery, liquid_batch};
+//! Offline cold, stable-liquid thermodynamic pressure territory.
+//! Regional E/B and finite metal E remain conservative differential histories.
+//! One finite aggregate mass fixes the thermodynamic pressure; thermal regions
+//! are NOT independent compression stores. Relative mechanical pressure drives
+//! signed quasi-steady links and pays the same shared donor pressure work.
+//! EOS excludes that mechanical correction: this is an explicit cold pressure
+//! approximation, not exact compressible entropy, phase or coastdown physics.
+//! No pump, rotor, maintained boundary, nested chart inverse or acoustic mode.
+use crate::{liquid_batch, CellGeometry, Liquid, LiquidQuery, GRAVITY};
 use std::collections::BTreeSet;
 mod hydraulic;
 pub use hydraulic::{Hydraulic, LossLaw};
-
 pub const SOLID_DATUM_K: f64 = 300.;
 
 #[derive(Clone, Copy, Debug)]
@@ -19,24 +17,20 @@ pub struct Water {
     pub geometry: CellGeometry,
     pub initial_pressure: f64,
     pub initial_temperature: f64,
-    /// Passive mobile kg-equivalent tracer/kg water; not extra physical mass.
+    /// Passive mobile kg-equivalent/kg; not additional physical mass.
     pub initial_tracer_fraction: f64,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Solid {
-    /// Authored constant sensible heat capacity, J/K; not a prescribed heater.
     pub heat_capacity: f64,
     pub initial_temperature: f64,
 }
 #[derive(Clone, Copy, Debug)]
 pub enum HeatLaw {
-    Conductance(f64), // W/K, with an authored applicability domain.
-    /// Selected low-flow Nu*A/D, m; source must be water, recipient solid.
-    /// G=geometry*k(current source water). Not a general SG correlation.
+    Conductance(f64),
     LiquidFilm {
         geometry: f64,
     },
-    /// Current SG sensible liquid film, no boiling/phase continuation.
     SgSensible {
         area: f64,
         diameter: f64,
@@ -46,7 +40,6 @@ pub enum HeatLaw {
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Heat {
-    /// Thermal indices: water first, then solids. Not equipment identifiers.
     pub from: usize,
     pub to: usize,
     pub law: HeatLaw,
@@ -59,25 +52,25 @@ pub struct Config {
     pub heat: Vec<Heat>,
 }
 
-/// Immutable compiled incidence and sparse pattern. Mutable solver/property
-/// buffers belong to Workspace, never another unit or global shared state.
 pub struct Network {
     config: Config,
+    /// Fixed ORIGINAL hydrostatic offsets, not a reached-state projection.
+    pressure_offsets: Vec<f64>,
     pub column_pointers: Vec<i64>,
     pub row_indices: Vec<i64>,
 }
 impl Network {
     pub fn new(config: Config) -> Result<Self, String> {
         let nw = config.water.len();
-        let nt = nw + config.solids.len();
         if nw == 0
             || nw
-                .checked_mul(5)
+                .checked_mul(4)
                 .and_then(|x| x.checked_add(config.solids.len()))
                 .and_then(|x| x.checked_add(config.hydraulic.len()))
+                .and_then(|x| x.checked_add(1))
                 .is_none()
         {
-            return Err("Invalid operating-network size".into());
+            return Err("Invalid pressure-territory size".into());
         }
         for w in &config.water {
             if ![
@@ -114,6 +107,8 @@ impl Network {
                 || e.length <= 0.
                 || !e.diameter.is_finite()
                 || e.diameter <= 0.
+                || !e.flow_area.is_finite()
+                || e.flow_area <= 0.
                 || !e.roughness.is_finite()
                 || e.roughness < 0.
                 || e.roughness / e.diameter > 0.1
@@ -121,16 +116,36 @@ impl Network {
                 || e.fixed_loss < 0.
                 || !e.grid_multiplier.is_finite()
                 || e.grid_multiplier < 0.
-                || matches!(e.law,LossLaw::GuideAnnulus{laminar_darcy} if !laminar_darcy.is_finite() || laminar_darcy<=0.)
-                || !e.flow_area.is_finite()
-                || e.flow_area <= 0.
-                || !e.inertance().is_finite()
-                || e.inertance() <= 0.
-                || !e.inertance().recip().is_finite()
+                || matches!(e.law,LossLaw::GuideAnnulus{laminar_darcy}
+                    if !laminar_darcy.is_finite() || laminar_darcy<=0.)
             {
-                return Err("Invalid finite-inertance hydraulic contact".into());
+                return Err("Invalid hydraulic contact".into());
             }
         }
+        // One pressure territory and one mechanical gauge require a connected
+        // incidence. This is topology rank, not a general phase/index proof.
+        let mut seen = vec![false; nw];
+        seen[0] = true;
+        loop {
+            let mut changed = false;
+            for e in &config.hydraulic {
+                if seen[e.from] && !seen[e.to] {
+                    seen[e.to] = true;
+                    changed = true;
+                }
+                if seen[e.to] && !seen[e.from] {
+                    seen[e.from] = true;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        if seen.iter().any(|x| !x) {
+            return Err("Disconnected pressure territory".into());
+        }
+        let nt = nw + config.solids.len();
         for e in &config.heat {
             if e.from >= nt || e.to >= nt || e.from == e.to {
                 return Err("Invalid thermal contact".into());
@@ -139,9 +154,7 @@ impl Network {
                 HeatLaw::Conductance(g) => g,
                 HeatLaw::LiquidFilm { geometry } => {
                     if e.from >= nw || e.to < nw {
-                        return Err(
-                            "Liquid film requires water source and finite solid recipient".into(),
-                        );
+                        return Err("Liquid film requires water and solid".into());
                     }
                     geometry
                 }
@@ -173,46 +186,78 @@ impl Network {
                 return Err("Nonpositive thermal contact".into());
             }
         }
-        let stock_dimension = 5 * nw + config.solids.len();
-        let n = stock_dimension + config.hydraulic.len();
+        let anchor = config.water[0].initial_pressure;
+        let pressure_offsets: Vec<_> = config
+            .water
+            .iter()
+            .map(|w| w.initial_pressure - anchor)
+            .collect();
+        let mut network = Self {
+            config,
+            pressure_offsets,
+            column_pointers: vec![],
+            row_indices: vec![],
+        };
+        let n = network.dimension();
         let mut pattern = vec![BTreeSet::new(); n];
+        let p = network.pressure_row();
+        let m = network.total_mass_row();
+        for row in 0..network.stock_dimension() {
+            pattern[row].insert(row);
+        }
+        pattern[m].insert(p);
         for i in 0..nw {
-            for column in 5 * i..5 * i + 5 {
-                for row in 5 * i..5 * i + 5 {
-                    pattern[column].insert(row);
+            let t = network.temperature_row(i);
+            pattern[i].insert(t);
+            pattern[p].insert(t);
+            pattern[t].insert(t);
+            pattern[p].insert(p);
+            pattern[t].insert(p);
+            // The reduced pressure-rate quotient is a global arrowhead, not
+            // a hidden differentiated constraint or global finite difference.
+            for j in 1..nw {
+                let row = network.mechanical_row(j).unwrap();
+                for col in [i, m, p, t] {
+                    pattern[col].insert(row);
                 }
             }
         }
-        for i in 5 * nw..stock_dimension {
-            pattern[i].insert(i);
-        }
-        for (edge, e) in config.hydraulic.iter().enumerate() {
-            let flow_row = stock_dimension + edge;
-            pattern[flow_row].insert(flow_row);
-            for recipient in [e.from, e.to] {
-                for row in 5 * recipient..5 * recipient + 3 {
-                    pattern[flow_row].insert(row);
-                }
-            }
+        for (edge, e) in network.config.hydraulic.iter().enumerate() {
+            let q = network.flow_row(edge);
+            pattern[q].insert(q);
+            pattern[p].insert(q);
             for node in [e.from, e.to] {
-                for column in [5 * node + 3, 5 * node + 4] {
-                    pattern[column].insert(flow_row);
-                    for recipient in [e.from, e.to] {
-                        pattern[column].insert(5 * recipient + 1);
-                    }
+                let t = network.temperature_row(node);
+                pattern[t].insert(q);
+                if let Some(pi) = network.mechanical_row(node) {
+                    pattern[pi].insert(q);
                 }
-                for column in [5 * node, 5 * node + 2] {
-                    for recipient in [e.from, e.to] {
-                        pattern[column].insert(5 * recipient + 2);
+                if let Some(row) = network.mechanical_row(node) {
+                    pattern[q].insert(row);
+                }
+                for recipient in [e.from, e.to] {
+                    pattern[q].insert(recipient);
+                    pattern[q].insert(network.marker_row(recipient));
+                    pattern[p].insert(recipient);
+                    pattern[t].insert(recipient);
+                    pattern[p].insert(network.marker_row(recipient));
+                    pattern[t].insert(network.marker_row(recipient));
+                    pattern[network.marker_row(node)].insert(network.marker_row(recipient));
+                    if let Some(pi) = network.mechanical_row(node) {
+                        pattern[pi].insert(recipient);
                     }
                 }
             }
         }
-        let energy_row = |i: usize| if i < nw { 5 * i + 1 } else { 5 * nw + i - nw };
-        let temperature_column = |i: usize| if i < nw { 5 * i + 4 } else { 5 * nw + i - nw };
-        for e in &config.heat {
-            for column in [temperature_column(e.from), temperature_column(e.to)] {
-                for row in [energy_row(e.from), energy_row(e.to)] {
+        for e in &network.config.heat {
+            let rows = [network.energy_row(e.from), network.energy_row(e.to)];
+            for thermal in [e.from, e.to] {
+                let column = if thermal < nw {
+                    network.temperature_row(thermal)
+                } else {
+                    network.energy_row(thermal)
+                };
+                for row in rows {
                     pattern[column].insert(row);
                 }
             }
@@ -220,63 +265,88 @@ impl Network {
                 e.law,
                 HeatLaw::LiquidFilm { .. } | HeatLaw::SgSensible { .. }
             ) {
-                for row in [energy_row(e.from), energy_row(e.to)] {
-                    pattern[5 * e.from + 3].insert(row);
+                for row in rows {
+                    pattern[p].insert(row);
                 }
             }
             if let HeatLaw::SgSensible { hydraulic_edge, .. } = e.law {
-                for row in [energy_row(e.from), energy_row(e.to)] {
-                    pattern[stock_dimension + hydraulic_edge].insert(row);
+                for row in rows {
+                    pattern[network.flow_row(hydraulic_edge)].insert(row);
                 }
             }
         }
-        let mut column_pointers = vec![0];
-        let mut row_indices = Vec::new();
+        network.column_pointers.push(0);
         for column in pattern {
-            row_indices.extend(column.into_iter().map(|x| x as i64));
-            column_pointers.push(row_indices.len() as i64);
+            network
+                .row_indices
+                .extend(column.into_iter().map(|x| x as i64));
+            network
+                .column_pointers
+                .push(network.row_indices.len() as i64);
         }
-        Ok(Self {
-            config,
-            column_pointers,
-            row_indices,
-        })
-    }
-    pub fn dimension(&self) -> usize {
-        self.stock_dimension() + self.config.hydraulic.len()
-    }
-    /// End of water and solid coordinates, before differential signed flows.
-    pub fn stock_dimension(&self) -> usize {
-        5 * self.config.water.len() + self.config.solids.len()
-    }
-    /// Signed kg/s coordinate and derivative-normalized momentum row.
-    pub fn flow_row(&self, edge: usize) -> usize {
-        self.stock_dimension() + edge
-    }
-    /// Differential-coordinate classification for solver IDs and matrix audits.
-    /// The caller supplies a compiled coordinate, not an equipment identifier.
-    pub fn is_differential(&self, row: usize) -> bool {
-        assert!(row < self.dimension(), "Invalid compiled coordinate");
-        row >= 5 * self.config.water.len() || row % 5 < 3
+        Ok(network)
     }
     pub fn config(&self) -> &Config {
         &self.config
     }
+    pub fn mass(&self, node: usize, liquid: Liquid) -> f64 {
+        self.config.water[node].geometry.volume * liquid.density
+    }
+    pub fn stock_dimension(&self) -> usize {
+        2 * self.config.water.len() + 1 + self.config.solids.len()
+    }
+    pub fn pressure_row(&self) -> usize {
+        self.stock_dimension()
+    }
+    pub fn temperature_row(&self, node: usize) -> usize {
+        self.pressure_row() + 1 + node
+    }
+    pub fn flow_row(&self, edge: usize) -> usize {
+        self.pressure_row() + 1 + self.config.water.len() + edge
+    }
+    pub fn mechanical_row(&self, node: usize) -> Option<usize> {
+        (node > 0).then(|| self.flow_row(self.config.hydraulic.len()) + node - 1)
+    }
+    pub fn dimension(&self) -> usize {
+        self.flow_row(self.config.hydraulic.len()) + self.config.water.len() - 1
+    }
+    pub fn total_mass_row(&self) -> usize {
+        2 * self.config.water.len()
+    }
+    pub fn marker_row(&self, node: usize) -> usize {
+        self.config.water.len() + node
+    }
     pub fn energy_row(&self, thermal: usize) -> usize {
         let nw = self.config.water.len();
         if thermal < nw {
-            5 * thermal + 1
+            thermal
         } else {
-            5 * nw + thermal - nw
+            2 * nw + 1 + thermal - nw
         }
+    }
+    pub fn is_differential(&self, row: usize) -> bool {
+        assert!(row < self.dimension());
+        row < self.stock_dimension()
+    }
+    pub fn pressure_offset(&self, node: usize) -> f64 {
+        self.pressure_offsets[node]
+    }
+    pub fn eos_pressure(&self, node: usize, y: &[f64]) -> f64 {
+        y[self.pressure_row()] + self.pressure_offsets[node]
+    }
+    pub fn relative_pressure(&self, node: usize, y: &[f64]) -> f64 {
+        self.mechanical_row(node).map_or(0., |r| y[r])
+    }
+    pub fn mechanical_pressure(&self, node: usize, y: &[f64]) -> f64 {
+        self.eos_pressure(node, y) + self.relative_pressure(node, y)
     }
     pub fn temperature(&self, thermal: usize, y: &[f64]) -> f64 {
         let nw = self.config.water.len();
         if thermal < nw {
-            y[5 * thermal + 4]
+            y[self.temperature_row(thermal)]
         } else {
             SOLID_DATUM_K
-                + y[5 * nw + thermal - nw] / self.config.solids[thermal - nw].heat_capacity
+                + y[self.energy_row(thermal)] / self.config.solids[thermal - nw].heat_capacity
         }
     }
     pub fn initial_state(&self) -> Result<Vec<f64>, String> {
@@ -293,33 +363,42 @@ impl Network {
         liquid_batch(&queries, &mut water)
             .map_err(|e| format!("Original water {}: {}", e.index, e.message))?;
         let mut y = vec![0.; self.dimension()];
-        for (i, (w, l)) in self.config.water.iter().zip(&water).enumerate() {
+        y[self.pressure_row()] = self.config.water[0].initial_pressure;
+        for (i, (w, l)) in self.config.water.iter().zip(water).enumerate() {
             let mass = w.geometry.volume * l.density;
-            y[5 * i] = mass;
-            y[5 * i + 1] = mass * (l.internal_energy + GRAVITY * w.geometry.elevation);
-            y[5 * i + 2] = mass * w.initial_tracer_fraction;
-            y[5 * i + 3] = w.initial_pressure;
-            y[5 * i + 4] = w.initial_temperature;
+            y[i] = mass * (l.internal_energy + GRAVITY * w.geometry.elevation);
+            y[self.marker_row(i)] = mass * w.initial_tracer_fraction;
+            y[self.total_mass_row()] += mass;
+            y[self.temperature_row(i)] = w.initial_temperature;
         }
         for (i, s) in self.config.solids.iter().enumerate() {
-            y[5 * self.config.water.len() + i] =
+            y[self.energy_row(self.config.water.len() + i)] =
                 s.heat_capacity * (s.initial_temperature - SOLID_DATUM_K);
         }
-        // Fresh cold preparation is at rest, not a massless steady-flow solve.
-        // evaluate() retains any actual discrete head imbalance as qdot=head/I;
-        // it does not force the prepared pressure field into exact equilibrium.
+        if y.iter().any(|x| !x.is_finite()) {
+            return Err("Nonfinite original stock".into());
+        }
+        // q/pi=0 is ONLY an initialization guess. Joint consistent preparation
+        // must solve heat-driven expansion and the actual head/loss constraints.
         Ok(y)
     }
 }
 
 pub struct Workspace {
     pub residual: Vec<f64>,
-    /// Differential stock and signed-flow rates; algebraic p/T slots are zero.
     pub rates: Vec<f64>,
     pub jacobian_values: Vec<f64>,
     pub liquids: Vec<Liquid>,
     pub mass_flows: Vec<f64>,
     pub heat_flows: Vec<f64>,
+    pub chart_mass: Vec<f64>,
+    pub chart_energy: Vec<f64>,
+    /// M_p,M_T,E_p,E_T, with independent P/T and fixed original offsets.
+    pub chart_derivatives: Vec<[f64; 4]>,
+    /// a=M_p-M_T E_p/E_T; b=M_T/E_T.
+    pub redistribution: Vec<[f64; 2]>,
+    pub pressure_rate: f64,
+    pub mass_rates: Vec<f64>,
     pub heat_entropy_production: f64,
     pub property_requests: usize,
     pub film_nusselt: Vec<f64>,
@@ -327,22 +406,47 @@ pub struct Workspace {
     queries: Vec<LiquidQuery>,
     probe_queries: Vec<LiquidQuery>,
     probes: Vec<Liquid>,
-    transport_derivatives: Vec<[f64; 4]>, // mu_p,mu_T,k_p,k_T
+    // mu_p,mu_T,k_p,k_T,a_p,a_T,b_p,b_T; bounded LOCAL property probes only.
+    local_derivatives: Vec<[f64; 8]>,
+}
+fn chart(w: Water, l: Liquid, p: f64, t: f64) -> Result<([f64; 4], [f64; 2]), String> {
+    let m = w.geometry.volume * l.density;
+    let u = l.internal_energy + GRAVITY * w.geometry.elevation;
+    let mp = m * l.compressibility;
+    let mt = -m * l.expansion;
+    let ep = u * mp + w.geometry.volume * (p * l.compressibility - t * l.expansion);
+    let et = u * mt + m * (l.cp - p * l.expansion / l.density);
+    if ![mp, mt, ep, et].iter().all(|x| x.is_finite()) || et <= 0. {
+        return Err("Singular local energy chart".into());
+    }
+    let a = mp - mt * ep / et;
+    let b = mt / et;
+    if !a.is_finite() || !b.is_finite() || a <= 0. {
+        return Err("Unsupported local pressure/energy chart".into());
+    }
+    Ok(([mp, mt, ep, et], [a, b]))
 }
 impl Workspace {
-    pub fn new(network: &Network) -> Self {
-        let nw = network.config.water.len();
+    pub fn new(n: &Network) -> Self {
+        let nw = n.config.water.len();
+        let nh = n.config.heat.len();
         Self {
-            residual: vec![0.; network.dimension()],
-            rates: vec![0.; network.dimension()],
-            jacobian_values: vec![0.; network.row_indices.len()],
+            residual: vec![0.; n.dimension()],
+            rates: vec![0.; n.dimension()],
+            jacobian_values: vec![0.; n.row_indices.len()],
             liquids: vec![Liquid::default(); nw],
-            mass_flows: vec![0.; network.config.hydraulic.len()],
-            heat_flows: vec![0.; network.config.heat.len()],
+            mass_flows: vec![0.; n.config.hydraulic.len()],
+            heat_flows: vec![0.; nh],
+            chart_mass: vec![0.; nw],
+            chart_energy: vec![0.; nw],
+            chart_derivatives: vec![[0.; 4]; nw],
+            redistribution: vec![[0.; 2]; nw],
+            pressure_rate: 0.,
+            mass_rates: vec![0.; nw],
             heat_entropy_production: 0.,
             property_requests: 0,
-            film_nusselt: vec![0.; network.config.heat.len()],
-            film_raw_prandtl_ratio: vec![0.; network.config.heat.len()],
+            film_nusselt: vec![0.; nh],
+            film_raw_prandtl_ratio: vec![0.; nh],
             queries: vec![
                 LiquidQuery {
                     pressure: 0.,
@@ -358,79 +462,89 @@ impl Workspace {
                 4 * nw
             ],
             probes: vec![Liquid::default(); 4 * nw],
-            transport_derivatives: vec![[0.; 4]; nw],
+            local_derivatives: vec![[0.; 8]; nw],
         }
     }
-    fn add(&mut self, network: &Network, row: usize, column: usize, value: f64) {
-        let start = network.column_pointers[column] as usize;
-        let end = network.column_pointers[column + 1] as usize;
-        let slot = network.row_indices[start..end]
+    fn add(&mut self, n: &Network, row: usize, col: usize, v: f64) {
+        let start = n.column_pointers[col] as usize;
+        let end = n.column_pointers[col + 1] as usize;
+        let slot = n.row_indices[start..end]
             .binary_search(&(row as i64))
-            .expect("Compiled local incidence");
-        self.jacobian_values[start + slot] += value;
+            .expect("Compiled pressure-territory incidence");
+        self.jacobian_values[start + slot] += v;
     }
-    /// One forward tuple per water state. Jacobians add bounded LOCAL p/T
-    /// transport-property probes only; no global residual probes/nested inverse.
-    /// Piecewise donor selection is directional at zero unequal-state flow.
     pub fn evaluate(
         &mut self,
-        network: &Network,
+        n: &Network,
         y: &[f64],
         yp: &[f64],
         cj: Option<f64>,
     ) -> Result<(), String> {
-        let nw = network.config.water.len();
-        let n = network.dimension();
-        if y.len() != n
-            || yp.len() != n
-            || self.residual.len() != n
-            || self.rates.len() != n
+        let nw = n.config.water.len();
+        let dim = n.dimension();
+        let pcol = n.pressure_row();
+        if y.len() != dim
+            || yp.len() != dim
+            || self.residual.len() != dim
+            || self.rates.len() != dim
+            || self.jacobian_values.len() != n.row_indices.len()
             || self.liquids.len() != nw
+            || self.chart_mass.len() != nw
+            || self.chart_energy.len() != nw
+            || self.chart_derivatives.len() != nw
+            || self.redistribution.len() != nw
+            || self.mass_rates.len() != nw
             || self.queries.len() != nw
-            || self.probes.len() != 4 * nw
             || self.probe_queries.len() != 4 * nw
-            || self.transport_derivatives.len() != nw
-            || self.mass_flows.len() != network.config.hydraulic.len()
-            || self.heat_flows.len() != network.config.heat.len()
-            || self.film_nusselt.len() != network.config.heat.len()
-            || self.film_raw_prandtl_ratio.len() != network.config.heat.len()
-            || self.jacobian_values.len() != network.row_indices.len()
+            || self.probes.len() != 4 * nw
+            || self.local_derivatives.len() != nw
+            || self.mass_flows.len() != n.config.hydraulic.len()
+            || self.heat_flows.len() != n.config.heat.len()
+            || self.film_nusselt.len() != n.config.heat.len()
+            || self.film_raw_prandtl_ratio.len() != n.config.heat.len()
             || y.iter().chain(yp).any(|x| !x.is_finite())
-            || cj.is_some_and(|x| !x.is_finite())
+            || cj.is_some_and(|x| !x.is_finite() || x < 0.)
+            || y[n.total_mass_row()] <= 0.
         {
-            return Err("Invalid network trial shape/value".into());
+            return Err("Invalid pressure-territory trial shape/value".into());
         }
         self.property_requests = 0;
         self.rates.fill(0.);
-        self.residual.copy_from_slice(yp);
+        self.residual.fill(0.);
         self.jacobian_values.fill(0.);
+        self.mass_rates.fill(0.);
         self.heat_entropy_production = 0.;
+        self.film_nusselt.fill(0.);
+        self.film_raw_prandtl_ratio.fill(0.);
         for i in 0..nw {
-            if y[5 * i] <= 0. || y[5 * i + 2] < 0. || y[5 * i + 3] <= 0. || y[5 * i + 4] <= 0. {
-                return Err(format!("Invalid water trial at node {i}"));
+            let p = n.eos_pressure(i, y);
+            let t = n.temperature(i, y);
+            if p <= 0. || t <= 0. || n.mechanical_pressure(i, y) <= 0. || y[n.marker_row(i)] < 0. {
+                return Err(format!("Invalid water trial {i}"));
             }
             self.queries[i] = LiquidQuery {
-                pressure: y[5 * i + 3],
-                temperature: y[5 * i + 4],
+                pressure: p,
+                temperature: t,
             };
         }
-        for thermal in nw..nw + network.config.solids.len() {
-            if network.temperature(thermal, y) <= 0. {
-                return Err(format!("Nonpositive solid temperature {thermal}"));
+        for i in nw..nw + n.config.solids.len() {
+            if n.temperature(i, y) <= 0. {
+                return Err("Nonpositive finite solid temperature".into());
             }
         }
         self.property_requests += nw;
         liquid_batch(&self.queries, &mut self.liquids)
             .map_err(|e| format!("Water node {}: {}", e.index, e.message))?;
-        if cj.is_some()
-            && (!network.config.hydraulic.is_empty()
-                || network.config.heat.iter().any(|e| {
-                    matches!(
-                        e.law,
-                        HeatLaw::LiquidFilm { .. } | HeatLaw::SgSensible { .. }
-                    )
-                }))
-        {
+        for i in 0..nw {
+            let l = self.liquids[i];
+            let q = self.queries[i];
+            self.chart_mass[i] = n.config.water[i].geometry.volume * l.density;
+            self.chart_energy[i] = self.chart_mass[i]
+                * (l.internal_energy + GRAVITY * n.config.water[i].geometry.elevation);
+            (self.chart_derivatives[i], self.redistribution[i]) =
+                chart(n.config.water[i], l, q.pressure, q.temperature)?;
+        }
+        if cj.is_some() {
             for i in 0..nw {
                 let q = self.queries[i];
                 let dp = (q.pressure * 1e-5).max(0.1).min(q.pressure * 0.01);
@@ -453,128 +567,140 @@ impl Workspace {
                 };
             }
             self.property_requests += 4 * nw;
-            liquid_batch(&self.probe_queries, &mut self.probes).map_err(|e| {
-                format!(
-                    "Local transport derivative probe {}: {}",
-                    e.index, e.message
-                )
-            })?;
+            liquid_batch(&self.probe_queries, &mut self.probes)
+                .map_err(|e| format!("Local coefficient probe {}: {}", e.index, e.message))?;
             for i in 0..nw {
                 let dp =
                     self.probe_queries[4 * i].pressure - self.probe_queries[4 * i + 1].pressure;
                 let dt = self.probe_queries[4 * i + 2].temperature
                     - self.probe_queries[4 * i + 3].temperature;
+                let mut ab = [[0.; 2]; 4];
+                for (k, out) in ab.iter_mut().enumerate() {
+                    let q = self.probe_queries[4 * i + k];
+                    *out = chart(
+                        n.config.water[i],
+                        self.probes[4 * i + k],
+                        q.pressure,
+                        q.temperature,
+                    )?
+                    .1;
+                }
                 let [a, b, c, d] = [
                     self.probes[4 * i],
                     self.probes[4 * i + 1],
                     self.probes[4 * i + 2],
                     self.probes[4 * i + 3],
                 ];
-                self.transport_derivatives[i] = [
+                self.local_derivatives[i] = [
                     (a.viscosity - b.viscosity) / dp,
                     (c.viscosity - d.viscosity) / dt,
                     (a.conductivity - b.conductivity) / dp,
                     (c.conductivity - d.conductivity) / dt,
+                    (ab[0][0] - ab[1][0]) / dp,
+                    (ab[2][0] - ab[3][0]) / dt,
+                    (ab[0][1] - ab[1][1]) / dp,
+                    (ab[2][1] - ab[3][1]) / dt,
                 ];
             }
         }
-        for (edge, e) in network.config.hydraulic.iter().enumerate() {
-            let a = self.liquids[e.from];
-            let b = self.liquids[e.to];
-            let rho = (a.density + b.density) * 0.5;
-            let mu = (a.viscosity + b.viscosity) * 0.5;
-            let dz = network.config.water[e.to].geometry.elevation
-                - network.config.water[e.from].geometry.elevation;
-            let drive = y[5 * e.from + 3] - y[5 * e.to + 3] - rho * GRAVITY * dz;
-            let flow_row = network.flow_row(edge);
-            let q = y[flow_row];
+        for (edge, e) in n.config.hydraulic.iter().enumerate() {
+            let row = n.flow_row(edge);
+            let q = y[row];
+            self.mass_flows[edge] = q;
+            let rho = (self.liquids[e.from].density + self.liquids[e.to].density) * 0.5;
+            let mu = (self.liquids[e.from].viscosity + self.liquids[e.to].viscosity) * 0.5;
+            let dz =
+                n.config.water[e.to].geometry.elevation - n.config.water[e.from].geometry.elevation;
+            // P cancels exactly: do not subtract two large total pressures to
+            // obtain a near-rest mechanical head.
+            let drive = n.pressure_offsets[e.from] - n.pressure_offsets[e.to]
+                + n.relative_pressure(e.from, y)
+                - n.relative_pressure(e.to, y)
+                - rho * GRAVITY * dz;
             let loss = e.pressure_loss(q, rho, mu);
             if !loss.iter().all(|x| x.is_finite()) || loss[1] <= 0. {
-                return Err(format!("Invalid forward hydraulic loss at edge {edge}"));
+                return Err(format!("Invalid forward hydraulic loss {edge}"));
             }
-            let inverse_inertance = e.inertance().recip();
-            self.rates[flow_row] = (drive - loss[0]) * inverse_inertance;
-            self.residual[flow_row] = yp[flow_row] - self.rates[flow_row];
-            self.mass_flows[edge] = q;
+            self.residual[row] = drive - loss[0];
             let donor = if q >= 0. { e.from } else { e.to };
             let l = self.liquids[donor];
+            let pi = n.relative_pressure(donor, y);
+            let t = n.temperature(donor, y);
             let h = l.internal_energy
-                + y[5 * donor + 3] / l.density
-                + GRAVITY * network.config.water[donor].geometry.elevation;
-            let concentration = y[5 * donor + 2] / y[5 * donor];
-            for (recipient, sign) in [(e.from, -1.), (e.to, 1.)] {
-                self.rates[5 * recipient] += sign * q;
-                self.rates[5 * recipient + 1] += sign * q * h;
-                self.rates[5 * recipient + 2] += sign * q * concentration;
+                + n.mechanical_pressure(donor, y) / l.density
+                + GRAVITY * n.config.water[donor].geometry.elevation;
+            let c = y[n.marker_row(donor)] / self.chart_mass[donor];
+            for (recipient, s) in [(e.from, -1.), (e.to, 1.)] {
+                self.mass_rates[recipient] += s * q;
+                self.rates[recipient] += s * q * h;
+                self.rates[n.marker_row(recipient)] += s * q * c;
             }
-            if let Some(cj) = cj {
-                self.add(
-                    network,
-                    flow_row,
-                    flow_row,
-                    cj + loss[1] * inverse_inertance,
-                );
-                for (recipient, sign) in [(e.from, 1.), (e.to, -1.)] {
-                    self.add(network, 5 * recipient, flow_row, sign);
-                    self.add(network, 5 * recipient + 1, flow_row, sign * h);
-                    self.add(network, 5 * recipient + 2, flow_row, sign * concentration);
-                }
-                for (node, pressure_sign) in [(e.from, 1.), (e.to, -1.)] {
+            if cj.is_some() {
+                self.add(n, row, row, -loss[1]);
+                let mut gp = 0.;
+                for (node, s) in [(e.from, 1.), (e.to, -1.)] {
                     let lnode = self.liquids[node];
-                    for (j, drho, dmu) in [
-                        (
-                            3,
-                            lnode.density * lnode.compressibility * 0.5,
-                            self.transport_derivatives[node][0] * 0.5,
-                        ),
-                        (
-                            4,
-                            -lnode.density * lnode.expansion * 0.5,
-                            self.transport_derivatives[node][1] * 0.5,
-                        ),
-                    ] {
-                        let dd = if j == 3 { pressure_sign } else { 0. };
-                        let dd = dd - GRAVITY * dz * drho;
-                        self.add(
-                            network,
-                            flow_row,
-                            5 * node + j,
-                            (-dd + loss[2] * dmu + loss[3] * drho) * inverse_inertance,
-                        );
-                        let dh = if node == donor {
-                            if j == 3 {
-                                (1. - y[5 * node + 4] * lnode.expansion) / lnode.density
-                            } else {
-                                lnode.cp
-                            }
-                        } else {
-                            0.
-                        };
-                        for (recipient, sign) in [(e.from, 1.), (e.to, -1.)] {
-                            self.add(network, 5 * recipient + 1, 5 * node + j, sign * q * dh);
-                        }
+                    let d = self.local_derivatives[node];
+                    let rp = lnode.density * lnode.compressibility * 0.5;
+                    let rt = -lnode.density * lnode.expansion * 0.5;
+                    gp += -GRAVITY * dz * rp - loss[2] * d[0] * 0.5 - loss[3] * rp;
+                    self.add(
+                        n,
+                        row,
+                        n.temperature_row(node),
+                        -GRAVITY * dz * rt - loss[2] * d[1] * 0.5 - loss[3] * rt,
+                    );
+                    if let Some(col) = n.mechanical_row(node) {
+                        self.add(n, row, col, s);
+                    }
+                    if let Some(r) = n.mechanical_row(node) {
+                        self.add(n, r, row, s);
                     }
                 }
-                for (recipient, sign) in [(e.from, 1.), (e.to, -1.)] {
+                self.add(n, row, pcol, gp);
+                for (recipient, s) in [(e.from, 1.), (e.to, -1.)] {
+                    self.add(n, recipient, row, s * h);
+                    self.add(n, n.marker_row(recipient), row, s * c);
                     self.add(
-                        network,
-                        5 * recipient + 2,
-                        5 * donor,
-                        -sign * q * concentration / y[5 * donor],
+                        n,
+                        recipient,
+                        pcol,
+                        s * q * (1. - t * l.expansion - pi * l.compressibility) / l.density,
                     );
                     self.add(
-                        network,
-                        5 * recipient + 2,
-                        5 * donor + 2,
-                        sign * q / y[5 * donor],
+                        n,
+                        recipient,
+                        n.temperature_row(donor),
+                        s * q * (l.cp + pi * l.expansion / l.density),
+                    );
+                    if let Some(col) = n.mechanical_row(donor) {
+                        self.add(n, recipient, col, s * q / l.density);
+                    }
+                    self.add(
+                        n,
+                        n.marker_row(recipient),
+                        n.marker_row(donor),
+                        s * q / self.chart_mass[donor],
+                    );
+                    self.add(
+                        n,
+                        n.marker_row(recipient),
+                        pcol,
+                        -s * q * c * l.compressibility,
+                    );
+                    self.add(
+                        n,
+                        n.marker_row(recipient),
+                        n.temperature_row(donor),
+                        s * q * c * l.expansion,
                     );
                 }
             }
         }
-        for (edge, e) in network.config.heat.iter().enumerate() {
-            let ta = network.temperature(e.from, y);
-            let tb = network.temperature(e.to, y);
-            let (g, q, film_partials) = match e.law {
+        for (edge, e) in n.config.heat.iter().enumerate() {
+            let ta = n.temperature(e.from, y);
+            let tb = n.temperature(e.to, y);
+            let (g, q, partials) = match e.law {
                 HeatLaw::Conductance(g) => (g, g * (ta - tb), None),
                 HeatLaw::LiquidFilm { geometry } => {
                     let g = geometry * self.liquids[e.from].conductivity;
@@ -586,7 +712,7 @@ impl Workspace {
                     flow_area,
                     hydraulic_edge,
                 } => {
-                    let p = y[5 * e.from + 3];
+                    let p = n.eos_pressure(e.from, y);
                     let flow = self.mass_flows[hydraulic_edge];
                     let result = sg_sensible(
                         p,
@@ -647,102 +773,121 @@ impl Workspace {
             };
             self.heat_flows[edge] = q;
             self.heat_entropy_production += q * (1. / tb - 1. / ta);
-            self.rates[network.energy_row(e.from)] -= q;
-            self.rates[network.energy_row(e.to)] += q;
+            self.rates[n.energy_row(e.from)] -= q;
+            self.rates[n.energy_row(e.to)] += q;
             if cj.is_some() {
-                if let (HeatLaw::SgSensible { hydraulic_edge, .. }, Some(d)) =
-                    (e.law, film_partials)
-                {
-                    let recipient = nw + (e.to - nw);
-                    for (row, s) in [
-                        (network.energy_row(e.from), 1.),
-                        (network.energy_row(e.to), -1.),
-                    ] {
-                        self.add(network, row, 5 * e.from + 3, s * d[0]);
-                        self.add(network, row, 5 * e.from + 4, s * d[1]);
+                if let (HeatLaw::SgSensible { hydraulic_edge, .. }, Some(d)) = (e.law, partials) {
+                    for (row, s) in [(n.energy_row(e.from), 1.), (n.energy_row(e.to), -1.)] {
+                        self.add(n, row, pcol, s * d[0]);
+                        self.add(n, row, n.temperature_row(e.from), s * d[1]);
                         self.add(
-                            network,
+                            n,
                             row,
-                            network.energy_row(recipient),
-                            s * d[2] / network.config.solids[e.to - nw].heat_capacity,
+                            n.energy_row(e.to),
+                            s * d[2] / n.config.solids[e.to - nw].heat_capacity,
                         );
-                        self.add(network, row, network.flow_row(hydraulic_edge), s * d[3]);
+                        self.add(n, row, n.flow_row(hydraulic_edge), s * d[3]);
                     }
-                    continue;
-                }
-                for (node, sign) in [(e.from, 1.), (e.to, -1.)] {
-                    let (column, dt) = if node < nw {
-                        (5 * node + 4, 1.)
-                    } else {
-                        (
-                            network.energy_row(node),
-                            1. / network.config.solids[node - nw].heat_capacity,
-                        )
-                    };
-                    for (recipient, s) in [(e.from, 1.), (e.to, -1.)] {
-                        self.add(
-                            network,
-                            network.energy_row(recipient),
-                            column,
-                            s * sign * g * dt,
-                        );
-                    }
-                }
-                if let HeatLaw::LiquidFilm { geometry } = e.law {
-                    for (column, dk) in [
-                        (5 * e.from + 3, self.transport_derivatives[e.from][2]),
-                        (5 * e.from + 4, self.transport_derivatives[e.from][3]),
-                    ] {
+                } else {
+                    for (node, sign) in [(e.from, 1.), (e.to, -1.)] {
+                        let (col, dt) = if node < nw {
+                            (n.temperature_row(node), 1.)
+                        } else {
+                            (
+                                n.energy_row(node),
+                                1. / n.config.solids[node - nw].heat_capacity,
+                            )
+                        };
                         for (recipient, s) in [(e.from, 1.), (e.to, -1.)] {
-                            self.add(
-                                network,
-                                network.energy_row(recipient),
-                                column,
-                                s * geometry * dk * (ta - tb),
-                            );
+                            self.add(n, n.energy_row(recipient), col, s * sign * g * dt);
+                        }
+                    }
+                    if let HeatLaw::LiquidFilm { geometry } = e.law {
+                        for (col, dk) in [
+                            (pcol, self.local_derivatives[e.from][2]),
+                            (n.temperature_row(e.from), self.local_derivatives[e.from][3]),
+                        ] {
+                            for (recipient, s) in [(e.from, 1.), (e.to, -1.)] {
+                                self.add(
+                                    n,
+                                    n.energy_row(recipient),
+                                    col,
+                                    s * geometry * dk * (ta - tb),
+                                );
+                            }
                         }
                     }
                 }
             }
         }
-        for i in 0..network.stock_dimension() {
-            self.residual[i] = yp[i] - self.rates[i];
-        }
-        for (i, w) in network.config.water.iter().enumerate() {
-            let l = self.liquids[i];
-            let mass = w.geometry.volume * l.density;
-            let u = l.internal_energy + GRAVITY * w.geometry.elevation;
-            let p = y[5 * i + 3];
-            let t = y[5 * i + 4];
-            self.residual[5 * i + 3] = y[5 * i] - mass;
-            self.residual[5 * i + 4] = y[5 * i + 1] - mass * u;
+        for row in 0..n.stock_dimension() {
+            self.residual[row] = yp[row] - self.rates[row];
             if let Some(cj) = cj {
-                for j in 0..3 {
-                    self.add(network, 5 * i + j, 5 * i + j, cj);
-                }
-                self.add(network, 5 * i + 3, 5 * i, 1.);
-                self.add(network, 5 * i + 4, 5 * i + 1, 1.);
-                let mp = mass * l.compressibility;
-                let mt = -mass * l.expansion;
-                self.add(network, 5 * i + 3, 5 * i + 3, -mp);
-                self.add(network, 5 * i + 3, 5 * i + 4, -mt);
-                self.add(
-                    network,
-                    5 * i + 4,
-                    5 * i + 3,
-                    -(u * mp + w.geometry.volume * (p * l.compressibility - t * l.expansion)),
-                );
-                self.add(
-                    network,
-                    5 * i + 4,
-                    5 * i + 4,
-                    -(u * mt + mass * (l.cp - p * l.expansion / l.density)),
-                );
+                self.add(n, row, row, cj);
+            }
+        }
+        self.residual[pcol] = y[n.total_mass_row()] - self.chart_mass.iter().sum::<f64>();
+        let sum_a: f64 = self.redistribution.iter().map(|x| x[0]).sum();
+        if !sum_a.is_finite() || sum_a <= 0. {
+            return Err("Singular aggregate pressure chart".into());
+        }
+        self.pressure_rate = (yp[n.total_mass_row()]
+            - (0..nw)
+                .map(|i| self.redistribution[i][1] * yp[i])
+                .sum::<f64>())
+            / sum_a;
+        for i in 0..nw {
+            self.residual[n.temperature_row(i)] = y[i] - self.chart_energy[i];
+            if let Some(row) = n.mechanical_row(i) {
+                let [a, b] = self.redistribution[i];
+                self.residual[row] = a * self.pressure_rate + b * yp[i] - self.mass_rates[i];
+            }
+            if cj.is_some() {
+                let [mp, mt, ep, et] = self.chart_derivatives[i];
+                self.add(n, pcol, pcol, -mp);
+                self.add(n, pcol, n.temperature_row(i), -mt);
+                self.add(n, n.temperature_row(i), i, 1.);
+                self.add(n, n.temperature_row(i), pcol, -ep);
+                self.add(n, n.temperature_row(i), n.temperature_row(i), -et);
             }
         }
         if let Some(cj) = cj {
-            for i in 5 * nw..network.stock_dimension() {
-                self.add(network, i, i, cj);
+            self.add(n, pcol, n.total_mass_row(), 1.);
+            let dp_rate: f64 = -(0..nw)
+                .map(|j| {
+                    self.local_derivatives[j][6] * yp[j]
+                        + self.pressure_rate * self.local_derivatives[j][4]
+                })
+                .sum::<f64>()
+                / sum_a;
+            for i in 1..nw {
+                let row = n.mechanical_row(i).unwrap();
+                let [a, b] = self.redistribution[i];
+                let d = self.local_derivatives[i];
+                self.add(
+                    n,
+                    row,
+                    pcol,
+                    d[4] * self.pressure_rate + d[6] * yp[i] + a * dp_rate,
+                );
+                self.add(n, row, n.total_mass_row(), cj * a / sum_a);
+                for j in 0..nw {
+                    let dj = self.local_derivatives[j];
+                    let dt_rate = -(dj[7] * yp[j] + self.pressure_rate * dj[5]) / sum_a;
+                    let local = if i == j {
+                        d[5] * self.pressure_rate + d[7] * yp[i]
+                    } else {
+                        0.
+                    };
+                    self.add(n, row, n.temperature_row(j), local + a * dt_rate);
+                    self.add(
+                        n,
+                        row,
+                        j,
+                        cj * ((if i == j { b } else { 0. })
+                            - a * self.redistribution[j][1] / sum_a),
+                    );
+                }
             }
         }
         if self
@@ -752,17 +897,18 @@ impl Workspace {
             .chain(&self.jacobian_values)
             .chain(&self.mass_flows)
             .chain(&self.heat_flows)
+            .chain(&self.chart_mass)
+            .chain(&self.chart_energy)
             .any(|x| !x.is_finite())
+            || !self.pressure_rate.is_finite()
         {
-            return Err("Nonfinite operating network result".into());
+            return Err("Nonfinite pressure-territory result".into());
         }
         Ok(())
     }
 }
 
-/// Same current-owner sensible-film formulas and property convention. This
-/// bounded stable-liquid block refuses a wall/film outside stable liquid; it
-/// does not install the owner's Tsat-bounded boiling or NC continuation.
+/// Current-owner stable sensible-film law; no phase/NC continuation.
 fn sg_sensible(
     p: f64,
     t: f64,

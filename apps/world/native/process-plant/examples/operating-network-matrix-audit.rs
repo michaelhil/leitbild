@@ -18,7 +18,8 @@ fn main() -> Result<(), String> {
     let n = Network::new(parsed.config)?;
     let dim = n.dimension();
     // Narrow diagnostic suffix: initial cj, captured cj, captured y and yp,
-    // then the EXACT original driver q absolute weights, in contact order.
+    // then ALL exact absolute weights, in compiled coordinate order. This
+    // diagnostic suffix is not part of the unchanged physical graph input.
     let initial_cj: f64 = operating_network_input::value(&mut tokens)?;
     let captured_cj: f64 = operating_network_input::value(&mut tokens)?;
     if ![initial_cj, captured_cj]
@@ -33,7 +34,7 @@ fn main() -> Result<(), String> {
     let yp: Vec<f64> = (0..dim)
         .map(|_| operating_network_input::value(&mut tokens))
         .collect::<Result<_, _>>()?;
-    let flow_weights: Vec<f64> = (0..n.config().hydraulic.len())
+    let weights: Vec<f64> = (0..dim)
         .map(|_| operating_network_input::value(&mut tokens))
         .collect::<Result<_, _>>()?;
     if tokens.next().is_some() {
@@ -42,24 +43,11 @@ fn main() -> Result<(), String> {
     let original = n.initial_state()?;
     let mut workspace = Workspace::new(&n);
     workspace.evaluate(&n, &original, &vec![0.; dim], None)?;
-    // Actual differential stock/flow rates with zero algebraic p/T entries;
-    // this is a residual-consistent audit seed, not the full physical tangent.
+    // Raw prepared coordinates and evaluated conservative rate field. This
+    // does not solve the new algebraic expansion/flow compatibility problem;
+    // it is NOT a claimed consistent initializer or physical tangent. The
+    // actual captured y/yp below retain their caller-owned initialization.
     let original_rates = workspace.rates.clone();
-    let nw = n.config().water.len();
-    let mut weights = vec![0.; dim];
-    for i in 0..nw {
-        weights[5 * i] = 1e-5;
-        weights[5 * i + 1] = original[5 * i] * workspace.liquids[i].cp * 1e-3;
-        weights[5 * i + 2] = 1e-8;
-        weights[5 * i + 3] = 100.;
-        weights[5 * i + 4] = 1e-3;
-    }
-    for i in 0..n.config().solids.len() {
-        weights[5 * nw + i] = n.config().solids[i].heat_capacity * 1e-3;
-    }
-    for (e, w) in flow_weights.into_iter().enumerate() {
-        weights[n.flow_row(e)] = w;
-    }
     if !weights.iter().all(|x| x.is_finite() && *x > 0.) {
         return Err("Finite positive actual weights required".into());
     }
@@ -69,10 +57,17 @@ fn main() -> Result<(), String> {
         &original,
         &original_rates,
         &weights,
-        [initial_cj, captured_cj],
-        "original",
+        &[initial_cj, captured_cj],
+        "prepared-before-algebraic-consistency",
     )?;
-    operating_network_audit::fixed(&n, &y, &yp, &weights, [initial_cj, captured_cj], "captured")?;
+    operating_network_audit::fixed(
+        &n,
+        &y,
+        &yp,
+        &weights,
+        &[initial_cj, captured_cj],
+        "captured",
+    )?;
     println!(
         "{{\"scope\":\"fixed-matrix-audit-complete\",\"unknowns\":{dim},\"elapsed_s\":{},\"advancement_s\":0,\"IDAConstructed\":false,\"inputHorizon_s\":{},\"inputAllowance_s\":{}}}",
         began.elapsed().as_secs_f64(),

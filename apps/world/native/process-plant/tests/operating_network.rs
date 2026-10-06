@@ -3,42 +3,24 @@ use leitbild_plant_numerics::{CellGeometry, GRAVITY};
 
 fn fixture() -> Network {
     Network::new(Config {
-        water: vec![
-            Water {
+        water: (0..3)
+            .map(|i| Water {
                 geometry: CellGeometry {
-                    volume: 12.,
+                    volume: [12., 20., 15.][i],
                     elevation: 3.,
                 },
-                initial_pressure: 15.2e6,
-                initial_temperature: 310.,
-                initial_tracer_fraction: 0.002,
-            },
-            Water {
-                geometry: CellGeometry {
-                    volume: 20.,
-                    elevation: 3.,
-                },
-                initial_pressure: 15.199e6,
-                initial_temperature: 300.,
-                initial_tracer_fraction: 0.001,
-            },
-            Water {
-                geometry: CellGeometry {
-                    volume: 15.,
-                    elevation: 3.,
-                },
-                initial_pressure: 15.202e6,
-                initial_temperature: 305.,
-                initial_tracer_fraction: 0.003,
-            },
-        ],
+                initial_pressure: [15.2e6, 15.199e6, 15.202e6][i],
+                initial_temperature: [310., 300., 305.][i],
+                initial_tracer_fraction: [0.002, 0.001, 0.003][i],
+            })
+            .collect(),
         solids: vec![
             Solid {
-                heat_capacity: 75.0e6,
+                heat_capacity: 75e6,
                 initial_temperature: 313.15,
             },
             Solid {
-                heat_capacity: 150.0e6,
+                heat_capacity: 150e6,
                 initial_temperature: 295.,
             },
         ],
@@ -81,115 +63,163 @@ fn fixture() -> Network {
     })
     .unwrap()
 }
-fn at(network: &Network, y: &[f64], yp: &[f64], cj: Option<f64>) -> Workspace {
-    let mut w = Workspace::new(network);
-    w.evaluate(network, y, yp, cj).unwrap();
+fn at(n: &Network, y: &[f64], yp: &[f64], cj: Option<f64>) -> Workspace {
+    let mut w = Workspace::new(n);
+    w.evaluate(n, y, yp, cj).unwrap();
     w
 }
-fn matrix(network: &Network, w: &Workspace, row: usize, col: usize) -> f64 {
-    let a = network.column_pointers[col] as usize;
-    let b = network.column_pointers[col + 1] as usize;
-    network.row_indices[a..b]
+fn entry(n: &Network, w: &Workspace, row: usize, col: usize) -> f64 {
+    let a = n.column_pointers[col] as usize;
+    let b = n.column_pointers[col + 1] as usize;
+    n.row_indices[a..b]
         .binary_search(&(row as i64))
         .map(|i| w.jacobian_values[a + i])
         .unwrap_or(0.)
 }
-
 #[test]
-fn fresh_rest_has_actual_head_acceleration_and_consistent_dynamic_rates() {
+fn fresh_energy_mass_and_material_identity_is_preserved_not_initial_flow_admission() {
     let n = fixture();
     let y = n.initial_state().unwrap();
     let w = at(&n, &y, &vec![0.; y.len()], Some(47.));
+    assert_eq!(n.stock_dimension(), 9);
+    assert_eq!(n.dimension(), 17);
     assert_eq!(
-        (0..n.dimension()).filter(|&i| n.is_differential(i)).count(),
-        13
+        (0..n.dimension()).filter(|&r| n.is_differential(r)).count(),
+        9
     );
+    assert_eq!(n.mechanical_row(0), None);
+    let total: f64 = w.chart_mass.iter().sum();
+    assert_eq!(y[n.total_mass_row()], total);
     for i in 0..3 {
-        assert!(n.is_differential(5 * i));
-        assert!(n.is_differential(5 * i + 1));
-        assert!(n.is_differential(5 * i + 2));
-        assert!(!n.is_differential(5 * i + 3));
-        assert!(!n.is_differential(5 * i + 4));
-        assert_eq!(w.rates[5 * i], 0.);
-        assert_eq!(w.rates[5 * i + 2], 0.);
+        assert_eq!(n.eos_pressure(i, &y), n.config().water[i].initial_pressure);
+        assert_eq!(y[i], w.chart_energy[i]);
+        assert_eq!(
+            y[n.marker_row(i)],
+            w.chart_mass[i] * n.config().water[i].initial_tracer_fraction
+        );
+        assert_eq!(w.residual[n.temperature_row(i)], 0.);
+        assert!(w.redistribution[i][0] > 0.);
+        assert!(w.chart_derivatives[i][3] > 0.);
     }
-    assert!(w.rates[1] > 0.); // Actual finite metal heat need not await flow.
-    for (edge, e) in n.config().hydraulic.iter().enumerate() {
-        let row = n.flow_row(edge);
-        let rho = (w.liquids[e.from].density + w.liquids[e.to].density) * 0.5;
-        let dz =
-            n.config().water[e.to].geometry.elevation - n.config().water[e.from].geometry.elevation;
-        let head = y[5 * e.from + 3] - y[5 * e.to + 3] - rho * GRAVITY * dz;
-        assert!(n.is_differential(row));
-        assert_eq!(y[row], 0.);
-        assert_eq!(w.mass_flows[edge], 0.);
-        assert_eq!(w.rates[row], head * e.inertance().recip());
-        assert_ne!(w.rates[row], 0.);
-        assert_eq!(w.residual[row], -w.rates[row]);
+    assert_eq!(w.residual[n.pressure_row()], 0.);
+    assert_eq!(w.rates[n.total_mass_row()], 0.);
+    for e in 0..2 {
+        assert!(!n.is_differential(n.flow_row(e)));
+        assert_eq!(y[n.flow_row(e)], 0.);
     }
-    let consistent = at(&n, &y, &w.rates, None);
-    assert!(consistent.residual.iter().all(|r| r.abs() < 1e-9));
+    assert!(w.rates[0] > 0.); // Finite warm metal, no prescribed power.
+    assert_ne!(w.residual[n.flow_row(0)], 0.); // A guess is not a consistent original.
 }
-
 #[test]
-fn signed_transfers_and_finite_heat_recipients_conserve_three_stocks() {
+fn signed_transport_and_finite_heat_conserve_energy_marker_and_aggregate_mass() {
     let n = fixture();
     let mut y = n.initial_state().unwrap();
     y[n.flow_row(0)] = 10.;
     y[n.flow_row(1)] = -20.;
-    let w = at(&n, &y, &vec![0.; y.len()], Some(73.));
-    assert!(w.mass_flows[0] > 0. && w.mass_flows[1] < 0.);
-    assert!(w.heat_flows[0] < 0. && w.heat_flows[1] > 0.);
-    for offset in [0, 2] {
-        let sum = (0..3).map(|i| w.rates[5 * i + offset]).sum::<f64>();
-        assert!(sum.abs() < 1e-12);
-    }
-    let sum = (0..5).map(|i| w.rates[n.energy_row(i)]).sum::<f64>();
-    assert!(sum.abs() < 1e-6);
-    assert!(w.rates[n.energy_row(3)] < 0. && w.rates[n.energy_row(4)] > 0.);
+    y[n.mechanical_row(1).unwrap()] = 123.;
+    let w = at(&n, &y, &vec![0.; y.len()], None);
+    assert_eq!(w.mass_flows, vec![10., -20.]);
+    assert_eq!(w.mass_rates, vec![-10., 30., -20.]);
+    assert!(w.mass_rates.iter().sum::<f64>().abs() < 1e-12);
+    assert!((0..3).map(|i| w.rates[n.marker_row(i)]).sum::<f64>().abs() < 1e-12);
+    assert!((0..5).map(|i| w.rates[n.energy_row(i)]).sum::<f64>().abs() < 1e-6);
+    assert_eq!(w.rates[n.total_mass_row()], 0.);
     assert!(w.heat_entropy_production > 0.);
-    for i in 0..3 {
-        assert_eq!(w.residual[5 * i + 3], 0.);
-        assert_eq!(w.residual[5 * i + 4], 0.);
-    }
-    assert_eq!(w.property_requests, 15);
-    assert_eq!(at(&n, &y, &vec![0.; y.len()], None).property_requests, 3);
-    assert_eq!(n.stock_dimension(), 17);
-    assert_eq!(n.dimension(), 19);
-    for edge in 0..n.config().hydraulic.len() {
-        assert_eq!(w.mass_flows[edge], y[n.flow_row(edge)]);
-        assert_eq!(w.residual[n.flow_row(edge)], -w.rates[n.flow_row(edge)]);
-    }
+    let l = w.liquids[0];
+    let h = l.internal_energy + n.mechanical_pressure(0, &y) / l.density + GRAVITY * 3.;
+    assert!((w.rates[0] + 10. * h + w.heat_flows[0]).abs() < 1e-7);
 }
-
 #[test]
-fn sparse_local_ida_matrix_matches_off_manifold_signed_network() {
+fn off_manifold_energy_and_total_mass_are_not_projected_or_used_as_local_fake_mass() {
     let n = fixture();
     let mut y = n.initial_state().unwrap();
     y[n.flow_row(0)] = 10.;
+    let before = at(&n, &y, &vec![0.; y.len()], None);
+    y[0] += 123.;
+    y[n.total_mass_row()] += 4.;
+    let after = at(&n, &y, &vec![0.; y.len()], None);
+    assert_eq!(before.rates, after.rates);
+    assert_eq!(before.chart_mass, after.chart_mass);
+    assert_eq!(after.residual[n.temperature_row(0)], 123.);
+    assert_eq!(after.residual[n.pressure_row()], 4.);
+}
+#[test]
+fn reduced_mass_matrix_is_non_diagonal_and_matches_independent_yp_perturbations() {
+    let n = fixture();
+    let y = n.initial_state().unwrap();
+    let mut yp = vec![0.; y.len()];
+    yp[0] = 1e6;
+    yp[1] = -2e6;
+    yp[2] = 3e6;
+    yp[n.total_mass_row()] = 0.37;
+    let base = at(&n, &y, &yp, Some(0.));
+    let stage = at(&n, &y, &yp, Some(73.));
+    assert!(entry(&n, &stage, n.mechanical_row(1).unwrap(), 0) != 0.);
+    for col in 0..y.len() {
+        let step = if col < 3 { 1000. } else { 1. };
+        let mut ap = yp.clone();
+        let mut bp = yp.clone();
+        ap[col] += step;
+        bp[col] -= step;
+        let plus = at(&n, &y, &ap, None);
+        let minus = at(&n, &y, &bp, None);
+        for row in 0..y.len() {
+            let observed = (plus.residual[row] - minus.residual[row]) / (2. * step);
+            let expected = (entry(&n, &stage, row, col) - entry(&n, &base, row, col)) / 73.;
+            assert!(
+                (observed - expected).abs() <= 1e-11 + expected.abs() * 1e-8,
+                "Fyp row{row} col{col}: {observed} {expected}"
+            );
+        }
+    }
+    let sum_a: f64 = base.redistribution.iter().map(|x| x[0]).sum();
+    assert!(
+        (base.pressure_rate
+            - (yp[n.total_mass_row()]
+                - (0..3)
+                    .map(|i| base.redistribution[i][1] * yp[i])
+                    .sum::<f64>())
+                / sum_a)
+            .abs()
+            < 1e-9
+    );
+    let predicted: f64 = (0..3)
+        .map(|i| base.redistribution[i][0] * base.pressure_rate + base.redistribution[i][1] * yp[i])
+        .sum();
+    assert!((predicted - yp[n.total_mass_row()]).abs() < 1e-12);
+}
+#[test]
+fn full_half_sparse_stage_matrix_matches_off_manifold_signed_trial() {
+    let n = fixture();
+    let mut y = n.initial_state().unwrap();
+    y[0] += 123.;
+    y[n.total_mass_row()] += 0.4;
+    y[n.flow_row(0)] = 10.;
     y[n.flow_row(1)] = -20.;
-    y[0] *= 1.001;
-    y[1] += 123.;
-    y[7] *= 0.99;
+    y[n.mechanical_row(1).unwrap()] = 70.;
+    y[n.mechanical_row(2).unwrap()] = -40.;
+    let mut yp = vec![0.37; y.len()];
+    yp[0] = 1e6;
+    yp[1] = -2e6;
+    yp[2] = 3e6;
     let cj = 73.;
-    let yp = vec![0.37; y.len()];
     let base = at(&n, &y, &yp, Some(cj));
     for factor in [1., 0.5] {
         for col in 0..y.len() {
-            let step = if col >= n.stock_dimension() {
-                y[col].abs().max(1.) * 1e-5
-            } else if col >= 15 {
+            let step = if col < 3 || (7..9).contains(&col) {
                 100.
+            } else if col < 6 {
+                0.0001
+            } else if col == n.total_mass_row() {
+                0.1
+            } else if col == n.pressure_row() {
+                1.
+            } else if col >= n.temperature_row(0) && col < n.flow_row(0) {
+                0.0002
             } else {
-                match col % 5 {
-                    0 => y[col] * 1e-6,
-                    1 => 100.,
-                    2 => 0.0001,
-                    3 => 1.,
-                    4 => 0.0002,
-                    _ => unreachable!(),
-                }
-            } * factor;
+                y[col].abs().max(1.) * 1e-5
+            };
+            let step = step * factor;
             let mut a = y.clone();
             let mut b = y.clone();
             let mut ap = yp.clone();
@@ -202,329 +232,102 @@ fn sparse_local_ida_matrix_matches_off_manifold_signed_network() {
             let minus = at(&n, &b, &bp, None);
             for row in 0..y.len() {
                 let observed = (plus.residual[row] - minus.residual[row]) * 0.5;
-                let expected = matrix(&n, &base, row, col) * step;
+                let expected = entry(&n, &base, row, col) * step;
+                let abs = if row >= n.mechanical_row(1).unwrap() {
+                    2e-9
+                } else {
+                    4e-5
+                };
                 assert!(
-                    (observed - expected).abs() <= 4e-5 + expected.abs() * 0.002,
-                    "row {row} column {col}: {observed} vs {expected}"
+                    (observed - expected).abs() <= abs + expected.abs() * 0.002,
+                    "row{row} col{col} factor{factor}: {observed} vs{expected}"
                 );
             }
         }
     }
 }
-
 #[test]
-fn zero_flow_has_physical_viscous_limit_and_reversal_changes_real_donor() {
-    let mut cfg = fixture().config().clone();
-    cfg.hydraulic.truncate(1);
-    cfg.heat.clear();
-    for w in &mut cfg.water {
-        w.initial_pressure = 15.2e6;
-        w.initial_temperature = 300.;
-    }
-    let n = Network::new(cfg).unwrap();
-    let y = n.initial_state().unwrap();
-    let base = at(&n, &y, &vec![0.; y.len()], Some(0.));
-    let flow_row = n.flow_row(0);
-    assert_eq!(base.mass_flows[0], 0.);
-    assert_eq!(matrix(&n, &base, 0, 3), 0.);
-    assert_eq!(matrix(&n, &base, 0, flow_row), 1.);
-    assert_eq!(matrix(&n, &base, 5, flow_row), -1.);
-    let l = base.liquids[0];
-    let viscous = n.config().hydraulic[0].pressure_loss(0., l.density, l.viscosity)[1];
-    let inertia = n.config().hydraulic[0].inertance();
-    assert_eq!(matrix(&n, &base, flow_row, flow_row), viscous / inertia);
-    assert_eq!(matrix(&n, &base, flow_row, 3), -1. / inertia);
-    assert_eq!(matrix(&n, &base, flow_row, 8), 1. / inertia);
-    let mut plus = y.clone();
-    plus[flow_row] = 1e-6;
-    let a = at(&n, &plus, &vec![0.; y.len()], None);
-    let mut minus = y.clone();
-    minus[flow_row] = -1e-6;
-    let b = at(&n, &minus, &vec![0.; y.len()], None);
-    assert!(a.mass_flows[0] > 0. && b.mass_flows[0] < 0.);
-    assert!((a.rates[2] / a.rates[0] - y[2] / y[0]).abs() < 1e-15);
-    assert!((b.rates[2] / b.rates[0] - y[7] / y[5]).abs() < 1e-15);
-    assert!(a.residual[flow_row] > 0. && b.residual[flow_row] < 0.);
-    // The chosen q=0 tangent is from-side directional, not smoothed donor data.
-    assert!((a.residual[2] / plus[flow_row] - matrix(&n, &base, 2, flow_row)).abs() < 1e-15);
-    let altered_yp = vec![12345.; y.len()];
-    assert_eq!(
-        at(&n, &y, &altered_yp, Some(917.)).residual[flow_row],
-        12345.
-    );
-    assert_eq!(
-        matrix(&n, &at(&n, &y, &altered_yp, Some(917.)), flow_row, flow_row),
-        917. + viscous / inertia
-    );
-}
-
-#[test]
-fn common_elevation_shift_changes_energy_receipts_by_same_mass_receipt() {
+fn mechanical_pressure_pays_shared_enthalpy_but_never_changes_eos_density() {
     let n = fixture();
     let mut y = n.initial_state().unwrap();
-    y[n.flow_row(0)] = 10.;
-    y[n.flow_row(1)] = -20.;
-    let a = at(&n, &y, &vec![0.; y.len()], None);
-    let mut cfg = n.config().clone();
-    for w in &mut cfg.water {
-        w.geometry.elevation += 100.;
-    }
-    let raised = Network::new(cfg).unwrap();
-    let mut z = raised.initial_state().unwrap();
-    z[raised.flow_row(0)] = 10.;
-    z[raised.flow_row(1)] = -20.;
-    let b = at(&raised, &z, &vec![0.; z.len()], None);
-    for i in 0..3 {
-        assert_eq!(a.mass_flows, b.mass_flows);
-        assert!((z[5 * i + 1] - y[5 * i + 1] - GRAVITY * 100. * y[5 * i]).abs() < 2e-5);
-        assert!(
-            (b.rates[5 * i + 1] - a.rates[5 * i + 1] - GRAVITY * 100. * a.rates[5 * i]).abs()
-                < 1e-6
-        );
-    }
+    y[n.flow_row(0)] = -10.;
+    let old = at(&n, &y, &vec![0.; y.len()], Some(0.));
+    let col = n.mechanical_row(1).unwrap();
+    y[col] += 1000.;
+    let new = at(&n, &y, &vec![0.; y.len()], Some(0.));
+    assert_eq!(old.chart_mass, new.chart_mass);
+    let change = 10. * 1000. / old.liquids[1].density;
+    assert!((new.rates[0] - old.rates[0] - change).abs() < 1e-8);
+    assert!((new.rates[1] - old.rates[1] + change).abs() < 1e-8);
+    assert_eq!(entry(&n, &new, n.flow_row(0), col), -1.);
 }
-
 #[test]
-fn closed_stock_keeps_eos_pressure_response_and_actual_heat_receipt() {
-    let mut cfg = fixture().config().clone();
-    cfg.hydraulic.clear();
-    cfg.heat.truncate(1);
-    let n = Network::new(cfg).unwrap();
-    let y = n.initial_state().unwrap();
-    let w = at(&n, &y, &vec![0.; y.len()], Some(0.));
-    assert_eq!(w.rates[0], 0.);
-    assert!(w.rates[1] > 0.);
-    let mp = -matrix(&n, &w, 3, 3);
-    let mt = -matrix(&n, &w, 3, 4);
-    let ep = -matrix(&n, &w, 4, 3);
-    let et = -matrix(&n, &w, 4, 4);
-    let det = mp * et - mt * ep;
-    assert!(det > 0.);
-    let pdot = -mt * w.rates[1] / det;
-    let tdot = mp * w.rates[1] / det;
-    assert!(pdot > 0. && tdot > 0.);
-    assert_eq!(w.rates[1], -w.rates[n.energy_row(3)]);
-}
-
-#[test]
-fn invalid_topology_trial_domain_and_nonfinite_values_refuse_explicitly() {
-    let mut cfg = fixture().config().clone();
-    cfg.hydraulic[0].length = 0.;
-    assert!(Network::new(cfg).is_err());
-    for (length, area) in [
-        (f64::MAX, f64::MIN_POSITIVE),
-        (f64::MIN_POSITIVE, f64::MAX),
-        (1e-320, 1.),
-    ] {
-        let mut cfg = fixture().config().clone();
-        cfg.hydraulic[0].length = length;
-        cfg.hydraulic[0].flow_area = area;
-        assert!(Network::new(cfg).is_err());
-    }
-    let mut cfg = fixture().config().clone();
-    cfg.heat[0].to = 1;
-    assert!(Network::new(cfg).is_err());
+fn zero_flow_has_one_sided_donor_tangent_not_a_floor_or_fictitious_inertia() {
     let n = fixture();
     let y = n.initial_state().unwrap();
-    for (col, value) in [(0, 0.), (2, -1.), (3, f64::NAN), (4, 0.), (15, -1e12)] {
-        let mut x = y.clone();
-        x[col] = value;
-        assert!(
-            Workspace::new(&n)
-                .evaluate(&n, &x, &vec![0.; x.len()], None)
-                .is_err()
-        );
+    let yp = vec![0.; y.len()];
+    let base = at(&n, &y, &yp, Some(197.));
+    let q = n.flow_row(0);
+    let mut a = y.clone();
+    a[q] = 1e-6;
+    let plus = at(&n, &a, &yp, None);
+    for row in [0, 1, n.marker_row(0), n.marker_row(1)] {
+        let d = (plus.residual[row] - base.residual[row]) / 1e-6;
+        assert!((d - entry(&n, &base, row, q)).abs() < 0.01);
     }
-    let mut x = y.clone();
-    x[4] = 200.;
-    assert!(
-        Workspace::new(&n)
-            .evaluate(&n, &x, &vec![0.; x.len()], None)
-            .is_err()
-    );
+    assert!(entry(&n, &base, q, q) < 0.); // No cj in algebraic loss row.
+    let other = at(&n, &y, &yp, Some(0.));
+    assert_eq!(entry(&n, &base, q, q), entry(&n, &other, q, q));
 }
-
 #[test]
-fn sg_sensible_uses_natural_transfer_at_zero_and_actual_turbulent_flow_feedback() {
+fn sg_film_uses_same_signed_q_and_local_pressure_coordinate() {
     let mut cfg = fixture().config().clone();
-    cfg.heat = vec![Heat {
-        from: 0,
-        to: 3,
-        law: HeatLaw::SgSensible {
-            area: 1250.,
-            diameter: 0.020,
-            flow_area: 1.25,
-            hydraulic_edge: 0,
-        },
-    }];
+    cfg.heat[0].law = HeatLaw::SgSensible {
+        area: 1250.,
+        diameter: 0.020,
+        flow_area: 1.25,
+        hydraulic_edge: 0,
+    };
     let n = Network::new(cfg).unwrap();
     let mut y = n.initial_state().unwrap();
-    y[n.flow_row(0)] = 10.;
-    let w = at(&n, &y, &vec![0.; y.len()], Some(19.));
-    assert!(w.film_nusselt[0] > 3.66);
-    assert!(w.heat_flows[0] < 0.);
-    assert_eq!(w.property_requests, 42); // 15 network + 3 film + 8*3 local film probes.
-    for col in [3, 4, 8, 9, 15, n.flow_row(0)] {
-        let step = if col == n.flow_row(0) {
-            y[col].abs() * 1e-5
-        } else if col == 15 {
-            1000.
-        } else if col % 5 == 3 {
-            0.25
-        } else {
-            0.0002
-        };
+    y[n.flow_row(0)] = 6000.;
+    let yp = vec![0.; y.len()];
+    let base = at(&n, &y, &yp, Some(0.));
+    assert!(base.film_nusselt[0] > 3.66);
+    for factor in [1., 0.5] {
+        let step = 0.1 * factor;
         let mut a = y.clone();
         let mut b = y.clone();
-        a[col] += step;
-        b[col] -= step;
-        let ap = at(&n, &a, &vec![0.; y.len()], None);
-        let bp = at(&n, &b, &vec![0.; y.len()], None);
-        for row in [1, 6, 15] {
-            let seen = (ap.residual[row] - bp.residual[row]) * 0.5;
-            let expected =
-                matrix(&n, &w, row, col) * step - if row == col { 19. * step } else { 0. };
-            assert!(
-                (seen - expected).abs() < 1e-4 + expected.abs() * 0.003,
-                "film row{row} col{col}: {seen} {expected}"
-            );
-        }
-    }
-    let mut rest = y.clone();
-    rest[n.flow_row(0)] = 0.;
-    let r = at(&n, &rest, &vec![0.; y.len()], None);
-    assert_eq!(r.mass_flows[0], 0.);
-    assert!(r.film_nusselt[0] > 3.66 && r.heat_flows[0] < 0.);
-    // A trial with unbalanced momentum still has one consumed q: the
-    // same flow drives transport and the turbulent film, without a new inverse.
-    let mut fast = y.clone();
-    fast[n.flow_row(0)] = 6000.;
-    let f = at(&n, &fast, &vec![0.; y.len()], Some(0.));
-    assert_eq!(f.mass_flows[0], 6000.);
-    assert!(f.film_nusselt[0] > r.film_nusselt[0]);
-    assert!(matrix(&n, &f, 15, n.flow_row(0)).abs() > 0.);
-    for factor in [1., 0.5] {
-        let step = 0.06 * factor;
-        let mut plus = fast.clone();
-        let mut minus = fast.clone();
-        plus[n.flow_row(0)] += step;
-        minus[n.flow_row(0)] -= step;
-        let a = at(&n, &plus, &vec![0.; y.len()], None);
-        let b = at(&n, &minus, &vec![0.; y.len()], None);
-        for row in [1, 15, n.flow_row(0)] {
-            let seen = (a.residual[row] - b.residual[row]) / (2. * step);
-            let expected = matrix(&n, &f, row, n.flow_row(0));
-            assert!((seen - expected).abs() < 1e-4 + expected.abs() * 1e-4);
+        a[n.flow_row(0)] += step;
+        b[n.flow_row(0)] -= step;
+        let plus = at(&n, &a, &yp, None);
+        let minus = at(&n, &b, &yp, None);
+        for row in [0, n.energy_row(3)] {
+            let d = (plus.residual[row] - minus.residual[row]) / (2. * step);
+            assert!((d - entry(&n, &base, row, n.flow_row(0))).abs() < 0.01 + 0.001 * d.abs());
         }
     }
 }
-
 #[test]
-fn pressure_head_changes_acceleration_without_instantly_changing_trial_flow() {
+fn malformed_disconnected_and_nonfinite_trials_refuse_explicitly() {
+    let mut cfg = fixture().config().clone();
+    cfg.hydraulic.pop();
+    assert!(Network::new(cfg).is_err());
+    let mut cfg = fixture().config().clone();
+    cfg.water[1].initial_pressure = f64::NAN;
+    assert!(Network::new(cfg).is_err());
     let n = fixture();
-    let y = n.initial_state().unwrap();
-    let a = at(&n, &y, &vec![0.; y.len()], Some(31.));
-    let mut changed = y.clone();
-    changed[3] += 100.;
-    let b = at(&n, &changed, &vec![0.; y.len()], Some(31.));
-    assert_eq!(a.mass_flows, b.mass_flows);
-    assert_eq!(a.rates[0], b.rates[0]);
-    assert_eq!(a.rates[2], b.rates[2]);
-    let inertia = n.config().hydraulic[0].inertance();
-    assert!((b.rates[n.flow_row(0)] - a.rates[n.flow_row(0)] - 100. / inertia).abs() < 1e-8);
-    assert_eq!(matrix(&n, &b, n.flow_row(0), n.flow_row(1)), 0.);
-    let mut nonfinite = y.clone();
-    nonfinite[n.flow_row(0)] = f64::INFINITY;
-    assert!(
-        Workspace::new(&n)
-            .evaluate(&n, &nonfinite, &vec![0.; y.len()], None)
-            .is_err()
-    );
-}
-
-#[test]
-fn each_selected_loss_has_dynamic_mass_diagonal_and_endpoint_tangents() {
-    for law in [
-        LossLaw::EffectiveTotal,
-        LossLaw::ChurchillPipe,
-        LossLaw::ChurchillAnnulus,
-        LossLaw::CoreBundle,
-        LossLaw::GuideAnnulus {
-            laminar_darcy: 95.98,
-        },
-        LossLaw::SmoothColebrook,
-    ] {
-        let mut cfg = fixture().config().clone();
-        cfg.hydraulic.truncate(1);
-        cfg.hydraulic[0].law = law;
-        cfg.hydraulic[0].diameter = 0.05;
-        cfg.hydraulic[0].roughness = 2e-6;
-        cfg.hydraulic[0].fixed_loss = 1.;
-        cfg.hydraulic[0].grid_multiplier = 0.49;
-        cfg.water[1].geometry.elevation = 5.;
-        cfg.heat.clear();
-        let n = Network::new(cfg).unwrap();
-        let mut y = n.initial_state().unwrap();
-        let flow = n.flow_row(0);
-        for q in [-100., 0., 100.] {
-            y[flow] = q;
-            let base = at(&n, &y, &vec![0.; y.len()], Some(197.));
-            let a = base.liquids[0];
-            let b = base.liquids[1];
-            let rho = (a.density + b.density) * 0.5;
-            let mu = (a.viscosity + b.viscosity) * 0.5;
-            let loss = n.config().hydraulic[0].pressure_loss(q, rho, mu);
-            let inverse_inertia = n.config().hydraulic[0].inertance().recip();
-            assert_eq!(
-                base.residual[flow],
-                -(y[3] - y[8] - rho * GRAVITY * 2. - loss[0]) * inverse_inertia
-            );
-            assert_eq!(
-                matrix(&n, &base, flow, flow),
-                197. + loss[1] * inverse_inertia
-            );
-            assert!(loss[1] > 0.);
-            for factor in [1., 0.5] {
-                for col in [3, 4, 8, 9, flow] {
-                    let step = if col == flow {
-                        q.abs().max(1.) * 1e-6
-                    } else if col % 5 == 3 {
-                        10.
-                    } else {
-                        1e-3
-                    } * factor;
-                    let mut plus = y.clone();
-                    let mut minus = y.clone();
-                    plus[col] += step;
-                    minus[col] -= step;
-                    let mut pp = vec![0.; y.len()];
-                    let mut mp = vec![0.; y.len()];
-                    pp[col] = 197. * step;
-                    mp[col] = -197. * step;
-                    let p = at(&n, &plus, &pp, None);
-                    let m = at(&n, &minus, &mp, None);
-                    let seen = (p.residual[flow] - m.residual[flow]) * 0.5;
-                    let expected = matrix(&n, &base, flow, col) * step;
-                    assert!(
-                        (seen - expected).abs() <= 5e-5 + expected.abs() * 0.001,
-                        "{law:?} q={q} momentum column={col}: seen={seen}, expected={expected}"
-                    );
-                }
-            }
-        }
-    }
-}
-
-#[test]
-fn workspace_cannot_be_reused_with_incompatible_same_size_topology() {
-    let n = fixture();
+    let mut y = n.initial_state().unwrap();
+    let yp = vec![0.; y.len()];
     let mut w = Workspace::new(&n);
-    let mut cfg = n.config().clone();
-    cfg.heat.push(cfg.heat[0]);
-    let changed = Network::new(cfg).unwrap();
-    let y = changed.initial_state().unwrap();
-    assert!(
-        w.evaluate(&changed, &y, &vec![0.; y.len()], Some(1.))
-            .is_err()
-    );
+    y[n.total_mass_row()] = 0.;
+    assert!(w.evaluate(&n, &y, &yp, None).is_err());
+    y = n.initial_state().unwrap();
+    y[n.mechanical_row(1).unwrap()] = -20e6;
+    assert!(w.evaluate(&n, &y, &yp, None).is_err());
+    y = n.initial_state().unwrap();
+    assert!(w.evaluate(&n, &y, &yp, Some(f64::NAN)).is_err());
+    assert!(w.evaluate(&n, &y[..y.len() - 1], &yp, None).is_err());
+    w.chart_mass.pop();
+    assert!(w.evaluate(&n, &y, &yp, None).is_err());
 }

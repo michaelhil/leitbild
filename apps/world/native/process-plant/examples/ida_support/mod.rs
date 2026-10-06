@@ -71,6 +71,8 @@ unsafe extern "C" {
     pub(crate) fn IDASetId(memory: Handle, id: Handle) -> c_int;
     pub(crate) fn IDASetLinearSolver(memory: Handle, solver: Handle, matrix: Handle) -> c_int;
     pub(crate) fn IDASetJacFn(memory: Handle, jacobian: JacobianFn) -> c_int;
+    pub(crate) fn IDACalcIC(memory: Handle, option: c_int, tout: f64) -> c_int;
+    pub(crate) fn IDAGetConsistentIC(memory: Handle, y: Handle, yp: Handle) -> c_int;
     pub(crate) fn IDASetStopTime(memory: Handle, stop: f64) -> c_int;
     pub(crate) fn IDASolve(
         memory: Handle,

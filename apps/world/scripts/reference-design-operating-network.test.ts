@@ -59,6 +59,9 @@ ownerTest('actual owners compile one finite connected cold primary/SG-metal part
   expect(p.hydraulic.filter(n => n.kind === 4).every(n => n.fixedLoss === .5 && n.roughness_m === 2e-6)).toBe(true)
   expect(p.hydraulic.filter(n => n.kind === 5).length).toBe(4)
   expect(p.limitations.some(n => n.includes('Re<=500'))).toBe(false)
+  expect(p.limitations.some(n => n.includes('no retained contact inertia'))).toBe(true)
+  expect(p.limitations.some(n => n.includes('zero-flow guess is not an admitted rest state'))).toBe(true)
+  expect(p.limitations.some(n => n.includes('flow inertia') || n.includes('drives qdot'))).toBe(false)
 }, 60_000)
 
 test('execution controls require a useful interval and one finite allowance', async () => {
